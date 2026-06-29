@@ -33,11 +33,13 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
+import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
@@ -124,6 +126,17 @@ void main([List<String> args = const <String>[]]) {
       // event-source cut + fast exit runs in
       // [_HoshiReaderAppState.onWindowClose] (TODO-086).
       await windowManager.setPreventClose(true);
+      // TODO-959: 数据迁移成功后的自动重启会以 detached 模式拉新进程并带上重启标志。
+      // detached 新进程在 Windows 上不一定自动抢前台 → 短暂黑/不可见窗口。见到标志就
+      // 主动 show()+focus() 把主窗口顶到前台。失败静默降级（窗口仍会由 runner 显示）。
+      if (args.contains(DesktopLifecycleService.restartMarkerArg)) {
+        try {
+          await windowManager.show();
+          await windowManager.focus();
+        } catch (e) {
+          debugPrint('[Hibiki] restart window focus skipped: $e');
+        }
+      }
       await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
       // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
       // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
@@ -834,7 +847,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -891,7 +904,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -948,7 +961,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -1012,6 +1025,30 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         ),
       );
     }
+    // TODO-959: 桌面「数据存储位置」整目录迁移期间，迁移引擎会 closeDatabase()（置
+    // isInitialised=false）以释放 Windows 文件锁。若直接落到下面的裸 loading 分支，背景
+    // _savedSplashColor 可能为 null/深色 → 近黑 + 转圈，搬大库数秒~数分钟被误判死机。
+    // 这里在 loading 分支之前拦截：改显一个带「请勿关闭」文案 + 进度条的迁移遮罩（明确
+    // 主题色背景），并保证「遮罩已上屏 → closeDatabase → 搬文件」的顺序（见
+    // _DataRootWidget._changeLocation 先调 beginDataRootMigration 再 migrate）。
+    if (appModel.dataRootMigrationActive) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          home: DataRootMigrationView(
+            progress: appModel.dataRootMigrationProgress,
+            background: _savedSplashColor,
+          ),
+        ),
+      );
+    }
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
@@ -1024,7 +1061,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: CircularProgressIndicator(color: cs.primary),
             ),

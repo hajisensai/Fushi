@@ -848,6 +848,13 @@ void main() {
           'Debug payload string logs parsed reader font size.',
       'lib/src/reader/reader_pagination_scripts.dart':
           'Injected reader JavaScript receives content font size.',
+      'lib/src/storage/data_root_migration_view.dart':
+          'TODO-959 data-root migration overlay is pre-init startup chrome '
+              '(rendered while the DB is closed / isInitialised=false during '
+              'the move), mirroring the main.dart loading/error scaffolds '
+              'verbatim — design tokens are not reliably available there, so it '
+              'uses raw fontSize + ColorScheme roles, the same reviewed '
+              'startup-chrome exception class as the main.dart splash branches.',
     };
 
     final List<String> violations = <String>[];

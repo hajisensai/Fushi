@@ -1988,5 +1988,8 @@
   "folder_picker_empty": "没有子文件夹",
   "folder_picker_permission_required": "浏览文件夹需要存储权限",
   "word_favorite_added": "已收藏该词",
-  "word_favorite_removed": "已取消收藏该词"
+  "word_favorite_removed": "已取消收藏该词",
+  "data_storage_migrate_overlay_title": "正在迁移数据",
+  "data_storage_migrate_overlay_warning": "正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。",
+  "data_storage_migrate_overlay_progress": "正在复制文件：$copied / $total"
 }

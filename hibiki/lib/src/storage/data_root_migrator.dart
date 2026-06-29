@@ -34,6 +34,7 @@ class DataRootMigrationRequest {
     required this.newDataRoot,
     required this.closeResources,
     required this.writeDataRootPref,
+    this.onProgress,
   });
 
   /// 旧「内容/书库」根（含 EPUB / 有声书 / 视频封面/字幕/shader / 词典资源 / 缩略图）。
@@ -53,6 +54,11 @@ class DataRootMigrationRequest {
   /// 迁移全部成功后，把新 dataRoot 写进 SharedPreferences（[AppPaths.dataRootPrefKey]）。
   /// 作为回调注入而非引擎内直连 SharedPreferences，使引擎在纯 Dart 单测里可断言写入。
   final Future<void> Function(String newDataRoot) writeDataRootPref;
+
+  /// 跨盘 copy 阶段的进度回调（可选）。仅在退回逐文件复制（不同卷）时触发：每复制完一个
+  /// 文件回报一次 (已复制文件数, 总文件数)。同盘 `rename` 是瞬时原子操作，不产生进度。
+  /// 注入给 UI 显示百分比进度条，避免搬大库被误判死机（TODO-959）。null 表示不需要进度。
+  final void Function(int copied, int total)? onProgress;
 }
 
 /// 迁移过程中可恢复的失败：旧根保持完整、未切换、新根半成品已清理。
@@ -105,10 +111,13 @@ class DataRootMigrator {
       _MovePlan(req.oldSupportRoot, newSupport),
     ];
     final List<_MovePlan> done = <_MovePlan>[];
+    // 跨盘复制的进度状态：累积已复制文件数 + 两子树总文件数（同盘 rename 不计）。
+    // 跨盘搬移前一次性数清总数，便于 UI 显示稳定的百分比；同盘搬移此对象不被用到。
+    final _CopyProgress progress = _CopyProgress(req.onProgress);
     try {
       newRoot.createSync(recursive: true);
       for (final _MovePlan m in moves) {
-        await _moveTree(m.src, m.dst);
+        await _moveTree(m.src, m.dst, progress);
         done.add(m);
       }
     } catch (e) {
@@ -162,7 +171,11 @@ class DataRootMigrator {
 
   /// 同卷直接 `rename`（原子、瞬时）；跨卷（rename 抛 errno 18 / EXDEV / Windows 17）
   /// 退回逐文件 copy + 字节数校验，校验通过才删源。源不存在 → 视为空内容，建空目标根。
-  Future<void> _moveTree(Directory src, Directory dst) async {
+  Future<void> _moveTree(
+    Directory src,
+    Directory dst,
+    _CopyProgress progress,
+  ) async {
     if (!await src.exists()) {
       // 旧根某子树不存在（如全新装从未产出有声书目录）：建空目标，无内容可搬。
       await dst.create(recursive: true);
@@ -176,7 +189,7 @@ class DataRootMigrator {
       if (!_isCrossDevice(e)) rethrow;
     }
     // 跨卷：copy + verify + delete。
-    await _copyTreeVerified(src, dst);
+    await _copyTreeVerified(src, dst, progress);
     await src.delete(recursive: true);
   }
 
@@ -186,8 +199,26 @@ class DataRootMigrator {
     return code == 18 || code == 17;
   }
 
-  Future<void> _copyTreeVerified(Directory src, Directory dst) async {
+  /// 仅供单测：直接驱动跨盘复制 + 进度回报，不依赖伪造 EXDEV/EXDEV-17 错误。复制 [src]
+  /// 整树到 [dst] 并按真实文件数回报 (copied, total)，与生产跨盘路径走同一份逻辑。
+  @visibleForTesting
+  Future<void> copyTreeWithProgressForTesting(
+    Directory src,
+    Directory dst,
+    void Function(int copied, int total) onProgress,
+  ) async {
+    await _copyTreeVerified(src, dst, _CopyProgress(onProgress));
+  }
+
+  Future<void> _copyTreeVerified(
+    Directory src,
+    Directory dst, [
+    _CopyProgress? progress,
+  ]) async {
     await dst.create(recursive: true);
+    // 进度模式：先一次性数清本子树的文件总数并并入全局分母，再逐文件复制时累加分子。
+    // null（回滚路径）时不报告进度——回滚是异常清理，没有 UI 等它。
+    progress?.addToTotal(_countFiles(src));
     await for (final FileSystemEntity entity
         in src.list(recursive: true, followLinks: false)) {
       final String rel = p.relative(entity.path, from: src.path);
@@ -203,8 +234,18 @@ class DataRootMigrator {
           throw DataRootMigrationException(
               '跨盘复制校验失败：$rel 字节数不一致（$srcLen != $dstLen）');
         }
+        progress?.fileCopied();
       }
     }
+  }
+
+  /// 同步数清目录树下的文件数（不含目录项）。用于跨盘复制前确定进度分母。
+  static int _countFiles(Directory dir) {
+    int count = 0;
+    for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+      if (e is File) count++;
+    }
+    return count;
   }
 
   Future<void> _rollbackMoves(List<_MovePlan> done) async {
@@ -414,4 +455,24 @@ class _MovePlan {
   _MovePlan(this.src, this.dst);
   final Directory src;
   final Directory dst;
+}
+
+/// 跨盘复制进度累加器：把多个子树的文件总数累进 [_total]，每复制完一个文件 [_copied]++
+/// 并向注入的回调回报 (copied, total)。同盘 rename 路径永不触碰它（回调不会被调用）。
+class _CopyProgress {
+  _CopyProgress(this._onProgress);
+  final void Function(int copied, int total)? _onProgress;
+  int _copied = 0;
+  int _total = 0;
+
+  void addToTotal(int count) {
+    _total += count;
+    // 数清新子树总数后立即回报一次（分子不变、分母变大），让 UI 早早呈现进度条。
+    _onProgress?.call(_copied, _total);
+  }
+
+  void fileCopied() {
+    _copied++;
+    _onProgress?.call(_copied, _total);
+  }
 }

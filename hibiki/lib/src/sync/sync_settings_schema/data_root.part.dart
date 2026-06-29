@@ -114,6 +114,11 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     if (!confirmed || !mounted) return;
 
     setState(() => _migrating = true);
+    // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置
+    // isInitialised=false）。这样 DB 关闭引发的根 widget rebuild 命中迁移遮罩分支，而不
+    // 是裸 loading 近黑屏。顺序铁律：beginDataRootMigration（遮罩上屏）→ migrate（内部
+    // 先 closeResources 关 DB 释放文件锁，再搬文件）。
+    appModel.beginDataRootMigration();
     try {
       final DataRootMigrationRequest req = DataRootMigrationRequest(
         oldDocumentsRoot: Directory(oldDocs),
@@ -124,6 +129,9 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
           final SharedPreferences sp = await SharedPreferences.getInstance();
           await sp.setString(AppPaths.dataRootPrefKey, newRoot);
         },
+        // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
+        onProgress: (int copied, int total) =>
+            appModel.updateDataRootMigrationProgress(copied, total),
       );
       await const DataRootMigrator().migrate(req);
 
@@ -135,22 +143,45 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       }
       await _restartOrPromptManual(appModel);
     } on DataRootMigrationException catch (e) {
-      // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref、不重启。
-      if (mounted) {
-        _showSnackBar(
-          context,
-          t.data_storage_migrate_failed(message: e.message),
-        );
-      }
+      // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref。但 closeResources 在搬移前就
+      // 已关掉 DB（_isInitialised=false），本进程无法原地恢复 → 重启回到**未改变**的
+      // 旧根（pref 没写，新进程仍解析到旧位置，干净重新初始化）。
+      await _recoverAfterFailedMigration(
+        appModel,
+        t.data_storage_migrate_failed(message: e.message),
+      );
     } catch (e) {
-      if (mounted) {
-        _showSnackBar(
-          context,
-          t.data_storage_migrate_failed(message: e.toString()),
-        );
-      }
+      await _recoverAfterFailedMigration(
+        appModel,
+        t.data_storage_migrate_failed(message: e.toString()),
+      );
     } finally {
       if (mounted) setState(() => _migrating = false);
+    }
+  }
+
+  /// 迁移失败的恢复：旧根完整、pref 未改。由于运行时句柄（DB/FFI/音频）已在搬移前关闭，
+  /// 本进程无法原地继续，重启回到旧根重新初始化。重启不支持/失败 → 撤遮罩并提示用户手动
+  /// 重开（数据安全，仅需重启）。
+  Future<void> _recoverAfterFailedMigration(
+    AppModel appModel,
+    String failureMessage,
+  ) async {
+    final PlatformLifecycleService lifecycle =
+        appModel.platformServices.lifecycle;
+    if (lifecycle.supportsRestart) {
+      try {
+        await lifecycle.restartApp();
+        return; // 成功重启则不返回（进程退出）。
+      } catch (e) {
+        debugPrint('DataRoot migrate: 失败后重启也失败: $e');
+      }
+    }
+    // 无法自动重启：撤遮罩，回到设置页并提示（此时 DB 已关，功能受限，但数据安全）。
+    appModel.endDataRootMigration();
+    if (mounted) {
+      _showSnackBar(context, failureMessage);
+      _showSnackBar(context, t.data_storage_restart_failed);
     }
   }
 

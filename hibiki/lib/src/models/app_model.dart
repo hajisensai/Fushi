@@ -664,6 +664,41 @@ class AppModel with ChangeNotifier {
   /// Notifies app to stop showing any screens.
   final ChangeNotifier databaseCloseNotifier = ChangeNotifier();
 
+  /// TODO-959：桌面「数据存储位置」整目录迁移期间为 true。迁移会 [closeDatabase]
+  /// （置 `_isInitialised=false`）以释放 Windows 文件锁，否则根 widget 会回退到裸
+  /// loading 分支（近黑底 + 转圈，搬大库数秒~数分钟被误判死机）。该标志让根 widget 在
+  /// loading 分支**之前**改显一个带「正在迁移数据，请勿关闭」文案 + 进度条的迁移遮罩。
+  bool _dataRootMigrationActive = false;
+  bool get dataRootMigrationActive => _dataRootMigrationActive;
+
+  /// 迁移进度（跨盘复制时 (已复制文件数, 总文件数)）。同盘 rename 瞬时完成不产生进度，
+  /// 此时保持 null → UI 显示不确定进度条。
+  ({int copied, int total})? _dataRootMigrationProgress;
+  ({int copied, int total})? get dataRootMigrationProgress =>
+      _dataRootMigrationProgress;
+
+  /// 进入迁移态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 搬文件」的顺序，
+  /// 这样根 widget 在 DB 关闭引发的 rebuild 里看到的是迁移遮罩而非裸 loading。
+  void beginDataRootMigration() {
+    _dataRootMigrationActive = true;
+    _dataRootMigrationProgress = null;
+    notifyListeners();
+  }
+
+  /// 更新迁移进度（跨盘复制每完成一个文件调一次）。无副作用，仅刷进度条。
+  void updateDataRootMigrationProgress(int copied, int total) {
+    _dataRootMigrationProgress = (copied: copied, total: total);
+    notifyListeners();
+  }
+
+  /// 退出迁移态。仅在迁移失败（保留旧根、不重启）回到设置页时调用；成功路径会重启进程，
+  /// 不会执行到这里。
+  void endDataRootMigration() {
+    _dataRootMigrationActive = false;
+    _dataRootMigrationProgress = null;
+    notifyListeners();
+  }
+
   /// TODO-376：一次性「请打开首页『查词』tab」信号。值每请求一次自增（内容无关，
   /// 仅作 edge 触发）。桌面悬浮字幕条点词（reader 路由里 `_lookupFromFloatingLyric`）
   /// 这种**显式**查词手势，需要把主窗口从阅读器/任意 tab 切到查词 tab，让
