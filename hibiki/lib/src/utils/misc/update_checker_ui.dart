@@ -88,6 +88,11 @@ class UpdateAvailableDialog extends StatelessWidget {
               MarkdownBody(
                 data: releaseNotes,
                 selectable: true,
+                // TODO-966: flutter_markdown 0.6.23 在 selectable 时会无条件
+                // 解引用 onSelectionChanged!（builder.dart:957），不传则选中文本即崩；
+                // 补一个空回调保留可选能力。
+                onSelectionChanged: (String? text, TextSelection selection,
+                    SelectionChangedCause? cause) {},
                 onTapLink: (_, href, __) {
                   if (href == null) return;
                   launchUrl(

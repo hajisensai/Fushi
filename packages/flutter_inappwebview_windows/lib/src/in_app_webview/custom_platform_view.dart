@@ -489,24 +489,27 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   }
 
   void _reportSurfaceSize() async {
-    final context = _key.currentContext;
-    final box = context?.findRenderObject() as RenderBox?;
-    if (box != null && context != null) {
-      await _controller.ready;
-      unawaited(_controller._setSize(
-          box.size, widget.scaleFactor ?? View.of(context).devicePixelRatio));
-    }
+    // 先等 native WebView2 跨帧创建完成；await 之后旧的 box/context 可能已随
+    // widget 销毁/重建失效（TODO-965），必须复检 mounted 并重新取 box，
+    // 否则 View.of 返回 null 被 `!` 解引用、box.localToGlobal 崩溃。
+    await _controller.ready;
+    if (!mounted) return;
+    final BuildContext? context = _key.currentContext;
+    final RenderBox? box = context?.findRenderObject() as RenderBox?;
+    if (context == null || box == null || !box.attached) return;
+    unawaited(_controller._setSize(
+        box.size, widget.scaleFactor ?? View.of(context).devicePixelRatio));
   }
 
   void _reportWidgetPosition() async {
-    final context = _key.currentContext;
-    final box = context?.findRenderObject() as RenderBox?;
-    if (box != null && context != null) {
-      await _controller.ready;
-      final position = box.localToGlobal(Offset.zero);
-      unawaited(_controller._setPosition(
-          position, widget.scaleFactor ?? View.of(context).devicePixelRatio));
-    }
+    await _controller.ready;
+    if (!mounted) return;
+    final BuildContext? context = _key.currentContext;
+    final RenderBox? box = context?.findRenderObject() as RenderBox?;
+    if (context == null || box == null || !box.attached) return;
+    final Offset position = box.localToGlobal(Offset.zero);
+    unawaited(_controller._setPosition(
+        position, widget.scaleFactor ?? View.of(context).devicePixelRatio));
   }
 
   @override
