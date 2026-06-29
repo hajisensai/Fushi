@@ -113,7 +113,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安裝
 
-從 [GitHub Releases](https://github.com/hdjsadgfwtg/hibiki/releases) 下載最新版本，支援 Android APK 和 Windows 安裝包。
+從 [GitHub Releases](https://github.com/hajisensai/hibiki/releases) 下載最新版本，支援 Android APK 和 Windows 安裝包。
 
 > 最低 Android 7.0（API 24）。
 

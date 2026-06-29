@@ -28,12 +28,12 @@ String _debugManifestJson({
           <String, dynamic>{
             'name': 'hibiki-$version-abc1234-debug.apk',
             'browser_download_url':
-                'https://github.com/hdjsadgfwtg/hibiki/releases/download/$tag/hibiki-$version-abc1234-debug.apk',
+                'https://github.com/hajisensai/hibiki/releases/download/$tag/hibiki-$version-abc1234-debug.apk',
           },
           <String, dynamic>{
             'name': 'hibiki-$version-windows-setup.exe',
             'browser_download_url':
-                'https://github.com/hdjsadgfwtg/hibiki/releases/download/$tag/hibiki-$version-windows-setup.exe',
+                'https://github.com/hajisensai/hibiki/releases/download/$tag/hibiki-$version-windows-setup.exe',
           },
         ],
   });
@@ -67,7 +67,7 @@ void main() {
       expect(selected!.version, '0.11.1-debug.5614');
       expect(
         selected.downloadUrl,
-        'https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.1-debug.5614+abc1234/hibiki-0.11.1-debug.5614-windows-setup.exe',
+        'https://github.com/hajisensai/hibiki/releases/download/v0.11.1-debug.5614+abc1234/hibiki-0.11.1-debug.5614-windows-setup.exe',
       );
     });
 

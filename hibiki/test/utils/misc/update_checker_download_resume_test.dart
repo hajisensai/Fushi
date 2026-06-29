@@ -555,7 +555,7 @@ void main() {
 UpdateAsset _asset(List<int> payload) => UpdateAsset(
       name: 'hibiki-1.2.0-windows-setup.exe',
       url:
-          'https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.2.0/hibiki-1.2.0-windows-setup.exe',
+          'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-windows-setup.exe',
       sizeBytes: payload.length,
       sha256Digest: _sha256Hex(payload),
     );

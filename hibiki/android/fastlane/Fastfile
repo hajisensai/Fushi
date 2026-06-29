@@ -29,7 +29,7 @@ platform :android do
     sh("flutter", "build", "apk", "--release", "--split-per-abi")
 
     set_github_release(
-      repository_name: "hdjsadgfwtg/hibiki",
+      repository_name: "hajisensai/hibiki",
       api_token: ENV["GITHUB_TOKEN"],
       name: "Hibiki #{version_name}",
       tag_name: version_name,

@@ -113,7 +113,7 @@ dev_dependencies:
 
 ```yaml
 name: hibiki_workspace
-repository: https://github.com/hdjsadgfwtg/hibiki
+repository: https://github.com/hajisensai/hibiki
 
 packages:
   - packages/*

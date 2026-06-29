@@ -6,19 +6,19 @@ void main() {
   group('parseLatestTagFromRedirectLocation (302 Location -> tag, 纯函数)', () {
     test('直连 Location（releases/tag/<tag>）抽出原始 tag 段（保留前导 v）', () {
       const String location =
-          'https://github.com/hdjsadgfwtg/hibiki/releases/tag/v0.4.1';
+          'https://github.com/hajisensai/hibiki/releases/tag/v0.4.1';
       expect(parseLatestTagFromRedirectLocation(location), 'v0.4.1');
     });
 
     test('镜像前缀改写后的 Location 仍只认 releases/tag 段、丢弃域名', () {
       // 镜像可能把 Location 改写成「镜像域名 + 真实 github URL」形式。
       const String location =
-          'https://ghfast.top/https://github.com/hdjsadgfwtg/hibiki/releases/tag/v0.4.1';
+          'https://ghfast.top/https://github.com/hajisensai/hibiki/releases/tag/v0.4.1';
       expect(parseLatestTagFromRedirectLocation(location), 'v0.4.1');
     });
 
     test('相对路径 Location 也能解析（GitHub 有时返回相对跳转）', () {
-      const String location = '/hdjsadgfwtg/hibiki/releases/tag/v1.2.3';
+      const String location = '/hajisensai/hibiki/releases/tag/v1.2.3';
       expect(parseLatestTagFromRedirectLocation(location), 'v1.2.3');
     });
 
@@ -68,6 +68,17 @@ void main() {
   });
 
   group('buildStableReleaseFromTag (302 tag -> API 同构 release map)', () {
+    test(
+        'stable release URL helpers prefer canonical repo with legacy fallback',
+        () {
+      expect(kStableReleasesLatestUrl,
+          'https://github.com/hajisensai/hibiki/releases/latest');
+      expect(kLegacyStableReleasesLatestUrl,
+          'https://github.com/hdjsadgfwtg/hibiki/releases/latest');
+      expect(stableReleasesLatestUrlForRepo(kLegacyGitHubRepo),
+          'https://github.com/hdjsadgfwtg/hibiki/releases/latest');
+    });
+
     test('用原始 tag（含 v）拼 download URL，version 去前导 v', () {
       final Map<String, dynamic> release = buildStableReleaseFromTag('v0.4.1');
       expect(release['tag_name'], 'v0.4.1');
@@ -76,6 +87,27 @@ void main() {
       expect(release['body'], '');
       expect(release['html_url'], contains('/releases/tag/v0.4.1'));
 
+      final List<dynamic> assets = release['assets'] as List<dynamic>;
+      final Map<String, dynamic> windows = assets
+          .cast<Map<String, dynamic>>()
+          .firstWhere((Map<String, dynamic> a) =>
+              (a['name'] as String).endsWith('-windows-setup.exe'));
+      expect(
+        windows['browser_download_url'],
+        'https://github.com/hajisensai/hibiki/releases/download/v0.4.1/hibiki-0.4.1-windows-setup.exe',
+      );
+    });
+
+    test('legacy repo override preserves installable fallback download URLs',
+        () {
+      final Map<String, dynamic> release = buildStableReleaseFromTag(
+        'v0.4.1',
+        repo: kLegacyGitHubRepo,
+      );
+      expect(
+        release['html_url'],
+        'https://github.com/hdjsadgfwtg/hibiki/releases/tag/v0.4.1',
+      );
       final List<dynamic> assets = release['assets'] as List<dynamic>;
       final Map<String, dynamic> windows = assets
           .cast<Map<String, dynamic>>()
@@ -102,7 +134,7 @@ void main() {
       final UpdateAsset? asset = await WindowsUpdater().selectAsset(assets);
       expect(
         asset?.url,
-        'https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.4.1/hibiki-0.4.1-windows-setup.exe',
+        'https://github.com/hajisensai/hibiki/releases/download/v0.4.1/hibiki-0.4.1-windows-setup.exe',
       );
     });
 
@@ -115,7 +147,7 @@ void main() {
       ).selectAsset(assets);
       expect(
         asset?.url,
-        'https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.4.1/hibiki-0.4.1-arm64-v8a.apk',
+        'https://github.com/hajisensai/hibiki/releases/download/v0.4.1/hibiki-0.4.1-arm64-v8a.apk',
       );
     });
   });

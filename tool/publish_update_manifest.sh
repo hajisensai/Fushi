@@ -18,7 +18,7 @@
 #   NOTES             release notes / body
 #   RELEASE_SEQUENCE  monotonic git rev-list count (NOT a workflow run-number)
 #   VERSION           normalized version (build_version_name)
-#   REPO              owner/repo, e.g. hdjsadgfwtg/hibiki
+#   REPO              owner/repo, e.g. hajisensai/hibiki
 #   GITHUB_TOKEN      token with contents:write on REPO
 #   ARTIFACTS_DIR     dir holding the built release assets for THIS platform
 #   ASSET_GLOB        glob (relative to ARTIFACTS_DIR) of this platform's assets

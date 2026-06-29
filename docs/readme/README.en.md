@@ -113,7 +113,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/hdjsadgfwtg/hibiki/releases) — Android APK and Windows installer are available.
+Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) — Android APK and Windows installer are available.
 
 > Requires Android 7.0 (API 24) or higher.
 

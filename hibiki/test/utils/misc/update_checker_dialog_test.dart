@@ -56,7 +56,7 @@ void main() {
         ValueNotifier<UpdateDownloadDiagnostics?>(
       const UpdateDownloadDiagnostics(
         sourceUrl:
-            'https://ghproxy.net/https://github.com/hdjsadgfwtg/hibiki/releases/download/v9.9.9/hibiki-9.9.9-windows-setup.exe',
+            'https://ghproxy.net/https://github.com/hajisensai/hibiki/releases/download/v9.9.9/hibiki-9.9.9-windows-setup.exe',
         sourceHost: 'ghproxy.net',
         receivedBytes: 1234567,
         totalBytes: 987654321,

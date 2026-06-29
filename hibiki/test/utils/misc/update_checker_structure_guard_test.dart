@@ -112,6 +112,9 @@ void main() {
     // TODO-705: beta/debug mirror-manifest reading lives in the release part.
     expect(source, contains('Map<String, dynamic>? buildReleaseFromManifest('));
     expect(source, contains('String? manifestUrlForChannel('));
+    expect(source, contains('Map<String, String> manifestUrlsForChannel('));
+    expect(source, contains('const String kGitHubRepo ='));
+    expect(source, contains('const String kLegacyGitHubRepo ='));
     expect(source, contains('const String kBetaManifestUrl ='));
     expect(source, contains('const String kDebugManifestUrl ='));
     expect(source, contains('kUpdateManifestSchemaVersion'));

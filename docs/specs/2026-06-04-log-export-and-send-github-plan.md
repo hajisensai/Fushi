@@ -12,7 +12,7 @@
 
 ## 关键事实（实现前必读）
 
-- 仓库常量：app 自身 GitHub 仓库是 `hdjsadgfwtg/hibiki`（见 `lib/src/utils/misc/update_checker.dart:13`）。
+- 仓库常量：app 自身 GitHub 仓库是 `hajisensai/hibiki`（见 `lib/src/utils/misc/update_checker.dart:13`）。
 - 平台分流导出范例：`lib/src/sync/sync_settings_schema.dart:745-768`（`getTemporaryDirectory` → 移动 `Share.shareXFiles` / 桌面 `FilePicker.platform.saveFile` + `File.copy`）。
 - 两个日志页现状：
   - `lib/src/pages/implementations/debug_log_page.dart`（StatefulWidget，`_log` 字段，已有 刷新/复制/分享/清除 四个按钮，分享 subject = `t.debug_log_share_subject`，文件名 `hibiki_debug_log.txt`）。
@@ -112,13 +112,13 @@ void main() {
   group('buildGitHubIssueUri', () {
     test('points to issues/new on the given repo with encoded params', () {
       final Uri uri = buildGitHubIssueUri(
-        repo: 'hdjsadgfwtg/hibiki',
+        repo: 'hajisensai/hibiki',
         title: '[Debug log] v1.2.3',
         body: 'line one\nline two & more',
       );
       expect(uri.scheme, 'https');
       expect(uri.host, 'github.com');
-      expect(uri.path, '/hdjsadgfwtg/hibiki/issues/new');
+      expect(uri.path, '/hajisensai/hibiki/issues/new');
       // Uri 自动百分号编码，解码后应原样还原。
       expect(uri.queryParameters['title'], '[Debug log] v1.2.3');
       expect(uri.queryParameters['body'], 'line one\nline two & more');
@@ -166,7 +166,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 /// app 自身仓库，GitHub Issue 提交目标。与 update_checker 里的常量一致。
-const String kHibikiGitHubRepo = 'hdjsadgfwtg/hibiki';
+const String kHibikiGitHubRepo = 'hajisensai/hibiki';
 
 /// 构造 GitHub 新建 issue 的预填 URL。title/body 自动百分号编码。
 Uri buildGitHubIssueUri({
@@ -515,7 +515,7 @@ Expected: 全绿（新增 4 测试 + 既有全部）。
 
 - [ ] **Step 5: 真机/桌面复测（声明修好前必做）**
 
-按 `docs/agent/integration-testing.md`：Windows 桌面验「另存为」弹出真实保存对话框且文件内容正确；任一平台验「发送 GitHub」打开浏览器到 `hdjsadgfwtg/hibiki/issues/new` 且剪贴板含完整日志。留证据。
+按 `docs/agent/integration-testing.md`：Windows 桌面验「另存为」弹出真实保存对话框且文件内容正确；任一平台验「发送 GitHub」打开浏览器到 `hajisensai/hibiki/issues/new` 且剪贴板含完整日志。留证据。
 
 ---
 

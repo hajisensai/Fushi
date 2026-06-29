@@ -2,7 +2,7 @@
 """GitHub Release 下载统计脚本。
 
 用法:
-    python gh_download_stats.py                          # 默认 hdjsadgfwtg/hibiki
+    python gh_download_stats.py                          # 默认 hajisensai/hibiki
     python gh_download_stats.py owner/repo               # 指定仓库
     python gh_download_stats.py owner/repo --token TOKEN  # 带 token（私有仓库 / 提高限额）
 """
@@ -13,7 +13,7 @@ import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-DEFAULT_REPO = "hdjsadgfwtg/hibiki"
+DEFAULT_REPO = "hajisensai/hibiki"
 API_BASE = "https://api.github.com"
 
 
@@ -83,7 +83,7 @@ def print_stats(releases: list[dict], repo: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GitHub Release 下载统计")
-    parser.add_argument("repo", nargs="?", default=DEFAULT_REPO, help="owner/repo（默认 hdjsadgfwtg/hibiki）")
+    parser.add_argument("repo", nargs="?", default=DEFAULT_REPO, help="owner/repo（默认 hajisensai/hibiki）")
     parser.add_argument("--token", "-t", help="GitHub personal access token（私有仓库必须）")
     args = parser.parse_args()
 

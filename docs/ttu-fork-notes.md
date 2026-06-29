@@ -6,7 +6,7 @@
 
 **fork 存放位置**：
 - 工作副本：本机 `/d/ttu-fork/`（branch `hibiki-patches`）
-- 远程：https://github.com/hdjsadgfwtg/ttu-fork （`origin/hibiki-patches`）
+- 远程：https://github.com/hajisensai/ttu-fork （`origin/hibiki-patches`）
 - 上游 remote：`upstream` → https://github.com/ttu-ttu/ebook-reader
 
 每个 patch 以 `feat(reader): [hibiki] ...` 开头便于 rebase 时辨识。
