@@ -1,27 +1,15 @@
 {
   "schemaVersion": 1,
   "version": "1.0.1",
-  "tag": "v1.0.1-beta.6095",
+  "tag": "v1.0.1-beta.6096",
   "channel": "beta",
   "prerelease": true,
-  "releaseSequence": 6095,
-  "notes": "## Hibiki 1.0.1 beta 6095\n\n本次测试版修复 GitHub 用户名迁移后的更新源兼容性，并把上个测试版的完整更新日志一并保留，方便从旧 beta 直接升级的用户查看连续变更。\n\nThis beta fixes update-source compatibility after the GitHub username migration, and also keeps the full previous beta changelog so users upgrading across beta builds can see the complete sequence of changes.\n\n### 本次测试版 / This Beta\n\n#### 中文\n\n- 将应用内更新源、GitHub 链接、README 下载入口、发布脚本与相关测试默认仓库切换到 `hajisensai/hibiki`。\n- 更新检查保留 `hdjsadgfwtg/hibiki` 作为旧用户名 fallback，覆盖 stable、beta、debug 的 GitHub API、manifest、release 页面和合成下载 URL，避免用户名迁移影响已安装用户获取更新。\n- 已通过 `flutter analyze` 与完整 `update_checker*` 测试集验证更新源兼容逻辑。\n\n#### English\n\n- Switched in-app update sources, GitHub links, README download links, release scripts, and related test defaults to `hajisensai/hibiki`.\n- Kept `hdjsadgfwtg/hibiki` as the legacy username fallback across stable, beta, and debug GitHub API, manifest, release-page, and synthesized download URLs so installed users can keep receiving updates through the username migration.\n- Verified the update-source compatibility changes with `flutter analyze` and the full `update_checker*` test suite.\n\n### 上个测试版 / Previous Beta: v1.0.1-beta.6093\n\n## Hibiki 1.0.1 beta 6093\n\n本次测试版首先修复了制卡时没有句子的问题，并补齐 Android 与 Windows 的测试版更新资产。\n\nThis beta first fixes the issue where card creation could miss the sentence, and includes both Android and Windows beta update assets.\n\n### 中文\n\n#### 新增与调整\n\n- 阅读器加入视觉小说阅读模式基础入口（未完成，先供测试）。\n- 桌面端加入数据目录迁移入口（未完成，实验性），可在设置中迁移数据根目录并尝试自动重启；迁移前建议先备份。\n- 书架加入系列分组、折叠系列卡片、系列详情页与自定义排序。\n- 自定义主题支持多套主题、色板切换、长按编辑与分享码。\n- 有声书新增选区音频片段导出与分享，支持从阅读器文字选区直接裁切句子音频。\n- README 增加使用文档链接。\n\n#### 修复\n\n- 修复制卡时句子为空或没有句子的问题，覆盖阅读器右键查词、收藏句子、选区导出等路径下的句子状态同步。\n- 备份导入/导出选择性资源保护整体修复：导入备份时保留本机同步配置与凭据；备份未包含词典时不再清空本机词典元数据、历史和资源文件；新增本地音频备份分类，避免选择性备份/导入误丢本机音频资产。\n- 修复 SRT/有声书条目从书架打开时未注册阅读器媒体源的问题，避免收藏句子等路径读不到当前媒体源。\n- 修复视频/阅读器点击查词命中、Windows 全局查词竖排渲染、Android 焦点高亮、日志选择滚动、WebView 释放等多处回归。\n- 修复 APK CI 主应用测试红点，测试版发布 workflow 可继续进入打包阶段。\n\n### English\n\n#### Added and Changed\n\n- Added the initial entry point for Visual Novel reader mode (unfinished, available for testing).\n- Added an experimental desktop data-directory migration entry point in Settings, with root-directory migration and attempted automatic restart; back up first before migrating.\n- Added series grouping, collapsible series cards, series details, and custom ordering to the bookshelf.\n- Custom themes now support multiple theme sets, palette switching, long-press editing, and share codes.\n- Audiobooks can now export and share audio clips from a text selection, including clipping sentence audio directly from reader selections.\n- Added the usage-document link to the README.\n\n#### Fixed\n\n- Fixed card creation losing or missing sentence context, including reader right-click lookup, sentence favorites, and selection export paths.\n- Fixed selective-resource protection for backup import/export as a whole: imports preserve local sync settings and credentials; backups without dictionaries no longer clear local dictionary metadata, history, or resource files; local audio is now a separate backup category to avoid losing local audio assets during selective backup/import.\n- Fixed SRT/audiobook entries opened from the bookshelf not registering the reader media source, which could leave sentence-favorite flows unable to read the current media source.\n- Fixed regressions in video/reader tap lookup hits, Windows global lookup vertical rendering, Android focus highlights, log-selection scrolling, WebView disposal, and related areas.\n- Fixed the APK CI main-app test failure so beta release workflows can continue into the packaging stage.\n",
+  "releaseSequence": 6096,
+  "notes": "Manual desktop beta/test build from codex/fix-beta-update-repeat @ ade12a8. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.0.1-beta.6095-arm64-v8a.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1-beta.6095/hibiki-1.0.1-beta.6095-arm64-v8a.apk"
-    },
-    {
-      "name": "hibiki-1.0.1-beta.6095-armeabi-v7a.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1-beta.6095/hibiki-1.0.1-beta.6095-armeabi-v7a.apk"
-    },
-    {
-      "name": "hibiki-1.0.1-beta.6095-x86_64.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1-beta.6095/hibiki-1.0.1-beta.6095-x86_64.apk"
-    },
-    {
       "name": "hibiki-1.0.1-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1-beta.6095/hibiki-1.0.1-windows-setup.exe"
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1-beta.6096/hibiki-1.0.1-windows-setup.exe"
     }
   ]
 }
