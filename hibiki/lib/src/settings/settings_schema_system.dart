@@ -224,6 +224,7 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
     await UpdateChecker.scheduleCheck(
       settingsContext.context,
       settingsContext.appModel.packageInfo.version,
+      currentBuildNumber: settingsContext.appModel.packageInfo.buildNumber,
       neverRemind: false,
       autoInstall: false,
       betaChannel: settingsContext.appModel.updateBetaChannel,

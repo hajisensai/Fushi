@@ -130,6 +130,7 @@ class _HomePageState extends BasePageState<HomePage>
         UpdateChecker.scheduleCheck(
           context,
           appVersion,
+          currentBuildNumber: appModel.packageInfo.buildNumber,
           neverRemind: appModel.updateNeverRemind,
           autoInstall: appModel.updateAutoInstall,
           betaChannel: appModel.updateBetaChannel,
