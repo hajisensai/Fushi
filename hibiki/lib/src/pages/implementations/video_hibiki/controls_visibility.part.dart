@@ -116,6 +116,13 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     // 不像真 overlay（[_videoSidePanel]）那样盖住控制条需强制隐藏。仅沉浸锁 / 真 overlay
     // 面板 / 剧集列表（其 push-aside 但仍占右栏）/ 编辑态压制。
     final bool gated = _immersiveLocked.value ||
+        // TODO-973: gamepad auto-immersive (global single source of truth on
+        // AppModel.gamepadImmersiveActive) suppresses the controls exactly like
+        // the manual immersive lock — OR-ed in so it never fights the user's own
+        // lock toggle (whichever wants immersion wins). Opted-out users keep this
+        // false (AppModel gates on the preference), so default behaviour is
+        // unchanged (Never break userspace).
+        appModel.gamepadImmersiveActive.value ||
         _videoSidePanel.value != null ||
         _episodeListVisible.value ||
         _videoControlEditMode.value;

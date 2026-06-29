@@ -1136,6 +1136,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (!mounted) return;
       _applyGamepadPresence(present);
     };
+    // TODO-973: seed from the global single source of truth so a reader opened
+    // while a controller is ALREADY present (the rising edge fired before this
+    // page attached) starts immersive too — the live callback above only carries
+    // future edges. Set the fields directly (NOT via _applyGamepadPresence, which
+    // calls setState — illegal in initState): this is exactly
+    // resolveGamepadImmersive(present:true, showChrome:true, hiddenByGamepad:false)
+    // so the first build already renders chrome-hidden + gamepad-owned. Value
+    // already reflects the gamepadAutoImmersive preference, so this is inert for
+    // opted-out users.
+    if (appModelNoUpdate.gamepadImmersiveActive.value) {
+      _showChrome = false;
+      _chromeHiddenByGamepad = true;
+    }
     _initBook();
   }
 

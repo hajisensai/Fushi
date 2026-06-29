@@ -1208,6 +1208,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // TODO-973：手柄沉浸（全局单一真相源 AppModel.gamepadImmersiveActive）也作为
+    // 控制条压制门控之一，与上面各本地门控同一派生路径——升降沿都重跑可见性派生。
+    appModel.gamepadImmersiveActive
+        .addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
@@ -2299,6 +2303,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
+    // TODO-973：手柄沉浸 notifier 归 AppModel 所有（生命周期长于本页），必须在本页
+    // dispose 时摘掉本页注册的监听，否则页面销毁后它仍会回调 [_applyControlsVisibility
+    // FromMediaKit] 触碰下面即将 dispose 的本地 notifier。
+    appModel.gamepadImmersiveActive
+        .removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();

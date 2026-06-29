@@ -586,18 +586,35 @@ class _HomePageState extends BasePageState<HomePage>
         // between the rail and the content pane row-by-row.
         child: Row(
           children: [
-            FocusTraversalGroup(
-              // Each rail destination is its own gamepad/keyboard focus target,
-              // so the app focus ring hugs the single selected item; D-pad
-              // Up/Down steps between them and Left/Right leaves to the content.
-              child: adaptiveNavRail(
-                context: context,
-                currentIndex: visualIndex,
-                onTap: selectVisual,
-                items: displayItems,
-              ),
+            // TODO-973: the side rail (AND its divider) collapse together while
+            // gamepad auto-immersive is active — single source of truth on
+            // AppModel.gamepadImmersiveActive. ValueListenableBuilder so only this
+            // region rebuilds on the immersive edge; opted-out users keep the rail
+            // at all times (default false, AppModel gates on the preference).
+            ValueListenableBuilder<bool>(
+              valueListenable: appModel.gamepadImmersiveActive,
+              builder: (BuildContext context, bool immersive, _) {
+                if (immersive) return const SizedBox.shrink();
+                return Row(
+                  children: [
+                    FocusTraversalGroup(
+                      // Each rail destination is its own gamepad/keyboard focus
+                      // target, so the app focus ring hugs the single selected
+                      // item; D-pad Up/Down steps between them and Left/Right
+                      // leaves to the content.
+                      child: adaptiveNavRail(
+                        context: context,
+                        currentIndex: visualIndex,
+                        onTap: selectVisual,
+                        items: displayItems,
+                        gamepadImmersiveActive: immersive,
+                      ),
+                    ),
+                    const VerticalDivider(thickness: 1, width: 1),
+                  ],
+                );
+              },
             ),
-            const VerticalDivider(thickness: 1, width: 1),
             Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
           ],
         ),
@@ -635,19 +652,30 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
-      bottomNavigationBar: FocusTraversalGroup(
-        child: adaptiveBottomBar(
-          context: context,
-          currentIndex: visualIndex,
-          onTap: (int index) {
-            _selectTab(homeTabForVisualIndex(
-              tabs: tabs,
-              visualIndex: index,
-              reversed: reversed,
-            ));
-          },
-          items: displayItems,
-        ),
+      // TODO-973: the bottom bar collapses while gamepad auto-immersive is active
+      // (single source of truth on AppModel.gamepadImmersiveActive). A null
+      // bottomNavigationBar removes it from the Scaffold entirely so the body gets
+      // the full height; opted-out users keep it (default false).
+      bottomNavigationBar: ValueListenableBuilder<bool>(
+        valueListenable: appModel.gamepadImmersiveActive,
+        builder: (BuildContext context, bool immersive, _) {
+          if (immersive) return const SizedBox.shrink();
+          return FocusTraversalGroup(
+            child: adaptiveBottomBar(
+              context: context,
+              currentIndex: visualIndex,
+              onTap: (int index) {
+                _selectTab(homeTabForVisualIndex(
+                  tabs: tabs,
+                  visualIndex: index,
+                  reversed: reversed,
+                ));
+              },
+              items: displayItems,
+              gamepadImmersiveActive: immersive,
+            ),
+          );
+        },
       ),
     );
   }
