@@ -27,11 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 453 条。点号进各自文件。
+> 共 455 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-469](bugs/BUG-469-collection-date-hidden.md) | ✅ | ✅ | 窄屏收藏列表收藏日期被书名/章节挤出可见区看不见 |
+| [BUG-468](bugs/BUG-468-double-context-menu.md) | ✅ | ✅ | Windows 阅读器右键同时弹原生与自定义两个菜单 |
+| [BUG-467](bugs/BUG-467-vertical-text-bottom-overflow.md) | ✅ | ✅ | 竖排正文文字溢出到底栏区域 |
 | [BUG-466](bugs/BUG-466-scroll-arrow-remap.md) | ✅ | ✅ | 滚动模式方向键改绑有声书句子无效仍翻页 |
 | [BUG-465](bugs/BUG-465-android-video-flash-blank.md) | ✅ | ✅ | Android video flashes then shows blank (no picture) |
 | [BUG-464](bugs/BUG-464-audio-highlight-theme-coupling.md) | ✅ | ✅ | 音频高亮颜色只在自定义主题生效·非自定义主题恒用主色 |
