@@ -6,12 +6,14 @@
 // （WebView，CDP 可抓）与视频页（Flutter 外壳；解码纹理在平台层，captureFlutterFrame
 // 抓不到，这是已知限制，下文注释处说明）。
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
+import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
+    show hibikiMaterialNavKey;
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/focus_driver.dart';
@@ -148,10 +150,15 @@ void main() {
 
       // 视频 tab 是导航第 2 项（顺序 books, video, dictionaries, ...；
       // experimentalVideoEnabled 恒 true，视频 tab 常驻）。
-      final List<Finder> navTargets = findPrimaryNavigationTargets();
-      expect(navTargets.length, greaterThanOrEqualTo(2),
-          reason: '至少应有书架 + 视频两个导航项');
-      final bool focusedVideoTab = await driver.focusWidget(navTargets[1]);
+      // 视频 tab 按图标定位（Icons.movie_outlined = 未选态），避开 navTargets 索引被
+      // 侧栏 rail 头部 logo Icon 移位的问题（导致 navTargets[1] 错指向书架）。
+      final Finder videoNavIcon = find.descendant(
+        of: find.byKey(hibikiMaterialNavKey),
+        matching: find.byIcon(Icons.movie_outlined),
+      );
+      expect(videoNavIcon, findsWidgets,
+          reason: '视频 nav 图标（movie_outlined）应存在');
+      final bool focusedVideoTab = await driver.focusWidget(videoNavIcon.first);
       expect(focusedVideoTab, isTrue, reason: '视频 tab 应可被焦点到达');
       // 切 tab 用 pump(固定时长)，与 reader_dictionary_test 的可靠范式一致；
       // pumpAndSettle 在含离屏 WebView/media_kit 的页面可能取不到切换帧。
