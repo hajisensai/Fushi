@@ -93,8 +93,16 @@ void main() {
           break;
         }
       }
+      // 诊断：截 activate 后的画面 + 报 reader 是否就绪，区分「书没打开 / 开进无
+      // WebView 的视图 / 打开了但渲染慢」。先抓图保证证据落盘。
+      final ObserveShot afterOpen =
+          await captureFlutterFrame(tester, 'observe-audiobook-after-open');
+      debugPrint('[observe-media] audiobook readerReady=$readerReady '
+          'after-open=${afterOpen.path} (${afterOpen.bytes}B nonBlank='
+          '${afterOpen.nonBlank})');
       expect(readerReady, isTrue,
-          reason: '有声书阅读器 WebView 应已创建（debugCaptureWebView 钩子就绪）');
+          reason: '有声书阅读器 WebView 应已创建（debugCaptureWebView 钩子就绪）'
+              '；after-open 截图=${afterOpen.path}');
       // 等正文/歌词渲染出内容（content_ready best-effort，不强断以兼容歌词模式）。
       for (int i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 500));
