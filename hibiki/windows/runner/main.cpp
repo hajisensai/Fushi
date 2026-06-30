@@ -48,10 +48,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // userDataFolder → 第二实例 env 创建锁冲突失败 → `Cannot create the InAppWebView
   // instance!`。原本只 CreateMutexW 不查 ERROR_ALREADY_EXISTS = 没有真单实例。
   // 此处检测已有实例则把首实例窗口前置并退出本进程，消除双实例锁冲突放大器。
+  // 离屏集成测试模式（HIBIKI_TEST_HIDDEN）完全不参与单实例互斥量：测试 runner 用隔离的
+  // WebView2 userDataFolder（HIBIKI_WEBVIEW2_USER_DATA_FOLDER），与用户在用的 Hibiki 不
+  // 抢同一 userDataFolder，无 WebView2 锁冲突。若仍走单实例守卫，测试 exe 会在用户开着
+  // Hibiki 时检测到首实例后立即 return EXIT_SUCCESS 退出 → `flutter test -d windows` 报
+  // 「log reader stopped/never started / Unable to start the app」（启动间歇失败的真因）。
+  // 跳过后测试实例与用户实例并存、互不干扰，也不持有互斥量去挡用户启动自己的 Hibiki。
+  const bool test_hidden_mode =
+      ::GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
   ::SetLastError(ERROR_SUCCESS);
   HANDLE single_instance_mutex =
-      ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
-  if (single_instance_mutex != nullptr &&
+      test_hidden_mode
+          ? nullptr
+          : ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
+  if (!test_hidden_mode && single_instance_mutex != nullptr &&
       ::GetLastError() == ERROR_ALREADY_EXISTS) {
     // 已有实例在跑：找到首实例主窗口。
     HWND existing = ::FindWindowW(nullptr, L"Hibiki");
