@@ -1871,6 +1871,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 远端 / 流（videoPath==null 或 http(s) URL）天然豁免（见 video_resource_check）。
     if (await isLocalVideoResourceMissing(videoPath)) {
       debugPrint('[VideoHibikiPage] local video resource missing: $videoPath');
+      ErrorLogService.instance.log(
+        'VideoHibiki.diag',
+        '[VIDEO-DIAG] local video resource missing: $videoPath',
+      );
       if (!mounted) return;
       setState(() {
         _failed = false;
@@ -1895,6 +1899,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           )
         : const <String>[];
     controller.setOnCompleted(_handlePlaybackCompleted);
+    // TODO-984：把控制器诊断行接到错误日志服务（用户可在「错误日志」页查看 / 上传）。
+    // 现场定位 Android「闪烁 + 空白无画面」（realme 8 / Android 11）——其他 app 播同文件
+    // 正常，疑点在 hwdec / 纹理 surface / 解码出帧。诊断行带 `[VIDEO-DIAG]` 前缀便于筛选。
+    controller.onDiagLog = (String message) {
+      ErrorLogService.instance.log('VideoHibiki.diag', message);
+    };
+    ErrorLogService.instance.log(
+      'VideoHibiki.diag',
+      '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
+          'mediaUri=$mediaUri cues=${cues.length} '
+          'initialPositionMs=$initialPositionMs '
+          'externalSubtitlePath=$externalSubtitlePath '
+          'renderGraphicStreamIndex=$renderGraphicStreamIndex '
+          'fitMode=$_videoFitMode platform=${Platform.operatingSystem}',
+    );
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -1918,10 +1937,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
+      ErrorLogService.instance
+          .log('VideoHibiki.diag', '[VIDEO-DIAG] controller.load() threw: $e');
+      ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
       if (mounted) setState(() => _failed = true);
       return;
     }
+    // TODO-984：load() 正常返回（未抛）——记一行让日志能区分「load 抛异常失败」与
+    // 「load 返回了但画面仍空白」（后者疑点在解码出帧 / 纹理，看控制器 [VIDEO-DIAG] 行）。
+    ErrorLogService.instance.log(
+      'VideoHibiki.diag',
+      '[VIDEO-DIAG] controller.load() returned ok: '
+          'durationMs=${controller.durationMs} '
+          'videoWidth=${controller.videoWidth} '
+          'videoHeight=${controller.videoHeight} '
+          'videoController=${controller.videoController != null}',
+    );
     _syncVolumeDisplay(controller.volume);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);

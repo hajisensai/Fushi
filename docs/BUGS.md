@@ -27,12 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 447 条。点号进各自文件。
+> 共 448 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-462](bugs/BUG-462-favorite-words-missing-in-collections.md) | ✅ | ✅ | 收藏的单词不在收藏列表显示 |
 | [BUG-460](bugs/BUG-460-ffmpeg-clip-muxer.md) | ✅ | ✅ | 有声书片段导出 ffmpeg exit -22（捆绑 ffmpeg 缺 mov/m4a muxer） |
+| [BUG-460](bugs/BUG-460-android-video-flash-blank.md) | ✅ | ✅ | Android video flashes then shows blank (no picture) |
 | [BUG-459](bugs/BUG-459-favorite-jump-char-anchor.md) | ✅ | ✅ | 收藏句/制卡历史跳原文跳错位置(恒跳章首)+跳后阅读进度丢失 |
 | [BUG-458](bugs/BUG-458-gap-word-sentence-audio-residue.md) | ✅ | ✅ | 句子音频gap词残留 |
 | [BUG-457](bugs/BUG-457-webmessage-uaf.md) | ✅ | ✅ | WebView2 事件 handler 析构后回调 UAF |

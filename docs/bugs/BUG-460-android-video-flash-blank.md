@@ -1,0 +1,12 @@
+## BUG-460 · Android video flashes then shows blank (no picture)
+- **报告**：2026-06-30（用户）
+- **真实性**：⚠️ Android 现场问题·待用户日志（本端无法复现：Windows/Mac 无 realme8/Android11 HEVC 硬解环境）。
+- **现象**：realme 8 / Android 11 打开某视频（样本 nyaa 2126641 [NanakoRaws] Wistoria S02E12，AT-X 1920x1080 **HEVC(H.265)** raw）只闪烁、无画面、空白；其他 app（manatan/chimahon）播同一文件正常。用户实测：① 设置切到 mpv 后端/profile 后闪烁减轻但仍黑屏空白；② **关掉画质增强（着色器超分）后不再闪烁，但视频依旧黑屏空白**。
+- **推断（待日志证实）**：两层叠加——闪烁来自画质增强（GPU 着色器/超分）渲染路径；黑屏是更底层的 HEVC 硬解（mediacodec）或 OpenGL ES 纹理上屏失败。播放后端为 media_kit/libmpv（Android `vo=gpu` 渲染进 Flutter Texture）。
+- **代码路径**：`hibiki/lib/src/media/video/video_player_controller.dart` 的 `load()`（实例化 `Player`/`VideoController` → `open` → `applyMpvConfigToPlayer` 下发 hwdec/scale 链 → 首帧 width/height）；页面 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_applyLoad()`（构造 controller、catch 失败、成功 setState）；渲染于 `video_hibiki/layout.part.dart` 的 `Video(controller:)`（纹理上屏）。
+- **[x] ① 诊断仪表化（非根因修复，待日志后再定根因修复）** — 不猜根因强修，先在播放初始化/首帧/渲染路径加结构化诊断日志（统一前缀 `[VIDEO-DIAG]`，落 `ErrorLogService`，用户可在「错误日志」页查看/导出/上传）：
+  - 解码层：`load start`（hwdec / highQuality / shaders 数 / platform）、`mpv hwdec/hwdec-current/video-codec/video-format`（回读实际生效硬解模式，区分 mediacodec vs 软解）、`videoParams`（w/h/pixelformat/**hwPixelformat**/colormatrix/colorlevels/primaries）、`first frame decoded`（首帧出帧信号——open 成功但此行永不出现即解码未出帧）、libmpv `error` 流 + `log` 流（诊断期把 `msg-level=vd=v,vo=v,ad=v,ffmpeg=v` 提到 verbose，捕获 HEVC mediacodec 回退 / 解码失败行）。
+  - 渲染层：`open() returned textureId=`（纹理是否创建=GL surface 信号）、`mpv vo/current-vo/gpu-context/gpu-api`（vo/gpu 后端是否回退失败）、`buffering` 抖动（surface 反复重建=闪烁）。
+  - 提交：见本分支 commit（`fix(video): TODO-984 ...`）。改动文件：`video_player_controller.dart`（onDiagLog 回调 + 诊断流订阅 + 里程碑日志）、`video_hibiki_page.dart`（接 ErrorLogService + load 失败/成功/缺资源结构化日志）。
+- **[x] ② 加自动化测试（源码扫描守卫）** — `hibiki/test/media/video/video_diag_logging_guard_test.dart`：守卫诊断日志点不被静默删除（`[VIDEO-DIAG]` 前缀、hwdec/hwdec-current/videoParams/first frame/textureId/error 流订阅、msg-level verbose 推送、页面 onDiagLog 接 ErrorLogService）。无法对 libmpv 真实播放做单测（宿主无 libmpv），守卫是此现场诊断改动可落地的最强测试层。
+- **备注**：根因修复待用户装新 build 复现两态（闪烁态 / 黑屏态）后上传 `[VIDEO-DIAG]` 日志再定（hwdec 失败 → 提示/回退软解；纹理未建 → GL/vo 后端问题；首帧从未解出 → HEVC mediacodec 不兼容）。本端无该机型 HEVC 硬解环境无法复现。复现/上传步骤见 `.codex-test/TODO-984-investigation.md`。
