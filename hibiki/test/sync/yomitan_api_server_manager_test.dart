@@ -28,12 +28,16 @@ void main() {
       readingResolver: (String w) => '',
     );
 
-    await mgr.start(port: 19744, apiKey: '');
+    // Bind to an ephemeral port (0) so concurrent CI test isolates never
+    // contend on a fixed port (TODO-1014); read the real port back from the
+    // manager after start().
+    await mgr.start(port: 0, apiKey: '');
     expect(mgr.isRunning, true);
+    final int boundPort = mgr.port!;
 
     final HttpClient client = HttpClient();
     final HttpClientRequest req =
-        await client.post('127.0.0.1', 19744, '/serverVersion');
+        await client.post('127.0.0.1', boundPort, '/serverVersion');
     final HttpClientResponse resp = await req.close();
     expect(resp.statusCode, 200);
     final dynamic body = jsonDecode(await resp.transform(utf8.decoder).join());
