@@ -707,6 +707,14 @@ class DictionaryPopupWebViewState
         allowUniversalAccessFromFileURLs: true,
         useShouldInterceptRequest: true,
         resourceCustomSchemes: dictionaryMediaCustomSchemes,
+        // BUG-477（BUG-468 同根，弹窗 WebView 漏修）：Windows 上压制 WebView2 原生右键
+        // 菜单的唯一真值是 `disableContextMenu`→`put_AreDefaultContextMenusEnabled`；
+        // 上面 `ContextMenu` 的 `hideDefaultSystemContextMenuItems` 是跨平台 API，在
+        // flutter_inappwebview_windows fork 上**不接到**原生菜单开关，故弹窗里右键仍同时
+        // 弹原生菜单（返回/刷新/另存为/打印/更多工具）与自定义 [_showWindowsContextMenu]
+        // 的搜索/复制菜单（用户报「右键出现清空」=双菜单）。Windows 关原生菜单只留 Flutter
+        // 菜单；移动端为 false 不动原生 ContextMenu（查词项），不回归。
+        disableContextMenu: isWindowsPlatform,
       ),
       shouldInterceptRequest: (controller, request) async {
         return dictionaryMediaWebResourceResponse(request.url);
