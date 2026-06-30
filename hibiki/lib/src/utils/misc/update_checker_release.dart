@@ -104,18 +104,31 @@ class UpdateChecker {
 
       // TODO-1010：保护 Windows 待重启安装的 handoff 安装包——若存在 handoff 标记，
       // 它指向的安装包正等下次启动安装，绝不能当旧包回收。
+      //
+      // fail-safe（根因修复）：`WindowsUpdateHandoff.read` 在 marker JSON 损坏时
+      // 内部吞掉 FormatException 返回 null——与「根本没有 marker」无法区分。若按
+      // null 当作「无排除名单」照常清理，待重启安装包就会因 mtime>7 天被误删，
+      // 破坏重启安装握手。因此：marker 文件存在但 read 拿不到记录 = 排除名单不可信，
+      // 这一轮直接跳过完整包回收（保守保留），不降级成「无保护清理」。
+      final File markerFile = WindowsUpdateHandoff.markerFile(updatesDir);
+      final bool markerExists = markerFile.existsSync();
       String? handoffInstallerName;
+      WindowsUpdateHandoffRecord? handoffRecord;
       try {
-        final WindowsUpdateHandoffRecord? record =
-            await WindowsUpdateHandoff.read(
-                WindowsUpdateHandoff.markerFile(updatesDir));
-        if (record != null && record.installerPath.isNotEmpty) {
+        handoffRecord = await WindowsUpdateHandoff.read(markerFile);
+        if (handoffRecord != null && handoffRecord.installerPath.isNotEmpty) {
           handoffInstallerName =
-              record.installerPath.replaceAll(r'\', '/').split('/').last;
+              handoffRecord.installerPath.replaceAll(r'\', '/').split('/').last;
         }
       } catch (e) {
         debugPrint('[UpdateChecker] cleanup read handoff failed: $e');
+        // 读取本身抛错（不只 read 内部吞掉的 FormatException）= 同样拿不到名单。
+        handoffRecord = null;
       }
+      final bool skipFullPackageCleanup = shouldSkipFullPackageCleanup(
+        markerExists: markerExists,
+        recordResolved: handoffRecord != null,
+      );
 
       final List<UpdateDirEntry> dirEntries = <UpdateDirEntry>[];
       for (final FileSystemEntity entity in updatesDir.listSync()) {
@@ -167,6 +180,15 @@ class UpdateChecker {
       // 历史清理只删临时文件，完整产物从不回收，每升级一版多堆一个，长期到数 GB。
       // 纯函数挑出待删项；排除 handoff 待装包与 marker 自身（无 active asset，因为
       // 清理发生在选出本轮 asset 之前——下载阶段会自行复用/重下当前版本）。
+      //
+      // fail-safe bail-out：marker 存在但记录未解析出来（损坏）时跳过本轮
+      // 完整包回收，以免误删待重启安装包。临时/元数据清理与 staging
+      // 上面已做（不依赖排除名单），故只跳过完整包那一段。
+      if (skipFullPackageCleanup) {
+        debugPrint('[UpdateChecker] handoff marker present but unreadable; '
+            'skipping full-package cleanup this pass (fail-safe)');
+        return;
+      }
       final List<String> stale = selectStaleUpdateArtifacts(
         entries: dirEntries,
         cutoff: cutoff,

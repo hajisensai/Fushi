@@ -139,4 +139,39 @@ void main() {
       );
     });
   });
+
+  group('shouldSkipFullPackageCleanup (TODO-1010 fail-safe：handoff 读取失败时保守跳过)',
+      () {
+    test('回归复现：marker 存在但记录损坏（read 吞 FormatException 返 null）→ 跳过', () {
+      // 根因：marker 存在意味着可能有待重启安装包要排除，但 read 返回 null（损坏）
+      // 让我们拿不到排除名单。旧行为会按 null 当「无名单」照常清理 → 误删待装包。
+      // 现在应保守跳过本轮完整包回收。
+      expect(
+        shouldSkipFullPackageCleanup(markerExists: true, recordResolved: false),
+        isTrue,
+      );
+    });
+
+    test('marker 存在且记录解析成功 → 名单可信 → 不跳过', () {
+      expect(
+        shouldSkipFullPackageCleanup(markerExists: true, recordResolved: true),
+        isFalse,
+      );
+    });
+
+    test('marker 不存在 → 没有待保护的待装包 → 不跳过', () {
+      expect(
+        shouldSkipFullPackageCleanup(
+            markerExists: false, recordResolved: false),
+        isFalse,
+      );
+    });
+
+    test('marker 不存在但 recordResolved=true（矛盾输入）→ 不跳过（防御）', () {
+      expect(
+        shouldSkipFullPackageCleanup(markerExists: false, recordResolved: true),
+        isFalse,
+      );
+    });
+  });
 }

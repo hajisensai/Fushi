@@ -224,6 +224,25 @@ List<String> selectStaleUpdateArtifacts({
   return stale;
 }
 
+/// TODO-1010 fail-safe 决策（纯函数，可测）：当 handoff marker 文件存在但无法解析
+/// 出有效记录（JSON 损坏被 `WindowsUpdateHandoff.read` 吞成 null，或读取本身抛错）
+/// 时，返回 `true` 表示**本轮跳过完整安装包回收**。
+///
+/// 根因：marker 存在意味着可能有一个待重启安装的安装包需要被排除，但解析失败让我们
+/// 拿不到这份排除名单。若照常清理就会把待装包（mtime>7 天）误删，破坏重启安装握手。
+/// 因此宁可保守跳过本轮完整包回收，也不降级成「无保护清理」。
+///
+/// - marker 不存在（`markerExists=false`）→ 没有需要保护的待装包 → 不跳过（`false`）。
+/// - marker 存在且记录已解析（`recordResolved=true`）→ 排除名单可信 → 不跳过（`false`）。
+/// - marker 存在但记录未解析（`recordResolved=false`）→ 名单不可信 → 跳过（`true`）。
+@visibleForTesting
+bool shouldSkipFullPackageCleanup({
+  required bool markerExists,
+  required bool recordResolved,
+}) {
+  return markerExists && !recordResolved;
+}
+
 @visibleForTesting
 Future<File> downloadUpdateAsset({
   required UpdateAsset asset,
