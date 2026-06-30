@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[Panduan Pengguna](../user-guide.id.md) | [Unduh versi terbaru](https://github.com/hajisensai/hibiki/releases)
+
 hibiki adalah alat belajar bahasa imersif untuk Android dan Windows yang menyatukan pembacaan EPUB, sinkronisasi buku audio, pencarian kata dari subtitel video, dan pembuatan kartu Anki sekali ketuk — sehingga setiap input secara alami menjadi kosakata yang dapat ditinjau ulang.
 
 <table>

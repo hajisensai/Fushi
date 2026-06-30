@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[사용 설명서](../user-guide.ko.md) | [최신 버전 다운로드](https://github.com/hajisensai/hibiki/releases)
+
 hibiki는 Android와 Windows를 위한 몰입형 어학 학습 도구입니다. EPUB 독서, 오디오북 동기화, 동영상 자막 단어 검색, 원탭 Anki 카드 생성을 하나로 통합하여, 모든 입력이 자연스럽게 복습 가능한 어휘가 되도록 합니다.
 
 <table>

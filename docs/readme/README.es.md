@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | **Español** | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[Guía de usuario](../user-guide.es.md) | [Descargar la última versión](https://github.com/hajisensai/hibiki/releases)
+
 hibiki es una herramienta inmersiva de aprendizaje de idiomas para Android y Windows que reúne la lectura de EPUB, la sincronización de audiolibros, la búsqueda de palabras en subtítulos de vídeo y la creación de tarjetas Anki con un solo toque, para que cada entrada se convierta de forma natural en vocabulario repasable.
 
 <table>

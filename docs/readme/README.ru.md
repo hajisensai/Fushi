@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | **Русский** | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[Руководство пользователя](../user-guide.ru.md) | [Скачать последнюю версию](https://github.com/hajisensai/hibiki/releases)
+
 hibiki — это иммерсивный инструмент изучения языков для Android и Windows, который объединяет чтение EPUB, синхронизацию аудиокниг, поиск слов в субтитрах видео и создание карточек Anki в одно нажатие — так каждый ввод естественным образом превращается в лексику для повторения.
 
 <table>

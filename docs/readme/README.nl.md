@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | **Nederlands** | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[Gebruikershandleiding](../user-guide.nl.md) | [Nieuwste versie downloaden](https://github.com/hajisensai/hibiki/releases)
+
 hibiki is een immersieve taalleertool voor Android en Windows die EPUB-lezen, audioboeksynchronisatie, het opzoeken van woorden in videoondertitels en het maken van Anki-kaarten met één tik samenbrengt — zodat elke input vanzelf herhaalbaar vocabulaire wordt.
 
 <table>

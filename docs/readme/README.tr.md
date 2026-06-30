@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | **Türkçe** | [العربية](README.ar.md)
 
+[Kullanım Kılavuzu](../user-guide.tr.md) | [En son sürümü indir](https://github.com/hajisensai/hibiki/releases)
+
 hibiki, Android ve Windows için EPUB okuma, sesli kitap eşitleme, video altyazılarında sözcük arama ve tek dokunuşla Anki kartı oluşturmayı bir araya getiren sürükleyici bir dil öğrenme aracıdır — böylece her girdi doğal olarak tekrar edilebilir kelime dağarcığına dönüşür.
 
 <table>

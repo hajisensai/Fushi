@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[คู่มือผู้ใช้](../user-guide.th.md) | [ดาวน์โหลดเวอร์ชันล่าสุด](https://github.com/hajisensai/hibiki/releases)
+
 hibiki เป็นเครื่องมือเรียนภาษาแบบ immersive สำหรับ Android และ Windows ที่รวมการอ่าน EPUB การซิงก์หนังสือเสียง การค้นคำจากคำบรรยายวิดีโอ และการสร้างการ์ด Anki ด้วยการแตะครั้งเดียวเข้าไว้ด้วยกัน เพื่อให้ทุกอินพุตกลายเป็นคำศัพท์ที่นำมาทบทวนได้อย่างเป็นธรรมชาติ
 
 <table>

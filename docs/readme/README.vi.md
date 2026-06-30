@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[Hướng dẫn sử dụng](../user-guide.vi.md) | [Tải bản mới nhất](https://github.com/hajisensai/hibiki/releases)
+
 hibiki là một công cụ học ngôn ngữ chuyên sâu dành cho Android và Windows, kết hợp đọc EPUB, đồng bộ sách nói, tra từ trên phụ đề video và tạo thẻ Anki chỉ với một chạm — để mỗi nguồn tiếp nhận đều tự nhiên trở thành từ vựng có thể ôn tập.
 
 <table>

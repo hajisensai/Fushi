@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | **繁體中文** | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[使用文件](../user-guide.zh-Hant.md) | [下載最新版本](https://github.com/hajisensai/hibiki/releases)
+
 hibiki 是一款面向 Android 與 Windows 的沉浸式語言學習工具，把 EPUB 閱讀、有聲書同步、影片字幕查詞和一鍵 Anki 製卡整合在一起，讓每一次輸入都自然沉澱為可複習的詞彙記憶。
 
 讀一本書，遇到不認識的詞——點一下就能查詞典，查完一鍵製成 Anki 卡片。<br>

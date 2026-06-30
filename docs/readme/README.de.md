@@ -10,6 +10,8 @@
 
 [简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | **Deutsch** | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
+[Benutzerhandbuch](../user-guide.de.md) | [Neueste Version herunterladen](https://github.com/hajisensai/hibiki/releases)
+
 hibiki ist ein immersives Sprachlernwerkzeug für Android und Windows, das EPUB-Lesen, Hörbuch-Synchronisation, das Nachschlagen von Wörtern in Videountertiteln und das Erstellen von Anki-Karten mit einem Tipp vereint — so wird jeder Input ganz natürlich zu wiederholbarem Vokabular.
 
 <table>
