@@ -75,6 +75,37 @@ Future<int> _seedSource(
   ));
 }
 
+/// 插入一条归属 [sourceId] 的视频条目（TODO-1036 累计计数用）。
+Future<void> _seedVideo(
+  HibikiDatabase db,
+  String bookUid, {
+  required int sourceId,
+}) =>
+    db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(bookUid),
+      videoPath: Value('/srv/$bookUid.mp4'),
+      sourceId: Value(sourceId),
+      importedAt: Value(DateTime.now()),
+    ));
+
+/// 插入一条归属 [sourceId] 的 EPUB 条目（TODO-1036 累计计数用）。
+Future<void> _seedBook(
+  HibikiDatabase db,
+  String bookKey, {
+  required int sourceId,
+}) =>
+    db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: bookKey,
+      epubPath: '/srv/$bookKey.epub',
+      extractDir: '/srv/$bookKey',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+      sourceId: Value(sourceId),
+    ));
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -89,13 +120,18 @@ void main() {
       (tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
-    await _seedSource(db,
+    // TODO-1036：统计显示的是来源**累计拥有**的条目数（直接 COUNT video_books），
+    // 不是 mediaCount（上次扫描新增数）。这里给 Anime 实插 2 条视频，mediaCount
+    // 故意设成不一致的 68 来证明 UI 不再读 mediaCount。
+    final int anime = await _seedSource(db,
         label: 'Anime',
         mediaKind: 'video',
         rootPath: '/srv/anime',
         sortOrder: 0,
         mediaCount: 68,
         lastScannedAt: DateTime(2026, 6, 25, 11, 27));
+    await _seedVideo(db, 'video/a1', sourceId: anime);
+    await _seedVideo(db, 'video/a2', sourceId: anime);
     await _seedSource(db,
         label: 'Movies',
         mediaKind: 'video',
@@ -107,8 +143,9 @@ void main() {
     expect(find.text('Anime'), findsOneWidget);
     expect(find.text('/srv/anime'), findsOneWidget);
     expect(find.text('Movies'), findsOneWidget);
-    // 统计文案用「N videos」（视频量词）。
-    expect(find.textContaining('68 videos'), findsOneWidget);
+    // 统计文案用「N videos」（视频量词），N = 累计拥有数（2），不是 mediaCount(68)。
+    expect(find.textContaining('2 videos'), findsOneWidget);
+    expect(find.textContaining('68 videos'), findsNothing);
     expect(find.textContaining('Last scan 2026-06-25 11:27'), findsOneWidget);
   });
 
@@ -158,16 +195,23 @@ void main() {
     expect(video!.sourceId, isNull, reason: 'FK setNull detaches the source');
   });
 
-  testWidgets('book mediaKind uses book count phrase', (tester) async {
+  testWidgets('book mediaKind uses book count phrase (cumulative, not '
+      'mediaCount)', (tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
-    await _seedSource(db,
+    // TODO-1036：mediaCount=12（上次扫描新增）但实际只有 3 本归属本来源，UI 必须
+    // 显示累计 3，不是 12（重扫已全导入的来源 mediaCount 会回落 0）。
+    final int novels = await _seedSource(db,
         label: 'Novels',
         mediaKind: 'book',
         rootPath: '/srv/novels',
         mediaCount: 12);
+    await _seedBook(db, 'N1', sourceId: novels);
+    await _seedBook(db, 'N2', sourceId: novels);
+    await _seedBook(db, 'N3', sourceId: novels);
     await _pumpDialog(tester, db, 'book');
-    expect(find.textContaining('12 books'), findsOneWidget);
+    expect(find.textContaining('3 books'), findsOneWidget);
+    expect(find.textContaining('12 books'), findsNothing);
   });
 
   group('credential red-line source guard', () {

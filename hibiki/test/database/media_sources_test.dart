@@ -131,4 +131,90 @@ void main() {
       expect(await db.getAllMediaSources(), isEmpty);
     });
   });
+
+  // TODO-1036：累计拥有数，区别于 mediaCount（上次扫描新增数）。
+  group('countMediaBySourceId', () {
+    Future<void> insertEpub(
+      HibikiDatabase db,
+      String bookKey, {
+      int? sourceId,
+    }) =>
+        db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: bookKey,
+            title: bookKey,
+            epubPath: '/tmp/$bookKey.epub',
+            extractDir: '/tmp/$bookKey',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1000,
+            sourceId: Value(sourceId),
+          ),
+        );
+
+    Future<void> insertVideo(
+      HibikiDatabase db,
+      String bookUid, {
+      int? sourceId,
+    }) =>
+        db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: bookUid,
+            title: bookUid,
+            videoPath: '/tmp/$bookUid.mp4',
+            sourceId: Value(sourceId),
+          ),
+        );
+
+    test('counts epub_books that point at the source (book kind)', () async {
+      final db = await _openDb();
+      final id = await db.insertMediaSource(_source(mediaKind: 'book'));
+
+      await insertEpub(db, 'B1', sourceId: id);
+      await insertEpub(db, 'B2', sourceId: id);
+      await insertEpub(db, 'B3', sourceId: id);
+
+      expect(await db.countMediaBySourceId(id, 'book'), 3);
+    });
+
+    test('isolates by source_id (other source not counted)', () async {
+      final db = await _openDb();
+      final id = await db.insertMediaSource(_source(mediaKind: 'book'));
+      final other = await db
+          .insertMediaSource(_source(mediaKind: 'book', rootPath: '/other'));
+
+      await insertEpub(db, 'B1', sourceId: id);
+      await insertEpub(db, 'B2', sourceId: id);
+      await insertEpub(db, 'B3', sourceId: id);
+      // Different source + a manual (null source) book must not leak in.
+      await insertEpub(db, 'Other', sourceId: other);
+      await insertEpub(db, 'Manual');
+
+      expect(await db.countMediaBySourceId(id, 'book'), 3);
+      expect(await db.countMediaBySourceId(other, 'book'), 1);
+    });
+
+    test('counts video_books for video kind', () async {
+      final db = await _openDb();
+      final id = await db.insertMediaSource(_source(mediaKind: 'video'));
+
+      await insertVideo(db, 'video/v1', sourceId: id);
+      await insertVideo(db, 'video/v2', sourceId: id);
+
+      expect(await db.countMediaBySourceId(id, 'video'), 2);
+    });
+
+    test('returns 0 for a source with no media', () async {
+      final db = await _openDb();
+      final id = await db.insertMediaSource(_source());
+      expect(await db.countMediaBySourceId(id, 'book'), 0);
+    });
+
+    test('unknown mediaKind returns 0', () async {
+      final db = await _openDb();
+      final id = await db.insertMediaSource(_source());
+      await insertEpub(db, 'B1', sourceId: id);
+      expect(await db.countMediaBySourceId(id, 'audio'), 0);
+    });
+  });
 }
