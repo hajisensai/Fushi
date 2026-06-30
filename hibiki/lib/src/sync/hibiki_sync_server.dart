@@ -14,6 +14,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -93,6 +94,7 @@ class HibikiSyncServer {
     HibikiLibraryHostService? libraryService,
     SecurityContext? securityContext,
     String? hostFingerprint,
+    String? deviceName,
     DateTime Function()? now,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
@@ -100,6 +102,7 @@ class HibikiSyncServer {
         _allowLan = allowLan,
         _securityContext = securityContext,
         _hostFingerprint = hostFingerprint,
+        _deviceName = deviceName,
         _remoteLookupService = remoteLookupService,
         _miningService = miningService,
         _historyService = historyService,
@@ -114,6 +117,10 @@ class HibikiSyncServer {
   /// 非 null 时 server 起 HTTPS（shelf 透传给 HttpServer.bindSecure）；null 时
   /// 走明文 HTTP 老路径，行为零变化（TLS 默认关，Never break userspace）。
   final SecurityContext? _securityContext;
+
+  /// TODO-963 M2: host 自报展示名，/api/ping 回传给手动配对的 client 展示「你正在连
+  /// 到 <name>」。可空（旧调用方不传，client 回退用 IP）。
+  final String? _deviceName;
 
   /// TODO-961 M1: 本 host 自签证书的 SHA-256 指纹（aa:bb:.. 形式），仅在 TLS 开启
   /// 时非 null。配对成功响应回传给 client 做 TOFU 钉扎核对（首连记录）。
@@ -132,6 +139,15 @@ class HibikiSyncServer {
   /// 内存态、不落盘；server 重启即清空（半截配对作废，安全侧）。
   final Map<String, HibikiPairSession> _pairSessions =
       <String, HibikiPairSession>{};
+
+  /// TODO-961 M1（会话 TTL/上限，对照 audio/video token 的 prune 模式）：只发
+  /// pair/v2 却不 confirm 的攻击者会留下永久驻留会话（慢速 DoS）。每个会话
+  /// [_pairSessionTtl] 后过期，超过 [_maxPairSessions] 时先 prune 再淘汰最旧者。
+  /// TTL 与现有 host 60s 自动 deny（[HibikiSyncServerController]）对齐：会话生命周期
+  /// 不应长于一次审批窗口（留 90s 余量覆盖审批弹窗 + 用户输 PIN）。
+  static const Duration _pairSessionTtl = Duration(seconds: 90);
+  static const int _maxPairSessions = 64;
+
   HttpServer? _server;
 
   /// Interactive pairing approval. When a client POSTs /api/pair, the server
@@ -212,6 +228,10 @@ class HibikiSyncServer {
             request.url.path == 'api/pair/v2/confirm') {
           return innerHandler(request);
         }
+        // TODO-963 M2: /api/ping 是无鉴权的轻量探测端点——手动输入 IP 的 client 在
+        // 配对前（还没有 token）用它确认地址可达 + 取 host 能力/指纹做 TOFU。只读、
+        // 不泄漏数据，与 /api/pair 同属配对前公开面。
+        if (request.url.path == 'api/ping') return innerHandler(request);
         // Video stream paths are exempted from Basic auth to allow media_kit
         // to play via a plain URL. Token validation happens inside the handler.
         // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
@@ -292,6 +312,10 @@ class HibikiSyncServer {
     if (reqPath == '/api/mine') {
       if (method != 'POST') return shelf.Response(405);
       return _handleMine(request);
+    }
+    if (reqPath == '/api/ping') {
+      if (method != 'GET') return shelf.Response(405);
+      return _handlePing();
     }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
@@ -422,6 +446,11 @@ class HibikiSyncServer {
       remoteAddress: remote,
       createdAt: _now(),
     );
+    // 先 prune 过期会话 + 守上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
+    // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。
+    _prunePairSessions();
+    _enforcePairSessionCap();
+
     // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
     // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
     final String shownPin = onPairPinGenerated?.call(session) ?? session.pin;
@@ -457,6 +486,8 @@ class HibikiSyncServer {
     if (sessionId == null || sessionId.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing sessionId');
     }
+    // 先清掉过期会话，使「pair/v2 后超 TTL 才 confirm」被当作未知会话拒绝。
+    _prunePairSessions();
     final HibikiPairSession? session = _pairSessions[sessionId];
     // 未知会话（过期/伪造）或已被消费过（重放）→ 拒。consumed 防同 nonce 二次提交。
     if (session == null || session.consumed) {
@@ -635,6 +666,22 @@ class HibikiSyncServer {
     final String result =
         await svc.mineEntry(fields: fields, sentence: sentence);
     return _jsonResponse(<String, dynamic>{'result': result});
+  }
+
+  /// TODO-963 M2: 无鉴权轻量探测。手动输入 IP 的 client 在「填 IP → 探测 → 配对」流程
+  /// 里用它确认地址可达、读 host 展示名 + 是否支持 v2 配对 + （TLS 开时）host 证书指纹
+  /// 供 TOFU 钉扎。只读、不含任何数据/凭据。绝不回传 token。
+  shelf.Response _handlePing() {
+    return _jsonResponse(<String, dynamic>{
+      'app': 'hibiki',
+      'pairing': <String, dynamic>{'v2': true},
+      'tls': <String, dynamic>{
+        'enabled': _securityContext != null,
+        if (_hostFingerprint != null) 'fingerprint': _hostFingerprint,
+      },
+      if (_deviceName != null && _deviceName.isNotEmpty)
+        'deviceName': _deviceName,
+    });
   }
 
   shelf.Response _handleCapabilities() {
@@ -1586,6 +1633,39 @@ class HibikiSyncServer {
       (String _, _RemoteAudioToken token) => token.createdAt.isBefore(cutoff),
     );
   }
+
+  /// TODO-961 M1：清掉 [_pairSessionTtl] 之前创建的配对会话。对照
+  /// [_pruneAudioTokens] / [_pruneVideoTokens]：按 createdAt + 注入的 [_now] 判定，
+  /// 可单测。在 pair/v2 创建与 confirm 两处调用，使过期会话既不堆积也不可被 confirm。
+  void _prunePairSessions() {
+    final DateTime cutoff = _now().subtract(_pairSessionTtl);
+    _pairSessions.removeWhere(
+      (String _, HibikiPairSession s) => s.createdAt.isBefore(cutoff),
+    );
+  }
+
+  /// TODO-961 M1：守住会话上限。prune 之后仍超过 [_maxPairSessions] 时，按 createdAt
+  /// 淘汰最旧的会话直到回到上限内（攻击者用全新 nonce 高频发起 pair/v2、每个都还在
+  /// TTL 内时的兜底）。正常一次一会话（_pairDialogOpen 串行审批），此路径几乎不触发。
+  void _enforcePairSessionCap() {
+    while (_pairSessions.length >= _maxPairSessions) {
+      String? oldestKey;
+      DateTime? oldestAt;
+      for (final MapEntry<String, HibikiPairSession> e
+          in _pairSessions.entries) {
+        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
+          oldestAt = e.value.createdAt;
+          oldestKey = e.key;
+        }
+      }
+      if (oldestKey == null) break;
+      _pairSessions.remove(oldestKey);
+    }
+  }
+
+  /// 测试钩子：当前进行中的配对会话数（验证 prune/cap 行为）。
+  @visibleForTesting
+  int get pendingPairSessionCount => _pairSessions.length;
 
   Future<shelf.Response> _handlePropfind(
       shelf.Request request, String davPath, String fsPath) async {

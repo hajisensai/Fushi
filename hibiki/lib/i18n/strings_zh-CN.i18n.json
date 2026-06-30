@@ -2010,5 +2010,16 @@
   "anki_note_viewer_empty": "这张卡片没有可读取的字段。",
   "anki_note_open_failed": "无法在 Anki 中打开这张卡片。",
   "update_cached_up_to_date": "已是最新已知版本 $version（校验中…）",
-  "update_cached_newer": "发现新版 $version（校验中…）"
+  "update_cached_newer": "发现新版 $version（校验中…）",
+  "sync_pair_probing": "正在检查设备…",
+  "sync_pair_confirm_identity_title": "确认设备",
+  "sync_pair_fingerprint_label": "证书指纹",
+  "sync_pair_enter_pin_title": "输入 PIN",
+  "sync_pair_enter_pin_body": "输入另一台设备屏幕上显示的 6 位 PIN。",
+  "sync_pair_continue": "继续",
+  "sync_pair_pin_wrong": "PIN 错误，请重试",
+  "sync_pair_fingerprint_changed": "证书已变更，为安全起见已中止配对（可能存在中间人攻击）。",
+  "sync_pair_not_hibiki": "此地址未找到 Hibiki 设备，已保存该地址。",
+  "sync_pair_pairing": "正在配对…",
+  "sync_pair_confirm_identity_body": "你正在与 $device 配对。继续前请确认这是你预期的设备。"
 }

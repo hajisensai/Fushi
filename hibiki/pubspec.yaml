@@ -118,6 +118,7 @@ dependencies:
   ftpconnect: ^2.0.10
   dartssh2: ^2.9.0
   crypto: ^3.0.0
+  meta: ^1.9.0
   transparent_image: ^2.0.1
   url_launcher: ^6.0.20
   visibility_detector: ^0.4.0+2

@@ -39,6 +39,40 @@ class HibikiClientUrl {
         fingerprintSha256: json['fingerprintSha256'] as String?,
         deviceName: json['deviceName'] as String?,
       );
+
+  /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
+  HibikiClientUrl copyWith({
+    String? url,
+    bool? enabled,
+    String? fingerprintSha256,
+    String? deviceName,
+  }) =>
+      HibikiClientUrl(
+        url: url ?? this.url,
+        enabled: enabled ?? this.enabled,
+        fingerprintSha256: fingerprintSha256 ?? this.fingerprintSha256,
+        deviceName: deviceName ?? this.deviceName,
+      );
+}
+
+/// TODO-961 M1：当一个已记录非空指纹的 https 候选地址再次出现、但带来的新指纹与
+/// 已存指纹不符时抛出（疑似 MITM 或 host 重置了证书）。**绝不静默覆盖已存指纹**——
+/// 由调用方告警并要求用户显式重置该条目，这是 TOFU 钉扎的硬约束（设计稿 §3.5）。
+class HibikiFingerprintMismatchException implements Exception {
+  const HibikiFingerprintMismatchException({
+    required this.url,
+    required this.storedFingerprint,
+    required this.incomingFingerprint,
+  });
+
+  final String url;
+  final String storedFingerprint;
+  final String incomingFingerprint;
+
+  @override
+  String toString() =>
+      'HibikiFingerprintMismatchException($url: stored=$storedFingerprint '
+      'incoming=$incomingFingerprint)';
 }
 
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
@@ -417,6 +451,7 @@ class SyncRepository {
   static const _keyServerPassword = 'sync_server_password';
   static const _keyDeviceId = 'sync_device_id';
   static const _keyLanRequiresPin = 'sync_lan_requires_pin';
+  static const _keyServerTlsEnabled = 'sync_server_tls_enabled';
 
   /// Single source of truth for the default Hibiki sync-server port.
   /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
@@ -440,6 +475,15 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyLanRequiresPin, false);
   Future<void> setLanRequiresPin(bool v) =>
       _db.setPrefTyped<bool>(_keyLanRequiresPin, v);
+
+  /// TODO-961 M1：host 是否以 HTTPS（自签证书 + 指纹钉扎）对外服务。默认 false=
+  /// 明文 HTTP 老路径（Never break userspace：现有 LAN 用户升级后行为不变，直到
+  /// 主动开 TLS）。开启后 [HibikiSyncServerController] 用 [HibikiTlsIdentityStore]
+  /// 起 TLS 并在配对响应里回传指纹供 client TOFU 钉扎。
+  Future<bool> getServerTlsEnabled() =>
+      _db.getPrefTyped<bool>(_keyServerTlsEnabled, false);
+  Future<void> setServerTlsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyServerTlsEnabled, v);
 
   Future<String?> getServerPassword() async {
     final encoded = await _getStringOrNull(_keyServerPassword);
@@ -504,17 +548,78 @@ class SyncRepository {
     );
   }
 
-  /// 追加一个候选地址（已存在则去重），保持原有顺序与 token 不变。返回最终列表。
-  /// 用于 LAN 发现：点设备把它的地址加入列表，而不是覆盖整套配置。
-  Future<List<HibikiClientUrl>> addHibikiClientUrl(String url) async {
+  /// 追加 / 升级一个候选地址（TOFU 指纹记录器）。保持原有顺序与 token 不变，返回最终列表。
+  /// 用于 LAN 发现与手动配对：把对端地址加入列表，而不是覆盖整套配置。
+  ///
+  /// TODO-961 M1（TOFU 接线，设计稿 §3.1 / §3.5）：
+  /// - [fingerprint] 非空（https 钉扎指纹）时，把它写进对应条目；这是「首次信任并
+  ///   记录」(TOFU) 的落脚点。
+  /// - 若该 URL 已存在且**已记录非空指纹**，而本次新指纹与之**不符**，抛
+  ///   [HibikiFingerprintMismatchException]，**绝不覆盖已存指纹**（疑似 MITM）。
+  /// - 已存指纹为空（明文老条目）→ 允许首次写入指纹（http 升级为 https 钉扎）。
+  /// - 指纹相同 / 本次 [fingerprint] 为 null（明文 http）→ 幂等：仅补 deviceName。
+  Future<List<HibikiClientUrl>> addHibikiClientUrl(
+    String url, {
+    String? fingerprint,
+    String? deviceName,
+  }) async {
     final List<HibikiClientUrl> urls = await getHibikiClientUrls();
-    if (urls.any((HibikiClientUrl u) => u.url == url)) return urls;
+    final int existingIdx =
+        urls.indexWhere((HibikiClientUrl u) => u.url == url);
+
+    final String? incomingFp =
+        (fingerprint != null && fingerprint.isNotEmpty) ? fingerprint : null;
+
+    if (existingIdx >= 0) {
+      final HibikiClientUrl existing = urls[existingIdx];
+      final String? storedFp = existing.fingerprintSha256;
+      // MITM 守卫：已记录非空指纹且新指纹非空且不符 → 拒绝覆盖，抛异常告警。
+      if (incomingFp != null &&
+          storedFp != null &&
+          storedFp.isNotEmpty &&
+          !_fingerprintEquals(storedFp, incomingFp)) {
+        throw HibikiFingerprintMismatchException(
+          url: url,
+          storedFingerprint: storedFp,
+          incomingFingerprint: incomingFp,
+        );
+      }
+      // 指纹处理：已存非空（且与新值归一化相等，否则上面已抛）→ 保留原存值，
+      // 不被新写法（大小写/冒号差异）改写；已存为空 → 首次写入新指纹（http→https 升级）。
+      final String? nextFp =
+          (storedFp != null && storedFp.isNotEmpty) ? storedFp : incomingFp;
+      final HibikiClientUrl upgraded = existing.copyWith(
+        fingerprintSha256: nextFp,
+        deviceName: deviceName,
+      );
+      if (upgraded.fingerprintSha256 == existing.fingerprintSha256 &&
+          upgraded.deviceName == existing.deviceName) {
+        return urls; // 无变化，避免无谓写盘。
+      }
+      final List<HibikiClientUrl> updated = <HibikiClientUrl>[...urls];
+      updated[existingIdx] = upgraded;
+      await setHibikiClientUrls(updated);
+      return updated;
+    }
+
     final List<HibikiClientUrl> updated = <HibikiClientUrl>[
       ...urls,
-      HibikiClientUrl(url: url),
+      HibikiClientUrl(
+        url: url,
+        fingerprintSha256: incomingFp,
+        deviceName: deviceName,
+      ),
     ];
     await setHibikiClientUrls(updated);
     return updated;
+  }
+
+  /// 指纹相等比较：去冒号、去空白、转小写后逐字符比对（与
+  /// hibiki_pinning_http 的归一化同语义，避免 aa:bb vs AABB 误判为不符）。
+  static bool _fingerprintEquals(String a, String b) {
+    String norm(String s) =>
+        s.replaceAll(':', '').replaceAll(RegExp(r'\s'), '').toLowerCase();
+    return norm(a) == norm(b);
   }
 
   Future<String?> getHibikiClientToken() async {
@@ -565,6 +670,7 @@ class SyncRepository {
     _keyServerPassword,
     _keyDeviceId,
     _keyLanRequiresPin,
+    _keyServerTlsEnabled,
     _keyHibikiClientUrls,
     _keyHibikiClientToken,
     _keyHibikiClientUrl,

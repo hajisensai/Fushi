@@ -2010,5 +2010,16 @@
   "anki_note_viewer_empty": "This card has no readable fields.",
   "anki_note_open_failed": "Could not open the card in Anki.",
   "update_cached_up_to_date": "On latest known version $version (checking…)",
-  "update_cached_newer": "Update $version available (verifying…)"
+  "update_cached_newer": "Update $version available (verifying…)",
+  "sync_pair_probing": "Checking device…",
+  "sync_pair_confirm_identity_title": "Confirm device",
+  "sync_pair_fingerprint_label": "Certificate fingerprint",
+  "sync_pair_enter_pin_title": "Enter PIN",
+  "sync_pair_enter_pin_body": "Enter the 6-digit PIN shown on the other device.",
+  "sync_pair_continue": "Continue",
+  "sync_pair_pin_wrong": "Wrong PIN — try again",
+  "sync_pair_fingerprint_changed": "Certificate changed — pairing aborted for safety (possible interception).",
+  "sync_pair_not_hibiki": "No Hibiki device found at this address. The address was saved.",
+  "sync_pair_pairing": "Pairing…",
+  "sync_pair_confirm_identity_body": "You are pairing with $device. Confirm this is the device you expect before continuing."
 }
