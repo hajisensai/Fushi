@@ -41,7 +41,8 @@ Directory observeScreenshotDir() {
     }
   } else {
     final String? runId = hibikiTestRunId();
-    final String runLeaf = (runId != null && runId.isNotEmpty) ? runId : 'local';
+    final String runLeaf =
+        (runId != null && runId.isNotEmpty) ? runId : 'local';
     base = Directory('.codex-test/observe/$runLeaf');
   }
   final Directory dir = Directory('${base.path}/screenshots');
@@ -119,6 +120,11 @@ Future<ObserveShot> captureFlutterFrame(
         name: name, path: '', saved: false, nonBlank: false, bytes: 0);
   }
 }
+
+/// 阅读器 WebView 是否已创建（onWebViewCreated 注册了抓图钩子）。跨模式可靠信号：
+/// 章节阅读器与歌词模式（有声书）都会触发 onWebViewCreated → 钩子非空，比等
+/// `hoshi_webview` widget key 更稳（歌词模式可能是不同页 / 不同 key）。
+bool readerWebViewReady() => ReaderHibikiPage.debugCaptureWebView != null;
 
 /// 抓阅读器 EPUB 正文（WebView2，经 CDP Page.captureScreenshot，真离屏可用）为 PNG。
 ///

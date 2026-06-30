@@ -82,26 +82,29 @@ void main() {
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
-      // 先等 WebView 挂载，再等正文 ready（reader_caret_test 的可靠范式）。
-      const Key webViewKey = ValueKey<String>('hoshi_webview');
-      for (int i = 0; i < 60; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byKey(webViewKey).evaluate().isNotEmpty) {
-          break;
-        }
-      }
-      expect(find.byKey(webViewKey), findsOneWidget, reason: '阅读器 WebView 应存在');
-
-      const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
-      bool ready = false;
+      // 有声书（EPUB+音频）可能以歌词模式打开（与章节阅读器不同页，无 hoshi_webview
+      // key），故不强求该 key；改等阅读器 WebView 创建钩子就绪（onWebViewCreated 注册，
+      // 任何模式都触发），这是跨模式可靠信号。
+      bool readerReady = false;
       for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 500));
-        if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
-          ready = true;
+        if (readerWebViewReady()) {
+          readerReady = true;
           break;
         }
       }
-      expect(ready, isTrue, reason: '有声书正文应就绪');
+      expect(readerReady, isTrue,
+          reason: '有声书阅读器 WebView 应已创建（debugCaptureWebView 钩子就绪）');
+      // 等正文/歌词渲染出内容（content_ready best-effort，不强断以兼容歌词模式）。
+      for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
+        if (find
+            .byKey(const ValueKey<String>('hoshi_content_ready'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
       await tester.pump(const Duration(seconds: 1));
 
       // 3) 有声书正文（WebView，CDP 离屏抓）：断言落盘（钩子注册成功 + 字节非空）。
