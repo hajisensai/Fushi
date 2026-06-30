@@ -216,10 +216,34 @@ class CdpSocket {
  * The driver navigates to a data: URL built from `html`, waits for load, then
  * evaluates `expr` (a JS expression string returning a JSON value) and returns it.
  */
+/**
+ * Resolve the actual DevTools port Chrome bound to. With
+ * `--remote-debugging-port=0` Chrome writes the chosen ephemeral port to
+ * `<userDir>/DevToolsActivePort` only once the debugger endpoint is actually
+ * listening, so reading it both avoids fixed-port collisions between concurrent
+ * processes and removes the connect-before-ready race. Returns the port.
+ */
+async function readDevToolsPort(userDir, proc, timeoutMs = 20000) {
+  const portFile = path.join(userDir, 'DevToolsActivePort');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null) {
+      throw new Error('chrome exited early (code ' + proc.exitCode + ')');
+    }
+    try {
+      const first = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim();
+      if (first) return Number(first);
+    } catch (_) {
+      // DevToolsActivePort not written yet; keep polling.
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error('DevToolsActivePort not written within ' + timeoutMs + 'ms');
+}
+
 export async function launchChromeDriver() {
   const chromePath = resolveChrome();
   if (!chromePath) throw new Error('NO_CHROME');
-  const port = 9000 + Math.floor(Math.random() * 1000);
   const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rph-chrome-'));
   const proc = spawn(
     chromePath,
@@ -229,7 +253,12 @@ export async function launchChromeDriver() {
       '--no-sandbox',
       '--disable-dev-shm-usage',
       `--user-data-dir=${userDir}`,
-      `--remote-debugging-port=${port}`,
+      // Ephemeral port: let Chrome pick a free port and report it via the
+      // DevToolsActivePort file. A fixed/random port in a shared range races
+      // with concurrent processes (collision -> the loser never binds ->
+      // ECONNREFUSED). Port 0 + reading the real port removes both the
+      // collision and the connect-before-listen race.
+      '--remote-debugging-port=0',
       '--remote-allow-origins=*',
       '--window-size=1280,800',
       'about:blank',
@@ -239,6 +268,7 @@ export async function launchChromeDriver() {
 
   let sock;
   try {
+    const port = await readDevToolsPort(userDir, proc);
     const targets = await getJson(`http://127.0.0.1:${port}/json`);
     const page = targets.find((t) => t.type === 'page');
     if (!page) throw new Error('no page target');
