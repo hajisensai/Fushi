@@ -35,6 +35,10 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<MediaSourceRow>? _rows;
 
+  /// 每个来源 id → 当前**累计拥有**的媒体条目数（TODO-1036）。
+  /// 与列表一起加载，避免逐行 FutureBuilder 抖动。来源不在 map 里时回退 0。
+  final Map<int, int> _cumulativeCount = <int, int>{};
+
   /// 正在扫描中的来源 id 集合（行级 loading）。
   final Set<int> _scanning = <int>{};
 
@@ -49,8 +53,34 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   Future<void> _load() async {
     final List<MediaSourceRow> rows =
         await _db.getMediaSourcesByKind(widget.mediaKind);
+    final Map<int, int> counts = await _loadCumulativeCounts(rows);
     if (!mounted) return;
-    setState(() => _rows = rows);
+    setState(() {
+      _rows = rows;
+      _cumulativeCount
+        ..clear()
+        ..addAll(counts);
+    });
+  }
+
+  /// 一次性查出每个来源累计拥有的媒体条目数（按 mediaKind 选表）。
+  Future<Map<int, int>> _loadCumulativeCounts(
+    List<MediaSourceRow> rows,
+  ) async {
+    final Map<int, int> counts = <int, int>{};
+    for (final MediaSourceRow row in rows) {
+      counts[row.id] =
+          await _db.countMediaBySourceId(row.id, widget.mediaKind);
+    }
+    return counts;
+  }
+
+  /// 重读单个来源的累计计数（重新扫描后刷新该行用）。
+  Future<void> _refreshCount(int sourceId) async {
+    final int count =
+        await _db.countMediaBySourceId(sourceId, widget.mediaKind);
+    if (!mounted) return;
+    setState(() => _cumulativeCount[sourceId] = count);
   }
 
   @override
@@ -234,9 +264,12 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
         overflow: TextOverflow.ellipsis,
       );
     }
+    // TODO-1036：显示该来源**累计拥有**的条目数（不是上次扫描新增数 mediaCount，
+    // 后者在重扫已全部导入的来源时会因去重跳过而显示 0）。
+    final int total = _cumulativeCount[row.id] ?? row.mediaCount;
     final String count = widget.mediaKind == 'book'
-        ? t.media_source_count_book(n: row.mediaCount)
-        : t.media_source_count_video(n: row.mediaCount);
+        ? t.media_source_count_book(n: total)
+        : t.media_source_count_video(n: total);
     final DateTime? scannedAt = row.lastScannedAt;
     final String text = scannedAt == null
         ? count
@@ -374,6 +407,8 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
             if (idx >= 0) rows[idx] = updated;
           }
         });
+        // 扫描可能新增条目，刷新累计计数（TODO-1036）。
+        await _refreshCount(row.id);
       }
     }
   }
