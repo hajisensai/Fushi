@@ -372,7 +372,7 @@
   "use_br_tags": "Use line break tag instead of newline on export",
   "prepend_dictionary_names": "Prepend dictionary name in meaning",
   "highlight_on_tap": "Highlight text on tap",
-  "tap_empty_hide_chrome": "Tap empty area to hide controls",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "No audio file to save.",
   "storage_permissions": "Please grant the following permissions for exporting to AnkiDroid.",
   "stream": "Stream",

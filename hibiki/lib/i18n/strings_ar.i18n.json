@@ -356,7 +356,7 @@
   "use_br_tags": "استخدام وسم فاصل السطر بدلاً من السطر الجديد عند التصدير",
   "prepend_dictionary_names": "إضافة اسم القاموس قبل المعنى",
   "highlight_on_tap": "تمييز النص عند النقر",
-  "tap_empty_hide_chrome": "انقر على المنطقة الفارغة لإخفاء عناصر التحكم",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "لا يوجد ملف صوت للحفظ.",
   "storage_permissions": "يرجى منح الأذونات التالية للتصدير إلى AnkiDroid.",
   "stream": "بث",

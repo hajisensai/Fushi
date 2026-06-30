@@ -356,7 +356,7 @@
   "use_br_tags": "匯出時以換行標籤代替換行符號",
   "prepend_dictionary_names": "在釋義前顯示辭典名稱",
   "highlight_on_tap": "點擊時醒目標示文字",
-  "tap_empty_hide_chrome": "點擊空白處隱藏控制列",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "沒有可儲存的音訊。",
   "storage_permissions": "請授予以下權限以便匯出到 AnkiDroid。",
   "stream": "串流",

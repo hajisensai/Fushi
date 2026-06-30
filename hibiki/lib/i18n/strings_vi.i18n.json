@@ -356,7 +356,7 @@
   "use_br_tags": "Dùng thẻ ngắt dòng thay vì xuống dòng khi xuất",
   "prepend_dictionary_names": "Thêm tên từ điển trước nghĩa",
   "highlight_on_tap": "Tô sáng văn bản khi chạm",
-  "tap_empty_hide_chrome": "Chạm vùng trống để ẩn thanh điều khiển",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Không có tệp âm thanh để lưu.",
   "storage_permissions": "Vui lòng cấp các quyền sau để xuất sang AnkiDroid.",
   "stream": "Luồng phát",

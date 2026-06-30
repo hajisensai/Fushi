@@ -356,7 +356,7 @@
   "use_br_tags": "Utiliser la balise de saut de ligne au lieu du retour à la ligne à l'exportation",
   "prepend_dictionary_names": "Ajouter le nom du dictionnaire dans la définition",
   "highlight_on_tap": "Surligner le texte au toucher",
-  "tap_empty_hide_chrome": "Appuyez sur une zone vide pour masquer les contrôles",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Aucun fichier audio à enregistrer.",
   "storage_permissions": "Veuillez accorder les permissions suivantes pour l'exportation vers AnkiDroid.",
   "stream": "Flux",

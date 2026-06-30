@@ -523,6 +523,27 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
+          // TODO-1029：「悬浮控制栏」开关（原「点击空白处隐藏控制栏」）紧挨「悬浮阅读
+          // 进度」分到一起——两个悬浮类开关相邻。持久化 key（tap_empty_hide_chrome）、
+          // 运行时行为（TODO-975 决策#3：同时把底栏切到悬浮模式）不变，仅改显示名 +
+          // 面板/设置页位置（order 11→18，紧随 top_progress_floating=17）。
+          SettingsSwitchItem(
+            id: 'reading_controls.tap_empty_hide_chrome',
+            title: t.tap_empty_hide_chrome,
+            icon: Icons.fullscreen_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 18,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.tapEmptyToHideChrome,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleTapEmptyToHideChrome();
+              // TODO-975 决策#3：此开关现同时把底栏切到悬浮模式，改变底栏预留高 →
+              // 走重锚通道（连续模式滚动保位）。
+              notifyReaderChromeReanchored(settingsContext);
+            },
+          ),
           // TODO-728: where the top reading-progress text sits. Only shown when
           // the progress bar itself is enabled. behavior group order 15.
           SettingsSegmentedItem<String>(
@@ -558,23 +579,6 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeChanged(c);
             },
           ),
-          SettingsSwitchItem(
-            id: 'reading_controls.tap_empty_hide_chrome',
-            title: t.tap_empty_hide_chrome,
-            icon: Icons.fullscreen_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 11,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.tapEmptyToHideChrome,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleTapEmptyToHideChrome();
-              // TODO-975 决策#3：此开关现同时把底栏切到悬浮模式，改变底栏预留高 →
-              // 走重锚通道（连续模式滚动保位）。
-              notifyReaderChromeReanchored(settingsContext);
-            },
-          ),
           // TODO-975 决策#1：悬浮 chrome 唤出后自动收起的时长（秒，顶部/底栏共用）。
           // 仅当存在任一悬浮 chrome（顶部进度悬浮 或 点空白隐藏=底栏悬浮）时显示。
           // 纯时长不改预留高 → 走 settings 刷新即可，无需重锚。
@@ -590,7 +594,7 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.tapEmptyToHideChrome,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 18,
+              order: 19,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoHideChromeMillis / 1000.0,

@@ -356,7 +356,7 @@
   "use_br_tags": "Usa tag di interruzione riga invece di a capo nell'esportazione",
   "prepend_dictionary_names": "Anteponi il nome del dizionario nella definizione",
   "highlight_on_tap": "Evidenzia il testo al tocco",
-  "tap_empty_hide_chrome": "Tocca un'area vuota per nascondere i controlli",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Nessun file audio da salvare.",
   "storage_permissions": "Concedi i seguenti permessi per l'esportazione verso AnkiDroid.",
   "stream": "Streaming",

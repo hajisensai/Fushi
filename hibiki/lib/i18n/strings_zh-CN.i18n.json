@@ -372,7 +372,7 @@
   "use_br_tags": "导出时以换行标签代替换行符",
   "prepend_dictionary_names": "在释义前显示词典名称",
   "highlight_on_tap": "点击时高亮文本",
-  "tap_empty_hide_chrome": "点击空白处隐藏控制栏",
+  "tap_empty_hide_chrome": "悬浮控制栏",
   "no_audio_file": "没有可保存的音频。",
   "storage_permissions": "请授予以下权限以便导出到 AnkiDroid。",
   "stream": "流媒体",
