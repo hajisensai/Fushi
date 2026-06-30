@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'audiobook_model.dart';
+import 'audiobook_repository.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
 import '../parsers/srt_parser.dart';
@@ -74,7 +75,59 @@ class SrtBookRepository {
     book.audioPaths = persisted;
     book.audioRoot = null;
     await save(book);
+
+    // TODO-1032 PR2：愈合旧数据。PR1 把 SRT 书音频归一到 SrtBooks.audioPaths，但
+    // 旧版书架「导入音频」曾对同一本 EPUB 配对 SRT 书落过一条 **Audiobooks** 脏行
+    // （audioOnly 导入，无对齐字幕）。读取端 AudiobookSessionLauncher.resolve 先查
+    // Audiobooks 再回退 SrtBooks，那条脏行存在时永远优先返回旧/错音频 → 用户在
+    // SrtBooks 重新定位的正确音频被无视（「重新导入后音频不对」根因）。
+    // 写入非空音频后删除这条脏行，让 resolve 落到 SrtBook 正确音频。
+    await _healDirtyAudiobookRow(book);
+
     return persisted;
+  }
+
+  /// TODO-1032 PR2：删除「旧版书架 audioOnly 导入误落的 Audiobook 脏行」，使读取端
+  /// resolve 落到本次写入的 SrtBook 正确音频。
+  ///
+  /// 严守的隔离判据（绝不误删真 EPUB 有声书）：
+  /// 1. 仅当本次 [book] 真带音频（[SrtBook.audioPaths] 非空）才触发——否则会删出
+  ///    「两边都没音频」。
+  /// 2. 仅对 **EPUB 配对 SRT 书**愈合：[SrtBook.bookKey] 非空（standalone 字幕书
+  ///    bookKey 为空，从不落 Audiobook 行，天然豁免）。
+  /// 3. **核心**：只删 **没有对齐字幕** 的 Audiobook 行（`alignmentPath` 空 **且**
+  ///    `alignmentFormat` 空）。Audiobooks.alignmentPath / alignmentFormat 都是
+  ///    NOT NULL 列：**真 EPUB 有声书**导入恒带对齐字幕（alignmentPath 指向真实
+  ///    .srt/.smil 文件、alignmentFormat 为 'srt'/'lrc'/... 非空，见
+  ///    AudiobookImportDialog `_doImport` 与 audiobook_alignment_service），v29
+  ///    backfill 也只为这种带对齐的 audiobook 造同 bookKey 的 SrtBook 配对行；而
+  ///    SRT 字幕书误落的脏行**没有对齐字幕**（对齐 cue 由 SrtBook 自身在 uid
+  ///    命名空间持有，脏 Audiobook 行只带裸音频、对齐字段为空）。两者都可能共享
+  ///    同一 bookKey 且都有「带音频的 SrtBook 配对行」，唯一可靠区分点就是
+  ///    Audiobook 行**自身是否带对齐字幕**——带对齐 → 真有声书会话来源，绝不删。
+  ///
+  /// cue 隔离：[AudiobookRepository.deleteAudiobook] 删 audio_cues 按 **bookKey**
+  /// （裸 EPUB key）；SrtBook 自己的 cue key 是 **uid**（`srtbook_epub_<bookKey>`，
+  /// 见 [cuesFor] 用 `t.bookKey.equals(uid)`）——不同命名空间，删脏行 cue 天然不碰
+  /// SrtBook cue。进度隔离：SrtBook 进度 pref key 为 `audiobook_pos_<uid>`，脏行
+  /// 进度为 `audiobook_pos_<bookKey>`，`deleteAudiobook` 只删表行+cue+persistDir，
+  /// 不删 pref，且 key 本就不同——删脏行不连带丢 SrtBook 进度。
+  Future<void> _healDirtyAudiobookRow(SrtBook book) async {
+    final List<String>? audioPaths = book.audioPaths;
+    if (audioPaths == null || audioPaths.isEmpty) return; // guard 1
+    final String bookKey = book.bookKey;
+    if (bookKey.isEmpty) return; // guard 2: standalone 字幕书无脏行
+
+    final AudiobookRow? abRow = await _db.getAudiobookByBookKey(bookKey);
+    if (abRow == null) return; // 无 Audiobook 行 → 无脏行可愈合
+    // guard 3: 带对齐字幕 = 真 EPUB 有声书（含 v29 backfill 的配对来源），绝不删。
+    // alignmentPath / alignmentFormat 为 NOT NULL 列，真有声书恒非空；脏行恒为空。
+    final bool hasAlignment =
+        abRow.alignmentPath.isNotEmpty || abRow.alignmentFormat.isNotEmpty;
+    if (hasAlignment) return;
+
+    // 确证为 audioOnly 脏行：删行（连带 bookKey 命名空间下的脏 cue + persistDir）。
+    await AudiobookRepository(_db).deleteAudiobook(bookKey);
   }
 
   Future<void> save(SrtBook book) async {
