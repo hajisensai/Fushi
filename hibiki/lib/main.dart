@@ -127,14 +127,25 @@ void main([List<String> args = const <String>[]]) {
       // [_HoshiReaderAppState.onWindowClose] (TODO-086).
       await windowManager.setPreventClose(true);
       // TODO-959: 数据迁移成功后的自动重启会以 detached 模式拉新进程并带上重启标志。
-      // detached 新进程在 Windows 上不一定自动抢前台 → 短暂黑/不可见窗口。见到标志就
-      // 主动 show()+focus() 把主窗口顶到前台。失败静默降级（窗口仍会由 runner 显示）。
+      // 新进程的 Windows runner 见到标志会**隐藏建窗**（不带 WS_VISIBLE，见
+      // win32_window.cpp 的 restarted_hidden 分支），把「旧进程 exit(0) → 新进程
+      // Flutter 首帧」这段交接期挡在屏幕之外，避免空白/黑色错误窗。此处在首帧前
+      // （runApp 之前）主动 show()+focus() 把已建好的隐藏主窗口顶到前台并显示出来。
+      // 铁律：隐藏建窗的进程**必须**在这里成功显示，否则窗口永久不可见。因此 show()
+      // 即使抛错也要在 catch 里再兜底强制 show 一次，绝不让任何路径停在不可见状态。
       if (args.contains(DesktopLifecycleService.restartMarkerArg)) {
         try {
           await windowManager.show();
           await windowManager.focus();
         } catch (e) {
           debugPrint('[Hibiki] restart window focus skipped: $e');
+          // 兜底：上面的 focus() 抢前台失败不致命，但隐藏建窗的窗口若未 show 就会
+          // 永久不可见。再尝试一次纯 show()，仍失败也只能记录（极端环境）。
+          try {
+            await windowManager.show();
+          } catch (e2) {
+            debugPrint('[Hibiki] restart window show fallback failed: $e2');
+          }
         }
       }
       await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 461 条。点号进各自文件。
+> 共 462 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-476](bugs/BUG-476-restart-cold-start-black-window.md) | ✅ | ✅ | 迁移重启新进程冷启动黑屏 |
 | [BUG-475](bugs/BUG-475-export-crosschapter-false-positive.md) | ✅ | ✅ | 选区导出误报跨章 |
 | [BUG-474](bugs/BUG-474-ankidroid-svg-fileprovider-root.md) | ✅ | ✅ | AnkiDroid外字SVG制卡FileProvider找不到根 |
 | [BUG-473](bugs/BUG-473-updates-cache-not-cleaned.md) | ✅ | ✅ | 更新包缓存不清理 |
