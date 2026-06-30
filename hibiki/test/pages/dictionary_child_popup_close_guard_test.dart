@@ -86,19 +86,33 @@ void main() {
     expect(popup, contains('onClose: isBase ? null : () => _popAt(index)'));
   });
 
-  // TODO-834（反转 TODO-720 / BUG-403）：区分两种「点外」——
-  //  (A) 点**所有弹窗矩形外**的真空白（全屏 barrier onTap）= 清整栈（会话收尾）。
+  // TODO-834（反转 TODO-720 / BUG-403）+ TODO-1027（barrier 改可覆写钩子）：区分两种「点外」——
+  //  (A) 点**所有弹窗矩形外**的真空白（全屏 barrier onTapUp）= 转发给可覆写钩子
+  //      [onDismissBarrierTap]；其**默认实现** = 清整栈（会话收尾，留热槽）。阅读器覆写
+  //      此钩子改成「命中词→换新查词」（TODO-1027），故守卫只锁 base 默认仍清整栈。
   //  (B) 点**某层弹窗本体的空白区**（弹窗 onTapOutside）= 只关该层衍生的后代层、
   //      保留本层 + 祖先（点顶层无后代 = no-op）。
-  // barrier 必须走清整栈路径；onTapOutside 必须带本层 index 走 truncateTo 关后代，
+  // barrier 默认走清整栈路径；onTapOutside 必须带本层 index 走 truncateTo 关后代，
   // 不能再写死 dismissTopPopup / lastVisibleIndex / index 0。
-  test('reader barrier clears the whole stack; onTapOutside closes descendants',
-      () {
+  test(
+      'base barrier default clears the whole stack via onDismissBarrierTap; '
+      'onTapOutside closes descendants', () {
     final String base = read('lib/src/pages/base_source_page.dart');
 
-    // (A) barrier 全屏 onTap = 清整栈（会话级路径，触发 onAllPopupsDismissed + 留热槽）。
-    expect(base, contains('onTap: clearDictionaryResult'),
-        reason: 'barrier 点所有弹窗外清整栈');
+    // (A) barrier 全屏 onTapUp 转发给可覆写钩子，默认实现清整栈（会话级路径，
+    // 触发 onAllPopupsDismissed + 留热槽）。TODO-1027 把硬编码 onTap 改成钩子。
+    expect(base, contains('onTapUp: (details) =>'),
+        reason: 'barrier 点所有弹窗外经 onTapUp 拿全局坐标转发');
+    expect(base, contains('onDismissBarrierTap(details.globalPosition)'),
+        reason: 'barrier 转发给可覆写钩子（阅读器据此命中词换新查词）');
+    expect(
+        base,
+        contains(
+            'void onDismissBarrierTap(Offset globalPos) => clearDictionaryResult();'),
+        reason: 'barrier 钩子默认实现清整栈（video/home/有声书 不变）');
+    // 旧的硬编码 onTap: clearDictionaryResult 不得残留（已改走钩子）。
+    expect(base, isNot(contains('onTap: clearDictionaryResult')),
+        reason: 'barrier 不再硬编码 onTap: clearDictionaryResult（改可覆写钩子）');
     // (B) 弹窗本体 onTapOutside = 关本层后代（带本层 index）。
     expect(base, contains('onTapOutside: () => dismissDescendantsOf(index)'),
         reason: '点某层本体空白只关其后代');

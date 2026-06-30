@@ -162,6 +162,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   void onDismissBarrierHover(PointerHoverEvent event) {}
 
+  /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为
+  /// 是一次性清整栈（[clearDictionaryResult] → 会话收尾，保留隐藏热槽 BUG-092）—
+  /// 视频/有声书/首页等横排表面维持「点空白关栈」旧语义不变。
+  ///
+  /// 阅读器覆写此钩子（见 reader_hibiki_page.dart）：barrier 叠在阅读器 WebView 之上，
+  /// 点弹窗外的新词正文若只关栈，tap 到不了底下的 WebView，必须再点一次才查新词
+  /// （查词被关窗逻辑堵塞）。覆写后用 WebView 的 RenderBox 把 [globalPos] 逆映成
+  /// CSS 坐标转发给选词：命中词→无缝换新查词弹窗（复用热槽），命中真空白→才关栈。
+  @protected
+  void onDismissBarrierTap(Offset globalPos) => clearDictionaryResult();
+
   Widget? buildPopupAudioControls() => null;
 
   /// Handles leaving a source page. All sources should
@@ -417,7 +428,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                           // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
                           // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
                           // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
-                          onTap: clearDictionaryResult,
+                          // TODO-1027：barrier 上 onTapUp 拿全局坐标转发给
+                          // [onDismissBarrierTap]（阅读器覆写为「命中词→换新查词」，
+                          // 默认表面仍清整栈）。onTapUp 与 onHorizontalDrag* 经
+                          // Flutter 手势竞技场天然分流（单击 vs 横拖），互斥不冲突。
+                          onTapUp: (details) =>
+                              onDismissBarrierTap(details.globalPosition),
                           // TODO-716：桌面对齐手机——在 barrier 上水平拖过阈同样关一层。
                           // 仅当滑动关闭开关开启时挂横拖识别（否则只 onTap，与旧行为一致）。
                           // 竞技场天然分流：单击走 onTap、横拖走 onHorizontalDrag*，互斥。

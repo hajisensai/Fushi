@@ -1,0 +1,11 @@
+## BUG-482 · 查词框关闭逻辑堵塞连续查词
+- **报告**：2026-06-30（用户：）TODO-1027
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/base_source_page.dart:412-441`（弹窗可见时 `Positioned.fill` + `GestureDetector(onTap: clearDictionaryResult)` 全屏 dismiss barrier）叠在阅读器 WebView 之上（`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart` 的 `buildDictionary()` 在 `_buildWebView` 之后构建）。查词弹窗显示时，点弹窗矩形外的新词正文，事件被 barrier 的 `onTap` 吃掉 → 只 `clearDictionaryResult()` 关栈，tap 到不了底下的 WebView 选词 → 必须再点一次才查新词。发起新查词侧本身不阻塞（`_runLookupAndHighlight` 开头 `prunePopupStack(0)` 保留热槽 + `searchDictionaryResult(deferDisplay)` 复用热槽），堵点纯在「barrier 吃掉点击只关栈」。
+- **[x] ① 已修复** — 提交见分支 `fix-1027-popup-close-nonblock`：
+  - base 抽出可覆写钩子 `onDismissBarrierTap(Offset globalPos)`（默认 `clearDictionaryResult()`，video/有声书/首页等横排表面维持「点空白关栈」旧语义）；barrier 的 `onTap` 改成 `onTapUp` 拿全局坐标转发给钩子（`base_source_page.dart`）。
+  - reader 覆写 `onDismissBarrierTap`：用 `_webViewKey` 的 `RenderBox.globalToLocal` 把全局坐标逆映成 WebView CSS 坐标（与既有 `onDismissBarrierHover` 同口径，不乘 DPR），转给真点击路径 `_selectTextAt(local.dx, local.dy)`（`fromHover:false`）。命中词 → `onTextSelected` → `_handleTextSelected` → `_runLookupAndHighlight`（`prunePopupStack(0)` 复用热槽，旧窗无缝换新窗）；命中真空白 → JS fire `onTapEmpty`（`reader_hibiki_page.dart`）。
+  - reader `onTapEmpty` handler：有可见弹窗时（barrier 转发的空白命中）`clearDictionaryResult()` 关栈并 return（由 `onAllPopupsDismissed` 触发 BUG-072 续播 / 保留热槽 BUG-092），不走隐藏控制栏分支；无弹窗时（正常正文点空白）维持旧行为（`reader_hibiki/webview.part.dart`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_dismiss_barrier_tap_test.dart`：
+  - 行为：base barrier `onTapUp` 转发全局坐标到 `onDismissBarrierTap`（默认表面仍清整栈）；reader 覆写命中词坐标 → 发起新查词且不清整栈（保留热槽）、命中空白 → 关栈。
+  - 源码守卫：barrier 不再硬编码 `onTap: clearDictionaryResult`，改 `onTapUp → onDismissBarrierTap`；reader `onTapEmpty` 在 `isDictionaryShown` 时 `clearDictionaryResult`。
+- **备注**：方案 A（最小、只动 reader 覆写 + base 加钩子，不动 video/首页 mixin 默认）。回归覆盖：①BUG-072 续播（换词路径不调 `onAllPopupsDismissed`，`_pausedForLookup` 不被误清）②BUG-092/093/095 热槽白屏（仍走 `_runLookupAndHighlight`→`prunePopupStack(0)`，不绕过）③嵌套弹窗 058/834/869（只改「点 barrier」，不碰「点某层本体空白」的 `onTapOutside`）④BUG-136 焦点（点空白关栈分支续走焦点回收，换窗分支弹窗自持焦点）。
