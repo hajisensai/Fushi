@@ -1,0 +1,17 @@
+## BUG-463 · 视频播放页顶栏按钮被状态栏/刘海遮挡
+- **报告**：2026-06-30（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki/controls_theme.part.dart:117`（`_mobileControlsTheme` 未设 `topButtonBarMargin`，落 media_kit 默认 `EdgeInsets.symmetric(horizontal:16)`、顶部 inset=0）。
+- **机理**：
+  - 视频内顶栏（返回 / 标题 / 截图 / 字幕 / 音轨 / 设置等按钮）由 media_kit 控制条的 `topButtonBar` 渲染（`controls_theme.part.dart:83/214`），页面已删除 Scaffold AppBar（BUG-102）、视频正文全屏铺满到状态栏 / 刘海下（`video_hibiki_page.dart:4317` 的 Scaffold 无 AppBar、body 全屏）。
+  - fork 的 `MaterialVideoControls` 只在**全屏**分支给顶栏 Column 套 `MediaQuery.padding` 顶部内缩：`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material.dart:1042` 的 `_theme(context).padding ?? (isFullscreen ? MediaQuery.of(context).padding : EdgeInsets.zero)`；窗口分支外层 padding 恒 `EdgeInsets.zero`。
+  - 移动端视频**永不进 media_kit 全屏路由**（BUG-221，`fullscreen.part.dart:42` 的 `_toggleVideoFullscreen` 移动端 `return Future.value()` no-op）→ 顶栏始终落窗口分支 → 顶部 inset 从不生效 → 顶栏按钮永远贴 `y=0`，被状态栏 / 顶部刘海盖住，点不到 / 看不全。
+  - 对照：底栏早有 `bottomButtonBarMargin` 叠加 `_videoBottomSystemInset()`（BUG-184/TODO-658），顶栏一直缺这条对称避让。
+- **[x] ① 已修复** — 提交 `78af1af4f`。
+  - 新增纯函数 `videoTopBarMargin(EdgeInsets systemPadding)`（`hibiki/lib/src/media/video/video_subtitle_style.dart`）：`top = systemPadding.top`；`left/right = max(16, systemPadding.left/right)`（与浮动侧栏 `_mergeRailSafeAreaPadding` 同款逐边取 max，兼顾横屏短边刘海）。读 `MediaQuery.padding`（**非** `viewPadding`），避免 immersiveSticky 隐栏后 `viewPadding.top` 恒上报状态栏区高度导致顶栏永久顶低空白（BUG-370 同型陷阱）。
+  - State 侧 `_videoTopBarMargin()`（`video_hibiki_page.dart`）委托纯函数读 `MediaQuery.padding`；`_mobileControlsTheme` 把 `topButtonBarMargin: _videoTopBarMargin()` 接上。**仅移动 theme**；桌面 theme 不含此字段（桌面无系统栏，`padding` 亦为 0）。
+  - theme 在 `_buildVideoControlsInner` 的 builder 内构造（`MediaQuery.of(context)` 在作用域内），状态栏唤出 / 隐藏经 `_systemBarsVisible` 的 `setState` + MediaQuery 依赖触发重建，inset 随之更新。
+- **[x] ② 已加自动化测试** —
+  - 纯函数行为：`hibiki/test/media/video/video_subtitle_style_test.dart` 新增 `videoTopBarMargin (BUG-463 ...)` 组（无 inset 回退 16 / 顶 0、状态栏唤出下压、横屏短边刘海逐边 max、小 inset 不拉低）。
+  - 源码守卫：`hibiki/test/pages/video_topbar_safe_inset_guard_test.dart`（移动 theme 必须接 `_videoTopBarMargin()`、读 `padding` 非 `viewPadding`、不写死回 media_kit 默认常量 margin）。
+  - 全量 `flutter analyze` 0 issue；上述 + `video_subtitle_push_up_guard_test.dart` 共 42 测试全绿。
+- **备注**：media_kit 控制条几何依赖私有 State + 真实系统栏可见性，widget 难稳定复现，故行为由纯函数测试、接线由源码守卫覆盖。**真机验证点**（无 Android/iOS 设备未亲测，如实声明）：① 刘海 / 挖孔安卓手机横屏播放视频，唤出控制条后确认顶栏返回 / 设置等按钮不被状态栏 / 刘海遮挡、可点；② 上划临时唤出状态栏时顶栏整体下压避让；③ 桌面 / 无刘海设备观感不变（top inset=0、左右仍 16）。

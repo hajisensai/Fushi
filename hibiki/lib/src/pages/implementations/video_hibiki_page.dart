@@ -3824,6 +3824,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   double _videoBottomSystemInset() =>
       _systemBarsVisible ? MediaQuery.of(context).viewPadding.bottom : 0.0;
 
+  /// 系统顶部安全区 inset（BUG-463）：把视频内顶栏（media_kit 控制条 [topButtonBar]）
+  /// 抬离状态栏 / 刘海，否则顶栏左右按钮被遮挡、点不到（用户报「顶栏的按钮会被挡住」）。
+  ///
+  /// **为何顶栏需要而底栏另有 helper**：fork 的 [MaterialVideoControls] 只在**全屏**时给
+  /// 顶栏 Column 套 `MediaQuery.padding` 顶部内缩（material.dart 的
+  /// `isFullscreen ? MediaQuery.padding : EdgeInsets.zero`），窗口态外层 padding 恒
+  /// `EdgeInsets.zero`。而移动端视频**永不进 media_kit 全屏路由**（BUG-221，
+  /// [_toggleVideoFullscreen] 移动端 no-op）→ 顶栏始终落在窗口分支、顶部 inset 从不生效，
+  /// 顶栏按钮永远贴 `y=0`，被状态栏 / 刘海盖住。故在 [_mobileControlsTheme] 的
+  /// `topButtonBarMargin.top` 显式补这一段，与底栏 [_videoBottomSystemInset] 对称。
+  ///
+  /// **为何读 `padding` 而非 `viewPadding`**（避免 BUG-370 式过度内缩）：
+  /// immersiveSticky 隐栏后 `viewPadding.top` 仍恒上报状态栏区高度，单读它会把顶栏永久
+  /// 顶低一段空白。`padding.top` 在隐栏且无顶部刘海时收敛到 0、有刘海时为刘海高、状态栏
+  /// 被上划临时唤出时为状态栏高——正是顶栏需要避让的真实物理 inset。桌面无系统栏语义，
+  /// [_isDesktopVideoControls] 恒走桌面 theme（不调本 helper），且桌面 `padding` 亦为 0。
+  ///
+  /// 左 / 右用 `max(16, padding.left/right)`：与浮动侧栏 [_mergeRailSafeAreaPadding] 同款
+  /// 逐边取 max——横屏刘海手机（cutout 落在短边 = 左 / 右）下顶栏左 / 右按钮也避开刘海，
+  /// 又不在无刘海时把默认 16 叠加成双重留白。几何收敛进纯函数 [videoTopBarMargin]
+  /// （页面与测试同源调用）。
+  EdgeInsets _videoTopBarMargin() =>
+      videoTopBarMargin(MediaQuery.of(context).padding);
+
   /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
   /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
   /// 几何加总（同名 getter 已 ×[_videoUiScale]），故随界面缩放一起变大——旧默认常量 56
