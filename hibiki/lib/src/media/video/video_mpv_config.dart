@@ -305,7 +305,7 @@ Map<String, String> parseMpvConf(String text) {
 /// 同 key 覆盖结构化项。
 /// 把 [hwdec] 偏好按平台解析成「实际下发给 libmpv 的 `hwdec` 值」。纯函数。
 ///
-/// **根治 realme 8 / Android 11「视频闪烁 + 无画面」（BUG-470）。** media_kit 在 Android
+/// **根治 realme 8 / Android 11「视频闪烁 + 无画面」（BUG-465）。** media_kit 在 Android
 /// 用的是**纹理渲染**路径——`AndroidVideoController` 强制 `vo=gpu` + `gpu-context=android`
 /// + `opengl-es=yes`（见 media_kit_video `android_video_controller/real.dart`），libmpv 把
 /// 解码帧画进 GL 纹理交给 Flutter 合成，**不存在**给硬件解码器直渲的 Android Surface /
@@ -337,7 +337,7 @@ String resolveAndroidHwdec(String hwdec, {bool? isAndroid}) {
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
     {bool? isAndroid}) {
   final Map<String, String> out = <String, String>{};
-  // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-470）。
+  // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）。
   out['hwdec'] = resolveAndroidHwdec(config.hwdec, isAndroid: isAndroid);
   // 画质：scale 链（on=高质量 / off=mpv 默认 bilinear，便于运行时复位）
   if (config.highQuality) {

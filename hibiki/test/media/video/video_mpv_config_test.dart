@@ -128,7 +128,7 @@ keep-open=yes
     });
   });
 
-  group('resolveAndroidHwdec (BUG-470 Android HEVC surface-null)', () {
+  group('resolveAndroidHwdec (BUG-465 Android HEVC surface-null)', () {
     // 根因：media_kit Android 纹理渲染（vo=gpu/gpu-context=android，无直渲 surface），
     // 而 auto-safe/auto 在 Android 选 surface-直渲 mediacodec → Both surface and
     // native_window are NULL。修复=Android 改写成 copy 变体。
