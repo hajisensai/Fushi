@@ -1247,20 +1247,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     HibikiToast.show(msg: t.dialog_importing);
 
     try {
-      final Directory persistDir =
-          await AudiobookStorage.ensurePersistDir(_srtBookUid!);
-      await AudiobookStorage.cleanAudioFiles(persistDir);
-
-      final List<String> persisted = <String>[];
-      for (final String src in newPaths) {
-        persisted.add(
-          await AudiobookStorage.persistFileWithProgress(File(src), persistDir),
-        );
-      }
-
-      book.audioPaths = persisted;
-      book.audioRoot = null;
-      await repo.save(book);
+      // TODO-1032：复制导入 + 改写 SrtBook.audioPaths（清 audioRoot）的核心写入逻辑
+      // 已下沉到 SrtBookRepository.replaceAudio，三入口（书架重新定位/书架导入音频/
+      // 阅读器内导入）共用同一写入路径，避免 SRT 书音频被误写进 Audiobooks 表。
+      await repo.replaceAudio(uid: _srtBookUid!, pickedPaths: newPaths);
 
       // 换了 SRT 书的音频：强制重 load（停旧会话再起新）。
       await _resolveAudioSlot(forceReload: true);

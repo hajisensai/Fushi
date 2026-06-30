@@ -151,7 +151,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         DialogQuickAction(
           label: t.audio_import,
           icon: Icons.headphones_outlined,
-          onPressed: () => _openAudioImport(item, bookKey),
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _openAudioImport(book);
+          },
         ),
         DialogListAction(
           label: t.profile_book_profile,
@@ -511,21 +514,36 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
   }
 
-  Future<void> _openAudioImport(MediaItem item, String bookKey) async {
-    Navigator.pop(context);
-    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
-    if (!mounted) return;
-    await showAppDialog<bool>(
-      context: context,
-      builder: (_) => AudiobookImportDialog(
-        bookKey: bookKey,
-        repo: AudiobookRepository(appModel.database),
-        extractDir: row?.extractDir,
-        audioOnly: true,
-      ),
+  /// TODO-1032：书架卡片菜单「导入音频」。该入口只对 SRT 字幕书可见
+  /// （[_srtExtraActions] 唯一调用方），音频真值必须落 SrtBooks.audioPaths，
+  /// 与「重新定位」/阅读器内导入归一；旧实现误弹 AudiobookImportDialog 把音频写进
+  /// Audiobooks 表，导致 SrtBook 音频对话框查不到、显示空表单。
+  Future<void> _openAudioImport(SrtBook book) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: true,
     );
-    if (mounted) {
-      _rebuild(() {});
+    if (result == null || !mounted) return;
+    final List<String> picked = result.files
+        .map((PlatformFile f) => f.path)
+        .whereType<String>()
+        .toList()
+      ..sort(compareAudioFilePath);
+    if (picked.isEmpty) return;
+
+    HibikiToast.show(msg: t.dialog_importing);
+    try {
+      await SrtBookRepository(appModel.database)
+          .replaceAudio(uid: book.uid, pickedPaths: picked);
+      if (mounted) {
+        _refreshSrtBooks();
+        _rebuild(() {});
+        HibikiToast.show(msg: t.audiobook_import_success);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHistory.openAudioImport', e, stack);
+      debugPrint('[ReaderHistory] openAudioImport failed: $e');
+      if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
     }
   }
 

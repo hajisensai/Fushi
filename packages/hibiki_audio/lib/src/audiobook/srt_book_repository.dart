@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -27,6 +28,53 @@ class SrtBookRepository {
     final row = await _db.getSrtBookByBookKey(bookKey);
     if (row == null) return null;
     return _rowToModel(row);
+  }
+
+  /// TODO-1032：把一组用户选定的音频文件**复制导入**到 [uid] 的持久目录，并改写
+  /// 该 SRT 书的 [SrtBook.audioPaths]（清空 [SrtBook.audioRoot]），三入口（书架
+  /// 重新定位/书架导入音频/阅读器内导入）归一到此唯一写入路径，避免把 SRT 书的
+  /// 音频误写进 Audiobooks 表（导致导入对话框查不到、显示空表单）。
+  ///
+  /// 行为与阅读器内 `_openSrtBookAudioPicker` 逐字节等价：
+  /// - persist 目录 key 统一为 [uid]（`AudiobookStorage.ensurePersistDir(uid)`）；
+  /// - 写入前 `cleanAudioFiles` 清掉旧音频文件（整组替换语义）；
+  /// - 逐个 `persistFileWithProgress` 复制进持久目录；
+  /// - 落库时 `audioPaths = 复制后的路径`、`audioRoot = null`。
+  ///
+  /// [uid] 必须命中既有 SRT 书，否则抛 [StateError]（调用方应已加载过该书）。
+  /// [pickedPaths] 为空时直接返回（无副作用），调用方负责空选过滤/提示。
+  /// [onProgress] 透传给 `persistFileWithProgress`，可用于进度 UI。
+  /// 返回复制后落库的音频路径列表（顺序与 [pickedPaths] 一致）。
+  Future<List<String>> replaceAudio({
+    required String uid,
+    required List<String> pickedPaths,
+    void Function(int copied, int total)? onProgress,
+  }) async {
+    if (pickedPaths.isEmpty) return const <String>[];
+
+    final SrtBook? book = await findByUid(uid);
+    if (book == null) {
+      throw StateError('replaceAudio: no SRT book for uid=$uid');
+    }
+
+    final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
+    await AudiobookStorage.cleanAudioFiles(persistDir);
+
+    final List<String> persisted = <String>[];
+    for (final String src in pickedPaths) {
+      persisted.add(
+        await AudiobookStorage.persistFileWithProgress(
+          File(src),
+          persistDir,
+          onProgress: onProgress,
+        ),
+      );
+    }
+
+    book.audioPaths = persisted;
+    book.audioRoot = null;
+    await save(book);
+    return persisted;
   }
 
   Future<void> save(SrtBook book) async {
