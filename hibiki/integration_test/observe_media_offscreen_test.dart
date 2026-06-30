@@ -10,6 +10,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/home_video_page.dart'
+    show HomeVideoPage;
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/focus_driver.dart';
@@ -154,13 +156,39 @@ void main() {
       await driver.activate();
       await tester.pumpAndSettle();
 
-      // 视频卡（HibikiCard key=home_video_<uid>）通常在打开视频页后才由 initState
-      // 的 listAll() 拉出（seedVideo 注释已说明 best-effort），故这里轮询等待。
+      // 诊断：导航后立刻抓视频 tab + 统计卡片，区分「没切到 tab / 卡 offstage /
+      // listAll 空」。先抓图保证证据落盘（卡断言早于截图会丢图）。
+      final ObserveShot videoTab =
+          await captureFlutterFrame(tester, 'observe-video-tab');
+      bool cardOnstage(String uid) =>
+          find.byKey(ValueKey<String>('home_video_$uid')).evaluate().isNotEmpty;
+      final int anyStage = find
+          .byKey(ValueKey<String>('home_video_$uid'), skipOffstage: false)
+          .evaluate()
+          .length;
+      final int allCards = find
+          .byWidgetPredicate(
+            (Widget w) =>
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.startsWith('home_video_'),
+            skipOffstage: false,
+          )
+          .evaluate()
+          .length;
+      debugPrint('[observe-media] video-tab=${videoTab.path} nonBlank='
+          '${videoTab.nonBlank} card(onstage=${cardOnstage(uid)} '
+          'anyStage=$anyStage allHomeVideoCards=$allCards)');
+
+      // 视频卡（HibikiCard key=home_video_<uid>）：seed 后经 debugRefreshVideos 重查；
+      // 若导航后仍未上屏，再补一次刷新 + 轮询。
       final Finder videoCard = find.byKey(ValueKey<String>('home_video_$uid'));
       for (int i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 500));
         if (videoCard.evaluate().isNotEmpty) {
           break;
+        }
+        if (i == 2) {
+          HomeVideoPage.debugRefreshVideos?.call();
         }
       }
       expect(videoCard, findsOneWidget, reason: '播种的视频卡应出现在视频页');
