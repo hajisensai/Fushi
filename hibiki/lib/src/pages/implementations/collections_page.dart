@@ -18,7 +18,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
-enum _CollectionType { bookmark, sentence, mined }
+enum _CollectionType { bookmark, sentence, mined, word }
 
 @visibleForTesting
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
@@ -118,6 +118,8 @@ class _CollectionItem {
     this.bookmarkId,
     this.favoriteId,
     this.minedId,
+    this.wordReading,
+    this.wordSourceType,
     this.source = kFavoriteSentenceSourceBook,
   });
 
@@ -136,6 +138,14 @@ class _CollectionItem {
 
   /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
   final int? minedId;
+
+  /// 收藏词的振假名读音（[_CollectionType.word] 专用）。删除按 (expression, reading,
+  /// sourceType) 复合唯一键匹配 [HibikiDatabase.removeFavoriteWord]，故读音/来源都要留存。
+  /// 这里 [text] 复用为 expression（词形），[chapterLabel] 复用为 glossary（释义）。
+  final String? wordReading;
+
+  /// 收藏词来源（'book' / 'video'，[_CollectionType.word] 专用），同上供删除匹配。
+  final String? wordSourceType;
 
   /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
   /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
@@ -183,6 +193,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final allBookmarks = await bookmarkRepo.getAllBookmarks();
     final allFavorites = await favoriteRepo.getAll();
     final allMined = await db.getAllMinedSentences();
+    // BUG-462：弹窗 ☆ 收藏的词（FavoriteWords 表）此前只进导出管线、从不进收藏列表，
+    // 用户「收藏里没有收藏的单词」。这里与书签/收藏句/制卡句同结构落 _CollectionItem。
+    final allWords = await db.getAllFavoriteWords();
 
     final srtBooks = await srtBookRepo.listAll();
     final bookTitleMap = <String, String>{};
@@ -244,6 +257,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           normCharLength: m.normCharLength,
           minedId: m.id,
           source: m.source,
+        ),
+      );
+    }
+
+    for (final w in allWords) {
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.word,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(w.createdAt),
+          // text=词形（标题行）、chapterLabel=释义（副标题行）；无 bookKey（不可跳转，
+          // 收藏词不携带原文定位）。删除复合键由 wordReading/wordSourceType 保留。
+          text: w.expression,
+          chapterLabel: w.glossary.isNotEmpty ? w.glossary : null,
+          wordReading: w.reading,
+          wordSourceType: w.sourceType,
+          source: w.sourceType,
         ),
       );
     }
@@ -609,6 +638,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final minedId = item.minedId;
       if (minedId == null) return;
       await db.removeMinedSentence(minedId);
+    } else if (item.type == _CollectionType.word) {
+      // BUG-462：收藏词按 (expression, reading, sourceType) 复合唯一键删除（与
+      // [HibikiDatabase.addFavoriteWord] 的 uniqueKeys 对齐）。
+      final String? expression = item.text;
+      if (expression == null || expression.isEmpty) return;
+      await db.removeFavoriteWord(
+        expression: expression,
+        reading: item.wordReading ?? '',
+        sourceType: item.wordSourceType ?? kFavoriteSentenceSourceBook,
+      );
     } else {
       final id = item.favoriteId;
       if (id == null) return;
@@ -1001,26 +1040,39 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final isBookmark = item.type == _CollectionType.bookmark;
     final bool isMined = item.type == _CollectionType.mined;
+    final bool isWord = item.type == _CollectionType.word;
     final IconData icon = isBookmark
         ? Icons.bookmark_outline
         : isMined
             ? Icons.style_outlined
-            : Icons.format_quote_outlined;
+            : isWord
+                ? Icons.star_outline
+                : Icons.format_quote_outlined;
     final String typeLabel = isBookmark
         ? t.collection_bookmark
         : isMined
             ? t.collection_mined
-            : t.collection_sentence;
+            : isWord
+                ? t.collection_word
+                : t.collection_sentence;
 
     final String title;
     final String? subtitle;
 
     final bool isVideoSentence =
-        !isBookmark && item.source == kFavoriteSentenceSourceVideo;
+        !isBookmark && !isWord && item.source == kFavoriteSentenceSourceVideo;
 
     if (isBookmark) {
       title = item.label ?? '';
       subtitle = item.bookTitle;
+    } else if (isWord) {
+      // BUG-462：收藏词标题=词形，副标题=读音 · 释义（无原文定位，不显示书名/章节）。
+      title = item.text ?? '';
+      subtitle = [
+        if (item.wordReading != null && item.wordReading!.isNotEmpty)
+          item.wordReading,
+        item.chapterLabel,
+      ].where((s) => s != null && s.isNotEmpty).join(' · ');
     } else {
       title = item.text ?? '';
       subtitle = [
@@ -1037,7 +1089,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'
         : isMined
             ? 'mined_${item.minedId}'
-            : 'fav_${item.favoriteId}';
+            : isWord
+                ? 'word_${item.text}_${item.wordReading}_${item.wordSourceType}'
+                : 'fav_${item.favoriteId}';
 
     return Dismissible(
       key: Key(key),

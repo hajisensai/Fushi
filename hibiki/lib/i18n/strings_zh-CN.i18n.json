@@ -1991,5 +1991,6 @@
   "word_favorite_removed": "已取消收藏该词",
   "data_storage_migrate_overlay_title": "正在迁移数据",
   "data_storage_migrate_overlay_warning": "正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。",
-  "data_storage_migrate_overlay_progress": "正在复制文件：$copied / $total"
+  "data_storage_migrate_overlay_progress": "正在复制文件：$copied / $total",
+  "collection_word": "单词"
 }

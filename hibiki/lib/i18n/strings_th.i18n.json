@@ -1991,5 +1991,6 @@
   "word_favorite_removed": "Word removed from favorites",
   "data_storage_migrate_overlay_title": "Moving your data",
   "data_storage_migrate_overlay_warning": "Please keep the app open. Do not close or shut down your computer until it finishes.",
-  "data_storage_migrate_overlay_progress": "Copying files: $copied / $total"
+  "data_storage_migrate_overlay_progress": "Copying files: $copied / $total",
+  "collection_word": "Word"
 }
