@@ -45,7 +45,48 @@ AudioPlaybackRange? miningSentenceAudioRange({
   if (baseRange == null) {
     return null;
   }
-  return _shiftRange(baseRange, delayMs);
+  // TODO-1009 / BUG-475: same-chapter selections on coarse-aligned audio
+  // (TextToEpub + post-attached audio, or alignment miss) can resolve to a
+  // zero-duration cue (`endMs == startMs`) or a merge of such cues. Every
+  // cue-relative path above copies the cue's raw start/end, so the merged range
+  // stays degenerate -- only [_cueRange] floored it. A degenerate range then
+  // trips `classifyAudiobookClipSelection` (`endMs <= startMs`) and the user
+  // sees the misleading cross-chapter/cross-file toast for a perfectly
+  // in-chapter selection. Repair the range here (single chokepoint) to a
+  // positive duration before shifting: extend to the next same-file cue's start
+  // (the implied playback length) and floor to +1ms. This keeps the same
+  // audioFileIndex -- never fabricates a cross-file/cross-chapter range -- so
+  // genuinely cross-file selections still fall through to the caller's
+  // single-file/null routing untouched.
+  return _shiftRange(_ensurePositiveDuration(baseRange, cues), delayMs);
+}
+
+/// Guarantees [range].endMs > [range].startMs. A zero/negative-duration range
+/// comes from cues whose own `startMs == endMs` (coarse alignment). Extend the
+/// end to the start of the next cue in the SAME file (the implied duration); if
+/// none, floor to startMs + 1 so ffmpeg gets a non-empty window. Never changes
+/// audioFileIndex.
+AudioPlaybackRange _ensurePositiveDuration(
+  AudioPlaybackRange range,
+  List<AudioCue> cues,
+) {
+  if (range.endMs > range.startMs) {
+    return range;
+  }
+  int repairedEnd = range.startMs + 1;
+  for (final AudioCue cue in cues) {
+    if (cue.audioFileIndex != range.audioFileIndex) continue;
+    // The next cue boundary strictly after our start bounds the clip duration.
+    if (cue.startMs > range.startMs && cue.startMs > repairedEnd) {
+      repairedEnd = cue.startMs;
+      break;
+    }
+  }
+  return AudioPlaybackRange(
+    audioFileIndex: range.audioFileIndex,
+    startMs: range.startMs,
+    endMs: repairedEnd,
+  );
 }
 
 AudioPlaybackRange? _rangeFromSentencePosition({

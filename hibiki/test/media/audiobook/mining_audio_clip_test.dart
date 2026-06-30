@@ -381,6 +381,74 @@ void main() {
 
       expect(clip, isNull);
     });
+
+    // TODO-1009 / BUG-475: same-chapter selection on coarse-aligned audio
+    // (TextToEpub + post-attached audio, alignment miss) where the matched
+    // cue is zero-duration (startMs == endMs). Every cue-relative path copies
+    // the cue's raw start/end, so the range came back degenerate
+    // (endMs <= startMs) -> classifyAudiobookClipSelection labelled it
+    // `unsupportedRange` -> user saw the misleading cross-chapter/cross-file
+    // toast for a perfectly in-chapter selection. The range must be repaired to
+    // a positive duration, never returned degenerate. Reverting
+    // _ensurePositiveDuration turns this red.
+    test('repairs a zero-duration single cue to a positive same-file range',
+        () {
+      final AudioCue cue = _cue(
+        startMs: 5000,
+        endMs: 5000,
+        text: '僕は学校へ行った',
+        textFragmentId: '[data-cue-id="0"]',
+      );
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: <AudioCue>[cue],
+        cue: cue,
+        sentence: '僕は学校へ行った',
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.audioFileIndex, 0);
+      // Same file, positive duration -> exportable, NOT a cross-chapter reject.
+      expect(clip.endMs, greaterThan(clip.startMs));
+    });
+
+    // TODO-1009: when the degenerate range has a following same-file cue, the
+    // repair extends the end to that next cue's start (the implied playback
+    // length), not just a hard +1ms floor.
+    test('repaired degenerate range extends to the next same-file cue start',
+        () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 5000,
+          endMs: 5000,
+          text: '僕は',
+          textFragmentId: '[data-cue-id="0"]',
+        ),
+        _cue(
+          startMs: 5000,
+          endMs: 5000,
+          text: '学校へ行った',
+          textFragmentId: '[data-cue-id="1"]',
+        ),
+        // Next cue boundary on the same file at 7000ms bounds the clip length.
+        _cue(
+          startMs: 7000,
+          endMs: 8000,
+          text: '次の文',
+          textFragmentId: '[data-cue-id="2"]',
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[0],
+        sentence: '僕は学校へ行った',
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 5000);
+      expect(clip.endMs, 7000);
+    });
   });
 }
 
