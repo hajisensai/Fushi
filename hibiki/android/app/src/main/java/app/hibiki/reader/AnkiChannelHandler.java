@@ -237,6 +237,12 @@ public class AnkiChannelHandler {
                             break;
                         }
                         File file = new File(filename);
+                        // TODO-1012 / BUG-474: filename 多来自 Dart 的
+                        // Directory.systemTemp/anki-media（Android = code_cache）。FileProvider
+                        // 的 provider_paths.xml 必须声明覆盖 code_cache 的根（<files-path
+                        // path="../code_cache">），否则 getUriForFile 抛
+                        // IllegalArgumentException「Failed to find configured root」，SVG 外字
+                        // 制卡断裂。
                         Uri fileUri = FileProvider.getUriForFile(
                             activity, BuildConfig.APPLICATION_ID + ".provider", file);
                         activity.grantUriPermission("com.ichi2.anki", fileUri,

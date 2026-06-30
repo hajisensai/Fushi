@@ -15,4 +15,15 @@
   <files-path
       name="files"
       path="." />
+  <!-- TODO-1012 / BUG: Dart 的 `Directory.systemTemp` 在 Android 上解析到
+       `/data/data/<pkg>/code_cache`（JVM `java.io.tmpdir`），制卡时词典 SVG 外字媒体
+       写到 `code_cache/anki-media/`。AndroidX core 1.13.1 的 FileProvider 没有
+       `code-cache-path` 标签（仅 root/files/cache/external*），故 `getUriForFile`
+       对 code_cache 下文件抛 IllegalArgumentException「Failed to find configured root」。
+       用 files-path 的相对 `../code_cache`：FileProvider 在 addRoot 时对
+       `getFilesDir()/../code_cache` 取 getCanonicalFile() → 规范化成
+       `/data/data/<pkg>/code_cache`，精确覆盖该根（不暴露整个设备根 root-path）。 -->
+  <files-path
+      name="code_cache"
+      path="../code_cache" />
 </paths>
