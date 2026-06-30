@@ -2537,6 +2537,33 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _selectTextAt(local.dx, local.dy, fromHover: true);
   }
 
+  // ── Tap dismiss barrier → 连续查词（TODO-1027）─────────
+
+  /// TODO-1027：点查词弹窗矩形外的正文（dismiss barrier）。barrier 叠在阅读器
+  /// WebView 之上（buildDictionary 在 _buildWebView 之后），旧行为 onTap=只关整栈，
+  /// tap 到不了底下 WebView，点新词必须再点一次才查——查词被关窗逻辑堵塞。
+  /// 改为用 WebView 自己的 RenderBox 把全局指针位置逆映成 WebView 局部（CSS）坐标，
+  /// 与 onDismissBarrierHover / 正常 onShiftHover 口径一致，转给真点击路径的 [_selectTextAt]
+  /// （fromHover:false）：
+  ///   • 命中词 → onTextSelected → _handleTextSelected → _runLookupAndHighlight（内部
+  ///     prunePopupStack(0) 保留热槽，旧窗无缝换新窗，BUG-092/093/095 不回归）；
+  ///   • 命中真空白 → JS fire onTapEmpty，有可见弹窗时在那里 clearDictionaryResult 关栈
+  ///     （并由 onAllPopupsDismissed 触发续播BUG-072）。
+  /// RenderBox 不可用时（不应发生：barrier 在屏说明 WebView 也在树上）退回默认清栈。
+  @override
+  void onDismissBarrierTap(Offset globalPos) {
+    final RenderObject? obj = _webViewKey.currentContext?.findRenderObject();
+    if (obj is! RenderBox || !obj.attached || !obj.hasSize) {
+      // WebView 不可用：退回默认「点空白关栈」。
+      clearDictionaryResult();
+      return;
+    }
+    // 与 onDismissBarrierHover 同口径：逻辑像素与 CSS 像素同尺度，不乘 DPR。
+    final Offset local = obj.globalToLocal(globalPos);
+    // 真点击路径（fromHover:false）：命中词走查词，命中空白 fire onTapEmpty。
+    _selectTextAt(local.dx, local.dy);
+  }
+
   // ── Reader chrome helpers kept in the shell ─────────────────────────
   // `_colorToCssRgba` / `_toDouble` stay here because their other call sites
   // live in the still-in-shell WebView region; the rest of the reader chrome

@@ -1196,7 +1196,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             'debugCaptureWebView already set — a previous reader did not '
             'clear it on dispose, or two readers are live at once.',
           );
-          ReaderHibikiPage.debugCaptureWebView = () => controller.takeScreenshot();
+          ReaderHibikiPage.debugCaptureWebView =
+              () => controller.takeScreenshot();
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
           ReaderHibikiPage.debugEvaluateTopPopup =
               (String source) async => _webviewTopPopupState?.debugEval(source);
@@ -1309,6 +1310,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (_) {
+            // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
+            // 真点击命中空白（onDismissBarrierTap → _selectTextAt 命中真空白才 fire）。
+            // 此时按 barrier 旧语义清整栈（clearDictionaryResult → onAllPopupsDismissed
+            // 续播 BUG-072 / 保留热槽 BUG-092），不走下面的隐藏控制栏分支。命中词的
+            // 情形不会到这里（走 onTextSelected）。无弹窗时（正常正文点空白）维持旧行为。
+            if (isDictionaryShown) {
+              clearDictionaryResult();
+              return;
+            }
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
