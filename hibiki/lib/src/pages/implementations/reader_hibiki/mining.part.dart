@@ -80,11 +80,15 @@ extension _ReaderMining on _ReaderHibikiPageState {
         final File inputFile = audioFiles[clip.audioFileIndex];
         sasayakiTempDir =
             Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
+        // 句子音频输出 `.aac`（adts 容器）。桌面捆绑的 ffmpeg-min 是
+        // `--disable-everything` 极简构建，muxer 白名单只有 adts 没有 mp4/ipod/m4a
+        // （BUG-460：写 `.m4a` 会让桌面 ffmpeg exit -22 EINVAL）。adts 是全平台唯一
+        // 都能 mux 的音频容器，故输出后缀全平台统一保持 `.aac`，不改。
         final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
         requestedSentenceAudioClip = true;
-        // TODO-757 压缩开关：仅桌面 ffmpeg 回退路径吃压缩档（默认单声道 64k=现状；
-        // 关闭压缩走立体声 128k）。Android 句子音频走原生无损 re-mux，extractAudioSegment
-        // 的 _isSupported 分支忽略这俩参数，开关对它天然无效。
+        // TODO-757 压缩开关：默认压缩档（单声道 64k=现状），关闭压缩走立体声 128k。
+        // TODO-970：句子音频已全平台统一走 ffmpeg（extractAudioSegment 不再有 Android
+        // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃压缩开关。
         final MiningMediaCompression mediaCompression =
             MiningMediaCompression.forCompressionEnabled(
           appModel.compressMiningMedia,
