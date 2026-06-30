@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -184,6 +185,65 @@ void main() {
       expect(result?.status, WindowsUpdateHandoffStatus.installed);
       expect(result?.record.targetVersion, '1.2.3');
       expect(await marker.exists(), isFalse);
+    });
+
+    test('a successful reconcile records the prompted app version', () async {
+      final File marker = await _markerFile();
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.2.3',
+        installerPath: r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
+        innoLogPath: r'C:\tmp\hibiki-1.2.3.install.log',
+        startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+      );
+      await WindowsUpdateHandoff.markLaunchSucceeded(
+        markerFile: marker,
+        installerPid: 4242,
+        launchedAt: DateTime.utc(2026, 6, 17, 10, 31),
+      );
+
+      final WindowsUpdateHandoffResult? result =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: marker,
+        currentVersion: '1.2.3',
+        now: DateTime.utc(2026, 6, 17, 10, 32),
+      );
+
+      expect(result?.status, WindowsUpdateHandoffStatus.installed);
+      expect(result?.record.lastPromptedAppVersion, '1.2.3');
+    });
+
+    test(
+        'does not pop the success dialog on every startup when the marker '
+        'survives (delete failed last time)', () async {
+      // Reproduces TODO-1035 / BUG-483: on real machines the updates dir marker
+      // can fail to delete (antivirus/indexer lock, permission error) and that
+      // failure is swallowed. The marker then persists with lastPromptedAppVersion
+      // already set to the current version, and reconcile must stay silent.
+      final File marker = await _markerFile();
+      final WindowsUpdateHandoffRecord persisted =
+          WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+        'targetVersion': '1.2.3',
+        'installerPath': r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
+        'innoLogPath': r'C:\tmp\hibiki-1.2.3.install.log',
+        'startedAt': '2026-06-17T10:30:00Z',
+        'installerLaunchSucceeded': true,
+        'lastPromptedAppVersion': '1.2.3',
+      });
+      await marker.parent.create(recursive: true);
+      await marker.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(persisted.toJson()),
+        flush: true,
+      );
+
+      final WindowsUpdateHandoffResult? result =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: marker,
+        currentVersion: '1.2.3',
+        now: DateTime.utc(2026, 6, 17, 10, 32),
+      );
+
+      expect(result, isNull, reason: 'do not pop on every startup');
     });
 
     test('reports an incomplete install once and keeps the log marker',

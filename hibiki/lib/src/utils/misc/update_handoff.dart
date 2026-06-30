@@ -573,6 +573,32 @@ abstract final class WindowsUpdateHandoff {
     final WindowsUpdateHandoffRecord? record = await read(markerFile);
     if (record == null) return null;
     if (_isVersionAtLeast(currentVersion, record.targetVersion)) {
+      // Idempotency guard mirroring the failure branch below: if we already
+      // surfaced the success dialog for this app version, stay silent. Relying
+      // solely on deleting the marker is fragile — the delete can fail on real
+      // machines (antivirus/indexer locks, permission errors in the updates
+      // dir) and is swallowed by the catch, leaving the marker in place so the
+      // success dialog pops on every startup (TODO-1035 / BUG-483).
+      if (record.lastPromptedAppVersion == currentVersion) {
+        // Best-effort cleanup is still worth retrying in case the lock cleared.
+        try {
+          if (await markerFile.exists()) await markerFile.delete();
+        } catch (_) {
+          // Ignore: the guard above already prevents a repeat dialog.
+        }
+        return null;
+      }
+      // Persist the prompted version *before* attempting deletion so that even
+      // if the delete fails, the next startup is silenced by the guard above.
+      final WindowsUpdateHandoffRecord prompted = record.copyWith(
+        lastPromptedAppVersion: currentVersion,
+        lastPromptedAt: now ?? DateTime.now(),
+      );
+      try {
+        await _write(markerFile, prompted);
+      } catch (_) {
+        // Keep going: the user still deserves the success result.
+      }
       try {
         if (await markerFile.exists()) await markerFile.delete();
       } catch (_) {
@@ -580,7 +606,7 @@ abstract final class WindowsUpdateHandoff {
       }
       return WindowsUpdateHandoffResult(
         status: WindowsUpdateHandoffStatus.installed,
-        record: record,
+        record: prompted,
       );
     }
 

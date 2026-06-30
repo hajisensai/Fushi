@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 468 条。点号进各自文件。
+> 共 469 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-483](bugs/BUG-483-handoff-success-idempotent.md) | ✅ | ✅ | Windows 每次启动弹出已更新至 xxx 对话框 |
 | [BUG-482](bugs/BUG-482-popup-close-blocks-continuous-lookup.md) | ✅ | ✅ | 查词框关闭逻辑堵塞连续查词 |
 | [BUG-481](bugs/BUG-481-dblclick-native-select-hijack.md) | ✅ | ✅ | 阅读器双击原生框选打扰查词 |
 | [BUG-480](bugs/BUG-480-update-channel-mixing.md) | ✅ | ✅ | 更新渠道混推：稳定版收到调试/测试版同基版本推送 + 同基跨通道未当成同版本 |
