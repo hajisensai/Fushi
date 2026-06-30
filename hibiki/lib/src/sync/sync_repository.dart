@@ -7,20 +7,37 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// 触达一台 Hibiki 同步服务器的一个候选地址。同一台服务器通常可经多条路由
 /// 触达（局域网、外网），它们共享同一个 token，按列表顺序尝试、第一个可达者胜出。
 class HibikiClientUrl {
-  const HibikiClientUrl({required this.url, this.enabled = true});
+  const HibikiClientUrl({
+    required this.url,
+    this.enabled = true,
+    this.fingerprintSha256,
+    this.deviceName,
+  });
 
   final String url;
   final bool enabled;
 
+  /// https 端点的证书 SHA-256 指纹钉扎值（aa:bb:.. 形式）。null = 明文 http
+  /// 老路径不钉扎（向后兼容）；非 null = https 路径，client 用它做指纹钉扎。
+  /// M0 仅落地字段，钉扎接线在 M1。
+  final String? fingerprintSha256;
+
+  /// 对端展示名（M0 仅落地，UI/配对在 M1 使用）。
+  final String? deviceName;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'url': url,
         'enabled': enabled,
+        if (fingerprintSha256 != null) 'fingerprintSha256': fingerprintSha256,
+        if (deviceName != null) 'deviceName': deviceName,
       };
 
   factory HibikiClientUrl.fromJson(Map<String, dynamic> json) =>
       HibikiClientUrl(
         url: json['url'] as String,
         enabled: json['enabled'] as bool? ?? true,
+        fingerprintSha256: json['fingerprintSha256'] as String?,
+        deviceName: json['deviceName'] as String?,
       );
 }
 

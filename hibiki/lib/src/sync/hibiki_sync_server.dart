@@ -82,11 +82,13 @@ class HibikiSyncServer {
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
     HibikiLibraryHostService? libraryService,
+    SecurityContext? securityContext,
     DateTime Function()? now,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
+        _securityContext = securityContext,
         _remoteLookupService = remoteLookupService,
         _miningService = miningService,
         _historyService = historyService,
@@ -97,6 +99,10 @@ class HibikiSyncServer {
   final int _requestedPort;
   final String _token;
   final bool _allowLan;
+
+  /// 非 null 时 server 起 HTTPS（shelf 透传给 HttpServer.bindSecure）；null 时
+  /// 走明文 HTTP 老路径，行为零变化（TLS 默认关，Never break userspace）。
+  final SecurityContext? _securityContext;
   final HibikiRemoteLookupService? _remoteLookupService;
   final HibikiRemoteMiningService? _miningService;
   final HibikiRemoteHistoryService? _historyService;
@@ -147,6 +153,7 @@ class HibikiSyncServer {
         handler,
         _allowLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
         _requestedPort,
+        securityContext: _securityContext,
       );
     } on SocketException catch (e) {
       if (isAddressInUseError(e)) {

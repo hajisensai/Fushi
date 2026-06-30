@@ -9,6 +9,7 @@ environment:
 dependencies:
   archive: ^3.6.1
   async_zip: ^0.1.0
+  basic_utils: ^5.7.0
   audio_service: ^0.18.9
   audio_session: ^0.1.13
   beautiful_soup_dart: ^0.3.0
