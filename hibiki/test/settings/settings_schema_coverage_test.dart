@@ -149,8 +149,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
-  'reading/Tap empty area to hide controls':
-      'DEVICE: WebView onTapEmpty chrome',
+  // TODO-1029：开关显示名改为「悬浮控制栏」(en: 'Floating control bar')，覆盖 map
+  // 的 key 按渲染英文标签命名，故同步改名。生效=WebView onTapEmpty 收 chrome（设备）
+  // + TODO-975 决策#3 底栏切悬浮模式（reader_chrome_floating_test 覆盖）。
+  'reading/Floating control bar':
+      'DEVICE: WebView onTapEmpty chrome + test/reader/reader_chrome_floating_test.dart',
   // TODO-727: 顶部「阅读进度」百分比指示的显隐开关。生效点在 reader 页 _showTopProgress
   // getter 末尾的 && ReaderHibikiSource.showTopProgressBar 与门（WebView 阅读器顶栏 Text
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。

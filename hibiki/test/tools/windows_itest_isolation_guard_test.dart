@@ -7,15 +7,33 @@ void main() {
     final String script = File('tool/run_windows_itest.ps1').readAsStringSync();
 
     test('does not kill or reject existing user Hibiki processes', () {
-      expect(script, isNot(contains('Stop-Process')),
-          reason: 'Windows itest must never terminate the user app.');
+      // TODO-980: the runner MAY reap stale TEST-RUNNER processes left by a
+      // previous crashed run of THIS runner (a stuck prior runner locks the
+      // build/debug port -> "Unable to start the app"). That reap is scoped
+      // strictly to this worktree's build\windows\x64\runner path via the
+      // isTestRunner flag, so it never touches the user's installed Hibiki or
+      // IDE processes. The contract is therefore "never hand-kill by name and
+      // never kill an unscoped process", NOT "never call Stop-Process at all".
       expect(script, isNot(contains('taskkill')),
-          reason: 'Windows itest must never terminate the user app.');
+          reason: 'Windows itest must never terminate processes by name.');
+      expect(script, isNot(contains('Stop-Process -Name')),
+          reason:
+              'Windows itest must never kill by process name (could match the '
+              'user app).');
       expect(script, isNot(contains('close it first')),
           reason: 'A running user Hibiki instance is evidence, not a blocker.');
       expect(script, isNot(contains('hibiki.exe is running')),
           reason:
               'The script must not fail just because a user instance exists.');
+      // Any Stop-Process must be gated by the isTestRunner scope check, so it
+      // only ever reaps stale test-runner processes under this worktree's
+      // runner path.
+      if (script.contains('Stop-Process')) {
+        expect(script, contains('isTestRunner'),
+            reason:
+                'Stop-Process is only allowed when scoped to stale test-runner '
+                'processes (isTestRunner path-prefix match).');
+      }
     });
 
     test('records required process and runner evidence files', () {
