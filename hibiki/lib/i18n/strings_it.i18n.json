@@ -2021,5 +2021,7 @@
   "sync_pair_fingerprint_changed": "Certificate changed — pairing aborted for safety (possible interception).",
   "sync_pair_not_hibiki": "No Hibiki device found at this address. The address was saved.",
   "sync_pair_pairing": "Pairing…",
-  "sync_pair_confirm_identity_body": "You are pairing with $device. Confirm this is the device you expect before continuing."
+  "sync_pair_confirm_identity_body": "You are pairing with $device. Confirm this is the device you expect before continuing.",
+  "local_audio_reference_original": "Reference original file (don't copy)",
+  "local_audio_reference_original_desc": "Keep the database where it is and read from its original path; the source breaks if the file is moved or deleted."
 }

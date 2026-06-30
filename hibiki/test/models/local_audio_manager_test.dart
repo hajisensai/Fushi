@@ -180,6 +180,70 @@ void main() {
     expect(leftover, isEmpty);
   });
 
+  // BUG-483：引用模式（仅桌面）不复制，entry.path 直接指向用户原文件，不在 AppData
+  // 库目录留任何副本。
+  test(
+      'importFile reference=true does NOT copy and points at the original path '
+      '(BUG-483)', () async {
+    final Directory src = await Directory.systemTemp.createTemp('src_ref');
+    final File source = File('${src.path}/nhk.db');
+    await source.writeAsString('sqlite-bytes');
+
+    final LocalAudioDbEntry entry = await manager.importFile(
+      source.path,
+      displayName: 'nhk',
+      reference: true,
+    );
+
+    expect(entry.path, source.path); // 直接引用原路径，不重命名
+    expect(entry.path.startsWith(directory.path), isFalse); // 不在库目录
+    expect(directory.listSync(), isEmpty); // 库目录里没有任何复制副本
+    expect(source.existsSync(), isTrue); // 原文件原封不动
+    expect(entry.enabled, isTrue);
+    await src.delete(recursive: true);
+  });
+
+  // 引用模式仍要校验源文件存在（不能假成功，沿用 BUG-446 不变量）。
+  test(
+      'importFile reference=true still throws when the source is missing '
+      '(BUG-483)', () async {
+    expect(
+      () => manager.importFile('/no/such/ref.db',
+          displayName: 'x', reference: true),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(directory.listSync(), isEmpty);
+  });
+
+  // BUG-483 安全：移除一个引用条目绝不删用户原文件（路径在库目录之外）。
+  test('remove does NOT delete a referenced external file (BUG-483)', () async {
+    final Directory ext = await Directory.systemTemp.createTemp('ext_ref');
+    final File original = File('${ext.path}/ref.db')..writeAsStringSync('keep');
+
+    await manager.setEntries(<LocalAudioDbEntry>[
+      LocalAudioDbEntry(path: original.path, displayName: 'ref', enabled: true),
+    ]);
+    await manager.remove(0);
+
+    expect(manager.entries, isEmpty); // 条目已移除
+    expect(original.existsSync(), isTrue); // 但用户原文件绝不被删
+    await ext.delete(recursive: true);
+  });
+
+  // BUG-483 安全：pruneOrphans 只回收库目录内的内部副本，外部引用路径天然不在
+  // 遍历范围内、绝不被删（即便它没出现在 keepPaths 里）。
+  test('pruneOrphans never touches external referenced files (BUG-483)',
+      () async {
+    final Directory ext = await Directory.systemTemp.createTemp('ext_prune');
+    final File external = File('${ext.path}/ref.db')..writeAsStringSync('safe');
+
+    // keepPaths 故意不含外部路径，证明安全靠「目录边界」而非「被引用名单」。
+    await manager.pruneOrphans(const <String>[]);
+
+    expect(external.existsSync(), isTrue);
+    await ext.delete(recursive: true);
+  });
+
   test('deleteFiles removes db + wal + shm', () async {
     final File dbf = File('${directory.path}/x.db')..writeAsStringSync('a');
     final File wal = File('${directory.path}/x.db-wal')..writeAsStringSync('b');
