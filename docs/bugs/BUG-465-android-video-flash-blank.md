@@ -1,4 +1,4 @@
-## BUG-460 · Android video flashes then shows blank (no picture)
+## BUG-465 · Android video flashes then shows blank (no picture)
 - **报告**：2026-06-30（用户）
 - **真实性**：⚠️ Android 现场问题·待用户日志（本端无法复现：Windows/Mac 无 realme8/Android11 HEVC 硬解环境）。
 - **现象**：realme 8 / Android 11 打开某视频（样本 nyaa 2126641 [NanakoRaws] Wistoria S02E12，AT-X 1920x1080 **HEVC(H.265)** raw）只闪烁、无画面、空白；其他 app（manatan/chimahon）播同一文件正常。用户实测：① 设置切到 mpv 后端/profile 后闪烁减轻但仍黑屏空白；② **关掉画质增强（着色器超分）后不再闪烁，但视频依旧黑屏空白**。

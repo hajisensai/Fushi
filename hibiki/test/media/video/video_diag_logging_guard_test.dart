@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码扫描守卫（BUG-460 / TODO-984）：Android「闪烁 + 空白无画面」现场诊断日志点
+/// 源码扫描守卫（BUG-465 / TODO-984）：Android「闪烁 + 空白无画面」现场诊断日志点
 /// 必须长期保留，让用户复现后能上传 `[VIDEO-DIAG]` 日志据其分层定位根因（解码层 vs
 /// 渲染层）。无法对 libmpv 真实播放做单测（测试宿主无 libmpv，`new Player()` 即抛），
 /// 故守卫诊断仪表化不被后续重构静默删除——这是此现场诊断改动可落地的最强测试层。
