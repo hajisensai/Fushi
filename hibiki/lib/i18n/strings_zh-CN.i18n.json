@@ -2024,5 +2024,7 @@
   "sync_pair_confirm_identity_body": "你正在与 $device 配对。继续前请确认这是你预期的设备。",
   "local_audio_reference_original": "引用原文件（不复制）",
   "local_audio_reference_original_desc": "数据库保留在原位置、按原路径读取；原文件被移动或删除后该来源会失效。",
-  "anki_card_action_failed": "卡片操作失败，请重试。"
+  "anki_card_action_failed": "卡片操作失败，请重试。",
+  "series_merged_hint": "已合并·可在系列详情重命名",
+  "series_default_name": "新系列"
 }

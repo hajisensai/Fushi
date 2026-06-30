@@ -421,11 +421,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 书架是独立分区且归视频 tab 管，不纳入本页（在视频库页单独排序）。
   Future<void> _openShelfSort() async {
     if (_selectionMode) _exitSelectionMode();
+    // TODO-947-② PR2：从已加载的 ShelfEntries 组一份 `mediaType|entryKey → seriesId`
+    // 归属映射，填进每个可重排条目，让重排页能判定拖合并语义（建新系列 / 并入已有系列）。
+    final Map<String, int?> seriesByEntry = <String, int?>{
+      for (final ShelfEntryRow r in _allShelfEntries)
+        '${r.mediaType}|${r.entryKey}': r.seriesId,
+    };
     final List<ShelfReorderItem> items = <ShelfReorderItem>[];
     for (final SrtBook book in _visibleSrtBooks) {
       items.add(ShelfReorderItem(
         mediaType: 'srt',
         entryKey: book.uid,
+        seriesId: seriesByEntry['srt|${book.uid}'],
         card: _buildSrtCard(
           book,
           epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
@@ -438,6 +445,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       items.add(ShelfReorderItem(
         mediaType: 'epub',
         entryKey: bookKey,
+        seriesId: seriesByEntry['epub|$bookKey'],
         card: buildMediaItem(item),
       ));
     }
@@ -455,9 +463,39 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           childAspectRatio: kShelfBookCardAspectRatio,
           feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
           onPersist: _persistShelfOrder,
+          onMerge: _mergeShelfEntries,
         ),
       ),
     );
+    // 重排页可能拖合并写过系列归属，回到书架后重载分组渲染（系列卡折叠）。
+    _shelfOrderFuture = _loadShelfOrder();
+    if (mounted) _rebuild(() {});
+  }
+
+  /// TODO-947-② PR2：把被拖条目 [dragged] 合并进目标条目 [target]。复用既有 Series
+  /// DB 原语（零新表零 schema），按目标当前归属决定建新系列还是并入已有系列：
+  /// - 目标已属某系列：单次 [setSeriesForEntry] 把 [dragged] 也并入该系列。
+  /// - 目标是散书：[createSeries]（默认名）+ 两次 [setSeriesForEntry]（[dragged] 与
+  ///   [target] 都入新系列）。
+  /// 返回合并后两条目应归属的系列 id（重排页据此即时更新本地 seriesId 并提示）；不
+  /// 满足合并前置（目标已是被拖条目所在系列）返回 null（重排页的 _canMergeInto 已先拦）。
+  Future<int?> _mergeShelfEntries(
+      ShelfReorderItem dragged, ShelfReorderItem target) async {
+    final int? targetSeries = target.seriesId;
+    if (targetSeries != null) {
+      if (dragged.seriesId == targetSeries) return null;
+      await appModel.database
+          .setSeriesForEntry(dragged.mediaType, dragged.entryKey, targetSeries);
+      return targetSeries;
+    }
+    // 目标是散书：建新系列，把目标与被拖条目都并入。
+    final int seriesId =
+        await appModel.database.createSeries(t.series_default_name);
+    await appModel.database
+        .setSeriesForEntry(target.mediaType, target.entryKey, seriesId);
+    await appModel.database
+        .setSeriesForEntry(dragged.mediaType, dragged.entryKey, seriesId);
+    return seriesId;
   }
 
   /// 把重排页给回的最终顺序按下标批量回写 ShelfEntries.sortOrder（单事务）。

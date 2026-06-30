@@ -2024,5 +2024,7 @@
   "sync_pair_confirm_identity_body": "You are pairing with $device. Confirm this is the device you expect before continuing.",
   "local_audio_reference_original": "Reference original file (don't copy)",
   "local_audio_reference_original_desc": "Keep the database where it is and read from its original path; the source breaks if the file is moved or deleted.",
-  "anki_card_action_failed": "Card action failed. Please try again."
+  "anki_card_action_failed": "Card action failed. Please try again.",
+  "series_merged_hint": "Merged · rename in series details",
+  "series_default_name": "New series"
 }
