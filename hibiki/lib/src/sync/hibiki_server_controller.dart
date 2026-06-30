@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -177,6 +179,19 @@ class HibikiSyncServerController extends ChangeNotifier {
       token = HibikiSyncServer.generateToken();
       await repo.setServerPassword(token);
     }
+    // TODO-961 M1: 仅当用户显式开启 TLS 时，加载（必要时生成）自签证书身份并起
+    // HTTPS。默认关 → securityContext/hostFingerprint 均 null → 明文 HTTP 老路径，
+    // 行为零变化（Never break userspace）。指纹随配对响应回传供 client TOFU 钉扎。
+    SecurityContext? securityContext;
+    String? hostFingerprint;
+    if (await repo.getServerTlsEnabled()) {
+      final HibikiTlsIdentity identity =
+          await HibikiTlsIdentityStore(dataDir: _syncDataDir()).loadOrCreate();
+      securityContext = SecurityContext()
+        ..useCertificateChainBytes(utf8.encode(identity.certificatePem))
+        ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem));
+      hostFingerprint = identity.fingerprintSha256;
+    }
     final HibikiSyncServer server = HibikiSyncServer(
       syncDataDir: _syncDataDir(),
       port: port,
@@ -186,6 +201,9 @@ class HibikiSyncServerController extends ChangeNotifier {
       miningService: _miningServiceFactory?.call(),
       historyService: _historyServiceFactory?.call(),
       libraryService: _libraryServiceFactory?.call(),
+      securityContext: securityContext,
+      hostFingerprint: hostFingerprint,
+      deviceName: _deviceName(),
     )
       ..onPairRequest = _promptPairApproval
       // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。

@@ -1998,5 +1998,16 @@
   "video_import_webpage_url_warning_title": "网页地址，不是视频直链",
   "video_import_webpage_url_warning_body": "这是网页地址（如 YouTube/Netflix），不是直接的视频流（.m3u8/.mp4/直链）。Hibiki 暂不支持解析网页视频，请提供直链。你仍可强行尝试。",
   "video_import_webpage_url_try_anyway": "仍要尝试",
-  "sync_pair_pin_label": "在另一台设备上输入此 PIN"
+  "sync_pair_pin_label": "在另一台设备上输入此 PIN",
+  "sync_pair_probing": "正在检查设备…",
+  "sync_pair_confirm_identity_title": "确认设备",
+  "sync_pair_fingerprint_label": "证书指纹",
+  "sync_pair_enter_pin_title": "输入 PIN",
+  "sync_pair_enter_pin_body": "输入另一台设备屏幕上显示的 6 位 PIN。",
+  "sync_pair_continue": "继续",
+  "sync_pair_pin_wrong": "PIN 错误，请重试",
+  "sync_pair_fingerprint_changed": "证书已变更，为安全起见已中止配对（可能存在中间人攻击）。",
+  "sync_pair_not_hibiki": "此地址未找到 Hibiki 设备，已保存该地址。",
+  "sync_pair_pairing": "正在配对…",
+  "sync_pair_confirm_identity_body": "你正在与 $device 配对。继续前请确认这是你预期的设备。"
 }

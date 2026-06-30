@@ -170,6 +170,101 @@ void main() {
       expect(result, hasLength(1));
       expect(await repo.getHibikiClientUrls(), hasLength(1));
     });
+
+    // ── TODO-961 M1: TOFU 指纹记录器 ────────────────────────────────────
+    test('addHibikiClientUrl 新增 https 条目即带指纹与展示名（创建即钉扎）', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      final List<HibikiClientUrl> result = await repo.addHibikiClientUrl(
+        'https://host:38765',
+        fingerprint: 'aa:bb:cc',
+        deviceName: 'Hibiki · mac',
+      );
+
+      expect(result, hasLength(1));
+      expect(result.first.fingerprintSha256, 'aa:bb:cc');
+      expect(result.first.deviceName, 'Hibiki · mac');
+      // 落盘后回读一致。
+      final List<HibikiClientUrl> reread = await repo.getHibikiClientUrls();
+      expect(reread.first.fingerprintSha256, 'aa:bb:cc');
+    });
+
+    test('addHibikiClientUrl 指纹相同时幂等（不变更，含大小写/冒号归一化）', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      await repo.addHibikiClientUrl('https://host:38765',
+          fingerprint: 'aa:bb:cc');
+      // 同一指纹换大小写 + 去冒号：归一化后相等，不应抛、不应改。
+      final List<HibikiClientUrl> result = await repo
+          .addHibikiClientUrl('https://host:38765', fingerprint: 'AABBCC');
+
+      expect(result, hasLength(1));
+      expect(result.first.fingerprintSha256, 'aa:bb:cc'); // 保留原存值。
+    });
+
+    test('addHibikiClientUrl 把明文老条目首次升级为 https 指纹（storedFp 空允许写入）', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      await repo.setHibikiClientUrls(
+          const <HibikiClientUrl>[HibikiClientUrl(url: 'https://host:38765')]);
+
+      final List<HibikiClientUrl> result = await repo
+          .addHibikiClientUrl('https://host:38765', fingerprint: 'aa:bb:cc');
+
+      expect(result, hasLength(1));
+      expect(result.first.fingerprintSha256, 'aa:bb:cc');
+    });
+
+    test(
+        'addHibikiClientUrl 指纹变更必抛 HibikiFingerprintMismatchException 且不覆盖（MITM 守卫）',
+        () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      await repo.addHibikiClientUrl('https://host:38765',
+          fingerprint: 'aa:bb:cc');
+
+      // 同一 URL 再来一个 **不同** 指纹 → 拒绝并抛异常。
+      expect(
+        () => repo.addHibikiClientUrl('https://host:38765',
+            fingerprint: 'de:ad:be'),
+        throwsA(isA<HibikiFingerprintMismatchException>()),
+      );
+
+      // 已存指纹绝不被覆盖：仍是首记录值。
+      final List<HibikiClientUrl> reread = await repo.getHibikiClientUrls();
+      expect(reread, hasLength(1));
+      expect(reread.first.fingerprintSha256, 'aa:bb:cc');
+    });
+
+    test('addHibikiClientUrl 明文 http（无指纹）路径保持向后兼容', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      final List<HibikiClientUrl> result =
+          await repo.addHibikiClientUrl('http://lan:8765');
+
+      expect(result, hasLength(1));
+      expect(result.first.fingerprintSha256, isNull);
+    });
+
+    test('getServerTlsEnabled 默认 false，可持久化', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      expect(await repo.getServerTlsEnabled(), isFalse);
+      await repo.setServerTlsEnabled(true);
+      expect(await repo.getServerTlsEnabled(), isTrue);
+    });
   });
 
   group('audiobook position', () {
