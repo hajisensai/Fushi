@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug。TODO-975（reader chrome 悬浮化）引入的回归。
 - **[x] ① 已修复** — `hibiki/lib/src/pages/implementations/reader_hibiki/navigation.part.dart:749`（`_refreshProgress` 内顶部进度上升沿补推 inset）
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_top_progress_first_load_inset_guard_static_test.dart`（源码守卫）
-- **备注**：提交 `d8e29ac7afe6e32d2809c12dfc35006a4c250411`
+- **备注**：提交 `23fd57051c44bd0297e79a97b6a05d4c499a60d7`（分支 fix-975-top-inset-gap，integration 合并后哈希可能变）
 
 ### 根因（file:line）
 - `_readerTopOffset = _stableTopInset + _topProgressReserve`（`reader_hibiki_page.dart:1174`）。
