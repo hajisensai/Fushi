@@ -481,6 +481,11 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 当前粘贴的视频 URL 是否可播（http/https 直链）。空串/非法 scheme → false。
   bool get _streamUrlValid => isPlayableStreamUrl(_streamUrlController.text);
 
+  /// 当前粘贴的 URL 是否命中已知网页视频站（YouTube/Netflix 等）。命中时显示软警告
+  /// 并在点播放前弹「仍要尝试/取消」确认——不阻断、不按后缀硬拒（TODO-1000 part-A1）。
+  bool get _streamUrlIsWebPage =>
+      isKnownWebPageVideoUrl(_streamUrlController.text);
+
   /// 「播放流」（TODO-850 阶段①）：把粘贴的 URL + 可选字幕 URL + 可选防盗链 header
   /// 包成 [UrlStreamVideoClient] 喂进既有远端播放链（[VideoHibikiPage.neutralizedRemote]）。
   ///
@@ -488,7 +493,43 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 派生（同一 URL 稳定，断点 prefs 续看可对齐）。直接 push 远端播放页后 pop(null)——
   /// 调用方（home_video / 书架）把 null 当「无新增入库，不刷新书架」，既有 import 路径
   /// 行为不变（Never break userspace）。
-  void _playStreamUrl() {
+  /// 「播放流」入口：URL 命中已知网页视频站时先弹软警告确认（带「仍要尝试」逃生口），
+  /// 用户确认后或非网页站时直接走 [_playStreamUrlConfirmed]。不据域名硬拒。
+  Future<void> _playStreamUrl() async {
+    final String url = _streamUrlController.text.trim();
+    if (!isPlayableStreamUrl(url)) return;
+    if (isKnownWebPageVideoUrl(url)) {
+      final bool proceed = await _confirmWebPageUrl();
+      if (!proceed || !mounted) return;
+    }
+    _playStreamUrlConfirmed();
+  }
+
+  /// 网页视频站 URL 软警告确认框：标题 + 正文说明「网页地址非直链、Hibiki 暂不解析」，
+  /// 「取消」返回 false、「仍要尝试」返回 true（逃生口，避免误伤边缘合法情况）。
+  Future<bool> _confirmWebPageUrl() async {
+    final bool? proceed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_import_webpage_url_warning_title),
+        content: Text(t.video_import_webpage_url_warning_body),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.video_import_webpage_url_try_anyway),
+          ),
+        ],
+      ),
+    );
+    return proceed ?? false;
+  }
+
+  /// 实际把粘贴的流 URL 包成 [UrlStreamVideoClient] 喂进远端播放链（原 _playStreamUrl 主体）。
+  void _playStreamUrlConfirmed() {
     final String url = _streamUrlController.text.trim();
     if (!isPlayableStreamUrl(url)) return;
     final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
@@ -600,6 +641,30 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
                 t.video_import_stream_url_hint,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              // 网页视频站 URL 软警告内联条（TODO-1000 part-A1）：命中 YouTube/Netflix 等
+              // 网页地址时提示「非直链、暂不解析」；不禁用播放按钮，仅在点播时弹确认。
+              if (_streamUrlIsWebPage) ...<Widget>[
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        t.video_import_webpage_url_warning_body,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 controller: _streamSubtitleUrlController,

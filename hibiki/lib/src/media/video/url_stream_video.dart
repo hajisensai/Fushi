@@ -20,6 +20,59 @@ bool isPlayableStreamUrl(String url) {
   return uri.host.isNotEmpty;
 }
 
+/// 已知「网页视频站」域名白名单（TODO-1000 part-A1）：这些站点的 URL 指向 **HTML 播放页**
+/// 而非可直接 demux 的音视频流，libmpv 拿到 HTML 解不出轨 → duration 永不就绪 → 卡 loading /
+/// 黑屏，且 `player.open` 对 HTML 不抛 Dart 异常 → 用户拿不到任何错误提示。
+///
+/// 只用于**软警告**（提示用户「这是网页地址不是直链」），**绝不据此硬拒导入**——大量合法
+/// 直链没有扩展名（CDN 直链常无后缀），按后缀/格式拒会误杀。命中后仍给用户「仍要尝试」逃生口。
+///
+/// 命中规则：host 完全等于白名单条目，或以 `.<条目>` 结尾（覆盖 `www.` / `m.` 等子域）。
+/// 大小写不敏感，并剥掉末尾的 `.`（FQDN 写法）。纯字符串判定，不碰网络。
+const Set<String> kKnownWebPageVideoHosts = <String>{
+  'youtube.com',
+  'youtu.be',
+  'm.youtube.com',
+  'music.youtube.com',
+  'bilibili.com',
+  'b23.tv',
+  'netflix.com',
+  'nicovideo.jp',
+  'nico.ms',
+  'vimeo.com',
+  'dailymotion.com',
+  'dai.ly',
+  'twitch.tv',
+  'iqiyi.com',
+  'youku.com',
+  'v.qq.com',
+  'abema.tv',
+  'tver.jp',
+};
+
+/// 纯函数：判断 [uri] 的 host 是否命中已知网页视频站白名单（[kKnownWebPageVideoHosts]）。
+///
+/// host 为空直接 false。把 host 转小写并剥掉末尾 `.` 后，命中「完全相等」或「以
+/// `.<条目>` 结尾」（如 `www.youtube.com` / `m.youtube.com` 命中 `youtube.com`）。
+/// 用于导入路径的软警告判定（见 [kKnownWebPageVideoHosts]）。
+bool isKnownWebPageVideoHost(Uri uri) {
+  String host = uri.host.toLowerCase();
+  if (host.endsWith('.')) host = host.substring(0, host.length - 1);
+  if (host.isEmpty) return false;
+  for (final String known in kKnownWebPageVideoHosts) {
+    if (host == known || host.endsWith('.$known')) return true;
+  }
+  return false;
+}
+
+/// 纯函数：判断粘贴的 [url] 是否是已知网页视频站地址（解析 URI 后委托给
+/// [isKnownWebPageVideoHost]）。非法 URI / 空串 → false。供导入对话框软警告调用。
+bool isKnownWebPageVideoUrl(String url) {
+  final Uri? uri = Uri.tryParse(url.trim());
+  if (uri == null) return false;
+  return isKnownWebPageVideoHost(uri);
+}
+
 /// 纯函数：从粘贴的流 URL 派生稳定 bookUid：`video/stream/<sha1前12>`。
 ///
 /// 与 [externalVideoBookUid]（`video/ext/`）/ [singleVideoBookUid]（`video/`）/

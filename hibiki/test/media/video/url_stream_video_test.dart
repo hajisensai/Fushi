@@ -151,4 +151,80 @@ void main() {
       await c.putRemoteVideoPosition('id', 12345, 999, episodeIndex: 3);
     });
   });
+
+  group('isKnownWebPageVideoHost / isKnownWebPageVideoUrl (TODO-1000 A1)', () {
+    test('exact known hosts match', () {
+      for (final String h in <String>[
+        'youtube.com',
+        'youtu.be',
+        'netflix.com',
+        'bilibili.com',
+        'b23.tv',
+        'nicovideo.jp',
+        'vimeo.com',
+        'twitch.tv',
+        'abema.tv',
+      ]) {
+        expect(
+            isKnownWebPageVideoHost(Uri.parse('https://$h/watch?v=x')), isTrue,
+            reason: h);
+      }
+    });
+
+    test('subdomains match via .suffix rule', () {
+      expect(
+          isKnownWebPageVideoHost(Uri.parse('https://www.youtube.com/watch')),
+          isTrue);
+      expect(isKnownWebPageVideoHost(Uri.parse('https://m.youtube.com/watch')),
+          isTrue);
+      expect(isKnownWebPageVideoHost(Uri.parse('https://music.youtube.com/x')),
+          isTrue);
+      expect(isKnownWebPageVideoHost(Uri.parse('https://www.netflix.com/x')),
+          isTrue);
+    });
+
+    test('case-insensitive and trailing-dot (FQDN) tolerant', () {
+      expect(isKnownWebPageVideoUrl('https://WWW.YouTube.COM/watch'), isTrue);
+      expect(isKnownWebPageVideoUrl('https://youtube.com./watch'), isTrue);
+    });
+
+    test('direct-stream hosts and bare IP do NOT match', () {
+      expect(
+          isKnownWebPageVideoHost(Uri.parse('https://cdn.example.com/v.mp4')),
+          isFalse);
+      expect(
+          isKnownWebPageVideoHost(Uri.parse('https://192.168.1.34/live.m3u8')),
+          isFalse);
+      // substring/suffix spoof must not false-positive (host != *.youtube.com).
+      expect(
+          isKnownWebPageVideoHost(Uri.parse('https://youtube.com.evil.test/x')),
+          isFalse);
+      expect(isKnownWebPageVideoHost(Uri.parse('https://notyoutube.com/x')),
+          isFalse);
+    });
+
+    test('empty host / garbage url -> false', () {
+      expect(isKnownWebPageVideoHost(Uri.parse('file:///c:/a.mp4')), isFalse);
+      expect(isKnownWebPageVideoUrl(''), isFalse);
+      expect(isKnownWebPageVideoUrl('   '), isFalse);
+      expect(isKnownWebPageVideoUrl('not a url at all'), isFalse);
+    });
+
+    test(
+        'REGRESSION: soft-warn never degrades to hard-reject — '
+        'web-page URLs stay isPlayableStreamUrl==true (Never break userspace)',
+        () {
+      // A1 only adds a confirm prompt; it must NOT gate import by host.
+      for (final String url in <String>[
+        'https://www.youtube.com/watch?v=x',
+        'https://youtu.be/abc',
+        'https://www.netflix.com/title/123',
+        'https://www.bilibili.com/video/BVxxx',
+      ]) {
+        expect(isKnownWebPageVideoUrl(url), isTrue, reason: url);
+        // The play button stays enabled; user keeps the escape hatch.
+        expect(isPlayableStreamUrl(url), isTrue, reason: url);
+      }
+    });
+  });
 }
