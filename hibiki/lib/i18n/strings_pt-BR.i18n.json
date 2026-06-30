@@ -356,7 +356,7 @@
   "use_br_tags": "Usar tag de quebra de linha em vez de nova linha na exportação",
   "prepend_dictionary_names": "Incluir nome do dicionário no significado",
   "highlight_on_tap": "Destacar texto ao tocar",
-  "tap_empty_hide_chrome": "Toque em uma área vazia para ocultar os controles",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Nenhum arquivo de áudio para salvar.",
   "storage_permissions": "Por favor, conceda as seguintes permissões para exportar para o AnkiDroid.",
   "stream": "Transmissão",

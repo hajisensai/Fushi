@@ -356,7 +356,7 @@
   "use_br_tags": "Использовать тег <br> вместо переноса строки при экспорте",
   "prepend_dictionary_names": "Добавлять название словаря к значению",
   "highlight_on_tap": "Подсветка текста при нажатии",
-  "tap_empty_hide_chrome": "Нажмите на пустую область, чтобы скрыть панели управления",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Нет аудиофайла для сохранения.",
   "storage_permissions": "Предоставьте следующие разрешения для экспорта в AnkiDroid.",
   "stream": "Поток",

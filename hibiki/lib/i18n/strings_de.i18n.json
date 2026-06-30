@@ -356,7 +356,7 @@
   "use_br_tags": "Zeilenumbruch-Tag statt Zeilenumbruch beim Export verwenden",
   "prepend_dictionary_names": "Wörterbuchname in Bedeutung voranstellen",
   "highlight_on_tap": "Text beim Antippen hervorheben",
-  "tap_empty_hide_chrome": "Auf leeren Bereich tippen, um Steuerung auszublenden",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Keine Audiodatei zum Speichern.",
   "storage_permissions": "Bitte erteilen Sie die folgenden Berechtigungen für den Export zu AnkiDroid.",
   "stream": "Stream",

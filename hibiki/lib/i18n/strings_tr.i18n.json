@@ -356,7 +356,7 @@
   "use_br_tags": "Dışa aktarmada yeni satır yerine satır sonu etiketi kullan",
   "prepend_dictionary_names": "Anlam alanına sözlük adını ekle",
   "highlight_on_tap": "Dokunma ile metni vurgula",
-  "tap_empty_hide_chrome": "Kontrolleri gizlemek için boş alana dokunun",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Kaydedilecek ses dosyası yok.",
   "storage_permissions": "AnkiDroid'a dışa aktarma için lütfen aşağıdaki izinleri verin.",
   "stream": "Yayın",

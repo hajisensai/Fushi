@@ -356,7 +356,7 @@
   "use_br_tags": "ใช้แท็กขึ้นบรรทัดใหม่แทนการขึ้นบรรทัดเมื่อส่งออก",
   "prepend_dictionary_names": "แสดงชื่อพจนานุกรมนำหน้าความหมาย",
   "highlight_on_tap": "เน้นข้อความเมื่อแตะ",
-  "tap_empty_hide_chrome": "แตะพื้นที่ว่างเพื่อซ่อนแถบควบคุม",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "ไม่มีไฟล์เสียงที่จะบันทึก",
   "storage_permissions": "กรุณาให้สิทธิ์ต่อไปนี้เพื่อส่งออกไปยัง AnkiDroid",
   "stream": "สตรีม",

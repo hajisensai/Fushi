@@ -356,7 +356,7 @@
   "use_br_tags": "Usar etiqueta de salto de línea en lugar de nueva línea al exportar",
   "prepend_dictionary_names": "Anteponer nombre del diccionario en el significado",
   "highlight_on_tap": "Resaltar texto al tocar",
-  "tap_empty_hide_chrome": "Toca un área vacía para ocultar los controles",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "No hay archivo de audio para guardar.",
   "storage_permissions": "Por favor concede los siguientes permisos para exportar a AnkiDroid.",
   "stream": "Transmisión",

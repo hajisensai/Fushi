@@ -356,7 +356,7 @@
   "use_br_tags": "내보내기 시 줄바꿈 대신 줄바꿈 태그 사용",
   "prepend_dictionary_names": "뜻에 사전 이름 표시",
   "highlight_on_tap": "탭 시 텍스트 강조",
-  "tap_empty_hide_chrome": "빈 영역을 탭하여 컨트롤 숨기기",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "저장할 오디오 파일이 없습니다.",
   "storage_permissions": "AnkiDroid로 내보내려면 다음 권한을 부여해 주세요.",
   "stream": "스트림",

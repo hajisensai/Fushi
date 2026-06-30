@@ -356,7 +356,7 @@
   "use_br_tags": "Gebruik regeleindetag in plaats van regeleinde bij export",
   "prepend_dictionary_names": "Woordenboeknaam toevoegen aan betekenis",
   "highlight_on_tap": "Tekst markeren bij tikken",
-  "tap_empty_hide_chrome": "Tik op een leeg gebied om bedieningselementen te verbergen",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Geen audiobestand om op te slaan.",
   "storage_permissions": "Verleen de volgende machtigingen voor het exporteren naar AnkiDroid.",
   "stream": "Stream",

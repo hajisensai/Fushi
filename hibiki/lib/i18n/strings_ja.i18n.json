@@ -356,7 +356,7 @@
   "use_br_tags": "エクスポート時に改行タグを使用",
   "prepend_dictionary_names": "意味に辞書名を付加",
   "highlight_on_tap": "タップでテキストをハイライト",
-  "tap_empty_hide_chrome": "空白タップでコントロールを非表示",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "保存する音声ファイルがありません。",
   "storage_permissions": "AnkiDroidへのエクスポートに必要な権限を許可してください。",
   "stream": "ストリーム",

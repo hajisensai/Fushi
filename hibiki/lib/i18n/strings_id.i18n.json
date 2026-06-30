@@ -356,7 +356,7 @@
   "use_br_tags": "Gunakan tag line break daripada baris baru saat ekspor",
   "prepend_dictionary_names": "Tampilkan nama kamus di awal arti",
   "highlight_on_tap": "Sorot teks saat ketuk",
-  "tap_empty_hide_chrome": "Ketuk area kosong untuk menyembunyikan kontrol",
+  "tap_empty_hide_chrome": "Floating control bar",
   "no_audio_file": "Tidak ada file audio untuk disimpan.",
   "storage_permissions": "Mohon berikan izin berikut untuk mengekspor ke AnkiDroid.",
   "stream": "Streaming",
