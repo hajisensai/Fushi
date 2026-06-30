@@ -1998,5 +1998,7 @@
   "video_import_webpage_url_warning_title": "Web page address, not a direct stream",
   "video_import_webpage_url_warning_body": "This looks like a web page (e.g. YouTube/Netflix), not a direct video stream (.m3u8/.mp4/direct link). Hibiki cannot extract video from web pages yet — please provide a direct stream URL. You can still try anyway.",
   "video_import_webpage_url_try_anyway": "Try anyway",
-  "sync_pair_pin_label": "Enter this PIN on the other device"
+  "sync_pair_pin_label": "Enter this PIN on the other device",
+  "update_cached_up_to_date": "On latest known version $version (checking…)",
+  "update_cached_newer": "Update $version available (verifying…)"
 }

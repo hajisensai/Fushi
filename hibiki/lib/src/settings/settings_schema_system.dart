@@ -219,22 +219,51 @@ bool _manualCheckInFlight = false;
 Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   if (_manualCheckInFlight) return;
   _manualCheckInFlight = true;
-  HibikiToast.show(msg: t.update_checking_now);
+  // TODO-1024 / BUG-479：缓存优先即时反馈——先读上次检查结果（按当前通道），据它立刻给
+  // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后
+  // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
+  // 原「正在检查…」提示。
+  final String currentVersion = settingsContext.appModel.packageInfo.version;
+  final UpdateChannel channel = _channelFromSettings(settingsContext);
+  final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
+    settingsContext.appModel.updateCheckCache,
+    channel,
+  );
+  if (cached != null) {
+    final bool newer =
+        updateTagIsNewerThanCurrent(cached.latestTag, currentVersion, channel);
+    HibikiToast.show(
+      msg: newer
+          ? t.update_cached_newer(version: cached.latestTag)
+          : t.update_cached_up_to_date(version: cached.latestTag),
+    );
+  } else {
+    HibikiToast.show(msg: t.update_checking_now);
+  }
   try {
     await UpdateChecker.scheduleCheck(
       settingsContext.context,
-      settingsContext.appModel.packageInfo.version,
+      currentVersion,
       neverRemind: false,
       autoInstall: false,
       betaChannel: settingsContext.appModel.updateBetaChannel,
       debugChannel: settingsContext.appModel.updateDebugChannel,
       customProxy: settingsContext.appModel.updateCustomProxy,
+      // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
+      cacheWriter: settingsContext.appModel.setUpdateCheckCache,
       onUpToDate: () => HibikiToast.show(msg: t.update_already_latest),
       onError: (Object _) => HibikiToast.show(msg: t.update_check_failed),
     );
   } finally {
     _manualCheckInFlight = false;
   }
+}
+
+/// 当前设置选中的更新通道（与 [scheduleCheck] 内的 debug>beta>stable 优先级一致）。
+UpdateChannel _channelFromSettings(SettingsContext settingsContext) {
+  if (settingsContext.appModel.updateDebugChannel) return UpdateChannel.debug;
+  if (settingsContext.appModel.updateBetaChannel) return UpdateChannel.beta;
+  return UpdateChannel.stable;
 }
 
 /// 「自定义更新代理」输入框（TODO-871/862）：fake-ip/TUN 模式下系统代理写注册表、

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 463 条。点号进各自文件。
+> 共 464 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-479](bugs/BUG-479-update-check-cache.md) | ✅ | ✅ | 更新检查时快时慢=无结果缓存每次冷查 GitHub（TODO-1024） |
 | [BUG-477](bugs/BUG-477-popup-webview-double-context-menu.md) | ✅ | ✅ | 查词弹窗右键同时弹WebView2原生菜单与自定义菜单(双菜单·BUG-468同根·弹窗WebView漏修) |
 | [BUG-476](bugs/BUG-476-restart-cold-start-black-window.md) | ✅ | ✅ | 迁移重启新进程冷启动黑屏 |
 | [BUG-475](bugs/BUG-475-export-crosschapter-false-positive.md) | ✅ | ✅ | 选区导出误报跨章 |
