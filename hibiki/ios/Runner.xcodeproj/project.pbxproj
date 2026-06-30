@@ -13,6 +13,8 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		B20100000000000000000012 /* libhoshidicts_ffi.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B20100000000000000000011 /* libhoshidicts_ffi.dylib */; };
+		B20100000000000000000013 /* libhoshidicts_ffi.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B20100000000000000000011 /* libhoshidicts_ffi.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -22,6 +24,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				B20100000000000000000013 /* libhoshidicts_ffi.dylib in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -42,6 +45,7 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B20100000000000000000011 /* libhoshidicts_ffi.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libhoshidicts_ffi.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +53,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20100000000000000000012 /* libhoshidicts_ffi.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,6 +110,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
+				B20100000000000000000010 /* Build HoshiDicts FFI */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -169,6 +175,27 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		B20100000000000000000010 /* Build HoshiDicts FFI */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(HOSHIDICTS_SOURCE_DIR)/CMakeLists.txt",
+			);
+			name = "Build HoshiDicts FFI";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(HOSHIDICTS_DYLIB_NAME)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nexport PATH=\"$HOME/Library/Python/3.9/bin:$PATH\"\n: \"${HOSHIDICTS_SOURCE_DIR:?HOSHIDICTS_SOURCE_DIR is not set}\"\n: \"${HOSHIDICTS_BUILD_DIR:?HOSHIDICTS_BUILD_DIR is not set}\"\n: \"${HOSHIDICTS_DYLIB_NAME:=libhoshidicts_ffi.dylib}\"\n\ncmake_archs=\"${ARCHS:-`uname -m`}\"\ncmake_archs=\"${cmake_archs// /;}\"\nsysroot=\"`xcrun --sdk \"${PLATFORM_NAME:-iphonesimulator}\" --show-sdk-path`\"\n\ncmake -S \"$HOSHIDICTS_SOURCE_DIR\" -B \"$HOSHIDICTS_BUILD_DIR\" -G Ninja \\\n  -DCMAKE_BUILD_TYPE=\"$CONFIGURATION\" \\\n  -DCMAKE_SYSTEM_NAME=iOS \\\n  -DCMAKE_OSX_SYSROOT=\"$sysroot\" \\\n  -DCMAKE_OSX_ARCHITECTURES=\"$cmake_archs\" \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${IPHONEOS_DEPLOYMENT_TARGET:-13.0}\" \\\n  -DCMAKE_IOS_INSTALL_COMBINED=NO\ncmake --build \"$HOSHIDICTS_BUILD_DIR\" --target hoshidicts_ffi --config \"$CONFIGURATION\"\n\nbuilt_dylib=\"`find \"$HOSHIDICTS_BUILD_DIR\" -type f -name \"$HOSHIDICTS_DYLIB_NAME\" | head -n 1`\"\nif [[ -z \"$built_dylib\" ]]; then\n  echo \"error: $HOSHIDICTS_DYLIB_NAME was not produced under $HOSHIDICTS_BUILD_DIR\" >&2\n  exit 1\nfi\n\ndestination=\"$BUILT_PRODUCTS_DIR/$HOSHIDICTS_DYLIB_NAME\"\nmkdir -p \"$BUILT_PRODUCTS_DIR\"\ncp -f \"$built_dylib\" \"$destination\"\ninstall_name_tool -id \"@rpath/$HOSHIDICTS_DYLIB_NAME\" \"$destination\"\n\nif [[ \"${CODE_SIGNING_ALLOWED:-}\" != \"NO\" ]] && command -v codesign >/dev/null 2>&1; then\n  sign_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\n  if [[ -z \"$sign_identity\" ]]; then\n    sign_identity=\"-\"\n  fi\n  codesign --force --sign \"$sign_identity\" --timestamp=none \"$destination\"\nfi\n";
+		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -295,6 +322,9 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.hibiki.reader;
+				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -423,6 +453,9 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.hibiki.reader;
+				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -445,6 +478,9 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.hibiki.reader;
+				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
