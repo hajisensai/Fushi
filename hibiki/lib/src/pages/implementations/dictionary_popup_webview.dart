@@ -69,6 +69,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onUpdateEntry,
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
+    this.onMinedCardAction,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
@@ -104,6 +105,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// latest 或后端拿不到 id 时返回 `null` → 弹窗维持旧两态行为（Never break userspace）。
   final Future<int?> Function(String expression, String reading)?
       onOverwriteTargetNoteId;
+
+  /// TODO-1007/1008：点 ✓（卡已存在）时弹宿主操作选择（覆写/新增重复卡/查看·在 Anki
+  /// 中打开），命中多张让用户选哪张。[fields] 是当前词条的制卡 payload（与 onMineEntry
+  /// 同一份），宿主据其 expression/reading 反查全部命中卡并据用户选择执行。返回执行后
+  /// 的 [MinePopupResult]（驱动 popup.js 刷新 ✓/+ 与第三态）。null 时 popup 回退到旧的
+  /// 「重验 + 静默」两态行为（Never break userspace）。
+  final Future<MinePopupResult> Function(Map<String, String> fields)?
+      onMinedCardAction;
 
   /// 切换收藏：返回切换后的新状态（true=已收藏）。供弹窗「☆/★」按钮回调。
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
@@ -808,6 +817,36 @@ class DictionaryPopupWebViewState
             } catch (e, stack) {
               ErrorLogService.instance
                   .log('DictPopupWebview.mineEntry', e, stack);
+            }
+            return const MinePopupResult().toJson();
+          },
+        );
+
+        // TODO-1007/1008：点 ✓（卡已存在）时 popup.js 调本处理器（带当前词条制卡
+        // payload）。宿主据 expression/reading 反查全部命中卡并弹操作选择（覆写指定
+        // 张 / 新增重复卡 / 查看·在 Anki 中打开），执行后回 MinePopupResult 刷新 ✓。
+        // 与 mineEntry 同样：先落盘词典媒体字节（覆写/新增都要嵌外字），自带 try/catch
+        // 永不让异常穿过原生桥（BUG-293），返回结构化结果。
+        controller.addJavaScriptHandler(
+          handlerName: 'minedCardAction',
+          callback: (args) async {
+            try {
+              if (args.isNotEmpty &&
+                  args[0] is Map &&
+                  widget.onMinedCardAction != null) {
+                final fields = Map<String, String>.from(
+                  (args[0] as Map)
+                      .map((k, v) => MapEntry(k.toString(), v.toString())),
+                );
+                await writeDictionaryMediaCache(
+                    fields['dictionaryMedia'] ?? '');
+                final MinePopupResult result =
+                    await widget.onMinedCardAction!(fields);
+                return result.toJson();
+              }
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('DictPopupWebview.minedCardAction', e, stack);
             }
             return const MinePopupResult().toJson();
           },

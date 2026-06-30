@@ -742,6 +742,79 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  // TODO-1007/1008：反查**所有**与当前查词同条件（deck + 第一字段=expression）的已存在
+  // 卡，返回 noteId + 一行预览，**不看 overwriteScope**——别处/上次会话建的卡也要能被
+  // 发现。先 findNotes 拿全部 id，再 notesInfo 批量拉第一字段做预览。按 id 降序（最近在前）。
+  // 任一步失败静默回空列表（与 isDuplicate 同样 fail-soft）。
+  @override
+  Future<List<MinedNoteRef>> findMatchingNotes(
+      String expression, String reading) async {
+    if (expression.isEmpty) return const <MinedNoteRef>[];
+    final settings = await loadSettings();
+    final deck = settings.availableDecks
+            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+        (settings.selectedDeckName != null
+            ? settings.availableDecks
+                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            : null);
+    final noteType = settings.selectedNoteType;
+    if (deck == null || noteType == null || noteType.fields.isEmpty) {
+      return const <MinedNoteRef>[];
+    }
+    try {
+      final service = _serviceForSettings(settings);
+      final List<int> ids = await service.findNotesByField(
+        deckName: deck.name,
+        fieldName: noteType.fields.first,
+        fieldValue: expression,
+      );
+      if (ids.isEmpty) return const <MinedNoteRef>[];
+      ids.sort((a, b) => b.compareTo(a)); // 最近（id 大）在前
+      final Map<int, Map<String, String>> infos =
+          await service.notesInfoMany(ids);
+      final String firstField = noteType.fields.first;
+      return ids.map((id) {
+        final fields = infos[id];
+        final String raw = fields == null ? '' : (fields[firstField] ?? '');
+        return MinedNoteRef(
+          noteId: id,
+          preview: BaseAnkiRepository.previewFromFieldValue(raw),
+        );
+      }).toList();
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.findMatchingNotes: $e');
+      debugPrint('$stack');
+      return const <MinedNoteRef>[];
+    }
+  }
+
+  // TODO-1007/1008：读取一张已存在 note 的现有字段，供 note viewer 只读展示。
+  @override
+  Future<Map<String, String>?> noteFields(int noteId) async {
+    try {
+      final service = await _getService();
+      return await service.notesInfo(noteId);
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.noteFields: $e');
+      debugPrint('$stack');
+      return null;
+    }
+  }
+
+  // TODO-1007/1008：在 Anki 桌面端打开浏览器并选中该 note（guiBrowse(nid:<id>)）。
+  @override
+  Future<bool> openNoteInAnki(int noteId) async {
+    try {
+      final service = await _getService();
+      await service.guiBrowse(noteId);
+      return true;
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.openNoteInAnki: $e');
+      debugPrint('$stack');
+      return false;
+    }
+  }
+
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
     final service = await _getService();

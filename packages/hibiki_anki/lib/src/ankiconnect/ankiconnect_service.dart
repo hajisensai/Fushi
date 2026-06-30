@@ -384,6 +384,43 @@ class AnkiConnectService implements AnkiService {
     });
     return fields;
   }
+
+  // TODO-1007/1008：批量读取多张 note 的字段（字段名 -> 值），供命中多张时一次往返
+  // 拉全部预览。AnkiConnect `notesInfo` 接收 `{notes: [id...]}`，按 id 顺序返回每项
+  // `{noteId, fields:{<name>:{value,order}}}`。返回 `noteId -> (name -> value)`；
+  // 形状异常项跳过（fail-soft）。
+  Future<Map<int, Map<String, String>>> notesInfoMany(List<int> noteIds) async {
+    if (noteIds.isEmpty) return <int, Map<String, String>>{};
+    final result = await _request('notesInfo', {'notes': noteIds});
+    final out = <int, Map<String, String>>{};
+    if (result is! List) return out;
+    for (final item in result) {
+      if (item is! Map) continue;
+      final rawId = item['noteId'];
+      final int? id =
+          rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+      if (id == null) continue;
+      final rawFields = item['fields'];
+      if (rawFields is! Map) continue;
+      final fields = <String, String>{};
+      rawFields.forEach((dynamic key, dynamic value) {
+        if (value is Map && value['value'] is String) {
+          fields[key.toString()] = value['value'] as String;
+        } else if (value is String) {
+          fields[key.toString()] = value;
+        }
+      });
+      out[id] = fields;
+    }
+    return out;
+  }
+
+  // TODO-1007/1008：在 Anki 桌面端打开浏览器并选中 [noteId]（`guiBrowse` 接收
+  // `{query: 'nid:<id>'}`，把 Anki 主窗口的 Browse 视图过滤到该 note）。需要 Anki GUI
+  // 在前台才有视觉效果；纯远程/无 GUI 时 AnkiConnect 仍返回成功（不抛）。
+  Future<void> guiBrowse(int noteId) async {
+    await _request('guiBrowse', {'query': 'nid:$noteId'});
+  }
 }
 
 String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');

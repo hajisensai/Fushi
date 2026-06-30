@@ -1206,6 +1206,24 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
     return Promise.resolve(true);
   };
 
+  const actions = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      cardExists = true;
+      return Promise.resolve(true);
+    }
+    // TODO-1007/1008: clicking a mined ✓ now routes to the host action sheet,
+    // which (when the card was deleted in Anki) re-mines via its mineNew path.
+    if (name === 'minedCardAction') {
+      actions.push(payload);
+      cardExists = true; // host re-mined the now-absent card
+      return Promise.resolve({ ankiConnect: false, noteId: null });
+    }
+    return Promise.resolve(true);
+  };
+
   const mineButton = buildMineHeader(context);
   await flush(); // lookup-time detection -> 已制卡 ✓
   assert.equal(mineButton.dataset.mined, '1', 'lookup-time detection marks the existing card as mined');
@@ -1214,11 +1232,13 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   // User deletes the card in Anki, popup still open, NO re-lookup / re-open.
   cardExists = false;
 
-  // Edge-case fallback: clicking the stale ✓ re-verifies, finds no card, re-mines.
+  // Clicking the stale ✓ hands off to the host action sheet (which re-mines the
+  // now-absent card on the host side); the popup must invoke it, never silently
+  // do nothing (TODO-1007 root cause).
   await mineButton.onclick();
   await flush();
-  assert.equal(mined.length, 1, 'clicking a stale ✓ after in-Anki deletion must re-mine');
-  assert.equal(mineButton.textContent, '✓', 'after re-mining the state is 已制卡 ✓ again');
+  assert.equal(actions.length, 1, 'clicking a mined ✓ invokes the host action sheet');
+  assert.equal(mineButton.textContent, '✓', 'after the host action the state is 已制卡 ✓');
   assert.equal(mineButton.disabled, false, 'button stays clickable, never a dead lock');
 }
 
@@ -1238,6 +1258,19 @@ async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
     return Promise.resolve(true);
   };
 
+  const actions = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') { mined.push(payload); return Promise.resolve(true); }
+    // The card still exists: the host shows the action sheet; the user cancels,
+    // so nothing is added or overwritten (echoes the unchanged mined state).
+    if (name === 'minedCardAction') {
+      actions.push(payload);
+      return Promise.resolve({ ankiConnect: false, noteId: null });
+    }
+    return Promise.resolve(true);
+  };
+
   const mineButton = buildMineHeader(context);
   await flush(); // initial lookup-time detection paints 已制卡 ✓
   assert.equal(mineButton.textContent, '✓', 'lookup-time detection shows 已制卡 ✓ for an existing card');
@@ -1245,7 +1278,8 @@ async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
 
   await mineButton.onclick();
   await flush();
-  assert.equal(mined.length, 0, 'must not duplicate a card that still exists in Anki');
+  assert.equal(actions.length, 1, 'clicking ✓ surfaces the host action sheet');
+  assert.equal(mined.length, 0, 'cancelling the action sheet must not duplicate the card');
   assert.equal(mineButton.textContent, '✓', 'indicator stays 已制卡 ✓');
   assert.equal(mineButton.disabled, false, 'button is still clickable, never locked');
 }
@@ -1329,13 +1363,15 @@ function buildMineHeaderFor(context, expression) {
 // the new fields — NOT a second mineEntry.
 async function testLatestMinedCardCanBeOverwrittenInPlace() {
   const context = loadPopup();
-  context.window.allowDupes = true; // skip the re-verify branch noise
+  context.window.allowDupes = true;
   const mined = [];
   const updated = [];
+  let cardExists = false; // mineable at lookup; the fresh mine creates it
   context.window.flutter_inappwebview.callHandler = (name, payload) => {
-    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
     if (name === 'mineEntry') {
       mined.push(payload);
+      cardExists = true;
       // AnkiConnect-style structured reply with a real note id.
       return Promise.resolve({ ankiConnect: true, noteId: 555 });
     }
@@ -1347,7 +1383,7 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
   };
 
   const mineButton = buildMineHeaderFor(context, '猫');
-  await flush(); // lookup-time detection (card present here)
+  await flush(); // lookup-time detection (mineable +)
 
   // First click mines and the note id makes it the editable latest.
   await mineButton.onclick();
@@ -1377,8 +1413,12 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
   context.window.allowDupes = true;
   const mined = [];
   const updated = [];
+  const actions = [];
+  // Mineable at lookup; once mined, the word is detected as present in Anki.
   context.window.flutter_inappwebview.callHandler = (name, payload) => {
-    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'duplicateCheck') {
+      return Promise.resolve(mined.includes(payload.expression));
+    }
     if (name === 'mineEntry') {
       mined.push(payload.expression);
       return Promise.resolve({ ankiConnect: true, noteId: mined.length });
@@ -1386,6 +1426,10 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
     if (name === 'updateEntry') {
       updated.push(payload.noteId);
       return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    if (name === 'minedCardAction') {
+      actions.push(payload.expression);
+      return Promise.resolve({ ankiConnect: false, noteId: null });
     }
     return Promise.resolve(true);
   };
@@ -1404,13 +1448,14 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
   await flush();
   assert.equal(buttonB.dataset.latest, '1', 'B is now the editable latest');
 
-  // Clicking A's stale button must NOT overwrite — A is no longer the latest.
+  // Clicking A's stale button must NOT overwrite in place (A is no longer the
+  // editable latest) — it routes to the host action sheet instead (TODO-1007).
   await buttonA.onclick();
   await flush();
   assert.equal(updated.length, 0,
-    'a superseded earlier card must not be overwritten in place');
-  // A re-mines through the ordinary path instead (allowDupes -> a new mine).
-  assert.ok(mined.includes('猫'), 'the earlier word goes through the normal mine path');
+    'a superseded earlier card must not be overwritten in place via updateEntry');
+  assert.ok(actions.includes('猫'),
+    'a superseded earlier mined ✓ click goes to the host action sheet');
 }
 
 // AnkiDroid graceful degrade: a mine that returns no note id (bare true / no id)
@@ -1419,25 +1464,30 @@ async function testNoNoteIdNeverBecomesEditableLatest() {
   const context = loadPopup();
   context.window.allowDupes = true;
   const updated = [];
+  const actions = [];
+  let cardExists = false; // mineable at lookup; AnkiDroid mine has no id
   context.window.flutter_inappwebview.callHandler = (name) => {
-    if (name === 'duplicateCheck') return Promise.resolve(true);
-    if (name === 'mineEntry') return Promise.resolve(true); // AnkiDroid: bare bool, no id
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') { cardExists = true; return Promise.resolve(true); } // AnkiDroid: bare bool, no id
     if (name === 'updateEntry') { updated.push(1); return Promise.resolve(true); }
+    if (name === 'minedCardAction') { actions.push(1); return Promise.resolve({ ankiConnect: false, noteId: null }); }
     return Promise.resolve(true);
   };
 
   const mineButton = buildMineHeaderFor(context, '本');
   await flush();
-  await mineButton.onclick();
+  await mineButton.onclick(); // fresh mine (no id) -> ordinary ✓, never ✓↩
   await flush();
   assert.notEqual(mineButton.dataset.latest, '1',
     'no note id -> never the editable latest (AnkiDroid degrade)');
   assert.equal(mineButton.textContent, '✓', 'shows an ordinary ✓, not the ✓↩ glyph');
 
-  // Clicking again must not attempt an in-place overwrite.
+  // Clicking the (now mined, no-id) button routes to the host action sheet, NOT
+  // an in-place updateEntry (no editable-latest note id to overwrite directly).
   await mineButton.onclick();
   await flush();
   assert.equal(updated.length, 0, 'without a note id, clicks never call updateEntry');
+  assert.equal(actions.length, 1, 'an ordinary mined ✓ click goes to the host action sheet');
 }
 
 // ── TODO-614: overwrite-scope = all promotes an EARLIER card to ✓↩ ─────────
@@ -1757,6 +1807,57 @@ testOverwriteScopeAllPromotesEarlierCardToEditable().catch((error) => {
 });
 
 testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// TODO-1007/1008: clicking ✓ on a card that exists but is NOT this session's
+// editable latest must hand the full payload to the host `minedCardAction`
+// handler (action sheet: overwrite / add duplicate / view+open), NOT silently
+// return. The host echoes the post-action {ankiConnect, noteId}; the button then
+// re-detects mined state. Root-cause fix for "clicking ✓ did nothing".
+async function testClickingMinedCheckInvokesHostActionSheet() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const actionCalls = [];
+  let duplicateChecks = 0;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') {
+      duplicateChecks++;
+      return Promise.resolve(true); // card is in Anki
+    }
+    // scope=latest / AnkiDroid: no editable-latest promotion.
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'minedCardAction') {
+      actionCalls.push(payload);
+      // Host applied "overwrite" and returns the chosen note id.
+      return Promise.resolve({ ankiConnect: true, noteId: 4242 });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeaderFor(context, '辞書');
+  await flush(); // lookup-time duplicateCheck → mined ✓ (ordinary, not latest)
+
+  assert.equal(mineButton.dataset.mined, '1', 'existing card detected as mined');
+  assert.notEqual(mineButton.dataset.latest, '1',
+    'an ordinary existing card is not the editable latest');
+  assert.equal(mineButton.textContent, '✓', 'ordinary mined shows plain ✓');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(actionCalls.length, 1,
+    'clicking ✓ must invoke the host minedCardAction (not a silent return)');
+  // The full mine payload (expression/reading) is forwarded so the host can find
+  // matching notes and overwrite/add with the freshly-built fields.
+  assert.equal(actionCalls[0].expression, '辞書',
+    'the mine payload (expression) is handed to the host');
+  // After the action, the host-returned note id promotes it to editable latest.
+  assert.equal(mineButton.dataset.mined, '1', 'still mined after the action');
+}
+
+testClickingMinedCheckInvokesHostActionSheet().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

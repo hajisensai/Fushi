@@ -442,6 +442,77 @@ class AnkiRepository extends BaseAnkiRepository {
     );
   }
 
+  // TODO-1007/1008：反查**所有**同词卡（第一字段=expression，可选 reading 过滤）的
+  // note id + 一行预览，使 AnkiDroid 与桌面 AnkiConnect 行为一致——能发现「别处/上次
+  // 会话建的卡」。经 native `findNotesByContent`（ContentProvider findDuplicateNotes →
+  // NoteInfo.getId），native 已按 id 降序去重。失败 / 拿不到时静默回空（fail-soft）。
+  @override
+  Future<List<MinedNoteRef>> findMatchingNotes(
+      String expression, String reading) async {
+    if (expression.isEmpty) return const <MinedNoteRef>[];
+    final settings = await loadSettings();
+    final noteType = settings.selectedNoteType;
+    if (noteType == null) return const <MinedNoteRef>[];
+    final readingIdx = _findReadingFieldIndex(noteType, settings.fieldMappings);
+    try {
+      final dynamic raw =
+          await _channel.invokeMethod('findNotesByContent', <String, dynamic>{
+        'models': [noteType.name],
+        'key': expression,
+        'reading': reading,
+        'readingFieldIndices': [readingIdx],
+      });
+      if (raw is! List) return const <MinedNoteRef>[];
+      final result = <MinedNoteRef>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final rawId = item['noteId'];
+        final int? id =
+            rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+        if (id == null) continue;
+        result.add(MinedNoteRef(
+          noteId: id,
+          preview: BaseAnkiRepository.previewFromFieldValue(
+              item['preview']?.toString() ?? ''),
+        ));
+      }
+      return result;
+    } catch (e, stack) {
+      debugPrint('AnkiRepository.findMatchingNotes: $e');
+      debugPrint('$stack');
+      return const <MinedNoteRef>[];
+    }
+  }
+
+  // TODO-1007/1008：读取一张已存在 note 的现有字段，供 note viewer 只读展示（复用
+  // 已有的 [notesInfo] 平台通道）。
+  @override
+  Future<Map<String, String>?> noteFields(int noteId) async {
+    try {
+      return await notesInfo(noteId);
+    } catch (e, stack) {
+      debugPrint('AnkiRepository.noteFields: $e');
+      debugPrint('$stack');
+      return null;
+    }
+  }
+
+  // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note（native `openNote`）。
+  @override
+  Future<bool> openNoteInAnki(int noteId) async {
+    try {
+      final dynamic ok =
+          await _channel.invokeMethod('openNote', <String, dynamic>{
+        'noteId': noteId,
+      });
+      return ok == true;
+    } catch (e, stack) {
+      debugPrint('AnkiRepository.openNoteInAnki: $e');
+      debugPrint('$stack');
+      return false;
+    }
+  }
+
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
     final settings = await loadSettings();

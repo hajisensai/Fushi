@@ -1997,5 +1997,15 @@
   "reader_auto_hide_chrome_duration": "Auto-hide floating controls after",
   "video_import_webpage_url_warning_title": "Web page address, not a direct stream",
   "video_import_webpage_url_warning_body": "This looks like a web page (e.g. YouTube/Netflix), not a direct video stream (.m3u8/.mp4/direct link). Hibiki cannot extract video from web pages yet — please provide a direct stream URL. You can still try anyway.",
-  "video_import_webpage_url_try_anyway": "Try anyway"
+  "video_import_webpage_url_try_anyway": "Try anyway",
+  "anki_mined_card_title": "Card already in Anki",
+  "anki_mined_card_subtitle": "Choose what to do with the matching card.",
+  "anki_mined_action_overwrite": "Overwrite this card",
+  "anki_mined_action_add_duplicate": "Add as a new card",
+  "anki_mined_action_view": "View / open in Anki",
+  "anki_mined_multiple_matches": "$count matching cards",
+  "anki_note_viewer_title": "Existing card",
+  "anki_note_viewer_open_in_anki": "Open in Anki",
+  "anki_note_viewer_empty": "This card has no readable fields.",
+  "anki_note_open_failed": "Could not open the card in Anki."
 }

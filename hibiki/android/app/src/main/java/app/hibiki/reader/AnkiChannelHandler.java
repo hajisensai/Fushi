@@ -128,6 +128,40 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
+                    case "findNotesByContent":
+                        // TODO-1007/1008：按内容（第一字段 = key，可选 reading 过滤）反查
+                        // 所有同词卡的 note id + 一行预览，使 AnkiDroid 与桌面 AnkiConnect
+                        // 一样能发现「别处/上次会话建的卡」。经 ContentProvider
+                        // findDuplicateNotes(mid, key) -> NoteInfo.getId()，不依赖 bool-only
+                        // 的 checkForDuplicates。
+                        if (models == null || key == null) {
+                            result.error("MISSING_ARG",
+                                "models and key are required", null);
+                        } else if (requirePermission(result)) {
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                try {
+                                    result.success(findNotesByContent(
+                                        models, key, reading, readingFieldIndices));
+                                } catch (Exception e) {
+                                    result.error(providerErrorCode(e),
+                                        e.getMessage(), null);
+                                }
+                            });
+                        }
+                        break;
+                    case "openNote":
+                        // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note。
+                        if (noteIdArg == null) {
+                            result.error("MISSING_ARG", "noteId is required", null);
+                        } else {
+                            try {
+                                result.success(openNote(noteIdArg.longValue()));
+                            } catch (Exception e) {
+                                result.error("OPEN_NOTE_FAILED",
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
                     case "checkForDuplicates":
                         if (models == null || key == null) {
                             result.error("MISSING_ARG",
@@ -474,6 +508,83 @@ public class AnkiChannelHandler {
             }
         }
         return false;
+    }
+
+    /**
+     * TODO-1007/1008: find every note whose first field equals {@code key}
+     * (optionally also matching {@code reading} at the given field index) and
+     * return a list of {@code {noteId, preview}} maps, ordered newest-first
+     * (AnkiDroid note ids are creation-epoch longs, larger = newer).
+     *
+     * <p>This is the AnkiDroid analogue of the AnkiConnect findNotes + notesInfo
+     * path: it discovers cards created anywhere (other apps, previous sessions),
+     * not just the current popup session. {@link AddContentApi#findDuplicateNotes}
+     * gives the matching {@link NoteInfo}s; {@link NoteInfo#getId()} is the note
+     * id and {@link NoteInfo#getFields()}[0] (HTML-stripped on the Dart side) is
+     * the preview.
+     *
+     * @return a list of {@code LinkedHashMap{noteId:Long, preview:String}},
+     *         newest-first; empty when nothing matches.
+     */
+    private List<Map<String, Object>> findNotesByContent(
+            ArrayList<String> models, String key, String reading,
+            ArrayList<Integer> readingFieldIndices) {
+        final AddContentApi api = new AddContentApi(activity);
+        // De-dup by note id across models (a card matches at most one model, but
+        // guard anyway), then sort newest-first.
+        final LinkedHashMap<Long, String> byId = new LinkedHashMap<>();
+        for (int i = 0; i < models.size(); i++) {
+            String model = models.get(i);
+            Long mid = ankiDroid.findModelIdByName(model, 1);
+            if (mid == null) continue;
+            List<NoteInfo> notes = api.findDuplicateNotes(mid, key);
+            if (notes == null || notes.isEmpty()) continue;
+            int readingIdx = (readingFieldIndices != null && i < readingFieldIndices.size())
+                    ? readingFieldIndices.get(i) : -1;
+            for (NoteInfo note : notes) {
+                String[] noteFields = note.getFields();
+                // When a reading is supplied and the model has a reading field,
+                // keep only notes whose reading also matches (mirrors the dupe
+                // check). Otherwise accept on the first-field match alone.
+                if (reading != null && !reading.isEmpty() && readingIdx >= 0) {
+                    if (readingIdx >= noteFields.length
+                            || !reading.equals(noteFields[readingIdx])) {
+                        continue;
+                    }
+                }
+                long id = note.getId();
+                String preview = noteFields.length > 0 && noteFields[0] != null
+                        ? noteFields[0] : "";
+                byId.put(id, preview);
+            }
+        }
+        List<Long> ids = new ArrayList<>(byId.keySet());
+        ids.sort((a, b) -> Long.compare(b, a)); // newest (larger id) first
+        List<Map<String, Object>> out = new ArrayList<>(ids.size());
+        for (Long id : ids) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("noteId", id);
+            entry.put("preview", byId.get(id));
+            out.add(entry);
+        }
+        return out;
+    }
+
+    /**
+     * TODO-1007/1008: open the given note in AnkiDroid via an {@code ACTION_VIEW}
+     * intent on the note's ContentProvider URI. Returns {@code true} when an
+     * activity was launched, {@code false} when no app could handle it.
+     */
+    private boolean openNote(long noteId) {
+        Uri noteUri = Uri.withAppendedPath(
+            FlashCardsContract.Note.CONTENT_URI, Long.toString(noteId));
+        Intent intent = new Intent(Intent.ACTION_VIEW, noteUri);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (intent.resolveActivity(activity.getPackageManager()) == null) {
+            return false;
+        }
+        activity.startActivity(intent);
+        return true;
     }
 
     private void createNoteType(String name, ArrayList<String> fields,

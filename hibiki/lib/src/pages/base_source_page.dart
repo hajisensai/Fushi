@@ -6,6 +6,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
@@ -584,6 +585,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           final repo = ref.read(ankiRepositoryProvider);
           return repo.findOverwriteTargetNoteId(expression, reading);
         },
+        // TODO-1007/1008：点 ✓（卡已存在）弹操作选择（覆写/新增重复卡/查看·在 Anki
+        // 中打开），命中多张让用户选哪张。reader 覆写 onMineFromPopup/onUpdateFromPopup
+        // 做真实制卡/覆盖（基类无操作）。
+        onMinedCardAction: onMinedCardActionFromPopup,
         // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
         // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
         onAppendSentence:
@@ -822,6 +827,33 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     Map<String, String> fields,
   ) async {
     return const MinePopupResult();
+  }
+
+  /// TODO-1007/1008：点 ✓（卡已存在）的编排入口（reader/有声书车道，与
+  /// [DictionaryPageMixin.onMinedCardAction] 对称）。据当前词条 [fields] 的
+  /// expression/reading 反查 Anki 全部命中卡，弹操作选择让用户选（覆写哪张 /
+  /// 新增重复卡 / 查看·在 Anki 中打开），复用可被 reader 覆写的 [onMineFromPopup] /
+  /// [onUpdateFromPopup] 执行。
+  Future<MinePopupResult> onMinedCardActionFromPopup(
+      Map<String, String> fields) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    final expression = fields['expression'] ?? '';
+    final reading = fields['reading'] ?? '';
+    final r = await runAnkiMinedCardAction(
+      context: context,
+      repo: repo,
+      expression: expression,
+      reading: reading,
+      mineNew: () async {
+        final res = await onMineFromPopup(fields);
+        return (ankiConnect: res.ankiConnect, noteId: res.noteId);
+      },
+      overwrite: (noteId) async {
+        final res = await onUpdateFromPopup(noteId, fields);
+        return (ankiConnect: res.ankiConnect, noteId: res.noteId);
+      },
+    );
+    return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
   /// 收藏/制卡计入统计时的来源标识。阅读器（EPUB）/有声书都归书籍统计
