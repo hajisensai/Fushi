@@ -1998,5 +1998,15 @@
   "video_import_webpage_url_warning_title": "Web page address, not a direct stream",
   "video_import_webpage_url_warning_body": "This looks like a web page (e.g. YouTube/Netflix), not a direct video stream (.m3u8/.mp4/direct link). Hibiki cannot extract video from web pages yet — please provide a direct stream URL. You can still try anyway.",
   "video_import_webpage_url_try_anyway": "Try anyway",
-  "sync_pair_pin_label": "Enter this PIN on the other device"
+  "sync_pair_pin_label": "Enter this PIN on the other device",
+  "anki_mined_card_title": "Card already in Anki",
+  "anki_mined_card_subtitle": "Choose what to do with the matching card.",
+  "anki_mined_action_overwrite": "Overwrite this card",
+  "anki_mined_action_add_duplicate": "Add as a new card",
+  "anki_mined_action_view": "View / open in Anki",
+  "anki_mined_multiple_matches": "$count matching cards",
+  "anki_note_viewer_title": "Existing card",
+  "anki_note_viewer_open_in_anki": "Open in Anki",
+  "anki_note_viewer_empty": "This card has no readable fields.",
+  "anki_note_open_failed": "Could not open the card in Anki."
 }

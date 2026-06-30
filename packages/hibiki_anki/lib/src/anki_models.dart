@@ -65,6 +65,50 @@ AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
   }
 }
 
+/// TODO-1007/1008：一张**已存在于 Anki**的、与当前查词同条件匹配的卡片的轻量引用。
+///
+/// 用户痛点（根因）：旧的「点 ✓ 默默 return / 只覆写本会话最近一张」把「別处或上次会话
+/// 建的同词卡」挡死——`findOverwriteTargetNoteId` 在 `overwriteScope != all` 时恒返回
+/// `null`，AnkiDroid 后端更是无法按内容反查 note id。本类是新可达性链路的数据载体：
+/// 两后端用「与查重同一条件」（第一字段=expression）反查所有命中卡，返回它们的
+/// [noteId] + 一行预览（[preview]），交给宿主弹操作选择（命中多张时让用户选哪张），
+/// 而不再默默取最近一张或静默无反应。
+///
+/// - [noteId]：Anki note id（AnkiConnect = findNotes 返回的 id；AnkiDroid = NoteInfo.getId）。
+/// - [preview]：给用户区分多张命中卡用的一行文本（第一字段去 HTML 后的纯文本，可能为空）。
+@immutable
+class MinedNoteRef {
+  const MinedNoteRef({required this.noteId, this.preview = ''});
+
+  factory MinedNoteRef.fromJson(Map<String, dynamic> json) => MinedNoteRef(
+        noteId: (json['noteId'] as num).toInt(),
+        preview: json['preview']?.toString() ?? '',
+      );
+
+  /// Anki note id（创建时间戳毫秒，越大越新）。
+  final int noteId;
+
+  /// 给用户区分多张命中卡用的一行预览文本（第一字段去 HTML 后的纯文本，可能为空）。
+  final String preview;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'noteId': noteId,
+        'preview': preview,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is MinedNoteRef &&
+      other.noteId == noteId &&
+      other.preview == preview;
+
+  @override
+  int get hashCode => Object.hash(noteId, preview);
+
+  @override
+  String toString() => 'MinedNoteRef(noteId: $noteId, preview: "$preview")';
+}
+
 class AnkiSettings {
   const AnkiSettings({
     this.selectedDeckId,

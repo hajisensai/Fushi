@@ -7,6 +7,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
@@ -220,6 +221,31 @@ mixin DictionaryPageMixin {
     return repo.findOverwriteTargetNoteId(expression, reading);
   }
 
+  /// TODO-1007/1008：点 ✓（卡已存在）的编排入口（视频/首页/独立查词车道）。据当前
+  /// 词条 [fields] 的 expression/reading 反查 Anki 全部命中卡，弹操作选择让用户选
+  /// （覆写哪张 / 新增重复卡 / 查看·在 Anki 中打开），复用 [onMineEntry]/[onUpdateEntry]
+  /// 执行，返回 [MinePopupResult] 刷新 ✓。与 reader 车道（base_source_page）对称。
+  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    final expression = fields['expression'] ?? '';
+    final reading = fields['reading'] ?? '';
+    final r = await runAnkiMinedCardAction(
+      context: context,
+      repo: repo,
+      expression: expression,
+      reading: reading,
+      mineNew: () async {
+        final res = await onMineEntry(fields);
+        return (ankiConnect: res.ankiConnect, noteId: res.noteId);
+      },
+      overwrite: (noteId) async {
+        final res = await onUpdateEntry(noteId, fields);
+        return (ankiConnect: res.ankiConnect, noteId: res.noteId);
+      },
+    );
+    return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
+  }
+
   /// 把一次成功制卡计入统计（按 [dictionarySourceType]）。
   ///
   /// 视频页等覆写 [onMineEntry]、绕过基类成功分支的页面，在自己的成功路径上
@@ -389,6 +415,7 @@ mixin DictionaryPageMixin {
         onUpdateEntry: onUpdateEntry,
         onDuplicateCheck: checkDuplicate,
         onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+        onMinedCardAction: onMinedCardAction,
         onFavoriteEntry: onFavoriteEntry,
         onFavoriteCheck: onFavoriteCheck,
         // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）

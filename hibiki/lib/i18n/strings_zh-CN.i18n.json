@@ -1998,5 +1998,15 @@
   "video_import_webpage_url_warning_title": "网页地址，不是视频直链",
   "video_import_webpage_url_warning_body": "这是网页地址（如 YouTube/Netflix），不是直接的视频流（.m3u8/.mp4/直链）。Hibiki 暂不支持解析网页视频，请提供直链。你仍可强行尝试。",
   "video_import_webpage_url_try_anyway": "仍要尝试",
-  "sync_pair_pin_label": "在另一台设备上输入此 PIN"
+  "sync_pair_pin_label": "在另一台设备上输入此 PIN",
+  "anki_mined_card_title": "卡片已在 Anki 中",
+  "anki_mined_card_subtitle": "选择对这张已存在的卡片做什么。",
+  "anki_mined_action_overwrite": "覆写这张卡",
+  "anki_mined_action_add_duplicate": "新增为重复卡",
+  "anki_mined_action_view": "查看 / 在 Anki 中打开",
+  "anki_mined_multiple_matches": "$count 张匹配的卡片",
+  "anki_note_viewer_title": "已存在的卡片",
+  "anki_note_viewer_open_in_anki": "在 Anki 中打开",
+  "anki_note_viewer_empty": "这张卡片没有可读取的字段。",
+  "anki_note_open_failed": "无法在 Anki 中打开这张卡片。"
 }

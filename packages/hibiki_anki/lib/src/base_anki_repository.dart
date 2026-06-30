@@ -126,6 +126,33 @@ abstract class BaseAnkiRepository {
           String expression, String reading) async =>
       null;
 
+  /// TODO-1007/1008：按「与查重同一条件」（第一字段=expression）反查 Anki 中**所有**
+  /// 已存在的同词卡，返回它们的 [MinedNoteRef]（noteId + 一行预览），**不受
+  /// [AnkiSettings.overwriteScope] 影响**——这是「别处/上次会话建的卡也要能被发现并操作」
+  /// 的根因修复入口。与 [findOverwriteTargetNoteId]（只在 scope=all 时回最近一张）不同，
+  /// 本方法恒尝试反查全部命中，交给宿主弹操作选择（命中多张让用户选哪张、点 ✓ 弹三选）。
+  ///
+  /// 返回顺序：note id 降序（最近的在前），便于宿主默认高亮最近一张。查询失败 / 拿不到
+  /// id 时返回空列表（fail-soft，绝不让探测把制卡链路搞崩）。
+  ///
+  /// **默认实现 = 优雅降级**：基类返回空列表。两后端各自覆写（AnkiConnect 经 findNotes +
+  /// notesInfo，AnkiDroid 经 ContentProvider findDuplicateNotes → NoteInfo.getId）。
+  Future<List<MinedNoteRef>> findMatchingNotes(
+          String expression, String reading) async =>
+      const <MinedNoteRef>[];
+
+  /// TODO-1007/1008：读取一张已存在 note（[noteId]）的现有字段（字段名 → 值），供
+  /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
+  /// ContentProvider getNote）。note 不存在 / 后端不支持时返回 `null`。
+  Future<Map<String, String>?> noteFields(int noteId) async => null;
+
+  /// TODO-1007/1008：在 Anki 中打开 / 浏览 [noteId] 对应的卡片（AnkiConnect 用
+  /// `guiBrowse(nid:<id>)`；AnkiDroid 用 ACTION_VIEW intent 跳 ContentProvider note）。
+  /// 成功返回 `true`，后端不支持 / 失败返回 `false`（不抛，供宿主据此提示）。
+  ///
+  /// **默认实现 = 优雅降级**：基类返回 `false`。
+  Future<bool> openNoteInAnki(int noteId) async => false;
+
   Future<bool> isDuplicate(String expression, String reading);
 
   /// Create [template] as a note type in the backend. Idempotent: returns
@@ -245,6 +272,17 @@ abstract class BaseAnkiRepository {
   /// 把任意标题字符串清洗成**单个合法 Anki tag**：Anki tag 以空白分隔，故空格 / Tab
   /// 全替换成下划线（与卡片创建器 `TagsField` 的清洗规则一致，保证两条路径产出同一字面量，
   /// 从而被 [buildNoteTags] 的去重正确合并、不重复追加）。空/全空白返回 `null`。
+  /// TODO-1007/1008：把一个卡片字段值（可能含 HTML）压成给用户看的**一行纯文本预览**：
+  /// 去标签、折叠空白、截断到 [maxLen]。供 note viewer / 多张命中选择列表区分卡片用。
+  /// 纯函数、可单测。
+  static String previewFromFieldValue(String value, {int maxLen = 60}) {
+    final String noTags = value.replaceAll(RegExp(r'<[^>]*>'), ' ');
+    final String collapsed =
+        noTags.replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (collapsed.length <= maxLen) return collapsed;
+    return '${collapsed.substring(0, maxLen)}…';
+  }
+
   static String? sanitizeTitleTag(String? title) {
     if (title == null) return null;
     // 先 trim 再替换内部空白：纯空白标题 → 空 → null（不产出 `___` 之类垃圾标签）；

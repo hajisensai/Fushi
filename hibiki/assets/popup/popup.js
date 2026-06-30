@@ -1184,6 +1184,18 @@ async function updateEntry(noteId, expression, reading, frequencies, pitches, ru
     return await window.flutter_inappwebview.callHandler('updateEntry', { noteId, fields });
 }
 
+// TODO-1007/1008: clicking ✓ (the card already exists) hands the FULL mine
+// payload to the host, which finds every matching note in Anki and shows an
+// action sheet (overwrite which card / add a new duplicate / view & open in
+// Anki). The host returns the post-action {ankiConnect, noteId} so the button
+// can refresh. This replaces the old silent "re-verify then return with no
+// feedback" path (TODO-1007 root cause: clicking ✓ did nothing).
+async function minedCardAction(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const fields = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
+}
+
 const INLINE_HTML_RE = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
 const URL_RE = /(?:https?:\/\/|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|dev|app|jp|uk|de|fr|info|me|co)\/)[^\s<>　，、。！））)]+/gi;
 const SAFE_TAGS = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','sub','br','a']);
@@ -1930,13 +1942,37 @@ function createEntryHeader(entry, idx) {
                 }
 
                 if (mineButton.dataset.mined === '1') {
-                    // Button shows 已制卡 ✓ (detected mined at lookup time). The
-                    // only reason to click it is the TODO-087 edge case: the card
-                    // may have been deleted in Anki since, with no re-lookup. So
-                    // re-verify against Anki before doing anything.
+                    // TODO-1007/1008: the card already exists (detected at lookup
+                    // time, but NOT this session's editable latest). Instead of the
+                    // old silent re-verify-then-return (which made ✓ feel dead),
+                    // ALWAYS hand off to the host action sheet so the user can
+                    // explicitly choose: overwrite a specific matching card, add a
+                    // new duplicate, or view / open the card in Anki. Works for
+                    // cards created elsewhere / in a previous session.
+                    if (typeof window.flutter_inappwebview.callHandler === 'function') {
+                        const reply = await minedCardAction(
+                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                        const result = parseMineResult(reply);
+                        // The host applied the chosen action (or the user cancelled,
+                        // in which case it echoes the unchanged mined state). Refresh
+                        // from Anki and update the editable-latest flag.
+                        if (window.sentenceDraftEnabled) {
+                            sentenceCtxPrev = 0;
+                            sentenceCtxNext = 0;
+                            sentenceDraftCount = 0;
+                            refreshAllSentenceContextPickers();
+                        }
+                        window.resetSelectedDictionariesForEntry(idx);
+                        if (result.ankiConnect) {
+                            rememberLatestMined(expression, reading, result.noteId);
+                        }
+                        const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                        setMineState(stillMined);
+                        return;
+                    }
+                    // No bridge (degenerate harness): keep the old behaviour.
                     const stillExists = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                     if (stillExists && !window.allowDupes) {
-                        // Still really in Anki, dupes off → keep 已制卡, add nothing.
                         setMineState(true);
                         return;
                     }
