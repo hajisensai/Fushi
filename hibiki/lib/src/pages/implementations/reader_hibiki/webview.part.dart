@@ -866,6 +866,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   document.addEventListener('selectstart', function(e) {
     if (hasStart && !_hoshiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
+  // TODO-1028: 砍掉双击建立的原生框选——它会盖住单击查词、并绊住振假名 dblclick
+  // 切换（_buildFuriganaJs 'toggle' 分支带 `!sel.isCollapsed` 守卫）。原生双击选词在
+  // mousedown/selectstart 阶段已发生，dblclick 只是结果，preventDefault 拦不住，故改
+  // removeAllRanges 清掉既成选区。用 capture 让它先于振假名 handler（bubble 阶段）跑，
+  // 从而振假名切换反而恢复正常（守卫不再被双击选区绊住）。单击查词走 onTap/_selectTextAt
+  // 自管 CSS Highlight，不产生原生选区，零影响。
+  document.addEventListener('dblclick', function() {
+    var sel = window.getSelection && window.getSelection();
+    if (sel && !sel.isCollapsed) sel.removeAllRanges();
+  }, true);
   // BUG-369: 滚动模式滚轮跨章的「arm-then-fire 二次确认」状态——记上一次已武装
   // 的边界方向（null=未武装）。惯性/竖排缓动擦边的单次瞬态只武装、不跨章；同方向
   // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
@@ -1196,7 +1206,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             'debugCaptureWebView already set — a previous reader did not '
             'clear it on dispose, or two readers are live at once.',
           );
-          ReaderHibikiPage.debugCaptureWebView = () => controller.takeScreenshot();
+          ReaderHibikiPage.debugCaptureWebView =
+              () => controller.takeScreenshot();
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
           ReaderHibikiPage.debugEvaluateTopPopup =
               (String source) async => _webviewTopPopupState?.debugEval(source);
