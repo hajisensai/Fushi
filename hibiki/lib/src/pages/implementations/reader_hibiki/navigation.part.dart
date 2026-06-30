@@ -96,7 +96,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         _hasEverLoaded = true;
       });
       // BUG-467：_hasEverLoaded 刚翻 true，底栏预留 _bottomChromeReserve 此刻才非 0。
-      // 初始 WebView HTML 是在 _hasEverLoaded=false 时求值的（漏底栏高），这里补下一次
+      // 初始 WebView HTML 是在 _hasEverLoaded 尚为 false 时求值的（漏底栏高），这里补下一次
       // chrome insets，让正文列底沿避开底栏（竖排尤为明显，见辅助方法长注释）。
       _reapplyChromeInsetsAfterFirstLoad();
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

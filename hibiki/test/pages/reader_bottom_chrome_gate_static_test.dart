@@ -71,13 +71,15 @@ void main() {
 
   test('_hasEverLoaded is set-once (no reset to false except its declaration)',
       () {
+    // 只数「复位赋值语句」（必带结尾 `;`），不数 prose 注释里出现的 `_hasEverLoaded
+    // = false` 字样 —— 注释描述状态不是复位点，旧正则漏算 `;` 会把注释误判成复位。
     final int resets =
-        RegExp(r'_hasEverLoaded\s*=\s*false').allMatches(src).length;
+        RegExp(r'_hasEverLoaded\s*=\s*false\s*;').allMatches(src).length;
     expect(
       resets,
       1,
       reason: '_hasEverLoaded 必须 set-once：除声明行 `bool _hasEverLoaded = false;` '
-          '外不得有任何复位点（复位会让切章底栏重新闪烁）。',
+          '外不得有任何复位语句（复位会让切章底栏重新闪烁）。',
     );
   });
 }
