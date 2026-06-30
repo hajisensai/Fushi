@@ -47,6 +47,8 @@ hibiki เปลี่ยนนิยายที่คุณอ่าน ซี
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> วิดีโอไม่แสดง? [ดูเดโมการสร้างการ์ดในคลิกเดียว ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## คุณสมบัติ

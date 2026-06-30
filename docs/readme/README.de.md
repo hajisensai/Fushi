@@ -47,6 +47,8 @@ Alle Szenarien teilen sich dieselben Wörterbücher, Statistiken und denselben W
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Video wird nicht angezeigt? [Demo zur Kartenerstellung mit einem Klick ansehen ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Funktionen

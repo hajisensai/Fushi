@@ -47,6 +47,8 @@ Every scenario shares the same dictionaries, statistics, and review workflow. It
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Video not showing? [Watch the one-click card-making demo ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Features

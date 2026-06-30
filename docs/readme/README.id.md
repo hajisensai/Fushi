@@ -47,6 +47,8 @@ Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok un
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Video tidak muncul? [Lihat demo pembuatan kartu sekali klik ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Fitur

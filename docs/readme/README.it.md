@@ -47,6 +47,8 @@ Tutti gli scenari condividono gli stessi dizionari, le stesse statistiche e lo s
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Il video non si visualizza? [Guarda la demo di creazione carte con un clic ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Funzionalità

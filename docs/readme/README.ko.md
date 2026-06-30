@@ -47,6 +47,8 @@ hibiki는 당신이 읽는 소설, 챙겨 보는 애니, 듣는 오디오북을 
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> 동영상이 표시되지 않나요? [원클릭 카드 제작 데모 보기 ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## 기능

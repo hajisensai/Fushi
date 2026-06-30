@@ -47,6 +47,8 @@ Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow.
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Video wordt niet weergegeven? [Bekijk de demo voor het maken van kaarten met één klik ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Functies

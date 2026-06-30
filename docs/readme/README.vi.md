@@ -47,6 +47,8 @@ Mọi tình huống đều dùng chung một bộ từ điển, thống kê và 
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Video không hiển thị? [Xem demo tạo thẻ một chạm ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Tính năng

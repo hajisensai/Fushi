@@ -47,6 +47,8 @@ Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaş
 
 <video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
+> Video görünmüyor mu? [Tek tıkla kart oluşturma demosunu izle ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
+
 </div>
 
 ## Özellikler
