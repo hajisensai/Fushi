@@ -79,6 +79,19 @@ bool WaitForSingleInstanceMutex(HANDLE mutex, DWORD timeout_ms) {
   return wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
 }
 
+// TODO-1003: 本进程是否为自动化集成测试 runner。itest harness（tool/run_windows_itest.ps1）
+// 在离屏/置屏两模式下都恒设 HIBIKI_TEST_HIDDEN（同 win32_window.cpp 的 IsTestHiddenMode）。
+// 测试模式下**必须跳过**下面的单实例守卫：测试 runner 本就该以首实例语义启动，哪怕用户
+// 自己的 Hibiki 正开着；否则守卫会看到用户实例持有 HibikiSingleInstanceMutex，走
+// FindWindow→前置→return EXIT_SUCCESS 分支，在 Flutter engine 初始化**之前**就退出 →
+// flutter_tool 永远拿不到 VM service URI（报 "log reader stopped unexpectedly"，整套
+// Windows itest 无法 attach）。跳过是安全的：守卫唯一目的是防两进程共享默认 WebView2
+// userDataFolder（BUG-437），而 harness 已用 HIBIKI_WEBVIEW2_USER_DATA_FOLDER 把测试
+// runner 的 WebView2 profile 隔离开，冲突不存在。生产从不设该变量，行为字节不变。
+bool IsTestRunnerMode() {
+  return ::GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
@@ -89,11 +102,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // userDataFolder → 第二实例 env 创建锁冲突失败 → `Cannot create the InAppWebView
   // instance!`。原本只 CreateMutexW 不查 ERROR_ALREADY_EXISTS = 没有真单实例。
   // 此处检测已有实例则把首实例窗口前置并退出本进程，消除双实例锁冲突放大器。
-  ::SetLastError(ERROR_SUCCESS);
-  HANDLE single_instance_mutex =
-      ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
-  bool another_instance = single_instance_mutex != nullptr &&
-                          ::GetLastError() == ERROR_ALREADY_EXISTS;
+  // 集成测试 runner（HIBIKI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
+  // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
+  const bool test_runner = IsTestRunnerMode();
+  HANDLE single_instance_mutex = nullptr;
+  bool another_instance = false;
+  if (!test_runner) {
+    ::SetLastError(ERROR_SUCCESS);
+    single_instance_mutex =
+        ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
+    another_instance = single_instance_mutex != nullptr &&
+                       ::GetLastError() == ERROR_ALREADY_EXISTS;
+  }
   // TODO-935 BUG 修复：数据迁移后的自动重启会以 detached 模式拉起带 [kRestartMarkerArg]
   // 的新进程，但此刻旧进程尚未走完退出序列、仍持有单实例互斥量。若直接按「二次启动」
   // 退出本进程，则重启落空：数据已迁到新根、data_root pref 已写，但应用从未重新初始化
