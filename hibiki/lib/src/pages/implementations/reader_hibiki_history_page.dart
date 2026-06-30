@@ -80,6 +80,12 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
   final Future<void> Function(File package, String? bookKeyOverride)?
       remoteAudiobookImporter;
 
+  /// 测试钩子：按 mediaIdentifier 确定性打开书（绕开离屏不可靠的焦点卡激活——
+  /// 焦点+Enter 在离屏 IndexedStack 下偶发不触发书卡 onTap）。走与书卡 onTap 同一
+  /// 路径 appModel.openMedia。仅 debug/profile build 在 build 注册。
+  @visibleForTesting
+  static Future<void> Function(String mediaIdentifier)? debugOpenBook;
+
   @override
   BaseHistoryPageState<BaseHistoryPage> createState() =>
       _ReaderHibikiHistoryPageState();
@@ -201,9 +207,42 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   @override
+  void dispose() {
+    assert(() {
+      ReaderHibikiHistoryPage.debugOpenBook = null;
+      return true;
+    }());
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
         ref.watch(hibikiBooksProvider(appModel.targetLanguage));
+    assert(() {
+      ReaderHibikiHistoryPage.debugOpenBook = (String mediaId) async {
+        final List<MediaItem> items = ref
+                .read(hibikiBooksProvider(appModel.targetLanguage))
+                .valueOrNull ??
+            const <MediaItem>[];
+        MediaItem? target;
+        for (final MediaItem m in items) {
+          if (m.mediaIdentifier == mediaId) {
+            target = m;
+            break;
+          }
+        }
+        if (target == null) {
+          return;
+        }
+        await appModel.openMedia(
+          ref: ref,
+          mediaSource: target.getMediaSource(appModel: appModel),
+          item: target,
+        );
+      };
+      return true;
+    }());
     final AsyncValue<Set<String>?> filteredIds =
         ref.watch(filteredBookIdsProvider);
     final allTags = ref.watch(allTagsProvider);

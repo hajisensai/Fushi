@@ -14,6 +14,8 @@ import 'package:hibiki/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
+import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
+    show ReaderHibikiHistoryPage;
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/focus_driver.dart';
@@ -49,37 +51,22 @@ void main() {
       expect(home.nonBlank, isTrue,
           reason: '离屏 Flutter 抓图不应是白屏（${home.path}, ${home.bytes}B）');
 
-      // 2) 焦点驱动打开有声书 fixture（有声书 = EPUB + 挂载 cue/音频，书架以
-      //    book_entry_/srt_entry_ 形态呈现，序列同 observe_offscreen_test）。
-      final FocusDriver driver = FocusDriver(tester);
+      // 2) 打开有声书 fixture（有声书 = EPUB + 挂载 cue/音频）。焦点卡激活在离屏下
+      //    偶发不触发书卡 onTap（截图证实仍停书架），故用书架页测试钩子按
+      //    mediaIdentifier 直接 openMedia（与书卡 onTap 同一路径），确定性可靠。
       final String bookKey = await seedAudiobook(tester);
-      final List<Finder> navTargets = findPrimaryNavigationTargets();
-      if (navTargets.isNotEmpty) {
-        final bool focusedTab = await driver.focusWidget(navTargets.first);
-        expect(focusedTab, isTrue, reason: '书架 tab 应可被焦点到达');
-        await driver.activate();
-        await tester.pumpAndSettle();
-      }
+      final String mediaId = ReaderHibikiSource.mediaIdentifierFor(bookKey);
 
-      // 优先按 book_entry_<mediaId> 命中；命中不到再退化到任意 srt_entry_ 前缀
-      // 谓词（有声书 fixture 也可能以 srt_entry_ 呈现）。
-      final String seededKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
-      Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
+      // 先等书出现在书架（provider 已含该书，debugOpenBook 才查得到）。
+      final Finder seededEntry =
+          find.byKey(ValueKey<String>('book_entry_$mediaId'));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
       }
-      if (seededEntry.evaluate().isEmpty) {
-        seededEntry = find.byWidgetPredicate((Widget w) {
-          final Key? key = w.key;
-          return key is ValueKey<String> && key.value.startsWith('srt_entry_');
-        });
-      }
       expect(seededEntry, findsWidgets, reason: '播种的有声书应出现在书架');
-      final Finder bookCard = seededEntry.first;
-      final bool focusedBook = await driver.focusWidget(bookCard);
-      expect(focusedBook, isTrue, reason: '书卡应可被焦点到达（否则离屏打不开书）');
-      await driver.activate();
+      expect(ReaderHibikiHistoryPage.debugOpenBook, isNotNull,
+          reason: '书架页打开书测试钩子应已注册（debug/profile build）');
+      await ReaderHibikiHistoryPage.debugOpenBook!(mediaId);
       await tester.pump(const Duration(seconds: 3));
 
       // 有声书（EPUB+音频）可能以歌词模式打开（与章节阅读器不同页，无 hoshi_webview
