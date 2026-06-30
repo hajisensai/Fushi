@@ -53,14 +53,30 @@ ShortcutAction? resolveReaderSpaceOverride({
 /// 导致 RTL 书翻页方向反转（落回注册表的 Right=前进 写死映射）。当
 /// `key == process` 时用 [physicalKey] 还原 arrowLeft/arrowRight 语义；文本框
 /// composing 时调用方传 null 关闭回退。方向键物理位在常见布局一致，回退稳定。
+///
+/// TODO-992：本覆写只为「翻页绑定」做阅读方向校正，**必须尊重用户改键**。调用方传入
+/// 该裸键当前在阅读器 co-active 组（reader + audiobook scope）解析出的 [boundAction]：
+/// - 仍是翻页动作（[ShortcutAction.readerPageForward]/[ShortcutAction.readerPageBackward]）
+///   → 按阅读方向重定向，保持 BUG-098/099/TODO-120 既有行为。
+/// - 被用户改绑成别的动作（如有声书上/下句）或显式解绑（null）→ 返回 null 让出，
+///   交回注册表解析用户的真实绑定（修复「连续滚动模式下左右键仍只翻页不动有声书」，
+///   分页与连续两模式都走这条统一解析，故两模式一并修复）。
+/// 默认绑定下裸 Left/Right 仍解析为翻页，故默认用户行为不变（Never break userspace）。
 ShortcutAction? resolveReaderArrowPageTurn({
   required LogicalKeyboardKey key,
   required Set<ModifierKey> modifiers,
   required bool rtl,
+  required ShortcutAction? boundAction,
   bool reverse = false,
   PhysicalKeyboardKey? physicalKey,
 }) {
   if (modifiers.isNotEmpty) return null;
+  // 用户已把裸左/右键改绑成非翻页动作（或解绑）→ 不覆写，交回注册表解析真实绑定。
+  // 只有当该键仍绑定到翻页时，阅读方向校正才适用。
+  if (boundAction != ShortcutAction.readerPageForward &&
+      boundAction != ShortcutAction.readerPageBackward) {
+    return null;
+  }
   final bool leftIsForward = rtl ^ reverse;
   final bool isLeft = key == LogicalKeyboardKey.arrowLeft ||
       (key == LogicalKeyboardKey.process &&
