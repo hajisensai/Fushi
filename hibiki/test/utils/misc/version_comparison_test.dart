@@ -56,30 +56,113 @@ void main() {
       expect(isVersionNewer('0.3.0', '0.2.9'), isTrue);
     });
 
-    test('selected prerelease channels can move from same-base stable', () {
+    // BUG-480：用户铁律「正式版/测试版/调试版更新不能混」。基版本相同时，本通道的预发布
+    // 绝不能被当成对正式版/别通道预发布的更新（semver 里 `x-debug.n < x`，预发布早于正式
+    // 版，回灌在语义上也错）。此前这里断言「同基正式版可被本通道预发布推送=isTrue」，正是
+    // 用户报告的混推根因，已随根因修复改为严格隔离。
+    test(
+        'BUG-480 prerelease channels do NOT push onto same-base stable install',
+        () {
+      // 正式版 1.0.1 装机 + 选 debug/beta 通道 → 同基预发布**不推送**（混推根因）。
+      expect(
+        isUpdateVersionNewer('0.5.1-debug.412', '0.5.1', UpdateChannel.debug),
+        isFalse,
+        reason: '正式版装机不得被同基 debug 预发布推送（不混渠道）',
+      );
+      expect(
+        isUpdateVersionNewer('0.5.1-beta.412', '0.5.1', UpdateChannel.beta),
+        isFalse,
+        reason: '正式版装机不得被同基 beta 预发布推送（不混渠道）',
+      );
+      // stable 通道恒不接受预发布（既有契约保持）。
+      expect(
+        isUpdateVersionNewer('0.5.1-beta.412', '0.5.1', UpdateChannel.stable),
+        isFalse,
+      );
+    });
+
+    test('BUG-480 debug channel does NOT push onto same-base beta install', () {
+      // beta 装机 1.0.1-beta.x + 选 debug 通道 → 同基 debug 预发布**不跨通道推送**。
       expect(
         isUpdateVersionNewer(
           '0.5.1-debug.412',
-          '0.5.1',
+          '0.5.1-beta.300',
+          UpdateChannel.debug,
+        ),
+        isFalse,
+        reason: 'beta 装机不得被同基 debug 预发布跨通道推送',
+      );
+    });
+
+    test('BUG-480 beta channel does NOT push onto same-base debug install', () {
+      expect(
+        isUpdateVersionNewer(
+          '0.5.1-beta.412',
+          '0.5.1-debug.300',
+          UpdateChannel.beta,
+        ),
+        isFalse,
+        reason: 'debug 装机不得被同基 beta 预发布跨通道推送',
+      );
+    });
+
+    test(
+        'BUG-480 same-channel sequence still advances (legit update preserved)',
+        () {
+      // 同通道序号递进=真更新，根因修复后必须仍然成立（别误伤正常 debug→debug 升级）。
+      expect(
+        isUpdateVersionNewer(
+          '0.5.1-debug.413',
+          '0.5.1-debug.412',
           UpdateChannel.debug,
         ),
         isTrue,
       );
       expect(
         isUpdateVersionNewer(
+          '0.5.1-beta.413',
           '0.5.1-beta.412',
-          '0.5.1',
           UpdateChannel.beta,
         ),
         isTrue,
       );
+    });
+
+    test('BUG-480 same prerelease version is NOT newer (reject same version)',
+        () {
+      // 「不检测版本号相同」根因：同基同序号必须判 false（含带 +build 元数据的同号）。
+      expect(
+        isUpdateVersionNewer(
+          '0.5.1-debug.412',
+          '0.5.1-debug.412',
+          UpdateChannel.debug,
+        ),
+        isFalse,
+      );
       expect(
         isUpdateVersionNewer(
           '0.5.1-beta.412',
-          '0.5.1',
-          UpdateChannel.stable,
+          '0.5.1-beta.412',
+          UpdateChannel.beta,
         ),
         isFalse,
+      );
+      expect(
+        isUpdateVersionNewer('1.0.1', '1.0.1', UpdateChannel.stable),
+        isFalse,
+        reason: '稳定通道同版本号不得提示更新',
+      );
+    });
+
+    test('BUG-480 newer BASE version still updates across channel opt-in', () {
+      // 跨通道升级走「基版本递增」这条正路（不靠同基回灌），必须仍然成立。
+      expect(
+        isUpdateVersionNewer('0.5.2-debug.1', '0.5.1', UpdateChannel.debug),
+        isTrue,
+      );
+      expect(
+        isUpdateVersionNewer('0.5.2-beta.1', '0.5.1', UpdateChannel.beta),
+        isTrue,
       );
     });
 

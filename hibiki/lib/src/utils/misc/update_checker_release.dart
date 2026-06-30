@@ -1251,9 +1251,22 @@ bool isUpdateVersionNewer(
   final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
   if (baseCompare != 0) return baseCompare > 0;
 
+  // BUG-480：基版本相同时**严格只在同通道预发布序号递进**才算更新——绝不让正式版/
+  // 别通道预发布被同基的本通道预发布推送（用户铁律「正式版/测试版/调试版更新不能混」）。
+  //
+  // 此前两条早退（`localPrerelease == null → true`、跨通道预发布 → `true`）把「同基的
+  // 本通道预发布」当成对本地的更新，导致：
+  //   * 正式版 `1.0.1` 装机 + 选了 debug 通道 → 同基 `1.0.1-debug.<seq>` 被判更新（混推，
+  //     且语义错：semver 里 `1.0.1-debug.x < 1.0.1`，预发布**早于**正式版，不该回灌）。
+  //   * beta 装机 `1.0.1-beta.x` + 选了 debug 通道 → 同基 `1.0.1-debug.<seq>` 被判更新（跨
+  //     通道混推）。
+  // 现在：同基场景下，只有「本地也是**本通道**预发布」且「远端本通道预发布序号严格更大」
+  // 才更新；本地是正式版、或本地是别通道预发布、或序号相同/更小 → 一律不更新（同基同号也
+  // 一并落到序号比较返回 false，根除「不检测版本号相同」）。跨通道升级走「基版本递增」
+  // （上面 baseCompare > 0）这条正路，不靠同基回灌。
   final String? localPrerelease = _prereleasePart(localVersion);
-  if (localPrerelease == null) return true;
-  if (!_prereleaseBelongsToChannel(localPrerelease, channel)) return true;
+  if (localPrerelease == null) return false;
+  if (!_prereleaseBelongsToChannel(localPrerelease, channel)) return false;
 
   final String remotePrerelease = _prereleasePart(remoteVersion)!;
   return _comparePrerelease(remotePrerelease, localPrerelease) > 0;

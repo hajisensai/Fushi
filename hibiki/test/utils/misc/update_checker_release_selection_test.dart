@@ -46,7 +46,7 @@ void main() {
             ],
           ),
         ],
-        currentVersion: '0.5.1',
+        currentVersion: '0.5.0',
         channel: UpdateChannel.debug,
         updater: WindowsUpdater(),
       );
@@ -79,7 +79,7 @@ void main() {
             ],
           ),
         ],
-        currentVersion: '0.5.1',
+        currentVersion: '0.5.0',
         channel: UpdateChannel.debug,
         updater: AndroidUpdater(
           abiProvider: () async => <String>['arm64-v8a'],
@@ -219,7 +219,7 @@ void main() {
             ],
           ),
         ],
-        currentVersion: '0.5.1',
+        currentVersion: '0.5.0',
         channel: UpdateChannel.beta,
         updater: WindowsUpdater(),
       );
