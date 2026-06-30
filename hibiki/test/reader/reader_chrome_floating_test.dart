@@ -235,6 +235,46 @@ void main() {
       expect(src.contains('_chromeAutoHideTimer?.cancel()'), isTrue);
     });
   });
+
+  group('first-load chrome inset re-apply (BUG-467 regression)', () {
+    // 回归——TODO-975 把底栏预留 _bottomChromeReserve 门控进 `_hasEverLoaded &&
+    // _showChrome`，但初始 WebView HTML 在 _hasEverLoaded=false 时求 chromeBottomInset
+    // → 漏底栏高；内容就绪后从未补下 chrome insets → 竖排正文画进底栏（「文字去到底栏」）。
+    // 修复=在每个内容首次就绪落点补 _reapplyChromeInsetsAfterFirstLoad()→_applyChromeInsets。
+    final String src = readReaderPageSource();
+
+    test('_reapplyChromeInsetsAfterFirstLoad exists and re-pushes insets', () {
+      expect(
+        src.contains('void _reapplyChromeInsetsAfterFirstLoad()'),
+        isTrue,
+        reason: 'BUG-467：必须有「内容首次就绪补下 chrome insets」的辅助方法',
+      );
+      final String body = _slice(
+        src,
+        'void _reapplyChromeInsetsAfterFirstLoad() {',
+        '  /// TODO-975：预留高发生变化',
+      );
+      expect(
+        body.contains('_applyChromeInsets()'),
+        isTrue,
+        reason: '辅助方法必须真重下 chrome insets（喂 WebView 此刻已正确的底栏预留）',
+      );
+    });
+
+    test('all three content-ready flip points re-apply insets', () {
+      // _hasEverLoaded 翻 true 的真实内容落点都必须补发，否则首屏底栏漏预留复活。
+      final int calls = RegExp(r'_reapplyChromeInsetsAfterFirstLoad\(\)')
+          .allMatches(src)
+          .length;
+      // 1 处定义体内不调用自身 + 3 处调用点（onRestoreComplete 正常/兜底 + spreadReady）。
+      expect(
+        calls,
+        greaterThanOrEqualTo(3),
+        reason: 'BUG-467：onRestoreComplete 正常路径 + 兜底超时 + spreadReady 三处'
+            '都必须在 _hasEverLoaded 翻 true 后补下 chrome insets',
+      );
+    });
+  });
 }
 
 String _slice(String source, String start, String end) {

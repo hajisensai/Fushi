@@ -1452,6 +1452,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
                 _hasEverLoaded = true;
               });
+              // BUG-467：spread 内容就绪同样补下 chrome insets（_hasEverLoaded 刚翻 true，
+              // 初始 HTML 漏了底栏预留）。
+              _reapplyChromeInsetsAfterFirstLoad();
               // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
               _settleFocusOnContentReady();
             }

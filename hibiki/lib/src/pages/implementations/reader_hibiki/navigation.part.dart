@@ -47,6 +47,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           _readerContentReady = true;
           _hasEverLoaded = true;
         });
+        // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
+        _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
         _settleFocusOnContentReady();
         HibikiToast.show(msg: t.reader_content_timeout);
@@ -93,6 +95,10 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         _readerContentReady = true;
         _hasEverLoaded = true;
       });
+      // BUG-467：_hasEverLoaded 刚翻 true，底栏预留 _bottomChromeReserve 此刻才非 0。
+      // 初始 WebView HTML 是在 _hasEverLoaded=false 时求值的（漏底栏高），这里补下一次
+      // chrome insets，让正文列底沿避开底栏（竖排尤为明显，见辅助方法长注释）。
+      _reapplyChromeInsetsAfterFirstLoad();
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       // TODO-700 T3：内容就绪确定性落焦到正文（门控见 helper）。
       _settleFocusOnContentReady();

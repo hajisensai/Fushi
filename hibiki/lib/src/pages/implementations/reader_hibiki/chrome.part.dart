@@ -575,6 +575,30 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     await _caretRefresh();
   }
 
+  /// BUG-467（TODO-975 回归修复）：内容首次就绪时确定性补下一次 chrome insets。
+  ///
+  /// 根因——底栏预留 [_bottomChromeReserve] 经 TODO-975 改为门控 `_hasEverLoaded &&
+  /// _showChrome`，但**初始 WebView HTML** 在 [_buildWebView] 里用 `chromeBottomInset:
+  /// _readerBottomReserve` 求值时 `_hasEverLoaded` 仍为 false → 初始 HTML 只预留了系统
+  /// 底 inset（多数桌面/手势导航机为 0），把底栏高度漏掉。TODO-975 之前的旧式
+  /// `_showChrome ? _readerChromeHeight + _stableBottomInset : _stableBottomInset`
+  /// 不依赖 `_hasEverLoaded`、`_showChrome` 默认 true，故首屏即正确预留；而内容就绪后
+  /// （`_hasEverLoaded` 翻 true）又**没有任何代码重下 chrome insets**，于是 WebView 永远
+  /// 停在「底栏未预留」状态——正文列（尤其竖排 vertical-rl，字形沿物理纵轴流到屏底）
+  /// 直接画进底栏区域（BUG-467「文字去到底栏」）。
+  ///
+  /// 修复：在每个内容首次就绪的落点（`_hasEverLoaded` 翻 true 处）补一次
+  /// [_applyChromeInsets]，把此刻已正确的 [_readerBottomReserve]（含底栏高）下发给
+  /// WebView。幂等且零行为变化于 975 语义——悬浮态仍预留 0、关进度仍 0，因为读的还是
+  /// 同一组派生 getter；只是把「内容就绪后从未补发」这个漏洞补上。歌词模式由
+  /// [_applyChromeInsets] 自身的 `_lyricsMode` 早返回挡掉（歌词走 Flutter 侧 padding）。
+  void _reapplyChromeInsetsAfterFirstLoad() {
+    unawaited(_applyChromeInsets().catchError((Object e, StackTrace s) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.reapplyChromeInsetsAfterFirstLoad', e, s);
+    }));
+  }
+
   /// TODO-975：预留高发生变化（开/关顶部进度、挤压↔悬浮切换）后，先下发新 chrome
   /// insets，再走样式重锚编排保住连续模式滚动位置。复用 [_reanchorForStyleChange]
   /// 的两阶段 begin→commit + `_reanchorPending` 串行旗（传当前样式 JSON，begin 重设
