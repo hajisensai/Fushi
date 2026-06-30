@@ -13,6 +13,18 @@ typedef HibikiGridKeyBuilder = Key Function(int index);
 /// 「item[from] 移到最终下标 to」——调用方实现为 `removeAt(from); insert(to, item)`。
 typedef HibikiGridReorderCallback = void Function(int from, int to);
 
+/// 「被拖格 [draggingIndex] 能否合并进目标格 [targetIndex]」——返回 true 才允许把
+/// 拖拽落到目标格中心判定为「合并」（而非重排）。调用方用它排除自合并、合集格不可
+/// 再被拖入等业务约束。null（默认）= 完全不允许合并 = 今天的纯重排行为。
+typedef HibikiGridCanMergeCallback = bool Function(
+    int draggingIndex, int targetIndex);
+
+/// 「把被拖格 [draggingIndex] 合并进目标格 [targetIndex]」——松手落在目标格中心
+/// mergeRadius 区内且 [HibikiGridCanMergeCallback] 放行时调用，替代 onReorder。
+/// null（默认）= 不接合并 = 今天的纯重排行为。
+typedef HibikiGridMergeCallback = void Function(
+    int draggingIndex, int targetIndex);
+
 /// 自实现的二维拖拽重排网格，是 [HibikiReorderableColumn] 的网格版（TODO-616 B2）。
 /// 浮层渲染在本组件自身 Stack 内 + 全程 globalToLocal 把指针转本地坐标，在祖先
 /// Transform.scale（HibikiAppUiScale 整体缩放）下零偏移跟手。
@@ -33,6 +45,8 @@ class HibikiReorderableGrid extends StatefulWidget {
     this.mainAxisSpacing = 0,
     this.padding = EdgeInsets.zero,
     this.feedbackBorderRadius,
+    this.canMergeInto,
+    this.onMergeIntoTarget,
     super.key,
   });
 
@@ -66,6 +80,15 @@ class HibikiReorderableGrid extends StatefulWidget {
   /// 拖拽浮层圆角（裁切到此半径）；null 为直角。
   final BorderRadius? feedbackBorderRadius;
 
+  /// 「被拖格能否合并进目标格」判据。null（默认）= 不允许合并 = 纯重排（行为与
+  /// 不传时逐像素一致）。非空时配合 [onMergeIntoTarget] 启用「拖到目标格中心 →
+  /// 合并成合集」手势。
+  final HibikiGridCanMergeCallback? canMergeInto;
+
+  /// 落点在目标格中心 mergeRadius 区内且 [canMergeInto] 放行时调用（替代 onReorder）。
+  /// null（默认）= 不接合并。必须与 [canMergeInto] 同时提供合并手势才生效。
+  final HibikiGridMergeCallback? onMergeIntoTarget;
+
   @override
   State<HibikiReorderableGrid> createState() => _HibikiReorderableGridState();
 }
@@ -75,6 +98,14 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   /// 不在拖拽中实时重排子列表（避免重排导致活跃手势识别器元素失效、end/cancel
   /// 丢失）——仅被拖卡片透明占位，其余卡片不动。
   int? _dropTarget;
+
+  /// 当前「合并候选」目标格 display 下标（拖拽浮层中心落在该格中心 mergeRadius 区内
+  /// 且 canMergeInto 放行）。null = 不是合并候选 = 松手走普通 onReorder。仅在同时
+  /// 提供 canMergeInto + onMergeIntoTarget 时才可能非空（不传回调=永远 null=纯重排）。
+  int? _mergeTarget;
+
+  /// 合并命中半径系数：浮层中心距目标格中心 < min(cellW,cellH) * 此系数 即判定合并。
+  static const double _mergeRadiusFactor = 0.30;
 
   /// 本网格根 Stack 的 key，用于 globalToLocal 把指针转本地坐标 + 测尺寸。
   final GlobalKey _rootKey = GlobalKey();
@@ -106,6 +137,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     if (oldWidget.itemCount != widget.itemCount) {
       _dragOriginal = null;
       _dropTarget = null;
+      _mergeTarget = null;
     }
   }
 
@@ -157,6 +189,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       _dragOriginal = original;
       _dragStartDi = original;
       _dropTarget = original;
+      _mergeTarget = null;
       _grabOffset = Offset(
         (local.dx - slot.dx).clamp(0.0, _cellSize.width),
         (local.dy - slot.dy).clamp(0.0, _cellSize.height),
@@ -195,6 +228,33 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     final int row = rawRow < 0 ? 0 : rawRow;
     final int target = (row * _crossCount + col).clamp(0, widget.itemCount - 1);
     if (target != _dropTarget) setState(() => _dropTarget = target);
+
+    // 合并候选判据：仅当同时提供 canMergeInto + onMergeIntoTarget 时才可能进入；不
+    // 传回调时下式恒为 null，merge 分支彻底不触发，行为与纯重排逐像素一致。
+    final int merge = _resolveMergeTarget(center, dragged, target);
+    if (merge != (_mergeTarget ?? -1)) {
+      setState(() => _mergeTarget = merge < 0 ? null : merge);
+    }
+  }
+
+  /// 计算当前拖拽浮层中心 [center] 落点是否构成「合并候选」，返回目标 display 下标，
+  /// 不构成时返回 -1。判据：①两个合并回调都非空；②目标格 [target] 不是被拖格本身；
+  /// ③浮层中心距目标格中心距离 < min(cellW,cellH)*_mergeRadiusFactor；④canMergeInto
+  /// 放行。任一不满足 → -1（走普通重排）。
+  int _resolveMergeTarget(Offset center, int dragged, int target) {
+    final HibikiGridCanMergeCallback? canMerge = widget.canMergeInto;
+    if (canMerge == null || widget.onMergeIntoTarget == null) return -1;
+    if (target == dragged) return -1;
+    final Offset slot = _slotTopLeft(target);
+    final Offset targetCenter =
+        slot + Offset(_cellSize.width / 2, _cellSize.height / 2);
+    final double radius = (_cellSize.width < _cellSize.height
+            ? _cellSize.width
+            : _cellSize.height) *
+        _mergeRadiusFactor;
+    if ((center - targetCenter).distance >= radius) return -1;
+    if (!canMerge(dragged, target)) return -1;
+    return target;
   }
 
   void _endDrag() {
@@ -203,10 +263,18 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     _autoScroller?.stopAutoScroll();
     final int from = _dragStartDi;
     final int to = _dropTarget ?? from;
+    final int? mergeTarget = _mergeTarget;
     setState(() {
       _dragOriginal = null;
       _dropTarget = null;
+      _mergeTarget = null;
     });
+    // 合并候选优先：落在目标格中心 mergeRadius 区内且 canMergeInto 放行 → 走合并，
+    // 不走 onReorder（onMergeIntoTarget 在 _resolveMergeTarget 已验证非空）。
+    if (mergeTarget != null) {
+      widget.onMergeIntoTarget!(from, mergeTarget);
+      return;
+    }
     if (to != from) widget.onReorder(from, to);
   }
 
@@ -217,11 +285,13 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     if (!mounted) {
       _dragOriginal = null;
       _dropTarget = null;
+      _mergeTarget = null;
       return;
     }
     setState(() {
       _dragOriginal = null;
       _dropTarget = null;
+      _mergeTarget = null;
     });
   }
 
@@ -249,6 +319,42 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     PointerDeviceKind.touch,
   };
 
+  /// 给合并候选目标格叠一层非交互的「新建合集」高亮：轻微放大 + 主题色高亮描边/蒙层
+  /// + 居中 create_new_folder 图标。整层 IgnorePointer，不影响原卡片命中与拖拽。
+  Widget _wrapMergeHighlight(Widget child) {
+    final ThemeData theme = Theme.of(context);
+    final Color accent = theme.colorScheme.primary;
+    final BorderRadius radius =
+        widget.feedbackBorderRadius ?? BorderRadius.circular(12);
+    return Transform.scale(
+      scale: 1.06,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          child,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.18),
+                  borderRadius: radius,
+                  border: Border.all(color: accent, width: 2),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.create_new_folder,
+                    color: accent,
+                    size: 32,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCell(int original) {
     final Widget content = Builder(
       builder: (BuildContext cellContext) {
@@ -262,8 +368,14 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     // 不再穿透打开书；拖拽仍由本格外层 RawGestureDetector（translucent）独立接收指针。
     final Widget inert = IgnorePointer(child: content);
     // 被拖格在原位透明占位（随实时重排移动的空位），可见的是浮层复制。
-    final Widget slot =
+    Widget slot =
         _dragOriginal == original ? Opacity(opacity: 0.0, child: inert) : inert;
+    // 合并候选高亮：本格是当前合并目标时叠一层「新建合集」视觉（轻微放大 + 高亮边框
+    // + create_new_folder 图标），层在 IgnorePointer 之外但本身也不吃指针，不改原
+    // 卡片渲染/命中。不传合并回调时 _mergeTarget 恒为 null，此分支永不进入。
+    if (_mergeTarget == original) {
+      slot = _wrapMergeHighlight(slot);
+    }
     return RawGestureDetector(
       key: widget.keyForIndex(original),
       behavior: HitTestBehavior.translucent,

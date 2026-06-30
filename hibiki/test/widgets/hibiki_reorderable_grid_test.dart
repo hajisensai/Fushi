@@ -226,6 +226,93 @@ void main() {
       expect(reorders, <int>[0, 5], reason: '缩放下 globalToLocal 抵消缩放，命中仍对');
     });
   });
+
+  group('HibikiReorderableGrid 合并手势（TODO-947 PR1 基建）', () {
+    testWidgets(
+        '拖到目标格中心 + canMergeInto=true → onMergeIntoTarget 触发、onReorder 不触发',
+        (WidgetTester tester) async {
+      final List<int> reorders = <int>[];
+      final List<List<int>> merges = <List<int>>[];
+      await tester.pumpWidget(_MergeHarness(
+        items: const <String>['a', 'b', 'c', 'd', 'e', 'f'],
+        canMergeInto: (int from, int target) => true,
+        onMergeIntoTarget: (int from, int target) =>
+            merges.add(<int>[from, target]),
+        onReorder: (int from, int to) => reorders
+          ..add(from)
+          ..add(to),
+      ));
+      await tester.pumpAndSettle();
+      // a(0) 拖到 e(4) 的正中心：落在目标格中心 mergeRadius 区内 → 合并而非重排。
+      await _dragTo(tester, 'a', tester.getCenter(find.text('e')));
+      expect(
+          merges,
+          <List<int>>[
+            <int>[0, 4]
+          ],
+          reason: 'a(0) 合并进 e(4)');
+      expect(reorders, isEmpty, reason: '合并落点不得走 onReorder');
+    });
+
+    testWidgets('拖到格间隙（远离任何格中心）→ onReorder 触发、onMergeIntoTarget 不触发',
+        (WidgetTester tester) async {
+      final List<int> reorders = <int>[];
+      final List<List<int>> merges = <List<int>>[];
+      await tester.pumpWidget(_MergeHarness(
+        items: const <String>['a', 'b', 'c', 'd', 'e', 'f'],
+        canMergeInto: (int from, int target) => true,
+        onMergeIntoTarget: (int from, int target) =>
+            merges.add(<int>[from, target]),
+        onReorder: (int from, int to) => reorders
+          ..add(from)
+          ..add(to),
+      ));
+      await tester.pumpAndSettle();
+      // 格 200x200、mergeRadius = 200*0.30 = 60。把 a 拖到 b(下标1) 与 c(下标2) 之间
+      // 的边界缝隙：b 中心在 x=300，c 中心在 x=500，两格交界 x=400。浮层中心落 x≈400
+      // 距任一格中心 100 > 60 → 不构成合并，命中仍按 floor 落到某格 → 走 onReorder。
+      final Offset bCenter = tester.getCenter(find.text('b'));
+      final Offset gap = bCenter + const Offset(100, 0); // x≈400，落 b/c 交界缝
+      await _dragTo(tester, 'a', gap);
+      expect(merges, isEmpty, reason: '格间隙落点不构成合并');
+      expect(reorders, isNotEmpty, reason: '格间隙落点必须走普通重排');
+    });
+
+    testWidgets('不传合并回调（null）→ 任何拖放都只走 onReorder（纯重排零回归守卫）',
+        (WidgetTester tester) async {
+      final List<int> reorders = <int>[];
+      // 用与「合并」用例完全相同的落点（目标格正中心），但不传 canMergeInto /
+      // onMergeIntoTarget：必须退化为今天的纯重排，一次合并都不会发生。
+      await tester.pumpWidget(_GridHarness(
+        items: const <String>['a', 'b', 'c', 'd', 'e', 'f'],
+        onReorder: (int from, int to) => reorders
+          ..add(from)
+          ..add(to),
+      ));
+      await tester.pumpAndSettle();
+      await _dragTo(tester, 'a', tester.getCenter(find.text('e')));
+      expect(reorders, <int>[0, 4], reason: '不传回调时拖到格中心仍是纯重排 a(0)→e位置(4)');
+    });
+
+    testWidgets('canMergeInto 返回 false → 即便落在格中心也走 onReorder',
+        (WidgetTester tester) async {
+      final List<int> reorders = <int>[];
+      final List<List<int>> merges = <List<int>>[];
+      await tester.pumpWidget(_MergeHarness(
+        items: const <String>['a', 'b', 'c', 'd', 'e', 'f'],
+        canMergeInto: (int from, int target) => false, // 业务禁止合并
+        onMergeIntoTarget: (int from, int target) =>
+            merges.add(<int>[from, target]),
+        onReorder: (int from, int to) => reorders
+          ..add(from)
+          ..add(to),
+      ));
+      await tester.pumpAndSettle();
+      await _dragTo(tester, 'a', tester.getCenter(find.text('e')));
+      expect(merges, isEmpty, reason: 'canMergeInto=false 不得合并');
+      expect(reorders, <int>[0, 4], reason: 'canMergeInto=false 退化为重排');
+    });
+  });
 }
 
 /// 缩放用例的内层网格（与 _GridHarness 同配置，但直接被 HibikiAppUiScale 包裹）。
@@ -254,6 +341,62 @@ class _ScaledGridState extends State<_ScaledGrid> {
       },
       itemBuilder: (BuildContext context, int i) =>
           Center(child: Text(_items[i])),
+    );
+  }
+}
+
+/// 与 [_GridHarness] 同视口/几何，但额外暴露 canMergeInto / onMergeIntoTarget，用于
+/// 合并手势用例。onReorder 仍真改顺序（贴近真实调用方），合并回调只记录不改列表
+/// （PR1 不接线书架，合并落库是 PR2 的事）。
+class _MergeHarness extends StatefulWidget {
+  const _MergeHarness({
+    required this.items,
+    required this.onReorder,
+    required this.canMergeInto,
+    required this.onMergeIntoTarget,
+  });
+  final List<String> items;
+  final void Function(int from, int to) onReorder;
+  final bool Function(int draggingIndex, int targetIndex) canMergeInto;
+  final void Function(int draggingIndex, int targetIndex) onMergeIntoTarget;
+
+  @override
+  State<_MergeHarness> createState() => _MergeHarnessState();
+}
+
+class _MergeHarnessState extends State<_MergeHarness> {
+  late final List<String> _items = List<String>.of(widget.items);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 600,
+            height: 600,
+            child: HibikiReorderableGrid(
+              itemCount: _items.length,
+              cellExtent: 200,
+              childAspectRatio: 1,
+              keyForIndex: (int i) => ValueKey<String>(_items[i]),
+              canMergeInto: widget.canMergeInto,
+              onMergeIntoTarget: widget.onMergeIntoTarget,
+              onReorder: (int from, int to) {
+                setState(() {
+                  final String it = _items.removeAt(from);
+                  _items.insert(to, it);
+                });
+                widget.onReorder(from, to);
+              },
+              itemBuilder: (BuildContext context, int i) => SizedBox(
+                key: ValueKey<String>('cell_${_items[i]}'),
+                child: Center(child: Text(_items[i])),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
