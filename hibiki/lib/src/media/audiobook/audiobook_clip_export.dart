@@ -91,8 +91,14 @@ AudiobookClipBoundaryResult classifyAudiobookClipSelection({
 // TODO-945 M4：把文本图（PNG）+ 音频片段（AAC）合成成一段短视频（mjpeg/.mov）。
 //
 // D-CODEC（实测捆绑 ffmpeg 只有 gif/mjpeg/png 视频编码器，无 libx264/mpeg4）：
-// 用 `-c:v mjpeg`（Motion JPEG）+ `-c:a aac` 落 `.mov` 容器，零额外打包。GIF 无
-// 音轨故排除。画面是静态文本图 `-loop 1`，音频驱动时长 `-shortest`。
+// 用 `-c:v mjpeg`（Motion JPEG）+ `-c:a aac` 落 `.mov` 容器。GIF 无音轨故排除。
+// 画面是静态文本图 `-loop 1`，音频驱动时长 `-shortest`。
+//
+// ⚠️ 容器（D-MUXER，BUG-460）：`.mov` 需要 mov muxer。精简 ffmpeg-min build
+// （`--disable-everything`）原本只编入 adts/gif/mjpeg/image2 muxer，没有任何能同时
+// 装视频+音频流的容器，写 `.mov` 会 exit -22（EINVAL）。已把 `mov` 加进
+// `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 MUXERS 白名单（AAC 入 mov 自动经已编入的
+// `aac_adtstoasc` bsf）；本路径依赖重编后的 ffmpeg-min 产物随桌面发布更新。
 // ─────────────────────────────────────────────────────────────────────────
 
 /// 片段视频合成的失败原因。

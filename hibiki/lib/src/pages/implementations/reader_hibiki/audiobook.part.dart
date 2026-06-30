@@ -912,12 +912,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
       final String base = p.join(tmpDir.path, 'audiobook_clip_$stamp');
 
-      // M2：裁音频片段（AAC）。cue.startMs/endMs 已是文件内相对偏移。
+      // M2：裁音频片段（AAC/ADTS）。cue.startMs/endMs 已是文件内相对偏移。
+      // 输出 .aac（adts 容器）而非 .m4a：捆绑的精简 ffmpeg（--disable-everything）
+      // 只编入 adts/gif/mjpeg/image2 muxer，没有 ipod/mov/m4a muxer，写 .m4a 会让
+      // ffmpeg 自动选不存在的 mov muxer → exit -22（EINVAL）。adts 是 ffmpeg-min
+      // build 契约里句子音频的指定容器（docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md）。
       final String? clipPath = await extractAudioSegmentViaFfmpeg(
         inputPath: inputFile.path,
         startMs: startMs,
         endMs: endMs,
-        outputPath: '$base.m4a',
+        outputPath: '$base.aac',
       );
       if (clipPath == null) {
         if (mounted) {
