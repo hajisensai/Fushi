@@ -68,6 +68,10 @@ class _BookImportDialogState extends State<BookImportDialog>
   List<String> _audioPaths = [];
   String? _coverPath;
   String? _audioCoverPath;
+  // 内嵌封面抽取（m4b 等经 ffmpeg probe，桌面端有数百毫秒~数秒延迟）的在途
+  // Future。各触发点赋值，导入时 _applyBestCoverToEpub 先 await 它，避免用户在
+  // 抽取未返回时点「导入」导致 _audioCoverPath 仍为 null 被吞掉（BUG-483）。
+  Future<void>? _coverExtraction;
 
   // 原始文件名（file_picker 在 Android 上返回的 cache 路径文件名可能与原始不同）
   String? _epubName;
@@ -500,7 +504,17 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
-  Future<void> _tryExtractAudioCover() async {
+  /// 启动内嵌封面抽取，并把在途 Future 存进 [_coverExtraction]，使无论调用方
+  /// fire-and-forget 还是 await，导入时 [_applyBestCoverToEpub] 都能 await 同一个
+  /// Future 后再读 [_audioCoverPath]（已完成则零等待）。返回该 Future 以兼容仍想
+  /// await 的调用点。
+  Future<void> _tryExtractAudioCover() {
+    final Future<void> extraction = _runCoverExtraction();
+    _coverExtraction = extraction;
+    return extraction;
+  }
+
+  Future<void> _runCoverExtraction() async {
     if (_audioPaths.isEmpty) return;
     final Directory tmpDir = await getTemporaryDirectory();
     final String outputPath = p.join(
@@ -823,6 +837,12 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<void> _applyBestCoverToEpub(String bookKey) async {
+    // 等内嵌封面抽取（可能仍在途）落定再判断，否则用户在 ffmpeg 未返回时点导入会把
+    // _audioCoverPath 当 null 吞掉封面（BUG-483）。已完成则零等待。
+    final Future<void>? extraction = _coverExtraction;
+    if (extraction != null) {
+      await extraction;
+    }
     if (_coverPath != null) {
       await _applyCoverToEpub(bookKey);
     } else if (_audioCoverPath != null && !(await _epubHasCover(bookKey))) {
