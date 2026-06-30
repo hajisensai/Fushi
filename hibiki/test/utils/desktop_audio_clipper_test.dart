@@ -194,6 +194,26 @@ void main() {
       );
     });
 
+    // TODO-1005 / BUG-472：「ffmpeg 还没跑就失败」此前静默 return null，in-app 日志页
+    // 空白。现在这两条早返回必须经 onFailure 回传可诊断摘要（同时也写 ErrorLogService）。
+    test('TODO-1005: non-positive range reports diagnostics via onFailure',
+        () async {
+      final List<String> failures = <String>[];
+      final String? result = await extractAudioSegmentViaFfmpeg(
+        inputPath: 'whatever',
+        startMs: 1000,
+        endMs: 1000,
+        outputPath: 'x.aac',
+        onFailure: failures.add,
+      );
+      expect(result, isNull);
+      expect(failures, hasLength(1),
+          reason: 'zero/negative-length range must no longer fail silently — '
+              'the «无任何错误日志» bug (TODO-1005/BUG-472).');
+      expect(failures.single, contains('non-positive range'));
+      expect(failures.single, contains('endMs=1000'));
+    });
+
     test('returns null when the input file does not exist', () async {
       expect(
         await extractAudioSegmentViaFfmpeg(
@@ -204,6 +224,24 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('TODO-1005: missing input reports diagnostics via onFailure',
+        () async {
+      final List<String> failures = <String>[];
+      final String? result = await extractAudioSegmentViaFfmpeg(
+        inputPath: '/no/such/input.m4b',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: 'x.aac',
+        onFailure: failures.add,
+      );
+      expect(result, isNull);
+      expect(failures, hasLength(1),
+          reason: 'missing input audio must no longer fail silently '
+              '(TODO-1005/BUG-472).');
+      expect(failures.single, contains('does not exist'));
+      expect(failures.single, contains('/no/such/input.m4b'));
     });
 
     test('cuts a real clip when ffmpeg is available', () async {
@@ -629,8 +667,7 @@ void main() {
       );
     });
 
-    test(
-        'TODO-816 ④: reports diagnostics via onFailure when frame grab fails',
+    test('TODO-816 ④: reports diagnostics via onFailure when frame grab fails',
         () async {
       // 根因（TODO-816 ④）：制卡封面降级链路需要拿到失败摘要才能给用户可感知提示。
       // 旧 extractVideoFrameViaFfmpeg 只往 ErrorLogService 记日志、不回调 onFailure，
@@ -665,8 +702,7 @@ void main() {
 
       expect(result, isNull);
       expect(File(output).existsSync(), isFalse);
-      expect(failures, hasLength(1),
-          reason: '抽帧失败必须经 onFailure 回传给制卡降级提示路径。');
+      expect(failures, hasLength(1), reason: '抽帧失败必须经 onFailure 回传给制卡降级提示路径。');
       expect(failures.single, contains('0xC000007B'));
       expect(failures.single, contains('STATUS_INVALID_IMAGE_FORMAT'));
     });

@@ -811,12 +811,27 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           '[ReaderHibiki] export-clip M1: empty/gaiji-only selection — '
           'no renderable text (selectedText.isEmpty).',
         );
+        // TODO-1005 / BUG-472：此前只 debugPrint，in-app 日志页空白。补 ErrorLogService
+        // 让「ffmpeg 还没跑就失败」也落进可查日志。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.emptySelection',
+          'empty/gaiji-only selection (no renderable text); '
+              'audioFileCount=$audioFileCount',
+          StackTrace.current,
+        );
         HibikiToast.show(msg: t.audiobook_export_clip_no_text);
         return;
       case AudiobookClipBoundaryKind.noAudio:
         debugPrint(
           '[ReaderHibiki] export-clip M1: no audio files for this book '
           '(audioFileCount=$audioFileCount).',
+        );
+        // TODO-1005 / BUG-472：此前只 debugPrint，in-app 日志页空白。补 ErrorLogService。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.noAudio',
+          'no audio files for this book (audioFileCount=$audioFileCount); '
+              'selectedText="${selectedText.trim()}"',
+          StackTrace.current,
         );
         HibikiToast.show(msg: t.audiobook_export_clip_no_selection);
         return;
@@ -924,6 +939,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         outputPath: '$base.aac',
       );
       if (clipPath == null) {
+        // TODO-1005 / BUG-472：M2 裁音频返回 null 此前只弹 toast、零日志（底层早返回
+        // 也曾静默）。在管线层补一条带完整上下文的 ErrorLogService，连同底层日志一起
+        // 让用户/排障能看到「在哪一步、裁哪段、哪个文件」失败。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.audioClipFailed',
+          'extractAudioSegmentViaFfmpeg returned null '
+              '(startMs=$startMs, endMs=$endMs, '
+              'durationMs=${endMs - startMs}, input=${inputFile.path})',
+          StackTrace.current,
+        );
         if (mounted) {
           HibikiToast.show(msg: t.audiobook_export_clip_failed);
         }
@@ -933,6 +958,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
       // M3：文本离屏渲 PNG（沿用阅读主题 / 写排方向 / 字号）。
       if (overlay == null) {
+        // TODO-1005 / BUG-472：离屏渲染缺 Overlay 此前只 toast、零日志。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.noOverlay',
+          'no Overlay available for offscreen text render '
+              '(text="$text")',
+          StackTrace.current,
+        );
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
         return;
       }
@@ -950,6 +982,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         layout: layout,
       );
       if (pngBytes == null) {
+        // TODO-1005 / BUG-472：文本图渲染失败此前只 toast、零日志。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.textRenderFailed',
+          'renderAudiobookClipTextToPng returned null (text="$text")',
+          StackTrace.current,
+        );
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
         return;
       }
@@ -970,6 +1008,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         debugPrint(
           '[ReaderHibiki] export-clip synth failed: '
           '${synth.failure} ${synth.detail ?? ''}',
+        );
+        // TODO-1005 / BUG-472：synth 内部已记 ffmpeg 真因；这里补一条管线级摘要，
+        // 让失败原因（inputMissing / ffmpegUnavailable / ffmpegFailed / outputMissing）
+        // 与上下文一起出现在 in-app 日志页。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.synthFailed',
+          'video synth failed: ${synth.failure} ${synth.detail ?? ''}',
+          StackTrace.current,
         );
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
         return;

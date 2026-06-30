@@ -99,6 +99,18 @@ void _reportFfmpegProcessException(
   ErrorLogService.instance.log(source, summary, stack);
 }
 
+/// TODO-1005 / BUG-472：「ffmpeg 还没跑」的早返回（零长/错位区间、输入缺失）统一上报：
+/// 同时进 ErrorLogService（in-app 日志页）+ 回调 onFailure（供传 reporter 的制卡路径
+/// 向用户解释）。不改变返回值，仅补可诊断日志。
+void _reportFfmpegEarlyReturn(
+  String source,
+  String summary,
+  FfmpegFailureReporter? onFailure,
+) {
+  onFailure?.call(summary);
+  ErrorLogService.instance.log(source, summary, StackTrace.current);
+}
+
 void _reportFfmpegUnexpectedException(
   String source,
   Object error,
@@ -740,8 +752,28 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   int audioChannels = 1,
   String audioBitrate = '64k',
 }) async {
-  if (endMs <= startMs) return null;
-  if (!File(inputPath).existsSync()) return null;
+  // TODO-1005 / BUG-472：这两条「ffmpeg 还没跑」的早返回历来静默 return null——
+  // 有声书片段导出 / 句子音频 TTS / 视频制卡 只看到「失败但日志空白」，无从诊断。
+  // 改为同时打 ErrorLogService（in-app 日志页可查）+ 回调 onFailure（让传 reporter
+  // 的制卡路径也能向用户解释），再 return null（返回值/行为不变）。
+  if (endMs <= startMs) {
+    _reportFfmpegEarlyReturn(
+      'extractAudioSegmentViaFfmpeg',
+      'non-positive range (endMs=$endMs <= startMs=$startMs); '
+          'inputPath=$inputPath',
+      onFailure,
+    );
+    return null;
+  }
+  if (!File(inputPath).existsSync()) {
+    _reportFfmpegEarlyReturn(
+      'extractAudioSegmentViaFfmpeg',
+      'input audio file does not exist: $inputPath '
+          '(startMs=$startMs, endMs=$endMs)',
+      onFailure,
+    );
+    return null;
+  }
 
   final File output = File(outputPath);
   try {

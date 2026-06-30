@@ -1,0 +1,16 @@
+## BUG-472 · 有声书片段导出失败且无任何错误日志
+- **报告**：2026-06-30（用户：TODO-1005）
+- **真实性**：✅ 真 bug。根因：导出片段「失败但无任何 ffmpeg 日志」是因为失败发生在 ffmpeg 被调用**之前**的静默早返回路径，这些路径只 `debugPrint` / 只弹 toast，从不写 `ErrorLogService`（用户的 in-app 持久日志页因此空白）。
+  - `hibiki/lib/src/utils/misc/desktop_audio_clipper.dart:743` `if (endMs <= startMs) return null;` — 选区零长/错位，静默 return null（无日志、无 onFailure 回调）。
+  - 同文件 `:744` `if (!File(inputPath).existsSync()) return null;` — 输入音频路径不存在，静默 return null。
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart` 管线 `clipPath == null`（M2 裁音频返回 null）只弹 toast、无 `ErrorLogService`，外加 M3 `overlay==null` / `pngBytes==null` 同样只 toast。
+  - `_exportAudiobookClip` 的 `emptySelection` / `noAudio` 分支只 `debugPrint`，不进 `ErrorLogService`（对比 `unsupportedRange` 分支早已写）。
+  - 最可能触发：文本 EPUB（TextToEpub）+ 后挂有声书音频，句子 cue 区间易解析出零长/错位 → `endMs<=startMs`。**该零长区间在纯函数 `classifyAudiobookClipSelection`（`audiobook_clip_export.dart:79` `range.endMs <= range.startMs`）已被归类成 `unsupportedRange`（有完整日志 + 明确用户文案），不会漏到 M2 ffmpeg**——part B 的「归类」在 classify 层本就正确；用户看到的「点了没反应/日志空白」根因是 part A 的各静默出口缺 `ErrorLogService`。
+- **[x] ① 已修复** — 提交 `47bd24bb695f5474132fae60dc0fb41212aa4872`
+  - `desktop_audio_clipper.dart`：两条 ffmpeg-前早返回（非正区间 / 输入缺失）改为经新 helper `_reportFfmpegEarlyReturn(...)` 同时写 `ErrorLogService` + 回调 `onFailure`（让传 reporter 的制卡路径也能向用户解释），返回值不变（仍 null）。
+  - `audiobook.part.dart`：`emptySelection` / `noAudio` 分支、M2 `audioClipFailed`、M3 `noOverlay` / `textRenderFailed`、M4 `synthFailed` 每个静默失败出口都补 `ErrorLogService.instance.log(...)`，带可诊断上下文（inputPath/startMs/endMs/durationMs/text）。
+  - part B：零长/错位区间在 `classifyAudiobookClipSelection` 已归 `unsupportedRange`（既有 `:79` 守卫），保留不动并加测试钉死。
+- **[x] ② 已加自动化测试** — 提交 `47bd24bb695f5474132fae60dc0fb41212aa4872`
+  - `hibiki/test/utils/desktop_audio_clipper_test.dart`：新增两条行为测试，断言「非正区间」与「输入缺失」两条早返回经 `onFailure` 回传可诊断摘要（不再静默）。
+  - `hibiki/test/media/audiobook/audiobook_clip_export_logging_guard_test.dart`：源码守卫断言导出管线每个静默出口都接上 `ErrorLogService`（emptySelection/noAudio/unsupportedRange/audioClipFailed/noOverlay/textRenderFailed/synthFailed），以及 desktop_audio_clipper 两条早返回已去静默 return null、改走 `_reportFfmpegEarlyReturn`；行为测试断言 `classifyAudiobookClipSelection` 把零长/错位区间归类 `unsupportedRange`（part B 不回退）。
+- **备注**：仍需真机验证一次完整文本 EPUB + 后挂音频的导出失败路径，确认失败条目真的出现在 in-app 错误日志页（本轮只验单测 + analyze；日志写盘是已有成熟链路）。
