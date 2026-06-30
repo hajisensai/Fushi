@@ -1158,6 +1158,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         ),
       ]),
       initialSettings: InAppWebViewSettings(
+        // BUG-468：Windows 上右键会同时弹两个菜单——Hibiki 自定义的 Flutter 菜单
+        // （`_showReaderTextContextMenu`，经 onSecondaryTapDown）和 WebView2 原生菜单
+        // （复制/打印/更多工具）。上面 `contextMenu` 的 `hideDefaultSystemContextMenuItems`
+        // 是跨平台 ContextMenu API，在 WebView2 fork 上并不接到原生菜单开关；fork 里唯一
+        // 压制原生菜单的真值是 `disableContextMenu`→`put_AreDefaultContextMenusEnabled`
+        // （见 packages/flutter_inappwebview_windows/.../in_app_webview.cpp:231）。
+        // 故 Windows 下显式禁掉原生菜单，只留 Flutter 菜单。移动端不设（值 false），原生
+        // ContextMenu（查词+导出）仍可用，不回归。
+        disableContextMenu: isWindowsPlatform,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
