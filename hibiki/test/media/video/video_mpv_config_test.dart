@@ -30,7 +30,9 @@ keep-open=yes
 
   group('buildMpvProperties', () {
     test('defaults enable conservative built-in image enhancement', () {
-      final Map<String, String> m = buildMpvProperties(VideoMpvConfig.defaults);
+      // isAndroid:false 钉非 Android：hwdec 透传 auto-safe（Android 改写见 resolveAndroidHwdec 组）。
+      final Map<String, String> m =
+          buildMpvProperties(VideoMpvConfig.defaults, isAndroid: false);
       expect(m['hwdec'], 'auto-safe');
       expect(VideoMpvConfig.defaults.highQuality, isTrue);
       expect(VideoMpvConfig.decode('').highQuality, isTrue);
@@ -70,9 +72,10 @@ keep-open=yes
       expect(m['audio-normalize-downmix'], 'yes');
     });
 
-    test('hwdec value passes through', () {
+    test('hwdec value passes through (non-Android)', () {
       final Map<String, String> m = buildMpvProperties(
-          VideoMpvConfig.defaults.copyWith(hwdec: 'auto-safe'));
+          VideoMpvConfig.defaults.copyWith(hwdec: 'auto-safe'),
+          isAndroid: false);
       expect(m['hwdec'], 'auto-safe');
     });
 
@@ -122,6 +125,45 @@ keep-open=yes
       final Map<String, String> m = buildMpvProperties(VideoMpvConfig.defaults
           .copyWith(hwdec: 'auto-safe', rawConf: 'hwdec=no'));
       expect(m['hwdec'], 'no'); // raw 优先
+    });
+  });
+
+  group('resolveAndroidHwdec (BUG-470 Android HEVC surface-null)', () {
+    // 根因：media_kit Android 纹理渲染（vo=gpu/gpu-context=android，无直渲 surface），
+    // 而 auto-safe/auto 在 Android 选 surface-直渲 mediacodec → Both surface and
+    // native_window are NULL。修复=Android 改写成 copy 变体。
+    test('Android: auto-safe -> auto-copy', () {
+      expect(resolveAndroidHwdec('auto-safe', isAndroid: true), 'auto-copy');
+    });
+    test('Android: auto -> auto-copy', () {
+      expect(resolveAndroidHwdec('auto', isAndroid: true), 'auto-copy');
+    });
+    test('Android: no (software) passes through', () {
+      expect(resolveAndroidHwdec('no', isAndroid: true), 'no');
+    });
+    test('Android: auto-copy (already copy) passes through', () {
+      expect(resolveAndroidHwdec('auto-copy', isAndroid: true), 'auto-copy');
+    });
+    test('non-Android: every value passes through unchanged', () {
+      expect(resolveAndroidHwdec('auto-safe', isAndroid: false), 'auto-safe');
+      expect(resolveAndroidHwdec('auto', isAndroid: false), 'auto');
+      expect(resolveAndroidHwdec('no', isAndroid: false), 'no');
+      expect(resolveAndroidHwdec('auto-copy', isAndroid: false), 'auto-copy');
+    });
+    test('buildMpvProperties on Android downs auto-safe to copy variant', () {
+      // 守卫：下发到 libmpv 的 hwdec 在 Android 必为 copy 变体，不被回退成 surface-直渲。
+      final Map<String, String> m = buildMpvProperties(
+        VideoMpvConfig.defaults, // 默认 hwdec=auto-safe
+        isAndroid: true,
+      );
+      expect(m['hwdec'], 'auto-copy');
+    });
+    test('buildMpvProperties keeps explicit no (software) on Android', () {
+      final Map<String, String> m = buildMpvProperties(
+        VideoMpvConfig.defaults.copyWith(hwdec: 'no'),
+        isAndroid: true,
+      );
+      expect(m['hwdec'], 'no');
     });
   });
 
