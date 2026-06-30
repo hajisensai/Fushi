@@ -96,9 +96,31 @@ class UpdateChecker {
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
       if (!updatesDir.existsSync()) return;
       final DateTime cutoff = DateTime.now().subtract(const Duration(days: 7));
+
+      // TODO-1010：保护 Windows 待重启安装的 handoff 安装包——若存在 handoff 标记，
+      // 它指向的安装包正等下次启动安装，绝不能当旧包回收。
+      String? handoffInstallerName;
+      try {
+        final WindowsUpdateHandoffRecord? record =
+            await WindowsUpdateHandoff.read(
+                WindowsUpdateHandoff.markerFile(updatesDir));
+        if (record != null && record.installerPath.isNotEmpty) {
+          handoffInstallerName =
+              record.installerPath.replaceAll(r'\', '/').split('/').last;
+        }
+      } catch (e) {
+        debugPrint('[UpdateChecker] cleanup read handoff failed: $e');
+      }
+
+      final List<UpdateDirEntry> dirEntries = <UpdateDirEntry>[];
       for (final FileSystemEntity entity in updatesDir.listSync()) {
+        final String name = entity.uri.pathSegments.last;
         if (entity is Directory) {
-          final String name = entity.uri.pathSegments.last;
+          dirEntries.add(UpdateDirEntry(
+            name: name,
+            isDirectory: true,
+            modified: DateTime.fromMillisecondsSinceEpoch(0),
+          ));
           if (!name.endsWith('.staging')) continue;
           for (final FileSystemEntity child in entity.listSync()) {
             try {
@@ -117,18 +139,39 @@ class UpdateChecker {
           continue;
         }
         if (entity is! File) continue;
-        final String name = entity.uri.pathSegments.last;
+        dirEntries.add(UpdateDirEntry(
+          name: name,
+          isDirectory: false,
+          modified: entity.statSync().modified,
+        ));
+        // 既有职责：清理过期的临时/元数据文件（.part/.meta.json/.owner.json）。
         final bool isTemporary = name.endsWith('.part') ||
             name.endsWith('.meta.json') ||
             name.endsWith('.owner.json');
         if (!isTemporary) continue;
-        final FileStat stat = entity.statSync();
-        if (stat.modified.isBefore(cutoff)) {
+        if (entity.statSync().modified.isBefore(cutoff)) {
           try {
             entity.deleteSync();
           } catch (e) {
             debugPrint('[UpdateChecker] cleanup delete failed: $e');
           }
+        }
+      }
+
+      // TODO-1010 根因修复：回收过期的**完整安装包**（旧版本 .exe/.apk/.AppImage…）。
+      // 历史清理只删临时文件，完整产物从不回收，每升级一版多堆一个，长期到数 GB。
+      // 纯函数挑出待删项；排除 handoff 待装包与 marker 自身（无 active asset，因为
+      // 清理发生在选出本轮 asset 之前——下载阶段会自行复用/重下当前版本）。
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: dirEntries,
+        cutoff: cutoff,
+        handoffInstallerFileName: handoffInstallerName,
+      );
+      for (final String name in stale) {
+        try {
+          File('${updatesDir.path}${Platform.pathSeparator}$name').deleteSync();
+        } catch (e) {
+          debugPrint('[UpdateChecker] cleanup stale installer failed: $e');
         }
       }
     } catch (e) {

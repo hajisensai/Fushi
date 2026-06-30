@@ -1,0 +1,6 @@
+## BUG-473 · 更新包缓存不清理
+- **报告**：2026-06-30（用户：）TODO-1010
+- **真实性**：✅ 真 bug。现象：`%AppData%\Hibiki\Hibiki\updates` 堆积约 4.7 GB。根因 `hibiki/lib/src/utils/misc/update_checker_release.dart:94`（旧 `_cleanupOldApks`）——桌面自动更新把完整安装包下载落在 updates 目录（`update_checker_download.dart:109` `UpdateDownloadPaths.forAsset` 的 `file`），但清理白名单只覆盖 `.part`/`.meta.json`/`.owner.json` 临时文件和 `.staging` 目录（旧 `release.dart:119-124` 的 `isTemporary` 判定），**完整安装包（.exe/.apk/.AppImage 等主文件）从不回收**；每升级一版多堆一个几十~几百 MB 的包，长期累积到数 GB。
+- **[x] ① 已修复** — `update_checker_download.dart` 新增纯函数 `selectStaleUpdateArtifacts`（挑出 cutoff=7 天前的过期完整安装包，排除当前活跃 asset、Windows handoff 待重启安装包、`update-handoff.json` 标记本身、`.staging` 目录与临时文件）；`update_checker_release.dart` `_cleanupOldApks` 重构为：先读 handoff marker 拿待装包名 → 收集目录条目 → 既有临时/staging 清理不变 → 调纯函数挑出旧完整包 `deleteSync`。清理仍在 `_check` 下载前触发（`release.dart:_check` 调 `_cleanupOldApks`），不破坏正在进行的更新。提交哈希：见分支 fix-1010-updates-cleanup。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/update_checker_cleanup_test.dart`（10 例）：回归复现「旧完整包永不回收→现在应删」、新近包保留、cutoff 边界严格小于、临时/元数据文件不归本函数管、目录/.staging 跳过、排除活跃 asset、排除 handoff 待装包、排除 marker JSON、apk/AppImage 同样回收、空目录无副作用。红→绿全过。
+- **备注**：跨平台路径用 `Platform.pathSeparator`；只动桌面更新路径（Android updates 目录走 `getTemporaryDirectory`，系统自身会回收，但同一清理逻辑也覆盖 apk）。未删 marker 指向的 installer，避免破坏 Windows 重启安装握手。

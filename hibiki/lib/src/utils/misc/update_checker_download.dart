@@ -149,6 +149,81 @@ String safeUpdateAssetFileName(String name) {
   return sanitized.isEmpty ? 'hibiki-update.bin' : sanitized;
 }
 
+/// updates 目录下一个待清理判定的条目（纯数据，便于纯函数测试）。
+@visibleForTesting
+class UpdateDirEntry {
+  const UpdateDirEntry({
+    required this.name,
+    required this.isDirectory,
+    required this.modified,
+  });
+
+  /// 叶子名（不含目录前缀）。
+  final String name;
+  final bool isDirectory;
+  final DateTime modified;
+}
+
+/// 更新下载产生的临时/元数据文件后缀。完整安装包（无这些后缀的普通文件）才是
+/// 占空间的大头，旧的需要按 mtime 回收（TODO-1010）。
+const List<String> _kUpdateTempFileSuffixes = <String>[
+  '.part',
+  '.meta.json',
+  '.owner.json',
+];
+
+bool _isUpdateTempFileName(String name) {
+  for (final String suffix in _kUpdateTempFileSuffixes) {
+    if (name.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
+/// 纯函数（TODO-1010）：给定 updates 目录条目列表，挑出**应删除的旧完整安装包**。
+///
+/// 根因：下载完成的安装包（`Hibiki-x.y.z-setup.exe` / `.apk` / `.AppImage` …）落在
+/// updates 目录后，旧版历史只清临时文件（`.part`/`.meta.json`/`.owner.json`）和
+/// `.staging` 目录，完整产物**从不回收**，每升级一版就多堆一个几十~几百 MB 的包，
+/// 长期累积到数 GB。此函数只挑「完整安装包」中的过期项，保证不会无限堆积。
+///
+/// 安全约束：
+/// - 只回收**普通文件**且**不是临时/元数据文件**（临时文件、`.staging` 目录由
+///   既有逻辑分管，不在此函数职责内）。
+/// - 排除 [activeAssetFileName]（当前正在下载/即将安装、可复用的包）。
+/// - 排除 [handoffInstallerFileName]（Windows 待重启安装的 handoff 安装包）。
+/// - 排除 [markerFileName]（handoff 标记 JSON 本身）。
+/// - 只删 [cutoff] 之前修改的项；当前活跃文件即便 mtime 很老也不删（已被名字排除）。
+///
+/// 返回应删除的叶子名列表（调用方据此 `File(...).delete()`），保持确定性顺序。
+@visibleForTesting
+List<String> selectStaleUpdateArtifacts({
+  required List<UpdateDirEntry> entries,
+  required DateTime cutoff,
+  String? activeAssetFileName,
+  String? handoffInstallerFileName,
+  String markerFileName = 'update-handoff.json',
+}) {
+  final Set<String> preserved = <String>{
+    markerFileName,
+    if (activeAssetFileName != null && activeAssetFileName.isNotEmpty)
+      activeAssetFileName,
+    if (handoffInstallerFileName != null && handoffInstallerFileName.isNotEmpty)
+      handoffInstallerFileName,
+  };
+  final List<String> stale = <String>[];
+  for (final UpdateDirEntry entry in entries) {
+    if (entry.isDirectory) continue;
+    final String name = entry.name;
+    if (preserved.contains(name)) continue;
+    // 临时/元数据文件由既有清理路径按同一 cutoff 处理；此函数只回收完整安装包，
+    // 避免重复删除职责交叠。
+    if (_isUpdateTempFileName(name)) continue;
+    if (!entry.modified.isBefore(cutoff)) continue;
+    stale.add(name);
+  }
+  return stale;
+}
+
 @visibleForTesting
 Future<File> downloadUpdateAsset({
   required UpdateAsset asset,
