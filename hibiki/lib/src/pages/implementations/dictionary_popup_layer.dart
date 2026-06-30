@@ -137,6 +137,27 @@ Rect calcPopupPosition({
   return placeAboveBelow();
 }
 
+/// TODO-872：app 外悬浮字幕条（FloatingLyricService 系统悬浮窗）查词弹窗的位置。
+/// 被查字的屏幕矩形 [glyphRect]（逻辑像素，与全屏弹窗窗口同坐标系）作为锚点，弹窗
+/// 贴在该字上方或下方、绝不盖住被查字——复用 [calcPopupPosition] 久经考验的横排上/下
+/// 避让 + clamp 逻辑（单行字幕无竖排，故 verticalWriting 恒 false），避免重复实现一套
+/// 几何。返回的矩形 left/top/width/height 直接喂给 Positioned。纯函数。
+Rect computeFloatingLyricPopupRect({
+  required Rect glyphRect,
+  required Size screen,
+  required double maxWidth,
+  required double maxHeight,
+  double gap = 6.0,
+}) {
+  return calcPopupPosition(
+    selectionRect: glyphRect,
+    screen: screen,
+    padding: gap,
+    maxWidth: maxWidth,
+    maxHeight: maxHeight,
+  );
+}
+
 /// TODO-108：底部固定（dock）模式下的弹窗矩形——忽略选区位置，把弹窗放成屏幕底部
 /// 一条全宽面板。[screen] 是可用区域大小；[inset] 是左右及离屏底的内边距；[dockedHeight]
 /// 是面板目标高度（会按可用高度 clamp）；[bottomReserve]/[topReserve] 与跟随模式同义

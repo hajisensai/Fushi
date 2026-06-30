@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -302,8 +303,65 @@ public class FloatingLyricService extends BaseFloatingService {
         Intent intent = new Intent(this, PopupDictFlutterActivity.class);
         intent.putExtra(Intent.EXTRA_PROCESS_TEXT, currentText);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX, index);
+
+        // TODO-872: ship the tapped glyph's on-screen rectangle (physical px,
+        // same coordinate space as the WindowManager overlay) so the Flutter
+        // popup can anchor the lookup card next to the word the user touched
+        // instead of always pinning it to the screen top. Only this floating
+        // lyric/subtitle entry carries the anchor; the absence of the anchor
+        // extras is what routes every other entry (system PROCESS_TEXT /
+        // hibiki://lookup) back to the default top-center placement.
+        Rect glyph = glyphScreenRect(index);
+        if (glyph != null && !glyph.isEmpty()) {
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_LEFT, glyph.left);
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_TOP, glyph.top);
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_RIGHT, glyph.right);
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_BOTTOM, glyph.bottom);
+        }
+
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
+    }
+
+    /**
+     * On-screen rectangle (physical px) of the glyph at {@code index} inside the
+     * lyric TextView, in the same coordinate space as the WindowManager overlay
+     * ({@link View#getLocationOnScreen}). Mirrors {@link #getCharIndexAt}'s
+     * padding/scroll bookkeeping in reverse: glyph left/right come from the
+     * layout's primary-horizontal offsets, top/bottom from the line geometry,
+     * then both are shifted by the view's padding minus scroll and the view's
+     * screen origin.
+     *
+     * Returns {@code null} when the layout is not ready or the index is out of
+     * range, so the caller can omit the anchor extras and fall back to the
+     * default top-center placement.
+     */
+    private Rect glyphScreenRect(int index) {
+        if (lyricText == null) return null;
+        Layout layout = lyricText.getLayout();
+        CharSequence value = lyricText.getText();
+        if (layout == null || value == null || value.length() == 0) return null;
+        if (index < 0 || index >= value.length()) return null;
+
+        int line = layout.getLineForOffset(index);
+        float left = layout.getPrimaryHorizontal(index);
+        float right = layout.getPrimaryHorizontal(index + 1);
+        if (right < left) { float tmp = left; left = right; right = tmp; }
+        int top = layout.getLineTop(line);
+        int bottom = layout.getLineBottom(line);
+
+        // Inverse of getCharIndexAt: layout space → view-local content space.
+        float padLeft = lyricText.getTotalPaddingLeft() - lyricText.getScrollX();
+        float padTop = lyricText.getTotalPaddingTop() - lyricText.getScrollY();
+
+        int[] loc = new int[2];
+        lyricText.getLocationOnScreen(loc);
+
+        int screenLeft = Math.round(loc[0] + padLeft + left);
+        int screenRight = Math.round(loc[0] + padLeft + right);
+        int screenTop = Math.round(loc[1] + padTop + top);
+        int screenBottom = Math.round(loc[1] + padTop + bottom);
+        return new Rect(screenLeft, screenTop, screenRight, screenBottom);
     }
 
     private int getCharIndexAt(float x, float y) {
