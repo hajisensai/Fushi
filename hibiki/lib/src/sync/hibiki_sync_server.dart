@@ -922,16 +922,15 @@ class HibikiSyncServer {
           positionBookKey.contains('..')) {
         return shelf.Response.forbidden('Invalid bookKey');
       }
-      // 先确认该有声书在 host DB 真实存在（exportAudiobook 缺 Audiobooks/SrtBooks 行
-      // 时抛 StateError），防任意 key 写脏 prefs；与视频 position 先 resolveVideoFile
-      // 同语义。
+      // 先确认该有声书在 host DB 真实存在，防任意 key 写脏 prefs；与视频 position
+      // 先 resolveVideoFile 同语义。BUG-471a：改用廉价的 audiobookExists（单次 DB
+      // 查询）替代旧的 exportAudiobook 打包探测——旧实现每次 GET/PUT position 都把整
+      // 本有声书音频/字幕/封面打成 .hibikiaudio 临时文件再删，live sweep 对每本共享
+      // 有声书每轮触发一次造成大量无谓 zip I/O + CPU。
       try {
-        final File probe = await svc.exportAudiobook(positionBookKey);
-        try {
-          probe.parent.deleteSync(recursive: true);
-        } catch (_) {/* best-effort temp cleanup */}
-      } on StateError {
-        return shelf.Response.notFound('Audiobook not found');
+        if (!await svc.audiobookExists(positionBookKey)) {
+          return shelf.Response.notFound('Audiobook not found');
+        }
       } on ArgumentError {
         return shelf.Response.forbidden('Invalid bookKey');
       }

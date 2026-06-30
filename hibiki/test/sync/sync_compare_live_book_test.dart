@@ -86,6 +86,9 @@ class _LiveBookLibraryService implements HibikiLibraryHostService {
       throw UnimplementedError();
 
   @override
+  Future<bool> audiobookExists(String bookKey) async => false;
+
+  @override
   Future<void> importAudiobook(
     File packageFile, {
     String? bookKeyOverride,

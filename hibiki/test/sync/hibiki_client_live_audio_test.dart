@@ -61,6 +61,10 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }
 
   @override
+  Future<bool> audiobookExists(String bookKey) async =>
+      audiobookEntries.any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey);
+
+  @override
   Future<void> importAudiobook(File packageFile,
           {String? bookKeyOverride}) async =>
       audiobookImported.add(await packageFile.readAsString());

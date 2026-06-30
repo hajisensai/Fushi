@@ -96,11 +96,17 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   /// importAudiobook 收到的 (content, bookKeyOverride) 对。
   final List<(String, String?)> importedAudiobooks = <(String, String?)>[];
 
+  /// BUG-471a 性能回归 spy：position 路由不得调用重量级 exportAudiobook
+  /// （真实实现会整包打 zip 写临时文件），只应走廉价的 audiobookExists。
+  int exportAudiobookCalls = 0;
+  int audiobookExistsCalls = 0;
+
   @override
   Future<List<RemoteAudiobookInfo>> listAudiobooks() async => audiobookEntries;
 
   @override
   Future<File> exportAudiobook(String bookKey) async {
+    exportAudiobookCalls++;
     if (!audiobookEntries
         .any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey)) {
       throw StateError('audiobook not found: $bookKey');
@@ -109,6 +115,13 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     final File f = File('${tmp.path}/$bookKey.audiobook');
     f.writeAsBytesSync(utf8.encode('AUDIOBOOK:$bookKey'));
     return f;
+  }
+
+  @override
+  Future<bool> audiobookExists(String bookKey) async {
+    audiobookExistsCalls++;
+    return audiobookEntries
+        .any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey);
   }
 
   @override
@@ -615,6 +628,34 @@ void main() {
         expect(json['positionMs'], 123456);
         expect(json['positionUpdatedAtMs'], 7000);
         c.close();
+      });
+
+      test(
+          'GET/PUT /position uses cheap existence gate, never exportAudiobook '
+          '(BUG-471a perf regression)', () async {
+        final HttpClient c = HttpClient();
+        // PUT
+        final HttpClientRequest put = await c.putUrl(
+            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+        put.headers.set('authorization', authHeader());
+        put.headers.set('content-type', 'application/json');
+        put.add(utf8.encode(jsonEncode(<String, Object?>{
+          'positionMs': 42,
+          'positionUpdatedAtMs': 100,
+        })));
+        await (await put.close()).drain<void>();
+        // GET
+        final HttpClientRequest get = await c.getUrl(
+            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+        get.headers.set('authorization', authHeader());
+        await (await get.close()).drain<void>();
+        c.close();
+
+        // 路由必须走廉价的 audiobookExists 而非整包打 zip 的 exportAudiobook。
+        expect(lib.exportAudiobookCalls, 0,
+            reason: 'position 路由不得触发重量级 exportAudiobook 整包导出（性能回归）');
+        expect(lib.audiobookExistsCalls, greaterThanOrEqualTo(2),
+            reason: 'GET 与 PUT 各应走一次廉价存在性闸门');
       });
 
       test('GET /position for missing audiobook returns 404', () async {

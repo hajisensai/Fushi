@@ -858,6 +858,18 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             : null;
         if (inputFile == null) {
           // 越界已被 classify 拦在 unsupportedRange，这里只是 null-safety 兜底。
+          // TODO-1005 / BUG-472：此前只 toast、零日志，in-app 日志页空白。补
+          // ErrorLogService（沿用同款 input/startMs/endMs 字段）让该兜底也可查。
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.inputFileNull',
+            'exportable range has no input audio file '
+                '(audioFileIndex=${range.audioFileIndex}, '
+                'audioFileCount=${audioFiles.length}, '
+                'startMs=${range.startMs}, endMs=${range.endMs}, '
+                'durationMs=${range.endMs - range.startMs}, '
+                'text="${selectedText.trim()}")',
+            StackTrace.current,
+          );
           HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
           return;
         }
@@ -868,6 +880,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             '[ReaderHibiki] export-clip: range too long '
             '(${range.endMs - range.startMs}ms > '
             '${_kAudiobookClipMaxDurationMs}ms) — refusing export.',
+          );
+          // TODO-1005 / BUG-472：此前只 debugPrint + toast、in-app 日志页空白。补
+          // ErrorLogService（沿用同款 input/startMs/endMs/durationMs 字段）。
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.rangeTooLong',
+            'selection range too long, refusing export '
+                '(durationMs=${range.endMs - range.startMs} > '
+                'maxMs=$_kAudiobookClipMaxDurationMs, '
+                'startMs=${range.startMs}, endMs=${range.endMs}, '
+                'input=${inputFile.path}, text="${selectedText.trim()}")',
+            StackTrace.current,
           );
           HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
           return;

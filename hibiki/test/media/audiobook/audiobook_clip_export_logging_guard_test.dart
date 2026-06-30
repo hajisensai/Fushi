@@ -60,6 +60,95 @@ void main() {
       expect(audiobookPart, contains('ReaderHibiki.exportClip.synthFailed'),
           reason: 'M4 合成失败必须在管线层记一条 ErrorLogService 摘要。');
     });
+
+    test('inputFile-null & range-too-long exits record ErrorLogService entries',
+        () {
+      // BUG-472(a) follow-up：dispatcher 的 exportable 分支还有两处只 toast 的早
+      // 返回（inputFile == null 兜底 / 区间超长 refuse），此前漏补日志。
+      expect(audiobookPart, contains('ReaderHibiki.exportClip.inputFileNull'),
+          reason: 'inputFile == null 兜底必须记 ErrorLogService。');
+      expect(audiobookPart, contains('ReaderHibiki.exportClip.rangeTooLong'),
+          reason: '区间超长 refuse 必须记 ErrorLogService。');
+    });
+
+    // ── 结构性守卫（BUG-472b）：未来再加「只 toast 不打日志」的静默 return 必须变红 ──
+    //
+    // 字符串存在性断言只能挡删除既有 tag，挡不住有人在管线里**新增**一条不打日志的
+    // 失败出口。这里对 _runAudiobookClipPipeline 与 _exportAudiobookClip 两个函数体
+    // 做结构断言：函数体内的失败出口（弹 *_failed / *_unsupported_range / *_no_text
+    // / *_no_selection toast）数 ≤ 同体内 ErrorLogService.instance.log 调用数，从而
+    // 钉住「每个静默失败 return 都伴随一条日志」。
+
+    // [signature] 应是函数名 + 起始 '('（如 `_runAudiobookClipPipeline(`）。先按圆括号
+    // 配平跳过整个参数列表（命名参数列表自带 `{...}`，不能当函数体大括号），再从参数
+    // 列表后的第一个 '{' 起按大括号配平截出函数体。
+    String fnBody(String src, String signature) {
+      final int start = src.indexOf(signature);
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '函数 $signature 必须存在（结构守卫锚点）。');
+      // 跳过参数列表：从签名末尾的 '(' 起配平圆括号。
+      int i = start + signature.length - 1; // 指向起始 '('
+      expect(src[i], '(', reason: 'signature 必须以 "(" 结尾。');
+      int paren = 0;
+      for (; i < src.length; i++) {
+        final String ch = src[i];
+        if (ch == '(') paren++;
+        if (ch == ')') {
+          paren--;
+          if (paren == 0) break;
+        }
+      }
+      // 参数列表已闭合，定位函数体起始 '{'。
+      final int bodyStart = src.indexOf('{', i);
+      expect(bodyStart, greaterThanOrEqualTo(0),
+          reason: '函数 $signature 参数列表后必须有函数体 "{"。');
+      int depth = 0;
+      for (i = bodyStart; i < src.length; i++) {
+        final String ch = src[i];
+        if (ch == '{') depth++;
+        if (ch == '}') {
+          depth--;
+          if (depth == 0) return src.substring(bodyStart, i + 1);
+        }
+      }
+      fail('函数 $signature 大括号不配平，无法截出函数体。');
+    }
+
+    int countFailureToasts(String body) =>
+        't.audiobook_export_clip_failed'.allMatches(body).length +
+        't.audiobook_export_clip_unsupported_range'.allMatches(body).length +
+        't.audiobook_export_clip_no_text'.allMatches(body).length +
+        't.audiobook_export_clip_no_selection'.allMatches(body).length;
+
+    // 容忍 dart format 把 ErrorLogService.instance.log( 折行成
+    // ErrorLogService.instance 换行后 .log(（catch 块就是这样），
+    // 用正则匹配 .instance 与 .log 之间任意空白。
+    final RegExp errorLogRe = RegExp(r'ErrorLogService\.instance\s*\.log');
+    int countErrorLogs(String body) => errorLogRe.allMatches(body).length;
+
+    test('每个失败出口都伴随一条 ErrorLogService.log（_runAudiobookClipPipeline）', () {
+      final String body = fnBody(
+        audiobookPart,
+        'Future<void> _runAudiobookClipPipeline(',
+      );
+      final int failures = countFailureToasts(body);
+      final int logs = countErrorLogs(body);
+      expect(failures, greaterThan(0), reason: '管线内应至少有一个失败出口（守卫自检，防截错函数体）。');
+      expect(logs, greaterThanOrEqualTo(failures),
+          reason: '管线内每个失败 toast/return 都必须伴随一条 ErrorLogService.log；'
+              '新增不打日志的静默 return 会让本守卫变红 (BUG-472b)。');
+    });
+
+    test('每个失败出口都伴随一条 ErrorLogService.log（_exportAudiobookClip）', () {
+      final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
+      final int failures = countFailureToasts(body);
+      final int logs = countErrorLogs(body);
+      expect(failures, greaterThan(0), reason: 'dispatcher 内应至少有一个失败出口（守卫自检）。');
+      expect(logs, greaterThanOrEqualTo(failures),
+          reason: 'dispatcher 内每个失败 toast/return 都必须伴随一条 '
+              'ErrorLogService.log；新增不打日志的静默 return 会让本守卫变红 '
+              '(BUG-472b)。');
+    });
   });
 
   group('ffmpeg early returns are no longer silent (desktop_audio_clipper)',

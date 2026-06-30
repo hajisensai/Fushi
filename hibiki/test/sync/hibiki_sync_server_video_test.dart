@@ -163,6 +163,9 @@ class _FakeLibraryService implements HibikiLibraryHostService {
       throw UnimplementedError('not used in video test');
 
   @override
+  Future<bool> audiobookExists(String bookKey) async => false;
+
+  @override
   Future<void> importAudiobook(File packageFile,
       {String? bookKeyOverride}) async {}
 

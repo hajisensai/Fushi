@@ -497,6 +497,15 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     return out;
   }
 
+  /// 廉价判断 host 库是否存在 bookKey 为 [bookKey] 的有声书（BUG-471a）：仅一次
+  /// `Audiobooks` 行查询，不触发 [exportAudiobook] 的整包打包 zip I/O。与
+  /// [putAudiobookPosition] 自身用的存在性闸门同一查询。
+  @override
+  Future<bool> audiobookExists(String bookKey) async {
+    _assertSafeName(bookKey);
+    return await _db.getAudiobookByBookKey(bookKey) != null;
+  }
+
   /// 把有声书包文件导入 host（解包写 DB + 音频文件）。
   /// 需要在构造器传入 [audioDatabaseRoot]；为 null 时抛 [UnsupportedError]。
   @override

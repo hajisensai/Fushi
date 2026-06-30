@@ -898,6 +898,14 @@ abstract class HibikiLibraryHostService {
   /// 找不到该有声书时抛 [StateError]。
   Future<File> exportAudiobook(String bookKey);
 
+  /// 廉价判断 host 库是否存在 bookKey 为 [bookKey] 的有声书（仅一次 DB 查询，
+  /// 不打包导出）。position 路由的存在性闸门用它替代重量级 [exportAudiobook]
+  /// （BUG-471a：旧实现每次 GET/PUT position 都把整本有声书打包成 .hibikiaudio
+  /// 临时文件再删，对每本共享有声书的 live sweep 造成大量无谓 zip I/O）。与视频
+  /// position 路由用 [resolveVideoFile] 廉价等价。
+  /// [bookKey] 含路径穿越字符时抛 [ArgumentError]。
+  Future<bool> audiobookExists(String bookKey);
+
   /// 把有声书包文件导入 host（解包写 DB + 音频文件）。
   /// 实现需要 [audioDatabaseRoot] 来确定音频文件落盘目录。
   Future<void> importAudiobook(File packageFile, {String? bookKeyOverride});
