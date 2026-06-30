@@ -76,4 +76,26 @@ void main() {
     expect(src.contains('showAnkiNoteViewer'), isTrue);
     expect(src.contains('openNoteInAnki'), isTrue);
   });
+
+  // TODO-1007 健壮性守卫：三处 await 宿主回调必须被 try/catch 包裹，catch 内复位
+  // _busy 并给用户反馈，否则宿主网络/平台通道抛错时 action sheet 卡在进度条无反应。
+  test('mineNew/overwrite await 三处都被 try/catch 包裹且 catch 内复位 _busy + 反馈', () {
+    final src = read('lib/src/anki/anki_mined_card_action_sheet.dart');
+    // 三处 await：_runMineNew / _runOverwrite / _AnkiNoteViewerDialogState._overwrite。
+    expect(
+      'try {'.allMatches(src).length,
+      greaterThanOrEqualTo(3),
+      reason: '三处宿主回调 await 必须各有 try',
+    );
+    // catch 块固定形态：复位 _busy（避免卡死）+ 弹失败反馈。三处都必须出现这条收口。
+    const String catchReset =
+        'setState(() => _busy = false);\n      HibikiToast.show(msg: t.anki_card_action_failed);';
+    expect(
+      catchReset.allMatches(src).length,
+      3,
+      reason: '三处 catch 必须复位 _busy 并弹 anki_card_action_failed 反馈',
+    );
+    // 失败分支早返回，不得继续走成功的 Navigator.pop。
+    expect(src.contains('} catch (e) {'), isTrue);
+  });
 }

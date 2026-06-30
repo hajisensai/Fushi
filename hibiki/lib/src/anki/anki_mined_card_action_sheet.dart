@@ -77,7 +77,17 @@ class _MinedCardActionSheetState extends State<_MinedCardActionSheet> {
   Future<void> _runMineNew() async {
     if (_busy) return;
     setState(() => _busy = true);
-    final r = await widget.mineNew();
+    // TODO-1007 健壮性：宿主回调（repo.mineEntry/loadSettings 等网络/平台通道）
+    // 可能抛错。无 try/catch 会让 _busy 永久卡 true（进度条不消、无任何反馈）。
+    final AnkiCardMutationResult r;
+    try {
+      r = await widget.mineNew();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      HibikiToast.show(msg: t.anki_card_action_failed);
+      return;
+    }
     if (!mounted) return;
     Navigator.of(context).pop(AnkiMinedCardActionResult(
       mined: true,
@@ -89,7 +99,16 @@ class _MinedCardActionSheetState extends State<_MinedCardActionSheet> {
   Future<void> _runOverwrite(int noteId) async {
     if (_busy) return;
     setState(() => _busy = true);
-    final r = await widget.overwrite(noteId);
+    // TODO-1007 健壮性：同 _runMineNew，宿主覆写回调抛错时复位 _busy + 反馈。
+    final AnkiCardMutationResult r;
+    try {
+      r = await widget.overwrite(noteId);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      HibikiToast.show(msg: t.anki_card_action_failed);
+      return;
+    }
     if (!mounted) return;
     Navigator.of(context).pop(AnkiMinedCardActionResult(
       mined: true,
@@ -251,7 +270,16 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
   Future<void> _overwrite() async {
     if (_busy) return;
     setState(() => _busy = true);
-    final r = await widget.overwrite(widget.noteId);
+    // TODO-1007 健壮性：note viewer 覆写同样可能抛错，复位 _busy + 反馈，不卡进度。
+    final AnkiCardMutationResult r;
+    try {
+      r = await widget.overwrite(widget.noteId);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      HibikiToast.show(msg: t.anki_card_action_failed);
+      return;
+    }
     if (!mounted) return;
     Navigator.of(context).pop(AnkiMinedCardActionResult(
       mined: true,

@@ -185,4 +185,111 @@ void main() {
     await tester.pumpAndSettle();
     expect(repo.openedNoteId, 300);
   });
+
+  // TODO-1007 健壮性：宿主回调抛错时，action sheet 不能卡在 _busy 进度条无反馈。
+  // 这三个用例构造抛错的 mineNew/overwrite，断言：异常不逃逸（无 takeException）、
+  // 弹窗仍在（未 pop 关闭）、操作可重试（_busy 已复位 → 按钮重新可点）。
+
+  testWidgets('回归复现：mineNew 抛错时复位 busy + 弹窗保留可重试（不卡进度条）', (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 300, preview: 'A')]);
+    int mineNewCalls = 0;
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: 'x',
+        reading: '',
+        mineNew: () async {
+          mineNewCalls++;
+          throw StateError('host channel failed');
+        },
+        overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // 点「新增重复卡」→ mineNew 抛错。
+    await tester.tap(find.text(t.anki_mined_action_add_duplicate));
+    await tester.pumpAndSettle();
+
+    // 异常被吞在 action sheet 内，不向 widget 树逃逸。
+    expect(tester.takeException(), isNull);
+    expect(mineNewCalls, 1);
+    // 弹窗未关闭（仍能看到选项），说明没误 pop。
+    expect(find.text(t.anki_mined_action_add_duplicate), findsOneWidget);
+    // _busy 已复位：再次点击会再次调用 mineNew（若仍 busy 则 onTap=null 不触发）。
+    await tester.tap(find.text(t.anki_mined_action_add_duplicate));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(mineNewCalls, 2, reason: '_busy 必须在失败后复位，否则按钮卡死无法重试');
+  });
+
+  testWidgets('回归复现：overwrite 抛错时复位 busy + 弹窗保留可重试', (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 200, preview: 'B')]);
+    int overwriteCalls = 0;
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: 'x',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async {
+          overwriteCalls++;
+          throw StateError('host channel failed');
+        },
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 1);
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    // 复位后可重试。
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 2, reason: '_busy 必须在失败后复位');
+  });
+
+  testWidgets('回归复现：note viewer overwrite 抛错时复位 busy + 对话框保留', (tester) async {
+    final repo = _FakeRepo(
+      const [MinedNoteRef(noteId: 300, preview: 'A')],
+      fields: const {'Expression': '日本語'},
+    );
+    int overwriteCalls = 0;
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: '日本語',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async {
+          overwriteCalls++;
+          throw StateError('host channel failed');
+        },
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 打开 note viewer。
+    await tester.tap(find.byIcon(Icons.open_in_new));
+    await tester.pumpAndSettle();
+    // 点对话框里的「覆写」→ overwrite 抛错。
+    await tester.tap(find.text(t.anki_mined_action_overwrite));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 1);
+    // 对话框仍在（未误 pop），覆写按钮还在 → 可重试。
+    expect(find.text(t.anki_mined_action_overwrite), findsOneWidget);
+    await tester.tap(find.text(t.anki_mined_action_overwrite));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 2, reason: '_busy 必须在失败后复位');
+  });
 }
