@@ -399,6 +399,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             sectionIndex: item.sectionIndex!,
             normCharOffset: isSentenceJump ? 0 : (item.normCharOffset ?? 0),
             charAnchor: isSentenceJump ? item.normCharOffset : null,
+            // BUG-461: 句子/制卡跳转把句长一并透传，连续模式横排据此整句对齐进可见区，
+            // 句尾不被阅读底栏切（句子行才有 normCharLength；制卡行/老收藏可能为 null）。
+            charAnchorLength: isSentenceJump ? item.normCharLength : null,
             preserveSavedPosition: isSentenceJump,
             label: item.label ?? '',
             createdAt: item.createdAt,

@@ -885,6 +885,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // BUG-162: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
   // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。
   int _initialCharOffset = -1;
+  // BUG-461: 收藏句跳转的句尾绝对字符偏移（_initialCharOffset + 句长）。-1 = 无（单点
+  // 句首锚，旧行为）。仅连续模式横排用它把整句对齐进可见区，句尾不被底栏切。
+  int _initialCharOffsetEnd = -1;
   // _refreshProgress 算得的最新精确字符偏移，供退出 flush 与 debounce 保存共用。
   int _lastProgressCharOffset = -1;
   // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内抑制 ReaderPosition
@@ -1293,9 +1296,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (charAnchor != null && charAnchor >= 0) {
         _initialCharOffset = charAnchor;
         _initialProgress = 0.0; // 精确锚优先；分数仅作锚算不出时的兜底。
+        // BUG-461: 句长可用时算句尾绝对偏移（连续模式横排整句对齐进可见区，句尾不被
+        // 底栏切）。无句长（制卡行 / 老收藏）→ -1 退回单点句首锚（旧行为）。
+        final int? len = bm.charAnchorLength;
+        _initialCharOffsetEnd =
+            (len != null && len > 0) ? charAnchor + len : -1;
       } else {
         _initialProgress = bm.normCharOffset / 10000.0;
         _initialCharOffset = -1; // BUG-162: 书签按 normCharOffset 分数跳转，非 char 锚。
+        _initialCharOffsetEnd = -1;
       }
       // BUG-459: 临时浏览跳转（收藏 / 制卡历史）进入后不覆盖该书已保存的阅读进度——
       // 用户点进来看某句不该毁掉真正的阅读位置。普通书签跳转照常持久化。
@@ -1321,6 +1330,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         _initialProgress = saved.normCharOffset / 10000.0;
         // BUG-162: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
         _initialCharOffset = saved.charOffset ?? -1;
+        // BUG-461: 存档恢复无句子区间，单点句首锚（仅收藏句跳转才有句尾锚）。
+        _initialCharOffsetEnd = -1;
         _lastProgressSection = _currentChapter;
         _lastProgressValue = _initialProgress;
         _lastProgressCharOffset = _initialCharOffset;

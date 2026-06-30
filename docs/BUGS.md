@@ -35,6 +35,7 @@
 | [BUG-464](bugs/BUG-464-audio-highlight-theme-coupling.md) | ✅ | ✅ | 音频高亮颜色只在自定义主题生效·非自定义主题恒用主色 |
 | [BUG-463](bugs/BUG-463-video-topbar-covered.md) | ✅ | ✅ | 视频播放页顶栏按钮被状态栏/刘海遮挡 |
 | [BUG-462](bugs/BUG-462-favorite-words-missing-in-collections.md) | ✅ | ✅ | 收藏的单词不在收藏列表显示 |
+| [BUG-461](bugs/BUG-461-favorite-sentence-jump-page-boundary.md) | ✅ | ✅ | 收藏句跳转整句显示不全（「五五开」切句尾）——根因在「滚动(连续)模式」，非分页边界 |
 | [BUG-460](bugs/BUG-460-ffmpeg-clip-muxer.md) | ✅ | ✅ | 有声书片段导出 ffmpeg exit -22（捆绑 ffmpeg 缺 mov/m4a muxer） |
 | [BUG-459](bugs/BUG-459-favorite-jump-char-anchor.md) | ✅ | ✅ | 收藏句/制卡历史跳原文跳错位置(恒跳章首)+跳后阅读进度丢失 |
 | [BUG-458](bugs/BUG-458-gap-word-sentence-audio-residue.md) | ✅ | ✅ | 句子音频gap词残留 |

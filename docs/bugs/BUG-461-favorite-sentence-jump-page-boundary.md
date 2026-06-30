@@ -1,0 +1,24 @@
+## BUG-461 · 收藏句跳转整句显示不全（「五五开」切句尾）——根因在「滚动(连续)模式」，非分页边界
+- **报告**：2026-06-30（用户：「收藏跳转 正常给你显示完句子 / 刚好句子在页面外一行的情况 五五开」，TODO-982）。用户明确纠正：**「没跨页，这个是滚动模式，和跨页有什么关系」** —— 失败路径是**连续(滚动)模式**，不是分页。
+- **真实性**：✅ 真 bug（与 TODO-974/BUG-459 absolute char anchor 同链路，但不同缺口：459 修「跳错章首」，461 是「跳对句但句尾显示不全」）。
+- **根因修正说明**：本文件**旧版本曾把根因写成分页边界**（`scrollToCharOffset` paged 版 `charPage=floor(scrollOffset/pageSize)` 落句首页切句尾）——那是**错的分析方向**：用户在滚动模式，根本没有分页 `pageSize`/`alignToPage`。已按真实路径重写如下。
+- **真实根因（连续模式，`file:line`）**：
+  - 入口 `collections_page.dart:_openBook`：句子行把句首绝对字符索引塞进 `Bookmark.charAnchor`（BUG-459），但**丢掉了句长** `_CollectionItem.normCharLength`。
+  - `reader_hibiki_page.dart:1265-1268`：`charAnchor>=0` → `_initialCharOffset=charAnchor`。
+  - `webview.part.dart:337-340`：连续模式 `shellScript(continuousMode:true, initialCharOffset:...)`。初始 `chromeBottomInset = _readerChromeHeight + _stableBottomInset` 已注入。
+  - 连续 shell `reader_pagination_scripts.dart:_continuousShellScript` 的 `initialRestoreScript` → `restoreToCharOffset($initialCharOffset)` → 连续 `restoreToCharOffset`（`reader_pagination_scripts.dart` ~`:2578`）→ **连续 `scrollToCharOffset`（~`:2537`）**：
+    - 横排分支 `root.scrollTop += rect.top - paddingTop` —— 只把**句首**字符对齐到内容顶（`paddingTop = marginTop·vh + chrome-top-inset`），**完全不看句尾**。
+  - 连续模式可见区 = `reader_content_styles.dart:_continuousLayoutCss` 的 `clip-path: inset(var(--chrome-top-inset) 0 var(--chrome-bottom-inset) 0)`，即 `[chromeTopInset, viewportHeight − chromeBottomInset]`；底部 `chromeBottomInset` 那段被阅读底栏盖住。
+  - **句尾被切**：句首贴内容顶后，整句向下展开；当整句高度让句尾越过 `viewportHeight − chromeBottomInset`（可见区底沿），句尾就落到阅读底栏后面被裁。是否越界随句长/字号/落点变化 → 用户感知的「五五开」。证据：旧 `scrollToCharOffset`（连续）`range.collapse(true)` 后只用句首 `rect.top` 锚顶，无任何句尾/句长检查。
+  - headless 复现：`tool/reader_pitch_headless/continuous_favorite_jump_probe.js`（临时诊断脚本，复刻连续横排 CSS + 旧 `scrollToCharOffset` 句首锚）证实——句首贴顶时短句不切；句子长到接近/超出可见区高度时句尾溢出 `chromeBottomInset` 被裁。
+- **[x] ① 已修复** —— 把跳转目标从「单点句首」升级为「字符区间 `[start, start+length]`」：
+  - `bookmark_repository.dart`：`Bookmark` 加**仅内存、不持久化**字段 `int? charAnchorLength`（与 `charAnchor`/BUG-459 同语义，`fromRow`/`fromJson`/`toJson` 不读写）。
+  - `collections_page.dart:_openBook`：句子/制卡跳转把 `item.normCharLength` 透传成 `charAnchorLength`。
+  - `reader_hibiki_page.dart`：新增 `_initialCharOffsetEnd = charAnchor + len`（无句长则 -1）；存档恢复/分数路径恒置 -1。`webview.part.dart` 经 `shellScript(initialCharOffsetEnd:)` 传入。
+  - `reader_pagination_scripts.dart`：连续 `scrollToCharOffset(charOffset, endCharOffset)` 与 `restoreToCharOffset(charOffset, endCharOffset)` 加可选句尾参；横排有句尾锚时——先句首贴内容顶算 `startAligned`，若句尾溢出可见区底沿（用 `--chrome-bottom-inset` 算）且**整句高 ≤ 可见区高**则多下滚 `overflow` 把句尾拉到可见区底沿（整句完整可见且尽量靠上）；句子比可见区还高（无任何落点能整句显示）则维持句首贴顶（尽力而为）。竖排可见区在内容宽度轴、与顶/底 padding 正交，无「句尾被底栏切」语义 → 维持句首贴右沿（旧行为）。**不传 endCharOffset 的所有旧调用方（`setChromeInsets`/缩放/换样式重锚）行为完全不变**（单点句首锚），无回归。连续模式是裸 `window.scrollY` 亚像素滚动，不破坏任何整页对齐（无分页 snap）。
+  - 纯 Dart 影子 `ReaderPaginationScripts.continuousFavoriteJumpScrollForTesting` + `continuousSentenceTailOverflow` 固化落点算法（与 JS 同口径）。
+  - 提交哈希：见备注。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/reader/continuous_favorite_jump_scroll_test.dart`：纯函数单测——短句不下滚、长句溢出按 overflow 下滚把句尾贴可见区底沿、句子超可见区高维持句首贴顶、无句长退回旧行为、句尾正好贴底沿不下滚、「刚好溢出一行」按一行下滚、结果非负。
+  - `hibiki/test/reader/favorite_jump_sentence_fit_guard_test.dart`：源码守卫——句长透传链（collections→Bookmark.charAnchorLength→`_initialCharOffsetEnd`→`shellScript(initialCharOffsetEnd:)`→连续 shell `restoreToCharOffset(start,end)`→连续 `scrollToCharOffset(charOffset,endCharOffset)` 句尾区间对齐用 `--chrome-bottom-inset`）任一环断掉即红。
+- **备注（真机待验，无法在 headless 跑 full reader——TODO-783）**：本修仅改连续模式横排落点几何，纯函数 + 源码守卫已绿，但「整句是否真完整落进可见区、不被底栏切」必须真机复测：滚动模式下从收藏夹点一条**较长**收藏句跳回原文，断言整句完整显示、句尾不被底栏遮。分页模式收藏跳转未触碰（paged `scrollToCharOffset` 仍旧行为；若分页也有切尾需求另开）。视频来源收藏句走 `_openVideoSentence`（startMs）不经本路径。临时诊断脚本 `continuous_favorite_jump_probe.js` 仅在 `todo982-scroll-favorite` 探针 worktree，未入本提交。

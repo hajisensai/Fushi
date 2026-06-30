@@ -26,6 +26,7 @@ class Bookmark {
     this.pageInChapter,
     this.totalPagesInChapter,
     this.charAnchor,
+    this.charAnchorLength,
     this.preserveSavedPosition = false,
   });
 
@@ -63,6 +64,13 @@ class Bookmark {
   /// `/10000≈0` 而恒跳章首的旧 bug。**仅内存传输用，不持久化**（[fromRow]/[fromJson]
   /// 不读它，真实书签恒为 null → 走 [normCharOffset] 分数路径，向后兼容）。
   final int? charAnchor;
+
+  /// BUG-461：收藏句的「章节内可匹配字符长度」（`getNormalizedOffset` 口径，与
+  /// [charAnchor] 同计量），由 [_CollectionItem.normCharLength] 透传。非 null 且 > 0 时，
+  /// 连续(滚动)模式横排把跳转目标当作字符区间 `[charAnchor, charAnchor+charAnchorLength]`
+  /// 整句对齐进可见区（句尾不被阅读底栏切，消除「五五开切句尾」）。**仅内存传输用，不
+  /// 持久化**（[fromRow]/[fromJson] 不读它）；null/0 时退回单点句首锚（旧行为，向后兼容）。
+  final int? charAnchorLength;
 
   /// BUG-459：本次跳转是否为「临时浏览跳转」——true 时阅读器进入后**不覆盖**该书
   /// 已保存的 [ReaderPosition]（用户从收藏 / 制卡历史点进来看某句，不应毁掉真正的

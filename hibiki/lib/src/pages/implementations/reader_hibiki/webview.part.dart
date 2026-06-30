@@ -337,6 +337,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
         initialCharOffset: _initialCharOffset,
+        // BUG-461: 收藏句跳转的句尾锚（连续模式横排整句对齐进可见区）；非跳转/无句长 = -1。
+        initialCharOffsetEnd: _initialCharOffsetEnd,
         continuousMode: s.isContinuousMode,
         // TODO-909: select the VN shell when view-mode == 'vn'. VN is mutually
         // exclusive with continuous (it is a page-flip stage, not native
