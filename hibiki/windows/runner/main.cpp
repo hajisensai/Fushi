@@ -38,6 +38,47 @@ std::wstring FirstFileArgFromCommandLine() {
   return file_arg;
 }
 
+// TODO-935 BUG: 数据迁移成功后的自动重启（DesktopLifecycleService.restartApp）
+// 带的重启标志。必须与 Dart 侧 DesktopLifecycleService.restartMarkerArg 逐字符一致。
+// 见到它说明本次启动是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
+constexpr wchar_t kRestartMarkerArg[] = L"--hibiki-restarted";
+
+// 本进程 argv 是否带 [kRestartMarkerArg]（自动重启拉起的新进程）。
+bool HasRestartMarker() {
+  int argc = 0;
+  wchar_t **argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  if (argv == nullptr) {
+    return false;
+  }
+  bool found = false;
+  for (int i = 1; i < argc; ++i) {
+    if (argv[i] != nullptr && ::wcscmp(argv[i], kRestartMarkerArg) == 0) {
+      found = true;
+      break;
+    }
+  }
+  ::LocalFree(argv);
+  return found;
+}
+
+// 等待旧实例释放单实例互斥量（[mutex] 由 CreateMutexW 返回、本进程未持有所有权）。
+// 自动重启时旧进程已开始退出序列（prepareForProcessExit + exit(0)），但「拉起新进程」
+// 与「旧进程真正退出」之间有一小段并发窗口：此刻互斥量仍被旧进程持有，新进程裸调
+// CreateMutexW 会拿到 ERROR_ALREADY_EXISTS 而被误判成「二次启动」直接退出，导致重启
+// 落空——数据已迁移但应用从未以新数据根重新初始化（用户感知「弹了下进度就重启、位置没变」）。
+// 这里用 WaitForSingleObject 阻塞到旧进程退出（其句柄关闭 → 互斥量被遗弃 → 本进程拿到
+// WAIT_ABANDONED/WAIT_OBJECT_0 即取得所有权），加超时上界避免旧进程异常不退时永久卡死。
+// 返回 true = 已取得所有权可继续启动；false = 超时（旧实例仍在，按二次启动语义放弃）。
+bool WaitForSingleInstanceMutex(HANDLE mutex, DWORD timeout_ms) {
+  if (mutex == nullptr) {
+    return false;
+  }
+  const DWORD wait = ::WaitForSingleObject(mutex, timeout_ms);
+  // WAIT_OBJECT_0：正常取得；WAIT_ABANDONED：上一持有者（旧进程）未释放就退出，所有权
+  // 移交本进程——对单实例守卫语义而言同样是「旧实例已走、我接管」，可继续启动。
+  return wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
@@ -51,8 +92,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::SetLastError(ERROR_SUCCESS);
   HANDLE single_instance_mutex =
       ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
-  if (single_instance_mutex != nullptr &&
-      ::GetLastError() == ERROR_ALREADY_EXISTS) {
+  bool another_instance = single_instance_mutex != nullptr &&
+                          ::GetLastError() == ERROR_ALREADY_EXISTS;
+  // TODO-935 BUG 修复：数据迁移后的自动重启会以 detached 模式拉起带 [kRestartMarkerArg]
+  // 的新进程，但此刻旧进程尚未走完退出序列、仍持有单实例互斥量。若直接按「二次启动」
+  // 退出本进程，则重启落空：数据已迁到新根、data_root pref 已写，但应用从未重新初始化
+  // 去读新根 → 用户看到「弹了下进度就重启、位置没变」。带重启标志时改为**等待**旧进程
+  // 释放互斥量（旧进程 exit(0) 后句柄关闭），取得所有权后继续正常启动，新进程的
+  // AppPaths.resolve() 即读到新 data_root。等待加 10s 上界，旧进程异常不退时退回二次
+  // 启动语义（前置旧窗口 + 退出），不永久卡死。普通用户二次点击图标无此标志，行为不变。
+  if (another_instance && HasRestartMarker()) {
+    if (WaitForSingleInstanceMutex(single_instance_mutex, 10000)) {
+      another_instance = false;  // 已接管单实例所有权：按首实例正常启动。
+    }
+  }
+  if (another_instance) {
     // 已有实例在跑：找到首实例主窗口。
     HWND existing = ::FindWindowW(nullptr, L"Hibiki");
     if (existing != nullptr) {
