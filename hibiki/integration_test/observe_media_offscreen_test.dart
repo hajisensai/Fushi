@@ -153,8 +153,15 @@ void main() {
           reason: '至少应有书架 + 视频两个导航项');
       final bool focusedVideoTab = await driver.focusWidget(navTargets[1]);
       expect(focusedVideoTab, isTrue, reason: '视频 tab 应可被焦点到达');
+      // 切 tab 用 pump(固定时长)，与 reader_dictionary_test 的可靠范式一致；
+      // pumpAndSettle 在含离屏 WebView/media_kit 的页面可能取不到切换帧。
       await driver.activate();
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 3));
+      // Enter 没切到时 ActivateIntent 兜底（nav 目的地 A/Enter 双绑）。
+      if (find.byKey(ValueKey<String>('home_video_$uid')).evaluate().isEmpty) {
+        await driver.activateIntent();
+        await tester.pump(const Duration(seconds: 2));
+      }
 
       // 诊断：导航后立刻抓视频 tab + 统计卡片，区分「没切到 tab / 卡 offstage /
       // listAll 空」。先抓图保证证据落盘（卡断言早于截图会丢图）。
