@@ -5,6 +5,8 @@
 // 与 observe_offscreen_test.dart（阅读器表面）配套：本文件扩展到有声书正文
 // （WebView，CDP 可抓）与视频页（Flutter 外壳；解码纹理在平台层，captureFlutterFrame
 // 抓不到，这是已知限制，下文注释处说明）。
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,7 +68,14 @@ void main() {
       expect(seededEntry, findsWidgets, reason: '播种的有声书应出现在书架');
       expect(ReaderHibikiHistoryPage.debugOpenBook, isNotNull,
           reason: '书架页打开书测试钩子应已注册（debug/profile build）');
-      await ReaderHibikiHistoryPage.debugOpenBook!(mediaId);
+      // openMedia 对有声书会初始化音频处理器，离屏/headless 下可能阻塞（实测会挂）。
+      // 加超时兜底：宁可 fail-fast 也绝不让测试无限挂起（曾挂 1 小时）。
+      try {
+        await ReaderHibikiHistoryPage.debugOpenBook!(mediaId)
+            .timeout(const Duration(seconds: 30));
+      } on TimeoutException {
+        debugPrint('[observe-media] openMedia 超时（疑音频处理器初始化在离屏阻塞）');
+      }
       await tester.pump(const Duration(seconds: 3));
 
       // 有声书（EPUB+音频）可能以歌词模式打开（与章节阅读器不同页，无 hoshi_webview
