@@ -41,6 +41,7 @@ export 'src/utils/misc/error_log_service.dart';
 export 'src/utils/misc/debug_log_service.dart';
 export 'src/utils/misc/show_app_dialog.dart';
 export 'src/utils/misc/update_checker.dart';
+export 'src/utils/misc/update_check_cache.dart';
 export 'src/utils/misc/hibiki_toast.dart';
 export 'src/utils/misc/webview_asset_url.dart';
 export 'src/utils/misc/platform_utils.dart';

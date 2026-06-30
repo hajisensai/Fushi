@@ -63,6 +63,10 @@ class UpdateChecker {
     String customProxy = '',
     void Function()? onUpToDate,
     void Function(Object error)? onError,
+    // TODO-1024 / BUG-479：缓存优先 + 后台静默刷新。`cacheWriter` 在一次成功网络检查
+    // 拿到最新 tag 后把结果写回缓存（供下次「检查更新」乐观即时反馈）。乐观读由调用方
+    // 直接读 `appModel.updateCheckCache`（不经此参数）。默认 null = 不接缓存（旧调用零变化）。
+    UpdateCheckCacheWriter? cacheWriter,
     // TODO-898 必修2：仅测试注入 fake「拉 release」函数指针，生产恒 null。
     @visibleForTesting
     Future<List<Map<String, dynamic>>> Function(
@@ -83,6 +87,7 @@ class UpdateChecker {
               customProxy: customProxy,
               onUpToDate: onUpToDate,
               onError: onError,
+              cacheWriter: cacheWriter,
               fetchReleases: fetchReleasesForTesting)
           .whenComplete(() {
         if (!completer.isCompleted) completer.complete();
@@ -188,6 +193,9 @@ class UpdateChecker {
     String customProxy = '',
     void Function()? onUpToDate,
     void Function(Object error)? onError,
+    // TODO-1024 / BUG-479：成功拿到最新 tag 后把结果写回缓存（供下次乐观显示）。默认
+    // null = 不写缓存（旧调用字节级零变化）。
+    UpdateCheckCacheWriter? cacheWriter,
     // TODO-898 必修2：可测 seam = 可选注入的「拉 release」函数指针。默认 null →
     // 走现有 _fetchReleasesForChannel（生产路径零改动，不拆 _check 网络层）；
     // 测试传 fake fetcher 即可覆盖三回调路径，不触网络。
@@ -240,6 +248,23 @@ class UpdateChecker {
         // tag 为空 = 等价「无可更新版本」（TODO-898）。
         onUpToDate?.call();
         return;
+      }
+
+      // TODO-1024 / BUG-479：一次成功网络检查已拿到本通道最新 tag，写回缓存供下次
+      // 「检查更新」乐观即时显示（不再每次冷查 GitHub 才知道结果）。写缓存的失败绝不
+      // 能影响本轮检查流程，吞掉并记日志即可。
+      if (cacheWriter != null) {
+        final UpdateCheckCacheEntry entry = UpdateCheckCacheEntry(
+          lastCheckEpochMs: DateTime.now().toUtc().millisecondsSinceEpoch,
+          latestTag: tagName,
+          htmlUrl: (json['html_url'] as String?) ?? '',
+          channel: channel,
+        );
+        try {
+          await cacheWriter(entry);
+        } catch (e) {
+          debugPrint('[UpdateChecker] write update cache failed: $e');
+        }
       }
 
       if (!isUpdateVersionNewer(tagName, currentVersion, channel)) {
@@ -1200,6 +1225,16 @@ bool releaseMatchesUpdateChannel(
       prerelease && _releaseTagMatchesChannel(tag, UpdateChannel.debug),
   };
 }
+
+/// TODO-1024 / BUG-479：通道感知的「远端 [tag] 是否比本地 [current] 新」公开判定，供
+/// 缓存优先的乐观反馈（手动「检查更新」据缓存 tag 立刻分流「发现新版」/「已是最新」）。
+/// 薄包 [isUpdateVersionNewer]（后者 `@visibleForTesting`，仅本库/测试内可用）。
+bool updateTagIsNewerThanCurrent(
+  String tag,
+  String current,
+  UpdateChannel channel,
+) =>
+    isUpdateVersionNewer(tag, current, channel);
 
 @visibleForTesting
 bool isUpdateVersionNewer(

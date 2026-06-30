@@ -1,0 +1,16 @@
+## BUG-479 · 更新检查时快时慢=无结果缓存每次冷查 GitHub（TODO-1024）
+- **报告**：2026-06-30（用户：app 自更新「检查更新」连接更新源时快时慢，网络没变也不稳定，要求恒快）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/utils/misc/update_checker_release.dart:_check`（旧 `client = HttpClient()` 处，原 :208）——每次检查都新建 `HttpClient` 冷查 GitHub，对直连 + 镜像竞速（`update_checker_net.dart` 的 `raceFirstSuccessfulBody`），**全程无任何检查结果缓存**：无 last-check 时间戳、无缓存的 latest tag、无乐观显示。命中 `api.github.com` 时镜像必 403、只有直连能成，故整轮耗时完全取决于当次直连 GitHub 的 DNS/TLS/限流状态——网络没变也「时快时慢」。对比 Hoshi-Reader-Android：缓存优先乐观渲染 + 后台异步刷新 = 永不等网络。
+- **[x] ① 已修复** — 对齐 Hoshi-A「缓存优先 + 后台静默刷新」：
+  - 新增纯数据结构 + 纯 encode/decode 缓存条目 `hibiki/lib/src/utils/misc/update_check_cache.dart`（`UpdateCheckCacheEntry{lastCheckEpochMs, latestTag, htmlUrl, channel}` + `cachedEntryForChannel` 通道隔离；落 Drift `preferences` 表单 key `update_check_cache`，**不动 schema**）。
+  - `_check` 在解析出合法 tag 后、在「是否更新」判断之前，把结果写回缓存（`update_checker_release.dart` 的 `cacheWriter` 调用），覆盖 up-to-date 与 newer 两路；写缓存失败吞 + 记日志，绝不影响检查流程。
+  - `scheduleCheck`/`_check` 暴露默认 null 的 `cacheWriter`（旧调用零变化）；启动期自动检查（`home_page.dart`）传 `cacheWriter` 持续刷新缓存。
+  - 手动「立即检查更新」（`settings_schema_system.dart` 的 `_checkUpdateNow`）**先读缓存乐观即时反馈**（`update_cached_newer` / `update_cached_up_to_date`，校验中…），网络刷新随后在后台校验并写回——不再每次冷查 GitHub 才知道结果（恒快）。无缓存（首检/畸形/换通道）才退回原「正在检查…」。
+  - `PreferencesRepository.updateCheckCache` / `setUpdateCheckCache`（key-value，不 notifyListeners）+ `AppModel` 同名委托。
+  - 提交：（见本轮提交哈希）
+  - **非目标（刻意不做，避免掩盖症状/过度设计）**：不加镜像、不调竞速/超时（镜像对 api.github.com 必 403，是症状掩盖）；ETag/If-None-Match 条件请求评估后**不做**——stable 主路径是 302 redirect 无 body，ETag 仅惠及 beta/debug API 回退，收益边际而要给缓存加 etag 字段、复杂度不匹配；根因（无缓存）已由缓存优先修掉。
+- **[x] ② 已加自动化测试** — 最强可落地层（纯 Dart 单测 + 源码守卫，不依赖真网络）：
+  - `hibiki/test/utils/misc/update_check_cache_test.dart`：encode/decode roundtrip 保真、全部畸形（null/空串/非 JSON/非对象/缺 tag/通道不识别/epoch 容错/html 缺失）安全回退 null、`cachedEntryForChannel` 通道隔离（stable 缓存不被 beta 误用）。
+  - `hibiki/test/utils/misc/update_check_cache_wiring_guard_test.dart`：`_check` 在拿到 tag 后、判断更新前写缓存；`scheduleCheck` 透传 cacheWriter；home_page/settings 两调用点传 cacheWriter；手动检查先读缓存乐观反馈；缓存落 preferences 表（无 schema bump）。
+  - 全量 `test/utils/misc/` + `test/settings/` 653 绿；`flutter analyze` No issues found。
+- **备注**：i18n 新增 `update_cached_newer` / `update_cached_up_to_date`（17 语言，经 `tool/i18n_sync.dart --add` + `dart run slang`）。未动 Drift schema（仍 v24）。

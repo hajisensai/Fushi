@@ -144,6 +144,9 @@ class _HomePageState extends BasePageState<HomePage>
           betaChannel: appModel.updateBetaChannel,
           debugChannel: appModel.updateDebugChannel,
           customProxy: appModel.updateCustomProxy,
+          // TODO-1024 / BUG-479：启动期后台检查跑完即把结果写回缓存，下次「检查更新」
+          // 直接读缓存乐观反馈（恒快）。auto 路径不读缓存（仍后台静默刷新）。
+          cacheWriter: appModel.setUpdateCheckCache,
         );
       }
 

@@ -4068,6 +4068,11 @@ class AppModel with ChangeNotifier {
   Future<void> setUpdateCustomProxy(String value) =>
       prefsRepo.setUpdateCustomProxy(value);
 
+  // TODO-1024 / BUG-479：更新检查结果缓存（缓存优先 + 后台静默刷新）。
+  UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;
+  Future<void> setUpdateCheckCache(UpdateCheckCacheEntry entry) =>
+      prefsRepo.setUpdateCheckCache(entry);
+
   bool get populateBookmarksFlag => prefsRepo.populateBookmarksFlag;
   void setPopulateBookmarksFlag() => prefsRepo.setPopulateBookmarksFlag();
 

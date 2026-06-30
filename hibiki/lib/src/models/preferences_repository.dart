@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/update_check_cache.dart';
 import 'package:hibiki/src/utils/player/blur_options.dart';
 
 enum DesktopClipboardWindowMode {
@@ -1193,6 +1194,17 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('update_custom_proxy', value);
     notifyListeners();
   }
+
+  /// TODO-1024 / BUG-479：上次更新检查结果缓存（解码后；无/畸形 → null）。检查时先读它
+  /// 乐观即时反馈，网络刷新在后台跑完再写回——不再每次冷查 GitHub 才知道结果（恒快）。
+  UpdateCheckCacheEntry? get updateCheckCache => UpdateCheckCacheEntry.decode(
+        getPref(updateCheckCachePrefKey, defaultValue: '') as String,
+      );
+
+  /// 写回更新检查结果缓存（落 `preferences` 表单 key）。不 `notifyListeners`——缓存是
+  /// 后台静默刷新的产物，不驱动 UI 重建，避免无谓 rebuild。
+  Future<void> setUpdateCheckCache(UpdateCheckCacheEntry entry) =>
+      setPref(updateCheckCachePrefKey, entry.encode());
 
   // ── bookmarks flag ───────────────────────────────────────────────────
 

@@ -2008,5 +2008,7 @@
   "anki_note_viewer_title": "Existing card",
   "anki_note_viewer_open_in_anki": "Open in Anki",
   "anki_note_viewer_empty": "This card has no readable fields.",
-  "anki_note_open_failed": "Could not open the card in Anki."
+  "anki_note_open_failed": "Could not open the card in Anki.",
+  "update_cached_up_to_date": "On latest known version $version (checking…)",
+  "update_cached_newer": "Update $version available (verifying…)"
 }
