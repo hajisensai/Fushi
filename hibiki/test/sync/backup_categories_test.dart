@@ -10,6 +10,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'sync_settings_schema_source_corpus.dart';
+import 'temp_dir_cleanup.dart';
 
 /// TODO-106/TODO-249: the export dialog lets the user pick which sidecar trees
 /// travel in the backup. [BackupService.exportBackup]'s [categories] param
@@ -26,7 +27,7 @@ void main() {
   tearDown(() async {
     for (final d in [src, dst]) {
       try {
-        if (d.existsSync()) await d.delete(recursive: true);
+        if (d.existsSync()) await cleanupTempDir(d);
       } on PathNotFoundException {
         // Windows recursive cleanup can race with already-removed temp paths.
       }

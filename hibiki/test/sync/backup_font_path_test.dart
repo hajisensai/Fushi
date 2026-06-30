@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'temp_dir_cleanup.dart';
 
 void main() {
   // ── BUG-183 unit: pure font-list path rebasing ──────────────────────────
@@ -123,8 +124,8 @@ void main() {
       final Directory srcFontsDir =
           await Directory.systemTemp.createTemp('bug183_src_fonts_');
       addTearDown(() async {
-        if (srcDir.existsSync()) await srcDir.delete(recursive: true);
-        if (srcFontsDir.existsSync()) await srcFontsDir.delete(recursive: true);
+        if (srcDir.existsSync()) await cleanupTempDir(srcDir);
+        if (srcFontsDir.existsSync()) await cleanupTempDir(srcFontsDir);
       });
 
       final String bodyFontPath = '${srcFontsDir.path}/Klee_1.ttf';
@@ -193,7 +194,7 @@ void main() {
       final Directory zipDir =
           await Directory.systemTemp.createTemp('bug183_zip_');
       addTearDown(() async {
-        if (zipDir.existsSync()) await zipDir.delete(recursive: true);
+        if (zipDir.existsSync()) await cleanupTempDir(zipDir);
       });
       final String zipPath = '${zipDir.path}/backup.zip';
 
@@ -216,8 +217,8 @@ void main() {
       final Directory dstFontsDir =
           await Directory.systemTemp.createTemp('bug183_dst_fonts_');
       addTearDown(() async {
-        if (dstDir.existsSync()) await dstDir.delete(recursive: true);
-        if (dstFontsDir.existsSync()) await dstFontsDir.delete(recursive: true);
+        if (dstDir.existsSync()) await cleanupTempDir(dstDir);
+        if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
       });
 
       await BackupService.importBackupFiles(
@@ -295,7 +296,7 @@ void main() {
       final Directory srcDir =
           await Directory.systemTemp.createTemp('bug183_legacy_src_');
       addTearDown(() async {
-        if (srcDir.existsSync()) await srcDir.delete(recursive: true);
+        if (srcDir.existsSync()) await cleanupTempDir(srcDir);
       });
       final HibikiDatabase onDisk = HibikiDatabase(srcDir.path);
       final BackupService realLegacy = BackupService(
@@ -306,7 +307,7 @@ void main() {
       final Directory zipDir =
           await Directory.systemTemp.createTemp('bug183_legacy_zip_');
       addTearDown(() async {
-        if (zipDir.existsSync()) await zipDir.delete(recursive: true);
+        if (zipDir.existsSync()) await cleanupTempDir(zipDir);
       });
       final String zipPath = '${zipDir.path}/legacy.zip';
       final BackupMeta meta = await realLegacy.exportBackup(zipPath);
@@ -318,8 +319,8 @@ void main() {
       final Directory dstFontsDir =
           await Directory.systemTemp.createTemp('bug183_legacy_dst_fonts_');
       addTearDown(() async {
-        if (dstDir.existsSync()) await dstDir.delete(recursive: true);
-        if (dstFontsDir.existsSync()) await dstFontsDir.delete(recursive: true);
+        if (dstDir.existsSync()) await cleanupTempDir(dstDir);
+        if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
       });
 
       await BackupService.importBackupFiles(

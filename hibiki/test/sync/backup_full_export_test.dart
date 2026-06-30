@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+import 'temp_dir_cleanup.dart';
 
 /// Full-data backup: export packs the hoshi_books + audiobooks trees and the
 /// db; import (on a DIFFERENT set of roots) restores the files AND rebases the
@@ -21,7 +22,7 @@ void main() {
   });
   tearDown(() async {
     for (final d in [src, dst]) {
-      if (d.existsSync()) await d.delete(recursive: true);
+      if (d.existsSync()) await cleanupTempDir(d);
     }
   });
 
