@@ -25,9 +25,17 @@ void main() {
     // 必须是真正的运行期检查（GetLastError），而非仅注释提到。
     expect(src.contains('GetLastError() == ERROR_ALREADY_EXISTS'), isTrue,
         reason: '必须检测 GetLastError()==ERROR_ALREADY_EXISTS（真单实例守卫）');
-    // 命中已有实例时退出本进程：取该检查之后到函数体一段，断言含早退。
-    // （TODO-904 P0 回归修复在 return 前插入了路径转交，窗口适当放宽到 1400 字符。）
-    final int idx = src.indexOf('GetLastError() == ERROR_ALREADY_EXISTS');
+    // TODO-935：数据迁移自动重启会以 detached 模式拉起带 --hibiki-restarted 标志的新
+    // 进程，但旧进程此刻仍持单实例互斥量。带该标志命中已有实例时必须**等待**旧进程
+    // 释放互斥量后按首实例启动（否则重启落空、新 data_root 从不重读）；普通二次启动
+    // 无此标志，维持「前置旧窗口 + 退出」。守卫这条豁免在位，防止有人把它改回无条件早退。
+    expect(src.contains('HasRestartMarker()'), isTrue,
+        reason: 'TODO-935：带重启标志命中已有实例须等待互斥量释放再作首实例，不能误退');
+    // 命中已有实例（且非重启豁免）时退出本进程：锚定到二次实例早退分支唯一标志
+    // FindWindowW（前置首实例窗口），断言其后不远处含早退；不再用对 935 插入的注释/
+    // 等待逻辑脆弱的「ERROR_ALREADY_EXISTS 后固定字符窗口」启发式。
+    final int idx = src.indexOf('::FindWindowW(nullptr, L"Hibiki")');
+    expect(idx >= 0, isTrue, reason: '二次实例分支必须前置首实例窗口');
     final String after = src.substring(idx, (idx + 1400).clamp(0, src.length));
     expect(after.contains('return EXIT_SUCCESS;'), isTrue,
         reason: '命中已有实例必须退出本进程，不再创建第二个共享 userDataFolder 的实例');
