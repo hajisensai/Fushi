@@ -72,6 +72,8 @@ class _BookImportDialogState extends State<BookImportDialog>
   // Future。各触发点赋值，导入时 _applyBestCoverToEpub 先 await 它，避免用户在
   // 抽取未返回时点「导入」导致 _audioCoverPath 仍为 null 被吞掉（BUG-483）。
   Future<void>? _coverExtraction;
+  // TODO-1034 次要：单调递增的抽取序号，用于让晚到的旧抽取放弃写 _audioCoverPath。
+  int _coverExtractionToken = 0;
 
   // 原始文件名（file_picker 在 Android 上返回的 cache 路径文件名可能与原始不同）
   String? _epubName;
@@ -509,12 +511,25 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// Future 后再读 [_audioCoverPath]（已完成则零等待）。返回该 Future 以兼容仍想
   /// await 的调用点。
   Future<void> _tryExtractAudioCover() {
-    final Future<void> extraction = _runCoverExtraction();
+    // TODO-1034 次要：fire-and-forget 多次触发时，给每次抽取发一个单调递增 token；
+    // 只有「仍是最新一次」的抽取才允许写 _audioCoverPath，避免晚到的旧抽取覆盖新封面。
+    final int token = ++_coverExtractionToken;
+    final Future<void> extraction = _runCoverExtraction(token);
     _coverExtraction = extraction;
     return extraction;
   }
 
-  Future<void> _runCoverExtraction() async {
+  /// 等内嵌封面抽取（可能仍在途）落定，使读取 [_audioCoverPath] 不会在 ffmpeg
+  /// probe 未返回时拿到 null 把封面吞掉（BUG-483 / TODO-1034）。已完成则零等待。
+  /// 主路径 [_applyBestCoverToEpub] 与字幕书+m4b 路径 [_importSubtitleBook] 共用。
+  Future<void> _awaitCoverExtraction() async {
+    final Future<void>? extraction = _coverExtraction;
+    if (extraction != null) {
+      await extraction;
+    }
+  }
+
+  Future<void> _runCoverExtraction(int token) async {
     if (_audioPaths.isEmpty) return;
     final Directory tmpDir = await getTemporaryDirectory();
     final String outputPath = p.join(
@@ -526,7 +541,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         audioPath: audioPath,
         outputPath: outputPath,
       );
-      if (result != null && mounted) {
+      if (result != null && mounted && token == _coverExtractionToken) {
         setState(() => _audioCoverPath = result);
         return;
       }
@@ -786,6 +801,9 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (author != null) {
       book.author = author;
     }
+    // TODO-1034：与主路径同根因——读 _audioCoverPath 前必须先等内嵌封面抽取落定，
+    // 否则用户在 ffmpeg probe 未返回时点「导入」会把封面吞掉。
+    await _awaitCoverExtraction();
     final String? coverSource = _coverPath ?? _audioCoverPath;
     if (coverSource != null) {
       final String ext = p.extension(coverSource);
@@ -839,10 +857,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   Future<void> _applyBestCoverToEpub(String bookKey) async {
     // 等内嵌封面抽取（可能仍在途）落定再判断，否则用户在 ffmpeg 未返回时点导入会把
     // _audioCoverPath 当 null 吞掉封面（BUG-483）。已完成则零等待。
-    final Future<void>? extraction = _coverExtraction;
-    if (extraction != null) {
-      await extraction;
-    }
+    await _awaitCoverExtraction();
     if (_coverPath != null) {
       await _applyCoverToEpub(bookKey);
     } else if (_audioCoverPath != null && !(await _epubHasCover(bookKey))) {
