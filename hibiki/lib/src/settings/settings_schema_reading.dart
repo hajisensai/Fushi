@@ -500,7 +500,27 @@ SettingsDestination buildReadingDestination() {
                 settingsContext.readerSource.showTopProgressBar,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.readerSource.toggleShowTopProgressBar();
-              notifyReaderSettingsChanged(settingsContext);
+              // TODO-975 需求 A：开/关顶部进度改变了喂 WebView 的预留高（关进度回收
+              // 18px），走重锚通道保住连续模式滚动位置。
+              notifyReaderChromeReanchored(settingsContext);
+            },
+          ),
+          // TODO-975 决策#2：顶部进度悬浮开关（点击唤出 + 自动收起 + 不占正文位置）。
+          // 仅当进度本身开启时显示。切换改变预留高 → 走重锚通道。
+          SettingsSwitchItem(
+            id: 'reading_controls.top_progress_floating',
+            title: t.reader_top_progress_floating,
+            icon: Icons.flip_to_front_outlined,
+            visible: (SettingsContext c) => c.readerSource.showTopProgressBar,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 17,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.topProgressFloating,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleTopProgressFloating();
+              notifyReaderChromeReanchored(settingsContext);
             },
           ),
           // TODO-728: where the top reading-progress text sits. Only shown when
@@ -550,7 +570,35 @@ SettingsDestination buildReadingDestination() {
                 settingsContext.readerSource.tapEmptyToHideChrome,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.readerSource.toggleTapEmptyToHideChrome();
-              notifyReaderSettingsChanged(settingsContext);
+              // TODO-975 决策#3：此开关现同时把底栏切到悬浮模式，改变底栏预留高 →
+              // 走重锚通道（连续模式滚动保位）。
+              notifyReaderChromeReanchored(settingsContext);
+            },
+          ),
+          // TODO-975 决策#1：悬浮 chrome 唤出后自动收起的时长（秒，顶部/底栏共用）。
+          // 仅当存在任一悬浮 chrome（顶部进度悬浮 或 点空白隐藏=底栏悬浮）时显示。
+          // 纯时长不改预留高 → 走 settings 刷新即可，无需重锚。
+          SettingsSliderItem(
+            id: 'reading_controls.auto_hide_chrome_duration',
+            title: t.reader_auto_hide_chrome_duration,
+            icon: Icons.timer_outlined,
+            min: 1,
+            max: 10,
+            divisions: 9,
+            visible: (SettingsContext c) =>
+                c.readerSource.topProgressFloating ||
+                c.readerSource.tapEmptyToHideChrome,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 18,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.autoHideChromeMillis / 1000.0,
+            label: (double value) => '${value.round()}s',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.readerSource
+                  .setAutoHideChromeMillis((value * 1000).round());
+              notifyReaderChromeChanged(settingsContext);
             },
           ),
           // TODO-728: per-reader toggle for the audiobook bottom-bar current

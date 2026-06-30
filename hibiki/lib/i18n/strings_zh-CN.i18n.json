@@ -1992,5 +1992,7 @@
   "data_storage_migrate_overlay_title": "正在迁移数据",
   "data_storage_migrate_overlay_warning": "正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。",
   "data_storage_migrate_overlay_progress": "正在复制文件：$copied / $total",
-  "collection_word": "单词"
+  "collection_word": "单词",
+  "reader_top_progress_floating": "悬浮阅读进度",
+  "reader_auto_hide_chrome_duration": "悬浮控件自动隐藏延时"
 }

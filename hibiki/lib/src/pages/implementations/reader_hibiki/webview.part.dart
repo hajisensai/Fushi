@@ -348,9 +348,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         initialFragment: _initialFragment,
         sasayakiCuesJson: sasayakiCuesJson,
         chromeTopInset: _readerTopOffset,
-        chromeBottomInset: _showChrome
-            ? _readerChromeHeight + _stableBottomInset
-            : _stableBottomInset,
+        // TODO-975：单一真相源 _readerBottomReserve（悬浮态 0 / 挤压态含底栏高 + 系统
+        // inset），取代旧 `_showChrome ? height+inset : inset` 三元式。
+        chromeBottomInset: _readerBottomReserve,
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
         blurImages: s.blurImages,
@@ -366,9 +366,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String furiganaJs = _buildFuriganaJs(s.furiganaMode);
 
     final String caretJs = ReaderCaretScripts.source();
-    final double caretBottomInset = _showChrome
-        ? _readerChromeHeight + _stableBottomInset
-        : _stableBottomInset;
+    // TODO-975：与 chromeBottomInset 同源 _readerBottomReserve（悬浮 0 / 挤压含底栏）。
+    final double caretBottomInset = _readerBottomReserve;
     final String caretInit = ReaderCaretScripts.initInvocation(
       color: _caretRingColorCss(),
       insetTop: _readerTopOffset,
@@ -1295,7 +1294,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (_) {
-            if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
+            // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
+            // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
+            // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
               _toggleChrome();
             }
             // Tap on empty space handed OS focus to the WebView; reclaim it so

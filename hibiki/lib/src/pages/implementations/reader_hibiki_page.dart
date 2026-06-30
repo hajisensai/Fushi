@@ -49,6 +49,7 @@ import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/reader/reader_gamepad_immersive.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
@@ -1030,6 +1031,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
   bool _showChrome = true;
+  // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
+  // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
+  // 一下立即收起置 false。顶部与底栏共用同一旗与同一计时器（决策#1 时长共用、决策#2
+  // 两栏唤出/收起联动）。改 _chromeTransientVisible 不改预留高 → 不需重锚。
+  bool _chromeTransientVisible = false;
+  Timer? _chromeAutoHideTimer;
   // TODO-728: true when the chrome was hidden BY the gamepad-present auto-immersive
   // path (not by the user). Used so that losing the controller restores the
   // chrome ONLY if the gamepad hid it; a manual toggle clears this flag and takes
@@ -1115,15 +1122,64 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _progressTotalChars! > 0 &&
       ReaderHibikiSource.instance.showTopProgressBar;
 
-  double get _readerTopOffset => _stableTopInset + _infoFontSize * 1.5;
+  /// 顶部进度信息条的自然高度（历史 `_infoFontSize * 1.5`）。
+  static const double _infoStripHeight = _infoFontSize * 1.5;
 
-  double get _readerBottomReserve => _readerChromeHeight + _stableBottomInset;
+  /// TODO-975 决策#2：顶部进度是否悬浮（点击唤出 + 自动收起 + 不占预留）。
+  bool get _topProgressFloating =>
+      ReaderHibikiSource.instance.topProgressFloating;
+
+  /// TODO-975 决策#3：底栏是否悬浮 == 「点空白处隐藏控制栏」开关。复用既有偏好，
+  /// 不另设开关（单一真相源、消除并列特例）。
+  bool get _bottomBarFloating =>
+      ReaderHibikiSource.instance.tapEmptyToHideChrome;
+
+  /// TODO-975：顶部进度的预留高（单一真相源）。关进度 / 悬浮态恒 0（需求 A：关进度
+  /// 回收 18px），挤压且显示时占 [_infoStripHeight]。
+  double get _topProgressReserve => topProgressReserve(
+        showTopProgress: _showTopProgress,
+        floating: _topProgressFloating,
+        infoStripHeight: _infoStripHeight,
+      );
+
+  /// TODO-975：底栏内容行的预留高（不含系统底 inset，单一真相源）。底栏不占位 /
+  /// 悬浮态恒 0，挤压且占位时占 [_readerChromeHeight]。占位判据与
+  /// [_buildBottomChrome] 的可见条件（_hasEverLoaded && _showChrome）一致。
+  double get _bottomChromeReserve => bottomChromeReserve(
+        barOccupiesLayout: _hasEverLoaded && _showChrome,
+        floating: _bottomBarFloating,
+        chromeHeight: _readerChromeHeight,
+      );
+
+  /// TODO-975：顶部进度此刻是否绘制。悬浮态额外受 [_chromeTransientVisible]（点击
+  /// 唤出、计时自动收起）门控；挤压态恒随 [_showTopProgress]。
+  bool get _topProgressShouldPaint => topProgressVisible(
+        showTopProgress: _showTopProgress,
+        floating: _topProgressFloating,
+        transientVisible: _chromeTransientVisible,
+      );
+
+  /// TODO-975：底栏此刻是否绘制。挤压态随 [_showChrome]；悬浮态额外受
+  /// [_chromeTransientVisible] 门控（与顶部共用同一唤出/收起状态）。
+  bool get _bottomBarShouldPaint {
+    if (!_hasEverLoaded || !_showChrome) return false;
+    if (!_bottomBarFloating) return true;
+    return _chromeTransientVisible;
+  }
+
+  /// TODO-975：是否有任一 chrome 处于悬浮模式（决定是否启用「点击唤出 + 自动收起」
+  /// 状态机；都不悬浮时走纯挤压旧路径，无 timer）。
+  bool get _anyChromeFloating => _topProgressFloating || _bottomBarFloating;
+
+  double get _readerTopOffset => _stableTopInset + _topProgressReserve;
+
+  double get _readerBottomReserve => _bottomChromeReserve + _stableBottomInset;
 
   @override
   double get popupBottomReserve =>
-      // 与 _buildBottomChrome 的可见条件保持一致：底栏占位 ⟺ 弹窗预留底部空间，
-      // 否则切章期间底栏可见但预留为 0，弹窗可能被底栏遮挡。
-      (_hasEverLoaded && _showChrome) ? _readerBottomReserve : 0;
+      // 弹窗避让只对挤压底栏预留空间；悬浮底栏不占正文位置故 0（避免弹窗为不存在
+      // 的预留留白）。_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
+      _bottomChromeReserve > 0 ? _readerBottomReserve : 0;
 
   @override
   double get popupTopReserve => _stableTopInset;
@@ -1166,6 +1222,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onChromeReloadLive = () {
       if (!mounted) return;
       setState(() {});
+    };
+    // TODO-975：改变了喂给 WebView 的预留高的 chrome 偏好（开/关顶部进度、顶部/底栏
+    // 挤压↔悬浮切换）。除重建外还需重新下发 chrome insets 并重锚连续模式滚动位置，
+    // 否则预留高变化触发的 reflow 会把 window.scrollY 归零弹回章首。切换悬浮模式时
+    // 先收起临时可见态（新模式从隐藏起步、reserve 自洽）。
+    ReaderHibikiSource.onChromeReanchorLive = () {
+      if (!mounted) return;
+      _cancelChromeAutoHide();
+      setState(() {
+        _chromeTransientVisible = false;
+      });
+      unawaited(_applyChromeInsetsAndReanchor().catchError(
+        (Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('ReaderHibiki.onChromeReanchorLive', e, s);
+        },
+      ));
     };
     // TODO-728: controller presence changes drive the reader's auto-immersive
     // mode. The AppModel bridge already gates on gamepadAutoImmersive, so this
@@ -1519,6 +1592,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onSettingsChangedLive = null;
     ReaderHibikiSource.onLayoutReloadLive = null;
     ReaderHibikiSource.onChromeReloadLive = null;
+    ReaderHibikiSource.onChromeReanchorLive = null;
     ReaderHibikiSource.onGamepadPresenceChanged = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
@@ -1533,6 +1607,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _contentReadyTimer?.cancel();
     _contentReadyDeadline = null;
     _resizeRepaginateDebounce?.cancel();
+    _chromeAutoHideTimer?.cancel();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
@@ -1885,9 +1960,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                                   FocusManager.instance.highlightMode ==
                                       FocusHighlightMode.traditional;
                               if (!show) return const SizedBox.shrink();
-                              final double bottomInset = _showChrome
-                                  ? _readerChromeHeight + _stableBottomInset
-                                  : _stableBottomInset;
+                              // TODO-975：焦点环预留与喂 WebView 同源 _readerBottomReserve
+                              // （悬浮 0 / 挤压含底栏），保证环始终落在正文视口内。
+                              final double bottomInset = _readerBottomReserve;
                               return Padding(
                                 padding: EdgeInsets.fromLTRB(
                                     1.5, _readerTopOffset, 1.5, bottomInset),
@@ -1997,20 +2072,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
-  Future<void> _applyStylesLive() async {
-    if (_controller == null || _settings == null) return;
-    _invalidateStyleCache();
-    // _settings 即 ReaderHibikiSource.readerSettings 本体，setTtu* 已在触发本
-    // 回调前写穿同一对象，无需再 _syncSettingsFromHive 自拷贝（旧 TTU 死桥）。
-    if (!mounted || _controller == null) return;
-    // TODO-756b：把“悬停即查词”开关下发到 WebView 的 window.__hoverAutoLookup（mousemove
-    // 监听器据此跳过 Shift 门控）。独立于样式/歌词分支：阅读器与歌词模式都吃此开关。
-    await _applyHoverAutoLookupLive();
-    if (!mounted || _controller == null) return;
-    if (_lyricsMode) {
-      await _updateLyricsStyleLive();
-      return;
-    }
+  /// 当前正文样式的 JSON 编码（喂给 beginStyleReanchorInvocation）。从 [_applyStylesLive]
+  /// 抽出，供它与 TODO-975 的 chrome-inset 重锚（[_applyChromeInsetsAndReanchor]，CSS
+  /// 不变但需复用样式重锚的滚动保位）共用同一套色/样式计算，避免两处漂移。
+  String _currentStyleJson() {
     final ReaderThemeColors rc = _readerThemeColors;
     final String css = ReaderContentStyles.css(
       settings: _settings!,
@@ -2025,7 +2090,24 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       sasayakiColor: _colorToCssRgba(rc.sasayaki),
       linkColor: _colorToCssRgba(rc.link),
     );
-    final String jsonCss = jsonEncode(css);
+    return jsonEncode(css);
+  }
+
+  Future<void> _applyStylesLive() async {
+    if (_controller == null || _settings == null) return;
+    _invalidateStyleCache();
+    // _settings 即 ReaderHibikiSource.readerSettings 本体，setTtu* 已在触发本
+    // 回调前写穿同一对象，无需再 _syncSettingsFromHive 自拷贝（旧 TTU 死桥）。
+    if (!mounted || _controller == null) return;
+    // TODO-756b：把“悬停即查词”开关下发到 WebView 的 window.__hoverAutoLookup（mousemove
+    // 监听器据此跳过 Shift 门控）。独立于样式/歌词分支：阅读器与歌词模式都吃此开关。
+    await _applyHoverAutoLookupLive();
+    if (!mounted || _controller == null) return;
+    if (_lyricsMode) {
+      await _updateLyricsStyleLive();
+      return;
+    }
+    final String jsonCss = _currentStyleJson();
     try {
       // 先确保 style 元素存在（begin 入口 setText 到它）。pagination 未就绪 / 非 reader 页
       // （无 hoshiReader）时 beginStyleReanchorInvocation 返回 -1，下面编排自然 no-op，

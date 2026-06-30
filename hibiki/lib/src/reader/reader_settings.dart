@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/font_catalog.dart';
+import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
@@ -439,9 +440,28 @@ class ReaderSettings {
   Future<void> setTopProgressPosition(String v) =>
       _set<String>('top_progress_position', normalizeTopProgressPosition(v));
 
+  // TODO-975 决策#3：「点空白处隐藏控制栏」开启 ⟺ 底栏进入悬浮模式（点击唤出、
+  // 计时自动收起、不占正文位置）。复用此既有 key 作为底栏悬浮开关，不新增独立偏好
+  // （单一真相源、消除并列开关的特例分支）。默认 false = 现状（挤压底栏，无自动隐藏）。
   bool get tapEmptyToHideChrome => _get<bool>('tap_empty_hide_chrome', false);
   Future<void> toggleTapEmptyToHideChrome() =>
       _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);
+
+  /// TODO-975 决策#2：顶部阅读进度悬浮开关（与底栏悬浮独立，时长共用）。开启时顶部
+  /// 进度变成「点击唤出、计时自动收起、不占正文位置」。默认 false = 现状（挤压，常驻
+  /// 显示，占 18px 预留）。与 [showTopProgressBar] 正交：进度关时本开关在 UI 隐藏。
+  bool get topProgressFloating => _get<bool>('top_progress_floating', false);
+  Future<void> toggleTopProgressFloating() =>
+      _set<bool>('top_progress_floating', !topProgressFloating);
+
+  /// TODO-975 决策#1：悬浮 chrome（顶部进度 / 底栏）唤出后自动收起的时长（毫秒），
+  /// 顶部与底栏共用同一个值。默认 [kDefaultAutoHideChromeMillis]（3000ms），可调滑块
+  /// 1000–10000，越界值经 [normalizeAutoHideChromeMillis] 归一。
+  int get autoHideChromeMillis => normalizeAutoHideChromeMillis(
+        _get<int>('auto_hide_chrome_millis', kDefaultAutoHideChromeMillis),
+      );
+  Future<void> setAutoHideChromeMillis(int v) =>
+      _set<int>('auto_hide_chrome_millis', normalizeAutoHideChromeMillis(v));
 
   bool get invertSwipeDirection => _get<bool>('invert_swipe_direction', true);
   Future<void> toggleInvertSwipeDirection() =>

@@ -48,7 +48,14 @@ void main() {
     expect(end, greaterThan(start));
     final String body = codeOnly(chrome.substring(start, end));
     expect(body, contains('HitTestBehavior.opaque'));
-    expect(body, contains('onTap: _toggleChrome'));
+    // TODO-975：挤压态仍 onTap:_toggleChrome；悬浮态点进度条立即收起
+    // （_handleFloatingChromeReveal）。两者都不是 focus 节点 —— 仍是纯指针面。
+    expect(
+      body.contains('_toggleChrome') &&
+          body.contains('_handleFloatingChromeReveal'),
+      isTrue,
+      reason: '顶部进度点击必须路由到 _toggleChrome（挤压）或悬浮唤出/收起',
+    );
     expect(body, isNot(contains('Focus(')));
     expect(body, isNot(contains('canRequestFocus')));
   });
