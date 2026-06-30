@@ -85,6 +85,11 @@ bool shouldWarnOnExit({required bool syncing, required bool isSettingsTab}) =>
 class HomePage extends BasePage {
   const HomePage({super.key});
 
+  /// 测试钩子：确定性切换顶层 tab（离屏集成测试焦点驱动 nav 在 IndexedStack +
+  /// 自绘 rail 下偶发切不过去，故提供直达入口）。仅 debug/profile build 注册。
+  @visibleForTesting
+  static void Function(HomeTab tab)? debugSelectTab;
+
   @override
   BasePageState<HomePage> createState() => _HomePageState();
 }
@@ -110,6 +115,10 @@ class _HomePageState extends BasePageState<HomePage>
     );
 
     WidgetsBinding.instance.addObserver(this);
+    assert(() {
+      HomePage.debugSelectTab = _selectTab;
+      return true;
+    }());
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
     // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
@@ -173,6 +182,10 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    assert(() {
+      HomePage.debugSelectTab = null;
+      return true;
+    }());
     _dictFocusSignal.dispose();
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);

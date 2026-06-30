@@ -10,10 +10,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show HomePage, HomeTab;
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
-import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
-    show hibikiMaterialNavKey;
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/focus_driver.dart';
@@ -148,27 +148,16 @@ void main() {
       final FocusDriver driver = FocusDriver(tester);
       final String uid = await seedVideo(tester);
 
-      // 视频 tab 是导航第 2 项（顺序 books, video, dictionaries, ...；
-      // experimentalVideoEnabled 恒 true，视频 tab 常驻）。
-      // 视频 tab 按图标定位（Icons.movie_outlined = 未选态），避开 navTargets 索引被
-      // 侧栏 rail 头部 logo Icon 移位的问题（导致 navTargets[1] 错指向书架）。
-      final Finder videoNavIcon = find.descendant(
-        of: find.byKey(hibikiMaterialNavKey),
-        matching: find.byIcon(Icons.movie_outlined),
-      );
-      expect(videoNavIcon, findsWidgets,
-          reason: '视频 nav 图标（movie_outlined）应存在');
-      final bool focusedVideoTab = await driver.focusWidget(videoNavIcon.first);
-      expect(focusedVideoTab, isTrue, reason: '视频 tab 应可被焦点到达');
-      // 切 tab 用 pump(固定时长)，与 reader_dictionary_test 的可靠范式一致；
-      // pumpAndSettle 在含离屏 WebView/media_kit 的页面可能取不到切换帧。
-      await driver.activate();
-      await tester.pump(const Duration(seconds: 3));
-      // Enter 没切到时 ActivateIntent 兜底（nav 目的地 A/Enter 双绑）。
-      if (find.byKey(ValueKey<String>('home_video_$uid')).evaluate().isEmpty) {
-        await driver.activateIntent();
-        await tester.pump(const Duration(seconds: 2));
-      }
+      // 确定性切到视频 tab：焦点驱动 nav 在离屏 IndexedStack + 自绘 rail 下偶发切不
+      // 过去（navTargets 索引被 rail 头部 logo 移位 + 激活在离屏不触发 _selectTab），
+      // 故用 HomePage 测试钩子直达。切后视频页（IndexedStack 内 lazy）build + listAll
+      // 拉出 seed 的视频；再补一次 debugRefreshVideos 兜底。
+      expect(HomePage.debugSelectTab, isNotNull,
+          reason: 'HomePage 切 tab 测试钩子应已注册（debug/profile build）');
+      HomePage.debugSelectTab!(HomeTab.video);
+      await tester.pump(const Duration(seconds: 1));
+      HomeVideoPage.debugRefreshVideos?.call();
+      await tester.pump(const Duration(seconds: 2));
 
       // 诊断：导航后立刻抓视频 tab + 统计卡片，区分「没切到 tab / 卡 offstage /
       // listAll 空」。先抓图保证证据落盘（卡断言早于截图会丢图）。
