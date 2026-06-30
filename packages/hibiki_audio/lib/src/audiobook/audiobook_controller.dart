@@ -263,6 +263,57 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// TODO-1037：跨章推进经过「独立成章的纯图片页」时的停留。
+  ///
+  /// 与 [triggerImagePause] 的区别：后者是 reader 在**已渲染章同一 DOM 内**两条
+  /// 相邻 cue 锚点间跨过 `<img>` 时调用（`window.__hoshiImageBetween`），用一次性
+  /// Timer 暂停 + 到点自恢复，调用方不等待。但纯图片章没有 cue → cue 驱动的跨章会
+  /// 一步从文本章 N 跳到下一个有文本的章 N+k，中间整章是图片的章从不挂载、从不被
+  /// 那条 DOM 内判定看见（两锚点在不同章 DOM，`document.contains(prev)` 直接返回
+  /// null），所以图片等待对独立成章的图片页彻底失效（BUG）。
+  ///
+  /// 修复方向 A：reader 在跨章落定前枚举中间纯图片章，对每一章导航过去并调用本
+  /// 方法停留 [imagePauseSec] 秒。本方法是 **await-based**（reader 要顺序停留多张图
+  /// 再继续到目标章），复用 [triggerImagePause] 同一套「暂停播放→等 imagePauseSec
+  /// 秒→恢复播放」原语，不新造定时器语义；用同一 [_imagePauseTimer] 字段记录在途
+  /// 停留，让 [isImagePaused] 在跨章停留期间也为真。
+  ///
+  /// 坑1（[triggerImagePause] 的 `!_player.playing` 早返回）规避：跨章停留是「正
+  /// 在跟随播放时跨过整章图片」，进来时 player 必为 playing（cue 推进才驱动跨章），
+  /// 本方法主动 `pause()`→等待→`play()`，不照搬那条「非播放即早退」守卫（它防的是
+  /// 用户已手动暂停时不该再被图片暂停二次接管，与本路径语义不同）。仍受
+  /// `imagePauseSec > 0` 门控：等于 0（图片等待关）时直接返回，调用方按原跨章直跳。
+  Future<void> awaitImageChapterPause() async {
+    final int sec = imagePauseSec.value;
+    if (sec <= 0) return;
+    _imagePauseTimer?.cancel();
+    if (_player.playing) {
+      await _player.pause();
+    }
+    notifyListeners();
+    final Completer<void> done = Completer<void>();
+    _imagePauseTimer = Timer(Duration(seconds: sec), () {
+      _imagePauseTimer = null;
+      if (!done.isCompleted) done.complete();
+    });
+    await done.future;
+    // 停留结束恢复播放，让 cue 推进继续把文字带到下一章。reader 侧在跨章序列收尾
+    // 时统一 notify / reanchor，这里只负责恢复播放时钟。
+    if (!_player.playing) {
+      await _player.play();
+    }
+    notifyListeners();
+  }
+
+  /// TODO-1037：reader 在「跨章中间存在纯图片章」的多步停留序列期间，竖起
+  /// [_chapterTransition] 守卫，阻止 [_updateCurrentCue] / [_maybeEmitCrossChapter]
+  /// 在序列途中（每个中间章 [notifySectionRestoreCompleted] 把守卫清回 false 后）
+  /// 重入 `onCrossChapter` 造成乱跳。序列结束由 reader 调
+  /// [notifySectionRestoreCompleted]（最终目标章载入完成）清回 false。
+  void holdChapterTransition() {
+    _chapterTransition = true;
+  }
+
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
 

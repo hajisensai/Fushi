@@ -1,0 +1,13 @@
+## BUG-487 · 有声书跨章跳过纯图片章节,图片等待对独立成章的图片页失效
+- **报告**：2026-07-01（用户：）
+- **真实性**：✅ 真 bug。有声书章节推进**完全由 cue 驱动**，纯图片章（无文本）没有 cue：
+  - 跨章只在 cue 的 `sectionIndex` 变化时触发：`packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart:949`（`_maybeEmitCrossChapter`）+ 纯决策 `:989`（`shouldCrossChapterForTesting`）。
+  - 播放推进只在「当前章 cue 列表」二分定位：`audiobook_controller.dart:865`（`_updateCurrentCue`）。上一文本章末句播完，下一 tick 命中的 cue 直接属于下一个**有文本**的章 → reader 一步从章 N 跳到 N+2，中间纯图片章 N+1 从未 mount。
+  - 图片等待唯一消费点 `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:49`（`__hoshiImageBetween`）在**已渲染章同一 DOM 内**用 `compareDocumentPosition` 判相邻 cue 锚点间是否夹 img/svg。跨章时两锚点在不同章 DOM，`document.contains(prev)` 直接 `return null` → `onImageDetected` 不触发 → `triggerImagePause`（`audiobook_controller.dart:248`）从不被调用。故「即使开了图片等待也跳过」。
+- **[x] ① 已修复** — 方向 A：跨章落定前枚举被跳过的中间纯图片章，图片等待开启时逐个导航过去并停留 `imagePauseSec` 秒，再继续到目标章。`commit 04070e6ed`
+  - 纯决策 `imageOnlyChaptersToPauseBetween`（`hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart:56`）：返回 `(from, to)` 开区间内按阅读顺序排列、`isImageOnlyChapter` 为真且非 nav 页的章；`pauseSec<=0` / 越界 / 相邻 / 同章返回空。
+  - reader 序列 `_pauseThroughImageOnlyChapters`（`audiobook.part.dart` `_handleCueCrossChapter` 内，最终 `_navigateToChapter(newSection)` 之前调用）：逐个 `_navigateToChapterAndWait` + `controller.awaitImageChapterPause()`。`_imageChapterPauseInFlight` 防重入。
+  - 控制器 `awaitImageChapterPause`（`audiobook_controller.dart:267` 附近）：await-based 停留，复用 `triggerImagePause` 同一 `_imagePauseTimer` 字段 + `pause→等→play` 原语，受 `imagePauseSec>0` 门控；进来时正在跟随播放故主动暂停（坑1：不照搬 `!_player.playing` 早退）。
+  - `holdChapterTransition`（`audiobook_controller.dart:288` 附近）：序列期间持住 `_chapterTransition` 守卫——每个中间章载入完成的 `notifySectionRestoreCompleted` 会清回 false，重新持住防途中重入 `onCrossChapter`（坑2 锚点重置时序：每章载入完成的 `resetImagePauseAnchor` 对本路径无害，纯图片章无 cue 不依赖 DOM 锚点，到目标章后锚点自然重置）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/image_only_chapter_pause_test.dart`：纯函数 `imageOnlyChaptersToPauseBetween` 真值表（开/关图片等待、目录页不停留、多张连续按序、相邻无停留、回退方向、越界）+ 源码接线守卫（停留在跨章落定前、经纯决策枚举、复用 await-based 停留与 holdChapterTransition）。14 用例绿。
+- **备注**：media_kit 在 flutter test headless 不可用，故停留时序走纯决策 + 源码守卫验证，未真播放器跑。真机验证（含整章插图逐张停留 + 停留后续播）由 integration owner / 用户在设备上复测原始失败路径。

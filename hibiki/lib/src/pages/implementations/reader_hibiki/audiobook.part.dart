@@ -53,6 +53,47 @@ int audiobookSrtCrossChapterTarget({
   return resolvedChapter;
 }
 
+/// TODO-1037　跨章推进经过的「独立成章纯图片页」决策（纯函数）。
+///
+/// 有声书章节推进完全由 cue 驱动；纯图片章没有 cue，于是 cue 驱动的跨章会一步从
+/// 文本章 [fromChapter] 跳到下一个有文本的章 [toChapter]，中间整章是图片的章从不
+/// 挂载、从不停留——即使用户开了「图片等待」也跳过（图片等待原本只在已渲染章同一
+/// DOM 内相邻 cue 锚点间生效，跨章两锚点在不同章 DOM）。
+///
+/// 本函数收口决策：返回 [fromChapter] 与 [toChapter] **之间（开区间，两端都不含）**
+/// 按阅读顺序排列、需要停留展示的纯图片章 index 列表。
+///   * `pauseSec <= 0`（图片等待关）→ 返回空列表，调用方按原跨章直跳。
+///   * `from`/`to` 任一越界、或 `from == to`、或两章相邻（中间无章）→ 空列表。
+///   * 中间章里 [isImageOnly] 为真且 [isNav] 为假者按顺序收集；非图片章 / 目录页
+///     不停留（目录页停留无意义，且与被动跨章不落 nav 页的既有语义一致）。
+///
+/// 支持 [fromChapter] > [toChapter]（理论上的回退跨章）：按从 from 向 to 的阅读
+/// 方向逐章枚举，保证停留顺序对用户自然（先看见先经过的图）。
+@visibleForTesting
+List<int> imageOnlyChaptersToPauseBetween({
+  required int fromChapter,
+  required int toChapter,
+  required int pauseSec,
+  required int chapterCount,
+  required bool Function(int index) isImageOnly,
+  required bool Function(int index) isNav,
+}) {
+  if (pauseSec <= 0) return const <int>[];
+  if (fromChapter == toChapter) return const <int>[];
+  if (fromChapter < 0 || toChapter < 0) return const <int>[];
+  if (fromChapter >= chapterCount || toChapter >= chapterCount) {
+    return const <int>[];
+  }
+  final int step = toChapter > fromChapter ? 1 : -1;
+  final List<int> out = <int>[];
+  for (int i = fromChapter + step; i != toChapter; i += step) {
+    if (i < 0 || i >= chapterCount) break;
+    if (isNav(i)) continue;
+    if (isImageOnly(i)) out.add(i);
+  }
+  return out;
+}
+
 /// audiobook domain helpers (profile resolution / audio-slot + session
 /// attach / cue priming + SRT chapter map / position restore-from-cue /
 /// volume-key sentence nav / cue-change sync + cross-chapter + boundary
@@ -614,7 +655,63 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         chapterChars: _chapterCharCounts[newSection],
       );
     }
+    // TODO-1037：cue 驱动的跨章会一步跳过「独立成章的纯图片页」（无 cue 故从不
+    // 被推进看见），图片等待对它彻底失效。跨章落定前先把中间纯图片章逐个导航过去
+    // 并停留 imagePauseSec 秒，让用户看见每张整章插图，再继续到目标文本章。
+    await _pauseThroughImageOnlyChapters(newSection);
     await _navigateToChapter(newSection, progress: progress ?? 0.0);
+  }
+
+  /// TODO-1037：跨章推进若跨过「独立成章的纯图片章」，且图片等待开启
+  /// (`imagePauseSec > 0`)，则在落到目标章 [targetSection] 前，按阅读顺序对每个
+  /// 中间纯图片章导航过去并停留展示。
+  ///
+  /// 多个连续图片章逐个停留（先经过先看见，对用户最自然）。每章：
+  ///   1. [_navigateToChapterAndWait] 导航并等其载入完成（拿到稳定渲染）；
+  ///   2. [AudiobookPlayerController.awaitImageChapterPause] 暂停播放并 await
+  ///      imagePauseSec 秒，复用 triggerImagePause 同一套暂停/恢复原语（坑1：进来
+  ///      时正在跟随播放，由该方法主动 pause→等→play，不照搬「非播放即早退」）。
+  ///
+  /// 坑2（锚点重置时序）：每次导航完成时 `_onChapterLoadComplete` 会调
+  /// `AudiobookBridge.resetImagePauseAnchor` 把 `__hoshiPrevHighlight` 归零，这对
+  /// 本路径无害——纯图片章无 cue、不依赖 DOM 内相邻锚点判定，且到达目标章后锚点
+  /// 自然重置，cue 推进干净续上。
+  ///
+  /// 序列期间用 [_imageChapterPauseInFlight] 防重入，并让控制器在整段序列里持住
+  /// [AudiobookPlayerController.holdChapterTransition] 守卫——否则每个中间章载入完成
+  /// 的 `notifySectionRestoreCompleted` 会把 `_chapterTransition` 清回 false，下一
+  /// tick 可能重入 `onCrossChapter` 乱跳。
+  Future<void> _pauseThroughImageOnlyChapters(int targetSection) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null || _book == null || _imageChapterPauseInFlight) {
+      return;
+    }
+    final List<int> imageChapters = imageOnlyChaptersToPauseBetween(
+      fromChapter: _currentChapter,
+      toChapter: targetSection,
+      pauseSec: controller.imagePauseSec.value,
+      chapterCount: _book!.chapters.length,
+      isImageOnly: _book!.isImageOnlyChapter,
+      isNav: _book!.isChapterNav,
+    );
+    if (imageChapters.isEmpty) return;
+    _imageChapterPauseInFlight = true;
+    try {
+      for (final int chapter in imageChapters) {
+        if (!mounted || _lyricsMode) break;
+        // 中间章载入完成会清掉 _chapterTransition；序列未结束前重新持住，防重入跨章。
+        controller.holdChapterTransition();
+        final bool loaded = await _navigateToChapterAndWait(chapter);
+        if (!mounted || _lyricsMode) break;
+        if (!loaded) continue;
+        await controller.awaitImageChapterPause();
+      }
+    } finally {
+      _imageChapterPauseInFlight = false;
+      // 序列收尾：最终的 _navigateToChapter(targetSection) 还会再触发一次
+      // notifySectionRestoreCompleted 清守卫；这里持住防止收尾导航发起前的空档被重入。
+      controller.holdChapterTransition();
+    }
   }
 
   Future<void> _handleBoundarySkip(int delta) async {

@@ -887,6 +887,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _hasEverLoaded = false;
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
+  // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
+  bool _imageChapterPauseInFlight = false;
   double _initialProgress = 0;
   // BUG-162: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
   // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。

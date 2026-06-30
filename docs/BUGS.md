@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 472 条。点号进各自文件。
+> 共 473 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-487](bugs/BUG-487-imageonly-chapter-skip.md) | ✅ | ✅ | 有声书跨章跳过纯图片章节,图片等待对独立成章的图片页失效 |
 | [BUG-486](bugs/BUG-486-cover-race.md) | ✅ | ✅ | 导入有声书封面竞态被吞 (m4b 内嵌封面异步抽取未 await) |
 | [BUG-485](bugs/BUG-485-local-audio-reference-path.md) | ✅ | ✅ | 添加本地音频库被复制到C盘，应支持引用原路径 |
 | [BUG-484](bugs/BUG-484-handoff-success-idempotent.md) | ✅ | ✅ | Windows 每次启动弹出已更新至 xxx 对话框 |
