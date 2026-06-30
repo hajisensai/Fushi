@@ -727,12 +727,32 @@ window.flutter_inappwebview.callHandler('spreadReady');
       final int newTotal = _chapterCumulativeChars.isNotEmpty
           ? _chapterCumulativeChars.last + _chapterCharCounts.last
           : total;
+      // BUG-470（TODO-975 回归修复）：顶部进度预留 [_topProgressReserve] 经 [_showTopProgress]
+      // 门控，而后者要求 _progressCurrentChars / _progressTotalChars 非空且 > 0——这两个字段
+      // 恰在本方法（_refreshProgress）才首次置值，**晚于**首载注入 setup 脚本的 `--chrome-top-inset`
+      // （webview.part.dart 用 _readerTopOffset，此刻 _showTopProgress 仍 false → 顶部 inset 漏掉
+      // 18px 进度条预留）。首载后再无任何路径在「进度由空→正」的跃迁上重推 inset，于是正文首行
+      // 被顶部进度条压住，直到下次样式变更/切主题/toggle 底栏/旋屏触发 inset 重推才自愈。
+      //
+      // 修复：捕获 rebuild 前后的 [_showTopProgress]（顶部预留的唯一门控真相源），仅在它由
+      // false→true 的**上升沿**补一次 inset 重推；用 [_applyChromeInsetsAndReanchor] 走 begin→commit
+      // 重锚，先下发含 18px 顶部预留的新 inset、再把阅读位置滚回（连续模式裸改 inset 会 reflow 归零
+      // 弹回章首，分页模式 JS 侧整体 no-op）。只在上升沿补推，避免每次进度刷新都重推 inset 抖动。
+      final bool topProgressWasShown = _showTopProgress;
       if (_progressCurrentChars != absoluteChars ||
           _progressTotalChars != newTotal) {
         _rebuild(() {
           _progressCurrentChars = absoluteChars;
           _progressTotalChars = newTotal;
         });
+      }
+      if (!topProgressWasShown && _showTopProgress) {
+        unawaited(_applyChromeInsetsAndReanchor().catchError(
+          (Object e, StackTrace s) {
+            ErrorLogService.instance
+                .log('ReaderHibiki.refreshProgress.topInsetRepush', e, s);
+          },
+        ));
       }
       // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
       // 记重算后章内进度 UI 字段最终值，便于真机确认滚动后进度数确实推进/未推进。
