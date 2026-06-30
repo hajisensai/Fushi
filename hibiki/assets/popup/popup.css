@@ -1041,3 +1041,32 @@ html.global-lookup .glossary-section > .category-body > .glossary-group {
     position: static !important;
     display: inline;
 }
+/* TODO-1022 / BUG-435 回归（未覆盖分支）：明鏡补足◆行的开引号「所在的
+   非 <a> 文本元素（structured-content 经 popup.js:1353 落 class
+   gloss-sc-span / gloss-sc-div，再经 popup.js:1396 setStructuredContentElementStyle
+   把词典节点自带 inline style 的 float / position:absolute|fixed 原样落到
+   element.style）落在上面 a.gloss-sc-a 兜底之外，再次被推到行右上角错位。
+   把中和作用域扩到 structured-content 下的文本类元素 span / div。
+   作用域铁律（同 a.gloss-sc-a）：
+     - 只命中带 gloss-sc-* 类的 span / div（明鏡引号 span/div），靠 :not 显式
+       排除图片链接 .gloss-image-link（TODO-859/350 图片合法依赖 position/float）；
+     - ruby / rt 用 <ruby>/<rt> 真标签渲染（class gloss-sc-ruby / gloss-sc-rt），
+       不是 span/div，本就在选择器之外，振假名布局不受影响；
+     - 第二条规则再把 .gloss-image-link 内部、ruby / rt 内部嵌套的 span/div
+       的 float / position 还原（revert），确保图片/振假名内部布局零回归。 */
+.structured-content span[class*="gloss-sc-"]:not(.gloss-image-link),
+.structured-content div[class*="gloss-sc-"]:not(.gloss-image-link) {
+    float: none !important;
+    position: static !important;
+    display: inline;
+}
+.structured-content .gloss-image-link span[class*="gloss-sc-"],
+.structured-content .gloss-image-link div[class*="gloss-sc-"],
+.structured-content ruby span[class*="gloss-sc-"],
+.structured-content ruby div[class*="gloss-sc-"],
+.structured-content rt span[class*="gloss-sc-"],
+.structured-content rt div[class*="gloss-sc-"] {
+    float: revert;
+    position: revert;
+    display: revert;
+}

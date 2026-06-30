@@ -93,6 +93,68 @@ void main() {
     expect(body.contains('gloss-image-link'), isFalse,
         reason: 'fix body must NOT mention gloss-image-link');
   });
+
+  // TODO-1022 / BUG-435 regression (uncovered branch): the misplaced glyph is a
+  // NON-<a> structured-content span/div (Meikyo opening quote, class
+  // gloss-sc-span / gloss-sc-div) that the a.gloss-sc-a rule never reached. The
+  // fix extends the inline-flow neutralization to span/div carrying a gloss-sc-*
+  // class, while EXPLICITLY excluding .gloss-image-link (image links keep their
+  // position/float) and ruby/rt (furigana layout).
+  test(
+      'popup.css extends the inline-flow fix to gloss-sc span/div, '
+      'excluding image links + ruby/rt (TODO-1022)', () {
+    final String raw = File('assets/popup/popup.css').readAsStringSync();
+    final String css = raw.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+
+    // The new neutralization rule targets span/div with a gloss-sc-* class and
+    // forces them back into the inline flow.
+    final int ruleStart =
+        css.indexOf('span[class*="gloss-sc-"]:not(.gloss-image-link)');
+    expect(ruleStart, greaterThanOrEqualTo(0),
+        reason:
+            'popup.css must carry the TODO-1022 span/div inline-flow rule that '
+            'excludes .gloss-image-link via :not()');
+
+    final int braceOpen = css.indexOf('{', ruleStart);
+    final int braceClose = css.indexOf('}', braceOpen);
+    expect(braceOpen, greaterThan(ruleStart));
+    expect(braceClose, greaterThan(braceOpen));
+
+    final String selector = css.substring(ruleStart, braceOpen);
+    final String body =
+        css.substring(braceOpen + 1, braceClose).replaceAll(RegExp(r'\s+'), '');
+
+    // Coverage: the rule must mention BOTH span and div forms.
+    final int spanIdx = css.lastIndexOf('span[class*="gloss-sc-"]', braceOpen);
+    final int divIdx = css.lastIndexOf('div[class*="gloss-sc-"]', braceOpen);
+    expect(spanIdx, greaterThanOrEqualTo(0),
+        reason: 'rule must cover span gloss-sc-*');
+    expect(divIdx, greaterThanOrEqualTo(0),
+        reason: 'rule must cover div gloss-sc-*');
+
+    // The fix must neutralize the escaping properties.
+    expect(body.contains('float:none!important'), isTrue,
+        reason: 'span/div fix must force float:none!important');
+    expect(body.contains('position:static!important'), isTrue,
+        reason: 'span/div fix must force position:static!important');
+
+    // SCOPE GUARD: the neutralization selector must EXCLUDE image links.
+    expect(selector.contains(':not(.gloss-image-link)'), isTrue,
+        reason: 'span/div fix selector must exclude .gloss-image-link');
+
+    // There must be a restore rule that re-grants float/position to span/div
+    // nested inside an image link or inside ruby/rt, so those legitimate uses
+    // are never collateral-damaged.
+    final int restoreImg =
+        css.indexOf('.gloss-image-link span[class*="gloss-sc-"]');
+    expect(restoreImg, greaterThanOrEqualTo(0),
+        reason:
+            'popup.css must restore float/position inside .gloss-image-link');
+    expect(css.contains('ruby span[class*="gloss-sc-"]'), isTrue,
+        reason: 'popup.css must restore float/position inside ruby');
+    expect(css.contains('rt span[class*="gloss-sc-"]'), isTrue,
+        reason: 'popup.css must restore float/position inside rt');
+  });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
