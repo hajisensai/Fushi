@@ -12,12 +12,18 @@
 
 [使用文件](../user-guide.zh-Hant.md) | [下載最新版本](https://github.com/hajisensai/hibiki/releases)
 
-hibiki 是一款面向 Android 與 Windows 的沉浸式語言學習工具，把 EPUB 閱讀、有聲書同步、影片字幕查詞和一鍵 Anki 製卡整合在一起，讓每一次輸入都自然沉澱為可複習的詞彙記憶。
+> **看你想看的，語言順手就學會了。**
 
-讀一本書，遇到不認識的詞——點一下就能查詞典，查完一鍵製成 Anki 卡片。<br>
-聽有聲書時，正文逐句高亮跟讀，自動翻頁。<br>
-看影片時，直接在字幕上查詞、製卡。<br>
-所有場景共用同一套詞典、統計和複習流程。
+hibiki 把你正在讀的小說、追的番、聽的有聲書，變成你的語言輸入——遇到生詞點一下就查，查完一鍵做成帶原文語境的 Anki 卡片。它不給你背預設詞表，只幫你抓住你**真正讀到、聽到**的詞。
+
+學語言最有效的方式是大量接觸真實內容，而不是抱著單字書背孤立的詞。但「沉浸」一直有兩個麻煩：看到生詞查起來打斷心流，查完轉頭就忘。hibiki 把這條鏈路打通了——
+
+📖 **讀**：EPUB 閱讀器點詞即查，不跳出當前頁。<br>
+🎧 **聽**：有聲書逐句高亮跟讀，自動翻頁。<br>
+🎬 **看**：影片字幕上直接查詞、製卡，追番就是輸入。<br>
+🃏 **沉澱**：任意場景查到的詞，一鍵進 Anki，只複習你真正遇到的詞。
+
+所有場景共用同一套詞典、統計和複習流程。適合任何語言（日語、英語……），尤其適合信奉**大量輸入 + 只背自製卡**的沉浸式學習者。面向 Android 與 Windows（iOS、macOS 計劃中）。
 
 <table>
   <tr>
@@ -31,7 +37,15 @@ hibiki 是一款面向 Android 與 Windows 的沉浸式語言學習工具，把 
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="影片查詞（巢狀彈窗）" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="影片查詞（字幕列表）" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="App 外選詞查詞（手機）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="App 外選詞查詞（電腦）" width="100%"></td>
+  </tr>
 </table>
+
+**一鍵製卡演示**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
 </div>
 

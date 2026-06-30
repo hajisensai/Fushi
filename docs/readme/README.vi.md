@@ -12,7 +12,18 @@
 
 [Hướng dẫn sử dụng](../user-guide.vi.md) | [Tải bản mới nhất](https://github.com/hajisensai/hibiki/releases)
 
-hibiki là một công cụ học ngôn ngữ chuyên sâu dành cho Android và Windows, kết hợp đọc EPUB, đồng bộ sách nói, tra từ trên phụ đề video và tạo thẻ Anki chỉ với một chạm — để mỗi nguồn tiếp nhận đều tự nhiên trở thành từ vựng có thể ôn tập.
+> **Xem thứ bạn muốn xem, rồi tự nhiên học được ngôn ngữ.**
+
+hibiki biến những cuốn tiểu thuyết bạn đọc, những bộ phim bạn theo dõi và những cuốn sách nói bạn nghe thành nguồn tiếp nhận ngôn ngữ của bạn — chạm vào bất kỳ từ lạ nào để tra, rồi chỉ với một chạm biến nó thành thẻ Anki kèm ngữ cảnh gốc. Nó không bắt bạn học thuộc một danh sách từ định sẵn, mà chỉ giúp bạn nắm bắt những từ bạn **thực sự đọc và nghe**.
+
+Cách học ngôn ngữ hiệu quả nhất là tiếp xúc thật nhiều với nội dung thực tế, chứ không phải học thuộc những từ rời rạc trong sách từ vựng. Nhưng "đắm chìm" luôn có hai phiền toái: tra một từ làm gián đoạn mạch tập trung, và vừa rời mắt là quên ngay. hibiki nối liền vòng tròn đó:
+
+📖 **Đọc**: chạm vào một từ trong trình đọc EPUB để tra, mà không rời khỏi trang hiện tại.<br>
+🎧 **Nghe**: sách nói tô sáng theo từng câu và tự động lật trang.<br>
+🎬 **Xem**: tra từ và tạo thẻ ngay trên phụ đề video — theo dõi một bộ phim *chính là* tiếp nhận.<br>
+🃏 **Khắc ghi**: gửi bất kỳ từ nào bạn đã tra, ở bất kỳ tình huống nào, thẳng vào Anki, và chỉ ôn lại những từ bạn thực sự gặp.
+
+Mọi tình huống đều dùng chung một bộ từ điển, thống kê và quy trình ôn tập. Phù hợp với mọi ngôn ngữ (tiếng Nhật, tiếng Anh, …), và đặc biệt phù hợp với những người học theo lối đắm chìm tin vào **tiếp nhận thật nhiều + chỉ học thẻ tự làm**. Hỗ trợ Android và Windows (iOS, macOS đang lên kế hoạch).
 
 <table>
   <tr>
@@ -26,7 +37,15 @@ hibiki là một công cụ học ngôn ngữ chuyên sâu dành cho Android và
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Tra từ trên video (cửa sổ lồng nhau)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Tra từ trên video (danh sách phụ đề)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (điện thoại)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (máy tính)" width="100%"></td>
+  </tr>
 </table>
+
+**Demo tạo thẻ Anki chỉ với một chạm**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
 </div>
 

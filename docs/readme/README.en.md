@@ -12,12 +12,18 @@
 
 [User Guide](../user-guide.md) | [Download Latest](https://github.com/hajisensai/hibiki/releases)
 
-hibiki is an immersive language-learning tool for Android and Windows (iOS and macOS planned) that brings EPUB reading, audiobook sync, video subtitle lookup, and one-tap Anki card creation together — so every input naturally becomes reviewable vocabulary.
+> **Watch what you want to watch, and pick up the language along the way.**
 
-Reading a book and hit an unknown word? Tap it to look it up, then create an Anki card in one tap.<br>
-Listening to an audiobook? The text highlights sentence by sentence and turns pages automatically.<br>
-Watching a video? Look up words right from the subtitles.<br>
-Every input mode shares the same dictionaries, statistics, and review workflow.
+hibiki turns the novels you read, the shows you follow, and the audiobooks you listen to into your language input — tap any unknown word to look it up, then turn it into an Anki card with original context in one tap. It doesn't hand you a preset word list; it just helps you catch the words you **actually read and hear**.
+
+The most effective way to learn a language is heavy exposure to real content, not memorizing isolated words from a vocabulary book. But "immersion" has always had two annoyances: looking up a word breaks your flow, and you forget it the moment you look away. hibiki closes that loop —
+
+📖 **Read**: tap a word in the EPUB reader to look it up, without leaving the current page.<br>
+🎧 **Listen**: audiobooks highlight along sentence by sentence and turn pages automatically.<br>
+🎬 **Watch**: look up words and make cards right on the video subtitles — following a show *is* input.<br>
+🃏 **Retain**: send any word you looked up, anywhere, straight to Anki, and review only the words you actually met.
+
+Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android and Windows (iOS and macOS planned).
 
 <table>
   <tr>
@@ -31,7 +37,15 @@ Every input mode shares the same dictionaries, statistics, and review workflow.
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Video lookup (nested popups)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Video lookup (subtitle list)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Out-of-app text-selection lookup (mobile)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Out-of-app text-selection lookup (desktop)" width="100%"></td>
+  </tr>
 </table>
+
+**One-tap Anki mining demo**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
 </div>
 

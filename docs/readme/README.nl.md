@@ -12,7 +12,18 @@
 
 [Gebruikershandleiding](../user-guide.nl.md) | [Nieuwste versie downloaden](https://github.com/hajisensai/hibiki/releases)
 
-hibiki is een immersieve taalleertool voor Android en Windows die EPUB-lezen, audioboeksynchronisatie, het opzoeken van woorden in videoondertitels en het maken van Anki-kaarten met één tik samenbrengt — zodat elke input vanzelf herhaalbaar vocabulaire wordt.
+> **Kijk waar je zin in hebt en pik de taal onderweg op.**
+
+hibiki maakt van de romans die je leest, de series die je volgt en de audioboeken die je luistert jouw taalinput: tik op elk onbekend woord om het op te zoeken en maak er met één tik een Anki-kaart met originele context van. Het laat je geen vooraf samengestelde woordenlijst stampen, maar helpt je juist de woorden te grijpen die je **echt leest en hoort**.
+
+De effectiefste manier om een taal te leren is veelvuldige blootstelling aan echte content, niet het uit je hoofd leren van losse woorden uit een woordenboekje. Maar "onderdompeling" had altijd twee ergernissen: een woord opzoeken onderbreekt je flow, en je vergeet het zodra je wegkijkt. hibiki sluit die cirkel:
+
+📖 **Lezen**: tik op een woord in de EPUB-lezer om het op te zoeken, zonder de huidige pagina te verlaten.<br>
+🎧 **Luisteren**: audioboeken markeren zin voor zin mee en slaan automatisch de pagina om.<br>
+🎬 **Kijken**: zoek woorden op en maak kaarten direct in de video-ondertitels — een serie volgen *is* input.<br>
+🃏 **Vastleggen**: stuur elk opgezocht woord, in welke situatie dan ook, rechtstreeks naar Anki en herhaal alleen de woorden die je echt bent tegengekomen.
+
+Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow. Geschikt voor elke taal (Japans, Engels, …) en vooral voor onderdompelingsleerders die geloven in **veel input + alleen zelfgemaakte kaarten**. Beschikbaar voor Android en Windows (iOS en macOS gepland).
 
 <table>
   <tr>
@@ -26,7 +37,15 @@ hibiki is een immersieve taalleertool voor Android en Windows die EPUB-lezen, au
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Opzoeken in video (geneste pop-ups)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Opzoeken in video (ondertitellijst)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Opzoeken via tekstselectie buiten de app (mobiel)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Opzoeken via tekstselectie buiten de app (desktop)" width="100%"></td>
+  </tr>
 </table>
+
+**Demo: Anki-kaarten maken met één tik**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
 </div>
 

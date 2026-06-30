@@ -12,7 +12,18 @@
 
 [Guía de usuario](../user-guide.es.md) | [Descargar la última versión](https://github.com/hajisensai/hibiki/releases)
 
-hibiki es una herramienta inmersiva de aprendizaje de idiomas para Android y Windows que reúne la lectura de EPUB, la sincronización de audiolibros, la búsqueda de palabras en subtítulos de vídeo y la creación de tarjetas Anki con un solo toque, para que cada entrada se convierta de forma natural en vocabulario repasable.
+> **Mira lo que quieras mirar y aprende el idioma sobre la marcha.**
+
+hibiki convierte las novelas que lees, las series que sigues y los audiolibros que escuchas en tu material de entrada para el idioma: toca cualquier palabra desconocida para buscarla y, con un solo toque, conviértela en una tarjeta Anki con su contexto original. No te hace memorizar una lista de palabras predefinida; solo te ayuda a captar las palabras que **realmente lees y escuchas**.
+
+La forma más eficaz de aprender un idioma es exponerse en grandes cantidades a contenido real, no memorizar palabras aisladas de un libro de vocabulario. Pero la "inmersión" siempre ha tenido dos inconvenientes: buscar una palabra rompe tu concentración y la olvidas en cuanto apartas la vista. hibiki cierra ese círculo:
+
+📖 **Leer**: toca una palabra en el lector de EPUB para buscarla, sin salir de la página actual.<br>
+🎧 **Escuchar**: los audiolibros resaltan frase por frase y pasan de página automáticamente.<br>
+🎬 **Ver**: busca palabras y crea tarjetas directamente sobre los subtítulos del vídeo; seguir una serie *es* entrada.<br>
+🃏 **Consolidar**: envía a Anki cualquier palabra que busques, en cualquier escenario, y repasa solo las palabras que de verdad te encontraste.
+
+Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de repaso. Sirve para cualquier idioma (japonés, inglés, …) y es especialmente adecuado para quienes aprenden por inmersión y creen en **mucha entrada + solo tarjetas propias**. Disponible para Android y Windows (iOS y macOS en planificación).
 
 <table>
   <tr>
@@ -26,7 +37,15 @@ hibiki es una herramienta inmersiva de aprendizaje de idiomas para Android y Win
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Búsqueda en vídeo (ventanas emergentes anidadas)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Búsqueda en vídeo (lista de subtítulos)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Búsqueda por selección de texto fuera de la app (móvil)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Búsqueda por selección de texto fuera de la app (escritorio)" width="100%"></td>
+  </tr>
 </table>
+
+**Demo de creación de tarjetas Anki con un toque**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
 </div>
 

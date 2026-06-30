@@ -12,7 +12,18 @@
 
 [Kullanım Kılavuzu](../user-guide.tr.md) | [En son sürümü indir](https://github.com/hajisensai/hibiki/releases)
 
-hibiki, Android ve Windows için EPUB okuma, sesli kitap eşitleme, video altyazılarında sözcük arama ve tek dokunuşla Anki kartı oluşturmayı bir araya getiren sürükleyici bir dil öğrenme aracıdır — böylece her girdi doğal olarak tekrar edilebilir kelime dağarcığına dönüşür.
+> **İzlemek istediğini izle, dili de yol üstünde kap.**
+
+hibiki, okuduğun romanları, takip ettiğin dizileri ve dinlediğin sesli kitapları dil girdine dönüştürür: bilmediğin herhangi bir sözcüğe dokunup ara, sonra tek dokunuşla onu özgün bağlamıyla bir Anki kartına çevir. Sana önceden hazırlanmış bir sözcük listesi ezberletmez; yalnızca **gerçekten okuduğun ve duyduğun** sözcükleri yakalamana yardım eder.
+
+Bir dili öğrenmenin en etkili yolu, kelime kitabından kopuk sözcükler ezberlemek değil, gerçek içerikle yoğun biçimde temas etmektir. Ama "daldırma"nın hep iki sıkıntısı oldu: sözcük aramak akışını bölüyor ve gözünü çevirir çevirmez unutuyorsun. hibiki bu döngüyü kapatıyor:
+
+📖 **Oku**: EPUB okuyucuda bir sözcüğe dokunarak, mevcut sayfadan çıkmadan ara.<br>
+🎧 **Dinle**: sesli kitaplar cümle cümle vurgulayarak okur ve sayfaları otomatik çevirir.<br>
+🎬 **İzle**: doğrudan video altyazılarında sözcük ara ve kart oluştur — bir diziyi takip etmek *zaten* girdidir.<br>
+🃏 **Kalıcı kıl**: hangi durumda olursa olsun aradığın her sözcüğü tek dokunuşla Anki'ye gönder ve yalnızca gerçekten karşılaştığın sözcükleri tekrar et.
+
+Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaşır. Her dil için uygundur (Japonca, İngilizce, …) ve özellikle **bol girdi + yalnızca kendi yaptığın kartlar** ilkesine inanan daldırma öğrenenler için idealdir. Android ve Windows için kullanılabilir (iOS ve macOS planlanıyor).
 
 <table>
   <tr>
@@ -26,7 +37,15 @@ hibiki, Android ve Windows için EPUB okuma, sesli kitap eşitleme, video altyaz
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Videoda arama (iç içe açılır pencereler)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Videoda arama (altyazı listesi)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Uygulama dışı metin seçerek arama (mobil)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Uygulama dışı metin seçerek arama (masaüstü)" width="100%"></td>
+  </tr>
 </table>
+
+**Tek dokunuşla Anki kartı oluşturma demosu**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
 
 </div>
 
