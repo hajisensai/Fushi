@@ -314,6 +314,29 @@ class AudiobookPlayerController extends ChangeNotifier {
     _chapterTransition = true;
   }
 
+  /// TODO-1037（重入竞态根因）：[_pauseThroughImageOnlyChapters] 逐个导航中间纯
+  /// 图片章时，每个中间章载入完成会**同步**触发 [notifySectionRestoreCompleted]
+  /// （reader 的 `_onRestoreComplete` 在 `_restoreCompleter.complete(true)` 之后、
+  /// 等待方 `_navigateToChapterAndWait` 的 await 续体作为微任务恢复**之前**就同步
+  /// 跑完）。那次同步的 `notifySectionRestoreCompleted` 会先把 [_chapterTransition]
+  /// 清回 false，再同步 `_updateCurrentCue`——此刻音频仍在播放（`awaitImageChapterPause`
+  /// 的 `pause()` 要等本次导航 await 返回后才发起），cue 位置仍指向最终文本章 →
+  /// `_maybeEmitCrossChapter` 命中 `cueSec(目标) != currentSec(图片章)` 重新发起跨章 →
+  /// 剩余中间图片章被一步跳过（即 f3e4d2e52 声称修好的症状复现）。reader 端
+  /// `_imageChapterPauseInFlight` 是 reader 私有标志，控制器看不到，挡不住这条同步
+  /// 重入。修复：reader 在整段停留序列期间置此标志为真，[notifySectionRestoreCompleted]
+  /// 见真则**保持守卫不放、不重算 cue**（中间章载入不是序列终点）；序列收尾 reader
+  /// 置回 false 后，最终落到目标文本章的导航才正常清守卫并重算。
+  bool _imageChapterPauseActive = false;
+
+  void setImageChapterPauseActive(bool active) {
+    _imageChapterPauseActive = active;
+  }
+
+  /// 测试用：暴露 [_chapterTransition] 守卫当前是否持住，便于断言重入竞态修复。
+  @visibleForTesting
+  bool get chapterTransitionHeldForTesting => _chapterTransition;
+
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
 
@@ -402,6 +425,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _hasPlayedOnce = false;
     _forceNextReveal = false;
     _chapterTransition = false;
+    _imageChapterPauseActive = false;
 
     await _player.stop();
     _positionSub?.cancel();
@@ -1059,6 +1083,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     required int currentReaderSection,
     required bool success,
   }) {
+    // TODO-1037（重入竞态守卫）：图片章停留序列进行中，中间章载入不是序列终点。
+    // 此刻清守卫 + 同步重算 cue 会在音频仍播放、cue 仍指目标文本章时重入
+    // _maybeEmitCrossChapter，一步跳过剩余中间图片章。保持守卫不放、不重算，
+    // 待 reader 收尾置 setImageChapterPauseActive(false) 后由落到目标章的导航正常清。
+    if (_imageChapterPauseActive) return;
     _chapterTransition = false;
     // 章节恢复完成是上下文边界：复位显式 seek 抑制窗，避免旧旗挡住重算（W-2）。
     _explicitSeekInFlight = false;

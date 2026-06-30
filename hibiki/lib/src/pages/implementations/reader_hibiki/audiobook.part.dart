@@ -696,6 +696,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     );
     if (imageChapters.isEmpty) return;
     _imageChapterPauseInFlight = true;
+    // TODO-1037（重入竞态根因修复）：整段序列期间让控制器持住跨章守卫。每个中间章
+    // 载入完成会**同步**调 notifySectionRestoreCompleted——它原本无条件清
+    // _chapterTransition 并同步 _updateCurrentCue，此刻音频仍在播放（pause 要等本次
+    // 导航 await 返回后才发起）、cue 仍指目标文本章 → 重入 _maybeEmitCrossChapter
+    // 一步跳过剩余图片章（f3e4d2e52 症状复现）。置此标志后 notifySectionRestoreCompleted
+    // 见序列在途即保持守卫不放、不重算，序列收尾置回 false 由落到目标章的导航正常清。
+    controller.setImageChapterPauseActive(true);
     try {
       for (final int chapter in imageChapters) {
         if (!mounted || _lyricsMode) break;
@@ -708,8 +715,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       }
     } finally {
       _imageChapterPauseInFlight = false;
-      // 序列收尾：最终的 _navigateToChapter(targetSection) 还会再触发一次
-      // notifySectionRestoreCompleted 清守卫；这里持住防止收尾导航发起前的空档被重入。
+      // 序列收尾：先解除控制器侧的序列守卫，再持住跨章守卫；最终的
+      // _navigateToChapter(targetSection) 会再触发一次 notifySectionRestoreCompleted，
+      // 此时 _imageChapterPauseActive 已为 false，正常清守卫并落到目标章。
+      controller.setImageChapterPauseActive(false);
       controller.holdChapterTransition();
     }
   }
