@@ -6,6 +6,7 @@ import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'temp_dir_cleanup.dart';
 
 String _b64(String s) => base64Encode(utf8.encode(s));
 
@@ -17,7 +18,7 @@ void main() {
       () async {
     // ── This device: a configured WebDAV account + behavior flag + cache ──
     final currentDir = await _tempDir('hibiki_cur_');
-    addTearDown(() => currentDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(currentDir));
     final curDb = HibikiDatabase(currentDir.path);
     final curRepo = SyncRepository(curDb);
     await curRepo.setBackendType(SyncBackendType.webDav);
@@ -29,7 +30,7 @@ void main() {
 
     // ── A backup from ANOTHER device with different config + a book ──
     final srcDir = await _tempDir('hibiki_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final srcDb = HibikiDatabase(srcDir.path);
     final srcRepo = SyncRepository(srcDb);
     await srcRepo.setBackendType(SyncBackendType.ftp);
@@ -47,7 +48,7 @@ void main() {
       importedAt: DateTime.now().millisecondsSinceEpoch,
     ));
     final zipDir = await _tempDir('hibiki_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zipPath = '${zipDir.path}/backup.zip';
     await BackupService(
       db: srcDb,
@@ -90,7 +91,7 @@ void main() {
   test('recoverPendingImport re-applies a leftover sidecar then clears it',
       () async {
     final dir = await _tempDir('hibiki_recover_');
-    addTearDown(() => dir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(dir));
 
     // Simulate a DB whose sync config was wiped by a crashed import.
     final db = HibikiDatabase(dir.path);
@@ -123,9 +124,9 @@ void main() {
     // ── This device: an imported dictionary (metadata row + history + a
     //    resource file on disk) ──
     final currentDir = await _tempDir('hibiki_cur_dict_');
-    addTearDown(() => currentDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(currentDir));
     final dictResDir = await _tempDir('hibiki_dictres_');
-    addTearDown(() => dictResDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(dictResDir));
 
     final curDb = HibikiDatabase(currentDir.path);
     await curDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
@@ -146,9 +147,9 @@ void main() {
     // ── A backup from another device, exported WITHOUT the dictionary
     //    category (no dictionaryResources/ files, dictionary rows stripped) ──
     final srcDir = await _tempDir('hibiki_src_nodict_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final srcDictResDir = await _tempDir('hibiki_src_dictres_');
-    addTearDown(() => srcDictResDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDictResDir));
     final srcDb = HibikiDatabase(srcDir.path);
     // Source HAS a dictionary, but we export with categories that EXCLUDE it,
     // so the export strips its rows + packs no resource files.
@@ -167,7 +168,7 @@ void main() {
       importedAt: DateTime.now().millisecondsSinceEpoch,
     ));
     final zipDir = await _tempDir('hibiki_zip_nodict_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zipPath = '${zipDir.path}/backup.zip';
     await BackupService(
       db: srcDb,
@@ -211,9 +212,9 @@ void main() {
       'BUG-454 guard: a backup WITH dictionaries still REPLACES this '
       "device's dictionaries (replace semantics preserved)", () async {
     final currentDir = await _tempDir('hibiki_cur_repl_');
-    addTearDown(() => currentDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(currentDir));
     final dictResDir = await _tempDir('hibiki_dictres_repl_');
-    addTearDown(() => dictResDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(dictResDir));
 
     // This device has a local-only dictionary.
     final curDb = HibikiDatabase(currentDir.path);
@@ -227,9 +228,9 @@ void main() {
 
     // Backup WITH a dictionary (resource files present → category included).
     final srcDir = await _tempDir('hibiki_src_withdict_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final srcDictResDir = await _tempDir('hibiki_src_dictres_with_');
-    addTearDown(() => srcDictResDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDictResDir));
     final srcDb = HibikiDatabase(srcDir.path);
     await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: 'backup-dict',
@@ -244,7 +245,7 @@ void main() {
         .writeAsStringSync('{"backup":true}');
     final srcDb2 = HibikiDatabase(srcDir.path);
     final zipDir = await _tempDir('hibiki_zip_withdict_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zipPath = '${zipDir.path}/backup.zip';
     await BackupService(
       db: srcDb2,

@@ -143,6 +143,44 @@ void main() {
     );
 
     test(
+      'TODO-958: _vnLayoutCss centres VN content (no hardcoded width:100%) and '
+      'branches on isVertical',
+      () {
+        final String body = _extractVnLayoutCssBody(styles);
+        // The function must actually consume its isVertical parameter so the
+        // axis (main vs cross) is taken into account, not ignored as before.
+        expect(
+          body.contains('isVertical'),
+          isTrue,
+          reason: '_vnLayoutCss must reference isVertical for axis-aware '
+              'centering, not ignore it',
+        );
+        // The .hoshi-vn-content block must no longer force a physical full
+        // width — that filled the main axis and defeated justify-content:center
+        // (台词贴最右). It must constrain with max-width instead. (Note:
+        // .hoshi-vn-screen legitimately keeps width: 100%, so scope the check
+        // to the vn-content block only.)
+        final String contentBlock = _extractCssBlock(body, '.hoshi-vn-content');
+        // Match a *declaration line* of plain `width: 100%` (not `max-width`,
+        // and not the explanatory comment text), so the guard is robust against
+        // the substring overlap with `max-width: 100% !important;`.
+        final RegExp plainWidthDecl =
+            RegExp(r'(^|[;{\s])width:\s*100%\s*!important;', multiLine: true);
+        expect(
+          plainWidthDecl.hasMatch(contentBlock),
+          isFalse,
+          reason: '_vnLayoutCss must not hardcode width: 100% on vn-content; '
+              'that breaks vertical-rl centering',
+        );
+        expect(
+          contentBlock.contains('max-width: 100% !important;'),
+          isTrue,
+          reason: 'vn-content must use max-width so flex centring works',
+        );
+      },
+    );
+
+    test(
       'webview passes vnMode + VN config into the shell and binds the M0 '
       'blank-tap advance',
       () {
@@ -246,6 +284,46 @@ void main() {
       },
     );
   });
+}
+
+/// 提取 `_vnLayoutCss(...) { ... }` 整个函数体（从签名到匹配的右花括号），
+/// 用花括号配平避免误截其它函数。
+String _extractVnLayoutCssBody(String source) {
+  final int sigIdx = source.indexOf('static String _vnLayoutCss(');
+  expect(sigIdx >= 0, isTrue, reason: '_vnLayoutCss must exist');
+  // The signature uses a `{required ...}` named-parameter list, so the method
+  // body brace is the first `{` AFTER the params close with `}) {`.
+  final int paramsEndIdx = source.indexOf('}) {', sigIdx);
+  expect(paramsEndIdx >= 0, isTrue, reason: '_vnLayoutCss must have a body');
+  final int braceIdx = source.indexOf('{', paramsEndIdx + 2);
+  expect(braceIdx >= 0, isTrue, reason: '_vnLayoutCss must have a body brace');
+  int depth = 0;
+  for (int i = braceIdx; i < source.length; i++) {
+    final String ch = source[i];
+    if (ch == '{') {
+      depth++;
+    } else if (ch == '}') {
+      depth--;
+      if (depth == 0) {
+        return source.substring(braceIdx, i + 1);
+      }
+    }
+  }
+  fail('_vnLayoutCss body braces are unbalanced');
+}
+
+/// 从一段 CSS 文本里提取以 `selector {` 开头的规则块（含选择器到 `}`）。
+String _extractCssBlock(String css, String selector) {
+  final int selIdx = css.indexOf(selector);
+  expect(selIdx >= 0, isTrue, reason: 'CSS must contain $selector block');
+  final int braceIdx = css.indexOf('{', selIdx);
+  final int endIdx = css.indexOf('}', braceIdx);
+  expect(
+    braceIdx >= 0 && endIdx >= 0,
+    isTrue,
+    reason: '$selector block must be well-formed',
+  );
+  return css.substring(selIdx, endIdx + 1);
 }
 
 String _stripLineComments(String source) {

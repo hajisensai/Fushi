@@ -73,8 +73,14 @@ void main() {
       final String src =
           readSource('lib/src/platform/desktop/desktop_lifecycle_service.dart')
               .readAsStringSync();
-      // supportsRestart must be true now (locale-change + data-root migration
-      // both gate on it), and restart must launch self + exit, not be a no-op.
+      // supportsRestart must be true (the data-root migration path gates on it
+      // and still restarts on every platform), and restart must launch self +
+      // exit, not be a no-op. NOTE (TODO-960): UI-language switching no longer
+      // uses this restart path on desktop — it hot-reloads via setAppLocale's
+      // isDesktopPlatform short-circuit (see locale_switch_no_restart_test.dart)
+      // because the restart raced the Windows single-instance mutex and closed
+      // the app. supportsRestart stays true regardless: data-root migration
+      // still needs it, and mobile language switches still restart.
       expect(src.contains('bool get supportsRestart => true'), isTrue);
       expect(src.contains('Process.start('), isTrue);
       expect(src.contains('Platform.resolvedExecutable'), isTrue);

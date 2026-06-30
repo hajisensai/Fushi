@@ -16,12 +16,20 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
     required this.searchTerm,
     this.searchGeneration = 0,
+    this.anchorRect,
     this.closeInApp,
     this.autoSearchOnOpen = true,
     super.key,
   });
 
   final String searchTerm;
+
+  /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
+  /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
+  /// 即非悬浮字幕入口（系统 PROCESS_TEXT / hibiki://lookup）→ 保持原 [Alignment.topCenter]
+  /// 贴顶。anchorRect 变化也纳入 [didUpdateWidget] 复用判定，让同一常驻热页连续点不同字
+  /// 位置也跟着更新。
+  final Rect? anchorRect;
 
   /// TODO-951 症状C：app 外查词窗常驻不重建，宿主（popup_main）每次新 ProcessText
   /// 把递增的 generation 一并透传——即便是同一个词的连续查词，widget 配置也会变，
@@ -104,7 +112,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 复用常驻热槽原地查新词（reuseWarmSlot:true），不重建整页 → 不闪。term 与
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
     final bool changed = oldWidget.searchTerm != widget.searchTerm ||
-        oldWidget.searchGeneration != widget.searchGeneration;
+        oldWidget.searchGeneration != widget.searchGeneration ||
+        oldWidget.anchorRect != widget.anchorRect;
     if (!changed) return;
     final String trimmed = widget.searchTerm.trim();
     if (trimmed.isEmpty || !appModel.isInitialised) return;
@@ -219,28 +228,60 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             child: const SizedBox.expand(),
           ),
         ),
-        // 贴顶部的浮动卡片，外观对齐书内查词弹窗（圆角 + 边框 + 横滑关闭）。
-        Align(
-          alignment: Alignment.topCenter,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              const double maxCardWidth = 480;
-              final double available = constraints.maxWidth - gap * 2;
-              final double width =
-                  available < maxCardWidth ? available : maxCardWidth;
-              final double height = (constraints.maxHeight - gap * 2) * 0.72;
-              return Padding(
-                padding: EdgeInsets.all(gap),
-                child: SizedBox(
-                  width: width,
-                  height: height,
-                  child: _buildCard(tokens),
-                ),
-              );
-            },
-          ),
-        ),
+        // 浮动卡片，外观对齐书内查词弹窗（圆角 + 边框 + 横滑关闭）。
+        // TODO-872：带 anchorRect（悬浮字幕条点字）时贴被查字旁定位；否则保持原
+        // Alignment.topCenter 贴顶（系统 PROCESS_TEXT / hibiki://lookup 等其它入口）。
+        _buildPositionedCard(tokens, gap),
       ],
+    );
+  }
+
+  /// TODO-872：anchorRect 为 null → 原 [Alignment.topCenter] 贴顶（**零变化**）；
+  /// 非空 → 用 [computeFloatingLyricPopupRect] 算出贴被查字旁的矩形，[Positioned] 定位。
+  Widget _buildPositionedCard(HibikiDesignTokens tokens, double gap) {
+    final Rect? anchor = widget.anchorRect;
+    if (anchor == null) {
+      return Align(
+        alignment: Alignment.topCenter,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const double maxCardWidth = 480;
+            final double available = constraints.maxWidth - gap * 2;
+            final double width =
+                available < maxCardWidth ? available : maxCardWidth;
+            final double height = (constraints.maxHeight - gap * 2) * 0.72;
+            return Padding(
+              padding: EdgeInsets.all(gap),
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: _buildCard(tokens),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double maxCardWidth = 480;
+        final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
+        final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
+        final Rect rect = computeFloatingLyricPopupRect(
+          glyphRect: anchor,
+          screen: screen,
+          maxWidth: maxCardWidth,
+          maxHeight: maxHeight,
+          gap: gap,
+        );
+        return Positioned(
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          child: _buildCard(tokens),
+        );
+      },
     );
   }
 

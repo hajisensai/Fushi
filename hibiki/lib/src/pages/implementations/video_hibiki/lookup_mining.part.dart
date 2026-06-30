@@ -457,7 +457,9 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     // 新制成功计入视频统计（dictionarySourceType=video）；覆盖 record=false 故不记账。
     // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
     if (described.record) unawaited(_recordMinedForVideo());
-    _showOsd(described.message);
+    // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
+    // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
+    _showOsd(described.message, prominent: true);
     return result;
   }
 

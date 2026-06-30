@@ -192,10 +192,30 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     // BUG-099: bare Left/Right page-turn follows the reading direction (RTL book
     // advances on Left). Resolved before the registry, which binds Right=forward
     // unconditionally; null for any other key leaves default resolution intact.
+    // TODO-992: the direction override only applies when the bare key is still
+    // bound to a page-turn. Resolve the user's *current* bare-arrow binding across
+    // the reader + audiobook co-active group and pass it in; if the user remapped
+    // Left/Right to e.g. audiobook prev/next sentence (or cleared it), the override
+    // yields (null) so the registry resolves their real binding — fixing
+    // "scroll mode still only page-turns" identically in paged and continuous mode.
+    final ShortcutAction? bareArrowBinding =
+        appModel.shortcutRegistry.resolveKeyboard(
+              event.logicalKey,
+              modifiers: modifiers,
+              scope: ShortcutScope.reader,
+              physicalKey: imeFallbackPhysicalKey,
+            ) ??
+            appModel.shortcutRegistry.resolveKeyboard(
+              event.logicalKey,
+              modifiers: modifiers,
+              scope: ShortcutScope.audiobook,
+              physicalKey: imeFallbackPhysicalKey,
+            );
     final ShortcutAction? arrowOverride = resolveReaderArrowPageTurn(
       key: event.logicalKey,
       modifiers: modifiers,
       rtl: _isRtlReading,
+      boundAction: bareArrowBinding,
       reverse: ReaderHibikiSource.instance.reverseArrowPageTurn,
       physicalKey: imeFallbackPhysicalKey,
     );

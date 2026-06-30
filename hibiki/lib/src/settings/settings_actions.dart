@@ -165,6 +165,19 @@ void notifyReaderChromeChanged(SettingsContext settingsContext) {
   settingsContext.refresh();
 }
 
+/// Like [notifyReaderChromeChanged], but for chrome keys whose change alters the
+/// reserved chrome HEIGHT fed to the WebView (TODO-975: toggling the top
+/// progress bar on/off, or flipping the top/bottom chrome between squeeze and
+/// floating mode). Fires the reader's chrome-reanchor hook so the page re-reads
+/// the preference, re-applies the chrome insets, AND re-anchors the continuous-
+/// mode scroll position (a bare rebuild would let the reflow zero scrollY and
+/// bounce to chapter start). Pure floating reveal/hide does NOT use this — only
+/// the mode/visibility-of-progress switches that move the reserve do.
+void notifyReaderChromeReanchored(SettingsContext settingsContext) {
+  ReaderHibikiSource.onChromeReanchorLive?.call();
+  settingsContext.refresh();
+}
+
 Future<void> setKeepScreenAwake(
   SettingsContext settingsContext,
   bool value,

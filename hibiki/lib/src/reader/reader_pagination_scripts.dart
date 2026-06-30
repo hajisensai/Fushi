@@ -182,6 +182,69 @@ class ReaderPaginationScripts {
     return (safe / pageSize).floorToDouble() * pageSize;
   }
 
+  /// 连续(滚动)模式收藏句跳转落点的纯 Dart 影子（BUG-461）。
+  ///
+  /// 收藏记录存了句子的**起始字符**和**字符长度**（`FavoriteSentence.normCharOffset`
+  /// / `normCharLength`）。旧的连续 `scrollToCharOffset` 只把**句首**字符对齐到内容顶
+  /// （`scrollTop += startTopInViewport − contentTopPad`），完全不看句尾——长句被滚到
+  /// 句首贴顶后，句尾溢出可见区底沿（连续模式可见区 = `clip-path inset` 的
+  /// `[chromeTopInset, viewportSize − chromeBottomInset]`，底部那段被阅读底栏盖住），
+  /// 于是「句尾被切」。句子是横跨可见区底边还是完整落在区内，随句长/字号/落点变化 →
+  /// 用户感知的「五五开」。
+  ///
+  /// 根因修复把跳转目标当作**字符区间** `[start, end]` 而非单点：先按句首贴内容顶算
+  /// 出 `startAligned`；若句尾在该位置会溢出可见区底沿、且整句高度 ≤ 可见区高度，则向
+  /// 后(下)多滚 `overflow` 像素把句尾正好拉到可见区底沿——整句完整可见且尽量靠上。句
+  /// 子比可见区还高(放不下)则维持句首贴顶(尽力而为，本就无任何落点能整句显示)。连续
+  /// 模式是裸 `window.scrollY` 亚像素滚动，多滚这点不破坏任何整页对齐(无分页 snap)。
+  ///
+  /// 参数都在滚动轴向、CSS px：
+  /// - [startTopInViewport]：当前滚动下，句首字符起始边相对视口原点的位置（横排
+  ///   `rect.top`、竖排把右沿翻成正向后的等价起始边）。
+  /// - [sentenceExtent]：整句在滚动轴向的尺寸（句尾远边 − 句首起始边，≥0）。
+  /// - [currentScroll]：当前滚动量（`root.scrollTop` / 翻正后的 `scrollLeft`）。
+  /// - [contentTopPad]：内容顶 padding（`paddingTop`，已含 chromeTopInset）——句首理想对齐到这里。
+  /// - [bandTop]：可见区顶沿（chromeTopInset）。
+  /// - [bandBottom]：可见区底沿（viewportSize − chromeBottomInset）。
+  ///
+  /// 返回新的目标滚动量（连续模式直接写回 `root.scrollTop`）。
+  @visibleForTesting
+  static double continuousFavoriteJumpScrollForTesting({
+    required double startTopInViewport,
+    required double sentenceExtent,
+    required double currentScroll,
+    required double contentTopPad,
+    required double bandTop,
+    required double bandBottom,
+  }) {
+    // 句首贴内容顶：scrollTop += startTop − contentTopPad（== 旧行为的落点）。
+    final double startAligned =
+        currentScroll + (startTopInViewport - contentTopPad);
+    final double band = bandBottom - bandTop;
+    // 区间信息不可用(老收藏无句长 / 句尾解析失败 → extent<=0)或整句放不下可见区 →
+    // 维持句首贴顶(尽力而为)。
+    if (sentenceExtent <= 0 || band <= 0 || sentenceExtent > band) {
+      return startAligned < 0 ? 0 : startAligned;
+    }
+    // 句首贴内容顶后，句尾在视口里的底沿位置 = contentTopPad + sentenceExtent。
+    final double sentenceBottomInViewport = contentTopPad + sentenceExtent;
+    final double overflow = continuousSentenceTailOverflow(
+      sentenceBottomInViewport,
+      bandBottom,
+    );
+    final double target = startAligned + overflow;
+    return target < 0 ? 0 : target;
+  }
+
+  /// 句尾溢出可见区底沿的像素量（≤0 即不溢出，返回 0）。抽出来便于单测断言。
+  static double continuousSentenceTailOverflow(
+    double sentenceBottomInViewport,
+    double bandBottom,
+  ) {
+    final double overflow = sentenceBottomInViewport - bandBottom;
+    return overflow > 0 ? overflow : 0;
+  }
+
   static double _pageStepPosition(double currentScroll, double columnPitch) {
     if (columnPitch <= 0) return currentScroll;
     final double nearestPage =
@@ -598,6 +661,9 @@ class ReaderPaginationScripts {
   static String shellScript({
     double initialProgress = 0.0,
     int initialCharOffset = -1,
+    // BUG-461：收藏句跳转的句尾绝对字符偏移（句首 [initialCharOffset] + 句长）。仅连续
+    // 模式横排用它把整句对齐进可见区（句尾不被阅读底栏切）。<0 / 不传 = 单点句首锚（旧）。
+    int initialCharOffsetEnd = -1,
     bool continuousMode = false,
     // TODO-909: VN is the third view-mode. It is mutually exclusive with
     // [continuousMode] (VN is a page-flip stage, not native scroll). When true
@@ -635,6 +701,7 @@ class ReaderPaginationScripts {
       return _continuousShellScript(
         initialProgress: initialProgress,
         initialCharOffset: initialCharOffset,
+        initialCharOffsetEnd: initialCharOffsetEnd,
         sasayakiCuesJson: sasayakiCuesJson,
         initialFragment: initialFragment,
         chromeTopInset: chromeTopInset,
@@ -2288,6 +2355,7 @@ $_sharedInitBoot
   static String _continuousShellScript({
     required double initialProgress,
     int initialCharOffset = -1,
+    int initialCharOffsetEnd = -1,
     String? sasayakiCuesJson,
     String? initialFragment,
     double chromeTopInset = 0.0,
@@ -2296,11 +2364,15 @@ $_sharedInitBoot
     double? dartPageHeight,
     bool blurImages = false,
   }) {
-    // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。
+    // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。BUG-461：收藏句跳转带句尾
+    // 偏移（initialCharOffsetEnd>句首）时透传给 restoreToCharOffset 做整句区间对齐。
+    final String restoreCharScript = initialCharOffsetEnd > initialCharOffset
+        ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset, $initialCharOffsetEnd);'
+        : 'window.hoshiReader.restoreToCharOffset($initialCharOffset);';
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
         : (initialCharOffset >= 0
-            ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset);'
+            ? restoreCharScript
             : 'window.hoshiReader.restoreProgress($initialProgress);');
 
     final String sasayakiInit = sasayakiCuesJson != null
@@ -2471,8 +2543,11 @@ $_sharedJs
   // BUG-162: 连续模式按 section 内绝对字符偏移定位（连续滚动语义：把目标字符滚到
   // 视口首边）。抽自原 setChromeInsets 内联体，供 setChromeInsets 重锚与退出再进
   // 恢复共用（DRY）。
-  scrollToCharOffset: function(charOffset) {
-    if (charOffset < 0) return;
+  // BUG-461：把章内绝对可匹配字符索引解析成一个塌缩到该字符起始边的 collapsed range。
+  // 抽自 scrollToCharOffset 内联体，供「句首锚」与「句尾锚」共用（DRY），返回 null 表示
+  // 该偏移落在正文之外（解析失败）。
+  collapsedRangeAtCharOffset: function(charOffset) {
+    if (charOffset < 0) return null;
     var walker = this.createWalker();
     var node;
     var runningOffset = 0;
@@ -2482,7 +2557,7 @@ $_sharedJs
       if (runningOffset + nodeChars > charOffset) { targetNode = node; break; }
       runningOffset += nodeChars;
     }
-    if (!targetNode) return;
+    if (!targetNode) return null;
     var remaining = charOffset - runningOffset;
     var charIdx = 0;
     var textOffset = 0;
@@ -2497,26 +2572,72 @@ $_sharedJs
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
     range.collapse(true);
-    var rect = range.getBoundingClientRect();
+    return range;
+  },
+  // BUG-461：连续模式按章内绝对字符偏移定位（连续滚动语义：把目标字符滚到视口首边）。
+  // [endCharOffset]（可选）= 收藏句句尾的绝对字符偏移：传入时把跳转目标当作字符区间
+  // [charOffset, endCharOffset]，先把句首贴内容顶，若句尾溢出可见区底沿且整句放得下，
+  // 多滚把句尾拉进可见区底沿（continuousFavoriteJumpScrollForTesting 的 JS 实现，整句完整
+  // 可见、不被阅读底栏切尾）。不传 endCharOffset（setChromeInsets / 缩放 / 换样式重锚）
+  // 时行为与旧版完全一致（句首贴顶，单点锚）。
+  scrollToCharOffset: function(charOffset, endCharOffset) {
+    var startRange = this.collapsedRangeAtCharOffset(charOffset);
+    if (!startRange) return;
+    var rect = startRange.getBoundingClientRect();
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var cs = getComputedStyle(document.body);
     if (vertical) {
       var pr = parseFloat(cs.paddingRight) || 0;
       var targetX = window.innerWidth - pr;
-      root.scrollLeft += rect.left - targetX;
-    } else {
-      var pt = parseFloat(cs.paddingTop) || 0;
-      root.scrollTop += rect.top - pt;
+      var startScrollV = root.scrollLeft + (rect.left - targetX);
+      // 竖排可见区在内容宽度轴（chrome-* inset 仍是顶/底 padding 与本轴正交），无「句尾被
+      // 底栏切」语义 → 句首贴右沿即可（与旧版一致）。
+      root.scrollLeft = startScrollV;
+      return;
     }
+    var pt = parseFloat(cs.paddingTop) || 0;
+    // 句尾区间锚（BUG-461）：仅横排、且调用方给了句尾偏移时启用。
+    if (typeof endCharOffset === 'number' && endCharOffset > charOffset) {
+      var endRange = this.collapsedRangeAtCharOffset(endCharOffset);
+      if (endRange) {
+        var endRect = endRange.getBoundingClientRect();
+        var lineH = parseFloat(cs.lineHeight);
+        if (!(lineH > 0)) lineH = (parseFloat(cs.fontSize) || 16) * 1.5;
+        // 句尾远边 = 句尾字符底边（含其所在行高），相对句首起始边的尺寸。
+        var sentenceExtent = (endRect.top + lineH) - rect.top;
+        var rootStyle = getComputedStyle(document.documentElement);
+        var topInset = parseFloat(
+          rootStyle.getPropertyValue('--chrome-top-inset')) || 0;
+        var bottomInset = parseFloat(
+          rootStyle.getPropertyValue('--chrome-bottom-inset')) || 0;
+        var vh = window.innerHeight;
+        var bandTop = topInset;
+        var bandBottom = vh - bottomInset;
+        var band = bandBottom - bandTop;
+        var startAligned = root.scrollTop + (rect.top - pt);
+        if (sentenceExtent > 0 && band > 0 && sentenceExtent <= band) {
+          var sentenceBottomInViewport = pt + sentenceExtent;
+          var overflow = sentenceBottomInViewport - bandBottom;
+          if (overflow < 0) overflow = 0;
+          var target = startAligned + overflow;
+          root.scrollTop = target < 0 ? 0 : target;
+          return;
+        }
+        root.scrollTop = startAligned < 0 ? 0 : startAligned;
+        return;
+      }
+    }
+    root.scrollTop += rect.top - pt;
   },
   // BUG-162: 退出再进的精确恢复（连续）。charOffset<0（旧存档）回退章首；调用方在
-  // initialCharOffset<0 时改走 restoreProgress（分数）。
-  restoreToCharOffset: async function(charOffset) {
+  // initialCharOffset<0 时改走 restoreProgress（分数）。BUG-461：endCharOffset（可选）=
+  // 收藏句句尾偏移，透传给 scrollToCharOffset 做整句区间对齐（不传则单点句首锚）。
+  restoreToCharOffset: async function(charOffset, endCharOffset) {
     await document.fonts.ready;
     var self = this;
     if (charOffset < 0) { this.scrollToChapterStart(); }
-    else { this.scrollToCharOffset(charOffset); }
+    else { this.scrollToCharOffset(charOffset, endCharOffset); }
     setTimeout(function() {
       setTimeout(function() { self.notifyRestoreComplete(); }, 16);
     }, 16);

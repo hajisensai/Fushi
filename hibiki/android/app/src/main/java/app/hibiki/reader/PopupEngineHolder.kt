@@ -39,15 +39,26 @@ object PopupEngineHolder {
     @Volatile
     private var pendingCharIndex: Int = -1
 
+    /**
+     * On-screen rectangle (physical px: left, top, right, bottom) of the tapped
+     * glyph, or null when the caller supplied no anchor (TODO-872). Only the
+     * floating lyric/subtitle strip ships an anchor; system PROCESS_TEXT /
+     * hibiki://lookup leave it null so the Dart popup keeps its default
+     * top-center placement.
+     */
+    @Volatile
+    private var pendingAnchor: IntArray? = null
+
     @Volatile
     private var onFinish: (() -> Unit)? = null
 
     @Volatile
     private var channel: MethodChannel? = null
 
-    fun setPendingText(text: String, charIndex: Int = -1) {
+    fun setPendingText(text: String, charIndex: Int = -1, anchor: IntArray? = null) {
         pendingText = text
         pendingCharIndex = charIndex
+        pendingAnchor = anchor
     }
 
     fun setOnFinish(callback: (() -> Unit)?) {
@@ -70,6 +81,7 @@ object PopupEngineHolder {
                     val map = HashMap<String, Any>()
                     map["text"] = pendingText
                     map["charIndex"] = pendingCharIndex
+                    putAnchor(map, pendingAnchor)
                     result.success(map)
                 }
                 "finishPopup" -> {
@@ -90,14 +102,27 @@ object PopupEngineHolder {
     }
 
     /** Warm-reuse / onNewIntent path: push a new term into the running Dart app. */
-    fun pushProcessText(text: String, charIndex: Int = -1) {
+    fun pushProcessText(text: String, charIndex: Int = -1, anchor: IntArray? = null) {
         if (text.isBlank()) return
         pendingText = text
         pendingCharIndex = charIndex
+        pendingAnchor = anchor
         val ch = channel ?: return
         val args = HashMap<String, Any>()
         args["text"] = text
         args["charIndex"] = charIndex
+        putAnchor(args, anchor)
         Handler(Looper.getMainLooper()).post { ch.invokeMethod("onNewProcessText", args) }
+    }
+
+    /**
+     * Encode the tapped-glyph anchor rectangle (physical px) into the channel
+     * payload as a 4-element [left, top, right, bottom] int list, or omit the
+     * key entirely when there is no anchor — the Dart side reads a missing
+     * "anchor" as null and keeps the default top-center placement (TODO-872).
+     */
+    private fun putAnchor(map: HashMap<String, Any>, anchor: IntArray?) {
+        if (anchor == null || anchor.size != 4) return
+        map["anchor"] = listOf(anchor[0], anchor[1], anchor[2], anchor[3])
     }
 }

@@ -45,7 +45,48 @@ AudioPlaybackRange? miningSentenceAudioRange({
   if (baseRange == null) {
     return null;
   }
-  return _shiftRange(baseRange, delayMs);
+  // TODO-1009 / BUG-475: same-chapter selections on coarse-aligned audio
+  // (TextToEpub + post-attached audio, or alignment miss) can resolve to a
+  // zero-duration cue (`endMs == startMs`) or a merge of such cues. Every
+  // cue-relative path above copies the cue's raw start/end, so the merged range
+  // stays degenerate -- only [_cueRange] floored it. A degenerate range then
+  // trips `classifyAudiobookClipSelection` (`endMs <= startMs`) and the user
+  // sees the misleading cross-chapter/cross-file toast for a perfectly
+  // in-chapter selection. Repair the range here (single chokepoint) to a
+  // positive duration before shifting: extend to the next same-file cue's start
+  // (the implied playback length) and floor to +1ms. This keeps the same
+  // audioFileIndex -- never fabricates a cross-file/cross-chapter range -- so
+  // genuinely cross-file selections still fall through to the caller's
+  // single-file/null routing untouched.
+  return _shiftRange(_ensurePositiveDuration(baseRange, cues), delayMs);
+}
+
+/// Guarantees [range].endMs > [range].startMs. A zero/negative-duration range
+/// comes from cues whose own `startMs == endMs` (coarse alignment). Extend the
+/// end to the start of the next cue in the SAME file (the implied duration); if
+/// none, floor to startMs + 1 so ffmpeg gets a non-empty window. Never changes
+/// audioFileIndex.
+AudioPlaybackRange _ensurePositiveDuration(
+  AudioPlaybackRange range,
+  List<AudioCue> cues,
+) {
+  if (range.endMs > range.startMs) {
+    return range;
+  }
+  int repairedEnd = range.startMs + 1;
+  for (final AudioCue cue in cues) {
+    if (cue.audioFileIndex != range.audioFileIndex) continue;
+    // The next cue boundary strictly after our start bounds the clip duration.
+    if (cue.startMs > range.startMs && cue.startMs > repairedEnd) {
+      repairedEnd = cue.startMs;
+      break;
+    }
+  }
+  return AudioPlaybackRange(
+    audioFileIndex: range.audioFileIndex,
+    startMs: range.startMs,
+    endMs: repairedEnd,
+  );
 }
 
 AudioPlaybackRange? _rangeFromSentencePosition({
@@ -69,16 +110,35 @@ AudioPlaybackRange? _rangeFromSentencePosition({
       sentenceNormCharOffset == null ||
       sentenceNormCharLength == null ||
       sentenceNormCharLength <= 0) {
-    // No usable normalized span. Still try the text fallback when there is no
-    // lookup cue to anchor a section (gap word); when a cue exists the caller's
-    // _expandAroundCue path already handles text-based expansion.
-    if (cue != null || textFallback.isEmpty) {
+    // No usable normalized span. The sentence text is then the only span anchor.
+    //
+    // TODO-970: try the plain-text match whenever there IS sentence text, even
+    // when a lookup cue exists. The old guard returned null on `cue != null` and
+    // deferred entirely to the caller's _expandAroundCue. But _expandAroundCue is
+    // cue-anchored: it only keeps a text match that COVERS the lookup cue and only
+    // expands to neighbours whose text is a substring of the sentence. When the
+    // looked-up token landed on a plain-selector boundary cue OUTSIDE the
+    // sentence (punctuation / adjacent-sentence fragment, common on local
+    // audiobooks with no sasayaki positions), the anchored match is rejected and
+    // expansion collapses to that single boundary cue — the wrong/missing audio
+    // (BUG-458 残留). The non-anchored text search recovers the full sentence
+    // range from the cue texts instead. On a hit, use it; on a miss return null
+    // so the caller's cue-anchored _expandAroundCue still gets its chance.
+    if (textFallback.isEmpty) {
       return null;
     }
-    return CollectionAudioMatcher.findPlaybackRange(
+    final AudioPlaybackRange? textRange =
+        CollectionAudioMatcher.findPlaybackRange(
       cues: cues,
       text: textFallback,
     );
+    if (textRange != null) {
+      return textRange;
+    }
+    // Text matched nothing. With no cue there is no further anchor; with a cue
+    // defer to the caller's _expandAroundCue (returning null here lets the main
+    // function fall through to the cue-relative path).
+    return null;
   }
   // When a lookup cue exists, keep the original guard: trust the sentence span
   // only if the cue actually decodes to this section (the word truly belongs to

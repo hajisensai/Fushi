@@ -694,15 +694,17 @@ function testKanjiSectionWhitespaceWithoutChildKeepsLayer() {
     'leaf layer (no child): tapping kanji-section whitespace must NOT fire tapOutside (859 kept)');
 }
 
-// (869-5) 有子弹窗时点 .glossary-content 文字本体仍走选词分支，不被门控波及。
-function testGlossaryTextWithChildStillSelects() {
+// (869-5) 有子弹窗时点 .glossary-content 文字本体（用户说的「词典部分」）必须发
+// tapOutside 关后代层，而不是选词——否则点父窗正文子窗永远关不掉（TODO-869 收尾，
+// 原始用户症状）。叶子层（hasChild=false，见 testTapOnGlossaryTextSelectsWord）仍选词。
+function testGlossaryTextWithChildClosesDescendants() {
   const context = loadPopup();
   const {glossary} = buildEntryCardDom(context);
   const result = fireDocumentClick(context, glossary, 50, 50, {hasChild: true});
-  assert.equal(result.selectCalls, 1,
-    'tapping glossary text must still select a word even with a child popup');
-  assert.equal(result.tapOutsideCalls, 0,
-    'selecting a word must not fire tapOutside (selection branch precedes the card gate)');
+  assert.equal(result.tapOutsideCalls, 1,
+    'parent layer with a child popup: tapping glossary text must fire tapOutside (close child)');
+  assert.equal(result.selectCalls, 0,
+    'with a child popup open, tapping the parent glossary text closes the child, not select');
 }
 
 // (869-6) 纯背景 body：有/无子弹窗都发 tapOutside（背景分支不受门控影响）。
@@ -1674,7 +1676,7 @@ testEntryWhitespaceWithChildFiresTapOutside();
 testEntryWhitespaceWithoutChildKeepsLayer();
 testKanjiSectionWhitespaceWithChildFiresTapOutside();
 testKanjiSectionWhitespaceWithoutChildKeepsLayer();
-testGlossaryTextWithChildStillSelects();
+testGlossaryTextWithChildClosesDescendants();
 testBackgroundFiresTapOutsideRegardlessOfChild();
 testTapOnImagePixelsOpensLightbox();
 testTapInImageContainerWhitespaceDoesNotOpenLightbox();

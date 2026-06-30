@@ -8,9 +8,22 @@
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | **Italiano** | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | **Italiano** | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-hibiki è uno strumento immersivo per l'apprendimento delle lingue per Android e Windows che unisce la lettura di EPUB, la sincronizzazione degli audiolibri, la ricerca di parole nei sottotitoli dei video e la creazione di carte Anki con un solo tocco, così che ogni input diventi naturalmente vocabolario da ripassare.
+[Guida utente](../user-guide.it.md) | [Scarica l'ultima versione](https://github.com/hajisensai/hibiki/releases)
+
+> **Guarda ciò che ti va di guardare e impara la lingua lungo il cammino.**
+
+hibiki trasforma i romanzi che leggi, le serie che segui e gli audiolibri che ascolti nel tuo input linguistico: tocca qualsiasi parola sconosciuta per cercarla e, con un solo tocco, trasformala in una carta Anki con il contesto originale. Non ti fa memorizzare un elenco di parole predefinito; ti aiuta solo a cogliere le parole che **leggi e ascolti davvero**.
+
+Il modo più efficace per imparare una lingua è l'esposizione massiccia a contenuti reali, non memorizzare parole isolate da un libro di vocaboli. Ma l'«immersione» ha sempre avuto due fastidi: cercare una parola spezza la concentrazione e la dimentichi appena distogli lo sguardo. hibiki chiude questo cerchio:
+
+📖 **Leggere**: tocca una parola nel lettore EPUB per cercarla, senza lasciare la pagina corrente.<br>
+🎧 **Ascoltare**: gli audiolibri evidenziano frase per frase e voltano pagina automaticamente.<br>
+🎬 **Guardare**: cerca parole e crea carte direttamente sui sottotitoli del video — seguire una serie *è* input.<br>
+🃏 **Consolidare**: invia ad Anki qualsiasi parola cercata, in qualsiasi scenario, e ripassa solo le parole che hai davvero incontrato.
+
+Tutti gli scenari condividono gli stessi dizionari, le stesse statistiche e lo stesso flusso di ripasso. Va bene per qualsiasi lingua (giapponese, inglese, …) ed è particolarmente adatto a chi impara per immersione e crede in **tanto input + solo carte fatte da sé**. Disponibile per Android e Windows (iOS e macOS in programma).
 
 <table>
   <tr>
@@ -24,7 +37,17 @@ hibiki è uno strumento immersivo per l'apprendimento delle lingue per Android e
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Ricerca nel video (finestre annidate)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Ricerca nel video (elenco dei sottotitoli)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Ricerca tramite selezione di testo fuori dall'app (mobile)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Ricerca tramite selezione di testo fuori dall'app (desktop)" width="100%"></td>
+  </tr>
 </table>
+
+**Demo di creazione carte Anki con un tocco**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
+
+> Il video non si visualizza? [Guarda la demo di creazione carte con un clic ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
 
 </div>
 
@@ -196,6 +219,6 @@ Distribuito sotto la GNU General Public License v3.0. Vedi [LICENSE](../../LICEN
 
 <br>
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | **Italiano** | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | **Italiano** | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
 </div>

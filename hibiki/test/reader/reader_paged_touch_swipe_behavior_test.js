@@ -242,4 +242,52 @@ function touchEvt(x, y) {
   );
 })();
 
+// TODO-971: PAGED mode, a 30px drift (below the 72px swipe threshold but above
+// the old 20px tap upper-bound) must be treated as a TAP, not silently dropped.
+// Pre-fix `_gestureEnd` had `else if (absDx < 20 && absDy < 20 && elapsed < 500)`
+// for the tap branch, so a 20~72px drift hit neither swipe nor tap -> the word
+// lookup was lost ("单词点不中"). The fix drops the 20px /
+// 500ms gate: anything that did NOT trigger a page swipe is a tap.
+(function () {
+  const h = makeHarness(false);
+  h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.dispatch('pointermove', pointerEvt('touch', 215, 305, -1, 1));
+  h.dispatch('touchend', touchEvt(230, 308)); // dx = +30 (>20, <72), dy = +8
+  h.dispatch('pointerup', pointerEvt('touch', 230, 308, 0, 0));
+  assert.deepStrictEqual(
+    h.swipes, [],
+    'a 30px drift must NOT page-turn (below swipe threshold); got '
+      + JSON.stringify(h.swipes),
+  );
+  assert.deepStrictEqual(
+    h.taps, [230],
+    'a 30px drift (no swipe) must be treated as a tap, not dropped; got '
+      + JSON.stringify(h.taps),
+  );
+})();
+
+// TODO-971 guard: a LARGE vertical drag (dy=120, above the 72px swipe distance)
+// is a scroll/drag gesture, NOT a tap. The fix caps the tap window at the swipe
+// distance threshold so continuous-mode scroll drags don't fire a spurious word
+// lookup. (Vertical-dominant means absDx<absDy so the swipe branch never fires;
+// without the cap this would wrongly emit onTap.)
+(function () {
+  const h = makeHarness(false);
+  h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.dispatch('pointermove', pointerEvt('touch', 205, 240, -1, 1));
+  h.dispatch('touchend', touchEvt(208, 180)); // dx = +8, dy = -120 (>72)
+  h.dispatch('pointerup', pointerEvt('touch', 208, 180, 0, 0));
+  assert.deepStrictEqual(
+    h.swipes, [], 'a vertical drag must not page-turn; got '
+      + JSON.stringify(h.swipes),
+  );
+  assert.deepStrictEqual(
+    h.taps, [],
+    'a large (>72px) drag is a scroll, not a tap; must NOT emit onTap; got '
+      + JSON.stringify(h.taps),
+  );
+})();
+
 console.log('reader_paged_touch_swipe_behavior_test.js: all assertions passed');

@@ -238,7 +238,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         replaceStack: false,
         visible: false,
       );
-      _popup.fillResult(item, result: dictionaryResult, allLoaded: true);
+      // TODO-962：阅读器/有声书弹窗此前硬编码 allLoaded:true，关掉了「加载更多」分页
+      // （[_buildPopupLayer] 的 onScrolledToBottom 恒 null），使弹窗永远停在第一页。
+      // maximumTerms 按 glossary 注释**行**计预算（language.dart），一个高频词头的注释
+      // 行就能吃满整个上限 → 只剩 1 个词头（首页/视频弹窗均正常，唯一差异就在此标志 +
+      // load-more 接线）。按真实截断计算：结果数 < 本次查询上限 ⇒ 已全部加载，否则可能
+      // 被截断，开放下滑加载（[loadMoreForLayer]，与 mixin/home 同构）。
+      _popup.fillResult(
+        item,
+        result: dictionaryResult,
+        allLoaded: dictionaryResult.entries.length < overrideMaximumTerms,
+      );
 
       // TODO-058：嵌套（第二个）查词复用不到热槽，beginTop 会 append 一条**新建
       // WebView** 的冷层；若就绪即 show，它的 popup.html/JS/CSS 还没冷加载完，一翻
@@ -282,6 +292,45 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           (!deferDisplay || _deferredPopupItem == null)) {
         _isSearchingNotifier.value = false;
         _pendingSelectionRect = null;
+      }
+    }
+  }
+
+  /// TODO-962：阅读器/有声书弹窗第 [index] 层「加载更多」——续查下一批词头并增量追加。
+  ///
+  /// 与 [DictionaryPageMixin.loadMoreForEntry] / [HomeDictionaryPageState] 的
+  /// `_loadMore` 同构：以「当前已显示词条数 + [AppModel.maximumTerms]」为新上限重查
+  /// 同一个 [searchTerm]，再 [DictionaryPopupController.fillResult] 更新该层
+  /// （`notifyListeners` 经 [buildDictionary] 的 [AnimatedBuilder] 自动重建，无需
+  /// setState）。webview 的 `_pushResults` 据 searchTerm 不变 + entries 增多自动判定
+  /// `isLoadMore` → 走 `window.updatePopupIncremental()` 增量渲染，保滚动位/热槽。
+  /// [allLoaded] 仍按真实截断（结果数 < 新上限）计算，到底即关闭后续 load-more。
+  Future<void> loadMoreForLayer(int index) async {
+    final List<DictionaryPopupEntry> entries = _popup.entries;
+    if (index < 0 || index >= entries.length) return;
+    final DictionaryPopupEntry entry = entries[index];
+    final DictionarySearchResult? current = entry.result;
+    if (entry.allLoaded || entry.isSearching || current == null) return;
+
+    final int newMax = current.entries.length + appModel.maximumTerms;
+    entry.isSearching = true;
+    try {
+      final DictionarySearchResult result = await appModel.searchDictionary(
+        searchTerm: entry.searchTerm,
+        searchWithWildcards: false,
+        overrideMaximumTerms: newMax,
+      );
+      // 续查期间该层可能被裁掉/换词（嵌套查词、关栈）；用身份核对确保只更新原层。
+      if (!mounted || !_popup.entries.contains(entry)) return;
+      _popup.fillResult(
+        entry,
+        result: result,
+        allLoaded: result.entries.length < newMax,
+      );
+    } finally {
+      // fillResult 成功路径已把 isSearching 清 false；失败/提前 return 在此兜底复位。
+      if (_popup.entries.contains(entry) && entry.isSearching) {
+        entry.isSearching = false;
       }
     }
   }
@@ -514,6 +563,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
         },
+        // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头
+        // （与 dictionary_page_mixin / home_dictionary_page 同构），webview 的
+        // _pushResults 据 searchTerm 不变 + entries 增多自动判 isLoadMore → 走
+        // window.updatePopupIncremental() 增量追加，不重渲染整页、保滚动位/热槽。
+        onScrolledToBottom:
+            item.allLoaded ? null : () => loadMoreForLayer(index),
         onMineEntry: onMineFromPopup,
         onUpdateEntry: onUpdateFromPopup,
         // TODO-948②：阅读器/有声书弹窗收藏按钮接线（视频走 mixin，不经此处）。
@@ -685,12 +740,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         bool isWarmSlot,
         bool visible,
         bool revealOnRender,
+        // TODO-962：暴露 allLoaded + entryCount，让 widget 测试断言「弹窗结果被截断时
+        // 不再硬编码 allLoaded:true、load-more 后词头数增加」。按名访问，不破坏既有解构。
+        bool allLoaded,
+        int entryCount,
         GlobalKey<DictionaryPopupWebViewState> webViewKey
       })> get debugPopupStack => _popup.entries
       .map((e) => (
             isWarmSlot: e.isWarmSlot,
             visible: e.visible,
             revealOnRender: e.revealOnRender,
+            allLoaded: e.allLoaded,
+            entryCount: e.result?.entries.length ?? 0,
             webViewKey: e.webViewKey,
           ))
       .toList();

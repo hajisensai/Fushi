@@ -18,7 +18,8 @@ part of '../video_hibiki_page.dart';
 /// `_mediaKitControlsVisible`, `_brightness`, `_enterBrightness`,
 /// `_onMediaKitVolumeChanged`, `_onMediaKitBrightnessChanged`,
 /// `_videoKeyboardShortcuts`, `_topBarSlotGroup`, `_topBarTitle`,
-/// `_centeredBottomControlBar`, `_videoBottomSystemInset`) and stays bare,
+/// `_centeredBottomControlBar`, `_videoBottomSystemInset`, `_videoTopBarMargin`)
+/// and stays bare,
 /// resolved through the shared private scope.
 ///
 /// Covers the desktop ([_desktopControlsTheme]) and mobile
@@ -209,6 +210,12 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       buttonBarHeight: _videoButtonBarHeight,
       buttonBarButtonSize: _videoControlIconSize,
       primaryButtonBar: const <Widget>[],
+      // 视频内顶栏抬离状态栏 / 刘海（BUG-463）：移动端视频永不进 media_kit 全屏路由
+      // （BUG-221），fork 只在全屏分支给顶栏套 `MediaQuery.padding` 顶部内缩、窗口分支恒
+      // `EdgeInsets.zero` → 顶栏按钮永远贴 y=0 被系统栏 / 刘海盖住。这里把系统顶部 / 左 / 右
+      // inset 补进 `topButtonBarMargin`（[_videoTopBarMargin]），与底栏 `bottomButtonBarMargin`
+      // 的 [_videoBottomSystemInset] 对称。仅移动端 theme；桌面 theme 不含本字段、无系统栏。
+      topButtonBarMargin: _videoTopBarMargin(),
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[

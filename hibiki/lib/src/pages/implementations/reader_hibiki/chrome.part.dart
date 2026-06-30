@@ -554,10 +554,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   Future<void> _applyChromeInsets() async {
     if (_controller == null || !_readerContentReady || _lyricsMode) return;
+    // TODO-975：底栏预留经单一真相源 _readerBottomReserve（悬浮态恒 0、挤压态含底栏高
+    // + 系统 inset），取代散落的 `_showChrome ? height+inset : inset` 三元式。
     final double top = _readerTopOffset;
-    final double bottom = _showChrome
-        ? _readerChromeHeight + _stableBottomInset
-        : _stableBottomInset;
+    final double bottom = _readerBottomReserve;
     await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.setChromeInsetsInvocation(top, bottom),
     );
@@ -573,6 +573,82 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       ),
     );
     await _caretRefresh();
+  }
+
+  /// BUG-467（TODO-975 回归修复）：内容首次就绪时确定性补下一次 chrome insets。
+  ///
+  /// 根因——底栏预留 [_bottomChromeReserve] 经 TODO-975 改为门控 `_hasEverLoaded &&
+  /// _showChrome`，但**初始 WebView HTML** 在 [_buildWebView] 里用 `chromeBottomInset:
+  /// _readerBottomReserve` 求值时 `_hasEverLoaded` 仍为 false → 初始 HTML 只预留了系统
+  /// 底 inset（多数桌面/手势导航机为 0），把底栏高度漏掉。TODO-975 之前的旧式
+  /// `_showChrome ? _readerChromeHeight + _stableBottomInset : _stableBottomInset`
+  /// 不依赖 `_hasEverLoaded`、`_showChrome` 默认 true，故首屏即正确预留；而内容就绪后
+  /// （`_hasEverLoaded` 翻 true）又**没有任何代码重下 chrome insets**，于是 WebView 永远
+  /// 停在「底栏未预留」状态——正文列（尤其竖排 vertical-rl，字形沿物理纵轴流到屏底）
+  /// 直接画进底栏区域（BUG-467「文字去到底栏」）。
+  ///
+  /// 修复：在每个内容首次就绪的落点（`_hasEverLoaded` 翻 true 处）补一次
+  /// [_applyChromeInsets]，把此刻已正确的 [_readerBottomReserve]（含底栏高）下发给
+  /// WebView。幂等且零行为变化于 975 语义——悬浮态仍预留 0、关进度仍 0，因为读的还是
+  /// 同一组派生 getter；只是把「内容就绪后从未补发」这个漏洞补上。歌词模式由
+  /// [_applyChromeInsets] 自身的 `_lyricsMode` 早返回挡掉（歌词走 Flutter 侧 padding）。
+  void _reapplyChromeInsetsAfterFirstLoad() {
+    unawaited(_applyChromeInsets().catchError((Object e, StackTrace s) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.reapplyChromeInsetsAfterFirstLoad', e, s);
+    }));
+  }
+
+  /// TODO-975：预留高发生变化（开/关顶部进度、挤压↔悬浮切换）后，先下发新 chrome
+  /// insets，再走样式重锚编排保住连续模式滚动位置。复用 [_reanchorForStyleChange]
+  /// 的两阶段 begin→commit + `_reanchorPending` 串行旗（传当前样式 JSON，begin 重设
+  /// CSS 是幂等的），避免裸改 inset 引发的 reflow 把 window.scrollY 归零弹回章首。
+  /// 分页模式 JS 侧整体 no-op，连续模式才真重锚（与现有重锚路径门控一致）。
+  Future<void> _applyChromeInsetsAndReanchor() async {
+    await _applyChromeInsets();
+    if (!mounted || _controller == null || _settings == null || _lyricsMode) {
+      return;
+    }
+    await _reanchorForStyleChange(_currentStyleJson());
+  }
+
+  // ── Floating chrome reveal / auto-hide (TODO-975) ─────────────────────
+  // 悬浮模式（顶部进度 / 底栏）：点击唤出 → 临时可见 + 武装定时器 → 计时到自动收起；
+  // 唤出期间再点一下立即收起（决策#4：不续命）。改 _chromeTransientVisible 不改预留高
+  // （悬浮恒 0），故纯显隐不重锚。挤压模式不调用这套（无 timer）。
+
+  void _cancelChromeAutoHide() {
+    _chromeAutoHideTimer?.cancel();
+    _chromeAutoHideTimer = null;
+  }
+
+  void _armChromeAutoHide() {
+    _cancelChromeAutoHide();
+    final int millis = ReaderHibikiSource.instance.autoHideChromeMillis;
+    _chromeAutoHideTimer = Timer(Duration(milliseconds: millis), () {
+      if (!mounted) return;
+      _rebuild(() {
+        _chromeTransientVisible = false;
+      });
+    });
+  }
+
+  /// 点击空白 / 顶部进度时调用（仅当存在任一悬浮 chrome）。可见时立即收起（决策#4），
+  /// 隐藏时唤出 + 武装自动收起。返回 true 表示本次点击被悬浮唤出/收起逻辑消费。
+  bool _handleFloatingChromeReveal() {
+    if (!_anyChromeFloating) return false;
+    if (_chromeTransientVisible) {
+      _cancelChromeAutoHide();
+      _rebuild(() {
+        _chromeTransientVisible = false;
+      });
+      return true;
+    }
+    _rebuild(() {
+      _chromeTransientVisible = true;
+    });
+    _armChromeAutoHide();
+    return true;
   }
 
   /// TODO-693: appUiScale（整体界面缩放）变化时把连续模式阅读位置重锚回原字符，避免
@@ -766,7 +842,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // _readerContentReady。否则切章时 _readerContentReady=false 会把底栏硬卸载
     // 成 SizedBox.shrink()，新章就绪后又突然挂回，造成底栏闪烁。冷启动首章
     // 渲染前 _hasEverLoaded 仍为 false，底栏照旧不显示，行为不变。
-    if (!_hasEverLoaded || !_showChrome) {
+    // TODO-975：悬浮模式额外受 _chromeTransientVisible 门控（_bottomBarShouldPaint）；
+    // 挤压模式恒随 _hasEverLoaded && _showChrome（旧行为）。
+    if (!_bottomBarShouldPaint) {
       return const SizedBox.shrink();
     }
     if (_audiobookController != null) {
@@ -1303,7 +1381,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   // ── Top Progress Bar ──────────────────────────────────────────────
 
   Widget _buildTopProgressBar() {
-    if (_lyricsMode || !_showTopProgress) {
+    // TODO-975：悬浮模式额外受 _chromeTransientVisible 门控（_topProgressShouldPaint）；
+    // 挤压模式恒随 _showTopProgress（旧行为）。
+    if (_lyricsMode || !_topProgressShouldPaint) {
       return const SizedBox.shrink();
     }
 
@@ -1331,7 +1411,11 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         alignment: readerTopProgressAlignment(position),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: _toggleChrome,
+          // TODO-975：悬浮态点进度条立即收起（决策#4，走 _handleFloatingChromeReveal
+          // 的「可见→收起」分支）；挤压态维持旧语义 _toggleChrome（切底栏）。
+          onTap: _anyChromeFloating
+              ? () => _handleFloatingChromeReveal()
+              : _toggleChrome,
           child: Text(
             '$_progressCurrentChars / $_progressTotalChars'
             '  ${(ratio * 100).toStringAsFixed(2)}%',
@@ -1421,6 +1505,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
       ),
       customColors: key == 'custom-theme' ? _customReaderThemeColors : null,
+      // TODO-977：全局音频高亮色覆盖（与主题解耦），对所有主题生效。
+      audioHighlightOverride: appModel.audioHighlightColor,
     );
   }
 

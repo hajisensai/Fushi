@@ -204,6 +204,45 @@ void main() {
       expect(wrote, isFalse);
     });
 
+    test('跨盘复制进度回调：分母=文件总数，分子从 0 单调累加到总数（TODO-959）', () async {
+      // 铺 3 个文件 + 嵌套目录（目录项不计入文件数）。
+      final Directory src = Directory(p.join(tmp.path, 'copy_src'))
+        ..createSync(recursive: true);
+      File(p.join(src.path, 'a.txt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('a');
+      File(p.join(src.path, 'sub', 'b.txt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('bb');
+      File(p.join(src.path, 'sub', 'deep', 'c.txt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('ccc');
+      final Directory dst = Directory(p.join(tmp.path, 'copy_dst'));
+
+      final List<(int, int)> reports = <(int, int)>[];
+      await const DataRootMigrator().copyTreeWithProgressForTesting(
+        src,
+        dst,
+        (int copied, int total) => reports.add((copied, total)),
+      );
+
+      // 文件全部复制过去。
+      expect(File(p.join(dst.path, 'a.txt')).existsSync(), isTrue);
+      expect(File(p.join(dst.path, 'sub', 'b.txt')).existsSync(), isTrue);
+      expect(
+          File(p.join(dst.path, 'sub', 'deep', 'c.txt')).existsSync(), isTrue);
+
+      // 至少回报一次；总数恒为 3（目录不计）。
+      expect(reports, isNotEmpty);
+      expect(reports.map((r) => r.$2).toSet(), <int>{3});
+      // 分子单调不减，最终达到总数。
+      final List<int> copied = reports.map((r) => r.$1).toList();
+      for (int i = 1; i < copied.length; i++) {
+        expect(copied[i], greaterThanOrEqualTo(copied[i - 1]));
+      }
+      expect(copied.last, equals(3));
+    });
+
     test('目标 dataRoot 已存在数据 → 抛错，旧根不动', () async {
       await seedDb();
       final String newDataRoot = p.join(tmp.path, 'occupied');

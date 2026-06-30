@@ -304,6 +304,35 @@ void main() {
           reason: 'card-root predicate retained (TODO-859)');
     });
 
+    // TODO-869 收尾：词典释义正文（.glossary-content，用户说的「词典部分」）也要受
+    // __hasChildPopup 门控——有子弹窗时点正文发 tapOutside 关后代，而非选词。否则点
+    // 父窗正文（占卡片绝大面积）子窗永远关不掉（原始用户症状）。
+    test('popup.js gates the glossary-content branch on __hasChildPopup too',
+        () {
+      final String js = read('assets/popup/popup.js');
+      // 取 .glossary-content 分支体（到下一个分支 .entry 卡片判定之前）。
+      final int start =
+          js.indexOf("if (target?.closest('.glossary-content')) {");
+      expect(start, greaterThanOrEqualTo(0),
+          reason: 'glossary-content branch present');
+      final int end = js.indexOf("if (target?.closest('.entry')", start);
+      expect(end, greaterThan(start));
+      final String branch = js.substring(start, end);
+
+      // 有子弹窗时该分支发 tapOutside（关后代），而非只走 selectText。
+      final RegExp gated = RegExp(
+        r'if \(window\.__hasChildPopup\)[\s\S]{0,160}?'
+        r"callHandler\('tapOutside'\)",
+      );
+      expect(gated.hasMatch(branch), isTrue,
+          reason:
+              'glossary-content tap must fire tapOutside when __hasChildPopup '
+              '(parent text closes the child popup)');
+      // 叶子层仍选词：selectText 仍在分支内（在门控之后作为 falsy 路径）。
+      expect(branch, contains('window.hoshiSelection?.selectText('),
+          reason: 'leaf layer still selects a word (TODO-859 not regressed)');
+    });
+
     test('webview compares hasChildPopup and result as two independent ifs',
         () {
       final String web =

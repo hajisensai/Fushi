@@ -22,6 +22,20 @@ class PopupDictFlutterActivity : FlutterActivity() {
          */
         const val EXTRA_CHAR_INDEX: String = "charIndex"
 
+        /**
+         * Intent extras carrying the tapped glyph's on-screen rectangle (physical
+         * px) from the floating lyric/subtitle strip (TODO-872). Defined here, the
+         * single owner of the popup intent contract, so FloatingLyricService and
+         * this activity cannot drift on a magic string. Their absence means "no
+         * anchor" → the Dart popup keeps its default top-center placement, which
+         * is exactly what every non-floating entry (system PROCESS_TEXT /
+         * hibiki://lookup) wants.
+         */
+        const val EXTRA_ANCHOR_LEFT: String = "anchorLeft"
+        const val EXTRA_ANCHOR_TOP: String = "anchorTop"
+        const val EXTRA_ANCHOR_RIGHT: String = "anchorRight"
+        const val EXTRA_ANCHOR_BOTTOM: String = "anchorBottom"
+
         @Volatile
         private var webViewDataDirConfigured = false
 
@@ -58,14 +72,15 @@ class PopupDictFlutterActivity : FlutterActivity() {
         // getInitialProcessText.
         val text: String = extractProcessText(intent).orEmpty()
         val charIndex: Int = extractCharIndex(intent)
-        PopupEngineHolder.setPendingText(text, charIndex)
+        val anchor: IntArray? = extractAnchorRect(intent)
+        PopupEngineHolder.setPendingText(text, charIndex, anchor)
         engineWasCold = PopupEngineHolder.ensureEngine(this)
         PopupEngineHolder.setOnFinish { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
-            PopupEngineHolder.pushProcessText(text, charIndex)
+            PopupEngineHolder.pushProcessText(text, charIndex, anchor)
         }
     }
 
@@ -81,6 +96,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         PopupEngineHolder.pushProcessText(
             extractProcessText(intent).orEmpty(),
             extractCharIndex(intent),
+            extractAnchorRect(intent),
         )
     }
 
@@ -111,5 +127,29 @@ class PopupDictFlutterActivity : FlutterActivity() {
      */
     private fun extractCharIndex(intent: Intent?): Int {
         return intent?.getIntExtra(EXTRA_CHAR_INDEX, -1) ?: -1
+    }
+
+    /**
+     * Tapped-glyph anchor rectangle (physical px: left, top, right, bottom) from
+     * the floating lyric/subtitle strip (TODO-872), or {@code null} when the
+     * intent carries no anchor (system PROCESS_TEXT / hibiki://lookup) — letting
+     * the Dart popup keep its default top-center placement. All four extras must
+     * be present; a partial set is treated as no anchor.
+     */
+    private fun extractAnchorRect(intent: Intent?): IntArray? {
+        if (intent == null) return null
+        if (!intent.hasExtra(EXTRA_ANCHOR_LEFT) ||
+            !intent.hasExtra(EXTRA_ANCHOR_TOP) ||
+            !intent.hasExtra(EXTRA_ANCHOR_RIGHT) ||
+            !intent.hasExtra(EXTRA_ANCHOR_BOTTOM)
+        ) {
+            return null
+        }
+        return intArrayOf(
+            intent.getIntExtra(EXTRA_ANCHOR_LEFT, 0),
+            intent.getIntExtra(EXTRA_ANCHOR_TOP, 0),
+            intent.getIntExtra(EXTRA_ANCHOR_RIGHT, 0),
+            intent.getIntExtra(EXTRA_ANCHOR_BOTTOM, 0),
+        )
     }
 }

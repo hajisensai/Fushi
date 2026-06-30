@@ -1,0 +1,13 @@
+## BUG-462 · 收藏的单词不在收藏列表显示
+- **报告**：2026-06-30（用户：「收藏里面没有收藏的单词啊」，TODO-983）
+- **真实性**：✅ 真 bug。写库正常、读/显示缺失。
+  - 写入端完好：查词弹窗 ☆ → `popup.js favoriteEntry` → webview handler（`dictionary_popup_webview.dart`）→ layer → mixin `dictionary_page_mixin.dart:264 onFavoriteEntry` / `base_source_page.dart onFavoriteFromPopup` → `HibikiDatabase.addFavoriteWord`（`packages/hibiki_core/lib/src/database/database.dart:1911`）。BUG-444 已复活弹窗 ☆ 按钮，写库链通。
+  - 读/显示端缺口（根因）：收藏列表 `CollectionsPage._load`（`hibiki/lib/src/pages/implementations/collections_page.dart:174`）只读 `getAllBookmarks` / `FavoriteSentenceRepository.getAll` / `getAllMinedSentences` 三类，**从不读 `getAllFavoriteWords()`**；`enum _CollectionType`（`:21`）也没有 `word` 项。`getAllFavoriteWords` 在此前仅被导出管线（`_exportAllWords`）调用。→ 收藏词写进 `FavoriteWords` 表却没有任何列表展示路径 → 用户「收藏里没有收藏的单词」。
+- **[x] ① 已修复** — commit `f8b0e7a0d`
+  - `collections_page.dart`：`_CollectionType` 加 `word`；`_CollectionItem` 加 `wordReading` / `wordSourceType`（删除按 `(expression, reading, sourceType)` 复合唯一键匹配，故读音/来源都留存，text 复用为 expression、chapterLabel 复用为 glossary）。
+  - `_load` 读 `db.getAllFavoriteWords()` 与其它三类同结构落 `_CollectionItem`（无 bookKey，不可跳转——收藏词不携带原文定位）。
+  - `_buildItem` 加 word 分支：图标 `star_outline`、类型标签 `t.collection_word`（新增 i18n key「单词」/「Word」，经 `i18n_sync.dart --add` 同步 17 语言）、标题=词形、副标题=读音 · 释义。
+  - `_deleteItem` 加 word 分支：调 `db.removeFavoriteWord(expression, reading, sourceType)`（与 `addFavoriteWord` uniqueKeys 对齐）。
+- **[x] ② 已加自动化测试** — commit `f8b0e7a0d`
+  - widget：`hibiki/test/pages/favorite_words_in_collections_test.dart`——真内存 DB `addFavoriteWord` 后 pump `CollectionsPage`，断言词形 + 读音 + 释义 + 「单词」类型标签真渲染；空集显示占位；写→读契约（`getAllFavoriteWords` 读回 sourceType=video）。
+- **备注**：与 BUG-444（收藏词导出为空，已修导出管线）同子系统但不同缺口——444 修的是「导出看不到」，460 修的是「列表看不到」。收藏词不可跳转原文（DB 无 locator），与收藏句/书签/制卡句的跳转能力不同，这是数据模型决定的，非缺陷。

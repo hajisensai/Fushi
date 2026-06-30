@@ -1,0 +1,14 @@
+## BUG-460 · 有声书片段导出 ffmpeg exit -22（捆绑 ffmpeg 缺 mov/m4a muxer）
+- **报告**：2026-06-30（用户：导出片段失败，日志 ffmpeg exit -22）
+- **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart:920`（片段管线把句子音频写成 `$base.m4a`）+ ffmpeg-min build 契约缺口（`tool/ffmpeg-min/build-ffmpeg-min.sh:40` 的 MUXERS 白名单无 mov/m4a）。
+- **根因**：桌面捆绑的精简 ffmpeg 用 `--disable-everything` 构建，muxer 白名单只有 `adts,gif,image2,mjpeg,srt,ass,webvtt`，**没有 ipod/mov/mp4/m4a muxer**。
+  - M2 裁音频写 `$base.m4a` → ffmpeg 按 `.m4a` 扩展名自动选不存在的 ipod/mov muxer → `Unable to choose an output format ... Invalid argument` → exit -22（EINVAL）。这是用户日志里崩在 `extractAudioSegmentViaFfmpeg`(desktop_audio_clipper.dart:773) 的真因。
+  - M4 合成视频写 `$base.mov`（mjpeg 视频 + aac 音频）→ adts/gif/image2/mjpeg 都是单流容器，没有任何能同时装视频+音频的容器 → 即使 M2 修了，M4 也会同样 -22。TODO-945 的 .mov 视频合成从一开始就违反了 ffmpeg-min build 契约（spec 表里只有单流输出，无视频+音频容器行）。
+  - 本机复现（用户安装目录 ffmpeg + 真实 mp4）：`.m4a` 路径 → "Unable to choose an output format ... Invalid argument" exit 127/EINVAL；`.aac` 路径 → exit 0 产出 17KB 有效 AAC。mjpeg+aac→.mov 命令在带 mov muxer 的 ffmpeg 上 exit 0 产出 403KB .mov（证明设计在补上 mov 后可用）。
+- **[x] ① 根因修复** — 提交 dd8c67ac6。
+  - `audiobook.part.dart:920` 音频输出 `$base.m4a` → `$base.aac`（adts 容器，ffmpeg-min spec 契约里句子音频的指定格式，当前捆绑二进制即可用）。
+  - `tool/ffmpeg-min/build-ffmpeg-min.sh:40` MUXERS 白名单加入 `mov`（LGPL、体积小；AAC 入 mov 自动经已编入的 `aac_adtstoasc` bsf），使设计中的 .mov 视频合成在 ffmpeg-min 重编后可用。
+  - 修正 `audiobook_clip_export.dart` 里「.mov 零额外打包」的错误注释，更新 `docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md` 能力表 + 调优清单，固化契约。
+  - 注：.mov 视频合成路径依赖 ffmpeg-min 重编后的产物随桌面发布更新；旧二进制下音频已先恢复（崩溃点在音频阶段）。
+- **[x] ② 自动化测试** — `hibiki/test/build/ffmpeg_min_clip_muxer_guard_test.dart`（提交 dd8c67ac6）。源码扫描守卫：① build 白名单含 mov + adts muxer ② build 含 aac_adtstoasc bsf ③ 片段管线只写 `.aac`、绝不写 `.m4a`/`.mp4`。
+- **备注**：TODO-981。本机 ffmpeg 复现/验证已完成；真机 app 端复测由后续验证代理执行。

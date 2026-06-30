@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+import 'temp_dir_cleanup.dart';
 
 Future<Directory> _tempDir(String prefix) =>
     Directory.systemTemp.createTemp(prefix);
@@ -48,19 +49,19 @@ EpubBooksCompanion _book(String key) => EpubBooksCompanion.insert(
 void main() {
   test('union: device keeps its books, backup adds the missing ones', () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.insertEpubBook(_book('local-only'));
     await cur.insertEpubBook(_book('shared'));
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     await src.insertEpubBook(_book('shared'));
     await src.insertEpubBook(_book('backup-only'));
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -88,7 +89,7 @@ void main() {
   test('reading statistics: same {title,dateKey} take MAX, never SUM',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'A',
@@ -100,7 +101,7 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'A',
@@ -110,7 +111,7 @@ void main() {
       lastStatisticModified: 20,
     ));
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -132,7 +133,7 @@ void main() {
   test('reading statistics: many titles under one dateKey are NOT folded',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'BookA',
@@ -144,7 +145,7 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     // Two DIFFERENT titles, SAME dateKey.
     await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
@@ -162,7 +163,7 @@ void main() {
       lastStatisticModified: 3,
     ));
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -183,19 +184,19 @@ void main() {
   test('mining statistics MAX-union (not double-counted on re-import)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.setMiningCount(
         sourceType: 'book', dateKey: '2026-03-03', count: 5);
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     await src.setMiningCount(
         sourceType: 'book', dateKey: '2026-03-03', count: 3);
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -214,7 +215,7 @@ void main() {
 
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.addFavoriteWord(
       expression: '表現',
@@ -226,7 +227,7 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     await src.addFavoriteWord(
       expression: '表現',
@@ -243,7 +244,7 @@ void main() {
       dateKey: '2026-01-01',
     );
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -262,7 +263,7 @@ void main() {
   test('tagId is remapped across DBs (no dangling FK on book tag mappings)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     // Device already has SOME tags so its autoincrement ids differ from src.
     await cur.createTag('existing-a', 0xFF111111);
@@ -271,13 +272,13 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     final int srcTagId = await src.createTag('shared-tag', 0xFF333333);
     await src.insertEpubBook(_book('book1'));
     await src.addTagToBook('book1', srcTagId);
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -311,7 +312,7 @@ void main() {
   test('profileId is remapped across DBs (no dangling FK on child tables)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     // Device already has a profile so its ids diverge from src.
     await cur.insertProfile(
@@ -320,7 +321,7 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     final int srcProfileId = await src.insertProfile(
         ProfilesCompanion.insert(name: 'Reading', createdAt: 2, updatedAt: 2));
@@ -333,7 +334,7 @@ void main() {
     await src.insertEpubBook(_book('pbook'));
     await src.setBookProfile('pbook', srcProfileId);
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -380,7 +381,7 @@ void main() {
   test('mined sentences dedupe by fingerprint (no INSERT OR IGNORE reliance)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.addMinedSentence(
       source: 'book',
@@ -394,7 +395,7 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     // Same fingerprint (duplicate) — must be dropped.
     await src.into(src.minedSentences).insert(MinedSentencesCompanion.insert(
@@ -412,7 +413,7 @@ void main() {
       reading: 'べつ',
     );
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -429,7 +430,7 @@ void main() {
   test('reader position LWW: newer updatedAt wins, older does not clobber',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.insertEpubBook(_book('lwwbook'));
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
@@ -441,7 +442,7 @@ void main() {
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     await src.insertEpubBook(_book('lwwbook'));
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
@@ -451,7 +452,7 @@ void main() {
       updatedAt: 200, // newer → wins
     ));
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -467,7 +468,7 @@ void main() {
 
     // Now re-merge a backup whose updatedAt is OLDER — must not clobber.
     final src2Dir = await _tempDir('mg_src2_');
-    addTearDown(() => src2Dir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(src2Dir));
     final src2 = HibikiDatabase(src2Dir.path);
     await src2.insertEpubBook(_book('lwwbook'));
     await src2.upsertReaderPosition(ReaderPositionsCompanion.insert(
@@ -488,26 +489,26 @@ void main() {
   test('content tree restore is copy-if-absent (never overwrites existing)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.close();
 
     // This device's books tree: one existing file with LOCAL content.
     final booksRoot = await _tempDir('mg_books_');
-    addTearDown(() => booksRoot.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(booksRoot));
     final existing = File(p.join(booksRoot.path, 'shared.txt'));
     await existing.writeAsString('LOCAL');
 
     // Backup carries the SAME relative file (different content) + a NEW file.
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     final srcBooks = await _tempDir('mg_srcbooks_');
-    addTearDown(() => srcBooks.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcBooks));
     await File(p.join(srcBooks.path, 'shared.txt')).writeAsString('BACKUP');
     await File(p.join(srcBooks.path, 'new.txt')).writeAsString('NEW');
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await BackupService(
       db: src,
@@ -531,13 +532,13 @@ void main() {
   test('bookmark for a book the backup omitted is skipped (no FK violation)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.insertEpubBook(_book('owned'));
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     // Bookmark whose owning book is NOT in the backup (and not on device).
     await src.insertEpubBook(_book('owned'));
@@ -558,7 +559,7 @@ void main() {
     );
     await src.customStatement('PRAGMA foreign_keys = ON');
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();
@@ -587,7 +588,7 @@ void main() {
   test('crash mid-merge rolls back: device DB unchanged, bak retained',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.insertEpubBook(_book('survivor'));
     await cur.close();
@@ -596,11 +597,11 @@ void main() {
     // migrate throws. The orchestrator must surface the error WITHOUT touching
     // the live DB (snapshot/mutation happen only after a successful migrate).
     final corruptDir = await _tempDir('mg_corrupt_');
-    addTearDown(() => corruptDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(corruptDir));
     final corruptDb = File(p.join(corruptDir.path, 'hibiki.db'));
     await corruptDb.writeAsBytes(List<int>.filled(64, 0x7a)); // garbage
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'corrupt.zip');
     await _zipDbWithMeta(corruptDb.path, zip);
 
@@ -620,7 +621,7 @@ void main() {
   test('engine-level transaction rolls back a partial merge on failure',
       () async {
     final tDir = await _tempDir('mg_eng_');
-    addTearDown(() => tDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(tDir));
     final target = HibikiDatabase(tDir.path);
     addTearDown(target.close);
     await target.insertEpubBook(_book('orig'));
@@ -628,7 +629,7 @@ void main() {
     // Build a src DB, then ATTACH it and abort the transaction mid-way: insert
     // a book that succeeds, then force a failure, and assert nothing committed.
     final sDir = await _tempDir('mg_engsrc_');
-    addTearDown(() => sDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(sDir));
     final srcDb = HibikiDatabase(sDir.path);
     await srcDb.insertEpubBook(_book('from-src'));
     await srcDb.close();
@@ -659,17 +660,17 @@ void main() {
   test('overwrite import path is unchanged (whole DB replaced, no merge)',
       () async {
     final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => curDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
     await cur.insertEpubBook(_book('device-book'));
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => srcDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(srcDir));
     final src = HibikiDatabase(srcDir.path);
     await src.insertEpubBook(_book('backup-book'));
     final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => zipDir.delete(recursive: true));
+    addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
     await src.close();

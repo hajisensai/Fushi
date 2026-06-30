@@ -33,11 +33,13 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
+import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
@@ -124,6 +126,28 @@ void main([List<String> args = const <String>[]]) {
       // event-source cut + fast exit runs in
       // [_HoshiReaderAppState.onWindowClose] (TODO-086).
       await windowManager.setPreventClose(true);
+      // TODO-959: 数据迁移成功后的自动重启会以 detached 模式拉新进程并带上重启标志。
+      // 新进程的 Windows runner 见到标志会**隐藏建窗**（不带 WS_VISIBLE，见
+      // win32_window.cpp 的 restarted_hidden 分支），把「旧进程 exit(0) → 新进程
+      // Flutter 首帧」这段交接期挡在屏幕之外，避免空白/黑色错误窗。此处在首帧前
+      // （runApp 之前）主动 show()+focus() 把已建好的隐藏主窗口顶到前台并显示出来。
+      // 铁律：隐藏建窗的进程**必须**在这里成功显示，否则窗口永久不可见。因此 show()
+      // 即使抛错也要在 catch 里再兜底强制 show 一次，绝不让任何路径停在不可见状态。
+      if (args.contains(DesktopLifecycleService.restartMarkerArg)) {
+        try {
+          await windowManager.show();
+          await windowManager.focus();
+        } catch (e) {
+          debugPrint('[Hibiki] restart window focus skipped: $e');
+          // 兜底：上面的 focus() 抢前台失败不致命，但隐藏建窗的窗口若未 show 就会
+          // 永久不可见。再尝试一次纯 show()，仍失败也只能记录（极端环境）。
+          try {
+            await windowManager.show();
+          } catch (e2) {
+            debugPrint('[Hibiki] restart window show fallback failed: $e2');
+          }
+        }
+      }
       await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
       // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
       // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
@@ -834,7 +858,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -891,7 +915,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -948,7 +972,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -1012,6 +1036,30 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         ),
       );
     }
+    // TODO-959: 桌面「数据存储位置」整目录迁移期间，迁移引擎会 closeDatabase()（置
+    // isInitialised=false）以释放 Windows 文件锁。若直接落到下面的裸 loading 分支，背景
+    // _savedSplashColor 可能为 null/深色 → 近黑 + 转圈，搬大库数秒~数分钟被误判死机。
+    // 这里在 loading 分支之前拦截：改显一个带「请勿关闭」文案 + 进度条的迁移遮罩（明确
+    // 主题色背景），并保证「遮罩已上屏 → closeDatabase → 搬文件」的顺序（见
+    // _DataRootWidget._changeLocation 先调 beginDataRootMigration 再 migrate）。
+    if (appModel.dataRootMigrationActive) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          home: DataRootMigrationView(
+            progress: appModel.dataRootMigrationProgress,
+            background: _savedSplashColor,
+          ),
+        ),
+      );
+    }
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
@@ -1024,7 +1072,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           debugShowCheckedModeBanner: false,
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
-            backgroundColor: _savedSplashColor,
+            backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
               child: CircularProgressIndicator(color: cs.primary),
             ),
@@ -1044,85 +1092,101 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       });
     }
 
-    return TranslationProvider(
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        navigatorKey: appModel.navigatorKey,
-        // Resets the focus highlight to touch on every route push/pop so a ring
-        // lit by keyboard/gamepad navigation on one page is not carried onto the
-        // freshly-entered page (BUG-398).
-        navigatorObservers: <NavigatorObserver>[
-          appModel.focusHighlightObserver
-        ],
-        home: home,
-        locale: locale,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        supportedLocales: appModel.locales.values,
-        themeMode: themeMode,
-        theme: appModel.theme,
-        darkTheme: appModel.darkTheme,
-        // This is responsible for the initialising the global spacing across
-        // the entire project, making use of the [spaces] package.
-        builder: (context, child) {
-          _scheduleWindowsUpdateHandoffReconcile();
-          final cs = Theme.of(context).colorScheme;
-          // Keep the native Windows title bar in sync with the live app theme
-          // (surface background + onSurface text). No-op on other platforms.
-          // The channel de-dupes identical values so this is cheap per rebuild.
-          WindowCaptionChannel.setCaptionColors(
-            caption: cs.surface,
-            text: cs.onSurface,
-          );
-          // Drive the status/navigation bar icon brightness from the *live*
-          // theme so switching themes repaints the system bars. The builder
-          // reruns on every theme change, so the AnnotatedRegion re-emits the
-          // matching overlay style.
-          return AnnotatedRegion<SystemUiOverlayStyle>(
-            value: hibikiSystemOverlayStyle(cs.brightness),
-            child: CupertinoTheme(
-              data:
-                  hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final Size viewport = constraints.hasBoundedWidth &&
-                          constraints.hasBoundedHeight
-                      ? constraints.biggest
-                      : MediaQuery.sizeOf(context);
-                  final double uiScale = appModel.resolveAppUiScaleForViewport(
-                    viewport: viewport,
-                    platform: Theme.of(context).platform,
-                  );
-                  return HibikiAppUiScale(
-                    scale: uiScale,
-                    child: _wrapFocusNavigation(
-                      enabled: appModel.experimentalFocusNavigationEnabled,
-                      child: wrapWithGlobalNavigation(
-                        navigatorKey: appModel.navigatorKey,
-                        focusNavigationEnabled:
-                            appModel.experimentalFocusNavigationEnabled,
-                        registry: appModel.shortcutRegistry,
+    // TODO-960: live UI-language switch on desktop. [setAppLocale] no longer
+    // restarts the process there (it raced the Windows single-instance mutex
+    // and killed the app); it mutates [LocaleSettings] + notifyListeners
+    // instead. Most of the UI reads the global Method A `t`, which does NOT
+    // rebuild on a [LocaleSettings] change on its own, so this locale-keyed
+    // [KeyedSubtree] remounts the whole app subtree whenever the display
+    // language changes, forcing every widget (incl. global-`t` readers) to
+    // re-resolve its strings. (The generated [TranslationProvider] takes no
+    // `key`, so the key lives on the enclosing [KeyedSubtree].) The remount
+    // returns to [home]; this is acceptable (a real restart also dropped the
+    // navigation stack) and only fires on an explicit language change, not on
+    // ordinary [notifyListeners] ticks.
+    return KeyedSubtree(
+      key: ValueKey<String>('app-locale-${locale.toLanguageTag()}'),
+      child: TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          navigatorKey: appModel.navigatorKey,
+          // Resets the focus highlight to touch on every route push/pop so a ring
+          // lit by keyboard/gamepad navigation on one page is not carried onto the
+          // freshly-entered page (BUG-398).
+          navigatorObservers: <NavigatorObserver>[
+            appModel.focusHighlightObserver
+          ],
+          home: home,
+          locale: locale,
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: appModel.locales.values,
+          themeMode: themeMode,
+          theme: appModel.theme,
+          darkTheme: appModel.darkTheme,
+          // This is responsible for the initialising the global spacing across
+          // the entire project, making use of the [spaces] package.
+          builder: (context, child) {
+            _scheduleWindowsUpdateHandoffReconcile();
+            final cs = Theme.of(context).colorScheme;
+            // Keep the native Windows title bar in sync with the live app theme
+            // (surface background + onSurface text). No-op on other platforms.
+            // The channel de-dupes identical values so this is cheap per rebuild.
+            WindowCaptionChannel.setCaptionColors(
+              caption: cs.surface,
+              text: cs.onSurface,
+            );
+            // Drive the status/navigation bar icon brightness from the *live*
+            // theme so switching themes repaints the system bars. The builder
+            // reruns on every theme change, so the AnnotatedRegion re-emits the
+            // matching overlay style.
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: hibikiSystemOverlayStyle(cs.brightness),
+              child: CupertinoTheme(
+                data: hibikiCupertinoTheme(cs,
+                    fontFamily: appModel.appFontFamily),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Size viewport = constraints.hasBoundedWidth &&
+                            constraints.hasBoundedHeight
+                        ? constraints.biggest
+                        : MediaQuery.sizeOf(context);
+                    final double uiScale =
+                        appModel.resolveAppUiScaleForViewport(
+                      viewport: viewport,
+                      platform: Theme.of(context).platform,
+                    );
+                    return HibikiAppUiScale(
+                      scale: uiScale,
+                      child: _wrapFocusNavigation(
+                        enabled: appModel.experimentalFocusNavigationEnabled,
+                        child: wrapWithGlobalNavigation(
+                          navigatorKey: appModel.navigatorKey,
+                          focusNavigationEnabled:
+                              appModel.experimentalFocusNavigationEnabled,
+                          registry: appModel.shortcutRegistry,
 
-                        // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
-                        // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
-                        // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                        child: Stack(
-                          children: <Widget>[
-                            child!,
-                            const FloatingLyricLookupHost(),
-                          ],
+                          // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
+                          // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
+                          // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                          child: Stack(
+                            children: <Widget>[
+                              child!,
+                              const FloatingLyricLookupHost(),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

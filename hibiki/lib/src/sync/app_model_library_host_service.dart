@@ -497,6 +497,15 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     return out;
   }
 
+  /// 廉价判断 host 库是否存在 bookKey 为 [bookKey] 的有声书（BUG-471a）：仅一次
+  /// `Audiobooks` 行查询，不触发 [exportAudiobook] 的整包打包 zip I/O。与
+  /// [putAudiobookPosition] 自身用的存在性闸门同一查询。
+  @override
+  Future<bool> audiobookExists(String bookKey) async {
+    _assertSafeName(bookKey);
+    return await _db.getAudiobookByBookKey(bookKey) != null;
+  }
+
   /// 把有声书包文件导入 host（解包写 DB + 音频文件）。
   /// 需要在构造器传入 [audioDatabaseRoot]；为 null 时抛 [UnsupportedError]。
   @override
@@ -554,6 +563,59 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         }
       }
     });
+  }
+
+  /// 读 host 端有声书 [bookKey] 的播放断点（BUG-471）。真相源是
+  /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（host 本机播放
+  /// 与远端 resume 路径统一写此键空间，见 [AudiobookRepository.updatePositionMs]）。
+  ///
+  /// 向后兼容：旧数据只写位置不写时间戳，缺时间戳时记 0，被任何带时间戳的对端进度
+  /// 在 [resolveAudiobookPositionSync] 中盖过——既能读出旧本机播放位置，又不让无时间戳
+  /// 旧值盖过更新的对端进度。
+  @override
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  ) async {
+    final int pos =
+        await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0);
+    final int at =
+        await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0);
+    return (positionMs: pos, updatedAtMs: at);
+  }
+
+  /// 把 client 上报的有声书 [bookKey] 断点写入 host（BUG-471）。
+  ///
+  /// 存在性闸门：host 无该 bookKey 的 Audiobooks 行 → no-op，不写孤儿
+  /// `audiobook_pos_` pref（与视频 [putVideoPosition]「视频不存在不写脏」、书
+  /// [putBookProgress]「书不存在不写孤儿行」同语义）。
+  ///
+  /// 冲突解决「取较新时间戳」（[resolveAudiobookPositionSync]）：仅当 [updatedAtMs]
+  /// 严格新于 host 已存时间戳才覆盖。负位置 clamp 0。
+  @override
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    // host 库不存在该有声书 → no-op（防任意 client 上报任意 bookKey 写脏 prefs）。
+    if (await _db.getAudiobookByBookKey(bookKey) == null) return;
+    final ({int positionMs, int updatedAtMs}) current =
+        await getAudiobookPosition(bookKey);
+    final ({int positionMs, int updatedAtMs}) winner =
+        resolveAudiobookPositionSync(
+      localPositionMs: current.positionMs,
+      localUpdatedAtMs: current.updatedAtMs,
+      remotePositionMs: positionMs < 0 ? 0 : positionMs,
+      remoteUpdatedAtMs: updatedAtMs,
+    );
+    if (winner.updatedAtMs == current.updatedAtMs &&
+        winner.positionMs == current.positionMs) {
+      return; // host 已存更新或相等，no-op。
+    }
+    await _db.setPrefTyped<int>(
+        audiobookPositionPrefKey(bookKey), winner.positionMs);
+    await _db.setPrefTyped<int>(
+        audiobookPositionAtPrefKey(bookKey), winner.updatedAtMs);
   }
 
   // ── 视频（P4-1，只读）────────────────────────────────────────────────────────

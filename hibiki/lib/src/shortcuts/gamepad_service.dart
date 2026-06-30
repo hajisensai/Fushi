@@ -389,6 +389,13 @@ class GamepadService {
     }
   }
 
+  /// TODO-973: the last inferred presence value (true while a controller is
+  /// considered active). Lets the owner recompute derived state — e.g. the global
+  /// [AppModel.gamepadImmersiveActive] — when the [gamepadAutoImmersive]
+  /// preference is toggled MID-presence, since the presence callback itself only
+  /// fires on rising/falling edges, not on every preference change.
+  bool get gamepadPresent => _gamepadPresent;
+
   /// TODO-728 test hook: simulates one controller event (the same call the
   /// poller makes via [_PluginGamepadPoller.onActivity]) so the rising-edge
   /// presence fire + idle-timeout falling edge can be unit-tested with fakeAsync,

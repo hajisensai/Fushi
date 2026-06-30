@@ -288,6 +288,7 @@ class SyncOrchestrator {
     if (isInterconnect) {
       await _syncBookProgressLive(report, b);
       await _syncVideoProgressLive(report, b);
+      await _syncAudiobookProgressLive(report, b);
     }
 
     return report;
@@ -622,6 +623,98 @@ class SyncOrchestrator {
     }
   }
 
+  /// 互联有声书播放进度 live 双向同步（BUG-471）。
+  ///
+  /// 与视频 [_syncVideoProgressLive] 完全对称。client 听的远端有声书进度落
+  /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（见
+  /// [AudiobookRepository.updatePositionMs]），但互联角色非对称：host 只跑 server，
+  /// 从不回灌自己的 `audiobook_pos_` pref，故「立即同步」点了进度不过去（云后端经
+  /// SyncManager 双向文件箱正常，互联缺这一段）。
+  ///
+  /// 同步基底 = 「本地有 `audiobook_pos_<key>` prefs 的 bookKey」∪「本地 Audiobooks
+  /// 行的 bookKey」，只对 host 也有的 bookKey 同步（host 无该有声书时其 PUT 端点
+  /// 404 / 闸门 no-op，且 GET 无真相可拉，跳过省一次网络）。每个 bookKey 比对本地
+  /// prefs 进度与 host 进度，[resolveAudiobookPositionSync]「取较新时间戳」选胜者；
+  /// 胜者新于 host → PUT 上报；胜者不同于本地 → 写回本地 prefs。
+  ///
+  /// 逐条错误进 [report.errors] 不中断整体。
+  Future<void> _syncAudiobookProgressLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    // 同步基底：本地 Audiobooks 行 ∪ 本地有 audiobook_pos_<key> prefs 的 bookKey。
+    final Set<String> localKeys = <String>{
+      for (final AudiobookRow ab in await _db.getAllAudiobooks()) ab.bookKey,
+    };
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    for (final String key in allPrefs.keys) {
+      final String? bookKey = audiobookKeyFromPositionPrefKey(key);
+      if (bookKey != null) localKeys.add(bookKey);
+    }
+    if (localKeys.isEmpty) return;
+
+    // 有声书进度是 host-truth 模型：只对 host 也有的有声书同步。先取 host 有声书
+    // 清单，只同步两端都有的 bookKey；本地独有有声书无 host 真相，跳过。
+    final Set<String> hostKeys = <String>{
+      for (final RemoteAudiobookInfo info
+          in await backend.listRemoteAudiobooks())
+        info.bookKey,
+    };
+    if (hostKeys.isEmpty) return;
+
+    for (final String bookKey in localKeys) {
+      if (!hostKeys.contains(bookKey)) continue; // host 无此有声书：跳过。
+      try {
+        await _syncOneAudiobookProgressLive(bookKey, backend);
+      } catch (e) {
+        report.errors.add('live audiobook progress "$bookKey": $e');
+      }
+    }
+  }
+
+  /// 同步单个有声书 [bookKey] 的进度（[_syncAudiobookProgressLive] 的循环体）。
+  ///
+  /// 本地进度真相 = `audiobook_pos_<bookKey>`（位置）+ `audiobook_pos_at_<bookKey>`
+  /// （时间戳，旧数据无记 0）；与 host 进度经 [resolveAudiobookPositionSync] 取较新。
+  Future<void> _syncOneAudiobookProgressLive(
+    String bookKey,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final int localPos =
+        await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0);
+    final int localAt =
+        await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0);
+    final ({int positionMs, int updatedAtMs}) host =
+        await backend.remoteAudiobookPosition(bookKey);
+
+    final ({int positionMs, int updatedAtMs}) winner =
+        resolveAudiobookPositionSync(
+      localPositionMs: localPos,
+      localUpdatedAtMs: localAt,
+      remotePositionMs: host.positionMs,
+      remoteUpdatedAtMs: host.updatedAtMs,
+    );
+
+    // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
+    if (winner.updatedAtMs > host.updatedAtMs ||
+        (winner.updatedAtMs == host.updatedAtMs &&
+            winner.positionMs != host.positionMs)) {
+      await backend.putRemoteAudiobookPosition(
+        bookKey,
+        winner.positionMs,
+        winner.updatedAtMs,
+      );
+    }
+
+    // host→本地：胜者不同于本地时写回本地 prefs（同 resume/播放写键空间）。
+    if (winner.positionMs != localPos || winner.updatedAtMs != localAt) {
+      await _db.setPrefTyped<int>(
+          audiobookPositionPrefKey(bookKey), winner.positionMs);
+      await _db.setPrefTyped<int>(
+          audiobookPositionAtPrefKey(bookKey), winner.updatedAtMs);
+    }
+  }
+
   /// 测试入口：直接调用 [_syncBookProgressLive]。
   @visibleForTesting
   Future<void> syncBookProgressLiveForTest(
@@ -637,6 +730,14 @@ class SyncOrchestrator {
     HibikiClientSyncBackend backend,
   ) =>
       _syncVideoProgressLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncAudiobookProgressLive]。
+  @visibleForTesting
+  Future<void> syncAudiobookProgressLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncAudiobookProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncBooksContentLive]（private 方法对测试文件不可见）。
   @visibleForTesting

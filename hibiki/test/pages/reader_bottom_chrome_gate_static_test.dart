@@ -18,22 +18,38 @@ void main() {
   final String src = readReaderPageSource();
 
   test('bottom chrome visibility is gated on set-once _hasEverLoaded', () {
-    final String chrome = _functionSource(
+    // TODO-975：底栏可见门控收敛进 _bottomBarShouldPaint（挤压恒随
+    // _hasEverLoaded && _showChrome；悬浮再加 _chromeTransientVisible），_buildBottomChrome
+    // 改调它。不变式（钉死在 set-once _hasEverLoaded、不退回每切章翻转的
+    // _readerContentReady）必须在 _bottomBarShouldPaint 里成立。
+    final String shouldPaint = _functionSource(
+      src,
+      '  bool get _bottomBarShouldPaint {',
+      '  bool get _anyChromeFloating',
+    );
+    expect(
+      shouldPaint,
+      contains('if (!_hasEverLoaded || !_showChrome) return false'),
+      reason: '底栏门控必须用 set-once _hasEverLoaded（切章不翻转），不得退回每切章'
+          '翻转的 _readerContentReady → 否则切章瞬间底栏卸载再挂回即闪烁。',
+    );
+    final String buildChrome = _functionSource(
       src,
       '  Widget _buildBottomChrome()',
       '  Widget _buildAudiobookBar()',
     );
     expect(
-      chrome,
-      contains('if (!_hasEverLoaded || !_showChrome)'),
-      reason: '底栏门控必须用 set-once _hasEverLoaded（切章不翻转），不得退回每切章'
-          '翻转的 _readerContentReady → 否则切章瞬间底栏卸载再挂回即闪烁。',
+      buildChrome,
+      contains('if (!_bottomBarShouldPaint)'),
+      reason: '_buildBottomChrome 必须经收敛后的 _bottomBarShouldPaint 门控可见性。',
     );
+    // popupBottomReserve 经 _bottomChromeReserve（含 _hasEverLoaded && _showChrome
+    // 占位判据 + 悬浮归零），不得退回 _readerContentReady。
     expect(
       src,
-      contains('(_hasEverLoaded && _showChrome) ? _readerBottomReserve'),
-      reason: 'popupBottomReserve 必须与底栏同门控在 _hasEverLoaded，不得用 '
-          '_readerContentReady。',
+      contains('barOccupiesLayout: _hasEverLoaded && _showChrome'),
+      reason: 'popupBottomReserve / _bottomChromeReserve 必须与底栏同门控在 '
+          '_hasEverLoaded，不得用 _readerContentReady。',
     );
   });
 
@@ -55,13 +71,15 @@ void main() {
 
   test('_hasEverLoaded is set-once (no reset to false except its declaration)',
       () {
+    // 只数「复位赋值语句」（必带结尾 `;`），不数 prose 注释里出现的 `_hasEverLoaded
+    // = false` 字样 —— 注释描述状态不是复位点，旧正则漏算 `;` 会把注释误判成复位。
     final int resets =
-        RegExp(r'_hasEverLoaded\s*=\s*false').allMatches(src).length;
+        RegExp(r'_hasEverLoaded\s*=\s*false\s*;').allMatches(src).length;
     expect(
       resets,
       1,
       reason: '_hasEverLoaded 必须 set-once：除声明行 `bool _hasEverLoaded = false;` '
-          '外不得有任何复位点（复位会让切章底栏重新闪烁）。',
+          '外不得有任何复位语句（复位会让切章底栏重新闪烁）。',
     );
   });
 }

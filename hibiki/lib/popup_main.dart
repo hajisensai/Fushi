@@ -61,12 +61,17 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   bool _pendingWordExtraction = false;
   int _pendingCharIndex = -1;
 
+  /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（已从物理像素换算成逻辑像素）。
+  /// 为 null 即非浮动字幕入口（系统 PROCESS_TEXT / hibiki://lookup）→ 弹窗走默认 topCenter。
+  /// 随 [_searchGeneration] 一并喂给 [PopupDictionaryPage]，让同词连续点不同位置也更新锚点。
+  Rect? _anchorRect;
+
   @override
   void initState() {
     super.initState();
 
     PopupChannel.instance.init(
-      onNewProcessText: (String text, int charIndex) async {
+      onNewProcessText: (String text, int charIndex, Rect? anchor) async {
         final appModel = ref.read(appProvider);
         // TODO-855: warm-reuse hot path. Don't unconditionally re-scan the whole
         // preferences table on every external ProcessText (the v0.4.1 path was a
@@ -82,6 +87,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         final String resolved = _extractWord(appModel, text, charIndex);
         setState(() {
           _searchTerm = resolved;
+          _anchorRect = _toLogicalRect(anchor);
           if (charIndex >= 0 && !appModel.isInitialised) {
             _pendingWordExtraction = true;
             _pendingCharIndex = charIndex;
@@ -89,6 +95,24 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           _searchGeneration++;
         });
       },
+    );
+  }
+
+  /// 把原生侧的物理像素矩形换算成 Flutter 逻辑像素（÷ devicePixelRatio），与
+  /// PopupDictionaryPage 内部用的逻辑坐标系一致。anchor 为 null 直接返回 null。
+  Rect? _toLogicalRect(Rect? physical) {
+    if (physical == null) return null;
+    final double dpr =
+        WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
+            ? WidgetsBinding
+                .instance.platformDispatcher.views.first.devicePixelRatio
+            : 1.0;
+    final double ratio = dpr <= 0 ? 1.0 : dpr;
+    return Rect.fromLTRB(
+      physical.left / ratio,
+      physical.top / ratio,
+      physical.right / ratio,
+      physical.bottom / ratio,
     );
   }
 
@@ -169,6 +193,8 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         home: PopupDictionaryPage(
           searchTerm: _searchTerm,
           searchGeneration: _searchGeneration,
+          // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
+          anchorRect: _anchorRect,
         ),
       ),
     );

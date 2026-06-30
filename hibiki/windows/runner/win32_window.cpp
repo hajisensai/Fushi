@@ -61,6 +61,42 @@ bool IsTestOnscreenMode() {
   return GetEnvironmentVariableW(L"HIBIKI_TEST_ONSCREEN", nullptr, 0) > 0;
 }
 
+// TODO-959: 数据迁移成功后的自动重启（DesktopLifecycleService.restartApp）会以
+// detached 模式拉起带这个标志的新进程。必须与 main.cpp 的 kRestartMarkerArg 和
+// Dart 侧 DesktopLifecycleService.restartMarkerArg 逐字符一致。见到它说明本次启动
+// 是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
+constexpr const wchar_t kRestartMarkerArg[] = L"--hibiki-restarted";
+
+// TODO-959: splash 背景画刷色。旧进程 exit(0) 杀掉自己到新进程 Flutter 画出首帧
+// 之间，runner 窗口已 WS_VISIBLE 上屏但还没有任何内容；窗口类原本 hbrBackground=0
+// （无背景画刷）→ 系统不擦背景 → 这段冷启动窗口里看到黑/未定义像素（经典 Flutter
+// Windows runner 首帧黑窗）。给窗口类一个非黑的 solid brush，让 WM_ERASEBKGND 用它
+// 填充，首帧前就是这块纯色而非黑。颜色取 Dart splash 的品牌 seed 色 0xFF1F4959
+// （main.dart 的 ColorScheme.fromSeed seedColor / 加载页 _savedSplashColor 兜底同色系深青），
+// 与启动画面观感一致，深色优先（不刺眼、不闪白）。COLORREF 是 0x00BBGGRR，
+// 故 R=0x1F G=0x49 B=0x59。
+constexpr COLORREF kSplashBackgroundColor = RGB(0x1F, 0x49, 0x59);
+
+// TODO-959: 本进程 argv 是否带 [kRestartMarkerArg]（迁移后自动重启拉起的新进程）。
+// 与 main.cpp 的 HasRestartMarker 同义，在 runner 窗口层独立判定，避免给
+// CreateAndShow 增加参数破坏其它平台/调用方的签名（向后兼容）。
+bool IsRestartedProcess() {
+  int argc = 0;
+  wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  if (argv == nullptr) {
+    return false;
+  }
+  bool found = false;
+  for (int i = 1; i < argc; ++i) {
+    if (argv[i] != nullptr && ::wcscmp(argv[i], kRestartMarkerArg) == 0) {
+      found = true;
+      break;
+    }
+  }
+  ::LocalFree(argv);
+  return found;
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -105,7 +141,11 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // TODO-959: 给窗口类一个非黑背景画刷（原为 0 = 无画刷），消除迁移重启
+    // 新进程冷启动期「窗已上屏但 Flutter 首帧未出」的黑窗。系统用它响应
+    // WM_ERASEBKGND 填充客户区。画刷由窗口类持有，生存期到 UnregisterWindowClass，
+    // RegisterClass 成功后由系统管理，无需手动 DeleteObject。
+    window_class.hbrBackground = CreateSolidBrush(kSplashBackgroundColor);
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -158,8 +198,20 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   const int window_y =
       (hidden && !onscreen) ? kOffscreenOrigin : Scale(origin.y, scale_factor);
 
+  // TODO-959 (方向 2)：迁移重启拉起的新进程先以隐藏状态建窗（不带
+  // WS_VISIBLE），等 Dart 首帧后由 main.dart 重启分支 windowManager.show()+focus()
+  // 再显示。这样旧进程 exit(0) 到新进程首帧的交接期不会出现空白/黑色
+  // 的错误窗。普通启动（无 --hibiki-restarted）仍带 WS_VISIBLE、立即上屏，
+  // 靠上面的背景画刷兜底首帧前不黑，不会永久不显窗。测试隐藏模式
+  // （hidden）不受影响：它靠 WS_VISIBLE+移出屏外保证引擎持续渲染，不能去掉
+  // WS_VISIBLE。只有「非测试 + 重启新进程」走隐藏建窗。
+  const bool restarted_hidden = !hidden && IsRestartedProcess();
+  const DWORD window_style = restarted_hidden
+                                 ? WS_OVERLAPPEDWINDOW
+                                 : (WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+
   HWND window = CreateWindowEx(
-      ex_style, window_class, title.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      ex_style, window_class, title.c_str(), window_style,
       window_x, window_y, Scale(size.width, scale_factor),
       Scale(size.height, scale_factor), nullptr, nullptr,
       GetModuleHandle(nullptr), this);

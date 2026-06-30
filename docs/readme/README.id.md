@@ -8,9 +8,22 @@
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-hibiki adalah alat belajar bahasa imersif untuk Android dan Windows yang menyatukan pembacaan EPUB, sinkronisasi buku audio, pencarian kata dari subtitel video, dan pembuatan kartu Anki sekali ketuk — sehingga setiap input secara alami menjadi kosakata yang dapat ditinjau ulang.
+[Panduan Pengguna](../user-guide.id.md) | [Unduh versi terbaru](https://github.com/hajisensai/hibiki/releases)
+
+> **Tonton apa yang ingin kamu tonton, lalu bahasanya ikut terkuasai.**
+
+hibiki mengubah novel yang kamu baca, serial yang kamu ikuti, dan buku audio yang kamu dengar menjadi input bahasamu — ketuk kata asing mana pun untuk mencarinya, lalu jadikan kartu Anki dengan konteks aslinya hanya dengan sekali ketuk. Ia tidak menyuruhmu menghafal daftar kata yang sudah ditetapkan, melainkan hanya membantumu menangkap kata yang **benar-benar kamu baca dan dengar**.
+
+Cara paling efektif untuk belajar bahasa adalah paparan dalam jumlah besar terhadap konten nyata, bukan menghafal kata-kata terisolasi dari buku kosakata. Tetapi "imersi" selalu punya dua kerepotan: mencari kata memutus alur, dan kamu lupa begitu mengalihkan pandangan. hibiki menyambungkan rantai itu:
+
+📖 **Baca**: ketuk kata di pembaca EPUB untuk mencarinya, tanpa keluar dari halaman saat ini.<br>
+🎧 **Dengar**: buku audio menyorot kalimat demi kalimat dan membalik halaman secara otomatis.<br>
+🎬 **Tonton**: cari kata dan buat kartu langsung di subtitel video — mengikuti serial *adalah* input.<br>
+🃏 **Endapkan**: kirim kata apa pun yang kamu cari, dari skenario mana pun, langsung ke Anki, dan tinjau ulang hanya kata yang benar-benar kamu temui.
+
+Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok untuk bahasa apa pun (Jepang, Inggris, …), dan terutama untuk pembelajar imersif yang meyakini **banyak input + hanya kartu buatan sendiri**. Tersedia untuk Android dan Windows (iOS dan macOS direncanakan).
 
 <table>
   <tr>
@@ -24,7 +37,17 @@ hibiki adalah alat belajar bahasa imersif untuk Android dan Windows yang menyatu
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Pencarian kata video (popup bertingkat)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Pencarian kata video (daftar subtitel)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Pencarian via seleksi teks di luar aplikasi (ponsel)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Pencarian via seleksi teks di luar aplikasi (desktop)" width="100%"></td>
+  </tr>
 </table>
+
+**Demo pembuatan kartu Anki sekali ketuk**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
+
+> Video tidak muncul? [Lihat demo pembuatan kartu sekali klik ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
 
 </div>
 
@@ -196,6 +219,6 @@ Didistribusikan di bawah GNU General Public License v3.0. Lihat [LICENSE](../../
 
 <br>
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
 </div>

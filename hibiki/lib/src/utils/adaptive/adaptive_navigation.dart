@@ -39,12 +39,30 @@ Widget _maybeBadge({required AdaptiveNavItem item, required Widget child}) {
 /// this no longer uses on Material).
 const Key hibikiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
 
+/// TODO-973: pure decision for whether the global navigation chrome (bottom bar /
+/// side rail) should be VISIBLE. The only input is whether gamepad auto-immersive
+/// is currently active (the single source of truth on
+/// [AppModel.gamepadImmersiveActive]). Kept standalone + pure so the truth table
+/// "controller driving immersion ↔ nav hidden" is unit-testable without pumping a
+/// whole HomePage. Inverse-trivial today, but a named seam keeps the gating rule
+/// in one place if more immersion sources are added later.
+bool navigationVisibleUnderGamepadImmersive(bool gamepadImmersiveActive) =>
+    !gamepadImmersiveActive;
+
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
   required ValueChanged<int> onTap,
   required List<AdaptiveNavItem> items,
+  bool gamepadImmersiveActive = false,
 }) {
+  // TODO-973: when a controller is driving auto-immersive mode, collapse the
+  // bottom bar entirely so it does not sit on top of an immersive surface. Opted-
+  // out users never reach here with `true` (AppModel gates on the preference), so
+  // default behaviour is unchanged (Never break userspace).
+  if (!navigationVisibleUnderGamepadImmersive(gamepadImmersiveActive)) {
+    return const SizedBox.shrink();
+  }
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
     // is touch-first and we don't self-draw its chrome; per-item focus is a
@@ -300,7 +318,14 @@ Widget adaptiveNavRail({
   required ValueChanged<int> onTap,
   required List<AdaptiveNavItem> items,
   Widget? leading,
+  bool gamepadImmersiveActive = false,
 }) {
+  // TODO-973: same gamepad-immersive collapse as the bottom bar — a controller
+  // driving immersion hides the side rail too, so wide-window layouts go fully
+  // immersive instead of keeping the rail beside an immersive surface.
+  if (!navigationVisibleUnderGamepadImmersive(gamepadImmersiveActive)) {
+    return const SizedBox.shrink();
+  }
   return _MaterialNavCluster(
     axis: Axis.vertical,
     currentIndex: currentIndex,

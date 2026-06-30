@@ -8,9 +8,22 @@
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-hibiki는 Android와 Windows를 위한 몰입형 어학 학습 도구입니다. EPUB 독서, 오디오북 동기화, 동영상 자막 단어 검색, 원탭 Anki 카드 생성을 하나로 통합하여, 모든 입력이 자연스럽게 복습 가능한 어휘가 되도록 합니다.
+[사용 설명서](../user-guide.ko.md) | [최신 버전 다운로드](https://github.com/hajisensai/hibiki/releases)
+
+> **보고 싶은 걸 보다 보면, 언어는 자연스럽게 따라옵니다.**
+
+hibiki는 당신이 읽는 소설, 챙겨 보는 애니, 듣는 오디오북을 그대로 언어 입력으로 바꿔 줍니다——모르는 단어를 한 번 탭하면 바로 찾아보고, 찾은 뒤에는 원문 맥락이 담긴 Anki 카드를 한 번에 만들 수 있습니다. 정해진 단어 목록을 외우게 하는 것이 아니라, 당신이 **실제로 읽고 들은** 단어만 붙잡아 줍니다.
+
+언어를 익히는 가장 효과적인 방법은 단어장으로 고립된 단어를 외우는 것이 아니라, 진짜 콘텐츠에 대량으로 노출되는 것입니다. 하지만 "몰입"에는 늘 두 가지 골칫거리가 있었습니다——모르는 단어를 찾느라 흐름이 끊기고, 찾고 나서도 금세 잊어버립니다. hibiki는 이 흐름을 하나로 이어 줍니다——
+
+📖 **읽기**: EPUB 리더에서 단어를 탭하면 현재 페이지를 벗어나지 않고 바로 찾아봅니다.<br>
+🎧 **듣기**: 오디오북이 문장마다 하이라이트하며 따라 읽고, 자동으로 페이지를 넘깁니다.<br>
+🎬 **보기**: 동영상 자막에서 바로 단어를 찾고 카드를 만들며, 애니를 보는 것 자체가 입력이 됩니다.<br>
+🃏 **정착**: 어떤 장면에서 찾은 단어든 한 번에 Anki로 보내고, 실제로 만난 단어만 복습합니다.
+
+모든 상황이 같은 사전, 통계, 복습 흐름을 공유합니다. 어떤 언어(일본어, 영어……)에도 적합하며, 특히 **대량 입력 + 직접 만든 카드만 외우기**를 신조로 하는 몰입형 학습자에게 잘 맞습니다. Android와 Windows를 지원합니다(iOS, macOS는 계획 중).
 
 <table>
   <tr>
@@ -24,7 +37,17 @@ hibiki는 Android와 Windows를 위한 몰입형 어학 학습 도구입니다. 
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="동영상 단어 검색(중첩 팝업)" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="동영상 단어 검색(자막 목록)" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="앱 외부 텍스트 선택 검색(모바일)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="앱 외부 텍스트 선택 검색(데스크톱)" width="100%"></td>
+  </tr>
 </table>
+
+**원탭 Anki 카드 생성 데모**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
+
+> 동영상이 표시되지 않나요? [원클릭 카드 제작 데모 보기 ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
 
 </div>
 
@@ -196,6 +219,6 @@ GNU General Public License v3.0에 따라 배포됩니다. 자세한 내용은 [
 
 <br>
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
 </div>

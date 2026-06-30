@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -302,10 +303,42 @@ Map<String, String> parseMpvConf(String text) {
 /// **全量 emit**（含中性默认值）：保证设置面板关掉某项时能在运行时复位回 mpv 默认，
 /// 而非残留。默认配置下所有值等于 mpv 默认 → 视觉等价于「什么都没设」。raw 最后合并、
 /// 同 key 覆盖结构化项。
-Map<String, String> buildMpvProperties(VideoMpvConfig config) {
+/// 把 [hwdec] 偏好按平台解析成「实际下发给 libmpv 的 `hwdec` 值」。纯函数。
+///
+/// **根治 realme 8 / Android 11「视频闪烁 + 无画面」（BUG-465）。** media_kit 在 Android
+/// 用的是**纹理渲染**路径——`AndroidVideoController` 强制 `vo=gpu` + `gpu-context=android`
+/// + `opengl-es=yes`（见 media_kit_video `android_video_controller/real.dart`），libmpv 把
+/// 解码帧画进 GL 纹理交给 Flutter 合成，**不存在**给硬件解码器直渲的 Android Surface /
+/// native_window。
+///
+/// 而 libmpv 的 `auto-safe`（与裸 `auto`）在 Android 上会选 **surface-直渲** 的
+/// `mediacodec` 硬解：它需要一个 `native_window` 把帧直接渲染上去。texture 路径没有这个
+/// surface → HEVC 等走 `mediacodec` 时报 `hevc_mediacodec: Both surface and native_window
+/// are NULL`，解码出不了帧 → 画面闪烁 / 全黑。
+///
+/// 与 texture/gpu 渲染**匹配**的硬解是 **copy 变体**（`mediacodec-copy`）：硬件解码后把帧
+/// **拷回内存**再上传 GL 纹理，不需要任何 surface/native_window。`auto-copy` 即「自动挑一个
+/// copy-back 硬解」，正好消除 surface-null。
+///
+/// 故 Android 上把会落到 surface-直渲的 `auto-safe` / `auto` 一律改写成 `auto-copy`；
+/// `no`（软解）与 `auto-copy`（已是 copy）原样透传。这是**对齐 media_kit 的纹理渲染模型**
+/// 的根因修复，对**所有** Android 设备一致（都走同一 texture 渲染器），不是给 realme 8
+/// 打特例；非 Android（桌面 / iOS）原样透传，零行为变化。
+///
+/// [isAndroid] 默认取 `Platform.isAndroid`，注入仅为单测。
+String resolveAndroidHwdec(String hwdec, {bool? isAndroid}) {
+  final bool android = isAndroid ?? Platform.isAndroid;
+  if (!android) return hwdec;
+  // Android 纹理渲染下，surface-直渲的 auto-safe/auto 会 surface-null，统一改 copy 变体。
+  if (hwdec == 'auto-safe' || hwdec == 'auto') return 'auto-copy';
+  return hwdec; // no（软解）/ auto-copy（已 copy）/ 其它显式值透传。
+}
+
+Map<String, String> buildMpvProperties(VideoMpvConfig config,
+    {bool? isAndroid}) {
   final Map<String, String> out = <String, String>{};
-  // 解码
-  out['hwdec'] = config.hwdec;
+  // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）。
+  out['hwdec'] = resolveAndroidHwdec(config.hwdec, isAndroid: isAndroid);
   // 画质：scale 链（on=高质量 / off=mpv 默认 bilinear，便于运行时复位）
   if (config.highQuality) {
     out['scale'] = 'ewa_lanczossharp';

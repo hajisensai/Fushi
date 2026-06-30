@@ -337,6 +337,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
         initialCharOffset: _initialCharOffset,
+        // BUG-461: 收藏句跳转的句尾锚（连续模式横排整句对齐进可见区）；非跳转/无句长 = -1。
+        initialCharOffsetEnd: _initialCharOffsetEnd,
         continuousMode: s.isContinuousMode,
         // TODO-909: select the VN shell when view-mode == 'vn'. VN is mutually
         // exclusive with continuous (it is a page-flip stage, not native
@@ -346,9 +348,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         initialFragment: _initialFragment,
         sasayakiCuesJson: sasayakiCuesJson,
         chromeTopInset: _readerTopOffset,
-        chromeBottomInset: _showChrome
-            ? _readerChromeHeight + _stableBottomInset
-            : _stableBottomInset,
+        // TODO-975：单一真相源 _readerBottomReserve（悬浮态 0 / 挤压态含底栏高 + 系统
+        // inset），取代旧 `_showChrome ? height+inset : inset` 三元式。
+        chromeBottomInset: _readerBottomReserve,
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
         blurImages: s.blurImages,
@@ -364,9 +366,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String furiganaJs = _buildFuriganaJs(s.furiganaMode);
 
     final String caretJs = ReaderCaretScripts.source();
-    final double caretBottomInset = _showChrome
-        ? _readerChromeHeight + _stableBottomInset
-        : _stableBottomInset;
+    // TODO-975：与 chromeBottomInset 同源 _readerBottomReserve（悬浮 0 / 挤压含底栏）。
+    final double caretBottomInset = _readerBottomReserve;
     final String caretInit = ReaderCaretScripts.initInvocation(
       color: _caretRingColorCss(),
       insetTop: _readerTopOffset,
@@ -628,7 +629,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
-    } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
+    } else if (absDx < $swipeDistThreshold && absDy < $swipeDistThreshold) {
+      // TODO-971: 消除「20~72px 漂移既不算 tap 也不算 swipe」的死区。旧判据
+      // `absDx<20 && absDy<20 && elapsed<500` 把稳而慢 / 略有漂移的点词手势整个丢
+      // 掉（用户报「单词难点中」）。把 tap 上界从 20px 放宽到 swipe 距离阈值
+      // （$swipeDistThreshold），并去掉 500ms 时限：在「翻页阈值」以内的非翻页手势
+      // 一律当点击查词。仍保留 swipe 阈值上界，使连续模式的整页竖向滚动拖拽（dy 远
+      // 超阈值）不会被误判成 tap 触发查词（保留原 20px 时「大拖拽不查词」的语义、
+      // 只是把可点击区从 20px 扩到 72px）。
       var tapEl = document.elementFromPoint(x, y);
       if (_hoshiRevealBlurredImage(tapEl)) {
         if (e && e.preventDefault) e.preventDefault();
@@ -1150,6 +1158,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         ),
       ]),
       initialSettings: InAppWebViewSettings(
+        // BUG-468：Windows 上右键会同时弹两个菜单——Hibiki 自定义的 Flutter 菜单
+        // （`_showReaderTextContextMenu`，经 onSecondaryTapDown）和 WebView2 原生菜单
+        // （复制/打印/更多工具）。上面 `contextMenu` 的 `hideDefaultSystemContextMenuItems`
+        // 是跨平台 ContextMenu API，在 WebView2 fork 上并不接到原生菜单开关；fork 里唯一
+        // 压制原生菜单的真值是 `disableContextMenu`→`put_AreDefaultContextMenusEnabled`
+        // （见 packages/flutter_inappwebview_windows/.../in_app_webview.cpp:231）。
+        // 故 Windows 下显式禁掉原生菜单，只留 Flutter 菜单。移动端不设（值 false），原生
+        // ContextMenu（查词+导出）仍可用，不回归。
+        disableContextMenu: isWindowsPlatform,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
@@ -1292,7 +1309,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (_) {
-            if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
+            // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
+            // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
+            // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
               _toggleChrome();
             }
             // Tap on empty space handed OS focus to the WebView; reclaim it so
@@ -1436,6 +1458,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
                 _hasEverLoaded = true;
               });
+              // BUG-467：spread 内容就绪同样补下 chrome insets（_hasEverLoaded 刚翻 true，
+              // 初始 HTML 漏了底栏预留）。
+              _reapplyChromeInsetsAfterFirstLoad();
               // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
               _settleFocusOnContentReady();
             }

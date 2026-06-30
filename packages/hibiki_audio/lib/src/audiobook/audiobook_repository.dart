@@ -71,15 +71,31 @@ class AudiobookRepository {
 
   static const String _kPositionMsKeyPrefix = 'audiobook_pos_';
 
+  /// 位置最后写入时刻（epoch 毫秒）pref 前缀。与 `audiobook_pos_<bookKey>` 配套，
+  /// 供互联（LAN）live 进度同步做「取较新时间戳」LWW（BUG-471）。云后端 SyncManager
+  /// 路径不读此键（其时间戳借用阅读进度 `lastBookmarkModified`），互不影响。
+  static const String _kPositionAtMsKeyPrefix = 'audiobook_pos_at_';
+
   Future<int> readPositionMs(String bookKey) async {
     return _db.getPrefTyped('$_kPositionMsKeyPrefix$bookKey', 0);
   }
 
+  /// 读位置最后写入时刻（epoch 毫秒）；无记录（旧数据未写过时间戳）返回 0，让任何
+  /// 带时间戳的对端进度在 LWW 中胜出（向后兼容降级，BUG-471）。
+  Future<int> readPositionUpdatedAtMs(String bookKey) async {
+    return _db.getPrefTyped('$_kPositionAtMsKeyPrefix$bookKey', 0);
+  }
+
+  /// 写位置（毫秒）并同时写入当前时刻为更新时间戳（BUG-471）。位置与时间戳是同一
+  /// 进度的两个 pref，必须一起写，否则 LWW 无依据。
   Future<void> updatePositionMs({
     required String bookKey,
     required int positionMs,
-  }) =>
-      _db.setPrefTyped('$_kPositionMsKeyPrefix$bookKey', positionMs);
+  }) async {
+    await _db.setPrefTyped('$_kPositionMsKeyPrefix$bookKey', positionMs);
+    await _db.setPrefTyped('$_kPositionAtMsKeyPrefix$bookKey',
+        DateTime.now().millisecondsSinceEpoch);
+  }
 
   // ── follow audio (preferences) ─────────────────────────────────
 

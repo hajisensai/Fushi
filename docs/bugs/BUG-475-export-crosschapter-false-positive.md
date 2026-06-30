@@ -1,0 +1,15 @@
+## BUG-475 · 选区导出误报跨章
+- **报告**：2026-06-30（用户：TODO-1009）。竖排阅读器里在**同一章内**选中一段连续文字，点「导出片段」弹 toast「该选区暂不支持导出（跨章或跨音频文件）」。用户原话：「我选中的一句话，怎么可能跨章」。
+- **真实性**：✅ 真 bug。根因：`miningSentenceAudioRange` 在同一章选区上可返回**退化区间**（`endMs <= startMs`），随后被 `classifyAudiobookClipSelection` 归类为 `unsupportedRange`，这一分支的文案写死为「跨章或跨音频文件」——于是同章同文件的合法选区被误报成跨章。
+  - `hibiki/lib/src/media/audiobook/mining_audio_clip.dart:48`（修复前：`return _shiftRange(baseRange, delayMs);`）——所有 cue 相对路径（位置匹配 / `_expandAroundCue` / `_cueRangeForNormalizedSpan` / `findPlaybackRange` 位置命中）都直接拷 cue 的 `startMs`/`endMs`；**只有** `_cueRange` 做了 `endMs = startMs+1` 下限保护。当命中的 cue 本身是零时长（`startMs == endMs`，常见于 TextToEpub + 后挂音频 / 粗粒度对齐）时，合并出的区间仍为零时长。
+  - `hibiki/lib/src/media/audiobook/audiobook_clip_export.dart:79` `range.endMs <= range.startMs` → `unsupportedRange`（归类层本身正确，错在上游产生了退化区间）。
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart:836` 弹出 `audiobook_export_clip_unsupported_range`。
+  - 与 BUG-472/TODO-1005（只补日志，明言「零长区间保留不动」）互补：BUG-472 加了诊断日志但**未**修复退化区间本身；本 bug 修复退化区间产生点。
+- **[x] ① 已修复** — 提交 `（见本分支 HEAD 提交）`
+  - `mining_audio_clip.dart`：在 `miningSentenceAudioRange` 唯一返回口新增纯函数 `_ensurePositiveDuration(range, cues)`：若 `endMs <= startMs`，把 `endMs` 延伸到**同文件**下一个 cue 的 `startMs`（隐含播放时长），无后续 cue 则 floor 到 `startMs+1`；**永不改 `audioFileIndex`**，所以真正跨文件选区仍走原有 null/跨文件路由。在 `_shiftRange` 前调用（单一 chokepoint，不散点打补丁）。
+  - 修复后，同章选区总能拿到正时长区间 → `classifyAudiobookClipSelection` 归 `exportable`，不再误报跨章；剩余的 `unsupportedRange` 只剩 `range == null`（真无 cue/无跨区间）与 `audioFileIndex` 越界（真跨文件）两类，文案对这两类是准确的，故 toast 文案保留不动（Linus：不为不再存在的 case 加分支）。
+- **[x] ② 已加自动化测试** — 提交 `（见本分支 HEAD 提交）`
+  - `hibiki/test/media/audiobook/mining_audio_clip_test.dart`：新增两条纯函数行为测试（1）零时长单 cue 修复为正时长同文件区间（1句 5000→5001）；（2）有后续同文件 cue 时延伸到其 `startMs`（5000→7000）。撤销 `_ensurePositiveDuration` 两条变红。
+  - 原有 12 条 `miningSentenceAudioRange` 测试（含 `keeps invalid fallback ranges valid` 的 `_cueRange` 下限）全绿，无回归。
+- **后续 follow-up（不在本次实现）**：用户提「导出最好用真有声书那种高亮跟随样式」——增强需求，与本 bug（误报跨章）无关，另开 TODO 跟进。
+- **备注**：本轮只验单测 + analyze；真机（TextToEpub + 后挂音频、在同章选连续句点导出）待用户验证该选区现能成功进入导出管线而非跨章拒绝。

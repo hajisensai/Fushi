@@ -398,11 +398,21 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
 }
 
 class _VideoOsdMessage {
-  const _VideoOsdMessage({required this.message, this.icon, this.progress});
+  const _VideoOsdMessage({
+    required this.message,
+    this.icon,
+    this.progress,
+    this.prominent = false,
+  });
 
   final String message;
   final IconData? icon;
   final double? progress;
+
+  /// TODO-971：突出变体（制卡成功用）。普通 OSD 沿用音量/亮度同款左上角小角标，
+  /// 太轻易被忽略；制卡成功这类用户主动操作的确认改成居中、更大字号、停留更久的
+  /// 卡片，区别于被动的音量小角标。
+  final bool prominent;
 }
 
 enum _VideoLevelHudKind { leftBrightness, rightVolume }
@@ -525,8 +535,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 移动控制条进度条触摸热区高度基线（TODO-157/BUG-218）。media_kit 默认
   /// `seekBarContainerHeight=36`，对准才滑得到；抬高扩大可命中热区。随界面缩放。
   /// 热区向上长（[_mobileControlsTheme] 把进度条整体抬到按钮条上方），不向下侵入
-  /// 系统边缘手势区。
-  static const double _videoSeekBarContainerHeightBase = 52;
+  /// 系统边缘手势区。TODO-971：原 52×缩放 的透明命中带过大，吞掉轨道上方一大片
+  /// 区域的底部点击；收窄到 40（仍高于 media_kit 默认 36，保留易命中），缩短透明
+  /// 命中带又不丢可命中性。
+  static const double _videoSeekBarContainerHeightBase = 40;
 
   /// 移动控制条进度条拖动滑块尺寸基线（TODO-157/BUG-218）。media_kit 默认 12.8；
   /// 抬高让滑块更易对准。随界面缩放。
@@ -1196,6 +1208,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // TODO-973：手柄沉浸（全局单一真相源 AppModel.gamepadImmersiveActive）也作为
+    // 控制条压制门控之一。但**不能在 initState 订阅**——读 appModel 会强制构造
+    // AppModel（错误态 smoke 用未初始化 AppModel，platformServicesProvider 未 override
+    // 会抛）。与上面 lowMemory 同范式：留到成功路径 [_seedWarmPopup]（缺书/错误态无
+    // 视频无控制条，本就无需此门控）再 attach，dispose 按 [_gamepadImmersiveListenerAttached]
+    // 守卫摘除。
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
@@ -1853,6 +1871,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 远端 / 流（videoPath==null 或 http(s) URL）天然豁免（见 video_resource_check）。
     if (await isLocalVideoResourceMissing(videoPath)) {
       debugPrint('[VideoHibikiPage] local video resource missing: $videoPath');
+      ErrorLogService.instance.log(
+        'VideoHibiki.diag',
+        '[VIDEO-DIAG] local video resource missing: $videoPath',
+      );
       if (!mounted) return;
       setState(() {
         _failed = false;
@@ -1877,6 +1899,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           )
         : const <String>[];
     controller.setOnCompleted(_handlePlaybackCompleted);
+    // TODO-984：把控制器诊断行接到错误日志服务（用户可在「错误日志」页查看 / 上传）。
+    // 现场定位 Android「闪烁 + 空白无画面」（realme 8 / Android 11）——其他 app 播同文件
+    // 正常，疑点在 hwdec / 纹理 surface / 解码出帧。诊断行带 `[VIDEO-DIAG]` 前缀便于筛选。
+    controller.onDiagLog = (String message) {
+      ErrorLogService.instance.log('VideoHibiki.diag', message);
+    };
+    ErrorLogService.instance.log(
+      'VideoHibiki.diag',
+      '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
+          'mediaUri=$mediaUri cues=${cues.length} '
+          'initialPositionMs=$initialPositionMs '
+          'externalSubtitlePath=$externalSubtitlePath '
+          'renderGraphicStreamIndex=$renderGraphicStreamIndex '
+          'fitMode=$_videoFitMode platform=${Platform.operatingSystem}',
+    );
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -1900,10 +1937,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
+      ErrorLogService.instance
+          .log('VideoHibiki.diag', '[VIDEO-DIAG] controller.load() threw: $e');
+      ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
       if (mounted) setState(() => _failed = true);
       return;
     }
+    // TODO-984：load() 正常返回（未抛）——记一行让日志能区分「load 抛异常失败」与
+    // 「load 返回了但画面仍空白」（后者疑点在解码出帧 / 纹理，看控制器 [VIDEO-DIAG] 行）。
+    ErrorLogService.instance.log(
+      'VideoHibiki.diag',
+      '[VIDEO-DIAG] controller.load() returned ok: '
+          'durationMs=${controller.durationMs} '
+          'videoWidth=${controller.videoWidth} '
+          'videoHeight=${controller.videoHeight} '
+          'videoController=${controller.videoController != null}',
+    );
     _syncVolumeDisplay(controller.volume);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
@@ -2287,6 +2337,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
+    // TODO-973：手柄沉浸 notifier 归 AppModel 所有（生命周期长于本页），必须在本页
+    // dispose 时摘掉本页注册的监听，否则页面销毁后它仍会回调 [_applyControlsVisibility
+    // FromMediaKit] 触碰下面即将 dispose 的本地 notifier。仅当成功路径真挂过才摘除
+    // （[_gamepadImmersiveListenerAttached]）——错误态从未 attach，也绝不读 appModel。
+    if (_gamepadImmersiveListenerAttached) {
+      appModel.gamepadImmersiveActive
+          .removeListener(_applyControlsVisibilityFromMediaKit);
+    }
     _subtitleListVisible.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
@@ -2515,11 +2573,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [DictionaryPopupWebView] cold-loads popup.html/JS/CSS ONCE while idle and
   /// is reused warm for every lookup — no per-lookup cold-load (white flash) in
   /// the video player. Low-memory mode keeps no warm slot (disposes on close).
+  /// 是否已把本页的可见性派生监听挂到全局 [AppModel.gamepadImmersiveActive]。
+  /// 仅成功路径（[_seedWarmPopup]）attach，dispose 据此守卫摘除——错误态从不读 appModel。
+  bool _gamepadImmersiveListenerAttached = false;
+
   void _seedWarmPopup() {
     if (!mounted) return;
     // 成功路径调用，此刻 AppModel 必已初始化 → 安全读取真实 lowMemory 设入 controller
     // （seedWarmSlot/dismissAt 据此决定是否保留热槽）。
     _popup.lowMemory = appModel.lowMemoryMode;
+    // TODO-973：手柄沉浸门控的订阅也在此成功路径挂载（此刻 appModel 必已初始化）。
+    if (!_gamepadImmersiveListenerAttached) {
+      appModel.gamepadImmersiveActive
+          .addListener(_applyControlsVisibilityFromMediaKit);
+      _gamepadImmersiveListenerAttached = true;
+    }
     setState(() => _popup.seedWarmSlot());
     _syncPopupOverlay();
   }
@@ -3755,6 +3823,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 始终 0，桌面无系统栏，符合预期。
   double _videoBottomSystemInset() =>
       _systemBarsVisible ? MediaQuery.of(context).viewPadding.bottom : 0.0;
+
+  /// 系统顶部安全区 inset（BUG-463）：把视频内顶栏（media_kit 控制条 [topButtonBar]）
+  /// 抬离状态栏 / 刘海，否则顶栏左右按钮被遮挡、点不到（用户报「顶栏的按钮会被挡住」）。
+  ///
+  /// **为何顶栏需要而底栏另有 helper**：fork 的 [MaterialVideoControls] 只在**全屏**时给
+  /// 顶栏 Column 套 `MediaQuery.padding` 顶部内缩（material.dart 的
+  /// `isFullscreen ? MediaQuery.padding : EdgeInsets.zero`），窗口态外层 padding 恒
+  /// `EdgeInsets.zero`。而移动端视频**永不进 media_kit 全屏路由**（BUG-221，
+  /// [_toggleVideoFullscreen] 移动端 no-op）→ 顶栏始终落在窗口分支、顶部 inset 从不生效，
+  /// 顶栏按钮永远贴 `y=0`，被状态栏 / 刘海盖住。故在 [_mobileControlsTheme] 的
+  /// `topButtonBarMargin.top` 显式补这一段，与底栏 [_videoBottomSystemInset] 对称。
+  ///
+  /// **为何读 `padding` 而非 `viewPadding`**（避免 BUG-370 式过度内缩）：
+  /// immersiveSticky 隐栏后 `viewPadding.top` 仍恒上报状态栏区高度，单读它会把顶栏永久
+  /// 顶低一段空白。`padding.top` 在隐栏且无顶部刘海时收敛到 0、有刘海时为刘海高、状态栏
+  /// 被上划临时唤出时为状态栏高——正是顶栏需要避让的真实物理 inset。桌面无系统栏语义，
+  /// [_isDesktopVideoControls] 恒走桌面 theme（不调本 helper），且桌面 `padding` 亦为 0。
+  ///
+  /// 左 / 右用 `max(16, padding.left/right)`：与浮动侧栏 [_mergeRailSafeAreaPadding] 同款
+  /// 逐边取 max——横屏刘海手机（cutout 落在短边 = 左 / 右）下顶栏左 / 右按钮也避开刘海，
+  /// 又不在无刘海时把默认 16 叠加成双重留白。几何收敛进纯函数 [videoTopBarMargin]
+  /// （页面与测试同源调用）。
+  EdgeInsets _videoTopBarMargin() =>
+      videoTopBarMargin(MediaQuery.of(context).padding);
 
   /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
   /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条

@@ -27,10 +27,30 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 442 条。点号进各自文件。
+> 共 462 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-476](bugs/BUG-476-restart-cold-start-black-window.md) | ✅ | ✅ | 迁移重启新进程冷启动黑屏 |
+| [BUG-475](bugs/BUG-475-export-crosschapter-false-positive.md) | ✅ | ✅ | 选区导出误报跨章 |
+| [BUG-474](bugs/BUG-474-ankidroid-svg-fileprovider-root.md) | ✅ | ✅ | AnkiDroid外字SVG制卡FileProvider找不到根 |
+| [BUG-473](bugs/BUG-473-updates-cache-not-cleaned.md) | ✅ | ✅ | 更新包缓存不清理 |
+| [BUG-472](bugs/BUG-472-audiobook-clip-export-silent.md) | ✅ | ✅ | 有声书片段导出失败且无任何错误日志 |
+| [BUG-471](bugs/BUG-471-audiobook-progress-lan-sync-missing.md) | ✅ | ✅ | 有声书互联(LAN)进度同步缺失 |
+| [BUG-470](bugs/BUG-470-reader-top-progress-first-load-gap.md) | ✅ | ✅ | 首屏顶部进度 inset 缺口（正文首行被进度条压住） |
+| [BUG-469](bugs/BUG-469-collection-date-hidden.md) | ✅ | ✅ | 窄屏收藏列表收藏日期被书名/章节挤出可见区看不见 |
+| [BUG-468](bugs/BUG-468-double-context-menu.md) | ✅ | ✅ | Windows 阅读器右键同时弹原生与自定义两个菜单 |
+| [BUG-467](bugs/BUG-467-vertical-text-bottom-overflow.md) | ✅ | ✅ | 竖排正文文字溢出到底栏区域 |
+| [BUG-466](bugs/BUG-466-scroll-arrow-remap.md) | ✅ | ✅ | 滚动模式方向键改绑有声书句子无效仍翻页 |
+| [BUG-465](bugs/BUG-465-android-video-flash-blank.md) | ✅ | ✅ | Android video flashes then shows blank (no picture) |
+| [BUG-464](bugs/BUG-464-audio-highlight-theme-coupling.md) | ✅ | ✅ | 音频高亮颜色只在自定义主题生效·非自定义主题恒用主色 |
+| [BUG-463](bugs/BUG-463-video-topbar-covered.md) | ✅ | ✅ | 视频播放页顶栏按钮被状态栏/刘海遮挡 |
+| [BUG-462](bugs/BUG-462-favorite-words-missing-in-collections.md) | ✅ | ✅ | 收藏的单词不在收藏列表显示 |
+| [BUG-461](bugs/BUG-461-favorite-sentence-jump-page-boundary.md) | ✅ | ✅ | 收藏句跳转整句显示不全（「五五开」切句尾）——根因在「滚动(连续)模式」，非分页边界 |
+| [BUG-460](bugs/BUG-460-ffmpeg-clip-muxer.md) | ✅ | ✅ | 有声书片段导出 ffmpeg exit -22（捆绑 ffmpeg 缺 mov/m4a muxer） |
+| [BUG-459](bugs/BUG-459-favorite-jump-char-anchor.md) | ✅ | ✅ | 收藏句/制卡历史跳原文跳错位置(恒跳章首)+跳后阅读进度丢失 |
+| [BUG-458](bugs/BUG-458-gap-word-sentence-audio-residue.md) | ✅ | ✅ | 句子音频gap词残留 |
+| [BUG-457](bugs/BUG-457-webmessage-uaf.md) | ✅ | ✅ | WebView2 事件 handler 析构后回调 UAF |
 | [BUG-456](bugs/BUG-456-srt-book-null-mediasource.md) | ✅ | ✅ | SRT书绕过openMedia致currentMediaSource为null收藏制卡无句子 |
 | [BUG-455](bugs/BUG-455-favorite-sentence-rightclick.md) | ✅ | ✅ | 右键查词弹窗顶栏收藏句子误报未选择句子 |
 | [BUG-454](bugs/BUG-454-backup-import-clears-dict.md) | ✅ | ✅ | 导入备份清空未导出的词典 |

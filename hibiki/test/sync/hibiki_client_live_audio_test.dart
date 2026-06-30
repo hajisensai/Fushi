@@ -61,6 +61,10 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }
 
   @override
+  Future<bool> audiobookExists(String bookKey) async =>
+      audiobookEntries.any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey);
+
+  @override
   Future<void> importAudiobook(File packageFile,
           {String? bookKeyOverride}) async =>
       audiobookImported.add(await packageFile.readAsString());
@@ -116,6 +120,28 @@ class _FakeLibraryService implements HibikiLibraryHostService {
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
     bookProgress[bookKey] =
         resolveBookProgressSync(local: current, remote: progress);
+  }
+
+  // ── 有声书断点（真实记录，BUG-471）──────────────────────────────────────────────
+  final Map<String, ({int positionMs, int updatedAtMs})> audiobookPositions =
+      <String, ({int positionMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  ) async =>
+      audiobookPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    audiobookPositions[bookKey] = (
+      positionMs: positionMs < 0 ? 0 : positionMs,
+      updatedAtMs: updatedAtMs,
+    );
   }
 
   // ── video stubs (P4-1) ────────────────────────────────────────────────────
@@ -392,5 +418,31 @@ void main() {
     );
 
     expect(dest.readAsStringSync(), 'AUDIOBOOK:吾輩は猫であるAudio');
+  });
+
+  // ── audiobook position round-trip (BUG-471) ──────────────────────────────
+
+  test('putRemoteAudiobookPosition then remoteAudiobookPosition round-trips',
+      () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    await backend.putRemoteAudiobookPosition('吾輩は猫であるAudio', 88000, 4242);
+    expect(lib.audiobookPositions['吾輩は猫であるAudio']?.positionMs, 88000);
+
+    final ({int positionMs, int updatedAtMs}) got =
+        await backend.remoteAudiobookPosition('吾輩は猫であるAudio');
+    expect(got.positionMs, 88000);
+    expect(got.updatedAtMs, 4242);
+  });
+
+  test('remoteAudiobookPosition returns (0,0) when host has no record',
+      () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final ({int positionMs, int updatedAtMs}) got =
+        await backend.remoteAudiobookPosition('吾輩は猫であるAudio');
+    expect(got.positionMs, 0);
+    expect(got.updatedAtMs, 0);
   });
 }

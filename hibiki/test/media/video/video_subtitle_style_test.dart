@@ -385,4 +385,40 @@ void main() {
       expect(buildSubtitleStrokePaint(c, 12)!.strokeWidth, 12);
     });
   });
+
+  group('videoTopBarMargin (BUG-463 顶栏避让状态栏/刘海)', () {
+    test('无系统 inset 时左右回退到默认 16、顶部为 0', () {
+      // 隐栏 + 无刘海（padding 全 0）：左右不被叠出多余留白、顶部不下压。
+      final EdgeInsets m = videoTopBarMargin(EdgeInsets.zero);
+      expect(m.left, 16);
+      expect(m.right, 16);
+      expect(m.top, 0);
+    });
+
+    test('状态栏唤出（padding.top>0）把顶栏整体下压避让', () {
+      // 上划临时唤出状态栏 / 顶部刘海：顶栏 top = 真实物理 inset，按钮不再被盖。
+      const EdgeInsets padding = EdgeInsets.only(top: 42);
+      final EdgeInsets m = videoTopBarMargin(padding);
+      expect(m.top, 42);
+      // 无横向 cutout 时左右仍是默认 16，不被 0 拉低。
+      expect(m.left, 16);
+      expect(m.right, 16);
+    });
+
+    test('横屏短边刘海：左右逐边取 max(16, inset)，不叠加成双重留白', () {
+      // 刘海落在左侧（landscape）：左边取刘海高 48 > 16；右侧无刘海仍 16。
+      const EdgeInsets padding = EdgeInsets.only(left: 48, top: 0);
+      final EdgeInsets m = videoTopBarMargin(padding);
+      expect(m.left, 48); // max(16, 48)
+      expect(m.right, 16); // max(16, 0)
+      expect(m.top, 0);
+    });
+
+    test('小于默认 16 的横向 inset 不会把 margin 拉低到 inset 以下', () {
+      const EdgeInsets padding = EdgeInsets.only(left: 8, right: 4);
+      final EdgeInsets m = videoTopBarMargin(padding);
+      expect(m.left, 16); // max(16, 8)
+      expect(m.right, 16); // max(16, 4)
+    });
+  });
 }

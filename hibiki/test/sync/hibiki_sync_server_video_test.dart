@@ -163,6 +163,9 @@ class _FakeLibraryService implements HibikiLibraryHostService {
       throw UnimplementedError('not used in video test');
 
   @override
+  Future<bool> audiobookExists(String bookKey) async => false;
+
+  @override
   Future<void> importAudiobook(File packageFile,
       {String? bookKeyOverride}) async {}
 
@@ -175,6 +178,19 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   static String _posKey(String id, int episodeIndex) =>
       episodeIndex <= 0 ? id : '$id#ep$episodeIndex';
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
 
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(

@@ -14,6 +14,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 
@@ -450,6 +451,15 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// re-eval + re-anchor) and [onLayoutReloadLive] (which re-runs pagination).
   static VoidCallback? onChromeReloadLive;
 
+  /// TODO-975: fired when a chrome change alters the reserved chrome HEIGHT fed
+  /// to the WebView (toggling the top progress bar on/off, or flipping a surface
+  /// between squeeze and floating mode). Unlike [onChromeReloadLive] (a pure
+  /// rebuild that never changes the reserve), this path additionally re-applies
+  /// the chrome insets and runs the style-reanchor orchestration so the
+  /// continuous-mode scroll position is preserved when the reserve changes (the
+  /// reflow would otherwise zero `window.scrollY` and bounce to chapter start).
+  static VoidCallback? onChromeReanchorLive;
+
   /// TODO-728: fired when a physical game controller's presence changes (true =
   /// now present, false = gone). The open reader applies/clears its
   /// gamepad-driven immersive mode. Only wired up by the reader page; the
@@ -819,6 +829,48 @@ class ReaderHibikiSource extends ReaderMediaSource {
     }
     await setPreference<String>(
       key: 'top_progress_position',
+      value: normalized,
+    );
+  }
+
+  // TODO-975 决策#2：顶部进度悬浮开关（per-reader，分层同 showTopProgressBar），
+  // 默认 false = 现状。底栏悬浮复用 tapEmptyToHideChrome（决策#3），不另设开关。
+  bool get topProgressFloating =>
+      readerSettings?.topProgressFloating ??
+      getPreference<bool>(key: 'top_progress_floating', defaultValue: false);
+
+  void toggleTopProgressFloating() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleTopProgressFloating();
+      return;
+    }
+    await setPreference<bool>(
+      key: 'top_progress_floating',
+      value: !topProgressFloating,
+    );
+  }
+
+  // TODO-975 决策#1：悬浮 chrome 自动收起时长（毫秒，顶部/底栏共用），默认 3000，
+  // 可调 1000–10000。分层同上；经 ReaderSettings 归一，越界存值降级回默认。
+  int get autoHideChromeMillis =>
+      readerSettings?.autoHideChromeMillis ??
+      normalizeAutoHideChromeMillis(
+        getPreference<int>(
+          key: 'auto_hide_chrome_millis',
+          defaultValue: kDefaultAutoHideChromeMillis,
+        ),
+      );
+
+  void setAutoHideChromeMillis(int value) async {
+    final int normalized = normalizeAutoHideChromeMillis(value);
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setAutoHideChromeMillis(normalized);
+      return;
+    }
+    await setPreference<int>(
+      key: 'auto_hide_chrome_millis',
       value: normalized,
     );
   }

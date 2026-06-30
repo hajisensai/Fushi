@@ -18,7 +18,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
-enum _CollectionType { bookmark, sentence, mined }
+enum _CollectionType { bookmark, sentence, mined, word }
 
 @visibleForTesting
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
@@ -118,6 +118,8 @@ class _CollectionItem {
     this.bookmarkId,
     this.favoriteId,
     this.minedId,
+    this.wordReading,
+    this.wordSourceType,
     this.source = kFavoriteSentenceSourceBook,
   });
 
@@ -136,6 +138,14 @@ class _CollectionItem {
 
   /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
   final int? minedId;
+
+  /// 收藏词的振假名读音（[_CollectionType.word] 专用）。删除按 (expression, reading,
+  /// sourceType) 复合唯一键匹配 [HibikiDatabase.removeFavoriteWord]，故读音/来源都要留存。
+  /// 这里 [text] 复用为 expression（词形），[chapterLabel] 复用为 glossary（释义）。
+  final String? wordReading;
+
+  /// 收藏词来源（'book' / 'video'，[_CollectionType.word] 专用），同上供删除匹配。
+  final String? wordSourceType;
 
   /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
   /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
@@ -183,6 +193,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final allBookmarks = await bookmarkRepo.getAllBookmarks();
     final allFavorites = await favoriteRepo.getAll();
     final allMined = await db.getAllMinedSentences();
+    // BUG-462：弹窗 ☆ 收藏的词（FavoriteWords 表）此前只进导出管线、从不进收藏列表，
+    // 用户「收藏里没有收藏的单词」。这里与书签/收藏句/制卡句同结构落 _CollectionItem。
+    final allWords = await db.getAllFavoriteWords();
 
     final srtBooks = await srtBookRepo.listAll();
     final bookTitleMap = <String, String>{};
@@ -244,6 +257,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           normCharLength: m.normCharLength,
           minedId: m.id,
           source: m.source,
+        ),
+      );
+    }
+
+    for (final w in allWords) {
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.word,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(w.createdAt),
+          // text=词形（标题行）、chapterLabel=释义（副标题行）；无 bookKey（不可跳转，
+          // 收藏词不携带原文定位）。删除复合键由 wordReading/wordSourceType 保留。
+          text: w.expression,
+          chapterLabel: w.glossary.isNotEmpty ? w.glossary : null,
+          wordReading: w.reading,
+          wordSourceType: w.sourceType,
+          source: w.sourceType,
         ),
       );
     }
@@ -356,10 +385,24 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       title: title,
     );
 
+    // BUG-459: 三类行的 normCharOffset 计量不同——
+    //   bookmark：0-10000 章内进度分数（reader `_addBookmarkAtCurrentPosition` 写）。
+    //   sentence/mined：`getNormalizedOffset` 的章节内绝对可匹配字符索引（0..数千，
+    //                   收藏 `_toggleFavoriteSentence` / 制卡 `_recordMinedSentence` 写）。
+    // 旧代码把后者也塞进 Bookmark.normCharOffset，跳转端按分数 `/10000≈0` 还原 → 恒
+    // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
+    // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
+    final bool isSentenceJump = item.type == _CollectionType.sentence ||
+        item.type == _CollectionType.mined;
     final Bookmark? bookmark = item.sectionIndex != null
         ? Bookmark(
             sectionIndex: item.sectionIndex!,
-            normCharOffset: item.normCharOffset ?? 0,
+            normCharOffset: isSentenceJump ? 0 : (item.normCharOffset ?? 0),
+            charAnchor: isSentenceJump ? item.normCharOffset : null,
+            // BUG-461: 句子/制卡跳转把句长一并透传，连续模式横排据此整句对齐进可见区，
+            // 句尾不被阅读底栏切（句子行才有 normCharLength；制卡行/老收藏可能为 null）。
+            charAnchorLength: isSentenceJump ? item.normCharLength : null,
+            preserveSavedPosition: isSentenceJump,
             label: item.label ?? '',
             createdAt: item.createdAt,
           )
@@ -598,6 +641,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final minedId = item.minedId;
       if (minedId == null) return;
       await db.removeMinedSentence(minedId);
+    } else if (item.type == _CollectionType.word) {
+      // BUG-462：收藏词按 (expression, reading, sourceType) 复合唯一键删除（与
+      // [HibikiDatabase.addFavoriteWord] 的 uniqueKeys 对齐）。
+      final String? expression = item.text;
+      if (expression == null || expression.isEmpty) return;
+      await db.removeFavoriteWord(
+        expression: expression,
+        reading: item.wordReading ?? '',
+        sourceType: item.wordSourceType ?? kFavoriteSentenceSourceBook,
+      );
     } else {
       final id = item.favoriteId;
       if (id == null) return;
@@ -986,30 +1039,79 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     );
   }
 
+  /// 收藏行副标题：可截断的[metadata]（书名/章节/来源前缀）+ **恒可见**的收藏日期。
+  ///
+  /// BUG-469：窄屏（12.4" 平板横向空间不足）下用户「看不到收藏日期，全被书名和章节
+  /// 挤跑了」。根因=旧实现把元数据与日期拼成一个单行 [Text] 共用同一截断预算，日期排
+  /// 末尾被省略号吃掉。这里拆成 [Row]：[metadata] 走 [Flexible]+[TextOverflow.ellipsis]
+  /// 优先收缩让位，日期是定宽尾随段（不进 Flexible，故永不被裁），两段间隔仍用 ' · '。
+  /// 无 [metadata] 时只渲染日期。整行 [TextStyle] 由 [HibikiListItem] 的
+  /// [DefaultTextStyle]（listSubtitle）注入，故此处不重复指定样式。
+  Widget _buildSubtitle({
+    required String? metadata,
+    required DateTime createdAt,
+  }) {
+    final String date = _dateFmt.format(createdAt);
+    final bool hasMetadata = metadata != null && metadata.isNotEmpty;
+    if (!hasMetadata) {
+      return Text(date, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
+    // mainAxisSize 用默认 max：撑满 [HibikiListItem] 给副标题的整行宽度，[Flexible]
+    // 才会收缩让位（min 时 Row 取子项固有宽 → 溢出，日期反而被挤出）。日期不进
+    // [Flexible]，作为定宽尾随段永远显示。
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            metadata,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          ),
+        ),
+        const Text(' · '),
+        Text(date, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ],
+    );
+  }
+
   Widget _buildItem(_CollectionItem item) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final isBookmark = item.type == _CollectionType.bookmark;
     final bool isMined = item.type == _CollectionType.mined;
+    final bool isWord = item.type == _CollectionType.word;
     final IconData icon = isBookmark
         ? Icons.bookmark_outline
         : isMined
             ? Icons.style_outlined
-            : Icons.format_quote_outlined;
+            : isWord
+                ? Icons.star_outline
+                : Icons.format_quote_outlined;
     final String typeLabel = isBookmark
         ? t.collection_bookmark
         : isMined
             ? t.collection_mined
-            : t.collection_sentence;
+            : isWord
+                ? t.collection_word
+                : t.collection_sentence;
 
     final String title;
     final String? subtitle;
 
     final bool isVideoSentence =
-        !isBookmark && item.source == kFavoriteSentenceSourceVideo;
+        !isBookmark && !isWord && item.source == kFavoriteSentenceSourceVideo;
 
     if (isBookmark) {
       title = item.label ?? '';
       subtitle = item.bookTitle;
+    } else if (isWord) {
+      // BUG-462：收藏词标题=词形，副标题=读音 · 释义（无原文定位，不显示书名/章节）。
+      title = item.text ?? '';
+      subtitle = [
+        if (item.wordReading != null && item.wordReading!.isNotEmpty)
+          item.wordReading,
+        item.chapterLabel,
+      ].where((s) => s != null && s.isNotEmpty).join(' · ');
     } else {
       title = item.text ?? '';
       subtitle = [
@@ -1026,7 +1128,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'
         : isMined
             ? 'mined_${item.minedId}'
-            : 'fav_${item.favoriteId}';
+            : isWord
+                ? 'word_${item.text}_${item.wordReading}_${item.wordSourceType}'
+                : 'fav_${item.favoriteId}';
 
     return Dismissible(
       key: Key(key),
@@ -1081,14 +1185,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               ],
             ),
             title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              [
-                if (subtitle != null && subtitle.isNotEmpty) subtitle,
-                _dateFmt.format(item.createdAt),
-              ].join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            // BUG-469：副标题=可截断的元数据（书名/章节/来源） + **恒可见**的收藏日期。
+            // 旧实现把两者用 ' · ' 拼成一个 Text(maxLines:1, ellipsis)，窄屏（如 12.4"
+            // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
+            // 根因=两段不同截断语义（元数据可截、日期不可截）共用同一行宽预算。修=拆成
+            // Row：元数据 Flexible+ellipsis 优先让位，日期固定宽不参与收缩永远显示。
+            subtitle:
+                _buildSubtitle(metadata: subtitle, createdAt: item.createdAt),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

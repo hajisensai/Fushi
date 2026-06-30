@@ -468,6 +468,61 @@ jobs:
         prerelease: ${{ steps.channel.outputs.prerelease }}
         make_latest: ${{ steps.channel.outputs.make_latest }}
         files: ${{ steps.channel.outputs.files }}
+
+    # TODO-967: every push to main/develop publishes one debug prerelease
+    # (tag v<version>-debug.<seq>+<sha>), so they accrue without bound and bury
+    # the formal/beta releases. Keep only the newest 10 debug prereleases; delete
+    # the rest (and their tags). This runs ONLY on the automated push debug path
+    # (github.event_name == 'push' AND channel == debug) -- never on
+    # workflow_dispatch (manual debug/beta/formal) nor on release events -- and
+    # ONLY in this one workflow so it cannot race release-desktop.yml, which
+    # publishes the SAME debug tag (deleting a tag both workflows publish from a
+    # single place avoids a delete-vs-publish race). HARD SAFETY: two independent
+    # filters before any delete -- (1) isPrerelease must be true AND isLatest must
+    # be false (never touch a formal or Latest release), and (2) the tag must
+    # match ^v.*-debug\.[0-9]+\+ (the exact debug tag shape). A release failing
+    # either filter is left untouched. We only ever delete debug prereleases.
+    - name: Prune old debug prereleases (keep newest 10)
+      if: github.event_name == 'push' && steps.channel.outputs.channel == 'debug'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        KEEP=10
+        # List every release with the fields needed for the double filter, newest
+        # first by publish time. --json keeps this robust against output format
+        # changes; jq does the prerelease + regex filtering, never a loose grep.
+        mapfile -t STALE < <(
+          gh release list --repo "$REPO" --limit 1000 \
+            --json tagName,isPrerelease,isLatest,publishedAt \
+            --jq '
+              [ .[]
+                | select(.isPrerelease == true and .isLatest == false)
+                | select(.tagName | test("^v.*-debug\\.[0-9]+\\+"))
+              ]
+              | sort_by(.publishedAt) | reverse
+              | .['"$KEEP"':]
+              | .[].tagName
+            '
+        )
+        if [ "${#STALE[@]}" -eq 0 ]; then
+          echo "No stale debug prereleases beyond the newest $KEEP; nothing to delete."
+          exit 0
+        fi
+        echo "Deleting ${#STALE[@]} debug prerelease(s) older than the newest $KEEP:"
+        for tag in "${STALE[@]}"; do
+          # Defence in depth: re-assert the debug tag shape per tag so a
+          # malformed jq result can never delete a non-debug tag.
+          if [[ ! "$tag" =~ ^v.*-debug\.[0-9]+\+ ]]; then
+            echo "::warning title=Skipping non-debug tag::Refusing to delete '$tag' (does not match debug tag pattern)"
+            continue
+          fi
+          echo "  deleting $tag"
+          gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+        done
+
     # TODO-705: publish a mirror update manifest so beta/debug in-China update
     # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
     # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the

@@ -67,6 +67,23 @@ Future<void> _seedHostVideo(
   ));
 }
 
+/// 在 host DB 种一本可经 live-sync 列出的有声书：Audiobooks 行 + SrtBooks 行齐备
+/// （host listAudiobooks 要求两表同源，缺一不列出，见 AppModelLibraryHostService）。
+Future<void> _seedHostAudiobook(HibikiDatabase db, String bookKey) async {
+  await db.upsertAudiobook(AudiobooksCompanion.insert(
+    bookKey: bookKey,
+    alignmentFormat: 'srt',
+    alignmentPath: '/tmp/$bookKey.srt',
+  ));
+  await db.upsertSrtBook(SrtBooksCompanion.insert(
+    uid: 'srt-$bookKey',
+    title: bookKey,
+    bookKey: Value(bookKey),
+    srtPath: '/tmp/$bookKey.srt',
+    importedAt: 0,
+  ));
+}
+
 Future<HibikiClientSyncBackend> _buildClientBackend({
   required String base,
   required String token,
@@ -350,6 +367,113 @@ void main() {
     });
   });
 
+  group('audiobook progress full sweep (BUG-471)', () {
+    test('local has audiobook position, host none -> push to host prefs',
+        () async {
+      await _seedHostAudiobook(hostDb, 'AB1');
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(audiobookPositionPrefKey('AB1'), 480000);
+      await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB1'), 3000);
+
+      final Directory tmp = Directory(p.join(work.path, 'ta1'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobookProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+
+      expect(await hostDb.getPrefTyped<int>(audiobookPositionPrefKey('AB1'), 0),
+          480000);
+      expect(
+          await hostDb.getPrefTyped<int>(audiobookPositionAtPrefKey('AB1'), 0),
+          3000);
+    });
+
+    test('host newer audiobook progress -> apply to local prefs', () async {
+      await _seedHostAudiobook(hostDb, 'AB2');
+      await hostDb.setPrefTyped<int>(audiobookPositionPrefKey('AB2'), 990000);
+      await hostDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB2'), 8000);
+
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(audiobookPositionPrefKey('AB2'), 100000);
+      await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB2'), 2000);
+
+      final Directory tmp = Directory(p.join(work.path, 'ta2'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncAudiobookProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await localDb.getPrefTyped<int>(audiobookPositionPrefKey('AB2'), 0),
+          990000);
+      expect(
+          await localDb.getPrefTyped<int>(audiobookPositionAtPrefKey('AB2'), 0),
+          8000);
+    });
+
+    test('local newer not rolled back by host old', () async {
+      await _seedHostAudiobook(hostDb, 'AB3');
+      await hostDb.setPrefTyped<int>(audiobookPositionPrefKey('AB3'), 1000);
+      await hostDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB3'), 1000);
+
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(audiobookPositionPrefKey('AB3'), 700000);
+      await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB3'), 9000);
+
+      final Directory tmp = Directory(p.join(work.path, 'ta3'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncAudiobookProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await localDb.getPrefTyped<int>(audiobookPositionPrefKey('AB3'), 0),
+          700000);
+      expect(await hostDb.getPrefTyped<int>(audiobookPositionPrefKey('AB3'), 0),
+          700000,
+          reason: 'local newer must propagate to host');
+      expect(
+          await hostDb.getPrefTyped<int>(audiobookPositionAtPrefKey('AB3'), 0),
+          9000);
+    });
+
+    test('local has audiobook but host does not -> skip (no error)', () async {
+      // host 没有这本有声书：listAudiobooks 不含它 → 跳过，不报错。
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(
+          audiobookPositionPrefKey('AB_local_only'), 60000);
+      await localDb.setPrefTyped<int>(
+          audiobookPositionAtPrefKey('AB_local_only'), 4000);
+
+      final Directory tmp = Directory(p.join(work.path, 'ta4'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobookProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty);
+      // host 无该有声书 → 不写脏 prefs。
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookPositionPrefKey('AB_local_only'), 0),
+          0);
+    });
+  });
+
   group('full run() syncs book + video progress together', () {
     test('interconnect run() runs book + video progress live sweep', () async {
       final HibikiDatabase localDb = _memDb();
@@ -357,6 +481,11 @@ void main() {
       await _seedHostVideo(hostDb, work, 'video/run', 'VRun');
       await _seedBook(hostDb, 'BookRun');
       await _seedBook(localDb, 'BookRun');
+      await _seedHostAudiobook(hostDb, 'ABRun');
+      await localDb.setPrefTyped<int>(
+          audiobookPositionPrefKey('ABRun'), 360000);
+      await localDb.setPrefTyped<int>(
+          audiobookPositionAtPrefKey('ABRun'), 4000);
       await _seedPosition(localDb, 'BookRun',
           section: 3, norm: 3000, charOffset: 33, updatedAt: 4000);
       await localDb.upsertVideoBook(VideoBooksCompanion.insert(
@@ -386,6 +515,11 @@ void main() {
       final int hostVidPos = await hostDb.getPrefTyped<int>(
           videoRemotePositionPrefKey('video/run'), 0);
       expect(hostVidPos, 450000);
+
+      final int hostAbPos =
+          await hostDb.getPrefTyped<int>(audiobookPositionPrefKey('ABRun'), 0);
+      expect(hostAbPos, 360000,
+          reason: 'run() full sweep must also push audiobook progress to host');
     });
   });
 }

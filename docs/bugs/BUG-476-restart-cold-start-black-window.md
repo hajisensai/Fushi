@@ -1,0 +1,12 @@
+## BUG-476 · 迁移重启新进程冷启动黑屏
+- **报告**：2026-06-30（用户：，TODO-959）
+- **真实性**：✅ 真 bug。数据目录迁移成功后 `DesktopLifecycleService.restartApp` 用 `Process.start` 起 detached 新进程 + `exit(0)` 杀旧进程。黑屏发生在「旧进程 exit(0) 之后、新进程 Flutter 首帧之前」这段冷启动窗口，两个 native 层根因：
+  - `hibiki/windows/runner/win32_window.cpp:108`（修复前）`window_class.hbrBackground = 0;`——窗口类**无背景画刷**；且 `CreateWindowEx(..., WS_OVERLAPPEDWINDOW | WS_VISIBLE, ...)` 窗口创建瞬间就 `WS_VISIBLE` 上屏。在「窗口已可见」到「Flutter 画出首帧」之间 = 无背景画刷的空窗口 = 黑/未定义像素（经典 Flutter Windows runner 首帧黑窗）。
+  - `hibiki/lib/main.dart:132`（修复前）见 `--hibiki-restarted` 标志才 `windowManager.show()+focus()`，但它跑在首帧前、只抢前台不改黑像素，无法覆盖「窗口已可见但首帧未出」的黑窗。
+  - 此前 `6bfee9d26`（DataRootMigrationView 全屏遮罩）只作用在**旧进程迁移进行中**，完全没覆盖新进程冷启动段 → 用户「一样没变化」。
+- **[x] ① 已修复** — 提交 `2f937fa90`
+  - **方向1（背景画刷，兜底所有路径）**：`hibiki/windows/runner/win32_window.cpp` 新增 `kSplashBackgroundColor = RGB(0x1F,0x49,0x59)`（取自 Dart splash 品牌 seed 色 `0xFF1F4959`，深色优先、匹配启动画面），窗口类 `window_class.hbrBackground = CreateSolidBrush(kSplashBackgroundColor)`（原 `= 0`）。窗口类持有画刷，生存期至 `UnregisterWindowClass`，RegisterClass 后由系统管理，无泄漏。首帧前 `WM_ERASEBKGND` 用此纯色填充客户区，不再黑。
+  - **方向2（时序，重启新进程隐藏建窗）**：`win32_window.cpp` 新增 `IsRestartedProcess()`（独立检测 argv 的 `--hibiki-restarted`，不改 `CreateAndShow` 签名）；`restarted_hidden = !hidden && IsRestartedProcess()` 时建窗去掉 `WS_VISIBLE`（`window_style` 只 `WS_OVERLAPPEDWINDOW`），等 Dart 首帧后由 `main.dart` 重启分支 `windowManager.show()+focus()` 再显示。**铁律守护**：`main.dart` 的重启分支在 `catch` 里加兜底 `show()`，确保隐藏建窗的进程绝不停在永久不可见状态。普通启动（无标志、非测试）仍 `WS_VISIBLE` 立即上屏，靠方向1画刷兜底；测试隐藏模式（`HIBIKI_TEST_HIDDEN`）保持 `WS_VISIBLE`+移屏外不受影响。
+- **[x] ② 已加自动化测试** — `hibiki/test/windows/runner_cold_start_black_window_guard_test.dart`
+  - 源码扫描守卫：断言 `win32_window.cpp` 不再有裸 `hbrBackground = 0`、已 `CreateSolidBrush` 设画刷、定义了 `kSplashBackgroundColor`；断言重启隐藏建窗时序代码（`IsRestartedProcess` / `restarted_hidden` / 去掉 WS_VISIBLE 的 `window_style`）存在；断言 `main.dart` 重启分支首帧后 `windowManager.show()` 且 catch 里有兜底 show。
+- **备注**：native 窗口视觉无法 headless 验，视觉确认（迁移重启录屏看 exit(0)→新窗出内容不再黑）留用户真机。已 `flutter build windows --debug` 确认 C++ 编译通过。

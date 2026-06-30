@@ -263,44 +263,46 @@ class TtsChannel {
     }
   }
 
+  /// 句子音频裁剪：**全平台**统一走 ffmpeg（[extractAudioSegmentViaFfmpeg]）。
+  ///
+  /// TODO-970 根因修：以前 Android 走原生 MethodChannel（`extractAudioSegment` →
+  /// `TtsChannelHandler`），用 `androidx.media3.transformer.Transformer` 重编码 +
+  /// 手写 `AacAdtsCueAudioRewriter` 解析非分片 MP4 成裸 ADTS `.aac`。这条原生链路
+  /// 有三类结构性失败：① Transformer 依赖设备 MediaCodec 能解码输入容器，`.m4b /
+  /// .opus / .flac / HE-AAC` 常解不了；② 手写 MP4 box 解析器任一 box 缺失即失败、
+  /// HE-AAC SBR 还会产坏文件；③ 输出裸 ADTS `.aac` 部分 Anki 播放器不识别。桌面端
+  /// 走 ffmpeg 完全不经过它们——这就是「桌面有句子音频、手机没有」的根因。
+  ///
+  /// 仓库已有 [FfmpegBackend] 抽象 + 移动端自编捆绑的 ffmpeg-kit
+  /// （`KitFfmpegBackend` 进程内 `FFmpegKit.executeWithArguments`，与桌面 CLI 后端
+  /// 同契约）；视频制卡的句子音频在 Android 上早已直接走 ffmpeg。统一到 ffmpeg 后
+  /// ①② 一次消除：ffmpeg 天然支持任意输入容器/编码（`.m4b/.opus/.flac/HE-AAC` 都能
+  /// 解），不再依赖设备 MediaCodec / 手写 MP4 box 解析器。输出仍是 `.aac`（adts 容器）
+  /// ——这是桌面 ffmpeg-min 极简构建唯一能 mux 的音频容器（BUG-460，无 mp4/ipod/m4a
+  /// muxer），全平台统一不改。桌面行为逐字节不变（同一函数）。
   Future<String?> extractAudioSegment({
     required String inputPath,
     required int startMs,
     required int endMs,
     required String outputPath,
     FfmpegFailureReporter? onFailure,
-    // TODO-757 压缩开关：仅桌面 ffmpeg 回退路径吃压缩档（默认单声道 64k = 现状；
-    // 关闭压缩传立体声 128k）。Android 句子音频走原生 AacAdtsCueAudioRewriter 无损
-    // re-mux，不重编码，压缩开关对它天然无效，故 _isSupported 分支不传这俩参数。
+    // TODO-757 压缩开关：默认压缩档（单声道 64k = 现状）；关闭压缩传立体声 128k。
+    // 全平台同走 ffmpeg，两端都受压缩开关影响（不再有 Android 原生无损 re-mux 特例）。
     int audioChannels = 1,
     String audioBitrate = '64k',
-  }) async {
-    if (!_isSupported) {
-      // No native channel off Android: cut the sentence clip with ffmpeg so
-      // desktop Anki cards still get audio (returns null if ffmpeg is absent).
-      return extractAudioSegmentViaFfmpeg(
-        inputPath: inputPath,
-        startMs: startMs,
-        endMs: endMs,
-        outputPath: outputPath,
-        onFailure: onFailure,
-        audioChannels: audioChannels,
-        audioBitrate: audioBitrate,
-      );
-    }
-    try {
-      final result = await _channel.invokeMethod('extractAudioSegment', {
-        'inputPath': inputPath,
-        'startMs': startMs,
-        'endMs': endMs,
-        'outputPath': outputPath,
-      });
-      return result as String?;
-    } catch (e, stack) {
-      onFailure?.call(e.toString());
-      ErrorLogService.instance.log('TtsChannel.extractAudioSegment', e, stack);
-      return null;
-    }
+  }) {
+    // 全平台一律 ffmpeg 裁剪：桌面 CliFfmpegBackend、移动端 KitFfmpegBackend
+    // （resolveFfmpegBackend 按平台分流），消除原 Android 原生 Transformer +
+    // AacAdtsCueAudioRewriter 的三类失败模式（TODO-970）。
+    return extractAudioSegmentViaFfmpeg(
+      inputPath: inputPath,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: outputPath,
+      onFailure: onFailure,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
   }
 
   Future<String?> ttsToFile(String text, String outputPath,

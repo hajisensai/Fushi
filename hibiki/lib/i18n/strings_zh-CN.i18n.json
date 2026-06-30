@@ -712,8 +712,8 @@
   "font_color_desc": "阅读器文字颜色",
   "background_color_desc": "阅读器页面背景",
   "selection_color_desc": "阅读器选中高亮",
-  "color_sasayaki": "Sasayaki 高亮",
-  "color_sasayaki_desc": "有声书字幕同步高亮",
+  "color_sasayaki": "音频高亮",
+  "color_sasayaki_desc": "有声书播放时跟随当前句的高亮颜色",
   "color_link": "链接颜色",
   "color_link_desc": "阅读器超链接颜色",
   "section_reader_colors": "阅读器颜色",
@@ -1988,5 +1988,14 @@
   "folder_picker_empty": "没有子文件夹",
   "folder_picker_permission_required": "浏览文件夹需要存储权限",
   "word_favorite_added": "已收藏该词",
-  "word_favorite_removed": "已取消收藏该词"
+  "word_favorite_removed": "已取消收藏该词",
+  "data_storage_migrate_overlay_title": "正在迁移数据",
+  "data_storage_migrate_overlay_warning": "正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。",
+  "data_storage_migrate_overlay_progress": "正在复制文件：$copied / $total",
+  "collection_word": "单词",
+  "reader_top_progress_floating": "悬浮阅读进度",
+  "reader_auto_hide_chrome_duration": "悬浮控件自动隐藏延时",
+  "video_import_webpage_url_warning_title": "网页地址，不是视频直链",
+  "video_import_webpage_url_warning_body": "这是网页地址（如 YouTube/Netflix），不是直接的视频流（.m3u8/.mp4/直链）。Hibiki 暂不支持解析网页视频，请提供直链。你仍可强行尝试。",
+  "video_import_webpage_url_try_anyway": "仍要尝试"
 }

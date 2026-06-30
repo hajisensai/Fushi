@@ -82,6 +82,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
         ),
         ShortcutAction.readerPageForward,
       );
@@ -90,6 +91,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
         ),
         ShortcutAction.readerPageBackward,
       );
@@ -101,6 +103,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
         ),
         ShortcutAction.readerPageForward,
       );
@@ -109,6 +112,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
         ),
         ShortcutAction.readerPageBackward,
       );
@@ -121,6 +125,7 @@ void main() {
             key: LogicalKeyboardKey.arrowRight,
             modifiers: const <ModifierKey>{ModifierKey.ctrl},
             rtl: rtl,
+            boundAction: ShortcutAction.readerPageForward,
           ),
           isNull,
         );
@@ -129,6 +134,7 @@ void main() {
             key: LogicalKeyboardKey.arrowLeft,
             modifiers: const <ModifierKey>{ModifierKey.ctrl},
             rtl: rtl,
+            boundAction: ShortcutAction.readerPageForward,
           ),
           isNull,
         );
@@ -147,6 +153,7 @@ void main() {
             key: key,
             modifiers: const <ModifierKey>{},
             rtl: true,
+            boundAction: ShortcutAction.readerPageForward,
           ),
           isNull,
         );
@@ -161,6 +168,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: false,
         ),
         ShortcutAction.readerPageForward,
@@ -170,6 +178,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: false,
         ),
         ShortcutAction.readerPageBackward,
@@ -182,6 +191,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: true,
         ),
         ShortcutAction.readerPageForward,
@@ -191,6 +201,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: true,
         ),
         ShortcutAction.readerPageBackward,
@@ -203,6 +214,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: false,
         ),
         ShortcutAction.readerPageForward,
@@ -212,6 +224,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: false,
         ),
         ShortcutAction.readerPageBackward,
@@ -224,6 +237,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: true,
         ),
         ShortcutAction.readerPageForward,
@@ -233,6 +247,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: true,
         ),
         ShortcutAction.readerPageBackward,
@@ -250,11 +265,13 @@ void main() {
               key: key,
               modifiers: const <ModifierKey>{},
               rtl: rtl,
+              boundAction: ShortcutAction.readerPageForward,
             ),
             resolveReaderArrowPageTurn(
               key: key,
               modifiers: const <ModifierKey>{},
               rtl: rtl,
+              boundAction: ShortcutAction.readerPageForward,
               reverse: false,
             ),
           );
@@ -268,6 +285,7 @@ void main() {
           key: LogicalKeyboardKey.arrowRight,
           modifiers: const <ModifierKey>{ModifierKey.ctrl},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
           reverse: true,
         ),
         isNull,
@@ -319,6 +337,7 @@ void main() {
             key: key,
             modifiers: const <ModifierKey>{},
             rtl: false,
+            boundAction: ShortcutAction.readerPageForward,
             reverse: true,
           ),
           isNull,
@@ -372,6 +391,7 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           physicalKey: PhysicalKeyboardKey.arrowLeft,
         ),
         ShortcutAction.readerPageForward,
@@ -381,6 +401,7 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           physicalKey: PhysicalKeyboardKey.arrowRight,
         ),
         ShortcutAction.readerPageBackward,
@@ -393,6 +414,7 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{},
           rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
           physicalKey: PhysicalKeyboardKey.arrowRight,
         ),
         ShortcutAction.readerPageForward,
@@ -405,6 +427,7 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           physicalKey: null,
         ),
         isNull,
@@ -417,7 +440,97 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{ModifierKey.ctrl},
           rtl: true,
+          boundAction: ShortcutAction.readerPageForward,
           physicalKey: PhysicalKeyboardKey.arrowLeft,
+        ),
+        isNull,
+      );
+    });
+  });
+  group('resolveReaderArrowPageTurn (TODO-992 改键后让出，尊重用户绑定)', () {
+    test('用户把裸左/右键改绑成有声书上/下句 → 覆写让出(null)，两模式都不再翻页', () {
+      // boundAction 是该裸键在 reader+audiobook co-active 组解析出的真实绑定。
+      // 用户从翻页解绑、改绑有声书句子后，覆写必须让出，交回注册表执行真实绑定。
+      for (final bool rtl in <bool>[true, false]) {
+        for (final bool reverse in <bool>[true, false]) {
+          expect(
+            resolveReaderArrowPageTurn(
+              key: LogicalKeyboardKey.arrowRight,
+              modifiers: const <ModifierKey>{},
+              rtl: rtl,
+              boundAction: ShortcutAction.audiobookNextSentence,
+              reverse: reverse,
+            ),
+            isNull,
+            reason: 'rtl=$rtl reverse=$reverse 右键改绑有声书下句应让出',
+          );
+          expect(
+            resolveReaderArrowPageTurn(
+              key: LogicalKeyboardKey.arrowLeft,
+              modifiers: const <ModifierKey>{},
+              rtl: rtl,
+              boundAction: ShortcutAction.audiobookPrevSentence,
+              reverse: reverse,
+            ),
+            isNull,
+            reason: 'rtl=$rtl reverse=$reverse 左键改绑有声书上句应让出',
+          );
+        }
+      }
+    });
+
+    test('裸左/右键被显式解绑(boundAction=null) → 覆写让出(null)', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          boundAction: null,
+        ),
+        isNull,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          boundAction: null,
+        ),
+        isNull,
+      );
+    });
+
+    test('仍绑定翻页(默认) → 覆写照常做阅读方向校正', () {
+      // 默认用户行为不变（Never break userspace）：boundAction 仍是翻页动作时，
+      // 覆写按阅读方向重定向，与改键前完全一致。
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          boundAction: ShortcutAction.readerPageForward,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          boundAction: ShortcutAction.readerPageBackward,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+    });
+
+    test('IME process + 物理键但已改绑非翻页 → 仍让出(null)', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          boundAction: ShortcutAction.audiobookNextSentence,
+          physicalKey: PhysicalKeyboardKey.arrowRight,
         ),
         isNull,
       );

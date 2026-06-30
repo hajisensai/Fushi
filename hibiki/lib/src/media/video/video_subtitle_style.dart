@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
@@ -393,4 +394,25 @@ List<Shadow> buildSubtitleShadows(Color color, double thickness) {
         ),
       ),
   ];
+}
+
+/// 视频内顶栏（media_kit 控制条 [topButtonBar]）的外边距（BUG-463）。
+///
+/// 移动端视频永不进 media_kit 全屏路由（BUG-221），而 fork 的 [MaterialVideoControls]
+/// 只在**全屏**分支给顶栏 Column 套 `MediaQuery.padding` 顶部内缩、窗口分支恒
+/// `EdgeInsets.zero` → 顶栏按钮永远贴 `y=0`，被状态栏 / 刘海盖住、点不到（用户报「顶栏
+/// 的按钮会被挡住」）。本纯函数把系统安全区 [systemPadding] 折成顶栏 margin：
+/// - `top`：直接取 `systemPadding.top`（状态栏唤出高 / 顶部刘海高；隐栏且无刘海时为 0）。
+/// - `left` / `right`：与浮动侧栏 `_mergeRailSafeAreaPadding` 同款逐边取 `max(16, inset)`
+///   ——横屏短边刘海下顶栏左 / 右按钮也避开 cutout，又不在无刘海时把默认 16 叠成双重留白。
+///
+/// 调用方传 `MediaQuery.padding`（**非** `viewPadding`）：immersiveSticky 隐栏后
+/// `viewPadding.top` 仍恒上报状态栏区高度，单读它会把顶栏永久顶低一段空白（BUG-370 同型
+/// 陷阱）；`padding.top` 才是顶栏需要避让的真实物理 inset。
+EdgeInsets videoTopBarMargin(EdgeInsets systemPadding) {
+  return EdgeInsets.only(
+    left: math.max(16.0, systemPadding.left),
+    right: math.max(16.0, systemPadding.right),
+    top: systemPadding.top,
+  );
 }

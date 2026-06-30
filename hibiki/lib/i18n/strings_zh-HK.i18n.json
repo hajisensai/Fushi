@@ -691,8 +691,8 @@
   "font_color_desc": "閱讀器文字顏色",
   "background_color_desc": "閱讀器頁面背景",
   "selection_color_desc": "閱讀器文字選取醒目標示",
-  "color_sasayaki": "Sasayaki 醒目標示",
-  "color_sasayaki_desc": "有聲書字幕同步醒目標示",
+  "color_sasayaki": "音訊醒目標示",
+  "color_sasayaki_desc": "有聲書播放時跟隨當前句的醒目標示顏色",
   "color_link": "連結顏色",
   "color_link_desc": "閱讀器超連結顏色",
   "section_reader_colors": "閱讀器顏色",
@@ -1988,5 +1988,14 @@
   "folder_picker_empty": "No subfolders",
   "folder_picker_permission_required": "Storage permission is required to browse folders",
   "word_favorite_added": "Word saved to favorites",
-  "word_favorite_removed": "Word removed from favorites"
+  "word_favorite_removed": "Word removed from favorites",
+  "data_storage_migrate_overlay_title": "Moving your data",
+  "data_storage_migrate_overlay_warning": "Please keep the app open. Do not close or shut down your computer until it finishes.",
+  "data_storage_migrate_overlay_progress": "Copying files: $copied / $total",
+  "collection_word": "Word",
+  "reader_top_progress_floating": "Floating reading progress",
+  "reader_auto_hide_chrome_duration": "Auto-hide floating controls after",
+  "video_import_webpage_url_warning_title": "Web page address, not a direct stream",
+  "video_import_webpage_url_warning_body": "This looks like a web page (e.g. YouTube/Netflix), not a direct video stream (.m3u8/.mp4/direct link). Hibiki cannot extract video from web pages yet — please provide a direct stream URL. You can still try anyway.",
+  "video_import_webpage_url_try_anyway": "Try anyway"
 }

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview_windows/src/in_app_webview/custom_platform_view.dart';
@@ -89,5 +92,51 @@ void main() {
     expect(disposeCalls.length, 1);
     expect((disposeCalls.single.arguments as Map)['id'], 42,
         reason: '成功路径行为零变化：用真实 textureId dispose');
+  });
+
+  testWidgets(
+      'TODO-965: ready 完成前 widget 被销毁，complete 后上报不崩（不解引用陈旧 box/context）',
+      (WidgetTester tester) async {
+    // native WebView2 跨帧创建用一个手动 Completer 卡住 createInAppWebView：
+    // postFrame 的 _reportSurfaceSize/_reportWidgetPosition 会 await _controller.ready
+    // 进入挂起；此时把 widget 从树移除（box/context 失效），再 complete 创建。
+    // 修复前 await 之后用陈旧 box/context → View.of 返 null `!` 崩、localToGlobal 崩。
+    final Completer<int> createGate = Completer<int>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+      if (call.method == 'createInAppWebView') {
+        return createGate.future;
+      }
+      return null;
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 200,
+            height: 200,
+            child: CustomPlatformView(),
+          ),
+        ),
+      ),
+    );
+    // 触发 initState 的 postFrameCallback（其中调用两个上报方法）。
+    await tester.pump();
+
+    // ready 仍未完成时，把 CustomPlatformView 从树里移除 → 其 box/context 失效。
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox())),
+    );
+    await tester.pump();
+
+    // 现在放行 native 创建：两个上报方法的 await 恢复执行，必须命中 !mounted 早返回，
+    // 而不是解引用已失效的 box/context。
+    createGate.complete(7);
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull,
+        reason: 'ready 完成后必须复检 mounted/box.attached，不得用陈旧引用崩溃');
   });
 }

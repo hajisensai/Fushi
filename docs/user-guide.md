@@ -1,6 +1,8 @@
 # hibiki User Guide
 
-[中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb)
+**English** | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
+
+> The Simplified Chinese guide is hosted on Feishu (link above). The English guide is also available [on GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md).
 
 ## Introduction
 
@@ -10,7 +12,7 @@ This is free software for Android / Windows (iOS / macOS planned) -- an epoch-ma
 
 https://github.com/hajisensai/hibiki
 
-Please Star the repository first.
+Actively developed — Your feedback will be addressed promptly. Bug reports and feature requests are welcome. If you find Hibiki useful, sharing it with others or leaving a ⭐ on the repository is appreciated.
 
 ### Download
 

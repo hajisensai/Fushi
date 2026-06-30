@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'temp_dir_cleanup.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 
@@ -415,7 +416,7 @@ void main() {
       } finally {
         await onDiskDb.close();
         for (final Directory d in [dbDir, dictDir, outDir]) {
-          if (d.existsSync()) await d.delete(recursive: true);
+          if (d.existsSync()) await cleanupTempDir(d);
         }
       }
     });

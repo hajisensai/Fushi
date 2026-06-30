@@ -8,9 +8,22 @@
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-hibiki は Android と Windows 向けの没入型語学学習ツールです。EPUB 読書、オーディオブック同期、動画字幕の単語検索、ワンタップでの Anki カード作成を一つにまとめ、あらゆるインプットが自然に復習可能な語彙になります。
+[使い方ガイド](../user-guide.ja.md) | [最新版をダウンロード](https://github.com/hajisensai/hibiki/releases)
+
+> **観たいものを観ているうちに、ことばが手に入る。**
+
+hibiki は、あなたが読んでいる小説、追っているアニメ、聴いているオーディオブックを、そのまま語学のインプットに変えます——知らない単語をタップすればすぐ辞書を引け、引いたらワンタップで原文の文脈つき Anki カードにできます。あらかじめ用意された単語リストを暗記させるのではなく、あなたが**実際に読んだ・聴いた**ことばだけを拾い上げます。
+
+語学を身につける最も効果的な方法は、単語帳で孤立した単語を覚えることではなく、本物のコンテンツに大量に触れることです。けれど「没入」にはずっと二つの厄介があります——知らない単語を引くと集中が途切れる、引いてもすぐに忘れる。hibiki はこの流れをつなぎ直しました——
+
+📖 **読む**：EPUB リーダーで単語をタップすればその場で辞書を引き、ページから離れません。<br>
+🎧 **聴く**：オーディオブックは一文ずつハイライトしながら読み上げ、自動でページをめくります。<br>
+🎬 **観る**：動画の字幕からそのまま単語を引いてカード化、アニメを追うことがそのままインプットになります。<br>
+🃏 **定着**：どの場面で引いた単語もワンタップで Anki へ送り、実際に出会った単語だけを復習します。
+
+すべての場面が同じ辞書・統計・復習フローを共有します。あらゆる言語（日本語、英語……）に対応し、特に**大量のインプット + 自作カードだけを覚える**を信条とする没入型学習者に向いています。Android と Windows に対応（iOS・macOS は計画中）。
 
 <table>
   <tr>
@@ -24,7 +37,17 @@ hibiki は Android と Windows 向けの没入型語学学習ツールです。E
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="動画の単語検索（ネストポップアップ）" width="100%"></td>
     <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="動画の単語検索（字幕リスト）" width="100%"></td>
   </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="アプリ外でのテキスト選択検索（モバイル）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="アプリ外でのテキスト選択検索（デスクトップ）" width="100%"></td>
+  </tr>
 </table>
+
+**ワンタップ Anki カード作成デモ**
+
+<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
+
+> 動画が表示されない？[ワンクリック作成デモを見る ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
 
 </div>
 
@@ -196,6 +219,6 @@ GNU General Public License v3.0 の下で配布されます。詳細は [LICENSE
 
 <br>
 
-[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+[简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
 </div>

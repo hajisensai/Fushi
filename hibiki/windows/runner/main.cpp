@@ -38,6 +38,60 @@ std::wstring FirstFileArgFromCommandLine() {
   return file_arg;
 }
 
+// TODO-935 BUG: 数据迁移成功后的自动重启（DesktopLifecycleService.restartApp）
+// 带的重启标志。必须与 Dart 侧 DesktopLifecycleService.restartMarkerArg 逐字符一致。
+// 见到它说明本次启动是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
+constexpr wchar_t kRestartMarkerArg[] = L"--hibiki-restarted";
+
+// 本进程 argv 是否带 [kRestartMarkerArg]（自动重启拉起的新进程）。
+bool HasRestartMarker() {
+  int argc = 0;
+  wchar_t **argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  if (argv == nullptr) {
+    return false;
+  }
+  bool found = false;
+  for (int i = 1; i < argc; ++i) {
+    if (argv[i] != nullptr && ::wcscmp(argv[i], kRestartMarkerArg) == 0) {
+      found = true;
+      break;
+    }
+  }
+  ::LocalFree(argv);
+  return found;
+}
+
+// 等待旧实例释放单实例互斥量（[mutex] 由 CreateMutexW 返回、本进程未持有所有权）。
+// 自动重启时旧进程已开始退出序列（prepareForProcessExit + exit(0)），但「拉起新进程」
+// 与「旧进程真正退出」之间有一小段并发窗口：此刻互斥量仍被旧进程持有，新进程裸调
+// CreateMutexW 会拿到 ERROR_ALREADY_EXISTS 而被误判成「二次启动」直接退出，导致重启
+// 落空——数据已迁移但应用从未以新数据根重新初始化（用户感知「弹了下进度就重启、位置没变」）。
+// 这里用 WaitForSingleObject 阻塞到旧进程退出（其句柄关闭 → 互斥量被遗弃 → 本进程拿到
+// WAIT_ABANDONED/WAIT_OBJECT_0 即取得所有权），加超时上界避免旧进程异常不退时永久卡死。
+// 返回 true = 已取得所有权可继续启动；false = 超时（旧实例仍在，按二次启动语义放弃）。
+bool WaitForSingleInstanceMutex(HANDLE mutex, DWORD timeout_ms) {
+  if (mutex == nullptr) {
+    return false;
+  }
+  const DWORD wait = ::WaitForSingleObject(mutex, timeout_ms);
+  // WAIT_OBJECT_0：正常取得；WAIT_ABANDONED：上一持有者（旧进程）未释放就退出，所有权
+  // 移交本进程——对单实例守卫语义而言同样是「旧实例已走、我接管」，可继续启动。
+  return wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
+}
+
+// TODO-1003: 本进程是否为自动化集成测试 runner。itest harness（tool/run_windows_itest.ps1）
+// 在离屏/置屏两模式下都恒设 HIBIKI_TEST_HIDDEN（同 win32_window.cpp 的 IsTestHiddenMode）。
+// 测试模式下**必须跳过**下面的单实例守卫：测试 runner 本就该以首实例语义启动，哪怕用户
+// 自己的 Hibiki 正开着；否则守卫会看到用户实例持有 HibikiSingleInstanceMutex，走
+// FindWindow→前置→return EXIT_SUCCESS 分支，在 Flutter engine 初始化**之前**就退出 →
+// flutter_tool 永远拿不到 VM service URI（报 "log reader stopped unexpectedly"，整套
+// Windows itest 无法 attach）。跳过是安全的：守卫唯一目的是防两进程共享默认 WebView2
+// userDataFolder（BUG-437），而 harness 已用 HIBIKI_WEBVIEW2_USER_DATA_FOLDER 把测试
+// runner 的 WebView2 profile 隔离开，冲突不存在。生产从不设该变量，行为字节不变。
+bool IsTestRunnerMode() {
+  return ::GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
@@ -48,21 +102,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // userDataFolder → 第二实例 env 创建锁冲突失败 → `Cannot create the InAppWebView
   // instance!`。原本只 CreateMutexW 不查 ERROR_ALREADY_EXISTS = 没有真单实例。
   // 此处检测已有实例则把首实例窗口前置并退出本进程，消除双实例锁冲突放大器。
-  // 离屏集成测试模式（HIBIKI_TEST_HIDDEN）完全不参与单实例互斥量：测试 runner 用隔离的
-  // WebView2 userDataFolder（HIBIKI_WEBVIEW2_USER_DATA_FOLDER），与用户在用的 Hibiki 不
-  // 抢同一 userDataFolder，无 WebView2 锁冲突。若仍走单实例守卫，测试 exe 会在用户开着
-  // Hibiki 时检测到首实例后立即 return EXIT_SUCCESS 退出 → `flutter test -d windows` 报
-  // 「log reader stopped/never started / Unable to start the app」（启动间歇失败的真因）。
-  // 跳过后测试实例与用户实例并存、互不干扰，也不持有互斥量去挡用户启动自己的 Hibiki。
-  const bool test_hidden_mode =
-      ::GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
-  ::SetLastError(ERROR_SUCCESS);
-  HANDLE single_instance_mutex =
-      test_hidden_mode
-          ? nullptr
-          : ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
-  if (!test_hidden_mode && single_instance_mutex != nullptr &&
-      ::GetLastError() == ERROR_ALREADY_EXISTS) {
+  // 集成测试 runner（HIBIKI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
+  // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
+  const bool test_runner = IsTestRunnerMode();
+  HANDLE single_instance_mutex = nullptr;
+  bool another_instance = false;
+  if (!test_runner) {
+    ::SetLastError(ERROR_SUCCESS);
+    single_instance_mutex =
+        ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
+    another_instance = single_instance_mutex != nullptr &&
+                       ::GetLastError() == ERROR_ALREADY_EXISTS;
+  }
+  // TODO-935 BUG 修复：数据迁移后的自动重启会以 detached 模式拉起带 [kRestartMarkerArg]
+  // 的新进程，但此刻旧进程尚未走完退出序列、仍持有单实例互斥量。若直接按「二次启动」
+  // 退出本进程，则重启落空：数据已迁到新根、data_root pref 已写，但应用从未重新初始化
+  // 去读新根 → 用户看到「弹了下进度就重启、位置没变」。带重启标志时改为**等待**旧进程
+  // 释放互斥量（旧进程 exit(0) 后句柄关闭），取得所有权后继续正常启动，新进程的
+  // AppPaths.resolve() 即读到新 data_root。等待加 10s 上界，旧进程异常不退时退回二次
+  // 启动语义（前置旧窗口 + 退出），不永久卡死。普通用户二次点击图标无此标志，行为不变。
+  if (another_instance && HasRestartMarker()) {
+    if (WaitForSingleInstanceMutex(single_instance_mutex, 10000)) {
+      another_instance = false;  // 已接管单实例所有权：按首实例正常启动。
+    }
+  }
+  if (another_instance) {
     // 已有实例在跑：找到首实例主窗口。
     HWND existing = ::FindWindowW(nullptr, L"Hibiki");
     if (existing != nullptr) {

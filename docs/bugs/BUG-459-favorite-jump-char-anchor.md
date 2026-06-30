@@ -1,0 +1,15 @@
+## BUG-459 · 收藏句/制卡历史跳原文跳错位置(恒跳章首)+跳后阅读进度丢失
+- **报告**：2026-06-30（用户：）TODO-974
+- **真实性**：✅ 真 bug。根因为「单位契约错位」：
+  - **跳错（恒跳章首）**：收藏句写入端 `chrome.part.dart:1563` 的 `normCharOffset = sentenceRange.offset` 来自 `reader_selection_scripts.dart:818 getNormalizedOffset` 返回的「章节内绝对可匹配字符索引」（0..数千）；制卡历史同口径 `mining.part.dart:348`。但跳转端 `reader_hibiki_page.dart:1253` 把 `bm.normCharOffset / 10000.0` 当成 0-10000 进度分数还原 → 绝对索引 `/10000≈0` → 恒落章首。真正用 0-10000 分数的是真实书签（`chrome.part.dart:1149/1132` 写 `(progress*10000).round()`）与 `ReaderPosition`（`navigation.part.dart:845`）。`collections_page._openBook:359` 把三类行都塞进同一 `Bookmark.normCharOffset`，混淆两套计量。
+  - **丢进度**：跳转走 `initialBookmarkJump` 分支（`reader_hibiki_page.dart:1248`）绕过 `else` 的 `ReaderPositionRepository.findByBookKey` 恢复；落地后正常滚动经 `navigation.part.dart:824 _debouncedSaveReaderPosition`→`_persistPosition` 把（错误的）跳转点 upsert 进该书唯一 `ReaderPosition` 行，永久覆盖用户真实阅读位置。
+- **[x] ① 已修复** — 方案 B（绝对字符锚，与查词高亮同语义，精度高）：
+  - `bookmark_repository.dart` 给 `Bookmark` 加两个**仅内存传输、不持久化**字段：`int? charAnchor`（章节内绝对可匹配字符索引，与 `_initialCharOffset`/`ReaderPosition.charOffset` 同计量）+ `bool preserveSavedPosition`（临时浏览跳转标记）。`fromRow`/`fromJson`/`toJson` 均不读写它们 → 真实书签恒 `charAnchor==null`/`preserve==false`，向后兼容分数路径不变。
+  - `collections_page.dart:359 _openBook` 按行类型分流：`sentence`/`mined` 把 `normCharOffset` 当绝对字符锚经 `charAnchor` 透传并标 `preserveSavedPosition: true`；真实 `bookmark` 仍走 `normCharOffset` 分数。覆盖收藏句与制卡历史两路（均复用 `_openBook`）。
+  - `reader_hibiki_page.dart:1248` 跳转分支：`charAnchor>=0` 时设 `_initialCharOffset=charAnchor`（→ `reader_pagination_scripts.dart:1455 restoreToCharOffset` 精确恢复），否则回退 `normCharOffset/10000` 分数（真实书签 / 无锚收藏句）；据 `preserveSavedPosition` 置 `_suppressPositionPersist`。
+  - `navigation.part.dart _persistPosition` 单点拦截：`_suppressPositionPersist` 时早返回不落盘（debounce 保存与退出 flush 都汇聚此处），保住原 `ReaderPosition`。
+  - 提交哈希：见下方备注。
+- **[x] ② 已加自动化测试** —
+  - `packages/hibiki_audio/test/audiobook/bookmark_char_anchor_test.dart`：`Bookmark` 新字段默认值 + charAnchor/preserveSavedPosition 不被 `fromJson`/`toJson` 持久化（防绝对锚污染真实书签语义）。
+  - `hibiki/test/pages/favorite_jump_char_anchor_guard_test.dart`：collections 句子/制卡分流走 charAnchor+preserve（书签仍走分数）、reader 跳转分支精确锚恢复 + 抑制持久化、`_persistPosition` 抑制守卫在落盘写入之前。
+- **备注**：旧收藏句记录的 offset 语义不变（仍是绝对字符锚），新跳转端按绝对锚还原即对，无需数据迁移。视频来源收藏句走 `_openVideoSentence`（`normCharOffset` 是 startMs），不经本路径，未触碰。真机待验：从收藏夹/制卡历史点书内句子跳回，落在正确句子且返回后原阅读进度不丢。

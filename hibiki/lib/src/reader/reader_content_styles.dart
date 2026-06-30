@@ -619,6 +619,14 @@ body {
     required double clampedMarginTop,
     required double clampedMarginBottom,
   }) {
+    // TODO-958：VN 居中需区分主轴。flex 容器 `.hoshi-vn-screen` 的物理主轴恒为水平
+    // （flex-direction:row），但「沿主轴居中」的语义在两种写排下不同：竖排
+    // vertical-rl 文字列沿水平主轴展开，水平居中即左右居中；横排文字行沿垂直交叉轴
+    // 堆叠，主轴是水平的单行宽度。两轴都给 content 上界由 flex 居中即可对齐；此处用
+    // isVertical 标注主/交叉轴，便于后续真机微调而不回退到硬编码 width:100%。
+    final String vnAxisComment = isVertical
+        ? '/* VN axis: vertical-rl — main axis = horizontal (left/right centering) */'
+        : '/* VN axis: horizontal-tb — main axis = horizontal single-line width */';
     return '''
 html, body {
   margin: 0 !important;
@@ -663,7 +671,15 @@ body {
   overflow: hidden !important;
 }
 .hoshi-vn-content {
-  width: 100% !important;
+  $vnAxisComment
+  /* TODO-958：内容沿两轴**有上界但不强制占满**，再交给 `.hoshi-vn-screen` 的
+     flex 居中（align-items + justify-content 都是 center）把单句台词放到屏幕正
+     中。旧代码硬写 `width: 100%`（物理宽度）：竖排 vertical-rl 下文字列从右边缘
+     向左排却占满全宽 → 主轴被填满 → justify-content:center 失效 → 台词贴最右。
+     改成 `max-*: 100%` 后内容少时沿主轴收缩由 flex 居中；内容多时撑到交叉轴上界
+     后向主轴溢出，仍被 fitScreensToViewport 的 scrollWidth/Height ≤ client 判据
+     正确捕获并拆屏（盒尺寸测量语义不变）。 */
+  max-width: 100% !important;
   max-height: 100% !important;
 }
 /* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */

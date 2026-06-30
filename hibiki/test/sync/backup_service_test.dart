@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'temp_dir_cleanup.dart';
 
 void main() {
   group('BackupMeta', () {
@@ -69,7 +70,7 @@ void main() {
 
     tearDown(() async {
       await db.close();
-      if (tmpDir.existsSync()) await tmpDir.delete(recursive: true);
+      if (tmpDir.existsSync()) await cleanupTempDir(tmpDir);
     });
 
     test('defaultFilename matches expected pattern', () {
@@ -263,7 +264,7 @@ void main() {
         expect(result.appVersion, '2.0.0');
       } finally {
         await onDiskDb.close();
-        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
       }
     });
 
@@ -306,12 +307,12 @@ void main() {
         } finally {
           await restored.close();
           if (restoreDir.existsSync()) {
-            await restoreDir.delete(recursive: true);
+            await cleanupTempDir(restoreDir);
           }
         }
       } finally {
         await onDiskDb.close();
-        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
       }
     });
 
@@ -358,12 +359,12 @@ void main() {
         } finally {
           await restored.close();
           if (restoreDir.existsSync()) {
-            await restoreDir.delete(recursive: true);
+            await cleanupTempDir(restoreDir);
           }
         }
       } finally {
         await onDiskDb.close();
-        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
       }
     });
 
@@ -440,16 +441,16 @@ void main() {
         } finally {
           await restored.close();
           if (restoreDir.existsSync()) {
-            await restoreDir.delete(recursive: true);
+            await cleanupTempDir(restoreDir);
           }
           if (restoredDictDir.existsSync()) {
-            await restoredDictDir.delete(recursive: true);
+            await cleanupTempDir(restoredDictDir);
           }
         }
       } finally {
         await onDiskDb.close();
-        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
-        if (dictDir.existsSync()) await dictDir.delete(recursive: true);
+        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
+        if (dictDir.existsSync()) await cleanupTempDir(dictDir);
       }
     });
 
@@ -510,12 +511,12 @@ void main() {
         } finally {
           await restored.close();
           if (restoreDir.existsSync()) {
-            await restoreDir.delete(recursive: true);
+            await cleanupTempDir(restoreDir);
           }
         }
       } finally {
         await onDiskDb.close();
-        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
       }
     });
 
@@ -569,14 +570,14 @@ void main() {
             'stale index',
           );
         } finally {
-          if (dstDir.existsSync()) await dstDir.delete(recursive: true);
+          if (dstDir.existsSync()) await cleanupTempDir(dstDir);
           if (dstDictDir.existsSync()) {
-            await dstDictDir.delete(recursive: true);
+            await cleanupTempDir(dstDictDir);
           }
         }
       } finally {
         await srcDb.close();
-        if (srcDir.existsSync()) await srcDir.delete(recursive: true);
+        if (srcDir.existsSync()) await cleanupTempDir(srcDir);
       }
     });
 
@@ -631,9 +632,9 @@ void main() {
         expect(await File('${dstDir.path}/hibiki.db').readAsString(),
             'current db');
       } finally {
-        if (dstDir.existsSync()) await dstDir.delete(recursive: true);
+        if (dstDir.existsSync()) await cleanupTempDir(dstDir);
         if (dstDictDir.existsSync()) {
-          await dstDictDir.delete(recursive: true);
+          await cleanupTempDir(dstDictDir);
         }
       }
     });
@@ -671,7 +672,7 @@ void main() {
         expect(meta.statsCount, 1);
       } finally {
         await srcDb.close();
-        if (srcDir.existsSync()) await srcDir.delete(recursive: true);
+        if (srcDir.existsSync()) await cleanupTempDir(srcDir);
       }
 
       // Restore into a fresh directory and reopen — data must survive.
@@ -698,7 +699,7 @@ void main() {
           await restored.close();
         }
       } finally {
-        if (dstDir.existsSync()) await dstDir.delete(recursive: true);
+        if (dstDir.existsSync()) await cleanupTempDir(dstDir);
       }
     });
 
@@ -739,7 +740,7 @@ void main() {
     test('no device-local key (incl. addresses/usernames) leaks into a backup',
         () async {
       final srcDir = await Directory.systemTemp.createTemp('hibiki_strip_src_');
-      addTearDown(() => srcDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = HibikiDatabase(srcDir.path);
       // Seed every device-local key with a sentinel value.
       for (final String key in SyncRepository.deviceLocalPrefKeys) {
@@ -758,7 +759,7 @@ void main() {
       ));
 
       final zipDir = await Directory.systemTemp.createTemp('hibiki_strip_zip_');
-      addTearDown(() => zipDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
         db: srcDb,
@@ -770,7 +771,7 @@ void main() {
       // Import into a FRESH dir: no current DB, so the backup is applied
       // verbatim with nothing preserved — exposing exactly what the ZIP holds.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_strip_dst_');
-      addTearDown(() => dstDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(dstDir));
       await BackupService.importBackupFiles(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
@@ -816,7 +817,7 @@ void main() {
         () async {
       // ── This device: UI pref + profile + binding + sync + local book ──
       final curDir = await Directory.systemTemp.createTemp('hibiki_keep_cur_');
-      addTearDown(() => curDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(curDir));
       final curDb = HibikiDatabase(curDir.path);
       await curDb.setPref('reader_appearance', 'LOCAL'); // UI pref (keep)
       await curDb.setPref('sync_backend_type', 'webDav'); // device-local (keep)
@@ -845,7 +846,7 @@ void main() {
 
       // ── Backup from another device: different settings/profile/book ──
       final srcDir = await Directory.systemTemp.createTemp('hibiki_keep_src_');
-      addTearDown(() => srcDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = HibikiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
       await srcDb.insertProfile(ProfilesCompanion.insert(
@@ -863,7 +864,7 @@ void main() {
           (await srcDb.getAllEpubBooks()).single.bookKey;
       await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
       final zipDir = await Directory.systemTemp.createTemp('hibiki_keep_zip_');
-      addTearDown(() => zipDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
         db: srcDb,
@@ -924,7 +925,7 @@ void main() {
         () async {
       // Backup with its own settings + content.
       final srcDir = await Directory.systemTemp.createTemp('hibiki_fresh_src_');
-      addTearDown(() => srcDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = HibikiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
       await srcDb.insertEpubBook(EpubBooksCompanion.insert(
@@ -937,7 +938,7 @@ void main() {
         importedAt: 1,
       ));
       final zipDir = await Directory.systemTemp.createTemp('hibiki_fresh_zip_');
-      addTearDown(() => zipDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
               db: srcDb, dbDirectory: srcDir.path, appVersion: '1.0')
@@ -946,7 +947,7 @@ void main() {
 
       // Import into an EMPTY dir (no current DB) with importSettings:false.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_fresh_dst_');
-      addTearDown(() => dstDir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(dstDir));
       await BackupService.importBackupFiles(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
@@ -968,7 +969,7 @@ void main() {
     test('recoverPendingImport with a settings sidecar but missing bak is safe',
         () async {
       final dir = await Directory.systemTemp.createTemp('hibiki_nobak_');
-      addTearDown(() => dir.delete(recursive: true));
+      addTearDown(() => cleanupTempDir(dir));
       final db = HibikiDatabase(dir.path);
       await db.setPref('reader_appearance', 'INTACT');
       await db.close();

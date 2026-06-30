@@ -544,6 +544,24 @@ class AppModel with ChangeNotifier {
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final HibikiShortcutRegistry shortcutRegistry = HibikiShortcutRegistry();
 
+  /// TODO-973: the SINGLE source of truth for "a controller is driving
+  /// auto-immersive mode right now". `true` once a controller is present AND the
+  /// user opted into [gamepadAutoImmersive]; `false` otherwise. Every chrome host
+  /// that should yield to controller immersion — the global bottom bar / side
+  /// rail ([adaptiveBottomBar]/[adaptiveNavRail]) and the video page — listens to
+  /// this so they all hide together, instead of the presence signal reaching only
+  /// the open reader (which used to leave the app-level bottom bar visible behind
+  /// the reader and never touched the video page). A [ValueNotifier] (not the
+  /// coarse [notifyListeners]) so hosts can rebuild precisely and tests can drive
+  /// the rising/falling edge directly.
+  ///
+  /// Reader ownership is unchanged: the reader still drives its own chrome through
+  /// [ReaderHibikiSource.onGamepadPresenceChanged] + its `_chromeHiddenByGamepad`
+  /// restore semantics (never fight a manual toggle). This notifier is the global
+  /// READ surface, fed from the same gated presence callback, so the reader's
+  /// behaviour is byte-for-byte preserved (Never break userspace).
+  final ValueNotifier<bool> gamepadImmersiveActive = ValueNotifier<bool>(false);
+
   /// Polls physical game controllers and dispatches them into the shortcut /
   /// focus pipeline on platforms where the Flutter engine does not deliver
   /// gameButton* key events (desktop). No-op on Android/iOS (native key events)
@@ -551,13 +569,23 @@ class AppModel with ChangeNotifier {
   late final GamepadService gamepadService = GamepadService(
     navigatorKey: navigatorKey,
     registry: shortcutRegistry,
-    // TODO-728: bridge controller presence to the open reader's auto-immersive
-    // mode, gated on the user preference so it is inert unless opted in.
-    onPresenceChanged: (bool present) {
-      if (!gamepadAutoImmersive) return;
-      ReaderHibikiSource.onGamepadPresenceChanged?.call(present);
-    },
+    // TODO-728/TODO-973: bridge controller presence to the global immersive
+    // state, gated on the user preference so it is inert unless opted in.
+    onPresenceChanged: _onGamepadPresenceChanged,
   );
+
+  /// TODO-973: the one place controller presence becomes app state. Gated on the
+  /// [gamepadAutoImmersive] preference: when the user has NOT opted in, immersive
+  /// state stays false no matter what the controller does (so nothing — bottom
+  /// bar, reader, video — ever auto-hides; Never break userspace for opted-out
+  /// users). When opted in, [present] sets the global [gamepadImmersiveActive]
+  /// single source of truth AND forwards to the open reader (which keeps its own
+  /// hide/restore ownership semantics).
+  void _onGamepadPresenceChanged(bool present) {
+    gamepadImmersiveActive.value = present && gamepadAutoImmersive;
+    if (!gamepadAutoImmersive) return;
+    ReaderHibikiSource.onGamepadPresenceChanged?.call(present);
+  }
 
   /// Resets the focus highlight to touch mode on every route push/pop so a ring
   /// lit by keyboard/gamepad navigation on one page is not carried onto the next
@@ -663,6 +691,41 @@ class AppModel with ChangeNotifier {
 
   /// Notifies app to stop showing any screens.
   final ChangeNotifier databaseCloseNotifier = ChangeNotifier();
+
+  /// TODO-959：桌面「数据存储位置」整目录迁移期间为 true。迁移会 [closeDatabase]
+  /// （置 `_isInitialised=false`）以释放 Windows 文件锁，否则根 widget 会回退到裸
+  /// loading 分支（近黑底 + 转圈，搬大库数秒~数分钟被误判死机）。该标志让根 widget 在
+  /// loading 分支**之前**改显一个带「正在迁移数据，请勿关闭」文案 + 进度条的迁移遮罩。
+  bool _dataRootMigrationActive = false;
+  bool get dataRootMigrationActive => _dataRootMigrationActive;
+
+  /// 迁移进度（跨盘复制时 (已复制文件数, 总文件数)）。同盘 rename 瞬时完成不产生进度，
+  /// 此时保持 null → UI 显示不确定进度条。
+  ({int copied, int total})? _dataRootMigrationProgress;
+  ({int copied, int total})? get dataRootMigrationProgress =>
+      _dataRootMigrationProgress;
+
+  /// 进入迁移态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 搬文件」的顺序，
+  /// 这样根 widget 在 DB 关闭引发的 rebuild 里看到的是迁移遮罩而非裸 loading。
+  void beginDataRootMigration() {
+    _dataRootMigrationActive = true;
+    _dataRootMigrationProgress = null;
+    notifyListeners();
+  }
+
+  /// 更新迁移进度（跨盘复制每完成一个文件调一次）。无副作用，仅刷进度条。
+  void updateDataRootMigrationProgress(int copied, int total) {
+    _dataRootMigrationProgress = (copied: copied, total: total);
+    notifyListeners();
+  }
+
+  /// 退出迁移态。仅在迁移失败（保留旧根、不重启）回到设置页时调用；成功路径会重启进程，
+  /// 不会执行到这里。
+  void endDataRootMigration() {
+    _dataRootMigrationActive = false;
+    _dataRootMigrationProgress = null;
+    notifyListeners();
+  }
 
   /// TODO-376：一次性「请打开首页『查词』tab」信号。值每请求一次自增（内容无关，
   /// 仅作 edge 触发）。桌面悬浮字幕条点词（reader 路由里 `_lookupFromFloatingLyric`）
@@ -2013,6 +2076,11 @@ class AppModel with ChangeNotifier {
   Future<void> setCustomThemeSasayakiColor(Color? c) =>
       themeNotifier.setCustomThemeSasayakiColor(c);
 
+  /// TODO-977: 全局音频高亮颜色（与阅读器主题解耦），委托 ThemeNotifier。
+  Color? get audioHighlightColor => themeNotifier.audioHighlightColor;
+  Future<void> setAudioHighlightColor(Color? c) =>
+      themeNotifier.setAudioHighlightColor(c);
+
   Color? get customThemeLinkColor => themeNotifier.customThemeLinkColor;
   Future<void> setCustomThemeLinkColor(Color? c) =>
       themeNotifier.setCustomThemeLinkColor(c);
@@ -2096,12 +2164,32 @@ class AppModel with ChangeNotifier {
 
   String? get lastSelectedModel => prefsRepo.lastSelectedModel;
 
-  /// Persist a new app locale in preferences. Restarts the app so every
-  /// widget re-resolves [t] with the new locale (Method A lookups don't
-  /// automatically rebuild on locale change).
+  /// Persist a new app locale in preferences and switch the UI language.
+  ///
+  /// Desktop (TODO-960): live hot-reload, **never** restart the process. The
+  /// desktop restart path (`Process.start(detached) + exit(0)`) races the
+  /// Windows single-instance mutex (`windows/runner/main.cpp`): the freshly
+  /// spawned process reaches `CreateMutexW` before the old process has called
+  /// `exit(0)`, gets `ERROR_ALREADY_EXISTS`, fronts the old window then
+  /// `return EXIT_SUCCESS` (self-terminates) — moments later the old process
+  /// also exits, leaving no process at all (app closes, never reopens). So on
+  /// desktop we mutate [LocaleSettings] in place and [notifyListeners]; because
+  /// the bulk of the UI reads the global Method A `t` (which does NOT rebuild
+  /// on a [LocaleSettings] change by itself), the root widget tree is
+  /// additionally remounted via a locale-keyed [Key] at [main]'s
+  /// [TranslationProvider] (see `_HoshiReaderAppState.build`).
+  ///
+  /// Mobile (Android/iOS) keeps the native restart path (`restart_app` plugin
+  /// rebuilds the Activity/scene — no mutex race). The data-root migration
+  /// path still restarts on every platform via its own call site
+  /// (`data_root.part.dart`), and is intentionally unaffected by this method.
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
+    if (isDesktopPlatform) {
+      notifyListeners();
+      return;
+    }
     if (platformServices.lifecycle.supportsRestart) {
       await platformServices.lifecycle.restartApp();
     } else {
@@ -2275,9 +2363,25 @@ class AppModel with ChangeNotifier {
   // TODO-728: gamepad-present auto-immersive preference, delegated to prefsRepo
   // (mirrors showMediaNotification). Default false.
   bool get gamepadAutoImmersive => prefsRepo.gamepadAutoImmersive;
-  void toggleGamepadAutoImmersive() => prefsRepo.toggleGamepadAutoImmersive();
-  Future<void> setGamepadAutoImmersive(bool value) =>
-      prefsRepo.setGamepadAutoImmersive(value);
+  void toggleGamepadAutoImmersive() {
+    prefsRepo.toggleGamepadAutoImmersive();
+    _recomputeGamepadImmersive();
+  }
+
+  Future<void> setGamepadAutoImmersive(bool value) async {
+    await prefsRepo.setGamepadAutoImmersive(value);
+    _recomputeGamepadImmersive();
+  }
+
+  /// TODO-973: re-derive the global [gamepadImmersiveActive] single source of
+  /// truth from CURRENT controller presence + the (possibly just-changed)
+  /// [gamepadAutoImmersive] preference. Called when the preference toggles
+  /// MID-presence — the presence callback only fires on rising/falling edges, so
+  /// without this, opting out while a controller is active would leave the bars
+  /// hidden until the controller goes idle. Reuses the same presence path so the
+  /// reader stays in sync too (forwarding is a no-op when nothing changed).
+  void _recomputeGamepadImmersive() =>
+      _onGamepadPresenceChanged(gamepadService.gamepadPresent);
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
@@ -3491,6 +3595,7 @@ class AppModel with ChangeNotifier {
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
     homeDictionaryTabRequest.dispose();
+    gamepadImmersiveActive.dispose();
     // session 的控制流订阅引用 audioCtrl 的 stream，须在 audioCtrl.dispose 前拆。
     audiobookSession.dispose();
     audioCtrl.dispose();

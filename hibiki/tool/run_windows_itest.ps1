@@ -13,6 +13,14 @@
 #   .\tool\run_windows_itest.ps1 integration_test\app_smoke_test.dart
 #   .\tool\run_windows_itest.ps1 -DryRun integration_test\app_smoke_test.dart
 #   .\tool\run_windows_itest.ps1 -Visible integration_test\app_smoke_test.dart
+#   .\tool\run_windows_itest.ps1 -Proxy "" integration_test\app_smoke_test.dart
+#
+# FFI / native-assets: `flutter test -d windows` runs native build hooks
+# (sqlite3 / hoshidicts). The runner isolates the app-under-test's runtime data
+# by redirecting APPDATA/LOCALAPPDATA/TEMP/USERPROFILE, but it pins PUB_CACHE to
+# the real cache so the build toolchain keeps resolving packages, and routes
+# downloads through -Proxy (default http://127.0.0.1:34151, applied only when
+# the parent has no proxy and the probe succeeds; pass -Proxy "" to disable).
 #
 # Both modes are non-blocking: the window is always non-activating
 # (WS_EX_NOACTIVATE) and never steals the user's foreground/keyboard focus.
@@ -29,11 +37,79 @@ param(
   [string]$Target = "integration_test\desktop_settings_smoke_test.dart",
   [string]$EvidenceRoot = "",
   [string]$RunId = "",
+  [string]$Proxy = "http://127.0.0.1:34151",
   [switch]$DryRun,
   [switch]$Visible
 )
 
 $ErrorActionPreference = "Stop"
+
+# Resolve the real pub cache location BEFORE we redirect LOCALAPPDATA below.
+# `flutter test -d windows` runs native-assets build hooks (sqlite3 / hoshidicts
+# FFI) that must resolve packages from the populated pub cache. Dart resolves the
+# cache via PUB_CACHE, falling back to %LOCALAPPDATA%\Pub\Cache on Windows. Since
+# the runner redirects LOCALAPPDATA to an empty isolated dir (to isolate the
+# app-under-test's runtime data), the build toolchain would otherwise lose its
+# cache and try to re-download — which fails offline / behind a flaky GitHub.
+# Pinning PUB_CACHE to the resolved real location keeps the build toolchain's
+# cache intact while the app under test still gets its isolated LOCALAPPDATA.
+function Resolve-PubCachePath {
+  if (-not [string]::IsNullOrWhiteSpace($env:PUB_CACHE)) {
+    return $env:PUB_CACHE
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    return (Join-Path $env:LOCALAPPDATA "Pub\Cache")
+  }
+  return ""
+}
+$RealPubCache = Resolve-PubCachePath
+
+# Decide whether to inject HTTPS_PROXY / HTTP_PROXY for the child build. Native
+# assets download prebuilt binaries from GitHub / pub; on this network direct
+# GitHub is unreliable and must go through 127.0.0.1:34151. We never override a
+# proxy the parent already set (caller wins), and we never force a dead proxy on
+# a no-proxy machine: the default proxy is only applied when a quick TCP probe
+# confirms it is actually listening. Pass `-Proxy ""` to opt out entirely.
+function Test-ProxyReachable {
+  param([Parameter(Mandatory = $true)][string]$ProxyUrl)
+  try {
+    $uri = [System.Uri]$ProxyUrl
+  } catch {
+    return $false
+  }
+  $proxyHost = $uri.Host
+  $proxyPort = if ($uri.Port -gt 0) { $uri.Port } else { 80 }
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $async = $client.BeginConnect($proxyHost, $proxyPort, $null, $null)
+    if (-not $async.AsyncWaitHandle.WaitOne(500)) {
+      return $false
+    }
+    $client.EndConnect($async)
+    return $client.Connected
+  } catch {
+    return $false
+  } finally {
+    $client.Close()
+  }
+}
+
+# Effective proxy = parent's existing proxy if set, else the (probed) -Proxy.
+$ParentProxy = if (-not [string]::IsNullOrWhiteSpace($env:HTTPS_PROXY)) {
+  $env:HTTPS_PROXY
+} elseif (-not [string]::IsNullOrWhiteSpace($env:HTTP_PROXY)) {
+  $env:HTTP_PROXY
+} else {
+  ""
+}
+$EffectiveProxy = ""
+if (-not [string]::IsNullOrWhiteSpace($ParentProxy)) {
+  $EffectiveProxy = $ParentProxy
+} elseif (-not [string]::IsNullOrWhiteSpace($Proxy)) {
+  if (Test-ProxyReachable -ProxyUrl $Proxy) {
+    $EffectiveProxy = $Proxy
+  }
+}
 
 function ConvertTo-CommandArgument {
   param([Parameter(Mandatory = $true)][string]$Value)
@@ -286,6 +362,8 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
   "[itest] evidenceDir=$EvidenceDir",
   "[itest] user Hibiki instances before=$($before.Count)",
   "[itest] command=$commandLine",
+  "[itest] pubCache=$RealPubCache",
+  "[itest] proxy=$(if ([string]::IsNullOrWhiteSpace($EffectiveProxy)) { '(none)' } else { $EffectiveProxy })",
   "[itest] dryRun=$($DryRun.IsPresent)",
   "[itest] visible=$($Visible.IsPresent)"
 ) | Out-File -LiteralPath $commandLog -Encoding UTF8
@@ -335,6 +413,9 @@ if ($DryRun) {
   $oldTemp = $env:TEMP
   $oldTmp = $env:TMP
   $oldUserProfile = $env:USERPROFILE
+  $oldPubCache = $env:PUB_CACHE
+  $oldHttpsProxy = $env:HTTPS_PROXY
+  $oldHttpProxy = $env:HTTP_PROXY
   try {
     # Always keep HIBIKI_TEST_HIDDEN set: it makes the window non-activating
     # (WS_EX_NOACTIVATE), so the app NEVER steals the user's foreground/keyboard
@@ -356,6 +437,15 @@ if ($DryRun) {
     $env:TEMP = $Paths.temp
     $env:TMP = $Paths.temp
     $env:USERPROFILE = $Paths.userProfile
+    # Keep the build toolchain's pub cache reachable despite LOCALAPPDATA redirect.
+    if (-not [string]::IsNullOrWhiteSpace($RealPubCache)) {
+      $env:PUB_CACHE = $RealPubCache
+    }
+    # Route native-assets downloads through the reachable proxy (if any).
+    if (-not [string]::IsNullOrWhiteSpace($EffectiveProxy)) {
+      $env:HTTPS_PROXY = $EffectiveProxy
+      $env:HTTP_PROXY = $EffectiveProxy
+    }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $cmdExe = if ($env:ComSpec) { $env:ComSpec } else { "cmd.exe" }
@@ -381,6 +471,16 @@ if ($DryRun) {
     $psi.EnvironmentVariables["TEMP"] = $Paths.temp
     $psi.EnvironmentVariables["TMP"] = $Paths.temp
     $psi.EnvironmentVariables["USERPROFILE"] = $Paths.userProfile
+    # Pin pub cache so native-assets build hooks resolve packages from the real
+    # (populated) cache instead of the empty isolated LOCALAPPDATA.
+    if (-not [string]::IsNullOrWhiteSpace($RealPubCache)) {
+      $psi.EnvironmentVariables["PUB_CACHE"] = $RealPubCache
+    }
+    # Pass proxy through to the build/test child for native-assets downloads.
+    if (-not [string]::IsNullOrWhiteSpace($EffectiveProxy)) {
+      $psi.EnvironmentVariables["HTTPS_PROXY"] = $EffectiveProxy
+      $psi.EnvironmentVariables["HTTP_PROXY"] = $EffectiveProxy
+    }
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $psi
@@ -448,6 +548,9 @@ if ($DryRun) {
     $env:TEMP = $oldTemp
     $env:TMP = $oldTmp
     $env:USERPROFILE = $oldUserProfile
+    $env:PUB_CACHE = $oldPubCache
+    $env:HTTPS_PROXY = $oldHttpsProxy
+    $env:HTTP_PROXY = $oldHttpProxy
   }
 }
 

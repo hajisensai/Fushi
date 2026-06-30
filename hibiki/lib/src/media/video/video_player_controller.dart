@@ -366,6 +366,85 @@ class VideoPlayerController extends ChangeNotifier
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
 
+  /// TODO-984 诊断日志回调：把视频播放初始化 / 首帧 / libmpv 错误的结构化诊断行
+  /// 交给上层落到 [ErrorLogService]（用户可在「错误日志」页查看 / 上传）。
+  ///
+  /// **为何用回调而非直接依赖 [ErrorLogService]**：控制器是纯播放领域对象，单测里
+  /// 不该耦合 app 级日志服务；页面（[VideoHibikiPage]）在 [load] 前把它接到
+  /// `ErrorLogService.instance.log('VideoHibiki.diag', message)`。null 时所有诊断行
+  /// 静默丢弃（零开销、零行为变化）。仅用于现场定位 Android「闪烁 + 空白无画面」
+  /// （realme 8 / Android 11，TODO-984）：覆盖 hwdec 配置、open、首帧分辨率 / videoParams、
+  /// libmpv error / log 流、缓冲态——拿到日志后据其分支定位（hwdec 失败 / 纹理未建 /
+  /// 解码未出帧 / 轨道问题）。
+  void Function(String message)? onDiagLog;
+
+  /// TODO-984：libmpv `error` / `log` / `videoParams` / `buffering` 流订阅
+  /// （仅 [onDiagLog] 非空、即诊断开启时挂）。每次 [load] 重挂、[dispose] 取消，
+  /// 避免向已释放 player 的流回调写日志。
+  StreamSubscription<String>? _diagErrorSub;
+  StreamSubscription<dynamic>? _diagLogSub;
+  StreamSubscription<dynamic>? _diagVideoParamsSub;
+  StreamSubscription<bool>? _diagBufferingSub;
+
+  /// 首帧分辨率（[videoWidth]/[videoHeight] 流）是否已记过一次诊断行——避免每次分辨率
+  /// 事件刷屏，只记「首次拿到非空尺寸」（=解码真正出帧的信号）。每次 [load] 复位。
+  bool _diagFirstFrameLogged = false;
+
+  /// 发一条 TODO-984 诊断行（带统一前缀，便于用户在错误日志里筛选 / 上传）。
+  /// [onDiagLog] 为空（诊断未开启 / 单测）时 no-op。
+  void _diag(String message) {
+    onDiagLog?.call('[VIDEO-DIAG] $message');
+  }
+
+  /// TODO-984：解码出第一帧（[videoWidth]/[videoHeight] 首次为非空且 > 0）时记一行诊断。
+  /// 「open 成功但此行永不出现」=解码未真正出帧（hwdec / 解码器 / surface 问题），正是
+  /// 「闪烁 + 空白无画面」的关键判据。只记首次，避免分辨率事件刷屏。
+  void _maybeLogFirstFrame() {
+    if (_diagFirstFrameLogged) return;
+    if (onDiagLog == null) return;
+    final int? w = videoWidth;
+    final int? h = videoHeight;
+    if (w == null || h == null || w <= 0 || h <= 0) return;
+    _diagFirstFrameLogged = true;
+    _diag('first frame decoded: ${w}x$h');
+  }
+
+  /// TODO-984：回读 libmpv 实际生效的渲染相关属性（hwdec / vo / gpu-context /
+  /// gpu-api / current-vo / video-codec / hwdec-current）并各记一行诊断。
+  ///
+  /// 经 `player.platform`（NativePlayer）的 `getProperty`——仅 libmpv 后端有效；非
+  /// libmpv / 属性不可读时单条静默跳过（与 [applyMpvConfigToPlayer] 同 best-effort
+  /// 纪律），绝不抛、不阻塞首帧。每个 await 后用 [_isCurrentLoad] 双判据重校验，过期
+  /// 立即放弃（防向已释放 NativePlayer 读属性 = 原生 UAF，与本文件其它异步 mpv 路径一致）。
+  Future<void> _logMpvRenderProperties(Player player, int loadToken) async {
+    final dynamic native = player.platform;
+    if (native == null) {
+      _diag('mpv render props: platform is null (non-libmpv backend?)');
+      return;
+    }
+    const List<String> props = <String>[
+      'hwdec',
+      'hwdec-current',
+      'vo',
+      'current-vo',
+      'gpu-context',
+      'gpu-api',
+      'video-codec',
+      'video-format',
+    ];
+    for (final String prop in props) {
+      String value;
+      try {
+        value = (await native.getProperty(prop)).toString();
+      } catch (_) {
+        // 属性不可读 / 非 libmpv：跳过这条，继续下一条（不致命）。
+        continue;
+      }
+      if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁。
+      _diag('mpv $prop=$value');
+    }
+  }
+
   @override
   AudioCue? get currentCue => _currentCue;
 
@@ -826,6 +905,16 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = null;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
+    // TODO-984：换集复用 player 时先取消上一片的诊断流订阅，重挂到新 load。
+    await _diagErrorSub?.cancel();
+    _diagErrorSub = null;
+    await _diagLogSub?.cancel();
+    _diagLogSub = null;
+    await _diagVideoParamsSub?.cancel();
+    _diagVideoParamsSub = null;
+    await _diagBufferingSub?.cancel();
+    _diagBufferingSub = null;
+    _diagFirstFrameLogged = false;
     _setSubtitleCuesLoading(false);
 
     // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
@@ -841,9 +930,79 @@ class VideoPlayerController extends ChangeNotifier
     // `PlayerConfiguration`——那会让视频每次调速重写 af 滤镜图、在 Windows 上回归
     // TODO-070 的调速闪退。守卫：`hibiki/test/media/video/video_speed_pitch_guard_test.dart`。
     final Player player = _player ?? Player();
+    final bool playerNewlyCreated = _player == null;
     if (_player == null) {
       _player = player;
       _videoController = VideoController(player);
+    }
+
+    // TODO-984 现场诊断：记录本次 load 的关键事实 + 挂 libmpv error/log/videoParams/
+    // buffering 流监听。仅 [onDiagLog] 非空（页面开了诊断）时执行；否则全静默零开销。
+    // 目标：定位 Android「闪烁 + 空白无画面」（realme 8 / Android 11）——其他 app 播同
+    // 文件正常，故疑点在 hwdec / 纹理(texture) surface / 解码出帧，靠下面的信号区分：
+    //   · open 成功但 width/height 永不就绪 → 解码未出帧（hwdec / 解码器问题）。
+    //   · error 流报 libmpv 错误 → 直接拿到根因字符串。
+    //   · videoParams 反复变化 + buffering 抖动 → surface 反复重建（闪烁）。
+    if (onDiagLog != null) {
+      _diag('load start: bookUid=$bookUid uri=$sourceUri '
+          'cues=${cues.length} hwdec=${mpvConfig.hwdec} '
+          'highQuality=${mpvConfig.highQuality} '
+          'shaders=${shaderPaths.length} '
+          'playerReused=${!playerNewlyCreated} '
+          'platform=${player.platform?.runtimeType}');
+      _diagErrorSub = player.stream.error.listen((String err) {
+        _diag('libmpv error: $err');
+      });
+      _diagLogSub = player.stream.log.listen((dynamic logEntry) {
+        // PlayerLog（prefix/level/text）——只记 warn/error/fatal 级，info/debug 太吵。
+        // 用 dynamic 取属性避免在控制器里硬依赖 media_kit 的 PlayerLog 类型签名。
+        try {
+          final String level = (logEntry.level ?? '').toString();
+          final String low = level.toLowerCase();
+          if (low.contains('error') ||
+              low.contains('warn') ||
+              low.contains('fatal') ||
+              low == 'v') {
+            final String prefix = (logEntry.prefix ?? '').toString();
+            final String text = (logEntry.text ?? '').toString().trim();
+            _diag('libmpv log[$level][$prefix] $text');
+          }
+        } catch (_) {
+          // PlayerLog 形状异常：尽力降级，原样记一行不致命。
+          _diag('libmpv log(raw): $logEntry');
+        }
+      });
+      _diagVideoParamsSub = player.stream.videoParams.listen((dynamic vp) {
+        // 视频参数（宽/高/像素格式/旋转等）首次解析就绪——解码出帧的强信号。
+        try {
+          final Object w = vp.w ?? vp.dw ?? '?';
+          final Object h = vp.h ?? vp.dh ?? '?';
+          _diag('videoParams: w=$w h=$h '
+              'pixelformat=${vp.pixelformat ?? '?'} '
+              'hwPixelformat=${vp.hwPixelformat ?? '?'} '
+              'colormatrix=${vp.colormatrix ?? '?'} '
+              'colorlevels=${vp.colorlevels ?? '?'} '
+              'primaries=${vp.primaries ?? '?'} '
+              'rotate=${vp.rotate ?? '?'}');
+        } catch (_) {
+          _diag('videoParams(raw): $vp');
+        }
+      });
+      _diagBufferingSub = player.stream.buffering.listen((bool b) {
+        _diag('buffering=$b');
+      });
+      // 把 libmpv 解码/输出/硬解模块的日志级别提到 verbose，让上面的 `log` 流真的
+      // 携带「HEVC 走 mediacodec / 软解回退」「vo/gpu 创建失败」「GL error」这类关键行
+      // （裸 Player() 默认 error 级，这些 info/v 级行收不到）。只提 vd/vo/ad/hwdec 四个
+      // 模块，避免 all=v 刷屏。runtime 可设属性，仅 libmpv 后端生效，best-effort。
+      final dynamic diagNative = player.platform;
+      if (diagNative != null) {
+        try {
+          await diagNative.setProperty('msg-level', 'vd=v,vo=v,ad=v,ffmpeg=v');
+        } catch (_) {
+          // 非 libmpv / 不支持：诊断日志退回 error 级，不致命。
+        }
+      }
     }
 
     // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
@@ -856,6 +1015,9 @@ class VideoPlayerController extends ChangeNotifier
     // 过期立即 `return` 干净放弃后续下发（不留半初始化——下面的订阅/tick 尚未挂起）。
     await player.open(Media(sourceUri), play: false);
     if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
+    _diag('open() returned; textureId='
+        '${_videoController?.id.value ?? 'null(not-created)'} '
+        'durationMs=${player.state.duration.inMilliseconds}');
 
     // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
     // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
@@ -900,6 +1062,13 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
+    // TODO-984：回读 libmpv 真实生效的 hwdec / vo / gpu-context——「闪烁 + 空白」最常见
+    // 根因是该机型上硬件解码或 vo/gpu 后端回退失败。读取经 NativePlayer.getProperty，
+    // 仅 libmpv 后端有效，best-effort 不阻塞、不致命。
+    if (onDiagLog != null) {
+      await _logMpvRenderProperties(player, loadToken);
+      if (!_isCurrentLoad(player, loadToken)) return;
+    }
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
     _lastVolume = initialVolume;
@@ -947,8 +1116,14 @@ class VideoPlayerController extends ChangeNotifier
     _completedSub = player.stream.completed.listen(_handleCompletedChanged);
 
     // 订阅视频原始分辨率变化：解码出分辨率后让 overlay 重新做 \pos letterbox 映射。
-    _widthSub = player.stream.width.listen((_) => notifyListeners());
-    _heightSub = player.stream.height.listen((_) => notifyListeners());
+    _widthSub = player.stream.width.listen((_) {
+      _maybeLogFirstFrame();
+      notifyListeners();
+    });
+    _heightSub = player.stream.height.listen((_) {
+      _maybeLogFirstFrame();
+      notifyListeners();
+    });
 
     // 125ms 周期读位置，驱动 cue 同步（对齐有声书 createPositionStream 的节奏）。
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
@@ -963,6 +1138,7 @@ class VideoPlayerController extends ChangeNotifier
     // 双判据：换集复用同一 player 实例时单判 `_player == player` 仍成立，会向已被新
     // load 接管的 player 误发 play()；loadToken 才能区分本次 load 是否仍当前（BUG-344）。
     if (autoPlay && _isCurrentLoad(player, loadToken)) {
+      _diag('autoPlay: calling play()');
       await player.play();
     }
 
@@ -2155,6 +2331,14 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
+    unawaited(_diagErrorSub?.cancel());
+    _diagErrorSub = null;
+    unawaited(_diagLogSub?.cancel());
+    _diagLogSub = null;
+    unawaited(_diagVideoParamsSub?.cancel());
+    _diagVideoParamsSub = null;
+    unawaited(_diagBufferingSub?.cancel());
+    _diagBufferingSub = null;
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;

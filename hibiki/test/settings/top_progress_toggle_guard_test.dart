@@ -137,7 +137,20 @@ void main() {
     ).readAsStringSync();
     expect(chrome.contains("ValueKey<String>('hoshi_progress')"), isTrue,
         reason: '顶栏文本 key 仍为 hoshi_progress');
-    expect(chrome.contains('!_showTopProgress'), isTrue,
-        reason: '_buildTopProgressBar 仍由 _showTopProgress 门控');
+    // TODO-975：顶栏门控收敛进 _topProgressShouldPaint（挤压恒随 _showTopProgress、
+    // 悬浮再加 transient 旗），关进度仍隐藏（topProgressVisible 在 showTopProgress=false
+    // 返 false）；不变式不退回。
+    expect(chrome.contains('!_topProgressShouldPaint'), isTrue,
+        reason:
+            '_buildTopProgressBar 由 _topProgressShouldPaint 门控（含 _showTopProgress）');
+    final String pageSrc = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    ).readAsStringSync();
+    expect(
+      pageSrc.contains('_topProgressShouldPaint => topProgressVisible(') &&
+          pageSrc.contains('showTopProgress: _showTopProgress'),
+      isTrue,
+      reason: '_topProgressShouldPaint 必须以 _showTopProgress 为基（关进度即隐藏）',
+    );
   });
 }

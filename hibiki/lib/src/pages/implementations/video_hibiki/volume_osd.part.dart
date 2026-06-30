@@ -23,17 +23,27 @@ part of '../video_hibiki_page.dart';
 extension _VideoVolumeOsd on _VideoHibikiPageState {
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
-  void _showOsd(String message, {IconData? icon, double? progress}) {
+  void _showOsd(
+    String message, {
+    IconData? icon,
+    double? progress,
+    bool prominent = false,
+  }) {
     if (!mounted) return;
     _osdNotifier.value = _VideoOsdMessage(
       message: message,
       icon: icon,
       progress: progress?.clamp(0.0, 1.0).toDouble(),
+      prominent: prominent,
     );
     _osdTimer?.cancel();
-    _osdTimer = Timer(const Duration(milliseconds: 2600), () {
-      _osdNotifier.value = null;
-    });
+    // TODO-971：突出 OSD（制卡成功）停留更久（3.6s），普通通知仍 2.6s。
+    _osdTimer = Timer(
+      Duration(milliseconds: prominent ? 3600 : 2600),
+      () {
+        _osdNotifier.value = null;
+      },
+    );
   }
 
   /// 滑条拖动写音量：即时写 controller + OSD + 同步显示真相源（TODO-377）。
@@ -256,89 +266,113 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
   /// 2.6s 后自动淡出。[IgnorePointer] 确保它从不拦截点击（单击暂停 / 拖放 / 字幕
   /// 查词都不受影响）。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
   Widget _buildOsdOverlay() {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
+    return Positioned.fill(
       child: SafeArea(
         child: IgnorePointer(
-          child: Align(
-            alignment: Alignment.topLeft,
+          child: ValueListenableBuilder<_VideoOsdMessage?>(
+            valueListenable: _osdNotifier,
+            builder: (BuildContext _, _VideoOsdMessage? osd, __) {
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child:
+                    osd == null ? const SizedBox.shrink() : _buildOsdCard(osd),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 单条 OSD 卡片。普通通知沿用左上角小角标；TODO-971 突出变体（制卡成功）改成
+  // 居中、更大字号、更厚卡片，醒目区别于音量/亮度被动小角标。
+  Widget _buildOsdCard(_VideoOsdMessage osd) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final bool prominent = osd.prominent;
+    final double fontSize = prominent ? 18 : 14;
+    final double iconSize = prominent ? 24 : 18;
+    final EdgeInsets cardPadding = prominent
+        ? const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
+        : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
+    final BorderRadius radius = BorderRadius.circular(prominent ? 12 : 6);
+    final AlignmentGeometry alignment =
+        prominent ? Alignment.center : Alignment.topLeft;
+    final EdgeInsets outerPadding = prominent
+        ? const EdgeInsets.all(24)
+        : const EdgeInsets.only(left: 16, top: 52);
+    return Align(
+      alignment: alignment,
+      child: Padding(
+        padding: outerPadding,
+        child: ConstrainedBox(
+          key: ValueKey<String>(osd.message),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width - 32,
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _osdSurfaceColor(cs),
+              borderRadius: radius,
+              boxShadow: prominent
+                  ? <BoxShadow>[
+                      BoxShadow(
+                        color: cs.shadow.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
             child: Padding(
-              padding: const EdgeInsets.only(left: 16, top: 52),
-              child: ValueListenableBuilder<_VideoOsdMessage?>(
-                valueListenable: _osdNotifier,
-                builder: (BuildContext _, _VideoOsdMessage? osd, __) {
-                  return AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    child: osd == null
-                        ? const SizedBox.shrink()
-                        : ConstrainedBox(
-                            key: ValueKey<String>(osd.message),
-                            constraints: BoxConstraints(
-                              maxWidth: MediaQuery.sizeOf(context).width - 32,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _osdSurfaceColor(cs),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  if (osd.icon != null) ...<Widget>[
-                                    Icon(
-                                      osd.icon,
-                                      size: 18,
-                                      color: _osdTextColor(cs),
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  Flexible(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(
-                                          osd.message,
-                                          style: TextStyle(
-                                            color: _osdTextColor(cs),
-                                            fontSize: 14,
-                                            height: 1.2,
-                                          ),
-                                        ),
-                                        if (osd.progress != null) ...<Widget>[
-                                          const SizedBox(height: 6),
-                                          SizedBox(
-                                            width: 112,
-                                            child: LinearProgressIndicator(
-                                              value: osd.progress,
-                                              minHeight: 3,
-                                              backgroundColor: _osdTextColor(
-                                                cs,
-                                              ).withValues(alpha: 0.25),
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                _osdTextColor(cs),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
+              padding: cardPadding,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (osd.icon != null) ...<Widget>[
+                    Icon(osd.icon, size: iconSize, color: _osdTextColor(cs)),
+                    SizedBox(width: prominent ? 12 : 8),
+                  ] else if (prominent) ...<Widget>[
+                    Icon(
+                      Icons.check_circle,
+                      size: iconSize,
+                      color: _osdTextColor(cs),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Flexible(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          osd.message,
+                          style: TextStyle(
+                            color: _osdTextColor(cs),
+                            fontSize: fontSize,
+                            fontWeight:
+                                prominent ? FontWeight.w600 : FontWeight.normal,
+                            height: 1.2,
+                          ),
+                        ),
+                        if (osd.progress != null) ...<Widget>[
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: 112,
+                            child: LinearProgressIndicator(
+                              value: osd.progress,
+                              minHeight: 3,
+                              backgroundColor:
+                                  _osdTextColor(cs).withValues(alpha: 0.25),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                _osdTextColor(cs),
                               ),
                             ),
                           ),
-                  );
-                },
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

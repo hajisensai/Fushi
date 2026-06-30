@@ -42,6 +42,49 @@ void main() {
     expect(find.text(t.update_download), findsOneWidget);
   });
 
+  // TODO-965 崩溃B / TODO-966: MarkdownBody(selectable: true) 必须传 onSelectionChanged，
+  // 否则 flutter_markdown 0.6.23 在选区变化时无条件解引用 onSelectionChanged! → 用户
+  // 选中 release notes 文本即崩。这里在渲染出的可选文本上发起一次拖拽选区，断言不崩。
+  testWidgets('selecting release notes text does not crash (TODO-966)', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 520);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        UpdateAvailableDialog(
+          version: '9.9.9',
+          releaseNotes: 'Selectable release note line for selection test.',
+          primaryLabel: t.update_download,
+          onPrimary: () {},
+        ),
+      ),
+    );
+
+    final Finder selectable = find.byType(SelectableText);
+    expect(selectable, findsWidgets,
+        reason: 'MarkdownBody(selectable: true) 应渲染出可选文本');
+
+    // 长按文本触发选词，这会让 SelectableText 调 onSelectionChanged
+    // （cause=longPress）→ 命中 builder.dart:957 的 onSelectionChanged!。
+    // 修复前该回调为 null，长按选词即抛 Null check operator used on a null value。
+    await tester.longPress(selectable.first);
+    await tester.pump();
+    // 再拖一段扩大选区，覆盖 drag 触发的选区变化路径。
+    final Rect box = tester.getRect(selectable.first);
+    final TestGesture gesture = await tester.startGesture(box.center);
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveTo(box.centerRight - const Offset(2, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull,
+        reason: '选中文本不得因 onSelectionChanged! 解引用 null 崩溃');
+  });
+
   testWidgets('download diagnostics overlay fits a compact desktop window', (
     WidgetTester tester,
   ) async {

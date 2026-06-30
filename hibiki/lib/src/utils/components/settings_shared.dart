@@ -552,6 +552,10 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
       onChanged: onChanged,
     );
     final bool stacked = controlBelow || body != null || panel != null;
+    // TODO-977 UX：带展开调色板（panel）时，整行 onTap 不再切换开关——否则用户在
+    // 面板/预览区域附近点一下就会误触把配置项关掉（用户反馈「经常点到背景给关了」）。
+    // 此时只有 switch 控件本身能切换。无 panel 的普通开关行保持整行可点的旧行为。
+    final bool rowTapTogglesSwitch = onChanged != null && panel == null;
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
@@ -560,7 +564,7 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
       trailing: stacked
           ? _buildStackedTrailing(switchControl)
           : _buildInlineTrailing(switchControl),
-      onTap: onChanged == null ? null : () => onChanged!(!value),
+      onTap: rowTapTogglesSwitch ? () => onChanged!(!value) : null,
     );
   }
 

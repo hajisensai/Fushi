@@ -277,6 +277,66 @@ void main() {
       expect(clip.endMs, 4300);
     });
 
+    // TODO-970 / BUG-458: empty DOM sentence span (offset/length null) + a non-null lookup
+    // cue that sits OUTSIDE the sentence (the looked-up token landed on a
+    // plain-selector boundary cue — punctuation / adjacent-sentence fragment —
+    // common on local audiobooks whose cues carry no sasayaki positions). The
+    // span guard trips (no normalized offset/length), so the old code returned
+    // from the position attempt without trying text and fell straight into
+    // _expandAroundCue. _expandAroundCue is cue-anchored: it only keeps text
+    // matches that COVER the anchor cue and only expands to neighbours whose text
+    // is a substring of the sentence. With the anchor cue outside the sentence,
+    // the anchored match is rejected and expansion stops immediately, collapsing
+    // to the single boundary cue — the wrong (or missing) audio. The plain
+    // sentence-text search recovers the full range instead, so when there is
+    // sentence text it must be tried even though cue != null.
+    test(
+        'recovers the full sentence via text when span is empty and the cue is '
+        'outside the sentence', () {
+      final List<AudioCue> cues = <AudioCue>[
+        // Boundary cue the looked-up token landed on (plain selector, outside the
+        // sentence the reader extracted). startMs marks it clearly distinct.
+        _cue(
+          startMs: 100,
+          endMs: 300,
+          text: '前の章の語',
+          textFragmentId: '[data-cue-id="0"]',
+        ),
+        // The sentence '僕は学校へ行った' spans these three cues.
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕は',
+          textFragmentId: '[data-cue-id="1"]',
+        ),
+        _cue(
+          startMs: 1600,
+          endMs: 2300,
+          text: '学校へ',
+          textFragmentId: '[data-cue-id="2"]',
+        ),
+        _cue(
+          startMs: 2300,
+          endMs: 4300,
+          text: '行った',
+          textFragmentId: '[data-cue-id="3"]',
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[0], // outside the sentence; span unavailable below
+        sentence: '「僕は学校へ行った。」',
+        sectionIndex: 0,
+        sentenceNormCharOffset: null,
+        sentenceNormCharLength: null,
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
+      expect(clip.endMs, 4300);
+    });
+
     test('returns null when there is no cue and no usable sentence span', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
@@ -320,6 +380,74 @@ void main() {
       );
 
       expect(clip, isNull);
+    });
+
+    // TODO-1009 / BUG-475: same-chapter selection on coarse-aligned audio
+    // (TextToEpub + post-attached audio, alignment miss) where the matched
+    // cue is zero-duration (startMs == endMs). Every cue-relative path copies
+    // the cue's raw start/end, so the range came back degenerate
+    // (endMs <= startMs) -> classifyAudiobookClipSelection labelled it
+    // `unsupportedRange` -> user saw the misleading cross-chapter/cross-file
+    // toast for a perfectly in-chapter selection. The range must be repaired to
+    // a positive duration, never returned degenerate. Reverting
+    // _ensurePositiveDuration turns this red.
+    test('repairs a zero-duration single cue to a positive same-file range',
+        () {
+      final AudioCue cue = _cue(
+        startMs: 5000,
+        endMs: 5000,
+        text: '僕は学校へ行った',
+        textFragmentId: '[data-cue-id="0"]',
+      );
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: <AudioCue>[cue],
+        cue: cue,
+        sentence: '僕は学校へ行った',
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.audioFileIndex, 0);
+      // Same file, positive duration -> exportable, NOT a cross-chapter reject.
+      expect(clip.endMs, greaterThan(clip.startMs));
+    });
+
+    // TODO-1009: when the degenerate range has a following same-file cue, the
+    // repair extends the end to that next cue's start (the implied playback
+    // length), not just a hard +1ms floor.
+    test('repaired degenerate range extends to the next same-file cue start',
+        () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 5000,
+          endMs: 5000,
+          text: '僕は',
+          textFragmentId: '[data-cue-id="0"]',
+        ),
+        _cue(
+          startMs: 5000,
+          endMs: 5000,
+          text: '学校へ行った',
+          textFragmentId: '[data-cue-id="1"]',
+        ),
+        // Next cue boundary on the same file at 7000ms bounds the clip length.
+        _cue(
+          startMs: 7000,
+          endMs: 8000,
+          text: '次の文',
+          textFragmentId: '[data-cue-id="2"]',
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[0],
+        sentence: '僕は学校へ行った',
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 5000);
+      expect(clip.endMs, 7000);
     });
   });
 }
