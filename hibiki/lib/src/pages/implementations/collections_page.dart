@@ -1039,6 +1039,42 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     );
   }
 
+  /// 收藏行副标题：可截断的[metadata]（书名/章节/来源前缀）+ **恒可见**的收藏日期。
+  ///
+  /// BUG-469：窄屏（12.4" 平板横向空间不足）下用户「看不到收藏日期，全被书名和章节
+  /// 挤跑了」。根因=旧实现把元数据与日期拼成一个单行 [Text] 共用同一截断预算，日期排
+  /// 末尾被省略号吃掉。这里拆成 [Row]：[metadata] 走 [Flexible]+[TextOverflow.ellipsis]
+  /// 优先收缩让位，日期是定宽尾随段（不进 Flexible，故永不被裁），两段间隔仍用 ' · '。
+  /// 无 [metadata] 时只渲染日期。整行 [TextStyle] 由 [HibikiListItem] 的
+  /// [DefaultTextStyle]（listSubtitle）注入，故此处不重复指定样式。
+  Widget _buildSubtitle({
+    required String? metadata,
+    required DateTime createdAt,
+  }) {
+    final String date = _dateFmt.format(createdAt);
+    final bool hasMetadata = metadata != null && metadata.isNotEmpty;
+    if (!hasMetadata) {
+      return Text(date, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
+    // mainAxisSize 用默认 max：撑满 [HibikiListItem] 给副标题的整行宽度，[Flexible]
+    // 才会收缩让位（min 时 Row 取子项固有宽 → 溢出，日期反而被挤出）。日期不进
+    // [Flexible]，作为定宽尾随段永远显示。
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            metadata,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          ),
+        ),
+        const Text(' · '),
+        Text(date, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ],
+    );
+  }
+
   Widget _buildItem(_CollectionItem item) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final isBookmark = item.type == _CollectionType.bookmark;
@@ -1149,14 +1185,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               ],
             ),
             title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              [
-                if (subtitle != null && subtitle.isNotEmpty) subtitle,
-                _dateFmt.format(item.createdAt),
-              ].join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            // BUG-469：副标题=可截断的元数据（书名/章节/来源） + **恒可见**的收藏日期。
+            // 旧实现把两者用 ' · ' 拼成一个 Text(maxLines:1, ellipsis)，窄屏（如 12.4"
+            // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
+            // 根因=两段不同截断语义（元数据可截、日期不可截）共用同一行宽预算。修=拆成
+            // Row：元数据 Flexible+ellipsis 优先让位，日期固定宽不参与收缩永远显示。
+            subtitle:
+                _buildSubtitle(metadata: subtitle, createdAt: item.createdAt),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

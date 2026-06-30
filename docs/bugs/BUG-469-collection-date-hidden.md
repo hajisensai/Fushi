@@ -1,0 +1,11 @@
+## BUG-469 · 窄屏收藏列表收藏日期被书名/章节挤出可见区看不见
+- **报告**：2026-06-30（用户：「小屏幕上看不到收藏日期，全被书名和章节挤跑了，不是我 12.4 寸的板子能显示完我大概不知道后面还跟着日期」，TODO-995）
+- **真实性**：✅ 真 bug。数据写入正常，仅窄屏渲染把日期裁没。
+  - 根因 `hibiki/lib/src/pages/implementations/collections_page.dart:1152`（修前）：收藏行副标题把「元数据（视频前缀/书名/章节）」与「收藏日期」用 `[metadata, date].join(' · ')` 拼成**单个** `Text(maxLines: 1, overflow: TextOverflow.ellipsis)`。两段共用同一行宽截断预算，日期排在末尾 → 窄屏（12.4" 平板横向空间不足）时书名+章节占满整行，日期被省略号吃掉，用户根本看不到后面还有日期。
+  - 数据结构错误：两段截断语义不同（元数据**可截**、日期**不可截**）却挤进同一截断预算。正确建模应让日期定宽永远显示、元数据优先收缩让位。
+- **[x] ① 已修复** — commit `90a06e38d`
+  - `collections_page.dart`：副标题从单个拼接 `Text` 拆成新私有方法 `_buildSubtitle({required String? metadata, required DateTime createdAt})` 返回的 `Row`：`metadata` 走 `Flexible` + `TextOverflow.ellipsis`（`softWrap: false`）优先收缩让位；中点分隔符 `' · '`；日期是定宽尾随 `Text`（不进 `Flexible`，故**永不参与收缩、永不被裁**）。无 metadata（如缺书名的书签）时只渲染日期。
+  - 不引入 `LayoutBuilder`/`MediaQuery` 宽度阈值——按 Flex 布局让元数据自然让位即可，消除特殊情况；宽屏元数据不长时观感与旧版一致（Never break userspace）。
+- **[x] ② 已加自动化测试** — commit `90a06e38d`
+  - widget：`hibiki/test/pages/collection_date_visible_test.dart`——窄屏（320×... 物理像素）pump 真 `CollectionsPage`，种入超长书名+超长章节的收藏句，断言收藏日期文本 `findsOneWidget` 且其渲染宽度 > 0（未被省略号截没）；对照宽屏同数据也可见。
+- **备注**：纯 Flutter 布局修复 + widget 测试可锁定，无平台特例。窄屏真机肉眼复测留待用户/集成验证。
