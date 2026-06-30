@@ -147,6 +147,59 @@ void main() {
       expect(reorders, isEmpty, reason: 'from==to 不提交');
     });
 
+    // TODO-947：编辑排序/整理态下点书不得进书籍详情。重排页把书架/视频既有卡片
+    // （内含 InkWell.onTap = openMedia）原样塞进网格，旧实现网格只装拖拽识别器、不
+    // 拦裸 tap → 裸 tap 穿透到卡片内 InkWell 触发打开书。本用例给格子内卡片绑一个
+    // onTap 计数器，断言「干净点击」不触发它（被网格吸收），仅拖拽才走 onReorder。
+    testWidgets('编辑排序态：干净点击卡片不触发卡片内 onTap（不进书籍详情）',
+        (WidgetTester tester) async {
+      int innerTaps = 0;
+      final List<int> reorders = <int>[];
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: HibikiReorderableGrid(
+                itemCount: 3,
+                cellExtent: 200,
+                childAspectRatio: 1,
+                keyForIndex: (int i) => ValueKey<String>('k$i'),
+                onReorder: (int from, int to) => reorders
+                  ..add(from)
+                  ..add(to),
+                // 模拟书架/视频卡片：整张卡是一个 InkWell.onTap（= 打开书）。
+                itemBuilder: (BuildContext context, int i) => Material(
+                  child: InkWell(
+                    onTap: () => innerTaps++,
+                    child: SizedBox(
+                      key: ValueKey<String>('cell_$i'),
+                      child: Center(child: Text('item$i')),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // 干净点击第一张卡所在坐标（按下即抬起、不移动）：旧实现裸 tap 穿透到卡片内
+      // InkWell → innerTaps++（打开书）；新实现卡片被 IgnorePointer 屏蔽，点击落空。
+      // 用原始 down/up 手势贴近真实点击，避免 find 命中 InkWell 的子树。
+      final TestGesture tap = await tester.startGesture(
+        tester.getCenter(find.text('item0')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await tap.up();
+      await tester.pumpAndSettle();
+      expect(innerTaps, 0, reason: '编辑排序态下点书不得触发卡片 onTap（不进书籍详情）');
+      expect(reorders, isEmpty, reason: '纯点击不是拖拽，不提交重排');
+    });
+
     testWidgets('祖先 Transform.scale（HibikiAppUiScale）下命中仍正确',
         (WidgetTester tester) async {
       final List<int> reorders = <int>[];

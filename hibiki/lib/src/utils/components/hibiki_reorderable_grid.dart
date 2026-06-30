@@ -1,7 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-/// 格子内容构造器：返回**不含任何拖拽监听**的纯卡片内容（卡片内按钮照常可点）。
+/// 格子内容构造器：返回**不含任何拖拽监听**的纯卡片内容。注意网格把卡片包进
+/// IgnorePointer（TODO-947：编辑排序态卡片只是拖拽把手，卡片内 onTap = 打开书必须
+/// 落空），所以这里返回的卡片内手势不会触发——卡片只作视觉渲染。
 typedef HibikiGridItemBuilder = Widget Function(
     BuildContext context, int index);
 
@@ -255,10 +257,13 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
         return widget.itemBuilder(cellContext, original);
       },
     );
+    // TODO-947：编辑排序态下卡片只是拖拽把手——把渲染出的卡片包进 IgnorePointer，
+    // 让卡片内的手势（书架/视频卡片的 InkWell.onTap = 打开书）完全不注册，干净点击
+    // 不再穿透打开书；拖拽仍由本格外层 RawGestureDetector（translucent）独立接收指针。
+    final Widget inert = IgnorePointer(child: content);
     // 被拖格在原位透明占位（随实时重排移动的空位），可见的是浮层复制。
-    final Widget slot = _dragOriginal == original
-        ? Opacity(opacity: 0.0, child: content)
-        : content;
+    final Widget slot =
+        _dragOriginal == original ? Opacity(opacity: 0.0, child: inert) : inert;
     return RawGestureDetector(
       key: widget.keyForIndex(original),
       behavior: HitTestBehavior.translucent,
