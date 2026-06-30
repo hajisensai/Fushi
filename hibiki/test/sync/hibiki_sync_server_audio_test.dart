@@ -121,6 +121,28 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   Future<void> deleteAudiobook(String bookKey) async =>
       deletedAudiobooks.add(bookKey);
 
+  // ── 有声书断点（真实记录，BUG-471）──────────────────────────────────────────────
+  final Map<String, ({int positionMs, int updatedAtMs})> audiobookPositions =
+      <String, ({int positionMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  ) async =>
+      audiobookPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    audiobookPositions[bookKey] = (
+      positionMs: positionMs < 0 ? 0 : positionMs,
+      updatedAtMs: updatedAtMs,
+    );
+  }
+
   // ── video stubs (P4-1) ────────────────────────────────────────────────────
   @override
   Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[];
@@ -563,6 +585,68 @@ void main() {
       expect(lib.deletedAudiobooks, contains('三体有声书'),
           reason: 'deleteAudiobook 应以解码后中文 key 被调用');
       c.close();
+    });
+
+    // ── /position 端点（BUG-471）────────────────────────────────────────────
+    group('position', () {
+      test('PUT then GET /position round-trips position + timestamp', () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest put = await c.putUrl(
+            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+        put.headers.set('authorization', authHeader());
+        put.headers.set('content-type', 'application/json');
+        put.add(utf8.encode(jsonEncode(<String, Object?>{
+          'positionMs': 123456,
+          'positionUpdatedAtMs': 7000,
+        })));
+        final HttpClientResponse putRes = await put.close();
+        expect(putRes.statusCode, 200);
+        await putRes.drain<void>();
+        expect(lib.audiobookPositions['sample_book']?.positionMs, 123456);
+
+        final HttpClientRequest get = await c.getUrl(
+            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+        get.headers.set('authorization', authHeader());
+        final HttpClientResponse getRes = await get.close();
+        expect(getRes.statusCode, 200);
+        final Map<String, dynamic> json =
+            jsonDecode(await getRes.transform(utf8.decoder).join())
+                as Map<String, dynamic>;
+        expect(json['positionMs'], 123456);
+        expect(json['positionUpdatedAtMs'], 7000);
+        c.close();
+      });
+
+      test('GET /position for missing audiobook returns 404', () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.getUrl(
+            Uri.parse('$base/api/library/audiobooks/no_such_book/position'));
+        req.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, 404,
+            reason: 'host 无该有声书时 /position 必须 404，防任意 key 写脏 prefs');
+        await res.drain<void>();
+        expect(lib.audiobookPositions.containsKey('no_such_book'), isFalse);
+        c.close();
+      });
+
+      test('PUT /position for missing audiobook returns 404 (no write)',
+          () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest put = await c.putUrl(
+            Uri.parse('$base/api/library/audiobooks/no_such_book/position'));
+        put.headers.set('authorization', authHeader());
+        put.headers.set('content-type', 'application/json');
+        put.add(utf8.encode(jsonEncode(<String, Object?>{
+          'positionMs': 9999,
+          'positionUpdatedAtMs': 5000,
+        })));
+        final HttpClientResponse res = await put.close();
+        expect(res.statusCode, 404);
+        await res.drain<void>();
+        expect(lib.audiobookPositions.containsKey('no_such_book'), isFalse);
+        c.close();
+      });
     });
   });
 }

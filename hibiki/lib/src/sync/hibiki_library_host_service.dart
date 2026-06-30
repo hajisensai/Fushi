@@ -458,6 +458,55 @@ String? videoUidFromRemotePositionPrefKey(String key) {
   return (positionMs: winnerPos, updatedAtMs: localUpdatedAtMs);
 }
 
+// ── 有声书进度（BUG-471）──────────────────────────────────────────────────────
+
+/// 有声书播放位置 pref key（毫秒）——单一真相源，host service 与
+/// `AudiobookRepository._kPositionMsKeyPrefix` 共用同一公式。
+String audiobookPositionPrefKey(String bookKey) => 'audiobook_pos_$bookKey';
+
+/// [audiobookPositionPrefKey] 对应的「最后更新时间」pref key（epoch 毫秒）——与
+/// `AudiobookRepository._kPositionAtMsKeyPrefix` 同公式。冲突解决「取较新时间戳」用它。
+String audiobookPositionAtPrefKey(String bookKey) =>
+    'audiobook_pos_at_$bookKey';
+
+/// [audiobookPositionPrefKey] 的逆：从位置 pref key 反解出 bookKey，非该 key 返回
+/// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。必须排除更长前缀的
+/// 时间戳键 [audiobookPositionAtPrefKey]（`audiobook_pos_at_<bookKey>`），否则会把
+/// 时间戳键误当成以 `at_` 开头的 bookKey。
+String? audiobookKeyFromPositionPrefKey(String key) {
+  const String atPrefix = 'audiobook_pos_at_';
+  const String posPrefix = 'audiobook_pos_';
+  if (key.startsWith(atPrefix)) return null;
+  if (!key.startsWith(posPrefix)) return null;
+  final String bookKey = key.substring(posPrefix.length);
+  return bookKey.isEmpty ? null : bookKey;
+}
+
+/// 有声书播放进度跨设备冲突解决（BUG-471）——「取较新时间戳」last-write-wins。
+///
+/// 与视频 [resolveVideoPositionSync] 完全同范式（取较新者；时间戳相等时取较大位置，
+/// "听得更远者胜"）。host 收到 client 上报时用它决定是否覆盖已存进度，client 全量
+/// sweep 时用它在 host 真相与本地 `audiobook_pos_` 之间选较新者。纯函数。
+///
+/// 旧数据无独立时间戳记 0，被任何带时间戳的对端进度盖过（向后兼容降级）。
+({int positionMs, int updatedAtMs}) resolveAudiobookPositionSync({
+  required int localPositionMs,
+  required int localUpdatedAtMs,
+  required int remotePositionMs,
+  required int remoteUpdatedAtMs,
+}) {
+  if (remoteUpdatedAtMs > localUpdatedAtMs) {
+    return (positionMs: remotePositionMs, updatedAtMs: remoteUpdatedAtMs);
+  }
+  if (localUpdatedAtMs > remoteUpdatedAtMs) {
+    return (positionMs: localPositionMs, updatedAtMs: localUpdatedAtMs);
+  }
+  // 时间戳相等（含都为 0）：取较大位置（听得更远者胜），保留该时间戳。
+  final int winnerPos =
+      localPositionMs >= remotePositionMs ? localPositionMs : remotePositionMs;
+  return (positionMs: winnerPos, updatedAtMs: localUpdatedAtMs);
+}
+
 /// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
 ///
 /// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
@@ -856,6 +905,22 @@ abstract class HibikiLibraryHostService {
   /// 从 host 删除 bookKey 为 [bookKey] 的有声书（Audiobooks/SrtBooks/AudioCues 行
   /// + 磁盘音频目录）。[bookKey] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteAudiobook(String bookKey);
+
+  /// 读 host 端记录的有声书 [bookKey] 播放断点（BUG-471）。返回 (位置毫秒, 更新时间毫秒)；
+  /// 无记录时返回 (0, 0)。
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  );
+
+  /// 把 client 上报的有声书 [bookKey] 播放断点写入 host（BUG-471）。
+  ///
+  /// 冲突解决「取较新时间戳」（见 [resolveAudiobookPositionSync]）：仅当 [updatedAtMs]
+  /// 严格新于 host 已存时间戳才覆盖，避免旧设备的滞后上报回退新进度。
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  );
 
   // ── 视频（只读，不同步）────────────────────────────────────────────────────────
 

@@ -141,6 +141,19 @@ class _FakeLibraryService implements HibikiLibraryHostService {
       null;
 
   @override
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
+
+  @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,

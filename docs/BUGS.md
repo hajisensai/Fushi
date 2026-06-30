@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 456 条。点号进各自文件。
+> 共 457 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-471](bugs/BUG-471-audiobook-progress-lan-sync-missing.md) | ✅ | ✅ | 有声书互联(LAN)进度同步缺失 |
 | [BUG-470](bugs/BUG-470-reader-top-progress-first-load-gap.md) | ✅ | ✅ | 首屏顶部进度 inset 缺口（正文首行被进度条压住） |
 | [BUG-469](bugs/BUG-469-collection-date-hidden.md) | ✅ | ✅ | 窄屏收藏列表收藏日期被书名/章节挤出可见区看不见 |
 | [BUG-468](bugs/BUG-468-double-context-menu.md) | ✅ | ✅ | Windows 阅读器右键同时弹原生与自定义两个菜单 |

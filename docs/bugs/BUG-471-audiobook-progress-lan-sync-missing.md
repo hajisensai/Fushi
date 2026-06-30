@@ -1,0 +1,23 @@
+## BUG-471 · 有声书互联(LAN)进度同步缺失
+- **报告**：2026-06-30（用户：）
+- **真实性**：✅ 真 bug。互联（Hibiki 互联 / LAN）模式下有声书播放进度同步不到对端；云后端（Google Drive 等 WebDAV 文件箱）正常。
+  - 有声书位置真相源 = pref 键 `audiobook_pos_<bookKey>`，由 `packages/hibiki_audio/lib/src/audiobook/audiobook_repository.dart:78` `updatePositionMs` 写（播放时经 `hibiki/lib/src/media/audiobook/audiobook_session_launcher.dart:142`）。
+  - 互联角色非对称：跑 sync 的是 client，host 只跑 server。云路径靠 SyncManager 双向导出/导入 `audioBook_*.json`（`sync_manager.dart:545` import / `:636` export），两端都是 client 角色，故进度对流。
+  - 互联路径**断裂点**：host 从不把对端进度回灌进自己的 `audiobook_pos_` pref。书进度（TODO-767）和视频进度（TODO-653）各自补了 live 端点 + orchestrator live 双向同步来解同款非对称，唯独有声书漏了：
+    - host service 无 `getAudiobookPosition/putAudiobookPosition`（`app_model_library_host_service.dart`）。
+    - server `_handleLibraryAudiobooks`（`hibiki_sync_server.dart:887`）只有整包 GET/PUT/DELETE，无 `/position` 子路径。
+    - orchestrator 无 `_syncAudiobookProgressLive`（`sync_orchestrator.dart`），run() 互联分支（`:288`）只调书+视频 live 同步。
+  - 数据结构前置缺口：`audiobook_pos_<bookKey>` 只存裸 int，无独立时间戳，无法做 LWW。
+- **[x] ① 已修复** — 根因修复，对称镜像视频 live 进度同步：
+  - `audiobook_repository.dart`：新增 `audiobook_pos_at_<bookKey>` 时间戳 pref，`updatePositionMs` 写位置时一并写当前时刻（epoch ms）；新增 `readPositionUpdatedAtMs`。
+  - `hibiki_library_host_service.dart`：新增 `audiobookPositionPrefKey` / `audiobookPositionAtPrefKey` 公式 helper + `resolveAudiobookPositionSync` LWW 纯函数（复用视频「取较新时间戳，相等取较大位置」语义）+ 抽象方法 `getAudiobookPosition/putAudiobookPosition`。
+  - `app_model_library_host_service.dart`：实现 host `getAudiobookPosition/putAudiobookPosition`（读写 `audiobook_pos_<bookKey>` + `_at_` pref；PUT 经 LWW，旧值无时间戳记 0 优雅降级；host 无该有声书时闸门 no-op，不写孤儿 pref）。
+  - `hibiki_sync_server.dart`：`_handleLibraryAudiobooks` 加 `GET/PUT /api/library/audiobooks/<key>/position`（PUT 前经 host service 存在性校验防任意 key 写脏）。
+  - `hibiki_client_sync_backend.dart`：新增 `remoteAudiobookPosition`（404/异常降级 (0,0)）+ `putRemoteAudiobookPosition`（旧 peer 无端点经 checkStatus 容错）。
+  - `sync_orchestrator.dart`：新增 `_syncAudiobookProgressLive`（遍历本地 `audiobook_pos_<uid>` prefs ∪ 本地 Audiobooks 行，对 host 也有的逐个双向 LWW），run() 互联分支 `:288` 旁调用。
+  - 提交哈希：见提交记录。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/sync/hibiki_library_host_service_audiobook_progress_test.dart`：`resolveAudiobookPositionSync` 纯函数 + host getter/putter（PUT 真写 pref、旧时间戳不覆盖、新时间戳覆盖、host 无该有声书闸门 no-op、旧值无时间戳降级）。
+  - `hibiki/test/sync/sync_orchestrator_live_progress_test.dart`：扩展 audiobook progress full sweep（local→host 推、host→local 回灌、本地新不被回退、run() 一并同步）。
+  - `hibiki/test/sync/hibiki_sync_server_audio_test.dart`：`/position` 端点 GET/PUT 往返 + host 无该有声书 404。
+- **备注**：与 TODO-961(HTTPS)/963(跨网段)正交。云后端有声书进度路径（SyncManager）未改动。

@@ -883,6 +883,54 @@ class HibikiClientSyncBackend extends SyncBackend
         .checkStatus(res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
   }
 
+  /// 读 host 端有声书 [bookKey] 的播放断点（BUG-471）。host 返回 404（有声书不存在）
+  /// 或网络异常时返回 (0, 0)，让调用方退回本地 prefs（离线/旧 host 无端点不致崩溃）。
+  Future<({int positionMs, int updatedAtMs})> remoteAudiobookPosition(
+    String bookKey,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return (positionMs: 0, updatedAtMs: 0);
+    }
+    _ops!.checkStatus(
+        res.statusCode, 'GET /api/library/audiobooks/$bookKey/position');
+    final String body = await res.transform(utf8.decoder).join();
+    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    return (
+      positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+      updatedAtMs: (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 向 host 上报有声书 [bookKey] 的本端播放断点（BUG-471）。host 端取较新时间戳决定
+  /// 是否覆盖。旧 peer 无此端点经 checkStatus 抛错由调用方逐项容错降级。
+  Future<void> putRemoteAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
+    );
+    req.headers.set('Content-Type', 'application/json');
+    req.write(jsonEncode(<String, Object?>{
+      'positionMs': positionMs,
+      'positionUpdatedAtMs': updatedAtMs,
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(
+        res.statusCode, 'PUT /api/library/audiobooks/$bookKey/position');
+  }
+
   // ── Remote videos (interconnect-only, read-only) ─────────────────────────
   // 视频只远程观看/可选下载，不参与双向同步。Host 的 /stream 端点使用短时
   // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。

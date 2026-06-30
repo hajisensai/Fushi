@@ -904,6 +904,66 @@ class HibikiSyncServer {
     }
 
     // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
+    // GET/PUT /api/library/audiobooks/<bookKey>/position — 跨设备有声书播放断点
+    // (BUG-471)。GET 让 client 拉取 host 真相源进度；PUT 让 client 上报本端进度
+    // (host 取较新者)。与 video /position 分支对称。必须在下面的整包 bookKey 提取
+    // 之前匹配，否则 `<key>/position` 会被当成含 `/` 的非法 bookKey 拒绝。
+    const String audiobookPrefix = '/api/library/audiobooks/';
+    const String positionSuffix = '/position';
+    if (reqPath.startsWith(audiobookPrefix) &&
+        reqPath.endsWith(positionSuffix)) {
+      final String positionBookKey = reqPath.substring(
+          audiobookPrefix.length, reqPath.length - positionSuffix.length);
+      if (positionBookKey.isEmpty) {
+        return shelf.Response.notFound('Missing bookKey');
+      }
+      if (positionBookKey.contains('/') ||
+          positionBookKey.contains('\\') ||
+          positionBookKey.contains('..')) {
+        return shelf.Response.forbidden('Invalid bookKey');
+      }
+      // 先确认该有声书在 host DB 真实存在（exportAudiobook 缺 Audiobooks/SrtBooks 行
+      // 时抛 StateError），防任意 key 写脏 prefs；与视频 position 先 resolveVideoFile
+      // 同语义。
+      try {
+        final File probe = await svc.exportAudiobook(positionBookKey);
+        try {
+          probe.parent.deleteSync(recursive: true);
+        } catch (_) {/* best-effort temp cleanup */}
+      } on StateError {
+        return shelf.Response.notFound('Audiobook not found');
+      } on ArgumentError {
+        return shelf.Response.forbidden('Invalid bookKey');
+      }
+      switch (method) {
+        case 'GET':
+          final ({int positionMs, int updatedAtMs}) p =
+              await svc.getAudiobookPosition(positionBookKey);
+          return shelf.Response.ok(
+            jsonEncode(<String, Object?>{
+              'positionMs': p.positionMs,
+              'positionUpdatedAtMs': p.updatedAtMs,
+            }),
+            headers: <String, String>{'Content-Type': 'application/json'},
+          );
+        case 'PUT':
+          final String body = await request.readAsString();
+          Map<String, dynamic> json;
+          try {
+            json = jsonDecode(body) as Map<String, dynamic>;
+          } catch (_) {
+            return shelf.Response(400, body: 'Invalid JSON');
+          }
+          final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
+          final int updatedAtMs =
+              (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
+          await svc.putAudiobookPosition(positionBookKey, posMs, updatedAtMs);
+          return shelf.Response(200);
+        default:
+          return shelf.Response(405);
+      }
+    }
+
     final String bookKey = reqPath.substring('/api/library/audiobooks/'.length);
     if (bookKey.isEmpty) {
       return shelf.Response.notFound('Missing bookKey');
