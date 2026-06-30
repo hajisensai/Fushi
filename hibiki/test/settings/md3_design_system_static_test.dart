@@ -830,6 +830,12 @@ void main() {
       'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
           'Experimental Jimaku subtitle dialog lists downloadable subtitle '
               'files as transient video-subsystem content rows.',
+      'lib/src/anki/anki_mined_card_action_sheet.dart':
+          'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
+              'as transient content rows (note preview + per-note overwrite/view '
+              'actions) plus an add-duplicate action row — Anki-subsystem content, '
+              'the same reviewed exception class as the dictionary import/delete '
+              'content rows.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
