@@ -132,7 +132,7 @@ Pod::Spec.new do |s|
   s.name             = 'hoshidicts_native'
   s.version          = '1.0.0'
   s.summary          = 'Hoshidicts C++ dictionary engine'
-  s.homepage         = 'https://github.com/user/hibiki'
+  s.homepage         = 'https://github.com/hajisensai/hibiki'
   s.license          = { :type => 'MIT' }
   s.author           = 'Hibiki'
   s.source           = { :path => '.' }
