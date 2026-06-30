@@ -1997,5 +1997,6 @@
   "reader_auto_hide_chrome_duration": "悬浮控件自动隐藏延时",
   "video_import_webpage_url_warning_title": "网页地址，不是视频直链",
   "video_import_webpage_url_warning_body": "这是网页地址（如 YouTube/Netflix），不是直接的视频流（.m3u8/.mp4/直链）。Hibiki 暂不支持解析网页视频，请提供直链。你仍可强行尝试。",
-  "video_import_webpage_url_try_anyway": "仍要尝试"
+  "video_import_webpage_url_try_anyway": "仍要尝试",
+  "sync_pair_pin_label": "在另一台设备上输入此 PIN"
 }

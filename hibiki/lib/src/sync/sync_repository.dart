@@ -416,6 +416,7 @@ class SyncRepository {
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';
   static const _keyDeviceId = 'sync_device_id';
+  static const _keyLanRequiresPin = 'sync_lan_requires_pin';
 
   /// Single source of truth for the default Hibiki sync-server port.
   /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
@@ -431,6 +432,14 @@ class SyncRepository {
   Future<int> getServerPort() =>
       _db.getPrefTyped<int>(_keyServerPort, defaultServerPort);
   Future<void> setServerPort(int v) => _db.setPrefTyped<int>(_keyServerPort, v);
+
+  /// TODO-961 取舍 A：LAN 自动发现的对端是否仍需 PIN 才能配对。默认 false=
+  /// 自家局域网免 PIN（公网入站恒强制，与本开关无关，见配对协议
+  /// [HibikiPairingProtocol.computePinRequired]）。
+  Future<bool> getLanRequiresPin() =>
+      _db.getPrefTyped<bool>(_keyLanRequiresPin, false);
+  Future<void> setLanRequiresPin(bool v) =>
+      _db.setPrefTyped<bool>(_keyLanRequiresPin, v);
 
   Future<String?> getServerPassword() async {
     final encoded = await _getStringOrNull(_keyServerPassword);
@@ -555,6 +564,7 @@ class SyncRepository {
     _keyServerPort,
     _keyServerPassword,
     _keyDeviceId,
+    _keyLanRequiresPin,
     _keyHibikiClientUrls,
     _keyHibikiClientToken,
     _keyHibikiClientUrl,

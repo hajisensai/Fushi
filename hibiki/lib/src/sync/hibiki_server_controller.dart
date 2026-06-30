@@ -6,6 +6,7 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
+import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
@@ -87,6 +88,10 @@ class HibikiSyncServerController extends ChangeNotifier {
   // One pairing prompt at a time: a peer must not be able to stack approval
   // dialogs on the host by hammering /api/pair.
   bool _pairDialogOpen = false;
+
+  // TODO-961 M1: 最近一次 v2 配对会话 host 屏显的 6 位 PIN（pair/v2 阶段生成、
+  // confirm 阶段的审批弹窗显示）。一次一会话（_pairDialogOpen 串行化），故单值即可。
+  String? _pendingPairPin;
 
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
@@ -181,7 +186,11 @@ class HibikiSyncServerController extends ChangeNotifier {
       miningService: _miningServiceFactory?.call(),
       historyService: _historyServiceFactory?.call(),
       libraryService: _libraryServiceFactory?.call(),
-    )..onPairRequest = _promptPairApproval;
+    )
+      ..onPairRequest = _promptPairApproval
+      // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
+      ..onPairPinGenerated = _generatePairPin
+      ..lanRequiresPinProvider = _repo.getLanRequiresPin;
     try {
       await server.start();
       _server = server;
@@ -246,6 +255,15 @@ class HibikiSyncServerController extends ChangeNotifier {
     return 'Hibiki';
   }
 
+  /// TODO-961 M1: server 在 pair/v2 创建会话时回调，host 生成本会话 6 位 PIN 并
+  /// 暂存，供随后的 confirm 审批弹窗显示给用户。返回的 PIN 同时被 server 用于
+  /// confirm 阶段重算 HMAC proof 比对——同一值，绝不过线。
+  String _generatePairPin(HibikiPairSession session) {
+    final String pin = HibikiPairingProtocol.generatePin();
+    _pendingPairPin = pin;
+    return pin;
+  }
+
   /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the
   /// token handout via the app-wide navigator so the prompt appears even when
   /// the user is not on the sync page. Resolves false (refuse) on a stacked
@@ -302,6 +320,28 @@ class HibikiSyncServerController extends ChangeNotifier {
                           fontWeight: FontWeight.w600,
                         ),
                   ),
+                  // TODO-961 M1: v2 配对（request.pinVerified != null）显示本会话
+                  // PIN，让用户口头/屏显把 PIN 念给 client 输入。PIN 只在 host 屏幕
+                  // 显示，绝不过线（client 只回传 HMAC proof）。
+                  if (request.pinVerified != null &&
+                      _pendingPairPin != null) ...<Widget>[
+                    SizedBox(height: tokens.spacing.gap),
+                    Text(t.sync_pair_pin_label),
+                    SizedBox(height: tokens.spacing.gap),
+                    Text(
+                      _pendingPairPin!,
+                      style: Theme.of(dialogCtx)
+                          .textTheme
+                          .headlineMedium
+                          ?.copyWith(
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                        letterSpacing: 4,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ],
               ),
               footer: Wrap(
@@ -330,6 +370,7 @@ class HibikiSyncServerController extends ChangeNotifier {
     } finally {
       autoDeny?.cancel();
       _pairDialogOpen = false;
+      _pendingPairPin = null;
     }
   }
 

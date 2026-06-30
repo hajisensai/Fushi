@@ -10,6 +10,7 @@ import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -29,14 +30,59 @@ Future<String> resolveReachableHibikiUrl(
   String token,
   HibikiProbe probe,
 ) async {
+  final HibikiClientUrl chosen =
+      await resolveReachableHibikiCandidate(candidates, token, probe);
+  return chosen.url;
+}
+
+/// TODO-961 M1: 同 [resolveReachableHibikiUrl] 的探测逻辑，但返回选中的
+/// [HibikiClientUrl]（而非裸 URL），让调用方能取到该地址的钉扎指纹（https 走 pinned
+/// client）。指纹是地址身份的一部分，故必须随选中地址一起流出。
+Future<HibikiClientUrl> resolveReachableHibikiCandidate(
+  List<HibikiClientUrl> candidates,
+  String token,
+  HibikiProbe probe,
+) async {
   for (final HibikiClientUrl candidate in candidates) {
     if (!candidate.enabled) continue;
-    if (await probe(candidate.url, token)) return candidate.url;
+    final String? fp = candidate.fingerprintSha256;
+    // https 端点（带指纹）的可达性必须用 pinned client 探测——裸 [probe] 会因自签
+    // TLS 握手失败把它误判不可达。明文 http（无指纹）仍走可注入的 [probe] 测试缝。
+    final bool reachable = (fp != null && fp.isNotEmpty)
+        ? await _pinnedReachabilityProbe(candidate.url, token, fp)
+        : await probe(candidate.url, token);
+    if (reachable) return candidate;
   }
   throw SyncBackendError(
     'No reachable Hibiki server address',
     isRetryable: true,
   );
+}
+
+/// TODO-961 M1: https 候选地址的固定 pinned 可达性探测（不经可注入的测试缝，因为
+/// 它必须真正建立 pinned TLS 连接才有意义）。语义同 [_defaultHibikiProbe]：可达 →
+/// true，鉴权失败 → 抛 [SyncAuthError]（停止尝试其余地址），其余失败 → false。
+Future<bool> _pinnedReachabilityProbe(
+    String url, String token, String fingerprint) async {
+  WebDavOps? ops;
+  try {
+    ops = WebDavOps(
+      baseUrl: WebDavOps.normalizeUrl(url),
+      username: 'hibiki',
+      password: token,
+      connectionTimeout: HibikiClientSyncBackend.probeTimeout,
+      pinnedFingerprint: fingerprint,
+    );
+    await ops.testConnection().timeout(HibikiClientSyncBackend.probeTimeout);
+    return true;
+  } on SyncAuthError {
+    rethrow;
+  } catch (e) {
+    debugPrint('[hibiki-client] pinned probe failed for $url: $e');
+    return false;
+  } finally {
+    ops?.close(force: true);
+  }
 }
 
 /// Default probe: a short-timeout WebDAV connection test. Connectivity
@@ -96,6 +142,8 @@ class HibikiClientSyncBackend extends SyncBackend
   bool _sessionResolved = false;
 
   WebDavOps? _ops;
+  // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
+  String? _activeFingerprint;
   String? _rootFolderId;
   final Map<String, String> _titleToFolderId = {};
 
@@ -136,7 +184,9 @@ class HibikiClientSyncBackend extends SyncBackend
           baseUrl: WebDavOps.normalizeUrl(candidate.url),
           username: 'hibiki',
           password: _token!,
+          pinnedFingerprint: candidate.fingerprintSha256,
         );
+        _activeFingerprint = candidate.fingerprintSha256;
         return;
       } on SyncBackendError {
         continue; // malformed URL — keep looking for a usable handle
@@ -153,13 +203,20 @@ class HibikiClientSyncBackend extends SyncBackend
     if (token == null) {
       throw SyncAuthError('Hibiki server credentials not configured');
     }
-    final String chosen =
-        await resolveReachableHibikiUrl(_candidates, token, _probe);
-    final String normalized = WebDavOps.normalizeUrl(chosen);
-    if (_ops == null || _ops!.baseUrl != normalized) {
+    final HibikiClientUrl chosen =
+        await resolveReachableHibikiCandidate(_candidates, token, _probe);
+    final String normalized = WebDavOps.normalizeUrl(chosen.url);
+    if (_ops == null ||
+        _ops!.baseUrl != normalized ||
+        _activeFingerprint != chosen.fingerprintSha256) {
       _ops?.close();
-      _ops =
-          WebDavOps(baseUrl: normalized, username: 'hibiki', password: token);
+      _ops = WebDavOps(
+        baseUrl: normalized,
+        username: 'hibiki',
+        password: token,
+        pinnedFingerprint: chosen.fingerprintSha256,
+      );
+      _activeFingerprint = chosen.fingerprintSha256;
       clearCache();
     }
     _sessionResolved = true;
@@ -1020,7 +1077,12 @@ class HibikiClientSyncBackend extends SyncBackend
     // 不分片（单连接 Range 已足够，避免共享出口限流）。
     final File partFile = File('${dest.path}.part');
     await dest.parent.create(recursive: true);
-    final HttpClient client = HttpClient();
+    // TODO-961 M1: https 端点（_activeFingerprint 非空）走 pinned client；明文 http
+    // 用裸 client（行为零变化）。stream token URL 自带鉴权，无需额外头。
+    final String? fp = _activeFingerprint;
+    final HttpClient client = fp != null && fp.isNotEmpty
+        ? createPinnedHttpClient(expectedFingerprint: fp)
+        : HttpClient();
     try {
       final ResumableDownloader downloader = ResumableDownloader(
         url: urls.streamUrl,

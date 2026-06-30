@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
@@ -37,6 +38,7 @@ class HibikiPairRequest {
   const HibikiPairRequest({
     required this.deviceName,
     required this.remoteAddress,
+    this.pinVerified,
   });
 
   /// Self-reported name from the client (may be null/empty if not sent).
@@ -44,6 +46,13 @@ class HibikiPairRequest {
 
   /// Source IP of the TCP connection, or null when it can't be resolved.
   final String? remoteAddress;
+
+  /// TODO-961 M1: PIN 校验结果，仅在 /api/pair/v2/confirm 路径携带。
+  /// - null：来自旧 /api/pair（无 PIN 概念），由 host 自行决定是否放行。
+  /// - true：本会话 pinProof 校验通过（或本会话 pinRequired=false 免 PIN）。
+  /// - false：理论上不出现——pinProof 校验失败时 server 直接 401，不会再问 host。
+  /// 双重确认（设计稿 §3.1）：v2 路径要求 pinVerified==true **且** host 人工允许。
+  final bool? pinVerified;
 }
 
 /// Thrown by [HibikiSyncServer.start] when the requested port is already bound
@@ -83,12 +92,14 @@ class HibikiSyncServer {
     HibikiRemoteHistoryService? historyService,
     HibikiLibraryHostService? libraryService,
     SecurityContext? securityContext,
+    String? hostFingerprint,
     DateTime Function()? now,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
         _securityContext = securityContext,
+        _hostFingerprint = hostFingerprint,
         _remoteLookupService = remoteLookupService,
         _miningService = miningService,
         _historyService = historyService,
@@ -103,6 +114,10 @@ class HibikiSyncServer {
   /// 非 null 时 server 起 HTTPS（shelf 透传给 HttpServer.bindSecure）；null 时
   /// 走明文 HTTP 老路径，行为零变化（TLS 默认关，Never break userspace）。
   final SecurityContext? _securityContext;
+
+  /// TODO-961 M1: 本 host 自签证书的 SHA-256 指纹（aa:bb:.. 形式），仅在 TLS 开启
+  /// 时非 null。配对成功响应回传给 client 做 TOFU 钉扎核对（首连记录）。
+  final String? _hostFingerprint;
   final HibikiRemoteLookupService? _remoteLookupService;
   final HibikiRemoteMiningService? _miningService;
   final HibikiRemoteHistoryService? _historyService;
@@ -112,6 +127,11 @@ class HibikiSyncServer {
       <String, _RemoteAudioToken>{};
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
+
+  /// TODO-961 M1：进行中的 v2 配对会话（pair/v2 创建、pair/v2/confirm 消费）。
+  /// 内存态、不落盘；server 重启即清空（半截配对作废，安全侧）。
+  final Map<String, HibikiPairSession> _pairSessions =
+      <String, HibikiPairSession>{};
   HttpServer? _server;
 
   /// Interactive pairing approval. When a client POSTs /api/pair, the server
@@ -120,6 +140,16 @@ class HibikiSyncServer {
   /// null (no UI wired), every pairing request is refused, so the raw token is
   /// never handed out without a deliberate human approval on the host device.
   Future<bool> Function(HibikiPairRequest request)? onPairRequest;
+
+  /// TODO-961 M1: host 生成 6 位 PIN 并喂给审批弹窗显示的供给器。pair/v2 创建会话时
+  /// 调用一次拿到本会话 PIN（同一 PIN 显示给用户、又用于 confirm 时重算比对）。
+  /// null（无 UI 接线）时 server 自行用 [HibikiPairingProtocol.generatePin] 兜底，
+  /// 但因 PIN 不显示给任何人，pinRequired=true 的会话将无法被 confirm（安全侧默认拒）。
+  String Function(HibikiPairSession session)? onPairPinGenerated;
+
+  /// TODO-961 M1: host 偏好「LAN 自动发现也要 PIN」的供给器（默认 false=自家免）。
+  /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
+  Future<bool> Function()? lanRequiresPinProvider;
 
   bool get isRunning => _server != null;
   int get port => _server?.port ?? _requestedPort;
@@ -176,6 +206,12 @@ class HibikiSyncServer {
         // yet — that is exactly what it is fetching. Gating is done by the
         // pairing window inside _handlePair, not by Basic auth.
         if (request.url.path == 'api/pair') return innerHandler(request);
+        // TODO-961 M1: v2 配对（含 confirm）同样无 token——这正是 client 在获取的
+        // 东西。门控由 PIN proof + host 人工确认完成，不靠 Basic auth。
+        if (request.url.path == 'api/pair/v2' ||
+            request.url.path == 'api/pair/v2/confirm') {
+          return innerHandler(request);
+        }
         // Video stream paths are exempted from Basic auth to allow media_kit
         // to play via a plain URL. Token validation happens inside the handler.
         // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
@@ -243,6 +279,12 @@ class HibikiSyncServer {
     final reqPath = Uri.decodeFull('/${request.url.path}');
     if (reqPath == '/api/pair') {
       return _handlePair(request);
+    }
+    if (reqPath == '/api/pair/v2') {
+      return _handlePairV2(request);
+    }
+    if (reqPath == '/api/pair/v2/confirm') {
+      return _handlePairConfirm(request);
     }
     if (reqPath.startsWith('/api/lookup/')) {
       return _handleLookupApi(request, method, reqPath);
@@ -338,6 +380,126 @@ class HibikiSyncServer {
   shelf.Response _pairDenied(String reason) => shelf.Response(
         403,
         body: jsonEncode(<String, String>{'reason': reason}),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+
+  /// TODO-961 M1: POST /api/pair/v2 {name, clientNonce} → 200 {sessionId,
+  /// pinRequired, hostNonce}。仅创建会话、决定是否需要 PIN，并把 host 生成的 PIN
+  /// 喂给审批弹窗显示——此阶段 **不** 派 token、**不** 弹「允许/拒绝」（那在
+  /// confirm 阶段，双重确认）。PIN 绝不进响应 body。
+  Future<shelf.Response> _handlePairV2(shelf.Request request) async {
+    if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
+    // No approval UI wired → never start a pairing handshake unattended.
+    if (onPairRequest == null) return _pairDenied('unavailable');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final String? clientNonce = body?['clientNonce']?.toString();
+    if (clientNonce == null || clientNonce.trim().isEmpty) {
+      return shelf.Response(400, body: 'Missing clientNonce');
+    }
+    final String? reportedName = body?['name']?.toString().trim();
+    final String? deviceName =
+        (reportedName != null && reportedName.isNotEmpty) ? reportedName : null;
+    final String? remote = _remoteAddress(request);
+
+    final bool isLanPeer = HibikiPairingProtocol.isPrivateLanAddress(remote);
+    final bool lanRequiresPin =
+        await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false));
+    final bool pinRequired = HibikiPairingProtocol.computePinRequired(
+      isLanPeer: isLanPeer,
+      lanRequiresPin: lanRequiresPin,
+    );
+
+    final String sessionId = HibikiPairingProtocol.generateNonce();
+    final String hostNonce = HibikiPairingProtocol.generateNonce();
+    final HibikiPairSession session = HibikiPairSession(
+      sessionId: sessionId,
+      clientNonce: clientNonce,
+      hostNonce: hostNonce,
+      // PIN 先用安全随机兜底，下面交给 host UI 供给器（若接线）覆盖为屏显值。
+      pin: HibikiPairingProtocol.generatePin(),
+      pinRequired: pinRequired,
+      deviceName: deviceName,
+      remoteAddress: remote,
+      createdAt: _now(),
+    );
+    // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
+    // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
+    final String shownPin = onPairPinGenerated?.call(session) ?? session.pin;
+    final HibikiPairSession stored = HibikiPairSession(
+      sessionId: sessionId,
+      clientNonce: clientNonce,
+      hostNonce: hostNonce,
+      pin: shownPin,
+      pinRequired: pinRequired,
+      deviceName: deviceName,
+      remoteAddress: remote,
+      createdAt: session.createdAt,
+    );
+    _pairSessions[sessionId] = stored;
+
+    // 响应只含 sessionId / pinRequired / hostNonce —— 绝不含 PIN 明文。
+    return _jsonResponse(<String, dynamic>{
+      'sessionId': sessionId,
+      'pinRequired': pinRequired,
+      'hostNonce': hostNonce,
+    });
+  }
+
+  /// TODO-961 M1: POST /api/pair/v2/confirm {sessionId, pinProof} → 200 {token,
+  /// hostFingerprint}。校验 pinProof（双 nonce HMAC），通过后 **仍** 需 host 人工
+  /// 点允许（双重确认）才派 token。同一 sessionId 二次 confirm（重放）一律拒。
+  Future<shelf.Response> _handlePairConfirm(shelf.Request request) async {
+    if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
+    final Future<bool> Function(HibikiPairRequest)? approve = onPairRequest;
+    if (approve == null) return _pairDenied('unavailable');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final String? sessionId = body?['sessionId']?.toString();
+    if (sessionId == null || sessionId.trim().isEmpty) {
+      return shelf.Response(400, body: 'Missing sessionId');
+    }
+    final HibikiPairSession? session = _pairSessions[sessionId];
+    // 未知会话（过期/伪造）或已被消费过（重放）→ 拒。consumed 防同 nonce 二次提交。
+    if (session == null || session.consumed) {
+      return _pairDenied('declined');
+    }
+    // 单次消费：无论本次成功失败，会话即作废，杜绝 nonce 重放。
+    session.consumed = true;
+    _pairSessions.remove(sessionId);
+
+    if (session.pinRequired) {
+      final String? pinProof = body?['pinProof']?.toString();
+      if (pinProof == null || pinProof.trim().isEmpty) {
+        // 401：PIN 校验未通过（缺 proof）——不再问 host（不弹窗）。
+        return _pairUnauthorized();
+      }
+      final bool ok = HibikiPairingProtocol.verifyPinProof(
+        pin: session.pin,
+        clientNonce: session.clientNonce,
+        hostNonce: session.hostNonce,
+        submittedProof: pinProof,
+      );
+      if (!ok) return _pairUnauthorized();
+    }
+
+    // 第二重确认：PIN 已对（或本会话免 PIN），仍要 host 人工点允许才派 token。
+    final bool approved = await approve(HibikiPairRequest(
+      deviceName: session.deviceName,
+      remoteAddress: session.remoteAddress,
+      pinVerified: true,
+    ));
+    if (!approved) return _pairDenied('declined');
+    return _jsonResponse(<String, dynamic>{
+      'token': _token,
+      if (_securityContext != null && _hostFingerprint != null)
+        'hostFingerprint': _hostFingerprint,
+    });
+  }
+
+  /// 401，机器可读 reason='pin'：PIN proof 校验未通过。与 403/declined 区分，让
+  /// client 提示「PIN 错误，请重输」而非「对端拒绝」。绝不在 body 里回显任何 PIN。
+  shelf.Response _pairUnauthorized() => shelf.Response(
+        401,
+        body: jsonEncode(<String, String>{'reason': 'pin'}),
         headers: <String, String>{'Content-Type': 'application/json'},
       );
 
@@ -484,6 +646,12 @@ class HibikiSyncServer {
         'audio': lib,
         'videos': lib,
       },
+      // TODO-961 M1 能力协商（设计稿 §1.1 / §2.5）：老 client 读不到也不崩。
+      'tls': <String, dynamic>{
+        'enabled': _securityContext != null,
+        if (_hostFingerprint != null) 'fingerprint': _hostFingerprint,
+      },
+      'pairing': <String, dynamic>{'v2': true},
     });
   }
 

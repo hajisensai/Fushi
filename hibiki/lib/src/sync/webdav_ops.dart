@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
@@ -24,14 +25,21 @@ class WebDavOps {
     required String username,
     required String password,
     Duration connectionTimeout = const Duration(seconds: 60),
+    String? pinnedFingerprint,
   })  : _baseUrl = baseUrl,
         _connectionTimeout = connectionTimeout,
+        _pinnedFingerprint = pinnedFingerprint,
         _authHeader =
             'Basic ${base64Encode(utf8.encode('$username:$password'))}';
 
   final String _baseUrl;
   final String _authHeader;
   final Duration _connectionTimeout;
+
+  /// TODO-961 M1: https 端点的证书 SHA-256 钉扎指纹（aa:bb:.. 形式）。null = 明文
+  /// http 老路径，用裸 [HttpClient]（行为零变化）；非 null = 用 pinned client，仅
+  /// 接受指纹相等的自签证书。由数据（URL 是否带指纹）决定，不靠平台分支。
+  final String? _pinnedFingerprint;
   HttpClient? _httpClient;
 
   String get baseUrl => _baseUrl;
@@ -44,11 +52,20 @@ class WebDavOps {
     _httpClient = null;
   }
 
-  HttpClient _client() => _httpClient ??= (HttpClient()
-    // connectionTimeout applies to connection establishment only; body
-    // transfer is not time-bounded so large uploads/downloads run to
-    // completion. Defaults to 60s; probes pass a short value.
-    ..connectionTimeout = _connectionTimeout);
+  HttpClient _client() {
+    final HttpClient? existing = _httpClient;
+    if (existing != null) return existing;
+    final String? fp = _pinnedFingerprint;
+    // 指纹非空 → pinned client（仅接受证书指纹相等的自签 https）；否则裸 client
+    // （明文 http 老路径，字节不变）。连接超时只约束 connect，不约束正文传输。
+    final HttpClient client = fp != null && fp.isNotEmpty
+        ? createPinnedHttpClient(
+            expectedFingerprint: fp,
+            connectionTimeout: _connectionTimeout,
+          )
+        : (HttpClient()..connectionTimeout = _connectionTimeout);
+    return _httpClient = client;
+  }
 
   Future<HttpClientRequest> buildRequest(String method, String url) async {
     final request = await _client().openUrl(method, Uri.parse(url));
