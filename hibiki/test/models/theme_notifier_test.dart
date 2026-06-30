@@ -157,6 +157,25 @@ void main() {
       expect(notifyCount, greaterThan(0));
     });
 
+    test('TODO-977/BUG-464: audioHighlightColor 是全局偏好，往返持久化且与主题解耦', () async {
+      // 默认 null（回退随主题取色）。
+      expect(notifier.audioHighlightColor, isNull);
+
+      const Color picked = Color(0xCCFF00AA);
+      await notifier.setAudioHighlightColor(picked);
+      expect(notifier.audioHighlightColor, picked);
+
+      // 重新从 DB 加载也保留——证明它是持久全局偏好，不依赖任何主题条目。
+      final ThemeNotifier reloaded = ThemeNotifier(db, textThemeBuilder);
+      addTearDown(reloaded.dispose);
+      await reloaded.refreshFromDb();
+      expect(reloaded.audioHighlightColor, picked);
+
+      // 置 null 清除（关闭开关 → 回退）。
+      await notifier.setAudioHighlightColor(null);
+      expect(notifier.audioHighlightColor, isNull);
+    });
+
     test('setBrightnessMode persists and notifies', () async {
       int notifyCount = 0;
       notifier.addListener(() => notifyCount++);

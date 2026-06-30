@@ -1421,6 +1421,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
       ),
       customColors: key == 'custom-theme' ? _customReaderThemeColors : null,
+      // TODO-977：全局音频高亮色覆盖（与主题解耦），对所有主题生效。
+      audioHighlightOverride: appModel.audioHighlightColor,
     );
   }
 

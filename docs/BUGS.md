@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 448 条。点号进各自文件。
+> 共 450 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-464](bugs/BUG-464-audio-highlight-theme-coupling.md) | ✅ | ✅ | 音频高亮颜色只在自定义主题生效·非自定义主题恒用主色 |
 | [BUG-463](bugs/BUG-463-video-topbar-covered.md) | ✅ | ✅ | 视频播放页顶栏按钮被状态栏/刘海遮挡 |
 | [BUG-462](bugs/BUG-462-favorite-words-missing-in-collections.md) | ✅ | ✅ | 收藏的单词不在收藏列表显示 |
 | [BUG-460](bugs/BUG-460-ffmpeg-clip-muxer.md) | ✅ | ✅ | 有声书片段导出 ffmpeg exit -22（捆绑 ffmpeg 缺 mov/m4a muxer） |

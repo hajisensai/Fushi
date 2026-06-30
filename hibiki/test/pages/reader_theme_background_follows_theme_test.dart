@@ -161,4 +161,75 @@ void main() {
       expect(c.link, const Color(0xFF7A6232));
     });
   });
+
+  /// TODO-977 / BUG-464 —— 音频高亮颜色「只在自定义主题生效·非自定义主题恒用主色」。
+  ///
+  /// 旧逻辑：音频高亮（sasayaki 跟随高亮）颜色只在 custom-theme 命中时取用户色，
+  /// 其余主题恒 `scheme.primary`/preset，用户无处改色（「一直用主色」）。修复：
+  /// resolveReaderThemeColors 新增 audioHighlightOverride，置非空时统一覆盖**所有**
+  /// 主题分支的 sasayaki；null 时回退随主题取色。撤掉覆盖这些断言会红。
+  group('TODO-977 · 音频高亮全局覆盖（audioHighlightOverride）', () {
+    const Color kOverride = Color(0xCCFF00AA);
+
+    test('system-theme：override 写穿 sasayaki，不再用 primary', () {
+      final ColorScheme scheme = lightScheme();
+      final ReaderThemeColors c = resolveReaderThemeColors(
+        themeKey: 'system-theme',
+        presetMap: presetMap,
+        scheme: scheme,
+        audioHighlightOverride: kOverride,
+      );
+      expect(c.sasayaki, kOverride);
+      expect(c.sasayaki, isNot(scheme.primary.withValues(alpha: 0.40)),
+          reason: '设了全局音频高亮色后不应再用主题主色（BUG-464）');
+      // 其它角色色不受影响。
+      expect(c.selection, scheme.tertiary.withValues(alpha: 0.40));
+      expect(c.link, scheme.primary);
+      expect(c.bg, scheme.surface);
+    });
+
+    test('preset 主题：override 也写穿 sasayaki（覆盖手调底色）', () {
+      final ReaderThemeColors c = resolveReaderThemeColors(
+        themeKey: 'ecru-theme',
+        presetMap: presetMap,
+        scheme: lightScheme(),
+        audioHighlightOverride: kOverride,
+      );
+      expect(c.sasayaki, kOverride);
+      // preset 的其它角色色保持透传，零变化。
+      expect(c.bg, const Color(0xFFF7F6EB));
+      expect(c.selection, const Color(0x59C2B280));
+    });
+
+    test('custom-theme：override 也写穿，压过 customColors.sasayaki', () {
+      const ReaderThemeColors custom = (
+        bg: Color(0xFF102030),
+        fg: Color(0xFFEEEEEE),
+        sasayaki: Color(0x66335577),
+        selection: Color(0x66445566),
+        link: Color(0xFF778899),
+        dark: true,
+      );
+      final ReaderThemeColors c = resolveReaderThemeColors(
+        themeKey: 'custom-theme',
+        presetMap: presetMap,
+        scheme: lightScheme(),
+        customColors: custom,
+        audioHighlightOverride: kOverride,
+      );
+      expect(c.sasayaki, kOverride);
+      expect(c.selection, custom.selection);
+    });
+
+    test('override=null：回退随主题取色（向后兼容，旧行为）', () {
+      final ColorScheme scheme = lightScheme();
+      final ReaderThemeColors c = resolveReaderThemeColors(
+        themeKey: 'system-theme',
+        presetMap: presetMap,
+        scheme: scheme,
+        audioHighlightOverride: null,
+      );
+      expect(c.sasayaki, scheme.primary.withValues(alpha: 0.40));
+    });
+  });
 }

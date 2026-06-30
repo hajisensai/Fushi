@@ -284,6 +284,36 @@ ReaderThemeColors resolveReaderThemeColors({
   required Map<String, ReaderThemeColors> presetMap,
   required ColorScheme scheme,
   ReaderThemeColors? customColors,
+  Color? audioHighlightOverride,
+}) {
+  final ReaderThemeColors base = _resolveBaseReaderThemeColors(
+    themeKey: themeKey,
+    presetMap: presetMap,
+    scheme: scheme,
+    customColors: customColors,
+  );
+  // TODO-977 根因修复：音频高亮（sasayaki 跟随高亮）颜色过去**只在 custom-theme**
+  // 时可被用户改（其余主题恒用 primary/preset），所以非自定义主题下「一直用主色」。
+  // 这里在五角色色的单一真相源里统一覆盖 sasayaki：只要用户设了全局音频高亮色，
+  // 不论当前主题是哪个分支，都写穿到渲染——消除「默认主色恒抢占」这个特殊情况，
+  // 而不是给某个主题分支加 if。null 时保持旧的随主题取色（向后兼容）。
+  if (audioHighlightOverride == null) return base;
+  return (
+    bg: base.bg,
+    fg: base.fg,
+    sasayaki: audioHighlightOverride,
+    selection: base.selection,
+    link: base.link,
+    dark: base.dark,
+  );
+}
+
+/// 五角色色的「随主题取色」基底，不含 TODO-977 的音频高亮全局覆盖。
+ReaderThemeColors _resolveBaseReaderThemeColors({
+  required String themeKey,
+  required Map<String, ReaderThemeColors> presetMap,
+  required ColorScheme scheme,
+  ReaderThemeColors? customColors,
 }) {
   if (themeKey == 'custom-theme' && customColors != null) {
     return customColors;

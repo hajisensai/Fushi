@@ -2076,6 +2076,11 @@ class AppModel with ChangeNotifier {
   Future<void> setCustomThemeSasayakiColor(Color? c) =>
       themeNotifier.setCustomThemeSasayakiColor(c);
 
+  /// TODO-977: 全局音频高亮颜色（与阅读器主题解耦），委托 ThemeNotifier。
+  Color? get audioHighlightColor => themeNotifier.audioHighlightColor;
+  Future<void> setAudioHighlightColor(Color? c) =>
+      themeNotifier.setAudioHighlightColor(c);
+
   Color? get customThemeLinkColor => themeNotifier.customThemeLinkColor;
   Future<void> setCustomThemeLinkColor(Color? c) =>
       themeNotifier.setCustomThemeLinkColor(c);

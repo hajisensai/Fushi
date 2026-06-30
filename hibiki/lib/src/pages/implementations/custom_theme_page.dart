@@ -104,8 +104,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         () => appModelNoUpdate.customThemeContainerColor);
     _useContainerColor = _containerColor != null;
     _containerColor ??= generated.primaryContainer;
-    _sasayakiColor = roleColor(
-        entry?.sasayakiColor, () => appModelNoUpdate.customThemeSasayakiColor);
+    // TODO-977：音频高亮色是**全局偏好**（与主题解耦），从 appModel.audioHighlightColor
+    // 读，不再依赖被编辑的 custom-theme 条目；这样它对所有主题生效，编辑它也不强制
+    // 切到本自定义主题。entry/encode/decode 仍保留 sasayakiColor 字段供分享码兼容。
+    _sasayakiColor = appModelNoUpdate.audioHighlightColor;
     _useSasayakiColor = _sasayakiColor != null;
     _sasayakiColor ??= HibikiColor.defaultSasayakiColor;
     _linkColor = roleColor(
@@ -376,6 +378,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       _linkColor = result.linkColor ?? generated.primary;
       _useLinkColor = result.linkColor != null;
     });
+    // TODO-977：导入的音频高亮色也写穿全局偏好（与主题解耦），保持与手动改色一致。
+    appModel.setAudioHighlightColor(result.sasayakiColor);
   }
 
   Future<void> _importTheme() async {
@@ -517,11 +521,19 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               description: t.color_sasayaki_desc,
               preview: _buildSasayakiPreview(cs),
               enabled: _useSasayakiColor,
-              onEnabledChanged: (bool value) =>
-                  setState(() => _useSasayakiColor = value),
+              // TODO-977：音频高亮是全局偏好，开关/改色立即写穿，对所有主题生效，
+              // 不必依赖「保存并切到本自定义主题」。关闭 → 写 null 回退到随主题取色。
+              onEnabledChanged: (bool value) {
+                setState(() => _useSasayakiColor = value);
+                appModel.setAudioHighlightColor(value ? _sasayakiColor : null);
+              },
               color: _sasayakiColor!,
-              onChanged: (Color color) =>
-                  setState(() => _sasayakiColor = color),
+              onChanged: (Color color) {
+                setState(() => _sasayakiColor = color);
+                if (_useSasayakiColor) {
+                  appModel.setAudioHighlightColor(color);
+                }
+              },
               enableAlpha: true,
             ),
             _buildOptionalColorPicker(

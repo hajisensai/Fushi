@@ -1,0 +1,9 @@
+## BUG-464 · 音频高亮颜色只在自定义主题生效·非自定义主题恒用主色
+- **报告**：2026-06-30（用户：TODO-977）
+- **真实性**：✅ 真 bug — 音频高亮（原 sasayaki 跟随高亮）颜色被结构性绑死在「自定义主题」上，非自定义主题下恒用主题 primary，用户无处改色。
+  - 根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:300`：`resolveReaderThemeColors` 对 light/system/未覆盖主题恒 `sasayaki: scheme.primary.withValues(...)`，且 preset 分支用手调底色——**只有 `themeKey == 'custom-theme'` 才读用户色** `customColors.sasayaki`（:288-289）。
+  - 取色源 `hibiki/lib/src/pages/implementations/reader_hibiki/chrome.part.dart:1404-1405`：`_customReaderThemeColors.sasayaki = appModel.customThemeSasayakiColor ?? HibikiColor.defaultSasayakiColor`——该色存在 **per-custom-theme 条目**里（`theme_notifier.dart:902` flat key + 条目 `sasayakiColor` 字段），编辑它还会经 `custom_theme_page.dart:677 setAppThemeKey('custom-theme:...')` 强制把全局主题切到该自定义主题。
+  - 结果：用户在非自定义主题（system/preset）下，音频高亮恒等于主题主色，没有任何设置能改它——「音频高亮颜色修改不生效，一直用主色」。
+- **[x] ① 已修复** — 引入**全局、主题无关**偏好 `audio_highlight_color`（`theme_notifier.dart` `audioHighlightColor`/`setAudioHighlightColor`，`app_model.dart` 委托）。在五角色色单一真相源 `resolveReaderThemeColors` 加 `audioHighlightOverride` 参数：非空时统一覆盖**所有主题分支**的 `sasayaki`（`reader_hibiki_page.dart` 抽出 `_resolveBaseReaderThemeColors` 基底 + 一处覆盖，消除「默认主色恒抢占」特殊情况），null 回退旧行为。`chrome.part.dart` `_readerThemeColors` 传 `appModel.audioHighlightColor`。`.hoshi-active`（纯 SRT 路径）经 `_themeSasayakiColor()` 共享同一覆盖。自定义主题页「音频高亮」调色器改读写全局偏好（即时写穿，不再依赖保存切主题）；导入分享码 `:sk` 也写穿。i18n 改名「音频高亮 / Audio Highlight」。提交：见 worktree。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/audio_highlight_override_test.dart`（override 写穿所有主题分支 + null 回退）、`hibiki/test/models/audio_highlight_color_pref_test.dart`（全局偏好往返）、`hibiki/test/utils/settings_switch_action_row_tap_guard_test.dart`（带 panel 不误关开关）。
+- **备注**：BUG 采番撞 463（被并发 worktree fix-985-video-topbar-inset 占），跨 worktree 取并集后改 464。调色行点背景误关开关属同一 TODO-977 的 UX 收窄（`settings_shared.dart` `AdaptiveSettingsSwitchActionRow`：带 panel 时整行 onTap 不切换开关），一并修。
