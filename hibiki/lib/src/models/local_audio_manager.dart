@@ -133,26 +133,51 @@ class LocalAudioManager {
     await setEntries(dbs);
   }
 
+  /// 路径是否落在库目录 [_databaseDirectory] 内部（=我们自己复制的内部副本）。
+  /// 引用模式下 entry.path 指向用户原文件，天然落在库目录之外 → 返回 false，
+  /// [pruneOrphans] / [remove] 据此跳过删除，绝不动用户原文件。
+  bool _isInternalCopy(String dbPath) {
+    if (dbPath.isEmpty) return false;
+    final String dir = path.canonicalize(_databaseDirectory.path);
+    final String parent = path.canonicalize(path.dirname(dbPath));
+    return path.equals(dir, parent);
+  }
+
   /// 把外部 [sourcePath] 拷贝进库目录，返回指向内部副本的 entry（默认启用），
   /// 但不写 prefs、不通知 native。持久化交给 setEntries / setAudioSourceConfigs。
+  ///
+  /// [reference]=true（仅桌面有意义，移动端 file_picker 给的是会被系统清掉的缓存
+  /// 临时副本，引用即指向消失的文件，故 UI 只在桌面暴露此开关，见 BUG-483）：跳过
+  /// copy，直接返回指向用户原始 [sourcePath] 的 entry，不在 C 盘 AppData 留副本。
+  /// false（默认，向后兼容）：复制进库目录返回内部副本 entry。
   Future<LocalAudioDbEntry> importFile(
     String sourcePath, {
     required String displayName,
+    bool reference = false,
   }) async {
+    final File sourceFile = File(sourcePath);
+    // 源文件不存在不再静默跳过 copy（BUG-446「假成功」根因：旧实现会返回一个指向
+    // 空 internalPath 的 entry，导入「成功」却拷不出任何文件）。显式失败抛错，让上层
+    // catch 记录真因（路径/选择问题）并把可见反馈带给用户。两种模式共用此校验。
+    if (!await sourceFile.exists()) {
+      throw FileSystemException(
+          'local audio db source file not found', sourcePath);
+    }
+    if (reference) {
+      // 引用模式（BUG-483）：不复制，直接指向用户原路径。清理逻辑按 [_isInternalCopy]
+      // 派生「外部引用 = 不删」，原文件天然落在库目录之外故安全。
+      return LocalAudioDbEntry(
+        path: sourcePath,
+        displayName: displayName,
+        enabled: true,
+      );
+    }
     int stamp = DateTime.now().millisecondsSinceEpoch;
     if (stamp <= _lastImportStamp) stamp = _lastImportStamp + 1;
     _lastImportStamp = stamp;
     final String internalName = 'local_audio_$stamp.db';
     final String internalPath =
         path.join(_databaseDirectory.path, internalName);
-    final File sourceFile = File(sourcePath);
-    // 源文件不存在不再静默跳过 copy（BUG-446「假成功」根因：旧实现会返回一个指向
-    // 空 internalPath 的 entry，导入「成功」却拷不出任何文件）。显式失败抛错，让上层
-    // catch 记录真因（路径/选择问题）并把可见反馈带给用户。
-    if (!await sourceFile.exists()) {
-      throw FileSystemException(
-          'local audio db source file not found', sourcePath);
-    }
     try {
       await sourceFile.copy(internalPath);
     } on FileSystemException catch (e) {
@@ -181,6 +206,8 @@ class LocalAudioManager {
         keepPaths.map((String p) => path.canonicalize(p)).toSet();
     if (!await _databaseDirectory.exists()) return;
     final RegExp namePattern = RegExp(r'^local_audio_\d+\.db$');
+    // BUG-483：本方法只遍历 [_databaseDirectory] 自身、且只匹配 `local_audio_<ts>.db`
+    // 内部副本命名，故引用模式落在库目录之外的用户原文件天然不会进入此循环、不被回收。
     await for (final FileSystemEntity entity in _databaseDirectory.list()) {
       if (entity is! File) continue;
       final String name = path.basename(entity.path);
@@ -210,7 +237,11 @@ class LocalAudioManager {
     final dbs = List<LocalAudioDbEntry>.of(entries);
     if (index < 0 || index >= dbs.length) return;
     final entry = dbs.removeAt(index);
-    await deleteFiles(entry.path);
+    // BUG-483：只删我们复制进库目录的内部副本；引用模式 entry.path 指向用户原文件
+    // （在库目录之外），移除来源条目时绝不删用户原文件。
+    if (_isInternalCopy(entry.path)) {
+      await deleteFiles(entry.path);
+    }
     await setEntries(dbs);
   }
 

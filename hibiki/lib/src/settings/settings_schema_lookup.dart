@@ -60,7 +60,7 @@ SettingsDestination buildLookupDestination() {
                     appModel.audioSourceConfigs,
                   ),
                   onSave: appModel.setAudioSourceConfigs,
-                  onPickLocalDb: () async {
+                  onPickLocalDb: (bool reference) async {
                     final FilePickerResult? result =
                         await FilePicker.platform.pickFiles();
                     // 用户取消选择：result 为 null，正常无声返回（不是失败）。
@@ -89,6 +89,7 @@ SettingsDestination buildLookupDestination() {
                         await appModel.importLocalAudioDbFile(
                       pickedPath,
                       displayName: picked.name,
+                      reference: reference,
                     );
                     return AudioSourceConfig.localAudio(
                       label: entry.displayName,

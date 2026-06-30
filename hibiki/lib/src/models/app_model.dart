@@ -3906,11 +3906,16 @@ class AppModel with ChangeNotifier {
 
   /// 把外部音频库文件拷进库目录，返回内部副本 entry（不写 prefs、不通知 native）。
   /// 持久化交给后续 [setAudioSourceConfigs]。
+  ///
+  /// [reference]=true（仅桌面）时跳过复制、直接引用用户原路径（BUG-483），不在
+  /// AppData 留副本；移动端缓存临时副本不可引用，故 UI 只在桌面暴露此开关，默认 false。
   Future<LocalAudioDbEntry> importLocalAudioDbFile(
     String sourcePath, {
     required String displayName,
+    bool reference = false,
   }) =>
-      _localAudioManager.importFile(sourcePath, displayName: displayName);
+      _localAudioManager.importFile(sourcePath,
+          displayName: displayName, reference: reference);
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);

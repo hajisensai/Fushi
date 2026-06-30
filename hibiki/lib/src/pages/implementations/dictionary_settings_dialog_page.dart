@@ -16,9 +16,9 @@ class AudioSourcesDialog extends StatefulWidget {
   final List<AudioSourceConfig> sources;
   final void Function(List<AudioSourceConfig>) onSave;
 
-  /// 选文件并拷贝进库目录，返回一个 localAudio 源（已拷贝、未持久化）；
-  /// 返回 null 表示用户取消。
-  final Future<AudioSourceConfig?> Function()? onPickLocalDb;
+  /// 选文件并导入为一个 localAudio 源（未持久化）；返回 null 表示用户取消。
+  /// [reference]=true（仅桌面开关可启）时引用原文件不复制（BUG-483）。
+  final Future<AudioSourceConfig?> Function(bool reference)? onPickLocalDb;
 
   /// 打开某个本地音频库的「子来源顺序 + 逐源启用」编辑器（按库路径）。
   final Future<void> Function(String path)? onEditLocalSources;
@@ -42,6 +42,10 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   /// 统一来源列表（hibikiRemote + remoteAudio + localAudio 混排，顺序即优先级）。
   late List<AudioSourceConfig> _sources;
   bool _importing = false;
+
+  /// BUG-483：导入本地音频库时「引用原文件（不复制）」。仅桌面可见/可选；移动端
+  /// file_picker 返回的是会被系统清掉的缓存临时副本，引用即指向消失的文件，恒 false。
+  bool _referenceOriginal = false;
   bool _urlValid = false;
   final TextEditingController _controller = TextEditingController();
 
@@ -121,6 +125,18 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                       onPressed: _importing ? null : _addLocalDb,
                     ),
                   ),
+                  // BUG-483：仅桌面暴露「引用原文件不复制」开关（移动端缓存副本不可引用）。
+                  if (isDesktopPlatform)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(Icons.link_outlined),
+                      title: Text(t.local_audio_reference_original),
+                      subtitle: Text(t.local_audio_reference_original_desc),
+                      value: _referenceOriginal,
+                      onChanged: _importing
+                          ? null
+                          : (bool v) => setState(() => _referenceOriginal = v),
+                    ),
                 ],
               ],
             ),
@@ -315,7 +331,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Future<void> _addLocalDb() async {
     setState(() => _importing = true);
     try {
-      final AudioSourceConfig? added = await widget.onPickLocalDb!();
+      final AudioSourceConfig? added =
+          await widget.onPickLocalDb!(_referenceOriginal && isDesktopPlatform);
       if (!mounted) return;
       if (added != null) {
         setState(() => _sources.insert(0, added));

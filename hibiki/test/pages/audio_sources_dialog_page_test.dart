@@ -141,7 +141,7 @@ void main() {
               label: 'android.db', path: '/a.db', enabled: true),
         ],
         onSave: (_) {},
-        onPickLocalDb: () async => null,
+        onPickLocalDb: (bool reference) async => null,
       ),
     );
 
@@ -189,7 +189,7 @@ void main() {
           AudioSourceConfig.remoteAudio(url: 'https://old.example.com/{term}'),
         ],
         onSave: (List<AudioSourceConfig> v) => saved = v,
-        onPickLocalDb: () async => AudioSourceConfig.localAudio(
+        onPickLocalDb: (bool reference) async => AudioSourceConfig.localAudio(
             label: 'new.db', path: '/new.db', enabled: true),
       ),
     );
@@ -217,7 +217,7 @@ void main() {
       AudioSourcesDialog(
         sources: const <AudioSourceConfig>[],
         onSave: (List<AudioSourceConfig> v) => saved = v,
-        onPickLocalDb: () async => AudioSourceConfig.localAudio(
+        onPickLocalDb: (bool reference) async => AudioSourceConfig.localAudio(
             label: 'new.db', path: '/new.db', enabled: true),
       ),
     );
@@ -248,7 +248,7 @@ void main() {
         sources: const <AudioSourceConfig>[],
         onSave: (List<AudioSourceConfig> v) =>
             saves.add(List<AudioSourceConfig>.of(v)),
-        onPickLocalDb: () async => AudioSourceConfig.localAudio(
+        onPickLocalDb: (bool reference) async => AudioSourceConfig.localAudio(
             label: 'new.db', path: '/new.db', enabled: true),
       ),
     );

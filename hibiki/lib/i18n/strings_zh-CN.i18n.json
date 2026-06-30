@@ -2021,5 +2021,7 @@
   "sync_pair_fingerprint_changed": "证书已变更，为安全起见已中止配对（可能存在中间人攻击）。",
   "sync_pair_not_hibiki": "此地址未找到 Hibiki 设备，已保存该地址。",
   "sync_pair_pairing": "正在配对…",
-  "sync_pair_confirm_identity_body": "你正在与 $device 配对。继续前请确认这是你预期的设备。"
+  "sync_pair_confirm_identity_body": "你正在与 $device 配对。继续前请确认这是你预期的设备。",
+  "local_audio_reference_original": "引用原文件（不复制）",
+  "local_audio_reference_original_desc": "数据库保留在原位置、按原路径读取；原文件被移动或删除后该来源会失效。"
 }
