@@ -126,12 +126,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                     ),
                   ),
                   // BUG-483：仅桌面暴露「引用原文件不复制」开关（移动端缓存副本不可引用）。
+                  // 走共享 MD3 开关行（AdaptiveSettingsSwitchRow），不直接用
+                  // 裸 SwitchListTile —— 否则触犯 md3 设计系统守卫且 chrome 不一致。
                   if (isDesktopPlatform)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: const Icon(Icons.link_outlined),
-                      title: Text(t.local_audio_reference_original),
-                      subtitle: Text(t.local_audio_reference_original_desc),
+                    AdaptiveSettingsSwitchRow(
+                      icon: Icons.link_outlined,
+                      title: t.local_audio_reference_original,
+                      subtitle: t.local_audio_reference_original_desc,
                       value: _referenceOriginal,
                       onChanged: _importing
                           ? null
