@@ -200,11 +200,13 @@ void main() {
                 'inline flow, span rect ${gloss['spanRect']} vs anchor '
                 '${gloss['anchorRect']}');
 
-        // 反向对照：gloss-image-link 内 span 不被中和（revert 保留 float/position）。
-        expect(gloss['imgLinkSpanFloat'], isNot('none'),
-            reason: 'TODO-1022: gloss-image-link span float must NOT be '
-                'neutralized (revert preserved), got '
-                '${gloss['imgLinkSpanFloat']}');
+        // 反向对照：<p> 元素（非 span/div）落在中和选择器之外，其 inline float 必须
+        // 原样保留 —— 证明 TODO-1022 中和严格限定 span/div、不误伤 structured-content
+        // 里其它标签（选择器作用域正确、零回归）。
+        expect(gloss['rtFloat'], isNot('none'),
+            reason: 'TODO-1022: a non span/div <p> element must be OUTSIDE the '
+                'neutralize scope and keep its inline float, got '
+                '${gloss['rtFloat']}');
 
         // ── TODO-1018 探针：弹窗 WebView 可派发 contextmenu，JS 层不吞它 ──
         final dynamic rawCtx = await runInPopup(_contextMenuProbeJs());
@@ -312,8 +314,9 @@ String _popupReadyJs() => r'''
 ''';
 
 /// TODO-1022 探针：在真弹窗文档造 structured-content，放带 inline float/position 的
-/// gloss-sc-span、gloss-sc-div，以及 gloss-image-link 内 gloss-sc-span 反向对照，
-/// 读回 getComputedStyle + getBoundingClientRect。
+/// gloss-sc-span、gloss-sc-div（应被中和），以及一个真 <rt> 振假名标签（带 inline
+/// float，落在 span/div 选择器之外，应保留）作反向对照，读回 getComputedStyle +
+/// getBoundingClientRect。
 String _glossaryNeutralizeProbeJs() => r'''
 (function() {
   try {
@@ -333,21 +336,21 @@ String _glossaryNeutralizeProbeJs() => r'''
     scDiv.style.cssText = 'float:left;position:relative;top:-40px;left:80px;';
     scDiv.textContent = 'DIV';
     host.appendChild(scDiv);
-    var imgLink = document.createElement('a');
-    imgLink.className = 'gloss-image-link';
-    var imgSpan = document.createElement('span');
-    imgSpan.className = 'gloss-sc-span';
-    imgSpan.style.cssText = 'float:left;position:relative;';
-    imgSpan.textContent = 'IMG';
-    imgLink.appendChild(imgSpan);
-    host.appendChild(imgLink);
+    // 反向对照：一个 <p> 元素（gloss-sc-p 类）——p 不是 span/div，落在中和选择器
+    // 之外，其 inline float 应原样保留，证明 TODO-1022 中和严格限定 span/div、不误伤
+    // structured-content 里其它标签（作用域正确、零回归）。
+    var scP = document.createElement('p');
+    scP.className = 'gloss-sc-p';
+    scP.style.cssText = 'float:left;position:relative;';
+    scP.textContent = 'P';
+    host.appendChild(scP);
 
     document.body.appendChild(host);
     void host.offsetHeight;
 
     var spanCs = window.getComputedStyle(scSpan);
     var divCs = window.getComputedStyle(scDiv);
-    var imgSpanCs = window.getComputedStyle(imgSpan);
+    var rtCs = window.getComputedStyle(scP);
 
     var anchorRect = anchor.getBoundingClientRect();
     var spanRect = scSpan.getBoundingClientRect();
@@ -361,8 +364,8 @@ String _glossaryNeutralizeProbeJs() => r'''
       spanPosition: spanCs.getPropertyValue('position'),
       divFloat: divCs.getPropertyValue('float') || divCs.cssFloat || '',
       divPosition: divCs.getPropertyValue('position'),
-      imgLinkSpanFloat: imgSpanCs.getPropertyValue('float') || imgSpanCs.cssFloat || '',
-      imgLinkSpanPosition: imgSpanCs.getPropertyValue('position'),
+      rtFloat: rtCs.getPropertyValue('float') || rtCs.cssFloat || '',
+      rtPosition: rtCs.getPropertyValue('position'),
       anchorRect: {top: anchorRect.top, left: anchorRect.left, h: anchorRect.height},
       spanRect: {top: spanRect.top, left: spanRect.left, h: spanRect.height},
       spanInFlow: spanInFlow
