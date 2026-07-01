@@ -330,7 +330,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     int? noteId,
   ) async {
     try {
-      final int section = _lookupSectionIndex;
+      final int section = _favoriteSectionIndex;
       final sentenceRange = _cachedSentenceRange ??
           (_cachedSelectionRange != null
               ? (

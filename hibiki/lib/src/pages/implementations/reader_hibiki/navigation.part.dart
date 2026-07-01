@@ -189,6 +189,36 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
   }
 
+  /// BUG-493 (TODO-1053 Bug B)：重锚在飞导致进度刷新拿到 null 时武装一次短延迟重试。
+  /// 只对「真实文本章」（非纯图片/封面章）武装——图片章的 null 是合法稳态由
+  /// [_applyImagePageProgressFallback] 兜底显示，重试会空转。有界（[_kProgressRetryMax]）：
+  /// 超界回落 10s 轮询，避免罕见永不 settle 场景无限重试。已武装则不重复排队（coalesce）。
+  void _maybeArmProgressReanchorRetry() {
+    if (!mounted) return;
+    if (_progressReanchorRetryTimer != null) return;
+    final EpubBook? book = _book;
+    if (book == null) return;
+    // 纯图片/封面章的 null 是稳态 → 不重试（避免空转）。
+    if (book.isImageOnlyChapter(_currentChapter)) return;
+    if (_progressReanchorRetryCount >=
+        _ReaderHibikiPageState._kProgressRetryMax) {
+      return;
+    }
+    _progressReanchorRetryCount++;
+    _progressReanchorRetryTimer =
+        Timer(_ReaderHibikiPageState._kProgressRetryDelay, () {
+      _progressReanchorRetryTimer = null;
+      if (mounted) _refreshProgress();
+    });
+  }
+
+  /// 撤销待重试并复位计数（拿到真实快照 / dispose 时）。
+  void _cancelProgressReanchorRetry() {
+    _progressReanchorRetryTimer?.cancel();
+    _progressReanchorRetryTimer = null;
+    _progressReanchorRetryCount = 0;
+  }
+
   /// BUG-213：setup 脚本的 scroll reporter 在章内原生滚动时（BUG-380 后改为 rAF 节流
   /// 边滑边回传 + 尾沿补一发）回传到此。门控通过则重算章内进度（high-water-mark 计字
   /// 不重复累计、`_debouncedSavePosition` 自带 500ms 去抖，不改字数累加路径）。恢复期/
@@ -680,7 +710,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.stableProgressInvocation(),
     );
-    if (result == null || !mounted) return;
+    if (result == null) {
+      // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
+      // settle）。真实文本章遇此是**瞬态**，武装一次短延迟重试，重锚一清旗即补到真值；
+      // 图片/封面章的 null 是**合法稳态**（无文本进度），不重试（由下方 snapshot==null 分支
+      // 兜底显示）。区分靠 _shouldRetryProgressRefresh（真文本章 && 未超界）。
+      if (mounted) _maybeArmProgressReanchorRetry();
+      return;
+    }
+    if (!mounted) return;
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
     if (snapshot == null) {
@@ -692,6 +730,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
 
+    // BUG-493：拿到真实快照 → 重锚已 settle，撤销待重试并复位计数。
+    _cancelProgressReanchorRetry();
     final int total = snapshot.total;
     final int charOffset = snapshot.charOffset;
     final double progress = snapshot.progress;

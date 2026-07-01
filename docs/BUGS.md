@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 477 条。点号进各自文件。
+> 共 480 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-494](bugs/BUG-494-favorite-phantom-identity-collapse.md) | ✅ | ✅ | 收藏身份键坍缩致幻影收藏未收藏句被点亮 |
+| [BUG-493](bugs/BUG-493-favorite-progress-hidden-reanchor.md) | ✅ | ✅ | 重锚时序竞态致进度概率不显示查词100%逼出 |
+| [BUG-492](bugs/BUG-492-favorite-wrong-section.md) | ✅ | ✅ | 收藏/制卡写错 sectionIndex 致跳错章看不到收藏句 |
 | [BUG-491](bugs/BUG-491-shelf-gamepad-nav.md) | ✅ | ✅ | 首页手柄方向键选不中书籍且右跳越过导入图标 |
 | [BUG-490](bugs/BUG-490-clip-text-render-null.md) | ✅ | ✅ | 有声书剪辑导出renderAudiobookClipTextToPng返null |
 | [BUG-489](bugs/BUG-489-audio-source-failure-cooldown.md) | ✅ | ✅ | 查词发音死源无冷却导致刷屏与串行拖累 |

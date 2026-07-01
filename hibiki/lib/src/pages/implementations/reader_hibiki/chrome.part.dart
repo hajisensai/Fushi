@@ -370,6 +370,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             length: data.sentenceNormalizedLength!,
           )
         : null;
+    // BUG-492：原生选区路径同样锁定所属章号（详见 _cachedSelectionSectionIndex）。
+    _cachedSelectionSectionIndex = _lookupSectionIndex;
     return data;
   }
 
@@ -1608,7 +1610,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return;
     }
 
-    final int section = _lookupSectionIndex;
+    final int section = _favoriteSectionIndex;
     final sentenceRange = _cachedSentenceRange ??
         (_cachedSelectionRange != null
             ? (
@@ -1624,12 +1626,20 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         FavoriteSentenceRepository(appModel.database);
 
     if (_currentSentenceIsFavorited) {
-      await repo.removeByContent(
-        text: sentence,
-        bookKey: widget.bookKey,
-        sectionIndex: section,
-        normCharOffset: sentenceRange?.offset,
-      );
+      // BUG-494：优先按 _checkFavoriteStatus 缓存的精确条目 id 删单条（身份键坍缩下不连坐
+      // 误删同内容的另一条）；无缓存 id（老路径 / 未经 checkFavoriteStatus）回退内容键删单条。
+      final String? favId = _currentFavoriteId;
+      if (favId != null) {
+        await repo.removeById(favId);
+      } else {
+        await repo.removeByContent(
+          text: sentence,
+          bookKey: widget.bookKey,
+          sectionIndex: section,
+          normCharOffset: sentenceRange?.offset,
+        );
+      }
+      _currentFavoriteId = null;
       _invalidateFavoriteSentenceCache();
       _rebuild(() => _currentSentenceIsFavorited = false);
       if (sentenceRange != null || _lyricsMode) {
@@ -1650,6 +1660,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       normCharLength: sentenceRange?.length,
     );
     await repo.add(fav);
+    // BUG-494：记住刚写入条目的精确 id，供随后取消收藏 removeById 精确删单条。
+    _currentFavoriteId = fav.id;
     _invalidateFavoriteSentenceCache();
     _rebuild(() => _currentSentenceIsFavorited = true);
     if (sentenceRange != null || _lyricsMode) {

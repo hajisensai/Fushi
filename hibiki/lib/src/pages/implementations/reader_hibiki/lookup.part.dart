@@ -195,6 +195,8 @@ extension _ReaderLookup on _ReaderHibikiPageState {
                 offset: frag.normCharStart,
                 length: frag.normCharEnd - frag.normCharStart,
               );
+              // BUG-492：歌词 cue 选区所属章号取自 fragment（与 _lookupSectionIndex 同源）。
+              _cachedSelectionSectionIndex = frag.sectionIndex;
             }
           }
           if (cueIdx != null && cueIdx >= 0 && cueIdx < _lyricsCueList.length) {
@@ -238,6 +240,8 @@ extension _ReaderLookup on _ReaderHibikiPageState {
     } else {
       _cachedSentenceRange = null;
     }
+    // BUG-492：选区时刻锁定所属章号，供收藏 / 制卡写入用（详见 _cachedSelectionSectionIndex）。
+    _cachedSelectionSectionIndex = _lookupSectionIndex;
     _checkFavoriteStatus();
   }
 
@@ -245,6 +249,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
     if (sentence.isEmpty) {
+      _currentFavoriteId = null;
       if (_currentSentenceIsFavorited) {
         _rebuild(() => _currentSentenceIsFavorited = false);
       }
@@ -257,13 +262,16 @@ extension _ReaderLookup on _ReaderHibikiPageState {
                 length: _cachedSelectionRange!.length
               )
             : null);
-    final bool favorited =
-        await FavoriteSentenceRepository(appModel.database).isFavorited(
+    // BUG-494：拿匹配条目的精确 id（未收藏 → null），供 toggle 用 removeById 精确删单条。
+    final String? matchedId =
+        await FavoriteSentenceRepository(appModel.database).matchedFavoriteId(
       text: sentence,
       bookKey: widget.bookKey,
-      sectionIndex: _lookupSectionIndex,
+      sectionIndex: _favoriteSectionIndex,
       normCharOffset: sentenceRange?.offset,
     );
+    _currentFavoriteId = matchedId;
+    final bool favorited = matchedId != null;
     if (mounted && favorited != _currentSentenceIsFavorited) {
       _rebuild(() => _currentSentenceIsFavorited = favorited);
     }

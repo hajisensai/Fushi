@@ -861,6 +861,22 @@ class ReaderPaginationScripts {
     this.nodeStartOffsets = offsets;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
   },
+  // BUG-492 (TODO-1053 Bug A) 越界判据（分页/连续共用，_sharedJs）：charOffset 是否落在
+  // 本章可匹配字符总数之内。恢复端用它护住旧脏收藏——写入端曾把某句错记成相邻章
+  // sectionIndex，恢复加载错章后 charOffset 可能超本章字符总数 → 定位静默失败停错位。
+  // 越界即回退章首（确定性落点）而非静默停。与 scrollToCharOffset 的走查同口径
+  // （countChars / createWalker，furigana 已 REJECT）。>=0 且在范围内返 true。
+  charOffsetInRange: function(charOffset) {
+    if (typeof charOffset !== 'number' || charOffset < 0) return false;
+    var walker = this.createWalker();
+    var runningOffset = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      runningOffset += this.countChars(node.textContent);
+      if (runningOffset > charOffset) return true;
+    }
+    return false;
+  },
   // TODO-736 A-1：连续模式进度的「字符级」分子。移植安卓 reader-continuous.js
   // countCharsBeforeViewport（:92-151）：返回本文本节点里**已滚出视口首边**的可匹配字符
   // 数（与 countChars / isMatchableChar 同口径作分子，calculateProgress 总字符作分母）。
@@ -1875,8 +1891,14 @@ $_sharedJs
   restoreToCharOffset: async function(charOffset) {
     await document.fonts.ready;
     var context = this.getScrollContext();
-    if (charOffset < 0) { this.scrollToProgressPaged(context, 0); }
-    else { this.scrollToCharOffset(charOffset); }
+    // BUG-492 (TODO-1053 Bug A) 越界兜底：旧脏收藏 charAnchor 属于相邻错章，恢复加载
+    // 本章后可能超本章字符总数 → scrollToCharOffset 静默 no-op 停在页 1 附近。越界回退
+    // 章首（scrollToProgressPaged 0），比静默停错位可诊断。范围内走精确定位，行为不变。
+    if (charOffset < 0 || !this.charOffsetInRange(charOffset)) {
+      this.scrollToProgressPaged(context, 0);
+    } else {
+      this.scrollToCharOffset(charOffset);
+    }
     var pos = this.getPagePosition(context);
     var self = this;
     setTimeout(function() {
@@ -2637,7 +2659,19 @@ $_sharedJs
     await document.fonts.ready;
     var self = this;
     if (charOffset < 0) { this.scrollToChapterStart(); }
-    else { this.scrollToCharOffset(charOffset, endCharOffset); }
+    else {
+      // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
+      // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
+      // 是「另一章」的绝对偏移，在当前（错）章内可能超出本章可匹配字符总数 →
+      // collapsedRangeAtCharOffset 返 null → scrollToCharOffset 静默 return，视口停在恢复瞬态
+      // 位置（章首附近的 reflow 落点）→ 用户看不到收藏句、且无任何提示。改为越界即回退章首
+      // （确定性落点），比静默停错位可诊断。锚在范围内（含新写入 / 已修数据）走精确对齐，行为不变。
+      if (!this.charOffsetInRange(charOffset)) {
+        this.scrollToChapterStart();
+      } else {
+        this.scrollToCharOffset(charOffset, endCharOffset);
+      }
+    }
     setTimeout(function() {
       setTimeout(function() { self.notifyRestoreComplete(); }, 16);
     }, 16);

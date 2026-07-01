@@ -975,6 +975,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 与翻章恢复直接调 _refreshProgress。
   bool _scrollProgressInFlight = false;
   bool _scrollProgressPending = false;
+  // BUG-493 (TODO-1053 Bug B)：重锚未完成时进度刷新的「待重试」coalesce。恢复完成后
+  // _reanchorContinuousAfterRestore 的 begin 同步置 JS 侧 _reanchorPending=true，紧跟的首发
+  // _refreshProgress() 撞上 → stableProgressInvocation 返 null → 早退 → 顶部进度条隐藏，只剩
+  // 10s 轮询兜底（要滑一下 / 查词滚 DOM 才补触发到 100%）。onAfterCommit 只覆盖「重锚 commit
+  // 成功」一条路；gate 不放行 / begin 采不到锚（charOffset<0）/ 已有别处重锚在飞等逃逸路径下
+  // commit 与 onAfterCommit 都不跑 → 进度仍锁死。故在 _refreshProgress 读到「真实文本章却返
+  // null」（即重锚在飞的瞬态）时武装一次短延迟重试，重锚一清旗即补到真值，覆盖所有逃逸路径。
+  // 有界重试（[_kProgressRetryMax]），避免罕见永不 settle 场景空转，超界回落 10s 轮询。
+  Timer? _progressReanchorRetryTimer;
+  int _progressReanchorRetryCount = 0;
+  static const int _kProgressRetryMax = 8;
+  static const Duration _kProgressRetryDelay = Duration(milliseconds: 120);
   // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
@@ -1610,6 +1622,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
+    _progressReanchorRetryTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
@@ -2259,7 +2272,28 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ({int offset, int length, String text})? _cachedSelectionRange;
   ({int offset, int length})? _cachedSentenceRange;
   int? _cachedSentenceOffset;
+
+  /// BUG-492 (TODO-1053 Bug A)。选区发生那一刻 [_lookupSectionIndex] 的快照。收藏 /
+  /// 制卡写入的 `sectionIndex` 必须绑定到「选中该句时」渲染的真实章号，而不是写入时刻
+  /// 再读裸 [_currentChapter]——有声书连续推进 / 跨章滚动会在选区与写入之间异步改写
+  /// [_currentChapter]，把第 N 章的句子记成第 N+1 章 → 恢复端忠实跳错章、charAnchor 在
+  /// 错章内合法 → scrollToCharOffset 静默停错位。与 [_cachedSentenceRange] 同批（同一次
+  /// `onTextSelected` / 原生选区解析）原子写入，消除 Dart 侧 section 与选区异章。null =
+  /// 无缓存选区，消费点 [_favoriteSectionIndex] 回退当前 [_lookupSectionIndex]（旧行为）。
+  int? _cachedSelectionSectionIndex;
   bool _currentSentenceIsFavorited = false;
+
+  /// BUG-494 (TODO-1053 Bug C)：当前句若已收藏，缓存其**精确条目 id**（未收藏 → null）。
+  /// 取消收藏走 [FavoriteSentenceRepository.removeById]（按此 id 删单条），杜绝身份键坍缩下
+  /// 的连坐误删——同章重复短句 normCharOffset 均 null 时内容键相同，若按内容删会把另一条
+  /// 同内容记录一起删掉。由 [_checkFavoriteStatus] 与收藏 toggle 同步维护。
+  String? _currentFavoriteId;
+
+  /// 收藏 / 制卡写入与「是否已收藏」判定统一取的 section 来源：优先用选区时刻快照的
+  /// [_cachedSelectionSectionIndex]（绑定到选中句所在真实章），无快照时回退当前
+  /// [_lookupSectionIndex]（首次收藏无前置查词等场景，行为与旧版一致）。
+  int get _favoriteSectionIndex =>
+      _cachedSelectionSectionIndex ?? _lookupSectionIndex;
 
   /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：会话级制卡草稿缓冲。弹窗点「+句」
   /// 把当前句（+句子音频区间）推进这里，连续查多句累积；制卡时合成一段写入卡片
@@ -2286,7 +2320,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
     _cachedSentenceOffset = null;
+    _cachedSelectionSectionIndex = null;
     _currentSentenceIsFavorited = false;
+    _currentFavoriteId = null;
     appModel.currentMediaSource?.clearCurrentCueSentence();
     super.clearDictionaryResult();
   }

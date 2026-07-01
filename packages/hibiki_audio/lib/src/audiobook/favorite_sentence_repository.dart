@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -41,7 +41,7 @@ class FavoriteSentence {
     String? id,
     String? source,
     this.dateKey,
-  })  : id = id ?? 'hl_${DateTime.now().microsecondsSinceEpoch}',
+  })  : id = id ?? _generateFavoriteId(),
         source = source ?? kFavoriteSentenceSourceBook;
 
   final String id;
@@ -62,6 +62,13 @@ class FavoriteSentence {
   /// 收藏日期键（形如 `2026-06-10`，与制卡/收藏单词统计的 `statDateKey` 同格式）。
   /// 旧条目无此字段 → null，按日统计时归为「未分类」，不参与分桶（不会崩）。
   final String? dateKey;
+
+  // BUG-494 (TODO-1053 Bug C)：id 生成必须无碰撞。旧 'hl_<microsecondsSinceEpoch>' 在同一
+  // 微秒内连续 new 两条（快速连续收藏 / 测试）会撞出相同 id → id 身份键坍缩（add 按 id 去重
+  // 误判重复丢第二条、removeById 连坐）。加进程内单调计数器后缀，保证同微秒也唯一。
+  static int _idCounter = 0;
+  static String _generateFavoriteId() =>
+      'hl_${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -98,7 +105,11 @@ class FavoriteSentenceRepository {
 
   Future<void> add(FavoriteSentence sentence) async {
     final sentences = await getAll();
-    if (sentences.any((s) => _contentMatch(s, sentence))) {
+    // BUG-494 (TODO-1053 Bug C)：去重**只按 id**（每条 add 的 FavoriteSentence 自带唯一 id）。
+    // 不再按内容键（text+bookKey+section+normCharOffset）去重——那会在 normCharOffset 均 null
+    // 时把同章重复短句 collapse 成一条（身份键坍缩，Bug C 的幻影收藏根因）。重复收藏同一句
+    // 由调用方（reader 的 _currentSentenceIsFavorited 门控）拦在 add 之前，不靠这里内容去重。
+    if (sentences.any((s) => s.id == sentence.id)) {
       return;
     }
     sentences.insert(0, sentence);
@@ -108,18 +119,41 @@ class FavoriteSentenceRepository {
     );
   }
 
-  Future<bool> isFavorited({
+  /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。id-first——先按内容键（含
+  /// normCharOffset）精确匹配，命中即返回该条 id 供 [removeById] 精确删除，杜绝 Bug C
+  /// 的身份键坍缩误删/误点亮（同章重复短句 offset 均 null 时，内容键相同也只会命中「某一
+  /// 条」，但因 removeById 按返回 id 删，不会连坐删掉另一条同内容记录）。
+  Future<String?> matchedFavoriteId({
     required String text,
     required String? bookKey,
     required int? sectionIndex,
     required int? normCharOffset,
   }) async {
     final sentences = await getAll();
-    return sentences.any((s) =>
-        s.text == text &&
-        s.bookKey == bookKey &&
-        s.sectionIndex == sectionIndex &&
-        s.normCharOffset == normCharOffset);
+    for (final FavoriteSentence s in sentences) {
+      if (s.text == text &&
+          s.bookKey == bookKey &&
+          s.sectionIndex == sectionIndex &&
+          s.normCharOffset == normCharOffset) {
+        return s.id;
+      }
+    }
+    return null;
+  }
+
+  Future<bool> isFavorited({
+    required String text,
+    required String? bookKey,
+    required int? sectionIndex,
+    required int? normCharOffset,
+  }) async {
+    return (await matchedFavoriteId(
+          text: text,
+          bookKey: bookKey,
+          sectionIndex: sectionIndex,
+          normCharOffset: normCharOffset,
+        )) !=
+        null;
   }
 
   Future<void> removeByContent({
@@ -129,22 +163,20 @@ class FavoriteSentenceRepository {
     required int? normCharOffset,
   }) async {
     final sentences = await getAll();
-    sentences.removeWhere((s) =>
+    // BUG-494：只删**第一条**匹配内容键的记录（非 removeWhere 全删），避免同章重复短句
+    // （offset 均 null → 内容键相同）取消收藏时把另一条同内容记录连坐删掉。
+    final int idx = sentences.indexWhere((s) =>
         s.text == text &&
         s.bookKey == bookKey &&
         s.sectionIndex == sectionIndex &&
         s.normCharOffset == normCharOffset);
+    if (idx < 0) return;
+    sentences.removeAt(idx);
     await _db.setPref(
       _key,
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
   }
-
-  static bool _contentMatch(FavoriteSentence a, FavoriteSentence b) =>
-      a.text == b.text &&
-      a.bookKey == b.bookKey &&
-      a.sectionIndex == b.sectionIndex &&
-      a.normCharOffset == b.normCharOffset;
 
   Future<void> removeAt(int index) async {
     final sentences = await getAll();
