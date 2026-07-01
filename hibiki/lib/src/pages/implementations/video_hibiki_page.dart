@@ -1956,6 +1956,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'videoController=${controller.videoController != null}',
     );
     _syncVolumeDisplay(controller.volume);
+    // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
+    // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
+    // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
+    controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
