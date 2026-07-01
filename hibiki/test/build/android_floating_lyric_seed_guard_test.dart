@@ -51,14 +51,20 @@ void main() {
       expect(end, greaterThan(start));
       final String body = main.substring(start, end);
 
-      expect(body, contains('persistFloatingLyricText(text)'),
+      // TODO-708 P4 threaded the current-line interval (currentLineStart /
+      // currentLineLength) through the persist call, so the exact arg list is
+      // persistFloatingLyricText(text, curStart, curLen). Match the call by
+      // prefix (tolerant of the extra interval args) while still pinning that
+      // the *text* is the first thing persisted.
+      final RegExp persistCall = RegExp(r'persistFloatingLyricText\(\s*text');
+      expect(persistCall.hasMatch(body), isTrue,
           reason: 'the line must be persisted before checking the live '
               'instance, so a not-yet-created service still gets it via '
               'readInitialState');
 
       // The persist call must precede the live-instance guard, otherwise an
       // early null-instance return would skip it.
-      final int persistAt = body.indexOf('persistFloatingLyricText(text)');
+      final int persistAt = persistCall.firstMatch(body)!.start;
       final int guardAt = body.indexOf('FloatingLyricService.getInstance()');
       expect(persistAt, isNonNegative);
       expect(guardAt, greaterThan(persistAt),
@@ -70,6 +76,16 @@ void main() {
               'persistFloatingLyricOptions)');
       expect(main, contains('PreferenceKeys.LYRIC_CURRENT_TEXT'),
           reason: 'the helper must write the current-text key');
+
+      // TODO-708 P4: the persist helper must also thread the current-line
+      // interval so the pre-onCreate replay renders the correct highlighted
+      // line inside the multi-line context block, not just the raw text.
+      expect(main, contains('PreferenceKeys.LYRIC_CURRENT_LINE_START'),
+          reason: 'the helper must persist the current-line start offset '
+              '(TODO-708 P4 context-block highlighting)');
+      expect(main, contains('PreferenceKeys.LYRIC_CURRENT_LINE_LENGTH'),
+          reason: 'the helper must persist the current-line length '
+              '(TODO-708 P4 context-block highlighting)');
     });
 
     test('MainActivity.setPlaybackState persists the playing flag', () {

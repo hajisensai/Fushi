@@ -234,6 +234,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip corner radius (Android GradientDrawable / Windows D2D)',
   'listening/Floating subtitle width':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip window width (Android LayoutParams / Windows SetWindowPos)',
+  // TODO-708 P4: 悬浮字幕前后 N 行上下文块（N=0 单行）。偏好往返 + 上下文行区间
+  // 构建（当前行 start/length 高亮）由专项测试覆盖；落到原生悬浮窗的多行渲染 +
+  // 当前行明暗需真机点验。
+  'listening/Floating subtitle context lines':
+      'test/media/audiobook/floating_lyric_context_pref_test.dart + test/media/audiobook/floating_lyric_context_test.dart + DEVICE: native strip multi-line context + current-line highlight (Android FloatingLyricService / Windows floating_lyric_window)',
   'listening/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
   'listening/Volume Key Sentence Navigation':
