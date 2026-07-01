@@ -310,36 +310,44 @@ void main() {
           'setTimeout(function(){window.flutter_inappwebview.callHandler('
           "'onTapEmpty');},0)",
         );
+        // Witness the reveal on TWO surfaces:
+        //  * top progress strip (hoshi_progress) - floating, gated only on
+        //    _chromeTransientVisible (_topProgressShouldPaint), so it is the
+        //    _showChrome-independent proof the shared reveal flag flipped.
+        //  * bottom bar - this seeded book has NO audiobook, so the bottom
+        //    chrome is the settings bar (_buildSettingsBar, no ValueKey), not
+        //    the audiobook play bar (hoshi_play_bar). Its unique headphones
+        //    (audio-import) IconButton is the direct bottom-bar witness.
+        final Finder bottomBarWitness =
+            find.widgetWithIcon(IconButton, Icons.headphones_outlined);
         bool progressRevealed = false;
-        bool barRevealed = false;
+        bool bottomBarRevealed = false;
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 200));
           progressRevealed = find
               .byKey(const ValueKey<String>('hoshi_progress'))
               .evaluate()
               .isNotEmpty;
-          barRevealed = find
-              .byKey(const ValueKey<String>('hoshi_play_bar'))
-              .evaluate()
-              .isNotEmpty;
-          if (progressRevealed || barRevealed) break;
+          bottomBarRevealed = bottomBarWitness.evaluate().isNotEmpty;
+          if (progressRevealed && bottomBarRevealed) break;
         }
         final double revealedBottomInset = await readChromeBottomInset();
         debugPrint('[CHROME975] BOTTOM-FLOATING(revealed) '
-            'progressRevealed=$progressRevealed barRevealed=$barRevealed '
+            'progressRevealed=$progressRevealed '
+            'bottomBarRevealed=$bottomBarRevealed '
             'bottomInset=$revealedBottomInset');
 
         // The tap-reveal state machine (_handleFloatingChromeReveal) flips
-        // the single _chromeTransientVisible flag shared by BOTH floating
-        // surfaces. The top progress strip is gated only on that flag
-        // (_topProgressShouldPaint); the bottom bar additionally requires
-        // _showChrome (_bottomBarShouldPaint). We witness the shared reveal
-        // by observing the floating top progress strip appear (975 core ask:
-        // tap reveals the floating chrome) - the _showChrome-independent
-        // proof that _chromeTransientVisible flipped to true.
-        expect(progressRevealed || barRevealed, isTrue,
-            reason: 'goal3: onTapEmpty must reveal the floating chrome '
-                '(hoshi_progress or hoshi_play_bar appears).');
+        // the single _chromeTransientVisible flag shared by both floating
+        // surfaces. Assert the tap revealed the floating bottom bar (975
+        // decision #3: tap-empty reveals the floating chrome) AND the top
+        // progress strip (both share the transient flag).
+        expect(bottomBarRevealed, isTrue,
+            reason: 'goal3: onTapEmpty must reveal the floating bottom bar '
+                '(settings-bar audio-import icon appears).');
+        expect(progressRevealed, isTrue,
+            reason: 'goal3: the shared transient-visible flag also reveals '
+                'the floating top progress strip.');
         // Core: inset unchanged after reveal (floating overlay does not push the
         // body / shrink the visible body height).
         expect((revealedBottomInset - floatBottomInset).abs(),
@@ -361,24 +369,30 @@ void main() {
         // Witness the same surface that just revealed. The top progress strip
         // (floating) is the _showChrome-independent witness; fall back to the
         // bottom bar if that was the one that appeared.
-        final String witnessKey =
-            progressRevealed ? 'hoshi_progress' : 'hoshi_play_bar';
-        // _armChromeAutoHide uses a real Timer (not the tester fake clock), so
-        // advance wall-clock time then pump for the auto-hide setState to land.
+        // Both revealed floating surfaces must auto-hide once the timer fires:
+        // the top progress strip (hoshi_progress) and the bottom settings bar
+        // (its audio-import icon). _armChromeAutoHide uses a real Timer (not
+        // the tester fake clock), so advance wall-clock time then pump for the
+        // auto-hide setState to land.
         await tester.pump(Duration(milliseconds: autoHideMs + 400));
         bool autoHidden = false;
         for (int i = 0; i < 25; i++) {
           await tester.pump(const Duration(milliseconds: 200));
-          if (find.byKey(ValueKey<String>(witnessKey)).evaluate().isEmpty) {
+          final bool progressGone = find
+              .byKey(const ValueKey<String>('hoshi_progress'))
+              .evaluate()
+              .isEmpty;
+          final bool bottomGone = bottomBarWitness.evaluate().isEmpty;
+          if (progressGone && bottomGone) {
             autoHidden = true;
             break;
           }
         }
-        debugPrint('[CHROME975] AUTO-HIDE witness=$witnessKey '
-            'autoHidden=$autoHidden');
+        debugPrint('[CHROME975] AUTO-HIDE autoHidden=$autoHidden');
         expect(autoHidden, isTrue,
-            reason: 'goal4: after waiting auto-hide (${autoHideMs}ms), the '
-                'revealed floating chrome ($witnessKey) must auto-hide.');
+            reason: 'goal4: after waiting auto-hide (${autoHideMs}ms), both '
+                'revealed floating surfaces (top progress + bottom bar) must '
+                'auto-hide.');
 
         // ── Restore prefs + exit ────────────────────────────────────────
         ReaderHibikiSource.instance.toggleTopProgressFloating();
