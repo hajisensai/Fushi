@@ -67,6 +67,10 @@ import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:hibiki/src/mining/immersion_mining_engine.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:hibiki/src/mining/immersion_capture_channel.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
@@ -4124,6 +4128,31 @@ class _AppModelRemoteLookupService
       context: AnkiMiningContext(sentence: sentence),
     );
     return outcome.result.name;
+  }
+
+  @override
+  Future<String> mineImmersion(ImmersionMinePayload payload) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    // 2B：有 clip 区间 + videoId → 先试后台软解实例抓 GIF/音频；native 缺失/失败降级 2A 截图。
+    ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
+    if (payload.netflixVideoId != null &&
+        payload.clipStartMs != null &&
+        payload.clipEndMs != null) {
+      cap = await ImmersionCaptureChannel.capture(
+        netflixVideoId: payload.netflixVideoId!,
+        clipStartMs: payload.clipStartMs!,
+        clipEndMs: payload.clipEndMs!,
+      );
+    }
+    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+      buildImmersionRequest(payload, cap),
+      compression: MiningMediaCompression.forCompressionEnabled(true),
+      tempDir: Directory.systemTemp.path,
+      repo: repo,
+    );
+    if (res.aborted) return MineResult.error.name;
+    return (res.outcome! as MineOutcome).result.name;
   }
 
   @override
