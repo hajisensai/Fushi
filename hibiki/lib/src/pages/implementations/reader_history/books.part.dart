@@ -169,6 +169,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             _openCssEditor(bookKey);
           },
         ),
+        // TODO-1068：SRT/有声书卡长按菜单对称补「悬浮字幕」项（与 EPUB 侧
+        // extraActions 一致）。复用同一 i18n key、同一回调、同一平台门控；
+        // bookKey 非空才可用，_toggleFloatingLyricFromShelf 按 bookKey 解析。
+        if (Platform.isAndroid || Platform.isWindows)
+          DialogListAction(
+            label: _isBackgroundListeningBook(bookKey)
+                ? '${t.floating_lyric_toggle_action} ✓'
+                : t.floating_lyric_toggle_action,
+            icon: Icons.subtitles_outlined,
+            onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
+          ),
       ],
     ];
   }

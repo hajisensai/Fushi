@@ -77,6 +77,22 @@ void main() {
     expect(srtActions, contains('t.audio_import'));
     expect(srtActions, contains('t.profile_book_profile'));
     expect(srtActions, contains('t.book_css_editor_edit_css'));
+    // TODO-1068：SRT/有声书卡长按菜单对称补悬浮字幕入口，与 EPUB 侧一致。
+    expect(
+      srtActions,
+      contains('floating_lyric_toggle_action'),
+      reason: 'SRT/有声书卡长按菜单也必须有悬浮字幕入口（TODO-1068）。',
+    );
+    expect(
+      srtActions,
+      contains('_toggleFloatingLyricFromShelf'),
+      reason: 'SRT 卡悬浮字幕入口复用 EPUB 侧同一后台听书切换回调。',
+    );
+    expect(
+      srtActions,
+      contains('Platform.isAndroid || Platform.isWindows'),
+      reason: 'SRT 卡悬浮字幕入口平台门控与 EPUB 侧一致。',
+    );
   });
 
   test('书籍长按对话框隐藏阅读按钮，点击卡片仍负责阅读', () {
