@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Variable;
+import 'package:hibiki/src/sync/aggregate_merge_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
@@ -17,8 +22,18 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// - statistics (reading / video / hourly / mining) -> per-bucket MAX-union, so
 ///   re-importing the same backup is idempotent and never double-counts.
 /// - favorites / mined sentences -> dedupe-UNION (both kept, duplicates dropped).
+/// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
+///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
+///   ATTACH SQL cannot merge a JSON blob, so this used to be dropped entirely).
 /// - tags / profiles -> UNION by name with cross-DB id REMAPPING for every child
 ///   row referencing the autoincrement id.
+///
+/// The aggregate MAX-union / dedupe-union families are the relational
+/// projection of the pure folds defined in [AggregateMergeService]; that class
+/// is the single source of truth for those semantics and is what online sync
+/// (TODO-1056 phase B/C) calls directly on materialised snapshots. The
+/// favorite-sentence pref blob is merged here by literally calling that pure
+/// service, so its logic lives in exactly one place.
 ///
 /// Device-local rows are deliberately skipped: `media_sources` (device-local
 /// scan paths), `sync_baselines` (would corrupt later incremental sync fork
@@ -29,6 +44,11 @@ class BackupMergeEngine {
 
   final HibikiDatabase _db;
   final String _srcAlias;
+
+  /// Preference key holding the favorite-sentence JSON list. Mirrors
+  /// `FavoriteSentenceRepository._key`; kept in sync by
+  /// `favorite_sentence_pref_key_guard_test.dart`.
+  static const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
   /// Runs the whole merge inside a single transaction. The backup DB must
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
@@ -48,6 +68,7 @@ class BackupMergeEngine {
       await _mergeMiningStatistics();
       await _mergeFavoriteWords();
       await _mergeMinedSentences();
+      await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeProfilesAndChildren();
       await _insertMissing('media_items', 'unique_key');
@@ -253,6 +274,70 @@ class BackupMergeEngine {
       'AND t.expression = s.expression AND t.reading = s.reading '
       'AND t.created_at = s.created_at)',
     );
+  }
+
+  /// Favorite SENTENCES dedupe-UNION. Unlike favorite words / mined sentences
+  /// these are NOT a table but a JSON list stored in the target's and src's
+  /// `preferences` row `favorite_sentences`, so the ATTACH SQL merge cannot
+  /// touch them -- before this the backup's favorite sentences were silently
+  /// dropped. Read both blobs, delegate the union+dedupe to the pure
+  /// [AggregateMergeService.mergeFavoriteSentences] (single source of truth for
+  /// this semantic, shared with online sync), and write the merged blob back.
+  ///
+  /// A missing/empty src blob is a no-op; a missing target blob just adopts the
+  /// merged src set. Runs inside the merge transaction, so a failure here rolls
+  /// the whole merge back with everything else.
+  Future<void> _mergeFavoriteSentencePrefs() async {
+    final String? targetRaw = await _readPref(isSrc: false);
+    final String? srcRaw = await _readPref(isSrc: true);
+    // Nothing to merge in from the backup: leave the device's blob untouched.
+    if (srcRaw == null || srcRaw.isEmpty) return;
+
+    final List<FavoriteSentence> localList =
+        _decodeFavoriteSentences(targetRaw);
+    final List<FavoriteSentence> remoteList = _decodeFavoriteSentences(srcRaw);
+    final List<FavoriteSentence> merged =
+        AggregateMergeService.mergeFavoriteSentences(localList, remoteList);
+
+    final String mergedJson =
+        jsonEncode(merged.map((FavoriteSentence s) => s.toJson()).toList());
+    // Upsert the target preference row (INSERT OR REPLACE on the key PK).
+    await _db.customStatement(
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>[_favoriteSentencesPrefKey, mergedJson],
+    );
+  }
+
+  /// Reads the `favorite_sentences` preference value from either the target
+  /// ([isSrc] false) or the ATTACHed src ([isSrc] true). Returns null when the
+  /// row is absent.
+  Future<String?> _readPref({required bool isSrc}) async {
+    final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
+    final rows = await _db.customSelect(
+      'SELECT "value" FROM $table WHERE "key" = ?',
+      variables: <Variable<Object>>[
+        Variable<String>(_favoriteSentencesPrefKey)
+      ],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.data['value'] as String?;
+  }
+
+  /// Decodes a `favorite_sentences` JSON blob into models, tolerating a
+  /// null/empty/malformed value (returns an empty list) so a corrupt pref on
+  /// either side never aborts the whole merge.
+  static List<FavoriteSentence> _decodeFavoriteSentences(String? raw) {
+    if (raw == null || raw.isEmpty) return const <FavoriteSentence>[];
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is! List) return const <FavoriteSentence>[];
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(FavoriteSentence.fromJson)
+          .toList();
+    } catch (_) {
+      return const <FavoriteSentence>[];
+    }
   }
 
   /// BookTags UNION by name (device keeps its own tag row + id on a name clash),
