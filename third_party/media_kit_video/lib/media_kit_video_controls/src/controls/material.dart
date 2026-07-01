@@ -932,13 +932,25 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                           color: _theme(context).backdropColor,
                         ),
                       ),
-                      // We are adding 16.0 boundary around the actual controls (which contain the vertical drag gesture detectors).
-                      // This will make the hit-test on edges (e.g. swiping to: show status-bar, show navigation-bar, go back in navigation) not activate the swipe gesture annoyingly.
+                      // Hibiki patch (TODO-1073): tap hit-region MUST cover the
+                      // whole video area, otherwise a single tap in the bottom /
+                      // bottom-right band (the [subtitleVerticalShiftOffset]
+                      // dead-zone below) can no longer toggle the controls back
+                      // on. Upstream lumped the "show controls" [onTap] together
+                      // with the drag recognizers inside one [Positioned.fill]
+                      // that is inset by 16.0 + [subtitleVerticalShiftOffset] at
+                      // the bottom -- an inset that only exists to keep edge
+                      // *drags* (swipe to reveal status/nav bar, back gesture)
+                      // from being hijacked. So we split the layer in two:
+                      //   * this full-cover tap/long-press layer (below the drag
+                      //     layer in the Stack), and
+                      //   * the inset drag layer (painted on top; keeps the 16px
+                      //     edge buffer).
+                      // Because the inset drag layer sits on top, an edge drag is
+                      // still arbitrated to the drag recognizers first, while a
+                      // plain single tap anywhere -- including the bottom band --
+                      // reaches this [onTap].
                       Positioned.fill(
-                        left: 16.0,
-                        top: 16.0,
-                        right: 16.0,
-                        bottom: 16.0 + subtitleVerticalShiftOffset,
                         // Hibiki patch (TODO-916): route "show controls" through
                         // the gesture arena's [onTap] instead of a raw
                         // [Listener.onPointerDown]. A pointer-down fires
@@ -978,6 +990,33 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                               }
                             }
                           },
+                          child: Container(
+                            color: const Color(0x00000000),
+                          ),
+                        ),
+                      ),
+                      // We are adding 16.0 boundary around the actual controls (which contain the vertical drag gesture detectors).
+                      // This will make the hit-test on edges (e.g. swiping to: show status-bar, show navigation-bar, go back in navigation) not activate the swipe gesture annoyingly.
+                      // Hibiki patch (TODO-1073): this layer now carries ONLY the
+                      // drag recognizers; tap/long-press moved to the full-cover
+                      // layer above so the bottom dead-zone no longer swallows taps.
+                      Positioned.fill(
+                        left: 16.0,
+                        top: 16.0,
+                        right: 16.0,
+                        bottom: 16.0 + subtitleVerticalShiftOffset,
+                        child: GestureDetector(
+                          // Hibiki patch (TODO-1073): translucent so this inset
+                          // drag layer (painted on top of the full-cover tap
+                          // layer) lets pointers keep hit-testing the tap layer
+                          // below. Both layers then join the same gesture arena:
+                          // an edge drag is claimed by these drag recognizers, a
+                          // plain single tap falls through to the tap layer's
+                          // [onTap]. Without translucent the default opaque
+                          // ColoredBox child would swallow taps in the overlap
+                          // region and the controls could not be toggled from the
+                          // center either.
+                          behavior: HitTestBehavior.translucent,
                           onHorizontalDragUpdate: (details) {
                             if ((!mount && _theme(context).seekGesture) ||
                                 (_theme(context).seekGesture &&

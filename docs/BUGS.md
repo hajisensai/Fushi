@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 483 条。点号进各自文件。
+> 共 484 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-498](bugs/BUG-498-video-tap-bottom-deadzone.md) | ✅ | ✅ | video: bottom/bottom-right tap cannot toggle controls (TODO-1073) |
 | [BUG-497](bugs/BUG-497-floating-lyric-hint-vague.md) | ✅ | ✅ | 悬浮字幕设置描述文案含糊 |
 | [BUG-496](bugs/BUG-496-floating-lyric-toggle-inverted.md) | ✅ | ✅ | 悬浮字幕总开关不即时且与书内翻转显隐反相 |
 | [BUG-495](bugs/BUG-495-floating-lyric-fontsize-live.md) | ✅ | ✅ | 悬浮字幕字号改值不即时生效 |
