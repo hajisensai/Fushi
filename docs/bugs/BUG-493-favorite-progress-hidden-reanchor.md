@@ -14,7 +14,7 @@
   清旗即补到真值，覆盖所有逃逸路径；拿到真实快照即 `_cancelProgressReanchorRetry` 撤销并复位。
   只对非图片章武装（图片章 null 是合法稳态，由 `_applyImagePageProgressFallback` 兜底）、有界
   （`_kProgressRetryMax`）、coalesce（已武装不重复排队）、dispose 清理定时器。与 TODO-933 的
-  onAfterCommit 补刷互补（保留不回归）。提交 <FIX-COMMIT>。
+  onAfterCommit 补刷互补（保留不回归）。提交 9d2bd1d7f。
 - **[x] ② 已加自动化测试** — 源码守卫 `hibiki/test/reader/progress_reanchor_retry_guard_test.dart`
   （断言 null 分支武装重试、只对文本章武装、有界 + coalesce、字段声明 + dispose 清理、
   onAfterCommit 补刷仍在）。

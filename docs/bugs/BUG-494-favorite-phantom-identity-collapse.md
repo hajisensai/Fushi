@@ -12,7 +12,7 @@
   reader 的 `_checkFavoriteStatus`（`lookup.part.dart`）缓存到 `_currentFavoriteId`，收藏 toggle
   取消时走 `removeById(id)` 精确删单条（`chrome.part.dart`）；④ id 生成器 `_generateFavoriteId`
   加进程内单调计数器后缀，保证同微秒也唯一。向后兼容旧无 id 记录（`fromJson` 已补 id）。
-  提交 <FIX-COMMIT>。
+  提交 9d2bd1d7f。
 - **[x] ② 已加自动化测试** — 纯 Dart 单测
   `hibiki/test/media/audiobook/favorite_sentence_identity_test.dart`（两条同 text/同 section、
   normCharOffset 均 null：断言 add 保留两条独立记录、removeById 精确删单条不连坐、

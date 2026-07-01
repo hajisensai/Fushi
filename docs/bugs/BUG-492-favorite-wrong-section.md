@@ -14,7 +14,7 @@
   toggle（`chrome.part.dart`）、制卡（`mining.part.dart`）、isFavorited 查询（`lookup.part.dart`）
   三处改用它。另加恢复端越界兜底：`reader_pagination_scripts.dart` 共享 `charOffsetInRange`
   判据，分页 + 连续两 shell 的 `restoreToCharOffset` 对越界 charAnchor 回退章首（护住旧脏收藏
-  记录，不静默停错位）。无需数据迁移。提交 <FIX-COMMIT>。
+  记录，不静默停错位）。无需数据迁移。提交 9d2bd1d7f。
 - **[x] ② 已加自动化测试** — 源码守卫 `hibiki/test/reader/favorite_write_section_source_guard_test.dart`
   （断言快照字段/getter 存在、三写入点消费 `_favoriteSectionIndex` 非裸 `_lookupSectionIndex`、
   三选区缓存点同批快照、两 shell 恢复端有越界回退）。行为级跨章滚动后收藏留真机焦点驱动
