@@ -5,7 +5,7 @@
   - 静态 `_dio`（原 :161-164）`connectTimeout: 5s`；失败落 `defaultFetchAudioSourceList`（原 :166-203）的 catch 里 `ErrorLogService.instance.log`。
   - 后果：一旦某远端源是死源（如用户配置的 `localhost:41440`，连不上/超时），连续查词时每次都重连、每次都写一条错误日志 → **日志刷屏**；且串行遍历时前面的慢源/超时源会**阻塞后面能用的源**（最坏每源等到 5s 连接超时）。
 - **范围界定（重要）**：用户报的 `localhost:41440` 死源本身**属用户配置**——用户配了一个当前不可达的本地音源。app 在该源失败后降级到下一源、返回 null（不做 TTS 兜底）的行为是**正确**的，本次**不改任何默认/用户音源配置**。要修的只是 **app 无失败冷却导致的刷屏 + 串行慢源拖累**这一真实健壮性缺陷。
-- **[x] ① 已修复** — commit `d19edb9d8`。根因修（非补丁式绕过）：
+- **[x] ① 已修复** — commit `4416137bd`。根因修（非补丁式绕过）：
   - `word_audio_resolver.dart` 新增「远端源失败冷却」内存表 `_remoteFailureCooldownUntil`（`host -> 冷却截止时间`，key 按 `Uri.parse(url).host` 归一，同 host 多源/重复失败命中同一冷却项）。`resolveConfigured` 的 remoteAudio 分支：请求前查 `isRemoteSourceInCooldown(url)`，仍在冷却窗内则**直接短路跳过**（不发请求、不再记日志、不阻塞后续源）；fetcher 抛出（网络失败）→ `_markRemoteSourceFailed` 记冷却并 continue；成功抵达（含合法“无音频”空列表）→ `_markRemoteSourceOk` 清冷却恢复优先级。冷却窗常量 `kRemoteAudioFailureCooldown = 45s`，过期后自动放行重试一次。
   - 失败信号根因修：`defaultFetchAudioSourceList` 原本把网络异常吞成空列表（与合法“无音频”空列表不可区分），改为**记一次日志后 `rethrow`**，让失败信号上浮到 `resolveConfigured` 才能区分“网络失败（冷却）”与“合法空（不冷却）”。冷却窗内 `resolveConfigured` 短路不再重入此处，故**不刷屏**；仍记一次日志，**不吞异常、保持可诊断**。传统 `resolve()`（仅测试用，无生产调用方）加 try/catch 保持“失败即跳过”原语。
   - `connectTimeout` 从 5s 放宽到 8s 并常量化（`kRemoteAudioConnectTimeout`），缓解弱网慢握手误判；`receiveTimeout` 一并常量化（`kRemoteAudioReceiveTimeout`，保持 10s）。未新增用户设置项（超出范围），只做常量放宽 + 可读化。
