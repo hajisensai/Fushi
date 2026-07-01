@@ -7,6 +7,7 @@
 //  (5) mediaKind='book' -> 统计文案用 media_source_count_book（N 本书）。
 //  (6) 凭据红线源码守卫：对话框源码不写任何 password/credential/secret，且网络分支
 //      不调 insertMediaSource、不传 configJson。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -195,7 +196,8 @@ void main() {
     expect(video!.sourceId, isNull, reason: 'FK setNull detaches the source');
   });
 
-  testWidgets('book mediaKind uses book count phrase (cumulative, not '
+  testWidgets(
+      'book mediaKind uses book count phrase (cumulative, not '
       'mediaCount)', (tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
@@ -212,6 +214,100 @@ void main() {
     await _pumpDialog(tester, db, 'book');
     expect(find.textContaining('3 books'), findsOneWidget);
     expect(find.textContaining('12 books'), findsNothing);
+  });
+
+  // BUG-513：用户点「重新扫描」后关闭对话框（State dispose、ProviderScope 随路由销毁），
+  // 扫描完成的 finally 若再 `ref.read(appProvider)` 会抛
+  // `Bad state: No ProviderScope found`（release 下 InheritedWidget 查找返回 null）。
+  // 根因修复把数据库引用在 initState（ProviderScope 必然存活）捕获成 late final
+  // 字段，之后所有 async gap 恢复后只用该字段，绝不再 `ref.read`。
+  //
+  // 行为烟囱测试：扫描 in-flight 时把对话框整棵换出树（dispose），排空扫描 future
+  // 后不得抛异常。真正把不变量钉死的是下方源码守卫（`ref.` 只允许出现在 initState）。
+  testWidgets('rescan then dispose dialog mid-scan drains without throwing',
+      (tester) async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    await _seedSource(db,
+        label: 'Ghost',
+        mediaKind: 'video',
+        rootPath: '/nonexistent/m1c_bug513');
+    final AppModel appModel = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(size: Size(420, 800)),
+            child: Scaffold(body: MediaSourcesDialog(mediaKind: 'video')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 点「重新扫描」启动 async _rescan（此刻 State 仍 mounted）。
+    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.pump(); // 让 _rescan 起步进入 await（scan 尚未完成）。
+
+    // 扫描 in-flight 时把对话框整棵换出树 -> State dispose。
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull,
+        reason: 'mid-scan dispose must not surface an exception (BUG-513)');
+  });
+
+  // BUG-513 源码守卫：数据库/provider 引用只允许在 initState 里 `ref.read` 一次并
+  // 缓存进字段；任何 async 方法（尤其 _rescan 的 finally）跨 async gap 再 `ref.*`，
+  // 对话框已被关闭/dispose 后就会抛 `No ProviderScope found`。把不变量钉死在源码层，
+  // 比脆弱的时序型 widget 测试更能防复发。
+  group('BUG-513 no ref access after initState (captured _db field)', () {
+    late String src;
+    setUpAll(() {
+      src = File(
+        'lib/src/pages/implementations/media_sources_dialog.dart',
+      ).readAsStringSync();
+    });
+
+    test('_db is a captured field, not a per-call ref.read getter', () {
+      // 修复前是 `HibikiDatabase get _db => ref.read(appProvider).database;`。
+      expect(src.contains('get _db =>'), isFalse,
+          reason: 'a getter re-reads ref on every async-gap access (BUG-513)');
+      expect(src.contains('late final HibikiDatabase _db'), isTrue,
+          reason: 'database must be captured once in initState');
+    });
+
+    test('every ref.read/watch/listen sits inside initState', () {
+      // 去掉行注释（避免文档注释里提到 ref.read 触发误报）。
+      final List<String> lines = const LineSplitter().convert(src);
+      final RegExp refAccess = RegExp(r'\bref\.(read|watch|listen)\b');
+      final RegExp initStart = RegExp(r'void\s+initState\s*\(\s*\)');
+      bool inInit = false;
+      int depth = 0;
+      for (final String raw in lines) {
+        final String line =
+            raw.replaceAll(RegExp(r'//.*$'), ''); // strip line comment
+        if (!inInit && initStart.hasMatch(line)) {
+          inInit = true;
+          depth = 0;
+        }
+        if (inInit) {
+          depth += '{'.allMatches(line).length;
+          depth -= '}'.allMatches(line).length;
+        }
+        if (refAccess.hasMatch(line)) {
+          expect(inInit, isTrue,
+              reason: 'ref.* outside initState re-reads a possibly-disposed '
+                  'ProviderScope across async gaps (BUG-513): "$line"');
+        }
+        if (inInit && depth <= 0 && line.contains('}')) {
+          inInit = false;
+        }
+      }
+    });
   });
 
   group('credential red-line source guard', () {

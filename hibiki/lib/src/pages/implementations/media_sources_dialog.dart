@@ -42,11 +42,17 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   /// 正在扫描中的来源 id 集合（行级 loading）。
   final Set<int> _scanning = <int>{};
 
-  HibikiDatabase get _db => ref.read(appProvider).database;
+  /// 数据库引用在 initState（ProviderScope 必然存活）时捕获一次，之后所有 async
+  /// 操作都用它，绝不在 async gap 恢复后再 `ref.read`。否则用户点「重新扫描」后关闭
+  /// 对话框，扫描完成的 finally 里若再 `ref.read(appProvider)`，此 State 的
+  /// ConsumerStatefulElement 已 dispose、ProviderScope 已销毁，
+  /// `containerOf` 抛 `Bad state: No ProviderScope found`（BUG-513）。
+  late final HibikiDatabase _db;
 
   @override
   void initState() {
     super.initState();
+    _db = ref.read(appProvider).database;
     _load();
   }
 
@@ -69,8 +75,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   ) async {
     final Map<int, int> counts = <int, int>{};
     for (final MediaSourceRow row in rows) {
-      counts[row.id] =
-          await _db.countMediaBySourceId(row.id, widget.mediaKind);
+      counts[row.id] = await _db.countMediaBySourceId(row.id, widget.mediaKind);
     }
     return counts;
   }
