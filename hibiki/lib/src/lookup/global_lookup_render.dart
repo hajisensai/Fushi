@@ -18,6 +18,7 @@ import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
+import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 
 // TODO-867 P3c — buildOverlayRenderScript (the single-frame TOP-LEVEL direct
 // renderPopup path) is RETIRED. The top-level WebView2 document is now
@@ -46,6 +47,7 @@ String buildFrameSettingsJs({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
+  bool hasChildPopup = false,
 }) {
   final String settingsJs = buildPopupSettingsJs(
     appModel: appModel,
@@ -53,8 +55,26 @@ String buildFrameSettingsJs({
     result: result,
     options: const PopupSettingsOptions(globalLookup: true),
   );
+  // TODO-1067 (子4) — wire the SAME __hasChildPopup guard the in-app popup uses
+  // (BUG-434): when this frame has a child card stacked on top, popup.js's
+  // document click handler must post `tapOutside` (close the child) instead of
+  // selecting/return when the user taps the parent card body / glossary text.
+  // The app-external overlay never set this flag, so tapping the parent card did
+  // nothing and the child popup could not be closed. A leaf frame (no child)
+  // leaves it false, so TODO-859 (tap card whitespace keeps the layer) still
+  // holds. This runs inside the frame's own iframe realm (contentWindow.eval).
+  //
+  // TODO-1067 (子2) — inject the shared top-pull swipe-close JS
+  // (kPopupTopPullReleaseJs) into the overlay iframe too. It was only injected on
+  // the in-app popup path; the overlay iframe never received it, so the desktop
+  // "swipe down to close" gesture was dead in the app-external window. The JS
+  // self-guards against double-install (window.__hoshiTopPullInstalled) and
+  // reports through flutter_inappwebview.callHandler('topPullReleased'), which
+  // the controller already gates on the enableSwipeToClose preference.
   return '''
     $settingsJs
+    window.__hasChildPopup = $hasChildPopup;
+    $kPopupTopPullReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
@@ -154,6 +174,11 @@ String buildStackRenderScript({
       context: context,
       appModel: appModel,
       result: p.result,
+      // TODO-1067 (子4) — a frame has a child popup iff it is not the deepest
+      // (last) frame in the stack, mirroring the in-app `index < entries.length
+      // - 1` derivation (BUG-434). Drives popup.js's __hasChildPopup guard so
+      // tapping a parent card closes the child.
+      hasChildPopup: i < payloads.length - 1,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;

@@ -240,7 +240,26 @@
         '.global-lookup-frame-shell.global-lookup-dismissing{' +
         'transform:translateX(120%);opacity:0;}' +
         '.global-lookup-frame-shell[' + ATTR_CONTENT_READY + '="true"]' +
-        '[' + ATTR_REVEAL_READY + '="true"]{visibility:visible;opacity:1;}';
+        '[' + ATTR_REVEAL_READY + '="true"]{visibility:visible;opacity:1;}' +
+        // TODO-1067 (子1) — per-shell close-X. Absolutely placed in the shell's
+        // top-right corner, above the iframe (z-index) with its own pointer
+        // events so it is always clickable even over the card content. Monochrome
+        // Segoe glyph to match the overlay icon-font override; dark variant keyed
+        // off the shell data-theme (same as the shadow variant above).
+        '.global-lookup-frame-shell .global-lookup-close{' +
+        'position:absolute;top:2px;right:6px;z-index:5;' +
+        'width:22px;height:22px;line-height:22px;text-align:center;' +
+        'font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
+        'font-size:17px;cursor:pointer;pointer-events:auto;' +
+        'color:rgba(60,60,67,0.6);border-radius:11px;' +
+        'transition:background-color 120ms ease-out, color 120ms ease-out;}' +
+        '.global-lookup-frame-shell .global-lookup-close:hover{' +
+        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.9);}' +
+        '.global-lookup-frame-shell[data-theme="dark"] .global-lookup-close{' +
+        'color:rgba(235,235,245,0.6);}' +
+        '.global-lookup-frame-shell[data-theme="dark"] ' +
+        '.global-lookup-close:hover{' +
+        'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
@@ -319,6 +338,24 @@
       topPost = native.bind(win.chrome.webview);
     }
     win.chrome.webview.postMessage = function (message) {
+      // TODO-1067 (子3) — DRIVE THE REVEAL GATE OFF popup.js's authoritative
+      // render signal instead of the body-height heuristic. popup.js calls
+      // flutter_inappwebview.callHandler('popupRendered', scrollHeight) EXACTLY
+      // when a render finishes (incl. the no-results card); it reaches the host
+      // through THIS wrapped bridge. Marking content-ready here means the shell
+      // only paints after popup.js truly rendered its themed card — no "empty
+      // frame paints white, then the glossary fills in" flash, and no missed
+      // no-results card (the old hasContent body>0 heuristic could reveal before
+      // the theme CSS painted). The MutationObserver / safety timer stay as
+      // belt-and-braces (a render that never signals still reveals via safety).
+      try {
+        if (message && typeof message === 'object' &&
+            message.handler === 'popupRendered') {
+          markContentReady(record);
+        }
+      } catch (e) {
+        // Never let the reveal hook break the message forwarding below.
+      }
       var out = message;
       try {
         out = transformFrameMessage(record, message);
@@ -386,6 +423,48 @@
     };
   }
 
+  // TODO-1067 (子1) — build the per-shell close-X. Positioned absolutely in the
+  // shell's top-right; clicking it posts dismissPopupAt[layerIndex] so ONLY this
+  // layer + its children close (the controller collapses the whole stack only
+  // when the ROOT is dismissed, index 0). stopPropagation keeps the click from
+  // also triggering onHostPointerDown's per-layer tapOutside. Returns null when
+  // the DOM lacks createElement (node harness without full DOM) so createRecord
+  // stays robust.
+  function createCloseButton(frameId) {
+    if (!document || typeof document.createElement !== 'function') {
+      return null;
+    }
+    var btn = document.createElement('div');
+    btn.className = 'global-lookup-close';
+    btn.setAttribute('data-close-frame-id', frameId);
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('aria-label', 'Close');
+    // The glyph is set via CSS content (ensureStyle) so theming/font is uniform;
+    // keep a textContent fallback for environments that do not honour ::before.
+    if (typeof btn.textContent !== 'undefined') {
+      btn.textContent = '×'; // multiplication sign ×
+    }
+    var onClose = function (event) {
+      if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+      }
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      var index = layerIndexOf(frameId);
+      if (index >= 0) {
+        postToHost('dismissPopupAt', [index]);
+      }
+    };
+    if (typeof btn.addEventListener === 'function') {
+      // pointerdown (capture) so it wins over the host document pointerdown that
+      // also fires for this host-chrome click; click kept as a fallback.
+      btn.addEventListener('pointerdown', onClose, true);
+      btn.addEventListener('click', onClose, true);
+    }
+    return btn;
+  }
+
   function createRecord(layer, descriptor) {
     var shell = document.createElement('div');
     shell.className = 'global-lookup-frame-shell';
@@ -405,6 +484,20 @@
     iframe.style.background = 'transparent';
 
     shell.appendChild(iframe);
+    // TODO-1067 (子1) — the app-external overlay is a bare iframe host: the
+    // in-app Flutter chrome (its close affordance) never wraps these shells, so
+    // there was NO way to dismiss a card with the mouse other than a lucky
+    // click-outside (which子5 shows also over-collapsed the whole stack). Draw a
+    // per-shell close-X in the top-right corner (host DOM, NOT inside the iframe)
+    // that dismisses EXACTLY this layer + its children via dismissPopupAt[index].
+    // The X lives on the shell, so `closest('.global-lookup-frame-shell')` in
+    // onHostPointerDown still classifies a stray click as a shell hit; the X's
+    // own handler stops propagation + posts the layer-scoped dismiss so it never
+    // falls through to the per-layer tapOutside / root dismiss.
+    var closeBtn = createCloseButton(descriptor.id);
+    if (closeBtn) {
+      shell.appendChild(closeBtn);
+    }
     layer.appendChild(shell);
 
     var record = {
@@ -506,21 +599,22 @@
     }, CONTENT_READY_SAFETY_MS);
   }
 
-  // True once the iframe document has real content: a rendered glossary node OR
-  // a body with a non-zero rendered height (the no-results card path).
+  // TODO-1067 (子3) — True once popup.js has PAINTED a real card: a rendered
+  // glossary node (.glossary-content) OR the no-results card (.no-results). The
+  // old fallback accepted ANY body with a non-zero rendered height, which let the
+  // gate reveal an empty/pre-theme body (white flash) before popup.js finished.
+  // The authoritative reveal is now popupRendered (wrapFrameBridge); this
+  // structural check only backs the synchronous first-look + MutationObserver, so
+  // tightening it to a real card node removes the height-heuristic false-positive
+  // without losing the no-results path.
   function hasContent(record) {
     try {
       var doc = record.iframe.contentDocument;
-      if (!doc || !doc.body) {
+      if (!doc || !doc.body || typeof doc.querySelector !== 'function') {
         return false;
       }
-      if (typeof doc.querySelector === 'function' &&
-          doc.querySelector('.glossary-content')) {
-        return true;
-      }
-      var body = doc.body;
-      var h = Math.max(body.scrollHeight || 0, body.offsetHeight || 0);
-      return h > 0;
+      return !!(doc.querySelector('.glossary-content') ||
+                doc.querySelector('.no-results'));
     } catch (e) {
       return false;
     }
@@ -764,39 +858,61 @@
     setTimerSafe(post, SLIDE_OUT_MS + 50);
   }
 
-  // C3 — capture-phase pointerdown on the host document. A click inside ANY shell
-  // is a card interaction -> do nothing. A click OUTSIDE all shells dismisses the
-  // ROOT (index 0) -> whole stack collapses -> empty -> C++ hides.
-  function onHostPointerDown(event) {
-    var t = event && event.target;
-    if (t && typeof t.closest === 'function' &&
-        t.closest('.global-lookup-frame-shell')) {
-      return;
-    }
-    dismissRootWithSlide();
-  }
-
-  // E2 — C++ WH_MOUSE_LL forwards a global click already converted to host CSS px
-  // relative to the window so the host can hit-test shells (geometry truth lives
-  // here). Inside any shell -> keep; otherwise -> dismiss the root.
-  function handleGlobalClick(x, y) {
-    var hit = false;
-    frames.forEach(function (record) {
-      if (hit) {
-        return;
-      }
+  // TODO-1067 (子5) — insertion-order id of the DEEPEST shell containing (x,y),
+  // or null when the point is outside every shell. "Deepest" (last matching in
+  // insertion order) so an overlapping cascade attributes the click to the child
+  // card on top, not the root beneath it. Used by the host click handlers to
+  // decide per-layer close vs root dismiss.
+  function frameIdAtPoint(x, y) {
+    var deepest = null;
+    frames.forEach(function (record, id) {
       var left = parseFloat(record.shell.style.left) || 0;
       var top = parseFloat(record.shell.style.top) || 0;
       var width = parseFloat(record.shell.style.width) || 0;
       var height = parseFloat(record.shell.style.height) || 0;
       if (x >= left && x <= left + width && y >= top && y <= top + height) {
-        hit = true;
+        deepest = id;
       }
     });
-    if (!hit) {
-      dismissRootWithSlide();
+    return deepest;
+  }
+
+  // C3 / TODO-1067 (子5) — capture-phase pointerdown on the HOST document. A
+  // click that lands on a shell is a CARD interaction: DEFER to popup.js running
+  // inside that iframe, which owns the PER-LAYER close decision (tap parent card
+  // body -> close child, via the __hasChildPopup guard wired by the render body).
+  // The host must NOT also post a dismiss here or it double-fires with popup.js
+  // and races the stack. Only a click that hits NO shell at all (true empty space
+  // in the bbox window / a cascade gap) dismisses the root. This is exactly why
+  // "click the first popup, everything closes" happened: the host used to nuke
+  // the root whenever its coarse hit-test missed the visual card; deferring card
+  // clicks to popup.js's per-layer path fixes it (SUB5) while the close-X (SUB1)
+  // gives the mouse an explicit per-layer affordance.
+  function onHostPointerDown(event) {
+    var t = event && event.target;
+    if (t && typeof t.closest === 'function' &&
+        t.closest('.global-lookup-frame-shell')) {
+      // On a shell: let popup.js (inside the iframe) decide per-layer. The
+      // close-X has its own stopPropagation handler, so it never reaches here.
+      return;
     }
-    return hit;
+    dismissRootWithSlide();
+  }
+
+  // E2 / TODO-1067 (子5) — C++ WH_MOUSE_LL forwards a global click already
+  // converted to host CSS px relative to the window so the host can hit-test
+  // shells (geometry truth lives here). A click INSIDE a shell is a card
+  // interaction -> DEFER to popup.js's own document handler (per-layer close via
+  // __hasChildPopup); the host must not post a competing dismiss (double-fire /
+  // stack race). Only a click OUTSIDE every shell (true gap) dismisses the root.
+  // Returns whether the click hit any shell (C++ uses it for logging).
+  function handleGlobalClick(x, y) {
+    var frameId = frameIdAtPoint(x, y);
+    if (frameId != null) {
+      return true; // Card hit: popup.js owns the per-layer decision.
+    }
+    dismissRootWithSlide();
+    return false;
   }
 
   function topPopupId() {
@@ -837,6 +953,7 @@
     topPopupId: topPopupId,
     frameIdForIframe: frameIdForIframe,
     layerIndexOf: layerIndexOf,
+    frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,
     frameGateState: frameGateState,

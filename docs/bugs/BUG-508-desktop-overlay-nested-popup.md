@@ -1,0 +1,20 @@
+## BUG-508 · 桌面app外全局查词覆盖窗嵌套弹窗:缺关闭X/不能滑关/点父不关子/子弹窗闪烁/点第一层关全部
+- **报告**：2026-07-01（用户：）· TODO-1067
+- **真实性**：✅ 真 bug。桌面 app 外查词 = Windows 独有的全局查词覆盖窗 `GlobalLookupController`（裸 WebView2 窗 + `global_lookup_host.html`/`.js` iframe 宿主，每层一个 `popup.html` iframe），完全不经 Flutter DictionaryPopupLayer/SwipeDismissWrapper/base_source_page。历史 BUG-403/434/170 只修了 app 内路径，覆盖窗（桌面专属分支）从未同步 = 五子问题共性根因。
+- **子问题根因**：
+  - 子1 缺关闭 X：覆盖窗裸 iframe 不套 in-app Flutter chrome，`createRecord`（`hibiki/assets/popup/global_lookup_host.js:389`）只建 shell>iframe，无任何关闭 DOM（popup.js 的 ✕ 是制卡按钮，非关闭键）。
+  - 子2 不能滑动关：① `kPopupTopPullReleaseJs`（`hibiki/lib/src/reader/popup_swipe_close_script.dart:14`）只注入 in-app popup（`dictionary_popup_webview.dart`），覆盖窗 iframe 从未注入（`buildFrameSettingsJs` `global_lookup_render.dart:45` 不含它）；② 即便触发也被 `enableSwipeToClose` 偏好（Windows 默认 false）否决（`controller.dart:398`）。
+  - 子3 子弹窗闪烁：reveal gate 的 `hasContent`（`global_lookup_host.js:511`）判据宽松——body 高度>0 即就绪，主题 CSS 未 paint 就放行白底；且忽略 popup.js 真实 `popupRendered` 信号（controller 收到即 `:443` 丢弃）。
+  - 子4 点父弹窗不关子：覆盖窗 iframe 从未注入 `window.__hasChildPopup`（`buildFrameSettingsJs` 不注入），popup.js 门控（`popup.js:2820/2847`）恒 undefined→点父卡片正文只 `selectText` 永不发 `tapOutside`。BUG-434 在 app 内已修，覆盖窗未同步。
+  - 子5 点第一个弹窗关全部：C++ WH_MOUSE_LL 全局鼠标钩子对每次点击调 `handleGlobalClick`（`global_lookup_host.js` E2）；旧实现「命中任一 shell 就 return，否则 `dismissRootWithSlide`→`dismissPopupAt[0]`→整栈清空」。当点击落在覆盖窗内但 host 粗粒度 hit-test 判为「不在卡片矩形内」时（父卡片可见区/级联留白），整窗被 nuke = 用户所见「点第一个弹窗全关」。
+- **[x] ① 已修复** —
+  - 子1（`global_lookup_host.js`）：`createRecord` 给每 shell 注入 `createCloseButton` 角标（top-right ×，host DOM 非 iframe 内），点击 `postToHost('dismissPopupAt',[layerIndexOf(frameId)])` 只关本层+后代；`stopPropagation` 防冒泡到 host dismiss。`ensureStyle` 加 `.global-lookup-close` 作用域样式（含 dark 变体）。
+  - 子2（`global_lookup_render.dart`）：`buildFrameSettingsJs` 追加 `$kPopupTopPullReleaseJs`（import 共享真值源），覆盖窗 iframe 也识别顶部下滑。偏好 gate（`enableSwipeToClose`）保留不动——close-X 作主要鼠标关闭手段，swipe 保留但默认关（权衡鼠标框选误触）。
+  - 子3（`global_lookup_host.js`）：reveal gate 改吃 popup.js 真实 `popupRendered` 信号——`wrapFrameBridge` 包装的 iframe bridge 里拦到 `handler==='popupRendered'` 即 `markContentReady(record)`（权威、同 message 路径无 race）。`hasContent` 收紧为「`.glossary-content` 或 `.no-results` 首帧存在」，删掉 body 高度>0 启发（消除白底放行）。MutationObserver/safety timer 保留兜底。
+  - 子4（`global_lookup_render.dart`）：`buildFrameSettingsJs` 注入 `window.__hasChildPopup = $hasChildPopup`；`buildStackRenderScript` 循环按 `i < payloads.length - 1`（=非最深层，等同 in-app `index < entries.length-1`）派生传入。复用 popup.js 已验门控（BUG-434），点父卡正文/留白→`tapOutside`（host 盖 `__frameId`）→controller `closeChildPopupsAndClearSelection(layerIndex)` 只关子层。
+  - 子5（`global_lookup_host.js`）：`handleGlobalClick`/`onHostPointerDown` 改为「命中 shell → 早返回，交给 popup.js 逐层处理（子4 已接线），host 不再自己 post dismiss（避免与 popup.js 双发 + 抢栈）；仅点击真正落在所有 shell 之外（级联空隙）才 `dismissRootWithSlide`」。消除 host 粗粒度 hit-test 误判整窗 nuke。根因确认：`global_lookup_host.js` 旧 `handleGlobalClick` 的 miss→`dismissPopupAt[0]` 整栈清空。
+- **[x] ② 已加自动化测试** —
+  - node 宿主守卫 `hibiki/test/lookup/global_lookup_host_test.mjs`（本机 `node` 亲跑 PASS，26 用例）：新增 #23 命中 shell 不 post（defer popup.js）+ 真空隙才 `dismissPopupAt[0]`、级联重叠 `frameIdAtPoint` 归属最深子层；#24 每 shell 有 close-X `data-close-frame-id` 点击 post `dismissPopupAt[layerIndex]`；#25 reveal gate 吃 `popupRendered` 而非 body 高度、`.no-results`/`.glossary-content` 才算 painted；#26 close-X post 本层 index。
+  - Dart 源码守卫 `hibiki/test/lookup/global_lookup_popup_style_guard_test.dart` 新增「TODO-1067」组（`flutter test` PASS）：子1 close-X + `dismissPopupAt[index]`；子2 import 共享 swipe 源 + `$kPopupTopPullReleaseJs` 注入 + 偏好 gate 保留；子3 `popupRendered` 驱动 + `hasContent` 收紧（删 body 高度启发）；子4 `__hasChildPopup` 注入 + `i < payloads.length - 1` 派生；子5 命中 defer（`return true; // Card hit`）+ 禁 host 自发 tapOutside。
+  - 既有 `global_lookup_controller_stack_test.dart` 已覆盖 tapOutside+`__frameId` 逐层关（`closeChildPopupsAndClearSelection(layerIndex)` 只 pop 一层），未回归。
+- **备注**：C++（`global_lookup_window.cpp` WH_MOUSE_LL / `ForwardGlobalClickToHost`）本轮未改（既有 `handleGlobalClick` 契约不变，本机不编译，走 CI Windows job）。Dart/JS/node-harness 部分本机已验（`flutter analyze` No issues；node 宿主 + Dart 守卫全绿）。真机截图验证待 CI Windows 构建 / 用户 Windows 设备复测原始五路径。

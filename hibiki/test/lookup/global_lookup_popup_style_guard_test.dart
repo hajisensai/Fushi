@@ -454,6 +454,114 @@ void main() {
     });
   });
 
+  group('TODO-1067 — desktop overlay nested popup close wiring (source)', () {
+    late String render;
+    late String host;
+    late String controller;
+    setUpAll(() {
+      render = read('lib/src/lookup/global_lookup_render.dart');
+      host = read('assets/popup/global_lookup_host.js');
+      controller = read('lib/src/lookup/global_lookup_controller.dart');
+    });
+
+    test('子4 — buildFrameSettingsJs wires window.__hasChildPopup (BUG-434)',
+        () {
+      // The app-external overlay never set __hasChildPopup, so popup.js's click
+      // handler never posted tapOutside on a parent-card tap -> the child popup
+      // could not be closed. The per-frame settings body must now inject it.
+      expect(render.contains('window.__hasChildPopup ='), isTrue,
+          reason: 'the overlay frame must inject the __hasChildPopup guard');
+      expect(render.contains('bool hasChildPopup'), isTrue,
+          reason: 'buildFrameSettingsJs must take a hasChildPopup param');
+      // Derived as "not the deepest frame" == the in-app index<len-1 rule.
+      expect(render.contains('hasChildPopup: i < payloads.length - 1'), isTrue,
+          reason: 'a frame has a child iff it is not the last in the stack');
+    });
+
+    test('子2 — buildFrameSettingsJs injects the shared swipe-close JS', () {
+      // The top-pull swipe JS was only injected on the in-app popup; the overlay
+      // iframe never received it, so desktop swipe-to-close was dead there. It
+      // must now be injected from the single shared source of truth.
+      expect(
+          render.contains(
+              "import 'package:hibiki/src/reader/popup_swipe_close_script.dart';"),
+          isTrue,
+          reason: 'must import the shared swipe-close source of truth');
+      expect(render.contains(r'$kPopupTopPullReleaseJs'), isTrue,
+          reason: 'the overlay frame body must inject the swipe-close JS');
+      // The controller still gates the resulting topPullReleased on the pref.
+      expect(controller.contains("handler == 'topPullReleased'"), isTrue);
+      expect(
+          controller.contains('ReaderHibikiSource.instance.enableSwipeToClose'),
+          isTrue,
+          reason: 'swipe close stays preference-gated (close-X is the primary '
+              'mouse affordance; swipe preserved to avoid mouse mis-drag)');
+    });
+
+    test('子1 — host.js draws a per-shell close-X posting dismissPopupAt[index]',
+        () {
+      expect(host.contains('function createCloseButton('), isTrue,
+          reason: 'the host must build a per-shell close-X');
+      expect(host.contains("btn.className = 'global-lookup-close'"), isTrue);
+      // Clicking it dismisses EXACTLY this layer (+ its children) by layer index.
+      expect(host.contains("postToHost('dismissPopupAt', [index])"), isTrue,
+          reason:
+              'the X dismisses this layer by its stack index, not the root');
+      expect(host.contains('var index = layerIndexOf(frameId);'), isTrue);
+      // The close-X CSS is present in the injected gate/shell stylesheet.
+      expect(host.contains('.global-lookup-close{'), isTrue,
+          reason: 'close-X must carry its own scoped style');
+    });
+
+    test('子5 — host DEFERS card clicks to popup.js; only a true gap nukes root',
+        () {
+      // "Click the first popup, everything closes" came from the host coarse
+      // mouse hook nuking the ROOT whenever its hit-test decided a click was
+      // outside the cards. The fix: a click that hits a shell DEFERS to popup.js
+      // (which owns the per-layer close via __hasChildPopup, 子4); the host must
+      // NOT post a competing dismiss (double-fire / stack race). Only a click
+      // that hits NO shell dismisses the root.
+      expect(host.contains('function frameIdAtPoint('), isTrue,
+          reason: 'the host still needs a hit-test for the gap decision');
+      expect(host.contains('return true; // Card hit: popup.js owns'), isTrue,
+          reason:
+              'a card hit defers to popup.js (no host post -> no double-fire)');
+      expect(host.contains('function postFrameStampedTapOutside('), isFalse,
+          reason:
+              'the host must NOT post its own tapOutside (would double-fire '
+              'with popup.js and race the stack)');
+      // The controller per-layer path (from popup.js tapOutside + __frameId)
+      // stays wired: clicking the parent card closes only the child.
+      expect(controller.contains("handler == 'tapOutside'"), isTrue);
+      expect(controller.contains("message['__frameId'] as String?"), isTrue);
+      expect(
+          controller.contains(
+              'closeChildPopupsAndClearSelection(_stack, layerIndex)'),
+          isTrue,
+          reason: 'a frame-stamped tapOutside (from popup.js) closes only that '
+              'layer children');
+    });
+
+    test('子3 — reveal gate driven by popup.js popupRendered, not body height',
+        () {
+      // The old reveal heuristic accepted any non-zero body height, painting a
+      // blank/pre-theme card (white flash) before popup.js finished. The gate
+      // must now be driven by popup.js's authoritative popupRendered signal.
+      expect(host.contains("message.handler === 'popupRendered'"), isTrue,
+          reason: 'the wrapped bridge marks content-ready on popupRendered');
+      expect(host.contains('markContentReady(record)'), isTrue);
+      // hasContent tightened to a real painted card node (no bare height check).
+      expect(host.contains("doc.querySelector('.glossary-content')"), isTrue);
+      expect(host.contains("doc.querySelector('.no-results')"), isTrue,
+          reason: 'no-results card still counts as painted content');
+      expect(
+          host.contains(
+              'body.scrollHeight || 0, body.offsetHeight || 0);\n      return h > 0;'),
+          isFalse,
+          reason: 'the bare body-height reveal heuristic must be gone');
+    });
+  });
+
   group('JS harness (node)', () {
     test('popup.css scoped-style structure (executes parser via node)',
         () async {

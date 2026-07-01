@@ -778,4 +778,110 @@ function flushTimers() {
   );
 }
 
+// 23. TODO-1067 (SUB5): a click INSIDE a shell DEFERS to popup.js (per-layer,
+//     via __hasChildPopup) — the host must NOT post a competing dismiss (that
+//     double-fires + races the stack). Only a click OUTSIDE every shell (true
+//     gap) dismisses the root. This kills "click the first popup, everything
+//     closes": a card click no longer nukes the root at the host level.
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 200 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 120, top: 40, width: 200, height: 200 }, settingsJs: '' },
+    ],
+  });
+  hostPostLog = [];
+  const rootHit = host.handleGlobalClick(20, 20);
+  assert.strictEqual(rootHit, true, 'click over the root card hits a shell');
+  assert.strictEqual(hostPostLog.length, 0,
+    'a shell-hit click posts NOTHING from the host (defers to popup.js)');
+  const overlapHit = host.handleGlobalClick(160, 60);
+  assert.strictEqual(overlapHit, true, 'overlap click hits a shell (deepest)');
+  assert.strictEqual(hostPostLog.length, 0,
+    'no host post on any card hit (no double-fire with popup.js)');
+  assert.strictEqual(host.frameIdAtPoint(160, 60), 'frame-1',
+    'the DEEPEST (child) shell wins the hit-test in a cascade overlap');
+  hostPostLog = [];
+  const gapHit = host.handleGlobalClick(1000, 1000);
+  assert.strictEqual(gapHit, false, 'a click outside all shells misses');
+  const dismiss = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(dismiss, 'a click that hits no shell dismisses the root');
+  assert.strictEqual(dismiss.args[0], 0, 'root dismiss targets index 0');
+}
+
+// 24. TODO-1067 (SUB1): each shell carries a per-shell close-X posting
+//     dismissPopupAt[layerIndex] for THAT layer when clicked.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 200 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 40, top: 40, width: 200, height: 200 }, settingsJs: '' },
+    ],
+  });
+  const shells = shellsOf(document);
+  const childShell = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-1');
+  const closeBtn = childShell.children.find((c) => c.className === 'global-lookup-close');
+  assert.ok(closeBtn, 'each shell has a close-X child');
+  assert.strictEqual(closeBtn.getAttribute('data-close-frame-id'), 'frame-1',
+    'close-X carries its own frame id');
+  const listeners = closeBtn._listeners['pointerdown'] || [];
+  assert.ok(listeners.length >= 1, 'close-X has a pointerdown handler');
+  hostPostLog = [];
+  let stopped = false;
+  listeners[0]({ stopPropagation: () => { stopped = true; }, preventDefault: () => {} });
+  assert.ok(stopped, 'close-X stops propagation so it does not fall through');
+  const msg = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(msg, 'close-X posts dismissPopupAt');
+  assert.strictEqual(msg.args[0], 1, 'child close-X dismisses layer index 1 (this layer)');
+}
+
+// 25. TODO-1067 (SUB3): the reveal gate is driven by popup.js popupRendered,
+//     NOT the body-height heuristic.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  iframe.contentDocument.body.scrollHeight = 300;
+  iframe.contentDocument.body.offsetHeight = 300;
+  assert.strictEqual(host.frameGateState('frame-0').contentReady, false,
+    'a non-zero body height with no card node does NOT reveal (SUB3)');
+  iframe.contentWindow.chrome.webview.postMessage({
+    handler: 'popupRendered',
+    args: [300],
+  });
+  assert.strictEqual(host.frameGateState('frame-0').contentReady, true,
+    'popupRendered flips content-ready (authoritative reveal signal)');
+  assert.strictEqual(host.frameGateState('frame-0').visible, true,
+    'shell reveals once popupRendered + geometry are both in');
+}
+
+// 26. TODO-1067 (SUB1): the close-X posts dismissPopupAt for ITS layer. (The
+//     per-layer card close itself is owned by popup.js; the host defers on card
+//     hits, tested in 23.)
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 200 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 40, top: 40, width: 200, height: 200 }, settingsJs: '' },
+    ],
+  });
+  const rootShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-0');
+  const closeBtn = rootShell.children.find((c) => c.className === 'global-lookup-close');
+  assert.ok(closeBtn, 'root shell has a close-X');
+  const listeners = closeBtn._listeners['pointerdown'] || [];
+  hostPostLog = [];
+  listeners[0]({ stopPropagation: () => {}, preventDefault: () => {} });
+  const msg = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(msg, 'root close-X posts dismissPopupAt');
+  assert.strictEqual(msg.args[0], 0, 'root close-X dismisses layer index 0 (whole stack)');
+}
+
 console.log('global_lookup_host_test: PASS');
