@@ -307,34 +307,101 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
-  /// Resolve a book's cover image URL, probing the declared cover path and the
-  /// conventional fallback names concurrently (HBK-AUDIT-128).
-  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+  /// BUG-513: process-level cache mapping a book's stable [EpubBookRow.bookKey]
+  /// to the last cover URL that was successfully resolved from disk. The cover
+  /// path is not a persisted column, so [_resolveCoverUrl] re-probes the disk
+  /// with `File.exists()` on every `hibikiBooksProvider` rebuild (and the shelf
+  /// invalidates that provider on a great many actions). Under IO contention —
+  /// notably the VACUUM + wal_checkpoint(TRUNCATE) that `deleteBook` runs right
+  /// before the shelf re-probes every surviving book — `File.exists()` can
+  /// momentarily return false for a file that is still on disk, collapsing that
+  /// book's `imageUrl` to null; the null is then cached by the shelf AsyncValue
+  /// and the cover visibly disappears until a cold restart re-probes it.
+  ///
+  /// Keying by bookKey (stable, unique) rather than by extractDir keeps the
+  /// cache correct across renamed/moved books. The cache only ever holds URLs
+  /// that were once true on disk, so a transient miss falls back to a real
+  /// previous cover, never to a fabricated path.
+  static final Map<String, String> _lastGoodCoverUrlByBookKey =
+      <String, String>{};
+
+  /// Test seam: reset the process cover cache between tests so state does not
+  /// leak across cases sharing the [instance] singleton.
+  @visibleForTesting
+  static void debugResetCoverCache() => _lastGoodCoverUrlByBookKey.clear();
+
+  /// Build the ordered candidate cover paths for a book: the declared cover
+  /// path (if any) wins over the conventional `cover.jpg/jpeg/png` fallbacks.
+  @visibleForTesting
+  static List<String> coverCandidatePaths({
+    required String extractDir,
+    String? coverPath,
+  }) {
     final List<String> candidates = <String>[];
-    if (book.coverPath != null && book.coverPath!.isNotEmpty) {
-      String coverRel = book.coverPath!;
+    if (coverPath != null && coverPath.isNotEmpty) {
+      String coverRel = coverPath;
       if (coverRel.startsWith('/')) coverRel = coverRel.substring(1);
-      candidates.add(p.join(book.extractDir, coverRel));
+      candidates.add(p.join(extractDir, coverRel));
     }
     for (final String name in const <String>[
       'cover.jpg',
       'cover.jpeg',
       'cover.png',
     ]) {
-      candidates.add(p.join(book.extractDir, name));
+      candidates.add(p.join(extractDir, name));
     }
+    return candidates;
+  }
 
-    // Probe all candidate paths concurrently, then keep the first existing one
-    // in declared priority order (declared cover path wins over fallbacks).
+  /// Pure, injectable cover resolution (BUG-513). Probes [candidates]
+  /// concurrently with [probe] and returns the `file://` URL of the first
+  /// existing one in priority order. On a total miss it does NOT collapse to
+  /// null: if [cache] holds a previously-resolved URL for [bookKey] it returns
+  /// that (a transient `File.exists()` false must not blank an on-disk cover),
+  /// otherwise null. A successful probe refreshes the cache entry.
+  ///
+  /// Kept static + parameterised so it is unit-testable with a mock filesystem;
+  /// the instance [_resolveCoverUrl] wires in the real `File.exists` + process
+  /// cache.
+  @visibleForTesting
+  static Future<String?> resolveCoverUrlFor({
+    required String bookKey,
+    required List<String> candidates,
+    required Future<bool> Function(String path) probe,
+    required Map<String, String> cache,
+  }) async {
     final List<bool> existed = await Future.wait<bool>(
-      candidates.map((String path) => File(path).exists()),
+      candidates.map(probe),
     );
     for (int i = 0; i < candidates.length; i++) {
       if (existed[i]) {
-        return Uri.file(candidates[i]).toString();
+        final String url = Uri.file(candidates[i]).toString();
+        if (bookKey.isNotEmpty) cache[bookKey] = url;
+        return url;
       }
     }
+    // Total miss. Fall back to the last successfully-resolved cover for this
+    // book so a transient IO race (e.g. VACUUM contention after deleteBook)
+    // cannot blank a cover whose file is still on disk. Only real, previously
+    // observed URLs live in the cache, so this never fabricates a path.
+    if (bookKey.isNotEmpty) return cache[bookKey];
     return null;
+  }
+
+  /// Resolve a book's cover image URL, probing the declared cover path and the
+  /// conventional fallback names concurrently (HBK-AUDIT-128), with a
+  /// last-good fallback so transient probe misses don't blank the cover
+  /// (BUG-513).
+  Future<String?> _resolveCoverUrl(EpubBookRow book) {
+    return resolveCoverUrlFor(
+      bookKey: book.bookKey,
+      candidates: coverCandidatePaths(
+        extractDir: book.extractDir,
+        coverPath: book.coverPath,
+      ),
+      probe: (String path) => File(path).exists(),
+      cache: _lastGoodCoverUrlByBookKey,
+    );
   }
 
   /// Delete a book and all of its associated data.
