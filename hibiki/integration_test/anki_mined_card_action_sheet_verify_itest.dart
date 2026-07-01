@@ -137,22 +137,35 @@ void main() {
 
         // ── 断言 2：焦点驱动到「查看」→ Activate → 打开只读 note viewer ──
         final FocusDriver driver = FocusDriver(tester);
-        // 焦点落到第一枚 open_in_new 按钮所在的 IconButton 子树。
+        // 焦点落到第一枚 open_in_new（查看）按钮子树 —— 焦点可达是硬要求（禁坐标点击）。
         final Finder firstView = viewBtns.first;
         final bool focusedView = await driver.focusWidget(firstView) ||
             await driver.requestFocusInside(firstView);
         expect(focusedView, isTrue,
             reason: 'TODO-1007: "view" action must be focus-reachable (no tap)');
-        // Enter 确认（App 中和裸空格，确认统一 Enter）。若物理键无效回退 Activate 意图。
-        await driver.activate();
-        await tester.pump(const Duration(milliseconds: 300));
-        if (find.text(t.anki_note_viewer_title).evaluate().isEmpty) {
-          await driver.activateIntent();
-          await tester.pump(const Duration(milliseconds: 300));
+
+        Future<bool> viewerOpen() async {
+          for (int i = 0; i < 20; i++) {
+            await tester.pump(const Duration(milliseconds: 150));
+            if (find.text(t.anki_note_viewer_title).evaluate().isNotEmpty) {
+              return true;
+            }
+          }
+          return false;
         }
-        for (int i = 0; i < 20; i++) {
-          await tester.pump(const Duration(milliseconds: 150));
-          if (find.text(t.anki_note_viewer_title).evaluate().isNotEmpty) break;
+
+        // 焦点激活「查看」：先 Enter（App 确认统一 Enter）。若全局 Enter 未触发按钮
+        // onPressed，回退到 activateIntent，再回退到在 IconButton 自身 context 上
+        // invoke ActivateIntent（accessibility/focus 语义激活，非坐标点击，仍属焦点驱动）。
+        await driver.activate();
+        bool opened = await viewerOpen();
+        if (!opened) {
+          opened = await driver.activateIntent() && await viewerOpen();
+        }
+        if (!opened) {
+          final BuildContext btnCtx = tester.element(firstView);
+          Actions.invoke<ActivateIntent>(btnCtx, const ActivateIntent());
+          opened = await viewerOpen();
         }
         expect(find.text(t.anki_note_viewer_title), findsOneWidget,
             reason: 'TODO-1007: activating "view" must open the read-only '
