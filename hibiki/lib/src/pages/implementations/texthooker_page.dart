@@ -6,6 +6,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 
 /// 独立 texthooker tab：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
@@ -61,6 +63,34 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
+  }
+
+  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
+  /// reader/audiobook、video、home_dictionary 共用 [BarrierSwipeDismissTracker]）。
+  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
+
+  /// texthooker 每次点词 `replaceStack: true`，可见栈至多一层（+ 隐藏热槽）；关一层
+  /// 即收起当前查词。逐层关索引取最后可见层（无可见层回退 0，与 barrier 只在有可见层
+  /// 时才渲染一致）。
+  int get _topVisiblePopupIndex {
+    final int i = _popup.lastVisibleIndex;
+    return i < 0 ? 0 : i;
+  }
+
+  void _onBarrierHorizontalDragStart(DragStartDetails details) {
+    _barrierSwipe.begin();
+  }
+
+  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
+    _barrierSwipe.update(details.delta.dx);
+  }
+
+  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
+    if (_barrierSwipe.end(
+      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+    )) {
+      popNestedPopupAt(_topVisiblePopupIndex, _popup);
+    }
   }
 
   void _onWordTap(String word, Rect rect) {
@@ -141,6 +171,28 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   List<Widget> _buildPopups(BuildContext context) {
     final Size screen = MediaQuery.sizeOf(context);
     return <Widget>[
+      // TODO-1052：查词浮层显示（或搜索中）时叠一层全屏 dismiss barrier——点真空白关一层
+      // （逐层关，与其它表面同语义），桌面开滑动关闭时水平拖过阈亦关一层。texthooker 原
+      // 先无 barrier（点外面关不掉浮层）；本层是附加的关闭手势，不改逐词查词点击本身。
+      if (_popup.hasVisiblePopup || _popup.isSearchingUi)
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
+            onHorizontalDragStart:
+                ReaderHibikiSource.instance.enableSwipeToClose
+                    ? _onBarrierHorizontalDragStart
+                    : null,
+            onHorizontalDragUpdate:
+                ReaderHibikiSource.instance.enableSwipeToClose
+                    ? _onBarrierHorizontalDragUpdate
+                    : null,
+            onHorizontalDragEnd: ReaderHibikiSource.instance.enableSwipeToClose
+                ? _onBarrierHorizontalDragEnd
+                : null,
+            child: const ColoredBox(color: Colors.transparent),
+          ),
+        ),
       // 搜索期加载占位卡（搜索→就绪才显示，与首页查词同观感）。
       if (_popup.isSearchingUi && _popup.pendingRect != null)
         buildPopupLoadingPlaceholder(

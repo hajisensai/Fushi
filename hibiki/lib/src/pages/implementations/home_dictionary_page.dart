@@ -13,6 +13,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/utils.dart';
 
@@ -813,6 +814,20 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
                       onTap: () => _popNestedPopupAt(0),
+                      // TODO-1052：桌面对齐手机——barrier 上水平拖过阈关一层（逐层关）。
+                      // 仅当滑动关闭开关开启时挂横拖（否则只 onTap）。竞技场分流单击/横拖。
+                      onHorizontalDragStart:
+                          ReaderHibikiSource.instance.enableSwipeToClose
+                              ? _onBarrierHorizontalDragStart
+                              : null,
+                      onHorizontalDragUpdate:
+                          ReaderHibikiSource.instance.enableSwipeToClose
+                              ? _onBarrierHorizontalDragUpdate
+                              : null,
+                      onHorizontalDragEnd:
+                          ReaderHibikiSource.instance.enableSwipeToClose
+                              ? _onBarrierHorizontalDragEnd
+                              : null,
                       child: const ColoredBox(color: Colors.transparent),
                     ),
                   ),
@@ -848,6 +863,28 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   /// TODO-931：是否有任何**可见**弹窗层（常驻隐藏热槽不算）。
   bool get _hasVisiblePopup => _popup.hasVisiblePopup;
+
+  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
+  /// reader/audiobook、video、texthooker 共用 [BarrierSwipeDismissTracker]，阈值/
+  /// 位移单一真相源、不漂移）。仅当 [ReaderHibikiSource.enableSwipeToClose] 开启时挂
+  /// 到 barrier（否则只 onTap，与旧行为一致）。过阈关一层（逐层关，非清整栈）。
+  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
+
+  void _onBarrierHorizontalDragStart(DragStartDetails details) {
+    _barrierSwipe.begin();
+  }
+
+  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
+    _barrierSwipe.update(details.delta.dx);
+  }
+
+  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
+    if (_barrierSwipe.end(
+      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+    )) {
+      _popNestedPopupAt(_popup.lastVisibleIndex);
+    }
+  }
 
   void _popNestedPopupAt(int index) {
     popNestedPopupAt(index, _popup);

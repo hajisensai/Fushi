@@ -8,6 +8,37 @@ import 'package:flutter/material.dart';
 double swipeDismissThreshold(double sensitivity) =>
     30 + (1.0 - sensitivity) * 160;
 
+/// TODO-716/1052：查词弹窗全屏 barrier 上「水平拖过阈关一层」的纯状态追踪器。
+///
+/// 各表面（reader/audiobook 经 `base_source_page`、video、home_dictionary、
+/// texthooker）的 barrier 都用同一套「累积水平位移 → 松手判是否过阈」逻辑；抽成
+/// 单一真相源避免每个表面各写一份 `_barrierDragX` 三方法、阈值魔法数漂移。
+///
+/// 用法：barrier 的 `onHorizontalDragStart/Update/End` 分别转发到 [begin] /
+/// [update] / [end]；[end] 返回 true 表示过阈应关一层（调用方据此 `dismissTopPopup`
+/// / `_popNestedPopupAt(topVisibleIndex)`，逐层关，与光标 B/Esc 同语义）。
+/// 阈值复用 [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同公式，不漂移），
+/// 灵敏度由调用方每次 [end] 传入（读实时偏好）。双向水平（左右皆可）。
+class BarrierSwipeDismissTracker {
+  double _dragX = 0;
+
+  void begin() {
+    _dragX = 0;
+  }
+
+  void update(double deltaX) {
+    _dragX += deltaX;
+  }
+
+  /// 松手：过阈返回 true（调用方关一层），否则 false。无论是否过阈都复位累积位移。
+  bool end({required double sensitivity}) {
+    final double threshold = swipeDismissThreshold(sensitivity);
+    final bool passed = _dragX.abs() > threshold;
+    _dragX = 0;
+    return passed;
+  }
+}
+
 /// TODO-890：松手滑出/弹回补间时长与曲线（与 [_BodySwipeDismissDetector] 同手感）。
 const Duration _kSwipeSlideDuration = Duration(milliseconds: 200);
 

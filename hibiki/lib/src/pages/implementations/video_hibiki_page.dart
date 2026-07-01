@@ -22,6 +22,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
@@ -2640,6 +2641,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// slot remains.
   int get _topVisiblePopupIndex => _popup.lastVisibleIndex;
 
+  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
+  /// reader/audiobook 经 base_source_page、home_dictionary、texthooker 共用同一
+  /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
+  /// [ReaderHibikiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
+  /// 与旧行为一致）。过阈关一层 = [_popNestedPopupAt]（_topVisiblePopupIndex），与
+  /// 光标 B/Esc / 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
+  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
+
+  void _onDismissBarrierHorizontalDragStart(DragStartDetails details) {
+    _barrierSwipe.begin();
+  }
+
+  void _onDismissBarrierHorizontalDragUpdate(DragUpdateDetails details) {
+    _barrierSwipe.update(details.delta.dx);
+  }
+
+  void _onDismissBarrierHorizontalDragEnd(DragEndDetails details) {
+    if (_barrierSwipe.end(
+      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+    )) {
+      _popNestedPopupAt(_topVisiblePopupIndex);
+    }
+  }
+
   /// BUG-094: seed one persistent, hidden warm popup slot on open so its
   /// [DictionaryPopupWebView] cold-loads popup.html/JS/CSS ONCE while idle and
   /// is reused warm for every lookup — no per-lookup cold-load (white flash) in
@@ -2836,6 +2861,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
                       onTapUp: (TapUpDetails d) =>
                           _onDismissBarrierTap(d.globalPosition),
+                      // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
+                      // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
+                      // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
+                      // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
+                      onHorizontalDragStart:
+                          ReaderHibikiSource.instance.enableSwipeToClose
+                              ? _onDismissBarrierHorizontalDragStart
+                              : null,
+                      onHorizontalDragUpdate:
+                          ReaderHibikiSource.instance.enableSwipeToClose
+                              ? _onDismissBarrierHorizontalDragUpdate
+                              : null,
+                      onHorizontalDragEnd:
+                          ReaderHibikiSource.instance.enableSwipeToClose
+                              ? _onDismissBarrierHorizontalDragEnd
+                              : null,
                       child: const ColoredBox(color: Colors.transparent),
                     ),
                   ),

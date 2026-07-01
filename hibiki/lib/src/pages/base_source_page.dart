@@ -137,24 +137,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// [ReaderHibikiSource.enableSwipeToClose] 开启时生效。
   /// 单击经 Flutter 手势竞技场仍走 onTap，与拖动互斥。阈值/灵敏度复用
   /// [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同一公式，不漂移）。
-  double _barrierDragX = 0;
+  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
 
   void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierDragX = 0;
+    _barrierSwipe.begin();
   }
 
   void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierDragX += details.delta.dx;
+    _barrierSwipe.update(details.delta.dx);
   }
 
   void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    final double threshold = swipeDismissThreshold(
-      ReaderHibikiSource.instance.dismissSwipeSensitivity,
-    );
-    final bool passedThreshold = _barrierDragX.abs() > threshold;
-    _barrierDragX = 0;
-    // 双向水平（左右皆可），与手机 [SwipeDismissWrapper] 的 _dragX.abs() 一致。
-    if (passedThreshold) dismissTopPopup();
+    // 双向水平（左右皆可），与手机 [SwipeDismissWrapper] 的 _dragX.abs() 一致；
+    // 过阈关一层（[dismissTopPopup]）。阈值/位移累积由共享纯追踪器统一，不漂移。
+    if (_barrierSwipe.end(
+      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+    )) {
+      dismissTopPopup();
+    }
   }
 
   bool get isDictionaryShown => _hasVisiblePopup(_popup.entries);
