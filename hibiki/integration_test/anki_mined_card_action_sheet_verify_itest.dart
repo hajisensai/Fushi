@@ -170,12 +170,22 @@ void main() {
         expect(find.text(t.anki_note_viewer_title), findsOneWidget,
             reason: 'TODO-1007: activating "view" must open the read-only '
                 'note viewer dialog');
+        // note viewer 的字段经 async repo.noteFields 加载后才渲染，等它落地。
+        bool fieldsShown = false;
+        for (int i = 0; i < 30; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+          if (find.textContaining('stub-front').evaluate().isNotEmpty) {
+            fieldsShown = true;
+            break;
+          }
+        }
         expect(repo.noteFieldsCalled, isTrue,
             reason: 'TODO-1007: note viewer must load existing fields via '
                 'repo.noteFields');
         // note viewer 展示了 stub 返回的字段值。
-        expect(find.textContaining('stub-front'), findsWidgets,
-            reason: 'TODO-1007: note viewer must render existing field values');
+        expect(fieldsShown, isTrue,
+            reason: 'TODO-1007: note viewer must render existing field values '
+                '(stub-front)');
         // 「在 Anki 打开」入口可见。
         expect(find.text(t.anki_note_viewer_open_in_anki), findsOneWidget,
             reason: 'TODO-1007: note viewer must offer "open in Anki"');
