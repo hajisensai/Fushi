@@ -70,8 +70,8 @@ void main() {
       );
       // 双引号/反斜杠必须被 JSON 转义，不能裸出破坏 JS 语法。
       // 用 jsonEncode 计算期望，避免手工转义歧义：编码后不含裸引号越界。
-      expect(js, contains('host: ' + jsonEncode('ho"st') + ','));
-      expect(js, contains('token: ' + jsonEncode(r'a"b\c') + ','));
+      expect(js, contains('host: ${jsonEncode('ho"st')},'));
+      expect(js, contains('token: ${jsonEncode(r'a"b\c')},'));
     });
   });
 

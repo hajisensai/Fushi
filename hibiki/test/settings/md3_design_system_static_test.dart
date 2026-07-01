@@ -1914,7 +1914,7 @@ void main() {
     final String confirmDialog = _functionSource(
       source,
       'Future<void> _confirmResetScope(ShortcutScope scope)',
-      '  Future<void> _editBinding(ShortcutAction action)',
+      '  Future<void> _editBinding(',
     );
 
     expect(confirmDialog, contains('HibikiDialogFrame('));
