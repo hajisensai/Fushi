@@ -468,6 +468,17 @@ class VideoPlayerController extends ChangeNotifier
   /// 制卡抽取源：优先覆盖源（流 URL），否则本地 [videoPath]。
   String? get miningSource => _miningSourceOverride ?? videoPath;
 
+  /// TODO-1000：YouTube 分离流时视频流无音轨，制卡音频须从 audio-only 流裁。null =
+  /// 用 [miningSource]（本地文件/muxed 自带音轨）。
+  String? _miningAudioSourceOverride;
+
+  /// 覆盖制卡音频抽取源（YouTube audio-only 流 URL）；传 null = 用 [miningSource]。
+  void setMiningAudioSourceOverride(String? source) =>
+      _miningAudioSourceOverride = source;
+
+  /// 制卡音频抽取源；null 时引擎回落 [miningSource]。
+  String? get miningAudioSource => _miningAudioSourceOverride;
+
   /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
   /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」
   /// （BUG-199 听力沉浸）等以 [isPlaying] 为闸的逻辑。置非 null 时覆盖。

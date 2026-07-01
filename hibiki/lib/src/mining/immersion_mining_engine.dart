@@ -107,13 +107,15 @@ class ImmersionMiningEngine {
       }
     }
 
+    // 音频段抽取源：优先独立 audioSource（YouTube 分离音频流），否则用视频源（本地/muxed）。
+    final String? audioSrc = req.audioSource ?? src;
     String? audioPath;
     if (req.providedAudioBytes != null) {
       audioPath = await _writeBytes(
           tempDir, req.providedAudioName ?? 'immersion_audio.aac', req.providedAudioBytes!);
-    } else if (src != null && req.hasRange) {
+    } else if (audioSrc != null && req.hasRange) {
       audioPath = await _audio(
-        inputPath: src,
+        inputPath: audioSrc,
         startMs: req.clipStartMs,
         endMs: req.clipEndMs,
         outputPath: '$tempDir/immersion_audio.aac',

@@ -169,6 +169,49 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
+  test('audioSource overrides mediaSource for audio extraction (youtube split)', () async {
+    final repo = _FakeRepo();
+    String? gifInput;
+    String? audioInput;
+    Future<String?> capGif(
+            {required String inputPath,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            int fps = 8,
+            int width = 320,
+            FfmpegFailureReporter? onFailure}) async {
+      gifInput = inputPath;
+      return outputPath;
+    }
+    Future<String?> capAudio(
+            {required String inputPath,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            int? audioStreamIndex,
+            int? audioStreamCount,
+            FfmpegFailureReporter? onFailure,
+            int audioChannels = 1,
+            String audioBitrate = '64k'}) async {
+      audioInput = inputPath;
+      return outputPath;
+    }
+    await build(gif: capGif, audio: capAudio, frame: okFrame).mine(
+        const ImmersionMiningRequest(
+            fields: {'expression': 'x'},
+            mediaSource: 'https://video-only.example/v',
+            audioSource: 'https://audio-only.example/a',
+            clipStartMs: 0,
+            clipEndMs: 2000,
+            sentence: 's'),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo);
+    expect(gifInput, 'https://video-only.example/v'); // GIF 从视频流
+    expect(audioInput, 'https://audio-only.example/a'); // 音频从独立音频流
+  });
+
   test('updateNoteId routes to updateMinedNote', () async {
     final repo = _FakeRepo();
     await build(gif: okGif, audio: okAudio, frame: okFrame).mine(

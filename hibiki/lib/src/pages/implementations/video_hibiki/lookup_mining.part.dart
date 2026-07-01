@@ -288,6 +288,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       ImmersionMiningRequest(
         fields: fields,
         mediaSource: controller.miningSource,
+        audioSource: controller.miningAudioSource,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
         sentence: sentence,

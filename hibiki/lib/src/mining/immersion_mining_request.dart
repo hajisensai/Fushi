@@ -14,6 +14,7 @@ class ImmersionMiningRequest {
     required this.clipEndMs,
     required this.sentence,
     this.mediaSource,
+    this.audioSource,
     this.cueSentence,
     this.documentTitle,
     this.audioStreamIndex,
@@ -34,6 +35,10 @@ class ImmersionMiningRequest {
   final int clipEndMs;
   final String sentence;
   final String? mediaSource;
+
+  /// 音频段抽取源（ffmpeg inputPath）。null = 用 [mediaSource]（本地文件/muxed）。
+  /// YouTube 分离流时 = audio-only 流 URL（视频流无音轨，音频得从这里裁）。
+  final String? audioSource;
   final String? cueSentence;
   final String? documentTitle;
   final int? audioStreamIndex;
