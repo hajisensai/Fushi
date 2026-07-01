@@ -66,11 +66,18 @@ void main() {
     expect(src.contains('DictionaryUpdateService.needsUpdate'), isTrue);
   });
 
-  test('在线下载落来源（sourceOverride 回填 downloadUrl）', () {
-    expect(
-      src.contains("sourceOverride: <String, String>{'downloadUrl': rec.url}"),
-      isTrue,
-      reason: '下载在线词典必须把 catalog url 当 downloadUrl 回填来源',
-    );
+  test('在线下载落来源（catalog 回填 downloadUrl，可更新源再补 isUpdatable+indexUrl）', () {
+    // TODO-1075：初装即把可更新性锚定在 catalog 来源真值。
+    // - 恒回填 downloadUrl（供更新时重下载）。
+    expect(src.contains("'downloadUrl': rec.url"), isTrue,
+        reason: '下载在线词典必须把 catalog url 当 downloadUrl 回填来源');
+    // - 对存在分离 index 端点的来源，据 rec.indexUrl 回填 isUpdatable:'true' + indexUrl，
+    //   让 catalog 导入的词典初装即 isUpdatable==true（修初装 gate 空档）。
+    expect(src.contains('final String? recIndexUrl = rec.indexUrl;'), isTrue,
+        reason: 'catalog 导入应读 rec.indexUrl 判定该来源是否可在线更新');
+    expect(src.contains("'isUpdatable': 'true',"), isTrue,
+        reason: '可更新源导入必须回填 isUpdatable:true');
+    expect(src.contains("'indexUrl': recIndexUrl,"), isTrue,
+        reason: '可更新源导入必须回填分离 index 端点 URL');
   });
 }

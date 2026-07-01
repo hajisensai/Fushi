@@ -9,7 +9,9 @@ struct Index {
   std::string_view title;
   int format = 3;
   std::string_view revision;
-  bool isUpdatable;
+  // TODO-1075: 默认 false——源 index.json 缺 isUpdatable 时不留未初始化 bool（否则
+  // glaze 会回写不确定值，可能误标不可更新的包为可更新）。
+  bool isUpdatable = false;
   std::string_view indexUrl;
   std::string_view downloadUrl;
 };

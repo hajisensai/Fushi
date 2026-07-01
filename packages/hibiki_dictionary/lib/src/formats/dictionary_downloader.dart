@@ -37,6 +37,44 @@ class RecommendedDictionary {
   /// ISO 639-1 code for language-based auto-selection.
   /// e.g. 'en' for JMdict English, 'de' for JMdict German.
   final String? langCode;
+
+  /// TODO-1075：本条目对应的**远端 index.json 可访问 URL**（供在线更新检查拉
+  /// revision 比对；见 [DictionaryUpdateService.fetchRemoteIndex]）。
+  ///
+  /// 只有确实提供「与 zip 分离的、可 HTTP GET 到 index.json」端点的来源才非 null：
+  /// - yomidevs `jmdict-yomitan` releases：sibling `<X>.json`（把 `.zip` 换 `.json`，
+  ///   实测 JMdict/KANJIDIC/JMnedict/Forms 等全部 200）。
+  /// - wty（HuggingFace daxida/wty-release）：`.../latest/index/wty-ja-<lang>-index.json
+  ///   ?download=true`（与 zip 路径不同构，单独派生）。
+  ///
+  /// 其余来源（MarvNC / Kuuuube git-raw、grammar/frequency 打包等）**没有**分离的
+  /// index 端点，返回 null → catalog 导入不置 `isUpdatable`，可更新性完全交回词典包
+  /// 自身 index.json 的声明（不误标不可更新来源为可更新，避免对无源词典发更新请求）。
+  ///
+  /// 这是把「可更新性」的权威信号锚定在 catalog（我们控制的来源真值），而不是脆弱地
+  /// 依赖第三方包内是否碰巧声明 `isUpdatable`——修 TODO-1075 的初装 gate 空档。
+  String? get indexUrl {
+    const String yomidevsPrefix =
+        'https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/';
+    if (url.startsWith(yomidevsPrefix) && url.endsWith('.zip')) {
+      return '${url.substring(0, url.length - '.zip'.length)}.json';
+    }
+    // wty: .../latest/dict/ja/<lang>/wty-ja-<lang>.zip
+    //   →  .../latest/index/wty-ja-<lang>-index.json?download=true
+    final RegExp wtyRe = RegExp(
+      r'^(https://huggingface\.co/datasets/daxida/wty-release/resolve/main/latest)/dict/ja/([a-z-]+)/(wty-ja-[a-z-]+)\.zip$',
+    );
+    final RegExpMatch? m = wtyRe.firstMatch(url);
+    if (m != null) {
+      final String base = m.group(1)!;
+      final String stem = m.group(3)!;
+      return '$base/index/$stem-index.json?download=true';
+    }
+    return null;
+  }
+
+  /// TODO-1075：本条目是否可作为「可在线更新」的来源导入（存在分离 index 端点）。
+  bool get isCatalogUpdatable => indexUrl != null;
 }
 
 const String _jmdictBase =

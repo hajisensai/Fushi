@@ -72,9 +72,11 @@ class _DictionaryDialogPageState extends BasePageState {
             : const <Widget>[],
         children: [
           if (!cupertino) _buildActionBar(),
-          _buildAutoUpdateCard(),
           compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
           buildContent(),
+          // TODO-1075：自动更新设置卡移到词典列表之后（页尾设置区），不再横切
+          // 「导入/浏览/清空」高频操作与分类选择器之间的操作动线。
+          _buildAutoUpdateCard(),
         ],
       ),
     );
@@ -82,7 +84,9 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// TODO-861③（移植 Hoshi `94d0c41`）：词典自动更新设置卡——「自动更新」开关 +
   /// 检查周期分段（开时显示）+「上次更新」只读行。仅 startup check-due（MVP，无
-  /// 计费网络门控）。开关默认 true。
+  /// 计费网络门控）。开关默认 **false**（opt-in，不在升级后静默联网/自动重导词典，
+  /// 与 [PreferencesRepository.autoUpdateDictionaries] 的 defaultValue: false 对齐；
+  /// TODO-1075 修正原「默认 true」误注释）。
   Widget _buildAutoUpdateCard() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final bool autoUpdate = appModel.autoUpdateDictionaries;
@@ -869,15 +873,28 @@ class _DictionaryDialogPageState extends BasePageState {
           );
 
           progressNotifier.value = t.import_extract;
-          // TODO-609：在线下载即记来源——catalog 的 zip URL 当 downloadUrl 回填。
-          // 嵌入 index.json 若声明 isUpdatable/indexUrl/revision（如 yomidevs
-          // releases/latest）会在 readSourceMetadataFromIndex 里覆盖优先；这里只兜底
-          // 补 downloadUrl，使凡声明可更新的在线词典都能后续检查更新。
+          // TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
+          // 对存在**分离 index.json 端点**的来源（yomidevs releases / wty，见
+          // [RecommendedDictionary.indexUrl]）回填 isUpdatable:'true' + indexUrl +
+          // downloadUrl 三件套——与手动更新链路（_updateSingleDictionary）一致，
+          // 让通过 catalog 导入的词典**初装即可 isUpdatable==true**，不再依赖第三方
+          // 包内是否碰巧声明这些字段（修 TODO-1075：初装 gate 恒空、自动更新永不启用）。
+          // 对无分离 index 端点的来源（MarvNC / grammar / frequency）只回填
+          // downloadUrl，isUpdatable 交回包内 index.json 声明——不误标不可更新来源为
+          // 可更新，避免对无源词典发无效更新请求。
+          final String? recIndexUrl = rec.indexUrl;
+          final Map<String, String> sourceOverride = recIndexUrl != null
+              ? <String, String>{
+                  'isUpdatable': 'true',
+                  'indexUrl': recIndexUrl,
+                  'downloadUrl': rec.url,
+                }
+              : <String, String>{'downloadUrl': rec.url};
           await appModel.importDictionary(
             file: zipFile,
             progressNotifier: progressNotifier,
             onImportSuccess: () {},
-            sourceOverride: <String, String>{'downloadUrl': rec.url},
+            sourceOverride: sourceOverride,
           );
           successCount++;
         } catch (e, st) {
