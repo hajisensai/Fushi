@@ -74,6 +74,17 @@ class DataRootMigrationException implements Exception {
 class DataRootMigrator {
   const DataRootMigrator();
 
+  /// SharedPreferences 落盘文件的**文件名前缀**族。桌面默认根迁移时，`oldSupportRoot`
+  /// 恰好等于平台固定落点 `getApplicationSupportDirectory()`，`shared_preferences_windows`
+  /// 插件把 `shared_preferences.json` 就存这个目录（见 `app_paths.dart:65-70` 的鸡生蛋
+  /// 铁律：data_root 配置必须在被迁移的 DB 打开*之前*从这个固定落点可读，故 prefs 文件
+  /// **不能**随数据根搬走）。用前缀而非精确名，覆盖插件可能派生的 sidecar（`.json` /
+  /// `.json.lock` / journal / `.bak` 等同名族），且只在源根**顶层**匹配（prefs 恒在根
+  /// 顶层，不在子目录），避免误伤子目录里恰好同名前缀的用户数据。
+  static const List<String> _prefsFileNamePrefixes = <String>[
+    'shared_preferences',
+  ];
+
   /// 持久化的字体目录配置 pref 键（含 ReaderSettings 前缀）。与 `backup_service.dart`
   /// 的同名常量保持一致（那边是 private，迁移引擎独立持有同一字面量）。
   static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
@@ -106,9 +117,19 @@ class DataRootMigrator {
 
     // ② 整目录搬动（同盘 rename / 跨盘 copy+verify+delete）。先 documents 再 support；
     //    任一失败 → 回滚已搬的部分，清理新根半成品。
+    //
+    // **prefs 例外**：默认根迁移时 oldSupportRoot == 平台固定落点，内含活的
+    // `shared_preferences.json`（data_root 配置本身就存在这里）。它必须留在原地——否则
+    // 迁移后固定落点读不到 data_root，重启回退默认根（TODO-935/959 根因）。故对 support
+    // 搬移排除源根顶层的 prefs 文件族；从自定义根迁移时源根顶层无 prefs → 排除集为空 →
+    // 走原子 rename 快路径，行为不变。
+    final Set<String> supportExclude =
+        _prefsFileNamesToPreserveAt(req.oldSupportRoot);
     final List<_MovePlan> moves = <_MovePlan>[
-      _MovePlan(req.oldDocumentsRoot, newDocs),
-      _MovePlan(req.oldSupportRoot, newSupport),
+      _MovePlan(req.oldDocumentsRoot, newDocs,
+          excludeTopLevelNames: const <String>{}),
+      _MovePlan(req.oldSupportRoot, newSupport,
+          excludeTopLevelNames: supportExclude),
     ];
     final List<_MovePlan> done = <_MovePlan>[];
     // 跨盘复制的进度状态：累积已复制文件数 + 两子树总文件数（同盘 rename 不计）。
@@ -117,7 +138,7 @@ class DataRootMigrator {
     try {
       newRoot.createSync(recursive: true);
       for (final _MovePlan m in moves) {
-        await _moveTree(m.src, m.dst, progress);
+        await _moveTree(m.src, m.dst, progress, m.excludeTopLevelNames);
         done.add(m);
       }
     } catch (e) {
@@ -143,8 +164,10 @@ class DataRootMigrator {
     }
 
     // ④ 全成功：删旧根（已确认数据都在新根且 DB 指向新根）+ 写 data_root pref。
+    //    oldSupportRoot 若保留了 prefs 文件（默认根迁移），只删非 prefs 残留、保住 prefs
+    //    本体（那正是持久化 data_root 的地方），不因目录删不掉而报错。
     await _deleteIfPresent(req.oldDocumentsRoot);
-    await _deleteIfPresent(req.oldSupportRoot);
+    await _deleteOldSupportPreservingPrefs(req.oldSupportRoot, supportExclude);
     await req.writeDataRootPref(req.newDataRoot);
 
     return (newDocs, newSupport);
@@ -171,14 +194,25 @@ class DataRootMigrator {
 
   /// 同卷直接 `rename`（原子、瞬时）；跨卷（rename 抛 errno 18 / EXDEV / Windows 17）
   /// 退回逐文件 copy + 字节数校验，校验通过才删源。源不存在 → 视为空内容，建空目标根。
+  ///
+  /// [excludeTopLevelNames] 非空时（默认根迁移的 support 搬移，需把 `shared_preferences*`
+  /// 留在原固定落点）**不能**用整目录 rename（会把 prefs 一起搬走），退回逐顶层项搬移，
+  /// 跳过被排除的 prefs 文件。为空（documents 搬移 / 自定义根 support 搬移）时保留原子
+  /// rename 快路径，行为逐字节不变。
   Future<void> _moveTree(
     Directory src,
     Directory dst,
     _CopyProgress progress,
+    Set<String> excludeTopLevelNames,
   ) async {
     if (!await src.exists()) {
       // 旧根某子树不存在（如全新装从未产出有声书目录）：建空目标，无内容可搬。
       await dst.create(recursive: true);
+      return;
+    }
+    if (excludeTopLevelNames.isNotEmpty) {
+      // 含排除项：逐顶层项选择性搬移，prefs 文件留在原地。
+      await _moveTreeSelective(src, dst, progress, excludeTopLevelNames);
       return;
     }
     await dst.parent.create(recursive: true);
@@ -191,6 +225,47 @@ class DataRootMigrator {
     // 跨卷：copy + verify + delete。
     await _copyTreeVerified(src, dst, progress);
     await src.delete(recursive: true);
+  }
+
+  /// 选择性搬移：逐个搬 [src] 顶层项到 [dst]，跳过基名命中 [excludeTopLevelNames] 的
+  /// prefs 文件（它们留在 src 原地）。每个顶层项优先同卷 `rename`；跨卷退回 copy+verify+
+  /// delete（子目录整树、文件逐个），保持与整目录搬移一致的字节校验与跨盘语义。被排除的
+  /// prefs 文件既不复制也不删除；搬完 [src] 里应只剩 prefs 文件。
+  Future<void> _moveTreeSelective(
+    Directory src,
+    Directory dst,
+    _CopyProgress progress,
+    Set<String> excludeTopLevelNames,
+  ) async {
+    await dst.create(recursive: true);
+    for (final FileSystemEntity entity
+        in src.listSync(recursive: false, followLinks: false)) {
+      final String name = p.basename(entity.path);
+      if (excludeTopLevelNames.contains(name)) continue; // prefs 留原地。
+      final String target = p.join(dst.path, name);
+      try {
+        await entity.rename(target);
+        continue;
+      } on FileSystemException catch (e) {
+        if (!_isCrossDevice(e)) rethrow;
+      }
+      // 跨卷：整树复制校验后删源（目录）/ 单文件复制校验后删源。
+      if (entity is Directory) {
+        await _copyTreeVerified(entity, Directory(target), progress);
+        await entity.delete(recursive: true);
+      } else if (entity is File) {
+        await File(target).parent.create(recursive: true);
+        await entity.copy(target);
+        final int srcLen = await entity.length();
+        final int dstLen = await File(target).length();
+        if (srcLen != dstLen) {
+          throw DataRootMigrationException(
+              '跨盘复制校验失败：$name 字节数不一致（$srcLen != $dstLen）');
+        }
+        progress.fileCopied();
+        await entity.delete();
+      }
+    }
   }
 
   static bool _isCrossDevice(FileSystemException e) {
@@ -249,8 +324,13 @@ class DataRootMigrator {
   }
 
   Future<void> _rollbackMoves(List<_MovePlan> done) async {
-    // 把已搬到新根的子树搬回旧根原位（尽力而为；旧位置此时应为空）。
+    // 把已搬到新根的子树搬回旧根原位（尽力而为）。选择性搬移的 plan（support + prefs
+    // 例外）：src 里还留着 prefs 文件，不能整目录 rename 覆盖 → 逐顶层项合并搬回。
     for (final _MovePlan m in done.reversed) {
+      if (m.isSelective) {
+        await _rollbackSelective(m);
+        continue;
+      }
       try {
         if (await m.dst.exists()) {
           if (await m.src.exists()) await m.src.delete(recursive: true);
@@ -271,10 +351,95 @@ class DataRootMigrator {
     }
   }
 
+  /// 选择性搬移的回滚：把 [m.dst]（新根 support，含已搬的非 prefs 数据）顶层项逐个搬回
+  /// [m.src]（旧固定落点，prefs 仍在原地），同卷 rename / 跨卷 copy+delete；搬完删空的
+  /// dst 目录。尽力而为——回滚是异常清理，任何一步失败只记日志不再抛。
+  Future<void> _rollbackSelective(_MovePlan m) async {
+    try {
+      if (!await m.dst.exists()) return;
+      await m.src.create(recursive: true);
+      for (final FileSystemEntity entity
+          in m.dst.listSync(recursive: false, followLinks: false)) {
+        final String name = p.basename(entity.path);
+        final String back = p.join(m.src.path, name);
+        try {
+          await entity.rename(back);
+        } on FileSystemException catch (e) {
+          if (!_isCrossDevice(e)) rethrow;
+          if (entity is Directory) {
+            await _copyTreeVerified(entity, Directory(back));
+            await entity.delete(recursive: true);
+          } else if (entity is File) {
+            await entity.copy(back);
+            await entity.delete();
+          }
+        }
+      }
+      await _deleteIfPresent(m.dst);
+    } catch (e) {
+      debugPrint('DataRootMigrator: 选择性回滚失败 ${m.dst.path}: $e');
+    }
+  }
+
   static Future<void> _deleteIfPresent(Directory dir) async {
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
+  }
+
+  /// 源根 [root] **顶层**里需要留在原地的 prefs 文件基名集合（基名前缀命中
+  /// [_prefsFileNamePrefixes]）。默认根迁移时命中 `shared_preferences.json`（及可能的
+  /// sidecar）；自定义根 support（`<root>/support`，顶层无 prefs）→ 返回空集，搬移逻辑
+  /// 自然走原子 rename 快路径。root 不存在 → 空集。只看顶层文件，不递归、不含目录。
+  static Set<String> _prefsFileNamesToPreserveAt(Directory root) {
+    if (!root.existsSync()) return const <String>{};
+    final Set<String> names = <String>{};
+    for (final FileSystemEntity e in root.listSync(recursive: false)) {
+      if (e is! File) continue;
+      final String name = p.basename(e.path);
+      if (_isPrefsFileName(name)) names.add(name);
+    }
+    return names;
+  }
+
+  /// 文件基名是否属于 SharedPreferences 落盘族（按 [_prefsFileNamePrefixes] 前缀判定，
+  /// 覆盖 `.json` / `.json.lock` / journal / `.bak` 等 sidecar）。
+  static bool _isPrefsFileName(String basename) {
+    for (final String prefix in _prefsFileNamePrefixes) {
+      if (basename.startsWith(prefix)) return true;
+    }
+    return false;
+  }
+
+  /// 迁移成功后删旧 support 根，但**保住**留在原地的 prefs 文件（[preservedNames]）。
+  /// 选择性搬移后 [oldSupportRoot] 顶层应只剩这些 prefs 文件——删除其余任何残留（防御性：
+  /// 正常情况无残留），保留 prefs 本体（那是持久化 data_root 的地方），且不因目录非空删不掉
+  /// 而报错。[preservedNames] 为空（自定义根迁移，无 prefs 需保）→ 退回整目录删除。
+  static Future<void> _deleteOldSupportPreservingPrefs(
+    Directory oldSupportRoot,
+    Set<String> preservedNames,
+  ) async {
+    if (preservedNames.isEmpty) {
+      await _deleteIfPresent(oldSupportRoot);
+      return;
+    }
+    if (!await oldSupportRoot.exists()) return;
+    for (final FileSystemEntity e
+        in oldSupportRoot.listSync(recursive: false)) {
+      final String name = p.basename(e.path);
+      if (preservedNames.contains(name)) continue; // 保住 prefs 本体。
+      try {
+        if (e is Directory) {
+          await e.delete(recursive: true);
+        } else {
+          await e.delete();
+        }
+      } on FileSystemException catch (err) {
+        // 尽力清理残留；删不掉不致命（数据已在新根，prefs 已保）。
+        debugPrint('DataRootMigrator: 清理旧 support 残留失败 ${e.path}: $err');
+      }
+    }
+    // 不删 oldSupportRoot 目录本身：它现在承载着 prefs 文件，是固定平台落点。
   }
 
   static bool _hasAnyFile(Directory dir) {
@@ -452,9 +617,16 @@ class DataRootMigrator {
 }
 
 class _MovePlan {
-  _MovePlan(this.src, this.dst);
+  _MovePlan(this.src, this.dst, {required this.excludeTopLevelNames});
   final Directory src;
   final Directory dst;
+
+  /// 搬移时需留在源根顶层的文件基名（prefs 文件）。非空 ⇒ 走选择性搬移（非整目录
+  /// rename），回滚也走合并式（dst 顶层项逐个搬回 src，不能整目录 rename 覆盖 src——src
+  /// 里还留着 prefs）。
+  final Set<String> excludeTopLevelNames;
+
+  bool get isSelective => excludeTopLevelNames.isNotEmpty;
 }
 
 /// 跨盘复制进度累加器：把多个子树的文件总数累进 [_total]，每复制完一个文件 [_copied]++

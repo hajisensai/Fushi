@@ -243,6 +243,117 @@ void main() {
       expect(copied.last, equals(3));
     });
 
+    test('prefs 保护：默认根迁移时 shared_preferences.json 留在旧 support 原地，DB+数据搬到新根',
+        () async {
+      // 模拟「默认根迁移」：oldSupport 即平台固定落点，顶层放真实
+      // shared_preferences.json（含真实 data_root 值），以及 hibiki.db、local_audio。
+      await seedDb();
+      final File prefsFile =
+          File(p.join(oldSupportPath, 'shared_preferences.json'))
+            ..writeAsStringSync(jsonEncode(<String, dynamic>{
+              'flutter.data_root': p.join(tmp.path, 'new'),
+              'flutter.some_other': 42,
+            }));
+      final String prefsContentBefore = prefsFile.readAsStringSync();
+      // sidecar：确保 .lock 之类前缀同族也被保护。
+      final File prefsLock =
+          File(p.join(oldSupportPath, 'shared_preferences.json.lock'))
+            ..writeAsStringSync('lock');
+
+      final String newDataRoot = p.join(tmp.path, 'new');
+      String? wroteDataRoot;
+
+      final (Directory newDocs, Directory newSupport) =
+          await const DataRootMigrator().migrate(DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        newDataRoot: newDataRoot,
+        closeResources: () async {},
+        writeDataRootPref: (String r) async => wroteDataRoot = r,
+      ));
+
+      // (a) prefs 仍在原 oldSupportRoot，内容不变；sidecar 也留下。
+      expect(prefsFile.existsSync(), isTrue,
+          reason: 'shared_preferences.json 必须留在固定平台落点');
+      expect(prefsFile.readAsStringSync(), equals(prefsContentBefore));
+      expect(prefsLock.existsSync(), isTrue);
+      // prefs 不该被复制进新 support。
+      expect(
+          File(p.join(newSupport.path, 'shared_preferences.json')).existsSync(),
+          isFalse);
+      // (b) hibiki.db 已到新 support。
+      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+          isTrue);
+      // hibiki.db 已从旧 support 移走（只剩 prefs 族）。
+      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isFalse);
+      expect(File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
+          isFalse);
+      // (c) documents 数据到了新根。
+      expect(
+          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+              .existsSync(),
+          isTrue);
+      expect(
+          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue);
+      expect(oldDocs.existsSync(), isFalse);
+      // (d) writeDataRootPref 收到新根值。
+      expect(wroteDataRoot, equals(newDataRoot));
+
+      // 旧 support 目录仍在（承载 prefs），且顶层只剩 prefs 族文件。
+      expect(oldSupport.existsSync(), isTrue);
+      final List<String> leftover = oldSupport
+          .listSync()
+          .map((FileSystemEntity e) => p.basename(e.path))
+          .toList()
+        ..sort();
+      expect(
+          leftover,
+          equals(<String>[
+            'shared_preferences.json',
+            'shared_preferences.json.lock'
+          ]));
+
+      // DB 内绝对路径仍正确 rebase 到新根（选择性搬移不破坏 rebase）。
+      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      try {
+        final EpubBookRow b = (await db.getAllEpubBooks()).single;
+        expect(b.epubPath, startsWith(newDocs.path));
+      } finally {
+        await db.close();
+      }
+    });
+
+    test('自定义根迁移（源 support 无 prefs）→ 整树照搬不受 prefs 保护影响', () async {
+      // 自定义根：oldSupport = <oldRoot>/support，顶层无 shared_preferences.json。
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'new2');
+      String? wroteDataRoot;
+
+      final (Directory newDocs, Directory newSupport) =
+          await const DataRootMigrator().migrate(DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        newDataRoot: newDataRoot,
+        closeResources: () async {},
+        writeDataRootPref: (String r) async => wroteDataRoot = r,
+      ));
+
+      // 整树搬齐：DB + local_audio + documents。
+      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+          isTrue);
+      expect(
+          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+              .existsSync(),
+          isTrue);
+      // 无 prefs 需保 → 旧根整目录删除（原行为）。
+      expect(oldSupport.existsSync(), isFalse);
+      expect(oldDocs.existsSync(), isFalse);
+      expect(wroteDataRoot, equals(newDataRoot));
+    });
+
     test('目标 dataRoot 已存在数据 → 抛错，旧根不动', () async {
       await seedDb();
       final String newDataRoot = p.join(tmp.path, 'occupied');
