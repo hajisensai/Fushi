@@ -2,9 +2,11 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/src/mining/immersion_capture_channel.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
@@ -16,7 +18,8 @@ class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
   @override
   Future<MineOutcome> mineEntry(
-      {required String rawPayloadJson, required AnkiMiningContext context}) async {
+      {required String rawPayloadJson,
+      required AnkiMiningContext context}) async {
     minedContext = context;
     return const MineOutcome.success(noteId: 1);
   }
@@ -49,9 +52,21 @@ void main() {
       // testsrc 视频 + sine 音频，5s，320x240@15fps，H.264/AAC。
       final ProcessResult r = Process.runSync(ffmpeg, <String>[
         '-y',
-        '-f', 'lavfi', '-i', 'testsrc=duration=5:size=320x240:rate=15',
-        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5',
-        '-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p', '-shortest',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=duration=5:size=320x240:rate=15',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=5',
+        '-c:v',
+        'libx264',
+        '-c:a',
+        'aac',
+        '-pix_fmt',
+        'yuv420p',
+        '-shortest',
         videoPath,
       ]);
       expect(r.exitCode, 0, reason: 'fixture encode failed: ${r.stderr}');
@@ -88,7 +103,8 @@ void main() {
       expect(File(audio!).lengthSync(), greaterThan(100));
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
 
-    test('engine end-to-end: real GIF + audio -> mineEntry with cover+audio', () async {
+    test('engine end-to-end: real GIF + audio -> mineEntry with cover+audio',
+        () async {
       final _FakeRepo repo = _FakeRepo();
       final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
@@ -105,10 +121,29 @@ void main() {
       expect(res.aborted, isFalse);
       expect(repo.minedContext, isNotNull);
       expect(repo.minedContext!.coverPath, endsWith('.gif'));
-      expect(File(repo.minedContext!.coverPath!).lengthSync(), greaterThan(100));
+      expect(
+          File(repo.minedContext!.coverPath!).lengthSync(), greaterThan(100));
       expect(repo.minedContext!.sasayakiAudioPath, isNotNull);
       expect(File(repo.minedContext!.sasayakiAudioPath!).lengthSync(),
           greaterThan(100));
+    }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
+
+    // Netflix GIF 路径：扩展录到的字幕片段（此处用 mp4 fixture 字节模拟）→ ffmpeg 转 GIF+音频。
+    // ffmpeg 按内容识别封装，扩展名无关，故用现成 mp4 字节即可验证转码链路。
+    test('transcodeClipToCapture (netflix clip -> GIF + audio) via real ffmpeg',
+        () async {
+      final Uint8List clipBytes = File(videoPath).readAsBytesSync();
+      final ImmersionCaptureResult cap = await transcodeClipToCapture(
+        clipBytes,
+        durationMs: 3000,
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+      );
+      expect(cap.error, isNull, reason: cap.error ?? '');
+      expect(cap.gifBytes, isNotNull);
+      expect(String.fromCharCodes(cap.gifBytes!.take(3)), 'GIF');
+      expect(cap.audioBytes, isNotNull);
+      expect(cap.audioBytes!.length, greaterThan(100));
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
   });
 }

@@ -3,7 +3,7 @@
   "name": "Hibiki Reader Bridge",
   "version": "0.1.0",
   "description": "Look up words on web pages using Hibiki's dictionaries.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "tabCapture", "offscreen"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [

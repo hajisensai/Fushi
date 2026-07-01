@@ -14,6 +14,8 @@ class ImmersionMinePayload {
     this.clipEndMs,
     this.netflixVideoId,
     this.screenshotBytes,
+    this.clipBytes,
+    this.clipDurationMs,
   });
 
   final Map<String, String> fields;
@@ -26,9 +28,17 @@ class ImmersionMinePayload {
   final String? netflixVideoId;
   final Uint8List? screenshotBytes;
 
+  /// TODO-1000：浏览器扩展在播放中录到的字幕片段（webm/mp4 字节，DRM 需关硬件加速才非黑）。
+  /// 非空时服务端用 ffmpeg 转 GIF + 抽音频 → 组卡（Netflix 唯一「不回放」的 GIF 路径）。
+  final Uint8List? clipBytes;
+
+  /// [clipBytes] 的时长（毫秒），供 ffmpeg 截取上界；null 时用默认上限。
+  final int? clipDurationMs;
+
   /// true = 带了媒体/时间戳，走沉浸引擎路径；false = 纯文本挖词，走现有 mineEntry 回落。
   bool get isImmersion =>
       screenshotBytes != null ||
+      clipBytes != null ||
       timestampMs != null ||
       (netflixVideoId != null && clipStartMs != null && clipEndMs != null);
 
@@ -38,9 +48,11 @@ class ImmersionMinePayload {
       throw const FormatException('fields must be an object');
     }
     final Map<String, String> fields = <String, String>{
-      for (final MapEntry<Object?, Object?> e in rawFields.entries) '${e.key}': '${e.value}',
+      for (final MapEntry<Object?, Object?> e in rawFields.entries)
+        '${e.key}': '${e.value}',
     };
     final Object? b64 = json['screenshotBase64'];
+    final Object? clip64 = json['clipBase64'];
     return ImmersionMinePayload(
       fields: fields,
       sentence: (json['sentence'] as String?) ?? (fields['sentence'] ?? ''),
@@ -50,7 +62,11 @@ class ImmersionMinePayload {
       clipStartMs: (json['clipStartMs'] as num?)?.round(),
       clipEndMs: (json['clipEndMs'] as num?)?.round(),
       netflixVideoId: json['netflixVideoId'] as String?,
-      screenshotBytes: b64 is String && b64.isNotEmpty ? base64Decode(b64) : null,
+      screenshotBytes:
+          b64 is String && b64.isNotEmpty ? base64Decode(b64) : null,
+      clipBytes:
+          clip64 is String && clip64.isNotEmpty ? base64Decode(clip64) : null,
+      clipDurationMs: (json['clipDurationMs'] as num?)?.round(),
     );
   }
 }

@@ -4134,9 +4134,21 @@ class _AppModelRemoteLookupService
   Future<String> mineImmersion(ImmersionMinePayload payload) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
-    // 2B：有 clip 区间 + videoId → 先试后台软解实例抓 GIF/音频；native 缺失/失败降级 2A 截图。
+    final MiningMediaCompression compression =
+        MiningMediaCompression.forCompressionEnabled(
+            _appModel.compressMiningMedia);
+    // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
+    // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
+    // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
     ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
-    if (payload.netflixVideoId != null &&
+    if (payload.clipBytes != null) {
+      cap = await transcodeClipToCapture(
+        payload.clipBytes!,
+        durationMs: payload.clipDurationMs ?? 6000,
+        compression: compression,
+        tempDir: Directory.systemTemp.path,
+      );
+    } else if (payload.netflixVideoId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
       cap = await ImmersionCaptureChannel.capture(
@@ -4147,7 +4159,7 @@ class _AppModelRemoteLookupService
     }
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
       buildImmersionRequest(payload, cap),
-      compression: MiningMediaCompression.forCompressionEnabled(true),
+      compression: compression,
       tempDir: Directory.systemTemp.path,
       repo: repo,
     );
