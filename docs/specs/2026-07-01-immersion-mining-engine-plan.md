@@ -145,7 +145,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart' show MiningMediaCompression;
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart' show MiningMediaCompression, FfmpegFailureReporter; // 审查 C2：假抽取器闭包用到 FfmpegFailureReporter
 
 class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
@@ -240,6 +240,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import '../utils/misc/desktop_audio_clipper.dart';
+import '../utils/misc/card_screenshot_downsampler.dart'; // downsampleCardScreenshot 真身在此（审查 C3）
 import 'immersion_mining_request.dart';
 
 /// 注入式抽取器（默认指向 desktop_audio_clipper.dart 真身，测试注入假件）。逐参对齐真身。
@@ -279,7 +280,7 @@ class ImmersionMiningEngine {
       if (shot != null) {
         final Uint8List small = downsampleCardScreenshot(shot, maxLongEdge: compression.screenshotMaxLongEdge, quality: compression.screenshotQuality);
         coverPath = await _writeBytes(tempDir, 'immersion_shot.jpg', small);
-        degradedToStill = true;
+        degradedToStill = req.hasRange; // 审查 W：无区间(无cue)截当前帧不算降级，不弹「降级为静态」OSD
       }
     }
     String? audioPath;
@@ -320,14 +321,76 @@ git commit -m "feat(mining): add injectable ImmersionMiningEngine (extracted min
 
 **Files:** Modify `hibiki/lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart:269-464`
 
-- [ ] **Step 1: 改 `_mineVideoCard`**：保留 `_resolveVideoMiningRange`/OSD/`_recordMinedForVideo`/`describeMineOutcome`/deckName 取法 不变；把 L285-441 的媒体抽取+落卡替换为构造 `ImmersionMiningRequest`（mediaSource: controller.videoPath（Task 1.3 后改 controller.miningSource）、stillFallback: controller.screenshot、requireAudio: true、audioStreamIndex: controller.currentAudioStreamIndex、audioStreamCount: controller.realAudioStreamCount、bookTitleTag: appModel.autoAddBookNameToTags ? BaseAnkiRepository.sanitizeTitleTag(_title) : null、updateNoteId）→ `ImmersionMiningEngine().mine(..., compression: MiningMediaCompression.forCompressionEnabled(appModel.compressMiningMedia), tempDir: (await getTemporaryDirectory()).path, repo: ref.read(ankiRepositoryProvider), onFailure: _showOsd)`；res.aborted → return const MinePopupResult()；成功且 updateNoteId==null → _recordMinedForVideo()；describeMineOutcome + _showOsd 保持原样。
-- [ ] **Step 2: 现有视频/制卡测试** → （在 `hibiki/`）`flutter test test/media/video/ test/mining/`（PASS，不回归）。
-- [ ] **Step 3: analyze** → `flutter analyze lib/src/pages/implementations/video_hibiki/ lib/src/mining/`（No issues）。
-- [ ] **Step 4: 提交**
+- [ ] **Step 1: 改 `_mineVideoCard`**：保留 `_resolveVideoMiningRange`/OSD/`_recordMinedForVideo`/`describeMineOutcome`/deckName 取法（`(await repo.loadSettings()).selectedDeckName ?? ''`）不变；把 L285-441 的媒体抽取+落卡替换为构造 `ImmersionMiningRequest` 并委托引擎。**必须逐项对齐原行为（审查 Critical）**：
+
+```dart
+final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+  ImmersionMiningRequest(
+    fields: fields,
+    mediaSource: controller.miningSource,          // Task 1.3 后 = videoPath 或 YouTube 流 URL
+    clipStartMs: clipStartMs,
+    clipEndMs: clipEndMs,
+    sentence: sentence,
+    cueSentence: cueSentence,
+    documentTitle: _videoMiningDocumentTitle(),     // 审查 C-必修：保住 TODO-761 播放列表「系列名 - 剧集名」
+    audioStreamIndex: controller.currentAudioStreamIndex,
+    audioStreamCount: controller.realAudioStreamCount,
+    bookTitleTag: appModel.autoAddBookNameToTags ? BaseAnkiRepository.sanitizeTitleTag(_title) : null,
+    updateNoteId: updateNoteId,
+    stillFallback: controller.screenshot,
+    requireAudio: true,
+  ),
+  compression: MiningMediaCompression.forCompressionEnabled(appModel.compressMiningMedia),
+  tempDir: (await getTemporaryDirectory()).path,
+  repo: ref.read(ankiRepositoryProvider),
+  onFailure: (String s) => _showOsd(s),             // GIF/帧/音频失败摘要（含降级为静态的 reason）
+);
+if (res.aborted) {
+  // 审查必修：原 L403 无音频中止会弹 card_export_failed_detail OSD——不能丢，否则回到 TODO-390 盲区
+  _showOsd(t.card_export_failed_detail, prominent: true); // 用原中止路径同一条 OSD 文案
+  return const MinePopupResult();
+}
+final MineOutcome outcome = res.outcome! as MineOutcome;
+final described = describeMineOutcome(outcome, deckName, overwrite: updateNoteId != null);
+if (described.record) unawaited(_recordMinedForVideo()); // 审查必修：走 described.record（=!overwrite&&success），不要手拼 success&&updateNoteId==null
+_showOsd(described.message, prominent: true);
+return outcome.result == MineResult.success
+    ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
+    : const MinePopupResult();
+```
+
+  > 落地核对：`t.card_export_failed_detail` 用原 `_mineVideoCard` L403 的同一 OSD 文案 key（照原文引用，别新造）；`_recordMinedSentenceForVideo`（原 L208 附近）若在被抽取范围外则保持原调用点不动。
+- [ ] **Step 2: 加源码扫描守卫测试**（审查必修：给「零行为变更」立证据，防 documentTitle/record 回归）
+
+Create `hibiki/test/mining/video_mine_delegate_guard_test.dart`：读 `lookup_mining.part.dart` 源码断言委托保住了关键行为——
+
+```dart
+import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final String src = File('lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart').readAsStringSync();
+  test('delegate passes playlist documentTitle (TODO-761 guard)', () {
+    expect(src.contains('documentTitle: _videoMiningDocumentTitle()'), isTrue);
+  });
+  test('accounting stays on describeMineOutcome().record, not hand-rolled', () {
+    expect(src.contains('described.record'), isTrue);
+    expect(src.contains('success && updateNoteId == null'), isFalse);
+  });
+  test('aborted branch still surfaces an OSD (no silent failure)', () {
+    // res.aborted 分支必须弹 OSD（card_export_failed_detail），不能静默返回。
+    expect(RegExp(r'res\.aborted[\s\S]{0,200}_showOsd').hasMatch(src), isTrue);
+  });
+}
+```
+
+- [ ] **Step 3: 现有视频/制卡测试 + 守卫** → （在 `hibiki/`）`flutter test test/media/video/ test/mining/`（PASS，不回归；守卫 3 条绿）。
+- [ ] **Step 4: analyze** → `flutter analyze lib/src/pages/implementations/video_hibiki/ lib/src/mining/`（No issues）。
+- [ ] **Step 5: 提交**
 
 ```
-git add hibiki/lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart
-git commit -m "refactor(video): route _mineVideoCard through ImmersionMiningEngine (TODO-1000)"
+git add hibiki/lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart hibiki/test/mining/video_mine_delegate_guard_test.dart
+git commit -m "refactor(video): route _mineVideoCard through ImmersionMiningEngine + guards (TODO-1000)"
 ```
 
 ---
@@ -389,7 +452,7 @@ void main() {
       expect(cues[1].endMs, 5500);
     });
     test('decodes entities and skips empty', () {
-      const xml = '<transcript><text start="0" dur="1">&amp;#39;</text><text start="1" dur="1"></text></transcript>';
+      const xml = '<transcript><text start="0" dur="1">&#39;</text><text start="1" dur="1"></text></transcript>';
       final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:x');
       expect(cues.length, 1);
       expect(cues[0].text, "'");
@@ -509,12 +572,16 @@ String? get miningSource => _miningSourceOverride ?? videoPath;
 
 - [ ] **Step 2: Phase 0 的 mediaSource 改用 controller.miningSource**（lookup_mining.part.dart）。
 - [ ] **Step 3: 视频源装配处加 YouTube 分支**：在 isPlayableStreamUrl(url) 附近加 `if (isYoutubeUrl(url)) { final r = await resolveYoutubeSource(url); await applyHttpHeaderFieldsToPlayer(player, r.httpHeaders); await player.open(Media(r.streamUrl, httpHeaders: r.httpHeaders), play: true); controller.setCues(r.cues); controller.setMiningSourceOverride(r.streamUrl); /* title=r.title */ }`（按真实装配点适配 Media 构造与 player 获取）。
+- [ ] **Step 3b: YouTube 流 URL 过期处理（审查新增风险：看久了再制卡，签名 URL 已失效）**
+
+YouTube muxed(googlevideo) URL 带时效签名（数小时）。`controller.miningSource` 存的流 URL 可能在制卡时已过期 → ffmpeg `-ss` 抓取失败 → 无音频 → 引擎 `aborted`，用户困惑。处理：在 `_mineVideoCard` 委托前，若 `controller.miningSource` 是 YouTube 流 URL 且距解析已超阈值（记录 `controller.setMiningSourceOverride` 时的时间戳，比如 > 30 分钟），先 `await resolveYoutubeSource(originalYoutubeUrl)` 刷新 `controller.setMiningSourceOverride(fresh.streamUrl)` 再制卡；或制卡 `res.aborted` 且源为 YouTube 时，OSD 提示 `t.stream_link_expired_refresh`（新 i18n key，走 `tool/i18n_sync.dart --add`）。`VideoPlayerController` 加 `String? _youtubeSourceUrl`（原始 watch URL）+ `DateTime? _miningSourceResolvedAt` 供判定。**优先自动 re-resolve，OSD 兜底。**
+
 - [ ] **Step 4: analyze + 现有视频测试** → `flutter analyze lib/src/media/video/ && flutter test test/media/video/`（No issues + PASS）。
 - [ ] **Step 5: 提交**
 
 ```
-git add hibiki/lib/src/media/video/ hibiki/lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart
-git commit -m "feat(video): play YouTube via resolved stream + cues; mine from stream url (TODO-1000)"
+git add hibiki/lib/src/media/video/ hibiki/lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart hibiki/lib/i18n/
+git commit -m "feat(video): play YouTube via resolved stream + cues; mine from stream url + stale-url re-resolve (TODO-1000)"
 ```
 
 - [ ] **Step 6: 真机验证（声明「修好了」前必做）**：桌面/模拟器打开日文字幕 YouTube → 字幕显示 → shift-hover/点词弹 Hibiki 词典卡 → 一键制卡 → Anki 卡带 GIF+音频+句子，制卡时视频不回放。留证据（docs/agent/integration-testing.md）。
@@ -595,13 +662,32 @@ git commit -m "feat(webext): per-site subtitle+timestamp adapters (netflix) (TOD
 
 **Files:** Modify `tools/browser-extension/manifest.json`（注入 subtitle-adapters.js + activeTab 权限）、`tools/browser-extension/content.js`、`tools/browser-extension/background.js`
 
-- [ ] **Step 1: manifest**：content_scripts[0].js 里在 scan.js 前加 `"subtitle-adapters.js"`；permissions 加 `"activeTab"`（供 captureVisibleTab）。
-- [ ] **Step 2: content.js 制卡携带字幕+timestamp+videoId**：挖词处（现有发 {type:'mine'} 的位置）扩展：`const v = netflixVideoEl(); chrome.runtime.sendMessage({ type:'mine', fields, sentence: extractNetflixCueText(netflixSubtitleContainer()), timestampMs: currentVideoTimeMs(v), netflixVideoId: netflixVideoIdFromPath(location.pathname) });`
+- [ ] **Step 1: manifest**：content_scripts[0].js 里在 `bridge-shim.js` 之后、`scan.js` 之前加 `"subtitle-adapters.js"`（与 bridge-shim.js 同 content-script isolated world，顶层 function 互相可见）；permissions 加 `"activeTab"`（供 captureVisibleTab）。
+- [ ] **Step 2: 在 `bridge-shim.js` 的 `mineEntry` 分支携带字幕+timestamp+videoId（审查 W1：真正发 `{type:'mine'}` 的是 bridge-shim.js，不是 content.js）**
+
+现状 `bridge-shim.js` `case 'mineEntry'` 是 `chrome.runtime.sendMessage({type:'mine', fields: args[0], sentence: args[0].popupSelectionText||''})`。扩展为：
+
+```js
+case 'mineEntry': {
+  const v = (typeof netflixVideoEl === 'function') ? netflixVideoEl() : null;
+  const cueText = (typeof extractNetflixCueText === 'function') ? extractNetflixCueText(netflixSubtitleContainer()) : '';
+  chrome.runtime.sendMessage({
+    type: 'mine',
+    fields: args[0],
+    sentence: cueText || (args[0].popupSelectionText || ''),  // 优先当前字幕整句，回落原选中文本
+    timestampMs: (typeof currentVideoTimeMs === 'function') ? currentVideoTimeMs(v) : null,
+    netflixVideoId: (typeof netflixVideoIdFromPath === 'function') ? netflixVideoIdFromPath(location.pathname) : null,
+  });
+  break;
+}
+```
+
+（用 `typeof ... === 'function'` 守卫：非流媒体页面（无 subtitle-adapters 加载或非 Netflix）时优雅回落到原纯文本挖词，不破坏现有行为。）
 - [ ] **Step 3: background.js 截图 + 转发**：type:'mine' 分支 `let shot=null; try{shot=await chrome.tabs.captureVisibleTab(null,{format:'jpeg',quality:85});}catch(_){}` → `const base64 = shot ? shot.split(',')[1] : null;` → POST base+'/api/mine' body {fields:msg.fields, sentence:msg.sentence||'', timestampMs:msg.timestampMs??null, netflixVideoId:msg.netflixVideoId??null, screenshotBase64:base64}。黑帧不阻塞（仍出文本卡）。
 - [ ] **Step 4: 提交**
 
 ```
-git add tools/browser-extension/manifest.json tools/browser-extension/content.js tools/browser-extension/background.js
+git add tools/browser-extension/manifest.json tools/browser-extension/bridge-shim.js tools/browser-extension/background.js
 git commit -m "feat(webext): report subtitle+timestamp+screenshot on mine (netflix 2A) (TODO-1000)"
 ```
 
@@ -694,8 +780,45 @@ class ImmersionMinePayload {
 
 - [ ] **Step 4: 运行确认通过** → PASS（3 tests）。
 
-- [ ] **Step 5: `_handleMine` 走引擎**（截图字节作封面、requireAudio=false）：`_handleMine` 解析 ImmersionMinePayload；若 screenshotBytes!=null || timestampMs!=null 走沉浸路径——`ImmersionMiningEngine().mine(ImmersionMiningRequest(fields: payload.fields, mediaSource: null, clipStartMs: 0, clipEndMs: 0, sentence: payload.sentence, providedCoverBytes: payload.screenshotBytes, providedCoverName: 'netflix_shot.jpg', requireAudio: false, source: AnkiMiningSource.video, documentTitle: payload.documentTitle ?? 'Netflix'), compression: MiningMediaCompression.forCompressionEnabled(true), tempDir: Directory.systemTemp.path, repo: <miningService 提供的 repo>)`；否则回落现有 svc.mineEntry(fields, sentence)（向后兼容）。响应仍 {result: <MineResult name>}。
-  > 落地核对：server 侧拿 BaseAnkiRepository——HibikiRemoteMiningService（hibiki_sync_server.dart 构造注入）若未暴露 repo，给它加 `Future<MineResult> mineImmersion(ImmersionMinePayload payload)` seam（内部调引擎），保持 server 只解析+转发，不在 server 层直接 new 引擎。
+- [ ] **Step 5: 加 `mineImmersion` seam（审查 Critical：唯一路径，server 不 new 引擎、不碰 repo）**
+
+已核实 `HibikiRemoteMiningService`（`hibiki_remote_lookup_service.dart:19`）是**窄接口**，只有 `Future<String> mineEntry({required Map<String,String> fields, required String sentence})`，**不暴露 `BaseAnkiRepository`**（注释明写避免 server 依赖 AnkiRepository）。因此 server 层**不能** new 引擎。改为给该接口加一个方法（返回类型对齐现有 `mineEntry` = `Future<String>`，即 `MineResult.name`）：
+
+```dart
+// hibiki_remote_lookup_service.dart（HibikiRemoteMiningService 接口）
+Future<String> mineImmersion(ImmersionMinePayload payload);
+```
+
+实现在 `_AppModelRemoteLookupService`（`app_model.dart:4106` 附近，与现有 `mineEntry` L4116 同层）——它内部 `createAnkiRepository()` 有 repo，在此调引擎：
+
+```dart
+@override
+Future<String> mineImmersion(ImmersionMinePayload payload) async {
+  final BaseAnkiRepository repo = createAnkiRepository();
+  final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+    ImmersionMiningRequest(
+      fields: payload.fields,
+      mediaSource: null,                         // 2A：无本地源，只用截图字节
+      clipStartMs: 0, clipEndMs: 0,
+      sentence: payload.sentence,
+      documentTitle: payload.documentTitle ?? 'Netflix',
+      providedCoverBytes: payload.screenshotBytes,
+      providedCoverName: 'netflix_shot.jpg',
+      requireAudio: false,                       // 允许无音频截图卡
+      source: AnkiMiningSource.video,
+    ),
+    compression: MiningMediaCompression.forCompressionEnabled(true),
+    tempDir: Directory.systemTemp.path,
+    repo: repo,
+  );
+  if (res.aborted) return MineResult.error.name;
+  return (res.outcome! as MineOutcome).result.name;
+}
+```
+
+`_handleMine`（`hibiki_sync_server.dart:655`）：解析 `ImmersionMinePayload`；若 `payload.screenshotBytes != null || payload.timestampMs != null` → `final String result = await _miningService.mineImmersion(payload);`（seam，`_miningService` 可空则回落）；否则走现有 `_miningService.mineEntry(fields:, sentence:)`（向后兼容纯文本挖词）。响应恒为 `{'result': result}`（String，与现有契约逐字一致）。**server 层只解析 + 转发，不 import 引擎、不碰 repo。**
+
+- [ ] **Step 5b: 移动端回落声明**（审查 Info）：`mineImmersion` 的引擎路径在 `mediaSource==null` 时**不触发 ffmpeg**（引擎抽取全 gate 在 `src != null`），仅写截图字节；移动端 server 收到无 screenshot 的纯 `{fields,sentence}` 仍走现有 `mineEntry` 纯文本回落，不依赖 ffmpeg/桌面能力。
 
 - [ ] **Step 6: analyze + server 测试** → `flutter analyze lib/src/sync/ && flutter test test/sync/`（No issues + PASS；纯文本挖词向后兼容不回归）。
 - [ ] **Step 7: 提交**
@@ -719,6 +842,10 @@ git commit -m "feat(sync): /api/mine consumes screenshot+timestamp via engine (n
 
 - [ ] **Step 1: 探针**：手工做一个隐藏、禁 GPU 的 WebView2（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--disable-gpu --disable-accelerated-video-decode`），登录 Netflix，Navigate(watch/<id>?t=<sec>)，用注入脚本运行 canvas `drawImage(video)` + `toDataURL` 取一帧，落盘查看是否**非黑**。
 - [ ] **Step 2: 结论落文档**：非黑 → 2B 成立，继续 2B.1；黑 → 2B 不可行，**止步于 2A**，在本计划与设计文档标注「Netflix 音频/GIF 受 DRM 输出保护，后台软解仍黑，2B 关闭」。**不硬做。**
+
+### Task 2B.0b：后台实例首次可见登录流程（审查新增：隐藏窗用户无法登录）
+
+隐藏屏外 WebView2 首次访问 Netflix 是**未登录**态 → 恒黑 → 白做。因此在 2B 首次使用（该实例 User Data Folder 无 Netflix cookie）时，必须先**把该实例窗口临时显示为可见前台**，让用户在里面登录一次；登录持久化到该实例的 User Data Folder 后，后续 capture 复用。实现：`ImmersionCaptureChannel.ensureLoggedIn()`（可见窗导航到 `netflix.com/login`，用户登录后关窗）；`capture` 前检测未登录（页面重定向到 /login 或无 profile）则先弹 `ensureLoggedIn` + OSD 引导。**首次一次性，之后静默。**
 
 ### Task 2B.1：Dart↔native 通道 + 后台实例骨架（Windows）
 
@@ -776,7 +903,23 @@ git commit -m "feat(mining): background software-decode capture instance (netfli
 
 **Files:** Modify `hibiki/lib/src/sync/hibiki_sync_server.dart`（`_handleMine` 沉浸分支 / mineImmersion seam）；Test `hibiki/test/sync/immersion_mine_payload_test.dart`（补降级路径单测）
 
-- [ ] **Step 1: 带 clip 区间 + videoId 时调后台实例**：沉浸分支若 netflixVideoId!=null && clipStartMs!=null && clipEndMs!=null，`final cap = await ImmersionCaptureChannel.capture(...)`；cap.error==null → 引擎 providedCoverBytes: cap.gifBytes ?? payload.screenshotBytes, providedAudioBytes: cap.audioBytes, requireAudio: cap.audioBytes!=null；cap.error!=null → 降级用 payload.screenshotBytes（2A 截图卡），响应标 degraded:true。把这段抽成可注入 capture 函数的纯逻辑 `resolveImmersionMedia(payload, captureFn)` 便于单测。
+- [ ] **Step 1: 在 `mineImmersion` seam 里接后台实例（server 仍只转发，seam 返回 String）**
+
+扩展 Task 2A.3 的 `mineImmersion` 实现（`_AppModelRemoteLookupService`，有 repo + 可调 channel）：若 `payload.netflixVideoId != null && payload.clipStartMs != null && payload.clipEndMs != null`，先 `final cap = await ImmersionCaptureChannel.capture(netflixVideoId: payload.netflixVideoId!, clipStartMs: payload.clipStartMs!, clipEndMs: payload.clipEndMs!)`；再据 cap 组请求：
+
+```dart
+// 纯逻辑，注入 captureFn 便于单测：给定 payload + capture 结果 → 引擎请求
+ImmersionMiningRequest buildImmersionRequest(ImmersionMinePayload p, ImmersionCaptureResult cap) => ImmersionMiningRequest(
+  fields: p.fields, mediaSource: null, clipStartMs: 0, clipEndMs: 0, sentence: p.sentence,
+  documentTitle: p.documentTitle ?? 'Netflix', source: AnkiMiningSource.video,
+  providedCoverBytes: cap.error == null ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes, // 后台失败→降级截图
+  providedCoverName: cap.gifBytes != null && cap.error == null ? 'netflix_clip.gif' : 'netflix_shot.jpg',
+  providedAudioBytes: cap.error == null ? cap.audioBytes : null,
+  requireAudio: cap.error == null && cap.audioBytes != null, // 有音频才要求；降级/无音频→false 不中止
+);
+```
+
+seam 用它调引擎，返回 `(res.outcome as MineOutcome).result.name`（String，与 2A/现有契约一致）。`_handleMine` 不变（仍只 `await _miningService.mineImmersion(payload)` 转发）。**server 层不 new 引擎、不调 channel、不碰 repo。**
 - [ ] **Step 2: 降级路径单测**（注入 fake capture 返 error → 断言回落 screenshotBytes、requireAudio=false）。
 - [ ] **Step 3: analyze + server 测试** → `flutter analyze lib/src/sync/ lib/src/mining/ && flutter test test/sync/`（No issues + PASS）。
 - [ ] **Step 4: 提交**
@@ -811,3 +954,28 @@ git commit -m "feat(sync): route netflix clip mine to background capture w/ scre
 - (d) captureVisibleTab 需 activeTab 权限，Netflix 非黑帧依赖用户关硬件加速（平台约束，doc 已证实）。
 - (e) downsampleCardScreenshot 真实 import 路径需 grep 核对。
 - (f) YouTube 播放走 libmpv 直吃流 URL 的稳定性（清晰度/限流/过期链接）需真机验证。
+
+---
+
+## 审查修订记录（2026-07-01，三路子代理审查后）
+
+三路审查（签名核对 / 架构根因兼容 / 可执行性TDD占位符）结论均为「需修正后执行」，方向正确。已全部修订：
+
+| # | 审查发现（严重度） | 处置 |
+|---|---|---|
+| 1 | 引擎实现漏 import `downsampleCardScreenshot`（真身在 `card_screenshot_downsampler.dart:48`，非 desktop_audio_clipper.dart）→ 编译失败 (Critical) | 引擎代码块补 `import '../utils/misc/card_screenshot_downsampler.dart';`（签名 `(Uint8List, {int maxLongEdge=1000, int quality=90})` 已核实一致） |
+| 2 | 引擎测试 `show MiningMediaCompression` 挡掉 `FfmpegFailureReporter` → 测试编译失败 (Critical) | 改 `show MiningMediaCompression, FfmpegFailureReporter` |
+| 3 | YouTube 实体测试 `&amp;#39;` 经单遍 html_unescape 得不到 `'` → 测试必失败 (Critical) | 测试 XML 改为 `&#39;`（真实 timedtext 形态），单遍解码得 `'` |
+| 4 | Task 0.3 委托漏 `documentTitle: _videoMiningDocumentTitle()` → 破坏 TODO-761 播放列表标题 (Critical) | Task 0.3 给出完整委托代码块，显式传 `documentTitle: _videoMiningDocumentTitle()` |
+| 5 | 记账手拼 `success && updateNoteId==null` 违反「不重写」→ 应走 `describeMineOutcome().record` (Critical) | Task 0.3 改用 `if (described.record) unawaited(_recordMinedForVideo())` |
+| 6 | `aborted` 分支丢了原 `card_export_failed_detail` OSD → 制卡失败无反馈回归 (Critical) | Task 0.3 `res.aborted` 分支补弹原 OSD 文案 |
+| 7 | `degradedToStill` 无条件置 true，丢了原「无区间不算降级」语义 (Warning) | 引擎 stillFallback 分支改 `degradedToStill = req.hasRange` |
+| 8 | server 拿不到 repo（`HibikiRemoteMiningService` 窄接口，已核实）→ seam 是唯一路径 (Critical) | Task 2A.3 明确加 `Future<String> mineImmersion(payload)` seam，实现在 `_AppModelRemoteLookupService`（有 repo），server 只转发、不 new 引擎不碰 repo |
+| 9 | seam 返回类型未钉死 (Warning) | 钉为 `Future<String>`（= `MineResult.name`），对齐现有 `mineEntry`，`_handleMine` 恒返 `{result: String}` |
+| 10 | Task 2A.2 改动点误指 content.js（真正发 `{type:'mine'}` 的是 `bridge-shim.js`）(Warning) | 改动重定位到 `bridge-shim.js` 的 `mineEntry` 分支 + `typeof ... === 'function'` 优雅回落 |
+| 11 | YouTube 流 URL 过期 → 制卡时失效、无声中止 (Critical，新风险) | Task 1.3 Step 3b：制卡前按时间阈值自动 re-resolve；`aborted` 且源为 YouTube 时 OSD `stream_link_expired_refresh` 兜底 |
+| 12 | 2B 隐藏窗首次无法登录 Netflix → 恒黑白做 (Warning，新风险) | Task 2B.0b：首次「可见登录」流程（`ensureLoggedIn`），持久化后静默复用 |
+| 13 | 移动端 server 无 ffmpeg/引擎依赖 (Info) | Task 2A.3 Step 5b：`mineImmersion` 在 `mediaSource==null` 不触发 ffmpeg；无 screenshot 走纯文本回落 |
+| 14 | Phase 0「零行为变更」缺证据 (Warning) | Task 0.3 Step 2：加源码扫描守卫测试（documentTitle / described.record / aborted OSD 三条） |
+
+**审查确认的非问题（无需改）**：typedef tearoff 带默认值赋给无默认值 typedef 合法（默认值不属函数静态类型）；`_FakeRepo implements BaseAnkiRepository` + `noSuchMethod` 可编译；`AnkiMiningContext` 仅 `sentence` 必填；payload/subtitle-adapters/timedtext 正则测试自洽；ffmpeg 三函数 + `MineOutcome`/`MineResult` 签名逐字匹配；deckName 取法 `(await repo.loadSettings()).selectedDeckName ?? ''` 属实。
