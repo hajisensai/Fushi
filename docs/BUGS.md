@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 503 条。点号进各自文件。
+> 共 504 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-518](bugs/BUG-518-global-lookup-hotkey-unregister.md) | ✅ | ✅ | Windows 应用外全局查词唤不出来（热键被全局 unregisterAll 误伤） |
 | [BUG-517](bugs/BUG-517-updates-installer-not-recycled.md) | ✅ | ✅ | 更新安装包安装成功后未回收 |
 | [BUG-516](bugs/BUG-516-vn-mode-mask-tiny-image.md) | ✅ | ✅ | VN模式常驻遮罩且图片极小 |
 | [BUG-515](bugs/BUG-515-media-sources-rescan-scope.md) | ✅ | ✅ | 媒体来源重扫跨async读已销毁ProviderScope崩溃 |

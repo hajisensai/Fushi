@@ -24,6 +24,7 @@ import 'package:hibiki/src/lookup/global_lookup_stack.dart';
 import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -193,8 +194,18 @@ class GlobalLookupController {
       await hotKeyManager.register(hotKey, keyDownHandler: (_) => _onHotKey());
       glog('hotkey: registered ${set.keyboardBindings.first.displayLabel} '
           'from registry OK');
-    } catch (e) {
+    } catch (e, st) {
       glog('hotkey: register FAILED: $e');
+      // TODO-1086 可见化：全局查词热键注册失败过去只写进 glog 临时诊断文件，用户/开发者
+      // 都看不到「应用外查词唤不出来」的真正原因（热键没注册上）。这里额外把失败记进
+      // ErrorLogService（用户可见的错误日志页 + 随复制/上传链路带走），让此失败成为可诊断
+      // 项而不是静默吞掉。别的注册/系统热键冲突（另一个 app 已占用同一组合键）也会经此暴露。
+      ErrorLogService.instance.log(
+        'GlobalLookupController.registerHotKey',
+        'Failed to register global lookup hotkey '
+            '${set.keyboardBindings.first.displayLabel}: $e',
+        st,
+      );
     }
   }
 

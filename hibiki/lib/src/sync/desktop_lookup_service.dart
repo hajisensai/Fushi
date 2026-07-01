@@ -163,7 +163,15 @@ class DesktopLookupService extends ChangeNotifier
     windowManager.removeListener(this);
     clipboardWatcher.removeListener(this);
     await clipboardWatcher.stop();
-    await hotKeyManager.unregisterAll();
+    // TODO-1086 根因：这里过去调**全局** hotKeyManager.unregisterAll()，会连带注销
+    // 本进程里其它服务注册的系统热键——尤其是应用外全局查词（GlobalLookupController
+    // 的 Ctrl+Alt+D）。本服务（老的 Ctrl+Shift+D 剪贴板/热键查词）一旦在全局查词热键
+    // 注册后被 stop/restart，就会把 Ctrl+Alt+D 一并抹掉，导致「应用外查词唤不出来」。
+    // 改为只注销自己持有的那个热键（per-hotkey），互不干扰。
+    final HotKey? hotKey = _hotKey;
+    if (hotKey != null) {
+      await hotKeyManager.unregister(hotKey);
+    }
     _hotKey = null;
     if (_windowMode == DesktopClipboardWindowMode.lookup) {
       await _setAlwaysOnTop(false);
