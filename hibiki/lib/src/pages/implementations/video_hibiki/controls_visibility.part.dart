@@ -27,12 +27,20 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
   /// 无此问题），故仅桌面派发。[_videoControlsContext] 是 controls 子树 context
   /// （全屏复用同一 builder 时为全屏子树），其 RenderBox 即控制条命中区。
   void _pokeControlsVisible() {
-    if (!_isDesktopVideoControls) return;
-    // 强压制态下不派合成 hover，避免控制条和 rail 被 poke 拉回。
+    // 强压制态下不续命控制条，避免控制条和 rail 被 poke 拉回（桌面/移动同门控——门控成立
+    // 时控制条本被遮住/压制，续命只会打架）。门控检查提前到平台无关处（TODO-1059）：桌面
+    // 派合成 hover，移动端改发 [_restartHideTimerSignal]（fork 侧续命隐藏 Timer）。
     if (_immersiveLocked.value) return;
     if (_videoSidePanel.value != null) return;
     if (_subtitleListVisible.value) return;
     if (_videoControlEditMode.value) return;
+    if (!_isDesktopVideoControls) {
+      // 移动端：底部按钮栏按下时经此续命 media_kit 隐藏 Timer（fork 只在整屏 tap / seek 时
+      // 重置，按按钮不重置 → 手指还在按控制条却隐藏 = 误触）。移动无 hover 语义，故不派合成
+      // hover，改边沿触发信号，fork 的 [restartHideTimerSignal] 监听在可见态重排 Timer。
+      _restartHideTimerSignal.poke();
+      return;
+    }
     final BuildContext? ctx = _videoControlsContext;
     if (ctx == null || !ctx.mounted) return;
     final RenderObject? renderObject = ctx.findRenderObject();

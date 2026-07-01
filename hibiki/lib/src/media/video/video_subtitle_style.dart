@@ -126,6 +126,21 @@ double videoSubtitleControlsReserve({
   return (bottom: trackCenter - tickHeight / 2, height: tickHeight);
 }
 
+/// 字幕背景盒的**默认底色**（TODO-1059 方案A）：固定半透明黑，而非跟随
+/// `ColorScheme.surface`。
+///
+/// 根因：字幕盒底色此前默认取当前主题 `surface`（[VideoSubtitleStyle.backgroundColor]
+/// 为 null 时由页面喂进 `cs.surface`）。浅色主题 `surface` 近白 → 字幕背景变成一块浅色
+/// 板，与白色字幕正文对比极低、观感违和（用户报「浅色主题下变浅色背景很违和」）。字幕
+/// 背景的语义是「在任意画面上给正文垫一层稳定的暗底提升可读性」，本就该像 ASS/播放器
+/// 惯例那样固定暗色、不跟随 App 主题（与固定白字 + 黑描边同源，TODO-051）。
+///
+/// 只在 `backgroundColor == null`（用户从未显式选过背景色）时生效：显式选过颜色的旧
+/// 用户数据（非 null）仍逐字尊重，不被本默认覆盖（Never break userspace）。透明度仍由
+/// [VideoSubtitleStyle.backgroundOpacity] 独立控制（0 = 完全无背景）。`0xFF000000`
+/// 纯黑，实际可见透明度由 opacity 决定。
+const Color kDefaultSubtitleBackgroundColor = Color(0xFF000000);
+
 /// Video subtitle appearance persisted as app preferences.
 ///
 /// The default is a high-contrast caption look: fixed white text with a thick
@@ -134,7 +149,9 @@ double videoSubtitleControlsReserve({
 /// default thickness can follow the global UI size, while explicit user choices
 /// remain fixed. [textColor]/[shadowColor] left null means "follow the theme"
 /// (legacy data persisted before TODO-051), resolved via [resolveTextColor] /
-/// [resolveShadowColor].
+/// [resolveShadowColor]. [backgroundColor] left null means "use the fixed
+/// [kDefaultSubtitleBackgroundColor] translucent black" (TODO-1059 方案A), NOT
+/// the theme surface — so a light theme no longer washes the subtitle box pale.
 @immutable
 class VideoSubtitleStyle {
   const VideoSubtitleStyle({
@@ -203,6 +220,10 @@ class VideoSubtitleStyle {
     Color? backgroundColor,
     double? backgroundOpacity,
     double? bottomPadding,
+    // [backgroundColor] 与 null 语义冲突：`null` 既是「不改」又是「显式清空跟随默认黑」。
+    // 用显式 [resetBackgroundColor] 标志区分——true 时把 [backgroundColor] 强制清成 null
+    // （回到 [kDefaultSubtitleBackgroundColor] 固定默认），供设置面板「默认（黑）」选项用。
+    bool resetBackgroundColor = false,
   }) {
     return VideoSubtitleStyle(
       fontSize: fontSize ?? this.fontSize,
@@ -210,7 +231,9 @@ class VideoSubtitleStyle {
       fontWeight: fontWeight ?? this.fontWeight,
       shadowColor: shadowColor ?? this.shadowColor,
       shadowThickness: shadowThickness ?? this.shadowThickness,
-      backgroundColor: backgroundColor ?? this.backgroundColor,
+      backgroundColor: resetBackgroundColor
+          ? null
+          : (backgroundColor ?? this.backgroundColor),
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       bottomPadding: bottomPadding ?? this.bottomPadding,
     );

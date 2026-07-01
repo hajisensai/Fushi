@@ -371,7 +371,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
 
         final Color backgroundColor = widget.backgroundOpacity <= 0
             ? Colors.transparent
-            : (widget.backgroundColor ?? Theme.of(context).colorScheme.surface)
+            // TODO-1059 方案A：未显式设背景色时用固定半透明黑
+            // ([kDefaultSubtitleBackgroundColor])，不再跟随主题 `surface`（浅色
+            // 主题近白会让字幕背景泛白）。页面路径恒传非 null（已由
+            // [_subtitleBackgroundColor] 解析成该常量）；此 `??` 兜底测试/直接
+            // 构造场景，二者同色。
+            : (widget.backgroundColor ?? kDefaultSubtitleBackgroundColor)
                 .withValues(alpha: widget.backgroundOpacity);
         Widget box = DecoratedBox(
           decoration: BoxDecoration(

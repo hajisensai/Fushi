@@ -62,6 +62,38 @@ old mirror + second timer.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_visibility_notifier_guard_test.dart`.
 
+## TODO-1059: restart auto-hide timer on host signal (`restartHideTimerSignal`)
+
+`lib/media_kit_video_controls/src/controls/material.dart` only, both the theme
+data class (`MaterialVideoControlsThemeData`) and the mobile control State
+(`_MaterialVideoControlsState`).
+
+On mobile the controls' auto-hide `Timer` is only reset by a full-screen tap
+(`onTap`) or a seek gesture. Pressing the bottom button-bar buttons (play /
+skip-forward / skip-back) runs each button's own `onPressed` and never resets
+the timer, so the controls vanish `controlsHoverDuration` after the last tap
+even while the user is still pressing a button — the finger then lands on the
+video underneath and mis-triggers a play/pause (users reported "the menu keeps
+auto-hiding while I press the fast-forward/back buttons").
+
+The patch adds an optional `final Listenable? restartHideTimerSignal;` to
+`MaterialVideoControlsThemeData` (wired through its constructor and `copyWith`).
+The mobile State subscribes to it in `didChangeDependencies` (re-binding when
+the theme's listenable identity changes) and detaches in `dispose`. On fire, the
+new `void _restartHideTimer()` — only while already `visible` — cancels and
+reschedules the hide `Timer` for another `controlsHoverDuration`, mirroring the
+visible-branch reset in `onTap` but **without** toggling visibility (a press on a
+visible button keeps the controls up; it never un-hides them). When no signal is
+injected the behaviour is identical to pub.dev.
+
+Hibiki injects one `ChangeNotifier` (`_RestartHideTimerSignal`) through the
+mobile controls theme (`restartHideTimerSignal:` in `_mobileControlsTheme`) and
+pokes it from the bottom button presses via `_pokeControlsVisible()` (which, on
+mobile, now fires this signal instead of the desktop synthetic-hover path — see
+`controls_visibility.part.dart`).
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_restart_hide_timer_guard_test.dart`.
+
 ## TODO-565: notify host on user seek-bar interaction (`onSeekStart`)
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart` and

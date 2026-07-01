@@ -2087,6 +2087,48 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   }
 
   // ── 字幕：模糊 + 外观（字号/背景不透明度/位置 + 重置）─────────────────
+  /// TODO-1059 方案B：字幕背景色离散预设。`color==null` = 「默认（黑）」（走
+  /// [kDefaultSubtitleBackgroundColor] 固定黑）；其余为显式颜色。顺序即选择器顺序，
+  /// 与 [_bgColorOptionIndex] 反查一致。颜色用不透明 ARGB（`0xFF...`），实际可见透明度
+  /// 由 [VideoSubtitleStyle.backgroundOpacity] 决定，故这里存纯色即可。
+  List<({Color? color, String label})> get _bgColorPresets =>
+      <({Color? color, String label})>[
+        (color: null, label: t.video_setting_subtitle_bg_color_default),
+        (
+          color: const Color(0xFFFFFFFF),
+          label: t.video_setting_subtitle_bg_color_white
+        ),
+        (
+          color: const Color(0xFF808080),
+          label: t.video_setting_subtitle_bg_color_gray
+        ),
+        (
+          color: const Color(0xFFD32F2F),
+          label: t.video_setting_subtitle_bg_color_red
+        ),
+        (
+          color: const Color(0xFF1976D2),
+          label: t.video_setting_subtitle_bg_color_blue
+        ),
+        (
+          color: const Color(0xFF388E3C),
+          label: t.video_setting_subtitle_bg_color_green
+        ),
+      ];
+
+  /// 当前 [_style.backgroundColor] 命中的预设下标：null（未设/默认）→ 0；显式色按 ARGB
+  /// 相等匹配；不在预设内（旧数据存了别的色）也回落 0「默认（黑）」（选择器只展示预设，
+  /// 但不覆盖用户存的原值，直到用户主动选一项）。
+  int get _bgColorOptionIndex {
+    final Color? current = _style.backgroundColor;
+    if (current == null) return 0;
+    for (int i = 0; i < _bgColorPresets.length; i++) {
+      final Color? c = _bgColorPresets[i].color;
+      if (c != null && c.toARGB32() == current.toARGB32()) return i;
+    }
+    return 0;
+  }
+
   Widget _buildSubtitleDetail() {
     final double uiScale = HibikiAppUiScale.normalize(widget.uiScale);
     final int resolvedFontWeight = _style.resolveFontWeight(uiScale);
@@ -2194,6 +2236,38 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               onTap: () => _applySubtitleStyle(
                 _style.copyWith(backgroundOpacity: 0),
               ),
+            ),
+            // TODO-1059 方案B：字幕背景**颜色**选择行（用户报「字幕背景没有明显地方
+            // 单独调」）。此前设置面板只有不透明度滑条、没有背景色控件，背景色只能落到
+            // 默认（跟随主题 surface → 浅色泛白，已由方案A改为固定黑）。这里补上离散预设
+            // 色选择，落 [VideoSubtitleStyle.backgroundColor]（编解码/copyWith 早已就位）。
+            // 「默认（黑）」= null（走 [kDefaultSubtitleBackgroundColor] 固定黑）；其余为
+            // 显式颜色，逐字持久化。选背景色不改透明度：透明度为 0 时用户看不到颜色变化，
+            // 故选任一非默认色时把透明度从 0 顶到一个可见基线（0.6），让「选了色」立刻生效。
+            AdaptiveSettingsPickerRow<int>(
+              title: t.video_setting_subtitle_bg_color,
+              icon: Icons.format_color_fill_outlined,
+              selected: _bgColorOptionIndex,
+              options: <AdaptiveSettingsPickerOption<int>>[
+                for (int i = 0; i < _bgColorPresets.length; i++)
+                  AdaptiveSettingsPickerOption<int>(
+                    value: i,
+                    label: _bgColorPresets[i].label,
+                  ),
+              ],
+              onChanged: (int index) {
+                final Color? color = _bgColorPresets[index].color;
+                // 选了具体颜色但当前完全透明 → 顶到可见基线，否则用户「选了色却没反应」。
+                final double opacity =
+                    (color != null && _style.backgroundOpacity <= 0)
+                        ? 0.6
+                        : _style.backgroundOpacity;
+                _applySubtitleStyle(_style.copyWith(
+                  backgroundColor: color,
+                  resetBackgroundColor: color == null,
+                  backgroundOpacity: opacity,
+                ));
+              },
             ),
             AdaptiveSettingsSliderRow(
               title: t.video_setting_subtitle_position,

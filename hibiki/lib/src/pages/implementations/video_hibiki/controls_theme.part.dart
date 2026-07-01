@@ -142,6 +142,11 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // TODO-364：移动控制条的真实 `visible`（含 onTap toggle）推进同一个 notifier，字幕避让
       // 唯一消费它，移动端不再用 Hibiki 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
+      // TODO-1059：把重启自动隐藏计时的信号接进 fork。fork 侧订阅它，在底部按钮栏
+      // play / 快进 / 快退按下（经 [_pokeControlsVisible] → [_restartHideTimerSignal.poke]）
+      // 时于控制条可见态续命隐藏 Timer，消除「按着按钮控制条却自动隐藏 → 手指落到画面
+      // 误触」。仅移动 theme 需要（桌面走合成 hover 经 media_kit 自身 MouseRegion 续命）。
+      restartHideTimerSignal: _restartHideTimerSignal,
       // TODO-565：进度条（seek bar）经 media_kit 内部 player.seek 绕过 controller 的
       // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek

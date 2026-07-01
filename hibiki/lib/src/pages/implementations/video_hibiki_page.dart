@@ -398,6 +398,19 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
 
+/// TODO-1059：驱动 media_kit 移动控制条**重启自动隐藏计时**的单发信号。
+///
+/// 移动端底部按钮栏的 play / 快进 / 快退按钮各按自己的 `onPressed` 执行，media_kit
+/// fork 的隐藏 `Timer` 只在整屏 tap 与 seek 时重置，按按钮不重置 → 用户还在按按钮，
+/// 控制条已到点自动隐藏，手指落到按钮下方的画面上（误触，用户报「持续点按钮仍自动
+/// 隐藏易误触」）。Hibiki 在这些按钮按下时 [poke]，fork 侧订阅本信号（经
+/// `MaterialVideoControlsThemeData.restartHideTimerSignal`），在控制条可见时取消并重排
+/// 隐藏 Timer，续命一个 `controlsHoverDuration`。是 [ChangeNotifier] 的极薄包装：
+/// [poke] 仅 `notifyListeners()`，不携带状态，纯边沿触发。
+class _RestartHideTimerSignal extends ChangeNotifier {
+  void poke() => notifyListeners();
+}
+
 class _VideoOsdMessage {
   const _VideoOsdMessage({
     required this.message,
@@ -595,6 +608,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// MouseTracker 每次都回调 onHover 续命。仅 1px 抖动不会偏出控制条命中区。
   bool _pokeParity = false;
 
+  /// TODO-1059：移动端底部按钮栏按下时经 [_pokeControlsVisible] 触发本信号，续命
+  /// media_kit 控制条的自动隐藏计时（见 [_RestartHideTimerSignal] / 传入
+  /// [_mobileControlsTheme] 的 `restartHideTimerSignal`）。随本 State dispose 释放。
+  final _RestartHideTimerSignal _restartHideTimerSignal =
+      _RestartHideTimerSignal();
+
   /// 合成 hover 派发去重旗（BUG-425）。[_pokeControlsVisible] 经
   /// [GestureBinding.handlePointerEvent] 派发合成 [PointerHoverEvent] 唤醒控制条，但派发
   /// 会同步进入 Flutter `MouseTracker.updateWithEvent` → 写 `_mouseStates[device]`。当
@@ -654,7 +673,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
-  Color _subtitleBackgroundColor(ColorScheme cs) => cs.surface;
+  // TODO-1059 方案A：字幕盒默认底色不再跟随主题 `surface`（浅色主题下近白 → 字幕
+  // 背景泛白违和），改用固定半透明黑 [kDefaultSubtitleBackgroundColor]。仅当
+  // 用户未显式选背景色（[VideoSubtitleStyle.backgroundColor]==null）时作为默认色
+  // 喂进 [VideoSubtitleStyle.resolveBackgroundColor]；显式选过的颜色仍逐字尊重。
+  Color _subtitleBackgroundColor(ColorScheme cs) =>
+      kDefaultSubtitleBackgroundColor;
   double get _videoUiScale => appModel.appUiScale;
 
   Color _osdSurfaceColor(ColorScheme cs) =>
@@ -2379,6 +2403,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
     _mediaKitControlsVisible.dispose();
+    _restartHideTimerSignal.dispose();
     _videoControlsVisible.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();
@@ -3128,7 +3153,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ? MaterialDesktopPlayOrPauseButton(
                   iconSize: _videoPlayPauseIconSize,
                 )
-              : MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
+              : Listener(
+                  // TODO-1059：media_kit 自带的播放/暂停按钮走它自己的 onPressed，无宿主
+                  // 续命路径。Listener 的 onPointerDown 在每次按下续命控制条，且不吞手势
+                  // （Listener 不参与手势 arena、不消费点击），按钮的播放/暂停照常触发。
+                  onPointerDown: (_) => _pokeControlsVisible(),
+                  child: MaterialPlayOrPauseButton(
+                    iconSize: _videoPlayPauseIconSize,
+                  ),
+                ),
         );
       case VideoControlItem.previousCue:
         return Tooltip(
@@ -3526,6 +3559,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _toggleImmersiveLock();
         break;
       case VideoControlItem.playPause:
+        // TODO-1059：按播放/暂停按钮也续命控制条（否则 3s 到点隐藏、手指还在按钮 = 误触）。
+        _pokeControlsVisible();
         unawaited(controller.playOrPause());
         break;
       case VideoControlItem.seekBackward:

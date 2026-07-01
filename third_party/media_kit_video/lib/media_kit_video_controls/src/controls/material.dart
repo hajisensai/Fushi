@@ -300,6 +300,20 @@ class MaterialVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final ValueNotifier<bool>? visibilityNotifier;
 
+  // AUTO-HIDE TIMER RESTART (Hibiki patch)
+
+  /// Optional [Listenable] the host pokes to *restart* the controls auto-hide
+  /// timer without toggling visibility. On mobile the controls' hide timer is
+  /// only reset by a full-screen tap or a seek — pressing the bottom button-bar
+  /// buttons (play / skip forward / back) does NOT reset it, so the controls
+  /// vanish 3s after the last tap even while the user is still pressing a button
+  /// (mis-tap on the video underneath, TODO-1059). The host (Hibiki) fires this
+  /// signal from those button presses; the controls listen and, while visible,
+  /// cancel + reschedule the hide timer for another [controlsHoverDuration].
+  /// Null (upstream default) = no listener, behaviour identical to pub.dev.
+  /// See third_party/media_kit_video/PATCHES.md.
+  final Listenable? restartHideTimerSignal;
+
   // SEEK START (Hibiki patch)
 
   /// Optional callback fired the moment the user starts dragging / tapping the
@@ -377,6 +391,7 @@ class MaterialVideoControlsThemeData {
     this.seekBarAlignment = Alignment.bottomCenter,
     this.shiftSubtitlesOnControlsVisibilityChange = false,
     this.visibilityNotifier,
+    this.restartHideTimerSignal,
     this.onSeekStart,
   });
 
@@ -432,6 +447,7 @@ class MaterialVideoControlsThemeData {
     Alignment? seekBarAlignment,
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
+    Listenable? restartHideTimerSignal,
     void Function()? onSeekStart,
   }) {
     return MaterialVideoControlsThemeData(
@@ -508,6 +524,8 @@ class MaterialVideoControlsThemeData {
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
+      restartHideTimerSignal:
+          restartHideTimerSignal ?? this.restartHideTimerSignal,
       onSeekStart: onSeekStart ?? this.onSeekStart,
     );
   }
@@ -561,6 +579,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   late bool mount;
   late bool visible;
   Timer? _timer;
+  // Hibiki patch (TODO-1059): the host's restart-hide-timer signal we are
+  // currently subscribed to, kept so dispose() / a theme change can detach the
+  // exact listener we attached (the theme's listenable identity can change).
+  Listenable? _restartHideTimerSignal;
 
   double _brightnessValue = 0.0;
   bool _brightnessIndicator = false;
@@ -685,6 +707,39 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
         );
       }
     }
+
+    // Hibiki patch (TODO-1059): (re)bind the host's restart-hide-timer signal.
+    // Runs on every didChangeDependencies (not gated by subscriptions.isEmpty)
+    // because the theme — and thus the signal's identity — can change across
+    // rebuilds; detach the old one and attach the current one when it differs.
+    final Listenable? signal = _theme(context).restartHideTimerSignal;
+    if (!identical(signal, _restartHideTimerSignal)) {
+      _restartHideTimerSignal?.removeListener(_restartHideTimer);
+      _restartHideTimerSignal = signal;
+      _restartHideTimerSignal?.addListener(_restartHideTimer);
+    }
+  }
+
+  /// Hibiki patch (TODO-1059): restart the auto-hide timer without toggling
+  /// visibility, fired by the host when a bottom button-bar button is pressed.
+  /// Only acts while the controls are already [visible] (a press on a visible
+  /// button should keep them alive); does nothing when hidden (the button isn't
+  /// on screen to be pressed, and we must not silently un-hide). Mirrors the
+  /// visible-branch timer reset in [onTap]: cancel the pending hide and schedule
+  /// a fresh [controlsHoverDuration], so holding / repeatedly tapping seek keeps
+  /// the controls up instead of vanishing under the finger.
+  void _restartHideTimer() {
+    if (!mounted || !visible) return;
+    _timer?.cancel();
+    _timer = Timer(_theme(context).controlsHoverDuration, () {
+      if (mounted) {
+        setState(() {
+          visible = false;
+        });
+        _publishVisibility();
+        unshiftSubtitle();
+      }
+    });
   }
 
   @override
@@ -695,6 +750,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     _onBrightnessReset?.call();
     _timerSeekBackwardButton?.cancel();
     _timerSeekForwardButton?.cancel();
+    // Hibiki patch (TODO-1059): detach the host's restart-hide-timer listener.
+    _restartHideTimerSignal?.removeListener(_restartHideTimer);
+    _restartHideTimerSignal = null;
     super.dispose();
   }
 
