@@ -71,9 +71,13 @@ void main() {
           const MinedNoteRef(noteId: 1700000000002, preview: '猫 — ねこ (card B)'),
         ];
 
-        // 测试内 widget 树稳定，无 dispose 竞态；直接取当前 context 供同一入口调用。
-        final BuildContext ctx =
-            tester.element(find.byType(MaterialApp).first);
+        // showModalBottomSheet 需 Navigator 祖先：必须取 Navigator 下游 context（不是
+        // MaterialApp 本身——它在 Navigator 之上，Navigator.of 会找不到根导航器）。用
+        // 首页 Scaffold 的 element 作锚点。
+        final Finder scaffoldFinder = find.byType(Scaffold);
+        expect(scaffoldFinder, findsWidgets,
+            reason: 'home must have a Scaffold to anchor the modal sheet');
+        final BuildContext ctx = tester.element(scaffoldFinder.first);
 
         // 与生产同一入口：直接调 showAnkiMinedCardActionSheet（runAnkiMinedCardAction
         // 命中后调的正是它）。mineNew / overwrite 用可观测的假 mutation。
@@ -93,13 +97,18 @@ void main() {
             return (ankiConnect: true, noteId: noteId);
           },
         );
-        // 让 bottom sheet 弹出并布局。
-        for (int i = 0; i < 20; i++) {
+        // 让 bottom sheet 弹出并布局（有界 pump，不用 pumpAndSettle）。
+        bool sheetUp = false;
+        for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 150));
           if (find.text(t.anki_mined_action_add_duplicate).evaluate().isNotEmpty) {
+            sheetUp = true;
             break;
           }
         }
+        debugPrint('[verify][1007] action sheet up=$sheetUp '
+            'title-present=${find.text(t.anki_mined_card_title).evaluate().isNotEmpty} '
+            'bottomsheet=${find.byType(BottomSheet).evaluate().length}');
 
         // ── 断言 1：操作单三项可达 ──
         // 标题（卡已在 Anki）。
