@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/pages.dart';
@@ -187,6 +188,40 @@ IconData _mouseIcon(MouseBinding binding) {
   }
 }
 
+/// TODO-1088: whether the running platform has a mouse whose non-primary buttons
+/// can be bound. Desktop (Windows/Linux/macOS) yes; mobile (Android/iOS) has no
+/// mouse, so the capture entry is hidden there and the mouse section stays a
+/// read-only display of any inherited bindings.
+bool _mouseBindingSupported(TargetPlatform platform) {
+  switch (platform) {
+    case TargetPlatform.windows:
+    case TargetPlatform.linux:
+    case TargetPlatform.macOS:
+      return true;
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+    case TargetPlatform.fuchsia:
+      return false;
+  }
+}
+
+/// TODO-1088: maps a Flutter [PointerDownEvent.buttons] bitmask to the single DOM
+/// `MouseEvent.button` number the runtime `onPointerSeek` dispatch shares with
+/// [MouseBinding], or null for the excluded primary button / an unrecognised
+/// bitmask. The primary (left) button is deliberately unbindable: the
+/// reader/webview runtime handler bails on `e.button === 0` (left is the main
+/// interaction key — binding it would swallow normal clicks / text selection),
+/// so a left binding could never fire. Checked most-specific first; a chorded
+/// press (multiple bits) resolves to the first non-primary button in this
+/// precedence: middle(1)/right(2)/back(3)/forward(4).
+int? _domButtonFromPointerButtons(int buttons) {
+  if (buttons & kMiddleMouseButton != 0) return 1;
+  if (buttons & kSecondaryMouseButton != 0) return 2;
+  if (buttons & kBackMouseButton != 0) return 3;
+  if (buttons & kForwardMouseButton != 0) return 4;
+  return null; // primary (kPrimaryMouseButton) or unknown → not bindable
+}
+
 class ShortcutSettingsPage extends BasePage {
   const ShortcutSettingsPage({super.key});
 
@@ -288,6 +323,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       result.bindings,
       removeKeyboardConflicts: result.keyboardReassignments,
       removeGamepadConflicts: result.gamepadReassignments,
+      removeMouseConflicts: result.mouseReassignments,
     );
     await _save();
     setState(() {});
@@ -578,9 +614,13 @@ class _ActionTile extends StatelessWidget {
 /// TODO-1050b: 鼠标绑定的小图标 chip（HibikiTagChip 无 leading icon 位，这里用同款
 /// surface 观感自绘一个「图标 + 名称」的小 chip，与文字 chip 并排展示，不改公共组件）。
 class _MouseChip extends StatelessWidget {
-  const _MouseChip({required this.binding});
+  const _MouseChip({required this.binding, this.onDeleted});
 
   final MouseBinding binding;
+
+  /// TODO-1088: when non-null a trailing delete affordance is shown (edit
+  /// dialog); null keeps it a plain read-only chip (list-view display).
+  final VoidCallback? onDeleted;
 
   @override
   Widget build(BuildContext context) {
@@ -610,6 +650,14 @@ class _MouseChip extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (onDeleted != null) ...<Widget>[
+            SizedBox(width: tokens.spacing.gap * 0.375),
+            InkWell(
+              onTap: onDeleted,
+              customBorder: const CircleBorder(),
+              child: Icon(Icons.close, size: 14, color: fg),
+            ),
+          ],
         ],
       ),
     );
@@ -652,20 +700,29 @@ class ShortcutBindingEditResult {
     required this.bindings,
     this.keyboardReassignments = const <InputBinding>[],
     this.gamepadReassignments = const <GamepadBinding>[],
+    this.mouseReassignments = const <MouseBinding>[],
   });
 
   final ShortcutBindingSet bindings;
   final List<InputBinding> keyboardReassignments;
   final List<GamepadBinding> gamepadReassignments;
+  final List<MouseBinding> mouseReassignments;
 }
 
 class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   late List<InputBinding> _keyboard;
   late List<GamepadBinding> _gamepad;
+  late List<MouseBinding> _mouse;
   final List<InputBinding> _keyboardReassignments = <InputBinding>[];
   final List<GamepadBinding> _gamepadReassignments = <GamepadBinding>[];
+  final List<MouseBinding> _mouseReassignments = <MouseBinding>[];
   String? _conflictWarning;
   bool _capturing = false;
+  // TODO-1088: distinct capture phase for mouse buttons — a bordered region that
+  // records the next non-primary mouse press. Kept separate from [_capturing]
+  // (keyboard) so pressing a key while mouse-capturing doesn't record a key, and
+  // vice-versa.
+  bool _mouseCapturing = false;
   final FocusNode _captureFocusNode = FocusNode();
 
   @override
@@ -686,6 +743,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       final GamepadBinding seed = GamepadBinding(pb);
       if (!_gamepad.contains(seed)) _gamepad.add(seed);
     }
+    // TODO-1088: mouse bindings are now editable, so seed the draft from the
+    // current bindings (was passed straight through from widget.initial before).
+    _mouse = List<MouseBinding>.of(widget.initial.mouseBindings);
   }
 
   @override
@@ -714,12 +774,87 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     });
   }
 
+  void _removeMouse(int index) {
+    setState(() {
+      final MouseBinding removed = _mouse.removeAt(index);
+      _mouseReassignments.removeWhere(
+        (MouseBinding binding) => binding == removed,
+      );
+      _conflictWarning = null;
+    });
+  }
+
   void _clearAll() {
     setState(() {
       _keyboard.clear();
       _gamepad.clear();
+      _mouse.clear();
       _keyboardReassignments.clear();
       _gamepadReassignments.clear();
+      _mouseReassignments.clear();
+      _conflictWarning = null;
+    });
+  }
+
+  void _startMouseCapture() {
+    setState(() {
+      _mouseCapturing = true;
+      _capturing = false;
+      _conflictWarning = null;
+    });
+  }
+
+  void _cancelMouseCapture() {
+    setState(() => _mouseCapturing = false);
+  }
+
+  /// TODO-1088: handle a raw pointer-down inside the mouse-capture region. Maps
+  /// the pressed button to its DOM number; the excluded primary button and
+  /// unknown bitmasks are ignored (capture stays armed). Delegates to [_addMouse]
+  /// which runs the same duplicate/conflict/reassignment flow as gamepad adds.
+  void _onMouseCapturePointerDown(PointerDownEvent event) {
+    final int? button = _domButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    unawaited(_addMouse(button));
+  }
+
+  Future<void> _addMouse(int button) async {
+    final MouseBinding binding = MouseBinding(button);
+    if (_mouse.contains(binding)) {
+      setState(() {
+        _mouseCapturing = false;
+        _conflictWarning = t.shortcut_conflict(s: _actionLabel(widget.action));
+      });
+      return;
+    }
+
+    final ShortcutAction? conflict = widget.registry.hasMouseConflict(
+      widget.action.scope,
+      binding,
+      exclude: widget.action,
+    );
+
+    if (conflict != null) {
+      setState(() {
+        _mouseCapturing = false;
+        _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
+      });
+      final bool confirmed = await _showConflictReassignmentDialog(conflict);
+      if (!confirmed || !mounted) return;
+      if (_mouse.contains(binding)) return;
+      setState(() {
+        _mouse.add(binding);
+        if (!_mouseReassignments.contains(binding)) {
+          _mouseReassignments.add(binding);
+        }
+        _conflictWarning = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _mouse.add(binding);
+      _mouseCapturing = false;
       _conflictWarning = null;
     });
   }
@@ -1062,12 +1197,15 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               ),
             ),
 
-            // Mouse section (TODO-1050b): read-only display of existing mouse
-            // bindings. Mouse binds are positional (resolved at runtime via
-            // onPointerSeek, not captured here), so this surfaces them with a
-            // small icon instead of leaving the channel invisible — capture stays
-            // out of scope (Never break userspace: no new mouse capture path).
-            if (widget.initial.mouseBindings.isNotEmpty) ...<Widget>[
+            // Mouse section (TODO-1088): editable. Existing bindings render as
+            // deletable chips; on desktop a capture region records the next
+            // non-primary mouse press into a binding, reusing the same
+            // duplicate/conflict/reassignment path as the keyboard/gamepad
+            // channels. On mobile there is no mouse, so the capture entry is
+            // hidden and only inherited bindings (if any) show read-only — Never
+            // break userspace: nothing captured, nothing lost.
+            if (_mouse.isNotEmpty ||
+                _mouseBindingSupported(defaultTargetPlatform)) ...<Widget>[
               const Divider(height: 24),
               Text(
                 t.shortcut_mouse_button,
@@ -1078,10 +1216,63 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 spacing: tokens.spacing.gap / 2,
                 runSpacing: tokens.spacing.gap / 2,
                 children: <Widget>[
-                  for (final MouseBinding mb in widget.initial.mouseBindings)
-                    _MouseChip(binding: mb),
+                  for (int i = 0; i < _mouse.length; i++)
+                    _MouseChip(
+                      binding: _mouse[i],
+                      onDeleted: () => _removeMouse(i),
+                    ),
                 ],
               ),
+              if (_mouseBindingSupported(defaultTargetPlatform)) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                if (_mouseCapturing)
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Listener(
+                        key: const Key('shortcut_mouse_capture_region'),
+                        onPointerDown: _onMouseCapturePointerDown,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.symmetric(
+                            vertical: tokens.spacing.gap + 4,
+                            horizontal: tokens.spacing.gap,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: themeData.colorScheme.primary,
+                            ),
+                            borderRadius: tokens.radii.controlRadius,
+                          ),
+                          child: Text(
+                            t.shortcut_press_mouse_button,
+                            textAlign: TextAlign.center,
+                            style: themeData.textTheme.bodyMedium?.copyWith(
+                              color: themeData.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          key: const Key('shortcut_stop_mouse_capture'),
+                          onPressed: _cancelMouseCapture,
+                          child: Text(t.shortcut_stop_capture),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  TextButton.icon(
+                    key: const Key('shortcut_add_mouse'),
+                    icon: const Icon(Icons.mouse_outlined, size: 18),
+                    label: Text(t.shortcut_mouse_button),
+                    onPressed: _startMouseCapture,
+                  ),
+              ],
             ],
 
             // Conflict warning
@@ -1121,12 +1312,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                         List<InputBinding>.unmodifiable(_keyboard),
                     gamepadBindings:
                         List<GamepadBinding>.unmodifiable(_gamepad),
-                    mouseBindings: widget.initial.mouseBindings,
+                    mouseBindings: List<MouseBinding>.unmodifiable(_mouse),
                   ),
                   keyboardReassignments:
                       List<InputBinding>.unmodifiable(_keyboardReassignments),
                   gamepadReassignments:
                       List<GamepadBinding>.unmodifiable(_gamepadReassignments),
+                  mouseReassignments:
+                      List<MouseBinding>.unmodifiable(_mouseReassignments),
                 ),
               ),
               child: Text(MaterialLocalizations.of(context).okButtonLabel),

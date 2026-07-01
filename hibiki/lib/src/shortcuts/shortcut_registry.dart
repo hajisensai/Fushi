@@ -199,13 +199,18 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     ShortcutBindingSet bindings, {
     Iterable<InputBinding> removeKeyboardConflicts = const <InputBinding>[],
     Iterable<GamepadBinding> removeGamepadConflicts = const <GamepadBinding>[],
+    Iterable<MouseBinding> removeMouseConflicts = const <MouseBinding>[],
   }) {
     final Set<InputBinding> keyboardToRemove =
         Set<InputBinding>.of(removeKeyboardConflicts);
     final Set<GamepadBinding> gamepadToRemove =
         Set<GamepadBinding>.of(removeGamepadConflicts);
+    final Set<MouseBinding> mouseToRemove =
+        Set<MouseBinding>.of(removeMouseConflicts);
 
-    if (keyboardToRemove.isNotEmpty || gamepadToRemove.isNotEmpty) {
+    if (keyboardToRemove.isNotEmpty ||
+        gamepadToRemove.isNotEmpty ||
+        mouseToRemove.isNotEmpty) {
       for (final ShortcutScope scope in action.scope.coactiveScopes) {
         for (final ShortcutAction oldAction
             in ShortcutAction.actionsForScope(scope)) {
@@ -217,11 +222,16 @@ class HibikiShortcutRegistry extends ChangeNotifier {
           final List<GamepadBinding> gamepad = oldBindings.gamepadBindings
               .where((GamepadBinding b) => !gamepadToRemove.contains(b))
               .toList(growable: false);
+          final List<MouseBinding> mouse = oldBindings.mouseBindings
+              .where((MouseBinding b) => !mouseToRemove.contains(b))
+              .toList(growable: false);
           if (keyboard.length != oldBindings.keyboardBindings.length ||
-              gamepad.length != oldBindings.gamepadBindings.length) {
+              gamepad.length != oldBindings.gamepadBindings.length ||
+              mouse.length != oldBindings.mouseBindings.length) {
             _bindings[oldAction] = oldBindings.copyWith(
               keyboardBindings: keyboard,
               gamepadBindings: gamepad,
+              mouseBindings: mouse,
             );
           }
         }
@@ -348,6 +358,27 @@ class HibikiShortcutRegistry extends ChangeNotifier {
         if (bindings == null) continue;
         for (final gp in bindings.gamepadBindings) {
           if (gp == binding) return action;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// TODO-1088: mouse-button conflict detection, mirroring the keyboard/gamepad
+  /// checks so binding a mouse button that's already owned by another action in a
+  /// coactive scope can prompt the same reassignment flow.
+  ShortcutAction? hasMouseConflict(
+    ShortcutScope scope,
+    MouseBinding binding, {
+    required ShortcutAction? exclude,
+  }) {
+    for (final coactive in scope.coactiveScopes) {
+      for (final action in ShortcutAction.actionsForScope(coactive)) {
+        if (action == exclude) continue;
+        final bindings = _bindings[action];
+        if (bindings == null) continue;
+        for (final mb in bindings.mouseBindings) {
+          if (mb == binding) return action;
         }
       }
     }

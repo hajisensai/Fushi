@@ -2060,5 +2060,6 @@
   "shortcut_mouse_forward": "Forward button",
   "shortcut_mouse_wheel": "Wheel",
   "shortcut_mouse_button": "Mouse button",
-  "error_log_diagnostics_section": "Diagnostics / forensics (not app errors)"
+  "error_log_diagnostics_section": "Diagnostics / forensics (not app errors)",
+  "shortcut_press_mouse_button": "Press a mouse button..."
 }

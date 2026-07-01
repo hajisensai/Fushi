@@ -54,10 +54,22 @@ void main() {
   });
 
   test('edit dialog construction preserves the mouse channel (must-fix 1)', () {
-    // The single write-construction site is the edit dialog OK button; it must
-    // carry mouseBindings forward so figure edits never clear MouseBinding(1).
-    expect(src.contains('mouseBindings: widget.initial.mouseBindings'), isTrue,
-        reason: 'edit result must preserve existing mouseBindings');
+    // TODO-1088: mouse bindings are now editable. The OK button writes the mouse
+    // DRAFT (_mouse), which initState seeds from widget.initial.mouseBindings, so
+    // an untouched dialog still carries existing bindings forward (never clears
+    // MouseBinding(1)) while user captures/deletes take effect.
+    expect(
+        src.contains('mouseBindings: List<MouseBinding>.unmodifiable(_mouse)'),
+        isTrue,
+        reason: 'edit result must write the mouse draft, not drop the channel');
+    expect(
+      RegExp(r'_mouse\s*=\s*List<MouseBinding>\.of\('
+              r'widget\.initial\.mouseBindings\)')
+          .hasMatch(src),
+      isTrue,
+      reason: 'mouse draft must be seeded from the initial bindings so an '
+          'untouched dialog preserves them',
+    );
   });
 
   test('TODO-1050b: the list view renders mouse bindings (not data-only)', () {
