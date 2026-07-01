@@ -1,9 +1,6 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
     show BookImportDialog;
 import 'package:path/path.dart' as p;
@@ -20,8 +17,8 @@ import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
 ///
-/// UI 沿用 [BookImportDialog] 的双图标按钮模式：每一项右侧提供
-/// "选目录"和"选文件"两个按钮，可在两种音频来源模式间切换。
+/// UI 沿用 [BookImportDialog] 的图标按钮模式：音频来源行提供「选文件」按钮，
+/// 用户明确多选音频文件（TODO-1031 删掉了旧的「选目录」整目录吞并入口）。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
     required this.bookKey,
@@ -443,23 +440,20 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     );
   }
 
-  /// 音频来源行：标签 + [选目录] [选文件] 两个按钮。
+  /// 音频来源行：标签 + [选文件] 按钮。
+  ///
+  /// TODO-1031：只保留「选文件」入口，删掉旧的「选目录」按钮。旧目录模式
+  /// 会把用户指向的整个文件夹里所有音频一股脑塞进同一本书，
+  /// 用户抱怨「导入文件夹书籍把一系列音频全弄进一本」即此。
+  /// 真正的多段章节有声书（一本书 N 个章节音频）仍可通过「选文件」多选精确选中，
+  /// 由用户明确挑文件而非盲目吞整个目录 —— 多段有声书语义完好保留。
   Widget _audioSourceRow() {
     return HibikiFilePickerRow(
-      title: _audioPaths != null
-          ? t.srt_import_pick_audio_files
-          : t.srt_import_pick_audio_dir,
+      title: t.srt_import_pick_audio_files,
       subtitle: _hasAudioSource ? _audioSourceLabel : null,
-      icon: _audioPaths != null
-          ? Icons.audio_file_outlined
-          : Icons.folder_open_outlined,
+      icon: Icons.audio_file_outlined,
+      onTap: _pickAudioFiles,
       actions: [
-        HibikiIconButton(
-          icon: Icons.folder_open_outlined,
-          tooltip: t.srt_import_pick_audio_dir,
-          isWideTapArea: true,
-          onTap: _pickAudioDir,
-        ),
         HibikiIconButton(
           icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
@@ -491,27 +485,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   // ── 文件/目录选择 ────────────────────────────────────────────────────────────
-
-  Future<void> _pickAudioDir() async {
-    if (_pickerActive) return;
-    _pickerActive = true;
-    try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
-      final String? dir = await pickRealDirectoryPath(
-        context: context,
-        appModel: appModel,
-      );
-      if (dir != null && mounted) {
-        setState(() {
-          _audioDir = dir;
-          _audioPaths = null;
-        });
-      }
-    } finally {
-      _pickerActive = false;
-    }
-  }
 
   Future<void> _pickAudioFiles() async {
     if (_pickerActive) return;
@@ -717,27 +690,18 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
       reportProgress(0.5, t.import_step_persisting);
 
-      // 收集需要复制的音频文件。
-      // file mode: 用户选的文件列表。
-      // directory mode: 列出目录下所有音频文件。
-      // 两种模式都复制到持久化目录——Android 11+ scoped storage 下，
-      // SAF 临时授权的路径后续可能无法访问。
+      // 收集需要复制的音频文件（file mode：用户经「选文件」明确挑选的列表）。
+      // 复制到持久化目录——Android 11+ scoped storage 下，SAF 临时授权的路径
+      // 后续可能无法访问。
+      //
+      // TODO-1031：旧的目录模式（指向一个文件夹后扫描其下全部音频）已删除——它是
+      // 用户抱怨「导入文件夹书籍把一系列音频全弄进一本」的根因。新导入只走用户
+      // 明确多选的音频文件列表；多段章节有声书由用户显式多选章节文件表达，语义
+      // 完好。legacy audioRoot 记录仍可在只读视图 / 换字幕模式回显，但不再作为
+      // 新导入的输入源。
       final List<File> audioCopyFiles = <File>[];
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
         audioCopyFiles.addAll(_audioPaths!.map(File.new));
-      } else if (_audioDir != null) {
-        final Directory srcDir = Directory(_audioDir!);
-        if (await srcDir.exists()) {
-          final List<FileSystemEntity> entries = await srcDir.list().toList();
-          audioCopyFiles.addAll(
-            entries
-                .whereType<File>()
-                .where((f) => AudiobookStorage.isAudioFile(f.path)),
-          );
-          audioCopyFiles.sort(
-            (a, b) => compareAudioFilePath(a.path, b.path),
-          );
-        }
       }
 
       // TODO-935 ①A：引用模式（仅桌面）下不复制音频，直接存原始绝对路径
