@@ -36,11 +36,13 @@ void main() {
     expect(
         nav, contains('if (book.isImageOnlyChapter(_currentChapter)) return;'),
         reason: '纯图片章 null 是稳态，不武装重试');
-    // 有界：达到上限不再排队。
+    // 有界：达到上限不再排队（常量在 part 文件里带类名限定、经 dart format 可能折行，
+    // 故对空白归一后再匹配逻辑内容）。
+    final String navFlat = nav.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-        nav,
+        navFlat,
         contains(
-            'if (_progressReanchorRetryCount >= _kProgressRetryMax) return;'),
+            'if (_progressReanchorRetryCount >= _ReaderHibikiPageState._kProgressRetryMax) {'),
         reason: '有界重试，超界回落 10s 轮询');
     // coalesce：已武装不重复排队。
     expect(nav, contains('if (_progressReanchorRetryTimer != null) return;'),
