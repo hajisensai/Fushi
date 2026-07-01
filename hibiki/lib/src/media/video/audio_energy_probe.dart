@@ -193,6 +193,59 @@ Future<List<double>> extractAudioEnergyEnvelope({
   }
 }
 
+/// **纯函数**：把逐帧 RMS 能量包络（[extractAudioEnergyEnvelope] 返回的 dB 序列，
+/// 越大越响，静音块为很低的有限值 [silenceDb]）降采样到 [targetBuckets] 个桶，并
+/// **归一化到 0..1**，供波形 painter 直接按桶宽绘制（TODO-1051 阶段A，字幕对轴波形可视化）。
+///
+/// **桶内取峰值（max），不取桶内 RMS**：入参 [frames] 本身已是逐帧 RMS 包络（≈100ms/帧，
+/// 见 [kAudioEnergyWindowMs]），再对每桶做二次 RMS 会二次平滑、淹没瞬态；波形可视化的目的
+/// 是让用户一眼看出响度尖峰的节奏以核对字幕对齐，故每桶取该区间**最大**能量，保留瞬态。
+///
+/// **归一化**：dB 是负值域且绝对范围随内容浮动，取降采样后所有桶峰值的 min/max 做线性拉伸到
+/// 0..1（`(v - min) / (max - min)`）。全同值（含单一静音）时 `max == min`，输出全 0（不除零）。
+///
+/// **退化输入（一律 sane，不抛、不越界）**：
+/// - [frames] 空 或 [targetBuckets] <= 0 → 返回空列表 `[]`。
+/// - [targetBuckets] >= 帧数 → 每帧各占一桶（不上采样、不插值补桶），返回长度 = 帧数、
+///   桶数即帧数的归一化序列；不会试图产出比数据更多的桶。
+/// - 否则输出长度恰为 [targetBuckets]，第 i 桶覆盖 `frames[i*n/B .. (i+1)*n/B)`（末桶收尾到 n），
+///   每桶至少含 1 帧，无空桶、无越界读。
+///
+/// 幂等：无内部状态、无 IO，同输入恒定同输出。
+List<double> downsampleEnergyEnvelope(List<double> frames, int targetBuckets) {
+  final int n = frames.length;
+  if (n == 0 || targetBuckets <= 0) return <double>[];
+
+  // 桶数 >= 帧数：不上采样，每帧一桶（桶数收敛到帧数）。桶数 < 帧数：恰好 targetBuckets 桶。
+  final int buckets = targetBuckets >= n ? n : targetBuckets;
+
+  // 第一趟：每桶取区间峰值（保留瞬态）。用 i*n/B 均分边界，末桶自然收尾到 n，
+  // 且因 buckets <= n，每桶起点严格递增、至少含 1 帧，无空桶。
+  final List<double> peaks = List<double>.filled(buckets, 0.0);
+  double minPeak = double.infinity;
+  double maxPeak = double.negativeInfinity;
+  for (int b = 0; b < buckets; b++) {
+    final int start = (b * n) ~/ buckets;
+    final int end =
+        ((b + 1) * n) ~/ buckets; // exclusive；因 buckets<=n 必有 end>start
+    double peak = frames[start];
+    for (int i = start + 1; i < end; i++) {
+      if (frames[i] > peak) peak = frames[i];
+    }
+    peaks[b] = peak;
+    if (peak < minPeak) minPeak = peak;
+    if (peak > maxPeak) maxPeak = peak;
+  }
+
+  // 第二趟：min/max 线性归一化到 0..1。全同值（含单一静音）不除零，返回全 0。
+  final double range = maxPeak - minPeak;
+  if (range <= 0) return List<double>.filled(buckets, 0.0);
+  for (int b = 0; b < buckets; b++) {
+    peaks[b] = (peaks[b] - minPeak) / range;
+  }
+  return peaks;
+}
+
 int _fileSizeOrZero(String path) {
   try {
     return File(path).lengthSync();
