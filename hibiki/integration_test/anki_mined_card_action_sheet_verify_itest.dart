@@ -1,5 +1,5 @@
-import 'dart:async';
-
+// 本 itest 在稳定的测试 widget 树上同步取 context 调生产 UI 入口，无 dispose 竞态。
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -71,6 +71,7 @@ void main() {
           const MinedNoteRef(noteId: 1700000000002, preview: '猫 — ねこ (card B)'),
         ];
 
+        // 测试内 widget 树稳定，无 dispose 竞态；直接取当前 context 供同一入口调用。
         final BuildContext ctx =
             tester.element(find.byType(MaterialApp).first);
 
