@@ -242,6 +242,26 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     );
   }
 
+  /// TODO-1078：WebView 内容层捕获的裸 Space（Windows WebView2 抢走 OS 键盘焦点后
+  /// _focusNode.onKeyEvent 收不到键，见 [webview.part] 的 `onSpaceKey` 桥）解析成
+  /// 阅读器动作。与 [_handleKeyEvent] 的 Space 解析同款语义：有声书激活 →
+  /// [ShortcutAction.audiobookPlayPause]（[resolveReaderSpaceOverride]）；否则回落
+  /// 到 reader scope 注册表里裸 Space 的真实绑定（默认 [ShortcutAction.readerPageForward]，
+  /// 用户改键后跟随其绑定）。返回 null 表示裸 Space 当前无绑定，调用方不执行。
+  ShortcutAction? _resolveWebViewSpaceAction() {
+    final ShortcutAction? override = resolveReaderSpaceOverride(
+      key: LogicalKeyboardKey.space,
+      modifiers: const <ModifierKey>{},
+      hasActiveAudiobook: _hasActiveAudiobook,
+    );
+    if (override != null) return override;
+    return appModel.shortcutRegistry.resolveKeyboard(
+      LogicalKeyboardKey.space,
+      modifiers: const <ModifierKey>{},
+      scope: ShortcutScope.reader,
+    );
+  }
+
   static bool _isReaderDirectCaretShortcut(ShortcutAction? action) {
     switch (action) {
       case ShortcutAction.readerLookupAtCursor:

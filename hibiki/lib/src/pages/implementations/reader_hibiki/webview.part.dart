@@ -999,6 +999,31 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
     window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
   }, {passive: true});
+  // TODO-1078：桌面 Windows 阅读器裸 Space 被 WebView2 吞成 Chromium 默认
+  // scrollByPage（向下翻屏），而不是走 Flutter 的 Space 覆写（有声书激活→
+  // 播放/暂停、否则→翻页）。根因：fork 的 flutter_inappwebview_windows 只把鼠标
+  // 转给 WebView2、不转键盘，且任一指针手势后 WebView2 抢走 OS 键盘焦点，导致
+  // 阅读器 _focusNode 的 onKeyEvent 收不到裸 Space（BUG-136/BUG-402 同源）。这里
+  // 在内容层直接捕获裸 Space，preventDefault 掐掉浏览器默认滚屏，再经 callHandler
+  // 交回 Dart 用 resolveReaderSpaceOverride 统一解析（与 Flutter 焦点路径同款语义）。
+  // 只拦「裸 Space」：带 Ctrl/Shift/Alt/Meta 的组合（Ctrl+Space 播放/暂停原义、
+  // Shift+Space 后退翻页）、以及输入框 / contenteditable / IME composing 里的
+  // 空格一律放行不拦，避免破坏改键语义与打字输入。OS 焦点归 Flutter 时 DOM 不收
+  // keydown，故与 _handleKeyEvent 天然互斥、不会双触发。
+  document.addEventListener('keydown', function(e) {
+    if (!e || e.key !== ' ') return;
+    if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+    if (e.isComposing) return;
+    var t = e.target;
+    if (t) {
+      var tag = t.tagName ? t.tagName.toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
+    }
+    e.preventDefault();
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler('onSpaceKey');
+    }
+  }, {capture: true});
   window.hoshiProgressDetails = function() {
     var r = window.hoshiReader;
     if (!r) return '';
@@ -1393,6 +1418,23 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               _paginate(ReaderNavigationDirection.backward,
                   throttleMs: throttleMs);
             }
+          },
+        );
+
+        // TODO-1078：内容层捕获的裸 Space（Windows WebView2 抢焦点后 Flutter
+        // _focusNode 收不到键，JS 已 preventDefault 掐掉 Chromium 默认 scrollByPage）。
+        // 经 _resolveWebViewSpaceAction 走与键盘焦点路径同款解析：有声书激活 →
+        // 播放/暂停，否则 → reader scope 裸 Space 的真实绑定（默认翻页）。执行后
+        // reclaim 焦点，让后续按键回到 _handleKeyEvent（对齐 onSwipe/onTap 的 BUG-136
+        // 修复）。带修饰键 / 文本框 / composing 的空格 JS 侧已放行，不会到这里。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSpaceKey',
+          callback: (List<dynamic> args) {
+            if (_lyricsMode) return;
+            final ShortcutAction? action = _resolveWebViewSpaceAction();
+            if (action == null) return;
+            _executeShortcutAction(action);
+            _reclaimReaderFocusAfterGesture();
           },
         );
 
