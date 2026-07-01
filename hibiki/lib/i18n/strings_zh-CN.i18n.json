@@ -2059,5 +2059,6 @@
   "shortcut_mouse_back": "鼠标侧键(后退)",
   "shortcut_mouse_forward": "鼠标侧键(前进)",
   "shortcut_mouse_wheel": "滚轮",
-  "shortcut_mouse_button": "鼠标按键"
+  "shortcut_mouse_button": "鼠标按键",
+  "error_log_diagnostics_section": "诊断/取证信息（非应用错误）"
 }

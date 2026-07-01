@@ -365,7 +365,10 @@ class UpdateChecker {
         // 让用户在日志里看到「连不上哪个源」而不被原始堆栈噪音淹没；其它异常
         // （解析/逻辑错误）才是真问题，连堆栈一起记。
         if (error == null || isExpectedUpdateNetworkFailure(error)) {
-          ErrorLogService.instance.log(
+          // TODO-1083：多镜像 failover 中途单个镜像连不上是**预期路径**（全失败才是真
+          // 失败），当应用错误刷进报错日志纯属噪声。降级为诊断/取证——仍随上传带走供排障，
+          // 但不进用户可见错误计数/正文（真解析/逻辑错走下面的 log()）。
+          ErrorLogService.instance.logDiagnostic(
               'UpdateChecker.httpGet',
               t.update_network_failure(
                 host: host,
@@ -533,7 +536,8 @@ class UpdateChecker {
         fetch: (String u) => _fetchRedirectTagOne(client, u),
         onFailure: (String host, Object? error) {
           if (error == null || isExpectedUpdateNetworkFailure(error)) {
-            ErrorLogService.instance.log(
+            // TODO-1083：见上——预期的镜像不可达降级为诊断，不进用户可见报错日志。
+            ErrorLogService.instance.logDiagnostic(
                 'UpdateChecker.redirectTag',
                 t.update_network_failure(
                   host: host,
@@ -848,7 +852,8 @@ class UpdateChecker {
         },
         onSourceFailure: (String url, Object error, StackTrace stack) {
           if (isExpectedUpdateNetworkFailure(error)) {
-            ErrorLogService.instance.log(
+            // TODO-1083：见上——预期的镜像不可达降级为诊断，不进用户可见报错日志。
+            ErrorLogService.instance.logDiagnostic(
                 'UpdateChecker.download',
                 t.update_network_failure(
                   host: hostLabelForUpdateUrl(url),

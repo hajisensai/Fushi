@@ -35,10 +35,25 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   static final instance = ErrorLogService._();
 
   static const int _maxEntries = 200;
+  static const int _maxDiagnosticEntries = 100;
   static const int _maxFileBytes = 512 * 1024;
 
   final List<ErrorLogEntry> _entries = [];
   List<ErrorLogEntry> get entries => List.unmodifiable(_entries);
+
+  /// TODO-1083：诊断/取证条目（**不是**用户可见的「报错」）。与 [_entries] 分列：
+  /// 瞬时网络探测失败摘要、WGC 帧捕获生命周期取证（BUG-209）等既非应用错误、又不该
+  /// 混进「错误日志」页用户可见错误计数/正文，但仍有排障与上传价值的信息进这里。
+  ///
+  /// 契约：
+  /// * 不计入 [entries]（错误日志页顶部列表 + 标题计数只反映真实错误）。
+  /// * 不写进持久化 [_logFile]（避免跨运行无界回灌噪声；诊断是本次运行内的排障线索，
+  ///   WGC 取证本身已是「读后清」的上次运行残留，无需再落进本次错误日志文件）。
+  /// * 仍进 [getFullLog]（复制/分享/上传链路），单独成一「诊断/取证」段，保住 BUG-209
+  ///   崩前生命周期证据可上传，不做删除式绕过。
+  final List<ErrorLogEntry> _diagnosticEntries = [];
+  List<ErrorLogEntry> get diagnosticEntries =>
+      List.unmodifiable(_diagnosticEntries);
 
   File? _logFile;
   String _persistedLog = '';
@@ -231,6 +246,28 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     _appendToFile(entry);
   }
 
+  /// TODO-1083：记录**诊断/取证**信息（非用户可见「报错」）。用于既非应用错误、又不该
+  /// 混进「错误日志」页用户可见错误计数/正文、但仍有排障与上传价值的信息：
+  /// * 更新检查多镜像 failover 的**瞬时网络探测失败**摘要（连不上某个 gh 镜像是预期路径，
+  ///   全失败才是真失败，中途每个镜像不可达都是噪声，不该当应用错误刷进报错日志）。
+  /// * WGC 帧捕获生命周期取证（BUG-209，见 [WgcCaptureLog.foldIntoErrorLog]）。
+  ///
+  /// 进入 [_diagnosticEntries]（独立于 [_entries]）：不计入错误计数、不进用户可见错误
+  /// 列表、不写持久化文件；但仍纳入 [getFullLog] 的「诊断/取证」段，随复制/分享/上传带走
+  /// （保住 BUG-209 崩前证据可上传，不做删除式绕过）。同样 notify，让打开着的日志页刷新。
+  void logDiagnostic(String source, Object info) {
+    final entry = ErrorLogEntry(
+      timestamp: DateTime.now(),
+      source: source,
+      error: info.toString(),
+    );
+    _diagnosticEntries.add(entry);
+    if (_diagnosticEntries.length > _maxDiagnosticEntries) {
+      _diagnosticEntries.removeAt(0);
+    }
+    notifyListenersFrameSafe();
+  }
+
   /// TODO-607 P0-1：致命级错误（`FlutterError.onError` / `runZonedGuarded` 的
   /// UncaughtZone / `PlatformDispatcher.onError`）的**同步**落盘版本。
   ///
@@ -269,7 +306,11 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   }
 
   String getFullLog() {
-    if (_entries.isEmpty && _persistedLog.isEmpty) return t.error_log_empty;
+    if (_entries.isEmpty &&
+        _persistedLog.isEmpty &&
+        _diagnosticEntries.isEmpty) {
+      return t.error_log_empty;
+    }
     final buf = StringBuffer();
     for (final e in _entries.reversed) {
       buf.write(e.format());
@@ -282,11 +323,24 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       }
       buf.write(_persistedLog);
     }
+    // TODO-1083：诊断/取证段附在错误 + 历史之后。它不计入用户可见错误计数，但随
+    // 复制/分享/上传一起带走（保住 BUG-209 WGC 崩前证据与网络排障线索的上传价值）。
+    if (_diagnosticEntries.isNotEmpty) {
+      if (_entries.isNotEmpty || _persistedLog.isNotEmpty) {
+        buf.writeln('═' * 60);
+      }
+      buf.writeln('▼ ${t.error_log_diagnostics_section}');
+      buf.writeln('═' * 60);
+      for (final e in _diagnosticEntries.reversed) {
+        buf.write(e.format());
+      }
+    }
     return buf.toString();
   }
 
   Future<void> clear() async {
     _entries.clear();
+    _diagnosticEntries.clear();
     _persistedLog = '';
     notifyListenersFrameSafe();
     try {

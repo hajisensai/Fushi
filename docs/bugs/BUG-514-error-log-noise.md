@@ -1,0 +1,16 @@
+## BUG-514 · 报错日志混入更新镜像失败与WGC取证噪声
+- **报告**：2026-07-01（用户：Windows debug 版「报错日志」里堆着一堆没用的条目——更新检查多镜像 failover 的瞬时网络失败 `UpdateChecker.httpGet 无法连接 ghfast.top/raw.githubusercontent.com/gh.llkk.cc/ghproxy.cc`，以及 `WGC 帧捕获生命周期日志(BUG-209 取证)…evt=create-bridge…`。「这些没用的可以从报错日志里面删掉了」）
+- **真实性**：✅ 真 bug（**分级错误**，非删字符串）。根因：`ErrorLogService`（`hibiki/lib/src/utils/misc/error_log_service.dart`）只有单一扁平 sink `log()`，任何写入都进用户可见「错误日志」页 + 上传链路，**没有严重度/类别概念**。两类既非应用错误、又不该占用户可见错误计数/正文的信息都错误地走了 `log()`：
+  - `UpdateChecker.httpGet` / `.redirectTag` / `.download` 的**预期网络失败**分支（`update_checker_release.dart:346/514/829`）。多镜像 failover 中途某个 gh 镜像连不上是**预期路径**（全失败才是真失败）。BUG-277（`69aa9032c`）当初的意图就是「预期网络失败不污染错误日志」，但只去掉了堆栈、条目仍进错误日志——半修复，正是用户现在报的噪声。
+  - `WGC.captureLog` 折入（`wgc_capture_log.dart:71`）。BUG-209 崩前生命周期取证，是**诊断/取证**不是应用「报错」，当初为进上传链路而折进错误日志，混进了用户可见错误。
+- **[x] ① 已修复** — 根因=正确分级，非删除式绕过：
+  - `error_log_service.dart`：新增独立诊断/取证层 `_diagnosticEntries` + `logDiagnostic(source, info)`（`:258`）。契约：不计入 `entries`（错误日志页顶部列表 + 标题计数只反映真实错误）、不写持久化 `error_log.txt`（避免跨运行无界回灌噪声）、但仍进 `getFullLog()` 的独立「诊断/取证」段（复制/分享/上传随日志带走，保住 BUG-209 崩前证据可上传）。`clear()` 同步清空诊断段。
+  - `wgc_capture_log.dart:71`：WGC 折入改 `log` → `logDiagnostic`（BUG-209 取证保留到诊断通道，不删除逻辑）。
+  - `update_checker_release.dart`：三个**预期网络失败**分支（`isExpectedUpdateNetworkFailure`/`error==null`）改 `log` → `logDiagnostic`；真解析/逻辑错误的 `else` 分支仍走 `log()`（never-break：真错误仍进报错日志）。
+  - 新 i18n key `error_log_diagnostics_section`（17 文件经 `i18n_sync.dart --add` + `dart run slang` 重生成 `strings.g.dart`），`getFullLog` 用它作诊断段标题。
+  - 提交：`<本轮提交，见报告>`
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/error_log_diagnostics_tier_test.dart`（6 例）：
+  - 行为：`logDiagnostic` 不计入 `entries`/错误计数；真 `log()` 错误仍进 `entries`；`getFullLog` 仍带诊断段（BUG-209 取证可上传）；`clear` 同清诊断段。
+  - 源码守卫：WGC 折入 + UpdateChecker 三分支必须走 `logDiagnostic` 而非 `log()`（防噪声回归）；真错误分支仍保留 `log()`（never-break）。
+  - `flutter analyze` No issues；6/6 绿 + 相邻 WGC 守卫 / 日志页 / 面包屑 / sync 共 38 例回归绿。
+- **备注**：WGC 取证仍随上传带走（未删除诊断价值），仅移出用户可见错误计数/正文——回应用户「取证/生命周期日志若仍有诊断价值应保留到 forensic 通道而非直接删除」。真机 Windows debug 版需用户复测：报错日志页不再出现 UpdateChecker 网络失败与 WGC 取证条目，但导出/上传的完整日志仍含诊断段。

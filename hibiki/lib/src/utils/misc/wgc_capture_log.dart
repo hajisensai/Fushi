@@ -14,7 +14,8 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 /// 路径——避免「下发前 capture 已发生」的时机赌注）。
 ///
 /// 启动时（[ErrorLogService.init] 之后）调用本函数：把上次运行残留的 WGC 日志读出
-/// 折进错误日志（用户在「错误日志」页即可看到 + 经现有 [uploadLogToServer] 上传），
+/// 折进错误日志的**诊断/取证段**（TODO-1083：不再计入用户可见错误，但仍经现有
+/// [uploadLogToServer] 上传随日志带走），
 /// 读后清空文件准备本次运行写入（滚动语义，避免无界累积，与导入面包屑「读后清」一致）。
 /// 这样 BUG-209 延迟 UAF 在下次启动就有可上传的可读崩前生命周期证据，不必再赌系统
 /// WER 偶然留 minidump。
@@ -68,7 +69,10 @@ class WgcCaptureLog {
       if (file == null) return;
       final String? content = readAndClear(file);
       if (content == null) return;
-      ErrorLogService.instance.log(
+      // TODO-1083：WGC 帧捕获生命周期日志是**取证/诊断**（崩前生命周期证据），不是用户
+      // 可见的应用「报错」。走 logDiagnostic 归入诊断段——不刷进错误日志页的错误计数/
+      // 正文，但仍随复制/分享/上传带走（保住 BUG-209 崩前证据可上传，非删除式绕过）。
+      ErrorLogService.instance.logDiagnostic(
         'WGC.captureLog',
         '上次运行的 Windows WGC 帧捕获生命周期日志（BUG-209 取证）：\n$content',
       );

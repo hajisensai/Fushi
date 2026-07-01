@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 499 条。点号进各自文件。
+> 共 500 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-514](bugs/BUG-514-error-log-noise.md) | ✅ | ✅ | 报错日志混入更新镜像失败与WGC取证噪声 |
 | [BUG-513](bugs/BUG-513-cover-runtime-disappear.md) | ✅ | ✅ | 封面运行期探测竞态消失重启恢复 |
 | [BUG-512](bugs/BUG-512-media-binding-missing-video.md) | ✅ | ✅ | TODO-1063 配置方案「媒体类型绑定」缺少 video 选项（视频毕业后未补齐） |
 | [BUG-511](bugs/BUG-511-global-hotkey-config.md) | ✅ | ✅ | TODO-1066 app 外查词（桌面全局查词）的快捷键没办法设置 |
