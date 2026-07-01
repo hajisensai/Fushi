@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
@@ -245,6 +246,104 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
     return null;
   } catch (e, stack) {
     ErrorLogService.instance.log('extractEmbeddedCoverViaFfmpeg', e, stack);
+    return null;
+  }
+}
+
+/// TODO-1045 M4B 元数据：从音频容器 tag 读到的标题/作者/专辑。不可变值对象（纯数据，
+/// 可单测、可在隔离中构造）。任一字段为 null 表示该 tag 缺失/空。
+class AudioMetadata {
+  const AudioMetadata({this.title, this.author, this.album});
+
+  /// 容器 `title` tag（M4B 的 `©nam` 由 ffprobe 归一为 `title`）。
+  final String? title;
+
+  /// 容器 `artist` tag（M4B 的 `©ART` → `artist`）。有声书作者/朗读者。
+  final String? author;
+
+  /// 容器 `album` tag（M4B 的 `©alb` → `album`）。系列名，暂不回填但一并解析备用。
+  final String? album;
+
+  /// 三个字段全空（无任何可用 tag）。
+  bool get isEmpty => title == null && author == null && album == null;
+}
+
+/// Builds the ffprobe argument list that prints [inputPath] 的 `format.tags` 为
+/// JSON（镜像 [buildFfmpegCoverArgs] 的纯函数风格，无 IO，可单测）。
+///
+/// `-v quiet` 压掉 banner/进度，`-print_format json -show_format` 让 ffprobe 只把
+/// 容器级信息（含 `format.tags`）以合法 JSON 写 stdout。M4B 的 iTunes 原子
+/// （`©nam`/`©ART`/`©alb`）由 ffprobe 归一成 `title`/`artist`/`album` 键。
+List<String> buildFfprobeFormatTagsArgs({required String inputPath}) {
+  return <String>[
+    '-v',
+    'quiet',
+    '-print_format',
+    'json',
+    '-show_format',
+    inputPath,
+  ];
+}
+
+/// **纯函数**：从 ffprobe `-show_format -print_format json` 的 stdout 解析出
+/// [AudioMetadata]。读 `format.tags` 下的 title/artist/album，**键名大小写不敏感**
+/// （不同容器写 `TITLE`/`title`/`Title`）。空白值归一成 null。解析失败 / 非预期结构
+/// 返回全空 [AudioMetadata]（绝不抛，调用方据此回退文件名兜底）。
+AudioMetadata parseAudioMetadataFromFfprobeJson(String probeStdout) {
+  final String trimmed = probeStdout.trim();
+  if (trimmed.isEmpty) return const AudioMetadata();
+  Object? decoded;
+  try {
+    decoded = jsonDecode(trimmed);
+  } catch (_) {
+    return const AudioMetadata();
+  }
+  if (decoded is! Map) return const AudioMetadata();
+  final Object? format = decoded['format'];
+  if (format is! Map) return const AudioMetadata();
+  final Object? tags = format['tags'];
+  if (tags is! Map) return const AudioMetadata();
+
+  // 大小写不敏感取键：把所有 tag 键小写化后查。首个非空值胜出。
+  final Map<String, String> lower = <String, String>{};
+  tags.forEach((Object? k, Object? v) {
+    if (k is String && v != null) {
+      final String key = k.toLowerCase();
+      final String value = v.toString().trim();
+      if (value.isNotEmpty && !lower.containsKey(key)) {
+        lower[key] = value;
+      }
+    }
+  });
+  return AudioMetadata(
+    title: lower['title'],
+    author: lower['artist'],
+    album: lower['album'],
+  );
+}
+
+/// Extracts the container-level [AudioMetadata] (title/artist/album tags) of
+/// [inputPath] via ffprobe. Returns null when the input is missing, ffprobe is
+/// unavailable (mobile CLI absent — the Kit backend handles mobile), the probe
+/// times out, or no usable tags were found — the same graceful degradation as
+/// [extractEmbeddedCoverViaFfmpeg]，调用方回退文件名兜底，绝不崩。
+Future<AudioMetadata?> extractAudioMetadataViaFfprobe({
+  required String inputPath,
+}) async {
+  if (!File(inputPath).existsSync()) return null;
+  try {
+    final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
+      buildFfprobeFormatTagsArgs(inputPath: inputPath),
+      const Duration(seconds: 15),
+    );
+    if (result.returnCode == null) return null; // timed out / killed
+    final AudioMetadata meta = parseAudioMetadataFromFfprobeJson(result.output);
+    return meta.isEmpty ? null : meta;
+  } on ProcessException catch (e, stack) {
+    ErrorLogService.instance.log('extractAudioMetadataViaFfprobe', e, stack);
+    return null;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('extractAudioMetadataViaFfprobe', e, stack);
     return null;
   }
 }

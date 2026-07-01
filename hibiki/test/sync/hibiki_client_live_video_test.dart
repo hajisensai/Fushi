@@ -375,6 +375,10 @@ void main() {
 }
 
 class _EmbeddedSubtitleFfmpegBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   final List<int> extractedSubtitleIndices = <int>[];
 
   @override

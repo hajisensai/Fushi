@@ -7,7 +7,7 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 // TODO-757：把制卡媒体压缩档位 re-export 给只 import tts_channel 的调用方
 // （阅读器句子音频走 TtsChannel 桌面回退，需要选档但没直接 import clipper）。
 export 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
-    show MiningMediaCompression;
+    show MiningMediaCompression, AudioMetadata;
 import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/desktop_tts.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -261,6 +261,18 @@ class TtsChannel {
       ErrorLogService.instance.log('TtsChannel.extractEmbeddedCover', e, stack);
       return null;
     }
+  }
+
+  /// TODO-1045：读音频容器（M4B/M4A/MP3…）的 title/artist/album tag，供导入对话框
+  /// 仅填空自动回填标题/作者。**全平台统一走 ffprobe / ffmpeg-kit**——不经 Android
+  /// 原生 `TtsChannelHandler`（P1 无原生实现）：桌面 CliFfmpegBackend 起 ffprobe、
+  /// 移动端 KitFfmpegBackend 走 `FFprobeKit.executeWithArguments`。缺 ffprobe / 无 tag
+  /// 时返回 null（[extractAudioMetadataViaFfprobe] 内部吞异常降级），调用方保留文件名
+  /// 兜底，绝不崩。
+  Future<AudioMetadata?> extractAudioMetadata({
+    required String audioPath,
+  }) {
+    return extractAudioMetadataViaFfprobe(inputPath: audioPath);
   }
 
   /// 句子音频裁剪：**全平台**统一走 ffmpeg（[extractAudioSegmentViaFfmpeg]）。

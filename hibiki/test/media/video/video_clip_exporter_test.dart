@@ -334,6 +334,10 @@ Input #0, matroska,webm, from 'a.mkv':
 typedef _RunHandler = FutureOr<FfmpegRunResult> Function(List<String> args);
 
 class _FakeFfmpegBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   _FakeFfmpegBackend({this.onRun});
 
   final _RunHandler? onRun;

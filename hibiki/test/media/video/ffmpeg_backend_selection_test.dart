@@ -28,9 +28,13 @@ void main() {
     expect(src, contains('FFmpegKit.executeWithArguments'));
   });
 
-  test('两后端共用顶层 runFfmpegProcess（drain/超时只此一处）', () {
+  test('顶层进程 runner 各自一处 drain/超时（ffmpeg + ffprobe）', () {
+    // ffmpeg 工作输出写 stderr、ffprobe JSON 写 stdout，两者收集/drain 的流相反，
+    // 故各有一个顶层 runner（runFfmpegProcess / runFfprobeProcess），各自一处
+    // sigkill 超时逻辑（TODO-1045 新增 ffprobe 路径）。钉死两处、不允许再散落第三处。
     expect(src, contains('Future<FfmpegRunResult> runFfmpegProcess('));
-    expect('ProcessSignal.sigkill'.allMatches(src).length, 1);
+    expect(src, contains('Future<FfmpegRunResult> runFfprobeProcess('));
+    expect('ProcessSignal.sigkill'.allMatches(src).length, 2);
   });
 
   test('Android/iOS 路由到 KitFfmpegBackend，桌面仍 CLI', () {

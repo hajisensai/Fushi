@@ -1097,6 +1097,13 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
     Duration timeout,
   ) async =>
       result;
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) async =>
+      result;
 }
 
 class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
@@ -1134,4 +1141,11 @@ class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
       },
     );
   }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) async =>
+      const ffmpeg.FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
 }

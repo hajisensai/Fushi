@@ -119,9 +119,12 @@ class _BookImportDialogState extends State<BookImportDialog>
       // 预填音频时尝试抽内嵌封面（与 _pickAudio 路径一致）。首帧后跑，避免在
       // initState 内同步触发 setState / 平台通道调用。
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _coverPath == null) {
+        if (!mounted) return;
+        if (_coverPath == null) {
           _tryExtractAudioCover();
         }
+        // 元数据回填独立于封面：即使已选封面也要试补空标题/作者（TODO-1045）。
+        _tryExtractAudioMetadata();
       });
     }
   }
@@ -208,8 +211,11 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (droppedEpub != null) {
       _autoAttachSidecars(droppedEpub);
     }
-    if (gotAudio && _coverPath == null) {
-      _tryExtractAudioCover();
+    if (gotAudio) {
+      if (_coverPath == null) {
+        _tryExtractAudioCover();
+      }
+      _tryExtractAudioMetadata();
     }
   }
 
@@ -423,8 +429,11 @@ class _BookImportDialogState extends State<BookImportDialog>
         attachedAudio = true;
       }
     });
-    if (attachedAudio && _coverPath == null) {
-      await _tryExtractAudioCover();
+    if (attachedAudio) {
+      if (_coverPath == null) {
+        await _tryExtractAudioCover();
+      }
+      await _tryExtractAudioMetadata();
     }
     final List<String> parts = <String>[
       if (attachedSub)
@@ -500,6 +509,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         if (_coverPath == null) {
           await _tryExtractAudioCover();
         }
+        await _tryExtractAudioMetadata();
       }
     } finally {
       _pickerActive = false;
@@ -545,6 +555,39 @@ class _BookImportDialogState extends State<BookImportDialog>
         setState(() => _audioCoverPath = result);
         return;
       }
+    }
+  }
+
+  /// TODO-1045：从第一个含 tag 的音频容器（M4B/M4A/MP3…）读标题/作者，**仅当对应
+  /// 输入框为空时**回填（复用 sidecar 的「填空不覆盖」闸门，绝不覆盖用户手打的值）。
+  ///
+  /// 与封面抽取同触发点、并行独立一趟：封面走 ffmpeg 抽帧、元数据走 ffprobe，本就是
+  /// 两个可执行/两次进程，无法共用一次 spawn。缺 ffprobe / 无 tag 时
+  /// [TtsChannel.extractAudioMetadata] 返回 null，保留文件名兜底。全程 mounted 检查
+  /// + setState；「仅填空」闸门天然避免异步竞态覆盖用户已手打的值。
+  ///
+  /// 身份安全：自动填的标题只写进导入前可编辑的 [_titleCtrl]，与既有「标题来自文件名
+  /// 兜底」同语义时机——bookKey=sanitizeTtuFilename(title) 仍由用户可见/可改的标题派生，
+  /// 零新增身份风险。
+  Future<void> _tryExtractAudioMetadata() async {
+    if (_audioPaths.isEmpty) return;
+    // 两框都已填就无事可做（避免无谓 ffprobe 进程）。
+    if (_titleCtrl.text.isNotEmpty && _authorCtrl.text.isNotEmpty) return;
+    for (final String audioPath in _audioPaths) {
+      final AudioMetadata? meta =
+          await TtsChannel.instance.extractAudioMetadata(audioPath: audioPath);
+      if (meta == null) continue;
+      if (!mounted) return;
+      final bool fillTitle = _titleCtrl.text.isEmpty && meta.title != null;
+      final bool fillAuthor = _authorCtrl.text.isEmpty && meta.author != null;
+      if (fillTitle || fillAuthor) {
+        setState(() {
+          if (fillTitle) _titleCtrl.text = meta.title!;
+          if (fillAuthor) _authorCtrl.text = meta.author!;
+        });
+      }
+      // 找到首个含可用 tag 的文件即停（多文件有声书用第一段的容器 tag）。
+      if (meta.title != null || meta.author != null) return;
     }
   }
 

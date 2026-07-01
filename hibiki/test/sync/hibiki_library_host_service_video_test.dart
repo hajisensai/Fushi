@@ -552,6 +552,10 @@ void main() {
 }
 
 class _EmbeddedSubtitleProbeBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   const _EmbeddedSubtitleProbeBackend();
 
   @override

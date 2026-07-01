@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter/return_code.dart';
 import 'package:flutter/foundation.dart';
 
@@ -135,6 +136,12 @@ ProcessException _withFfmpegLaunchContext(
 /// （进程内自编 ffmpeg-kit）。经 [resolveFfmpegBackend] 按平台分流。
 abstract class FfmpegBackend {
   Future<FfmpegRunResult> run(List<String> args, Duration timeout);
+
+  /// 跑一次 ffprobe，返回退出码 + **stdout** 文本（ffprobe 的 JSON 报告写 stdout，
+  /// 不是 stderr）。TODO-1045 元数据探测用：桌面 [CliFfmpegBackend] 起 ffprobe 进程、
+  /// 移动端 [KitFfmpegBackend] 走 `FFprobeKit.executeWithArguments`。与 [run] 分开
+  /// （不同可执行、不同输出流），不污染既有 ffmpeg 调用路径。
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout);
 }
 
 /// 解析 ffmpeg 可执行文件（桌面 [CliFfmpegBackend] 用）。优先级：
@@ -164,11 +171,39 @@ String resolveFfmpegExecutableFrom({
 /// 本进程的可执行文件：Windows `…\Hibiki\hibiki.exe` → 找 `…\Hibiki\ffmpeg.exe`；
 /// macOS `Hibiki.app/Contents/MacOS/Hibiki` → 找同目录 `ffmpeg`；Linux 同理。
 /// 任何异常（沙箱/只读/解析失败）静默返回 null，回退 PATH。
-String? _bundledFfmpegPath() {
+String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
+
+/// 解析 ffprobe 可执行文件（TODO-1045 元数据探测用）。与 [resolveFfmpegExecutable]
+/// 同款优先级：`HIBIKI_FFPROBE` 覆盖 > 程序旁捆绑 `ffprobe(.exe)`（打包时与 ffmpeg
+/// 并排塞进各桌面产物）> 系统 PATH 上的 `ffprobe`。
+String resolveFfprobeExecutable() => resolveFfprobeExecutableFrom(
+      override: Platform.environment['HIBIKI_FFPROBE'],
+      bundledPath: _bundledFfprobePath(),
+    );
+
+/// 纯函数：按「覆盖 > 捆绑 > PATH」决定 ffprobe 可执行（镜像
+/// [resolveFfmpegExecutableFrom]，便于单测优先级）。
+String resolveFfprobeExecutableFrom({
+  required String? override,
+  required String? bundledPath,
+}) {
+  final String? o = override?.trim();
+  if (o != null && o.isNotEmpty) return o;
+  if (bundledPath != null && bundledPath.isNotEmpty) return bundledPath;
+  return 'ffprobe';
+}
+
+/// app 可执行文件同目录下的捆绑 ffprobe 路径（存在才返回，否则 null）。镜像
+/// [_bundledFfmpegPath]：捆绑 ffmpeg 的产物旁通常并排放着同版本 ffprobe(.exe)。
+String? _bundledFfprobePath() => _bundledExecutablePath('ffprobe');
+
+/// 共享：app 可执行文件同目录下名为 [name]（Windows 补 `.exe`）的捆绑工具路径，
+/// 存在才返回，否则 null；任何异常静默返回 null 回退 PATH。ffmpeg / ffprobe 共用。
+String? _bundledExecutablePath(String name) {
   try {
     final String exeDir = File(Platform.resolvedExecutable).parent.path;
-    final String name = Platform.isWindows ? 'ffmpeg.exe' : 'ffmpeg';
-    final File candidate = File('$exeDir${Platform.pathSeparator}$name');
+    final String fileName = Platform.isWindows ? '$name.exe' : name;
+    final File candidate = File('$exeDir${Platform.pathSeparator}$fileName');
     if (candidate.existsSync()) return candidate.path;
   } catch (_) {}
   return null;
@@ -195,6 +230,42 @@ Future<FfmpegRunResult> runFfmpegProcess(
   try {
     final int code = await process.exitCode.timeout(timeout);
     final String output = await stderrText;
+    return FfmpegRunResult(
+      returnCode: code,
+      output: output,
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    return FfmpegRunResult(
+      returnCode: null,
+      output: '',
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
+  }
+}
+
+/// 共享：跑一次指定可执行文件的 **ffprobe**，返回退出码 + **stdout** 文本。
+///
+/// 与 [runFfmpegProcess] 的关键区别：ffprobe 的 `-print_format json` 报告写到
+/// **stdout**（ffmpeg 把工作输出写 stderr），故这里收集 stdout 作 [FfmpegRunResult.output]、
+/// drain stderr 防管道死锁——正好与 ffmpeg 反过来。超时 SIGKILL 返回 `returnCode:null`；
+/// 可执行文件不存在时 `Process.start` 抛 [ProcessException] **向上传播**（调用方 catch
+/// 后回退文件名兜底）。stdout 用宽容 UTF-8 解码，绝不因个别非法字节抛错。
+Future<FfmpegRunResult> runFfprobeProcess(
+  String executable,
+  List<String> args,
+  Duration timeout,
+) async {
+  final Process process = await Process.start(executable, args);
+  final Future<String> stdoutText =
+      process.stdout.transform(const Utf8Decoder(allowMalformed: true)).join();
+  unawaited(process.stderr.drain<void>());
+  try {
+    final int code = await process.exitCode.timeout(timeout);
+    final String output = await stdoutText;
     return FfmpegRunResult(
       returnCode: code,
       output: output,
@@ -365,6 +436,68 @@ Future<FfmpegRunResult> runCliFfmpegForTesting({
       runner: runner,
     );
 
+/// 桌面 ffprobe 执行（`resolveFfprobeExecutable` 解析：覆盖>捆绑>PATH）：先试解析出的
+/// 可执行，若它是捆绑路径且 `Process.start` 抛 [ProcessException]（损坏/权限/架构不匹配），
+/// 回退 PATH 上的 `ffprobe`；两者都跑不起来则向上抛（调用方回退文件名兜底）。
+///
+/// 不复用 ffmpeg 的 stderr-空回退启发式（那些针对 ffmpeg 的工作输出写 stderr）：
+/// ffprobe JSON 写 stdout，无 tag 的容器也会输出合法的 `{"format":{...}}`，故只需处理
+/// 「二进制跑不起来」这一类回退。纯函数 [runCliFfprobeForTesting] 暴露给单测。
+Future<FfmpegRunResult> _runCliFfprobe({
+  required String? override,
+  required String? bundledPath,
+  required List<String> args,
+  required Duration timeout,
+  required FfmpegProcessRunner runner,
+}) async {
+  final String resolved = resolveFfprobeExecutableFrom(
+      override: override, bundledPath: bundledPath);
+  try {
+    return (await runner(resolved, args, timeout)).withExecutionContext(
+      executable: resolved,
+      attemptedExecutables: <String>[resolved],
+    );
+  } on ProcessException catch (e) {
+    // 显式覆盖跑不起来沿旧契约如实抛（不悄悄换 PATH）。
+    final String? o = override?.trim();
+    final bool isOverride = o != null && o.isNotEmpty && resolved == o;
+    // 已经就是裸 PATH `ffprobe` 了，无处可退，向上抛。
+    if (isOverride || resolved == 'ffprobe') rethrow;
+    final List<String> attempted = <String>[resolved, 'ffprobe'];
+    final String reason = 'bundled ffprobe launch failed '
+        '(errorCode=${e.errorCode}, message=${e.message})';
+    try {
+      return (await runner('ffprobe', args, timeout)).withExecutionContext(
+        executable: 'ffprobe',
+        attemptedExecutables: attempted,
+        fallbackReason: reason,
+      );
+    } on ProcessException catch (e2) {
+      throw _withFfmpegLaunchContext(
+        e2,
+        attemptedExecutables: attempted,
+        fallbackReason: reason,
+      );
+    }
+  }
+}
+
+@visibleForTesting
+Future<FfmpegRunResult> runCliFfprobeForTesting({
+  required String? override,
+  required String? bundledPath,
+  required List<String> args,
+  required Duration timeout,
+  required FfmpegProcessRunner runner,
+}) =>
+    _runCliFfprobe(
+      override: override,
+      bundledPath: bundledPath,
+      args: args,
+      timeout: timeout,
+      runner: runner,
+    );
+
 /// 系统 ffmpeg（`Process.start`）后端：桌面三端（Windows/macOS/Linux）。
 /// 委托 [runFfmpegProcess]，可执行文件经 [resolveFfmpegExecutable] 解析（覆盖>捆绑>PATH）。
 class CliFfmpegBackend implements FfmpegBackend {
@@ -379,6 +512,16 @@ class CliFfmpegBackend implements FfmpegBackend {
         args: args,
         timeout: timeout,
         runner: runFfmpegProcess,
+      );
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      _runCliFfprobe(
+        override: Platform.environment['HIBIKI_FFPROBE'],
+        bundledPath: _bundledFfprobePath(),
+        args: args,
+        timeout: timeout,
+        runner: runFfprobeProcess,
       );
 }
 
@@ -416,6 +559,33 @@ class KitFfmpegBackend implements FfmpegBackend {
         output: '',
         executable: 'ffmpeg-kit',
         attemptedExecutables: <String>['ffmpeg-kit'],
+      );
+    }
+  }
+
+  /// 移动端 ffprobe：进程内 `FFprobeKit.executeWithArguments`，`session.getOutput()`
+  /// 拿 ffprobe 的 JSON 报告（喂 `parseAudioMetadataFromFfprobeJson`）。与 [run] 同款
+  /// 超时/cancel 语义。TODO-1045：移动端也能读 M4B 容器 tag（方案 A 的关键假设）。
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
+    try {
+      final session =
+          await FFprobeKit.executeWithArguments(args).timeout(timeout);
+      final ReturnCode? rc = await session.getReturnCode();
+      final String output = (await session.getOutput()) ?? '';
+      return FfmpegRunResult(
+        returnCode: rc?.getValue(),
+        output: output,
+        executable: 'ffprobe-kit',
+        attemptedExecutables: const <String>['ffprobe-kit'],
+      );
+    } on TimeoutException {
+      await FFmpegKit.cancel();
+      return const FfmpegRunResult(
+        returnCode: null,
+        output: '',
+        executable: 'ffprobe-kit',
+        attemptedExecutables: <String>['ffprobe-kit'],
       );
     }
   }

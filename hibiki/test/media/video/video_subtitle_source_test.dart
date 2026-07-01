@@ -1483,6 +1483,10 @@ String _functionBody(String source, String signature) {
 }
 
 class _FakeFfmpegBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   _FakeFfmpegBackend({
     this.extractReturnCode = 0,
     this.writeOutputs = true,
@@ -1555,6 +1559,10 @@ Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,hello
 }
 
 class _TimeoutCapturingBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   Duration? lastTimeout;
 
   @override
@@ -1570,6 +1578,10 @@ class _TimeoutCapturingBackend implements FfmpegBackend {
 }
 
 class _ProbeResultBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   const _ProbeResultBackend(this.result);
 
   final FfmpegRunResult result;
@@ -1581,6 +1593,10 @@ class _ProbeResultBackend implements FfmpegBackend {
 }
 
 class _DefaultSubtitleFfmpegBackend implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
+
   _DefaultSubtitleFfmpegBackend({this.writeOutputs = true});
 
   final bool writeOutputs;
