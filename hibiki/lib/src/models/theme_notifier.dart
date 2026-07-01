@@ -536,6 +536,8 @@ class ThemeNotifier extends ChangeNotifier {
         return HibikiDesignSystem.material;
       case 'cupertino':
         return HibikiDesignSystem.cupertino;
+      case 'macos':
+        return HibikiDesignSystem.macos;
       default:
         return HibikiDesignSystem.auto;
     }

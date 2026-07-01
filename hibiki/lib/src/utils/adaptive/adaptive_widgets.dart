@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:macos_ui/macos_ui.dart'
+    show MacosSwitch, MacosSlider, PushButton, ControlSize;
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
@@ -11,6 +13,26 @@ Widget adaptiveDialogAction({
   bool isDestructiveAction = false,
   bool isDefaultAction = false,
 }) {
+  // macOS-native: PushButton is the standard dialog button. Default action =
+  // filled primary; destructive = error-tinted; everything else = secondary
+  // (the grey Cancel-style button). Checked before isCupertinoPlatform (macOS
+  // auto answers true there as the legacy fallback).
+  if (isMacosPlatform(context)) {
+    if (isDestructiveAction) {
+      return PushButton(
+        controlSize: ControlSize.large,
+        color: Theme.of(context).colorScheme.error,
+        onPressed: onPressed,
+        child: child,
+      );
+    }
+    return PushButton(
+      controlSize: ControlSize.large,
+      secondary: !isDefaultAction,
+      onPressed: onPressed,
+      child: child,
+    );
+  }
   if (isCupertinoPlatform(context)) {
     return CupertinoDialogAction(
       onPressed: onPressed,
@@ -48,6 +70,18 @@ Widget adaptiveSwitch({
   required ValueChanged<bool>? onChanged,
   Color? activeColor,
 }) {
+  // macOS-native: MacosSwitch is a clean drop-in (nullable onChanged handles the
+  // disabled state, activeColor maps 1:1). Checked BEFORE isCupertinoPlatform
+  // because under `auto` macOS still answers true there as the legacy fallback.
+  if (isMacosPlatform(context)) {
+    // Let MacosSwitch use the system accent for its active track — that's the
+    // native macOS look, more correct than forcing the app's activeColor (which
+    // is a Material/Cupertino Color, not macos_ui's MacosColor anyway).
+    return MacosSwitch(
+      value: value,
+      onChanged: onChanged,
+    );
+  }
   if (isCupertinoPlatform(context)) {
     return CupertinoSwitch(
       value: value,
@@ -74,6 +108,23 @@ Widget adaptiveSlider({
   ValueChanged<double>? onChangeStart,
   ValueChanged<double>? onChangeEnd,
 }) {
+  // macOS-native: MacosSlider has no onChangeEnd/onChangeStart/divisions, so a
+  // thin wrapper re-creates the commit-on-drag-end contract the settings sliders
+  // rely on (e.g. app UI scale). Only when interactive — a null onChanged means
+  // disabled, which MacosSlider can't express (its onChanged is non-nullable),
+  // so we fall through to the Cupertino disabled slider for that case.
+  if (isMacosPlatform(context) && onChanged != null) {
+    return _MacosSliderWithDragCallbacks(
+      value: value.clamp(min, max).toDouble(),
+      min: min,
+      max: max,
+      divisions: divisions,
+      color: Theme.of(context).colorScheme.primary,
+      onChanged: onChanged,
+      onChangeStart: onChangeStart,
+      onChangeEnd: onChangeEnd,
+    );
+  }
   if (isCupertinoPlatform(context)) {
     return CupertinoSlider(
       value: value,
@@ -201,4 +252,71 @@ Route<T> adaptivePageRoute<T>({
     settings: settings,
     fullscreenDialog: fullscreenDialog,
   );
+}
+
+/// Wraps [MacosSlider] (which only exposes a continuous [onChanged]) to restore
+/// the [Slider]/[CupertinoSlider] drag-boundary callbacks the settings sliders
+/// depend on. The raw [Listener] sees the pointer down/up regardless of the
+/// slider's internal pan recognizer, so commit-on-drag-end keeps working without
+/// re-introducing the scaled-tree slider regression. Maps Material `divisions`
+/// to MacosSlider's `discrete`/`splits`.
+class _MacosSliderWithDragCallbacks extends StatefulWidget {
+  const _MacosSliderWithDragCallbacks({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.color,
+    required this.onChanged,
+    required this.onChangeStart,
+    required this.onChangeEnd,
+  });
+
+  final double value;
+  final double min;
+  final double max;
+  final int? divisions;
+  final Color color;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeStart;
+  final ValueChanged<double>? onChangeEnd;
+
+  @override
+  State<_MacosSliderWithDragCallbacks> createState() =>
+      _MacosSliderWithDragCallbacksState();
+}
+
+class _MacosSliderWithDragCallbacksState
+    extends State<_MacosSliderWithDragCallbacks> {
+  late double _latest = widget.value;
+
+  @override
+  void didUpdateWidget(_MacosSliderWithDragCallbacks oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Track externally-driven value changes between drags so a pointer-up that
+    // fires without an intervening onChanged still commits the current value.
+    if (oldWidget.value != widget.value) _latest = widget.value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int? divisions = widget.divisions;
+    return Listener(
+      onPointerDown: (_) => widget.onChangeStart?.call(_latest),
+      onPointerUp: (_) => widget.onChangeEnd?.call(_latest),
+      onPointerCancel: (_) => widget.onChangeEnd?.call(_latest),
+      child: MacosSlider(
+        value: _latest.clamp(widget.min, widget.max).toDouble(),
+        min: widget.min,
+        max: widget.max,
+        discrete: divisions != null,
+        splits: (divisions != null && divisions >= 2) ? divisions : 15,
+        color: widget.color,
+        onChanged: (double next) {
+          _latest = next;
+          widget.onChanged(next);
+        },
+      ),
+    );
+  }
 }

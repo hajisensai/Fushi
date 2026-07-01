@@ -1,7 +1,11 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:macos_ui/macos_ui.dart'
+    show MacosTextField, MacosIcon, OverlayVisibilityMode;
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/focus/page_scroll_registry.dart';
@@ -330,50 +334,70 @@ class HibikiSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget searchBar = ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller,
-      builder: (context, value, _) {
-        final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
-          context: context,
-          controller: controller,
-          onChanged: onChanged,
-        );
-        final List<Widget> trailing = <Widget>[
-          if (onClear != null && value.text.isNotEmpty)
-            HibikiIconButton(
-              key: clearButtonKey,
-              icon: Icons.close,
-              tooltip: t.clear,
-              onTap: () {
-                onClear?.call();
-                if (focusNode.canRequestFocus) {
-                  focusNode.requestFocus();
-                }
-              },
+    final Widget searchBar;
+    if (isMacosPlatform(context)) {
+      // macOS-native: MacosTextField maps the search field faithfully —
+      // search-icon prefix, native clear button (clearButtonMode), and it keeps
+      // onSubmitted (MacosSearchField drops it, which would break enter-to-search).
+      searchBar = MacosTextField(
+        key: fieldKey,
+        controller: controller,
+        focusNode: focusNode,
+        placeholder: hintText,
+        prefix: const Padding(
+          padding: EdgeInsets.only(left: 6, right: 2),
+          child: MacosIcon(CupertinoIcons.search),
+        ),
+        clearButtonMode: OverlayVisibilityMode.editing,
+        onChanged: onChanged,
+        onSubmitted: onSubmitted,
+      );
+    } else {
+      searchBar = ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
+            context: context,
+            controller: controller,
+            onChanged: onChanged,
+          );
+          final List<Widget> trailing = <Widget>[
+            if (onClear != null && value.text.isNotEmpty)
+              HibikiIconButton(
+                key: clearButtonKey,
+                icon: Icons.close,
+                tooltip: t.clear,
+                onTap: () {
+                  onClear?.call();
+                  if (focusNode.canRequestFocus) {
+                    focusNode.requestFocus();
+                  }
+                },
+              ),
+            if (inputSuffix != null) inputSuffix,
+          ];
+          return SearchBar(
+            key: fieldKey,
+            controller: controller,
+            focusNode: focusNode,
+            hintText: hintText,
+            leading: const Icon(Icons.search),
+            trailing: trailing.isEmpty ? null : trailing,
+            elevation: const WidgetStatePropertyAll<double>(0),
+            backgroundColor:
+                WidgetStatePropertyAll<Color>(tokens.surfaces.search),
+            shape: WidgetStatePropertyAll<OutlinedBorder>(
+              RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
             ),
-          if (inputSuffix != null) inputSuffix,
-        ];
-        return SearchBar(
-          key: fieldKey,
-          controller: controller,
-          focusNode: focusNode,
-          hintText: hintText,
-          leading: const Icon(Icons.search),
-          trailing: trailing.isEmpty ? null : trailing,
-          elevation: const WidgetStatePropertyAll<double>(0),
-          backgroundColor:
-              WidgetStatePropertyAll<Color>(tokens.surfaces.search),
-          shape: WidgetStatePropertyAll<OutlinedBorder>(
-            RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
-          ),
-          textStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listTitle),
-          hintStyle:
-              WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
-          onChanged: onChanged,
-          onSubmitted: onSubmitted,
-        );
-      },
-    );
+            textStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listTitle),
+            hintStyle:
+                WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
+            onChanged: onChanged,
+            onSubmitted: onSubmitted,
+          );
+        },
+      );
+    }
     if (focusId == null) return searchBar;
     if (HibikiFocusRoot.maybeControllerOf(context) == null) return searchBar;
     return HibikiFocusRegistration(

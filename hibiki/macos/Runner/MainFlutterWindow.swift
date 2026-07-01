@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import macos_window_utils
 
 class MainFlutterWindow: NSWindow {
   // Background test mode: when HIBIKI_TEST_HIDDEN is set, the window is parked
@@ -15,9 +16,15 @@ class MainFlutterWindow: NSWindow {
   }
 
   override func awakeFromNib() {
-    let flutterViewController = FlutterViewController()
     var windowFrame = self.frame
-    self.contentViewController = flutterViewController
+    // macos_ui needs the window's content view managed by macos_window_utils so
+    // the transparent titlebar / full-size-content view / sidebar vibrancy work.
+    // MacOSWindowUtilsViewController() creates its own internal
+    // FlutterViewController; plugins must be registered against that one. This
+    // is the package's documented MainFlutterWindow.swift setup and is
+    // orthogonal to the test-hidden frame / activation-policy overrides below.
+    let macOSWindowUtilsViewController = MacOSWindowUtilsViewController()
+    self.contentViewController = macOSWindowUtilsViewController
 
     if hiddenTestMode {
       // Park far off every physical screen; keep the size so layout is
@@ -28,7 +35,11 @@ class MainFlutterWindow: NSWindow {
     }
     self.setFrame(windowFrame, display: true)
 
-    RegisterGeneratedPlugins(registry: flutterViewController)
+    // Initialize the macos_window_utils plugin (native side of WindowManipulator).
+    MainFlutterWindowManipulator.start(mainFlutterWindow: self)
+
+    RegisterGeneratedPlugins(
+      registry: macOSWindowUtilsViewController.flutterViewController)
 
     super.awakeFromNib()
   }

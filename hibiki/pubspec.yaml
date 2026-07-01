@@ -94,6 +94,7 @@ dependencies:
   # 归档(同下载路径不同 MD5)，video libs 是 audio 超集，统一提供 libmpv。
   kana_kit: ^2.0.0
   list_counter: ^1.0.2
+  macos_ui: ^2.2.2
   material_color_utilities: ^0.13.0
   marquee: ^2.2.3
   multi_value_listenable_builder: ^0.0.2

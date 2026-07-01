@@ -4,6 +4,8 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:macos_ui/macos_ui.dart'
+    show MacosTheme, MacosWindow, WindowManipulator;
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -29,6 +31,7 @@ import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/wgc_capture_log.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
+import 'package:hibiki/src/utils/adaptive/hibiki_macos_theme.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
@@ -174,6 +177,21 @@ void main([List<String> args = const <String>[]]) {
     JustAudioMediaKit.pitch = false;
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
+
+    // macOS native shell: initialise the macos_window_utils channel (paired with
+    // MainFlutterWindowManipulator.start in MainFlutterWindow.swift) so the
+    // MacosWindow transparent titlebar / sidebar vibrancy work. enableWindow
+    // Delegate is required for fullscreen presentation options. macos_ui's ToolBar
+    // adds a passthrough view constrained to the titlebar, which throws
+    // `NSLayoutAttributeTop requires NSWindowStyleMaskFullSizeContentView` unless
+    // the window has a full-size content view + transparent titlebar, so enable
+    // those explicitly here (before runApp) so the style mask is correct before
+    // any ToolBar mounts. No-op / not called on other platforms.
+    if (Platform.isMacOS) {
+      await WindowManipulator.initialize(enableWindowDelegate: true);
+      await WindowManipulator.makeTitlebarTransparent();
+      await WindowManipulator.enableFullSizeContentView();
+    }
 
     /// Ensure no pop-in for the app icon. Precaching is a best-effort
     /// optimisation: if the decode fails (e.g. the CI software-GPU emulator
@@ -1192,26 +1210,57 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                       viewport: viewport,
                       platform: Theme.of(context).platform,
                     );
+                    Widget navigation = wrapWithGlobalNavigation(
+                      navigatorKey: appModel.navigatorKey,
+                      focusNavigationEnabled:
+                          appModel.experimentalFocusNavigationEnabled,
+                      registry: appModel.shortcutRegistry,
+
+                      // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
+                      // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
+                      // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                      child: Stack(
+                        children: <Widget>[
+                          child!,
+                          const FloatingLyricLookupHost(),
+                        ],
+                      ),
+                    );
+                    if (Theme.of(context).platform == TargetPlatform.macOS) {
+                      // macOS native shell (Approach B): the MacosWindow + Sidebar
+                      // wrap the WHOLE navigator so every route — home tabs AND
+                      // pushed routes (reader, settings detail, dialogs) — inherits
+                      // a MacosWindowScope and can use native MacosScaffold/ToolBar.
+                      // MacosTheme is derived from the SAME live ColorScheme as the
+                      // rest of the app. The sidebar destinations come from the
+                      // dynamic HomeTab list (video/texthooker toggles) so they
+                      // stay in lock-step with HomePage's rail; selection is shared
+                      // via homeShellTabNotifier. Hide the sidebar while a media
+                      // item (reader/video) is open so reading is full-width; the
+                      // builder reruns when appModel notifies (openMedia/close).
+                      navigation = MacosTheme(
+                        data:
+                            hibikiMacosThemeFromColorScheme(cs, cs.brightness),
+                        child: MacosWindow(
+                          sidebar: appModel.isMediaOpen
+                              ? null
+                              : buildHibikiMacosSidebar(
+                                  activeTabs: homeActiveTabs(
+                                    videoEnabled:
+                                        appModel.experimentalVideoEnabled,
+                                    texthookerEnabled:
+                                        appModel.texthookerEnabled,
+                                  ),
+                                ),
+                          child: navigation,
+                        ),
+                      );
+                    }
                     return HibikiAppUiScale(
                       scale: uiScale,
                       child: _wrapFocusNavigation(
                         enabled: appModel.experimentalFocusNavigationEnabled,
-                        child: wrapWithGlobalNavigation(
-                          navigatorKey: appModel.navigatorKey,
-                          focusNavigationEnabled:
-                              appModel.experimentalFocusNavigationEnabled,
-                          registry: appModel.shortcutRegistry,
-
-                          // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
-                          // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
-                          // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                          child: Stack(
-                            children: <Widget>[
-                              child!,
-                              const FloatingLyricLookupHost(),
-                            ],
-                          ),
-                        ),
+                        child: navigation,
                       ),
                     );
                   },

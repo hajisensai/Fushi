@@ -39,6 +39,12 @@ Widget _maybeBadge({required AdaptiveNavItem item, required Widget child}) {
 /// this no longer uses on Material).
 const Key hibikiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
 
+/// Marks the macOS-native (macos_ui) shell's content subtree so integration
+/// tests can locate the top-level destinations without depending on the
+/// MacosWindow/Sidebar internals. Mirrors [hibikiMaterialNavKey] for the macOS
+/// design system.
+const Key hibikiMacosNavKey = ValueKey<String>('hibiki-macos-nav');
+
 /// TODO-973: pure decision for whether the global navigation chrome (bottom bar /
 /// side rail) should be VISIBLE. The only input is whether gamepad auto-immersive
 /// is currently active (the single source of truth on
