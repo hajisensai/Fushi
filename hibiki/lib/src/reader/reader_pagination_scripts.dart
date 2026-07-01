@@ -1483,28 +1483,55 @@ $blurFn
       $blurSvgCall
     }
   });
-  var imagePromises = Array.from(document.querySelectorAll('img')).map(function(img) {
-    return new Promise(function(resolve) {
-      var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
-      var mark = function() {
-        if (!isGaiji && (img.naturalWidth > 256 || img.naturalHeight > 256)) {
-          img.classList.add('block-img');
-          var wrapper = document.createElement('div');
-          wrapper.className = 'block-img-wrapper';
-          img.parentNode.insertBefore(wrapper, img);
-          wrapper.appendChild(img);
-          $blurImgCall
+  // TODO-1074（根因 A）：首屏可见性/restore 不再被「所有 <img> 都 decode 完」整页阻塞。
+  // 旧实现给每个未完成的 <img> 挂 img.onload 才 resolve，Promise.all 揭开 restore 前要等
+  // 最大图读盘+全分辨率解码 → 图片章首屏/换章卡（文字章几乎无 <img> 故快）。
+  // 现在：
+  //   · 每个 <img> 加 loading="lazy"（视口外不预取解码，不再拖住 window.load）+
+  //     decoding="async"（解码离主线程，不阻塞首帧）。gaiji 内联小图除外——它们参与文字
+  //     排版几何，必须 eager 同步，lazy 会让占位撑不开破坏 metrics。
+  //   · 已 decode 完（complete && naturalWidth>0）的图仍同步分类 block-img 并即刻 resolve。
+  //   · 未完成的图**立即 resolve**（不再 gate restore），block-img 归类推迟到它真正 onload
+  //     时补做（懒图滚进视口才 load，普通图 decode 完），补做后失效 paginationMetrics 强制
+  //     下次 paginate 用纳入真实图尺寸的几何重建（与 TODO-627 首帧那次失效同源）。
+  // 竖排 SVG 封面（<svg><image>）走上面 querySelectorAll('svg') 的同步分支（尺寸取
+  // 属性/viewBox，无需 onload），本改动不触及 → BUG-025 行为不变。
+  function _hoshiClassifyBlockImg(img) {
+    var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
+    if (isGaiji) return false;
+    if (img.naturalWidth > 256 || img.naturalHeight > 256) {
+      if (img.closest('.block-img-wrapper')) return false;
+      img.classList.add('block-img');
+      var wrapper = document.createElement('div');
+      wrapper.className = 'block-img-wrapper';
+      img.parentNode.insertBefore(wrapper, img);
+      wrapper.appendChild(img);
+      $blurImgCall
+      return true;
+    }
+    return false;
+  }
+  Array.from(document.querySelectorAll('img')).forEach(function(img) {
+    var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
+    // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
+    if (!isGaiji) {
+      img.setAttribute('loading', 'lazy');
+    }
+    img.setAttribute('decoding', 'async');
+    if (img.complete && img.naturalWidth > 0) {
+      _hoshiClassifyBlockImg(img);
+    } else {
+      // 未完成：restore 不等它。真正 load 后补做 block-img 归类并失效 metrics。
+      img.addEventListener('load', function() {
+        if (_hoshiClassifyBlockImg(img)) {
+          var r = window.hoshiReader;
+          if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
         }
-        resolve();
-      };
-      if (img.complete && img.naturalWidth > 0) {
-        mark();
-      } else {
-        img.onload = mark;
-        img.onerror = function() { resolve(); };
-      }
-    });
+      });
+    }
   });
+  // TODO-1074：restore/buildNodeOffsets 只等已完成的图（几乎瞬时），未完成图不 gate。
+  var imagePromises = [];
 ''';
   }
 

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 486 条。点号进各自文件。
+> 共 487 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-501](bugs/BUG-501-image-chapter-load-blocking.md) | ✅ | ✅ | TODO-1074 图片章加载慢 |
 | [BUG-500](bugs/BUG-500-profile-dict-metadata-not-followed.md) | ✅ | ✅ | TODO-1077 切换Profile词典设置不跟随 |
 | [BUG-499](bugs/BUG-499-srt-floating-lyric-menu.md) | ✅ | ✅ | SRT/有声书卡长按缺悬浮字幕菜单项 |
 | [BUG-498](bugs/BUG-498-video-tap-bottom-deadzone.md) | ✅ | ✅ | video: bottom/bottom-right tap cannot toggle controls (TODO-1073) |

@@ -145,6 +145,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       data = _chapterHtmlBytes(filePath, data);
     }
 
+    // TODO-1074 (root cause B): images are immutable on disk and carry no live
+    // style injection (unlike HTML/CSS which are re-sanitized per style change),
+    // so let the WebView cache the decoded bitmap. Without this, every "text ->
+    // image -> text" chapter round-trip re-reads the file off disk and re-decodes
+    // it at full resolution (no-cache defeats the WebView bitmap cache). HTML/CSS
+    // stay no-cache because their bytes change when the reader style changes.
+    final bool isImage = mime.startsWith('image/');
+    final String cacheControl = isImage ? 'max-age=3600' : 'no-cache';
     return WebResourceResponse(
       contentType: mime,
       contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
@@ -152,7 +160,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       reasonPhrase: 'OK',
       headers: <String, String>{
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': cacheControl,
       },
       data: data,
     );
