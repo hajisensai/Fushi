@@ -1104,6 +1104,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         lineHeight: lineHeight,
         background: themeColors.bg,
         foreground: themeColors.fg,
+        // TODO-1013：逐句高亮跟随色 = 有声书当前句跟读高亮（sasayaki），与阅读器正文
+        // `::highlight(hoshi-sasayaki)` 同一真相源（ReaderThemeColors.sasayaki），
+        // 导出卡片把它当整句背景衬底，复刻「逐句高亮跟随」样式。
+        highlight: themeColors.sasayaki,
       );
       final Uint8List? pngBytes = await renderAudiobookClipTextToPng(
         overlay: overlay,

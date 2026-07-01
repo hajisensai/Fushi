@@ -68,6 +68,8 @@ void main() {
   group('computeClipTextLayout (TODO-945 M3 layout)', () {
     const Color bg = Color(0xFF101010);
     const Color fg = Color(0xFFF0F0F0);
+    // TODO-1013：逐句高亮跟随色（sasayaki）——导出卡片当整句背景衬底。
+    const Color highlight = Color(0x66FFCC00);
 
     test('default output is portrait 720x1280 (D3) and carries theme colors',
         () {
@@ -78,11 +80,14 @@ void main() {
         lineHeight: 1.65,
         background: bg,
         foreground: fg,
+        highlight: highlight,
       );
       expect(layout.width, 720);
       expect(layout.height, 1280);
       expect(layout.background, bg);
       expect(layout.foreground, fg);
+      // TODO-1013：逐句高亮跟随色（sasayaki）必须原样透传给渲染层。
+      expect(layout.highlight, highlight);
       expect(layout.vertical, isFalse);
     });
 
@@ -94,6 +99,7 @@ void main() {
         lineHeight: 1.6,
         background: bg,
         foreground: fg,
+        highlight: highlight,
       );
       final AudiobookClipTextLayout longL = computeClipTextLayout(
         textLength: 200,
@@ -102,6 +108,7 @@ void main() {
         lineHeight: 1.6,
         background: bg,
         foreground: fg,
+        highlight: highlight,
       );
       expect(longL.fontSize, lessThan(shortL.fontSize));
       // Never collapses below the readable floor.
@@ -116,6 +123,7 @@ void main() {
         lineHeight: 1.6,
         background: bg,
         foreground: fg,
+        highlight: highlight,
       );
       expect(layout.vertical, isTrue);
     });
@@ -128,6 +136,7 @@ void main() {
         lineHeight: 0,
         background: bg,
         foreground: fg,
+        highlight: highlight,
       );
       expect(layout.fontSize, greaterThan(0));
       expect(layout.lineHeight, greaterThan(0));

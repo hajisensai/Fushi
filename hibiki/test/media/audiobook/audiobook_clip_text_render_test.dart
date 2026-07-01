@@ -44,6 +44,7 @@ void main() {
         lineHeight: 1.6,
         background: const Color(0xFF101010),
         foreground: const Color(0xFFF0F0F0),
+        highlight: const Color(0x66FFCC00),
       );
 
       Uint8List? png;
@@ -105,6 +106,7 @@ void main() {
         lineHeight: 1.6,
         background: const Color(0xFF101010),
         foreground: const Color(0xFFF0F0F0),
+        highlight: const Color(0x66FFCC00),
       );
       expect(layout.fontSize, greaterThan(0));
       expect(layout.width, 720);

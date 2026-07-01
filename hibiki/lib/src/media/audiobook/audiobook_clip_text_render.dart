@@ -28,6 +28,7 @@ class AudiobookClipTextLayout {
     required this.vertical,
     required this.background,
     required this.foreground,
+    required this.highlight,
   });
 
   /// 输出图宽（px）。
@@ -53,6 +54,11 @@ class AudiobookClipTextLayout {
 
   /// 文字色（阅读主题 fg）。
   final Color foreground;
+
+  /// 逐句高亮跟随色（阅读主题 sasayaki——有声书当前句跟读高亮的背景衬色）。
+  /// 与阅读器正文里 `::highlight(hoshi-sasayaki)` 同一真相源（`ReaderThemeColors.sasayaki`），
+  /// 导出卡片把它当整句背景衬底涂在 fg 文字之下，复刻「逐句高亮跟随」观感（TODO-1013）。
+  final Color highlight;
 }
 
 /// 纯函数：按选中文本长度 + 阅读设置算出文本图布局。
@@ -60,6 +66,8 @@ class AudiobookClipTextLayout {
 /// - [textLength]：选中文本字符数，用于自适应缩小字号（长选区不溢出/不被截断）。
 /// - [baseFontSize]：阅读器正文字号（`ReaderSettings.fontSize`，逻辑 px）。
 /// - [vertical] / [lineHeight] / [background] / [foreground]：沿用阅读主题（D2）。
+/// - [highlight]：逐句高亮跟随色（`ReaderThemeColors.sasayaki`，TODO-1013），作为整句
+///   背景衬底涂在文字之下，复刻有声书当前句跟读高亮。
 /// - [width] / [height]：输出分辨率（默认竖屏 720×1280，D3）。
 ///
 /// 字号自适应规则（粗略但确定，避免巨图/截断）：以 [baseFontSize] 为上限，文本越长
@@ -71,6 +79,7 @@ AudiobookClipTextLayout computeClipTextLayout({
   required double lineHeight,
   required Color background,
   required Color foreground,
+  required Color highlight,
   int width = 720,
   int height = 1280,
   double minFontSize = 18,
@@ -96,6 +105,7 @@ AudiobookClipTextLayout computeClipTextLayout({
     vertical: vertical,
     background: background,
     foreground: foreground,
+    highlight: highlight,
   );
 }
 
@@ -280,16 +290,33 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
   @override
   Widget build(BuildContext context) {
     final AudiobookClipTextLayout layout = widget.layout;
+    // TODO-1013：复刻有声书「逐句高亮跟随」——阅读器当前句用 sasayaki 色作整句背景衬底
+    // （`::highlight(hoshi-sasayaki)`），文字保持 fg，并加粗（呼应歌词模式当前句
+    // `font-weight: 700`）。导出卡片对齐同一观感：fg 粗体文字铺在 highlight 衬底上。
     final TextStyle textStyle = TextStyle(
       color: layout.foreground,
       fontSize: layout.fontSize,
       height: layout.lineHeight,
+      fontWeight: FontWeight.w700,
     );
 
-    final Widget body = Text(
-      widget.text,
-      style: textStyle,
-      textAlign: TextAlign.center,
+    // 衬底内边距：与字号成比例（大字大衬底），圆角柔化边缘（分享卡片观感）。
+    final double highlightPadV = layout.fontSize * 0.14;
+    final double highlightPadH = layout.fontSize * 0.28;
+    final Widget body = Container(
+      decoration: BoxDecoration(
+        color: layout.highlight,
+        borderRadius: BorderRadius.circular(layout.fontSize * 0.18),
+      ),
+      padding: EdgeInsets.symmetric(
+        vertical: highlightPadV,
+        horizontal: highlightPadH,
+      ),
+      child: Text(
+        widget.text,
+        style: textStyle,
+        textAlign: TextAlign.center,
+      ),
     );
 
     // 竖排：用 RotatedBox 把整段文本块旋转。简化实现 —— 真竖排（每字直排）需 WebView
