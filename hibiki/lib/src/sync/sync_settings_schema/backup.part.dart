@@ -52,6 +52,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       final tmpDir = await getTemporaryDirectory();
       final filename = service.defaultFilename();
       final tmpPath = p.join(tmpDir.path, filename);
+      final tmpFile = File(tmpPath);
       await service.exportBackup(tmpPath, categories: categories);
 
       if (!mounted) return;
@@ -68,10 +69,14 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
           type: FileType.custom,
           allowedExtensions: ['zip'],
         );
-        if (savePath != null) {
-          await File(tmpPath).copy(savePath);
+        try {
+          if (savePath == null) return;
+          await tmpFile.copy(savePath);
+        } finally {
+          if (await tmpFile.exists()) {
+            await tmpFile.delete();
+          }
         }
-        await File(tmpPath).delete();
       }
 
       if (mounted) {
