@@ -24,14 +24,26 @@ void main() {
         reason: 'poke 必须派发 hover 事件（media_kit 在 onHover 重置隐藏计时）');
   });
 
-  test('poke 仅桌面生效（移动端 controls 无 hover 自动隐藏问题）', () {
+  test('poke 仅桌面派发合成 hover（移动端 controls 无 hover 自动隐藏问题）', () {
     expect(src.contains('bool get _isDesktopVideoControls'), isTrue);
+    // TODO-1059：平台无关的压制门控（沉浸锁 / 侧栏 / 字幕列表 / 编辑态）前置到
+    // _isDesktopVideoControls 之前，且移动端改走 _restartHideTimerSignal.poke() 续命隐藏
+    // Timer 而**不派合成 hover**（无 hover 语义）。故桌面门控不再是方法体首语句——守卫改成
+    // 「方法体内存在 !_isDesktopVideoControls 早退」，不变量强度不变：移动端绝不派合成 hover。
+    final int at = src.indexOf('void _pokeControlsVisible()');
+    expect(at, greaterThanOrEqualTo(0), reason: '缺 _pokeControlsVisible 助手');
+    final int end = src.indexOf('void _dispatchPokeHover', at);
+    expect(end, greaterThan(at), reason: '缺 _dispatchPokeHover（方法体终点锚）');
+    final String body = src.substring(at, end);
     expect(
-      RegExp(r'void _pokeControlsVisible\(\)\s*\{\s*if \(!_isDesktopVideoControls\) return;')
-          .hasMatch(src),
+      RegExp(r'if \(!_isDesktopVideoControls\)\s*\{').hasMatch(body),
       isTrue,
-      reason: '_pokeControlsVisible 必须先门控 _isDesktopVideoControls 再派发',
+      reason:
+          '_pokeControlsVisible 必须门控 _isDesktopVideoControls（移动端不派合成 hover）',
     );
+    // 移动端分支续命隐藏 Timer 而非派合成 hover（TODO-1059）。
+    expect(body.contains('_restartHideTimerSignal.poke();'), isTrue,
+        reason: '移动端经 _restartHideTimerSignal 续命，而非派合成 hover');
   });
 
   test('键盘快进/跳句四个入口都调用 _pokeControlsVisible', () {

@@ -119,13 +119,32 @@ void main() {
         contains(
             'await favRepo.removeById(fav.id);\n          _invalidateFavoriteSentenceCache();'),
         reason: '设置面板删除收藏后，当前 reader 缓存必须失效');
+    // BUG-494：取消收藏优先按缓存的精确条目 id removeById 删单条，无 id 时才回退内容键
+    // removeByContent（包在 else 分支里，故内容键删单条这段多缩进一层，text: 现为 10 空格
+    // 缩进）。守卫更新到当前缩进，不变量强度不变：内容键删除仍走 removeByContent 单条删。
     expect(toggleBody,
-        contains('await repo.removeByContent(\n        text: sentence,'));
+        contains('await repo.removeByContent(\n          text: sentence,'));
     expect(toggleBody, contains('_invalidateFavoriteSentenceCache();'));
-    expect(
-        toggleBody,
-        contains(
-            'await repo.add(fav);\n    _invalidateFavoriteSentenceCache();'),
-        reason: '新增收藏后必须重新拉取/过滤，保证高亮和星标状态准确');
+    // 删除路径（内容键回退分支）删后必失效缓存。
+    final int removeIdx = toggleBody.indexOf('await repo.removeByContent(');
+    final int removeInvalidateIdx =
+        toggleBody.indexOf('_invalidateFavoriteSentenceCache();', removeIdx);
+    expect(removeInvalidateIdx, greaterThan(removeIdx),
+        reason: '删除收藏（内容键回退）后当前 reader 缓存必须失效');
+    // 新增收藏：repo.add(fav) 后必记住精确 id（BUG-494 removeById 用）并失效缓存再刷新
+    // 高亮。BUG-494 在 add 与 invalidate 之间插入 _currentFavoriteId = fav.id;，故不再是
+    // 紧邻两行——改为「add 之后、rebuild 之前必有 _currentFavoriteId 记账 + 缓存失效」，
+    // 不变量强度不变（新增后缓存必失效）。
+    final int addIdx = toggleBody.indexOf('await repo.add(fav);');
+    expect(addIdx, greaterThan(0), reason: '新增收藏必须 repo.add(fav)');
+    final int rebuildAfterAddIdx = toggleBody.indexOf(
+        '_rebuild(() => _currentSentenceIsFavorited = true)', addIdx);
+    expect(rebuildAfterAddIdx, greaterThan(addIdx),
+        reason: '新增收藏后必须 rebuild 星标态');
+    final String addBody = toggleBody.substring(addIdx, rebuildAfterAddIdx);
+    expect(addBody, contains('_currentFavoriteId = fav.id;'),
+        reason: 'BUG-494：新增后记住精确 id，供随后 removeById 精确删单条');
+    expect(addBody, contains('_invalidateFavoriteSentenceCache();'),
+        reason: '新增收藏后必须失效缓存重新拉取/过滤，保证高亮和星标状态准确');
   });
 }

@@ -26,7 +26,8 @@ void main() {
       File(relative).readAsStringSync().replaceAll('\r\n', '\n');
 
   group('sentence-audio ffmpeg routing guard (TODO-970)', () {
-    test('TtsChannel.extractAudioSegment routes to ffmpeg on all platforms', () {
+    test('TtsChannel.extractAudioSegment routes to ffmpeg on all platforms',
+        () {
       final String source = libFile('lib/src/utils/misc/tts_channel.dart');
 
       // Pin the method body window so the assertions are scoped to it.
@@ -34,8 +35,9 @@ void main() {
       expect(start, greaterThanOrEqualTo(0),
           reason: 'extractAudioSegment must still exist on TtsChannel.');
       final int next = source.indexOf('Future<', start + 1);
-      final String body =
-          next > start ? source.substring(start, next) : source.substring(start);
+      final String body = next > start
+          ? source.substring(start, next)
+          : source.substring(start);
 
       expect(body, contains('extractAudioSegmentViaFfmpeg('),
           reason: 'Sentence-audio cutting must delegate to the ffmpeg path so '
@@ -68,14 +70,26 @@ void main() {
 
     test('video sentence-audio output is .aac (adts), the cross-platform muxer',
         () {
-      final String source = libFile(
-        'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart',
-      );
-      expect(source, contains("'\${tmp.path}/video_mine_audio.aac'"),
-          reason: 'Video sentence audio must stay .aac (adts) for the same '
-              'cross-platform muxer reason as the book path (BUG-460).');
-      expect(source.contains('video_mine_audio.m4a'), isFalse,
-          reason: 'Do not switch video sentence audio to .m4a (no desktop '
+      // TODO-1000: video sentence-audio cutting moved out of _mineVideoCard
+      // (lookup_mining.part.dart) into the shared ImmersionMiningEngine, which
+      // cuts the clip via extractAudioSegmentViaFfmpeg to `immersion_audio.aac`
+      // (the old video-only `video_mine_audio.aac` name folded into the shared
+      // engine). Same invariant, new home: assert the engine cuts to a `.aac`
+      // (adts) output via ffmpeg and never `.m4a` (BUG-460 muxer). The video
+      // shell just delegates to the engine (asserted by the customization guard).
+      final String engine =
+          libFile('lib/src/mining/immersion_mining_engine.dart');
+      expect(engine, contains(r"outputPath: '$tempDir/immersion_audio.aac'"),
+          reason: 'Video (and all immersion) sentence audio must stay .aac '
+              '(adts) for the cross-platform muxer reason (BUG-460).');
+      expect(engine, contains('await _audio('),
+          reason: 'Sentence audio must be cut via the ffmpeg audio extractor '
+              '(_audio defaults to extractAudioSegmentViaFfmpeg), TODO-1000.');
+      expect(engine.contains('extractAudioSegmentViaFfmpeg'), isTrue,
+          reason: 'The engine audio extractor default must be the ffmpeg path '
+              '(never the native Transformer handler), TODO-970/TODO-1000.');
+      expect(engine.contains('immersion_audio.m4a'), isFalse,
+          reason: 'Do not switch immersion sentence audio to .m4a (no desktop '
               'm4a/ipod muxer, BUG-460).');
     });
   });

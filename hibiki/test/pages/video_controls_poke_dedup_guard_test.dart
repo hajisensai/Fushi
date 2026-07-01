@@ -24,11 +24,20 @@ void main() {
         reason: '必须有合成 hover 位置抖动开关字段（TODO-148/BUG-215）');
   });
 
-  test('每次 poke 翻转 _pokeParity 并据此 ±1px 偏移合成 hover 位置', () {
+  /// 取 _pokeControlsVisible 方法体：从其签名到下一成员 _dispatchPokeHover 声明。
+  /// 旧实现用固定 1200 字窗，但 TODO-1059（平台无关门控前置）+ BUG-425（派发拆到
+  /// _dispatchPokeHover 微任务）把方法体撑过 1200 字，pokePosition/派发落到窗外 →
+  /// 守卫误报。改按真实后继成员切片，抖动续命契约不变。
+  String pokeBody() {
     final int at = src.indexOf('void _pokeControlsVisible()');
     expect(at, greaterThanOrEqualTo(0), reason: '缺 _pokeControlsVisible 助手');
-    // 取助手体（到下一个成员声明前一段）做断言。
-    final String body = src.substring(at, at + 1200);
+    final int end = src.indexOf('void _dispatchPokeHover', at);
+    expect(end, greaterThan(at), reason: '缺 _dispatchPokeHover（方法体终点锚）');
+    return src.substring(at, end);
+  }
+
+  test('每次 poke 翻转 _pokeParity 并据此 ±1px 偏移合成 hover 位置', () {
+    final String body = pokeBody();
     expect(body.contains('_pokeParity = !_pokeParity;'), isTrue,
         reason: 'poke 必须翻转 _pokeParity，使每次派发坐标都不同');
     expect(
@@ -39,8 +48,7 @@ void main() {
   });
 
   test('合成 hover 派发用抖动后的位置，而非固定 center', () {
-    final int at = src.indexOf('void _pokeControlsVisible()');
-    final String body = src.substring(at, at + 1200);
+    final String body = pokeBody();
     // 抖动后的位置变量喂给 PointerHoverEvent，而不是直接 position: center。
     expect(body.contains('Offset pokePosition ='), isTrue,
         reason: '必须先算出抖动后的 pokePosition');

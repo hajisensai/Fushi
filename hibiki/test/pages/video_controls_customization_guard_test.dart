@@ -402,7 +402,12 @@ void main() {
     expect(page, contains('_controller?.skipToCue(cue)'));
     expect(page, contains('_lastLookupCue = controller.currentCue ??'));
     expect(page, contains('buildSelectedSubtitleCueContext'));
-    expect(page, contains('rawPayloadJson: jsonEncode(fields)'));
+    // TODO-1000: the raw-payload assembly moved out of the video shell into the
+    // shared ImmersionMiningEngine (fields carried on the request), so the card
+    // still lands from the selected-cue context via repo.mineEntry — assert it in
+    // the engine source now (jsonEncode(req.fields)). Same invariant, new home.
+    final String engine = readImmersionMiningEngineSource();
+    expect(engine, contains('rawPayloadJson: jsonEncode(req.fields)'));
   });
 
   test(
@@ -420,9 +425,18 @@ void main() {
     expect(mineEnd, greaterThan(mineStart));
     final String mineBody = page.substring(mineStart, mineEnd);
 
-    expect(mineBody, contains('extractAudioSegmentViaFfmpeg'));
-    expect(mineBody, contains('sasayakiAudioPath: audioPath'));
-    expect(mineBody, contains('repo.mineEntry('));
+    // TODO-1000: the media-degradation ladder / audio extraction / no-audio abort
+    // / AnkiMiningContext assembly moved out of _mineVideoCard into the shared
+    // ImmersionMiningEngine (_mineVideoCard now delegates to it). The extractor +
+    // sentence-audio wiring + card landing are asserted in the engine source now;
+    // the shell shim only keeps OSD/stats — but the negative invariant (mining
+    // sentence audio is NOT gated on playback preview / auto-read state) is a
+    // property of the shell shim, so those stay asserted on the shell slice.
+    final String engine = readImmersionMiningEngineSource();
+    expect(engine, contains('extractAudioSegmentViaFfmpeg'));
+    expect(engine, contains('sasayakiAudioPath: audioPath'));
+    expect(engine, contains('repo.mineEntry('));
+    expect(mineBody, contains('ImmersionMiningEngine().mine('));
     expect(mineBody, isNot(contains('autoRead')));
     expect(mineBody, isNot(contains('_pausedForLookup')));
   });

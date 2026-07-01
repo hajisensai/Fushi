@@ -56,7 +56,13 @@ void main() {
     // _loadRemoteEpisode 向 host 按 episodeIndex 换流式 url（绝不用本地 path）。
     final int loadStart = pageSrc.indexOf('Future<void> _loadRemoteEpisode(');
     expect(loadStart, isNonNegative);
-    final String loadEp = pageSrc.substring(loadStart, loadStart + 1200);
+    // TODO-1000：分离流（video-only + 外挂 audio-only）接线把 _loadRemoteEpisode 撑大，
+    // getRemoteVideoSubtitle 落到旧 1200 字窗外 → 守卫误报。改切到方法体真实终点（下一
+    // Future 成员声明），不变量强度不变：仍断言按 episodeIndex 取流 + 字幕。
+    final int loadEnd = pageSrc.indexOf('\n  Future<', loadStart + 10);
+    expect(loadEnd, greaterThan(loadStart),
+        reason: '缺 _loadRemoteEpisode 方法体终点锚');
+    final String loadEp = pageSrc.substring(loadStart, loadEnd);
     expect(
       loadEp.contains('remoteVideoStreamUrls(') &&
           loadEp.contains('episodeIndex: index,'),
