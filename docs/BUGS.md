@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-488](bugs/BUG-488-toc-chapter-name-wrap.md) | ✅ | ✅ | 手机端TOC章节名被截断不换行 |
+| [BUG-488](bugs/BUG-488-audio-source-failure-cooldown.md) | ✅ | ✅ | 查词发音死源无冷却导致刷屏与串行拖累 |
 | [BUG-487](bugs/BUG-487-imageonly-chapter-skip.md) | ✅ | ✅ | 有声书跨章跳过纯图片章节,图片等待对独立成章的图片页失效 |
 | [BUG-486](bugs/BUG-486-cover-race.md) | ✅ | ✅ | 导入有声书封面竞态被吞 (m4b 内嵌封面异步抽取未 await) |
 | [BUG-485](bugs/BUG-485-local-audio-reference-path.md) | ✅ | ✅ | 添加本地音频库被复制到C盘，应支持引用原路径 |
