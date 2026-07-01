@@ -108,9 +108,13 @@ void main() {
             : path.endsWith('video_hibiki_page.dart')
                 ? readVideoHibikiSource()
                 : f.readAsStringSync();
-        // Only inspect files that actually mine entries.
-        expect(src.contains('mineEntry'), isTrue,
-            reason: '$path no longer calls mineEntry — update this guard');
+        // Only inspect files that actually mine entries. TODO-1000：video 页把
+        // repo.mineEntry 调用搬进 ImmersionMiningEngine（引擎内落卡 + 经
+        // describeMineOutcome 路由错误），故委托引擎也算「本页会制卡」。
+        expect(src.contains('mineEntry') || src.contains('ImmersionMiningEngine'),
+            isTrue,
+            reason: '$path no longer calls mineEntry nor delegates to '
+                'ImmersionMiningEngine — update this guard');
         expect(
           src.contains('describeMineOutcome('),
           isTrue,
