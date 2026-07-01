@@ -463,7 +463,8 @@ class VideoPlayerController extends ChangeNotifier
   String? _miningSourceOverride;
 
   /// 覆盖制卡抽取源（YouTube 流 URL 等）；传 null 还原为 [videoPath]。
-  void setMiningSourceOverride(String? source) => _miningSourceOverride = source;
+  void setMiningSourceOverride(String? source) =>
+      _miningSourceOverride = source;
 
   /// 制卡抽取源：优先覆盖源（流 URL），否则本地 [videoPath]。
   String? get miningSource => _miningSourceOverride ?? videoPath;
@@ -478,6 +479,13 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 制卡音频抽取源；null 时引擎回落 [miningSource]。
   String? get miningAudioSource => _miningAudioSourceOverride;
+
+  /// TODO-1000：外挂 audio-only 流为播放音轨（YouTube 分离流：视频流无音轨）。libmpv
+  /// 经 `AudioTrack.uri` 加载；http header 沿用 load 时下发的 `http-header-fields`。
+  /// 播放完成后 libmpv 自动卸载外挂轨（media_kit 契约）。
+  Future<void> setExternalAudioTrack(String url) async {
+    await _player?.setAudioTrack(AudioTrack.uri(url));
+  }
 
   /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
   /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」

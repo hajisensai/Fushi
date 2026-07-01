@@ -1400,7 +1400,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
-      if (urls.subtitleUrl != null) {
+      // TODO-1000：YouTube 等预解析好 cue（timedtext→AudioCue）时直接用，跳过
+      // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
+      if (client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty) {
+        cues = client.preresolvedCues;
+      } else if (urls.subtitleUrl != null) {
         final Directory temp = await getTemporaryDirectory();
         final File subtitle = File(
           p.join(
@@ -1431,6 +1435,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         startIntent: startIntent,
         externalSubtitlePath: externalSub,
       );
+      // TODO-1000：分离流（YouTube video-only）——外挂 audio-only 流为播放音轨，并把它设为
+      // 制卡音频源（视频流无音轨，音频段须从 audio-only 流裁）。_applyLoad 已把 miningSource
+      // 设为视频流（GIF/帧从它裁），这里补音频侧。
+      if (urls.audioStreamUrl != null) {
+        _controller?.setMiningAudioSourceOverride(urls.audioStreamUrl);
+        await _controller?.setExternalAudioTrack(urls.audioStreamUrl!);
+      }
     } catch (e, stack) {
       debugPrint(
         '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',

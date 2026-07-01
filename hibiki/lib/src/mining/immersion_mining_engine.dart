@@ -65,7 +65,9 @@ class ImmersionMiningEngine {
 
     if (req.providedCoverBytes != null) {
       coverPath = await _writeBytes(
-          tempDir, req.providedCoverName ?? 'immersion_cover.gif', req.providedCoverBytes!);
+          tempDir,
+          req.providedCoverName ?? 'immersion_cover.gif',
+          req.providedCoverBytes!);
     }
 
     final String? src = req.mediaSource;
@@ -112,7 +114,9 @@ class ImmersionMiningEngine {
     String? audioPath;
     if (req.providedAudioBytes != null) {
       audioPath = await _writeBytes(
-          tempDir, req.providedAudioName ?? 'immersion_audio.aac', req.providedAudioBytes!);
+          tempDir,
+          req.providedAudioName ?? 'immersion_audio.aac',
+          req.providedAudioBytes!);
     } else if (audioSrc != null && req.hasRange) {
       audioPath = await _audio(
         inputPath: audioSrc,
@@ -143,9 +147,12 @@ class ImmersionMiningEngine {
     );
 
     final MineOutcome outcome = req.updateNoteId == null
-        ? await repo.mineEntry(rawPayloadJson: jsonEncode(req.fields), context: context)
+        ? await repo.mineEntry(
+            rawPayloadJson: jsonEncode(req.fields), context: context)
         : await repo.updateMinedNote(
-            noteId: req.updateNoteId!, rawPayloadJson: jsonEncode(req.fields), context: context);
+            noteId: req.updateNoteId!,
+            rawPayloadJson: jsonEncode(req.fields),
+            context: context);
 
     return ImmersionMiningResult(
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);

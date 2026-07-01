@@ -39,15 +39,16 @@ bool isYoutubeUrl(String url) {
 
 final HtmlUnescape _unescape = HtmlUnescape();
 
-AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) => AudioCue()
-  ..bookKey = bookKey
-  ..chapterHref = 'youtube://$bookKey'
-  ..sentenceIndex = index
-  ..textFragmentId = 'yt-$index'
-  ..text = text
-  ..startMs = startMs
-  ..endMs = endMs
-  ..audioFileIndex = 0;
+AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) =>
+    AudioCue()
+      ..bookKey = bookKey
+      ..chapterHref = 'youtube://$bookKey'
+      ..sentenceIndex = index
+      ..textFragmentId = 'yt-$index'
+      ..text = text
+      ..startMs = startMs
+      ..endMs = endMs
+      ..audioFileIndex = 0;
 
 /// 纯函数：YouTube timedtext XML → List<AudioCue>。start/dur 秒 → 毫秒。
 List<AudioCue> parseYoutubeTimedTextToCues({
@@ -63,10 +64,12 @@ List<AudioCue> parseYoutubeTimedTextToCues({
   for (final RegExpMatch m in re.allMatches(content)) {
     final double start = double.tryParse(m.group(1) ?? '') ?? 0;
     final double dur = double.tryParse(m.group(2) ?? '') ?? 0;
-    final String raw =
-        _unescape.convert((m.group(3) ?? '').replaceAll(RegExp(r'<[^>]+>'), '')).trim();
+    final String raw = _unescape
+        .convert((m.group(3) ?? '').replaceAll(RegExp(r'<[^>]+>'), ''))
+        .trim();
     if (raw.isEmpty) continue;
-    cues.add(_cue(bookKey, index, raw, (start * 1000).round(), ((start + dur) * 1000).round()));
+    cues.add(_cue(bookKey, index, raw, (start * 1000).round(),
+        ((start + dur) * 1000).round()));
     index++;
   }
   return cues;

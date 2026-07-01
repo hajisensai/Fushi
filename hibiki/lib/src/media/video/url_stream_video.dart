@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
+
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:http/http.dart' as http;
@@ -104,12 +106,22 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     required this.streamUrl,
     this.subtitleUrl,
     this.subtitleFileName,
+    this.audioStreamUrl,
+    this.preresolvedCues = const <AudioCue>[],
     this.httpHeaderFields = const <String, String>{},
     http.Client? httpClient,
   }) : _httpClient = httpClient ?? http.Client();
 
   /// 用户粘贴的视频流 URL（http/https 直链 / HLS / m3u8）。
   final String streamUrl;
+
+  /// TODO-1000：分离流（YouTube video-only）的 audio-only 流 URL；null=同轨/muxed。
+  /// 经 [remoteVideoStreamUrls] 回给播放页外挂（[AudioTrack.uri]）+ 制卡音频源。
+  final String? audioStreamUrl;
+
+  /// TODO-1000：预解析好的字幕 cue（YouTube timedtext 已转 [AudioCue]）；非空时播放页
+  /// 直接用，跳过 [subtitleUrl] 下载+解析（YouTube XML 字幕现有解析器不识别）。
+  final List<AudioCue> preresolvedCues;
 
   /// 可选外挂字幕 URL（http/https）；非空时 [getRemoteVideoSubtitle] 下载到 dest。
   final String? subtitleUrl;
@@ -136,6 +148,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
       streamUrl: streamUrl,
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
+      audioStreamUrl: audioStreamUrl,
     );
   }
 

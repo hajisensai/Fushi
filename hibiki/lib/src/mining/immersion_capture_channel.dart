@@ -33,7 +33,8 @@ abstract final class ImmersionCaptureChannel {
     } on PlatformException catch (e) {
       return ImmersionCaptureResult(error: e.message ?? 'capture failed');
     } on MissingPluginException {
-      return const ImmersionCaptureResult(error: 'immersion_capture unavailable');
+      return const ImmersionCaptureResult(
+          error: 'immersion_capture unavailable');
     }
   }
 }
