@@ -1,0 +1,14 @@
+## BUG-491 · 首页手柄方向键选不中书籍且右跳越过导入图标
+- **报告**：2026-07-01（用户：）· TODO-1062
+- **真实性**：✅ 真 bug。首页焦点引擎是自研几何方向控制器 `HibikiFocusController.move`（`hibiki/lib/src/focus/hibiki_focus_controller.dart:192`，`_geometricTarget:370`，`clears>samePane>along>beam>cross` 排名 `:457-498`）。三处根因：
+  - **A1（硬伤）**：折叠系列卡 `SeriesShelfCard` 是裸 `InkWell`（`canRequestFocus:false`，无 `HibikiFocusTarget`/focusId）——`hibiki/lib/src/pages/implementations/series_shelf_card.dart:52-55`；调用点 `reader_hibiki_history_page.dart:854`。书架含系列 group 时这些卡永远选不到（对照可聚焦散书卡 `reader_history/card_widgets.part.dart:289-300`）。
+  - **A2（到不了书籍）**：书架页头图标行、标签排序栏、书籍网格同在一个 body `FocusTraversalGroup`（`reader_hibiki_history_page.dart:275-279`）。焦点在标签栏（横向 `ListView`，不在网格纵向 `Scrollable` 内）按 Down 时，`activeIsOnlyFocusableInNearestScrollable`（`hibiki_focus_controller.dart:105`）对标签栏不成立（栏内有兄弟），滚动接管通道（`gamepad_service.dart:783`）也不触发——进不了网格。
+  - **B（右跳越导入）**：页头动作 `[导入, 管理来源, …]`（`reader_hibiki_history_page.dart:353-385`，导入按钮 `reader_hibiki_source.dart:187-211`）。焦点在标签排序栏最右 `swap_vert`（`tag_filter_bar.dart:82-87`）按 Right：栏内无 x-ahead，转全体找 x-ahead，`clears` 分层让完全 clear 源右边缘的「管理来源」胜出，越过与源 x 部分重叠（未 clears）的「导入」。
+- **[x] ① 已修复** — 提交 <PENDING>
+  - **A1**：给 `SeriesShelfCard` 加可选 `focusId`，仅在 `HibikiFocusRoot` 存在时包 `HibikiFocusTarget` + `ActivateIntent→onTap`（Enter/手柄 A 打开系列），非 focus-root 退化为原裸 `InkWell` 不变（`series_shelf_card.dart`）。调用点传 `reader-shelf-series-<id>`（`reader_hibiki_history_page.dart:_buildShelfGroupCard`）。
+  - **A2+B（引擎内方向锚点）**：`HibikiFocusController` 新增 `(sourceId, direction)→targetId` 显式方向锚点（`registerDirectionalAnchor`/`unregisterDirectionalAnchor`），在 `move()` 几何裁决**之前**短路：命中且目标可聚焦则 `requestById`（自带 reveal 滚入视口）；目标不存在/不可聚焦则退化为纯几何，无锚点场景零变化。声明式 `HibikiFocusDirectionalAnchor` 组件（`hibiki_focus_target.dart`）注册两条锚：标签栏「整理」Right→导入（`kShelfImportFocusId`）、Down→网格第一本卡（`_shelfGroupFocusId(shelfGroups.first)`）。用 focusId 逻辑锚，无硬编码坐标。**未翻转 `clears>samePane` 优先级**（BUG-015 守卫），锚点是几何之前的可选短路。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/focus/shelf_directional_anchor_test.dart`（新建，5 例）：真实相对矩形复现——无锚点时 Right 从「整理」几何越过导入落「管理来源」（baseline 复现 B）；注册 Right 锚点后落导入非管理来源（B 修复）；Down 锚点从「整理」落网格第一本书（A2 修复）；锚点目标不可聚焦时退化为纯几何；`unregisterDirectionalAnchor` 恢复纯几何。
+  - `hibiki/test/pages/series_shelf_card_test.dart`（补 2 例）：`HibikiFocusRoot` + focusId 下注册 `HibikiFocusTarget` 且 `requestById('reader-shelf-series-42')` 返 true、`ActivateIntent` 激活 onTap（A1 修复）；无 focusId 时退化为纯 `InkWell`（never-break）。
+  - 结果：`flutter test` 上述两文件 10/10 通过；`test/focus/` + `gamepad_focus_nav` + `gamepad_navigation_flow` 共 48/48 通过，无回归。`flutter analyze` 全仓库 No issues。
+- **备注**：真机横竖屏旋转落点属 Category-A 留用户复测。BUG 号如与并发分支撞号由集成 owner 统一重编号。

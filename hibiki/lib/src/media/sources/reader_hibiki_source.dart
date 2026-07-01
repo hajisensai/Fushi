@@ -12,6 +12,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
@@ -188,11 +189,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required BuildContext context,
     required WidgetRef ref,
     required AppModel appModel,
+    HibikiFocusId? focusId,
   }) {
     return HibikiIconButton(
       size: Theme.of(context).textTheme.titleLarge?.fontSize,
       tooltip: t.srt_import,
       icon: Icons.library_add_outlined,
+      focusId: focusId,
       onTap: () async {
         final bool? imported = await showAppDialog<bool>(
           context: context,

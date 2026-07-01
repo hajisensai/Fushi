@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 476 条。点号进各自文件。
+> 共 477 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-491](bugs/BUG-491-shelf-gamepad-nav.md) | ✅ | ✅ | 首页手柄方向键选不中书籍且右跳越过导入图标 |
 | [BUG-490](bugs/BUG-490-clip-text-render-null.md) | ✅ | ✅ | 有声书剪辑导出renderAudiobookClipTextToPng返null |
 | [BUG-489](bugs/BUG-489-audio-source-failure-cooldown.md) | ✅ | ✅ | 查词发音死源无冷却导致刷屏与串行拖累 |
 | [BUG-488](bugs/BUG-488-toc-chapter-name-wrap.md) | ✅ | ✅ | 手机端TOC章节名被截断不换行 |

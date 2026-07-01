@@ -57,6 +57,14 @@ part 'reader_history/video.part.dart';
 part 'reader_history/books.part.dart';
 part 'reader_history/dialogs.part.dart';
 
+/// Stable gamepad/keyboard focus ids for the shelf chrome, used both to place
+/// [HibikiFocusTarget]s and to wire directional anchors (see
+/// [HibikiFocusController.registerDirectionalAnchor]). Kept as constants (not
+/// derived per-instance ids) precisely so anchors can point at them by name.
+const HibikiFocusId kShelfImportFocusId = HibikiFocusId('reader-shelf-import');
+const HibikiFocusId kShelfTagBarOrganizeFocusId =
+    HibikiFocusId('reader-shelf-tagbar-organize');
+
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
     this.remoteBookClientLoader,
@@ -334,6 +342,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
       onOrganize: _openShelfSort,
+      onOrganizeFocusId: kShelfTagBarOrganizeFocusId,
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
     );
   }
@@ -346,6 +355,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           context: context,
           ref: ref,
           appModel: appModel,
+          focusId: kShelfImportFocusId,
         ),
         _headerAction(
           tooltip: t.media_source_manage_title,
@@ -781,53 +791,89 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
       );
     }
-    return RawScrollbar(
-      thumbVisibility: true,
-      thickness: 3,
-      controller: mediaType.scrollController,
-      child: LayoutBuilder(
-        builder: (context, constraints) => CustomScrollView(
-          controller: mediaType.scrollController,
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          slivers: [
-            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-            if (showRemoteBooks)
-              SliverToBoxAdapter(
-                child: _buildRemoteBookSection(remoteState, constraints),
-              ),
-            // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-            // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-            // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
-            if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
-              SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: _gridExtent(context, constraints),
-                  childAspectRatio: kShelfBookCardAspectRatio,
+    // A2/B directional anchors from the tag bar's「整理」action: pressing Right
+    // jumps to the leftmost header icon (import), pressing Down enters the grid's
+    // first card (revealed if scrolled off-screen). Down only when a grid card
+    // exists (loose/series first, else the first video card); the anchor is a
+    // pure option so if the target isn't focusable geometry runs unchanged.
+    final HibikiFocusId? firstGridCardFocusId = shelfGroups.isNotEmpty
+        ? _shelfGroupFocusId(shelfGroups.first)
+        : (videoBooks.isNotEmpty
+            ? HibikiFocusId('reader-shelf-video-${videoBooks.first.bookUid}')
+            : null);
+    return HibikiFocusDirectionalAnchor(
+      source: kShelfTagBarOrganizeFocusId,
+      anchors: <HibikiFocusDirection, HibikiFocusId>{
+        HibikiFocusDirection.right: kShelfImportFocusId,
+        if (firstGridCardFocusId != null)
+          HibikiFocusDirection.down: firstGridCardFocusId,
+      },
+      child: RawScrollbar(
+        thumbVisibility: true,
+        thickness: 3,
+        controller: mediaType.scrollController,
+        child: LayoutBuilder(
+          builder: (context, constraints) => CustomScrollView(
+            controller: mediaType.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+              if (showRemoteBooks)
+                SliverToBoxAdapter(
+                  child: _buildRemoteBookSection(remoteState, constraints),
                 ),
-                itemCount: shelfGroups.length,
-                itemBuilder: (_, i) => _buildShelfGroupCard(
-                  shelfGroups[i],
-                  epubCoverUrisByBookKey,
+              // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+              // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+              if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
+                SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: _gridExtent(context, constraints),
+                    childAspectRatio: kShelfBookCardAspectRatio,
+                  ),
+                  itemCount: shelfGroups.length,
+                  itemBuilder: (_, i) => _buildShelfGroupCard(
+                    shelfGroups[i],
+                    epubCoverUrisByBookKey,
+                  ),
                 ),
-              ),
-            if (videoBooks.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                  child: _buildSectionHeader(t.shelf_video_section)),
-              SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: _gridExtent(context, constraints),
-                  // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
-                  childAspectRatio: kShelfVideoCardAspectRatio,
+              if (videoBooks.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                    child: _buildSectionHeader(t.shelf_video_section)),
+                SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: _gridExtent(context, constraints),
+                    // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
+                    childAspectRatio: kShelfVideoCardAspectRatio,
+                  ),
+                  itemCount: videoBooks.length,
+                  itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
                 ),
-                itemCount: videoBooks.length,
-                itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// The gamepad/keyboard focus id of a shelf group's card, matching the id the
+  /// card actually registers in [_buildShelfGroupCard]: series -> the folded
+  /// series card; a loose SRT slot -> its SRT card; a loose EPUB slot -> its book
+  /// card. Used to anchor "Down from the tag bar enters the first grid card".
+  HibikiFocusId _shelfGroupFocusId(ShelfGroup<_ShelfBookSlot> group) {
+    if (group.seriesId != null) {
+      return HibikiFocusId('reader-shelf-series-${group.seriesId}');
+    }
+    final _ShelfBookSlot slot = group.coverItem.payload;
+    final SrtBook? srt = slot.srt;
+    if (srt != null) {
+      return HibikiFocusId('reader-shelf-srt-${srt.uid}');
+    }
+    return HibikiFocusId(
+      'reader-shelf-book-${slot.epub!.mediaIdentifier}',
     );
   }
 
@@ -855,6 +901,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       name: series?.name ?? t.series,
       itemCount: group.items.length,
       slotAspectRatio: kShelfBookCardAspectRatio,
+      // Gamepad/keyboard focus id, same 'reader-shelf-<kind>-<id>' scheme as the
+      // loose book cards so a folded series is reachable by D-pad.
+      focusId: HibikiFocusId('reader-shelf-series-$seriesId'),
       cover: _slotCover(coverSlot, epubCoverUrisByBookKey),
       onTap: () => _openSeriesDetail(seriesId, series?.name ?? t.series),
     );

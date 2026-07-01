@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/utils.dart';
 
 /// TODO-616 A2 series folded card: one card stands for a whole series (cover =
@@ -16,6 +18,7 @@ class SeriesShelfCard extends StatelessWidget {
     required this.cover,
     required this.onTap,
     required this.slotAspectRatio,
+    this.focusId,
     this.selectionKey,
     this.selectionMode = false,
     this.selected = false,
@@ -28,6 +31,12 @@ class SeriesShelfCard extends StatelessWidget {
   final Widget cover;
   final VoidCallback onTap;
   final double slotAspectRatio;
+
+  /// Gamepad/keyboard focus id. When non-null and a [HibikiFocusRoot] is present
+  /// the card becomes a directional-focus target that opens on Enter / gamepad A,
+  /// mirroring the loose book cards ([_bookCardShell]). Without it (or outside a
+  /// focus root) the card stays a plain, tap-only InkWell as before.
+  final HibikiFocusId? focusId;
 
   /// Optional selection wiring (so a series card is selectable in batch mode
   /// just like a normal card). When [selectionMode] is on, tap toggles
@@ -45,7 +54,7 @@ class SeriesShelfCard extends StatelessWidget {
     final VoidCallback effectiveTap =
         selectionMode && onSelectionToggle != null ? onSelectionToggle! : onTap;
 
-    return Padding(
+    final Widget card = Padding(
       padding: EdgeInsets.all(tokens.spacing.rowVertical),
       child: Material(
         type: MaterialType.transparency,
@@ -139,6 +148,27 @@ class SeriesShelfCard extends StatelessWidget {
         ),
       ),
     );
+
+    // Loose book cards are gamepad/keyboard focusable via _bookCardShell; a
+    // folded series card must be too, else a shelf with series can't be entered
+    // by D-pad. Only wrap when a focusId is supplied AND a HibikiFocusRoot exists
+    // (plain tests / no-controller contexts keep the bare InkWell). Enter /
+    // gamepad A activate the same tap as a mouse; in selection mode that tap
+    // toggles selection (effectiveTap), matching the InkWell.
+    if (focusId != null && HibikiFocusRoot.maybeControllerOf(context) != null) {
+      return Actions(
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              effectiveTap();
+              return null;
+            },
+          ),
+        },
+        child: HibikiFocusTarget(id: focusId!, child: card),
+      );
+    }
+    return card;
   }
 
   Widget _stackBackLayer(ThemeData theme, HibikiDesignTokens tokens) {

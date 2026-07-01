@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
 
 /// TODO-616 A2 SeriesShelfCard 守卫：
@@ -66,5 +68,55 @@ void main() {
     await tester.pump();
     expect(toggles, 1);
     expect(taps, 0);
+  });
+
+  testWidgets('registers a HibikiFocusTarget under a focus root with focusId',
+      (tester) async {
+    int taps = 0;
+    await tester.pumpWidget(wrap(HibikiFocusRoot(
+      child: SeriesShelfCard(
+        name: 'S',
+        itemCount: 2,
+        cover: const ColoredBox(color: Colors.green),
+        slotAspectRatio: 160 / 260,
+        focusId: const HibikiFocusId('reader-shelf-series-42'),
+        onTap: () => taps++,
+      ),
+    )));
+    await tester.pump();
+
+    expect(find.byType(HibikiFocusTarget), findsOneWidget);
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(SeriesShelfCard)),
+    );
+    expect(
+      controller.requestById(const HibikiFocusId('reader-shelf-series-42')),
+      isTrue,
+    );
+    await tester.pump();
+    expect(controller.activeId, const HibikiFocusId('reader-shelf-series-42'));
+
+    // Enter / gamepad A activates the same onTap as a mouse.
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    await tester.pump();
+    expect(taps, 1);
+  });
+
+  testWidgets('stays a bare InkWell without a focusId (never-break)',
+      (tester) async {
+    await tester.pumpWidget(wrap(HibikiFocusRoot(
+      child: SeriesShelfCard(
+        name: 'S',
+        itemCount: 2,
+        cover: const ColoredBox(color: Colors.green),
+        slotAspectRatio: 160 / 260,
+        onTap: () {},
+      ),
+    )));
+    await tester.pump();
+    expect(find.byType(HibikiFocusTarget), findsNothing);
   });
 }

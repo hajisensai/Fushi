@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
@@ -20,6 +21,7 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
     this.selectionMode = false,
     this.onToggleSelectionMode,
     this.onOrganize,
+    this.onOrganizeFocusId,
     this.onTagsChanged,
     super.key,
   });
@@ -38,6 +40,11 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
   /// TODO-947：把原本散在页头的「编辑排序」(swap_vert) 入口挪到多选按钮旁，与
   /// 「组合成系列」(多选批量栏) 聚成一组整理动作。
   final VoidCallback? onOrganize;
+
+  /// Stable focus id for the「整理」(swap_vert) action, so a directional anchor
+  /// can point at it (the shelf anchors "Right from organize -> import icon" and
+  /// "Down from organize -> first grid card"). Null keeps the derived fallback id.
+  final HibikiFocusId? onOrganizeFocusId;
 
   /// 管理标签返回后，调用方据此刷新自身的标签映射 provider（book / video）。
   final VoidCallback? onTagsChanged;
@@ -84,6 +91,7 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
           icon: Icons.swap_vert,
           tooltip: t.shelf_edit_order,
           onTap: widget.onOrganize!,
+          focusId: widget.onOrganizeFocusId,
         ),
     ];
 
@@ -173,6 +181,7 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
     required String tooltip,
     required VoidCallback onTap,
     bool selected = false,
+    HibikiFocusId? focusId,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiIconButton(
@@ -183,6 +192,7 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
       enabledColor:
           selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
       onTap: onTap,
+      focusId: focusId,
     );
   }
 

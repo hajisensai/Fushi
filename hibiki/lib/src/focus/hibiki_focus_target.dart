@@ -183,6 +183,99 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
   }
 }
 
+/// Declaratively registers one or more directional anchors on the ambient
+/// [HibikiFocusController] for the lifetime of [child]. An anchor makes pressing
+/// a direction while [source] is focused jump to an explicit target focusId,
+/// short-circuiting geometry (see [HibikiFocusController.registerDirectionalAnchor]).
+/// Outside a [HibikiFocusRoot] it is an inert pass-through.
+class HibikiFocusDirectionalAnchor extends StatefulWidget {
+  const HibikiFocusDirectionalAnchor({
+    required this.source,
+    required this.anchors,
+    required this.child,
+    super.key,
+  });
+
+  final HibikiFocusId source;
+
+  /// direction -> target focusId for [source].
+  final Map<HibikiFocusDirection, HibikiFocusId> anchors;
+  final Widget child;
+
+  @override
+  State<HibikiFocusDirectionalAnchor> createState() =>
+      _HibikiFocusDirectionalAnchorState();
+}
+
+class _HibikiFocusDirectionalAnchorState
+    extends State<HibikiFocusDirectionalAnchor> {
+  HibikiFocusController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final HibikiFocusController? next =
+        HibikiFocusRoot.maybeControllerOf(context);
+    if (!identical(next, _controller)) {
+      _clear();
+      _controller = next;
+    }
+    _apply();
+  }
+
+  @override
+  void didUpdateWidget(HibikiFocusDirectionalAnchor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source != widget.source ||
+        !_sameAnchors(oldWidget.anchors, widget.anchors)) {
+      _clearFor(oldWidget.source, oldWidget.anchors);
+      _apply();
+    }
+  }
+
+  @override
+  void dispose() {
+    _clear();
+    super.dispose();
+  }
+
+  bool _sameAnchors(
+    Map<HibikiFocusDirection, HibikiFocusId> a,
+    Map<HibikiFocusDirection, HibikiFocusId> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (final MapEntry<HibikiFocusDirection, HibikiFocusId> e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
+
+  void _apply() {
+    final HibikiFocusController? controller = _controller;
+    if (controller == null) return;
+    widget.anchors
+        .forEach((HibikiFocusDirection direction, HibikiFocusId target) {
+      controller.registerDirectionalAnchor(widget.source, direction, target);
+    });
+  }
+
+  void _clear() => _clearFor(widget.source, widget.anchors);
+
+  void _clearFor(
+    HibikiFocusId source,
+    Map<HibikiFocusDirection, HibikiFocusId> anchors,
+  ) {
+    final HibikiFocusController? controller = _controller;
+    if (controller == null) return;
+    anchors.forEach((HibikiFocusDirection direction, HibikiFocusId target) {
+      controller.unregisterDirectionalAnchor(source, direction, target);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _HibikiFocusTargetAnchor extends StatefulWidget {
   const _HibikiFocusTargetAnchor({
     required this.onReady,

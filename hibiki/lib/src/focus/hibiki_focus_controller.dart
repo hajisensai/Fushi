@@ -69,6 +69,18 @@ class HibikiFocusController extends ChangeNotifier {
   final LinkedHashMap<HibikiFocusId, HibikiFocusTargetEntry> _entries =
       LinkedHashMap<HibikiFocusId, HibikiFocusTargetEntry>();
 
+  // Directional anchors: an explicit `(sourceId, direction) -> targetId`
+  // short-circuit consulted BEFORE geometric selection in [move]. It exists to
+  // express intent that pure centre-to-centre geometry can't reach or would get
+  // wrong -- e.g. a shelf's horizontal tag bar declaring "Down enters the grid's
+  // first card" (the grid may be a different pane / partly off-screen) and
+  // "Right from my last action jumps to the leftmost header icon" (a farther but
+  // cleanly-clearing icon would otherwise beat the intended one). An anchor is a
+  // PURE OPTION: if its target isn't currently a focusable entry it is ignored
+  // and geometry runs unchanged, so scenes without anchors behave identically.
+  final Map<_AnchorKey, HibikiFocusId> _directionalAnchors =
+      <_AnchorKey, HibikiFocusId>{};
+
   BuildContext? _rootContext;
   HibikiFocusId? _activeId;
   bool _attached = false;
@@ -134,6 +146,7 @@ class HibikiFocusController extends ChangeNotifier {
       _attached = false;
     }
     _entries.clear();
+    _directionalAnchors.clear();
     fallbackNode.dispose();
     _rootContext = null;
   }
@@ -179,6 +192,49 @@ class HibikiFocusController extends ChangeNotifier {
     }
   }
 
+  /// Register an explicit directional short-circuit: pressing [direction] while
+  /// [source] is the active target moves focus to [target] (revealing it if it
+  /// scrolled off-screen), consulted before geometry in [move]. Re-registering
+  /// the same `(source, direction)` overwrites. Type signatures are explicit so
+  /// callers can register from a declarative widget without casts.
+  void registerDirectionalAnchor(
+    HibikiFocusId source,
+    HibikiFocusDirection direction,
+    HibikiFocusId target,
+  ) {
+    _directionalAnchors[_AnchorKey(source, direction)] = target;
+  }
+
+  /// Remove a previously-registered anchor. No-op if the current mapping does
+  /// not match [target] (so a stale unregister from a rebuilt widget cannot
+  /// clobber a newer registration).
+  void unregisterDirectionalAnchor(
+    HibikiFocusId source,
+    HibikiFocusDirection direction,
+    HibikiFocusId target,
+  ) {
+    final _AnchorKey key = _AnchorKey(source, direction);
+    if (_directionalAnchors[key] == target) {
+      _directionalAnchors.remove(key);
+    }
+  }
+
+  /// The anchored target for the active [source] pressing [direction], but only
+  /// when that target is a currently-focusable registered entry. Returns null
+  /// when there is no anchor or its target is not (yet) focusable, so [move]
+  /// cleanly falls through to geometry.
+  HibikiFocusTargetEntry? _anchoredTarget(
+    HibikiFocusId source,
+    HibikiFocusDirection direction,
+  ) {
+    final HibikiFocusId? targetId =
+        _directionalAnchors[_AnchorKey(source, direction)];
+    if (targetId == null) return null;
+    final HibikiFocusTargetEntry? entry = _entries[targetId];
+    if (entry == null || !_entryCanFocus(entry)) return null;
+    return entry;
+  }
+
   bool requestById(HibikiFocusId id) {
     final HibikiFocusTargetEntry? entry = _entries[id];
     if (entry == null || !_entryCanFocus(entry)) return false;
@@ -199,6 +255,11 @@ class HibikiFocusController extends ChangeNotifier {
     final HibikiFocusTargetEntry? active = _currentEntry();
     final int currentIndex = active == null ? -1 : targets.indexOf(active);
     if (active != null) {
+      // Explicit directional anchor wins over geometry (see _directionalAnchors).
+      // requestById reveals the target if it scrolled off-screen.
+      final HibikiFocusTargetEntry? anchored =
+          _anchoredTarget(active.id, direction);
+      if (anchored != null) return requestById(anchored.id);
       final _GeometricMoveResult geometric =
           _geometricTarget(active, targets, direction);
       if (!geometric.hasGeometry) {
@@ -583,6 +644,24 @@ class HibikiFocusController extends ChangeNotifier {
       }
     }
   }
+}
+
+@immutable
+class _AnchorKey {
+  const _AnchorKey(this.source, this.direction);
+
+  final HibikiFocusId source;
+  final HibikiFocusDirection direction;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _AnchorKey &&
+          other.source == source &&
+          other.direction == direction;
+
+  @override
+  int get hashCode => Object.hash(source, direction);
 }
 
 @immutable
