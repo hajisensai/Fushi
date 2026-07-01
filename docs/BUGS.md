@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 475 条。点号进各自文件。
+> 共 476 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-490](bugs/BUG-490-clip-text-render-null.md) | ✅ | ✅ | 有声书剪辑导出renderAudiobookClipTextToPng返null |
 | [BUG-489](bugs/BUG-489-audio-source-failure-cooldown.md) | ✅ | ✅ | 查词发音死源无冷却导致刷屏与串行拖累 |
 | [BUG-488](bugs/BUG-488-toc-chapter-name-wrap.md) | ✅ | ✅ | 手机端TOC章节名被截断不换行 |
 | [BUG-487](bugs/BUG-487-imageonly-chapter-skip.md) | ✅ | ✅ | 有声书跨章跳过纯图片章节,图片等待对独立成章的图片页失效 |

@@ -1,0 +1,15 @@
+## BUG-490 · 有声书剪辑导出renderAudiobookClipTextToPng返null
+- **报告**：2026-07-01（用户：）
+- **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/media/audiobook/audiobook_clip_text_render.dart:renderAudiobookClipTextToPng`（原体 109-169）：
+  - **时序根因**：原 152-156 发现 `debugNeedsPaint` 后只等一帧就直接 `toImage`，不复查。桌面（Windows）离屏栅格化首帧时序下 boundary 未完成 paint 时 `toImage` 抛异常。
+  - **掩盖真因**：原 164-165 裸 `catch (_) { return null; }` 吞掉 `toImage`/`toByteData` 一切异常 → 调用方（`audiobook.part.dart:1099-1113`）只看到 null，真因被静默，日志只记 `textRenderFailed`。
+  - **次要**：原 151 非 RepaintBoundary 静默 return null；原 142 `attached.future.timeout` 超时空 `onTimeout` 不早退继续跑。
+- **[x] ① 已修复** — commit `a62f3ba37`；`hibiki/lib/src/media/audiobook/audiobook_clip_text_render.dart`：
+  - `catch (e, st)` 记 `ErrorLogService.instance.log('AudiobookClipTextRender.clipToImageThrew', e, st)`，不再吞异常。
+  - 新增 helper `_waitForBoundaryPainted(RenderRepaintBoundary)`：debug 下 `while (debugNeedsPaint && tries<30) await _waitForNextFrame()`；release 下 `debugNeedsPaint` 由 assert 守护不可靠，改固定多等 3 帧。
+  - 首帧超时 / 非 boundary / 0 尺寸 / `toByteData` 返 null 各分支提前记 in-app 日志再返回 null（不再静默）。
+- **[x] ② 已加自动化测试** — commit `a62f3ba37`；`hibiki/test/audiobook_clip_text_render_test.dart`：
+  - widget test（`testWidgets`+`tester.runAsync`+真 Overlay）驱动 `renderAudiobookClipTextToPng` 喂用户文本 `"ょっと面倒だったりする。今は尚更だ。"`，断言返回非 null 且字节非空（改前 render 函数零覆盖）。
+  - 源码守卫：断言 `catch (e, st)` 分支含 `ErrorLogService.instance.log(...clipToImageThrew`（防复发裸 `return null`）。
+  - `computeClipTextLayout` 纯函数：18 runes 拗音开头 → fontSize>0 且 width/height==720/1280（零 flake）。
+- **备注**：触发文本 18 runes 拗音「ょ」开头；已排除拗音/measure 假设（`computeClipTextLayout` 纯函数与首字符无关，fontSize=(44*12/18).clamp≈29，尺寸 720×1280 正常）。真变量是桌面 pipeline 首帧 paint 时序。`debugNeedsPaint` 是 debug-only getter（release 由 assert 守护不可用），故 `_waitForBoundaryPainted` 用 `kDebugMode` 分流。

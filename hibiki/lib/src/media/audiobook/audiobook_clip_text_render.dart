@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// TODO-945 M3：把有声书片段分享所选文本离屏栅格化成 PNG。
 ///
@@ -139,32 +140,103 @@ Future<Uint8List?> renderAudiobookClipTextToPng({
   overlay.insert(entry);
   try {
     // 等首帧绘制完成（_AudiobookClipTextCard 在 post-frame 回调里通知），再取图。
+    // 超时不静默失败：拿不到首帧就早退（避免在未挂载的 boundary 上取图）。
+    var gotFirstFrame = true;
     await attached.future.timeout(
       const Duration(seconds: 5),
-      onTimeout: () {},
+      onTimeout: () {
+        gotFirstFrame = false;
+      },
     );
-    // 再等一帧，确保 boundary 已 paint（首帧回调时可能尚未完成首次 paint）。
-    await _waitForNextFrame();
+    if (!gotFirstFrame) {
+      ErrorLogService.instance.log(
+        'AudiobookClipTextRender.firstFrameTimeout',
+        'offscreen clip text card never reported first frame within 5s '
+            '(len=${text.runes.length})',
+        StackTrace.current,
+      );
+      return null;
+    }
 
     final RenderObject? renderObject =
         boundaryKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderRepaintBoundary) return null;
-    if (renderObject.debugNeedsPaint) {
-      // 还没画完，再等一帧。
-      await _waitForNextFrame();
+    if (renderObject is! RenderRepaintBoundary) {
+      ErrorLogService.instance.log(
+        'AudiobookClipTextRender.noBoundary',
+        'offscreen boundary render object missing or wrong type: '
+            '${renderObject.runtimeType}',
+        StackTrace.current,
+      );
+      return null;
     }
+
+    // 尺寸守卫：0 尺寸交给 toImage 会抛，提前记日志并回退。
+    final ui.Size boundarySize = renderObject.size;
+    if (boundarySize.width <= 0 || boundarySize.height <= 0) {
+      ErrorLogService.instance.log(
+        'AudiobookClipTextRender.zeroSize',
+        'offscreen boundary has non-positive size: $boundarySize '
+            '(layout=${layout.width}x${layout.height})',
+        StackTrace.current,
+      );
+      return null;
+    }
+
+    // 时序根因：首帧回调时 boundary 未必完成 paint（桌面离屏首帧栅格化尤其）。
+    // debug 下循环等到 !debugNeedsPaint；release 下该 getter 不可靠（assert 守护），
+    // 改为固定多等几帧。两者都先把 boundary 推进已 paint 状态再 toImage。
+    await _waitForBoundaryPainted(renderObject);
+
     final ui.Image image = await renderObject.toImage(pixelRatio: pixelRatio);
     try {
       final ByteData? bytes =
           await image.toByteData(format: ui.ImageByteFormat.png);
-      return bytes?.buffer.asUint8List();
+      if (bytes == null) {
+        ErrorLogService.instance.log(
+          'AudiobookClipTextRender.toByteDataNull',
+          'image.toByteData(png) returned null '
+              '(size=$boundarySize, pixelRatio=$pixelRatio)',
+          StackTrace.current,
+        );
+        return null;
+      }
+      return bytes.buffer.asUint8List();
     } finally {
       image.dispose();
     }
-  } catch (_) {
+  } catch (e, st) {
+    // 不再吞异常：toImage / toByteData 的真因写进 in-app 日志，调用方仍回退。
+    ErrorLogService.instance.log(
+      'AudiobookClipTextRender.clipToImageThrew',
+      e,
+      st,
+    );
     return null;
   } finally {
     entry.remove();
+  }
+}
+
+/// 把离屏 [boundary] 推进已完成 paint 的状态，再交给 `toImage`。
+///
+/// 时序根因（TODO-1071 / BUG-490）：首帧 post-frame 回调时 boundary 并未必完成
+/// 首次 paint，直接 `toImage` 在桌面（Windows）离屏栅格化首帧时序下会抛。
+///
+/// - debug：`RenderObject.debugNeedsPaint` 可用，循环等到不再 needs-paint（上限 30 帧）。
+/// - release：`debugNeedsPaint` 由 assert 守护不可靠，改为固定多等几帧确保首次 paint 完成。
+Future<void> _waitForBoundaryPainted(RenderRepaintBoundary boundary) async {
+  const int maxTries = 30;
+  if (kDebugMode) {
+    var tries = 0;
+    while (boundary.debugNeedsPaint && tries < maxTries) {
+      await _waitForNextFrame();
+      tries++;
+    }
+    return;
+  }
+  // release 确保：多等几帧，给离屏 pipeline 充分时间完成首次 paint。
+  for (var i = 0; i < 3; i++) {
+    await _waitForNextFrame();
   }
 }
 
