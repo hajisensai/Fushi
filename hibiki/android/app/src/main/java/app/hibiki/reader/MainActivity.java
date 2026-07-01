@@ -609,6 +609,9 @@ public class MainActivity extends AudioServiceActivity {
                         Number buttonBgColor = call.argument("buttonBgColor");
                         Number highlightColor = call.argument("highlightColor");
                         Number activeColor = call.argument("activeColor");
+                        // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台默认）。旧 payload 缺字段回退 0。
+                        Number cornerRadius = call.argument("cornerRadius");
+                        Number windowWidth = call.argument("windowWidth");
                         FloatingLyricService svc = FloatingLyricService.getInstance();
                         persistFloatingLyricOptions(call.arguments);
                         if (svc != null) {
@@ -619,7 +622,9 @@ public class MainActivity extends AudioServiceActivity {
                                     buttonTextColor != null ? buttonTextColor.intValue() : FloatingColors.LYRIC_BUTTON_TEXT,
                                     buttonBgColor != null ? buttonBgColor.intValue() : FloatingColors.LYRIC_BUTTON_BG,
                                     highlightColor != null ? highlightColor.intValue() : FloatingColors.LYRIC_HIGHLIGHT,
-                                    activeColor != null ? activeColor.intValue() : FloatingColors.LYRIC_ACTIVE);
+                                    activeColor != null ? activeColor.intValue() : FloatingColors.LYRIC_ACTIVE,
+                                    cornerRadius != null ? cornerRadius.intValue() : 0,
+                                    windowWidth != null ? windowWidth.intValue() : 0);
                         }
                         result.success(null);
                         break;
@@ -929,6 +934,9 @@ public class MainActivity extends AudioServiceActivity {
         putIntIfNumber(editor, PreferenceKeys.LYRIC_BUTTON_BG_COLOR, args.get("buttonBgColor"));
         putIntIfNumber(editor, PreferenceKeys.LYRIC_HIGHLIGHT_COLOR, args.get("highlightColor"));
         putIntIfNumber(editor, PreferenceKeys.LYRIC_ACTIVE_COLOR, args.get("activeColor"));
+        // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台默认）。启动服务前落盘，让 readInitialState 首帧即应用。
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_CORNER_RADIUS, args.get("cornerRadius"));
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_WIDTH, args.get("windowWidth"));
         putBooleanIfBoolean(editor, PreferenceKeys.LYRIC_LOCKED, args.get("locked"));
         putBooleanIfBoolean(
                 editor,

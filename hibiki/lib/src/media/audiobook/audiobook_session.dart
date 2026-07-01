@@ -385,6 +385,8 @@ class AudiobookSession extends ChangeNotifier {
       buttonBgColor: style.buttonBgColor,
       highlightColor: style.highlightColor,
       activeColor: style.activeColor,
+      cornerRadius: style.cornerRadius,
+      windowWidth: style.windowWidth,
       clickLookupEnabled: _floatingLyricClickLookup(),
     );
     if (!shown) return false;
@@ -402,6 +404,8 @@ class AudiobookSession extends ChangeNotifier {
       buttonBgColor: style.buttonBgColor,
       highlightColor: style.highlightColor,
       activeColor: style.activeColor,
+      cornerRadius: style.cornerRadius,
+      windowWidth: style.windowWidth,
     );
     await FloatingLyricChannel.setClickLookupEnabled(
         _floatingLyricClickLookup());
@@ -592,6 +596,8 @@ class FloatingLyricStyle {
     required this.buttonBgColor,
     required this.highlightColor,
     required this.activeColor,
+    this.cornerRadius = 0,
+    this.windowWidth = 0,
   });
 
   final double fontSize;
@@ -601,6 +607,14 @@ class FloatingLyricStyle {
   final int buttonBgColor;
   final int highlightColor;
   final int activeColor;
+
+  /// TODO-708 P2: 悬浮字幕背景/按钮圆角半径（逻辑 dp）。0 = 平台原生默认观感
+  /// （Android 直角 / Windows 14dp），>0 时两端都按该 dp 渲染圆角。
+  final int cornerRadius;
+
+  /// TODO-708 P2: 悬浮窗宽度（逻辑 dp）。0 = 平台默认宽（Android 撑满屏 / Windows
+  /// 720dip 起始 + 可拖拽），>0 时两端都按该 dp 设窗宽（居中）。
+  final int windowWidth;
 
   /// TODO-370: 按百分比（0..100）缩放某个 ARGB 颜色的 alpha 通道。100 = 原 alpha 不变
   /// （保持各表面历史观感），调小变更透明。两个悬浮字幕样式构造点（app 级 / reader 级）

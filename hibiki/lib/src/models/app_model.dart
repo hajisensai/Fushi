@@ -3419,6 +3419,9 @@ class AppModel with ChangeNotifier {
       ),
       highlightColor: accent.withAlpha(128).value,
       activeColor: accent.value,
+      // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台原生默认观感）。
+      cornerRadius: floatingLyricCornerRadius,
+      windowWidth: floatingLyricWidth,
     );
   }
 
@@ -4006,6 +4009,15 @@ class AppModel with ChangeNotifier {
   int get floatingLyricBgOpacity => prefsRepo.floatingLyricBgOpacity;
   Future<void> setFloatingLyricBgOpacity(int value) =>
       prefsRepo.setFloatingLyricBgOpacity(value);
+
+  // TODO-708 P2: 悬浮字幕圆角半径（dp，0=平台原生观感）+ 宽度（dp，0=平台默认宽）。
+  int get floatingLyricCornerRadius => prefsRepo.floatingLyricCornerRadius;
+  Future<void> setFloatingLyricCornerRadius(int value) =>
+      prefsRepo.setFloatingLyricCornerRadius(value);
+
+  int get floatingLyricWidth => prefsRepo.floatingLyricWidth;
+  Future<void> setFloatingLyricWidth(int value) =>
+      prefsRepo.setFloatingLyricWidth(value);
 
   bool get showFloatingDict => prefsRepo.showFloatingDict;
 

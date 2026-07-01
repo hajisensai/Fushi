@@ -54,6 +54,10 @@ class FloatingLyricWindow {
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
     uint32_t active_color = 0xFFFFD54F;
+    // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认（14dp 圆角 / 720dip 起始
+    // 宽 + 可拖拽），>0 时按该 dp 覆盖，保证默认零观感变化。
+    double corner_radius = 0.0;
+    double window_width = 0.0;
   };
 
   struct Labels {
@@ -135,6 +139,12 @@ class FloatingLyricWindow {
   // Recomputes the logical strip size from the current window size (after a
   // system resize) so the font + control layout track the new dimensions.
   void SyncStripSizeFromWindow();
+
+  // TODO-708 P2: applies style_.window_width (logical dp, >0) to the live window
+  // by resizing it (clamped to the drag min/max), keeping the top-left origin
+  // and re-clamping to the monitor. No-op when the width is 0 (platform default)
+  // or the window does not exist yet.
+  void ApplyStyleWidth();
 
   float ScaleForDpi(float value) const;
 

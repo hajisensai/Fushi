@@ -175,6 +175,9 @@ void main() {
         'buttonBgColor': 0x33112233,
         'highlightColor': 0x80445566,
         'activeColor': 0xFFABCDEF,
+        // TODO-708 P2: 圆角半径 / 窗宽默认哨兵 0（缺省=平台原生观感）。
+        'cornerRadius': 0,
+        'windowWidth': 0,
       });
     });
 
@@ -211,6 +214,9 @@ void main() {
         'buttonBgColor': 0x330A0B0C,
         'highlightColor': 0x80112233,
         'activeColor': 0xFF445566,
+        // TODO-708 P2: 圆角半径 / 窗宽默认哨兵 0（缺省=平台原生观感）。
+        'cornerRadius': 0,
+        'windowWidth': 0,
         'locked': true,
         'clickLookupEnabled': false,
       });

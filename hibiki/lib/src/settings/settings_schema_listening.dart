@@ -142,6 +142,55 @@ SettingsDestination buildListeningDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（dp，0=平台原生观感）。同样仅
+          // Android/Windows 可见（有原生悬浮窗后端）。镜像透明度那条 apply 链路。
+          SettingsStepperItem(
+            id: 'listening.floating_lyric_corner_radius',
+            title: t.floating_lyric_corner_radius,
+            subtitle: t.floating_lyric_corner_radius_hint,
+            icon: Icons.rounded_corner_outlined,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            min: 0,
+            max: 48,
+            step: 2,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.floatingLyricCornerRadius.toDouble(),
+            format: (double value) =>
+                value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setFloatingLyricCornerRadius(value.round());
+              await settingsContext.appModel.audiobookSession
+                  .applyFloatingLyricStyle();
+              settingsContext.refresh();
+            },
+          ),
+          // TODO-708 P2: 悬浮字幕/歌词条「宽度」自定义（dp，0=平台默认宽）。0 显示为「自动」，
+          // 其余 200..1200 逐 40 dp 步进。
+          SettingsStepperItem(
+            id: 'listening.floating_lyric_width',
+            title: t.floating_lyric_width,
+            subtitle: t.floating_lyric_width_hint,
+            icon: Icons.width_normal_outlined,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            min: 0,
+            max: 1200,
+            step: 40,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.floatingLyricWidth.toDouble(),
+            format: (double value) =>
+                value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              // 0=自动；其余夹到 [200,1200]（<200 的步进值向上取到 200，保持哨兵语义只在 0）。
+              final int rounded = value.round();
+              final int width =
+                  rounded <= 0 ? 0 : (rounded < 200 ? 200 : rounded);
+              await settingsContext.appModel.setFloatingLyricWidth(width);
+              await settingsContext.appModel.audiobookSession
+                  .applyFloatingLyricStyle();
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'listening.floating_lyric_click_lookup',
             title: t.floating_lyric_click_lookup,

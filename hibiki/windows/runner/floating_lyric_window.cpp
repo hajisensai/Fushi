@@ -216,7 +216,11 @@ bool FloatingLyricWindow::Show(HWND owner) {
     GetMonitorInfo(monitor, &mi);
 
     dpi_ = GetDpiForSystem();
-    strip_width_dip_ = kStripWidthDip;
+    // TODO-708 P2: 首次创建即用设置宽度（>0，夹到拖拽边界），否则历史 720dip 起始宽。
+    strip_width_dip_ = style_.window_width > 0.0
+                           ? std::clamp(static_cast<float>(style_.window_width),
+                                        kMinStripWidthDip, kMaxStripWidthDip)
+                           : kStripWidthDip;
     strip_height_dip_ = kStripHeightDip;
     const int width = static_cast<int>(ScaleForDpi(strip_width_dip_));
     const int height = static_cast<int>(ScaleForDpi(strip_height_dip_));
@@ -276,7 +280,33 @@ void FloatingLyricWindow::UpdateStyle(const Style& style) {
   style_ = style;
   text_format_.Reset();
   text_layout_.Reset();
+  ApplyStyleWidth();
   RequestRender();
+}
+
+// TODO-708 P2: 悬浮窗宽度可调。style_.window_width > 0 时把窗口调到该逻辑 dp 宽（夹到
+// 与拖拽相同的 [kMinStripWidthDip, kMaxStripWidthDip] 边界），保留左上角原点，再夹回工作
+// 区；== 0 时保持当前宽度（历史默认 720dip 起始 + 用户拖拽结果）。文本/控件布局随 WM_SIZE
+// 自动跟随，无需重复处理。
+void FloatingLyricWindow::ApplyStyleWidth() {
+  if (hwnd_ == nullptr || style_.window_width <= 0.0) {
+    return;
+  }
+  const float target_dip =
+      std::clamp(static_cast<float>(style_.window_width), kMinStripWidthDip,
+                 kMaxStripWidthDip);
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int target_px = static_cast<int>(ScaleForDpi(target_dip));
+  const int current_px = rc.right - rc.left;
+  if (target_px == current_px) {
+    return;
+  }
+  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, target_px, rc.bottom - rc.top,
+               SWP_NOMOVE | SWP_NOACTIVATE);
+  ClampCurrentPositionToWindowMonitor();
 }
 
 void FloatingLyricWindow::UpdateLabels(const Labels& labels) {
@@ -587,7 +617,11 @@ void FloatingLyricWindow::Render() {
   render_target_->BeginDraw();
   render_target_->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-  const float corner = ScaleForDpi(kCornerRadiusDip);
+  // TODO-708 P2: 圆角半径可调。style_.corner_radius > 0 时用设置值，否则回退历史 14dp。
+  const float corner_dip = style_.corner_radius > 0.0
+                               ? static_cast<float>(style_.corner_radius)
+                               : kCornerRadiusDip;
+  const float corner = ScaleForDpi(corner_dip);
   D2D1_ROUNDED_RECT bg_rect = D2D1::RoundedRect(
       D2D1::RectF(0, 0, static_cast<float>(width), static_cast<float>(height)),
       corner, corner);

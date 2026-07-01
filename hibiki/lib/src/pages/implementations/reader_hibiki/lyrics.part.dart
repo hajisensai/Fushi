@@ -256,6 +256,9 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       ),
       highlightColor: accent.withAlpha(128).value,
       activeColor: accent.value,
+      // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台原生默认观感）。
+      cornerRadius: appModel.floatingLyricCornerRadius,
+      windowWidth: appModel.floatingLyricWidth,
     );
   }
 

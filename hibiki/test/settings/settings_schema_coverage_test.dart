@@ -228,6 +228,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // scaleAlpha 纯函数测试覆盖，落到原生悬浮窗的实际像素需真机。
   'listening/Floating subtitle background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + test/settings/floating_lyric_bg_opacity_test.dart + DEVICE: native strip bg alpha',
+  // TODO-708 P2: 圆角半径 / 宽度（dp，0=平台原生观感）。偏好往返 + 默认哨兵 + 两个样式
+  // 构造点喂入由专项测试覆盖；落到原生悬浮窗的实际圆角/窗宽像素需真机点验。
+  'listening/Floating subtitle corner radius':
+      'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip corner radius (Android GradientDrawable / Windows D2D)',
+  'listening/Floating subtitle width':
+      'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip window width (Android LayoutParams / Windows SetWindowPos)',
   'listening/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
   'listening/Volume Key Sentence Navigation':

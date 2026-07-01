@@ -637,6 +637,9 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   style.highlight_color =
       ArgbFromValue(args, "highlightColor", style.highlight_color);
   style.active_color = ArgbFromValue(args, "activeColor", style.active_color);
+  // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。旧 payload 缺字段回退结构体默认 0=平台默认。
+  style.corner_radius = DoubleFromValue(args, "cornerRadius", style.corner_radius);
+  style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
   return style;
 }
 

@@ -44,6 +44,9 @@ public final class PreferenceKeys {
     public static final String LYRIC_BUTTON_BG_COLOR = "lyricButtonBgColor";
     public static final String LYRIC_HIGHLIGHT_COLOR = "lyricHighlightColor";
     public static final String LYRIC_ACTIVE_COLOR = "lyricActiveColor";
+    // TODO-708 P2: 悬浮字幕圆角半径（dp，0=直角原生观感）+ 宽度（dp，0=MATCH_PARENT 撑满）。
+    public static final String LYRIC_CORNER_RADIUS = "lyricCornerRadius";
+    public static final String LYRIC_WIDTH = "lyricWidth";
     public static final String LYRIC_LOCKED = "lyricLocked";
     public static final String LYRIC_CLICK_LOOKUP_ENABLED = "lyricClickLookupEnabled";
 

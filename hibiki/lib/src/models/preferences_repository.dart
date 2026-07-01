@@ -1147,6 +1147,60 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（逻辑 dp）。0 = 平台原生默认观感
+  // （Android 直角矩形背景 / Windows 14dp 圆角），确保默认不改动时视觉与历史一致；>0
+  // 时两端都按该 dp 值渲染背景与按钮圆角。上界 48 足够覆盖胶囊化诉求。
+  static const int floatingLyricCornerRadiusDefault = 0;
+  static const int floatingLyricCornerRadiusMax = 48;
+
+  static int normalizeFloatingLyricCornerRadius(num value) =>
+      value.round().clamp(0, floatingLyricCornerRadiusMax).toInt();
+
+  int get floatingLyricCornerRadius => normalizeFloatingLyricCornerRadius(
+        getPref(
+          'floating_lyric_corner_radius',
+          defaultValue: floatingLyricCornerRadiusDefault,
+        ) as int,
+      );
+
+  Future<void> setFloatingLyricCornerRadius(int value) async {
+    await setPref(
+      'floating_lyric_corner_radius',
+      normalizeFloatingLyricCornerRadius(value),
+    );
+    notifyListeners();
+  }
+
+  // TODO-708 P2: 悬浮字幕/歌词条「宽度」自定义（逻辑 dp）。0 = 平台原生默认宽度
+  // （Android 撑满屏宽 MATCH_PARENT / Windows 720dip 起始宽 + 可拖拽），默认不改动时
+  // 视觉与历史一致；>0 时两端都按该 dp 值设窗口宽（居中）。范围 200..1200 覆盖窄条到
+  // 宽横幅。
+  static const int floatingLyricWidthDefault = 0;
+  static const int floatingLyricWidthMin = 200;
+  static const int floatingLyricWidthMax = 1200;
+
+  /// 归一悬浮窗宽度：0 保持为「自动/平台默认」哨兵，其余夹到 [min, max]。
+  static int normalizeFloatingLyricWidth(num value) {
+    final int rounded = value.round();
+    if (rounded <= 0) return 0;
+    return rounded.clamp(floatingLyricWidthMin, floatingLyricWidthMax).toInt();
+  }
+
+  int get floatingLyricWidth => normalizeFloatingLyricWidth(
+        getPref(
+          'floating_lyric_width',
+          defaultValue: floatingLyricWidthDefault,
+        ) as int,
+      );
+
+  Future<void> setFloatingLyricWidth(int value) async {
+    await setPref(
+      'floating_lyric_width',
+      normalizeFloatingLyricWidth(value),
+    );
+    notifyListeners();
+  }
+
   bool get showFloatingDict =>
       getPref('show_floating_dict', defaultValue: false) as bool;
 

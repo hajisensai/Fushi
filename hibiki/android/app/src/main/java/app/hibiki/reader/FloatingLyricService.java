@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.text.Layout;
 import android.text.SpannableString;
@@ -16,6 +17,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -61,6 +63,9 @@ public class FloatingLyricService extends BaseFloatingService {
     private int buttonBgColor = FloatingColors.LYRIC_BUTTON_BG;
     private int highlightColor = FloatingColors.LYRIC_HIGHLIGHT;
     private int activeColor = FloatingColors.LYRIC_ACTIVE;
+    // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认观感（直角背景 / MATCH_PARENT 撑满）。
+    private int cornerRadiusDp = 0;
+    private int windowWidthDp = 0;
     private boolean isLocked = false;
     private boolean clickLookupEnabled = true;
     private boolean isPlaying = false;
@@ -194,6 +199,44 @@ public class FloatingLyricService extends BaseFloatingService {
         return prefs.getInt(PreferenceKeys.POS_Y_TOP, 100);
     }
 
+    // ── Window width (TODO-708 P2) ──────────────────────────────────────────
+
+    /**
+     * TODO-708 P2: 悬浮窗宽度。windowWidthDp == 0 时用基类默认（MATCH_PARENT 撑满屏宽，
+     * 靠左 gravity，历史观感零变化）；>0 时按 dp 固定宽并水平居中（VERTICAL_ONLY 拖拽下
+     * x 不变，clamp 只夹 Y，居中不受影响）。
+     */
+    @Override
+    protected WindowManager.LayoutParams createLayoutParams() {
+        WindowManager.LayoutParams lp = super.createLayoutParams();
+        if (windowWidthDp > 0) {
+            lp.width = dpToPx(windowWidthDp);
+            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        }
+        return lp;
+    }
+
+    /** 宽度改变后在已显示的窗口上即时生效（无窗口时下次 createLayoutParams 会应用）。 */
+    private void applyWindowWidth() {
+        if (windowManager == null || rootView == null || layoutParams == null) return;
+        int targetWidth = windowWidthDp > 0
+                ? dpToPx(windowWidthDp)
+                : WindowManager.LayoutParams.MATCH_PARENT;
+        int targetGravity = windowWidthDp > 0
+                ? (Gravity.TOP | Gravity.CENTER_HORIZONTAL)
+                : (Gravity.TOP | Gravity.START);
+        if (layoutParams.width == targetWidth && layoutParams.gravity == targetGravity) {
+            return;
+        }
+        layoutParams.width = targetWidth;
+        layoutParams.gravity = targetGravity;
+        rootView.post(() -> {
+            if (windowManager != null && rootView != null && layoutParams != null) {
+                windowManager.updateViewLayout(rootView, layoutParams);
+            }
+        });
+    }
+
     // ── Public API (called from MainActivity) ──
 
     public void updateLyricText(String text) {
@@ -212,7 +255,8 @@ public class FloatingLyricService extends BaseFloatingService {
     public void updateStyle(
             float size, int color, int bg,
             int buttonColor, int buttonBg,
-            int highlight, int active) {
+            int highlight, int active,
+            int cornerRadius, int windowWidth) {
         fontSize = size;
         textColor = color;
         bgColor = bg;
@@ -220,6 +264,9 @@ public class FloatingLyricService extends BaseFloatingService {
         buttonBgColor = buttonBg;
         highlightColor = highlight;
         activeColor = active;
+        cornerRadiusDp = Math.max(0, cornerRadius);
+        windowWidthDp = Math.max(0, windowWidth);
+        applyWindowWidth();
         applyStyle();
     }
 
@@ -267,7 +314,7 @@ public class FloatingLyricService extends BaseFloatingService {
         btn.setMinimumWidth(dpToPx(DP_BTN_MIN_W));
         btn.setMinimumHeight(dpToPx(DP_BTN_MIN_H));
         btn.setScaleType(ImageView.ScaleType.CENTER);
-        btn.setBackgroundColor(buttonBgColor);
+        btn.setBackground(makeRoundedBackground(buttonBgColor));
         tintIcon(btn, buttonTextColor);
         btn.setOnClickListener(v -> onControlClick(action));
 
@@ -465,7 +512,7 @@ public class FloatingLyricService extends BaseFloatingService {
         if (lyricText == null || rootView == null) return;
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        rootView.setBackgroundColor(bgColor);
+        rootView.setBackground(makeRoundedBackground(bgColor));
         applyButtonStyle(previousButton);
         applyButtonStyle(nextButton);
         applyButtonStyle(closeButton);
@@ -474,9 +521,22 @@ public class FloatingLyricService extends BaseFloatingService {
         applyLyricText();
     }
 
+    /**
+     * TODO-708 P2: 背景/按钮底色。cornerRadiusDp == 0 时退化为等价于 setBackgroundColor 的
+     * 纯色直角矩形（GradientDrawable 半径 0 = 直角），保持历史像素观感零变化；>0 时按 dp
+     * 半径圆角。单一实现供背景与所有按钮共用，圆角与颜色绝不会漂移。
+     */
+    private GradientDrawable makeRoundedBackground(int color) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setColor(color);
+        drawable.setCornerRadius(dpToPx(cornerRadiusDp));
+        return drawable;
+    }
+
     private void applyButtonStyle(ImageButton btn) {
         if (btn == null) return;
-        btn.setBackgroundColor(buttonBgColor);
+        btn.setBackground(makeRoundedBackground(buttonBgColor));
         tintIcon(btn, buttonTextColor);
     }
 
@@ -486,7 +546,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 isLocked ? R.drawable.ic_floating_lock : R.drawable.ic_floating_lock_open);
         lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
         tintIcon(lockButton, isLocked ? activeColor : buttonTextColor);
-        lockButton.setBackgroundColor(buttonBgColor);
+        lockButton.setBackground(makeRoundedBackground(buttonBgColor));
     }
 
     private void applyPlayPauseButton() {
@@ -495,7 +555,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 isPlaying ? R.drawable.ic_floating_pause : R.drawable.ic_floating_play);
         playPauseButton.setContentDescription(playPauseLabel);
         tintIcon(playPauseButton, isPlaying ? activeColor : buttonTextColor);
-        playPauseButton.setBackgroundColor(buttonBgColor);
+        playPauseButton.setBackground(makeRoundedBackground(buttonBgColor));
     }
 
     private void applyControlLabels() {
@@ -524,6 +584,9 @@ public class FloatingLyricService extends BaseFloatingService {
         buttonBgColor = prefs.getInt(PreferenceKeys.LYRIC_BUTTON_BG_COLOR, buttonBgColor);
         highlightColor = prefs.getInt(PreferenceKeys.LYRIC_HIGHLIGHT_COLOR, highlightColor);
         activeColor = prefs.getInt(PreferenceKeys.LYRIC_ACTIVE_COLOR, activeColor);
+        // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台默认）。首帧即读，createLayoutParams 用宽、applyStyle 用圆角。
+        cornerRadiusDp = Math.max(0, prefs.getInt(PreferenceKeys.LYRIC_CORNER_RADIUS, cornerRadiusDp));
+        windowWidthDp = Math.max(0, prefs.getInt(PreferenceKeys.LYRIC_WIDTH, windowWidthDp));
         isLocked = prefs.getBoolean(PreferenceKeys.LYRIC_LOCKED, isLocked);
         clickLookupEnabled = prefs.getBoolean(
                 PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED, clickLookupEnabled);

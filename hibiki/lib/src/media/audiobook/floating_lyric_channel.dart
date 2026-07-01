@@ -125,6 +125,10 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
     int buttonBgColor = 0x33000000,
     int highlightColor = 0x80FFD54F,
     int activeColor = 0xFFFFD54F,
+    // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认（旧 payload 缺字段回退
+    // 到此默认，保证向后兼容与零观感变化）。
+    int cornerRadius = 0,
+    int windowWidth = 0,
     bool? locked,
     bool clickLookupEnabled = true,
   }) {
@@ -136,6 +140,8 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
       'buttonBgColor': buttonBgColor,
       'highlightColor': highlightColor,
       'activeColor': activeColor,
+      'cornerRadius': cornerRadius,
+      'windowWidth': windowWidth,
       'clickLookupEnabled': clickLookupEnabled,
     };
     if (locked != null) {
@@ -198,6 +204,9 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
     int buttonBgColor = 0x33000000,
     int highlightColor = 0x80FFD54F,
     int activeColor = 0xFFFFD54F,
+    // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认。
+    int cornerRadius = 0,
+    int windowWidth = 0,
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', {
@@ -208,6 +217,8 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
       'buttonBgColor': buttonBgColor,
       'highlightColor': highlightColor,
       'activeColor': activeColor,
+      'cornerRadius': cornerRadius,
+      'windowWidth': windowWidth,
     });
   }
 

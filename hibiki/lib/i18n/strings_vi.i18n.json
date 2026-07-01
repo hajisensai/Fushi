@@ -2026,5 +2026,9 @@
   "local_audio_reference_original_desc": "Keep the database where it is and read from its original path; the source breaks if the file is moved or deleted.",
   "anki_card_action_failed": "Card action failed. Please try again.",
   "series_merged_hint": "Merged · rename in series details",
-  "series_default_name": "New series"
+  "series_default_name": "New series",
+  "floating_lyric_corner_radius": "Floating subtitle corner radius",
+  "floating_lyric_corner_radius_hint": "0 keeps each platform's default corners; raise it to round the bar and buttons more",
+  "floating_lyric_width": "Floating subtitle width",
+  "floating_lyric_width_hint": "0 uses the platform default width; set a value to make the bar a fixed width"
 }
