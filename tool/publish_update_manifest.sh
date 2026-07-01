@@ -13,7 +13,18 @@
 #
 # Required env:
 #   CHANNEL           release channel (debug|beta|formal|github-release)
-#   TAG               release tag, e.g. v0.10.1-beta.162
+#   TAG               VERSION tag written into the manifest's `tag` field, e.g.
+#                     v0.10.1-beta.162 / v0.10.1-debug.5633+3cf5905. The client
+#                     compares THIS to decide "is there a newer build?", so it
+#                     must keep the versioned/seq shape even when the debug
+#                     channel reuses a single rolling GitHub Release (TODO-1049).
+#   DOWNLOAD_TAG      git tag the assets actually live under on GitHub, used ONLY
+#                     to form browser_download_url = releases/download/<tag>/...
+#                     Defaults to TAG (beta/formal: the release IS the version
+#                     tag). The debug channel sets it to the fixed rolling tag
+#                     `debug-rolling`, so one GitHub Release entry is reused
+#                     forever (no per-push prerelease pile-up) while the
+#                     manifest's `tag` still advances by seq (TODO-1049).
 #   PRERELEASE        true|false  (echoed verbatim from steps.channel outputs)
 #   NOTES             release notes / body
 #   RELEASE_SEQUENCE  monotonic git rev-list count (NOT a workflow run-number)
@@ -36,6 +47,11 @@ set -euo pipefail
 PRERELEASE="${PRERELEASE:-true}"
 NOTES="${NOTES:-}"
 PLATFORM_LABEL="${PLATFORM_LABEL:-platform}"
+# Download-URL tag defaults to the version TAG (beta/formal: the release IS the
+# version tag); the debug channel passes the rolling `debug-rolling` tag so
+# asset URLs resolve on the single reused release even though `tag` keeps the
+# per-push seq for version comparison (TODO-1049).
+DOWNLOAD_TAG="${DOWNLOAD_TAG:-$TAG}"
 
 # Map channel -> manifest filename. Only managed channels get a manifest;
 # github-release events publish through the Release UI directly and are skipped.
@@ -51,7 +67,10 @@ esac
 
 # Collect this platform's assets (name + GitHub release download URL). Build
 # numbers / run-numbers are NEVER used to form the URL: the download URL is
-# purely releases/download/<tag>/<asset-name>, the path the client expects.
+# purely releases/download/<DOWNLOAD_TAG>/<asset-name>, the path the client
+# expects. DOWNLOAD_TAG is the git tag the release actually lives under
+# (== TAG for beta/formal; the fixed `debug-rolling` tag for the debug channel,
+# TODO-1049), which is why it, not the versioned `tag` field, forms the URL.
 # Expand the glob inside the artifacts dir and take basenames. Using a glob
 # loop (not `ls`) keeps names clean: an `ls -F` alias cannot append a classify
 # suffix (*, /). CI asset names are controlled (no spaces/newlines), so a
@@ -66,10 +85,10 @@ if [ "${#ASSET_FILES[@]}" -eq 0 ]; then
 fi
 
 PLATFORM_ASSETS_JSON="$(
-  REPO="$REPO" TAG="$TAG" python3 - "${ASSET_FILES[@]}" <<'PY'
+  REPO="$REPO" DOWNLOAD_TAG="$DOWNLOAD_TAG" python3 - "${ASSET_FILES[@]}" <<'PY'
 import json, os, sys
 repo = os.environ["REPO"]
-tag = os.environ["TAG"]
+tag = os.environ["DOWNLOAD_TAG"]
 base = f"https://github.com/{repo}/releases/download/{tag}"
 out = [{"name": name, "browser_download_url": f"{base}/{name}"} for name in sys.argv[1:]]
 print(json.dumps(out))

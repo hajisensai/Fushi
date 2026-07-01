@@ -186,9 +186,27 @@ jobs:
             ;;
         esac
 
+        # TODO-1049: the debug channel publishes to ONE fixed rolling GitHub
+        # Release tag (`debug-rolling`) instead of a new v<version>-debug.<seq>
+        # tag per push, so debug builds stop piling up prereleases that bury the
+        # formal/beta entries in the Releases list. PUBLISH_TAG is the git tag
+        # the GitHub Release actually uses; TAG stays the versioned/seq tag that
+        # the client compares (manifest `tag` field) and that names the APK.
+        # beta/formal are unchanged: their release IS the version tag.
+        ROLLING_DEBUG_TAG=debug-rolling
+        if [ "$CHANNEL" = debug ]; then
+          PUBLISH_TAG="$ROLLING_DEBUG_TAG"
+          ROLLING_DEBUG=true
+        else
+          PUBLISH_TAG="$TAG"
+          ROLLING_DEBUG=false
+        fi
+
         {
           echo "channel=$CHANNEL"
           echo "tag=$TAG"
+          echo "publish_tag=$PUBLISH_TAG"
+          echo "rolling_debug=$ROLLING_DEBUG"
           echo "name=$NAME"
           echo "prerelease=$PRERELEASE"
           echo "make_latest=$MAKE_LATEST"
@@ -457,11 +475,54 @@ jobs:
         files: |
           hibiki/build/release-artifacts/hibiki-*.apk
 
+    # TODO-1049: the debug channel reuses ONE rolling GitHub Release
+    # (tag `debug-rolling`). softprops upserts same-named assets but never
+    # removes an asset from a PRIOR commit (different seq/sha in the name), so
+    # without pruning the rolling release would still accumulate one APK+EXE per
+    # commit. Before publishing, delete every asset on the rolling release whose
+    # name does NOT belong to THIS release sequence, leaving only the current
+    # build. Same-commit Android+desktop share the seq, so they never delete
+    # each other's asset; a newer commit prunes the older one. Skipped entirely
+    # unless this run is the rolling debug channel. Missing release / no stale
+    # asset is a no-op.
+    - name: Prune stale assets from rolling debug release
+      if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+        BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+      run: |
+        set -euo pipefail
+        # Current build's assets embed the versionName (e.g. 0.11.1-debug.5633);
+        # anything on the rolling release NOT carrying this exact token belongs
+        # to an older commit and is superseded.
+        KEEP_TOKEN="-${BUILD_VERSION_NAME}-"
+        if ! gh release view "$PUBLISH_TAG" --repo "$REPO" >/dev/null 2>&1; then
+          echo "Rolling release $PUBLISH_TAG does not exist yet; nothing to prune."
+          exit 0
+        fi
+        mapfile -t STALE < <(
+          gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets \
+            --jq '.assets[].name' \
+            | grep -v -- "$KEEP_TOKEN" || true
+        )
+        if [ "${#STALE[@]}" -eq 0 ]; then
+          echo "No stale assets on $PUBLISH_TAG (all carry $KEEP_TOKEN)."
+          exit 0
+        fi
+        for asset in "${STALE[@]}"; do
+          [ -n "$asset" ] || continue
+          echo "  deleting stale asset $asset from $PUBLISH_TAG"
+          gh release delete-asset "$PUBLISH_TAG" "$asset" --repo "$REPO" --yes
+        done
+
     - name: Publish Android channel release
       if: steps.channel.outputs.publish_managed_release == 'true'
       uses: softprops/action-gh-release@v3
       with:
-        tag_name: ${{ steps.channel.outputs.tag }}
+        tag_name: ${{ steps.channel.outputs.publish_tag }}
         target_commitish: ${{ github.sha }}
         name: ${{ steps.channel.outputs.name }}
         body: ${{ steps.channel.outputs.body }}
@@ -469,20 +530,22 @@ jobs:
         make_latest: ${{ steps.channel.outputs.make_latest }}
         files: ${{ steps.channel.outputs.files }}
 
-    # TODO-967: every push to main/develop publishes one debug prerelease
-    # (tag v<version>-debug.<seq>+<sha>), so they accrue without bound and bury
-    # the formal/beta releases. Keep only the newest 10 debug prereleases; delete
-    # the rest (and their tags). This runs ONLY on the automated push debug path
-    # (github.event_name == 'push' AND channel == debug) -- never on
-    # workflow_dispatch (manual debug/beta/formal) nor on release events -- and
-    # ONLY in this one workflow so it cannot race release-desktop.yml, which
-    # publishes the SAME debug tag (deleting a tag both workflows publish from a
-    # single place avoids a delete-vs-publish race). HARD SAFETY: two independent
-    # filters before any delete -- (1) isPrerelease must be true AND isLatest must
-    # be false (never touch a formal or Latest release), and (2) the tag must
-    # match ^v.*-debug\.[0-9]+\+ (the exact debug tag shape). A release failing
-    # either filter is left untouched. We only ever delete debug prereleases.
-    - name: Prune old debug prereleases (keep newest 10)
+    # TODO-1049 (supersedes TODO-967): the debug channel now publishes to ONE
+    # fixed rolling release (`debug-rolling`), so no new per-push
+    # v<version>-debug.<seq>+<sha> prereleases are ever created. This step
+    # garbage-collects the LEGACY versioned debug prereleases the old scheme
+    # accumulated (and any that a stale/manual run might create), leaving the
+    # Releases list with a single rolling debug entry alongside the formal/beta
+    # ones. Runs ONLY on the automated push debug path -- never on
+    # workflow_dispatch nor on release events -- and ONLY in this one workflow so
+    # it cannot race release-desktop.yml (which publishes the SAME rolling tag).
+    # HARD SAFETY, two independent filters before any delete: (1) isPrerelease
+    # must be true AND isLatest must be false (never touch a formal or Latest
+    # release), and (2) the tag must match ^v.*-debug\.[0-9]+\+ (the legacy
+    # versioned debug tag shape) -- which the rolling tag `debug-rolling` does
+    # NOT match, so the rolling release is never deleted. A release failing
+    # either filter is left untouched.
+    - name: Prune legacy versioned debug prereleases
       if: github.event_name == 'push' && steps.channel.outputs.channel == 'debug'
       shell: bash
       env:
@@ -490,33 +553,30 @@ jobs:
         REPO: ${{ github.repository }}
       run: |
         set -euo pipefail
-        KEEP=10
-        # List every release with the fields needed for the double filter, newest
-        # first by publish time. --json keeps this robust against output format
-        # changes; jq does the prerelease + regex filtering, never a loose grep.
+        # List every release with the fields needed for the double filter.
+        # --json keeps this robust against output format changes; jq does the
+        # prerelease + regex filtering, never a loose grep.
         mapfile -t STALE < <(
           gh release list --repo "$REPO" --limit 1000 \
-            --json tagName,isPrerelease,isLatest,publishedAt \
+            --json tagName,isPrerelease,isLatest \
             --jq '
-              [ .[]
-                | select(.isPrerelease == true and .isLatest == false)
-                | select(.tagName | test("^v.*-debug\\.[0-9]+\\+"))
-              ]
-              | sort_by(.publishedAt) | reverse
-              | .['"$KEEP"':]
-              | .[].tagName
+              .[]
+              | select(.isPrerelease == true and .isLatest == false)
+              | select(.tagName | test("^v.*-debug\\.[0-9]+\\+"))
+              | .tagName
             '
         )
         if [ "${#STALE[@]}" -eq 0 ]; then
-          echo "No stale debug prereleases beyond the newest $KEEP; nothing to delete."
+          echo "No legacy versioned debug prereleases to delete."
           exit 0
         fi
-        echo "Deleting ${#STALE[@]} debug prerelease(s) older than the newest $KEEP:"
+        echo "Deleting ${#STALE[@]} legacy versioned debug prerelease(s):"
         for tag in "${STALE[@]}"; do
-          # Defence in depth: re-assert the debug tag shape per tag so a
-          # malformed jq result can never delete a non-debug tag.
+          [ -n "$tag" ] || continue
+          # Defence in depth: re-assert the legacy debug tag shape per tag so a
+          # malformed jq result can never delete a non-debug or the rolling tag.
           if [[ ! "$tag" =~ ^v.*-debug\.[0-9]+\+ ]]; then
-            echo "::warning title=Skipping non-debug tag::Refusing to delete '$tag' (does not match debug tag pattern)"
+            echo "::warning title=Skipping non-legacy-debug tag::Refusing to delete '$tag' (does not match legacy versioned debug tag pattern)"
             continue
           fi
           echo "  deleting $tag"
@@ -539,6 +599,10 @@ jobs:
         REPO: ${{ github.repository }}
         CHANNEL: ${{ steps.channel.outputs.channel }}
         TAG: ${{ steps.channel.outputs.tag }}
+        # TODO-1049: manifest `tag` keeps the versioned/seq TAG for client
+        # version comparison; asset URLs resolve under DOWNLOAD_TAG (the actual
+        # release tag -- `debug-rolling` for debug, else identical to TAG).
+        DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
         PRERELEASE: ${{ steps.channel.outputs.prerelease }}
         NOTES: ${{ steps.channel.outputs.body }}
         VERSION: ${{ steps.channel.outputs.build_version_name }}

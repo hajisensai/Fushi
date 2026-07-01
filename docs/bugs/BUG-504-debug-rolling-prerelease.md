@@ -1,0 +1,15 @@
+## BUG-504 · TODO-1049 debug版滚动prerelease不占Release位
+- **报告**：2026-07-01（用户：调试版本更新太高频了，不应该占在 Release 的位置）
+- **真实性**：✅ 真（发布策略缺陷，非崩溃）。根因 `.github/workflows/release.yml`（旧 `push`/`debug` 路径 `TAG="v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}"` 每次 push 新建一个 GitHub Release，且 softprops 以该版本化 tag 为 `tag_name` 发布）+ `.github/workflows/release-desktop.yml` 同构。旧的 TODO-967「保留最近 10 个 debug prerelease」只是把堆积上限压到 10，仍在 Releases 列表常驻 10 条 debug，淹没正式/beta 条目。
+- **根因数据结构洞察**：GitHub Release 的 git tag 同时承担两个被耦合的职责——①客户端版本比较（从 `-debug.<seq>` 提序号判「有无更新」，见 `hibiki/lib/src/utils/misc/update_checker_release.dart` 的 `_kDebugReleaseTagPattern` / `isUpdateVersionNewer`）②资产下载 URL 路径段（`releases/download/<tag>/<name>`）。要「Releases 列表 debug 永远只 1 条」必须把这两个职责拆开。
+- **[x] ① 已修复** — 提交 `<待集成 owner 落地填>`
+  - debug 通道改为发布到**固定滚动 tag `debug-rolling`**（`steps.channel.outputs.publish_tag`），softprops `tag_name` 用 `publish_tag` 而非版本化 `tag`；beta/formal 不变（`publish_tag == tag`）。改动点：
+    - `.github/workflows/release.yml`：channel resolver 新增 `ROLLING_DEBUG_TAG=debug-rolling` + `PUBLISH_TAG`/`ROLLING_DEBUG` 输出；`Publish Android channel release` 用 `publish_tag`；新增 `Prune stale assets from rolling debug release`（按当前 `versionName` token 删滚动 release 上非本 seq 的陈旧资产，同 commit Android+desktop 共享 seq 互不误删）；`Prune old debug prereleases (keep newest 10)` 重构为 `Prune legacy versioned debug prereleases`（GC 掉历史遗留 `v...-debug.<seq>+` prerelease，滚动 tag 不匹配该 shape 故永不删）；manifest step 新增 `DOWNLOAD_TAG=publish_tag`。
+    - `.github/workflows/release-desktop.yml`：同构（channel resolver 输出、`publish_tag` 发布、滚动资产 prune、`DOWNLOAD_TAG` 接入）。
+    - `tool/publish_update_manifest.sh`：新增 `DOWNLOAD_TAG`（默认 `=$TAG`，向后兼容）；`browser_download_url` 用 `DOWNLOAD_TAG` 拼路径，manifest 的 `tag` 字段仍写版本化 `TAG`（客户端版本比较不变）。
+    - 客户端 `update_checker*`：**零改动**——`buildReleaseFromManifest` 读 `browser_download_url` 原样透传下载，读 `tag` 做版本比较，对下载 URL 里的 tag 段完全无感。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/utils/misc/update_checker_debug_seq_prompt_test.dart` 新增 group「rolling debug release: versioned tag vs debug-rolling download URL (TODO-1049)」：断言 manifest `tag` 用版本化 tag、下载 URL 用 `debug-rolling` 时，seq 递进仍判更新、下载 URL 原样透传滚动 tag、同 seq 不弹（守卫解耦契约）。
+  - `tool/check_release_policy.ps1` 新增 TODO-1049 守卫：两条 workflow 必须用 `tag_name: ${{ steps.channel.outputs.publish_tag }}` 发布、debug 通道 `ROLLING_DEBUG_TAG=debug-rolling` + `PUBLISH_TAG="$ROLLING_DEBUG_TAG"`、manifest step 接 `DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}`、仍 emit 版本化 `tag=$TAG`；`publish_update_manifest.sh` 必须含 `DOWNLOAD_TAG`。
+  - `hibiki/test/tools/update_manifest_publish_race_test.dart`（既有，未改）复跑绿：证明 `DOWNLOAD_TAG` 默认值保持向后兼容。
+- **备注**：workflow YAML / gh CLI 行为本机不可跑，需**下次 CI debug 构建真机验证**：①Releases 列表 debug 只剩 1 条 `debug-rolling`；②该 release 同时挂当前 commit 的 Android APK + Windows setup；③新 commit push 后滚动 release 资产被替换为新 seq、历史版本化 debug prerelease 被 GC；④客户端 debug 通道仍能从 `latest-debug.json` 解析出更新并从 `releases/download/debug-rolling/...` 匿名下载成功。softprops/action-gh-release 对已存在 tag 的 upsert 行为（保留旧不同名 asset）是本方案加 prune step 的前提，也需 CI 真验。

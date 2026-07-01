@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 489 条。点号进各自文件。
+> 共 490 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-504](bugs/BUG-504-debug-rolling-prerelease.md) | ✅ | ✅ | TODO-1049 debug版滚动prerelease不占Release位 |
 | [BUG-503](bugs/BUG-503-win-global-lookup-popup-flaky.md) | ✅ | ✅ | TODO-1079 win外查词弹窗偶发不出 |
 | [BUG-502](bugs/BUG-502-space-scroll-not-audiobook-pause.md) | ✅ | ✅ | TODO-1078 空格滚动而非暂停有声书 |
 | [BUG-501](bugs/BUG-501-image-chapter-load-blocking.md) | ✅ | ✅ | TODO-1074 图片章加载慢 |

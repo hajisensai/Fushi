@@ -100,6 +100,30 @@ Require-Text 'tool/publish_update_manifest.sh' $manifestScript 'releases/downloa
 Forbid-Pattern 'tool/publish_update_manifest.sh' $manifestScript 'make_latest' 'the mirror manifest is a data file on a git branch, not a GitHub Release; it must never set make_latest (TODO-705)'
 Forbid-Pattern 'tool/publish_update_manifest.sh' $manifestScript '\brun_number\b' 'manifest sequence must be the shared git release sequence, never a workflow run_number (TODO-705)'
 
+# TODO-1049: the debug channel publishes to ONE fixed rolling GitHub Release
+# tag (`debug-rolling`) so debug builds no longer pile up one prerelease per
+# push. Guard the invariants that keep this safe AND keep the client update
+# check working:
+#   1. Both workflows publish the managed release under `publish_tag`
+#      (the actual git tag: `debug-rolling` for debug, the version tag
+#      otherwise) -- NOT the raw versioned `tag`.
+#   2. The debug channel maps PUBLISH_TAG to the fixed rolling tag.
+#   3. Asset download URLs resolve under DOWNLOAD_TAG = publish_tag, while the
+#      manifest's `tag` field still carries the versioned/seq `tag` output the
+#      client compares. This decoupling in publish_update_manifest.sh is what
+#      lets one rolling release coexist with a monotonically advancing manifest.
+#   4. The rolling debug tag must still be prerelease + non-Latest (no hardcoded
+#      make_latest:true -- already forbidden above, re-stated here for the tag).
+Require-Text 'tool/publish_update_manifest.sh' $manifestScript 'DOWNLOAD_TAG' 'manifest download URLs must resolve under the actual release tag (DOWNLOAD_TAG), decoupled from the versioned manifest tag (TODO-1049)'
+foreach ($relativePath in $workflowPaths) {
+  $content = Read-RepoFile $relativePath
+  Require-Text $relativePath $content 'tag_name: ${{ steps.channel.outputs.publish_tag }}' 'the managed release must publish under publish_tag (rolling `debug-rolling` for debug), not the versioned tag (TODO-1049)'
+  Require-Text $relativePath $content 'ROLLING_DEBUG_TAG=debug-rolling' 'the debug channel must publish to the fixed rolling release tag `debug-rolling` (TODO-1049)'
+  Require-Text $relativePath $content 'PUBLISH_TAG="$ROLLING_DEBUG_TAG"' 'debug channel PUBLISH_TAG must be the rolling tag so debug prereleases stop accumulating (TODO-1049)'
+  Require-Text $relativePath $content 'DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}' 'manifest publisher must form asset URLs under the actual release tag (publish_tag), not the versioned tag (TODO-1049)'
+  Require-Text $relativePath $content 'echo "tag=$TAG"' 'the versioned tag must still be emitted so the manifest `tag` field drives client version comparison (TODO-1049)'
+}
+
 $buildGradle = Read-RepoFile 'hibiki/android/app/build.gradle'
 Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'
 Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def maxVersionCode = 2100000000' 'versionCode ceiling guard must match Android''s 2.1e9 limit (TODO-414)'

@@ -111,4 +111,86 @@ void main() {
       expect(selected, isNull, reason: '同序号时链路不得返回 selection（即不弹）');
     });
   });
+
+  // TODO-1049：debug 通道改为「单一滚动 GitHub Release」（固定 tag `debug-rolling`），
+  // 让 Releases 列表里 debug 永远只有 1 条、不再每次 push 堆一条。发布侧把两件事解耦：
+  //   * manifest 的 `tag` 字段仍写版本化 `v<version>-debug.<seq>+<sha>`（客户端据 `<seq>`
+  //     判「有无更新」，逻辑零改动）；
+  //   * 资产 `browser_download_url` 指向 `releases/download/debug-rolling/<name>`（滚动 tag）。
+  // 本组守卫「客户端对下载 URL 里的 tag 段完全无感」这一契约：只要版本化 `tag` 递进就判更新，
+  // 且下载 URL 原样透传（不从 URL 反解 tag），滚动 tag 不破坏任何既有行为。
+  group('rolling debug release: versioned tag vs debug-rolling download URL '
+      '(TODO-1049)', () {
+    String rollingManifestJson({
+      required String tag,
+      required String version,
+    }) {
+      // 关键：assets 的下载 URL 用固定滚动 tag `debug-rolling`，而 manifest.tag 用
+      // 版本化 tag —— 正是 publish_update_manifest.sh 的 DOWNLOAD_TAG 解耦产物。
+      return _debugManifestJson(
+        tag: tag,
+        version: version,
+        assets: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'hibiki-$version-abc1234-debug.apk',
+            'browser_download_url':
+                'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-$version-abc1234-debug.apk',
+          },
+          <String, dynamic>{
+            'name': 'hibiki-$version-windows-setup.exe',
+            'browser_download_url':
+                'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-$version-windows-setup.exe',
+          },
+        ],
+      );
+    }
+
+    test('higher seq still prompts; download URL uses debug-rolling verbatim',
+        () async {
+      final Map<String, dynamic>? release = buildReleaseFromManifest(
+        rollingManifestJson(
+          tag: 'v0.11.1-debug.5614+abc1234',
+          version: '0.11.1-debug.5614',
+        ),
+      );
+      expect(release, isNotNull);
+      // 版本比较仍走版本化 tag（含 seq），与滚动下载 tag 无关。
+      expect(release!['tag_name'], 'v0.11.1-debug.5614+abc1234');
+
+      final UpdateReleaseSelection? selected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[release],
+        currentVersion: _kInstalled,
+        channel: UpdateChannel.debug,
+        updater: WindowsUpdater(),
+      );
+
+      expect(selected, isNotNull, reason: 'seq 5614 > 5613：仍必须判为有更新');
+      expect(selected!.version, '0.11.1-debug.5614');
+      // 下载 URL 原样透传滚动 tag：客户端不从 URL 反解 tag，滚动 tag 不影响下载。
+      expect(
+        selected.downloadUrl,
+        'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-0.11.1-debug.5614-windows-setup.exe',
+      );
+    });
+
+    test('same seq under a rolling download URL still yields no prompt',
+        () async {
+      final Map<String, dynamic> release = buildReleaseFromManifest(
+        rollingManifestJson(
+          tag: 'v0.11.1-debug.5613+abc1234',
+          version: '0.11.1-debug.5613',
+        ),
+      )!;
+      final UpdateReleaseSelection? selected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[release],
+        currentVersion: _kInstalled,
+        channel: UpdateChannel.debug,
+        updater: WindowsUpdater(),
+      );
+      expect(selected, isNull,
+          reason: '同 seq（即便下载 URL 是滚动 tag）也不得判为有更新');
+    });
+  });
 }
