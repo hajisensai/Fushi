@@ -1,6 +1,17 @@
+// TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 hibiki-defaults.js，
+// 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
+try { importScripts('hibiki-defaults.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+const HIBIKI_DEFAULTS =
+    (self.HIBIKI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
+
 async function cfg() {
-  const { host = '127.0.0.1', port = 0, token = '' } =
-      await chrome.storage.local.get(['host', 'port', 'token']);
+  const saved = await chrome.storage.local.get(['host', 'port', 'token']);
+  const host = (saved.host != null && saved.host !== '')
+      ? saved.host : HIBIKI_DEFAULTS.host;
+  const port = (saved.port != null && saved.port !== 0)
+      ? saved.port : HIBIKI_DEFAULTS.port;
+  const token = (saved.token != null && saved.token !== '')
+      ? saved.token : HIBIKI_DEFAULTS.token;
   return { base: `http://${host}:${port}`, token };
 }
 function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }

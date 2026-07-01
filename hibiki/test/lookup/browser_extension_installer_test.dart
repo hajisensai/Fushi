@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -39,6 +40,62 @@ void main() {
         expect(bundled.readAsBytesSync(), (e as File).readAsBytesSync(),
             reason: 'bundle out of sync with source: $rel');
       }
+    });
+  });
+
+  // TODO-1087：自动配置注入函数。buildBrowserExtensionDefaultsJs 把 server 真值写成
+  // 扩展的 hibiki-defaults.js（self.HIBIKI_DEFAULTS）。测注入结果字面正确 + 转义安全。
+  group('buildBrowserExtensionDefaultsJs', () {
+    test('emits host/port/token into self.HIBIKI_DEFAULTS', () {
+      final String js = buildBrowserExtensionDefaultsJs(
+        const BrowserExtensionServerConfig(
+          host: '127.0.0.1',
+          port: 19633,
+          token: 'abc123',
+        ),
+      );
+      expect(js, contains('self.HIBIKI_DEFAULTS'));
+      expect(js, contains('host: "127.0.0.1"'));
+      expect(js, contains('port: 19633'));
+      expect(js, contains('token: "abc123"'));
+    });
+
+    test('json-encodes host/token so quotes cannot break out', () {
+      final String js = buildBrowserExtensionDefaultsJs(
+        const BrowserExtensionServerConfig(
+          host: 'ho"st',
+          port: 1,
+          token: r'a"b\c',
+        ),
+      );
+      // 双引号/反斜杠必须被 JSON 转义，不能裸出破坏 JS 语法。
+      // 用 jsonEncode 计算期望，避免手工转义歧义：编码后不含裸引号越界。
+      expect(js, contains('host: ' + jsonEncode('ho"st') + ','));
+      expect(js, contains('token: ' + jsonEncode(r'a"b\c') + ','));
+    });
+  });
+
+  // TODO-1087：扩展默认端口/主机守卫。打包扩展的 hibiki-defaults.js 与 background.js
+  // 的默认必须指向本机环回 + kYomitanApiDefaultPort(19633)，否则「加载已解压」后默认连不上。
+  group('bundled extension default connection', () {
+    test('hibiki-defaults.js defaults to 127.0.0.1:19633', () {
+      final File defaults = File('assets/browser_extension/hibiki-defaults.js');
+      expect(defaults.existsSync(), isTrue,
+          reason: 'missing bundled hibiki-defaults.js');
+      final String src = defaults.readAsStringSync();
+      expect(src, contains('self.HIBIKI_DEFAULTS'));
+      expect(src, contains("host: '127.0.0.1'"));
+      expect(src, contains('port: 19633'));
+    });
+
+    test('background.js falls back to HIBIKI_DEFAULTS (not port 0)', () {
+      final File bg = File('assets/browser_extension/background.js');
+      final String src = bg.readAsStringSync();
+      // 必须 importScripts 默认文件 + cfg() 引用 HIBIKI_DEFAULTS 作回落。
+      expect(src, contains("importScripts('hibiki-defaults.js')"));
+      expect(src, contains('HIBIKI_DEFAULTS'));
+      // 不再无条件默认 port=0（那会导致默认连不上）。
+      expect(src, isNot(contains('port = 0')));
     });
   });
 }

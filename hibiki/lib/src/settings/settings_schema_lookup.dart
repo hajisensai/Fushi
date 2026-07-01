@@ -123,12 +123,25 @@ SettingsDestination buildLookupDestination() {
             title: t.install_browser_extension,
             icon: Icons.extension_outlined,
             onTap: (SettingsContext settingsContext) async {
-              final String dir = await prepareBundledBrowserExtension();
+              // TODO-1087：解压时注入当前 server 真值（host 固定环回，port/token 取
+              // AppModel），扩展默认即连本机 app，无需用户手填 host/port/token。
+              final AppModel appModel = settingsContext.appModel;
+              final String dir = await prepareBundledBrowserExtension(
+                serverConfig: BrowserExtensionServerConfig(
+                  host: '127.0.0.1',
+                  port: appModel.yomitanApiPort,
+                  token: appModel.yomitanApiKey,
+                ),
+              );
               await Clipboard.setData(ClipboardData(text: dir));
               if (!settingsContext.context.mounted) return;
               await showSettingsDialog(
                 settingsContext,
-                (_) => _BrowserExtensionInstallDialog(path: dir),
+                (_) => _BrowserExtensionInstallDialog(
+                  path: dir,
+                  serverEnabled: appModel.yomitanApiServerEnabled,
+                  hasToken: appModel.yomitanApiKey.isNotEmpty,
+                ),
               );
             },
           ),
@@ -677,39 +690,220 @@ Widget _buildMaximumTermsField(SettingsContext settingsContext) {
   );
 }
 
-/// TODO-1000：浏览器扩展安装引导弹窗。路径已在打开前解压好并复制到剪贴板；这里展示可选中的
-/// 路径 + 步骤 + 「复制路径」按钮。自建 MV3 无真·一键（浏览器封侧载），故为半自动引导。
-class _BrowserExtensionInstallDialog extends StatelessWidget {
-  const _BrowserExtensionInstallDialog({required this.path});
+/// TODO-1087：暴露安装引导弹窗给 widget 测试（验证可复制字段 + 分步渲染），
+/// 不改变生产调用路径（生产仍走上面的 SettingsActionItem）。
+@visibleForTesting
+Widget buildBrowserExtensionInstallDialogForTest({
+  required String path,
+  required bool serverEnabled,
+  required bool hasToken,
+}) {
+  return _BrowserExtensionInstallDialog(
+    path: path,
+    serverEnabled: serverEnabled,
+    hasToken: hasToken,
+  );
+}
 
+/// TODO-1000/1087：浏览器扩展安装引导弹窗。路径已在打开前解压好并复制到剪贴板，且当前
+/// server 真值已注入扩展 hibiki-defaults.js（自动配置）。这里给出分步图文教程 + 可复制的
+/// chrome://extensions 地址 + 可复制的扩展文件夹路径。自建 MV3 无真·一键（浏览器封侧载），
+/// 故为半自动引导；但 host/port/token 已自动配置，用户无需手填。
+///
+/// 图位：每步用「编号圆点 + Icon + 文案」把操作可视化。真实浏览器截图（chrome://extensions
+/// 页的开发者模式开关 / 加载已解压按钮）在 bg 环境无法采集，故此处用 Flutter Icon 示意；
+/// 若后续要放真实截图，把资产落到 `assets/help/browser_extension/step_*.png` 并在对应步骤下
+/// 用 Image.asset 渲染（下方每步已预留插图位注释）。
+class _BrowserExtensionInstallDialog extends StatelessWidget {
+  const _BrowserExtensionInstallDialog({
+    required this.path,
+    required this.serverEnabled,
+    required this.hasToken,
+  });
+
+  /// 解压出的扩展目录绝对路径（供「加载已解压」时选择）。
   final String path;
 
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.install_browser_extension),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+  /// yomitan-api server 是否已开启（决定自动配置横幅是成功还是提醒）。
+  final bool serverEnabled;
+
+  /// 是否已设 API token（未设时连接虽通但鉴权会失败，一并提醒）。
+  final bool hasToken;
+
+  /// 一步：编号圆点 + 图标 + 正文（可含尾随可复制字段）。
+  Widget _step(
+    BuildContext context, {
+    required int index,
+    required IconData icon,
+    required String text,
+    Widget? trailing,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(t.browser_extension_install_steps),
-          const SizedBox(height: 12),
-          SelectableText(
-            path,
-            style: const TextStyle(fontFamily: 'monospace'),
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$index',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Icon(icon, size: 20, color: theme.colorScheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(text),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(height: 6),
+                  trailing,
+                ],
+                // 图位：如需真实截图，此处 Image.asset('assets/help/browser_extension/
+                // step_$index.png') 渲染对应步骤的浏览器截图（待用户后续补图）。
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 可复制字段：等宽显示 [value]，尾随复制按钮（HibikiIconButton），复制后 SnackBar 反馈。
+  /// 表面走共享 HibikiCard（MD3 token 半径/配色），不自造本地 chrome。
+  Widget _copyableField(BuildContext context, String value) {
+    return HibikiCard(
+      padding: const EdgeInsets.fromLTRB(10, 2, 2, 2),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ),
+          HibikiIconButton(
+            icon: Icons.copy,
+            size: 18,
+            tooltip: t.copy,
+            onTap: () async {
+              await Clipboard.setData(ClipboardData(text: value));
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(t.copied)),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool autoReady = serverEnabled && hasToken;
+    final Color bannerColor = autoReady
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.tertiaryContainer;
+    final Color bannerFg = autoReady
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onTertiaryContainer;
+    return AlertDialog(
+      title: Text(t.install_browser_extension),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              // 自动配置状态横幅：server+token 就绪 → 成功；否则提醒先开 server。
+              // 走共享 HibikiCard（token 半径），配色按就绪状态用 ColorScheme 语义角色。
+              HibikiCard(
+                color: bannerColor,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      autoReady ? Icons.check_circle : Icons.info_outline,
+                      color: bannerFg,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        autoReady
+                            ? t.browser_extension_step_done_auto
+                            : t.browser_extension_enable_server_first,
+                        style: TextStyle(color: bannerFg),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // 步骤 1：打开扩展管理页（chrome:// 无法程序化导航，给可复制文本）。
+              _step(
+                context,
+                index: 1,
+                icon: Icons.open_in_browser_outlined,
+                text: t.browser_extension_step_open_page,
+                trailing: _copyableField(
+                  context,
+                  browserExtensionsPageUrl(BrowserKind.chrome),
+                ),
+              ),
+              // 步骤 2：开启开发者模式。
+              _step(
+                context,
+                index: 2,
+                icon: Icons.developer_mode_outlined,
+                text: t.browser_extension_step_dev_mode,
+              ),
+              // 步骤 3：点「加载已解压」。
+              _step(
+                context,
+                index: 3,
+                icon: Icons.drive_folder_upload_outlined,
+                text: t.browser_extension_step_load_unpacked,
+              ),
+              // 步骤 4：选择扩展文件夹（路径已复制，可再复制）。
+              _step(
+                context,
+                index: 4,
+                icon: Icons.folder_open_outlined,
+                text: t.browser_extension_step_pick_folder,
+                trailing: _copyableField(context, path),
+              ),
+              // 步骤 5：完成，自动配置生效。
+              _step(
+                context,
+                index: 5,
+                icon: Icons.check_circle_outline,
+                text: t.browser_extension_step_done_auto,
+              ),
+            ],
+          ),
+        ),
+      ),
       actions: <Widget>[
         TextButton(
-          onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: path));
-          },
-          child: Text(t.copy),
-        ),
-        TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.cancel),
+          child: Text(t.dialog_done),
         ),
       ],
     );

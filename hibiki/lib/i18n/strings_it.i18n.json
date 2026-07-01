@@ -2061,5 +2061,13 @@
   "shortcut_mouse_wheel": "Wheel",
   "shortcut_mouse_button": "Mouse button",
   "error_log_diagnostics_section": "Diagnostics / forensics (not app errors)",
-  "shortcut_press_mouse_button": "Press a mouse button..."
+  "shortcut_press_mouse_button": "Press a mouse button...",
+  "browser_extension_step_open_page": "Open the browser extensions page:",
+  "browser_extension_step_dev_mode": "Turn on \"Developer mode\" (toggle in the top-right corner).",
+  "browser_extension_step_load_unpacked": "Click \"Load unpacked\".",
+  "browser_extension_step_pick_folder": "Select the extension folder below (its path is already copied to your clipboard).",
+  "browser_extension_step_done_auto": "Done. The extension is auto-configured to connect to this app — no host/port/token to fill in.",
+  "browser_extension_enable_server_first": "Tip: enable \"Yomitan API server\" and set an API key above first, so the extension is auto-configured with a working connection.",
+  "browser_extension_folder_label": "Extension folder (already copied)",
+  "copied": "Copied"
 }
