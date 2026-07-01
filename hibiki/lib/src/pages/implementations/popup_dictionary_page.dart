@@ -423,6 +423,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
     final Widget layer = DictionaryPopupLayer(
+      // TODO-1065：独立查词窗（popup_main 宿主 / 悬浮字幕外部弹窗）跑在透明浮动窗里，
+      // 圆角卡由 Flutter HibikiPopupSurface 画；令弹窗 WebView `<html>` 透明，消除
+      // documentElement 不透明填充铺满整窗的泛白（in-app 与桌面 global-lookup 不受影响）。
+      transparentDocumentBackground: true,
       result: entry.result,
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，

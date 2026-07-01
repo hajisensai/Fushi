@@ -62,6 +62,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     required this.result,
     super.key,
     this.hasChildPopup = false,
+    this.transparentDocumentBackground = false,
     this.onTextSelected,
     this.onLinkClick,
     this.onTapOutside,
@@ -87,6 +88,16 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
   /// 不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生传入。
   final bool hasChildPopup;
+
+  /// TODO-1065：本弹窗宿主是「app 外 / 悬浮字幕」独立查词窗（popup_main 宿主）时置 true。
+  /// 该路径的圆角卡由 Flutter [HibikiPopupSurface] 画，弹窗 WebView 跑在透明浮动窗里；
+  /// 若 `<html>` documentElement 被填不透明近白的主题 surface（`--background-color`）铺满
+  /// 整个 WebView 视口，就盖在 Flutter 卡片之上、浅色主题下读成整窗泛白。为 true 时给
+  /// `<html>` 加 `mobile-external` class（popup.css `html.mobile-external{background:transparent}`）
+  /// 令 documentElement 透明，只留 `<body>` 的主题填充（同一变量，被 Flutter 卡片裁圆角），
+  /// 消除泛白。默认 false = 原 in-app 行为，桌面 global-lookup 走独立 `.global-lookup` 路径，
+  /// 二者均不受影响（零回归）。
+  final bool transparentDocumentBackground;
   final void Function(String text, Rect localRect)? onTextSelected;
   final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
@@ -477,8 +488,14 @@ class DictionaryPopupWebViewState
     // alongside the theme vars so a live theme switch re-applies it; the popup
     // CSS falls back to 1 when the property is absent (untouched default).
     final int dictColumns = appModel.popupDictionaryColumns;
+    // TODO-1065：app 外 / 悬浮字幕独立查词窗给 <html> 打透明标记（见 popup.css
+    // html.mobile-external），消除 documentElement 不透明填充铺满视口的泛白。in-app
+    // （transparentDocumentBackground=false）不加，桌面 global-lookup 走独立路径。
+    final String docClassLine = widget.transparentDocumentBackground
+        ? "document.documentElement.classList.add('mobile-external');\n"
+        : '';
     return '''
-      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      $docClassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
       document.documentElement.style.setProperty('--text-color', '$textRgba');
       document.documentElement.style.setProperty('--background-color', '$bgRgb');
@@ -517,6 +534,8 @@ class DictionaryPopupWebViewState
       theme: Theme.of(context),
       result: widget.result,
       options: PopupSettingsOptions(
+        // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
+        mobileExternal: widget.transparentDocumentBackground,
         sentenceDraftEnabled: kSentenceContextPickerEnabled &&
             widget.onSetSentenceContext != null,
       ),

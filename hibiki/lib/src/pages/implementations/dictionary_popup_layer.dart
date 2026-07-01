@@ -331,6 +331,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.enableSwipeToClose = true,
     this.onClose,
     this.onBack,
+    this.transparentDocumentBackground = false,
     super.key,
   });
 
@@ -415,6 +416,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// TODO-485：嵌套层左端"返回"按钮的回调。非空时弹窗顶栏渲染一个不依赖滑动
   /// 的返回入口，语义是关闭当前子层并回到父层。
   final VoidCallback? onBack;
+
+  /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
+  /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
+  /// in-app 行为，见 DictionaryPopupWebView.transparentDocumentBackground）。
+  final bool transparentDocumentBackground;
 
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
@@ -577,6 +583,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         children: [
           DictionaryPopupWebView(
             key: webViewKey,
+            transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
             hasChildPopup: hasChildPopup,
             onTapOutside: onTapOutside,

@@ -59,6 +59,25 @@ html.global-lookup {
     background: transparent;
 }
 
+/* TODO-1065 -- mobile / external floating-subtitle popup (popup_main host) ONLY:
+   same washout root cause as .global-lookup above, different host chrome. The
+   external popup runs inside a TRANSPARENT floating window whose rounded card is
+   a Flutter `HibikiPopupSurface` (Material radius/border/fill), NOT drawn by the
+   iframe. Left alone, the `<html>` documentElement fills the whole WebView
+   viewport with the opaque near-white --background-color (set inline by
+   dictionary_popup_webview / popup_settings_injection), which paints OVER the
+   Flutter card and reads as a full-viewport white wash in light themes. Making
+   documentElement transparent leaves only `<body>`'s themed fill (same var,
+   clipped by the Flutter card), so the card colour comes through with no wash.
+   Scoped to .mobile-external (added to <html> ONLY on the popup_main / external
+   popup path -- the in-app popup and desktop global-lookup never get it), so both
+   of those stay untouched (zero regression). Unlike .global-lookup this adds NO
+   body border/radius: the Flutter surface owns the card chrome. Higher
+   specificity than the html,body var rule above, so no !important needed. */
+html.mobile-external {
+    background: transparent;
+}
+
 body {
     overflow-x: hidden;
     padding: 0 10px 10px;

@@ -27,6 +27,7 @@ import 'package:path/path.dart' as p;
 class PopupSettingsOptions {
   const PopupSettingsOptions({
     this.globalLookup = false,
+    this.mobileExternal = false,
     this.sentenceDraftEnabled = false,
   });
 
@@ -34,6 +35,15 @@ class PopupSettingsOptions {
   /// `global-lookup` document class, the monochrome icon-font override, and
   /// hides the `.mine-button` (no card mining outside the app).
   final bool globalLookup;
+
+  /// TODO-1065: the app-OUTSIDE / floating-subtitle popup (popup_main host). Adds
+  /// the `mobile-external` document class so popup.css makes the `<html>`
+  /// documentElement transparent (`html.mobile-external{background:transparent}`),
+  /// killing the opaque full-viewport fill that washed the popup white over its
+  /// transparent floating window. Mutually exclusive with [globalLookup] in
+  /// practice (desktop bare-WebView2 vs mobile external window); the in-app popup
+  /// sets neither.
+  final bool mobileExternal;
 
   /// Whether popup.js should render the sentence-context picker. Currently gated
   /// off in both paths (kSentenceContextPickerEnabled), but the in-app path
@@ -52,6 +62,7 @@ String _themeVariablesJs({
   required AppModel appModel,
   required ThemeData theme,
   required bool globalLookup,
+  required bool mobileExternal,
 }) {
   final bool isDark = theme.brightness == Brightness.dark;
   final ColorScheme scheme = theme.colorScheme;
@@ -61,9 +72,14 @@ String _themeVariablesJs({
       '${(primary.g * 255.0).round().clamp(0, 255)}, '
       '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
   final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
+  // TODO-1065: mobileExternal tags the doc so popup.css `html.mobile-external`
+  // turns the documentElement transparent (external popup washout fix), the
+  // mobile analogue of the desktop global-lookup transparent-html rule.
   final String classLine = globalLookup
       ? "document.documentElement.classList.add('global-lookup');\n"
-      : '';
+      : (mobileExternal
+          ? "document.documentElement.classList.add('mobile-external');\n"
+          : '');
   return '''
       $classLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
@@ -145,6 +161,7 @@ String buildPopupSettingsJs({
     appModel: appModel,
     theme: theme,
     globalLookup: options.globalLookup,
+    mobileExternal: options.mobileExternal,
   );
   final String fontStyleJs = dictionaryFontStyleJs(appModel);
   final double zoom = DictionaryPopupWebViewState.popupContentZoom(

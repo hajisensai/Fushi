@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 492 条。点号进各自文件。
+> 共 493 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-507](bugs/BUG-507-mobile-popup-washout.md) | ✅ | ✅ | TODO-1065 悬浮字幕查词弹窗<html>不透明泛白 |
 | [BUG-506](bugs/BUG-506-video-controls-autohide-button-misclick.md) | ✅ | ✅ | TODO-1059 菜单播放按钮时自动隐藏误触 |
 | [BUG-505](bugs/BUG-505-subtitle-bg-light-theme-washout.md) | ✅ | ✅ | TODO-1059 字幕背景浅色泛白+缺调节控件 |
 | [BUG-504](bugs/BUG-504-debug-rolling-prerelease.md) | ✅ | ✅ | TODO-1049 debug版滚动prerelease不占Release位 |
