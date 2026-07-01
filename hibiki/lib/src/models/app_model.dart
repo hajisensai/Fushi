@@ -519,6 +519,7 @@ class AppModel with ChangeNotifier {
     showFloatingLyric: () => showFloatingLyric,
     showMediaNotification: () => showMediaNotification,
     floatingLyricStyle: _appLevelFloatingLyricStyle,
+    floatingLyricContextLines: () => floatingLyricContextLines,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
     onFloatingLyricLookup: (String text, int index) {
       // app 级（无 reader attach）桌面悬浮窗点词：路由进常驻主窗口的查词宿主
@@ -4028,6 +4029,11 @@ class AppModel with ChangeNotifier {
   int get floatingLyricWidth => prefsRepo.floatingLyricWidth;
   Future<void> setFloatingLyricWidth(int value) =>
       prefsRepo.setFloatingLyricWidth(value);
+
+  // TODO-708 P4: 悬浮字幕上下文行数（对称单值，0=只当前行=今天）。
+  int get floatingLyricContextLines => prefsRepo.floatingLyricContextLines;
+  Future<void> setFloatingLyricContextLines(int value) =>
+      prefsRepo.setFloatingLyricContextLines(value);
 
   bool get showFloatingDict => prefsRepo.showFloatingDict;
 

@@ -2036,5 +2036,7 @@
   "stat_goal_set": "Set Goal",
   "stat_goal_reached": "Goal reached",
   "stat_goal_none": "No goal set",
-  "stat_goal_progress": "$read / $goal chars"
+  "stat_goal_progress": "$read / $goal chars",
+  "floating_lyric_context_lines": "Floating subtitle context lines",
+  "floating_lyric_context_lines_hint": "0 shows only the current line (single-line, unchanged); set 1-3 to show that many lines before and after it"
 }

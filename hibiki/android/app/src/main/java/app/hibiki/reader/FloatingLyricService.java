@@ -13,6 +13,7 @@ import android.text.Layout;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -72,6 +73,11 @@ public class FloatingLyricService extends BaseFloatingService {
     private String currentText = "";
     private int highlightStart = -1;
     private int highlightLength = 0;
+
+    // TODO-708 P4: 多行上下文块内「当前行」区间（UTF-16 offset/length）。-1/0 = 无
+    // 行标记（N=0 单行或旧 payload），退化为无中间行明暗（never-break userspace）。
+    private int currentLineStart = -1;
+    private int currentLineLength = 0;
 
     private String previousLabel = "Previous";
     private String playPauseLabel = "Play";
@@ -240,7 +246,15 @@ public class FloatingLyricService extends BaseFloatingService {
     // ── Public API (called from MainActivity) ──
 
     public void updateLyricText(String text) {
+        updateLyricText(text, -1, 0);
+    }
+
+    // TODO-708 P4: 带块内当前行区间的多行文本更新。currentLineStart<0 = 无行标记，
+    // 整块满色（与今天单行观感一致）；>=0 时当前行满色、其余行降 alpha。
+    public void updateLyricText(String text, int lineStart, int lineLength) {
         currentText = text;
+        currentLineStart = lineStart;
+        currentLineLength = lineLength;
         highlightStart = -1;
         highlightLength = 0;
         applyLyricText();
@@ -489,23 +503,58 @@ public class FloatingLyricService extends BaseFloatingService {
 
     // ── Style application ──
 
+    // TODO-708 P4: 中间行明暗——当前行满 textColor，上下文其余行降 alpha（~55%）。
+    // 与 word 级 highlight（BackgroundColorSpan）正交：dim 用 ForegroundColorSpan 只改
+    // 字色 alpha，highlight 仍单独叠加。currentLineStart<0（N=0 单行/无标记）时不 dim，
+    // 整块满色 = 今天观感（never-break userspace）。
+    private static final float CONTEXT_DIM_ALPHA = 0.55f;
+
     private void applyLyricText() {
         if (lyricText == null) return;
-        if (highlightStart >= 0 && highlightLength > 0 && currentText != null) {
-            int start = Math.max(0, Math.min(highlightStart, currentText.length()));
-            int end = Math.max(start, Math.min(start + highlightLength, currentText.length()));
-            SpannableString span = new SpannableString(currentText);
-            if (end > start) {
-                span.setSpan(new BackgroundColorSpan(highlightColor),
-                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        final String text = currentText != null ? currentText : "";
+        final int len = text.length();
+        final boolean hasLineMarker =
+                currentLineStart >= 0 && currentLineLength > 0 && len > 0;
+        final boolean hasHighlight = highlightStart >= 0 && highlightLength > 0 && len > 0;
+
+        if (!hasLineMarker && !hasHighlight) {
+            lyricText.setText(text);
+        } else {
+            SpannableString span = new SpannableString(text);
+            if (hasLineMarker) {
+                int curStart = Math.max(0, Math.min(currentLineStart, len));
+                int curEnd = Math.max(curStart, Math.min(curStart + currentLineLength, len));
+                int dimColor = dimAlpha(textColor, CONTEXT_DIM_ALPHA);
+                // Dim the prefix (before current line) and suffix (after current line).
+                if (curStart > 0) {
+                    span.setSpan(new ForegroundColorSpan(dimColor),
+                            0, curStart, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                if (curEnd < len) {
+                    span.setSpan(new ForegroundColorSpan(dimColor),
+                            curEnd, len, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
+            if (hasHighlight) {
+                int hStart = Math.max(0, Math.min(highlightStart, len));
+                int hEnd = Math.max(hStart, Math.min(hStart + highlightLength, len));
+                if (hEnd > hStart) {
+                    span.setSpan(new BackgroundColorSpan(highlightColor),
+                            hStart, hEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
             }
             lyricText.setText(span);
-        } else {
-            lyricText.setText(currentText);
         }
         if (windowManager != null && rootView != null && layoutParams != null) {
             rootView.post(() -> windowManager.updateViewLayout(rootView, layoutParams));
         }
+    }
+
+    // 把颜色 alpha 乘以 factor（保留 RGB），用于上下文行降亮。
+    private static int dimAlpha(int color, float factor) {
+        int a = Math.round(Color.alpha(color) * factor);
+        a = Math.max(0, Math.min(255, a));
+        return Color.argb(a, Color.red(color), Color.green(color), Color.blue(color));
     }
 
     private void applyStyle() {
@@ -596,6 +645,9 @@ public class FloatingLyricService extends BaseFloatingService {
         // MainActivity persists these unconditionally because the service is not
         // alive yet when Dart pushes the current cue right after show().
         currentText = prefs.getString(PreferenceKeys.LYRIC_CURRENT_TEXT, currentText);
+        // TODO-708 P4: 也重放块内当前行区间，让首帧多行上下文有正确的明暗。
+        currentLineStart = prefs.getInt(PreferenceKeys.LYRIC_CURRENT_LINE_START, currentLineStart);
+        currentLineLength = prefs.getInt(PreferenceKeys.LYRIC_CURRENT_LINE_LENGTH, currentLineLength);
         isPlaying = prefs.getBoolean(PreferenceKeys.LYRIC_PLAYING, isPlaying);
     }
 

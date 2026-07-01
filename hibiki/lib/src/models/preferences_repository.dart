@@ -1201,6 +1201,31 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-708 P4: 悬浮字幕/歌词条「上下文行数」——在当前行上下各显示 N 行前后文
+  // （对称单值）。0 = 只当前行 = 今天的单行观感（默认），确保默认不改动时逐字节一致；
+  // 1..3 时 Dart 端组装多行文本推给原生渲染（路线 A）。上界 3 足够铺满一小条上下文而
+  // 不喧宾夺主；per-Profile 自动快照（不加排除集）。
+  static const int floatingLyricContextLinesDefault = 0;
+  static const int floatingLyricContextLinesMax = 3;
+
+  static int normalizeFloatingLyricContextLines(num value) =>
+      value.round().clamp(0, floatingLyricContextLinesMax).toInt();
+
+  int get floatingLyricContextLines => normalizeFloatingLyricContextLines(
+        getPref(
+          'floating_lyric_context_lines',
+          defaultValue: floatingLyricContextLinesDefault,
+        ) as int,
+      );
+
+  Future<void> setFloatingLyricContextLines(int value) async {
+    await setPref(
+      'floating_lyric_context_lines',
+      normalizeFloatingLyricContextLines(value),
+    );
+    notifyListeners();
+  }
+
   bool get showFloatingDict =>
       getPref('show_floating_dict', defaultValue: false) as bool;
 

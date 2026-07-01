@@ -712,7 +712,12 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           result->Success(
               flutter::EncodableValue(floating_lyric_window_->IsShowing()));
         } else if (method == "updateText") {
-          floating_lyric_window_->UpdateText(WideFromValue(args, "text", L""));
+          // TODO-708 P4: 多行上下文块内当前行区间。缺字段回退 -1/0 = 无行标记
+          // （N=0 单行/旧 payload），整块满色（never-break userspace）。
+          floating_lyric_window_->UpdateText(
+              WideFromValue(args, "text", L""),
+              IntFromValue(args, "currentLineStart", -1),
+              IntFromValue(args, "currentLineLength", 0));
           result->Success();
         } else if (method == "highlight") {
           floating_lyric_window_->Highlight(IntFromValue(args, "start", -1),

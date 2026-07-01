@@ -587,16 +587,22 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     case "updateText": {
                         String text = call.argument("text");
+                        // TODO-708 P4: 多行上下文块内当前行区间。缺字段回退 -1/0 = 无行标记
+                        // （N=0 单行或旧 payload），退化为无中间行明暗（never-break userspace）。
+                        Number lineStart = call.argument("currentLineStart");
+                        Number lineLength = call.argument("currentLineLength");
+                        int curStart = lineStart != null ? lineStart.intValue() : -1;
+                        int curLen = lineLength != null ? lineLength.intValue() : 0;
                         // BUG-400/TODO-711: persist the line unconditionally so a
                         // service that has not yet finished onCreate (startForegroundService
                         // returns before onCreate; Dart pushes the current cue right after
                         // show) still renders the current line on its first frame via
                         // readInitialState — instead of dropping it and showing blank
                         // until the next cue. Mirrors persistFloatingLyricOptions.
-                        persistFloatingLyricText(text);
+                        persistFloatingLyricText(text, curStart, curLen);
                         FloatingLyricService svc = FloatingLyricService.getInstance();
                         if (svc != null && text != null) {
-                            svc.updateLyricText(text);
+                            svc.updateLyricText(text, curStart, curLen);
                         }
                         result.success(null);
                         break;
@@ -959,10 +965,12 @@ public class MainActivity extends AudioServiceActivity {
                 .apply();
     }
 
-    private void persistFloatingLyricText(String text) {
+    private void persistFloatingLyricText(String text, int currentLineStart, int currentLineLength) {
         getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
                 .edit()
                 .putString(PreferenceKeys.LYRIC_CURRENT_TEXT, text != null ? text : "")
+                .putInt(PreferenceKeys.LYRIC_CURRENT_LINE_START, currentLineStart)
+                .putInt(PreferenceKeys.LYRIC_CURRENT_LINE_LENGTH, currentLineLength)
                 .apply();
     }
 

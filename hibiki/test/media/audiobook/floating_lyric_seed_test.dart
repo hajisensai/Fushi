@@ -96,11 +96,15 @@ void main() {
     FloatingLyricChannel.platformOverride = null;
   });
 
-  AudiobookSession makeSession({required bool floatingOn}) {
+  AudiobookSession makeSession({
+    required bool floatingOn,
+    int contextLines = 0,
+  }) {
     return AudiobookSession(
       audioHandler: () => null,
       showFloatingLyric: () => floatingOn,
       showMediaNotification: () => false,
+      floatingLyricContextLines: () => contextLines,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
         textColor: 0,
@@ -135,10 +139,12 @@ void main() {
     required bool floatingOn,
     required List<AudioCue> cues,
     int positionMs = 0,
+    int contextLines = 0,
     required String audioName,
   }) async {
     installPlatform();
-    final AudiobookSession session = makeSession(floatingOn: floatingOn);
+    final AudiobookSession session =
+        makeSession(floatingOn: floatingOn, contextLines: contextLines);
     addTearDown(session.dispose);
     await session.start(
       info: SessionBookInfo(
@@ -213,6 +219,58 @@ void main() {
     );
     expect(nativeCalls.any((MethodCall c) => c.method == 'updateText'), isFalse,
         reason: 'no updateText should be pushed when the overlay is off');
+  });
+
+  // TODO-708 P4 T4: 默认 N=0 = 零变化守卫。_syncFloatingLyric 走原单行分支——
+  // updateText 只携带当前行文本 + 无行标记 (-1, 0)，与今天逐字节等价（原生据此退化为
+  // 单行渲染，无中间行明暗）。任何回归把 N=0 也灌多行/带真实区间都会在这里挂。
+  test('N=0 keeps single-line updateText with no-line-marker range (-1, 0)',
+      () async {
+    await startedSession(
+      floatingOn: true,
+      contextLines: 0,
+      cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
+      positionMs: 1000,
+      audioName: 'hibiki-lyric-n0.mp3',
+    );
+    final int showIndex =
+        nativeCalls.indexWhere((MethodCall c) => c.method == 'show');
+    final int postShowUpdateIndex = nativeCalls.indexWhere(
+        (MethodCall c) => c.method == 'updateText', showIndex + 1);
+    final MethodCall update = nativeCalls[postShowUpdateIndex];
+    final Map<Object?, Object?> args =
+        update.arguments as Map<Object?, Object?>;
+    expect(args['text'], 'cue 1000',
+        reason: 'N=0 still pushes only the current line');
+    expect(args['currentLineStart'], -1,
+        reason: 'N=0 must carry no-line-marker start (-1)');
+    expect(args['currentLineLength'], 0,
+        reason: 'N=0 must carry no-line-marker length (0)');
+    expect(args['text'], isNot(contains('\n')),
+        reason: 'N=0 payload must remain single-line');
+  });
+
+  // TODO-708 P4: N>0 = 多行块 + 当前行真实区间。current line = 'cue 1000' 位于
+  // 'cue 0\ncue 1000\ncue 2000' 的 offset 6，长度 8。
+  test('N=1 pushes a 3-line context block with the real current-line range',
+      () async {
+    await startedSession(
+      floatingOn: true,
+      contextLines: 1,
+      cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
+      positionMs: 1000,
+      audioName: 'hibiki-lyric-n1.mp3',
+    );
+    final int showIndex =
+        nativeCalls.indexWhere((MethodCall c) => c.method == 'show');
+    final int postShowUpdateIndex = nativeCalls.indexWhere(
+        (MethodCall c) => c.method == 'updateText', showIndex + 1);
+    final MethodCall update = nativeCalls[postShowUpdateIndex];
+    final Map<Object?, Object?> args =
+        update.arguments as Map<Object?, Object?>;
+    expect(args['text'], 'cue 0\ncue 1000\ncue 2000');
+    expect(args['currentLineStart'], 6);
+    expect(args['currentLineLength'], 'cue 1000'.length);
   });
 }
 

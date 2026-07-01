@@ -2036,5 +2036,7 @@
   "stat_goal_set": "设定目标",
   "stat_goal_reached": "已达成",
   "stat_goal_none": "未设定目标",
-  "stat_goal_progress": "$read / $goal 字"
+  "stat_goal_progress": "$read / $goal 字",
+  "floating_lyric_context_lines": "悬浮字幕上下文行数",
+  "floating_lyric_context_lines_hint": "0 只显示当前行(单行,与今天一致);设 1-3 在当前行上下各显示这么多行上下文"
 }

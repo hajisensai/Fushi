@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_context.dart';
 import 'package:hibiki/src/utils/misc/hibiki_audio_handler.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
@@ -29,6 +30,7 @@ class AudiobookSession extends ChangeNotifier {
     required bool Function() showFloatingLyric,
     required bool Function() showMediaNotification,
     required FloatingLyricStyle Function() floatingLyricStyle,
+    required int Function() floatingLyricContextLines,
     required bool Function() floatingLyricClickLookup,
     required FloatingLyricLookupHandler onFloatingLyricLookup,
     required AudioControlStreams controlStreams,
@@ -36,6 +38,7 @@ class AudiobookSession extends ChangeNotifier {
         _showFloatingLyric = showFloatingLyric,
         _showMediaNotification = showMediaNotification,
         _floatingLyricStyle = floatingLyricStyle,
+        _floatingLyricContextLines = floatingLyricContextLines,
         _floatingLyricClickLookup = floatingLyricClickLookup,
         _onFloatingLyricLookup = onFloatingLyricLookup,
         _defaultFloatingLyricStyle = floatingLyricStyle,
@@ -46,6 +49,10 @@ class AudiobookSession extends ChangeNotifier {
   final bool Function() _showFloatingLyric;
   final bool Function() _showMediaNotification;
   final bool Function() _floatingLyricClickLookup;
+
+  /// TODO-708 P4: 悬浮字幕上下文行数 N（对称）。0=只当前行=今天单行观感。
+  /// 闭包注入（照 floatingLyricStyle 范式），每次 _syncFloatingLyric 读实时值。
+  final int Function() _floatingLyricContextLines;
   final AudioControlStreams _controlStreams;
 
   /// 悬浮窗样式来源。默认是 AppModel 注入的 app 级主题样式；reader attach 时换成
@@ -286,9 +293,37 @@ class AudiobookSession extends ChangeNotifier {
 
   void _syncFloatingLyric(AudiobookPlayerController controller) {
     if (!_showFloatingLyric()) return;
-    final AudioCue? cue = controller.currentCue;
-    FloatingLyricChannel.updateText(cue?.text ?? '');
+    final int n = _floatingLyricContextLines();
+    if (n <= 0) {
+      // N=0（默认）：零变化分支——payload 只有 text（无行标记键），逐字节等于今天。
+      final AudioCue? cue = controller.currentCue;
+      FloatingLyricChannel.updateText(cue?.text ?? '');
+    } else {
+      // N>0：与 lyrics.part.dart 同源的列表/索引选择（全书快照优先，否则章内），
+      // 切上下文窗口 → 组装多行块 + 当前行块内区间，推给原生渲染。
+      final List<AudioCue> cues = controller.allBookCuesSnapshot.isNotEmpty
+          ? controller.allBookCuesSnapshot
+          : controller.chapterCuesSnapshot;
+      final int index = controller.allBookCuesSnapshot.isNotEmpty
+          ? controller.allBookCueIdx
+          : controller.currentCueIdx;
+      final FloatingLyricBlock block =
+          buildFloatingLyricBlock(cues: cues, index: index, n: n);
+      FloatingLyricChannel.updateText(
+        block.text,
+        currentLineStart: block.start,
+        currentLineLength: block.length,
+      );
+    }
     FloatingLyricChannel.setPlaybackState(playing: controller.isPlaying);
+  }
+
+  /// TODO-708 P4: 设置页改上下文行数 N 后即时重推悬浮字幕文本（对称 [applyFloatingLyricStyle]）。
+  /// 无活动会话时为 no-op（幂等）。
+  Future<void> resyncFloatingLyricText() async {
+    final AudiobookPlayerController? controller = _controller;
+    if (controller == null) return;
+    _syncFloatingLyric(controller);
   }
 
   void _syncMediaNotification(AudiobookPlayerController controller) {

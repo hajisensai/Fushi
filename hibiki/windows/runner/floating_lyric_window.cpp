@@ -262,8 +262,12 @@ bool FloatingLyricWindow::IsShowing() const {
   return visible_ && hwnd_ != nullptr && IsWindowVisible(hwnd_);
 }
 
-void FloatingLyricWindow::UpdateText(const std::wstring& text) {
+void FloatingLyricWindow::UpdateText(const std::wstring& text,
+                                    int current_line_start,
+                                    int current_line_length) {
   text_ = text;
+  current_line_start_ = current_line_start;
+  current_line_length_ = current_line_length;
   highlight_start_ = -1;
   highlight_length_ = 0;
   text_layout_.Reset();
@@ -695,6 +699,38 @@ void FloatingLyricWindow::Render() {
         }
       }
       brush->SetColor(ColorFromArgb(style_.text_color));
+      // TODO-708 P4: 多行上下文——当前行满 text_color，其余行降 alpha(~55%)。用
+      // per-range SetDrawingEffect 挂 dim 画刷（D2D DrawTextLayout 会以此覆盖该 range
+      // 的前景色）。current_line_start_<0（N=0 单行/无标记）时不设 dim，整块满色 =
+      // 今天观感（never-break userspace）。与 word 级 highlight 背景框正交。
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dim_brush;
+      const int text_len = static_cast<int>(text_.size());
+      if (current_line_start_ >= 0 && current_line_length_ > 0 &&
+          text_len > 0) {
+        const uint32_t base = style_.text_color;
+        const uint32_t base_alpha = (base >> 24) & 0xFF;
+        const uint32_t dim_alpha =
+            static_cast<uint32_t>(base_alpha * 0.55f) & 0xFF;
+        const uint32_t dim_argb = (dim_alpha << 24) | (base & 0x00FFFFFF);
+        render_target_->CreateSolidColorBrush(ColorFromArgb(dim_argb),
+                                              dim_brush.GetAddressOf());
+        if (dim_brush != nullptr) {
+          const int cur_start =
+              std::clamp(current_line_start_, 0, text_len);
+          const int cur_end = std::clamp(
+              current_line_start_ + current_line_length_, cur_start, text_len);
+          if (cur_start > 0) {
+            DWRITE_TEXT_RANGE pre = {0, static_cast<UINT32>(cur_start)};
+            text_layout_->SetDrawingEffect(dim_brush.Get(), pre);
+          }
+          if (cur_end < text_len) {
+            DWRITE_TEXT_RANGE post = {
+                static_cast<UINT32>(cur_end),
+                static_cast<UINT32>(text_len - cur_end)};
+            text_layout_->SetDrawingEffect(dim_brush.Get(), post);
+          }
+        }
+      }
       render_target_->DrawTextLayout(
           D2D1::Point2F(text_rect_.left, text_rect_.top), text_layout_.Get(),
           brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);

@@ -92,7 +92,10 @@ class FloatingLyricWindow {
   void Hide();
   bool IsShowing() const;
 
-  void UpdateText(const std::wstring& text);
+  // TODO-708 P4: 多行上下文文本 + 块内当前行区间。current_line_start<0 = 无行
+  // 标记（N=0 单行/旧 payload），整块满色 = 今天观感（never-break userspace）。
+  void UpdateText(const std::wstring& text, int current_line_start = -1,
+                  int current_line_length = 0);
   // Highlights [start, start + length) UTF-16 code units of the current text.
   void Highlight(int start, int length);
   void UpdateStyle(const Style& style);
@@ -188,6 +191,9 @@ class FloatingLyricWindow {
   std::wstring text_;
   int highlight_start_ = -1;
   int highlight_length_ = 0;
+  // TODO-708 P4: 块内当前行区间（UTF-16）。-1/0 = 无行标记（不 dim）。
+  int current_line_start_ = -1;
+  int current_line_length_ = 0;
   Style style_;
   Labels labels_;
 

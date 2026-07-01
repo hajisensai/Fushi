@@ -244,6 +244,55 @@ void main() {
       );
     });
 
+    // TODO-708 P4: updateText 携带当前行块内区间（多行上下文）。
+    test('updateText carries current-line range for multi-line context',
+        () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.updateText(
+        '前行\n当前行\n后行',
+        currentLineStart: 3,
+        currentLineLength: 3,
+      );
+
+      expect(capturedCall?.method, 'updateText');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'text': '前行\n当前行\n后行',
+        'currentLineStart': 3,
+        'currentLineLength': 3,
+      });
+    });
+
+    // TODO-708 P4: 缺省参数 = 无行标记 (-1, 0)，与 N=0（今天单行）语义一致。
+    test('updateText defaults to no-line-marker range (-1, 0)', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.updateText('単行');
+
+      expect(capturedCall?.method, 'updateText');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'text': '単行',
+        'currentLineStart': -1,
+        'currentLineLength': 0,
+      });
+    });
+
     test('sends click lookup state to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

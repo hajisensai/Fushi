@@ -154,9 +154,23 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<bool> isShowing() => _instance.isShowingImpl();
 
-  static Future<void> updateText(String text) async {
+  /// 推送当前悬浮字幕文本。
+  ///
+  /// TODO-708 P4：可携带块内「当前行区间」——[currentLineStart] = 当前行在 [text]
+  /// 中的 UTF-16 offset（-1 = 无当前行标记，退化为无行明暗区分），[currentLineLength]
+  /// = 当前行 UTF-16 长度。默认 (-1, 0) = 无行标记：与今天（N=0 只推单行）payload
+  /// 语义一致，且原生缺字段读默认也退化 0 上下文（向后兼容）。
+  static Future<void> updateText(
+    String text, {
+    int currentLineStart = -1,
+    int currentLineLength = 0,
+  }) async {
     if (!_instance.isSupported) return;
-    await _instance.channel.invokeMethod<void>('updateText', {'text': text});
+    await _instance.channel.invokeMethod<void>('updateText', {
+      'text': text,
+      'currentLineStart': currentLineStart,
+      'currentLineLength': currentLineLength,
+    });
   }
 
   static Future<void> highlight({

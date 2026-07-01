@@ -191,6 +191,29 @@ SettingsDestination buildListeningDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-708 P4: 悬浮字幕/歌词条「上下文行数」（对称单值，0=只当前行=今天单行
+          // 观感）。0 显示为「自动」/单行语义，1..3 在当前行上下各显示 N 行。改值后调
+          // resyncFloatingLyricText 即时重推（对称透明度那条的 applyFloatingLyricStyle）。
+          SettingsStepperItem(
+            id: 'listening.floating_lyric_context_lines',
+            title: t.floating_lyric_context_lines,
+            subtitle: t.floating_lyric_context_lines_hint,
+            icon: Icons.format_line_spacing_outlined,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            min: 0,
+            max: 3,
+            step: 1,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.floatingLyricContextLines.toDouble(),
+            format: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setFloatingLyricContextLines(value.round());
+              await settingsContext.appModel.audiobookSession
+                  .resyncFloatingLyricText();
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'listening.floating_lyric_click_lookup',
             title: t.floating_lyric_click_lookup,

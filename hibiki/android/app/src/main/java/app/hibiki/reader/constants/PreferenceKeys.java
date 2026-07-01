@@ -67,6 +67,11 @@ public final class PreferenceKeys {
     /** Last playback state pushed from Dart, replayed on service startup. */
     public static final String LYRIC_PLAYING = "lyricPlaying";
 
+    // TODO-708 P4: 多行上下文块内「当前行」区间（UTF-16 offset/length）。-1/0 = 无
+    // 行标记（N=0 单行或旧 payload 缺字段），服务据此退化为无中间行明暗（never-break）。
+    public static final String LYRIC_CURRENT_LINE_START = "lyricCurrentLineStart";
+    public static final String LYRIC_CURRENT_LINE_LENGTH = "lyricCurrentLineLength";
+
     // ── Splash / theme keys (MainActivity) ───────────────────────────────────
 
     /** Stored background colour as a packed ARGB int. */

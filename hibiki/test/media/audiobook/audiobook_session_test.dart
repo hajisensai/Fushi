@@ -72,6 +72,7 @@ void main() {
       audioHandler: () => null,
       showFloatingLyric: () => false,
       showMediaNotification: () => false,
+      floatingLyricContextLines: () => 0,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
         textColor: 0,
