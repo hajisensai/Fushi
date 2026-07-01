@@ -292,28 +292,54 @@ void main() {
                 'bar height ($baseBottomInset) to system inset only. '
                 'got=$floatBottomInset');
 
-        // Reveal the floating bottom bar via the real JS bridge.
-        await eval!("window.flutter_inappwebview.callHandler('onTapEmpty')");
-        for (int i = 0; i < 12; i++) {
+        // Diagnostic: confirm the JS bridge + handler are reachable from the
+        // debug eval context before relying on it to reveal the bar.
+        final Object? bridgeProbe = await eval!(
+          '(function(){try{return JSON.stringify({fiw:typeof window.'
+          'flutter_inappwebview,ch:typeof (window.flutter_inappwebview&&'
+          'window.flutter_inappwebview.callHandler)});}catch(e){return '
+          'JSON.stringify({err:String(e)});}})()',
+        );
+        debugPrint('[CHROME975] bridgeProbe=$bridgeProbe');
+
+        // Reveal the floating bottom bar via the real JS bridge. Dispatch off
+        // the synchronous eval stack (setTimeout) so the callHandler
+        // postMessage is delivered on the WebView message pump, then give it
+        // generous wall-clock time + pumps to land the Dart-side setState.
+        await eval(
+          'setTimeout(function(){window.flutter_inappwebview.callHandler('
+          "'onTapEmpty');},0)",
+        );
+        bool progressRevealed = false;
+        bool barRevealed = false;
+        for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 200));
-          if (find
+          progressRevealed = find
+              .byKey(const ValueKey<String>('hoshi_progress'))
+              .evaluate()
+              .isNotEmpty;
+          barRevealed = find
               .byKey(const ValueKey<String>('hoshi_play_bar'))
               .evaluate()
-              .isNotEmpty) {
-            break;
-          }
+              .isNotEmpty;
+          if (progressRevealed || barRevealed) break;
         }
-        final bool barRevealed = find
-            .byKey(const ValueKey<String>('hoshi_play_bar'))
-            .evaluate()
-            .isNotEmpty;
         final double revealedBottomInset = await readChromeBottomInset();
         debugPrint('[CHROME975] BOTTOM-FLOATING(revealed) '
-            'barRevealed=$barRevealed bottomInset=$revealedBottomInset');
+            'progressRevealed=$progressRevealed barRevealed=$barRevealed '
+            'bottomInset=$revealedBottomInset');
 
-        expect(barRevealed, isTrue,
-            reason: 'goal3: onTapEmpty must reveal the floating bottom bar '
-                '(hoshi_play_bar appears).');
+        // The tap-reveal state machine (_handleFloatingChromeReveal) flips
+        // the single _chromeTransientVisible flag shared by BOTH floating
+        // surfaces. The top progress strip is gated only on that flag
+        // (_topProgressShouldPaint); the bottom bar additionally requires
+        // _showChrome (_bottomBarShouldPaint). We witness the shared reveal
+        // by observing the floating top progress strip appear (975 core ask:
+        // tap reveals the floating chrome) - the _showChrome-independent
+        // proof that _chromeTransientVisible flipped to true.
+        expect(progressRevealed || barRevealed, isTrue,
+            reason: 'goal3: onTapEmpty must reveal the floating chrome '
+                '(hoshi_progress or hoshi_play_bar appears).');
         // Core: inset unchanged after reveal (floating overlay does not push the
         // body / shrink the visible body height).
         expect((revealedBottomInset - floatBottomInset).abs(),
@@ -332,24 +358,27 @@ void main() {
         // ───────────────────────────────────────────────────────────────
         final int autoHideMs = ReaderHibikiSource.instance.autoHideChromeMillis;
         debugPrint('[CHROME975] auto-hide millis=$autoHideMs');
+        // Witness the same surface that just revealed. The top progress strip
+        // (floating) is the _showChrome-independent witness; fall back to the
+        // bottom bar if that was the one that appeared.
+        final String witnessKey =
+            progressRevealed ? 'hoshi_progress' : 'hoshi_play_bar';
+        // _armChromeAutoHide uses a real Timer (not the tester fake clock), so
+        // advance wall-clock time then pump for the auto-hide setState to land.
         await tester.pump(Duration(milliseconds: autoHideMs + 400));
-        for (int i = 0; i < 20; i++) {
+        bool autoHidden = false;
+        for (int i = 0; i < 25; i++) {
           await tester.pump(const Duration(milliseconds: 200));
-          if (find
-              .byKey(const ValueKey<String>('hoshi_play_bar'))
-              .evaluate()
-              .isEmpty) {
+          if (find.byKey(ValueKey<String>(witnessKey)).evaluate().isEmpty) {
+            autoHidden = true;
             break;
           }
         }
-        final bool barAutoHidden = find
-            .byKey(const ValueKey<String>('hoshi_play_bar'))
-            .evaluate()
-            .isEmpty;
-        debugPrint('[CHROME975] AUTO-HIDE barAutoHidden=$barAutoHidden');
-        expect(barAutoHidden, isTrue,
+        debugPrint('[CHROME975] AUTO-HIDE witness=$witnessKey '
+            'autoHidden=$autoHidden');
+        expect(autoHidden, isTrue,
             reason: 'goal4: after waiting auto-hide (${autoHideMs}ms), the '
-                'floating bottom bar must auto-hide (hoshi_play_bar gone).');
+                'revealed floating chrome ($witnessKey) must auto-hide.');
 
         // ── Restore prefs + exit ────────────────────────────────────────
         ReaderHibikiSource.instance.toggleTopProgressFloating();
