@@ -2047,5 +2047,6 @@
   "video_setting_subtitle_bg_color_gray": "Gray",
   "video_setting_subtitle_bg_color_red": "Red",
   "video_setting_subtitle_bg_color_blue": "Blue",
-  "video_setting_subtitle_bg_color_green": "Green"
+  "video_setting_subtitle_bg_color_green": "Green",
+  "profile_media_video": "Video"
 }

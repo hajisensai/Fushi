@@ -112,6 +112,12 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
               uiState,
               vm,
             ),
+            _buildMediaTypeRow(
+              t.profile_media_video,
+              'video',
+              uiState,
+              vm,
+            ),
           ],
         ),
       ],

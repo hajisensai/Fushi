@@ -2047,5 +2047,6 @@
   "video_setting_subtitle_bg_color_gray": "灰色",
   "video_setting_subtitle_bg_color_red": "红色",
   "video_setting_subtitle_bg_color_blue": "蓝色",
-  "video_setting_subtitle_bg_color_green": "绿色"
+  "video_setting_subtitle_bg_color_green": "绿色",
+  "profile_media_video": "视频"
 }

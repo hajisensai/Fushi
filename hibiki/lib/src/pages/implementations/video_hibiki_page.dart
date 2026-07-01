@@ -71,6 +71,8 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/media/video/video_volume_overlays.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
@@ -1309,7 +1311,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await _watchTracker?.stop();
   }
 
+  /// TODO-1063: 解析并应用绑定到视频（媒体类型 'video'）的 profile。
+  /// 优先 per-book（[widget.bookUid]）绑定，其次媒体类型级 'video' 绑定，
+  /// 都无则维持当前活跃 profile。镜像 [_ReaderAudiobook._resolveAndApplyProfile]
+  /// 的非致命范式：失败只记日志、不打断视频加载。
+  Future<void> _resolveAndApplyVideoProfile() async {
+    try {
+      final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
+      final ProfileViewModel profileVm =
+          ref.read(profileViewModelProvider.notifier);
+      final int resolvedId = await profileRepo.resolveProfileId(
+        bookUid: widget.bookUid,
+        mediaType: 'video',
+      );
+      final int currentActiveId = await profileRepo.getActiveProfileId();
+      if (resolvedId != currentActiveId) {
+        await profileVm.switchProfile(resolvedId);
+      }
+    } catch (e, st) {
+      debugPrint(
+          '[VideoHibiki] profile resolution failed (non-fatal): $e\n$st');
+    }
+  }
+
   Future<void> _init() async {
+    // TODO-1063: 视频毕业为常驻媒体类型后，配置方案的「媒体类型绑定」也支持
+    // 绑定 profile 到 'video'。打开视频即解析并应用绑定的 profile（与阅读器
+    // /有声书同构），使看视频时的查词浮层 / 制卡按绑定 profile 生效。与视频
+    // 加载并行、失败非致命（unawaited + 内部 try/catch）。
+    unawaited(_resolveAndApplyVideoProfile());
     if (_isRemote) {
       await _initRemote();
       return;

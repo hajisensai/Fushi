@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 496 条。点号进各自文件。
+> 共 497 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-512](bugs/BUG-512-media-binding-missing-video.md) | ✅ | ✅ | TODO-1063 配置方案「媒体类型绑定」缺少 video 选项（视频毕业后未补齐） |
 | [BUG-510](bugs/BUG-510-dict-autoupdate-gate.md) | ✅ | ✅ | TODO-1075 词典自动更新 isUpdatable gate 在 catalog 导入路径恒空档 |
 | [BUG-509](bugs/BUG-509-floating-lyric-first-cue.md) | ✅ | ✅ | TODO-1065 悬浮字幕首句空窗 / 每句要等上一句播完才出现 |
 | [BUG-508](bugs/BUG-508-desktop-overlay-nested-popup.md) | ✅ | ✅ | 桌面app外全局查词覆盖窗嵌套弹窗:缺关闭X/不能滑关/点父不关子/子弹窗闪烁/点第一层关全部 |
