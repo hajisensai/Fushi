@@ -74,7 +74,7 @@ class LyricsModeHtml {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-:root { --cue-scale: 1.15; }
+:root { --cue-scale: 1.15; --cue-font-size: ${fontSize}px; }
 html, body {
   width: 100%;
   height: 100%;
@@ -113,7 +113,10 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   position: relative;
   text-align: center;
   color: $textColor;
-  font-size: ${fontSize}px;
+  /* TODO-1080: per-cue font-size flows from --cue-font-size so JS can shrink one
+     over-long cue via inline font-size (see __lyricsFitCues) without touching the
+     shared base every other cue uses. */
+  font-size: var(--cue-font-size);
   line-height: 1.7;
   padding: 12px 8px;
   max-width: calc(100% / var(--cue-scale) - 1%);
@@ -223,6 +226,77 @@ function scrollToCenter(el, duration) {
 // ── cue 切换 ──
 var _currentIdx = -1;
 var _cues = document.querySelectorAll('.cue');
+
+// ── TODO-1080: over-long cue auto-shrink ──────────────────────────────────
+// A single sentence can be longer than the screen fits. In vertical-rl the cue
+// column runs top-to-bottom and the body clips overflow-y, so a too-tall column
+// is silently cut off; in horizontal the cue wraps and grows vertically but a
+// single unbreakable run can still spill past the content-box width. Instead of
+// letting either clip, measure each cue against the constraining cross-axis and,
+// only when it truly overflows, override THAT cue's inline font-size down by the
+// overflow ratio (clamped to a readable floor). Cues that already fit keep the
+// user's base font-size untouched (never-break: no change for the common case).
+//
+// The base size lives in --cue-font-size; the .current cue is transform:scaled
+// by --cue-scale, so we discount the available extent by that factor to leave
+// headroom (a cue that fits un-scaled but overflows once enlarged still fits).
+var __LYRICS_MIN_FONT_PX = 12;
+function _lyricsCueScale() {
+  var raw = getComputedStyle(document.documentElement)
+      .getPropertyValue('--cue-scale');
+  var v = parseFloat(raw);
+  return (isFinite(v) && v > 0) ? v : 1;
+}
+function _lyricsBaseFontPx() {
+  var raw = getComputedStyle(document.documentElement)
+      .getPropertyValue('--cue-font-size');
+  var v = parseFloat(raw);
+  return (isFinite(v) && v > 0) ? v : 24;
+}
+// Available cross-axis extent (px) a cue may occupy without clipping, already
+// discounted for the enlarged .current scale. Vertical clips on height, so the
+// limit is the viewport height minus the container's top+bottom padding; the
+// horizontal path scrolls vertically so its only hard limit is width.
+function _lyricsAvailExtent(container) {
+  var cs = getComputedStyle(container);
+  var scale = _lyricsCueScale();
+  if (__lyricsVertical) {
+    var padV = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    return Math.max(1, (window.innerHeight - padV) / scale);
+  }
+  var padH = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  return Math.max(1, (window.innerWidth - padH) / scale);
+}
+// Fit one cue: clear any prior override, measure at base size, and if it still
+// overflows the available extent, set an inline font-size scaled by the overflow
+// ratio down to the floor. Returns nothing; idempotent.
+function _lyricsFitCue(el, avail, base) {
+  el.style.fontSize = '';
+  // offsetHeight/offsetWidth are the layout-box extents and (unlike
+  // getBoundingClientRect) exclude the .current scale transform, so the
+  // measurement is scale-independent and the shared avail (already discounted
+  // by --cue-scale) applies uniformly to current and non-current cues alike.
+  var measured = __lyricsVertical ? el.offsetHeight : el.offsetWidth;
+  if (measured <= avail) return;
+  var shrunk = Math.max(__LYRICS_MIN_FONT_PX, base * (avail / measured));
+  if (shrunk < base) el.style.fontSize = shrunk + 'px';
+}
+function __lyricsFitCues() {
+  var container = document.getElementById('lc');
+  if (!container) return;
+  var base = _lyricsBaseFontPx();
+  var avail = _lyricsAvailExtent(container);
+  for (var i = 0; i < _cues.length; i++) _lyricsFitCue(_cues[i], avail, base);
+}
+window.__lyricsFitCues = __lyricsFitCues;
+// Re-fit on viewport changes (rotation / window resize) so a cue that fit at the
+// old size is re-measured; debounced via rAF to coalesce burst resize events.
+var _lyricsFitPending = false;
+window.addEventListener('resize', function() {
+  if (_lyricsFitPending) return;
+  _lyricsFitPending = true;
+  requestAnimationFrame(function() { _lyricsFitPending = false; __lyricsFitCues(); });
+});
 
 // scroll === false (audio-follow OFF) updates the current/near highlight but
 // does NOT auto-scroll, so the user can freely scroll the lyrics while playback
@@ -358,7 +432,12 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
     var r = rules[i];
     if (r.selectorText === '.cue') {
       r.style.color = textColor;
-      r.style.fontSize = fontSize + 'px';
+      // TODO-1080: the base size is now the --cue-font-size custom prop that .cue
+      // reads via var(); update the prop (not a fixed .cue font-size) so the refit
+      // below re-measures against the new base and clears/re-applies per-cue
+      // shrink overrides. Setting .cue's own font-size would beat the var and
+      // strand overflowing cues at the un-shrunk size.
+      root.style.setProperty('--cue-font-size', fontSize + 'px');
     } else if (r.selectorText === 'html, body') {
       r.style.setProperty('scrollbar-color', textColor + ' transparent');
     } else if (r.selectorText === '::-webkit-scrollbar-thumb') {
@@ -383,6 +462,10 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       }
     }
   }
+  // Base font-size / margins just changed, so cues re-flow; re-measure overflow
+  // and re-apply (or clear) the per-cue shrink so a now-fitting cue reverts to
+  // the base and a now-overflowing cue shrinks — without a full page reload.
+  __lyricsFitCues();
 };
 
 // ── 实时模糊开关（TODO-908，仿 __lyricsUpdateStyle，不重建整页） ──
@@ -397,6 +480,10 @@ window.__lyricsSetBlur = function(on) {
     for (var i = 0; i < revealed.length; i++) revealed[i].classList.remove('revealed');
   }
 };
+
+// TODO-1080: shrink any over-long cue before positioning so the initial-scroll
+// geometry (and the caret ring) is measured against the final, fitted sizes.
+__lyricsFitCues();
 
 // ── 初始定位（即时跳转，不用动画，避免与 Dart 端 setCue 竞争） ──
 // TODO-907: 同样走 delta 增量滚动，横竖排一致；竖排 vertical-rl 的负向 scrollX

@@ -196,6 +196,86 @@ void main() {
       expect(html, contains('window.scrollBy(d, 0)'));
       expect(html, contains('_lyricsScrollByAxis'));
     });
+
+    // TODO-1080: an over-long sentence can be taller (vertical-rl) or wider than
+    // the screen and gets clipped by the body's overflow-hidden. The page must
+    // ship a measure-then-shrink pass (__lyricsFitCues) that overrides only an
+    // overflowing cue's inline font-size, keeping every fitting cue at the base.
+    group('over-long cue auto-shrink (TODO-1080)', () {
+      String buildHtml({bool vertical = false, double fontSize = 24}) {
+        return LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: fontSize,
+          vertical: vertical,
+        );
+      }
+
+      test('base cue font-size flows from the --cue-font-size custom prop', () {
+        final String html = buildHtml(fontSize: 30);
+        // The base size is a custom prop so JS can shrink one cue without
+        // beating it via a fixed .cue font-size.
+        expect(html, contains('--cue-font-size: 30.0px;'));
+        final String cueRule = _cssBlock(html, '.cue {');
+        expect(cueRule, contains('font-size: var(--cue-font-size);'));
+        // No fixed px font-size baked onto the .cue rule itself.
+        expect(cueRule, isNot(contains('font-size: 30.0px')));
+      });
+
+      test('ships a measure-then-shrink fit pass over all cues', () {
+        final String html = buildHtml();
+        expect(html, contains('function __lyricsFitCues()'));
+        expect(html, contains('window.__lyricsFitCues = __lyricsFitCues;'));
+        // The pass is invoked on initial load before scroll positioning.
+        expect(html, contains('__lyricsFitCues();'));
+        // Only overflowing cues get an inline override; fitting cues are cleared.
+        expect(html, contains("el.style.fontSize = ''"));
+        expect(html, contains('function _lyricsFitCue('));
+      });
+
+      test('shrink is clamped to a readable minimum floor', () {
+        final String html = buildHtml();
+        expect(html, contains('__LYRICS_MIN_FONT_PX = 12'));
+        expect(html, contains('Math.max(__LYRICS_MIN_FONT_PX'));
+      });
+
+      test(
+          'fit measures the constraining axis (height vertical, width horizontal)',
+          () {
+        final String html = buildHtml();
+        // Scale-independent layout-box extents (offsetHeight/offsetWidth), not
+        // getBoundingClientRect which would fold in the .current scale.
+        expect(html,
+            contains('__lyricsVertical ? el.offsetHeight : el.offsetWidth'));
+        // Available extent is discounted by --cue-scale so a cue that fits
+        // un-scaled but overflows once enlarged still fits.
+        expect(html, contains('/ scale'));
+      });
+
+      test('live style update retargets the base var and re-fits (no reload)',
+          () {
+        final String html = buildHtml();
+        // Font-size live update writes the --cue-font-size prop (not a fixed
+        // .cue font-size) so the refit re-measures against the new base.
+        expect(
+            html,
+            contains(
+                "root.style.setProperty('--cue-font-size', fontSize + 'px')"));
+        // __lyricsUpdateStyle re-runs the fit pass after mutating base/margins.
+        final String updateFn =
+            _fnBody(html, 'window.__lyricsUpdateStyle = function');
+        expect(updateFn, contains('__lyricsFitCues();'));
+      });
+
+      test('re-fits on viewport resize (rotation / window resize)', () {
+        final String html = buildHtml();
+        expect(html, contains("window.addEventListener('resize'"));
+        expect(html, contains('__lyricsFitCues()'));
+      });
+    });
   });
 }
 
@@ -208,6 +288,25 @@ String _cssBlock(String css, String selectorWithBrace) {
   final int close = css.indexOf('}', open);
   expect(close, isNonNegative, reason: 'unterminated rule: $selectorWithBrace');
   return css.substring(open + 1, close);
+}
+
+/// Returns the source of a JS function assignment starting at [signature]
+/// (e.g. `window.__lyricsUpdateStyle = function`), spanning from its opening
+/// brace to the matching closing brace via depth counting.
+String _fnBody(String src, String signature) {
+  final int start = src.indexOf(signature);
+  expect(start, isNonNegative, reason: 'missing fn: $signature');
+  final int open = src.indexOf('{', start);
+  int depth = 0;
+  for (int i = open; i < src.length; i++) {
+    final String ch = src[i];
+    if (ch == '{') depth++;
+    if (ch == '}') {
+      depth--;
+      if (depth == 0) return src.substring(open + 1, i);
+    }
+  }
+  fail('unterminated fn: $signature');
 }
 
 AudioCue _cue(int index) {
