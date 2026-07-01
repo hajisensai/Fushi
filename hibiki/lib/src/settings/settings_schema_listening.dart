@@ -57,7 +57,10 @@ SettingsDestination buildListeningDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showFloatingLyric,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setShowFloatingLyric(value);
+              // TODO-1069/1070：走语义意图入口，置位（非翻转）+ 有会话时原子拉/隐
+              // 原生悬浮窗 + 写意图 pref。旧实现只裸写 setShowFloatingLyric 旁路，
+              // 不真正显隐窗，导致开关不即时、与书内翻转显隐反相。
+              await settingsContext.appModel.setFloatingLyricEnabled(value);
               settingsContext.refresh();
             },
           ),
@@ -74,6 +77,11 @@ SettingsDestination buildListeningDestination() {
             format: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) async {
               await settingsContext.appModel.setFloatingLyricFontSize(value);
+              // TODO-1069：改字号后把整支 style（含 fontSize）经 FloatingLyricChannel
+              // .updateStyle 即时推给原生悬浮窗——与透明度三项对齐。漏掉这一步时字号
+              // 只写了 pref，原生窗不刷新，得等改透明度才顺带把字号推过去。
+              await settingsContext.appModel.audiobookSession
+                  .applyFloatingLyricStyle();
               settingsContext.refresh();
             },
           ),

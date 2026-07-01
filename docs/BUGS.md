@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 480 条。点号进各自文件。
+> 共 483 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-497](bugs/BUG-497-floating-lyric-hint-vague.md) | ✅ | ✅ | 悬浮字幕设置描述文案含糊 |
+| [BUG-496](bugs/BUG-496-floating-lyric-toggle-inverted.md) | ✅ | ✅ | 悬浮字幕总开关不即时且与书内翻转显隐反相 |
+| [BUG-495](bugs/BUG-495-floating-lyric-fontsize-live.md) | ✅ | ✅ | 悬浮字幕字号改值不即时生效 |
 | [BUG-494](bugs/BUG-494-favorite-phantom-identity-collapse.md) | ✅ | ✅ | 收藏身份键坍缩致幻影收藏未收藏句被点亮 |
 | [BUG-493](bugs/BUG-493-favorite-progress-hidden-reanchor.md) | ✅ | ✅ | 重锚时序竞态致进度概率不显示查词100%逼出 |
 | [BUG-492](bugs/BUG-492-favorite-wrong-section.md) | ✅ | ✅ | 收藏/制卡写错 sectionIndex 致跳错章看不到收藏句 |

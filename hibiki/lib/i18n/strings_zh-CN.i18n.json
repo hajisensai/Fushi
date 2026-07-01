@@ -597,7 +597,7 @@
   "show_play_bar": "显示播放栏",
   "show_media_notification": "显示媒体通知",
   "show_floating_lyric": "悬浮字幕",
-  "floating_lyric_hint": "在其他应用上方显示当前句子。",
+  "floating_lyric_hint": "将当前播放的字幕句悬浮显示在其他应用之上。",
   "follow_audio_on_tooltip": "音频跟随：开启",
   "follow_audio_off_tooltip": "音频跟随：关闭",
   "reading_progress": "阅读进度",

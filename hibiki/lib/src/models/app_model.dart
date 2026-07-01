@@ -3998,6 +3998,39 @@ class AppModel with ChangeNotifier {
   Future<void> setShowFloatingLyric(bool value) =>
       prefsRepo.setShowFloatingLyric(value);
 
+  /// TODO-1069/1070：悬浮字幕「用户意图」开关的唯一语义入口（设置页开关委托此处）。
+  ///
+  /// 历史 bug：设置页开关只裸写 [setShowFloatingLyric] 旁路，不真正拉起/隐藏原生
+  /// 悬浮窗——「意图 pref」与「窗实际可见」两语义混用，导致设置页置位与书内翻转
+  /// （[toggleFloatingLyricFromControls]）显隐反相、开关不即时。此方法把两语义收成
+  /// 一个「置位（非翻转）+ 有会话时原子拉/隐窗 + 写意图 pref」的入口：
+  /// - 有活动会话：先按 [value] 拉起/隐藏原生窗（拉起可能因缺 overlay 权限失败，此
+  ///   时不写 pref、返回 false，由调用方提示）。窗与 pref 保持同步。
+  /// - 无活动会话：仅置意图 pref；下次进书 `_startBackgroundSurfaces` 以同一 pref 为
+  ///   唯一门控自动拉起，退书 `stop()` 隐窗时不改意图 pref（保持用户意图）。
+  ///
+  /// 返回 false 表示开启失败（缺 overlay 权限等），pref 维持原值。
+  Future<bool> setFloatingLyricEnabled(bool value) async {
+    if (value == showFloatingLyric && !audiobookSession.isActive) {
+      // 无会话且意图未变：幂等 no-op。
+      return true;
+    }
+    if (audiobookSession.isActive) {
+      // 有活动会话：拉/隐窗要与 pref 原子同步。toggleFloatingLyric 按「当前显隐」
+      // 翻转，这里以意图 pref 当作「当前显隐」的真值（二者已同步），把翻转转成置位。
+      final bool currentlyShown = showFloatingLyric;
+      if (value != currentlyShown) {
+        final bool ok = await audiobookSession.toggleFloatingLyric(
+          currentlyOn: currentlyShown,
+        );
+        if (!ok) return false;
+      }
+    }
+    await setShowFloatingLyric(value);
+    notifyListeners();
+    return true;
+  }
+
   double get floatingLyricFontSize => prefsRepo.floatingLyricFontSize;
   Future<void> setFloatingLyricFontSize(double value) =>
       prefsRepo.setFloatingLyricFontSize(value);
