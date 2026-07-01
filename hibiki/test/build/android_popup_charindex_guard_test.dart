@@ -26,6 +26,12 @@ void main() {
   String read(String relative) =>
       File('$androidRoot/$relative').readAsStringSync();
 
+  // Collapse whitespace runs (incl. newlines) so multi-line-formatted Kotlin
+  // signatures — trailing-comma param-per-line, plus later-extended arg lists
+  // like the TODO-708 P1 `subtitle` param — still satisfy the wire-contract
+  // assertions, which pin charIndex + anchor flow, not exact source formatting.
+  String collapse(String src) => src.replaceAll(RegExp(r'\s+'), ' ');
+
   group('BUG-214 floating lyric lookup charIndex wiring', () {
     test(
       'FloatingLyricService routes the tap into the Flutter popup, not the '
@@ -92,16 +98,16 @@ void main() {
       'PopupEngineHolder forwards the real charIndex to Dart instead of the '
       'hardcoded -1 it carried before BUG-214',
       () {
-        final String holder = read('PopupEngineHolder.kt');
+        final String holder = collapse(read('PopupEngineHolder.kt'));
 
         expect(holder, contains('private var pendingCharIndex: Int = -1'));
         expect(
           holder,
-          contains('fun setPendingText(text: String, charIndex: Int = -1'),
+          contains('fun setPendingText( text: String, charIndex: Int = -1'),
         );
         expect(
           holder,
-          contains('fun pushProcessText(text: String, charIndex: Int = -1'),
+          contains('fun pushProcessText( text: String, charIndex: Int = -1'),
         );
         expect(
           holder,
@@ -165,13 +171,12 @@ void main() {
         expect(activity, contains('private fun extractAnchorRect'));
         expect(
           activity,
-          contains('PopupEngineHolder.setPendingText(text, charIndex, anchor)'),
+          contains('PopupEngineHolder.setPendingText(text, charIndex, anchor'),
           reason: 'cold-start path must forward the anchor',
         );
         expect(
           activity,
-          contains(
-              'PopupEngineHolder.pushProcessText(text, charIndex, anchor)'),
+          contains('PopupEngineHolder.pushProcessText(text, charIndex, anchor'),
           reason: 'warm-reuse path must forward the anchor',
         );
       },
@@ -181,18 +186,18 @@ void main() {
       'PopupEngineHolder carries a nullable anchor and only emits the wire '
       'field when an anchor is present',
       () {
-        final String holder = read('PopupEngineHolder.kt');
+        final String holder = collapse(read('PopupEngineHolder.kt'));
 
         expect(holder, contains('private var pendingAnchor: IntArray? = null'));
         expect(
           holder,
-          contains('fun setPendingText(text: String, charIndex: Int = -1, '
-              'anchor: IntArray? = null)'),
+          contains('fun setPendingText( text: String, charIndex: Int = -1, '
+              'anchor: IntArray? = null,'),
         );
         expect(
           holder,
-          contains('fun pushProcessText(text: String, charIndex: Int = -1, '
-              'anchor: IntArray? = null)'),
+          contains('fun pushProcessText( text: String, charIndex: Int = -1, '
+              'anchor: IntArray? = null,'),
         );
         // putAnchor omits the key when there is no anchor → Dart reads null →
         // default top-center placement for non-floating entries.
