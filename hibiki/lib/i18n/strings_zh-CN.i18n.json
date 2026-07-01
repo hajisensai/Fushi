@@ -2051,5 +2051,13 @@
   "profile_media_video": "视频",
   "shortcut_scope_global_external": "全局（应用外）",
   "shortcut_action_global_external_lookup": "应用外查词热键",
-  "shortcut_scope_global_external_mobile_note": "由系统触发（选中文本菜单、分享、悬浮球），系统不允许应用自定义此热键。"
+  "shortcut_scope_global_external_mobile_note": "由系统触发（选中文本菜单、分享、悬浮球），系统不允许应用自定义此热键。",
+  "shortcut_assign_pick_action": "分配到动作…",
+  "shortcut_mouse_left": "鼠标左键",
+  "shortcut_mouse_right": "鼠标右键",
+  "shortcut_mouse_middle": "鼠标中键",
+  "shortcut_mouse_back": "鼠标侧键(后退)",
+  "shortcut_mouse_forward": "鼠标侧键(前进)",
+  "shortcut_mouse_wheel": "滚轮",
+  "shortcut_mouse_button": "鼠标按键"
 }

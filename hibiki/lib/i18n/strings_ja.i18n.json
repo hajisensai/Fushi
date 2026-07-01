@@ -2051,5 +2051,13 @@
   "profile_media_video": "Video",
   "shortcut_scope_global_external": "Global (app-external)",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
-  "shortcut_scope_global_external_mobile_note": "Triggered by the system (text selection menu, share, floating ball); the OS does not allow apps to remap this hotkey."
+  "shortcut_scope_global_external_mobile_note": "Triggered by the system (text selection menu, share, floating ball); the OS does not allow apps to remap this hotkey.",
+  "shortcut_assign_pick_action": "Assign to action…",
+  "shortcut_mouse_left": "Left click",
+  "shortcut_mouse_right": "Right click",
+  "shortcut_mouse_middle": "Middle click",
+  "shortcut_mouse_back": "Back button",
+  "shortcut_mouse_forward": "Forward button",
+  "shortcut_mouse_wheel": "Wheel",
+  "shortcut_mouse_button": "Mouse button"
 }

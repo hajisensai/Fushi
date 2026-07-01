@@ -59,4 +59,43 @@ void main() {
     expect(src.contains('mouseBindings: widget.initial.mouseBindings'), isTrue,
         reason: 'edit result must preserve existing mouseBindings');
   });
+
+  test('TODO-1050b: the list view renders mouse bindings (not data-only)', () {
+    // _ActionTile must iterate bindings.mouseBindings so the mouse channel is
+    // visible in the list, not silently passed through.
+    expect(
+      RegExp(r'for\s*\(\s*final\s+MouseBinding\s+\w+\s+in\s+'
+              r'bindings\.mouseBindings')
+          .hasMatch(src),
+      isTrue,
+      reason: 'action tile must render each mouse binding',
+    );
+  });
+
+  test('TODO-1060: empty keycaps route to the empty-key assignment handler',
+      () {
+    // Un-defer: the figure wires onEmptyKeyTap to _onEmptyKeyboardKeyTap, which
+    // picks an action then reuses _editBinding with a prefillKey (no bespoke
+    // write path). This pins the un-defer so it cannot silently regress back to
+    // "empty keys are not tappable".
+    expect(src.contains('onEmptyKeyTap:'), isTrue,
+        reason: 'figure must pass an onEmptyKeyTap to KeyboardLayoutView');
+    expect(src.contains('_onEmptyKeyboardKeyTap('), isTrue,
+        reason: 'empty tap must route through the empty-key handler');
+    final RegExp emptyHandler = RegExp(
+      r'_onEmptyKeyboardKeyTap[\s\S]*?await\s+_editBinding\(',
+    );
+    expect(emptyHandler.hasMatch(src), isTrue,
+        reason:
+            'empty-key assignment must reuse _editBinding, not a new write');
+  });
+
+  test('TODO-1050a: the figure renders gamepad brand glyphs via the panel', () {
+    // The visual surface must wire gamepad taps so the GamepadGlyphs data layer
+    // is actually rendered (previously zero UI references).
+    expect(src.contains('onGamepadTap:'), isTrue,
+        reason: 'figure must wire gamepad taps to render the gamepad panel');
+    expect(src.contains('onEmptyGamepadTap:'), isTrue,
+        reason: 'figure must allow assigning unbound gamepad buttons');
+  });
 }

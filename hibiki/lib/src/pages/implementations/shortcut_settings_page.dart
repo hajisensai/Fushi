@@ -157,6 +157,36 @@ String _scopeLabel(ShortcutScope scope) {
   }
 }
 
+/// TODO-1050b: 鼠标绑定的本地化显示名。DOM MouseEvent.button：1=中键/滚轮、2=右键、
+/// 3=后退侧键、4=前进侧键（与 [MouseBinding._knownButtons] 对齐）；0=左键与其它未知值兜底。
+String _mouseLabel(MouseBinding binding) {
+  switch (binding.button) {
+    case 0:
+      return t.shortcut_mouse_left;
+    case 1:
+      return t.shortcut_mouse_middle;
+    case 2:
+      return t.shortcut_mouse_right;
+    case 3:
+      return t.shortcut_mouse_back;
+    case 4:
+      return t.shortcut_mouse_forward;
+    default:
+      return t.shortcut_mouse_button;
+  }
+}
+
+/// TODO-1050b: 鼠标绑定的小图标。中键落在滚轮上用滚轮图标，其余用通用鼠标图标
+/// （Material 无左右键专属图标）。
+IconData _mouseIcon(MouseBinding binding) {
+  switch (binding.button) {
+    case 1:
+      return Icons.mouse_outlined;
+    default:
+      return Icons.mouse;
+  }
+}
+
 class ShortcutSettingsPage extends BasePage {
   const ShortcutSettingsPage({super.key});
 
@@ -236,7 +266,11 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     setState(() {});
   }
 
-  Future<void> _editBinding(ShortcutAction action) async {
+  Future<void> _editBinding(
+    ShortcutAction action, {
+    LogicalKeyboardKey? prefillKey,
+    GamepadButton? prefillButton,
+  }) async {
     final ShortcutBindingEditResult? result =
         await showAppDialog<ShortcutBindingEditResult>(
       context: context,
@@ -244,6 +278,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         action: action,
         registry: _registry,
         initial: _registry.bindingsFor(action),
+        prefillKey: prefillKey,
+        prefillButton: prefillButton,
       ),
     );
     if (result == null || !mounted) return;
@@ -257,17 +293,91 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     setState(() {});
   }
 
-  /// 点击键盘图上某个已绑键位。该键位上绑了哪些 action 由 [ReverseBindingIndex]
-  /// 反查得到并传入；阶段 2a 只接「点已绑键位」零新分支，故直接编辑其上第一个
-  /// action，复用现成 [_editBinding] → updateBindingWithReassignments →
-  /// saveShortcutRegistry 写穿路径。空键位在图上不可点（高亮只读），改它走列表
-  /// 视图兜底（必改 3/4）。多绑键位的逐 action 选择留待后续增量。
+  /// 点击键盘图上某个**已绑**键位。该键位上绑了哪些 action 由 [ReverseBindingIndex]
+  /// 反查得到并传入；直接编辑其上第一个 action，复用现成 [_editBinding] →
+  /// updateBindingWithReassignments → saveShortcutRegistry 写穿路径。**空键位**改走
+  /// [_onEmptyKeyboardKeyTap]（TODO-1060② un-defer：key-first 选 action 后分配）。
+  /// 多绑键位的逐 action 选择留待后续增量。
   Future<void> _onKeyboardKeyTap(
     LogicalKeyboardKey key,
     List<ShortcutAction> boundActions,
   ) async {
     if (boundActions.isEmpty) return;
     await _editBinding(boundActions.first);
+  }
+
+  /// TODO-1060②: 点击可视化键盘上的**空白/未分配**键位。key-first：先让用户从该
+  /// scope 的 action 列表里选一个 action，再打开标准编辑对话框并把该键预填进草稿，
+  /// 复用现成 [_editBinding] → updateBindingWithReassignments → saveShortcutRegistry
+  /// 写穿路径（不造第二套分配逻辑）。用户可在对话框里删掉预填或加更多键后确认。
+  Future<void> _onEmptyKeyboardKeyTap(
+    ShortcutScope scope,
+    LogicalKeyboardKey key,
+  ) async {
+    final ShortcutAction? action = await _pickActionForScope(scope);
+    if (action == null || !mounted) return;
+    await _editBinding(action, prefillKey: key);
+  }
+
+  /// 点击可视化手柄图上某**已绑**按钮：编辑其首个 action（对齐键盘已绑口径）。
+  Future<void> _onGamepadButtonTap(
+    GamepadButton button,
+    List<ShortcutAction> boundActions,
+  ) async {
+    if (boundActions.isEmpty) return;
+    await _editBinding(boundActions.first);
+  }
+
+  /// 点击可视化手柄图上某**未绑**按钮：key-first 选 action 后预填该按钮分配。
+  Future<void> _onEmptyGamepadButtonTap(
+    ShortcutScope scope,
+    GamepadButton button,
+  ) async {
+    final ShortcutAction? action = await _pickActionForScope(scope);
+    if (action == null || !mounted) return;
+    await _editBinding(action, prefillButton: button);
+  }
+
+  /// 弹出「为此键位选择要分配的动作」选择器：列出该 scope 的全部 action（复用
+  /// [ShortcutAction.actionsForScope] + [_actionLabel]），选中返回该 action，取消返回
+  /// null。纯 UI 选择器，不写任何注册表（写穿仍由后续 [_editBinding] 完成）。
+  Future<ShortcutAction?> _pickActionForScope(ShortcutScope scope) {
+    final List<ShortcutAction> actions =
+        ShortcutAction.actionsForScope(scope).toList(growable: false);
+    return showAppDialog<ShortcutAction>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 480,
+          maxHeightFactor: 0.82,
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.shortcut_assign_pick_action,
+            leadingIcon: Icons.add_link_outlined,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (final ShortcutAction action in actions)
+                  HibikiListItem(
+                    key: Key('pick_action_${action.name}'),
+                    onTap: () => Navigator.pop(ctx, action),
+                    title: Text(_actionLabel(action)),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// 把每个 scope 投影成一张统一的 [AdaptiveSettingsSection] 卡片（标题用共享的
@@ -351,6 +461,11 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               registry: _registry,
               scope: scope,
               onKeyTap: _onKeyboardKeyTap,
+              onEmptyKeyTap: (LogicalKeyboardKey key) =>
+                  _onEmptyKeyboardKeyTap(scope, key),
+              onGamepadTap: _onGamepadButtonTap,
+              onEmptyGamepadTap: (GamepadButton button) =>
+                  _onEmptyGamepadButtonTap(scope, button),
             ),
           )
         else
@@ -416,9 +531,22 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final List<String> labels = <String>[
-      ...bindings.keyboardBindings.map((InputBinding b) => b.displayLabel),
-      ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
+    // Keyboard + gamepad render as plain text chips; TODO-1050b: mouse bindings
+    // render as icon chips (middle/right/back/forward small glyph) so the mouse
+    // channel is no longer invisible in the list view (was data-only pass-through).
+    final List<Widget> chips = <Widget>[
+      for (final InputBinding b in bindings.keyboardBindings)
+        HibikiTagChip(
+          label: b.displayLabel,
+          tone: HibikiTagChipTone.surface,
+        ),
+      for (final GamepadBinding b in bindings.gamepadBindings)
+        HibikiTagChip(
+          label: b.button.label,
+          tone: HibikiTagChipTone.surface,
+        ),
+      for (final MouseBinding b in bindings.mouseBindings)
+        _MouseChip(binding: b),
     ];
 
     // TODO-944: the whole row taps into the SAME assign/edit flow, so unmapped
@@ -429,24 +557,60 @@ class _ActionTile extends StatelessWidget {
     return HibikiListItem(
       onTap: onEdit,
       title: Text(_actionLabel(action)),
-      subtitle: labels.isEmpty
+      subtitle: chips.isEmpty
           ? Text(
               t.shortcut_tap_to_assign,
             )
           : Wrap(
               spacing: tokens.spacing.gap / 2,
               runSpacing: tokens.spacing.gap / 2,
-              children: labels
-                  .map((String label) => HibikiTagChip(
-                        label: label,
-                        tone: HibikiTagChipTone.surface,
-                      ))
-                  .toList(growable: false),
+              children: chips,
             ),
       trailing: HibikiIconButton(
         icon: Icons.edit_outlined,
         tooltip: t.options_edit,
         onTap: onEdit,
+      ),
+    );
+  }
+}
+
+/// TODO-1050b: 鼠标绑定的小图标 chip（HibikiTagChip 无 leading icon 位，这里用同款
+/// surface 观感自绘一个「图标 + 名称」的小 chip，与文字 chip 并排展示，不改公共组件）。
+class _MouseChip extends StatelessWidget {
+  const _MouseChip({required this.binding});
+
+  final MouseBinding binding;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color fg = theme.colorScheme.onSurface;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap * 0.75,
+        vertical: tokens.spacing.gap * 0.375,
+      ),
+      decoration: BoxDecoration(
+        color: tokens.surfaces.overlay,
+        borderRadius: tokens.radii.chipRadius,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(_mouseIcon(binding), size: 14, color: fg),
+          SizedBox(width: tokens.spacing.gap * 0.375),
+          Text(
+            _mouseLabel(binding),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.metadata.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -462,11 +626,20 @@ class ShortcutBindingEditDialog extends StatefulWidget {
     required this.action,
     required this.registry,
     required this.initial,
+    this.prefillKey,
+    this.prefillButton,
   });
 
   final ShortcutAction action;
   final HibikiShortcutRegistry registry;
   final ShortcutBindingSet initial;
+
+  /// TODO-1060②: 从可视化图上点空白键位进入时预填的逻辑键——打开即把它加进键盘草稿
+  /// （不与已有绑定重复时），用户可删可再加，确认才写穿。null = 从列表/编辑图标进入。
+  final LogicalKeyboardKey? prefillKey;
+
+  /// 从可视化手柄图上点空白按钮进入时预填的手柄按钮（同上语义）。
+  final GamepadButton? prefillButton;
 
   @override
   State<ShortcutBindingEditDialog> createState() =>
@@ -500,6 +673,19 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     super.initState();
     _keyboard = List<InputBinding>.of(widget.initial.keyboardBindings);
     _gamepad = List<GamepadBinding>.of(widget.initial.gamepadBindings);
+    // TODO-1060②: seed the draft with the visual-figure-tapped slot so tapping an
+    // empty keycap / gamepad button lands directly on this action already carrying
+    // that key. Skip if it's already bound to this action (no duplicate chip).
+    final LogicalKeyboardKey? pk = widget.prefillKey;
+    if (pk != null) {
+      final InputBinding seed = InputBinding(key: pk);
+      if (!_keyboard.contains(seed)) _keyboard.add(seed);
+    }
+    final GamepadButton? pb = widget.prefillButton;
+    if (pb != null) {
+      final GamepadBinding seed = GamepadBinding(pb);
+      if (!_gamepad.contains(seed)) _gamepad.add(seed);
+    }
   }
 
   @override
@@ -875,6 +1061,28 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 ),
               ),
             ),
+
+            // Mouse section (TODO-1050b): read-only display of existing mouse
+            // bindings. Mouse binds are positional (resolved at runtime via
+            // onPointerSeek, not captured here), so this surfaces them with a
+            // small icon instead of leaving the channel invisible — capture stays
+            // out of scope (Never break userspace: no new mouse capture path).
+            if (widget.initial.mouseBindings.isNotEmpty) ...<Widget>[
+              const Divider(height: 24),
+              Text(
+                t.shortcut_mouse_button,
+                style: themeData.textTheme.labelLarge,
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Wrap(
+                spacing: tokens.spacing.gap / 2,
+                runSpacing: tokens.spacing.gap / 2,
+                children: <Widget>[
+                  for (final MouseBinding mb in widget.initial.mouseBindings)
+                    _MouseChip(binding: mb),
+                ],
+              ),
+            ],
 
             // Conflict warning
             if (_conflictWarning != null) ...[
