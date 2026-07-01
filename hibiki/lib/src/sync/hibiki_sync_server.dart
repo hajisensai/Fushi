@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:meta/meta.dart';
@@ -657,14 +658,18 @@ class HibikiSyncServer {
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final dynamic rawFields = body['fields'];
-    if (rawFields is! Map) return shelf.Response(400, body: 'Missing fields');
-    final Map<String, String> fields = rawFields.map(
-        (dynamic k, dynamic v) => MapEntry(k.toString(), v?.toString() ?? ''));
-    final String sentence =
-        body['sentence']?.toString() ?? fields['sentence'] ?? '';
-    final String result =
-        await svc.mineEntry(fields: fields, sentence: sentence);
+    if (body['fields'] is! Map) return shelf.Response(400, body: 'Missing fields');
+    // TODO-1000：带截图/时间戳/clip 的沉浸挖词走 mineImmersion（引擎在实现方，server 只转发）；
+    // 纯 {fields,sentence} 保持现有 mineEntry 回落（向后兼容浏览器扩展纯文本挖词 + 移动端）。
+    final ImmersionMinePayload payload;
+    try {
+      payload = ImmersionMinePayload.fromJson(body);
+    } on FormatException {
+      return shelf.Response(400, body: 'Missing fields');
+    }
+    final String result = payload.isImmersion
+        ? await svc.mineImmersion(payload)
+        : await svc.mineEntry(fields: payload.fields, sentence: payload.sentence);
     return _jsonResponse(<String, dynamic>{'result': result});
   }
 

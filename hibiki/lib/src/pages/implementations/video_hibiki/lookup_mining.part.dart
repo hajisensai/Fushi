@@ -278,167 +278,60 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     if (controller == null) return const MinePopupResult();
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
-    final String? videoPath = controller.videoPath;
-    final bool hasRange = clipEndMs > clipStartMs;
-    // TODO-757 压缩开关：开=压缩档（GIF 320/8·音频 ac1 64k·截图 1000/90，=现状）；
-    // 关=高保真档（GIF 480/12·音频 ac2 128k·截图 2000/95）。一处选档喂三条媒体链路。
     final MiningMediaCompression mediaCompression =
-        MiningMediaCompression.forCompressionEnabled(
-      appModel.compressMiningMedia,
-    );
-
-    // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**区间时间段**导出成循环 GIF
-    // （单句=该 cue 时间窗；跨字幕=整段区间）。桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit
-    // （resolveFfmpegBackend）；无区间 / 导出失败（ffmpeg 真不可用等）时回退**按 cue 时间
-    // 抽的单帧**（见下方降级链路）。
-    String? coverPath;
+        MiningMediaCompression.forCompressionEnabled(appModel.compressMiningMedia);
+    // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
+    // 引擎内；本壳只管 OSD + 视频统计。onFailure 捕获 GIF(首)/音频(末)失败摘要供 OSD。
     String? gifFailure;
-    if (hasRange && videoPath != null) {
-      coverPath = await extractClipGifViaFfmpeg(
-        inputPath: videoPath,
-        startMs: clipStartMs,
-        endMs: clipEndMs,
-        outputPath: '${tmp.path}/video_mine_clip.gif',
-        fps: mediaCompression.gifFps,
-        width: mediaCompression.gifWidth,
-        onFailure: (String summary) {
-          gifFailure = summary;
-        },
-      );
-    }
-    // 封面降级链路（GIF 不可用 / 无区间时）。
-    // BUG（TODO-816 ③）根因修：旧兜底直接截**播放器当前解码帧**——它从不 seek 到 cue
-    // 时间，所以一旦退到这条路径，封面就取到播放器当下停的帧（常是片头/暂停处），与卡片
-    // 例句不是同一段。GIF 主路径用的是 [clipStartMs]
-    // （已经过 miningClipTimeMs 逆变换回播放器轴的目标毫秒），降级帧必须用**同一个**
-    // cue 时间从视频文件抽，才与例句对齐。
-    bool degradedToStill = false;
-    if (coverPath == null && hasRange && videoPath != null) {
-      String? frameFailure;
-      coverPath = await extractVideoFrameViaFfmpeg(
-        inputPath: videoPath,
-        outputPath: '${tmp.path}/video_mine_frame.jpg',
-        atSeconds: clipStartMs / 1000.0,
-        onFailure: (String summary) {
-          frameFailure = summary;
-        },
-      );
-      if (coverPath != null) {
-        // 成功抽到 cue 时间帧：仍是「动图降级为静态」，需告知用户（W2a）。
-        degradedToStill = true;
-      } else if (frameFailure != null) {
-        debugPrint(
-          '[VideoHibiki] mine: GIF + cue-frame export both failed '
-          '(gif=$gifFailure; frame=$frameFailure).',
-        );
+    String? lastFailure;
+    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+      ImmersionMiningRequest(
+        fields: fields,
+        mediaSource: controller.miningSource,
+        audioSource: controller.miningAudioSource,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        sentence: sentence,
+        cueSentence: cueSentence,
+        // TODO-761（方案 B）：播放列表下拼「系列名 - 剧集名」，单视频/远端仍是剧集名，零变化。
+        documentTitle: _videoMiningDocumentTitle(),
+        audioStreamIndex: controller.currentAudioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
+        // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
+        source: AnkiMiningSource.video,
+        // TODO-681 / BUG-393：番名/标题作书名标签，开关关闭或无标题时 null 不追加。
+        bookTitleTag: appModel.autoAddBookNameToTags
+            ? BaseAnkiRepository.sanitizeTitleTag(_title)
+            : null,
+        updateNoteId: updateNoteId,
+        stillFallback: controller.screenshot,
+      ),
+      compression: mediaCompression,
+      tempDir: tmp.path,
+      repo: repo,
+      onFailure: (String summary) {
+        gifFailure ??= summary;
+        lastFailure = summary;
+      },
+    );
+    // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
+    if (res.aborted) {
+      if (mounted) {
+        _showOsd(t.card_export_failed_detail(
+          reason: lastFailure == null
+              ? 'sentence audio export failed'
+              : 'sentence audio export failed: $lastFailure',
+        ));
       }
+      return const MinePopupResult();
     }
-    // 最后兜底：无区间（无 cue），或按 cue 时间抽帧也失败 → 截播放器当前解码帧。无区间
-    // 本就没有可对齐的 cue 时间，当前帧是唯一合理来源；区间存在但抽帧失败时这是降级。
-    if (coverPath == null) {
-      if (gifFailure != null) {
-        debugPrint('[VideoHibiki] mine: GIF clip export failed: $gifFailure');
-      }
-      final Uint8List? shot = await controller.screenshot();
-      if (shot != null && shot.isNotEmpty) {
-        // TODO-646 近无损压缩：截图按原始解码帧分辨率输出（1080p/4K），降采样到
-        // 长边 1000px（卡面 + 灯箱放大都不糊）再写盘，省媒体库体积。解码失败/已不
-        // 超限时原样返回，不破坏制卡。
-        final Uint8List cover = downsampleCardScreenshot(
-          shot,
-          maxLongEdge: mediaCompression.screenshotMaxLongEdge,
-          quality: mediaCompression.screenshotQuality,
-        );
-        final File f = File('${tmp.path}/video_mine_shot.jpg');
-        await f.writeAsBytes(cover);
-        coverPath = f.path;
-        // 区间存在却退到当前帧（GIF + cue 抽帧都失败）：也属动图降级为静态，提示用户。
-        if (hasRange) degradedToStill = true;
-      }
-    }
-    // W2a 根因修：动图降级为静态帧时给用户可感知 OSD，原仅 debugPrint 静默吞掉，用户
-    // 不知拿到的是降级图。原因取 GIF 失败摘要（最贴近根因）。
-    if (degradedToStill && mounted) {
+    // W2a：动图降级为静态帧时可感知 OSD（原因取 GIF 失败摘要，最贴近根因）。
+    if (res.degradedToStill && mounted) {
       _showOsd(t.card_cover_degraded_to_static(
         reason: gifFailure ?? 'animated clip unavailable',
       ));
     }
-
-    // 区间音频片段（桌面 ffmpeg 按时间裁，映射到当前选中音轨）→ sasayakiAudioPath。
-    // 跨字幕时这就是 [startCue.startMs, endCue.endMs] 一整段（不逐句抽再拼，TODO-102）。
-    String? audioPath;
-    String? audioFailure;
-    if (hasRange && videoPath != null) {
-      audioPath = await extractAudioSegmentViaFfmpeg(
-        inputPath: videoPath,
-        startMs: clipStartMs,
-        endMs: clipEndMs,
-        outputPath: '${tmp.path}/video_mine_audio.aac',
-        audioStreamIndex: controller.currentAudioStreamIndex,
-        audioStreamCount: controller.realAudioStreamCount,
-        audioChannels: mediaCompression.audioChannels,
-        audioBitrate: mediaCompression.audioBitrate,
-        onFailure: (String summary) {
-          audioFailure = summary;
-        },
-      );
-      // BUG-296 / TODO-390: sentence-audio "should-have-but-failed" visibility,
-      // symmetric with reader BUG-172. hasRange means this card was supposed to
-      // carry sentence audio, but ffmpeg returned null (ffmpeg unavailable on
-      // device / current audio track undecodable / interleaved container read
-      // failure) so the card's {sasayaki-audio}/SentenceAudio renders empty.
-      // This used to be a fully silent drop (user sees "card created" with no
-      // sentence audio and no way to diagnose - exactly the TODO-390 blind spot
-      // behind repeated "Hibiki deck has no sentence audio" reports). Treat it
-      // like the reader/audiobook path: surface the root cause and abort this
-      // mining attempt rather than creating a "successful" no-audio card.
-      if (audioPath == null) {
-        debugPrint(
-          '[VideoHibiki] mine: sentence-audio clip failed for range '
-          '[$clipStartMs,$clipEndMs] '
-          '(audioStreamIndex=${controller.currentAudioStreamIndex}; '
-          '${audioFailure ?? 'ffmpeg returned null'}).',
-        );
-        if (mounted) {
-          _showOsd(t.card_export_failed_detail(
-            reason: audioFailure == null
-                ? 'sentence audio export failed'
-                : 'sentence audio export failed: $audioFailure',
-          ));
-        }
-        return const MinePopupResult();
-      }
-    }
-
-    final AnkiMiningContext miningContext = AnkiMiningContext(
-      sentence: sentence,
-      cueSentence: cueSentence,
-      // TODO-761（方案 B）：播放列表下制卡时把系列名拼进 documentTitle →
-      // 渲染到 Anki `{document-title}` 成「系列名 - 剧集名」，老卡片模板零改动自动带上
-      // 系列名。单视频 / 远端（_isPlaylist 为假或 _playlistTitle 为空）→ 仍是剧集名
-      // [_title]，向后兼容零变化。
-      documentTitle: _videoMiningDocumentTitle(),
-      coverPath: coverPath,
-      sasayakiAudioPath: audioPath,
-      // TODO-115: 视频来源 → 卡片追加 `video` 分类标签（本页覆写了 onMineEntry，
-      // 绕过 DictionaryPageMixin 的 source 注入，故在此显式指定）。
-      source: AnkiMiningSource.video,
-      // TODO-681 / BUG-393：「自动添加书名到标签」开关原只对书籍生效，现视频同样吃——
-      // 视频的「书名」= 番名/标题（_title）。开关关闭或无标题时传 null，不追加。
-      bookTitleTag: appModel.autoAddBookNameToTags
-          ? BaseAnkiRepository.sanitizeTitleTag(_title)
-          : null,
-    );
-    final MineOutcome outcome = updateNoteId == null
-        ? await repo.mineEntry(
-            rawPayloadJson: jsonEncode(fields),
-            context: miningContext,
-          )
-        : await repo.updateMinedNote(
-            noteId: updateNoteId,
-            rawPayloadJson: jsonEncode(fields),
-            context: miningContext,
-          );
+    final MineOutcome outcome = res.outcome! as MineOutcome;
     final MinePopupResult result = outcome.result == MineResult.success
         ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
         : const MinePopupResult();

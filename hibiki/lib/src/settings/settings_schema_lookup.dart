@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -111,6 +113,22 @@ SettingsDestination buildLookupDestination() {
                     settingsContext.refresh();
                   },
                 ),
+              );
+            },
+          ),
+          // TODO-1000：浏览器扩展「安装助手」——把随 app 打包的扩展解压到磁盘 + 引导
+          // 「开发者模式 → 加载已解压 → 粘贴路径」（自建 MV3 无真·一键，浏览器封了侧载）。
+          SettingsActionItem(
+            id: 'lookup.install_browser_extension',
+            title: t.install_browser_extension,
+            icon: Icons.extension_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              final String dir = await prepareBundledBrowserExtension();
+              await Clipboard.setData(ClipboardData(text: dir));
+              if (!settingsContext.context.mounted) return;
+              await showSettingsDialog(
+                settingsContext,
+                (_) => _BrowserExtensionInstallDialog(path: dir),
               );
             },
           ),
@@ -657,4 +675,43 @@ Widget _buildMaximumTermsField(SettingsContext settingsContext) {
       settingsContext.refresh();
     },
   );
+}
+
+/// TODO-1000：浏览器扩展安装引导弹窗。路径已在打开前解压好并复制到剪贴板；这里展示可选中的
+/// 路径 + 步骤 + 「复制路径」按钮。自建 MV3 无真·一键（浏览器封侧载），故为半自动引导。
+class _BrowserExtensionInstallDialog extends StatelessWidget {
+  const _BrowserExtensionInstallDialog({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.install_browser_extension),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(t.browser_extension_install_steps),
+          const SizedBox(height: 12),
+          SelectableText(
+            path,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: path));
+          },
+          child: Text(t.copy),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.cancel),
+        ),
+      ],
+    );
+  }
 }

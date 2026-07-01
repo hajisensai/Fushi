@@ -1,0 +1,593 @@
+/*
+ *  popup.css
+ *  Hoshi Reader
+ *
+ *  Copyright © 2026 Manhhao.
+ *  Copyright © 2023-2025 Yomitan Authors.
+ *  Copyright © 2021-2022 Yomichan Authors.
+ *  SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+/* A big portion of the CSS was directly copied from Yomitan */
+/* https://github.com/yomidevs/yomitan/blob/d810b2f0842536d24ab82b6cd75d00841710e57b/ext/css/structured-content.css */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html,
+body {
+    --font-size-no-units: 15;
+    --line-height: 1.4;
+    --list-padding1: 1.4em;
+    --list-padding2: var(--list-padding1);
+    --text-color-light1: #555555;
+    --text-color-light2: #666666;
+    --text-color-light3: #777777;
+    --text-color-light4: #888888;
+    --background-color-dark1: #eeeeee;
+    /* Base fallbacks; the active values are set per-theme in the html[data-theme]
+       blocks below, which prefer the MD3 ColorScheme values Dart injects. */
+    --surface-container: rgba(128, 128, 128, 0.10);
+    --surface-container-high: rgba(128, 128, 128, 0.14);
+    --outline-variant: rgba(128, 128, 128, 0.32);
+    --primary-color: #386A58;
+    --on-surface-variant: #44483F;
+    color: var(--text-color);
+    background-color: var(--background-color, transparent);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important;
+    overscroll-behavior-y: contain;
+    touch-action: auto;
+    -webkit-user-select: text;
+}
+
+body {
+    overflow-x: hidden;
+    padding: 0 10px 10px;
+}
+
+.entry {
+    padding: 8px 0;
+}
+
+.entry-header {
+    display: flex;
+    align-items: center;
+    padding-top: 4px;
+}
+
+.expression-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.expression-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.expression {
+    font-size: 26px;
+    cursor: pointer;
+}
+
+.expression:active {
+    opacity: 0.6;
+}
+
+.kanji-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 0 2px;
+}
+
+.kanji-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(128, 128, 128, 0.15);
+    font-size: 16px;
+    cursor: pointer;
+    -webkit-user-select: none;
+}
+
+.kanji-tag:active {
+    opacity: 0.6;
+}
+
+.expression-scroll .expression {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.expression rt {
+    font-size: 13px;
+    -webkit-user-select: none;
+}
+
+.header-buttons {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+    gap: 6px;
+}
+
+.audio-button,
+.mine-button {
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 18px;
+    opacity: 0.5;
+    -webkit-user-select: none;
+}
+
+.mine-button {
+    margin-left: 6px;
+}
+
+.mine-button.duplicate {
+    transform: translateY(0.5px);
+}
+
+.mine-button:disabled {
+    opacity: 0.15;
+}
+
+.audio-button {
+    transform: translateY(1px);
+}
+
+.entry-tags {
+    margin-top: -4px;
+    -webkit-user-select: none;
+}
+
+.tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 3px;
+    line-height: 1;
+}
+
+.expr-tag-row {
+    margin-top: 0;
+}
+
+.expr-tag {
+    font-size: 11px;
+    padding: 2px 4px;
+    margin-right: 2px;
+    background-color: var(--expr-tag-color, rgba(120, 140, 160, 0.22));
+    border-radius: 4px;
+    color: var(--expr-tag-text-color, inherit);
+    -webkit-user-select: text;
+}
+
+.deinflection-tag {
+    font-size: 11px;
+    padding: 2px 4px;
+    margin-right: 2px;
+    background-color: rgba(128, 128, 128, 0.2);
+    border-radius: 4px;
+    color: inherit;
+}
+
+.frequency-group {
+    display: inline-flex;
+    font-size: 11px;
+    border: 1px solid var(--freq-tag-color, #77aaeb);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.frequency-dict-label {
+    padding: 2px 4px;
+    background-color: var(--freq-tag-color, #77aaeb);
+    color: #fff;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.frequency-values {
+    padding: 2px 4px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--outline-variant);
+    margin: 4px 0;
+}
+
+a {
+    color: var(--primary-color);
+}
+
+.gloss-image-container {
+    display: inline-block;
+    white-space: nowrap;
+    max-width: 100%;
+    max-height: 100vh;
+    position: relative;
+    vertical-align: top;
+    line-height: 0;
+    font-size: calc(1em / var(--font-size-no-units));
+    overflow: hidden;
+}
+
+.gloss-image-link[data-background=true]>.gloss-image-container {
+    background-color: var(--gloss-image-background-color);
+}
+
+.gloss-image-link:not([data-appearance="monochrome"])>.gloss-image-container {
+    min-width: min(100%, 200px);
+}
+
+.gloss-image-link {
+    cursor: inherit;
+    color: var(--accent-color);
+    display: inline-block;
+    position: relative;
+    line-height: 1;
+    max-width: 100%;
+}
+
+.gloss-image-container-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    font-size: calc(1em * var(--font-size-no-units));
+    line-height: var(--line-height);
+    display: table;
+    table-layout: fixed;
+    white-space: normal;
+    color: rgba(128, 128, 128, 0.8);
+}
+
+.gloss-image-background {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--text-color);
+    display: none;
+}
+
+.gloss-image {
+    display: inline-block;
+    vertical-align: top;
+    object-fit: contain;
+    border: none;
+    outline: none;
+}
+
+.gloss-image-link[data-has-aspect-ratio=true] .gloss-image {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.gloss-image-link[data-has-aspect-ratio=true] .gloss-image-sizer {
+    display: inline-block;
+    width: 0;
+    vertical-align: top;
+    font-size: 0;
+}
+
+.gloss-image-link[data-appearance="monochrome"] img.gloss-image {
+    filter: brightness(0);
+}
+
+html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.gloss-image {
+    filter: brightness(0) invert(1);
+}
+
+.gloss-image-link[data-size-units=em] .gloss-image-container {
+    font-size: 1em;
+}
+
+.gloss-image-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+
+.dict-image-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.82);
+    cursor: zoom-out;
+}
+
+.dict-image-lightbox-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    background: transparent;
+}
+
+.glossary-group {
+    position: relative;
+    margin-top: 5px;
+}
+
+.glossary-group > summary {
+    list-style: none;
+}
+
+.glossary-group > summary::-webkit-details-marker {
+    display: none;
+}
+
+.glossary-group > summary::before {
+    content: '▶ ';
+    font-size: 8px;
+    opacity: 0.5;
+}
+
+.glossary-group[open] > summary::before {
+    content: '▼ ';
+}
+
+.glossary-group > div[data-dictionary] {
+    display: block;
+    font-size: 14px;
+    line-height: 1.4;
+    padding-top: 2px;
+}
+
+.glossary-group > div[data-dictionary] > ol {
+    padding-left: 1.8em;
+}
+
+:where(.glossary-group > div[data-dictionary]) ul,
+:where(.glossary-group > div[data-dictionary]) ol {
+    padding-left: 1.2em;
+    margin: 2px 0;
+}
+
+:where(.glossary-group > div[data-dictionary]) li {
+    margin: 1px 0;
+}
+
+.glossary-group > div[data-dictionary] .glossary-tags {
+    display: inline-flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin: 0 0 2px 0;
+}
+
+.glossary-group > div[data-dictionary] .glossary-tag {
+    font-size: 10px;
+    padding: 2px 4px;
+    background-color: rgba(128, 128, 128, 0.2);
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.gloss-sc-table-container {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.gloss-sc-table {
+    table-layout: auto;
+    border-collapse: collapse;
+}
+
+.gloss-sc-thead,
+.gloss-sc-tfoot,
+.gloss-sc-th {
+    font-weight: bold;
+    background-color: var(--background-color-dark1);
+}
+
+.gloss-sc-th,
+.gloss-sc-td {
+    border-width: calc(1em / var(--font-size-no-units));
+    border-style: solid;
+    border-color: var(--text-color-light2);
+    padding: 0.25em;
+    vertical-align: top;
+}
+
+.glossary-content {
+    font-size: 15px;
+    padding: 0 8px;
+}
+
+.dict-label {
+    font-size: 10px;
+    opacity: 0.7;
+    display: inline;
+    margin-right: 4px;
+}
+
+.dict-label.selected {
+    opacity: 1;
+    color: var(--primary-color);
+    font-weight: bold;
+}
+
+.overlay {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 80%;
+    overflow-y: auto;
+    padding: 16px;
+    z-index: 727;
+    background: var(--surface-container-high);
+    border-top: 1px solid var(--outline-variant);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.overlay-content {
+    font-size: 15px;
+    padding-right: 20px;
+    white-space: pre-wrap;
+}
+
+.overlay-close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--on-surface-variant);
+}
+
+.category-section {
+    margin-top: 2px;
+}
+
+.category-body {
+    padding: 0;
+}
+
+.category-body .tag-row {
+    margin-top: 0;
+}
+
+.category-body .pitch-list {
+    margin-top: 0;
+}
+
+.glossary-section > .category-body > .glossary-group {
+    margin-top: 3px;
+}
+
+.pitch-list {
+    margin: 0;
+    font-size: 13px;
+}
+
+.pitch-group {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.pitch-dict-label {
+    display: none;
+}
+
+.pitch-entries {
+    list-style: circle inside;
+    margin: 0;
+    padding: 0;
+}
+
+/* https://github.com/yomidevs/yomitan/blob/master/ext/css/display-pronunciation.css */
+.pronunciation-mora {
+    position: relative;
+}
+
+.pronunciation-mora[data-pitch="high"] > .pronunciation-mora-line {
+    position: absolute;
+    top: -2px;
+    left: 0;
+    right: 0;
+    border-top: 1px solid currentColor;
+}
+
+.pronunciation-mora[data-pitch="high"][data-pitch-next="low"] > .pronunciation-mora-line {
+    right: -1px;
+    height: 0.4em;
+    border-right: 1px solid currentColor;
+}
+
+.pronunciation-mora[data-pitch="high"][data-pitch-next="low"] {
+    padding-right: 1px;
+    margin-right: 1px;
+}
+
+::highlight(hoshi-selection) {
+    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4));
+    color: inherit;
+}
+
+.hoshi-dict-highlight {
+    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
+    color: inherit;
+}
+
+::selection {
+    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
+    color: inherit;
+}
+
+html[data-theme="light"] {
+    --background-color: #fff;
+    --background-color-light: #fff;
+    --text-color: #000;
+    /* Prefer the MD3 ColorScheme values Dart injects (--md-*); the per-theme
+       literals stay as fallbacks for hosts that don't inject (Android native). */
+    --surface-container: var(--md-surface-container, #F0F1EC);
+    --surface-container-high: var(--md-surface-container-high, #EAEBE5);
+    --outline-variant: var(--md-outline-variant, #C4C8BE);
+    --primary-color: var(--md-primary, #386A58);
+    --on-surface-variant: var(--md-on-surface-variant, #44483F);
+}
+
+html[data-theme="dark"] {
+    --background-color: #000;
+    --background-color-light: #000;
+    --text-color: #fff;
+    --text-color-light1: #aaaaaa;
+    --text-color-light2: #999999;
+    --text-color-light3: #888888;
+    --text-color-light4: #777777;
+    --background-color-dark1: #333333;
+    --surface-container: var(--md-surface-container, #1D211D);
+    --surface-container-high: var(--md-surface-container-high, #282B27);
+    --outline-variant: var(--md-outline-variant, #44483F);
+    --primary-color: var(--md-primary, #9DD7B8);
+    --on-surface-variant: var(--md-on-surface-variant, #C4C8BE);
+}
+
+.no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 16px;
+    color: var(--on-surface-variant, #44483F);
+    font-size: 14px;
+    opacity: 0.7;
+    text-align: center;
+    gap: 8px;
+}
+
+.no-results-icon {
+    font-size: 32px;
+    opacity: 0.5;
+}

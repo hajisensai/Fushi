@@ -458,6 +458,35 @@ class VideoPlayerController extends ChangeNotifier
   /// 视频文件绝对路径（制卡裁字幕音频用）；未 [load] 时为空。
   String? get videoPath => _videoPath;
 
+  /// TODO-1000：制卡 ffmpeg 抽取源。本地=videoPath；YouTube 等流媒体用可 seek 的流 URL
+  /// 覆盖（[setMiningSourceOverride]），使引擎能从流 URL 按时间戳裁 GIF/音频而不动前台播放器。
+  String? _miningSourceOverride;
+
+  /// 覆盖制卡抽取源（YouTube 流 URL 等）；传 null 还原为 [videoPath]。
+  void setMiningSourceOverride(String? source) =>
+      _miningSourceOverride = source;
+
+  /// 制卡抽取源：优先覆盖源（流 URL），否则本地 [videoPath]。
+  String? get miningSource => _miningSourceOverride ?? videoPath;
+
+  /// TODO-1000：YouTube 分离流时视频流无音轨，制卡音频须从 audio-only 流裁。null =
+  /// 用 [miningSource]（本地文件/muxed 自带音轨）。
+  String? _miningAudioSourceOverride;
+
+  /// 覆盖制卡音频抽取源（YouTube audio-only 流 URL）；传 null = 用 [miningSource]。
+  void setMiningAudioSourceOverride(String? source) =>
+      _miningAudioSourceOverride = source;
+
+  /// 制卡音频抽取源；null 时引擎回落 [miningSource]。
+  String? get miningAudioSource => _miningAudioSourceOverride;
+
+  /// TODO-1000：外挂 audio-only 流为播放音轨（YouTube 分离流：视频流无音轨）。libmpv
+  /// 经 `AudioTrack.uri` 加载；http header 沿用 load 时下发的 `http-header-fields`。
+  /// 播放完成后 libmpv 自动卸载外挂轨（media_kit 契约）。
+  Future<void> setExternalAudioTrack(String url) async {
+    await _player?.setAudioTrack(AudioTrack.uri(url));
+  }
+
   /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
   /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」
   /// （BUG-199 听力沉浸）等以 [isPlaying] 为闸的逻辑。置非 null 时覆盖。

@@ -782,24 +782,31 @@ class RemoteVideoStreamUrls {
     required this.streamUrl,
     this.subtitleUrl,
     this.subtitleFileName,
+    this.audioStreamUrl,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
   });
 
   final String streamUrl;
   final String? subtitleUrl;
   final String? subtitleFileName;
+
+  /// TODO-1000：分离音视频流（YouTube video-only）时的 audio-only 流 URL；播放页经
+  /// `AudioTrack.uri` 外挂、制卡音频从它裁。同轨/muxed 时为 null。
+  final String? audioStreamUrl;
   final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
     final String streamUrl = json['url']?.toString() ?? '';
     final String? subtitleUrl = json['subtitleUrl']?.toString();
     final String? subtitleFileName = _jsonString(json['subtitleFileName']);
+    final String? audioStreamUrl = _jsonString(json['audioStreamUrl']);
     final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
         _jsonEmbeddedSubtitleTracks(json['embeddedSubtitleTracks']);
     return RemoteVideoStreamUrls(
       streamUrl: streamUrl,
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
+      audioStreamUrl: audioStreamUrl,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
     );
   }

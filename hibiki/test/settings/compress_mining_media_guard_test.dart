@@ -79,32 +79,37 @@ void main() {
   });
 
   group('调用点源码守卫', () {
-    test('视频 mining 三条链路读 compressMiningMedia 并选档', () {
+    test('视频 mining 据 compressMiningMedia 选档并把档喂进引擎（TODO-1000 收口）', () {
+      // TODO-1000：三条媒体链路已收进 ImmersionMiningEngine；video 页只负责「选档 + 传引擎」，
+      // 引擎负责「把档应用到三链路」。守卫拆成两半，TODO-757 不变式仍全覆盖。
       final String src = File(
         'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart',
       ).readAsStringSync();
-
-      // 选档一次，三条链路共用。
       expect(
         src.contains('MiningMediaCompression.forCompressionEnabled') &&
             src.contains('appModel.compressMiningMedia'),
         isTrue,
         reason: '视频 mining 必须据 appModel.compressMiningMedia 选档',
       );
-      // GIF 链路传 fps/width。
-      expect(src.contains('fps: mediaCompression.gifFps'), isTrue);
-      expect(src.contains('width: mediaCompression.gifWidth'), isTrue);
-      // 截图链路传 maxLongEdge/quality。
+      expect(src.contains('compression: mediaCompression'), isTrue,
+          reason: '选好的档必须喂进 ImmersionMiningEngine.mine');
+    });
+
+    test('ImmersionMiningEngine 把档应用到三条媒体链路', () {
+      final String src = File(
+        'lib/src/mining/immersion_mining_engine.dart',
+      ).readAsStringSync();
+      // GIF 链路。
+      expect(src.contains('fps: compression.gifFps'), isTrue);
+      expect(src.contains('width: compression.gifWidth'), isTrue);
+      // 截图链路。
       expect(
-          src.contains('maxLongEdge: mediaCompression.screenshotMaxLongEdge'),
-          isTrue);
+          src.contains('maxLongEdge: compression.screenshotMaxLongEdge'), isTrue);
+      expect(src.contains('quality: compression.screenshotQuality'), isTrue);
+      // 音频链路。
       expect(
-          src.contains('quality: mediaCompression.screenshotQuality'), isTrue);
-      // 音频链路传 channels/bitrate。
-      expect(src.contains('audioChannels: mediaCompression.audioChannels'),
-          isTrue);
-      expect(
-          src.contains('audioBitrate: mediaCompression.audioBitrate'), isTrue);
+          src.contains('audioChannels: compression.audioChannels'), isTrue);
+      expect(src.contains('audioBitrate: compression.audioBitrate'), isTrue);
     });
 
     test('阅读器句子音频读 compressMiningMedia 并传桌面 ffmpeg 档', () {

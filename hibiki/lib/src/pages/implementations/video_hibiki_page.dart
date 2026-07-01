@@ -78,8 +78,9 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
+import 'package:hibiki/src/mining/immersion_mining_engine.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
@@ -1399,7 +1400,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
-      if (urls.subtitleUrl != null) {
+      // TODO-1000：YouTube 等预解析好 cue（timedtext→AudioCue）时直接用，跳过
+      // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
+      if (client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty) {
+        cues = client.preresolvedCues;
+      } else if (urls.subtitleUrl != null) {
         final Directory temp = await getTemporaryDirectory();
         final File subtitle = File(
           p.join(
@@ -1430,6 +1435,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         startIntent: startIntent,
         externalSubtitlePath: externalSub,
       );
+      // TODO-1000：分离流（YouTube video-only）——外挂 audio-only 流为播放音轨，并把它设为
+      // 制卡音频源（视频流无音轨，音频段须从 audio-only 流裁）。_applyLoad 已把 miningSource
+      // 设为视频流（GIF/帧从它裁），这里补音频侧。
+      if (urls.audioStreamUrl != null) {
+        _controller?.setMiningAudioSourceOverride(urls.audioStreamUrl);
+        await _controller?.setExternalAudioTrack(urls.audioStreamUrl!);
+      }
     } catch (e, stack) {
       debugPrint(
         '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',
@@ -1955,6 +1967,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'videoController=${controller.videoController != null}',
     );
     _syncVolumeDisplay(controller.volume);
+    // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
+    // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
+    // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
+    controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);

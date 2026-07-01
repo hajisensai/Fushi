@@ -2038,5 +2038,7 @@
   "stat_goal_none": "No goal set",
   "stat_goal_progress": "$read / $goal chars",
   "floating_lyric_context_lines": "Floating subtitle context lines",
-  "floating_lyric_context_lines_hint": "0 shows only the current line (single-line, unchanged); set 1-3 to show that many lines before and after it"
+  "floating_lyric_context_lines_hint": "0 shows only the current line (single-line, unchanged); set 1-3 to show that many lines before and after it",
+  "install_browser_extension": "Install browser extension",
+  "browser_extension_install_steps": "In chrome://extensions (or edge://extensions): enable Developer mode, click Load unpacked, and paste the path below. Then fill Hibiki host/port/token in the extension options."
 }

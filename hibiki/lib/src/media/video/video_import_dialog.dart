@@ -13,6 +13,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -502,7 +503,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       final bool proceed = await _confirmWebPageUrl();
       if (!proceed || !mounted) return;
     }
-    _playStreamUrlConfirmed();
+    await _playStreamUrlConfirmed();
   }
 
   /// 网页视频站 URL 软警告确认框：标题 + 正文说明「网页地址非直链、Hibiki 暂不解析」，
@@ -529,30 +530,57 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   }
 
   /// 实际把粘贴的流 URL 包成 [UrlStreamVideoClient] 喂进远端播放链（原 _playStreamUrl 主体）。
-  void _playStreamUrlConfirmed() {
+  ///
+  /// TODO-1000：YouTube URL 先经 [resolveYoutubeSource] 解析出最高清 video-only + audio-only
+  /// 分离流 + timedtext 字幕 cue（muxed 限 360p，不用），再包成 client 喂同一条远端播放链。
+  Future<void> _playStreamUrlConfirmed() async {
     final String url = _streamUrlController.text.trim();
     if (!isPlayableStreamUrl(url)) return;
-    final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
-    final String? subtitleUrl =
-        isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
-    final Map<String, String> headers = <String, String>{};
-    final String referer = _streamRefererController.text.trim();
-    final String userAgent = _streamUserAgentController.text.trim();
-    if (referer.isNotEmpty) headers['Referer'] = referer;
-    if (userAgent.isNotEmpty) headers['User-Agent'] = userAgent;
 
     final String bookUid = streamVideoBookUid(url);
-    final UrlStreamVideoClient client = UrlStreamVideoClient(
-      streamUrl: url,
-      subtitleUrl: subtitleUrl,
-      subtitleFileName:
-          subtitleUrl == null ? null : _subtitleFileNameForUrl(subtitleUrl),
-      httpHeaderFields: headers,
-    );
-    final RemoteVideoInfo info = RemoteVideoInfo(
-      id: bookUid,
-      title: _streamTitleForUrl(url),
-    );
+    final UrlStreamVideoClient client;
+    final String title;
+
+    if (isYoutubeUrl(url)) {
+      final YoutubeResolvedSource resolved;
+      try {
+        resolved = await resolveYoutubeSource(url);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.video_file_error_content)),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      client = UrlStreamVideoClient(
+        streamUrl: resolved.streamUrl,
+        audioStreamUrl: resolved.audioStreamUrl,
+        preresolvedCues: resolved.cues,
+        httpHeaderFields: resolved.httpHeaders,
+      );
+      title = resolved.title;
+    } else {
+      final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
+      final String? subtitleUrl =
+          isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
+      final Map<String, String> headers = <String, String>{};
+      final String referer = _streamRefererController.text.trim();
+      final String userAgent = _streamUserAgentController.text.trim();
+      if (referer.isNotEmpty) headers['Referer'] = referer;
+      if (userAgent.isNotEmpty) headers['User-Agent'] = userAgent;
+      client = UrlStreamVideoClient(
+        streamUrl: url,
+        subtitleUrl: subtitleUrl,
+        subtitleFileName:
+            subtitleUrl == null ? null : _subtitleFileNameForUrl(subtitleUrl),
+        httpHeaderFields: headers,
+      );
+      title = _streamTitleForUrl(url);
+    }
+
+    final RemoteVideoInfo info = RemoteVideoInfo(id: bookUid, title: title);
     final NavigatorState navigator = Navigator.of(context);
     // 先关本对话框（避免播放页叠在对话框之上），再 push 远端播放页。
     navigator.pop();

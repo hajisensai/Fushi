@@ -67,6 +67,10 @@ import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:hibiki/src/mining/immersion_mining_engine.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:hibiki/src/mining/immersion_capture_channel.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
@@ -4199,6 +4203,43 @@ class _AppModelRemoteLookupService
       context: AnkiMiningContext(sentence: sentence),
     );
     return outcome.result.name;
+  }
+
+  @override
+  Future<String> mineImmersion(ImmersionMinePayload payload) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    final MiningMediaCompression compression =
+        MiningMediaCompression.forCompressionEnabled(
+            _appModel.compressMiningMedia);
+    // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
+    // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
+    // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
+    ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
+    if (payload.clipBytes != null) {
+      cap = await transcodeClipToCapture(
+        payload.clipBytes!,
+        durationMs: payload.clipDurationMs ?? 6000,
+        compression: compression,
+        tempDir: Directory.systemTemp.path,
+      );
+    } else if (payload.netflixVideoId != null &&
+        payload.clipStartMs != null &&
+        payload.clipEndMs != null) {
+      cap = await ImmersionCaptureChannel.capture(
+        netflixVideoId: payload.netflixVideoId!,
+        clipStartMs: payload.clipStartMs!,
+        clipEndMs: payload.clipEndMs!,
+      );
+    }
+    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+      buildImmersionRequest(payload, cap),
+      compression: compression,
+      tempDir: Directory.systemTemp.path,
+      repo: repo,
+    );
+    if (res.aborted) return MineResult.error.name;
+    return (res.outcome! as MineOutcome).result.name;
   }
 
   @override
