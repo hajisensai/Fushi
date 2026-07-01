@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/media_source.dart';
@@ -139,6 +140,22 @@ class ProfileRepository {
       ));
     }
 
+    // TODO-1077: dictionary enable-list / order / source / language visibility
+    // live in the standalone `dictionary_metadata` table, not in prefs, so they
+    // were previously shared across all profiles. Snapshot one row per
+    // dictionary (key = dictionary name) into the dedicated
+    // [ProfileKeys.categoryDictionaryMeta] category so they follow the profile.
+    final List<DictionaryMetaRow> dictRows =
+        await _db.getAllDictionaryMetadata();
+    for (final DictionaryMetaRow row in dictRows) {
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryDictionaryMeta,
+        key: row.name,
+        value: _encodeDictionaryMeta(row),
+      ));
+    }
+
     await _db.replaceProfileSettings(profileId, entries);
   }
 
@@ -152,12 +169,28 @@ class ProfileRepository {
 
     final ankiMap = <String, String>{};
     final prefMap = <String, String>{};
+    // TODO-1077: snapshot rows for the dictionary_metadata table. `hasDictMeta`
+    // distinguishes "profile has no dictionary_meta snapshot at all" (old
+    // snapshot, pre-TODO-1077) from "profile intentionally has zero
+    // dictionaries". Only the latter may prune the live table; the former MUST
+    // be left untouched so a switch never wipes the shared dictionary config.
+    final Map<String, DictionaryMetadataCompanion> dictMetaMap =
+        <String, DictionaryMetadataCompanion>{};
+    bool hasDictMeta = false;
     for (final row in rows) {
       switch (row.category) {
         case ProfileKeys.categoryAnki:
           ankiMap[row.key] = row.value;
         case ProfileKeys.categoryPref:
           prefMap[row.key] = row.value;
+        case ProfileKeys.categoryDictionaryMeta:
+          hasDictMeta = true;
+          final DictionaryMetadataCompanion? companion =
+              _decodeDictionaryMeta(row.key, row.value);
+          // Defensive: a single corrupt row degrades gracefully (skipped)
+          // instead of aborting the whole profile-apply (mirrors the Anki
+          // fieldMappings try/catch, HBK-AUDIT-043).
+          if (companion != null) dictMetaMap[row.key] = companion;
         // Legacy categories from old snapshots
         case ProfileKeys.categoryDictionary:
           prefMap[row.key] = row.value;
@@ -177,6 +210,25 @@ class ProfileRepository {
         if (ProfileKeys.isExcludedPref(key)) continue;
         if (!prefMap.containsKey(key)) {
           await _db.deletePref(key);
+        }
+      }
+      // TODO-1077: replace dictionary_metadata with the profile snapshot
+      // ("snapshot wins"): upsert every snapshot row, then delete live rows the
+      // snapshot does not contain (mirrors the pref prune above). Guarded by
+      // `hasDictMeta` so a pre-TODO-1077 snapshot (no dictionary_meta rows) is
+      // NEVER mistaken for "empty dictionaries" and does not wipe the shared
+      // table — never break userspace.
+      if (hasDictMeta) {
+        final List<DictionaryMetaRow> liveDicts =
+            await _db.getAllDictionaryMetadata();
+        for (final DictionaryMetaRow live in liveDicts) {
+          if (!dictMetaMap.containsKey(live.name)) {
+            await _db.deleteDictionaryMeta(live.name);
+          }
+        }
+        for (final DictionaryMetadataCompanion companion
+            in dictMetaMap.values) {
+          await _db.upsertDictionaryMeta(companion);
         }
       }
       for (final entry in prefMap.entries) {
@@ -525,6 +577,52 @@ class ProfileRepository {
                 value: e.value,
               ))
           .toList();
+
+  // ── TODO-1077 dictionary_metadata snapshot serialization ────────────
+
+  /// Serialize one `dictionary_metadata` row into the JSON value stored in a
+  /// profile_settings row (key = dictionary name). Carries every profile-owned
+  /// column: order, formatKey (source), type, and the language-visibility /
+  /// metadata JSON blobs (kept as raw strings — they are already JSON).
+  String _encodeDictionaryMeta(DictionaryMetaRow row) {
+    return jsonEncode(<String, dynamic>{
+      'order': row.order,
+      'formatKey': row.formatKey,
+      'type': row.type,
+      'metadataJson': row.metadataJson,
+      'hiddenLanguagesJson': row.hiddenLanguagesJson,
+      'collapsedLanguagesJson': row.collapsedLanguagesJson,
+    });
+  }
+
+  /// Decode a snapshot dictionary-meta value back into an upsert companion.
+  /// Returns null (skip the row) on any malformed data — a single bad row must
+  /// not abort the whole profile-apply (mirrors [ProfileKeys] Anki parsing,
+  /// HBK-AUDIT-043). [name] is the profile_settings key (dictionary name / PK).
+  DictionaryMetadataCompanion? _decodeDictionaryMeta(
+      String name, String value) {
+    try {
+      final dynamic decoded = jsonDecode(value);
+      if (decoded is! Map) return null;
+      final Object? rawOrder = decoded['order'];
+      final int order =
+          rawOrder is int ? rawOrder : int.tryParse('$rawOrder') ?? 0;
+      String asString(Object? v, String fallback) => v is String ? v : fallback;
+      return DictionaryMetadataCompanion(
+        name: Value(name),
+        formatKey: Value(asString(decoded['formatKey'], '')),
+        order: Value(order),
+        type: Value(asString(decoded['type'], 'term')),
+        metadataJson: Value(asString(decoded['metadataJson'], '{}')),
+        hiddenLanguagesJson:
+            Value(asString(decoded['hiddenLanguagesJson'], '[]')),
+        collapsedLanguagesJson:
+            Value(asString(decoded['collapsedLanguagesJson'], '[]')),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> ensureDefaultProfile() async {
     final existing = await _db.getAllProfiles();

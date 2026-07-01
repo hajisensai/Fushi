@@ -1204,6 +1204,20 @@ class AppModel with ChangeNotifier {
     _currentMediaSource = mediaItem.getMediaSource(appModel: this);
   }
 
+  /// TODO-1077: reload the dictionary repository cache from the DB after an
+  /// external, wholesale change to the `dictionary_metadata` table (a profile
+  /// switch replaces the whole table). Rebuilds the in-memory cache, reloads the
+  /// native FFI engine with the new dictionary set, and drops the stale search
+  /// caches so the next lookup re-merges. Mirrors what `_onCacheRebuild` +
+  /// `clearDictionaryResultsCache` do for the incremental per-mutation paths,
+  /// but for the bulk "the whole table just changed underneath us" case.
+  Future<void> reloadDictionariesFromDb() async {
+    await dictRepo.loadFromDb();
+    await _rebuildDictPathsCacheAsync();
+    dictRepo.clearDictionaryResultsCache();
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
+
   void updateDictionaryOrder(List<Dictionary> newDictionaries) {
     // dictRepo.updateDictionaryOrder persists the new order, fires
     // _onCacheRebuild (_rebuildDictPathsCache → engine reload) and drops the

@@ -10,6 +10,15 @@ class ProfileKeys {
   static const String categoryAnki = 'anki';
   static const String categoryPref = 'pref';
 
+  /// TODO-1077: per-profile snapshot of the `dictionary_metadata` Drift table
+  /// (enable list / order / formatKey / type / hidden+collapsed languages /
+  /// metadata). This is a NEW category, distinct from the legacy pref-style
+  /// [categoryDictionary] below — that one only ever carried old v1 pref keys
+  /// and must not be reused for the metadata-table snapshot. One
+  /// profile_settings row per dictionary: key = dictionary name, value = the
+  /// JSON blob produced by [ProfileRepository]'s dictionary-meta serializer.
+  static const String categoryDictionaryMeta = 'dictionary_meta';
+
   // Legacy categories (pre-v2 snapshots stored dictionary/reader separately)
   static const String categoryDictionary = 'dictionary';
   static const String categoryReader = 'reader';

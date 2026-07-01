@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
@@ -54,6 +56,32 @@ ProfileRepository _repo(HibikiDatabase db) =>
 Future<Set<String>> _prefKeys(HibikiDatabase db, int profileId) async {
   final rows = await db.getProfileSettings(profileId);
   return rows.where((r) => r.category == 'pref').map((r) => r.key).toSet();
+}
+
+/// Seeds one dictionary_metadata row (TODO-1077 fixtures).
+Future<void> _seedDict(
+  HibikiDatabase db, {
+  required String name,
+  required int order,
+  String formatKey = 'yomitan',
+  String type = 'term',
+  List<String> hidden = const <String>[],
+}) async {
+  await db.upsertDictionaryMeta(DictionaryMetadataCompanion(
+    name: Value(name),
+    formatKey: Value(formatKey),
+    order: Value(order),
+    type: Value(type),
+    metadataJson: const Value('{}'),
+    hiddenLanguagesJson: Value(jsonEncode(hidden)),
+    collapsedLanguagesJson: const Value('[]'),
+  ));
+}
+
+/// name -> row, keyed for stable assertions.
+Future<Map<String, DictionaryMetaRow>> _dictByName(HibikiDatabase db) async {
+  final rows = await db.getAllDictionaryMetadata();
+  return {for (final r in rows) r.name: r};
 }
 
 void main() {
@@ -333,6 +361,124 @@ void main() {
           r.key == PreferencesRepository.prefsVersionKey);
       expect(hasVersion, isFalse,
           reason: 'prefs_version must be excluded from profile snapshots');
+    });
+  });
+
+  group('dictionary_metadata follows profile (TODO-1077)', () {
+    test('snapshot + apply round-trips enable list / order / hidden', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pidA = await repo.createProfile('A');
+
+      await _seedDict(db, name: 'JMdict', order: 0);
+      await _seedDict(db, name: 'Daijirin', order: 1, hidden: ['en']);
+      await repo.snapshotCurrentSettings(pidA);
+
+      // A no-op apply would leave THIS mutated state in place.
+      await db.clearAllDictionaryMeta();
+      await _seedDict(db, name: 'Other', order: 0);
+
+      await repo.applyProfile(pidA);
+
+      final byName = await _dictByName(db);
+      expect(byName.keys.toSet(), <String>{'JMdict', 'Daijirin'},
+          reason:
+              'enable list follows profile (Other pruned, JMdict re-added)');
+      expect(byName['JMdict']!.order, 0);
+      expect(byName['Daijirin']!.order, 1);
+      expect(jsonDecode(byName['Daijirin']!.hiddenLanguagesJson), ['en'],
+          reason: 'hidden languages follow profile');
+    });
+
+    test('order change follows profile switch', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+
+      final pidA = await repo.createProfile('A');
+      await _seedDict(db, name: 'D1', order: 0);
+      await _seedDict(db, name: 'D2', order: 1);
+      await repo.snapshotCurrentSettings(pidA);
+
+      final pidB = await repo.createProfile('B');
+      await db.clearAllDictionaryMeta();
+      await _seedDict(db, name: 'D1', order: 1);
+      await _seedDict(db, name: 'D2', order: 0);
+      await repo.snapshotCurrentSettings(pidB);
+
+      await repo.applyProfile(pidA);
+      var byName = await _dictByName(db);
+      expect(byName['D1']!.order, 0);
+      expect(byName['D2']!.order, 1);
+
+      await repo.applyProfile(pidB);
+      byName = await _dictByName(db);
+      expect(byName['D1']!.order, 1);
+      expect(byName['D2']!.order, 0);
+    });
+
+    test(
+        'GUARD: old snapshot without dictionary_meta category must NOT wipe '
+        'the shared dictionary table', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('Legacy');
+
+      await db.setPref('font_size', '16');
+      await repo.snapshotCurrentSettings(pid);
+      // Strip any dictionary_meta rows to simulate a pre-TODO-1077 snapshot.
+      final legacyRows = (await db.getProfileSettings(pid))
+          .where((r) => r.category != 'dictionary_meta')
+          .map((r) => ProfileSettingsCompanion.insert(
+                profileId: pid,
+                category: r.category,
+                key: r.key,
+                value: r.value,
+              ))
+          .toList();
+      await db.replaceProfileSettings(pid, legacyRows);
+
+      await _seedDict(db, name: 'JMdict', order: 0);
+      await _seedDict(db, name: 'Daijirin', order: 1);
+
+      await repo.applyProfile(pid);
+
+      final byName = await _dictByName(db);
+      expect(byName.keys.toSet(), <String>{'JMdict', 'Daijirin'},
+          reason:
+              'no dictionary_meta snapshot => leave the shared table untouched');
+    });
+
+    test('corrupt dictionary_meta value row is skipped, apply still succeeds',
+        () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('A');
+
+      await _seedDict(db, name: 'Good', order: 0);
+      await repo.snapshotCurrentSettings(pid);
+
+      final rows = await db.getProfileSettings(pid);
+      final rebuilt = rows.map((r) {
+        final value = (r.category == 'dictionary_meta' && r.key == 'Good')
+            ? 'not-json{{{'
+            : r.value;
+        return ProfileSettingsCompanion.insert(
+          profileId: pid,
+          category: r.category,
+          key: r.key,
+          value: value,
+        );
+      }).toList();
+      await db.replaceProfileSettings(pid, rebuilt);
+
+      await db.clearAllDictionaryMeta();
+      await _seedDict(db, name: 'Live', order: 0);
+      await repo.applyProfile(pid);
+
+      final byName = await _dictByName(db);
+      // 'Good' skipped (corrupt), 'Live' pruned (not in snapshot) => empty.
+      expect(byName.containsKey('Good'), isFalse);
+      expect(byName.containsKey('Live'), isFalse);
     });
   });
 }

@@ -186,6 +186,10 @@ final profileViewModelProvider =
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
     await appModel.refreshPrefCache();
+    // TODO-1077: the profile switch replaced the dictionary_metadata table, so
+    // reload the dictionary cache + native engine to pick up the new enable
+    // list / order / language visibility for the switched-to profile.
+    await appModel.reloadDictionariesFromDb();
     await ReaderHibikiSource.readerSettings?.refreshFromDb();
   }
 
