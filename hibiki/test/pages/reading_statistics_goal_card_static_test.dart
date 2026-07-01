@@ -18,14 +18,14 @@ void main() {
   test('goal card sliver is wired right after the summary cards', () {
     final String text = src.readAsStringSync();
     expect(
-      text.contains('SliverToBoxAdapter(child: _buildGoalCard())'),
+      text.contains('SliverToBoxAdapter(child: _buildGoalPanel())'),
       isTrue,
       reason: '目标卡应作为独立 sliver 接入 _buildContent',
     );
     final int summaryIdx =
         text.indexOf('SliverToBoxAdapter(child: _buildSummaryCards())');
     final int goalIdx =
-        text.indexOf('SliverToBoxAdapter(child: _buildGoalCard())');
+        text.indexOf('SliverToBoxAdapter(child: _buildGoalPanel())');
     expect(summaryIdx, greaterThanOrEqualTo(0));
     expect(goalIdx, greaterThan(summaryIdx),
         reason: '目标卡 sliver 应紧接在 summary cards 之后');
@@ -34,8 +34,8 @@ void main() {
   test('goal card hides entirely when both goals are 0 (never-break red line)',
       () {
     final String text = src.readAsStringSync();
-    final int start = text.indexOf('Widget _buildGoalCard()');
-    expect(start, greaterThanOrEqualTo(0), reason: '应定义 _buildGoalCard');
+    final int start = text.indexOf('Widget _buildGoalPanel()');
+    expect(start, greaterThanOrEqualTo(0), reason: '应定义 _buildGoalPanel');
     final String body = text.substring(start, start + 400);
     expect(body.contains('dailyGoal <= 0 && weeklyGoal <= 0'), isTrue,
         reason: '两目标皆 0 才隐藏');

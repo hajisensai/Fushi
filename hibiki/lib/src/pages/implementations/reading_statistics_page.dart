@@ -289,7 +289,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(child: _buildGoalCard()),
+        SliverToBoxAdapter(child: _buildGoalPanel()),
         SliverToBoxAdapter(child: _buildOverviewPanel()),
         SliverToBoxAdapter(child: _buildHourlyChart()),
         SliverToBoxAdapter(child: _buildDailyChart()),
@@ -697,7 +697,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// (SizedBox.shrink), so an install that never set a goal sees zero visual
   /// change on the statistics page. Reuses the already-computed [_todayChars] /
   /// [_weekChars] aggregates (no extra DB query).
-  Widget _buildGoalCard() {
+  Widget _buildGoalPanel() {
     final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
     final int weeklyGoal = appModelNoUpdate.readingGoalWeeklyChars;
     if (dailyGoal <= 0 && weeklyGoal <= 0) {
@@ -825,6 +825,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final bool? saved = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogContext);
         return AlertDialog(
           title: Text(t.stat_goal_set),
           content: Column(
@@ -835,7 +836,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(labelText: t.stat_goal_daily),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
               TextField(
                 controller: weeklyController,
                 keyboardType: TextInputType.number,
