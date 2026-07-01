@@ -1,4 +1,4 @@
-## BUG-488 · 查词发音死源无冷却导致刷屏与串行拖累
+## BUG-489 · 查词发音死源无冷却导致刷屏与串行拖累
 - **报告**：2026-07-01（用户：TODO-1057）
 - **真实性**：✅ 真 bug（app 侧健壮性缺陷）。根因 `hibiki/lib/src/utils/misc/word_audio_resolver.dart`：
   - `resolveConfigured`（原 :79-119）按 `audioSourceConfigs` 顺序**串行 await** 遍历，remoteAudio 分支（原 :106-115）每次查词发音都对所有 enabled 远端源重新发请求，**无失败冷却/去重**。
