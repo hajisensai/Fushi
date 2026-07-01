@@ -18,8 +18,6 @@ void main() {
     final DateTime fresh = now.subtract(const Duration(hours: 1));
 
     test('回归复现：旧完整安装包永不被回收 → 现在应被选中删除', () {
-      // 这是根因：历史 cleanup 只清 .part/.meta.json/.owner.json，完整 .exe/.apk
-      // 从不回收，长期堆积。给两个过期完整包，期望两个都进待删清单。
       final List<String> stale = selectStaleUpdateArtifacts(
         entries: <UpdateDirEntry>[
           _f('Hibiki-1.0.0-windows-setup.exe', old),
@@ -140,37 +138,109 @@ void main() {
     });
   });
 
-  group('shouldSkipFullPackageCleanup (TODO-1010 fail-safe：handoff 读取失败时保守跳过)',
-      () {
-    test('回归复现：marker 存在但记录损坏（read 吞 FormatException 返 null）→ 跳过', () {
-      // 根因：marker 存在意味着可能有待重启安装包要排除，但 read 返回 null（损坏）
-      // 让我们拿不到排除名单。旧行为会按 null 当「无名单」照常清理 → 误删待装包。
-      // 现在应保守跳过本轮完整包回收。
+  group(
+      'installerToDeleteAfterSuccessfulHandoff '
+      '(TODO-1089：安装成功即刻回收安装包)', () {
+    const String root = r'C:\Users\wrds\AppData\Roaming\Hibiki\Hibiki\updates';
+    const String installer = root + r'\Hibiki-1.0.1-windows-setup.exe';
+
+    test('回归复现：安装成功后应立刻删掉刚装的安装包（不等 7 天 GC）', () {
+      // 根因：旧逻辑安装成功只删 marker，setup.exe 只能等 7 天 GC 兜底、且 GC 只在
+      // 下次检查更新时才跑；关自动检查就永不回收 → updates 堆几百 MB。安装成功即删。
       expect(
-        shouldSkipFullPackageCleanup(markerExists: true, recordResolved: false),
-        isTrue,
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: installer,
+          updatesDirPath: root,
+        ),
+        installer,
       );
     });
 
-    test('marker 存在且记录解析成功 → 名单可信 → 不跳过', () {
+    test('未成功安装（失败/未完成）不删——保留供重试与诊断', () {
       expect(
-        shouldSkipFullPackageCleanup(markerExists: true, recordResolved: true),
-        isFalse,
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: false,
+          installerPath: installer,
+          updatesDirPath: root,
+        ),
+        isNull,
       );
     });
 
-    test('marker 不存在 → 没有待保护的待装包 → 不跳过', () {
+    test('installerPath 为空/为 null 不删', () {
       expect(
-        shouldSkipFullPackageCleanup(
-            markerExists: false, recordResolved: false),
-        isFalse,
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: '',
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+      expect(
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: null,
+          updatesDirPath: root,
+        ),
+        isNull,
       );
     });
 
-    test('marker 不存在但 recordResolved=true（矛盾输入）→ 不跳过（防御）', () {
+    test('安全约束：updates 目录之外的路径绝不删（防误删任意文件）', () {
       expect(
-        shouldSkipFullPackageCleanup(markerExists: false, recordResolved: true),
-        isFalse,
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: r'C:\Windows\System32\evil.exe',
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+    });
+
+    test('安全约束：updates 更深子目录里的文件不删（安装包只落在根）', () {
+      expect(
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: root + r'\.staging\stray.exe',
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+    });
+
+    test('反斜杠归一：记录用正斜杠分隔、根用反斜杠分隔也判定为目录内', () {
+      const String slashInstaller =
+          r'C:\Users\wrds\AppData\Roaming\Hibiki\Hibiki\updates/Hibiki-1.0.1-windows-setup.exe';
+      expect(
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: slashInstaller,
+          updatesDirPath: root,
+        ),
+        slashInstaller,
+      );
+    });
+
+    test('尾部斜杠的 updatesDirPath 不影响判定', () {
+      expect(
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: installer,
+          updatesDirPath: root + r'\',
+        ),
+        installer,
+      );
+    });
+
+    test('updatesDirPath 为空不删（无可信根，保守）', () {
+      expect(
+        installerToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: installer,
+          updatesDirPath: '',
+        ),
+        isNull,
       );
     });
   });

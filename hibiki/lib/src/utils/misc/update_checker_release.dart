@@ -944,6 +944,28 @@ class UpdateChecker {
       );
       if (result == null) return;
 
+      // TODO-1089 根因修复：握手确认已成功安装到目标版本时，被这次更新安装的 setup.exe
+      // 生命周期就此终结——立刻回收它，而不是等 `_cleanupOldApks` 的 7 天 GC 兜底（那个
+      // GC 只在下次更新检查触发时才跑，关闭自动检查 / neverRemind 短路时永不跑，导致升级
+      // 后 updates 目录里几百 MB 安装包一直残留，BUG-517）。纯函数守卫：仅安装成功分支、
+      // 路径非空、且必须是 updates 根目录下的直属文件才删，绝不越界删任意路径。
+      final String? installerToDelete = installerToDeleteAfterSuccessfulHandoff(
+        installed: result.status == WindowsUpdateHandoffStatus.installed,
+        installerPath: result.record.installerPath,
+        updatesDirPath: updatesDir.path,
+      );
+      if (installerToDelete != null) {
+        try {
+          final File installer = File(installerToDelete);
+          if (await installer.exists()) await installer.delete();
+        } catch (e, stack) {
+          // best-effort：删失败（AV/索引器占用等）不影响成功提示；下次 7 天 GC 兜底。
+          ErrorLogService.instance
+              .log('UpdateChecker.windowsHandoff.deleteInstaller', e, stack);
+          debugPrint('[Hibiki] delete installed update installer failed: $e');
+        }
+      }
+
       ErrorLogService.instance.log(
         'UpdateChecker.windowsHandoff',
         'status=${result.status.name}, target=${result.record.targetVersion}, '

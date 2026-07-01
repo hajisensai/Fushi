@@ -224,6 +224,51 @@ List<String> selectStaleUpdateArtifacts({
   return stale;
 }
 
+/// **纯函数（TODO-1089）**：Windows 更新握手确认「已成功安装到目标版本」后，挑出应
+/// **立即回收**的那一个安装包路径。
+///
+/// 根因：旧逻辑安装成功只删 `update-handoff.json` 标记，被它安装的 setup.exe 从不在
+/// 安装成功那一刻回收——只能等 [selectStaleUpdateArtifacts] 的 7 天 GC 兜底，而那个 GC
+/// 又只在下一次「更新检查」触发时才跑（关闭自动检查 / `neverRemind` 短路时永不跑），
+/// 于是用户升级后 `updates` 目录里那个几百 MB 的安装包一直残留（BUG-517）。安装成功是
+/// 该安装包生命周期的确定终点，此刻就是删它最正确的时机，不该拖到 GC。
+///
+/// 安全约束（消除误删风险）：
+/// - [installed] 必须为 true（仅安装成功分支删；失败/未完成保留供重试与诊断）。
+/// - [installerPath] 非空。
+/// - 归一化后该文件必须位于 [updatesDirPath] 之下且是**直属文件**——绝不删 updates 目录
+///   之外或更深子目录里的任意路径（安装包本就落在 updates 根，越界即视为不可信记录，
+///   保守不删）。
+///
+/// 返回可安全删除的**绝对安装包路径**；任一约束不满足返回 null（调用方据此跳过删除）。
+@visibleForTesting
+String? installerToDeleteAfterSuccessfulHandoff({
+  required bool installed,
+  required String? installerPath,
+  required String updatesDirPath,
+}) {
+  if (!installed) return null;
+  if (installerPath == null || installerPath.isEmpty) return null;
+  final String installer = _normalizeUpdatePathForCompare(installerPath);
+  final String root = _normalizeUpdatePathForCompare(updatesDirPath);
+  if (root.isEmpty) return null;
+  final String rootWithSep = '$root/';
+  if (!installer.startsWith(rootWithSep)) return null;
+  // installer 位于 updates 根目录，还需确保它是「直属文件」而非更深子目录里的东西——
+  // 安装包由 [UpdateDownloadPaths.forAsset] 落在 updates 根，深层路径不是它的产物。
+  final String relative = installer.substring(rootWithSep.length);
+  if (relative.isEmpty || relative.contains('/')) return null;
+  return installerPath;
+}
+
+/// 归一化路径用于「是否在 updates 目录下」的前缀比较：反斜杠转正斜杠、去尾部斜杠，
+/// Windows 大小写不敏感故统一小写（其余平台保持原样，避免破坏区分大小写的文件系统）。
+String _normalizeUpdatePathForCompare(String path) {
+  final String slashed =
+      path.replaceAll(r'\', '/').replaceAll(RegExp(r'/+$'), '');
+  return Platform.isWindows ? slashed.toLowerCase() : slashed;
+}
+
 /// TODO-1010 fail-safe 决策（纯函数，可测）：当 handoff marker 文件存在但无法解析
 /// 出有效记录（JSON 损坏被 `WindowsUpdateHandoff.read` 吞成 null，或读取本身抛错）
 /// 时，返回 `true` 表示**本轮跳过完整安装包回收**。
