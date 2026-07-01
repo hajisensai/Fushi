@@ -2026,5 +2026,7 @@
   "local_audio_reference_original_desc": "数据库保留在原位置、按原路径读取；原文件被移动或删除后该来源会失效。",
   "anki_card_action_failed": "卡片操作失败，请重试。",
   "series_merged_hint": "已合并·可在系列详情重命名",
-  "series_default_name": "新系列"
+  "series_default_name": "新系列",
+  "install_browser_extension": "安装浏览器扩展",
+  "browser_extension_install_steps": "在 chrome://extensions（或 edge://extensions）：开启右上角「开发者模式」，点「加载已解压的扩展程序」，粘贴下方路径；再到扩展 options 填 Hibiki 的 host/port/配对 token。"
 }

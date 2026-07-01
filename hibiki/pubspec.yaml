@@ -241,6 +241,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/browser_extension/
+    - assets/browser_extension/vendor/
     - assets/licenses/
     - assets/meta/
     - assets/popup/

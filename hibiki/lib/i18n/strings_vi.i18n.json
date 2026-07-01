@@ -2026,5 +2026,7 @@
   "local_audio_reference_original_desc": "Keep the database where it is and read from its original path; the source breaks if the file is moved or deleted.",
   "anki_card_action_failed": "Card action failed. Please try again.",
   "series_merged_hint": "Merged · rename in series details",
-  "series_default_name": "New series"
+  "series_default_name": "New series",
+  "install_browser_extension": "Install browser extension",
+  "browser_extension_install_steps": "In chrome://extensions (or edge://extensions): enable Developer mode, click Load unpacked, and paste the path below. Then fill Hibiki host/port/token in the extension options."
 }
