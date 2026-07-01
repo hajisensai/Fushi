@@ -4681,6 +4681,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// TODO-1058：桌面在视频画面上滚鼠标滚轮调音量（上滚增、下滚减，[_volumeStep] 步进，
+  /// 复用 [_onVolumeWheel] → [_adjustVolume] → 现有音量通道 + level HUD 反馈）。
+  ///
+  /// 门控（诚实降级、不与既有语义冲突）：
+  /// - 仅桌面（[_isDesktopVideoControls]）——移动端无滚轮；
+  /// - 沉浸锁非 full 模式不放行（[_immersiveAllowsFullControls]，与键盘音量键同门控）；
+  /// - 落在控制条 chrome（底栏 / 顶栏 / 侧栏）上的滚轮不接管：底栏音量控件已有自己的
+  ///   [_onVolumeWheel] Listener、进度条 / 列表各有滚动语义，画面级只处理**画面区**的
+  ///   滚轮，避免双触发或抢走 chrome 滚动。侧栏打开时一律不接管。
+  /// 滚轮是 [PointerSignalEvent]（不进手势竞技场），与长按横拖 seek（TODO-756）、单击
+  /// 暂停正交，互不干扰。
+  void _handleVideoWheelSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (!_isDesktopVideoControls) return;
+    if (!_immersiveAllowsFullControls) return;
+    if (_videoSidePanel.value != null) return;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final BuildContext? controlsContext = _videoControlsContext;
+    if (controlsContext != null &&
+        controlsContext.mounted &&
+        _isVideoChromePointer(controlsContext, event.position)) {
+      return; // 落在控制条 chrome 上：交回 chrome 自己的滚轮/滚动语义。
+    }
+    _onVolumeWheel(controller, event.scrollDelta.dy);
+  }
+
   /// 双击左 / 右区快退 / 快进（TODO-173/BUG-231）。返回 true=已处理（左 / 右区），
   /// 调用方应早返回、不再走平台默认的暂停 / 全屏；false=落在中带（中间 1/3）或功能
   /// 关闭，调用方继续走 BUG-221 的暂停 / 全屏分流。

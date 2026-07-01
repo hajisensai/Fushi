@@ -234,6 +234,9 @@ extension _VideoLayout on _VideoHibikiPageState {
               child: Listener(
                 behavior: HitTestBehavior.translucent,
                 onPointerUp: _handleVideoPointerUp,
+                // TODO-1058：桌面在画面上滚鼠标滚轮调音量（门控见 _handleVideoWheelSignal）。
+                // PointerSignal 不进手势竞技场，与单击暂停 / 长按横拖 seek 正交、互不干扰。
+                onPointerSignal: _handleVideoWheelSignal,
                 // 桌面右键 = 视频上下文菜单（TODO-048c）。GestureDetector 只接管次按钮
                 // （右键）的 tap，左键双击全屏仍走外层 Listener.onPointerUp（两路指针语义互不
                 // 干扰）。onSecondaryTapUp 提供右键松手处的 globalPosition 作 showMenu 锚点。
