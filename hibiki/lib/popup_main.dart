@@ -215,6 +215,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           anchorRect: _toLogicalRect(_anchorPhysical),
           // TODO-708 P1 ⑥：整条字幕窗矩形（同一平移换算）作弹窗避让锚，弹窗不遮任一字。
           subtitleWindowRect: _toLogicalRect(_subtitlePhysical),
+          // TODO-708 P3 ③：悬浮字幕「点字查词」入口（_anchorPhysical != null）回旧「4.1」轻形态：
+          // 无搜索输入框、点字直接出词卡。其它入口（系统 PROCESS_TEXT / hibiki://lookup）
+          // _anchorPhysical == null → showSearchBar 保持 true，仍带搜索栏重查。
+          showSearchBar: _anchorPhysical == null,
         ),
       ),
     );

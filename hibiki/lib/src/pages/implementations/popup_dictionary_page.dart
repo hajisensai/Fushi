@@ -20,6 +20,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.subtitleWindowRect,
     this.closeInApp,
     this.autoSearchOnOpen = true,
+    this.showSearchBar = true,
     super.key,
   });
 
@@ -45,6 +46,13 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 
   final VoidCallback? closeInApp;
   final bool autoSearchOnOpen;
+
+  /// TODO-708 P3 ③：是否在卡片顶部显示搜索输入框（含搜索/关闭行）。默认 true——
+  /// 系统 PROCESS_TEXT / 独立查词窗（hibiki://lookup）需要它重查任意词。悬浮字幕
+  /// 「点字查词」入口（[popup_main] 构造 [anchorRect] != null 处）传 false，回到旧
+  /// 「4.1」轻形态：点字直接出词卡、无搜索输入框；关闭按钮仍恒可用（独立渲染，不随
+  /// 搜索栏隐藏）。源文本面板（[SourceLookupTextPanel]）不受此参数影响，保留点选重查。
+  final bool showSearchBar;
 
   @override
   ConsumerState<PopupDictionaryPage> createState() =>
@@ -305,12 +313,23 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           // 关闭 X 渲染在 [SwipeDismissWrapper] 之外（不在其 Listener 子树内）——点 X 永远
           // 直接 [_close]（无滑出动画），不会因 X 落在可滑区里被横拖手势误判/连带播放滑动
           // 特效。横滑只裹搜索栏本体（拖它仍可滑出关闭，那是滑动这一触发行为本身的动画）。
-          Row(
-            children: <Widget>[
-              _buildCloseButton(),
-              Expanded(child: _buildSwipeChrome(_buildSearchBar())),
-            ],
-          ),
+          if (widget.showSearchBar)
+            Row(
+              children: <Widget>[
+                _buildCloseButton(),
+                Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+              ],
+            )
+          else
+            // TODO-708 P3 ③：悬浮字幕点字入口无搜索输入框，关闭行只留右上关闭按钮。
+            // 关闭按钮渲染在 [SwipeDismissWrapper] 之外（TODO-951 症状B：点 X 直接关、
+            // 无滑出动画）；横滑只裹左侧留白区（拖它仍可滑出关闭）。
+            Row(
+              children: <Widget>[
+                Expanded(child: _buildSwipeChrome(const SizedBox(height: 36))),
+                _buildCloseButton(),
+              ],
+            ),
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
           if (_sourceLookupText.trim().isNotEmpty)
             SourceLookupTextPanel(

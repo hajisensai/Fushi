@@ -400,4 +400,89 @@ void main() {
     expect(model, contains('ReaderHibikiSource.instance.initialise()'),
         reason: 'popup init must hydrate ReaderHibikiSource preferences.');
   });
+
+  testWidgets(
+      'TODO-708 P3: search bar shown by default (PROCESS_TEXT / standalone)', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = AppModel(testPlatformServices());
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () {},
+          autoSearchOnOpen: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 默认 showSearchBar=true：搜索输入框 + 关闭按钮都在。
+    expect(
+      find.byKey(const ValueKey<String>('popup_dictionary_search_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('popup_dictionary_close_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'TODO-708 P3: point-lookup entry hides search bar, keeps close button', (
+    WidgetTester tester,
+  ) async {
+    bool closed = false;
+    final AppModel appModel = AppModel(testPlatformServices());
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () => closed = true,
+          autoSearchOnOpen: false,
+          // 悬浮字幕点字入口：回旧「4.1」轻形态，无搜索输入框。
+          showSearchBar: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 无搜索输入框 / 搜索按钮 / 搜索栏组件。
+    expect(
+      find.byKey(const ValueKey<String>('popup_dictionary_search_field')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('popup_dictionary_search_button')),
+      findsNothing,
+    );
+    expect(find.byType(PopupDictionarySearchBar), findsNothing);
+
+    // 关闭按钮仍恒在、恒可关（独立于搜索栏，never-break 关闭能力）。
+    final Finder closeButton = find.byKey(
+      const ValueKey<String>('popup_dictionary_close_button'),
+    );
+    expect(closeButton, findsOneWidget);
+    await tester.tap(closeButton);
+    await tester.pump();
+    expect(closed, isTrue);
+  });
+
+  test(
+      'TODO-708 P3: popup_main routes point-lookup (anchorRect) to no search bar',
+      () {
+    // 入口分流守卫（源码级）：悬浮字幕点字宿主 popup_main 只在 _anchorPhysical == null
+    // 时保留搜索栏；非空（点字入口）传 showSearchBar: false。防回归误删/误传全局。
+    final String popupMain = File('lib/popup_main.dart').readAsStringSync();
+    expect(
+      popupMain,
+      contains('showSearchBar: _anchorPhysical == null'),
+      reason: 'floating-lyric point-lookup (anchorRect != null) must hide the '
+          'search bar; PROCESS_TEXT / standalone (anchorRect == null) keep it.',
+    );
+  });
 }
