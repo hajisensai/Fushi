@@ -74,13 +74,11 @@ void main() {
       );
     });
 
-    test('audiobook_import_dialog._pickAudioDir calls pickRealDirectoryPath',
-        () {
-      final String src =
-          File('lib/src/media/audiobook/audiobook_import_dialog.dart')
-              .readAsStringSync();
-      expect(src.contains('pickRealDirectoryPath('), isTrue);
-    });
+    // 注：原「audiobook_import_dialog._pickAudioDir calls pickRealDirectoryPath」
+    // 守卫已于 TODO-1031 作废——按用户「改成只支持一个音频」诉求，有声书导入删除了
+    // 整个目录吞并入口 _pickAudioDir（会把一个文件夹下所有音频聚成一本），改为只保留
+    // 多选文件（多段章节有声书仍可用）。故 audiobook_import_dialog.dart 不再含
+    // pickRealDirectoryPath；视频侧 _pickFolder 的同名守卫（上方）仍有效保留。
 
     test('helper branches on Android + permission before browsing', () {
       final String src =
