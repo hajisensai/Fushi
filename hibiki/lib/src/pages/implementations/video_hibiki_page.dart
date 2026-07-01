@@ -78,8 +78,9 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
+import 'package:hibiki/src/mining/immersion_mining_engine.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';

@@ -458,6 +458,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 视频文件绝对路径（制卡裁字幕音频用）；未 [load] 时为空。
   String? get videoPath => _videoPath;
 
+  /// TODO-1000：制卡 ffmpeg 抽取源。本地=videoPath；YouTube 等流媒体用可 seek 的流 URL
+  /// 覆盖（[setMiningSourceOverride]），使引擎能从流 URL 按时间戳裁 GIF/音频而不动前台播放器。
+  String? _miningSourceOverride;
+
+  /// 覆盖制卡抽取源（YouTube 流 URL 等）；传 null 还原为 [videoPath]。
+  void setMiningSourceOverride(String? source) => _miningSourceOverride = source;
+
+  /// 制卡抽取源：优先覆盖源（流 URL），否则本地 [videoPath]。
+  String? get miningSource => _miningSourceOverride ?? videoPath;
+
   /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
   /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」
   /// （BUG-199 听力沉浸）等以 [isPlaying] 为闸的逻辑。置非 null 时覆盖。
