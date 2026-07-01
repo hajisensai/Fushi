@@ -6,6 +6,7 @@ import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -39,7 +40,9 @@ const String _localAudioAssetSuffix = '.hibikiaudiolib';
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 bool isReservedSyncFolderName(String name) =>
-    name == kSyncDictionaryNamespace || name == kSyncLocalAudioNamespace;
+    name == kSyncDictionaryNamespace ||
+    name == kSyncLocalAudioNamespace ||
+    name == kSyncAggregateNamespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
@@ -134,6 +137,7 @@ class SyncOrchestrator {
     required Directory dictionaryResourceRoot,
     required Directory audioDatabaseRoot,
     required Directory tempDir,
+    this.deviceId = '',
     required this.syncStats,
     required this.syncAudioBookPosition,
     required this.syncContent,
@@ -157,6 +161,13 @@ class SyncOrchestrator {
   final Directory _audioDatabaseRoot;
   final Directory _tempDir;
   final SyncAssetPackageService _packages;
+
+  /// This device's stable id (SyncRepository.getOrCreateDeviceId). Names this
+  /// device's own snapshot asset in the cloud `__aggregate__` namespace so two
+  /// devices never clobber each other's aggregate snapshot (TODO-1056 phase B).
+  /// Defaults to '' for callers that do not sync the aggregate dimension (e.g.
+  /// tests of other dimensions); an empty id skips aggregate sync as a no-op.
+  final String deviceId;
 
   final bool syncStats;
   final bool syncAudioBookPosition;
@@ -291,7 +302,34 @@ class SyncOrchestrator {
       await _syncAudiobookProgressLive(report, b);
     }
 
+    // 云后端聚合同步（统计 + 收藏跨端共享，TODO-1056 phase B）。互联 live 端点
+    // 是 phase C，这里只做云后端这一条通道，且复用 syncStats 开关（聚合 =
+    // 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
+    // deviceId 为空（测试构造 / 未配置）时跳过：聚合快照按 deviceId 命名，无 id
+    // 无法安全落每设备快照，降级为 no-op（绝不崩，绝不写错名快照）。
+    if (!isInterconnect && syncStats && deviceId.isNotEmpty) {
+      await _syncAggregate(report);
+    }
+
     return report;
+  }
+
+  /// 云后端聚合同步：把本机统计 + 收藏经 [AggregateSyncService] 与其它设备的
+  /// per-device 快照并集合并（只增不减 / 值不缩小 / 幂等 / 并集），写回本地并
+  /// 上传本机最新快照。无 baseline / 无冲突弹窗（集合 + 单调语义无损）。首次同步
+  /// （云上无 `__aggregate__` 快照）优雅退化为「只上传本机快照」，不崩。
+  ///
+  /// 整段包在 try/catch 里，逐轮错误进 [report.errors] 不中断整体 sweep（与其它
+  /// 维度同纪律）。删除不跨端传播；无 schema 变更。
+  Future<void> _syncAggregate(SyncRunReport report) async {
+    try {
+      await AggregateSyncService(_db).sync(
+        store: _backend,
+        deviceId: deviceId,
+      );
+    } catch (e) {
+      report.errors.add('aggregate sync: $e');
+    }
   }
 
   /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
