@@ -11,8 +11,13 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   // TODO-590 batch13: `_lookupAt` 已搬进 lookup_favorite.part.dart，改读合并语料。
   late String src;
+  // TODO-1000: 沉浸制卡引擎（ImmersionMiningEngine）接手了媒体降级阶梯 / 无音频中止 /
+  // AnkiMiningContext 组装（原在 _mineVideoCard 里）。守卫按重构后真实位置分层扫：
+  // shell（_mineVideoCard）扫 OSD/中止接线，engine 扫抽取器编排。行为不变，只是搬了家。
+  late String engine;
   setUpAll(() {
     src = readVideoHibikiSource();
+    engine = readImmersionMiningEngineSource();
   });
 
   String region(String startSig, String endSig) {
@@ -106,11 +111,18 @@ void main() {
       'Future<MinePopupResult> _mineVideoCard(',
       'Future<void> _recordMinedSentenceForVideo(',
     );
-    expect(mineCard, contains('startMs: clipStartMs'),
-        reason: '区间音频/封面起点必须是传入的 clipStartMs。');
-    expect(mineCard, contains('endMs: clipEndMs'),
-        reason: '区间音频/封面终点必须是传入的 clipEndMs。');
-    expect(mineCard, contains('extractAudioSegmentViaFfmpeg('),
+    // TODO-1000: shell 把区间端点原样喂进沉浸引擎请求（clipStartMs/clipEndMs 直传），
+    // 引擎再把 req.clipStartMs/req.clipEndMs 绑到真实音频抽取器 extractAudioSegmentViaFfmpeg。
+    expect(mineCard, contains('clipStartMs: clipStartMs'),
+        reason: '区间音频/封面起点必须是传入的 clipStartMs（喂进沉浸引擎请求）。');
+    expect(mineCard, contains('clipEndMs: clipEndMs'),
+        reason: '区间音频/封面终点必须是传入的 clipEndMs（喂进沉浸引擎请求）。');
+    final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
+    expect(engineNorm, contains('startMs: req.clipStartMs'),
+        reason: '引擎音频段起点绑到请求 clipStartMs。');
+    expect(engineNorm, contains('endMs: req.clipEndMs'),
+        reason: '引擎音频段终点绑到请求 clipEndMs。');
+    expect(engine, contains('extractAudioSegmentViaFfmpeg'),
         reason: '区间音频走真实 ffmpeg 抽取器（绝无 TTS）。');
   });
 
@@ -121,40 +133,52 @@ void main() {
     // 完全静默丢弃——用户看到「制卡成功」却没句子音频，无从诊断（正是反复报
     // 「ひびき 卡组没句子音频」却定位不到的盲区）。落卡链路必须把这条丢弃变为
     // 可追踪日志 + OSD 提示，并中止本次制卡，不能落一张成功但无句子音频的卡。
-    // TODO-590 batch14: `_mineVideoCard` 搬进 lookup_mining.part.dart，部内紧随其后
-    // 的是 `_recordMinedSentenceForVideo`；end marker 改用它（`_handleBackOrExit` 留主壳、
-    // 在合并语料里排在 part 之前，会切片失败）。
+    // TODO-1000: 无音频中止判据搬进沉浸引擎（req.requireAudio && req.hasRange &&
+    // audioPath == null → 返回 aborted），shell 的 _mineVideoCard 据 res.aborted 出
+    // 可追踪 OSD（含底层 ffmpeg 摘要）并中止。分层扫 engine（中止判据）+ shell（surface）。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
       'Future<void> _recordMinedSentenceForVideo(',
     );
-    expect(mineCard, contains('if (audioPath == null) {'),
-        reason: '抽段失败（audioPath==null）须被显式处理，而非静默落空。');
-    expect(mineCard, contains('sentence-audio clip failed'),
-        reason: '抽段失败须打可追踪日志（含区间端点供诊断）。');
+    final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
+    // 引擎：有区间却抽不出音频（audioPath==null）须被显式处理（中止），而非静默落空。
+    expect(engineNorm,
+        contains('req.requireAudio && req.hasRange && audioPath == null'),
+        reason: '抽段失败（有区间应带音频却 audioPath==null）须显式中止，而非静默落空。');
+    expect(engineNorm, contains('ImmersionMiningResult(aborted: true)'),
+        reason: '缺音频中止走 aborted 信号回 shell。');
+    // shell：res.aborted → 用户可见 OSD（复用现有 i18n card_export_failed_detail）。
+    expect(mineCard, contains('res.aborted'),
+        reason: '抽段失败须被 shell 显式处理（据 aborted），而非静默落空。');
     expect(mineCard, contains('card_export_failed_detail'),
         reason: '抽段失败须给用户可见的 OSD 提示（复用现有 i18n，不静默）。');
-    expect(mineCard, contains('String? audioFailure'),
+    // 底层 ffmpeg 诊断摘要经 onFailure 回调传回（不是只有泛化失败文案）。
+    expect(mineCard, contains('String? lastFailure'),
         reason: 'OSD/日志应携带底层 ffmpeg 诊断摘要，而不是只有泛化失败文案。');
     expect(mineCard, contains('onFailure: (String summary)'),
-        reason: 'extractAudioSegmentViaFfmpeg 的失败摘要必须传回视频制卡路径。');
-    expect(mineCard, contains(r'sentence audio export failed: $audioFailure'),
+        reason: '抽取器（GIF/音频）的失败摘要必须传回视频制卡路径。');
+    expect(mineCard, contains(r'sentence audio export failed: $lastFailure'),
         reason: '用户可见错误应含实际 executable/fallback/0xC000007B 等摘要。');
-    expect(mineCard, contains('GIF clip export failed'),
-        reason: 'GIF 导出失败虽可回退截图，也必须留下 ffmpeg 诊断。');
+    // 引擎把 onFailure 转发给 GIF/音频抽取器，故 GIF 失败也留下 ffmpeg 诊断。
+    expect(
+        engineNorm.contains('await _gif(') &&
+            engineNorm.contains('onFailure: onFailure'),
+        isTrue,
+        reason: 'GIF 导出失败虽可回退截图，也必须经 onFailure 留下 ffmpeg 诊断。');
 
-    final int failureGuardIndex = mineCard.indexOf('if (audioPath == null) {');
-    final int abortIndex = mineCard.indexOf(
-      'return const MinePopupResult();',
-      failureGuardIndex,
-    );
-    final int contextIndex =
-        mineCard.indexOf('final AnkiMiningContext miningContext');
-    expect(failureGuardIndex, greaterThanOrEqualTo(0));
-    expect(abortIndex, greaterThan(failureGuardIndex),
-        reason: '句子音频导出失败后必须中止视频制卡，不能继续构造缺音频 context。');
-    expect(abortIndex, lessThan(contextIndex),
-        reason: '中止必须发生在 repo.mineEntry/updateMinedNote 之前。');
+    // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
+    // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
+    final int engineAbortIdx =
+        engineNorm.indexOf('ImmersionMiningResult(aborted: true)');
+    final int engineCtxIdx = engineNorm.indexOf('AnkiMiningContext context =');
+    expect(engineAbortIdx, greaterThanOrEqualTo(0));
+    expect(engineCtxIdx, greaterThan(engineAbortIdx),
+        reason: '缺音频中止必须发生在组 AnkiMiningContext / repo.mineEntry 之前。');
+    final int shellAbortIdx = mineCard.indexOf('if (res.aborted)');
+    final int shellOutcomeIdx = mineCard.indexOf('res.outcome!');
+    expect(shellAbortIdx, greaterThanOrEqualTo(0));
+    expect(shellOutcomeIdx, greaterThan(shellAbortIdx),
+        reason: '句子音频导出失败后必须中止，不能继续读落卡产物 res.outcome!。');
   });
 
   test(
@@ -165,40 +189,47 @@ void main() {
     // （常是片头/暂停处），与卡片例句不是同一段。GIF 主路径用的是 clipStartMs（经
     // miningClipTimeMs 逆变换回播放器轴的目标毫秒），降级帧必须用同一个 cue 时间从视频
     // 文件抽，才与例句对齐。
+    // TODO-1000: 降级阶梯搬进沉浸引擎：GIF -> cue 时间抽单帧(_frame) -> stillFallback
+    // (shell 传 controller.screenshot) 最后兜底。cue 抽帧的取帧时间 = req.clipStartMs/1000。
+    final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
+    expect(engine, contains('extractVideoFrameViaFfmpeg'),
+        reason: 'GIF 不可用时须按 cue 时间从视频文件抽单帧（而非截当前解码帧）。');
+    expect(engineNorm, contains('atSeconds: req.clipStartMs / 1000.0'),
+        reason: '降级帧的取帧时间必须 = clipStartMs（与 GIF 主路径同一播放器轴坐标）。');
+    // shell 把当前解码帧截图作为最后兜底喂进引擎（stillFallback: controller.screenshot）。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
       'Future<void> _recordMinedSentenceForVideo(',
     );
-    expect(mineCard, contains('extractVideoFrameViaFfmpeg('),
-        reason: 'GIF 不可用时须按 cue 时间从视频文件抽单帧（而非截当前解码帧）。');
-    expect(mineCard, contains('atSeconds: clipStartMs / 1000.0'),
-        reason: '降级帧的取帧时间必须 = clipStartMs（与 GIF 主路径同一播放器轴坐标）。');
+    expect(mineCard, contains('stillFallback: controller.screenshot'),
+        reason: '当前解码帧截图只作最后兜底，经 stillFallback 喂进引擎。');
 
-    // controller.screenshot()（当前解码帧）只能是无 cue（无区间）或 cue 抽帧也失败后的
-    // 最后兜底，必须排在 extractVideoFrameViaFfmpeg 之后——保证有区间时优先按 cue 取帧。
-    final int frameIdx = mineCard.indexOf('extractVideoFrameViaFfmpeg(');
-    final int screenshotIdx = mineCard.indexOf('controller.screenshot()');
+    // 引擎里：cue 抽帧(_frame) 必须排在 stillFallback（当前解码帧）之前——有区间时优先按
+    // cue 取帧，截当前帧只能是 cue 抽帧也失败/无区间后的最后兜底。
+    final int frameIdx = engineNorm.indexOf('atSeconds: req.clipStartMs');
+    final int stillIdx = engineNorm.indexOf('req.stillFallback!()');
     expect(frameIdx, greaterThanOrEqualTo(0));
-    expect(screenshotIdx, greaterThan(frameIdx),
+    expect(stillIdx, greaterThan(frameIdx),
         reason: '当前帧截图只能是 cue 抽帧失败/无区间后的最后兜底，须排在按 cue 抽帧之后。');
   });
 
   test('TODO-816 ④: degrading a clip to a still frame surfaces an OSD', () {
     // 根因（TODO-816 ④）：动图降级为静态帧时旧实现仅 debugPrint 静默吞掉，用户不知拿到
     // 的是降级图。必须给用户可感知 OSD（复用 i18n，携带底层失败摘要）。
+    // TODO-1000: 引擎显式跟踪「动图降级为静态」状态并回传 res.degradedToStill；shell 据此
+    // 出可感知 OSD（复用 i18n，携带 GIF 失败底层摘要），异步路径 mounted 守卫。
+    expect(engine, contains('bool degradedToStill'),
+        reason: '须显式跟踪「动图降级为静态」状态，作为提示判据。');
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
       'Future<void> _recordMinedSentenceForVideo(',
     );
-    expect(mineCard, contains('bool degradedToStill'),
-        reason: '须显式跟踪「动图降级为静态」状态，作为提示判据。');
+    expect(mineCard, contains('res.degradedToStill && mounted'),
+        reason: '降级提示须据引擎回传状态 + mounted 守卫，避免向已销毁页面 _showOsd。');
     expect(mineCard, contains('card_cover_degraded_to_static'),
         reason: '降级为静态图须给用户可见 OSD（不再只 debugPrint 静默吞掉）。');
     expect(mineCard, contains('reason: gifFailure ??'),
         reason: 'OSD 应携带 GIF 失败的底层 ffmpeg 诊断摘要，最贴近根因。');
-    // 提示必须 mounted 守卫（异步路径，页面可能已退出）。
-    expect(mineCard, contains('degradedToStill && mounted'),
-        reason: '降级提示须 mounted 守卫，避免向已销毁页面 _showOsd。');
   });
 
   test('TODO-971：制卡成功 OSD 用突出变体（醒目，区别于音量小角标）', () {

@@ -122,16 +122,19 @@ void main() {
           reason: '系列名赋值须在 idx 解析前的播放列表分支头部。');
     });
 
-    test('_mineVideoCard 的 AnkiMiningContext.documentTitle 经 helper 而非裸 _title',
-        () {
-      final int ctxIdx = src.indexOf('final AnkiMiningContext miningContext');
-      expect(ctxIdx, greaterThanOrEqualTo(0));
-      final int ctxEnd = src.indexOf('coverPath: coverPath,', ctxIdx);
-      expect(ctxEnd, greaterThan(ctxIdx));
-      final String ctx = src.substring(ctxIdx, ctxEnd);
-      expect(ctx.contains('documentTitle: _videoMiningDocumentTitle()'), isTrue,
+    test('_mineVideoCard 的 documentTitle 经 helper 而非裸 _title（喂进沉浸引擎请求）', () {
+      // TODO-1000: AnkiMiningContext 组装搬进 ImmersionMiningEngine；shell 的
+      // _mineVideoCard 把 documentTitle: _videoMiningDocumentTitle() 喂进
+      // ImmersionMiningRequest（引擎再原样透传给 AnkiMiningContext.documentTitle）。
+      // 守卫锚点随之搬到请求构造域（ImmersionMiningRequest( ... source: ...）。
+      final int reqIdx = src.indexOf('ImmersionMiningRequest(');
+      expect(reqIdx, greaterThanOrEqualTo(0));
+      final int reqEnd = src.indexOf('source: AnkiMiningSource.video', reqIdx);
+      expect(reqEnd, greaterThan(reqIdx));
+      final String req = src.substring(reqIdx, reqEnd);
+      expect(req.contains('documentTitle: _videoMiningDocumentTitle()'), isTrue,
           reason: '制卡 documentTitle 必须经播放列表感知 helper，而非裸 _title。');
-      expect(ctx.contains('documentTitle: _title,'), isFalse,
+      expect(req.contains('documentTitle: _title,'), isFalse,
           reason: '不得保留旧的裸 _title 赋值（会绕过系列名拼接）。');
     });
 

@@ -30,11 +30,37 @@ const List<String> _videoHibikiPageFiles = <String>[
   'lib/src/pages/implementations/video_hibiki/layout.part.dart',
 ];
 
+/// TODO-1000: the media-degradation ladder (GIF -> cue-time still frame ->
+/// current-decoded-frame fallback), the no-audio abort (BUG-296) and the
+/// AnkiMiningContext assembly were extracted out of _mineVideoCard into the
+/// shared ImmersionMiningEngine (_mineVideoCard now delegates to it). The static
+/// guards that used to assert those tokens *inside* _mineVideoCard still protect
+/// the exact same behaviours -- they just live in the engine now. So the guard
+/// corpus also exposes the engine + request source; guards scan the shell shim
+/// for the OSD/abort wiring and the engine for the extractor ordering. Pure
+/// relocation, assertion intent unchanged.
+const List<String> _immersionMiningEngineFiles = <String>[
+  'lib/src/mining/immersion_mining_engine.dart',
+  'lib/src/mining/immersion_mining_request.dart',
+];
+
 /// 读「视频页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。
 /// 统一把 CRLF 归一成 LF，与逐文件守卫此前的隐式假设一致。
 String readVideoHibikiSource() {
   final StringBuffer buffer = StringBuffer();
   for (final String path in _videoHibikiPageFiles) {
+    buffer.writeln(File(path).readAsStringSync().replaceAll('\r\n', '\n'));
+  }
+  return buffer.toString();
+}
+
+/// TODO-1000: read the ImmersionMiningEngine + request source (LF-normalised),
+/// where the media-degradation ladder / no-audio abort / AnkiMiningContext
+/// assembly moved out of _mineVideoCard. Guards scan this for the extractor
+/// wiring while still scanning the video corpus for the shell OSD/abort glue.
+String readImmersionMiningEngineSource() {
+  final StringBuffer buffer = StringBuffer();
+  for (final String path in _immersionMiningEngineFiles) {
     buffer.writeln(File(path).readAsStringSync().replaceAll('\r\n', '\n'));
   }
   return buffer.toString();
