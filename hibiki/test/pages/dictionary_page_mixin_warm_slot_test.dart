@@ -8,6 +8,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
 
 /// BUG-094: the video player seeds one persistent hidden warm popup slot and
@@ -16,7 +17,10 @@ import '../helpers/test_platform_services.dart';
 /// These tests exercise the shared mixin reuse contract directly (the real
 /// VideoHibikiPage needs media_kit, which is unavailable in the test harness).
 class MixinTestAppModel extends AppModel {
-  MixinTestAppModel() : super(testPlatformServices());
+  MixinTestAppModel({this.results = const <DictionaryEntry>[]})
+      : super(testPlatformServices());
+
+  final List<DictionaryEntry> results;
 
   @override
   int get maximumTerms => 10;
@@ -42,6 +46,12 @@ class MixinTestAppModel extends AppModel {
   void addToDictionaryHistory({required DictionarySearchResult result}) {}
 
   @override
+  void addToSearchHistory({
+    required String historyKey,
+    required String searchTerm,
+  }) {}
+
+  @override
   Future<DictionarySearchResult> searchDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -49,7 +59,7 @@ class MixinTestAppModel extends AppModel {
     bool useCache = true,
     bool allowRemoteLookup = true,
   }) async {
-    return DictionarySearchResult(searchTerm: searchTerm);
+    return DictionarySearchResult(searchTerm: searchTerm, entries: results);
   }
 }
 
@@ -130,6 +140,8 @@ Widget wrap(AppModel appModel, GlobalKey<MixinHostPageState> key) {
 }
 
 void main() {
+  setUpAll(installFakeInAppWebViewPlatform);
+
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   testWidgets('reuseWarmSlot reuses the seeded warm slot (same webViewKey)',
@@ -158,6 +170,49 @@ void main() {
     await tester.pump();
     expect(state.controller.entries, hasLength(1));
     expect(state.controller.entries.single.webViewKey, same(warmKey));
+  });
+
+  testWidgets(
+      'reuseWarmSlot with entries waits for popupRendered before reveal',
+      (WidgetTester tester) async {
+    final key = GlobalKey<MixinHostPageState>();
+    await tester.pumpWidget(
+      wrap(
+        MixinTestAppModel(
+          results: <DictionaryEntry>[
+            DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
+          ],
+        ),
+        key,
+      ),
+    );
+    key.currentState!.seedWarmSlot();
+    await tester.pump();
+
+    final state = key.currentState!;
+    final warmKey = state.controller.entries.single.webViewKey;
+
+    await state.lookup('語');
+    await tester.pump();
+
+    final entry = state.controller.entries.single;
+    expect(entry.webViewKey, same(warmKey));
+    expect(entry.isWarmSlot, isTrue);
+    expect(entry.visible, isFalse,
+        reason: 'Renderable warm-slot results must wait for popupRendered '
+            'instead of exposing a possibly stale hidden WebView.');
+    expect(entry.revealOnRender, isTrue);
+    expect(state.controller.isSearchingUi, isTrue,
+        reason: 'The lightweight placeholder stays up while the WebView '
+            'renders off-screen.');
+
+    expect(state.controller.revealRendered(entry), isTrue);
+    state.controller.endSearchUi();
+    await tester.pump();
+
+    expect(entry.visible, isTrue);
+    expect(entry.revealOnRender, isFalse);
+    expect(state.controller.isSearchingUi, isFalse);
   });
 
   testWidgets('reuseWarmSlot drops nested children but keeps the warm WebView',

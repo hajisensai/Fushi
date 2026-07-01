@@ -24,12 +24,12 @@ void main() {
     expect(bodyIdx, greaterThanOrEqualTo(0), reason: '_buildBody not found');
     final String body = src.substring(bodyIdx);
 
-    // The cover is gated on "searching AND no entries yet" so results /
-    // pagination (hasEntries) never get covered, and an idle slot (not
+    // The cover is gated on "searching AND no renderable result yet" so
+    // dictionary/kanji results and pagination never get covered, and an idle slot (not
     // searching) shows nothing.
-    expect(body, contains('isSearching && !hasEntries'),
+    expect(body, contains('isSearching && !hasRenderableResults'),
         reason:
-            'loading cover must be gated on searching-without-entries only');
+            'loading cover must be gated on searching-without-renderable-results only');
     // It must be an OPAQUE fill (ColoredBox with the popup fill color), not a
     // transparent spinner that lets the white WebView show through.
     expect(body, contains('ColoredBox('),

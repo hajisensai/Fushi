@@ -24,7 +24,7 @@ void main() {
 
     // The WebView branch must be entered while searching, not gated solely on
     // having entries.
-    expect(body.contains('hasEntries || isSearching'), isTrue,
+    expect(body.contains('hasRenderableResults || isSearching'), isTrue,
         reason: 'WebView must mount during the search phase to preload');
 
     // And it must fall back to the shared empty result when results are not

@@ -552,6 +552,13 @@ class DictionaryPopupLayer extends StatelessWidget {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     final bool hasEntries = result != null && result!.entries.isNotEmpty;
+    final bool hasKanjiResults =
+        result != null && result!.kanjiResults.isNotEmpty;
+    final bool hasRenderableResults = hasEntries || hasKanjiResults;
+    final bool isSeedWarmSlot = keepWebViewWarm &&
+        result != null &&
+        result!.searchTerm.isEmpty &&
+        !hasRenderableResults;
 
     // BUG-080: mount the WebView as soon as the lookup starts (while still
     // searching, before results arrive) so popup.html + JS + CSS cold-load in
@@ -563,10 +570,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     // they arrive. A finished search with no results falls through to the
     // placeholder below (no WebView kept).
     //
-    // [keepWebViewWarm] additionally keeps the WebView mounted while idle (no
-    // results, not searching) so a persistent hidden slot can pre-warm it on
-    // open and reuse it warm for every lookup (BUG-092).
-    if (hasEntries || isSearching || keepWebViewWarm) {
+    // A persistent hidden warm slot still mounts the WebView while seeded with
+    // the shared empty result. Once a real empty lookup completes, it must fall
+    // through to the Flutter placeholder instead of showing the warm WebView's
+    // blank shell.
+    if (hasRenderableResults || isSearching || isSeedWarmSlot) {
       return Stack(
         children: [
           DictionaryPopupWebView(
@@ -594,9 +602,9 @@ class DictionaryPopupLayer extends StatelessWidget {
           // 是空载——Windows 的 inappwebview fork 不完全尊重 transparentBackground，
           // 会露出白底（用户报「白屏等一会才出字」）。盖板把这段空白替换成与弹窗同色的
           // 加载态，待词条到达即撤掉露出已渲染内容。书内查词结果就绪后才可见
-          // （那时 hasEntries=true 不触发）、分页 load-more 有词条也不触发，故只对
+          // （那时 hasRenderableResults=true 不触发）、分页 load-more 有词条也不触发，故只对
           // 视频这条「可见+搜索中+无词条」路径生效，四个表面共用同一组件、观感一致。
-          if (isSearching && !hasEntries)
+          if (isSearching && !hasRenderableResults)
             Positioned.fill(
               child: ColoredBox(
                 color: fillColor,

@@ -159,8 +159,10 @@ class DictionaryPopupWebViewState
   Future<dynamic> debugEval(String source) async =>
       _controller?.evaluateJavascript(source: source);
   bool _ready = false;
+  bool _refreshWhenReady = false;
   String? _lastSearchTerm;
   int _lastEntryCount = 0;
+  int _renderToken = 0;
 
   /// The theme-derived CSS variable JS last pushed to the WebView. Used to
   /// re-inject (and only re-inject) when the app theme actually changes while
@@ -230,13 +232,15 @@ class DictionaryPopupWebViewState
 
   void highlightSelection(int charCount) {
     _controller?.evaluateJavascript(
-      source: 'window.hoshiSelection.highlightSelection($charCount)',
+      source:
+          'window.hoshiSelection?.highlightSelection && window.hoshiSelection.highlightSelection($charCount)',
     );
   }
 
   void clearSelection() {
     _controller?.evaluateJavascript(
-      source: 'window.hoshiSelection.clearSelection()',
+      source:
+          'window.hoshiSelection?.clearSelection && window.hoshiSelection.clearSelection()',
     );
   }
 
@@ -483,8 +487,13 @@ class DictionaryPopupWebViewState
   }
 
   void _pushResults() {
-    if (_controller == null || !_ready) return;
+    if (_controller == null || !_ready) {
+      _refreshWhenReady = true;
+      return;
+    }
+    _refreshWhenReady = false;
 
+    final int renderToken = ++_renderToken;
     final bool isLoadMore = _lastSearchTerm == widget.result.searchTerm &&
         widget.result.entries.length > _lastEntryCount;
     _lastSearchTerm = widget.result.searchTerm;
@@ -537,6 +546,7 @@ class DictionaryPopupWebViewState
     _controller!.evaluateJavascript(source: '''
       $sharedSettingsJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
+      window.__hibikiRenderToken = $renderToken;
       window.__hoshiResetPopupScroll = function() {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -556,6 +566,17 @@ class DictionaryPopupWebViewState
       debugPrint(
           '[dict-perf] evaluateJavascript: ${swInject.elapsedMilliseconds}ms');
     });
+  }
+
+  /// Re-injects the current [widget.result] into an already-mounted WebView.
+  ///
+  /// BUG-480: macOS can skip the hidden warm slot's result push while the popup is
+  /// parked off-screen. When the slot is made visible, the host calls this once
+  /// after layout so the visible WebView definitely renders the current lookup
+  /// instead of exposing a blank white body.
+  void refreshCurrentResult() {
+    _refreshWhenReady = true;
+    _pushResults();
   }
 
   static String _colorToHex(Color c) {
@@ -769,12 +790,19 @@ class DictionaryPopupWebViewState
 
         controller.addJavaScriptHandler(
           handlerName: 'popupRendered',
-          callback: (_) {
+          callback: (args) {
             return _guardJsBridge<Object?>(
               'DictPopupWebview.popupRendered',
               null,
               ErrorLogService.instance,
               () {
+                final Object? rawToken = args.length > 1 ? args[1] : null;
+                final int? token = rawToken is num
+                    ? rawToken.toInt()
+                    : int.tryParse(rawToken?.toString() ?? '');
+                if (token != null && token != _renderToken) {
+                  return null;
+                }
                 widget.onRendered?.call();
                 return null;
               },
@@ -1172,7 +1200,9 @@ class DictionaryPopupWebViewState
             .then((_) {
           if (!mounted) return;
           unawaited(_pushInstantScrollPreference());
-          _pushResults();
+          if (_refreshWhenReady || _lastSearchTerm == null) {
+            _pushResults();
+          }
           // TODO-869：冷加载就绪后显式下发一次当前 hasChildPopup（默认 false 也下发，
           // 保证叶子层 __hasChildPopup 明确为 false）。
           _setHasChildPopupJs(widget.hasChildPopup);

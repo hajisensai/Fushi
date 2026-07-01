@@ -4,6 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 
+final DictionarySearchResult _kWarmSlotSeedResult =
+    DictionarySearchResult(searchTerm: '');
+
 /// 统一的查词弹窗条目（合并旧 `_PopupStackItem`（base_source_page）与
 /// `NestedPopupEntry`（dictionary_page_mixin）两份近乎重复的类型）。
 class DictionaryPopupEntry {
@@ -144,12 +147,23 @@ class DictionaryPopupController extends ChangeNotifier {
     _entries.add(DictionaryPopupEntry(
       searchTerm: '',
       selectionRect: Rect.zero,
-      result: seedResult,
+      result: seedResult ?? _kWarmSlotSeedResult,
       visible: false,
       isWarmSlot: true,
     ));
     notifyListeners();
     _notifyLookupStackDepth();
+  }
+
+  void _restoreWarmSeed(DictionaryPopupEntry e) {
+    e
+      ..searchTerm = ''
+      ..selectionRect = Rect.zero
+      ..result = _kWarmSlotSeedResult
+      ..visible = false
+      ..revealOnRender = false
+      ..isSearching = false
+      ..allLoaded = false;
   }
 
   /// 顶层查词目标：能复用常驻热槽（首条且 isWarmSlot）就原地复用并丢弃子层；
@@ -229,10 +243,7 @@ class DictionaryPopupController extends ChangeNotifier {
     final DictionaryPopupEntry first = _entries.first;
     if (first.isWarmSlot && !lowMemory) {
       _cancelRevealTimers(_entries);
-      first
-        ..visible = false
-        ..revealOnRender = false
-        ..selectionRect = Rect.zero;
+      _restoreWarmSeed(first);
       _entries
         ..clear()
         ..add(first);
@@ -341,11 +352,7 @@ class DictionaryPopupController extends ChangeNotifier {
       final DictionaryPopupEntry first = _entries.first;
       if (first.isWarmSlot && !lowMemory) {
         _cancelRevealTimers(_entries);
-        first
-          ..visible = false
-          ..revealOnRender = false
-          ..selectionRect = Rect.zero
-          ..isSearching = false;
+        _restoreWarmSeed(first);
         _entries
           ..clear()
           ..add(first);
