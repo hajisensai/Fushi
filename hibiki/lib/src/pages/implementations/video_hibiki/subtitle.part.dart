@@ -945,4 +945,25 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         break;
     }
   }
+
+  /// TODO-1051 阶段B：为字幕对轴波形面板抽当前视频的逐帧音频能量包络（原始 dB 序列）。
+  ///
+  /// 复用与 [_autoAlignSubtitle] 同一探测入口 [extractAudioEnergyEnvelope]（同音轨、同前
+  /// N 分钟截断），返回原始逐帧包络交给面板降采样成 0..1 波形桶（降采样在面板层随宽度算，
+  /// 不在此处、不在 paint 里跑 ffmpeg）。无 controller / 无视频路径 / 移动端拿不到逐帧行时
+  /// 返回空列表，面板据此退化成纯 stepper（不崩不空白）。
+  Future<List<double>> _loadSubtitleWaveformEnvelope() async {
+    final VideoPlayerController? controller = _controller;
+    final String? videoPath = controller?.videoPath;
+    if (controller == null || videoPath == null || videoPath.isEmpty) {
+      return const <double>[];
+    }
+    return extractAudioEnergyEnvelope(
+      videoPath: videoPath,
+      windowMs: kSubtitleAutoAlignBinMs,
+      audioStreamIndex: controller.currentAudioStreamIndex,
+      audioStreamCount: controller.realAudioStreamCount,
+      limitMs: kSubtitleAutoAlignProbeLimitMs,
+    );
+  }
 }

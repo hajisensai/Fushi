@@ -12,6 +12,8 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/settings/master_detail_settings_sheet.dart';
@@ -43,6 +45,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.initialSubtitleStyle,
     required this.onSetDelay,
     this.onAutoAlign,
+    this.subtitleWaveformCues = const <AudioCue>[],
+    this.videoDurationMs = 0,
+    this.loadSubtitleWaveform,
+    this.subtitlePositionListenable,
+    this.currentSubtitlePositionMs,
     required this.onPreviewSpeed,
     required this.onSetSpeed,
     required this.onSetSubtitleObscureMode,
@@ -96,6 +103,24 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 经现有 [onSetDelay] 写穿延迟落盘。回调内部负责 OSD/低置信提示；本面板只在其
   /// `await` 期间显示按钮 loading。null=不显示自动对轴按钮（无字幕/无视频路径时）。
   final Future<void> Function()? onAutoAlign;
+
+  /// TODO-1051 阶段B：字幕对轴波形面板的输入。当前字幕 cue 列表（画边界线，只读）。
+  /// 空 = 无字幕，不显示波形面板。
+  final List<AudioCue> subtitleWaveformCues;
+
+  /// 视频总时长（毫秒），供波形时间窗换算。0 / 未知时波形面板据探测上界降级。
+  final int videoDurationMs;
+
+  /// 抽音频能量包络（原始逐帧 dB 序列）。null = 不显示波形面板（无视频路径 / 无字幕）。
+  /// 由页面经 `extractAudioEnergyEnvelope` 提供；移动端拿不到逐帧行时返回空列表，面板据此
+  /// 退化成纯 stepper。
+  final Future<List<double>> Function()? loadSubtitleWaveform;
+
+  /// 可选：播放位置变化通知源（`VideoPlayerController`），驱动波形面板重绘播放头。
+  final Listenable? subtitlePositionListenable;
+
+  /// 可选：读当前播放位置（毫秒），供波形面板画播放头。
+  final int Function()? currentSubtitlePositionMs;
 
   /// 拖动倍速滑条时的实时预览（下发真实播放倍速，不落盘）。
   final Future<void> Function(double speed) onPreviewSpeed;
@@ -829,6 +854,24 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               _commitDelay(parsed);
             },
           ),
+          // TODO-1051 阶段B：音频波形对轴可视化面板（有字幕 cue + 可抽波形时才挂）。
+          // 面板本地拖动预览字幕平移、松手才经 [_commitDelay] 落盘（唯一写回点）；拿不到
+          // 波形（移动端 ffmpeg 无逐帧行）时面板内部退化成纯 stepper，不崩不空白。
+          if (widget.loadSubtitleWaveform != null &&
+              widget.subtitleWaveformCues.isNotEmpty) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            SubtitleWaveformAlignPanel(
+              key: ValueKey<int>(widget.subtitleWaveformCues.length),
+              initialDelayMs: _delayMs,
+              clampMs: _subtitleSyncClampMs,
+              cues: widget.subtitleWaveformCues,
+              durationMs: widget.videoDurationMs,
+              loadWaveform: widget.loadSubtitleWaveform!,
+              positionListenable: widget.subtitlePositionListenable,
+              currentPositionMs: widget.currentSubtitlePositionMs,
+              onCommitDelay: (int ms) => _commitDelay(ms),
+            ),
+          ],
         ],
       ),
     );

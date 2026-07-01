@@ -4339,6 +4339,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               (_controller?.videoPath?.isNotEmpty ?? false)
           ? _autoAlignSubtitle
           : null,
+      // TODO-1051 阶段B：字幕对轴波形面板输入。有 cue + 本地视频路径时给波形抽取回调
+      // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
+      subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
+      videoDurationMs: _controller?.durationMs ?? 0,
+      loadSubtitleWaveform: (_controller?.cues.isNotEmpty ?? false) &&
+              (_controller?.videoPath?.isNotEmpty ?? false)
+          ? _loadSubtitleWaveformEnvelope
+          : null,
+      subtitlePositionListenable: _controller,
+      currentSubtitlePositionMs: () => _controller?.positionMs ?? -1,
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
