@@ -590,3 +590,32 @@ class ShelfEntries extends Table {
   @override
   Set<Column> get primaryKey => {mediaType, entryKey};
 }
+
+// ── hibiki_paired_peers ─────────────────────────────
+// TODO-1017 阶段1：互联（Hibiki server 局域网配对）的 per-peer 授权凭据表。每个
+// 已配对设备一行，token 是该设备访问本机 Hibiki server 的长期凭据。范式仿
+// [MediaSources]（自增 id + text().unique() 身份列 + int 毫秒戳时间列）。本阶段
+// 仅建表 + DB 方法 + 迁移，不接线 auth（阶段2 再改 server controller），空表 =
+// 无人读 = 行为零变化（Never break userspace）。
+@DataClassName('HibikiPairedPeerRow')
+class HibikiPairedPeers extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 对端设备的稳定身份（配对握手时对端上报的 device/installation id）。
+  /// UNIQUE：一设备一行，[upsertPairedPeer] 靠它 insertOnConflictUpdate 幂等。
+  TextColumn get peerId => text().unique()();
+
+  /// 对端设备显示名（配对时上报，可为空）。
+  TextColumn get deviceName => text().nullable()();
+
+  /// 🔴 凭据红线：本列为敏感授权凭据，**当前明文列存**（与既有 MediaSources
+  /// 密码引用「密码存储方案待定」的现状一致——per-peer token 加密方案同为后续
+  /// 决策点，本阶段先落地表结构）。绝不写日志、绝不进 sync/backup 明文导出。
+  TextColumn get token => text()();
+
+  /// 配对时间（毫秒戳，同 [Series].createdAt / [MediaSources].createdAt int 范式）。
+  IntColumn get pairedAtMs => integer()();
+
+  /// 对端上次访问时的来源 IP（诊断/展示用，可为空）。
+  TextColumn get lastSeenIp => text().nullable()();
+}

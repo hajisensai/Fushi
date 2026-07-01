@@ -12580,6 +12580,369 @@ class ShelfEntriesCompanion extends UpdateCompanion<ShelfEntryRow> {
   }
 }
 
+class $HibikiPairedPeersTable extends HibikiPairedPeers
+    with TableInfo<$HibikiPairedPeersTable, HibikiPairedPeerRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $HibikiPairedPeersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _peerIdMeta = const VerificationMeta('peerId');
+  @override
+  late final GeneratedColumn<String> peerId = GeneratedColumn<String>(
+      'peer_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _deviceNameMeta =
+      const VerificationMeta('deviceName');
+  @override
+  late final GeneratedColumn<String> deviceName = GeneratedColumn<String>(
+      'device_name', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _tokenMeta = const VerificationMeta('token');
+  @override
+  late final GeneratedColumn<String> token = GeneratedColumn<String>(
+      'token', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _pairedAtMsMeta =
+      const VerificationMeta('pairedAtMs');
+  @override
+  late final GeneratedColumn<int> pairedAtMs = GeneratedColumn<int>(
+      'paired_at_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _lastSeenIpMeta =
+      const VerificationMeta('lastSeenIp');
+  @override
+  late final GeneratedColumn<String> lastSeenIp = GeneratedColumn<String>(
+      'last_seen_ip', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, peerId, deviceName, token, pairedAtMs, lastSeenIp];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'hibiki_paired_peers';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<HibikiPairedPeerRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('peer_id')) {
+      context.handle(_peerIdMeta,
+          peerId.isAcceptableOrUnknown(data['peer_id']!, _peerIdMeta));
+    } else if (isInserting) {
+      context.missing(_peerIdMeta);
+    }
+    if (data.containsKey('device_name')) {
+      context.handle(
+          _deviceNameMeta,
+          deviceName.isAcceptableOrUnknown(
+              data['device_name']!, _deviceNameMeta));
+    }
+    if (data.containsKey('token')) {
+      context.handle(
+          _tokenMeta, token.isAcceptableOrUnknown(data['token']!, _tokenMeta));
+    } else if (isInserting) {
+      context.missing(_tokenMeta);
+    }
+    if (data.containsKey('paired_at_ms')) {
+      context.handle(
+          _pairedAtMsMeta,
+          pairedAtMs.isAcceptableOrUnknown(
+              data['paired_at_ms']!, _pairedAtMsMeta));
+    } else if (isInserting) {
+      context.missing(_pairedAtMsMeta);
+    }
+    if (data.containsKey('last_seen_ip')) {
+      context.handle(
+          _lastSeenIpMeta,
+          lastSeenIp.isAcceptableOrUnknown(
+              data['last_seen_ip']!, _lastSeenIpMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  HibikiPairedPeerRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return HibikiPairedPeerRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      peerId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}peer_id'])!,
+      deviceName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}device_name']),
+      token: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}token'])!,
+      pairedAtMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}paired_at_ms'])!,
+      lastSeenIp: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_seen_ip']),
+    );
+  }
+
+  @override
+  $HibikiPairedPeersTable createAlias(String alias) {
+    return $HibikiPairedPeersTable(attachedDatabase, alias);
+  }
+}
+
+class HibikiPairedPeerRow extends DataClass
+    implements Insertable<HibikiPairedPeerRow> {
+  final int id;
+
+  /// 对端设备的稳定身份（配对握手时对端上报的 device/installation id）。
+  /// UNIQUE：一设备一行，[upsertPairedPeer] 靠它 insertOnConflictUpdate 幂等。
+  final String peerId;
+
+  /// 对端设备显示名（配对时上报，可为空）。
+  final String? deviceName;
+
+  /// 🔴 凭据红线：本列为敏感授权凭据，**当前明文列存**（与既有 MediaSources
+  /// 密码引用「密码存储方案待定」的现状一致——per-peer token 加密方案同为后续
+  /// 决策点，本阶段先落地表结构）。绝不写日志、绝不进 sync/backup 明文导出。
+  final String token;
+
+  /// 配对时间（毫秒戳，同 [Series].createdAt / [MediaSources].createdAt int 范式）。
+  final int pairedAtMs;
+
+  /// 对端上次访问时的来源 IP（诊断/展示用，可为空）。
+  final String? lastSeenIp;
+  const HibikiPairedPeerRow(
+      {required this.id,
+      required this.peerId,
+      this.deviceName,
+      required this.token,
+      required this.pairedAtMs,
+      this.lastSeenIp});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['peer_id'] = Variable<String>(peerId);
+    if (!nullToAbsent || deviceName != null) {
+      map['device_name'] = Variable<String>(deviceName);
+    }
+    map['token'] = Variable<String>(token);
+    map['paired_at_ms'] = Variable<int>(pairedAtMs);
+    if (!nullToAbsent || lastSeenIp != null) {
+      map['last_seen_ip'] = Variable<String>(lastSeenIp);
+    }
+    return map;
+  }
+
+  HibikiPairedPeersCompanion toCompanion(bool nullToAbsent) {
+    return HibikiPairedPeersCompanion(
+      id: Value(id),
+      peerId: Value(peerId),
+      deviceName: deviceName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deviceName),
+      token: Value(token),
+      pairedAtMs: Value(pairedAtMs),
+      lastSeenIp: lastSeenIp == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSeenIp),
+    );
+  }
+
+  factory HibikiPairedPeerRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return HibikiPairedPeerRow(
+      id: serializer.fromJson<int>(json['id']),
+      peerId: serializer.fromJson<String>(json['peerId']),
+      deviceName: serializer.fromJson<String?>(json['deviceName']),
+      token: serializer.fromJson<String>(json['token']),
+      pairedAtMs: serializer.fromJson<int>(json['pairedAtMs']),
+      lastSeenIp: serializer.fromJson<String?>(json['lastSeenIp']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'peerId': serializer.toJson<String>(peerId),
+      'deviceName': serializer.toJson<String?>(deviceName),
+      'token': serializer.toJson<String>(token),
+      'pairedAtMs': serializer.toJson<int>(pairedAtMs),
+      'lastSeenIp': serializer.toJson<String?>(lastSeenIp),
+    };
+  }
+
+  HibikiPairedPeerRow copyWith(
+          {int? id,
+          String? peerId,
+          Value<String?> deviceName = const Value.absent(),
+          String? token,
+          int? pairedAtMs,
+          Value<String?> lastSeenIp = const Value.absent()}) =>
+      HibikiPairedPeerRow(
+        id: id ?? this.id,
+        peerId: peerId ?? this.peerId,
+        deviceName: deviceName.present ? deviceName.value : this.deviceName,
+        token: token ?? this.token,
+        pairedAtMs: pairedAtMs ?? this.pairedAtMs,
+        lastSeenIp: lastSeenIp.present ? lastSeenIp.value : this.lastSeenIp,
+      );
+  HibikiPairedPeerRow copyWithCompanion(HibikiPairedPeersCompanion data) {
+    return HibikiPairedPeerRow(
+      id: data.id.present ? data.id.value : this.id,
+      peerId: data.peerId.present ? data.peerId.value : this.peerId,
+      deviceName:
+          data.deviceName.present ? data.deviceName.value : this.deviceName,
+      token: data.token.present ? data.token.value : this.token,
+      pairedAtMs:
+          data.pairedAtMs.present ? data.pairedAtMs.value : this.pairedAtMs,
+      lastSeenIp:
+          data.lastSeenIp.present ? data.lastSeenIp.value : this.lastSeenIp,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HibikiPairedPeerRow(')
+          ..write('id: $id, ')
+          ..write('peerId: $peerId, ')
+          ..write('deviceName: $deviceName, ')
+          ..write('token: $token, ')
+          ..write('pairedAtMs: $pairedAtMs, ')
+          ..write('lastSeenIp: $lastSeenIp')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, peerId, deviceName, token, pairedAtMs, lastSeenIp);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is HibikiPairedPeerRow &&
+          other.id == this.id &&
+          other.peerId == this.peerId &&
+          other.deviceName == this.deviceName &&
+          other.token == this.token &&
+          other.pairedAtMs == this.pairedAtMs &&
+          other.lastSeenIp == this.lastSeenIp);
+}
+
+class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
+  final Value<int> id;
+  final Value<String> peerId;
+  final Value<String?> deviceName;
+  final Value<String> token;
+  final Value<int> pairedAtMs;
+  final Value<String?> lastSeenIp;
+  const HibikiPairedPeersCompanion({
+    this.id = const Value.absent(),
+    this.peerId = const Value.absent(),
+    this.deviceName = const Value.absent(),
+    this.token = const Value.absent(),
+    this.pairedAtMs = const Value.absent(),
+    this.lastSeenIp = const Value.absent(),
+  });
+  HibikiPairedPeersCompanion.insert({
+    this.id = const Value.absent(),
+    required String peerId,
+    this.deviceName = const Value.absent(),
+    required String token,
+    required int pairedAtMs,
+    this.lastSeenIp = const Value.absent(),
+  })  : peerId = Value(peerId),
+        token = Value(token),
+        pairedAtMs = Value(pairedAtMs);
+  static Insertable<HibikiPairedPeerRow> custom({
+    Expression<int>? id,
+    Expression<String>? peerId,
+    Expression<String>? deviceName,
+    Expression<String>? token,
+    Expression<int>? pairedAtMs,
+    Expression<String>? lastSeenIp,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (peerId != null) 'peer_id': peerId,
+      if (deviceName != null) 'device_name': deviceName,
+      if (token != null) 'token': token,
+      if (pairedAtMs != null) 'paired_at_ms': pairedAtMs,
+      if (lastSeenIp != null) 'last_seen_ip': lastSeenIp,
+    });
+  }
+
+  HibikiPairedPeersCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? peerId,
+      Value<String?>? deviceName,
+      Value<String>? token,
+      Value<int>? pairedAtMs,
+      Value<String?>? lastSeenIp}) {
+    return HibikiPairedPeersCompanion(
+      id: id ?? this.id,
+      peerId: peerId ?? this.peerId,
+      deviceName: deviceName ?? this.deviceName,
+      token: token ?? this.token,
+      pairedAtMs: pairedAtMs ?? this.pairedAtMs,
+      lastSeenIp: lastSeenIp ?? this.lastSeenIp,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (peerId.present) {
+      map['peer_id'] = Variable<String>(peerId.value);
+    }
+    if (deviceName.present) {
+      map['device_name'] = Variable<String>(deviceName.value);
+    }
+    if (token.present) {
+      map['token'] = Variable<String>(token.value);
+    }
+    if (pairedAtMs.present) {
+      map['paired_at_ms'] = Variable<int>(pairedAtMs.value);
+    }
+    if (lastSeenIp.present) {
+      map['last_seen_ip'] = Variable<String>(lastSeenIp.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HibikiPairedPeersCompanion(')
+          ..write('id: $id, ')
+          ..write('peerId: $peerId, ')
+          ..write('deviceName: $deviceName, ')
+          ..write('token: $token, ')
+          ..write('pairedAtMs: $pairedAtMs, ')
+          ..write('lastSeenIp: $lastSeenIp')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -12629,6 +12992,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $MinedSentencesTable minedSentences = $MinedSentencesTable(this);
   late final $SeriesTable series = $SeriesTable(this);
   late final $ShelfEntriesTable shelfEntries = $ShelfEntriesTable(this);
+  late final $HibikiPairedPeersTable hibikiPairedPeers =
+      $HibikiPairedPeersTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -12665,7 +13030,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         miningStatistics,
         minedSentences,
         series,
-        shelfEntries
+        shelfEntries,
+        hibikiPairedPeers
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -21416,6 +21782,192 @@ typedef $$ShelfEntriesTableProcessedTableManager = ProcessedTableManager<
     (ShelfEntryRow, $$ShelfEntriesTableReferences),
     ShelfEntryRow,
     PrefetchHooks Function({bool seriesId})>;
+typedef $$HibikiPairedPeersTableCreateCompanionBuilder
+    = HibikiPairedPeersCompanion Function({
+  Value<int> id,
+  required String peerId,
+  Value<String?> deviceName,
+  required String token,
+  required int pairedAtMs,
+  Value<String?> lastSeenIp,
+});
+typedef $$HibikiPairedPeersTableUpdateCompanionBuilder
+    = HibikiPairedPeersCompanion Function({
+  Value<int> id,
+  Value<String> peerId,
+  Value<String?> deviceName,
+  Value<String> token,
+  Value<int> pairedAtMs,
+  Value<String?> lastSeenIp,
+});
+
+class $$HibikiPairedPeersTableFilterComposer
+    extends Composer<_$HibikiDatabase, $HibikiPairedPeersTable> {
+  $$HibikiPairedPeersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get peerId => $composableBuilder(
+      column: $table.peerId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get deviceName => $composableBuilder(
+      column: $table.deviceName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get token => $composableBuilder(
+      column: $table.token, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pairedAtMs => $composableBuilder(
+      column: $table.pairedAtMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastSeenIp => $composableBuilder(
+      column: $table.lastSeenIp, builder: (column) => ColumnFilters(column));
+}
+
+class $$HibikiPairedPeersTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $HibikiPairedPeersTable> {
+  $$HibikiPairedPeersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get peerId => $composableBuilder(
+      column: $table.peerId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get deviceName => $composableBuilder(
+      column: $table.deviceName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get token => $composableBuilder(
+      column: $table.token, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pairedAtMs => $composableBuilder(
+      column: $table.pairedAtMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastSeenIp => $composableBuilder(
+      column: $table.lastSeenIp, builder: (column) => ColumnOrderings(column));
+}
+
+class $$HibikiPairedPeersTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $HibikiPairedPeersTable> {
+  $$HibikiPairedPeersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get peerId =>
+      $composableBuilder(column: $table.peerId, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceName => $composableBuilder(
+      column: $table.deviceName, builder: (column) => column);
+
+  GeneratedColumn<String> get token =>
+      $composableBuilder(column: $table.token, builder: (column) => column);
+
+  GeneratedColumn<int> get pairedAtMs => $composableBuilder(
+      column: $table.pairedAtMs, builder: (column) => column);
+
+  GeneratedColumn<String> get lastSeenIp => $composableBuilder(
+      column: $table.lastSeenIp, builder: (column) => column);
+}
+
+class $$HibikiPairedPeersTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $HibikiPairedPeersTable,
+    HibikiPairedPeerRow,
+    $$HibikiPairedPeersTableFilterComposer,
+    $$HibikiPairedPeersTableOrderingComposer,
+    $$HibikiPairedPeersTableAnnotationComposer,
+    $$HibikiPairedPeersTableCreateCompanionBuilder,
+    $$HibikiPairedPeersTableUpdateCompanionBuilder,
+    (
+      HibikiPairedPeerRow,
+      BaseReferences<_$HibikiDatabase, $HibikiPairedPeersTable,
+          HibikiPairedPeerRow>
+    ),
+    HibikiPairedPeerRow,
+    PrefetchHooks Function()> {
+  $$HibikiPairedPeersTableTableManager(
+      _$HibikiDatabase db, $HibikiPairedPeersTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$HibikiPairedPeersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$HibikiPairedPeersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$HibikiPairedPeersTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> peerId = const Value.absent(),
+            Value<String?> deviceName = const Value.absent(),
+            Value<String> token = const Value.absent(),
+            Value<int> pairedAtMs = const Value.absent(),
+            Value<String?> lastSeenIp = const Value.absent(),
+          }) =>
+              HibikiPairedPeersCompanion(
+            id: id,
+            peerId: peerId,
+            deviceName: deviceName,
+            token: token,
+            pairedAtMs: pairedAtMs,
+            lastSeenIp: lastSeenIp,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String peerId,
+            Value<String?> deviceName = const Value.absent(),
+            required String token,
+            required int pairedAtMs,
+            Value<String?> lastSeenIp = const Value.absent(),
+          }) =>
+              HibikiPairedPeersCompanion.insert(
+            id: id,
+            peerId: peerId,
+            deviceName: deviceName,
+            token: token,
+            pairedAtMs: pairedAtMs,
+            lastSeenIp: lastSeenIp,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$HibikiPairedPeersTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $HibikiPairedPeersTable,
+    HibikiPairedPeerRow,
+    $$HibikiPairedPeersTableFilterComposer,
+    $$HibikiPairedPeersTableOrderingComposer,
+    $$HibikiPairedPeersTableAnnotationComposer,
+    $$HibikiPairedPeersTableCreateCompanionBuilder,
+    $$HibikiPairedPeersTableUpdateCompanionBuilder,
+    (
+      HibikiPairedPeerRow,
+      BaseReferences<_$HibikiDatabase, $HibikiPairedPeersTable,
+          HibikiPairedPeerRow>
+    ),
+    HibikiPairedPeerRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -21484,4 +22036,6 @@ class $HibikiDatabaseManager {
       $$SeriesTableTableManager(_db, _db.series);
   $$ShelfEntriesTableTableManager get shelfEntries =>
       $$ShelfEntriesTableTableManager(_db, _db.shelfEntries);
+  $$HibikiPairedPeersTableTableManager get hibikiPairedPeers =>
+      $$HibikiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
 }
