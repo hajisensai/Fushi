@@ -48,7 +48,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   // ── identifier helpers ────────────────────────────────────────────────
 
-  static const String kHost = 'hoshi.local';
+  static const String kHost = ReaderCustomFontCss.kReaderResourceHost;
+  static const String kResourceScheme =
+      ReaderCustomFontCss.kReaderResourceScheme;
 
   static String mediaIdentifierFor(String bookKey) => 'hoshi://book/$bookKey';
 
@@ -60,10 +62,19 @@ class ReaderHibikiSource extends ReaderMediaSource {
   // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
   static String epubUrl(String href) {
     final String encoded = href.split('/').map(Uri.encodeComponent).join('/');
+    if (Platform.isMacOS || Platform.isIOS) {
+      return '$kResourceScheme://$kHost/epub/$encoded';
+    }
     return 'https://$kHost/epub/$encoded';
   }
 
-  static String fontUrl(String path) => ReaderCustomFontCss.fontUrl(path);
+  static String fontUrl(String path) {
+    final String encoded = Uri.encodeComponent(path);
+    if (Platform.isMacOS || Platform.isIOS) {
+      return '$kResourceScheme://$kHost/fonts/$encoded';
+    }
+    return 'https://$kHost/fonts/$encoded';
+  }
 
   // BUG-097: decide whether a navigation URL belongs to the OS browser. Internal
   // book content lives on the [kHost] virtual host (https://hoshi.local/...), so
@@ -1340,6 +1351,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       ReaderSettings.customFontCssForEntries(
         fonts,
         allowedDirectories: allowedDirectories,
+        fontUrlBuilder: fontUrl,
       );
 
   static String normalizedFontFamilyName(String name) {

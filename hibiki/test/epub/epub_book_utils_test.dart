@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 void main() {
   group('normalizeHref', () {
@@ -155,6 +156,33 @@ void main() {
       expect(result, isNotNull);
       expect(result!.chapterIndex, 1);
       expect(result.fragment, isNull);
+    });
+
+    test('resolves Apple custom-scheme internal link to chapter index', () {
+      final book = EpubBook(
+        title: 'Test',
+        chapters: [
+          EpubChapter(
+            id: 'ch1',
+            href: 'ch1.xhtml',
+            mediaType: 'application/xhtml+xml',
+            html: '',
+          ),
+          EpubChapter(
+            id: 'ch2',
+            href: 'OEBPS/ch2.xhtml',
+            mediaType: 'application/xhtml+xml',
+            html: '',
+          ),
+        ],
+      );
+
+      final result = book.resolveInternalLink(
+        '${ReaderHibikiSource.kResourceScheme}://hoshi.local/epub/OEBPS/ch2.xhtml#frag',
+      );
+      expect(result, isNotNull);
+      expect(result!.chapterIndex, 1);
+      expect(result.fragment, 'frag');
     });
 
     test('resolves link with fragment', () {
@@ -316,7 +344,8 @@ void main() {
       expect(book.chapterIndexForHref('OEBPS%2Fcover.xhtml'), 0);
     });
 
-    test('case-only difference recovers the spine chapter (cover fallback)', () {
+    test('case-only difference recovers the spine chapter (cover fallback)',
+        () {
       // Filesystem-case-insensitive authoring: TOC says Cover.XHTML, spine has
       // cover.xhtml. resolveInternalLink stays case-sensitive (case-sensitive
       // FS), but the TOC matcher case-insensitive fallback recovers it so the
@@ -348,7 +377,8 @@ void main() {
       expect(book.chapterIndexForHref('   '), -1);
     });
 
-    test('href owned by no spine chapter returns -1 (dirty TOC item skipped)', () {
+    test('href owned by no spine chapter returns -1 (dirty TOC item skipped)',
+        () {
       // A cover entry pointing straight at the image (not a spine document) is
       // genuinely unlocatable and must still be skippable — but only AFTER the
       // canonical + case-insensitive passes both fail, never via a stale ==.

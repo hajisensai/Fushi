@@ -17,6 +17,24 @@ part of '../reader_hibiki_page.dart';
 /// 样式/主题域（`_buildStyleTag` / `_computeStyleTag` / `_applyStylesLive` 等）被
 /// chrome / lyrics / navigation part 广泛引用，属另一域，留在主壳；本 part 通过共享
 /// 私有作用域调用它们（如 `_buildSanitizedChapterHtmlBytes` 调 `_buildStyleTag`）。
+class _ReaderResourceResponse {
+  const _ReaderResourceResponse({
+    required this.contentType,
+    required this.statusCode,
+    required this.reasonPhrase,
+    required this.headers,
+    required this.data,
+    this.contentEncoding,
+  });
+
+  final String contentType;
+  final String? contentEncoding;
+  final int statusCode;
+  final String reasonPhrase;
+  final Map<String, String> headers;
+  final Uint8List data;
+}
+
 extension _ReaderWebView on _ReaderHibikiPageState {
   // ── URL & Resource Serving (mirrors Hoshi Android's hoshi.local scheme) ──
 
@@ -40,10 +58,30 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
   }
 
-  static WebResourceResponse _notFound(String reason) {
+  static bool get _usesReaderResourceCustomScheme =>
+      Platform.isMacOS || Platform.isIOS;
+
+  static bool _isReaderResourceUrl(WebUri url) {
+    if (url.host != ReaderHibikiSource.kHost) return false;
+    return url.scheme == 'https' ||
+        url.scheme == ReaderHibikiSource.kResourceScheme;
+  }
+
+  static String? _contentEncodingForMime(String mime) {
+    if (mime.startsWith('text/') ||
+        mime.contains('xml') ||
+        mime.contains('xhtml') ||
+        mime == 'application/javascript') {
+      return 'utf-8';
+    }
+    return null;
+  }
+
+  static _ReaderResourceResponse _notFound(String reason) {
     debugPrint('[ReaderHibiki] 404: $reason');
-    return WebResourceResponse(
+    return _ReaderResourceResponse(
       contentType: 'text/plain',
+      contentEncoding: 'utf-8',
       statusCode: 404,
       reasonPhrase: 'Not Found',
       headers: <String, String>{'Access-Control-Allow-Origin': '*'},
@@ -51,10 +89,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     );
   }
 
-  static WebResourceResponse _forbidden(String reason) {
+  static _ReaderResourceResponse _forbidden(String reason) {
     debugPrint('[ReaderHibiki] 403: $reason');
-    return WebResourceResponse(
+    return _ReaderResourceResponse(
       contentType: 'text/plain',
+      contentEncoding: 'utf-8',
       statusCode: 403,
       reasonPhrase: 'Forbidden',
       headers: <String, String>{'Access-Control-Allow-Origin': '*'},
@@ -62,8 +101,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     );
   }
 
-  Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
-    if (url.host != ReaderHibikiSource.kHost) return null;
+  Future<_ReaderResourceResponse> _readerResourcePayload(WebUri url) async {
     final String path = url.path;
 
     if (path.startsWith('/fonts/')) {
@@ -98,8 +136,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       debugPrint(
           '[ReaderHibiki] font served: $safeFontPath (${data.length} bytes)');
       final String mime = fallbackMimeType(safeFontPath);
-      return WebResourceResponse(
+      return _ReaderResourceResponse(
         contentType: mime,
+        contentEncoding: _contentEncodingForMime(mime),
         statusCode: 200,
         reasonPhrase: 'OK',
         headers: <String, String>{
@@ -145,9 +184,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       data = _chapterHtmlBytes(filePath, data);
     }
 
-    return WebResourceResponse(
+    return _ReaderResourceResponse(
       contentType: mime,
-      contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
+      contentEncoding: _contentEncodingForMime(mime),
       statusCode: 200,
       reasonPhrase: 'OK',
       headers: <String, String>{
@@ -155,6 +194,45 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         'Cache-Control': 'no-cache',
       },
       data: data,
+    );
+  }
+
+  Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
+    if (!_isReaderResourceUrl(url)) return null;
+    _ReaderResourceResponse response;
+    try {
+      response = await _readerResourcePayload(url);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHibiki.interceptResource', e, stack);
+      response = _notFound('resource intercept failed: $url');
+    }
+    return WebResourceResponse(
+      contentType: response.contentType,
+      contentEncoding: response.contentEncoding,
+      statusCode: response.statusCode,
+      reasonPhrase: response.reasonPhrase,
+      headers: response.headers,
+      data: response.data,
+    );
+  }
+
+  Future<CustomSchemeResponse> _loadResourceWithCustomScheme(
+    WebResourceRequest request,
+  ) async {
+    _ReaderResourceResponse response;
+    try {
+      response = _isReaderResourceUrl(request.url)
+          ? await _readerResourcePayload(request.url)
+          : _notFound('unknown custom scheme URL: ${request.url}');
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.customSchemeResource', e, stack);
+      response = _notFound('custom scheme resource failed: ${request.url}');
+    }
+    return CustomSchemeResponse(
+      contentType: response.contentType,
+      contentEncoding: response.contentEncoding ?? '',
+      data: response.data,
     );
   }
 
@@ -1177,7 +1255,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         scrollbarFadingEnabled: false,
         databaseEnabled: false,
         domStorageEnabled: false,
-        useShouldInterceptRequest: true,
+        resourceCustomSchemes: _usesReaderResourceCustomScheme
+            ? <String>[ReaderHibikiSource.kResourceScheme]
+            : const <String>[],
+        useShouldInterceptRequest: !_usesReaderResourceCustomScheme,
         mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
         useShouldOverrideUrlLoading: true,
       ),
@@ -1196,7 +1277,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             'debugCaptureWebView already set — a previous reader did not '
             'clear it on dispose, or two readers are live at once.',
           );
-          ReaderHibikiPage.debugCaptureWebView = () => controller.takeScreenshot();
+          ReaderHibikiPage.debugCaptureWebView =
+              () => controller.takeScreenshot();
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
           ReaderHibikiPage.debugEvaluateTopPopup =
               (String source) async => _webviewTopPopupState?.debugEval(source);
@@ -1515,6 +1597,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       },
       shouldInterceptRequest: (controller, request) async {
         return await _interceptRequest(request.url);
+      },
+      onLoadResourceWithCustomScheme: (controller, request) {
+        return _loadResourceWithCustomScheme(request);
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';

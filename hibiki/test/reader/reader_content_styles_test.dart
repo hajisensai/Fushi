@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
@@ -184,6 +187,38 @@ void main() {
       );
       expect(css, contains('@font-face'));
       expect(css, contains('TestFont'));
+    });
+
+    test('settings custom fonts use Apple custom scheme in produced CSS',
+        () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+      });
+      final Directory tempDir =
+          await Directory.systemTemp.createTemp('hibiki_reader_css_font_');
+      addTearDown(() async {
+        await tempDir.delete(recursive: true);
+      });
+      final File fontFile = File('${tempDir.path}/body.ttf')
+        ..writeAsBytesSync(<int>[0, 1, 0, 0]);
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setCustomFonts(<Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': 'Body Font',
+          'path': fontFile.path,
+          'enabled': true,
+        },
+      ]);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+
+      expect(css, contains('@font-face'));
+      expect(
+        css,
+        contains('${ReaderHibikiSource.kResourceScheme}://hoshi.local/fonts/'),
+      );
+      expect(css, isNot(contains('https://hoshi.local/fonts/')));
     });
 
     test('selection color override (opaque) appears verbatim in css', () async {

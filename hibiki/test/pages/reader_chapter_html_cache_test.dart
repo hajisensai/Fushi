@@ -31,19 +31,24 @@ void main() {
           reason: '缓存必须有界，防无限增长');
     });
 
-    test('_interceptRequest 的 HTML 分支经缓存提供，而非每次原地重建', () {
+    test('HTML 资源分支经缓存提供，而非每次原地重建', () {
+      final int payloadIdx = src
+          .indexOf('Future<_ReaderResourceResponse> _readerResourcePayload(');
       final int interceptIdx =
           src.indexOf('Future<WebResourceResponse?> _interceptRequest(');
-      // _isCustomTheme 仍在主壳（样式域），在合并语料里位于已搬到 part 的
-      // _interceptRequest 之前，故用 part 内紧随其后的 _chapterHtmlBytes 作下界。
-      final int isCustomIdx = src.indexOf('Uint8List _chapterHtmlBytes(');
-      expect(interceptIdx, greaterThan(0));
-      expect(isCustomIdx, greaterThan(interceptIdx));
-      final String interceptBody = src.substring(interceptIdx, isCustomIdx);
-      expect(
-          interceptBody.contains('_chapterHtmlBytes(filePath, data)'), isTrue,
+      expect(payloadIdx, greaterThan(0));
+      expect(interceptIdx, greaterThan(payloadIdx));
+      final String payloadBody = src.substring(payloadIdx, interceptIdx);
+      expect(payloadBody.contains('_chapterHtmlBytes(filePath, data)'), isTrue,
           reason: 'HTML 分支必须走 _chapterHtmlBytes（命中缓存/失效重建），'
-              '不能在拦截器里内联 sanitize+inject');
+              '不能在资源分支里内联 sanitize+inject');
+
+      final int chapterIdx = src.indexOf('Uint8List _chapterHtmlBytes(');
+      expect(chapterIdx, greaterThan(interceptIdx));
+      final String interceptBody = src.substring(interceptIdx, chapterIdx);
+      expect(interceptBody.contains('_readerResourcePayload(url)'), isTrue,
+          reason: '_interceptRequest 必须复用共享资源分支，避免 https/custom-scheme '
+              '两套路径绕过 HTML 缓存');
     });
 
     test('_chapterHtmlBytes 命中即把条目顶到 MRU', () {

@@ -39,6 +39,8 @@ void _noopDouble(double value) {}
 
 String _formatNumber(double value) => value.round().toString();
 
+String _formatEm(double value) => '${value.toStringAsFixed(1)}em';
+
 void main() {
   test('settings shared chrome uses design token radii and typography', () {
     final String source = File('lib/src/utils/components/settings_shared.dart')
@@ -553,6 +555,41 @@ void main() {
       greaterThanOrEqualTo(label.bottom - 0.5),
       reason: 'narrow non-flex stepper trailing should move below the label',
     );
+  });
+
+  testWidgets('stepper readout keeps unit values on one line', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: const Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsStepperRow(
+                  title: 'Paragraph spacing',
+                  value: 0,
+                  step: 0.1,
+                  min: 0,
+                  max: 4,
+                  format: _formatEm,
+                  onChanged: _noopDouble,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final Text readout = tester.widget<Text>(find.text('0.0em'));
+    expect(readout.softWrap, isFalse);
+    expect(readout.maxLines, 1);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

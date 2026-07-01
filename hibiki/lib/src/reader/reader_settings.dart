@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/font_catalog.dart';
@@ -698,10 +697,12 @@ class ReaderSettings {
   static ({String fontFamily, String fontFaces}) customFontCssForEntries(
     Iterable<Map<String, dynamic>> fonts, {
     Iterable<String> allowedDirectories = const <String>[],
+    String Function(String path) fontUrlBuilder = ReaderCustomFontCss.fontUrl,
   }) {
     return ReaderCustomFontCss.build(
       fonts,
       allowedDirectories: allowedDirectories,
+      fontUrlBuilder: fontUrlBuilder,
     );
   }
 
@@ -791,9 +792,13 @@ class ReaderSettings {
 }
 
 class ReaderCustomFontCss {
+  static const String kReaderResourceHost = 'hoshi.local';
+  static const String kReaderResourceScheme = 'hibiki-reader';
+
   static ({String fontFamily, String fontFaces}) build(
     Iterable<Map<String, dynamic>> fonts, {
     Iterable<String> allowedDirectories = const <String>[],
+    String Function(String path) fontUrlBuilder = fontUrl,
   }) {
     final Set<String> allowedRoots = allowedDirectories
         .where((String path) => path.isNotEmpty)
@@ -818,7 +823,7 @@ class ReaderCustomFontCss {
         continue;
       }
       families.add(cssFontFamilyName(normalizedName));
-      final String uri = fontUrl(safePath);
+      final String uri = fontUrlBuilder(safePath);
       faces.add(
         '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
         'src: url("$uri"); font-display: swap; }',
@@ -859,5 +864,6 @@ class ReaderCustomFontCss {
   }
 
   static String fontUrl(String path) =>
-      'https://hoshi.local/fonts/${Uri.encodeComponent(path)}';
+      '${defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS ? kReaderResourceScheme : 'https'}'
+      '://$kReaderResourceHost/fonts/${Uri.encodeComponent(path)}';
 }

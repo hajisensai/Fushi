@@ -38,6 +38,7 @@ const kSettingsSegmentedStyle = ButtonStyle(
 
 const int kSettingsRowTitleMaxLines = 2;
 const int kSettingsRowSubtitleMaxLines = 3;
+const double kSettingsStepperValueWidth = 72;
 const double kSettingsPickerDefaultWidth = 220;
 const double kSettingsPickerMinInlineWidth = 120;
 
@@ -324,14 +325,16 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // layout is only an improvement when there is no horizontal room left.
     //
     // The threshold must follow text scale: at 1x a label + a switch/stepper
-    // fit comfortably well below any real phone row width (≈320–380dp), so a
+    // fit comfortably below any real phone row width (≈320–380dp), so a
     // fixed 360 wrongly stacked nearly every row — worse at high UI scale, where
     // the app shrinks the logical width and pushed `maxWidth` under 360. Scaling
-    // the threshold with the effective text scale keeps it tiny at 1x (so normal
-    // rows stay horizontal) while still stacking when large text genuinely needs
-    // the extra room. Capped so absurd scales don't demand an impossible width.
+    // the threshold with the effective text scale keeps it modest at 1x (so
+    // normal rows stay horizontal) while still stacking when large text or a
+    // wider non-flex trailing, like a stepper with a fixed readout slot,
+    // genuinely needs the extra room. Capped so absurd scales don't demand an
+    // impossible width.
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
-    final double stackThreshold = (180.0 * textScale).clamp(180.0, 420.0);
+    final double stackThreshold = (220.0 * textScale).clamp(220.0, 420.0);
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool stackControls = controlBelow ||
@@ -1353,11 +1356,17 @@ class _KeyboardStepper extends StatelessWidget {
               tooltip: t.decrease,
             ),
             SizedBox(
-              width: 46,
-              child: Text(
-                format(value),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge,
+              width: kSettingsStepperValueWidth,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                child: Text(
+                  format(value),
+                  textAlign: TextAlign.center,
+                  softWrap: false,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
               ),
             ),
             _SettingsStepButton(
