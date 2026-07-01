@@ -260,7 +260,7 @@ class OffscreenVideoFrameGrabber {
     this.preferFfmpeg = false,
     this.thumbnailWidth = 320,
     this.screenshotRetries = 3,
-    this.screenshotSettle = const Duration(milliseconds: 90),
+    this.screenshotSettle = const Duration(milliseconds: 30),
     this.ffmpegTempDir,
   });
 
@@ -277,7 +277,9 @@ class OffscreenVideoFrameGrabber {
   /// screenshot 有界重试次数（seek 后帧可能尚未 render，等 settle 再试）。
   final int screenshotRetries;
 
-  /// 每次 screenshot 重试前的 settle 延迟（等 seek 后帧就绪）。
+  /// 每次 screenshot 重试前的 settle 延迟（等 seek 后帧就绪）。离屏 Player 已下发
+  /// `hr-seek=no`（关键帧 seek），seek 后仅解码 1 个 I 帧、帧就绪极快，故默认 30ms
+  /// 即可（对标 mpv 无感预览，TODO-1082 阶段①）。
   final Duration screenshotSettle;
 
   /// ffmpeg 兜底临时目录（默认系统临时目录）。
@@ -295,6 +297,13 @@ class OffscreenVideoFrameGrabber {
       configuration: const PlayerConfiguration(muted: true, vo: 'null'),
     );
     _player = player;
+    // 关键帧 seek 提速（TODO-1082 阶段①，对标 mpv 无感预览）：给离屏 Player 下发
+    // `hr-seek=no`——seek 只解码最近的 1 个关键帧（I 帧），不再从关键帧逐帧精确解码
+    // 到目标帧（长 GOP 精确 seek 数百 ms~1s+）；`hr-seek-framedrop=yes` 允许丢帧进一步
+    // 提速。仅本离屏第二 Player 生效，主播放器是独立实例、精确 seek 契约不动（never-break），
+    // 绝不改 media_kit 全局默认。best-effort：非 libmpv / 属性不支持时静默吞掉（与
+    // video_mpv_config.dart 的属性下发同范式）。
+    unawaited(_applyKeyframeSeekProperties(player));
     unawaited(player.open(Media(_sourceUri()), play: false));
     return player;
   }
@@ -305,6 +314,29 @@ class OffscreenVideoFrameGrabber {
       return uri.toString();
     }
     return videoPath;
+  }
+
+  /// 给离屏 [player] best-effort 下发关键帧 seek 属性（TODO-1082 阶段①）。
+  ///
+  /// 经 `player.platform`（NativePlayer）的 `setProperty` 下发，仅 libmpv 后端生效；
+  /// 非 libmpv / 该属性不支持运行时设置时单条静默吞掉（与 video_mpv_config.dart
+  /// 的 `applyMpvConfigToPlayer` 等同范式）。只影响本离屏 Player，不碰主播放器 /
+  /// media_kit 全局默认。
+  Future<void> _applyKeyframeSeekProperties(Player player) async {
+    final dynamic native = player.platform;
+    if (native == null) return;
+    const Map<String, String> props = <String, String>{
+      'hr-seek': 'no',
+      'hr-seek-framedrop': 'yes',
+    };
+    for (final MapEntry<String, String> e in props.entries) {
+      if (_disposed) return;
+      try {
+        await native.setProperty(e.key, e.value);
+      } catch (_) {
+        // 非 libmpv / 该属性不支持：跳过这条，继续下一条。
+      }
+    }
   }
 
   /// 取帧入口（注入给 [VideoThumbnailPreviewController]）。默认 screenshot 主、
@@ -325,21 +357,31 @@ class OffscreenVideoFrameGrabber {
     try {
       final Player player = _ensurePlayer();
       await player.seek(Duration(milliseconds: targetMs));
-      // seek 后帧未必立刻 render；有界重试，每次 settle 后尝试 screenshot。
+      // hr-seek=no 关键帧 seek 后帧就绪极快 → 先立即试拍一次（多数情况这一拍就命中，
+      // 无需等 settle，对标 mpv 无感预览，TODO-1082 阶段①）。
+      final ui.Image? immediate = await _tryScreenshotOnce(player);
+      if (immediate != null) return immediate;
+      // 首拍未命中（帧尚未 render）：有界重试，每次 settle 后再试。
       for (int attempt = 0; attempt < screenshotRetries; attempt++) {
         if (_disposed) return null;
         await Future<void>.delayed(screenshotSettle);
         if (_disposed) return null;
-        final Uint8List? bytes = await player.screenshot();
-        if (bytes != null && bytes.isNotEmpty) {
-          final ui.Image? decoded = await _decode(bytes);
-          if (decoded != null) return decoded;
-        }
+        final ui.Image? decoded = await _tryScreenshotOnce(player);
+        if (decoded != null) return decoded;
       }
     } catch (_) {
       // 落到 ffmpeg 兜底或返回 null。
     }
     return null;
+  }
+
+  /// 拍一帧并解码：screenshot 拿到非空字节则解码返回 [ui.Image]，否则返回 null。
+  /// 供 [_grabViaScreenshot] 的首拍与 settle 重试复用（消除两处重复）。
+  Future<ui.Image?> _tryScreenshotOnce(Player player) async {
+    if (_disposed) return null;
+    final Uint8List? bytes = await player.screenshot();
+    if (bytes == null || bytes.isEmpty) return null;
+    return _decode(bytes);
   }
 
   Future<ui.Image?> _grabViaFfmpeg(int targetMs) async {
