@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 501 条。点号进各自文件。
+> 共 502 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-516](bugs/BUG-516-vn-mode-mask-tiny-image.md) | ✅ | ✅ | VN模式常驻遮罩且图片极小 |
 | [BUG-515](bugs/BUG-515-media-sources-rescan-scope.md) | ✅ | ✅ | 媒体来源重扫跨async读已销毁ProviderScope崩溃 |
 | [BUG-514](bugs/BUG-514-error-log-noise.md) | ✅ | ✅ | 报错日志混入更新镜像失败与WGC取证噪声 |
 | [BUG-513](bugs/BUG-513-cover-runtime-disappear.md) | ✅ | ✅ | 封面运行期探测竞态消失重启恢复 |

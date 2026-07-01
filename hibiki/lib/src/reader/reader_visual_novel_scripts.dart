@@ -29,6 +29,9 @@
 // ignore_for_file: lines_longer_than_80_chars
 library;
 
+import 'package:hibiki/src/reader/reader_content_styles.dart'
+    show ReaderLayoutDefaults;
+
 /// Builds the VN-mode reader shell `<script>` for the reader WebView. Mirrors
 /// [ReaderPaginationScripts.shellScript]'s shells but installs the hoshi a
 /// Visual-Novel `window.hoshiReader`.
@@ -92,6 +95,10 @@ class ReaderVisualNovelScripts {
     required bool mergeCrossScreenSasayakiCues,
     required String initialRestoreScript,
   }) {
+    // TODO-1085 (BUG-513): single source of truth for the image viewport ratio,
+    // shared with the paginated shell (ReaderLayoutDefaults.imageWidthViewportRatio),
+    // consumed by applyImageMaxVars below.
+    const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
     return '''<script>
 (function(global) {
   'use strict';
@@ -991,10 +998,29 @@ window.hoshiReader = {
       })
       .then(() => {
         this.ensureStage();
+        this.applyImageMaxVars();
         this.buildSourceIndexes();
         this.setSasayakiCueData(this.initialSasayakiCues);
         this.buildScreens();
         this.renderInitialScreen();
+        this.notifyRestoreComplete();
+      })
+      .catch((error) => {
+        // TODO-1085 (BUG-513): notifyRestoreComplete is the ONLY signal that
+        // clears the Dart-side loading mask (reader_hibiki_page.dart's
+        // `if (!_readerContentReady) Positioned.fill(ColoredBox)`). It is the
+        // last statement of the happy path AND every restore method awaits this
+        // same readyPromise, so a reject anywhere in the chain (buildSourceIndexes
+        // / buildScreens / renderInitialScreen throwing on odd chapter markup)
+        // silently swallows the notify -> the mask hangs until the 8s content
+        // -ready timeout fallback. Fail-open: still fire notifyRestoreComplete so
+        // the mask is released (degrades to empty/partial screen, never a
+        // permanent black cover).
+        try {
+          if (window.console && console.error) {
+            console.error('[HoshiVN] initialize failed', error);
+          }
+        } catch (_ignored) {}
         this.notifyRestoreComplete();
       });
     return this.readyPromise;
@@ -1023,6 +1049,25 @@ window.hoshiReader = {
     this.screen.className = 'hoshi-vn-screen';
     this.stage.appendChild(this.screen);
     document.body.appendChild(this.stage);
+  },
+  applyImageMaxVars: function() {
+    // TODO-1085 (BUG-513): the shared reader image CSS
+    // (reader_content_styles.dart: `img.block-img`, `img:not(.block-img)`, `svg`)
+    // sizes images against `--hoshi-image-max-width` / `--hoshi-image-max-height`.
+    // The paginated/continuous shell sets those vars in initialize/updatePageSize
+    // from its content-box; the VN shell never did, so they stayed at the CSS
+    // fallbacks (`95vw` / `calc(--page-height - 22px)`). Combined with a
+    // never-promoted `<img>` (see setupReaderImages) that collapses inside the
+    // shrink-to-fit `.hoshi-vn-content` flex item, VN images rendered tiny. Set
+    // the vars to the actual VN viewport so a promoted `.block-img` fills the
+    // screen the same way it does in paginated mode.
+    var root = document.documentElement;
+    if (!root || !root.style) return;
+    var ratio = $imageWidthRatio;
+    var vw = Math.max(1, window.innerWidth || 0);
+    var vh = Math.max(1, window.innerHeight || 0);
+    root.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(vw * ratio)) + 'px');
+    root.style.setProperty('--hoshi-image-max-height', vh + 'px');
   },
   buildSourceIndexes: function() {
     var contentStreamFactory = window.hoshiReaderVnContentStream && window.hoshiReaderVnContentStream.create;
@@ -2340,11 +2385,65 @@ window.hoshiReader = {
   },
   setupReaderImages: function(root) {
     var scope = root || this.screen;
+    // TODO-1085 (BUG-513): the media-semantics stub is a no-op at M0, so cloned
+    // VN images never received the `.block-img` class that the shared reader CSS
+    // (reader_content_styles.dart) needs to give an image a page-sized centred
+    // box. Without it they fell through to `img:not(.block-img){max-width:100%}`,
+    // whose 100% resolves against the shrink-to-fit `.hoshi-vn-content` flex item
+    // and collapses to a few px. Promote large standalone images to `.block-img`
+    // (+ `.block-img-wrapper` for centering) exactly like the paginated shell's
+    // _sharedInitImages, so `--hoshi-image-max-width/height` (set by
+    // applyImageMaxVars) drive their size. Gaiji glyph images are left inline.
+    this.promoteBlockImages(scope);
     return window.hoshiReaderMediaSemantics.setupReaderImages(scope, {
       blurImages: $blurImages,
       imageBridge: window.HoshiReaderImage,
       waitForImages: false
     });
+  },
+  promoteBlockImages: function(scope) {
+    if (!scope || !scope.querySelectorAll) return;
+    var svgs = Array.from(scope.querySelectorAll('svg'));
+    for (var s = 0; s < svgs.length; s++) {
+      var svg = svgs[s];
+      if (svg.classList.contains('gaiji') || svg.classList.contains('gaiji-line')) continue;
+      if (svg.classList.contains('block-img') || svg.closest('.block-img-wrapper')) continue;
+      var svgImage = svg.querySelector('image');
+      if (!svgImage) continue;
+      if (svg.getAttribute('preserveAspectRatio') === 'none') {
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      }
+      var iw = parseFloat(svgImage.getAttribute('width')) || 0;
+      var ih = parseFloat(svgImage.getAttribute('height')) || 0;
+      if (iw <= 256 && ih <= 256) {
+        var vb = (svg.getAttribute('viewBox') || '').split(/[ ,]+/);
+        iw = parseFloat(vb[2]) || iw;
+        ih = parseFloat(vb[3]) || ih;
+      }
+      if (iw > 256 || ih > 256) {
+        svg.classList.add('block-img');
+        this.wrapBlockImage(svg);
+      }
+    }
+    var imgs = Array.from(scope.querySelectorAll('img'));
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      if (img.classList.contains('gaiji') || img.classList.contains('gaiji-line')) continue;
+      if (img.classList.contains('block-img') || img.closest('.block-img-wrapper')) continue;
+      if ((img.naturalWidth || 0) > 256 || (img.naturalHeight || 0) > 256) {
+        img.classList.add('block-img');
+        this.wrapBlockImage(img);
+      }
+    }
+  },
+  wrapBlockImage: function(element) {
+    var parent = element.parentNode;
+    if (!parent) return;
+    if (parent.classList && parent.classList.contains('block-img-wrapper')) return;
+    var wrapper = document.createElement('div');
+    wrapper.className = 'block-img-wrapper';
+    parent.insertBefore(wrapper, element);
+    wrapper.appendChild(element);
   },
   renderInitialScreen: function() {
     var index = 0;

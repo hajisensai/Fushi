@@ -100,4 +100,119 @@ void main() {
       reason: '_didScroll must not accept "revealed" as a turn',
     );
   });
+
+  // TODO-1085 / BUG-513 症状①：VN 模式常驻遮罩。Dart 侧 loading 遮罩
+  // (reader_hibiki_page.dart `if (!_readerContentReady) Positioned.fill(ColoredBox)`)
+  // 只由 JS 的 notifyRestoreComplete -> callHandler('onRestoreComplete') 清除。
+  // notifyRestoreComplete 是 initialize() readyPromise 链的最后一步，且所有 restore
+  // 方法都 await 这同一个 readyPromise —— 链上任何一步 reject 都会静默吞掉 notify，
+  // 遮罩只能等 8s 兜底才消。根因修复：readyPromise 补 .catch 兜底仍 fire notify。
+  test(
+      'BUG-513①: VN initialize readyPromise has a .catch that still fires '
+      'notifyRestoreComplete (fail-open, never a permanent mask)', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    // The happy-path notify exists.
+    expect(
+      shell.contains("callHandler('onRestoreComplete')"),
+      isTrue,
+      reason: 'notifyRestoreComplete must forward to onRestoreComplete',
+    );
+    // A .catch handler must exist on the initialize promise chain.
+    expect(
+      shell.contains('.catch((error) => {'),
+      isTrue,
+      reason: 'initialize readyPromise must catch failures',
+    );
+    // Inside the catch, notifyRestoreComplete must still be called so the Dart
+    // loading mask is released even when a build step throws.
+    final int catchIdx = shell.indexOf('.catch((error) => {');
+    expect(catchIdx, greaterThanOrEqualTo(0));
+    final int chainEnd = shell.indexOf('return this.readyPromise;', catchIdx);
+    expect(chainEnd, greaterThan(catchIdx),
+        reason:
+            'catch must sit inside initialize before returning readyPromise');
+    final String catchBody = shell.substring(catchIdx, chainEnd);
+    expect(
+      catchBody.contains('this.notifyRestoreComplete();'),
+      isTrue,
+      reason: 'catch branch must still fire notifyRestoreComplete (fail-open)',
+    );
+  });
+
+  // TODO-1085 / BUG-513 症状②：VN 模式图片极小。共享 reader 图片 CSS
+  // (reader_content_styles.dart) 用 --hoshi-image-max-width/height 给 .block-img 一个
+  // 页面尺寸的居中盒；分页 shell 在 initialize/updatePageSize 设这些变量并把大图
+  // 提升为 .block-img，VN shell 原来两件都没做 —— 变量落回 CSS 回退、img 又没
+  // .block-img，只能命中 img:not(.block-img){max-width:100%}，100% 对着 shrink-to-fit
+  // 的 .hoshi-vn-content flex item 解析 -> 坍成几像素。根因修复：VN initialize 里
+  // applyImageMaxVars 设变量 + setupReaderImages 把大图提升为 .block-img。
+  test(
+      'BUG-513②: VN shell sets --hoshi-image-max vars and promotes large '
+      'images to .block-img so they are not tiny', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    // The image viewport vars are set (single source of truth ratio 0.95).
+    expect(
+      shell.contains("setProperty('--hoshi-image-max-width'"),
+      isTrue,
+      reason: 'VN must set --hoshi-image-max-width so images size to viewport',
+    );
+    expect(
+      shell.contains("setProperty('--hoshi-image-max-height'"),
+      isTrue,
+      reason: 'VN must set --hoshi-image-max-height so images size to viewport',
+    );
+    expect(
+      shell.contains('var ratio = 0.95;'),
+      isTrue,
+      reason:
+          'image width ratio must match paginated (imageWidthViewportRatio)',
+    );
+    // applyImageMaxVars is invoked from initialize.
+    expect(
+      shell.contains('this.applyImageMaxVars();'),
+      isTrue,
+      reason: 'initialize must call applyImageMaxVars',
+    );
+    // Large standalone images/svgs are promoted to .block-img + wrapper, so the
+    // shared CSS gives them a page-sized centred box (not the collapsed
+    // max-width:100% fallback).
+    expect(
+      shell.contains("classList.add('block-img')"),
+      isTrue,
+      reason: 'VN must promote large images to .block-img',
+    );
+    expect(
+      shell.contains('this.promoteBlockImages('),
+      isTrue,
+      reason: 'setupReaderImages must promote block images before rendering',
+    );
+    expect(
+      shell.contains("wrapper.className = 'block-img-wrapper'"),
+      isTrue,
+      reason: 'promoted images must be centred via .block-img-wrapper',
+    );
+    // Gaiji glyph images must stay inline (never promoted / never blown up).
+    expect(
+      shell.contains("img.classList.contains('gaiji')"),
+      isTrue,
+      reason: 'gaiji glyph images must be excluded from block promotion',
+    );
+  });
+
+  // Never-break：非 VN 模式（分页/连续）不应被 VN 的图片 var/提升逻辑影响 ——
+  // 那些逻辑只存在于 VN shell，分页 shell 的图片处理仍走自己的 _sharedInitImages。
+  test('BUG-513: paginated shell is unchanged (VN-only promoteBlockImages)',
+      () {
+    final String paginated = ReaderPaginationScripts.shellScript();
+    expect(
+      paginated.contains('this.promoteBlockImages('),
+      isFalse,
+      reason: 'promoteBlockImages is VN-only; paginated must not gain it',
+    );
+    expect(
+      paginated.contains('this.applyImageMaxVars();'),
+      isFalse,
+      reason: 'applyImageMaxVars is VN-only; paginated uses its own image vars',
+    );
+  });
 }
