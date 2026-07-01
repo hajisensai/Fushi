@@ -3,13 +3,13 @@
   "name": "Hibiki Reader Bridge",
   "version": "0.1.0",
   "description": "Look up words on web pages using Hibiki's dictionaries.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["bridge-shim.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "scan.js", "content.js"],
+      "js": ["bridge-shim.js", "subtitle-adapters.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "scan.js", "content.js"],
       "css": ["vendor/popup.css"]
     }
   ],
