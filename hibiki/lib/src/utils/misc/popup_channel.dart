@@ -10,31 +10,47 @@ class PopupChannel {
 
   static const _channel = HibikiChannels.popup;
 
-  void Function(String text, int charIndex, Rect? anchor)? _onNewProcessText;
+  void Function(String text, int charIndex, Rect? anchor, Rect? subtitle)?
+      _onNewProcessText;
 
   void init({
-    void Function(String text, int charIndex, Rect? anchor)? onNewProcessText,
+    void Function(String text, int charIndex, Rect? anchor, Rect? subtitle)?
+        onNewProcessText,
   }) {
     _onNewProcessText = onNewProcessText;
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onNewProcessText' && _onNewProcessText != null) {
-        final ({String text, int charIndex, Rect? anchor}) parsed =
-            _parseProcessTextArgs(call.arguments);
+        final ({
+          String text,
+          int charIndex,
+          Rect? anchor,
+          Rect? subtitle
+        }) parsed = _parseProcessTextArgs(call.arguments);
         if (parsed.text.trim().isNotEmpty) {
-          _onNewProcessText!(parsed.text, parsed.charIndex, parsed.anchor);
+          _onNewProcessText!(
+            parsed.text,
+            parsed.charIndex,
+            parsed.anchor,
+            parsed.subtitle,
+          );
         }
       }
     });
     if (_onNewProcessText != null) {
       getInitialProcessText().then((data) {
         if (data.text != null && data.text!.trim().isNotEmpty) {
-          _onNewProcessText?.call(data.text!, data.charIndex, data.anchor);
+          _onNewProcessText?.call(
+            data.text!,
+            data.charIndex,
+            data.anchor,
+            data.subtitle,
+          );
         }
       });
     }
   }
 
-  Future<({String? text, int charIndex, Rect? anchor})>
+  Future<({String? text, int charIndex, Rect? anchor, Rect? subtitle})>
       getInitialProcessText() async {
     try {
       final Object? result =
@@ -47,21 +63,23 @@ class PopupChannel {
           text: text,
           charIndex: charIndex,
           anchor: _parseAnchor(result['anchor']),
+          subtitle: _parseAnchor(result['subtitle']),
         );
       }
       if (result is String) {
-        return (text: result, charIndex: -1, anchor: null);
+        return (text: result, charIndex: -1, anchor: null, subtitle: null);
       }
-      return (text: null, charIndex: -1, anchor: null);
+      return (text: null, charIndex: -1, anchor: null, subtitle: null);
     } catch (e, stack) {
       ErrorLogService.instance
           .log('PopupChannel.getInitialProcessText', e, stack);
       debugPrint('[Hibiki-popup] getInitialProcessText failed: $e');
-      return (text: null, charIndex: -1, anchor: null);
+      return (text: null, charIndex: -1, anchor: null, subtitle: null);
     }
   }
 
-  static ({String text, int charIndex, Rect? anchor}) _parseProcessTextArgs(
+  static ({String text, int charIndex, Rect? anchor, Rect? subtitle})
+      _parseProcessTextArgs(
     Object? args,
   ) {
     if (args is Map) {
@@ -72,12 +90,13 @@ class PopupChannel {
         text: text,
         charIndex: charIndex,
         anchor: _parseAnchor(args['anchor']),
+        subtitle: _parseAnchor(args['subtitle']),
       );
     }
     if (args is String) {
-      return (text: args, charIndex: -1, anchor: null);
+      return (text: args, charIndex: -1, anchor: null, subtitle: null);
     }
-    return (text: '', charIndex: -1, anchor: null);
+    return (text: '', charIndex: -1, anchor: null, subtitle: null);
   }
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（物理像素 [left, top, right,

@@ -36,6 +36,18 @@ class PopupDictFlutterActivity : FlutterActivity() {
         const val EXTRA_ANCHOR_RIGHT: String = "anchorRight"
         const val EXTRA_ANCHOR_BOTTOM: String = "anchorBottom"
 
+        /**
+         * Intent extras carrying the whole subtitle-window rectangle (physical px)
+         * from the floating lyric/subtitle strip (TODO-708 P1). The Dart popup
+         * avoids this superset so the lookup card never covers any glyph in the
+         * strip - not just the tapped one. Absent -> Dart avoids only the glyph
+         * anchor above, preserving the TODO-872 single-glyph behaviour.
+         */
+        const val EXTRA_SUBTITLE_LEFT: String = "subtitleLeft"
+        const val EXTRA_SUBTITLE_TOP: String = "subtitleTop"
+        const val EXTRA_SUBTITLE_RIGHT: String = "subtitleRight"
+        const val EXTRA_SUBTITLE_BOTTOM: String = "subtitleBottom"
+
         @Volatile
         private var webViewDataDirConfigured = false
 
@@ -73,14 +85,15 @@ class PopupDictFlutterActivity : FlutterActivity() {
         val text: String = extractProcessText(intent).orEmpty()
         val charIndex: Int = extractCharIndex(intent)
         val anchor: IntArray? = extractAnchorRect(intent)
-        PopupEngineHolder.setPendingText(text, charIndex, anchor)
+        val subtitle: IntArray? = extractSubtitleRect(intent)
+        PopupEngineHolder.setPendingText(text, charIndex, anchor, subtitle)
         engineWasCold = PopupEngineHolder.ensureEngine(this)
         PopupEngineHolder.setOnFinish { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
-            PopupEngineHolder.pushProcessText(text, charIndex, anchor)
+            PopupEngineHolder.pushProcessText(text, charIndex, anchor, subtitle)
         }
     }
 
@@ -97,6 +110,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
             extractProcessText(intent).orEmpty(),
             extractCharIndex(intent),
             extractAnchorRect(intent),
+            extractSubtitleRect(intent),
         )
     }
 
@@ -150,6 +164,31 @@ class PopupDictFlutterActivity : FlutterActivity() {
             intent.getIntExtra(EXTRA_ANCHOR_TOP, 0),
             intent.getIntExtra(EXTRA_ANCHOR_RIGHT, 0),
             intent.getIntExtra(EXTRA_ANCHOR_BOTTOM, 0),
+        )
+    }
+
+    /**
+     * Whole subtitle-window rectangle (physical px: left, top, right, bottom) from
+     * the floating lyric/subtitle strip (TODO-708 P1), or {@code null} when the
+     * intent carries no subtitle rect (system PROCESS_TEXT / hibiki://lookup, or an
+     * overlay not yet laid out). The Dart popup avoids this superset so the card
+     * never covers any glyph in the strip. All four extras must be present; a
+     * partial set is treated as absent.
+     */
+    private fun extractSubtitleRect(intent: Intent?): IntArray? {
+        if (intent == null) return null
+        if (!intent.hasExtra(EXTRA_SUBTITLE_LEFT) ||
+            !intent.hasExtra(EXTRA_SUBTITLE_TOP) ||
+            !intent.hasExtra(EXTRA_SUBTITLE_RIGHT) ||
+            !intent.hasExtra(EXTRA_SUBTITLE_BOTTOM)
+        ) {
+            return null
+        }
+        return intArrayOf(
+            intent.getIntExtra(EXTRA_SUBTITLE_LEFT, 0),
+            intent.getIntExtra(EXTRA_SUBTITLE_TOP, 0),
+            intent.getIntExtra(EXTRA_SUBTITLE_RIGHT, 0),
+            intent.getIntExtra(EXTRA_SUBTITLE_BOTTOM, 0),
         )
     }
 }

@@ -17,6 +17,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     required this.searchTerm,
     this.searchGeneration = 0,
     this.anchorRect,
+    this.subtitleWindowRect,
     this.closeInApp,
     this.autoSearchOnOpen = true,
     super.key,
@@ -30,6 +31,12 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 贴顶。anchorRect 变化也纳入 [didUpdateWidget] 复用判定，让同一常驻热页连续点不同字
   /// 位置也跟着更新。
   final Rect? anchorRect;
+
+  /// TODO-708 P1 ⑥：app 外悬浮字幕条「整条字幕窗屏幕矩形」（逻辑像素，与 [anchorRect]
+  /// 同坐标系，已含状态栏平移）。非空时作为弹窗避让锚（超集，同时覆盖被查字与未点的
+  /// 其它字），弹窗不遮整条字幕窗；为 null 时回退按 [anchorRect]（被查字单字）避让。
+  /// 仅悬浮字幕入口带此值；其它入口（系统 PROCESS_TEXT / hibiki://lookup）恒 null。
+  final Rect? subtitleWindowRect;
 
   /// TODO-951 症状C：app 外查词窗常驻不重建，宿主（popup_main）每次新 ProcessText
   /// 把递增的 generation 一并透传——即便是同一个词的连续查词，widget 配置也会变，
@@ -113,7 +120,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
     final bool changed = oldWidget.searchTerm != widget.searchTerm ||
         oldWidget.searchGeneration != widget.searchGeneration ||
-        oldWidget.anchorRect != widget.anchorRect;
+        oldWidget.anchorRect != widget.anchorRect ||
+        oldWidget.subtitleWindowRect != widget.subtitleWindowRect;
     if (!changed) return;
     final String trimmed = widget.searchTerm.trim();
     if (trimmed.isEmpty || !appModel.isInitialised) return;
@@ -262,13 +270,16 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         ),
       );
     }
+    // TODO-708 P1 ⑥：避让锚优先用「整条字幕窗矩形」（超集，覆盖被查字与未点的其它字），
+    // 弹窗不遮整条字幕窗；无字幕窗矩形时回退被查字单字（TODO-872 行为）。
+    final Rect avoidRect = widget.subtitleWindowRect ?? anchor;
     return LayoutBuilder(
       builder: (context, constraints) {
         const double maxCardWidth = 480;
         final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
         final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
         final Rect rect = computeFloatingLyricPopupRect(
-          glyphRect: anchor,
+          glyphRect: avoidRect,
           screen: screen,
           maxWidth: maxCardWidth,
           maxHeight: maxHeight,

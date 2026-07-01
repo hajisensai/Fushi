@@ -319,6 +319,18 @@ public class FloatingLyricService extends BaseFloatingService {
             intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_BOTTOM, glyph.bottom);
         }
 
+        // TODO-708 P1 (6): also ship the whole subtitle-window rectangle (physical
+        // px, same coordinate space as the glyph anchor above). The Flutter popup
+        // avoids this superset rect so the lookup card never covers *any* glyph in
+        // the strip - not just the tapped one. Absent -> Dart avoids only the glyph.
+        Rect subtitle = subtitleWindowScreenRect();
+        if (subtitle != null && !subtitle.isEmpty()) {
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_SUBTITLE_LEFT, subtitle.left);
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_SUBTITLE_TOP, subtitle.top);
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_SUBTITLE_RIGHT, subtitle.right);
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_SUBTITLE_BOTTOM, subtitle.bottom);
+        }
+
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
     }
@@ -362,6 +374,27 @@ public class FloatingLyricService extends BaseFloatingService {
         int screenTop = Math.round(loc[1] + padTop + top);
         int screenBottom = Math.round(loc[1] + padTop + bottom);
         return new Rect(screenLeft, screenTop, screenRight, screenBottom);
+    }
+
+    /**
+     * On-screen rectangle (physical px) of the whole subtitle overlay window
+     * ({@link #rootView}), in the same coordinate space as {@link #glyphScreenRect}
+     * ({@link View#getLocationOnScreen}, origin = physical screen top). TODO-708 P1
+     * (6): the Flutter popup avoids this superset so the lookup card never covers
+     * any glyph in the strip, not just the tapped one.
+     *
+     * Returns {@code null} when the overlay view is not laid out yet, so the caller
+     * omits the extras and the Dart popup falls back to avoiding only the glyph.
+     */
+    private Rect subtitleWindowScreenRect() {
+        View view = rootView;
+        if (view == null) return null;
+        int width = view.getWidth();
+        int height = view.getHeight();
+        if (width <= 0 || height <= 0) return null;
+        int[] loc = new int[2];
+        view.getLocationOnScreen(loc);
+        return new Rect(loc[0], loc[1], loc[0] + width, loc[1] + height);
     }
 
     private int getCharIndexAt(float x, float y) {
