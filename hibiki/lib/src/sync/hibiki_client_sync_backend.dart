@@ -797,6 +797,47 @@ class HibikiClientSyncBackend extends SyncBackend
         res.statusCode, 'PUT /api/library/books/$bookKey/progress');
   }
 
+  // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
+
+  /// 拉取 host 端聚合快照原始 JSON（TODO-1056 phase C）。老 host 无该端点返回 404
+  /// 时优雅降级返回 null（调用方跳过聚合步骤，与 [remoteBookProgress] 的 404 降级
+  /// 同纪律）——绝不因老 server 缺端点崩溃。返回的是未解码 Map，快照 decode 由上层
+  /// orchestrator 用 AggregateSnapshot.fromJson 处理，本 backend 只搬运 JSON。
+  Future<Map<String, dynamic>?> getRemoteAggregate() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/aggregate',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null; // 老 host 无聚合端点：降级跳过，不崩。
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/aggregate');
+    final String body = await res.transform(utf8.decoder).join();
+    final dynamic decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    return null; // 非对象返回体：当作空快照处理（上层 fromJson 也会降级）。
+  }
+
+  /// 向 host 上报（已在 client 端与 host 并集合并的）聚合快照 JSON（TODO-1056
+  /// phase C）。host 端用 MAX / 并集 upsert 折叠进自己 DB（幂等）。[json] 是
+  /// AggregateSnapshot.toJson() 的结果，本 backend 只负责 PUT 搬运。
+  Future<void> putRemoteAggregate(Object? json) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/aggregate',
+    );
+    req.headers.set('Content-Type', 'application/json');
+    req.write(jsonEncode(json));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/aggregate');
+  }
+
   // ── Live local audio (interconnect-only) ──────────────────────────
   // 与 live books 对称：直打 /api/library/localaudio，不经 WebDAV 暂存。
 

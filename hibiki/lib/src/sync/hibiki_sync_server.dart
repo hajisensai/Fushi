@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         listEmbeddedSubtitleTracks,
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
@@ -342,6 +343,9 @@ class HibikiSyncServer {
         reqPath.startsWith('/api/library/videos/')) {
       return _handleLibraryVideos(request, method, reqPath);
     }
+    if (reqPath == '/api/library/aggregate') {
+      return _handleLibraryAggregate(request, method, reqPath);
+    }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
     // 大小写不敏感平台（Windows）会把整条路径小写化，这会让书文件夹名按宿主平台
@@ -658,7 +662,9 @@ class HibikiSyncServer {
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    if (body['fields'] is! Map) return shelf.Response(400, body: 'Missing fields');
+    if (body['fields'] is! Map) {
+      return shelf.Response(400, body: 'Missing fields');
+    }
     // TODO-1000：带截图/时间戳/clip 的沉浸挖词走 mineImmersion（引擎在实现方，server 只转发）；
     // 纯 {fields,sentence} 保持现有 mineEntry 回落（向后兼容浏览器扩展纯文本挖词 + 移动端）。
     final ImmersionMinePayload payload;
@@ -669,7 +675,8 @@ class HibikiSyncServer {
     }
     final String result = payload.isImmersion
         ? await svc.mineImmersion(payload)
-        : await svc.mineEntry(fields: payload.fields, sentence: payload.sentence);
+        : await svc.mineEntry(
+            fields: payload.fields, sentence: payload.sentence);
     return _jsonResponse(<String, dynamic>{'result': result});
   }
 
@@ -1601,6 +1608,46 @@ class HibikiSyncServer {
     _videoStreamTokens.removeWhere(
       (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
     );
+  }
+
+  /// 聚合（统计 + 收藏）跨设备 live 端点（TODO-1056 phase C）。
+  ///
+  /// GET /api/library/aggregate — materialize host 自己的聚合快照（四张统计表 +
+  /// 挖掘计数 + 收藏词 + 收藏句）返回 JSON，供 client 拉取 host 真相源。
+  /// PUT /api/library/aggregate — client 上报（已在 client 端与 host 并集合并的）
+  /// 快照，host 用 MAX / 并集 upsert 折叠进自己 DB（幂等，删除不跨端传播）。
+  ///
+  /// 鉴权：不在中间件豁免名单，故自动走 Basic token 全量校验（已配对 peer 才可访问）。
+  /// 容错：坏 JSON → 400；service 未接线 → 404；apply 内部错误经 500 暴露（不静默）。
+  Future<shelf.Response> _handleLibraryAggregate(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+
+    switch (method) {
+      case 'GET':
+        final AggregateSnapshot snapshot = await svc.getAggregateSnapshot();
+        return shelf.Response.ok(
+          jsonEncode(snapshot.toJson()),
+          // charset=utf-8 必带：快照里的书名/标题/义项含 CJK，client 用
+          // package:http `.body` 默认按 latin1 解码会乱码（同 _jsonResponse）。
+          headers: <String, String>{
+            'Content-Type': 'application/json; charset=utf-8'
+          },
+        );
+      case 'PUT':
+        final Map<String, dynamic>? json = await _readJsonObject(request);
+        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
+        // fromJson 容错：未知高版本 / 缺字段 / 坏行降级为空或跳过，绝不抛。
+        final AggregateSnapshot snapshot = AggregateSnapshot.fromJson(json);
+        await svc.applyAggregateSnapshot(snapshot);
+        return shelf.Response(200);
+      default:
+        return shelf.Response(405);
+    }
   }
 
   Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {

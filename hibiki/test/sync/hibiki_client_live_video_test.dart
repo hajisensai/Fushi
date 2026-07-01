@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -12,6 +13,13 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 class _FakeLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   _FakeLibraryService() {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_client_vid');
     videoFile = File('${tmp.path}/sample.mp4');

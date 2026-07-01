@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -47,6 +48,13 @@ class _RecordingBackend implements SyncBackend {
 // ── live 分支集成：验证 HibikiClientSyncBackend 路由到 host DELETE 端点 ─────
 
 class _FakeLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   final List<String> deleted = <String>[];
 
   @override

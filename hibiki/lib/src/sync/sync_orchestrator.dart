@@ -300,6 +300,11 @@ class SyncOrchestrator {
       await _syncBookProgressLive(report, b);
       await _syncVideoProgressLive(report, b);
       await _syncAudiobookProgressLive(report, b);
+      // 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。复用 syncStats
+      // 开关（聚合 = 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
+      // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
+      // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
+      if (syncStats) await _syncAggregateLive(report, b);
     }
 
     // 云后端聚合同步（统计 + 收藏跨端共享，TODO-1056 phase B）。互联 live 端点
@@ -331,6 +336,38 @@ class SyncOrchestrator {
       report.errors.add('aggregate sync: $e');
     }
   }
+
+  /// 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。
+  ///
+  /// 复用 [AggregateSyncService.syncOverClient] 的通道无关核心（materialize 本地 →
+  /// GET host 快照 → [AggregateMergeService] 并集折叠 → 写回本地 DB（只 MAX / 并集
+  /// upsert，幂等）→ PUT 合并后快照回 host）。IO 由本方法注入：GET 走
+  /// [HibikiClientSyncBackend.getRemoteAggregate]（老 host 无端点返回 404 → null →
+  /// 只推不拉，优雅降级），PUT 走 [HibikiClientSyncBackend.putRemoteAggregate]。
+  ///
+  /// 无 baseline / 无冲突弹窗（集合 + 单调语义无损）；删除不跨端传播；无 schema 变更。
+  /// 整段 try/catch，逐轮错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
+  Future<void> _syncAggregateLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    try {
+      await AggregateSyncService(_db).syncOverClient(
+        fetchRemote: backend.getRemoteAggregate,
+        pushMerged: backend.putRemoteAggregate,
+      );
+    } catch (e) {
+      report.errors.add('aggregate live sync: $e');
+    }
+  }
+
+  /// 测试入口：直接调用 [_syncAggregateLive]（private 方法对测试文件不可见）。
+  @visibleForTesting
+  Future<void> syncAggregateLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncAggregateLive(report, backend);
 
   /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
   /// [SyncResult.conflict] rows are collected; everything else (imported /

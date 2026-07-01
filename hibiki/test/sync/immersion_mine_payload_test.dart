@@ -21,7 +21,9 @@ void main() {
     expect(p.isImmersion, true);
   });
 
-  test('missing optionals -> nulls, sentence falls back to fields, not immersion', () {
+  test(
+      'missing optionals -> nulls, sentence falls back to fields, not immersion',
+      () {
     final p = ImmersionMinePayload.fromJson(<String, dynamic>{
       'fields': <String, dynamic>{'sentence': 'fromfield'},
     });

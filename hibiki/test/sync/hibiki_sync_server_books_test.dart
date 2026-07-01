@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
@@ -8,6 +9,13 @@ const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
 /// Fake service：dict 方法存根（不抛，返回空），books 方法真实记录调用。
 class _FakeLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   // ── dict stubs ──────────────────────────────────────────────────────────────
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async =>

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
@@ -16,6 +17,13 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 ///
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
 class _FakeLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   _FakeLibraryService() {
     // 创建临时视频文件（内容为已知字节）
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_test');

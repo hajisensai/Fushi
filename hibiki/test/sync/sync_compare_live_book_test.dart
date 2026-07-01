@@ -4,6 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
@@ -13,6 +14,13 @@ import 'package:hibiki_core/hibiki_core.dart';
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 
 class _LiveBookLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   const _LiveBookLibraryService(this.bookTitle);
 
   final String bookTitle;

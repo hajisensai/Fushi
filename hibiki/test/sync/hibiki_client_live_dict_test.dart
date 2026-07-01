@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
@@ -13,6 +14,13 @@ import 'package:hibiki_core/hibiki_core.dart';
 // ── fake 库服务（与 hibiki_sync_server_library_test 同款）─────────────────
 
 class _FakeLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   final List<RemoteDictionaryInfo> dicts = <RemoteDictionaryInfo>[
     const RemoteDictionaryInfo(name: 'JMdict', type: 'term'),
   ];

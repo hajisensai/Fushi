@@ -101,6 +101,58 @@ class AggregateSyncService {
     await store.putJsonAsset(ns, ownAssetName, merged.toJson());
   }
 
+  /// Runs one aggregate sync over the interconnect live channel (TODO-1056
+  /// phase C). Same only-grows / MAX / union / idempotent semantics as the cloud
+  /// [sync], but the transport is a single host snapshot fetched over the LAN
+  /// server instead of per-device snapshot files in a `__aggregate__` namespace.
+  ///
+  /// [fetchRemote] GETs the host's aggregate snapshot JSON (the client backend
+  /// returns null when the host is old / lacks the endpoint — an old-server
+  /// degradation: the client then only PUSHES its own materialised snapshot so a
+  /// newer host would still receive it, and skips the local fold with no crash).
+  /// [pushMerged] PUTs the merged snapshot JSON back to the host, where the host
+  /// folds it into its own DB (MAX / union, idempotent).
+  ///
+  /// Flow: materialise local -> GET host snapshot -> fold via [mergeSnapshots]
+  /// (single source of truth) -> apply locally (MAX / union writes only) -> PUT
+  /// merged back. First sync (host empty) still converges: an empty peer folds to
+  /// the local snapshot, applied as a no-op, then pushed so the host converges.
+  /// A device with an empty merged state pushes nothing (nothing to share).
+  ///
+  /// No schema change; the snapshot is a transient JSON payload, local state
+  /// lives in the existing statistic tables + favorite_sentences pref.
+  Future<void> syncOverClient({
+    required Future<Object?> Function() fetchRemote,
+    required Future<void> Function(Object json) pushMerged,
+  }) async {
+    // 1) Materialise local state.
+    final AggregateSnapshot localSnapshot = await materializeLocalSnapshot();
+
+    // 2) Fetch the host's snapshot. null => old host without the endpoint:
+    //    degrade to push-only (still share our state; skip the local fold).
+    final Object? remoteJson = await fetchRemote();
+    if (remoteJson == null) {
+      if (localSnapshot.isEmpty) return; // Nothing to share, nothing to fold.
+      await pushMerged(localSnapshot.toJson());
+      return;
+    }
+
+    // 3) Fold the host snapshot into the local one through the same pure merge
+    //    the cloud channel uses (single source of truth; commutative/idempotent).
+    final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson);
+    final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
+
+    // 4) Apply the merged result back locally (MAX / union writes; idempotent).
+    if (!identical(merged, localSnapshot)) {
+      await applySnapshotToLocal(merged);
+    }
+
+    // 5) Push the merged snapshot back so the host converges to the union.
+    //    Nothing to share on an all-empty merge: skip the write.
+    if (merged.isEmpty) return;
+    await pushMerged(merged.toJson());
+  }
+
   /// Pure fold of two snapshots through [AggregateMergeService] - the single
   /// source of truth for every family's merge semantics. No new algorithm here:
   /// each list is projected to the keyed map the fold expects, MAX-/union-ed,
@@ -260,7 +312,6 @@ class AggregateSyncService {
   /// Reads the whole local aggregate state (four statistic tables + mining +
   /// favorite words + favorite-sentence pref blob) into a snapshot. Pure read,
   /// no mutation.
-  @visibleForTesting
   Future<AggregateSnapshot> materializeLocalSnapshot() async {
     final List<ReadingStatisticRow> reading =
         await _db.getAllReadingStatistics();
@@ -340,7 +391,6 @@ class AggregateSyncService {
   /// side already folded MAX, mining through setMiningCount (MAX), favorite
   /// words through the idempotent addFavoriteWord, and favorite sentences
   /// through the same pure fold + pref write BackupMergeEngine uses.
-  @visibleForTesting
   Future<void> applySnapshotToLocal(AggregateSnapshot snapshot) async {
     for (final ReadingStatRecord r in snapshot.readingStats) {
       await _db.setReadingStatistic(ReadingStatisticsCompanion(
@@ -393,6 +443,23 @@ class AggregateSyncService {
       );
     }
     await _writeFavoriteSentences(snapshot.favoriteSentences);
+  }
+
+  /// Folds an INCOMING peer snapshot into the local DB safely: materialises the
+  /// local state first, MAX/union-merges the peer on top (single source of truth
+  /// [mergeSnapshots]), then applies the merged result. Unlike calling
+  /// [applySnapshotToLocal] directly with a raw peer snapshot, this can NEVER
+  /// shrink a local value — a peer bucket smaller than the local one is dominated
+  /// by the local side in the MAX fold. Used by the interconnect HOST when it
+  /// receives a client-pushed snapshot (the host has not pre-merged its own state
+  /// into what the client sent, so it must fold here), keeping the never-shrinks /
+  /// idempotent invariants on the host side too. Returns nothing; local DB is the
+  /// side effect.
+  Future<void> foldIntoLocal(AggregateSnapshot incoming) async {
+    if (incoming.isEmpty) return; // Nothing to fold: no-op (idempotent).
+    final AggregateSnapshot local = await materializeLocalSnapshot();
+    final AggregateSnapshot merged = mergeSnapshots(local, incoming);
+    await applySnapshotToLocal(merged);
   }
 
   /// Reads the favorite-sentence pref blob into models, tolerating a

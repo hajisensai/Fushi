@@ -12,6 +12,8 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
 import 'package:hibiki/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
+import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
@@ -866,5 +868,28 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     await _db.setPrefTyped<int>(
         videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
         winner.updatedAtMs);
+  }
+
+  // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
+
+  /// 读 host 端当前聚合快照。直接复用云后端 phase B 的
+  /// [AggregateSyncService.materializeLocalSnapshot]（同一 DB 读取逻辑），保证互联
+  /// 与云通道 materialize 结果字节等价、无第二套实现。
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async {
+    return AggregateSyncService(_db).materializeLocalSnapshot();
+  }
+
+  /// 把 client 上报的聚合快照折叠进 host DB。用
+  /// [AggregateSyncService.foldIntoLocal]（先 materialize host 自己 → MAX / 并集
+  /// 合并 incoming → apply），保证 host 侧也满足 never-shrinks：client 上报的某字段
+  /// 即便小于 host 当前值（并发 / GET 后 host 又涨），MAX 折叠让 host 值不被缩小；
+  /// 幂等（重复 apply 同一快照不变）；删除不跨端传播。经 [_runExclusive] 与其它库
+  /// 变动串行，避免与 host 本机写统计/收藏竞态。
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {
+    await _runExclusive(
+      () => AggregateSyncService(_db).foldIntoLocal(snapshot),
+    );
   }
 }

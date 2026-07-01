@@ -1,11 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
 /// Fake 库服务：本地音频 + 有声书方法真实记录调用；dict/books 方法存根。
 class _FakeLibraryService implements HibikiLibraryHostService {
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
   // ── dict stubs ──────────────────────────────────────────────────────────────
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
