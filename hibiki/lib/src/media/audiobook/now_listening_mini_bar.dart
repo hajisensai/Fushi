@@ -57,7 +57,9 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     }
 
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final AudioCue? cue = controller.currentCue;
+    // 书架 mini bar 字幕行同属「显示意图」（TODO-1065, BUG-509）：display cue
+    // 消除首句空窗 / gap 内提前显示下一句。
+    final AudioCue? cue = controller.displayCueForFloatingLyric;
     final bool playing = controller.isPlaying;
 
     return Material(

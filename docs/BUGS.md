@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 495 条。点号进各自文件。
+> 共 496 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-510](bugs/BUG-510-dict-autoupdate-gate.md) | ✅ | ✅ | TODO-1075 词典自动更新 isUpdatable gate 在 catalog 导入路径恒空档 |
+| [BUG-509](bugs/BUG-509-floating-lyric-first-cue.md) | ✅ | ✅ | TODO-1065 悬浮字幕首句空窗 / 每句要等上一句播完才出现 |
 | [BUG-508](bugs/BUG-508-desktop-overlay-nested-popup.md) | ✅ | ✅ | 桌面app外全局查词覆盖窗嵌套弹窗:缺关闭X/不能滑关/点父不关子/子弹窗闪烁/点第一层关全部 |
 | [BUG-507](bugs/BUG-507-mobile-popup-washout.md) | ✅ | ✅ | TODO-1065 悬浮字幕查词弹窗<html>不透明泛白 |
 | [BUG-506](bugs/BUG-506-video-controls-autohide-button-misclick.md) | ✅ | ✅ | TODO-1059 菜单播放按钮时自动隐藏误触 |

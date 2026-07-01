@@ -95,6 +95,68 @@ class AudiobookPlayerController extends ChangeNotifier {
     return best ?? _currentCue;
   }
 
+  /// 供**悬浮字幕 / 媒体通知副标题 / 书架 mini bar** 这类「显示意图」表面使用的
+  /// cue（TODO-1065, BUG-509）。与 [currentCue] 的关键差异：
+  ///
+  /// [currentCue] 是 reader 正文高亮的权威值——`_updateCurrentCue` 在 `idx<0`
+  /// （音频引子期 / 句间静音 gap）时**刻意裸 return 保持上一句**，避免高亮闪烁
+  /// （见 findCueIndex 闭区间契约 + BUG-074 家族）。这条 hold 契约**不改**。
+  ///
+  /// 但显示表面不需要「hold 上一句防闪烁」，反而希望：
+  ///  - 音频开头到首句 startMs 之间就先显示**首句**（消除首句空窗）；
+  ///  - 句间 gap 内提前显示**下一条即将到来**的 cue（不再等上一句播完）。
+  ///
+  /// 因此本 getter 独立按当前位置重算，不复用被 hold 的 `_currentCue`：
+  ///  - 命中某条 cue 区间（`idx>=0`）→ 返回该 cue（= 当前句）；
+  ///  - 位置早于首句 → 返回首句（index 0）；
+  ///  - 落在 gap → 返回下一条 startMs 严格大于当前位置的 cue；
+  ///  - 位置晚于末句（无下一条）→ 返回末句，保持显示不清空。
+  ///
+  /// 前瞻在 `effectiveMs = pos - delayMs` 空间计算，与用户音画同步偏移一致。
+  /// 无 cue 数据时回退到 [currentCue]（可能为 null）。
+  AudioCue? get displayCueForFloatingLyric {
+    final int audioFileIndex = _player.currentIndex ?? 0;
+    final List<AudioCue> fileCues = _chapterCuesForAudioFile(audioFileIndex);
+    if (fileCues.isEmpty) return _currentCue;
+    final int effectiveMs =
+        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
+    return _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
+  }
+
+  /// [displayCueForFloatingLyric] 的纯决策（与 [_nextCueIndex]/[_prevCueIndex]
+  /// 同构，抽成静态便于单测，不触 [_player]）。[cues] 须已按 startMs 升序、且同属
+  /// 当前音频文件；[effectiveMs] 已减 delay。空列表返回 null。
+  static AudioCue? _displayCueFor({
+    required List<AudioCue> cues,
+    required int effectiveMs,
+  }) {
+    if (cues.isEmpty) return null;
+    final int idx = JsonAlignmentParser.findCueIndex(
+      cues: cues,
+      positionMs: effectiveMs,
+    );
+    // 命中某条 cue 区间：当前句。
+    if (idx >= 0) return cues[idx];
+    // idx<0：早于首句 / 句间 gap / 晚于末句。取「下一条 startMs 严格大于当前
+    // 位置」的 cue（早于首句时即首句 index 0）；无下一条（晚于末句）→ 末句。
+    for (final AudioCue cue in cues) {
+      if (cue.startMs > effectiveMs) return cue;
+    }
+    return cues.last;
+  }
+
+  /// [displayCueForFloatingLyric] 在给定 cue 列表中的 0-based 索引（-1 = 未命中）。
+  /// 供悬浮字幕 N>0 上下文窗口选行用；语义与 getter 一致（首句前=首句、gap=下一句），
+  /// 只是把「显示 cue」映射回调用方选定的列表（全书快照 or 章内快照）的下标。
+  int displayCueIndexIn(List<AudioCue> cues) {
+    final AudioCue? cue = displayCueForFloatingLyric;
+    if (cue == null || cues.isEmpty) return -1;
+    for (int i = 0; i < cues.length; i++) {
+      if (_isSameCue(cues[i], cue)) return i;
+    }
+    return -1;
+  }
+
   /// 当前章节 cue 列表长度（UI 用于 "第 x / n 句" 进度显示）。
   int get chapterCueCount => _chapterCues.length;
 
@@ -1321,6 +1383,15 @@ class AudiobookPlayerController extends ChangeNotifier {
       startMs: startMs,
       audioFileCount: audioFileCount,
     );
+  }
+
+  /// 测试钩子：暴露 [_displayCueFor] 纯决策（悬浮字幕/通知/mini bar 显示 cue）。
+  @visibleForTesting
+  static AudioCue? displayCueForTesting({
+    required List<AudioCue> cues,
+    required int effectiveMs,
+  }) {
+    return _displayCueFor(cues: cues, effectiveMs: effectiveMs);
   }
 
   @visibleForTesting

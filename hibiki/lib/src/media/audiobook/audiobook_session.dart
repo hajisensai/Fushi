@@ -295,8 +295,10 @@ class AudiobookSession extends ChangeNotifier {
     if (!_showFloatingLyric()) return;
     final int n = _floatingLyricContextLines();
     if (n <= 0) {
-      // N=0（默认）：零变化分支——payload 只有 text（无行标记键），逐字节等于今天。
-      final AudioCue? cue = controller.currentCue;
+      // N=0（默认）：payload 只有 text（无行标记键）。改用 display cue
+      // （TODO-1065, BUG-509）：音频引子期先显示首句、句间 gap 提前显示下一句，
+      // 消除首句空窗 / 「等上一句播完才出现」。reader 高亮仍用 currentCue，不受影响。
+      final AudioCue? cue = controller.displayCueForFloatingLyric;
       FloatingLyricChannel.updateText(cue?.text ?? '');
     } else {
       // N>0：与 lyrics.part.dart 同源的列表/索引选择（全书快照优先，否则章内），
@@ -304,9 +306,9 @@ class AudiobookSession extends ChangeNotifier {
       final List<AudioCue> cues = controller.allBookCuesSnapshot.isNotEmpty
           ? controller.allBookCuesSnapshot
           : controller.chapterCuesSnapshot;
-      final int index = controller.allBookCuesSnapshot.isNotEmpty
-          ? controller.allBookCueIdx
-          : controller.currentCueIdx;
+      // display cue 在选定列表中的下标（TODO-1065, BUG-509）：与 N=0 分支同源，
+      // 首句前=首句、gap=下一句，让上下文窗口在引子期 / gap 也对齐即将播的句。
+      final int index = controller.displayCueIndexIn(cues);
       final FloatingLyricBlock block =
           buildFloatingLyricBlock(cues: cues, index: index, n: n);
       FloatingLyricChannel.updateText(
@@ -336,7 +338,9 @@ class AudiobookSession extends ChangeNotifier {
       speed: controller.speed,
       duration: controller.duration,
     );
-    final AudioCue? cue = controller.currentCue;
+    // 锁屏/媒体通知副标题同属「显示意图」（TODO-1065, BUG-509）：用 display cue
+    // 让引子期先显示首句、gap 提前显示下一句。不涉及高亮/进度语义。
+    final AudioCue? cue = controller.displayCueForFloatingLyric;
     if (cue != null) {
       handler.updateNotificationSubtitle(
         title: _book?.title ?? 'Hibiki',
