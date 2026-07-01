@@ -79,6 +79,14 @@
   var frameSources = new WeakMap();
   var wrappedWindows = new WeakSet();
   var lastBBoxKey = '';
+  // TODO-1079 (C) — the root frame id of the currently-rendered stack. A NEW
+  // hotkey lookup resets the stack to a fresh root (Dart _resetStackRoot mints a
+  // new frame id), so a changed root id means "new lookup": reset lastBBoxKey so
+  // the first overlaySize of the new card is ALWAYS delivered even when its
+  // union bbox happens to equal the previous lookup's (else the reveal-driving
+  // overlaySize was de-duped away and the window stayed hidden -> popup 'did not
+  // appear').
+  var lastRootId = null;
 
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
@@ -601,6 +609,7 @@
     if (!popups.length) {
       removeMissing([]);
       lastBBoxKey = '';
+      lastRootId = null;
       return;
     }
     var layer = ensureLayer();
@@ -612,6 +621,14 @@
       }
       ids.push(descriptor.id);
       renderPayload(layer, descriptor);
+    }
+    // TODO-1079 (C) — a changed ROOT frame id means a fresh lookup: clear the
+    // bbox de-dup so the new card's first overlaySize is never suppressed by a
+    // stale identical-bbox key from the previous lookup.
+    var rootId = ids.length ? ids[0] : null;
+    if (rootId !== lastRootId) {
+      lastRootId = rootId;
+      lastBBoxKey = '';
     }
     removeMissing(ids);
     scheduleMeasure();

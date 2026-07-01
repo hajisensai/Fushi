@@ -55,6 +55,21 @@ class GlobalLookupWindow {
   // set (via the channel "prepare" call) before the first ShowAt.
   void SetPopupAssetsDir(const std::wstring& dir) { popup_assets_dir_ = dir; }
 
+  // TODO-1079 — creates the overlay window + WebView2 OFF-SCREEN and navigates
+  // to host.html WITHOUT revealing it, so the first hotkey lookup hits a WARM
+  // WebView2 (webview_ready_ already set) instead of racing a cold create chain
+  // (environment + controller + navigation + host/popup double-iframe, commonly
+  // >450ms). Idempotent: a no-op once the window exists. Mirrors the in-app
+  // keepWebViewWarm hot-slot ownership for this app-external overlay window.
+  // |width|/|height| size the off-screen host so its first self-measure is at a
+  // sane size; the real card size is applied on the first ShowAt/Reveal.
+  void PrewarmWebView(int width, int height, HWND owner);
+  // TODO-1079 — whether the WebView2 has finished its initial navigation (the
+  // host document + popup iframes are loaded). The ready-driven reveal fallback
+  // must confirm this before revealing so a not-yet-loaded overlay never shows
+  // as a blank window.
+  bool IsWebViewReady() const { return webview_ready_; }
+
   // Shows the overlay at screen coordinates (physical pixels) without stealing
   // focus. Creates the window + WebView2 lazily on first call. Returns false if
   // window creation failed.

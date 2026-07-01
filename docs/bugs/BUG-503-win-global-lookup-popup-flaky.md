@@ -1,0 +1,14 @@
+## BUG-503 · TODO-1079 win外查词弹窗偶发不出
+- **报告**：2026-07-01（用户：）
+- **真实性**：✅ 真 bug（时序/生命周期归属，非平台硬限制）。app 外全局查词覆盖窗是真 WebView2 顶层窗（非视频 WGC 桥）。根因分三处：
+  - 主根因：覆盖窗 WebView2 完全懒创建、从不预热。唯一创建点在 `hibiki/windows/runner/global_lookup_window.cpp:201` 的 `ShowAt -> EnsureWebView()`；TODO-951 的 keepWebViewWarm 热槽只服务 in-app HeadlessInAppWebView（`hibiki/lib/src/startup/webview_prewarm.dart`，无 GlobalLookup 引用）。首帧热键走冷创建链（环境+控制器+导航+host/popup 双层 iframe）常 >450ms，而 reveal 由 Dart 450ms 盲兜底（`hibiki/lib/src/lookup/global_lookup_controller.dart:250` 旧 `reveal: SAFETY timeout`）踩空 → "窗在但内容空白"或被前台钩子 `ForegroundHookProc`（`global_lookup_window.cpp:97`）自关。
+  - 次因1：host.js `lastBBoxKey` 跨查词去重（`hibiki/assets/popup/global_lookup_host.js:81/:669`）吞掉新查词首个 `overlaySize`（reveal 驱动源）。
+  - 次因2：原生 `visible_/revealed_`（`global_lookup_window.cpp:336-351`）与 Dart `_revealed`（controller `_onHotKey`）跨查词状态错位，in-flight `Hide()` 吞新窗。
+- **[x] ① 已修复** — 根因修复（A+B+C+D）：
+  - A 预热归属：`GlobalLookupController.start()` 首帧后新增 `_prewarmOverlay` → `GlobalLookupChannel.prewarmWebView` → 原生 `GlobalLookupWindow::PrewarmWebView`（`global_lookup_window.cpp`），仅建 window + `EnsureWebView()` 导航 host.html 停在 off-screen，使 `webview_ready_` 提前置位；语义对齐 in-app keepWebViewWarm。
+  - B 就绪驱动 reveal：把 450ms 盲兜底改为 `_scheduleReadyDrivenSafety`（controller），每 tick 先 `GlobalLookupChannel.isWebViewReady()`（原生 `IsWebViewReady()`）确认再 reveal；未就绪则有界重排（≤6 次），最后兜底 reveal，绝不 reveal 空白面。真正 reveal 仍是 host `overlaySize` 驱动。
+  - C 消去重吞噬：host.js `renderStack` 记录 `lastRootId`，root 帧 id 变化（新查词）即 `lastBBoxKey=''`，保证新卡首个 `overlaySize` 必投递；空栈时同时清 `lastRootId`。
+  - D 状态归属统一：`_onHotKey` 开头无条件 `GlobalLookupChannel.hide()`（复位原生 visible_/revealed_ 与 Dart `_revealed`）再 showAt。
+  - 跨文件：`global_lookup_controller.dart` / `global_lookup_channel.dart` / `windows/runner/global_lookup_window.{h,cpp}` / `windows/runner/flutter_window.cpp` / `assets/popup/global_lookup_host.js`。in-app 查词/视频查词路径不受影响。提交哈希：见分支 todo-1079-win-global-lookup-flaky。
+- **[x] ② 已加自动化测试** — 源码扫描守卫 `hibiki/test/lookup/global_lookup_flaky_popup_guard_test.dart`（A prewarm 存在且 off-screen 导航 host.html、B reveal 就绪驱动且盲兜底已删、C host 去重按 root 复位、D _onHotKey 开头 hide）；host.js C 复位行为端到端 `hibiki/test/lookup/global_lookup_host_test.mjs` case 22（换 root id 即使 bbox 相同仍重投 overlaySize）。均真绿。
+- **备注**：真机验收项（Category-A，集成 owner 落代码后留用户真机）：① 偶发时 HWND 是否 `IsWindowVisible`（区分"空白" vs "被 Hide"）；② 冷态 `EnsureWebView` 实测是否稳定 >450ms（决定 A vs B 主次）；③ overlaySize 去重是否真复现。C++ 改动本 harness 不编 Windows runner，需集成/CI Windows job 编译。

@@ -51,6 +51,11 @@ class GlobalLookupController {
   // off-screen / awaiting reveal. Reset per lookup.
   bool _revealed = false;
   Timer? _revealSafety;
+  // TODO-1079 (B) — ready-driven reveal safety cadence. Each tick re-checks
+  // isWebViewReady before revealing; a not-yet-ready surface reschedules up to
+  // _kReadySafetyMaxAttempts times (~450ms each) then reveals as a last resort.
+  static const Duration _kReadySafetyStep = Duration(milliseconds: 450);
+  static const int _kReadySafetyMaxAttempts = 6;
 
   // TODO-867 P3b nested stack. The ordered lookup-popup stack (index 0 root
   // ... last = deepest child) drives the host renderStack payload. Each
@@ -121,6 +126,29 @@ class GlobalLookupController {
     } catch (e, st) {
       glog('start: hotkey register FAILED: $e\n$st');
     }
+
+    // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
+    // so the first hotkey lookup hits a WARM surface instead of racing a cold
+    // create chain (>450ms) against the reveal. Sized to the current card size ×
+    // dpr so its off-screen self-measure is at a sane size; the real geometry is
+    // applied on the first showAt/reveal. Non-fatal on failure (the lazy create
+    // path in showAt still works, just cold). Semantics mirror the in-app
+    // keepWebViewWarm hot slot, but for THIS bare overlay window (which
+    // webview_prewarm.dart never warmed — that gap was the root cause).
+    unawaited(_prewarmOverlay(appModel));
+  }
+
+  /// TODO-1079 — off-screen prewarm of the overlay WebView2 (see [start]).
+  Future<void> _prewarmOverlay(AppModel model) async {
+    try {
+      final double dpr = _devicePixelRatio();
+      final int w = (model.popupMaxWidth * model.appUiScale * dpr).round();
+      final int h = (model.popupMaxHeight * model.appUiScale * dpr).round();
+      await GlobalLookupChannel.prewarmWebView(width: w, height: h);
+      glog('start: overlay prewarm requested w=$w h=$h');
+    } catch (e) {
+      glog('start: overlay prewarm FAILED (non-fatal): $e');
+    }
   }
 
   /// Absolute folder that holds popup.html on Windows:
@@ -145,6 +173,15 @@ class GlobalLookupController {
         glog('hotkey: appModel null — abort');
         return;
       }
+      // TODO-1079 (D) — reset native + Dart reveal state from zero every
+      // lookup. The native visible_/revealed_ and this controller's
+      // _revealed used to drift out of sync across lookups (an in-flight
+      // Hide() could swallow the next window; a stale revealed_ let the
+      // foreground hook self-close the fresh card). An unconditional hide()
+      // up front collapses both sides to a known-hidden state before showAt
+      // re-arms them, so every lookup starts clean. Cheap (SW_HIDE + unhook)
+      // and the prewarmed WebView2 survives it.
+      GlobalLookupChannel.hide();
       // Grab the foreground app's current selection (inject Ctrl+C) — no manual
       // copy needed.
       final String text =
@@ -210,21 +247,58 @@ class GlobalLookupController {
       glog('hotkey: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
       _autoReadFirstEntry(model, result);
-      // Safety: if the page never reports a size (render failure), reveal at the
-      // single-card size (NOT the larger measurement bounds w0/h0) so the card is
-      // not stuck invisible off-screen and the fallback window is not oversized.
+      // TODO-1079 (B) — READY-DRIVEN reveal fallback (was a blind 450ms timeout).
+      // The real reveal is host-driven (overlaySize -> _applyOverlayBox). This
+      // safety only fires when that never arrives (true render failure), and it
+      // MUST NOT reveal a WebView2 that has not finished loading — that produced
+      // the 'window present but blank' flake when a cold create chain outran the
+      // 450ms budget. So the tick reveals only after confirming the surface is
+      // ready (webview_ready_ via isWebViewReady); if still loading it reschedules
+      // a bounded number of times, then reveals as a last resort so the card is
+      // never stuck invisible. Prewarm (A) makes the ready path the common case;
+      // this gate is the belt-and-braces for a cold/slow surface.
       final int safeW = (cardW * dpr).round();
       final int safeH = (cardH * dpr).round();
-      _revealSafety = Timer(const Duration(milliseconds: 450), () {
-        if (!_revealed) {
-          _revealed = true;
-          glog('reveal: SAFETY timeout w=$safeW h=$safeH');
-          unawaited(GlobalLookupChannel.reveal(width: safeW, height: safeH));
-        }
-      });
+      _scheduleReadyDrivenSafety(safeW, safeH, attempt: 0);
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
+  }
+
+  /// TODO-1079 (B) — schedules the ready-driven reveal safety. On each 450ms
+  /// tick: if the host already revealed (overlaySize path), stop. Else confirm
+  /// the overlay WebView2 finished loading (isWebViewReady) before revealing at
+  /// the single-card size — a not-yet-ready surface would flash blank. While the
+  /// surface is still loading, reschedule up to [_kReadySafetyMaxAttempts] times
+  /// (~kReadySafetyStep each), then reveal as an absolute last resort so the card
+  /// is never stuck invisible. [attempt] is the current retry index.
+  void _scheduleReadyDrivenSafety(int width, int height,
+      {required int attempt}) {
+    _revealSafety?.cancel();
+    _revealSafety = Timer(_kReadySafetyStep, () async {
+      if (_revealed) {
+        return;
+      }
+      bool ready;
+      try {
+        ready = await GlobalLookupChannel.isWebViewReady();
+      } catch (_) {
+        ready = false;
+      }
+      if (_revealed) {
+        return; // Host revealed while we awaited the readiness check.
+      }
+      if (ready || attempt >= _kReadySafetyMaxAttempts) {
+        _revealed = true;
+        glog('reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
+            'w=$width h=$height');
+        unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+        return;
+      }
+      // Surface still loading — defer instead of revealing blank.
+      glog('reveal: READY-SAFETY defer (not ready, attempt=$attempt)');
+      _scheduleReadyDrivenSafety(width, height, attempt: attempt + 1);
+    });
   }
 
   /// The main window's device-pixel ratio (monitor scale). Used as the initial

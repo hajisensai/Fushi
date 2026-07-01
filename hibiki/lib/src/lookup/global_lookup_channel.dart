@@ -61,6 +61,26 @@ abstract final class GlobalLookupChannel {
         'assetsDir': assetsDir,
       });
 
+  /// TODO-1079 — root-cause fix: build the overlay window + WebView2 OFF-SCREEN
+  /// and navigate to host.html at startup (after the first frame) so the first
+  /// hotkey lookup hits a WARM surface. Without this the very first (and any
+  /// post-idle) lookup raced a cold WebView2 create chain (environment ->
+  /// controller -> navigate -> load the popup.html child iframes, commonly
+  /// >450ms) while the reveal fired against a not-yet-ready surface -> "window
+  /// present but blank" / self-closed. Idempotent natively (no-op once warm).
+  static Future<void> prewarmWebView({int width = 420, int height = 600}) =>
+      _channel.invokeMethod<void>('prewarmWebView', <String, Object?>{
+        'width': width,
+        'height': height,
+      });
+
+  /// TODO-1079 — whether the overlay WebView2 finished its initial navigation
+  /// (host document + popup iframes loaded). The ready-driven reveal fallback
+  /// confirms this before revealing so a not-yet-loaded overlay never flashes as
+  /// a blank window. False on any non-bool native reply (treat as not ready).
+  static Future<bool> isWebViewReady() async =>
+      (await _channel.invokeMethod<bool>('isWebViewReady')) ?? false;
+
   /// Shows the overlay at screen coordinates (physical pixels) without stealing
   /// focus. Returns the native reply: whether the window was created plus the
   /// cursor monitor's work area in PHYSICAL px (TODO-893 — so the Dart cascade

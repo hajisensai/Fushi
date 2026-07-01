@@ -749,4 +749,33 @@ function flushTimers() {
   assert.strictEqual(out.args[1].height, 16, 'anchor height preserved');
 }
 
+// 22. TODO-1079 (C): a NEW lookup (changed ROOT frame id) resets the bbox
+//     de-dup so the fresh card's first overlaySize is ALWAYS delivered, even
+//     when its union bbox equals the previous lookup's. Without the reset, the
+//     reveal-driving overlaySize was suppressed by the stale key and the window
+//     stayed hidden -> "popup did not appear".
+{
+  const { host } = freshHost();
+  // Lookup 1: root frame-0 at a fixed geometry -> one overlaySize.
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const first = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.ok(first.length >= 1, 'lookup 1 reported overlaySize');
+  hostPostLog = [];
+  // Lookup 2: a DIFFERENT root id (fresh lookup) but the SAME bbox geometry.
+  host.renderStack({
+    popups: [
+      { id: 'frame-9', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const second = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.ok(
+    second.length >= 1,
+    'a new root id re-delivers overlaySize despite an identical bbox (C)',
+  );
+}
+
 console.log('global_lookup_host_test: PASS');

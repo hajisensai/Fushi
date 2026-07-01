@@ -209,6 +209,42 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   return true;
 }
 
+void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
+  // TODO-1079 — root-cause fix for the app-external lookup popup "sometimes does
+  // not appear". The overlay's WebView2 used to be created LAZILY on the first
+  // ShowAt (EnsureWebView), so the very first hotkey raced a cold create chain
+  // (CreateCoreWebView2Environment -> controller -> Navigate host.html -> load
+  // the popup.html child iframes), commonly >450ms, while the Dart 450ms safety
+  // reveal / host overlaySize fired against a not-yet-ready surface -> "window
+  // present but blank" or the foreground hook self-closed it. Prewarming builds
+  // the window + WebView2 ONCE off-screen at startup and navigates to host.html,
+  // so webview_ready_ is set before the user ever presses the hotkey and the hot
+  // path only renders + reveals. Semantics mirror the in-app keepWebViewWarm hot
+  // slot, but for THIS bare overlay window (webview_prewarm.dart only warms the
+  // in-app HeadlessInAppWebView, never this window — that gap was the root cause).
+  if (hwnd_ != nullptr) {
+    return;  // Already warm (window + WebView2 exist) — idempotent.
+  }
+  EnsureWindowClass();
+  const int off_x = OffscreenX();
+  const int w = width > 0 ? width : 420;
+  const int h = height > 0 ? height : 600;
+  hwnd_ = CreateWindowExW(
+      WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName,
+      L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
+      GetModuleHandle(nullptr), this);
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  EnsureWebView();
+  // Show off-screen (so WebView2 lays out + navigates and NavigationCompleted
+  // fires -> webview_ready_) but keep visible_ false: the click-outside hooks
+  // stay disarmed and the user sees nothing until a real lookup reveals it.
+  ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+  visible_ = false;
+  revealed_ = false;
+}
+
 void GlobalLookupWindow::Reveal(int width, int height) {
   if (hwnd_ == nullptr) {
     return;

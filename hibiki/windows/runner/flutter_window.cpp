@@ -812,6 +812,19 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           global_lookup_window_->SetPopupAssetsDir(
               WideFromValue(args, "assetsDir", L""));
           result->Success();
+        } else if (method == "prewarmWebView") {
+          // TODO-1079 — build the overlay window + WebView2 off-screen at
+          // startup so the first hotkey lookup hits a WARM surface (no cold
+          // create-chain race that left the popup blank / self-closed).
+          global_lookup_window_->PrewarmWebView(
+              IntFromValue(args, "width", 420),
+              IntFromValue(args, "height", 600), GetHandle());
+          result->Success();
+        } else if (method == "isWebViewReady") {
+          // TODO-1079 — the ready-driven reveal fallback confirms the WebView2
+          // finished its initial navigation before revealing (else it defers).
+          result->Success(flutter::EncodableValue(
+              global_lookup_window_->IsWebViewReady()));
         } else if (method == "showAt") {
           int x = IntFromValue(args, "x", 0);
           int y = IntFromValue(args, "y", 0);
