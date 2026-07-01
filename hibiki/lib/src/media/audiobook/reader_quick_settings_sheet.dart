@@ -1734,6 +1734,10 @@ class _InBookTocRow extends StatelessWidget {
       padding: EdgeInsetsDirectional.only(start: indent),
       child: AdaptiveSettingsRow(
         title: title,
+        // TOC chapter names can be long; on a narrow phone the default 2-line
+        // clamp clips them. Allow a few wrapped lines (still finite so pathological
+        // titles can't blow up the row) before ellipsizing (TODO-1055).
+        titleMaxLines: 4,
         icon: entry.depth > 0
             ? (cupertino ? CupertinoIcons.text_alignleft : Icons.notes_outlined)
             : (cupertino ? CupertinoIcons.book : Icons.menu_book_outlined),

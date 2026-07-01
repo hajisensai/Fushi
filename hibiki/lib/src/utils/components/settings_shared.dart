@@ -284,12 +284,21 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.onTap,
     this.controlBelow = false,
     this.trailingFlexible = false,
+    this.titleMaxLines,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
   final bool showIcon;
+
+  /// Overrides how many lines the title may occupy before ellipsizing. When
+  /// null the shared [kSettingsRowTitleMaxLines] default (2) is used, so every
+  /// existing call site keeps its current behavior. Pass a larger finite value
+  /// (never null-as-unbounded) for rows whose title can legitimately be long -
+  /// e.g. a table-of-contents chapter name on a narrow phone - so it wraps
+  /// instead of being clipped at two lines.
+  final int? titleMaxLines;
 
   /// CONTRACT: [trailing] must be self-sizing. With [controlBelow] false it is
   /// placed as a NON-flex child of a Row that also has an `Expanded` label, so
@@ -398,7 +407,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
             _SettingsIcon(icon: icon!),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
-          Expanded(child: _SettingsLabel(title: title, subtitle: subtitle)),
+          Expanded(
+            child: _SettingsLabel(
+              title: title,
+              subtitle: subtitle,
+              titleMaxLines: titleMaxLines,
+            ),
+          ),
           if (trailing != null) ...[
             SizedBox(width: tokens.spacing.gap + 4),
             // A flexible trailing receives bounded width so an inner horizontal
@@ -437,7 +452,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
                 _SettingsIcon(icon: icon!),
                 SizedBox(width: tokens.spacing.gap + 4),
               ],
-              Expanded(child: _SettingsLabel(title: title, subtitle: subtitle)),
+              Expanded(
+                child: _SettingsLabel(
+                  title: title,
+                  subtitle: subtitle,
+                  titleMaxLines: titleMaxLines,
+                ),
+              ),
             ],
           ),
           if (trailing != null) ...[
@@ -1560,10 +1581,15 @@ class AdaptiveSettingsNavigationRow extends StatelessWidget {
 }
 
 class _SettingsLabel extends StatelessWidget {
-  const _SettingsLabel({required this.title, this.subtitle});
+  const _SettingsLabel({
+    required this.title,
+    this.subtitle,
+    this.titleMaxLines,
+  });
 
   final String title;
   final String? subtitle;
+  final int? titleMaxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -1583,7 +1609,7 @@ class _SettingsLabel extends StatelessWidget {
           title,
           style: titleStyle,
           overflow: TextOverflow.ellipsis,
-          maxLines: kSettingsRowTitleMaxLines,
+          maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
         ),
         if (subtitle != null && subtitle!.isNotEmpty)
           Padding(

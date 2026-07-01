@@ -1,0 +1,6 @@
+## BUG-488 · 手机端TOC章节名被截断不换行
+- **报告**：2026-07-01（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/utils/components/settings_shared.dart:1586`（`_SettingsLabel` 标题 `Text` 硬编码 `maxLines: kSettingsRowTitleMaxLines`，常量=2，见 `settings_shared.dart:39`）；TOC 章节名走 `hibiki/lib/src/media/audiobook/reader_quick_settings_sheet.dart:1735` 的 `_InBookTocRow` 非 header 分支，把长章节名作为 `title` 传给 `AdaptiveSettingsRow`。手机窄屏 label 被 `Expanded`（settings_shared.dart:401/440）压窄→2 行放不下→ellipsis 截断。桌面走 `MaterialSupportingPaneLayout` 宽分栏故不易复现。
+- **[x] ① 已修复** — 给 `AdaptiveSettingsRow` 增加可选 `int? titleMaxLines`（默认 null→回退 `kSettingsRowTitleMaxLines`，既有调用零行为变化），透传经 `_SettingsLabel` 到标题 `Text.maxLines`（`settings_shared.dart:277/1563/1586` + build 站点 401/440）。仅在 TOC 行 `reader_quick_settings_sheet.dart:1735` 传 `titleMaxLines: 4`（有限值防极端超长撑爆，仍保留尾部省略号）。未直接改全局常量。提交哈希：见分支 `fix-1055-toc-chapter-name-wrap`。
+- **[x] ② 已加自动化测试** — `hibiki/test/settings/settings_row_title_max_lines_test.dart`：窄屏（360）pump `AdaptiveSettingsRow`，① 传 `titleMaxLines: 4` 断言标题 `Text.maxLines > 2`（且 ==4）——修复前红；② 不传时断言回退 `kSettingsRowTitleMaxLines`（既有行为不变）。
+- **备注**：TODO-1055。方案 A 最小改动，未从零重写。
