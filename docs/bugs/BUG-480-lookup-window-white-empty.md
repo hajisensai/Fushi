@@ -1,6 +1,6 @@
 ## BUG-480 · 查词窗白色无内容
 - **报告**：2026-07-01（用户：`查词窗是白色的，没内容`）
-- **真实性**：❌ 当前未复现/未定位新根因。修复 macOS file picker entitlement 后，用 Computer Use 复测首页查词页：搜索框、空状态“请先导入词典以便使用”和“导入词典”按钮均正常显示；进入词典管理页后，顶部导入/下载按钮、分类 tabs 和空状态也正常显示。既有查词弹窗防白屏路径（空结果仍注入 `renderPopup`、搜索中遮罩、global-lookup 样式作用域）自动化守卫均通过。
-- **[ ] ① 未修复** — 当前没有复现到独立查词窗白屏缺陷；本轮实际修复的是导致词典导入 picker 不弹出的 macOS sandbox entitlement 问题（见 BUG-478）。
-- **[ ] ② 未加自动化测试** — 未新增测试；已回跑既有查词弹窗守卫：`flutter test test/pages/dictionary_popup_webview_test.dart test/pages/popup_layer_loading_cover_guard_test.dart test/lookup/global_lookup_popup_style_guard_test.dart --reporter expanded`。
-- **备注**：如再次出现，需要补充具体入口（首页查词、阅读器划词弹窗、全局查词悬浮窗或视频字幕查词）和触发词/页面状态；旧的同类真 bug 记录见 `docs/bugs/BUG-312-todo-520-lookup-window-no-text.md`。
+- **真实性**：✅ 真 bug。沿用户截图路径复现：macOS 阅读器竖排页点击正文触发查词，弹窗外壳出现但正文区域白色无内容。根因是阅读器复用隐藏 warm slot 时会把真实空结果也当作 `keepWebViewWarm` WebView 层处理：`DictionaryPopupLayer._buildBody` 对 `keepWebViewWarm` 无条件挂 WebView，`BaseSourcePage.showDeferredPopup` 又等待该层的 `popupRendered` 才撤搜索态；macOS 上隐藏/屏外 warm slot 的 JS 注入可能未完成，最终用户看到空白 WebView 壳而不是 Flutter 的无结果占位。
+- **[x] ① 已修复** — 真实空结果不再等待 WebView，直接走 Flutter `t.no_search_results` 占位；只有搜索中、有词条/汉字结果、或空 searchTerm 的隐藏 seed warm slot 才挂 WebView。对需要 WebView 渲染的可见 warm slot，显示临时盖板并在可见后一帧调用 `refreshCurrentResult()` 重推当前结果；`popupRendered` 携带 render token，避免旧渲染回调误撤盖板。提交：`4c43fd939aa7`。
+- **[x] ② 已加自动化测试** — 新增/更新 `test/pages/base_source_page_nested_popup_flash_test.dart`、`test/pages/dictionary_popup_webview_test.dart`、`test/pages/base_source_page_warm_popup_test.dart`、`test/pages/dictionary_popup_eager_mount_guard_test.dart`、`test/pages/popup_layer_loading_cover_guard_test.dart`，覆盖 warm slot 可见结果等 `popupRendered`、真实空结果立即显示 Flutter 占位、render token 顺序与排队刷新。
+- **备注**：已用 Computer Use 复测打包后的 macOS debug app：阅读器点击 `Pagination Test Book (2)` 正文触发查词后，弹窗正文显示“未找到搜索结果。”而非白色空白；导出备份确认分类后弹出 Save 面板，Cancel 后未落盘；导入备份与数据存储位置均可打开系统 Open 面板。

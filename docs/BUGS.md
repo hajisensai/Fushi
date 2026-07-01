@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-480](bugs/BUG-480-lookup-window-white-empty.md) | 🚧 | 🚧 | 查词窗白色无内容 |
+| [BUG-480](bugs/BUG-480-lookup-window-white-empty.md) | ✅ | ✅ | 查词窗白色无内容 |
 | [BUG-479](bugs/BUG-479-backup-export-null-save-success.md) | ✅ | ✅ | 备份导出未选择位置也提示成功 |
 | [BUG-478](bugs/BUG-478-macos-file-picker-entitlements.md) | ✅ | ✅ | macOS 文件选择器不弹出 |
 | [BUG-477](bugs/BUG-477-popup-webview-double-context-menu.md) | ✅ | ✅ | 查词弹窗右键同时弹WebView2原生菜单与自定义菜单(双菜单·BUG-468同根·弹窗WebView漏修) |
