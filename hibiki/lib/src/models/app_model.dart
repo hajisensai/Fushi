@@ -658,8 +658,9 @@ class AppModel with ChangeNotifier {
   }
 
   /// Used for caching images and audio produced from media seeds.
-  DefaultCacheManager get cacheManager => _cacheManager;
-  final _cacheManager = DefaultCacheManager();
+  DefaultCacheManager get cacheManager =>
+      _cacheManager ??= DefaultCacheManager();
+  DefaultCacheManager? _cacheManager;
 
   /// Used to notify dictionary widgets to dictionary history additions.
   final ChangeNotifier dictionaryEntriesNotifier = ChangeNotifier();
