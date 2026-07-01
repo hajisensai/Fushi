@@ -47,6 +47,11 @@ void main() {
       'lib/src/media/audiobook/pointer_seek.dart',
       'lib/src/shortcuts/gamepad_service.dart',
       'lib/src/shortcuts/reader_space_override.dart',
+      // TODO-1066: the app-external global lookup hotkey's executor. It reads
+      // ShortcutAction.globalExternalLookup from the registry and registers it
+      // to the OS-level hotkey_manager (the one action that runs via a system
+      // hotkey rather than page/media _executeShortcutAction dispatch).
+      'lib/src/lookup/global_lookup_controller.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

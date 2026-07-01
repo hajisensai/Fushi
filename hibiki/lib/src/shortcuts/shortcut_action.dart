@@ -7,7 +7,13 @@ enum ShortcutScope {
   // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
   // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
   // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
-  gamepad;
+  gamepad,
+  // TODO-1066：桌面「app 外全局查词」的系统级触发热键作用域。此 scope 的动作
+  // **不经 resolveKeyboard / 页面派发**，而是由 GlobalLookupController 直接读其
+  // 绑定注册到操作系统级 hotkey_manager（默认 Ctrl+Alt+D）。它跨页面常驻、不与
+  // 任何应用内页面的键盘绑定竞争，故自成独立 co-active 组，冲突检测只扫自己，
+  // 绝不与 global/home 等页面 scope 互相牵连。仅桌面（Windows）有意义。
+  globalExternal;
 
   // Scopes that are resolved together on the same page. The reader page
   // resolves reader + audiobook bindings; the home page resolves home + global.
@@ -33,6 +39,11 @@ enum ShortcutScope {
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
         return const <ShortcutScope>[gamepad];
+      // globalExternal（系统级 app 外查词热键）是独立 co-active 组：它不经页面
+      // 派发，只由 controller 注册到操作系统热键；冲突检测只扫自己，永不与任何
+      // 应用内 scope 牵连。
+      case globalExternal:
+        return const <ShortcutScope>[globalExternal];
     }
   }
 }
@@ -138,7 +149,14 @@ enum ShortcutAction {
   dpadUp(ShortcutScope.gamepad, 'dpad_up'),
   dpadDown(ShortcutScope.gamepad, 'dpad_down'),
   dpadLeft(ShortcutScope.gamepad, 'dpad_left'),
-  dpadRight(ShortcutScope.gamepad, 'dpad_right');
+  dpadRight(ShortcutScope.gamepad, 'dpad_right'),
+
+  // Global external lookup (TODO-1066)：桌面「app 外全局查词」的系统级触发热键。
+  // 执行体是 GlobalLookupController（读本 action 的键盘绑定注册到 hotkey_manager，
+  // 默认 Ctrl+Alt+D），而非页面/媒体 _executeShortcutAction 派发——它是唯一一个
+  // 走操作系统热键、不经 resolveKeyboard 的 action。设置页据此渲染出可改键行，
+  // 修复「app 外查词快捷键没办法设置」。
+  globalExternalLookup(ShortcutScope.globalExternal, 'global_external_lookup');
 
   const ShortcutAction(this.scope, this.key);
 

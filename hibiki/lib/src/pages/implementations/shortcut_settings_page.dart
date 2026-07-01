@@ -132,6 +132,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_dpad_left;
     case ShortcutAction.dpadRight:
       return t.shortcut_action_dpad_right;
+    case ShortcutAction.globalExternalLookup:
+      return t.shortcut_action_global_external_lookup;
   }
 }
 
@@ -150,6 +152,8 @@ String _scopeLabel(ShortcutScope scope) {
       return t.shortcut_scope_video;
     case ShortcutScope.gamepad:
       return t.shortcut_scope_gamepad;
+    case ShortcutScope.globalExternal:
+      return t.shortcut_scope_global_external;
   }
 }
 
@@ -299,37 +303,64 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           ),
         ),
         for (final ShortcutScope scope in ShortcutScope.values)
-          AdaptiveSettingsSection(
-            title: _scopeLabel(scope),
-            children: <Widget>[
-              AdaptiveSettingsRow(
-                title: t.shortcut_reset_defaults,
-                icon: Icons.restore_outlined,
-                showIcon: true,
-                onTap: () => _confirmResetScope(scope),
-              ),
-              if (_visualMode)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: KeyboardLayoutView(
-                    registry: _registry,
-                    scope: scope,
-                    onKeyTap: _onKeyboardKeyTap,
-                  ),
-                )
-              else
-                for (final ShortcutAction action
-                    in ShortcutAction.actionsForScope(scope))
-                  _ActionTile(
-                    action: action,
-                    bindings: _registry.bindingsFor(action),
-                    onEdit: () => _editBinding(action),
-                  ),
-            ],
+          _buildScopeSection(scope),
+      ],
+    );
+  }
+
+  /// Builds one scope's card. TODO-1066: on mobile the `globalExternal` scope
+  /// (app-external lookup) is triggered by the OS (text-selection menu / share /
+  /// floating ball) and the OS forbids apps from remapping that hotkey, so it
+  /// renders a read-only explanatory note instead of an editable binding row —
+  /// keeping the app honest ("为什么这里改不了键") without a dead, non-functional
+  /// remap row. On desktop the same scope is a real, editable Ctrl+Alt+D binding
+  /// and renders like every other scope.
+  Widget _buildScopeSection(ShortcutScope scope) {
+    final bool isMobilePlatform =
+        defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS;
+    if (scope == ShortcutScope.globalExternal && isMobilePlatform) {
+      return AdaptiveSettingsSection(
+        title: _scopeLabel(scope),
+        children: <Widget>[
+          AdaptiveSettingsRow(
+            title: _actionLabel(ShortcutAction.globalExternalLookup),
+            subtitle: t.shortcut_scope_global_external_mobile_note,
+            icon: Icons.info_outline,
+            showIcon: true,
           ),
+        ],
+      );
+    }
+    return AdaptiveSettingsSection(
+      title: _scopeLabel(scope),
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          title: t.shortcut_reset_defaults,
+          icon: Icons.restore_outlined,
+          showIcon: true,
+          onTap: () => _confirmResetScope(scope),
+        ),
+        if (_visualMode)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
+            child: KeyboardLayoutView(
+              registry: _registry,
+              scope: scope,
+              onKeyTap: _onKeyboardKeyTap,
+            ),
+          )
+        else
+          for (final ShortcutAction action
+              in ShortcutAction.actionsForScope(scope))
+            _ActionTile(
+              action: action,
+              bindings: _registry.bindingsFor(action),
+              onEdit: () => _editBinding(action),
+            ),
       ],
     );
   }

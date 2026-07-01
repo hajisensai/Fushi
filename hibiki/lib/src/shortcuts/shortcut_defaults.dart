@@ -308,6 +308,13 @@ class ShortcutDefaults {
     ShortcutAction.dpadDown: _kb([], [_gDpadDown]),
     ShortcutAction.dpadLeft: _kb([], [_gDpadLeft]),
     ShortcutAction.dpadRight: _kb([], [_gDpadRight]),
+    // TODO-1066：桌面「app 外全局查词」系统级触发热键，默认 Ctrl+Alt+D（与旧硬
+    // 编码一致，行为不变，只是变成可改键）。GlobalLookupController 读此绑定注册到
+    // hotkey_manager；macOS 表把 Ctrl 换成 Meta（见 _macOS）。globalExternal 是独立
+    // co-active 组，Ctrl+Alt+D 不与任何应用内页面键冲突。
+    ShortcutAction.globalExternalLookup: _kb([
+      _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl, ModifierKey.alt}),
+    ]),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
@@ -350,6 +357,11 @@ class ShortcutDefaults {
             return ShortcutBindingSet(
               gamepadBindings: desktop.gamepadBindings,
             );
+          // TODO-1066：移动端「app 外查词」= 纯系统 PROCESS_TEXT / 分享 / 悬浮球
+          // 触发，操作系统不允许第三方注册系统级文本选择热键，故此 scope 在移动端
+          // 无任何 app 内绑定（设置页对该 scope 显示系统级说明文案，不渲染可改键行）。
+          case ShortcutScope.globalExternal:
+            return const ShortcutBindingSet();
         }
       }(),
   };

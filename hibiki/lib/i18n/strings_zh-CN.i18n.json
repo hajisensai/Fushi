@@ -2048,5 +2048,8 @@
   "video_setting_subtitle_bg_color_red": "红色",
   "video_setting_subtitle_bg_color_blue": "蓝色",
   "video_setting_subtitle_bg_color_green": "绿色",
-  "profile_media_video": "视频"
+  "profile_media_video": "视频",
+  "shortcut_scope_global_external": "全局（应用外）",
+  "shortcut_action_global_external_lookup": "应用外查词热键",
+  "shortcut_scope_global_external_mobile_note": "由系统触发（选中文本菜单、分享、悬浮球），系统不允许应用自定义此热键。"
 }

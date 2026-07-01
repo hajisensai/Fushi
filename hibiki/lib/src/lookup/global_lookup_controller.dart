@@ -15,7 +15,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
@@ -24,6 +24,9 @@ import 'package:hibiki/src/lookup/global_lookup_stack.dart';
 import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
@@ -40,6 +43,11 @@ class GlobalLookupController {
 
   AppModel? _appModel;
   HotKey? _hotKey;
+  // TODO-1066 — the live shortcut registry we read the global-lookup hotkey
+  // from (was a hard-coded Ctrl+Alt+D). Listened to so a user remapping the
+  // key in settings (or a profile switch that reloads bindings) re-registers
+  // the OS hotkey immediately, instead of the key being a compile-time const.
+  HibikiShortcutRegistry? _registry;
   bool _started = false;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
@@ -114,18 +122,13 @@ class GlobalLookupController {
       onJsMessage: _onJsMessage,
     );
 
-    _hotKey = HotKey(
-      key: PhysicalKeyboardKey.keyD,
-      modifiers: <HotKeyModifier>[HotKeyModifier.control, HotKeyModifier.alt],
-      scope: HotKeyScope.system,
-    );
-    try {
-      await hotKeyManager.register(_hotKey!,
-          keyDownHandler: (_) => _onHotKey());
-      glog('start: hotkey Ctrl+Alt+D registered OK');
-    } catch (e, st) {
-      glog('start: hotkey register FAILED: $e\n$st');
-    }
+    // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
+    // hard-coded Ctrl+Alt+D that bypassed the whole registry, so it never showed
+    // up in the settings page and could not be remapped). Register it now and
+    // re-register whenever the registry changes (user remap / profile switch).
+    _registry = appModel.shortcutRegistry;
+    _registry!.addListener(_onRegistryChanged);
+    await _registerHotKeyFromRegistry();
 
     // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
     // so the first hotkey lookup hits a WARM surface instead of racing a cold
@@ -149,6 +152,92 @@ class GlobalLookupController {
     } catch (e) {
       glog('start: overlay prewarm FAILED (non-fatal): $e');
     }
+  }
+
+  /// TODO-1066 — (un)registers the OS-level trigger hotkey from the current
+  /// [ShortcutAction.globalExternalLookup] binding in the registry. Unregisters
+  /// any previously-registered hotkey first so a remap does not leak the old
+  /// combo. The first keyboard binding (there is at most one meaningful global
+  /// hotkey) is used; when the action has no keyboard binding (e.g. the user
+  /// cleared it, or on a platform with no default) no hotkey is registered and
+  /// the feature is simply off until a key is assigned. Non-fatal on failure.
+  Future<void> _registerHotKeyFromRegistry() async {
+    // Drop the previously-registered hotkey (idempotent: safe when none).
+    final HotKey? previous = _hotKey;
+    _hotKey = null;
+    if (previous != null) {
+      try {
+        await hotKeyManager.unregister(previous);
+      } catch (e) {
+        glog('hotkey: unregister previous FAILED (non-fatal): $e');
+      }
+    }
+    final HibikiShortcutRegistry? registry = _registry;
+    if (registry == null) {
+      return;
+    }
+    final ShortcutBindingSet set =
+        registry.bindingsFor(ShortcutAction.globalExternalLookup);
+    if (set.keyboardBindings.isEmpty) {
+      glog('hotkey: no keyboard binding for globalExternalLookup — not '
+          'registered (feature off until a key is assigned)');
+      return;
+    }
+    final HotKey? hotKey = _hotKeyFromBinding(set.keyboardBindings.first);
+    if (hotKey == null) {
+      glog('hotkey: binding has no mappable physical key — not registered');
+      return;
+    }
+    _hotKey = hotKey;
+    try {
+      await hotKeyManager.register(hotKey, keyDownHandler: (_) => _onHotKey());
+      glog('hotkey: registered ${set.keyboardBindings.first.displayLabel} '
+          'from registry OK');
+    } catch (e) {
+      glog('hotkey: register FAILED: $e');
+    }
+  }
+
+  /// TODO-1066 — re-registers the OS hotkey when the registry changes (user
+  /// remaps the key in settings, or a profile switch reloads bindings). Fire and
+  /// forget; failures are logged inside [_registerHotKeyFromRegistry].
+  void _onRegistryChanged() {
+    unawaited(_registerHotKeyFromRegistry());
+  }
+
+  /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
+  /// hotkey_manager keys off the USB-HID [PhysicalKeyboardKey]; the registry
+  /// stores a logical key + [ModifierKey] set. [InputBinding.physicalKey] reuses
+  /// the same logical→physical table the IME fallback uses (US-QWERTY). Returns
+  /// null when the logical key has no physical mapping (e.g. game* / numpad keys
+  /// that are not valid global hotkeys anyway).
+  HotKey? _hotKeyFromBinding(InputBinding binding) {
+    final PhysicalKeyboardKey? physical = binding.physicalKey;
+    if (physical == null) {
+      return null;
+    }
+    final List<HotKeyModifier> modifiers = <HotKeyModifier>[];
+    for (final ModifierKey mod in binding.modifiers) {
+      switch (mod) {
+        case ModifierKey.ctrl:
+          modifiers.add(HotKeyModifier.control);
+          break;
+        case ModifierKey.shift:
+          modifiers.add(HotKeyModifier.shift);
+          break;
+        case ModifierKey.alt:
+          modifiers.add(HotKeyModifier.alt);
+          break;
+        case ModifierKey.meta:
+          modifiers.add(HotKeyModifier.meta);
+          break;
+      }
+    }
+    return HotKey(
+      key: physical,
+      modifiers: modifiers,
+      scope: HotKeyScope.system,
+    );
   }
 
   /// Absolute folder that holds popup.html on Windows:
