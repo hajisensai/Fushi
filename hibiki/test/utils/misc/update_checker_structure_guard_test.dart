@@ -33,7 +33,17 @@ void main() {
     // plumbing (TODO-738), so it gets a slightly higher ceiling; every other
     // part stays under 1500. The point is to flag uncontrolled growth, not to
     // forbid a real cross-cutting feature.
-    const int kDownloadCeiling = 1520;
+    //
+    // TODO-1010 / BUG-473 加入了「updates 目录旧完整安装包按 mtime 回收」的真实新
+    // 功能：纯函数 selectStaleUpdateArtifacts + UpdateDirEntry 数据类（防安装包无限
+    // 堆积到数 GB）以及 fail-safe 决策 shouldSkipFullPackageCleanup（marker 损坏时
+    // 保守跳过完整包回收，不误删待重启安装包）。两者都是带 @visibleForTesting 纯函数
+    // + 专用测试 update_checker_cleanup_test.dart 的独立跨切关注点，且都必须与下载/
+    // staging 引擎共享同一 library 私有作用域（part 契约禁止 part 内 import，无法拆成
+    // 独立库而不破坏「纯 part」不变式）。这正是本注释所说「真实跨切功能」应被容纳、
+    // 而非被行数天花板强行拆散的情形，故把 download 天花板从 1520 上调到 1560
+    // （当前 1538，留 ~22 行合理余量，与 default 1500 的既有余量风格一致）。
+    const int kDownloadCeiling = 1560;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download ? kDownloadCeiling : kDefaultCeiling;

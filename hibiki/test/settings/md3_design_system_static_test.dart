@@ -846,6 +846,15 @@ void main() {
           'Cupertino destination list still wraps platform navigation rows.',
       'lib/src/utils/components/hibiki_list_tile.dart':
           'Legacy compatibility adapter wraps framework ListTile.',
+      'lib/src/utils/components/hibiki_reorderable_grid.dart':
+          'TODO-947-2 the 2D drag-reorder grid paints a transient non-interactive '
+              '"new collection" merge affordance (_wrapMergeHighlight) on the '
+              'drop-target cell during a merge gesture; its BorderRadius.circular(12) '
+              'is only the fallback when the caller supplies no feedbackBorderRadius '
+              '(callers pass their own card radius), so it is a transient drag/merge '
+              'interaction affordance rendered by a shared gesture primitive, not '
+              'ordinary settings/list page chrome — same reviewed exception class as '
+              'the allowlisted reader-shelf book-cover overlays / drag affordances.',
       'lib/src/utils/components/hibiki_text_selection_controls.dart':
           'Shared text-selection toolbar owns its transient surface.',
       'lib/src/utils/misc/update_checker_ui.dart':
