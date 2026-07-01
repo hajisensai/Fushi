@@ -289,6 +289,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
+        SliverToBoxAdapter(child: _buildGoalCard()),
         SliverToBoxAdapter(child: _buildOverviewPanel()),
         SliverToBoxAdapter(child: _buildHourlyChart()),
         SliverToBoxAdapter(child: _buildDailyChart()),
@@ -690,6 +691,185 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _bookSort = sort;
       _sortBookData();
     });
+  }
+
+  /// TODO-1046: daily/weekly reading goal card. Both goals 0 => no card at all
+  /// (SizedBox.shrink), so an install that never set a goal sees zero visual
+  /// change on the statistics page. Reuses the already-computed [_todayChars] /
+  /// [_weekChars] aggregates (no extra DB query).
+  Widget _buildGoalCard() {
+    final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
+    final int weeklyGoal = appModelNoUpdate.readingGoalWeeklyChars;
+    if (dailyGoal <= 0 && weeklyGoal <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final List<Widget> rows = <Widget>[];
+    if (dailyGoal > 0) {
+      rows.add(_buildGoalRow(t.stat_goal_daily, _todayChars, dailyGoal));
+    }
+    if (dailyGoal > 0 && weeklyGoal > 0) {
+      rows.add(SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2));
+    }
+    if (weeklyGoal > 0) {
+      rows.add(_buildGoalRow(t.stat_goal_weekly, _weekChars, weeklyGoal));
+    }
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+      child: HibikiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    t.stat_goal_set,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
+                  ),
+                ),
+                HibikiIconButton(
+                  icon: Icons.edit,
+                  tooltip: t.stat_goal_set,
+                  onTap: _editGoals,
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            ...rows,
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One goal row: label + progress bar + "read / goal" text. When the goal is
+  /// reached ([goalReached]) the bar switches to the tertiary color as a
+  /// positive accent. A goal of 0 never reaches here (the card gates on it).
+  Widget _buildGoalRow(String label, int read, int goal) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final double? fraction = goalProgressFraction(read, goal);
+    final bool reached = goalReached(read, goal);
+    final Color barColor = reached ? colorScheme.tertiary : colorScheme.primary;
+    final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
+            if (reached)
+              Text(t.stat_goal_reached,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.tertiary,
+                        fontWeight: FontWeight.bold,
+                      )),
+          ],
+        ),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: ClipRRect(
+                borderRadius: tokens.radii.chipRadius,
+                child: LinearProgressIndicator(
+                  value: fraction,
+                  minHeight: 8,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  color: barColor,
+                ),
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+            Text(
+              t.stat_goal_progress(read: read, goal: goal),
+              style: subStyle,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Number-input dialog to set/clear the daily & weekly character goals.
+  /// Writing 0 clears (hides) that goal. setState reruns the sliver build so the
+  /// card appears/updates/disappears immediately.
+  Future<void> _editGoals() async {
+    final TextEditingController dailyController = TextEditingController(
+      text: appModelNoUpdate.readingGoalDailyChars == 0
+          ? ''
+          : appModelNoUpdate.readingGoalDailyChars.toString(),
+    );
+    final TextEditingController weeklyController = TextEditingController(
+      text: appModelNoUpdate.readingGoalWeeklyChars == 0
+          ? ''
+          : appModelNoUpdate.readingGoalWeeklyChars.toString(),
+    );
+
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(t.stat_goal_set),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              TextField(
+                controller: dailyController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: t.stat_goal_daily),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: weeklyController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: t.stat_goal_weekly),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(t.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(t.dialog_save),
+            ),
+          ],
+        );
+      },
+    );
+
+    final String dailyText = dailyController.text.trim();
+    final String weeklyText = weeklyController.text.trim();
+    dailyController.dispose();
+    weeklyController.dispose();
+
+    if (saved != true) return;
+
+    final int daily = int.tryParse(dailyText) ?? 0;
+    final int weekly = int.tryParse(weeklyText) ?? 0;
+    await appModelNoUpdate.setReadingGoalDailyChars(daily < 0 ? 0 : daily);
+    await appModelNoUpdate.setReadingGoalWeeklyChars(weekly < 0 ? 0 : weekly);
+    if (!mounted) return;
+    setState(() {});
   }
 
   Widget _buildBookTile(_BookData book) {

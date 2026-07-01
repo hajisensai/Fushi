@@ -188,3 +188,22 @@ double bookProgressFraction(double metric, double topMetric) {
   if (f > 1) return 1;
   return f;
 }
+
+/// 纯函数：阅读目标进度比例（TODO-1046）。
+/// [read] 为当前已读字符数，[goal] 为目标字符数。
+/// [goal] <= 0 表示未设定/关闭，返回 null（调用方不渲染进度）。
+/// [read] < 0 视作 0；否则返回 read/goal 并封顶到 [0, 1]。
+double? goalProgressFraction(int read, int goal) {
+  if (goal <= 0) return null;
+  final int clampedRead = read < 0 ? 0 : read;
+  final double f = clampedRead / goal;
+  if (f > 1) return 1;
+  return f;
+}
+
+/// 纯函数：是否达成阅读目标（TODO-1046）。
+/// [goal] > 0 且 [read] >= [goal] 才算达成；[goal] <= 0 恒为 false。
+bool goalReached(int read, int goal) {
+  if (goal <= 0) return false;
+  return read >= goal;
+}

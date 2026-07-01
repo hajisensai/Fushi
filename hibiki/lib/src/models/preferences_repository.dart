@@ -1353,4 +1353,29 @@ class PreferencesRepository extends ChangeNotifier {
 
   bool get lowMemoryMode =>
       getPref('low_memory_mode', defaultValue: false) as bool;
+
+  // ── reading goals (TODO-1046) ────────────────────────────────────────
+  // Daily/weekly reading targets measured in characters. 0 = unset/off,
+  // which the statistics page treats as "no goal" (goal card hidden). Read
+  // and write clamped so a corrupt/out-of-range stored value can never reach
+  // the progress UI as an absurd goal. Per-Profile (not excluded in
+  // ProfileKeys), so each profile keeps its own targets.
+
+  int get readingGoalDailyChars =>
+      (getPref('reading_goal_daily_chars', defaultValue: 0) as int)
+          .clamp(0, 1000000);
+
+  Future<void> setReadingGoalDailyChars(int value) async {
+    await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
+    notifyListeners();
+  }
+
+  int get readingGoalWeeklyChars =>
+      (getPref('reading_goal_weekly_chars', defaultValue: 0) as int)
+          .clamp(0, 10000000);
+
+  Future<void> setReadingGoalWeeklyChars(int value) async {
+    await setPref('reading_goal_weekly_chars', value.clamp(0, 10000000));
+    notifyListeners();
+  }
 }

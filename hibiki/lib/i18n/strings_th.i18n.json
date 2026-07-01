@@ -2030,5 +2030,11 @@
   "floating_lyric_corner_radius": "Floating subtitle corner radius",
   "floating_lyric_corner_radius_hint": "0 keeps each platform's default corners; raise it to round the bar and buttons more",
   "floating_lyric_width": "Floating subtitle width",
-  "floating_lyric_width_hint": "0 uses the platform default width; set a value to make the bar a fixed width"
+  "floating_lyric_width_hint": "0 uses the platform default width; set a value to make the bar a fixed width",
+  "stat_goal_daily": "Daily Goal",
+  "stat_goal_weekly": "Weekly Goal",
+  "stat_goal_set": "Set Goal",
+  "stat_goal_reached": "Goal reached",
+  "stat_goal_none": "No goal set",
+  "stat_goal_progress": "$read / $goal chars"
 }

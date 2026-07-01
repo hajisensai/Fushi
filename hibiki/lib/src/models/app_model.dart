@@ -3667,6 +3667,16 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 
+  // TODO-1046: daily/weekly reading goals (characters). 0 = unset/off; the
+  // statistics page hides the goal card. Delegated to prefsRepo.
+  int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
+  Future<void> setReadingGoalDailyChars(int value) =>
+      prefsRepo.setReadingGoalDailyChars(value);
+
+  int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
+  Future<void> setReadingGoalWeeklyChars(int value) =>
+      prefsRepo.setReadingGoalWeeklyChars(value);
+
   bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);

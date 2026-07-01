@@ -43,6 +43,14 @@ void main() {
       expect(ProfileKeys.isExcludedPref('theme_color'), isFalse);
       expect(ProfileKeys.isExcludedPref('reader_vertical'), isFalse);
     });
+
+    test('reading goals are per-Profile (not excluded, TODO-1046)', () {
+      // 0=off, but the goal targets themselves are per-Profile prefs: they must
+      // NOT be in the exclusion set so each profile keeps its own daily/weekly
+      // target.
+      expect(ProfileKeys.isExcludedPref('reading_goal_daily_chars'), isFalse);
+      expect(ProfileKeys.isExcludedPref('reading_goal_weekly_chars'), isFalse);
+    });
   });
 
   group('ProfileKeys.ankiSettingsToMap', () {

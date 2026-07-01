@@ -2030,5 +2030,11 @@
   "floating_lyric_corner_radius": "悬浮字幕圆角",
   "floating_lyric_corner_radius_hint": "0 = 各平台默认圆角；调大让字幕条与按钮更圆",
   "floating_lyric_width": "悬浮字幕宽度",
-  "floating_lyric_width_hint": "0 = 平台默认宽度；设定数值让字幕条固定宽"
+  "floating_lyric_width_hint": "0 = 平台默认宽度；设定数值让字幕条固定宽",
+  "stat_goal_daily": "每日目标",
+  "stat_goal_weekly": "每周目标",
+  "stat_goal_set": "设定目标",
+  "stat_goal_reached": "已达成",
+  "stat_goal_none": "未设定目标",
+  "stat_goal_progress": "$read / $goal 字"
 }
