@@ -312,6 +312,16 @@ class GlobalLookupController {
       // its iframe shows popup.js's own no-results card (see _resetStackRoot).
       _resetStackRoot(text, result);
 
+      // TODO-1095 — announce a NEW lookup to the host BEFORE the stack render:
+      // clear the union-bbox de-dup key (so the fresh card's reveal-driving
+      // overlaySize is never suppressed by a stale identical bbox) and re-gate
+      // the REUSED root shell's content-ready flag (so the reveal waits for THIS
+      // lookup's popupRendered, not the previous card's already-satisfied gate).
+      // Sent through the existing render channel (ExecuteScript) so no new native
+      // method is needed; the host guard makes it inert until host.js installs.
+      await GlobalLookupChannel.render(
+          buildBeginLookupScript(kGlobalLookupRootFrameId));
+
       // Render OFF-SCREEN at the reader-faithful size (popupMax* × appUiScale ×
       // dpr) so the page measures at the correct width straight away; the card
       // is revealed once via overlaySize. dpr is the main window's — the same
@@ -705,7 +715,13 @@ class GlobalLookupController {
   void _resetStackRoot(String text, DictionarySearchResult result) {
     _frameResults.clear();
     _frameAnchors.clear();
-    final String id = _nextFrameId();
+    // TODO-1095 — the root frame keeps a STABLE id across hotkey lookups so the
+    // host REUSES the already-loaded root iframe (re-inject settingsJs, re-render
+    // in place) instead of tearing it down + rebuilding a cold iframe every
+    // lookup. beginLookup (sent in _onHotKey) re-gates the reused shell so the
+    // reveal still waits for the NEW card's render. Nested children keep minting
+    // monotonic ids (they are genuinely added/removed).
+    const String id = kGlobalLookupRootFrameId;
     final GlobalLookupFrame root = GlobalLookupFrame(
       id: id,
       query: text,

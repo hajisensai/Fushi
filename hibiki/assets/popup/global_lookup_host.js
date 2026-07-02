@@ -79,13 +79,12 @@
   var frameSources = new WeakMap();
   var wrappedWindows = new WeakSet();
   var lastBBoxKey = '';
-  // TODO-1079 (C) — the root frame id of the currently-rendered stack. A NEW
-  // hotkey lookup resets the stack to a fresh root (Dart _resetStackRoot mints a
-  // new frame id), so a changed root id means "new lookup": reset lastBBoxKey so
-  // the first overlaySize of the new card is ALWAYS delivered even when its
-  // union bbox happens to equal the previous lookup's (else the reveal-driving
-  // overlaySize was de-duped away and the window stayed hidden -> popup 'did not
-  // appear').
+  // TODO-1079 (C) / TODO-1095 — the root frame id of the currently-rendered
+  // stack. TODO-1095 makes the root frame id STABLE across hotkey lookups (the
+  // root iframe is REUSED, not rebuilt per lookup — see beginLookup), so the
+  // authoritative "new lookup" bbox-dedup reset + content-gate re-arm now arrive
+  // via beginLookup(). This changed-root-id path stays as belt-and-braces for any
+  // caller that still rotates the root id (nested-only rebuilds, tests).
   var lastRootId = null;
 
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
@@ -698,6 +697,38 @@
     }
   }
 
+  // TODO-1095 — a NEW hotkey lookup is starting. Dart calls this (via the render
+  // channel) BEFORE the fresh renderStack. Because the root frame id is now
+  // STABLE (the root iframe is reused, not rebuilt), two per-lookup resets that
+  // used to piggy-back on a changing root id must be done explicitly here:
+  //   1. Clear lastBBoxKey so the new card's reveal-driving overlaySize is never
+  //      de-duped away when its union bbox equals the previous lookup's.
+  //   2. RE-GATE the reused root shell: reset data-content-ready to false and
+  //      re-arm the content observer + safety timer, so the reveal WAITS for THIS
+  //      lookup's popupRendered instead of inheriting the previous card's already
+  //      satisfied content-ready (the "audio plays but no popup" mislevel: the
+  //      window revealed before the fresh iframe card had actually rendered).
+  // reveal-ready is left intact (geometry is re-placed by the following
+  // renderStack); only the CONTENT half of the two-flag gate is re-armed.
+  function beginLookup(rootId) {
+    lastBBoxKey = '';
+    if (typeof rootId !== 'string' || !rootId) {
+      return;
+    }
+    var record = frames.get(rootId);
+    if (!record) {
+      return; // First-ever lookup for this id: createRecord gates it fresh.
+    }
+    // Re-arm the content half of the reveal gate for the reused shell.
+    record.contentReady = false;
+    if (record.shell && typeof record.shell.setAttribute === 'function') {
+      record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
+    }
+    // Re-arm the content observer + safety timer so the fresh card re-signals
+    // content-ready (observeContent no-ops if contentReady were still true).
+    observeContent(record);
+  }
+
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
     if (!popups.length) {
@@ -950,6 +981,7 @@
   window.__globalLookupHost = {
     __installed: true,
     renderStack: renderStack,
+    beginLookup: beginLookup,
     topPopupId: topPopupId,
     frameIdForIframe: frameIdForIframe,
     layerIndexOf: layerIndexOf,

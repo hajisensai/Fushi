@@ -884,4 +884,56 @@ function flushTimers() {
   assert.strictEqual(msg.args[0], 0, 'root close-X dismisses layer index 0 (whole stack)');
 }
 
+// 27. TODO-1095: beginLookup clears the bbox de-dup key so a fresh lookup whose
+//     union bbox equals the previous lookup's STILL re-delivers overlaySize even
+//     when the ROOT FRAME ID IS STABLE (the reuse contract — the id no longer
+//     rotates, so the changed-root-id path in test 22 would not fire).
+{
+  const { host } = freshHost();
+  const stableRoot = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' };
+  host.renderStack({ popups: [stableRoot] });
+  const first = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.ok(first.length >= 1, 'lookup 1 reported overlaySize');
+  hostPostLog = [];
+  // Second lookup: SAME root id (reuse), SAME bbox geometry. Without beginLookup
+  // the identical bbox key would suppress overlaySize and the window would stay
+  // hidden. beginLookup clears lastBBoxKey so it is re-delivered.
+  host.beginLookup('global-lookup-root');
+  host.renderStack({ popups: [stableRoot] });
+  const second = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.ok(second.length >= 1,
+    'beginLookup re-delivers overlaySize for a reused root with an identical bbox');
+}
+
+// 28. TODO-1095: beginLookup RE-GATES the reused root shell so the reveal waits
+//     for the NEW card's popupRendered. A stable-id root that was visible after
+//     lookup 1 must go content-ready=false again on beginLookup, then re-reveal
+//     only once the fresh card signals popupRendered (kills "audio plays but the
+//     popup is blank/absent" — reveal firing before the reused iframe re-rendered).
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const stableRoot = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' };
+  host.renderStack({ popups: [stableRoot] });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  // Lookup 1 renders -> visible.
+  iframe.contentWindow.chrome.webview.postMessage({ handler: 'popupRendered', args: [140] });
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
+    'lookup 1: reused root visible after popupRendered');
+  // Lookup 2 begins: re-gate. The reused shell must be NOT visible again until
+  // the new card renders (content-ready re-armed to false).
+  host.beginLookup('global-lookup-root');
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, false,
+    'beginLookup re-arms content-ready=false on the reused root shell');
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, false,
+    'reused root is gated hidden again until the NEW card renders (no stale reveal)');
+  host.renderStack({ popups: [stableRoot] });
+  // The fresh card renders -> content-ready flips true again -> visible.
+  iframe.contentWindow.chrome.webview.postMessage({ handler: 'popupRendered', args: [150] });
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
+    'reused root re-reveals once the NEW card signals popupRendered');
+}
+
 console.log('global_lookup_host_test: PASS');

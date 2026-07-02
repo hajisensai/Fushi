@@ -134,6 +134,33 @@ const double kGlobalLookupCascadeStep = 28.0;
 const double kGlobalLookupLayoutBoundsWidthFactor = 2.4;
 const double kGlobalLookupLayoutBoundsHeightFactor = 2.0;
 
+/// TODO-1095 — the STABLE root frame id reused across hotkey lookups. Before
+/// this, every hotkey lookup minted a fresh `frame-N` id, so the host tore the
+/// root popup.html iframe down (removeMissing) and rebuilt it (createRecord ->
+/// async iframe load -> injectContent), re-paying the cold per-lookup iframe
+/// cost the TODO-1079 top-level prewarm could not cover. Keeping the root id
+/// constant lets the host REUSE the already-loaded root iframe and just re-inject
+/// the new card's settingsJs (re-render in place), so the card is warm on the
+/// second lookup onward. Nested child frames keep their own monotonic ids (they
+/// are genuinely added/removed), so only the root/card layer is pinned.
+const String kGlobalLookupRootFrameId = 'global-lookup-root';
+
+/// TODO-1095 — builds the host `beginLookup(rootId)` prelude script prepended to
+/// each fresh root render (see [GlobalLookupController]). It tells the host a NEW
+/// hotkey lookup is starting so it (a) clears the union-bbox de-dup key
+/// (lastBBoxKey) — the reveal-driving overlaySize of the new card is otherwise
+/// suppressed when its bbox equals the previous lookup's — and (b) RE-GATES the
+/// reused root shell's content-ready flag so the reveal waits for the NEW card's
+/// popupRendered instead of inheriting the previous lookup's already-satisfied
+/// gate (the mislevelled-ready root cause: reveal fired before the fresh iframe
+/// card actually rendered = "audio plays but the popup is blank/absent"). Inert
+/// when the host is not installed (guarded, mirroring buildStackRenderScript).
+String buildBeginLookupScript(String rootId) {
+  final String encodedId = jsonEncode(rootId);
+  return 'window.__globalLookupHost && '
+      'window.__globalLookupHost.beginLookup($encodedId);';
+}
+
 /// Builds the full stack render script for the host (TODO-867 P3b/P3c).
 /// Serialises every frame into the `{ popups: [...] }` payload
 /// global_lookup_host.js renderStack consumes, then calls
