@@ -59,6 +59,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_global_scroll_page_down;
     case ShortcutAction.globalScrollPageUp:
       return t.shortcut_action_global_scroll_page_up;
+    case ShortcutAction.globalToggleFullscreen:
+      return t.shortcut_action_global_toggle_fullscreen;
     case ShortcutAction.audiobookPlayPause:
       return t.shortcut_action_audiobook_play_pause;
     case ShortcutAction.audiobookNextSentence:

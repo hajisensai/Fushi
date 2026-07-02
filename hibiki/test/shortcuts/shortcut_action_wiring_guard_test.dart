@@ -52,6 +52,10 @@ void main() {
       // to the OS-level hotkey_manager (the one action that runs via a system
       // hotkey rather than page/media _executeShortcutAction dispatch).
       'lib/src/lookup/global_lookup_controller.dart',
+      // TODO-1093: the window-level fullscreen toggle's executor. It reads
+      // ShortcutAction.globalToggleFullscreen from the registry inside
+      // wrapWithGlobalNavigation and flips WindowManager.setFullScreen on desktop.
+      'lib/src/shortcuts/global_navigation.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

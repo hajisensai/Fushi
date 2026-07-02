@@ -159,6 +159,12 @@ class ShortcutDefaults {
     // reader+audiobook，不会被遮蔽。执行体见 wrapWithGlobalNavigation。
     ShortcutAction.globalScrollPageDown: _kb([], [_gRB]),
     ShortcutAction.globalScrollPageUp: _kb([], [_gLB]),
+    // TODO-1093：窗口级全屏切换默认 F11（桌面惯例）。global scope、home+global
+    // co-active 组内 F11 未被占用；手柄留空（gamepad 键在 home/global 组已被翻页/
+    // 返回占用，用户可自绑）。移动端无窗口全屏语义，执行体在移动端 no-op。
+    ShortcutAction.globalToggleFullscreen: _kb([
+      _key(LogicalKeyboardKey.f11),
+    ]),
     // Play/pause moved off controller A → L3: on the reader page A is now
     // "enter the char-level reading cursor" (and, once inside, "look up the word
     // at the cursor"), which the page intercepts before the audiobook scope is

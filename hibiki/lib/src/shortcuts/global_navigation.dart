@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:window_manager/window_manager.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -209,6 +213,74 @@ KeyEventResult _handleGlobalBack(
   return KeyEventResult.handled;
 }
 
+/// Desktop window-level fullscreen toggle for the remappable
+/// [ShortcutAction.globalToggleFullscreen] key (TODO-1093). Distinct from the
+/// video player's own [ShortcutAction.videoToggleFullscreen] (which only toggles
+/// the video surface): this flips the whole app window between fullscreen and
+/// windowed via [WindowManager.setFullScreen], reading the current state the same
+/// way [DesktopWindowPlacement.saveCurrentBoundsNow] does
+/// ([WindowManager.isFullScreen]). Only meaningful on desktop (Windows / macOS /
+/// Linux) where a native window exists; on mobile there is no such window, so the
+/// binding resolves but the toggle is a no-op (guarded by [_isDesktopWindow]).
+///
+/// Resolution is synchronous so [Focus.onKeyEvent] can return a [KeyEventResult]
+/// immediately; the actual (async) [WindowManager] round-trip is fired
+/// unawaited only after the key is confirmed bound to globalToggleFullscreen.
+KeyEventResult _handleGlobalToggleFullscreen(
+  HibikiShortcutRegistry registry,
+  KeyEvent event,
+) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  final Set<ModifierKey> modifiers = <ModifierKey>{};
+  final HardwareKeyboard hw = HardwareKeyboard.instance;
+  if (hw.isControlPressed) modifiers.add(ModifierKey.ctrl);
+  if (hw.isShiftPressed) modifiers.add(ModifierKey.shift);
+  if (hw.isAltPressed) modifiers.add(ModifierKey.alt);
+  if (hw.isMetaPressed) modifiers.add(ModifierKey.meta);
+  final PhysicalKeyboardKey? imeFallbackPhysicalKey =
+      focusedEditableText() == null ? event.physicalKey : null;
+  ShortcutAction? action = registry.resolveKeyboard(
+    event.logicalKey,
+    modifiers: modifiers,
+    scope: ShortcutScope.global,
+    physicalKey: imeFallbackPhysicalKey,
+  );
+  if (action == null) {
+    final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
+    if (gamepad != null) {
+      action = registry.resolveGamepad(gamepad, scope: ShortcutScope.global);
+    }
+  }
+  if (action != ShortcutAction.globalToggleFullscreen) {
+    return KeyEventResult.ignored;
+  }
+  // Bound but no desktop window (mobile): consume the key (it is intentionally
+  // assigned) but do nothing — there is no window to toggle.
+  if (_isDesktopWindow) {
+    unawaited(_toggleWindowFullscreen());
+  }
+  return KeyEventResult.handled;
+}
+
+/// Whether the running platform has a desktop window whose fullscreen state can
+/// be toggled via [WindowManager] (mirrors [DesktopWindowPlacement] desktop gate).
+bool get _isDesktopWindow =>
+    Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+/// Flips the main window between fullscreen and windowed. Reads the current
+/// state with [WindowManager.isFullScreen] (same call
+/// [DesktopWindowPlacement.saveCurrentBoundsNow] uses) and inverts it. Any
+/// platform-channel failure is swallowed with a debug log so a stray key press
+/// can never crash the app.
+Future<void> _toggleWindowFullscreen() async {
+  try {
+    final bool current = await windowManager.isFullScreen();
+    await windowManager.setFullScreen(!current);
+  } catch (e) {
+    debugPrint('[Hibiki] window fullscreen toggle skipped: $e');
+  }
+}
+
 /// Wrap [child] (typically MaterialApp's builder child) with app-wide keyboard /
 /// gamepad navigation:
 
@@ -273,6 +345,13 @@ Widget wrapWithGlobalNavigation({
           final KeyEventResult backResult =
               _handleGlobalBack(navigatorKey, registry, event);
           if (backResult == KeyEventResult.handled) return backResult;
+          // TODO-1093：注册表驱动的窗口级全屏切换（默认 F11）。放在 globalBack 之后、
+          // Escape 之前；仅桌面有窗口时真正 toggle，移动端 no-op（见下）。
+          final KeyEventResult fullscreenResult =
+              _handleGlobalToggleFullscreen(registry, event);
+          if (fullscreenResult == KeyEventResult.handled) {
+            return fullscreenResult;
+          }
         }
       }
       return _handleGlobalEscape(navigatorKey, event);

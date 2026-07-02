@@ -2069,5 +2069,6 @@
   "browser_extension_step_done_auto": "完成。扩展已自动配置为连接本应用——无需填写 host/端口/token。",
   "browser_extension_enable_server_first": "提示：请先在上方开启「Yomitan API 服务器」并设置 API 密钥，扩展才能被自动配置为可用连接。",
   "browser_extension_folder_label": "扩展文件夹（已复制）",
-  "copied": "已复制"
+  "copied": "已复制",
+  "shortcut_action_global_toggle_fullscreen": "全屏切换"
 }
