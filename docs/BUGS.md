@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 517 条。点号进各自文件。
+> 共 518 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-532](bugs/BUG-532-pref-null-roundtrip.md) | ✅ | ✅ | PrefCodec 清空 override round-trip 成字面 null |
 | [BUG-531](bugs/BUG-531-ios-image-picker-usage-desc.md) | ✅ | ✅ | iOS 制卡取图缺 Info.plist 权限键硬崩 |
 | [BUG-530](bugs/BUG-530-netflix-extension-wrong-server.md) | ✅ | ✅ | 网飞扩展查词/制卡断: 扩展指向 yomitan server(19633) 但端点只在 sync server |
 | [BUG-529](bugs/BUG-529-ffmpeg-url-input-exists-guard.md) | ✅ | ✅ | 制卡 ffmpeg 抽取器 existsSync 守卫拦 http(s) 流 URL + 无网络韧性致 GIF 间歇失败 |

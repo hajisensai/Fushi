@@ -1,0 +1,14 @@
+## BUG-532 · PrefCodec 清空 override round-trip 成字面 null
+- **报告**：2026-07-03（用户：TODO-1106）
+- **真实性**：✅ 真 bug。根因链：
+  - `packages/hibiki_core/lib/src/database/pref_codec.dart:18-24` —— `PrefCodec.encode(dynamic)` 原实现没有 null 分支，null 落到 `return 's:$value'` 得到字面 `'s:null'`。
+  - `packages/hibiki_core/lib/src/database/pref_codec.dart:56-57`（原 `_tryTagged`）—— tag `s` 返回 `substring(2)` = 真字符串 `'null'`（4 字符），而非 Dart `null`。
+  - 真实写入路径：`hibiki/lib/src/media/media_source.dart:482-496` `setOverrideTitleFromMediaItem`：用户清空书名 override 时 `value = null` → `setPreference<String?>(key, value: null)`（`media_source.dart:158-169`）→ `PrefCodec.encode(null)` 存 `'s:null'` 到 DB。
+  - 症状显形：`media_source.dart:125-141` `_loadPreferencesFromDb` 重启/profile 切换时 `PrefCodec.decodeUntyped('s:null')` 返回字符串 `'null'`，`getOverrideTitleFromMediaItem`（`media_source.dart:451-460`）遂返回 `"null"`，书名显示字面 "null"。
+- **[x] ① 已修复** —
+  - 根因层：`packages/hibiki_core/lib/src/database/pref_codec.dart`。`encode(null)` 新增显式 `z:` null tag（不再落 `'s:null'`）；`_tryTagged` 加 `case 'z': return null`；用私有 `_kNotTagged` 哨兵区分「非 tagged 格式」与「tagged 值解析为 Dart null」，使 `decode`/`decodeUntyped` 把 `z:` 正确 round-trip 回 `null`。`decode<T>` 对不可空 `T` 遇 stored null 回退 default（不违反非空契约），对可空 `T` 返回真 null。
+  - 用户真把书名命名为字符串 "null" 仍存 `'s:null'` 并读回字符串 `'null'`，与「清空 override（Dart null）」区分开，无歧义。
+  - 旧库遗留的 `'s:null'` 行不迁移、读为字符串 `'null'`（行为不变、无数据损坏）；新写入一律 `z:`，不再产生该症状。
+  - 提交：见本轮 commit。
+- **[x] ② 已加自动化测试** — `packages/hibiki_core/test/pref_codec_null_roundtrip_test.dart`（14 个用例）：`encode(null)=='z:'` 且不含 "null"；`decodeUntyped`/`decode<String?>` 把 null round-trip 回 null（不产生字面 "null"）；用户 "null" 字符串保留；不可空 `decode<String>` 回退 default；bool/int/double/string/List 非 null round-trip 无回归；legacy 无 tag 值走 heuristic；`s:null` legacy 读为字面 "null"；未知 tag 落 heuristic。
+- **备注**：修在 codec 层而非 UI/caller 层，覆盖所有存 null 的 pref caller（书名 override 只是触发点），消除特殊情况而非加特例分支。

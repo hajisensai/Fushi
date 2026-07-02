@@ -1,11 +1,28 @@
 import 'dart:convert';
 
+/// Sentinel distinguishing "the raw string is not in tagged format" from
+/// "the raw string is a tagged value that decodes to Dart `null`" (the `z`
+/// tag). Using plain `null` for both would make a stored null indistinguishable
+/// from an untagged legacy value, sending it down the heuristic path and losing
+/// the null. Private + const so no caller can forge or observe it.
+class _NotTagged {
+  const _NotTagged();
+}
+
+const Object _kNotTagged = _NotTagged();
+
 /// Type-tagged preference serialization.
 ///
 /// Format: single-char type tag + colon + value.
-/// Tags: `b` (bool), `i` (int), `d` (double), `s` (string), `j` (JSON list).
-/// Untagged values (written by older code) fall through to heuristic parsing
-/// for backward compatibility.
+/// Tags: `b` (bool), `i` (int), `d` (double), `s` (string), `j` (JSON list),
+/// `z` (explicit Dart `null`). Untagged values (written by older code) fall
+/// through to heuristic parsing for backward compatibility.
+///
+/// Null round-trip (TODO-1106 / BUG-532): `encode(null)` emits the `z:` tag so
+/// that a preference deliberately set to null (e.g. clearing a book-title
+/// override) decodes back to `null`, not the literal string `"null"`. Before
+/// the `z` tag, `encode(null)` fell through to `'s:null'` and reload surfaced
+/// the four-character string "null" in the UI.
 ///
 /// List support is limited to `List<String>`: [decode] always rebuilds list
 /// prefs as `List<String>`. Storing a `List<int>`/`List<double>` and reading
@@ -16,6 +33,7 @@ class PrefCodec {
   PrefCodec._();
 
   static String encode(dynamic value) {
+    if (value == null) return 'z:';
     if (value is bool) return 'b:$value';
     if (value is int) return 'i:$value';
     if (value is double) return 'd:$value';
@@ -25,28 +43,39 @@ class PrefCodec {
 
   static T decode<T>(String raw, T defaultValue) {
     final dynamic parsed = _tryTagged(raw);
-    if (parsed != null) {
-      if (parsed is T) return parsed;
-      if (T == double && parsed is int) return parsed.toDouble() as T;
-      if (defaultValue is List && parsed is List) {
-        return List<String>.from(parsed) as T;
-      }
+    if (identical(parsed, _kNotTagged)) {
+      return _heuristic<T>(raw, defaultValue);
+    }
+    if (parsed == null) {
+      // Explicit `z:` null. Honour it when T is nullable; otherwise fall back to
+      // the (non-null) default so a null can never violate a non-null contract.
+      if (null is T) return null as T;
       return defaultValue;
     }
-    return _heuristic<T>(raw, defaultValue);
+    if (parsed is T) return parsed;
+    if (T == double && parsed is int) return parsed.toDouble() as T;
+    if (defaultValue is List && parsed is List) {
+      return List<String>.from(parsed) as T;
+    }
+    return defaultValue;
   }
 
   static dynamic decodeUntyped(String raw) {
     final dynamic parsed = _tryTagged(raw);
-    if (parsed != null) return parsed;
-    return _heuristicUntyped(raw);
+    if (identical(parsed, _kNotTagged)) return _heuristicUntyped(raw);
+    return parsed;
   }
 
+  /// Returns the decoded value, or the [_kNotTagged] sentinel when [raw] is not
+  /// in tagged format. A genuine `null` return means the tagged value decoded
+  /// to Dart `null` (the `z` tag, or a malformed `i`/`d`/`j` payload).
   static dynamic _tryTagged(String raw) {
-    if (raw.length < 2 || raw[1] != ':') return null;
+    if (raw.length < 2 || raw[1] != ':') return _kNotTagged;
     final String tag = raw[0];
     final String payload = raw.substring(2);
     switch (tag) {
+      case 'z':
+        return null;
       case 'b':
         return payload == 'true';
       case 'i':
@@ -62,7 +91,7 @@ class PrefCodec {
           return null;
         }
       default:
-        return null;
+        return _kNotTagged;
     }
   }
 
