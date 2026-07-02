@@ -1,0 +1,17 @@
+## BUG-530 · 网飞扩展查词/制卡断: 扩展指向 yomitan server(19633) 但端点只在 sync server
+- **报告**：2026-07-02（TODO-1000 网飞制卡链路验证时发现）
+- **真实性**：✅ 真 bug（读代码 + HTTP 层复现）。契约分裂根因：
+  - 浏览器扩展 POST `/api/lookup/dictionary` + `/api/mine`，鉴权 `Authorization: Basic base64("hibiki:"+token)`（`tools/browser-extension/background.js:63,88,17`）。
+  - 安装助手（TODO-1087）把扩展默认连接信息自动配置为 **YomitanApiServer 的 port/token**（`lib/src/settings/settings_schema_lookup.dart:129-134`：`port: appModel.yomitanApiPort`=19633、`token: appModel.yomitanApiKey`），UI 也引导用户开「Yomitan API server」开关。
+  - 但这两个端点**当时只在 HibikiSyncServer 实现**（`hibiki_sync_server.dart:_handleDictionaryLookup/_handleMine`）；YomitanApiServer 只有 `/termEntries`/`/tokenize`，且鉴权是 API-key 式、**不解析 Basic**（`yomitan_api_server.dart:101-120` 把含空格的 `Basic ...` 整体当 key，永不匹配）。
+  - 结果：扩展连的地址（19633 yomitan server）不实现它要的端点、也不认它的 Basic 鉴权 → **Netflix 查词 404 + 制卡 404，全断**。
+- **根因** `hibiki/lib/src/sync/yomitan_api_server.dart`（缺 `/api/lookup/dictionary` + `/api/mine` + Basic auth）。
+- **[x] ① 已修复** — 提交 `<pending>`（方向 B：让扩展被自动指向的 server 真正实现契约，最小改动、不背 LAN 同步 host 的重量）：
+  - 抽出共享 handler `lib/src/sync/hibiki_remote_api_handlers.dart`（`buildRemoteDictionaryLookupResponse` / `buildRemoteMineResponse`）——扩展契约**单一真相源**，HibikiSyncServer 与 YomitanApiServer 都复用（消除两 server 契约 drift）。
+  - `yomitan_api_server.dart`：`_handleRequest` 加 `/api/lookup/dictionary` + `/api/mine` 两 case；`_apiKeyFromRequestMetadata` 加 `Basic base64('hibiki:'+key)` 解析（取 password 段比对，与 HibikiSyncServer 同款）；构造注入 `HibikiRemoteMiningService`/`HibikiRemoteHistoryService`。
+  - `yomitan_api_server_manager.dart` + `app_model.dart:_ensureYomitanManager` 注入 `createRemoteMiningService()`/`createRemoteHistoryService()`。
+  - `hibiki_sync_server.dart` 的两个 handler 改为委托共享 handler（行为不变，1000 sync 测试全绿）。
+  - 安装助手注入的 yomitanApiPort/Key **无需改**——本就指向该 server，方向 B 让它真正可用即自洽。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/sync/yomitan_api_server_extension_endpoints_test.dart`：真实 HTTP 层复现扩展请求——`/api/lookup/dictionary`（Basic auth→200+真结果）、`/api/mine` 带截图→mineImmersion、纯文本→mineEntry、错 token→401、无 key→放行、无 fields→400。6 用例全绿。
+- **备注**：应用内播 Netflix 受 DRM 封死（TODO-1000 已定），扩展路线是唯一。本 bug 修的是**扩展↔本机 server 接线**（查词/制卡断的根因）。仍属**用户侧手工前置**（非 bug，是 asbplayer 式方案的固有约束）：① Chrome 加载已解压扩展；② 开「Yomitan API server」开关（+可选 API key）；③ Netflix GIF 需关 Chrome 硬件加速（否则 DRM 帧全黑）；④ 录 GIF 需先点扩展图标启动 tabCapture。这些在安装助手图文引导里。与 [[BUG-528]]/[[BUG-529]] 同属 TODO-1000。

@@ -6,6 +6,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
@@ -24,19 +25,26 @@ const List<String> _apiKeyParameterNames = <String>[
   'yomitan_api_key',
 ];
 
-/// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容）。
-/// 只接受 POST；可选 API key 鉴权；端点 serverVersion/yomitanVersion/
-/// termEntries/tokenize。查词复用 [HibikiRemoteLookupService]。
+/// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容），同时是 Hibiki 浏览器扩展
+/// （Netflix 等流媒体查词/制卡）的 API surface。只接受 POST；可选 API key 鉴权（支持
+/// x-api-key / Bearer / 裸 Authorization / query / body，也支持扩展用的
+/// `Basic base64('hibiki:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize
+/// （yomitan-api 兼容）+ `/api/lookup/dictionary` + `/api/mine`（BUG-530：浏览器扩展契约，
+/// 与 HibikiSyncServer 共享 [buildRemoteDictionaryLookupResponse]/[buildRemoteMineResponse]）。
 class YomitanApiServer {
   YomitanApiServer({
     required int port,
     required HibikiRemoteLookupService lookupService,
     required Tokenizer tokenizer,
     required ReadingResolver readingResolver,
+    HibikiRemoteMiningService? miningService,
+    HibikiRemoteHistoryService? historyService,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
         _lookup = lookupService,
+        _mining = miningService,
+        _history = historyService,
         _tokenizer = tokenizer,
         _readingResolver = readingResolver,
         _apiKey = apiKey,
@@ -44,6 +52,8 @@ class YomitanApiServer {
 
   final int _requestedPort;
   final HibikiRemoteLookupService _lookup;
+  final HibikiRemoteMiningService? _mining;
+  final HibikiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
   final String? _apiKey;
@@ -109,6 +119,20 @@ class YomitanApiServer {
           authorization.toLowerCase().startsWith(bearerPrefix.toLowerCase())) {
         return authorization.substring(bearerPrefix.length);
       }
+      // BUG-530：Hibiki 浏览器扩展用 `Basic base64('hibiki:'+key)`（与 HibikiSyncServer
+      // 同款鉴权），密码段=API key。解码取冒号后的 password 段与 _apiKey 比对。
+      const String basicPrefix = 'Basic ';
+      if (authorization.length > basicPrefix.length &&
+          authorization.toLowerCase().startsWith(basicPrefix.toLowerCase())) {
+        try {
+          final String decoded = utf8.decode(
+              base64Decode(authorization.substring(basicPrefix.length)));
+          final int colon = decoded.indexOf(':');
+          if (colon >= 0) return decoded.substring(colon + 1);
+        } catch (_) {
+          // 非法 base64/编码：按无 key 处理（回落其它来源）。
+        }
+      }
       if (!authorization.contains(' ')) return authorization;
     }
 
@@ -148,8 +172,37 @@ class YomitanApiServer {
         return _handleTermEntries(request);
       case '/tokenize':
         return _handleTokenize(request);
+      case '/api/lookup/dictionary':
+        return _handleDictionaryLookup(request);
+      case '/api/mine':
+        return _handleMine(request);
       default:
         return shelf.Response.notFound('Unknown endpoint');
+    }
+  }
+
+  /// BUG-530：浏览器扩展查词端点（与 HibikiSyncServer 共享契约）。
+  Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    return _json(await buildRemoteDictionaryLookupResponse(
+      body,
+      lookup: _lookup,
+      history: _history,
+    ));
+  }
+
+  /// BUG-530：浏览器扩展制卡端点（与 HibikiSyncServer 共享契约）。未注入挖词 service
+  /// 时 404（mining off）；fields 缺失/类型错 → 400。
+  Future<shelf.Response> _handleMine(shelf.Request request) async {
+    final HibikiRemoteMiningService? mining = _mining;
+    if (mining == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      return _json(await buildRemoteMineResponse(body, mining: mining));
+    } on FormatException {
+      return shelf.Response(400, body: 'Missing fields');
     }
   }
 

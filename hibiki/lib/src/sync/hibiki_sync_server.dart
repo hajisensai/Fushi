@@ -13,7 +13,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:meta/meta.dart';
@@ -572,33 +572,12 @@ class HibikiSyncServer {
     if (service == null) return shelf.Response.notFound('Remote lookup off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-
-    final String term = body['term']?.toString() ?? '';
-    if (term.trim().isEmpty) {
-      return _jsonResponse(<String, dynamic>{
-        'type': 'dictionaryResult',
-        'result': null,
-        'popupJson': null,
-      });
-    }
-    final bool wildcards = body['wildcards'] as bool? ?? false;
-    final int maximumTerms = (body['maximumTerms'] as num?)?.toInt() ?? 10;
-    final result = await service.searchDictionary(
-      term: term,
-      wildcards: wildcards,
-      maximumTerms: maximumTerms,
-    );
-
-    final HibikiRemoteHistoryService? hist = _historyService;
-    if (result != null && hist != null && (body['record'] as bool? ?? false)) {
-      hist.recordHistory(result);
-    }
-
-    return _jsonResponse(<String, dynamic>{
-      'type': 'dictionaryResult',
-      'result': result == null ? null : jsonDecode(result.toJson()),
-      'popupJson': result?.popupJson,
-    });
+    // 契约与 YomitanApiServer 共享（BUG-530，单一真相源）。
+    return _jsonResponse(await buildRemoteDictionaryLookupResponse(
+      body,
+      lookup: service,
+      history: _historyService,
+    ));
   }
 
   Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
@@ -662,22 +641,12 @@ class HibikiSyncServer {
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    if (body['fields'] is! Map) {
-      return shelf.Response(400, body: 'Missing fields');
-    }
-    // TODO-1000：带截图/时间戳/clip 的沉浸挖词走 mineImmersion（引擎在实现方，server 只转发）；
-    // 纯 {fields,sentence} 保持现有 mineEntry 回落（向后兼容浏览器扩展纯文本挖词 + 移动端）。
-    final ImmersionMinePayload payload;
+    // 契约与 YomitanApiServer 共享（BUG-530，单一真相源）。fields 缺失/类型错 → 400。
     try {
-      payload = ImmersionMinePayload.fromJson(body);
+      return _jsonResponse(await buildRemoteMineResponse(body, mining: svc));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
-    final String result = payload.isImmersion
-        ? await svc.mineImmersion(payload)
-        : await svc.mineEntry(
-            fields: payload.fields, sentence: payload.sentence);
-    return _jsonResponse(<String, dynamic>{'result': result});
   }
 
   /// TODO-963 M2: 无鉴权轻量探测。手动输入 IP 的 client 在「填 IP → 探测 → 配对」流程

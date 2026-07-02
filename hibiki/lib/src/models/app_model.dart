@@ -3915,6 +3915,10 @@ class AppModel with ChangeNotifier {
   YomitanApiServerManager _ensureYomitanManager() {
     return _yomitanServerManager ??= YomitanApiServerManager(
       lookupService: createRemoteLookupService(),
+      // BUG-530：注入挖词/历史，让浏览器扩展在 yomitan-api server 上查词+制卡真正可用
+      // （扩展被安装助手自动配置指向本 server 的 port/token）。
+      miningService: createRemoteMiningService(),
+      historyService: createRemoteHistoryService(),
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
