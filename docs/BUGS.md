@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 513 条。点号进各自文件。
+> 共 516 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-530](bugs/BUG-530-netflix-extension-wrong-server.md) | ✅ | ✅ | 网飞扩展查词/制卡断: 扩展指向 yomitan server(19633) 但端点只在 sync server |
+| [BUG-529](bugs/BUG-529-ffmpeg-url-input-exists-guard.md) | ✅ | ✅ | 制卡 ffmpeg 抽取器 existsSync 守卫拦 http(s) 流 URL + 无网络韧性致 GIF 间歇失败 |
+| [BUG-528](bugs/BUG-528-youtube-stream-403-caption-resolve.md) | ✅ | ✅ | 油管播放/制卡: 默认 client 流 URL 403 + 字幕接口空 body 炸掉整个 resolve + 防盗链 header 迟发致黑屏 |
 | [BUG-527](bugs/BUG-527-macos-data-root-restart-sandbox-crash.md) | ✅ | ✅ | macOS 数据迁移后自动重启崩溃 |
 | [BUG-526](bugs/BUG-526-dictionary-download-catalog-stale.md) | ✅ | ✅ | 推荐词典下载链接失效 |
 | [BUG-525](bugs/BUG-525-settings-log-count-stale.md) | ✅ | ✅ | 清除日志后系统页计数不刷新 |
