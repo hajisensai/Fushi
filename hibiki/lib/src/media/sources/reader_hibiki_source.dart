@@ -702,7 +702,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }
 
   bool get pauseOnLookup =>
-      getPreference<bool>(key: 'pause_on_lookup', defaultValue: false);
+      getPreference<bool>(key: 'pause_on_lookup', defaultValue: true);
 
   Future<void> setPauseOnLookup({required bool value}) async {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
