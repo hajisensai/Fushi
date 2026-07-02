@@ -6,7 +6,9 @@ import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
+import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/utils.dart';
 
 /// Renders [destination] through the active platform's settings detail shell
 /// (Material → [HibikiPageScaffold] + 24px padding + [AdaptiveSettingsSection];
@@ -47,6 +49,24 @@ class SettingsDetailPage extends BasePage {
 
 class _SettingsDetailPageState extends BasePageState<SettingsDetailPage> {
   @override
+  void initState() {
+    super.initState();
+    ErrorLogService.instance.addListener(_onLogChanged);
+    DebugLogService.instance.addListener(_onLogChanged);
+  }
+
+  @override
+  void dispose() {
+    ErrorLogService.instance.removeListener(_onLogChanged);
+    DebugLogService.instance.removeListener(_onLogChanged);
+    super.dispose();
+  }
+
+  void _onLogChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final SettingsContext settingsContext = SettingsContext(
       context: context,
@@ -57,15 +77,24 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage> {
         if (mounted) setState(() {});
       },
     );
+    final SettingsDestination destination = _freshDestination(settingsContext);
     if (isCupertinoPlatform(context)) {
       return const CupertinoSettingsRenderer().buildDetailPage(
         settingsContext: settingsContext,
-        destination: widget.destination,
+        destination: destination,
       );
     }
     return const MaterialSettingsRenderer().buildDetailPage(
       settingsContext: settingsContext,
-      destination: widget.destination,
+      destination: destination,
     );
+  }
+
+  SettingsDestination _freshDestination(SettingsContext settingsContext) {
+    for (final SettingsDestination destination
+        in buildSettingsSchema(settingsContext)) {
+      if (destination.id == widget.destination.id) return destination;
+    }
+    return widget.destination;
   }
 }

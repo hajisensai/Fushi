@@ -15,12 +15,14 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_home_page.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -633,6 +635,41 @@ void main() {
     expect(source, isNot(contains('pubspec.yaml')));
   });
 
+  testWidgets('pushed settings detail refreshes dynamic log row counts',
+      (WidgetTester tester) async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(db);
+    await ErrorLogService.instance.clear();
+    addTearDown(() => ErrorLogService.instance.clear());
+    ErrorLogService.instance.log('SettingsDetailPage.test', 'boom');
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        database: db,
+        appModel: appModel,
+        builder: (SettingsContext settingsContext) {
+          final SettingsDestination system =
+              buildSettingsSchema(settingsContext).firstWhere(
+            (SettingsDestination destination) =>
+                destination.id == SettingsDestinationId.system,
+          );
+          return SettingsDetailPage(destination: system);
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Error Log (1)'), findsOneWidget);
+
+    await ErrorLogService.instance.clear();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Error Log (1)'), findsNothing);
+    expect(find.text('Error Log (0)'), findsOneWidget);
+  });
+
   // TODO-323: 自动/自定义不再是独立全权重行，而是「界面大小」标题行尾的内联切换；
   // 自动模式不再渲染无用滑条，只读展示当前自动百分比。
   Widget interfaceSettingsHarness({
@@ -1058,6 +1095,17 @@ void main() {
 /// 后备，避免渲染该开关时 _prefsRepo! 空指针（同 _SettingsDialogTestAppModel）。
 class _RendererTestAppModel extends AppModel {
   _RendererTestAppModel() : super(testPlatformServices());
+
+  @override
+  Locale get appLocale => const Locale('en', 'US');
+
+  @override
+  PackageInfo get packageInfo => PackageInfo(
+        appName: 'Hibiki',
+        packageName: 'jp.hibiki.test',
+        version: '1.0.0',
+        buildNumber: '1',
+      );
 
   @override
   bool get reverseReaderBottomBar => false;
