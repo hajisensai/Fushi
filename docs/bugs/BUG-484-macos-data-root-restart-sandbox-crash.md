@@ -1,0 +1,9 @@
+## BUG-484 · macOS 数据迁移后自动重启崩溃
+- **报告**：2026-07-02（用户：）
+- **真实性**：✅ 真 bug。真实 macOS app 在「设置 → 同步与备份 → 数据存储位置 → 更改位置」后暴露三段故障：
+  1. `hibiki/lib/src/platform/desktop/desktop_lifecycle_service.dart:35` 直接分离启动 `Platform.resolvedExecutable`（`.app/Contents/MacOS/hibiki`）而不是经 LaunchServices 打开 `.app` bundle，沙盒初始化阶段可崩在 `libsystem_secinit.dylib` / `SYSCALL_SET_USERLAND_PROFILE`（用户附件 crash report：2026-07-02 14:54:13 +0800）。
+  2. `hibiki/lib/src/storage/data_root_migrator.dart:353` 迁移 `srt_books` 时把已有行重新 `upsertSrtBook`，但底层 `insertOnConflictUpdate` 按主键 `id` 冲突，不按唯一 `uid` 冲突；未带 `id` 会插入新行并触发 `UNIQUE constraint failed: srt_books.uid`，迁移回滚。
+  3. `hibiki/lib/src/storage/app_paths.dart:95` 只保存外部 data root 路径。macOS 沙盒下 `user-selected.read-write` 只授权当前进程；重启后没有 security-scoped bookmark 就无法打开 `/Users/.../Downloads/<dataRoot>/support/hibiki.db`，表现为 `SqliteException(14): unable to open database file` / Database damaged。
+- **[x] ① 已修复** — macOS 重启改为 `/usr/bin/open -n <bundle>.app --args ...`；SRT 路径改为按 `id` 原地更新路径列；迁移前创建 security-scoped bookmark，成功写入时先保存 `data_root_bookmark` 再保存 `data_root`，启动解析 data root 前恢复 bookmark 访问；pref 写入失败时恢复旧 bookmark、把 DB 路径反向 rebase 并搬回旧根，避免旧 pref 指向不可用状态。（修复提交：本提交）
+- **[x] ② 已加自动化测试** — `hibiki/test/platform/macos_restart_launchservices_guard_test.dart` 覆盖 macOS LaunchServices 重启；`hibiki/test/storage/data_root_migrator_test.dart` 覆盖 SRT 行迁移不再撞 `uid` 与 pref 写入失败回滚；`hibiki/test/storage/macos_data_root_bookmark_guard_test.dart` 覆盖 macOS app-scope bookmark entitlement、Swift bridge、启动恢复、迁移保存顺序与 data_root 写失败时恢复旧 bookmark；`hibiki/test/storage/data_root_migration_view_test.dart` 覆盖失败日志/迁移遮罩守卫。（测试提交：本提交）
+- **备注**：真机 UI 复测：从默认沙盒数据根迁到 `/Users/shfaifsj/Downloads/HibikiDataRootQA-20260702B` 后自动重启，新进程 pid 91652 正常显示书架空态；plist 同时存在 `flutter.data_root` 与 `flutter.data_root_bookmark`；目标 `support/hibiki.db` `PRAGMA integrity_check` 返回 `ok`；复测后无新增 `hibiki*.ips/crash`。

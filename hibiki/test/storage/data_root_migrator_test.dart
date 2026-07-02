@@ -48,6 +48,12 @@ void main() {
     File(p.join(oldDocs.path, 'audiobooks', 'Bk', 'a.mp3'))
       ..createSync(recursive: true)
       ..writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+    File(p.join(oldDocs.path, 'audiobooks', 'SrtOnly', 'line.mp3'))
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(<int>[6, 7, 8]);
+    File(p.join(oldDocs.path, 'audiobooks', 'SrtOnly', 'line.srt'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello\n');
     File(p.join(oldSupport.path, 'local_audio_1.db'))
       ..createSync(recursive: true)
       ..writeAsBytesSync(<int>[9, 9, 9]);
@@ -72,6 +78,19 @@ void main() {
         audioPathsJson: Value(jsonEncode(<String>[
           p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3'),
         ])),
+      ));
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srtbook_1',
+        title: 'SRT Only',
+        author: const Value('tester'),
+        audioRoot: Value(p.join(oldDocsPath, 'audiobooks', 'SrtOnly')),
+        audioPathsJson: Value(jsonEncode(<String>[
+          p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'line.mp3'),
+        ])),
+        srtPath: p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'line.srt'),
+        coverPath: Value(p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'c.jpg')),
+        importedAt: 1234,
+        bookKey: const Value(''),
       ));
       // local_audio_dbs pref points at the internal copy under support root.
       await db.setPref(
@@ -154,6 +173,15 @@ void main() {
             jsonDecode(a.audioPathsJson!) as List<dynamic>;
         expect(paths.single as String, startsWith(newDocs.path));
 
+        final SrtBookRow s = (await db.getAllSrtBooks()).single;
+        expect(s.uid, equals('srtbook_1'));
+        expect(s.audioRoot, startsWith(newDocs.path));
+        expect(s.srtPath, startsWith(newDocs.path));
+        expect(s.coverPath, startsWith(newDocs.path));
+        final List<dynamic> srtAudioPaths =
+            jsonDecode(s.audioPathsJson!) as List<dynamic>;
+        expect(srtAudioPaths.single as String, startsWith(newDocs.path));
+
         final Map<String, String> prefs = await db.getAllPrefs();
         // local_audio_dbs rebased onto new support root.
         expect(prefs['local_audio_dbs'], contains('local_audio_1.db'));
@@ -204,6 +232,71 @@ void main() {
       expect(wrote, isFalse);
     });
 
+    test('pref 写入失败：DB 路径反向 rebase 后搬回旧根，旧根继续可用', () async {
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'new_pref_fails');
+      int writeAttempts = 0;
+
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: newDataRoot,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async {
+            writeAttempts++;
+            throw StateError('prefs unavailable');
+          },
+        )),
+        throwsA(isA<DataRootMigrationException>().having(
+          (DataRootMigrationException e) => e.message,
+          'message',
+          contains('写入新数据根设置失败'),
+        )),
+      );
+
+      expect(writeAttempts, equals(1));
+      expect(Directory(newDataRoot).existsSync(), isFalse);
+      expect(
+          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          isTrue);
+      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
+
+      final HibikiDatabase db = HibikiDatabase(oldSupportPath);
+      try {
+        final EpubBookRow b = (await db.getAllEpubBooks()).single;
+        expect(b.epubPath, startsWith(oldDocsPath));
+        expect(b.extractDir, startsWith(oldDocsPath));
+        expect(b.coverPath, startsWith(oldDocsPath));
+
+        final AudiobookRow a = (await db.getAllAudiobooks()).single;
+        expect(a.audioRoot, startsWith(oldDocsPath));
+        expect(a.alignmentPath, startsWith(oldDocsPath));
+        final List<dynamic> audioPaths =
+            jsonDecode(a.audioPathsJson!) as List<dynamic>;
+        expect(audioPaths.single as String, startsWith(oldDocsPath));
+
+        final SrtBookRow s = (await db.getAllSrtBooks()).single;
+        expect(s.audioRoot, startsWith(oldDocsPath));
+        expect(s.srtPath, startsWith(oldDocsPath));
+        expect(s.coverPath, startsWith(oldDocsPath));
+
+        final Map<String, String> prefs = await db.getAllPrefs();
+        final List<dynamic> localAudio =
+            jsonDecode(prefs['local_audio_dbs']!) as List<dynamic>;
+        expect((localAudio.single as Map)['path'] as String,
+            startsWith(oldSupportPath));
+        final Map<String, dynamic> fontCatalog =
+            jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+                as Map<String, dynamic>;
+        final String fontPath =
+            ((fontCatalog['fonts'] as List).single as Map)['path'] as String;
+        expect(fontPath, startsWith(oldDocsPath));
+      } finally {
+        await db.close();
+      }
+    });
+
     test('跨盘复制进度回调：分母=文件总数，分子从 0 单调累加到总数（TODO-959）', () async {
       // 铺 3 个文件 + 嵌套目录（目录项不计入文件数）。
       final Directory src = Directory(p.join(tmp.path, 'copy_src'))
@@ -241,6 +334,23 @@ void main() {
         expect(copied[i], greaterThanOrEqualTo(copied[i - 1]));
       }
       expect(copied.last, equals(3));
+    });
+
+    test('rename 被沙箱/权限层拒绝时退回 copy/delete（macOS 用户选择目录）', () {
+      // POSIX EPERM / EACCES：macOS sandbox 下把容器目录 rename 到用户选择目录时
+      // 可能被拒绝，但逐文件 copy/delete 仍可用，不能直接宣告迁移失败。
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(1), isTrue);
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(13), isTrue);
+      // 既有跨盘 fallback 仍保留。
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(18), isTrue);
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(17), isTrue);
+      // 普通不存在/路径错误不应伪装成可复制 fallback。
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(2), isFalse);
     });
 
     test('目标 dataRoot 已存在数据 → 抛错，旧根不动', () async {

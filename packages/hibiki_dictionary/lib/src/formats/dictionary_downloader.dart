@@ -42,7 +42,7 @@ class RecommendedDictionary {
 const String _jmdictBase =
     'https://github.com/yomidevs/jmdict-yomitan/releases/latest/download';
 const String _marvBase =
-    'https://github.com/MarvNC/yomichan-dictionaries/raw/master/dl';
+    'https://raw.githubusercontent.com/MarvNC/yomitan-dictionaries/master/dl';
 const String _kuuuubeBase =
     'https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries';
 const String _wtyBase =
@@ -455,7 +455,7 @@ class DictionaryDownloader {
     RecommendedDictionary(
       name: 'JPDB Frequency',
       url:
-          'https://github.com/MarvNC/jpdb-freq-list/releases/latest/download/JPDB.Frequency.List.zip',
+          'https://github.com/MarvNC/jpdb-freq-list/releases/download/2022-05-09/Freq.JPDB_2022-05-10T03_27_02.930Z.zip',
       description: 'Word frequency from jpdb.io',
       matchPrefix: 'JPDB Frequency',
       category: DictionaryCategory.frequency,

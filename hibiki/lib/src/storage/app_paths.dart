@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/src/startup/test_environment.dart';
+import 'package:hibiki/src/storage/macos_data_root_access.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 /// TODO-935 E0：应用数据根目录的**唯一入口**。
@@ -94,8 +95,12 @@ class AppPaths {
       raw = await reader();
     } else {
       try {
-        raw =
-            (await SharedPreferences.getInstance()).getString(dataRootPrefKey);
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        raw = prefs.getString(dataRootPrefKey);
+        if (raw != null && raw.trim().isNotEmpty && Platform.isMacOS) {
+          raw = await MacOSDataRootAccess.startAccessingStoredBookmark(prefs) ??
+              raw;
+        }
       } catch (_) {
         // SharedPreferences 平台通道不可用（无插件注册的纯 Dart 测试环境 / 极端
         // 启动早期）→ 按「无覆盖」处理，退回 path_provider 默认根，与 E1 前行为

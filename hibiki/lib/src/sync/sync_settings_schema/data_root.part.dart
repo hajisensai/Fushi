@@ -113,6 +113,21 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     final bool confirmed = await _confirmMigrate();
     if (!confirmed || !mounted) return;
 
+    final String? macOSBookmark;
+    try {
+      macOSBookmark = await MacOSDataRootAccess.createBookmarkForPath(picked);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .logFatal('DataRootMigration.createBookmark', e, stack);
+      if (mounted) {
+        _showSnackBar(
+          context,
+          t.data_storage_migrate_failed(message: e.toString()),
+        );
+      }
+      return;
+    }
+
     setState(() => _migrating = true);
     // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置
     // isInitialised=false）。这样 DB 关闭引发的根 widget rebuild 命中迁移遮罩分支，而不
@@ -127,7 +142,30 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         closeResources: () => _closeRuntimeResources(appModel),
         writeDataRootPref: (String newRoot) async {
           final SharedPreferences sp = await SharedPreferences.getInstance();
-          await sp.setString(AppPaths.dataRootPrefKey, newRoot);
+          final String? previousBookmark =
+              sp.getString(MacOSDataRootAccess.dataRootBookmarkPrefKey);
+          final bool bookmarkStored =
+              await MacOSDataRootAccess.storeBookmark(sp, macOSBookmark);
+          if (!bookmarkStored) {
+            throw const DataRootMigrationException('写入 macOS 数据根授权失败');
+          }
+          try {
+            final bool rootStored =
+                await sp.setString(AppPaths.dataRootPrefKey, newRoot);
+            if (!rootStored) {
+              throw const DataRootMigrationException('写入新数据根设置失败');
+            }
+          } catch (e) {
+            final bool bookmarkRestored =
+                await MacOSDataRootAccess.restoreBookmark(sp, previousBookmark);
+            if (!bookmarkRestored) {
+              throw DataRootMigrationException(
+                '写入新数据根设置失败，且恢复旧授权失败',
+                cause: e,
+              );
+            }
+            throw DataRootMigrationException('写入新数据根设置失败', cause: e);
+          }
         },
         // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
         onProgress: (int copied, int total) =>
@@ -142,15 +180,17 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         _showSnackBar(context, t.data_storage_migrate_success);
       }
       await _restartOrPromptManual(appModel);
-    } on DataRootMigrationException catch (e) {
+    } on DataRootMigrationException catch (e, stack) {
       // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref。但 closeResources 在搬移前就
       // 已关掉 DB（_isInitialised=false），本进程无法原地恢复 → 重启回到**未改变**的
       // 旧根（pref 没写，新进程仍解析到旧位置，干净重新初始化）。
+      ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
       await _recoverAfterFailedMigration(
         appModel,
         t.data_storage_migrate_failed(message: e.message),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
       await _recoverAfterFailedMigration(
         appModel,
         t.data_storage_migrate_failed(message: e.toString()),

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -90,8 +89,8 @@ class DataRootMigrator {
   /// 步骤：① await 关闭运行时句柄；② 校验新 dataRoot 可建且为空（不覆盖已有数据）；
   /// ③ 把旧 documents/support 整目录搬进新根的 documents/support；④ 在已搬过去的
   /// `hibiki.db` 上把所有绝对路径列从旧根 rebase 到新根（含 prefs 里的字体 / 本地音频
-  /// 库 JSON）；⑤ 全成功后删旧根 + 写 data_root pref。任一步失败抛
-  /// [DataRootMigrationException]，旧根原样保留、新根半成品清理、不写 pref。
+  /// 库 JSON）；⑤ 写 data_root pref；⑥ pref 已写成功后尽力删除旧根。pref 写入前任一
+  /// 步失败抛 [DataRootMigrationException]，旧根原样保留、新根半成品清理、不写 pref。
   Future<(Directory documents, Directory support)> migrate(
     DataRootMigrationRequest req,
   ) async {
@@ -142,10 +141,33 @@ class DataRootMigrator {
       throw DataRootMigrationException('改写数据库内绝对路径失败，已回滚到旧根', cause: e);
     }
 
-    // ④ 全成功：删旧根（已确认数据都在新根且 DB 指向新根）+ 写 data_root pref。
-    await _deleteIfPresent(req.oldDocumentsRoot);
-    await _deleteIfPresent(req.oldSupportRoot);
-    await req.writeDataRootPref(req.newDataRoot);
+    // ④ 全成功：先写 data_root pref；只有 pref 写成功后才删除旧根。若 pref 写失败，
+    // 先把新 DB 路径 rebase 回旧根，再把目录搬回旧位置，避免下次启动仍读旧 pref 但
+    // 旧 DB 里已指向新根。
+    try {
+      await req.writeDataRootPref(req.newDataRoot);
+    } catch (e) {
+      try {
+        await _rebaseDatabasePaths(
+          dbDirectory: newSupport.path,
+          oldDocumentsRoot: newDocs.path,
+          newDocumentsRoot: req.oldDocumentsRoot.path,
+          oldSupportRoot: newSupport.path,
+          newSupportRoot: req.oldSupportRoot.path,
+        );
+      } catch (rollbackError) {
+        debugPrint(
+          'DataRootMigrator: 写入 pref 失败后的 DB 路径回滚失败: '
+          '$rollbackError',
+        );
+      }
+      await _rollbackMoves(done);
+      await _deleteIfPresent(newRoot);
+      throw DataRootMigrationException('写入新数据根设置失败，已回滚到旧根', cause: e);
+    }
+
+    await _deleteOldRootAfterSwitch(req.oldDocumentsRoot);
+    await _deleteOldRootAfterSwitch(req.oldSupportRoot);
 
     return (newDocs, newSupport);
   }
@@ -170,7 +192,8 @@ class DataRootMigrator {
   }
 
   /// 同卷直接 `rename`（原子、瞬时）；跨卷（rename 抛 errno 18 / EXDEV / Windows 17）
-  /// 退回逐文件 copy + 字节数校验，校验通过才删源。源不存在 → 视为空内容，建空目标根。
+  /// 或沙箱/权限层拒绝 rename 但允许逐文件写入时，退回逐文件 copy + 字节数校验，校验
+  /// 通过才删源。源不存在 → 视为空内容，建空目标根。
   Future<void> _moveTree(
     Directory src,
     Directory dst,
@@ -186,9 +209,9 @@ class DataRootMigrator {
       await src.rename(dst.path);
       return;
     } on FileSystemException catch (e) {
-      if (!_isCrossDevice(e)) rethrow;
+      if (!_shouldCopyAfterRenameFailure(e)) rethrow;
     }
-    // 跨卷：copy + verify + delete。
+    // 跨卷或 rename 被沙箱/权限层拒绝：copy + verify + delete。
     await _copyTreeVerified(src, dst, progress);
     await src.delete(recursive: true);
   }
@@ -198,6 +221,24 @@ class DataRootMigrator {
     // POSIX EXDEV=18；Windows ERROR_NOT_SAME_DEVICE=17。
     return code == 18 || code == 17;
   }
+
+  static bool _shouldCopyAfterRenameFailure(FileSystemException e) {
+    if (_isCrossDevice(e)) return true;
+    final int? code = e.osError?.errorCode;
+    // macOS sandboxed apps can receive EPERM/EACCES for directory rename into
+    // a user-selected security-scoped folder while individual file copy/delete
+    // still works. Falling back is safe: if copy or source delete fails, the
+    // caller rolls the new root back and leaves the old root intact.
+    return code == 1 || code == 13;
+  }
+
+  @visibleForTesting
+  static bool shouldCopyAfterRenameFailureForTesting(int errorCode) =>
+      _shouldCopyAfterRenameFailure(FileSystemException(
+        'rename failed',
+        null,
+        OSError('', errorCode),
+      ));
 
   /// 仅供单测：直接驱动跨盘复制 + 进度回报，不依赖伪造 EXDEV/EXDEV-17 错误。复制 [src]
   /// 整树到 [dst] 并按真实文件数回报 (copied, total)，与生产跨盘路径走同一份逻辑。
@@ -257,7 +298,7 @@ class DataRootMigrator {
           await m.dst.rename(m.src.path);
         }
       } on FileSystemException catch (e) {
-        if (_isCrossDevice(e)) {
+        if (_shouldCopyAfterRenameFailure(e)) {
           try {
             await _copyTreeVerified(m.dst, m.src);
             await m.dst.delete(recursive: true);
@@ -274,6 +315,14 @@ class DataRootMigrator {
   static Future<void> _deleteIfPresent(Directory dir) async {
     if (await dir.exists()) {
       await dir.delete(recursive: true);
+    }
+  }
+
+  static Future<void> _deleteOldRootAfterSwitch(Directory dir) async {
+    try {
+      await _deleteIfPresent(dir);
+    } catch (e) {
+      debugPrint('DataRootMigrator: 新根已切换，旧根清理失败 ${dir.path}: $e');
     }
   }
 
@@ -332,24 +381,22 @@ class DataRootMigrator {
       // ── srt_books（独立 SRT/有声书，无 epub 背书）：audioRoot / audioPathsJson /
       //    srtPath / coverPath 都在 documents 根下，随数据根迁移。
       for (final SrtBookRow s in await db.getAllSrtBooks()) {
-        await db.upsertSrtBook(
-          SrtBooksCompanion(
-            uid: Value(s.uid),
-            title: Value(s.title),
-            author: Value(s.author),
-            audioRoot: Value(s.audioRoot == null
+        await db.customStatement(
+          'UPDATE srt_books SET '
+          'audio_root = ?, audio_paths_json = ?, srt_path = ?, cover_path = ? '
+          'WHERE id = ?',
+          <Object?>[
+            s.audioRoot == null
                 ? null
-                : rebasePath(s.audioRoot!, oldDocumentsRoot, newDocumentsRoot)),
-            audioPathsJson: Value(_rebaseJsonStringList(
-                s.audioPathsJson, oldDocumentsRoot, newDocumentsRoot)),
-            srtPath: Value(
-                rebasePath(s.srtPath, oldDocumentsRoot, newDocumentsRoot)),
-            coverPath: Value(s.coverPath == null
+                : rebasePath(s.audioRoot!, oldDocumentsRoot, newDocumentsRoot),
+            _rebaseJsonStringList(
+                s.audioPathsJson, oldDocumentsRoot, newDocumentsRoot),
+            rebasePath(s.srtPath, oldDocumentsRoot, newDocumentsRoot),
+            s.coverPath == null
                 ? null
-                : rebasePath(s.coverPath!, oldDocumentsRoot, newDocumentsRoot)),
-            importedAt: Value(s.importedAt),
-            bookKey: Value(s.bookKey),
-          ),
+                : rebasePath(s.coverPath!, oldDocumentsRoot, newDocumentsRoot),
+            s.id,
+          ],
         );
       }
 
