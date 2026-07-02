@@ -998,4 +998,77 @@ void main() {
       expect(decoded.removedItems, contains(VideoControlItem.settings));
     });
   });
+
+  group('TODO-1098 frame-step buttons', () {
+    test('frameBackward / frameForward are catalogued transport keys', () {
+      for (final VideoControlItem item in <VideoControlItem>[
+        VideoControlItem.frameBackward,
+        VideoControlItem.frameForward,
+      ]) {
+        expect(VideoControlItem.values, contains(item));
+        // Transport keys (no legacy peer) that are freely placeable chips.
+        expect(item.legacyButton, isNull);
+        expect(item.isChipRenderable, isTrue);
+        expect(VideoControlItem.customizableItems, contains(item));
+        expect(VideoControlItem.fromStorage(item.storageValue), item);
+      }
+      expect(VideoControlItem.frameBackward.storageValue, 'frameBackward');
+      expect(VideoControlItem.frameForward.storageValue, 'frameForward');
+    });
+
+    test('both frame keys default into the bottom-center transport cluster', () {
+      for (final VideoControlLayout layout in <VideoControlLayout>[
+        VideoControlLayout.currentChrome,
+        VideoControlLayout.defaults,
+      ]) {
+        final List<VideoControlItem> center =
+            layout.itemsIn(VideoControlSlot.bottomCenter);
+        expect(center, contains(VideoControlItem.frameBackward));
+        expect(center, contains(VideoControlItem.frameForward));
+        // Symmetric layout: frameBackward left of playPause, frameForward right.
+        expect(
+          center.indexOf(VideoControlItem.frameBackward),
+          lessThan(center.indexOf(VideoControlItem.playPause)),
+          reason: 'frameBackward must sit before play in ${layout.hashCode}',
+        );
+        expect(
+          center.indexOf(VideoControlItem.frameForward),
+          greaterThan(center.indexOf(VideoControlItem.playPause)),
+          reason: 'frameForward must sit after play in ${layout.hashCode}',
+        );
+      }
+    });
+
+    test('empty pref decodes to currentChrome carrying both frame keys', () {
+      final VideoControlLayout fresh = VideoControlLayout.decode('');
+      expect(fresh.isOnPlayer(VideoControlItem.frameBackward), isTrue);
+      expect(fresh.isOnPlayer(VideoControlItem.frameForward), isTrue);
+      expect(
+        fresh.slotOf(VideoControlItem.frameBackward),
+        VideoControlSlot.bottomCenter,
+      );
+      expect(
+        fresh.slotOf(VideoControlItem.frameForward),
+        VideoControlSlot.bottomCenter,
+      );
+    });
+
+    test('existing v3 layout backfills the new frame keys (no silent drop)', () {
+      // A user saved before TODO-1098 has no frame keys in their slots; decode
+      // must backfill them onto the player (their currentChrome fallback slot),
+      // never leave them missing from both player and removed tray.
+      final VideoControlLayout decoded = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 3,
+          'slots': <String, List<String>>{
+            'bottomCenter': <String>['playPause'],
+          },
+        }),
+      );
+      expect(decoded.isOnPlayer(VideoControlItem.frameBackward), isTrue);
+      expect(decoded.isOnPlayer(VideoControlItem.frameForward), isTrue);
+      expect(decoded.removedItems, isNot(contains(VideoControlItem.frameBackward)));
+      expect(decoded.removedItems, isNot(contains(VideoControlItem.frameForward)));
+    });
+  });
 }

@@ -2011,6 +2011,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return t.video_control_seek_backward;
       case VideoControlItem.seekForward:
         return t.video_control_seek_forward;
+      case VideoControlItem.frameBackward:
+        return t.shortcut_action_video_previous_frame;
+      case VideoControlItem.frameForward:
+        return t.shortcut_action_video_next_frame;
       case VideoControlItem.previousCue:
         return t.video_control_previous_cue;
       case VideoControlItem.nextCue:
@@ -2064,6 +2068,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return Icons.fast_rewind;
       case VideoControlItem.seekForward:
         return Icons.fast_forward;
+      case VideoControlItem.frameBackward:
+        return Icons.arrow_left;
+      case VideoControlItem.frameForward:
+        return Icons.arrow_right;
       case VideoControlItem.previousCue:
         return Icons.skip_previous;
       case VideoControlItem.nextCue:

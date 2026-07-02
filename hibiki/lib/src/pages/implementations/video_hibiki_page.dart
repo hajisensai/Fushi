@@ -3282,6 +3282,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           );
         }
         return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
+      case VideoControlItem.frameBackward:
+        return _frameStepButton(controller, forward: false);
+      case VideoControlItem.frameForward:
+        return _frameStepButton(controller, forward: true);
       case VideoControlItem.fullscreen:
         return _buildFullscreenButton(desktop: desktop);
       case VideoControlItem.back:
@@ -3354,6 +3358,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
         return false;
+      // 逐帧后退 / 前进：libmpv frame-step / frame-back-step 只在桌面可用（移动端
+      // media_kit 后端不支持，点了无反应）。仅桌面控制条渲染，避免移动端出现死按钮。
+      case VideoControlItem.frameBackward:
+      case VideoControlItem.frameForward:
+        return _isDesktopVideoControls;
       case VideoControlItem.back:
       case VideoControlItem.immersiveLock:
       case VideoControlItem.speed:
@@ -3511,6 +3520,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return Icons.fast_rewind;
       case VideoControlItem.seekForward:
         return Icons.fast_forward;
+      case VideoControlItem.frameBackward:
+        return Icons.arrow_left;
+      case VideoControlItem.frameForward:
+        return Icons.arrow_right;
       case VideoControlItem.previousCue:
         return Icons.skip_previous;
       case VideoControlItem.nextCue:
@@ -3566,6 +3579,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_control_seek_backward;
       case VideoControlItem.seekForward:
         return t.video_control_seek_forward;
+      case VideoControlItem.frameBackward:
+        return t.shortcut_action_video_previous_frame;
+      case VideoControlItem.frameForward:
+        return t.shortcut_action_video_next_frame;
       case VideoControlItem.previousCue:
         return t.video_control_previous_cue;
       case VideoControlItem.nextCue:
@@ -3639,6 +3656,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         break;
       case VideoControlItem.seekForward:
         unawaited(_seekRelative(10000));
+        break;
+      case VideoControlItem.frameBackward:
+        _pokeControlsVisible();
+        unawaited(controller.frameStep(forward: false));
+        break;
+      case VideoControlItem.frameForward:
+        _pokeControlsVisible();
+        unawaited(controller.frameStep(forward: true));
         break;
       case VideoControlItem.previousCue:
         unawaited(controller.skipToPrevCueOrSeekBack(
@@ -3803,6 +3828,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 带可见标注的 seek 按钮（图标 + `−10s`/`+10s`）。media_kit 的 `MaterialCustomButton`
   /// 只接受单 icon、无可见文字，用户看不懂图标（BUG-257）；这里用 [InkWell] 自绘
   /// 图标 + 紧凑标注，颜色对齐 `buttonBarButtonColor`（cs.primary），仍带 [Tooltip]。
+  ///
+  /// TODO-1098：单击 seek 一次，长按连续 seek（[_VideoRepeatGestureButton]：先触发
+  /// 一次 + 500ms 后每 100ms 一次，松手停）。画面区长按已被临时变速占用（speed.part），
+  /// 这里只包按钮自身的手势，不影响画面层。
   Widget _seekLabelButton({
     required IconData icon,
     required String label,
@@ -3810,10 +3839,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required Color color,
     required VoidCallback onPressed,
   }) {
+    return _VideoRepeatGestureButton(
+      onTrigger: onPressed,
+      child: _seekLabelButtonContent(
+        icon: icon,
+        label: label,
+        tooltip: tooltip,
+        color: color,
+        onTap: onPressed,
+      ),
+    );
+  }
+
+  /// [_seekLabelButton] 的视觉体（[InkWell] 单击 + 图标/标注）。抽出以便长按包装器
+  /// [_VideoRepeatGestureButton] 复用同一视觉，单击路径不变。
+  Widget _seekLabelButtonContent({
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return Tooltip(
       message: tooltip,
       child: InkWell(
-        onTap: onPressed,
+        onTap: onTap,
         customBorder: const StadiumBorder(),
         child: Padding(
           padding: EdgeInsets.symmetric(
@@ -3835,6 +3885,43 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 逐帧后退 / 前进按钮（桌面专属，[_shouldRenderControlItem] 已门控）。图标按钮，
+  /// 单击步进一帧，长按连续步进（[_VideoRepeatGestureButton]，与 seek 按钮同款节律）。
+  /// [forward] true=下一帧、false=上一帧。底层 [VideoPlayerController.frameStep] 内部
+  /// 先 pause 再走 mpv frame-step / frame-back-step。
+  Widget _frameStepButton(
+    VideoPlayerController controller, {
+    required bool forward,
+  }) {
+    final IconData icon = forward ? Icons.arrow_right : Icons.arrow_left;
+    final String tooltip = forward
+        ? t.shortcut_action_video_next_frame
+        : t.shortcut_action_video_previous_frame;
+    void trigger() {
+      _pokeControlsVisible();
+      unawaited(controller.frameStep(forward: forward));
+    }
+
+    return _VideoRepeatGestureButton(
+      onTrigger: trigger,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: trigger,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: EdgeInsets.all(4 * _videoUiScale),
+            child: Icon(
+              icon,
+              size: _videoControlIconSize * 0.9,
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
         ),
       ),
@@ -4921,5 +5008,71 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // [_videoSidePanelTitle]）。
       item(Icons.tune, t.video_settings_title, _showPlayerSettings),
     ];
+  }
+}
+
+/// TODO-1098：把任意视觉体升级为「单击一次 + 长按连触」按钮。用于底栏 seek 前进/后退
+/// 与逐帧前进/后退（用户诉求：这些按钮该支持长按）。范式照搬有声书快捷设置的
+/// `_RepeatIconButton`（[ReaderQuickSettingsSheet]）：[onLongPressStart] 先触发一次、
+/// 500ms 后 `Timer.periodic(100ms)` 连续触发，[onLongPressEnd] 停，dispose 清 Timer。
+///
+/// 只包按钮自身的手势层，不动画面区 [GestureDetector]（画面长按 = 临时变速，见
+/// speed.part.dart）。[child] 自身保留其单击语义（[onTrigger] 同一回调），因此单击
+/// 走 child 的 onTap、长按走本包装器的连触 Timer，两者不冲突。
+class _VideoRepeatGestureButton extends StatefulWidget {
+  const _VideoRepeatGestureButton({
+    required this.onTrigger,
+    required this.child,
+  });
+
+  /// 单次步进回调（长按时按节律重复调用）。
+  final VoidCallback onTrigger;
+
+  /// 视觉体（自带单击 onTap → [onTrigger]，长按由本包装器接管）。
+  final Widget child;
+
+  /// 长按后首次连触前的延迟（区分单击与长按）。
+  static const Duration _initialDelay = Duration(milliseconds: 500);
+
+  /// 连触间隔。
+  static const Duration _repeatInterval = Duration(milliseconds: 100);
+
+  @override
+  State<_VideoRepeatGestureButton> createState() =>
+      _VideoRepeatGestureButtonState();
+}
+
+class _VideoRepeatGestureButtonState extends State<_VideoRepeatGestureButton> {
+  Timer? _timer;
+
+  void _start() {
+    widget.onTrigger();
+    _timer = Timer(_VideoRepeatGestureButton._initialDelay, () {
+      _timer = Timer.periodic(
+        _VideoRepeatGestureButton._repeatInterval,
+        (_) => widget.onTrigger(),
+      );
+    });
+  }
+
+  void _stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: (_) => _start(),
+      onLongPressEnd: (_) => _stop(),
+      onLongPressCancel: _stop,
+      child: widget.child,
+    );
   }
 }

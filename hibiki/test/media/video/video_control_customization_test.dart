@@ -99,12 +99,15 @@ void main() {
 
   group('VideoControlLayout index-aware moves', () {
     test('reorders one item within the same slot', () {
+      // TODO-1098: bottomCenter now carries the two frame-step keys around play:
+      // [seekBackward, frameBackward, previousCue, playPause, nextCue,
+      //  frameForward, seekForward] -> nextCue sits at index 4.
       final VideoControlLayout moved =
           VideoControlLayout.currentChrome.moveDraggedItem(
         const VideoControlDragData(
           item: VideoControlItem.nextCue,
           sourceSlot: VideoControlSlot.bottomCenter,
-          sourceIndex: 3,
+          sourceIndex: 4,
         ),
         VideoControlSlot.bottomCenter,
         targetIndex: 0,
@@ -115,9 +118,9 @@ void main() {
         <VideoControlItem>[
           VideoControlItem.nextCue,
           VideoControlItem.seekBackward,
+          VideoControlItem.frameBackward,
           VideoControlItem.previousCue,
           VideoControlItem.playPause,
-          VideoControlItem.seekForward,
         ],
       );
     });

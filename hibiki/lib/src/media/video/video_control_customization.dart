@@ -243,6 +243,11 @@ enum VideoControlItem {
   playPause('playPause', isSpecialRender: true, pinnedRequired: true),
   seekBackward('seekBackward'),
   seekForward('seekForward'),
+  // 逐帧后退 / 前进（libmpv frame-back-step / frame-step，桌面专属）。渲染层用
+  // [_isDesktopVideoControls] 门控（移动端 libmpv 逐帧不可用，不显示），但模型层
+  // 保持跨平台一致，不在此加平台字段。
+  frameBackward('frameBackward'),
+  frameForward('frameForward'),
   previousCue('previousCue'),
   nextCue('nextCue'),
   volume('volume', isSpecialRender: true),
@@ -550,7 +555,9 @@ class VideoControlLayout {
       VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
       VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
       VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
+      VideoControlItem.frameBackward: VideoControlSlot.bottomCenter,
       VideoControlItem.playPause: VideoControlSlot.bottomCenter,
+      VideoControlItem.frameForward: VideoControlSlot.bottomCenter,
       VideoControlItem.seekForward: VideoControlSlot.bottomCenter,
       VideoControlItem.nextCue: VideoControlSlot.bottomCenter,
       VideoControlItem.volume: VideoControlSlot.bottomRight,
@@ -581,9 +588,11 @@ class VideoControlLayout {
       ],
       VideoControlSlot.bottomCenter: <VideoControlItem>[
         VideoControlItem.seekBackward,
+        VideoControlItem.frameBackward,
         VideoControlItem.previousCue,
         VideoControlItem.playPause,
         VideoControlItem.nextCue,
+        VideoControlItem.frameForward,
         VideoControlItem.seekForward,
       ],
       VideoControlSlot.bottomRight: <VideoControlItem>[
@@ -639,9 +648,11 @@ class VideoControlLayout {
       VideoControlItem.chapterList: VideoControlSlot.topRight,
       // -- bottom-center transport cluster (play pinned geometric centre) --
       VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
+      VideoControlItem.frameBackward: VideoControlSlot.bottomCenter,
       VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
       VideoControlItem.playPause: VideoControlSlot.bottomCenter,
       VideoControlItem.nextCue: VideoControlSlot.bottomCenter,
+      VideoControlItem.frameForward: VideoControlSlot.bottomCenter,
       VideoControlItem.seekForward: VideoControlSlot.bottomCenter,
       // -- bottom row trailing / leading --
       VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
@@ -672,9 +683,11 @@ class VideoControlLayout {
       ],
       VideoControlSlot.bottomCenter: <VideoControlItem>[
         VideoControlItem.seekBackward,
+        VideoControlItem.frameBackward,
         VideoControlItem.previousCue,
         VideoControlItem.playPause,
         VideoControlItem.nextCue,
+        VideoControlItem.frameForward,
         VideoControlItem.seekForward,
       ],
       VideoControlSlot.bottomLeft: <VideoControlItem>[
