@@ -1720,10 +1720,13 @@ void main() {
       );
       await openControls(tester);
 
+      // TODO-1098：bottomCenter 默认布局插入了 frameBackward（index 1）+ frameForward，
+      // 令 playPause 从 index 2 后移到 index 3（顺序：seekBackward, frameBackward,
+      // previousCue, playPause, nextCue, frameForward, seekForward）。
       await dragChipTo(
         tester,
         dragChipFinder(
-            VideoControlItem.playPause, VideoControlSlot.bottomCenter, 2),
+            VideoControlItem.playPause, VideoControlSlot.bottomCenter, 3),
         slotFinder(VideoControlSlot.hidden),
       );
       expect(latest, isNull);
