@@ -61,6 +61,7 @@ class MediaItemDialogPage extends BasePage {
     required this.isHistory,
     this.extraActions,
     this.showLaunchAction = true,
+    this.coverFallbackIcon,
     super.key,
   });
 
@@ -68,6 +69,12 @@ class MediaItemDialogPage extends BasePage {
   final bool isHistory;
   final List<DialogAction> Function(MediaItem)? extraActions;
   final bool showLaunchAction;
+
+  /// TODO-1094：当条目没有任何可显示封面（无 override 缩略图 / imageUrl /
+  /// base64Image / extraUrl）时，用它作占位图标渲染封面块，而不是整块隐藏封面区。
+  /// 供 SRT/字幕卡与网格 `_buildSrtCover` 的占位判据统一；其它来源不传（保持
+  /// 「无封面则不渲染封面块」的既有行为）。
+  final IconData? coverFallbackIcon;
 
   @override
   BasePageState createState() => _MediaItemDialogPageState();
@@ -148,8 +155,12 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
     final String? author = widget.item.author;
     final bool hasAuthor = author != null && author.isNotEmpty;
 
+    final IconData? fallbackIcon = widget.coverFallbackIcon;
+    final Widget? cover = _hasCover
+        ? _buildCover()
+        : (fallbackIcon != null ? _buildFallbackCover(fallbackIcon) : null);
     return MediaItemDialogFrame(
-      cover: _hasCover ? _buildCover() : null,
+      cover: cover,
       title: displayTitle,
       author: hasAuthor ? author : null,
       showLaunchAction: widget.showLaunchAction,
@@ -158,6 +169,22 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       quickActions: _quickActions,
       listActions: _listActions,
       dangerActions: _dangerActions,
+    );
+  }
+
+  /// TODO-1094：无真实封面时的占位封面块，居中显示一个来源相关图标。视觉与书架
+  /// 网格 `_coverPlaceholderIcon`（size 40 / onSurfaceVariant）保持一致，让长按
+  /// 对话框不再出现「网格有占位图标、长按却空白」的不一致。
+  Widget _buildFallbackCover(IconData icon) {
+    return SizedBox(
+      height: 120,
+      child: Center(
+        child: Icon(
+          icon,
+          size: 40,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 
