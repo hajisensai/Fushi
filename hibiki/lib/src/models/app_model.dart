@@ -2355,6 +2355,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleStyle(String json) =>
       prefsRepo.setVideoSubtitleStyle(json);
 
+  /// 是否尊重 .ass 字幕自带样式（TODO-1105；默认 true）。
+  bool get videoRespectAssStyle => prefsRepo.videoRespectAssStyle;
+
+  Future<void> setVideoRespectAssStyle(bool value) =>
+      prefsRepo.setVideoRespectAssStyle(value);
+
   /// 视频 mpv 配置（JSON；见 VideoMpvConfig）。
   String get videoMpvConfig => prefsRepo.videoMpvConfig;
 

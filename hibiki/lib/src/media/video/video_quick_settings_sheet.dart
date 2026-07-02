@@ -55,6 +55,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onSetSubtitleObscureMode,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
+    this.initialRespectAssStyle = true,
+    this.onRespectAssStyleChanged,
     required this.initialAsbConfig,
     required this.onAsbConfigChanged,
     required this.initialShadersEnabled,
@@ -137,6 +139,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 字幕外观定稿（拖动结束 / 重置）时落盘。
   final Future<void> Function(VideoSubtitleStyle style) onSubtitleStyleCommit;
+
+  /// 是否尊重 .ass 字幕自带样式（TODO-1105；默认 true）。
+  final bool initialRespectAssStyle;
+
+  /// 切换「尊重 .ass 自带样式」开关时回调：即时生效 + 持久化由调用方负责。
+  final Future<void> Function(bool value)? onRespectAssStyleChanged;
 
   final VideoAsbplayerConfig initialAsbConfig;
 
@@ -237,6 +245,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
   late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
+  late bool _respectAssStyle = widget.initialRespectAssStyle;
   late bool _danmakuEnabled = widget.initialDanmakuEnabled;
   late bool _danmakuOnlineEnabled = widget.initialDanmakuOnlineEnabled;
   late int _danmakuMaxActive =
@@ -2228,6 +2237,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         _settingsSection(
           title: t.video_setting_subtitle_appearance,
           children: <Widget>[
+            // TODO-1105：尊重 .ass 自带样式开关。开时字幕优先用 .ass 的字体/主色/描边/阴影，
+            // 缺失回退下面的统一外观；关时全走统一外观。默认开，即时生效 + 落盘。
+            AdaptiveSettingsSwitchRow(
+              title: t.video_setting_subtitle_respect_ass,
+              subtitle: t.video_setting_subtitle_respect_ass_hint,
+              icon: Icons.style_outlined,
+              value: _respectAssStyle,
+              onChanged: (bool value) async {
+                setState(() => _respectAssStyle = value);
+                await widget.onRespectAssStyleChanged?.call(value);
+              },
+            ),
             AdaptiveSettingsSliderRow(
               title: t.video_setting_subtitle_font_size,
               icon: Icons.format_size_outlined,

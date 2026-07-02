@@ -4246,6 +4246,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 持久化字幕外观并刷新 overlay（纯 Flutter overlay，不碰 mpv）。
+  /// TODO-1105：持久化「尊重 .ass 自带样式」开关并重建，使字幕 overlay 即时按新开关渲染。
+  Future<void> _setVideoRespectAssStyle(bool value) async {
+    await appModel.setVideoRespectAssStyle(value);
+    if (!mounted) return;
+    _rebuild(() {});
+  }
+
   Future<void> _persistSubtitleStyle(VideoSubtitleStyle style) async {
     _subtitleStyle = style;
     await appModel.setVideoSubtitleStyle(VideoSubtitleStyle.encode(style));
@@ -4461,6 +4468,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         if (mounted) setState(() => _subtitleStyle = s);
       },
       onSubtitleStyleCommit: _persistSubtitleStyle,
+      // TODO-1105：尊重 .ass 自带样式开关初值 + 切换回调（持久化 + 重建让 overlay 即时生效）。
+      initialRespectAssStyle: appModel.videoRespectAssStyle,
+      onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置改为面板内嵌（不再弹独立对话框，见 VideoQuickSettingsSheet）：
       // 着色器勾选 → 持久化启用集 + 解析绝对路径 + 实时应用；mpv 配置即改即生效。
       initialShadersEnabled: decodeEnabledShaders(appModel.videoShadersEnabled),

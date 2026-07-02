@@ -377,6 +377,9 @@ extension _VideoLayout on _VideoHibikiPageState {
                           controlsBottomReserve:
                               _subtitleControlsBottomReserve(),
                           fontFamily: appModel.subtitleFontFamily,
+                          // TODO-1105：尊重 .ass 自带样式（字体/主色/描边/阴影）。开关默认开；
+                          // 关时 overlay 全走上面的统一样式，外观与历史像素级一致。
+                          respectAssStyle: appModel.videoRespectAssStyle,
                         ),
                       ),
                       _buildOsdOverlay(),

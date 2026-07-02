@@ -89,4 +89,46 @@ void main() {
       expect(m.posFraction, isNull);
     });
   });
+  group('parseSubtitleMarkup ASS inline style tags (TODO-1105)', () {
+    test(r'\fn font name preserved on span', () {
+      final SubtitleMarkup m = parseSubtitleMarkup(r'{\fnYu Mincho}x');
+      expect(m.plainText, 'x');
+      expect(m.spans.single.fontName, 'Yu Mincho');
+    });
+
+    test(r'\3c outline color BGR->ARGB on span', () {
+      final SubtitleMarkup m = parseSubtitleMarkup(r'{\3c&HFF0000&}x');
+      // &HFF0000& = B=FF G=00 R=00 -> blue 0xFF0000FF.
+      expect(m.spans.single.outlineColorArgb, 0xFF0000FF);
+    });
+
+    test(r'\4c shadow color BGR->ARGB on span', () {
+      final SubtitleMarkup m = parseSubtitleMarkup(r'{\4c&H00FF00&}x');
+      // &H00FF00& = B=00 G=FF R=00 -> green 0xFF00FF00.
+      expect(m.spans.single.shadowColorArgb, 0xFF00FF00);
+    });
+
+    test(r'\bord outline width and \shad shadow depth on span', () {
+      final SubtitleMarkup m = parseSubtitleMarkup(r'{\bord4\shad2}x');
+      expect(m.spans.single.outlineWidthPx, 4);
+      expect(m.spans.single.shadowDepthPx, 2);
+    });
+
+    test(r'combined \fn \3c \bord in one block', () {
+      final SubtitleMarkup m =
+          parseSubtitleMarkup(r'{\fnArial\3c&H0000FF&\bord3}ab');
+      final SubtitleSpan s = m.spans.single;
+      expect(m.plainText, 'ab');
+      expect(s.fontName, 'Arial');
+      // &H0000FF& = B=00 G=00 R=FF -> red 0xFFFF0000.
+      expect(s.outlineColorArgb, 0xFFFF0000);
+      expect(s.outlineWidthPx, 3);
+    });
+
+    test(r'plain text with no ASS tags keeps span fields null', () {
+      final SubtitleMarkup m = parseSubtitleMarkup('hello');
+      expect(m.spans, isEmpty);
+      expect(m.cueStyle, isNull);
+    });
+  });
 }
