@@ -30,12 +30,21 @@ import 'test_helpers.dart';
 ///   WebView 在真渲染、可对文档派发 contextmenu、JS 层不吞它（压制在原生侧）。原生
 ///   菜单「只出一个」的最终目视需可见窗，标 PARTIAL。
 ///
-/// TODO-1022：structured-content 下带 gloss-sc-* 类的 span/div 携带词典 inline
-///   float/position 时被 popup.css 中和回正常行内流（修引文/外字错位）。在真渲染的
-///   弹窗文档里注入 gloss-sc-span/gloss-sc-div（各带 inline float:left;
-///   position:relative），读回 getComputedStyle 断言 float=none / position=static；
-///   注入 gloss-image-link 内 span 作反向对照，断言它不被误伤。真引擎 computed-style
-///   + DOM-rect 证据，不是源码 grep。
+/// TODO-1022 / BUG-478 / BUG-520：词典 structured-content 自带的 inline
+///   float / position:absolute|fixed|sticky 现在在源头（popup.js
+///   setStructuredContentElementStyle 里的 isFlowEscapingStructuredContentStyle）
+///   被过滤，而不是 BUG-478 那条一刀切 CSS——那条规则的 display:inline 把所有
+///   词典靠 div block 布局做的分行压成一行（BUG-520）。探针改为在真弹窗文档里
+///   调用真实渲染管线 renderStructuredContent：
+///   - 带 float/position:absolute|fixed 的 span/div 渲染后 computed float=none /
+///     position=static（源头过滤生效）；
+///   - div 渲染后 computed display=block，且两个 div 垂直堆叠（分行不变量，
+///     BUG-520 的像素级证据）；
+///   - position:relative 微调保留（computed position=relative）；
+///   - 裸 gloss-sc-div（带 inline float，不经渲染管线）float 原样保留——证明
+///     一刀切 CSS 已删、中和只发生在 JS 源头；
+///   - .gloss-image-link 仍由 popup.css 拿到 position:relative（图片布局零回归）。
+///   真引擎 computed-style + DOM-rect 证据，不是源码 grep。
 ///
 /// Run (PowerShell, from hibiki/)：
 ///   flutter test integration_test/dict_popup_ctxmenu_glossary_verify_itest.dart -d windows
@@ -173,7 +182,8 @@ void main() {
             reason: 'popup WebView document must become ready');
 
         // ── TODO-1022 探针：注入 gloss-sc span/div + image-link 反向对照 ──
-        final dynamic rawGloss = await runInPopup!(_glossaryNeutralizeProbeJs());
+        final dynamic rawGloss =
+            await runInPopup!(_glossaryNeutralizeProbeJs());
         final Map<String, dynamic> gloss =
             jsonDecode(rawGloss as String) as Map<String, dynamic>;
         debugPrint('[verify][1022] glossary neutralize probe: $gloss');
@@ -181,32 +191,44 @@ void main() {
             reason: 'glossary probe must run: ${gloss['error']}');
 
         expect(gloss['spanFloat'], 'none',
-            reason:
-                'TODO-1022: gloss-sc-span float must be neutralized to none, '
-                'got ${gloss['spanFloat']}');
+            reason: 'TODO-1022: dict float on rendered gloss-sc-span must be '
+                'filtered at the source, got ${gloss['spanFloat']}');
         expect(gloss['spanPosition'], 'static',
-            reason: 'TODO-1022: gloss-sc-span position must be neutralized to '
-                'static, got ${gloss['spanPosition']}');
+            reason: 'TODO-1022: dict position:absolute on rendered '
+                'gloss-sc-span must be filtered, got ${gloss['spanPosition']}');
         expect(gloss['divFloat'], 'none',
-            reason: 'TODO-1022: gloss-sc-div float must be neutralized to none, '
-                'got ${gloss['divFloat']}');
+            reason: 'TODO-1022: dict float on rendered gloss-sc-div must be '
+                'filtered at the source, got ${gloss['divFloat']}');
         expect(gloss['divPosition'], 'static',
-            reason: 'TODO-1022: gloss-sc-div position must be neutralized to '
-                'static, got ${gloss['divPosition']}');
+            reason: 'TODO-1022: dict position:fixed on rendered gloss-sc-div '
+                'must be filtered, got ${gloss['divPosition']}');
 
-        // DOM-rect：中和后的 span 落在正常行内流（垂直中心与父行锚点接近）。
-        expect(gloss['spanInFlow'], isTrue,
-            reason: 'TODO-1022: neutralized gloss-sc-span must sit in normal '
-                'inline flow, span rect ${gloss['spanRect']} vs anchor '
-                '${gloss['anchorRect']}');
+        // BUG-520 分行不变量：渲染出的 div 保持 block，两个 div 垂直堆叠。
+        expect(gloss['divDisplay'], 'block',
+            reason: 'BUG-520: rendered gloss-sc-div must keep UA block display '
+                '(line breaks), got ${gloss['divDisplay']}');
+        expect(gloss['divsStackVertically'], isTrue,
+            reason: 'BUG-520: two rendered dict divs must stack vertically '
+                '(line breaks), rects ${gloss['div1Rect']} / '
+                '${gloss['div2Rect']}');
 
-        // 反向对照：<p> 元素（非 span/div）落在中和选择器之外，其 inline float 必须
-        // 原样保留 —— 证明 TODO-1022 中和严格限定 span/div、不误伤 structured-content
-        // 里其它标签（选择器作用域正确、零回归）。
-        expect(gloss['rtFloat'], isNot('none'),
-            reason: 'TODO-1022: a non span/div <p> element must be OUTSIDE the '
-                'neutralize scope and keep its inline float, got '
-                '${gloss['rtFloat']}');
+        // position:relative（行内微调）保留。
+        expect(gloss['relPosition'], 'relative',
+            reason: 'source filter must keep position:relative glyph nudges, '
+                'got ${gloss['relPosition']}');
+
+        // 反向对照：裸 gloss-sc-div（不经渲染管线、直接带 inline float）float 原样
+        // 保留 —— 证明一刀切 CSS 已删，中和只发生在 popup.js 源头（BUG-520 守卫）。
+        expect(gloss['bareDivFloat'], isNot('none'),
+            reason: 'BUG-520: no blanket CSS may neutralize a bare '
+                'gloss-sc-div; filtering happens only in the JS renderer, got '
+                '${gloss['bareDivFloat']}');
+
+        // 图片链接布局零回归：popup.css 仍给 .gloss-image-link position:relative。
+        expect(gloss['imageLinkPosition'], 'relative',
+            reason: 'TODO-859/350: .gloss-image-link must keep '
+                'position:relative from popup.css, got '
+                '${gloss['imageLinkPosition']}');
 
         // ── TODO-1018 探针：弹窗 WebView 可派发 contextmenu，JS 层不吞它 ──
         final dynamic rawCtx = await runInPopup(_contextMenuProbeJs());
@@ -313,62 +335,81 @@ String _popupReadyJs() => r'''
 })()
 ''';
 
-/// TODO-1022 探针：在真弹窗文档造 structured-content，放带 inline float/position 的
-/// gloss-sc-span、gloss-sc-div（应被中和），以及一个真 <rt> 振假名标签（带 inline
-/// float，落在 span/div 选择器之外，应保留）作反向对照，读回 getComputedStyle +
-/// getBoundingClientRect。
+/// TODO-1022 / BUG-520 探针：在真弹窗文档里调用真实渲染管线
+/// renderStructuredContent，验证源头过滤（float / position:absolute|fixed 不落地、
+/// relative 保留）、div 分行不变量（display=block + 两 div 垂直堆叠），以及
+/// 一刀切 CSS 已删（裸 gloss-sc-div 的 inline float 原样保留）。
 String _glossaryNeutralizeProbeJs() => r'''
 (function() {
   try {
+    if (typeof renderStructuredContent !== 'function') {
+      return JSON.stringify({ok: false, error: 'renderStructuredContent missing'});
+    }
     var host = document.createElement('span');
     host.className = 'structured-content';
     host.setAttribute('data-verify-1022', '1');
-    var anchor = document.createElement('span');
-    anchor.textContent = 'ANCHOR';
-    host.appendChild(anchor);
-    var scSpan = document.createElement('span');
-    scSpan.className = 'gloss-sc-span';
-    scSpan.style.cssText = 'float:left;position:relative;top:-40px;left:80px;';
-    scSpan.textContent = 'Q';
-    host.appendChild(scSpan);
-    var scDiv = document.createElement('div');
-    scDiv.className = 'gloss-sc-div';
-    scDiv.style.cssText = 'float:left;position:relative;top:-40px;left:80px;';
-    scDiv.textContent = 'DIV';
-    host.appendChild(scDiv);
-    // 反向对照：一个 <p> 元素（gloss-sc-p 类）——p 不是 span/div，落在中和选择器
-    // 之外，其 inline float 应原样保留，证明 TODO-1022 中和严格限定 span/div、不误伤
-    // structured-content 里其它标签（作用域正确、零回归）。
-    var scP = document.createElement('p');
-    scP.className = 'gloss-sc-p';
-    scP.style.cssText = 'float:left;position:relative;';
-    scP.textContent = 'P';
-    host.appendChild(scP);
-
     document.body.appendChild(host);
+
+    // (a) 真渲染管线：float / position:absolute 在源头被过滤。
+    renderStructuredContent(host,
+      {tag: 'span', style: {float: 'right', position: 'absolute'}, content: 'Q'},
+      'ja', 'VerifyDict', false);
+    var scSpan = host.querySelector('.gloss-sc-span');
+
+    // (b) 真渲染 div×2：display 保持 block、两行垂直堆叠（BUG-520 分行不变量）。
+    renderStructuredContent(host,
+      {tag: 'div', style: {float: 'left', position: 'fixed'}, content: 'LINE1'},
+      'ja', 'VerifyDict', false);
+    renderStructuredContent(host,
+      {tag: 'div', content: 'LINE2'}, 'ja', 'VerifyDict', false);
+    var divs = host.querySelectorAll('.gloss-sc-div');
+    var d1 = divs[0];
+    var d2 = divs[1];
+
+    // (c) position:relative 行内微调保留。
+    renderStructuredContent(host,
+      {tag: 'span', style: {position: 'relative', top: '-6px'}, content: 'R'},
+      'ja', 'VerifyDict', false);
+    var spans = host.querySelectorAll('.gloss-sc-span');
+    var relSpan = spans[spans.length - 1];
+
+    // (d) 反向对照：裸 gloss-sc-div 带 inline float，不经渲染管线 —— 一刀切
+    //     CSS 已删，float 应原样保留（中和只发生在 JS 源头）。
+    var bare = document.createElement('div');
+    bare.className = 'gloss-sc-div';
+    bare.style.cssText = 'float:left;';
+    bare.textContent = 'BARE';
+    host.appendChild(bare);
+
+    // (e) 图片链接布局零回归：popup.css 仍给 .gloss-image-link position:relative。
+    var imgLink = document.createElement('a');
+    imgLink.className = 'gloss-image-link';
+    imgLink.textContent = 'IMG';
+    host.appendChild(imgLink);
+
     void host.offsetHeight;
 
     var spanCs = window.getComputedStyle(scSpan);
-    var divCs = window.getComputedStyle(scDiv);
-    var rtCs = window.getComputedStyle(scP);
-
-    var anchorRect = anchor.getBoundingClientRect();
-    var spanRect = scSpan.getBoundingClientRect();
-    var anchorMidY = anchorRect.top + anchorRect.height / 2;
-    var spanMidY = spanRect.top + spanRect.height / 2;
-    var spanInFlow = Math.abs(spanMidY - anchorMidY) < 30;
+    var d1Cs = window.getComputedStyle(d1);
+    var relCs = window.getComputedStyle(relSpan);
+    var bareCs = window.getComputedStyle(bare);
+    var imgCs = window.getComputedStyle(imgLink);
+    var r1 = d1.getBoundingClientRect();
+    var r2 = d2.getBoundingClientRect();
 
     var result = {
       ok: true,
       spanFloat: spanCs.getPropertyValue('float') || spanCs.cssFloat || '',
       spanPosition: spanCs.getPropertyValue('position'),
-      divFloat: divCs.getPropertyValue('float') || divCs.cssFloat || '',
-      divPosition: divCs.getPropertyValue('position'),
-      rtFloat: rtCs.getPropertyValue('float') || rtCs.cssFloat || '',
-      rtPosition: rtCs.getPropertyValue('position'),
-      anchorRect: {top: anchorRect.top, left: anchorRect.left, h: anchorRect.height},
-      spanRect: {top: spanRect.top, left: spanRect.left, h: spanRect.height},
-      spanInFlow: spanInFlow
+      divFloat: d1Cs.getPropertyValue('float') || d1Cs.cssFloat || '',
+      divPosition: d1Cs.getPropertyValue('position'),
+      divDisplay: d1Cs.getPropertyValue('display'),
+      relPosition: relCs.getPropertyValue('position'),
+      bareDivFloat: bareCs.getPropertyValue('float') || bareCs.cssFloat || '',
+      imageLinkPosition: imgCs.getPropertyValue('position'),
+      div1Rect: {top: r1.top, bottom: r1.bottom},
+      div2Rect: {top: r2.top, bottom: r2.bottom},
+      divsStackVertically: r2.top >= r1.bottom - 1
     };
     host.remove();
     return JSON.stringify(result);

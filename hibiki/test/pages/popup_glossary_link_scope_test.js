@@ -1,24 +1,39 @@
 // TODO-860 / BUG-435 behavior test: dictionary structured-content TEXT links
 // (<a class="gloss-sc-a">) must stay in the inline flow, NOT escape sideways
-// via the dictionary inline style (float / position:absolute|fixed) that
-// popup.js:setStructuredContentElementStyle lands on element.style with no
-// whitelist.
+// via the dictionary inline style (float / position:absolute|fixed).
 //
-// The fix is a pure CSS rule in popup.css:
-//   .structured-content a.gloss-sc-a { float:none!important; position:static!important; display:inline; }
+// TODO-1022 / BUG-478: the misplaced glyph can also be a non-<a> span/div
+// (Meikyo opening quote, class gloss-sc-span / gloss-sc-div).
 //
-// TODO-1022 / BUG-435 regression (uncovered branch): the misplaced glyph is NOT
-// an <a> but a structured-content span/div -- Meikyo opening quote carries
-// class gloss-sc-span / gloss-sc-div, which the original a.gloss-sc-a rule never
-// reached, so it escaped sideways again. The fix extends the neutralization to:
+// BUG-520 (regression of the BUG-478 fix): the blanket CSS rule
 //   .structured-content span[class*="gloss-sc-"]:not(.gloss-image-link),
 //   .structured-content div[class*="gloss-sc-"]:not(.gloss-image-link)
-// while a second rule reverts float/position for span/div nested inside an
-// image link or inside ruby/rt (TODO-859/350 + furigana layout stay intact).
+//   { float:none!important; position:static!important; display:inline; }
+// forced display:inline onto EVERY gloss-sc-div. Structured content relies on
+// the div's UA block display for line breaks, so every dictionary's lines
+// collapsed into one run-on line (Meikyo monolingual AND bilingual dicts) and
+// zero-line-height inline-block icon containers started overlapping text.
 //
-// Asserts (1) <a> text link reproduces+neutralized, (2) image link untouched by
-// a.gloss-sc-a rule, (3) TODO-1022 span/div quote reproduces+neutralized by the
-// new rule, (4) image-link element + ruby/rt NOT matched by the new rule.
+// ROOT FIX (this contract): the pollution source is popup.js
+// setStructuredContentElementStyle applying dictionary inline styles verbatim.
+// Upstream Yomitan whitelists schema style properties and never lands
+// float / position on elements. We now drop the flow-escaping properties at
+// the source (float always; position only when absolute|fixed|sticky --
+// relative stays, it never leaves the flow), and the blanket CSS rule is GONE.
+// The original a.gloss-sc-a CSS rule stays: it also guards against the
+// dictionary's own styles.css (secondary cause of BUG-435).
+//
+// Asserts:
+//  (1) <a>/span/div dict float + position:absolute|fixed are filtered at the
+//      source (never land on element.style);
+//  (2) position:relative and unrelated styles (fontWeight, marginRight) are
+//      preserved;
+//  (3) NO popup.css rule matches a plain gloss-sc-div/span and forces
+//      display:inline or float/position (BUG-520 regression guard);
+//  (4) a.gloss-sc-a CSS rule still exists, matches text links only, never the
+//      image link;
+//  (5) image link internals keep their own position:relative (separate code
+//      path, applyImageStyles, TODO-859/350).
 //
 // Run: node hibiki/test/pages/popup_glossary_link_scope_test.js
 
@@ -131,9 +146,7 @@ function loadPopup() {
 function parseRules(text) {
   const noComments = text.replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = [];
-  const re = /([^{}]+)\{([^{}]*)\}/g;
-  let m;
-  while ((m = re.exec(noComments)) !== null) {
+  for (const m of noComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     rules.push({ selector: m[1].trim(), body: m[2].trim() });
   }
   return rules;
@@ -202,30 +215,99 @@ function findChildByClass(root, className) {
 (function run() {
   const sb = loadPopup();
 
-  // ---- Existing TODO-860 <a> text-link coverage --------------------------
+  // ---- (1) Source filter: flow-escaping inline styles never land ---------
   const textLink = sb.window.__test.renderSc({
     tag: "a",
     href: "?query=foo",
-    style: { position: "absolute", float: "right" },
+    style: { position: "absolute", float: "right", fontWeight: "bold" },
     content: "foo",
   });
   assert.ok(textLink, "structured-content <a> must render");
   assert.strictEqual(textLink.tagName, "A", "text link is an <a> element");
   assert.ok(textLink.classList.contains("gloss-sc-a"),
-    "text link must carry class gloss-sc-a (popup.js:1353)");
-  assert.strictEqual(textLink.style.position, "absolute",
-    "reproduction: dict inline position escaped onto element.style");
-  assert.strictEqual(textLink.style.float, "right",
-    "reproduction: dict inline float escaped onto element.style");
+    "text link must carry class gloss-sc-a");
+  assert.strictEqual(textLink.style.position, undefined,
+    "ROOT FIX: dict inline position:absolute must be filtered at the source");
+  assert.strictEqual(textLink.style.float, undefined,
+    "ROOT FIX: dict inline float must be filtered at the source");
+  assert.strictEqual(textLink.style.fontWeight, "bold",
+    "unrelated dict styles must still be applied");
 
+  const quoteSpan = sb.window.__test.renderSc({
+    tag: "span",
+    style: { position: "absolute", float: "right" },
+    content: "Q",
+  });
+  assert.ok(quoteSpan.classList.contains("gloss-sc-span"),
+    "quote span must carry class gloss-sc-span");
+  assert.strictEqual(quoteSpan.style.position, undefined,
+    "BUG-478: span position:absolute must be filtered at the source");
+  assert.strictEqual(quoteSpan.style.float, undefined,
+    "BUG-478: span float must be filtered at the source");
+
+  const blockDiv = sb.window.__test.renderSc({
+    tag: "div",
+    style: { position: "fixed", float: "left", marginRight: 0.5 },
+    content: "x",
+  });
+  assert.ok(blockDiv.classList.contains("gloss-sc-div"),
+    "div must carry class gloss-sc-div");
+  assert.strictEqual(blockDiv.style.position, undefined,
+    "BUG-478: div position:fixed must be filtered at the source");
+  assert.strictEqual(blockDiv.style.float, undefined,
+    "BUG-478: div float must be filtered at the source");
+  assert.strictEqual(blockDiv.style.marginRight, "0.5em",
+    "numeric margin conversion must survive the filter");
+  assert.strictEqual(blockDiv.style.display, undefined,
+    "BUG-520: nothing may force a display onto a dict div -- line breaks " +
+    "depend on its UA block display");
+
+  // ---- (2) position:relative stays in the flow -> preserved --------------
+  const relSpan = sb.window.__test.renderSc({
+    tag: "span",
+    style: { position: "relative", top: "-0.2em" },
+    content: "r",
+  });
+  assert.strictEqual(relSpan.style.position, "relative",
+    "position:relative never leaves the flow and must be preserved");
+  assert.strictEqual(relSpan.style.top, "-0.2em",
+    "relative offset must be preserved");
+
+  const stickyDiv = sb.window.__test.renderSc({
+    tag: "div",
+    style: { position: "sticky" },
+    content: "s",
+  });
+  assert.strictEqual(stickyDiv.style.position, undefined,
+    "position:sticky escapes the flow and must be filtered");
+
+  // ---- (3) BUG-520 regression guard: no blanket CSS on gloss-sc div/span -
+  const rules = parseRules(cssSource);
+  const plainDiv = sb.window.__test.renderSc({ tag: "div", content: "x" });
+  const plainSpan = sb.window.__test.renderSc({ tag: "span", content: "y" });
+  for (const el of [plainDiv, plainSpan]) {
+    const label = el.tagName.toLowerCase();
+    for (const rule of rules) {
+      if (!selectorListMatches(rule.selector, el)) continue;
+      const norm = rule.body.replace(/\s+/g, "");
+      assert.ok(!/display:inline(?![-a-z])/.test(norm),
+        "BUG-520: no popup.css rule may force display:inline onto a plain " +
+        "gloss-sc-" + label + " (div line breaks depend on block display); " +
+        "offending selector: " + rule.selector);
+      assert.ok(!/float:none!important/.test(norm)
+        && !/position:static!important/.test(norm),
+        "BUG-520: no blanket popup.css rule may neutralize float/position " +
+        "on a plain gloss-sc-" + label + "; offending selector: " + rule.selector);
+    }
+  }
+
+  // ---- (4) a.gloss-sc-a CSS rule stays (dictionary styles.css guard) -----
   const imageLink = sb.window.__test.makeImageLink();
   assert.ok(imageLink, "image link must render");
   assert.ok(imageLink.classList.contains("gloss-image-link"),
-    "image link must carry class gloss-image-link (popup.js:866)");
+    "image link must carry class gloss-image-link");
   assert.ok(!imageLink.classList.contains("gloss-sc-a"),
     "image link must NOT carry gloss-sc-a");
-
-  const rules = parseRules(cssSource);
 
   const anchorRules = rules.filter((r) => /a\.gloss-sc-a\b/.test(r.selector));
   assert.strictEqual(anchorRules.length, 1,
@@ -243,65 +325,36 @@ function findChildByClass(root, className) {
   assert.ok(!descendantMatches(".structured-content a.gloss-sc-a", imageLink),
     "REVERSE GUARD: a.gloss-sc-a rule must NOT match the gloss-image-link");
 
-  // ---- TODO-1022: non-<a> span/div quote coverage ------------------------
-  const quoteSpan = sb.window.__test.renderSc({
-    tag: "span",
-    style: { position: "absolute", float: "right" },
-    content: "Q",
-  });
-  assert.strictEqual(quoteSpan.tagName, "SPAN", "quote node is a <span>");
-  assert.ok(quoteSpan.classList.contains("gloss-sc-span"),
-    "quote span must carry class gloss-sc-span (popup.js:1353)");
-  assert.strictEqual(quoteSpan.style.position, "absolute",
-    "reproduction: dict inline position escaped onto the span");
-  assert.strictEqual(quoteSpan.style.float, "right",
-    "reproduction: dict inline float escaped onto the span");
+  // ---- (5) image internals keep their own position (separate path) -------
+  // In the popup (non-exporting) path the image link is styled by popup.css
+  // classes, not by setStructuredContentElementStyle, so the source filter
+  // cannot touch it. Assert popup.css still positions .gloss-image-link
+  // (TODO-859/350: image sizer/lightbox depend on position:relative).
+  const imageLinkRules = rules.filter((r) =>
+    selectorListMatches(r.selector, imageLink));
+  assert.ok(imageLinkRules.some((r) =>
+    /position:\s*relative/.test(r.body)),
+    "popup.css must keep .gloss-image-link position:relative " +
+    "(TODO-859/350 image layout)");
 
-  const quoteDiv = sb.window.__test.renderSc({
-    tag: "div",
-    style: { position: "fixed", float: "left" },
-    content: "x",
-  });
-  assert.ok(quoteDiv.classList.contains("gloss-sc-div"),
-    "quote div must carry class gloss-sc-div");
-
-  const spanDivRules = rules.filter(
-    (r) => /span\[class\*="gloss-sc-"\]/.test(r.selector)
-      && /float:\s*none\s*!important/.test(r.body));
-  assert.strictEqual(spanDivRules.length, 1,
-    "exactly one popup.css rule must neutralize span/div gloss-sc-* float/position");
-  const spanDivFix = spanDivRules[0];
-  const sdNorm = spanDivFix.body.replace(/\s+/g, "");
-  assert.ok(/float:none!important/.test(sdNorm),
-    "span/div fix must neutralize float to none !important");
-  assert.ok(/position:static!important/.test(sdNorm),
-    "span/div fix must neutralize position to static !important");
-  assert.ok(/:not\(\.gloss-image-link\)/.test(spanDivFix.selector),
-    "SCOPE: span/div fix selector must exclude .gloss-image-link via :not()");
-
-  assert.ok(selectorListMatches(spanDivFix.selector, quoteSpan),
-    "TODO-1022: span/div rule must match the gloss-sc-span quote");
-  assert.ok(selectorListMatches(spanDivFix.selector, quoteDiv),
-    "TODO-1022: span/div rule must match the gloss-sc-div quote");
-
-  assert.ok(!selectorListMatches(spanDivFix.selector, imageLink),
-    "REVERSE GUARD: span/div rule must NOT match the gloss-image-link element");
-
+  // ---- ruby/rt: uniform source filter, other styles preserved ------------
   const rubyRoot = sb.window.__test.renderSc({
     tag: "ruby",
-    style: { position: "absolute", float: "right" },
+    style: { float: "right" },
     content: [
-      { tag: "rt", style: { position: "absolute", float: "right" }, content: "a" },
+      { tag: "rt", style: { position: "absolute", fontSize: "0.6em" }, content: "a" },
     ],
   });
   assert.ok(rubyRoot.classList.contains("gloss-sc-ruby"),
     "ruby node must carry class gloss-sc-ruby");
-  assert.ok(!selectorListMatches(spanDivFix.selector, rubyRoot),
-    "REVERSE GUARD: span/div rule must NOT match the <ruby> element");
+  assert.strictEqual(rubyRoot.style.float, undefined,
+    "source filter applies uniformly: ruby float filtered");
   const rtNode = findChildByClass(rubyRoot, "gloss-sc-rt");
   assert.ok(rtNode, "ruby must contain an rt child");
-  assert.ok(!selectorListMatches(spanDivFix.selector, rtNode),
-    "REVERSE GUARD: span/div rule must NOT match the <rt> element");
+  assert.strictEqual(rtNode.style.position, undefined,
+    "source filter applies uniformly: rt position:absolute filtered");
+  assert.strictEqual(rtNode.style.fontSize, "0.6em",
+    "rt keeps its legitimate fontSize");
 
   console.log("popup_glossary_link_scope_test.js: all assertions passed");
 })();

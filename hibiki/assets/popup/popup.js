@@ -513,8 +513,28 @@ function getMediaFilename(dictionary, path) {
     return currentDictionaryMedia.get(key).filename;
 }
 
+// BUG-435 / BUG-478 / BUG-520 家族根因：词典 structured-content 节点自带的
+// inline float / position:absolute|fixed|sticky 会把文本节点推出行内流（明鏡
+// 补足◆行开引号被推到行右上角）。上游 Yomitan 按 schema 白名单下发样式，这
+// 两族属性从不落地；这里在源头丢弃，而不是事后用一刀切 CSS 兜底——BUG-520
+// 就是那种兜底的代价：display:inline 打断了所有词典靠 div block 布局做的分行。
+// position:relative（及其 top/left 偏移）不脱离文档流，词典靠它做合法的字形
+// 微调，保留。
+function isFlowEscapingStructuredContentStyle(property, value) {
+    if (property === 'float' || property === 'cssFloat') {
+        return true;
+    }
+    if (property === 'position') {
+        return /^(absolute|fixed|sticky)$/i.test(String(value).trim());
+    }
+    return false;
+}
+
 function setStructuredContentElementStyle(element, style) {
     for (const [property, value] of Object.entries(style)) {
+        if (isFlowEscapingStructuredContentStyle(property, value)) {
+            continue;
+        }
         if ((property === 'marginTop' || property === 'marginLeft' || property === 'marginRight' || property === 'marginBottom') && typeof value === 'number') {
             element.style[property] = `${value}em`;
         } else {

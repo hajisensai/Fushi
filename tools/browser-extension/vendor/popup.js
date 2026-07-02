@@ -287,8 +287,25 @@ function getMediaFilename(dictionary, path) {
     return currentDictionaryMedia.get(key).filename;
 }
 
+// BUG-435 / BUG-478 / BUG-520 家族根因：词典 structured-content 节点自带的
+// inline float / position:absolute|fixed|sticky 会把文本节点推出行内流。
+// 上游 Yomitan 按 schema 白名单下发样式，这两族属性从不落地；这里在源头丢弃。
+// position:relative 不脱离文档流，保留。与 hibiki/assets/popup/popup.js 同步。
+function isFlowEscapingStructuredContentStyle(property, value) {
+    if (property === 'float' || property === 'cssFloat') {
+        return true;
+    }
+    if (property === 'position') {
+        return /^(absolute|fixed|sticky)$/i.test(String(value).trim());
+    }
+    return false;
+}
+
 function setStructuredContentElementStyle(element, style) {
     for (const [property, value] of Object.entries(style)) {
+        if (isFlowEscapingStructuredContentStyle(property, value)) {
+            continue;
+        }
         if ((property === 'marginTop' || property === 'marginLeft' || property === 'marginRight' || property === 'marginBottom') && typeof value === 'number') {
             element.style[property] = `${value}em`;
         } else {

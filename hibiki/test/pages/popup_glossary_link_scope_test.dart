@@ -2,25 +2,30 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-860 / BUG-435: dictionary structured-content TEXT links
-/// (`<a class="gloss-sc-a">`) escape the inline flow and land "off to the side"
-/// because their structured-content node carries an inline `style`
-/// (`float` / `position:absolute|fixed`) that popup.js
-/// `setStructuredContentElementStyle` lands on `element.style` with no
-/// whitelist (popup.js:516). Secondary cause: the dictionary's own styles.css
-/// `a{float/position}`. The fix is a pure CSS rule in popup.css that pulls the
-/// text link back into the inline flow.
+/// TODO-860 / BUG-435 / TODO-1022 / BUG-478 / BUG-520: dictionary
+/// structured-content nodes carry inline `style` (`float` /
+/// `position:absolute|fixed|sticky`) that used to land verbatim on
+/// `element.style` via popup.js `setStructuredContentElementStyle` and push
+/// text out of the inline flow. Two rounds of CSS bandaids followed; the
+/// second (BUG-478) was a blanket span/div rule whose `display:inline`
+/// destroyed the div-based line breaks of every dictionary (BUG-520).
 ///
-/// Two guards:
+/// ROOT FIX contract: popup.js drops the flow-escaping properties at the
+/// source (`isFlowEscapingStructuredContentStyle`); the only CSS rule left is
+/// the narrow `a.gloss-sc-a` one (still needed against the dictionary's own
+/// styles.css, secondary cause of BUG-435). Blanket gloss-sc span/div CSS
+/// rules are banned.
+///
+/// Three guards:
 /// 1) Behaviour — Node truly executes popup.js `renderStructuredContent` +
-///    `createDefinitionImage`, then matches the actual popup.css rule against
-///    the rendered text link and image link. Asserts the rule neutralizes the
-///    text link (float none / position static) and, crucially, does NOT touch
-///    the image link (`gloss-image-link`, TODO-859/350 keeps position/float).
-///    Skipped when node is absent.
+///    `createDefinitionImage` and asserts the source filter semantics (see
+///    popup_glossary_link_scope_test.js). Skipped when node is absent.
 /// 2) CSS source — scans popup.css for the `a.gloss-sc-a` rule with
 ///    `float:none!important` + `position:static!important`, and asserts the
 ///    rule does NOT mention `gloss-image-link`. Holds even without node.
+/// 3) Source filter + BUG-520 regression guard — popup.js (app + extension
+///    vendor) must carry the filter; popup.css must NOT carry blanket
+///    gloss-sc span/div rules.
 void main() {
   test(
     'popup glossary text link stays inline, image link untouched (node)',
@@ -94,66 +99,67 @@ void main() {
         reason: 'fix body must NOT mention gloss-image-link');
   });
 
-  // TODO-1022 / BUG-435 regression (uncovered branch): the misplaced glyph is a
-  // NON-<a> structured-content span/div (Meikyo opening quote, class
-  // gloss-sc-span / gloss-sc-div) that the a.gloss-sc-a rule never reached. The
-  // fix extends the inline-flow neutralization to span/div carrying a gloss-sc-*
-  // class, while EXPLICITLY excluding .gloss-image-link (image links keep their
-  // position/float) and ruby/rt (furigana layout).
+  // BUG-520 (regression of the BUG-478 fix): the blanket popup.css rule
+  //   span/div[class*="gloss-sc-"] { float:none!important;
+  //     position:static!important; display:inline; }
+  // forced display:inline onto every gloss-sc-div. Structured content relies
+  // on the div's UA block display for line breaks, so every dictionary's lines
+  // collapsed into one run-on line and icon containers overlapped text.
+  //
+  // ROOT FIX contract: popup.js filters the flow-escaping inline styles at the
+  // source (isFlowEscapingStructuredContentStyle inside
+  // setStructuredContentElementStyle), and the blanket CSS rule is BANNED.
+  // The same filter must exist in the browser-extension vendor snapshot.
   test(
-      'popup.css extends the inline-flow fix to gloss-sc span/div, '
-      'excluding image links + ruby/rt (TODO-1022)', () {
-    final String raw = File('assets/popup/popup.css').readAsStringSync();
-    final String css = raw.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+      'popup.js filters flow-escaping dict styles at the source; '
+      'no blanket gloss-sc span/div CSS rule (BUG-520)', () {
+    final String js = File('assets/popup/popup.js').readAsStringSync();
 
-    // The new neutralization rule targets span/div with a gloss-sc-* class and
-    // forces them back into the inline flow.
-    final int ruleStart =
-        css.indexOf('span[class*="gloss-sc-"]:not(.gloss-image-link)');
-    expect(ruleStart, greaterThanOrEqualTo(0),
-        reason:
-            'popup.css must carry the TODO-1022 span/div inline-flow rule that '
-            'excludes .gloss-image-link via :not()');
+    // Source filter present and wired into setStructuredContentElementStyle.
+    expect(js.contains('function isFlowEscapingStructuredContentStyle'), isTrue,
+        reason: 'popup.js must define the flow-escape source filter '
+            '(root fix for BUG-435/478/519)');
+    final int setterIdx =
+        js.indexOf('function setStructuredContentElementStyle');
+    expect(setterIdx, greaterThanOrEqualTo(0));
+    final int setterEnd = js.indexOf('\n}', setterIdx);
+    final String setterBody = js.substring(setterIdx, setterEnd);
+    expect(setterBody.contains('isFlowEscapingStructuredContentStyle'), isTrue,
+        reason: 'setStructuredContentElementStyle must consult the filter '
+            'before landing dict inline styles');
 
-    final int braceOpen = css.indexOf('{', ruleStart);
-    final int braceClose = css.indexOf('}', braceOpen);
-    expect(braceOpen, greaterThan(ruleStart));
-    expect(braceClose, greaterThan(braceOpen));
+    // The filter must drop float and absolute/fixed/sticky position, and it
+    // must NOT special-case relative (position:relative stays in the flow and
+    // is legitimately used by dictionaries for glyph nudges).
+    final int filterIdx =
+        js.indexOf('function isFlowEscapingStructuredContentStyle');
+    final int filterEnd = js.indexOf('\n}', filterIdx);
+    final String filterBody = js.substring(filterIdx, filterEnd);
+    expect(filterBody.contains("'float'"), isTrue,
+        reason: 'filter must drop float');
+    expect(filterBody.contains('absolute|fixed|sticky'), isTrue,
+        reason: 'filter must drop only absolute/fixed/sticky positions');
 
-    final String selector = css.substring(ruleStart, braceOpen);
-    final String body =
-        css.substring(braceOpen + 1, braceClose).replaceAll(RegExp(r'\s+'), '');
+    // BUG-520 regression guard: the blanket span/div neutralization rule that
+    // broke line breaks must never come back.
+    final String rawCss = File('assets/popup/popup.css').readAsStringSync();
+    final String css = rawCss.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+    expect(css.contains('span[class*="gloss-sc-"]'), isFalse,
+        reason: 'BUG-520: no blanket span[class*="gloss-sc-"] rule in '
+            'popup.css -- neutralize at the popup.js source instead');
+    expect(css.contains('div[class*="gloss-sc-"]'), isFalse,
+        reason: 'BUG-520: no blanket div[class*="gloss-sc-"] rule in '
+            'popup.css -- forcing display:inline on dict divs destroys '
+            'line breaks');
 
-    // Coverage: the rule must mention BOTH span and div forms.
-    final int spanIdx = css.lastIndexOf('span[class*="gloss-sc-"]', braceOpen);
-    final int divIdx = css.lastIndexOf('div[class*="gloss-sc-"]', braceOpen);
-    expect(spanIdx, greaterThanOrEqualTo(0),
-        reason: 'rule must cover span gloss-sc-*');
-    expect(divIdx, greaterThanOrEqualTo(0),
-        reason: 'rule must cover div gloss-sc-*');
-
-    // The fix must neutralize the escaping properties.
-    expect(body.contains('float:none!important'), isTrue,
-        reason: 'span/div fix must force float:none!important');
-    expect(body.contains('position:static!important'), isTrue,
-        reason: 'span/div fix must force position:static!important');
-
-    // SCOPE GUARD: the neutralization selector must EXCLUDE image links.
-    expect(selector.contains(':not(.gloss-image-link)'), isTrue,
-        reason: 'span/div fix selector must exclude .gloss-image-link');
-
-    // There must be a restore rule that re-grants float/position to span/div
-    // nested inside an image link or inside ruby/rt, so those legitimate uses
-    // are never collateral-damaged.
-    final int restoreImg =
-        css.indexOf('.gloss-image-link span[class*="gloss-sc-"]');
-    expect(restoreImg, greaterThanOrEqualTo(0),
-        reason:
-            'popup.css must restore float/position inside .gloss-image-link');
-    expect(css.contains('ruby span[class*="gloss-sc-"]'), isTrue,
-        reason: 'popup.css must restore float/position inside ruby');
-    expect(css.contains('rt span[class*="gloss-sc-"]'), isTrue,
-        reason: 'popup.css must restore float/position inside rt');
+    // The browser-extension vendor snapshot ships the same renderer and must
+    // carry the same source filter (both vendor copies are byte-locked by the
+    // browser_extension_installer drift guard).
+    final String vendorJs =
+        File('assets/browser_extension/vendor/popup.js').readAsStringSync();
+    expect(vendorJs.contains('function isFlowEscapingStructuredContentStyle'),
+        isTrue,
+        reason: 'extension vendor popup.js must carry the same source filter');
   });
 }
 
