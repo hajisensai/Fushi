@@ -337,4 +337,27 @@ void main() {
       );
     });
   });
+
+  // TODO-1104：拖选跨句制卡——source() 里必须存在「起点句首 → 终点句尾」端点合并逻辑，
+  // 使卡片句子文本与句级音频区间同源变宽。node 缺席时行为测试跳过，此源码契约仍钉住合并
+  // 代码存在（回退分支同样断言，防止有人删掉守卫直接产出错误跨 block 区间）。
+  group('ReaderSelectionScripts drag-selection sentence span (TODO-1104)', () {
+    test('source() exposes the endpoint-merge helpers and wiring', () {
+      final String src = ReaderSelectionScripts.source();
+      expect(src, contains('spanSentenceRange: function'),
+          reason: 'drag span must merge start/end sentence contexts');
+      expect(src, contains('textBetween: function'),
+          reason: 'merged card text is assembled across the dragged span');
+      // Native drag path computes an END-sentence context and merges it.
+      expect(src, contains('this.getSentenceContext(endNode, endOffset)'),
+          reason:
+              'the drag path must resolve the END sentence, not only start');
+      // Never-break: the merge is gated on start!=end so tap single-point stays
+      // byte-identical, and a reversed/cross-block span conservatively falls back.
+      expect(src, contains('var isDrag ='),
+          reason: 'collapsed (tap) selections must skip the widen path');
+      expect(src, contains('if (endSEnd < startSStart) return startOnly;'),
+          reason: 'reversed/discontiguous cross-block spans must fall back');
+    });
+  });
 }

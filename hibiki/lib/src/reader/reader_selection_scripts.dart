@@ -470,6 +470,76 @@ window.hoshiSelection = {
   getSentence: function(startNode, startOffset) {
     return this.getSentenceContext(startNode, startOffset).sentence;
   },
+  // TODO-1104：拖选跨句时，让制卡「句子」文本 + 句级归一化区间一起从**起点句首**扩到
+  // **终点句尾**，使卡片文本与裁出的句子音频同源、同宽。入参是同一 normalized 文本坐标
+  // 系里的两端归一化位置（起点句首 startSStart、终点句尾 endSEnd，均由 getNormalizedOffset
+  // 解析），以及两个 getSentenceContext 结果。返回 { offset, length, sStartNode,
+  // sStartOffset, sEndNode, sEndOffset, merged }：
+  //   * merged=true  → 采纳并区间（起点句首 → 终点句尾）；
+  //   * merged=false → 保守回退到起点单句（今天的行为）。
+  // 回退条件（never-break 硬约束）：
+  //   1) 任一归一化位置为 null（reader 未就绪 / 节点未映射）——无法定坐标；
+  //   2) 终点句尾归一化 < 起点句首归一化——两端跨 block 导致区间在 normalized 坐标系里
+  //      反向 / 不连续（拖选跨段落时起点句与终点句可能分属不同块，合并会产出错误区间），
+  //      保守只取起点单句。
+  // start==end（tap 单点 / 未拖动）时两端 getSentenceContext 落同一句，startSStart===
+  // endSStart 且 startSEnd===endSEnd → 合并区间与起点单句逐字节相同（下方调用点对此加
+  // 断言守卫）。
+  spanSentenceRange: function(startContext, endContext, startSStart, endSEnd) {
+    // 起点句自身（回退基准 = 今天的行为）。
+    var startOnly = {
+      offset: startSStart,
+      sStartNode: startContext.sStartNode,
+      sStartOffset: startContext.sStartOffset,
+      sEndNode: startContext.sEndNode,
+      sEndOffset: startContext.sEndOffset,
+      merged: false
+    };
+    if (startSStart === null || startSStart === undefined) return startOnly;
+    if (endSEnd === null || endSEnd === undefined) return startOnly;
+    // 反向 / 不连续（跨 block）：保守回退起点单句，绝不产出错误区间。
+    if (endSEnd < startSStart) return startOnly;
+    return {
+      offset: startSStart,
+      length: Math.max(0, endSEnd - startSStart),
+      sStartNode: startContext.sStartNode,
+      sStartOffset: startContext.sStartOffset,
+      sEndNode: endContext.sEndNode,
+      sEndOffset: endContext.sEndOffset,
+      merged: true
+    };
+  },
+  // TODO-1104：按 document 顺序把 [sStartNode:sStartOffset, sEndNode:sEndOffset) 之间的
+  // 文本节点内容拼起来（跳振假名 / 纯空白节点，与 getSentenceContext 同一套 createWalker
+  // 边界）。用于拖选跨句合并后取「起点句首→终点句尾」并区间正文。sStartNode===sEndNode
+  // 时退化为同节点切片。终点不在起点之后的 walk 可达范围内（跨 block 越界）返回空串，由
+  // 调用点决定回退。
+  textBetween: function(sStartNode, sStartOffset, sEndNode, sEndOffset) {
+    if (sStartNode === sEndNode) {
+      return sStartNode.textContent.slice(sStartOffset, sEndOffset);
+    }
+    var container = this.findParagraph(sStartNode) || document.body;
+    var walker = this.createWalker(container);
+    walker.currentNode = sStartNode;
+    var parts = [];
+    var node = sStartNode;
+    var reachedEnd = false;
+    while (node) {
+      var text = node.textContent;
+      if (node === sStartNode) {
+        parts.push(text.slice(sStartOffset));
+      } else if (node === sEndNode) {
+        parts.push(text.slice(0, sEndOffset));
+        reachedEnd = true;
+        break;
+      } else {
+        parts.push(text);
+      }
+      node = walker.nextNode();
+    }
+    if (!reachedEnd) return '';
+    return parts.join('');
+  },
   // TODO-393：从「当前查词句」往前 / 往后逐句采集上下文（制卡「上 N 句 / 下 N 句」）。
   // 以当前 this.selection 的起点定位当前句边界，再用 getSentenceContext 从「当前句首
   // 的前一个字符」继续往前取上一句、从「当前句尾的后一个字符」往后取下一句，逐句迭代。
@@ -570,24 +640,55 @@ window.hoshiSelection = {
         normalizedLength = Math.max(0, normalizedEnd - normalizedOffset);
       }
     }
+    // TODO-1104：拖选跨句时把句级区间 + 卡片正文一起从起点句首扩到终点句尾（文本 / 音频
+    // 同源同宽）。start==end（tap / 未拖动，两端在下钻后落同一 (node,offset)）时只算一次
+    // 起点句，与今天逐字节相同；否则另在终点算一次句上下文并合并。合并 / 回退判定见
+    // spanSentenceRange（跨 block 反向 → 保守回退起点单句）。
+    var sentence = sentenceContext.sentence;
+    var sentenceOffset = sentenceContext.sentenceOffset;
     var sentenceNormalizedOffset = null;
     var sentenceNormalizedLength = null;
     if (window.hoshiReader) {
+      var isDrag = !(startNode === endNode && startOffset === endOffset);
+      var endContext = isDrag
+        ? this.getSentenceContext(endNode, endOffset) : sentenceContext;
       var snStart = this.getNormalizedOffset(
         sentenceContext.sStartNode, sentenceContext.sStartOffset);
       var snEnd = this.getNormalizedOffset(
-        sentenceContext.sEndNode, sentenceContext.sEndOffset);
-      if (snStart !== null && snEnd !== null) {
-        sentenceNormalizedOffset = snStart;
-        sentenceNormalizedLength = Math.max(0, snEnd - snStart);
+        endContext.sEndNode, endContext.sEndOffset);
+      var span = this.spanSentenceRange(
+        sentenceContext, endContext, snStart, snEnd);
+      if (span.offset !== null && span.offset !== undefined) {
+        sentenceNormalizedOffset = span.offset;
+        if (span.merged) {
+          sentenceNormalizedLength = span.length;
+          if (isDrag) {
+            // 合并成功：卡片正文也取起点句首→终点句尾的并区间正文（与音频同源）。
+            // textBetween 越界（跨 block 不连续）返回空串时保守保留起点单句正文。
+            var merged = this.textBetween(
+              span.sStartNode, span.sStartOffset,
+              span.sEndNode, span.sEndOffset).trim();
+            if (merged !== '') {
+              sentence = merged;
+              sentenceOffset = 0;
+            }
+          }
+        } else {
+          // 回退：起点单句自身归一化长度（今天的行为）。
+          var fbEnd = this.getNormalizedOffset(
+            sentenceContext.sEndNode, sentenceContext.sEndOffset);
+          if (fbEnd !== null) {
+            sentenceNormalizedLength = Math.max(0, fbEnd - span.offset);
+          }
+        }
       }
     }
     return {
       text: text,
-      sentence: sentenceContext.sentence,
+      sentence: sentence,
       normalizedOffset: normalizedOffset,
       normalizedLength: normalizedLength,
-      sentenceOffset: sentenceContext.sentenceOffset,
+      sentenceOffset: sentenceOffset,
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength
     };
