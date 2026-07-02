@@ -741,24 +741,11 @@ class _MaterialDesktopVideoControlsState
                             toggleFullscreen(context);
                           }
                         },
-                  onPanUpdate: _theme(context).modifyVolumeOnScroll
-                      ? (e) {
-                          if (e.delta.dy > 0) {
-                            final volume =
-                                controller(context).player.state.volume - 5.0;
-                            controller(context)
-                                .player
-                                .setVolume(volume.clamp(0.0, 100.0));
-                          }
-                          if (e.delta.dy < 0) {
-                            final volume =
-                                controller(context).player.state.volume + 5.0;
-                            controller(context)
-                                .player
-                                .setVolume(volume.clamp(0.0, 100.0));
-                          }
-                        }
-                      : null,
+                  // TODO-1097 (Hibiki vendored patch): removed desktop
+                  // onPanUpdate drag-to-adjust-volume handler. Holding the left
+                  // mouse button and dragging vertically no longer changes the
+                  // volume. Scroll-wheel volume (Listener.onPointerSignal above,
+                  // gated by modifyVolumeOnScroll) is intentionally kept.
                   child: MouseRegion(
                     cursor:
                         (_theme(context).hideMouseOnControlsRemoval && !mount)
@@ -879,8 +866,8 @@ class _MaterialDesktopVideoControlsState
                                             // the host hover-position callback so
                                             // the seek bar can drive the
                                             // thumbnail preview. See PATCHES.md.
-                                            onHoverPosition: _theme(context)
-                                                .onHoverPosition,
+                                            onHoverPosition:
+                                                _theme(context).onHoverPosition,
                                             onSeekStart: () {
                                               _theme(context)
                                                   .onSeekStart

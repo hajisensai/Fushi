@@ -214,3 +214,27 @@ unchanged — single tap still toggles the controls, just one arena resolution l
 via `MouseRegion.onHover`, never on pointer-down).
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_controls_tap_arena_guard_test.dart`.
+
+## TODO-1097: remove desktop drag-to-adjust-volume gesture
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart`,
+`_MaterialDesktopVideoControlsState.build`, the central `GestureDetector`.
+
+Upstream binds `GestureDetector.onPanUpdate` (gated by `modifyVolumeOnScroll`)
+so that holding the left mouse button and dragging vertically over the video
+changes the volume by `e.delta.dy`. Hibiki users found this accidental: any
+click-and-drag on the video surface silently jumped the volume. TODO-1097 asks
+to drop only the drag behavior on Windows/desktop while keeping every other
+gesture.
+
+The patch removes the `onPanUpdate` handler entirely (leaving the sibling
+`onTap` play/pause, `onTapDown` play/pause eligibility, and `onTapUp`
+double-press fullscreen untouched). The scroll-wheel volume path
+(`Listener.onPointerSignal` → `PointerScrollEvent`, also gated by
+`modifyVolumeOnScroll`, ~30 lines above) is intentionally **kept** — users did
+not complain about the wheel and it is a separate, deliberate feature. Mobile
+touch gestures (`material.dart`) and the long-press temporary speed-up
+(`speed.part.dart`, a `LongPress` gesture family) are unrelated to `onPanUpdate`
+and untouched.
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_desktop_drag_volume_guard_test.dart`.
