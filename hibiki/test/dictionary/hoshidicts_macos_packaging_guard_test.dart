@@ -14,8 +14,9 @@ void main() {
     final String cmake = read('../native/hoshidicts/CMakeLists.txt');
 
     expect(cmake, contains('add_library(hoshidicts_ffi SHARED'));
-    expect(cmake, contains('if(APPLE)'),
-        reason: 'macOS needs an @rpath dylib id for app-bundle loading.');
+    expect(cmake, contains('if(APPLE AND NOT HOSHIDICTS_IOS)'),
+        reason: 'macOS (non-iOS) needs an @rpath dylib id for app-bundle '
+            'loading; iOS switched to a force_loaded merged static archive.');
     expect(cmake, contains('INSTALL_NAME_DIR "@rpath"'));
     expect(cmake, contains('BUILD_WITH_INSTALL_NAME_DIR TRUE'));
   });
