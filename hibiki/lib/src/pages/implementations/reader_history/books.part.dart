@@ -38,6 +38,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         : isEpubBackedAudiobookSrt(book)
             ? Icons.headphones_outlined
             : Icons.subtitles_outlined;
+    // TODO-1094：书架 SRT 卡书名必须与长按对话框同源——两者都基于同一
+    // [_srtBookMediaItem]，再经 [MediaSource.getDisplayTitleFromMediaItem] 应用
+    // 编辑弹窗写入的 override_title 偏好。以前直接读 DB 原始列 book.title，忽略
+    // override，导致「编辑书名」保存后网格仍显示旧名。
+    final MediaItem srtItem = _srtBookMediaItem(book);
+    final String displayTitle =
+        mediaSource.getDisplayTitleFromMediaItem(srtItem);
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
@@ -49,7 +56,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       onTap: () => _openSrtBook(book),
       onLongPress: () => _showSrtBookDialog(book),
       child: _bookCardLayout(
-        title: book.title,
+        title: displayTitle,
         cover: _buildSrtCover(book, epubCoverUri: epubCoverUri),
         tagLabels: tagWidget,
         coverBadge: _cardBadge(
@@ -191,6 +198,11 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         item: _srtBookMediaItem(book),
         isHistory: true,
         showLaunchAction: false,
+        // TODO-1094：SRT 无自选封面且未关联 EPUB 封面时，长按对话框显示与网格
+        // `_buildSrtCover` 同判据的占位图标（耳机/字幕），而非整块隐藏封面区。
+        coverFallbackIcon: isEpubBackedAudiobookSrt(book)
+            ? Icons.headphones_outlined
+            : Icons.subtitles_outlined,
         extraActions: (_) => _srtExtraActions(ctx, book),
       ),
     );
