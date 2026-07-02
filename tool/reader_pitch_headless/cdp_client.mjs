@@ -36,7 +36,7 @@ export function resolveChrome() {
   return null;
 }
 
-function getJson(url, tries = 60) {
+function getJson(url, tries = 24) {
   return new Promise((resolve, reject) => {
     const attempt = (n) => {
       http
@@ -70,7 +70,7 @@ class CdpSocket {
     this.buf = Buffer.alloc(0);
   }
 
-  async connect(retries = 20) {
+  async connect(retries = 12) {
     for (let i = 0; ; i++) {
       try {
         await this._connectOnce();
@@ -195,11 +195,30 @@ class CdpSocket {
     this.sock.write(Buffer.concat([header, mask, masked]));
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, timeoutMs = 10000) {
     const id = this.nextId++;
     const msg = JSON.stringify({ id, method, params });
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      // Per-command deadline. A CDP response frame can be lost or arbitrarily
+      // delayed on a loaded/slow runner; without this the Promise would never
+      // settle and the whole node process would hang past the Dart isolate's
+      // 30s test timeout (surfacing as TimeoutException, not a harness skip).
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error('CDP command timed out: ' + method));
+        }
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
       this._sendFrame(msg);
     });
   }
@@ -223,7 +242,7 @@ class CdpSocket {
  * listening, so reading it both avoids fixed-port collisions between concurrent
  * processes and removes the connect-before-ready race. Returns the port.
  */
-async function readDevToolsPort(userDir, proc, timeoutMs = 20000) {
+async function readDevToolsPort(userDir, proc, timeoutMs = 8000) {
   const portFile = path.join(userDir, 'DevToolsActivePort');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

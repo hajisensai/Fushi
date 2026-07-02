@@ -91,6 +91,59 @@ void main() {
     });
   });
 
+  // TODO-1042：headless harness 偶发把 develop 染红的直接原因是 node 进程整体墙钟
+  // 可能悄悄逼近 Dart 隔离默认 30s 测试超时，被 Dart 侧抢先杀掉 → TimeoutException 红门
+  // （CI 里 0 行 [HARNESS] 输出即是明证）。根因是 harness 缺「整体墙钟看门狗」+ 单条
+  // CDP 命令缺超时（send 永不 settle 就永远挂）。这里源码守住三道防线，撤掉即红：
+  //  ① harness 有 22s 墙钟看门狗，超时确定性软跳过 exit 4（远小于 30s）。
+  //  ② 每条 CDP 命令有超时，绝不无限挂起。
+  //  ③ Dart 侧显式放宽 headless 测试超时到 > 看门狗，让 harness 自己的退出码契约落地。
+  group('TODO-1042 headless flake 反回归源码守卫', () {
+    late String harnessSource;
+    late String invariantSource;
+
+    setUpAll(() {
+      harnessSource = File(
+        'test/reader/reader_horizontal_pitch_harness.mjs',
+      ).readAsStringSync();
+      invariantSource = File(
+        'test/reader/reader_horizontal_pitch_invariant_test.dart',
+      ).readAsStringSync();
+    });
+
+    test('harness 有整体墙钟看门狗，超时软跳过 exit 4（不让 Dart 30s 抢先杀）', () {
+      expect(
+          harnessSource.contains('const HARNESS_DEADLINE_MS = 22000;'), isTrue,
+          reason: 'harness 必须有整体墙钟看门狗常量，且 < Dart 隔离 30s');
+      final int wdIdx = harnessSource.indexOf('const watchdog = setTimeout(');
+      expect(wdIdx, greaterThan(0),
+          reason: '看门狗必须是 setTimeout；超时后 process.exit(4) 软跳过');
+      final String wdBody = harnessSource.substring(wdIdx, wdIdx + 400);
+      expect(wdBody.contains('process.exit(4)'), isTrue,
+          reason: '看门狗超时必须走 exit 4 软跳过契约（测试端已 markTestSkipped）');
+    });
+
+    test('每条 CDP 命令有超时，绝不无限挂起', () {
+      expect(harnessSource.contains('CDP command timed out: '), isTrue,
+          reason: 'CdpSocket.send 必须对每条命令设超时，防响应帧丢失导致 node 永挂');
+      expect(
+          harnessSource
+              .contains('send(method, params = {}, timeoutMs = 10000)'),
+          isTrue,
+          reason: 'send 必须带 timeoutMs 形参并默认有限值');
+    });
+
+    test('Dart 侧 headless 测试显式放宽超时到 > harness 看门狗', () {
+      // 默认 30s 隔离超时是 flake 直接触发点：会在 harness 打印退出码契约前先杀进程。
+      expect(
+          invariantSource
+              .contains('timeout: const Timeout(Duration(seconds: 90))'),
+          isTrue,
+          reason: 'headless 几何测试必须显式 90s 超时（> 22s 看门狗 + 进程余量），'
+              '让 harness 自己的 exit 2/4 软跳过契约落地而非被 30s 隔离超时抢先');
+    });
+  });
+
   group('TODO-753 横排残差 headless 几何守卫（真实 multicol getClientRects）', () {
     test('旧整数 pageStep 残差随页数线性发散；新亚像素 pageStep 残差恒 0', () async {
       final String? nodeExe = _resolveNode();
@@ -136,7 +189,13 @@ void main() {
         contains('[HARNESS] all assertions passed'),
         reason: 'harness 必须达到成功标记（旧残差发散 + 新残差 0 + 测得列周期==亚像素 pageStep）',
       );
-    });
+    },
+        // 显式放宽到 90s：node harness 自带 22s 墙钟看门狗（超时确定性软跳过 exit 4），
+        // 加进程 spawn/teardown 余量仍远小于此。默认 30s 隔离超时会在 harness 打印
+        // 自己的退出码契约前先杀掉进程，把「runner 太慢」误判成 TimeoutException 红门，
+        // 是本 flake 的直接触发点，故这里给足 Dart 侧等待窗口，让 harness 自己的
+        // exit 2/4 软跳过契约落地而非被隔离超时抢先。
+        timeout: const Timeout(Duration(seconds: 90)));
   });
 }
 

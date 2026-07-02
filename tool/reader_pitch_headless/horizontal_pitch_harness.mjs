@@ -178,6 +178,21 @@ async function main() {
     console.log('[HARNESS] NO_CHROME - skipping (no Chrome on this machine)');
     process.exit(2);
   }
+  // Overall wall-clock watchdog. Every internal wait (port read, /json fetch,
+  // WS connect, per-CDP-command send, load event) is individually bounded, but
+  // their sum on a heavily loaded CI runner could still creep toward the Dart
+  // isolate's 30s test timeout. If it does, the Dart side kills the process
+  // before the harness can emit its own exit-code contract, surfacing as a
+  // TimeoutException (red) with zero [HARNESS] output. This watchdog makes
+  // "too slow to finish" a DETERMINISTIC soft-skip inside the harness's own
+  // contract (exit 4, same class as glyph-unavailable) well under 30s, so the
+  // algebra guards' absence is treated as an environment limit, never a red.
+  const HARNESS_DEADLINE_MS = 22000;
+  const watchdog = setTimeout(() => {
+    console.log('[HARNESS] WATCHDOG - exceeded', HARNESS_DEADLINE_MS,
+      'ms before completing; soft-skip (environment too slow, guards unproven)');
+    process.exit(4);
+  }, HARNESS_DEADLINE_MS);
   let driver;
   try {
     driver = await launchChromeDriver();

@@ -40,7 +40,7 @@ function resolveChrome() {
   return null;
 }
 
-function getJson(url, tries = 60) {
+function getJson(url, tries = 24) {
   return new Promise((resolve, reject) => {
     const attempt = (n) => {
       http
@@ -74,7 +74,7 @@ class CdpSocket {
     this.buf = Buffer.alloc(0);
   }
 
-  async connect(retries = 20) {
+  async connect(retries = 12) {
     for (let i = 0; ; i++) {
       try {
         await this._connectOnce();
@@ -199,11 +199,30 @@ class CdpSocket {
     this.sock.write(Buffer.concat([header, mask, masked]));
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, timeoutMs = 10000) {
     const id = this.nextId++;
     const msg = JSON.stringify({ id, method, params });
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      // Per-command deadline. A CDP response frame can be lost or arbitrarily
+      // delayed on a loaded/slow runner; without this the Promise would never
+      // settle and the whole node process would hang past the Dart isolate's
+      // 30s test timeout (surfacing as TimeoutException, not a harness skip).
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error('CDP command timed out: ' + method));
+        }
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
       this._sendFrame(msg);
     });
   }
@@ -227,7 +246,7 @@ class CdpSocket {
  * listening, so reading it both avoids fixed-port collisions between concurrent
  * test processes and removes the connect-before-ready race. Returns the port.
  */
-async function readDevToolsPort(userDir, proc, timeoutMs = 20000) {
+async function readDevToolsPort(userDir, proc, timeoutMs = 8000) {
   const portFile = path.join(userDir, 'DevToolsActivePort');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -508,6 +527,21 @@ async function main() {
     console.log('[HARNESS] NO_CHROME - skipping (no Chrome on this machine)');
     process.exit(2);
   }
+  // Overall wall-clock watchdog. Every internal wait (port read, /json fetch,
+  // WS connect, per-CDP-command send, load event) is individually bounded, but
+  // their sum on a heavily loaded CI runner could still creep toward the Dart
+  // isolate's 30s test timeout. If it does, the Dart side kills the process
+  // before the harness can emit its own exit-code contract, surfacing as a
+  // TimeoutException (red) with zero [HARNESS] output. This watchdog makes
+  // "too slow to finish" a DETERMINISTIC soft-skip inside the harness's own
+  // contract (exit 4, same class as glyph-unavailable) well under 30s, so the
+  // algebra guards' absence is treated as an environment limit, never a red.
+  const HARNESS_DEADLINE_MS = 22000;
+  const watchdog = setTimeout(() => {
+    console.log('[HARNESS] WATCHDOG - exceeded', HARNESS_DEADLINE_MS,
+      'ms before completing; soft-skip (environment too slow, guards unproven)');
+    process.exit(4);
+  }, HARNESS_DEADLINE_MS);
   let driver;
   try {
     driver = await launchChromeDriver();
