@@ -1324,7 +1324,8 @@ function createPitchSection(pitches, reading) {
 function createGlossarySectionWrapper(entry) {
     const grouped = {};
     entry.glossaries.forEach(g => {
-        (grouped[g.dictionary] ??= []).push({
+        if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
+        grouped[g.dictionary].push({
             content: g.content,
             definitionTags: g.definitionTags,
             termTags: g.termTags
@@ -1789,7 +1790,8 @@ window.updatePopupIncremental = function() {
                         node => existingDicts.add(node.getAttribute('data-dictionary')));
                     const grouped = {};
                     entry.glossaries.forEach(g => {
-                        (grouped[g.dictionary] ??= []).push({
+                        if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
+                        grouped[g.dictionary].push({
                             content: g.content,
                             definitionTags: g.definitionTags,
                             termTags: g.termTags,

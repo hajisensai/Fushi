@@ -1722,7 +1722,8 @@ function createGlossarySectionWrapper(entry) {
     const grouped = {};
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
-        (grouped[g.dictionary] ??= []).push({
+        if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
+        grouped[g.dictionary].push({
             content: g.content,
             definitionTags: g.definitionTags,
             termTags: g.termTags
@@ -2662,7 +2663,8 @@ window.updatePopupIncremental = function() {
                 const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
                 entry.glossaries.forEach(g => {
                     if (hiddenDictionaryNames.includes(g.dictionary)) return;
-                    (grouped[g.dictionary] ??= []).push({
+                    if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
+                    grouped[g.dictionary].push({
                         content: g.content,
                         definitionTags: g.definitionTags,
                         termTags: g.termTags,
