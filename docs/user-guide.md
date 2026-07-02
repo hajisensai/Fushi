@@ -14,6 +14,10 @@ https://github.com/hajisensai/hibiki
 
 Actively developed — Your feedback will be addressed promptly. Bug reports and feature requests are welcome. If you find Hibiki useful, sharing it with others or leaving a ⭐ on the repository is appreciated.
 
+### Community
+
+Join our Discord to ask questions, share setups, and follow development: https://discord.gg/WhjwyGmm7f
+
 ### Download
 
 https://github.com/hajisensai/hibiki/releases/latest
