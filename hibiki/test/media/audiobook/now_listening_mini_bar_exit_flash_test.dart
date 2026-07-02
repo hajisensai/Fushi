@@ -170,6 +170,115 @@ void main() {
     );
   });
 
+  testWidgets('mini bar defers session notifications during tree finalization',
+      (tester) async {
+    installPlatform();
+    final _MiniBarAppModel appModel = _MiniBarAppModel();
+    final AudiobookSession session = appModel.audiobookSession;
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Test Book',
+        mediaIdentifier: 'hoshi://book/a',
+      ),
+      audioFiles: <File>[makeFile('hibiki-minibar-locked-tree.mp3')],
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 0,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: persist(),
+    );
+
+    Widget harness({required bool includeStopper}) => ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((ref) => appModel),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(
+                body: Column(
+                  children: <Widget>[
+                    const NowListeningMiniBar(),
+                    if (includeStopper) _StopSessionOnDispose(session),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(harness(includeStopper: true));
+    expect(find.text('Test Book'), findsOneWidget);
+
+    await tester.pumpWidget(harness(includeStopper: false));
+    expect(tester.takeException(), isNull);
+
+    await tester.pump();
+    expect(find.text('Test Book'), findsNothing);
+  });
+
+  testWidgets('post-frame session notifications request a follow-up frame',
+      (tester) async {
+    installPlatform();
+    final _MiniBarAppModel appModel = _MiniBarAppModel();
+    final AudiobookSession session = appModel.audiobookSession;
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Test Book',
+        mediaIdentifier: 'hoshi://book/a',
+      ),
+      audioFiles: <File>[makeFile('hibiki-minibar-post-frame.mp3')],
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 0,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: persist(),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: const MaterialApp(
+            home: Scaffold(body: NowListeningMiniBar()),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Test Book'), findsOneWidget);
+
+    Future<void>? stopping;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      stopping = session.stop();
+    });
+
+    await tester.pump();
+    expect(stopping, isNotNull);
+    final Future<void> pendingStop = stopping!;
+    expect(
+      tester.binding.hasScheduledFrame,
+      isTrue,
+      reason: 'post-frame stop 通知被延后 setState 时必须主动安排下一帧',
+    );
+
+    await tester.pump();
+    await pendingStop;
+    expect(find.text('Test Book'), findsNothing);
+  });
+
   test(
       'AudiobookSession.stop clears book/controller and notifies before the '
       'first await (TODO-831 方案3)', () async {
@@ -222,6 +331,26 @@ void main() {
     await stopping;
     expect(session.isActive, isFalse);
   });
+}
+
+class _StopSessionOnDispose extends StatefulWidget {
+  const _StopSessionOnDispose(this.session);
+
+  final AudiobookSession session;
+
+  @override
+  State<_StopSessionOnDispose> createState() => _StopSessionOnDisposeState();
+}
+
+class _StopSessionOnDisposeState extends State<_StopSessionOnDispose> {
+  @override
+  void dispose() {
+    unawaited(widget.session.stop());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _FakePlatform extends JustAudioPlatform {

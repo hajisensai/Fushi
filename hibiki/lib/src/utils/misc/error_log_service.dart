@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -83,6 +84,81 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// 带崩 + 崩时第几层」。与导入面包屑分文件，互不覆盖。
   File? _lookupBreadcrumbFile;
 
+  static String _trimToMaxUtf8Bytes(
+    String content, {
+    int maxBytes = _maxFileBytes,
+  }) {
+    if (maxBytes <= 0) return '';
+    int totalBytes = 0;
+    final List<int> suffixRunes = <int>[];
+    for (final int rune in content.runes.toList().reversed) {
+      final int runeBytes = utf8.encode(String.fromCharCode(rune)).length;
+      if (totalBytes + runeBytes > maxBytes) break;
+      suffixRunes.add(rune);
+      totalBytes += runeBytes;
+    }
+    return String.fromCharCodes(suffixRunes.reversed);
+  }
+
+  static String _trimLogBytes(List<int> bytes) {
+    if (bytes.length > _maxFileBytes) {
+      bytes = bytes.sublist(bytes.length - _maxFileBytes);
+    }
+    var content = utf8.decode(bytes, allowMalformed: true);
+    final String separator = '─' * 60;
+    final firstSep = content.indexOf(separator);
+    if (firstSep != -1) {
+      final String afterSeparator =
+          content.substring(firstSep + separator.length).trimLeft();
+      if (afterSeparator.isNotEmpty) {
+        content = afterSeparator;
+      }
+    }
+    return _trimToMaxUtf8Bytes(content);
+  }
+
+  static String _formatEntryForFile(ErrorLogEntry entry) {
+    final String formatted = entry.format();
+    if (utf8.encode(formatted).length <= _maxFileBytes) {
+      return formatted;
+    }
+
+    final String separator = '─' * 60;
+    final String header = '[${entry.timestamp}] ${entry.source}\n'
+        '[truncated: single log entry exceeded $_maxFileBytes bytes]\n';
+    final StringBuffer body = StringBuffer(entry.error);
+    final String? stackTrace = entry.stackTrace;
+    if (stackTrace != null && stackTrace.isNotEmpty) {
+      body
+        ..writeln()
+        ..write(stackTrace);
+    }
+    final String footer = '\n$separator\n';
+    final int bodyBudget =
+        _maxFileBytes - utf8.encode(header).length - utf8.encode(footer).length;
+    final String tail = _trimToMaxUtf8Bytes(
+      body.toString(),
+      maxBytes: bodyBudget,
+    );
+    return '$header$tail$footer';
+  }
+
+  Future<void> _trimLogFileToMaxBytes() async {
+    final File? file = _logFile;
+    if (file == null || !await file.exists()) return;
+    final List<int> bytes = await file.readAsBytes();
+    if (bytes.length <= _maxFileBytes) return;
+    await file.writeAsString(_trimLogBytes(bytes));
+  }
+
+  void _trimLogFileToMaxBytesSync() {
+    final File? file = _logFile;
+    if (file == null || !file.existsSync()) return;
+    final List<int> bytes = file.readAsBytesSync();
+    if (bytes.length <= _maxFileBytes) return;
+    file.writeAsStringSync(_trimLogBytes(bytes), flush: true);
+  }
+
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
   /// path_provider）；生产不传，走 [hibikiTestDirectory] / 应用文档目录。
   Future<void> init({Directory? directoryOverride}) async {
@@ -97,13 +173,15 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     _lookupBreadcrumbFile = File('${dir.path}/lookup_crash_breadcrumb.txt');
     try {
       if (await _logFile!.exists()) {
-        var content = await _logFile!.readAsString();
-        if (content.length > _maxFileBytes) {
-          content = content.substring(content.length - _maxFileBytes);
-          final firstSep = content.indexOf('─' * 60);
-          if (firstSep != -1) {
-            content = content.substring(firstSep + 60).trimLeft();
-          }
+        final bytes = await _logFile!.readAsBytes();
+        final bool truncated = bytes.length > _maxFileBytes;
+        final String content;
+        if (truncated) {
+          content = _trimLogBytes(bytes);
+        } else {
+          content = utf8.decode(bytes, allowMalformed: true);
+        }
+        if (truncated) {
           await _logFile!.writeAsString(content);
         }
         _persistedLog = content;
@@ -290,8 +368,9 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     }
     notifyListenersFrameSafe();
     try {
-      _logFile?.writeAsStringSync(entry.format(),
+      _logFile?.writeAsStringSync(_formatEntryForFile(entry),
           mode: FileMode.append, flush: true);
+      _trimLogFileToMaxBytesSync();
     } catch (e) {
       debugPrint('[ErrorLogService] logFatal sync append failed: $e');
     }
@@ -299,7 +378,11 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
 
   Future<void> _appendToFile(ErrorLogEntry entry) async {
     try {
-      await _logFile?.writeAsString(entry.format(), mode: FileMode.append);
+      await _logFile?.writeAsString(
+        _formatEntryForFile(entry),
+        mode: FileMode.append,
+      );
+      await _trimLogFileToMaxBytes();
     } catch (e) {
       debugPrint('[ErrorLogService] append failed: $e');
     }

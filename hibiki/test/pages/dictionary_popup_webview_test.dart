@@ -65,15 +65,19 @@ void main() {
             'WebView through the shared caret invocation builder so LB/RB and '
             'edge-follow scroll without animation when enabled.',
       );
-      expect(
-        source,
-        contains(
-            '      \${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};\n'
-            '      window.__hoshiResetPopupScroll = function() {'),
-        reason:
-            'Initial result injection must set the caret scroll mode before '
-            'rendering or resetting the warm popup DOM.',
+      final int instantScrollAt = source.indexOf(
+        r'${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};',
       );
+      final int renderTokenAt = source.indexOf('window.__hibikiRenderToken =');
+      final int resetAt =
+          source.indexOf('window.__hoshiResetPopupScroll = function() {');
+      expect(instantScrollAt, greaterThanOrEqualTo(0));
+      expect(renderTokenAt, greaterThan(instantScrollAt),
+          reason: 'BUG-480 render tokens must be stamped after the shared '
+              'settings / caret preference and before renderPopup().');
+      expect(resetAt, greaterThan(renderTokenAt),
+          reason: 'Initial result injection must set the caret scroll mode and '
+              'render token before rendering or resetting the warm popup DOM.');
     });
   });
 
@@ -125,6 +129,37 @@ void main() {
               'beforeRenderJs so empty and kanji-only payloads reach '
               'renderPopup().');
       expect(pushBody, contains('window.renderPopup();'));
+    });
+
+    test('visible refresh queues until popup.html is ready', () {
+      final source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('bool _refreshWhenReady = false;'));
+      expect(
+        source,
+        contains(
+            'if (_controller == null || !_ready) {\n      _refreshWhenReady = true;\n      return;\n    }'),
+        reason: 'BUG-480: a visible warm slot can request a re-render before '
+            'popup.html has finished loading; that request must be queued '
+            'instead of dropped.',
+      );
+      expect(source, contains('void refreshCurrentResult()'));
+      expect(
+        source,
+        contains('_refreshWhenReady = true;\n    _pushResults();'),
+        reason: 'The host-triggered visible refresh must either run now or be '
+            'replayed by the loadStop push.',
+      );
+      expect(
+        source,
+        contains('if (_refreshWhenReady || _lastSearchTerm == null) {'),
+        reason: 'loadStop must consume a queued visible refresh instead of '
+            'relying on an unrelated unconditional initial push.',
+      );
+      expect(source, contains('_refreshWhenReady = false;'),
+          reason: 'A successful push must clear the queued refresh flag.');
     });
   });
 

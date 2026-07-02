@@ -379,12 +379,18 @@ mixin DictionaryPageMixin {
         // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。
         onRendered: () {
           if (!mounted) return;
-          if (controller.revealRendered(entry)) setState(() {});
+          if (controller.revealRendered(entry)) {
+            controller.endSearchUi();
+            setState(() {});
+          }
         },
         // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
         onRenderError: () {
           if (!mounted) return;
-          if (controller.revealRendered(entry)) setState(() {});
+          if (controller.revealRendered(entry)) {
+            controller.endSearchUi();
+            setState(() {});
+          }
         },
         onScrolledToBottom: entry.allLoaded
             ? null
@@ -512,14 +518,12 @@ mixin DictionaryPageMixin {
             result: result,
             allLoaded: result.entries.length < maxTerms,
           );
-          // TODO-058：嵌套（第二个）查词复用不到热槽 → beginTop append 一条**新建
-          // WebView** 的冷层；就绪即 show 会在其 popup.html/JS/CSS 冷加载完前露白屏
-          // 一瞬。只有「复用已预热热槽」或「无词条（走 Flutter 占位，不靠 WebView
-          // 渲染）」才立即 show；其余冷层挂起到其 WebView 渲染完成（onRendered →
-          // revealRendered）才翻可见，杜绝白屏。
-          final bool revealImmediately =
-              reuseWarmSlot || result.entries.isEmpty;
-          if (revealImmediately) {
+          // TODO-058 / BUG-480：真实空结果走 Flutter 占位，可立即显示；有词条/汉字卡
+          // 的结果必须等当前 WebView render 信号，哪怕复用 warm slot。macOS 隐藏
+          // warm slot 可能漏掉当前结果注入，直显会露出空白 WebView 壳。
+          final bool needsWebViewRender =
+              result.entries.isNotEmpty || result.kanjiResults.isNotEmpty;
+          if (!needsWebViewRender) {
             controller.show(entry);
           } else {
             // TODO-058 fail-safe：mixin 宿主（视频/首页）不监听 controller，靠
@@ -527,9 +531,18 @@ mixin DictionaryPageMixin {
             controller.markPendingReveal(
               entry,
               onForcedReveal: () {
+                controller.endSearchUi();
                 if (mounted) setState(() {});
               },
             );
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted ||
+                  !controller.entries.contains(entry) ||
+                  !entry.revealOnRender) {
+                return;
+              }
+              entry.webViewKey.currentState?.refreshCurrentResult();
+            });
           }
         });
       }
@@ -537,7 +550,9 @@ mixin DictionaryPageMixin {
       if (mounted && controller.entries.contains(entry)) {
         setState(() {
           entry.isSearching = false;
-          controller.endSearchUi();
+          if (!entry.revealOnRender) {
+            controller.endSearchUi();
+          }
         });
       }
     }

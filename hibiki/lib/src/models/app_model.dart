@@ -604,7 +604,12 @@ class AppModel with ChangeNotifier {
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
-  Future<void> refreshSystemPalette() => themeNotifier.refreshSystemPalette();
+  Future<void> refreshSystemPalette() {
+    if (!_themeListenerAdded) {
+      return Future<void>.value();
+    }
+    return themeNotifier.refreshSystemPalette();
+  }
 
   /// Used to get the versioning metadata of the app. See [initialise].
   PackageInfo get packageInfo => _packageInfo;
@@ -663,8 +668,9 @@ class AppModel with ChangeNotifier {
   }
 
   /// Used for caching images and audio produced from media seeds.
-  DefaultCacheManager get cacheManager => _cacheManager;
-  final _cacheManager = DefaultCacheManager();
+  DefaultCacheManager get cacheManager =>
+      _cacheManager ??= DefaultCacheManager();
+  DefaultCacheManager? _cacheManager;
 
   /// Used to notify dictionary widgets to dictionary history additions.
   final ChangeNotifier dictionaryEntriesNotifier = ChangeNotifier();
@@ -3610,6 +3616,7 @@ class AppModel with ChangeNotifier {
     if (_themeListenerAdded) {
       themeNotifier.removeListener(notifyListeners);
       themeNotifier.dispose();
+      _themeListenerAdded = false;
     }
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();

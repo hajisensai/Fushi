@@ -57,6 +57,81 @@ void main() {
     expect(ErrorLogService.readAndClearBreadcrumb(f), isNull);
   });
 
+  test('历史错误日志含坏 UTF-8 字节时 init 仍能恢复可读尾部', () async {
+    File('${tmp.path}/error_log.txt').writeAsBytesSync(
+      <int>[0xFF, 0xFE, ...'valid tail'.codeUnits],
+    );
+
+    await ErrorLogService.instance.init(directoryOverride: tmp);
+
+    expect(ErrorLogService.instance.getFullLog(), contains('valid tail'));
+    await ErrorLogService.instance.clear();
+  });
+
+  test('坏 UTF-8 历史错误日志截断后仍受 512KB 字节上限约束', () async {
+    final File logFile = File('${tmp.path}/error_log.txt')
+      ..writeAsBytesSync(List<int>.filled(600 * 1024, 0xFF));
+
+    await ErrorLogService.instance.init(directoryOverride: tmp);
+
+    expect(logFile.lengthSync(), lessThanOrEqualTo(512 * 1024));
+    await ErrorLogService.instance.clear();
+  });
+
+  test('运行期 fatal 日志追加后立即受 512KB 字节上限约束', () async {
+    final File logFile = File('${tmp.path}/error_log.txt');
+    await ErrorLogService.instance.init(directoryOverride: tmp);
+
+    ErrorLogService.instance.logFatal(
+      'Runtime.bigFatal',
+      '${'x' * (700 * 1024)}FATAL_TAIL',
+    );
+
+    final String content = logFile.readAsStringSync();
+    expect(logFile.lengthSync(), lessThanOrEqualTo(512 * 1024));
+    expect(content, contains('Runtime.bigFatal'));
+    expect(content, contains('FATAL_TAIL'));
+    await ErrorLogService.instance.clear();
+  });
+
+  test('运行期普通日志异步追加后受 512KB 字节上限约束', () async {
+    final File logFile = File('${tmp.path}/error_log.txt');
+    await ErrorLogService.instance.init(directoryOverride: tmp);
+
+    ErrorLogService.instance.log(
+      'Runtime.bigAsync',
+      '${'y' * (700 * 1024)}ASYNC_TAIL',
+    );
+    await pumpEventQueue(times: 20);
+
+    final String content = logFile.readAsStringSync();
+    expect(logFile.lengthSync(), lessThanOrEqualTo(512 * 1024));
+    expect(content, contains('Runtime.bigAsync'));
+    expect(content, contains('ASYNC_TAIL'));
+    await ErrorLogService.instance.clear();
+  });
+
+  test('clear 清空运行期日志、历史日志和落盘文件', () async {
+    final File logFile = File('${tmp.path}/error_log.txt')
+      ..writeAsStringSync('previous-run-error');
+    await ErrorLogService.instance.init(directoryOverride: tmp);
+
+    expect(
+        ErrorLogService.instance.getFullLog(), contains('previous-run-error'));
+    ErrorLogService.instance.logFatal('Runtime.clearSmoke', 'fresh-error');
+    expect(ErrorLogService.instance.entries, isNotEmpty);
+    expect(logFile.readAsStringSync(), contains('fresh-error'));
+
+    await ErrorLogService.instance.clear();
+
+    expect(ErrorLogService.instance.entries, isEmpty);
+    expect(ErrorLogService.instance.getFullLog(),
+        isNot(contains('previous-run-error')));
+    expect(
+        ErrorLogService.instance.getFullLog(), isNot(contains('fresh-error')));
+    expect(logFile.readAsStringSync(), isEmpty);
+  });
+
   group('TODO-892：native 步进面包屑折进 crashRecovered', () {
     test('importStepBreadcrumbDir 在 init 后指向注入目录', () async {
       await ErrorLogService.instance.init(directoryOverride: tmp);

@@ -93,6 +93,18 @@ class NestedFlashHostPageState
     );
   }
 
+  Future<void> deferredTopSearch(String term) async {
+    // Reader lookup path: search first, highlight in the source WebView, then
+    // reveal the popup via showDeferredPopup.
+    prunePopupStack(0);
+    await searchDictionaryResult(
+      searchTerm: term,
+      selectionRect: const Rect.fromLTWH(40, 40, 8, 8),
+      deferDisplay: true,
+    );
+    showDeferredPopup(selectionRect: const Rect.fromLTWH(44, 44, 8, 8));
+  }
+
   /// Mimics a nested lookup fired from inside the parent popup
   /// (DictionaryPopupLayer.onTextSelected): keep the parent (index 0) and
   /// append a child.
@@ -210,6 +222,65 @@ void main() {
     // so there is nothing to cold-load -> reveal immediately, no pending.
     expect(stack[1].visible, isTrue);
     expect(stack[1].revealOnRender, isFalse);
+  });
+
+  testWidgets(
+      'reader deferred warm-slot lookup keeps loading cover until popupRendered',
+      (WidgetTester tester) async {
+    final appModel = NestedFlashAppModel(results: <DictionaryEntry>[_entry()]);
+    final hostKey = GlobalKey<NestedFlashHostPageState>();
+
+    await tester.pumpWidget(
+      buildNestedFlashApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await hostKey.currentState!.deferredTopSearch('first');
+    await tester.pump();
+
+    var stack = hostKey.currentState!.debugPopupStack;
+    expect(stack, hasLength(1));
+    expect(stack.single.visible, isTrue,
+        reason: 'showDeferredPopup should reveal the shell at the final rect');
+    expect(find.byType(LinearProgressIndicator), findsOneWidget,
+        reason: 'The body must stay covered until the reused WebView reports '
+            'that this lookup has rendered; otherwise macOS can expose a '
+            'white empty WebView body.');
+
+    hostKey.currentState!.debugFirePopupRendered(0);
+    await tester.pump();
+
+    stack = hostKey.currentState!.debugPopupStack;
+    expect(stack.single.visible, isTrue);
+    expect(find.byType(LinearProgressIndicator), findsNothing,
+        reason: 'popupRendered clears the temporary cover.');
+  });
+
+  testWidgets(
+      'reader deferred warm-slot lookup with no entries shows the '
+      'Flutter no-results placeholder immediately',
+      (WidgetTester tester) async {
+    final appModel = NestedFlashAppModel(results: const <DictionaryEntry>[]);
+    final hostKey = GlobalKey<NestedFlashHostPageState>();
+
+    await tester.pumpWidget(
+      buildNestedFlashApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await hostKey.currentState!.deferredTopSearch('missing');
+    await tester.pump();
+
+    final stack = hostKey.currentState!.debugPopupStack;
+    expect(stack, hasLength(1));
+    expect(stack.single.isWarmSlot, isTrue);
+    expect(stack.single.visible, isTrue);
+    expect(find.byType(LinearProgressIndicator), findsNothing,
+        reason: 'A completed empty lookup has no WebView content to wait for; '
+            'waiting exposes the warm WebView shell as a blank white body.');
+    expect(find.text(t.no_search_results), findsOneWidget);
   });
 
   // ── TODO-058 fail-safe：popupRendered 永不发也不卡死 ──────────────────────

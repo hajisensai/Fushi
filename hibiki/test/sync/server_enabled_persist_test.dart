@@ -20,9 +20,13 @@ void main() {
 
   group('BUG-160: server-enabled intent persists across bind failures', () {
     test('PortInUse failure preserves serverEnabled=true', () async {
-      // 占用一个端口，使 start() 必然抛 SyncServerPortInUseException。
-      final ServerSocket blocker =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      // controller 以 allowLan=true 启动，会绑定 wildcard 地址；这里同样占用
+      // wildcard 端口，避免 macOS 上 loopback-only 监听不阻止 0.0.0.0 绑定。
+      final ServerSocket blocker = await ServerSocket.bind(
+        InternetAddress.anyIPv4,
+        0,
+        shared: false,
+      );
       addTearDown(() => blocker.close());
       final int takenPort = blocker.port;
 

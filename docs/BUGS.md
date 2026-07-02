@@ -27,10 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 506 条。点号进各自文件。
+> 共 513 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-527](bugs/BUG-527-macos-data-root-restart-sandbox-crash.md) | ✅ | ✅ | macOS 数据迁移后自动重启崩溃 |
+| [BUG-526](bugs/BUG-526-dictionary-download-catalog-stale.md) | ✅ | ✅ | 推荐词典下载链接失效 |
+| [BUG-525](bugs/BUG-525-settings-log-count-stale.md) | ✅ | ✅ | 清除日志后系统页计数不刷新 |
+| [BUG-524](bugs/BUG-524-audiobook-exit-overlay-layout.md) | ✅ | ✅ | Audiobook退出快捷设置后红屏 |
+| [BUG-523](bugs/BUG-523-lookup-window-white-empty.md) | ✅ | ✅ | 查词窗白色无内容 |
+| [BUG-522](bugs/BUG-522-backup-export-null-save-success.md) | ✅ | ✅ | 备份导出未选择位置也提示成功 |
+| [BUG-521](bugs/BUG-521-macos-file-picker-entitlements.md) | ✅ | ✅ | macOS 文件选择器不弹出 |
 | [BUG-520](bugs/BUG-520-popup-div-inline-linebreak-regression.md) | ✅ | ✅ | 查词弹窗分行全坏+图标重合（BUG-478一刀切display:inline回归） |
 | [BUG-519](bugs/BUG-519-shelf-srt-edit-title.md) | ✅ | ✅ | 书架编辑 SRT 书名不生效 + 长按无封面 |
 | [BUG-518](bugs/BUG-518-global-lookup-hotkey-unregister.md) | ✅ | ✅ | Windows 应用外全局查词唤不出来（热键被全局 unregisterAll 误伤） |

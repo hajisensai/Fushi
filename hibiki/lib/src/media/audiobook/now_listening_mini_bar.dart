@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
@@ -26,9 +27,21 @@ class NowListeningMiniBar extends ConsumerStatefulWidget {
 
 class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
   AudiobookSession? _session;
+  bool _deferredSessionRebuildScheduled = false;
 
   void _onSessionChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      setState(() {});
+      return;
+    }
+    if (_deferredSessionRebuildScheduled) return;
+    _deferredSessionRebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _deferredSessionRebuildScheduled = false;
+      if (mounted) setState(() {});
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
   }
 
   void _bindSession(AudiobookSession session) {

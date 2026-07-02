@@ -294,6 +294,47 @@ void main() {
     expect(actionBtnSource, contains('maxLines: 2'));
   });
 
+  test(
+      'reader exit waits until the quick-settings overlay is dismissed '
+      '(BUG-481)', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final String exitActionSource = _between(
+      source,
+      'label: t.action_exit',
+      '  Widget _actionBtn(',
+    );
+
+    expect(exitActionSource, contains('if (_exitScheduled)'),
+        reason: '退出动作必须幂等，避免重复焦点/键盘激活调度多次退出');
+    expect(exitActionSource, contains('_exitScheduled = true;'),
+        reason: '第一次退出点击后要立即锁住，不能等下一帧才防重复');
+    expect(exitActionSource, contains('final VoidCallback exitReader'),
+        reason: '退出回调要先捕获，避免下一帧读取已卸载 sheet 的 widget 状态');
+    expect(exitActionSource, contains('Navigator.of(context).pop();'),
+        reason: '先关闭快捷设置 overlay');
+    expect(exitActionSource,
+        contains('WidgetsBinding.instance.addPostFrameCallback'),
+        reason: '阅读器退出会 dispose 有声书 session 并同步 notify，必须等 overlay '
+            '本帧布局/激活结束后再触发');
+    expect(exitActionSource, contains('exitReader();'),
+        reason: '下一帧触发调用方退出阅读器');
+
+    final int popIndex =
+        exitActionSource.indexOf('Navigator.of(context).pop()');
+    final int postFrameIndex = exitActionSource
+        .indexOf('WidgetsBinding.instance.addPostFrameCallback');
+    final int exitIndex = exitActionSource.indexOf('exitReader();');
+    expect(popIndex, isNonNegative);
+    expect(postFrameIndex, greaterThan(popIndex),
+        reason: '不能在关闭 overlay 前调度退出');
+    expect(exitIndex, greaterThan(postFrameIndex),
+        reason: 'onExitReader 不能和 Navigator.pop 同一布局帧同步执行');
+    expect(exitActionSource, isNot(contains('widget.onExitReader();')),
+        reason: '直接同步退出会复现 _RenderLayoutBuilder performLayout 期间被修改');
+  });
+
   test('reader page opens the reader quick settings sheet', () {
     final String readerSource = readReaderPageSource();
     final String playBarSource =

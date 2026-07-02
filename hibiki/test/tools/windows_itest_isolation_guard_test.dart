@@ -36,6 +36,70 @@ void main() {
       }
     });
 
+    test('only reaps isolated stale test-runner processes', () {
+      final List<RegExpMatch> stopProcessMatches =
+          RegExp(r'\bStop-Process\b').allMatches(script).toList();
+      expect(stopProcessMatches, hasLength(1),
+          reason:
+              'Only the scoped stale test-runner cleanup may terminate a process.');
+      final int killIndex = stopProcessMatches.single.start;
+      final int cleanupStart =
+          script.lastIndexOf(r'foreach ($proc in $before)', killIndex);
+      final int cleanupEnd = script.indexOf(r'$runnerRecords', killIndex);
+      expect(cleanupStart, isNot(-1),
+          reason: 'Stop-Process must live inside the stale runner loop.');
+      expect(cleanupEnd, isNot(-1),
+          reason: 'Stop-Process must not leak past runner startup setup.');
+
+      final String cleanupBlock = script.substring(cleanupStart, cleanupEnd);
+      expect(
+          RegExp(
+            r'if\s*\(\$proc\.isTestRunner\)\s*\{\s*try\s*\{[^}]*\bStop-Process\b',
+            dotAll: true,
+          ).hasMatch(cleanupBlock),
+          isTrue,
+          reason: 'Windows itest must never terminate the user app.');
+
+      final int snapshotStart =
+          script.indexOf('function Get-HibikiProcessSnapshot');
+      final int snapshotEnd = script.indexOf('function Add-RunnerSnapshot');
+      expect(snapshotStart, isNot(-1),
+          reason: 'Process classification helper must exist.');
+      expect(snapshotEnd, isNot(-1),
+          reason: 'Process classification helper must have a bounded body.');
+      final String snapshotBlock = script.substring(snapshotStart, snapshotEnd);
+      expect(snapshotBlock, contains(r'$path = [string]$cim.ExecutablePath'),
+          reason: 'The test-runner scope must be based on executable path.');
+      expect(snapshotBlock, contains(r'$path.StartsWith($RunnerPathPrefix,'),
+          reason: 'The stale runner check must be scoped to this worktree.');
+      expect(snapshotBlock,
+          contains('[System.StringComparison]::OrdinalIgnoreCase'),
+          reason:
+              'The test-runner scope must stay path based, not name based.');
+      expect(snapshotBlock, contains(r'isTestRunner = $isRunner'),
+          reason: 'The guarded cleanup must use the path-derived marker.');
+      expect(script, isNot(contains('taskkill')),
+          reason: 'Windows itest must never terminate processes by name.');
+      expect(script, isNot(contains('Stop-Process -Name')),
+          reason:
+              'Windows itest must never kill by process name (could match the '
+              'user app).');
+      expect(script, isNot(contains('close it first')),
+          reason: 'A running user Hibiki instance is evidence, not a blocker.');
+      expect(script, isNot(contains('hibiki.exe is running')),
+          reason:
+              'The script must not fail just because a user instance exists.');
+      // Any Stop-Process must be gated by the isTestRunner scope check, so it
+      // only ever reaps stale test-runner processes under this worktree's
+      // runner path.
+      if (script.contains('Stop-Process')) {
+        expect(script, contains('isTestRunner'),
+            reason:
+                'Stop-Process is only allowed when scoped to stale test-runner '
+                'processes (isTestRunner path-prefix match).');
+      }
+    });
+
     test('records required process and runner evidence files', () {
       for (final String marker in <String>[
         'process-before.json',

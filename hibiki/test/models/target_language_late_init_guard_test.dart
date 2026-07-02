@@ -89,4 +89,14 @@ void main() {
       expect(identical(lateValue, appModel.languages.values.first), isTrue);
     },
   );
+
+  test('refreshSystemPalette is safe before themeNotifier initialises',
+      () async {
+    final AppModel appModel = AppModel(testPlatformServices());
+
+    await expectLater(
+      Future<void>.sync(appModel.refreshSystemPalette),
+      completes,
+    );
+  });
 }

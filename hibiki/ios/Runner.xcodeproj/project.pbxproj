@@ -3,18 +3,17 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		61FEF2834CC237156E0983BA /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
-		B20100000000000000000012 /* libhoshidicts_ffi.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B20100000000000000000011 /* libhoshidicts_ffi.dylib */; };
-		B20100000000000000000013 /* libhoshidicts_ffi.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B20100000000000000000011 /* libhoshidicts_ffi.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -24,7 +23,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				B20100000000000000000013 /* libhoshidicts_ffi.dylib in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -32,6 +30,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
@@ -45,7 +44,9 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B20100000000000000000011 /* libhoshidicts_ffi.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libhoshidicts_ffi.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		98BDBE4503C990FEE020FA76 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		D9A52DE6A05798E2273C9F32 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		E028078670CD7C9794E8BB9B /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,13 +54,21 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B20100000000000000000012 /* libhoshidicts_ffi.dylib in Frameworks */,
+				61FEF2834CC237156E0983BA /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1D3CD73C7D9CCFDBC1D715ED /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
 			isa = PBXGroup;
 			children = (
@@ -77,6 +86,8 @@
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
+				EB95B78877CDD31699B9B134 /* Pods */,
+				1D3CD73C7D9CCFDBC1D715ED /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -103,6 +114,17 @@
 			path = Runner;
 			sourceTree = "<group>";
 		};
+		EB95B78877CDD31699B9B134 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				98BDBE4503C990FEE020FA76 /* Pods-Runner.debug.xcconfig */,
+				D9A52DE6A05798E2273C9F32 /* Pods-Runner.release.xcconfig */,
+				E028078670CD7C9794E8BB9B /* Pods-Runner.profile.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -110,13 +132,16 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
-				B20100000000000000000010 /* Build HoshiDicts FFI */,
+				913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */,
+				B20200000000000000000001 /* Build HoshiDicts FFI */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+				4A503E8BEA363684D8AE6DAF /* [CP] Embed Pods Frameworks */,
+				6EF0EBA4A7F1146005A69FBC /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -133,7 +158,7 @@
 		97C146E61CF9000F007C117D /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 1300;
+				LastUpgradeCheck = 1510;
 				ORGANIZATIONNAME = "";
 				TargetAttributes = {
 					97C146ED1CF9000F007C117D = {
@@ -175,7 +200,94 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		B20100000000000000000010 /* Build HoshiDicts FFI */ = {
+		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}",
+			);
+			name = "Thin Binary";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+		};
+		4A503E8BEA363684D8AE6DAF /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		6EF0EBA4A7F1146005A69FBC /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-Runner-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		9740EEB61CF901F6004384FC /* Run Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+		};
+		B20200000000000000000001 /* Build HoshiDicts FFI */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -190,39 +302,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(BUILT_PRODUCTS_DIR)/$(HOSHIDICTS_DYLIB_NAME)",
+				"$(HOSHIDICTS_MERGED_ARCHIVE)",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nexport PATH=\"$HOME/Library/Python/3.9/bin:$PATH\"\n: \"${HOSHIDICTS_SOURCE_DIR:?HOSHIDICTS_SOURCE_DIR is not set}\"\n: \"${HOSHIDICTS_BUILD_DIR:?HOSHIDICTS_BUILD_DIR is not set}\"\n: \"${HOSHIDICTS_DYLIB_NAME:=libhoshidicts_ffi.dylib}\"\n\ncmake_archs=\"${ARCHS:-`uname -m`}\"\ncmake_archs=\"${cmake_archs// /;}\"\nsysroot=\"`xcrun --sdk \"${PLATFORM_NAME:-iphonesimulator}\" --show-sdk-path`\"\n\ncmake -S \"$HOSHIDICTS_SOURCE_DIR\" -B \"$HOSHIDICTS_BUILD_DIR\" -G Ninja \\\n  -DCMAKE_BUILD_TYPE=\"$CONFIGURATION\" \\\n  -DCMAKE_SYSTEM_NAME=iOS \\\n  -DCMAKE_OSX_SYSROOT=\"$sysroot\" \\\n  -DCMAKE_OSX_ARCHITECTURES=\"$cmake_archs\" \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${IPHONEOS_DEPLOYMENT_TARGET:-13.0}\" \\\n  -DCMAKE_IOS_INSTALL_COMBINED=NO\ncmake --build \"$HOSHIDICTS_BUILD_DIR\" --target hoshidicts_ffi --config \"$CONFIGURATION\"\n\nbuilt_dylib=\"`find \"$HOSHIDICTS_BUILD_DIR\" -type f -name \"$HOSHIDICTS_DYLIB_NAME\" | head -n 1`\"\nif [[ -z \"$built_dylib\" ]]; then\n  echo \"error: $HOSHIDICTS_DYLIB_NAME was not produced under $HOSHIDICTS_BUILD_DIR\" >&2\n  exit 1\nfi\n\ndestination=\"$BUILT_PRODUCTS_DIR/$HOSHIDICTS_DYLIB_NAME\"\nmkdir -p \"$BUILT_PRODUCTS_DIR\"\ncp -f \"$built_dylib\" \"$destination\"\ninstall_name_tool -id \"@rpath/$HOSHIDICTS_DYLIB_NAME\" \"$destination\"\n\nif [[ \"${CODE_SIGNING_ALLOWED:-}\" != \"NO\" ]] && command -v codesign >/dev/null 2>&1; then\n  sign_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\n  if [[ -z \"$sign_identity\" ]]; then\n    sign_identity=\"-\"\n  fi\n  codesign --force --sign \"$sign_identity\" --timestamp=none \"$destination\"\nfi\n";
-		};
-		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Thin Binary";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
-		};
-		9740EEB61CF901F6004384FC /* Run Script */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Run Script";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+			shellScript = "set -euo pipefail\n\n: \"${HOSHIDICTS_SOURCE_DIR:?HOSHIDICTS_SOURCE_DIR is not set}\"\n: \"${HOSHIDICTS_BUILD_DIR:?HOSHIDICTS_BUILD_DIR is not set}\"\n: \"${HOSHIDICTS_MERGED_ARCHIVE:?HOSHIDICTS_MERGED_ARCHIVE is not set}\"\n\n# Homebrew cmake is not on Xcode default PATH.\nexport PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\n\ncmake_archs=\"${ARCHS:-arm64}\"\ncmake_archs=\"${cmake_archs// /;}\"\n\n# Drop a stale CMake cache from a different generator so an aborted or older\n# configure cannot poison compiler detection.\nif [[ -f \"$HOSHIDICTS_BUILD_DIR/CMakeCache.txt\" ]] && ! grep -q \"CMAKE_GENERATOR:INTERNAL=Unix Makefiles\" \"$HOSHIDICTS_BUILD_DIR/CMakeCache.txt\"; then\n  rm -rf \"$HOSHIDICTS_BUILD_DIR\"\nfi\ncmake -S \"$HOSHIDICTS_SOURCE_DIR\" -B \"$HOSHIDICTS_BUILD_DIR\" \\\n  -DCMAKE_SYSTEM_NAME=iOS \\\n  -DCMAKE_OSX_SYSROOT=\"$PLATFORM_NAME\" \\\n  -DCMAKE_OSX_ARCHITECTURES=\"$cmake_archs\" \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${IPHONEOS_DEPLOYMENT_TARGET:-13.0}\"\ncmake --build \"$HOSHIDICTS_BUILD_DIR\" --target hoshidicts_ffi --config \"$CONFIGURATION\"\n\nif [[ ! -f \"$HOSHIDICTS_MERGED_ARCHIVE\" ]]; then\n  echo \"error: $HOSHIDICTS_MERGED_ARCHIVE was not produced\" >&2\n  exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -316,15 +400,20 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
+				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				HOSHIDICTS_MERGED_ARCHIVE = "$(HOSHIDICTS_BUILD_DIR)/libhoshidicts_ffi_merged.a";
+				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(HOSHIDICTS_MERGED_ARCHIVE)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.hibiki.reader;
-				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
-				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -447,15 +536,20 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
+				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				HOSHIDICTS_MERGED_ARCHIVE = "$(HOSHIDICTS_BUILD_DIR)/libhoshidicts_ffi_merged.a";
+				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(HOSHIDICTS_MERGED_ARCHIVE)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.hibiki.reader;
-				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
-				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -472,15 +566,20 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
+				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				HOSHIDICTS_MERGED_ARCHIVE = "$(HOSHIDICTS_BUILD_DIR)/libhoshidicts_ffi_merged.a";
+				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(HOSHIDICTS_MERGED_ARCHIVE)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.hibiki.reader;
-				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
-				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

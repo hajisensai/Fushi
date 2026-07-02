@@ -2486,7 +2486,8 @@ window._renderGeneration = 0;
 function _firePopupRendered() {
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+            document.body.scrollHeight,
+            window.__hibikiRenderToken || 0);
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
     }
@@ -2715,7 +2716,8 @@ window.updatePopupIncremental = function() {
     applyCustomCSS();
 
     window.flutter_inappwebview.callHandler('popupRendered',
-        document.body.scrollHeight);
+        document.body.scrollHeight,
+        window.__hibikiRenderToken || 0);
 };
 
 

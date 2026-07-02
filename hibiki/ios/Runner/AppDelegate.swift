@@ -1,7 +1,7 @@
 import UIKit
 import Flutter
 
-@UIApplicationMain
+@main
 @objc class AppDelegate: FlutterAppDelegate {
   // TODO-057: brightness override applied during a video session. We snapshot
   // the user's brightness the first time the player asks (getBrightness) and

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../pages/reader_history_source_corpus.dart';
@@ -49,6 +50,24 @@ void main() {
             'https://hoshi.local/epub/text/note.xhtml#n1'),
         isFalse,
       );
+      expect(
+        ReaderHibikiSource.isExternalUrl(
+            '${ReaderHibikiSource.kResourceScheme}://hoshi.local/epub/OEBPS/ch2.xhtml'),
+        isFalse,
+      );
+    });
+
+    test('Apple 平台 EPUB 资源 URL 走 WebKit custom scheme', () {
+      final String url = ReaderHibikiSource.epubUrl('OEBPS/ch 2.xhtml');
+
+      if (Platform.isMacOS || Platform.isIOS) {
+        expect(
+          url,
+          '${ReaderHibikiSource.kResourceScheme}://hoshi.local/epub/OEBPS/ch%202.xhtml',
+        );
+      } else {
+        expect(url, 'https://hoshi.local/epub/OEBPS/ch%202.xhtml');
+      }
     });
 
     test('真正的外部 http/https/mailto 链接 → 外部打开', () {
@@ -107,7 +126,43 @@ void main() {
         result.fontFaces,
         contains(Uri.encodeComponent(p.canonicalize(fontFile.path))),
       );
+      expect(
+        result.fontFaces,
+        contains(
+          Platform.isMacOS || Platform.isIOS
+              ? '${ReaderHibikiSource.kResourceScheme}://hoshi.local/fonts/'
+              : 'https://hoshi.local/fonts/',
+        ),
+      );
       expect(result.fontFaces, isNot(contains('..')));
+    });
+
+    test('reader settings font CSS uses custom scheme on macOS target',
+        () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+      });
+      final fontsDir = Directory(p.join(tempDir.path, 'fonts'));
+      await fontsDir.create();
+      final fontFile = File(p.join(fontsDir.path, 'font.ttf'));
+      await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
+
+      final result = ReaderSettings.customFontCssForEntries(
+        <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'Body Font',
+            'path': fontFile.path,
+            'enabled': true,
+          },
+        ],
+        allowedDirectories: <String>[fontsDir.path],
+      );
+
+      expect(
+        result.fontFaces,
+        contains('${ReaderHibikiSource.kResourceScheme}://hoshi.local/fonts/'),
+      );
     });
 
     test('rejects custom font paths outside the allowed directories', () async {

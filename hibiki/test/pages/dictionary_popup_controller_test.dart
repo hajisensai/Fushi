@@ -3,6 +3,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 /// Unit tests for the shared [DictionaryPopupController] — the single set of
 /// stack primitives across the reader / audiobook / video / home tab /
@@ -18,6 +19,10 @@ void main() {
     expect(c.entries.length, 1);
     expect(c.entries.first.isWarmSlot, true);
     expect(c.entries.first.visible, false);
+    expect(c.entries.first.searchTerm, '');
+    expect(c.entries.first.result, isNotNull,
+        reason: 'hidden warm slots must keep the WebView mounted for prewarm');
+    expect(c.entries.first.result!.searchTerm, '');
     expect(c.hasVisiblePopup, false);
 
     final lm = DictionaryPopupController(lowMemory: true)..seedWarmSlot();
@@ -116,11 +121,19 @@ void main() {
         reuseWarmSlot: true,
         replaceStack: false,
         visible: true);
-    c.fillResult(e, result: null, allLoaded: true);
+    c.fillResult(
+      e,
+      result: DictionarySearchResult(searchTerm: 'a'),
+      allLoaded: true,
+    );
     c.dismissAt(0);
     expect(c.entries.length, 1);
     expect(c.entries.first.isWarmSlot, true);
     expect(c.entries.first.visible, false);
+    expect(c.entries.first.searchTerm, '',
+        reason: 'closing a visible empty lookup restores the warm seed');
+    expect(c.entries.first.result!.searchTerm, '');
+    expect(c.entries.first.allLoaded, false);
 
     final lm = DictionaryPopupController(lowMemory: true);
     lm.beginTop(
@@ -274,6 +287,9 @@ void main() {
     expect(c.entries.length, 1);
     expect(c.entries.first.isWarmSlot, true);
     expect(c.entries.first.visible, false);
+    expect(c.entries.first.searchTerm, '');
+    expect(c.entries.first.result!.searchTerm, '');
+    expect(c.entries.first.allLoaded, false);
   });
 
   // ── TODO-058 fail-safe：popupRendered 永不发时的超时兜底 + Timer 取消/防泄漏 ──

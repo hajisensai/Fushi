@@ -21,9 +21,14 @@ void main() {
 
     setUpAll(() {
       src = readReaderPageSource();
+      // macOS/iOS 稳定化重构后，资源服务体从 _interceptRequest 移进
+      // _readerResourcePayload（返回 _ReaderResourceResponse DTO，供拦截 +
+      // Apple 自定义 scheme 两条路径复用）。图片 max-age / HTML-CSS no-cache
+      // 的缓存分支现在住在 payload 函数里，守卫据此扫 payload 函数体。
       final int interceptIdx =
-          src.indexOf('Future<WebResourceResponse?> _interceptRequest(');
-      final int end = src.indexOf('Uint8List _chapterHtmlBytes(', interceptIdx);
+          src.indexOf('_readerResourcePayload(WebUri url) async {');
+      final int end = src.indexOf(
+          'Future<WebResourceResponse?> _interceptRequest(', interceptIdx);
       expect(interceptIdx, greaterThan(0));
       expect(end, greaterThan(interceptIdx));
       interceptBody = src.substring(interceptIdx, end);

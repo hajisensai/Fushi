@@ -105,6 +105,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @override
   void dispose() {
     _creatorActiveStreamSubscription?.cancel();
+    _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();
     super.dispose();
@@ -207,6 +208,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   DictionaryPopupEntry? _deferredPopupItem;
   int _deferredGeneration = 0;
+  DictionaryPopupEntry? _visibleRenderPendingItem;
+  int _visibleRenderPendingGeneration = 0;
+  Timer? _visibleRenderFailsafeTimer;
 
   Future<int> searchDictionaryResult({
     required String searchTerm,
@@ -262,15 +266,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         allLoaded: dictionaryResult.entries.length < overrideMaximumTerms,
       );
 
-      // TODO-058：嵌套（第二个）查词复用不到热槽，beginTop 会 append 一条**新建
-      // WebView** 的冷层；若就绪即 show，它的 popup.html/JS/CSS 还没冷加载完，一翻
-      // 可见就露白屏一瞬。只有「能复用已预热热槽」或「无词条（走 Flutter 占位，不靠
-      // WebView 渲染）」才立即 show；其余冷层挂起到其 WebView 真正渲染完成（onRendered
-      // → revealRendered）才翻可见。deferDisplay（阅读器手动延迟）路径不变。
+      // TODO-058 / BUG-480：嵌套冷层继续挂起到 popupRendered；复用热槽也不能裸奔
+      // 直显内容区。macOS 上隐藏/屏外热槽的 JS 注入可能没跑到当前结果，直 show 会露出
+      // 白色空 WebView。需要 WebView 渲染的结果先显示带盖板的壳，并在可见后一帧强制
+      // 重推当前结果，收到 popupRendered 后再撤盖板。空结果走 Flutter 占位，不靠 WebView。
+      final bool needsWebViewRender = _itemNeedsWebViewRender(item);
       final bool revealImmediately = reuse || dictionaryResult.entries.isEmpty;
       if (deferDisplay) {
         _deferredPopupItem = item;
         _deferredGeneration = gen;
+      } else if (revealImmediately && needsWebViewRender) {
+        _showPopupWaitingForRender(item, gen);
       } else if (revealImmediately) {
         _popup.show(item);
       } else {
@@ -301,7 +307,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       return highlightCount;
     } finally {
       if (_searchGeneration == gen &&
-          (!deferDisplay || _deferredPopupItem == null)) {
+          (!deferDisplay || _deferredPopupItem == null) &&
+          _visibleRenderPendingItem == null) {
         _isSearchingNotifier.value = false;
         _pendingSelectionRect = null;
       }
@@ -355,13 +362,70 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       if (selectionRect != null) {
         item.selectionRect = selectionRect;
       }
-      // item 已在栈内（beginTop 时加入，隐藏）；show 翻为可见并通知重建。
-      _popup.show(item);
+      // item 已在栈内（beginTop 时加入，隐藏）。需要 WebView 渲染的结果先带盖板
+      // 翻可见，等当前结果 popupRendered 后再撤盖板，避免 macOS 隐藏热槽漏注入后露白。
+      if (_itemNeedsWebViewRender(item)) {
+        _showPopupWaitingForRender(item, gen);
+      } else {
+        _popup.show(item);
+      }
     }
-    if (_searchGeneration == gen) {
+    if (_searchGeneration == gen && _visibleRenderPendingItem == null) {
       _isSearchingNotifier.value = false;
       _pendingSelectionRect = null;
     }
+  }
+
+  bool _itemNeedsWebViewRender(DictionaryPopupEntry item) {
+    final result = item.result;
+    if (result == null) return false;
+    // A completed empty lookup is rendered by Flutter's no-results placeholder.
+    // Waiting for the reused warm WebView here exposes an empty shell on macOS.
+    return result.entries.isNotEmpty || result.kanjiResults.isNotEmpty;
+  }
+
+  void _showPopupWaitingForRender(
+    DictionaryPopupEntry item,
+    int generation,
+  ) {
+    _visibleRenderFailsafeTimer?.cancel();
+    _visibleRenderPendingItem = item;
+    _visibleRenderPendingGeneration = generation;
+    _isSearchingNotifier.value = true;
+    _popup.show(item);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _visibleRenderPendingItem != item ||
+          _visibleRenderPendingGeneration != generation ||
+          !_popup.entries.contains(item) ||
+          !item.visible) {
+        return;
+      }
+      item.webViewKey.currentState?.refreshCurrentResult();
+    });
+
+    _visibleRenderFailsafeTimer = Timer(
+      DictionaryPopupController.kRevealFailsafeTimeout,
+      () {
+        if (!mounted ||
+            _visibleRenderPendingItem != item ||
+            _visibleRenderPendingGeneration != generation) {
+          return;
+        }
+        _clearVisibleRenderPending();
+      },
+    );
+  }
+
+  void _clearVisibleRenderPending({DictionaryPopupEntry? item}) {
+    if (item != null && _visibleRenderPendingItem != item) return;
+    _visibleRenderFailsafeTimer?.cancel();
+    _visibleRenderFailsafeTimer = null;
+    _visibleRenderPendingItem = null;
+    _visibleRenderPendingGeneration = 0;
+    _isSearchingNotifier.value = false;
+    _pendingSelectionRect = null;
   }
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
@@ -624,6 +688,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void _onPopupLayerRendered(int index, DictionaryPopupEntry item) {
     if (!mounted) return;
     _popup.revealRendered(item);
+    _clearVisibleRenderPending(item: item);
     onDictionaryPopupRendered(index);
   }
 
@@ -632,6 +697,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _pendingSelectionRect = null;
     _isSearchingNotifier.value = false;
     _deferredPopupItem = null;
+    _clearVisibleRenderPending();
     if (index > 0) {
       final parent = _popup.entries[index - 1];
       parent.webViewKey.currentState?.clearSelection();
@@ -943,6 +1009,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   void prunePopupStack(int keepCount) {
     if (keepCount > 0) {
+      final pending = _visibleRenderPendingItem;
+      if (pending != null) {
+        final index = _popup.entries.indexOf(pending);
+        if (index < 0 || index >= keepCount) {
+          _clearVisibleRenderPending(item: pending);
+        }
+      }
       _popup.truncateTo(keepCount);
       return;
     }
@@ -955,6 +1028,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (_popup.entries.first.isWarmSlot && !appModel.lowMemoryMode) {
       _popup.entries.first.webViewKey.currentState?.clearSelection();
     }
+    _clearVisibleRenderPending();
     _popup.pruneToWarmSlot();
   }
 

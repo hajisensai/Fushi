@@ -139,5 +139,16 @@ void main() {
       expect(src.contains('updateDataRootMigrationProgress('), isTrue);
       expect(src.contains('onProgress:'), isTrue);
     });
+
+    test('data_root.part：迁移失败同步写错误日志再重启', () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/data_root.part.dart')
+              .readAsStringSync();
+      final int logIdx = src.indexOf("logFatal('DataRootMigration.migrate'");
+      final int recoverIdx = src.indexOf('_recoverAfterFailedMigration(');
+      expect(logIdx, greaterThan(0), reason: '迁移失败必须同步落错误日志');
+      expect(recoverIdx, greaterThan(logIdx),
+          reason: '错误日志必须在自动重启前落盘，否则失败原因会消失');
+    });
   });
 }

@@ -33,9 +33,18 @@ void main() {
         reason: 'onRendered 经统一入口翻可见挂起层');
     expect(base.contains('_popup.revealRendered('), isTrue,
         reason: '渲染完成时调 revealRendered');
-    // Only reuse-warm-slot or empty results reveal immediately.
-    expect(base.contains('reuse || dictionaryResult.entries.isEmpty'), isTrue,
-        reason: '只有复用热槽或无词条才立即 show');
+    // Renderable results, including reused warm slots, must wait for the current
+    // WebView render signal; completed empty results can use Flutter's
+    // no-results placeholder immediately.
+    expect(
+        base.contains(
+            'final bool needsWebViewRender = _itemNeedsWebViewRender(item);'),
+        isTrue,
+        reason: 'reader 必须先判断结果是否需要 WebView 渲染');
+    expect(base.contains('revealImmediately && needsWebViewRender'), isTrue,
+        reason: '复用 warm slot 但有可渲染内容时也要等 popupRendered');
+    expect(base.contains('result.kanjiResults.isNotEmpty'), isTrue,
+        reason: 'kanji-only 结果也需要 WebView 渲染');
   });
 
   test('video/home (dictionary_page_mixin) gates a cold nested popup on render',
@@ -47,8 +56,12 @@ void main() {
         reason: '冷嵌套层就绪后挂起，不立即 show');
     expect(mixin.contains('controller.revealRendered(entry)'), isTrue,
         reason: 'onRendered 翻可见挂起层');
-    expect(mixin.contains('reuseWarmSlot || result.entries.isEmpty'), isTrue,
-        reason: '只有复用热槽或无词条才立即 show');
+    expect(mixin.contains('final bool needsWebViewRender ='), isTrue,
+        reason: 'mixin 必须先判断结果是否需要 WebView 渲染');
+    expect(mixin.contains('result.kanjiResults.isNotEmpty'), isTrue,
+        reason: 'kanji-only 结果也需要 WebView 渲染');
+    expect(mixin.contains('if (!needsWebViewRender) {'), isTrue,
+        reason: '只有真实空结果才立即 show Flutter 占位');
   });
 
   // ── TODO-058 fail-safe 守卫：popupRendered 永不发也不卡死 ───────────────────

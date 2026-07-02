@@ -12,6 +12,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/storage/data_root_migrator.dart';
+import 'package:hibiki/src/storage/macos_data_root_access.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
