@@ -518,6 +518,16 @@ bool FlutterWindow::OnCreate() {
           "app.hibiki/external_video",
           &flutter::StandardMethodCodec::GetInstance());
 
+  // TODO-1092: 系统强调色/主题色实时变更通知 channel。runner 侧收到 Windows 的
+  // WM_DWMCOLORIZATIONCOLORCHANGED / WM_SETTINGCHANGE("ImmersiveColorSet") /
+  // WM_THEMECHANGED 后，经此 channel 把 onSystemColorChanged 推给 Dart，触发
+  // ThemeNotifier.refreshSystemPalette()——动态取色不再依赖 app 生命周期 resumed。
+  // 首实例无需主动调用任何方法，仅作为 MessageHandler 的出口。
+  system_theme_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "app.hibiki/system_theme",
+          &flutter::StandardMethodCodec::GetInstance());
+
   RegisterFloatingLyricChannel();
   RegisterGlobalLookupChannel();
 
@@ -921,6 +931,16 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
       });
 }
 
+void FlutterWindow::NotifySystemColorChanged() {
+  // TODO-1092: 把「系统强调色/主题色已变」事件推给 Dart。WndProc 跑在 platform
+  // 线程，InvokeMethod 可直接调用。channel 在 OnCreate 建好前（极早期消息）可能为
+  // 空，做 null 保护后静默忽略——启动完成后所有实时变更都会被投递。
+  if (system_theme_channel_) {
+    system_theme_channel_->InvokeMethod(
+        "onSystemColorChanged", std::make_unique<flutter::EncodableValue>());
+  }
+}
+
 void FlutterWindow::ApplyCaptionColors(uint32_t caption_argb,
                                        uint32_t text_argb) {
   HWND hwnd = GetHandle();
@@ -1031,6 +1051,23 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
             "openExternalVideo",
             std::make_unique<flutter::EncodableValue>(video_path));
         return TRUE;  // 已处理本 WM_COPYDATA。
+      }
+      break;
+    }
+    // TODO-1092: 系统强调色/主题色实时变更。三条广播覆盖不同触发面：
+    //   WM_DWMCOLORIZATIONCOLORCHANGED — DWM 玻璃/强调色变（改强调色即发）；
+    //   WM_SETTINGCHANGE + lParam=="ImmersiveColorSet" — 设置里改「浅色/深色/强调色」；
+    //   WM_THEMECHANGED — 经典主题切换。
+    // 收到后通知 Dart 重新取系统色（refreshSystemPalette），随后 **不消费** 消息、
+    // 落到下面 Win32Window::MessageHandler 走默认处理，保持既有其它消息分支语义不变。
+    case WM_DWMCOLORIZATIONCOLORCHANGED:
+    case WM_THEMECHANGED:
+      NotifySystemColorChanged();
+      break;
+    case WM_SETTINGCHANGE: {
+      const auto* area = reinterpret_cast<const wchar_t*>(lparam);
+      if (area != nullptr && wcscmp(area, L"ImmersiveColorSet") == 0) {
+        NotifySystemColorChanged();
       }
       break;
     }

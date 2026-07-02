@@ -427,6 +427,19 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   static const MethodChannel _externalVideoChannel =
       MethodChannel('app.hibiki/external_video');
 
+  /// TODO-1092: Windows 系统强调色/主题色实时变更通知 channel。runner 侧
+  /// （`windows/runner/flutter_window.cpp` 的 MessageHandler）收到
+  /// WM_DWMCOLORIZATIONCOLORCHANGED / WM_SETTINGCHANGE("ImmersiveColorSet") /
+  /// WM_THEMECHANGED 后经此 channel 推 `onSystemColorChanged`，Dart 侧据此调
+  /// [AppModel.refreshSystemPalette] 让动态取色实时刷新（不再等生命周期 resumed）。
+  static const MethodChannel _systemThemeChannel =
+      MethodChannel('app.hibiki/system_theme');
+
+  /// 去抖：一次系统色变更常连发多条 Win32 广播（DWM + ImmersiveColorSet +
+  /// THEMECHANGED），合并到一次 [AppModel.refreshSystemPalette]，避免同一变更重复
+  /// 取色 + notifyListeners 抖动。
+  Timer? _systemColorRefreshDebounce;
+
   /// 守卫：退出清理（停 Bonsoir 事件源）只跑一次，避免 [onWindowClose] 与
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
@@ -453,6 +466,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     }
     if (Platform.isWindows) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
+      _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
     HibikiToast.navigatorKey = ref.read(appProvider).navigatorKey;
 
@@ -653,6 +667,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   @override
   void dispose() {
     _intentsSubscription?.cancel();
+    _systemColorRefreshDebounce?.cancel();
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -742,6 +757,24 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       return null;
     }
     await _openExternalVideo(videoPath);
+    return null;
+  }
+
+  /// TODO-1092: Windows runner 报告「系统强调色/主题色已变」。经短去抖合并同一次
+  /// 变更连发的多条广播，然后调 [AppModel.refreshSystemPalette] 让 `system-theme`
+  /// 动态取色实时更新——修复「必须最小化/恢复/失焦触发生命周期 resumed 才刷新」。
+  /// 与 [didChangeAppLifecycleState] 的 resumed 刷新共存：两者都只是重新取系统色，
+  /// 幂等、互不冲突。
+  Future<dynamic> _handleSystemThemeChannel(MethodCall call) async {
+    if (call.method != 'onSystemColorChanged') return null;
+    _systemColorRefreshDebounce?.cancel();
+    _systemColorRefreshDebounce = Timer(
+      const Duration(milliseconds: 150),
+      () {
+        if (!mounted) return;
+        unawaited(ref.read(appProvider).refreshSystemPalette());
+      },
+    );
     return null;
   }
 

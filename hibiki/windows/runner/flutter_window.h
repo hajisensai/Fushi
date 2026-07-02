@@ -49,6 +49,13 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       external_video_channel_;
 
+  // TODO-1092: 系统强调色/主题色实时变更通知出口。runner 收到 Windows 的
+  // WM_DWMCOLORIZATIONCOLORCHANGED / WM_SETTINGCHANGE("ImmersiveColorSet") /
+  // WM_THEMECHANGED 后经此 channel 把 onSystemColorChanged 推给 Dart，触发
+  // 动态取色实时刷新（不再等 app 生命周期 resumed）。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      system_theme_channel_;
+
   // Drives the standalone always-on-top desktop lyric strip (the Windows
   // counterpart of Android's FloatingLyricService). See floating_lyric_window.h.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
@@ -69,6 +76,11 @@ class FlutterWindow : public Win32Window {
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);
+
+  // TODO-1092: notify Dart (system_theme_channel_) that the OS accent/theme
+  // color changed so ThemeNotifier.refreshSystemPalette() re-reads it live.
+  // Safe to call before the channel exists (null-guarded no-op).
+  void NotifySystemColorChanged();
 
   // Loads an image file via WIC, builds big/small HICONs and applies them to
   // the top-level window (WM_SETICON). Returns true if at least one icon was
