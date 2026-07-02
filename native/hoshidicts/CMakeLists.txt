@@ -9,6 +9,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
+# iOS: the Dart FFI bindings load symbols via DynamicLibrary.process(), so the
+# hoshidicts symbols must live in the Runner executable image itself. We build a
+# STATIC hoshidicts_ffi archive and a merged self-contained archive of it plus
+# its static deps, then force_load that into Runner from the Xcode build phase.
+# Everything must be PIC so it can be linked into the app executable.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(HOSHIDICTS_IOS ON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -104,9 +114,17 @@ target_link_libraries(hoshidicts PRIVATE
     ${HOSHIDICTS_PLATFORM_LIBS}
 )
 
-add_library(hoshidicts_ffi SHARED
-    hoshidicts_ffi.cpp
-)
+if(HOSHIDICTS_IOS)
+  # iOS: STATIC so the FFI + hoshidicts symbols end up in the Runner image, which
+  # is where DynamicLibrary.process() resolves them from.
+  add_library(hoshidicts_ffi STATIC
+      hoshidicts_ffi.cpp
+  )
+else()
+  add_library(hoshidicts_ffi SHARED
+      hoshidicts_ffi.cpp
+  )
+endif()
 
 target_compile_features(hoshidicts_ffi PRIVATE
     cxx_std_23
@@ -121,11 +139,33 @@ target_link_libraries(hoshidicts_ffi PRIVATE
     ${HOSHIDICTS_PLATFORM_LIBS}
 )
 
-if(APPLE)
+if(APPLE AND NOT HOSHIDICTS_IOS)
   set_target_properties(hoshidicts_ffi PROPERTIES
       INSTALL_NAME_DIR "@rpath"
       BUILD_WITH_INSTALL_NAME_DIR TRUE
   )
+endif()
+
+# iOS: merge the FFI static archive and every static dependency it links into a
+# single self-contained archive (libhoshidicts_ffi_merged.a) so the Xcode build
+# phase can force_load exactly one file into Runner. libtool -static resolves the
+# recursive INTERFACE link deps for us via generator expressions.
+if(HOSHIDICTS_IOS)
+  set(HOSHIDICTS_MERGED_ARCHIVE
+      ${CMAKE_BINARY_DIR}/libhoshidicts_ffi_merged.a)
+  # Merge the FFI archive + its static deps into one archive that the iOS Runner
+  # force_loads. Delegated to a helper script because the merge must run inside
+  # Xcode's per-target env (EFFECTIVE_PLATFORM_NAME / CONFIGURATION) and reference
+  # dependency archives in other CMake subprojects, which the Xcode generator
+  # cannot express via $<TARGET_FILE> for cross-project targets.
+  add_custom_command(
+      TARGET hoshidicts_ffi POST_BUILD
+      COMMAND bash
+          ${CMAKE_CURRENT_SOURCE_DIR}/merge_ios_archives.sh
+          ${CMAKE_BINARY_DIR}
+          ${HOSHIDICTS_MERGED_ARCHIVE}
+      COMMENT "Merging hoshidicts static archives into libhoshidicts_ffi_merged.a"
+      VERBATIM)
 endif()
 
 # Windows: set output name without 'lib' prefix
