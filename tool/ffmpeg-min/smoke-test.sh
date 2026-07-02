@@ -179,4 +179,56 @@ for output in \
   run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$output" -f null -
 done
 
+echo "[ffmpeg-min-smoke] synthesizing audiobook clip video (loop PNG + audio -> mov)"
+# TODO-1096: mirror buildFfmpegImageAudioToVideoArgs
+# (hibiki/lib/src/media/audiobook/audiobook_clip_export.dart). The clip export
+# feeds a single text PNG as a looping video stream (`-loop 1 -i clip.png`) and
+# muxes mjpeg video + aac audio into a .mov. Reading the named PNG needs the
+# image2 demuxer; a missing image2 makes ffmpeg exit -1094995529
+# (AVERROR_INVALIDDATA, "Invalid data found when processing input"). Exercise the
+# real binary so a dropped image2 demuxer fails the build, not the user.
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y  -f lavfi -i "color=green:size=64x64:duration=1"  -frames:v 1 "$WORK/clip-text.png"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y  -loop 1 -i "$WORK/clip-text.png"  -i "$WORK/tone.wav"  -c:v mjpeg -pix_fmt yuvj420p -r 12  -vf "scale=64:64:force_original_aspect_ratio=decrease,pad=64:64:(ow-iw)/2:(oh-ih)/2:color=black"  -c:a aac -shortest "$WORK/clip.mov"
+assert_nonempty "$WORK/clip.mov"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mov" -f null -
+
+echo "[ffmpeg-min-smoke] probing audio RMS energy envelope (aresample/asetnsamples/astats/ametadata)"
+# TODO-1096: mirror buildFfmpegPcmEnvelopeArgs
+# (hibiki/lib/src/media/video/audio_energy_probe.dart). Subtitle auto-align
+# (TODO-701) probes per-frame RMS energy through the SAME bundled ffmpeg via
+# `-af aresample=R,asetnsamples=n=N:p=0,astats=metadata=1:reset=1,ametadata=print:key=...`
+# `-f null -`. A minimal build missing asetnsamples/astats/ametadata parses
+# the filterchain unsuccessfully → empty envelope, silently breaking auto-align.
+# Exercise the real binary so a dropped filter fails the build, not the user.
+# The probe discards output via `-f null -`; a minimal build missing the null
+# muxer fails with "Requested output format 'null' is not known" before any
+# filter runs. Assert the muxer exists up front so a dropped null (or mov)
+# fails loudly here instead of silently breaking runtime auto-align.
+"$FFMPEG_MIN" -hide_banner -muxers > "$WORK/muxers.txt" 2>&1
+if ! grep -qw null "$WORK/muxers.txt" || ! grep -qw mov "$WORK/muxers.txt"; then
+  echo "MISSING MUXER (need null + mov for energy probe / clip synth):"
+  cat "$WORK/muxers.txt"
+  exit 1
+fi
+# The null muxer's default audio encoder is pcm_s16le; `-f null -` opens the
+# null output with it. A build carrying the null muxer but missing the
+# pcm_s16le encoder fails with "Default encoder for format null (codec
+# pcm_s16le) ... Encoder not found" (TODO-1096). Assert it exists up front so a
+# dropped encoder fails loudly here instead of at runtime auto-align.
+"$FFMPEG_MIN" -hide_banner -encoders > "$WORK/encoders.txt" 2>&1
+if ! grep -qw pcm_s16le "$WORK/encoders.txt"; then
+  echo "MISSING ENCODER (need pcm_s16le for the -f null energy probe):"
+  cat "$WORK/encoders.txt"
+  exit 1
+fi
+echo "+ $FFMPEG_MIN -hide_banner -nostats -i $WORK/tone.wav -af aresample=8000,asetnsamples=n=400:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level -f null -"
+# Capture stderr so a probe failure shows the real ffmpeg error, not just an
+# exit code (this is the app's literal call: -f null - to read astats metadata).
+if ! "$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" -af "aresample=8000,asetnsamples=n=400:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level" -f null - >"$WORK/rms.log" 2>&1; then
+  echo "[smoke] energy probe FAILED:"
+  cat "$WORK/rms.log"
+  exit 1
+fi
+assert_log_contains "$WORK/rms.log" "lavfi.astats.Overall.RMS_level"
+
 echo "[ffmpeg-min-smoke] PASS"
