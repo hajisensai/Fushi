@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/utils/components/settings_shared.dart'
+    show kSettingsRowTitleMaxLines;
 
 import '../../pages/reader_hibiki_page_source_corpus.dart';
 
@@ -523,6 +525,41 @@ void main() {
     expect(wideOrder, expected, reason: '宽窗分类顺序必须与窄窗一致、导航置首：$wideOrder');
     expect(narrowOrder.first, 'location');
     expect(wideOrder.first, 'location');
+  });
+
+  test(
+      'in-book TOC row passes titleMaxLines > 2 so long chapter names wrap '
+      '(TODO-1055, BUG-488)', () {
+    // 回归守卫：手机端目录（TOC）里长章节名曾被 AdaptiveSettingsRow 的默认 2 行
+    // clamp（kSettingsRowTitleMaxLines）截断。修复给 _InBookTocRow 的
+    // AdaptiveSettingsRow 传 titleMaxLines: 4 让章节名换行显示完整。
+    //
+    // settings_row_title_max_lines_test 直接 pump AdaptiveSettingsRow 证明该参数
+    // 有效，但那测不到 _InBookTocRow 是否真的把它传下去——若有人误删 TOC 行的
+    // titleMaxLines，那份 widget 测仍会绿。这里补一条源码守卫，锁住 TOC 行确实
+    // 传了一个 > 2 的 titleMaxLines（仍为有限值，避免病态长标题撑爆行）。
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final int tocIndex = source.indexOf('class _InBookTocRow');
+    expect(tocIndex, isNonNegative, reason: 'Missing _InBookTocRow class');
+    final int nextClassIndex = source.indexOf('class ', tocIndex + 1);
+    final String tocSource = nextClassIndex >= 0
+        ? source.substring(tocIndex, nextClassIndex)
+        : source.substring(tocIndex);
+
+    // TOC 行必须用共享 AdaptiveSettingsRow 渲染章节名（章节名走它的 title）。
+    expect(tocSource, contains('AdaptiveSettingsRow('),
+        reason: 'TOC 章节行应复用共享 AdaptiveSettingsRow 渲染标题');
+
+    // 必须显式传 titleMaxLines，且其值为 > 2 的有限整数字面量。
+    final RegExpMatch? match =
+        RegExp(r'titleMaxLines:\s*(\d+)').firstMatch(tocSource);
+    expect(match, isNotNull,
+        reason: 'TOC 章节行必须显式传 titleMaxLines，否则回退默认 2 行截断长章节名');
+    final int maxLines = int.parse(match!.group(1)!);
+    expect(maxLines, greaterThan(kSettingsRowTitleMaxLines),
+        reason: '章节名要能换行显示，titleMaxLines 必须大于默认 2 行 clamp');
   });
 }
 
