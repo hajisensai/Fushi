@@ -10,7 +10,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["bridge-shim.js", "subtitle-adapters.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "scan.js", "content.js"],
-      "css": ["vendor/popup.css"]
+      "css": ["vendor/content.css"]
     }
   ],
   "options_page": "options.html",

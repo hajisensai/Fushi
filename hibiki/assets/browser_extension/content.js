@@ -1,7 +1,18 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
+// 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
+
+/**
+ * 跟随宿主页配色返回弹窗主题名。
+ * @returns {'dark'|'light'}
+ */
+function hibikiResolveTheme() {
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    ? 'dark'
+    : 'light';
+}
 
 function hibikiEnsureContainer() {
   if (hibikiContainer && document.body.contains(hibikiContainer)) return hibikiContainer;
@@ -10,6 +21,9 @@ function hibikiEnsureContainer() {
     c = document.createElement('div');
     c.id = 'entries-container';
     c.style.cssText = 'position:absolute;z-index:2147483647;max-width:400px;';
+    // content.css 把主题变量作用域到 #entries-container[data-theme]，
+    // 主题属性必须落在弹窗根上（不再改宿主 <html>），否则文字/背景色回退到空值。
+    c.setAttribute('data-theme', hibikiResolveTheme());
     document.body.appendChild(c);
   }
   hibikiContainer = c;
