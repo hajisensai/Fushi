@@ -781,6 +781,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 是否尊重 .ass 字幕自带样式（字体 / 主色 / 描边 / 阴影，TODO-1105）。**默认 true**——
+  /// 用户期望「默认尊重字幕自带样式」；关闭时字幕全走用户统一外观设置。
+  bool get videoRespectAssStyle =>
+      getPref('video_respect_ass_style', defaultValue: true) as bool;
+
+  Future<void> setVideoRespectAssStyle(bool value) async {
+    await setPref('video_respect_ass_style', value);
+    notifyListeners();
+  }
+
   /// 视频 mpv 配置（JSON；解析见 VideoMpvConfig.encode/decode）。空串=默认全 mpv 默认值。
   String get videoMpvConfig =>
       getPref('video_mpv_config', defaultValue: '') as String;

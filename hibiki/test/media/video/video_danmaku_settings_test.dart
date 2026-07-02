@@ -110,4 +110,32 @@ void main() {
       reloaded.dispose();
     });
   });
+  group('PreferencesRepository videoRespectAssStyle (TODO-1105)', () {
+    late HibikiDatabase db;
+    late PreferencesRepository repo;
+
+    setUp(() async {
+      db = _testDb();
+      repo = PreferencesRepository(db);
+      await repo.loadFromDb();
+    });
+
+    tearDown(() async {
+      repo.dispose();
+      await db.close();
+    });
+
+    test('defaults to ON (respect .ass style by default)', () {
+      expect(repo.videoRespectAssStyle, isTrue);
+    });
+
+    test('persists the opt-out across reload', () async {
+      await repo.setVideoRespectAssStyle(false);
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.videoRespectAssStyle, isFalse,
+          reason: 'user turning off respect-ass must survive restart');
+      reloaded.dispose();
+    });
+  });
 }

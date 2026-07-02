@@ -176,4 +176,69 @@ ${header}Dialogue: 0,0:00:01.1,0:00:03.0,Default,,0,0,0,,十分の一秒テス�
       expect(cues.single.markup?.anchor?.horizontal, SubtitleHAlign.center);
     });
   });
+  group('AssParser [V4+ Styles] cue style (TODO-1105)', () {
+    const String styledHeader = '''
+[Script Info]
+Title: Test
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Yu Mincho,40,&H0000FFFF,&H000000FF,&H00FF0000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,8,10,10,20,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+''';
+
+    test('Style font/color/outline/shadow/alignment parsed into cueStyle', () {
+      final List<AudioCue> cues = AssParser.parseString(
+        content:
+            '${styledHeader}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,konnichiwa\n',
+        bookKey: 'b',
+      );
+      expect(cues.length, 1);
+      final SubtitleCueStyle? cue = cues.single.markup?.cueStyle;
+      expect(cue, isNotNull);
+      expect(cue!.fontName, 'Yu Mincho');
+      expect(cue.fontSizePx, 40);
+      // PrimaryColour &H0000FFFF -> B=00 G=FF R=FF -> yellow 0xFFFFFF00.
+      expect(cue.primaryColorArgb, 0xFFFFFF00);
+      // OutlineColour &H00FF0000 -> B=FF G=00 R=00 -> blue 0xFF0000FF.
+      expect(cue.outlineColorArgb, 0xFF0000FF);
+      expect(cue.outlineWidthPx, 3);
+      expect(cue.shadowDepthPx, 2);
+      expect(cue.bold, isTrue); // Bold=-1
+      // Alignment 8 = top-center (same code as \an8).
+      expect(cue.anchor?.vertical, SubtitleVAlign.top);
+      expect(cue.anchor?.horizontal, SubtitleHAlign.center);
+      expect(cue.marginV, 20);
+      // cueStyle Alignment also backfills markup.anchor when no inline \an.
+      expect(cues.single.markup?.anchor?.vertical, SubtitleVAlign.top);
+    });
+
+    test('no [V4+ Styles] section -> cueStyle null (backward compatible)', () {
+      const String plainHeader = '''
+[Script Info]
+Title: Test
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+''';
+      final List<AudioCue> cues = AssParser.parseString(
+        content:
+            '${plainHeader}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,soko\n',
+        bookKey: 'b',
+      );
+      expect(cues.single.markup?.cueStyle, isNull);
+    });
+
+    test(r'inline \an overrides cueStyle Alignment', () {
+      final List<AudioCue> cues = AssParser.parseString(
+        content:
+            '${styledHeader}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\an2}shita\n',
+        bookKey: 'b',
+      );
+      // Style Alignment=8 (top), inline \an2 (bottom-center) wins.
+      expect(cues.single.markup?.anchor?.vertical, SubtitleVAlign.bottom);
+    });
+  });
 }

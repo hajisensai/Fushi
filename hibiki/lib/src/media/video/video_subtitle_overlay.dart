@@ -107,6 +107,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.controlsVisible,
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.fontFamily,
+    this.respectAssStyle = false,
     super.key,
   });
 
@@ -202,6 +203,14 @@ class VideoSubtitleOverlay extends StatefulWidget {
 
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
   final String? fontFamily;
+
+  /// 是否尊重 .ass 字幕自带样式（TODO-1105）。为 true 时，字体名 / 主色 / 字号 / 描边色 /
+  /// 描边宽 / 阴影色 / 阴影深度优先取 markup 里 ASS 解析出的值（行内 {...} 覆盖 > [V4+ Styles]
+  /// cue 默认），缺失才回退用户统一样式（[fontFamily] / [textColor] / [fontSize] /
+  /// [shadowColor] / [shadowThickness]）。为 false 时（默认）全部走 widget.* 统一样式，与历史
+  /// 外观像素级一致（仅行内 \i \b \u \s \c \fs 这些旧就支持的 span 样式照旧生效——那是本开关
+  /// 出现前既有行为、不受影响）。
+  final bool respectAssStyle;
 
   @override
   State<VideoSubtitleOverlay> createState() => _VideoSubtitleOverlayState();
@@ -566,20 +575,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 渲染单个字幕字符为**真描边**：底层 stroke [Text]（[buildSubtitleStrokePaint] 沿
   /// 字形轮廓描一圈）+ 上层 fill [Text]（正文填充色）精确重叠（BUG-323 / TODO-569）。
   ///
-  /// 取代旧的「单层 [Text] + 8 个模糊 `Shadow` glyph 拷贝伪描边」：那套在大 thickness /
-  /// 横竖屏缩放下会让模糊黑字外溢成「残留黑字」（根因见 [buildSubtitleStrokePaint] 文档）。
-  ///
-  /// 两层用同一份几何样式（字号 / 字重 / 字体 / fallback / 行高 / 下划线删除线），仅描边
-  /// 层把 `color` 换成 `foreground=strokePaint`、fill 层保留 `color`——故两层字形逐像素
-  /// 对齐、Stack 尺寸 == 字符尺寸，不改变 hit-test 几何（[_charContexts] 登记的字符矩形
-  /// 仍精确）。thickness<=0（无描边）时 [buildSubtitleStrokePaint] 返回 null，直接渲染单层
-  /// fill [Text]（与历史无描边场景等价、零多余层）。
+  /// 描边色 / 描边宽默认取用户统一样式（[VideoSubtitleOverlay.shadowColor] /
+  /// [VideoSubtitleOverlay.shadowThickness]）；开 [VideoSubtitleOverlay.respectAssStyle]
+  /// 时优先取 .ass 的 \3c 描边色 / \bord 描边宽（行内 span > cueStyle，缺失回退统一样式，
+  /// TODO-1105）。thickness<=0（无描边）时 [buildSubtitleStrokePaint] 返回 null，直接渲染
+  /// 单层 fill [Text]（与历史无描边场景等价、零多余层）。
   Widget _buildStrokedChar(String char, int i, SubtitleMarkup? markup) {
     final TextStyle fillStyle = _styleForGrapheme(i, markup);
-    final Paint? strokePaint = buildSubtitleStrokePaint(
-      widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
-      widget.shadowThickness,
-    );
+    final (Color strokeColor, double strokeWidth) = _resolveStroke(i, markup);
+    final Paint? strokePaint =
+        buildSubtitleStrokePaint(strokeColor, strokeWidth);
     final Widget fill = Text(char, style: fillStyle);
     if (strokePaint == null) return fill;
     // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
@@ -599,41 +604,101 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     );
   }
 
+  /// 解析第 [i] 个 grapheme 的**描边色 + 描边宽**（[_buildStrokedChar] 用）。
+  ///
+  /// respectAssStyle 关：恒返回用户统一 (shadowColor, shadowThickness)——与历史像素级一致。
+  /// respectAssStyle 开：描边色取 span.\3c ?? cueStyle.OutlineColour ?? 统一色；描边宽取
+  /// span.\bord ?? cueStyle.Outline ?? 统一宽（TODO-1105，行内覆盖 cue 默认覆盖统一样式）。
+  (Color, double) _resolveStroke(int i, SubtitleMarkup? markup) {
+    final Color baseColor =
+        widget.shadowColor ?? Theme.of(context).colorScheme.shadow;
+    final double baseWidth = widget.shadowThickness;
+    if (!widget.respectAssStyle || markup == null) {
+      return (baseColor, baseWidth);
+    }
+    final SubtitleSpan? span = _spanAt(i, markup);
+    final SubtitleCueStyle? cue = markup.cueStyle;
+    final int? outlineArgb = span?.outlineColorArgb ?? cue?.outlineColorArgb;
+    final double? outlineWidth = span?.outlineWidthPx ?? cue?.outlineWidthPx;
+    return (
+      outlineArgb != null ? Color(outlineArgb) : baseColor,
+      outlineWidth ?? baseWidth,
+    );
+  }
+
+  /// 覆盖第 [i] 个 grapheme 的行内 span（半开区间命中）；无则 null。
+  SubtitleSpan? _spanAt(int i, SubtitleMarkup? markup) {
+    if (markup == null) return null;
+    for (final SubtitleSpan s in markup.spans) {
+      if (i >= s.startGrapheme && i < s.endGrapheme) return s;
+    }
+    return null;
+  }
+
   /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式（**填充层**，不含描边——描边由
   /// [_buildStrokedChar] 的底层 stroke [Text] 单独承载，BUG-323 / TODO-569）。
+  ///
+  /// respectAssStyle 关：只应用行内 `\i \b \u \s \c \fs` 这些历史就支持的 span 样式，字体 /
+  /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
+  /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
+  /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
+  /// [_kSubtitleCjkFallback] 兜底。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup) {
+    final bool respect = widget.respectAssStyle && markup != null;
+    final SubtitleCueStyle? cue = respect ? markup.cueStyle : null;
+    final SubtitleSpan? span = _spanAt(i, markup);
+
+    // 基线字体 / 颜色 / 字号：respect 时先叠 cueStyle（V4+ Styles）默认，否则恒用户统一样式。
+    final String? baseFontFamily =
+        (respect ? cue?.fontName : null) ?? widget.fontFamily;
+    final Color baseColor = (respect && cue?.primaryColorArgb != null)
+        ? Color(cue!.primaryColorArgb!)
+        : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
+    final double baseFontSize =
+        (respect ? cue?.fontSizePx : null) ?? widget.fontSize;
+    final FontWeight baseWeight = (respect && (cue?.bold ?? false))
+        ? FontWeight.bold
+        : _fontWeight(widget.fontWeight);
+
     final TextStyle base = TextStyle(
-      color: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
-      fontSize: widget.fontSize,
+      color: baseColor,
+      fontSize: baseFontSize,
       height: 1.3,
-      fontFamily: widget.fontFamily,
+      fontFamily: baseFontFamily,
       // 统一的 CJK 日文回退链：主字体（自定义或平台默认）缺某字形（如假名「の」缺字）
       // 时，引擎按本列表顺序找到第一个存在的系统日文字体，而非各字符独立走引擎默认
       // fallback（不同字符可能落到不同字体、字形割裂）。引擎自动忽略当前平台不存在的
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
       fontFamilyFallback: _kSubtitleCjkFallback,
-      fontWeight: _fontWeight(widget.fontWeight),
+      fontWeight: baseWeight,
+      // cueStyle 的斜体 / 下划线 / 删除线（respect 时）作为基线，行内 span 可再覆盖。
+      fontStyle: (respect && (cue?.italic ?? false)) ? FontStyle.italic : null,
+      decoration: (respect) ? _cueDecoration(cue) : null,
     );
-    SubtitleSpan? span;
-    if (markup != null) {
-      for (final SubtitleSpan s in markup.spans) {
-        if (i >= s.startGrapheme && i < s.endGrapheme) {
-          span = s;
-          break;
-        }
-      }
-    }
     if (span == null) return base;
+
     final List<TextDecoration> decos = <TextDecoration>[];
     if (span.underline) decos.add(TextDecoration.underline);
     if (span.strike) decos.add(TextDecoration.lineThrough);
+    // 行内 \fn 字体（respect 时）：优先于 base 的 cue 字体 / 统一字体。
+    final String? spanFontFamily = (respect ? span.fontName : null);
     return base.copyWith(
+      fontFamily: spanFontFamily,
       fontStyle: span.italic ? FontStyle.italic : null,
       fontWeight: span.bold ? FontWeight.bold : null,
       color: span.colorArgb != null ? Color(span.colorArgb!) : null,
-      fontSize: span.fontSizePx ?? widget.fontSize,
+      fontSize: span.fontSizePx ?? base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
     );
+  }
+
+  /// [SubtitleCueStyle] 的下划线 / 删除线合成 [TextDecoration]（respect 基线用）；都无则 null。
+  static TextDecoration? _cueDecoration(SubtitleCueStyle? cue) {
+    if (cue == null) return null;
+    final List<TextDecoration> decos = <TextDecoration>[];
+    if (cue.underline ?? false) decos.add(TextDecoration.underline);
+    if (cue.strikeOut ?? false) decos.add(TextDecoration.lineThrough);
+    return decos.isEmpty ? null : TextDecoration.combine(decos);
   }
 
   static FontWeight _fontWeight(int value) {

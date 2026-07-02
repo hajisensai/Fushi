@@ -2070,5 +2070,7 @@
   "browser_extension_enable_server_first": "提示：请先在上方开启「Yomitan API 服务器」并设置 API 密钥，扩展才能被自动配置为可用连接。",
   "browser_extension_folder_label": "扩展文件夹（已复制）",
   "copied": "已复制",
-  "shortcut_action_global_toggle_fullscreen": "全屏切换"
+  "shortcut_action_global_toggle_fullscreen": "全屏切换",
+  "video_setting_subtitle_respect_ass": "尊重字幕自带样式",
+  "video_setting_subtitle_respect_ass_hint": "有 .ass 字幕自带的字体、颜色、描边时优先采用；关闭则一律使用你的外观设置。"
 }

@@ -47,6 +47,21 @@ class SubtitleSpan {
   /// `\fs` 字号（px）；null=默认。
   final double? fontSizePx;
 
+  /// `\fn` 字体名（ASS 行内字体覆盖，TODO-1105）；null=默认。
+  final String? fontName;
+
+  /// `\3c` 描边色，0xFFRRGGBB（TODO-1105）；null=默认。
+  final int? outlineColorArgb;
+
+  /// `\4c` 阴影色，0xFFRRGGBB（TODO-1105）；null=默认。
+  final int? shadowColorArgb;
+
+  /// `\bord` 描边宽（px，TODO-1105）；null=默认。
+  final double? outlineWidthPx;
+
+  /// `\shad` 阴影深度（px，TODO-1105）；null=默认。
+  final double? shadowDepthPx;
+
   const SubtitleSpan({
     required this.startGrapheme,
     required this.endGrapheme,
@@ -56,6 +71,11 @@ class SubtitleSpan {
     this.strike = false,
     this.colorArgb,
     this.fontSizePx,
+    this.fontName,
+    this.outlineColorArgb,
+    this.shadowColorArgb,
+    this.outlineWidthPx,
+    this.shadowDepthPx,
   });
 
   bool get hasStyle =>
@@ -64,7 +84,75 @@ class SubtitleSpan {
       underline ||
       strike ||
       colorArgb != null ||
-      fontSizePx != null;
+      fontSizePx != null ||
+      fontName != null ||
+      outlineColorArgb != null ||
+      shadowColorArgb != null ||
+      outlineWidthPx != null ||
+      shadowDepthPx != null;
+}
+
+/// 单条 cue 的**默认样式**：来自 ASS `[V4+ Styles]` 段里该 Dialogue 引用的 Style 行
+/// （字体名 / 主色 / 描边色 / 阴影色 / 描边宽 / 阴影深度 / 对齐 / 竖直边距，TODO-1105）。
+///
+/// 语义是「本条字幕在没有行内 `{...}` 覆盖时的基线样式」：渲染层先取本 cueStyle，再让
+/// 行内 [SubtitleSpan] 覆盖之。所有字段可空——srt/vtt 无 `[V4+ Styles]`、或某列缺失时留 null，
+/// 渲染层回退到用户统一样式（fail-safe，Never break userspace）。
+class SubtitleCueStyle {
+  /// `Fontname`；null=默认。
+  final String? fontName;
+
+  /// `PrimaryColour`（BGR→0xFFRRGGBB）主色；null=默认。
+  final int? primaryColorArgb;
+
+  /// `OutlineColour`（BGR→0xFFRRGGBB）描边色；null=默认。
+  final int? outlineColorArgb;
+
+  /// `BackColour`（BGR→0xFFRRGGBB）阴影/背景色；null=默认。
+  final int? shadowColorArgb;
+
+  /// `Fontsize`（px）；null=默认。
+  final double? fontSizePx;
+
+  /// `Outline` 描边宽（px）；null=默认。
+  final double? outlineWidthPx;
+
+  /// `Shadow` 阴影深度（px）；null=默认。
+  final double? shadowDepthPx;
+
+  /// `Bold`（-1/1=粗体）；null=默认。
+  final bool? bold;
+
+  /// `Italic`（-1/1=斜体）；null=默认。
+  final bool? italic;
+
+  /// `Underline`；null=默认。
+  final bool? underline;
+
+  /// `StrikeOut`；null=默认。
+  final bool? strikeOut;
+
+  /// `Alignment`（\an 小键盘布局 1..9，V4+ 与行内 \an 同码）解码出的锚点；null=默认。
+  final SubtitleAnchor? anchor;
+
+  /// `MarginV` 竖直边距（px，ASS 坐标系）；null=默认。渲染层可选消费。
+  final double? marginV;
+
+  const SubtitleCueStyle({
+    this.fontName,
+    this.primaryColorArgb,
+    this.outlineColorArgb,
+    this.shadowColorArgb,
+    this.fontSizePx,
+    this.outlineWidthPx,
+    this.shadowDepthPx,
+    this.bold,
+    this.italic,
+    this.underline,
+    this.strikeOut,
+    this.anchor,
+    this.marginV,
+  });
 }
 
 /// 单条字幕 cue 解析出的几何 + 行内样式。`plainText` 不含任何标签，供逐字查词/制卡。
@@ -73,11 +161,16 @@ class SubtitleMarkup {
   final List<SubtitleSpan> spans;
   final SubtitleAnchor? anchor;
   final SubtitlePos? posFraction;
+
+  /// cue 级默认样式（来自 ASS `[V4+ Styles]`，TODO-1105）。null=无 Style 段/非 ASS。
+  final SubtitleCueStyle? cueStyle;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
     this.anchor,
     this.posFraction,
+    this.cueStyle,
   });
 }
 
@@ -89,6 +182,11 @@ class _Style {
   bool strike = false;
   int? colorArgb;
   double? fontSizePx;
+  String? fontName;
+  int? outlineColorArgb;
+  int? shadowColorArgb;
+  double? outlineWidthPx;
+  double? shadowDepthPx;
 
   _Style clone() => _Style()
     ..italic = italic
@@ -96,7 +194,12 @@ class _Style {
     ..underline = underline
     ..strike = strike
     ..colorArgb = colorArgb
-    ..fontSizePx = fontSizePx;
+    ..fontSizePx = fontSizePx
+    ..fontName = fontName
+    ..outlineColorArgb = outlineColorArgb
+    ..shadowColorArgb = shadowColorArgb
+    ..outlineWidthPx = outlineWidthPx
+    ..shadowDepthPx = shadowDepthPx;
 
   bool get hasStyle =>
       italic ||
@@ -104,16 +207,24 @@ class _Style {
       underline ||
       strike ||
       colorArgb != null ||
-      fontSizePx != null;
+      fontSizePx != null ||
+      fontName != null ||
+      outlineColorArgb != null ||
+      shadowColorArgb != null ||
+      outlineWidthPx != null ||
+      shadowDepthPx != null;
 }
 
 /// 单条 cue 原文 → 结构化 markup。一趟扫描同时构建 plainText 与 span 边界。
 ///
 /// [playResX]/[playResY] 仅用于把 `\pos` 归一化；srt/vtt 无 `\pos`，传 null 即可。
+/// [cueStyle] 是本条 cue 引用的 ASS `[V4+ Styles]` 默认样式（TODO-1105）：原样透传到
+/// 返回的 [SubtitleMarkup.cueStyle]，供渲染层作行内 span 之下的基线；行内 `{...}` 覆盖
+/// 它。srt/vtt 无 Style 段传 null。
 /// 不支持的标签（卡拉OK `\k`、动画 `\t/\move/\fad`、绘图 `\p`、旋转缩放等）静默删除，
 /// 既不显示控制码也不产出样式。
 SubtitleMarkup parseSubtitleMarkup(String raw,
-    {double? playResX, double? playResY}) {
+    {double? playResX, double? playResY, SubtitleCueStyle? cueStyle}) {
   final List<({String text, _Style style})> segments =
       <({String text, _Style style})>[];
   final StringBuffer cur = StringBuffer();
@@ -198,6 +309,11 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         strike: seg.style.strike,
         colorArgb: seg.style.colorArgb,
         fontSizePx: seg.style.fontSizePx,
+        fontName: seg.style.fontName,
+        outlineColorArgb: seg.style.outlineColorArgb,
+        shadowColorArgb: seg.style.shadowColorArgb,
+        outlineWidthPx: seg.style.outlineWidthPx,
+        shadowDepthPx: seg.style.shadowDepthPx,
       ));
     }
     plain.write(seg.text);
@@ -207,8 +323,10 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
   return SubtitleMarkup(
     plainText: plain.toString(),
     spans: spans,
-    anchor: anchor,
+    // 行内 \an 优先；无行内 \an 时回退 cueStyle（V4+ Styles）的 Alignment（TODO-1105）。
+    anchor: anchor ?? cueStyle?.anchor,
     posFraction: pos,
+    cueStyle: cueStyle,
   );
 }
 
@@ -280,7 +398,44 @@ void _applyOverrideBlock(
     final RegExpMatch? col =
         RegExp(r'^1?c&H([0-9a-fA-F]{1,8})&?$').firstMatch(tag);
     if (col != null) {
-      style.colorArgb = _assColorToArgb(col.group(1)!);
+      style.colorArgb = assColorToArgb(col.group(1)!);
+      continue;
+    }
+
+    // \3c&H..&（描边色，BGR，TODO-1105）
+    final RegExpMatch? col3 =
+        RegExp(r'^3c&H([0-9a-fA-F]{1,8})&?$').firstMatch(tag);
+    if (col3 != null) {
+      style.outlineColorArgb = assColorToArgb(col3.group(1)!);
+      continue;
+    }
+
+    // \4c&H..&（阴影色，BGR，TODO-1105）
+    final RegExpMatch? col4 =
+        RegExp(r'^4c&H([0-9a-fA-F]{1,8})&?$').firstMatch(tag);
+    if (col4 != null) {
+      style.shadowColorArgb = assColorToArgb(col4.group(1)!);
+      continue;
+    }
+
+    // \fn<字体名>（TODO-1105）。字体名可含空格；截到本 tag 末尾（\ 切分已隔开各 tag）。
+    if (tag.startsWith('fn') && tag.length > 2) {
+      final String name = tag.substring(2).trim();
+      if (name.isNotEmpty) style.fontName = name;
+      continue;
+    }
+
+    // \bord<n> 描边宽（px，TODO-1105）
+    final RegExpMatch? bord = RegExp(r'^bord(\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (bord != null) {
+      style.outlineWidthPx = double.parse(bord.group(1)!);
+      continue;
+    }
+
+    // \shad<n> 阴影深度（px，TODO-1105）
+    final RegExpMatch? shad = RegExp(r'^shad(\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (shad != null) {
+      style.shadowDepthPx = double.parse(shad.group(1)!);
       continue;
     }
 
@@ -291,12 +446,17 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // 其余（\k \t \move \fad \frx \fscx \clip \bord \shad ...）忽略。
+    // 其余（\k \t \move \fad \frx \fscx \clip \xbord \ybord ...）忽略。
   }
 }
 
 /// ASS 颜色十六进制（BGR，可省前导零）→ 0xFFRRGGBB。
-int _assColorToArgb(String hex) {
+///
+/// 公开供 [SubtitleMarkup] 与 ass_parser 的 `[V4+ Styles]` 颜色列（PrimaryColour /
+/// OutlineColour / BackColour）共用同一份 BGR→ARGB 解码（TODO-1105），消除重复实现。
+/// 高字节（AA）在 ASS 里是「透明度」（0=不透明，255=全透明）——本函数忽略之，一律返回
+/// 不透明 0xFF；字幕渲染层不消费 ASS alpha（与行内 \c 路径一致）。
+int assColorToArgb(String hex) {
   final int v = int.parse(hex, radix: 16);
   final int b = (v >> 16) & 0xFF;
   final int g = (v >> 8) & 0xFF;

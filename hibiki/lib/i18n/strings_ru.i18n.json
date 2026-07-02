@@ -2070,5 +2070,7 @@
   "browser_extension_enable_server_first": "Tip: enable \"Yomitan API server\" and set an API key above first, so the extension is auto-configured with a working connection.",
   "browser_extension_folder_label": "Extension folder (already copied)",
   "copied": "Copied",
-  "shortcut_action_global_toggle_fullscreen": "Toggle fullscreen"
+  "shortcut_action_global_toggle_fullscreen": "Toggle fullscreen",
+  "video_setting_subtitle_respect_ass": "Respect subtitle's own style",
+  "video_setting_subtitle_respect_ass_hint": "Use the font, color, and outline built into .ass subtitles when available; turn off to force your appearance settings."
 }

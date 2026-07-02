@@ -95,4 +95,107 @@ void main() {
     final Offset boxCenter = tester.getCenter(find.text('そ').first);
     expect(boxCenter.dy, greaterThan(overlayRect.center.dy)); // 底部
   });
+  testWidgets(
+      'respectAssStyle ON: inline c/fn/3c apply; OFF: unified style wins',
+      (WidgetTester tester) async {
+    // Cue with inline primary color (red \c), font (\fnArial) and outline blue (\3c).
+    AudioCue buildCue() => _cue(r'{\c&H0000FF&\fnArial\3c&HFF0000&}A');
+
+    // OFF: fill color follows widget.textColor; \fn/\3c NOT applied (font stays null).
+    final VideoPlayerController cOff = _stubWithCue(buildCue());
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: cOff,
+          textColor: const Color(0xFF112233),
+          fontFamily: 'UnifiedFont',
+          respectAssStyle: false,
+        ),
+      ),
+    ));
+    await tester.pump();
+    // Fill layer: foreground == null (BUG-323/TODO-569 dual layer).
+    Text fillOff = tester
+        .widgetList<Text>(find.text('A'))
+        .firstWhere((Text t) => t.style?.foreground == null);
+    // Inline \c red is a legacy span style -> applies even when off.
+    expect(fillOff.style?.color, const Color(0xFFFF0000));
+    // \fn is gated by respectAssStyle -> off keeps unified font family.
+    expect(fillOff.style?.fontFamily, 'UnifiedFont');
+
+    // ON: \fn applies (Arial), \c red still applies.
+    final VideoPlayerController cOn = _stubWithCue(buildCue());
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: cOn,
+          textColor: const Color(0xFF112233),
+          fontFamily: 'UnifiedFont',
+          shadowColor: const Color(0xFF000000),
+          shadowThickness: 5,
+          respectAssStyle: true,
+        ),
+      ),
+    ));
+    await tester.pump();
+    Text fillOn = tester
+        .widgetList<Text>(find.text('A'))
+        .firstWhere((Text t) => t.style?.foreground == null);
+    expect(fillOn.style?.color, const Color(0xFFFF0000)); // inline \c red
+    expect(fillOn.style?.fontFamily, 'Arial'); // \fn respected
+
+    // Stroke layer uses ASS outline color \3c blue when respectAssStyle on.
+    final Text strokeOn = tester
+        .widgetList<Text>(find.text('A'))
+        .firstWhere((Text t) => t.style?.foreground != null);
+    expect(strokeOn.style?.foreground?.color, const Color(0xFF0000FF));
+  });
+
+  testWidgets('respectAssStyle ON: cueStyle default font/color/outline applied',
+      (WidgetTester tester) async {
+    // No inline overrides; style comes from V4+ Styles (cueStyle).
+    const SubtitleMarkup markup = SubtitleMarkup(
+      plainText: 'B',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(
+        fontName: 'CueFont',
+        primaryColorArgb: 0xFF00FF00, // green
+        outlineColorArgb: 0xFF0000FF, // blue
+        outlineWidthPx: 4,
+      ),
+    );
+    final AudioCue cue = AudioCue()
+      ..bookKey = 'b'
+      ..chapterHref = 'c'
+      ..sentenceIndex = 0
+      ..textFragmentId = '[data-cue-id="0"]'
+      ..text = 'B'
+      ..markup = markup
+      ..startMs = 0
+      ..endMs = 5000
+      ..audioFileIndex = 0;
+    final VideoPlayerController c = _stubWithCue(cue);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          textColor: const Color(0xFF112233),
+          fontFamily: 'UnifiedFont',
+          shadowColor: const Color(0xFF000000),
+          shadowThickness: 5,
+          respectAssStyle: true,
+        ),
+      ),
+    ));
+    await tester.pump();
+    final Text fill = tester
+        .widgetList<Text>(find.text('B'))
+        .firstWhere((Text t) => t.style?.foreground == null);
+    expect(fill.style?.color, const Color(0xFF00FF00)); // cueStyle primary
+    expect(fill.style?.fontFamily, 'CueFont'); // cueStyle font
+    final Text stroke = tester
+        .widgetList<Text>(find.text('B'))
+        .firstWhere((Text t) => t.style?.foreground != null);
+    expect(stroke.style?.foreground?.color, const Color(0xFF0000FF)); // outline
+  });
 }
