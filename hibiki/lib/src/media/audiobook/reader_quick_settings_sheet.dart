@@ -144,6 +144,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   int _searchGeneration = 0;
   bool _isSearching = false;
   bool _layoutReloading = false;
+  bool _exitScheduled = false;
 
   String? _subPage;
 
@@ -1631,8 +1632,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             icon: Icons.exit_to_app_outlined,
             label: t.action_exit,
             onTap: () {
+              if (_exitScheduled) {
+                return;
+              }
+              _exitScheduled = true;
+              final VoidCallback exitReader = widget.onExitReader;
               Navigator.of(context).pop();
-              widget.onExitReader();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                exitReader();
+              });
             },
           ),
         ),

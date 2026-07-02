@@ -111,6 +111,27 @@ void main() {
     await ErrorLogService.instance.clear();
   });
 
+  test('clear 清空运行期日志、历史日志和落盘文件', () async {
+    final File logFile = File('${tmp.path}/error_log.txt')
+      ..writeAsStringSync('previous-run-error');
+    await ErrorLogService.instance.init(directoryOverride: tmp);
+
+    expect(
+        ErrorLogService.instance.getFullLog(), contains('previous-run-error'));
+    ErrorLogService.instance.logFatal('Runtime.clearSmoke', 'fresh-error');
+    expect(ErrorLogService.instance.entries, isNotEmpty);
+    expect(logFile.readAsStringSync(), contains('fresh-error'));
+
+    await ErrorLogService.instance.clear();
+
+    expect(ErrorLogService.instance.entries, isEmpty);
+    expect(ErrorLogService.instance.getFullLog(),
+        isNot(contains('previous-run-error')));
+    expect(
+        ErrorLogService.instance.getFullLog(), isNot(contains('fresh-error')));
+    expect(logFile.readAsStringSync(), isEmpty);
+  });
+
   group('TODO-892：native 步进面包屑折进 crashRecovered', () {
     test('importStepBreadcrumbDir 在 init 后指向注入目录', () async {
       await ErrorLogService.instance.init(directoryOverride: tmp);

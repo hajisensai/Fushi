@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 466 条。点号进各自文件。
+> 共 467 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-481](bugs/BUG-481-audiobook-exit-overlay-layout.md) | ✅ | ✅ | Audiobook退出快捷设置后红屏 |
 | [BUG-480](bugs/BUG-480-lookup-window-white-empty.md) | ✅ | ✅ | 查词窗白色无内容 |
 | [BUG-479](bugs/BUG-479-backup-export-null-save-success.md) | ✅ | ✅ | 备份导出未选择位置也提示成功 |
 | [BUG-478](bugs/BUG-478-macos-file-picker-entitlements.md) | ✅ | ✅ | macOS 文件选择器不弹出 |

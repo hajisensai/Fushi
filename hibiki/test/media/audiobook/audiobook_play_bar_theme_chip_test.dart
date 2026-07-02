@@ -190,6 +190,58 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
+  testWidgets('reader exit is deferred and only scheduled once',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    int exitCount = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [],
+                readerProgress: const (1, 3),
+                onJumpSection: (_) async {},
+                onBookmark: () async {},
+                onExitReader: () {
+                  exitCount += 1;
+                },
+                webViewController: _FakeInAppWebViewController(),
+                appModel: _testAppModel(),
+                ref: ref,
+                isHibikiReader: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.ensureVisible(find.text(t.action_exit));
+    final Finder exitButton = find.ancestor(
+      of: find.text(t.action_exit),
+      matching: find.byType(InkWell),
+    );
+    expect(exitButton, findsOneWidget);
+    final Offset exitButtonCenter = tester.getCenter(exitButton);
+    await tester.tapAt(exitButtonCenter);
+    await tester.tapAt(exitButtonCenter);
+
+    expect(exitCount, 0);
+
+    await tester.pump();
+    expect(exitCount, 1);
+
+    await tester.pump();
+    expect(exitCount, 1);
+  });
+
   testWidgets(
       'wide in-book settings keeps the left pane fixed while the right scrolls '
       '(BUG-096)', (tester) async {
