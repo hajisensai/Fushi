@@ -37,5 +37,23 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # fluttertoast 8.2.1 excludes arm64 for iOS simulators in its podspec.
+    # iOS 26+ simulators on Apple Silicon require arm64, so keep only the
+    # obsolete i386 exclusion that CocoaPods/Flutter still tolerate.
+    if target.name == 'fluttertoast'
+      target.build_configurations.each do |config|
+        config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386'
+      end
+    end
+  end
+
+  Dir.glob(File.join(installer.sandbox.root, 'Target Support Files', '**', '*.xcconfig')).each do |xcconfig_path|
+    contents = File.read(xcconfig_path)
+    updated = contents
+      .gsub(/^EXCLUDED_ARCHS\[sdk=iphonesimulator\*\]\s*=\s*(?:\$\(inherited\)\s*)?i386,\s*arm64\s*$/, 'EXCLUDED_ARCHS[sdk=iphonesimulator*] = i386')
+      .gsub(/^EXCLUDED_ARCHS\[sdk=iphonesimulator\*\]\s*=\s*arm64\s*$/, '')
+
+    File.write(xcconfig_path, updated) if updated != contents
   end
 end
