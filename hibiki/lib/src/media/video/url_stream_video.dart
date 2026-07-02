@@ -107,6 +107,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     this.subtitleUrl,
     this.subtitleFileName,
     this.audioStreamUrl,
+    this.miningVideoUrl,
     this.preresolvedCues = const <AudioCue>[],
     this.httpHeaderFields = const <String, String>{},
     http.Client? httpClient,
@@ -118,6 +119,10 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   /// TODO-1000：分离流（YouTube video-only）的 audio-only 流 URL；null=同轨/muxed。
   /// 经 [remoteVideoStreamUrls] 回给播放页外挂（[AudioTrack.uri]）+ 制卡音频源。
   final String? audioStreamUrl;
+
+  /// TODO-1000（BUG-528）：制卡 GIF/帧专用的低分辨率视频流 URL（见
+  /// [YoutubeResolvedSource.miningVideoUrl]）。null=用 [streamUrl] 抽。
+  final String? miningVideoUrl;
 
   /// TODO-1000：预解析好的字幕 cue（YouTube timedtext 已转 [AudioCue]）；非空时播放页
   /// 直接用，跳过 [subtitleUrl] 下载+解析（YouTube XML 字幕现有解析器不识别）。
@@ -149,6 +154,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
       audioStreamUrl: audioStreamUrl,
+      miningVideoUrl: miningVideoUrl,
     );
   }
 

@@ -557,6 +557,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       client = UrlStreamVideoClient(
         streamUrl: resolved.streamUrl,
         audioStreamUrl: resolved.audioStreamUrl,
+        miningVideoUrl: resolved.miningVideoUrl,
         preresolvedCues: resolved.cues,
         httpHeaderFields: resolved.httpHeaders,
       );

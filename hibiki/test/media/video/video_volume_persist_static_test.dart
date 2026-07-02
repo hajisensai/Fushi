@@ -128,7 +128,8 @@ void main() {
 
     test('initialVolume is applied after open and before autoPlay', () {
       final String loadBody = methodBody(controller, 'Future<void> load({');
-      final int open = loadBody.indexOf('await player.open(Media(sourceUri)');
+      // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点收敛到唯一的 `await player.open(`。
+      final int open = loadBody.indexOf('await player.open(');
       final int lastVolume = loadBody.indexOf('_lastVolume = initialVolume');
       final int setVolume =
           loadBody.indexOf('await player.setVolume(initialVolume)');

@@ -784,6 +784,7 @@ class RemoteVideoStreamUrls {
     this.subtitleUrl,
     this.subtitleFileName,
     this.audioStreamUrl,
+    this.miningVideoUrl,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
   });
 
@@ -794,6 +795,11 @@ class RemoteVideoStreamUrls {
   /// TODO-1000：分离音视频流（YouTube video-only）时的 audio-only 流 URL；播放页经
   /// `AudioTrack.uri` 外挂、制卡音频从它裁。同轨/muxed 时为 null。
   final String? audioStreamUrl;
+
+  /// TODO-1000（BUG-528）：制卡 GIF/帧专用的低分辨率视频流 URL（muxed 360p 等）。播放
+  /// 用的 [streamUrl] 可达 4K，从它抽 GIF 会网络超时；制卡封面只需小图，故另取小流。
+  /// null=从 [streamUrl] 抽（本地文件 / 已是低分辨率流）。
+  final String? miningVideoUrl;
   final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
@@ -801,6 +807,7 @@ class RemoteVideoStreamUrls {
     final String? subtitleUrl = json['subtitleUrl']?.toString();
     final String? subtitleFileName = _jsonString(json['subtitleFileName']);
     final String? audioStreamUrl = _jsonString(json['audioStreamUrl']);
+    final String? miningVideoUrl = _jsonString(json['miningVideoUrl']);
     final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
         _jsonEmbeddedSubtitleTracks(json['embeddedSubtitleTracks']);
     return RemoteVideoStreamUrls(
@@ -808,6 +815,7 @@ class RemoteVideoStreamUrls {
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
       audioStreamUrl: audioStreamUrl,
+      miningVideoUrl: miningVideoUrl,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
     );
   }

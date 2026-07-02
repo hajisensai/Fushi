@@ -1042,7 +1042,19 @@ class VideoPlayerController extends ChangeNotifier
     // 0xc0000005）。与本文件 [_refreshChaptersForLoad] / [selectEmbeddedGraphicTrack] 一致，
     // **每个 await 后都用 [_isCurrentLoad] 双判据（player identity + loadToken）重校验**，
     // 过期立即 `return` 干净放弃后续下发（不留半初始化——下面的订阅/tick 尚未挂起）。
-    await player.open(Media(sourceUri), play: false);
+    // TODO-1000（BUG-528）：防盗链 header（YouTube 流的 User-Agent 等）**必须在 open 之前**
+    // 随 Media 下发——googlevideo 对 UA 不匹配的首个请求返 403，libmpv open 即失败、
+    // duration/position 永远 0（黑屏卡 loading）。media_kit 用 `on_load` hook 从 Media 缓存里
+    // 取 httpHeaders 设 `http-header-fields` 后才真正打开 URL（media_kit-1.2.6 real.dart:2145），
+    // 故 header 走 Media 构造参数才赶得上 open。open 后的 [applyHttpHeaderFieldsToPlayer] 保留，
+    // 为随后外挂的 audio-only 音轨（[setExternalAudioTrack]）设全局属性。
+    await player.open(
+      Media(
+        sourceUri,
+        httpHeaders: httpHeaderFields.isEmpty ? null : httpHeaderFields,
+      ),
+      play: false,
+    );
     if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
     _diag('open() returned; textureId='
         '${_videoController?.id.value ?? 'null(not-created)'} '

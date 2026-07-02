@@ -300,7 +300,9 @@ void main() {
     test('load() captures loadToken before the first native FFI send', () {
       final String b = loadBody();
       final int tokenAt = b.indexOf('final int loadToken = ++_loadToken;');
-      final int firstOpenAt = b.indexOf('await player.open(Media(sourceUri)');
+      // BUG-528：open 现随 Media(httpHeaders:) 多行下发（防盗链 header 须在 open 前设），
+      // 锚点收敛到唯一的 `await player.open(`。
+      final int firstOpenAt = b.indexOf('await player.open(');
       expect(tokenAt, greaterThanOrEqualTo(0),
           reason: 'load 必须在第一处原生下发前捕获 loadToken（开头 ++_loadToken）');
       expect(firstOpenAt, greaterThan(tokenAt),
@@ -315,7 +317,8 @@ void main() {
       // 每个早期下发语句后，在下一个早期下发语句之前，必须出现一次
       // `_isCurrentLoad(player, loadToken)` 重校验。按出现顺序成对断言。
       const List<String> sends = <String>[
-        'await player.open(Media(sourceUri)',
+        // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点用唯一的 `await player.open(`。
+        'await player.open(',
         'await applyNetworkCachePropertiesToPlayer(player, sourceUri);',
         'await player.setSubtitleTrack(SubtitleTrack.no());',
         // 字幕抑制（多行调用）：用其首行锚定。

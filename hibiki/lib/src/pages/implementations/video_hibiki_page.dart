@@ -455,6 +455,12 @@ abstract class VideoHibikiTestHooks {
   /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
   int? get debugDurationMs;
 
+  /// 制卡 GIF/帧的抽取源（YouTube=低分辨率 miningVideoUrl；本地=videoPath）。
+  String? get debugMiningSource;
+
+  /// 制卡音频的抽取源（YouTube=audio-only 流；本地/muxed=null→回落 miningSource）。
+  String? get debugMiningAudioSource;
+
   /// 测试直接打开章节侧栏，避免用坐标/私有控件路径模拟点击。
   void debugShowChapterPanel();
 
@@ -697,6 +703,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   @override
   int? get debugDurationMs => _controller?.durationMs;
+
+  @override
+  String? get debugMiningSource => _controller?.miningSource;
+
+  @override
+  String? get debugMiningAudioSource => _controller?.miningAudioSource;
 
   @override
   void debugShowChapterPanel() {
@@ -1496,6 +1508,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (urls.audioStreamUrl != null) {
         _controller?.setMiningAudioSourceOverride(urls.audioStreamUrl);
         await _controller?.setExternalAudioTrack(urls.audioStreamUrl!);
+      }
+      // TODO-1000（BUG-528）：制卡 GIF/帧改用低分辨率流（muxed 360p 等）。_applyLoad 已把
+      // miningSource 设成了播放流（可达 4K）——从 4K 流网络抽 GIF 会超时，这里覆盖成小流。
+      if (urls.miningVideoUrl != null) {
+        _controller?.setMiningSourceOverride(urls.miningVideoUrl);
       }
     } catch (e, stack) {
       debugPrint(

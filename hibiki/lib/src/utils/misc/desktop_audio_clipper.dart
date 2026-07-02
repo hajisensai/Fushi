@@ -5,6 +5,7 @@ import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -14,6 +15,39 @@ export 'package:hibiki/src/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
 
 typedef FfmpegFailureReporter = void Function(String summary);
+
+/// TODO-1000：ffmpeg 抽取器的 inputPath 可以是本地绝对路径，也可以是可 seek 的 http(s)
+/// 流 URL（YouTube 分离流、其它远端直链）。本地路径要用 `File.existsSync()` 早退避免喂
+/// ffmpeg 一个不存在的文件；但对 http(s) URL 该守卫会误杀——文件系统里当然没有它。此谓词
+/// 让各抽取器只对本地路径做存在性检查，URL 直接放行给 ffmpeg（ffmpeg 自己吃 http 输入）。
+bool _isRemoteFfmpegInput(String inputPath) {
+  return inputPath.startsWith('http://') || inputPath.startsWith('https://');
+}
+
+/// 仅供测试：暴露 [_isRemoteFfmpegInput] 的判定（本地路径 vs http(s) 流 URL）。
+@visibleForTesting
+bool debugIsRemoteFfmpegInput(String inputPath) =>
+    _isRemoteFfmpegInput(inputPath);
+
+/// TODO-1000（BUG-528/522）：http(s) 流输入（YouTube googlevideo 分离流/直链）的 ffmpeg
+/// 网络韧性开关，**必须放在 `-i` 之前**（这些是 http 协议的输入选项）。googlevideo 在打开
+/// 输入时会间歇性丢连（实测 `Error number -138` opening input——多帧 GIF/音频段读取更易撞上），
+/// 加 `-reconnect` 系列让 ffmpeg 自动重连（实测把间歇失败的 GIF 抽取变成稳定 277KB 产出）；
+/// `-user_agent` 与 libmpv 侧一致，规避个别流对 UA 的挑剔。本地路径返回空（不加网络开关）。
+/// 纯函数，便于单测。
+List<String> buildFfmpegRemoteInputArgs(String inputPath) {
+  if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
+  return const <String>[
+    '-user_agent',
+    'Mozilla/5.0',
+    '-reconnect',
+    '1',
+    '-reconnect_streamed',
+    '1',
+    '-reconnect_delay_max',
+    '5',
+  ];
+}
 
 /// TODO-757 制卡媒体压缩档位（音频 / GIF 封面 / 截图封面的编码参数集）。
 ///
@@ -165,6 +199,7 @@ List<String> buildFfmpegClipArgs({
   );
   return <String>[
     '-y',
+    ...buildFfmpegRemoteInputArgs(inputPath),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -452,6 +487,7 @@ List<String> buildFfmpegFrameArgs({
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   return <String>[
     '-y',
+    ...buildFfmpegRemoteInputArgs(inputPath),
     '-ss',
     seek.toStringAsFixed(3),
     '-i',
@@ -479,7 +515,9 @@ Future<String?> extractVideoFrameViaFfmpeg({
   double atSeconds = 10.0,
   FfmpegFailureReporter? onFailure,
 }) async {
-  if (!File(inputPath).existsSync()) return null;
+  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
+    return null;
+  }
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
@@ -596,6 +634,7 @@ List<String> buildFfmpegClipGifArgs({
       'split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
   return <String>[
     '-y',
+    ...buildFfmpegRemoteInputArgs(inputPath),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -628,7 +667,9 @@ Future<String?> extractClipGifViaFfmpeg({
   int width = 320,
 }) async {
   if (endMs <= startMs) return null;
-  if (!File(inputPath).existsSync()) return null;
+  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
+    return null;
+  }
 
   final File output = File(outputPath);
   try {
@@ -864,7 +905,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
     );
     return null;
   }
-  if (!File(inputPath).existsSync()) {
+  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     _reportFfmpegEarlyReturn(
       'extractAudioSegmentViaFfmpeg',
       'input audio file does not exist: $inputPath '
