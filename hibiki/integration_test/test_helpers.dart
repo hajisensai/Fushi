@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoTabBar;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +113,13 @@ List<Finder> findPrimaryNavigationTargets() {
   final Finder navigationBar = find.byType(NavigationBar);
   if (navigationBar.evaluate().isNotEmpty) {
     return _navigationIconsInside(navigationBar);
+  }
+
+  // iOS draws a CupertinoTabBar (see adaptive_navigation.dart); without this
+  // branch isHomeReady() never fires on iOS and every waitForHome() test hangs.
+  final Finder cupertinoTabBar = find.byType(CupertinoTabBar);
+  if (cupertinoTabBar.evaluate().isNotEmpty) {
+    return _navigationIconsInside(cupertinoTabBar);
   }
 
   return const <Finder>[];

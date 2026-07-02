@@ -4,6 +4,10 @@
 	<dict>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Hibiki needs the microphone to record audio for your Anki cards.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Hibiki uses the camera to capture images to add to your Anki cards.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Hibiki accesses your photo library to pick images to add to your Anki cards.</string>
 		<key>NSLocalNetworkUsageDescription</key>
 		<string>Hibiki finds other Hibiki devices on your local network to sync your library.</string>
 		<key>NSBonjourServices</key>
