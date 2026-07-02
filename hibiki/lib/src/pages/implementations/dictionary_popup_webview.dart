@@ -616,28 +616,53 @@ class DictionaryPopupWebViewState
         '${b.toRadixString(16).padLeft(2, '0')}';
   }
 
-  // NavigateToString() uses about:blank origin — relative URLs can't resolve.
-  // Read popup assets from disk once, embed inline in the HTML string.
-  static String? _winCss;
-  static String? _winDictMediaJs;
-  static String? _winSelectionJs;
-  static String? _winPopupJs;
-  static bool _winAssetsLoadFailed = false;
+  // Some platform WebViews cannot reliably bootstrap popup.html as a file://
+  // main frame. Read the popup assets from disk once and embed them inline.
+  static String? _inlineCss;
+  static String? _inlineDictMediaJs;
+  static String? _inlineSelectionJs;
+  static String? _inlinePopupJs;
+  static bool _inlineAssetsLoadFailed = false;
 
-  static void _ensureWindowsAssetsLoaded() {
-    if (_winCss != null || _winAssetsLoadFailed) return;
+  static bool get _shouldInlinePopupAssets =>
+      isWindowsPlatform || defaultTargetPlatform == TargetPlatform.iOS;
+
+  static void _ensureInlinePopupAssetsLoaded() {
+    if (_inlineCss != null || _inlineAssetsLoadFailed) return;
     try {
-      _winCss = _readPopupAsset('popup.css');
-      _winDictMediaJs = _readPopupAsset('dict-media.js');
-      _winSelectionJs = _readPopupAsset('selection.js');
-      _winPopupJs = _readPopupAsset('popup.js');
+      _inlineCss = _readPopupAsset('popup.css');
+      _inlineDictMediaJs = _readPopupAsset('dict-media.js');
+      _inlineSelectionJs = _readPopupAsset('selection.js');
+      _inlinePopupJs = _readPopupAsset('popup.js');
     } catch (e, stack) {
-      _winAssetsLoadFailed = true;
-      debugPrint('[PopupWebView] Windows asset inlining failed, '
+      _inlineAssetsLoadFailed = true;
+      debugPrint('[PopupWebView] Popup asset inlining failed, '
           'falling back to file:// URL loading: $e');
       ErrorLogService.instance
-          .log('PopupWebView._ensureWindowsAssetsLoaded', e, stack);
+          .log('PopupWebView._ensureInlinePopupAssetsLoaded', e, stack);
     }
+  }
+
+  static String _buildInlinePopupHtml({
+    required String themeAttr,
+    required String bgHex,
+  }) {
+    return '<!DOCTYPE html>'
+        '<html data-theme="$themeAttr" style="--background-color:$bgHex">'
+        '<head>'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">'
+        '<style>${_inlineCss!.replaceAll('</style', r'<\/style')}</style>'
+        '<script>$_inlineDictMediaJs</script>'
+        '<script>$_inlineSelectionJs</script>'
+        '<script>$_inlinePopupJs</script>'
+        '</head>'
+        '<body>'
+        '<div id="entries-container"></div>'
+        '<div class="overlay">'
+        '<div class="overlay-close" onclick="closeOverlay()">×</div>'
+        '<div class="overlay-content"></div>'
+        '</div>'
+        '</body></html>';
   }
 
   static String _readPopupAsset(String name) {
@@ -674,27 +699,16 @@ class DictionaryPopupWebViewState
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';
 
-    InAppWebViewInitialData? winData;
-    if (isWindowsPlatform) {
-      _ensureWindowsAssetsLoaded();
-      if (_winCss != null) {
-        winData = InAppWebViewInitialData(
-          data: '<!DOCTYPE html>'
-              '<html data-theme="$themeAttr" style="--background-color:$bgHex">'
-              '<head>'
-              '<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">'
-              '<style>${_winCss!.replaceAll('</style', r'<\/style')}</style>'
-              '<script>$_winDictMediaJs</script>'
-              '<script>$_winSelectionJs</script>'
-              '<script>$_winPopupJs</script>'
-              '</head>'
-              '<body>'
-              '<div id="entries-container"></div>'
-              '<div class="overlay">'
-              '<div class="overlay-close" onclick="closeOverlay()">×</div>'
-              '<div class="overlay-content"></div>'
-              '</div>'
-              '</body></html>',
+    InAppWebViewInitialData? popupInitialData;
+    final bool shouldInlinePopupAssets = _shouldInlinePopupAssets;
+    if (shouldInlinePopupAssets) {
+      _ensureInlinePopupAssetsLoaded();
+      if (_inlineCss != null &&
+          _inlineDictMediaJs != null &&
+          _inlineSelectionJs != null &&
+          _inlinePopupJs != null) {
+        popupInitialData = InAppWebViewInitialData(
+          data: _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex),
           mimeType: 'text/html',
           encoding: 'utf-8',
         );
@@ -702,8 +716,8 @@ class DictionaryPopupWebViewState
     }
 
     final Widget webView = InAppWebView(
-      initialData: winData,
-      initialUrlRequest: winData != null
+      initialData: popupInitialData,
+      initialUrlRequest: popupInitialData != null
           ? null
           : URLRequest(
               url: WebUri(webViewAssetUrl('assets/popup/popup.html')),

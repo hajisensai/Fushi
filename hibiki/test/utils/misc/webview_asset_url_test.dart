@@ -43,6 +43,24 @@ void main() {
       );
     });
 
+    test('uses Runner.app Frameworks/App.framework on iOS bundles', () {
+      const String iosExecutable =
+          '/tmp/Containers/Bundle/Application/UUID/Runner.app/Runner';
+
+      final String url = appleBundleWebViewAssetUrl(
+        assetPath: asset,
+        resolvedExecutable: iosExecutable,
+        existsSync: (String path) =>
+            path ==
+            '/tmp/Containers/Bundle/Application/UUID/Runner.app/Frameworks/App.framework/flutter_assets/$asset',
+      );
+
+      expect(
+        Uri.parse(url).toFilePath(),
+        '/tmp/Containers/Bundle/Application/UUID/Runner.app/Frameworks/App.framework/flutter_assets/$asset',
+      );
+    });
+
     test('falls back to the macOS Resources location when neither exists', () {
       final String url = appleBundleWebViewAssetUrl(
         assetPath: asset,

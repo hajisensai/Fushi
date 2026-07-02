@@ -6,6 +6,29 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
+  group('dictionary popup asset bootstrap', () {
+    test('iOS uses inline popup assets instead of a file URL main frame', () {
+      final source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('defaultTargetPlatform == TargetPlatform.iOS'),
+        reason: 'iOS WKWebView can fail the popup.html file:// main-frame '
+            'load in Simulator; it must share the inline bootstrap path.',
+      );
+      expect(source, contains('final bool shouldInlinePopupAssets'));
+      expect(source, contains('initialData: popupInitialData'));
+      expect(
+        source,
+        contains('initialUrlRequest: popupInitialData != null'),
+        reason: 'When inline data is available, the WebView must not also '
+            'navigate to assets/popup/popup.html as its main frame.',
+      );
+    });
+  });
+
   group('dictionary popup scroll lifecycle', () {
     test('resets viewport scroll before rendering a new lookup', () {
       final source = File(

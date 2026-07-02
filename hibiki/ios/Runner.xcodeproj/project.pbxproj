@@ -306,7 +306,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\n\n: \"${HOSHIDICTS_SOURCE_DIR:?HOSHIDICTS_SOURCE_DIR is not set}\"\n: \"${HOSHIDICTS_BUILD_DIR:?HOSHIDICTS_BUILD_DIR is not set}\"\n: \"${HOSHIDICTS_MERGED_ARCHIVE:?HOSHIDICTS_MERGED_ARCHIVE is not set}\"\n\n# Homebrew cmake is not on Xcode default PATH.\nexport PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\n\ncmake_archs=\"${ARCHS:-arm64}\"\ncmake_archs=\"${cmake_archs// /;}\"\n\n# Drop a stale CMake cache from a different generator so an aborted or older\n# configure cannot poison compiler detection.\nif [[ -f \"$HOSHIDICTS_BUILD_DIR/CMakeCache.txt\" ]] && ! grep -q \"CMAKE_GENERATOR:INTERNAL=Unix Makefiles\" \"$HOSHIDICTS_BUILD_DIR/CMakeCache.txt\"; then\n  rm -rf \"$HOSHIDICTS_BUILD_DIR\"\nfi\ncmake -S \"$HOSHIDICTS_SOURCE_DIR\" -B \"$HOSHIDICTS_BUILD_DIR\" \\\n  -DCMAKE_SYSTEM_NAME=iOS \\\n  -DCMAKE_OSX_SYSROOT=\"$PLATFORM_NAME\" \\\n  -DCMAKE_OSX_ARCHITECTURES=\"$cmake_archs\" \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${IPHONEOS_DEPLOYMENT_TARGET:-13.0}\"\ncmake --build \"$HOSHIDICTS_BUILD_DIR\" --target hoshidicts_ffi --config \"$CONFIGURATION\"\n\nif [[ ! -f \"$HOSHIDICTS_MERGED_ARCHIVE\" ]]; then\n  echo \"error: $HOSHIDICTS_MERGED_ARCHIVE was not produced\" >&2\n  exit 1\nfi\n";
+			shellScript = "/bin/bash \"$PROJECT_DIR/build_hoshidicts_ffi.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
