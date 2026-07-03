@@ -110,4 +110,49 @@ void main() {
     expect(src.contains('onEmptyGamepadTap:'), isTrue,
         reason: 'figure must allow assigning unbound gamepad buttons');
   });
+
+  test('TODO-1113: brand selector is wired to the persisted preference', () {
+    // The selectable brand is loaded from and written to the reader source
+    // preference (display-only), so it survives restart and never touches the
+    // binding registry.
+    expect(
+      src.contains('ReaderHibikiSource.instance.gamepadGlyphBrand'),
+      isTrue,
+      reason: 'brand must be seeded from the persisted display preference',
+    );
+    expect(
+      src.contains('setGamepadGlyphBrand('),
+      isTrue,
+      reason: 'changing the brand must persist through the source setter',
+    );
+    expect(
+      src.contains("Key('gamepad_brand_select')"),
+      isTrue,
+      reason: 'the brand SegmentedButton must be test-addressable',
+    );
+  });
+
+  test('TODO-1113: all three brands are offered as segments', () {
+    for (final String brand in <String>[
+      'GamepadBrand.xbox',
+      'GamepadBrand.playstation',
+      'GamepadBrand.nintendoSwitch',
+    ]) {
+      expect(src.contains(brand), isTrue,
+          reason: 'brand selector must offer segment for \$brand');
+    }
+  });
+
+  test('TODO-1113: the chosen brand is threaded into the figure + list chips',
+      () {
+    // The figure re-skins with the selected brand...
+    expect(src.contains('gamepadBrand: _gamepadBrand'), isTrue,
+        reason: 'KeyboardLayoutView must render with the selected brand');
+    // ...and the list-view gamepad chip uses the brand glyph, not the raw label.
+    expect(
+      src.contains('GamepadGlyphs.glyphFor(b.button, brand).symbol'),
+      isTrue,
+      reason: 'list-view gamepad chips must render brand glyphs',
+    );
+  });
 }

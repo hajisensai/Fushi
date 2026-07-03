@@ -17,6 +17,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/utils.dart';
 
 final hibikiBooksProvider =
@@ -547,6 +548,24 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// AppModel-side bridge already gates on [AppModel.gamepadAutoImmersive] so
   /// this fires only when the user opted in.
   static void Function(bool present)? onGamepadPresenceChanged;
+
+  /// 手柄按钮图显示品牌（TODO-1113 / TODO-612）。纯**显示偏好**：只决定快捷键设置页
+  /// 里手柄面键渲染成 Xbox A/B/X/Y、PlayStation ✕○□△ 还是 Nintendo Switch B/A/Y/X，
+  /// 与 binding 序列化完全解耦（[GamepadButton.serialize] 恒定）。以 token 字符串持久化，
+  /// 未知/缺省回退 Xbox。
+  GamepadBrand get gamepadGlyphBrand => GamepadBrand.fromToken(
+        getPreference<String?>(
+          key: 'gamepad_glyph_brand',
+          defaultValue: null,
+        ),
+      );
+
+  Future<void> setGamepadGlyphBrand(GamepadBrand brand) async {
+    await setPreference<String>(
+      key: 'gamepad_glyph_brand',
+      value: brand.token,
+    );
+  }
 
   bool get volumePageTurningEnabled => getPreference<bool>(
       key: 'volume_page_turning_enabled', defaultValue: true);

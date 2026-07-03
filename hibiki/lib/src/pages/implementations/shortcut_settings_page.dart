@@ -14,6 +14,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
 
 /// Localised label for a [ShortcutAction].
@@ -241,6 +242,24 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   // there). Icon-only segments avoid new i18n in this batch.
   bool _visualMode = false;
 
+  // TODO-1113: gamepad glyph brand (display-only). Loaded from the reader source
+  // preference on init; persisted on change. Only re-skins the visual keyboard
+  // figure's gamepad panel + list-view gamepad chips — never touches binding
+  // serialization (GamepadButton.serialize stays A/B/X/Y regardless of brand).
+  GamepadBrand _gamepadBrand = GamepadBrand.xbox;
+
+  @override
+  void initState() {
+    super.initState();
+    _gamepadBrand = ReaderHibikiSource.instance.gamepadGlyphBrand;
+  }
+
+  Future<void> _onGamepadBrandChanged(GamepadBrand brand) async {
+    if (brand == _gamepadBrand) return;
+    setState(() => _gamepadBrand = brand);
+    await ReaderHibikiSource.instance.setGamepadGlyphBrand(brand);
+  }
+
   Future<void> _save() async {
     await saveShortcutRegistry(
       _registry,
@@ -466,9 +485,64 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
             ),
           ),
         ),
+        if (_visualMode) _buildGamepadBrandSelector(),
         for (final ShortcutScope scope in ShortcutScope.values)
           _buildScopeSection(scope),
       ],
+    );
+  }
+
+  /// TODO-1113: gamepad button-style (brand) selector. Display-only — switches
+  /// how face buttons render in the visual figure (Xbox A/B/X/Y, PlayStation
+  /// ✕○□△, Nintendo Switch B/A/Y/X). Only visible in the visual figure mode.
+  /// Wrapped in HibikiAdjustableSegmented so it is a single directional focus
+  /// stop reachable by pure-gamepad users (same pattern as the view toggle).
+  Widget _buildGamepadBrandSelector() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              t.shortcut_gamepad_brand_label,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: HibikiAdjustableSegmented<GamepadBrand>(
+              focusIdPrefix: 'gamepad-brand-select',
+              values: GamepadBrand.values,
+              selected: _gamepadBrand,
+              onChanged: _onGamepadBrandChanged,
+              child: SegmentedButton<GamepadBrand>(
+                key: const Key('gamepad_brand_select'),
+                showSelectedIcon: false,
+                segments: <ButtonSegment<GamepadBrand>>[
+                  ButtonSegment<GamepadBrand>(
+                    value: GamepadBrand.xbox,
+                    label: Text(t.shortcut_gamepad_brand_xbox),
+                  ),
+                  ButtonSegment<GamepadBrand>(
+                    value: GamepadBrand.playstation,
+                    label: Text(t.shortcut_gamepad_brand_playstation),
+                  ),
+                  ButtonSegment<GamepadBrand>(
+                    value: GamepadBrand.nintendoSwitch,
+                    label: Text(t.shortcut_gamepad_brand_switch),
+                  ),
+                ],
+                selected: <GamepadBrand>{_gamepadBrand},
+                onSelectionChanged: (Set<GamepadBrand> selection) =>
+                    _onGamepadBrandChanged(selection.first),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -514,6 +588,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
             child: KeyboardLayoutView(
               registry: _registry,
               scope: scope,
+              gamepadBrand: _gamepadBrand,
               onKeyTap: _onKeyboardKeyTap,
               onEmptyKeyTap: (LogicalKeyboardKey key) =>
                   _onEmptyKeyboardKeyTap(scope, key),
@@ -528,6 +603,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
             _ActionTile(
               action: action,
               bindings: _registry.bindingsFor(action),
+              brand: _gamepadBrand,
               onEdit: () => _editBinding(action),
             ),
       ],
@@ -575,11 +651,16 @@ class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.action,
     required this.bindings,
+    required this.brand,
     required this.onEdit,
   });
 
   final ShortcutAction action;
   final ShortcutBindingSet bindings;
+
+  /// Display brand for gamepad chips (TODO-1113); display-only, never affects
+  /// binding serialization.
+  final GamepadBrand brand;
   final VoidCallback onEdit;
 
   @override
@@ -596,7 +677,7 @@ class _ActionTile extends StatelessWidget {
         ),
       for (final GamepadBinding b in bindings.gamepadBindings)
         HibikiTagChip(
-          label: b.button.label,
+          label: GamepadGlyphs.glyphFor(b.button, brand).symbol,
           tone: HibikiTagChipTone.surface,
         ),
       for (final MouseBinding b in bindings.mouseBindings)

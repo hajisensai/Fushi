@@ -104,6 +104,46 @@ void main() {
     );
   });
 
+  testWidgets(
+      'Nintendo Switch brand renders ABXY swapped (bottom .a -> B, right .b -> A)',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpView(tester, registry, ShortcutScope.reader,
+        brand: GamepadBrand.nintendoSwitch);
+
+    // Logical .a (bottom) shows Switch letter 'B'.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('gamepad_btn_A')),
+        matching: find.text('B'),
+      ),
+      findsOneWidget,
+    );
+    // Logical .b (right) shows Switch letter 'A'.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('gamepad_btn_B')),
+        matching: find.text('A'),
+      ),
+      findsOneWidget,
+    );
+    // Logical .x (left) shows 'Y', .y (top) shows 'X'.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('gamepad_btn_X')),
+        matching: find.text('Y'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('gamepad_btn_Y')),
+        matching: find.text('X'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a bound gamepad button is tappable and routes onGamepadTap',
       (WidgetTester tester) async {
     final HibikiShortcutRegistry registry = buildRegistry();
