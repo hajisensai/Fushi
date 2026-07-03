@@ -430,23 +430,39 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           padding: const EdgeInsets.only(bottom: 8),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: SegmentedButton<bool>(
-              key: const Key('shortcut_view_toggle'),
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<bool>>[
-                ButtonSegment<bool>(
-                  value: false,
-                  icon: Icon(Icons.list_outlined),
-                ),
-                ButtonSegment<bool>(
-                  value: true,
-                  icon: Icon(Icons.keyboard_outlined),
-                ),
-              ],
-              selected: <bool>{_visualMode},
-              onSelectionChanged: (Set<bool> selection) {
-                setState(() => _visualMode = selection.first);
+            // Wrap the list/keyboard segmented toggle in a
+            // HibikiAdjustableSegmented so it becomes a single gamepad/keyboard
+            // focus stop with D-pad / arrow Left-Right flipping between the two
+            // views (TODO-942 residual: a bare SegmentedButton is a cluster of
+            // native buttons the directional HibikiFocusController skips
+            // entirely, leaving pure-gamepad users unable to reach the
+            // keyboard-skin view at all). The inner SegmentedButton keeps its
+            // Key so it stays mouse/touch-tappable and test-addressable.
+            child: HibikiAdjustableSegmented<bool>(
+              focusIdPrefix: 'shortcut-view-toggle',
+              values: const <bool>[false, true],
+              selected: _visualMode,
+              onChanged: (bool value) {
+                setState(() => _visualMode = value);
               },
+              child: SegmentedButton<bool>(
+                key: const Key('shortcut_view_toggle'),
+                showSelectedIcon: false,
+                segments: const <ButtonSegment<bool>>[
+                  ButtonSegment<bool>(
+                    value: false,
+                    icon: Icon(Icons.list_outlined),
+                  ),
+                  ButtonSegment<bool>(
+                    value: true,
+                    icon: Icon(Icons.keyboard_outlined),
+                  ),
+                ],
+                selected: <bool>{_visualMode},
+                onSelectionChanged: (Set<bool> selection) {
+                  setState(() => _visualMode = selection.first);
+                },
+              ),
             ),
           ),
         ),
