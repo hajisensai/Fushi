@@ -41,7 +41,8 @@ class YoutubeClipMiner {
     YoutubeResolver? resolve,
     DateTime Function()? now,
     this.ttl = const Duration(minutes: 3),
-  })  : _resolve = resolve ?? ((String url) => resolveYoutubeSource(url)),
+  })  : _resolve = resolve ??
+            ((String url) => resolveYoutubeSource(url, withCaptions: false)),
         _now = now ?? DateTime.now;
 
   final YoutubeResolver _resolve;

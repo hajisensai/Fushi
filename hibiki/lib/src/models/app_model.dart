@@ -4309,6 +4309,8 @@ class _AppModelRemoteLookupService
         compression: compression,
         tempDir: Directory.systemTemp.path,
         repo: repo,
+        // GIF/音频抽取失败摘要写日志，便于排查「没 gif / 只有图片」。
+        onFailure: (String s) => debugPrint('[yt-mine] extract: $s'),
       );
       if (ytRes.aborted) return MineResult.error.name;
       return (ytRes.outcome! as MineOutcome).result.name;

@@ -1,0 +1,41 @@
+// TODO-1000 诊断脚本（不入库长期用）：测 youtube_explode androidVr 解析在本机是 direct 挂死
+// 还是要走代理。分别用直连 client 和代理 client 跑 videos.get + getManifest，打印各步耗时/错误。
+// 运行：dart run tool/yt_probe.dart
+import 'dart:io';
+
+import 'package:http/io_client.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
+
+Future<void> probe(String label, {String? proxy}) async {
+  final Stopwatch sw = Stopwatch()..start();
+  late yt.YoutubeExplode client;
+  if (proxy != null) {
+    final Uri u = Uri.parse(proxy);
+    final HttpClient io = HttpClient();
+    io.findProxy = (_) => 'PROXY ${u.host}:${u.port}';
+    client = yt.YoutubeExplode(yt.YoutubeHttpClient(IOClient(io)));
+  } else {
+    client = yt.YoutubeExplode();
+  }
+  try {
+    final yt.Video v = await client.videos
+        .get('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+        .timeout(const Duration(seconds: 30));
+    print('$label: videos.get OK ${sw.elapsedMilliseconds}ms "${v.title}"');
+    final yt.StreamManifest m = await client.videos.streamsClient
+        .getManifest(v.id,
+            ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr])
+        .timeout(const Duration(seconds: 30));
+    print('$label: manifest OK ${sw.elapsedMilliseconds}ms '
+        'muxed=${m.muxed.length} videoOnly=${m.videoOnly.length} audioOnly=${m.audioOnly.length}');
+  } catch (e) {
+    print('$label: FAIL ${sw.elapsedMilliseconds}ms  $e');
+  } finally {
+    client.close();
+  }
+}
+
+Future<void> main() async {
+  await probe('DIRECT');
+  await probe('PROXY', proxy: 'http://127.0.0.1:34151');
+}

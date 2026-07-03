@@ -34,6 +34,7 @@ class YoutubeResolvedSource {
     required this.streamUrl,
     required this.audioStreamUrl,
     required this.miningVideoUrl,
+    required this.miningVideoHasAudio,
     required this.title,
     required this.httpHeaders,
     required this.cues,
@@ -45,8 +46,15 @@ class YoutubeResolvedSource {
   /// TODO-1000（BUG-528）：**制卡 GIF/帧专用**的低分辨率视频流 URL（muxed 360p 或最低
   /// 码率 video-only）。播放用的 [streamUrl] 可达 4K，让 ffmpeg 从它按时间戳裁 GIF 会
   /// 因下载/解码 4K 帧而超时（实测 120s timeout）；制卡封面只需 ~320px，故另取一条小流。
-  /// 音频段仍从 [audioStreamUrl]（audio-only）裁。null → 回落 [streamUrl]。
+  /// 音频段抽取源见 [miningVideoHasAudio]。null → 回落 [streamUrl]。
   final String? miningVideoUrl;
+
+  /// TODO-1000（BUG-528）：[miningVideoUrl] 是否是 **muxed 流（自带音轨）**。muxed 时
+  /// 制卡句子音频直接从 [miningVideoUrl] 抽（实测 2s 出 AAC）；YouTube 的 **audio-only
+  /// DASH 流** ffmpeg 的 `-ss`(置于 `-i` 前) HTTP seek 会 stall→撞 120s 超时→无句子音频
+  /// （实测：audio-only itag258 首个请求即超时，muxed itag18 抽音频 2s 成功）。故 muxed 时
+  /// 播放页不把制卡音频指向 [audioStreamUrl]，让引擎回落 muxed 视频源抽音频。
+  final bool miningVideoHasAudio;
 
   final String title;
   final Map<String, String> httpHeaders;
@@ -114,47 +122,73 @@ List<AudioCue> parseYoutubeTimedTextToCues({
 Future<YoutubeResolvedSource> resolveYoutubeSource(
   String url, {
   String preferSubtitleLang = 'ja',
+  // 慢网下每个 youtube_explode 请求可达 7~9s：videos.get + getManifest 就 ~14s，再加字幕解析
+  // （另一次 WatchPage.get + player response + timedtext）总和常 >25s → 旧 25s 超时会误杀。放宽到 40s。
+  Duration timeout = const Duration(seconds: 40),
+  // 制卡只需流 URL，不需字幕 cue（扩展已给时间窗）→ 传 false 跳过昂贵的第二次字幕解析，
+  // 解析从 ~33s 降到 ~14s、稳进超时。仅应用内播放器（要显示字幕）用默认 true。
+  bool withCaptions = true,
 }) async {
   final yt.YoutubeExplode client = yt.YoutubeExplode();
   try {
-    final yt.Video video = await client.videos.get(url);
-    final yt.StreamManifest manifest =
-        await client.videos.streamsClient.getManifest(
-      video.id,
-      ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr],
-    );
-    // 优先「video-only（≤1080p 里最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
-    // 否则回落 muxed（YouTube 把 muxed 限 ≤360p，故仅作最后兜底）。
-    String streamUrl;
-    String? audioStreamUrl;
-    if (manifest.videoOnly.isNotEmpty && manifest.audioOnly.isNotEmpty) {
-      streamUrl = _pickPlaybackVideoUrl(manifest);
-      audioStreamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-    } else {
-      streamUrl = manifest.muxed.withHighestBitrate().url.toString();
-      audioStreamUrl = null;
-    }
-    // 制卡 GIF/帧的低分辨率源：muxed（360p，含音视频、抽 GIF 快）优先，否则最低码率
-    // video-only（都远小于 4K 播放流，避免网络抽取超时）。见 [YoutubeResolvedSource.miningVideoUrl]。
-    final String? miningVideoUrl = _pickMiningVideoUrl(manifest);
-    final String bookKey = 'yt:${video.id.value}';
-    final List<AudioCue> cues = await _resolveYoutubeCaptions(
-      video.id,
-      bookKey: bookKey,
-      preferSubtitleLang: preferSubtitleLang,
-    );
-
-    return YoutubeResolvedSource(
-      streamUrl: streamUrl,
-      audioStreamUrl: audioStreamUrl,
-      miningVideoUrl: miningVideoUrl,
-      title: video.title,
-      httpHeaders: const <String, String>{'User-Agent': 'Mozilla/5.0'},
-      cues: cues,
-    );
+    // 加超时：YouTube 的 innertube/googlevideo 偶发 tarpit（高频请求被限流时连接不完成），
+    // youtube_explode 内部无超时 → 会永久挂住，UI 表现为「点了没反应也没报错」。超时后
+    // finally 关 client 取消挂起请求、抛 TimeoutException，让调用方给出明确「解析失败」反馈。
+    return await _resolveYoutubeSourceInner(
+            client, url, preferSubtitleLang, withCaptions)
+        .timeout(timeout);
   } finally {
     client.close();
   }
+}
+
+Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
+  yt.YoutubeExplode client,
+  String url,
+  String preferSubtitleLang,
+  bool withCaptions,
+) async {
+  final yt.Video video = await client.videos.get(url);
+  final yt.StreamManifest manifest =
+      await client.videos.streamsClient.getManifest(
+    video.id,
+    ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr],
+  );
+  // 优先「video-only（≤1080p 里最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
+  // 否则回落 muxed（YouTube 把 muxed 限 ≤360p，故仅作最后兜底）。
+  String streamUrl;
+  String? audioStreamUrl;
+  if (manifest.videoOnly.isNotEmpty && manifest.audioOnly.isNotEmpty) {
+    streamUrl = _pickPlaybackVideoUrl(manifest);
+    audioStreamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+  } else {
+    streamUrl = manifest.muxed.withHighestBitrate().url.toString();
+    audioStreamUrl = null;
+  }
+  // 制卡 GIF/帧的低分辨率源：muxed（360p，含音视频、抽 GIF 快）优先，否则最低码率
+  // video-only（都远小于 4K 播放流，避免网络抽取超时）。见 [YoutubeResolvedSource.miningVideoUrl]。
+  final String? miningVideoUrl = _pickMiningVideoUrl(manifest);
+  // muxed 挖矿流自带音轨 → 制卡音频从它抽（audio-only DASH 流 ffmpeg seek 会超时）。
+  final bool miningVideoHasAudio = manifest.muxed.isNotEmpty;
+  final String bookKey = 'yt:${video.id.value}';
+  // 制卡路径 withCaptions=false → 跳过字幕解析（省 ~19s，避免超时）；播放器路径仍取字幕。
+  final List<AudioCue> cues = withCaptions
+      ? await _resolveYoutubeCaptions(
+          video.id,
+          bookKey: bookKey,
+          preferSubtitleLang: preferSubtitleLang,
+        )
+      : const <AudioCue>[];
+
+  return YoutubeResolvedSource(
+    streamUrl: streamUrl,
+    audioStreamUrl: audioStreamUrl,
+    miningVideoUrl: miningVideoUrl,
+    miningVideoHasAudio: miningVideoHasAudio,
+    title: video.title,
+    httpHeaders: const <String, String>{'User-Agent': 'Mozilla/5.0'},
+    cues: cues,
+  );
 }
 
 /// 选播放用 video-only 流：优先「≤1080p 里最高清」。4K progressive 流（video-only 无
