@@ -85,32 +85,44 @@ async function stopTabCapture() {
   setRecordingBadge(false);
 }
 
-// Netflix 跨剧集批量：点扩展图标(手势)→ 依次自动导航到每个含待生成项的剧集，逐句回放录制出卡，
-// 全部完成回原页。activeTab 在 netflix.com 同源导航间持续有效，故一次手势覆盖所有剧集。状态存
-// chrome.storage（跨导航/SW 重启存活），由每次注入的 content script 驱动（见 content.js 续跑）。
-async function hibikiStartNetflixBatch(tab) {
-  const got = await chrome.storage.local.get(['hibikiQueue']);
-  const q = Array.isArray(got.hibikiQueue) ? got.hibikiQueue : [];
-  const episodes = [];
-  for (const it of q) {
-    if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) {
-      episodes.push(it.netflixId);
-    }
-  }
-  if (!episodes.length) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '队列里没有 Netflix 待生成项' }); } catch (_) {}
+// 点扩展图标（唯一手势入口）：
+// - 正在生成中/残留卡住状态 → 取消并清理（逃生口）。
+// - Netflix 剧集播放页且本集有待生成项 → **就地**逐句回放录制（不 reload！Netflix DRM 会拒绝
+//   为一个正在被录屏的**新加载**播放器解密 → M7375；录一个**已经在放**的播放器则没问题）。
+// - YouTube → 让页面跑 YouTube 队列生成（等同点浮动按钮）。
+async function hibikiIconClick(tab) {
+  const got = await chrome.storage.local.get(['hibikiQueue', 'hibikiNfBatch']);
+  if (got.hibikiNfBatch && got.hibikiNfBatch.active) {
+    await stopTabCapture();
+    try { await chrome.storage.local.remove(['hibikiNfBatch']); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '已取消生成' }); } catch (_) {}
     return;
   }
-  await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: episodes, idx: 0, originalUrl: tab.url } });
-  await startTabCapture(tab.id); // 手势启动录屏（Chrome 硬性要求）
-  await chrome.tabs.update(tab.id, { url: 'https://www.netflix.com/watch/' + episodes[0] });
+  const url = tab.url || '';
+  if (url.indexOf('youtube.com') >= 0) {
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiRunYoutube' }); } catch (_) {}
+    return;
+  }
+  if (url.indexOf('netflix.com') < 0) return;
+  const q = Array.isArray(got.hibikiQueue) ? got.hibikiQueue : [];
+  const curId = (url.match(/\/watch\/(\d+)/) || [])[1];
+  if (!curId) {
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '请先打开要制卡的那集播放页，再点图标生成' }); } catch (_) {}
+    return;
+  }
+  const here = q.filter((it) => it && it.site === 'netflix' && it.netflixId === curId).length;
+  if (!here) {
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '本片没有待生成项' }); } catch (_) {}
+    return;
+  }
+  // 就地录：当前播放器已在放（DRM 已授权），先起录屏（手势即时消费），设状态让 content 就地跑。
+  await startTabCapture(tab.id);
+  await chrome.storage.local.set({ hibikiNfBatch: { active: true, netflixId: curId } });
 }
 
 chrome.action.onClicked.addListener((tab) => {
   if (!tab || tab.id == null) return;
-  (async () => {
-    if (tab.url && tab.url.indexOf('netflix.com') >= 0) await hibikiStartNetflixBatch(tab);
-  })().catch(() => {});
+  hibikiIconClick(tab).catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -160,15 +172,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const rec = await isOffscreenRecording();
         if (!rec && _sender.tab && _sender.tab.id != null) await startTabCapture(_sender.tab.id);
         sendResponse({ ok: true });
-      } else if (msg.type === 'nfNavigate') {
-        if (_sender.tab && _sender.tab.id != null) await chrome.tabs.update(_sender.tab.id, { url: msg.url });
-        sendResponse({ ok: true });
       } else if (msg.type === 'nfFinish') {
         await stopTabCapture();
         try { await chrome.storage.local.remove(['hibikiNfBatch']); } catch (_) {}
-        if (_sender.tab && _sender.tab.id != null && msg.originalUrl) {
-          await chrome.tabs.update(_sender.tab.id, { url: msg.originalUrl });
-        }
         sendResponse({ ok: true });
       } else {
         sendResponse({ ok: false, error: 'unknown' });
