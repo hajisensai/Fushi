@@ -1,0 +1,6 @@
+## BUG-542 · apple debug release prune 用 mapfile 在 macOS bash3.2 崩(command not found)
+- **报告**：2026-07-04（用户：）
+- **真实性**：✅ 真 bug。CI 证据 run `28679437961` apple job step16「Prune stale assets from rolling debug release」稳定失败：`mapfile: command not found` → exit 127。根因是 `.github/workflows/release-desktop.yml` 的 prune 步骤用 bash 4+ builtin `mapfile`（修复前 apple job `.github/workflows/release-desktop.yml:768` / `:791`，windows job `:418` / `:441`）。GitHub Actions 的 macOS runner 自带 `/bin/bash` 仍是 **bash 3.2**（2007 年，Apple 因 GPLv3 从未升级），没有 `mapfile`/`readarray` builtin；windows runner 的 git-bash 是 bash>=4 故其 job 侥幸过关。
+- **[x] ① 已修复** — 把 windows + apple 两个 job 共 4 处 `mapfile -t VAR < <(cmd)` 换成 bash 3.2 可移植的 `VAR=(); while IFS= read -r line; do VAR+=("$line"); done < <(cmd)`（process substitution 在 bash 3.2 支持；while-read 语义与 `mapfile -t` 等价，逐行去尾换行、空输入得空数组，`${#VAR[@]}` 判定不变）。两个 job 都换＝消除 windows/apple 特例分支。提交：本次引入本 BUG 文件的同一 commit（BUG-542 修复）。
+- **[x] ② 已加自动化测试** — `hibiki/test/tools/release_workflow_bash_portability_guard_test.dart` 源码扫描守卫：断言 `.github/workflows/release-desktop.yml` 不含 `mapfile`/`readarray`（单词边界正则），失败信息说明 macOS runner 是 bash 3.2 无这两个 builtin、必须用 while-read。
+- **备注**：未动 `release.yml`（runs-on ubuntu-latest，bash>=4，mapfile 能跑，且属正式发布路径，越界有风险）。其余 prune 逻辑（`seq_of`/`KEEP_SEQS=3`/发布步骤）一律未动。

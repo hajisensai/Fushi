@@ -415,7 +415,8 @@ jobs:
             echo "Rolling release $PUBLISH_TAG does not exist yet; nothing to prune."
             exit 0
           fi
-          mapfile -t ASSET_NAMES < <(
+          ASSET_NAMES=()
+          while IFS= read -r line; do ASSET_NAMES+=("$line"); done < <(
             gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets \
               --jq '.assets[].name' || true
           )
@@ -438,7 +439,8 @@ jobs:
               [ -n "$s" ] && echo "$s"
             done
           } | sort -rn -u > /tmp/all_seqs.txt
-          mapfile -t KEEP_SEQ_LIST < <(head -n "$KEEP_SEQS" /tmp/all_seqs.txt)
+          KEEP_SEQ_LIST=()
+          while IFS= read -r line; do KEEP_SEQ_LIST+=("$line"); done < <(head -n "$KEEP_SEQS" /tmp/all_seqs.txt)
           echo "Keeping debug seqs: ${KEEP_SEQ_LIST[*]:-<none>}"
           in_keep() {
             local target="$1"
@@ -765,7 +767,8 @@ jobs:
             echo "Rolling release $PUBLISH_TAG does not exist yet; nothing to prune."
             exit 0
           fi
-          mapfile -t ASSET_NAMES < <(
+          ASSET_NAMES=()
+          while IFS= read -r line; do ASSET_NAMES+=("$line"); done < <(
             gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets \
               --jq '.assets[].name' || true
           )
@@ -788,7 +791,8 @@ jobs:
               [ -n "$s" ] && echo "$s"
             done
           } | sort -rn -u > /tmp/all_seqs.txt
-          mapfile -t KEEP_SEQ_LIST < <(head -n "$KEEP_SEQS" /tmp/all_seqs.txt)
+          KEEP_SEQ_LIST=()
+          while IFS= read -r line; do KEEP_SEQ_LIST+=("$line"); done < <(head -n "$KEEP_SEQS" /tmp/all_seqs.txt)
           echo "Keeping debug seqs: ${KEEP_SEQ_LIST[*]:-<none>}"
           in_keep() {
             local target="$1"
