@@ -7,23 +7,21 @@ window.flutter_inappwebview = {
         if (window.__hibikiOnRendered) window.__hibikiOnRendered(args[0]);
         return Promise.resolve(null);
       case 'mineEntry':
-        // TODO-1000：流媒体（Netflix）挖词时附当前字幕整句 + video 时间戳 + videoId，
-        // 供 Hibiki 截图/GIF/音频制卡。subtitle-adapters.js 同 content-script world 提供函数；
-        // 非流媒体页面（函数缺失）优雅回落到原纯文本挖词，不破坏现有行为。
+        // 批量制卡：点「制卡」= 入队（瞬间，不录不裁不暂停）。末尾统一「生成全部」。
+        // subtitle-adapters.js 同 content-script world 提供 Netflix 取词函数；缺失时回落选区文本。
         return new Promise((resolve) => {
-          var v = (typeof netflixVideoEl === 'function') ? netflixVideoEl() : null;
+          var toast = function (text, sticky) {
+            if (typeof window.hibikiToast === 'function') window.hibikiToast(text, sticky);
+          };
           var cueText = (typeof extractNetflixCueText === 'function')
             ? extractNetflixCueText(netflixSubtitleContainer()) : '';
-          chrome.runtime.sendMessage(
-            {
-              type: 'mine',
-              fields: args[0],
-              sentence: cueText || (args[0] && args[0].popupSelectionText) || '',
-              timestampMs: (typeof currentVideoTimeMs === 'function') ? currentVideoTimeMs(v) : null,
-              netflixVideoId: (typeof netflixVideoIdFromPath === 'function')
-                ? netflixVideoIdFromPath(location.pathname) : null,
-            },
-            (resp) => resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success')));
+          var sentence = cueText || (args[0] && args[0].popupSelectionText) || '';
+          var res = (typeof window.hibikiEnqueue === 'function')
+            ? window.hibikiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
+          if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
+          else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
+          else toast('✗ 入队失败');
+          resolve(!!(res && res.ok));
         });
       case 'duplicateCheck':
         return Promise.resolve(false);
