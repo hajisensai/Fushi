@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_resource_check.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('videoResourceRequiresLocalCheck (TODO-897 纯函数)', () {
@@ -96,13 +97,15 @@ void main() {
           '${dir.path}/Containers/Data/Application/OLD/Documents/codex/movie.mp4';
 
       expect(await File(stale).exists(), isFalse);
-      expect(
-        await relocateMissingAppDocumentPath(
-          stale,
-          documentsRoot: currentDocs,
-        ),
-        current.path,
+      // 源码用 package:path 的 `p.join` 重建绝对路径（跨平台正确：Windows 产出
+      // `\`，POSIX 产出 `/`）。断言用 `p.equals` 做平台无关比较，别写死分隔符，
+      // 否则 Windows 上会把语义相等的 `\` 路径误判为不等。
+      final String? relocated = await relocateMissingAppDocumentPath(
+        stale,
+        documentsRoot: currentDocs,
       );
+      expect(relocated, isNotNull);
+      expect(p.equals(relocated!, current.path), isTrue);
     });
 
     test('does not repoint arbitrary user Documents paths', () async {

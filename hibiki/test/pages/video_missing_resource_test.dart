@@ -110,12 +110,22 @@ void main() {
   // `tester.pump` 只推假时钟、不推真 Future。视频页有控制条自动隐藏等周期定时器，
   // `pumpAndSettle` 等不到稳态会超时，故 runAsync 跑完 _init 异步链后用有界 pump
   // 落帧。缺失分支在 controller.load 之前短路，全程不碰 libmpv。
+  //
+  // `_init → _loadSingle → _relocateSingleMediaPaths → _applyLoad` 是一串**顺序**
+  // 真实 IO await（getByBookUid / relocateMissingAppDocumentPath×N / loadCues /
+  // isLocalVideoResourceMissing）。单个固定时长的 runAsync 窗口只能推进落在窗口内
+  // 那几跳；末尾的 isLocalVideoResourceMissing 若被排到窗口关闭之后，后续假时钟
+  // pump 不驱动真实 dart:io，missing 短路永不触发、spinner 残留（PR 在链中加了
+  // relocateMissingAppDocumentPath 的额外真实 IO 跳数后，Windows 上恰好越窗）。
+  // 故交替 runAsync + pump 多轮：每一段顺序真实 IO 都拿到自己的 real-async 窗口，
+  // 直到 spinner 消失（缺失态落定）或轮数耗尽——与「链里有几跳 IO」解耦，不再脆弱。
   Future<void> drive(WidgetTester tester) async {
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    });
-    for (int i = 0; i < 10; i++) {
+    for (int round = 0; round < 12; round++) {
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
       await tester.pump(const Duration(milliseconds: 50));
+      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
     }
   }
 
