@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v33 loaded (Netflix seek via official player API, no M7375)');
+console.log('[Hibiki] content script v34 loaded (Netflix replay: wait for cue render before end-detect)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v33'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v34'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -307,16 +307,22 @@ async function hibikiRunNetflixBatch() {
       await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
       // 本句结束判据：字幕文本变成别的/清空（≠ 这一句），且已过句首 0.4s。refText 用入队时存的整句
       // 文本，比「播放时现采样」稳（避免字幕还没渲染时采到空 → 判据失效整段录到超时）。
-      const refText = (q.sentence || '').trim();
-      // 主判据是「字幕变成别句」；hardEnd 只是判据失效（相邻同文本/字幕关）时的安全上限。
-      // 有观测到的 endV 就用 endV+1500（长句不被截）；否则封顶 startV+8000（8s，控制转码体积）。
-      const hardEnd = Math.max((q.endV || 0) + 1500, q.startV + 8000) / 1000;
-      const deadline = Date.now() + 12000;
+      // seek 后字幕要零点几秒才重新渲染：**先等本句字幕真正出现**（过句首 0.3s 后第一段非空字幕
+      // 作参照 ref），**再**录到字幕变成别句(=本句结束)才停。不能一开始就比 refText——seek 后先采到
+      // 的是残留/空字幕，会被误判成「已结束」→ 录一瞬就停（用户报「一下就停了」根因）。
+      // hardEnd 只是字幕检测失效（字幕关/相邻同文本）时的安全上限。
+      const startSec = Math.max(0, q.startV) / 1000;
+      const hardEnd = startSec + 12; // 12s 硬上限
+      const deadline = Date.now() + 16000;
+      let ref = '';
       while (v.currentTime < hardEnd && Date.now() < deadline) {
         await sleep(120);
-        if (v.paused) break; // 外部暂停 → 别空转录冻结帧到超时
         const nowText = hibikiSubtitleTextNow();
-        if (refText && v.currentTime > (q.startV / 1000 + 0.4) && nowText !== refText) break;
+        if (!ref) {
+          if (nowText && v.currentTime > startSec + 0.3) ref = nowText; // 抓到本句字幕作参照
+          continue;
+        }
+        if (nowText !== ref) break; // 字幕变成别句 = 本句结束
       }
       try { v.pause(); } catch (_) {}
       const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
