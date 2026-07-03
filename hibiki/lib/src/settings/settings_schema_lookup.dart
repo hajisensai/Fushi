@@ -301,6 +301,26 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
+          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
+          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
+          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
+          // 故仅桌面（DesktopLookupService.isDesktop）显示。
+          SettingsSwitchItem(
+            id: 'lookup.global_context_capture',
+            title: t.global_context_capture,
+            subtitle: t.global_context_capture_hint,
+            icon: Icons.short_text_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.globalContextCaptureEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setGlobalContextCaptureEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,

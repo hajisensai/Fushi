@@ -2084,5 +2084,7 @@
   "shortcut_gamepad_brand_label": "手柄按钮样式",
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_brand_playstation": "PlayStation",
-  "shortcut_gamepad_brand_switch": "Nintendo Switch"
+  "shortcut_gamepad_brand_switch": "Nintendo Switch",
+  "global_context_capture": "抓取选中文本上下文",
+  "global_context_capture_hint": "从前台应用读取选区周围文本，在查词弹窗显示当前句（仅 Windows）"
 }

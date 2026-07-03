@@ -90,6 +90,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // === false` 选区边界分支（非 reader CSS / 主题树），无适用 T4 探针；由专项持久化
   // 往返 + webview 注入 + 选区消费端源码守卫覆盖。
   'lookup/Scan non-Japanese text': 'test/reader/todo861_hoshi_ports_test.dart',
+  // TODO-1030 M0：全局查词（应用外）抓取选中文本上下文开关（隐私敏感，默认关，仅桌面）。
+  // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 Windows UIA native 捕获 +
+  // 纯函数句子裁剪 + popup.js 句子横幅注入（非 reader CSS / 主题树），无适用 T4 探针；
+  // 由纯函数守卫（含与阅读器分隔符表的双端一致性）+ pref 往返覆盖。
+  'lookup/Capture selection context':
+      'test/lookup/sentence_extraction_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
   'syncBackup/Auto Sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',

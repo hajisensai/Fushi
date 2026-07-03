@@ -2494,6 +2494,38 @@ function _firePopupRendered() {
     }
 }
 
+// TODO-1030 M0 — the app-external global-lookup capture (Windows UIA) hands the
+// popup the sentence the selected word sits in via window.__globalLookupSentence
+// (set per-render by buildFrameSettingsJs; empty for in-app popups and for
+// nested child cards). Build a small context banner shown above the entries so
+// the user sees the word IN CONTEXT (Yomitan {sentence}-style). Returns null
+// when there is no captured sentence, so the in-app / no-context paths render
+// exactly as before.
+function buildGlobalLookupSentenceBanner() {
+    const sentence = window.__globalLookupSentence;
+    if (typeof sentence !== 'string' || sentence.length === 0) {
+        return null;
+    }
+    const banner = el('div', { className: 'global-lookup-sentence' });
+    // textContent (not innerHTML) — the sentence is untrusted foreground-app
+    // text; never interpret it as markup.
+    banner.textContent = sentence;
+    return banner;
+}
+
+// Inserts the sentence-context banner (if any) as the FIRST child of the popup
+// entries container, above the kanji card / entries / no-results placeholder.
+// No-op when there is no captured sentence (in-app popups, nested cards).
+function prependSentenceBanner(container) {
+    const banner = buildGlobalLookupSentenceBanner();
+    if (!banner || !container) return;
+    if (container.firstChild) {
+        container.insertBefore(banner, container.firstChild);
+    } else {
+        container.appendChild(banner);
+    }
+}
+
 window.renderPopup = function() {
     const t0 = performance.now();
     const container = document.getElementById('entries-container');
@@ -2517,6 +2549,7 @@ window.renderPopup = function() {
             + '<div class="no-results-icon">&#x1F50D;</div>'
             + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
             + '</div>';
+        prependSentenceBanner(container);
         window._renderedGlossaryCounts = [];
         _firePopupRendered();
         return;
@@ -2538,6 +2571,7 @@ window.renderPopup = function() {
     // Kanji-only result (no term entries): render just the kanji card(s).
     if (!entries || !entries.length) {
         container.innerHTML = '';
+        prependSentenceBanner(container);
         if (kanjiSection) {
             container.appendChild(kanjiSection);
         }
@@ -2550,6 +2584,7 @@ window.renderPopup = function() {
 
     try {
         container.innerHTML = '';
+        prependSentenceBanner(container);
 
         if (kanjiSection) {
             container.appendChild(kanjiSection);

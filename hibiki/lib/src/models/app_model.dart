@@ -3747,6 +3747,11 @@ class AppModel with ChangeNotifier {
   bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
   Future<void> setDesktopClipboardEnabled(bool v) =>
       prefsRepo.setDesktopClipboardEnabled(v);
+
+  // TODO-1030 M0 — 全局查词是否抓取选中文本上下文（隐私敏感，默认关）。
+  bool get globalContextCaptureEnabled => prefsRepo.globalContextCaptureEnabled;
+  Future<void> setGlobalContextCaptureEnabled(bool v) =>
+      prefsRepo.setGlobalContextCaptureEnabled(v);
   bool get desktopClipboardAlwaysOnTop => prefsRepo.desktopClipboardAlwaysOnTop;
   Future<void> setDesktopClipboardAlwaysOnTop(bool v) =>
       prefsRepo.setDesktopClipboardAlwaysOnTop(v);

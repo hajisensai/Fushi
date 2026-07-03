@@ -71,6 +71,12 @@ class GlobalLookupController {
   // frame's own DictionarySearchResult is held alongside (the pure stack
   // model only carries identity/linkage). _frameSeq mints stable per-frame
   // ids (the stack model never generates random/clock ids, see its docs).
+  // TODO-1030 M0 — the current sentence for THIS lookup (UIA context capture),
+  // shown as a context banner in the root popup card. Empty when context
+  // capture is off / unavailable (clipboard fallback), in which case the banner
+  // is not rendered. Reset per hotkey lookup in _onHotKey.
+  String _currentSentence = '';
+
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
       <String, DictionarySearchResult>{};
@@ -282,14 +288,32 @@ class GlobalLookupController {
       // re-arms them, so every lookup starts clean. Cheap (SW_HIDE + unhook)
       // and the prewarmed WebView2 survives it.
       GlobalLookupChannel.hide();
-      // Grab the foreground app's current selection (inject Ctrl+C) — no manual
-      // copy needed.
-      final String text =
-          (await SelectionCapture.captureForegroundSelection() ?? '').trim();
+      // TODO-1030 M0 — when the user opted into context capture, try UI
+      // Automation first: it yields the selected term PLUS the sentence it sits
+      // in (shown in the popup). On any miss (no UIA text element, non-Windows,
+      // channel unavailable) fall back to the clipboard capture (inject Ctrl+C),
+      // which yields only the bare selection — never break the existing path.
+      String text = '';
+      String sentence = '';
+      if (model.globalContextCaptureEnabled) {
+        final ForegroundSelectionContext? ctx =
+            await SelectionCapture.captureForegroundContext();
+        if (ctx != null) {
+          text = ctx.selectedText.trim();
+          sentence = ctx.sentence;
+        }
+      }
+      if (text.isEmpty) {
+        // No context (or feature off): fall back to the clipboard selection.
+        text =
+            (await SelectionCapture.captureForegroundSelection() ?? '').trim();
+        sentence = '';
+      }
       if (text.isEmpty) {
         glog('hotkey: empty selection — abort');
         return;
       }
+      _currentSentence = sentence;
 
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: text,
@@ -812,11 +836,16 @@ class GlobalLookupController {
       if (result == null) {
         continue;
       }
+      // TODO-1030 M0 — only the ROOT frame (the hotkey lookup itself) carries
+      // the captured sentence banner; nested child lookups (clicked words) have
+      // no sentence context, so they render without a banner.
+      final bool isRoot = frame.id == kGlobalLookupRootFrameId;
       payloads.add(GlobalLookupFramePayload(
         frame: frame,
         result: result,
         anchorRect: _frameAnchors[frame.id],
         isVertical: isVertical,
+        sentence: isRoot ? _currentSentence : '',
       ));
     }
     if (payloads.isEmpty) {

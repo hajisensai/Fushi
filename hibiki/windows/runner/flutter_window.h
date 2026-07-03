@@ -73,6 +73,13 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<GlobalLookupWindow> global_lookup_window_;
   void RegisterGlobalLookupChannel();
 
+  // TODO-1030 M0: Windows UIA foreground-selection context capture channel.
+  // Dart calls captureContext; the UIA work runs on a worker thread and the
+  // result is marshalled back via WM_FGSEL_CAPTURE_DONE (see flutter_window.cpp).
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      foreground_selection_channel_;
+  void RegisterForegroundSelectionChannel();
+
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);

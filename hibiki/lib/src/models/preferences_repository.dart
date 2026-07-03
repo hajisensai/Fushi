@@ -373,6 +373,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-1030 M0 — 全局查词（应用外）是否抓取选中文本周围的上下文句。默认 false：
+  // 抓取要读前台应用的 UIA 文本，隐私敏感，用户显式开启才启用；关闭时全局查词只用
+  // 剪贴板拿到的纯选中串（现状），不接触前台应用文本。
+  bool get globalContextCaptureEnabled =>
+      getPref('lookup.global_context_capture', defaultValue: false) as bool;
+
+  Future<void> setGlobalContextCaptureEnabled(bool value) async {
+    await setPref('lookup.global_context_capture', value);
+    notifyListeners();
+  }
+
   bool get desktopClipboardAlwaysOnTop =>
       desktopClipboardWindowMode != DesktopClipboardWindowMode.normal;
 
