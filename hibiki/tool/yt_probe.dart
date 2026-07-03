@@ -35,7 +35,25 @@ Future<void> probe(String label, {String? proxy}) async {
   }
 }
 
+// 只测 getManifest（VideoId 直构，跳过 videos.get）——制卡新路径的真实耗时。
+Future<void> manifestOnly(String label) async {
+  final Stopwatch sw = Stopwatch()..start();
+  final yt.YoutubeExplode client = yt.YoutubeExplode();
+  try {
+    final yt.StreamManifest m = await client.videos.streamsClient
+        .getManifest(yt.VideoId('dQw4w9WgXcQ'),
+            ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr])
+        .timeout(const Duration(seconds: 40));
+    print('$label: manifest-only OK ${sw.elapsedMilliseconds}ms muxed=${m.muxed.length}');
+  } catch (e) {
+    print('$label: manifest-only FAIL ${sw.elapsedMilliseconds}ms  $e');
+  } finally {
+    client.close();
+  }
+}
+
 Future<void> main() async {
-  await probe('DIRECT');
-  await probe('PROXY', proxy: 'http://127.0.0.1:34151');
+  await manifestOnly('run1');
+  await manifestOnly('run2');
+  await manifestOnly('run3');
 }

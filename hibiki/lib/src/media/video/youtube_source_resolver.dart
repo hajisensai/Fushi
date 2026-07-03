@@ -148,10 +148,21 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   String preferSubtitleLang,
   bool withCaptions,
 ) async {
-  final yt.Video video = await client.videos.get(url);
+  // 制卡路径（withCaptions=false）直接从 URL 取 VideoId，**跳过 videos.get**（慢网下这一步就
+  // ~9s）——制卡不需要标题/元数据，只要 getManifest 的流 URL。播放器路径仍取完整 Video（要标题）。
+  final yt.VideoId videoId;
+  final String title;
+  if (withCaptions) {
+    final yt.Video video = await client.videos.get(url);
+    videoId = video.id;
+    title = video.title;
+  } else {
+    videoId = yt.VideoId(url);
+    title = '';
+  }
   final yt.StreamManifest manifest =
       await client.videos.streamsClient.getManifest(
-    video.id,
+    videoId,
     ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr],
   );
   // 优先「video-only（≤1080p 里最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
@@ -170,11 +181,11 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   final String? miningVideoUrl = _pickMiningVideoUrl(manifest);
   // muxed 挖矿流自带音轨 → 制卡音频从它抽（audio-only DASH 流 ffmpeg seek 会超时）。
   final bool miningVideoHasAudio = manifest.muxed.isNotEmpty;
-  final String bookKey = 'yt:${video.id.value}';
+  final String bookKey = 'yt:${videoId.value}';
   // 制卡路径 withCaptions=false → 跳过字幕解析（省 ~19s，避免超时）；播放器路径仍取字幕。
   final List<AudioCue> cues = withCaptions
       ? await _resolveYoutubeCaptions(
-          video.id,
+          videoId,
           bookKey: bookKey,
           preferSubtitleLang: preferSubtitleLang,
         )
@@ -185,7 +196,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
     audioStreamUrl: audioStreamUrl,
     miningVideoUrl: miningVideoUrl,
     miningVideoHasAudio: miningVideoHasAudio,
-    title: video.title,
+    title: title,
     httpHeaders: const <String, String>{'User-Agent': 'Mozilla/5.0'},
     cues: cues,
   );
