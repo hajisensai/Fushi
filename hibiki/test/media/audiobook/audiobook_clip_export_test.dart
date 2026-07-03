@@ -110,8 +110,15 @@ void main() {
       expect(clip, isNotNull);
       // Stays in file 0 — never a cross-file range.
       expect(clip!.audioFileIndex, 0);
-      // Did not absorb file 1's end time.
-      expect(clip.endMs, lessThanOrEqualTo(2000));
+      // Did not absorb file 1's end time. Phase 0 (d7cee212e / TODO-1115) appends
+      // a tail pad to the exported clip; file 0's last cue has no same-file
+      // successor, so its tail pad is uncapped and extends the end from the raw
+      // 2000ms boundary by kMiningTailPadMs. The bound below therefore updates
+      // from the pre-pad raw boundary (2000) to the pad-bounded boundary
+      // (file 0 last cue endMs + kMiningTailPadMs). This proves the extension
+      // comes from the same-file tail pad, NOT from absorbing file 1's timeline
+      // (which would require audioFileIndex != 0, already excluded above).
+      expect(clip.endMs, lessThanOrEqualTo(2000 + kMiningTailPadMs));
     });
   });
 }
