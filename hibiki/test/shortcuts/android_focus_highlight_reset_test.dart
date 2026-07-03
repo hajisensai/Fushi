@@ -75,7 +75,13 @@ void main() {
     test('PointerMove (swipe) is a touch-reset trigger', () {
       final int onPtrStart = src.indexOf('void _onPointerGlobal(');
       expect(onPtrStart, greaterThanOrEqualTo(0));
-      final String onPtrBody = src.substring(onPtrStart, onPtrStart + 600);
+      // Slice to the END of the method (next member declaration) rather than a
+      // fixed char window: TODO-1113 P3 added comments/branches inside
+      // _onPointerGlobal, so a fixed window can fall short of the alwaysTouch
+      // reset even though the PointerMove→touch contract still holds.
+      final int onPtrEnd = src.indexOf('bool _onKey(', onPtrStart);
+      expect(onPtrEnd, greaterThan(onPtrStart));
+      final String onPtrBody = src.substring(onPtrStart, onPtrEnd);
       expect(onPtrBody, contains('PointerMoveEvent'),
           reason: 'PointerMove（滑动）必须把 strategy 复位 touch — '
               '这是 Android「滑动消不掉」的直接解');

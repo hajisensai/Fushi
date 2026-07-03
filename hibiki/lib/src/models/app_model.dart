@@ -577,6 +577,10 @@ class AppModel with ChangeNotifier {
     // TODO-728/TODO-973: bridge controller presence to the global immersive
     // state, gated on the user preference so it is inert unless opted in.
     onPresenceChanged: _onGamepadPresenceChanged,
+    // TODO-1113 P3: lets the pointer route keep the ring lit on a mouse DOWN that
+    // carries focus to a target while focus navigation is enabled (hover/move
+    // still hide it). Live-read so toggling the preference takes effect at once.
+    focusNavigationEnabled: () => experimentalFocusNavigationEnabled,
   );
 
   /// TODO-973: the one place controller presence becomes app state. Gated on the

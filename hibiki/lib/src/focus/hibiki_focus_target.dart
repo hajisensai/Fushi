@@ -1,6 +1,27 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+
+/// TODO-1113 P3: whether mouse click-to-focus should be wired on a focus target.
+///
+/// Gated on the LOGICAL target platform ([defaultTargetPlatform], so tests can
+/// override it) being a desktop OS. Mobile / touch platforms do NOT get click-
+/// to-focus: there directional focus navigation is a controller/keyboard affair
+/// and a tap is already a plain activation with no ring to carry.
+bool get _mouseFocusNavigationEnabledForPlatform {
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.windows:
+    case TargetPlatform.macOS:
+    case TargetPlatform.linux:
+      return true;
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+    case TargetPlatform.fuchsia:
+      return false;
+  }
+}
 
 class HibikiFocusTarget extends StatefulWidget {
   const HibikiFocusTarget({
@@ -145,7 +166,7 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
+    final Widget focus = Focus(
       focusNode: _focusNode,
       autofocus: widget.autofocus,
       canRequestFocus: widget.enabled,
@@ -158,6 +179,28 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
         child: widget.child,
       ),
     );
+    // TODO-1113 P3: on desktop, a mouse click on a focus target should carry
+    // directional-navigation focus here so subsequent keyboard/gamepad traversal
+    // continues from what the user clicked. The [Listener] does NOT consume the
+    // event (child InkWell/GestureDetector still activates as usual — no double
+    // fire) and does NOT invoke ActivateIntent; it only moves focus. Restricted
+    // to real mouse pointers and to enabled targets; touch/stylus and mobile
+    // platforms keep the old plain-tap behaviour.
+    if (!widget.enabled || !_mouseFocusNavigationEnabledForPlatform) {
+      return focus;
+    }
+    return Listener(
+      onPointerDown: _handleMousePointerDown,
+      child: focus,
+    );
+  }
+
+  /// TODO-1113 P3: carries focus to this target on a mouse press. Mouse-only so
+  /// touch input on a desktop touchscreen keeps plain-tap behaviour; activation
+  /// is left entirely to the child's own tap handling to avoid double firing.
+  void _handleMousePointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) return;
+    _controller?.requestById(widget.id);
   }
 
   void _register({bool repairBeforeNextFrame = false}) {
