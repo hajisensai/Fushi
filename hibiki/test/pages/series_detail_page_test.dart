@@ -92,7 +92,43 @@ void main() {
     expect(changed, greaterThanOrEqualTo(1));
   });
 
-  testWidgets('remove member calls setSeriesForEntry(null)', (tester) async {
+  testWidgets(
+      'remove member: confirm dialog appears, confirm calls setSeriesForEntry(null)',
+      (tester) async {
+    final int sid = await db.createSeries('S');
+    await db.setSeriesForEntry('epub', 'bookA', sid);
+    await tester.pumpWidget(wrap(SeriesDetailPage(
+      database: db,
+      seriesId: sid,
+      initialName: 'S',
+      memberCardBuilder: (_) => const ColoredBox(color: Colors.blue),
+      onChanged: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    // Tapping the icon must NOT remove immediately — a confirm dialog opens.
+    await tester.tap(find.byIcon(Icons.remove_circle_outline));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('This book will be removed from the series and returned to '
+          "the shelf. It won't be deleted."),
+      findsOneWidget,
+      reason: '点移出必须先弹平白话确认框',
+    );
+    var shelfRow = await db.getShelfEntry('epub', 'bookA');
+    expect(shelfRow!.seriesId, sid, reason: '弹框阶段还未移出');
+
+    // Confirm: the dialog's "Remove from series" action.
+    await tester.tap(find.text('Remove from series').last);
+    await tester.pumpAndSettle();
+
+    shelfRow = await db.getShelfEntry('epub', 'bookA');
+    expect(shelfRow!.seriesId, isNull, reason: '确认后移出系列 → seriesId NULL');
+    expect(await db.getShelfEntriesBySeries(sid), isEmpty);
+  });
+
+  testWidgets('remove member: cancel leaves membership untouched',
+      (tester) async {
     final int sid = await db.createSeries('S');
     await db.setSeriesForEntry('epub', 'bookA', sid);
     await tester.pumpWidget(wrap(SeriesDetailPage(
@@ -106,9 +142,12 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.remove_circle_outline));
     await tester.pumpAndSettle();
+    // Cancel the confirm dialog.
+    await tester.tap(find.text('CANCEL').last);
+    await tester.pumpAndSettle();
 
     final shelfRow = await db.getShelfEntry('epub', 'bookA');
-    expect(shelfRow!.seriesId, isNull, reason: '移出系列 → seriesId NULL');
-    expect(await db.getShelfEntriesBySeries(sid), isEmpty);
+    expect(shelfRow!.seriesId, sid, reason: '取消后归属不变，未误移出');
+    expect(await db.getShelfEntriesBySeries(sid), hasLength(1));
   });
 }

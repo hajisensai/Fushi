@@ -99,9 +99,21 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   }
 
   Future<void> _removeMember(ShelfEntryRow row) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => _SeriesConfirmDialog(
+        title: t.remove_from_series,
+        message: t.remove_from_series_confirm,
+        confirmLabel: t.remove_from_series,
+        onConfirm: () => Navigator.pop(ctx, true),
+      ),
+    );
+    if (confirmed != true) return;
     await widget.database.setSeriesForEntry(row.mediaType, row.entryKey, null);
+    if (!mounted) return;
     widget.onChanged();
     await _reload();
+    HibikiToast.show(msg: t.removed_from_series);
   }
 
   Future<void> _reorderMembers() async {

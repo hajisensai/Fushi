@@ -2078,5 +2078,7 @@
   "sync_paired_peer_remove": "Remove",
   "sync_paired_peer_removed": "Removed paired device",
   "sync_paired_peer_unknown": "Unknown device",
-  "video_setting_mpv_sigmoid_hint": "Sigmoid-curve upscaling reduces ringing but costs GPU. Off by default for performance; turn on if you want sharper upscaling."
+  "video_setting_mpv_sigmoid_hint": "Sigmoid-curve upscaling reduces ringing but costs GPU. Off by default for performance; turn on if you want sharper upscaling.",
+  "remove_from_series_confirm": "This book will be removed from the series and returned to the shelf. It won't be deleted.",
+  "removed_from_series": "Removed from series"
 }
