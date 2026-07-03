@@ -3,7 +3,7 @@ import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:progress_indicators/progress_indicators.dart';
-import 'package:hibiki/src/utils/spacing.dart';
+import 'package:gap/gap.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -74,7 +74,7 @@ class ImageField extends ImageExportField {
                 width: double.infinity,
               ),
             ),
-          const Space.normal(),
+          const Gap(10),
           buildFooterLoading(
             appModel: appModel,
             context: context,
@@ -108,7 +108,7 @@ class ImageField extends ImageExportField {
             appModel: appModel,
             creatorModel: creatorModel,
           ),
-        const Space.normal(),
+        const Gap(10),
         ValueListenableBuilder<int?>(
           valueListenable: indexNotifier,
           builder: (context, index, _) => buildFooterTextSpans(
@@ -197,7 +197,7 @@ class ImageField extends ImageExportField {
                 popup?.remove();
               },
               child: Padding(
-                padding: Spacing.of(context).insets.horizontal.small,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: buildImage(
                   image: currentImageSuggestions![index],
                   fit: BoxFit.fitHeight,
@@ -240,9 +240,9 @@ class ImageField extends ImageExportField {
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
-              padding: EdgeInsets.only(
+              padding: const EdgeInsets.only(
                 top: 1.25,
-                right: Spacing.of(context).spaces.small,
+                right: 4,
               ),
               child: Icon(
                 icon,
@@ -345,9 +345,9 @@ class ImageField extends ImageExportField {
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
-              padding: EdgeInsets.only(
+              padding: const EdgeInsets.only(
                 top: 1.25,
-                right: Spacing.of(context).spaces.small,
+                right: 4,
               ),
               child: Icon(
                 icon,

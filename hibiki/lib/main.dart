@@ -942,9 +942,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   @override
   Widget build(BuildContext context) {
     // Fields like locales/targetLanguage/theme are late and only available
-    // after initialise() completes. Return a minimal app while loading.
-    // LoadingPage calls Spacing.of(context) via buildLoading(), so we must
-    // not use it here — render the spinner directly instead.
+    // after initialise() completes. Return a minimal app while loading and
+    // render the spinner directly instead of going through LoadingPage.
     //
     // Use system brightness to match the native splash and avoid a white
     // flash when the user has dark mode enabled.

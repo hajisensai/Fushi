@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 /// 浏览器式整体界面缩放。
 ///
@@ -90,10 +89,7 @@ class HibikiAppUiScale extends StatelessWidget {
 
     final Widget scoped = _AppUiScaleScope(
       scale: s,
-      child: Spacing(
-        dataBuilder: (_) => SpacingData.generate(10),
-        child: child,
-      ),
+      child: child,
     );
 
     if (s == defaultScale) return scoped;

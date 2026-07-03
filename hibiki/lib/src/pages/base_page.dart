@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
@@ -111,8 +110,8 @@ abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
   Widget buildLoading() {
     return Center(
       child: SizedBox(
-        height: Spacing.of(context).spaces.big,
-        width: Spacing.of(context).spaces.big,
+        height: 25,
+        width: 25,
         child: adaptiveIndicator(
           context: context,
           color: theme.colorScheme.primary,

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
-import 'package:hibiki/src/utils/spacing.dart';
+import 'package:gap/gap.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/utils.dart';
 
@@ -106,7 +106,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
                 children: <Widget>[
                   Icon(Icons.privacy_tip_outlined,
                       size: 20, color: cs.onSurfaceVariant),
-                  const Space.small(),
+                  const Gap(4),
                   Expanded(
                     child: Text(
                       t.crash_dump_privacy_notice,

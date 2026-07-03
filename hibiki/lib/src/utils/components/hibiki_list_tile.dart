@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
+import 'package:gap/gap.dart';
 import 'package:hibiki/utils.dart';
 
 /// Used for various dialogs, such as the dictionary, profiles and enhancements
@@ -62,10 +62,10 @@ class HibikiListTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 trailing!,
-                const Space.semiSmall(),
+                const Gap(6),
               ],
             )
-          : const Space.semiSmall(),
+          : const Gap(6),
     );
   }
 }
