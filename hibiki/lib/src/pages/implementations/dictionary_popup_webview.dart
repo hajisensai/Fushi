@@ -29,6 +29,15 @@ import 'package:url_launcher/url_launcher.dart';
 /// 将来恢复：把本常量改回 true 即可——回调链、JS 处理器、i18n 注入都还在，零重连。
 const bool kSentenceContextPickerEnabled = false;
 
+/// board-1117：查词弹窗 WebView 在 Flutter 手势竞技场里挂的 [LongPressGestureRecognizer]
+/// （5deeb754d 加，用途是让长按把手势让给 WebView 的原生选词把手）本来吃 Flutter 默认
+/// `kLongPressTimeout`（500ms）——用户反馈「popup 里长按选中文字的等待时间太长」。
+/// 这个 recognizer 只为触发原生选区，并不需要跟系统长按菜单对齐 500ms；缩短 deadline
+/// 让原生选词更跟手。250ms 明显高于点按（tap 立即），不会把单击查词误判成长按，又比
+/// 500ms 快一倍——与弹窗其它可调交互（滚轮 250~450ms）同量级。
+const Duration kPopupNativeSelectLongPressDuration =
+    Duration(milliseconds: 250);
+
 /// TODO-270 D：制卡（mineEntry）回传给弹窗 JS 的结构化结果。
 ///
 /// [ankiConnect] 沿用旧的 `Future<bool>` 字段名，但现在作为「制卡成功，可立即
@@ -756,7 +765,8 @@ class DictionaryPopupWebViewState
       // 的「顶栏/留白横拖关」保留，仅正文区让位给框选。边界由「谁渲染谁吃手势」自然
       // 划定，无坐标特判。
       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-        Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
+        Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer(
+            duration: kPopupNativeSelectLongPressDuration)),
         Factory<VerticalDragGestureRecognizer>(
             () => VerticalDragGestureRecognizer()),
         Factory<HorizontalDragGestureRecognizer>(

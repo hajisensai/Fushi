@@ -1,0 +1,7 @@
+## BUG-536 · 查词弹窗长按选中文字等待时间过长(500ms)
+
+- **报告**：2026-07-03（用户：board-1117「popup 现在长按选中的等待时间有点太长了」）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:745`（修前）——查词弹窗 `InAppWebView` 在 Flutter 手势竞技场里注册的 `LongPressGestureRecognizer` 用裸构造器 `LongPressGestureRecognizer()`，deadline 吃 Flutter 默认 `kLongPressTimeout = 500ms`。这个 recognizer 是 `5deeb754d`（`fix(dict-popup): add gestureRecognizers ... for native text selection`）为「长按把手势让给 WebView 的原生选词把手（长按→选区把手→复制/分享）」而加。因为要等竞技场里的长按 recognizer 先在 500ms 后 accept，用户在弹窗正文里长按选中文字必须干等约半秒，才触发原生选区 → 「等待时间太长」。
+- **[x] ① 已修复** — `dictionary_popup_webview.dart`：新增常量 `kPopupNativeSelectLongPressDuration = Duration(milliseconds: 250)`，给弹窗的 `LongPressGestureRecognizer` 传 `duration: kPopupNativeSelectLongPressDuration`，把长按 deadline 从 500ms 砍到 250ms（比默认快一倍，仍明显高于点按，不会把单击查词误判成长按）。这个 recognizer 只为触发原生选区，不需要跟系统长按菜单对齐 500ms，故缩短是纯提速、无副作用。提交见 fix-1117-longpress 分支（owner 落地）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/popup_longpress_select_duration_guard_test.dart`：源码扫描守卫。① 断言弹窗不得用裸 `LongPressGestureRecognizer()`（会重新继承 500ms 默认），必须 `duration: kPopupNativeSelectLongPressDuration`；② 解析常量的毫秒值，断言 `< 500`（比「太慢」的默认快）且 `>= 150`（保持在点按之上，防止劫持单击查词）。纯手势 deadline 无法 widget 级稳定测（竞技场 + 平台原生选区），故用与 `popup_webview_disable_context_menu_guard_test.dart` 同款的源码守卫防「等待又变长」回归。
+- **备注**：手感类改动——数值下调（250ms）需 owner/用户在真机长按弹窗正文确认「跟手且不误触发」后定稿；若仍偏慢可继续下调常量（守卫下限 150ms）。此 500ms 非近期回归，`5deeb754d`（2026-05-13）加入时就是裸构造器吃默认值；用户「现在太长」是首次反馈该体验，非某次调大。
