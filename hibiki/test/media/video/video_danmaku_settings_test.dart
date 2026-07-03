@@ -73,12 +73,14 @@ void main() {
         () async {
       DandanplayConfig.current =
           const DandanplayConfig(baseUrl: 'https://stale.example');
-      final HibikiDatabase freshDb = _testDb();
-      addTearDown(freshDb.close);
-      final PreferencesRepository fresh = PreferencesRepository(freshDb);
-      addTearDown(fresh.dispose);
-      await fresh.loadFromDb();
-      expect(DandanplayConfig.current, DandanplayConfig.defaults);
+      await _withMultipleDatabaseWarningDisabled(() async {
+        final HibikiDatabase freshDb = _testDb();
+        addTearDown(freshDb.close);
+        final PreferencesRepository fresh = PreferencesRepository(freshDb);
+        addTearDown(fresh.dispose);
+        await fresh.loadFromDb();
+        expect(DandanplayConfig.current, DandanplayConfig.defaults);
+      });
     });
   });
 
@@ -138,4 +140,16 @@ void main() {
       reloaded.dispose();
     });
   });
+}
+
+Future<T> _withMultipleDatabaseWarningDisabled<T>(
+  Future<T> Function() body,
+) async {
+  final bool previous = driftRuntimeOptions.dontWarnAboutMultipleDatabases;
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  try {
+    return await body();
+  } finally {
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = previous;
+  }
 }

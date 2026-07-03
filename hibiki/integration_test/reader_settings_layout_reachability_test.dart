@@ -131,7 +131,8 @@ void main() {
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
       errors.add(details);
-      debugPrint('[reader-layout] FlutterError: ${details.exceptionAsString()}');
+      debugPrint(
+          '[reader-layout] FlutterError: ${details.exceptionAsString()}');
     };
     await tester.binding.setSurfaceSize(const Size(420, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -209,7 +210,8 @@ void main() {
     }
   });
 
-  testWidgets('TODO-802 wide: no appearance category; layout pane hosts theme + CSS',
+  testWidgets(
+      'TODO-802 wide: no appearance category; layout pane hosts theme + CSS',
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;

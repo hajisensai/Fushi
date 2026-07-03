@@ -131,6 +131,13 @@ Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'output.versionCodeO
 
 $desktopWorkflow = Read-RepoFile '.github/workflows/release-desktop.yml'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '--build-number "${{ steps.channel.outputs.release_sequence }}"' 'desktop build number must use the shared release sequence'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build windows --release' 'desktop workflow must still publish Windows'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build macos --release' 'desktop workflow must publish macOS app zips'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build ios --release --no-codesign' 'desktop workflow must publish unsigned iOS IPA artifacts without requiring Apple signing'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-windows-setup.exe' 'desktop workflow must upload Windows installer assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-macos.zip' 'desktop workflow must upload macOS zip assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'

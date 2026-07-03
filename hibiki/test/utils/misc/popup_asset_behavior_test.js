@@ -90,7 +90,10 @@ class FakeElement {
   }
 
   addEventListener(type, handler) {
-    (this.listeners[type] ??= []).push(handler);
+    if (!this.listeners[type]) {
+      this.listeners[type] = [];
+    }
+    this.listeners[type].push(handler);
   }
 
   dispatchEvent(event) {
@@ -224,7 +227,10 @@ function createPopupContext() {
       };
     },
     addEventListener(type, handler) {
-      (listeners[type] ??= []).push(handler);
+      if (!listeners[type]) {
+        listeners[type] = [];
+      }
+      listeners[type].push(handler);
     },
     querySelector(selector) {
       if (!selector.startsWith('.')) {

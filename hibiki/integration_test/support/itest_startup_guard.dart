@@ -59,7 +59,8 @@ void assertNoFatalStartupErrors(List<FlutterErrorDetails> errors) {
   expect(
     fatal,
     isEmpty,
-    reason: 'Fatal FlutterError(s) after filtering benign startup-network noise: '
+    reason:
+        'Fatal FlutterError(s) after filtering benign startup-network noise: '
         '${fatal.map((e) => e.exceptionAsString()).join('; ')}',
   );
 }

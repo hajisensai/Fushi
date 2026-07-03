@@ -439,7 +439,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         _srtChapterRanges = r;
       }
     } else if (_audiobookBookKey != null) {
-      if (_cachedSasayaki) {
+      if (_cachedSasayaki || audiobookCuesUseWholeBookForChapter(allCues)) {
         _audiobookController!.setChapterCues(allCues);
         _audiobookController!.setAllBookCues(allCues);
       } else {

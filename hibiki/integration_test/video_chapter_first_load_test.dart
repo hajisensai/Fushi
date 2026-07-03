@@ -55,7 +55,7 @@ title=Credits
 ''');
 
   final File video = File('${root.path}${Platform.pathSeparator}chaptered.mkv');
-  final FfmpegRunResult result = await const CliFfmpegBackend().run(
+  final FfmpegRunResult result = await resolveFfmpegBackend().run(
     <String>[
       '-hide_banner',
       '-y',

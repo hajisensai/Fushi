@@ -32,6 +32,29 @@ class VideoBookRepository {
   Future<void> updatePosition(String bookUid, int positionMs) =>
       _db.updateVideoBookPosition(bookUid, positionMs);
 
+  /// Updates local file paths after app-owned media is relocated.
+  ///
+  /// Only fields with non-null arguments are written. This keeps progress,
+  /// title, playlist state, audio preferences, and statistics untouched.
+  Future<void> updateLocalMediaPaths(
+    String bookUid, {
+    String? videoPath,
+    String? subtitleSource,
+  }) {
+    if (videoPath == null && subtitleSource == null) {
+      return Future<void>.value();
+    }
+    return (_db.update(_db.videoBooks)
+          ..where((tbl) => tbl.bookUid.equals(bookUid)))
+        .write(VideoBooksCompanion(
+      videoPath:
+          videoPath == null ? const Value.absent() : Value<String>(videoPath),
+      subtitleSource: subtitleSource == null
+          ? const Value.absent()
+          : Value<String?>(subtitleSource),
+    ));
+  }
+
   /// 更新播放列表当前集索引（多集导航切集后持久化）。
   Future<void> updateCurrentEpisode(String bookUid, int episodeIndex) =>
       _db.updateVideoBookEpisode(bookUid, episodeIndex);

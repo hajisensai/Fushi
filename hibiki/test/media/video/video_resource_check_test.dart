@@ -79,4 +79,48 @@ void main() {
       );
     });
   });
+
+  group('relocateMissingAppDocumentPath', () {
+    test(
+        'repairs stale iOS app-container Documents paths when same relative file exists',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('todo897_relocate');
+      addTearDown(() => dir.delete(recursive: true));
+      final Directory currentDocs = Directory(
+        '${dir.path}/Containers/Data/Application/NEW/Documents',
+      )..createSync(recursive: true);
+      final File current = File('${currentDocs.path}/codex/movie.mp4')
+        ..createSync(recursive: true);
+      final String stale =
+          '${dir.path}/Containers/Data/Application/OLD/Documents/codex/movie.mp4';
+
+      expect(await File(stale).exists(), isFalse);
+      expect(
+        await relocateMissingAppDocumentPath(
+          stale,
+          documentsRoot: currentDocs,
+        ),
+        current.path,
+      );
+    });
+
+    test('does not repoint arbitrary user Documents paths', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('todo897_no_relocate');
+      addTearDown(() => dir.delete(recursive: true));
+      final Directory currentDocs = Directory(
+        '${dir.path}/Containers/Data/Application/NEW/Documents',
+      )..createSync(recursive: true);
+      File('${currentDocs.path}/movie.mp4').createSync();
+
+      expect(
+        await relocateMissingAppDocumentPath(
+          '${dir.path}/Users/alice/Documents/movie.mp4',
+          documentsRoot: currentDocs,
+        ),
+        isNull,
+      );
+    });
+  });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/utils.dart';
 
 class AnkiUiState {
@@ -48,6 +49,8 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       await fetchConfiguration();
     }
   }
+
+  Future<void> reloadSettings() => _loadSettings();
 
   Future<void> fetchConfiguration() async {
     state = state.copyWith(isFetching: true, clearError: true);
@@ -223,12 +226,11 @@ class LapisSetupResult {
   final String? message;
 }
 
-final ankiRepositoryProvider = Provider<BaseAnkiRepository>((_) {
-  if (isAndroidPlatform) return AnkiRepository();
-  return AnkiConnectRepository();
+final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
+  return ref.watch(platformServicesProvider).createAnkiRepository();
 });
 
 final ankiViewModelProvider =
     StateNotifierProvider<AnkiViewModel, AnkiUiState>((ref) {
-  return AnkiViewModel(ref.read(ankiRepositoryProvider));
+  return AnkiViewModel(ref.watch(ankiRepositoryProvider));
 });

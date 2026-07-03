@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/media.dart';
@@ -169,19 +170,22 @@ void main() {
     });
 
     test('two books do not cross-contaminate top floating', () async {
-      final dbA = HibikiDatabase.forTesting(NativeDatabase.memory());
-      final dbB = HibikiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(dbA.close);
-      addTearDown(dbB.close);
+      await _withMultipleDatabaseWarningDisabled(() async {
+        final dbA = HibikiDatabase.forTesting(NativeDatabase.memory());
+        final dbB = HibikiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(dbA.close);
+        addTearDown(dbB.close);
 
-      final ReaderSettings bookA = ReaderSettings(dbA);
-      final ReaderSettings bookB = ReaderSettings(dbB);
-      await bookA.refreshFromDb();
-      await bookB.refreshFromDb();
+        final ReaderSettings bookA = ReaderSettings(dbA);
+        final ReaderSettings bookB = ReaderSettings(dbB);
+        await bookA.refreshFromDb();
+        await bookB.refreshFromDb();
 
-      await bookA.toggleTopProgressFloating();
-      expect(bookA.topProgressFloating, isTrue);
-      expect(bookB.topProgressFloating, isFalse, reason: 'per-reader 偏好不得跨书泄漏');
+        await bookA.toggleTopProgressFloating();
+        expect(bookA.topProgressFloating, isTrue);
+        expect(bookB.topProgressFloating, isFalse,
+            reason: 'per-reader 偏好不得跨书泄漏');
+      });
     });
   });
 
@@ -275,6 +279,18 @@ void main() {
       );
     });
   });
+}
+
+Future<T> _withMultipleDatabaseWarningDisabled<T>(
+  Future<T> Function() body,
+) async {
+  final bool previous = driftRuntimeOptions.dontWarnAboutMultipleDatabases;
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  try {
+    return await body();
+  } finally {
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = previous;
+  }
 }
 
 String _slice(String source, String start, String end) {

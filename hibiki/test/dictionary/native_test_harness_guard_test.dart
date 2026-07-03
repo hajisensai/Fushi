@@ -25,7 +25,8 @@ void main() {
     final String cmake = read('../native/hoshidicts/tests/CMakeLists.txt');
 
     // Reuses the real engine static lib (production link path).
-    expect(cmake, contains('add_subdirectory(\${HOSHI_ROOT} hoshidicts_build)'));
+    expect(
+        cmake, contains('add_subdirectory(\${HOSHI_ROOT} hoshidicts_build)'));
     expect(cmake, contains('enable_testing()'));
     expect(cmake, contains('add_test(NAME \${name} COMMAND \${name})'));
     // Every test we expect ctest to drive must be registered.
@@ -70,7 +71,8 @@ void main() {
     // The native ctest step must live inside the Linux job (which installs
     // g++-14 + cmake + ninja) and run before the Flutter Linux build so a
     // native break fails fast.
-    final int ctestIdx = workflow.indexOf('Run hoshidicts native tests (ctest)');
+    final int ctestIdx =
+        workflow.indexOf('Run hoshidicts native tests (ctest)');
     final int verifyIdx = workflow.indexOf('Verify Linux C++23 compiler');
     final int flutterBuildIdx = workflow.indexOf('Build Linux (debug)');
     expect(verifyIdx, greaterThan(0));
@@ -80,7 +82,8 @@ void main() {
         reason: 'run native ctest before the Flutter Linux build (fail fast).');
   });
 
-  test('the existing macOS ctypes dylib smoke stays intact (not regressed)', () {
+  test('the existing macOS ctypes dylib smoke stays intact (not regressed)',
+      () {
     // The deep native gate is additive: it must NOT remove or replace the
     // pre-existing macOS create/destroy ctypes smoke in the macos job.
     final String workflow =

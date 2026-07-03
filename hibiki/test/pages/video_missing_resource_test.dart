@@ -8,11 +8,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 /// TODO-897 widget 行为守卫：本地视频文件缺失（被移动/删除/盘未挂载）时，页面进入
@@ -21,10 +25,16 @@ import '../helpers/test_platform_services.dart';
 /// 缺失分支在 `controller.load` 之前短路（video_resource_check.dart），全程不碰
 /// libmpv；故能在 widget 环境跑通真实 `_init → _loadSingle → _applyLoad` 链。
 class _MissingTestAppModel extends AppModel {
-  _MissingTestAppModel() : super(testPlatformServices());
+  _MissingTestAppModel(PlatformServices platformServices, this._db)
+      : super(platformServices);
+
+  final HibikiDatabase _db;
 
   @override
   double get appUiScale => 1.0;
+
+  @override
+  HibikiDatabase get database => _db;
 }
 
 void main() {
@@ -34,6 +44,8 @@ void main() {
   late HibikiDatabase db;
   late PreferencesRepository prefs;
   late Directory storeDir;
+  late PlatformServices platformServices;
+  late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
 
   setUpAll(() {
@@ -55,7 +67,9 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_todo897');
-    appModel = _MissingTestAppModel()
+    platformServices = testPlatformServices();
+    ankiRepository = FakeAnkiRepository();
+    appModel = _MissingTestAppModel(platformServices, db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
   });
 
@@ -78,6 +92,8 @@ void main() {
 
   Widget wrap(String bookUid) => ProviderScope(
         overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
         ],
         child: TranslationProvider(

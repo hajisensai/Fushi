@@ -48,7 +48,8 @@ void main() {
       final FlutterExceptionHandler? oldHandler = FlutterError.onError;
       FlutterError.onError = (FlutterErrorDetails details) {
         errors.add(details);
-        debugPrint('[verify-1027] FlutterError: ${details.exceptionAsString()}');
+        debugPrint(
+            '[verify-1027] FlutterError: ${details.exceptionAsString()}');
       };
 
       try {

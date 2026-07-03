@@ -62,6 +62,7 @@ class ReaderSettings {
       _cache[shortKey] = _parseValue(entry.value);
     }
     await _migrateMargins();
+    await _ensureResponsiveMarginDefaults();
     await _ensureFontCatalogState();
   }
 
@@ -92,11 +93,24 @@ class ReaderSettings {
     await _db.deletePref('${_prefix}ttu_second_dimension_max');
   }
 
+  Future<void> _ensureResponsiveMarginDefaults() async {
+    final Map<String, double> defaults = <String, double>{
+      'ttu_margin_top': defaultMarginTopPercent,
+      'ttu_margin_bottom': defaultMarginBottomPercent,
+      'ttu_margin_left': defaultMarginLeftPercent,
+      'ttu_margin_right': defaultMarginRightPercent,
+    };
+    for (final MapEntry<String, double> entry in defaults.entries) {
+      if (_cache.containsKey(entry.key)) continue;
+      await _set<double>(entry.key, entry.value);
+    }
+  }
+
   T _get<T>(String key, T defaultValue) {
     final dynamic value = _cache[key];
     if (value is T) return value;
     if (T == double && value is int) return value.toDouble() as T;
-    _set<T>(key, defaultValue);
+    _cache[key] = defaultValue;
     return defaultValue;
   }
 

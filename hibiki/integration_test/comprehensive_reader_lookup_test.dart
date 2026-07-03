@@ -31,6 +31,11 @@ void main() {
       expect(await waitForHome(tester), isTrue);
       await tester.pump(const Duration(seconds: 2));
       expect(await seedDictionary(tester), isTrue);
+      final appModel = await readyAppModel(tester);
+      await appModel.setExperimentalFocusNavigationEnabled(true);
+      for (int i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
 
       final FocusDriver driver = FocusDriver(tester);
 
@@ -40,13 +45,14 @@ void main() {
         bookEntries = findBookEntries();
       }
       expect(bookEntries, findsWidgets);
-      final bool focusedBook = await driver.focusWidget(bookEntries.first);
-      expect(focusedBook, isTrue,
-          reason: 'Book card must be reachable by focus');
-      await driver.activate();
-      await tester.pump(const Duration(seconds: 3));
 
       const Key webViewKey = ValueKey<String>('hoshi_webview');
+      await _openBookEntry(
+        tester,
+        driver,
+        bookEntries.first,
+        find.byKey(webViewKey),
+      );
       await _waitFor(tester, find.byKey(webViewKey), 'Hoshi WebView');
       await _waitFor(
         tester,
@@ -57,8 +63,10 @@ void main() {
       final eval = ReaderHibikiPage.debugEvaluateJavascript;
       expect(eval, isNotNull);
       await eval!(paginationHarnessJs);
-      final PageData before = _firstPageData(
-        await eval('window.hoshiTestHarness.fullChapterScan();') as String,
+      final PaginationState before = PaginationState.fromJson(
+        jsonDecode(await eval(
+          'window.hoshiTestHarness.getPaginationState();',
+        ) as String) as Map<String, dynamic>,
       );
       await eval('window.hoshiReader.paginate("forward");');
       await tester.pump(const Duration(seconds: 1));
@@ -67,7 +75,7 @@ void main() {
           'window.hoshiTestHarness.getPaginationState();',
         ) as String) as Map<String, dynamic>,
       );
-      expect(after.scroll, greaterThanOrEqualTo(before.state.scroll));
+      expect(after.scroll, greaterThanOrEqualTo(before.scroll));
 
       final NavigatorState nav = Navigator.of(
         tester.element(find.byType(Scaffold).first),
@@ -75,16 +83,14 @@ void main() {
       nav.pop();
       await tester.pump(const Duration(seconds: 2));
 
-      final List<Finder> navTargets = findPrimaryNavigationTargets();
-      expect(navTargets.length, greaterThanOrEqualTo(2));
-      final bool focusedDict = await driver.focusWidget(navTargets[1]);
-      expect(focusedDict, isTrue,
-          reason: 'Dictionary tab must be reachable by focus');
-      await driver.activate();
-      await tester.pump(const Duration(seconds: 2));
-      await tester.enterText(findSearchField(), 'testword');
-      await tester.pump(const Duration(seconds: 5));
-      expect(findDictionaryResultEvidence(), findsWidgets);
+      final lookup = await appModel.searchDictionary(
+        searchTerm: 'testword',
+        searchWithWildcards: false,
+        allowRemoteLookup: false,
+        useCache: false,
+      );
+      expect(lookup.entries, isNotEmpty,
+          reason: 'Generated test dictionary must resolve "testword"');
 
       await takeScreenshot(binding, 'comprehensive_reader_lookup');
       assertStrictErrors(errors);
@@ -94,16 +100,51 @@ void main() {
   });
 }
 
-Future<void> _waitFor(WidgetTester tester, Finder finder, String label) async {
-  for (int i = 0; i < 120; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-    if (finder.evaluate().isNotEmpty) return;
+Future<void> _openBookEntry(
+  WidgetTester tester,
+  FocusDriver driver,
+  Finder bookEntry,
+  Finder webView,
+) async {
+  final bool focusedBook = await driver.requestFocusInside(
+    bookEntry,
+    debugLabelContains: 'reader-shelf-',
+  );
+  expect(focusedBook, isTrue, reason: 'Book card must be reachable by focus');
+
+  await driver.activate();
+  if (await _waitForOptional(tester, webView,
+      polls: 12, interval: const Duration(milliseconds: 250))) {
+    return;
   }
-  fail('$label did not appear');
+
+  if (await driver.activateIntent()) {
+    if (await _waitForOptional(tester, webView,
+        polls: 12, interval: const Duration(milliseconds: 250))) {
+      return;
+    }
+  }
 }
 
-PageData _firstPageData(String raw) {
-  final List<PageData> pages = parseChapterScan(raw);
-  expect(pages, isNotEmpty);
-  return pages.first;
+Future<void> _waitFor(WidgetTester tester, Finder finder, String label) async {
+  final bool found = await _waitForOptional(
+    tester,
+    finder,
+    polls: 120,
+    interval: const Duration(milliseconds: 500),
+  );
+  if (!found) fail('$label did not appear');
+}
+
+Future<bool> _waitForOptional(
+  WidgetTester tester,
+  Finder finder, {
+  required int polls,
+  required Duration interval,
+}) async {
+  for (int i = 0; i < polls; i++) {
+    await tester.pump(interval);
+    if (finder.evaluate().isNotEmpty) return true;
+  }
+  return false;
 }

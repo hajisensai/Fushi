@@ -1,4 +1,4 @@
-name: Build Desktop Release Artifacts
+name: Build Desktop and Apple Release Artifacts
 
 on:
   push:
@@ -459,4 +459,301 @@ jobs:
           ARTIFACTS_DIR: hibiki/build/release-artifacts
           ASSET_GLOB: hibiki-*-windows-setup.exe
           PLATFORM_LABEL: desktop
+        run: bash tool/publish_update_manifest.sh
+
+  apple:
+    needs: windows
+    if: ${{ always() }}
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+      - name: Resolve Apple release channel
+        id: channel
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          EVENT="${GITHUB_EVENT_NAME}"
+          CHANNEL="${INPUT_CHANNEL:-}"
+          TAG="${INPUT_TAG_NAME:-}"
+          NAME="${INPUT_RELEASE_NAME:-}"
+          BODY=""
+          PRERELEASE=true
+          MAKE_LATEST=false
+          PUBLISH_MANAGED_RELEASE=false
+
+          case "$EVENT" in
+            push)
+              CHANNEL=debug
+              TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+              NAME="${NAME:-Hibiki Apple debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated Apple debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            workflow_dispatch)
+              case "$CHANNEL" in
+                debug)
+                  TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+                  NAME="${NAME:-Hibiki Apple debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual Apple debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  ;;
+                beta)
+                  TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  BODY="Manual Apple beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  ;;
+                formal)
+                  TAG="${TAG:-v${VERSION}}"
+                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  BODY="Manual Apple formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  PRERELEASE=false
+                  MAKE_LATEST=true
+                  ;;
+                *)
+                  echo "::error title=Invalid release channel::Use debug, beta, or formal."
+                  exit 1
+                  ;;
+              esac
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            release)
+              CHANNEL=github-release
+              TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              ;;
+            *)
+              echo "::error title=Unsupported event::$EVENT is not an Apple release event."
+              exit 1
+              ;;
+          esac
+
+          BUILD_VERSION_NAME="$VERSION"
+          case "$CHANNEL" in
+            debug)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
+                exit 1
+              fi
+              ;;
+            beta)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
+                exit 1
+              fi
+              ;;
+            formal)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "::error title=Invalid formal tag::Use v<version>."
+                exit 1
+              fi
+              ;;
+          esac
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+            BUILD_VERSION_NAME="${TAG#v}"
+            BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+          fi
+
+          ROLLING_DEBUG_TAG=debug-rolling
+          if [ "$CHANNEL" = debug ]; then
+            PUBLISH_TAG="$ROLLING_DEBUG_TAG"
+            ROLLING_DEBUG=true
+          else
+            PUBLISH_TAG="$TAG"
+            ROLLING_DEBUG=false
+          fi
+
+          {
+            echo "channel=$CHANNEL"
+            echo "tag=$TAG"
+            echo "publish_tag=$PUBLISH_TAG"
+            echo "rolling_debug=$ROLLING_DEBUG"
+            echo "name=$NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$MAKE_LATEST"
+            echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Provide gitignored Google OAuth secret stub
+        shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          fi
+      - name: Provide gitignored log upload secret stub
+        shell: bash
+        env:
+          LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        run: |
+          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+          fi
+      - name: Flutter pub get
+        working-directory: hibiki
+        run: flutter pub get
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+      - name: Build macOS release
+        working-directory: hibiki
+        run: >-
+          flutter build macos --release
+          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-number "${{ steps.channel.outputs.release_sequence }}"
+      - name: Prepare macOS app release asset
+        working-directory: hibiki
+        shell: bash
+        env:
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+        run: |
+          set -euo pipefail
+          app_dir="build/macos/Build/Products/Release/hibiki.app"
+          out_dir="build/release-artifacts"
+          if [ ! -d "$app_dir" ]; then
+            echo "::error title=macOS app missing::Expected $app_dir"
+            exit 1
+          fi
+          mkdir -p "$out_dir"
+          rm -f "$out_dir"/hibiki-*-macos.zip
+          ditto -c -k --keepParent "$app_dir" "$out_dir/hibiki-${BUILD_VERSION_NAME}-macos.zip"
+      - name: Build iOS release app (no codesign)
+        working-directory: hibiki
+        run: >-
+          flutter build ios --release --no-codesign
+          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-number "${{ steps.channel.outputs.release_sequence }}"
+      - name: Prepare unsigned iOS IPA release asset
+        working-directory: hibiki
+        shell: bash
+        env:
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+        run: |
+          set -euo pipefail
+          app_dir="build/ios/iphoneos/Runner.app"
+          out_dir="build/release-artifacts"
+          payload_dir="$RUNNER_TEMP/hibiki-ios-payload"
+          if [ ! -d "$app_dir" ]; then
+            echo "::error title=iOS app missing::Expected $app_dir"
+            exit 1
+          fi
+          rm -rf "$payload_dir"
+          mkdir -p "$payload_dir/Payload" "$out_dir"
+          ditto "$app_dir" "$payload_dir/Payload/Runner.app"
+          rm -f "$out_dir"/hibiki-*-ios.ipa
+          (
+            cd "$payload_dir"
+            zip -qry "$GITHUB_WORKSPACE/hibiki/$out_dir/hibiki-${BUILD_VERSION_NAME}-ios.ipa" Payload
+          )
+      - name: Upload Apple artifacts to workflow run
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hibiki-${{ steps.channel.outputs.channel }}-apple-${{ github.sha }}
+          path: |
+            hibiki/build/release-artifacts/hibiki-*-macos.zip
+            hibiki/build/release-artifacts/hibiki-*-ios.ipa
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload Apple assets to GitHub Release event
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.channel.outputs.tag }}
+          files: |
+            hibiki/build/release-artifacts/hibiki-*-macos.zip
+            hibiki/build/release-artifacts/hibiki-*-ios.ipa
+      - name: Prune stale assets from rolling debug release
+        if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+        run: |
+          set -euo pipefail
+          KEEP_TOKEN="-${BUILD_VERSION_NAME}-"
+          if ! gh release view "$PUBLISH_TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Rolling release $PUBLISH_TAG does not exist yet; nothing to prune."
+            exit 0
+          fi
+          mapfile -t STALE < <(
+            gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets \
+              --jq '.assets[].name' \
+              | grep -v -- "$KEEP_TOKEN" || true
+          )
+          if [ "${#STALE[@]}" -eq 0 ]; then
+            echo "No stale assets on $PUBLISH_TAG (all carry $KEEP_TOKEN)."
+            exit 0
+          fi
+          for asset in "${STALE[@]}"; do
+            [ -n "$asset" ] || continue
+            echo "  deleting stale asset $asset from $PUBLISH_TAG"
+            gh release delete-asset "$PUBLISH_TAG" "$asset" --repo "$REPO" --yes
+          done
+      - name: Publish Apple channel release
+        if: steps.channel.outputs.publish_managed_release == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.channel.outputs.publish_tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.channel.outputs.name }}
+          body: ${{ steps.channel.outputs.body }}
+          prerelease: ${{ steps.channel.outputs.prerelease }}
+          make_latest: ${{ steps.channel.outputs.make_latest }}
+          files: |
+            hibiki/build/release-artifacts/hibiki-*-macos.zip
+            hibiki/build/release-artifacts/hibiki-*-ios.ipa
+      - name: Publish mirror update manifest (Apple assets)
+        if: steps.channel.outputs.publish_managed_release == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          TAG: ${{ steps.channel.outputs.tag }}
+          DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+          NOTES: ${{ steps.channel.outputs.body }}
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
+          ARTIFACTS_DIR: hibiki/build/release-artifacts
+          ASSET_GLOB: hibiki-*-macos.zip hibiki-*-ios.ipa
+          PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh

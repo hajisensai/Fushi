@@ -519,7 +519,8 @@ void main() {
 
     expect(shared, contains('kSettingsRowTitleMaxLines'));
     expect(shared, contains('kSettingsRowSubtitleMaxLines'));
-    expect(shared, contains('maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines'));
+    expect(shared,
+        contains('maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines'));
     expect(shared, contains('maxLines: kSettingsRowSubtitleMaxLines'));
     expect(shared, contains('kSettingsPickerDefaultWidth'));
     expect(shared, contains('kSettingsPickerMinInlineWidth'));

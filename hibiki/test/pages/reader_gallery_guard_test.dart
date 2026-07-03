@@ -21,7 +21,8 @@ void main() {
   test('gallery button is wired into the bottom settings bar (barItems)', () {
     final int barItemsIdx = src.indexOf('final List<Widget> barItems');
     expect(barItemsIdx, greaterThan(-1));
-    final int onPressedIdx = src.indexOf('onPressed: _openGallery,', barItemsIdx);
+    final int onPressedIdx =
+        src.indexOf('onPressed: _openGallery,', barItemsIdx);
     expect(onPressedIdx, greaterThan(-1),
         reason: 'gallery IconButton must call _openGallery from barItems');
     expect(src.contains('tooltip: t.reader_gallery_tooltip'), isTrue);
@@ -32,7 +33,8 @@ void main() {
     expect(idx, greaterThan(-1));
     // _openGallery wires onOpenImage to _openImageViewer.
     expect(src.contains('onOpenImage: (EpubImageRef ref) =>'), isTrue);
-    expect(src.contains('_openImageViewer(ReaderHibikiSource.epubUrl(ref.src))'),
+    expect(
+        src.contains('_openImageViewer(ReaderHibikiSource.epubUrl(ref.src))'),
         isTrue,
         reason: 'gallery thumbnail tap must reuse _openImageViewer');
   });

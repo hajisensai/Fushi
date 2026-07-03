@@ -571,6 +571,7 @@ class SessionBookInfo {
     required this.audiobook,
     required this.title,
     required this.mediaIdentifier,
+    this.isSrtBookSource = false,
     this.author,
     this.coverPath,
   });
@@ -581,6 +582,14 @@ class SessionBookInfo {
 
   /// 媒体标识（用于「回到书」时按 source 打开，如 `reader_hibiki://book/<key>`）。
   final String mediaIdentifier;
+
+  /// True only when this session was resolved from the SrtBooks table.
+  ///
+  /// Do not infer this from [Audiobook.alignmentFormat]: normal EPUB
+  /// audiobooks can also use an SRT alignment file, but their cues live in the
+  /// Audiobooks namespace and must be loaded through AudiobookRepository.
+  final bool isSrtBookSource;
+
   final String? author;
   final String? coverPath;
 }

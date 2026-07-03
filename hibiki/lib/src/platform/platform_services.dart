@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_platform/hibiki_platform.dart';
 
+import 'package:hibiki/src/anki/ankimobile_repository.dart';
 import 'package:hibiki/src/platform/android/android_directory_service.dart';
 import 'package:hibiki/src/platform/android/android_lifecycle_service.dart';
 import 'package:hibiki/src/platform/android/android_clipboard_service.dart';
@@ -79,7 +80,7 @@ class PlatformServices {
         clipboard: IosClipboardService(),
         permission: IosPermissionService(),
         deviceInfo: IosDeviceInfoService(),
-        createAnkiRepository: AnkiConnectRepository.new,
+        createAnkiRepository: AnkiMobileRepository.new,
       );
     }
     return PlatformServices(

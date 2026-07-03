@@ -27,8 +27,8 @@ void main() {
 
   group('VideoPlayerController TODO-984 诊断仪表', () {
     test('暴露 onDiagLog 回调 + 统一 [VIDEO-DIAG] 前缀', () {
-      expect(controllerSrc,
-          contains('void Function(String message)? onDiagLog'),
+      expect(
+          controllerSrc, contains('void Function(String message)? onDiagLog'),
           reason: '上层（页面）须能接入诊断日志回调');
       expect(controllerSrc, contains('[VIDEO-DIAG]'),
           reason: '诊断行须带统一前缀，便于用户筛选/上传');
@@ -73,14 +73,14 @@ void main() {
     test('把控制器诊断行接到 ErrorLogService（用户可查看/上传）', () {
       expect(pageSrc, contains('controller.onDiagLog'),
           reason: '页面须把 controller 诊断回调接到日志服务');
-      expect(pageSrc,
-          contains("ErrorLogService.instance.log('VideoHibiki.diag'"),
+      expect(
+          pageSrc, contains("ErrorLogService.instance.log('VideoHibiki.diag'"),
           reason: '诊断行落 ErrorLogService 的 VideoHibiki.diag 源');
     });
 
     test('load 失败 catch 落结构化日志（不只 debugPrint）', () {
-      expect(pageSrc,
-          contains("ErrorLogService.instance.log('VideoHibiki.load'"),
+      expect(
+          pageSrc, contains("ErrorLogService.instance.log('VideoHibiki.load'"),
           reason: 'load 抛异常须落结构化错误日志，Android 上 debugPrint 收不到');
     });
 

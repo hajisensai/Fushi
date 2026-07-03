@@ -32,24 +32,28 @@ void main() {
   ]);
 
   late Directory extractDir;
+  final List<Directory> tempDirs = <Directory>[];
 
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
     extractDir = Directory.systemTemp.createTempSync('hibiki_illust_kbd');
+    tempDirs.add(extractDir);
     // 写 3 张图片（命名带序号，listSync 顺序在同一目录内稳定）。
     for (int i = 0; i < 3; i++) {
       File('${extractDir.path}/img_$i.png').writeAsBytesSync(onePxPng);
     }
   });
 
-  tearDown(() {
+  tearDownAll(() {
     // Windows 下解码句柄可能仍占用文件，删除失败不应让用例变红。
-    try {
-      if (extractDir.existsSync()) {
-        extractDir.deleteSync(recursive: true);
+    for (final Directory dir in tempDirs) {
+      try {
+        if (dir.existsSync()) {
+          dir.deleteSync(recursive: true);
+        }
+      } on FileSystemException {
+        // 临时目录由 OS 回收。
       }
-    } on FileSystemException {
-      // 临时目录由 OS 回收。
     }
   });
 

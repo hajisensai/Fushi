@@ -1627,24 +1627,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
   /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
   Future<void> _loadSingle(VideoBookRow row) async {
+    final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
+    final ({
+      String videoPath,
+      String? subtitleSource,
+    }) paths = await _relocateSingleMediaPaths(row);
     List<AudioCue> cues = await widget.repo.loadCues(widget.bookUid);
-    String? externalSub = row.subtitleSource;
+    String? externalSub = paths.subtitleSource;
     int? graphicStreamIndex;
 
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
     // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
-    if (SubtitleSource.isOff(row.subtitleSource)) {
+    if (subtitleExplicitlyOff) {
       cues = const <AudioCue>[];
     } else if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
-      if (row.subtitleSource != null && row.subtitleSource!.isNotEmpty) {
+      if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
         final ({
           String persisted,
           List<AudioCue> cues,
           int? graphicStreamIndex,
         })? restored = await _restorePersistedSubtitle(
-          videoPath: row.videoPath,
-          persisted: row.subtitleSource,
+          videoPath: paths.videoPath,
+          persisted: paths.subtitleSource,
           crossEpisode: false,
         );
         if (restored != null) {
@@ -1656,7 +1661,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // ② 无持久化 / 无匹配：退默认 sidecar 探测。
       if (cues.isEmpty && externalSub == null) {
         final ({String path, List<AudioCue> cues})? sidecar =
-            await _detectSidecar(row.videoPath, widget.bookUid);
+            await _detectSidecar(paths.videoPath, widget.bookUid);
         if (sidecar != null) {
           cues = sidecar.cues;
           externalSub = sidecar.path;
@@ -1664,7 +1669,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
     }
     await _applyLoad(
-      videoPath: row.videoPath,
+      videoPath: paths.videoPath,
       cues: cues,
       title: row.title,
       initialPositionMs: widget.initialCueStartMs ?? row.lastPositionMs,
@@ -1674,6 +1679,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       externalSubtitlePath: externalSub,
       renderGraphicStreamIndex: graphicStreamIndex,
     );
+  }
+
+  Future<({String videoPath, String? subtitleSource})>
+      _relocateSingleMediaPaths(VideoBookRow row) async {
+    final String? relocatedVideo =
+        await relocateMissingAppDocumentPath(row.videoPath);
+    final String videoPath = relocatedVideo ?? row.videoPath;
+    final String? subtitleSource = row.subtitleSource;
+    final String? relocatedSubtitle =
+        subtitleSource == null || subtitleSource.isEmpty
+            ? null
+            : await relocateMissingAppDocumentPath(subtitleSource);
+    final String? effectiveSubtitle = relocatedSubtitle ?? subtitleSource;
+    if (relocatedVideo != null || relocatedSubtitle != null) {
+      await widget.repo.updateLocalMediaPaths(
+        widget.bookUid,
+        videoPath: relocatedVideo,
+        subtitleSource: relocatedSubtitle,
+      );
+      debugPrint(
+        '[VideoHibikiPage] relocated app-owned media path(s): '
+        'video=${relocatedVideo != null} subtitle=${relocatedSubtitle != null}',
+      );
+    }
+    return (videoPath: videoPath, subtitleSource: effectiveSubtitle);
   }
 
   /// 尝试用持久化偏好 [persisted] 在 [videoPath] 的可用字幕源里选一个并加载 cue。

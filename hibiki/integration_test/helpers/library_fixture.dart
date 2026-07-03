@@ -158,13 +158,23 @@ Future<File> writeGeneratedDictionary(File file) async {
 
 Future<File?> _findExternalDictionaryFixture() async {
   final List<File> candidates = <File>[];
-  if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+
+  const String testRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+  if (testRoot.isNotEmpty) {
+    candidates.add(File(
+        '$testRoot${Platform.pathSeparator}fixtures${Platform.pathSeparator}test_dict.zip'));
+    candidates.add(File('$testRoot${Platform.pathSeparator}test_dict.zip'));
+  }
+
+  candidates.add(File('integration_test/fixtures/test_dict.zip'));
+
+  if (Platform.isAndroid) {
     final Directory? extDir = await getExternalStorageDirectory();
     if (extDir != null) {
       candidates.add(File('${extDir.path}/test_dict.zip'));
     }
+    candidates.add(File('/sdcard/Download/test_dict.zip'));
   }
-  candidates.add(File('/sdcard/Download/test_dict.zip'));
 
   for (final File file in candidates) {
     if (file.existsSync()) return file;

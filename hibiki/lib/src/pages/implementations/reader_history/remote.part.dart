@@ -386,8 +386,8 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
               .migrateShelfEntryKey('epub', book.downloadId, localBookKey);
         } catch (e, stack) {
           // 排序/系列元数据迁移失败不能让已成功的下载失败。
-          ErrorLogService.instance.log(
-              'ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
+          ErrorLogService.instance
+              .log('ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
         }
       }
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。

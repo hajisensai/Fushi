@@ -18,6 +18,7 @@ import 'package:stack_trace/stack_trace.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
@@ -40,9 +41,12 @@ import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/anki/ankimobile_repository.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
+import 'package:hibiki/src/platform/ios/ios_url_event_channel.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
@@ -468,6 +472,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 
   /// 守卫：Windows 安装器 handoff marker 只在拿到真实 Navigator 后 reconcile 一次。
   bool _windowsUpdateHandoffChecked = false;
+  StreamSubscription<String>? _iosUrlSubscription;
 
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -500,6 +505,22 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             intents.ReceiveIntent.receivedIntentStream.listen(
           (intent) => handleIntent(
             intent: intent,
+            isInitial: false,
+          ),
+        );
+      });
+    }
+    if (Platform.isIOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        IosUrlEventChannel.getInitialUrl().then(
+          (url) => handleIncomingUrl(
+            data: url,
+            isInitial: true,
+          ),
+        );
+        _iosUrlSubscription = IosUrlEventChannel.urls.listen(
+          (url) => handleIncomingUrl(
+            data: url,
             isInitial: false,
           ),
         );
@@ -685,6 +706,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   @override
   void dispose() {
     _intentsSubscription?.cancel();
+    _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     if (_isDesktop) {
       windowManager.removeListener(this);
@@ -702,8 +724,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     }
 
     final String? data = intent.data;
-    if (data != null && data.startsWith('hibiki://auth/')) {
-      await _handleOAuthRedirect(data);
+    if (await handleIncomingUrl(data: data, isInitial: isInitial)) {
       return;
     }
 
@@ -713,6 +734,41 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           _isMainIntent = true;
         });
         return;
+    }
+  }
+
+  Future<bool> handleIncomingUrl({
+    required String? data,
+    required bool isInitial,
+  }) async {
+    if (data == null || !mounted) return false;
+    final String normalized = data.toLowerCase();
+    if (normalized.startsWith('hibiki://auth/')) {
+      await _handleOAuthRedirect(data);
+      return true;
+    }
+    if (normalized.startsWith(hibikiAnkiFetchCallback.toLowerCase())) {
+      await _handleAnkiMobileInfoCallback();
+      return true;
+    }
+    if (normalized.startsWith(hibikiAnkiSuccessCallback.toLowerCase())) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _handleAnkiMobileInfoCallback() async {
+    final repo = ref.read(ankiRepositoryProvider);
+    if (repo is! AnkiMobileRepository) return;
+    final result = await repo.consumeInfoForAddingPasteboard();
+    switch (result) {
+      case AnkiFetchSuccess():
+        await ref.read(ankiViewModelProvider.notifier).reloadSettings();
+        HibikiToast.show(msg: 'AnkiMobile configuration imported.');
+      case AnkiFetchError(:final message, :final code):
+        HibikiToast.show(
+          msg: AnkiViewModel.localizeAnkiFetchError(message, code),
+        );
     }
   }
 

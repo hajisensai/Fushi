@@ -14,6 +14,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -344,7 +346,8 @@ void main() {
     });
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final AppModel appModel = _CoverageAppModel()
+    final PlatformServices platformServices = testPlatformServices();
+    final AppModel appModel = _CoverageAppModel(platformServices)
       ..themeNotifier = themeNotifier
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
@@ -375,7 +378,10 @@ void main() {
     List<SettingsDestination> destinations = const <SettingsDestination>[];
 
     await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+      overrides: <Override>[
+        appProvider.overrideWith((Ref ref) => appModel),
+        platformServicesProvider.overrideWithValue(platformServices),
+      ],
       child: MaterialApp(
         theme: ThemeData(
           useMaterial3: true,
@@ -471,18 +477,22 @@ void main() {
     final Map<String, String> afterAll =
         Map<String, String>.from(await db.getAllPrefs());
     for (final MapEntry<String, String> e in initial.entries) {
+      if (e.key == PreferencesRepository.prefsVersionKey) continue;
       if (afterAll[e.key] != e.value) {
         await db.setPref(e.key, e.value);
       }
     }
     for (final String k in afterAll.keys) {
+      if (k == PreferencesRepository.prefsVersionKey) continue;
       if (!initial.containsKey(k)) {
         await db.deletePref(k);
       }
     }
     await readerSettings.refreshFromDb();
-    final bool globallyRestored =
-        _mapsEqual(initial, Map<String, String>.from(await db.getAllPrefs()));
+    final Map<String, String> restored =
+        Map<String, String>.from(await db.getAllPrefs());
+    final List<String> restoreDiff = _mapDiff(initial, restored);
+    final bool globallyRestored = restoreDiff.isEmpty;
 
     // 「Yomitan API server」开关被焦点遍历真切到 ON 时会 shelf_io.serve 绑定一个
     // 真实 HttpServer，它带一个 2 分钟 idleTimeout 周期 Timer。全局还原只写回 DB
@@ -547,7 +557,8 @@ void main() {
     expect(verdicts.where((ItemVerdict v) => v.effectVerified).length,
         greaterThanOrEqualTo(8),
         reason: 'reading(T1)+appearance(T2) 应有多项被探针确认真生效');
-    expect(globallyRestored, isTrue, reason: '全部设置必须能还原到初始快照');
+    expect(globallyRestored, isTrue,
+        reason: '全部设置必须能还原到初始快照。diff: ${restoreDiff.join("; ")}');
   });
 }
 
@@ -658,6 +669,23 @@ bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
   return true;
 }
 
+List<String> _mapDiff(Map<String, String> before, Map<String, String> after) {
+  final List<String> out = <String>[];
+  final Set<String> keys = <String>{...before.keys, ...after.keys};
+  for (final String key in keys) {
+    if (key == PreferencesRepository.prefsVersionKey) continue;
+    if (!before.containsKey(key)) {
+      out.add('+$key=${after[key]}');
+    } else if (!after.containsKey(key)) {
+      out.add('-$key=${before[key]}');
+    } else if (before[key] != after[key]) {
+      out.add('$key: ${before[key]} -> ${after[key]}');
+    }
+  }
+  out.sort();
+  return out;
+}
+
 enum _RowKind { switchRow, slider, stepper, segmented }
 
 class _FocusedRow {
@@ -667,7 +695,8 @@ class _FocusedRow {
 }
 
 class _CoverageAppModel extends AppModel {
-  _CoverageAppModel() : super(testPlatformServices());
+  _CoverageAppModel(PlatformServices platformServices)
+      : super(platformServices);
 
   final PackageInfo _packageInfo = PackageInfo(
     appName: 'Hibiki',

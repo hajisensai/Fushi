@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:path/path.dart' as p;
 
 /// 纯函数（TODO-897）：判断 [videoPath] 是否需要做「本地文件存在性校验」。
 ///
@@ -34,4 +36,47 @@ bool videoResourceRequiresLocalCheck(String? videoPath) {
 Future<bool> isLocalVideoResourceMissing(String? videoPath) async {
   if (!videoResourceRequiresLocalCheck(videoPath)) return false;
   return !await File(videoPath!.trim()).exists();
+}
+
+/// Relocates an app-owned iOS Documents path whose container UUID changed.
+///
+/// iOS app data container absolute paths include a volatile
+/// `.../Containers/Data/Application/<uuid>/Documents/...` prefix. If a DB row
+/// survives while the app-owned file has moved under the current Documents root,
+/// keep the relative path under `Documents/` and return the current absolute
+/// path. Arbitrary user `~/Documents/...` files are intentionally ignored.
+Future<String?> relocateMissingAppDocumentPath(
+  String? path, {
+  Directory? documentsRoot,
+}) async {
+  if (!videoResourceRequiresLocalCheck(path)) return null;
+  final String trimmed = path!.trim();
+  if (trimmed.isEmpty || !p.isAbsolute(trimmed)) return null;
+  if (await File(trimmed).exists()) return null;
+
+  final List<String> staleSegments = p.split(p.normalize(trimmed));
+  final int documentsIndex = _iosAppDocumentsIndex(staleSegments);
+  if (documentsIndex < 0 || documentsIndex == staleSegments.length - 1) {
+    return null;
+  }
+
+  final Directory root =
+      documentsRoot ?? await AppPaths.documentsRootDirectory();
+  final String relative = p.joinAll(staleSegments.sublist(documentsIndex + 1));
+  final String candidate = p.normalize(p.join(root.path, relative));
+  if (p.equals(p.normalize(trimmed), candidate)) return null;
+  return await File(candidate).exists() ? candidate : null;
+}
+
+int _iosAppDocumentsIndex(List<String> segments) {
+  for (int i = 0; i + 4 < segments.length; i++) {
+    if (segments[i] == 'Containers' &&
+        segments[i + 1] == 'Data' &&
+        segments[i + 2] == 'Application' &&
+        segments[i + 3].isNotEmpty &&
+        segments[i + 4] == 'Documents') {
+      return i + 4;
+    }
+  }
+  return -1;
 }

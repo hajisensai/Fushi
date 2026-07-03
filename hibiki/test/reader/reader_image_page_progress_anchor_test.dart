@@ -112,8 +112,7 @@ void main() {
     });
 
     test('_applyImagePageProgressFallback 经 isImageOnlyChapter 门控 + 纯函数锚点', () {
-      final int idx =
-          src.indexOf('void _applyImagePageProgressFallback() {');
+      final int idx = src.indexOf('void _applyImagePageProgressFallback() {');
       expect(idx, greaterThan(0),
           reason: '_applyImagePageProgressFallback 必须存在');
       final String body = src.substring(idx, idx + 900);
@@ -123,8 +122,8 @@ void main() {
       expect(body.contains('imagePageProgressAnchor('), isTrue,
           reason: '落点必须走纯函数 imagePageProgressAnchor');
       // 只动进度 UI 字段，不碰 DB 落库 / session 累计。
-      expect(body.contains('_progressCurrentChars = anchor.currentChars'),
-          isTrue);
+      expect(
+          body.contains('_progressCurrentChars = anchor.currentChars'), isTrue);
       expect(body.contains('_progressTotalChars = anchor.totalChars'), isTrue);
     });
   });

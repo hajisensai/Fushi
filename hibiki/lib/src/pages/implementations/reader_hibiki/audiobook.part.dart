@@ -30,6 +30,17 @@ double? audiobookSasayakiCrossChapterProgress({
   return (normCharStart / chapterChars).clamp(0.0, 1.0);
 }
 
+/// 普通 EPUB + SRT 音频在 matcher 未能落到 EPUB 章节时，cue 仍保留
+/// `srt://default`。这种书没有可按 chapterHref 再筛的本章 cue，reader 应把全书
+/// cue 当作当前章节 cue 使用。
+@visibleForTesting
+bool audiobookCuesUseWholeBookForChapter(List<AudioCue> allCues) {
+  return allCues.isNotEmpty &&
+      allCues.every(
+        (AudioCue cue) => cue.chapterHref == SrtParser.defaultChapter,
+      );
+}
+
 /// TODO-807　SRT 被动跨章导航目标决策（纯函数）。
 ///
 /// `_srtCueChapterMap` 的 value 是 [CuesToEpub.splitChapters] 的人工切章序号，
@@ -270,7 +281,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     final SessionBookInfo? info = session.book;
     // 恢复 SRT 路径标识（_srtBookUid / _audiobookBookKey），cue 同步分支据此走 SRT/EPUB。
     if (info != null) {
-      if (info.audiobook.alignmentFormat == 'srt') {
+      if (info.isSrtBookSource) {
         _srtBookUid = info.bookKey;
       } else {
         _audiobookBookKey = info.bookKey;
@@ -312,7 +323,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // 页面在 await 期间被弃：会话仍可在后台续播（用户决策①后台继续），不 stop。
       return;
     }
-    if (req.info.audiobook.alignmentFormat == 'srt') {
+    if (req.info.isSrtBookSource) {
       _srtBookUid = req.info.bookKey;
     } else {
       _audiobookBookKey = req.info.bookKey;
@@ -367,11 +378,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // SRT 格式导入的 Audiobook 在 matcher 全部失败时，cue 的
     // chapterHref 仍为 'srt://default'，按 EPUB 章节 href 查不到。
     // 与 SrtBook 路径对齐，直接用全部 cue。
-    final bool allSrtDefault = allCues.isNotEmpty &&
-        allCues
-            .every((AudioCue c) => c.chapterHref == SrtParser.defaultChapter);
-
-    if (_cachedSasayaki || allSrtDefault) {
+    if (_cachedSasayaki || audiobookCuesUseWholeBookForChapter(allCues)) {
       controller.setChapterCues(allCues);
       return;
     }

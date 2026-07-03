@@ -119,7 +119,8 @@ void main() {
   //   * 资产 `browser_download_url` 指向 `releases/download/debug-rolling/<name>`（滚动 tag）。
   // 本组守卫「客户端对下载 URL 里的 tag 段完全无感」这一契约：只要版本化 `tag` 递进就判更新，
   // 且下载 URL 原样透传（不从 URL 反解 tag），滚动 tag 不破坏任何既有行为。
-  group('rolling debug release: versioned tag vs debug-rolling download URL '
+  group(
+      'rolling debug release: versioned tag vs debug-rolling download URL '
       '(TODO-1049)', () {
     String rollingManifestJson({
       required String tag,
@@ -189,8 +190,7 @@ void main() {
         channel: UpdateChannel.debug,
         updater: WindowsUpdater(),
       );
-      expect(selected, isNull,
-          reason: '同 seq（即便下载 URL 是滚动 tag）也不得判为有更新');
+      expect(selected, isNull, reason: '同 seq（即便下载 URL 是滚动 tag）也不得判为有更新');
     });
   });
 }

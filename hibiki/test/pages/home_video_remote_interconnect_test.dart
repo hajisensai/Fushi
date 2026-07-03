@@ -11,10 +11,14 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 void main() {
@@ -44,6 +48,8 @@ void main() {
   });
 
   late HibikiDatabase db;
+  late PlatformServices platformServices;
+  late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
   late _FakeRemoteVideoClient remoteClient;
   late File remoteVideoCover;
@@ -56,7 +62,9 @@ void main() {
         Directory.systemTemp.createTempSync('hibiki_remote_video_store');
     remoteVideoCover = File('${storeDir.path}/remote-video-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
-    appModel = AppModel(testPlatformServices())
+    platformServices = testPlatformServices();
+    ankiRepository = FakeAnkiRepository();
+    appModel = AppModel(platformServices)
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     remoteClient = _FakeRemoteVideoClient(coverPath: remoteVideoCover.path);
@@ -68,6 +76,8 @@ void main() {
 
   Widget buildApp() => ProviderScope(
         overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
         ],
         child: TranslationProvider(

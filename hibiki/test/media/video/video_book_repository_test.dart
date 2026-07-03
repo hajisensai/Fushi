@@ -66,6 +66,34 @@ void main() {
     expect(await repo.loadCues('video/off'), isEmpty);
   });
 
+  test('updateLocalMediaPaths rewrites stale video/subtitle paths only',
+      () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/relocated'),
+      title: Value('Relocated'),
+      videoPath: Value('/old/movie.mp4'),
+      subtitleSource: Value('/old/movie.srt'),
+      lastPositionMs: Value(1234),
+      delayMs: Value(250),
+    ));
+
+    await repo.updateLocalMediaPaths(
+      'video/relocated',
+      videoPath: '/new/movie.mp4',
+      subtitleSource: '/new/movie.srt',
+    );
+
+    final VideoBookRow row = (await repo.getByBookUid('video/relocated'))!;
+    expect(row.videoPath, '/new/movie.mp4');
+    expect(row.subtitleSource, '/new/movie.srt');
+    expect(row.title, 'Relocated');
+    expect(row.lastPositionMs, 1234);
+    expect(row.delayMs, 250);
+  });
+
   test('saveSubtitleSelection writes cues + source atomically (BUG-081/W1)',
       () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());

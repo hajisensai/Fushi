@@ -101,7 +101,10 @@ void main() {
         bool sheetUp = false;
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 150));
-          if (find.text(t.anki_mined_action_add_duplicate).evaluate().isNotEmpty) {
+          if (find
+              .text(t.anki_mined_action_add_duplicate)
+              .evaluate()
+              .isNotEmpty) {
             sheetUp = true;
             break;
           }
@@ -142,7 +145,8 @@ void main() {
         final bool focusedView = await driver.focusWidget(firstView) ||
             await driver.requestFocusInside(firstView);
         expect(focusedView, isTrue,
-            reason: 'TODO-1007: "view" action must be focus-reachable (no tap)');
+            reason:
+                'TODO-1007: "view" action must be focus-reachable (no tap)');
 
         Future<bool> viewerOpen() async {
           for (int i = 0; i < 20; i++) {
@@ -198,7 +202,10 @@ void main() {
             tester.state<NavigatorState>(find.byType(Navigator).first);
         nav.pop(); // note viewer
         await tester.pump(const Duration(milliseconds: 300));
-        if (find.text(t.anki_mined_action_add_duplicate).evaluate().isNotEmpty) {
+        if (find
+            .text(t.anki_mined_action_add_duplicate)
+            .evaluate()
+            .isNotEmpty) {
           nav.pop(); // action sheet
           await tester.pump(const Duration(milliseconds: 300));
         }

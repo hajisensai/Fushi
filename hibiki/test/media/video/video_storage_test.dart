@@ -137,7 +137,8 @@ void main() {
       // Reference the same file via a messy path → guard keeps it.
       // 平台无关:冗余 '.' 段构造等价异格式路径(canonicalize 各平台归一);不能用反斜杠
       // 替换 — Linux 上反斜杠是合法文件名字符非分隔符,不归一致 CI 误删红。
-      final String messy = p.join(p.dirname(sub.path), '.', p.basename(sub.path));
+      final String messy =
+          p.join(p.dirname(sub.path), '.', p.basename(sub.path));
 
       final int removed = await VideoStorage.deleteBookAssets(
         deletedCoverPath: null,

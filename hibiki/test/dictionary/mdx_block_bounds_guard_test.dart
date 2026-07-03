@@ -31,8 +31,7 @@ void main() {
         r'if\s*\(\s*pos\s*\+\s*meta\.decompressed_size\s*>\s*size\s*\)\s*break;');
     final int hits = guard.allMatches(src).length;
     expect(hits, greaterThanOrEqualTo(2),
-        reason:
-            'both else branches (key block + record block) must bound the '
+        reason: 'both else branches (key block + record block) must bound the '
             'source-buffer copy by decompressed_size before assigning; '
             'found $hits guard(s)');
   });
@@ -56,11 +55,10 @@ void main() {
         reason: 'record-block raw copy must still exist');
     // The nearest preceding decompressed_size guard must sit just above it.
     final String before = src.substring(0, insertIdx);
-    final int lastGuard =
-        before.lastIndexOf(RegExp(r'pos\s*\+\s*meta\.decompressed_size\s*>\s*size'));
+    final int lastGuard = before
+        .lastIndexOf(RegExp(r'pos\s*\+\s*meta\.decompressed_size\s*>\s*size'));
     expect(lastGuard, greaterThanOrEqualTo(0),
-        reason:
-            'the record-block raw insert must be preceded by a '
+        reason: 'the record-block raw insert must be preceded by a '
             'pos + decompressed_size > size bound check');
   });
 }

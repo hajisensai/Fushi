@@ -12,17 +12,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
@@ -98,6 +102,8 @@ void main() {
   });
 
   late HibikiDatabase db;
+  late PlatformServices platformServices;
+  late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
   late Directory externalVideoDir;
   late Directory storeDir;
@@ -116,7 +122,9 @@ void main() {
     storeDir = Directory.systemTemp.createTempSync('hibiki_home_video_store');
     externalVideoDir =
         Directory.systemTemp.createTempSync('hibiki_home_video_external');
-    appModel = AppModel(testPlatformServices())
+    platformServices = testPlatformServices();
+    ankiRepository = FakeAnkiRepository();
+    appModel = AppModel(platformServices)
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     toastNavigatorKey = GlobalKey<NavigatorState>();
@@ -242,6 +250,8 @@ void main() {
   }) =>
       ProviderScope(
         overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
         ],
         child: TranslationProvider(

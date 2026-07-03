@@ -44,8 +44,7 @@ void main() {
       expect(
         src.contains('_buildMediaTypeRow(') && src.contains("'$mediaType'"),
         isTrue,
-        reason:
-            'binding row for "$mediaType" missing — video (TODO-1063) or a '
+        reason: 'binding row for "$mediaType" missing — video (TODO-1063) or a '
             'sibling type was dropped from the media-type binding list',
       );
     }

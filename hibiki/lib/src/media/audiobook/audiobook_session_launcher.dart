@@ -60,6 +60,7 @@ class AudiobookSessionLauncher {
         audiobook: audiobook,
         title: title,
         mediaIdentifier: 'hoshi://book/$bookKey',
+        isSrtBookSource: false,
         author: author,
         coverPath: coverPath,
       ),
@@ -101,6 +102,7 @@ class AudiobookSessionLauncher {
         title: srtBook.title,
         mediaIdentifier: 'hoshi://book/'
             '${srtBook.bookKey.isNotEmpty ? srtBook.bookKey : key}',
+        isSrtBookSource: true,
         author: srtBook.author,
         coverPath: srtBook.coverPath,
       ),
@@ -250,6 +252,8 @@ class AudiobookSessionStartRequest {
   final List<File> audioFiles;
   final SessionPrefs prefs;
   final SessionPersistCallbacks persist;
+
+  bool get isSrtBookSource => info.isSrtBookSource;
 
   /// 全书对齐 cue（扁平，无章节上下文）。供后台听书 [AudiobookSession.start] 在无
   /// reader 时灌进控制器，让 currentCue 在 load 后即可解析（悬浮窗有字）。reader 在场

@@ -51,7 +51,7 @@ void main() {
     expect(boxCenter.dy, lessThan(overlayRect.center.dy));
 
     // 逐字查词仍传纯文本 + 正确 grapheme 索引。
-    await tester.tap(find.text('ト').first);
+    await tester.tapAt(tester.getCenter(find.text('ト').first));
     expect(tappedSentence, 'トップ');
     expect(tappedIndex, 0);
   });

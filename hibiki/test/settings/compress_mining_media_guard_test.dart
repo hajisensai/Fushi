@@ -103,12 +103,11 @@ void main() {
       expect(src.contains('fps: compression.gifFps'), isTrue);
       expect(src.contains('width: compression.gifWidth'), isTrue);
       // 截图链路。
-      expect(
-          src.contains('maxLongEdge: compression.screenshotMaxLongEdge'), isTrue);
+      expect(src.contains('maxLongEdge: compression.screenshotMaxLongEdge'),
+          isTrue);
       expect(src.contains('quality: compression.screenshotQuality'), isTrue);
       // 音频链路。
-      expect(
-          src.contains('audioChannels: compression.audioChannels'), isTrue);
+      expect(src.contains('audioChannels: compression.audioChannels'), isTrue);
       expect(src.contains('audioBitrate: compression.audioBitrate'), isTrue);
     });
 

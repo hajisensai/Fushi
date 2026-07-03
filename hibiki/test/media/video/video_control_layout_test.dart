@@ -1016,7 +1016,8 @@ void main() {
       expect(VideoControlItem.frameForward.storageValue, 'frameForward');
     });
 
-    test('both frame keys default into the bottom-center transport cluster', () {
+    test('both frame keys default into the bottom-center transport cluster',
+        () {
       for (final VideoControlLayout layout in <VideoControlLayout>[
         VideoControlLayout.currentChrome,
         VideoControlLayout.defaults,
@@ -1053,7 +1054,8 @@ void main() {
       );
     });
 
-    test('existing v3 layout backfills the new frame keys (no silent drop)', () {
+    test('existing v3 layout backfills the new frame keys (no silent drop)',
+        () {
       // A user saved before TODO-1098 has no frame keys in their slots; decode
       // must backfill them onto the player (their currentChrome fallback slot),
       // never leave them missing from both player and removed tray.
@@ -1067,8 +1069,10 @@ void main() {
       );
       expect(decoded.isOnPlayer(VideoControlItem.frameBackward), isTrue);
       expect(decoded.isOnPlayer(VideoControlItem.frameForward), isTrue);
-      expect(decoded.removedItems, isNot(contains(VideoControlItem.frameBackward)));
-      expect(decoded.removedItems, isNot(contains(VideoControlItem.frameForward)));
+      expect(decoded.removedItems,
+          isNot(contains(VideoControlItem.frameBackward)));
+      expect(
+          decoded.removedItems, isNot(contains(VideoControlItem.frameForward)));
     });
   });
 }

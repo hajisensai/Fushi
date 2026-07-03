@@ -105,4 +105,60 @@ void main() {
             'audio, not the stale Audiobook audio');
     expect(after.audioFiles.single.path, isNot(staleAudio.path));
   });
+
+  test(
+      'resolve marks an EPUB Audiobook row as audiobook source even when '
+      'its alignment format is srt', () async {
+    const String bookKey = 'epub-audio';
+    final Directory srcDir = Directory(p.join(docsDir.path, 'epub_audio'))
+      ..createSync(recursive: true);
+    final File audio = File(p.join(srcDir.path, 'audio.mp3'))
+      ..writeAsStringSync('AUDIO');
+    final File alignment = File(p.join(srcDir.path, 'align.srt'))
+      ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+
+    final Audiobook audiobook = Audiobook()
+      ..bookKey = bookKey
+      ..alignmentFormat = 'srt'
+      ..alignmentPath = alignment.path
+      ..audioPaths = <String>[audio.path];
+    await AudiobookRepository(db).saveAudiobook(audiobook);
+
+    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
+    final AudiobookSessionStartRequest? request =
+        await launcher.resolve(bookKey);
+
+    expect(request, isNotNull);
+    expect(request!.isSrtBookSource, isFalse,
+        reason: 'SRT is an alignment format here; the row still came from '
+            'Audiobooks and reader cue loading must use AudiobookRepository.');
+  });
+
+  test('resolve marks SrtBook fallback as srt book source', () async {
+    const String bookKey = 'epub-paired';
+    const String uid = 'srtbook_epub_$bookKey';
+    final Directory srcDir = Directory(p.join(docsDir.path, 'srt_book'))
+      ..createSync(recursive: true);
+    final File audio = File(p.join(srcDir.path, 'audio.mp3'))
+      ..writeAsStringSync('AUDIO');
+    final File srt = File(p.join(srcDir.path, 'book.srt'))
+      ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+
+    final SrtBook book = SrtBook()
+      ..uid = uid
+      ..title = 'Paired SRT'
+      ..srtPath = srt.path
+      ..audioPaths = <String>[audio.path]
+      ..importedAt = 1
+      ..bookKey = bookKey;
+    await SrtBookRepository(db).save(book);
+
+    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
+    final AudiobookSessionStartRequest? request =
+        await launcher.resolve(bookKey);
+
+    expect(request, isNotNull);
+    expect(request!.isSrtBookSource, isTrue);
+    expect(request.info.bookKey, uid);
+  });
 }

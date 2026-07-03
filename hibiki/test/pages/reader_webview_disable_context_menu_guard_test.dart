@@ -38,8 +38,7 @@ void main() {
       contains('initialSettings: InAppWebViewSettings('),
     );
     expect(
-      RegExp(r'disableContextMenu:\s*isWindowsPlatform')
-          .hasMatch(webViewBuild),
+      RegExp(r'disableContextMenu:\s*isWindowsPlatform').hasMatch(webViewBuild),
       isTrue,
       reason:
           'disableContextMenu must be isWindowsPlatform — the cross-platform '

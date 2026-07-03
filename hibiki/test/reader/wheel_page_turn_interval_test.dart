@@ -24,6 +24,23 @@ void main() {
     expect(settings.wheelPageTurnInterval, 450);
   });
 
+  test('reading default does not persist a synthetic preference row', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final ReaderSettings settings = await defaultSettings(db);
+
+    expect(settings.wheelPageTurnInterval, 450);
+
+    final Map<String, String> prefs = await db.getAllPrefs();
+    expect(
+      prefs.containsKey('src:reader_ttu:wheel_page_turn_interval'),
+      isFalse,
+      reason: 'a synchronous getter must not start an unawaitable DB write; '
+          'tests and app shutdown can close the DB before that write finishes',
+    );
+  });
+
   test('setWheelPageTurnInterval round-trips through DB', () async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());

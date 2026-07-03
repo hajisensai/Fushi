@@ -177,6 +177,42 @@ void main() {
     );
   });
 
+  test('build-multiplatform gates iOS and macOS on normal PRs', () {
+    final String workflow = readBuildMultiplatformWorkflow();
+    final String macosJob = workflowJob(workflow, 'macos');
+    final String iosJob = workflowJob(workflow, 'ios');
+
+    expect(workflow, contains("branches: ['main', 'develop']"),
+        reason: 'the multiplatform compile gate must run on routine '
+            'main/develop PRs and pushes, not only ad-hoc ci/** branches');
+    expect(workflow, isNot(contains("branches: ['ci/**']")));
+    expect(workflow, isNot(contains('if: false')),
+        reason: 'iOS/macOS compile jobs must not be left disabled');
+    expect(macosJob, contains('flutter build macos --debug'));
+    expect(iosJob, contains('flutter build ios --debug --no-codesign'));
+  });
+
+  test('desktop release workflow publishes Windows macOS and iOS assets', () {
+    final String workflow = readReleaseDesktopWorkflow();
+    final String windowsJob = workflowJob(workflow, 'windows');
+    final String appleJob = workflowJob(workflow, 'apple');
+
+    expect(windowsJob, contains('flutter build windows --release'));
+    expect(windowsJob, contains('hibiki-*-windows-setup.exe'));
+
+    expect(appleJob, contains('flutter build macos --release'));
+    expect(appleJob, contains('ditto -c -k --keepParent'));
+    expect(appleJob, contains(r'hibiki-${BUILD_VERSION_NAME}-macos.zip'));
+
+    expect(appleJob, contains('flutter build ios --release --no-codesign'));
+    expect(appleJob, contains('Payload'));
+    expect(appleJob, contains(r'hibiki-${BUILD_VERSION_NAME}-ios.ipa'));
+
+    expect(appleJob, contains('hibiki-*-macos.zip'));
+    expect(appleJob, contains('hibiki-*-ios.ipa'));
+    expect(appleJob, contains('Publish mirror update manifest (Apple assets)'));
+  });
+
   test(
       'TODO-414: Android versionCode is the monotonic git-rev-count + base, '
       'never the overflowing *1000000 formula', () {

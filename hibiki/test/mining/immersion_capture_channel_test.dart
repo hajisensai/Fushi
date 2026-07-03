@@ -15,10 +15,14 @@ ImmersionMinePayload _payload({Uint8List? shot}) => ImmersionMinePayload(
 
 void main() {
   group('buildImmersionRequest', () {
-    test('capture ok with gif+audio -> uses gif cover + audio, requireAudio true', () {
+    test(
+        'capture ok with gif+audio -> uses gif cover + audio, requireAudio true',
+        () {
       final req = buildImmersionRequest(
         _payload(),
-        ImmersionCaptureResult(gifBytes: Uint8List.fromList([1]), audioBytes: Uint8List.fromList([2])),
+        ImmersionCaptureResult(
+            gifBytes: Uint8List.fromList([1]),
+            audioBytes: Uint8List.fromList([2])),
       );
       expect(req.providedCoverName, 'netflix_clip.gif');
       expect(req.providedCoverBytes, [1]);
@@ -28,7 +32,9 @@ void main() {
       expect(req.documentTitle, 'Netflix');
     });
 
-    test('capture error -> degrades to screenshot cover, no audio, requireAudio false', () {
+    test(
+        'capture error -> degrades to screenshot cover, no audio, requireAudio false',
+        () {
       final req = buildImmersionRequest(
         _payload(shot: Uint8List.fromList([9])),
         const ImmersionCaptureResult(error: 'black frame'),

@@ -13,7 +13,8 @@ class _FakeRepo implements BaseAnkiRepository {
 
   @override
   Future<MineOutcome> mineEntry(
-      {required String rawPayloadJson, required AnkiMiningContext context}) async {
+      {required String rawPayloadJson,
+      required AnkiMiningContext context}) async {
     minedContext = context;
     return const MineOutcome.success(noteId: 42);
   }
@@ -45,7 +46,8 @@ void main() {
           {required GifExtractor gif,
           required AudioExtractor audio,
           required FrameExtractor frame}) =>
-      ImmersionMiningEngine(gifExtractor: gif, audioExtractor: audio, frameExtractor: frame);
+      ImmersionMiningEngine(
+          gifExtractor: gif, audioExtractor: audio, frameExtractor: frame);
 
   Future<String?> okGif(
           {required String inputPath,
@@ -137,66 +139,71 @@ void main() {
 
   test('requireAudio && audio missing -> abort, no mine', () async {
     final repo = _FakeRepo();
-    final res = await build(gif: okGif, audio: nullAudio, frame: nullFrame).mine(
-        const ImmersionMiningRequest(
-            fields: {'expression': 'x'},
-            mediaSource: '/v.mp4',
-            clipStartMs: 0,
-            clipEndMs: 2000,
-            sentence: 's'),
-        compression: MiningMediaCompression.compressed,
-        tempDir: tmp.path,
-        repo: repo);
+    final res = await build(gif: okGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            const ImmersionMiningRequest(
+                fields: {'expression': 'x'},
+                mediaSource: '/v.mp4',
+                clipStartMs: 0,
+                clipEndMs: 2000,
+                sentence: 's'),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
     expect(res.aborted, true);
     expect(repo.minedContext, isNull);
   });
 
   test('requireAudio=false (netflix 2A) allows still-only card', () async {
     final repo = _FakeRepo();
-    final res = await build(gif: nullGif, audio: nullAudio, frame: okFrame).mine(
-        const ImmersionMiningRequest(
-            fields: {'expression': 'x'},
-            mediaSource: '/v.mp4',
-            clipStartMs: 0,
-            clipEndMs: 2000,
-            sentence: 's',
-            requireAudio: false),
-        compression: MiningMediaCompression.compressed,
-        tempDir: tmp.path,
-        repo: repo);
+    final res = await build(gif: nullGif, audio: nullAudio, frame: okFrame)
+        .mine(
+            const ImmersionMiningRequest(
+                fields: {'expression': 'x'},
+                mediaSource: '/v.mp4',
+                clipStartMs: 0,
+                clipEndMs: 2000,
+                sentence: 's',
+                requireAudio: false),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
     expect(res.aborted, false);
     expect(repo.minedContext!.sasayakiAudioPath, isNull);
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
-  test('audioSource overrides mediaSource for audio extraction (youtube split)', () async {
+  test('audioSource overrides mediaSource for audio extraction (youtube split)',
+      () async {
     final repo = _FakeRepo();
     String? gifInput;
     String? audioInput;
     Future<String?> capGif(
-            {required String inputPath,
-            required int startMs,
-            required int endMs,
-            required String outputPath,
-            int fps = 8,
-            int width = 320,
-            FfmpegFailureReporter? onFailure}) async {
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int fps = 8,
+        int width = 320,
+        FfmpegFailureReporter? onFailure}) async {
       gifInput = inputPath;
       return outputPath;
     }
+
     Future<String?> capAudio(
-            {required String inputPath,
-            required int startMs,
-            required int endMs,
-            required String outputPath,
-            int? audioStreamIndex,
-            int? audioStreamCount,
-            FfmpegFailureReporter? onFailure,
-            int audioChannels = 1,
-            String audioBitrate = '64k'}) async {
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k'}) async {
       audioInput = inputPath;
       return outputPath;
     }
+
     await build(gif: capGif, audio: capAudio, frame: okFrame).mine(
         const ImmersionMiningRequest(
             fields: {'expression': 'x'},

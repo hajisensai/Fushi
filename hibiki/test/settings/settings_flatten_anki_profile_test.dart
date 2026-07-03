@@ -12,6 +12,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/pages/implementations/anki_settings_page.dart';
 import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
@@ -42,6 +44,7 @@ void main() {
 
   late HibikiDatabase db;
   late AppModel appModel;
+  late PlatformServices platformServices;
   late ThemeNotifier themeNotifier;
   late Directory tmpDir;
   ReaderSettings? prevReaderSettings;
@@ -85,7 +88,8 @@ void main() {
     tmpDir = Directory.systemTemp.createTempSync('hibiki_flatten_test_');
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    appModel = AppModel(testPlatformServices())
+    platformServices = testPlatformServices();
+    appModel = AppModel(platformServices)
       ..themeNotifier = themeNotifier
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
@@ -114,7 +118,10 @@ void main() {
   ) async {
     late SettingsDestination target;
     await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+      overrides: <Override>[
+        appProvider.overrideWith((Ref ref) => appModel),
+        platformServicesProvider.overrideWithValue(platformServices),
+      ],
       child: MaterialApp(
         theme: ThemeData(
           useMaterial3: true,

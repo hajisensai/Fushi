@@ -42,14 +42,16 @@ void main() {
     }
   });
 
-  test('_highlightAndShowPopup keeps showing popup even when highlight eval fails',
+  test(
+      '_highlightAndShowPopup keeps showing popup even when highlight eval fails',
       () {
     // catch 记日志后，finally 的 showDeferredPopup 必须照常执行：高亮失败退回
     // fallbackRect，查词弹窗仍显示不中断（TODO-678 核心语义）。谁把 finally 去掉、
     // 让异常吞掉后弹窗也不显示，本断言红。
     expect(
       src,
-      contains('} finally {\n      showDeferredPopup(selectionRect: finalRect);'),
+      contains(
+          '} finally {\n      showDeferredPopup(selectionRect: finalRect);'),
       reason: '_highlightAndShowPopup 的 showDeferredPopup 必须留在 finally：高亮 '
           'eval 在半销毁 WebView 上抛 MissingPluginException 时，查词弹窗仍要照常 '
           '显示（退回 fallbackRect）。勿移出 finally。',

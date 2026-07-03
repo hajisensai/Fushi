@@ -190,7 +190,8 @@ void main() {
             await tester.pump(const Duration(milliseconds: 150));
           }
           expect(ctrl.currentCueIdx, baseIdx,
-              reason: 'with DEFAULT page-turn binding, ArrowRight must NOT move '
+              reason:
+                  'with DEFAULT page-turn binding, ArrowRight must NOT move '
                   'the audiobook cue (it turns the page) — this is the pre-fix '
                   'behaviour the report complained about');
 
@@ -214,7 +215,8 @@ void main() {
                   scope: ShortcutScope.audiobook,
                 ),
             ShortcutAction.audiobookNextSentence,
-            reason: 'after remap, bare ArrowRight must resolve to next-sentence',
+            reason:
+                'after remap, bare ArrowRight must resolve to next-sentence',
           );
 
           // 正向断言①：改绑后按 → 前进一句（TODO-992 修复点）。
@@ -225,7 +227,8 @@ void main() {
           final int afterNext = ctrl.currentCueIdx;
           debugPrint('[arrow-skip] base=$baseIdx afterNext=$afterNext');
           expect(afterNext, baseIdx + 1,
-              reason: 'remapped ArrowRight must advance the audiobook cue by one '
+              reason:
+                  'remapped ArrowRight must advance the audiobook cue by one '
                   'sentence in continuous scroll mode (TODO-992 fix); pre-fix it '
                   'would have only turned the page and left cue at $baseIdx');
 
@@ -237,7 +240,8 @@ void main() {
           final int afterPrev = ctrl.currentCueIdx;
           debugPrint('[arrow-skip] afterNext=$afterNext afterPrev=$afterPrev');
           expect(afterPrev, afterNext - 1,
-              reason: 'remapped ArrowLeft must retreat the audiobook cue by one '
+              reason:
+                  'remapped ArrowLeft must retreat the audiobook cue by one '
                   'sentence (back to $baseIdx)');
           expect(afterPrev, baseIdx,
               reason: 'next then prev returns to the baseline cue');
