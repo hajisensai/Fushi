@@ -244,6 +244,128 @@ window.hibikiGenerateAll = async function () {
   window.hibikiToast('✓ 生成完成：成功 ' + done + (fail ? ' · 失败 ' + fail : ''));
 };
 
+// ── Netflix 回放录制（DRM）：由 content 驱动，capture 经 background/offscreen（beginClip/endClip）──
+let hibikiNfBatchRunning = false;
+
+// 生成本剧集的项：逐句 seek 到句首 → 播放到字幕变化(=本句结束) → 停录 → 送服务端整段裁 [0,时长]
+// 转 GIF+音频。整场用注入 CSS 藏字幕轨(GIF 不烧字幕，且能扛 Netflix 换节点)+藏鼠标。不停录屏
+// （跨集续用，由 nfFinish 收尾）。只移除成功的本集项。
+async function hibikiRunNetflixBatch() {
+  const nfId = hibikiNetflixId();
+  const items = hibikiQueue.filter((q) => q.site === 'netflix' && q.netflixId === nfId);
+  if (!items.length) return;
+  const v = document.querySelector('video');
+  if (!v) return;
+  const hideStyle = document.createElement('style');
+  hideStyle.id = 'hibiki-nf-hide-sub';
+  hideStyle.textContent = '.player-timedtext{visibility:hidden!important}';
+  try { document.head.appendChild(hideStyle); } catch (_) {}
+  document.body.style.cursor = 'none';
+  let done = 0, fail = 0;
+  const okIds = [];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const seekTo = (sec) => new Promise((resolve) => {
+    let settled = false;
+    const on = () => { if (settled) return; settled = true; try { v.removeEventListener('seeked', on); } catch (_) {} resolve(); };
+    v.addEventListener('seeked', on);
+    try { v.currentTime = sec; } catch (_) {}
+    setTimeout(on, 4000); // 兜底：seeked 不来也继续
+  });
+  for (const q of items) {
+    try {
+      await seekTo(Math.max(0, q.startV / 1000));
+      await sleep(150); // 让首帧稳定
+      await chrome.runtime.sendMessage({ type: 'beginClip' });
+      try { await v.play(); } catch (_) {}
+      const startText = hibikiSubtitleTextNow();
+      const hardEnd = Math.max(q.endV, q.startV + 1500) / 1000;
+      const deadline = Date.now() + 12000;
+      while (v.currentTime < hardEnd && Date.now() < deadline) {
+        await sleep(120);
+        const nowText = hibikiSubtitleTextNow();
+        if (nowText && startText && nowText !== startText && v.currentTime > (q.startV / 1000 + 0.4)) break;
+      }
+      try { v.pause(); } catch (_) {}
+      const clip = await chrome.runtime.sendMessage({ type: 'endClip' });
+      let ok = false;
+      if (clip && clip.ok && clip.clipBase64) {
+        ok = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64 },
+            (resp) => {
+              try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
+              resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));
+            });
+        });
+      }
+      if (ok) { done++; okIds.push(q.id); } else fail++;
+    } catch (_) { fail++; }
+    window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
+  }
+  try { hideStyle.remove(); } catch (_) {}
+  document.body.style.cursor = '';
+  hibikiQueue = hibikiQueue.filter((q) => okIds.indexOf(q.id) < 0);
+  hibikiQueueSave();
+  hibikiUpdateQueueChip();
+}
+
+// 等 Netflix 播放器就绪（切集后 video 需时间加载）。
+async function hibikiWaitForPlayer(timeoutMs) {
+  const deadline = Date.now() + (timeoutMs || 20000);
+  while (Date.now() < deadline) {
+    const v = document.querySelector('video');
+    if (v && v.readyState >= 2) return v;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return document.querySelector('video');
+}
+
+// 跨剧集批量：页面(重)注入或状态变 active 后检查是否在批量中；是且当前是目标剧集 → 等就绪 →
+// 生成本集项 → 前进/跳下一集/收尾。状态在 storage，跨导航与 SW 休眠都存活。防重入。
+async function hibikiMaybeResumeNetflixBatch() {
+  if (hibikiNfBatchRunning) return;
+  if (hibikiSite() !== 'netflix') return;
+  let st;
+  try { st = (await chrome.storage.local.get(['hibikiNfBatch'])).hibikiNfBatch; } catch (_) { return; }
+  if (!st || !st.active) return;
+  const target = st.episodes[st.idx];
+  if (hibikiNetflixId() !== target) {
+    try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + target }); } catch (_) {}
+    return;
+  }
+  hibikiNfBatchRunning = true;
+  try {
+    window.hibikiToast('自动生成中：第 ' + (st.idx + 1) + '/' + st.episodes.length + ' 部…', true);
+    await hibikiWaitForPlayer(20000);
+    try { await chrome.runtime.sendMessage({ type: 'nfEnsureCapture' }); } catch (_) {}
+    await hibikiRunNetflixBatch();
+    const next = st.idx + 1;
+    if (next < st.episodes.length) {
+      try { await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: st.episodes, idx: next, originalUrl: st.originalUrl } }); } catch (_) {}
+      try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + st.episodes[next] }); } catch (_) {}
+    } else {
+      try { chrome.runtime.sendMessage({ type: 'nfFinish', originalUrl: st.originalUrl }); } catch (_) {}
+      window.hibikiToast('✓ 全部剧集生成完成');
+    }
+  } finally {
+    hibikiNfBatchRunning = false;
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === 'hibikiToastMsg' && typeof window.hibikiToast === 'function') window.hibikiToast(msg.text);
+});
+// 批量状态刚被激活（图标点击、同 URL 无重载时）→ 立即续跑；重载路径由下方 setTimeout 覆盖。
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.hibikiNfBatch) {
+      const nv = changes.hibikiNfBatch.newValue;
+      if (nv && nv.active) hibikiMaybeResumeNetflixBatch();
+    }
+  });
+} catch (_) {}
+try { setTimeout(hibikiMaybeResumeNetflixBatch, 1500); } catch (_) {}
+
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见
   // （浏览器全屏只渲染 fullscreenElement 及其后代）→ shift 划词其实触发了但弹窗不可见=「没反应」。

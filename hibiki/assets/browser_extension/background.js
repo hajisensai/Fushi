@@ -85,17 +85,31 @@ async function stopTabCapture() {
   setRecordingBadge(false);
 }
 
-// 点扩展图标 → 切换录制开/关（Netflix/YouTube 制卡的句子音频+GIF 需先开这个）。红点=录制中。
-// 先从 offscreen 对齐真态再切，避免 SW 重启后 captureActive=false 导致「已在录却又开一遍」。
+// Netflix 跨剧集批量：点扩展图标(手势)→ 依次自动导航到每个含待生成项的剧集，逐句回放录制出卡，
+// 全部完成回原页。activeTab 在 netflix.com 同源导航间持续有效，故一次手势覆盖所有剧集。状态存
+// chrome.storage（跨导航/SW 重启存活），由每次注入的 content script 驱动（见 content.js 续跑）。
+async function hibikiStartNetflixBatch(tab) {
+  const got = await chrome.storage.local.get(['hibikiQueue']);
+  const q = Array.isArray(got.hibikiQueue) ? got.hibikiQueue : [];
+  const episodes = [];
+  for (const it of q) {
+    if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) {
+      episodes.push(it.netflixId);
+    }
+  }
+  if (!episodes.length) {
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '队列里没有 Netflix 待生成项' }); } catch (_) {}
+    return;
+  }
+  await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: episodes, idx: 0, originalUrl: tab.url } });
+  await startTabCapture(tab.id); // 手势启动录屏（Chrome 硬性要求）
+  await chrome.tabs.update(tab.id, { url: 'https://www.netflix.com/watch/' + episodes[0] });
+}
+
 chrome.action.onClicked.addListener((tab) => {
   if (!tab || tab.id == null) return;
   (async () => {
-    await syncCaptureState();
-    if (captureActive) {
-      await stopTabCapture();
-    } else {
-      await startTabCapture(tab.id);
-    }
+    if (tab.url && tab.url.indexOf('netflix.com') >= 0) await hibikiStartNetflixBatch(tab);
   })().catch(() => {});
 });
 
@@ -133,6 +147,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'beginClip') {
+        // content 驱动的 Netflix 回放录制：起一段新 clip。转发给 offscreen。
+        sendResponse(await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' }));
+      } else if (msg.type === 'endClip') {
+        sendResponse(await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' }));
+      } else if (msg.type === 'mineClip') {
+        // Netflix 回放录到的整段 webm → 服务端整段裁 [0,时长] 转 GIF+音频（无偏移运算）。
+        const r = await fetch(base + '/api/mine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ fields: msg.fields, sentence: msg.sentence || '', clipBase64: msg.clipBase64 }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'nfEnsureCapture') {
+        // 导航后流可能已断：还在录就复用，否则用仍有效的 activeTab 重取 streamId 重启（无需新手势）。
+        const rec = await isOffscreenRecording();
+        if (!rec && _sender.tab && _sender.tab.id != null) await startTabCapture(_sender.tab.id);
+        sendResponse({ ok: true });
+      } else if (msg.type === 'nfNavigate') {
+        if (_sender.tab && _sender.tab.id != null) await chrome.tabs.update(_sender.tab.id, { url: msg.url });
+        sendResponse({ ok: true });
+      } else if (msg.type === 'nfFinish') {
+        await stopTabCapture();
+        try { await chrome.storage.local.remove(['hibikiNfBatch']); } catch (_) {}
+        if (_sender.tab && _sender.tab.id != null && msg.originalUrl) {
+          await chrome.tabs.update(_sender.tab.id, { url: msg.originalUrl });
+        }
+        sendResponse({ ok: true });
       } else {
         sendResponse({ ok: false, error: 'unknown' });
       }
