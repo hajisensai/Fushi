@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 
 /// 解析好的「一句 YouTube 片段制卡请求」的裸值：喂给引擎的 ffmpeg 输入 + 视频时间窗 + 文本。
@@ -10,6 +12,7 @@ class YoutubeClipRequest {
     required this.clipEndMs,
     required this.fields,
     required this.sentence,
+    required this.cueSentence,
     required this.documentTitle,
   });
 
@@ -23,6 +26,7 @@ class YoutubeClipRequest {
   final int clipEndMs;
   final Map<String, String> fields;
   final String sentence;
+  final String? cueSentence;
   final String? documentTitle;
 }
 
@@ -30,7 +34,8 @@ typedef YoutubeResolver = Future<YoutubeResolvedSource> Function(String url);
 
 /// 批量 YouTube 制卡的流解析层：把 videoId + 视频时间窗解析成 [YoutubeClipRequest]。
 /// 内置 TTL 缓存——一次「生成全部」里同一视频的 N 张卡只解析一次流（解析走网络、~数秒）。
-/// [resolve]/[now] 可注入便于单测（默认走真 [resolveYoutubeSource] + [DateTime.now]）。
+/// 缓存的是**进行中的 Future**，故即便多张卡并发解析同一视频也只发一次网络请求；解析失败则从缓存
+/// 剔除（不让 rejected future 卡住 TTL 内的重试）。[resolve]/[now] 可注入便于单测。
 class YoutubeClipMiner {
   YoutubeClipMiner({
     YoutubeResolver? resolve,
@@ -50,6 +55,7 @@ class YoutubeClipMiner {
     required int endMs,
     required Map<String, String> fields,
     required String sentence,
+    String? cueSentence,
     String? documentTitle,
   }) async {
     final YoutubeResolvedSource src = await _resolvedFor(videoId);
@@ -62,23 +68,29 @@ class YoutubeClipMiner {
       clipEndMs: endMs,
       fields: fields,
       sentence: sentence,
+      cueSentence: cueSentence,
       documentTitle: documentTitle ?? src.title,
     );
   }
 
-  Future<YoutubeResolvedSource> _resolvedFor(String videoId) async {
+  Future<YoutubeResolvedSource> _resolvedFor(String videoId) {
     final DateTime t = _now();
     final _CachedSource? hit = _cache[videoId];
-    if (hit != null && t.difference(hit.at) < ttl) return hit.source;
-    final YoutubeResolvedSource src =
-        await _resolve('https://www.youtube.com/watch?v=$videoId');
-    _cache[videoId] = _CachedSource(src, t);
-    return src;
+    if (hit != null && t.difference(hit.at) < ttl) return hit.future;
+    final Future<YoutubeResolvedSource> fut =
+        _resolve('https://www.youtube.com/watch?v=$videoId');
+    _cache[videoId] = _CachedSource(fut, t);
+    // 失败即从缓存剔除（否则 TTL 内都返回同一个 rejected future，卡住重试）。这个独立监听器
+    // 自己吞掉清理分支的错误（不 rethrow），调用方仍从 await fut 拿到原始异常。
+    unawaited(fut.then<void>((_) {}, onError: (Object e, StackTrace s) {
+      if (identical(_cache[videoId]?.future, fut)) _cache.remove(videoId);
+    }));
+    return fut;
   }
 }
 
 class _CachedSource {
-  const _CachedSource(this.source, this.at);
-  final YoutubeResolvedSource source;
+  const _CachedSource(this.future, this.at);
+  final Future<YoutubeResolvedSource> future;
   final DateTime at;
 }

@@ -4270,14 +4270,28 @@ class _AppModelRemoteLookupService
     if (payload.youtubeVideoId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
-      final YoutubeClipRequest yt = await _youtubeClipMiner.buildRequest(
-        videoId: payload.youtubeVideoId!,
-        startMs: payload.clipStartMs!,
-        endMs: payload.clipEndMs!,
-        fields: payload.fields,
-        sentence: payload.sentence,
-        documentTitle: payload.documentTitle,
-      );
+      // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声/无 GIF 的静帧卡：服务端 YouTube 路径无
+      // stillFallback，且 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成坏卡。
+      if (payload.clipEndMs! <= payload.clipStartMs!) {
+        return MineResult.error.name;
+      }
+      final YoutubeClipRequest yt;
+      try {
+        yt = await _youtubeClipMiner.buildRequest(
+          videoId: payload.youtubeVideoId!,
+          startMs: payload.clipStartMs!,
+          endMs: payload.clipEndMs!,
+          fields: payload.fields,
+          sentence: payload.sentence,
+          cueSentence: payload.cueSentence,
+          documentTitle: payload.documentTitle,
+        );
+      } catch (e, st) {
+        // resolveYoutubeSource 会抛 TimeoutException / 视频不可用等；两个 server 的 /api/mine
+        // 只 catch FormatException，这里不兜住会 500 整张卡。收敛成干净的 MineResult.error。
+        debugPrint('[yt-mine] resolve failed: $e\n$st');
+        return MineResult.error.name;
+      }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
           fields: yt.fields,
@@ -4286,7 +4300,7 @@ class _AppModelRemoteLookupService
           clipStartMs: yt.clipStartMs,
           clipEndMs: yt.clipEndMs,
           sentence: yt.sentence,
-          cueSentence: payload.cueSentence,
+          cueSentence: yt.cueSentence,
           documentTitle: yt.documentTitle ?? 'YouTube',
           source: AnkiMiningSource.video,
           // YouTube 有音频源 → 缺音频即失败（与应用内一致），不出无声卡。
