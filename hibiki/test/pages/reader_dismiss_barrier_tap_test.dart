@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
@@ -124,10 +123,7 @@ Widget _wrap({required AppModel appModel, required Widget child}) {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
-        builder: (context, c) => Spacing(
-          dataBuilder: (context) => SpacingData.generate(10),
-          child: c ?? const SizedBox.shrink(),
-        ),
+        builder: (context, c) => c ?? const SizedBox.shrink(),
         home: Scaffold(body: child),
       ),
     ),

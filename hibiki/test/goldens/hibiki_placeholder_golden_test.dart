@@ -15,7 +15,7 @@ void main() {
           icon: Icons.book,
           message: 'No books yet',
         ),
-        size: const Size(300, 150),
+        size: const Size(300, 190),
       ));
       await tester.pumpAndSettle();
 
@@ -32,7 +32,7 @@ void main() {
           message: 'Something went wrong',
           color: Colors.red,
         ),
-        size: const Size(300, 150),
+        size: const Size(300, 190),
       ));
       await tester.pumpAndSettle();
 
@@ -49,7 +49,7 @@ void main() {
           message: 'No results found',
         ),
         theme: ThemeData.dark(useMaterial3: true),
-        size: const Size(300, 150),
+        size: const Size(300, 190),
       ));
       await tester.pumpAndSettle();
 

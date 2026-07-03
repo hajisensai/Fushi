@@ -2,16 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/media_item_edit_dialog_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:transparent_image/transparent_image.dart';
 
 void main() {
   Widget buildApp(Widget child) {
     return MaterialApp(
-      builder: (context, appChild) => Spacing(
-        dataBuilder: (context) => SpacingData.generate(10),
-        child: appChild ?? const SizedBox.shrink(),
-      ),
+      builder: (context, appChild) => appChild ?? const SizedBox.shrink(),
       home: Scaffold(body: Center(child: child)),
     );
   }

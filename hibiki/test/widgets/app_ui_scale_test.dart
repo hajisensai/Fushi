@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 void main() {
   group('automatic UI scale calculation', () {
@@ -93,25 +92,6 @@ void main() {
     expect(logical.width, 100);
     expect(visual.width, 200);
     expect(visual.height, 200);
-  });
-
-  testWidgets('整体缩放：间距基数保持 10（视觉由 Transform 放大，不再二次乘 scale）', (
-    WidgetTester tester,
-  ) async {
-    late double normalSpacing;
-    await tester.pumpWidget(
-      MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
-            scale: 3.0, child: child ?? const SizedBox.shrink()),
-        home: Builder(
-          builder: (BuildContext context) {
-            normalSpacing = Spacing.of(context).spaces.normal;
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-    expect(normalSpacing, 10.0);
   });
 
   testWidgets('整体缩放：不再改写 textScaler（系统字号缩放原样透传）', (

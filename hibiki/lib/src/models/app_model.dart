@@ -1115,25 +1115,12 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// This override is a workaround required to theme the app-wide [TextTheme]
-  /// based on the [Locale] and [TextBaseline] of the active target language.
-  TextTheme get textTheme => TextTheme(
-        displayLarge: textStyle,
-        displayMedium: textStyle,
-        displaySmall: textStyle,
-        headlineLarge: textStyle,
-        headlineMedium: textStyle,
-        headlineSmall: textStyle,
-        titleLarge: textStyle,
-        titleMedium: textStyle,
-        titleSmall: textStyle,
-        bodyLarge: textStyle,
-        bodyMedium: textStyle,
-        bodySmall: textStyle,
-        labelLarge: textStyle,
-        labelMedium: textStyle,
-        labelSmall: textStyle,
-      );
+  /// The app-wide [TextTheme]. [textStyle] carries the locale-aware font
+  /// (fontFamily/fontFeatures/baseline); [HibikiTypeScale] layers the editorial
+  /// size/weight/line-height scale on top. Explicit sizes here survive the
+  /// geometry merge `MaterialApp` performs, so this scale — not M3 defaults —
+  /// is what renders.
+  TextTheme get textTheme => HibikiTypeScale.buildTextTheme(textStyle);
 
   ThemeMode get themeMode => themeNotifier.themeMode;
   ThemeData get theme => themeNotifier.theme;

@@ -345,12 +345,12 @@ void main() {
     final SingleChildScrollView detailScroll = detailScrolls.lastWhere(
       (SingleChildScrollView s) {
         final EdgeInsets? p = s.padding as EdgeInsets?;
-        return s.scrollDirection == Axis.vertical && p != null && p.left == 24;
+        return s.scrollDirection == Axis.vertical && p != null && p.left == 28;
       },
     );
     final EdgeInsets primaryPadding = detailScroll.padding! as EdgeInsets;
-    expect(primaryPadding.left, 24);
-    expect(primaryPadding.right, 24);
+    expect(primaryPadding.left, 28);
+    expect(primaryPadding.right, 28);
 
     // 选「字幕」→ 下方详情切到字幕详情，仍无返回箭头。
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
@@ -1260,7 +1260,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=24，顶部 card=16（不再贴死），
+    // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=28，顶部 card=20（不再贴死），
     // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
     // 故 padding 落在它外层那个 Padding widget 上，按值精确定位。
     final Finder firstCategoryChip = find.byType(HibikiSelectableChip).first;
@@ -1272,16 +1272,16 @@ void main() {
     );
     final Padding categoryOuterPad = categoryPads.firstWhere((Padding p) {
       final EdgeInsets? e = p.padding as EdgeInsets?;
-      return e != null && e.left == 24 && e.top == 16 && e.bottom == 4;
+      return e != null && e.left == 28 && e.top == 20 && e.bottom == 4;
     });
     final EdgeInsets categoryPadding = categoryOuterPad.padding as EdgeInsets;
-    expect(categoryPadding.left, 24);
-    expect(categoryPadding.right, 24);
-    expect(categoryPadding.top, 16);
+    expect(categoryPadding.left, 28);
+    expect(categoryPadding.right, 28);
+    expect(categoryPadding.top, 20);
     expect(categoryPadding.bottom, 4);
 
-    // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 24、独占整宽。
-    // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==24 的纵向
+    // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 28、独占整宽。
+    // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==28 的纵向
     // scroll」精确定位详情那一个。
     final SingleChildScrollView detailScroll = tester
         .widgetList<SingleChildScrollView>(
@@ -1289,12 +1289,12 @@ void main() {
     )
         .lastWhere((SingleChildScrollView s) {
       final EdgeInsets? p = s.padding as EdgeInsets?;
-      return s.scrollDirection == Axis.vertical && p != null && p.left == 24;
+      return s.scrollDirection == Axis.vertical && p != null && p.left == 28;
     });
     final EdgeInsets primaryPadding = detailScroll.padding! as EdgeInsets;
-    expect(primaryPadding.left, 24);
-    expect(primaryPadding.right, 24);
-    expect(primaryPadding.top, 16);
+    expect(primaryPadding.left, 28);
+    expect(primaryPadding.right, 28);
+    expect(primaryPadding.top, 20);
   });
 
   testWidgets('narrow video settings uses roomy MD3 padding (TODO-344)',
@@ -1303,14 +1303,14 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 窄窗主页同样用放宽后的 padding（顶部 >= 16，不再贴死）。窄窗 body 的最外层
+    // 窄窗主页同样用放宽后的 padding（顶部 >= 20，不再贴死）。窄窗 body 的最外层
     // SingleChildScrollView 承载本功能的 padding（内部组件可能另有自己的 scroll，故取 first）。
     final SingleChildScrollView scroll = tester.widget<SingleChildScrollView>(
         find.byType(SingleChildScrollView).first);
     final EdgeInsets padding = scroll.padding! as EdgeInsets;
-    expect(padding.left, 24);
-    expect(padding.right, 24);
-    expect(padding.top, 16);
+    expect(padding.left, 28);
+    expect(padding.right, 28);
+    expect(padding.top, 20);
   });
 
   // ── TODO-470：设置页内控制按钮编辑器使用播放器方位预览舞台 ─

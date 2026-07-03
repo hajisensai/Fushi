@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 Widget buildGoldenApp(
   Widget child, {
@@ -9,15 +8,12 @@ Widget buildGoldenApp(
   return MaterialApp(
     debugShowCheckedModeBanner: false,
     theme: theme ?? ThemeData.light(useMaterial3: true),
-    home: Spacing(
-      dataBuilder: (context) => SpacingData.generate(10),
-      child: Scaffold(
-        body: Center(
-          child: SizedBox(
-            width: size.width,
-            height: size.height,
-            child: Center(child: child),
-          ),
+    home: Scaffold(
+      body: Center(
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: Center(child: child),
         ),
       ),
     ),

@@ -5,7 +5,6 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_dialog_delete_page.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_dialog_import_page.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -21,10 +20,7 @@ void main() {
       ],
       child: TranslationProvider(
         child: MaterialApp(
-          builder: (context, child) => Spacing(
-            dataBuilder: (context) => SpacingData.generate(10),
-            child: child ?? const SizedBox.shrink(),
-          ),
+          builder: (context, child) => child ?? const SizedBox.shrink(),
           home: home,
         ),
       ),

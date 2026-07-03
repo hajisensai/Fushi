@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
@@ -137,10 +136,7 @@ Widget buildNestedFlashApp({
     ],
     child: TranslationProvider(
       child: MaterialApp(
-        builder: (context, child) => Spacing(
-          dataBuilder: (context) => SpacingData.generate(10),
-          child: child ?? const SizedBox.shrink(),
-        ),
+        builder: (context, child) => child ?? const SizedBox.shrink(),
         home: Scaffold(body: NestedFlashHostPage(key: hostKey)),
       ),
     ),

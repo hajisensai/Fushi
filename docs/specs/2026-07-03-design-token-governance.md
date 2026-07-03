@@ -48,7 +48,29 @@
 - 不改 type scale、不改 Cupertino、不发明新数值 token、不迁一次性几何、不重写 theme_notifier/app_model。
 - 不动 window.hoshiReader、持久化 key、reader_ttu/ttuBookId 兼容残留。
 
-## 待用户拍板的 fork
-"全仓迁移 534 处"在"数值维持"下largely不适用（多数值无对应 token，造 token=下一轮新数值）。
-本轮交付诚实的十几处 + 守卫。若用户要现在就设计新 spacing/radii 阶梯（造 24/12 等 token 并全迁），
-那是"新视觉数值"轮，需先定新数值。
+## Round 2：用户选择"现在就设计新视觉阶梯"（editorial B）
+
+fork 拍板：不停在管道治理，直接上一套新的 "editorial" 视觉阶梯 B（用户从 3 套方向中选定）。
+
+### 新数值（B，已落地）
+- **Type scale**（`HibikiTypeScale`，app_model.textTheme 应用）：display 40/33/28 w400；
+  headline 24/22/20 w600；title 18/16/15 w600；body 17/15/13 w400；label 13/12/11 w500。
+  比 M3 默认（57→11）压缩了 display、加重 headline/title、放大 body 更好读。
+  实证确认：显式字号穿过 MaterialApp 的 geometry 合并保留（探针验证）。CJK 安全：letterSpacing 仅 displayLarge -0.25，其余 0。
+- **Radii**（`HibikiRadii.*Value` + `HibikiBorderRadius` const）：chip 6、card/group/menu 10、
+  control 12、dialog/sheet 16（旧 8/12/16/28，更锐利）。theme_notifier 11 处主题 shape 全部
+  引用 `HibikiBorderRadius`（单一圆角真相源，新值真正传导）。
+- **Spacing**（`HibikiSpacingTokens`）：page 20、card 20、rowVertical 12、gap 8、+section 32
+  （旧 16/16/10；rowV 10 曾不在 4px 栅格）。传导到 83 个 `.spacing.X` 消费方。
+
+### 已知/已接受的后果
+- compact list tile 44→48px：新 body 字号更大导致 content-driven 高度增，是"更好读 body"的取舍（已更新断言）。
+- 5 个对话框测试用 320×240 极端视口（比任何真机小）恰好被撑破 5px → 视口修正为 320×480（真机 cap≥550px 无影响）。
+- 值断言测试（hibiki_material_components / video_quick_settings）更新到新 B 值。
+- golden 全部重生成（编辑器渲染 tofu 是 flutter test 标准行为；golden 验圆角/间距/布局/配色）。
+  ⚠ golden 在本机 Windows 重生成；若 CI golden job 用其它平台，可能需在该平台复生成。
+
+### 验证
+- `flutter test test/`：我改动的全部测试绿；全量残留 ~3 失败是**既有并发 flaky**（每轮不同集、隔离皆过），非本改动。
+- `flutter analyze`（含 test）：No issues found。
+- ⏳ **待真机截图验证**（阅读器/书架/设置/视频逐屏）——视觉变更按项目铁律需真机复测，尚未做。

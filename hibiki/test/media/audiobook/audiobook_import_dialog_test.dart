@@ -18,7 +18,7 @@ void main() {
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 240);
+    tester.view.physicalSize = const Size(320, 480);
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
@@ -51,7 +51,7 @@ void main() {
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 240);
+    tester.view.physicalSize = const Size(320, 480);
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(

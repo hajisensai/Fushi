@@ -63,13 +63,14 @@ class HibikiRadii {
 
   // Single value source for the radii scale (used by both these field defaults
   // and [HibikiBorderRadius]'s const BorderRadius objects).
-  static const double groupValue = 12;
-  static const double cardValue = 12;
-  static const double controlValue = 16;
-  static const double chipValue = 8;
-  static const double menuValue = 12;
-  static const double dialogValue = 28;
-  static const double sheetValue = 28;
+  // Editorial scale: sharper, more geometric than M3 default (was 12/12/16/8/12/28/28).
+  static const double groupValue = 10;
+  static const double cardValue = 10;
+  static const double controlValue = 12;
+  static const double chipValue = 6;
+  static const double menuValue = 10;
+  static const double dialogValue = 16;
+  static const double sheetValue = 16;
 
   final double group;
   final double card;
@@ -203,18 +204,22 @@ class HibikiTypeRoles {
 
 class HibikiSpacingTokens {
   const HibikiSpacingTokens({
-    this.page = 16,
+    this.page = 20,
     this.rowHorizontal = 16,
-    this.rowVertical = 10,
-    this.card = 16,
+    this.rowVertical = 12,
+    this.card = 20,
     this.gap = 8,
+    this.section = 32,
   });
 
+  // Editorial rhythm on an 8/4px grid (was page16/rowV10/card16; rowV10 was
+  // off-grid). `section` is new: spacing between major grouped sections.
   final double page;
   final double rowHorizontal;
   final double rowVertical;
   final double card;
   final double gap;
+  final double section;
 }
 
 class HibikiDensityTokens {
@@ -229,4 +234,89 @@ class HibikiDensityTokens {
   final double compactListMinHeight;
   final double controlHeight;
   final double compactControlHeight;
+}
+
+/// One role's type spec (size/weight/line-height/tracking). Applied onto the
+/// locale-aware base [TextStyle] so the per-locale fontFamily/fontFeatures/
+/// baseline injection is preserved while size/weight/height come from the scale.
+class HibikiTypeSpec {
+  const HibikiTypeSpec(
+    this.size,
+    this.weight,
+    this.height, [
+    this.letterSpacing,
+  ]);
+
+  final double size;
+  final FontWeight weight;
+  final double height;
+  final double? letterSpacing;
+
+  TextStyle applyTo(TextStyle base) => base.copyWith(
+        fontSize: size,
+        fontWeight: weight,
+        height: height,
+        letterSpacing: letterSpacing,
+      );
+}
+
+/// The app's type scale — the single source for the 15 Material text roles.
+///
+/// "Editorial" scale: compressed display (M3's 57 is TV-huge for a reader),
+/// modular ~1.2 ratio, heavier headline/title weights for a stronger hierarchy,
+/// and a slightly larger, more legible reading body. Tracking is kept at 0 for
+/// most roles because the UI locale is often CJK (positive tracking spaces out
+/// ideographs badly); only the single largest display size gets mild tightening.
+abstract final class HibikiTypeScale {
+  static const HibikiTypeSpec displayLarge =
+      HibikiTypeSpec(40, FontWeight.w400, 1.15, -0.25);
+  static const HibikiTypeSpec displayMedium =
+      HibikiTypeSpec(33, FontWeight.w400, 1.16);
+  static const HibikiTypeSpec displaySmall =
+      HibikiTypeSpec(28, FontWeight.w400, 1.18);
+  static const HibikiTypeSpec headlineLarge =
+      HibikiTypeSpec(24, FontWeight.w600, 1.25);
+  static const HibikiTypeSpec headlineMedium =
+      HibikiTypeSpec(22, FontWeight.w600, 1.27);
+  static const HibikiTypeSpec headlineSmall =
+      HibikiTypeSpec(20, FontWeight.w600, 1.3);
+  static const HibikiTypeSpec titleLarge =
+      HibikiTypeSpec(18, FontWeight.w600, 1.33);
+  static const HibikiTypeSpec titleMedium =
+      HibikiTypeSpec(16, FontWeight.w600, 1.4);
+  static const HibikiTypeSpec titleSmall =
+      HibikiTypeSpec(15, FontWeight.w600, 1.4);
+  static const HibikiTypeSpec bodyLarge =
+      HibikiTypeSpec(17, FontWeight.w400, 1.5);
+  static const HibikiTypeSpec bodyMedium =
+      HibikiTypeSpec(15, FontWeight.w400, 1.5);
+  static const HibikiTypeSpec bodySmall =
+      HibikiTypeSpec(13, FontWeight.w400, 1.45);
+  static const HibikiTypeSpec labelLarge =
+      HibikiTypeSpec(13, FontWeight.w500, 1.4);
+  static const HibikiTypeSpec labelMedium =
+      HibikiTypeSpec(12, FontWeight.w500, 1.35);
+  static const HibikiTypeSpec labelSmall =
+      HibikiTypeSpec(11, FontWeight.w500, 1.45);
+
+  /// Build the full 15-slot [TextTheme] by applying the scale onto [base]
+  /// (the locale-aware app text style). Explicit sizes survive the geometry
+  /// application `MaterialApp` performs (verified), so these values win.
+  static TextTheme buildTextTheme(TextStyle base) => TextTheme(
+        displayLarge: displayLarge.applyTo(base),
+        displayMedium: displayMedium.applyTo(base),
+        displaySmall: displaySmall.applyTo(base),
+        headlineLarge: headlineLarge.applyTo(base),
+        headlineMedium: headlineMedium.applyTo(base),
+        headlineSmall: headlineSmall.applyTo(base),
+        titleLarge: titleLarge.applyTo(base),
+        titleMedium: titleMedium.applyTo(base),
+        titleSmall: titleSmall.applyTo(base),
+        bodyLarge: bodyLarge.applyTo(base),
+        bodyMedium: bodyMedium.applyTo(base),
+        bodySmall: bodySmall.applyTo(base),
+        labelLarge: labelLarge.applyTo(base),
+        labelMedium: labelMedium.applyTo(base),
+        labelSmall: labelSmall.applyTo(base),
+      );
 }

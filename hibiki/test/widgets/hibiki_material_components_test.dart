@@ -54,7 +54,7 @@ void main() {
 
     expect(chip.selected, isTrue);
     expect(chip.showCheckmark, isFalse);
-    expect(shape.borderRadius, BorderRadius.circular(8));
+    expect(shape.borderRadius, BorderRadius.circular(6));
     expect(
       chip.selectedColor,
       Theme.of(tester.element(find.byType(ChoiceChip)))
@@ -113,7 +113,7 @@ void main() {
     final RoundedRectangleBorder shape = button.style!.shape!
         .resolve(<WidgetState>{})! as RoundedRectangleBorder;
 
-    expect(shape.borderRadius, BorderRadius.circular(8));
+    expect(shape.borderRadius, BorderRadius.circular(6));
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
 
     await tester.tap(find.byType(HibikiActionChip));
@@ -155,7 +155,7 @@ void main() {
     );
 
     expect(standard.size.height, 56);
-    expect(compact.size.height, 44);
+    expect(compact.size.height, 48);
   });
 
   testWidgets('HibikiActionChip registers with the focus root',
@@ -213,7 +213,7 @@ void main() {
     expect(lightText.style?.color, Colors.black);
     expect(
       (darkContainer.decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(8),
+      BorderRadius.circular(6),
     );
   });
 
@@ -248,7 +248,7 @@ void main() {
     final BoxDecoration chipDecoration = chip.decoration! as BoxDecoration;
     final BoxDecoration swatchDecoration = swatch.decoration as BoxDecoration;
 
-    expect(chipDecoration.borderRadius, BorderRadius.circular(8));
+    expect(chipDecoration.borderRadius, BorderRadius.circular(6));
     expect(chipDecoration.border, isNotNull);
     expect(swatchDecoration.color, Colors.red);
     expect(swatchDecoration.shape, BoxShape.circle);
@@ -493,17 +493,17 @@ void main() {
   testWidgets('HibikiPageHeader trims top gap to page on compact (phone) width',
       (WidgetTester tester) async {
     final double phoneTop = await measureHeaderTop(tester, width: 360);
-    // page = 16；不再是 page + 8 = 24。
-    expect(phoneTop, moreOrLessEquals(16, epsilon: 0.5));
+    // page = 20；不再是 page + 8 = 28。
+    expect(phoneTop, moreOrLessEquals(20, epsilon: 0.5));
   });
 
   testWidgets('HibikiPageHeader keeps page + 8 top gap on desktop/tablet width',
       (WidgetTester tester) async {
     final double tabletTop = await measureHeaderTop(tester, width: 700);
     final double desktopTop = await measureHeaderTop(tester, width: 1000);
-    // page + 8 = 24，桌面 / 平板不变。
-    expect(tabletTop, moreOrLessEquals(24, epsilon: 0.5));
-    expect(desktopTop, moreOrLessEquals(24, epsilon: 0.5));
+    // page + 8 = 28，桌面 / 平板不变。
+    expect(tabletTop, moreOrLessEquals(28, epsilon: 0.5));
+    expect(desktopTop, moreOrLessEquals(28, epsilon: 0.5));
   });
 
   testWidgets(
@@ -532,7 +532,7 @@ void main() {
 
     expect(
       (badge.decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(8),
+      BorderRadius.circular(6),
     );
     expect(find.byIcon(Icons.headphones_outlined), findsOneWidget);
   });
@@ -559,7 +559,7 @@ void main() {
     final BoxDecoration decoration = swatch.decoration as BoxDecoration;
 
     expect(decoration.color, Colors.green);
-    expect(decoration.borderRadius, BorderRadius.circular(8));
+    expect(decoration.borderRadius, BorderRadius.circular(6));
     expect(decoration.border, isNotNull);
 
     await tester.tap(find.byType(HibikiColorSwatch));
@@ -707,7 +707,7 @@ void main() {
         dialog.shape! as RoundedRectangleBorder;
 
     expect(find.text('Dialog body'), findsOneWidget);
-    expect(shape.borderRadius, BorderRadius.circular(28));
+    expect(shape.borderRadius, BorderRadius.circular(16));
     expect(dialog.clipBehavior, Clip.antiAlias);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });

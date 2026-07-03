@@ -13,6 +13,7 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -751,32 +752,32 @@ class ThemeNotifier extends ChangeNotifier {
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
         indicatorShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: HibikiBorderRadius.control,
         ),
         labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
       ),
       popupMenuTheme: PopupMenuThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: HibikiBorderRadius.menu,
         ),
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: HibikiBorderRadius.dialog,
         ),
       ),
       listTileTheme: const ListTileThemeData(),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: HibikiBorderRadius.control,
           borderSide: BorderSide(color: cs.outline),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: HibikiBorderRadius.control,
           borderSide: BorderSide(color: cs.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: HibikiBorderRadius.control,
           borderSide: BorderSide(color: cs.primary, width: 2),
         ),
       ),
@@ -793,20 +794,20 @@ class ThemeNotifier extends ChangeNotifier {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: HibikiBorderRadius.card,
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         color: cs.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: HibikiBorderRadius.card,
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         showDragHandle: true,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: HibikiBorderRadius.sheet,
         ),
         surfaceTintColor: Colors.transparent,
       ),
@@ -816,12 +817,12 @@ class ThemeNotifier extends ChangeNotifier {
         backgroundColor: cs.primaryContainer,
         foregroundColor: cs.onPrimaryContainer,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: HibikiBorderRadius.control,
         ),
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: HibikiBorderRadius.chip,
         ),
         side: BorderSide(color: cs.outlineVariant),
         selectedColor: cs.secondaryContainer,

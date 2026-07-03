@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/switch_settings_page.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -20,10 +19,7 @@ void main() {
       ],
       child: TranslationProvider(
         child: MaterialApp(
-          builder: (context, child) => Spacing(
-            dataBuilder: (context) => SpacingData.generate(10),
-            child: child ?? const SizedBox.shrink(),
-          ),
+          builder: (context, child) => child ?? const SizedBox.shrink(),
           home: home,
         ),
       ),

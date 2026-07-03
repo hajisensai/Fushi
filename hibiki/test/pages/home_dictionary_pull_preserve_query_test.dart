@@ -10,7 +10,6 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_dictionary_page.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
@@ -93,10 +92,8 @@ Widget _wrapHomeDictionary(_ClearRaceAppModel appModel) {
     child: TranslationProvider(
       child: MaterialApp(
         navigatorKey: appModel.navigatorKey,
-        builder: (BuildContext context, Widget? child) => Spacing(
-          dataBuilder: (BuildContext context) => SpacingData.generate(10),
-          child: child ?? const SizedBox.shrink(),
-        ),
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
         home: const Scaffold(body: HomeDictionaryPage()),
       ),
     ),

@@ -12,7 +12,6 @@ import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -60,10 +59,7 @@ Widget buildTestApp({
     child: TranslationProvider(
       child: MaterialApp(
         navigatorKey: appModel.navigatorKey,
-        builder: (context, child) => Spacing(
-          dataBuilder: (context) => SpacingData.generate(10),
-          child: child ?? const SizedBox.shrink(),
-        ),
+        builder: (context, child) => child ?? const SizedBox.shrink(),
         home: home,
       ),
     ),

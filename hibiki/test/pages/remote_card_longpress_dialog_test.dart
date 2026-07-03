@@ -17,7 +17,6 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -88,10 +87,8 @@ void main() {
         ],
         child: TranslationProvider(
           child: MaterialApp(
-            builder: (BuildContext context, Widget? child) => Spacing(
-              dataBuilder: (_) => SpacingData.generate(10),
-              child: child ?? const SizedBox.shrink(),
-            ),
+            builder: (BuildContext context, Widget? child) =>
+                child ?? const SizedBox.shrink(),
             home: Scaffold(
               body: ReaderHibikiHistoryPage(
                 remoteBookClientLoader: () async => client,
