@@ -52,7 +52,7 @@ class VideoMpvConfig {
     dither: false,
     interpolation: false,
     deinterlace: false,
-    sigmoidUpscaling: true,
+    sigmoidUpscaling: false,
     correctDownscaling: false,
     videoRotate: 0,
     videoZoom: 0,
@@ -89,7 +89,7 @@ class VideoMpvConfig {
   /// 去隔行 deinterlace（隔行片源用）。
   final bool deinterlace;
 
-  /// S 形曲线上采样（减少振铃；mpv 默认 yes）。
+  /// S 形曲线上采样（减少振铃；mpv 默认 yes，本 app 默认 no——性能占用偏大，用户可开）。
   final bool sigmoidUpscaling;
 
   /// 线性光降采样（更准的缩小；mpv 默认 no）。
@@ -242,7 +242,7 @@ class VideoMpvConfig {
         dither: d['dither'] == true,
         interpolation: d['interpolation'] == true,
         deinterlace: d['deinterlace'] == true,
-        sigmoidUpscaling: d['sigmoidUpscaling'] != false, // 默认 true
+        sigmoidUpscaling: d['sigmoidUpscaling'] == true, // 默认 false（性能占用）
         correctDownscaling: d['correctDownscaling'] == true,
         videoRotate: rotates.contains(rot) ? rot : 0,
         videoZoom:

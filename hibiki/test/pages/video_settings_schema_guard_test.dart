@@ -59,6 +59,7 @@ void main() {
       'video.playback.pause_at_subtitle_end',
       // Image quality (mpv pure-pref subset)
       'video.quality.enhancement',
+      'video.quality.sigmoid', // TODO-1120/BUG-538 sigmoid toggle grouped here
       'video.quality.hwdec',
       'video.quality.deband',
       'video.quality.loop',

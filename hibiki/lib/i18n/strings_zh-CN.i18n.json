@@ -2077,5 +2077,6 @@
   "sync_paired_peers_empty": "尚无已配对设备",
   "sync_paired_peer_remove": "移除",
   "sync_paired_peer_removed": "已移除配对设备",
-  "sync_paired_peer_unknown": "未知设备"
+  "sync_paired_peer_unknown": "未知设备",
+  "video_setting_mpv_sigmoid_hint": "S 形曲线上采样可减少振铃，但会增加显卡负担。为性能默认关闭；想要更锐利的放大画质可开启。"
 }

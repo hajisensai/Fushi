@@ -2077,5 +2077,6 @@
   "sync_paired_peers_empty": "No paired devices yet",
   "sync_paired_peer_remove": "Remove",
   "sync_paired_peer_removed": "Removed paired device",
-  "sync_paired_peer_unknown": "Unknown device"
+  "sync_paired_peer_unknown": "Unknown device",
+  "video_setting_mpv_sigmoid_hint": "Sigmoid-curve upscaling reduces ringing but costs GPU. Off by default for performance; turn on if you want sharper upscaling."
 }

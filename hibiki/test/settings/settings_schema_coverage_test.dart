@@ -129,6 +129,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_asbplayer_config_test.dart',
   'video/Quality enhancement':
       'test/media/video/video_mpv_config_test.dart + test/media/video/video_shader_manager_test.dart',
+  // TODO-1120/BUG-538：sigmoid 上采样开关（画质增强/着色器等级组内并列开关），mpv 纯
+  // pref，下次开视频 applyMpvConfigToPlayer 应用——效果需真机放视频验，单测覆盖默认关 +
+  // encode/decode 往返 + emit yes/no。
+  'video/Sigmoid upscaling': 'test/media/video/video_mpv_config_test.dart',
   'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
   'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
   'video/Loop file': 'test/media/video/video_mpv_config_test.dart',

@@ -49,7 +49,10 @@ keep-open=yes
       expect(m['video-rotate'], '0');
       expect(m['loop-file'], 'no');
       // 新增结构化项的中性默认（= mpv 默认，视觉等价）。
-      expect(m['sigmoid-upscaling'], 'yes'); // mpv 默认 yes
+      // sigmoid 上采样默认关（BUG-538：mpv 默认 yes 但性能占用偏大，本 app 默认 no）。
+      expect(m['sigmoid-upscaling'], 'no');
+      expect(VideoMpvConfig.defaults.sigmoidUpscaling, isFalse);
+      expect(VideoMpvConfig.decode('').sigmoidUpscaling, isFalse);
       expect(m['correct-downscaling'], 'no');
       expect(m['panscan'], '0.0');
       expect(m['audio-delay'], '0.0');
@@ -225,6 +228,22 @@ keep-open=yes
     test('legacy config missing image enhancement migrates to new default', () {
       final VideoMpvConfig c = VideoMpvConfig.decode('{"hwdec":"auto-safe"}');
       expect(c.highQuality, isTrue);
+    });
+
+    test('legacy config missing sigmoid key migrates to off (BUG-538)', () {
+      // 无 sigmoidUpscaling 键的旧配置（该键存在前存的）迁移到默认关，不再残留旧默认开。
+      final VideoMpvConfig c = VideoMpvConfig.decode('{"hwdec":"auto-safe"}');
+      expect(c.sigmoidUpscaling, isFalse);
+      expect(buildMpvProperties(c)['sigmoid-upscaling'], 'no');
+    });
+
+    test('explicit sigmoid on round-trips + emits yes (BUG-538)', () {
+      // 用户手动开 sigmoid：显式 true 必须存得住、下发 yes（默认关不影响可选开启）。
+      final VideoMpvConfig c = VideoMpvConfig.decode(VideoMpvConfig.encode(
+        VideoMpvConfig.defaults.copyWith(sigmoidUpscaling: true),
+      ));
+      expect(c.sigmoidUpscaling, isTrue);
+      expect(buildMpvProperties(c)['sigmoid-upscaling'], 'yes');
     });
 
     test('decode invalid hwdec falls back to automatic safe detection', () {

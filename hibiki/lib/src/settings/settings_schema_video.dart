@@ -237,6 +237,24 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // S 形上采样（sigmoid-upscaling）：与「画质增强/着色器等级」并列的一档可选画质
+          // 开关（TODO-1120/BUG-538）。默认关（性能占用偏大，见 VideoMpvConfig.defaults）；
+          // 想要更锐利放大的用户可开。纯 pref，序列化进 videoMpvConfig，下次开视频时应用。
+          SettingsSwitchItem(
+            id: 'video.quality.sigmoid',
+            title: t.video_setting_mpv_sigmoid,
+            subtitle: t.video_setting_mpv_sigmoid_hint,
+            icon: Icons.show_chart_outlined,
+            value: (SettingsContext settingsContext) => VideoMpvConfig.decode(
+              settingsContext.appModel.videoMpvConfig,
+            ).sigmoidUpscaling,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await _commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(sigmoidUpscaling: value),
+              );
+            },
+          ),
           SettingsSegmentedItem<String>(
             id: 'video.quality.hwdec',
             title: t.video_setting_mpv_hwdec,
