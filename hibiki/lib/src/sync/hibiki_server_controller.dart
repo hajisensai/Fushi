@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
@@ -208,7 +209,11 @@ class HibikiSyncServerController extends ChangeNotifier {
       ..onPairRequest = _promptPairApproval
       // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
       ..onPairPinGenerated = _generatePairPin
-      ..lanRequiresPinProvider = _repo.getLanRequiresPin;
+      ..lanRequiresPinProvider = _repo.getLanRequiresPin
+      // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
+      // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
+      ..onPeerPaired = _persistPairedPeer
+      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
     try {
       await server.start();
       _server = server;
@@ -280,6 +285,39 @@ class HibikiSyncServerController extends ChangeNotifier {
     final String pin = HibikiPairingProtocol.generatePin();
     _pendingPairPin = pin;
     return pin;
+  }
+
+  /// TODO-961 M1b: server confirm 成功回调——把一台新配对设备的 per-peer 凭据 upsert
+  /// 进 `hibiki_paired_peers`（peerId UNIQUE，重复配对同一设备只轮换其 token）。
+  /// token 是敏感凭据，绝不写日志。
+  Future<void> _persistPairedPeer(
+      HibikiPairedPeerRegistration registration) async {
+    await _database().upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+      peerId: registration.peerId,
+      token: registration.token,
+      pairedAtMs: DateTime.now().millisecondsSinceEpoch,
+      deviceName: Value<String?>(registration.deviceName),
+      lastSeenIp: Value<String?>(registration.remoteAddress),
+    ));
+  }
+
+  /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer token 集合。
+  /// 吊销 = 删行，故只需读全表 token。
+  Future<Set<String>> _loadPairedPeerTokens() async {
+    final List<HibikiPairedPeerRow> peers = await _database().getPairedPeers();
+    return peers.map((HibikiPairedPeerRow p) => p.token).toSet();
+  }
+
+  /// 全部已配对设备（供「移除已配对设备」UI 列表）。按配对先后升序。
+  Future<List<HibikiPairedPeerRow>> pairedPeers() =>
+      _database().getPairedPeers();
+
+  /// TODO-961 M1b: 吊销一台已配对设备（删其 per-peer token 行），返回是否真的删了。
+  /// 删后清 server 端 token 缓存 → 该设备下一次请求即被 401（吊销即时生效）。
+  Future<bool> revokePeer(String peerId) async {
+    final int deleted = await _database().revokePairedPeer(peerId);
+    if (deleted > 0) _server?.invalidatePeerTokenCache();
+    return deleted > 0;
   }
 
   /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the

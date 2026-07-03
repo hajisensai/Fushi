@@ -30,6 +30,7 @@ class HibikiPairSession {
     required this.deviceName,
     required this.remoteAddress,
     required this.createdAt,
+    this.clientDeviceId,
   });
 
   /// 不透明会话 id（client 在 confirm 时回传以定位本会话）。
@@ -53,6 +54,11 @@ class HibikiPairSession {
 
   /// 请求来源 IP（弹窗展示 + 审计用，可空）。
   final String? remoteAddress;
+
+  /// TODO-961 M1b: client 自报的稳定 deviceId（配对时上报），confirm 成功后作为
+  /// `hibiki_paired_peers.peerId` 落库的 UNIQUE 身份。可空——旧 client / 未上报时
+  /// 为 null，confirm 回退派发共享 token（不落 per-peer 行，Never break userspace）。
+  final String? clientDeviceId;
 
   /// 会话创建时刻（TTL 判定基准，TTL 加固在 M3，本阶段先记录）。
   final DateTime createdAt;

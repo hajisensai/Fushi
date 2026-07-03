@@ -58,6 +58,30 @@ class HibikiPairRequest {
   final bool? pinVerified;
 }
 
+/// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
+/// 通过注入的 [HibikiSyncServer.onPeerPaired] 回调把本记录交给 controller 写进
+/// `hibiki_paired_peers` 表（server 不直连 DB，保持可单测 / 存储层无依赖）。
+class HibikiPairedPeerRegistration {
+  const HibikiPairedPeerRegistration({
+    required this.peerId,
+    required this.token,
+    required this.deviceName,
+    required this.remoteAddress,
+  });
+
+  /// 对端稳定身份（client 配对时上报的 deviceId）。表 UNIQUE 键，upsert 幂等基准。
+  final String peerId;
+
+  /// 本设备专属的长期访问凭据（confirm 派发，写库并回给该 client）。
+  final String token;
+
+  /// 对端自报展示名（可空）。
+  final String? deviceName;
+
+  /// 配对时对端来源 IP（诊断/展示，可空）。
+  final String? remoteAddress;
+}
+
 /// Thrown by [HibikiSyncServer.start] when the requested port is already bound
 /// by another process. Carries the [port] so the UI can name it.
 class SyncServerPortInUseException implements Exception {
@@ -169,6 +193,22 @@ class HibikiSyncServer {
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
   Future<bool> Function()? lanRequiresPinProvider;
 
+  /// TODO-961 M1b: confirm 成功后把新派发的 per-peer 凭据交给 host 落库（写
+  /// `hibiki_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
+  /// null（未接线，如纯协议单测）时 confirm 回退派发共享 [_token]，不落 per-peer 行
+  /// ——既有 pair_v2 行为零变化（Never break userspace）。
+  Future<void> Function(HibikiPairedPeerRegistration registration)?
+      onPeerPaired;
+
+  /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
+  /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
+  /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
+  Future<Set<String>> Function()? pairedPeerTokensProvider;
+
+  /// [pairedPeerTokensProvider] 结果的缓存（避免每个请求打一次 DB）。null=未加载。
+  /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null，下次 auth 重新拉取。
+  Set<String>? _cachedPeerTokens;
+
   bool get isRunning => _server != null;
   int get port => _server?.port ?? _requestedPort;
 
@@ -218,7 +258,7 @@ class HibikiSyncServer {
 
   shelf.Middleware _authMiddleware() {
     return (shelf.Handler innerHandler) {
-      return (shelf.Request request) {
+      return (shelf.Request request) async {
         if (request.method == 'OPTIONS') return innerHandler(request);
         // Pairing is the one unauthenticated route: the client has no token
         // yet — that is exactly what it is fetching. Gating is done by the
@@ -247,7 +287,7 @@ class HibikiSyncServer {
           return innerHandler(request);
         }
         final auth = request.headers['authorization'];
-        if (auth == null || !_validateAuth(auth)) {
+        if (auth == null || !await _validateAuth(auth)) {
           return shelf.Response(401,
               headers: {'WWW-Authenticate': 'Basic realm="Hibiki Sync"'});
         }
@@ -271,20 +311,53 @@ class HibikiSyncServer {
   static bool _isLookupAudioFilePath(String urlPath) =>
       urlPath == 'api/lookup/audio/file';
 
-  bool _validateAuth(String header) {
+  Future<bool> _validateAuth(String header) async {
     if (!header.startsWith('Basic ')) return false;
     try {
       final decoded = utf8.decode(base64Decode(header.substring(6)));
       final colonIdx = decoded.indexOf(':');
       if (colonIdx < 0) return false;
       final password = decoded.substring(colonIdx + 1);
-      return _constantTimeEquals(
+      // 兼容路径：共享 [_token] 仍受理（未重新配对的老设备继续可用，Never break
+      // userspace）。常量时间比较防计时侧信道泄漏 token 前缀。
+      if (_constantTimeEquals(
         Uint8List.fromList(utf8.encode(password)),
         Uint8List.fromList(utf8.encode(_token)),
-      );
+      )) {
+        return true;
+      }
+      // TODO-961 M1b：再比对任一未吊销的 per-peer token。惰性加载 + 缓存，避免每请求
+      // 打库；配对/吊销经 [invalidatePeerTokenCache] 清缓存促重载。
+      final Set<String> peerTokens = await _peerTokens();
+      final Uint8List pw = Uint8List.fromList(utf8.encode(password));
+      for (final String peerToken in peerTokens) {
+        if (_constantTimeEquals(
+            pw, Uint8List.fromList(utf8.encode(peerToken)))) {
+          return true;
+        }
+      }
+      return false;
     } catch (_) {
       return false;
     }
+  }
+
+  /// 当前有效 per-peer token 集合（惰性加载 + 缓存）。无 provider 时为空集——只认
+  /// 共享 [_token]。
+  Future<Set<String>> _peerTokens() async {
+    final Set<String>? cached = _cachedPeerTokens;
+    if (cached != null) return cached;
+    final Future<Set<String>> Function()? provider = pairedPeerTokensProvider;
+    final Set<String> loaded = provider == null ? <String>{} : await provider();
+    _cachedPeerTokens = loaded;
+    return loaded;
+  }
+
+  /// TODO-961 M1b：配对新增一台设备 / 吊销一台设备后调用，清 per-peer token 缓存，
+  /// 使下一次 [_validateAuth] 从 [pairedPeerTokensProvider] 重新拉取最新集合。
+  /// controller 在 upsert / revoke 后调它，保证吊销即时生效、新 token 立即受理。
+  void invalidatePeerTokenCache() {
+    _cachedPeerTokens = null;
   }
 
   static bool _constantTimeEquals(Uint8List a, Uint8List b) {
@@ -428,6 +501,13 @@ class HibikiSyncServer {
     final String? reportedName = body?['name']?.toString().trim();
     final String? deviceName =
         (reportedName != null && reportedName.isNotEmpty) ? reportedName : null;
+    // TODO-961 M1b: client 自报稳定 deviceId（per-peer token 落库的 UNIQUE 身份）。
+    // 旧 client 不带此字段 → null → confirm 回退共享 token（兼容）。
+    final String? reportedDeviceId = body?['clientDeviceId']?.toString().trim();
+    final String? clientDeviceId =
+        (reportedDeviceId != null && reportedDeviceId.isNotEmpty)
+            ? reportedDeviceId
+            : null;
     final String? remote = _remoteAddress(request);
 
     final bool isLanPeer = HibikiPairingProtocol.isPrivateLanAddress(remote);
@@ -450,6 +530,7 @@ class HibikiSyncServer {
       deviceName: deviceName,
       remoteAddress: remote,
       createdAt: _now(),
+      clientDeviceId: clientDeviceId,
     );
     // 先 prune 过期会话 + 守上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
     // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。
@@ -468,6 +549,7 @@ class HibikiSyncServer {
       deviceName: deviceName,
       remoteAddress: remote,
       createdAt: session.createdAt,
+      clientDeviceId: clientDeviceId,
     );
     _pairSessions[sessionId] = stored;
 
@@ -524,11 +606,39 @@ class HibikiSyncServer {
       pinVerified: true,
     ));
     if (!approved) return _pairDenied('declined');
+
+    // TODO-961 M1b：per-peer token 派发。仅当 host 接线了落库回调（onPeerPaired）
+    // **且** client 上报了稳定 deviceId 时，才生成本设备专属 token 并写库、回给该
+    // client。任一缺失（纯协议单测无 DB / 旧 client 不上报 deviceId）则回退共享
+    // [_token]——既有行为零变化、老设备继续可配对（Never break userspace）。
+    final String issuedToken = await _issuePeerTokenOrFallback(session);
     return _jsonResponse(<String, dynamic>{
-      'token': _token,
+      'token': issuedToken,
       if (_securityContext != null && _hostFingerprint != null)
         'hostFingerprint': _hostFingerprint,
     });
+  }
+
+  /// confirm 成功后派发访问 token：有 [onPeerPaired] 回调且会话带 clientDeviceId
+  /// 时生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效），返回该
+  /// token；否则回退共享 [_token]（无 DB 接线 / 旧 client 无 deviceId 的兼容路径）。
+  Future<String> _issuePeerTokenOrFallback(HibikiPairSession session) async {
+    final Future<void> Function(HibikiPairedPeerRegistration)? persist =
+        onPeerPaired;
+    final String? peerId = session.clientDeviceId?.trim();
+    if (persist == null || peerId == null || peerId.isEmpty) {
+      return _token;
+    }
+    final String peerToken = generateToken();
+    await persist(HibikiPairedPeerRegistration(
+      peerId: peerId,
+      token: peerToken,
+      deviceName: session.deviceName,
+      remoteAddress: session.remoteAddress,
+    ));
+    // 新 token 立即受理：清缓存促下次 auth 从 provider 重载（含刚写入的这行）。
+    invalidatePeerTokenCache();
+    return peerToken;
   }
 
   /// 401，机器可读 reason='pin'：PIN proof 校验未通过。与 403/declined 区分，让

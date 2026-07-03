@@ -278,9 +278,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
         // 证书校验，故安全；真正的 https 必有指纹。
         expectedFingerprint: fingerprint ?? '',
       );
+      // TODO-961 M1b: 上报本机稳定 deviceId，host 据此发 per-peer token 并落库。
+      final String clientDeviceId = await _repo.getOrCreateDeviceId();
       final HibikiPairV2Outcome outcome = await client.pair(
         deviceName: _localDeviceName(),
         pin: pin.isEmpty ? null : pin,
+        clientDeviceId: clientDeviceId,
       );
       if (!mounted) return;
       switch (outcome) {
@@ -705,6 +708,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   late final TextEditingController _portController;
   bool _loaded = false;
 
+  // TODO-961 M1b: 已配对设备（per-peer token 表 hibiki_paired_peers 的行）。开启
+  // 主机时加载，用于「移除已配对设备」列表；吊销后刷新。
+  List<HibikiPairedPeerRow> _pairedPeers = const <HibikiPairedPeerRow>[];
+
   // The HibikiSyncServer + LAN broadcast are owned app-wide by
   // appModel.syncServerController now, NOT by this page (BUG-085). This widget
   // is a thin view that drives start/stop and reflects its running state.
@@ -752,12 +759,16 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       token = HibikiSyncServer.generateToken();
       await repo.setServerPassword(token);
     }
+    // TODO-961 M1b: 预取已配对设备（server 开启时才展示列表，但不阻塞开关加载）。
+    final List<HibikiPairedPeerRow> peers =
+        await _serverController.pairedPeers();
     if (mounted) {
       setState(() {
         _enabled = enabled;
         _port = port;
         _portController.text = '$port';
         _token = token;
+        _pairedPeers = peers;
         _loaded = true;
       });
       _syncSettings(widget.settingsContext).setServerEnabled(enabled);
@@ -797,6 +808,23 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     setState(() => _token = newToken);
     // Bounce the running host so the freshly-persisted token takes effect.
     if (_serverController.isRunning) await _serverController.restart();
+  }
+
+  /// TODO-961 M1b: 重新拉取已配对设备列表（吊销 / 页面重进后刷新）。
+  Future<void> _reloadPairedPeers() async {
+    final List<HibikiPairedPeerRow> peers =
+        await _serverController.pairedPeers();
+    if (mounted) setState(() => _pairedPeers = peers);
+  }
+
+  /// TODO-961 M1b: 移除一台已配对设备——删其 per-peer token 行，该设备下次请求即被
+  /// 401 拒绝（吊销即时生效，controller 内部会清 server token 缓存）。
+  Future<void> _revokePeer(HibikiPairedPeerRow peer) async {
+    final bool removed = await _serverController.revokePeer(peer.peerId);
+    await _reloadPairedPeers();
+    if (mounted && removed) {
+      _showSnackBar(context, t.sync_paired_peer_removed);
+    }
   }
 
   @override
@@ -907,6 +935,45 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 ),
               ],
             ),
+            // TODO-961 M1b: 已配对设备列表 + 逐台移除（吊销 per-peer token）。
+            const SizedBox(height: 16),
+            Text(t.sync_paired_peers_title,
+                style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: 4),
+            if (_pairedPeers.isEmpty)
+              Text(
+                t.sync_paired_peers_empty,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              )
+            else
+              ..._pairedPeers.map(
+                (HibikiPairedPeerRow peer) => HibikiListItem(
+                  padding: EdgeInsets.zero,
+                  title: Text(
+                    (peer.deviceName != null &&
+                            peer.deviceName!.trim().isNotEmpty)
+                        ? peer.deviceName!
+                        : t.sync_paired_peer_unknown,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: (peer.lastSeenIp != null &&
+                          peer.lastSeenIp!.trim().isNotEmpty)
+                      ? Text(
+                          peer.lastSeenIp!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        )
+                      : null,
+                  trailing: HibikiIconButton(
+                    icon: Icons.delete_outline,
+                    size: 18,
+                    tooltip: t.sync_paired_peer_remove,
+                    onTap: () => _revokePeer(peer),
+                  ),
+                ),
+              ),
           ],
         ],
       ),

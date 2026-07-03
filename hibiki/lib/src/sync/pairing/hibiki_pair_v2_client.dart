@@ -53,9 +53,14 @@ class HibikiPairV2Client {
 
   /// 完整一键配对：pair/v2 创建会话 → 用 [pin] + 双 nonce 算 pinProof → confirm。
   /// LAN 免 PIN（host 返回 pinRequired:false）时 [pin] 可为空（confirm 不带 proof）。
+  ///
+  /// [clientDeviceId] 是本机稳定 deviceId（TODO-961 M1b）：随 pair/v2 上报，host 用它
+  /// 作 `hibiki_paired_peers.peerId` 落库并回派本设备专属 per-peer token。可空——host
+  /// 侧无此字段时回退共享 token（向后兼容）。
   Future<HibikiPairV2Outcome> pair({
     required String deviceName,
     String? pin,
+    String? clientDeviceId,
   }) async {
     final http.Client client = _client();
     try {
@@ -67,6 +72,8 @@ class HibikiPairV2Client {
             body: jsonEncode(<String, String>{
               'name': deviceName,
               'clientNonce': clientNonce,
+              if (clientDeviceId != null && clientDeviceId.isNotEmpty)
+                'clientDeviceId': clientDeviceId,
             }),
           )
           .timeout(timeout);

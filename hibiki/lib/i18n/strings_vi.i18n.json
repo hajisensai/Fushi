@@ -2072,5 +2072,10 @@
   "copied": "Copied",
   "shortcut_action_global_toggle_fullscreen": "Toggle fullscreen",
   "video_setting_subtitle_respect_ass": "Respect subtitle's own style",
-  "video_setting_subtitle_respect_ass_hint": "Use the font, color, and outline built into .ass subtitles when available; turn off to force your appearance settings."
+  "video_setting_subtitle_respect_ass_hint": "Use the font, color, and outline built into .ass subtitles when available; turn off to force your appearance settings.",
+  "sync_paired_peers_title": "Paired devices",
+  "sync_paired_peers_empty": "No paired devices yet",
+  "sync_paired_peer_remove": "Remove",
+  "sync_paired_peer_removed": "Removed paired device",
+  "sync_paired_peer_unknown": "Unknown device"
 }
