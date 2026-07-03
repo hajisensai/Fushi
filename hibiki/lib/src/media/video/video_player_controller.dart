@@ -390,6 +390,23 @@ class VideoPlayerController extends ChangeNotifier
   /// 事件刷屏，只记「首次拿到非空尺寸」（=解码真正出帧的信号）。每次 [load] 复位。
   bool _diagFirstFrameLogged = false;
 
+  /// TODO-1110：Android 视频「无画面」纹理握手诊断。挂在 [VideoController.id]
+  /// （ValueNotifier<int?>）上——`id` 是 media_kit Android 纹理握手**唯一**的 Dart 侧
+  /// 可观测输出：native `VideoOutput.Resize`（`onSurfaceAvailable` 触发）把 texture id
+  /// 回传后 `id` 才从 null 变非空；`id` 非空又是 `vo` 从 `null` 切到 `gpu` 的前置
+  /// （media_kit_video `android_video_controller/real.dart` widListener：`wid==0 → vo=null`）。
+  ///
+  /// **修 TODO-1110 的诊断盲区**：旧诊断只在 `open()` 后**一次性**回读 `vo`——但那一刻
+  /// `vo=null` 是 media_kit **有意**的初始态（`wid` 尚未到），无法区分「vo=null 瞬态
+  /// （正常，纹理稍后就绪）」与「vo=null 永久（纹理握手从未完成＝真正无画面）」。挂 id
+  /// 监听后：id 变非空＝纹理握手成功（此后 `vo=gpu`、画面应出）；一段时间后 id 仍 null＝
+  /// 握手从未完成（surface 从未 available / getSurface 返 null / JNI globalRef 失败），
+  /// 即无画面根因。[onDiagLog] 为空时不挂（零开销）。每次 [load] 重挂、[dispose] 清。
+  VoidCallback? _diagTextureIdListener;
+
+  /// [_diagTextureIdListener] 当前挂靠的 [VideoController]（清监听时需用同一实例）。
+  VideoController? _diagTextureIdController;
+
   /// 发一条 TODO-984 诊断行（带统一前缀，便于用户在错误日志里筛选 / 上传）。
   /// [onDiagLog] 为空（诊断未开启 / 单测）时 no-op。
   void _diag(String message) {
@@ -443,6 +460,78 @@ class VideoPlayerController extends ChangeNotifier
       if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁。
       _diag('mpv $prop=$value');
     }
+  }
+
+  /// TODO-1110：挂 [VideoController.id] 监听，把纹理握手的每次状态变化记进诊断日志。
+  ///
+  /// `id`（texture id）从 null 变非空＝native 纹理握手成功（`onSurfaceAvailable` →
+  /// `VideoOutput.Resize`），此后 `vo=gpu` 生效、画面应出；若始终不变非空即握手从未完成
+  /// （无画面根因）。[controller] 为空（非平台后端/测试）或 [onDiagLog] 关闭时 no-op。
+  /// 重复调用先清旧监听再挂（换集复用同一 controller 时避免叠加）。
+  void _attachTextureIdDiag(VideoController? controller) {
+    _detachTextureIdDiag();
+    if (controller == null) return;
+    if (onDiagLog == null) return;
+    _diagTextureIdController = controller;
+    void listener() {
+      _diag('texture id changed: ${controller.id.value ?? 'null(not-created)'} '
+          'rect=${controller.rect.value?.width.toInt()}x'
+          '${controller.rect.value?.height.toInt()}');
+    }
+
+    _diagTextureIdListener = listener;
+    controller.id.addListener(listener);
+    // 记一次初始态（挂监听那一刻 id 通常仍为 null，是 media_kit 的有意初始值）。
+    _diag('texture id initial: '
+        '${controller.id.value ?? 'null(not-created)'}');
+  }
+
+  /// 清除 [_attachTextureIdDiag] 挂的 id 监听（换集重挂 / [dispose]）。
+  void _detachTextureIdDiag() {
+    final VideoController? controller = _diagTextureIdController;
+    final VoidCallback? listener = _diagTextureIdListener;
+    if (controller != null && listener != null) {
+      controller.id.removeListener(listener);
+    }
+    _diagTextureIdController = null;
+    _diagTextureIdListener = null;
+  }
+
+  /// TODO-1110：在首帧就绪 / 有界超时后**再回读一次**渲染属性 + 纹理 id，让诊断日志
+  /// 能区分「vo=null 瞬态」与「vo=null 永久」。
+  ///
+  /// [_logMpvRenderProperties] 在 `open()` 后立刻读一次——那一刻 `vo=null` 是 media_kit
+  /// 的有意初始态（`wid` 未到），无法判断是否为真故障。本方法等 [player] 的首帧渲染完成
+  /// （[VideoController.waitUntilFirstFrameRendered]，纹理握手成功才 complete）或 6 秒
+  /// 超时后再读一次：若此时 texture id 仍 null / vo 仍 null＝握手从未完成（Android 无画面
+  /// 根因）；若 id 非空、vo=gpu＝渲染链已建成（画面应出，问题在别处）。仅 [onDiagLog] 非空
+  /// 时执行；每个 await 后用 [_isCurrentLoad] 双判据重校验，过期立即放弃（防原生 UAF）。
+  Future<void> _logRenderStateAfterFirstFrame(
+      Player player, int loadToken, VideoController? controller) async {
+    if (onDiagLog == null) return;
+    if (controller == null) return;
+    bool firstFrame = true;
+    Object? waitError;
+    try {
+      await controller.waitUntilFirstFrameRendered
+          .timeout(const Duration(seconds: 6));
+    } on TimeoutException {
+      // 6 秒内首帧未渲染出来——正是无画面的强信号，照样回读一次快照定位。
+      firstFrame = false;
+    } catch (e) {
+      // 首帧 Future 直接抛异常（多是 VideoController.create 失败，如 h264 解码器缺失
+      // 抛 UnsupportedError——media_kit 只 debugPrint 吞掉，这里把它显式记进诊断日志）。
+      firstFrame = false;
+      waitError = e;
+    }
+    if (!_isCurrentLoad(player, loadToken)) return; // 等待期间换片/销毁。
+    _diag('render state after '
+        '${firstFrame ? 'first-frame' : (waitError != null ? 'create-error' : '6s-timeout')}: '
+        'textureId=${controller.id.value ?? 'null(not-created)'} '
+        'rect=${controller.rect.value?.width.toInt()}x'
+        '${controller.rect.value?.height.toInt()}'
+        '${waitError != null ? ' error=$waitError' : ''}');
+    await _logMpvRenderProperties(player, loadToken);
   }
 
   @override
@@ -943,6 +1032,9 @@ class VideoPlayerController extends ChangeNotifier
     _diagVideoParamsSub = null;
     await _diagBufferingSub?.cancel();
     _diagBufferingSub = null;
+    // TODO-1110：换集复用 player 时清上一片的纹理 id 监听（load 末尾会按新 controller
+    // 重挂；换集通常复用同一 controller，[_attachTextureIdDiag] 内也会先清再挂）。
+    _detachTextureIdDiag();
     _diagFirstFrameLogged = false;
     _setSubtitleCuesLoading(false);
 
@@ -964,6 +1056,10 @@ class VideoPlayerController extends ChangeNotifier
       _player = player;
       _videoController = VideoController(player);
     }
+    // TODO-1110：挂纹理 id 监听（Android 无画面诊断）。放在 controller 就绪后、诊断
+    // 订阅块之前——首个 id 变化（native 纹理握手成功）能被记进日志。换集复用同一
+    // controller 时 [_attachTextureIdDiag] 会先清旧监听再挂，不叠加。
+    _attachTextureIdDiag(_videoController);
 
     // TODO-984 现场诊断：记录本次 load 的关键事实 + 挂 libmpv error/log/videoParams/
     // buffering 流监听。仅 [onDiagLog] 非空（页面开了诊断）时执行；否则全静默零开销。
@@ -1109,6 +1205,12 @@ class VideoPlayerController extends ChangeNotifier
     if (onDiagLog != null) {
       await _logMpvRenderProperties(player, loadToken);
       if (!_isCurrentLoad(player, loadToken)) return;
+      // TODO-1110：上面这次回读发生在 `open()` 后立刻，`vo=null` 是 media_kit 有意的
+      // 初始态（纹理 `wid` 尚未到），不能据此判无画面。故后台再等首帧渲染 / 6 秒超时后
+      // 回读一次纹理 id + vo——那一刻仍 null 才是「纹理握手从未完成」的确凿信号。不阻塞
+      // 播放主流程（unawaited），换片/销毁由方法内 [_isCurrentLoad] 双判据放弃。
+      unawaited(
+          _logRenderStateAfterFirstFrame(player, loadToken, _videoController));
     }
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
@@ -2380,6 +2482,7 @@ class VideoPlayerController extends ChangeNotifier
     _diagVideoParamsSub = null;
     unawaited(_diagBufferingSub?.cancel());
     _diagBufferingSub = null;
+    _detachTextureIdDiag();
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;

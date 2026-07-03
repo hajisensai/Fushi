@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 520 条。点号进各自文件。
+> 共 521 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-535](bugs/BUG-535-android-video-noframe.md) | ✅ | ✅ | Android 视频无画面(vo=null/texture not-created) |
 | [BUG-534](bugs/BUG-534-updater-stuck-connecting.md) | ✅ | ✅ | Update download stuck on connecting while traffic runs |
 | [BUG-533](bugs/BUG-533-updater-installer-not-cleaned.md) | ✅ | ✅ | Windows update installer not deleted after successful install |
 | [BUG-532](bugs/BUG-532-pref-null-roundtrip.md) | ✅ | ✅ | PrefCodec 清空 override round-trip 成字面 null |
