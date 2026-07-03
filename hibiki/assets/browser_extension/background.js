@@ -105,19 +105,26 @@ async function hibikiIconClick(tab) {
   }
   if (url.indexOf('netflix.com') < 0) return;
   const q = Array.isArray(got.hibikiQueue) ? got.hibikiQueue : [];
+  // 队列里所有含待生成项的剧集（去重）。当前正播这集若在其中，排到最前 → 它就地录（不导航、手势
+  // 现成，最稳）；其余集靠导航（导航时**不录**，到位再录，避开「加载中录屏」的 M7375）。
+  const episodes = [];
+  for (const it of q) {
+    if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
+  }
+  if (!episodes.length) {
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '队列里没有 Netflix 待生成项' }); } catch (_) {}
+    return;
+  }
   const curId = (url.match(/\/watch\/(\d+)/) || [])[1];
-  if (!curId) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '请先打开要制卡的那集播放页，再点图标生成' }); } catch (_) {}
-    return;
+  if (curId && episodes.indexOf(curId) > 0) { episodes.splice(episodes.indexOf(curId), 1); episodes.unshift(curId); }
+  await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: episodes, idx: 0, originalUrl: url } });
+  if (curId && episodes[0] === curId) {
+    // 第一集就是当前播放页 → 就地录：立刻起录屏（手势现成消费），content 收到 storage 变化即跑。
+    await startTabCapture(tab.id);
+  } else {
+    // 当前不在第一集 → 导航过去（此时不录；到位后由 content 的 nfEnsureCapture 再开录）。
+    await chrome.tabs.update(tab.id, { url: 'https://www.netflix.com/watch/' + episodes[0] });
   }
-  const here = q.filter((it) => it && it.site === 'netflix' && it.netflixId === curId).length;
-  if (!here) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '本片没有待生成项' }); } catch (_) {}
-    return;
-  }
-  // 就地录：当前播放器已在放（DRM 已授权），先起录屏（手势即时消费），设状态让 content 就地跑。
-  await startTabCapture(tab.id);
-  await chrome.storage.local.set({ hibikiNfBatch: { active: true, netflixId: curId } });
 }
 
 chrome.action.onClicked.addListener((tab) => {
@@ -168,13 +175,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'nfEnsureCapture') {
-        // 导航后流可能已断：还在录就复用，否则用仍有效的 activeTab 重取 streamId 重启（无需新手势）。
+        // 到位后开录：还在录就复用，否则用仍有效的 activeTab 重取 streamId 起录（无需新手势）。
         const rec = await isOffscreenRecording();
         if (!rec && _sender.tab && _sender.tab.id != null) await startTabCapture(_sender.tab.id);
+        sendResponse({ ok: true });
+      } else if (msg.type === 'nfStopCapture') {
+        // 切下一集前停录：录屏绝不在「切集重新加载」时活着 → 避开 M7375。
+        await stopTabCapture();
+        sendResponse({ ok: true });
+      } else if (msg.type === 'nfNavigate') {
+        if (_sender.tab && _sender.tab.id != null) await chrome.tabs.update(_sender.tab.id, { url: msg.url });
         sendResponse({ ok: true });
       } else if (msg.type === 'nfFinish') {
         await stopTabCapture();
         try { await chrome.storage.local.remove(['hibikiNfBatch']); } catch (_) {}
+        if (_sender.tab && _sender.tab.id != null && msg.originalUrl && _sender.tab.url !== msg.originalUrl) {
+          try { await chrome.tabs.update(_sender.tab.id, { url: msg.originalUrl }); } catch (_) {}
+        }
         sendResponse({ ok: true });
       } else {
         sendResponse({ ok: false, error: 'unknown' });
