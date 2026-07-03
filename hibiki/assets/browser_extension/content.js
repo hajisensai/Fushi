@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v31 loaded (batch mining; Netflix in-place, icon=generate/cancel)');
+console.log('[Hibiki] content script v32 loaded (batch mining; empty-queue feedback)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v31'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v32'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -231,7 +231,10 @@ function hibikiResolveTheme() {
 // 只移除**成功**的项（失败留在队列下次重试）；跨视频累积的 youtube 项都在此生成。
 window.hibikiGenerateAll = async function () {
   const items = hibikiQueue.filter((q) => q.site === 'youtube' && q.youtubeId);
-  if (!items.length) return;
+  if (!items.length) {
+    window.hibikiToast('YouTube 队列为空：先开字幕 → shift 查词 → 点弹窗「制卡」入队，再来生成');
+    return;
+  }
   if (!hibikiExtAlive()) { window.hibikiToast('扩展已更新，刷新页面(F5)后重试'); return; }
   let done = 0, fail = 0;
   const okIds = [];
