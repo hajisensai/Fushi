@@ -427,9 +427,23 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           ref,
     ];
     if (refs.isEmpty) return;
+    // TODO-1125 B：预填合集默认名——收集选中条目标题（epub 用 mediaIdentifier、srt 用
+    // 'srt_<uid>' 与选择键同编码匹配），经 deriveSeriesDefaultName 剥卷号取公共前缀；
+    // 推导为空则兜底 t.series_default_name（「新系列」）。
+    final List<String> memberTitles = <String>[
+      for (final MediaItem item in _visibleEpubBooks)
+        if (_selectedKeys.contains(item.mediaIdentifier)) item.title,
+      for (final SrtBook book in _visibleSrtBooks)
+        if (_selectedKeys.contains('srt_${book.uid}')) book.title,
+    ];
+    final String defaultName = deriveSeriesDefaultName(
+      memberTitles,
+      fallback: t.series_default_name,
+    );
     final String? name = await showSeriesNameDialog(
       context: context,
       title: t.create_series,
+      initialName: defaultName,
     );
     if (name == null || !mounted) return;
     final int seriesId = await appModel.database.createSeries(name);
