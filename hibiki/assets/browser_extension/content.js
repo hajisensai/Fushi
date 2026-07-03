@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v32 loaded (batch mining; empty-queue feedback)');
+console.log('[Hibiki] content script v33 loaded (Netflix seek via official player API, no M7375)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v32'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v33'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -279,11 +279,21 @@ async function hibikiRunNetflixBatch() {
   const okIds = [];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const seekTo = (sec) => new Promise((resolve) => {
+    const ms = Math.max(0, Math.round(sec * 1000));
     let settled = false;
-    const on = () => { if (settled) return; settled = true; try { v.removeEventListener('seeked', on); } catch (_) {} resolve(); };
-    v.addEventListener('seeked', on);
-    try { v.currentTime = sec; } catch (_) {}
-    setTimeout(on, 4000); // 兜底：seeked 不来也继续
+    const finish = () => {
+      if (settled) return; settled = true;
+      try { v.removeEventListener('seeked', onSeeked); } catch (_) {}
+      try { window.removeEventListener('message', onMsg); } catch (_) {}
+      resolve();
+    };
+    const onSeeked = () => finish();
+    const onMsg = (e) => { if (e.source === window && e.data && e.data.__hibikiNf === 'seekDone') finish(); };
+    v.addEventListener('seeked', onSeeked);
+    window.addEventListener('message', onMsg);
+    // 走 Netflix 官方播放器 API seek（主世界 netflix-bridge.js 执行），不改 currentTime → 不触发 M7375。
+    try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, window.location.origin); } catch (_) {}
+    setTimeout(finish, 5000); // 兜底：seeked / seekDone 都不来也继续
   });
   for (const q of items) {
     try {
