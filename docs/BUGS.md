@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 524 条。点号进各自文件。
+> 共 525 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-539](bugs/BUG-539-sync-latin1-body.md) | ✅ | ✅ | live sync 日文书名上报 latin1 编码崩 |
 | [BUG-538](bugs/BUG-538-mpv-sigmoid-upscaling-default-off.md) | ✅ | ✅ | mpv sigmoid upscaling default on (perf cost) |
 | [BUG-537](bugs/BUG-537-windows-video-picture-flicker.md) | 🚧 | 🚧 | Windows video picture layer flickers (subtitle overlay stable) |
 | [BUG-536](bugs/BUG-536-popup-longpress-select-too-slow.md) | ✅ | ✅ | 查词弹窗长按选中文字等待时间过长(500ms) |
