@@ -192,4 +192,93 @@ void main() {
       expect(s.consumed, isFalse);
     });
   });
+
+  group('HibikiPinRateLimiter', () {
+    final DateTime t0 = DateTime.utc(2026, 1, 1, 12, 0, 0);
+
+    HibikiPinRateLimiter limiter() => HibikiPinRateLimiter(
+          maxFailures: 3,
+          failureWindow: const Duration(minutes: 5),
+          lockoutDuration: const Duration(minutes: 15),
+        );
+
+    test('阈值前不锁定；第 maxFailures 次失败即锁定', () {
+      final HibikiPinRateLimiter rl = limiter();
+      expect(rl.isLockedOut('ip:1.2.3.4', t0), isFalse);
+      expect(rl.recordFailure('ip:1.2.3.4', t0), isFalse); // 1
+      expect(rl.recordFailure('ip:1.2.3.4', t0), isFalse); // 2
+      expect(rl.isLockedOut('ip:1.2.3.4', t0), isFalse);
+      expect(rl.recordFailure('ip:1.2.3.4', t0), isTrue); // 3 → 锁定
+      expect(rl.isLockedOut('ip:1.2.3.4', t0), isTrue);
+    });
+
+    test('锁定退避窗口内被拒，窗口后自动恢复', () {
+      final HibikiPinRateLimiter rl = limiter();
+      rl.recordFailure('ip:a', t0);
+      rl.recordFailure('ip:a', t0);
+      rl.recordFailure('ip:a', t0); // 锁定 15min
+      // 窗口内仍锁定。
+      expect(
+          rl.isLockedOut('ip:a', t0.add(const Duration(minutes: 14))), isTrue);
+      // 窗口后自动恢复（退避可恢复、有界）。
+      expect(
+          rl.isLockedOut('ip:a', t0.add(const Duration(minutes: 15))), isFalse);
+      // 恢复后计数已清零：再失败一次不会立刻又锁。
+      expect(rl.recordFailure('ip:a', t0.add(const Duration(minutes: 16))),
+          isFalse);
+    });
+
+    test('成功配对清零该来源计数（不株连未来）', () {
+      final HibikiPinRateLimiter rl = limiter();
+      rl.recordFailure('ip:b', t0);
+      rl.recordFailure('ip:b', t0); // 2 次，未到阈值
+      rl.recordSuccess('ip:b'); // 清零
+      // 清零后再失败两次仍未锁（若没清零则第 1 次就到阈值 3）。
+      expect(rl.recordFailure('ip:b', t0), isFalse); // 1
+      expect(rl.recordFailure('ip:b', t0), isFalse); // 2
+    });
+
+    test('滑动窗口：失败冷却出窗口后计数重置', () {
+      final HibikiPinRateLimiter rl = limiter();
+      rl.recordFailure('ip:c', t0); // 1
+      rl.recordFailure('ip:c', t0); // 2
+      // 距上次失败超过 5min 窗口 → 下一次失败视为窗口重开（计数=1，不触锁）。
+      expect(rl.recordFailure('ip:c', t0.add(const Duration(minutes: 6))),
+          isFalse);
+    });
+
+    test('不同来源各自独立计数（不互相株连）', () {
+      final HibikiPinRateLimiter rl = limiter();
+      rl.recordFailure('ip:x', t0);
+      rl.recordFailure('ip:x', t0);
+      rl.recordFailure('ip:x', t0); // x 锁定
+      expect(rl.isLockedOut('ip:x', t0), isTrue);
+      expect(rl.isLockedOut('dev:y', t0), isFalse); // y 未受影响
+    });
+
+    test('prune 回收冷却记录但保留锁定中的记录', () {
+      final HibikiPinRateLimiter rl = limiter();
+      rl.recordFailure('ip:cold', t0); // 单次失败，未锁
+      rl.recordFailure('ip:hot', t0);
+      rl.recordFailure('ip:hot', t0);
+      rl.recordFailure('ip:hot', t0); // hot 锁定
+      expect(rl.trackedSourceCount, 2);
+      // 推进超过失败窗口但未到锁定期满：cold 应被回收，hot 仍保留（否则=提前解锁）。
+      rl.prune(t0.add(const Duration(minutes: 6)));
+      expect(rl.trackedSourceCount, 1);
+      expect(
+          rl.isLockedOut('ip:hot', t0.add(const Duration(minutes: 6))), isTrue);
+    });
+
+    test('跟踪来源数受上限约束（防伪造来源撑爆内存）', () {
+      final HibikiPinRateLimiter rl = HibikiPinRateLimiter(
+        maxFailures: 3,
+        maxTrackedSources: 8,
+      );
+      for (int i = 0; i < 100; i++) {
+        rl.recordFailure('ip:flood-$i', t0.add(Duration(seconds: i)));
+      }
+      expect(rl.trackedSourceCount, lessThanOrEqualTo(8));
+    });
+  });
 }

@@ -174,6 +174,14 @@ class HibikiSyncServer {
   static const Duration _pairSessionTtl = Duration(seconds: 90);
   static const int _maxPairSessions = 64;
 
+  /// TODO-961 M3：PIN 爆破限速器。按来源（client 自报 deviceId，回退来源 IP）聚合
+  /// PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
+  /// 直接被拒（不再触碰 PIN 比对）。粒度选「来源」而非「会话」的理由见
+  /// [HibikiPinRateLimiter] 文档：[HibikiPairSession.consumed] 已让单会话只能撞一次，
+  /// 真正的爆破面是不断开新会话逐个撞——只有按来源聚合才挡得住。纯内存态，随
+  /// [_prunePairSessions] 一并 prune 防泄漏；server 重启即清空。
+  final HibikiPinRateLimiter _pinRateLimiter = HibikiPinRateLimiter();
+
   HttpServer? _server;
 
   /// Interactive pairing approval. When a client POSTs /api/pair, the server
@@ -536,6 +544,8 @@ class HibikiSyncServer {
     // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。
     _prunePairSessions();
     _enforcePairSessionCap();
+    // 同步回收已冷却的 PIN 失败记录，防限速器内存随开会话数无界增长。
+    _pinRateLimiter.prune(_now());
 
     // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
     // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
@@ -575,6 +585,8 @@ class HibikiSyncServer {
     }
     // 先清掉过期会话，使「pair/v2 后超 TTL 才 confirm」被当作未知会话拒绝。
     _prunePairSessions();
+    // 同步回收已冷却的 PIN 失败记录（锁定中的保留到期满），防限速器内存泄漏。
+    _pinRateLimiter.prune(_now());
     final HibikiPairSession? session = _pairSessions[sessionId];
     // 未知会话（过期/伪造）或已被消费过（重放）→ 拒。consumed 防同 nonce 二次提交。
     if (session == null || session.consumed) {
@@ -584,9 +596,24 @@ class HibikiSyncServer {
     session.consumed = true;
     _pairSessions.remove(sessionId);
 
+    // TODO-961 M3：本会话来源标识，供爆破限速按来源聚合失败计数。优先 client 自报的
+    // 稳定 deviceId，回退来源 IP；二者都缺时为 null → 无稳定身份可锁，退化为不限速的
+    // 单会话路径（该路径已被 session.consumed 单次消费保护，一个会话只能撞一次）。
+    final String? sourceKey = _pinRateLimitSourceKey(session);
     if (session.pinRequired) {
+      // 先查锁定态（再触碰 PIN 比对）：锁定则直接拒，杜绝继续撞。锁定判定只看来源与
+      // 时钟，与 PIN 内容完全无关，故不引入「前缀正确就更慢」的计时侧信道。
+      if (sourceKey != null && _pinRateLimiter.isLockedOut(sourceKey, _now())) {
+        return _pairRateLimited();
+      }
       final String? pinProof = body?['pinProof']?.toString();
       if (pinProof == null || pinProof.trim().isEmpty) {
+        // 缺 proof 同样计一次失败：否则攻击者可用「开会话→空 proof」零成本探测锁定态
+        // 之外的东西。记后若已锁定，返回 429 让 client 知道被限速。
+        if (sourceKey != null &&
+            _pinRateLimiter.recordFailure(sourceKey, _now())) {
+          return _pairRateLimited();
+        }
         // 401：PIN 校验未通过（缺 proof）——不再问 host（不弹窗）。
         return _pairUnauthorized();
       }
@@ -596,7 +623,14 @@ class HibikiSyncServer {
         hostNonce: session.hostNonce,
         submittedProof: pinProof,
       );
-      if (!ok) return _pairUnauthorized();
+      if (!ok) {
+        // 记一次来源级失败；若因此达阈值进入锁定，返回 429（限速），否则 401（PIN 错）。
+        if (sourceKey != null &&
+            _pinRateLimiter.recordFailure(sourceKey, _now())) {
+          return _pairRateLimited();
+        }
+        return _pairUnauthorized();
+      }
     }
 
     // 第二重确认：PIN 已对（或本会话免 PIN），仍要 host 人工点允许才派 token。
@@ -606,6 +640,9 @@ class HibikiSyncServer {
       pinVerified: true,
     ));
     if (!approved) return _pairDenied('declined');
+
+    // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
+    if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);
 
     // TODO-961 M1b：per-peer token 派发。仅当 host 接线了落库回调（onPeerPaired）
     // **且** client 上报了稳定 deviceId 时，才生成本设备专属 token 并写库、回给该
@@ -648,6 +685,26 @@ class HibikiSyncServer {
         body: jsonEncode(<String, String>{'reason': 'pin'}),
         headers: <String, String>{'Content-Type': 'application/json'},
       );
+
+  /// TODO-961 M3：429，机器可读 reason='rate_limited'：该来源 PIN 失败过多已被锁定
+  /// 退避。与 401/pin 区分，让 client 提示「尝试过多，请稍后再试」而非「PIN 错误」。
+  /// 绝不回显剩余锁定时长的精确值以外的信息，也绝不泄露 PIN 是否部分正确。
+  shelf.Response _pairRateLimited() => shelf.Response(
+        429,
+        body: jsonEncode(<String, String>{'reason': 'rate_limited'}),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+
+  /// TODO-961 M3：本会话在 PIN 爆破限速里的来源标识。优先 client 自报的稳定
+  /// deviceId（同一物理设备换 IP 也锁得住），回退请求来源 IP。二者都缺（无稳定身份）
+  /// 时返回 null → 调用方退化为不限速的单会话路径（已由 consumed 单次消费保护）。
+  static String? _pinRateLimitSourceKey(HibikiPairSession session) {
+    final String? deviceId = session.clientDeviceId?.trim();
+    if (deviceId != null && deviceId.isNotEmpty) return 'dev:$deviceId';
+    final String? remote = session.remoteAddress?.trim();
+    if (remote != null && remote.isNotEmpty) return 'ip:$remote';
+    return null;
+  }
 
   /// Source IP of the request's TCP connection, or null when shelf_io did not
   /// attach connection info (e.g. some test harnesses).
@@ -1797,6 +1854,10 @@ class HibikiSyncServer {
   /// 测试钩子：当前进行中的配对会话数（验证 prune/cap 行为）。
   @visibleForTesting
   int get pendingPairSessionCount => _pairSessions.length;
+
+  /// TODO-961 M3 测试钩子：当前限速器跟踪的来源记录数（验证 prune 不泄漏）。
+  @visibleForTesting
+  int get pinRateLimitTrackedSourceCount => _pinRateLimiter.trackedSourceCount;
 
   Future<shelf.Response> _handlePropfind(
       shelf.Request request, String davPath, String fsPath) async {

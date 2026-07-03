@@ -190,3 +190,142 @@ class HibikiPairingProtocol {
     return result == 0;
   }
 }
+
+/// TODO-961 M3: 配对 PIN 爆破限速的纯状态跟踪器（无 IO / 无 Flutter，可完整单测）。
+///
+/// 威胁模型（设计稿 §3.1 承诺「靠限速防爆破」）：6 位 PIN 只有 100 万空间，
+/// [HibikiPairSession.consumed] 让**单个会话**只能 confirm 一次，所以真正的爆破面
+/// 不是「对一个会话反复撞」，而是攻击者**不断 pair/v2 开新会话、每个 confirm 一次**
+/// 撞不同 PIN。故计数粒度必须落在**来源**（client），而非会话——否则每次开新会话就
+/// 把失败计数重置为零，限速形同虚设。
+///
+/// 来源标识（[sourceKey]）由调用方给出：优先 client 自报的稳定 `clientDeviceId`，
+/// 回退请求来源 IP（`remoteAddress`）。二者都缺时调用方应退化为不限速的单会话路径
+/// （无稳定身份可锁，见 [HibikiSyncServer]）。
+///
+/// 语义：同一来源在滑动窗口 [failureWindow] 内累计 [maxFailures] 次 PIN 校验失败即
+/// 进入锁定，锁定持续 [lockoutDuration]（退避有界、可恢复）。锁定窗口内该来源的
+/// confirm 一律被拒（不再触碰 PIN 比对，杜绝继续撞）。成功配对或来源记录过期后计数
+/// 清零，绝不永久株连。清理复用注入时钟，配合会话 prune 一并调用防内存泄漏。
+class HibikiPinRateLimiter {
+  HibikiPinRateLimiter({
+    this.maxFailures = 5,
+    this.failureWindow = const Duration(minutes: 5),
+    this.lockoutDuration = const Duration(minutes: 15),
+    this.maxTrackedSources = 256,
+  })  : assert(maxFailures > 0),
+        assert(maxTrackedSources > 0);
+
+  /// 触发锁定的连续（窗口内）失败阈值。第 [maxFailures] 次失败后即锁定。
+  final int maxFailures;
+
+  /// 失败计数的滑动窗口：距上次失败超过本时长即视为「已冷却」，计数从头开始，
+  /// 使正常用户偶发输错在长时间后不被历史失败株连。
+  final Duration failureWindow;
+
+  /// 达阈值后的锁定退避时长。锁定窗口内该来源 confirm 直接被拒。有界、到期自动恢复。
+  final Duration lockoutDuration;
+
+  /// 跟踪来源数上限（防攻击者用海量伪造来源撑爆内存）。超限时先按最旧活动淘汰。
+  final int maxTrackedSources;
+
+  /// 每来源一条记录：窗口内失败计数、最近一次失败时刻、锁定到期时刻（null=未锁）。
+  final Map<String, _PinFailureRecord> _records = <String, _PinFailureRecord>{};
+
+  /// [sourceKey] 当前是否处于锁定退避窗口内（[now] 为注入时钟）。锁定期满自动解除。
+  /// 调用方在触碰 PIN 比对**之前**先查此方法：锁定则直接拒，不给继续撞的机会，
+  /// 也不引入「PIN 前缀正确就更慢」的计时差（锁定判定与 PIN 内容完全无关）。
+  bool isLockedOut(String sourceKey, DateTime now) {
+    final _PinFailureRecord? rec = _records[sourceKey];
+    if (rec == null) return false;
+    final DateTime? until = rec.lockedUntil;
+    if (until == null) return false;
+    if (!now.isBefore(until)) {
+      // 锁定期满：清除该来源记录，允许重新尝试（退避可恢复）。
+      _records.remove(sourceKey);
+      return false;
+    }
+    return true;
+  }
+
+  /// 记录 [sourceKey] 一次 PIN 校验失败（[now] 为注入时钟）。返回记录后该来源是否
+  /// **已进入锁定**。滑动窗口：距上次失败超过 [failureWindow] 则计数重置为 1。
+  bool recordFailure(String sourceKey, DateTime now) {
+    _reclaimStale(now);
+    final _PinFailureRecord existing = _records[sourceKey] ??
+        _PinFailureRecord(failureCount: 0, lastFailureAt: now);
+    final bool windowExpired =
+        now.difference(existing.lastFailureAt) > failureWindow;
+    final int nextCount = windowExpired ? 1 : existing.failureCount + 1;
+    final bool nowLocked = nextCount >= maxFailures;
+    _records[sourceKey] = _PinFailureRecord(
+      failureCount: nextCount,
+      lastFailureAt: now,
+      lockedUntil: nowLocked ? now.add(lockoutDuration) : null,
+    );
+    // 插入后再守上限：先回收陈旧再插入可能使总数达 maxTrackedSources+1，此处淘汰
+    // 最旧活动来源把它压回上限内（刚写入的记录 lastFailureAt=now 最新，不会被淘汰）。
+    _enforceCap();
+    return nowLocked;
+  }
+
+  /// [sourceKey] 成功配对后清零其失败计数与锁定态（不再株连未来尝试）。
+  void recordSuccess(String sourceKey) {
+    _records.remove(sourceKey);
+  }
+
+  /// 清掉既非锁定中、失败又已冷却（超 [failureWindow]）的陈旧记录，并在超过
+  /// [maxTrackedSources] 时淘汰最旧活动来源。与会话 prune 同步调用防内存泄漏。
+  void prune(DateTime now) {
+    _reclaimStale(now);
+    _enforceCap();
+  }
+
+  /// 测试钩子：当前跟踪的来源记录数。
+  int get trackedSourceCount => _records.length;
+
+  /// 回收陈旧记录：锁定中的保留到锁定期满（删掉=提前解锁），未锁定的失败一旦冷却
+  /// 出 [failureWindow] 窗口即回收。不涉及上限淘汰。
+  void _reclaimStale(DateTime now) {
+    _records.removeWhere((String _, _PinFailureRecord rec) {
+      final DateTime? until = rec.lockedUntil;
+      if (until != null) return !now.isBefore(until);
+      return now.difference(rec.lastFailureAt) > failureWindow;
+    });
+  }
+
+  /// 守住跟踪来源数上限：超过 [maxTrackedSources] 时按 lastFailureAt 淘汰最旧活动
+  /// 来源直到回到上限内（防攻击者用海量伪造来源撑爆内存）。
+  void _enforceCap() {
+    while (_records.length > maxTrackedSources) {
+      String? oldestKey;
+      DateTime? oldestAt;
+      for (final MapEntry<String, _PinFailureRecord> e in _records.entries) {
+        if (oldestAt == null || e.value.lastFailureAt.isBefore(oldestAt)) {
+          oldestAt = e.value.lastFailureAt;
+          oldestKey = e.key;
+        }
+      }
+      if (oldestKey == null) break;
+      _records.remove(oldestKey);
+    }
+  }
+}
+
+/// 单个来源的 PIN 失败记录（[HibikiPinRateLimiter] 内部值对象，不可变）。
+class _PinFailureRecord {
+  const _PinFailureRecord({
+    required this.failureCount,
+    required this.lastFailureAt,
+    this.lockedUntil,
+  });
+
+  /// 当前滑动窗口内累计的连续失败次数。
+  final int failureCount;
+
+  /// 最近一次失败时刻（滑动窗口与陈旧回收的判定基准）。
+  final DateTime lastFailureAt;
+
+  /// 锁定退避到期时刻；null 表示尚未触发锁定。
+  final DateTime? lockedUntil;
+}
