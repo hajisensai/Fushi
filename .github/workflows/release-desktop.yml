@@ -652,6 +652,12 @@ jobs:
           mkdir -p "$out_dir"
           rm -f "$out_dir"/hibiki-*-macos.zip
           ditto -c -k --keepParent "$app_dir" "$out_dir/hibiki-${BUILD_VERSION_NAME}-macos.zip"
+      # See build-multiplatform.yml ios job: flutter_native_splash 2.4.4 ships a
+      # broken SPM Package.swift and its 2.4.5+ fix conflicts with our pinned
+      # archive ^3.6.1 / xml ^6.3.0. iOS deps are CocoaPods-managed, so disable
+      # Flutter 3.44's experimental SPM integration here too. (TODO-1129)
+      - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
+        run: flutter config --no-enable-swift-package-manager
       - name: Build iOS release app (no codesign)
         working-directory: hibiki
         run: >-

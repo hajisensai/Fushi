@@ -444,6 +444,15 @@ jobs:
       # path was wrong before — record_mp3_plus shipped a device-only static lib
       # with no simulator slice; record now ships proper xcframeworks, but the
       # device no-codesign build is the meaningful headless verification.
+      # flutter_native_splash 2.4.4 ships a broken SPM Package.swift (invalid
+      # public headers "include" dir; fixed upstream only in 2.4.5+, which pulls
+      # image ^4.5.2 -> archive 4.x / xml 7.x, conflicting with our pinned
+      # archive ^3.6.1 (GDrive streaming) + xml ^6.3.0). iOS deps here are
+      # CocoaPods-managed (ios/Podfile.lock), so Flutter 3.44's experimental SPM
+      # integration is redundant and breaks the build on this dev-only tool.
+      # Disable it until the native_splash chain is satisfiable / we adopt SPM. (TODO-1129)
+      - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
+        run: flutter config --no-enable-swift-package-manager
       - name: Build iOS (debug, no codesign)
         working-directory: hibiki
         run: >-
