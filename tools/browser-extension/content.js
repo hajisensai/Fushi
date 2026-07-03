@@ -295,8 +295,10 @@ async function hibikiRunNetflixBatch() {
       // 本句结束判据：字幕文本变成别的/清空（≠ 这一句），且已过句首 0.4s。refText 用入队时存的整句
       // 文本，比「播放时现采样」稳（避免字幕还没渲染时采到空 → 判据失效整段录到超时）。
       const refText = (q.sentence || '').trim();
-      const hardEnd = Math.max((q.endV || 0) + 1500, q.startV + 12000) / 1000;
-      const deadline = Date.now() + 15000;
+      // 主判据是「字幕变成别句」；hardEnd 只是判据失效（相邻同文本/字幕关）时的安全上限。
+      // 有观测到的 endV 就用 endV+1500（长句不被截）；否则封顶 startV+8000（8s，控制转码体积）。
+      const hardEnd = Math.max((q.endV || 0) + 1500, q.startV + 8000) / 1000;
+      const deadline = Date.now() + 12000;
       while (v.currentTime < hardEnd && Date.now() < deadline) {
         await sleep(120);
         if (v.paused) break; // 外部暂停 → 别空转录冻结帧到超时
@@ -483,6 +485,7 @@ function hibikiSubtitleCaretAtPoint(x, y) {
 }
 
 document.addEventListener('mousemove', (e) => {
+  if (hibikiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   if (!e[HIBIKI_MOD]) { hibikiLastTerm = ''; return; } // 松开 Shift 复位，下次可重查同词
   // 位移阈值：几乎没动就跳过（同一像素反复 mousemove 不重复取词）。
   if (Math.abs(e.clientX - hibikiLastX) < 4 && Math.abs(e.clientY - hibikiLastY) < 4) return;

@@ -16,9 +16,9 @@ async function cfg() {
 }
 function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }
 
-// TODO-1000 Netflix GIF：offscreen 文档承载 tabCapture MediaRecorder（分段滚动录最近一段）。
-// 用户点扩展图标在 Netflix 标签开始录制（需 activeTab 手势 + 关硬件加速才非黑）；一键制卡时
-// background 向 offscreen 取最近一段 webm，随 mine 一起发给 Hibiki 转 GIF+音频。
+// TODO-1000 Netflix：offscreen 文档承载 tabCapture MediaRecorder。批量生成时按字幕逐句「回放
+// 录制」——每句 seek 到句首、播到句尾录成一段自包含 webm（beginClip/endClip），随 mineClip 发给
+// Hibiki 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
 let captureActive = false;
 
 async function ensureOffscreen() {
