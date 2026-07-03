@@ -214,6 +214,36 @@ function hibikiResolveTheme() {
     : 'light';
 }
 
+// 生成全部（YouTube）：逐条把 {videoId,起,止} 发服务端从真实流裁 → 出卡。无录屏、无回放。
+// 只移除**成功**的项（失败留在队列下次重试）；跨视频累积的 youtube 项都在此生成。
+window.hibikiGenerateAll = async function () {
+  const items = hibikiQueue.filter((q) => q.site === 'youtube' && q.youtubeId);
+  if (!items.length) return;
+  if (!hibikiExtAlive()) { window.hibikiToast('扩展已更新，刷新页面(F5)后重试'); return; }
+  let done = 0, fail = 0;
+  const okIds = [];
+  window.hibikiToast('生成中… 0/' + items.length, true);
+  for (const q of items) {
+    const ok = await new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'mineYoutube', fields: q.fields, sentence: q.sentence,
+          youtubeVideoId: q.youtubeId, startMs: q.startV, endMs: q.endV,
+        }, (resp) => {
+          try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
+          resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));
+        });
+      } catch (_) { resolve(false); }
+    });
+    if (ok) { done++; okIds.push(q.id); } else fail++;
+    window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
+  }
+  hibikiQueue = hibikiQueue.filter((q) => okIds.indexOf(q.id) < 0);
+  hibikiQueueSave();
+  hibikiUpdateQueueChip();
+  window.hibikiToast('✓ 生成完成：成功 ' + done + (fail ? ' · 失败 ' + fail : ''));
+};
+
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见
   // （浏览器全屏只渲染 fullscreenElement 及其后代）→ shift 划词其实触发了但弹窗不可见=「没反应」。
