@@ -1,89 +1,96 @@
-// TODO-1000 Netflix GIF：offscreen 文档里用 tabCapture 录制当前标签页（含 DRM 视频——需用户
-// 关硬件加速才非黑），分段滚动保留「最近一段完整 webm」。一键制卡时取该段回给 background，
-// 由 Hibiki server ffmpeg 转 GIF+音频。用分段（周期重启）而非丢头块：MediaRecorder 的分片不
-// 独立可解，只有「从 start 起的完整序列」才是合法 webm，故每段自包含。
-
-let recorder = null;
+// TODO-1000 批量制卡：offscreen 只做「录一小段完整 webm」。startCapture 建 tabCapture 流；
+// 每次 beginClip 新起一个 MediaRecorder（自包含、可解码），endClip 停止并回 base64。
+// 不再滚动分段、不暂停、不算墙钟偏移（旧模型的时钟错配就是「完全不行」根因）。
 let stream = null;
-let segMs = 12000; // 每段 12s
-let lastSegment = null; // 最近一段完整 webm Blob
-let currentChunks = [];
-let restartTimer = null;
+let audioPlaybackCtx = null;
+let recorder = null;
+let chunks = [];
 let mime = 'video/webm;codecs=vp8,opus';
 
 function pickMime() {
-  const prefs = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ];
+  const prefs = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   for (const m of prefs) {
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) return m;
   }
   return 'video/webm';
 }
 
-function beginSegment() {
-  currentChunks = [];
-  recorder = new MediaRecorder(stream, { mimeType: mime });
-  recorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) currentChunks.push(e.data);
-  };
-  recorder.onstop = () => {
-    if (currentChunks.length) lastSegment = new Blob(currentChunks, { type: mime });
-    // 只要流还在，立即开新段（滚动保留最近一段）。
-    if (stream && stream.active) beginSegment();
-  };
-  recorder.start();
-  restartTimer = setTimeout(() => {
-    if (recorder && recorder.state === 'recording') recorder.stop();
-  }, segMs);
-}
-
 async function startCapture(streamId) {
-  if (recorder) return { ok: true, already: true };
+  if (stream) return { ok: true, already: true };
   stream = await navigator.mediaDevices.getUserMedia({
     audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } },
-    video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } },
+    video: {
+      mandatory: {
+        chromeMediaSource: 'tab', chromeMediaSourceId: streamId,
+        maxWidth: 640, maxHeight: 360, maxFrameRate: 12,
+      },
+    },
   });
+  // tabCapture 会把标签页音频改道进流 → 默认不再对用户放音。接回扬声器，回放时仍能听到。
+  try {
+    audioPlaybackCtx = new AudioContext();
+    audioPlaybackCtx.createMediaStreamSource(stream).connect(audioPlaybackCtx.destination);
+  } catch (_) {}
   mime = pickMime();
-  beginSegment();
   return { ok: true };
 }
 
 function stopCapture() {
-  if (restartTimer) clearTimeout(restartTimer);
-  restartTimer = null;
-  try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch (_) {}
-  recorder = null;
+  try { if (recorder && recorder.state !== 'inactive') { recorder.onstop = null; recorder.stop(); } } catch (_) {}
+  recorder = null; chunks = [];
+  if (audioPlaybackCtx) { try { audioPlaybackCtx.close(); } catch (_) {} audioPlaybackCtx = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+}
+
+function beginClip() {
+  if (!stream) return { ok: false, error: 'no stream' };
+  chunks = [];
+  recorder = new MediaRecorder(stream, {
+    mimeType: mime, videoBitsPerSecond: 800000, audioBitsPerSecond: 128000,
+  });
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+  recorder.start();
+  return { ok: true };
+}
+
+function endClip() {
+  return new Promise((resolve) => {
+    if (!recorder || recorder.state === 'inactive') { resolve({ ok: false, error: 'no clip' }); return; }
+    recorder.onstop = async () => {
+      const blob = new Blob(chunks, { type: mime });
+      chunks = [];
+      const b64 = await blobToBase64(blob);
+      resolve({ ok: true, clipBase64: b64 });
+    };
+    try { recorder.stop(); } catch (_) { resolve({ ok: false, error: 'stop failed' }); }
+  });
 }
 
 function blobToBase64(blob) {
   return new Promise((resolve) => {
     const r = new FileReader();
-    r.onloadend = () => resolve(String(r.result).split(',')[1] || '');
+    r.onloadend = () => {
+      // data URL: data:<mime>;base64,<数据>。webm 的 MIME 含逗号 → 必须从 ';base64,' 后取，
+      // 不能 split(',')[1]（会切在 codecs 逗号上 → 服务端 base64Decode 抛 → HTTP 400）。
+      const s = String(r.result || '');
+      const i = s.indexOf(';base64,');
+      resolve(i >= 0 ? s.slice(i + 8) : (s.split(',').pop() || ''));
+    };
     r.readAsDataURL(blob);
   });
 }
 
-async function getRecentClip() {
-  if (!lastSegment) return null;
-  const base64 = await blobToBase64(lastSegment);
-  return { clipBase64: base64, clipDurationMs: segMs };
-}
-
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   if (!msg || msg.target !== 'offscreen') return false;
   (async () => {
     try {
       if (msg.type === 'startCapture') sendResponse(await startCapture(msg.streamId));
       else if (msg.type === 'stopCapture') { stopCapture(); sendResponse({ ok: true }); }
-      else if (msg.type === 'getRecentClip') sendResponse(await getRecentClip());
+      else if (msg.type === 'beginClip') sendResponse(beginClip());
+      else if (msg.type === 'endClip') sendResponse(await endClip());
+      else if (msg.type === 'isRecording') sendResponse({ ok: true, recording: !!(stream && stream.active) });
       else sendResponse({ ok: false, error: 'unknown' });
-    } catch (e) {
-      sendResponse({ ok: false, error: String(e) });
-    }
+    } catch (e) { sendResponse({ ok: false, error: String(e) }); }
   })();
   return true;
 });
