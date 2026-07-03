@@ -52,14 +52,24 @@ class HibikiDesignTokens {
 
 class HibikiRadii {
   const HibikiRadii({
-    this.group = 12,
-    this.card = 12,
-    this.control = 16,
-    this.chip = 8,
-    this.menu = 12,
-    this.dialog = 28,
-    this.sheet = 28,
+    this.group = groupValue,
+    this.card = cardValue,
+    this.control = controlValue,
+    this.chip = chipValue,
+    this.menu = menuValue,
+    this.dialog = dialogValue,
+    this.sheet = sheetValue,
   });
+
+  // Single value source for the radii scale (used by both these field defaults
+  // and [HibikiBorderRadius]'s const BorderRadius objects).
+  static const double groupValue = 12;
+  static const double cardValue = 12;
+  static const double controlValue = 16;
+  static const double chipValue = 8;
+  static const double menuValue = 12;
+  static const double dialogValue = 28;
+  static const double sheetValue = 28;
 
   final double group;
   final double card;
@@ -78,6 +88,29 @@ class HibikiRadii {
   BorderRadius get sheetRadius =>
       BorderRadius.vertical(top: Radius.circular(sheet));
   Radius get chipCorner => Radius.circular(chip);
+}
+
+/// Compile-time `const` border radii — the single source for `BorderRadius`
+/// across theme config and widget call sites. Radii are theme-independent, so
+/// these stay `const`: migrating a hardcoded `BorderRadius.circular(N)` to one
+/// of these preserves const-ness at the call site (routing through
+/// `HibikiDesignTokens.of(context)` would not). Values come from [HibikiRadii].
+abstract final class HibikiBorderRadius {
+  static const BorderRadius group =
+      BorderRadius.all(Radius.circular(HibikiRadii.groupValue));
+  static const BorderRadius card =
+      BorderRadius.all(Radius.circular(HibikiRadii.cardValue));
+  static const BorderRadius control =
+      BorderRadius.all(Radius.circular(HibikiRadii.controlValue));
+  static const BorderRadius chip =
+      BorderRadius.all(Radius.circular(HibikiRadii.chipValue));
+  static const BorderRadius menu =
+      BorderRadius.all(Radius.circular(HibikiRadii.menuValue));
+  static const BorderRadius dialog =
+      BorderRadius.all(Radius.circular(HibikiRadii.dialogValue));
+  static const BorderRadius sheet =
+      BorderRadius.vertical(top: Radius.circular(HibikiRadii.sheetValue));
+  static const Radius chipCorner = Radius.circular(HibikiRadii.chipValue);
 }
 
 class HibikiSurfaceColors {
