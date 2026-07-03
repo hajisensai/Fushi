@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 518 条。点号进各自文件。
+> 共 520 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-534](bugs/BUG-534-updater-stuck-connecting.md) | ✅ | ✅ | Update download stuck on connecting while traffic runs |
+| [BUG-533](bugs/BUG-533-updater-installer-not-cleaned.md) | ✅ | ✅ | Windows update installer not deleted after successful install |
 | [BUG-532](bugs/BUG-532-pref-null-roundtrip.md) | ✅ | ✅ | PrefCodec 清空 override round-trip 成字面 null |
 | [BUG-531](bugs/BUG-531-ios-image-picker-usage-desc.md) | ✅ | ✅ | iOS 制卡取图缺 Info.plist 权限键硬崩 |
 | [BUG-530](bugs/BUG-530-netflix-extension-wrong-server.md) | ✅ | ✅ | 网飞扩展查词/制卡断: 扩展指向 yomitan server(19633) 但端点只在 sync server |

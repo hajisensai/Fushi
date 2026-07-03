@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/update_checker.dart';
 
@@ -241,6 +243,38 @@ void main() {
           updatesDirPath: '',
         ),
         isNull,
+      );
+    });
+  });
+
+  group('BUG-533 接线守卫：完整包 GC 在每次 Windows 启动确定性触发', () {
+    // 根因：`_cleanupOldApks` 的过期完整安装包回收（selectStaleUpdateArtifacts）此前
+    // 只在 `_check`（检查更新）路径调用；用户关闭自动检查 / neverRemind 短路时它永不跑，
+    // 旧安装包在 updates 目录无限堆积（用户报告「安装包没有自动清除」）。修复把兜底 GC
+    // 挂到每次 Windows 启动的 `reconcilePendingWindowsInstallerHandoff` 入口。这条路径
+    // 是平台耦合 static 方法（依赖 Platform.isWindows / 平台目录 / 弹窗上下文），无法在
+    // 纯 Dart 单测里端到端跑，故用源码扫描守卫锚定接线，防未来重构悄悄摘掉它复发。
+    late final String source;
+    setUpAll(() {
+      source = File(
+        'lib/src/utils/misc/update_checker_release.dart',
+      ).readAsStringSync();
+    });
+
+    test('reconcilePendingWindowsInstallerHandoff 内调用 _cleanupOldApks', () {
+      final int reconcileIdx =
+          source.indexOf('reconcilePendingWindowsInstallerHandoff(');
+      expect(reconcileIdx, greaterThanOrEqualTo(0),
+          reason: 'handoff reconcile 入口必须存在');
+      final int nextMethodIdx =
+          source.indexOf('static bool canShowDialogFromContext', reconcileIdx);
+      expect(nextMethodIdx, greaterThan(reconcileIdx));
+      final String body = source.substring(reconcileIdx, nextMethodIdx);
+      expect(
+        body.contains('await _cleanupOldApks('),
+        isTrue,
+        reason: 'BUG-533：兜底完整包 GC 必须在每次 Windows 启动的 reconcile 路径无条件触发，'
+            '否则关闭自动检查后安装包永不清理',
       );
     });
   });

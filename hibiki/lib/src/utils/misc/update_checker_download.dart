@@ -804,7 +804,7 @@ Future<void> _cleanupSegmentFiles(
 /// 源选择——整体多源回退仍由外层 [_downloadUpdateAssetUncoalesced] 的 candidateUrls 循环
 /// 负责（拿到 null 退单线程体；单线程体抛错时外层换源）。
 ///
-/// 流程：① 探针 `Range: bytes=0-`（带 If-Range）读 Content-Range 总大小 + ETag；返 200 /
+/// 流程：① 探针 `Range: bytes=0-0`（带 If-Range，单字节，BUG-534）读 Content-Range 总大小 + ETag；返 200 /
 /// 无总大小 / 切完只剩单段 → null 退单线程。② [planDownloadSegments] 按 total +
 /// [connectionCount] + [minSegmentBytes] 切 N>1 个闭区间。③ 各段独立 `Range: start-end`
 /// + 同一 If-Range 并发写 `partFile.<i>`，每段 [_kPerAttemptTimeout] 超时 +
@@ -830,8 +830,11 @@ Future<File?> _downloadSegmented({
   final String? ifRange = metadata?.etag ?? metadata?.lastModified;
 
   // ---- 1. 探针：拿总大小 + 该后端的 ETag（用作 If-Range 一致性验证器）----
+  // BUG-534：探针只为读 `Content-Range: bytes 0-0/TOTAL`，用单字节 `bytes=0-0`。
+  // `bytes=0-` 会把整个安装包当开放区间返回，后面 `probe.stream.drain` 会把整包下完
+  // 丢弃——流量在跑却不上报进度，UI 卡在「正在连接下载源」。单字节探针 drain 瞬间完成。
   final Map<String, String> probeHeaders = <String, String>{
-    HttpHeaders.rangeHeader: 'bytes=0-',
+    HttpHeaders.rangeHeader: 'bytes=0-0',
     if (ifRange != null && ifRange.isNotEmpty)
       HttpHeaders.ifRangeHeader: ifRange,
   };

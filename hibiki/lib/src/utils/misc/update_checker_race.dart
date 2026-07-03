@@ -1,7 +1,7 @@
 part of 'update_checker.dart';
 
 /// **首字节超时（TODO-683）**。[_kPerAttemptTimeout]（8s，TODO-808 从 15s 压下来）管
-/// 「一段正式下载」的整体耗时；但下载阶段第一步是对每个候选发探针（`Range: bytes=0-`，
+/// 「一段正式下载」的整体耗时；但下载阶段第一步是对每个候选发探针（`Range: bytes=0-0`，
 /// 只探不真下载），目的只是「这个源能不能用、拿到总大小」。GFW 下坏候选 TCP 连上后挂起
 /// 不返首字节，用 body 超时会让每个坏候选都吃满它，首字节前进度恒显 0%（TODO-596 回归）。
 /// 探针只需
@@ -192,7 +192,7 @@ Future<bool> _shouldRaceCandidates({
 }
 
 /// **并发探针竞速选源（TODO-683 核心）**。对 [candidateUrls] 里的**所有**候选并发发
-/// 探针（`Range: bytes=0-`，只探不真下载）。语义：
+/// 探针（`Range: bytes=0-0`，单字节，只探不真下载）。语义：
 ///   * 第一个返回 206 且拿到合法总大小的候选触发裁决——若它是直连，立即胜出；若它是
 ///     镜像，再多等 [_kDirectTieBreakWindow]（或直到某个直连也到）做 tie-break（PM ④）。
 ///   * 裁决后（`_settled` 置位）所有候选 response 立即 `drain()` 回收（取消语义 R1）。
@@ -253,8 +253,14 @@ Future<List<String>?> raceSelectFastestCandidate({
 
   Future<void> probe(String url) async {
     final Stopwatch watch = Stopwatch()..start();
+    // BUG-534 根因修复：探针只为拿总大小（`Content-Range: bytes 0-0/TOTAL`），单字节
+    // `bytes=0-0` 即可——用 `bytes=0-` 会让服务器把**整个安装包**当开放区间返回，随后
+    // `drainQuietly` 把这几十~几百 MB 全部下下来丢弃：流量实打实在跑，可竞速阶段从不调
+    // onProgress/onDiagnostics，UI 状态一直停在「正在连接下载源」（用户报告）。单字节探针
+    // 的 drain 瞬间完成，消除「探针白下整包」的浪费与状态卡死。206 + Content-Range 语义
+    // 不变，_contentRangeTotal 仍能解析总大小、elapsed（首字节时刻）与 range 大小无关。
     final Map<String, String> headers = <String, String>{
-      HttpHeaders.rangeHeader: 'bytes=0-',
+      HttpHeaders.rangeHeader: 'bytes=0-0',
       if (ifRange != null && ifRange.isNotEmpty)
         HttpHeaders.ifRangeHeader: ifRange,
     };

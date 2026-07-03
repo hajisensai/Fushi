@@ -936,6 +936,16 @@ class UpdateChecker {
       return;
     }
     try {
+      // BUG-533 根因修复：完整安装包的兜底 GC（`_cleanupOldApks` 的过期完整包回收，
+      // TODO-1010）此前**只**在「检查更新」路径触发；用户关闭自动检查 / neverRemind
+      // 短路时它永不跑，于是每升级一版残留的旧安装包（几百 MB）在 updates 目录里无限
+      // 堆积（用户报告「安装包没有自动清除」）。handoff 成功即删（下方 TODO-1089）只
+      // 负责**当次**那个包、且是一次性尝试（AV/句柄占用删失败即无重试锚点）。把兜底 GC
+      // 挂到每次 Windows 启动的 reconcile 入口——不依赖任何用户动作，确定性回收历史堆积，
+      // 也补回 handoff 一次性删除失败的漏网包。GC 自带 handoff 待装包保护，不误删待重启
+      // 安装的包。
+      await _cleanupOldApks(currentVersion);
+
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(

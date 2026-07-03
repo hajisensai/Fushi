@@ -221,6 +221,31 @@ void main() {
       expect(result, isNull);
     });
 
+    test(
+        'BUG-534 探针只请求单字节 bytes=0-0（不是 bytes=0- 整包，否则 drain 会把整个'
+        '安装包下下来、流量在跑而 UI 卡在 connecting）', () async {
+      const String direct =
+          'https://github.com/x/y/releases/download/v1/app.exe';
+      const String mirror = 'https://m.example/$direct';
+      final List<String> observedRanges = <String>[];
+      final List<String>? result = await raceSelectFastestCandidate(
+        candidateUrls: <String>[direct, mirror],
+        directUrl: direct,
+        openUrl: (Uri _, Map<String, String> headers) async {
+          final String? range = headers[HttpHeaders.rangeHeader];
+          if (range != null) observedRanges.add(range);
+          return _probe206(1000);
+        },
+      );
+      expect(result, isNotNull);
+      expect(observedRanges, isNotEmpty, reason: '竞速必发探针');
+      for (final String range in observedRanges) {
+        expect(range, 'bytes=0-0',
+            reason: '探针 Range 必须是单字节 0-0；bytes=0- 会让服务器把整包当开放区间返回，'
+                '随后 drain 整包下载→流量在跑但状态停 connecting（用户报告）');
+      }
+    });
+
     test('首字节超时：永不返首字节的坏候选 ~5s 判死、不吃 15s（fakeAsync）', () {
       fakeAsync((FakeAsync async) {
         const String direct = 'https://direct.example/app';

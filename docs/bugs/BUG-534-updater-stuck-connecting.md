@@ -1,0 +1,6 @@
+## BUG-534 · Update download stuck on connecting while traffic runs
+- **报告**：2026-07-03（用户：自动更新时经常流量在跑，但显示「正在连接下载源」）
+- **真实性**：✅ 真 bug。根因在下载探针 Range：`hibiki/lib/src/utils/misc/update_checker_race.dart:257`（竞速探针 `raceSelectFastestCandidate.probe`）与 `hibiki/lib/src/utils/misc/update_checker_download.dart:770`（分段探针 `_downloadSegmented`）都用 `Range: bytes=0-`。这等于「从 0 到文件末尾」的开放区间——服务器返回整个安装包，随后 `drainQuietly` / `probe.stream.drain` 把这几十~几百 MB **全部下下来再丢弃**。这段探针 drain 期间流量实打实在跑，但竞速/探针阶段**从不调用** `onProgress` / `onDiagnostics`，`UpdateDownloadStatusController.onFirstByte()` 不触发，状态一直停在 `t.update_connecting`（「正在连接下载源」），精确匹配用户现象。
+- **[x] ① 已修复** — 两处探针 Range 从 `bytes=0-` 改为单字节 `bytes=0-0`。探针只需从 `Content-Range: bytes 0-0/TOTAL` 读总大小，单字节即可；drain 瞬间完成，不再白下整包、状态不再卡死。206 + Content-Range 语义不变（`_contentRangeTotal` 仍解析总大小），elapsed（首字节时刻）与 range 大小无关，竞速/tie-break/换源全不受影响。同步更新了相关 doc 注释里的 `bytes=0-` 提及。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/update_checker_race_test.dart` 新增测试「BUG-534 探针只请求单字节 bytes=0-0」：在 `raceSelectFastestCandidate` 注入 fake openUrl 捕获 Range 头，断言每个竞速探针发的 Range 恰为 `bytes=0-0`。分段探针路径由既有 `update_checker_segmented_download_test.dart` 覆盖（探针改单字节后所有分段用例仍绿）。
+- **备注**：`UpdateDownloadStatusController` 的 connecting→downloading 翻转逻辑本身正确，问题在探针 drain 整包期间根本没有任何字节信号喂到它。真机走一次实际慢源/GFW 更新下载确认状态不再卡 connecting 仍需实机验证。
