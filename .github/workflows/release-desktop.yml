@@ -433,10 +433,14 @@ jobs:
           seq_of() { printf '%s' "$1" | sed -n 's/.*-debug\.\([0-9]\+\).*/\1/p'; }
           CURRENT_SEQ="$(seq_of "$BUILD_VERSION_NAME")"
           {
-            [ -n "$CURRENT_SEQ" ] && echo "$CURRENT_SEQ"
+            # Terminal-position `[ -n "$X" ] && echo` inside a pipefail
+            # brace-group returns 1 when the last test is false (empty seq /
+            # legacy tail asset), which pipefail propagates and set -e kills
+            # silently. Use no-else `if` so a false test yields exit 0.
+            if [ -n "$CURRENT_SEQ" ]; then echo "$CURRENT_SEQ"; fi
             for name in "${ASSET_NAMES[@]}"; do
               s="$(seq_of "$name")"
-              [ -n "$s" ] && echo "$s"
+              if [ -n "$s" ]; then echo "$s"; fi
             done
           } | sort -rn -u > /tmp/all_seqs.txt
           KEEP_SEQ_LIST=()
@@ -785,10 +789,14 @@ jobs:
           seq_of() { printf '%s' "$1" | sed -n 's/.*-debug\.\([0-9]\+\).*/\1/p'; }
           CURRENT_SEQ="$(seq_of "$BUILD_VERSION_NAME")"
           {
-            [ -n "$CURRENT_SEQ" ] && echo "$CURRENT_SEQ"
+            # Terminal-position `[ -n "$X" ] && echo` inside a pipefail
+            # brace-group returns 1 when the last test is false (empty seq /
+            # legacy tail asset), which pipefail propagates and set -e kills
+            # silently. Use no-else `if` so a false test yields exit 0.
+            if [ -n "$CURRENT_SEQ" ]; then echo "$CURRENT_SEQ"; fi
             for name in "${ASSET_NAMES[@]}"; do
               s="$(seq_of "$name")"
-              [ -n "$s" ] && echo "$s"
+              if [ -n "$s" ]; then echo "$s"; fi
             done
           } | sort -rn -u > /tmp/all_seqs.txt
           KEEP_SEQ_LIST=()
