@@ -59,7 +59,10 @@ void main() {
     final Finder settingsItem = find.byWidgetPredicate(
         (Widget w) => w is MacosIcon && w.icon == Icons.tune);
     if (settingsItem.evaluate().isNotEmpty) {
-      await tester.tap(settingsItem.first, warnIfMissed: false);
+      // itest-tap-allow: macOS-only screenshot harness — navigates the macos_ui
+      // sidebar to capture native settings pixels; no interaction assertion.
+      await tester.tap(settingsItem.first,
+          warnIfMissed: false); // itest-tap-allow: macOS pixel-capture only
       for (int i = 0; i < 30; i++) {
         await tester.pump(const Duration(milliseconds: 300));
       }
@@ -70,7 +73,10 @@ void main() {
       // capture the native MacosSwitch controls. Locale on the build Mac is zh.
       final Finder systemDest = find.text('系统');
       if (systemDest.evaluate().isNotEmpty) {
-        await tester.tap(systemDest.first, warnIfMissed: false);
+        // itest-tap-allow: macOS-only screenshot harness — opens the 系统
+        // destination to capture native MacosSwitch pixels; no assertion.
+        await tester.tap(systemDest.first,
+            warnIfMissed: false); // itest-tap-allow: macOS pixel-capture only
         for (int i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 300));
         }
@@ -88,7 +94,10 @@ void main() {
     final Finder dictItem = find.byWidgetPredicate(
         (Widget w) => w is MacosIcon && w.icon == Icons.search);
     if (dictItem.evaluate().isNotEmpty) {
-      await tester.tap(dictItem.first, warnIfMissed: false);
+      // itest-tap-allow: macOS-only screenshot harness — opens the dictionary
+      // tab to capture the native MacosTextField pixels; no assertion.
+      await tester.tap(dictItem.first,
+          warnIfMissed: false); // itest-tap-allow: macOS pixel-capture only
       for (int i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 300));
       }

@@ -49,7 +49,10 @@ void main() {
     }
     expect(seededEntry, findsOneWidget, reason: 'seeded book on shelf');
 
-    await tester.tap(seededEntry);
+    // macOS-only screenshot harness (manual `flutter drive -d macos`): opens the
+    // seeded book only to capture reader pixels — no interaction assertion, and
+    // the macos_ui shell is not modeled by the Material-oriented FocusDriver.
+    await tester.tap(seededEntry); // itest-tap-allow: macOS pixel-capture only
     await tester.pump(const Duration(seconds: 3));
 
     const Key webViewKey = ValueKey<String>('hoshi_webview');
