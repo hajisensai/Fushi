@@ -831,41 +831,63 @@ class UpdateChecker {
       cancellation.registerAbort(() => abortClient.close(force: true));
 
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
-      final File outFile = await downloadUpdateAsset(
+      // 一个 asset 的实际下载（多镜像回退 + 分片 + 续传 + 校验全在引擎里）。抽成闭包，
+      // 以便 TODO-1123 的「下载 404 → 重取 manifest 换新 URL 单次重试」复用同一套
+      // 进度/诊断/取消接线，而不复制下载参数。
+      final HttpClient downloadClient = client;
+      Future<File> downloadAsset(UpdateAsset target) {
+        return downloadUpdateAsset(
+          asset: target,
+          version: version,
+          updatesDir: updatesDir,
+          candidateUrls: updateCheckUrls(target.url),
+          openUrl: (Uri uri, Map<String, String> headers) =>
+              _openHttpDownload(downloadClient, uri, headers, version),
+          onProgress: (double value) {
+            // 首个真实进度（>0 = 已有字节落盘）才翻「下载中」；onProgress(0) 是请求前的
+            // 初始占位，不能据它过早翻、否则 connecting 几乎不可见（失去体感意义）。
+            if (value > 0) statusController.onFirstByte();
+            progress.value = value;
+          },
+          onDiagnostics: (UpdateDownloadDiagnostics value) {
+            // 诊断里 receivedBytes>0 同样表示已有字节到达，作为翻「下载中」的等价信号
+            // （某些路径 diagnostics 比 onProgress 先携带非零字节，如续传起点）。
+            if (value.receivedBytes > 0) statusController.onFirstByte();
+            diagnostics.value = value;
+          },
+          onSourceFailure: (String url, Object error, StackTrace stack) {
+            if (isExpectedUpdateNetworkFailure(error)) {
+              // TODO-1083：见上——预期的镜像不可达降级为诊断，不进用户可见报错日志。
+              ErrorLogService.instance.logDiagnostic(
+                  'UpdateChecker.download',
+                  t.update_network_failure(
+                    host: hostLabelForUpdateUrl(url),
+                    reason: describeUpdateNetworkFailureReason(error),
+                  ));
+            } else {
+              ErrorLogService.instance
+                  .log('UpdateChecker.download', error, stack);
+            }
+            debugPrint('[Hibiki] download source failed ($url): $error');
+          },
+          cancellation: cancellation,
+        );
+      }
+
+      // TODO-1123 / BUG-539 根因兜底：debug 通道的 rolling tag prune 竞态下，「检查」阶段
+      // 解析出的 asset.url 可能在真正下载前被 CI 删掉 → 404。此时不再直接失败，而是重取一次
+      // manifest（重走 selectAsset）拿到新 URL，与旧不同则用新 URL 单次重试。只重试一次，
+      // 避免无限循环；重取仍 404 或拿不到新 URL 才把错误冒泡走原有失败路径。
+      final File outFile = await downloadAssetWithStaleRetry(
         asset: asset,
-        version: version,
-        updatesDir: updatesDir,
-        candidateUrls: updateCheckUrls(asset.url),
-        openUrl: (Uri uri, Map<String, String> headers) =>
-            _openHttpDownload(client!, uri, headers, version),
-        onProgress: (double value) {
-          // 首个真实进度（>0 = 已有字节落盘）才翻「下载中」；onProgress(0) 是请求前的
-          // 初始占位，不能据它过早翻、否则 connecting 几乎不可见（失去体感意义）。
-          if (value > 0) statusController.onFirstByte();
-          progress.value = value;
-        },
-        onDiagnostics: (UpdateDownloadDiagnostics value) {
-          // 诊断里 receivedBytes>0 同样表示已有字节到达，作为翻「下载中」的等价信号
-          // （某些路径 diagnostics 比 onProgress 先携带非零字节，如续传起点）。
-          if (value.receivedBytes > 0) statusController.onFirstByte();
-          diagnostics.value = value;
-        },
-        onSourceFailure: (String url, Object error, StackTrace stack) {
-          if (isExpectedUpdateNetworkFailure(error)) {
-            // TODO-1083：见上——预期的镜像不可达降级为诊断，不进用户可见报错日志。
-            ErrorLogService.instance.logDiagnostic(
-                'UpdateChecker.download',
-                t.update_network_failure(
-                  host: hostLabelForUpdateUrl(url),
-                  reason: describeUpdateNetworkFailureReason(error),
-                ));
-          } else {
-            ErrorLogService.instance
-                .log('UpdateChecker.download', error, stack);
-          }
-          debugPrint('[Hibiki] download source failed ($url): $error');
-        },
-        cancellation: cancellation,
+        download: downloadAsset,
+        reResolveAsset: () => _reResolveDownloadAsset(
+          client: downloadClient,
+          staleAsset: asset,
+          version: version,
+          updater: updater,
+          customProxy: customProxy,
+        ),
       );
 
       status.value = t.update_installing;
@@ -919,6 +941,70 @@ class UpdateChecker {
       status.dispose();
       diagnostics.dispose();
       overlayVisible.dispose();
+    }
+  }
+
+  /// **可测的下载编排（TODO-1123 / BUG-539）**：先用 [asset] 下载；若失败被
+  /// [isStaleAssetDownloadFailure] 判为 404（rolling tag prune 竞态导致手里 URL 过期），
+  /// 调 [reResolveAsset] 重取一次 manifest 拿到新 asset，仅当新 URL 与旧不同才用它**单次**
+  /// 重试下载。非 404 失败、重取拿不到新 asset、或新 URL 与旧相同 → 原样冒泡原错误
+  /// （用户仍看到既有「下载失败」处理）。只重试一次，绝不无限循环。
+  ///
+  /// 用注入的 [download] / [reResolveAsset] 闭包承载 HTTP，纯逻辑可单测（无需真网络）。
+  @visibleForTesting
+  static Future<File> downloadAssetWithStaleRetry({
+    required UpdateAsset asset,
+    required Future<File> Function(UpdateAsset asset) download,
+    required Future<UpdateAsset?> Function() reResolveAsset,
+  }) async {
+    try {
+      return await download(asset);
+    } catch (error, stack) {
+      if (!isStaleAssetDownloadFailure(error)) {
+        Error.throwWithStackTrace(error, stack);
+      }
+      debugPrint(
+          '[Hibiki] download asset 404 (stale manifest?); re-resolving manifest');
+      final UpdateAsset? fresh = await reResolveAsset();
+      if (fresh == null || fresh.url == asset.url) {
+        // 重取拿不到新 asset，或 URL 未变（asset 真被删且 manifest 尚未更新）——
+        // 无可重试的新目标，冒泡原始 404 走既有失败路径。
+        Error.throwWithStackTrace(error, stack);
+      }
+      debugPrint('[Hibiki] retrying download with re-resolved asset url');
+      return download(fresh);
+    }
+  }
+
+  /// **生产 re-resolve（TODO-1123 / BUG-539）**：下载 404 后重取本通道 release，重走
+  /// [selectUpdateReleaseForCurrentPlatform] 拿到当前 [updater] 平台的最新 asset。
+  ///
+  /// 通道由 [version] 推断（[channelForUpdateVersion]，下载路径不显式携带 channel）。重取
+  /// 用同一个已配代理的 [client]（走 [_fetchReleasesForChannel] 的镜像 manifest 优先 + API
+  /// 回退）。任何失败/无匹配 → 返 null（调用方据此冒泡原始 404）。
+  static Future<UpdateAsset?> _reResolveDownloadAsset({
+    required HttpClient client,
+    required UpdateAsset staleAsset,
+    required String version,
+    required PlatformUpdater updater,
+    required String customProxy,
+  }) async {
+    try {
+      final UpdateChannel channel = channelForUpdateVersion(version);
+      final List<Map<String, dynamic>> releases =
+          await _fetchReleasesForChannel(client, channel);
+      final UpdateReleaseSelection? selection =
+          await selectUpdateReleaseForCurrentPlatform(
+        releases,
+        currentVersion: version,
+        channel: channel,
+        updater: updater,
+      );
+      return selection?.asset;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.reResolveAsset', e, stack);
+      debugPrint('[Hibiki] re-resolve download asset failed: $e');
+      return null;
     }
   }
 
@@ -1375,6 +1461,23 @@ int _compareBaseVersion(String remote, String local) {
     if (rv != lv) return rv.compareTo(lv);
   }
   return 0;
+}
+
+/// **纯函数（TODO-1123 / BUG-539）**：从版本串推断它属于哪个更新通道，供下载 404 后
+/// 「重取本通道 manifest」的 re-resolve 使用（下载路径不再显式携带 channel）。
+///
+/// debug 预发布形如 `1.0.1-debug.6421`、beta 形如 `1.0.1-beta.3`，否则视为 stable。
+/// 与 [_versionBelongsToChannel] / [releaseMatchesUpdateChannel] 的通道判定同一套 pattern，
+/// 不新造判据。
+@visibleForTesting
+UpdateChannel channelForUpdateVersion(String version) {
+  if (_versionBelongsToChannel(version, UpdateChannel.debug)) {
+    return UpdateChannel.debug;
+  }
+  if (_versionBelongsToChannel(version, UpdateChannel.beta)) {
+    return UpdateChannel.beta;
+  }
+  return UpdateChannel.stable;
 }
 
 bool _versionBelongsToChannel(String version, UpdateChannel channel) {

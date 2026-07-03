@@ -640,6 +640,29 @@ Map<String, String> _buildProxyEnv({
   return result;
 }
 
+/// **纯函数（TODO-1123 / BUG-539）**：判定一次下载失败是否是「asset 已被 rolling tag
+/// 覆盖 / 客户端手里的 manifest 过期」——即服务器对下载 URL 返回 **404 Not Found**。
+///
+/// 根因：debug 通道走镜像 `latest-debug.json`（[kDebugManifestUrl]）。app 在「检查」阶段
+/// 解析出 `asset.url` 后，「真正下载」时不再重取 manifest、直接信任旧 URL。CI 每次 push 都
+/// 在 `debug-rolling` 这一个滚动 tag 上 prune 掉非当前 seq 的 asset，用户设备持旧 manifest
+/// （旧 seq）去下载时，CI 可能已滚到新 seq 把旧 APK 删了 → 该 URL 404。这是 rolling tag
+/// 覆盖式 prune 竞态，不是「网络连不上」，需触发「重取 manifest + 换新 URL 重试」而非当作
+/// 普通网络失败静默失败。
+///
+/// 下载引擎（[ResumableDownloader] / [_runSegmentRequest]）对 4xx/5xx 统一抛
+/// `HttpException('download failed (<code>): <url>')`，故此处按消息里的 `(404)` 段识别
+/// （不引入新异常类型、不改引擎契约）。非 [HttpException] / 非 404 → false（真网络失败照走
+/// 原路径冒泡，绝不误当过期 asset）。
+bool isStaleAssetDownloadFailure(Object error) {
+  if (error is! HttpException) return false;
+  return _kDownload404Pattern.hasMatch(error.message);
+}
+
+// 下载引擎对 404 抛 `HttpException('download failed (404): <url>')`；匹配 `(404)` 段。
+// HttpStatus.notFound == 404（避免魔法数与协议常量脱节，此处以注释锚定其数值语义）。
+final RegExp _kDownload404Pattern = RegExp(r'\(404\)');
+
 /// 更新检查与下载都是 best-effort。网络类失败——连不上、连接超时、TLS 握手
 /// 失败、底层 HTTP 协议错误、单候选整体超时（[_kPerAttemptTimeout]）——是预期现象
 /// （尤其 GFW 下访问 GitHub / 代理本就不稳），不该当错误带完整堆栈塞进用户可见的

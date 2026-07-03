@@ -475,16 +475,22 @@ jobs:
         files: |
           hibiki/build/release-artifacts/hibiki-*.apk
 
-    # TODO-1049: the debug channel reuses ONE rolling GitHub Release
+    # TODO-1049 / TODO-1123: the debug channel reuses ONE rolling GitHub Release
     # (tag `debug-rolling`). softprops upserts same-named assets but never
     # removes an asset from a PRIOR commit (different seq/sha in the name), so
-    # without pruning the rolling release would still accumulate one APK+EXE per
-    # commit. Before publishing, delete every asset on the rolling release whose
-    # name does NOT belong to THIS release sequence, leaving only the current
-    # build. Same-commit Android+desktop share the seq, so they never delete
-    # each other's asset; a newer commit prunes the older one. Skipped entirely
-    # unless this run is the rolling debug channel. Missing release / no stale
-    # asset is a no-op.
+    # without pruning the rolling release would accumulate one APK+EXE per commit.
+    #
+    # TODO-1123 root-cause narrowing of the pruned-asset 404 race: the OLD prune
+    # kept ONLY the current build's seq, so a device that had just fetched the
+    # PREVIOUS manifest (older seq) and then started downloading would 404 the
+    # instant a newer push pruned that seq's APK. We now keep the most recent
+    # KEEP_SEQS (=3: current + prior two) sequences, giving in-flight downloads a
+    # grace window across a couple of pushes. The client also re-resolves the
+    # manifest on a 404 and retries the fresh URL once (update_checker), so this
+    # CI change is the "widen the window" half of a two-sided fix. Same-commit
+    # Android+desktop share the seq, so they never prune each other. Skipped
+    # unless this run is the rolling debug channel. Missing release / nothing to
+    # prune is a no-op.
     - name: Prune stale assets from rolling debug release
       if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
       shell: bash
@@ -495,21 +501,55 @@ jobs:
         BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
       run: |
         set -euo pipefail
-        # Current build's assets embed the versionName (e.g. 0.11.1-debug.5633);
-        # anything on the rolling release NOT carrying this exact token belongs
-        # to an older commit and is superseded.
-        KEEP_TOKEN="-${BUILD_VERSION_NAME}-"
+        # Keep the most recent KEEP_SEQS debug sequences (current + prior 2) so a
+        # client mid-download against a just-superseded seq is not 404'd.
+        KEEP_SEQS=3
         if ! gh release view "$PUBLISH_TAG" --repo "$REPO" >/dev/null 2>&1; then
           echo "Rolling release $PUBLISH_TAG does not exist yet; nothing to prune."
           exit 0
         fi
-        mapfile -t STALE < <(
+        mapfile -t ASSET_NAMES < <(
           gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets \
-            --jq '.assets[].name' \
-            | grep -v -- "$KEEP_TOKEN" || true
+            --jq '.assets[].name' || true
         )
+        if [ "${#ASSET_NAMES[@]}" -eq 0 ]; then
+          echo "No assets on $PUBLISH_TAG; nothing to prune."
+          exit 0
+        fi
+        # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
+        # hibiki-0.11.1-debug.5633-3cf5905-debug.apk). Parse the current build's
+        # seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every asset's
+        # seq the same way, keep the top KEEP_SEQS distinct seqs (numeric desc),
+        # and delete only assets whose seq is NOT in that set. Assets with no
+        # parseable debug seq are treated as stale (superseded/legacy naming).
+        seq_of() { printf '%s' "$1" | sed -n 's/.*-debug\.\([0-9]\+\).*/\1/p'; }
+        CURRENT_SEQ="$(seq_of "$BUILD_VERSION_NAME")"
+        {
+          [ -n "$CURRENT_SEQ" ] && echo "$CURRENT_SEQ"
+          for name in "${ASSET_NAMES[@]}"; do
+            s="$(seq_of "$name")"
+            [ -n "$s" ] && echo "$s"
+          done
+        } | sort -rn -u > /tmp/all_seqs.txt
+        mapfile -t KEEP_SEQ_LIST < <(head -n "$KEEP_SEQS" /tmp/all_seqs.txt)
+        echo "Keeping debug seqs: ${KEEP_SEQ_LIST[*]:-<none>}"
+        in_keep() {
+          local target="$1"
+          for k in "${KEEP_SEQ_LIST[@]}"; do
+            [ "$k" = "$target" ] && return 0
+          done
+          return 1
+        }
+        STALE=()
+        for name in "${ASSET_NAMES[@]}"; do
+          [ -n "$name" ] || continue
+          s="$(seq_of "$name")"
+          if [ -z "$s" ] || ! in_keep "$s"; then
+            STALE+=("$name")
+          fi
+        done
         if [ "${#STALE[@]}" -eq 0 ]; then
-          echo "No stale assets on $PUBLISH_TAG (all carry $KEEP_TOKEN)."
+          echo "No stale assets on $PUBLISH_TAG (all within kept seqs)."
           exit 0
         fi
         for asset in "${STALE[@]}"; do
