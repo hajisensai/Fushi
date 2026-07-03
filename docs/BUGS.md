@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 526 条。点号进各自文件。
+> 共 527 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-541](bugs/BUG-541-pageheader-narrow-window-icon-clip.md) | ✅ | ✅ | 页头窄窗动作图标被裁切 |
 | [BUG-540](bugs/BUG-540-update-404-rolling-prune-race.md) | ✅ | ✅ | 更新下载 404: rolling tag prune 竞态 |
 | [BUG-539](bugs/BUG-539-sync-latin1-body.md) | ✅ | ✅ | live sync 日文书名上报 latin1 编码崩 |
 | [BUG-538](bugs/BUG-538-mpv-sigmoid-upscaling-default-off.md) | ✅ | ✅ | mpv sigmoid upscaling default on (perf cost) |

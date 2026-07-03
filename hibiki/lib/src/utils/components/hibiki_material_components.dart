@@ -1648,66 +1648,31 @@ class HibikiPageHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (leading != null) ...<Widget>[
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: tokens.spacing.gap / 2,
-                    right: tokens.spacing.gap + 4,
-                  ),
-                  child: leading!,
+          _HibikiPageHeaderRow(
+            tokens: tokens,
+            leading: leading,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.pageTitle,
                 ),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      title,
+                if (resolvedSubtitle != null)
+                  Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                    child: Text(
+                      resolvedSubtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: tokens.type.pageTitle,
-                    ),
-                    if (resolvedSubtitle != null)
-                      Padding(
-                        padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
-                        child: Text(
-                          resolvedSubtitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: tokens.type.listSubtitle,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (actions.isNotEmpty) ...<Widget>[
-                SizedBox(width: tokens.spacing.gap),
-                // 窄窗（如桌面 master-detail 208px 左栏 / 手机竖屏）下多个动作按钮的
-                // 自然宽度可能超过页头可用宽，旧实现用不受约束的 Align 直接让 Row 溢出
-                // （RenderFlex OVERFLOWING）。这里把动作区改成 [Flexible] + 横向
-                // [SingleChildScrollView]：可用宽不足时动作区收缩到剩余宽并允许横向滚动，
-                // 彻底消除溢出。但 [Flexible](flex:1) 与标题 [Expanded](flex:1) 平分剩余宽，
-                // 动作视口恒占右半幅；[SingleChildScrollView] 内容未溢出时停在视口起始边，
-                // 故必须再套一层 [Align](centerRight) 把按钮推到右半幅的右缘——而右半幅是
-                // 本行最后一个子项，其右缘即整条页头的最右侧，从而恢复「按钮靠最右」。
-                // 内容溢出时 Align 不改变滚动行为，仍可横向滚到最右侧动作可见。
-                Flexible(
-                  fit: FlexFit.loose,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      reverse: true,
-                      physics: const ClampingScrollPhysics(),
-                      child: _buildActionRow(tokens),
+                      style: tokens.type.listSubtitle,
                     ),
                   ),
-                ),
               ],
-            ],
+            ),
+            actions: actions.isEmpty ? null : _buildActionRow(tokens),
           ),
           if (bottom != null)
             Padding(
@@ -1729,6 +1694,87 @@ class HibikiPageHeader extends StatelessWidget {
           actions[index],
         ],
       ],
+    );
+  }
+}
+
+/// TODO-1126 / BUG-541: [HibikiPageHeader] 的标题 + 动作行。
+///
+/// 根因：旧实现（7ce19740c + 3df631aaf）标题 [Expanded](flex:1) 与动作区
+/// [Flexible](flex:1) **均分**剩余宽，动作格恒占页头右半幅（与图标实际总宽无关），
+/// 再套 [Align](centerRight) 把按钮推到右半幅右缘才勉强靠右。窄窗时 4 个图标自然宽
+/// 超过右半幅视口，内层 [SingleChildScrollView](reverse:true) 把最左侧 [Icons.add]
+/// 裁到视口外（用户看到像个「-」）。
+///
+/// 修法：标题 [Expanded]（tight）吃满剩余，动作区作为**非弹性**子项按自身自然宽落在
+/// 页头最右侧——不再与标题 flex 均分，宽窗行为零变化。用 [LayoutBuilder] 拿到整行可用
+/// 宽，给动作区套 [ConstrainedBox]（maxWidth = 整行宽 − 动作前 gap，title 允许被压到
+/// 0）：放得下时约束不触发、动作区取自然宽、所有图标可见且靠右；仅当动作总宽超过该
+/// 上界（极端窄窗，如 master-detail 208px 左栏）时约束触发，内层横向
+/// [SingleChildScrollView] 收缩 + 可横滚兜底，消除 RenderFlex overflow，滚动起始边在
+/// 左、最左侧动作（回归态被裁的 [Icons.add]）默认可见。三个 home tab（视频/书架/词典）
+/// 页头均无 leading + actions 并存，故不必为 leading 额外预留。
+class _HibikiPageHeaderRow extends StatelessWidget {
+  const _HibikiPageHeaderRow({
+    required this.tokens,
+    required this.title,
+    required this.leading,
+    required this.actions,
+  });
+
+  final HibikiDesignTokens tokens;
+  final Widget title;
+  final Widget? leading;
+  final Widget? actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final double leadingGap = tokens.spacing.gap + 4;
+    final double actionsGap = tokens.spacing.gap;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget titleChild = Expanded(child: title);
+
+        final List<Widget> children = <Widget>[];
+        if (leading != null) {
+          children.add(
+            Padding(
+              padding: EdgeInsets.only(
+                top: tokens.spacing.gap / 2,
+                right: leadingGap,
+              ),
+              child: leading,
+            ),
+          );
+        }
+        children.add(titleChild);
+        if (actions != null) {
+          // 动作区可用宽上界：整行宽减去动作前 gap（title [Expanded] 允许被压到 0）。
+          // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
+          // 独立扣除；这里只需保证「gap + 动作区」不超过整行宽即可避免 overflow。
+          final double maxActionsWidth = constraints.maxWidth.isFinite
+              ? (constraints.maxWidth - actionsGap).clamp(0.0, double.infinity)
+              : double.infinity;
+          children
+            ..add(SizedBox(width: actionsGap))
+            ..add(
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxActionsWidth),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: actions,
+                ),
+              ),
+            );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        );
+      },
     );
   }
 }
