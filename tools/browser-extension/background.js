@@ -157,7 +157,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const r = await fetch(base + '/api/mine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-          body: JSON.stringify({ fields: msg.fields, sentence: msg.sentence || '', clipBase64: msg.clipBase64 }),
+          body: JSON.stringify({ fields: msg.fields, sentence: msg.sentence || '', clipBase64: msg.clipBase64, clipDurationMs: msg.clipDurationMs }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'nfEnsureCapture') {

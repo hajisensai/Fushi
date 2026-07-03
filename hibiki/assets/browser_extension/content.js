@@ -291,7 +291,7 @@ async function hibikiRunNetflixBatch() {
       if (clip && clip.ok && clip.clipBase64) {
         ok = await new Promise((resolve) => {
           chrome.runtime.sendMessage(
-            { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64 },
+            { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
             (resp) => {
               try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
               resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));

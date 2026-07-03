@@ -5,6 +5,7 @@ let stream = null;
 let audioPlaybackCtx = null;
 let recorder = null;
 let chunks = [];
+let clipStartWall = 0; // 本段 clip 起始墙钟，用来回给服务端真实时长（否则整段裁默认封顶 6s → 长句被截）
 let mime = 'video/webm;codecs=vp8,opus';
 
 function pickMime() {
@@ -45,6 +46,7 @@ function stopCapture() {
 function beginClip() {
   if (!stream) return { ok: false, error: 'no stream' };
   chunks = [];
+  clipStartWall = Date.now();
   recorder = new MediaRecorder(stream, {
     mimeType: mime, videoBitsPerSecond: 800000, audioBitsPerSecond: 128000,
   });
@@ -56,11 +58,14 @@ function beginClip() {
 function endClip() {
   return new Promise((resolve) => {
     if (!recorder || recorder.state === 'inactive') { resolve({ ok: false, error: 'no clip' }); return; }
+    // 时长用墙钟（beginClip→endClip 经过）：这是**上界**（含 seek 稳定/消息往返），服务端整段裁
+    // [0, 时长] 时 ffmpeg 到 EOF 即止 → 拿到完整整句、绝不因固定 6s 默认把长句截断。
+    const durMs = Math.max(1000, Date.now() - clipStartWall);
     recorder.onstop = async () => {
       const blob = new Blob(chunks, { type: mime });
       chunks = [];
       const b64 = await blobToBase64(blob);
-      resolve({ ok: true, clipBase64: b64 });
+      resolve({ ok: true, clipBase64: b64, clipDurationMs: durMs });
     };
     try { recorder.stop(); } catch (_) { resolve({ ok: false, error: 'stop failed' }); }
   });
