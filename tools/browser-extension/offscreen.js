@@ -17,7 +17,17 @@ function pickMime() {
 }
 
 async function startCapture(streamId) {
-  if (stream) return { ok: true, already: true };
+  // 同源导航（切下一集）会让上一个 tabCapture 流的轨道 end，但 stream 变量仍是个 truthy 对象。
+  // 只有 stream.active 才算「已在录」直接复用；否则先把这个死流拆掉再重新 getUserMedia，
+  // 不然 nfEnsureCapture 会以为还在录 → 之后每段都从死流录出黑/空片（跨集失败根因）。
+  if (stream && stream.active) return { ok: true, already: true };
+  if (stream) {
+    try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+    stream = null;
+    if (audioPlaybackCtx) { try { audioPlaybackCtx.close(); } catch (_) {} audioPlaybackCtx = null; }
+    recorder = null;
+    chunks = [];
+  }
   stream = await navigator.mediaDevices.getUserMedia({
     audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } },
     video: {

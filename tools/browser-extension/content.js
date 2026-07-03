@@ -130,6 +130,19 @@ let hibikiQueue = [];
 function hibikiQueueSave() {
   try { chrome.storage.local.set({ hibikiQueue: hibikiQueue }); } catch (_) {}
 }
+// 移除已成功生成的项：storage 读-改-写（不改可能被 storage.onChanged 覆盖的内存镜像），跨标签安全。
+// 生成过程中别的标签/别集入队都不会被这一步误删（只按 id 剔除本次成功的）。
+async function hibikiRemoveQueued(okIds) {
+  if (!okIds || !okIds.length) return;
+  try {
+    const got = await chrome.storage.local.get(['hibikiQueue']);
+    const fresh = Array.isArray(got.hibikiQueue) ? got.hibikiQueue : [];
+    const remaining = fresh.filter((q) => okIds.indexOf(q.id) < 0);
+    hibikiQueue = remaining;
+    await chrome.storage.local.set({ hibikiQueue: remaining });
+    hibikiUpdateQueueChip();
+  } catch (_) {}
+}
 function hibikiQueueLoad() {
   try {
     chrome.storage.local.get(['hibikiQueue'], (r) => {
@@ -238,9 +251,7 @@ window.hibikiGenerateAll = async function () {
     if (ok) { done++; okIds.push(q.id); } else fail++;
     window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
   }
-  hibikiQueue = hibikiQueue.filter((q) => okIds.indexOf(q.id) < 0);
-  hibikiQueueSave();
-  hibikiUpdateQueueChip();
+  await hibikiRemoveQueued(okIds);
   window.hibikiToast('✓ 生成完成：成功 ' + done + (fail ? ' · 失败 ' + fail : ''));
 };
 
@@ -275,18 +286,25 @@ async function hibikiRunNetflixBatch() {
     try {
       await seekTo(Math.max(0, q.startV / 1000));
       await sleep(150); // 让首帧稳定
-      await chrome.runtime.sendMessage({ type: 'beginClip' });
+      // 先确保真的在播（自动播放策略可能拦；重试一次）。仍暂停 → 跳过本句，不录一段冻结帧。
       try { await v.play(); } catch (_) {}
-      const startText = hibikiSubtitleTextNow();
-      const hardEnd = Math.max(q.endV, q.startV + 1500) / 1000;
-      const deadline = Date.now() + 12000;
+      await sleep(200);
+      if (v.paused) { try { await v.play(); } catch (_) {} await sleep(200); }
+      if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+      await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
+      // 本句结束判据：字幕文本变成别的/清空（≠ 这一句），且已过句首 0.4s。refText 用入队时存的整句
+      // 文本，比「播放时现采样」稳（避免字幕还没渲染时采到空 → 判据失效整段录到超时）。
+      const refText = (q.sentence || '').trim();
+      const hardEnd = Math.max((q.endV || 0) + 1500, q.startV + 12000) / 1000;
+      const deadline = Date.now() + 15000;
       while (v.currentTime < hardEnd && Date.now() < deadline) {
         await sleep(120);
+        if (v.paused) break; // 外部暂停 → 别空转录冻结帧到超时
         const nowText = hibikiSubtitleTextNow();
-        if (nowText && startText && nowText !== startText && v.currentTime > (q.startV / 1000 + 0.4)) break;
+        if (refText && v.currentTime > (q.startV / 1000 + 0.4) && nowText !== refText) break;
       }
       try { v.pause(); } catch (_) {}
-      const clip = await chrome.runtime.sendMessage({ type: 'endClip' });
+      const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
       let ok = false;
       if (clip && clip.ok && clip.clipBase64) {
         ok = await new Promise((resolve) => {
@@ -304,9 +322,7 @@ async function hibikiRunNetflixBatch() {
   }
   try { hideStyle.remove(); } catch (_) {}
   document.body.style.cursor = '';
-  hibikiQueue = hibikiQueue.filter((q) => okIds.indexOf(q.id) < 0);
-  hibikiQueueSave();
-  hibikiUpdateQueueChip();
+  await hibikiRemoveQueued(okIds);
 }
 
 // 等 Netflix 播放器就绪（切集后 video 需时间加载）。
@@ -322,25 +338,38 @@ async function hibikiWaitForPlayer(timeoutMs) {
 
 // 跨剧集批量：页面(重)注入或状态变 active 后检查是否在批量中；是且当前是目标剧集 → 等就绪 →
 // 生成本集项 → 前进/跳下一集/收尾。状态在 storage，跨导航与 SW 休眠都存活。防重入。
-async function hibikiMaybeResumeNetflixBatch() {
+async function hibikiMaybeResumeNetflixBatch(fromLoad) {
   if (hibikiNfBatchRunning) return;
-  if (hibikiSite() !== 'netflix') return;
-  let st;
-  try { st = (await chrome.storage.local.get(['hibikiNfBatch'])).hibikiNfBatch; } catch (_) { return; }
-  if (!st || !st.active) return;
-  const target = st.episodes[st.idx];
-  if (hibikiNetflixId() !== target) {
-    try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + target }); } catch (_) {}
-    return;
-  }
+  // 同步置位（在任何 await 之前）：堵住 setTimeout 与 storage 事件「查-await-置位」之间的重入
+  // TOCTOU（否则两个触发都能越过守卫 → 同一集被录两遍/重复卡）。
   hibikiNfBatchRunning = true;
   try {
+    if (!hibikiExtAlive() || hibikiSite() !== 'netflix') return;
+    let st;
+    try { st = (await chrome.storage.local.get(['hibikiNfBatch'])).hibikiNfBatch; } catch (_) { return; }
+    if (!st || !st.active) return;
+    const target = st.episodes[st.idx];
+    if (hibikiNetflixId() !== target) {
+      // 只有真实页面加载(fromLoad)才驱动跳转 + 计数；storage 变化触发的不跳转，避免风暴。
+      // 连续 4 次真实加载都到不了目标集（区域锁/资料档门/被跳到别集）→ 放弃并收尾，绝不无限重载。
+      if (!fromLoad) return;
+      const attempts = (st.navAttempts || 0) + 1;
+      if (attempts > 4) {
+        window.hibikiToast('✗ 无法打开剧集 ' + target + '，结束生成');
+        try { chrome.runtime.sendMessage({ type: 'nfFinish', originalUrl: st.originalUrl }); } catch (_) {}
+        return;
+      }
+      try { await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: st.episodes, idx: st.idx, originalUrl: st.originalUrl, navAttempts: attempts } }); } catch (_) {}
+      try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + target }); } catch (_) {}
+      return;
+    }
     window.hibikiToast('自动生成中：第 ' + (st.idx + 1) + '/' + st.episodes.length + ' 部…', true);
     await hibikiWaitForPlayer(20000);
     try { await chrome.runtime.sendMessage({ type: 'nfEnsureCapture' }); } catch (_) {}
     await hibikiRunNetflixBatch();
     const next = st.idx + 1;
     if (next < st.episodes.length) {
+      // 前进到下一集：新对象不带 navAttempts → 下一集从 0 计数。
       try { await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: st.episodes, idx: next, originalUrl: st.originalUrl } }); } catch (_) {}
       try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + st.episodes[next] }); } catch (_) {}
     } else {
@@ -360,11 +389,11 @@ try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.hibikiNfBatch) {
       const nv = changes.hibikiNfBatch.newValue;
-      if (nv && nv.active) hibikiMaybeResumeNetflixBatch();
+      if (nv && nv.active) hibikiMaybeResumeNetflixBatch(false); // storage 触发：不驱动跳转
     }
   });
 } catch (_) {}
-try { setTimeout(hibikiMaybeResumeNetflixBatch, 1500); } catch (_) {}
+try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } catch (_) {} // 真实加载：可驱动跳转
 
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见

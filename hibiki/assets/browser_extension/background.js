@@ -39,8 +39,8 @@ function setRecordingBadge(on) {
     chrome.action.setBadgeText({ text: on ? '●' : '' });
     chrome.action.setTitle({
       title: on
-          ? 'Hibiki：正在录制本标签（再次点击停止）——制卡取最近约 12 秒转 GIF+句子音频'
-          : 'Hibiki：点击开始录制本标签（Netflix/YouTube 制卡的句子音频/GIF 需先录制）',
+          ? 'Hibiki：正在生成 Netflix 制卡（逐句回放录制中）'
+          : 'Hibiki：点击生成 Netflix 制卡队列（逐集自动回放录制）',
     });
   } catch (_) { /* setBadge 在某些上下文不可用：忽略，不影响录制 */ }
 }
@@ -147,11 +147,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
-      } else if (msg.type === 'beginClip') {
-        // content 驱动的 Netflix 回放录制：起一段新 clip。转发给 offscreen。
-        sendResponse(await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' }));
-      } else if (msg.type === 'endClip') {
-        sendResponse(await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' }));
       } else if (msg.type === 'mineClip') {
         // Netflix 回放录到的整段 webm → 服务端整段裁 [0,时长] 转 GIF+音频（无偏移运算）。
         const r = await fetch(base + '/api/mine', {
