@@ -424,6 +424,26 @@ jobs:
             echo "No assets on $PUBLISH_TAG; nothing to prune."
             exit 0
           fi
+          # TODO-1131: only ever prune THIS platform's own assets. The rolling
+          # debug release is shared by Android/Windows/Apple, each publishing from
+          # an independent workflow run. Computing the kept-seq set across ALL
+          # platforms' assets means a lagging platform has its last-good asset's
+          # seq pushed out of the top KEEP_SEQS by the OTHER platforms' newer
+          # seqs -- so another platform's prune deletes it and the rolling release
+          # "loses" that device. Scope the candidate set to this platform's
+          # filename shape (Windows: *-windows-setup.exe) so each platform keeps
+          # its own top KEEP_SEQS and never touches another's assets.
+          PLATFORM_ASSETS=()
+          for name in "${ASSET_NAMES[@]}"; do
+            case "$name" in
+              *-windows-setup.exe) PLATFORM_ASSETS+=("$name") ;;
+            esac
+          done
+          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
+          if [ "${#ASSET_NAMES[@]}" -eq 0 ]; then
+            echo "No Windows assets on $PUBLISH_TAG; nothing to prune."
+            exit 0
+          fi
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
           # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
@@ -780,8 +800,28 @@ jobs:
             echo "No assets on $PUBLISH_TAG; nothing to prune."
             exit 0
           fi
+          # TODO-1131: only ever prune THIS platform's own assets. The rolling
+          # debug release is shared by Android/Windows/Apple, each publishing from
+          # an independent workflow run. Computing the kept-seq set across ALL
+          # platforms' assets means a lagging platform has its last-good asset's
+          # seq pushed out of the top KEEP_SEQS by the OTHER platforms' newer
+          # seqs -- so another platform's prune deletes it and the rolling release
+          # "loses" that device. Scope the candidate set to this platform's
+          # filename shape (Apple: *-macos.zip / *-ios.ipa) so each platform keeps
+          # its own top KEEP_SEQS and never touches another's assets.
+          PLATFORM_ASSETS=()
+          for name in "${ASSET_NAMES[@]}"; do
+            case "$name" in
+              *-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+            esac
+          done
+          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
+          if [ "${#ASSET_NAMES[@]}" -eq 0 ]; then
+            echo "No Apple assets on $PUBLISH_TAG; nothing to prune."
+            exit 0
+          fi
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-          # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
+          # hibiki-0.11.1-debug.5633-3cf5905-macos.zip). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
           # asset's seq the same way, keep the top KEEP_SEQS distinct seqs (numeric
           # desc), and delete only assets whose seq is NOT in that set. Assets with
