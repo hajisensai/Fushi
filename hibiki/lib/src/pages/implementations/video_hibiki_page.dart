@@ -92,6 +92,7 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
 part 'video_hibiki/danmaku.part.dart';

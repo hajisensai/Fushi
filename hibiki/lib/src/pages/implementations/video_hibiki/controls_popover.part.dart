@@ -463,7 +463,7 @@ extension _VideoControlsPopover on _VideoHibikiPageState {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: HibikiBorderRadius.menu,
           border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
           boxShadow: <BoxShadow>[
             BoxShadow(

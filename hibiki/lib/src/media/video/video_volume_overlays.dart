@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 const Key videoVolumePopoverFrameKey =
     ValueKey<String>('video-volume-popover-frame');
@@ -51,7 +52,7 @@ class VideoVolumePopoverCard extends StatelessWidget {
         key: frameKey,
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: HibikiBorderRadius.menu,
           border: Border.all(
             color: colorScheme.outlineVariant.withValues(alpha: 0.7),
           ),
