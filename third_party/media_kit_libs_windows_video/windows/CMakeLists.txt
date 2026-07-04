@@ -81,11 +81,20 @@ endfunction()
 # grows ~30MB → ~118MB (full FFmpeg). Drop this fork once upstream ships a newer
 # libmpv with TrueHD. The .7z layout (libmpv-2.dll + include/mpv) matches what
 # the extract step below expects, so only the URL/MD5/name change.
-set(LIBMPV "mpv-dev-x86_64-20260605-git-71ebd08406.7z")
+#
+# NOTE: zhongfly/mpv-winbuild only keeps a ~30-day rolling window of releases -
+# older tagged assets get pruned and 404. When a fresh Windows build fails with a
+# cmake file(DOWNLOAD) FATAL_ERROR here, re-pin to the newest LIVE zhongfly
+# release. MUST pick the plain `mpv-dev-x86_64-...` asset (GPL full FFmpeg with
+# TrueHD): NOT `-lgpl` (drops TrueHD -> re-opens BUG-073), NOT `-v3` (needs
+# Haswell+, crashes on older CPUs). sha256 of this pin (verified against zhongfly
+# sha256.txt before the swap):
+# 2651a618ba6906ac869a87f669c4db157ef3b9d566eb946362fadafcd2e253c1
+set(LIBMPV "mpv-dev-x86_64-20260704-git-33111f3212.7z")
 
 # Download URL & MD5 hash of the libmpv archive.
-set(LIBMPV_URL "https://github.com/zhongfly/mpv-winbuild/releases/download/2026-06-05-71ebd08406/${LIBMPV}")
-set(LIBMPV_MD5 "184ecbff96d29b9a2e0349b65d2cc0d2")
+set(LIBMPV_URL "https://github.com/zhongfly/mpv-winbuild/releases/download/2026-07-04-33111f3212/${LIBMPV}")
+set(LIBMPV_MD5 "89702937368b0181cbce41c30e811c76")
 
 # Download location of the libmpv archive.
 set(LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${LIBMPV}")
