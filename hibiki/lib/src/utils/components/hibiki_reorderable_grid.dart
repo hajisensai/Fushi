@@ -25,6 +25,12 @@ typedef HibikiGridCanMergeCallback = bool Function(
 typedef HibikiGridMergeCallback = void Function(
     int draggingIndex, int targetIndex);
 
+/// 「格 [index] 被点击（tap，未升级成拖拽）」——TODO-947 方案A：编辑排序态卡片被
+/// IgnorePointer 吞掉自身手势（只作拖拽把手），故折叠系列卡「点进成员视图」的 tap 必须
+/// 由网格自己识别。仅 [HibikiReorderableGrid.onActivate] 非空时才装 TapGestureRecognizer；
+/// null（默认）= 不识别 tap = 与历史逐像素一致（纯拖拽，无点击语义）。
+typedef HibikiGridActivateCallback = void Function(int index);
+
 /// 自实现的二维拖拽重排网格，是 [HibikiReorderableColumn] 的网格版（TODO-616 B2）。
 /// 浮层渲染在本组件自身 Stack 内 + 全程 globalToLocal 把指针转本地坐标，在祖先
 /// Transform.scale（HibikiAppUiScale 整体缩放）下零偏移跟手。
@@ -47,6 +53,7 @@ class HibikiReorderableGrid extends StatefulWidget {
     this.feedbackBorderRadius,
     this.canMergeInto,
     this.onMergeIntoTarget,
+    this.onActivate,
     super.key,
   });
 
@@ -88,6 +95,10 @@ class HibikiReorderableGrid extends StatefulWidget {
   /// 落点在目标格中心 mergeRadius 区内且 [canMergeInto] 放行时调用（替代 onReorder）。
   /// null（默认）= 不接合并。必须与 [canMergeInto] 同时提供合并手势才生效。
   final HibikiGridMergeCallback? onMergeIntoTarget;
+
+  /// 「格被点击（未升级成拖拽）」回调（TODO-947 方案A：折叠系列卡点进成员视图）。
+  /// null（默认）= 网格不识别 tap，行为与历史一致（卡片只是拖拽把手，点击落空）。
+  final HibikiGridActivateCallback? onActivate;
 
   @override
   State<HibikiReorderableGrid> createState() => _HibikiReorderableGridState();
@@ -380,6 +391,18 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       key: widget.keyForIndex(original),
       behavior: HitTestBehavior.translucent,
       gestures: <Type, GestureRecognizerFactory>{
+        // TODO-947 方案A：仅当 onActivate 非空时装 tap 识别器，让折叠系列卡「点进
+        // 成员视图」的 tap 被识别（拖拽把手模型下卡片自身 onTap 被 IgnorePointer 吞掉）。
+        // tap 与 multidrag 在手势竞技场按胜出者裁决：成为拖拽（移动超阈值）时 tap 输掉不
+        // 触发；干净点击（未拖拽）时 tap 胜出 → onActivate。null 时不装 = 纯拖拽无点击。
+        if (widget.onActivate != null)
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+            () => TapGestureRecognizer(),
+            (TapGestureRecognizer instance) {
+              instance.onTap = () => widget.onActivate!(original);
+            },
+          ),
         ImmediateMultiDragGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<
                 ImmediateMultiDragGestureRecognizer>(

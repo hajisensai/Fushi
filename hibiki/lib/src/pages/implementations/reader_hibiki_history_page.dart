@@ -431,35 +431,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 书架是独立分区且归视频 tab 管，不纳入本页（在视频库页单独排序）。
   Future<void> _openShelfSort() async {
     if (_selectionMode) _exitSelectionMode();
-    // TODO-947-② PR2：从已加载的 ShelfEntries 组一份 `mediaType|entryKey → seriesId`
-    // 归属映射，填进每个可重排条目，让重排页能判定拖合并语义（建新系列 / 并入已有系列）。
-    final Map<String, int?> seriesByEntry = <String, int?>{
-      for (final ShelfEntryRow r in _allShelfEntries)
-        '${r.mediaType}|${r.entryKey}': r.seriesId,
-    };
-    final List<ShelfReorderItem> items = <ShelfReorderItem>[];
-    for (final SrtBook book in _visibleSrtBooks) {
-      items.add(ShelfReorderItem(
-        mediaType: 'srt',
-        entryKey: book.uid,
-        seriesId: seriesByEntry['srt|${book.uid}'],
-        card: _buildSrtCard(
-          book,
-          epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
-        ),
-      ));
-    }
-    for (final MediaItem item in _visibleEpubBooks) {
-      final String? bookKey = _parseBookKey(item.mediaIdentifier);
-      if (bookKey == null) continue;
-      items.add(ShelfReorderItem(
-        mediaType: 'epub',
-        entryKey: bookKey,
-        seriesId: seriesByEntry['epub|$bookKey'],
-        card: buildMediaItem(item),
-      ));
-    }
-    if (items.length < 2) {
+    // TODO-947 方案A：排序页先经 groupAndSortShelfEntries 折叠——系列渲染成一张
+    // SeriesShelfCard（与主网格对齐），散书渲染原卡。拖合并、点进成员视图均在本页内完成。
+    final List<ShelfReorderItem> items = _buildSortItems();
+    // TODO-947-R4：折叠后可能仅一个 group（单系列 / 单散书），但只要存在任何系列卡就
+    // 应能进去拖出成员（单成员系列也算）；仅当既无系列卡又 <2 散书时才无事可做。
+    final bool hasSeriesCard =
+        items.any((ShelfReorderItem it) => it.seriesCardId != null);
+    if (items.length < 2 && !hasSeriesCard) {
       HibikiToast.show(msg: t.shelf_sort_saved);
       return;
     }
@@ -474,12 +453,138 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
           onPersist: _persistShelfOrder,
           onMerge: _mergeShelfEntries,
+          onEnterSeries: _enterSeriesInSort,
+          rebuildItems: _rebuildSortItems,
         ),
       ),
     );
-    // 重排页可能拖合并写过系列归属，回到书架后重载分组渲染（系列卡折叠）。
+    // 重排页可能拖合并 / 拖出写过系列归属，回到书架后重载分组渲染（系列卡折叠）。
     _shelfOrderFuture = _loadShelfOrder();
     if (mounted) _rebuild(() {});
+  }
+
+  /// TODO-947 方案A：把当前可见 SRT + EPUB 经 [groupAndSortShelfEntries] 折叠成重排
+  /// 条目——散书（group.seriesId==null）渲染原卡并带上归属 seriesId（拖合判据）；系列
+  /// （group.seriesId!=null）折叠成一张 [SeriesShelfCard]，[ShelfReorderItem.seriesCardId]
+  /// = 系列 id（持久化时回写 Series.sortOrder、tap 时进成员视图），entryKey 用合成键
+  /// 'series_<id>'（不对应任何真书条目，仅作拖拽身份）。与主网格折叠排序自洽。
+  List<ShelfReorderItem> _buildSortItems() {
+    final List<ShelfOrderingItem<_ShelfBookSlot>> shelfItems =
+        <ShelfOrderingItem<_ShelfBookSlot>>[
+      for (int i = 0; i < _visibleSrtBooks.length; i++)
+        ShelfOrderingItem<_ShelfBookSlot>(
+          mediaType: 'srt',
+          entryKey: _visibleSrtBooks[i].uid,
+          importedAt: -i,
+          payload: _ShelfBookSlot(
+            seq: i,
+            order: _orderOf('srt', _visibleSrtBooks[i].uid),
+            srt: _visibleSrtBooks[i],
+          ),
+        ),
+      for (int i = 0; i < _visibleEpubBooks.length; i++)
+        if (_parseBookKey(_visibleEpubBooks[i].mediaIdentifier)
+            case final String bookKey)
+          ShelfOrderingItem<_ShelfBookSlot>(
+            mediaType: 'epub',
+            entryKey: bookKey,
+            importedAt: -(_visibleSrtBooks.length + i),
+            payload: _ShelfBookSlot(
+              seq: _visibleSrtBooks.length + i,
+              order: _orderOf('epub', bookKey),
+              epub: _visibleEpubBooks[i],
+            ),
+          ),
+    ];
+    final List<ShelfGroup<_ShelfBookSlot>> groups =
+        groupAndSortShelfEntries<_ShelfBookSlot>(
+      items: shelfItems,
+      shelfEntries: _allShelfEntries,
+      seriesById: _seriesById,
+    );
+    final List<ShelfReorderItem> out = <ShelfReorderItem>[];
+    for (final ShelfGroup<_ShelfBookSlot> group in groups) {
+      final int? seriesId = group.seriesId;
+      if (seriesId == null) {
+        final _ShelfBookSlot slot = group.coverItem.payload;
+        final SrtBook? srt = slot.srt;
+        if (srt != null) {
+          out.add(ShelfReorderItem(
+            mediaType: 'srt',
+            entryKey: srt.uid,
+            seriesId: null,
+            card: _buildSrtCard(
+              srt,
+              epubCoverUri: _epubCoverUrisByBookKey[srt.bookKey],
+            ),
+          ));
+        } else {
+          final MediaItem item = slot.epub!;
+          final String? bookKey = _parseBookKey(item.mediaIdentifier);
+          if (bookKey == null) continue;
+          out.add(ShelfReorderItem(
+            mediaType: 'epub',
+            entryKey: bookKey,
+            seriesId: null,
+            card: buildMediaItem(item),
+          ));
+        }
+        continue;
+      }
+      // 系列折叠卡：同主网格的堆叠封面 + 角标渲染（前 3 张成员封面）。
+      final SeriesRow? series = _seriesById[seriesId];
+      final List<Widget> covers = <Widget>[
+        for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(3))
+          _slotCover(it.payload, _epubCoverUrisByBookKey),
+      ];
+      out.add(ShelfReorderItem(
+        mediaType: 'series',
+        // 合成身份键：系列卡不对应 ShelfEntries 行，仅用作网格拖拽元素的稳定 Key。
+        entryKey: 'series_$seriesId',
+        // seriesId 与 seriesCardId 同值：前者供拖合判据（目标已属某系列），后者标识
+        // 本条目就是一张折叠系列卡（持久化分流 + tap 进入）。
+        seriesId: seriesId,
+        seriesCardId: seriesId,
+        card: SeriesShelfCard(
+          name: series?.name ?? t.series,
+          itemCount: group.items.length,
+          slotAspectRatio: kShelfBookCardAspectRatio,
+          covers: covers,
+          // 排序态 tap 由网格 onActivate 处理（此 onTap 被 IgnorePointer 吞）；占位无操作。
+          onTap: () {},
+        ),
+      ));
+    }
+    return out;
+  }
+
+  /// TODO-947 方案A：进入成员视图返回后重取折叠条目（成员可能已被拖出 / 系列已清空
+  /// 消失）。先重载归属映射再重建，保证折叠快照与 DB 一致。
+  Future<List<ShelfReorderItem>> _rebuildSortItems() async {
+    await _loadShelfOrder();
+    return _buildSortItems();
+  }
+
+  /// TODO-947 方案A ③④⑤：在排序页内点进一个折叠系列卡——复用现有 [SeriesDetailPage]
+  /// （它已提供成员拖出 setSeriesForEntry(null) + 成员重排）。本页导航内推入子页，返回
+  /// 同折叠视图；拖出只改 seriesId 归属（不动 sortOrder），天然可逆。
+  Future<void> _enterSeriesInSort(int seriesId) async {
+    final SeriesRow? series = _seriesById[seriesId];
+    await Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => SeriesDetailPage(
+          database: appModel.database,
+          seriesId: seriesId,
+          initialName: series?.name ?? t.series,
+          memberCardBuilder: _buildSeriesMemberCard,
+          onChanged: () {
+            _shelfOrderFuture = _loadShelfOrder();
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+    );
   }
 
   /// TODO-947-② PR2：把被拖条目 [dragged] 合并进目标条目 [target]。复用既有 Series
@@ -508,18 +613,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     return seriesId;
   }
 
-  /// 把重排页给回的最终顺序按下标批量回写 ShelfEntries.sortOrder（单事务）。
+  /// TODO-947 方案A：把重排页给回的折叠顺序拆分回写——散书条目下标 →
+  /// ShelfEntries.sortOrder（[batchUpsertShelfOrder]，单事务）；折叠系列卡下标 →
+  /// Series.sortOrder（[updateSeriesSortOrder]，逐行）。拆分逻辑复用纯函数
+  /// [splitShelfReorderOrders]（与测试同一真相源）。同一折叠下标 i 喂两套目标，保证回
+  /// 主网格经 groupAndSortShelfEntries 混排后顺序与本页折叠视图一致。
   Future<void> _persistShelfOrder(List<ShelfReorderItem> ordered) async {
-    final List<({String mediaType, String entryKey, int sortOrder})> orders =
-        <({String mediaType, String entryKey, int sortOrder})>[
-      for (int i = 0; i < ordered.length; i++)
-        (
-          mediaType: ordered[i].mediaType,
-          entryKey: ordered[i].entryKey,
-          sortOrder: i,
-        ),
-    ];
-    await appModel.database.batchUpsertShelfOrder(orders);
+    final ({
+      List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
+      List<({int seriesId, int sortOrder})> seriesOrders,
+    }) split = splitShelfReorderOrders(ordered);
+    for (final ({int seriesId, int sortOrder}) so in split.seriesOrders) {
+      await appModel.database.updateSeriesSortOrder(so.seriesId, so.sortOrder);
+    }
+    if (split.entryOrders.isNotEmpty) {
+      await appModel.database.batchUpsertShelfOrder(split.entryOrders);
+    }
     _shelfOrderFuture = _loadShelfOrder();
     if (mounted) setState(() {});
   }

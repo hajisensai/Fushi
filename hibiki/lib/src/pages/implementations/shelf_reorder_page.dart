@@ -10,6 +10,7 @@ class ShelfReorderItem {
     required this.entryKey,
     required this.card,
     this.seriesId,
+    this.seriesCardId,
   });
 
   /// 媒体种类：'epub' | 'srt' | 'video'。
@@ -26,12 +27,21 @@ class ShelfReorderItem {
   /// 系列）依赖它判定。不传 [ShelfReorderPage.onMerge] 时本字段被忽略（纯重排不读它）。
   final int? seriesId;
 
+  /// 折叠后系列卡标识（TODO-947 方案A）。非空 = 本条目**本身就是一张折叠系列卡**
+  /// （渲染的是 [SeriesShelfCard]，entryKey = 'series_<id>' 的合成键，不对应任何真书
+  /// 条目）；null = 普通散书 / 系列成员条目。持久化时据此分流：系列卡下标回写
+  /// [SeriesRow.sortOrder]，散书条目下标回写 [ShelfEntries.sortOrder]。点进（tap）
+  /// 也据此判定「进入系列成员视图」（散书 tap 不进入）。
+  final int? seriesCardId;
+
   /// 复制本条目，仅覆盖 [seriesId]（合并后本地即时刷新 UI 用，避免整页重查）。
+  /// [seriesCardId] 原样保留（散书合并不会把散书变成折叠卡，语义不变）。
   ShelfReorderItem copyWithSeriesId(int? newSeriesId) => ShelfReorderItem(
         mediaType: mediaType,
         entryKey: entryKey,
         card: card,
         seriesId: newSeriesId,
+        seriesCardId: seriesCardId,
       );
 }
 
@@ -45,6 +55,16 @@ typedef ShelfReorderPersist = Future<void> Function(
 /// 有系列 id）。返回 null 表示本次合并未生效（不写 DB / 不刷新）。
 typedef ShelfReorderMerge = Future<int?> Function(
     ShelfReorderItem dragged, ShelfReorderItem target);
+
+/// 点进一张折叠系列卡的回调（TODO-947 方案A ③④⑤）：把该系列 [seriesId] 交给调用方，
+/// 由调用方推入成员视图（拖出成员 = setSeriesForEntry(null)、成员重排）。await 返回后
+/// 本页用 [ShelfReorderRebuild] 重取折叠条目刷新（成员可能已被拖出/重排）。
+typedef ShelfReorderEnterSeries = Future<void> Function(int seriesId);
+
+/// 进入系列成员视图返回后重取折叠条目（TODO-947 方案A）：成员被拖出会让系列成员数变化
+/// （甚至系列清空后消失），本页据此重建 [ShelfReorderPage.initialItems] 的当前快照，
+/// 避免显示过期折叠卡。null（默认，如系列成员子页自身）= 不重取。
+typedef ShelfReorderRebuild = Future<List<ShelfReorderItem>> Function();
 
 /// TODO-616 B2 独立重排页：长按 / 「编辑排序」入口 push 进来，在独立有界覆盖层里用
 /// [HibikiReorderablegrid] 二维拖拽重排，退出时把最终顺序批量回写 ShelfEntries。
@@ -63,6 +83,8 @@ class ShelfReorderPage extends StatefulWidget {
     this.mainAxisSpacing = 12,
     this.feedbackBorderRadius,
     this.onMerge,
+    this.onEnterSeries,
+    this.rebuildItems,
     super.key,
   });
 
@@ -80,6 +102,14 @@ class ShelfReorderPage extends StatefulWidget {
   /// canMergeInto/onMergeIntoTarget，行为与历史逐像素一致）。非空时启用「拖到目标卡
   /// 中心 → 合并成合集」手势。
   final ShelfReorderMerge? onMerge;
+
+  /// 点进折叠系列卡的回调（TODO-947 方案A ③）。null（默认，如系列成员子页）= 折叠卡
+  /// 点击无效（本页无系列卡，也不需要「进入」）。非空时点一张系列卡（[ShelfReorderItem
+  /// .seriesCardId] 非空）触发它进入成员视图。
+  final ShelfReorderEnterSeries? onEnterSeries;
+
+  /// 进入成员视图返回后重取折叠条目（TODO-947 方案A）。null = 不重取（保持当前 _items）。
+  final ShelfReorderRebuild? rebuildItems;
 
   @override
   State<ShelfReorderPage> createState() => _ShelfReorderPageState();
@@ -164,6 +194,28 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     if (mounted) HibikiToast.show(msg: t.series_merged_hint);
   }
 
+  /// TODO-947 方案A ③：点一张折叠系列卡（[ShelfReorderItem.seriesCardId] 非空）进入
+  /// 成员视图。散书 / 系列成员卡（seriesCardId==null）点击一律无效（R2：排序态点书不
+  /// 开书），未提供 [ShelfReorderPage.onEnterSeries] 时同样无效。返回后若提供
+  /// [ShelfReorderPage.rebuildItems] 则重取折叠条目刷新（成员可能已被拖出 / 系列已清空）。
+  Future<void> _onActivate(int index) async {
+    if (index < 0 || index >= _items.length) return;
+    final int? seriesCardId = _items[index].seriesCardId;
+    final ShelfReorderEnterSeries? onEnter = widget.onEnterSeries;
+    if (seriesCardId == null || onEnter == null) return;
+    await onEnter(seriesCardId);
+    if (!mounted) return;
+    final ShelfReorderRebuild? rebuild = widget.rebuildItems;
+    if (rebuild == null) return;
+    final List<ShelfReorderItem> fresh = await rebuild();
+    if (!mounted) return;
+    setState(() {
+      _items = fresh;
+      // 拖出成员改的是 seriesId 归属（各自 setSeriesForEntry），未触碰 sortOrder，故
+      // 折叠层顺序本身没被本页改动——不置 _dirty，退出时不做无谓 sortOrder 回写。
+    });
+  }
+
   /// 正在执行退出收口（落盘 -> 真正 pop）。置位后 [PopScope.canPop] 翻成 true，
   /// 使我们手动发起的 pop 直接放行，不再被本 PopScope 二次拦截。
   bool _finishing = false;
@@ -231,9 +283,38 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
             canMergeInto: widget.onMerge == null ? null : _canMergeInto,
             onMergeIntoTarget:
                 widget.onMerge == null ? null : _onMergeIntoTarget,
+            // 仅当调用方提供 onEnterSeries 时才识别 tap（进折叠系列卡成员视图）；否则
+            // null = 网格不装 tap 识别器 = 纯拖拽（与历史一致，散书页/成员子页不受影响）。
+            onActivate: widget.onEnterSeries == null ? null : _onActivate,
           ),
         ),
       ),
     );
   }
+}
+
+/// TODO-947 方案A：把折叠重排页给回的有序条目按下标拆成两套持久化目标——散书条目
+/// （[ShelfReorderItem.seriesCardId] == null）→ ShelfEntries.sortOrder 三元组；折叠系列卡
+/// （seriesCardId != null）→ (系列 id, 下标) 对回写 Series.sortOrder。两者共用同一折叠
+/// 下标 i，保证回主网格经 groupAndSortShelfEntries 混排后顺序与折叠视图一致。纯函数，
+/// widget/DB-free，供单测直接断言拆分正确（散书落 ShelfEntries、系列卡落 Series）。
+({
+  List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
+  List<({int seriesId, int sortOrder})> seriesOrders,
+}) splitShelfReorderOrders(List<ShelfReorderItem> ordered) {
+  final List<({String mediaType, String entryKey, int sortOrder})> entryOrders =
+      <({String mediaType, String entryKey, int sortOrder})>[];
+  final List<({int seriesId, int sortOrder})> seriesOrders =
+      <({int seriesId, int sortOrder})>[];
+  for (int i = 0; i < ordered.length; i++) {
+    final ShelfReorderItem it = ordered[i];
+    final int? seriesCardId = it.seriesCardId;
+    if (seriesCardId != null) {
+      seriesOrders.add((seriesId: seriesCardId, sortOrder: i));
+    } else {
+      entryOrders
+          .add((mediaType: it.mediaType, entryKey: it.entryKey, sortOrder: i));
+    }
+  }
+  return (entryOrders: entryOrders, seriesOrders: seriesOrders);
 }
