@@ -71,6 +71,7 @@ import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
+import 'package:hibiki/src/mining/youtube_clip_miner.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
@@ -2032,6 +2033,38 @@ class AppModel with ChangeNotifier {
   Future<void> setBrightnessMode(String mode) =>
       themeNotifier.setBrightnessMode(mode);
 
+  /// BUG-530：当前 app 主题（MD3 ColorScheme）的关键色 + 查词弹窗尺寸/列数/字号配置，作为
+  /// CSS 变量喂给浏览器扩展的查词弹窗（经查词响应的 `theme` 字段下发，改主题/配置即生效，无需
+  /// 重装扩展）。内容 content.js 把每一项 `setProperty` 到 `#entries-container` 上，popup.css
+  /// 用 `var(...)` 消费：`--md-*` 上色、`--hibiki-popup-max-width/height` 定弹窗盒、
+  /// `--hibiki-popup-zoom` 缩放内容字号、`--dict-columns` 决定词典多列布局。与 in-app 弹窗
+  /// 注入的 md 变量 / --dict-columns / zoom 同源（dictionary_popup_webview / popup_settings_injection 一致）。
+  Map<String, String> browserExtensionThemeColors() {
+    final ColorScheme s = themeNotifier.buildColorScheme(
+        themeNotifier.isDarkMode ? Brightness.dark : Brightness.light);
+    String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)})';
+    // 内容缩放：与 in-app popupContentZoom 同公式，但扩展弹窗在宿主浏览器原生缩放下，
+    // 不叠加 app 的 appUiScale（那是 app 窗口的缩放，与浏览器无关）→ 只跟词典字号。
+    final double rawZoom = dictionaryFontSize / 16.0;
+    final double zoom =
+        (rawZoom.isFinite && rawZoom > 0) ? rawZoom.clamp(0.3, 8.0) : 1.0;
+    return <String, String>{
+      '--md-surface-container-high':
+          rgb(_overrideDictionaryColor ?? s.surfaceContainerHigh),
+      '--md-surface-container': rgb(s.surfaceContainer),
+      '--md-on-surface': rgb(s.onSurface),
+      '--md-on-surface-variant': rgb(s.onSurfaceVariant),
+      '--md-outline-variant': rgb(s.outlineVariant),
+      '--md-primary': rgb(s.primary),
+      '--hibiki-popup-max-width': '${popupMaxWidth.round()}px',
+      '--hibiki-popup-max-height': '${popupMaxHeight.round()}px',
+      '--hibiki-popup-zoom': zoom.toStringAsFixed(4),
+      '--dict-columns': '$popupDictionaryColumns',
+    };
+  }
+
   double get customAppUiScale => themeNotifier.customAppUiScale;
   double get autoAppUiScale => themeNotifier.autoAppUiScale;
   double get appUiScale => themeNotifier.appUiScale;
@@ -3921,6 +3954,8 @@ class AppModel with ChangeNotifier {
       // （扩展被安装助手自动配置指向本 server 的 port/token）。
       miningService: createRemoteMiningService(),
       historyService: createRemoteHistoryService(),
+      // BUG-530：主题色随查词响应下发，扩展弹窗实时跟随用户主题色（改主题即生效）。
+      themeColorsProvider: browserExtensionThemeColors,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4195,6 +4230,11 @@ class AppModel with ChangeNotifier {
   }
 }
 
+/// 批量 YouTube 制卡的流解析器（进程级：TTL 缓存跨 mineImmersion 调用共享，一场「生成全部」
+/// 同一视频只解析一次流）。放 top-level 而非实例字段，是因 [_AppModelRemoteLookupService]
+/// 是 const 构造，无法挂非 const 的可变缓存字段。
+final YoutubeClipMiner _youtubeClipMiner = YoutubeClipMiner();
+
 class _AppModelRemoteLookupService
     implements
         HibikiRemoteLookupService,
@@ -4225,6 +4265,56 @@ class _AppModelRemoteLookupService
     final MiningMediaCompression compression =
         MiningMediaCompression.forCompressionEnabled(
             _appModel.compressMiningMedia);
+    // 优先级 0（YouTube，非 DRM）：有 videoId + 视频时间窗 → 从真实视频流精确裁，不录屏/不回放。
+    // 复用应用内播放器已验证的引擎（mediaSource=挖矿流，audioSource=分离音频流或 null）。
+    if (payload.youtubeVideoId != null &&
+        payload.clipStartMs != null &&
+        payload.clipEndMs != null) {
+      // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声/无 GIF 的静帧卡：服务端 YouTube 路径无
+      // stillFallback，且 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成坏卡。
+      if (payload.clipEndMs! <= payload.clipStartMs!) {
+        return MineResult.error.name;
+      }
+      final YoutubeClipRequest yt;
+      try {
+        yt = await _youtubeClipMiner.buildRequest(
+          videoId: payload.youtubeVideoId!,
+          startMs: payload.clipStartMs!,
+          endMs: payload.clipEndMs!,
+          fields: payload.fields,
+          sentence: payload.sentence,
+          cueSentence: payload.cueSentence,
+          documentTitle: payload.documentTitle,
+        );
+      } catch (e, st) {
+        // resolveYoutubeSource 会抛 TimeoutException / 视频不可用等；两个 server 的 /api/mine
+        // 只 catch FormatException，这里不兜住会 500 整张卡。收敛成干净的 MineResult.error。
+        debugPrint('[yt-mine] resolve failed: $e\n$st');
+        return MineResult.error.name;
+      }
+      final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
+        ImmersionMiningRequest(
+          fields: yt.fields,
+          mediaSource: yt.mediaSource,
+          audioSource: yt.audioSource,
+          clipStartMs: yt.clipStartMs,
+          clipEndMs: yt.clipEndMs,
+          sentence: yt.sentence,
+          cueSentence: yt.cueSentence,
+          documentTitle: yt.documentTitle ?? 'YouTube',
+          source: AnkiMiningSource.video,
+          // YouTube 有音频源 → 缺音频即失败（与应用内一致），不出无声卡。
+          requireAudio: true,
+        ),
+        compression: compression,
+        tempDir: Directory.systemTemp.path,
+        repo: repo,
+        // GIF/音频抽取失败摘要写日志，便于排查「没 gif / 只有图片」。
+        onFailure: (String s) => debugPrint('[yt-mine] extract: $s'),
+      );
+      if (ytRes.aborted) return MineResult.error.name;
+      return (ytRes.outcome! as MineOutcome).result.name;
+    }
     // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
     // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
@@ -4233,6 +4323,12 @@ class _AppModelRemoteLookupService
       cap = await transcodeClipToCapture(
         payload.clipBytes!,
         durationMs: payload.clipDurationMs ?? 6000,
+        // clipStartMs/EndMs 是扩展算好的**段内句子时间窗**偏移（对齐整句）；有 clipBytes 时走这一
+        // 支，clipStartMs/EndMs 即窗口偏移（非 videoId 原生路径的视频时间）。gifEndMs 让 GIF 收口
+        // 到查词交互前 → 无鼠标/弹窗，音频仍到整句结束。
+        windowStartMs: payload.clipStartMs,
+        windowEndMs: payload.clipEndMs,
+        gifEndMs: payload.clipGifEndMs,
         compression: compression,
         tempDir: Directory.systemTemp.path,
       );

@@ -39,6 +39,7 @@ class YomitanApiServer {
     required ReadingResolver readingResolver,
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
+    Map<String, String> Function()? themeColorsProvider,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -47,6 +48,7 @@ class YomitanApiServer {
         _history = historyService,
         _tokenizer = tokenizer,
         _readingResolver = readingResolver,
+        _themeColorsProvider = themeColorsProvider,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -56,6 +58,8 @@ class YomitanApiServer {
   final HibikiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
+  // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。
+  final Map<String, String> Function()? _themeColorsProvider;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -189,6 +193,7 @@ class YomitanApiServer {
       body,
       lookup: _lookup,
       history: _history,
+      themeColorsProvider: _themeColorsProvider,
     ));
   }
 

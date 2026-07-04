@@ -12,7 +12,9 @@ class ImmersionMinePayload {
     this.timestampMs,
     this.clipStartMs,
     this.clipEndMs,
+    this.clipGifEndMs,
     this.netflixVideoId,
+    this.youtubeVideoId,
     this.screenshotBytes,
     this.clipBytes,
     this.clipDurationMs,
@@ -25,7 +27,16 @@ class ImmersionMinePayload {
   final int? timestampMs;
   final int? clipStartMs;
   final int? clipEndMs;
+
+  /// TODO-1000：clip 里 **GIF 的结束偏移**（毫秒，段内）。GIF 窗收口到「用户首次查词交互」之前，
+  /// 帧里无鼠标/弹窗；音频窗仍到整句结束 [clipStartMs, clipEndMs]。null → GIF 与音频同窗。
+  final int? clipGifEndMs;
   final String? netflixVideoId;
+
+  /// TODO-1000（批量制卡）：YouTube 视频 ID（youtube.com 扩展制卡）。非空 + [clipStartMs]/
+  /// [clipEndMs]（**视频时间**窗，非段内偏移）时，服务端 resolveYoutubeSource 取真实流 ffmpeg
+  /// 精确裁 GIF+音频（非 DRM，无需录屏/回放）。
+  final String? youtubeVideoId;
   final Uint8List? screenshotBytes;
 
   /// TODO-1000：浏览器扩展在播放中录到的字幕片段（webm/mp4 字节，DRM 需关硬件加速才非黑）。
@@ -40,7 +51,8 @@ class ImmersionMinePayload {
       screenshotBytes != null ||
       clipBytes != null ||
       timestampMs != null ||
-      (netflixVideoId != null && clipStartMs != null && clipEndMs != null);
+      (netflixVideoId != null && clipStartMs != null && clipEndMs != null) ||
+      (youtubeVideoId != null && clipStartMs != null && clipEndMs != null);
 
   static ImmersionMinePayload fromJson(Map<String, dynamic> json) {
     final Object? rawFields = json['fields'];
@@ -51,8 +63,6 @@ class ImmersionMinePayload {
       for (final MapEntry<Object?, Object?> e in rawFields.entries)
         '${e.key}': '${e.value}',
     };
-    final Object? b64 = json['screenshotBase64'];
-    final Object? clip64 = json['clipBase64'];
     return ImmersionMinePayload(
       fields: fields,
       sentence: (json['sentence'] as String?) ?? (fields['sentence'] ?? ''),
@@ -61,12 +71,24 @@ class ImmersionMinePayload {
       timestampMs: (json['timestampMs'] as num?)?.round(),
       clipStartMs: (json['clipStartMs'] as num?)?.round(),
       clipEndMs: (json['clipEndMs'] as num?)?.round(),
+      clipGifEndMs: (json['clipGifEndMs'] as num?)?.round(),
       netflixVideoId: json['netflixVideoId'] as String?,
-      screenshotBytes:
-          b64 is String && b64.isNotEmpty ? base64Decode(b64) : null,
-      clipBytes:
-          clip64 is String && clip64.isNotEmpty ? base64Decode(clip64) : null,
+      youtubeVideoId: json['youtubeVideoId'] as String?,
+      // 截图 / clip 是**可选媒体**：base64 坏了就当没这个媒体（降级到截图/文本卡），
+      // 绝不 throw 把整张卡 400 掉——只有 fields 缺失才是真正的坏请求。
+      screenshotBytes: _tryDecodeBase64(json['screenshotBase64']),
+      clipBytes: _tryDecodeBase64(json['clipBase64']),
       clipDurationMs: (json['clipDurationMs'] as num?)?.round(),
     );
+  }
+
+  /// 容错 base64 解码：非字符串/空/格式错都返回 null（媒体缺失即降级，不抛异常）。
+  static Uint8List? _tryDecodeBase64(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    try {
+      return base64Decode(value);
+    } on FormatException {
+      return null;
+    }
   }
 }

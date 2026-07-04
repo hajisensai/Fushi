@@ -90,32 +90,50 @@ ImmersionMiningRequest buildImmersionRequest(
 
 /// TODO-1000：把浏览器扩展在播放中录到的字幕片段（webm/mp4 字节）用 ffmpeg 转 GIF + 抽音频，
 /// 组成 [ImmersionCaptureResult]（Netflix 唯一「不回放」的 GIF 来源）。复用已验证的
-/// [extractClipGifViaFfmpeg] / [extractAudioSegmentViaFfmpeg]（片段整段 0..durationMs）。
+/// [extractClipGifViaFfmpeg] / [extractAudioSegmentViaFfmpeg]。
 /// 转码失败（黑帧/无音轨/ffmpeg 不可用）返回 error，seam 降级为截图卡。
+///
+/// 时间窗（均可选，全 null 时保持旧行为「整段 0..durationMs」，不破坏现有集成测试）：
+/// - [windowStartMs]/[windowEndMs]：段内**句子时间窗**偏移（对齐整句）。给了就用它做音频窗
+///   （GIF 默认也用它），没给回落到整段。
+/// - [gifEndMs]：GIF 单独的收口点（收到「用户首次查词交互」前 → 帧里无鼠标/弹窗），音频仍到
+///   [windowEndMs]（整句结束）。null → GIF 与音频同窗。
 Future<ImmersionCaptureResult> transcodeClipToCapture(
   Uint8List clipBytes, {
   required int durationMs,
   required MiningMediaCompression compression,
   required String tempDir,
+  int? windowStartMs,
+  int? windowEndMs,
+  int? gifEndMs,
 }) async {
   final Directory dir = Directory('$tempDir/nf_clip_${clipBytes.length}');
   await dir.create(recursive: true);
   try {
     final File clip = File('${dir.path}/clip.webm');
     await clip.writeAsBytes(clipBytes, flush: true);
-    final int end = durationMs > 0 ? durationMs : 6000;
+    final int fallbackEnd = durationMs > 0 ? durationMs : 6000;
+    // 音频窗：给了段内窗就用它，否则整段。
+    final int audioStart =
+        (windowStartMs != null && windowStartMs >= 0) ? windowStartMs : 0;
+    final int audioEnd = (windowEndMs != null && windowEndMs > audioStart)
+        ? windowEndMs
+        : fallbackEnd;
+    // GIF 窗：起点同音频起点；终点优先 gifEndMs（收口到查词前），否则同音频窗。
+    final int gifEnd =
+        (gifEndMs != null && gifEndMs > audioStart) ? gifEndMs : audioEnd;
     final String? gifPath = await extractClipGifViaFfmpeg(
       inputPath: clip.path,
-      startMs: 0,
-      endMs: end,
+      startMs: audioStart,
+      endMs: gifEnd,
       outputPath: '${dir.path}/clip.gif',
       fps: compression.gifFps,
       width: compression.gifWidth,
     );
     final String? audioPath = await extractAudioSegmentViaFfmpeg(
       inputPath: clip.path,
-      startMs: 0,
-      endMs: end,
+      startMs: audioStart,
+      endMs: audioEnd,
       outputPath: '${dir.path}/clip.aac',
       audioChannels: compression.audioChannels,
       audioBitrate: compression.audioBitrate,

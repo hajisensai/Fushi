@@ -16,17 +16,25 @@ import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 
 /// `POST /api/lookup/dictionary` 的响应体。[body] 是已解析的 JSON Map。
 /// term 为空 → 返回空结果（与既有契约一致，不算错误）。
+///
+/// BUG-530：可选 [themeColorsProvider] 返回当前 app 主题的 CSS 变量 Map（`--md-*` /
+/// `--hibiki-popup-*` / `--dict-columns`），随响应放进 `theme` 字段下发。浏览器扩展
+/// content.js 读 `resp.data.theme` 并 `setProperty` 到弹窗容器 → 弹窗实时跟随用户主题
+/// （改主题下次查词即变），无需重装扩展。null（未注入）时不带 `theme` 字段（向后兼容）。
 Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   Map<String, dynamic> body, {
   required HibikiRemoteLookupService lookup,
   HibikiRemoteHistoryService? history,
+  Map<String, String> Function()? themeColorsProvider,
 }) async {
+  final Map<String, String>? theme = themeColorsProvider?.call();
   final String term = body['term']?.toString() ?? '';
   if (term.trim().isEmpty) {
     return <String, dynamic>{
       'type': 'dictionaryResult',
       'result': null,
       'popupJson': null,
+      if (theme != null) 'theme': theme,
     };
   }
   final bool wildcards = body['wildcards'] as bool? ?? false;
@@ -43,6 +51,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     'type': 'dictionaryResult',
     'result': result == null ? null : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
+    if (theme != null) 'theme': theme,
   };
 }
 
