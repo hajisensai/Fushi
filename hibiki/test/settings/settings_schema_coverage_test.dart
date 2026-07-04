@@ -43,6 +43,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Design System': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
+  // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
+  // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
+  // notifyReaderLayoutChanged 需活 reader/WebView 重排），无适用 T4 探针；合并语义/
+  // charOffset 不变/spread 优先由专项纯函数测试守住，渲染效果需真机验。
+  'reading/Merge illustration pages into text':
+      'test/epub/epub_spread_map_test.dart: mergeImagePages absorb/spread-priority/charOffset (reader layout effect needs live WebView, DEVICE for render)',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗每行词典数（实验性）。焦点遍历能切到滑块并写穿 DB
