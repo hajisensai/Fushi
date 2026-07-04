@@ -1,9 +1,28 @@
 ## BUG-535 · Android 视频无画面(vo=null/texture not-created)
 - **报告**：2026-07-03（用户：RMX3085 / Android 11 / app 1.0.1-debug.6411）
 - **真实性**：✅ 真 bug（Android 纹理握手从未完成）。根因路径见下。
-- **[x] ① 根因定位 + 定向诊断（未一步根治，见说明）** — 提交 <PENDING>
-- **[x] ② 源码扫描守卫测试** — `hibiki/test/media/video/video_noframe_diag_guard_test.dart`
-- **备注**：
+- **[x] ① 根因修复：manifest 关闭 SurfaceControl 后端（待真机验收）** — 提交 <PENDING>
+- **[x] ② 源码扫描守卫测试** — `hibiki/test/media/video/video_noframe_diag_guard_test.dart` +
+  `hibiki/test/android/manifest_surface_control_guard_test.dart`（守卫 EnableSurfaceControl=false）
+- **备注**：诊断埋点已落 develop 794c943bb 坐实「vo=null 永久 / 纹理握手从未完成」；本次
+  加根因修复 `EnableSurfaceControl=false`（见下「根因修复」段）。无安卓真机，真机验收由 owner 后续安排。
+
+### 根因修复（TODO-1110）
+在 `hibiki/android/app/src/main/AndroidManifest.xml` 加
+`<meta-data android:name="io.flutter.embedding.android.EnableSurfaceControl" android:value="false" />`。
+
+- **为何是根因层**：无画面卡死在「SurfaceProducer 首次 `onSurfaceAvailable` 从未触发 → native
+  `wid` 永为 0 → widListener 永远 `vo=null`」。Flutter 的 SurfaceControl 合成路径在这批 Android 11
+  ROM/GPU 驱动上正是让 SurfaceProducer 表面握手不触发的诱因（flutter/flutter#156488、#162902）。
+  关掉 SurfaceControl 让 SurfaceProducer 回落到经典 ImageReader/SurfaceTexture 支撑路径——表面
+  同步可用，`wid` 立刻非 0 → `vo=gpu` 生效 → 画面出。
+- **为何不是掩盖补丁**：这是 Flutter 官方文档化的渲染后端选择开关（非延迟/重试/吞异常/特例分支），
+  对已正常出画的设备无功能差异（只是不用较新的 SurfaceControl 合成路径，走最广兼容的旧表面路径）。
+- **Flutter 3.44 已含 PR#160937**（onSurfaceCleanup 生命周期修复），故 destroy/recreate 竞态已解；
+  剩余的「首开就无画面」正是 SurfaceControl 后端在该机型的表面握手缺陷 → 用该 flag 规避到旧后端。
+- **待真机验收判据**：装带此 flag 的 debug 包到 RMX3085，开原 mkv：logcat 应出
+  `VideoOutput: onSurfaceAvailable` + `newGlobalRef` 且 `[VIDEO-DIAG] texture id changed: <非空>`、
+  `vo=gpu`、画面出。若仍 `texture id 停 null`，则需进一步试 `EnableImpeller=false` 或降级 native 纹理路径。
 
 ### 现象（用户诊断日志）
 解码链完全正常：`first frame decoded: 1920x1080` / `videoParams w=1920 h=1080

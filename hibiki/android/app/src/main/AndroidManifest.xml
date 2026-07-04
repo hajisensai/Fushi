@@ -214,6 +214,20 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths" />
         </provider>
+        <!-- TODO-1110 / BUG-535：禁用 Flutter 的 Android SurfaceControl 后端。
+             media_kit_video 1.3.0 起把 Android 纹理从 SurfaceTextureEntry 迁到
+             TextureRegistry.SurfaceProducer。在部分 Android 11 ROM/GPU 驱动
+             （如 RMX3085/realme 8）上，SurfaceControl 支撑的 SurfaceProducer 首次
+             onSurfaceAvailable 回调不触发 → native wid 永为 0 → android_video_controller
+             widListener 永远设 vo=null → mpv 拿不到 GL surface（current-vo/gpu-api 全空、
+             texture id 停 null）→ 解码出帧但无画面（黑屏）。参见 flutter/flutter#156488、
+             #162902（SurfaceProducer 表面生命周期），媒体渲染最广兼容路径是关掉
+             SurfaceControl，让 SurfaceProducer 回落到经典 ImageReader/SurfaceTexture 支撑
+             （表面同步可用）。这是 Flutter 官方文档化的后端选择开关，非绕过/掩盖补丁；
+             对已正常出画的设备无功能差异（只是不用较新的 SurfaceControl 合成路径）。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableSurfaceControl"
+            android:value="false" />
         <!-- Don't delete the meta-data below.
                 This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
