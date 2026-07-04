@@ -1,0 +1,6 @@
+## BUG-539 · live sync 日文书名上报 latin1 编码崩
+- **报告**：2026-07-04（用户：TODO-1123 错误 B）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/sync/hibiki_client_sync_backend.dart:792/834/1021/1210`（旧行号）。live sync 的 4 处 PUT 用 `req.headers.set('Content-Type', 'application/json')`（缺 charset）+ `req.write(jsonEncode(...))`。`dart:io` 的 `HttpClientRequest` 默认 IOSink 编码是 **latin1**，只有 Content-Type 带 `charset=utf-8` 才切 UTF-8；因此 body 里含日文书名（码点 >255，如 `謎解きはディナーのあとで`）时，在写入阶段就抛 `Invalid argument (string): Contains invalid characters.`，请求还没发出就崩。触发面：聚合上报（aggregate PUT，body 含 `ReadingStatRecord.title` 等书名）、书进度 / 有声书断点 / 视频断点上报。参照正确写法：`hibiki/lib/src/sync/webdav_ops.dart` 的 `request.add(utf8.encode(propfindBody))`（Content-Type 带 charset=utf-8）。
+- **[x] ① 已修复** — 本轮提交（分支 `fix-1123b-sync-utf8`）：4 处 PUT 全改为 Content-Type `application/json; charset=utf-8` + `req.add(utf8.encode(jsonEncode(...)))`（字节级写，绕开 latin1 默认编码器）。不吞异常。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/sync_backend_utf8_body_test.dart`：起真实 `HibikiSyncServer`，让 client 的 `putRemoteAggregate`（body 含日文 title）与 `putRemoteBookProgress`（日文 bookKey）PUT 路径发出，服务端以 UTF-8 解码 body 并存进 fake 库，断言日文 title/进度完整往返。已验证旧代码复现失败（aggregate 用例抛 `Invalid argument (string): Contains invalid characters.`），修复后两用例全绿。
+- **备注**：TODO-1123 错误 B。修复覆盖全部 4 处 JSON body PUT（aggregate + book progress + audiobook position + video position），非单点补丁。

@@ -453,6 +453,94 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsWidgets);
   });
 
+  // TODO-1126 / BUG-541: 窄窗下动作区按内容自然宽（不再与标题等 flex 五五均分右半
+  // 幅）。旧实现动作视口恒占页头右半幅，窄窗时 4 个图标自然宽超右半幅 →
+  // reverse:true 把最左侧 Icons.add 裁到视口外（用户看到像个「-」）。守卫：4 个
+  // 动作图标（含最左 add）在 300 / 208 窄宽下全部可见、水平落在页头视口内、不抛
+  // RenderFlex overflow。
+  Future<void> pumpNarrowHeader(
+    WidgetTester tester, {
+    required double width,
+  }) async {
+    await tester.pumpWidget(
+      buildSubject(
+        SizedBox(
+          width: width,
+          child: HibikiPageHeader(
+            title: '视频',
+            padding: EdgeInsets.zero,
+            actions: <Widget>[
+              HibikiIconButton(
+                tooltip: 'Add',
+                icon: Icons.add,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Import',
+                icon: Icons.folder_copy_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Collections',
+                icon: Icons.collections_bookmark_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Statistics',
+                icon: Icons.bar_chart_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  for (final double narrowWidth in <double>[300, 208]) {
+    testWidgets(
+      'HibikiPageHeader keeps leftmost add action visible at ${narrowWidth}px',
+      (WidgetTester tester) async {
+        await pumpNarrowHeader(tester, width: narrowWidth);
+
+        // 无 RenderFlex overflow（旧实现窄窗会抛 OVERFLOWING）。
+        expect(tester.takeException(), isNull);
+
+        final Rect headerRect = tester.getRect(find.byType(HibikiPageHeader));
+
+        // 4 个动作图标都存在（未被折叠成菜单或丢失）。
+        for (final IconData icon in <IconData>[
+          Icons.add,
+          Icons.folder_copy_outlined,
+          Icons.collections_bookmark_outlined,
+          Icons.bar_chart_outlined,
+        ]) {
+          expect(find.byIcon(icon), findsOneWidget, reason: '$icon 应存在');
+        }
+
+        // 回归目标：最左侧 Icons.add 必须完整落在页头视口内（旧实现
+        // 把它裁到右半幅视口的左缘之外，用户看到像个「-」）。
+        // 用 tester.getRect 拿到的是图标的真实绘制位置；不被裁则它落在
+        // [headerRect.left, headerRect.right] 区间内。
+        final Rect addRect = tester.getRect(find.byIcon(Icons.add));
+        expect(
+          addRect.left,
+          greaterThanOrEqualTo(headerRect.left - 0.5),
+          reason: '最左 Icons.add 左缘不得被裁到页头视口左侧之外',
+        );
+        expect(
+          addRect.right,
+          lessThanOrEqualTo(headerRect.right + 0.5),
+          reason: '最左 Icons.add 必须完整落在页头视口内',
+        );
+      },
+    );
+  }
+
   // TODO-667: 手机竖排 / 窄窗（compact 尺寸类，宽 < 600）下页头顶距应收到 `page`
   // (16)，而桌面 / 平板（>= 600）保持 `page + 8`(24)。验证三档行为，并守住手机首页
   // 书架标题不再离顶部多空一行。

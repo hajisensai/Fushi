@@ -2080,5 +2080,11 @@
   "sync_paired_peer_unknown": "未知设备",
   "video_setting_mpv_sigmoid_hint": "S 形曲线上采样可减少振铃，但会增加显卡负担。为性能默认关闭；想要更锐利的放大画质可开启。",
   "remove_from_series_confirm": "此书将移出此系列并放回书架，不会删除书籍。",
-  "removed_from_series": "已移出系列"
+  "removed_from_series": "已移出系列",
+  "shortcut_gamepad_brand_label": "手柄按钮样式",
+  "shortcut_gamepad_brand_xbox": "Xbox",
+  "shortcut_gamepad_brand_playstation": "PlayStation",
+  "shortcut_gamepad_brand_switch": "Nintendo Switch",
+  "global_context_capture": "抓取选中文本上下文",
+  "global_context_capture_hint": "从前台应用读取选区周围文本，在查词弹窗显示当前句（仅 Windows）"
 }

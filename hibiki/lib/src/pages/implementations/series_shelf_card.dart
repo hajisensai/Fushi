@@ -8,14 +8,18 @@ import 'package:hibiki/utils.dart';
 /// first volume, count badge = members, name footer). Same slot aspect ratio as
 /// a normal book card so it mixes inline with loose books. Tap -> series detail.
 ///
-/// Generic over the cover widget so both the book shelf and the video library
-/// reuse it (each passes its own first-volume cover widget; this card adds only
-/// the stack affordance + count badge + name, never re-renders the cover).
+/// Generic over the cover widgets so both the book shelf and the video library
+/// reuse it (each passes its own member-cover widget list; this card adds only
+/// the stacked-pile affordance + count badge + name, never re-renders a cover).
+///
+/// TODO-1125 A：堆叠样式——[covers] 传前 N 张成员封面（首卷在 first，最前层），
+/// 后 1~2 张真实成员封面偏移 + 缩小 + 描边/阴影铺在后层，读作「一摞书」（苹果式）。
+/// 成员不足 2 张优雅降级为单封面（无堆叠）。
 class SeriesShelfCard extends StatelessWidget {
   const SeriesShelfCard({
     required this.name,
     required this.itemCount,
-    required this.cover,
+    required this.covers,
     required this.onTap,
     required this.slotAspectRatio,
     this.focusId,
@@ -28,7 +32,10 @@ class SeriesShelfCard extends StatelessWidget {
 
   final String name;
   final int itemCount;
-  final Widget cover;
+
+  /// 系列前 N 张成员封面（N≤3），[covers].first 为主封面（首卷，最前层），其余
+  /// 作为后层「露出后面几本书」的堆叠视觉。为空则不渲染封面（防御性，调用方保证非空）。
+  final List<Widget> covers;
   final VoidCallback onTap;
   final double slotAspectRatio;
 
@@ -71,15 +78,10 @@ class SeriesShelfCard extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: <Widget>[
-                      // Stack affordance: a back layer peeking out top/right to
-                      // read as a pile of volumes folded into one card.
-                      Positioned(
-                        top: 0,
-                        left: 6,
-                        right: 0,
-                        bottom: 8,
-                        child: _stackBackLayer(theme, tokens),
-                      ),
+                      // TODO-1125 A：堆叠样式——后层铺真实成员封面（露出后面几本书），
+                      // 首卷主封面在最前。成员不足 2 张时 _backCovers 为空 → 只画主
+                      // 封面，视觉退回单卡（never break 单封面书架）。
+                      ..._buildBackLayers(theme, tokens),
                       Positioned(
                         top: 4,
                         left: 0,
@@ -88,7 +90,11 @@ class SeriesShelfCard extends StatelessWidget {
                         child: HibikiCard(
                           padding: EdgeInsets.zero,
                           margin: EdgeInsets.zero,
-                          child: ClipRect(child: cover),
+                          child: ClipRect(
+                            child: covers.isNotEmpty
+                                ? covers.first
+                                : const SizedBox.shrink(),
+                          ),
                         ),
                       ),
                       PositionedDirectional(
@@ -171,14 +177,55 @@ class SeriesShelfCard extends StatelessWidget {
     return card;
   }
 
-  Widget _stackBackLayer(ThemeData theme, HibikiDesignTokens tokens) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.surfaces.overlay,
-        borderRadius: tokens.radii.cardRadius,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-    );
+  /// TODO-1125 A：后层堆叠封面。取 [covers] 里主封面之后的 1~2 张成员封面，各自
+  /// 向右下略偏移 + 缩小 + 描边/阴影铺在主封面后面，读作「一摞书」（苹果式）。
+  ///
+  /// 越靠后的成员偏移越大、越小（离读者越远），且先渲染（Stack 底层），故主封面最前。
+  /// 成员不足 2 张（[covers].length < 2）→ 返回空列表，视觉退回单封面无堆叠。
+  List<Widget> _buildBackLayers(ThemeData theme, HibikiDesignTokens tokens) {
+    if (covers.length < 2) return const <Widget>[];
+    // 最多两张后层（第 2、3 个成员封面）；离读者越远层级越靠后（先绘制）。
+    final List<Widget> back = covers.skip(1).take(2).toList(growable: false);
+    final List<Widget> layers = <Widget>[];
+    for (int i = back.length - 1; i >= 0; i--) {
+      // depth 1 = 紧贴主封面的一层；depth 2 = 更远一层。偏移/缩小随 depth 递增。
+      final int depth = i + 1;
+      final double dx = 6.0 * depth;
+      final double dy = 3.0 * depth;
+      final double scale = 1.0 - 0.05 * depth;
+      layers.add(Positioned(
+        // 稳定 Key，供测试精确统计后层数量（与主封面 / app 内部 Transform 区分）。
+        key: ValueKey<String>('series-stack-back-$depth'),
+        top: 4 + dy,
+        left: dx,
+        right: 6,
+        bottom: 0,
+        child: IgnorePointer(
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.topLeft,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: tokens.radii.cardRadius,
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 4,
+                    offset: const Offset(1, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: tokens.radii.cardRadius,
+                child: back[i],
+              ),
+            ),
+          ),
+        ),
+      ));
+    }
+    return layers;
   }
 
   Widget _countBadge(ThemeData theme, HibikiDesignTokens tokens) {

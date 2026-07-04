@@ -48,6 +48,7 @@ String buildFrameSettingsJs({
   required AppModel appModel,
   required DictionarySearchResult result,
   bool hasChildPopup = false,
+  String sentence = '',
 }) {
   final String settingsJs = buildPopupSettingsJs(
     appModel: appModel,
@@ -77,6 +78,7 @@ String buildFrameSettingsJs({
     $kPopupTopPullReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
+    window.__globalLookupSentence = ${jsonEncode(sentence)};
     window.renderPopup && window.renderPopup();
 ''';
 }
@@ -94,10 +96,16 @@ class GlobalLookupFramePayload {
     required this.result,
     this.anchorRect,
     this.isVertical = false,
+    this.sentence = '',
   });
 
   final GlobalLookupFrame frame;
   final DictionarySearchResult result;
+
+  /// TODO-1030 M0 — the current sentence to show as a context banner in this
+  /// card (only the ROOT frame carries it; empty = no banner). Body text stays
+  /// inside the frame realm and is never logged.
+  final String sentence;
 
   /// Screen-space CSS px anchor rect (selection / clicked word). Null when the
   /// caller has no anchor yet (placeholder cascade offset is used instead).
@@ -201,6 +209,7 @@ String buildStackRenderScript({
       context: context,
       appModel: appModel,
       result: p.result,
+      sentence: p.sentence,
       // TODO-1067 (子4) — a frame has a child popup iff it is not the deepest
       // (last) frame in the stack, mirroring the in-app `index < entries.length
       // - 1` derivation (BUG-434). Drives popup.js's __hasChildPopup guard so

@@ -25,6 +25,7 @@ add_executable(${BINARY_NAME} WIN32
   "external_video_handoff.cpp"
   "flutter_window.cpp"
   "floating_lyric_window.cpp"
+  "foreground_selection.cpp"
   "global_lookup_window.cpp"
   "main.cpp"
   "utils.cpp"
@@ -60,6 +61,10 @@ target_link_libraries(${BINARY_NAME} PRIVATE
 target_link_libraries(${BINARY_NAME} PRIVATE
   ${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/build/native/Microsoft.Windows.ImplementationLibrary.targets)
 target_link_libraries(${BINARY_NAME} PRIVATE Shlwapi.lib)
+# uiautomationcore: the UI Automation COM GUIDs (CLSID_CUIAutomation /
+# IID_IUIAutomation*) used by foreground_selection.cpp to read the foreground
+# app's text selection + surrounding context (TODO-1030 M0 global lookup).
+target_link_libraries(${BINARY_NAME} PRIVATE uiautomationcore.lib)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 

@@ -1,5 +1,22 @@
 import 'package:hibiki_audio/hibiki_audio.dart';
 
+/// Default head padding (ms) prepended to a mining audio clip.
+///
+/// Human speech onset (attack of the first mora) is short, so a small lead-in is
+/// enough to keep the very first sound from being clipped. Kept intentionally
+/// smaller than [kMiningTailPadMs] because a long head easily bleeds the previous
+/// sentence's tail into the clip. Phase 0: a constant (not yet a setting) so the
+/// intent and the value stay in one place.
+const int kMiningHeadPadMs = 120;
+
+/// Default tail padding (ms) appended to a mining audio clip.
+///
+/// Sentence endings decay slowly (trailing vowels, particles, breath), so the
+/// tail needs more room than the head to avoid a hard cut that swallows the final
+/// mora. Larger than [kMiningHeadPadMs] for that reason. Clamped against the next
+/// same-file cue so it never bleeds the following sentence's onset in.
+const int kMiningTailPadMs = 200;
+
 /// Resolves the audio range used when exporting sentence audio for Anki.
 ///
 /// The lookup cue can be only one fragment inside the selected sentence. Prefer
@@ -58,7 +75,103 @@ AudioPlaybackRange? miningSentenceAudioRange({
   // audioFileIndex -- never fabricates a cross-file/cross-chapter range -- so
   // genuinely cross-file selections still fall through to the caller's
   // single-file/null routing untouched.
-  return _shiftRange(_ensurePositiveDuration(baseRange, cues), delayMs);
+  final AudioPlaybackRange positiveRange =
+      _ensurePositiveDuration(baseRange, cues);
+  // Phase 0 (TODO-1115): widen the exported clip by a small head/tail padding so
+  // the reader's first-mora onset and last-mora decay are not hard-cut, WITHOUT
+  // bleeding an adjacent sentence in. Padding is clamped against the neighbouring
+  // same-file cue boundaries in the unshifted timebase; the A/V [delayMs] is then
+  // applied to the already-padded window (same as before). Only this mining
+  // chokepoint pads — normal playback follow uses a different path and is
+  // untouched.
+  final AudioPlaybackRange paddedRange = padSentenceRange(
+    positiveRange,
+    cues: cues,
+    headPadMs: kMiningHeadPadMs,
+    tailPadMs: kMiningTailPadMs,
+  );
+  return _shiftRange(paddedRange, delayMs);
+}
+
+/// Widens [range] by up to [headPadMs] before its start and [tailPadMs] after its
+/// end, clamped against the nearest neighbouring cue in the SAME audio file so the
+/// padding never runs into an adjacent sentence.
+///
+/// Pure and side-effect free (unit-testable). Never changes [range.audioFileIndex]
+/// and always returns a range with `endMs > startMs`.
+///
+/// Head: `startMs` moves back by [headPadMs] but is floored at
+/// `max(0, endMs of the closest same-file cue that ends at/before the start)`.
+/// When there is no such cue (first sentence in the file) the floor is 0, so the
+/// clip can reach into the leading silence but never below the file origin.
+///
+/// Tail: `endMs` moves forward by [tailPadMs] but is capped at the `startMs` of
+/// the closest same-file cue that starts at/after the end. When there is no such
+/// cue (last sentence in the file) the tail is uncapped here — ffmpeg's `-t`
+/// naturally stops at end-of-file, so over-running the real duration is harmless.
+///
+/// [headPadMs]/[tailPadMs] may be 0 (no padding on that edge); negative values are
+/// treated as 0.
+AudioPlaybackRange padSentenceRange(
+  AudioPlaybackRange range, {
+  required List<AudioCue> cues,
+  required int headPadMs,
+  required int tailPadMs,
+}) {
+  final int head = headPadMs > 0 ? headPadMs : 0;
+  final int tail = tailPadMs > 0 ? tailPadMs : 0;
+  if (head == 0 && tail == 0) {
+    return range;
+  }
+
+  // Head floor: the latest same-file cue boundary that does NOT belong to this
+  // sentence (ends at or before our start). Guarantees we never swallow the
+  // previous sentence's tail. 0 when there is no earlier cue (leading silence).
+  int headFloor = 0;
+  // Tail cap: the earliest same-file cue boundary strictly after our end (the
+  // next sentence's onset). No cap when nothing follows in this file.
+  int? tailCap;
+  for (final AudioCue cue in cues) {
+    if (cue.audioFileIndex != range.audioFileIndex) {
+      continue;
+    }
+    if (cue.endMs <= range.startMs && cue.endMs > headFloor) {
+      headFloor = cue.endMs;
+    }
+    if (cue.startMs >= range.endMs) {
+      if (tailCap == null || cue.startMs < tailCap) {
+        tailCap = cue.startMs;
+      }
+    }
+  }
+
+  int paddedStart = range.startMs - head;
+  if (paddedStart < headFloor) {
+    paddedStart = headFloor;
+  }
+  if (paddedStart < 0) {
+    paddedStart = 0;
+  }
+
+  int paddedEnd = range.endMs + tail;
+  if (tailCap != null && paddedEnd > tailCap) {
+    paddedEnd = tailCap;
+  }
+
+  // Never let padding collapse the window (e.g. degenerate neighbours touching
+  // the range on both sides). Keep at least the original span.
+  if (paddedStart > range.startMs) {
+    paddedStart = range.startMs;
+  }
+  if (paddedEnd < range.endMs) {
+    paddedEnd = range.endMs;
+  }
+
+  return AudioPlaybackRange(
+    audioFileIndex: range.audioFileIndex,
+    startMs: paddedStart,
+    endMs: paddedEnd,
+  );
 }
 
 /// Guarantees [range].endMs > [range].startMs. A zero/negative-duration range

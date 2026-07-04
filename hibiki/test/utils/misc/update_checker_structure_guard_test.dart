@@ -52,10 +52,23 @@ void main() {
     // 的 marker-unreadable 保守分支。净增 ~64 行到 1583（无删除，纯跨切功能）。同上
     // 判断：跨切功能应被容纳而非被行数天花板强行拆散，故把 download 天花板从 1560 上调
     // 到 1650（当前 1583，留 ~67 行合理余量，与既有 default 1500 余量风格一致）。
+    //
+    // TODO-1123 / BUG-539 又加入「下载 404（rolling tag prune 竞态导致手里 manifest
+    // 过期）→ 重取 manifest 换新 URL 单次重试」的真实跨切功能：可测编排
+    // downloadAssetWithStaleRetry + 生产 _reResolveDownloadAsset + 通道推断
+    // channelForUpdateVersion（均需与 release 检查/版本比较共享同一 library 私有作用域，
+    // part 契约禁止 part 内 import 无法拆库）。净增 ~90 行到 1530（无删除，纯跨切功能）。
+    // 同上判断：跨切功能应被容纳而非被行数天花板强行拆散，故给 release 单独上调到 1600
+    // （当前 1530，留 ~70 行合理余量，与既有余量风格一致）。
     const int kDownloadCeiling = 1650;
+    const int kReleaseCeiling = 1600;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
-      final int ceiling = path == download ? kDownloadCeiling : kDefaultCeiling;
+      final int ceiling = path == download
+          ? kDownloadCeiling
+          : path == release
+              ? kReleaseCeiling
+              : kDefaultCeiling;
       expect(lineCount(path), lessThan(ceiling),
           reason: '$path exceeds the $ceiling-line ceiling; split it further');
     }

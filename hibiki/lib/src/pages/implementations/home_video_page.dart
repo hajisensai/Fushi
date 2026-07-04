@@ -45,6 +45,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
 import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
 
@@ -537,9 +538,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           ref,
     ];
     if (refs.isEmpty) return;
+    // TODO-1125 B：预填合集默认名——把选中视频标题经 parseVideoFilename 去集号得系列名，
+    // 再取最长公共前缀；推导为空则兜底 t.series_default_name（「新系列」）。
+    final Set<String> selectedUids = Set<String>.of(_selectedUids);
+    final List<String> memberSeries = <String>[
+      for (final VideoBookRow book in _visibleVideos)
+        if (selectedUids.contains(book.bookUid))
+          parseVideoFilename(book.title).series,
+    ];
+    final String defaultName = deriveSeriesDefaultName(
+      memberSeries,
+      fallback: t.series_default_name,
+    );
     final String? name = await showSeriesNameDialog(
       context: context,
       title: t.create_series,
+      initialName: defaultName,
     );
     if (name == null || !mounted) return;
     final HibikiDatabase db = ref.read(appProvider).database;
@@ -1618,11 +1632,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     final int seriesId = group.seriesId!;
     final SeriesRow? series = _seriesById[seriesId];
+    // TODO-1125 A：前 3 张成员封面做「露出后面几本书」的堆叠视觉（首卷 = 主封面）；
+    // 封面数据已在 group.items 里，无需额外查询，不足 3 张自动降级为单封面。
+    final List<Widget> covers = <Widget>[
+      for (final ShelfOrderingItem<VideoBookRow> it in group.items.take(3))
+        _buildCover(it.payload),
+    ];
     return SeriesShelfCard(
       name: series?.name ?? t.series,
       itemCount: group.items.length,
       slotAspectRatio: 280 / 200,
-      cover: _buildCover(group.coverItem.payload),
+      covers: covers,
       onTap: () => _openSeriesDetail(seriesId, series?.name ?? t.series),
     );
   }

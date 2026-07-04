@@ -896,7 +896,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
     final int seriesId = group.seriesId!;
     final SeriesRow? series = _seriesById[seriesId];
-    final _ShelfBookSlot coverSlot = group.coverItem.payload;
+    // TODO-1125 A：前 3 张成员封面喂 SeriesShelfCard 做「露出后面几本书」的堆叠视觉
+    // （首卷在 first = 主封面；不足 3 张自动降级）。封面数据已在 group.items 里，无需
+    // 额外查询。
+    final List<Widget> covers = <Widget>[
+      for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(3))
+        _slotCover(it.payload, epubCoverUrisByBookKey),
+    ];
     return SeriesShelfCard(
       name: series?.name ?? t.series,
       itemCount: group.items.length,
@@ -904,7 +910,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       // Gamepad/keyboard focus id, same 'reader-shelf-<kind>-<id>' scheme as the
       // loose book cards so a folded series is reachable by D-pad.
       focusId: HibikiFocusId('reader-shelf-series-$seriesId'),
-      cover: _slotCover(coverSlot, epubCoverUrisByBookKey),
+      covers: covers,
       onTap: () => _openSeriesDetail(seriesId, series?.name ?? t.series),
     );
   }

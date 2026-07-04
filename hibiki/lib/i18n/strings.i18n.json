@@ -2080,5 +2080,11 @@
   "sync_paired_peer_unknown": "Unknown device",
   "video_setting_mpv_sigmoid_hint": "Sigmoid-curve upscaling reduces ringing but costs GPU. Off by default for performance; turn on if you want sharper upscaling.",
   "remove_from_series_confirm": "This book will be removed from the series and returned to the shelf. It won't be deleted.",
-  "removed_from_series": "Removed from series"
+  "removed_from_series": "Removed from series",
+  "shortcut_gamepad_brand_label": "Gamepad button style",
+  "shortcut_gamepad_brand_xbox": "Xbox",
+  "shortcut_gamepad_brand_playstation": "PlayStation",
+  "shortcut_gamepad_brand_switch": "Nintendo Switch",
+  "global_context_capture": "Capture selection context",
+  "global_context_capture_hint": "Read surrounding text from the foreground app to show the current sentence (Windows only)"
 }

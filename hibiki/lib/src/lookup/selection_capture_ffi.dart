@@ -16,6 +16,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
+import 'package:hibiki/src/lookup/sentence_extraction.dart';
 
 typedef _KeybdEventNative = Void Function(
     Uint8 bVk, Uint8 bScan, Uint32 dwFlags, IntPtr dwExtraInfo);
@@ -36,6 +37,13 @@ abstract final class SelectionCapture {
   static const int _vkRWin = 0x5C;
   static const int _vkC = 0x43;
   static const int _keyUp = 0x0002; // KEYEVENTF_KEYUP
+
+  // TODO-1030 M0 — the native UI Automation foreground-selection context
+  // channel (flutter_window.cpp RegisterForegroundSelectionChannel). Only used
+  // on Windows; a MissingPluginException / any failure falls back to the
+  // clipboard capture below.
+  static const MethodChannel _foregroundSelectionChannel =
+      MethodChannel('app.hibiki.reader/foreground_selection');
 
   /// Saves the clipboard, clears it, injects a clean Ctrl+C so the foreground
   /// app copies its current selection, reads it back, then restores the
@@ -70,9 +78,69 @@ abstract final class SelectionCapture {
     if (oldText != null && oldText.isNotEmpty && captured != oldText) {
       await Clipboard.setData(ClipboardData(text: oldText));
     }
-    glog('capture: result="${captured ?? '<null>'}" '
-        '(oldLen=${oldText?.length ?? 0})');
+    // 隐私：绝不把选中/剪贴板正文写进 glog——只记长度与成功/失败。
+    glog('capture: clipboard ok=${captured != null && captured.isNotEmpty} '
+        'len=${captured?.length ?? 0} (oldLen=${oldText?.length ?? 0})');
     return captured;
+  }
+
+  /// TODO-1030 M0 — captures the foreground app's current selection PLUS its
+  /// surrounding context via Windows UI Automation, then trims it to the one
+  /// sentence the selection sits in (Yomitan {sentence}-style). Returns a
+  /// [ForegroundSelectionContext] with the selected term, the current sentence
+  /// and the term's offset inside it; or null when UIA has nothing (no focused
+  /// text element, empty selection, non-Windows, or the native channel is
+  /// unavailable) so the caller falls back to [captureForegroundSelection].
+  ///
+  /// Off-loads the UIA call to a native worker thread (see the native channel);
+  /// this future completes when the marshalled result returns. Never throws:
+  /// any error resolves to null (never break the existing lookup path).
+  static Future<ForegroundSelectionContext?> captureForegroundContext({
+    int maxExpand = 600,
+  }) async {
+    if (!Platform.isWindows) {
+      glog('context: unsupported (windows=${Platform.isWindows})');
+      return null;
+    }
+    try {
+      final Map<Object?, Object?>? reply =
+          await _foregroundSelectionChannel.invokeMapMethod<Object?, Object?>(
+        'captureContext',
+        <String, Object?>{'maxExpand': maxExpand},
+      );
+      if (reply == null) {
+        glog('context: UIA returned null — fall back to clipboard');
+        return null;
+      }
+      final String contextText = reply['contextText']?.toString() ?? '';
+      final int selStart = (reply['selStart'] as num?)?.toInt() ?? 0;
+      final int selLen = (reply['selLen'] as num?)?.toInt() ?? 0;
+      final int elapsedMs = (reply['elapsedMs'] as num?)?.toInt() ?? -1;
+      if (contextText.isEmpty || selLen <= 0) {
+        glog('context: UIA empty (len=${contextText.length} selLen=$selLen '
+            'elapsedMs=$elapsedMs) — fall back');
+        return null;
+      }
+      final String selectedText =
+          contextText.substring(selStart, selStart + selLen);
+      final SentenceExtractionResult sentence =
+          extractSentenceAt(contextText, selStart, selLen);
+      // 隐私：绝不记录 contextText / sentence 正文——只记长度、耗时、成功。
+      glog('context: UIA ok ctxLen=${contextText.length} '
+          'selLen=$selLen sentenceLen=${sentence.sentence.length} '
+          'elapsedMs=$elapsedMs');
+      return ForegroundSelectionContext(
+        selectedText: selectedText,
+        sentence: sentence.sentence,
+        sentenceSelStart: sentence.selStart,
+        sentenceSelLen: sentence.selLen,
+      );
+    } catch (e) {
+      // MissingPluginException (channel not registered) or any native error:
+      // fall back to the clipboard capture. Log only the error TYPE.
+      glog('context: UIA EXCEPTION ${e.runtimeType} — fall back to clipboard');
+      return null;
+    }
   }
 
   /// Releases every modifier the user may be holding from the trigger hotkey,
@@ -92,4 +160,29 @@ abstract final class SelectionCapture {
     f(_vkC, 0, _keyUp, 0); // C up
     f(_vkControl, 0, _keyUp, 0); // Ctrl up
   }
+}
+
+/// TODO-1030 M0 — the result of a UIA foreground-selection context capture: the
+/// bare selected term plus the sentence it sits in and where the term lands
+/// inside that sentence. Pure data (no body text ever logged by the producer).
+class ForegroundSelectionContext {
+  const ForegroundSelectionContext({
+    required this.selectedText,
+    required this.sentence,
+    required this.sentenceSelStart,
+    required this.sentenceSelLen,
+  });
+
+  /// The originally-selected text (the query for the dictionary lookup).
+  final String selectedText;
+
+  /// The current sentence the selection sits in (trimmed). May equal
+  /// [selectedText] when the buffer had no sentence delimiters.
+  final String sentence;
+
+  /// The selection's start offset within [sentence] (UTF-16 code units).
+  final int sentenceSelStart;
+
+  /// The selection's length within [sentence] (UTF-16 code units).
+  final int sentenceSelLen;
 }

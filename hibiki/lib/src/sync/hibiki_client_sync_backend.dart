@@ -789,8 +789,8 @@ class HibikiClientSyncBackend extends SyncBackend
       'PUT',
       '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
     );
-    req.headers.set('Content-Type', 'application/json');
-    req.write(jsonEncode(progress.toJson()));
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(progress.toJson())));
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(
@@ -831,8 +831,8 @@ class HibikiClientSyncBackend extends SyncBackend
       'PUT',
       '$_apiBase/api/library/aggregate',
     );
-    req.headers.set('Content-Type', 'application/json');
-    req.write(jsonEncode(json));
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(json)));
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/aggregate');
@@ -1018,11 +1018,11 @@ class HibikiClientSyncBackend extends SyncBackend
       'PUT',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
     );
-    req.headers.set('Content-Type', 'application/json');
-    req.write(jsonEncode(<String, Object?>{
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(<String, Object?>{
       'positionMs': positionMs,
       'positionUpdatedAtMs': updatedAtMs,
-    }));
+    })));
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(
@@ -1207,11 +1207,11 @@ class HibikiClientSyncBackend extends SyncBackend
       'PUT',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position$query',
     );
-    req.headers.set('Content-Type', 'application/json');
-    req.write(jsonEncode(<String, Object?>{
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(<String, Object?>{
       'positionMs': positionMs,
       'positionUpdatedAtMs': updatedAtMs,
-    }));
+    })));
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');

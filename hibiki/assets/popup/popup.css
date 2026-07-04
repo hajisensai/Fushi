@@ -1070,3 +1070,21 @@ html.global-lookup .glossary-section > .category-body > .glossary-group {
    hibiki/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
    上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
    float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
+
+/* TODO-1030 M0 — app-external global-lookup sentence-context banner. Shows the
+   sentence the selected word sits in (captured via Windows UI Automation) above
+   the dictionary entries. Only rendered when window.__globalLookupSentence is
+   set (never for in-app popups). Uses the same injected theme vars as the rest
+   of the popup so it follows light/dark + ColorScheme. */
+.global-lookup-sentence {
+    margin: 0 0 8px 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface-variant, rgba(128, 128, 128, 0.12));
+    border-left: 3px solid var(--primary-color, #386A58);
+    color: var(--text-color-light1, #555555);
+    font-size: 0.85em;
+    line-height: 1.5;
+    word-break: break-word;
+    white-space: pre-wrap;
+}

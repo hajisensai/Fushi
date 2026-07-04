@@ -11,8 +11,10 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -20,6 +22,7 @@
 
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
+#include "foreground_selection.h"
 
 #pragma comment(lib, "windowscodecs.lib")
 
@@ -530,6 +533,7 @@ bool FlutterWindow::OnCreate() {
 
   RegisterFloatingLyricChannel();
   RegisterGlobalLookupChannel();
+  RegisterForegroundSelectionChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -652,6 +656,20 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
   return style;
 }
+
+// TODO-1030 M0 — private window message posting a completed foreground-selection
+// UIA capture (run on a worker thread) back to the UI thread, where the pending
+// Flutter MethodResult is completed. The LPARAM is a heap-owned
+// ForegroundSelectionPending* transferred to MessageHandler (which deletes it).
+constexpr UINT WM_FGSEL_CAPTURE_DONE = WM_APP + 3;
+
+// Ownership hand-off across the worker->UI thread boundary: the UIA result plus
+// the still-pending Flutter reply. Deleted by MessageHandler after replying.
+struct ForegroundSelectionPending {
+  ForegroundSelectionResult capture;
+  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result;
+  int64_t elapsed_ms = 0;
+};
 
 }  // namespace
 
@@ -931,6 +949,61 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
       });
 }
 
+// TODO-1030 M0 — Windows UIA foreground-selection context capture channel.
+// Dart (selection_capture_ffi.dart) calls `captureContext` when the global
+// lookup pref opts into context capture. The UIA call can block 50-200ms
+// cross-process, so it runs on a DETACHED worker thread; the completed result is
+// marshalled back to the UI thread via WM_FGSEL_CAPTURE_DONE, where the pending
+// Flutter reply is finished (MethodResult is not thread-safe). A failure returns
+// null so Dart falls back to the clipboard capture (never break userspace).
+void FlutterWindow::RegisterForegroundSelectionChannel() {
+  foreground_selection_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/foreground_selection",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  foreground_selection_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "captureContext") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const int max_expand =
+            IntFromValue(args, "maxExpand", kForegroundContextExpand);
+        const HWND hwnd = GetHandle();
+        // Move the pending reply onto the heap so the worker thread can own it
+        // until the UI thread completes it (via WM_FGSEL_CAPTURE_DONE).
+        auto* pending = new ForegroundSelectionPending();
+        pending->result = std::move(result);
+        std::thread([hwnd, max_expand, pending]() {
+          const LARGE_INTEGER t0 = [] {
+            LARGE_INTEGER v;
+            QueryPerformanceCounter(&v);
+            return v;
+          }();
+          pending->capture = CaptureForegroundSelectionContext(max_expand);
+          LARGE_INTEGER t1;
+          QueryPerformanceCounter(&t1);
+          LARGE_INTEGER freq;
+          QueryPerformanceFrequency(&freq);
+          pending->elapsed_ms = freq.QuadPart > 0
+              ? ((t1.QuadPart - t0.QuadPart) * 1000) / freq.QuadPart
+              : 0;
+          // Hand ownership to the UI thread. If PostMessage fails (window gone),
+          // reply null here and delete to avoid a leak / dangling result.
+          if (!PostMessage(hwnd, WM_FGSEL_CAPTURE_DONE, 0,
+                           reinterpret_cast<LPARAM>(pending))) {
+            pending->result->Success(flutter::EncodableValue());
+            delete pending;
+          }
+        }).detach();
+      });
+}
+
 void FlutterWindow::NotifySystemColorChanged() {
   // TODO-1092: 把「系统强调色/主题色已变」事件推给 Dart。WndProc 跑在 platform
   // 线程，InvokeMethod 可直接调用。channel 在 OnCreate 建好前（极早期消息）可能为
@@ -1039,6 +1112,33 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_FGSEL_CAPTURE_DONE: {
+      // TODO-1030 M0 — a worker-thread UIA capture finished; complete its
+      // pending Flutter reply here on the UI thread. On success return a
+      // {contextText, selStart, selLen} map; on failure return null so Dart
+      // falls back to the clipboard capture. NEVER log capture.text (privacy);
+      // only lengths / elapsed / ok are diagnostic-safe.
+      auto* pending =
+          reinterpret_cast<ForegroundSelectionPending*>(lparam);
+      if (pending != nullptr) {
+        if (pending->capture.ok) {
+          pending->result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("contextText"),
+               flutter::EncodableValue(pending->capture.text)},
+              {flutter::EncodableValue("selStart"),
+               flutter::EncodableValue(pending->capture.sel_start)},
+              {flutter::EncodableValue("selLen"),
+               flutter::EncodableValue(pending->capture.sel_len)},
+              {flutter::EncodableValue("elapsedMs"),
+               flutter::EncodableValue(
+                   static_cast<int>(pending->elapsed_ms))}}));
+        } else {
+          pending->result->Success(flutter::EncodableValue());
+        }
+        delete pending;
+      }
+      return 0;
+    }
     case WM_COPYDATA: {
       // TODO-904 P0 回归：第二实例转交「用 Hibiki 打开视频」的路径。解出 UTF-8 路径
       // （dwData magic 不匹配则 DecodeExternalVideoPath 返回空串，忽略非本协议消息），

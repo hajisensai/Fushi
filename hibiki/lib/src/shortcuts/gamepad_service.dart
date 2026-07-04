@@ -227,9 +227,20 @@ class GamepadService {
     required this.navigatorKey,
     this.registry,
     this.onPresenceChanged,
+    this.focusNavigationEnabled,
   });
 
   final GlobalKey<NavigatorState> navigatorKey;
+
+  /// TODO-1113 P3: reads whether the experimental focus-navigation layer is
+  /// currently enabled (the [HibikiFocusRoot] is mounted). When it is, a mouse
+  /// DOWN on a focus target carries directional focus there, so [_onPointerGlobal]
+  /// must NOT immediately drop the ring back to touch on that press — otherwise
+  /// the focus a click just placed would be invisible. Hover/move still hide the
+  /// ring (a mouse merely passing over must not light it — 保守方案 b). Null in
+  /// tests / when focus navigation is not wired: pointer events keep the old
+  /// unconditional touch behaviour.
+  final bool Function()? focusNavigationEnabled;
 
   /// TODO-728: fired when controller PRESENCE changes (true = a controller is
   /// active/in-use, false = none seen for [_presenceIdleTimeout]). The `gamepads`
@@ -572,6 +583,16 @@ class GamepadService {
         event is PointerHoverEvent ||
         event is PointerMoveEvent ||
         event is PointerPanZoomStartEvent) {
+      // TODO-1113 P3: when focus navigation is enabled, a mouse DOWN carries
+      // directional focus to the clicked target (HibikiFocusTarget), so the ring
+      // must stay lit on that press to show where focus landed. Hover/move/pan
+      // still hide it (a mouse merely passing over must not keep a ring — 保守
+      // 方案 b: no ring flicker for pure-mouse users). Everything else, and when
+      // focus navigation is off, keeps the old unconditional touch behaviour.
+      if (event is PointerDownEvent &&
+          (focusNavigationEnabled?.call() ?? false)) {
+        return;
+      }
       FocusManager.instance.highlightStrategy =
           FocusHighlightStrategy.alwaysTouch;
     }
