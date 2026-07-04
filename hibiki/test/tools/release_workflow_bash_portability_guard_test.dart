@@ -88,4 +88,42 @@ void main() {
           'else 的 if：if [ -n "\$X" ]; then echo "\$X"; fi（见 TODO-1129）。',
     );
   });
+
+  // TODO-1131：per-platform prune 过滤后，把本平台资产从 PLATFORM_ASSETS 中转回
+  // ASSET_NAMES 用 `ASSET_NAMES=("${PLATFORM_ASSETS[@]}")`。当本平台在 rolling
+  // release 上暂无资产（掉队 / 首发场景，正是本 fix 目标）时 PLATFORM_ASSETS 为
+  // 空数组，`("${empty[@]}")` 在 macOS bash 3.2（apple job）+ set -u 下报
+  // unbound variable 退 1。必须在该重赋值之前先用 `${#PLATFORM_ASSETS[@]}`（求长对
+  // 空数组安全）判空早退。本守卫锁定：两个 workflow 里每个 ASSET_NAMES 重赋值前
+  // 都得有对应的长度判空，防 3.2 复崩。
+  final releaseYml = File('${root.path}/.github/workflows/release.yml');
+  final reassignRe = RegExp(r'ASSET_NAMES=\("\$\{PLATFORM_ASSETS\[@\]\}"\)');
+  final guardRe = RegExp(r'\$\{#PLATFORM_ASSETS\[@\]\}"?\s*-eq\s*0');
+  for (final wf in [releaseYml, workflow]) {
+    test('${wf.uri.pathSegments.last} 的 PLATFORM_ASSETS 重赋值前必须先判空（防 macOS '
+        'bash 3.2 空数组 set -u 崩）', () {
+      expect(wf.existsSync(), isTrue, reason: '缺 ${wf.path}');
+      final content = wf.readAsStringSync();
+      final reassigns = reassignRe.allMatches(content).toList();
+      // 有 per-platform 过滤才需要守卫；无则跳过（不强制存在，避免过度耦合）。
+      if (reassigns.isEmpty) return;
+      for (final m in reassigns) {
+        // 只看重赋值之前一小段窗口（同一 prune 块内），避免上一块的判空替下一块
+        // 背书造成漏检。
+        final windowStart = m.start - 600 < 0 ? 0 : m.start - 600;
+        final before = content.substring(windowStart, m.start);
+        expect(
+          guardRe.hasMatch(before),
+          isTrue,
+          reason: '${wf.path} 在 `ASSET_NAMES=("\${PLATFORM_ASSETS[@]}")`（偏移 '
+              '${m.start}）之前没有 `[ "\${#PLATFORM_ASSETS[@]}" -eq 0 ]` 判空早退：'
+              '本平台在 rolling 上暂无资产时 PLATFORM_ASSETS 为空，`("\${empty[@]}")` '
+              '在 macOS bash 3.2（apple job）+ set -u 下报 unbound variable 退 1，'
+              '正好在本 fix 目标场景（掉队 / 首发平台）反向引入新崩点。请先 '
+              'if [ "\${#PLATFORM_ASSETS[@]}" -eq 0 ]; then echo ...; exit 0; fi '
+              '再重赋值（见 TODO-1131 / BUG-542）。',
+        );
+      }
+    });
+  }
 }

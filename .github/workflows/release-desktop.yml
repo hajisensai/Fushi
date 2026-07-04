@@ -439,11 +439,15 @@ jobs:
               *-windows-setup.exe) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
-          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
-          if [ "${#ASSET_NAMES[@]}" -eq 0 ]; then
+          # Check length BEFORE re-expanding the (possibly empty) array: on macOS
+          # bash 3.2 `("${empty[@]}")` under `set -u` is an unbound-variable error,
+          # and no-asset-for-this-platform is exactly the lagging / first-publish
+          # case this fix must handle gracefully. `${#arr[@]}` is safe on 3.2.
+          if [ "${#PLATFORM_ASSETS[@]}" -eq 0 ]; then
             echo "No Windows assets on $PUBLISH_TAG; nothing to prune."
             exit 0
           fi
+          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
           # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
@@ -815,11 +819,15 @@ jobs:
               *-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
-          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
-          if [ "${#ASSET_NAMES[@]}" -eq 0 ]; then
+          # Check length BEFORE re-expanding the (possibly empty) array: on macOS
+          # bash 3.2 `("${empty[@]}")` under `set -u` is an unbound-variable error,
+          # and no-asset-for-this-platform is exactly the lagging / first-publish
+          # case this fix must handle gracefully. `${#arr[@]}` is safe on 3.2.
+          if [ "${#PLATFORM_ASSETS[@]}" -eq 0 ]; then
             echo "No Apple assets on $PUBLISH_TAG; nothing to prune."
             exit 0
           fi
+          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
           # hibiki-0.11.1-debug.5633-3cf5905-macos.zip). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
