@@ -205,4 +205,46 @@ void main() {
     // 顶层查词，搜索栏唯一。
     expect(find.byType(HibikiCompactSearchRow), findsOneWidget);
   });
+
+  // TODO-1144：头部 Row 里关闭按钮与搜索栏并排，两者必须等高（消除旧 36 vs 44 的 8px
+  // 高差）。关闭按钮命中盒与 HibikiCompactSearchRow 内 `SizedBox(height: 44)` 都应为 44。
+  testWidgets(
+      'TODO-1144: popup close button height matches the compact search row (44)',
+      (WidgetTester tester) async {
+    final AppModel appModel = _PopupTestAppModel();
+    await tester.pumpWidget(
+      _wrap(
+        appModel,
+        PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () {},
+          autoSearchOnOpen: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 关闭按钮渲染盒高度。
+    final Finder closeButton = find.byKey(
+      const ValueKey<String>('popup_dictionary_close_button'),
+    );
+    expect(closeButton, findsOneWidget);
+    final double closeHeight = tester.getSize(closeButton).height;
+
+    // HibikiCompactSearchRow 内部的 44 高度 SizedBox（并排的搜索栏本体）。
+    final Finder searchRowBox = find.descendant(
+      of: find.byType(HibikiCompactSearchRow),
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is SizedBox && w.height == 44,
+      ),
+    );
+    expect(searchRowBox, findsOneWidget,
+        reason: 'HibikiCompactSearchRow 内是 SizedBox(height: 44)');
+    final double searchHeight = tester.getSize(searchRowBox).height;
+
+    expect(closeHeight, 44.0, reason: '关闭按钮命中盒高度对齐搜索栏 = 44');
+    expect(searchHeight, 44.0, reason: '搜索栏内盒高度 = 44');
+    expect(closeHeight, searchHeight,
+        reason: '关闭按钮与搜索栏等高，消除 TODO-1144 的 8px 高差');
+  });
 }

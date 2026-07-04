@@ -2040,7 +2040,6 @@
   "floating_lyric_context_lines": "悬浮字幕上下文行数",
   "floating_lyric_context_lines_hint": "0 只显示当前行(单行,与今天一致);设 1-3 在当前行上下各显示这么多行上下文",
   "install_browser_extension": "安装浏览器扩展",
-  "browser_extension_install_steps": "在 chrome://extensions（或 edge://extensions）：开启右上角「开发者模式」，点「加载已解压的扩展程序」，粘贴下方路径；再到扩展 options 填 Hibiki 的 host/port/配对 token。",
   "video_setting_subtitle_bg_color": "背景颜色",
   "video_setting_subtitle_bg_color_default": "默认（黑）",
   "video_setting_subtitle_bg_color_white": "白色",
@@ -2068,7 +2067,6 @@
   "browser_extension_step_pick_folder": "选择下方的扩展文件夹（其路径已复制到剪贴板）。",
   "browser_extension_step_done_auto": "完成。扩展已自动配置为连接本应用——无需填写 host/端口/token。",
   "browser_extension_enable_server_first": "提示：请先在上方开启「Yomitan API 服务器」并设置 API 密钥，扩展才能被自动配置为可用连接。",
-  "browser_extension_folder_label": "扩展文件夹（已复制）",
   "copied": "已复制",
   "shortcut_action_global_toggle_fullscreen": "全屏切换",
   "video_setting_subtitle_respect_ass": "尊重字幕自带样式",
@@ -2094,5 +2092,6 @@
   "video_resource_missing_relink": "重新选择文件",
   "video_resource_relink_success": "已重新链接视频文件",
   "ttu_merge_image_pages": "将插图页并入正文",
-  "ttu_merge_image_pages_subtitle": "把只含一张图的独立章节并入相邻正文章连续显示，不再单独占一页"
+  "ttu_merge_image_pages_subtitle": "把只含一张图的独立章节并入相邻正文章连续显示，不再单独占一页",
+  "browser_extension_mobile_unsupported": "手机浏览器无法加载此扩展，请直接在 app 内阅读器/视频中查词。"
 }

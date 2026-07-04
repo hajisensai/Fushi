@@ -533,8 +533,12 @@ class PopupDictionarySearchBar extends StatelessWidget {
 
 /// TODO-951 症状B：独立于滑动手势的关闭按钮。渲染在 [SwipeDismissWrapper] 之外，
 /// 点它直接调 [onClose]（无滑出动画），与 search bar 内的旧关闭按钮视觉一致（[Icons.close]
-/// + 36×36 命中区 + 20 图标）。键沿用 `popup_dictionary_close_button`（桌面焦点驱动测试
+/// + 20 图标）。键沿用 `popup_dictionary_close_button`（桌面焦点驱动测试
 /// + 既有 widget 测试都按此键定位）。
+///
+/// TODO-1144：高度对齐 [HibikiCompactSearchRow] 的 44（其内是 `SizedBox(height: 44)`）。
+/// 头部 Row 里关闭按钮与搜索栏并排，之前裸盒 36 高、搜索卡 44 高，居中对齐后产生 8px
+/// 高差且背景不一致；命中区改为 36 宽 × 44 高与搜索卡等高（图标仍 20），消除高差。
 class _CompactPopupCloseButton extends StatelessWidget {
   const _CompactPopupCloseButton({
     required this.onClose,
@@ -543,12 +547,15 @@ class _CompactPopupCloseButton extends StatelessWidget {
 
   final VoidCallback onClose;
 
+  /// 与 [HibikiCompactSearchRow] 内 `SizedBox(height: 44)` 同高，头部 Row 两侧等高对齐。
+  static const double height = 44;
+
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return SizedBox(
       width: 36,
-      height: 36,
+      height: height,
       child: HibikiIconButton(
         icon: Icons.close,
         enabledColor: tokens.surfaces.onVariant,

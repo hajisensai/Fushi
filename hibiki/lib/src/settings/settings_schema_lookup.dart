@@ -123,9 +123,28 @@ SettingsDestination buildLookupDestination() {
             title: t.install_browser_extension,
             icon: Icons.extension_outlined,
             onTap: (SettingsContext settingsContext) async {
+              final AppModel appModel = settingsContext.appModel;
+              // TODO-1146：手机浏览器（Android/iOS 的 Chrome/Edge）不支持加载未解压扩展，
+              // 手机方案是直接在 app 内阅读器/视频里查词。故移动端只给专属提示、不解压扩展
+              // （解压引导仅桌面有意义）。用项目现有 DesktopLookupService.isDesktop 门控。
+              if (!DesktopLookupService.isDesktop) {
+                await showSettingsDialog(
+                  settingsContext,
+                  (BuildContext dialogContext) => AlertDialog(
+                    title: Text(t.install_browser_extension),
+                    content: Text(t.browser_extension_mobile_unsupported),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: Text(t.dialog_done),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
               // TODO-1087：解压时注入当前 server 真值（host 固定环回，port/token 取
               // AppModel），扩展默认即连本机 app，无需用户手填 host/port/token。
-              final AppModel appModel = settingsContext.appModel;
               final String dir = await prepareBundledBrowserExtension(
                 serverConfig: BrowserExtensionServerConfig(
                   host: '127.0.0.1',
@@ -876,15 +895,27 @@ class _BrowserExtensionInstallDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              // 步骤 1：打开扩展管理页（chrome:// 无法程序化导航，给可复制文本）。
+              // 步骤 1：打开扩展管理页（chrome:// / edge:// 无法程序化导航，给可复制文本）。
+              // TODO-1146：不再只硬编 chrome —— Chrome 与 Edge 地址不同，两者都列出，
+              // 用户按自己浏览器复制对应地址（均复用 browserExtensionsPageUrl 纯函数）。
               _step(
                 context,
                 index: 1,
                 icon: Icons.open_in_browser_outlined,
                 text: t.browser_extension_step_open_page,
-                trailing: _copyableField(
-                  context,
-                  browserExtensionsPageUrl(BrowserKind.chrome),
+                trailing: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _copyableField(
+                      context,
+                      browserExtensionsPageUrl(BrowserKind.chrome),
+                    ),
+                    const SizedBox(height: 6),
+                    _copyableField(
+                      context,
+                      browserExtensionsPageUrl(BrowserKind.edge),
+                    ),
+                  ],
                 ),
               ),
               // 步骤 2：开启开发者模式。
