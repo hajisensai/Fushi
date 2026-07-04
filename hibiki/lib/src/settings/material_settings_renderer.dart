@@ -66,6 +66,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
               : HibikiListItemSelectedShape.pill,
           leading: Icon(destination.icon),
           title: Text(destination.title),
+          // TODO-1143：左父菜单在窄布局（clamp 280..360，最窄 280px）下曾把长分类
+          // 标签（如「同步与备份（实验性）」）用 HibikiListItem 默认 titleMaxLines:1
+          // 截成「同步与…」。放行第二行；全宽布局本就不换行，无害。
+          titleMaxLines: 2,
           subtitle:
               destination.summary != null ? Text(destination.summary!) : null,
           // Chevron implies push navigation; only show it when tapping actually

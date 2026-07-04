@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
@@ -1083,6 +1084,62 @@ void main() {
       findsOneWidget,
       reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
     );
+  });
+
+  // TODO-1143：master-detail 左父菜单在最窄布局（supportingPaneWidthForLayout
+  // clamp 280..360，下界 280px）下曾把长分类标签（如「同步与备份（实验性）」）用
+  // HibikiListItem 默认 titleMaxLines:1 + ellipsis 截成「同步与…」。修复给
+  // buildDestinationList 的分类项传 titleMaxLines: 2（全宽本不换行，无害）。
+  testWidgets(
+      'TODO-1143: narrow (280px) master-detail destination rows allow two title '
+      'lines so long CJK category labels are not truncated', (
+    WidgetTester tester,
+  ) async {
+    const String longTitle = '同步与备份（实验性）';
+    final SettingsDestination longDestination = SettingsDestination(
+      id: SettingsDestinationId.syncBackup,
+      title: longTitle,
+      icon: Icons.cloud_sync_outlined,
+      sections: const <SettingsSection>[],
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 280, // 左父菜单最窄宽度（clamp 下界）。
+              child: MaterialSettingsRenderer().buildDestinationList(
+                settingsContext: settingsContext,
+                destinations: <SettingsDestination>[longDestination],
+                selectedDestinationId: SettingsDestinationId.syncBackup,
+                onDestinationSelected: (_) {},
+                pushRoutes: false,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 机制（字体无关）：分类项真拿到 titleMaxLines: 2（放行第二行）。
+    final HibikiListItem item = tester.widget<HibikiListItem>(
+      find.widgetWithText(HibikiListItem, longTitle),
+    );
+    expect(item.titleMaxLines, 2,
+        reason: 'TODO-1143 左父菜单分类项必须传 titleMaxLines: 2');
+
+    // 效果：标题 RenderParagraph 允许两行，长标签在 280px 内不再被单行 ellipsis
+    // 截断。
+    final RenderParagraph paragraph =
+        tester.renderObject<RenderParagraph>(find.text(longTitle));
+    expect(paragraph.maxLines, 2,
+        reason: 'titleMaxLines: 2 必须真透传到标题的 RenderParagraph');
+    expect(paragraph.didExceedMaxLines, isFalse,
+        reason: '两行内「同步与备份（实验性）」应完整显示，不触发 ellipsis');
   });
 }
 

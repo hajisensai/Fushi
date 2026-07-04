@@ -1208,34 +1208,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.devices_other_outlined,
-                  size: 18, color: colors.primary),
-              const SizedBox(width: 8),
-              // 标题/副标题用 Flexible + 省略号，窄屏（手机）两段文字不再撑爆
-              // Row 造成右侧溢出（TODO-593）。
-              Flexible(
-                child: Text(
-                  t.remote_video_interconnect,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  t.remote_video_paired_device,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: colors.onSurfaceVariant),
-                ),
-              ),
-            ],
+          // TODO-1143：标题与副标题拆成两行（副标题独占第二行），消除窄屏（手机）
+          // 下两固定中文标签在同一 Row 里各占 Flexible 抢行、互挤截断成「…」。
+          RemoteVideoSectionHeader(
+            title: t.remote_video_interconnect,
+            subtitle: t.remote_video_paired_device,
           ),
           if (state.failed)
             Padding(
@@ -2131,6 +2108,58 @@ class _VideoBatchTagIntentRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 远端视频区头部（TODO-1143）。
+///
+/// 把「标题 + 副标题」两个固定中文标签拆成两行：标题与图标同处第一行、副标题
+/// 独占第二行。旧结构把两段标签放进同一个 `Row` 各占 `Flexible`，窄屏（手机）
+/// 下二者抢同一行宽度互相挤压，被 `maxLines:1 + ellipsis` 截成「…」。拆成两行后
+/// 每段标签独占整行宽度，不再互挤。抽成公开可复用 widget 以便窄宽行为守卫直接
+/// pump（避免依赖整页状态）。
+class RemoteVideoSectionHeader extends StatelessWidget {
+  const RemoteVideoSectionHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(Icons.devices_other_outlined, size: 18, color: colors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }
