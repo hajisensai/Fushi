@@ -52,9 +52,9 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath) {
 /// TODO-757 制卡媒体压缩档位（音频 / GIF 封面 / 截图封面的编码参数集）。
 ///
 /// 压缩开关（`AppModel.compressMiningMedia`，默认开）选档：
-/// - [compressed]（默认 = TODO-646 现状）：音频单声道 64k、GIF 320px/8fps、
+/// - [compressed]（默认 = TODO-646 现状）：音频单声道 64k、GIF 480px/8fps、
 ///   截图长边 1000px/质量 90。体积省一半以上，移动端小图肉眼基本无差。
-/// - [highFidelity]（关闭压缩时）：音频立体声 128k、GIF 480px/12fps、截图长边
+/// - [highFidelity]（关闭压缩时）：音频立体声 128k、GIF 720px/12fps、截图长边
 ///   2000px/质量 95。给想要高保真的用户更清晰的媒体，代价是更大的卡片体积。
 ///
 /// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
@@ -79,7 +79,7 @@ class MiningMediaCompression {
   /// cue 封面 GIF 帧率（`fps=`）。压缩档 8，高保真档 12。
   final int gifFps;
 
-  /// cue 封面 GIF 宽度（`scale=W:-2`）。压缩档 320，高保真档 480。
+  /// cue 封面 GIF 宽度（`scale=W:-2`）。压缩档 480，高保真档 720（TODO-1145 拉高）。
   final int gifWidth;
 
   /// 帧截图封面降采样长边（px）。压缩档 1000，高保真档 2000。
@@ -93,7 +93,7 @@ class MiningMediaCompression {
     audioChannels: 1,
     audioBitrate: '64k',
     gifFps: 8,
-    gifWidth: 320,
+    gifWidth: 480,
     screenshotMaxLongEdge: 1000,
     screenshotQuality: 90,
   );
@@ -103,7 +103,7 @@ class MiningMediaCompression {
     audioChannels: 2,
     audioBitrate: '128k',
     gifFps: 12,
-    gifWidth: 480,
+    gifWidth: 720,
     screenshotMaxLongEdge: 2000,
     screenshotQuality: 95,
   );
@@ -617,8 +617,8 @@ List<String> buildFfmpegClipGifArgs({
   required int startMs,
   required int endMs,
   required String outputPath,
-  // TODO-646 近无损压缩 + TODO-757 压缩开关：压缩档 cue 封面动图收紧到 320px/8fps
-  // （= 现状，体积省 40-60%，移动端小图肉眼基本无差）；高保真档放宽到 480px/12fps。
+  // TODO-646 近无损压缩 + TODO-757 压缩开关：压缩档 cue 封面动图 480px/8fps
+  // （TODO-1145 从 320 拉高）；高保真档 720px/12fps（关闭压缩=满捕获宽不降采样）。
   // 默认值保持压缩档（现状），由调用点据压缩开关传值，纯函数不读全局偏好。仍走
   // palettegen/paletteuse 双遍避免抖动。
   int fps = 8,
@@ -661,8 +661,8 @@ Future<String?> extractClipGifViaFfmpeg({
   required int endMs,
   required String outputPath,
   FfmpegFailureReporter? onFailure,
-  // TODO-757 压缩开关：默认压缩档（320px/8fps，= 现状）；关闭压缩时调用点传高保真
-  // 档（480px/12fps）。
+  // TODO-757 压缩开关：默认压缩档（480px/8fps，TODO-1145 拉高）；关闭压缩时调用点
+  // 传高保真档（720px/12fps，满捕获宽不降采样）。
   int fps = 8,
   int width = 320,
 }) async {

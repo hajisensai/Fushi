@@ -1062,7 +1062,7 @@ void main() {
       expect(c.audioChannels, 1);
       expect(c.audioBitrate, '64k');
       expect(c.gifFps, 8);
-      expect(c.gifWidth, 320);
+      expect(c.gifWidth, 480);
       expect(c.screenshotMaxLongEdge, 1000);
       expect(c.screenshotQuality, 90);
     });
@@ -1072,7 +1072,7 @@ void main() {
       expect(h.audioChannels, 2);
       expect(h.audioBitrate, '128k');
       expect(h.gifFps, 12);
-      expect(h.gifWidth, 480);
+      expect(h.gifWidth, 720);
       expect(h.screenshotMaxLongEdge, 2000);
       expect(h.screenshotQuality, 95);
     });

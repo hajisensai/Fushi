@@ -33,7 +33,10 @@ async function startCapture(streamId) {
     video: {
       mandatory: {
         chromeMediaSource: 'tab', chromeMediaSourceId: streamId,
-        maxWidth: 640, maxHeight: 360, maxFrameRate: 12,
+        // TODO-1145：捕获分辨率是整条 Netflix 制卡链路的支配性限制器——offscreen 录
+        // 出的 webm 只有这个分辨率，下游 GIF 转码（gifWidth）再高也无法超采源。旧值
+        // 640×360 让 720p GIF 只能拉伸糊图；提到 1280×720 让 GIF 真正吃到 720p 源。
+        maxWidth: 1280, maxHeight: 720, maxFrameRate: 12,
       },
     },
   });
@@ -58,7 +61,7 @@ function beginClip() {
   chunks = [];
   clipStartWall = Date.now();
   recorder = new MediaRecorder(stream, {
-    mimeType: mime, videoBitsPerSecond: 800000, audioBitsPerSecond: 128000,
+    mimeType: mime, videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000,
   });
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
   recorder.start();
