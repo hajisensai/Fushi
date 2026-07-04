@@ -53,9 +53,82 @@ Future<String?> pickRealDirectoryPath({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (BuildContext sheetContext) =>
-        _RealPathDirectoryBrowser(roots: roots),
+    builder: (BuildContext sheetContext) => _RealPathBrowser(
+      roots: roots,
+      mode: _BrowserMode.directory,
+      allowedExtensions: null,
+    ),
   );
+}
+
+/// 「选一个**文件**并返回它的真实文件系统绝对路径」的统一入口（board 1112）。
+///
+/// 与 [pickRealDirectoryPath] 同源同哲学，只是叶子是文件而非目录：安卓上
+/// `FilePicker.pickFiles()` 走 SAF，会把选中文件**复制一份到 app cache** 再返回
+/// 缓存路径——手机存储/IO 差时白拷一份大视频，且清缓存后该路径失效、videoPath 引用
+/// 悬空。视频/字幕导入本就只存绝对路径不复制（见 video_import_dialog），这个缓存副本
+/// 是唯一残留的「变相复制」。
+///
+/// 授予 `MANAGE_EXTERNAL_STORAGE`（全文件访问）后，`dart:io` 可全盘读真实路径，于是
+/// 安卓改为：先确保权限 → 弹真实路径浏览器（下钻目录、点文件返回其绝对路径，可按
+/// [allowedExtensions] 过滤，如字幕 srt/ass/vtt）→ 返回真实绝对路径，不产生任何副本。
+///
+/// **降级逃生口**：安卓未授予全文件访问时，回退到 `FilePicker.pickFiles()`（仍复制到
+/// cache，但功能可用）——不硬性要求授权。**桌面 / iOS 维持 `pickFiles()`**（它们本就
+/// 返回真实路径、不复制）。
+///
+/// [allowedExtensions] 为不带点的小写扩展名集（如 `{'srt','ass'}`）；null = 不过滤
+/// （任意文件，用于视频，避免维护两份视频扩展名清单）。传给回退的 `pickFiles` 时
+/// 会转成其 `allowedExtensions` 语义（custom 类型）。
+Future<String?> pickRealFilePath({
+  required BuildContext context,
+  required AppModel appModel,
+  Set<String>? allowedExtensions,
+}) async {
+  // 桌面（Windows/macOS/Linux）与 iOS：`pickFiles()` 已返回真实路径、不复制。
+  if (defaultTargetPlatform != TargetPlatform.android) {
+    return _fallbackPickFile(allowedExtensions);
+  }
+
+  // 安卓：先尝试确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权。
+  await appModel.requestExternalStoragePermissions();
+  final bool granted =
+      await appModel.platformServices.permission.hasExternalStoragePermission();
+  if (!granted) {
+    // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
+    return _fallbackPickFile(allowedExtensions);
+  }
+
+  final List<String> roots =
+      await appModel.platformServices.directory.getDefaultPickerDirectories();
+  if (!context.mounted) return null;
+
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (BuildContext sheetContext) => _RealPathBrowser(
+      roots: roots,
+      mode: _BrowserMode.file,
+      allowedExtensions: allowedExtensions,
+    ),
+  );
+}
+
+/// 回退到 file_picker 选单个文件（安卓无全文件访问 / 桌面 / iOS）。
+/// [allowedExtensions] 非空 → 走 custom 类型按扩展名过滤；null → 任意文件。
+Future<String?> _fallbackPickFile(Set<String>? allowedExtensions) async {
+  final FilePickerResult? result;
+  if (allowedExtensions == null || allowedExtensions.isEmpty) {
+    result = await FilePicker.platform.pickFiles(allowMultiple: false);
+  } else {
+    result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions.toList(),
+      allowMultiple: false,
+    );
+  }
+  return result?.files.single.path;
 }
 
 /// 列出 [directory] 的直接子目录绝对路径（已排序，目录不存在或无权限时返回空）。
@@ -79,24 +152,76 @@ List<String> listSubdirectories(String directory) {
   return out;
 }
 
-/// 真实路径目录浏览器：从外置存储根集开始逐级下钻，pop 回选中的真实绝对路径。
-class _RealPathDirectoryBrowser extends StatefulWidget {
-  const _RealPathDirectoryBrowser({required this.roots});
+/// 列出 [directory] 直接子文件的绝对路径（已排序）；[allowedExtensions] 非空时
+/// 只保留扩展名（不带点、小写）命中的文件，null = 不过滤。
+///
+/// 纯函数（仅碰磁盘，不碰 UI），供文件选择浏览器列叶子文件。容错哲学同
+/// [listSubdirectories]：目录不存在 / 无权限 → 空列表而非崩溃。
+List<String> listFilesInDirectory(
+  String directory, {
+  Set<String>? allowedExtensions,
+}) {
+  final Directory dir = Directory(directory);
+  if (!dir.existsSync()) return const <String>[];
+  final List<String> out = <String>[];
+  try {
+    for (final FileSystemEntity entity
+        in dir.listSync(recursive: false, followLinks: false)) {
+      if (entity is! File) continue;
+      if (allowedExtensions == null || allowedExtensions.isEmpty) {
+        out.add(entity.path);
+        continue;
+      }
+      final String ext =
+          p.extension(entity.path).replaceFirst('.', '').toLowerCase();
+      if (allowedExtensions.contains(ext)) out.add(entity.path);
+    }
+  } on FileSystemException {
+    return const <String>[];
+  }
+  out.sort();
+  return out;
+}
+
+/// 浏览器叶子选择模式：选目录本身，还是下钻到文件选一个文件。
+enum _BrowserMode { directory, file }
+
+/// 真实路径浏览器：从外置存储根集开始逐级下钻，pop 回选中的真实绝对路径。
+///
+/// 两种模式共用同一下钻 UI：
+/// - [_BrowserMode.directory]（[pickRealDirectoryPath]）：header 顶部有「选择此
+///   文件夹」按钮，列表只列子目录，点目录下钻。
+/// - [_BrowserMode.file]（[pickRealFilePath]）：列表同时列子目录（点击下钻）与
+///   文件（点击直接 pop 回其绝对路径），无「选择此文件夹」按钮；[allowedExtensions]
+///   非空时只列命中扩展名的文件（null = 任意文件）。
+class _RealPathBrowser extends StatefulWidget {
+  const _RealPathBrowser({
+    required this.roots,
+    required this.mode,
+    required this.allowedExtensions,
+  });
 
   /// 起始根目录集（安卓外置存储根，真实绝对路径）。
   final List<String> roots;
 
+  /// 选目录本身还是下钻选文件。
+  final _BrowserMode mode;
+
+  /// 仅文件模式生效：null=任意文件；非空=按扩展名（不带点、小写）过滤子文件。
+  final Set<String>? allowedExtensions;
+
   @override
-  State<_RealPathDirectoryBrowser> createState() =>
-      _RealPathDirectoryBrowserState();
+  State<_RealPathBrowser> createState() => _RealPathBrowserState();
 }
 
-class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
+class _RealPathBrowserState extends State<_RealPathBrowser> {
   /// 当前浏览的目录；null = 停在根集列表（多根时让用户先选一个根）。
   String? _current;
 
   /// 当前 [_current] 是否就是某个根（用于决定「上一级」是回根集还是回父目录）。
   bool get _atRootList => _current == null;
+
+  bool get _fileMode => widget.mode == _BrowserMode.file;
 
   bool _isRoot(String path) =>
       widget.roots.any((String r) => p.equals(r, path));
@@ -117,8 +242,18 @@ class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
   @override
   Widget build(BuildContext context) {
     final String? cur = _current;
-    final List<String> entries =
+    // 根集列表只列目录（进根后才可能出现文件）。目录模式全程只列子目录；文件模式
+    // 在具体目录里子目录 + 命中扩展名的文件都列（子目录在前，便于下钻）。
+    final List<String> subdirs =
         _atRootList ? widget.roots : listSubdirectories(cur!);
+    final List<String> files = (_atRootList || !_fileMode)
+        ? const <String>[]
+        : listFilesInDirectory(cur!,
+            allowedExtensions: widget.allowedExtensions);
+    // 拼成统一 entries：前 subdirs.length 项是目录（点击下钻），其后是文件
+    // （点击 pop 回绝对路径）。用下标区分类型，避免额外包装类型。
+    final List<String> entries = <String>[...subdirs, ...files];
+    final int dirCount = subdirs.length;
 
     return SafeArea(
       child: DraggableScrollableSheet(
@@ -153,7 +288,9 @@ class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
                         children: <Widget>[
                           Text(
                             _atRootList
-                                ? t.folder_picker_title
+                                ? (_fileMode
+                                    ? t.file_picker_title
+                                    : t.folder_picker_title)
                                 : p.basename(cur!).isEmpty
                                     ? cur
                                     : p.basename(cur),
@@ -170,7 +307,8 @@ class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
                         ],
                       ),
                     ),
-                    if (!_atRootList) ...<Widget>[
+                    // 「选择此文件夹」按钮仅目录模式出现；文件模式靠点文件行确认。
+                    if (!_atRootList && !_fileMode) ...<Widget>[
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () => Navigator.pop(context, cur),
@@ -183,20 +321,31 @@ class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
               const Divider(height: 1),
               Expanded(
                 child: entries.isEmpty
-                    ? Center(child: Text(t.folder_picker_empty))
+                    ? Center(
+                        child: Text(_fileMode
+                            ? t.file_picker_empty
+                            : t.folder_picker_empty),
+                      )
                     : ListView.builder(
                         controller: scrollController,
                         itemCount: entries.length,
                         itemBuilder: (BuildContext context, int index) {
                           final String path = entries[index];
+                          final bool isDir = index < dirCount;
+                          final String label = p.basename(path).isEmpty
+                              ? path
+                              : p.basename(path);
                           return HibikiListTile(
-                            icon: Icons.folder,
+                            icon: isDir
+                                ? Icons.folder
+                                : Icons.insert_drive_file_outlined,
                             selected: false,
-                            title: p.basename(path).isEmpty
-                                ? path
-                                : p.basename(path),
+                            title: label,
                             subtitle: '',
-                            onTap: () => _enter(path),
+                            // 目录 → 下钻；文件 → pop 回其真实绝对路径。
+                            onTap: () => isDir
+                                ? _enter(path)
+                                : Navigator.pop(context, path),
                           );
                         },
                       ),

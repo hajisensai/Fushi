@@ -229,12 +229,16 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       );
 
   Future<void> _pickVideo() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
-      allowMultiple: false,
+    // 安卓：走真实路径浏览器拿绝对路径（不复制到 cache，清缓存不失效）；
+    // 桌面/iOS 及安卓无全文件访问时回退 file_picker（board 1112）。
+    // 视频不限扩展名（allowedExtensions:null），避免维护第二份视频扩展名清单。
+    final AppModel appModel =
+        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    final String? path = await pickRealFilePath(
+      context: context,
+      appModel: appModel,
     );
-    final String? path = result?.files.single.path;
-    if (path == null) return;
+    if (path == null || !mounted) return;
     setState(() => _videoPath = path);
     await _autoAttachSubtitle(path);
   }
@@ -258,13 +262,17 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   }
 
   Future<void> _pickSubtitle() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    // 安卓：真实路径浏览器（按字幕扩展名过滤），拿绝对路径不复制到 cache；
+    // 桌面/iOS 及安卓无全文件访问时回退 file_picker（board 1112）。扩展名集与
+    // _autoAttachSubtitle / parseSubtitleCues 支持列表对齐。
+    final AppModel appModel =
+        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    final String? path = await pickRealFilePath(
+      context: context,
+      appModel: appModel,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
-    final String? path = result?.files.single.path;
-    if (path == null) return;
+    if (path == null || !mounted) return;
     setState(() => _subtitlePath = path);
   }
 
