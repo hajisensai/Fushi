@@ -414,6 +414,7 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(HOSHIDICTS_MERGED_ARCHIVE)",
 				);
@@ -550,6 +551,7 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(HOSHIDICTS_MERGED_ARCHIVE)",
 				);
@@ -580,6 +582,7 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(HOSHIDICTS_MERGED_ARCHIVE)",
 				);

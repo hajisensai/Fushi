@@ -27,22 +27,22 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 547 条。点号进各自文件。
+> 共 548 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-553](bugs/BUG-553-subtitle-tap-swallow-controls.md) | ✅ | ✅ | 字幕盒吞掉唤出视频控制条的点击 |
 | [BUG-552](bugs/BUG-552-android-clip-export-anr-oom.md) | ✅ | ✅ | 安卓导出片段视频ANR/OOM崩溃 |
-| [BUG-551](bugs/BUG-551-ankimobile-background-media-download.md) | ✅ | ✅ | iOS AnkiMobile 视频句音频导入后仍保留 localhost URL |
 | [BUG-551](bugs/BUG-551-dict-result-webview-lower-half-blank.md) | ✅ | ✅ | in-app 查词结果区 WebView 下半屏空白(Windows WebView2/WGC 渲染完 idle 无 damage) |
+| [BUG-551](bugs/BUG-551-ankimobile-background-media-download.md) | ✅ | ✅ | iOS AnkiMobile 视频句音频导入后仍保留 localhost URL |
 | [BUG-550](bugs/BUG-550-ankimobile-media-url-plus-payload.md) | ✅ | ✅ | iOS AnkiMobile 制卡音频不播放且词典/详情字段出现加号和本地路径 |
 | [BUG-550](bugs/BUG-550-ffmpeg-715-crash.md) | ✅ | ✅ | ffmpeg 7.1.5 本地构建二进制崩溃破坏视频制卡 |
 | [BUG-549](bugs/BUG-549-glookup-overlay-env-conflict.md) | ✅ | ✅ | Windows app-external lookup shows no popup (overlay WebView2 env fails silently) |
 | [BUG-549](bugs/BUG-549-xcode27-ios-deployment-target.md) | ✅ | ✅ | Xcode 27 真机编译失败：iOS deployment target 低于 15.0 |
-| [BUG-548](bugs/BUG-548-ankimobile-local-media-fields.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地音频图片未嵌入 |
 | [BUG-548](bugs/BUG-548-update-staging-dir-leak.md) | ✅ | ✅ | Windows 更新 .staging 暂存根目录泄漏堆积 |
-| [BUG-547](bugs/BUG-547-ankimobile-query-plus-encoding.md) | ✅ | ✅ | iOS AnkiMobile 制卡字段空格显示成加号 |
+| [BUG-548](bugs/BUG-548-ankimobile-local-media-fields.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地音频图片未嵌入 |
 | [BUG-547](bugs/BUG-547-progress-frosted.md) | ✅ | ✅ | 悬浮阅读进度无背景看不清 |
+| [BUG-547](bugs/BUG-547-ankimobile-query-plus-encoding.md) | ✅ | ✅ | iOS AnkiMobile 制卡字段空格显示成加号 |
 | [BUG-546](bugs/BUG-546-interconnect-manual-url-scheme.md) | ✅ | ✅ | Hibiki互联手动地址提示HTTPS导致默认HTTP主机无法连接 |
 | [BUG-546](bugs/BUG-546-theme-card-width.md) | ✅ | ✅ | 设置主题卡与下方配置项不等宽 |
 | [BUG-545](bugs/BUG-545-ios-video-topbar-transient-inset.md) | ✅ | ✅ | iOS 视频顶部功能栏偶发位置不准 |
@@ -50,6 +50,7 @@
 | [BUG-544](bugs/BUG-544-ios-video-controls-tap-anywhere.md) | ✅ | ✅ | iOS 视频画面中部点击无法唤出控制栏 |
 | [BUG-544](bugs/BUG-544-clip-context-menu-order.md) | ✅ | ✅ | 移动端导出片段右键菜单项垫底应前置 |
 | [BUG-543](bugs/BUG-543-clip-png-decoder.md) | ✅ | ✅ | 有声书片段导出移动端合成失败 ffmpeg-kit min 变体缺 png decoder |
+| [BUG-543](bugs/BUG-543-ios-hoshidicts-release-export.md) | ✅ | ✅ | iOS release startup fails: hoshidicts_import symbol not found |
 | [BUG-542](bugs/BUG-542-apple-prune-mapfile-bash32.md) | ✅ | ✅ | apple debug release prune 用 mapfile 在 macOS bash3.2 崩(command not found) |
 | [BUG-541](bugs/BUG-541-pageheader-narrow-window-icon-clip.md) | ✅ | ✅ | 页头窄窗动作图标被裁切 |
 | [BUG-540](bugs/BUG-540-update-404-rolling-prune-race.md) | ✅ | ✅ | 更新下载 404: rolling tag prune 竞态 |

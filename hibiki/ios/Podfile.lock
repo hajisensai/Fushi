@@ -369,7 +369,7 @@ SPEC CHECKSUMS:
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
   flutter_logs: 30a36079651dcdfb260dbff875bf882bbbcaa22e
   flutter_native_splash: 6cad9122ea0fad137d23137dd14b937f3e90b145
-  fluttertoast: 555beb79a42174676d2c8d673f344d9c2ece64ae
+  fluttertoast: e83df7131c78b5087a8c45e12c0a4760ab9c6227
   gamepads_ios: c75c6d31377d275b0effb9174c619e2705678c09
   google_sign_in_ios: b48bb9af78576358a168361173155596c845f0b9
   GoogleSignIn: ce8c89bb9b37fb624b92e7514cc67335d1e277e4
