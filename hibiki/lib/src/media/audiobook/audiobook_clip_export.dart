@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:image/image.dart' as img;
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show extractFfmpegFailureReason;
@@ -142,7 +144,15 @@ class AudiobookClipSynthResult {
 /// 纯函数：构建「静态图 + 音频 → mjpeg/.mov 短视频」的 ffmpeg 参数表。可单测。
 ///
 /// 关键参数与理由：
-/// - `-loop 1 -i img`：把单张 PNG 当无限循环视频流（静态画面）。
+/// - `-f image2 -loop 1 -i img`：把单张 **JPEG** 图当无限循环视频流（静态画面）。显式
+///   `-f image2`（image2 demuxer，桌面 ffmpeg-min 与移动端自编 ffmpeg-kit min AAR
+///   两端白名单都含），避免依赖后缀嗅探。
+/// - **为何 JPEG 而非 PNG（BUG-543，根因）**：移动端自编 ffmpeg-kit **min** 变体的
+///   libavcodec **没有 png decoder**（AAR 实证：`.rodata` 有 `MJPEG decoder` / `gif
+///   decoder` / `BMP decoder`，独缺 `PNG decoder`；运行时报 `Decoder (codec png) not
+///   found` → 帧解不出 → `unspecified size` → 合成 exit 1）。但它**有 mjpeg decoder**。
+///   桌面 ffmpeg-min 同样含 mjpeg decoder（build-ffmpeg-min.sh DECODERS 列 `mjpeg`），
+///   故把静止文本帧统一喂 JPEG，两端都走已存在的 mjpeg 解码，不再触碰缺失的 png。
 /// - `-i audio`：音频输入。两输入默认映射（无显式 -map，单流无歧义）。
 /// - `-c:v mjpeg`：**捆绑包唯一带音轨容器可用的视频编码器**（D-CODEC，非 libx264）。
 /// - `-pix_fmt yuvj420p`：mjpeg 的全范围 YUV420，最通用播放器兼容。
@@ -153,6 +163,7 @@ class AudiobookClipSynthResult {
 ///   [width]×[height] 并居中黑边填充，保证输出维度恒定且为偶数（mjpeg 要求）。
 ///
 /// 注意 mjpeg 不接受奇数维度；[width]/[height] 由调用方传偶数（720×1280 天然偶数）。
+/// [imagePath] 必须指向 JPEG 内容（调用方经 [encodeClipTextFrameAsJpg] 落盘 `.jpg`）。
 List<String> buildFfmpegImageAudioToVideoArgs({
   required String imagePath,
   required String audioPath,
@@ -168,6 +179,8 @@ List<String> buildFfmpegImageAudioToVideoArgs({
   return <String>[
     '-hide_banner',
     '-y',
+    '-f',
+    'image2',
     '-loop',
     '1',
     '-i',
@@ -187,6 +200,26 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     '-shortest',
     outputPath,
   ];
+}
+
+/// 纯函数：把 Flutter 离屏栅格化出的 **PNG** 字节（[renderAudiobookClipTextToPng]
+/// 唯一支持的输出格式）重编码成 **JPEG** 字节，供 [buildFfmpegImageAudioToVideoArgs]
+/// 的 image2 输入使用。
+///
+/// 根因（BUG-543）：移动端 ffmpeg-kit min 变体无 png decoder 但有 mjpeg decoder；
+/// Flutter `Image.toByteData` 又只支持 png/rawRgba（不支持直出 jpeg），且移动/桌面
+/// min 均无 rawvideo demuxer/decoder。故在 Dart 层用 `package:image` 把 png 解码后
+/// 以 jpeg 重编码，得到两端 ffmpeg 都能解的静止帧。
+///
+/// [pngBytes] 解码失败（损坏/空）返回 null，调用方据此回退（记日志 + toast）。
+/// [quality] 为 JPEG 质量（1-100），静态文本卡片用高质量避免文字边缘锯齿。
+Uint8List? encodeClipTextFrameAsJpg(
+  Uint8List pngBytes, {
+  int quality = 95,
+}) {
+  final img.Image? decoded = img.decodeImage(pngBytes);
+  if (decoded == null) return null;
+  return img.encodeJpg(decoded, quality: quality);
 }
 
 /// 把 [imagePath]（文本图）+ [audioPath]（片段音频）合成成 [outputPath]

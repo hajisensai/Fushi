@@ -1215,7 +1215,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       // TODO-954：Windows 的文字选区右键改用 Flutter 菜单（`_showReaderTextContextMenu`，
       // 经 GestureDetector.onSecondaryTapDown 触发），它在 HibikiAppUiScale 内能跟随界面
       // 大小缩放；故 Windows 下禁掉平台原生 WebView2 菜单（它不在 Flutter 树里、永远不
-      // 缩放）。移动端无 onSecondaryTapDown，仍走原生 ContextMenu（查词 + 导出）。
+      // 缩放）。移动端无 onSecondaryTapDown，仍走原生 ContextMenu。
+      // BUG-544：移动端此前不隐藏系统默认项（该标志曾设为 false），保留系统默认项
+      // （复制/全选/粘贴），Android ActionMode 契约把自定义 menuItems 追加在系统项之后，
+      // 「导出片段」永远垫底、淹没在系统项后。改为隐藏系统默认项、只留自定义项，顺序
+      // [查词][导出片段][复制]，把导出提到第二位；因隐藏系统项会一并去掉系统「复制」，
+      // 补一条自定义复制项（复用桌面右键菜单 `t.copy` / `t.copied_to_clipboard`，不丢功能）。
       contextMenu: isWindowsPlatform
           ? ContextMenu(
               settings: ContextMenuSettings(
@@ -1225,7 +1230,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             )
           : ContextMenu(
               settings: ContextMenuSettings(
-                hideDefaultSystemContextMenuItems: false,
+                hideDefaultSystemContextMenuItems: true,
               ),
               menuItems: [
                 ContextMenuItem(
@@ -1262,11 +1267,24 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 ),
                 // TODO-954：移动端选区右键也提供「导出片段」，与 Windows 一致都从选区
                 // 触发；handler 内部判 hasCue/音频，无音频时走 noAudio 兜底 toast。
+                // BUG-544：提到第二位（复制之前），不再垫底。
                 ContextMenuItem(
                   id: 2,
                   title: t.audiobook_export_clip,
                   action: () async {
                     await _exportAudiobookClipFromSelection();
+                  },
+                ),
+                // BUG-544：补自定义「复制」补偿被隐藏的系统复制项，逻辑与桌面右键菜单
+                // 的 'copy' 分支同源（Clipboard.setData + copied_to_clipboard toast）。
+                ContextMenuItem(
+                  id: 3,
+                  title: t.copy,
+                  action: () async {
+                    final text = await _controller?.getSelectedText();
+                    if (text == null || text.isEmpty) return;
+                    await Clipboard.setData(ClipboardData(text: text));
+                    HibikiToast.show(msg: t.copied_to_clipboard);
                   },
                 ),
               ],

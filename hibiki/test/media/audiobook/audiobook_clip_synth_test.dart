@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:image/image.dart' as img;
 
 void main() {
   group('buildFfmpegImageAudioToVideoArgs (TODO-945 M4, mjpeg/.mov D-CODEC)',
@@ -62,6 +65,77 @@ void main() {
         outputPath: '/o.mov',
       );
       expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
+    });
+  });
+
+  // BUG-543：移动端自编 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），此前
+  // 合成命令喂 png 输入 → 帧解不出 → exit 1。根因守卫：命令必须走 image2 demuxer 且
+  // 图片输入为 JPEG（`.jpg`），绝不依赖 png 解码，保证两端（桌面 ffmpeg-min / 移动
+  // ffmpeg-kit min）都走已存在的 mjpeg decoder。
+  group('buildFfmpegImageAudioToVideoArgs image input (BUG-543 png-free)', () {
+    test('declares -f image2 demuxer before the image input', () {
+      final List<String> args = buildFfmpegImageAudioToVideoArgs(
+        imagePath: '/tmp/text.jpg',
+        audioPath: '/tmp/clip.aac',
+        outputPath: '/tmp/out.mov',
+      );
+      final int fIdx = args.indexOf('-f');
+      expect(fIdx, greaterThanOrEqualTo(0),
+          reason: 'must pin the input demuxer explicitly');
+      expect(args[fIdx + 1], 'image2');
+      // -f image2 must precede the image -i so it applies to that input.
+      final int loopIdx = args.indexOf('-loop');
+      expect(fIdx, lessThan(loopIdx));
+    });
+
+    test('feeds a JPEG image input (never a .png that would need png decoder)',
+        () {
+      final List<String> args = buildFfmpegImageAudioToVideoArgs(
+        imagePath: '/tmp/text.jpg',
+        audioPath: '/tmp/clip.aac',
+        outputPath: '/tmp/out.mov',
+      );
+      // The image input path is the arg right after the first '-i'.
+      final int firstI = args.indexOf('-i');
+      expect(firstI, greaterThanOrEqualTo(0));
+      final String imageArg = args[firstI + 1];
+      expect(imageArg.toLowerCase().endsWith('.jpg'), isTrue,
+          reason: 'still frame must be JPEG so ffmpeg uses mjpeg decoder, '
+              'never the missing png decoder');
+      // No image argument in the command may be a .png.
+      for (final String a in args) {
+        expect(a.toLowerCase().endsWith('.png'), isFalse,
+            reason: 'no .png input: mobile ffmpeg-kit min has no png decoder');
+      }
+    });
+  });
+
+  // BUG-543：把 Flutter 唯一能直出的 png 帧转成两端 ffmpeg 都能解的 jpeg。
+  group('encodeClipTextFrameAsJpg (BUG-543 png->jpeg)', () {
+    Uint8List makePngBytes() {
+      final img.Image image = img.Image(width: 8, height: 8);
+      img.fill(image, color: img.ColorRgb8(200, 100, 50));
+      return Uint8List.fromList(img.encodePng(image));
+    }
+
+    test('re-encodes valid png bytes into decodable jpeg bytes', () {
+      final Uint8List png = makePngBytes();
+      final Uint8List? jpg = encodeClipTextFrameAsJpg(png);
+      expect(jpg, isNotNull);
+      // JPEG SOI marker 0xFFD8: proves the output is JPEG, not still PNG.
+      expect(jpg!.length, greaterThan(2));
+      expect(jpg[0], 0xFF);
+      expect(jpg[1], 0xD8);
+      // Round-trips back to a decodable image of the same dimensions.
+      final img.Image? decoded = img.decodeImage(jpg);
+      expect(decoded, isNotNull);
+      expect(decoded!.width, 8);
+      expect(decoded.height, 8);
+    });
+
+    test('returns null on undecodable bytes (caller falls back)', () {
+      final Uint8List garbage = Uint8List.fromList(<int>[0, 1, 2, 3, 4, 5]);
+      expect(encodeClipTextFrameAsJpg(garbage), isNull);
     });
   });
 

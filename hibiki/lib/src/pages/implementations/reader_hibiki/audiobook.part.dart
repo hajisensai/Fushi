@@ -1131,8 +1131,23 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
         return;
       }
-      imageFile = File('$base.png');
-      await imageFile.writeAsBytes(pngBytes);
+      // BUG-543：移动端 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），
+      // 桌面 ffmpeg-min 同样含 mjpeg decoder。Flutter 只能直出 png/rawRgba，故把
+      // 渲出的 png 帧在 Dart 层重编码为 jpeg，让两端 ffmpeg 都走 mjpeg 解码，
+      // 绕开缺失的 png decoder（此前移动端合成 exit 1 / "unspecified size"）。
+      final Uint8List? jpgBytes = encodeClipTextFrameAsJpg(pngBytes);
+      if (jpgBytes == null) {
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.jpgEncodeFailed',
+          'encodeClipTextFrameAsJpg returned null '
+              '(pngLen=${pngBytes.length}, text="$text")',
+          StackTrace.current,
+        );
+        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+        return;
+      }
+      imageFile = File('$base.jpg');
+      await imageFile.writeAsBytes(jpgBytes);
 
       // M4：图 + 音频 → mjpeg/.mov 短视频。
       videoFile = File('$base.mov');
