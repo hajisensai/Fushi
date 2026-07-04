@@ -9,7 +9,7 @@
 # 故 LGPL（不传 --enable-gpl），体积与许可都更干净。
 #
 # 用法：
-#   FFMPEG_REF=n7.1 OUT=$PWD/out ./build-ffmpeg-min.sh
+#   FFMPEG_REF=n7.1.5 OUT=$PWD/out ./build-ffmpeg-min.sh
 # 产物：$OUT/bin/ffmpeg(.exe)。把它放到 app 程序旁即被
 # resolveFfmpegExecutable()（lib/src/media/video/ffmpeg_backend.dart）优先选用。
 #
@@ -22,7 +22,7 @@
 # 调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
 set -euo pipefail
 
-FFMPEG_REF="${FFMPEG_REF:-n7.1}"
+FFMPEG_REF="${FFMPEG_REF:-n7.1.5}"
 OUT="${OUT:-$PWD/ffmpeg-min-out}"
 SRC="${SRC:-$PWD/ffmpeg-src}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"

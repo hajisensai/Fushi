@@ -14,7 +14,7 @@ on:
     inputs:
       ffmpeg_ref:
         description: "FFmpeg git tag/branch"
-        default: "n7.1"
+        default: "n7.1.5"
 
 jobs:
   build:
