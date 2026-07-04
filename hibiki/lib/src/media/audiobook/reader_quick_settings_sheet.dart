@@ -637,8 +637,20 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 删外观组后主题仍可达。主题行用专门的 [_themeSettingsContext]（换肤后还要
   /// `_syncThemeSelection` 落 reader 设置 + 触发词典/歌词联动）。
   Widget _buildThemeSelectorSection() {
-    return AdaptiveSettingsSection(
+    final Widget section = AdaptiveSettingsSection(
       children: <Widget>[buildThemeSelector(_themeSettingsContext())],
+    );
+    // 主题卡与下方 layout schema section 并列同一 Column（见 _buildLayoutDetail）。
+    // schema section 走 MaterialSettingsRenderer.buildDetailContent，正文额外套了
+    // detailHorizontalInsets 的横向缩进；主题卡若裸放就会比配置行更宽、左右对不齐
+    // （BUG-545）。Cupertino 渲染器的 buildDetailContent 无横向内边距，故仅 Material
+    // 补这层缩进，两处共用同一真相源 detailHorizontalInsets，消除等宽特例。
+    if (isCupertinoPlatform(context)) return section;
+    return Padding(
+      padding: MaterialSettingsRenderer.detailHorizontalInsets(
+        HibikiDesignTokens.of(context),
+      ),
+      child: section,
     );
   }
 

@@ -12,6 +12,17 @@ import 'package:hibiki/src/utils/components/settings_shared.dart';
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
 
+  /// 详情页正文的水平内边距（唯一真相源）：左侧贴近 pane 分隔线，给 MD3 expanded
+  /// 呼吸量（page + gap），右侧 page。[buildDetailContent] 与任何要与 schema
+  /// section 等宽对齐的兄弟卡片（如阅读器快捷设置里并入 layout 子页顶部的主题选
+  /// 择器卡）都必须从这里取横向缩进，避免各自硬编码导致左右对不齐。
+  static EdgeInsets detailHorizontalInsets(HibikiDesignTokens tokens) {
+    return EdgeInsets.only(
+      left: tokens.spacing.page + tokens.spacing.gap,
+      right: tokens.spacing.page,
+    );
+  }
+
   @override
   Widget buildHomePage({
     required SettingsContext settingsContext,
@@ -116,11 +127,15 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     // Left side hugs the pane divider; give it MD3 expanded breathing room
-    // (page + gap = 24) so detail content isn't glued to the nav pane.
+    // (page + gap = 24) so detail content isn't glued to the nav pane. Horizontal
+    // insets come from the shared [detailHorizontalInsets] so sibling cards that
+    // must match this width (reader quick-settings 主题选择器) can reuse the same
+    // source instead of hardcoding their own left/right padding.
+    final EdgeInsets horizontal = detailHorizontalInsets(tokens);
     final EdgeInsets padding = EdgeInsets.fromLTRB(
-      tokens.spacing.page + tokens.spacing.gap,
+      horizontal.left,
       tokens.spacing.gap,
-      tokens.spacing.page,
+      horizontal.right,
       tokens.spacing.page + mediaPadding.bottom,
     );
 
