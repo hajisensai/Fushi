@@ -203,6 +203,15 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     final int? seriesCardId = _items[index].seriesCardId;
     final ShelfReorderEnterSeries? onEnter = widget.onEnterSeries;
     if (seriesCardId == null || onEnter == null) return;
+    // H1（TODO-947）：进成员视图前先把折叠层未落盘的重排落盘。否则返回后
+    // rebuildItems() 用 DB 旧序重建 _items（下面 setState），会把用户在折叠视图里刚拖
+    // 的换位静默丢弃，退出反而把旧序写回。先 await onPersist(_items) 落盘并清 _dirty，
+    // 返回后 DB 序即与当前内存序一致，rebuild 读到的就是新序，不再丢。
+    if (_dirty) {
+      await widget.onPersist(_items);
+      if (!mounted) return;
+      _dirty = false;
+    }
     await onEnter(seriesCardId);
     if (!mounted) return;
     final ShelfReorderRebuild? rebuild = widget.rebuildItems;

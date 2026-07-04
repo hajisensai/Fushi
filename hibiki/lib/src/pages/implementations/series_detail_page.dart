@@ -110,6 +110,19 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     );
     if (confirmed != true) return;
     await widget.database.setSeriesForEntry(row.mediaType, row.entryKey, null);
+    // M2（TODO-947）：移出最后一个成员后系列已空，删掉它避免留孤儿 Series 行（否则折叠
+    // 视图会显示一张 0 成员的空系列卡）。deleteSeries 走 FK onDelete:setNull，只删 Series
+    // 行、不连坐删成员条目（此刻本成员 seriesId 已被上面置 NULL，无成员可散回），是干净原语。
+    final List<ShelfEntryRow> remaining =
+        await widget.database.getShelfEntriesBySeries(widget.seriesId);
+    if (remaining.isEmpty) {
+      await widget.database.deleteSeries(widget.seriesId);
+      if (!mounted) return;
+      widget.onChanged();
+      HibikiToast.show(msg: t.removed_from_series);
+      Navigator.of(context).maybePop();
+      return;
+    }
     if (!mounted) return;
     widget.onChanged();
     await _reload();

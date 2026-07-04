@@ -170,12 +170,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('LOOSE'));
+      await tester.tap(find.text('LOOSE'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(entered, isEmpty,
           reason: 'R2: tap loose does not enter/open book');
 
-      await tester.tap(find.text('SERIES'));
+      await tester.tap(find.text('SERIES'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(entered, <int>[42],
           reason: 'R2: tap series card enters member view');
@@ -201,9 +201,144 @@ void main() {
         )),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('C0'));
+      await tester.tap(find.text('C0'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(find.byType(HibikiReorderableGrid), findsOneWidget);
+    });
+  });
+
+  group('H1 folded reorder flushed before entering series (no silent loss)',
+      () {
+    testWidgets(
+        'dirty reorder -> tap series persists NEW order before onEnterSeries',
+        (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(700, 700);
+      addTearDown(tester.view.reset);
+
+      // 事件时间线：折叠层拖动重排 -> 点进系列 -> 返回 rebuild。断言 persist 发生在 enter
+      // 之前且落的是新序（不是 initialItems 旧序），否则返回后 rebuild 会静默丢弃重排。
+      final List<String> events = <String>[];
+      List<String>? persistedOrder;
+
+      await tester.pumpWidget(
+        wrap(Navigator(
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            builder: (_) => ShelfReorderPage(
+              title: 'Edit order',
+              cellExtent: 200,
+              childAspectRatio: 1,
+              initialItems: const <ShelfReorderItem>[
+                ShelfReorderItem(
+                  mediaType: 'series',
+                  entryKey: 'series_7',
+                  seriesId: 7,
+                  seriesCardId: 7,
+                  card: Center(child: Text('SERIES')),
+                ),
+                ShelfReorderItem(
+                  mediaType: 'epub',
+                  entryKey: 'bookA',
+                  card: Center(child: Text('BOOKA')),
+                ),
+                ShelfReorderItem(
+                  mediaType: 'epub',
+                  entryKey: 'bookB',
+                  card: Center(child: Text('BOOKB')),
+                ),
+              ],
+              onPersist: (List<ShelfReorderItem> ordered) async {
+                events.add('persist');
+                persistedOrder = <String>[
+                  for (final ShelfReorderItem it in ordered) it.entryKey,
+                ];
+              },
+              onEnterSeries: (int id) async => events.add('enter:$id'),
+              // 返回后 rebuild 读「DB」序：这里回放已落盘的新序，模拟真实 _loadShelfOrder。
+              rebuildItems: () async {
+                events.add('rebuild');
+                return <ShelfReorderItem>[
+                  for (final String key in persistedOrder ?? const <String>[])
+                    ShelfReorderItem(
+                      mediaType: key.startsWith('series_') ? 'series' : 'epub',
+                      entryKey: key,
+                      seriesId: key.startsWith('series_') ? 7 : null,
+                      seriesCardId: key.startsWith('series_') ? 7 : null,
+                      card: const SizedBox(),
+                    ),
+                ];
+              },
+            ),
+          ),
+        )),
+      );
+      await tester.pumpAndSettle();
+
+      // 拿到真实网格实例，直接驱动它的 onReorder/onActivate —— 这些正是页面的私有
+      // _onReorder/_onActivate（不靠脆弱的坐标拖拽几何）。
+      final HibikiReorderableGrid grid = tester
+          .widget<HibikiReorderableGrid>(find.byType(HibikiReorderableGrid));
+
+      // 折叠层拖动：把 bookB(2) 移到最前(0)。新序应为 [bookB, series_7, bookA]，_dirty=true。
+      grid.onReorder(2, 0);
+      await tester.pump();
+
+      // 点进系列卡（现位于 index 1）。onActivate 静态类型为 void 回调（页面的
+      // Future<void> _onActivate 被赋给它），不能 await 其返回值；触发后用 pumpAndSettle
+      // 抽干页面内部 await 链。
+      grid.onActivate!(1);
+      await tester.pumpAndSettle();
+
+      // persist 必须在 enter 之前发生（H1 根因：不先落盘则返回后 rebuild 用旧序覆盖）。
+      expect(events, <String>['persist', 'enter:7', 'rebuild'],
+          reason:
+              'H1: dirty folded reorder must be flushed BEFORE entering the '
+              'series so the return-side rebuild reads the new DB order');
+      // 落盘的是重排后的新序，不是 initialItems 旧序。
+      expect(persistedOrder, <String>['bookB', 'series_7', 'bookA'],
+          reason: 'H1: persisted order is the in-memory reordered order');
+    });
+
+    testWidgets('clean (not dirty) tap does NOT persist before entering',
+        (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(700, 700);
+      addTearDown(tester.view.reset);
+
+      final List<String> events = <String>[];
+      await tester.pumpWidget(
+        wrap(Navigator(
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            builder: (_) => ShelfReorderPage(
+              title: 'Edit order',
+              cellExtent: 200,
+              childAspectRatio: 1,
+              initialItems: const <ShelfReorderItem>[
+                ShelfReorderItem(
+                  mediaType: 'series',
+                  entryKey: 'series_3',
+                  seriesId: 3,
+                  seriesCardId: 3,
+                  card: Center(child: Text('SERIES')),
+                ),
+              ],
+              onPersist: (_) async => events.add('persist'),
+              onEnterSeries: (int id) async => events.add('enter:$id'),
+              rebuildItems: () async => const <ShelfReorderItem>[],
+            ),
+          ),
+        )),
+      );
+      await tester.pumpAndSettle();
+
+      final HibikiReorderableGrid grid = tester
+          .widget<HibikiReorderableGrid>(find.byType(HibikiReorderableGrid));
+      // 未拖动 => _dirty=false => 进系列前不做无谓落盘（避免空写）。
+      grid.onActivate!(0);
+      await tester.pumpAndSettle();
+      expect(events, <String>['enter:3'],
+          reason:
+              'no reorder means no flush before entering (avoids empty write)');
     });
   });
 
@@ -246,7 +381,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byType(SeriesShelfCard));
+      await tester.tap(find.byType(SeriesShelfCard), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(entered, <int>[1],
           reason: 'R4: single-member series still enterable');
