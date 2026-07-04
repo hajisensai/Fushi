@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 530 条。点号进各自文件。
+> 共 531 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-545](bugs/BUG-545-windows-video-black-flash.md) | ✅ | ✅ | Windows 高显卡占用时视频黑屏闪烁 |
 | [BUG-544](bugs/BUG-544-clip-context-menu-order.md) | ✅ | ✅ | 移动端导出片段右键菜单项垫底应前置 |
 | [BUG-543](bugs/BUG-543-clip-png-decoder.md) | ✅ | ✅ | 有声书片段导出移动端合成失败 ffmpeg-kit min 变体缺 png decoder |
 | [BUG-542](bugs/BUG-542-apple-prune-mapfile-bash32.md) | ✅ | ✅ | apple debug release prune 用 mapfile 在 macOS bash3.2 崩(command not found) |

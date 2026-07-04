@@ -312,6 +312,14 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 已知问题说明（TODO-1116/1119 / BUG-545）：Windows 渲染链在高显卡占用时
+          // 可能黑屏闪烁；hwdec 真修属 device-gated 后续项，本轮先在画质组内明示，
+          // 并指向上面真实存在的画质控件降低 GPU 负载。仅 Windows 展示。
+          SettingsCustomItem(
+            id: 'video.quality.windows_black_flash_notice',
+            visible: (SettingsContext settingsContext) => isWindowsPlatform,
+            builder: _buildWindowsBlackFlashNotice,
+          ),
         ],
       ),
       SettingsSection(
@@ -608,6 +616,18 @@ Future<void> _commitVideoMpvConfig(
     VideoMpvConfig.encode(mutate(current)),
   );
   settingsContext.refresh();
+}
+
+/// 「Windows 高显卡占用黑屏闪烁」已知问题说明行（TODO-1116/1119 / BUG-545）。
+/// 纯说明文案，不写偏好、不改默认值；仅 Windows 平台在画质组内展示，指向上面真实
+/// 存在的画质控件（画质增强 / S 形上采样 / 去色带 / 硬件解码）降低 GPU 负载。
+Widget _buildWindowsBlackFlashNotice(SettingsContext settingsContext) {
+  return AdaptiveSettingsRow(
+    title: t.video_windows_black_flash_notice_title,
+    subtitle: t.video_windows_black_flash_notice_body,
+    icon: Icons.info_outline,
+    showIcon: true,
+  );
 }
 
 /// 读改写 videoSubtitleStyle（纯 pref）：decode → [mutate] → encode 落盘 → 刷新面板。

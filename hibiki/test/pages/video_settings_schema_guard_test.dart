@@ -6,6 +6,7 @@ void main() {
   late String destinationSrc;
   late String schemaSrc;
   late String videoSrc;
+  late String stringsSrc;
 
   setUpAll(() {
     destinationSrc =
@@ -16,6 +17,7 @@ void main() {
         File('lib/src/settings/settings_schema.dart').readAsStringSync();
     videoSrc =
         File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
+    stringsSrc = File('lib/i18n/strings.i18n.json').readAsStringSync();
   });
 
   test('TODO-186: global settings has a dedicated video destination', () {
@@ -125,5 +127,45 @@ void main() {
     expect(body.contains('t.video_control_reset_layout_hint'), isTrue);
     expect(body.contains('setVideoControlLayout('), isTrue);
     expect(body.contains('VideoControlLayout.currentChrome'), isTrue);
+  });
+
+  test(
+      'TODO-1116/1119: Windows video quality group carries a black-flicker known-issue notice',
+      () {
+    final int start =
+        videoSrc.indexOf('SettingsDestination buildVideoDestination()');
+    final int end = videoSrc.indexOf(
+      'Future<void> _commitVideoAsbConfig(',
+      start,
+    );
+    final String body = videoSrc.substring(start, end);
+
+    // The notice must live inside the schema (Image quality group) as a
+    // dedicated custom item, gated Windows-only via the isWindowsPlatform
+    // helper. Never-break-userspace: it is a pure explanation row — it must not
+    // wire a switch/default that would degrade non-Windows or Windows users.
+    expect(
+        body.contains("id: 'video.quality.windows_black_flash_notice'"), isTrue,
+        reason: 'video quality group must own the black-flicker notice item');
+    expect(body.contains('isWindowsPlatform'), isTrue,
+        reason: 'black-flicker notice must be gated to Windows only');
+    expect(body.contains('_buildWindowsBlackFlashNotice'), isTrue,
+        reason: 'notice item must delegate to its info-row builder');
+
+    // i18n-backed, and it must be a plain info row (no new pref write / default).
+    expect(
+        videoSrc.contains('t.video_windows_black_flash_notice_title'), isTrue);
+    expect(
+        videoSrc.contains('t.video_windows_black_flash_notice_body'), isTrue);
+    expect(videoSrc.contains('Icons.info_outline'), isTrue,
+        reason: 'notice should render as an informational row');
+
+    // The two i18n keys must exist in the base translations (all 17 locales are
+    // kept complete by tool/i18n_sync.dart; the i18n completeness test enforces
+    // the rest).
+    expect(stringsSrc.contains('"video_windows_black_flash_notice_title"'),
+        isTrue);
+    expect(
+        stringsSrc.contains('"video_windows_black_flash_notice_body"'), isTrue);
   });
 }
