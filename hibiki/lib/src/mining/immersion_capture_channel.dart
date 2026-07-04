@@ -93,47 +93,36 @@ ImmersionMiningRequest buildImmersionRequest(
 /// [extractClipGifViaFfmpeg] / [extractAudioSegmentViaFfmpeg]。
 /// 转码失败（黑帧/无音轨/ffmpeg 不可用）返回 error，seam 降级为截图卡。
 ///
-/// 时间窗（均可选，全 null 时保持旧行为「整段 0..durationMs」，不破坏现有集成测试）：
-/// - [windowStartMs]/[windowEndMs]：段内**句子时间窗**偏移（对齐整句）。给了就用它做音频窗
-///   （GIF 默认也用它），没给回落到整段。
-/// - [gifEndMs]：GIF 单独的收口点（收到「用户首次查词交互」前 → 帧里无鼠标/弹窗），音频仍到
-///   [windowEndMs]（整句结束）。null → GIF 与音频同窗。
+/// 录到的片段本身即整句：扩展 Netflix 批量录制 seek 到句首 → 播到字幕变化(=句末)停录，片段边界
+/// 即句子边界；且全自动回放（无查词交互、光标/字幕已隐藏），帧里本就无鼠标/弹窗。故整段转码
+/// [0, durationMs]，不做段内窗裁剪。
+/// V16#4：之前本函数的段内时间窗 + GIF 收口偏移参数是无来源死代码（扩展 mineClip 从不发这些偏
+/// 移，Netflix clip 一直回落整段），已删。若将来加入「实时查词捕获」模型（非批量、播放中查词冻结
+/// 帧），届时再重新引入段内句子窗 + GIF 收口到查词交互前的偏移；批量录制路径不适用。
 Future<ImmersionCaptureResult> transcodeClipToCapture(
   Uint8List clipBytes, {
   required int durationMs,
   required MiningMediaCompression compression,
   required String tempDir,
-  int? windowStartMs,
-  int? windowEndMs,
-  int? gifEndMs,
 }) async {
   final Directory dir = Directory('$tempDir/nf_clip_${clipBytes.length}');
   await dir.create(recursive: true);
   try {
     final File clip = File('${dir.path}/clip.webm');
     await clip.writeAsBytes(clipBytes, flush: true);
-    final int fallbackEnd = durationMs > 0 ? durationMs : 6000;
-    // 音频窗：给了段内窗就用它，否则整段。
-    final int audioStart =
-        (windowStartMs != null && windowStartMs >= 0) ? windowStartMs : 0;
-    final int audioEnd = (windowEndMs != null && windowEndMs > audioStart)
-        ? windowEndMs
-        : fallbackEnd;
-    // GIF 窗：起点同音频起点；终点优先 gifEndMs（收口到查词前），否则同音频窗。
-    final int gifEnd =
-        (gifEndMs != null && gifEndMs > audioStart) ? gifEndMs : audioEnd;
+    final int endMs = durationMs > 0 ? durationMs : 6000;
     final String? gifPath = await extractClipGifViaFfmpeg(
       inputPath: clip.path,
-      startMs: audioStart,
-      endMs: gifEnd,
+      startMs: 0,
+      endMs: endMs,
       outputPath: '${dir.path}/clip.gif',
       fps: compression.gifFps,
       width: compression.gifWidth,
     );
     final String? audioPath = await extractAudioSegmentViaFfmpeg(
       inputPath: clip.path,
-      startMs: audioStart,
-      endMs: audioEnd,
+      startMs: 0,
+      endMs: endMs,
       outputPath: '${dir.path}/clip.aac',
       audioChannels: compression.audioChannels,
       audioBitrate: compression.audioBitrate,

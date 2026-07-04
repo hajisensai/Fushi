@@ -4320,15 +4320,11 @@ class _AppModelRemoteLookupService
     // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
     ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
     if (payload.clipBytes != null) {
+      // Netflix 批量录制的片段边界即句子边界（seek 到句首 → 录到字幕变化停），整段转码 [0,时长]。
+      // 扩展 mineClip 不发段内窗/gifEnd（批量回放全自动、无查词交互、无鼠标/弹窗）→ 无从也无须裁段内窗（V16#4）。
       cap = await transcodeClipToCapture(
         payload.clipBytes!,
         durationMs: payload.clipDurationMs ?? 6000,
-        // clipStartMs/EndMs 是扩展算好的**段内句子时间窗**偏移（对齐整句）；有 clipBytes 时走这一
-        // 支，clipStartMs/EndMs 即窗口偏移（非 videoId 原生路径的视频时间）。gifEndMs 让 GIF 收口
-        // 到查词交互前 → 无鼠标/弹窗，音频仍到整句结束。
-        windowStartMs: payload.clipStartMs,
-        windowEndMs: payload.clipEndMs,
-        gifEndMs: payload.clipGifEndMs,
         compression: compression,
         tempDir: Directory.systemTemp.path,
       );

@@ -58,6 +58,12 @@ function stopCapture() {
 
 function beginClip() {
   if (!stream) return { ok: false, error: 'no stream' };
+  // V16#3 防孤儿：上一段 recorder 若因异常未经 endClip 收口仍在录，先强停并解绑再新建，
+  // 否则直接覆盖 recorder 变量会让旧 MediaRecorder 成孤儿、仍在流上跑（内存/流泄漏）。
+  if (recorder && recorder.state !== 'inactive') {
+    try { recorder.onstop = null; recorder.ondataavailable = null; recorder.stop(); } catch (_) {}
+  }
+  recorder = null;
   chunks = [];
   clipStartWall = Date.now();
   recorder = new MediaRecorder(stream, {

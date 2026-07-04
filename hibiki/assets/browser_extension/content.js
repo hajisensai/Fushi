@@ -274,6 +274,7 @@ async function hibikiRunNetflixBatch() {
   hideStyle.id = 'hibiki-nf-hide-sub';
   hideStyle.textContent = '.player-timedtext{visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
+  const prevCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
   let done = 0, fail = 0;
   const okIds = [];
@@ -295,54 +296,72 @@ async function hibikiRunNetflixBatch() {
     try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, window.location.origin); } catch (_) {}
     setTimeout(finish, 5000); // 兜底：seeked / seekDone 都不来也继续
   });
-  for (const q of items) {
-    try {
-      await seekTo(Math.max(0, q.startV / 1000));
-      await sleep(150); // 让首帧稳定
-      // 先确保真的在播（自动播放策略可能拦；重试一次）。仍暂停 → 跳过本句，不录一段冻结帧。
-      try { await v.play(); } catch (_) {}
-      await sleep(200);
-      if (v.paused) { try { await v.play(); } catch (_) {} await sleep(200); }
-      if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
-      await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
-      // 本句结束判据：字幕文本变成别的/清空（≠ 这一句），且已过句首 0.4s。refText 用入队时存的整句
-      // 文本，比「播放时现采样」稳（避免字幕还没渲染时采到空 → 判据失效整段录到超时）。
-      // seek 后字幕要零点几秒才重新渲染：**先等本句字幕真正出现**（过句首 0.3s 后第一段非空字幕
-      // 作参照 ref），**再**录到字幕变成别句(=本句结束)才停。不能一开始就比 refText——seek 后先采到
-      // 的是残留/空字幕，会被误判成「已结束」→ 录一瞬就停（用户报「一下就停了」根因）。
-      // hardEnd 只是字幕检测失效（字幕关/相邻同文本）时的安全上限。
-      const startSec = Math.max(0, q.startV) / 1000;
-      const hardEnd = startSec + 12; // 12s 硬上限
-      const deadline = Date.now() + 16000;
-      let ref = '';
-      while (v.currentTime < hardEnd && Date.now() < deadline) {
-        await sleep(120);
-        const nowText = hibikiSubtitleTextNow();
-        if (!ref) {
-          if (nowText && v.currentTime > startSec + 0.3) ref = nowText; // 抓到本句字幕作参照
-          continue;
-        }
-        if (nowText !== ref) break; // 字幕变成别句 = 本句结束
-      }
-      try { v.pause(); } catch (_) {}
-      const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
+  try {
+    for (const q of items) {
+      let began = false; // beginClip 是否成功（决定 finally 是否需要收口 recorder）
       let ok = false;
-      if (clip && clip.ok && clip.clipBase64) {
-        ok = await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
-            (resp) => {
-              try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
-              resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));
-            });
-        });
+      try {
+        await seekTo(Math.max(0, q.startV / 1000));
+        await sleep(150); // 让首帧稳定
+        // 先确保真的在播（自动播放策略可能拦；重试一次）。仍暂停 → 跳过本句，不录一段冻结帧。
+        try { await v.play(); } catch (_) {}
+        await sleep(200);
+        if (v.paused) { try { await v.play(); } catch (_) {} await sleep(200); }
+        if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        const beginResp = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
+        began = !!(beginResp && beginResp.ok);
+        if (!began) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        // 本句结束判据：字幕文本变成别的/清空（≠ 这一句），且已过句首 0.4s。refText 用入队时存的整句
+        // 文本，比「播放时现采样」稳（避免字幕还没渲染时采到空 → 判据失效整段录到超时）。
+        // seek 后字幕要零点几秒才重新渲染：**先等本句字幕真正出现**（过句首 0.3s 后第一段非空字幕
+        // 作参照 ref），**再**录到字幕变成别句(=本句结束)才停。不能一开始就比 refText——seek 后先采到
+        // 的是残留/空字幕，会被误判成「已结束」→ 录一瞬就停（用户报「一下就停了」根因）。
+        // hardEnd 只是字幕检测失效（字幕关/相邻同文本）时的安全上限。
+        const startSec = Math.max(0, q.startV) / 1000;
+        const hardEnd = startSec + 12; // 12s 硬上限
+        const deadline = Date.now() + 16000;
+        let ref = '';
+        while (v.currentTime < hardEnd && Date.now() < deadline) {
+          await sleep(120);
+          const nowText = hibikiSubtitleTextNow();
+          if (!ref) {
+            if (nowText && v.currentTime > startSec + 0.3) ref = nowText; // 抓到本句字幕作参照
+            continue;
+          }
+          if (nowText !== ref) break; // 字幕变成别句 = 本句结束
+        }
+        try { v.pause(); } catch (_) {}
+        const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
+        began = false; // 已正常收口，finally 不再重复 endClip
+        if (clip && clip.ok && clip.clipBase64) {
+          ok = await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
+              (resp) => {
+                try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
+                resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));
+              });
+          });
+        }
+      } catch (_) {
+        // 录制期异常：不吞进「下一句」，交给 finally 收口 recorder，本句按失败计（下方 else fail++）。
+      } finally {
+        // V16#2/#3：beginClip 成功但正常路径未走到 endClip（异常/中途 return）→ 这里必收口，
+        // 否则 offscreen 录制器泄漏，下一句 beginClip 覆盖 recorder → 旧 MediaRecorder 成孤儿仍占流（状态叠加根因）。
+        if (began) {
+          try { v.pause(); } catch (_) {}
+          try { await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' }); } catch (_) {}
+        }
       }
       if (ok) { done++; okIds.push(q.id); } else fail++;
-    } catch (_) { fail++; }
-    window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
+      window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
+    }
+  } finally {
+    // V16#3：无论批量循环正常结束还是中途抛错，都必还原隐藏字幕的样式 + 光标，绝不把
+    // cursor:none / 藏字幕样式泄漏到用户可见界面（循环外抛异常留可见副作用的根因）。
+    try { hideStyle.remove(); } catch (_) {}
+    document.body.style.cursor = prevCursor;
   }
-  try { hideStyle.remove(); } catch (_) {}
-  document.body.style.cursor = '';
   await hibikiRemoveQueued(okIds);
 }
 
@@ -545,10 +564,14 @@ document.addEventListener('mousemove', (e) => {
   if (!term.trim()) return;
   if (term === hibikiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   hibikiLastTerm = term;
-  // 查词即自动暂停网飞：定格画面 + 字幕（字幕不消失，方便看词/看弹窗）；也冻结 video.currentTime →
-  // 句子窗口自动停在句末，且 offscreen 随之暂停录制保住这句 → 制卡得到整句、干净（无鼠标/弹窗）。
+  // 查词即自动暂停：**仅对 Netflix 播放器**（按域名判定，不碰别的站点/后台视频）。定格画面+字幕
+  // （方便看词/看弹窗），冻结 video.currentTime → 句子窗口停在句末，offscreen 随之暂停录制保住这
+  // 句 → 制卡得整句、干净（无鼠标/弹窗）。YouTube 走服务端裁剪路径不需暂停；普通网页的背景视频更
+  // 不该被查词误暂停（V16#1：原来对页面任意 <video> 都暂停 → UX 副作用）。
   // 仅在播放时暂停（避免重复触发），不自动恢复（用户查完自己按空格续播）。
-  try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}
+  if (hibikiSite() === 'netflix') {
+    try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}
+  }
   // 视口坐标（配合 position:fixed）：全屏与普通页都定位在光标处，且不受页面滚动影响。
   const px = e.clientX;
   const py = e.clientY;

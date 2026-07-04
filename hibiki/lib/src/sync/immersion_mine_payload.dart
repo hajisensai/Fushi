@@ -12,7 +12,6 @@ class ImmersionMinePayload {
     this.timestampMs,
     this.clipStartMs,
     this.clipEndMs,
-    this.clipGifEndMs,
     this.netflixVideoId,
     this.youtubeVideoId,
     this.screenshotBytes,
@@ -27,10 +26,6 @@ class ImmersionMinePayload {
   final int? timestampMs;
   final int? clipStartMs;
   final int? clipEndMs;
-
-  /// TODO-1000：clip 里 **GIF 的结束偏移**（毫秒，段内）。GIF 窗收口到「用户首次查词交互」之前，
-  /// 帧里无鼠标/弹窗；音频窗仍到整句结束 [clipStartMs, clipEndMs]。null → GIF 与音频同窗。
-  final int? clipGifEndMs;
   final String? netflixVideoId;
 
   /// TODO-1000（批量制卡）：YouTube 视频 ID（youtube.com 扩展制卡）。非空 + [clipStartMs]/
@@ -71,7 +66,6 @@ class ImmersionMinePayload {
       timestampMs: (json['timestampMs'] as num?)?.round(),
       clipStartMs: (json['clipStartMs'] as num?)?.round(),
       clipEndMs: (json['clipEndMs'] as num?)?.round(),
-      clipGifEndMs: (json['clipGifEndMs'] as num?)?.round(),
       netflixVideoId: json['netflixVideoId'] as String?,
       youtubeVideoId: json['youtubeVideoId'] as String?,
       // 截图 / clip 是**可选媒体**：base64 坏了就当没这个媒体（降级到截图/文本卡），
