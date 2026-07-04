@@ -12,7 +12,7 @@
 #   bash ci/integration-test.sh                      # boot/select emulator, run all
 #   bash ci/integration-test.sh --skip-build         # reuse the existing app-debug.apk
 #   bash ci/integration-test.sh --only=app_smoke,reader_pagination
-#   bash ci/integration-test.sh --avd=hoshi_test_api35
+#   bash ci/integration-test.sh --avd=hibiki_gpu_test
 #
 # Env overrides: ADB, EMULATOR, FLUTTER, AVD, PKG, DICT_ZIP, ANKI_APK_URL
 #
@@ -23,7 +23,7 @@ set -uo pipefail
 ADB="${ADB:-$(command -v adb 2>/dev/null || echo /d/android_sdk/platform-tools/adb)}"
 EMULATOR="${EMULATOR:-$(command -v emulator 2>/dev/null || echo /d/android_sdk/emulator/emulator)}"
 FLUTTER="${FLUTTER:-$(command -v flutter 2>/dev/null || echo /d/flutter_sdk/flutter_extracted/flutter/bin/flutter)}"
-AVD="${AVD:-hoshi_test_api35}"
+AVD="${AVD:-}"   # resolved lazily below (boot block) if left empty
 PKG="${PKG:-app.hibiki.reader}"
 # Dictionary fixture for popup_dictionary / reader_dictionary. Those tests look
 # up basic vocabulary (猫 / 食べる), so the fixture must be a GENERAL J-J/J-C
@@ -59,6 +59,26 @@ emulator_serial() {
 
 DEVICE="$(emulator_serial)"
 if [ -z "$DEVICE" ]; then
+  # Resolve which AVD to boot (lazily — only needed when nothing is online,
+  # so a host that already has an emulator up needs no AVD at all). The
+  # default is NOT hardcoded to one fixed name that may not exist on this
+  # host: prefer the GPU-verified `hibiki_gpu_test` image (android-34,
+  # renders real Flutter pixels) if present, else fall back to the first AVD
+  # `emulator -list-avds` reports. An explicit --avd=/AVD= override wins.
+  if [ -z "$AVD" ]; then
+    _avds="$("$EMULATOR" -list-avds 2>/dev/null | tr -d '\r')"
+    if printf '%s\n' "$_avds" | grep -qx "hibiki_gpu_test"; then
+      AVD="hibiki_gpu_test"
+    else
+      AVD="$(printf '%s\n' "$_avds" | grep -v '^[[:space:]]*$' | head -1)"
+    fi
+    if [ -z "$AVD" ]; then
+      echo ">>> FAIL: no AVD available — 'emulator -list-avds' is empty and" >&2
+      echo ">>>       no --avd=/AVD= was given. Create one (e.g. an android-34" >&2
+      echo ">>>       'hibiki_gpu_test' image) or pass --avd=<name>." >&2
+      exit 1
+    fi
+  fi
   echo ">>> No emulator online — booting AVD '$AVD'..."
   # GPU mode is overridable via GPU_MODE; default host. NOTE: the emulator logs
   # "aw_browser_terminator: Renderer process crash detected" during WebView
@@ -249,6 +269,16 @@ run_target() {
     grep -iE "fail\(|Expected:|Exception|Error:|No books|Dictionary fixture|AnkiFetch" "$log" | head -3
   fi
 }
+
+# ── Proxy is two-phased. Earlier internet-facing setup — `flutter build apk`
+#    fetching native deps (libmpv android .jar, sqlite3 .dll) and the AnkiDroid
+#    APK curl download — may rely on HTTPS_PROXY/HTTP_PROXY. But `flutter drive`
+#    below talks to the Dart VM service on 127.0.0.1:<port>; routing that
+#    localhost socket through an HTTP proxy makes it get closed mid-handshake
+#    (HttpException: Connection closed), failing EVERY target. All downloads are
+#    done by now, so drop the proxy for the drive phase — localhost must be
+#    direct. (--skip-build reaches here too: unset is a harmless no-op.) ──
+unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy
 
 for t in "${TARGETS[@]}"; do
   run_target "$t"

@@ -69,21 +69,43 @@ provision_ankidroid() {
   MSYS_NO_PATHCONV=1 $ADBD shell pm grant "$ANKI_PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
   # 3. Ensure a collection file exists (first-launch onboarding).
-  # AnkiDroid 22.x auto-creates a default collection on its first launch — no
-  # onboarding tap is required. We just launch it, let it settle, restart once
-  # (the collection is flushed to disk on a clean stop/relaunch), then verify the
-  # file landed. The `test -f $ANKI_COLLECTION` check below is the real gate: if
-  # the collection still is not there, return 1 so the caller reports
-  # anki_integration as failed without aborting the whole run.
+  # AnkiDroid 22.4.3 does NOT silently auto-create a collection: a fresh install
+  # lands on IntroductionActivity with a "Get started" button that must be
+  # activated before DeckPicker runs and writes collection.anki2. A bare `monkey`
+  # LAUNCHER intent only re-surfaces that intro screen — it does not dismiss it —
+  # so on API 34 the collection never appears without one interaction. We (a)
+  # launch the intro explicitly, (b) best-effort advance it with focus-traversal
+  # + Enter (no fragile screen coordinates), then (c) verify. The
+  # `test -f $ANKI_COLLECTION` check is the real gate: if it is still missing we
+  # FAIL LOUDLY with the one manual step, rather than silently pretending
+  # AnkiDroid is ready (return 1 so the caller reports anki_integration failed
+  # without aborting the whole run).
   if ! MSYS_NO_PATHCONV=1 $ADBD shell "test -f $ANKI_COLLECTION" >/dev/null 2>&1; then
     echo ">>> No AnkiDroid collection; running first-launch onboarding..."
-    MSYS_NO_PATHCONV=1 $ADBD shell monkey -p "$ANKI_PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
-    sleep 6
+    # Launch the intro directly (monkey only ever re-surfaces this same screen).
+    MSYS_NO_PATHCONV=1 $ADBD shell am start -n "$ANKI_PKG/.IntroductionActivity" >/dev/null 2>&1 \
+      || MSYS_NO_PATHCONV=1 $ADBD shell monkey -p "$ANKI_PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 \
+      || true
+    sleep 4
+    # Best-effort, coordinate-free advance: move focus onto "Get started" and
+    # activate it with Enter. If the build ignores these keyevents the verify
+    # below still gates the truth, so this can only help, never corrupt state.
+    MSYS_NO_PATHCONV=1 $ADBD shell input keyevent KEYCODE_TAB >/dev/null 2>&1 || true
+    MSYS_NO_PATHCONV=1 $ADBD shell input keyevent KEYCODE_TAB >/dev/null 2>&1 || true
+    MSYS_NO_PATHCONV=1 $ADBD shell input keyevent KEYCODE_ENTER >/dev/null 2>&1 || true
+    sleep 4
+    # A clean stop/relaunch flushes any freshly-created collection to disk.
     MSYS_NO_PATHCONV=1 $ADBD shell am force-stop "$ANKI_PKG" || true
     MSYS_NO_PATHCONV=1 $ADBD shell monkey -p "$ANKI_PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
-    sleep 6
+    sleep 4
     if ! MSYS_NO_PATHCONV=1 $ADBD shell "test -f $ANKI_COLLECTION" >/dev/null 2>&1; then
-      echo ">>> WARN: AnkiDroid collection not created automatically." >&2
+      echo ">>> FAIL: AnkiDroid ($ANKI_PKG) still has no collection at" >&2
+      echo ">>>       $ANKI_COLLECTION. AnkiDroid 22.4.3 blocks automated" >&2
+      echo ">>>       onboarding at IntroductionActivity — its 'Get started'" >&2
+      echo ">>>       button could not be activated headlessly on this image." >&2
+      echo ">>>       ONE-TIME manual step: open AnkiDroid on the emulator, tap" >&2
+      echo ">>>       'Get started' once, then re-run. Verify it took with:" >&2
+      echo ">>>         $ADBD shell test -f $ANKI_COLLECTION && echo OK" >&2
       return 1
     fi
   fi
