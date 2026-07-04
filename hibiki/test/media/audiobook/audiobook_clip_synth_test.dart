@@ -58,13 +58,32 @@ void main() {
       expect(args.last, '/out.mov');
     });
 
-    test('yuvj420p pixel format for mjpeg full-range compatibility', () {
+    // TODO-1147 文字模糊根因守卫：默认去色度下采样（yuvj444p）+ 近最佳 qscale（-q:v 2）。
+    test('defaults to yuvj444p + -q:v 2 (TODO-1147 anti-blur)', () {
       final List<String> args = buildFfmpegImageAudioToVideoArgs(
-        imagePath: '/i.png',
+        imagePath: '/i.jpg',
         audioPath: '/a.m4a',
         outputPath: '/o.mov',
       );
+      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuvj444p']));
+      // 近最佳 qscale 消除默认 qscale 的二次有损。
+      final int qIdx = args.indexOf('-q:v');
+      expect(qIdx, greaterThanOrEqualTo(0),
+          reason: 'mjpeg must pin a low qscale to avoid extra JPEG loss');
+      expect(args[qIdx + 1], '2');
+    });
+
+    // 移动端保守回退：调用方可显式传 yuvj420p（自编 ffmpeg-kit min 的 mjpeg encoder
+    // 收 444 需真机验，未验前移动端仍走 420，靠 1080×1920 分辨率提升消模糊）。
+    test('pixFmt override lets mobile fall back to yuvj420p', () {
+      final List<String> args = buildFfmpegImageAudioToVideoArgs(
+        imagePath: '/i.jpg',
+        audioPath: '/a.m4a',
+        outputPath: '/o.mov',
+        pixFmt: 'yuvj420p',
+      );
       expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
+      expect(args, isNot(contains('yuvj444p')));
     });
   });
 
@@ -208,6 +227,28 @@ void main() {
         containsAllInOrder(<String>['-i', '/tmp/frames/frame_%04d.jpg']),
       );
     });
+
+    // TODO-1147：序列帧路径同样默认 yuvj444p + -q:v 2，可被移动端保守覆写为 420。
+    test('seq defaults to yuvj444p + -q:v 2, mobile override to yuvj420p', () {
+      final List<String> def = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/f',
+        audioPath: '/a.aac',
+        outputPath: '/o.mov',
+      );
+      expect(def, containsAllInOrder(<String>['-pix_fmt', 'yuvj444p']));
+      final int qIdx = def.indexOf('-q:v');
+      expect(qIdx, greaterThanOrEqualTo(0));
+      expect(def[qIdx + 1], '2');
+
+      final List<String> mobile = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/f',
+        audioPath: '/a.aac',
+        outputPath: '/o.mov',
+        pixFmt: 'yuvj420p',
+      );
+      expect(mobile, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
+      expect(mobile, isNot(contains('yuvj444p')));
+    });
   });
 
   group('computeClipTextLayout (TODO-945 M3 layout)', () {
@@ -216,8 +257,9 @@ void main() {
     // TODO-1013：逐句高亮跟随色（sasayaki）——导出卡片当整句背景衬底。
     const Color highlight = Color(0x66FFCC00);
 
-    test('default output is portrait 720x1280 (D3) and carries theme colors',
-        () {
+    test(
+        'default output is portrait 1080x1920 (TODO-1147 anti-blur) and carries '
+        'theme colors', () {
       final AudiobookClipTextLayout layout = computeClipTextLayout(
         textLength: 6,
         baseFontSize: 22,
@@ -227,8 +269,11 @@ void main() {
         foreground: fg,
         highlight: highlight,
       );
-      expect(layout.width, 720);
-      expect(layout.height, 1280);
+      // TODO-1147 根因守卫：栅格化+输出分辨率 >= 1080x1920（旧 720x1280 致文字模糊）。
+      expect(layout.width, greaterThanOrEqualTo(1080));
+      expect(layout.height, greaterThanOrEqualTo(1920));
+      expect(layout.width, 1080);
+      expect(layout.height, 1920);
       expect(layout.background, bg);
       expect(layout.foreground, fg);
       // TODO-1013：逐句高亮跟随色（sasayaki）必须原样透传给渲染层。

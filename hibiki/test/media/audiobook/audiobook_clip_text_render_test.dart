@@ -96,7 +96,7 @@ void main() {
 
   test(
     'computeClipTextLayout: 18-rune yoon-initial trigger stays sane '
-    '(fontSize>0, 720x1280) (BUG-490)',
+    '(fontSize>0, 1080x1920) (BUG-490 / TODO-1147)',
     () {
       expect(triggerText.runes.length, 18);
       final AudiobookClipTextLayout layout = computeClipTextLayout(
@@ -109,8 +109,9 @@ void main() {
         highlight: const Color(0x66FFCC00),
       );
       expect(layout.fontSize, greaterThan(0));
-      expect(layout.width, 720);
-      expect(layout.height, 1280);
+      // TODO-1147：默认分辨率提到 1080x1920 消除文字模糊。
+      expect(layout.width, 1080);
+      expect(layout.height, 1920);
     },
   );
 

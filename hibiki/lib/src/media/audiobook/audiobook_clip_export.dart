@@ -242,7 +242,9 @@ class AudiobookClipSynthResult {
 ///   故把静止文本帧统一喂 JPEG，两端都走已存在的 mjpeg 解码，不再触碰缺失的 png。
 /// - `-i audio`：音频输入。两输入默认映射（无显式 -map，单流无歧义）。
 /// - `-c:v mjpeg`：**捆绑包唯一带音轨容器可用的视频编码器**（D-CODEC，非 libx264）。
-/// - `-pix_fmt yuvj420p`：mjpeg 的全范围 YUV420，最通用播放器兼容。
+/// - `-q:v 2 -pix_fmt [pixFmt]`（TODO-1147）：mjpeg 近最佳 qscale 消除默认 qscale 二次
+///   有损；[pixFmt] 桌面传 `yuvj444p`（去色度下采样，保彩色文字边缘），移动端保守传
+///   `yuvj420p`（自编 ffmpeg-kit min 的 mjpeg encoder 收 444 需真机验合成不 exit）。
 /// - `-c:a aac`：音频转 AAC（捆绑包唯一音频编码器，与桌面音频裁剪同源）。
 /// - `-shortest`：以较短的输入（音频）定时长——图是无限 loop，必须靠音频收尾。
 /// - `-r [fps]`：低帧率（静态画面无需高帧率，省体积/编码时间）。
@@ -255,9 +257,10 @@ List<String> buildFfmpegImageAudioToVideoArgs({
   required String imagePath,
   required String audioPath,
   required String outputPath,
-  int width = 720,
-  int height = 1280,
+  int width = 1080,
+  int height = 1920,
   int fps = 12,
+  String pixFmt = 'yuvj444p',
 }) {
   // pad 居中黑边：scale 先按比例缩进框内，再 pad 到精确 WxH（偶数维度安全）。
   final String filter = 'scale=$width:$height:'
@@ -276,8 +279,12 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     audioPath,
     '-c:v',
     'mjpeg',
+    // TODO-1147：mjpeg 用近最佳 qscale（-q:v 2）消除默认 qscale 的二次有损；yuvj444p
+    // 去色度下采样（桌面路径）保留彩色文字边缘精度（移动端调用方保守传 yuvj420p）。
+    '-q:v',
+    '2',
     '-pix_fmt',
-    'yuvj420p',
+    pixFmt,
     '-r',
     '$fps',
     '-vf',
@@ -304,7 +311,7 @@ List<String> buildFfmpegImageAudioToVideoArgs({
 /// [quality] 为 JPEG 质量（1-100），静态文本卡片用高质量避免文字边缘锯齿。
 Uint8List? encodeClipTextFrameAsJpg(
   Uint8List pngBytes, {
-  int quality = 95,
+  int quality = 98,
 }) {
   final img.Image? decoded = img.decodeImage(pngBytes);
   if (decoded == null) return null;
@@ -328,7 +335,8 @@ Uint8List? encodeClipTextFrameAsJpg(
 /// - `-framerate <fps> -i <framesDir>/<pattern>`：image2 demuxer 按 [fps] 读序列帧。
 ///   **不用** `-loop 1`（那是单张静态图）；序列帧本身携带时间轴。
 /// - `-i audio`：完整音频输入。
-/// - `-c:v mjpeg` / `-pix_fmt yuvj420p`：捆绑包唯一带音轨容器可用的视频编码器（非 libx264）。
+/// - `-c:v mjpeg` / `-q:v 2` / `-pix_fmt [pixFmt]`（TODO-1147）：捆绑包唯一带音轨容器
+///   可用的视频编码器（非 libx264）+ 近最佳 qscale + 桌面 444 / 移动 420 见单图版。
 /// - `-c:a aac`：捆绑包唯一音频编码器。
 /// - `-shortest`：以较短输入收尾（帧数×1/fps 与音频时长对齐时二者相近，防尾端错位）。
 /// - `-vf scale=...:pad=...`：缩放+黑边填充到精确偶数维度（mjpeg 要求偶数维度）。
@@ -341,9 +349,10 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
   required String audioPath,
   required String outputPath,
   String framePattern = 'frame_%04d.jpg',
-  int width = 720,
-  int height = 1280,
+  int width = 1080,
+  int height = 1920,
   int fps = 12,
+  String pixFmt = 'yuvj444p',
 }) {
   final String filter = 'scale=$width:$height:'
       'force_original_aspect_ratio=decrease,'
@@ -365,8 +374,11 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
     audioPath,
     '-c:v',
     'mjpeg',
+    // TODO-1147：同单图版——近最佳 qscale + 桌面去色度下采样，消除逐帧模糊。
+    '-q:v',
+    '2',
     '-pix_fmt',
-    'yuvj420p',
+    pixFmt,
     '-vf',
     filter,
     '-c:a',
@@ -385,9 +397,10 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
   required String imagePath,
   required String audioPath,
   required String outputPath,
-  int width = 720,
-  int height = 1280,
+  int width = 1080,
+  int height = 1920,
   int fps = 12,
+  String pixFmt = 'yuvj444p',
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 3),
 }) async {
@@ -410,6 +423,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
         width: width,
         height: height,
         fps: fps,
+        pixFmt: pixFmt,
       ),
       timeout,
     );
@@ -458,9 +472,10 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
   required String audioPath,
   required String outputPath,
   String framePattern = 'frame_%04d.jpg',
-  int width = 720,
-  int height = 1280,
+  int width = 1080,
+  int height = 1920,
   int fps = 12,
+  String pixFmt = 'yuvj444p',
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 3),
 }) async {
@@ -484,6 +499,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
         width: width,
         height: height,
         fps: fps,
+        pixFmt: pixFmt,
       ),
       timeout,
     );

@@ -16,7 +16,8 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 /// 布局参数（尺寸/字号/内边距/竖排）抽成纯函数 [computeClipTextLayout] 便于守卫测试，
 /// 渲染本身要 BuildContext + 真实 pipeline 不可纯单测（合成由真机验）。
 
-/// 片段分享文本图的布局规格（纯数据）。竖屏 720×1280（D3），沿用阅读主题色（D2）。
+/// 片段分享文本图的布局规格（纯数据）。竖屏 1080×1920（D3，TODO-1147 把栅格化+输出
+/// 分辨率从 720×1280 提到 1080×1920 消除文字模糊），沿用阅读主题色（D2）。
 @immutable
 class AudiobookClipTextLayout {
   const AudiobookClipTextLayout({
@@ -68,7 +69,7 @@ class AudiobookClipTextLayout {
 /// - [vertical] / [lineHeight] / [background] / [foreground]：沿用阅读主题（D2）。
 /// - [highlight]：逐句高亮跟随色（`ReaderThemeColors.sasayaki`，TODO-1013），作为整句
 ///   背景衬底涂在文字之下，复刻有声书当前句跟读高亮。
-/// - [width] / [height]：输出分辨率（默认竖屏 720×1280，D3）。
+/// - [width] / [height]：输出分辨率（默认竖屏 1080×1920，D3；TODO-1147 提分辨率消模糊）。
 ///
 /// 字号自适应规则（粗略但确定，避免巨图/截断）：以 [baseFontSize] 为上限，文本越长
 /// 越往下收，最低 [minFontSize]。padding 取较小边的 8%，给文本留呼吸空间。
@@ -80,10 +81,10 @@ AudiobookClipTextLayout computeClipTextLayout({
   required Color background,
   required Color foreground,
   required Color highlight,
-  int width = 720,
-  int height = 1280,
+  int width = 1080,
+  int height = 1920,
   double minFontSize = 18,
-  double maxFontSize = 96,
+  double maxFontSize = 144,
 }) {
   // 自适应字号：短句用接近正文 2 倍的大字（分享卡片观感），长句逐级收。
   final double base = baseFontSize <= 0 ? 22 : baseFontSize;

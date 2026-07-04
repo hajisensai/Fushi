@@ -1227,6 +1227,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           framesDir: framesDir,
           audioClip: audioClip,
           videoFile: videoFile,
+          isDesktop: isDesktop,
         );
         if (!dynamicOk) {
           // 回退：清掉可能半成的序列帧目录，走单句静态。
@@ -1283,6 +1284,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           outputPath: videoFile.path,
           width: layout.width,
           height: layout.height,
+          // TODO-1147：桌面去色度下采样（yuvj444p）保留彩色文字边缘精度；移动端
+          // ffmpeg-kit min 的 mjpeg encoder 收 444 需真机验合成不 exit，故保守 420
+          // （仍靠 1080×1920 分辨率提升消模糊，不触碰移动合成 exit1 风险）。
+          pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
         );
         if (!synth.isSuccess || synth.outputPath == null) {
           debugPrint(
@@ -1353,6 +1358,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     required Directory framesDir,
     required File audioClip,
     required File videoFile,
+    required bool isDesktop,
   }) async {
     const int fps = 12;
     // 帧计划：每帧此刻高亮哪一句（相邻同句合并计数）。
@@ -1427,6 +1433,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       width: layout.width,
       height: layout.height,
       fps: fps,
+      // TODO-1147：同单图静态路径——桌面 444 / 移动保守 420（见上）。
+      pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
     );
     if (!synth.isSuccess || synth.outputPath == null) {
       debugPrint(
