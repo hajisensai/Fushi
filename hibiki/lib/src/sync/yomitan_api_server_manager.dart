@@ -12,17 +12,21 @@ class YomitanApiServerManager {
     required ReadingResolver readingResolver,
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
+    Map<String, String> Function()? themeColorsProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
         _tokenizer = tokenizer,
-        _readingResolver = readingResolver;
+        _readingResolver = readingResolver,
+        _themeColorsProvider = themeColorsProvider;
 
   final HibikiRemoteLookupService _lookup;
   final HibikiRemoteMiningService? _mining;
   final HibikiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
+  // BUG-530：主题 CSS 变量供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展弹窗。
+  final Map<String, String> Function()? _themeColorsProvider;
 
   YomitanApiServer? _server;
 
@@ -38,6 +42,7 @@ class YomitanApiServerManager {
       historyService: _history,
       tokenizer: _tokenizer,
       readingResolver: _readingResolver,
+      themeColorsProvider: _themeColorsProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );
