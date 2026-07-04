@@ -25,6 +25,7 @@ import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
@@ -271,7 +272,7 @@ String videoFavoriteCacheKey({
 }
 
 /// TODO-897：缺失资源对话框的用户选择。
-enum _MissingResourceChoice { reimport, delete, cancel }
+enum _MissingResourceChoice { relink, reimport, delete, cancel }
 
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
@@ -2205,6 +2206,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => Navigator.pop(ctx, _MissingResourceChoice.cancel),
             child: Text(t.dialog_cancel),
           ),
+          // TODO-1133：重新选择文件——把 videoPath 重链到用户新选的真实文件并持久化，
+          // 保留进度 / 字幕 / 音轨等既有状态。只对单视频（非播放列表、非远端）提供，
+          // 判据与「删除条目」一致（重链只对单个物理文件有意义）。
+          if (canDelete)
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(ctx, _MissingResourceChoice.relink),
+              child: Text(t.video_resource_missing_relink),
+            ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(ctx, _MissingResourceChoice.reimport),
@@ -2222,6 +2232,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     if (!mounted) return;
     switch (choice) {
+      case _MissingResourceChoice.relink:
+        // TODO-1133：重新选择文件，重链 videoPath 并原地重新播放（保留 row 上其它状态）。
+        await _relinkMissingResource(row!);
       case _MissingResourceChoice.reimport:
         // M1：退回视频库，由用户在库内重新导入（最小落地，零新依赖）。
         nav.pop();
@@ -2232,6 +2245,40 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 停在缺失态（不转圈）。可重连磁盘 / 移回文件后退页重进。
         break;
     }
+  }
+
+  /// TODO-1133：缺失的本地视频「重新选择文件」——重链 [VideoBookRow.videoPath] 到
+  /// 用户新选的真实文件并持久化，然后原地重新载入播放（保留进度 / 字幕 / 音轨 / 倍速
+  /// 等所有既有状态，只换物理文件路径）。
+  ///
+  /// 泛化（好品味）：对**任意**缺失的本地视频都提供此动作，不对 app cache 目录加特例
+  /// 分支——cache 被系统清空只是「文件失联」的一个子集。
+  ///
+  /// 拾取复用 [pickRealFilePath]（TODO-1112 已建的统一真实路径拾取：安卓有全文件访问
+  /// 时走真实路径浏览器拿 content 之外的绝对路径、不复制到 cache；桌面 / iOS 及安卓降级
+  /// 走 file_picker）。不新造第二套文件通道。
+  ///
+  /// 只处理单视频（非播放列表、非远端）；调用点已用 canDelete 判据门控。
+  Future<void> _relinkMissingResource(VideoBookRow row) async {
+    final String? newPath = await pickRealFilePath(
+      context: context,
+      appModel: appModel,
+    );
+    if (newPath == null || newPath.isEmpty || !mounted) return;
+    // 持久化新路径（只写 videoPath，进度 / 字幕 / 音轨 / 倍速等其它列不动，
+    // updateLocalMediaPaths 用 Value.absent() 保持未触及）。
+    await widget.repo.updateLocalMediaPaths(row.bookUid, videoPath: newPath);
+    // 重读最新行（承载新 videoPath + 其它未变列），清缺失态后原地重新载入播放。
+    final VideoBookRow? updated = await widget.repo.getByBookUid(row.bookUid);
+    if (updated == null || !mounted) return;
+    setState(() {
+      _bookRow = updated;
+      _missingResource = false;
+      _missingRow = null;
+      _failed = false;
+    });
+    HibikiToast.show(msg: t.video_resource_relink_success);
+    await _loadSingle(updated);
   }
 
   /// 缺失态删除：二次确认后复用 home_video_page._confirmDelete 的删除序列
@@ -4692,6 +4739,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
+                // TODO-1133：重新选择文件（重链），单视频主修复动作。
+                if (canDelete)
+                  FilledButton.tonal(
+                    onPressed: () => unawaited(_relinkMissingResource(row)),
+                    child: Text(t.video_resource_missing_relink),
+                  ),
                 FilledButton.tonal(
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text(t.video_resource_missing_reimport),

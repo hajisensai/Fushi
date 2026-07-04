@@ -94,6 +94,38 @@ void main() {
     expect(row.delayMs, 250);
   });
 
+  test(
+      'updateLocalMediaPaths relinks videoPath only, leaving subtitle/'
+      'progress/audio untouched (TODO-1133)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/relink'),
+      title: Value('Relink'),
+      videoPath: Value('/cleared/cache/movie.mp4'),
+      subtitleSource: Value('/keep/movie.srt'),
+      audioTrackId: Value('aid1'),
+      lastPositionMs: Value(4321),
+      delayMs: Value(180),
+    ));
+
+    // Missing-video relink: only videoPath is passed (subtitleSource absent).
+    // Everything else must survive so playback resumes with prior state.
+    await repo.updateLocalMediaPaths(
+      'video/relink',
+      videoPath: '/new/real/movie.mp4',
+    );
+
+    final VideoBookRow row = (await repo.getByBookUid('video/relink'))!;
+    expect(row.videoPath, '/new/real/movie.mp4');
+    expect(row.subtitleSource, '/keep/movie.srt');
+    expect(row.audioTrackId, 'aid1');
+    expect(row.lastPositionMs, 4321);
+    expect(row.delayMs, 180);
+    expect(row.title, 'Relink');
+  });
+
   test('saveSubtitleSelection writes cues + source atomically (BUG-081/W1)',
       () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());

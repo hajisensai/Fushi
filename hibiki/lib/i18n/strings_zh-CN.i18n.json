@@ -2090,5 +2090,7 @@
   "file_picker_title": "选择一个文件",
   "file_picker_empty": "没有文件",
   "video_windows_black_flash_notice_title": "Windows 上黑屏闪烁？",
-  "video_windows_black_flash_notice_body": "在 Windows 上，当显卡占用过高时视频画面可能出现黑屏闪烁。可尝试关闭上方的画质增强、S 形上采样和去色带，或把硬件解码切到「复制」以降低显卡负载。"
+  "video_windows_black_flash_notice_body": "在 Windows 上，当显卡占用过高时视频画面可能出现黑屏闪烁。可尝试关闭上方的画质增强、S 形上采样和去色带，或把硬件解码切到「复制」以降低显卡负载。",
+  "video_resource_missing_relink": "重新选择文件",
+  "video_resource_relink_success": "已重新链接视频文件"
 }
