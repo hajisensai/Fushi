@@ -1305,7 +1305,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   ) {
     for (final EpubTocItem item in items) {
       final int index = _tocHrefToChapterIndex(item.href);
-      if (index >= 0) {
+      // TODO-1128: hide TOC entries for single-image chapters absorbed into a
+      // neighbouring text chapter (merge-image on) — they no longer own a
+      // virtual page, so a TOC jump there would land on a page that does not
+      // exist. UI-only: _book.toc (persistent) is untouched; children are still
+      // walked so a nested real chapter under an absorbed item is not lost.
+      final bool absorbed =
+          index >= 0 && (_spreadMap?.isAbsorbedImageChapter(index) ?? false);
+      if (index >= 0 && !absorbed) {
         result.add(TtuTocEntry(
           index: index,
           label: item.label,
@@ -1320,6 +1327,11 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (_controller == null) return;
     _sanitizedCssCache.clear();
     _invalidateStyleCache();
+    // TODO-1128: structural layout changes routed through onLayoutReloadLive
+    // (spread mode/direction, merge-image toggle) may change the virtual-page
+    // map, so rebuild it from the current settings before reloading. Cheap and
+    // idempotent when nothing structural changed.
+    _rebuildSpreadMap();
     if (_lyricsMode) {
       await _loadLyricsPage();
       return;

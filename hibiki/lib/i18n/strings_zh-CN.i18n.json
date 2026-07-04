@@ -2092,5 +2092,7 @@
   "video_windows_black_flash_notice_title": "Windows 上黑屏闪烁？",
   "video_windows_black_flash_notice_body": "在 Windows 上，当显卡占用过高时视频画面可能出现黑屏闪烁。可尝试关闭上方的画质增强、S 形上采样和去色带，或把硬件解码切到「复制」以降低显卡负载。",
   "video_resource_missing_relink": "重新选择文件",
-  "video_resource_relink_success": "已重新链接视频文件"
+  "video_resource_relink_success": "已重新链接视频文件",
+  "ttu_merge_image_pages": "将插图页并入正文",
+  "ttu_merge_image_pages_subtitle": "把只含一张图的独立章节并入相邻正文章连续显示，不再单独占一页"
 }

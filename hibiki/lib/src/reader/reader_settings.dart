@@ -325,6 +325,14 @@ class ReaderSettings {
   Future<void> setSpreadDirection(String v) =>
       _set<String>('ttu_spread_direction', v);
 
+  /// TODO-1128: when true, the reader folds each run of trailing standalone
+  /// single-image (0-char) chapters into the preceding text chapter's
+  /// continuous flow instead of paging to each illustration separately.
+  /// Default false (conservative first ship); a structural layout key.
+  bool get mergeImagePages => _get<bool>('ttu_merge_image_pages', false);
+  Future<void> setMergeImagePages(bool v) =>
+      _set<bool>('ttu_merge_image_pages', v);
+
   bool get enableVerticalFontKerning => _get<bool>('ttu_vert_kerning', false);
   Future<void> setEnableVerticalFontKerning(bool v) =>
       _set<bool>('ttu_vert_kerning', v);

@@ -1262,6 +1262,23 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  // TODO-1128: merge standalone single-image chapters into the neighbouring
+  // text chapter's continuous flow. A *structural* layout key (it changes the
+  // virtual-page/spread map and the injected chapter DOM, not just CSS). Mirrors
+  // setTtuSpreadMode/setTtuBlurImages: the setter fires the CSS-live hook only;
+  // the caller (schema UI via notifyReaderLayoutChanged, or the in-reader quick
+  // sheet via its layout-key reload) drives the structural reload — which now
+  // rebuilds the spread map before reloading. Firing onLayoutReloadLive here too
+  // would double-reload.
+  bool get ttuMergeImagePages =>
+      readerSettings?.mergeImagePages ??
+      getPreference<bool>(key: 'ttu_merge_image_pages', defaultValue: false);
+  Future<void> setTtuMergeImagePages(bool v) async {
+    await (readerSettings?.setMergeImagePages(v) ??
+        setPreference<bool>(key: 'ttu_merge_image_pages', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   bool get ttuEnableVerticalFontKerning =>
       readerSettings?.enableVerticalFontKerning ??
       getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);

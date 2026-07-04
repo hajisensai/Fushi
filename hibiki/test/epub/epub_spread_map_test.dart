@@ -238,5 +238,182 @@ void main() {
       expect(offHasAnySpread, isFalse);
       expect(onHasAnySpread, isTrue);
     });
+
+    // ── TODO-1128: merge trailing single-image chapters into text chapter ──
+    group('mergeImagePages (TODO-1128, restricted plan A)', () {
+      test(
+          'off by default: mergeImagePages omitted leaves image chapters '
+          'on their own virtual pages', () {
+        // text, img, img, text
+        final EpubBook book = _makeBook(
+          count: 4,
+          imageOnly: <bool>[false, true, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+        );
+        // No merge → 4 independent virtual pages, no absorbed chapters.
+        expect(map.length, 4);
+        expect(map.mergedImagesForChapter(0), isEmpty);
+        expect(map.isAbsorbedImageChapter(1), isFalse);
+        expect(map.isAbsorbedImageChapter(2), isFalse);
+      });
+
+      test(
+          'on: a text chapter absorbs its run of trailing single-image '
+          'chapters into its own virtual page', () {
+        // ch0 text, ch1 img, ch2 img, ch3 text
+        final EpubBook book = _makeBook(
+          count: 4,
+          imageOnly: <bool>[false, true, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+
+        // ch0 absorbs ch1+ch2; ch3 is its own page. 4 chapters → 2 pages.
+        expect(map.length, 2);
+        expect(map.entryAt(0).chapterIndex, 0);
+        expect(map.entryAt(0).hasMergedImages, isTrue);
+        expect(map.entryAt(0).mergedImageChapters, <int>[1, 2]);
+        expect(map.entryAt(0).chapterIndices, <int>[0, 1, 2]);
+        expect(map.entryAt(1).chapterIndex, 3);
+        expect(map.entryAt(1).hasMergedImages, isFalse);
+
+        // Reverse lookups the reader uses for injection / TOC hiding.
+        expect(map.mergedImagesForChapter(0), <int>[1, 2]);
+        expect(map.mergedImagesForChapter(3), isEmpty);
+        expect(map.isAbsorbedImageChapter(1), isTrue);
+        expect(map.isAbsorbedImageChapter(2), isTrue);
+        expect(map.isAbsorbedImageChapter(0), isFalse);
+        expect(map.isAbsorbedImageChapter(3), isFalse);
+      });
+
+      test(
+          'charOffset ownership unchanged: every chapter still maps to a '
+          'virtual page and text-chapter indices are never reassigned', () {
+        final EpubBook book = _makeBook(
+          count: 4,
+          imageOnly: <bool>[false, true, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // Absorbed images resolve to the absorbing text chapter's page; text
+        // chapters keep their own page. No chapter index is dropped/renumbered.
+        expect(map.virtualPageForChapter(0), 0);
+        expect(map.virtualPageForChapter(1), 0);
+        expect(map.virtualPageForChapter(2), 0);
+        expect(map.virtualPageForChapter(3), 1);
+      });
+
+      test(
+          'NEVER merges two text chapters: adjacent text chapters stay '
+          'separate pages, no absorption', () {
+        // All text — merge must be a total no-op.
+        final EpubBook book = _makeBook(
+          count: 4,
+          imageOnly: <bool>[false, false, false, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        expect(map.length, 4);
+        for (int i = 0; i < 4; i++) {
+          expect(map.entryAt(i).chapterIndex, i);
+          expect(map.entryAt(i).hasMergedImages, isFalse);
+          expect(map.isAbsorbedImageChapter(i), isFalse);
+        }
+      });
+
+      test(
+          'a leading image-only chapter (no preceding text) is NOT absorbed '
+          'and keeps its own page', () {
+        // ch0 img (cover-like), ch1 text — nothing precedes ch0 to absorb it.
+        final EpubBook book = _makeBook(
+          count: 2,
+          imageOnly: <bool>[true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        expect(map.length, 2);
+        expect(map.isAbsorbedImageChapter(0), isFalse);
+        expect(map.entryAt(0).chapterIndex, 0);
+        expect(map.entryAt(1).chapterIndex, 1);
+      });
+
+      test(
+          'spread pairing wins over merge: a spread-paired image pair is '
+          'opaque and never absorbed into a preceding text chapter', () {
+        // ch0 text, ch1 img, ch2 img, ch3 img — with OPF spread on ch1/ch2.
+        // ch1+ch2 pair first; the pair (a spread entry) stops the absorb run,
+        // so ch0 absorbs nothing across it. ch3 is a lone trailing image with
+        // no preceding *text single* adjacent (the spread sits between), so it
+        // stays its own page.
+        final EpubBook book = _makeBook(
+          count: 4,
+          imageOnly: <bool>[false, true, true, true],
+          spreadProps: <String?>[
+            null,
+            'page-spread-left',
+            'page-spread-right',
+            null,
+          ],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'auto',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // Pages: [ch0 text], [ch1+ch2 spread], [ch3 img].
+        expect(map.length, 3);
+        expect(map.entryAt(0).chapterIndex, 0);
+        expect(map.entryAt(0).hasMergedImages, isFalse,
+            reason: 'spread pair between blocks absorption');
+        expect(map.entryAt(1).isSpread, isTrue);
+        expect(map.entryAt(1).chapterIndices, <int>[1, 2]);
+        expect(map.entryAt(2).chapterIndex, 3);
+        expect(map.isAbsorbedImageChapter(1), isFalse);
+        expect(map.isAbsorbedImageChapter(2), isFalse);
+        expect(map.isAbsorbedImageChapter(3), isFalse);
+      });
+
+      test('merge absorbs a run then resumes after the next text chapter', () {
+        // text, img, img, text, img, text
+        final EpubBook book = _makeBook(
+          count: 6,
+          imageOnly: <bool>[false, true, true, false, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // Pages: [ch0+img1+img2], [ch3+img4], [ch5].
+        expect(map.length, 3);
+        expect(map.entryAt(0).mergedImageChapters, <int>[1, 2]);
+        expect(map.entryAt(1).chapterIndex, 3);
+        expect(map.entryAt(1).mergedImageChapters, <int>[4]);
+        expect(map.entryAt(2).chapterIndex, 5);
+        expect(map.entryAt(2).hasMergedImages, isFalse);
+      });
+    });
   });
 }

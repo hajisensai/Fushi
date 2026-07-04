@@ -468,6 +468,24 @@ SettingsDestination buildReadingDestination() {
               notifyReaderLayoutChanged(c);
             },
           ),
+          // TODO-1128（受限方案 A）：把 0 字符单图 spine 章并入相邻正文章连续显示，
+          // 不再各占一页/一条目录。结构性布局键（改虚拟页映射 + 注入章 DOM），故走
+          // notifyReaderLayoutChanged（重建 spread map + 重排），默认关。
+          SettingsSwitchItem(
+            id: 'reading_display.merge_image_pages',
+            title: t.ttu_merge_image_pages,
+            subtitle: t.ttu_merge_image_pages_subtitle,
+            icon: Icons.collections_bookmark_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 20,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuMergeImagePages,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuMergeImagePages(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
         ],
       ),
       SettingsSection(

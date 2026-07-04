@@ -526,6 +526,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       spreadMode: _settings!.spreadMode,
       spreadDirection: _settings!.spreadDirection,
       edgeMatchResults: _edgeMatchResults,
+      mergeImagePages: _settings!.mergeImagePages,
     );
   }
 
