@@ -1179,7 +1179,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           builder: (_) => HibikiDialogFrame(
             // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口
             // 由面板内部 LayoutBuilder 自动降级回单列 push。
-            maxWidth: 900,
+            maxWidth: kHibikiSettingsDialogMaxWidth,
             maxHeightFactor: 0.80,
             scrollable: false,
             child: sheetContent,

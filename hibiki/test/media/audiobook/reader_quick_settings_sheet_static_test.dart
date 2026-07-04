@@ -388,7 +388,10 @@ void main() {
         readerSource.substring(desktopBranch, mobileBranch);
     expect(desktopSource, contains('HibikiDialogFrame('));
     // master-detail 需要更宽画布（左父菜单 + 右详情）；520 太窄进不了分栏。
-    expect(desktopSource, contains('maxWidth: 900'));
+    // TODO-1142：魔法数 900 抽成共享 kHibikiSettingsDialogMaxWidth（全屏 push 的
+    // 书籍 CSS 编辑页也引用它约束正文宽度，与限宽弹窗兄弟页同宽）。
+    expect(desktopSource, contains('maxWidth: kHibikiSettingsDialogMaxWidth'));
+    expect(desktopSource, isNot(contains('maxWidth: 900')));
     expect(desktopSource, contains('maxHeightFactor: 0.80'));
     expect(desktopSource, isNot(contains('=> Dialog(')));
     expect(desktopSource, isNot(contains('ConstrainedBox(')));
@@ -423,6 +426,20 @@ void main() {
     expect(source, contains('_subPageContent(selectedId)'));
     // 左 pane 分类用带选中态的 MD3 列表项（pill 高亮，无 chevron 误导 push）。
     expect(source, contains('HibikiListItemSelectedShape.pill'));
+    // TODO-1143：左父菜单固定 208px，长分类标签（如「布局与显示」选中加粗）会被
+    // HibikiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。守卫
+    // _buildWidePane 的分类项显式传 titleMaxLines: 2 让长标签换行而非省略。
+    final String widePaneSource = _between(
+      source,
+      '  Widget _buildWidePane(',
+      '  Widget _buildWidePrimary(',
+    );
+    final RegExpMatch? widePaneTitleMaxLines =
+        RegExp(r'titleMaxLines:\s*(\d+)').firstMatch(widePaneSource);
+    expect(widePaneTitleMaxLines, isNotNull,
+        reason: 'TODO-1143：宽窗左父菜单分类项必须显式传 titleMaxLines');
+    expect(int.parse(widePaneTitleMaxLines!.group(1)!), greaterThan(1),
+        reason: '长分类标签要能换行而非 ellipsis 截断，titleMaxLines 必须 > 1');
     // 右 pane 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
     expect(source, contains('ValueKey<String>(selectedId)'));

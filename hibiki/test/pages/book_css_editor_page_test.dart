@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart'
+    show kHibikiSettingsDialogMaxWidth;
 
 // Minimal Slang stub — the real strings.g.dart pulls in too many
 // dependencies for a focused widget test.  We wrap the page in a
@@ -178,6 +180,36 @@ void main() {
       expect(
           File('${tmpDir.path}${p.separator}style.css.original').existsSync(),
           isFalse);
+    },
+  );
+
+  testWidgets(
+    'TODO-1142: body + bottom actions width-capped to shared settings dialog '
+    'width so the full-screen editor matches sibling dialog pages',
+    (WidgetTester tester) async {
+      // BookCssEditorPage 是逃出 900px 限宽设置弹窗的全屏 push 路由；桌面下若不约束
+      // 正文宽度会铺满整屏，与限宽弹窗里的兄弟设置页不一致。修复把 body 与底部动作栏
+      // 包进 Center + ConstrainedBox(maxWidth: kHibikiSettingsDialogMaxWidth)。
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1920, 1080);
+      addTearDown(tester.view.reset);
+
+      createCss(tmpDir, 'a.css', 'aaa');
+
+      await pumpEditor(tester, tmpDir.path);
+
+      // 找出所有约束到共享设置弹窗宽度的 ConstrainedBox（正文 + 底部动作栏各一个）。
+      final Iterable<ConstrainedBox> capped = tester
+          .widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
+          .where((ConstrainedBox b) =>
+              b.constraints.maxWidth == kHibikiSettingsDialogMaxWidth);
+      expect(capped.length, greaterThanOrEqualTo(2),
+          reason: '正文与底部动作栏都应被约束到 kHibikiSettingsDialogMaxWidth');
+
+      // 编辑器正文仍正常渲染（TextField expands:true 需要有界高度，包裹层用
+      // SizedBox(height: infinity) 保留满高，不应抛布局异常）。
+      expect(tester.takeException(), isNull);
+      expect(find.byType(TextField), findsWidgets);
     },
   );
 }

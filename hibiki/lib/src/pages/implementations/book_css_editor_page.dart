@@ -285,33 +285,64 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
             ),
           ),
         ),
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: List.generate(_entries.length, (i) {
-            return HibikiEditorPanel(controller: _textControllers[i]!);
-          }),
-        ),
-        bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap,
+        // 全屏 push 页面在桌面会铺满整宽，与限宽弹窗（900）里的兄弟设置页
+        // 不一致；把正文与底部动作栏约束到同一最大宽度并居中。TextField 用
+        // expands:true 需要有界高度，故用 SizedBox(height: infinity) 保留满高。
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: kHibikiSettingsDialogMaxWidth,
             ),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap / 2,
-              children: [
-                OutlinedButton(
-                  onPressed: _currentTabCanReset() ? _doResetCurrent : null,
-                  child: Text(t.book_css_editor_reset_current),
+            child: SizedBox(
+              width: double.infinity,
+              height: double.infinity,
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: List.generate(_entries.length, (i) {
+                  return HibikiEditorPanel(controller: _textControllers[i]!);
+                }),
+              ),
+            ),
+          ),
+        ),
+        // Scaffold 给 bottomNavigationBar 松弛高度约束：这里用 Align(heightFactor: 1)
+        // 让外层高度收缩到动作栏本身（若用 Center 会纵向膨胀占满全屏、盖住上方标签栏
+        // 吸走点击），再 ConstrainedBox 限宽 + SizedBox(width: infinity) 在 900 内铺满，
+        // spaceBetween 才能像限宽弹窗那样把「重置/保存」推到两端。
+        bottomNavigationBar: Align(
+          alignment: Alignment.center,
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: kHibikiSettingsDialogMaxWidth,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.card,
+                    vertical: tokens.spacing.gap,
+                  ),
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap / 2,
+                    children: [
+                      OutlinedButton(
+                        onPressed:
+                            _currentTabCanReset() ? _doResetCurrent : null,
+                        child: Text(t.book_css_editor_reset_current),
+                      ),
+                      FilledButton(
+                        onPressed: () => _doSave(_selectedIndex),
+                        child: Text(t.book_css_editor_save),
+                      ),
+                    ],
+                  ),
                 ),
-                FilledButton(
-                  onPressed: () => _doSave(_selectedIndex),
-                  child: Text(t.book_css_editor_save),
-                ),
-              ],
+              ),
             ),
           ),
         ),

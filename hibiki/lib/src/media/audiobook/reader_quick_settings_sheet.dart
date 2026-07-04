@@ -380,6 +380,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             selectedShape: HibikiListItemSelectedShape.pill,
             leading: Icon(cat.icon),
             title: Text(cat.label),
+            // 左父菜单固定 208px，长标签（如「布局与显示」选中加粗后 ~80px）
+            // 会触发 ellipsis 截断成「布局与…」；允许换成两行而非省略。
+            titleMaxLines: 2,
             onTap: () => setState(() => _subPage = cat.id),
           ),
         SizedBox(height: sectionGap),
