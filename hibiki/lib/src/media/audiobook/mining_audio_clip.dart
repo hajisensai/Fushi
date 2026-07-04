@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// Default head padding (ms) prepended to a mining audio clip.
@@ -487,4 +489,317 @@ AudioPlaybackRange _shiftRange(AudioPlaybackRange range, int delayMs) {
     startMs: startMs,
     endMs: endMs,
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// TODO-1115 动态高亮片段视频：多句连读 + 逐帧高亮跟随。
+//
+// [miningSentenceAudioRange] 只回一段合并后的 [AudioPlaybackRange]（单文件、
+// 起止 ms），够用来「裁一段音频」，但**丢失了每句 cue 的边界**——逐句高亮跟随需要
+// 知道选区覆盖了哪几个 cue、每个 cue 的 [startMs]/[endMs]，才能在每一帧定位「此刻
+// 该高亮哪一句」。所以这里新增一条纯数据路径：把选区映射到**有序 cue 列表**，再由
+// [clipFramePlan] 排出每帧高亮哪一句。二者都是纯函数、无副作用、可单测。
+//
+// 不改 [miningSentenceAudioRange]：单句静态导出仍走旧路径（never break userspace），
+// 多句动态失败时回退单句静态。
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 把有声书查词/拖选选区映射到覆盖它的**有序 cue 列表**（同一 [AudioCue.audioFileIndex]，
+/// 按 [AudioCue.startMs] 升序）。
+///
+/// 与 [miningSentenceAudioRange] 复用同一套定位逻辑（sasayaki 位置匹配优先，文本兜底），
+/// 但**收集所有命中的 cue**而不合并成单一区间——逐句高亮跟随需要每句边界。
+///
+/// 语义与约束：
+/// - **单文件约束**：只保留第一个命中 cue 所在文件（`audioFileIndex`）的 cue；跨文件的
+///   命中被丢弃（跨文件选区在导出侧本就降级，见 [classifyAudiobookClipSelection]）。
+/// - 选区只覆盖 1 句时自然退化为**单元素列表**，等价旧单句路径。
+/// - 无法定位（跨章解析落空 / 无 cue 无 span）返回**空列表**，调用方据此回退单句静态。
+///
+/// [cue] 是查词落入的 cue（可空——gap word）；[sentence] 是选区文本；
+/// [sectionIndex]/[sentenceNormCharOffset]/[sentenceNormCharLength] 是选区的整书归一化
+/// span（拖选跨句时已由选区 JS 合并成整段 span，见 mining_clip_span_test）。
+List<AudioCue> miningSentenceCueSpan({
+  required List<AudioCue> cues,
+  required AudioCue? cue,
+  required String sentence,
+  int? sectionIndex,
+  int? sentenceNormCharOffset,
+  int? sentenceNormCharLength,
+}) {
+  if (cues.isEmpty) {
+    return const <AudioCue>[];
+  }
+
+  final List<AudioCue> hits = _collectSpanCues(
+    cues: cues,
+    cue: cue,
+    sentence: sentence,
+    sectionIndex: sectionIndex,
+    sentenceNormCharOffset: sentenceNormCharOffset,
+    sentenceNormCharLength: sentenceNormCharLength,
+  );
+  if (hits.isEmpty) {
+    return const <AudioCue>[];
+  }
+
+  // 单文件约束：以第一句所在文件为准，丢弃跨文件命中，再按 startMs 升序。
+  final int fileIndex = hits.first.audioFileIndex;
+  final List<AudioCue> sameFile = hits
+      .where((AudioCue c) => c.audioFileIndex == fileIndex)
+      .toList()
+    ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+  return List<AudioCue>.unmodifiable(sameFile);
+}
+
+/// 收集覆盖选区的 cue（未过滤文件、未排序）。位置匹配优先，文本兜底，最后单 cue 兜底。
+List<AudioCue> _collectSpanCues({
+  required List<AudioCue> cues,
+  required AudioCue? cue,
+  required String sentence,
+  required int? sectionIndex,
+  required int? sentenceNormCharOffset,
+  required int? sentenceNormCharLength,
+}) {
+  // 1) 位置匹配（sasayaki span 与选区 [offset, offset+length) 有交集的 cue）。
+  if (sectionIndex != null &&
+      sentenceNormCharOffset != null &&
+      sentenceNormCharLength != null &&
+      sentenceNormCharLength > 0) {
+    final int offset = sentenceNormCharOffset;
+    final int rangeEnd = offset + sentenceNormCharLength;
+    final List<AudioCue> hits = <AudioCue>[];
+    for (final AudioCue c in cues) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(c.textFragmentId);
+      if (frag == null || frag.sectionIndex != sectionIndex) {
+        continue;
+      }
+      if (offset < frag.normCharEnd && rangeEnd > frag.normCharStart) {
+        hits.add(c);
+      }
+    }
+    if (hits.isNotEmpty) {
+      return hits;
+    }
+  }
+
+  // 2) 文本兜底：归一化拼接子串匹配，取覆盖 span 的连续 cue。
+  final String textFallback = sentence.trim();
+  if (textFallback.isNotEmpty) {
+    final List<AudioCue> textHits = _collectSpanCuesByText(cues, textFallback);
+    if (textHits.isNotEmpty) {
+      return textHits;
+    }
+  }
+
+  // 3) 单 cue 兜底：连位置/文本都定位不出时，至少保留查词落入的那个 cue（若有），
+  //    让多句路径自然退化为单句静态（等价旧路径），而不是彻底放弃。
+  if (cue != null) {
+    return <AudioCue>[cue];
+  }
+  return const <AudioCue>[];
+}
+
+/// 归一化所有 cue.text 拼接后定位 [query]，返回与其重叠的连续 cue（复刻
+/// [CollectionAudioMatcher] 的文本匹配语义，但回 cue 列表而非合并区间）。
+List<AudioCue> _collectSpanCuesByText(List<AudioCue> cues, String query) {
+  final String normQuery = AudioTextNormalizer.normalize(query);
+  if (normQuery.isEmpty) {
+    return const <AudioCue>[];
+  }
+  final List<int> cueStarts = <int>[];
+  final List<String> normTexts = <String>[];
+  final StringBuffer buf = StringBuffer();
+  for (final AudioCue c in cues) {
+    cueStarts.add(buf.length);
+    final String nt = AudioTextNormalizer.normalize(c.text);
+    normTexts.add(nt);
+    buf.write(nt);
+  }
+  final String concat = buf.toString();
+  final int found = concat.indexOf(normQuery);
+  if (found < 0) {
+    return const <AudioCue>[];
+  }
+  final int foundEnd = found + normQuery.length;
+  final List<AudioCue> hits = <AudioCue>[];
+  for (int i = 0; i < cues.length; i++) {
+    final int cueStart = cueStarts[i];
+    final int cueEnd = cueStart + normTexts[i].length;
+    if (cueStart < foundEnd && cueEnd > found) {
+      hits.add(cues[i]);
+    }
+  }
+  return hits;
+}
+
+/// 有声书片段导出专用的整段尾 padding（ms）。比 Anki 制卡共用的 [kMiningTailPadMs]
+/// 放宽，避免导出视频末句尾音被硬切；**只用于导出路径**（[clipExportGlobalRange]），
+/// 不改全局常量，不影响 [miningSentenceAudioRange] 的 Anki 制卡窗口。
+const int kClipExportTailPadMs = 600;
+
+/// 从**有序**多句 cue 列表算出导出用的整段完整音频窗口（首句 head-padded start ..
+/// 末句 tail-padded end），并应用 A/V [delayMs] 偏移。纯函数、可单测。
+///
+/// 中间句本就连续（相邻 cue 首尾相接），不会被 padSentenceRange 的 tailCap 切——tailCap
+/// 只对**末句**的尾 padding 生效（末句之后无同文件 cue 时 tailCap 为空，尾 padding 放宽到
+/// [kClipExportTailPadMs] 也不会侵入下一句）。跨文件 cue 已在 [miningSentenceCueSpan]
+/// 侧被过滤，这里的 [span] 保证单文件。返回 null 当 [span] 为空。
+AudioPlaybackRange? clipExportGlobalRange({
+  required List<AudioCue> span,
+  required List<AudioCue> allCues,
+  int headPadMs = kMiningHeadPadMs,
+  int tailPadMs = kClipExportTailPadMs,
+  int delayMs = 0,
+}) {
+  if (span.isEmpty) {
+    return null;
+  }
+  final int fileIndex = span.first.audioFileIndex;
+  int startMs = span.first.startMs;
+  int endMs = span.first.endMs;
+  for (final AudioCue c in span) {
+    if (c.audioFileIndex != fileIndex) continue;
+    if (c.startMs < startMs) startMs = c.startMs;
+    if (c.endMs > endMs) endMs = c.endMs;
+  }
+  final AudioPlaybackRange merged = AudioPlaybackRange(
+    audioFileIndex: fileIndex,
+    startMs: startMs,
+    endMs: endMs > startMs ? endMs : startMs + 1,
+  );
+  final AudioPlaybackRange padded = padSentenceRange(
+    merged,
+    cues: allCues,
+    headPadMs: headPadMs,
+    tailPadMs: tailPadMs,
+  );
+  return _shiftRange(padded, delayMs);
+}
+
+/// 逐帧渲染计划里的一段：从第 [highlightCueIndex] 句起、连续 [frameCount] 帧都高亮它。
+///
+/// [highlightCueIndex] 是**多句 cue 列表里的下标**（0-based）；-1 表示这一段落在句间
+/// gap（无 cue 覆盖当前帧时刻，见 [clipFramePlan] 的 gap 策略）。相邻相同 index 的帧被
+/// 合并成一段（[frameCount] 累加），供渲染层「每句只渲一次 PNG、按 frameCount 决定序列帧
+/// 里复制几帧」。
+@immutable
+class ClipFrameSpec {
+  const ClipFrameSpec({
+    required this.highlightCueIndex,
+    required this.frameCount,
+  });
+
+  /// 该段高亮的 cue 下标（多句列表 0-based）；-1 = 句间 gap，无高亮。
+  final int highlightCueIndex;
+
+  /// 该段持续的帧数（合并相邻同 index 帧后的计数）。
+  final int frameCount;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ClipFrameSpec &&
+      other.highlightCueIndex == highlightCueIndex &&
+      other.frameCount == frameCount;
+
+  @override
+  int get hashCode => Object.hash(highlightCueIndex, frameCount);
+
+  @override
+  String toString() =>
+      'ClipFrameSpec(cue=$highlightCueIndex, frames=$frameCount)';
+}
+
+/// 句间 gap（某帧时刻无 cue 覆盖）时的高亮策略。
+enum ClipGapHighlight {
+  /// 保持上一句高亮（默认——朗读者在句间停顿时上一句字幕通常仍留在屏上）。
+  holdPrevious,
+
+  /// 无高亮（gap 帧不高亮任何句）。
+  none,
+}
+
+/// 纯函数：给定**有序** cue 列表 [cues]（[miningSentenceCueSpan] 产出，已单文件+升序）、
+/// 全局裁剪窗口 `[globalStartMs, globalEndMs)` 与帧率 [fps]，排出每帧「高亮哪一句」。
+///
+/// 帧数 = ceil((globalEndMs - globalStartMs) / (1000/fps))，至少 1 帧。第 i 帧的时刻
+/// `t = globalStartMs + i * (1000/fps)`；在 [cues] 里找**包含 t** 的 cue
+/// （`startMs <= t < endMs`）→ 该帧高亮它。落在任何 cue 之外（句间 gap / 头尾 padding）
+/// 时按 [gapHighlight] 决定：默认 [ClipGapHighlight.holdPrevious] 保持上一句。
+///
+/// 相邻相同 highlightCueIndex 的帧合并计数（每句只渲一次 PNG）。返回 [ClipFrameSpec] 列表，
+/// 其 [ClipFrameSpec.frameCount] 之和 == 总帧数。
+///
+/// [cues] 为空返回空列表（调用方回退单句静态）。
+List<ClipFrameSpec> clipFramePlan({
+  required List<AudioCue> cues,
+  required int globalStartMs,
+  required int globalEndMs,
+  required int fps,
+  ClipGapHighlight gapHighlight = ClipGapHighlight.holdPrevious,
+}) {
+  if (cues.isEmpty || fps <= 0 || globalEndMs <= globalStartMs) {
+    return const <ClipFrameSpec>[];
+  }
+
+  final double msPerFrame = 1000.0 / fps;
+  final int durationMs = globalEndMs - globalStartMs;
+  // ceil：末段不足一帧也补一帧，保证覆盖整段音频时长。
+  int frameCount = (durationMs / msPerFrame).ceil();
+  if (frameCount < 1) {
+    frameCount = 1;
+  }
+
+  final List<ClipFrameSpec> plan = <ClipFrameSpec>[];
+  // run-length：逐帧算高亮 index，相邻相同则累加计数，变化则 flush 当前 run。
+  int? currentIndex;
+  int runFrames = 0;
+  int lastHighlight = _kNoHighlight;
+
+  for (int i = 0; i < frameCount; i++) {
+    final int t = globalStartMs + (i * msPerFrame).round();
+    int frameIndex = _cueIndexAt(cues, t);
+    if (frameIndex == _kNoHighlight) {
+      // 句间 gap / 头尾 padding：按策略处理。
+      if (gapHighlight == ClipGapHighlight.holdPrevious &&
+          lastHighlight != _kNoHighlight) {
+        frameIndex = lastHighlight;
+      }
+    } else {
+      lastHighlight = frameIndex;
+    }
+
+    if (currentIndex == null) {
+      currentIndex = frameIndex;
+      runFrames = 1;
+    } else if (frameIndex == currentIndex) {
+      runFrames += 1;
+    } else {
+      plan.add(
+        ClipFrameSpec(highlightCueIndex: currentIndex, frameCount: runFrames),
+      );
+      currentIndex = frameIndex;
+      runFrames = 1;
+    }
+  }
+  plan.add(
+    ClipFrameSpec(highlightCueIndex: currentIndex!, frameCount: runFrames),
+  );
+  return List<ClipFrameSpec>.unmodifiable(plan);
+}
+
+/// [ClipFrameSpec.highlightCueIndex] 的「无高亮 / gap」哨兵值。
+const int _kNoHighlight = -1;
+
+/// 在**有序** cue 列表里找包含时刻 [t] 的 cue 下标（`startMs <= t < endMs`）；无则 -1。
+/// cue 已按 startMs 升序，命中区间可能重叠时取**第一个**包含 t 的 cue（读序优先）。
+int _cueIndexAt(List<AudioCue> cues, int t) {
+  for (int i = 0; i < cues.length; i++) {
+    final AudioCue c = cues[i];
+    if (t >= c.startMs && t < c.endMs) {
+      return i;
+    }
+  }
+  return _kNoHighlight;
 }

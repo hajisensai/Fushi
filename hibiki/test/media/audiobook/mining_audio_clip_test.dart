@@ -617,6 +617,219 @@ void main() {
       expect(padded.endMs, 4000);
     });
   });
+
+  group('miningSentenceCueSpan (TODO-1115 多句连读)', () {
+    test('maps a 3-sentence position span to ordered same-file cues', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+            startMs: 1000,
+            endMs: 1600,
+            text: '第一句',
+            textFragmentId: _frag(0, 0, 10)),
+        _cue(
+            startMs: 1600,
+            endMs: 2300,
+            text: '第二句',
+            textFragmentId: _frag(0, 10, 20)),
+        _cue(
+            startMs: 2300,
+            endMs: 4300,
+            text: '第三句',
+            textFragmentId: _frag(0, 20, 30)),
+        _cue(
+            startMs: 4300,
+            endMs: 5200,
+            text: '句外',
+            textFragmentId: _frag(0, 30, 40)),
+      ];
+      // 选区覆盖 [0, 30) → 前三句命中，第四句（30..40）在选区之外。
+      final List<AudioCue> span = miningSentenceCueSpan(
+        cues: cues,
+        cue: cues[0],
+        sentence: '第一句第二句第三句',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 30,
+      );
+      expect(span.length, 3);
+      expect(span.map((AudioCue c) => c.text).toList(),
+          <String>['第一句', '第二句', '第三句']);
+      // 升序（startMs 递增）。
+      for (int i = 1; i < span.length; i++) {
+        expect(span[i].startMs, greaterThanOrEqualTo(span[i - 1].startMs));
+      }
+    });
+
+    test('single-sentence selection degenerates to a one-element span', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+            startMs: 1000,
+            endMs: 1600,
+            text: '一句',
+            textFragmentId: _frag(0, 0, 10)),
+        _cue(
+            startMs: 1600,
+            endMs: 2300,
+            text: '二句',
+            textFragmentId: _frag(0, 10, 20)),
+      ];
+      final List<AudioCue> span = miningSentenceCueSpan(
+        cues: cues,
+        cue: cues[0],
+        sentence: '一句',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 10,
+      );
+      expect(span.length, 1);
+      expect(span.first.text, '一句');
+    });
+
+    test('drops cross-file cues, keeps only first hit file', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+            startMs: 1000,
+            endMs: 2000,
+            text: 'A',
+            textFragmentId: _frag(0, 0, 10)),
+        _cue(
+            startMs: 0, endMs: 900, text: 'B', textFragmentId: _frag(0, 10, 20))
+          ..audioFileIndex = 1,
+      ];
+      // 两句都在 section 0 的选区 [0,20)，但属不同文件 → 只保留第一命中文件（file 0）。
+      final List<AudioCue> span = miningSentenceCueSpan(
+        cues: cues,
+        cue: cues[0],
+        sentence: 'AB',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 20,
+      );
+      expect(span.length, 1);
+      expect(span.first.audioFileIndex, 0);
+    });
+
+    test('empty cues → empty span', () {
+      final List<AudioCue> span = miningSentenceCueSpan(
+        cues: const <AudioCue>[],
+        cue: null,
+        sentence: 'x',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 10,
+      );
+      expect(span, isEmpty);
+    });
+
+    test('text fallback collects contiguous cues covering the sentence', () {
+      // 无 sasayaki 位置（plain selector），走文本兜底。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 500, text: '前'),
+        _cue(startMs: 500, endMs: 1500, text: '本文'),
+        _cue(startMs: 1500, endMs: 2000, text: 'です'),
+        _cue(startMs: 2000, endMs: 2500, text: '次'),
+      ];
+      final List<AudioCue> span = miningSentenceCueSpan(
+        cues: cues,
+        cue: cues[1],
+        sentence: '本文です',
+      );
+      expect(span.map((AudioCue c) => c.text).toList(), <String>['本文', 'です']);
+    });
+  });
+
+  group('clipExportGlobalRange (TODO-1115 整段完整音频窗口)', () {
+    test('start = first head-padded, end = last tail-padded (widened tail)',
+        () {
+      // 首句 [1000,1600)、中间句 [1600,2300)、末句 [2300,4300)，末句后无 cue → 尾无 cap。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+            startMs: 1000,
+            endMs: 1600,
+            text: '一',
+            textFragmentId: _frag(0, 0, 10)),
+        _cue(
+            startMs: 1600,
+            endMs: 2300,
+            text: '二',
+            textFragmentId: _frag(0, 10, 20)),
+        _cue(
+            startMs: 2300,
+            endMs: 4300,
+            text: '三',
+            textFragmentId: _frag(0, 20, 30)),
+      ];
+      final List<AudioCue> span = <AudioCue>[cues[0], cues[1], cues[2]];
+      final AudioPlaybackRange? global = clipExportGlobalRange(
+        span: span,
+        allCues: cues,
+      );
+      expect(global, isNotNull);
+      // head: 1000 - kMiningHeadPadMs(120) = 880。
+      expect(global!.startMs, 880);
+      // tail: 末句 4300 + kClipExportTailPadMs(600) = 4900（无后续 cue 不被 cap）。
+      expect(global.endMs, 4900);
+      expect(global.audioFileIndex, 0);
+    });
+
+    test('middle cues stay continuous, not cut by tailCap', () {
+      // 中间句紧接下一句，只有末句尾 padding 可越界；中间不被切。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+            startMs: 1000,
+            endMs: 2000,
+            text: '一',
+            textFragmentId: _frag(0, 0, 10)),
+        _cue(
+            startMs: 2000,
+            endMs: 3000,
+            text: '二',
+            textFragmentId: _frag(0, 10, 20)),
+        // 末句后紧跟一个不属于选区的 cue（tailCap 生效，尾 padding 被 clamp 到它）。
+        _cue(
+            startMs: 3050,
+            endMs: 4000,
+            text: '外',
+            textFragmentId: _frag(0, 20, 30)),
+      ];
+      final List<AudioCue> span = <AudioCue>[cues[0], cues[1]];
+      final AudioPlaybackRange? global = clipExportGlobalRange(
+        span: span,
+        allCues: cues,
+      );
+      expect(global, isNotNull);
+      expect(global!.startMs, 880); // 1000-120
+      // 末句 endMs=3000 + 600 = 3600，但被下一 cue start 3050 capped → 3050。
+      expect(global.endMs, 3050);
+    });
+
+    test('empty span → null', () {
+      expect(
+        clipExportGlobalRange(
+            span: const <AudioCue>[], allCues: const <AudioCue>[]),
+        isNull,
+      );
+    });
+
+    test('applies A/V delay to both edges', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+            startMs: 1000,
+            endMs: 2000,
+            text: '一',
+            textFragmentId: _frag(0, 0, 10)),
+      ];
+      final AudioPlaybackRange? global = clipExportGlobalRange(
+        span: cues,
+        allCues: cues,
+        delayMs: 100,
+      );
+      expect(global, isNotNull);
+      // (1000-120)+100 = 980；(2000+600)+100 = 2700。
+      expect(global!.startMs, 980);
+      expect(global.endMs, 2700);
+    });
+  });
 }
 
 AudioCue _cue({

@@ -126,9 +126,13 @@ Future<Uint8List?> renderAudiobookClipTextToPng({
   final GlobalKey boundaryKey = GlobalKey();
   final Completer<void> attached = Completer<void>();
 
+  // 单句静态图：一段文本、该段高亮（highlightIndex 0），等价旧行为。
   final Widget card = _AudiobookClipTextCard(
     boundaryKey: boundaryKey,
-    text: text,
+    segments: <AudiobookClipTextSegment>[
+      AudiobookClipTextSegment(text: text),
+    ],
+    highlightIndex: 0,
     layout: layout,
     onFirstFrame: () {
       if (!attached.isCompleted) attached.complete();
@@ -260,17 +264,185 @@ Future<void> _waitForNextFrame() {
   return completer.future;
 }
 
-/// 离屏文本卡片：`RepaintBoundary` 包一个按阅读主题着色 + 竖/横排的居中文本块。
+// ─────────────────────────────────────────────────────────────────────────
+// TODO-1115 逐帧动态高亮：把「多句整段文本 + 指定高亮哪一句」批量离屏渲成 N 帧 PNG。
+//
+// 单图 D-RENDER（[renderAudiobookClipTextToPng]）只渲一句静态图；动态高亮跟随需要
+// 每句一张「整段文本 + 该句高亮」的 PNG，ffmpeg 用 image2 序列帧拼成逐句跟随视频
+// （见 buildFfmpegImageSeqAudioToVideoArgs）。这里复用同一套「离屏 RepaintBoundary +
+// 等 paint 完成 + toImage(png)」时序（BUG-490 已修，对每帧都生效），只把单句 Text
+// 换成多句段落、按 highlightCueIndex 给指定句涂 highlight 衬底、其余句常态 fg。
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 多句整段文本的一段（一句 / 一个 cue 对应的文本 + 可选图片）。
+@immutable
+class AudiobookClipTextSegment {
+  const AudiobookClipTextSegment({
+    required this.text,
+    this.imageBytes,
+  });
+
+  /// 该句文本（cue.text）。
+  final String text;
+
+  /// TODO-1127：该句区间内夹带的 EPUB 插图字节（PNG/JPEG，可空）。当前导出路径
+  /// 尚未从 WebView 抽取插图字节，故常为 null——保留字段+渲染分支，owner 后续接
+  /// 图片抽取时无需改渲染层。
+  final Uint8List? imageBytes;
+}
+
+/// 批量把「多句整段文本」离屏渲成 [segments].length 张 PNG（每张高亮不同一句）。
+///
+/// 返回 `List<Uint8List?>`，第 i 张是「整段文本、第 i 句高亮」的 PNG 字节；某句渲染
+/// 失败对应位 null（调用方据此回退单句静态）。复用 [renderAudiobookClipTextToPng] 的
+/// 离屏时序（每帧等 paint 完成再 toImage），只是把单句卡片换成多句 + 高亮某句的卡片。
+///
+/// [highlightIndices] 指定要渲哪些高亮下标（通常 = 帧计划里出现过的去重 cue 下标，
+/// 每句只渲一次）；未传时默认渲每一句（0..segments.length-1）。-1（gap 无高亮）也可传，
+/// 渲成「整段文本、无句高亮」。
+Future<List<Uint8List?>> renderAudiobookClipFrames({
+  required OverlayState overlay,
+  required List<AudiobookClipTextSegment> segments,
+  required AudiobookClipTextLayout layout,
+  List<int>? highlightIndices,
+  double pixelRatio = 1.0,
+}) async {
+  final List<int> indices = highlightIndices ??
+      List<int>.generate(segments.length, (int i) => i, growable: false);
+  final List<Uint8List?> out = <Uint8List?>[];
+  for (final int highlightIndex in indices) {
+    final Uint8List? png = await _renderClipFramePng(
+      overlay: overlay,
+      segments: segments,
+      highlightIndex: highlightIndex,
+      layout: layout,
+      pixelRatio: pixelRatio,
+    );
+    out.add(png);
+  }
+  return out;
+}
+
+/// 渲单帧：整段文本、第 [highlightIndex] 句高亮（-1 = 无句高亮）。镜像
+/// [renderAudiobookClipTextToPng] 的离屏时序，只换卡片 widget。
+Future<Uint8List?> _renderClipFramePng({
+  required OverlayState overlay,
+  required List<AudiobookClipTextSegment> segments,
+  required int highlightIndex,
+  required AudiobookClipTextLayout layout,
+  double pixelRatio = 1.0,
+}) async {
+  final GlobalKey boundaryKey = GlobalKey();
+  final Completer<void> attached = Completer<void>();
+
+  final Widget card = _AudiobookClipTextCard(
+    boundaryKey: boundaryKey,
+    segments: segments,
+    highlightIndex: highlightIndex,
+    layout: layout,
+    onFirstFrame: () {
+      if (!attached.isCompleted) attached.complete();
+    },
+  );
+
+  final OverlayEntry entry = OverlayEntry(
+    builder: (BuildContext context) => Positioned(
+      left: -100000,
+      top: -100000,
+      child: Material(
+        type: MaterialType.transparency,
+        child: card,
+      ),
+    ),
+  );
+
+  overlay.insert(entry);
+  try {
+    var gotFirstFrame = true;
+    await attached.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        gotFirstFrame = false;
+      },
+    );
+    if (!gotFirstFrame) {
+      ErrorLogService.instance.log(
+        'AudiobookClipTextRender.frameFirstFrameTimeout',
+        'offscreen multi-cue frame never reported first frame within 5s '
+            '(highlight=$highlightIndex, segments=${segments.length})',
+        StackTrace.current,
+      );
+      return null;
+    }
+
+    final RenderObject? renderObject =
+        boundaryKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderRepaintBoundary) {
+      ErrorLogService.instance.log(
+        'AudiobookClipTextRender.frameNoBoundary',
+        'offscreen frame boundary missing or wrong type: '
+            '${renderObject.runtimeType}',
+        StackTrace.current,
+      );
+      return null;
+    }
+
+    final ui.Size boundarySize = renderObject.size;
+    if (boundarySize.width <= 0 || boundarySize.height <= 0) {
+      ErrorLogService.instance.log(
+        'AudiobookClipTextRender.frameZeroSize',
+        'offscreen frame boundary non-positive size: $boundarySize',
+        StackTrace.current,
+      );
+      return null;
+    }
+
+    await _waitForBoundaryPainted(renderObject);
+
+    final ui.Image image = await renderObject.toImage(pixelRatio: pixelRatio);
+    try {
+      final ByteData? bytes =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) {
+        ErrorLogService.instance.log(
+          'AudiobookClipTextRender.frameToByteDataNull',
+          'frame image.toByteData(png) returned null (highlight=$highlightIndex)',
+          StackTrace.current,
+        );
+        return null;
+      }
+      return bytes.buffer.asUint8List();
+    } finally {
+      image.dispose();
+    }
+  } catch (e, st) {
+    ErrorLogService.instance.log(
+      'AudiobookClipTextRender.frameToImageThrew',
+      e,
+      st,
+    );
+    return null;
+  } finally {
+    entry.remove();
+  }
+}
+
+/// 离屏文本卡片：`RepaintBoundary` 包按阅读主题着色的多句整段文本块，指定句高亮。
+///
+/// [segments] 为单元素时等价旧单句静态卡片（never break userspace）；多元素时把每句
+/// 依次排下来，第 [highlightIndex] 句涂 highlight 衬底（其余常态 fg）。
 class _AudiobookClipTextCard extends StatefulWidget {
   const _AudiobookClipTextCard({
     required this.boundaryKey,
-    required this.text,
+    required this.segments,
+    required this.highlightIndex,
     required this.layout,
     required this.onFirstFrame,
   });
 
   final GlobalKey boundaryKey;
-  final String text;
+  final List<AudiobookClipTextSegment> segments;
+  final int highlightIndex;
   final AudiobookClipTextLayout layout;
   final VoidCallback onFirstFrame;
 
@@ -290,9 +462,8 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
   @override
   Widget build(BuildContext context) {
     final AudiobookClipTextLayout layout = widget.layout;
-    // TODO-1013：复刻有声书「逐句高亮跟随」——阅读器当前句用 sasayaki 色作整句背景衬底
-    // （`::highlight(hoshi-sasayaki)`），文字保持 fg，并加粗（呼应歌词模式当前句
-    // `font-weight: 700`）。导出卡片对齐同一观感：fg 粗体文字铺在 highlight 衬底上。
+    // TODO-1013：复刻有声书「逐句高亮跟随」——当前句用 sasayaki 色作整句背景衬底，
+    // 文字保持 fg 并加粗（呼应歌词模式当前句 font-weight: 700）。
     final TextStyle textStyle = TextStyle(
       color: layout.foreground,
       fontSize: layout.fontSize,
@@ -300,27 +471,80 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
       fontWeight: FontWeight.w700,
     );
 
-    // 衬底内边距：与字号成比例（大字大衬底），圆角柔化边缘（分享卡片观感）。
     final double highlightPadV = layout.fontSize * 0.14;
     final double highlightPadH = layout.fontSize * 0.28;
-    final Widget body = Container(
-      decoration: BoxDecoration(
-        color: layout.highlight,
-        borderRadius: BorderRadius.circular(layout.fontSize * 0.18),
-      ),
-      padding: EdgeInsets.symmetric(
-        vertical: highlightPadV,
-        horizontal: highlightPadH,
-      ),
-      child: Text(
-        widget.text,
+    final double radius = layout.fontSize * 0.18;
+
+    // 多句整段：每句一段，第 highlightIndex 句涂 highlight 衬底，其余常态 fg。
+    final List<Widget> lines = <Widget>[];
+    for (int i = 0; i < widget.segments.length; i++) {
+      final AudiobookClipTextSegment segment = widget.segments[i];
+      final bool isHighlighted = i == widget.highlightIndex;
+      // TODO-1127：句内夹带插图与文本同层渲进整段图。当前导出路径尚未抽取插图字节，
+      // imageBytes 常为 null → 只渲文本；接上抽取后此分支自动生效，不改渲染层。
+      final Widget lineText = Text(
+        segment.text,
         style: textStyle,
         textAlign: TextAlign.center,
+      );
+      final Widget line = isHighlighted
+          ? Container(
+              decoration: BoxDecoration(
+                color: layout.highlight,
+                borderRadius: BorderRadius.circular(radius),
+              ),
+              padding: EdgeInsets.symmetric(
+                vertical: highlightPadV,
+                horizontal: highlightPadH,
+              ),
+              child: lineText,
+            )
+          : Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: highlightPadV,
+                horizontal: highlightPadH,
+              ),
+              child: lineText,
+            );
+      if (segment.imageBytes != null) {
+        lines.add(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              line,
+              Padding(
+                padding: EdgeInsets.only(top: highlightPadV),
+                child: Image.memory(
+                  segment.imageBytes!,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        lines.add(line);
+      }
+    }
+
+    // 内容宽度 = 卡片宽 - 两侧 padding。文本按此宽换行（与旧单句路径一致），Column 竖向
+    // 堆叠多句；再用 FittedBox(scaleDown) 让整段（尤其小图/长内容）超高时等比缩小、永不
+    // RenderFlex 溢出，单句时不放大（scaleDown 只缩不放），保留原单句观感。
+    final double contentWidth =
+        (layout.width - layout.padding * 2).clamp(1.0, layout.width.toDouble());
+    final Widget body = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: SizedBox(
+        width: contentWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: lines,
+        ),
       ),
     );
 
-    // 竖排：用 RotatedBox 把整段文本块旋转。简化实现 —— 真竖排（每字直排）需 WebView
-    // 渲染，此处用整块旋转近似「竖排分享卡片」观感（D2 沿用阅读方向，不追求逐字直排）。
+    // 竖排：整块旋转近似（真竖排逐字直排 defer 到后续，见 D2）。
     final Widget oriented = layout.vertical
         ? RotatedBox(
             quarterTurns: 1,

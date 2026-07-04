@@ -113,4 +113,94 @@ void main() {
       expect(layout.height, 1280);
     },
   );
+
+  // TODO-1115：多句逐帧高亮渲染守卫。
+  testWidgets(
+    'renderAudiobookClipFrames highlights the requested sentence per frame '
+    '(distinct PNGs, TODO-1115)',
+    (WidgetTester tester) async {
+      final GlobalKey<OverlayState> overlayKey = GlobalKey<OverlayState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Overlay(
+            key: overlayKey,
+            initialEntries: <OverlayEntry>[
+              OverlayEntry(
+                builder: (BuildContext context) => const SizedBox.expand(),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final OverlayState overlay = overlayKey.currentState!;
+      final AudiobookClipTextLayout layout = computeClipTextLayout(
+        textLength: 4,
+        baseFontSize: 40,
+        vertical: false,
+        lineHeight: 1.6,
+        background: const Color(0xFF000000),
+        foreground: const Color(0xFFFFFFFF),
+        // 不透明高亮色，最大化「哪一句被涂」的像素差异。
+        highlight: const Color(0xFFFF0000),
+      );
+      final List<AudiobookClipTextSegment> segments =
+          <AudiobookClipTextSegment>[
+        const AudiobookClipTextSegment(text: '第一句です'),
+        const AudiobookClipTextSegment(text: '第二句です'),
+      ];
+
+      List<Uint8List?> frames = <Uint8List?>[];
+      await tester.runAsync(() async {
+        bool done = false;
+        final Future<List<Uint8List?>> future = renderAudiobookClipFrames(
+          overlay: overlay,
+          segments: segments,
+          layout: layout,
+          highlightIndices: <int>[0, 1],
+        ).then((List<Uint8List?> r) {
+          done = true;
+          return r;
+        });
+        // 两帧串行渲染，各需多帧推进离屏 pipeline；持续泵帧直到整体完成（上限保护）。
+        for (int i = 0; i < 200 && !done; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+        frames = await future;
+      });
+
+      expect(frames.length, 2);
+      expect(frames[0], isNotNull, reason: 'frame highlighting sentence 0');
+      expect(frames[1], isNotNull, reason: 'frame highlighting sentence 1');
+      expect(frames[0]!.isNotEmpty, isTrue);
+      expect(frames[1]!.isNotEmpty, isTrue);
+      // PNG 魔数。
+      expect(frames[0]!.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
+      expect(frames[1]!.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
+      // 高亮句不同 → 两帧字节必然不同（高亮衬底位置随句子移动）。
+      expect(frames[0], isNot(equals(frames[1])),
+          reason: 'moving the highlight to a different sentence must change '
+              'the rendered pixels');
+    },
+  );
+
+  test(
+    'source guard: highlighted line uses layout.highlight, others plain fg '
+    '(TODO-1115)',
+    () {
+      final File src = File(
+        'lib/src/media/audiobook/audiobook_clip_text_render.dart',
+      );
+      final String code = src.readAsStringSync();
+      // 高亮句用 highlight 衬底；判据是 highlightIndex 命中当前句。
+      expect(code.contains('i == widget.highlightIndex'), isTrue,
+          reason: 'the highlighted sentence is chosen by highlightIndex');
+      expect(code.contains('color: layout.highlight'), isTrue,
+          reason: 'highlighted line paints the sasayaki highlight backing');
+      // 批量渲染入口存在。
+      expect(code.contains('renderAudiobookClipFrames'), isTrue);
+    },
+  );
 }

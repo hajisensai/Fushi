@@ -1011,21 +1011,113 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // M2-M5：裁音频 → 渲文本图 → mjpeg/.mov 合成 → 分享/存盘。异步推进，先给一个
         // 反馈 toast；失败在管线内各自 toast。防重入：导出进行中再点直接忽略。
         if (_audiobookClipExporting) return;
+        // TODO-1115：尝试多句连读 + 逐句高亮跟随。把选区映射到有序 cue 列表；≥1 句即走
+        // 动态路径（单句时自然退化为单句动态，仍可回退单句静态）。跨章/跨文件 span 为空
+        // → dynamicPlan 为 null → 直接走原单句静态路径（never break userspace）。
+        _AudiobookClipDynamicPlan? dynamicPlan = _buildAudiobookClipPlan(
+          audioFileCount: audioFileCount,
+        );
+        // TODO-1115 review M1：根因护栏。音频裁剪走静态 `range`（由 range.audioFileIndex
+        // 选 inputFile），但起止 ms 走 dynamicPlan.globalStartMs/globalEndMs（由 span 独立
+        // 解析出的 dynamicPlan.audioFileIndex 定的坐标系）。二者理论可分歧（静态走
+        // `_expandAroundCue`/`_cueRange` 兜底，动态走 `_collectSpanCues` 优先序）；一旦
+        // dynamicPlan.audioFileIndex != range.audioFileIndex，就会拿 A 文件的 ms 偏移去裁
+        // B 文件 → 错音频 + 错高亮。此处不用 assert（release 会被剥离），用运行时判据：
+        // 分歧则放弃动态、令 dynamicPlan=null，回退单句静态（宁可回退不出错产物）。
+        if (dynamicPlan != null &&
+            dynamicPlan.audioFileIndex != range.audioFileIndex) {
+          debugPrint(
+            '[ReaderHibiki] export-clip: dynamic/static audioFileIndex '
+            'divergence (dynamic=${dynamicPlan.audioFileIndex} '
+            'static=${range.audioFileIndex}) — falling back to single-cue '
+            'static to avoid cutting the wrong audio file.',
+          );
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.audioFileIndexDivergence',
+            'dynamic audioFileIndex=${dynamicPlan.audioFileIndex} '
+                '!= static range.audioFileIndex=${range.audioFileIndex}; '
+                'dropping dynamic plan, falling back to single-cue static '
+                '(dynamicCues=${dynamicPlan.cueSpans.length})',
+            StackTrace.current,
+          );
+          dynamicPlan = null;
+        }
         debugPrint(
           '[ReaderHibiki] export-clip start: text="${selectedText.trim()}" '
           'audioFileIndex=${range.audioFileIndex} '
           'startMs=${range.startMs} endMs=${range.endMs} '
           'durationMs=${range.endMs - range.startMs} '
-          'file=${inputFile.path}',
+          'file=${inputFile.path} '
+          'dynamicCues=${dynamicPlan?.cueSpans.length ?? 0}',
         );
         unawaited(_runAudiobookClipPipeline(
           text: selectedText.trim(),
           inputFile: inputFile,
           startMs: range.startMs,
           endMs: range.endMs,
+          dynamicPlan: dynamicPlan,
         ));
         return;
     }
+  }
+
+  /// TODO-1115：把当前选区映射成「多句连读 + 逐句高亮」动态导出计划。返回 null 表示无法
+  /// 走动态路径（span 为空 / 跨文件 / 分类不可导出），调用方回退单句静态。
+  ///
+  /// 单一真相源：[globalRange] 用 [clipExportGlobalRange]（首句 head-padded ..
+  /// 末句尾 padding 放宽到 [kClipExportTailPadMs]，中间句连续不被 tailCap 切），供音频
+  /// 裁剪与帧计划共用，避免二者窗口漂移。
+  _AudiobookClipDynamicPlan? _buildAudiobookClipPlan({
+    required int audioFileCount,
+  }) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    // span 主锚：句子文本 + 归一化 offset/length（保持不变，动态多句仍以整句 span 定位）。
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    // TODO-1115 review M2：分类文本与静态路径（[_exportAudiobookClip] 的 selectedText）
+    // 同源——`_cachedSelectionRange?.text ?? currentSentence.text`。此前动态侧只用
+    // currentSentence.text，与静态侧 emptySelection 判据不同调（纯外字/无选区时可能一条
+    // 判空、另一条判非空）。归一到同一真相源，消除两条路径的边界分歧。
+    final String classifyText = _cachedSelectionRange?.text ?? sentence;
+    final List<AudioCue> allCues = _sentenceAudioMiningCues(_lookupCue);
+    final List<AudioCue> span = miningSentenceCueSpan(
+      cues: allCues,
+      cue: _lookupCue,
+      sentence: sentence,
+      sectionIndex: _lookupSectionIndex,
+      sentenceNormCharOffset: _cachedSentenceRange?.offset,
+      sentenceNormCharLength: _cachedSentenceRange?.length,
+    );
+    if (span.isEmpty) return null;
+
+    final AudioPlaybackRange? globalRange = clipExportGlobalRange(
+      span: span,
+      allCues: allCues,
+      delayMs: ctrl.delayMs.value,
+    );
+    final List<AudiobookClipCueSpan> cueSpans = span
+        .map((AudioCue c) => AudiobookClipCueSpan(
+              text: c.text,
+              startMs: c.startMs,
+              endMs: c.endMs,
+            ))
+        .toList(growable: false);
+
+    final AudiobookClipMultiCueResult result = classifyAudiobookClipMultiCue(
+      selectedText: classifyText,
+      audioFileCount: audioFileCount,
+      globalRange: globalRange,
+      cueSpans: cueSpans,
+      maxDurationMs: _kAudiobookClipMaxDurationMs,
+    );
+    if (!result.isExportable) return null;
+    return _AudiobookClipDynamicPlan(
+      audioFileIndex: result.audioFileIndex,
+      globalStartMs: result.globalStartMs,
+      globalEndMs: result.globalEndMs,
+      cueSpans: result.cueSpans,
+    );
   }
 
   /// D4：片段视频时长安全上限（120s）。单句天然短，仅兜底超长选区。
@@ -1041,6 +1133,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     required File inputFile,
     required int startMs,
     required int endMs,
+    _AudiobookClipDynamicPlan? dynamicPlan,
   }) async {
     _audiobookClipExporting = true;
     HibikiToast.show(msg: t.audiobook_export_clip_in_progress);
@@ -1056,6 +1149,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     File? audioClip;
     File? imageFile;
     File? videoFile;
+    Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     try {
@@ -1063,15 +1157,18 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
       final String base = p.join(tmpDir.path, 'audiobook_clip_$stamp');
 
-      // M2：裁音频片段（AAC/ADTS）。cue.startMs/endMs 已是文件内相对偏移。
+      // M2：裁完整音频片段（AAC/ADTS）。动态多句时裁**整段** [globalStart, globalEnd]
+      // （单一真相源，含 head/放宽的 tail padding）；否则裁单句 range。
       // 输出 .aac（adts 容器）而非 .m4a：捆绑的精简 ffmpeg（--disable-everything）
       // 只编入 adts/gif/mjpeg/image2 muxer，没有 ipod/mov/m4a muxer，写 .m4a 会让
       // ffmpeg 自动选不存在的 mov muxer → exit -22（EINVAL）。adts 是 ffmpeg-min
       // build 契约里句子音频的指定容器（docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md）。
+      final int clipStartMs = dynamicPlan?.globalStartMs ?? startMs;
+      final int clipEndMs = dynamicPlan?.globalEndMs ?? endMs;
       final String? clipPath = await extractAudioSegmentViaFfmpeg(
         inputPath: inputFile.path,
-        startMs: startMs,
-        endMs: endMs,
+        startMs: clipStartMs,
+        endMs: clipEndMs,
         outputPath: '$base.aac',
       );
       if (clipPath == null) {
@@ -1081,8 +1178,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         ErrorLogService.instance.log(
           'ReaderHibiki.exportClip.audioClipFailed',
           'extractAudioSegmentViaFfmpeg returned null '
-              '(startMs=$startMs, endMs=$endMs, '
-              'durationMs=${endMs - startMs}, input=${inputFile.path})',
+              '(startMs=$clipStartMs, endMs=$clipEndMs, '
+              'durationMs=${clipEndMs - clipStartMs}, input=${inputFile.path})',
           StackTrace.current,
         );
         if (mounted) {
@@ -1116,66 +1213,95 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // 导出卡片把它当整句背景衬底，复刻「逐句高亮跟随」样式。
         highlight: themeColors.sasayaki,
       );
-      final Uint8List? pngBytes = await renderAudiobookClipTextToPng(
-        overlay: overlay,
-        text: text,
-        layout: layout,
-      );
-      if (pngBytes == null) {
-        // TODO-1005 / BUG-472：文本图渲染失败此前只 toast、零日志。
-        ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.textRenderFailed',
-          'renderAudiobookClipTextToPng returned null (text="$text")',
-          StackTrace.current,
-        );
-        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
-        return;
-      }
-      // BUG-543：移动端 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），
-      // 桌面 ffmpeg-min 同样含 mjpeg decoder。Flutter 只能直出 png/rawRgba，故把
-      // 渲出的 png 帧在 Dart 层重编码为 jpeg，让两端 ffmpeg 都走 mjpeg 解码，
-      // 绕开缺失的 png decoder（此前移动端合成 exit 1 / "unspecified size"）。
-      final Uint8List? jpgBytes = encodeClipTextFrameAsJpg(pngBytes);
-      if (jpgBytes == null) {
-        ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.jpgEncodeFailed',
-          'encodeClipTextFrameAsJpg returned null '
-              '(pngLen=${pngBytes.length}, text="$text")',
-          StackTrace.current,
-        );
-        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
-        return;
-      }
-      imageFile = File('$base.jpg');
-      await imageFile.writeAsBytes(jpgBytes);
 
-      // M4：图 + 音频 → mjpeg/.mov 短视频。
       videoFile = File('$base.mov');
-      final AudiobookClipSynthResult synth =
-          await synthAudiobookClipVideoViaFfmpeg(
-        imagePath: imageFile.path,
-        audioPath: audioClip.path,
-        outputPath: videoFile.path,
-        width: layout.width,
-        height: layout.height,
-      );
-      if (!synth.isSuccess || synth.outputPath == null) {
-        debugPrint(
-          '[ReaderHibiki] export-clip synth failed: '
-          '${synth.failure} ${synth.detail ?? ''}',
+
+      // M3/M4：优先动态逐帧高亮跟随（多句序列帧 → image2 合成）；任一步失败回退单句静态。
+      bool dynamicOk = false;
+      if (dynamicPlan != null) {
+        framesDir = Directory('${base}_frames');
+        dynamicOk = await _synthDynamicClipVideo(
+          plan: dynamicPlan,
+          overlay: overlay,
+          layout: layout,
+          framesDir: framesDir,
+          audioClip: audioClip,
+          videoFile: videoFile,
         );
-        // TODO-1005 / BUG-472：synth 内部已记 ffmpeg 真因；这里补一条管线级摘要，
-        // 让失败原因（inputMissing / ffmpegUnavailable / ffmpegFailed / outputMissing）
-        // 与上下文一起出现在 in-app 日志页。
-        ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.synthFailed',
-          'video synth failed: ${synth.failure} ${synth.detail ?? ''}',
-          StackTrace.current,
-        );
-        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
-        return;
+        if (!dynamicOk) {
+          // 回退：清掉可能半成的序列帧目录，走单句静态。
+          await _deleteClipFramesDir(framesDir);
+          framesDir = null;
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.dynamicFallback',
+            'dynamic multi-cue clip synth failed, falling back to static '
+                '(cues=${dynamicPlan.cueSpans.length})',
+            StackTrace.current,
+          );
+        }
       }
-      final String outPath = synth.outputPath!;
+
+      if (!dynamicOk) {
+        // 单句静态回退：整段文本单图 + `-loop 1` 单图合成（原有稳定路径）。
+        final Uint8List? pngBytes = await renderAudiobookClipTextToPng(
+          overlay: overlay,
+          text: text,
+          layout: layout,
+        );
+        if (pngBytes == null) {
+          // TODO-1005 / BUG-472：文本图渲染失败此前只 toast、零日志。
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.textRenderFailed',
+            'renderAudiobookClipTextToPng returned null (text="$text")',
+            StackTrace.current,
+          );
+          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          return;
+        }
+        // BUG-543：移动端 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），
+        // 桌面 ffmpeg-min 同样含 mjpeg decoder。Flutter 只能直出 png/rawRgba，故把
+        // 渲出的 png 帧在 Dart 层重编码为 jpeg，让两端 ffmpeg 都走 mjpeg 解码，
+        // 绕开缺失的 png decoder（此前移动端合成 exit 1 / "unspecified size"）。
+        final Uint8List? jpgBytes = encodeClipTextFrameAsJpg(pngBytes);
+        if (jpgBytes == null) {
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.jpgEncodeFailed',
+            'encodeClipTextFrameAsJpg returned null '
+                '(pngLen=${pngBytes.length}, text="$text")',
+            StackTrace.current,
+          );
+          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          return;
+        }
+        imageFile = File('$base.jpg');
+        await imageFile.writeAsBytes(jpgBytes);
+
+        final AudiobookClipSynthResult synth =
+            await synthAudiobookClipVideoViaFfmpeg(
+          imagePath: imageFile.path,
+          audioPath: audioClip.path,
+          outputPath: videoFile.path,
+          width: layout.width,
+          height: layout.height,
+        );
+        if (!synth.isSuccess || synth.outputPath == null) {
+          debugPrint(
+            '[ReaderHibiki] export-clip synth failed: '
+            '${synth.failure} ${synth.detail ?? ''}',
+          );
+          // TODO-1005 / BUG-472：synth 内部已记 ffmpeg 真因；这里补一条管线级摘要，
+          // 让失败原因（inputMissing / ffmpegUnavailable / ffmpegFailed / outputMissing）
+          // 与上下文一起出现在 in-app 日志页。
+          ErrorLogService.instance.log(
+            'ReaderHibiki.exportClip.synthFailed',
+            'video synth failed: ${synth.failure} ${synth.detail ?? ''}',
+            StackTrace.current,
+          );
+          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          return;
+        }
+      }
+      final String outPath = videoFile.path;
 
       // M5：分享/存盘。桌面（含 Linux）走 FilePicker 存盘；移动走系统 Share。
       if (isDesktop) {
@@ -1207,14 +1333,128 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // 系统 Share 异步读取 outPath，保留视频文件供其读取，仅清理音频/图中间产物。
       await _deleteClipTempFile(audioClip);
       await _deleteClipTempFile(imageFile);
+      // TODO-1115：动态路径的 N 帧 JPEG 序列帧目录一并清理（无论成功/回退/桌面/移动）。
+      await _deleteClipFramesDir(framesDir);
       if (isDesktop) await _deleteClipTempFile(videoFile);
     }
+  }
+
+  /// TODO-1115 动态逐帧高亮：按 [plan] 的 cue 列表批量渲「整段文本 + 逐句高亮」序列帧
+  /// 到 [framesDir]，再用 image2 序列帧 + 完整音频合成 [videoFile]。全程成功返回 true；
+  /// 任一步失败返回 false（调用方回退单句静态）。
+  ///
+  /// 每句只渲一次 PNG（去重），按帧计划里各 [ClipFrameSpec.frameCount] 把该句 PNG 复制成
+  /// 连续帧编号（每帧经 encodeClipTextFrameAsJpg 重编码为 JPEG，BUG-543），喂给 image2
+  /// demuxer（`frame_%04d.jpg`），从而复刻「逐句高亮跟随」时间轴。
+  Future<bool> _synthDynamicClipVideo({
+    required _AudiobookClipDynamicPlan plan,
+    required OverlayState overlay,
+    required AudiobookClipTextLayout layout,
+    required Directory framesDir,
+    required File audioClip,
+    required File videoFile,
+  }) async {
+    const int fps = 12;
+    // 帧计划：每帧此刻高亮哪一句（相邻同句合并计数）。
+    final List<AudioCue> planCues = plan.cueSpans
+        .map((AudiobookClipCueSpan s) => AudioCue()
+          ..bookKey = ''
+          ..chapterHref = ''
+          ..sentenceIndex = 0
+          ..textFragmentId = ''
+          ..text = s.text
+          ..startMs = s.startMs
+          ..endMs = s.endMs
+          ..audioFileIndex = plan.audioFileIndex)
+        .toList(growable: false);
+    final List<ClipFrameSpec> frames = clipFramePlan(
+      cues: planCues,
+      globalStartMs: plan.globalStartMs,
+      globalEndMs: plan.globalEndMs,
+      fps: fps,
+    );
+    if (frames.isEmpty) return false;
+
+    // 去重要渲的高亮下标（每句只渲一次），再批量离屏渲 PNG。
+    final List<AudiobookClipTextSegment> segments = plan.cueSpans
+        .map((AudiobookClipCueSpan s) => AudiobookClipTextSegment(text: s.text))
+        .toList(growable: false);
+    final List<int> distinctIndices = <int>[];
+    for (final ClipFrameSpec spec in frames) {
+      if (!distinctIndices.contains(spec.highlightCueIndex)) {
+        distinctIndices.add(spec.highlightCueIndex);
+      }
+    }
+    final List<Uint8List?> pngs = await renderAudiobookClipFrames(
+      overlay: overlay,
+      segments: segments,
+      layout: layout,
+      highlightIndices: distinctIndices,
+    );
+    // BUG-543：移动端 ffmpeg-kit min 无 png decoder（有 mjpeg decoder），桌面 ffmpeg-min
+    // 同样含 mjpeg decoder。Flutter 每帧只能直出 png，故逐帧重编码为 jpeg 落盘
+    // （frame_%04d.jpg），让两端 image2 序列帧都走已存在的 mjpeg 解码，绝不触碰缺失的
+    // png decoder（否则移动端序列帧合成 exit 1 / "unspecified size"）。单图静态回退同源。
+    final Map<int, Uint8List> jpgByIndex = <int, Uint8List>{};
+    for (int i = 0; i < distinctIndices.length; i++) {
+      final Uint8List? png = pngs[i];
+      if (png == null) return false; // 任一句渲染失败 → 回退单句静态。
+      final Uint8List? jpg = encodeClipTextFrameAsJpg(png);
+      if (jpg == null) return false; // 帧重编码失败 → 回退单句静态。
+      jpgByIndex[distinctIndices[i]] = jpg;
+    }
+
+    // 落盘序列帧：按帧计划展开成连续编号 frame_0000.jpg, frame_0001.jpg ...
+    await framesDir.create(recursive: true);
+    int frameNo = 0;
+    for (final ClipFrameSpec spec in frames) {
+      final Uint8List? jpg = jpgByIndex[spec.highlightCueIndex];
+      if (jpg == null) return false;
+      for (int i = 0; i < spec.frameCount; i++) {
+        final String name = 'frame_${frameNo.toString().padLeft(4, '0')}.jpg';
+        await File(p.join(framesDir.path, name)).writeAsBytes(jpg);
+        frameNo += 1;
+      }
+    }
+    if (frameNo == 0) return false;
+
+    // image2 序列帧 + 完整音频 → mjpeg/.mov。
+    final AudiobookClipSynthResult synth =
+        await synthAudiobookClipFrameSeqVideoViaFfmpeg(
+      framesDir: framesDir.path,
+      audioPath: audioClip.path,
+      outputPath: videoFile.path,
+      width: layout.width,
+      height: layout.height,
+      fps: fps,
+    );
+    if (!synth.isSuccess || synth.outputPath == null) {
+      debugPrint(
+        '[ReaderHibiki] export-clip dynamic synth failed: '
+        '${synth.failure} ${synth.detail ?? ''}',
+      );
+      ErrorLogService.instance.log(
+        'ReaderHibiki.exportClip.dynamicSynthFailed',
+        'dynamic seq video synth failed: ${synth.failure} '
+            '${synth.detail ?? ''} (frames=$frameNo)',
+        StackTrace.current,
+      );
+      return false;
+    }
+    return true;
   }
 
   Future<void> _deleteClipTempFile(File? file) async {
     if (file == null) return;
     try {
       if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  Future<void> _deleteClipFramesDir(Directory? dir) async {
+    if (dir == null) return;
+    try {
+      if (await dir.exists()) await dir.delete(recursive: true);
     } catch (_) {}
   }
 
@@ -1306,4 +1546,24 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       Navigator.pop(dialogContext, paths);
     }
   }
+}
+
+/// TODO-1115：有声书片段视频「多句连读 + 逐句高亮跟随」动态导出计划（纯数据）。
+///
+/// [globalStartMs]/[globalEndMs] 是整段完整音频窗口（首句 head-padded start .. 末句
+/// tail-padded end，含 A/V 偏移），音频裁剪与帧计划共用。[cueSpans] 是有序（升序）
+/// 单文件多句，供逐句高亮渲帧。单句选区时 [cueSpans] 只有一元素，动态路径仍可跑（等价
+/// 单句动态），失败时管线回退单句静态。
+class _AudiobookClipDynamicPlan {
+  const _AudiobookClipDynamicPlan({
+    required this.audioFileIndex,
+    required this.globalStartMs,
+    required this.globalEndMs,
+    required this.cueSpans,
+  });
+
+  final int audioFileIndex;
+  final int globalStartMs;
+  final int globalEndMs;
+  final List<AudiobookClipCueSpan> cueSpans;
 }

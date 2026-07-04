@@ -139,6 +139,77 @@ void main() {
     });
   });
 
+  // TODO-1115 + BUG-543: multi-cue frame sequence must also be JPEG.
+  group('buildFfmpegImageSeqAudioToVideoArgs (TODO-1115 image2 序列帧动态高亮)', () {
+    test('reads a JPEG sequence via image2 (-framerate + frame_%04d.jpg)', () {
+      final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/tmp/frames',
+        audioPath: '/tmp/clip.aac',
+        outputPath: '/tmp/out.mov',
+        fps: 12,
+      );
+      // 序列帧靠 -framerate 定时（非单图 -loop 1），输入用 frame_%04d.jpg 模式。
+      expect(args, containsAllInOrder(<String>['-framerate', '12']));
+      expect(
+        args,
+        containsAllInOrder(<String>['-i', '/tmp/frames/frame_%04d.jpg']),
+      );
+      // 天花板守卫：绝不是单图 -loop 1 路径。
+      expect(args, isNot(contains('-loop')));
+    });
+
+    test('still mjpeg video + aac audio, never libx264/concat/overlay', () {
+      final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/f',
+        audioPath: '/a.aac',
+        outputPath: '/o.mov',
+      );
+      // ffmpeg-min 天花板：只有 mjpeg 视频编码器；无 libx264/h264/concat/overlay/drawtext。
+      expect(args, containsAllInOrder(<String>['-c:v', 'mjpeg']));
+      expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
+      expect(args, isNot(contains('libx264')));
+      expect(args, isNot(contains('h264')));
+      expect(args, isNot(contains('concat')));
+      expect(args, isNot(contains('overlay')));
+      expect(args, isNot(contains('drawtext')));
+      // 序列帧 vf 里也不得掺 overlay/drawtext（逐句高亮靠逐帧 PNG，非 ffmpeg filter）。
+      final int vfIdx = args.indexOf('-vf');
+      expect(vfIdx, greaterThanOrEqualTo(0));
+      final String filter = args[vfIdx + 1];
+      expect(filter, isNot(contains('overlay')));
+      expect(filter, isNot(contains('drawtext')));
+      expect(filter, isNot(contains('subtitles')));
+    });
+
+    test('audio-bounded (-shortest), output last, even dims scale+pad', () {
+      final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/f',
+        audioPath: '/a.aac',
+        outputPath: '/out.mov',
+        width: 720,
+        height: 1280,
+      );
+      expect(args, contains('-shortest'));
+      expect(args.last, '/out.mov');
+      final int vfIdx = args.indexOf('-vf');
+      final String filter = args[vfIdx + 1];
+      expect(filter, contains('scale=720:1280'));
+      expect(filter, contains('pad=720:1280'));
+    });
+
+    test('normalizes a trailing-slash frames dir without doubling', () {
+      final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/tmp/frames/',
+        audioPath: '/a.aac',
+        outputPath: '/o.mov',
+      );
+      expect(
+        args,
+        containsAllInOrder(<String>['-i', '/tmp/frames/frame_%04d.jpg']),
+      );
+    });
+  });
+
   group('computeClipTextLayout (TODO-945 M3 layout)', () {
     const Color bg = Color(0xFF101010);
     const Color fg = Color(0xFFF0F0F0);

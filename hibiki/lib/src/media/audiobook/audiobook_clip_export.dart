@@ -90,6 +90,93 @@ AudiobookClipBoundaryResult classifyAudiobookClipSelection({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// TODO-1115 多句连读 + 逐句高亮跟随：把「多句 cue 列表 + 全局裁剪窗口」分类成可导出
+// 结果。沿用 [classifyAudiobookClipSelection] 的时长上限与单文件约束；多句按**全局
+// 时长**判上限（首句 head-padded start .. 末句 tail-padded end）。
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 多句片段里的一句：文本 + 该句在音频文件内的起止 ms（用于逐句高亮/帧计划）。
+class AudiobookClipCueSpan {
+  const AudiobookClipCueSpan({
+    required this.text,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  final String text;
+  final int startMs;
+  final int endMs;
+}
+
+/// 多句片段导出的分类结果（纯数据）。
+///
+/// [kind] 复用 [AudiobookClipBoundaryKind]：emptySelection / noAudio /
+/// unsupportedRange / exportable，语义同单句版。exportable 时 [cueSpans] 非空且
+/// 已按 startMs 升序、同一 [audioFileIndex]，[globalStartMs]/[globalEndMs] 是整段
+/// 完整音频的裁剪窗口（首句 head-padded start .. 末句 tail-padded end）。
+class AudiobookClipMultiCueResult {
+  const AudiobookClipMultiCueResult({
+    required this.kind,
+    this.audioFileIndex = -1,
+    this.globalStartMs = 0,
+    this.globalEndMs = 0,
+    this.cueSpans = const <AudiobookClipCueSpan>[],
+  });
+
+  final AudiobookClipBoundaryKind kind;
+  final int audioFileIndex;
+  final int globalStartMs;
+  final int globalEndMs;
+  final List<AudiobookClipCueSpan> cueSpans;
+
+  bool get isExportable => kind == AudiobookClipBoundaryKind.exportable;
+}
+
+/// 把「选中文本 + 多句 cue 列表 + 全局裁剪窗口 + 音频文件数」分类成多句可导出结果。
+///
+/// [globalRange] 是 [miningSentenceAudioRange]（含 head/tail padding + A/V 偏移）算出的
+/// 整段完整音频窗口——**单一真相源**，多句路径不再自己拼窗口，避免与音频裁剪窗口漂移。
+/// [cueStartEndMs] 是每句 `(text, startMs, endMs)`（原始 cue，未加 padding），供逐句高亮。
+///
+/// 判定顺序与单句版一致（空选区 → 无音频 → 无区间 → 否则可导出）。多句按**全局时长**
+/// 判上限 [maxDurationMs]；超限走 unsupportedRange（回退单句静态）。
+AudiobookClipMultiCueResult classifyAudiobookClipMultiCue({
+  required String selectedText,
+  required int audioFileCount,
+  required AudioPlaybackRange? globalRange,
+  required List<AudiobookClipCueSpan> cueSpans,
+  int maxDurationMs = 120 * 1000,
+}) {
+  if (selectedText.trim().isEmpty) {
+    return const AudiobookClipMultiCueResult(
+      kind: AudiobookClipBoundaryKind.emptySelection,
+    );
+  }
+  if (audioFileCount <= 0) {
+    return const AudiobookClipMultiCueResult(
+      kind: AudiobookClipBoundaryKind.noAudio,
+    );
+  }
+  if (globalRange == null ||
+      cueSpans.isEmpty ||
+      globalRange.audioFileIndex < 0 ||
+      globalRange.audioFileIndex >= audioFileCount ||
+      globalRange.endMs <= globalRange.startMs ||
+      globalRange.endMs - globalRange.startMs > maxDurationMs) {
+    return const AudiobookClipMultiCueResult(
+      kind: AudiobookClipBoundaryKind.unsupportedRange,
+    );
+  }
+  return AudiobookClipMultiCueResult(
+    kind: AudiobookClipBoundaryKind.exportable,
+    audioFileIndex: globalRange.audioFileIndex,
+    globalStartMs: globalRange.startMs,
+    globalEndMs: globalRange.endMs,
+    cueSpans: List<AudiobookClipCueSpan>.unmodifiable(cueSpans),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // TODO-945 M4：把文本图（PNG）+ 音频片段（AAC）合成成一段短视频（mjpeg/.mov）。
 //
 // D-CODEC（实测捆绑 ffmpeg 只有 gif/mjpeg/png 视频编码器，无 libx264/mpeg4）：
@@ -203,13 +290,15 @@ List<String> buildFfmpegImageAudioToVideoArgs({
 }
 
 /// 纯函数：把 Flutter 离屏栅格化出的 **PNG** 字节（[renderAudiobookClipTextToPng]
-/// 唯一支持的输出格式）重编码成 **JPEG** 字节，供 [buildFfmpegImageAudioToVideoArgs]
-/// 的 image2 输入使用。
+/// / [renderAudiobookClipFrames] 唯一支持的输出格式）重编码成 **JPEG** 字节，供
+/// [buildFfmpegImageAudioToVideoArgs]（单图）或 [buildFfmpegImageSeqAudioToVideoArgs]
+/// （序列帧）的 image2 输入使用。
 ///
 /// 根因（BUG-543）：移动端 ffmpeg-kit min 变体无 png decoder 但有 mjpeg decoder；
 /// Flutter `Image.toByteData` 又只支持 png/rawRgba（不支持直出 jpeg），且移动/桌面
 /// min 均无 rawvideo demuxer/decoder。故在 Dart 层用 `package:image` 把 png 解码后
-/// 以 jpeg 重编码，得到两端 ffmpeg 都能解的静止帧。
+/// 以 jpeg 重编码，得到两端 ffmpeg 都能解的静止帧。单图版与逐帧动态版（TODO-1115）
+/// 共用此重编码，两条路径都只喂 JPEG，绝不触碰缺失的 png decoder。
 ///
 /// [pngBytes] 解码失败（损坏/空）返回 null，调用方据此回退（记日志 + toast）。
 /// [quality] 为 JPEG 质量（1-100），静态文本卡片用高质量避免文字边缘锯齿。
@@ -220,6 +309,71 @@ Uint8List? encodeClipTextFrameAsJpg(
   final img.Image? decoded = img.decodeImage(pngBytes);
   if (decoded == null) return null;
   return img.encodeJpg(decoded, quality: quality);
+}
+
+/// 纯函数：构建「逐帧 JPEG 序列 + 音频 → mjpeg/.mov 短视频」的 ffmpeg 参数表（可单测）。
+///
+/// TODO-1115 动态高亮跟随：捆绑 ffmpeg-min **无 overlay/drawtext/concat/subtitles
+/// filter**，所以逐句高亮只能靠 Flutter 侧逐帧渲 PNG，ffmpeg 只做「读序列帧 + 拼音频」。
+/// 用 image2 demuxer 读 `frame_%04d.jpg` 序列帧（[framePattern]，如 `frame_%04d.jpg`），
+/// [framesDir] 是序列帧所在目录。
+///
+/// **为何 JPEG 而非 PNG（BUG-543，根因）**：移动端自编 ffmpeg-kit **min** 变体的
+/// libavcodec **没有 png decoder**（只有 mjpeg/gif/bmp decoder），桌面 ffmpeg-min 同样
+/// 含 mjpeg decoder 而无 png decoder。Flutter 离屏只能直出 png，故渲染层每帧 png 先经
+/// [encodeClipTextFrameAsJpg] 重编码为 jpeg 落盘（`frame_%04d.jpg`），两端 image2 序列帧
+/// 都走已存在的 mjpeg 解码，绝不触碰缺失的 png decoder（否则移动端合成 exit 1）。
+///
+/// 关键参数与理由（沿用单图版 D-CODEC 天花板：仅 mjpeg 视频 + aac 音频）：
+/// - `-framerate <fps> -i <framesDir>/<pattern>`：image2 demuxer 按 [fps] 读序列帧。
+///   **不用** `-loop 1`（那是单张静态图）；序列帧本身携带时间轴。
+/// - `-i audio`：完整音频输入。
+/// - `-c:v mjpeg` / `-pix_fmt yuvj420p`：捆绑包唯一带音轨容器可用的视频编码器（非 libx264）。
+/// - `-c:a aac`：捆绑包唯一音频编码器。
+/// - `-shortest`：以较短输入收尾（帧数×1/fps 与音频时长对齐时二者相近，防尾端错位）。
+/// - `-vf scale=...:pad=...`：缩放+黑边填充到精确偶数维度（mjpeg 要求偶数维度）。
+///
+/// **天花板守卫**：绝不含 libx264/h264/concat/overlay/drawtext，且序列帧输入必为 JPEG
+/// （非需 png decoder 的 .png）——由 audiobook_clip_synth_test 断言。序列帧 JPEG 已由渲染层
+/// 按每帧 highlightCueIndex 逐帧生成后经 [encodeClipTextFrameAsJpg] 重编码。
+List<String> buildFfmpegImageSeqAudioToVideoArgs({
+  required String framesDir,
+  required String audioPath,
+  required String outputPath,
+  String framePattern = 'frame_%04d.jpg',
+  int width = 720,
+  int height = 1280,
+  int fps = 12,
+}) {
+  final String filter = 'scale=$width:$height:'
+      'force_original_aspect_ratio=decrease,'
+      'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black';
+  // 用正斜杠拼输入模式：ffmpeg 在所有平台都接受 `/`；Windows 反斜杠会被 image2
+  // demuxer 的 `%d` 解析规则误伤。
+  final String inputPattern =
+      framesDir.endsWith('/') || framesDir.endsWith('\\')
+          ? '$framesDir$framePattern'
+          : '$framesDir/$framePattern';
+  return <String>[
+    '-hide_banner',
+    '-y',
+    '-framerate',
+    '$fps',
+    '-i',
+    inputPattern,
+    '-i',
+    audioPath,
+    '-c:v',
+    'mjpeg',
+    '-pix_fmt',
+    'yuvj420p',
+    '-vf',
+    filter,
+    '-c:a',
+    'aac',
+    '-shortest',
+    outputPath,
+  ];
 }
 
 /// 把 [imagePath]（文本图）+ [audioPath]（片段音频）合成成 [outputPath]
@@ -288,6 +442,81 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
   } catch (e, stack) {
     _deleteClipSynthOutput(output);
     ErrorLogService.instance.log('AudiobookClipSynth', e, stack);
+    return AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.ffmpegFailed,
+      detail: e.toString(),
+    );
+  }
+}
+
+/// TODO-1115：把 [framesDir] 里的 JPEG 序列帧（`frame_%04d.jpg`，BUG-543）+ [audioPath] 完整音频
+/// 合成成 [outputPath]（mjpeg/.mov 逐句高亮跟随短视频）。镜像
+/// [synthAudiobookClipVideoViaFfmpeg]：有界超时、失败/超时清理半成品、ffmpeg 真因写日志，
+/// 绝不对调用方抛。序列帧由渲染层按帧计划落盘（[buildFfmpegImageSeqAudioToVideoArgs]）。
+Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
+  required String framesDir,
+  required String audioPath,
+  required String outputPath,
+  String framePattern = 'frame_%04d.jpg',
+  int width = 720,
+  int height = 1280,
+  int fps = 12,
+  FfmpegBackend? backend,
+  Duration timeout = const Duration(minutes: 3),
+}) async {
+  final File output = File(outputPath);
+  if (!Directory(framesDir).existsSync() || !File(audioPath).existsSync()) {
+    _deleteClipSynthOutput(output);
+    return const AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.inputMissing,
+    );
+  }
+
+  try {
+    output.parent.createSync(recursive: true);
+    final FfmpegRunResult result =
+        await (backend ?? resolveFfmpegBackend()).run(
+      buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: framesDir,
+        audioPath: audioPath,
+        outputPath: outputPath,
+        framePattern: framePattern,
+        width: width,
+        height: height,
+        fps: fps,
+      ),
+      timeout,
+    );
+    if (result.isSuccess && output.existsSync() && output.lengthSync() > 0) {
+      return AudiobookClipSynthResult.success(outputPath);
+    }
+    _deleteClipSynthOutput(output);
+    if (result.isSuccess) {
+      return const AudiobookClipSynthResult.failure(
+        AudiobookClipSynthFailure.outputMissing,
+      );
+    }
+    ErrorLogService.instance
+        .log('AudiobookClipSeqSynth', result.failureSummary);
+    final String reason = extractFfmpegFailureReason(result.output);
+    return AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.ffmpegFailed,
+      detail: reason.isEmpty ? null : reason,
+    );
+  } on ProcessException catch (e, stack) {
+    _deleteClipSynthOutput(output);
+    ErrorLogService.instance.log(
+      'AudiobookClipSeqSynth',
+      describeFfmpegProcessException(e),
+      stack,
+    );
+    return AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.ffmpegUnavailable,
+      detail: e.message,
+    );
+  } catch (e, stack) {
+    _deleteClipSynthOutput(output);
+    ErrorLogService.instance.log('AudiobookClipSeqSynth', e, stack);
     return AudiobookClipSynthResult.failure(
       AudiobookClipSynthFailure.ffmpegFailed,
       detail: e.toString(),
