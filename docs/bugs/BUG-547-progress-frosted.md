@@ -1,0 +1,6 @@
+## BUG-547 · 悬浮阅读进度无背景看不清
+- **报告**：2026-07-04（用户：）TODO-1136
+- **真实性**：✅ 真 bug — 顶部悬浮「阅读进度」文字是裸 `Text`、无任何背景层，浅色书或复杂正文背景下与正文同色/低对比，看不清。根因 `hibiki/lib/src/pages/implementations/reader_hibiki/chrome.part.dart:1421`（`_buildTopProgressBar` 内直接把 `Text` 挂在 `GestureDetector` 下，无 backdrop/背景）。
+- **[x] ① 已修复** — 复用 `blur_options.dart` 既有毛玻璃配方，在进度文字后加一层 `ClipRRect(圆角10) > BackdropFilter(ImageFilter.blur sigma12) > 半透明 Container`：填充色取当前主题背景 `_themeBackgroundColor()` 并按明暗 `withValues(alpha: dark?0.42:0.55)`（毛玻璃半透明，不是不透明色块糊死正文），文字色仍走 `_themeTextColor()`；`BackdropFilter` 被 `ClipRRect` 限定到 pill 自身矩形避免整页模糊，pill 加 8×3 内边距。`ImageFilter` 经父壳 `reader_hibiki_page.dart` 新增 `import 'dart:ui' show ImageFilter;`。修改文件：`hibiki/lib/src/pages/implementations/reader_hibiki/chrome.part.dart`、`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`。提交见本轮 commit。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_top_progress_frosted_guard_test.dart`：从合并语料切出 `_buildTopProgressBar` 方法体，断言毛玻璃三件套（`ClipRRect` / `BackdropFilter` / `ImageFilter.blur`）俱在、填充色跟随 `_themeBackgroundColor()` 且 `withValues(` 保持半透明、文字色跟随 `_themeTextColor()`、`hoshi_progress` Text 仍在 pill 内且带内边距，防回退成裸 Text 或不透明纯色块。
+- **备注**：`flutter analyze`（reader 两文件）No issues found；6 项进度相关测试全绿。UI 可读性改动，最强可落地层为源码扫描守卫（整机渲染 pixel 验证留真机）。

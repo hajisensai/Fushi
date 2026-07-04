@@ -1394,15 +1394,24 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final Color infoColor = _themeTextColor();
     final String position = ReaderHibikiSource.instance.topProgressPosition;
 
+    // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下
+    //  看不清。在文字后面加一层毛玻璃（frosted glass）背景提升可读性——
+    //  复用 blur_options.dart 的既有配方（ClipRRect > BackdropFilter(ImageFilter.blur)
+    //  > 半透明 Container），背景色/文字色跟随当前主题
+    //  （_themeBackgroundColor / _themeTextColor），不硬编码。BackdropFilter 必须
+    //  在 ClipRRect 内限定到 pill 自身矩形，避免整页模糊。
+    final Color frostedFill = _themeBackgroundColor()
+        .withValues(alpha: _isReaderThemeDark ? 0.42 : 0.55);
+
     // TODO-728: position-aware top progress + tap-to-toggle chrome.
     //  - The Positioned strip spans the available width (16px side margins);
-    //    [Align] pushes the text to the configured side (left/center/right).
-    //  - The opaque [GestureDetector] wraps ONLY the [Text], so its hit box is
-    //    the text's own bounds. A tap on the text toggles the chrome (the
-    //    pointer-only mouse/touch equivalent of the readerToggleChrome shortcut
-    //    used by M / gamepad-Y); a tap anywhere ELSE in the strip is NOT inside
-    //    the GestureDetector child, so it passes through to the WebView and does
-    //    not swallow text selection (penetration guard).
+    //    [Align] pushes the pill to the configured side (left/center/right).
+    //  - The opaque [GestureDetector] wraps ONLY the frosted pill, so its hit
+    //    box is the pill's own bounds. A tap on it toggles/collapses the chrome
+    //    (the pointer-only equivalent of readerToggleChrome / M / gamepad-Y); a
+    //    tap anywhere ELSE in the strip is NOT inside the GestureDetector child,
+    //    so it passes through to the WebView and does not swallow text selection
+    //    (penetration guard).
     //  - No Focus/canRequestFocus wrapper: this stays a pure pointer surface and
     //    must never enter the focus-traversal pool (TODO-700 invariant).
     return Positioned(
@@ -1418,14 +1427,24 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           onTap: _anyChromeFloating
               ? () => _handleFloatingChromeReveal()
               : _toggleChrome,
-          child: Text(
-            '$_progressCurrentChars / $_progressTotalChars'
-            '  ${(ratio * 100).toStringAsFixed(2)}%',
-            key: const ValueKey<String>('hoshi_progress'),
-            style: TextStyle(
-                fontSize: _ReaderHibikiPageState._infoFontSize,
-                color: infoColor),
-            textAlign: readerTopProgressTextAlign(position),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                color: frostedFill,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                child: Text(
+                  '$_progressCurrentChars / $_progressTotalChars'
+                  '  ${(ratio * 100).toStringAsFixed(2)}%',
+                  key: const ValueKey<String>('hoshi_progress'),
+                  style: TextStyle(
+                      fontSize: _ReaderHibikiPageState._infoFontSize,
+                      color: infoColor),
+                  textAlign: readerTopProgressTextAlign(position),
+                ),
+              ),
+            ),
           ),
         ),
       ),
