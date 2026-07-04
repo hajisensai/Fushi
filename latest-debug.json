@@ -5,8 +5,16 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 6460,
-  "notes": "Automated desktop debug-channel build from develop @ f657804. Push releases are always prerelease and never Latest.",
+  "notes": "Automated Apple debug-channel build from develop @ f657804. Push releases are always prerelease and never Latest.",
   "assets": [
+    {
+      "name": "hibiki-1.0.1-debug.6460-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6460-ios.ipa"
+    },
+    {
+      "name": "hibiki-1.0.1-debug.6460-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6460-macos.zip"
+    },
     {
       "name": "hibiki-1.0.1-debug.6460-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6460-windows-setup.exe"
