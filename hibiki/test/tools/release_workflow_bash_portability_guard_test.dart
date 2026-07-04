@@ -100,7 +100,8 @@ void main() {
   final reassignRe = RegExp(r'ASSET_NAMES=\("\$\{PLATFORM_ASSETS\[@\]\}"\)');
   final guardRe = RegExp(r'\$\{#PLATFORM_ASSETS\[@\]\}"?\s*-eq\s*0');
   for (final wf in [releaseYml, workflow]) {
-    test('${wf.uri.pathSegments.last} 的 PLATFORM_ASSETS 重赋值前必须先判空（防 macOS '
+    test(
+        '${wf.uri.pathSegments.last} 的 PLATFORM_ASSETS 重赋值前必须先判空（防 macOS '
         'bash 3.2 空数组 set -u 崩）', () {
       expect(wf.existsSync(), isTrue, reason: '缺 ${wf.path}');
       final content = wf.readAsStringSync();

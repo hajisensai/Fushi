@@ -95,7 +95,8 @@ void main() {
   // MIME（video/webm;codecs=vp8,opus）含逗号 → 取到 'opus;base64' 这种垃圾。服务端此前 base64Decode
   // 直接抛 FormatException → 整张卡 HTTP 400。根因已在 offscreen 修好；此处守卫服务端**容错**：
   // 坏的可选媒体 base64 一律降级为 null，绝不把整张卡 400 掉（只有 fields 缺失才是坏请求）。
-  test('malformed clip/screenshot base64 -> null bytes, does NOT throw (no 400)',
+  test(
+      'malformed clip/screenshot base64 -> null bytes, does NOT throw (no 400)',
       () {
     final ImmersionMinePayload p =
         ImmersionMinePayload.fromJson(<String, dynamic>{

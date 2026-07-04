@@ -82,7 +82,8 @@ void main() {
           break;
         }
       }
-      expect(ready, isTrue, reason: 'video controller 应 load（debugPositionMs 可读）');
+      expect(ready, isTrue,
+          reason: 'video controller 应 load（debugPositionMs 可读）');
 
       // 真实播放，贴近用户在放视频时滚轮调音量的场景。
       await hooks().debugPlay();
@@ -136,8 +137,7 @@ void main() {
       expect(baseline, isNotNull,
           reason: '压低音量后音量 HUD 应出现并可读（说明画面区滚轮已被 '
               '_handleVideoWheelSignal 接管并改了音量）');
-      expect(baseline!, lessThan(100.0),
-          reason: '向下滚数次后音量应已低于满值（画面区滚轮真的在减音量）');
+      expect(baseline!, lessThan(100.0), reason: '向下滚数次后音量应已低于满值（画面区滚轮真的在减音量）');
 
       // ── ① 画面区向上滚 → 音量真升 ─────────────────────────────────────────
       await sendWheel(pictureCenter, -40); // dy<0（向上）= 增

@@ -21,15 +21,16 @@ Future<void> probe(String label, {String? proxy}) async {
     final yt.Video v = await client.videos
         .get('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
         .timeout(const Duration(seconds: 30));
-    print('$label: videos.get OK ${sw.elapsedMilliseconds}ms "${v.title}"');
+    stdout.writeln(
+        '$label: videos.get OK ${sw.elapsedMilliseconds}ms "${v.title}"');
     final yt.StreamManifest m = await client.videos.streamsClient
-        .getManifest(v.id,
-            ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr])
-        .timeout(const Duration(seconds: 30));
-    print('$label: manifest OK ${sw.elapsedMilliseconds}ms '
+        .getManifest(v.id, ytClients: <yt.YoutubeApiClient>[
+      yt.YoutubeApiClient.androidVr
+    ]).timeout(const Duration(seconds: 30));
+    stdout.writeln('$label: manifest OK ${sw.elapsedMilliseconds}ms '
         'muxed=${m.muxed.length} videoOnly=${m.videoOnly.length} audioOnly=${m.audioOnly.length}');
   } catch (e) {
-    print('$label: FAIL ${sw.elapsedMilliseconds}ms  $e');
+    stdout.writeln('$label: FAIL ${sw.elapsedMilliseconds}ms  $e');
   } finally {
     client.close();
   }
@@ -40,13 +41,16 @@ Future<void> manifestOnly(String label) async {
   final Stopwatch sw = Stopwatch()..start();
   final yt.YoutubeExplode client = yt.YoutubeExplode();
   try {
-    final yt.StreamManifest m = await client.videos.streamsClient
-        .getManifest(yt.VideoId('dQw4w9WgXcQ'),
-            ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr])
-        .timeout(const Duration(seconds: 40));
-    print('$label: manifest-only OK ${sw.elapsedMilliseconds}ms muxed=${m.muxed.length}');
+    final yt.StreamManifest m = await client.videos.streamsClient.getManifest(
+        yt.VideoId('dQw4w9WgXcQ'),
+        ytClients: <yt.YoutubeApiClient>[
+          yt.YoutubeApiClient.androidVr
+        ]).timeout(const Duration(seconds: 40));
+    stdout.writeln(
+        '$label: manifest-only OK ${sw.elapsedMilliseconds}ms muxed=${m.muxed.length}');
   } catch (e) {
-    print('$label: manifest-only FAIL ${sw.elapsedMilliseconds}ms  $e');
+    stdout
+        .writeln('$label: manifest-only FAIL ${sw.elapsedMilliseconds}ms  $e');
   } finally {
     client.close();
   }

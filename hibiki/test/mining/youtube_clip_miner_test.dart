@@ -5,7 +5,8 @@ import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/mining/youtube_clip_miner.dart';
 
-YoutubeResolvedSource _fakeSource({required bool muxed}) => YoutubeResolvedSource(
+YoutubeResolvedSource _fakeSource({required bool muxed}) =>
+    YoutubeResolvedSource(
       streamUrl: 'https://v/play',
       audioStreamUrl: muxed ? null : 'https://v/audio',
       miningVideoUrl: 'https://v/mine',
