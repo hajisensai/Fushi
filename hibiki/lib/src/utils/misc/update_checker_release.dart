@@ -134,26 +134,16 @@ class UpdateChecker {
       for (final FileSystemEntity entity in updatesDir.listSync()) {
         final String name = entity.uri.pathSegments.last;
         if (entity is Directory) {
+          // TODO-1149：目录也带**真实 mtime** 进 GC 决策——`.staging` 下载暂存根按自身
+          // mtime 与安装包同策由 selectStaleUpdateArtifacts 一并回收（活跃下载 root mtime
+          // 为今日→保留；promote 后残留的空根 / 无活动 >7 天→回收）。旧逻辑传 epoch-0 假
+          // mtime 并在此内联删子目录，空根只靠被吞的 best-effort `deleteSync` 兜底，从不被
+          // 确定性回收，导致空 `.staging` 根无限堆积。
           dirEntries.add(UpdateDirEntry(
             name: name,
             isDirectory: true,
-            modified: DateTime.fromMillisecondsSinceEpoch(0),
+            modified: entity.statSync().modified,
           ));
-          if (!name.endsWith('.staging')) continue;
-          for (final FileSystemEntity child in entity.listSync()) {
-            try {
-              if (child.statSync().modified.isBefore(cutoff)) {
-                child.deleteSync(recursive: true);
-              }
-            } catch (e) {
-              debugPrint('[UpdateChecker] cleanup staging failed: $e');
-            }
-          }
-          try {
-            if (entity.listSync().isEmpty) entity.deleteSync();
-          } catch (_) {
-            // The staging root can stay around until the next cleanup pass.
-          }
           continue;
         }
         if (entity is! File) continue;
@@ -182,8 +172,9 @@ class UpdateChecker {
       // 清理发生在选出本轮 asset 之前——下载阶段会自行复用/重下当前版本）。
       //
       // fail-safe bail-out：marker 存在但记录未解析出来（损坏）时跳过本轮
-      // 完整包回收，以免误删待重启安装包。临时/元数据清理与 staging
-      // 上面已做（不依赖排除名单），故只跳过完整包那一段。
+      // 完整包回收，以免误删待重启安装包。临时/元数据清理上面已做（不依赖排除名单）；
+      // `.staging` 暂存根回收现随完整包 GC 一并按 mtime 处理（TODO-1149），marker 损坏时
+      // 一并保守跳过本轮，下一轮正常清理（暂存根是下载 scratch，多留一轮无害）。
       if (skipFullPackageCleanup) {
         debugPrint('[UpdateChecker] handoff marker present but unreadable; '
             'skipping full-package cleanup this pass (fail-safe)');
@@ -195,10 +186,16 @@ class UpdateChecker {
         handoffInstallerFileName: handoffInstallerName,
       );
       for (final String name in stale) {
+        final String path = '${updatesDir.path}${Platform.pathSeparator}$name';
         try {
-          File('${updatesDir.path}${Platform.pathSeparator}$name').deleteSync();
+          // `.staging` 暂存根是目录，递归删；其余是完整安装包文件（TODO-1149）。
+          if (name.endsWith('.staging')) {
+            Directory(path).deleteSync(recursive: true);
+          } else {
+            File(path).deleteSync();
+          }
         } catch (e) {
-          debugPrint('[UpdateChecker] cleanup stale installer failed: $e');
+          debugPrint('[UpdateChecker] cleanup stale artifact failed: $e');
         }
       }
     } catch (e) {
@@ -1059,6 +1056,31 @@ class UpdateChecker {
           ErrorLogService.instance
               .log('UpdateChecker.windowsHandoff.deleteInstaller', e, stack);
           debugPrint('[Hibiki] delete installed update installer failed: $e');
+        }
+      }
+
+      // TODO-1149 根因修复：安装成功时被这次更新用的下载 `.staging` 暂存根也生命周期终结
+      // （promote 只删了内层 {id} 子目录，留下空根）——与安装包一起立刻回收，不留空根等
+      // 7 天 GC 兜底（消除 updates 目录里空 `.staging` 根无限堆积）。纯函数守卫同安装包：
+      // 仅安装成功、路径为 updates 根直属文件、按命名规则重建的 `.staging` 目录才删，绝不
+      // 越界删任意路径。
+      final String? stagingDirToDelete =
+          stagingDirToDeleteAfterSuccessfulHandoff(
+        installed: result.status == WindowsUpdateHandoffStatus.installed,
+        installerPath: result.record.installerPath,
+        updatesDirPath: updatesDir.path,
+      );
+      if (stagingDirToDelete != null) {
+        try {
+          final Directory stagingDir = Directory(stagingDirToDelete);
+          if (await stagingDir.exists()) {
+            await stagingDir.delete(recursive: true);
+          }
+        } catch (e, stack) {
+          // best-effort：删失败（AV/句柄占用等）不影响成功提示；下次 GC 按 mtime 兜底。
+          ErrorLogService.instance
+              .log('UpdateChecker.windowsHandoff.deleteStaging', e, stack);
+          debugPrint('[Hibiki] delete installed update staging dir failed: $e');
         }
       }
 

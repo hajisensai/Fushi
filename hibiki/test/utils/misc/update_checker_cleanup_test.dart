@@ -6,10 +6,10 @@ import 'package:hibiki/src/utils/misc/update_checker.dart';
 UpdateDirEntry _f(String name, DateTime modified) =>
     UpdateDirEntry(name: name, isDirectory: false, modified: modified);
 
-UpdateDirEntry _d(String name) => UpdateDirEntry(
+UpdateDirEntry _d(String name, [DateTime? modified]) => UpdateDirEntry(
       name: name,
       isDirectory: true,
-      modified: DateTime.fromMillisecondsSinceEpoch(0),
+      modified: modified ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
 
 void main() {
@@ -69,15 +69,56 @@ void main() {
       expect(stale, isEmpty);
     });
 
-    test('目录条目（含 .staging）一律跳过', () {
+    test('回归复现：过期 .staging 暂存根按 mtime 回收（此前一律跳过 → 空根堆积）', () {
+      // 根因：下载 promote 只删内层 {id} 子目录，留下空 `.<安装包名>.staging` 根；旧逻辑
+      // 本函数 `if (isDirectory) continue` 跳过所有目录，空根从不被确定性回收（TODO-1149）。
       final List<String> stale = selectStaleUpdateArtifacts(
         entries: <UpdateDirEntry>[
-          _d('.Hibiki-1.0.0-windows-setup.exe.staging'),
-          _d('some-old-dir'),
+          _d('.Hibiki-1.0.0-windows-setup.exe.staging', old),
+          _d('.Hibiki-0.9.0-windows-setup.exe.staging', old),
+        ],
+        cutoff: cutoff,
+      );
+      expect(
+        stale,
+        containsAll(<String>[
+          '.Hibiki-1.0.0-windows-setup.exe.staging',
+          '.Hibiki-0.9.0-windows-setup.exe.staging',
+        ]),
+      );
+      expect(stale, hasLength(2));
+    });
+
+    test('新近 .staging（cutoff 之后，活跃下载 root mtime 为今日）保留', () {
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _d('.Hibiki-1.0.0-windows-setup.exe.staging', fresh),
         ],
         cutoff: cutoff,
       );
       expect(stale, isEmpty);
+    });
+
+    test('.staging cutoff 当刻不删（isBefore 严格小于）', () {
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _d('.Hibiki-1.0.0-windows-setup.exe.staging', cutoff),
+        ],
+        cutoff: cutoff,
+      );
+      expect(stale, isEmpty);
+    });
+
+    test('越界守卫：非 .staging 目录一律不删（绝不误删用户数据，即便很旧）', () {
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _d('some-old-dir', old),
+          _d('books', old),
+          _d('.Hibiki-1.0.0-windows-setup.exe.staging', old),
+        ],
+        cutoff: cutoff,
+      );
+      expect(stale, <String>['.Hibiki-1.0.0-windows-setup.exe.staging']);
     });
 
     test('排除当前活跃 asset 主文件（即便很旧也不删）', () {
@@ -247,6 +288,117 @@ void main() {
     });
   });
 
+  group(
+      'stagingDirToDeleteAfterSuccessfulHandoff '
+      '(TODO-1149：安装成功即刻回收 .staging 暂存根)', () {
+    const String root = r'C:\Users\wrds\AppData\Roaming\Hibiki\Hibiki\updates';
+    const String installer = root + r'\Hibiki-1.0.1-windows-setup.exe';
+    // 期望的 staging 根由函数用 Platform.pathSeparator 重建，故 sep-aware 构造期望值，
+    // 保证 Windows / Linux（CI）两种测试宿主都匹配。
+    final String stagingDir =
+        '$root${Platform.pathSeparator}.Hibiki-1.0.1-windows-setup.exe.staging';
+
+    test('回归复现：安装成功后应立刻删对应 .staging 暂存根（不留空根等 GC）', () {
+      // 根因：promote 只删内层 {id} 子目录，留下空 `.staging` 根；handoff 成功旧逻辑只删
+      // 安装包 .exe（TODO-1089），空根靠 7 天 GC 兜底 → 每装一版残留一个空根堆积。
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: installer,
+          updatesDirPath: root,
+        ),
+        stagingDir,
+      );
+    });
+
+    test('未成功安装（失败/未完成）不删', () {
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: false,
+          installerPath: installer,
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+    });
+
+    test('installerPath 为空/为 null 不删', () {
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: '',
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: null,
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+    });
+
+    test('安全约束：updates 目录之外的路径绝不删（防误删任意目录）', () {
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: r'C:\Windows\System32\evil.exe',
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+    });
+
+    test('安全约束：updates 更深子目录里的文件不删（安装包只落在根）', () {
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: root + r'\.staging\stray.exe',
+          updatesDirPath: root,
+        ),
+        isNull,
+      );
+    });
+
+    test('重建的 staging 恒为 updates 根直属且以 .staging 结尾（越界守卫）', () {
+      final String? out = stagingDirToDeleteAfterSuccessfulHandoff(
+        installed: true,
+        installerPath: installer,
+        updatesDirPath: root,
+      );
+      expect(out, isNotNull);
+      expect(out!.endsWith('.staging'), isTrue);
+      // 直属：root + 单个分隔符之后只有一个路径段（无更深子目录穿越）。
+      final String rel = out.substring(root.length + 1);
+      expect(rel.contains(r'\') || rel.contains('/'), isFalse);
+    });
+
+    test('尾部斜杠的 updatesDirPath 不影响判定', () {
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: installer,
+          updatesDirPath: root + r'\',
+        ),
+        stagingDir,
+      );
+    });
+
+    test('updatesDirPath 为空不删（无可信根，保守）', () {
+      expect(
+        stagingDirToDeleteAfterSuccessfulHandoff(
+          installed: true,
+          installerPath: installer,
+          updatesDirPath: '',
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('BUG-533 接线守卫：完整包 GC 在每次 Windows 启动确定性触发', () {
     // 根因：`_cleanupOldApks` 的过期完整安装包回收（selectStaleUpdateArtifacts）此前
     // 只在 `_check`（检查更新）路径调用；用户关闭自动检查 / neverRemind 短路时它永不跑，
@@ -275,6 +427,30 @@ void main() {
         isTrue,
         reason: 'BUG-533：兜底完整包 GC 必须在每次 Windows 启动的 reconcile 路径无条件触发，'
             '否则关闭自动检查后安装包永不清理',
+      );
+    });
+
+    test(
+        'TODO-1149：reconcile 内握手成功调 stagingDirToDeleteAfterSuccessfulHandoff '
+        '即刻清 .staging 暂存根', () {
+      final int reconcileIdx =
+          source.indexOf('reconcilePendingWindowsInstallerHandoff(');
+      expect(reconcileIdx, greaterThanOrEqualTo(0));
+      final int nextMethodIdx =
+          source.indexOf('static bool canShowDialogFromContext', reconcileIdx);
+      expect(nextMethodIdx, greaterThan(reconcileIdx));
+      final String body = source.substring(reconcileIdx, nextMethodIdx);
+      expect(
+        body.contains('stagingDirToDeleteAfterSuccessfulHandoff('),
+        isTrue,
+        reason: 'TODO-1149：安装成功必须连对应 `.staging` 暂存根一起立刻回收，'
+            '否则每装一版残留一个空根堆积',
+      );
+      expect(
+        body.contains('deleteStaging'),
+        isTrue,
+        reason: 'TODO-1149：staging 删除失败必须记 best-effort 日志（deleteStaging），'
+            '由下次 GC 按 mtime 兜底',
       );
     });
   });

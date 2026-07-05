@@ -60,7 +60,15 @@ void main() {
     // part 契约禁止 part 内 import 无法拆库）。净增 ~90 行到 1530（无删除，纯跨切功能）。
     // 同上判断：跨切功能应被容纳而非被行数天花板强行拆散，故给 release 单独上调到 1600
     // （当前 1530，留 ~70 行合理余量，与既有余量风格一致）。
-    const int kDownloadCeiling = 1650;
+    //
+    // TODO-1149：又加入「过期 `.staging` 下载暂存根按 mtime 回收」的真实跨切功能——扩展
+    // selectStaleUpdateArtifacts 目录分支 + 新纯函数 stagingDirToDeleteAfterSuccessfulHandoff
+    // （安装成功即刻回收对应空 staging 根，消除 updates 目录空 `.staging` 根无限堆积），均带
+    // @visibleForTesting + update_checker_cleanup_test.dart 覆盖，且必须与下载 / staging 引擎
+    // 共享同一 library 私有作用域（part 契约禁止 part 内 import 无法拆库）。download 净增
+    // ~55 行到 1641，故把 download 天花板从 1650 上调到 1700（留 ~59 行合理余量，与既有余量
+    // 风格一致）。
+    const int kDownloadCeiling = 1700;
     const int kReleaseCeiling = 1600;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
