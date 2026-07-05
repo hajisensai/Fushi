@@ -156,6 +156,7 @@ class RemoteBookInfo {
     this.coverUrl,
     this.coverPath,
     this.hasAudiobook = false,
+    this.tags = const <String>[],
   });
 
   final String title;
@@ -169,6 +170,10 @@ class RemoteBookInfo {
   /// 渲染类型徽章（耳机 / 书本），与本地书卡 `_getAudiobookInfo` 同源（TODO-655a）。
   final bool hasAudiobook;
 
+  /// 该书在 host 端的标签名列表（TODO-1165）。标签是每设备本地数据，只传
+  /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
+  final List<String> tags;
+
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
   bool get hasDisplayCover =>
@@ -181,6 +186,7 @@ class RemoteBookInfo {
         if (hasDisplayCover) 'hasCover': true,
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (hasAudiobook) 'hasAudiobook': true,
+        if (tags.isNotEmpty) 'tags': tags,
       };
 
   RemoteBookInfo copyWith({
@@ -189,6 +195,7 @@ class RemoteBookInfo {
     String? coverUrl,
     String? coverPath,
     bool? hasAudiobook,
+    List<String>? tags,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -198,6 +205,7 @@ class RemoteBookInfo {
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
+        tags: tags ?? this.tags,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -213,6 +221,7 @@ class RemoteBookInfo {
       coverUrl: coverUrl,
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
+      tags: _jsonStringList(json['tags']),
     );
   }
 }
@@ -621,6 +630,7 @@ class RemoteVideoInfo {
     this.positionUpdatedAtMs = 0,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
+    this.tags = const <String>[],
   });
 
   final String id;
@@ -639,6 +649,10 @@ class RemoteVideoInfo {
 
   /// 默认起播集下标（= host 端 `VideoBooks.currentEpisode`）。单视频恒 0。
   final int currentEpisode;
+
+  /// 该视频在 host 端的标签名列表（TODO-1165）。标签每设备本地，只传名；
+  /// client 下载后 getOrCreateTagByName + addTagToVideoBook 重建映射。
+  final List<String> tags;
 
   /// 是否为多集远端播放列表（≥2 集）。client UI 据此渲染集数角标 + 切集面板。
   bool get isPlaylist => episodes.length > 1;
@@ -683,6 +697,7 @@ class RemoteVideoInfo {
           ],
           if (currentEpisode > 0) 'currentEpisode': currentEpisode,
         },
+        if (tags.isNotEmpty) 'tags': tags,
       };
 
   RemoteVideoInfo copyWith({
@@ -733,6 +748,7 @@ class RemoteVideoInfo {
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
+      tags: _jsonStringList(json['tags']),
     );
   }
 }
@@ -743,6 +759,16 @@ List<RemoteVideoEpisode> _jsonVideoEpisodes(Object? value) {
     for (final Object? item in value)
       if (item is Map)
         RemoteVideoEpisode.fromJson(item.cast<String, Object?>()),
+  ];
+}
+
+/// 解析 JSON 数组为非空字符串列表（标签名）。非 List / 缺字段返回空列表
+/// （向后兼容：旧 host 不带 tags 字段时按空标签处理）。
+List<String> _jsonStringList(Object? value) {
+  if (value is! List) return const <String>[];
+  return <String>[
+    for (final Object? item in value)
+      if (item != null && item.toString().isNotEmpty) item.toString(),
   ];
 }
 

@@ -390,6 +390,17 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
               .log('ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
         }
       }
+      // TODO-1165：按标签名重建远端书标签映射（标签每设备本地，host 按名传来，
+      // 落地端 getOrCreate 后 addTagToBook；只增不删；localBookKey 为 null 即注入
+      // 测试 importer 不返 key 时跳过）。
+      if (localBookKey != null && book.tags.isNotEmpty) {
+        for (final String tagName in book.tags) {
+          if (tagName.isEmpty) continue;
+          final int tagId =
+              await appModel.database.getOrCreateTagByName(tagName);
+          await appModel.database.addTagToBook(localBookKey, tagId);
+        }
+      }
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
       await _downloadRemoteAudiobook(book, client, localBookKey);
     } on _RemoteAudiobookException catch (e, stack) {

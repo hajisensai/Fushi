@@ -816,6 +816,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
     }
+    // TODO-1165：按标签名重建视频标签映射（host 按名传来，只增不删）。
+    if (video.tags.isNotEmpty) {
+      await widget.repo.applyTagNamesToVideoBook(bookUid, video.tags);
+    }
     // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
     // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
     // 单独抽好后再 updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，

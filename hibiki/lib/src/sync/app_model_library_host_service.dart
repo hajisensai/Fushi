@@ -201,6 +201,35 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
   // ── 书籍 ─────────────────────────────────────────────────────────────────
 
+  /// bookKey → 标签名列表 的一趟映射（TODO-1165，避免逐书 N+1 查询）。
+  Future<Map<String, List<String>>> _tagNamesByBookKey() async {
+    final Map<int, String> nameById = <int, String>{
+      for (final BookTagRow t in await _db.getAllTags()) t.id: t.name,
+    };
+    final Map<String, List<String>> result = <String, List<String>>{};
+    for (final BookTagMappingRow m in await _db.getAllBookTagMappings()) {
+      final String? name = nameById[m.tagId];
+      if (name == null) continue;
+      (result[m.bookKey] ??= <String>[]).add(name);
+    }
+    return result;
+  }
+
+  /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
+  Future<Map<String, List<String>>> _tagNamesByVideoUid() async {
+    final Map<int, String> nameById = <int, String>{
+      for (final BookTagRow t in await _db.getAllTags()) t.id: t.name,
+    };
+    final Map<String, List<String>> result = <String, List<String>>{};
+    for (final VideoBookTagMappingRow m
+        in await _db.getAllVideoBookTagMappings()) {
+      final String? name = nameById[m.tagId];
+      if (name == null) continue;
+      (result[m.videoBookUid] ??= <String>[]).add(name);
+    }
+    return result;
+  }
+
   /// host 当前书库清单（从 EpubBooks 表读）。
   /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
   @override
@@ -212,6 +241,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     // 有声书（有 Audiobook 无 SrtBook）会亮徽章 + 可点下载，但 exportAudiobook
     // 抛 StateError → 服务端 404。
     final Set<String> audiobookKeys = await _srtBackedAudiobookKeys();
+    final Map<String, List<String>> tagsByBookKey = await _tagNamesByBookKey();
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -226,6 +256,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         hasCover: coverPath != null,
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
+        tags: tagsByBookKey[r.bookKey] ?? const <String>[],
       );
     }).toList();
   }
@@ -640,15 +671,23 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       return tb.compareTo(ta);
     });
 
+    final Map<String, List<String>> tagsByVideoUid =
+        await _tagNamesByVideoUid();
     final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
     for (final VideoBookRow row in rows) {
-      videos.add(await _videoInfoFromRow(row));
+      videos.add(await _videoInfoFromRow(
+        row,
+        tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
+      ));
     }
     return videos;
   }
 
   /// 构建单条 [RemoteVideoInfo]（内部辅助，不做 IO 之外的副作用）。
-  Future<RemoteVideoInfo> _videoInfoFromRow(VideoBookRow row) async {
+  Future<RemoteVideoInfo> _videoInfoFromRow(
+    VideoBookRow row, {
+    List<String> tags = const <String>[],
+  }) async {
     final String videoPath = row.videoPath;
     int? sizeBytes;
     bool hasSubtitle = false;
@@ -705,6 +744,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       positionUpdatedAtMs: progress.updatedAtMs,
       episodes: episodes,
       currentEpisode: currentEpisode,
+      tags: tags,
     );
   }
 
