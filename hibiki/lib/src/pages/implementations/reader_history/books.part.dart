@@ -155,6 +155,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           },
         ),
       if (bookKey.isNotEmpty) ...[
+        // TODO-1191：与 EPUB 卡菜单对称补「查看插画」。仅在该 SRT 书有对应
+        // EpubBooks 行（[_epubBackedBookKeys] 命中 = extractDir 存在）时展示，
+        // 复用 EPUB 侧同一 [_openIllustrations]（自行 Navigator.pop + 打开
+        // [IllustrationsViewerPage]，无插图时页面友好占位）。「选择封面图片」照旧
+        // 保留——EPUB 卡不能选封面、SRT 卡可选是合理差异。
+        if (_epubBackedBookKeys.contains(bookKey))
+          DialogQuickAction(
+            label: t.view_illustrations,
+            icon: Icons.image_outlined,
+            onPressed: () => _openIllustrations(item, bookKey),
+          ),
         DialogQuickAction(
           label: t.audio_import,
           icon: Icons.headphones_outlined,

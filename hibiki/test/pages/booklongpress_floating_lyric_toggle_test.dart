@@ -95,6 +95,54 @@ void main() {
     );
   });
 
+  test('SRT 卡长按菜单对称补「查看插画」并 EPUB-backed 门控（TODO-1191）', () {
+    final String srtActions = _sectionSource(
+      src,
+      'List<DialogAction> _srtExtraActions(',
+      '  Future<void> _showSrtBookDialog(',
+    );
+    // 对称：SRT 卡菜单必须与 EPUB 卡一样含「查看插画」入口。
+    expect(
+      srtActions,
+      contains('t.view_illustrations'),
+      reason: 'SRT/有声书卡长按菜单也必须有「查看插画」入口（TODO-1191）。',
+    );
+    // 复用 EPUB 侧同一 _openIllustrations 回调，不另起实现。
+    expect(
+      srtActions,
+      contains('_openIllustrations(item, bookKey)'),
+      reason: 'SRT 卡「查看插画」复用 EPUB 侧同一 _openIllustrations 回调。',
+    );
+    // 门控：仅在该 SRT 书有对应 EpubBooks 行（extractDir 存在）时展示；
+    // 纯字幕书 / EPUB 未生成完不命中，入口不显示。
+    expect(
+      srtActions,
+      contains('_epubBackedBookKeys.contains(bookKey)'),
+      reason: 'SRT 卡「查看插画」必须按 EPUB-backing 门控（纯 SRT 无 EPUB 不显示）。',
+    );
+    // 「选择封面图片」照旧保留（EPUB 卡不能选封面、SRT 卡可选是合理差异）。
+    expect(
+      srtActions,
+      contains('t.srt_import_pick_cover'),
+      reason: '补「查看插画」不得删除 SRT 卡专有的「选择封面图片」。',
+    );
+  });
+
+  test('_epubBackedBookKeys 由 books（EpubBooks 行）真值填充（TODO-1191）', () {
+    // 门控真值来源：books 列表（hibikiBooksProvider 的全部 EpubBooks 行）解析出的
+    // bookKey 全集；确保门控不是空集导致入口永不显示。
+    expect(
+      src.contains('epubBackedBookKeys.add(key)'),
+      isTrue,
+      reason: '_epubBackedBookKeys 必须从 books 的 EpubBooks 行填充。',
+    );
+    expect(
+      src.contains('_epubBackedBookKeys = epubBackedBookKeys;'),
+      isTrue,
+      reason: '填充后的 EPUB-backing 集合必须写回 state 供菜单门控读取。',
+    );
+  });
+
   test('书籍长按对话框隐藏阅读按钮，点击卡片仍负责阅读', () {
     final String srtDialog = _sectionSource(
       src,
