@@ -101,7 +101,10 @@ void main() {
     late _FakeMining mining;
     late YomitanApiServer server;
 
-    Future<void> startServer({String? apiKey}) async {
+    Future<void> startServer({
+      String? apiKey,
+      Map<String, String> Function()? themeColorsProvider,
+    }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
       server = YomitanApiServer(
@@ -110,6 +113,7 @@ void main() {
         miningService: mining,
         tokenizer: tok,
         readingResolver: rr,
+        themeColorsProvider: themeColorsProvider,
         apiKey: apiKey,
       );
       await server.start();
@@ -131,6 +135,47 @@ void main() {
       expect(lookup.lastTerm, '走る');
       expect((j['result'] as Map<String, dynamic>)['searchTerm'], '走る');
       expect(j['popupJson'], contains('走る'));
+    });
+
+    test(
+        'lookup response carries popup size vars from themeColorsProvider '
+        '(TODO-1185)', () async {
+      // TODO-1185 follow-up：浏览器扩展弹窗尺寸跟随 app 内弹窗尺寸设置。app 注入的
+      // browserExtensionThemeColors 把用户配置的 popupMaxWidth/Height 作为
+      // --hibiki-popup-max-width / --hibiki-popup-max-height 放进查词响应 theme 字段，
+      // content.js 逐项 setProperty 到 #entries-container，content.css 同名 var(...) 消费。
+      Map<String, String> provider() => <String, String>{
+            '--md-primary': 'rgb(1, 2, 3)',
+            '--hibiki-popup-max-width': '520px',
+            '--hibiki-popup-max-height': '640px',
+          };
+      await startServer(apiKey: 'k123', themeColorsProvider: provider);
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '猫', 'record': false},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      final Map<String, dynamic> theme = j['theme'] as Map<String, dynamic>;
+      expect(theme['--hibiki-popup-max-width'], '520px');
+      expect(theme['--hibiki-popup-max-height'], '640px');
+    });
+
+    test('lookup response omits theme when provider absent (backward compat)',
+        () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '猫', 'record': false},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      // 无 provider（旧 app / server 未注入）→ 不带 theme，扩展 CSS 回落默认 400x360。
+      expect(j.containsKey('theme'), isFalse);
     });
 
     test('/api/mine with screenshot routes to mineImmersion', () async {

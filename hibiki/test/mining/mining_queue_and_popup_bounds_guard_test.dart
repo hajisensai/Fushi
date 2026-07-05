@@ -16,6 +16,8 @@ void main() {
   final File toolsContent = File('../tools/browser-extension/content.js');
   final File assetsCss = File('assets/browser_extension/vendor/content.css');
   final File toolsCss = File('../tools/browser-extension/vendor/content.css');
+  // 服务端主题下发弹窗尺寸的真值源（app_model.browserExtensionThemeColors）。
+  final File appModel = File('lib/src/models/app_model.dart');
 
   group('TODO-1184 制卡队列出队判据 + 逐项删除守卫', () {
     for (final File content in <File>[assetsContent, toolsContent]) {
@@ -84,9 +86,45 @@ void main() {
             reason: '${css.path} #entries-container 缺 max-height 约束');
         expect(src.contains('overflow-y: auto;'), isTrue,
             reason: '${css.path} #entries-container 缺 overflow-y 内部滚动');
-        // 默认锚定 app 的 400 宽（保留 --hibiki-popup-* 配置路径）。
-        expect(src.contains('var(--hibiki-popup-width, 400px)'), isTrue,
-            reason: '${css.path} 弹窗宽度未默认 400px');
+        // TODO-1185 follow-up：弹窗宽/高必须消费**服务端真喂**的变量名
+        // （browserExtensionThemeColors 下发 --hibiki-popup-max-width /
+        //  --hibiki-popup-max-height），否则查词响应下发的用户配置尺寸永远落不到
+        //  弹窗上（历史 bug：content.css 曾读 --hibiki-popup-width，服务端只发
+        //  --hibiki-popup-max-width → 宽度死锁 400px）。默认 400×360 兜底保留。
+        expect(src.contains('var(--hibiki-popup-max-width, 400px)'), isTrue,
+            reason: '${css.path} 弹窗宽度未消费服务端下发的 --hibiki-popup-max-width');
+        expect(src.contains('var(--hibiki-popup-max-height, 360px)'), isTrue,
+            reason: '${css.path} 弹窗高度未消费服务端下发的 --hibiki-popup-max-height');
+        // 旧的不匹配变量名不得复活（服务端从不发 --hibiki-popup-width）。
+        expect(src.contains('var(--hibiki-popup-width,'), isFalse,
+            reason: '${css.path} 残留服务端从不下发的 --hibiki-popup-width（宽度死锁根因）');
+      });
+    }
+  });
+
+  group('TODO-1185 follow-up 服务端下发弹窗尺寸变量名与 CSS 消费一致', () {
+    test('app_model.browserExtensionThemeColors 下发 max-width/height 两变量', () {
+      final String src = appModel.readAsStringSync();
+      // 服务端在查词响应 theme 字段里把用户配置的 popupMaxWidth/Height 作为这两个
+      // CSS 变量下发；content.js hibikiRender 逐项 setProperty 到 #entries-container，
+      // content.css 用同名 var(...) 消费 → 扩展弹窗跟随 app 内弹窗尺寸设置。
+      expect(src.contains("'--hibiki-popup-max-width':"), isTrue,
+          reason: 'app_model 未下发 --hibiki-popup-max-width（扩展宽度无法跟随配置）');
+      expect(src.contains("'--hibiki-popup-max-height':"), isTrue,
+          reason: 'app_model 未下发 --hibiki-popup-max-height（扩展高度无法跟随配置）');
+      expect(src.contains('popupMaxWidth.round()'), isTrue,
+          reason: 'app_model 未用用户配置 popupMaxWidth 生成弹窗宽度变量');
+      expect(src.contains('popupMaxHeight.round()'), isTrue,
+          reason: 'app_model 未用用户配置 popupMaxHeight 生成弹窗高度变量');
+    });
+
+    for (final File content in <File>[assetsContent, toolsContent]) {
+      test('content.js ${content.path} 把 theme 每项 setProperty 到弹窗容器', () {
+        final String src = content.readAsStringSync();
+        // 通用 theme 应用循环：--hibiki-popup-max-* 与 --md-* 同路径下发生效，
+        // 无需为弹窗尺寸单开一条并行路径（单一真相源=theme 映射）。
+        expect(src.contains('c.style.setProperty(k, theme[k])'), isTrue,
+            reason: '${content.path} 缺 theme 逐项 setProperty（弹窗尺寸/主题下发生效点）');
       });
     }
   });
