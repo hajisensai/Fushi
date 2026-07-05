@@ -142,4 +142,62 @@ void main() {
           reason: 'app_model 仍接线已删的 windowStartMs');
     });
   });
+
+  // TODO-1170：网飞制卡提示不再在右下角常驻小控件，改成「中间下方短暂 toast」。
+  // 源码扫描守卫（不依赖真机/真浏览器），两份镜像都守；内容不变，只改位置 + 停留。
+  group('TODO-1170 网飞制卡提示：中下短暂 toast、非右下常驻', () {
+    for (final File content in <File>[assetsContent, toolsContent]) {
+      group('content.js ${content.path}', () {
+        test('Netflix 分支隐藏常驻 chip、只在队列增长时弹短暂 toast（内容不变）', () {
+          final String src = content.readAsStringSync();
+          // Netflix 走短暂提示：隐藏右下角常驻 chip。
+          expect(
+              src.contains(
+                  "if (hibikiChip) hibikiChip.style.display = 'none';"),
+              isTrue,
+              reason: '${content.path} Netflix 未隐藏右下角常驻 chip');
+          // 只在队列**增长**时弹一次（避免加载/删除/跨标签同步刷屏）。
+          expect(
+              src.contains(
+                  "if (total > hibikiLastQueueTotal && typeof window.hibikiToast === 'function')"),
+              isTrue,
+              reason: '${content.path} Netflix toast 未按队列增长门控');
+          // 提示内容保持不变（与旧 chip 文案一致）。
+          expect(
+              src.contains(
+                  "window.hibikiToast('制卡队列 ' + total + ' · 点扩展图标生成本片 ' + here);"),
+              isTrue,
+              reason: '${content.path} Netflix 提示文案被改动');
+        });
+
+        test('Netflix 分支在常驻 chip 创建之前 return（绝不落右下角）', () {
+          final String src = content.readAsStringSync();
+          final int nfIdx =
+              src.indexOf("if (hibikiChip) hibikiChip.style.display = 'none';");
+          final int chipIdx =
+              src.indexOf('hibikiChip = document.createElement');
+          expect(nfIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} 缺 Netflix 短暂 toast 分支');
+          expect(chipIdx, greaterThan(nfIdx),
+              reason: '${content.path} Netflix 分支须在常驻 chip 创建前 return');
+        });
+
+        test('hibikiToast 定位为中间下方、非 sticky 时 5s 自动淡出（短暂）', () {
+          final String src = content.readAsStringSync();
+          // 中间下方：left:50% + translateX(-50%) + bottom（不是右下角固定）。
+          expect(
+              src.contains(
+                  'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);'),
+              isTrue,
+              reason: '${content.path} hibikiToast 不是中间下方定位');
+          // 非 sticky：5000ms 后自动淡出（短暂、不常驻）。
+          expect(
+              src.contains(
+                  "if (!sticky) hibikiToastTimer = setTimeout(() => { if (t) t.style.opacity = '0'; }, 5000);"),
+              isTrue,
+              reason: '${content.path} hibikiToast 非 sticky 时未自动淡出');
+        });
+      });
+    }
+  });
 }

@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v36 loaded (yomitan-style word anchor + highlight via hoshiSelection)');
+console.log('[Hibiki] content script v37 loaded (yomitan-style word anchor + highlight via hoshiSelection)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v36'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v37'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -179,6 +179,8 @@ try {
 
 // 浮动小控件：显示总队列数 + 本页可生成数；YouTube 点即生成，Netflix 提示点扩展图标。
 let hibikiChip = null;
+// Netflix 用：只在制卡队列**增长**时弹一次中间下方短暂提示，避免加载/删除/跨标签同步也刷屏。
+let hibikiLastQueueTotal = 0;
 function hibikiGenerableCount() {
   const site = hibikiSite();
   if (site === 'youtube') return hibikiQueue.filter((q) => q.site === 'youtube').length;
@@ -191,6 +193,18 @@ function hibikiGenerableCount() {
 function hibikiUpdateQueueChip() {
   const total = hibikiQueue.length;
   const here = hibikiGenerableCount();
+  // Netflix：不再在右下角常驻小控件（长期遮挡视频/字幕）。改为「中间下方短暂提示」——
+  // 复用 hibikiToast（left:50% + bottom，5s 自动淡出），只在队列新增时弹一次、内容不变。
+  // 生成仍走浏览器工具栏的 Hibiki 图标（Netflix 录屏需手势），不依赖常驻控件。
+  if (hibikiSite() === 'netflix') {
+    if (hibikiChip) hibikiChip.style.display = 'none';
+    if (total > hibikiLastQueueTotal && typeof window.hibikiToast === 'function') {
+      window.hibikiToast('制卡队列 ' + total + ' · 点扩展图标生成本片 ' + here);
+    }
+    hibikiLastQueueTotal = total;
+    return;
+  }
+  hibikiLastQueueTotal = total;
   if (!hibikiChip) {
     hibikiChip = document.createElement('div');
     hibikiChip.id = 'hibiki-queue-chip';
