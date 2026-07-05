@@ -116,6 +116,18 @@ void main() {
     }
   }
 
+  /// Extracts the packed `hibiki.db` from [zipPath] into a fresh dir under [into]
+  /// and opens it, so a test can assert on the exported DB blob's rows directly.
+  Future<HibikiDatabase> openBackupDb(String zipPath, Directory into) async {
+    final Archive archive = await readZip(zipPath);
+    final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
+    final Directory dir = Directory(p.join(into.path, 'exdb'))
+      ..createSync(recursive: true);
+    File(p.join(dir.path, 'hibiki.db'))
+        .writeAsBytesSync(dbFile.content as List<int>);
+    return HibikiDatabase(dir.path);
+  }
+
   test('null categories packs every tree (legacy all-in export)', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'all.zip');
@@ -416,5 +428,54 @@ void main() {
 
     expect(File(p.join(dstDbDir, 'local_audio_999.db')).existsSync(), isTrue,
         reason: 'localAudio absent from backup → existing DB file untouched');
+  });
+
+  // ── TODO-1195 part C: ghost-book fix ──────────────────────────────────
+  test(
+      'unticking book content strips epub_books records from the DB blob '
+      '(no ghost book) and zeroes the reported book count', () async {
+    final built = await buildFullSource();
+    final zip = p.join(src.path, 'no_books.zip');
+    // Everything EXCEPT books.
+    final meta = await built.service.exportBackup(zip, categories: {
+      BackupCategory.dictionary,
+      BackupCategory.audiobooks,
+      BackupCategory.fonts,
+    });
+    await built.db.close();
+
+    expect(meta.bookCount, 0, reason: 'no book records were exported');
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await db.getAllEpubBooks(), isEmpty,
+          reason: 'book records must be stripped when book content is excluded');
+      // The audiobook + its cues key on the same bookKey, so the cascade drops
+      // them too (an audiobook without its epub row is itself un-openable).
+      expect(await db.getAllAudiobooks(), isEmpty);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('merge-importing a books-excluded backup adds no ghost books', () async {
+    final built = await buildFullSource();
+    final zip = p.join(src.path, 'no_books.zip');
+    await built.service.exportBackup(zip, categories: {BackupCategory.fonts});
+    await built.db.close();
+
+    final String dstDbDir = p.join(dst.path, 'db');
+    Directory(dstDbDir).createSync(recursive: true);
+    // Fresh device with no books → the backup must not add any un-openable book.
+    await BackupService.mergeImportBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+    );
+    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    try {
+      expect(await restored.getAllEpubBooks(), isEmpty,
+          reason: 'a book-excluded backup must not resurrect books on merge');
+    } finally {
+      await restored.close();
+    }
   });
 }

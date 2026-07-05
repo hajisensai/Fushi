@@ -406,9 +406,18 @@ class BackupService {
   /// regardless, since it holds every table's metadata. [BackupMeta] still
   /// records the source roots of the trees that were actually packed so import
   /// can rebase them; an omitted tree's root is left null in the meta.
+  ///
+  /// [bookKeys] optionally restricts the export to specific books (TODO-1195
+  /// part A): null (default) exports every book (legacy); a non-null set exports
+  /// ONLY those books — both their `epub_books` records (every unselected book's
+  /// row is stripped from the DB copy) AND their `hoshi_books/` content. Other
+  /// categories (dictionaries / statistics / settings / videos / local audio)
+  /// are unaffected. When the [BackupCategory.books] category itself is excluded
+  /// no book records or content travel at all, regardless of [bookKeys].
   Future<BackupMeta> exportBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
+    Set<String>? bookKeys,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -456,13 +465,37 @@ class BackupService {
       // resource files are present on disk.
       final bool includeDictionary = wants(BackupCategory.dictionary) &&
           await _hasCompleteDictionaryResources(dictionaryResourceRoot);
+      // Whether the "book content" category is packed. When it is NOT, the
+      // hoshi_books/ tree is skipped below AND the epub_books rows must be
+      // stripped from the DB copy — otherwise a restore/merge would insert book
+      // records whose content files never travelled = un-openable "ghost" books
+      // (TODO-1195 part C). This keeps the switch consistent: a book that isn't
+      // packed never appears after import.
+      final bool includeBooks = wants(BackupCategory.books);
       await _stripCredentials(tmpDir.path);
       if (!includeDictionary) {
         await _stripDictionaryState(tmpDir.path);
       }
+      // Which books' records survive in the exported DB copy:
+      //  - book content unticked      → keep NONE (strip every epub_books row).
+      //  - a per-book selection given  → keep ONLY the selected book_keys.
+      //  - otherwise                   → keep all (null = legacy full export).
+      final Set<String>? retainBookKeys =
+          !includeBooks ? const <String>{} : bookKeys; // null = every book
+      if (retainBookKeys != null) {
+        await _retainBooks(tmpDir.path, retainBookKeys);
+      }
 
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
+      // The count reported to the import confirm dialog must reflect what is
+      // actually exported, not the live library — a book whose record was
+      // stripped above must not be counted (TODO-1195 part C/A).
+      final int exportedBookCount = retainBookKeys == null
+          ? books.length
+          : books
+              .where((EpubBookRow b) => retainBookKeys.contains(b.bookKey))
+              .length;
 
       // Build the flat "zip-path → disk-path" map, then stream every file into
       // the ZIP off the UI isolate. The old path read each file fully into a
@@ -486,7 +519,7 @@ class BackupService {
         appVersion: _appVersion,
         schemaVersion: _db.schemaVersion,
         createdAt: DateTime.now(),
-        bookCount: books.length,
+        bookCount: exportedBookCount,
         statsCount: stats.length,
         // Only record a tree's source root when that tree is actually packed,
         // so import never rebases stored paths against a tree the backup never
@@ -504,9 +537,19 @@ class BackupService {
         await _collectTreeFiles(
             dictionaryResourceRoot!, _dictionaryResourcesPrefix, files);
       }
-      if (_booksRootDirectory != null && wants(BackupCategory.books)) {
-        await _collectTreeFiles(
-            Directory(_booksRootDirectory), _booksPrefix, files);
+      if (_booksRootDirectory != null && includeBooks) {
+        if (bookKeys == null) {
+          // Legacy full export: pack the whole books tree.
+          await _collectTreeFiles(
+              Directory(_booksRootDirectory), _booksPrefix, files);
+        } else {
+          // Per-book export (TODO-1195 part A): pack ONLY the selected books'
+          // content, keyed by each file's path relative to the books root so
+          // the archive layout matches the full-tree export (import restores
+          // the whole hoshi_books/ prefix onto this device's root either way).
+          await _collectSelectedBookFiles(
+              bookKeys, books, _booksRootDirectory, files);
+        }
       }
       if (_audiobooksRootDirectory != null &&
           wants(BackupCategory.audiobooks)) {
@@ -1368,6 +1411,132 @@ class BackupService {
           p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
       into[archivePath] = entity.path;
     }
+  }
+
+  /// Deletes from the exported DB copy in [dbDirectory] every epub book whose
+  /// `book_key` is NOT in [keep], plus all of that book's dependent rows via the
+  /// canonical [HibikiDatabase.deleteEpubBook] cascade (reader position,
+  /// bookmarks, tag mappings, audiobook + cues, srt rows, shelf entry). [keep]
+  /// empty strips every book (the "book content" category was unticked);
+  /// a non-empty set keeps only the user-selected books (per-book export).
+  ///
+  /// Root fix for the "ghost book" bug (TODO-1195 part C/A): the whole DB is
+  /// exported as one VACUUM-INTO blob, so without this every book's `epub_books`
+  /// row travelled even when its `hoshi_books/` files were left out — a
+  /// restore/merge then inserted book rows with no content = un-openable books.
+  /// Filtering the rows here makes the "book content" switch / per-book
+  /// selection consistent: a book that isn't packed never appears after import.
+  static Future<void> _retainBooks(
+    String dbDirectory,
+    Set<String> keep,
+  ) async {
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      for (final EpubBookRow b in await db.getAllEpubBooks()) {
+        if (keep.contains(b.bookKey)) continue;
+        // Default (tombstone: false): stripping a book from an export copy is
+        // NOT a user deletion, so it must never write a resurrection tombstone
+        // into the backup DB (TODO-1195 part B interaction).
+        await db.deleteEpubBook(b.bookKey);
+      }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Packs ONLY the selected [bookKeys]' book content into [into] (per-book
+  /// export, TODO-1195 part A). For each selected [EpubBookRow] its extracted
+  /// content directory subtree plus the epub file and cover file are added,
+  /// each keyed by its path RELATIVE to [booksRootDirectory] under the
+  /// `hoshi_books/` prefix — identical to what the full-tree export would emit
+  /// for those files, so import (which restores the whole prefix) is unchanged.
+  /// A book whose paths are not under the books root, or whose files are gone,
+  /// is silently skipped (its DB row is likewise stripped by [_retainBooks]).
+  static Future<void> _collectSelectedBookFiles(
+    Set<String> bookKeys,
+    List<EpubBookRow> allBooks,
+    String booksRootDirectory,
+    Map<String, String> into,
+  ) async {
+    final Directory booksRoot = Directory(booksRootDirectory);
+    if (!await booksRoot.exists()) return;
+    final String rootNorm = booksRoot.path.replaceAll(r'\', '/');
+    for (final EpubBookRow b in allBooks) {
+      if (!bookKeys.contains(b.bookKey)) continue;
+      // The book's extracted directory subtree (epub + html/images/fonts +
+      // in-tree cover) — the bulk of its content.
+      await _collectSubtreeUnderRoot(
+          b.extractDir, booksRootDirectory, rootNorm, into);
+      // The epub file and cover file explicitly, in case either lives directly
+      // under the books root rather than inside extractDir.
+      await _collectSingleFileUnderRoot(
+          b.epubPath, booksRootDirectory, rootNorm, into);
+      if (b.coverPath != null) {
+        await _collectSingleFileUnderRoot(
+            b.coverPath!, booksRootDirectory, rootNorm, into);
+      }
+    }
+  }
+
+  /// Walks [subtreePath] and adds every file to [into] keyed by its path
+  /// relative to [booksRootDirectory] under the `hoshi_books/` prefix. No-op
+  /// when the subtree is missing or is not located under the books root
+  /// ([rootNorm] is the forward-slash-normalized root, precomputed by the
+  /// caller). Used by per-book export to pack one book's extracted directory.
+  static Future<void> _collectSubtreeUnderRoot(
+    String subtreePath,
+    String booksRootDirectory,
+    String rootNorm,
+    Map<String, String> into,
+  ) async {
+    final Directory dir = Directory(subtreePath);
+    if (!await dir.exists()) return;
+    if (!_isUnderRoot(subtreePath, rootNorm)) return;
+    await for (final FileSystemEntity entity in dir.list(recursive: true)) {
+      if (entity is! File) continue;
+      _addFileRelativeToRoot(
+          entity.path, booksRootDirectory, rootNorm, into);
+    }
+  }
+
+  /// Adds one file at [filePath] to [into] keyed by its path relative to the
+  /// books root under the `hoshi_books/` prefix. No-op when the file is missing
+  /// or not under the root. Idempotent via the map key (a file already added by
+  /// the subtree walk is simply overwritten with the same value).
+  static Future<void> _collectSingleFileUnderRoot(
+    String filePath,
+    String booksRootDirectory,
+    String rootNorm,
+    Map<String, String> into,
+  ) async {
+    if (!_isUnderRoot(filePath, rootNorm)) return;
+    if (!await File(filePath).exists()) return;
+    _addFileRelativeToRoot(filePath, booksRootDirectory, rootNorm, into);
+  }
+
+  /// Whether [path] is located within [rootNorm] (a forward-slash-normalized
+  /// directory), using a separator-boundary prefix test so `/a/books_extra` is
+  /// not treated as under `/a/books`.
+  static bool _isUnderRoot(String path, String rootNorm) {
+    final String pNorm = path.replaceAll(r'\', '/');
+    return pNorm == rootNorm || pNorm.startsWith('$rootNorm/');
+  }
+
+  /// Maps [filePath] to its `hoshi_books/<relative-to-root>` archive key and
+  /// records it in [into]. Mirrors [_collectTreeFiles]'s keying so a per-book
+  /// export and a full-tree export produce identical archive paths.
+  static void _addFileRelativeToRoot(
+    String filePath,
+    String booksRootDirectory,
+    String rootNorm,
+    Map<String, String> into,
+  ) {
+    final String relativePath = p.relative(filePath, from: booksRootDirectory);
+    final String archivePath =
+        p.posix.join(_booksPrefix, relativePath.replaceAll(r'\', '/'));
+    into[archivePath] = filePath;
   }
 
   /// Adds every local-audio pronunciation database file (`local_audio_*.db`
