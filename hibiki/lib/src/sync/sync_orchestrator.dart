@@ -1513,11 +1513,14 @@ Future<bool> importRemoteBookFolder({
   ));
   try {
     await backend.getAsset(epub.id, tmp, onProgress: onProgress);
-    await EpubImporter.importFromPath(
+    final String importedBookKey = await EpubImporter.importFromPath(
       db: db,
       filePath: tmp.path,
       fileName: epub.name,
     );
+    // TODO-1165：按标签名重建云盘书标签映射（sidecar 由 push 侧写在同文件夹，只增
+    // 不删）。复用已列出的 children，不再多发一次 listChildren。
+    await _applyRemoteBookFolderTags(db, backend, children, importedBookKey);
     return true;
   } finally {
     try {
@@ -1526,4 +1529,41 @@ Future<bool> importRemoteBookFolder({
       // best-effort temp cleanup
     }
   }
+}
+
+/// 读取云盘书文件夹里的标签 sidecar（[kSyncBookTagsAssetName]）并按名重建 [bookKey]
+/// 的标签映射（TODO-1165）。[children] 复用 [importRemoteBookFolder] 已列出的目录项。
+/// 缺 sidecar（旧端未写）安全降级为空——按名只增不删，绝不清本地既有标签。
+Future<void> _applyRemoteBookFolderTags(
+  HibikiDatabase db,
+  SyncBackend backend,
+  List<AssetEntry> children,
+  String bookKey,
+) async {
+  AssetEntry? sidecar;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name == kSyncBookTagsAssetName) {
+      sidecar = e;
+      break;
+    }
+  }
+  if (sidecar == null) return;
+  final Object? json = await backend.getJsonAsset(sidecar.id);
+  for (final String name in _bookTagNamesFromSidecar(json)) {
+    if (name.isEmpty) continue;
+    final int tagId = await db.getOrCreateTagByName(name);
+    await db.addTagToBook(bookKey, tagId);
+  }
+}
+
+/// 从标签 sidecar JSON 解析非空标签名列表（TODO-1165）。非 Map / `tags` 非 List /
+/// 缺键一律返回空列表——向后兼容旧格式，绝不对缺字段抛 FormatException。
+List<String> _bookTagNamesFromSidecar(Object? json) {
+  if (json is! Map) return const <String>[];
+  final Object? raw = json['tags'];
+  if (raw is! List) return const <String>[];
+  return <String>[
+    for (final Object? item in raw)
+      if (item != null && item.toString().isNotEmpty) item.toString(),
+  ];
 }

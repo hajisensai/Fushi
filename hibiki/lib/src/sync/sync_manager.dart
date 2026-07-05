@@ -14,6 +14,15 @@ import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+/// 云盘书文件夹里承载「书标签名列表」的 sidecar 资产名（TODO-1165）。
+///
+/// 标签是每设备本地数据（[BookTags].id 各设备不一致），跨设备只能按名传递。云盘
+/// 后端的书走 per-book 文件夹（`<title>.epub` + progress/statistics/audioBook_
+/// 前缀的 json），此 sidecar 与它们同级，仅带标签名。命名不撞任何前缀分类
+/// （`progress_`/`statistics_`/`audioBook_`），也不是 `.epub`，故 [listSyncFiles]
+/// / [importRemoteBookFolder] / 内容探针都不会把它误判为进度或内容。
+const String kSyncBookTagsAssetName = 'tags.json';
+
 /// Re-package an extracted book directory back into a single `.epub` at
 /// [outputPath]. Hibiki stores imported books EXTRACTED (the extract dir is a
 /// valid EPUB layout: `mimetype` + `META-INF/` + OPF + content) and keeps no
@@ -699,6 +708,19 @@ class SyncManager {
           } catch (_) {/* best-effort temp cleanup */}
         }
       }
+    }
+
+    // TODO-1165：书标签名 sidecar。标签每设备本地，跨设备按名带、落地端按名归一
+    // 重建（只增不删）。与内容同属「书文件夹元数据」，同受 syncContent 门控（本方法
+    // 仅在 syncContent 开时被 _handleExport 调用）。putJsonAsset 覆盖写，标签编辑后
+    // 每次导出同步刷新；无标签时不写空文件（避免无谓 PUT，且下行只增语义下无差别）。
+    final List<BookTagRow> bookTags = await _db.getTagsForBook(book.bookKey);
+    if (bookTags.isNotEmpty) {
+      await _backend
+          .putJsonAsset(folderId, kSyncBookTagsAssetName, <String, Object?>{
+        'schemaVersion': 1,
+        'tags': <String>[for (final BookTagRow t in bookTags) t.name],
+      });
     }
 
     // Export audio files
