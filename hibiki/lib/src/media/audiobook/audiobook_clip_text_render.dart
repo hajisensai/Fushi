@@ -545,14 +545,11 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
       ),
     );
 
-    // 竖排：整块旋转近似（真竖排逐字直排 defer 到后续，见 D2）。
-    final Widget oriented = layout.vertical
-        ? RotatedBox(
-            quarterTurns: 1,
-            child: body,
-          )
-        : body;
-
+    // TODO-1147 option A: vertical clip frames now render through the offscreen
+    // WebView true-vertical path (audiobook_clip_webview_render.dart); this
+    // Flutter raster path serves horizontal only (and is the readable horizontal
+    // fallback if the WebView vertical render fails). No more quarter-turn block
+    // rotation (rotated text lies on its side, unreadable) -- that was the bug.
     return RepaintBoundary(
       key: widget.boundaryKey,
       child: Container(
@@ -561,7 +558,7 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
         color: layout.background,
         alignment: Alignment.center,
         padding: EdgeInsets.all(layout.padding),
-        child: oriented,
+        child: body,
       ),
     );
   }

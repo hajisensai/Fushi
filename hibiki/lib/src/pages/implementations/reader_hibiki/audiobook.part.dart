@@ -1244,7 +1244,18 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
       if (!dynamicOk) {
         // 单句静态回退：整段文本单图 + `-loop 1` 单图合成（原有稳定路径）。
-        final Uint8List? pngBytes = await renderAudiobookClipTextToPng(
+        // TODO-1147 option A: vertical uses the true-vertical offscreen WebView
+        // render; horizontal keeps the Flutter raster path. If the WebView path
+        // returns null (platform without WebView / render failure), gracefully
+        // fall back to Flutter raster (readable horizontal) rather than hard-fail.
+        Uint8List? pngBytes;
+        if (layout.vertical) {
+          pngBytes = await renderAudiobookClipTextViaWebView(
+            text: text,
+            layout: layout,
+          );
+        }
+        pngBytes ??= await renderAudiobookClipTextToPng(
           overlay: overlay,
           text: text,
           layout: layout,
@@ -1391,12 +1402,21 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         distinctIndices.add(spec.highlightCueIndex);
       }
     }
-    final List<Uint8List?> pngs = await renderAudiobookClipFrames(
-      overlay: overlay,
-      segments: segments,
-      layout: layout,
-      highlightIndices: distinctIndices,
-    );
+    // TODO-1147 option A: vertical renders true-vertical frames via offscreen
+    // WebView; horizontal keeps the Flutter raster frames (never break). Any null
+    // frame below still triggers the static fallback.
+    final List<Uint8List?> pngs = layout.vertical
+        ? await renderAudiobookClipFramesViaWebView(
+            segments: segments,
+            layout: layout,
+            highlightIndices: distinctIndices,
+          )
+        : await renderAudiobookClipFrames(
+            overlay: overlay,
+            segments: segments,
+            layout: layout,
+            highlightIndices: distinctIndices,
+          );
     // BUG-543：移动端 ffmpeg-kit min 无 png decoder（有 mjpeg decoder），桌面 ffmpeg-min
     // 同样含 mjpeg decoder。Flutter 每帧只能直出 png，故逐帧重编码为 jpeg 落盘
     // （frame_%04d.jpg），让两端 image2 序列帧都走已存在的 mjpeg 解码，绝不触碰缺失的
