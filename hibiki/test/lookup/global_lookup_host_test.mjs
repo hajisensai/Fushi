@@ -103,6 +103,15 @@ function makeElement(tag) {
           },
         },
       },
+      // TODO-1188 — each iframe's popup_bridge_adapter defines its own
+      // window.__hibikiBridgeResolve (frame-local _pending realm). The host's
+      // top-level router forwards a native reply to the SOURCE frame's resolver;
+      // this spy records (id, value) so a test can assert the reply reached
+      // EXACTLY that frame with its original frame-local id.
+      __hibikiBridgeResolve(id, value) {
+        (el.contentWindow._bridgeResolved =
+          el.contentWindow._bridgeResolved || []).push({ id, value });
+      },
     };
     // contentDocument for D1/D2: a mutable body height + a .glossary-content
     // flag + querySelector. _observers holds MutationObserver callbacks bound to
@@ -383,7 +392,15 @@ function descriptor(id, parentIndex, settingsJs) {
   assert.strictEqual(out.args[1].y, 58, 'anchor y = shell.top + local.y');
   assert.strictEqual(out.args[1].width, 30, 'anchor width preserved');
   assert.strictEqual(out.args[1].height, 18, 'anchor height preserved');
-  assert.strictEqual(out.__bridgeId, 5, 'bridge id preserved for resolution');
+  // TODO-1188 — the frame-LOCAL bridge id (5) is rewritten to a host-GLOBAL id on
+  // the outbound message, and a route back to the source frame's local id is
+  // recorded. The global id is what native sees + echoes back.
+  assert.strictEqual(typeof out.__bridgeId, 'number',
+    'outbound bridge id is a host-global integer');
+  const route = host._bridgeRoutes.get(out.__bridgeId);
+  assert.ok(route, 'a route was recorded for the outbound global id');
+  assert.strictEqual(route.frameId, 'frame-0', 'route points at the source frame');
+  assert.strictEqual(route.localId, 5, 'route remembers the frame-local id');
 }
 
 // 8. C1: a non-onLinkClick message (e.g. tapOutside) is passed through with only
@@ -934,6 +951,115 @@ function flushTimers() {
   iframe.contentWindow.chrome.webview.postMessage({ handler: 'popupRendered', args: [150] });
   assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
     'reused root re-reveals once the NEW card signals popupRendered');
+}
+
+// 29. TODO-1188 bridge round-trip: a native reply (top-level
+//     window.__hibikiBridgeResolve, the ONLY document native ExecuteScript can
+//     reach) is FORWARDED to the SOURCE iframe's adapter with its ORIGINAL
+//     frame-local id — not to the top-level realm (where the callHandler Promise
+//     does NOT live) and not broadcast to siblings. This is the audio ♪ / favorite
+//     ☆ "button does nothing" root cause: the reply never reached the iframe.
+{
+  const { host, document, window } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shells = shellsOf(document);
+  const if0 = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-0')
+    .children.find((c) => c.tagName === 'IFRAME');
+  const if1 = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  // frame-1 issues a favoriteEntry callHandler (frame-local id 1 via its adapter).
+  if1.contentWindow.chrome.webview.postMessage({
+    handler: 'favoriteEntry',
+    args: [{ expression: '猫', reading: 'ねこ' }],
+    __bridgeId: 1,
+  });
+  const out = hostPostLog.find((m) => m.handler === 'favoriteEntry');
+  assert.ok(out, 'favoriteEntry reached the top bridge');
+  assert.strictEqual(out.__frameId, 'frame-1', 'stamped with the source frame id');
+  const globalId = out.__bridgeId;
+  assert.strictEqual(typeof globalId, 'number', 'outbound id is a global integer');
+  // Native replies on the TOP-LEVEL document with the GLOBAL id.
+  window.__hibikiBridgeResolve(globalId, true);
+  assert.deepStrictEqual(if1.contentWindow._bridgeResolved, [{ id: 1, value: true }],
+    'reply forwarded to the SOURCE frame with its ORIGINAL local id 1');
+  assert.ok(!if0.contentWindow._bridgeResolved,
+    'the sibling frame was NOT resolved (no broadcast)');
+  assert.ok(!host._bridgeRoutes.has(globalId),
+    'the route is consumed (pruned) after the reply is delivered');
+}
+
+// 30. TODO-1188 cross-frame id collision: two frames each mint the SAME
+//     frame-local id (their adapters both start _seq at 1). The host rewrites them
+//     to DISTINCT global ids, so resolving one global id resolves ONLY its source
+//     frame — a naive broadcast-by-id would wrongly resolve BOTH frames' pending
+//     id-1 Promise with the same value.
+{
+  const { host, document, window } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shells = shellsOf(document);
+  const if0 = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-0')
+    .children.find((c) => c.tagName === 'IFRAME');
+  const if1 = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  // BOTH frames issue a callHandler with the SAME frame-local id 1.
+  if0.contentWindow.chrome.webview.postMessage({
+    handler: 'favoriteCheck', args: [{ expression: 'A' }], __bridgeId: 1,
+  });
+  if1.contentWindow.chrome.webview.postMessage({
+    handler: 'favoriteCheck', args: [{ expression: 'B' }], __bridgeId: 1,
+  });
+  const outs = hostPostLog.filter((m) => m.handler === 'favoriteCheck');
+  assert.strictEqual(outs.length, 2, 'both favoriteCheck calls reached the bridge');
+  const gid0 = outs.find((m) => m.__frameId === 'frame-0').__bridgeId;
+  const gid1 = outs.find((m) => m.__frameId === 'frame-1').__bridgeId;
+  assert.notStrictEqual(gid0, gid1,
+    'the two same-local-id calls got DISTINCT global ids (no collision)');
+  // Resolve frame-1's global id: ONLY frame-1 sees it.
+  window.__hibikiBridgeResolve(gid1, true);
+  assert.deepStrictEqual(if1.contentWindow._bridgeResolved, [{ id: 1, value: true }],
+    'frame-1 resolved with its own reply');
+  assert.ok(!if0.contentWindow._bridgeResolved,
+    'frame-0 (same local id 1) is NOT mis-resolved by frame-1 reply');
+  // Now resolve frame-0's global id: frame-0 gets ITS reply.
+  window.__hibikiBridgeResolve(gid0, false);
+  assert.deepStrictEqual(if0.contentWindow._bridgeResolved, [{ id: 1, value: false }],
+    'frame-0 resolved independently with its own reply');
+}
+
+// 31. TODO-1188 route pruning: closing a frame drops its pending bridge routes so
+//     the route map does not leak entries for torn-down iframes.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const if1 = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  if1.contentWindow.chrome.webview.postMessage({
+    handler: 'resolveWordAudio', args: [{ expression: '猫' }], __bridgeId: 1,
+  });
+  assert.strictEqual(host._bridgeRoutes.size, 1, 'one pending route for frame-1');
+  // Close the child (truncate to root) -> the child's route is pruned.
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host._bridgeRoutes.size, 0,
+    'the removed frame\'s pending route is pruned (no leak)');
 }
 
 console.log('global_lookup_host_test: PASS');
