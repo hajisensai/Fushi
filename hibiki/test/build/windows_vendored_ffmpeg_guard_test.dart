@@ -126,6 +126,39 @@ void main() {
             'vendored');
   });
 
+  // BUG-550 / TODO-1156: the vendored Windows ffmpeg.exe MUST be built in the
+  // clean CI environment (ffmpeg-min.yml on a GitHub-hosted runner), never a
+  // developer's local MSYS2 checkout. A locally-built n7.1.5 binary
+  // (configure --prefix=/d/ffmpeg715/out) shipped in V35 and crashed on the
+  // user's machine with exit -1414549496 (0xABAFB008) across all three video
+  // mining ffmpeg calls (cue gif / frame / sentence audio), breaking video
+  // mining entirely, while the CI-built predecessor (--prefix=/d/a/...) worked.
+  // GitHub-hosted Windows runners always check out under D:\a\ (msys path
+  // /d/a/<owner>/<repo>), so the configure string embedded in the PE binary
+  // carries a stable CI signature. This fence rejects any re-vendored binary
+  // that was built outside CI so the regression cannot silently return.
+  test('vendored Windows ffmpeg.exe is a CI build, not a local dev build', () {
+    final File ffmpeg = File('../third_party/ffmpeg-min/windows/ffmpeg.exe');
+    expect(ffmpeg.existsSync(), isTrue);
+    // Latin-1 keeps the embedded ASCII configure string byte-for-byte scannable.
+    final String blob = String.fromCharCodes(ffmpeg.readAsBytesSync());
+    expect(
+      blob.contains('/d/a/'),
+      isTrue,
+      reason: 'vendored ffmpeg.exe must be built by ffmpeg-min.yml on a '
+          'GitHub-hosted Windows runner (configure --prefix under /d/a/...); '
+          'a locally-built binary crashed on the user with exit -1414549496 '
+          '(BUG-550). Rebuild via `gh workflow run ffmpeg-min.yml` and vendor '
+          'the CI artifact, never a local `/d/ffmpeg715`-style build.',
+    );
+    expect(
+      blob.contains('/d/ffmpeg715'),
+      isFalse,
+      reason: 'the crashing V35 local-build marker /d/ffmpeg715 must never '
+          'ship again (BUG-550 / TODO-1156).',
+    );
+  });
+
   test('ffmpeg-min workflow has no deprecated branch push trigger', () {
     final String workflow = readWorkflow('ffmpeg-min.yml');
     expect(
