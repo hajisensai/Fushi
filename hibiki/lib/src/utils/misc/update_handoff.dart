@@ -458,8 +458,17 @@ abstract final class WindowsUpdateHandoff {
     required DateTime startedAt,
     WindowsInstallerDiagnostics diagnostics =
         const WindowsInstallerDiagnostics(),
-  }) {
-    return _write(
+  }) async {
+    // TODO-1197/1198：写新的 pending 记录前，如果磁盘上已有一份指向**同一 target
+    // 版本**的旧标记，保留它的 `lastPrompted*` 字段。否则每次重走安装握手都会把
+    // 这些字段清成 null，reconcile 的幂等守卫（同版本同指纹只提示一次）在
+    // 「装不成→重启→再装」的循环里失效，用户每次启动都会再弹一次「安装未完成」。
+    // 换成**不同** target 版本（真正的新版本 / 新 debug 指纹）时不保留——那是一次
+    // 全新的更新尝试，失败理应重新提示。
+    final WindowsUpdateHandoffRecord? existing = await read(markerFile);
+    final bool sameTarget = existing != null &&
+        _isSameHandoffTarget(existing.targetVersion, targetVersion);
+    await _write(
       markerFile,
       WindowsUpdateHandoffRecord(
         targetVersion: targetVersion,
@@ -474,6 +483,11 @@ abstract final class WindowsUpdateHandoff {
         libmpvModuleHolders: diagnostics.libmpvModuleHolders,
         innoLogDeleteFileFailures: diagnostics.innoLogDeleteFileFailures,
         pathMismatchWarning: diagnostics.pathMismatchWarning,
+        lastPromptedAppVersion:
+            sameTarget ? existing.lastPromptedAppVersion : null,
+        lastPromptedFailureFingerprint:
+            sameTarget ? existing.lastPromptedFailureFingerprint : null,
+        lastPromptedAt: sameTarget ? existing.lastPromptedAt : null,
       ),
     );
   }
@@ -494,6 +508,34 @@ abstract final class WindowsUpdateHandoff {
     } catch (_) {
       return null;
     }
+  }
+
+  /// TODO-1197/1198 只读退避判据：磁盘上是否存在一份指向 [candidateVersion]
+  /// **同一版本**的握手标记。存在即代表上一轮对这个确切版本的自动安装握手没有
+  /// 落地——安装成功会由 [reconcile] 删除标记，且能走到自动安装分支时当前版本
+  /// 必然仍低于目标（否则「已是最新」早退），所以标记仍在 = 上次没装成。调用方
+  /// 据此**退回手动确认对话框**，打断「装不成→退出→重启→又自动装」的死循环
+  /// （BUG-488 / TODO-1181 触发）。
+  ///
+  /// 换成**不同**候选版本（新 release / 新 debug 指纹）→ 返 false，退避重置，
+  /// 允许对新版本再自动装一次，绝不「一次失败就永久不更新」。标记缺失 / 损坏
+  /// （[read] 返 null）同样返 false（fail-open，不因读不到标记而卡住更新）。
+  static Future<bool> shouldBackOffAutoInstall({
+    required File markerFile,
+    required String candidateVersion,
+  }) async {
+    final WindowsUpdateHandoffRecord? record = await read(markerFile);
+    if (record == null) return false;
+    return _isSameHandoffTarget(record.targetVersion, candidateVersion);
+  }
+
+  /// 两个版本串是否指向同一次更新目标：strip 前导 `v` + trim 后精确相等。
+  /// 保留 prerelease 段与 `+build` 元数据（debug 通道用 `+<sha>` 区分构建，
+  /// 不能像语义比较那样丢掉——否则不同 debug 构建会被误判成同一版本而永不重试）。
+  static bool _isSameHandoffTarget(String a, String b) {
+    final String left = _stripLeadingV(a.trim());
+    final String right = _stripLeadingV(b.trim());
+    return left.isNotEmpty && left == right;
   }
 
   static Future<void> markLaunchSucceeded({

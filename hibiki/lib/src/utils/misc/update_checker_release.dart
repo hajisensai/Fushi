@@ -309,8 +309,18 @@ class UpdateChecker {
         }
         return;
       }
+      // TODO-1197/1198：Windows 自动安装死循环防护。装不成的安装器（WebView2 /
+      // libmpv 占用致 Inno DeleteFile code5）会 exit→重启→又被自动装，无限循环。
+      // 下载前先读 handoff 标记：若这个**确切目标版本**上一轮握手没装成（标记仍在），
+      // 退避——改弹手动确认对话框让用户自行决定，不再静默重下重启。换成新版本会重置
+      // 退避（见 WindowsUpdateHandoff.shouldBackOffAutoInstall）。读标记出错则 fail-open
+      // 照常自动装，绝不「一次失败就永久不更新」。
+      final bool autoInstallBackoff = canInstall &&
+          autoInstall &&
+          Platform.isWindows &&
+          await _shouldBackOffWindowsAutoInstall(tagName);
       if (!context.mounted) return;
-      if (canInstall && autoInstall) {
+      if (canInstall && autoInstall && !autoInstallBackoff) {
         _downloadAndInstall(context, asset!, tagName, updater,
             customProxy: customProxy);
       } else if (canInstall) {
@@ -343,6 +353,28 @@ class UpdateChecker {
   /// 检查连接，使整轮检查即刻收尾而非干等超时。无在途检查则 no-op。
   static void cancelActiveCheck() {
     _activeCheckCancellation?.cancel();
+  }
+
+  /// TODO-1197/1198：Windows 自动安装跨重启失败退避判据。读 handoff 标记判断
+  /// [candidateVersion] 这个确切版本上一轮是否已装失败（标记仍在 = 没落地）；是则
+  /// 返 true，调用方退回手动确认对话框，打断自动安装死循环。读标记出错 → 返 false
+  /// （fail-open，绝不因读不到标记而永久不更新）。仅 Windows 有意义（只有 Windows 走
+  /// handoff 标记），调用点已用 `Platform.isWindows` 门控。
+  static Future<bool> _shouldBackOffWindowsAutoInstall(
+    String candidateVersion,
+  ) async {
+    try {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      return await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+        markerFile: WindowsUpdateHandoff.markerFile(updatesDir),
+        candidateVersion: candidateVersion,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('UpdateChecker.autoInstallBackoff', e, stack);
+      debugPrint('[Hibiki] auto-install backoff check failed: $e');
+      return false;
+    }
   }
 
   /// 多镜像回退的更新检查请求（BUG-277）。生成「直连 + 各 gh 代理前缀」候选列表

@@ -811,4 +811,201 @@ void main() {
       );
     });
   });
+
+  // TODO-1197/1198: auto-install cross-restart failure backoff guard. An
+  // installer that cannot land (WebView2/libmpv lock -> Inno DeleteFile code5)
+  // used to exit -> relaunch -> auto-install again in an infinite loop. Backoff
+  // predicate: a handoff marker for the SAME target version still on disk = the
+  // last attempt did not land -> back off (caller falls back to a manual
+  // dialog). A genuinely NEW version resets the backoff (never block forever).
+  group('WindowsUpdateHandoff.shouldBackOffAutoInstall (TODO-1197/1198)', () {
+    test('backs off when a marker for the SAME target version persists',
+        () async {
+      final File marker = await _markerFile();
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.1+468',
+        installerPath: 'hibiki-1.0.1-windows-setup.exe',
+        innoLogPath: 'hibiki-1.0.1.install.log',
+        startedAt: DateTime.utc(2026, 7, 5, 9),
+      );
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: '1.0.1+468',
+        ),
+        isTrue,
+      );
+    });
+
+    test('ignores leading-v differences when matching the target', () async {
+      final File marker = await _markerFile();
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.1',
+        installerPath: 'hibiki-1.0.1-windows-setup.exe',
+        innoLogPath: 'hibiki-1.0.1.install.log',
+        startedAt: DateTime.utc(2026, 7, 5, 9),
+      );
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: 'v1.0.1',
+        ),
+        isTrue,
+      );
+    });
+
+    test('resets (no backoff) for a genuinely NEW target version', () async {
+      final File marker = await _markerFile();
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.1+468',
+        installerPath: 'hibiki-1.0.1-windows-setup.exe',
+        innoLogPath: 'hibiki-1.0.1.install.log',
+        startedAt: DateTime.utc(2026, 7, 5, 9),
+      );
+      // A newer release must be allowed to auto-install once — a stale failed
+      // version must never permanently block future updates.
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: '1.0.2+470',
+        ),
+        isFalse,
+      );
+    });
+
+    test('resets for a new debug build with a different +fingerprint',
+        () async {
+      final File marker = await _markerFile();
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.1-debug.5+aaaaaaa',
+        installerPath: 'hibiki-debug-setup.exe',
+        innoLogPath: 'hibiki-debug.install.log',
+        startedAt: DateTime.utc(2026, 7, 5, 9),
+      );
+      // Same base version, fresh CI fingerprint (+sha) = a NEW build; the build
+      // metadata must be kept in the identity check so it retries once.
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: '1.0.1-debug.5+bbbbbbb',
+        ),
+        isFalse,
+      );
+      // The identical debug fingerprint that failed still backs off.
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: '1.0.1-debug.5+aaaaaaa',
+        ),
+        isTrue,
+      );
+    });
+
+    test('no backoff when no marker exists (fail-open)', () async {
+      final File marker = await _markerFile();
+      expect(await marker.exists(), isFalse);
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: '1.0.1+468',
+        ),
+        isFalse,
+      );
+    });
+
+    test('no backoff when the marker JSON is corrupt (fail-open)', () async {
+      final File marker = await _markerFile();
+      await marker.parent.create(recursive: true);
+      await marker.writeAsString('{ this is not valid json');
+      expect(
+        await WindowsUpdateHandoff.shouldBackOffAutoInstall(
+          markerFile: marker,
+          candidateVersion: '1.0.1+468',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  // TODO-1197/1198: writePending preserves the previous run's lastPrompted*
+  // fields when rewriting a pending record for the SAME target, so reconcile's
+  // idempotency guard keeps suppressing the repeat "install incomplete" dialog
+  // across the loop; a different target clears them (a fresh update attempt).
+  group('WindowsUpdateHandoff.writePending lastPrompted carry-over', () {
+    Future<void> seedMarkerWithLastPrompted(
+      File marker, {
+      required String targetVersion,
+      required String lastPromptedAppVersion,
+      required String lastPromptedFailureFingerprint,
+    }) async {
+      await marker.parent.create(recursive: true);
+      await marker.writeAsString(jsonEncode(<String, dynamic>{
+        'targetVersion': targetVersion,
+        'installerPath': 'hibiki-setup.exe',
+        'innoLogPath': 'hibiki.install.log',
+        'startedAt': DateTime.utc(2026, 7, 5, 9).toIso8601String(),
+        'installerLaunchSucceeded': false,
+        'lastPromptedAppVersion': lastPromptedAppVersion,
+        'lastPromptedFailureFingerprint': lastPromptedFailureFingerprint,
+        'lastPromptedAt': DateTime.utc(2026, 7, 5, 9, 30).toIso8601String(),
+      }));
+    }
+
+    test('preserves lastPrompted fields when the target version is unchanged',
+        () async {
+      final File marker = await _markerFile();
+      await seedMarkerWithLastPrompted(
+        marker,
+        targetVersion: '1.0.1+468',
+        lastPromptedAppVersion: '1.0.0+467',
+        lastPromptedFailureFingerprint: 'fp-old',
+      );
+
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.1+468',
+        installerPath: 'hibiki-1.0.1-windows-setup.exe',
+        innoLogPath: 'hibiki-1.0.1.install.log',
+        startedAt: DateTime.utc(2026, 7, 5, 10),
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record, isNotNull);
+      expect(record!.lastPromptedAppVersion, '1.0.0+467');
+      expect(record.lastPromptedFailureFingerprint, 'fp-old');
+      // The launch-state fields still reset (a fresh handoff attempt).
+      expect(record.installerLaunchSucceeded, isNull);
+    });
+
+    test('clears lastPrompted fields when the target version changes',
+        () async {
+      final File marker = await _markerFile();
+      await seedMarkerWithLastPrompted(
+        marker,
+        targetVersion: '1.0.1+468',
+        lastPromptedAppVersion: '1.0.0+467',
+        lastPromptedFailureFingerprint: 'fp-old',
+      );
+
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.2+470',
+        installerPath: 'hibiki-1.0.2-windows-setup.exe',
+        innoLogPath: 'hibiki-1.0.2.install.log',
+        startedAt: DateTime.utc(2026, 7, 5, 10),
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record, isNotNull);
+      expect(record!.lastPromptedAppVersion, isNull);
+      expect(record.lastPromptedFailureFingerprint, isNull);
+      expect(record.lastPromptedAt, isNull);
+    });
+  });
 }
