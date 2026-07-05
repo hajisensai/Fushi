@@ -350,7 +350,7 @@ DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
 
 /// TODO-1151：本地备份导入/恢复的全屏遮罩阶段。[running] 正在解压落盘（阻塞、请勿
 /// 关闭）；[done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
-enum BackupImportPhase { running, done }
+enum BackupImportPhase { running, done, failed }
 
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
@@ -780,18 +780,39 @@ class AppModel with ChangeNotifier {
   String? _backupImportMessage;
   String? get backupImportMessage => _backupImportMessage;
 
+  /// TODO-1183：备份导入的确定进度（0..1）。用 [ValueNotifier] 让**只有进度条**随每
+  /// 4MB 落盘重建，而非每个 chunk 都 [notifyListeners] 触发整棵根 widget 重绘。
+  final ValueNotifier<double> backupImportProgress = ValueNotifier<double>(0.0);
+
+  /// 由 [BackupService.importBackupFiles] 的 onProgress 回调（在本 isolate 上被后台
+  /// 解压 isolate 的 SendPort 消息驱动）。夹紧到 [0,1]。
+  void reportBackupImportProgress(double fraction) {
+    backupImportProgress.value = fraction.clamp(0.0, 1.0);
+  }
+
   /// 进入导入态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 解压落盘」的
   /// 顺序，根 widget 在关库引发的 rebuild 里看到的是导入遮罩而非裸 loading。
   void beginBackupImport() {
     _backupImportPhase = BackupImportPhase.running;
     _backupImportMessage = null;
+    backupImportProgress.value = 0.0;
     notifyListeners();
   }
 
-  /// 导入结束（成功或失败）：切到确认视图，展示 [message]（成功/失败文案），等待用户
-  /// 确认后重启。DB 已关闭，无论成败都必须重启，故失败也走同一确认出口。
+  /// 导入**成功**结束：切到确认视图（导入完成 → 立即重启），展示成功 [message]。
+  /// DB 已关闭，必须重启才能重载数据。
   void completeBackupImport(String message) {
     _backupImportPhase = BackupImportPhase.done;
+    _backupImportMessage = message;
+    backupImportProgress.value = 1.0;
+    notifyListeners();
+  }
+
+  /// 导入**失败**结束（如 OOM/损坏/异常）：切到确认视图并置 [BackupImportPhase.failed]，
+  /// 让遮罩画红色错误图标 + 失败原因 [message]（根治「失败却显绿✓」，TODO-1183）。DB 已
+  /// 关闭，仍必须重启回到可用状态，故失败也走同一「立即重启」出口。
+  void failBackupImport(String message) {
+    _backupImportPhase = BackupImportPhase.failed;
     _backupImportMessage = message;
     notifyListeners();
   }

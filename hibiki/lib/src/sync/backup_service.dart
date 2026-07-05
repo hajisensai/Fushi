@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -711,6 +712,7 @@ class BackupService {
     String? audiobooksRootDirectory,
     String? fontsRootDirectory,
     String? videosRootDirectory,
+    void Function(double progress)? onProgress,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
     // Stream the central directory instead of buffering the whole (GB-scale)
@@ -721,6 +723,16 @@ class BackupService {
       final archive = ZipDecoder().decodeBuffer(input);
       final dbFile = archive.findFile(_dbName);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
+
+      // TODO-1183: determinate progress across every streamed byte. Total is the
+      // sum of all content entry sizes; each streamed chunk advances the bar.
+      final int totalBytes = _totalContentBytes(archive);
+      int writtenBytes = 0;
+      void reportBytes(int deltaBytes) {
+        writtenBytes += deltaBytes;
+        final double fraction = writtenBytes / totalBytes;
+        onProgress?.call(fraction > 1.0 ? 1.0 : fraction);
+      }
 
       // Parse the source-device content roots so book/audio paths can be
       // rebased onto this device after the trees are restored.
@@ -783,8 +795,16 @@ class BackupService {
       final shmFile = File('$dbPath-shm');
       if (shmFile.existsSync()) await shmFile.delete();
 
-      // 2) Overwrite with the backup DB bytes.
-      await currentDb.writeAsBytes(dbFile.content as List<int>);
+      // 2) Overwrite with the backup DB bytes — streamed on a background
+      //    isolate so a multi-GB DB never materializes in the heap (OOM,
+      //    TODO-1183) and never blocks the UI isolate.
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(dbFile.name, dbPath),
+        ],
+        onBytes: reportBytes,
+      );
 
       if (backupHasDictionaries &&
           dictionaryRestorePlan != null &&
@@ -792,8 +812,10 @@ class BackupService {
         // Backup carries dictionaries → replace this device's resources with
         // the backup's (the DB overwrite already brought the matching rows).
         await _restoreDictionaryResources(
+          zipPath: zipPath,
           restorePlan: dictionaryRestorePlan,
           dictionaryResourceDirectory: dictionaryRestoreDirectory,
+          onBytes: reportBytes,
         );
       } else if (!backupHasDictionaries &&
           haveCurrent &&
@@ -820,22 +842,26 @@ class BackupService {
       try {
         if (booksRootDirectory != null &&
             await _prepareTreeRestore(
-                archive, _booksPrefix, booksRootDirectory)) {
+                zipPath, archive, _booksPrefix, booksRootDirectory,
+                onBytes: reportBytes)) {
           toCommit.add(booksRootDirectory);
         }
         if (audiobooksRootDirectory != null &&
             await _prepareTreeRestore(
-                archive, _audiobooksPrefix, audiobooksRootDirectory)) {
+                zipPath, archive, _audiobooksPrefix, audiobooksRootDirectory,
+                onBytes: reportBytes)) {
           toCommit.add(audiobooksRootDirectory);
         }
         if (fontsRootDirectory != null &&
             await _prepareTreeRestore(
-                archive, _fontsPrefix, fontsRootDirectory)) {
+                zipPath, archive, _fontsPrefix, fontsRootDirectory,
+                onBytes: reportBytes)) {
           toCommit.add(fontsRootDirectory);
         }
         if (videosRootDirectory != null &&
             await _prepareTreeRestore(
-                archive, _videosPrefix, videosRootDirectory)) {
+                zipPath, archive, _videosPrefix, videosRootDirectory,
+                onBytes: reportBytes)) {
           toCommit.add(videosRootDirectory);
         }
       } catch (_) {
@@ -864,7 +890,8 @@ class BackupService {
       //     extracted file-by-file (never the destructive tree swap). When the
       //     backup carries no localAudio/ prefix the existing local-audio DBs
       //     are left untouched (same preserve-on-absent contract as the trees).
-      await _restoreLocalAudioFiles(archive, dbDirectory);
+      await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+          onBytes: reportBytes);
 
       // 3) Restore what must stay on this device — inline, not deferred to
       //    startup, so the common path never depends on bak surviving a restart.
@@ -949,6 +976,7 @@ class BackupService {
     String? audiobooksRootDirectory,
     String? fontsRootDirectory,
     String? videosRootDirectory,
+    void Function(double progress)? onProgress,
   }) async {
     final String dbPath = p.join(dbDirectory, _dbName);
     final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
@@ -961,6 +989,15 @@ class BackupService {
       final ArchiveFile? dbFile = archive.findFile(_dbName);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
+      // TODO-1183: determinate progress across every streamed byte.
+      final int totalBytes = _totalContentBytes(archive);
+      int writtenBytes = 0;
+      void reportBytes(int deltaBytes) {
+        writtenBytes += deltaBytes;
+        final double fraction = writtenBytes / totalBytes;
+        onProgress?.call(fraction > 1.0 ? 1.0 : fraction);
+      }
+
       BackupMeta? meta;
       final ArchiveFile? metaFile = archive.findFile(_metaName);
       if (metaFile != null) {
@@ -972,8 +1009,13 @@ class BackupService {
       await _safeDelete(mergeSrcPath);
       await _safeDelete('$mergeSrcPath-wal');
       await _safeDelete('$mergeSrcPath-shm');
-      await File(mergeSrcPath)
-          .writeAsBytes(dbFile.content as List<int>, flush: true);
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(dbFile.name, mergeSrcPath),
+        ],
+        onBytes: reportBytes,
+      );
 
       // 2) Migrate the backup DB up to the current schema so its columns align
       //    with the live DB for the ATTACH-based row merge. (Its schemaVersion
@@ -1019,25 +1061,34 @@ class BackupService {
       // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing
       //    files — the device's own library must stay intact).
       if (dictionaryResourceDirectory != null) {
-        await _copyTreeIfAbsent(
-            archive, _dictionaryResourcesPrefix, dictionaryResourceDirectory);
+        await _copyTreeIfAbsent(zipPath, archive, _dictionaryResourcesPrefix,
+            dictionaryResourceDirectory,
+            onBytes: reportBytes);
       }
       if (booksRootDirectory != null) {
-        await _copyTreeIfAbsent(archive, _booksPrefix, booksRootDirectory);
+        await _copyTreeIfAbsent(
+            zipPath, archive, _booksPrefix, booksRootDirectory,
+            onBytes: reportBytes);
       }
       if (audiobooksRootDirectory != null) {
         await _copyTreeIfAbsent(
-            archive, _audiobooksPrefix, audiobooksRootDirectory);
+            zipPath, archive, _audiobooksPrefix, audiobooksRootDirectory,
+            onBytes: reportBytes);
       }
       if (fontsRootDirectory != null) {
-        await _copyTreeIfAbsent(archive, _fontsPrefix, fontsRootDirectory);
+        await _copyTreeIfAbsent(
+            zipPath, archive, _fontsPrefix, fontsRootDirectory,
+            onBytes: reportBytes);
       }
       if (videosRootDirectory != null) {
-        await _copyTreeIfAbsent(archive, _videosPrefix, videosRootDirectory);
+        await _copyTreeIfAbsent(
+            zipPath, archive, _videosPrefix, videosRootDirectory,
+            onBytes: reportBytes);
       }
       // Local-audio DBs are copy-if-absent into the support directory (never
       // overwrite the device's own local_audio_*.db files).
-      await _restoreLocalAudioFiles(archive, dbDirectory, overwrite: false);
+      await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+          overwrite: false, onBytes: reportBytes);
 
       // 6) Rebase the newly-merged backup rows' stored paths onto this device's
       //    roots. Device-local rows aren't under the backup's source root, so
@@ -1082,21 +1133,27 @@ class BackupService {
   /// never delete or overwrite the device's own content). Reuses the same path
   /// traversal safety checks as the overwrite path's [_buildTreeRestorePlan].
   static Future<void> _copyTreeIfAbsent(
+    String zipPath,
     Archive archive,
     String prefix,
-    String targetRootPath,
-  ) async {
+    String targetRootPath, {
+    void Function(int deltaBytes)? onBytes,
+  }) async {
     final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
       archive: archive,
       prefix: prefix,
       targetRootPath: targetRootPath,
     );
+    final List<MapEntry<String, String>> toWrite = <MapEntry<String, String>>[];
     for (final MapEntry<ArchiveFile, String> entry in plan) {
-      final File dest = File(entry.value);
-      if (await dest.exists()) continue; // copy-if-absent: never overwrite
-      dest.parent.createSync(recursive: true);
-      await dest.writeAsBytes(entry.key.content as List<int>, flush: true);
+      if (await File(entry.value).exists()) continue; // copy-if-absent
+      toWrite.add(MapEntry<String, String>(entry.key.name, entry.value));
     }
+    await _extractEntriesStreaming(
+      zipPath: zipPath,
+      entries: toWrite,
+      onBytes: onBytes,
+    );
   }
 
   /// Cleans up a crashed/finished MERGE import's temp files (TODO-888). Returns
@@ -1511,22 +1568,24 @@ class BackupService {
   }
 
   static Future<void> _restoreDictionaryResources({
+    required String zipPath,
     required List<MapEntry<ArchiveFile, String>> restorePlan,
     required String dictionaryResourceDirectory,
+    void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
     if (await targetRoot.exists()) {
       await targetRoot.delete(recursive: true);
     }
     await targetRoot.create(recursive: true);
-    for (final MapEntry<ArchiveFile, String> entry in restorePlan) {
-      final File targetFile = File(entry.value);
-      targetFile.parent.createSync(recursive: true);
-      await targetFile.writeAsBytes(
-        entry.key.content as List<int>,
-        flush: true,
-      );
-    }
+    await _extractEntriesStreaming(
+      zipPath: zipPath,
+      entries: restorePlan
+          .map((MapEntry<ArchiveFile, String> e) =>
+              MapEntry<String, String>(e.key.name, e.value))
+          .toList(),
+      onBytes: onBytes,
+    );
   }
 
   /// Extracts the packed local-audio databases (`localAudio/<file>`) into the
@@ -1543,11 +1602,14 @@ class BackupService {
   /// [overwrite] true (overwrite import) replaces an existing same-named file;
   /// false (merge import) keeps the device's own file (copy-if-absent).
   static Future<void> _restoreLocalAudioFiles(
+    String zipPath,
     Archive archive,
     String dbDirectory, {
     bool overwrite = true,
+    void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dbDirectory);
+    final List<MapEntry<String, String>> plan = <MapEntry<String, String>>[];
     for (final ArchiveFile file in archive.files) {
       if (!file.isFile) continue;
       final String rawName = file.name.replaceAll(r'\', '/');
@@ -1562,10 +1624,14 @@ class BackupService {
         throw FormatException('Invalid local audio backup path: ${file.name}');
       }
       final File dest = File(p.join(targetRoot.path, name));
-      if (!overwrite && await dest.exists()) continue;
-      dest.parent.createSync(recursive: true);
-      await dest.writeAsBytes(file.content as List<int>, flush: true);
+      if (!overwrite && await dest.exists()) continue; // copy-if-absent (merge)
+      plan.add(MapEntry<String, String>(file.name, dest.path));
     }
+    await _extractEntriesStreaming(
+      zipPath: zipPath,
+      entries: plan,
+      onBytes: onBytes,
+    );
   }
 
   /// Files in [archive] under `<prefix>/`, validated against path traversal and
@@ -1630,10 +1696,12 @@ class BackupService {
   /// lets the caller stage ALL trees before committing ANY — a write failure
   /// then swaps nothing and leaves every existing tree intact (review W2).
   static Future<bool> _prepareTreeRestore(
+    String zipPath,
     Archive archive,
     String prefix,
-    String targetRootPath,
-  ) async {
+    String targetRootPath, {
+    void Function(int deltaBytes)? onBytes,
+  }) async {
     final String tmpRoot = _importTmpPath(targetRootPath);
     final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
       archive: archive,
@@ -1646,11 +1714,14 @@ class BackupService {
     final Directory tmpDir = Directory(tmpRoot);
     await tmpDir.create(recursive: true);
     try {
-      for (final MapEntry<ArchiveFile, String> entry in plan) {
-        final File dest = File(entry.value);
-        dest.parent.createSync(recursive: true);
-        await dest.writeAsBytes(entry.key.content as List<int>, flush: true);
-      }
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: plan
+            .map((MapEntry<ArchiveFile, String> e) =>
+                MapEntry<String, String>(e.key.name, e.value))
+            .toList(),
+        onBytes: onBytes,
+      );
     } catch (_) {
       if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
       rethrow; // nothing swapped; existing tree untouched
@@ -2002,10 +2073,166 @@ class BackupService {
     }
   }
 
+  /// Total uncompressed byte size of every content entry in [archive] (the DB +
+  /// packed trees + local-audio DBs), excluding the tiny meta json. Used as the
+  /// denominator for the import progress bar. Read from the central directory,
+  /// so it never decompresses anything. Never returns 0 (avoids /0).
+  static int _totalContentBytes(Archive archive) {
+    int total = 0;
+    for (final ArchiveFile f in archive.files) {
+      if (!f.isFile) continue;
+      if (f.name == _metaName) continue;
+      total += f.size;
+    }
+    return total > 0 ? total : 1;
+  }
+
+  // ── TODO-1183: streaming, off-UI-isolate backup extraction ───────────────
+  //
+  // The import/merge paths used to `dest.writeAsBytes(archiveFile.content)`,
+  // which decodes a whole archive entry into ONE Uint8List. A full-data backup's
+  // local-audio DB alone can be many GB, so that single allocation OOM-killed the
+  // app mid-import (TODO-1183); even when it fit, the synchronous write froze the
+  // UI isolate for the whole copy (progress bar stuck → looked like a hang).
+  //
+  // Extraction now runs on a BACKGROUND isolate and STREAMS each entry to disk in
+  // bounded chunks (never materializing a whole entry), reporting bytes written
+  // through a port so the overlay shows real progress. Only pure file IO +
+  // archive decoding runs in the isolate (no sqlite / platform channels), so it
+  // is isolate-safe — the DB work stays on the caller's isolate. archive 3.6.1's
+  // `ArchiveFile.writeContent` is NOT usable here: for a `decodeBuffer`-produced
+  // file it still fully materializes (`_content is FileContent` → `.content` →
+  // `toUint8List()`), so we stream the raw file-backed window directly instead.
+
+  /// Sent by the extract worker once every planned entry has been written.
+  static const String _extractDoneToken = '__hibiki_backup_extract_done__';
+
+  /// Streams the entries in [entries] (archive entry name → absolute dest path)
+  /// out of the zip at [zipPath] on a background isolate. [onBytes] is invoked on
+  /// THIS isolate with each chunk's byte count as it lands, so callers accumulate
+  /// determinate progress. Throws (on this isolate) if the worker reports an
+  /// error, preserving the caller's existing try/catch crash-safety.
+  static Future<void> _extractEntriesStreaming({
+    required String zipPath,
+    required List<MapEntry<String, String>> entries,
+    void Function(int deltaBytes)? onBytes,
+  }) async {
+    if (entries.isEmpty) return;
+    final ReceivePort port = ReceivePort();
+    final Completer<void> completer = Completer<void>();
+    Isolate? isolate;
+    port.listen((dynamic message) {
+      if (message is int) {
+        onBytes?.call(message);
+      } else if (message == _extractDoneToken) {
+        if (!completer.isCompleted) completer.complete();
+        port.close();
+      } else {
+        // Worker failure ('errorText') or an uncaught isolate error
+        // ([error, stack]): fail the future so the caller's rollback runs.
+        if (!completer.isCompleted) {
+          completer.completeError(
+            StateError('Backup extraction failed: $message'),
+          );
+        }
+        port.close();
+      }
+    });
+    isolate = await Isolate.spawn(
+      _backupExtractWorker,
+      _BackupExtractRequest(zipPath, entries, port.sendPort),
+      onError: port.sendPort,
+    );
+    try {
+      await completer.future;
+    } finally {
+      isolate.kill(priority: Isolate.immediate);
+    }
+  }
+
+  /// Background-isolate entry point for [_extractEntriesStreaming]. Re-opens the
+  /// zip by path (the decoded [Archive] from the caller's isolate cannot cross
+  /// the boundary), then streams each requested entry to disk, reporting progress
+  /// and terminal status through the [SendPort].
+  static void _backupExtractWorker(_BackupExtractRequest request) {
+    final SendPort port = request.sendPort;
+    InputFileStream? input;
+    try {
+      input = InputFileStream(request.zipPath);
+      final Archive archive = ZipDecoder().decodeBuffer(input);
+      final Map<String, ArchiveFile> byName = <String, ArchiveFile>{
+        for (final ArchiveFile file in archive.files) file.name: file,
+      };
+      for (final MapEntry<String, String> entry in request.entries) {
+        final ArchiveFile? file = byName[entry.key];
+        if (file == null) {
+          throw StateError('Backup archive missing entry: ${entry.key}');
+        }
+        _streamArchiveFileToDisk(file, entry.value, port);
+      }
+      port.send(_extractDoneToken);
+    } catch (error, stack) {
+      port.send('$error\n$stack');
+    } finally {
+      input?.closeSync();
+    }
+  }
+
+  /// Streams one [file]'s uncompressed bytes to [destPath] without buffering the
+  /// whole entry. Hibiki backups are written STORE (see
+  /// [_writeBackupZipInIsolate]) so the raw window IS the uncompressed data and is
+  /// copied in bounded 4 MB chunks (each chunk's size reported via [port]); a
+  /// DEFLATE entry (small metadata / test fixtures — never a multi-GB file in
+  /// practice) is inflated streaming.
+  static void _streamArchiveFileToDisk(
+    ArchiveFile file,
+    String destPath,
+    SendPort port,
+  ) {
+    File(destPath).parent.createSync(recursive: true);
+    final OutputFileStream output = OutputFileStream(destPath);
+    try {
+      final InputStreamBase? raw = file.rawContent;
+      if (raw != null && !file.isCompressed) {
+        const int chunkSize = 4 * 1024 * 1024; // 4 MB peak heap per chunk
+        final int total = raw.length;
+        int written = 0;
+        while (written < total) {
+          final int want =
+              (total - written) < chunkSize ? (total - written) : chunkSize;
+          final Uint8List bytes = raw.readBytes(want).toUint8List();
+          if (bytes.isEmpty) break;
+          output.writeBytes(bytes);
+          written += bytes.length;
+          port.send(bytes.length);
+        }
+      } else if (raw != null && file.compressionType == ArchiveFile.DEFLATE) {
+        Inflate.stream(raw, output);
+        port.send(file.size);
+      } else {
+        // Last resort (already-materialized content): write buffered bytes.
+        output.writeBytes(file.content as List<int>);
+        port.send(file.size);
+      }
+    } finally {
+      output.closeSync();
+    }
+  }
+
   String defaultFilename() {
     final now = DateTime.now();
     final date =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     return 'hibiki-backup-$date.hibiki.zip';
   }
+}
+
+/// Sendable request for the background extract worker (records with a `List` and
+/// a `SendPort` cross the isolate boundary fine). Kept a top-level class rather
+/// than an anonymous record for a clearer worker signature.
+class _BackupExtractRequest {
+  const _BackupExtractRequest(this.zipPath, this.entries, this.sendPort);
+  final String zipPath;
+  final List<MapEntry<String, String>> entries;
+  final SendPort sendPort;
 }
