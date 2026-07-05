@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v38 loaded (yomitan-style word anchor + highlight via hoshiSelection)');
+console.log('[Hibiki] content script v39 loaded (queue clears on success|duplicate + per-item delete UI; bounded popup)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v38'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v39'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -143,6 +143,16 @@ async function hibikiRemoveQueued(okIds) {
     hibikiUpdateQueueChip();
   } catch (_) {}
 }
+// 制卡结果分类（TODO-1184）：卡已建(success)或已存在(duplicate) → 出队(done，队列才会清)；
+// Anki 未配置(notConfigured) → 留队 + 提示用户去配（配好再点生成即可，出队会静默丢词）；
+// 其余(error / 网络失败 / 上下文失效) → 留队下次重试。只有 done 才 push 进 okIds 被剔除。
+function hibikiClassifyMineResp(resp) {
+  if (!resp || !resp.ok || !resp.data) return 'retry';
+  const r = resp.data.result;
+  if (r === 'success' || r === 'duplicate') return 'done';
+  if (r === 'notConfigured') return 'unconfigured';
+  return 'retry';
+}
 function hibikiQueueLoad() {
   try {
     chrome.storage.local.get(['hibikiQueue'], (r) => {
@@ -179,6 +189,8 @@ try {
 
 // 浮动小控件：显示总队列数 + 本页可生成数；YouTube 点即生成，Netflix 提示点扩展图标。
 let hibikiChip = null;
+// 队列列表是否展开（点 chip 头部切换）。跨 storage.onChanged 重渲染保留展开态。
+let hibikiChipExpanded = false;
 // Netflix 用：只在制卡队列**增长**时弹一次中间下方短暂提示，避免加载/删除/跨标签同步也刷屏。
 let hibikiLastQueueTotal = 0;
 function hibikiGenerableCount() {
@@ -208,26 +220,88 @@ function hibikiUpdateQueueChip() {
   if (!hibikiChip) {
     hibikiChip = document.createElement('div');
     hibikiChip.id = 'hibiki-queue-chip';
-    hibikiChip.style.cssText =
-      'position:fixed;right:16px;bottom:16px;z-index:2147483647;padding:8px 12px;border-radius:20px;' +
-      'background:rgba(20,20,22,.92);color:#fff;font:13px/1.4 sans-serif;cursor:pointer;' +
-      'box-shadow:0 4px 16px rgba(0,0,0,.4);user-select:none;';
-    hibikiChip.addEventListener('click', () => {
+    // 样式全在 content.css（#hibiki-queue-chip 作用域，不污染宿主页）。结构：头部 pill（计数 +
+    // 「生成」按钮，点头部展开/收起列表）+ 列表（每项一行 + 删除按钮，TODO-1184 逐项删）。
+    const header = document.createElement('div');
+    header.className = 'hibiki-queue-header';
+    const label = document.createElement('span');
+    label.className = 'hibiki-queue-label';
+    header.appendChild(label);
+    const gen = document.createElement('button');
+    gen.className = 'hibiki-queue-gen';
+    gen.type = 'button';
+    gen.textContent = '生成';
+    gen.addEventListener('click', (e) => {
+      e.stopPropagation(); // 生成按钮独立，不触发头部的展开/收起
       if (hibikiSite() === 'youtube') {
         if (typeof window.hibikiGenerateAll === 'function') window.hibikiGenerateAll();
       } else if (typeof window.hibikiToast === 'function') {
         window.hibikiToast('点浏览器工具栏的 Hibiki 图标生成本片的 ' + hibikiGenerableCount() + ' 条（Netflix 录屏需此手势）');
       }
     });
+    header.appendChild(gen);
+    header.addEventListener('click', () => {
+      hibikiChipExpanded = !hibikiChipExpanded;
+      hibikiRenderQueueList();
+    });
+    const list = document.createElement('div');
+    list.className = 'hibiki-queue-list';
+    list.style.display = 'none';
+    hibikiChip.appendChild(header);
+    hibikiChip.appendChild(list);
     (document.fullscreenElement || document.body).appendChild(hibikiChip);
   } else if (hibikiChip.parentNode !== (document.fullscreenElement || document.body)) {
     (document.fullscreenElement || document.body).appendChild(hibikiChip);
   }
-  if (total === 0) { hibikiChip.style.display = 'none'; return; }
+  if (total === 0) { hibikiChip.style.display = 'none'; hibikiChipExpanded = false; return; }
   hibikiChip.style.display = 'block';
-  hibikiChip.textContent = hibikiSite() === 'youtube'
-    ? '制卡队列 ' + total + ' · 点此生成 ' + here
-    : '制卡队列 ' + total + ' · 点扩展图标生成本片 ' + here;
+  const labelEl = hibikiChip.querySelector('.hibiki-queue-label');
+  if (labelEl) {
+    labelEl.textContent = hibikiSite() === 'youtube'
+      ? '制卡队列 ' + total + ' · 点此展开 · 可生成 ' + here
+      : '制卡队列 ' + total + ' · 点此展开';
+  }
+  const genEl = hibikiChip.querySelector('.hibiki-queue-gen');
+  if (genEl) genEl.style.display = hibikiSite() === 'youtube' ? 'inline-block' : 'none';
+  hibikiRenderQueueList();
+}
+
+// 队列项的简短标签：优先入队时存的句子，其次表达/词字段，末尾回退站点名。
+function hibikiQueueItemLabel(q) {
+  const raw = (q && (q.sentence || (q.fields && (q.fields.expression || q.fields.word || q.fields.term)))) || '';
+  const txt = String(raw).trim();
+  if (txt) return txt.length > 30 ? txt.slice(0, 30) + '…' : txt;
+  return (q && q.site) ? q.site : '(空)';
+}
+
+// 渲染/刷新展开的队列列表：每项一行（简短标签 + 删除按钮）。删除按 id 走 hibikiRemoveQueued。
+function hibikiRenderQueueList() {
+  if (!hibikiChip) return;
+  const list = hibikiChip.querySelector('.hibiki-queue-list');
+  if (!list) return;
+  list.textContent = '';
+  list.style.display = hibikiChipExpanded ? 'block' : 'none';
+  if (!hibikiChipExpanded) return;
+  for (const q of hibikiQueue) {
+    const row = document.createElement('div');
+    row.className = 'hibiki-queue-row';
+    const text = document.createElement('span');
+    text.className = 'hibiki-queue-row-text';
+    text.textContent = hibikiQueueItemLabel(q);
+    const del = document.createElement('button');
+    del.className = 'hibiki-queue-row-del';
+    del.type = 'button';
+    del.textContent = '×';
+    del.title = '从队列移除';
+    const id = q.id;
+    del.addEventListener('click', (e) => {
+      e.stopPropagation(); // 别冒泡到头部触发折叠
+      hibikiRemoveQueued([id]);
+    });
+    row.appendChild(text);
+    row.appendChild(del);
+    list.appendChild(row);
+  }
 }
 try { hibikiQueueLoad(); } catch (_) {}
 
@@ -250,26 +324,32 @@ window.hibikiGenerateAll = async function () {
     return;
   }
   if (!hibikiExtAlive()) { window.hibikiToast('扩展已更新，刷新页面(F5)后重试'); return; }
-  let done = 0, fail = 0;
+  let done = 0, fail = 0, unconfigured = 0;
   const okIds = [];
   window.hibikiToast('生成中… 0/' + items.length, true);
   for (const q of items) {
-    const ok = await new Promise((resolve) => {
+    const cls = await new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({
           type: 'mineYoutube', fields: q.fields, sentence: q.sentence,
           youtubeVideoId: q.youtubeId, startMs: q.startV, endMs: q.endV,
         }, (resp) => {
-          try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
-          resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));
+          try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
+          resolve(hibikiClassifyMineResp(resp));
         });
-      } catch (_) { resolve(false); }
+      } catch (_) { resolve('retry'); }
     });
-    if (ok) { done++; okIds.push(q.id); } else fail++;
+    // done(成功/已存在)才出队；unconfigured/retry 留队（前者提示配 Anki，后者下次重试）。
+    if (cls === 'done') { done++; okIds.push(q.id); }
+    else { fail++; if (cls === 'unconfigured') unconfigured++; }
     window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
   }
   await hibikiRemoveQueued(okIds);
-  window.hibikiToast('✓ 生成完成：成功 ' + done + (fail ? ' · 失败 ' + fail : ''));
+  if (unconfigured > 0) {
+    window.hibikiToast('部分未生成：Anki 未配置，请在 Hibiki 中配置 Anki 后重试（已处理 ' + done + '，保留 ' + fail + '）');
+  } else {
+    window.hibikiToast('✓ 生成完成：已处理 ' + done + (fail ? ' · 失败 ' + fail : ''));
+  }
 };
 
 // ── Netflix 回放录制（DRM）：由 content 驱动，capture 经 background/offscreen（beginClip/endClip）──
@@ -293,7 +373,7 @@ async function hibikiRunNetflixBatch() {
   try { document.head.appendChild(hideStyle); } catch (_) {}
   const prevCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
-  let done = 0, fail = 0;
+  let done = 0, fail = 0, unconfigured = 0;
   const okIds = [];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const seekTo = (sec) => new Promise((resolve) => {
@@ -316,7 +396,7 @@ async function hibikiRunNetflixBatch() {
   try {
     for (const q of items) {
       let began = false; // beginClip 是否成功（决定 finally 是否需要收口 recorder）
-      let ok = false;
+      let cls = 'retry';
       try {
         await seekTo(Math.max(0, q.startV / 1000));
         await sleep(150); // 让首帧稳定
@@ -351,12 +431,12 @@ async function hibikiRunNetflixBatch() {
         const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
         began = false; // 已正常收口，finally 不再重复 endClip
         if (clip && clip.ok && clip.clipBase64) {
-          ok = await new Promise((resolve) => {
+          cls = await new Promise((resolve) => {
             chrome.runtime.sendMessage(
               { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
               (resp) => {
-                try { if (chrome.runtime.lastError) return resolve(false); } catch (_) { return resolve(false); }
-                resolve(!!(resp && resp.ok && resp.data && resp.data.result === 'success'));
+                try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
+                resolve(hibikiClassifyMineResp(resp));
               });
           });
         }
@@ -370,7 +450,8 @@ async function hibikiRunNetflixBatch() {
           try { await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' }); } catch (_) {}
         }
       }
-      if (ok) { done++; okIds.push(q.id); } else fail++;
+      if (cls === 'done') { done++; okIds.push(q.id); }
+      else { fail++; if (cls === 'unconfigured') unconfigured++; }
       window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true);
     }
   } finally {
@@ -383,6 +464,9 @@ async function hibikiRunNetflixBatch() {
     if (wasPlaying) { try { await v.play(); } catch (_) {} }
   }
   await hibikiRemoveQueued(okIds);
+  if (unconfigured > 0 && typeof window.hibikiToast === 'function') {
+    window.hibikiToast('部分未生成：Anki 未配置，请在 Hibiki 中配置 Anki 后重试（保留 ' + fail + '）');
+  }
 }
 
 // 等 Netflix 播放器就绪（切集后 video 需时间加载）。
