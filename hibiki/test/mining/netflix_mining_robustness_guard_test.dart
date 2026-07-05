@@ -200,4 +200,52 @@ void main() {
       });
     }
   });
+
+  // TODO-1175：网飞批量制卡结束后视频回到批量前的位置并恢复原播放/暂停态。
+  // 批量循环逐句 seekTo + 暂停会把视频停在最后一句 + 暂停态；必须在进入批量前记录
+  // currentTime/paused，并在外层 finally（成功或异常都走）里 seek 回 + 恢复播放态。
+  // 源码扫描守卫（不依赖真机/真浏览器），两份镜像都守。
+  group('TODO-1175 网飞批量制卡后回到原播放位置/态', () {
+    for (final File content in <File>[assetsContent, toolsContent]) {
+      group('content.js ${content.path}', () {
+        test('批量前记录 resumeAt/wasPlaying（video 元素取到之后）', () {
+          final String src = content.readAsStringSync();
+          expect(src.contains('const resumeAt = v.currentTime;'), isTrue,
+              reason: '${content.path} 未记录批量前播放位置 resumeAt');
+          expect(src.contains('const wasPlaying = !v.paused;'), isTrue,
+              reason: '${content.path} 未记录批量前播放态 wasPlaying');
+        });
+
+        test('外层 finally 里 seek 回 resumeAt + 按 wasPlaying 恢复播放', () {
+          final String src = content.readAsStringSync();
+          // 用现有 seekTo（走官方 API seek）回到原位。
+          expect(src.contains('try { await seekTo(resumeAt); } catch (_) {}'),
+              isTrue,
+              reason: '${content.path} finally 未 seek 回批量前位置');
+          // 原来在播才恢复播放，原本暂停则保持暂停。
+          expect(
+              src.contains(
+                  'if (wasPlaying) { try { await v.play(); } catch (_) {} }'),
+              isTrue,
+              reason: '${content.path} finally 未按 wasPlaying 恢复播放态');
+          // 还原必须在外层 finally（还原光标那块）里，才能成功/异常都走到。
+          final int cursorIdx =
+              src.indexOf('document.body.style.cursor = prevCursor;');
+          final int seekBackIdx =
+              src.indexOf('try { await seekTo(resumeAt); } catch (_) {}');
+          expect(cursorIdx, greaterThanOrEqualTo(0));
+          expect(seekBackIdx, greaterThan(cursorIdx),
+              reason: '${content.path} 位置还原未与光标还原同处外层 finally');
+        });
+
+        test('内容脚本版本标记 bump 到 v38（用户可确认新版）', () {
+          final String src = content.readAsStringSync();
+          expect(src.contains("'data-hibiki-cs', 'v38'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v38');
+          expect(src.contains('content script v38 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v38');
+        });
+      });
+    }
+  });
 }
