@@ -154,6 +154,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   List<MediaItem> _visibleEpubBooks = const [];
   List<SrtBook> _visibleSrtBooks = const [];
   Map<String, String> _epubCoverUrisByBookKey = const {};
+  // TODO-1191：书架 SRT 卡长按菜单「查看插画」的 EPUB-backing 门控真值。
+  // 收录当前 `books`（hibikiBooksProvider 的全部 EpubBooks 行）解析出的 bookKey；
+  // SRT 卡的 bookKey 命中此集合 = 有对应 EpubBooks 行（extractDir 存在），才对称
+  // 展示「查看插画」。EPUB 未生成完（`srt_epub_not_ready`）的 SRT 书不在此集合，
+  // 避免展示打不开的死项。生成型 EPUB（TextToEpub，无真实插图）仍展示，交由
+  // IllustrationsViewerPage 的 `no_illustrations_found` 占位友好兜底。
+  Set<String> _epubBackedBookKeys = const {};
 
   // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
   List<VideoBookRow> _videoBooks = const [];
@@ -757,8 +764,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Map<String, String> epubCoverUrisByBookKey = {};
+    // TODO-1191：`books` 是 hibikiBooksProvider 的全部 EpubBooks 行；解析出的
+    // bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
+    final Set<String> epubBackedBookKeys = {};
     for (final MediaItem item in books) {
       final String? key = _parseBookKey(item.mediaIdentifier);
+      if (key != null) epubBackedBookKeys.add(key);
       final String? imageUrl = item.imageUrl;
       if (key != null && imageUrl != null && imageUrl.isNotEmpty) {
         epubCoverUrisByBookKey[key] = imageUrl;
@@ -838,6 +849,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       seriesById: _seriesById,
     );
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
+    _epubBackedBookKeys = epubBackedBookKeys;
     final _RemoteBookState? remoteState = remoteSnapshot?.data;
     final bool showRemoteBooks = remoteState != null &&
         (remoteState.failed || remoteState.books.isNotEmpty);
