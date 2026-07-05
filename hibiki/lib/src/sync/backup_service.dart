@@ -1221,11 +1221,11 @@ class BackupService {
       await _safeDelete('$tmpSrc-wal');
       await _safeDelete('$tmpSrc-shm');
 
-      final String safeSrc =
-          tmpSrc.replaceAll(r'\', '/').replaceAll("'", "''");
+      final String safeSrc = tmpSrc.replaceAll(r'\', '/').replaceAll("'", "''");
       await liveDb.customStatement("ATTACH DATABASE '$safeSrc' AS previewsrc");
       try {
-        return await BackupMergeEngine(liveDb, srcAlias: 'previewsrc').preview();
+        return await BackupMergeEngine(liveDb, srcAlias: 'previewsrc')
+            .preview();
       } finally {
         await liveDb.customStatement('DETACH DATABASE previewsrc');
       }
@@ -1566,8 +1566,7 @@ class BackupService {
     if (!_isUnderRoot(subtreePath, rootNorm)) return;
     await for (final FileSystemEntity entity in dir.list(recursive: true)) {
       if (entity is! File) continue;
-      _addFileRelativeToRoot(
-          entity.path, booksRootDirectory, rootNorm, into);
+      _addFileRelativeToRoot(entity.path, booksRootDirectory, rootNorm, into);
     }
   }
 

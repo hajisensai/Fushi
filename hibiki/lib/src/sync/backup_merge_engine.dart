@@ -110,24 +110,28 @@ class BackupMergeEngine {
     final String tombstoneGuard = skipBookTombstones
         ? 'AND s.$keyColumn NOT IN (SELECT book_key FROM book_tombstones) '
         : '';
-    final row = await _db.customSelect(
-      'SELECT COUNT(*) AS c FROM $_srcAlias.$table AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
-      'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
-    ).getSingle();
+    final row = await _db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $_srcAlias.$table AS s '
+          'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
+          'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
+        )
+        .getSingle();
     return row.data['c'] as int;
   }
 
   /// Counts reader positions the merge would touch: a src book the target lacks
   /// (new) or a src position strictly newer than the target's (LWW update).
   Future<int> _countReaderPositionChanges() async {
-    final row = await _db.customSelect(
-      'SELECT COUNT(*) AS c FROM $_srcAlias.reader_positions AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
-      'WHERE t.book_key = s.book_key) '
-      'OR EXISTS (SELECT 1 FROM reader_positions AS t '
-      'WHERE t.book_key = s.book_key AND s.updated_at > t.updated_at)',
-    ).getSingle();
+    final row = await _db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $_srcAlias.reader_positions AS s '
+          'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
+          'WHERE t.book_key = s.book_key) '
+          'OR EXISTS (SELECT 1 FROM reader_positions AS t '
+          'WHERE t.book_key = s.book_key AND s.updated_at > t.updated_at)',
+        )
+        .getSingle();
     return row.data['c'] as int;
   }
 

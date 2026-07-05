@@ -299,8 +299,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                       const Spacer(),
                       adaptiveDialogAction(
                         context: ctx,
-                        onPressed: () =>
-                            setLocal(() => sel..clear()..addAll(keys)),
+                        onPressed: () => setLocal(() => sel
+                          ..clear()
+                          ..addAll(keys)),
                         child: Text(t.backup_export_select_all),
                       ),
                       adaptiveDialogAction(

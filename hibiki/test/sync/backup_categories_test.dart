@@ -460,7 +460,8 @@ void main() {
     final HibikiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await db.getAllEpubBooks(), isEmpty,
-          reason: 'book records must be stripped when book content is excluded');
+          reason:
+              'book records must be stripped when book content is excluded');
       // The audiobook + its cues key on the same bookKey, so the cascade drops
       // them too (an audiobook without its epub row is itself un-openable).
       expect(await db.getAllAudiobooks(), isEmpty);
