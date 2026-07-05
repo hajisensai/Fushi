@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show PointerHoverEvent;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
@@ -447,34 +447,56 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
           );
         }
 
-        // 字符点击查词：整个字幕盒一个 translucent GestureDetector，松手时用
-        // [_charHitTest] 按全局坐标反查命中的字符 grapheme 再回调 [onCharTap]。
-        // - translucent：hover/指针 hit-test 不被本层独占，media_kit 的
-        //   `MouseRegion` 仍进 path → 鼠标在字幕上时控制条照常唤起、不被吞
-        //   （BUG-198，对比旧的逐字符 opaque）。
-        // - 本层在 Stack 上层，tap 会赢手势竞技场 → media_kit 的 `playAndPauseOnTap`
-        //   （onTapDown）被截断 → 点字幕文字仍是查词、不会顺手暂停（保留旧 opaque
-        //   行为）；点字幕盒内字符间空白则什么也不做（不查词、不暂停）。
+        // 字符点击查词：整片字幕盒一个 translucent [RawGestureDetector]，其 tap 识别器是
+        // [_SubtitleCharTapRecognizer]——**只在按下点命中某字符时才收指针、加入手势竞技场**。
+        // - translucent（命中 / hover hit-test 语义与旧实现逐字节不变，BUG-198 / 桌面 hover
+        //   行为原样保留）：本层始终在命中路径里但 `hitTest` 返回 false，盖在其下的 media_kit
+        //   `MouseRegion` 与控制条 `onTap` 仍进 path → 鼠标在字幕上时控制条照常唤起、不被吞。
+        // - 竞技场门控（BUG-553）：识别器 [_SubtitleCharTapRecognizer.isPointerAllowed] 仅在
+        //   按下点命中某字符（含 [resolveSubtitleCharHit] 字缝 / 描边容差）时才收下指针、加入
+        //   竞技场；本层在 Stack 上层、竞技场里排在 media_kit 之前 → 命中字符时赢得竞技场 →
+        //   查词，并截断 media_kit 的 `playAndPauseOnTap`（点字幕文字只查词、不顺手暂停，保留
+        //   旧行为）。按下点落在字幕盒内**字符间空白**（超容差）时识别器不收指针、不进竞技场
+        //   → 媒体层的 show-controls `onTap` 独占竞技场胜出 → 点字幕区空白照常唤出 / 隐藏控制
+        //   条。旧的整片 translucent [GestureDetector] 会无条件收下所有 tap、赢竞技场并 reject
+        //   掉 media_kit 的 onTap，移动端（无 hover 兜底）表现为「有字幕在屏时点画面唤不出控制
+        //   条」（BUG-553 根因）。
         if (widget.onCharTap != null) {
-          box = GestureDetector(
+          box = RawGestureDetector(
             behavior: HitTestBehavior.translucent,
-            // down-snap（TODO-916 ④-A）：按下时刻字幕盒尚未被控制条避让动画推移，此刻
-            // 反查命中字符并记下其下标；up 时刻用该下标（[_charHitByIndex]）查词，即便
-            // 控制条已唤起、字幕盒上移，命中仍锁按下瞄准的字符。
-            onTapDown: (TapDownDetails details) {
-              final SubtitleCharHit? hit = _charHitTest(details.globalPosition);
-              _pendingTapGrapheme = hit?.graphemeIndex ?? -1;
-            },
-            onTapUp: (TapUpDetails details) {
-              final SubtitleCharHit? hit = _charHitByIndex(_pendingTapGrapheme);
-              _pendingTapGrapheme = -1;
-              if (hit != null) {
-                widget.onCharTap!(
-                    hit.sentence, hit.graphemeIndex, hit.charRect);
-              }
-            },
-            onTapCancel: () {
-              _pendingTapGrapheme = -1;
+            gestures: <Type, GestureRecognizerFactory>{
+              _SubtitleCharTapRecognizer: GestureRecognizerFactoryWithHandlers<
+                  _SubtitleCharTapRecognizer>(
+                () => _SubtitleCharTapRecognizer(
+                  // 竞技场门控判据与查词完全一致：[_charHitTest] 命中某字符（模糊态 / 空句
+                  // 返回 null）才收指针。故 fall-through 边界与查词命中边界像素级重合。
+                  hitTestChar: (Offset globalPosition) =>
+                      _charHitTest(globalPosition) != null,
+                ),
+                (_SubtitleCharTapRecognizer instance) {
+                  instance
+                    // down-snap（TODO-916 ④-A）：按下时刻字幕盒尚未被控制条避让动画推移，
+                    // 此刻反查命中字符并记下其下标；up 时刻用该下标（[_charHitByIndex]）查词，
+                    // 即便控制条已唤起、字幕盒上移，命中仍锁按下瞄准的字符。
+                    ..onTapDown = (TapDownDetails details) {
+                      final SubtitleCharHit? hit =
+                          _charHitTest(details.globalPosition);
+                      _pendingTapGrapheme = hit?.graphemeIndex ?? -1;
+                    }
+                    ..onTapUp = (TapUpDetails details) {
+                      final SubtitleCharHit? hit =
+                          _charHitByIndex(_pendingTapGrapheme);
+                      _pendingTapGrapheme = -1;
+                      if (hit != null) {
+                        widget.onCharTap!(
+                            hit.sentence, hit.graphemeIndex, hit.charRect);
+                      }
+                    }
+                    ..onTapCancel = () {
+                      _pendingTapGrapheme = -1;
+                    };
+                },
+              ),
             },
             child: box,
           );
@@ -804,5 +826,29 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     if (ro is! RenderBox || !ro.hasSize) return Rect.zero;
     final Offset topLeft = ro.localToGlobal(Offset.zero);
     return topLeft & ro.size;
+  }
+}
+
+/// 字幕盒的**按字符矩形门控** tap 识别器（BUG-553）。语义同普通 [TapGestureRecognizer]，
+/// 但只有当**按下点**命中某字幕字符（含 [resolveSubtitleCharHit] 字缝 / 描边容差，由
+/// [hitTestChar] 判定）时才通过 [isPointerAllowed] 收下该指针、加入手势竞技场竞逐 tap；
+/// 按下点落在字幕盒内字符间空白（超容差）时不收指针、不进竞技场，让盖在其下的 media_kit
+/// 控制条 `onTap` 独占竞技场胜出（点字幕区空白照常唤出 / 隐藏控制条）。
+///
+/// 取代旧的「整片 translucent [GestureDetector] 无条件收下所有 tap」：那样字幕盒在 Stack
+/// 上层、任何落在盒内的 tap 都赢竞技场并 reject 掉 media_kit 的 onTap，移动端（无 hover
+/// 兜底）表现为「有字幕在屏时点画面唤不出控制条」。门控只作用于竞技场，不改变 translucent
+/// 的命中 / hover hit-test 语义（media_kit 仍在命中路径里，桌面 hover 行为原样保留、BUG-198）。
+class _SubtitleCharTapRecognizer extends TapGestureRecognizer {
+  _SubtitleCharTapRecognizer({required this.hitTestChar});
+
+  /// 按**全局**坐标判定按下点是否命中某字幕字符（与点击查词同一判据）。
+  final bool Function(Offset globalPosition) hitTestChar;
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) {
+    // 按下点未命中字符 → 不收指针 → 不进竞技场 → media_kit 控制条 onTap 独占胜出。
+    if (!hitTestChar(event.position)) return false;
+    return super.isPointerAllowed(event);
   }
 }
