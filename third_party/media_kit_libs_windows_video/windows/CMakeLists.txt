@@ -82,18 +82,24 @@ endfunction()
 # libmpv with TrueHD. The .7z layout (libmpv-2.dll + include/mpv) matches what
 # the extract step below expects, so only the URL/MD5/name change.
 #
-# NOTE: zhongfly/mpv-winbuild only keeps a ~30-day rolling window of releases -
-# older tagged assets get pruned and 404. When a fresh Windows build fails with a
-# cmake file(DOWNLOAD) FATAL_ERROR here, re-pin to the newest LIVE zhongfly
-# release. MUST pick the plain `mpv-dev-x86_64-...` asset (GPL full FFmpeg with
-# TrueHD): NOT `-lgpl` (drops TrueHD -> re-opens BUG-073), NOT `-v3` (needs
-# Haswell+, crashes on older CPUs). sha256 of this pin (verified against zhongfly
-# sha256.txt before the swap):
+# MIRROR (TODO-1137): zhongfly/mpv-winbuild only keeps a ~30-day rolling window
+# of releases - older tagged assets get pruned and 404, breaking every fresh
+# Windows build (V37/V38 both hit this). Root fix: we now mirror the exact
+# zhongfly .7z into our own permanent GitHub release
+# (hajisensai/hibiki `vendor-libmpv`, assets never deleted), so the cmake
+# file(DOWNLOAD) no longer depends on zhongfly's rolling deletion. To bump to a
+# newer libmpv: download the newest LIVE zhongfly `mpv-dev-x86_64-...` asset
+# (GPL full FFmpeg with TrueHD): NOT `-lgpl` (drops TrueHD -> re-opens BUG-073),
+# NOT `-v3` (needs Haswell+, crashes on older CPUs); `gh release upload
+# vendor-libmpv <file> --repo hajisensai/hibiki`; then update the name/URL/MD5
+# below. sha256 of this pin (verified against zhongfly sha256.txt AND re-verified
+# from the mirror before the swap):
 # 2651a618ba6906ac869a87f669c4db157ef3b9d566eb946362fadafcd2e253c1
 set(LIBMPV "mpv-dev-x86_64-20260704-git-33111f3212.7z")
 
-# Download URL & MD5 hash of the libmpv archive.
-set(LIBMPV_URL "https://github.com/zhongfly/mpv-winbuild/releases/download/2026-07-04-33111f3212/${LIBMPV}")
+# Download URL & MD5 hash of the libmpv archive. URL points at our permanent
+# mirror (hajisensai/hibiki release), NOT zhongfly, to survive upstream pruning.
+set(LIBMPV_URL "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/${LIBMPV}")
 set(LIBMPV_MD5 "89702937368b0181cbce41c30e811c76")
 
 # Download location of the libmpv archive.

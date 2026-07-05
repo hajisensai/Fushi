@@ -56,10 +56,21 @@ void main() {
         fork('media_kit_libs_windows_video/windows/CMakeLists.txt');
     final String url =
         RegExp(r'set\(LIBMPV_URL\s+"([^"]+)"\)').firstMatch(cmake)!.group(1)!;
+    final String asset =
+        RegExp(r'set\(LIBMPV "([^"]+)"\)').firstMatch(cmake)!.group(1)!;
     expect(url.contains('media-kit/libmpv-win32-video-build'), isFalse,
         reason: 'win32 upstream froze at 2023-09-24 with no TrueHD decoder.');
-    expect(url.contains('zhongfly/mpv-winbuild'), isTrue,
-        reason: 'expected the maintained full-FFmpeg libmpv (zhongfly).');
+    // The libmpv .7z is mirrored into our own permanent GitHub release
+    // (hajisensai/hibiki `vendor-libmpv`) because zhongfly/mpv-winbuild prunes
+    // releases on a ~30-day window and the pinned asset 404s (TODO-1137). The
+    // mirrored file is the exact zhongfly full-FFmpeg build, so guard the real
+    // BUG-073 intent (full flavor, not the broken flavors) instead of the host.
+    expect(RegExp(r'^mpv-dev-x86_64-\d').hasMatch(asset), isTrue,
+        reason: 'must be the full GPL FFmpeg flavor (mpv-dev-x86_64-<date>).');
+    expect(asset.contains('-lgpl'), isFalse,
+        reason: '-lgpl drops the TrueHD decoder -> re-opens BUG-073.');
+    expect(asset.contains('-v3'), isFalse,
+        reason: '-v3 needs Haswell+ and crashes on older CPUs.');
     expect(RegExp(r'set\(LIBMPV_MD5 "[0-9a-f]{32}"\)').hasMatch(cmake), isTrue,
         reason: 'LIBMPV_MD5 must stay pinned.');
   });
