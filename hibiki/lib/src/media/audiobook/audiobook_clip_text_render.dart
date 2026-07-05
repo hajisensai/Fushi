@@ -292,25 +292,39 @@ class AudiobookClipTextSegment {
   final Uint8List? imageBytes;
 }
 
-/// 批量把「多句整段文本」离屏渲成 [segments].length 张 PNG（每张高亮不同一句）。
+/// TODO-1167 流式渲染回调：渲染层每产出一帧就调一次。[highlightIndex] 是这一帧高亮的
+/// 句下标（-1=无句高亮），[pngBytes] 是该帧 PNG（null=渲染失败）。调用方即时消费（后台
+/// isolate 编码 + 落盘）后返回 true 继续渲下一帧、false 提前停止（如遇编码失败或只需单帧）。
 ///
-/// 返回 `List<Uint8List?>`，第 i 张是「整段文本、第 i 句高亮」的 PNG 字节；某句渲染
-/// 失败对应位 null（调用方据此回退单句静态）。复用 [renderAudiobookClipTextToPng] 的
-/// 离屏时序（每帧等 paint 完成再 toImage），只是把单句卡片换成多句 + 高亮某句的卡片。
+/// 用回调而非返回 `List<Uint8List?>`：让每次内存里只驻留一帧 PNG，渲一帧→编码落盘→释放，
+/// 避免把 N 帧 1080×1920 PNG（+ 竖排路径每帧 8.3MB native 位图）同时驻留导致 native OOM。
+typedef AudiobookClipFrameSink = Future<bool> Function(
+  int highlightIndex,
+  Uint8List? pngBytes,
+);
+
+/// 批量把「多句整段文本」离屏渲成 [segments].length 张 PNG（每张高亮不同一句），逐帧
+/// 经 [onFrame] 回调交给调用方即时消费（TODO-1167 流式，见 [AudiobookClipFrameSink]）。
+///
+/// 每帧是「整段文本、该句高亮」的 PNG 字节；某句渲染失败传 null（调用方据此回退单句
+/// 静态）。复用 [renderAudiobookClipTextToPng] 的离屏时序（每帧等 paint 完成再 toImage），
+/// 只是把单句卡片换成多句 + 高亮某句的卡片。onFrame 返回 false 即提前停止。
 ///
 /// [highlightIndices] 指定要渲哪些高亮下标（通常 = 帧计划里出现过的去重 cue 下标，
 /// 每句只渲一次）；未传时默认渲每一句（0..segments.length-1）。-1（gap 无高亮）也可传，
 /// 渲成「整段文本、无句高亮」。
-Future<List<Uint8List?>> renderAudiobookClipFrames({
+Future<void> renderAudiobookClipFrames({
   required OverlayState overlay,
   required List<AudiobookClipTextSegment> segments,
   required AudiobookClipTextLayout layout,
+  required AudiobookClipFrameSink onFrame,
   List<int>? highlightIndices,
   double pixelRatio = 1.0,
 }) async {
   final List<int> indices = highlightIndices ??
       List<int>.generate(segments.length, (int i) => i, growable: false);
-  final List<Uint8List?> out = <Uint8List?>[];
+  // 流式（TODO-1167）：渲一帧立刻交给 [onFrame] 消费，不再攒成 List<Uint8List?> 返回，
+  // 避免 N 帧 PNG 同时驻留。onFrame 返回 false（编码失败/只需单帧）即提前停止。
   for (final int highlightIndex in indices) {
     final Uint8List? png = await _renderClipFramePng(
       overlay: overlay,
@@ -319,9 +333,9 @@ Future<List<Uint8List?>> renderAudiobookClipFrames({
       layout: layout,
       pixelRatio: pixelRatio,
     );
-    out.add(png);
+    final bool keepGoing = await onFrame(highlightIndex, png);
+    if (!keepGoing) return;
   }
-  return out;
 }
 
 /// 渲单帧：整段文本、第 [highlightIndex] 句高亮（-1 = 无句高亮）。镜像

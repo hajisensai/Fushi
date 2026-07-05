@@ -1274,11 +1274,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // 桌面 ffmpeg-min 同样含 mjpeg decoder。Flutter 只能直出 png/rawRgba，故把
         // 渲出的 png 帧在 Dart 层重编码为 jpeg，让两端 ffmpeg 都走 mjpeg 解码，
         // 绕开缺失的 png decoder（此前移动端合成 exit 1 / "unspecified size"）。
-        final Uint8List? jpgBytes = encodeClipTextFrameAsJpg(pngBytes);
+        // TODO-1167：静态回退单帧编码同样卸到后台 isolate（UI 线程不被 2MP 解码/编码阻塞）。
+        final Uint8List? jpgBytes =
+            await encodeClipTextFrameAsJpgAsync(pngBytes);
         if (jpgBytes == null) {
           ErrorLogService.instance.log(
             'ReaderHibiki.exportClip.jpgEncodeFailed',
-            'encodeClipTextFrameAsJpg returned null '
+            'encodeClipTextFrameAsJpgAsync returned null '
                 '(pngLen=${pngBytes.length}, text="$text")',
             StackTrace.current,
           );
@@ -1359,9 +1361,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   /// 到 [framesDir]，再用 image2 序列帧 + 完整音频合成 [videoFile]。全程成功返回 true；
   /// 任一步失败返回 false（调用方回退单句静态）。
   ///
-  /// 每句只渲一次 PNG（去重），按帧计划里各 [ClipFrameSpec.frameCount] 把该句 PNG 复制成
-  /// 连续帧编号（每帧经 encodeClipTextFrameAsJpg 重编码为 JPEG，BUG-543），喂给 image2
-  /// demuxer（`frame_%04d.jpg`），从而复刻「逐句高亮跟随」时间轴。
+  /// 每句只渲一次 PNG（去重），后台 isolate 编码为 JPEG 母帧落盘（encodeClipTextFrameAsJpgAsync，
+  /// BUG-543 + TODO-1167），再按帧计划里各 [ClipFrameSpec.frameCount] 从母帧复制成连续帧
+  /// 编号，喂给 image2 demuxer（`frame_%04d.jpg`），从而复刻「逐句高亮跟随」时间轴。
   Future<bool> _synthDynamicClipVideo({
     required _AudiobookClipDynamicPlan plan,
     required OverlayState overlay,
@@ -1402,43 +1404,66 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         distinctIndices.add(spec.highlightCueIndex);
       }
     }
-    // TODO-1147 option A: vertical renders true-vertical frames via offscreen
-    // WebView; horizontal keeps the Flutter raster frames (never break). Any null
-    // frame below still triggers the static fallback.
-    final List<Uint8List?> pngs = layout.vertical
-        ? await renderAudiobookClipFramesViaWebView(
-            segments: segments,
-            layout: layout,
-            highlightIndices: distinctIndices,
-          )
-        : await renderAudiobookClipFrames(
-            overlay: overlay,
-            segments: segments,
-            layout: layout,
-            highlightIndices: distinctIndices,
-          );
-    // BUG-543：移动端 ffmpeg-kit min 无 png decoder（有 mjpeg decoder），桌面 ffmpeg-min
-    // 同样含 mjpeg decoder。Flutter 每帧只能直出 png，故逐帧重编码为 jpeg 落盘
-    // （frame_%04d.jpg），让两端 image2 序列帧都走已存在的 mjpeg 解码，绝不触碰缺失的
-    // png decoder（否则移动端序列帧合成 exit 1 / "unspecified size"）。单图静态回退同源。
-    final Map<int, Uint8List> jpgByIndex = <int, Uint8List>{};
-    for (int i = 0; i < distinctIndices.length; i++) {
-      final Uint8List? png = pngs[i];
-      if (png == null) return false; // 任一句渲染失败 → 回退单句静态。
-      final Uint8List? jpg = encodeClipTextFrameAsJpg(png);
-      if (jpg == null) return false; // 帧重编码失败 → 回退单句静态。
-      jpgByIndex[distinctIndices[i]] = jpg;
+    // TODO-1167 流式渲染（安卓 ANR/OOM 根因修复）：原实现先把**全部** N 帧 1080×1920
+    // PNG 攒进 pngs 列表（竖排每帧还叠 8.3MB native 位图）→ native OOM，再在 UI isolate
+    // 同步无 await 逐帧 encodeClipTextFrameAsJpg（2MP 解码+编码）→ 冻死主线程 ANR。
+    // 改为逐帧回调：渲一帧 → 后台 isolate 编码 JPEG → 立刻落盘为「母帧」→ 释放该帧
+    // PNG/JPEG，内存里任一时刻只驻留一帧。母帧按去重的 highlightCueIndex 命名（image2
+    // 只认 frame_%04d.jpg，master_* 不会被序列 demuxer 命中），帧计划展开时再从母帧复制
+    // 成连续编号 frame_%04d.jpg，复刻「逐句高亮跟随」时间轴。横排/竖排同一回调路径同治。
+    //
+    // BUG-543：两端 ffmpeg 都无 png decoder 但有 mjpeg decoder，故母帧统一为 JPEG
+    // （encodeClipTextFrameAsJpgAsync），下游 image2 序列帧契约不变。
+    await framesDir.create(recursive: true);
+    final Map<int, String> masterJpgPathByIndex = <int, String>{};
+    bool frameFailed = false;
+    Future<bool> onFrame(int highlightIndex, Uint8List? png) async {
+      if (png == null) {
+        frameFailed = true;
+        return false; // 任一句渲染失败 → 停止渲染，回退单句静态。
+      }
+      final Uint8List? jpg = await encodeClipTextFrameAsJpgAsync(png);
+      if (jpg == null) {
+        frameFailed = true;
+        return false; // 帧重编码失败 → 回退单句静态。
+      }
+      final String masterPath =
+          p.join(framesDir.path, 'master_$highlightIndex.jpg');
+      await File(masterPath).writeAsBytes(jpg);
+      masterJpgPathByIndex[highlightIndex] = masterPath;
+      return true;
     }
 
-    // 落盘序列帧：按帧计划展开成连续编号 frame_0000.jpg, frame_0001.jpg ...
-    await framesDir.create(recursive: true);
+    // TODO-1147 option A: vertical renders true-vertical frames via offscreen
+    // WebView; horizontal keeps the Flutter raster frames (never break). Any null
+    // frame triggers the static fallback via onFrame returning false.
+    if (layout.vertical) {
+      await renderAudiobookClipFramesViaWebView(
+        segments: segments,
+        layout: layout,
+        highlightIndices: distinctIndices,
+        onFrame: onFrame,
+      );
+    } else {
+      await renderAudiobookClipFrames(
+        overlay: overlay,
+        segments: segments,
+        layout: layout,
+        highlightIndices: distinctIndices,
+        onFrame: onFrame,
+      );
+    }
+    if (frameFailed) return false;
+
+    // 落盘序列帧：按帧计划从母帧复制成连续编号 frame_0000.jpg, frame_0001.jpg ...
     int frameNo = 0;
     for (final ClipFrameSpec spec in frames) {
-      final Uint8List? jpg = jpgByIndex[spec.highlightCueIndex];
-      if (jpg == null) return false;
+      final String? masterPath = masterJpgPathByIndex[spec.highlightCueIndex];
+      if (masterPath == null) return false;
+      final File master = File(masterPath);
       for (int i = 0; i < spec.frameCount; i++) {
         final String name = 'frame_${frameNo.toString().padLeft(4, '0')}.jpg';
-        await File(p.join(framesDir.path, name)).writeAsBytes(jpg);
+        await master.copy(p.join(framesDir.path, name));
         frameNo += 1;
       }
     }

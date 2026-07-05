@@ -7,6 +7,10 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
+/// TODO-1167：单帧 takeScreenshot 的超时上限，对齐 load 的 8s 语义（截图原来无超时，
+/// 卡死会永久挂住整条导出管线 → 表现为卡死/ANR）。
+const Duration _kClipScreenshotTimeout = Duration(seconds: 8);
+
 /// TODO-1147 option A: true-vertical offscreen render path for clip export.
 ///
 /// Flutter cannot lay out CJK vertical text, so [renderAudiobookClipFrames]'s
@@ -125,14 +129,15 @@ window.__clipFit = function() {
 ///
 /// Same contract as [renderAudiobookClipFrames] (null per failed frame). Vertical
 /// only; horizontal keeps [renderAudiobookClipFrames].
-Future<List<Uint8List?>> renderAudiobookClipFramesViaWebView({
+Future<void> renderAudiobookClipFramesViaWebView({
   required List<AudiobookClipTextSegment> segments,
   required AudiobookClipTextLayout layout,
+  required AudiobookClipFrameSink onFrame,
   List<int>? highlightIndices,
 }) async {
   final List<int> indices = highlightIndices ??
       List<int>.generate(segments.length, (int i) => i, growable: false);
-  if (indices.isEmpty) return <Uint8List?>[];
+  if (indices.isEmpty) return;
 
   final String html = buildAudiobookClipVerticalHtml(
     segments: segments,
@@ -192,7 +197,9 @@ Future<List<Uint8List?>> renderAudiobookClipFramesViaWebView({
         'headless webViewController null after run (segments=${segments.length})',
         StackTrace.current,
       );
-      return List<Uint8List?>.filled(indices.length, null);
+      // 发一帧 null，让调用方回退单句静态（流式回调下不再返回 List）。
+      await onFrame(indices.first, null);
+      return;
     }
 
     await Future<void>.delayed(const Duration(milliseconds: 120));
@@ -201,7 +208,6 @@ Future<List<Uint8List?>> renderAudiobookClipFramesViaWebView({
     );
     await Future<void>.delayed(const Duration(milliseconds: 32));
 
-    final List<Uint8List?> out = <Uint8List?>[];
     for (final int idx in indices) {
       await controller.evaluateJavascript(
         source: 'window.__clipSetActive && window.__clipSetActive($idx);',
@@ -209,7 +215,28 @@ Future<List<Uint8List?>> renderAudiobookClipFramesViaWebView({
       await Future<void>.delayed(const Duration(milliseconds: 48));
       Uint8List? shot;
       try {
-        shot = await controller.takeScreenshot();
+        // TODO-1167：takeScreenshot 加超时。load 已有 8s 超时但截图原来没有，单帧
+        // takeScreenshot 卡死会永久挂住整条导出管线（native 位图迟迟不回）→ 卡死/ANR。
+        // 超时该帧记 null，调用方走单句静态回退，绝不无限等。
+        shot =
+            await controller.takeScreenshot().timeout(_kClipScreenshotTimeout);
+        if (shot == null) {
+          ErrorLogService.instance.log(
+            'AudiobookClipWebViewRender.screenshotNull',
+            'takeScreenshot returned null for vertical clip frame '
+                '(highlight=$idx, segments=${segments.length})',
+            StackTrace.current,
+          );
+        }
+      } on TimeoutException catch (e, st) {
+        ErrorLogService.instance.log(
+          'AudiobookClipWebViewRender.screenshotTimeout',
+          'takeScreenshot exceeded ${_kClipScreenshotTimeout.inSeconds}s '
+              '(highlight=$idx, segments=${segments.length}); frame skipped, '
+              'caller falls back to static. $e',
+          st,
+        );
+        shot = null;
       } catch (e, st) {
         ErrorLogService.instance.log(
           'AudiobookClipWebViewRender.screenshotThrew',
@@ -218,23 +245,20 @@ Future<List<Uint8List?>> renderAudiobookClipFramesViaWebView({
         );
         shot = null;
       }
-      if (shot == null) {
-        ErrorLogService.instance.log(
-          'AudiobookClipWebViewRender.screenshotNull',
-          'takeScreenshot returned null for vertical clip frame (highlight=$idx, segments=${segments.length})',
-          StackTrace.current,
-        );
-      }
-      out.add(shot);
+      // 流式消费该帧（编码 + 落盘由调用方在后台 isolate 做），随即释放本帧内存。
+      final bool keepGoing = await onFrame(idx, shot);
+      if (!keepGoing) return;
     }
-    return out;
   } catch (e, st) {
     ErrorLogService.instance.log(
       'AudiobookClipWebViewRender.clipWebViewThrew',
       e,
       st,
     );
-    return List<Uint8List?>.filled(indices.length, null);
+    // 发一帧 null 让调用方回退单句静态（流式回调下不再返回 List）。
+    try {
+      await onFrame(indices.first, null);
+    } catch (_) {}
   } finally {
     try {
       await headless?.dispose();
@@ -250,14 +274,19 @@ Future<Uint8List?> renderAudiobookClipTextViaWebView({
   required String text,
   required AudiobookClipTextLayout layout,
 }) async {
-  final List<Uint8List?> frames = await renderAudiobookClipFramesViaWebView(
+  Uint8List? result;
+  await renderAudiobookClipFramesViaWebView(
     segments: <AudiobookClipTextSegment>[
       AudiobookClipTextSegment(text: text),
     ],
     layout: layout,
     highlightIndices: <int>[0],
+    onFrame: (int highlightIndex, Uint8List? pngBytes) async {
+      result = pngBytes;
+      return false; // 单句静态图只需一帧。
+    },
   );
-  return frames.isNotEmpty ? frames.first : null;
+  return result;
 }
 
 /// Color to rgba(r,g,b,a) CSS string, mirroring reader readerColorToCssRgba

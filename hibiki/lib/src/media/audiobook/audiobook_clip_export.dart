@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -316,6 +317,24 @@ Uint8List? encodeClipTextFrameAsJpg(
   final img.Image? decoded = img.decodeImage(pngBytes);
   if (decoded == null) return null;
   return img.encodeJpg(decoded, quality: quality);
+}
+
+/// [encodeClipTextFrameAsJpg] 的后台 isolate 版本（TODO-1167 / BUG-552，安卓导出片段
+/// 视频 ANR/OOM 根因修复）。
+///
+/// 根因：导出长片段时 `_synthDynamicClipVideo` 与静态回退在 **UI isolate** 同步逐帧调
+/// [encodeClipTextFrameAsJpg]（2MP=1080×1920 PNG 解码 + JPEG 编码，每帧数十 ms），N 帧
+/// 串起来同步无 await 冻死主线程 → 安卓 ANR 杀进程。这里把纯 Dart 的解码/编码整体卸到
+/// 后台 isolate（[Isolate.run]）：传 [Uint8List]（PNG bytes）进、[Uint8List]（JPEG bytes）
+/// 出，`package:image` 对象只在后台 isolate 内生灭（不能跨 isolate 传句柄），UI 线程不再
+/// 被 2MP 解码/编码阻塞。解码失败返回 null，语义与同步版完全一致，调用方据此回退。
+Future<Uint8List?> encodeClipTextFrameAsJpgAsync(
+  Uint8List pngBytes, {
+  int quality = 98,
+}) {
+  return Isolate.run<Uint8List?>(
+    () => encodeClipTextFrameAsJpg(pngBytes, quality: quality),
+  );
 }
 
 /// 纯函数：构建「逐帧 JPEG 序列 + 音频 → mjpeg/.mov 短视频」的 ffmpeg 参数表（可单测）。

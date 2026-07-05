@@ -152,24 +152,28 @@ void main() {
         const AudiobookClipTextSegment(text: '第二句です'),
       ];
 
-      List<Uint8List?> frames = <Uint8List?>[];
+      // TODO-1167：renderAudiobookClipFrames 改为逐帧回调（流式），测试自己收集帧字节。
+      final List<Uint8List?> frames = <Uint8List?>[];
       await tester.runAsync(() async {
         bool done = false;
-        final Future<List<Uint8List?>> future = renderAudiobookClipFrames(
+        final Future<void> future = renderAudiobookClipFrames(
           overlay: overlay,
           segments: segments,
           layout: layout,
           highlightIndices: <int>[0, 1],
-        ).then((List<Uint8List?> r) {
+          onFrame: (int highlightIndex, Uint8List? png) async {
+            frames.add(png);
+            return true; // 收全部帧
+          },
+        ).whenComplete(() {
           done = true;
-          return r;
         });
         // 两帧串行渲染，各需多帧推进离屏 pipeline；持续泵帧直到整体完成（上限保护）。
         for (int i = 0; i < 200 && !done; i++) {
           await tester.pump(const Duration(milliseconds: 16));
           await Future<void>.delayed(const Duration(milliseconds: 1));
         }
-        frames = await future;
+        await future;
       });
 
       expect(frames.length, 2);
