@@ -688,12 +688,26 @@ void GlobalLookupWindow::ConfigureWebView() {
               // so the star never flips (the earlier "favorite button does
               // nothing" bug). The reply is routed back to the SOURCE iframe by
               // the host bridge router (global_lookup_host.js).
+              // TODO-1188 follow-up — mineEntry/duplicateCheck are DEFERRED for
+              // the SAME reason: the +/mine button awaits mineEntry's real
+              // {ankiConnect,noteId} (repo.mineEntry via AnkiConnect/AnkiDroid)
+              // and then duplicateCheck's real bool to flip +/mine into the
+              // already-mined check. An immediate null here would resolve
+              // mineEntry with null (parseMineResult -> no card / no refresh) and
+              // duplicateCheck with null (never mined), so app-external mining
+              // silently did nothing. Dart computes both replies and
+              // ResolveBridge()s them; the host router returns each reply to the
+              // source iframe (no host.js change needed). Read-only probes
+              // (overwriteTargetNoteId) still get an immediate null -- that is a
+              // valid "no overwrite target" reply, so they stay non-deferred.
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
                   body.find("\"playWordAudio\"") != std::string::npos ||
                   body.find("\"favoriteEntry\"") != std::string::npos ||
-                  body.find("\"favoriteCheck\"") != std::string::npos;
+                  body.find("\"favoriteCheck\"") != std::string::npos ||
+                  body.find("\"mineEntry\"") != std::string::npos ||
+                  body.find("\"duplicateCheck\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {

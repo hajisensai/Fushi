@@ -12,6 +12,7 @@
 // deferred audio bridge calls (resolveWordAudio / playWordAudio).
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -24,6 +25,7 @@ import 'package:hibiki/src/lookup/global_lookup_stack.dart';
 import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -32,6 +34,7 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
@@ -558,6 +561,22 @@ class GlobalLookupController {
       unawaited(_handleFavoriteBridge(handler! as String, message));
       return;
     }
+    // TODO-1188 follow-up — 制卡（➕）也是 DEFERRED 桥：popup.js 的 mine 按钮
+    // await callHandler('mineEntry', fields) 拿 {ankiConnect,noteId}，再
+    // await callHandler('duplicateCheck', {expression,reading}) 拿 bool 把 ➕→✓。
+    // app 外覆盖窗过去 Dart 侧没有这两个分支、C++ 又当只读即时 null-resolve（mineEntry
+    // 拿 null=没制成、duplicateCheck 拿 null=永不显示已制卡）——本次一并接上，直接调
+    // AnkiConnect/AnkiDroid repo（与 in-app DictionaryPageMixin.onMineEntry /
+    // checkDuplicate 同一 repo.mineEntry / repo.isDuplicate 路径），resolveBridge 回传
+    // 供 popup.js 翻 ✓。始终 resolveBridge，即使无 model / 出错也不卡死按钮。
+    if (handler == 'mineEntry') {
+      unawaited(_handleMineBridge(message));
+      return;
+    }
+    if (handler == 'duplicateCheck') {
+      unawaited(_handleDuplicateBridge(message));
+      return;
+    }
     // TODO-867 P3c D2 — size + place the overlay window from the host's stack
     // self-measurement. The host reports overlaySize = [dpr, box] where box is
     // the UNION bounding box of all card shells in window-local CSS px
@@ -755,6 +774,152 @@ class GlobalLookupController {
       dateKey: statTodayKey(),
     );
     return true;
+  }
+
+  /// TODO-1188 follow-up — resolves a DEFERRED mineEntry bridge call and pushes
+  /// the {ankiConnect, noteId} result back to the overlay iframe via
+  /// [GlobalLookupChannel.resolveBridge] so popup.js flips the ➕ button
+  /// (parseMineResult). Mirrors the in-app [DictionaryPageMixin.onMineEntry].
+  /// Always resolves — even on error / no model — so the ➕ button never freezes
+  /// (same contract as [_handleFavoriteBridge] / [_handleAudioBridge]).
+  Future<void> _handleMineBridge(Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    Map<String, Object?> reply = const <String, Object?>{
+      'ankiConnect': false,
+      'noteId': null,
+    };
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> raw =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final Map<String, String> fields = <String, String>{
+        for (final MapEntry<Object?, Object?> e in raw.entries)
+          e.key.toString(): e.value?.toString() ?? '',
+      };
+      final String expression = fields['expression'] ?? '';
+      if (model != null && expression.isNotEmpty) {
+        reply = await _mineEntry(model, fields);
+      }
+    } catch (e, st) {
+      glog('mine: EXCEPTION $e\n$st');
+      reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
+    }
+    if (id != null) {
+      glog('mine: mineEntry -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
+  }
+
+  /// TODO-1188 follow-up — mines [fields] to Anki through the same
+  /// [BaseAnkiRepository.mineEntry] path the in-app dictionary popup uses
+  /// ([DictionaryPageMixin.onMineEntry]), records the mined-count + mined-sentence
+  /// stats on success (source [kStatSourceBook], to match the in-book dictionary
+  /// default so the shared uniqueness key + tag category stay consistent across
+  /// surfaces), and returns the popup.js-shaped {ankiConnect, noteId} reply.
+  ///
+  /// Gaiji (外字) bytes are flushed to the Anki media cache first (via
+  /// [writeDictionaryMediaCache]) so dictionary media embeds rather than degrading
+  /// to alt text — exactly as the in-app mineEntry handler does. App-external
+  /// lookup has NO screenshot / sentence-audio media context (the source text
+  /// lives in another app), so the card is a plain text/dictionary card; the
+  /// word-pronunciation `audio` field is still resolved by popup.js's
+  /// buildMinePayload when audio sources are configured. No toast: the main window
+  /// is backgrounded behind the external app (Windows Fluttertoast would not
+  /// render over it), so the button's ➕→✓ flip — driven by the follow-up
+  /// duplicateCheck reading THIS card back — is the user-visible feedback.
+  Future<Map<String, Object?>> _mineEntry(
+    AppModel model,
+    Map<String, String> fields,
+  ) async {
+    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+    final BaseAnkiRepository repo =
+        model.platformServices.createAnkiRepository();
+    final MineOutcome outcome = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: fields['sentence'] ?? '',
+        source: AnkiMiningSource.book,
+      ),
+    );
+    // 与 in-app onMineEntry 同判据：仅 MineResult.success 回 ankiConnect=true + noteId
+    // （AnkiConnect 非空进「最新可改」态；AnkiDroid 恒 null=优雅降级）。重复/失败回
+    // false+null，随后 popup.js 的 duplicateCheck 若查到已存在仍会把按钮涂成 ✓。
+    final bool success = outcome.result == MineResult.success;
+    if (success) {
+      unawaited(_recordMinedStats(model, fields, outcome.noteId));
+    }
+    return <String, Object?>{
+      'ankiConnect': success,
+      'noteId': success ? outcome.noteId : null,
+    };
+  }
+
+  /// TODO-1188 follow-up — records one mined-count + one mined-sentence history
+  /// row on a successful app-external mine (source [kStatSourceBook]; no book
+  /// locator — same as home / standalone lookup, mirrors
+  /// [DictionaryPageMixin.recordMined]/[recordMinedSentence]). Best-effort: any
+  /// failure is logged and swallowed so a stats hiccup never fails the reply.
+  Future<void> _recordMinedStats(
+    AppModel model,
+    Map<String, String> fields,
+    int? noteId,
+  ) async {
+    try {
+      final HibikiDatabase db = model.database;
+      final String dateKey = statTodayKey();
+      await db.addMiningCount(sourceType: kStatSourceBook, dateKey: dateKey);
+      await db.addMinedSentence(
+        source: kStatSourceBook,
+        dateKey: dateKey,
+        expression: fields['expression'] ?? '',
+        reading: fields['reading'] ?? '',
+        glossary: fields['glossary'] ?? '',
+        sentence: fields['sentence'] ?? '',
+        noteId: noteId,
+      );
+    } catch (e, st) {
+      glog('mine: record stats FAILED (non-fatal): $e\n$st');
+    }
+  }
+
+  /// TODO-1188 follow-up — resolves a DEFERRED duplicateCheck bridge call
+  /// (queries Anki live for whether [expression]/[reading] already has a card via
+  /// [BaseAnkiRepository.isDuplicate] — the same repo path in-app checkDuplicate
+  /// uses) and pushes the bool back to the overlay iframe so popup.js paints the
+  /// ✓ (already mined) / ➕ (mineable) state at lookup time and after a mine.
+  /// Always resolves — even on error / no model — so the paint never hangs.
+  Future<void> _handleDuplicateBridge(Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    bool reply = false;
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> data =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final String expression = data['expression']?.toString() ?? '';
+      final String reading = data['reading']?.toString() ?? '';
+      if (model != null && expression.isNotEmpty) {
+        final BaseAnkiRepository repo =
+            model.platformServices.createAnkiRepository();
+        reply = await repo.isDuplicate(expression, reading);
+      }
+    } catch (e, st) {
+      glog('duplicate: EXCEPTION $e\n$st');
+      reply = false;
+    }
+    if (id != null) {
+      glog('duplicate: duplicateCheck -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
   }
 
   /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。
