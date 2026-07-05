@@ -35,6 +35,7 @@ class DataRootMigrationRequest {
     required this.closeResources,
     required this.writeDataRootPref,
     this.onProgress,
+    this.resolvedExecutablePath,
   });
 
   /// 旧「内容/书库」根（含 EPUB / 有声书 / 视频封面/字幕/shader / 词典资源 / 缩略图）。
@@ -59,6 +60,12 @@ class DataRootMigrationRequest {
   /// 文件回报一次 (已复制文件数, 总文件数)。同盘 `rename` 是瞬时原子操作，不产生进度。
   /// 注入给 UI 显示百分比进度条，避免搬大库被误判死机（TODO-959）。null 表示不需要进度。
   final void Function(int copied, int total)? onProgress;
+
+  /// TODO-1182：当前正在运行的可执行文件绝对路径（生产传 `Platform.resolvedExecutable`）。
+  /// 引擎据此拒绝把**含正在运行程序的目录 / 其祖先目录**（= 应用安装目录）当数据根——否则
+  /// 迁移搬大库遇文件锁失败时，回滚会试图删掉含运行 exe 的整个安装目录（删不掉、留半状态）。
+  /// null（旧测试夹具/移动端）→ 跳过该校验，行为与 1182 前一致。
+  final String? resolvedExecutablePath;
 }
 
 /// 迁移过程中可恢复的失败：旧根保持完整、未切换、新根半成品已清理。
@@ -144,7 +151,14 @@ class DataRootMigrator {
       }
     } catch (e) {
       await _rollbackMoves(done);
-      await _deleteIfPresent(newRoot);
+      // TODO-1182：回滚只清理迁移自己创建的 documents/support 子树，**绝不**删用户选定的
+      // 整个 newRoot（它可能是安装目录或含用户其它文件）；newRoot 本体一律保留。
+      await _cleanupCreatedSubtrees(newDocs, newSupport);
+      if (_isFileInUseError(e)) {
+        throw DataRootMigrationException(
+            '有文件被占用，无法迁移数据（请关闭正在使用书库/音频的功能后重试），已回滚到旧根',
+            cause: e);
+      }
       throw DataRootMigrationException('搬动数据目录失败，已回滚到旧根', cause: e);
     }
 
@@ -158,9 +172,9 @@ class DataRootMigrator {
         newSupportRoot: newSupport.path,
       );
     } catch (e) {
-      // DB 改写失败：把已搬目录搬回旧根、清新根，绝不留半迁移状态。
+      // DB 改写失败：把已搬目录搬回旧根、只清迁移自建子树（不删用户选定的 newRoot 本体）。
       await _rollbackMoves(done);
-      await _deleteIfPresent(newRoot);
+      await _cleanupCreatedSubtrees(newDocs, newSupport);
       throw DataRootMigrationException('改写数据库内绝对路径失败，已回滚到旧根', cause: e);
     }
 
@@ -186,7 +200,7 @@ class DataRootMigrator {
         );
       }
       await _rollbackMoves(done);
-      await _deleteIfPresent(newRoot);
+      await _cleanupCreatedSubtrees(newDocs, newSupport);
       throw DataRootMigrationException('写入新数据根设置失败，已回滚到旧根', cause: e);
     }
 
@@ -208,6 +222,16 @@ class DataRootMigrator {
         p.isWithin(p.canonicalize(req.oldDocumentsRoot.path), canonNew) ||
         p.isWithin(p.canonicalize(req.oldSupportRoot.path), canonNew)) {
       throw const DataRootMigrationException('新数据根不能位于旧数据目录内部');
+    }
+    // TODO-1182：拒绝把含正在运行 exe 的目录（安装目录）或其祖先目录当数据根。否则搬大库
+    // 遇文件锁失败回滚时会试图删掉含运行程序的整个安装目录（删不掉、留半状态、pref 没写）。
+    final String? exe = req.resolvedExecutablePath;
+    if (exe != null && exe.trim().isNotEmpty) {
+      final String canonExe = p.canonicalize(exe);
+      if (p.isWithin(canonNew, canonExe)) {
+        throw const DataRootMigrationException(
+            '新数据根不能是应用安装目录（含正在运行的程序），请另选一个空目录');
+      }
     }
     // 目标 dataRoot 若已存在且其 documents/support 子树非空 → 拒绝（不覆盖已有数据）。
     if ((newDocs.existsSync() && _hasAnyFile(newDocs)) ||
@@ -429,6 +453,45 @@ class DataRootMigrator {
       await dir.delete(recursive: true);
     }
   }
+
+  /// TODO-1182：回滚时只删迁移**自己创建**的 `<newRoot>/documents` 与 `<newRoot>/support`
+  /// 子树，**绝不**触碰用户选定的 [newRoot] 本体（它可能是安装目录或含用户其它文件）。
+  /// [_validateTarget] 已保证迁移前这两个子树为空或不存在，故此处清掉的必然是本次迁移搬进
+  /// 去的数据（正常路径下 `_rollbackMoves` 已把它们搬回旧根、这里是幂等兜底）。尽力而为：
+  /// 任一子树删不掉只记日志不抛（数据已回滚在旧根，用户根保留完整）。
+  static Future<void> _cleanupCreatedSubtrees(
+    Directory newDocs,
+    Directory newSupport,
+  ) async {
+    for (final Directory sub in <Directory>[newDocs, newSupport]) {
+      try {
+        await _deleteIfPresent(sub);
+      } catch (e) {
+        debugPrint('DataRootMigrator: 清理迁移自建子树失败 ${sub.path}: $e');
+      }
+    }
+  }
+
+  /// TODO-1182：判断异常是否为「文件被占用」类（仅 Windows 有意义）。搬移/删源时若目标位置
+  /// 或源文件被其它句柄（词典/音频/杀软/资源管理器）锁住，Windows 返回
+  /// ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32) / ERROR_LOCK_VIOLATION(33)。
+  /// 命中则由 [migrate] 抛出明确的「文件被占用」提示，而非静默回滚成泛化失败。
+  static bool _isFileInUseError(Object? e) {
+    if (!Platform.isWindows) return false;
+    if (e is DataRootMigrationException) return _isFileInUseError(e.cause);
+    if (e is FileSystemException) {
+      return _isWindowsLockCode(e.osError?.errorCode);
+    }
+    return false;
+  }
+
+  /// Windows「文件被占用」错误码：ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32)
+  /// / ERROR_LOCK_VIOLATION(33)。与平台判定分离，便于跨平台单测分类逻辑。
+  static bool _isWindowsLockCode(int? code) =>
+      code == 5 || code == 32 || code == 33;
+
+  @visibleForTesting
+  static bool isWindowsLockCodeForTesting(int code) => _isWindowsLockCode(code);
 
   /// 源根 [root] **顶层**里需要留在原地的 prefs 文件基名集合（基名前缀命中
   /// [_prefsFileNamePrefixes]）。默认根迁移时命中 `shared_preferences.json`（及可能的

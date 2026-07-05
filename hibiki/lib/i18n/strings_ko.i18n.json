@@ -2103,5 +2103,9 @@
   "tag_seed_stars": "Add star rating tags",
   "tag_seed_stars_added": "Star rating tags added",
   "tag_seed_stars_exists": "Star rating tags already exist",
-  "audio_source_loopback_warning": "Points at this device — re-point after switching machines"
+  "audio_source_loopback_warning": "Points at this device — re-point after switching machines",
+  "data_storage_migrate_failed_suggestions": "Please try again with a different, empty folder. Do not choose the app's install folder, and make sure no files in that location are in use.",
+  "data_storage_migrate_failed_restart": "Restart",
+  "data_storage_reject_install_dir": "That folder is the app's install location and can't store your data. Please choose a different, empty folder.",
+  "data_storage_migrate_failed_title": "Data migration failed"
 }

@@ -2103,5 +2103,9 @@
   "tag_seed_stars": "添加星级标签",
   "tag_seed_stars_added": "已添加星级标签",
   "tag_seed_stars_exists": "星级标签已存在",
-  "audio_source_loopback_warning": "指向本机地址，换机后需重新指向"
+  "audio_source_loopback_warning": "指向本机地址，换机后需重新指向",
+  "data_storage_migrate_failed_suggestions": "请改选一个空目录后重试。不要选择应用安装目录，并确保目标位置没有文件正在被占用。",
+  "data_storage_migrate_failed_restart": "重启",
+  "data_storage_reject_install_dir": "所选目录是应用的安装位置，不能用来存放数据。请另选一个空目录。",
+  "data_storage_migrate_failed_title": "数据迁移失败"
 }

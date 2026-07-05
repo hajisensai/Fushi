@@ -256,7 +256,11 @@ void main() {
       );
 
       expect(writeAttempts, equals(1));
-      expect(Directory(newDataRoot).existsSync(), isFalse);
+      // TODO-1182：回滚只清迁移自建的 documents/support 子树，用户选定的 newRoot 本体保留
+      // （它可能是安装目录或含用户其它文件）；断言两子树已清、newRoot 下无迁移残留文件。
+      expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
+      expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
+      expect(_hasAnyFileUnder(newDataRoot), isFalse);
       expect(
           File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
@@ -487,4 +491,141 @@ void main() {
       expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
     });
   });
+
+  group('TODO-1182：安装目录/exe 目录拒绝 + 安全回滚 + 文件锁分类', () {
+    test('目标是含运行 exe 的目录（安装目录）→ 拒绝，旧根不动', () async {
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'install');
+      // 模拟安装目录：newRoot 下就放着「正在运行」的 exe。
+      final String exe = p.join(newDataRoot, 'hibiki.exe');
+      File(exe)
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[0x4d, 0x5a]);
+
+      bool wrote = false;
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: newDataRoot,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async => wrote = true,
+          resolvedExecutablePath: exe,
+        )),
+        throwsA(isA<DataRootMigrationException>().having(
+          (DataRootMigrationException e) => e.message,
+          'message',
+          contains('安装目录'),
+        )),
+      );
+
+      // exe 未被删、旧根完整、未写 pref。
+      expect(File(exe).existsSync(), isTrue);
+      expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(wrote, isFalse);
+    });
+
+    test('目标是 exe 所在目录的**祖先**目录 → 拒绝', () async {
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'apps');
+      // exe 在 newRoot 的更深子目录（newRoot 是其祖先）。
+      final String exe = p.join(newDataRoot, 'Hibiki', 'bin', 'hibiki.exe');
+      File(exe)
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[0x4d, 0x5a]);
+
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: newDataRoot,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async {},
+          resolvedExecutablePath: exe,
+        )),
+        throwsA(isA<DataRootMigrationException>()),
+      );
+      expect(File(exe).existsSync(), isTrue);
+    });
+
+    test('exe 在 newRoot 之外（普通空目录）→ 不拒绝，正常迁移', () async {
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'good_root');
+      // exe 落在完全不相干的目录，不该触发安装目录拒绝。
+      final String exe = p.join(tmp.path, 'elsewhere', 'hibiki.exe');
+      File(exe)
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[0x4d, 0x5a]);
+      String? wrote;
+
+      final (Directory newDocs, Directory newSupport) =
+          await const DataRootMigrator().migrate(DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        newDataRoot: newDataRoot,
+        closeResources: () async {},
+        writeDataRootPref: (String r) async => wrote = r,
+        resolvedExecutablePath: exe,
+      ));
+      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(
+          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+              .existsSync(),
+          isTrue);
+      expect(wrote, equals(newDataRoot));
+    });
+
+    test('回滚绝不删用户选定的 newRoot 本体：保留其中的用户预存文件', () async {
+      await seedDb();
+      // 用户选了一个**已存在且含自己其它文件**的目录做数据根。
+      final String newDataRoot = p.join(tmp.path, 'user_picked');
+      final File userFile = File(p.join(newDataRoot, 'my_notes.txt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('do not delete me');
+
+      // 让 pref 写入失败，强制迁移在搬移成功后回滚。
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: newDataRoot,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async =>
+              throw StateError('prefs unavailable'),
+        )),
+        throwsA(isA<DataRootMigrationException>()),
+      );
+
+      // newRoot 本体保留，用户预存文件毫发无损。
+      expect(Directory(newDataRoot).existsSync(), isTrue);
+      expect(userFile.existsSync(), isTrue);
+      expect(userFile.readAsStringSync(), equals('do not delete me'));
+      // 迁移自建的 documents/support 子树已清理（无半迁移残留数据）。
+      expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
+      expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
+      // 旧根完整、数据回滚保留。
+      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(
+          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          isTrue);
+    });
+
+    test('Windows 文件锁错误码分类：5/32/33 判为「被占用」，普通错误不误判', () {
+      expect(DataRootMigrator.isWindowsLockCodeForTesting(5), isTrue);
+      expect(DataRootMigrator.isWindowsLockCodeForTesting(32), isTrue);
+      expect(DataRootMigrator.isWindowsLockCodeForTesting(33), isTrue);
+      expect(DataRootMigrator.isWindowsLockCodeForTesting(2), isFalse);
+      expect(DataRootMigrator.isWindowsLockCodeForTesting(18), isFalse);
+    });
+  });
+}
+
+/// 目录树下是否有任意文件（不含目录项）。用于断言回滚后 newRoot 下无迁移残留数据。
+bool _hasAnyFileUnder(String dirPath) {
+  final Directory dir = Directory(dirPath);
+  if (!dir.existsSync()) return false;
+  for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+    if (e is File) return true;
+  }
+  return false;
 }

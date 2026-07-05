@@ -78,6 +78,39 @@ void main() {
       final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
       expect(scaffold.backgroundColor, equals(const Color(0xFF223344)));
     });
+
+    testWidgets('TODO-1182 失败态：显示标题 + 原因 + 建议 + 重启按钮，点按触发 onRestart',
+        (WidgetTester tester) async {
+      int restarts = 0;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            ),
+            home: DataRootMigrationView(
+              failure: 'boom: 有文件被占用',
+              onRestart: () => restarts++,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // 标题 + 具体原因 + 可执行建议都醒目呈现（不再是无声失败）。
+      expect(find.text(t.data_storage_migrate_failed_title), findsOneWidget);
+      expect(find.text('boom: 有文件被占用'), findsOneWidget);
+      expect(
+          find.text(t.data_storage_migrate_failed_suggestions), findsOneWidget);
+      // 失败态不显示进度条。
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+
+      // 点重启按钮触发注入的回调（测试里不真重启）。
+      await tester.tap(find.text(t.data_storage_migrate_failed_restart));
+      await tester.pump();
+      expect(restarts, equals(1));
+    });
   });
 
   group('源码守卫 (TODO-959)', () {
