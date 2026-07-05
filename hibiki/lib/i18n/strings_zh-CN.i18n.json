@@ -2107,5 +2107,11 @@
   "data_storage_migrate_failed_suggestions": "请改选一个空目录后重试。不要选择应用安装目录，并确保目标位置没有文件正在被占用。",
   "data_storage_migrate_failed_restart": "重启",
   "data_storage_reject_install_dir": "所选目录是应用的安装位置，不能用来存放数据。请另选一个空目录。",
-  "data_storage_migrate_failed_title": "数据迁移失败"
+  "data_storage_migrate_failed_title": "数据迁移失败",
+  "backup_export_choose_books": "选择书籍",
+  "backup_export_books_all": "全部书籍",
+  "backup_export_select_all": "全选",
+  "backup_export_select_none": "全不选",
+  "backup_export_no_books": "没有可选的书籍",
+  "backup_export_books_selected": "已选 $count 本书"
 }

@@ -2107,5 +2107,11 @@
   "data_storage_migrate_failed_suggestions": "Please try again with a different, empty folder. Do not choose the app's install folder, and make sure no files in that location are in use.",
   "data_storage_migrate_failed_restart": "Restart",
   "data_storage_reject_install_dir": "That folder is the app's install location and can't store your data. Please choose a different, empty folder.",
-  "data_storage_migrate_failed_title": "Data migration failed"
+  "data_storage_migrate_failed_title": "Data migration failed",
+  "backup_export_choose_books": "Choose books",
+  "backup_export_books_all": "All books",
+  "backup_export_select_all": "Select all",
+  "backup_export_select_none": "Select none",
+  "backup_export_no_books": "No books to choose from",
+  "backup_export_books_selected": "$count books selected"
 }

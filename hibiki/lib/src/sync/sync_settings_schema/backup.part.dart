@@ -33,6 +33,12 @@ class _BackupExportWidget extends StatefulWidget {
 class _BackupExportWidgetState extends State<_BackupExportWidget> {
   bool _isExporting = false;
 
+  /// Per-book export selection (TODO-1195 part A). null = every book (the legacy
+  /// full export); a non-null set = only those `book_key`s travel. Persists
+  /// across dialog opens within this settings session (the picker re-seeds from
+  /// it); only consulted when the Books category is selected.
+  Set<String>? _selectedBookKeys;
+
   Future<void> _export() async {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an export is running.
@@ -65,7 +71,15 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       final filename = service.defaultFilename();
       final tmpPath = p.join(tmpDir.path, filename);
       final tmpFile = File(tmpPath);
-      await service.exportBackup(tmpPath, categories: categories);
+      // Per-book selection (TODO-1195 part A) only applies when the Books
+      // category is packed; excluding Books strips every book regardless.
+      await service.exportBackup(
+        tmpPath,
+        categories: categories,
+        bookKeys: categories.contains(BackupCategory.books)
+            ? _selectedBookKeys
+            : null,
+      );
 
       if (!mounted) return;
 
@@ -112,6 +126,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     final Set<BackupCategory> selected = defaultBackupExportCategories();
     assert(!selected.contains(BackupCategory.videos));
     assert(!selected.contains(BackupCategory.localAudio));
+    // Per-book selection (TODO-1195 part A). Mutated by the nested book picker;
+    // written back to [_selectedBookKeys] only when the dialog is confirmed.
+    Set<String>? chosenBooks = _selectedBookKeys;
     String labelFor(BackupCategory c) {
       switch (c) {
         case BackupCategory.dictionary:
@@ -177,6 +194,23 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                         }
                       }),
                     ),
+                  // Per-book selection row (TODO-1195 part A): only meaningful
+                  // when the Books category itself is packed.
+                  if (selected.contains(BackupCategory.books))
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(t.backup_export_choose_books),
+                      subtitle: Text(chosenBooks == null
+                          ? t.backup_export_books_all
+                          : t.backup_export_books_selected(
+                              count: chosenBooks!.length.toString())),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        final Set<String>? picked = await _pickBooks(chosenBooks);
+                        setLocal(() => chosenBooks = picked);
+                      },
+                    ),
                 ],
               ),
               footer: Wrap(
@@ -201,7 +235,123 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
         },
       ),
     );
-    return confirmed == true ? selected : null;
+    if (confirmed != true) return null;
+    // Commit the per-book selection only on confirm (cancel leaves it as-was).
+    _selectedBookKeys = chosenBooks;
+    return selected;
+  }
+
+  /// Nested picker for per-book export (TODO-1195 part A). Loads the library and
+  /// lets the user tick which books travel; [current] seeds the initial state
+  /// (null = every book). Returns the chosen set, collapsing "all ticked" back
+  /// to null (the legacy full-export path), or [current] unchanged on cancel.
+  Future<Set<String>?> _pickBooks(Set<String>? current) async {
+    final List<EpubBookRow> books =
+        await widget.settingsContext.appModel.database.getAllEpubBooks();
+    // State.context guarded by State.mounted (coherent for the lint): the
+    // settings page may have unmounted while the library loaded.
+    if (!mounted) return current;
+    if (books.isEmpty) {
+      _showSnackBar(context, t.backup_export_no_books);
+      return current;
+    }
+    final List<String> keys =
+        books.map((EpubBookRow b) => b.bookKey).toList(growable: false);
+    // Seed: null (all) → every book ticked; otherwise the given subset.
+    final Set<String> sel = current == null
+        ? keys.toSet()
+        : keys.where((String k) => current.contains(k)).toSet();
+
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) {
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+          return HibikiDialogFrame(
+            maxWidth: 460,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.card,
+            ),
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.backup_export_choose_books,
+              scrollable: true,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Text('${sel.length} / ${keys.length}',
+                          style: Theme.of(ctx).textTheme.bodySmall),
+                      const Spacer(),
+                      adaptiveDialogAction(
+                        context: ctx,
+                        onPressed: () =>
+                            setLocal(() => sel..clear()..addAll(keys)),
+                        child: Text(t.backup_export_select_all),
+                      ),
+                      adaptiveDialogAction(
+                        context: ctx,
+                        onPressed: () => setLocal(sel.clear),
+                        child: Text(t.backup_export_select_none),
+                      ),
+                    ],
+                  ),
+                  for (final EpubBookRow b in books)
+                    AdaptiveSettingsSwitchRow(
+                      title: b.title,
+                      value: sel.contains(b.bookKey),
+                      onChanged: (bool v) => setLocal(() {
+                        if (v) {
+                          sel.add(b.bookKey);
+                        } else {
+                          sel.remove(b.bookKey);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(t.dialog_cancel),
+                  ),
+                  adaptiveDialogAction(
+                    context: ctx,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(t.dialog_ok),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (confirmed != true) return current;
+    // "All ticked" collapses back to null so the export takes the legacy
+    // full-book path (and stays correct if a book is added/removed later).
+    if (sel.length == keys.length) return null;
+    return sel;
   }
 
   @override
