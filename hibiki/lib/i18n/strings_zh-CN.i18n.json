@@ -2096,5 +2096,8 @@
   "browser_extension_mobile_unsupported": "手机浏览器无法加载此扩展，请直接在 app 内阅读器/视频中查词。",
   "backup_import_overlay_warning": "正在恢复数据，请勿关闭应用。",
   "backup_import_restart_button": "立即重启",
-  "backup_import_overlay_title": "正在导入备份"
+  "backup_import_overlay_title": "正在导入备份",
+  "reader_frosted_bottom_bar": "毛玻璃悬浮底栏",
+  "reader_frosted_bottom_bar_hint": "给阅读器控制栏加毛玻璃模糊和半透明背景",
+  "reader_bottom_bar_opacity": "底栏不透明度"
 }
