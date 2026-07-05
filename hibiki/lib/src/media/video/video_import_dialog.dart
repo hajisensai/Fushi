@@ -493,7 +493,8 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 当前粘贴的 URL 是否命中已知网页视频站（YouTube/Netflix 等）。命中时显示软警告
   /// 并在点播放前弹「仍要尝试/取消」确认——不阻断、不按后缀硬拒（TODO-1000 part-A1）。
   bool get _streamUrlIsWebPage =>
-      isKnownWebPageVideoUrl(_streamUrlController.text);
+      isKnownWebPageVideoUrl(_streamUrlController.text) &&
+      !isYoutubeUrl(_streamUrlController.text);
 
   /// 「播放流」（TODO-850 阶段①）：把粘贴的 URL + 可选字幕 URL + 可选防盗链 header
   /// 包成 [UrlStreamVideoClient] 喂进既有远端播放链（[VideoHibikiPage.neutralizedRemote]）。
@@ -507,7 +508,9 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   Future<void> _playStreamUrl() async {
     final String url = _streamUrlController.text.trim();
     if (!isPlayableStreamUrl(url)) return;
-    if (isKnownWebPageVideoUrl(url)) {
+    // TODO-1159：YouTube 已由 resolveYoutubeSource 支持解析播放，不再弹「网页地址」软警告；
+    // 其它网页视频站（Netflix/bilibili 等）无解析器，仍弹确认（带「仍要尝试」逃生口）。
+    if (isKnownWebPageVideoUrl(url) && !isYoutubeUrl(url)) {
       final bool proceed = await _confirmWebPageUrl();
       if (!proceed || !mounted) return;
     }

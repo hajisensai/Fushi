@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 
 void main() {
@@ -33,6 +34,29 @@ void main() {
       final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:x');
       expect(cues.length, 1);
       expect(cues[0].text, "'");
+    });
+  });
+
+  // TODO-1159 M0：导入对话框「网页地址」软警告的判定谓词——命中已知网页视频站
+  // 且不是 YouTube 时才警告（YouTube 已由 resolveYoutubeSource 支持解析）。这里断言
+  // 该组合谓词的真值表，守卫 YouTube 抑制 / 非 YouTube 保留不被回退。
+  group('webpage warning suppression predicate (TODO-1159 M0)', () {
+    bool warns(String url) => isKnownWebPageVideoUrl(url) && !isYoutubeUrl(url);
+    test('YouTube 各形态一律不警告', () {
+      expect(warns('https://www.youtube.com/watch?v=abc123'), isFalse);
+      expect(warns('https://youtu.be/abc123'), isFalse);
+      expect(warns('https://m.youtube.com/watch?v=abc'), isFalse);
+      expect(warns('https://music.youtube.com/watch?v=abc'), isFalse);
+      expect(warns('https://www.youtube-nocookie.com/embed/abc'), isFalse);
+    });
+    test('非 YouTube 网页视频站仍保留警告', () {
+      expect(warns('https://www.netflix.com/watch/1'), isTrue);
+      expect(warns('https://www.bilibili.com/video/BV1'), isTrue);
+      expect(warns('https://www.nicovideo.jp/watch/sm1'), isTrue);
+    });
+    test('普通直链不警告', () {
+      expect(warns('https://cdn.example.com/a.m3u8'), isFalse);
+      expect(warns('https://example.com/video.mp4'), isFalse);
     });
   });
 }

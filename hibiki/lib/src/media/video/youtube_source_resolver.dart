@@ -2,6 +2,7 @@
 // player response（见下方注释与 resolveYoutubeSource）。dart format 会把多行 import 的
 // `show VideoController` 换行，令行内 `// ignore` 锚点失效，故用 file 级抑制。
 // ignore_for_file: invalid_use_of_internal_member
+import 'package:flutter/foundation.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
@@ -165,7 +166,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
     videoId,
     ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr],
   );
-  // 优先「video-only（≤1080p 里最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
+  // 优先「video-only（编码优先 avc1>vp9>av01，≤1080p 最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
   // 否则回落 muxed（YouTube 把 muxed 限 ≤360p，故仅作最后兜底）。
   String streamUrl;
   String? audioStreamUrl;
@@ -202,22 +203,81 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   );
 }
 
-/// 选播放用 video-only 流：优先「≤1080p 里最高清」。4K progressive 流（video-only 无
-/// 自适应码率）网络下持续缓冲 → 黑屏加载（用户 TODO-1000 原报障），1080p 对阅读器窗口足够
-/// 且流畅。全部 >1080p（罕见）时退最低清（宁流畅勿卡死）。
-String _pickPlaybackVideoUrl(yt.StreamManifest manifest) {
-  final List<yt.VideoOnlyStreamInfo> all = manifest.videoOnly.toList();
-  final List<yt.VideoOnlyStreamInfo> capped = all
-      .where((yt.VideoOnlyStreamInfo s) => s.videoResolution.height <= 1080)
-      .toList();
-  if (capped.isNotEmpty) {
-    capped.sort((yt.VideoOnlyStreamInfo a, yt.VideoOnlyStreamInfo b) =>
-        b.videoResolution.compareTo(a.videoResolution));
-    return capped.first.url.toString();
+/// 编码优先级（数字越小越优先）：avc1/H.264=0 > vp9=1 > av01=2 > 其它=3。
+///
+/// TODO-1159：H.264（avc1）几乎所有移动/桌面 GPU 都有硬件解码；VP9 次之；AV1（av01）
+/// 硬解支持最差，老机/无硬解设备走软解 → libmpv 掉帧抖动（用户原报「YouTube 播放卡顿」）。
+/// 同 1080p 下 YouTube 常同时给 avc1/vp9/av01，之前按分辨率取 `.first`（`List.sort` 非稳定）
+/// 常落到 vp9/av01 → 软解抖。故显式按编码优先挑。前缀匹配（avc1.640028 / vp09 / av01.0.08M）。
+int youtubeVideoCodecPriority(String videoCodec) {
+  final String c = videoCodec.toLowerCase();
+  if (c.startsWith('avc1') || c.startsWith('avc3') || c.startsWith('h264')) {
+    return 0;
   }
-  all.sort((yt.VideoOnlyStreamInfo a, yt.VideoOnlyStreamInfo b) =>
-      a.videoResolution.compareTo(b.videoResolution));
-  return all.first.url.toString();
+  if (c.startsWith('vp9') || c.startsWith('vp09')) return 1;
+  if (c.startsWith('av01') || c.startsWith('av1')) return 2;
+  return 3;
+}
+
+/// 纯函数：从 video-only 候选里挑「最适合流畅播放」的一条（TODO-1159 修卡顿）。
+///
+/// 选流优先级：
+/// 1. **编码优先** avc1(H.264) > vp9 > av01（[youtubeVideoCodecPriority]）——修软解抖的核心；
+/// 2. 先按 [maxHeight] cap（默认 1080，保画质不顺带降到 720），再在最优编码里取**分辨率最高**
+///    的一条（同编码就近上限）；
+/// 3. 同编码同分辨率再优先 **非 throttled**（`isThrottled==false`，正常 ANDROID_VR 都不
+///    throttled，纯保险 tiebreak）。
+/// 全部 >maxHeight（罕见）时退**最低清**（宁流畅勿卡死）。
+///
+/// 注意：注入泛型 + 访问器，核心只依赖每条流的 height/codec/throttled 三属性，便于纯函数
+/// 单测（免构造重量级 youtube_explode 对象）。返回被选中的原始元素；空列表抛 [StateError]。
+T pickPlaybackVideoStream<T>(
+  List<T> streams, {
+  required int Function(T stream) heightOf,
+  required String Function(T stream) codecOf,
+  required bool Function(T stream) throttledOf,
+  int maxHeight = 1080,
+}) {
+  if (streams.isEmpty) {
+    throw StateError('pickPlaybackVideoStream: empty stream list');
+  }
+  final List<T> capped =
+      streams.where((T s) => heightOf(s) <= maxHeight).toList();
+  if (capped.isEmpty) {
+    // 全部 >maxHeight：退最低清（宁流畅勿卡死）。
+    return (streams.toList()
+          ..sort((T a, T b) => heightOf(a).compareTo(heightOf(b))))
+        .first;
+  }
+  capped.sort((T a, T b) {
+    final int byCodec = youtubeVideoCodecPriority(codecOf(a))
+        .compareTo(youtubeVideoCodecPriority(codecOf(b)));
+    if (byCodec != 0) return byCodec;
+    final int byHeight = heightOf(b).compareTo(heightOf(a)); // 分辨率降序
+    if (byHeight != 0) return byHeight;
+    // 非 throttled 优先（throttled=true 排后）。
+    return (throttledOf(a) ? 1 : 0).compareTo(throttledOf(b) ? 1 : 0);
+  });
+  return capped.first;
+}
+
+/// 选播放用 video-only 流：编码优先（avc1>vp9>av01）→ ≤1080p 最高清 → 非 throttled
+/// （[pickPlaybackVideoStream]）。命中 throttled（异常，ANDROID_VR 正常不 throttled）时告警。
+String _pickPlaybackVideoUrl(yt.StreamManifest manifest) {
+  final yt.VideoOnlyStreamInfo chosen =
+      pickPlaybackVideoStream<yt.VideoOnlyStreamInfo>(
+    manifest.videoOnly.toList(),
+    heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
+    codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
+    throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
+  );
+  if (chosen.isThrottled) {
+    debugPrint(
+      '[hibiki][youtube] 选中的播放流 isThrottled=true（异常，缓冲可能慢）：'
+      'codec=${chosen.videoCodec} res=${chosen.videoResolution}',
+    );
+  }
+  return chosen.url.toString();
 }
 
 /// 选制卡 GIF/帧的低分辨率视频源：优先 muxed（360p，抽 GIF 实测 ~1.4s），否则最低码率
