@@ -1311,4 +1311,68 @@ void main() {
     expect(t.copy, isNotEmpty);
     expect(t.collection_sentence, isNotEmpty);
   });
+
+  group('subtitleTimestampColumnWidth (TODO-1200 时间戳列内容自适应)', () {
+    test('不足 1 小时用更窄的列（消除空隙、还宽度给文本）', () {
+      final double narrow = subtitleTimestampColumnWidth(14, false);
+      final double wide = subtitleTimestampColumnWidth(14, true);
+      expect(narrow, lessThan(wide));
+      // 短视频窄列明显小于旧的恒 ~60（旧 `(14-1)*4.6=59.8`），把宽度还给文本列。
+      expect(narrow, lessThan(52));
+    });
+
+    test('设下界防极窄字号下列太窄', () {
+      // 极小字号仍不低于各自下界（窄列 36 / 宽列 52）。
+      expect(subtitleTimestampColumnWidth(1, false), 36);
+      expect(subtitleTimestampColumnWidth(1, true), 52);
+    });
+
+    test('随字号放大', () {
+      expect(
+        subtitleTimestampColumnWidth(30, true),
+        greaterThan(subtitleTimestampColumnWidth(14, true)),
+      );
+    });
+  });
+
+  group('VideoSubtitleJumpPanel 行布局 (TODO-1200)', () {
+    testWidgets('窄面板上字幕文本列占据行主要空间（不再被时间戳/图标挤成 3-4 字折行）',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      // 短视频（无小时级时间戳）+ 制卡多选控件（勾选框常驻），复现窄面板拥挤场景。
+      controller.setCues(<AudioCue>[
+        _cue(0, 6000, 8000, 'ユーアーマイフレンド'),
+        _cue(1, 12000, 14000, 'これはテスト字幕です'),
+      ]);
+      final Set<int> selected = <int>{};
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        isCueSelectedForCard: (AudioCue c) => selected.contains(c.startMs),
+        onToggleCueSelection: (_) {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 240, // 移动端最窄档（panelWidth clamp 下限）。
+      )));
+
+      // 文本列（Expanded 内的 Text）实测宽度：应显著宽于时间戳列，且拿到行的主要空间。
+      final RenderBox textBox =
+          tester.renderObject<RenderBox>(find.text('ユーアーマイフレンド'));
+      // 时间戳列宽（内容自适应，短视频窄列）。
+      final double tsWidth = subtitleTimestampColumnWidth(14, false);
+      expect(textBox.size.width, greaterThan(tsWidth), reason: '文本列必须宽于时间戳列');
+      // 旧实现下文本列被挤到 ~50px（3-4 个假名折行）。修复后应明显更宽。
+      expect(textBox.size.width, greaterThan(80),
+          reason: '窄面板上文本列应拿到足够宽度，不再 3-4 字硬折行');
+      // 文本列应是行内最大的单列（宽于时间戳与动作列）。
+      expect(textBox.size.width, greaterThan(tsWidth * 1.5));
+    });
+  });
 }

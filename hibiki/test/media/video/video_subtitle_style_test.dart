@@ -421,4 +421,49 @@ void main() {
       expect(m.right, 16); // max(16, 4)
     });
   });
+
+  group('subtitleScreenScaleFactor (TODO-1199 字幕字号屏幕自适应)', () {
+    test('小屏缩小 < 参考(≈1) < 大屏放大', () {
+      // 参考短边 400 → 因子约 1（基准即所见）。
+      expect(
+          subtitleScreenScaleFactor(const Size(800, 400)), closeTo(1.0, 1e-9));
+      // 小屏短边 360 < 400 → 因子 < 1（自动缩小），仍在 min 之上（未夹）。
+      final double small = subtitleScreenScaleFactor(const Size(640, 360));
+      expect(small, lessThan(1.0));
+      expect(small, closeTo(0.9, 1e-9)); // 360/400
+      // 大屏短边 560 → 因子 > 1（自动放大），未夹。
+      final double large = subtitleScreenScaleFactor(const Size(1000, 560));
+      expect(large, greaterThan(1.0));
+      expect(large, closeTo(1.4, 1e-9)); // 560/400
+    });
+
+    test('取视口短边：横竖屏同尺寸得同因子', () {
+      expect(
+        subtitleScreenScaleFactor(const Size(400, 800)),
+        subtitleScreenScaleFactor(const Size(800, 400)),
+      );
+    });
+
+    test('夹上下限防极端；未布局(0)返回 1.0 不缩放', () {
+      // 超小屏夹到 minFactor 0.85（100/400=0.25 被夹）。
+      expect(subtitleScreenScaleFactor(const Size(100, 100)), 0.85);
+      // 超大屏夹到 maxFactor 1.6（4000/400=10 被夹）。
+      expect(subtitleScreenScaleFactor(const Size(4000, 4000)), 1.6);
+      // 短边 <= 0（未布局）→ 1.0。
+      expect(subtitleScreenScaleFactor(Size.zero), 1.0);
+    });
+
+    test('手动基准仍被尊重：有效字号 = 基准 × 因子（因子只是叠加乘数）', () {
+      final double bigScreen = subtitleScreenScaleFactor(const Size(1000, 560));
+      final double smallScreen =
+          subtitleScreenScaleFactor(const Size(640, 360));
+      // 同一基准在大屏比小屏放得更大。
+      expect(36.0 * bigScreen, greaterThan(36.0 * smallScreen));
+      // 同屏下有效字号与基准成正比（改基准 → 有效字号按比例变，手动可调）。
+      expect(
+        (48.0 * bigScreen) / (24.0 * bigScreen),
+        closeTo(2.0, 1e-9),
+      );
+    });
+  });
 }
