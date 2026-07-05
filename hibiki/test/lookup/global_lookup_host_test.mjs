@@ -936,4 +936,70 @@ function flushTimers() {
     'reused root re-reveals once the NEW card signals popupRendered');
 }
 
+// 29. TODO-1189 (X passthrough fix): each shell gets a z-index equal to its
+//     insertion depth (0 = root), establishing a per-shell stacking context so a
+//     deeper child shell fully covers its parent — and the parent's z-index:5
+//     close-X no longer escapes to paint OVER the child card. Without this the
+//     shells sat at z-index:auto and every close-X leaked above sibling shells.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      descriptor('frame-0', -1),
+      descriptor('frame-1', 0),
+      descriptor('frame-2', 1),
+    ],
+  });
+  const shells = shellsOf(document);
+  const zOf = (id) =>
+    shells.find((sx) => sx.getAttribute('data-frame-id') === id).style.zIndex;
+  assert.strictEqual(zOf('frame-0'), '0', 'root shell z-index = depth 0');
+  assert.strictEqual(zOf('frame-1'), '1', 'child shell z-index = depth 1');
+  assert.strictEqual(zOf('frame-2'), '2', 'grandchild shell z-index = depth 2');
+  // Strictly increasing with depth: a deeper shell always stacks above shallower.
+  assert.ok(
+    Number(zOf('frame-2')) > Number(zOf('frame-1')) &&
+      Number(zOf('frame-1')) > Number(zOf('frame-0')),
+    'shell z-index strictly increases with stack depth (deeper covers parent X)',
+  );
+}
+
+// 30. TODO-1190 (app-external nested highlight): host.highlightFrame(index,count)
+//     evals popup.js's hoshiSelection.highlightSelection(count) INSIDE the target
+//     (parent) frame's realm, marking the searched word in the parent card. A bad
+//     index / non-positive count is a no-op (returns false, no eval) so a failed
+//     highlight never breaks the lookup.
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [descriptor('frame-0', -1), descriptor('frame-1', 0)],
+  });
+  evalLog = [];
+  const ok = host.highlightFrame(0, 3);
+  assert.strictEqual(ok, true, 'highlightFrame(0,3) targets an existing frame');
+  const hl = evalLog.find(
+    (e) => e.frameId === 'frame-0' && /highlightSelection\(3\)/.test(e.code),
+  );
+  assert.ok(hl, 'highlightSelection(3) eval ran in the PARENT frame-0 realm');
+  assert.ok(
+    /window\.hoshiSelection/.test(hl.code),
+    'highlight goes through popup.js window.hoshiSelection',
+  );
+  // Wrong-realm guard: nothing was injected into the child frame-1.
+  assert.ok(
+    !evalLog.some((e) => e.frameId === 'frame-1'),
+    'highlightFrame(0,...) does NOT touch the child frame',
+  );
+  // No-op guards.
+  evalLog = [];
+  assert.strictEqual(host.highlightFrame(0, 0), false, 'count 0 -> no-op');
+  assert.strictEqual(host.highlightFrame(9, 3), false, 'bad index -> no-op');
+  assert.strictEqual(host.highlightFrame(-1, 3), false, 'negative index -> no-op');
+  assert.strictEqual(
+    evalLog.length,
+    0,
+    'a no-op highlight injects nothing',
+  );
+}
+
 console.log('global_lookup_host_test: PASS');

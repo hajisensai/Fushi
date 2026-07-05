@@ -707,6 +707,12 @@ class GlobalLookupController {
       return;
     }
     try {
+      // TODO-1190 — the PARENT frame (where the clicked word lives) is the
+      // current stack top. Capture its insertion-order index BEFORE pushing the
+      // child so we can highlight the searched word in the parent card after the
+      // child renders (app-external parity with the in-app popup, which marks the
+      // clicked word in the parent via DictionaryPopupWebView.highlightSelection).
+      final int parentIndex = _stack.length - 1;
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: query,
         searchWithWildcards: false,
@@ -721,6 +727,21 @@ class GlobalLookupController {
       _pushChildFrame(query, result, anchorRect);
       await _renderStack();
       glog('nested: "$query" entries=${result.entries.length}');
+      // TODO-1190 — mark the searched word inside the PARENT card's popup.js
+      // realm (host.highlightFrame -> hoshiSelection.highlightSelection). Only
+      // when the child search matched something; count = the matched char length
+      // (same source the in-app lookupHighlightCharCount reads). No-op host-side
+      // on a bad index / non-positive count.
+      final int highlightCount = result.entries.isEmpty
+          ? 0
+          : model.targetLanguage.getFinalHighlightLength(
+              result: result,
+              searchTerm: query,
+            );
+      if (parentIndex >= 0 && highlightCount > 0) {
+        await GlobalLookupChannel.render(
+            buildHighlightFrameScript(parentIndex, highlightCount));
+      }
       _autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('nested: EXCEPTION $e\n$st');

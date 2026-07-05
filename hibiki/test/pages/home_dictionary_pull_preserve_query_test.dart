@@ -188,7 +188,7 @@ void main() {
     );
 
     final int resultBodyStart = src.indexOf('Widget _buildSearchResultBody()');
-    final int pushPopupStart = src.indexOf('Future<void> _pushNestedPopup(');
+    final int pushPopupStart = src.indexOf('Future<int> _pushNestedPopup(');
     expect(resultBodyStart, isNonNegative);
     expect(pushPopupStart, greaterThan(resultBodyStart));
     final String resultBody = src.substring(resultBodyStart, pushPopupStart);

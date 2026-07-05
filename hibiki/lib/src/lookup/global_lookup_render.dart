@@ -169,6 +169,18 @@ String buildBeginLookupScript(String rootId) {
       'window.__globalLookupHost.beginLookup($encodedId);';
 }
 
+/// TODO-1190 — builds the host `highlightFrame(frameIndex, count)` script that
+/// marks the searched word inside a PARENT frame's popup.js realm after a nested
+/// lookup (parity with the in-app popup, which highlights the clicked word in
+/// the parent card via [DictionaryPopupWebView.highlightSelection]). [frameIndex]
+/// is the parent's insertion-order stack depth (0 = root); [count] is the matched
+/// char count ([lookupHighlightCharCount]). Inert when the host is not installed
+/// (guarded) and a no-op host-side on a bad index / non-positive count.
+String buildHighlightFrameScript(int frameIndex, int count) {
+  return 'window.__globalLookupHost && '
+      'window.__globalLookupHost.highlightFrame($frameIndex, $count);';
+}
+
 /// Builds the full stack render script for the host (TODO-867 P3b/P3c).
 /// Serialises every frame into the `{ popups: [...] }` payload
 /// global_lookup_host.js renderStack consumes, then calls
@@ -276,10 +288,20 @@ Map<String, Object?> _frameRectMap({
       'height': r.height,
     };
   }
+  // TODO-1189 — anchorless fallback. The old diagonal (left=top=offset) IGNORED
+  // the writing mode and stepped every layer DOWN-RIGHT, so a vertical-writing
+  // cascade drifted over the following kana columns. Step along the writing
+  // mode's SECONDARY axis only (never diagonally), mirroring computeFrameRect's
+  // real cascade axis: horizontal writing stacks DOWN (top), vertical writing
+  // stacks to the RIGHT (left) — the same side computeFrameRect prefers via
+  // showOnRight. The root (depth 0) still lands at the window origin (offset 0),
+  // so a single-frame lookup is unchanged. This branch is only reached when a
+  // frame has no real anchorRect (host failed to re-anchor); with an anchor the
+  // geometry comes from computeFrameRect above.
   final double offset = kGlobalLookupCascadeStep * depth;
   return <String, Object?>{
-    'left': offset,
-    'top': offset,
+    'left': isVertical ? offset : 0.0,
+    'top': isVertical ? 0.0 : offset,
     'width': maxWidth,
     'height': maxHeight,
   };
