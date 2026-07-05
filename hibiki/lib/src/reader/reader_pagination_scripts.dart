@@ -182,6 +182,50 @@ class ReaderPaginationScripts {
     return (safe / pageSize).floorToDouble() * pageSize;
   }
 
+  /// JS `buildPaginationMetrics` 的 min/maxScroll 落页纯 Dart 影子（TODO-1179）。
+  ///
+  /// 手动跳章分页恢复用 `contentFirstPageScroll`(=minScroll，前进 progress=0) /
+  /// `contentLastPageScroll`(=maxScroll，后退 progress=0.99) 落页。两者的取整边界是
+  /// 首/末行是否被跳的唯一决定因素：
+  /// - `minScroll` = min(maxAligned, alignContentStartToPage(firstContentEdge))。
+  ///   `alignContentStartToPage` 必须 **floor**（落到含首行内容边的那页），旧实现在
+  ///   内容边距页边界 <1px 时 `Math.round` 会向上取整 → minScroll 抬一页 → 首行整页被跳。
+  /// - `maxAligned` = floor((ctxMaxScroll + 1) / pageStep) * pageStep。**+1px 容差**
+  ///   吸收单一量纲下 totalSize 比 numCols*pageStep 少零点几 px 的 sub-pixel 下溢，
+  ///   否则裸 floor 把 P*pageStep−ε 砍成 (P−1)*pageStep → 末列整页(含末行)不可达。
+  /// - `maxScroll` = min(maxAligned, lastContentScroll)；`lastContentScroll` 夹住
+  ///   maxScroll 不越过末内容页，容差绝不引入空白末页。
+  ///
+  /// 与 JS 同算法（headless WebView 不可用）。所有量都在滚动轴向、CSS px，pageStep 为
+  /// 真实列周期(column-width + gap)。返回 (minScroll, maxScroll)。
+  @visibleForTesting
+  static ({double minScroll, double maxScroll}) resolveContentBoundsForTesting({
+    required double firstContentEdge,
+    required double lastContentEdge,
+    required double contextMaxScroll,
+    required double pageStep,
+  }) {
+    if (pageStep <= 0) {
+      return (minScroll: 0, maxScroll: 0);
+    }
+    final double maxAligned =
+        ((contextMaxScroll + 1) / pageStep).floorToDouble() * pageStep;
+    // 章首/内容起始边落页：floor，绝不 round-up 跳过首行。
+    final double startSafe = firstContentEdge < 0 ? 0 : firstContentEdge;
+    final double startAligned =
+        (startSafe / pageStep).floorToDouble() * pageStep;
+    final double minScroll =
+        maxAligned < startAligned ? maxAligned : startAligned;
+    final double lastContentScroll = lastContentEdge <= 0
+        ? 0
+        : (((lastContentEdge - 1) < 0 ? 0 : (lastContentEdge - 1)) / pageStep)
+                .floorToDouble() *
+            pageStep;
+    final double maxScroll =
+        maxAligned < lastContentScroll ? maxAligned : lastContentScroll;
+    return (minScroll: minScroll, maxScroll: maxScroll);
+  }
+
   /// 连续(滚动)模式收藏句跳转落点的纯 Dart 影子（BUG-461）。
   ///
   /// 收藏记录存了句子的**起始字符**和**字符长度**（`FavoriteSentence.normCharOffset`
@@ -1716,12 +1760,14 @@ $_sharedJs
     return Math.floor(Math.max(0, offset) / context.pageSize) * context.pageSize;
   },
   alignContentStartToPage: function(context, offset) {
-    var safeOffset = Math.max(0, offset);
-    var nearestPage = Math.round(safeOffset / context.pageSize) * context.pageSize;
-    if (Math.abs(safeOffset - nearestPage) < 1) {
-      return nearestPage;
-    }
-    return this.alignToPage(context, safeOffset);
+    // TODO-1179：章首落点只能向下偏置到「包含首行内容边」的那一页。firstContentEdge
+    // 恰落在页边界下方 <1px（k*pageStep-ε，sub-pixel）时旧 Math.round 会向上取整到页 k，
+    // 但首行内容边实际在页 k-1 → minScroll 抬到页 k、手动前进跳章 progress=0 落第二页、
+    // 整页首行被跳。内容起始边恒属于它所在页(floor)，floor 对边界上/下方 sub-pixel 都落
+    // 「含首行」那页，绝不跳过首行（宁可多显示半列 padding）。与 scrollToCharOffset /
+    // scrollToProgressPaged 的 floor(alignToPage) 落页锚同量纲；此函数只被 minScroll
+    // 一处调用，无其它场景受影响。
+    return this.alignToPage(context, offset);
   },
   pageStepPosition: function(currentScroll, pitch) {
     if (pitch <= 0) return currentScroll;
@@ -1801,7 +1847,15 @@ $_sharedJs
   buildPaginationMetrics: function() {
     var context = this.getScrollContext();
     var currentScroll = this.getPagePosition(context);
-    var maxAlignedScroll = Math.floor(context.maxScroll / context.pageSize) * context.pageSize;
+    // TODO-1179：context.maxScroll = totalSize − pageStep，单一量纲下应恰为末列页的
+    // 整页倍数；但竖排 vh/chrome-inset sub-pixel 使 totalSize 比 numCols*pageStep 少
+    // 零点几 px → 裸 floor 把 P*pageStep−ε 砍成 (P−1)*pageStep，末列整页(含末行)不可达
+    // → 手动后退跳章 progress=0.99 落 maxScroll 停在倒数第二页、末行被跳。加 1px 容差吸收
+    // sub-pixel 下溢（要真多一页需近乎一整列真实尾随空间，容差绝不越界；下方 maxScroll 仍
+    // 被 lastContentScroll 上限夹住不越过末内容页，setPagePosition 再 clamp 到物理
+    // context.maxScroll，绝不 overscroll）。与 pageStepPosition / alignContentStartToPage
+    // 的 1px sub-pixel 归一同口径。
+    var maxAlignedScroll = Math.floor((context.maxScroll + 1) / context.pageSize) * context.pageSize;
     if (context.pageSize <= 0) {
       var emptyMetrics = { minScroll: 0, maxScroll: 0, totalChars: 0, progressStops: [] };
       this.paginationMetrics = emptyMetrics;
