@@ -2637,15 +2637,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         baseHeight: _readerPopupHeaderBaseHeight,
         child: SizedBox(
           height: _readerPopupHeaderBaseHeight,
+          // TODO-1187：header 底边框已移出 —— 分隔线改由 [DictionaryPopupLayer] 在
+          // 「有词条」时才画（无结果/搜索中悬空的多余横线消除）。
           child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: theme.dividerColor,
-                  width: 0.5,
-                ),
-              ),
-            ),
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
