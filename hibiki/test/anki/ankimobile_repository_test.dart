@@ -162,8 +162,9 @@ void main() {
 
     final cover = File('${temp.path}/clip.gif');
     await cover.writeAsBytes(<int>[0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
-    final sentenceAudio = File('${temp.path}/sentence.aac');
-    await sentenceAudio.writeAsBytes(<int>[0xff, 0xf1, 0x50, 0x80]);
+    final sentenceAudio = File('${temp.path}/sentence.m4a');
+    await sentenceAudio
+        .writeAsBytes(<int>[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]);
     final wordAudio = File('${temp.path}/word.mp3');
     await wordAudio.writeAsBytes(<int>[0x49, 0x44, 0x33, 0x04]);
 
@@ -248,7 +249,7 @@ void main() {
     expect(fields['fldExpressionAudio'],
         matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.mp3$')));
     expect(fields['fldSentenceAudio'],
-        matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.aac$')));
+        matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.m4a$')));
     expect(fields['fldPicture'],
         matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.gif$')));
     expect(
