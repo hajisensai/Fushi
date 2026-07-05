@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/builtin_tags.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -116,6 +117,23 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     await _reload();
   }
 
+  // TODO-1166：一键把内置星级标签（1⭐..5⭐）补入标签池。
+  // 只增不删（[seedStarRatingTags] 命中同名即跳过），零误删风险：不会碰用户
+  // 自建标签，也不会动任何书籍映射。老用户想切到星级评分点这里即可，旧的
+  // 「在读/读完」标签由用户自行决定是否删除。
+  Future<void> _seedStarTags() async {
+    final int added = await seedStarRatingTags(_db);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          added > 0 ? t.tag_seed_stars_added : t.tag_seed_stars_exists,
+        ),
+      ),
+    );
+    await _reload();
+  }
+
   Future<TagEditResult?> _showTagEditDialog({
     required String title,
     required String initialName,
@@ -137,6 +155,13 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiPageScaffold(
       title: t.tag_manage_title,
+      actions: <Widget>[
+        IconButton(
+          icon: const Icon(Icons.star_outline),
+          tooltip: t.tag_seed_stars,
+          onPressed: _seedStarTags,
+        ),
+      ],
       floatingActionButton: FloatingActionButton(
         onPressed: _createTag,
         tooltip: t.tag_new,

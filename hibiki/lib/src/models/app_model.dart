@@ -32,6 +32,7 @@ import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/models/app_font_loader.dart';
+import 'package:hibiki/src/models/builtin_tags.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
@@ -2019,14 +2020,14 @@ class AppModel with ChangeNotifier {
   Future<void> _setPref(String key, dynamic value) =>
       prefsRepo.setPref(key, value);
 
+  // TODO-1166：新装时把内置默认标签播种为 5 档星级评分（1⭐..5⭐）。
+  // 仍是「一次性、仅空池」播种：`builtInTagsSeeded` 标志种过即不再动，空池才种，
+  // 保证既有用户的标签池不被覆盖（老用户改星级走标签管理页的一键补齐入口）。
   Future<void> _seedBuiltInTags() async {
     if (prefsRepo.containsKey('builtInTagsSeeded')) return;
     final existing = await _database.getAllTags();
     if (existing.isEmpty) {
-      const int blue = 0xFF42A5F5;
-      const int green = 0xFF66BB6A;
-      await _database.createTag(t.tag_builtin_reading, blue);
-      await _database.createTag(t.tag_builtin_finished, green);
+      await seedStarRatingTags(_database);
     }
     await _setPref('builtInTagsSeeded', 'true');
   }
