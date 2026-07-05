@@ -178,13 +178,23 @@ void main() {
       if (dictFile.existsSync()) dictFile.deleteSync();
     });
 
+    final events = <String>[];
     final launched = <Uri>[];
     final repo = AnkiMobileRepository(
       openUrl: (uri) async {
+        expect(events, contains('begin-background-task'));
+        events.add('open-ankimobile');
         launched.add(uri);
         return true;
       },
       readInfoForAddingJson: () async => null,
+      mediaServerLifetime: Duration.zero,
+      beginMediaImportBackgroundTask: () async {
+        events.add('begin-background-task');
+      },
+      endMediaImportBackgroundTask: () async {
+        events.add('end-background-task');
+      },
     );
     await repo.saveSettings(const AnkiSettings(
       selectedDeckId: 0,
@@ -255,5 +265,11 @@ void main() {
       expect(value, isNot(contains(temp.path)));
       expect(value, isNot(contains('hoshi_dict_0.svg')));
     }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(events, <String>[
+      'begin-background-task',
+      'open-ankimobile',
+      'end-background-task',
+    ]);
   });
 }

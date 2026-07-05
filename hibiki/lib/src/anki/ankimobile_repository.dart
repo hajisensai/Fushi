@@ -223,6 +223,51 @@ class AnkiMobileRepository extends BaseAnkiRepository {
 
     _AnkiMobileMediaServer? mediaServer;
     Future<_AnkiMobileMediaServer>? mediaServerFuture;
+    Timer? mediaServerCloseTimer;
+    var mediaServerKeepAliveStarted = false;
+    Future<void>? mediaServerCloseFuture;
+
+    Future<void> closeMediaServerKeepAlive() {
+      final pendingClose = mediaServerCloseFuture;
+      if (pendingClose != null) return pendingClose;
+
+      mediaServerCloseTimer?.cancel();
+      mediaServerCloseTimer = null;
+      final server = mediaServer;
+      mediaServer = null;
+      final shouldEndBackgroundTask = mediaServerKeepAliveStarted;
+      mediaServerKeepAliveStarted = false;
+
+      mediaServerCloseFuture = () async {
+        await server?.close();
+        if (shouldEndBackgroundTask) {
+          await _endMediaImportBackgroundTask();
+        }
+      }();
+      return mediaServerCloseFuture!;
+    }
+
+    Future<void> beginMediaServerKeepAliveIfNeeded() async {
+      if (mediaServer == null ||
+          mediaServerKeepAliveStarted ||
+          mediaServerCloseFuture != null) {
+        return;
+      }
+
+      await _beginMediaImportBackgroundTask();
+      mediaServerKeepAliveStarted = true;
+
+      void closeLater() {
+        unawaited(closeMediaServerKeepAlive());
+      }
+
+      if (_mediaServerLifetime > Duration.zero) {
+        mediaServerCloseTimer = Timer(_mediaServerLifetime, closeLater);
+      } else {
+        Timer.run(closeLater);
+      }
+    }
+
     Future<String?> localMediaRef(
       String filePath, {
       String? mimePath,
@@ -244,7 +289,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       );
       final fields = rendered.fields;
       if (fields.isEmpty) {
-        await mediaServer?.close();
+        await closeMediaServerKeepAlive();
         return MineOutcome.failure(
           'All fields are empty — refusing to create a blank card. '
           'Check your note type field mappings.',
@@ -272,33 +317,21 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         successCallback: success,
       );
 
+      // Start the iOS background task before switching apps, otherwise the
+      // localhost server can be suspended before AnkiMobile downloads media.
+      await beginMediaServerKeepAliveIfNeeded();
       final opened = await _openUrl(uri);
       if (!opened) {
-        await mediaServer?.close();
+        await closeMediaServerKeepAlive();
         return MineOutcome.failure(
           'Could not open AnkiMobile. Install AnkiMobile and try again.',
         );
       }
-      if (mediaServer != null) _keepMediaServerAlive(mediaServer!);
       return MineOutcome.success(audioWarning: rendered.audioWarning);
     } catch (_) {
-      await mediaServer?.close();
+      await closeMediaServerKeepAlive();
       rethrow;
     }
-  }
-
-  void _keepMediaServerAlive(_AnkiMobileMediaServer server) {
-    unawaited(() async {
-      await _beginMediaImportBackgroundTask();
-      try {
-        if (_mediaServerLifetime > Duration.zero) {
-          await Future<void>.delayed(_mediaServerLifetime);
-        }
-      } finally {
-        await server.close();
-        await _endMediaImportBackgroundTask();
-      }
-    }());
   }
 
   Future<RenderedMinedFields> _renderMinedFieldsForAnkiMobile({
