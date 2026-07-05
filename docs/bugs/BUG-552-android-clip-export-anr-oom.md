@@ -1,0 +1,12 @@
+## BUG-552 · 安卓导出片段视频ANR/OOM崩溃
+- **报告**：2026-07-05（用户：）
+- **真实性**：✅ 真 bug。安卓「导出片段视频」竖排有声书长片段=UI isolate 卡死 ANR + native OOM，三处叠加根因（origin/develop 2a5c528f5）：
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart:1408`（原）`_synthDynamicClipVideo` 一次性把全部 N 帧 1080×1920 PNG 收进 `pngs` 列表，随后 `for` 循环在 **UI isolate 同步无 await** 逐帧 `encodeClipTextFrameAsJpg`（`audiobook_clip_export.dart:312`，2MP PNG 解码 + JPEG 编码）→ 冻死主线程 → 安卓 ANR 杀进程；静态回退 `audiobook.part.dart:1277`（原）同病。
+  - `hibiki/lib/src/media/audiobook/audiobook_clip_webview_render.dart:205`（原）单 headless WebView 循环 `takeScreenshot()`，每帧 8.3MB native 位图 + N 份 PNG 全驻留 → native OOM；且 `:212`（原）`takeScreenshot()` 无超时（load 有 8s 超时，截图没）→ 单帧卡死永久挂住整条管线。
+- **[x] ① 已修复** — commit `268f350c9`。
+  - JPEG 编码卸后台 isolate：`audiobook_clip_export.dart` 新增 `encodeClipTextFrameAsJpgAsync`（`Isolate.run`，传 Uint8List 进/出），UI isolate 不再被 2MP 解码/编码阻塞；`audiobook.part.dart` 动态逐帧路径与静态回退（原 :1277）都改调异步版。
+  - 流式不全驻留：渲染层 `renderAudiobookClipFrames` / `renderAudiobookClipFramesViaWebView` 从返回 `List<Uint8List?>` 改逐帧回调 `AudiobookClipFrameSink onFrame`（新 typedef）；`_synthDynamicClipVideo` 渲一帧→后台编码→落盘「母帧」`master_<idx>.jpg`→释放，内存里任一时刻只驻留一帧，帧计划展开时从母帧 `copy` 成 `frame_%04d.jpg`。横排（Flutter raster）与竖排（WebView）同一回调路径同治。
+  - `takeScreenshot()` 加 `.timeout(_kClipScreenshotTimeout=8s)`（对齐 load 语义），超时捕获 `TimeoutException` 记日志→该帧 null→调用方回退单句静态，绝不无限卡死。
+  - 零回归：下游 image2 ffmpeg 序列帧/单图契约（JPEG 帧 `frame_%04d.jpg` + `-shortest`）不变；`master_*` 命名不被 `frame_%04d.jpg` demuxer 命中，随 framesDir 一并清理。120s 时长上限保留（流式后大 N 不再 OOM/ANR，缩上限会回退用户可导出长度=破坏 userspace）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/audiobook_clip_anr_oom_guard_test.dart`（commit `268f350c9`）。源码扫描守卫（ANR/OOM 无法在 widget test 可靠复现）：(a) `encodeClipTextFrameAsJpgAsync` 经 `Isolate.run` + audiobook.part.dart 零同步 `encodeClipTextFrameAsJpg(` 调用；(b) 每个 `takeScreenshot()` 都 `.timeout(` 守护；(c) 渲染层不再返回 `List<Uint8List?>`、`_synthDynamicClipVideo` 不再持 `pngs`/`jpgByIndex` 全帧容器、走母帧 `copy` 流式。另 `audiobook_clip_text_render_test.dart` widget 测试改用 onFrame 回调（真 Overlay + pipeline）验逐帧高亮不同。
+- **备注**：真机验收口径——安卓竖排有声书选长片段（多句连读）导出，全程不 ANR（无「应用无响应」弹窗）、不 native OOM 闪退，成功产出逐句高亮跟随的 .mov 片段并可分享。

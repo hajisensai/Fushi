@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 537 条。点号进各自文件。
+> 共 538 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-552](bugs/BUG-552-android-clip-export-anr-oom.md) | ✅ | ✅ | 安卓导出片段视频ANR/OOM崩溃 |
 | [BUG-551](bugs/BUG-551-dict-result-webview-lower-half-blank.md) | ✅ | ✅ | in-app 查词结果区 WebView 下半屏空白(Windows WebView2/WGC 渲染完 idle 无 damage) |
 | [BUG-550](bugs/BUG-550-ffmpeg-715-crash.md) | ✅ | ✅ | ffmpeg 7.1.5 本地构建二进制崩溃破坏视频制卡 |
 | [BUG-549](bugs/BUG-549-glookup-overlay-env-conflict.md) | ✅ | ✅ | Windows app-external lookup shows no popup (overlay WebView2 env fails silently) |
