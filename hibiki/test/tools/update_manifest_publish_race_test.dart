@@ -105,7 +105,12 @@ void main() {
     expect(assets.length, 2);
   });
 
-  test('a newer tag fully supersedes stale prior-tag assets', () async {
+  test('a newer tag from another platform keeps the lagging platform asset',
+      () async {
+    // TODO-1173: a newer DESKTOP tag must not fully supersede the older ANDROID
+    // asset -- that android build is android's only release, so dropping it
+    // leaves android clients with no update. Keep both (cross-platform union),
+    // advertise the newest tag.
     final _Fixture fx = await _Fixture.create();
     addTearDown(fx.dispose);
 
@@ -127,9 +132,56 @@ void main() {
     expect(newDesktop.exitCode, 0, reason: _io(newDesktop));
 
     final List<String> assets = await fx.finalAssetNames();
-    expect(assets, <String>[fx.exeName],
-        reason: 'stale prior-tag asset should be superseded: $assets');
+    expect(
+      assets,
+      containsAll(<String>[
+        'hibiki-0.11.1-debug.5630-08dc73c-debug.apk',
+        fx.exeName,
+      ]),
+      reason: 'cross-platform union dropped the lagging platform: $assets',
+    );
+    expect(assets.length, 2);
     expect(await fx.finalTag(), 'v0.11.1-debug.5633+3cf5905');
+    expect(await fx.finalReleaseSequence(), 5633);
+  });
+
+  test('a late older-sequence publish never downgrades the manifest', () async {
+    // TODO-1173 core guard: the reported bug was an installed newer build being
+    // shown an OLDER latest. It happened when a slow older-sequence platform job
+    // finished after a newer push and overwrote the whole manifest. The merge
+    // must keep advertising the newest sequence and only add the late asset.
+    final _Fixture fx = await _Fixture.create();
+    addTearDown(fx.dispose);
+
+    final ProcessResult newDesktop = await fx.publish(
+      label: 'desktop',
+      artifactsSubdir: 'art_desktop',
+      assetGlob: 'hibiki-*-windows-setup.exe',
+    );
+    expect(newDesktop.exitCode, 0, reason: _io(newDesktop));
+
+    final ProcessResult oldAndroid = await fx.publish(
+      label: 'android',
+      artifactsSubdir: 'art_android_old',
+      assetGlob: 'hibiki-*.apk',
+      tag: 'v0.11.1-debug.5630+08dc73c',
+      version: '0.11.1-debug.5630',
+      releaseSequence: 5630,
+    );
+    expect(oldAndroid.exitCode, 0, reason: _io(oldAndroid));
+
+    expect(await fx.finalTag(), 'v0.11.1-debug.5633+3cf5905');
+    expect(await fx.finalReleaseSequence(), 5633);
+    final List<String> assets = await fx.finalAssetNames();
+    expect(
+      assets,
+      containsAll(<String>[
+        'hibiki-0.11.1-debug.5630-08dc73c-debug.apk',
+        fx.exeName,
+      ]),
+      reason: 'late older publish lost an asset: $assets',
+    );
+    expect(assets.length, 2);
   });
 }
 
@@ -245,6 +297,11 @@ class _Fixture {
   Future<String> finalTag() async {
     final Map<String, dynamic> m = await _finalManifest();
     return m['tag'] as String;
+  }
+
+  Future<int> finalReleaseSequence() async {
+    final Map<String, dynamic> m = await _finalManifest();
+    return m['releaseSequence'] as int;
   }
 
   Future<void> dispose() async {
