@@ -739,6 +739,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                   onOverwriteTargetNoteId: findOverwriteTargetNoteId,
                   onScrolledToBottom: _allLoaded ? null : _loadMore,
                   onTopPullReleased: _clearSearchFromResultPull,
+                  // TODO-1152：结果区 WebView 填满 [Expanded]（全高固定大区域）。
+                  // Windows 上 WebView2 内容在 put_Bounds 撑高后 render 完即 idle 无
+                  // damage，宿主 WGC 帧池采不到新暴露下半区（下半屏黑）。渲染完补一次
+                  // 表面重绘 nudge 逼出完整视口帧。嵌套弹窗内容自适应、无此问题，不开。
+                  nudgeSurfaceOnRender: true,
                 ),
               ],
             ),

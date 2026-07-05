@@ -89,6 +89,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onTopPullReleased,
     this.onRendered,
     this.onRenderError,
+    this.nudgeSurfaceOnRender = false,
   });
 
   final DictionarySearchResult result;
@@ -171,6 +172,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// `popupRendered` 才显示的冷层若加载失败，`popupRendered` 永不会发；宿主据此
   /// 立即把该层翻可见（加载失败也显示空壳，至少不卡死「点查词什么都不出」）。
   final VoidCallback? onRenderError;
+
+  /// TODO-1152：内容渲染完成（`popupRendered`）后是否补一次「表面重绘 nudge」。
+  /// 仅用于把 WebView 撑满一块固定大区域（如 in-app 查词页的结果区，[Expanded] 全高）
+  /// 的宿主：Windows 上 WebView2 内容在尺寸增大后 render 完即 idle 无 damage，宿主
+  /// WGC 帧池采不到新暴露的下半区（下半屏黑）。渲染完逼一帧合成即可让 WGC 捕获完整
+  /// 视口。默认 false，保持 nested 弹窗等内容自适应宿主的原行为不变（Never break
+  /// userspace）。非 Windows 平台恒为 no-op（原生 WebView 正常合成）。
+  final bool nudgeSurfaceOnRender;
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -258,6 +267,35 @@ class DictionaryPopupWebViewState
   // 桌面 in-app 弹窗与 Windows 全局查词覆盖窗共用）。touch + pointer/mouse 两套识别，
   // 解决桌面 WebView2 不触发 touch 导致下滑关闭失效。
   static const String _topPullReleaseJs = kPopupTopPullReleaseJs;
+
+  // TODO-1152：内容渲染完成后逼一帧合成的「表面重绘 nudge」JS。put_Bounds 增大后
+  // WebView2 已按新视口重排/重栅格，但内容随即 idle、compositor 不再产帧，宿主 WGC
+  // 帧池（尺寸已随 setSurfaceSize 重建为全高）采不到新暴露下半区 → 下半屏黑。改 opacity
+  // 到 0.9999（肉眼不可辨）触发一次全页合成，下一帧还原：这一帧 WebView2 产出 →
+  // OnFrameArrived → WGC 捕获到完整视口。opacity<1 只建立层叠上下文、不为 fixed 后代
+  // 建立包含块（不像 transform），故不动图片放大 .overlay 的 fixed 定位。幂等、无害。
+  static const String _surfaceRepaintNudgeJs = r'''
+(function(){
+  try {
+    var el = document.documentElement;
+    if (!el) return;
+    var prev = el.style.opacity;
+    el.style.opacity = '0.9999';
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ el.style.opacity = prev; });
+    });
+  } catch (e) {}
+})();
+''';
+
+  /// TODO-1152：渲染完成后（`popupRendered`）对 WebView 表面补一次重绘 nudge，逼
+  /// WebView2 产出一帧让宿主 WGC 帧池捕获完整视口，消除下半屏黑。仅在
+  /// [DictionaryPopupWebView.nudgeSurfaceOnRender] 且 Windows 平台执行；其余平台/宿主
+  /// 恒 no-op（原生 WebView 正常合成，改动零行为影响）。
+  void _nudgeSurfaceRepaint() {
+    if (!isWindowsPlatform) return;
+    _controller?.evaluateJavascript(source: _surfaceRepaintNudgeJs);
+  }
 
   void highlightSelection(int charCount) {
     _controller?.evaluateJavascript(
@@ -856,6 +894,9 @@ class DictionaryPopupWebViewState
                   return null;
                 }
                 widget.onRendered?.call();
+                // TODO-1152：全高填充宿主（in-app 查词结果区）渲染完成后补一次表面
+                // 重绘 nudge，逼 Windows WebView2/WGC 捕获完整视口，消除下半屏黑。
+                if (widget.nudgeSurfaceOnRender) _nudgeSurfaceRepaint();
                 return null;
               },
             );
