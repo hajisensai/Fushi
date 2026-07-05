@@ -253,11 +253,20 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     appModel.failDataRootMigration(failureMessage);
   }
 
-  /// 注入给迁移引擎的真实资源关闭：停音频，关词典 FFI，checkpoint+关 DB，确保
-  /// Windows 上文件锁释放、整目录可被 rename/搬移。顺序与 main.dart 退出闸门一致，
-  /// 额外补上音频与 FFI（退出闸门没做这两步）。
+  /// 注入给迁移引擎的真实资源关闭：停音频（含 media_kit/libmpv 对数据根内音频文件的
+  /// 句柄）、清 Flutter 图片缓存、关词典 FFI、checkpoint+关 DB，确保 Windows 上数据根
+  /// 子树里的文件句柄尽量释放、整目录可被 rename/搬移。顺序与 main.dart 退出闸门一致，
+  /// 额外补上音频、图片缓存与 FFI（退出闸门没做这几步）。
+  ///
+  /// 关于 WebView2：常驻热 WebView2 的 user-data 目录在数据根**之外**（进程默认基于
+  /// exe 名的目录 + 应用外查词覆盖窗的 `%LOCALAPPDATA%\Hibiki\GlobalLookupWebView2`，
+  /// 见 `windows/runner/global_lookup_window.cpp`），不落在被迁移的 documents/support
+  /// 子树里，故 dispose 它对释放数据根文件锁无意义、此处不做（避免无效的连带拆引擎）。
+  /// 真正压在数据根子树上的句柄是：正在播放的音频/视频文件（media_kit/libmpv）、封面/
+  /// 缩略图解码、词典索引/资源、DB 及 local_audio_*.db。
   static Future<void> _closeRuntimeResources(AppModel appModel) async {
-    // 1) 停音频句柄（just_audio / AudiobookPlayerController）。
+    // 1) 停音频句柄（just_audio / AudiobookPlayerController；桌面经 just_audio_media_kit
+    //    → libmpv 打开数据根内的音频文件，未停会锁住 rename/删源）。
     try {
       await appModel.audiobookSession.stop();
     } catch (e) {
@@ -270,9 +279,18 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       debugPrint(
           'DataRoot migrate: audioHandler.stop failed (best-effort): $e');
     }
-    // 2) 释放词典 FFI 原生句柄（静态单例）。
+    // 2) 清 Flutter 图片缓存：释放封面/缩略图解码持有的解码资源。FileImage 通常读完
+    //    即关句柄，此处更多是防御性清理（活图连带 clearLiveImages），成本极低。
+    try {
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    } catch (e) {
+      debugPrint('DataRoot migrate: imageCache clear failed (best-effort): $e');
+    }
+    // 3) 释放词典 FFI 原生句柄（静态单例；打开数据根内的词典索引/资源文件）。
     HoshiDicts.disposeInstance();
-    // 3) WAL checkpoint(TRUNCATE) 落盘 + 关 DB（释放文件锁）。
+    // 4) WAL checkpoint(TRUNCATE) 落盘 + 关 DB（释放文件锁）。
     try {
       await appModel.database
           .customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

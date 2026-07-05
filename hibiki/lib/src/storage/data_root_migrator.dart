@@ -266,14 +266,16 @@ class DataRootMigrator {
     }
     await dst.parent.create(recursive: true);
     try {
-      await src.rename(dst.path);
+      // Windows 上刚关闭的 DB/音频/FFI 句柄可能滞后释放，或 Defender/索引器短暂锁住
+      // 树里某个文件 → rename 返回锁码 5/32/33；有界退避重试把瞬态锁转成成功。
+      await _withLockRetry(() => src.rename(dst.path));
       return;
     } on FileSystemException catch (e) {
       if (!_shouldCopyAfterRenameFailure(e)) rethrow;
     }
     // 跨卷或 rename 被沙箱/权限层拒绝：copy + verify + delete。
     await _copyTreeVerified(src, dst, progress);
-    await src.delete(recursive: true);
+    await _deleteSourceAfterVerifiedCopy(src);
   }
 
   /// 选择性搬移：逐个搬 [src] 顶层项到 [dst]，跳过基名命中 [excludeTopLevelNames] 的
@@ -293,7 +295,7 @@ class DataRootMigrator {
       if (excludeTopLevelNames.contains(name)) continue; // prefs 留原地。
       final String target = p.join(dst.path, name);
       try {
-        await entity.rename(target);
+        await _withLockRetry(() => entity.rename(target));
         continue;
       } on FileSystemException catch (e) {
         if (!_shouldCopyAfterRenameFailure(e)) rethrow;
@@ -301,7 +303,7 @@ class DataRootMigrator {
       // 跨卷或沙箱/权限拒绝 rename：整树复制校验后删源（目录）/ 单文件复制校验后删源。
       if (entity is Directory) {
         await _copyTreeVerified(entity, Directory(target), progress);
-        await entity.delete(recursive: true);
+        await _deleteSourceAfterVerifiedCopy(entity);
       } else if (entity is File) {
         await File(target).parent.create(recursive: true);
         await entity.copy(target);
@@ -312,7 +314,7 @@ class DataRootMigrator {
               '跨盘复制校验失败：$name 字节数不一致（$srcLen != $dstLen）');
         }
         progress.fileCopied();
-        await entity.delete();
+        await _deleteSourceAfterVerifiedCopy(entity);
       }
     }
   }
@@ -450,7 +452,9 @@ class DataRootMigrator {
 
   static Future<void> _deleteIfPresent(Directory dir) async {
     if (await dir.exists()) {
-      await dir.delete(recursive: true);
+      // 迁移末尾删旧根同样可能撞瞬态锁（AV 扫刚搬完的文件）：有界重试后仍锁则由调用方
+      // 的 best-effort catch 记日志放行（数据已在新根，残留可后续清）。
+      await _withLockRetry(() => dir.delete(recursive: true));
     }
   }
 
@@ -492,6 +496,65 @@ class DataRootMigrator {
 
   @visibleForTesting
   static bool isWindowsLockCodeForTesting(int code) => _isWindowsLockCode(code);
+
+  /// 有界退避重试次数与基础退避。迁移整库时至少有一个文件被短暂锁住的概率不低
+  /// （我方刚关闭的句柄异步释放滞后、Defender 实时扫描刚复制的大文件、资源管理器/
+  /// 索引器持句柄）——这些锁通常数百毫秒内自行释放。与词典导入 BUG-050 的 rename
+  /// 抗锁重试同构：只对 Windows 锁码 5/32/33 重试，非锁错误立即上抛。
+  static const int _lockRetryAttempts = 6;
+  static const Duration _lockRetryBackoff = Duration(milliseconds: 250);
+
+  /// 对可能命中 Windows 文件锁的文件系统操作做有界退避重试。仅当异常是
+  /// [FileSystemException] 且错误码是 Windows 锁码（[_isWindowsLockCode]）时重试；
+  /// 跨盘 EXDEV(17/18)、POSIX EPERM/EACCES(1/13) 等**非锁**错误立即上抛（不无谓重试，
+  /// 保留原有的跨盘 copy 回退 / 校验失败语义）。POSIX 生产永不产出 5/32/33，故此路径
+  /// 在非 Windows 上透明无副作用。
+  static Future<void> _withLockRetry(
+    Future<void> Function() op, {
+    int maxAttempts = _lockRetryAttempts,
+    Duration backoff = _lockRetryBackoff,
+  }) async {
+    for (int attempt = 0;; attempt++) {
+      try {
+        await op();
+        return;
+      } on FileSystemException catch (e) {
+        final bool lock = _isWindowsLockCode(e.osError?.errorCode);
+        if (!lock || attempt >= maxAttempts) rethrow;
+        await Future<void>.delayed(backoff * (attempt + 1));
+      }
+    }
+  }
+
+  @visibleForTesting
+  static Future<void> withLockRetryForTesting(
+    Future<void> Function() op, {
+    int maxAttempts = 3,
+    Duration backoff = Duration.zero,
+  }) =>
+      _withLockRetry(op, maxAttempts: maxAttempts, backoff: backoff);
+
+  /// 跨盘 copy+verify **已成功**后删源。删源属清理、不属迁移关键路径：源被顽固锁住
+  /// （删不掉）时**不判迁移失败**——校验过的完整数据已在新根、pref 随后照写、重启读
+  /// 新根；旧根残留留待后续清理（TODO-935 授权的次级降级，避免「整库已复制完却因删源
+  /// 被占用而回滚、位置没变」）。先做有界退避重试吃掉瞬态锁；仍是锁码则吞并记日志，非锁
+  /// 错误照常上抛（真实的 IO 故障不该被掩盖）。
+  static Future<void> _deleteSourceAfterVerifiedCopy(
+    FileSystemEntity src,
+  ) async {
+    try {
+      await _withLockRetry(() => src.delete(recursive: true));
+    } on FileSystemException catch (e) {
+      if (_isWindowsLockCode(e.osError?.errorCode)) {
+        debugPrint(
+          'DataRootMigrator: 跨盘复制已校验完成但源删除被占用，保留旧根残留继续'
+          '（数据已在新根）: ${src.path}: $e',
+        );
+        return;
+      }
+      rethrow;
+    }
+  }
 
   /// 源根 [root] **顶层**里需要留在原地的 prefs 文件基名集合（基名前缀命中
   /// [_prefsFileNamePrefixes]）。默认根迁移时命中 `shared_preferences.json`（及可能的

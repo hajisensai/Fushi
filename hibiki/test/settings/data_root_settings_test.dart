@@ -148,6 +148,9 @@ void main() {
       expect(src.contains('HoshiDicts.disposeInstance()'), isTrue);
       expect(src.contains('closeDatabase()'), isTrue);
       expect(src.contains('wal_checkpoint(TRUNCATE)'), isTrue);
+      // TODO-935：迁移前也释放图片缓存句柄（封面/缩略图解码），减少数据根文件锁。
+      expect(src.contains('PaintingBinding.instance.imageCache'), isTrue);
+      expect(src.contains('clearLiveImages()'), isTrue);
       // Writes the data_root pref via the canonical key.
       expect(src.contains('AppPaths.dataRootPrefKey'), isTrue);
       // Auto-restarts after a successful migration.
@@ -186,6 +189,10 @@ void main() {
       // 文件锁失败有明确「被占用」提示。
       expect(src.contains('_isFileInUseError('), isTrue);
       expect(src.contains('有文件被占用'), isTrue);
+      // TODO-935：对 Windows 锁码做有界退避重试（吃瞬态 AV/索引器锁），跨盘 copy 校验
+      // 完成后删源被锁则降级保留残留、不判失败（避免「整库已复制却回滚、位置没变」）。
+      expect(src.contains('_withLockRetry('), isTrue);
+      expect(src.contains('_deleteSourceAfterVerifiedCopy('), isTrue);
     });
 
     test('migration view renders a failure phase with reason + suggestions',

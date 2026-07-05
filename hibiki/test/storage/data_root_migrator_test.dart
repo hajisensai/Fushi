@@ -618,6 +618,60 @@ void main() {
       expect(DataRootMigrator.isWindowsLockCodeForTesting(18), isFalse);
     });
   });
+
+  group('TODO-935/959：Windows 文件锁抗性（有界退避重试 + 跨盘删源降级）', () {
+    test('withLockRetry：锁码抛出前几次后成功 → 重试直至成功', () async {
+      int calls = 0;
+      await DataRootMigrator.withLockRetryForTesting(
+        () async {
+          calls++;
+          if (calls < 3) {
+            throw FileSystemException(
+                'locked', '', const OSError('sharing violation', 32));
+          }
+        },
+        maxAttempts: 5,
+        backoff: Duration.zero,
+      );
+      // 前 2 次锁、第 3 次成功。
+      expect(calls, equals(3));
+    });
+
+    test('withLockRetry：锁码持续超过上限 → 最终上抛 FileSystemException', () async {
+      int calls = 0;
+      await expectLater(
+        DataRootMigrator.withLockRetryForTesting(
+          () async {
+            calls++;
+            throw FileSystemException(
+                'locked', '', const OSError('access denied', 5));
+          },
+          maxAttempts: 3,
+          backoff: Duration.zero,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      // 初次 + 3 次重试 = 4 次调用。
+      expect(calls, equals(4));
+    });
+
+    test('withLockRetry：非锁错误立即上抛，不重试', () async {
+      int calls = 0;
+      await expectLater(
+        DataRootMigrator.withLockRetryForTesting(
+          () async {
+            calls++;
+            throw FileSystemException(
+                'not found', '', const OSError('no such file', 2));
+          },
+          maxAttempts: 5,
+          backoff: Duration.zero,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(calls, equals(1));
+    });
+  });
 }
 
 /// 目录树下是否有任意文件（不含目录项）。用于断言回滚后 newRoot 下无迁移残留数据。
