@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "콘텐츠 로딩 시간이 초과되었습니다. 표시가 비정상이면 다시 열어 주세요",
   "backup_local": "로컬 백업",
   "backup_export": "백업 내보내기",
-  "backup_export_hint": "모든 설정, 읽기 진행 상황, 통계를 파일로 저장합니다",
+  "backup_export_hint": "포함할 항목을 선택하세요. 데이터베이스(도서, 진행 상황, 통계)는 항상 포함됩니다. 큰 항목(로컬 오디오, 동영상)의 선택을 해제하면 백업 크기를 줄일 수 있습니다.",
   "backup_import": "백업 가져오기",
   "backup_import_hint": "백업 파일에서 복원합니다. 앱이 다시 시작됩니다.",
   "backup_export_success": "백업을 내보냈습니다",

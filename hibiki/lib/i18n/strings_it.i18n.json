@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Timeout nel caricamento del contenuto. Riapri se la visualizzazione è anomala",
   "backup_local": "Backup locale",
   "backup_export": "Esporta backup",
-  "backup_export_hint": "Salva tutte le impostazioni, i progressi di lettura e le statistiche in un file",
+  "backup_export_hint": "Scegli cosa includere; il database (libri, progressi, statistiche) è sempre incluso. Deseleziona gli elementi grandi (audio locale, video) per ridurre il backup.",
   "backup_import": "Importa backup",
   "backup_import_hint": "Ripristina da un file di backup. L'app verrà riavviata.",
   "backup_export_success": "Backup esportato correttamente",

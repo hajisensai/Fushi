@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Tải nội dung quá thời gian. Mở lại nếu hiển thị bất thường",
   "backup_local": "Sao lưu cục bộ",
   "backup_export": "Xuất bản sao lưu",
-  "backup_export_hint": "Lưu toàn bộ cài đặt, tiến độ đọc và thống kê vào một tệp",
+  "backup_export_hint": "Chọn nội dung muốn đưa vào; cơ sở dữ liệu (sách, tiến độ, thống kê) luôn được đưa vào. Bỏ chọn các mục lớn (âm thanh cục bộ, video) để giảm dung lượng bản sao lưu.",
   "backup_import": "Nhập bản sao lưu",
   "backup_import_hint": "Khôi phục từ tệp sao lưu. Ứng dụng sẽ khởi động lại.",
   "backup_export_success": "Đã xuất bản sao lưu thành công",

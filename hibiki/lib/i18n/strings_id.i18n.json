@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Pemuatan konten habis waktu. Buka ulang jika tampilan tidak normal",
   "backup_local": "Cadangan Lokal",
   "backup_export": "Ekspor Cadangan",
-  "backup_export_hint": "Simpan semua pengaturan, progres membaca, dan statistik ke berkas",
+  "backup_export_hint": "Pilih apa yang disertakan; basis data (buku, progres, statistik) selalu disertakan. Hapus centang item besar (audio lokal, video) untuk memperkecil cadangan.",
   "backup_import": "Impor Cadangan",
   "backup_import_hint": "Pulihkan dari berkas cadangan. Aplikasi akan dimulai ulang.",
   "backup_export_success": "Cadangan berhasil diekspor",

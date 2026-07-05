@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "內容載入逾時，如顯示異常請重新開啟",
   "backup_local": "本機備份",
   "backup_export": "匯出備份",
-  "backup_export_hint": "將所有設定、閱讀進度及統計資料儲存到檔案",
+  "backup_export_hint": "勾選要包含的內容；資料庫（書籍、進度、統計）一律包含。取消大型項目（本地音訊、影片）可縮小備份體積。",
   "backup_import": "匯入備份",
   "backup_import_hint": "從備份檔案還原。App 將會重新啟動。",
   "backup_export_success": "備份匯出成功",

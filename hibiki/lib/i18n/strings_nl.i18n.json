@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Time-out bij laden van inhoud. Open opnieuw als de weergave afwijkt",
   "backup_local": "Lokale back-up",
   "backup_export": "Back-up exporteren",
-  "backup_export_hint": "Sla alle instellingen, leesvoortgang en statistieken op in een bestand",
+  "backup_export_hint": "Kies wat je wilt opnemen; de database (boeken, voortgang, statistieken) wordt altijd opgenomen. Schakel grote items (lokale audio, video's) uit om de back-up te verkleinen.",
   "backup_import": "Back-up importeren",
   "backup_import_hint": "Herstel vanuit een back-upbestand. De app wordt opnieuw gestart.",
   "backup_export_success": "Back-up geëxporteerd",

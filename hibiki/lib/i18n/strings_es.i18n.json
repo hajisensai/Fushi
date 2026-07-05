@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Se agotó el tiempo al cargar el contenido. Reabre si la visualización es anómala",
   "backup_local": "Copia de seguridad local",
   "backup_export": "Exportar copia de seguridad",
-  "backup_export_hint": "Guarda todos los ajustes, el progreso de lectura y las estadísticas en un archivo",
+  "backup_export_hint": "Elige qué incluir; la base de datos (libros, progreso, estadísticas) siempre se incluye. Desmarca elementos grandes (audio local, vídeos) para reducir el tamaño de la copia.",
   "backup_import": "Importar copia de seguridad",
   "backup_import_hint": "Restaura desde un archivo de copia de seguridad. La app se reiniciará.",
   "backup_export_success": "Copia de seguridad exportada correctamente",
