@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Délai de chargement du contenu dépassé. Rouvrez si l'affichage est anormal",
   "backup_local": "Sauvegarde locale",
   "backup_export": "Exporter la sauvegarde",
-  "backup_export_hint": "Enregistrer tous les réglages, la progression de lecture et les statistiques dans un fichier",
+  "backup_export_hint": "Choisissez ce qu’il faut inclure ; la base de données (livres, progression, statistiques) est toujours incluse. Décochez les éléments volumineux (audio local, vidéos) pour réduire la sauvegarde.",
   "backup_import": "Importer une sauvegarde",
   "backup_import_hint": "Restaurer depuis un fichier de sauvegarde. L'application redémarrera.",
   "backup_export_success": "Sauvegarde exportée avec succès",

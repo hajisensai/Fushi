@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "内容加载超时，如显示异常请重新打开",
   "backup_local": "本地备份",
   "backup_export": "导出备份",
-  "backup_export_hint": "将所有设置、阅读进度和统计数据保存到文件",
+  "backup_export_hint": "勾选要包含的内容；数据库（书籍、进度、统计）始终包含。取消大文件（本地音频、视频）可减小备份体积。",
   "backup_import": "导入备份",
   "backup_import_hint": "从备份文件恢复。应用将会重启。",
   "backup_export_success": "备份导出成功",

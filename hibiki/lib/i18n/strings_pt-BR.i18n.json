@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "O carregamento do conteúdo expirou. Reabra se a exibição estiver anormal",
   "backup_local": "Backup local",
   "backup_export": "Exportar backup",
-  "backup_export_hint": "Salvar todas as configurações, progresso de leitura e estatísticas em um arquivo",
+  "backup_export_hint": "Escolha o que incluir; o banco de dados (livros, progresso, estatísticas) é sempre incluído. Desmarque itens grandes (áudio local, vídeos) para reduzir o backup.",
   "backup_import": "Importar backup",
   "backup_import_hint": "Restaurar a partir de um arquivo de backup. O app será reiniciado.",
   "backup_export_success": "Backup exportado com sucesso",

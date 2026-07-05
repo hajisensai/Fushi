@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Zeitüberschreitung beim Laden des Inhalts. Bei fehlerhafter Anzeige erneut öffnen",
   "backup_local": "Lokales Backup",
   "backup_export": "Backup exportieren",
-  "backup_export_hint": "Alle Einstellungen, Lesefortschritte und Statistiken in eine Datei speichern",
+  "backup_export_hint": "Wähle aus, was enthalten sein soll; die Datenbank (Bücher, Fortschritt, Statistiken) ist immer enthalten. Deaktiviere große Elemente (lokale Audios, Videos), um das Backup zu verkleinern.",
   "backup_import": "Backup importieren",
   "backup_import_hint": "Aus einer Backup-Datei wiederherstellen. Die App wird neu gestartet.",
   "backup_export_success": "Backup erfolgreich exportiert",

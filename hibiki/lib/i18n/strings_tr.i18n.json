@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "İçerik yüklemesi zaman aşımına uğradı. Görüntü anormalse yeniden açın",
   "backup_local": "Yerel Yedek",
   "backup_export": "Yedeği Dışa Aktar",
-  "backup_export_hint": "Tüm ayarları, okuma ilerlemesini ve istatistikleri bir dosyaya kaydet",
+  "backup_export_hint": "Nelerin dâhil edileceğini seçin; veritabanı (kitaplar, ilerleme, istatistikler) her zaman dâhildir. Yedeği küçültmek için büyük öğelerin (yerel ses, videolar) işaretini kaldırın.",
   "backup_import": "Yedeği İçe Aktar",
   "backup_import_hint": "Bir yedek dosyasından geri yükle. Uygulama yeniden başlatılacak.",
   "backup_export_success": "Yedek başarıyla dışa aktarıldı",
