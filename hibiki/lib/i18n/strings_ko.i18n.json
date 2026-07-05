@@ -2114,5 +2114,6 @@
   "backup_export_select_none": "Select none",
   "backup_export_no_books": "No books to choose from",
   "backup_export_books_selected": "$count books selected",
-  "backup_import_merge_preview": "Merge will add $bookCount books and update $progressCount reading positions."
+  "backup_import_merge_preview": "Merge will add $bookCount books and update $progressCount reading positions.",
+  "stat_lookup": "검색"
 }

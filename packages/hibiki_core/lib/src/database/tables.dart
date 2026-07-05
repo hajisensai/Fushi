@@ -451,6 +451,35 @@ class MiningStatistics extends Table {
       ];
 }
 
+// ── lookup_mining_counters ──────────────────
+/// TODO-1204 查词 / 制卡 per-book 计数（终身累加，不 trim，区别于 [MinedSentences]
+/// 的 1000 条滚动历史）。[lookupCount] 每次查词 +1（顶层 / 嵌套 / 重复查各算一次，
+/// 不去重）；[mineCount] 每次成功制卡 +1，与 [MiningStatistics] 的全局按日计数**并行**
+/// 写（后者维持全局汇总 / 备份合并 / 云同步契约不变，Never break userspace）。
+///
+/// 聚合键 (title, sourceType, dateKey)：per-book 行 [title]=书 / 视频标题、[bookKey]
+/// 存书身份（视频存 bookUid）；无书查词（首页 / 独立查词窗 / 歌词）[title]=''、
+/// [bookKey]=null——只进统计页「查词」汇总，不落任何 per-book / per-video tile。
+/// title 聚合键与统计页现有 per-book/video tile（按 title 聚合）对齐。
+///
+/// setLookupCount / setMineCount 用 MAX-union 语义（非累加），为将来备份合并 / 云聚合
+/// 幂等重导留口（本期 sync 不接）。
+@DataClassName('LookupMiningCounterRow')
+class LookupMiningCounters extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get bookKey => text().nullable()();
+  TextColumn get title => text().withDefault(const Constant(''))();
+  TextColumn get sourceType => text()(); // 'book' | 'video'
+  TextColumn get dateKey => text()();
+  IntColumn get lookupCount => integer().withDefault(const Constant(0))();
+  IntColumn get mineCount => integer().withDefault(const Constant(0))();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {title, sourceType, dateKey},
+      ];
+}
+
 // ── mined_sentences ──────────────────────────────────────────────────
 /// 制卡历史：每成功制一张卡，落一条逐条记录（与 [MiningStatistics] 的按日计数互补——
 /// 计数供统计页画图，本表供「收藏夹」页跨媒体全局查看每一次制卡的句子并跳回原文）。

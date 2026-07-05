@@ -100,6 +100,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   void initState() {
     super.initState();
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
+    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
+    attachLookupCounter(_popup);
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);

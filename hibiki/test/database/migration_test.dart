@@ -873,10 +873,10 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 32,
-          reason: 'global schemaVersion is now 32 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32); TODO-894 backfill behavior asserted by the '
-              'srt_books '
+      expect(db.schemaVersion, 33,
+          reason: 'global schemaVersion is now 33 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32 + TODO-1204 v33); TODO-894 backfill behavior '
+              'asserted by the srt_books '
               'checks below');
 
       // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
@@ -1058,10 +1058,10 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 32,
-          reason: 'global schemaVersion is now 32 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32); v29->v30 series/shelf_entries creation '
-              'asserted below');
+      expect(db.schemaVersion, 33,
+          reason: 'global schemaVersion is now 33 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32 + TODO-1204 v33); v29->v30 series/shelf_entries '
+              'creation asserted below');
 
       // Both new tables now exist.
       final tableNames = (await db
@@ -1108,7 +1108,40 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 32);
+      expect(db.schemaVersion, 33);
+    });
+
+    test(
+        'fresh DB (v33) has lookup_mining_counters with the expected columns '
+        '(TODO-1204)', () async {
+      final db = await _openDb();
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+      expect(db.schemaVersion, 33,
+          reason: 'TODO-1204 bumps the global schemaVersion to 33');
+
+      final tableNames = (await db
+              .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
+              .get())
+          .map((r) => r.data['name'] as String)
+          .toSet();
+      expect(tableNames, contains('lookup_mining_counters'),
+          reason: 'from<33 must createTable(lookup_mining_counters)');
+
+      final cols = await db
+          .customSelect("PRAGMA table_info('lookup_mining_counters')")
+          .get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(
+          colNames,
+          containsAll(<String>[
+            'book_key',
+            'title',
+            'source_type',
+            'date_key',
+            'lookup_count',
+            'mine_count',
+          ]));
     });
   });
 }

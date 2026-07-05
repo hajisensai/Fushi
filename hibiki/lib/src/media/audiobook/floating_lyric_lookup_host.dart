@@ -94,6 +94,8 @@ class _FloatingLyricLookupHostState
   void initState() {
     super.initState();
     _notifier.addListener(_onLookupRequested);
+    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
+    attachLookupCounter(_popup);
   }
 
   @override

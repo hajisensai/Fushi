@@ -13137,6 +13137,390 @@ class BookTombstonesCompanion extends UpdateCompanion<BookTombstoneRow> {
   }
 }
 
+class $LookupMiningCountersTable extends LookupMiningCounters
+    with TableInfo<$LookupMiningCountersTable, LookupMiningCounterRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LookupMiningCountersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _sourceTypeMeta =
+      const VerificationMeta('sourceType');
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+      'source_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _lookupCountMeta =
+      const VerificationMeta('lookupCount');
+  @override
+  late final GeneratedColumn<int> lookupCount = GeneratedColumn<int>(
+      'lookup_count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _mineCountMeta =
+      const VerificationMeta('mineCount');
+  @override
+  late final GeneratedColumn<int> mineCount = GeneratedColumn<int>(
+      'mine_count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, bookKey, title, sourceType, dateKey, lookupCount, mineCount];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'lookup_mining_counters';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<LookupMiningCounterRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+          _sourceTypeMeta,
+          sourceType.isAcceptableOrUnknown(
+              data['source_type']!, _sourceTypeMeta));
+    } else if (isInserting) {
+      context.missing(_sourceTypeMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('lookup_count')) {
+      context.handle(
+          _lookupCountMeta,
+          lookupCount.isAcceptableOrUnknown(
+              data['lookup_count']!, _lookupCountMeta));
+    }
+    if (data.containsKey('mine_count')) {
+      context.handle(_mineCountMeta,
+          mineCount.isAcceptableOrUnknown(data['mine_count']!, _mineCountMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {title, sourceType, dateKey},
+      ];
+  @override
+  LookupMiningCounterRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LookupMiningCounterRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key']),
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      sourceType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      lookupCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}lookup_count'])!,
+      mineCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}mine_count'])!,
+    );
+  }
+
+  @override
+  $LookupMiningCountersTable createAlias(String alias) {
+    return $LookupMiningCountersTable(attachedDatabase, alias);
+  }
+}
+
+class LookupMiningCounterRow extends DataClass
+    implements Insertable<LookupMiningCounterRow> {
+  final int id;
+  final String? bookKey;
+  final String title;
+  final String sourceType;
+  final String dateKey;
+  final int lookupCount;
+  final int mineCount;
+  const LookupMiningCounterRow(
+      {required this.id,
+      this.bookKey,
+      required this.title,
+      required this.sourceType,
+      required this.dateKey,
+      required this.lookupCount,
+      required this.mineCount});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || bookKey != null) {
+      map['book_key'] = Variable<String>(bookKey);
+    }
+    map['title'] = Variable<String>(title);
+    map['source_type'] = Variable<String>(sourceType);
+    map['date_key'] = Variable<String>(dateKey);
+    map['lookup_count'] = Variable<int>(lookupCount);
+    map['mine_count'] = Variable<int>(mineCount);
+    return map;
+  }
+
+  LookupMiningCountersCompanion toCompanion(bool nullToAbsent) {
+    return LookupMiningCountersCompanion(
+      id: Value(id),
+      bookKey: bookKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookKey),
+      title: Value(title),
+      sourceType: Value(sourceType),
+      dateKey: Value(dateKey),
+      lookupCount: Value(lookupCount),
+      mineCount: Value(mineCount),
+    );
+  }
+
+  factory LookupMiningCounterRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LookupMiningCounterRow(
+      id: serializer.fromJson<int>(json['id']),
+      bookKey: serializer.fromJson<String?>(json['bookKey']),
+      title: serializer.fromJson<String>(json['title']),
+      sourceType: serializer.fromJson<String>(json['sourceType']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      lookupCount: serializer.fromJson<int>(json['lookupCount']),
+      mineCount: serializer.fromJson<int>(json['mineCount']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookKey': serializer.toJson<String?>(bookKey),
+      'title': serializer.toJson<String>(title),
+      'sourceType': serializer.toJson<String>(sourceType),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'lookupCount': serializer.toJson<int>(lookupCount),
+      'mineCount': serializer.toJson<int>(mineCount),
+    };
+  }
+
+  LookupMiningCounterRow copyWith(
+          {int? id,
+          Value<String?> bookKey = const Value.absent(),
+          String? title,
+          String? sourceType,
+          String? dateKey,
+          int? lookupCount,
+          int? mineCount}) =>
+      LookupMiningCounterRow(
+        id: id ?? this.id,
+        bookKey: bookKey.present ? bookKey.value : this.bookKey,
+        title: title ?? this.title,
+        sourceType: sourceType ?? this.sourceType,
+        dateKey: dateKey ?? this.dateKey,
+        lookupCount: lookupCount ?? this.lookupCount,
+        mineCount: mineCount ?? this.mineCount,
+      );
+  LookupMiningCounterRow copyWithCompanion(LookupMiningCountersCompanion data) {
+    return LookupMiningCounterRow(
+      id: data.id.present ? data.id.value : this.id,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      title: data.title.present ? data.title.value : this.title,
+      sourceType:
+          data.sourceType.present ? data.sourceType.value : this.sourceType,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      lookupCount:
+          data.lookupCount.present ? data.lookupCount.value : this.lookupCount,
+      mineCount: data.mineCount.present ? data.mineCount.value : this.mineCount,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LookupMiningCounterRow(')
+          ..write('id: $id, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('title: $title, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('lookupCount: $lookupCount, ')
+          ..write('mineCount: $mineCount')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id, bookKey, title, sourceType, dateKey, lookupCount, mineCount);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LookupMiningCounterRow &&
+          other.id == this.id &&
+          other.bookKey == this.bookKey &&
+          other.title == this.title &&
+          other.sourceType == this.sourceType &&
+          other.dateKey == this.dateKey &&
+          other.lookupCount == this.lookupCount &&
+          other.mineCount == this.mineCount);
+}
+
+class LookupMiningCountersCompanion
+    extends UpdateCompanion<LookupMiningCounterRow> {
+  final Value<int> id;
+  final Value<String?> bookKey;
+  final Value<String> title;
+  final Value<String> sourceType;
+  final Value<String> dateKey;
+  final Value<int> lookupCount;
+  final Value<int> mineCount;
+  const LookupMiningCountersCompanion({
+    this.id = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.title = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.lookupCount = const Value.absent(),
+    this.mineCount = const Value.absent(),
+  });
+  LookupMiningCountersCompanion.insert({
+    this.id = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.title = const Value.absent(),
+    required String sourceType,
+    required String dateKey,
+    this.lookupCount = const Value.absent(),
+    this.mineCount = const Value.absent(),
+  })  : sourceType = Value(sourceType),
+        dateKey = Value(dateKey);
+  static Insertable<LookupMiningCounterRow> custom({
+    Expression<int>? id,
+    Expression<String>? bookKey,
+    Expression<String>? title,
+    Expression<String>? sourceType,
+    Expression<String>? dateKey,
+    Expression<int>? lookupCount,
+    Expression<int>? mineCount,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookKey != null) 'book_key': bookKey,
+      if (title != null) 'title': title,
+      if (sourceType != null) 'source_type': sourceType,
+      if (dateKey != null) 'date_key': dateKey,
+      if (lookupCount != null) 'lookup_count': lookupCount,
+      if (mineCount != null) 'mine_count': mineCount,
+    });
+  }
+
+  LookupMiningCountersCompanion copyWith(
+      {Value<int>? id,
+      Value<String?>? bookKey,
+      Value<String>? title,
+      Value<String>? sourceType,
+      Value<String>? dateKey,
+      Value<int>? lookupCount,
+      Value<int>? mineCount}) {
+    return LookupMiningCountersCompanion(
+      id: id ?? this.id,
+      bookKey: bookKey ?? this.bookKey,
+      title: title ?? this.title,
+      sourceType: sourceType ?? this.sourceType,
+      dateKey: dateKey ?? this.dateKey,
+      lookupCount: lookupCount ?? this.lookupCount,
+      mineCount: mineCount ?? this.mineCount,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (lookupCount.present) {
+      map['lookup_count'] = Variable<int>(lookupCount.value);
+    }
+    if (mineCount.present) {
+      map['mine_count'] = Variable<int>(mineCount.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LookupMiningCountersCompanion(')
+          ..write('id: $id, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('title: $title, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('lookupCount: $lookupCount, ')
+          ..write('mineCount: $mineCount')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -13189,6 +13573,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $HibikiPairedPeersTable hibikiPairedPeers =
       $HibikiPairedPeersTable(this);
   late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
+  late final $LookupMiningCountersTable lookupMiningCounters =
+      $LookupMiningCountersTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -13227,7 +13613,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         series,
         shelfEntries,
         hibikiPairedPeers,
-        bookTombstones
+        bookTombstones,
+        lookupMiningCounters
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -22293,6 +22680,209 @@ typedef $$BookTombstonesTableProcessedTableManager = ProcessedTableManager<
     ),
     BookTombstoneRow,
     PrefetchHooks Function()>;
+typedef $$LookupMiningCountersTableCreateCompanionBuilder
+    = LookupMiningCountersCompanion Function({
+  Value<int> id,
+  Value<String?> bookKey,
+  Value<String> title,
+  required String sourceType,
+  required String dateKey,
+  Value<int> lookupCount,
+  Value<int> mineCount,
+});
+typedef $$LookupMiningCountersTableUpdateCompanionBuilder
+    = LookupMiningCountersCompanion Function({
+  Value<int> id,
+  Value<String?> bookKey,
+  Value<String> title,
+  Value<String> sourceType,
+  Value<String> dateKey,
+  Value<int> lookupCount,
+  Value<int> mineCount,
+});
+
+class $$LookupMiningCountersTableFilterComposer
+    extends Composer<_$HibikiDatabase, $LookupMiningCountersTable> {
+  $$LookupMiningCountersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lookupCount => $composableBuilder(
+      column: $table.lookupCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get mineCount => $composableBuilder(
+      column: $table.mineCount, builder: (column) => ColumnFilters(column));
+}
+
+class $$LookupMiningCountersTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $LookupMiningCountersTable> {
+  $$LookupMiningCountersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lookupCount => $composableBuilder(
+      column: $table.lookupCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get mineCount => $composableBuilder(
+      column: $table.mineCount, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LookupMiningCountersTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $LookupMiningCountersTable> {
+  $$LookupMiningCountersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get lookupCount => $composableBuilder(
+      column: $table.lookupCount, builder: (column) => column);
+
+  GeneratedColumn<int> get mineCount =>
+      $composableBuilder(column: $table.mineCount, builder: (column) => column);
+}
+
+class $$LookupMiningCountersTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $LookupMiningCountersTable,
+    LookupMiningCounterRow,
+    $$LookupMiningCountersTableFilterComposer,
+    $$LookupMiningCountersTableOrderingComposer,
+    $$LookupMiningCountersTableAnnotationComposer,
+    $$LookupMiningCountersTableCreateCompanionBuilder,
+    $$LookupMiningCountersTableUpdateCompanionBuilder,
+    (
+      LookupMiningCounterRow,
+      BaseReferences<_$HibikiDatabase, $LookupMiningCountersTable,
+          LookupMiningCounterRow>
+    ),
+    LookupMiningCounterRow,
+    PrefetchHooks Function()> {
+  $$LookupMiningCountersTableTableManager(
+      _$HibikiDatabase db, $LookupMiningCountersTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LookupMiningCountersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LookupMiningCountersTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LookupMiningCountersTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String?> bookKey = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String> sourceType = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> lookupCount = const Value.absent(),
+            Value<int> mineCount = const Value.absent(),
+          }) =>
+              LookupMiningCountersCompanion(
+            id: id,
+            bookKey: bookKey,
+            title: title,
+            sourceType: sourceType,
+            dateKey: dateKey,
+            lookupCount: lookupCount,
+            mineCount: mineCount,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String?> bookKey = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            required String sourceType,
+            required String dateKey,
+            Value<int> lookupCount = const Value.absent(),
+            Value<int> mineCount = const Value.absent(),
+          }) =>
+              LookupMiningCountersCompanion.insert(
+            id: id,
+            bookKey: bookKey,
+            title: title,
+            sourceType: sourceType,
+            dateKey: dateKey,
+            lookupCount: lookupCount,
+            mineCount: mineCount,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$LookupMiningCountersTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $LookupMiningCountersTable,
+        LookupMiningCounterRow,
+        $$LookupMiningCountersTableFilterComposer,
+        $$LookupMiningCountersTableOrderingComposer,
+        $$LookupMiningCountersTableAnnotationComposer,
+        $$LookupMiningCountersTableCreateCompanionBuilder,
+        $$LookupMiningCountersTableUpdateCompanionBuilder,
+        (
+          LookupMiningCounterRow,
+          BaseReferences<_$HibikiDatabase, $LookupMiningCountersTable,
+              LookupMiningCounterRow>
+        ),
+        LookupMiningCounterRow,
+        PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -22365,4 +22955,6 @@ class $HibikiDatabaseManager {
       $$HibikiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
   $$BookTombstonesTableTableManager get bookTombstones =>
       $$BookTombstonesTableTableManager(_db, _db.bookTombstones);
+  $$LookupMiningCountersTableTableManager get lookupMiningCounters =>
+      $$LookupMiningCountersTableTableManager(_db, _db.lookupMiningCounters);
 }

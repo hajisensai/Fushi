@@ -408,4 +408,78 @@ void main() {
       expect(async.pendingTimers, isEmpty, reason: 'dispose 取消全部 Timer');
     });
   });
+
+  group('TODO-1204 onLookupStarted 查词计数注入回调', () {
+    test('每次 beginTop 触发一次（顶层查词 +1）', () {
+      int calls = 0;
+      final c = DictionaryPopupController(lowMemory: false)
+        ..seedWarmSlot()
+        ..onLookupStarted = () => calls++;
+      c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: false,
+      );
+      expect(calls, 1);
+      // 复查同一个词（重复查）仍 +1，不去重。
+      c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: false,
+      );
+      expect(calls, 2);
+    });
+
+    test('嵌套查词（beginTop append + pushChild）各触发一次', () {
+      int calls = 0;
+      final c = DictionaryPopupController(lowMemory: false)
+        ..onLookupStarted = () => calls++;
+      // 顶层。
+      c.beginTop(
+        term: 'top',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: true,
+        visible: false,
+      );
+      // 嵌套（append 一层）。
+      c.beginTop(
+        term: 'child',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: false,
+        visible: false,
+      );
+      // pushChild 路径也计一次。
+      c.pushChild(
+          term: 'deep', rect: Rect.zero, parentIndex: 1, visible: false);
+      expect(calls, 3, reason: '顶层 + 嵌套 + pushChild 各 +1');
+    });
+
+    test('未注入回调时栈操作正常（纯逻辑测试不触发）', () {
+      final c = DictionaryPopupController(lowMemory: false);
+      expect(
+        () => c.beginTop(
+          term: 'a',
+          rect: Rect.zero,
+          reuseWarmSlot: false,
+          replaceStack: true,
+          visible: false,
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('seedWarmSlot 不算查词（不触发回调）', () {
+      int calls = 0;
+      final c = DictionaryPopupController(lowMemory: false);
+      c.onLookupStarted = () => calls++;
+      c.seedWarmSlot();
+      expect(calls, 0);
+    });
+  });
 }

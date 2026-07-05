@@ -91,6 +91,13 @@ class DictionaryPopupController extends ChangeNotifier {
   /// prefsRepo（未初始化会抛）。
   bool lowMemory;
 
+  /// TODO-1204：每次「查词开始」的注入回调（每个宿主在安全时机设入，解析本表面的书
+  /// 身份后写 [HibikiDatabase.addLookupCount]）。在 [beginTop] / [pushChild] 头部触发，
+  /// **每次查词 +1**（顶层 / 嵌套 / 重复查各算一次，不去重；seed 热槽不算）。与
+  /// [onLookupStackDepthChanged] 同理由用注入回调而非让 controller 直接碰 DB——保持
+  /// controller 纯逻辑可测（纯逻辑测试缺省不设，为空则不触发）。
+  void Function()? onLookupStarted;
+
   /// TODO-058 fail-safe：挂起层（[markPendingReveal]）等 `popupRendered` 才翻可见。
   /// 若 WebView 冷加载失败 / `renderPopup()` JS 抛异常 / `callHandler` 因 WebView
   /// 进程异常失败 → `popupRendered` 永不发，挂起层会**永久** `visible=false`（点查词
@@ -177,6 +184,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required bool visible,
     DictionarySearchResult? initialResult,
   }) {
+    onLookupStarted?.call();
     final DictionaryPopupEntry e;
     if (reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot) {
       if (_entries.length > 1) {
@@ -213,6 +221,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required int parentIndex,
     required bool visible,
   }) {
+    onLookupStarted?.call();
     truncateTo(parentIndex + 1);
     final DictionaryPopupEntry e = DictionaryPopupEntry(
       searchTerm: term,

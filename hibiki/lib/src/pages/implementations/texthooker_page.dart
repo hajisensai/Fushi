@@ -45,6 +45,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   void initState() {
     super.initState();
     TexthookerService.instance.addListener(_onLines);
+    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
+    attachLookupCounter(_popup);
   }
 
   @override

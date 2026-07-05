@@ -31,6 +31,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   StatActivityBuckets _favorited = StatActivityBuckets();
   StatActivityBuckets _favoritedSentences = StatActivityBuckets();
 
+  // 查词计数（来源 'video'）分桶（TODO-1204）。
+  StatActivityBuckets _lookup = StatActivityBuckets();
+
+  // per-video 查词/制卡计数（按 title 聚合，对齐观看时长 tile 的聚合键）。
+  Map<String, ({int lookups, int mines})> _videoCounters =
+      <String, ({int lookups, int mines})>{};
+
   // 今日每小时观看时长（0-23，毫秒）。
   List<int> _hourlyMs = List.filled(24, 0);
 
@@ -76,6 +83,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
         now,
       );
+      // TODO-1204：查词/制卡 per-video 计数（新表）。
+      final List<LookupMiningCounterRow> counters =
+          await db.getLookupMiningCountersBySource(kStatSourceVideo);
+      _lookup = bucketActivityByDateKey(
+        counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
+        now,
+      );
+      _videoCounters = _aggregateCountersByTitle(counters);
       // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
@@ -110,6 +125,24 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         _hourlyMs[row.hour] = row.watchTimeMs;
       }
     }
+  }
+
+  /// TODO-1204：查词/制卡计数行按 title 聚合成 (查词数, 制卡数)，供 per-video tile
+  /// 展示（无书查词 title 空跳过，只进汇总）。
+  Map<String, ({int lookups, int mines})> _aggregateCountersByTitle(
+      List<LookupMiningCounterRow> rows) {
+    final Map<String, ({int lookups, int mines})> out =
+        <String, ({int lookups, int mines})>{};
+    for (final LookupMiningCounterRow r in rows) {
+      if (r.title.isEmpty) continue;
+      final ({int lookups, int mines}) prev =
+          out[r.title] ?? (lookups: 0, mines: 0);
+      out[r.title] = (
+        lookups: prev.lookups + r.lookupCount,
+        mines: prev.mines + r.mineCount,
+      );
+    }
+    return out;
   }
 
   static String _dateKey(DateTime d) =>
@@ -196,6 +229,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     t.stat_today,
                     _agg.todayMs,
                     _agg.todayCompleted,
+                    _lookup.today,
                     _mined.today,
                     _favorited.today,
                     _favoritedSentences.today),
@@ -206,6 +240,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     t.stat_this_week,
                     _agg.weekMs,
                     _agg.weekCompleted,
+                    _lookup.week,
                     _mined.week,
                     _favorited.week,
                     _favoritedSentences.week),
@@ -220,6 +255,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     t.stat_this_month,
                     _agg.monthMs,
                     _agg.monthCompleted,
+                    _lookup.month,
                     _mined.month,
                     _favorited.month,
                     _favoritedSentences.month),
@@ -230,6 +266,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     t.stat_all_time,
                     _agg.allMs,
                     _agg.allCompleted,
+                    _lookup.all,
                     _mined.all,
                     _favorited.all,
                     _favoritedSentences.all),
@@ -241,8 +278,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
-  Widget _summaryStatPanel(String label, int ms, int completed, int mined,
-      int favorited, int favoritedSentences) {
+  Widget _summaryStatPanel(String label, int ms, int completed, int lookup,
+      int mined, int favorited, int favoritedSentences) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -267,6 +304,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     )),
             SizedBox(height: tokens.spacing.gap / 2),
             Text('${t.video_stat_completed}: $completed', style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_lookup}: $lookup', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
             Text('${t.stat_mined}: $mined', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
@@ -347,6 +386,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   }
 
   Widget _buildVideoTile(VideoStatBookData video) {
+    // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
+    final ({int lookups, int mines}) counter =
+        _videoCounters[video.title] ?? (lookups: 0, mines: 0);
     // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
     final maxMs =
         _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
@@ -390,6 +432,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                     ),
               ),
             ],
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
         ],
