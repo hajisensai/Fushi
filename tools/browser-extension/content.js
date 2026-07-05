@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v35 loaded (Netflix cross-episode auto-switch, capture off during nav)');
+console.log('[Hibiki] content script v36 loaded (yomitan-style word anchor + highlight via hoshiSelection)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v35'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v36'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -475,24 +475,19 @@ function hibikiEnsureContainer() {
 
 function hibikiRemoveContainer() {
   if (hibikiContainer) { hibikiContainer.remove(); hibikiContainer = null; }
-}
-
-function hibikiCaretFromPoint(x, y) {
-  if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
-  if (document.caretPositionFromPoint) {
-    const p = document.caretPositionFromPoint(x, y);
-    if (!p) return null;
-    const r = document.createRange();
-    r.setStart(p.offsetNode, p.offset);
-    return r;
-  }
-  return null;
+  // TODO-1150（yomitan 式）：关窗即撤被查词高亮。hoshiSelection 未加载/无选区时是 no-op。
+  try {
+    if (window.hoshiSelection && typeof window.hoshiSelection.clearSelection === 'function') {
+      window.hoshiSelection.clearSelection();
+    }
+  } catch (_) { /* no-op */ }
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
-// 会把 caretRangeFromPoint 截走 → 命中空覆盖层而非字幕文字。这里绕开命中测试：找到包含光标的
-// 字幕容器，遍历其文本节点、逐字符用 Range.getBoundingClientRect 找出光标 (x,y) 落在哪个字上，
-// 返回该字所在的 Range（供 expandWordWindow 展开成词）。只在 caretRangeFromPoint 失败时兜底。
+// 会把 caretRangeFromPoint 截走 → hoshiSelection.getCharacterAtPoint 命中空覆盖层而非字幕文字。这里
+// 绕开命中测试：找到包含光标的字幕容器，遍历其文本节点、逐字符用 Range.getBoundingClientRect 找出
+// 光标 (x,y) 落在哪个字上，返回该字所在的 Range（供 hoshiSelection.selectFromPosition 展开成词）。
+// 只在 getCharacterAtPoint 失败时兜底。
 const HIBIKI_SUBTITLE_SELECTORS = [
   '.player-timedtext-text-container', // Netflix
   '.player-timedtext',
@@ -545,23 +540,31 @@ document.addEventListener('mousemove', (e) => {
   hibikiLastX = e.clientX;
   hibikiLastY = e.clientY;
   if (hibikiPending) return; // 在途闸：上一次查词还没回来就不发新请求（防洪）
-  let range = hibikiCaretFromPoint(e.clientX, e.clientY);
-  // 命中的不是文本节点（多为流媒体字幕上盖了视频覆盖层截走了 caret）→ 用字幕逐字兜底绕开覆盖层。
-  if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) {
-    range = hibikiSubtitleCaretAtPoint(e.clientX, e.clientY);
+  // 取词：复用 Flutter app 同款 window.hoshiSelection（vendor/selection.js，manifest 里先于本脚本加载）——
+  // 统一处理 furigana/ruby、词边界、跨文本节点扩词，取词一致性与阅读器/视频查词同源（TODO-1150）。
+  if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
+  let hit = window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY);
+  // getCharacterAtPoint 命中失败（多为流媒体字幕上盖了视频覆盖层截走了 caret）→ 字幕逐字兜底绕开覆盖层。
+  if (!hit) {
+    const subRange = hibikiSubtitleCaretAtPoint(e.clientX, e.clientY);
+    if (subRange && subRange.startContainer.nodeType === Node.TEXT_NODE) {
+      hit = { node: subRange.startContainer, offset: subRange.startOffset };
+    }
   }
   // 诊断：记录本次 shift 划词命中了什么（页面 Console 读 document.documentElement.dataset）。
   try {
     const d = document.documentElement.dataset;
     d.hibikiMove = e.clientX + ',' + e.clientY;
-    d.hibikiCaret = range
-      ? (range.startContainer.nodeType + ':' + String(range.startContainer.textContent || '').slice(0, 12))
+    d.hibikiCaret = hit
+      ? String(hit.node.textContent || '').slice(hit.offset, hit.offset + 12)
       : 'null';
   } catch (_) {}
-  if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) return;
-  const term = expandWordWindow(range.startContainer, range.startOffset, HIBIKI_MAX_LEN);
-  try { document.documentElement.dataset.hibikiTerm = term; } catch (_) {}
-  if (!term.trim()) return;
+  if (!hit) return;
+  // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 hoshiSelection.selection，
+  // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 在扩展里经 bridge-shim 是 no-op（无副作用）。
+  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, HIBIKI_MAX_LEN, e.clientX, e.clientY);
+  try { document.documentElement.dataset.hibikiTerm = term || ''; } catch (_) {}
+  if (!term || !term.trim()) return;
   if (term === hibikiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   hibikiLastTerm = term;
   // 查词即自动暂停：**仅对 Netflix 播放器**（按域名判定，不碰别的站点/后台视频）。定格画面+字幕
@@ -572,9 +575,6 @@ document.addEventListener('mousemove', (e) => {
   if (hibikiSite() === 'netflix') {
     try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}
   }
-  // 视口坐标（配合 position:fixed）：全屏与普通页都定位在光标处，且不受页面滚动影响。
-  const px = e.clientX;
-  const py = e.clientY;
   if (!hibikiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
   hibikiPending = true;
   try {
@@ -587,14 +587,21 @@ document.addEventListener('mousemove', (e) => {
         return;
       }
       if (!resp || !resp.ok || !resp.data || !resp.data.popupJson) return;
-      hibikiRender(resp.data.popupJson, px, py, resp.data.theme);
+      // TODO-1150（yomitan 式）：弹窗钉在被查词旁 + 高亮词。匹配长度取服务端 result.bestLength（日语=
+      // 去屈折后命中的词长，与 app 阅读器 lookupHighlightCharCount → result.bestLength 同源），只高亮真正
+      // 匹配的词而非整个 12 字扫描窗；缺失/为 0 时回落扫描窗长度 term.length。
+      const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
+        ? resp.data.result.bestLength
+        : 0;
+      const termLen = best > 0 ? best : term.length;
+      hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
     });
   } catch (_) {
     hibikiPending = false; // 「Extension context invalidated」：静默，等用户重载页面
   }
 });
 
-function hibikiRender(popupJson, x, y, theme) {
+function hibikiRender(popupJson, termLen, theme) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
   // （改主题下次查词即变）。无 theme 时用 popup.css 里的深色兜底。
@@ -603,8 +610,18 @@ function hibikiRender(popupJson, x, y, theme) {
       if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
     }
   }
-  // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则字幕在屏幕底/右时，
-  // 弹窗直接放光标处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
+  // TODO-1150（yomitan 式）：高亮刚取的词并拿它的视口 bbox 作弹窗锚点（不再贴鼠标坐标）。
+  // highlightSelection 复用上一步 selectFromPosition 存进 hoshiSelection.selection 的 ranges，用
+  // CSS Custom Highlight API 高亮前 termLen 个字并返回其 getClientRects 视口系 bbox；同名高亮覆盖
+  // 上一次（切词自动换高亮）。拿不到 bbox（极少数取词失败）→ 回落到最后鼠标位置。
+  let wordRect = null;
+  try {
+    if (window.hoshiSelection && typeof window.hoshiSelection.highlightSelection === 'function') {
+      wordRect = window.hoshiSelection.highlightSelection(termLen);
+    }
+  } catch (_) { wordRect = null; }
+  // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
+  // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';
   c.style.left = '0px';
   c.style.top = '0px';
@@ -617,11 +634,16 @@ function hibikiRender(popupJson, x, y, theme) {
     const rect = c.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let left = x + 4;
-    let top = y + 16; // 默认落在光标下方一点
+    // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
+    // scrollX/Y（加了反而在滚动页面上错位）。拿不到 bbox → 回落最后鼠标视口坐标。
+    const ax = wordRect ? wordRect.x : hibikiLastX;
+    const ay = wordRect ? wordRect.y : hibikiLastY;
+    const ah = wordRect ? wordRect.height : 0;
+    let left = ax;
+    let top = ay + ah + 4; // 默认落在词下方
     if (left + rect.width > vw - 8) left = Math.max(8, vw - rect.width - 8); // 右溢出→贴右
     if (left < 8) left = 8;
-    if (top + rect.height > vh - 8) top = Math.max(8, y - rect.height - 12); // 下溢出→翻到光标上方
+    if (top + rect.height > vh - 8) top = Math.max(8, ay - rect.height - 4); // 下溢出→翻到词上方
     if (top < 8) top = 8;
     c.style.left = left + 'px';
     c.style.top = top + 'px';
