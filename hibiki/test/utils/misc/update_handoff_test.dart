@@ -511,8 +511,9 @@ void main() {
       expect(record?.launchError, contains('boom'));
     });
 
-    test('records holders and does not launch when target libmpv is held',
-        () async {
+    test(
+        'blocks when a non-Hibiki external process holds libmpv in the target '
+        'directory (installer cannot close it by image name)', () async {
       final File marker = await _markerFile();
       final Directory dir = marker.parent;
       final File installer = File(
@@ -530,16 +531,11 @@ void main() {
                 '${dir.path}${Platform.pathSeparator}hibiki.exe',
             currentInstallDir: dir.path,
             targetInstallDir: dir.path,
-            runningHibikiProcesses: <WindowsProcessInfo>[
-              WindowsProcessInfo(
-                pid: 5678,
-                path: '${dir.path}${Platform.pathSeparator}hibiki.exe',
-              ),
-            ],
             libmpvModuleHolders: <WindowsProcessInfo>[
               WindowsProcessInfo(
-                pid: 5678,
-                path: '${dir.path}${Platform.pathSeparator}hibiki.exe',
+                pid: 9001,
+                name: 'someplayer.exe',
+                path: '${dir.path}${Platform.pathSeparator}someplayer.exe',
               ),
             ],
           ),
@@ -556,13 +552,68 @@ void main() {
           await WindowsUpdateHandoff.read(marker);
       expect(startCalled, isFalse);
       expect(record?.installerLaunchSucceeded, isFalse);
-      expect(record?.runningHibikiProcesses.single.pid, 5678);
-      expect(record?.libmpvModuleHolders.single.pid, 5678);
+      expect(record?.libmpvModuleHolders.single.pid, 9001);
+      expect(record?.launchError, contains('non-Hibiki process'));
       expect(
           record?.launchError, contains('Close the listed process manually'));
     });
 
-    test('blocks any active hibiki.exe even outside the target directory',
+    test(
+        'defers a hibiki.exe libmpv holder to the installer instead of '
+        'aborting (TODO-1181)', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}hibiki-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await WindowsInstaller.runAndExit(
+        installer.path,
+        targetVersion: '1.2.3',
+        handoffMarkerFile: marker,
+        collectDiagnostics: () async => WindowsInstallerDiagnostics(
+          currentExecutablePath:
+              '${dir.path}${Platform.pathSeparator}hibiki.exe',
+          currentInstallDir: dir.path,
+          targetInstallDir: dir.path,
+          runningHibikiProcesses: <WindowsProcessInfo>[
+            WindowsProcessInfo(
+              pid: 5678,
+              name: 'hibiki.exe',
+              path: '${dir.path}${Platform.pathSeparator}hibiki.exe',
+            ),
+          ],
+          libmpvModuleHolders: <WindowsProcessInfo>[
+            WindowsProcessInfo(
+              pid: 5678,
+              name: 'hibiki.exe',
+              path: '${dir.path}${Platform.pathSeparator}hibiki.exe',
+            ),
+          ],
+        ),
+        startProcess: (String executable, List<String> args) async {
+          startCalled = true;
+          return const WindowsInstallerStartedProcess(pid: 4242);
+        },
+        exitProcess: (_) {},
+      );
+
+      expect(startCalled, isTrue,
+          reason: 'hibiki.exe (even holding libmpv) is closed by hibiki.iss '
+              'InitializeSetup; Dart must not hard-abort the update');
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      // Diagnostics still record the deferred holders, but the launch is not
+      // marked failed and no manual-close error is surfaced.
+      expect(record?.libmpvModuleHolders.single.pid, 5678);
+      expect(record?.installerLaunchSucceeded, isNull);
+      expect(record?.launchError, isNull);
+    });
+
+    test(
+        'defers other active hibiki.exe instances (even outside the target '
+        'directory) to the installer instead of aborting (TODO-1181)',
         () async {
       final File marker = await _markerFile();
       final Directory dir = marker.parent;
@@ -571,39 +622,38 @@ void main() {
       await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
 
       var startCalled = false;
-      await expectLater(
-        WindowsInstaller.runAndExit(
-          installer.path,
-          targetVersion: '1.2.3',
-          handoffMarkerFile: marker,
-          collectDiagnostics: () async => WindowsInstallerDiagnostics(
-            currentExecutablePath:
-                '${dir.path}${Platform.pathSeparator}hibiki.exe',
-            currentInstallDir: dir.path,
-            targetInstallDir: dir.path,
-            runningHibikiProcesses: const <WindowsProcessInfo>[
-              WindowsProcessInfo(
-                pid: 6789,
-                name: 'hibiki.exe',
-                path: r'C:\Users\wrds\AppData\Local\Hibiki\hibiki.exe',
-              ),
-            ],
-          ),
-          startProcess: (String executable, List<String> args) async {
-            startCalled = true;
-            return const WindowsInstallerStartedProcess(pid: 4242);
-          },
-          exitProcess: (_) {},
+      await WindowsInstaller.runAndExit(
+        installer.path,
+        targetVersion: '1.2.3',
+        handoffMarkerFile: marker,
+        collectDiagnostics: () async => WindowsInstallerDiagnostics(
+          currentExecutablePath:
+              '${dir.path}${Platform.pathSeparator}hibiki.exe',
+          currentInstallDir: dir.path,
+          targetInstallDir: dir.path,
+          runningHibikiProcesses: const <WindowsProcessInfo>[
+            WindowsProcessInfo(
+              pid: 6789,
+              name: 'hibiki.exe',
+              path: r'C:\Users\wrds\AppData\Local\Hibiki\hibiki.exe',
+            ),
+          ],
         ),
-        throwsA(isA<UpdateInstallerException>()),
+        startProcess: (String executable, List<String> args) async {
+          startCalled = true;
+          return const WindowsInstallerStartedProcess(pid: 4242);
+        },
+        exitProcess: (_) {},
       );
 
+      expect(startCalled, isTrue,
+          reason: 'the installer (hibiki.iss) force-kills other hibiki.exe by '
+              'image name; Dart must not hard-abort the update');
       final WindowsUpdateHandoffRecord? record =
           await WindowsUpdateHandoff.read(marker);
-      expect(startCalled, isFalse);
-      expect(record?.installerLaunchSucceeded, isFalse);
       expect(record?.runningHibikiProcesses.single.pid, 6789);
-      expect(record?.launchError, contains('HibikiSingleInstanceMutex'));
+      expect(record?.installerLaunchSucceeded, isNull);
+      expect(record?.launchError, isNull);
     });
 
     test('does not block on historical install locations without a process',

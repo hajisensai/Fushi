@@ -551,8 +551,11 @@ class WindowsInstaller {
     }
 
     // launcher 已成功启动（分离进程）。当前实例只让出自己的 AppMutex / exe 锁；
-    // 其他 Hibiki/libmpv 持有进程已经在 preflight 被列出并要求用户手动关闭，
-    // 这里绝不委托 Inno/RestartManager 自动关闭或强制结束残留进程。
+    // 其他 hibiki.exe / WebView2 实例交给安装器自己的 hibiki.iss InitializeSetup 处理
+    // （先 WM_CLOSE 优雅关闭给落盘机会，再按 image 名强制结束），而不是靠 Inno
+    // 的 RestartManager（已用 /NOCLOSEAPPLICATIONS + /NOFORCECLOSEAPPLICATIONS 关掉）。
+    // 只有安装器杀不掉的真外部锁（非 hibiki/WebView2 占用目标目录 libmpv）才在 preflight
+    // 硬中止并要求用户手动关闭（见 _throwIfWindowsInstallBlocked，TODO-1181）。
     await Future<void>.delayed(Duration.zero);
     await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
     (exitProcess ?? exit)(0);
@@ -567,6 +570,17 @@ class WindowsInstaller {
     }
   }
 
+  /// 启动安装器前的最后一道占用检查。**只对安装器无法自愈的真外部锁硬中止**；能被
+  /// 安装器按 image 名关闭的进程（其他 `hibiki.exe` 实例 / WebView2 子进程）不再中止。
+  ///
+  /// 根因（TODO-1181）：`hibiki.iss` 的 `InitializeSetup()` 在 Inno 的 AppMutex 检查
+  /// 之前，先对 `hibiki.exe` 树发 `WM_CLOSE`（优雅关闭，给正在写 DB 的其他实例落盘机会）、
+  /// 轮询 `HibikiSingleInstanceMutex` 释放，再按 image 名强制结束 `hibiki.exe` +
+  /// `msedgewebview2.exe`。即安装器本就能自己关掉其他 Hibiki 实例并解开 mutex 死锁。旧的
+  /// Dart 预检却在**启动安装器之前**就因「检测到其他 hibiki.exe」硬 throw，用户永远走不到
+  /// 这段自愈，只能被迫手动关进程——是过度防御。故这里改为：安装器杀得掉的占用进程只记警告、
+  /// 继续启动安装器交给 `.iss` 处理；只有安装器杀不掉的真外部锁（非 hibiki/WebView2 的进程
+  /// 按 image 名占用目标目录里的 `libmpv-2.dll`）才保留硬中止。
   static void _throwIfWindowsInstallBlocked(
     WindowsInstallerDiagnostics diagnostics,
     String innoLogPath,
@@ -576,20 +590,60 @@ class WindowsInstaller {
     if (blockers.isEmpty) return;
 
     final String target = diagnostics.targetInstallDir ?? 'unknown';
-    final String holderSummary = blockers
-        .map(
-          (WindowsProcessInfo process) =>
-              'PID ${process.pid}: ${process.path ?? process.name ?? 'unknown'}',
-        )
-        .join('; ');
+    final List<WindowsProcessInfo> externalLocks = blockers
+        .where((WindowsProcessInfo process) => !_installerCanClose(process))
+        .toList(growable: false);
+    if (externalLocks.isEmpty) {
+      // 只剩安装器能强杀的 hibiki.exe / WebView2 实例：不中止，记警告后继续启动安装器，
+      // 由 .iss InitializeSetup 的 WM_CLOSE(优雅落盘)→强杀 序列关掉它们并解开 mutex。
+      ErrorLogService.instance.log(
+        'WindowsInstaller.installBlockersDeferred',
+        'Other Hibiki/WebView2 processes are still running; continuing the '
+            'update and letting the installer close them (WM_CLOSE then '
+            'force-terminate via hibiki.iss). Target: $target. '
+            'Deferred: ${_summarizeBlockingProcesses(blockers)}. '
+            'Installer log: $innoLogPath',
+      );
+      return;
+    }
+
     throw UpdateInstallerException(
-      'Hibiki cannot install while another hibiki.exe process is holding the '
-      'global HibikiSingleInstanceMutex, or a process is using libmpv in the '
-      'target directory. Target: $target. Holders: $holderSummary. '
+      'Hibiki cannot install while a non-Hibiki process is using libmpv in the '
+      'target directory (the installer cannot close it automatically). '
+      'Target: $target. Holders: ${_summarizeBlockingProcesses(externalLocks)}. '
       'Close the listed process manually, then retry the installer. '
       'Installer log: $innoLogPath',
     );
   }
+
+  /// 该占用进程是否能被 `hibiki.iss` 按 image 名强制结束（连同其子进程树）：
+  /// 只有 `hibiki.exe`（含 popup/floating 等同 exe 子入口与其子进程树）和 WebView2 的
+  /// `msedgewebview2.exe` 是安装器托管得到的。其余 image 名视为安装器杀不掉的真外部锁。
+  static bool _installerCanClose(WindowsProcessInfo process) {
+    final String name = _windowsImageName(process);
+    return name == 'hibiki.exe' || name == 'msedgewebview2.exe';
+  }
+
+  /// 取进程的 Windows image 名（小写）：优先 [WindowsProcessInfo.name]，缺失时退回
+  /// [WindowsProcessInfo.path] 的最后一段，保证 name 未被填充的诊断也能正确归类。
+  static String _windowsImageName(WindowsProcessInfo process) {
+    final String name = (process.name ?? '').trim();
+    if (name.isNotEmpty) return name.toLowerCase();
+    final String path = (process.path ?? '').trim();
+    if (path.isEmpty) return '';
+    final int sep = _lastPathSeparatorIndex(path);
+    return (sep >= 0 ? path.substring(sep + 1) : path).toLowerCase();
+  }
+
+  static String _summarizeBlockingProcesses(
+    List<WindowsProcessInfo> processes,
+  ) =>
+      processes
+          .map(
+            (WindowsProcessInfo process) =>
+                'PID ${process.pid}: ${process.path ?? process.name ?? 'unknown'}',
+          )
+          .join('; ');
 
   static List<WindowsProcessInfo> _blockingWindowsInstallProcesses(
     WindowsInstallerDiagnostics diagnostics,
