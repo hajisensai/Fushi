@@ -66,7 +66,10 @@ extension _VideoSpeed on _VideoHibikiPageState {
     // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。
     _longPressDragBaseSpeed = speed;
     unawaited(_setSpeed(speed, persist: false));
-    _showOsd('${speed.toStringAsFixed(1)}x', icon: Icons.speed);
+    // TODO-1154：在长按落点上方弹出跟随指针的倍速徽章（B 站/YouTube 观感），
+    // 取代钉死左上角的 _showOsd。localPosition 与 Stack 同坐标系，可直接用作 Positioned 锚点。
+    _longPressSpeedBadge.value =
+        (position: details.localPosition, speed: speed);
   }
 
   /// 长按后横向拖动连续调速（TODO-338）：向右拖加速、向左减速，以长按固定加速速
@@ -81,15 +84,19 @@ extension _VideoSpeed on _VideoHibikiPageState {
       base,
       details.localOffsetFromOrigin.dx,
     );
+    // 徽章始终跟随指针移动（即使速度未越过 0.1x 步进也更新位置），保证「跟手」。
+    _longPressSpeedBadge.value =
+        (position: details.localPosition, speed: snapped);
     if ((snapped - _playbackSpeed).abs() < 0.001) return;
     unawaited(_setSpeed(snapped, persist: false));
-    _showOsd('${snapped.toStringAsFixed(1)}x', icon: Icons.speed);
   }
 
   void _handleVideoLongPressEnd(LongPressEndDetails details) {
     final double? previous = _longPressPreviousSpeed;
     _longPressPreviousSpeed = null;
     _longPressDragBaseSpeed = null;
+    // 松手清空跟随徽章。
+    _longPressSpeedBadge.value = null;
     if (previous == null) return;
     unawaited(_setSpeed(previous, persist: false));
   }

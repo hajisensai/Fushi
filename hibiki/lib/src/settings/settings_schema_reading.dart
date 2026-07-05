@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -644,6 +646,8 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,
+            // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
+            visible: (_) => Platform.isAndroid,
             icon: Icons.volume_up_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
@@ -662,6 +666,8 @@ SettingsDestination buildReadingDestination() {
           SettingsSliderItem(
             id: 'reading_controls.volume_page_turning_speed',
             title: t.volume_button_turning_speed,
+            // 随 volume_page_turning 一起仅 Android 可见（TODO-1155）。
+            visible: (_) => Platform.isAndroid,
             icon: Icons.speed_outlined,
             min: 10,
             max: 500,

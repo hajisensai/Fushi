@@ -284,6 +284,39 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
     );
   }
 
+  /// TODO-1154：长按倍速跟随徽章层。监听 [_longPressSpeedBadge]，非空时在长按/拖动指针
+  /// 上方渲染一枚「Nx」圆角徽章跟手移动（B 站/YouTube 长按倍速气泡观感），松手清空。
+  /// 位置用 `details.localPosition`（与本 Stack 同坐标系），[FractionalTranslation] 把徽章
+  /// 水平居中于指针、并整体上移一个多身位避免被手指/光标遮挡。[IgnorePointer] 纯视觉，不
+  /// 拦长按拖动手势本身。**不**复用钉死左上角的 [_buildOsdOverlay]。
+  Widget _buildLongPressSpeedBadgeOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ValueListenableBuilder<({Offset position, double speed})?>(
+          valueListenable: _longPressSpeedBadge,
+          builder: (
+            BuildContext _,
+            ({Offset position, double speed})? badge,
+            __,
+          ) {
+            if (badge == null) return const SizedBox.shrink();
+            final ColorScheme cs = _videoChromeColorScheme(context);
+            return Stack(
+              children: <Widget>[
+                VideoLongPressSpeedBadge(
+                  position: badge.position,
+                  speed: badge.speed,
+                  surfaceColor: _osdSurfaceColor(cs),
+                  textColor: _osdTextColor(cs),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   // 单条 OSD 卡片。普通通知沿用左上角小角标；TODO-971 突出变体（制卡成功）改成
   // 居中、更大字号、更厚卡片，醒目区别于音量/亮度被动小角标。
   Widget _buildOsdCard(_VideoOsdMessage osd) {

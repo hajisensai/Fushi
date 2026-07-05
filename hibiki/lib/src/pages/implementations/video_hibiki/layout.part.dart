@@ -383,6 +383,8 @@ extension _VideoLayout on _VideoHibikiPageState {
                         ),
                       ),
                       _buildOsdOverlay(),
+                      // TODO-1154：长按倍速徽章跟随指针（在 OSD 之后、其余 chrome 之前挂）。
+                      _buildLongPressSpeedBadgeOverlay(),
                       _buildAutoAdvanceOverlay(),
                       _buildLevelHudOverlay(),
                       _buildVideoSideActionRail(controller),

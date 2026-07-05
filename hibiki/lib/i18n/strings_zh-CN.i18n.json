@@ -2093,5 +2093,8 @@
   "video_resource_relink_success": "已重新链接视频文件",
   "ttu_merge_image_pages": "将插图页并入正文",
   "ttu_merge_image_pages_subtitle": "把只含一张图的独立章节并入相邻正文章连续显示，不再单独占一页",
-  "browser_extension_mobile_unsupported": "手机浏览器无法加载此扩展，请直接在 app 内阅读器/视频中查词。"
+  "browser_extension_mobile_unsupported": "手机浏览器无法加载此扩展，请直接在 app 内阅读器/视频中查词。",
+  "backup_import_overlay_warning": "正在恢复数据，请勿关闭应用。",
+  "backup_import_restart_button": "立即重启",
+  "backup_import_overlay_title": "正在导入备份"
 }

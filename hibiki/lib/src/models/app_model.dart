@@ -347,6 +347,10 @@ DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   return null;
 }
 
+/// TODO-1151：本地备份导入/恢复的全屏遮罩阶段。[running] 正在解压落盘（阻塞、请勿
+/// 关闭）；[done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
+enum BackupImportPhase { running, done }
+
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
@@ -740,6 +744,36 @@ class AppModel with ChangeNotifier {
   void endDataRootMigration() {
     _dataRootMigrationActive = false;
     _dataRootMigrationProgress = null;
+    notifyListeners();
+  }
+
+  /// TODO-1151：本地备份「导入/恢复」期间的全屏遮罩状态。导入同样会
+  /// [closeDatabase]（释放数据库句柄以便整体替换 DB + 内容树），流程结束后必须
+  /// 重启进程重新载入数据。旧实现只在设置行显示一个 24px 小圈、成功后延迟 500ms
+  /// 直接 `exit(0)`，用户看到 app「突然消失」误以为失败。这里镜像 TODO-959 数据根
+  /// 迁移的做法：进入导入态时把根 widget 切到明确的「正在导入备份，请勿关闭」遮罩，
+  /// 完成后切到「导入完成 → 立即重启」确认视图，由用户点按（或后续可加倒计时）再退出。
+  BackupImportPhase? _backupImportPhase;
+  BackupImportPhase? get backupImportPhase => _backupImportPhase;
+  bool get backupImportActive => _backupImportPhase != null;
+
+  /// 导入完成/失败后展示在确认视图里的文案（成功提示或失败原因）。
+  String? _backupImportMessage;
+  String? get backupImportMessage => _backupImportMessage;
+
+  /// 进入导入态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 解压落盘」的
+  /// 顺序，根 widget 在关库引发的 rebuild 里看到的是导入遮罩而非裸 loading。
+  void beginBackupImport() {
+    _backupImportPhase = BackupImportPhase.running;
+    _backupImportMessage = null;
+    notifyListeners();
+  }
+
+  /// 导入结束（成功或失败）：切到确认视图，展示 [message]（成功/失败文案），等待用户
+  /// 确认后重启。DB 已关闭，无论成败都必须重启，故失败也走同一确认出口。
+  void completeBackupImport(String message) {
+    _backupImportPhase = BackupImportPhase.done;
+    _backupImportMessage = message;
     notifyListeners();
   }
 

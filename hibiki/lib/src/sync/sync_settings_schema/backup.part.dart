@@ -10,6 +10,18 @@ Set<BackupCategory> defaultBackupExportCategories() => BackupCategory.values
         c != BackupCategory.videos && c != BackupCategory.localAudio)
     .toSet();
 
+/// TODO-1151：备份导入完成后由 [BackupImportOverlayView] 的「立即重启」按钮触发的退出。
+/// 沿用旧导入实现的平台分支（移动端 [FlutterExitApp.exitApp]，桌面端 `exit(0)`），只把
+/// 触发时机从「延迟 500ms 自动退出」改为「用户点确认后退出」，退出行为本身不变
+/// （never-break）。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
+void backupImportRestart() {
+  if (Platform.isAndroid || Platform.isIOS) {
+    FlutterExitApp.exitApp();
+  } else {
+    exit(0);
+  }
+}
+
 class _BackupExportWidget extends StatefulWidget {
   const _BackupExportWidget({required this.settingsContext});
   final SettingsContext settingsContext;
@@ -268,9 +280,11 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     if (!mounted) return;
 
     setState(() => _isImporting = true);
+    // appModel 在 try 外声明：导入执行期 beginBackupImport 会切走本设置页（tree swap），
+    // 此后 catch/finally 仍需经 appModel 驱动遮罩（不再依赖已卸载的本页 context）。
+    final appModel = widget.settingsContext.appModel;
     try {
       final filePath = result.files.single.path!;
-      final appModel = widget.settingsContext.appModel;
       final service = BackupService(
         db: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
@@ -307,6 +321,10 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
           p.join(appModel.appDirectory.path, 'custom_fonts');
       final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
 
+      // TODO-1151: 先上屏全屏「正在导入备份，请勿关闭」遮罩，再关库解压。beginBackupImport
+      // notifyListeners → 根 widget 切到 BackupImportOverlayView（本设置页随之卸载，故此后
+      // 不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
+      appModel.beginBackupImport();
       await appModel.closeDatabase();
       if (choice.mode == _BackupImportMode.merge) {
         // TODO-888 merge: keep this device's library + settings, only ADD what
@@ -340,28 +358,14 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         );
       }
 
-      if (mounted) {
-        _showSnackBar(context, t.backup_import_success);
-      }
-
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      if (Platform.isAndroid || Platform.isIOS) {
-        FlutterExitApp.exitApp();
-      } else {
-        exit(0);
-      }
+      // TODO-1151: 导入成功。不再「延迟 500ms 后突然 exit」——那会让用户以为崩溃/失败。
+      // 切到确认视图（导入完成 → 立即重启），由用户点按后经 backupImportRestart 退出。
+      appModel.completeBackupImport(t.backup_import_success);
     } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            t.backup_import_failed(message: friendlySyncErrorDetail(e)));
-      }
-      // DB is already closed — must exit regardless to avoid dead state.
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      if (Platform.isAndroid || Platform.isIOS) {
-        FlutterExitApp.exitApp();
-      } else {
-        exit(0);
-      }
+      // DB 已关闭，无论成败都必须重启才能回到可用状态；失败也走同一确认出口，展示失败原因。
+      appModel.completeBackupImport(
+        t.backup_import_failed(message: friendlySyncErrorDetail(e)),
+      );
     } finally {
       if (mounted) setState(() => _isImporting = false);
     }

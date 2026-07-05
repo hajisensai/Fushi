@@ -745,6 +745,14 @@ void main() {
               'progress-bar scrub, not ordinary page chrome — same reviewed '
               'exception class as the sibling video_volume_overlays HUD and '
               'video_danmaku_overlay.',
+      'lib/src/media/video/video_long_press_speed_badge.dart':
+          'TODO-1154 long-press temporary-speed badge: a video-subsystem '
+              'transient overlay bubble (BorderRadius.circular(8) pill + speed '
+              'fontSize label) that follows the pointer during a long-press '
+              'speed gesture, styled to match the sibling OSD/HUD; not ordinary '
+              'page chrome — same reviewed media-page exception class as the '
+              'sibling video_thumbnail_preview_overlay / video_volume_overlays '
+              'HUD entries and the volume_osd.part.dart OSD.',
       'lib/src/media/video/video_volume_overlays.dart':
           'TODO-517 split out the compact video volume popover and '
               'volume/brightness HUD to keep visible slider/HUD layers from '
@@ -870,6 +878,14 @@ void main() {
               'verbatim — design tokens are not reliably available there, so it '
               'uses raw fontSize + ColorScheme roles, the same reviewed '
               'startup-chrome exception class as the main.dart splash branches.',
+      'lib/src/sync/backup_import_overlay_view.dart':
+          'TODO-1151 backup import/restore overlay is pre-init startup chrome '
+              '(rendered while the DB is closed / isInitialised=false during the '
+              'import, mirroring the main.dart loading/error scaffolds and the '
+              'sibling data_root_migration_view verbatim) — design tokens are not '
+              'reliably available there, so it uses raw fontSize + ColorScheme '
+              'roles, the same reviewed startup-chrome exception class as the '
+              'data-root migration overlay and the main.dart splash branches.',
     };
 
     final List<String> violations = <String>[];

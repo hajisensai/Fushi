@@ -239,6 +239,8 @@ SettingsDestination buildListeningDestination() {
             id: 'listening.volume_key_sentence_nav',
             title: t.volume_key_sentence_nav,
             icon: Icons.skip_next_outlined,
+            // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
+            visible: (_) => Platform.isAndroid,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 10,

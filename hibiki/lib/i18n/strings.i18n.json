@@ -2093,5 +2093,8 @@
   "video_resource_relink_success": "Video relinked",
   "ttu_merge_image_pages": "Merge illustration pages into text",
   "ttu_merge_image_pages_subtitle": "Standalone single-image chapters render inline in the adjacent text chapter instead of on their own page",
-  "browser_extension_mobile_unsupported": "Mobile browsers cannot load this extension. Use in-app lookup in the reader or video player instead."
+  "browser_extension_mobile_unsupported": "Mobile browsers cannot load this extension. Use in-app lookup in the reader or video player instead.",
+  "backup_import_overlay_warning": "Restoring your data. Please don't close the app.",
+  "backup_import_restart_button": "Restart now",
+  "backup_import_overlay_title": "Importing backup"
 }

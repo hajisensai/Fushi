@@ -38,6 +38,9 @@ import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
+import 'package:hibiki/src/sync/backup_import_overlay_view.dart';
+import 'package:hibiki/src/sync/sync_settings_schema.dart'
+    show backupImportRestart;
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
@@ -1162,6 +1165,30 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           home: DataRootMigrationView(
             progress: appModel.dataRootMigrationProgress,
             background: _savedSplashColor,
+          ),
+        ),
+      );
+    }
+    // TODO-1151: 本地备份「导入/恢复」期间会 closeDatabase() 置 isInitialised=false。
+    // 若落到下面的裸 loading 分支，设置页会「突然消失」变近黑转圈，导入完再 exit(0)，
+    // 用户误以为崩溃/失败。这里镜像上面的迁移遮罩：running 显「正在导入备份，请勿关闭」
+    // + 进度条；done 显结果 +「立即重启」按钮，由用户点按后再退出（backupImportRestart）。
+    if (appModel.backupImportActive) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          home: BackupImportOverlayView(
+            phase: appModel.backupImportPhase!,
+            message: appModel.backupImportMessage,
+            background: _savedSplashColor,
+            onRestart: backupImportRestart,
           ),
         ),
       );

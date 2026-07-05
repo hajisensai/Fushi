@@ -2093,5 +2093,8 @@
   "video_resource_relink_success": "Video relinked",
   "ttu_merge_image_pages": "Merge illustration pages into text",
   "ttu_merge_image_pages_subtitle": "Standalone single-image chapters render inline in the adjacent text chapter instead of on their own page",
-  "browser_extension_mobile_unsupported": "Navegadores móveis não conseguem carregar esta extensão. Use a busca no app no leitor ou no player de vídeo."
+  "browser_extension_mobile_unsupported": "Navegadores móveis não conseguem carregar esta extensão. Use a busca no app no leitor ou no player de vídeo.",
+  "backup_import_overlay_warning": "Restoring your data. Please don't close the app.",
+  "backup_import_restart_button": "Restart now",
+  "backup_import_overlay_title": "Importing backup"
 }
