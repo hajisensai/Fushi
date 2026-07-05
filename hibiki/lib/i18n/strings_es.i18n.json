@@ -2099,5 +2099,6 @@
   "backup_import_overlay_title": "Importing backup",
   "reader_frosted_bottom_bar": "Frosted floating bottom bar",
   "reader_frosted_bottom_bar_hint": "Blur and translucent background for the reader control bar",
-  "reader_bottom_bar_opacity": "Bottom bar opacity"
+  "reader_bottom_bar_opacity": "Bottom bar opacity",
+  "audio_source_loopback_warning": "Points at this device — re-point after switching machines"
 }

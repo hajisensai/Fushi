@@ -355,4 +355,29 @@ void main() {
         saved!.map((AudioSourceConfig s) => s.url).toList();
     expect(order.indexOf(urlA), greaterThan(order.indexOf(urlB)));
   });
+  testWidgets(
+      'a loopback remoteAudio source shows the cross-machine re-point warning '
+      '(TODO-1171)', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        AudioSourcesDialog(
+          sources: <AudioSourceConfig>[
+            AudioSourceConfig.remoteAudio(
+              url: 'http://localhost:41440/localaudio/get/?term={term}',
+            ),
+            AudioSourceConfig.remoteAudio(
+              url: 'https://real.example.com/?term={term}',
+            ),
+          ],
+          onSave: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Exactly one row (the loopback one) surfaces the cross-machine re-point
+    // warning; the real remote row does not.
+    expect(
+        find.textContaining(t.audio_source_loopback_warning), findsOneWidget);
+  });
 }

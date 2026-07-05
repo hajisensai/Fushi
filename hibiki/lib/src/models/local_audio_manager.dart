@@ -73,11 +73,45 @@ class LocalAudioManager {
   /// 让每次导入的内部文件名唯一（仍是单段数字，匹配 [pruneOrphans] 的命名正则）。
   static int _lastImportStamp = 0;
 
-  /// 把一个库 entry 转成喂 native 的配置：sourceOrder 只含**启用**的子来源，
+  /// 内部副本命名（[importFile] 生成、[pruneOrphans] 回收的形状）：
+  /// `local_audio_<毫秒时间戳>.db`。是判定「可跨机按文件名归一」的唯一真值。
+  static final RegExp _internalCopyNamePattern =
+      RegExp(r'^local_audio_\d+\.db$');
+
+  /// 同时容忍 `/` 与 `\` 的 basename（不依赖运行平台的 [path.basename] 语义，
+  /// 兼容跨 OS 备份：Windows 备份在 POSIX 机导入时反斜杠也要被切掉）。
+  static String _basenameAnySep(String p) {
+    int cut = -1;
+    for (int i = p.length - 1; i >= 0; i--) {
+      final String c = p[i];
+      if (c == '/' || c == '\\') {
+        cut = i;
+        break;
+      }
+    }
+    return cut < 0 ? p : p.substring(cut + 1);
+  }
+
+  /// [dbPath] 的 basename 是否是内部副本命名。跨机导入后目录前缀是**源机**的，
+  /// 只有文件名可信，故只按 basename 判断（[resolveInternalPath] 据此归一）。
+  static bool isInternalCopyName(String dbPath) =>
+      dbPath.isNotEmpty &&
+      _internalCopyNamePattern.hasMatch(_basenameAnySep(dbPath));
+
+  /// 把一条存储的 localAudio 库路径归一到本机库目录 [dir]：内部副本按**文件名**
+  /// 重挂到 `<dir>/<basename>`（跨机可移植——丢弃源机绝对前缀，只认文件名，修
+  /// TODO-1171：换机后源机绝对 path 不存在导致本地发音静默消失）；外部引用
+  /// （BUG-483 引用模式，命名不匹配）原样返回（本就无法跨机，保留原值等重指）。
+  static String resolveInternalPath(String storedPath, String dir) =>
+      isInternalCopyName(storedPath)
+          ? path.join(dir, _basenameAnySep(storedPath))
+          : storedPath;
+
+  /// 把一个库 entry 转成喂 native 的配置：path 先按 [resolveInternalPath] 归一到
+  /// 本机库目录（内部副本认文件名，跨机安全），sourceOrder 只含**启用**的子来源，
   /// 按存储顺序（=优先级）。空 sources → 空 order → native 退回全启用自然序。
-  static LocalAudioDbConfig _configFor(LocalAudioDbEntry e) =>
-      LocalAudioDbConfig(
-        path: e.path,
+  LocalAudioDbConfig _configFor(LocalAudioDbEntry e) => LocalAudioDbConfig(
+        path: resolveInternalPath(e.path, _databaseDirectory.path),
         sourceOrder: e.sources
             .where((LocalAudioSourcePref s) => s.enabled)
             .map((LocalAudioSourcePref s) => s.name)
@@ -202,10 +236,14 @@ class LocalAudioManager {
   /// 用于回收"拷贝了但从未持久化"的孤儿文件。
   Future<void> pruneOrphans(Iterable<String> keepPaths) async {
     // 规范化引用路径，避免 Windows 反斜杠 / 正斜杠 + 大小写差异导致误删被引用文件。
-    final Set<String> keep =
-        keepPaths.map((String p) => path.canonicalize(p)).toSet();
+    // 归一后再规范化：跨机导入后 keepPaths 里内部副本仍带**源机**绝对前缀，
+    // 若不归一，本机已落地的同名副本会被判为孤儿误删（TODO-1171 数据丢失）。
+    final Set<String> keep = keepPaths
+        .map((String p) =>
+            path.canonicalize(resolveInternalPath(p, _databaseDirectory.path)))
+        .toSet();
     if (!await _databaseDirectory.exists()) return;
-    final RegExp namePattern = RegExp(r'^local_audio_\d+\.db$');
+    final RegExp namePattern = _internalCopyNamePattern;
     // BUG-483：本方法只遍历 [_databaseDirectory] 自身、且只匹配 `local_audio_<ts>.db`
     // 内部副本命名，故引用模式落在库目录之外的用户原文件天然不会进入此循环、不被回收。
     await for (final FileSystemEntity entity in _databaseDirectory.list()) {
@@ -263,10 +301,15 @@ class LocalAudioManager {
     final validConfigs = <LocalAudioDbConfig>[];
     for (final entry in dbs) {
       if (!entry.enabled) continue;
-      if (await File(entry.path).exists()) {
+      // 存在性判定认归一后的本机路径（内部副本按文件名重挂），而非可能来自别机
+      // 的存储 path——否则跨机导入的同名库虽已落地却被判缺失静默跳过（TODO-1171）。
+      final String resolved =
+          resolveInternalPath(entry.path, _databaseDirectory.path);
+      if (await File(resolved).exists()) {
         validConfigs.add(_configFor(entry));
       } else {
-        debugPrint('[hibiki-audio] DB missing, skipping: ${entry.path}');
+        debugPrint('[hibiki-audio] DB missing, skipping: $resolved'
+            '${resolved == entry.path ? '' : ' (stored: ${entry.path})'}');
       }
     }
     if (validConfigs.isNotEmpty) {

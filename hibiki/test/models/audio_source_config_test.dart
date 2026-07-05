@@ -72,4 +72,59 @@ void main() {
       );
     });
   });
+
+  group('AudioSourceConfig.isLoopbackAudioUrl (TODO-1171)', () {
+    test('detects loopback hosts across schemes and templates', () {
+      expect(
+        AudioSourceConfig.isLoopbackAudioUrl(
+            'http://localhost:41440/localaudio/get/?term={term}'),
+        isTrue,
+      );
+      expect(
+        AudioSourceConfig.isLoopbackAudioUrl(
+            'http://127.0.0.1:8765/get?reading={reading}'),
+        isTrue,
+      );
+      expect(
+        AudioSourceConfig.isLoopbackAudioUrl('http://[::1]:9000/x'),
+        isTrue,
+      );
+      // Bare host:port template (no scheme) still caught via substring probe.
+      expect(
+        AudioSourceConfig.isLoopbackAudioUrl('localhost:19633/api/lookup'),
+        isTrue,
+      );
+    });
+
+    test('does not flag a real remote host or empty/null', () {
+      expect(
+        AudioSourceConfig.isLoopbackAudioUrl(
+            'https://hoshi-reader.example.workers.dev/?term={term}'),
+        isFalse,
+      );
+      expect(AudioSourceConfig.isLoopbackAudioUrl(''), isFalse);
+      expect(AudioSourceConfig.isLoopbackAudioUrl(null), isFalse);
+    });
+
+    test('pointsAtLoopbackHost only true for loopback remoteAudio', () {
+      expect(
+        AudioSourceConfig.remoteAudio(url: 'http://localhost:1/x')
+            .pointsAtLoopbackHost,
+        isTrue,
+      );
+      expect(
+        AudioSourceConfig.remoteAudio(url: 'https://real.test/{term}')
+            .pointsAtLoopbackHost,
+        isFalse,
+      );
+      // A localAudio source that happens to carry a loopback-looking label/path
+      // is NOT a remote source, so it is never flagged.
+      expect(
+        AudioSourceConfig.localAudio(
+                label: 'localhost', path: '/tmp/local_audio_1.db')
+            .pointsAtLoopbackHost,
+        isFalse,
+      );
+    });
+  });
 }

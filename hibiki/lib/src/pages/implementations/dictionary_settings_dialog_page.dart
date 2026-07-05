@@ -200,13 +200,21 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
     final String title =
         isHibiki ? t.audio_source_hibiki_interconnect : source.displayLabel;
-    final String subtitle = isHibiki
+    final bool loopbackWarn = source.pointsAtLoopbackHost;
+    final String baseSubtitle = isHibiki
         ? t.remote_audio_source
         : (isLocal ? (source.path ?? '') : (source.url ?? ''));
+    // 换机后指向本机回环地址的远端音频源本机通常无服务→静默失败。附一行可见
+    // 「换机需重指」提示 + 警告图标，绝不让用户以为源还在正常工作（TODO-1171）。
+    final String subtitle = loopbackWarn
+        ? '$baseSubtitle\n${t.audio_source_loopback_warning}'
+        : baseSubtitle;
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
-      icon: isLocal ? Icons.audiotrack_outlined : null,
+      icon: loopbackWarn
+          ? Icons.warning_amber_outlined
+          : (isLocal ? Icons.audiotrack_outlined : null),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
