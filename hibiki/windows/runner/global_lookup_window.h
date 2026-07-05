@@ -43,6 +43,9 @@ class GlobalLookupWindow {
       const std::string& url, std::function<void(std::vector<uint8_t>)> respond)>;
   // Receives raw JSON sent by popup JS via window.chrome.webview.postMessage.
   using MessageCallback = std::function<void(const std::string& json)>;
+  // TODO-1153 -- receives a native bring-up error message (WebView2 environment
+  // /controller create failure) so Dart can surface it via ErrorLogService.
+  using ErrorCallback = std::function<void(const std::string& message)>;
 
   GlobalLookupWindow();
   ~GlobalLookupWindow();
@@ -107,6 +110,10 @@ class GlobalLookupWindow {
   void SetMessageCallback(MessageCallback cb) {
     message_cb_ = std::move(cb);
   }
+  // TODO-1153 -- wires the native overlay-error reporter (see ReportOverlayError).
+  void SetErrorCallback(ErrorCallback cb) {
+    error_cb_ = std::move(cb);
+  }
 
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
@@ -129,6 +136,9 @@ class GlobalLookupWindow {
   void ForwardGlobalClickToHost(int screen_x, int screen_y);
   void EnsureWindowClass();
   void EnsureWebView();
+  // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
+  // swallows it) so the "app-external lookup shows no popup" cause is visible.
+  void ReportOverlayError(const std::string& message, HRESULT hr);
   void ConfigureWebView();
   std::wstring LoadAdapterScript() const;
   // TODO-867 P3c — reads global_lookup_host.js for top-level injection.
@@ -153,6 +163,7 @@ class GlobalLookupWindow {
 
   MediaResolver media_resolver_;
   MessageCallback message_cb_;
+  ErrorCallback error_cb_;
 };
 
 #endif  // RUNNER_GLOBAL_LOOKUP_WINDOW_H_

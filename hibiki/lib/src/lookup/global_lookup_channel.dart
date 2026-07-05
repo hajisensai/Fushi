@@ -12,7 +12,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Thin wrapper over [HibikiChannels.globalLookup]. Static because there is a
 /// single overlay per process.
@@ -199,6 +201,21 @@ abstract final class GlobalLookupChannel {
             if (decoded is Map) {
               onJsMessage(decoded.cast<String, Object?>());
             }
+          }
+          return null;
+        case 'nativeError':
+          // TODO-1153 -- the native overlay reported a WebView2 bring-up failure
+          // (e.g. environment create 0x8007139F). Surface it in ErrorLogService
+          // (user-visible error log + copy/upload link) AND the glookup diagnostic
+          // file, so "app-external lookup shows no popup" is diagnosable rather
+          // than silently swallowed. Mirrors the TODO-1086 hotkey visibility fix.
+          final Object? message = call.arguments;
+          if (message is String && message.isNotEmpty) {
+            glog('nativeError: $message');
+            ErrorLogService.instance.log(
+              'GlobalLookupChannel.nativeError',
+              message,
+            );
           }
           return null;
         default:

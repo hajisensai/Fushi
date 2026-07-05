@@ -829,6 +829,16 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         "jsMessage", std::make_unique<flutter::EncodableValue>(json));
   });
 
+  // TODO-1153 -- native overlay bring-up errors (WebView2 environment/controller
+  // create failure) -> Dart, so ErrorLogService surfaces "app-external lookup
+  // shows no popup" like the TODO-1086 hotkey-registration failure instead of
+  // swallowing it. Fires on the platform thread (WebView2 posts its completion
+  // callbacks to the creating thread's loop), so InvokeMethod is safe here.
+  global_lookup_window_->SetErrorCallback([this](const std::string& message) {
+    global_lookup_channel_->InvokeMethod(
+        "nativeError", std::make_unique<flutter::EncodableValue>(message));
+  });
+
   global_lookup_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>

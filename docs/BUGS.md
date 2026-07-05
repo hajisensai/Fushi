@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 534 条。点号进各自文件。
+> 共 535 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-549](bugs/BUG-549-glookup-overlay-env-conflict.md) | ✅ | ✅ | Windows app-external lookup shows no popup (overlay WebView2 env fails silently) |
 | [BUG-548](bugs/BUG-548-update-staging-dir-leak.md) | ✅ | ✅ | Windows 更新 .staging 暂存根目录泄漏堆积 |
 | [BUG-547](bugs/BUG-547-progress-frosted.md) | ✅ | ✅ | 悬浮阅读进度无背景看不清 |
 | [BUG-546](bugs/BUG-546-theme-card-width.md) | ✅ | ✅ | 设置主题卡与下方配置项不等宽 |

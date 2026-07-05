@@ -83,6 +83,68 @@ std::wstring MediaContentTypeHeader(const std::string& url) {
   return L"Content-Type: application/octet-stream";
 }
 
+// TODO-1153 -- native diagnostic logger for the overlay bring-up. The runner is
+// a WIN32 GUI exe with no console, so a failed WebView2 environment/controller
+// create otherwise vanishes. Appends timestamped lines to the SAME file the Dart
+// side uses (glog -> <systemTemp>/hibiki_glookup.log) so both halves of the
+// trigger correlate in one log. Best-effort: never throws, never blocks.
+void NativeGlog(const std::string& message) {
+  wchar_t temp_dir[MAX_PATH];
+  DWORD n = GetTempPathW(MAX_PATH, temp_dir);
+  if (n == 0 || n >= MAX_PATH) {
+    return;
+  }
+  std::wstring path(temp_dir, n);
+  path += L"hibiki_glookup.log";
+  std::ofstream out(path, std::ios::app | std::ios::binary);
+  if (!out) {
+    return;
+  }
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  char stamp[32];
+  _snprintf_s(stamp, sizeof(stamp), _TRUNCATE, "%04d-%02d-%02dT%02d:%02d:%02d",
+              st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+  out << stamp << "  [native] " << message << "\n";
+}
+
+// TODO-1153 -- dedicated WebView2 user data folder for the app-external overlay.
+//
+// Root cause: the overlay's environment registers the image:// + dictmedia://
+// custom schemes (SetCustomSchemeRegistrations below), but was created against
+// the process DEFAULT user data folder (userDataFolder == nullptr) -- the SAME
+// folder the in-app fork WebView2 environments use. WebView2 forbids two
+// environments sharing one user data folder with DIFFERENT CreateOptions and
+// fails the second create with 0x8007139F (ERROR_INVALID_STATE). That failure
+// was swallowed (the completion callback never fired, the synchronous HRESULT
+// was discarded), so the overlay never navigated, webview_ready_ stayed false,
+// and the reveal showed a blank transparent window ("no popup").
+//
+// Giving the overlay its OWN folder makes it an INDEPENDENT WebView2 profile
+// scope whose options never have to match any other environment. The folder is
+// under %LOCALAPPDATA% (writable per-user) and distinct from the fork's default
+// folder, so there is no collision regardless of what schemes the in-app
+// environments register. Falls back to %TEMP% then to empty (default) as a last
+// resort; empty only re-risks the conflict, which the added error logging then
+// surfaces instead of swallowing.
+std::wstring OverlayUserDataFolder() {
+  wchar_t buf[MAX_PATH];
+  DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH);
+  std::wstring base;
+  if (n > 0 && n < MAX_PATH) {
+    base.assign(buf, n);
+  } else {
+    DWORD t = GetEnvironmentVariableW(L"TEMP", buf, MAX_PATH);
+    if (t > 0 && t < MAX_PATH) {
+      base.assign(buf, t);
+    }
+  }
+  if (base.empty()) {
+    return std::wstring();
+  }
+  return base + L"\\Hibiki\\GlobalLookupWebView2";
+}
+
 }  // namespace
 
 GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
@@ -423,6 +485,25 @@ std::wstring GlobalLookupWindow::LoadHostScript() const {
   return Utf8ToWide(ss.str());
 }
 
+// TODO-1153 -- single failure sink for the overlay WebView2 bring-up. Writes the
+// message + HRESULT (hex) to the native diagnostic log AND routes it to Dart's
+// ErrorLogService via the error callback (wired in RegisterGlobalLookupChannel),
+// so an app-external "no popup" failure is user-visible/diagnosable exactly like
+// the TODO-1086 hotkey-registration failure, instead of being silently dropped.
+// Runs on the platform thread (WebView2 posts completion callbacks to the
+// creating thread's loop), so invoking the channel callback here is safe.
+void GlobalLookupWindow::ReportOverlayError(const std::string& message,
+                                            HRESULT hr) {
+  char hr_buf[16];
+  _snprintf_s(hr_buf, sizeof(hr_buf), _TRUNCATE, "0x%08lX",
+              static_cast<unsigned long>(hr));
+  const std::string full = message + " hr=" + hr_buf;
+  NativeGlog(full);
+  if (error_cb_) {
+    error_cb_(full);
+  }
+}
+
 void GlobalLookupWindow::EnsureWebView() {
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto options = Make<CoreWebView2EnvironmentOptions>();
@@ -447,17 +528,40 @@ void GlobalLookupWindow::EnsureWebView() {
     options4->SetCustomSchemeRegistrations(2, regs);
   }
 
-  CreateCoreWebView2EnvironmentWithOptions(
-      nullptr, nullptr, options.Get(),
+  // TODO-1153 -- create the overlay environment against its OWN user data folder
+  // (see OverlayUserDataFolder above) so the image:// + dictmedia:// custom
+  // schemes never clash with the in-app fork environments on the shared default
+  // folder (0x8007139F), which previously failed this create silently and left
+  // the overlay a blank window.
+  const std::wstring overlay_folder = OverlayUserDataFolder();
+  HRESULT create_hr = CreateCoreWebView2EnvironmentWithOptions(
+      nullptr, overlay_folder.empty() ? nullptr : overlay_folder.c_str(),
+      options.Get(),
       Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-          [this](HRESULT, ICoreWebView2Environment* env) -> HRESULT {
+          [this](HRESULT env_hr, ICoreWebView2Environment* env) -> HRESULT {
+            // TODO-1153 -- do NOT swallow a failed environment create. A null
+            // env here (or a failing HRESULT) means WebView2 could not build the
+            // overlay environment; dereferencing it would crash, and ignoring it
+            // leaves webview_ready_ false forever (blank popup). Surface it.
+            if (FAILED(env_hr) || env == nullptr) {
+              ReportOverlayError("WebView2 environment create failed (async)",
+                                 env_hr);
+              return env_hr;
+            }
             env_ = env;
-            env_->CreateCoreWebView2Controller(
+            HRESULT ctrl_hr = env_->CreateCoreWebView2Controller(
                 hwnd_,
                 Callback<
                     ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                    [this](HRESULT, ICoreWebView2Controller* ctrl) -> HRESULT {
-                      if (ctrl == nullptr) {
+                    [this](HRESULT ctrl_hr,
+                           ICoreWebView2Controller* ctrl) -> HRESULT {
+                      // TODO-1153 -- a null controller (or failing HRESULT) is a
+                      // real failure, not a benign no-op: log it instead of
+                      // silently returning S_OK so the blank-popup cause is
+                      // diagnosable.
+                      if (FAILED(ctrl_hr) || ctrl == nullptr) {
+                        ReportOverlayError(
+                            "WebView2 controller create failed", ctrl_hr);
                         return S_OK;
                       }
                       controller_ = ctrl;
@@ -503,9 +607,21 @@ void GlobalLookupWindow::EnsureWebView() {
                       return S_OK;
                     })
                     .Get());
+            if (FAILED(ctrl_hr)) {
+              ReportOverlayError("CreateCoreWebView2Controller call failed",
+                                 ctrl_hr);
+            }
             return S_OK;
           })
           .Get());
+  // TODO-1153 -- capture the SYNCHRONOUS HRESULT. On an options/user-data-folder
+  // conflict the create fails synchronously (the completion callback never
+  // fires), so this is the only place the 0x8007139F is observable.
+  if (FAILED(create_hr)) {
+    ReportOverlayError(
+        "CreateCoreWebView2EnvironmentWithOptions call failed (sync)",
+        create_hr);
+  }
 }
 
 void GlobalLookupWindow::ConfigureWebView() {
