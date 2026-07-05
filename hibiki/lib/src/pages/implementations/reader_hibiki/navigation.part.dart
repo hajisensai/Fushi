@@ -126,7 +126,14 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _readingTimeTracker ??= ReadingTimeTracker(appModel.database);
     _readingTimeTracker!.start();
     _sessionStartTime = DateTime.now();
-    _sessionMaxAbsoluteChars = _absoluteCharPosition(_initialProgress);
+    // TODO-1192：session 水位只升不降。旧代码在此把水位无条件重置成恢复目标位置，
+    // 跨章回读（往回翻章 → 恢复完成）会把水位下调到更靠前那章章首，导致重读那章
+    // 正文被再次计入统计（字数虚高）。改用 [sessionWatermarkAfterRestore] 取
+    // max：前进/首次进入抬高水位（新内容照常计入），回读已读章不下调（不重复计）。
+    _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
+      _sessionMaxAbsoluteChars,
+      _absoluteCharPosition(_initialProgress),
+    );
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
     // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0

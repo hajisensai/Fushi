@@ -68,6 +68,17 @@ class EpubBook {
     return _chapterPlainTextFromBody(doc.body);
   }
 
+  /// TODO-1192: chapter [index] 的「实义字符数」——只数假名 / 汉字 / 叠字符 /
+  /// 字母数字，剔除所有标点、括号（「」『』（）等）、全角/半角空白与全角符号，
+  /// 与 hoshi/ttu `getCharacterCount`（`isNotJapaneseRegex`）口径一致（见
+  /// [japaneseCharCount]）。基于 [chapterPlainText]（振假名 `<rt>/<rp>/<rtc>` 已
+  /// 剥离故不计入），再过滤非实义字符。用于导入时落库的每章字数与阅读统计，让
+  /// 「书的总字数 / 统计字数 / 阅读速度」贴近 hoshi，而不是含标点/括号/空白高约
+  /// 10~20%。**不改** [chapterPlainText]（查词 / 对齐 / 搜索仍需完整文本）。
+  int chapterCharacterCount(int index) {
+    return japaneseCharCount(chapterPlainText(index));
+  }
+
   /// Whitespace-collapsed plain text of an already-parsed [body], with ruby
   /// annotations (`<rt>`/`<rp>`/`<rtc>`) stripped. Mutates [body] by removing the
   /// ruby nodes, so callers must pass a throwaway parsed document's body.
@@ -464,6 +475,57 @@ String decodeEpubText(List<int> rawBytes) {
     bytes = bytes.sublist(3);
   }
   return utf8.decode(bytes, allowMalformed: true);
+}
+
+/// TODO-1192: 存进 [EpubBooks.chaptersJson] 每章 `characters` 字段用的计数口径版本。
+/// v1（无 `charCaliber` 标记）= 旧的 `chapterPlainText().length`（含标点/括号/空白，
+/// 比 hoshi 高约 10~20%）；v2 = [japaneseCharCount]（只数假名/汉字/叠字符/字母数字，
+/// 与 hoshi `getCharacterCount` 对齐）。开书发现缓存不是当前口径 → 后台重算并回写。
+const int kChapterCharCountCaliber = 2;
+
+/// TODO-1192: 统计一段文本里的「实义字符数」，与 ttu/hoshi `getCharacterCount`
+/// 的 `isNotJapaneseRegex` 口径一致：只计入
+///   - 假名：平假名（ぁ-ゖ / ゝゞ）、片假名（ァ-ヺ / ー ヽヾ）、半角片假名（ｦ-ﾟ）；
+///   - 汉字（CJK 扩展A/统一/兼容 + BMP 外扩展B+ 经 runes 计入）；
+///   - 叠字/重复符号（々〆〇〻）与日文常见圈号（○◯）；
+///   - 半角字母数字（0-9 A-Z a-z）。
+/// 其余一律不计：所有标点、括号（「」『』（）【】等）、全/半角空白、全角标点
+/// （。！？、）、全角字母数字等。用 [String.runes] 遍历，正确处理 BMP 外的
+/// 代理对汉字（每个码点算一字，不因 UTF-16 拆成两半重复计）。纯函数，供单测锁定
+/// 口径（剔标点 / 振假名不计 / 撤销修复即转红）。
+int japaneseCharCount(String text) {
+  int count = 0;
+  for (final int rune in text.runes) {
+    if (_isCountedJapaneseRune(rune)) count++;
+  }
+  return count;
+}
+
+/// 单个码点是否计入 [japaneseCharCount]（whitelist；其余全部剔除）。
+bool _isCountedJapaneseRune(int c) {
+  // 半角字母数字（ttu 用 `0-9A-Z` + `i` flag → 含小写）。
+  if (c >= 0x30 && c <= 0x39) return true; // 0-9
+  if (c >= 0x41 && c <= 0x5A) return true; // A-Z
+  if (c >= 0x61 && c <= 0x7A) return true; // a-z
+  // 日文常见圈号 ○(25CB) ◯(25EF)。
+  if (c == 0x25CB || c == 0x25EF) return true;
+  // 叠字/重复符号：々(3005) 〆(3006) 〇(3007)、〻(303B)、ゝゞ(309D-309E)。
+  if (c >= 0x3005 && c <= 0x3007) return true;
+  if (c == 0x303B) return true;
+  if (c >= 0x309D && c <= 0x309E) return true;
+  // 平假名 ぁ-ゖ。
+  if (c >= 0x3041 && c <= 0x3096) return true;
+  // 片假名 ァ-ヺ 与音符/叠字 ー-ヿ（含 ー ヽ ヾ）。
+  if (c >= 0x30A1 && c <= 0x30FA) return true;
+  if (c >= 0x30FC && c <= 0x30FF) return true;
+  // 半角片假名 ｦ-ﾟ。
+  if (c >= 0xFF66 && c <= 0xFF9F) return true;
+  // 汉字：扩展A(3400-4DBF)、统一(4E00-9FFF)、兼容(F900-FAFF)、扩展B+(20000-2FA1F)。
+  if (c >= 0x3400 && c <= 0x4DBF) return true;
+  if (c >= 0x4E00 && c <= 0x9FFF) return true;
+  if (c >= 0xF900 && c <= 0xFAFF) return true;
+  if (c >= 0x20000 && c <= 0x2FA1F) return true;
+  return false;
 }
 
 String normalizeHref(String href) => href

@@ -121,6 +121,10 @@ class EpubImporter {
                   'href': entry.value.href,
                   'mediaType': entry.value.mediaType,
                   'characters': characterCounts[entry.key],
+                  // TODO-1192: 标记该 characters 计数的口径版本，供开书判定是否需
+                  // 要按新口径（[japaneseCharCount]）后台重算并回写（见
+                  // [kChapterCharCountCaliber] / charCountsFromChaptersJson）。
+                  'charCaliber': kChapterCharCountCaliber,
                 })
             .toList(),
       );
@@ -240,10 +244,13 @@ class _ParseResult {
 
 /// Compute the per-chapter character counts inside the isolate so the
 /// expensive html_parser DOM build never runs on the main/UI isolate.
+///
+/// TODO-1192: 口径改为 [EpubBook.chapterCharacterCount]（只数假名/汉字/字母数字，
+/// 剔标点/括号/空白），与 hoshi 对齐；落库时同时打 [kChapterCharCountCaliber]。
 List<int> _computeCharacterCounts(EpubBook book) {
   return List<int>.generate(
     book.chapters.length,
-    (int index) => book.chapterPlainText(index).length,
+    (int index) => book.chapterCharacterCount(index),
     growable: false,
   );
 }
