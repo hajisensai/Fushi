@@ -128,6 +128,33 @@ class AudioSourceConfig {
     };
   }
 
+  /// 该 URL 是否指向本机回环地址（localhost / 127.0.0.1 / ::1 / 0.0.0.0）。这类
+  /// remoteAudio 源在导出机器有效，换机导入后指向的是**新机自己**（通常没有对应
+  /// 服务）→ 查词发音静默失败。UI 据此打「换机需重指」标记、导入侧据此记可见日志，
+  /// 绝不静默失败（TODO-1171）。模板占位符先中性化，避免污染 host 解析。
+  static bool isLoopbackAudioUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final String probe =
+        url.replaceAll('{term}', 'x').replaceAll('{reading}', 'x');
+    final String host = (Uri.tryParse(probe)?.host ?? '').toLowerCase();
+    if (host.isNotEmpty) {
+      return host == 'localhost' ||
+          host == '127.0.0.1' ||
+          host == '0.0.0.0' ||
+          host == '::1';
+    }
+    // 无 scheme 的裸 host:port / 畸形 URL：退回子串探测。
+    final String lower = probe.toLowerCase();
+    return lower.contains('localhost') ||
+        lower.contains('127.0.0.1') ||
+        lower.contains('0.0.0.0') ||
+        lower.contains('[::1]');
+  }
+
+  /// 本源是否是指向本机回环地址的远端音频源（跨机不可移植，需用户重指）。
+  bool get pointsAtLoopbackHost =>
+      kind == AudioSourceKind.remoteAudio && isLoopbackAudioUrl(url);
+
   static List<AudioSourceConfig> fromLegacyUrls(List<String> urls) {
     return urls
         .where((String url) => url.trim().isNotEmpty)

@@ -8,9 +8,10 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/sync/backup_service.dart'
     show
+        normalizeAudioSourceConfigsJson,
+        normalizeLocalAudioDbsJson,
         rebaseFontCatalogJson,
         rebaseFontListJson,
-        rebaseLocalAudioDbsJson,
         rebasePath;
 
 /// TODO-935 E1：把应用「数据存储位置」整目录迁到新 dataRoot 的引擎（仅桌面）。
@@ -94,6 +95,7 @@ class DataRootMigrator {
     'src:reader_ttu:video_sub_fonts',
   ];
   static const String _localAudioDbsPrefKey = 'local_audio_dbs';
+  static const String _audioSourceConfigsPrefKey = 'audio_source_configs';
 
   /// 执行迁移。成功返回新 dataRoot 派生的 (documents, support) 根。
   ///
@@ -500,7 +502,7 @@ class DataRootMigrator {
   }
 
   /// 在 [dbDirectory] 的 `hibiki.db` 上把所有绝对路径列从旧根 rebase 到新根。复用
-  /// `backup_service.dart` 的纯函数（[rebasePath] / [rebaseLocalAudioDbsJson] /
+  /// `backup_service.dart` 的纯函数（[rebasePath] / [normalizeLocalAudioDbsJson] /
   /// 字体 JSON rebaser）+ Drift CRUD，逐行改写 epub / audiobook / srt / video_books，
   /// 以及 prefs 里的字体目录与本地音频库 JSON。改完 checkpoint(TRUNCATE) 落盘。
   ///
@@ -599,12 +601,25 @@ class DataRootMigrator {
             rebaseFontListJson(raw, oldDocumentsRoot, newDocumentsRoot);
         if (rebased != raw) await db.setPref(key, rebased);
       }
+      // TODO-1171: local-audio internal copies (`local_audio_<ts>.db`) are
+      // re-homed by FILENAME onto the new support root (tag-aware; the pref is
+      // PrefCodec-tagged so the pre-1171 raw json-decode silently no-op'd here
+      // too). Also re-home the typed `audio_source_configs` localAudio paths so
+      // the two prefs stay joined after a data-root move.
       final String? localAudio = prefs[_localAudioDbsPrefKey];
       if (localAudio != null) {
         final String rebased =
-            rebaseLocalAudioDbsJson(localAudio, oldSupportRoot, newSupportRoot);
+            normalizeLocalAudioDbsJson(localAudio, newSupportRoot);
         if (rebased != localAudio) {
           await db.setPref(_localAudioDbsPrefKey, rebased);
+        }
+      }
+      final String? audioConfigs = prefs[_audioSourceConfigsPrefKey];
+      if (audioConfigs != null) {
+        final String rebased =
+            normalizeAudioSourceConfigsJson(audioConfigs, newSupportRoot);
+        if (rebased != audioConfigs) {
+          await db.setPref(_audioSourceConfigsPrefKey, rebased);
         }
       }
 

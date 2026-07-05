@@ -2102,5 +2102,6 @@
   "reader_bottom_bar_opacity": "底栏不透明度",
   "tag_seed_stars": "添加星级标签",
   "tag_seed_stars_added": "已添加星级标签",
-  "tag_seed_stars_exists": "星级标签已存在"
+  "tag_seed_stars_exists": "星级标签已存在",
+  "audio_source_loopback_warning": "指向本机地址，换机后需重新指向"
 }

@@ -2102,5 +2102,6 @@
   "reader_bottom_bar_opacity": "Bottom bar opacity",
   "tag_seed_stars": "Add star rating tags",
   "tag_seed_stars_added": "Star rating tags added",
-  "tag_seed_stars_exists": "Star rating tags already exist"
+  "tag_seed_stars_exists": "Star rating tags already exist",
+  "audio_source_loopback_warning": "Points at this device — re-point after switching machines"
 }

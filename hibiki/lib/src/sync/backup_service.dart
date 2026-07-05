@@ -4,6 +4,8 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/models/audio_source_config.dart';
+import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/backup_merge_engine.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -134,30 +136,88 @@ String rebaseFontCatalogJson(String json, String oldRoot, String newRoot) {
   }
 }
 
-/// Rebases every entry's `path` inside a persisted `local_audio_dbs` JSON
-/// string (`[{path, displayName, enabled, sources}, ...]`) from [oldRoot] onto
-/// [newRoot] via [rebasePath]. Each `path` points at a `local_audio_*.db` file
-/// under the source device's support directory; the importing device's root
-/// differs, so without rebasing the restored config points at databases that
-/// never crossed over and the local audio sources silently never apply
-/// (TODO-941). A malformed value (not a JSON list of maps) is returned verbatim
-/// so a corrupt pref never aborts the import.
-String rebaseLocalAudioDbsJson(String json, String oldRoot, String newRoot) {
+/// Splits a possibly PrefCodec-tagged pref value into its (tag, jsonBody). The
+/// repo writes `local_audio_dbs` as a jsonEncode(...) STRING -> `s:<json>` and
+/// `audio_source_configs` as a List -> `j:<json>`; legacy / low-level
+/// `db.setPref` writes are untagged `<json>` (empty tag). The pre-TODO-1171
+/// rebase json-decoded the whole tagged string and silently no-op'd in
+/// production; splitting the tag off first is what makes re-homing actually run.
+({String tag, String body}) splitPrefTag(String raw) {
+  if (raw.length >= 2 && raw[1] == ':' && (raw[0] == 's' || raw[0] == 'j')) {
+    return (tag: raw[0], body: raw.substring(2));
+  }
+  return (tag: '', body: raw);
+}
+
+/// Re-applies the [splitPrefTag] tag to a rewritten [body].
+String joinPrefTag(String tag, String body) =>
+    tag.isEmpty ? body : '$tag:$body';
+
+/// Re-homes every internal local-audio copy path (`local_audio_<ts>.db`) inside
+/// a stored `local_audio_dbs` pref value onto [newRoot] by FILENAME (see
+/// [LocalAudioManager.resolveInternalPath]), preserving the PrefCodec tag.
+///
+/// Import used to rebase by source-root prefix (TODO-941) but (a) that never ran
+/// in production: the pref is PrefCodec-tagged and the old code json-decoded the
+/// whole tagged string, always throwing -> verbatim no-op (the TODO-1171 root
+/// cause), and (b) a bare-db import carries no source root. Filename re-homing is
+/// root-independent and idempotent; each `path` points at a `local_audio_*.db`
+/// under the source device's support dir, which the backup drops flat under this
+/// device's support dir with the SAME name. External references (BUG-483, name
+/// mismatch) keep their path. A malformed value is returned verbatim so a corrupt
+/// pref never aborts import/migration.
+String normalizeLocalAudioDbsJson(String stored, String newRoot) {
+  final ({String tag, String body}) split = splitPrefTag(stored);
+  return joinPrefTag(split.tag, _rehomeLocalAudioBody(split.body, newRoot));
+}
+
+String _rehomeLocalAudioBody(String jsonBody, String newRoot) {
   try {
-    final dynamic decoded = jsonDecode(json);
-    if (decoded is! List) return json;
+    final dynamic decoded = jsonDecode(jsonBody);
+    if (decoded is! List) return jsonBody;
     final List<dynamic> out = decoded.map<dynamic>((dynamic e) {
       if (e is! Map) return e;
       final Object? path = e['path'];
       if (path is! String) return e;
       return <String, dynamic>{
         ...Map<String, dynamic>.from(e),
-        'path': rebasePath(path, oldRoot, newRoot),
+        'path': LocalAudioManager.resolveInternalPath(path, newRoot),
       };
     }).toList();
     return jsonEncode(out);
   } catch (_) {
-    return json; // never throw on a corrupt pref value
+    return jsonBody; // never throw on a corrupt pref value
+  }
+}
+
+/// Same filename re-homing for the typed `audio_source_configs` pref value: only
+/// `localAudio` entries carry a re-homable `path`; every other kind passes
+/// through untouched. Kept in lock-step with [normalizeLocalAudioDbsJson] so the
+/// typed-config <-> `local_audio_dbs` join (AppModel.audioSourceConfigs matches
+/// by path) survives import — re-homing only one side would split them and
+/// silently drop the typed local source (TODO-1171).
+String normalizeAudioSourceConfigsJson(String stored, String newRoot) {
+  final ({String tag, String body}) split = splitPrefTag(stored);
+  return joinPrefTag(split.tag, _rehomeAudioConfigsBody(split.body, newRoot));
+}
+
+String _rehomeAudioConfigsBody(String jsonBody, String newRoot) {
+  try {
+    final dynamic decoded = jsonDecode(jsonBody);
+    if (decoded is! List) return jsonBody;
+    final List<dynamic> out = decoded.map<dynamic>((dynamic e) {
+      if (e is! Map) return e;
+      if (e['kind'] != AudioSourceKind.localAudio.wireName) return e;
+      final Object? path = e['path'];
+      if (path is! String) return e;
+      return <String, dynamic>{
+        ...Map<String, dynamic>.from(e),
+        'path': LocalAudioManager.resolveInternalPath(path, newRoot),
+      };
+    }).toList();
+    return jsonEncode(out);
+  } catch (_) {
+    return jsonBody; // never throw on a corrupt pref value
   }
 }
 
@@ -305,6 +365,7 @@ class BackupService {
   /// `path` of each entry points at a `local_audio_*.db` file in the support
   /// directory and is rebased onto this device's root on import (TODO-941).
   static const String _localAudioDbsPrefKey = 'local_audio_dbs';
+  static const String _audioSourceConfigsPrefKey = 'audio_source_configs';
 
   /// Matches a packed local-audio database file (and its `-wal`/`-shm`
   /// siblings). Only these are packed from the support directory so the export
@@ -1735,31 +1796,89 @@ class BackupService {
     }
   }
 
-  /// Rebases the imported DB's `local_audio_dbs` preference paths from the
-  /// backup's [BackupMeta.localAudioRoot] onto this device's
-  /// [newLocalAudioRoot] (its support directory). No-op when the backup did not
-  /// pack local-audio DBs (meta has no localAudioRoot) or the value is absent.
+  /// Re-homes the imported DB's stored local-audio paths onto THIS device's
+  /// support directory [newLocalAudioRoot] by FILENAME, for BOTH the canonical
+  /// `local_audio_dbs` pref AND the typed `audio_source_configs` pref (its
+  /// localAudio entries). Keeping both in lock-step preserves the
+  /// typed-config <-> local_audio_dbs join (AppModel.audioSourceConfigs matches
+  /// by path); re-homing only one side would split them and drop the typed
+  /// source (TODO-1171). Gated on [BackupMeta.localAudioRoot] being non-null —
+  /// i.e. the localAudio category was packed, so the `.db` files actually
+  /// crossed over and this device's restored DB is a real, openable database
+  /// (a db-only backup carries no audio files, and runtime resolution via
+  /// [LocalAudioManager.resolveInternalPath] covers playback there without
+  /// touching stored prefs; opening the DB in that isolation case is neither
+  /// needed nor safe — mirrors the sibling content/font rebasers). Preserves
+  /// each pref's PrefCodec tag (`s:`/`j:` in production, untagged in some
+  /// tests). Also logs any loopback remoteAudio source as a cross-machine
+  /// hazard so the failure is visible, never silent.
   static Future<void> _rebaseLocalAudioPaths({
     required String dbDirectory,
     required BackupMeta meta,
     required String? newLocalAudioRoot,
   }) async {
-    final String? oldRoot = meta.localAudioRoot;
-    if (oldRoot == null || newLocalAudioRoot == null) return;
+    if (meta.localAudioRoot == null || newLocalAudioRoot == null) return;
     final HibikiDatabase db = HibikiDatabase(dbDirectory);
     try {
       final Map<String, String> prefs = await db.getAllPrefs();
-      final String? raw = prefs[_localAudioDbsPrefKey];
-      if (raw != null) {
-        final String rebased =
-            rebaseLocalAudioDbsJson(raw, oldRoot, newLocalAudioRoot);
-        if (rebased != raw) {
-          await db.setPref(_localAudioDbsPrefKey, rebased);
-        }
-      }
+      await _normalizePrefInPlace(
+        db,
+        prefs,
+        _localAudioDbsPrefKey,
+        (String body) => normalizeLocalAudioDbsJson(body, newLocalAudioRoot),
+      );
+      await _normalizePrefInPlace(
+        db,
+        prefs,
+        _audioSourceConfigsPrefKey,
+        (String body) =>
+            normalizeAudioSourceConfigsJson(body, newLocalAudioRoot),
+      );
+      _warnLoopbackAudioSources(prefs[_audioSourceConfigsPrefKey]);
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// Reads [key] from [prefs], runs the tag-aware [transform] on its stored
+  /// value, and writes it back when it changed. No-op when the key is absent or
+  /// the value is unchanged.
+  static Future<void> _normalizePrefInPlace(
+    HibikiDatabase db,
+    Map<String, String> prefs,
+    String key,
+    String Function(String storedValue) transform,
+  ) async {
+    final String? raw = prefs[key];
+    if (raw == null) return;
+    final String next = transform(raw);
+    if (next == raw) return;
+    await db.setPref(key, next);
+  }
+
+  /// Logs (never silently drops) any imported remoteAudio source that points at
+  /// a loopback host — it resolved on the source device but points at THIS new
+  /// machine after import, so it needs a manual re-point. The audio-source
+  /// management UI surfaces the same hazard as a per-row warning (TODO-1171).
+  static void _warnLoopbackAudioSources(String? rawConfigs) {
+    if (rawConfigs == null) return;
+    try {
+      final dynamic decoded = jsonDecode(splitPrefTag(rawConfigs).body);
+      if (decoded is! List) return;
+      for (final dynamic e in decoded) {
+        if (e is! Map) continue;
+        if (e['kind'] != AudioSourceKind.remoteAudio.wireName) continue;
+        final Object? url = e['url'];
+        if (url is String && AudioSourceConfig.isLoopbackAudioUrl(url)) {
+          debugPrint(
+            '[hibiki-audio] imported remote audio source points at a loopback '
+            'host and will not resolve on this device until re-pointed: $url',
+          );
+        }
+      }
+    } catch (_) {
+      // diagnostic only; never abort import on a malformed pref
     }
   }
 
