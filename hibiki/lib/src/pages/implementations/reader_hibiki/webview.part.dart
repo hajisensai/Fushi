@@ -327,16 +327,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     return Uint8List.fromList(utf8.encode(html));
   }
 
-  // TODO-1128 / TODO-1174: prepend the absorbed single-image chapters' <img> to
+  // TODO-1128 / TODO-1174: prepend the absorbed image-only chapters' images to
   // the *start* of [html]'s <body> when the spread map records this text chapter
-  // as absorbing the images that precede it (merge-image on). Each image chapter
-  // contributes exactly one <img> (isImageOnlyChapter guarantees a single
-  // <img>); its src is resolved to an absolute hoshi.local /epub URL relative to
-  // *that* image chapter's own href, so a text chapter absorbing images from a
-  // different directory still points at the right files (the served text
-  // chapter's baseURI would otherwise mis-resolve them). The insertion position
-  // is a pure string op in ReaderResourceSanitizer.injectImagesAfterBodyOpen
-  // (unit-tested). No-op unless merge is on and the chapter absorbs images.
+  // as absorbing the images that precede it (merge-image on). Each absorbed
+  // chapter contributes *all* of its image references (chapterImageSrcs covers
+  // <img>, SVG <image>, and CSS background-image — TODO-1174 broadened the
+  // classifier, so an SVG-only or multi-image illustration page must re-emit
+  // every image or the merge would silently drop illustrations). Each relative
+  // src is resolved to an absolute hoshi.local /epub URL relative to *that* image
+  // chapter's own href, so a text chapter absorbing images from a different
+  // directory still points at the right files (the served text chapter's baseURI
+  // would otherwise mis-resolve them); already-absolute (data:/scheme) refs pass
+  // through untouched. The insertion position is a pure string op in
+  // ReaderResourceSanitizer.injectImagesAfterBodyOpen (unit-tested). No-op unless
+  // merge is on and the chapter absorbs images.
   String _injectMergedChapterImages(String html, int chapterIndex) {
     if (chapterIndex < 0) return html;
     final EpubBook? book = _book;
@@ -347,17 +351,21 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
     final StringBuffer figures = StringBuffer();
     for (final int imageChapter in merged) {
-      final String? src = book.chapterImageSrc(imageChapter);
-      if (src == null || src.trim().isEmpty) continue;
       final String chapterDir =
           p.posix.dirname(normalizeHref(book.chapters[imageChapter].href));
-      final String resolved = p.posix.normalize(p.posix.join(chapterDir, src));
-      final String absoluteUrl = ReaderHibikiSource.epubUrl(resolved);
-      figures.write(
-        '<div class="hoshi-merged-image">'
-        '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img"/>'
-        '</div>',
-      );
+      for (final String src in book.chapterImageSrcs(imageChapter)) {
+        if (src.trim().isEmpty) continue;
+        final bool isAbsolute = src.startsWith('data:') || src.contains('://');
+        final String absoluteUrl = isAbsolute
+            ? src
+            : ReaderHibikiSource.epubUrl(
+                p.posix.normalize(p.posix.join(chapterDir, src)));
+        figures.write(
+          '<div class="hoshi-merged-image">'
+          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img"/>'
+          '</div>',
+        );
+      }
     }
     if (figures.isEmpty) return html;
 
