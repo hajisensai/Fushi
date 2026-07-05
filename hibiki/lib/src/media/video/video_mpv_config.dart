@@ -74,7 +74,8 @@ class VideoMpvConfig {
   /// 硬件解码：`no` | `auto-safe` | `auto-copy`。
   final String hwdec;
 
-  /// 高画质渲染：on → 高质量 scale 链（ewa_lanczossharp 等）；off → bilinear（mpv 默认）。
+  /// 高画质渲染：on → 高质量 scale 链（桌面 `ewa_lanczossharp`；移动端回落轻量 `spline36`，
+  /// 见 [resolveScaleProperties]，TODO-1196 修 realme8 HEVC 闪烁）；off → bilinear（mpv 默认）。
   final bool highQuality;
 
   /// 去色带 deband。
@@ -334,25 +335,63 @@ String resolveAndroidHwdec(String hwdec, {bool? isAndroid}) {
   return hwdec; // no（软解）/ auto-copy（已 copy）/ 其它显式值透传。
 }
 
+/// 把 [highQuality] 偏好按平台解析成「实际下发给 libmpv 的 scale 缩放链」属性 map。纯函数。
+///
+/// **根治 realme 8 / 移动中端 GPU「HEVC 视频闪烁」（TODO-1196；用户 BUG-465 亲测方向）。**
+/// [highQuality] 开时桌面下发 `scale/cscale=ewa_lanczossharp`——EWA polar（径向）多抽头缩放
+/// 画质最好，但每帧 GPU 开销极重。移动中端 GPU（realme 8 的 Mali 等）+ media_kit 纹理管线
+/// （`vo=gpu` / `gpu-context=android` / `opengl-es`，每帧把解码帧画进 GL 纹理再交 Flutter 合成）
+/// 扛不住这条重缩放链 → 掉帧 / GL 表面重建 → 画面闪烁（用户 BUG-465 亲测「关画质增强后不再闪」）。
+///
+/// 故移动端（Android/iOS）即便 highQuality 开，也把 EWA polar 链回落成轻量的**可分离**
+/// `spline36`（远比 EWA polar 便宜、又明显优于 mpv 默认 bilinear，保留「高画质开关」在移动端的
+/// 可感质量差异）；桌面 GPU 扛得住，保持 `ewa_lanczossharp` 原样不降级。这与 [resolveAndroidHwdec]
+/// 同范式：只改移动端**实际下发**的滤镜，不改用户可见的 highQuality 开关语义（用户仍可手动开，
+/// 移动端下发的是轻量链、自担闪烁风险）。对齐 Windows 端把 `sigmoid-upscaling` 默认关修闪的同类
+/// 「中端 GPU 扛不住高画质渲染链」降级思路。highQuality 关时两端一致回落 mpv 默认 bilinear
+/// （全量 emit 便于运行时关掉高画质时复位）。
+///
+/// [isMobile] 默认取 `Platform.isAndroid || Platform.isIOS`，注入仅为单测。
+Map<String, String> resolveScaleProperties(bool highQuality, {bool? isMobile}) {
+  if (!highQuality) {
+    // 关：显式回落 mpv 默认 bilinear（便于运行时关掉高画质时复位，两端一致）。
+    return <String, String>{
+      'scale': 'bilinear',
+      'cscale': 'bilinear',
+      'dscale': 'bilinear',
+      'scale-antiring': '0',
+      'cscale-antiring': '0',
+    };
+  }
+  final bool mobile = isMobile ?? (Platform.isAndroid || Platform.isIOS);
+  if (mobile) {
+    // 移动中端 GPU 扛不住 EWA polar 重缩放 → 闪烁；回落轻量可分离 spline36（TODO-1196）。
+    return <String, String>{
+      'scale': 'spline36',
+      'cscale': 'spline36',
+      'dscale': 'mitchell',
+      'scale-antiring': '0',
+      'cscale-antiring': '0',
+    };
+  }
+  // 桌面：GPU 扛得住，保持高画质 EWA polar 缩放链原样。
+  return <String, String>{
+    'scale': 'ewa_lanczossharp',
+    'cscale': 'ewa_lanczossharp',
+    'dscale': 'mitchell',
+    'scale-antiring': '0.7',
+    'cscale-antiring': '0.7',
+  };
+}
+
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
-    {bool? isAndroid}) {
+    {bool? isAndroid, bool? isMobile}) {
   final Map<String, String> out = <String, String>{};
   // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）。
   out['hwdec'] = resolveAndroidHwdec(config.hwdec, isAndroid: isAndroid);
-  // 画质：scale 链（on=高质量 / off=mpv 默认 bilinear，便于运行时复位）
-  if (config.highQuality) {
-    out['scale'] = 'ewa_lanczossharp';
-    out['cscale'] = 'ewa_lanczossharp';
-    out['dscale'] = 'mitchell';
-    out['scale-antiring'] = '0.7';
-    out['cscale-antiring'] = '0.7';
-  } else {
-    out['scale'] = 'bilinear';
-    out['cscale'] = 'bilinear';
-    out['dscale'] = 'bilinear';
-    out['scale-antiring'] = '0';
-    out['cscale-antiring'] = '0';
-  }
+  // 画质：scale 链——桌面高质量 EWA polar，移动端回落轻量 spline36 修闪（TODO-1196）；
+  // off=mpv 默认 bilinear，便于运行时复位。见 [resolveScaleProperties]。
+  out.addAll(resolveScaleProperties(config.highQuality, isMobile: isMobile));
   out['deband'] = config.deband ? 'yes' : 'no';
   out['dither-depth'] = config.dither ? 'auto' : 'no';
   if (config.interpolation) {

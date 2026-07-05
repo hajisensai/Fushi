@@ -170,6 +170,65 @@ keep-open=yes
     });
   });
 
+  group('resolveScaleProperties (TODO-1196 移动端 HEVC 缩放闪烁降级)', () {
+    // 根因：桌面 ewa_lanczossharp（EWA polar 多抽头）缩放画质最好但每帧极重；realme8 等
+    // 移动中端 GPU + media_kit 纹理管线扛不住 → 掉帧/GL 表面重建 → 闪烁（用户 BUG-465 亲测）。
+    // 修复=移动端即便 highQuality 开也回落轻量可分离 spline36，桌面保持 ewa 不降级。
+    test('mobile highQuality: 回落轻量 spline36，绝不下发 ewa_lanczossharp', () {
+      final Map<String, String> m =
+          resolveScaleProperties(true, isMobile: true);
+      expect(m['scale'], 'spline36');
+      expect(m['cscale'], 'spline36');
+      // 关键守卫：移动端绝不下发重 EWA polar 缩放（闪烁根因）。
+      expect(m['scale'], isNot('ewa_lanczossharp'));
+      expect(m['cscale'], isNot('ewa_lanczossharp'));
+      expect(m['dscale'], 'mitchell');
+      expect(m['scale-antiring'], '0');
+      expect(m['cscale-antiring'], '0');
+    });
+    test('desktop highQuality: 保持高画质 ewa_lanczossharp（桌面画质不降级）', () {
+      final Map<String, String> m =
+          resolveScaleProperties(true, isMobile: false);
+      expect(m['scale'], 'ewa_lanczossharp');
+      expect(m['cscale'], 'ewa_lanczossharp');
+      expect(m['dscale'], 'mitchell');
+      expect(m['scale-antiring'], '0.7');
+      expect(m['cscale-antiring'], '0.7');
+    });
+    test('highQuality off: 两端一致回落 mpv 默认 bilinear（运行时可复位）', () {
+      for (final bool mobile in <bool>[true, false]) {
+        final Map<String, String> m =
+            resolveScaleProperties(false, isMobile: mobile);
+        expect(m['scale'], 'bilinear', reason: 'mobile=$mobile');
+        expect(m['cscale'], 'bilinear', reason: 'mobile=$mobile');
+        expect(m['dscale'], 'bilinear', reason: 'mobile=$mobile');
+      }
+    });
+    test('buildMpvProperties(isMobile:true) 默认高画质下不下发 ewa_lanczossharp', () {
+      // 端到端守卫：移动端默认配置（highQuality=true）下发到 libmpv 的 scale 必为轻量链。
+      final Map<String, String> m =
+          buildMpvProperties(VideoMpvConfig.defaults, isMobile: true);
+      expect(m['scale'], 'spline36');
+      expect(m['cscale'], 'spline36');
+      expect(m['scale'], isNot('ewa_lanczossharp'));
+    });
+    test('buildMpvProperties(isMobile:false) 桌面默认高画质仍下发 ewa_lanczossharp', () {
+      final Map<String, String> m =
+          buildMpvProperties(VideoMpvConfig.defaults, isMobile: false);
+      expect(m['scale'], 'ewa_lanczossharp');
+      expect(m['cscale'], 'ewa_lanczossharp');
+    });
+    test('用户仍可手动开高画质：开关语义不变（只改移动端实际下发的滤镜）', () {
+      // 移动端只改实际下发滤镜，不删/不翻转 highQuality 开关；语义保留 true。
+      expect(VideoMpvConfig.defaults.highQuality, isTrue);
+      final VideoMpvConfig on =
+          VideoMpvConfig.defaults.copyWith(highQuality: true);
+      expect(on.highQuality, isTrue);
+      expect(resolveScaleProperties(on.highQuality, isMobile: true)['scale'],
+          'spline36');
+    });
+  });
+
   group('encode/decode', () {
     test('round-trips all fields', () {
       final VideoMpvConfig c = VideoMpvConfig.defaults.copyWith(
