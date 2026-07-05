@@ -65,8 +65,15 @@ class EpubBook {
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
     final html_dom.Document doc = html_parser.parse(chapters[index].html);
-    _removeRubyAnnotations(doc.body);
-    final String raw = doc.body?.text ?? '';
+    return _chapterPlainTextFromBody(doc.body);
+  }
+
+  /// Whitespace-collapsed plain text of an already-parsed [body], with ruby
+  /// annotations (`<rt>`/`<rp>`/`<rtc>`) stripped. Mutates [body] by removing the
+  /// ruby nodes, so callers must pass a throwaway parsed document's body.
+  static String _chapterPlainTextFromBody(html_dom.Element? body) {
+    _removeRubyAnnotations(body);
+    final String raw = body?.text ?? '';
     return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
@@ -77,21 +84,110 @@ class EpubBook {
         );
   }
 
-  /// True when chapter [index] contains no readable text and exactly one
-  /// `<img>` element — i.e. a pure image page (scan, manga, illustration).
+  /// TODO-1174: the largest whitespace-stripped plain-text length a chapter may
+  /// still carry and count as a pure illustration page. A full-page illustration
+  /// commonly carries a short caption / figcaption / page number / 「挿絵」credit
+  /// that the old strict "text must be empty" test rejected, so such a page never
+  /// merged into the following prose and kept its own page. Kept deliberately
+  /// small: any real prose paragraph blows past it, so a text chapter can never
+  /// be misclassified as image-only and have its body silently dropped by the
+  /// image-merge pass ([EpubSpreadMap._mergeImageEntries]).
+  static const int _imageChapterMaxTextChars = 20;
+
+  /// True when chapter [index] is a pure illustration page: it carries at least
+  /// one image and no more than [_imageChapterMaxTextChars] characters of
+  /// readable text. Drives spread-pairing of adjacent scan/manga/illustration
+  /// pages and folding a standalone illustration page into the following prose.
+  ///
+  /// TODO-1174: broadened from the original "exactly one `<img>` AND zero text"
+  /// test, which missed the two commonest real illustration pages — Japanese
+  /// fixed-layout books that wrap a single JPEG in an SVG `<image xlink:href>`
+  /// (no `<img>` at all), and pages carrying a caption / page number beside the
+  /// image — so those illustrations each kept their own page instead of merging.
+  /// "Has an image" now counts `<img>`, SVG `<image>`, and CSS
+  /// `background-image` (see [_chapterImageRefs]); the count is relaxed from
+  /// exactly one to one-or-more. The text threshold is the guardrail that keeps
+  /// a real prose chapter from ever being absorbed.
   bool isImageOnlyChapter(int index) {
     if (index < 0 || index >= chapters.length) return false;
-    if (chapterPlainText(index).isNotEmpty) return false;
     final html_dom.Document doc = html_parser.parse(chapters[index].html);
-    return doc.querySelectorAll('img').length == 1;
+    if (_chapterImageRefs(doc).isEmpty) return false;
+    return _chapterPlainTextFromBody(doc.body).length <=
+        _imageChapterMaxTextChars;
   }
 
-  /// Extract the `src` attribute of the first `<img>` in chapter [index].
+  /// The first chapter-relative image reference of chapter [index] (see
+  /// [_chapterImageRefs] for the sources considered), or null when none. Used by
+  /// edge-matching and spread pairing, which need a single representative image.
   String? chapterImageSrc(int index) {
-    if (index < 0 || index >= chapters.length) return null;
+    final List<String> refs = chapterImageSrcs(index);
+    return refs.isEmpty ? null : refs.first;
+  }
+
+  /// TODO-1174: every chapter-relative image reference of chapter [index], in
+  /// priority/DOM order (see [_chapterImageRefs]). The inline image-merge
+  /// renderer folds all of them into the absorbing prose chapter so a multi-image
+  /// or SVG-`<image>` illustration page never loses an illustration when merged.
+  List<String> chapterImageSrcs(int index) {
+    if (index < 0 || index >= chapters.length) return const <String>[];
     final html_dom.Document doc = html_parser.parse(chapters[index].html);
-    final html_dom.Element? img = doc.querySelector('img');
-    return img?.attributes['src'];
+    return _chapterImageRefs(doc);
+  }
+
+  /// TODO-1174: every chapter-relative image reference in [doc], across the ways
+  /// a fixed-layout / illustration EPUB page can carry a full-page image, in
+  /// priority order: HTML `<img src>`, then SVG `<image xlink:href>` / `<image
+  /// href>` (Japanese fixed layout often wraps one JPEG in an SVG viewport with
+  /// no `<img>`), then CSS `background-image: url(...)` (inline `style=`
+  /// attributes and `<style>` blocks — best effort, not matched to a specific
+  /// element, which is enough for the image-only classifier). Empty/whitespace
+  /// references are skipped.
+  static List<String> _chapterImageRefs(html_dom.Document doc) {
+    final List<String> refs = <String>[];
+    for (final html_dom.Element img in doc.querySelectorAll('img')) {
+      final String ref = (img.attributes['src'] ?? '').trim();
+      if (ref.isNotEmpty) refs.add(ref);
+    }
+    for (final html_dom.Element image in doc.querySelectorAll('image')) {
+      final String? ref = _svgImageHref(image);
+      if (ref != null && ref.isNotEmpty) refs.add(ref);
+    }
+    final StringBuffer css = StringBuffer();
+    for (final html_dom.Element styled in doc.querySelectorAll('[style]')) {
+      css.writeln(styled.attributes['style'] ?? '');
+    }
+    for (final html_dom.Element styleEl in doc.querySelectorAll('style')) {
+      css.writeln(styleEl.text);
+    }
+    for (final Match match
+        in _backgroundImageUrlPattern.allMatches(css.toString())) {
+      final String ref = (match.group(1) ?? '').trim();
+      if (ref.isNotEmpty) refs.add(ref);
+    }
+    return refs;
+  }
+
+  /// Matches a CSS `background-image: url(...)` (or `background:` shorthand),
+  /// capturing the reference with surrounding quotes/whitespace stripped.
+  static final RegExp _backgroundImageUrlPattern = RegExp(
+    r'''background(?:-image)?\s*:[^;}]*url\(\s*['"]?([^'")]+?)['"]?\s*\)''',
+    caseSensitive: false,
+  );
+
+  /// Reads an SVG `<image>` reference. package:html stores a namespaced
+  /// `xlink:href` under an `AttributeName` key (not the plain String
+  /// `'xlink:href'`), so match on the attribute's *local* name `href` — this
+  /// covers both `xlink:href` (legacy, still the norm in Japanese fixed-layout
+  /// EPUB) and the un-prefixed SVG2 `href`.
+  static String? _svgImageHref(html_dom.Element image) {
+    for (final MapEntry<Object, String> attr in image.attributes.entries) {
+      final String name = attr.key.toString();
+      if (name == 'href' || name == 'xlink:href' || name.endsWith(':href')) {
+        final String value = attr.value.trim();
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return null;
   }
 
   /// TODO-723: every `<img>` in the book in reading order. Walks [chapters] in
