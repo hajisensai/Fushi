@@ -33,20 +33,26 @@ void main() {
     }
   });
 
-  test('parseAndCountChapters 的字符数与逐章 chapterPlainText 等价', () {
+  test('parseAndCountChapters 的字符数与逐章 chapterCharacterCount 等价', () {
     final ParsedBookData result = parseAndCountChapters(extractDir.path);
     final EpubBook book = EpubParser.parseFromExtracted(extractDir.path);
 
     expect(result.book.chapters.length, book.chapters.length);
     expect(result.book.chapters.length, greaterThan(1));
 
+    // TODO-1192: 计数口径改为 chapterCharacterCount（只数实义字符，剔标点/空白），
+    // 与 hoshi 对齐；parseAndCountChapters 必须与逐章 chapterCharacterCount 一致。
     final List<int> expected = List<int>.generate(
       book.chapters.length,
-      (int i) => book.chapterPlainText(i).length,
+      (int i) => book.chapterCharacterCount(i),
     );
     expect(result.charCounts, expected);
     // Non-trivial counts: guards against an all-zero false equivalence.
     expect(expected.every((int c) => c > 0), isTrue);
+    // 口径确实剔除了标点/空白：英文正文含空格 + 句号，实义计数应严格小于原始长度。
+    for (int i = 0; i < book.chapters.length; i++) {
+      expect(result.charCounts[i], lessThan(book.chapterPlainText(i).length));
+    }
   });
 }
 

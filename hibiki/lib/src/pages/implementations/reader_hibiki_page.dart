@@ -368,6 +368,21 @@ ReadProgressResult accumulateSessionChars({
   return (charsAdded: 0, highWaterMark: highWaterMark);
 }
 
+/// TODO-1192: 章节位置恢复完成后，本 session「历史最高已读绝对字符位置」水位应取
+/// 的值——只升不降：`max(currentWatermark, restoreAbsolute)`。
+///
+/// 旧实现（[_ReaderNavigation._onRestoreComplete]）每次恢复完成都把水位无条件重置成
+/// 恢复目标位置。章内往返由 [accumulateSessionChars] 的 high-water 语义挡住，但**跨
+/// 章回读**会触发一次 `_navigateToChapter` → 恢复完成 → 水位被下调到更靠前那章的章
+/// 首，往回翻的那章正文于是被再次计入统计（字数虚高）。改「只升不降」后：前进 / 首次
+/// 进入把水位抬到新章起点（新内容照常计入），回读已读过的章不下调水位（重读不重复
+/// 计）。纯函数，供单测锁定「回读不下调水位」语义。
+int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
+  return restoreAbsolute > currentWatermark
+      ? restoreAbsolute
+      : currentWatermark;
+}
+
 /// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
 ///
 /// 这类页 `paginationMetrics.totalChars==0` → JS `hoshiProgressDetails()` 返空串
@@ -648,7 +663,8 @@ class ParsedBookData {
 List<int> countChapterChars(EpubBook book) {
   return List<int>.generate(
     book.chapters.length,
-    (int i) => book.chapterPlainText(i).length,
+    // TODO-1192: 与导入路径同口径——只数实义字符（剔标点/括号/空白），对齐 hoshi。
+    (int i) => book.chapterCharacterCount(i),
   );
 }
 
@@ -699,6 +715,31 @@ List<int>? charCountsFromChaptersJson(
     counts.add(raw);
   }
   return counts;
+}
+
+/// TODO-1192: [EpubBooks.chaptersJson] 里每章 `characters` 计数是否已是当前口径
+/// （[kChapterCharCountCaliber]）。仅当**每一章**条目都带 `charCaliber` == 当前
+/// 版本、且条目数与 [expectedChapters] 一致时返回 true；任一缺标记（旧书 / v1 导入）
+/// 或版本不符返回 false，开书据此触发后台按新口径 [japaneseCharCount] 重算并回写。
+/// 与 [charCountsFromChaptersJson] 拆开：后者只管「计数是否可用」（口径无关，旧书也
+/// 先用旧计数别闪 0），本函数只管「口径是否最新」。纯函数，供单测锁定判定。
+bool chaptersJsonCharCaliberIsCurrent(
+  String chaptersJson,
+  int expectedChapters,
+) {
+  if (expectedChapters <= 0) return false;
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(chaptersJson);
+  } on FormatException {
+    return false;
+  }
+  if (decoded is! List || decoded.length != expectedChapters) return false;
+  for (final Object? entry in decoded) {
+    if (entry is! Map) return false;
+    if (entry['charCaliber'] != kChapterCharCountCaliber) return false;
+  }
+  return true;
 }
 
 /// TODO-575 批1: 把 reader 里散落的 5 处 `rgba(...)` 生成统一成一个纯函数。
@@ -1359,7 +1400,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
 
     if (charsFromDb != null) {
+      // TODO-1192: 先立刻用命中的计数（即便是旧口径 v1，先让进度/总字数有值不闪 0）；
+      // 若该缓存不是当前口径（[kChapterCharCountCaliber]），后台按新口径重算并回写 DB，
+      // 使书架总字数与后续统计随之对齐 hoshi。
       _applyCharCounts(charsFromDb);
+      if (bookRow != null &&
+          !chaptersJsonCharCaliberIsCurrent(
+              bookRow.chaptersJson, _book!.chapters.length)) {
+        _recomputeCharCountsInBackground();
+      }
     } else {
       // DB 计数不可用：以零计数占位（所有消费点已 >0 / empty 守卫，进度回退 JS
       // total、统计暂累 0），同时后台 isolate 重算整本，落定后 _applyCharCounts
@@ -1516,6 +1565,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }
       _applyCharCounts(counts);
       _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
+      // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
+      // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
+      unawaited(_persistRecomputedCharCounts(counts));
     }).catchError((Object e, StackTrace s) {
       ErrorLogService.instance
           .log('ReaderHibiki._recomputeCharCountsInBackground', e, s);
@@ -1599,6 +1651,36 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       chapters: chapters,
       rootDirectory: extractDir,
     );
+  }
+
+  /// TODO-1192: 把后台按新口径（[japaneseCharCount]）重算出的每章字数回写进
+  /// [EpubBooks.chaptersJson]，并打上当前口径版本 [kChapterCharCountCaliber]，使书架
+  /// 总字数（[ReaderHibikiSource] 直接读 chaptersJson 的 characters）与下次开书都用
+  /// 新口径，不必每次开书重算。只覆写 `characters` / `charCaliber` 两个字段、保留原有
+  /// 条目结构（id/href/mediaType 等）——绝不改章节数或顺序；数量不符（竞态换书 / 脏
+  /// 数据）宁可跳过不写，也不写坏结构（下次开书再算）。
+  Future<void> _persistRecomputedCharCounts(List<int> counts) async {
+    final String bookKey = widget.bookKey;
+    try {
+      final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+      if (row == null) return;
+      final Object? decoded = jsonDecode(row.chaptersJson);
+      if (decoded is! List || decoded.length != counts.length) return;
+      final List<Object?> updated = <Object?>[];
+      for (int i = 0; i < decoded.length; i++) {
+        final Object? entry = decoded[i];
+        if (entry is! Map) return;
+        final Map<String, Object?> next = Map<String, Object?>.from(entry);
+        next['characters'] = counts[i];
+        next['charCaliber'] = kChapterCharCountCaliber;
+        updated.add(next);
+      }
+      await appModel.database
+          .updateEpubBookChaptersJson(bookKey, jsonEncode(updated));
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki._persistRecomputedCharCounts', e, stack);
+    }
   }
 
   @override
