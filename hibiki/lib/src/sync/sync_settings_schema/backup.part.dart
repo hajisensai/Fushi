@@ -339,6 +339,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
           audiobooksRootDirectory: audiobooksRoot,
           fontsRootDirectory: fontsRoot,
           videosRootDirectory: videosRoot,
+          // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
+          onProgress: appModel.reportBackupImportProgress,
         );
       } else {
         await BackupService.importBackupFiles(
@@ -355,6 +357,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
           // config paths onto this device's root.
           fontsRootDirectory: fontsRoot,
           videosRootDirectory: videosRoot,
+          // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
+          onProgress: appModel.reportBackupImportProgress,
         );
       }
 
@@ -362,8 +366,9 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       // 切到确认视图（导入完成 → 立即重启），由用户点按后经 backupImportRestart 退出。
       appModel.completeBackupImport(t.backup_import_success);
     } catch (e) {
-      // DB 已关闭，无论成败都必须重启才能回到可用状态；失败也走同一确认出口，展示失败原因。
-      appModel.completeBackupImport(
+      // TODO-1183: DB 已关闭，无论成败都必须重启；失败走 failBackupImport → 遮罩画红色
+      // 错误图标 + 失败原因（根治 OOM/异常「失败却显绿✓成功」的误导）。
+      appModel.failBackupImport(
         t.backup_import_failed(message: friendlySyncErrorDetail(e)),
       );
     } finally {

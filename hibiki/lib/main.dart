@@ -1188,6 +1188,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             phase: appModel.backupImportPhase!,
             message: appModel.backupImportMessage,
             background: _savedSplashColor,
+            // TODO-1183: 确定进度条监听（只进度条重建，不整树重绘）。
+            progress: appModel.backupImportProgress,
             onRestart: backupImportRestart,
           ),
         ),

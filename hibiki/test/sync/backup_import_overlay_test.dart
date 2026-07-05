@@ -81,6 +81,71 @@ void main() {
       await tester.pump();
       expect(restarts, 1);
     });
+
+    testWidgets('failed：红色 error_outline 错误图标（非绿✓）+ 失败文案 + 重启按钮',
+        (WidgetTester tester) async {
+      // TODO-1183 根治「导入失败却显绿✓成功」：failed 态必须画错误图标而非成功勾。
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
+            ),
+            home: BackupImportOverlayView(
+              phase: BackupImportPhase.failed,
+              message: 'Backup import failed: out of memory',
+              onRestart: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+      expect(find.byIcon(Icons.check_circle), findsNothing);
+      expect(find.text('Backup import failed: out of memory'), findsOneWidget);
+      // DB 已关闭，失败也必须给「立即重启」出口。
+      expect(find.text(t.backup_import_restart_button), findsOneWidget);
+      // running 期的进度条已消失。
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+    });
+
+    testWidgets('running：progress 有值 → 确定进度条（value 非空且跟随更新）',
+        (WidgetTester tester) async {
+      // TODO-1183：后台解压 isolate 经 SendPort 回报字节 → 确定进度，不再「卡死」。
+      final ValueNotifier<double> progress = ValueNotifier<double>(0.42);
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            ),
+            home: BackupImportOverlayView(
+              phase: BackupImportPhase.running,
+              progress: progress,
+              onRestart: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final LinearProgressIndicator bar =
+          tester.widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator));
+      expect(bar.value, isNotNull);
+      expect(bar.value, closeTo(0.42, 1e-9));
+
+      // 进度推进只重建进度条（ValueListenableBuilder），值跟随更新。
+      progress.value = 0.87;
+      await tester.pump();
+      final LinearProgressIndicator bar2 =
+          tester.widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator));
+      expect(bar2.value, closeTo(0.87, 1e-9));
+    });
   });
 
   group('源码守卫 (TODO-1151)', () {
@@ -115,14 +180,18 @@ void main() {
           reason: 'beginBackupImport 必须在 closeDatabase 之前，否则导入期回退裸 loading');
     });
 
-    test('backup.part：成功/失败都走 completeBackupImport；删除旧的 500ms 自动退出', () {
+    test(
+        'backup.part：成功走 completeBackupImport / 失败走 failBackupImport；删除旧的 500ms 自动退出',
+        () {
       final String src =
           readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
               .readAsStringSync();
-      // 成功与失败两条路径都切到确认视图。
+      // 成功与失败两条路径都切到确认视图（TODO-1183：失败走 failed 态而非绿✓）。
       expect(
           src.contains('completeBackupImport(t.backup_import_success)'), isTrue,
           reason: '导入成功必须切到确认视图，而非直接退出');
+      expect(src.contains('failBackupImport('), isTrue,
+          reason: '导入失败必须切 failed 态（根治「失败显绿✓」，TODO-1183）');
       expect(src.contains('t.backup_import_failed('), isTrue);
       // _import 里不得再有「延迟 500ms 后自动退出」的旧逻辑。
       final int importIdx = src.indexOf('Future<void> _import()');
