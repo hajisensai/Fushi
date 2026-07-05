@@ -15,6 +15,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/reader/dictionary_font_css.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -90,6 +91,7 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');
       document.documentElement.style.setProperty('--md-on-surface-variant', '${_cssRgb(scheme.onSurfaceVariant)}');
       document.documentElement.style.setProperty('--md-primary', '${_cssRgb(scheme.primary)}');
+      document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
       document.documentElement.style.setProperty('--dict-columns', '${appModel.popupDictionaryColumns}');
 ''';
 }

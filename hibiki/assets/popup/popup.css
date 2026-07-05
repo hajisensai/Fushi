@@ -919,7 +919,7 @@ html[data-theme="dark"] {
     margin-top: 4px;
     padding: 8px 10px;
     border: 1px solid var(--outline-variant);
-    border-radius: 8px;
+    border-radius: var(--hibiki-radius-card, 10px);
     background: var(--surface-container);
 }
 
@@ -1079,7 +1079,7 @@ html.global-lookup .glossary-section > .category-body > .glossary-group {
 .global-lookup-sentence {
     margin: 0 0 8px 0;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: var(--hibiki-radius-card, 10px);
     background: var(--surface-variant, rgba(128, 128, 128, 0.12));
     border-left: 3px solid var(--primary-color, #386A58);
     color: var(--text-color-light1, #555555);

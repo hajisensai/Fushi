@@ -555,6 +555,7 @@ class DictionaryPopupWebViewState
       document.documentElement.style.setProperty('--md-outline-variant', '${cssRgb(scheme.outlineVariant)}');
       document.documentElement.style.setProperty('--md-on-surface-variant', '${cssRgb(scheme.onSurfaceVariant)}');
       document.documentElement.style.setProperty('--md-primary', '${cssRgb(scheme.primary)}');
+      document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
       document.documentElement.style.setProperty('--dict-columns', '$dictColumns');
 ''';
   }
