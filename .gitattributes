@@ -27,6 +27,7 @@
 *.keystore binary
 *.zip   binary
 *.gz    binary
+*.7z    binary
 *.mp3   binary
 *.wav   binary
 *.m4a   binary
