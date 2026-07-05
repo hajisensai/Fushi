@@ -449,9 +449,21 @@ class DictionaryPopupLayer extends StatelessWidget {
               child: topBar,
             )
           : topBar;
+      // TODO-1187：分隔线从 header widget 内的无条件底边框移到这里，只在「有 header
+      // 星标/音频行」且「有可渲染词条」时才画。无结果（「未找到搜索结果」占位）/ 搜索中
+      // 不画，消除悬在收藏行与占位卡之间的多余横线。app 外覆盖窗 / 嵌套返回层无
+      // [headerWidget]（topBar 只有关闭/返回按钮）—— 从来没有这条线，此处也不画，不受影响。
+      final bool showHeaderDivider =
+          headerWidget != null && _hasRenderableResults;
       surfaceChild = Column(
         children: <Widget>[
           topRegion,
+          if (showHeaderDivider)
+            Divider(
+              height: 0.5,
+              thickness: 0.5,
+              color: Theme.of(context).dividerColor,
+            ),
           Expanded(child: body),
         ],
       );
@@ -560,13 +572,17 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
+  /// TODO-1187：本层是否有可渲染词条（词条或汉字结果）。header 与 body 之间的分隔线
+  /// 只在此为真时才画（无结果/搜索中不画，消除悬空多余横线）；[_buildBody] 也据此决定
+  /// 是挂 WebView 还是「未找到搜索结果」占位。单一真相源，避免两处判据漂移。
+  bool get _hasRenderableResults =>
+      result != null &&
+      (result!.entries.isNotEmpty || result!.kanjiResults.isNotEmpty);
+
   Widget _buildBody(BuildContext context, Color fillColor) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    final bool hasEntries = result != null && result!.entries.isNotEmpty;
-    final bool hasKanjiResults =
-        result != null && result!.kanjiResults.isNotEmpty;
-    final bool hasRenderableResults = hasEntries || hasKanjiResults;
+    final bool hasRenderableResults = _hasRenderableResults;
     final bool isSeedWarmSlot = keepWebViewWarm &&
         result != null &&
         result!.searchTerm.isEmpty &&
