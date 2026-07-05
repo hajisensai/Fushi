@@ -93,6 +93,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.searchTerm);
+    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
+    attachLookupCounter(_popup);
     _sourceLookupText = widget.searchTerm.trim();
     debugPrint('[popup-perf] init search="${widget.searchTerm}"');
     // TODO-951 症状C：开页 seed 一个常驻隐藏热槽，弹窗 WebView 冷加载一次后全程复用

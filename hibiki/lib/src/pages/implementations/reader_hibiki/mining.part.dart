@@ -312,13 +312,27 @@ extension _ReaderMining on _ReaderHibikiPageState {
   /// 不 mixin [DictionaryPageMixin]，故自带本记账（来源固定 [kStatSourceBook]，与
   /// mixin 的 `recordMined` 同契约：[HibikiDatabase.addMiningCount]）。失败吞掉并记日志。
   Future<void> _recordMined() async {
+    final String dateKey = statTodayKey();
     try {
+      // 全局按日汇总（保留不动：备份合并 / 云同步依赖它，Never break userspace）。
       await appModel.database.addMiningCount(
         sourceType: kStatSourceBook,
-        dateKey: statTodayKey(),
+        dateKey: dateKey,
       );
     } catch (e, st) {
       debugPrint('[hibiki-stats] reader addMiningCount failed: $e\n$st');
+    }
+    // TODO-1204：并行写 per-book 制卡计数（book 来源，带 bookKey + 标题；title 与
+    // 阅读统计 tile 的聚合键 [EpubBook.title] 对齐）。
+    try {
+      await appModel.database.addMineCountPerBook(
+        bookKey: widget.bookKey,
+        title: _book?.title ?? '',
+        sourceType: kStatSourceBook,
+        dateKey: dateKey,
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] reader addMineCountPerBook failed: $e\n$st');
     }
   }
 

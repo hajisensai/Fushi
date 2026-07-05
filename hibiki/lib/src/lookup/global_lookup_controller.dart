@@ -340,6 +340,7 @@ class GlobalLookupController {
       // path is retired). A no-result lookup still seeds a root frame so
       // its iframe shows popup.js's own no-results card (see _resetStackRoot).
       _resetStackRoot(text, result);
+      _recordLookupCount();
 
       // TODO-1095 — announce a NEW lookup to the host BEFORE the stack render:
       // clear the union-bbox de-dup key (so the fresh card's reveal-driving
@@ -859,6 +860,22 @@ class GlobalLookupController {
     };
   }
 
+  /// TODO-1204 — records one lookup on every app-external hotkey / nested lookup
+  /// (source [kStatSourceBook]; no book locator — global overlay is not tied to a
+  /// book, so it only feeds the stats page "lookup" totals, never a per-book
+  /// tile). Best-effort: any failure is logged and swallowed.
+  void _recordLookupCount() {
+    final AppModel? model = _appModel;
+    if (model == null) {
+      return;
+    }
+    unawaited(model.database
+        .addLookupCount(sourceType: kStatSourceBook, dateKey: statTodayKey())
+        .catchError((Object e, StackTrace st) {
+      glog('lookup-count: EXCEPTION $e\n$st');
+    }));
+  }
+
   /// TODO-1188 follow-up — records one mined-count + one mined-sentence history
   /// row on a successful app-external mine (source [kStatSourceBook]; no book
   /// locator — same as home / standalone lookup, mirrors
@@ -873,6 +890,10 @@ class GlobalLookupController {
       final HibikiDatabase db = model.database;
       final String dateKey = statTodayKey();
       await db.addMiningCount(sourceType: kStatSourceBook, dateKey: dateKey);
+      // TODO-1204：并行写 per-book 制卡计数（app 外全局查词无书 → bookKey/title 空，
+      // 只进统计页「查词」汇总。addMiningCount 保留不动，Never break userspace）。
+      await db.addMineCountPerBook(
+          sourceType: kStatSourceBook, dateKey: dateKey);
       await db.addMinedSentence(
         source: kStatSourceBook,
         dateKey: dateKey,
@@ -967,6 +988,7 @@ class GlobalLookupController {
       return;
     }
     try {
+      _recordLookupCount();
       // TODO-1190 — the PARENT frame (where the clicked word lives) is the
       // current stack top. Capture its insertion-order index BEFORE pushing the
       // child so we can highlight the searched word in the parent card after the

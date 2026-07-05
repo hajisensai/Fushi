@@ -255,14 +255,61 @@ mixin DictionaryPageMixin {
   /// [addMiningCount] 的契约细节。
   @protected
   Future<void> recordMined() async {
+    final String dateKey = _statTodayKey();
     try {
+      // 全局按日汇总（保留不动：备份合并 / 云同步依赖它，Never break userspace）。
       await mixinAppModel.database.addMiningCount(
         sourceType: dictionarySourceType,
-        dateKey: _statTodayKey(),
+        dateKey: dateKey,
       );
     } catch (e, st) {
       debugPrint('[hibiki-stats] addMiningCount failed: $e\n$st');
     }
+    // TODO-1204：并行写 per-book 制卡计数（视频带 bookUid+标题；无书来源 title=''）。
+    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
+    try {
+      await mixinAppModel.database.addMineCountPerBook(
+        bookKey: identity?.bookKey,
+        title: identity?.title ?? '',
+        sourceType: dictionarySourceType,
+        dateKey: dateKey,
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] addMineCountPerBook failed: $e\n$st');
+    }
+  }
+
+  /// TODO-1204：本次查词 / 制卡归属的书身份（[bookKey] + [title]）。视频页覆写返回
+  /// (bookUid, 剧集标题)；无书来源（首页 / 独立查词窗 / 歌词）保持 null → 只进统计页
+  /// 「查词」汇总，不落 per-book / per-video tile。[title] 与各统计页 tile 的 title
+  /// 聚合键对齐。
+  @protected
+  ({String? bookKey, String? title})? get lookupBookIdentity => null;
+
+  /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
+  /// （顶层 / 嵌套 / 重复查各一次）累加 [HibikiDatabase.addLookupCount]。宿主构造
+  /// controller 后调 [attachLookupCounter] 接线。best-effort。
+  @protected
+  void recordLookup() {
+    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
+    unawaited(mixinAppModel.database
+        .addLookupCount(
+      bookKey: identity?.bookKey,
+      title: identity?.title ?? '',
+      sourceType: dictionarySourceType,
+      dateKey: _statTodayKey(),
+    )
+        .catchError((Object e, StackTrace st) {
+      debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
+    }));
+  }
+
+  /// TODO-1204：把 [recordLookup] 挂到 [controller] 的查词开始回调上。各 mixin 宿主
+  /// （视频 / 首页 / 独立查词窗 / texthooker / 歌词浮层）在 initState 构造 controller
+  /// 后调用一次。
+  @protected
+  void attachLookupCounter(DictionaryPopupController controller) {
+    controller.onLookupStarted = recordLookup;
   }
 
   /// TODO-633: land one mined-sentence history row (no book locator here —

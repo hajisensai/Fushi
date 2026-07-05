@@ -99,6 +99,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (!mounted) return;
     // 此刻 AppModel 已初始化（源页开页在 init 之后）→ 安全设真实 lowMemory。
     _popup.lowMemory = appModel.lowMemoryMode;
+    _popup.onLookupStarted = _recordLookupCounter;
     _popup.seedWarmSlot(seedResult: kPopupSearchingPlaceholderResult);
   }
 
@@ -949,6 +950,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// （[kStatSourceBook]）；视频走 [DictionaryPageMixin] 自己覆写，不经本基类。
   @protected
   String get dictionarySourceType => kStatSourceBook;
+
+  /// TODO-1204：本次查词归属的书身份（[bookKey] + [title]），供 per-book 查词计数。
+  /// 阅读器（EPUB/有声书）覆写返回当前书（[title] 与阅读统计 tile 的 title 聚合键
+  /// 对齐）；无书来源保持 null → 查词只进统计页「查词」汇总，不落 per-book tile。
+  @protected
+  ({String? bookKey, String? title})? get lookupBookIdentity => null;
+
+  /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
+  /// （顶层 / 嵌套 / 重复查各一次）累加 [HibikiDatabase.addLookupCount]。best-effort，
+  /// 失败吞掉并记日志（与 [addMiningCount] 记账同容错口径）。
+  void _recordLookupCounter() {
+    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
+    unawaited(appModel.database
+        .addLookupCount(
+      bookKey: identity?.bookKey,
+      title: identity?.title ?? '',
+      sourceType: dictionarySourceType,
+      dateKey: statTodayKey(),
+    )
+        .catchError((Object e, StackTrace st) {
+      debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
+    }));
+  }
 
   /// TODO-948②：弹窗右部「收藏」按钮回调（阅读器 EPUB 走本基类的 [_buildPopupLayer]，
   /// 不经 [DictionaryPageMixin]，曾因这里漏接线导致点击无反应）。切换收藏当前词条：

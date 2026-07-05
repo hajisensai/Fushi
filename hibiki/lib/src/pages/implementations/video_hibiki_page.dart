@@ -1111,6 +1111,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   String get dictionarySourceType => kStatSourceVideo;
 
+  /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
+  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// [VideoHibikiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
+  @override
+  ({String? bookKey, String? title})? get lookupBookIdentity =>
+      (bookKey: widget.bookUid, title: _title ?? '');
+
   /// 多集播放列表（单视频导入时为空）。
   List<PlaylistEntry> _episodes = const <PlaylistEntry>[];
 
@@ -1246,6 +1253,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       lowMemory: false,
       onLookupStackDepthChanged: recordLookupStackDepth,
     );
+    // TODO-1204：接线查词计数（视频来源，带 bookUid + 剧集标题）。
+    attachLookupCounter(_popup);
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
     // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
     // （[_mediaKitControlsVisible]）+ 三个门控派生。订阅这四个输入，任一变化即重派生

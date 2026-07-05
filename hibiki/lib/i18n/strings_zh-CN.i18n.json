@@ -2114,5 +2114,6 @@
   "backup_export_select_none": "全不选",
   "backup_export_no_books": "没有可选的书籍",
   "backup_export_books_selected": "已选 $count 本书",
-  "backup_import_merge_preview": "合并将新增 $bookCount 本书、更新 $progressCount 条阅读进度。"
+  "backup_import_merge_preview": "合并将新增 $bookCount 本书、更新 $progressCount 条阅读进度。",
+  "stat_lookup": "查词"
 }

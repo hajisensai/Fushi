@@ -45,6 +45,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   StatActivityBuckets _favorited = StatActivityBuckets();
   StatActivityBuckets _favoritedSentences = StatActivityBuckets();
 
+  // 查词计数（来源 'book'）按今日/本周/本月/全部分桶（TODO-1204）。
+  StatActivityBuckets _lookup = StatActivityBuckets();
+
+  // per-book 查词/制卡计数（按 title 聚合，对齐字数/时长 tile 的聚合键）。
+  Map<String, ({int lookups, int mines})> _bookCounters =
+      <String, ({int lookups, int mines})>{};
+
   // 按书聚合
   List<_BookData> _bookData = [];
 
@@ -92,6 +99,15 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
         now,
       );
+      // TODO-1204：查词/制卡 per-book 计数（新表）。汇总用 lookupCount 分桶，
+      // per-book tile 按 title 聚合（无书查词 title='' 跳过，只进汇总）。
+      final List<LookupMiningCounterRow> counters =
+          await db.getLookupMiningCountersBySource(kStatSourceBook);
+      _lookup = bucketActivityByDateKey(
+        counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
+        now,
+      );
+      _bookCounters = _aggregateCountersByTitle(counters);
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
       // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
       final List<FavoriteSentence> favSentences =
@@ -121,6 +137,25 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         _hourlyMs[row.hour] = row.readingTimeMs;
       }
     }
+  }
+
+  /// TODO-1204：把查词/制卡计数行按 [LookupMiningCounterRow.title] 聚合成
+  /// (查词数, 制卡数)，供 per-book tile 展示。无书查词（title 空）不入 tile，只进
+  /// 汇总面板。聚合键与字数/时长 tile 的 title 一致。
+  Map<String, ({int lookups, int mines})> _aggregateCountersByTitle(
+      List<LookupMiningCounterRow> rows) {
+    final Map<String, ({int lookups, int mines})> out =
+        <String, ({int lookups, int mines})>{};
+    for (final LookupMiningCounterRow r in rows) {
+      if (r.title.isEmpty) continue;
+      final ({int lookups, int mines}) prev =
+          out[r.title] ?? (lookups: 0, mines: 0);
+      out[r.title] = (
+        lookups: prev.lookups + r.lookupCount,
+        mines: prev.mines + r.mineCount,
+      );
+    }
+    return out;
   }
 
   void _computeAggregates() {
@@ -331,6 +366,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                       t.stat_today,
                       _todayChars,
                       _todayMs,
+                      _lookup.today,
                       _mined.today,
                       _favorited.today,
                       _favoritedSentences.today)),
@@ -340,6 +376,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                       t.stat_this_week,
                       _weekChars,
                       _weekMs,
+                      _lookup.week,
                       _mined.week,
                       _favorited.week,
                       _favoritedSentences.week)),
@@ -353,13 +390,20 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                       t.stat_this_month,
                       _monthChars,
                       _monthMs,
+                      _lookup.month,
                       _mined.month,
                       _favorited.month,
                       _favoritedSentences.month)),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                  child: _summaryStatPanel(t.stat_all_time, _allChars, _allMs,
-                      _mined.all, _favorited.all, _favoritedSentences.all)),
+                  child: _summaryStatPanel(
+                      t.stat_all_time,
+                      _allChars,
+                      _allMs,
+                      _lookup.all,
+                      _mined.all,
+                      _favorited.all,
+                      _favoritedSentences.all)),
             ],
           ),
         ],
@@ -367,8 +411,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _summaryStatPanel(String label, int chars, int ms, int mined,
-      int favorited, int favoritedSentences) {
+  Widget _summaryStatPanel(String label, int chars, int ms, int lookup,
+      int mined, int favorited, int favoritedSentences) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -392,6 +436,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     )),
             SizedBox(height: tokens.spacing.gap / 2),
             Text(_formatTime(ms), style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_lookup}: $lookup', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
             Text('${t.stat_mined}: $mined', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
@@ -874,6 +920,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildBookTile(_BookData book) {
+    // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
+    final ({int lookups, int mines}) counter =
+        _bookCounters[book.title] ?? (lookups: 0, mines: 0);
     // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
     final double topMetric =
         _bookData.isEmpty ? 0 : _sortMetric(_bookData.first);
@@ -917,6 +966,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     ),
               ),
             ],
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
         ],
