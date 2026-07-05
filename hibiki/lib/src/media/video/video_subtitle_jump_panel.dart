@@ -18,6 +18,27 @@ String formatCueTimestamp(int startMs) {
   return '$minutes:$ss';
 }
 
+/// 字幕列表行**时间戳列宽度**（TODO-567 / TODO-1200）。纯函数，页面与测试同源。
+///
+/// 时间戳用 tabular figures 单行不换行渲染，列宽须容下最宽的时间戳字符串，否则文本溢出到
+/// 右侧字幕文本列（TODO-567）。但旧实现恒按**小时级**最坏宽度（`(字号-1) × 4.6`、下界 52）
+/// 预留，即便整段视频不足 1 小时（时间戳只有 `m:ss`，约 5 字符 ≈ 40px）也占 ~60px——短时间戳
+/// 左对齐在过宽的列里，时间戳与字幕文本之间凭空多出一段空白（TODO-1200 用户报的「奇怪空隙」），
+/// 且白白吃掉本就紧张的文本列宽度（窄面板上字幕被挤成 3-4 字硬折行）。
+///
+/// 修正：按列表**是否真的出现小时级时间戳**（[hasHours]）取宽——不足 1 小时只按 `mm:ss`
+/// （约 5 字符）算窄列，达到 1 小时才按 `h:mm:ss`（约 7 字符）算宽列。既不溢出（仍容下实际
+/// 最宽时间戳），又消除短视频的空隙、把宽度还给文本列。tabular figures 下每字位约 0.62em，
+/// 加一点余量并随字号缩放，设下界防极窄字号下列太窄。[effectiveFontSize] 传行内时间戳同源
+/// 的有效字号（渲染时时间戳用 `effectiveFontSize - 1`，故此处一致用 `-1` 折算字位宽）。
+double subtitleTimestampColumnWidth(double effectiveFontSize, bool hasHours) {
+  const double emPerChar = 0.62;
+  final double chars = hasHours ? 7.2 : 5.0;
+  final double scaled = (effectiveFontSize - 1) * emPerChar * chars;
+  final double floor = hasHours ? 52.0 : 36.0;
+  return scaled < floor ? floor : scaled;
+}
+
 const List<double> _kFontScaleSteps = <double>[0.85, 1.0, 1.15, 1.3];
 
 /// 字幕列表行内点击命中的字符：被点 grapheme 下标 + 该字符的全局屏幕矩形。
@@ -124,19 +145,27 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   double get _effectiveFontSize => widget.fontSize * _fontScaleSteps;
 
-  /// 时间戳列宽度（TODO-567）。固定 52px 在放大字号 + 小时级时间戳（`1:23:45`，7
-  /// 字符 tabular figures）下放不下，时间戳文本溢出 [SizedBox] 边界画到右侧字幕文本
-  /// 区，看起来像「时间被下一条字幕挡住 / 溢出」。改为随字号缩放估宽：tabular figures
-  /// 下每个 `h:mm:ss` 字位约 0.6em，7 字符 + 余量 → `字号 × 4.6`，并设下界 52 保证窄字
-  /// 号下不变窄。配合时间戳 Text 单行不换行（`maxLines:1` / `softWrap:false`），列内
-  /// 容永不溢出到文本列。
-  double get _timestampColumnWidth {
-    final double scaled = (_effectiveFontSize - 1) * 4.6;
-    return scaled < 52 ? 52 : scaled;
+  /// 列表里是否出现**小时级**时间戳（TODO-1200）：cue 升序（`setCues` 保证），故最后一条
+  /// cue 的起始时间即最大值，>= 1 小时才需要 `h:mm:ss` 宽列；空列表按无小时（窄列）。用它
+  /// 让 [_timestampColumnWidth] 只在真有小时级时间戳时才取宽列，短视频用窄列消除空隙。
+  bool get _hasHourTimestamps {
+    final List<AudioCue> cues = widget.controller.cues;
+    if (cues.isEmpty) return false;
+    return cues.last.startMs >= 3600 * 1000;
   }
 
+  /// 时间戳列宽度（TODO-567 / TODO-1200）：内容自适应，见 [subtitleTimestampColumnWidth]。
+  /// 短视频（无小时级时间戳）取窄列消除时间戳与文本间的「奇怪空隙」并把宽度还给文本列，
+  /// 达到 1 小时才取宽列容下 `h:mm:ss`。配合时间戳 Text 单行不换行（`maxLines:1` /
+  /// `softWrap:false`），列内容永不溢出到文本列。
+  double get _timestampColumnWidth =>
+      subtitleTimestampColumnWidth(_effectiveFontSize, _hasHourTimestamps);
+
   double _estimatedRowExtentForCue(AudioCue cue, double rowWidth) {
-    final double actionWidth = 3 * (_effectiveFontSize + 10);
+    // 3 个操作图标：每个 icon 宽 [_effectiveFontSize]+2，[_RowActionButton] 内缩 all(2)
+    // → 每个约 +6，故动作列宽 ≈ 3×(字号+6)（TODO-1200 压缩内缩后，与 [_buildRowActions]
+    // 的实际几何一致，供行高文本宽度估算）。
+    final double actionWidth = 3 * (_effectiveFontSize + 6);
     final double selectionWidth = _hasCueSelectionControls ? 44 : 0;
     final double textWidth = rowWidth -
         8 -
@@ -1036,8 +1065,11 @@ class _RowActionButton extends StatelessWidget {
       child: InkResponse(
         onTap: onPressed,
         radius: size,
+        // TODO-1200：内缩从 4 压到 2，收窄常驻 3 个操作图标的动作列，把行宽还给中间的
+        // 字幕文本列（窄面板上文本不再被挤成 3-4 字硬折行）。图标仍常驻可见（不改 BUG-265
+        // 的常显语义），只是更紧凑。
         child: Padding(
-          padding: const EdgeInsets.all(4),
+          padding: const EdgeInsets.all(2),
           child: Icon(icon, size: size, color: color),
         ),
       ),

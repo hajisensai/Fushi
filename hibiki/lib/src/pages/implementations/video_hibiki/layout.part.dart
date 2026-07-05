@@ -340,7 +340,16 @@ extension _VideoLayout on _VideoHibikiPageState {
                               VideoSubtitleObscureMode.blur,
                           subtitleHidden: appModel.videoSubtitleObscureMode ==
                               VideoSubtitleObscureMode.hide,
-                          fontSize: _subtitleStyle.fontSize,
+                          // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
+                          // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
+                          // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /
+                          // 大屏平板 / 桌面上物理观感一致（自动缩放恒开、叠加在基准之上）。
+                          // MediaQuery.sizeOf 建立尺寸依赖：横竖屏切换 / 窗口缩放会重建本
+                          // builder 重算因子。
+                          fontSize: _subtitleStyle.fontSize *
+                              subtitleScreenScaleFactor(
+                                MediaQuery.sizeOf(context),
+                              ),
                           textColor: _subtitleStyle.resolveTextColor(
                             _subtitleTextColor(
                                 _videoChromeColorScheme(context)),

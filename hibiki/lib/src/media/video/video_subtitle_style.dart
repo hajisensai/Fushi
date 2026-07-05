@@ -126,6 +126,37 @@ double videoSubtitleControlsReserve({
   return (bottom: trackCenter - tickHeight / 2, height: tickHeight);
 }
 
+/// 字幕字号的**屏幕自适应因子**（TODO-1199）。
+///
+/// 问题：字幕字号此前把用户设置的固定值（[VideoSubtitleStyle.fontSize]）原样喂给
+/// overlay，不随屏幕尺寸换算。同一 36px 在小屏手机上占画面很大一块、在大屏平板 / 桌面
+/// 上却显得很小——同一字号在不同设备物理观感不一致（用户报「大屏字幕偏小、小屏偏大」）。
+///
+/// 方案（用户决策「A：自动缩放并且可以调整」）：用户设置的字号仍是**基准**，渲染时乘本
+/// 因子，使字幕占屏比例在不同屏幕上观感一致；用户的手动基准值不被改写（自动是叠加的乘数、
+/// 可调是保留手动基准），故无需额外开关——自动缩放恒开、基准始终可调。
+///
+/// 因子按**视口短边**相对参考短边 [referenceShortestSide] 线性缩放，并夹在
+/// [minFactor, maxFactor] 内防极端（超小 / 超大屏不会把字幕缩没 / 撑爆）：
+/// - 用短边（而非宽 / 高）使横竖屏一致：竖屏短边≈宽、横屏短边≈高，都代表「较小的那一维」，
+///   是字幕相对屏幕占比的稳定代理；
+/// - 参考短边默认 400（约一台手机的短边逻辑像素），故手机附近因子≈1（基准即所见），平板 /
+///   桌面短边更大→因子 > 1 放大，超小屏→因子 < 1 缩小。
+///
+/// 纯函数（页面与测试同源）：[screenSize] 传 `MediaQuery.sizeOf(context)`（逻辑像素、已
+/// 折算 DPI）。短边 <= 0（未布局）时返回 1.0（不缩放）。
+double subtitleScreenScaleFactor(
+  Size screenSize, {
+  double referenceShortestSide = 400.0,
+  double minFactor = 0.85,
+  double maxFactor = 1.6,
+}) {
+  final double shortest = screenSize.shortestSide;
+  if (shortest <= 0 || referenceShortestSide <= 0) return 1.0;
+  final double raw = shortest / referenceShortestSide;
+  return raw.clamp(minFactor, maxFactor).toDouble();
+}
+
 /// 字幕背景盒的**默认底色**（TODO-1059 方案A）：固定半透明黑，而非跟随
 /// `ColorScheme.surface`。
 ///
