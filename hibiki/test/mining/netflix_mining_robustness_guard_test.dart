@@ -238,12 +238,12 @@ void main() {
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');
         });
 
-        test('内容脚本版本标记 bump 到 v38（用户可确认新版）', () {
+        test('内容脚本版本标记 bump 到 v39（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-hibiki-cs', 'v38'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v38');
-          expect(src.contains('content script v38 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v38');
+          expect(src.contains("'data-hibiki-cs', 'v39'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v39');
+          expect(src.contains('content script v39 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v39');
         });
       });
     }
