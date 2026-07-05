@@ -40,7 +40,7 @@ import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/sync/backup_import_overlay_view.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart'
-    show backupImportRestart;
+    show backupImportRestart, dataRootMigrationRestart;
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
@@ -1165,6 +1165,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           home: DataRootMigrationView(
             progress: appModel.dataRootMigrationProgress,
             background: _savedSplashColor,
+            // TODO-1182：失败态在同一遮罩上改显「原因 + 建议 + 重启」，用户点重启回旧根。
+            failure: appModel.dataRootMigrationFailure,
+            onRestart: () => dataRootMigrationRestart(appModel),
           ),
         ),
       );

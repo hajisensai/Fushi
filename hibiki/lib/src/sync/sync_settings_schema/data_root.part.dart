@@ -12,6 +12,10 @@ enum DataRootTargetRejection {
 
   /// 目标已派生出非空的 documents/support 子树：不覆盖已有数据。
   targetNotEmpty,
+
+  /// TODO-1182：目标是应用安装目录（含正在运行的 exe）或其祖先目录：拒绝（否则迁移失败
+  /// 回滚会试图删掉含运行程序的整个安装目录，删不掉、留半状态）。
+  containsExecutable,
 }
 
 /// 纯函数：在不触碰文件系统搬移的前提下判断 [newDataRoot] 是否可作为迁移目标。
@@ -22,6 +26,7 @@ DataRootTargetRejection? validateDataRootTarget({
   required String oldDocumentsRoot,
   required String oldSupportRoot,
   required bool Function(String absolutePath) existsAndHasFiles,
+  String? executablePath,
 }) {
   final String canonNew = p.canonicalize(newDataRoot);
   final String canonDocs = p.canonicalize(oldDocumentsRoot);
@@ -32,12 +37,43 @@ DataRootTargetRejection? validateDataRootTarget({
       p.isWithin(canonSupport, canonNew)) {
     return DataRootTargetRejection.insideCurrentRoot;
   }
+  // TODO-1182：拒绝安装目录（含正在运行的 exe）及其祖先目录。`isWithin(newRoot, exe)` 为真
+  // 即 exe 落在 newRoot 内 → newRoot 是 exe 所在目录或其祖先。生产传 Platform.resolvedExecutable。
+  if (executablePath != null && executablePath.trim().isNotEmpty) {
+    if (p.isWithin(canonNew, p.canonicalize(executablePath))) {
+      return DataRootTargetRejection.containsExecutable;
+    }
+  }
   final (Directory docs, Directory support) =
       AppPaths.rootsForDataRoot(newDataRoot);
   if (existsAndHasFiles(docs.path) || existsAndHasFiles(support.path)) {
     return DataRootTargetRejection.targetNotEmpty;
   }
   return null;
+}
+
+/// TODO-1182：迁移失败视图「重启」按钮触发的重启。桌面 `supportsRestart==true` → 拉新进程
+/// 回到**未改变**的旧根重新初始化（pref 未写、数据已回滚）；不支持/失败则退出让用户手动重开
+/// （数据安全，仅需重启）。抽成顶层函数供 `main.dart` 注入为失败视图 `onRestart`。
+void dataRootMigrationRestart(AppModel appModel) {
+  final PlatformLifecycleService lifecycle =
+      appModel.platformServices.lifecycle;
+  if (lifecycle.supportsRestart) {
+    lifecycle.restartApp().catchError((Object e) {
+      debugPrint('DataRoot migrate: 失败视图重启也失败: $e');
+      _exitDataRootMigrationProcess();
+    });
+    return;
+  }
+  _exitDataRootMigrationProcess();
+}
+
+void _exitDataRootMigrationProcess() {
+  if (Platform.isAndroid || Platform.isIOS) {
+    FlutterExitApp.exitApp();
+  } else {
+    exit(0);
+  }
 }
 
 /// 设置行：显示当前数据根 + 更改位置按钮。仅桌面构造（section 已门控）。
@@ -102,6 +138,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       oldDocumentsRoot: oldDocs,
       oldSupportRoot: oldSupport,
       existsAndHasFiles: _dirExistsAndHasFiles,
+      executablePath: Platform.resolvedExecutable,
     );
     if (rejection != null) {
       if (mounted) {
@@ -170,6 +207,8 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
         onProgress: (int copied, int total) =>
             appModel.updateDataRootMigrationProgress(copied, total),
+        // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
+        resolvedExecutablePath: Platform.resolvedExecutable,
       );
       await const DataRootMigrator().migrate(req);
 
@@ -200,29 +239,18 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     }
   }
 
-  /// 迁移失败的恢复：旧根完整、pref 未改。由于运行时句柄（DB/FFI/音频）已在搬移前关闭，
-  /// 本进程无法原地继续，重启回到旧根重新初始化。重启不支持/失败 → 撤遮罩并提示用户手动
-  /// 重开（数据安全，仅需重启）。
+  /// TODO-1182：迁移失败 → 切到**失败态遮罩**（原因 + 建议 + 重启按钮），由根 widget 渲染。
+  /// **不**在这里直接重启：旧实现桌面 supportsRestart=true 时立刻 `restartApp()`，用户永远
+  /// 看不到失败原因（「换数据位置不生效且无提示」根因之一）。而且迁移期间根 widget 树已被
+  /// 换成迁移遮罩，本设置页 State 已 unmount（`mounted==false`），旧的 `_showSnackBar` 也
+  /// 从不触发。closeResources 已在搬移前关 DB，本进程无法原地恢复 → 保持遮罩激活（撤了会落
+  /// 到裸 loading），由用户在失败视图点「重启」回到未改变的旧根重新初始化（数据已由引擎完整
+  /// 回滚保留、pref 未写）。
   Future<void> _recoverAfterFailedMigration(
     AppModel appModel,
     String failureMessage,
   ) async {
-    final PlatformLifecycleService lifecycle =
-        appModel.platformServices.lifecycle;
-    if (lifecycle.supportsRestart) {
-      try {
-        await lifecycle.restartApp();
-        return; // 成功重启则不返回（进程退出）。
-      } catch (e) {
-        debugPrint('DataRoot migrate: 失败后重启也失败: $e');
-      }
-    }
-    // 无法自动重启：撤遮罩，回到设置页并提示（此时 DB 已关，功能受限，但数据安全）。
-    appModel.endDataRootMigration();
-    if (mounted) {
-      _showSnackBar(context, failureMessage);
-      _showSnackBar(context, t.data_storage_restart_failed);
-    }
+    appModel.failDataRootMigration(failureMessage);
   }
 
   /// 注入给迁移引擎的真实资源关闭：停音频，关词典 FFI，checkpoint+关 DB，确保
@@ -342,6 +370,8 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       case DataRootTargetRejection.targetNotEmpty:
         return t.data_storage_migrate_failed(
             message: t.data_storage_location_hint);
+      case DataRootTargetRejection.containsExecutable:
+        return t.data_storage_reject_install_dir;
     }
   }
 

@@ -726,11 +726,19 @@ class AppModel with ChangeNotifier {
   ({int copied, int total})? get dataRootMigrationProgress =>
       _dataRootMigrationProgress;
 
+  /// TODO-1182：迁移失败原因文案。非 null 时根 widget 在迁移遮罩上改显「失败」态
+  /// （原因 + 建议 + 重启按钮），而不是像旧实现那样立刻重启导致用户永远看不到失败。
+  /// closeResources 已在搬移前关闭 DB（`_isInitialised=false`），本进程无法原地恢复，
+  /// 故失败态不撤遮罩（撤了会落到裸 loading）；由用户在失败视图点「重启」回到干净旧根。
+  String? _dataRootMigrationFailure;
+  String? get dataRootMigrationFailure => _dataRootMigrationFailure;
+
   /// 进入迁移态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 搬文件」的顺序，
   /// 这样根 widget 在 DB 关闭引发的 rebuild 里看到的是迁移遮罩而非裸 loading。
   void beginDataRootMigration() {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
+    _dataRootMigrationFailure = null;
     notifyListeners();
   }
 
@@ -740,11 +748,21 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 退出迁移态。仅在迁移失败（保留旧根、不重启）回到设置页时调用；成功路径会重启进程，
-  /// 不会执行到这里。
+  /// TODO-1182：迁移失败 → 切到失败态。**保持**遮罩激活（DB 已关，撤遮罩会落到裸 loading），
+  /// 让根 widget 在同一遮罩上渲染「失败原因 + 建议 + 重启按钮」，确保用户醒目看到失败。
+  void failDataRootMigration(String message) {
+    _dataRootMigrationActive = true;
+    _dataRootMigrationProgress = null;
+    _dataRootMigrationFailure = message;
+    notifyListeners();
+  }
+
+  /// 退出迁移态。用户在失败视图点「重启」但重启不受支持时兜底回到（受限的）设置页。
+  /// 成功路径会重启进程，不会执行到这里。
   void endDataRootMigration() {
     _dataRootMigrationActive = false;
     _dataRootMigrationProgress = null;
+    _dataRootMigrationFailure = null;
     notifyListeners();
   }
 

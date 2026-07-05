@@ -60,6 +60,53 @@ void main() {
       );
       expect(r, DataRootTargetRejection.targetNotEmpty);
     });
+
+    test('target is the install dir (contains the running exe) is rejected',
+        () {
+      // TODO-1182：exe 落在 newRoot 里 → newRoot 是安装目录 → 拒绝（否则失败回滚会删安装目录）。
+      final DataRootTargetRejection? r = validateDataRootTarget(
+        newDataRoot: '/apps/Hibiki',
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        existsAndHasFiles: alwaysEmpty,
+        executablePath: '/apps/Hibiki/hibiki.exe',
+      );
+      expect(r, DataRootTargetRejection.containsExecutable);
+    });
+
+    test('target is an ancestor of the exe dir is rejected', () {
+      final DataRootTargetRejection? r = validateDataRootTarget(
+        newDataRoot: '/apps',
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        existsAndHasFiles: alwaysEmpty,
+        executablePath: '/apps/Hibiki/bin/hibiki.exe',
+      );
+      expect(r, DataRootTargetRejection.containsExecutable);
+    });
+
+    test('exe outside the target dir does not trigger install-dir rejection',
+        () {
+      final DataRootTargetRejection? r = validateDataRootTarget(
+        newDataRoot: '/data/new-root',
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        existsAndHasFiles: alwaysEmpty,
+        executablePath: '/apps/Hibiki/hibiki.exe',
+      );
+      expect(r, isNull);
+    });
+
+    test('null executablePath keeps pre-1182 behavior (no install-dir check)',
+        () {
+      final DataRootTargetRejection? r = validateDataRootTarget(
+        newDataRoot: '/data/new-root',
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        existsAndHasFiles: alwaysEmpty,
+      );
+      expect(r, isNull);
+    });
   });
 
   group('source guards (TODO-935 E2/E3)', () {
@@ -107,6 +154,48 @@ void main() {
       expect(src.contains('restartApp()'), isTrue);
       // This entry is still experimental and must be labeled in-app.
       expect(src.contains('t.settings_experimental_suffix'), isTrue);
+    });
+
+    test(
+        'data-root part: rejects install dir, safe rollback, prominent failure',
+        () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/data_root.part.dart')
+              .readAsStringSync();
+      // TODO-1182：UI 把正在运行的 exe 路径喂给校验 + 迁移引擎（拒绝安装目录）。
+      expect(
+          src.contains('executablePath: Platform.resolvedExecutable'), isTrue);
+      expect(
+          src.contains('resolvedExecutablePath: Platform.resolvedExecutable'),
+          isTrue);
+      // 失败切到失败态遮罩（不再立刻重启导致用户看不到失败）。
+      expect(src.contains('failDataRootMigration('), isTrue);
+    });
+
+    test(
+        'migrator engine: safe rollback + install-dir/exe rejection + lock class',
+        () {
+      final String src = readSource('lib/src/storage/data_root_migrator.dart')
+          .readAsStringSync();
+      // 回滚只删自建子树，绝不删用户选定的整个 newRoot。
+      expect(src.contains('_cleanupCreatedSubtrees('), isTrue);
+      expect(src.contains('_deleteIfPresent(newRoot)'), isFalse,
+          reason: 'TODO-1182：回滚绝不删用户选定的整个 newRoot');
+      // 引擎二次拒绝安装目录/exe 目录。
+      expect(src.contains('resolvedExecutablePath'), isTrue);
+      // 文件锁失败有明确「被占用」提示。
+      expect(src.contains('_isFileInUseError('), isTrue);
+      expect(src.contains('有文件被占用'), isTrue);
+    });
+
+    test('migration view renders a failure phase with reason + suggestions',
+        () {
+      final String src =
+          readSource('lib/src/storage/data_root_migration_view.dart')
+              .readAsStringSync();
+      expect(src.contains('final String? failure'), isTrue);
+      expect(src.contains('data_storage_migrate_failed_title'), isTrue);
+      expect(src.contains('data_storage_migrate_failed_suggestions'), isTrue);
     });
 
     test('data-storage section is gated desktop-only', () {
