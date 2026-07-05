@@ -111,6 +111,8 @@ class SyncAssetPackageService {
     final AudiobookRow audiobook = (await _db.getAudiobookByBookKey(bookKey))!;
     final SrtBookRow srtBook = (await _db.getSrtBookByUid(srtBookUid))!;
     final List<AudioCueRow> cues = await _db.getCuesForBook(bookKey);
+    // TODO-1165：SRT 书标签名（标签每设备本地，跨设备按名带进 manifest）。
+    final List<BookTagRow> srtTags = await _db.getTagsForSrtBook(srtBook.id);
     final List<File> files = _audioPackageFiles(audiobook, srtBook);
 
     // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
@@ -129,7 +131,11 @@ class SyncAssetPackageService {
       'schemaVersion': 1,
       'kind': 'audioDatabase',
       'audiobook': _audiobookManifest(audiobook),
-      'srtBook': _srtBookManifest(srtBook),
+      'srtBook': <String, Object?>{
+        ..._srtBookManifest(srtBook),
+        if (srtTags.isNotEmpty)
+          'tags': <String>[for (final BookTagRow t in srtTags) t.name],
+      },
       'cues': cues.map(_audioCueManifest).toList(),
       'resources': resourceNames,
     });
@@ -221,6 +227,27 @@ class SyncAssetPackageService {
       importedAt: _intValue(srtBook, 'importedAt'),
       bookKey: Value(bookKey),
     ));
+
+    // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
+    // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
+    final Object? rawSrtTags = srtBook['tags'];
+    final List<String> srtTagNames = rawSrtTags is List
+        ? <String>[
+            for (final Object? t in rawSrtTags)
+              if (t != null && t.toString().isNotEmpty) t.toString(),
+          ]
+        : const <String>[];
+    if (srtTagNames.isNotEmpty) {
+      final SrtBookRow? importedSrt =
+          await _db.getSrtBookByUid(_stringValue(srtBook, 'uid'));
+      if (importedSrt != null) {
+        for (final String name in srtTagNames) {
+          if (name.isEmpty) continue;
+          final int tagId = await _db.getOrCreateTagByName(name);
+          await _db.addTagToSrtBook(importedSrt.id, tagId);
+        }
+      }
+    }
 
     await _db.replaceCuesForBook(
       bookKey,

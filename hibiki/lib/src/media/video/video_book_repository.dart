@@ -24,6 +24,20 @@ class VideoBookRepository {
     return _db.upsertVideoBook(withSource);
   }
 
+  /// 按标签名重建视频书标签映射（TODO-1165 跨设备下载后恢复标签）。标签是每设备
+  /// 本地数据，只能按名传递：逐名 [HibikiDatabase.getOrCreateTagByName] 归一到本机
+  /// tag id，再 [HibikiDatabase.addTagToVideoBook]（insertOrIgnore 幂等）。只增不删。
+  Future<void> applyTagNamesToVideoBook(
+    String bookUid,
+    List<String> tagNames,
+  ) async {
+    for (final String name in tagNames) {
+      if (name.isEmpty) continue;
+      final int tagId = await _db.getOrCreateTagByName(name);
+      await _db.addTagToVideoBook(bookUid, tagId);
+    }
+  }
+
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
 
