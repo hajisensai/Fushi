@@ -197,17 +197,16 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                   // Per-book selection row (TODO-1195 part A): only meaningful
                   // when the Books category itself is packed.
                   if (selected.contains(BackupCategory.books))
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text(t.backup_export_choose_books),
-                      subtitle: Text(chosenBooks == null
+                    AdaptiveSettingsRow(
+                      title: t.backup_export_choose_books,
+                      subtitle: chosenBooks == null
                           ? t.backup_export_books_all
                           : t.backup_export_books_selected(
-                              count: chosenBooks!.length.toString())),
+                              count: chosenBooks!.length.toString()),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () async {
-                        final Set<String>? picked = await _pickBooks(chosenBooks);
+                        final Set<String>? picked =
+                            await _pickBooks(chosenBooks);
                         setLocal(() => chosenBooks = picked);
                       },
                     ),
