@@ -229,6 +229,51 @@ keep-open=yes
     });
   });
 
+  group(
+      'resolveAndroidPixelFormatProperties '
+      '(TODO-1196 / BUG-465 Mali-G76 10-bit GL 纹理 OOM)', () {
+    // 根因：media_kit Android 纹理渲染（vo=gpu/opengl-es）下，10-bit 帧需 16-bit 纹理格式，
+    // Mali-G76 GL ES 驱动分配时 OUT_OF_MEMORY → 帧上不了屏（blank）/ 偶发成功交替（闪烁）。
+    // 软解与 copy 硬解的公共下游都是这段 10-bit GL 上屏 → hwdec 改写救不了，必须 VO 前降位。
+    // 修复=Android 无条件下发 vf=format=yuv420p，让 GL 路径只见 8-bit。
+    test('Android: 下发 vf=format=yuv420p（VO 前把 10-bit 降 8-bit）', () {
+      final Map<String, String> m =
+          resolveAndroidPixelFormatProperties(isAndroid: true);
+      expect(m['vf'], 'format=yuv420p');
+      // 只发 vf 这一个 key，不碰画质/解码/几何等属性。
+      expect(m.keys.toSet(), <String>{'vf'});
+    });
+    test('non-Android: 不下发 vf（桌面/iOS 零行为变化）', () {
+      final Map<String, String> m =
+          resolveAndroidPixelFormatProperties(isAndroid: false);
+      expect(m.containsKey('vf'), isFalse);
+      expect(m.isEmpty, isTrue);
+    });
+    test('buildMpvProperties(isAndroid:true) 端到端下发 vf 降位', () {
+      // 端到端守卫：Android 下发到 libmpv 的属性必含 vf=format=yuv420p，10-bit 不进 GL。
+      final Map<String, String> m = buildMpvProperties(
+        VideoMpvConfig.defaults,
+        isAndroid: true,
+      );
+      expect(m['vf'], 'format=yuv420p');
+    });
+    test('buildMpvProperties(isAndroid:false) 桌面不下发 vf', () {
+      final Map<String, String> m = buildMpvProperties(
+        VideoMpvConfig.defaults,
+        isAndroid: false,
+      );
+      expect(m.containsKey('vf'), isFalse);
+    });
+    test('rawConf 的 vf 覆盖默认降位（高级逃生口，raw 最后合并优先）', () {
+      // 用户经 rawConf 显式指定 vf 时，raw 优先——保留高级逃生口。
+      final Map<String, String> m = buildMpvProperties(
+        VideoMpvConfig.defaults.copyWith(rawConf: 'vf=format=yuv444p16'),
+        isAndroid: true,
+      );
+      expect(m['vf'], 'format=yuv444p16');
+    });
+  });
+
   group('encode/decode', () {
     test('round-trips all fields', () {
       final VideoMpvConfig c = VideoMpvConfig.defaults.copyWith(

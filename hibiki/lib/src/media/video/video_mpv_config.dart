@@ -384,11 +384,44 @@ Map<String, String> resolveScaleProperties(bool highQuality, {bool? isMobile}) {
   };
 }
 
+/// 构建 Android 专用的「10-bit → 8-bit 降位」视频滤镜属性 map（`vf`）。纯函数。
+///
+/// **根治 realme 8 / Mali-G76「10-bit HEVC 视频闪烁 + 无画面」（TODO-1196；用户 BUG-465
+/// 日志：`first frame decoded 1920x1080` 紧接 `[vo/gpu/opengl] OpenGL error OUT_OF_MEMORY`）。**
+/// media_kit 在 Android 走**纹理渲染**（`vo=gpu` + `gpu-context=android` + `opengl-es=yes`，
+/// libmpv 把解码帧画进 GL 纹理交 Flutter 合成，见 media_kit_video
+/// `android_video_controller/real.dart`）。10-bit 帧（`yuv420p10` 等）需 16-bit 纹理格式，
+/// Mali-G76 的 GL ES 驱动为该格式分配/上传时 `OUT_OF_MEMORY` → 帧上不了屏（blank），偶发
+/// 成功 vs 失败交替 → 闪烁。软解（`hwdec=no`）与 copy 硬解（`auto-copy`）两条路的**公共下游**
+/// 都是这段 10-bit GL 上屏，故 [resolveAndroidHwdec] 的 hwdec 改写救不了它——必须在 VO 之前把
+/// 帧降到 8-bit。
+///
+/// 修复=Android 上无条件下发 `vf=format=yuv420p`，让 libmpv 在滤镜链里把 10-bit 帧转成
+/// 8-bit `yuv420p`，整条 GL/纹理路径只见 8-bit，绕开 Mali 的 16-bit 纹理 OOM。对**已是**
+/// 8-bit yuv420p 的源，`format=yuv420p` 是 no-op（mpv 匹配格式时不做转换），代价极小；
+/// 故对全部 Android 设备一致下发（GL 路径本就不该见 10-bit），不是给 realme 8 打特例。
+///
+/// **仅 Android**：桌面 GL 扛得住 10-bit，iOS 走另一套渲染（Metal），均不下发（原样透传，
+/// 零行为变化）。与 [resolveAndroidHwdec] / [resolveScaleProperties] 同范式——只改 Android
+/// **实际下发**的属性，不引入用户可见开关（高级用户仍可经 [VideoMpvConfig.rawConf] 的 `vf`
+/// 覆盖，raw 最后合并优先）。
+///
+/// [isAndroid] 默认取 `Platform.isAndroid`，注入仅为单测。
+Map<String, String> resolveAndroidPixelFormatProperties({bool? isAndroid}) {
+  final bool android = isAndroid ?? Platform.isAndroid;
+  if (!android) return const <String, String>{};
+  // 10-bit → 8-bit：VO 前降位，绕开 Mali GL ES 的 16-bit 纹理 OOM（BUG-465）。
+  return const <String, String>{'vf': 'format=yuv420p'};
+}
+
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
     {bool? isAndroid, bool? isMobile}) {
   final Map<String, String> out = <String, String>{};
   // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）。
   out['hwdec'] = resolveAndroidHwdec(config.hwdec, isAndroid: isAndroid);
+  // Android 10-bit → 8-bit 降位：VO 前 vf=format=yuv420p 绕开 Mali GL 16-bit 纹理 OOM
+  // （TODO-1196 / BUG-465 根因）；桌面/iOS 不下发。见 [resolveAndroidPixelFormatProperties]。
+  out.addAll(resolveAndroidPixelFormatProperties(isAndroid: isAndroid));
   // 画质：scale 链——桌面高质量 EWA polar，移动端回落轻量 spline36 修闪（TODO-1196）；
   // off=mpv 默认 bilinear，便于运行时复位。见 [resolveScaleProperties]。
   out.addAll(resolveScaleProperties(config.highQuality, isMobile: isMobile));
