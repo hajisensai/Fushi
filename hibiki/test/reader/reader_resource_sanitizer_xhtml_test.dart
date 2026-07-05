@@ -81,4 +81,52 @@ void main() {
       expect(out, equals(input));
     });
   });
+
+  group('ReaderResourceSanitizer.injectImagesAfterBodyOpen (TODO-1174)', () {
+    const String img = '<div class="hoshi-merged-image">'
+        '<img src="a.png" class="block-img"/></div>';
+
+    test(
+        'inserts the images right AFTER the <body> open tag, not before '
+        '</body>', () {
+      const String html = '<html><body><p>本文</p></body></html>';
+      final String out =
+          ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
+
+      final int bodyOpenEnd = out.indexOf('<body>') + '<body>'.length;
+      final int imgAt = out.indexOf('hoshi-merged-image');
+      final int paraAt = out.indexOf('<p>本文</p>');
+      // The image lands at the very top of the flow: after <body>, before the
+      // original first content — i.e. merged illustrations open the chapter.
+      expect(imgAt, greaterThan(0));
+      expect(imgAt, greaterThanOrEqualTo(bodyOpenEnd));
+      expect(imgAt, lessThan(paraAt),
+          reason: 'merged image must precede the chapter body content');
+    });
+
+    test('preserves <body> attributes and injects after the full open tag', () {
+      const String html =
+          '<html><body class="c" dir="rtl"><p>x</p></body></html>';
+      final String out =
+          ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
+      expect(out, contains('<body class="c" dir="rtl">'));
+      final int openEnd = out.indexOf('<body class="c" dir="rtl">') +
+          '<body class="c" dir="rtl">'.length;
+      expect(out.indexOf('hoshi-merged-image'), greaterThanOrEqualTo(openEnd));
+    });
+
+    test('empty images string is a verbatim no-op', () {
+      const String html = '<html><body><p>x</p></body></html>';
+      expect(ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, ''),
+          equals(html));
+    });
+
+    test('no <body> tag falls back to prepending before the document', () {
+      const String html = '<p>x</p>';
+      final String out =
+          ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
+      expect(
+          out.indexOf('hoshi-merged-image'), lessThan(out.indexOf('<p>x</p>')));
+    });
+  });
 }

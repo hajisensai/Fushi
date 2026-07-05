@@ -25,6 +25,25 @@ class ReaderResourceSanitizer {
     caseSensitive: false,
   );
 
+  static final RegExp _bodyOpenPattern =
+      RegExp(r'<body[^>]*>', caseSensitive: false);
+
+  /// TODO-1174: insert [imagesHtml] immediately after the document's `<body>`
+  /// open tag, so merged single-image chapters render at the very *top* of the
+  /// absorbing text chapter's flow (a standalone illustration belongs to the
+  /// *beginning* of the chapter it introduces, not the tail of the previous
+  /// one). Returns [html] unchanged when [imagesHtml] is empty; when no `<body>`
+  /// open tag is present, prepends the images before the whole document.
+  static String injectImagesAfterBodyOpen(String html, String imagesHtml) {
+    if (imagesHtml.isEmpty) return html;
+    final String block = '\n$imagesHtml\n';
+    final RegExpMatch? match = _bodyOpenPattern.firstMatch(html);
+    if (match != null) {
+      return '${html.substring(0, match.end)}$block${html.substring(match.end)}';
+    }
+    return '$block$html';
+  }
+
   /// Normalizes XHTML served as text/html so self-closing raw-text elements do
   /// not swallow the document body. Returns the input unchanged when no such
   /// element is present.

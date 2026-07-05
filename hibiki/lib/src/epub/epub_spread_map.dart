@@ -18,18 +18,22 @@ class SpreadEntry {
   /// Second chapter index when this is a two-page spread; `null` for singles.
   final int? secondChapterIndex;
 
-  /// TODO-1128: spine indices of 0-char single-image chapters absorbed into
-  /// this (text) chapter's continuous flow. Empty for the common case. The
-  /// absorbed chapters keep their physical spine index (charOffset ownership /
-  /// DB serialization unchanged) but no longer occupy their own virtual page —
-  /// the reader injects their `<img>` inline when serving [chapterIndex]. Only
-  /// ever populated on a `single` text entry; never on a spread or an
-  /// image-only entry.
+  /// TODO-1128 / TODO-1174: spine indices of 0-char single-image chapters that
+  /// physically *precede* this (text) chapter and are absorbed into the very
+  /// start of its continuous flow, in reading order. Empty for the common case.
+  /// The absorbed chapters keep their physical spine index (charOffset ownership
+  /// / DB serialization unchanged) but no longer occupy their own virtual page —
+  /// the reader injects their `<img>` inline at the *top* of [chapterIndex]'s
+  /// body when serving it. Because the images sit before the owning text in the
+  /// spine, these indices are all *smaller* than [chapterIndex]. Only ever
+  /// populated on a `single` text entry; never on a spread or an image-only
+  /// entry.
   final List<int> mergedImageChapters;
 
   bool get isSpread => secondChapterIndex != null;
 
-  /// True when this entry absorbs one or more trailing single-image chapters.
+  /// True when this entry absorbs one or more preceding single-image chapters
+  /// into its opening flow.
   bool get hasMergedImages => mergedImageChapters.isNotEmpty;
 
   List<int> get chapterIndices {
@@ -61,11 +65,12 @@ class EpubSpreadMap {
   int virtualPageForChapter(int chapterIndex) =>
       _chapterToVirtual[chapterIndex] ?? 0;
 
-  /// TODO-1128: spine indices of the 0-char single-image chapters absorbed into
-  /// the *text* chapter [textChapterIndex]'s flow, in reading order. Empty when
+  /// TODO-1128 / TODO-1174: spine indices of the 0-char single-image chapters
+  /// (physically *preceding* [textChapterIndex]) absorbed into the *top* of the
+  /// *text* chapter [textChapterIndex]'s flow, in reading order. Empty when
   /// [textChapterIndex] is not an absorbing text chapter (the common case, and
   /// whenever `mergeImagePages` is off). The reader injects these chapters'
-  /// `<img>` inline when serving [textChapterIndex]'s XHTML.
+  /// `<img>` inline at the start of [textChapterIndex]'s body when serving it.
   List<int> mergedImagesForChapter(int textChapterIndex) {
     final int? virtual = _chapterToVirtual[textChapterIndex];
     if (virtual == null) return const <int>[];
@@ -163,18 +168,29 @@ class EpubSpreadMap {
     return entries;
   }
 
-  /// TODO-1128 (受限方案 A): fold each run of trailing single-image-only
-  /// entries into the immediately-preceding single *text* entry, so the source
-  /// EPUB's standalone illustration chapters render inline in the neighbouring
-  /// prose chapter's continuous flow instead of each taking its own page.
+  /// TODO-1128 / TODO-1174 (受限方案 A): fold each run of *leading* single-
+  /// image-only entries into the immediately-*following* single *text* entry,
+  /// so the source EPUB's standalone illustration chapters render inline at the
+  /// *start* of the next prose chapter's continuous flow instead of each taking
+  /// its own page. This is the flipped direction of the original TODO-1128
+  /// design (which absorbed a *trailing* image run into the *preceding* text):
+  /// users expect a standalone illustration page to belong to the chapter it
+  /// introduces, not to dangle at the tail of the previous one.
   ///
   /// Hard invariants (never-break-userspace):
   ///  - Only a `single` entry whose chapter is NOT image-only (a text chapter)
   ///    absorbs; two text chapters are never merged (charOffset ownership must
   ///    stay one-section-per-document).
   ///  - Only `single` image-only entries are absorbed — a spread entry (already
-  ///    paired) is opaque and stops the run, so pairing always wins over merge.
-  ///  - Chapter 0 (cover) is never absorbed (it is emitted as its own single).
+  ///    paired) is opaque and ends the pending run, so pairing always wins over
+  ///    merge; the un-absorbed images are then emitted as their own pages.
+  ///  - A leading image run with *no* following text before a barrier / EOF
+  ///    (e.g. trailing illustrations after the last prose chapter) is emitted as
+  ///    its own page(s) — images can only join the chapter they precede.
+  ///  - Chapter 0 (cover / front-matter illustration) is no longer special-
+  ///    cased: when it is an image-only chapter followed by a prose chapter it
+  ///    is absorbed into that chapter's opening (fixes the old front-matter blind
+  ///    spot); when nothing prose follows it, it stays its own page.
   ///  - Absorbed chapters keep their physical spine index; they only drop their
   ///    own virtual page. [_buildIndex] then maps them to the absorbing page.
   static List<SpreadEntry> _mergeImageEntries(
@@ -182,38 +198,43 @@ class EpubSpreadMap {
     List<SpreadEntry> base,
   ) {
     final List<SpreadEntry> out = <SpreadEntry>[];
-    int i = 0;
-    while (i < base.length) {
+    // Spine indices of the leading single-image run seen so far, awaiting the
+    // next absorbing text entry. Flushed as standalone pages at any barrier.
+    final List<int> pending = <int>[];
+    void flushPendingAsOwnPages() {
+      for (final int image in pending) {
+        out.add(SpreadEntry.single(chapterIndex: image));
+      }
+      pending.clear();
+    }
+
+    for (int i = 0; i < base.length; i++) {
       final SpreadEntry entry = base[i];
-      final bool absorbable = !entry.isSpread &&
+      final bool isLeadingImage = !entry.isSpread &&
           entry.mergedImageChapters.isEmpty &&
-          !book.isImageOnlyChapter(entry.chapterIndex);
-      if (!absorbable) {
-        out.add(entry);
-        i++;
+          book.isImageOnlyChapter(entry.chapterIndex);
+      if (isLeadingImage) {
+        pending.add(entry.chapterIndex);
         continue;
       }
-      // Collect the run of following single image-only entries.
-      final List<int> absorbed = <int>[];
-      int j = i + 1;
-      while (j < base.length) {
-        final SpreadEntry next = base[j];
-        if (next.isSpread) break;
-        if (!book.isImageOnlyChapter(next.chapterIndex)) break;
-        absorbed.add(next.chapterIndex);
-        j++;
-      }
-      if (absorbed.isEmpty) {
-        out.add(entry);
-        i++;
-      } else {
+      final bool isAbsorbingText = !entry.isSpread &&
+          entry.mergedImageChapters.isEmpty &&
+          !book.isImageOnlyChapter(entry.chapterIndex);
+      if (isAbsorbingText && pending.isNotEmpty) {
         out.add(SpreadEntry.single(
           chapterIndex: entry.chapterIndex,
-          mergedImageChapters: List<int>.unmodifiable(absorbed),
+          mergedImageChapters: List<int>.unmodifiable(pending),
         ));
-        i = j;
+        pending.clear();
+        continue;
       }
+      // Barrier (spread) or a text entry with no pending images: any images seen
+      // so far have nothing to join, so they keep their own pages.
+      flushPendingAsOwnPages();
+      out.add(entry);
     }
+    // Images trailing the last prose chapter (no following text) stay on-page.
+    flushPendingAsOwnPages();
     return out;
   }
 
