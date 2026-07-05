@@ -299,10 +299,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }) {
     String html = utf8.decode(rawData, allowMalformed: true);
     html = ReaderResourceSanitizer.sanitizeXhtml(html);
-    // TODO-1128: when this text chapter absorbs trailing single-image chapters
-    // (merge-image on), append their <img> to the end of the flow before the
-    // reader style is injected, so the illustrations render inline instead of
-    // each taking their own virtual page. No-op on the common path.
+    // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
+    // single-image chapters (merge-image on), prepend their <img> to the *start*
+    // of the flow before the reader style is injected, so the illustrations
+    // render inline at the top of the chapter they introduce instead of each
+    // taking their own virtual page. No-op on the common path.
     html = _injectMergedChapterImages(html, chapterIndex);
     final String styleTag = _buildStyleTag();
     const String hideUntilReady =
@@ -326,14 +327,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     return Uint8List.fromList(utf8.encode(html));
   }
 
-  // TODO-1128: append the absorbed single-image chapters' <img> to the end of
-  // [html]'s <body> when the spread map records this text chapter as absorbing
-  // them (merge-image on). Each image chapter contributes exactly one <img>
-  // (isImageOnlyChapter guarantees a single <img>); its src is resolved to an
-  // absolute hoshi.local /epub URL relative to *that* image chapter's own href,
-  // so a text chapter absorbing images from a different directory still points
-  // at the right files (the served text chapter's baseURI would otherwise
-  // mis-resolve them). No-op unless merge is on and the chapter absorbs images.
+  // TODO-1128 / TODO-1174: prepend the absorbed single-image chapters' <img> to
+  // the *start* of [html]'s <body> when the spread map records this text chapter
+  // as absorbing the images that precede it (merge-image on). Each image chapter
+  // contributes exactly one <img> (isImageOnlyChapter guarantees a single
+  // <img>); its src is resolved to an absolute hoshi.local /epub URL relative to
+  // *that* image chapter's own href, so a text chapter absorbing images from a
+  // different directory still points at the right files (the served text
+  // chapter's baseURI would otherwise mis-resolve them). The insertion position
+  // is a pure string op in ReaderResourceSanitizer.injectImagesAfterBodyOpen
+  // (unit-tested). No-op unless merge is on and the chapter absorbs images.
   String _injectMergedChapterImages(String html, int chapterIndex) {
     if (chapterIndex < 0) return html;
     final EpubBook? book = _book;
@@ -358,13 +361,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
     if (figures.isEmpty) return html;
 
-    final String block = '\n$figures\n';
-    final RegExp bodyClose = RegExp(r'</body\s*>', caseSensitive: false);
-    final RegExpMatch? match = bodyClose.firstMatch(html);
-    if (match != null) {
-      return '${html.substring(0, match.start)}$block${html.substring(match.start)}';
-    }
-    return '$html$block';
+    return ReaderResourceSanitizer.injectImagesAfterBodyOpen(
+      html,
+      figures.toString(),
+    );
   }
 
   // BUG-270: resolve the absolute on-disk path of chapter [index]'s XHTML, or
