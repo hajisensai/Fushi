@@ -24,7 +24,22 @@ window.flutter_inappwebview = {
           resolve(!!(res && res.ok));
         });
       case 'duplicateCheck':
-        return Promise.resolve(false);
+        // TODO-1176：真查重（+→✓，与 app 内一致）。经 background.js 转发到 server
+        // /api/duplicate（Anki findNotes / findDuplicateNotes）。任何失败（扩展已重载、
+        // server 未开、未配置 Anki）都 fail-soft 成 false → 弹窗显示「+」，绝不阻断查词。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'duplicate',
+              expression: a.expression || '',
+              reading: a.reading || '',
+            });
+            return !!(resp && resp.ok && resp.data && resp.data.duplicate === true);
+          } catch (_) {
+            return false;
+          }
+        })();
       case 'onLinkClick':
         if (window.__hibikiOnLinkClick) window.__hibikiOnLinkClick(args[0]);
         return Promise.resolve(null);

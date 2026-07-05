@@ -180,6 +180,8 @@ class YomitanApiServer {
         return _handleDictionaryLookup(request);
       case '/api/mine':
         return _handleMine(request);
+      case '/api/duplicate':
+        return _handleDuplicate(request);
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
@@ -209,6 +211,19 @@ class YomitanApiServer {
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
+  }
+
+  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重端点（`+`→`✓`，与 HibikiSyncServer 共享
+  /// 契约）。扩展默认指向本 server（19633），故这里是真正被命中的路径。未注入挖词 service
+  /// 时返回 `{duplicate:false}`（弹窗降级为「+」）。
+  Future<shelf.Response> _handleDuplicate(shelf.Request request) async {
+    final HibikiRemoteMiningService? mining = _mining;
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    if (mining == null) {
+      return _json(<String, dynamic>{'duplicate': false});
+    }
+    return _json(await buildRemoteDuplicateResponse(body, mining: mining));
   }
 
   Future<shelf.Response> _handleTermEntries(shelf.Request request) async {

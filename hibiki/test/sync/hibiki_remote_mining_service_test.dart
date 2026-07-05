@@ -18,4 +18,11 @@ class _FakeMining implements HibikiRemoteMiningService {
 
   @override
   Future<String> mineImmersion(ImmersionMinePayload payload) async => 'success';
+
+  @override
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async =>
+      false;
 }

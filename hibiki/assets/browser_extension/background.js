@@ -153,6 +153,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ fields: msg.fields, sentence: msg.sentence || '' }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'duplicate') {
+        // TODO-1176：查词弹窗制卡按钮真查重（+→✓，与 app 一致）。POST {expression,reading}
+        // → server /api/duplicate，经 Anki 后端判断该词是否已存在，返回 {duplicate:bool}。
+        const r = await fetch(base + '/api/duplicate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mineYoutube') {
         // 批量制卡（YouTube，非 DRM）：视频ID + 视频时间窗 → 服务端 resolveYoutubeSource 从真实
         // 流精确裁 GIF+音频。无需录屏、无回放、无跳动。

@@ -396,6 +396,10 @@ class HibikiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleMine(request);
     }
+    if (reqPath == '/api/duplicate') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleDuplicate(request);
+    }
     if (reqPath == '/api/ping') {
       if (method != 'GET') return shelf.Response(405);
       return _handlePing();
@@ -814,6 +818,19 @@ class HibikiSyncServer {
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
+  }
+
+  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重（`+`→`✓`）。契约与 YomitanApiServer
+  /// 共享（单一真相源）。未注入挖词 service 时返回 `{duplicate:false}`（弹窗降级为「+」，
+  /// 绝不阻断查词）。
+  Future<shelf.Response> _handleDuplicate(shelf.Request request) async {
+    final HibikiRemoteMiningService? svc = _miningService;
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    if (svc == null) {
+      return _jsonResponse(<String, dynamic>{'duplicate': false});
+    }
+    return _jsonResponse(await buildRemoteDuplicateResponse(body, mining: svc));
   }
 
   /// TODO-963 M2: 无鉴权轻量探测。手动输入 IP 的 client 在「填 IP → 探测 → 配对」流程

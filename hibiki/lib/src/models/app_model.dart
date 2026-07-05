@@ -4293,6 +4293,18 @@ class _AppModelRemoteLookupService
   }
 
   @override
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async {
+    // TODO-1176：与 app 内 dictionary_page_mixin.checkDuplicate 走同一 repo.isDuplicate
+    // 路径（AnkiConnect findNotes / AnkiDroid findDuplicateNotes），repo 内部已 fail-soft。
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    return repo.isDuplicate(expression, reading);
+  }
+
+  @override
   Future<String> mineImmersion(ImmersionMinePayload payload) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
