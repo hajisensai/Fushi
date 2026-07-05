@@ -16,32 +16,32 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 
 # ------------------------------------------------------------------------------
-function(download_and_verify url md5 locationForArchive)
-  # Check if the archive exists.
-  if(EXISTS "${locationForArchive}")
-    file(MD5 "${locationForArchive}" ARCHIVE_MD5)
-
-    # If MD5 doesn't match, delete the archive to download again.
-    if(NOT md5 STREQUAL ARCHIVE_MD5)
-      file(REMOVE "${locationForArchive}")
-      message(STATUS "MD5 mismatch. File deleted.")
-    endif()
+# HIBIKI FORK (TODO-1172): upstream fetched these .7z archives from GitHub
+# at *configure* time via file(DOWNLOAD) and hard FATAL_ERROR'd on any
+# network/integrity hiccup, making Windows CI builds intermittently red.
+# TODO-1137 already mirrored libmpv to a permanent release to survive
+# zhongfly's rolling-window pruning, but the archives were still downloaded
+# at build time -- so a transient network failure still broke the build.
+# Both archives are now VENDORED into ../vendored (committed, self-contained,
+# same rationale as third_party/ffmpeg-min). This step reads + MD5-verifies
+# the local copy; no runtime GitHub download remains. The integrity check now
+# guards against a corrupt committed file and never deletes the source.
+function(verify_vendored_archive path md5 label)
+  if(NOT EXISTS "${path}")
+    message(FATAL_ERROR
+      "${label}: vendored archive missing at ${path}. It must be committed "
+      "under third_party/media_kit_libs_windows_video/vendored (TODO-1172).")
   endif()
 
-  # Download the archive if it doesn't exist.
-  if(NOT EXISTS "${locationForArchive}")
-    message(STATUS "Downloading archive from ${url}...")
-    file(DOWNLOAD "${url}" "${locationForArchive}")
-    message(STATUS "Downloaded archive to ${locationForArchive}.")
+  file(MD5 "${path}" ARCHIVE_MD5)
 
-    # Verify MD5 of the newly downloaded file.
-    file(MD5 "${locationForArchive}" ARCHIVE_MD5)
-
-    if(md5 STREQUAL ARCHIVE_MD5)
-      message(STATUS "${locationForArchive} Verification successful.")
-    else()
-      message(FATAL_ERROR "${locationForArchive} Integrity check failed, please try to re-build project again.")
-    endif()
+  if(md5 STREQUAL ARCHIVE_MD5)
+    message(STATUS "${label}: vendored archive verified (${path}).")
+  else()
+    message(FATAL_ERROR
+      "${label}: vendored archive ${path} integrity check failed "
+      "(expected ${md5}, got ${ARCHIVE_MD5}). The committed file is corrupt; "
+      "restore it from git.")
   endif()
 endfunction()
 
@@ -62,6 +62,15 @@ function(check_directory_exists_and_not_empty dir result_var)
     message(STATUS "Directory ${dir} does not exist!")
   endif()
 endfunction()
+
+# Directory holding the vendored (committed) .7z archives, resolved to a
+# clean absolute path so the extract commands below never carry a "../"
+# segment (TODO-1172).
+get_filename_component(
+  VENDORED_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../vendored"
+  ABSOLUTE
+)
 
 # libmpv archive containing the pre-built shared libraries & headers.
 #
@@ -97,20 +106,17 @@ endfunction()
 # 2651a618ba6906ac869a87f669c4db157ef3b9d566eb946362fadafcd2e253c1
 set(LIBMPV "mpv-dev-x86_64-20260704-git-33111f3212.7z")
 
-# Download URL & MD5 hash of the libmpv archive. URL points at our permanent
-# mirror (hajisensai/hibiki release), NOT zhongfly, to survive upstream pruning.
+# Provenance of the vendored libmpv archive (TODO-1172: no longer downloaded
+# at build time). URL is the permanent mirror (hajisensai/hibiki release),
+# kept so the origin stays auditable; the committed .7z is the source of truth.
 set(LIBMPV_URL "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/${LIBMPV}")
 set(LIBMPV_MD5 "89702937368b0181cbce41c30e811c76")
 
-# Download location of the libmpv archive.
-set(LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${LIBMPV}")
+# Vendored archive (committed) + build-dir extraction target (TODO-1172).
+set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")
 set(LIBMPV_SRC "${CMAKE_BINARY_DIR}/libmpv")
 
-download_and_verify(
-  ${LIBMPV_URL}
-  ${LIBMPV_MD5}
-  ${LIBMPV_ARCHIVE}
-)
+verify_vendored_archive("${LIBMPV_ARCHIVE}" "${LIBMPV_MD5}" "libmpv")
 
 check_directory_exists_and_not_empty(${LIBMPV_SRC} LIBMPV_SRC_VALID)
 
@@ -134,19 +140,15 @@ endif()
 # ANGLE archive containing the pre-built shared libraries & headers.
 set(ANGLE "ANGLE.7z")
 
-# Download URL & MD5 hash of the ANGLE archive.
+# Provenance of the vendored ANGLE archive (TODO-1172: no longer downloaded).
 set(ANGLE_URL "https://github.com/alexmercerind/flutter-windows-ANGLE-OpenGL-ES/releases/download/v1.0.1/ANGLE.7z")
 set(ANGLE_MD5 "e866f13e8d552348058afaafe869b1ed")
 
-# Download location of the ANGLE archive.
-set(ANGLE_ARCHIVE "${CMAKE_BINARY_DIR}/${ANGLE}")
+# Vendored archive (committed) + build-dir extraction target (TODO-1172).
+set(ANGLE_ARCHIVE "${VENDORED_DIR}/${ANGLE}")
 set(ANGLE_SRC "${CMAKE_BINARY_DIR}/ANGLE")
 
-download_and_verify(
-  ${ANGLE_URL}
-  ${ANGLE_MD5}
-  ${ANGLE_ARCHIVE}
-)
+verify_vendored_archive("${ANGLE_ARCHIVE}" "${ANGLE_MD5}" "ANGLE")
 
 check_directory_exists_and_not_empty(${ANGLE_SRC} ANGLE_SRC_VALID)
 
