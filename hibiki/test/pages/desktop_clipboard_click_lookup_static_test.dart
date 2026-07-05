@@ -11,7 +11,7 @@ void main() {
     final String resultBody = _functionSource(
       src,
       'Widget _buildSearchResultBody()',
-      'Future<void> _pushNestedPopup(',
+      'Future<int> _pushNestedPopup(',
     );
 
     expect(src, contains('SourceLookupTextPanel'));

@@ -308,6 +308,23 @@
       shell.setAttribute('data-theme', theme);
     }
     shell.style.position = 'absolute';
+    // TODO-1189 — establish a per-shell STACKING CONTEXT ordered by insertion
+    // depth (0 = root) so each shell — and the z-index:5 close-X inside it — is
+    // CONFINED to its own context. Without a shell z-index the shells sit at
+    // z-index:auto and every close-X (a POSITIVE z-index) escapes to the shared
+    // parent (#global-lookup-host-layer) stacking level, painting ABOVE all
+    // sibling shells' iframes regardless of DOM order: a parent card's X floated
+    // over the child card stacked on top of it (the "X 穿透图层" bug). Giving each
+    // shell a z-index equal to its depth makes a deeper child shell fully cover
+    // its parent (including the parent's X); only the topmost card's X stays
+    // exposed. The frames Map is insertion-ordered (root first), so layerIndexOf
+    // is the depth. -1 (record not yet tracked) leaves z-index auto.
+    var stackDepth = descriptor && descriptor.id != null
+        ? layerIndexOf(descriptor.id)
+        : -1;
+    if (stackDepth >= 0) {
+      shell.style.zIndex = String(stackDepth);
+    }
     shell.style.left = (typeof f.left === 'number' ? f.left : 0) + 'px';
     shell.style.top = (typeof f.top === 'number' ? f.top : 0) + 'px';
     if (typeof f.width === 'number') {
@@ -1062,6 +1079,54 @@
     };
   }
 
+  // TODO-1190 — highlight the searched word inside a PARENT frame's popup.js
+  // realm. When a nested lookup opens off a clicked word, the in-app popup marks
+  // that word with a CSS Custom Highlight in the PARENT card
+  // (dictionary_popup_webview.highlightSelection); the app-external overlay never
+  // did, so the source word in the parent card was left unmarked. The controller
+  // resolves the parent's insertion-order frame index + the matched char count
+  // and calls this; we find that frame and eval popup.js's own
+  // window.hoshiSelection.highlightSelection(count) inside its iframe realm (the
+  // popup.js selection already spans the just-clicked word). No-op on a bad index
+  // / count / missing frame so a failed highlight never breaks the lookup.
+  function highlightFrame(frameIndex, count) {
+    if (typeof frameIndex !== 'number' || frameIndex < 0) {
+      return false;
+    }
+    if (typeof count !== 'number' || !(count > 0)) {
+      return false;
+    }
+    var i = 0;
+    var target = null;
+    frames.forEach(function (record) {
+      if (i === frameIndex) {
+        target = record;
+      }
+      i++;
+    });
+    if (!target) {
+      return false;
+    }
+    var win = null;
+    try {
+      win = target.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win || typeof win.eval !== 'function') {
+      return false;
+    }
+    try {
+      win.eval(
+          'window.hoshiSelection && ' +
+          'window.hoshiSelection.highlightSelection && ' +
+          'window.hoshiSelection.highlightSelection(' + count + ');');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   window.__globalLookupHost = {
     __installed: true,
     renderStack: renderStack,
@@ -1069,6 +1134,7 @@
     topPopupId: topPopupId,
     frameIdForIframe: frameIdForIframe,
     layerIndexOf: layerIndexOf,
+    highlightFrame: highlightFrame,
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,

@@ -852,7 +852,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     );
   }
 
-  Future<void> _pushNestedPopup(
+  Future<int> _pushNestedPopup(
     String query,
     Rect selectionRect, {
     bool reuseWarmSlot = false,

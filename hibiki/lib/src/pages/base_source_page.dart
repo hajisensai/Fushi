@@ -639,10 +639,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                   fallback: item.selectionRect,
                 );
           prunePopupStack(index + 1);
-          await searchDictionaryResult(
+          // TODO-1190: symmetric with onTextSelected above — mark the clicked
+          // headword/link target in this parent card after the child search
+          // (it previously highlighted only on plain-text selection, so a
+          // headword/kanji-tag tap left the source word unmarked).
+          final count = await searchDictionaryResult(
             searchTerm: query,
             selectionRect: childRect,
           );
+          if (count > 0) {
+            item.webViewKey.currentState?.highlightSelection(count);
+          }
         },
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头
         // （与 dictionary_page_mixin / home_dictionary_page 同构），webview 的

@@ -8,6 +8,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:hibiki/src/pages/base_source_page.dart'
+    show lookupHighlightCharCount;
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
@@ -340,7 +342,7 @@ mixin DictionaryPageMixin {
     required int index,
     required Size screen,
     required DictionaryPopupController controller,
-    required void Function(String text, Rect selectionRect) onPush,
+    required Future<int> Function(String text, Rect selectionRect) onPush,
     required void Function(int index) onPop,
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
@@ -395,7 +397,7 @@ mixin DictionaryPageMixin {
         onScrolledToBottom: entry.allLoaded
             ? null
             : () => loadMoreForEntry(entry: entry, controller: controller),
-        onTextSelected: (text, localRect) {
+        onTextSelected: (text, localRect) async {
           final Rect childRect = localRect == Rect.zero
               ? entry.selectionRect
               : popupWordScreenRect(
@@ -404,9 +406,17 @@ mixin DictionaryPageMixin {
                   fallback: entry.selectionRect,
                 );
           setState(() => controller.truncateTo(index + 1));
-          onPush(text, childRect);
+          // TODO-1190: after the child search, mark the clicked word in THIS
+          // (parent) card's WebView (parity with base_source_page reader family
+          // — the mixin family video/首页/texthooker only truncate+onPush before,
+          // so the source word was left unmarked). onPush returns the matched
+          // char count (0 = no entries -> no highlight, preserving prior look).
+          final int count = await onPush(text, childRect);
+          if (count > 0) {
+            entry.webViewKey.currentState?.highlightSelection(count);
+          }
         },
-        onLinkClick: (query, localRect) {
+        onLinkClick: (query, localRect) async {
           final Rect childRect = localRect == Rect.zero
               ? entry.selectionRect
               : popupWordScreenRect(
@@ -415,7 +425,12 @@ mixin DictionaryPageMixin {
                   fallback: entry.selectionRect,
                 );
           setState(() => controller.truncateTo(index + 1));
-          onPush(query, childRect);
+          // TODO-1190: symmetric with onTextSelected — highlight the clicked
+          // headword/link target in this parent card after the child search.
+          final int count = await onPush(query, childRect);
+          if (count > 0) {
+            entry.webViewKey.currentState?.highlightSelection(count);
+          }
         },
         onMineEntry: onMineEntry,
         onUpdateEntry: onUpdateEntry,
@@ -477,7 +492,7 @@ mixin DictionaryPageMixin {
   /// so a blank/cold WebView is never shown. (Set [revealWhileSearching] `true`
   /// to keep the old reveal-during-search behaviour.) If [autoRead] is true and
   /// results are found, the first entry's audio is played automatically.
-  Future<void> pushNestedPopup({
+  Future<int> pushNestedPopup({
     required String query,
     required Rect selectionRect,
     required DictionaryPopupController controller,
@@ -487,7 +502,7 @@ mixin DictionaryPageMixin {
     bool revealWhileSearching = false,
   }) async {
     final String trimmed = query.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return 0;
     final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
     final Rect rect = fallbackSelectionRect(selectionRect);
@@ -556,7 +571,7 @@ mixin DictionaryPageMixin {
         });
       }
     }
-    if (!mounted || !controller.entries.contains(entry)) return;
+    if (!mounted || !controller.entries.contains(entry)) return 0;
     if (result.entries.isNotEmpty) {
       mixinAppModel.addToSearchHistory(
         historyKey: DictionaryMediaType.instance.uniqueKey,
@@ -570,6 +585,14 @@ mixin DictionaryPageMixin {
         }
       }
     }
+    // TODO-1190: matched char count so the caller (buildNestedPopupLayer's
+    // onPush) can highlight the searched word in the PARENT card. 0 when no
+    // entries matched — the caller then skips the highlight (unchanged look).
+    return lookupHighlightCharCount(
+      result: result,
+      searchTerm: trimmed,
+      language: mixinAppModel.targetLanguage,
+    );
   }
 
   Future<void> loadMoreForEntry({

@@ -2878,7 +2878,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
         // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一
         // 真实视口空间），直接复用，无需任何缩放换算。
-        pushNestedPopup(
+        // TODO-1190: return the matched char count so the mixin highlights the
+        // clicked word in the parent card.
+        return pushNestedPopup(
           query: text,
           selectionRect: rect,
           controller: _popup,
