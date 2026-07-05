@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 542 条。点号进各自文件。
+> 共 543 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-550](bugs/BUG-550-ffmpeg-715-crash.md) | ✅ | ✅ | ffmpeg 7.1.5 本地构建二进制崩溃破坏视频制卡 |
 | [BUG-549](bugs/BUG-549-glookup-overlay-env-conflict.md) | ✅ | ✅ | Windows app-external lookup shows no popup (overlay WebView2 env fails silently) |
 | [BUG-548](bugs/BUG-548-update-staging-dir-leak.md) | ✅ | ✅ | Windows 更新 .staging 暂存根目录泄漏堆积 |
+| [BUG-547](bugs/BUG-547-ankimobile-query-plus-encoding.md) | ✅ | ✅ | iOS AnkiMobile 制卡字段空格显示成加号 |
 | [BUG-547](bugs/BUG-547-progress-frosted.md) | ✅ | ✅ | 悬浮阅读进度无背景看不清 |
 | [BUG-546](bugs/BUG-546-interconnect-manual-url-scheme.md) | ✅ | ✅ | Hibiki互联手动地址提示HTTPS导致默认HTTP主机无法连接 |
 | [BUG-546](bugs/BUG-546-theme-card-width.md) | ✅ | ✅ | 设置主题卡与下方配置项不等宽 |

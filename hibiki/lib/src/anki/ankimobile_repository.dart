@@ -16,6 +16,16 @@ const String hibikiAnkiSuccessCallback = 'hibiki://ankiSuccess';
 const MethodChannel _ankiMobileChannel =
     MethodChannel('app.hibiki.reader/ankimobile');
 
+String _encodeAnkiMobileQueryComponent(String value) =>
+    Uri.encodeComponent(value);
+
+String _buildAnkiMobileQuery(Iterable<MapEntry<String, String>> entries) {
+  return entries
+      .map((entry) => '${_encodeAnkiMobileQueryComponent(entry.key)}='
+          '${_encodeAnkiMobileQueryComponent(entry.value)}')
+      .join('&');
+}
+
 Uri buildAnkiMobileAddNoteUri({
   required String deckName,
   required String noteTypeName,
@@ -24,15 +34,18 @@ Uri buildAnkiMobileAddNoteUri({
   required bool allowDuplicate,
   Uri? successCallback,
 }) {
-  final query = <String, String>{
-    'deck': deckName,
-    'type': noteTypeName,
-    for (final entry in fields.entries) 'fld${entry.key}': entry.value,
-    if (tags.isNotEmpty) 'tags': tags.join(' '),
-    if (allowDuplicate) 'dupes': '1',
-    if (successCallback != null) 'x-success': successCallback.toString(),
-  };
-  return Uri.parse(ankiMobileAddNoteCallback).replace(queryParameters: query);
+  final query = <MapEntry<String, String>>[
+    MapEntry('deck', deckName),
+    MapEntry('type', noteTypeName),
+    for (final entry in fields.entries)
+      MapEntry('fld${entry.key}', entry.value),
+    if (tags.isNotEmpty) MapEntry('tags', tags.join(' ')),
+    if (allowDuplicate) const MapEntry('dupes', '1'),
+    if (successCallback != null)
+      MapEntry('x-success', successCallback.toString()),
+  ];
+  return Uri.parse(
+      '$ankiMobileAddNoteCallback?${_buildAnkiMobileQuery(query)}');
 }
 
 class AnkiMobileRepository extends BaseAnkiRepository {

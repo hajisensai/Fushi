@@ -44,6 +44,30 @@ void main() {
     );
   });
 
+  test('encodes addnote query spaces as percent escapes, not plus signs', () {
+    final successCallback = Uri.parse('hibiki://ankisuccess').replace(
+      queryParameters: const <String, String>{'expression': 'はい いいえ'},
+    );
+    final uri = buildAnkiMobileAddNoteUri(
+      deckName: 'Japanese Mining',
+      noteTypeName: 'Lapis Card',
+      fields: const <String, String>{
+        'Expression': 'はい + いいえ',
+        'Meaning': '(明鏡国語辞典 第三版) はい',
+      },
+      tags: const <String>['hibiki', 'book tag'],
+      allowDuplicate: false,
+      successCallback: successCallback,
+    );
+
+    expect(uri.query, isNot(contains('+')));
+    expect(uri.query, contains('deck=Japanese%20Mining'));
+    expect(uri.query, contains('type=Lapis%20Card'));
+    expect(uri.queryParameters['fldExpression'], 'はい + いいえ');
+    expect(uri.queryParameters['fldMeaning'], '(明鏡国語辞典 第三版) はい');
+    expect(uri.queryParameters['tags'], 'hibiki book tag');
+  });
+
   test('imports AnkiMobile infoForAdding clipboard JSON into settings',
       () async {
     final repo = AnkiMobileRepository(
