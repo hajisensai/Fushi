@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v37 loaded (yomitan-style word anchor + highlight via hoshiSelection)');
+console.log('[Hibiki] content script v38 loaded (yomitan-style word anchor + highlight via hoshiSelection)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v37'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v38'); } catch (_) {}
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -284,6 +284,9 @@ async function hibikiRunNetflixBatch() {
   if (!items.length) return;
   const v = document.querySelector('video');
   if (!v) return;
+  // TODO-1175：记录批量前的播放位置/态，批量结束（成功或异常）后都回到这里、恢复原播放/暂停态。
+  const resumeAt = v.currentTime;
+  const wasPlaying = !v.paused;
   const hideStyle = document.createElement('style');
   hideStyle.id = 'hibiki-nf-hide-sub';
   hideStyle.textContent = '.player-timedtext{visibility:hidden!important}';
@@ -375,6 +378,9 @@ async function hibikiRunNetflixBatch() {
     // cursor:none / 藏字幕样式泄漏到用户可见界面（循环外抛异常留可见副作用的根因）。
     try { hideStyle.remove(); } catch (_) {}
     document.body.style.cursor = prevCursor;
+    // TODO-1175：批量停在最后一句 + 暂停态 → 回到批量前的位置并恢复原播放/暂停态。
+    try { await seekTo(resumeAt); } catch (_) {}
+    if (wasPlaying) { try { await v.play(); } catch (_) {} }
   }
   await hibikiRemoveQueued(okIds);
 }
