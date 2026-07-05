@@ -484,6 +484,23 @@ class ReaderSettings {
   Future<void> setAutoHideChromeMillis(int v) =>
       _set<int>('auto_hide_chrome_millis', normalizeAutoHideChromeMillis(v));
 
+  /// TODO-1168（实验性）：给阅读器底栏加毛玻璃（BackdropFilter 高斯模糊）+ 半透明
+  /// 背景开关（per-reader）。默认 `false` = 现状（不透明底栏），零回归。纯视觉效果，
+  /// **不改变底栏预留高度**（`bottomChromeReserve` 不读此值）。
+  bool get frostedBottomBar => _get<bool>('frosted_bottom_bar', false);
+  Future<void> setFrostedBottomBar(bool v) =>
+      _set<bool>('frosted_bottom_bar', v);
+
+  /// TODO-1168（实验性）：底栏背景不透明度，仅当 [frostedBottomBar] 开启时生效。
+  /// 归一到 `[0.15, 1.0]`（下限防止底栏几乎不可见/不可用），非有限值降级回默认 0.6。
+  static double normalizeBottomBarOpacity(double value) =>
+      value.isFinite ? value.clamp(0.15, 1.0).toDouble() : 0.6;
+
+  double get bottomBarOpacity =>
+      normalizeBottomBarOpacity(_get<double>('bottom_bar_opacity', 0.6));
+  Future<void> setBottomBarOpacity(double v) =>
+      _set<double>('bottom_bar_opacity', normalizeBottomBarOpacity(v));
+
   bool get invertSwipeDirection => _get<bool>('invert_swipe_direction', true);
   Future<void> toggleInvertSwipeDirection() =>
       _set<bool>('invert_swipe_direction', !invertSwipeDirection);

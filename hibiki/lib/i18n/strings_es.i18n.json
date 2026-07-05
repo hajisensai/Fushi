@@ -2096,5 +2096,8 @@
   "browser_extension_mobile_unsupported": "Los navegadores móviles no pueden cargar esta extensión. Usa la búsqueda dentro de la app en el lector o el reproductor de vídeo.",
   "backup_import_overlay_warning": "Restoring your data. Please don't close the app.",
   "backup_import_restart_button": "Restart now",
-  "backup_import_overlay_title": "Importing backup"
+  "backup_import_overlay_title": "Importing backup",
+  "reader_frosted_bottom_bar": "Frosted floating bottom bar",
+  "reader_frosted_bottom_bar_hint": "Blur and translucent background for the reader control bar",
+  "reader_bottom_bar_opacity": "Bottom bar opacity"
 }
