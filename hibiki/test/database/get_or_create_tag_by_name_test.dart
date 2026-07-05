@@ -44,6 +44,23 @@ void main() {
       expect(all.single.colorValue, 0xFF112233);
     });
 
+    test('并发同名 get-or-create 都不抛、返回同一 id、只建一行（竞态守卫）', () async {
+      final HibikiDatabase db = await openDb();
+      // 逼近两条下载流交错：三个同名调用一并发出（不在中间 await），旧的
+      // select-then-insert 实现会 A/B 都 select 到 null、第二个 insert 撞 UNIQUE 抛；
+      // 原子 insertOrIgnore 实现下全部成功且归一到同一 id。
+      final List<int> ids = await Future.wait<int>(<Future<int>>[
+        db.getOrCreateTagByName('并发'),
+        db.getOrCreateTagByName('并发'),
+        db.getOrCreateTagByName('并发'),
+      ]);
+      expect(ids.toSet(), hasLength(1));
+      final List<BookTagRow> all = await db.getAllTags();
+      expect(all, hasLength(1));
+      expect(all.single.name, '并发');
+      expect(all.single.id, ids.first);
+    });
+
     test('不同名分别新建、各自独立 id', () async {
       final HibikiDatabase db = await openDb();
       final int a = await db.getOrCreateTagByName('A');
