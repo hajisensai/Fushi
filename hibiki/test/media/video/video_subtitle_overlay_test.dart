@@ -470,7 +470,9 @@ void main() {
       // 旧实现每个字符包 HitTestBehavior.opaque 的 GestureDetector，吞掉指针
       // hover hit-test，盖在其下的 media_kit MouseRegion 收不到鼠标 → 鼠标移到
       // 字幕文字上控制条不再被唤起、光标被吃。根因修后字符层不得再有 opaque
-      // GestureDetector；tap 命中统一交给一片 translucent GestureDetector。
+      // GestureDetector；tap 命中统一交给一片 translucent 的 RawGestureDetector
+      // （承载按字符门控的 tap 识别器 _SubtitleCharTapRecognizer，BUG-553）——
+      // translucent 保持 hover 透传 / media_kit 在命中路径不回归。
       final VideoPlayerController c = _controllerWithCue('テスト');
       await _pump(
         tester,
@@ -486,12 +488,16 @@ void main() {
           reason: '字幕层出现 opaque GestureDetector，会吞 hover/光标（BUG-198 回归）',
         );
       }
-      // 至少有一片 translucent 的 tap 层（承载查词）。
+      // 至少有一片 translucent 的 RawGestureDetector 承载字符 tap（hover 透传 +
+      // 竞技场按字符门控，BUG-553）。改回无条件收 tap 的整片 GestureDetector 或改成
+      // 非 translucent 命中语义（吞 hover）→ 红。
+      final Iterable<RawGestureDetector> raws = tester
+          .widgetList<RawGestureDetector>(find.byType(RawGestureDetector));
       expect(
-        detectors.any((GestureDetector d) =>
-            d.behavior == HitTestBehavior.translucent && d.onTapUp != null),
+        raws.any((RawGestureDetector r) =>
+            r.behavior == HitTestBehavior.translucent),
         isTrue,
-        reason: '缺少 translucent 的字符 tap 层',
+        reason: '缺少 translucent 的字符 tap 层（hover 透传 + 竞技场门控）',
       );
     });
 
