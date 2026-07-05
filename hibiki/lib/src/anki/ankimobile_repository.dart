@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 typedef AnkiMobileUrlOpener = Future<bool> Function(Uri uri);
 typedef AnkiMobileInfoReader = Future<String?> Function();
+typedef AnkiMobileBackgroundTaskHandler = Future<void> Function();
+typedef _AnkiMobileLocalMediaRefBuilder = Future<String?> Function(
+  String filePath, {
+  String? mimePath,
+});
 
 const String ankiMobileInfoCallback = 'anki://x-callback-url/infoForAdding';
 const String ankiMobileAddNoteCallback = 'anki://x-callback-url/addnote';
@@ -54,18 +60,51 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   AnkiMobileRepository({
     AnkiMobileUrlOpener? openUrl,
     AnkiMobileInfoReader? readInfoForAddingJson,
+    Duration mediaServerLifetime = const Duration(seconds: 60),
+    AnkiMobileBackgroundTaskHandler? beginMediaImportBackgroundTask,
+    AnkiMobileBackgroundTaskHandler? endMediaImportBackgroundTask,
   })  : _openUrl = openUrl ?? _openExternalUrl,
         _readInfoForAddingJson =
-            readInfoForAddingJson ?? _readInfoForAddingJsonFromPlatform;
+            readInfoForAddingJson ?? _readInfoForAddingJsonFromPlatform,
+        _mediaServerLifetime = mediaServerLifetime,
+        _beginMediaImportBackgroundTask = beginMediaImportBackgroundTask ??
+            _beginMediaImportBackgroundTaskFromPlatform,
+        _endMediaImportBackgroundTask = endMediaImportBackgroundTask ??
+            _endMediaImportBackgroundTaskFromPlatform;
 
   final AnkiMobileUrlOpener _openUrl;
   final AnkiMobileInfoReader _readInfoForAddingJson;
+  final Duration _mediaServerLifetime;
+  final AnkiMobileBackgroundTaskHandler _beginMediaImportBackgroundTask;
+  final AnkiMobileBackgroundTaskHandler _endMediaImportBackgroundTask;
 
   static Future<bool> _openExternalUrl(Uri uri) =>
       launchUrl(uri, mode: LaunchMode.externalApplication);
 
   static Future<String?> _readInfoForAddingJsonFromPlatform() =>
       _ankiMobileChannel.invokeMethod<String>('consumeInfoForAddingPasteboard');
+
+  static Future<void> _beginMediaImportBackgroundTaskFromPlatform() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _ankiMobileChannel.invokeMethod<void>(
+        'beginMediaImportBackgroundTask',
+      );
+    } catch (e, stack) {
+      debugPrint('AnkiMobile begin background task failed: $e\n$stack');
+    }
+  }
+
+  static Future<void> _endMediaImportBackgroundTaskFromPlatform() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _ankiMobileChannel.invokeMethod<void>(
+        'endMediaImportBackgroundTask',
+      );
+    } catch (e, stack) {
+      debugPrint('AnkiMobile end background task failed: $e\n$stack');
+    }
+  }
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async {
@@ -182,70 +221,108 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       );
     }
 
-    final rendered = await _renderMinedFieldsForAnkiMobile(
-      settings: settings,
-      payload: payload,
-      context: context,
-    );
-    final fields = rendered.fields;
-    if (fields.isEmpty) {
-      return MineOutcome.failure(
-        'All fields are empty — refusing to create a blank card. '
-        'Check your note type field mappings.',
-      );
+    _AnkiMobileMediaServer? mediaServer;
+    Future<_AnkiMobileMediaServer>? mediaServerFuture;
+    Future<String?> localMediaRef(
+      String filePath, {
+      String? mimePath,
+    }) async {
+      final file = File(filePath);
+      if (!file.existsSync()) return null;
+      mediaServerFuture ??= _AnkiMobileMediaServer.start();
+      final server = await mediaServerFuture!;
+      mediaServer = server;
+      return server.addFile(file, mimePath: mimePath);
     }
 
-    final tags = buildNoteTags(
-      settings.tags,
-      source: context.source,
-      includeHibiki: settings.tagIncludeHibiki,
-      includeCategory: settings.tagIncludeCategory,
-      titleTag: context.bookTitleTag,
-    );
-    final success = Uri.parse(hibikiAnkiSuccessCallback).replace(
-      queryParameters: <String, String>{
-        if (payload.expression.isNotEmpty) 'expression': payload.expression,
-      },
-    );
-    final uri = buildAnkiMobileAddNoteUri(
-      deckName: deck.name,
-      noteTypeName: noteType.name,
-      fields: fields,
-      tags: tags,
-      allowDuplicate: settings.allowDupes,
-      successCallback: success,
-    );
-
-    final opened = await _openUrl(uri);
-    if (!opened) {
-      return MineOutcome.failure(
-        'Could not open AnkiMobile. Install AnkiMobile and try again.',
+    try {
+      final rendered = await _renderMinedFieldsForAnkiMobile(
+        settings: settings,
+        payload: payload,
+        context: context,
+        localMediaRef: localMediaRef,
       );
+      final fields = rendered.fields;
+      if (fields.isEmpty) {
+        await mediaServer?.close();
+        return MineOutcome.failure(
+          'All fields are empty — refusing to create a blank card. '
+          'Check your note type field mappings.',
+        );
+      }
+
+      final tags = buildNoteTags(
+        settings.tags,
+        source: context.source,
+        includeHibiki: settings.tagIncludeHibiki,
+        includeCategory: settings.tagIncludeCategory,
+        titleTag: context.bookTitleTag,
+      );
+      final success = Uri.parse(hibikiAnkiSuccessCallback).replace(
+        queryParameters: <String, String>{
+          if (payload.expression.isNotEmpty) 'expression': payload.expression,
+        },
+      );
+      final uri = buildAnkiMobileAddNoteUri(
+        deckName: deck.name,
+        noteTypeName: noteType.name,
+        fields: fields,
+        tags: tags,
+        allowDuplicate: settings.allowDupes,
+        successCallback: success,
+      );
+
+      final opened = await _openUrl(uri);
+      if (!opened) {
+        await mediaServer?.close();
+        return MineOutcome.failure(
+          'Could not open AnkiMobile. Install AnkiMobile and try again.',
+        );
+      }
+      if (mediaServer != null) _keepMediaServerAlive(mediaServer!);
+      return MineOutcome.success(audioWarning: rendered.audioWarning);
+    } catch (_) {
+      await mediaServer?.close();
+      rethrow;
     }
-    return MineOutcome.success(audioWarning: rendered.audioWarning);
+  }
+
+  void _keepMediaServerAlive(_AnkiMobileMediaServer server) {
+    unawaited(() async {
+      await _beginMediaImportBackgroundTask();
+      try {
+        if (_mediaServerLifetime > Duration.zero) {
+          await Future<void>.delayed(_mediaServerLifetime);
+        }
+      } finally {
+        await server.close();
+        await _endMediaImportBackgroundTask();
+      }
+    }());
   }
 
   Future<RenderedMinedFields> _renderMinedFieldsForAnkiMobile({
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
+    required _AnkiMobileLocalMediaRefBuilder localMediaRef,
   }) async {
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
-          ? _dataUrlForLocalFile(context.coverPath!)
+          ? localMediaRef(context.coverPath!)
           : Future<String?>.value(null),
       context.sasayakiAudioPath != null
-          ? _dataUrlForLocalFile(context.sasayakiAudioPath!)
+          ? localMediaRef(context.sasayakiAudioPath!)
           : Future<String?>.value(null),
-      _audioFieldForAnkiMobile(payload.audio),
+      _audioFieldForAnkiMobile(payload.audio, localMediaRef),
       buildDictionaryMediaTags(
         payload.dictionaryMedia,
-        _dictionaryMediaDataUrl,
+        (media) => _dictionaryMediaUrl(media, localMediaRef),
       ),
     ];
     final mediaResults = await Future.wait(mediaFutures);
-    final String? coverDataUrl = mediaResults[0] as String?;
-    final String? sasayakiDataUrl = mediaResults[1] as String?;
+    final String? coverUrl = mediaResults[0] as String?;
+    final String? sasayakiUrl = mediaResults[1] as String?;
     final _AnkiMobileAudioField audio =
         mediaResults[2] as _AnkiMobileAudioField;
     final Map<String, String> dictionaryMediaTags =
@@ -255,8 +332,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       sentence: context.sentence,
       cueSentence: context.cueSentence,
       documentTitle: context.documentTitle,
-      coverPath: coverDataUrl,
-      sasayakiAudioPath: sasayakiDataUrl,
+      coverPath: coverUrl,
+      sasayakiAudioPath: sasayakiUrl,
       sentenceOffset: context.sentenceOffset,
       source: context.source,
       bookTitleTag: context.bookTitleTag,
@@ -290,7 +367,10 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     );
   }
 
-  Future<_AnkiMobileAudioField> _audioFieldForAnkiMobile(String audio) async {
+  Future<_AnkiMobileAudioField> _audioFieldForAnkiMobile(
+    String audio,
+    _AnkiMobileLocalMediaRefBuilder localMediaRef,
+  ) async {
     switch (AnkiAudioRef.classify(audio)) {
       case AnkiAudioRefKind.empty:
         return const _AnkiMobileAudioField('');
@@ -298,32 +378,19 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         return _AnkiMobileAudioField(audio);
       case AnkiAudioRefKind.localFile:
         final path = AnkiAudioRef.localPath(audio);
-        final dataUrl = await _dataUrlForLocalFile(path);
-        if (dataUrl != null) return _AnkiMobileAudioField(dataUrl);
+        final url = await localMediaRef(path);
+        if (url != null) return _AnkiMobileAudioField(url);
         return const _AnkiMobileAudioField('');
     }
   }
 
-  Future<String?> _dictionaryMediaDataUrl(DictionaryMedia media) {
+  Future<String?> _dictionaryMediaUrl(
+    DictionaryMedia media,
+    _AnkiMobileLocalMediaRefBuilder localMediaRef,
+  ) {
     final filename = ankiDictionaryMediaCacheFilename(media.path);
     final path = '${ankiDictionaryMediaCacheDirPath()}/$filename';
-    return _dataUrlForLocalFile(path, mimePath: filename);
-  }
-
-  Future<String?> _dataUrlForLocalFile(
-    String filePath, {
-    String? mimePath,
-  }) async {
-    try {
-      final file = File(filePath);
-      if (!file.existsSync()) return null;
-      final bytes = await file.readAsBytes();
-      final mime = mimeTypeForPath(mimePath ?? file.path);
-      return 'data:$mime;base64,${base64Encode(bytes)}';
-    } catch (e, stack) {
-      debugPrint('AnkiMobileRepository._dataUrlForLocalFile: $e\n$stack');
-      return null;
-    }
+    return localMediaRef(path, mimePath: filename);
   }
 
   @override
@@ -334,6 +401,100 @@ class AnkiMobileRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> createDeck(String name) async => false;
+}
+
+class _AnkiMobileMediaServer {
+  _AnkiMobileMediaServer._(this._server) {
+    _server.listen(_handleRequest);
+  }
+
+  final HttpServer _server;
+  final Map<String, _ServedAnkiMobileMedia> _files =
+      <String, _ServedAnkiMobileMedia>{};
+  var _nextId = 0;
+  var _closed = false;
+
+  static Future<_AnkiMobileMediaServer> start() async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    return _AnkiMobileMediaServer._(server);
+  }
+
+  String addFile(File file, {String? mimePath}) {
+    final sourceName = _safeMediaBasename(mimePath ?? file.path);
+    final path = '/media/${_nextId++}-$sourceName';
+    _files[path] = _ServedAnkiMobileMedia(
+      file: file,
+      mimeType: mimeTypeForPath(mimePath ?? file.path),
+    );
+    return Uri(
+      scheme: 'http',
+      host: '127.0.0.1',
+      port: _server.port,
+      path: path,
+    ).toString();
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _server.close(force: true);
+  }
+
+  Future<void> _handleRequest(HttpRequest request) async {
+    try {
+      request.response.headers
+          .set(HttpHeaders.accessControlAllowOriginHeader, '*');
+      request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+      if (request.method == 'OPTIONS') {
+        request.response.statusCode = HttpStatus.noContent;
+        await request.response.close();
+        return;
+      }
+      if (request.method != 'GET' && request.method != 'HEAD') {
+        request.response.statusCode = HttpStatus.methodNotAllowed;
+        await request.response.close();
+        return;
+      }
+      final media = _files[request.uri.path];
+      if (media == null || !media.file.existsSync()) {
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+        return;
+      }
+      request.response.headers.contentType = ContentType.parse(media.mimeType);
+      request.response.headers.contentLength = media.file.lengthSync();
+      if (request.method == 'HEAD') {
+        await request.response.close();
+        return;
+      }
+      await request.response.addStream(media.file.openRead());
+      await request.response.close();
+    } catch (e, stack) {
+      debugPrint('AnkiMobile media server request failed: $e\n$stack');
+      try {
+        request.response.statusCode = HttpStatus.internalServerError;
+        await request.response.close();
+      } catch (_) {
+        // The client may have gone away while AnkiMobile was switching apps.
+      }
+    }
+  }
+
+  static String _safeMediaBasename(String path) {
+    final raw = path.split(RegExp(r'[/\\]')).last;
+    final base = raw.isEmpty ? 'media.bin' : raw;
+    return base.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  }
+}
+
+class _ServedAnkiMobileMedia {
+  const _ServedAnkiMobileMedia({
+    required this.file,
+    required this.mimeType,
+  });
+
+  final File file;
+  final String mimeType;
 }
 
 class _AnkiMobileAudioField {

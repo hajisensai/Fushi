@@ -6,6 +6,7 @@ import Flutter
   private static let ankiMobilePasteboardType = "net.ankimobile.json"
   private var initialUrl: String?
   private var urlEventSink: FlutterEventSink?
+  private var ankiMobileMediaBackgroundTask: UIBackgroundTaskIdentifier = .invalid
 
   // TODO-057: brightness override applied during a video session. We snapshot
   // the user's brightness the first time the player asks (getBrightness) and
@@ -40,7 +41,7 @@ import Flutter
     let ankiMobileChannel = FlutterMethodChannel(
       name: "app.hibiki.reader/ankimobile",
       binaryMessenger: binaryMessenger)
-    ankiMobileChannel.setMethodCallHandler { (call, result) in
+    ankiMobileChannel.setMethodCallHandler { [weak self] (call, result) in
       switch call.method {
       case "consumeInfoForAddingPasteboard":
         if let data = UIPasteboard.general.data(
@@ -53,6 +54,12 @@ import Flutter
         } else {
           result(nil)
         }
+      case "beginMediaImportBackgroundTask":
+        self?.beginAnkiMobileMediaBackgroundTask()
+        result(nil)
+      case "endMediaImportBackgroundTask":
+        self?.endAnkiMobileMediaBackgroundTask()
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -142,5 +149,21 @@ import Flutter
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
     urlEventSink = nil
     return nil
+  }
+
+  private func beginAnkiMobileMediaBackgroundTask() {
+    endAnkiMobileMediaBackgroundTask()
+    ankiMobileMediaBackgroundTask = UIApplication.shared.beginBackgroundTask(
+      withName: "AnkiMobile media import"
+    ) { [weak self] in
+      self?.endAnkiMobileMediaBackgroundTask()
+    }
+  }
+
+  private func endAnkiMobileMediaBackgroundTask() {
+    guard ankiMobileMediaBackgroundTask != .invalid else { return }
+    let task = ankiMobileMediaBackgroundTask
+    ankiMobileMediaBackgroundTask = .invalid
+    UIApplication.shared.endBackgroundTask(task)
   }
 }

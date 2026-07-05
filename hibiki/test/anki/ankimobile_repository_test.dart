@@ -113,6 +113,7 @@ void main() {
         return true;
       },
       readInfoForAddingJson: () async => null,
+      mediaServerLifetime: Duration.zero,
     );
     await repo.saveSettings(const AnkiSettings(
       selectedDeckId: 0,
@@ -150,7 +151,7 @@ void main() {
     expect(launched.single.queryParameters, isNot(contains('dupes')));
   });
 
-  test('mineEntry embeds local media for AnkiMobile instead of raw paths',
+  test('mineEntry exposes local media as downloadable URLs for AnkiMobile',
       () async {
     final temp = await Directory.systemTemp.createTemp('ankimobile-media-');
     addTearDown(() async {
@@ -234,12 +235,15 @@ void main() {
     expect(outcome.result, MineResult.success);
     expect(launched, hasLength(1));
     final fields = launched.single.queryParameters;
-    expect(fields['fldExpressionAudio'], startsWith('data:audio/mpeg;base64,'));
-    expect(fields['fldSentenceAudio'], startsWith('data:audio/aac;base64,'));
-    expect(fields['fldPicture'], startsWith('data:image/gif;base64,'));
+    expect(fields['fldExpressionAudio'],
+        matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.mp3$')));
+    expect(fields['fldSentenceAudio'],
+        matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.aac$')));
+    expect(fields['fldPicture'],
+        matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.gif$')));
     expect(
       fields['fldGlossary'],
-      contains('src="data:image/svg+xml;base64,'),
+      matches(RegExp(r'src="http://127\.0\.0\.1:\d+/media/[^"]+\.svg"')),
     );
     for (final value in <String>[
       fields['fldExpressionAudio']!,
@@ -247,6 +251,7 @@ void main() {
       fields['fldPicture']!,
       fields['fldGlossary']!,
     ]) {
+      expect(value, isNot(contains('data:')));
       expect(value, isNot(contains(temp.path)));
       expect(value, isNot(contains('hoshi_dict_0.svg')));
     }
