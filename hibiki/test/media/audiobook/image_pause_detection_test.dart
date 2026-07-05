@@ -65,7 +65,8 @@ void main() {
     // 才滚到插图——imagePauseSec=0 关闭图片暂停时绝不把视口滚到图（用户报告症状）。
     final int fnIdx = src.indexOf('__hoshiImagePauseAdvance = function');
     expect(fnIdx, greaterThan(-1));
-    final String fn = src.substring(fnIdx, fnIdx + 400);
+    // TODO-1178：函数体前增了揭遮罩注释/调用，门控右移，窗口从 400 放宽到 800。
+    final String fn = src.substring(fnIdx, fnIdx + 800);
     expect(fn, contains('function(el, reveal, pauseEnabled)'),
         reason: 'cue 推进核心须新增 pauseEnabled 参数门控滚图');
     expect(fn, contains('if (reveal && pauseEnabled)'),
@@ -110,5 +111,40 @@ void main() {
     final String restoreBody = navSrc.substring(restoreIdx, endIdx);
     expect(restoreBody, contains('AudiobookBridge.resetImagePauseAnchor'),
         reason: '_onRestoreComplete 须在恢复完成时重置 cue 推进锚点');
+  });
+
+  // TODO-1178：有声书音频跟随到某张图片时，自动去掉该图的防剧透模糊遮罩
+  // （blurred 类）。cue 推进核心 __hoshiImagePauseAdvance 须在 pause 门控前
+  // 揭「上一句→当前句」区间内所有 blurred 图；未读到的图保持模糊。
+  test('audio follow reveals crossed blurred images (TODO-1178)', () {
+    // 存在独立揭遮罩 helper，不改动 __hoshiImageBetween 暂停判据。
+    expect(src, contains('window.__hoshiRevealBlurredBetween = function'),
+        reason: '须有独立揭防剧透模糊的 helper，与暂停判据平行、不改暂停逻辑');
+
+    // helper 只针对带 blurred 类的 img/svg，并 remove('blurred')。
+    final int rbIdx = src.indexOf('__hoshiRevealBlurredBetween = function');
+    expect(rbIdx, greaterThan(-1));
+    final int rbEnd = src.indexOf('};', rbIdx);
+    expect(rbEnd, greaterThan(rbIdx));
+    final String rbFn = src.substring(rbIdx, rbEnd);
+    expect(rbFn, contains("querySelectorAll('img.blurred, svg.blurred')"),
+        reason: '仅扫描带 blurred 类的插图；未开图片模糊时空集合 → 天然 no-op');
+    expect(rbFn, contains("classList.remove('blurred')"),
+        reason: '跨过（读到）的图须去掉 blurred 类揭开防剧透遮罩');
+    expect(rbFn, contains('compareDocumentPosition'),
+        reason: '按 DOM 顺序判定「上一句→当前句」区间，只揭已读到的图');
+
+    // __hoshiImagePauseAdvance 在 pause 门控（if (!crossed) return false）之前
+    // 调用揭遮罩：与图片暂停解耦，无论是否跨图/是否开暂停都揭已读区间的图。
+    final int adv = src.indexOf('__hoshiImagePauseAdvance = function');
+    expect(adv, greaterThan(-1));
+    final String advFn = src.substring(adv, adv + 500);
+    final int revealCall =
+        advFn.indexOf('__hoshiRevealBlurredBetween(prev, el)');
+    final int crossedGate = advFn.indexOf('if (!crossed) return false');
+    expect(revealCall, greaterThan(-1), reason: 'cue 推进核心须调用揭遮罩 helper');
+    expect(crossedGate, greaterThan(-1));
+    expect(revealCall, lessThan(crossedGate),
+        reason: '揭遮罩须在 crossed/pause 门控之前，与图片暂停功能解耦');
   });
 }

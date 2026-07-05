@@ -63,6 +63,30 @@ window.__hoshiImageBetween = function(prev, el) {
   return null;
 };
 
+// TODO-1178：揭开「上一句 prev → 当前句 el」区间内所有带 blurred 类的插图
+// （防剧透模糊遮罩，img.block-img.blurred / svg.block-img.blurred）。与
+// __hoshiImageBetween 的暂停判据平行、不改动它：那个只取第一张图作暂停锚点，
+// 本函数遍历区间全部 blurred 图一次全揭，一次推进跨多图也能全部去模糊。
+// 只揭音频已跨过（读到）的图；未读到的保持模糊。返回揭开的图片数量。
+window.__hoshiRevealBlurredBetween = function(prev, el) {
+  if (!prev || !el || prev === el || !document.contains(prev)) return 0;
+  var a = prev, b = el;
+  if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
+    a = el; b = prev;
+  }
+  var media = document.querySelectorAll('img.blurred, svg.blurred');
+  var revealed = 0;
+  for (var i = 0; i < media.length; i++) {
+    var m = media[i];
+    if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING)) {
+      m.classList.remove('blurred');
+      revealed++;
+    }
+  }
+  return revealed;
+};
+
 window.__hoshiRevealTarget = function(t) {
   if (!t) return;
   var r = window.hoshiReader;
@@ -93,8 +117,13 @@ window.__hoshiRevealTarget = function(t) {
 // 不应把视口无预兆滚到插图——返回 false 让调用方按正常 cue 跟随 reveal el。
 // 只有 imagePauseSec>0（图片暂停开启）时才滚到插图，配合 Dart 的暂停让用户看见图。
 window.__hoshiImagePauseAdvance = function(el, reveal, pauseEnabled) {
-  var crossed = window.__hoshiImageBetween(window.__hoshiPrevHighlight, el);
+  var prev = window.__hoshiPrevHighlight;
+  var crossed = window.__hoshiImageBetween(prev, el);
   window.__hoshiPrevHighlight = el;
+  // TODO-1178：音频已读到（跨过）的图揭开防剧透模糊。独立于图片暂停：在下面
+  // reveal/pauseEnabled 门控之前无条件揭区间内所有 blurred 图；未开图片模糊时
+  // 无元素带 blurred 类，remove 天然 no-op，与图片暂停功能解耦、零副作用。
+  window.__hoshiRevealBlurredBetween(prev, el);
   if (!crossed) return false;
   if (window.flutter_inappwebview) {
     window.flutter_inappwebview.callHandler('onImageDetected');
