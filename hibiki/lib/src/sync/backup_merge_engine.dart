@@ -54,11 +54,11 @@ class BackupMergeEngine {
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   Future<void> merge() async {
     await _db.transaction(() async {
-      await _insertMissing('epub_books', 'book_key');
+      await _insertMissing('epub_books', 'book_key', skipBookTombstones: true);
       await _insertMissing('video_books', 'book_uid');
       await _insertMissing('dictionary_metadata', 'name');
       await _insertMissing('srt_books', 'uid');
-      await _insertMissing('audiobooks', 'book_key');
+      await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
       await _insertAudioCues();
       await _mergeReaderPositions();
       await _mergeReadingStatistics();
@@ -79,6 +79,62 @@ class BackupMergeEngine {
     });
   }
 
+  /// Read-only estimate of what [merge] would change, for the import confirm
+  /// dialog (TODO-1195 part B). Runs no mutations and opens no transaction, so
+  /// the caller may ATTACH the backup DB to the LIVE connection and call this
+  /// before deciding to import. Counts the user-meaningful deltas: books that
+  /// would newly appear (epub + video + audiobook, excluding tombstoned keys)
+  /// and reading positions that would be inserted or advanced by LWW.
+  Future<BackupMergePreview> preview() async {
+    final int epub =
+        await _countMissing('epub_books', 'book_key', skipBookTombstones: true);
+    final int video = await _countMissing('video_books', 'book_uid');
+    final int audio =
+        await _countMissing('audiobooks', 'book_key', skipBookTombstones: true);
+    final int positions = await _countReaderPositionChanges();
+    return BackupMergePreview(
+      newEpubBooks: epub,
+      newVideoBooks: video,
+      newAudiobooks: audio,
+      updatedReaderPositions: positions,
+    );
+  }
+
+  /// Counts src rows whose [keyColumn] is absent from the target (and, when
+  /// [skipBookTombstones], not tombstoned) — mirrors [_insertMissing]'s WHERE.
+  Future<int> _countMissing(
+    String table,
+    String keyColumn, {
+    bool skipBookTombstones = false,
+  }) async {
+    final String tombstoneGuard = skipBookTombstones
+        ? 'AND s.$keyColumn NOT IN (SELECT book_key FROM book_tombstones) '
+        : '';
+    final row = await _db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $_srcAlias.$table AS s '
+          'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
+          'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
+        )
+        .getSingle();
+    return row.data['c'] as int;
+  }
+
+  /// Counts reader positions the merge would touch: a src book the target lacks
+  /// (new) or a src position strictly newer than the target's (LWW update).
+  Future<int> _countReaderPositionChanges() async {
+    final row = await _db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $_srcAlias.reader_positions AS s '
+          'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
+          'WHERE t.book_key = s.book_key) '
+          'OR EXISTS (SELECT 1 FROM reader_positions AS t '
+          'WHERE t.book_key = s.book_key AND s.updated_at > t.updated_at)',
+        )
+        .getSingle();
+    return row.data['c'] as int;
+  }
+
   /// Column names of [table] excluding autoincrement `id` (so INSERT...SELECT
   /// lets SQLite assign fresh ids). Both DBs are at the current schema so the
   /// target's column set matches src.
@@ -96,14 +152,26 @@ class BackupMergeEngine {
   /// UNION push-only: insert every src row whose [keyColumn] value is not
   /// already present in the target. Explicit column list (minus `id`) so SQLite
   /// assigns fresh autoincrement ids and never reuses the src id.
-  Future<void> _insertMissing(String table, String keyColumn) async {
+  ///
+  /// [skipBookTombstones] additionally excludes any src row whose [keyColumn]
+  /// (a `book_key`) is tombstoned in the target — i.e. the user deleted that
+  /// book on this device, so an old backup must never resurrect it (TODO-1195
+  /// part B). Overwrite import does not go through here.
+  Future<void> _insertMissing(
+    String table,
+    String keyColumn, {
+    bool skipBookTombstones = false,
+  }) async {
     final List<String> cols = await _columnsExceptId(table);
     final String colList = cols.join(', ');
+    final String tombstoneGuard = skipBookTombstones
+        ? 'AND s.$keyColumn NOT IN (SELECT book_key FROM book_tombstones) '
+        : '';
     await _db.customStatement(
       'INSERT INTO $table ($colList) '
       'SELECT $colList FROM $_srcAlias.$table AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
-      'WHERE t.$keyColumn = s.$keyColumn)',
+      'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
     );
   }
 
@@ -116,7 +184,9 @@ class BackupMergeEngine {
       'INSERT INTO audio_cues ($colList) '
       'SELECT $colList FROM $_srcAlias.audio_cues AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM audio_cues AS t '
-      'WHERE t.book_key = s.book_key)',
+      'WHERE t.book_key = s.book_key) '
+      // TODO-1195 part B: never bring back a deleted book's cues.
+      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
     );
   }
 
@@ -129,7 +199,9 @@ class BackupMergeEngine {
       'INSERT INTO reader_positions ($colList) '
       'SELECT $colList FROM $_srcAlias.reader_positions AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
-      'WHERE t.book_key = s.book_key)',
+      'WHERE t.book_key = s.book_key) '
+      // TODO-1195 part B: never re-add a deleted book's reading position.
+      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
     );
     final String setClause = cols
         .where((String c) => c != '"book_key"')
@@ -462,3 +534,32 @@ class BackupMergeEngine {
 /// positions, so device-local sync prefs are inherently never merged.
 List<String> mergeSkippedDeviceLocalPrefKeys() =>
     List<String>.unmodifiable(SyncRepository.deviceLocalPrefKeys);
+
+/// Read-only summary of what a backup MERGE import would change on this device
+/// (TODO-1195 part B), shown in the import confirm dialog. Produced by
+/// [BackupMergeEngine.preview]; counts only the user-meaningful deltas.
+class BackupMergePreview {
+  const BackupMergePreview({
+    required this.newEpubBooks,
+    required this.newVideoBooks,
+    required this.newAudiobooks,
+    required this.updatedReaderPositions,
+  });
+
+  /// EPUB books present in the backup but not on this device (and not
+  /// tombstoned), that the merge would add.
+  final int newEpubBooks;
+
+  /// Video books the merge would add.
+  final int newVideoBooks;
+
+  /// Audiobooks the merge would add (their EPUB shell is counted in
+  /// [newEpubBooks]; this is the audio-alignment rows).
+  final int newAudiobooks;
+
+  /// Reading positions the merge would insert or advance (LWW).
+  final int updatedReaderPositions;
+
+  /// Total books that would newly appear on the shelf (EPUB + video).
+  int get newBooks => newEpubBooks + newVideoBooks;
+}

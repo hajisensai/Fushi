@@ -116,6 +116,18 @@ void main() {
     }
   }
 
+  /// Extracts the packed `hibiki.db` from [zipPath] into a fresh dir under [into]
+  /// and opens it, so a test can assert on the exported DB blob's rows directly.
+  Future<HibikiDatabase> openBackupDb(String zipPath, Directory into) async {
+    final Archive archive = await readZip(zipPath);
+    final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
+    final Directory dir = Directory(p.join(into.path, 'exdb'))
+      ..createSync(recursive: true);
+    File(p.join(dir.path, 'hibiki.db'))
+        .writeAsBytesSync(dbFile.content as List<int>);
+    return HibikiDatabase(dir.path);
+  }
+
   test('null categories packs every tree (legacy all-in export)', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'all.zip');
@@ -305,6 +317,18 @@ void main() {
         reason: 'the chosen set must be forwarded to exportBackup');
   });
 
+  // TODO-1195 part A: the export UI must offer a per-book picker and forward the
+  // chosen book_keys to exportBackup (dormant null = full export).
+  test('export UI wires the per-book selection picker', () {
+    final String src = readSyncSettingsSchemaSource();
+    expect(src.contains('_pickBooks('), isTrue,
+        reason: 'export must offer a per-book picker');
+    expect(src.contains('_selectedBookKeys'), isTrue,
+        reason: 'the picked set must be held on the widget state');
+    expect(src.contains('bookKeys:'), isTrue,
+        reason: 'the chosen books must be forwarded to exportBackup');
+  });
+
   test(
       'selecting localAudio packs the local_audio_*.db files (not hibiki.db) '
       'and import restores them + rebases the local_audio_dbs pref', () async {
@@ -416,5 +440,143 @@ void main() {
 
     expect(File(p.join(dstDbDir, 'local_audio_999.db')).existsSync(), isTrue,
         reason: 'localAudio absent from backup → existing DB file untouched');
+  });
+
+  // ── TODO-1195 part C: ghost-book fix ──────────────────────────────────
+  test(
+      'unticking book content strips epub_books records from the DB blob '
+      '(no ghost book) and zeroes the reported book count', () async {
+    final built = await buildFullSource();
+    final zip = p.join(src.path, 'no_books.zip');
+    // Everything EXCEPT books.
+    final meta = await built.service.exportBackup(zip, categories: {
+      BackupCategory.dictionary,
+      BackupCategory.audiobooks,
+      BackupCategory.fonts,
+    });
+    await built.db.close();
+
+    expect(meta.bookCount, 0, reason: 'no book records were exported');
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await db.getAllEpubBooks(), isEmpty,
+          reason:
+              'book records must be stripped when book content is excluded');
+      // The audiobook + its cues key on the same bookKey, so the cascade drops
+      // them too (an audiobook without its epub row is itself un-openable).
+      expect(await db.getAllAudiobooks(), isEmpty);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('merge-importing a books-excluded backup adds no ghost books', () async {
+    final built = await buildFullSource();
+    final zip = p.join(src.path, 'no_books.zip');
+    await built.service.exportBackup(zip, categories: {BackupCategory.fonts});
+    await built.db.close();
+
+    final String dstDbDir = p.join(dst.path, 'db');
+    Directory(dstDbDir).createSync(recursive: true);
+    // Fresh device with no books → the backup must not add any un-openable book.
+    await BackupService.mergeImportBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+    );
+    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    try {
+      expect(await restored.getAllEpubBooks(), isEmpty,
+          reason: 'a book-excluded backup must not resurrect books on merge');
+    } finally {
+      await restored.close();
+    }
+  });
+
+  // ── TODO-1195 part A: per-book export ─────────────────────────────────
+  test(
+      'per-book export packs only the selected books (records + content); '
+      'unselected books travel in neither the tree nor the DB blob', () async {
+    final String dbDir = p.join(src.path, 'db');
+    final String books = p.join(src.path, 'hoshi_books');
+    Directory(dbDir).createSync(recursive: true);
+    await writeFile(p.join(books, 'Keep', 'k.epub'), 'KEEP');
+    await writeFile(p.join(books, 'Keep', 'text', 'c1.html'), 'HK');
+    await writeFile(p.join(books, 'Drop', 'd.epub'), 'DROP');
+
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'Keep',
+      title: 'Keep',
+      epubPath: p.join(books, 'Keep', 'k.epub'),
+      extractDir: p.join(books, 'Keep'),
+      chapterCount: 1,
+      chaptersJson: '["c"]',
+      importedAt: 0,
+    ));
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'Drop',
+      title: 'Drop',
+      epubPath: p.join(books, 'Drop', 'd.epub'),
+      extractDir: p.join(books, 'Drop'),
+      chapterCount: 1,
+      chaptersJson: '["c"]',
+      importedAt: 0,
+    ));
+
+    final BackupService service = BackupService(
+      db: db,
+      dbDirectory: dbDir,
+      appVersion: '1.0.0',
+      booksRootDirectory: books,
+    );
+    final String zip = p.join(src.path, 'onebook.zip');
+    final BackupMeta meta = await service.exportBackup(
+      zip,
+      categories: {BackupCategory.books},
+      bookKeys: {'Keep'},
+    );
+    await db.close();
+
+    expect(meta.bookCount, 1, reason: 'only the selected book is counted');
+    final Archive archive = await readZip(zip);
+    // Selected book's content packed (subtree + epub).
+    expect(archive.findFile('hoshi_books/Keep/k.epub'), isNotNull);
+    expect(archive.findFile('hoshi_books/Keep/text/c1.html'), isNotNull);
+    // Unselected book's content is absent from the archive.
+    expect(archive.findFile('hoshi_books/Drop/d.epub'), isNull);
+    // And its record is stripped from the DB blob (no ghost).
+    final HibikiDatabase restored = await openBackupDb(zip, dst);
+    try {
+      final Set<String> keys =
+          (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
+      expect(keys, <String>{'Keep'});
+    } finally {
+      await restored.close();
+    }
+  });
+
+  test('per-book export: selecting every book equals a full export', () async {
+    final built = await buildFullSource();
+    final String zip = p.join(src.path, 'allbooks.zip');
+    // buildFullSource has exactly one book 'Bk'.
+    final BackupMeta meta = await built.service.exportBackup(
+      zip,
+      categories: {BackupCategory.books},
+      bookKeys: {'Bk'},
+    );
+    await built.db.close();
+
+    expect(meta.bookCount, 1);
+    final Archive archive = await readZip(zip);
+    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
+    final HibikiDatabase restored = await openBackupDb(zip, dst);
+    try {
+      final Set<String> keys =
+          (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
+      expect(keys, <String>{'Bk'});
+    } finally {
+      await restored.close();
+    }
   });
 }

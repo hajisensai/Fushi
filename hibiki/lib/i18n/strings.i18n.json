@@ -1067,7 +1067,7 @@
   "reader_content_timeout": "Content loading timed out. Reopen if display is abnormal",
   "backup_local": "Local Backup",
   "backup_export": "Export Backup",
-  "backup_export_hint": "Choose what to include; the database (books, progress, stats) is always included. Uncheck large items (local audio, videos) to shrink the backup.",
+  "backup_export_hint": "Choose what to include. Reading data (progress, stats, settings) is always included; uncheck Books to exclude books entirely, or uncheck large items (local audio, videos) to shrink the backup.",
   "backup_import": "Import Backup",
   "backup_import_hint": "Restore from a backup file. The app will restart.",
   "backup_export_success": "Backup exported successfully",
@@ -1498,7 +1498,7 @@
   "video_subtitle_color_note": "Subtitle colors are set inside the video player.",
   "theme_seed_preview_hint": "Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly.",
   "backup_export_categories_title": "Choose what to export",
-  "backup_export_categories_hint": "Selected categories are packed into the backup. The database (books, statistics, favorites, profiles, settings) is always included.",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Your reading data (progress, statistics, favorites, profiles, settings) is always included in the database. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import.",
   "backup_category_dictionary": "Dictionaries",
   "backup_category_books": "Books",
   "backup_category_audiobooks": "Audiobook audio",
@@ -2107,5 +2107,12 @@
   "data_storage_migrate_failed_suggestions": "Please try again with a different, empty folder. Do not choose the app's install folder, and make sure no files in that location are in use.",
   "data_storage_migrate_failed_restart": "Restart",
   "data_storage_reject_install_dir": "That folder is the app's install location and can't store your data. Please choose a different, empty folder.",
-  "data_storage_migrate_failed_title": "Data migration failed"
+  "data_storage_migrate_failed_title": "Data migration failed",
+  "backup_export_choose_books": "Choose books",
+  "backup_export_books_all": "All books",
+  "backup_export_select_all": "Select all",
+  "backup_export_select_none": "Select none",
+  "backup_export_no_books": "No books to choose from",
+  "backup_export_books_selected": "$count books selected",
+  "backup_import_merge_preview": "Merge will add $bookCount books and update $progressCount reading positions."
 }

@@ -873,9 +873,10 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 31,
-          reason: 'global schemaVersion is now 31 (TODO-616 v30 + TODO-1017 '
-              'v31); TODO-894 backfill behavior asserted by the srt_books '
+      expect(db.schemaVersion, 32,
+          reason: 'global schemaVersion is now 32 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32); TODO-894 backfill behavior asserted by the '
+              'srt_books '
               'checks below');
 
       // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
@@ -1057,9 +1058,10 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 31,
-          reason: 'global schemaVersion is now 31 (TODO-616 v30 + TODO-1017 '
-              'v31); v29->v30 series/shelf_entries creation asserted below');
+      expect(db.schemaVersion, 32,
+          reason: 'global schemaVersion is now 32 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32); v29->v30 series/shelf_entries creation '
+              'asserted below');
 
       // Both new tables now exist.
       final tableNames = (await db
@@ -1106,7 +1108,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 31);
+      expect(db.schemaVersion, 32);
     });
   });
 }

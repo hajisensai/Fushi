@@ -321,7 +321,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
       // DB 事务：删除 EpubBooks 行及其所有关联行（readerPositions / bookmarks /
       // srtBooks / audioCues / audiobooks）。见 HBK-AUDIT-041。
-      await _db.deleteEpubBook(row.bookKey);
+      // TODO-1195 part B：用户删书记墓碑，避免旧备份合并导入时复活。
+      await _db.deleteEpubBook(row.bookKey, tombstone: true);
 
       // extractDir 磁盘目录：DB 删除后再清理（与 reader_hibiki_source 同顺序）。
       if (row.extractDir.isNotEmpty) {
