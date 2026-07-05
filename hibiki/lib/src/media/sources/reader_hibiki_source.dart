@@ -452,7 +452,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
         return false;
       }
 
-      final int deletedRows = await db.deleteEpubBook(bookKey);
+      // TODO-1195 part B: a user shelf delete records a tombstone so a later
+      // backup MERGE import never resurrects this book from an old backup.
+      final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
 
       // On-disk cleanups (not covered by the DB transaction). The audiobook
       // persist dir is keyed by the book's own key now (no legacy uid).

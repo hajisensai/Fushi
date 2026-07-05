@@ -460,7 +460,18 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 
       if (!mounted) return;
 
-      final _BackupImportChoice? choice = await _showConfirmDialog(meta);
+      // TODO-1195 part B: best-effort merge preview for the confirm dialog.
+      // Runs against the still-open live DB; null on any failure → generic UI.
+      final BackupMergePreview? mergePreview =
+          await BackupService.previewMergeImport(
+        liveDb: appModel.database,
+        dbDirectory: appModel.databaseDirectory.path,
+        zipPath: filePath,
+      );
+      if (!mounted) return;
+
+      final _BackupImportChoice? choice =
+          await _showConfirmDialog(meta, mergePreview);
       if (choice == null || !mounted) return;
 
       final String booksRoot =
@@ -530,7 +541,10 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
   /// (legacy default) or MERGE into the current one. For overwrite, a secondary
   /// switch chooses whether to also pull the backup's settings layer. Returns
   /// the choice, or `null` if the user cancels.
-  Future<_BackupImportChoice?> _showConfirmDialog(BackupMeta meta) async {
+  Future<_BackupImportChoice?> _showConfirmDialog(
+    BackupMeta meta,
+    BackupMergePreview? preview,
+  ) async {
     final dateStr =
         '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
     // Default: OVERWRITE (Never break userspace — the existing behavior), and
@@ -593,6 +607,16 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     title: Text(t.backup_import_mode_merge),
+                    subtitle: preview == null
+                        ? null
+                        : Text(
+                            t.backup_import_merge_preview(
+                              bookCount: preview.newBooks.toString(),
+                              progressCount:
+                                  preview.updatedReaderPositions.toString(),
+                            ),
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
                     value: _BackupImportMode.merge,
                     groupValue: mode,
                     onChanged: (_BackupImportMode? v) =>

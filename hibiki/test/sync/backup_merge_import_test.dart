@@ -684,4 +684,129 @@ void main() {
     final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
     expect(keys, <String>{'backup-book'});
   });
+
+  // ── TODO-1195 part B: tombstones + merge preview ─────────────────────────
+  test('merge does NOT resurrect a book the user deleted (tombstone)',
+      () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    await cur.insertEpubBook(_book('deleted-book'));
+    await cur.insertEpubBook(_book('kept-book'));
+    // User deletes one book → a tombstone is recorded.
+    await cur.deleteEpubBook('deleted-book', tombstone: true);
+    expect(await cur.getBookTombstoneKeys(), <String>{'deleted-book'});
+    await cur.close();
+
+    // An OLDER backup still carries the deleted book plus a brand-new one.
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    await src.insertEpubBook(_book('deleted-book'));
+    await src.insertEpubBook(_book('new-book'));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeImportBackupFiles(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = HibikiDatabase(curDir.path);
+    addTearDown(after.close);
+    final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
+    // deleted-book stays gone; the new book is still added.
+    expect(keys, <String>{'kept-book', 'new-book'});
+  });
+
+  test('re-adding a deleted book clears its tombstone', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    addTearDown(cur.close);
+    await cur.insertEpubBook(_book('b'));
+    await cur.deleteEpubBook('b', tombstone: true);
+    expect(await cur.getBookTombstoneKeys(), <String>{'b'});
+    // Re-importing the same book cancels the tombstone.
+    await cur.insertEpubBook(_book('b'));
+    expect(await cur.getBookTombstoneKeys(), isEmpty);
+  });
+
+  test('previewMergeImport counts new books and updated positions', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    addTearDown(cur.close);
+    await cur.insertEpubBook(_book('shared'));
+    await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
+      bookKey: 'shared',
+      sectionIndex: 1,
+      normCharOffset: 100,
+      updatedAt: 100,
+    ));
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    await src.insertEpubBook(_book('shared'));
+    await src.insertEpubBook(_book('new1'));
+    await src.insertEpubBook(_book('new2'));
+    // Newer position for the shared book → counts as an update.
+    await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
+      bookKey: 'shared',
+      sectionIndex: 5,
+      normCharOffset: 999,
+      updatedAt: 200,
+    ));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // Preview runs against the STILL-OPEN live DB (attaches, counts, detaches).
+    final preview = await BackupService.previewMergeImport(
+      liveDb: cur,
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
+    expect(preview != null, true);
+    expect(preview!.newEpubBooks, 2); // new1, new2
+    expect(preview.newBooks, 2);
+    expect(preview.updatedReaderPositions, 1); // shared position advanced
+    // Preview leaves no temp/attached state behind.
+    expect(
+        File(p.join(curDir.path, 'hibiki.db.merge-preview-src')).existsSync(),
+        false);
+  });
+
+  test('previewMergeImport excludes tombstoned books from the new-book count',
+      () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    addTearDown(cur.close);
+    // The device deleted 'gone' earlier (tombstoned) and never had 'fresh'.
+    await cur.insertBookTombstone('gone');
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    await src.insertEpubBook(_book('gone'));
+    await src.insertEpubBook(_book('fresh'));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    final preview = await BackupService.previewMergeImport(
+      liveDb: cur,
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
+    expect(preview != null, true);
+    expect(preview!.newEpubBooks, 1); // only 'fresh' — 'gone' is tombstoned
+  });
 }

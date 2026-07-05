@@ -12943,6 +12943,200 @@ class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
   }
 }
 
+class $BookTombstonesTable extends BookTombstones
+    with TableInfo<$BookTombstonesTable, BookTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+      'deleted_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [bookKey, deletedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_tombstones';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookTombstoneRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    } else if (isInserting) {
+      context.missing(_bookKeyMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookKey};
+  @override
+  BookTombstoneRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookTombstoneRow(
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}deleted_at'])!,
+    );
+  }
+
+  @override
+  $BookTombstonesTable createAlias(String alias) {
+    return $BookTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class BookTombstoneRow extends DataClass
+    implements Insertable<BookTombstoneRow> {
+  final String bookKey;
+  final int deletedAt;
+  const BookTombstoneRow({required this.bookKey, required this.deletedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_key'] = Variable<String>(bookKey);
+    map['deleted_at'] = Variable<int>(deletedAt);
+    return map;
+  }
+
+  BookTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return BookTombstonesCompanion(
+      bookKey: Value(bookKey),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory BookTombstoneRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookTombstoneRow(
+      bookKey: serializer.fromJson<String>(json['bookKey']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookKey': serializer.toJson<String>(bookKey),
+      'deletedAt': serializer.toJson<int>(deletedAt),
+    };
+  }
+
+  BookTombstoneRow copyWith({String? bookKey, int? deletedAt}) =>
+      BookTombstoneRow(
+        bookKey: bookKey ?? this.bookKey,
+        deletedAt: deletedAt ?? this.deletedAt,
+      );
+  BookTombstoneRow copyWithCompanion(BookTombstonesCompanion data) {
+    return BookTombstoneRow(
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTombstoneRow(')
+          ..write('bookKey: $bookKey, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookKey, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookTombstoneRow &&
+          other.bookKey == this.bookKey &&
+          other.deletedAt == this.deletedAt);
+}
+
+class BookTombstonesCompanion extends UpdateCompanion<BookTombstoneRow> {
+  final Value<String> bookKey;
+  final Value<int> deletedAt;
+  final Value<int> rowid;
+  const BookTombstonesCompanion({
+    this.bookKey = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BookTombstonesCompanion.insert({
+    required String bookKey,
+    required int deletedAt,
+    this.rowid = const Value.absent(),
+  })  : bookKey = Value(bookKey),
+        deletedAt = Value(deletedAt);
+  static Insertable<BookTombstoneRow> custom({
+    Expression<String>? bookKey,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookKey != null) 'book_key': bookKey,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BookTombstonesCompanion copyWith(
+      {Value<String>? bookKey, Value<int>? deletedAt, Value<int>? rowid}) {
+    return BookTombstonesCompanion(
+      bookKey: bookKey ?? this.bookKey,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTombstonesCompanion(')
+          ..write('bookKey: $bookKey, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -12994,6 +13188,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $ShelfEntriesTable shelfEntries = $ShelfEntriesTable(this);
   late final $HibikiPairedPeersTable hibikiPairedPeers =
       $HibikiPairedPeersTable(this);
+  late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -13031,7 +13226,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         minedSentences,
         series,
         shelfEntries,
-        hibikiPairedPeers
+        hibikiPairedPeers,
+        bookTombstones
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -21968,6 +22164,135 @@ typedef $$HibikiPairedPeersTableProcessedTableManager = ProcessedTableManager<
     ),
     HibikiPairedPeerRow,
     PrefetchHooks Function()>;
+typedef $$BookTombstonesTableCreateCompanionBuilder = BookTombstonesCompanion
+    Function({
+  required String bookKey,
+  required int deletedAt,
+  Value<int> rowid,
+});
+typedef $$BookTombstonesTableUpdateCompanionBuilder = BookTombstonesCompanion
+    Function({
+  Value<String> bookKey,
+  Value<int> deletedAt,
+  Value<int> rowid,
+});
+
+class $$BookTombstonesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookTombstonesTable> {
+  $$BookTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookTombstonesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookTombstonesTable> {
+  $$BookTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookTombstonesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookTombstonesTable> {
+  $$BookTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$BookTombstonesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookTombstonesTable,
+    BookTombstoneRow,
+    $$BookTombstonesTableFilterComposer,
+    $$BookTombstonesTableOrderingComposer,
+    $$BookTombstonesTableAnnotationComposer,
+    $$BookTombstonesTableCreateCompanionBuilder,
+    $$BookTombstonesTableUpdateCompanionBuilder,
+    (
+      BookTombstoneRow,
+      BaseReferences<_$HibikiDatabase, $BookTombstonesTable, BookTombstoneRow>
+    ),
+    BookTombstoneRow,
+    PrefetchHooks Function()> {
+  $$BookTombstonesTableTableManager(
+      _$HibikiDatabase db, $BookTombstonesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookTombstonesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookTombstonesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookTombstonesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> bookKey = const Value.absent(),
+            Value<int> deletedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookTombstonesCompanion(
+            bookKey: bookKey,
+            deletedAt: deletedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String bookKey,
+            required int deletedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookTombstonesCompanion.insert(
+            bookKey: bookKey,
+            deletedAt: deletedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookTombstonesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $BookTombstonesTable,
+    BookTombstoneRow,
+    $$BookTombstonesTableFilterComposer,
+    $$BookTombstonesTableOrderingComposer,
+    $$BookTombstonesTableAnnotationComposer,
+    $$BookTombstonesTableCreateCompanionBuilder,
+    $$BookTombstonesTableUpdateCompanionBuilder,
+    (
+      BookTombstoneRow,
+      BaseReferences<_$HibikiDatabase, $BookTombstonesTable, BookTombstoneRow>
+    ),
+    BookTombstoneRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -22038,4 +22363,6 @@ class $HibikiDatabaseManager {
       $$ShelfEntriesTableTableManager(_db, _db.shelfEntries);
   $$HibikiPairedPeersTableTableManager get hibikiPairedPeers =>
       $$HibikiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
+  $$BookTombstonesTableTableManager get bookTombstones =>
+      $$BookTombstonesTableTableManager(_db, _db.bookTombstones);
 }

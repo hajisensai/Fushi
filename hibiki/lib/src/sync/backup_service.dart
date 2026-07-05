@@ -1171,6 +1171,76 @@ class BackupService {
     }
   }
 
+  /// Temp filename for the preview-only extracted backup DB (TODO-1195 part B).
+  static const String _mergePreviewSrcName = 'hibiki.db.merge-preview-src';
+
+  /// Read-only estimate of what a MERGE import of [zipPath] would change on this
+  /// device, for the import confirm dialog (TODO-1195 part B). Extracts ONLY the
+  /// backup's `hibiki.db` to a temp file, migrates it to the current schema,
+  /// ATTACHes it to the still-open [liveDb] and runs [BackupMergeEngine.preview]
+  /// (no mutation, no transaction), then detaches and cleans up. Best-effort:
+  /// any failure returns null so the caller shows a generic dialog and the
+  /// import is never blocked by a preview problem. The content trees are NOT
+  /// extracted (only row counts matter), so this stays cheap even for a
+  /// multi-GB backup.
+  static Future<BackupMergePreview?> previewMergeImport({
+    required HibikiDatabase liveDb,
+    required String dbDirectory,
+    required String zipPath,
+  }) async {
+    final String tmpSrc = p.join(dbDirectory, _mergePreviewSrcName);
+    try {
+      final InputFileStream input = InputFileStream(zipPath);
+      final Archive archive;
+      try {
+        archive = ZipDecoder().decodeBuffer(input);
+      } finally {
+        await input.close();
+      }
+      final ArchiveFile? dbFile = archive.findFile(_dbName);
+      if (dbFile == null) return null;
+
+      await _safeDelete(tmpSrc);
+      await _safeDelete('$tmpSrc-wal');
+      await _safeDelete('$tmpSrc-shm');
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(dbFile.name, tmpSrc),
+        ],
+      );
+
+      // Migrate the extracted DB up to the current schema so its columns align
+      // for the ATTACH-based COUNT queries (same contract as the real merge).
+      final HibikiDatabase srcMigrate = HibikiDatabase.atFile(tmpSrc);
+      try {
+        await srcMigrate.customStatement('PRAGMA user_version');
+      } finally {
+        await srcMigrate.close();
+      }
+      await _safeDelete('$tmpSrc-wal');
+      await _safeDelete('$tmpSrc-shm');
+
+      final String safeSrc =
+          tmpSrc.replaceAll(r'\', '/').replaceAll("'", "''");
+      await liveDb.customStatement("ATTACH DATABASE '$safeSrc' AS previewsrc");
+      try {
+        return await BackupMergeEngine(liveDb, srcAlias: 'previewsrc').preview();
+      } finally {
+        await liveDb.customStatement('DETACH DATABASE previewsrc');
+      }
+    } catch (e, st) {
+      // Never block the import on a preview failure — fall back to a generic
+      // confirm dialog.
+      debugPrint('BackupService.previewMergeImport failed: $e\n$st');
+      return null;
+    } finally {
+      await _safeDelete(tmpSrc);
+      await _safeDelete('$tmpSrc-wal');
+      await _safeDelete('$tmpSrc-shm');
+    }
+  }
+
   /// Copies every file under `<prefix>/` in [archive] into [targetRootPath],
   /// SKIPPING any whose destination already exists (the merge-import invariant:
   /// never delete or overwrite the device's own content). Reuses the same path

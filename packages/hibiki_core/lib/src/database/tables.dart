@@ -619,3 +619,18 @@ class HibikiPairedPeers extends Table {
   /// 对端上次访问时的来源 IP（诊断/展示用，可为空）。
   TextColumn get lastSeenIp => text().nullable()();
 }
+
+// ── book_tombstones ─────────────────────────────────────────────────
+// TODO-1195 part B：已删书墓碑。用户从书架删除一本书时记一条 book_key（+删除时刻），
+// 供备份「合并导入」跳过——避免把用户已删的书从旧备份里复活（reported bug：导入备份出现
+// 不该有的书）。重新导入/新增同 book_key 的书会清除其墓碑（见 [insertEpubBook]）。仅
+// 合并导入消费；覆盖导入是整库替换（用户明确选择用备份替换），故不看墓碑（Never break
+// userspace：覆盖语义不变）。范式仿 [BookProfiles]（text book_key 主键 + int 毫秒戳）。
+@DataClassName('BookTombstoneRow')
+class BookTombstones extends Table {
+  TextColumn get bookKey => text()();
+  IntColumn get deletedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {bookKey};
+}
