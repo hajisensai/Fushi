@@ -64,7 +64,7 @@
        lives in. Without a size box it stretches to fill the whole viewport. Bound
        it to the app default (400 wide, 360 tall, internal scroll); the optional
        --hibiki-popup-* vars (lookup response may inject) still override. */
-    width: var(--hibiki-popup-width, 400px);
+    width: var(--hibiki-popup-max-width, 400px);
     max-width: calc(100vw - 16px);
     max-height: min(var(--hibiki-popup-max-height, 360px), 80vh);
     overflow-x: hidden;
