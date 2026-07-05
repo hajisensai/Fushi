@@ -24,6 +24,7 @@ import 'package:hibiki/src/lookup/global_lookup_stack.dart';
 import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
@@ -31,6 +32,7 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
@@ -545,6 +547,17 @@ class GlobalLookupController {
       unawaited(_handleAudioBridge(handler! as String, message));
       return;
     }
+    // TODO-1188 — 收藏（☆/★）也是 DEFERRED 桥：popup.js 的 createFavoriteButton
+    // await callHandler('favoriteEntry'/'favoriteCheck', {expression, reading})，
+    // 需 Dart 落库（FavoriteWords 表）后经 resolveBridge 回传新收藏态，iframe 里的
+    // 星标才切换。app 外覆盖窗过去 Dart 侧没有这两个分支（按钮永挂），且 C++ 把它们
+    // 当只读即时 null-resolve（回传恒 null）——本次一并接上（C++ 也纳入 deferred，
+    // host 桥回程把回复路由回源 iframe）。始终 resolveBridge，即使无 model / 出错，
+    // 收藏按钮也不会卡死。
+    if (handler == 'favoriteEntry' || handler == 'favoriteCheck') {
+      unawaited(_handleFavoriteBridge(handler! as String, message));
+      return;
+    }
     // TODO-867 P3c D2 — size + place the overlay window from the host's stack
     // self-measurement. The host reports overlaySize = [dpr, box] where box is
     // the UNION bounding box of all card shells in window-local CSS px
@@ -660,6 +673,88 @@ class GlobalLookupController {
       glog('audio: $handler -> reply=$reply (id=$id)');
       unawaited(GlobalLookupChannel.resolveBridge(id, reply));
     }
+  }
+
+  /// TODO-1188 — resolves a DEFERRED favorite bridge call (favoriteEntry toggles
+  /// the FavoriteWords row and returns the NEW state; favoriteCheck just reads the
+  /// current state) and pushes the resulting bool back to the overlay iframe via
+  /// [GlobalLookupChannel.resolveBridge] so popup.js flips the ☆/★ star. Always
+  /// resolves — even on error / no model — so the ☆ button never freezes (mirrors
+  /// [_handleAudioBridge]). The DB logic mirrors the in-app
+  /// [DictionaryPageMixin.onFavoriteEntry]/[onFavoriteCheck].
+  Future<void> _handleFavoriteBridge(
+      String handler, Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    bool reply = false;
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> data =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final String expression = data['expression']?.toString() ?? '';
+      final String reading = data['reading']?.toString() ?? '';
+      if (model != null && expression.isNotEmpty) {
+        reply = await _toggleOrCheckFavorite(
+          model,
+          toggle: handler == 'favoriteEntry',
+          expression: expression,
+          reading: reading,
+        );
+      }
+    } catch (e, st) {
+      glog('favorite: EXCEPTION $e\n$st');
+      reply = false;
+    }
+    if (id != null) {
+      glog('favorite: $handler -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
+  }
+
+  /// TODO-1188 — favorite toggle ([toggle] true, favoriteEntry) or read ([toggle]
+  /// false, favoriteCheck) against the FavoriteWords table. Returns the resulting
+  /// favorited state (true = now favorited). Uses [kStatSourceBook] to match the
+  /// in-app dictionary default ([DictionaryPageMixin.dictionarySourceType]) so the
+  /// (expression, reading, sourceType) uniqueness key is SHARED with in-book
+  /// favorites — a word favorited app-out and the same word in the book reader
+  /// popup toggle the same row (consistent ★ across surfaces). No toast here: the
+  /// main window is backgrounded behind the external app, so the star flip in the
+  /// overlay iframe (driven by this returned bool) is the user-visible feedback.
+  Future<bool> _toggleOrCheckFavorite(
+    AppModel model, {
+    required bool toggle,
+    required String expression,
+    required String reading,
+  }) async {
+    final HibikiDatabase db = model.database;
+    final bool already = await db.isFavoriteWord(
+      expression: expression,
+      reading: reading,
+      sourceType: kStatSourceBook,
+    );
+    if (!toggle) {
+      return already; // favoriteCheck: report the current state, no write.
+    }
+    if (already) {
+      await db.removeFavoriteWord(
+        expression: expression,
+        reading: reading,
+        sourceType: kStatSourceBook,
+      );
+      return false;
+    }
+    await db.addFavoriteWord(
+      expression: expression,
+      reading: reading,
+      glossary: '',
+      sourceType: kStatSourceBook,
+      dateKey: statTodayKey(),
+    );
+    return true;
   }
 
   /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。

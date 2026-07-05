@@ -681,10 +681,19 @@ void GlobalLookupWindow::ConfigureWebView() {
               // DEFERRED: native does not resolve them; Dart computes the reply
               // and calls back ResolveBridge(id, json). The id is the integer
               // after "__bridgeId":.
+              // TODO-1188 — favoriteEntry/favoriteCheck are ALSO deferred: the
+              // main Dart engine toggles/reads the FavoriteWords row and returns
+              // the new ☆/★ state via ResolveBridge. An immediate null here would
+              // resolve the popup.js Promise with null BEFORE Dart's real reply,
+              // so the star never flips (the earlier "favorite button does
+              // nothing" bug). The reply is routed back to the SOURCE iframe by
+              // the host bridge router (global_lookup_host.js).
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
-                  body.find("\"playWordAudio\"") != std::string::npos;
+                  body.find("\"playWordAudio\"") != std::string::npos ||
+                  body.find("\"favoriteEntry\"") != std::string::npos ||
+                  body.find("\"favoriteCheck\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {

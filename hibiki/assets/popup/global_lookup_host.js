@@ -78,6 +78,20 @@
   var frames = new Map();
   var frameSources = new WeakMap();
   var wrappedWindows = new WeakSet();
+  // TODO-1188 — bridge round-trip routing. popup.js runs inside a CHILD iframe,
+  // so its window.flutter_inappwebview.callHandler Promise lives in THAT iframe's
+  // popup_bridge_adapter realm (each iframe adapter mints its own _seq from 1, so
+  // the frame-LOCAL bridge ids collide across frames). Native
+  // (global_lookup_window.cpp) only ever ExecuteScripts the TOP-LEVEL document,
+  // whose window.__hibikiBridgeResolve is a DIFFERENT adapter realm — so a native
+  // reply used to never reach the source iframe and every AWAITED callHandler
+  // (audio ♪ / favorite ☆) hung forever. Fix: the host rewrites each outbound
+  // frame-local __bridgeId to a HOST-GLOBAL id (transformFrameMessage) and records
+  // the route here; the top-level __hibikiBridgeResolve (installBridgeRouter) then
+  // forwards the native reply back to EXACTLY the source frame's adapter with its
+  // own local id — no cross-frame id collision, no broadcast to the wrong card.
+  var bridgeSeq = 0;
+  var bridgeRoutes = new Map();
   var lastBBoxKey = '';
   // TODO-1079 (C) / TODO-1095 — the root frame id of the currently-rendered
   // stack. TODO-1095 makes the root frame id STABLE across hotkey lookups (the
@@ -379,8 +393,18 @@
       args: message.args,
       __frameId: record.id,
     };
+    // TODO-1188 — rewrite the frame-LOCAL bridge id to a host-GLOBAL id and
+    // remember the route (globalId -> {frameId, localId}) so the native reply
+    // (which reaches only the top-level document) is forwarded back to the SOURCE
+    // iframe's adapter with its own local id. The global id stays a plain integer
+    // so the C++ digit scan of "__bridgeId": still extracts it verbatim.
     if (typeof message.__bridgeId !== 'undefined') {
-      out.__bridgeId = message.__bridgeId;
+      var globalBridgeId = ++bridgeSeq;
+      bridgeRoutes.set(globalBridgeId, {
+        frameId: record.id,
+        localId: message.__bridgeId,
+      });
+      out.__bridgeId = globalBridgeId;
     }
     // TODO-893 v2 (symptom 1) — textSelected (tapping plain glossary text) carries
     // the SAME arg shape as onLinkClick (args[1] = the clicked word's iframe-LOCAL
@@ -694,6 +718,14 @@
         }
       }
       frames.delete(id);
+      // TODO-1188 — drop any pending bridge routes for the removed frame so the
+      // route map never leaks entries for a torn-down iframe (whose adapter can
+      // no longer resolve anything anyway).
+      bridgeRoutes.forEach(function (route, globalId) {
+        if (route.frameId === id) {
+          bridgeRoutes.delete(globalId);
+        }
+      });
     }
   }
 
@@ -958,6 +990,58 @@
     return frameSources.has(iframe) ? frameSources.get(iframe) : null;
   }
 
+  // TODO-1188 — the contentWindow of a frame record, or null when unavailable
+  // (cross-origin guard / torn-down iframe / node harness).
+  function frameWindowOf(record) {
+    if (!record) {
+      return null;
+    }
+    try {
+      return record.iframe.contentWindow;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // TODO-1188 — install the top-level bridge-reply router. Native
+  // (global_lookup_window.cpp: ResolveBridge for the deferred audio/favorite
+  // handlers, and the immediate null-resolve for the read-only ones) calls
+  // window.__hibikiBridgeResolve(globalId, jsonValue) on THIS top-level document.
+  // The global id was minted in transformFrameMessage and maps back to the source
+  // iframe + its frame-local id; forward the reply to exactly that iframe's
+  // adapter so the awaited callHandler Promise there resolves. No route -> defer
+  // to the top-level adapter (the host itself issues no bridge calls, so this is
+  // normally a no-op); a spurious/duplicate reply with no route is dropped rather
+  // than broadcast, so two frames sharing a local id can never mis-resolve.
+  function installBridgeRouter() {
+    var priorResolve = (typeof window.__hibikiBridgeResolve === 'function')
+        ? window.__hibikiBridgeResolve
+        : null;
+    window.__hibikiBridgeResolve = function (globalId, jsonValue) {
+      var route = bridgeRoutes.get(globalId);
+      if (route) {
+        bridgeRoutes.delete(globalId);
+        var win = frameWindowOf(frames.get(route.frameId));
+        if (win && typeof win.__hibikiBridgeResolve === 'function') {
+          try {
+            win.__hibikiBridgeResolve(route.localId, jsonValue);
+          } catch (e) {
+            // Never let one frame's resolve throw break the router.
+          }
+        }
+        return;
+      }
+      if (priorResolve) {
+        try {
+          priorResolve(globalId, jsonValue);
+        } catch (e) {
+          // no-op
+        }
+      }
+    };
+  }
+  installBridgeRouter();
+
   if (document && typeof document.addEventListener === 'function') {
     document.addEventListener('pointerdown', onHostPointerDown, true);
   }
@@ -991,5 +1075,8 @@
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
     _frames: frames,
+    // TODO-1188 — exposed for the node bridge-routing harness only (never used to
+    // drive behaviour): the live globalId -> {frameId, localId} route map.
+    _bridgeRoutes: bridgeRoutes,
   };
 })();
