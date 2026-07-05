@@ -29,6 +29,15 @@ abstract class HibikiRemoteMiningService {
   /// 实例（2B）；server 只解析 body 成 [ImmersionMinePayload] 后转发，不 new 引擎、不碰 repo。
   /// 返回 MineResult.name。
   Future<String> mineImmersion(ImmersionMinePayload payload);
+
+  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重（`+`→`✓`，与 app 内一致）。经 Anki 后端
+  /// （AnkiConnect `findNotes` / AnkiDroid `findDuplicateNotes`）判断 [expression]/[reading]
+  /// 是否已在当前牌组+笔记类型存在。与 app 内 `dictionary_page_mixin.checkDuplicate` 同一
+  /// `repo.isDuplicate` 路径，fail-soft（后端不可用/未配置 → false，绝不让查重探测阻断查词）。
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  });
 }
 
 /// 把一次查词结果写入 Hibiki 查词历史（无 UI 副作用）。浏览器扩展 record 用。

@@ -71,3 +71,21 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
           fields: payload.fields, sentence: payload.sentence);
   return <String, dynamic>{'result': result};
 }
+
+/// TODO-1176：`POST /api/duplicate` 的响应体。[body] 需含 `expression`（+可选 `reading`）。
+/// 浏览器扩展查词弹窗渲染时调它，把制卡按钮从恒「+」变成与 app 一致的 `+`（未添加）/
+/// `✓`（Anki 已有）两态。空 expression → 直接返回 `false`（不算错误，与查词空 term 一致）。
+/// 经注入的 [mining].isDuplicate 复用 app 内同一 Anki 查重后端，单一真相源。
+Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
+  Map<String, dynamic> body, {
+  required HibikiRemoteMiningService mining,
+}) async {
+  final String expression = body['expression']?.toString() ?? '';
+  final String reading = body['reading']?.toString() ?? '';
+  if (expression.trim().isEmpty) {
+    return <String, dynamic>{'duplicate': false};
+  }
+  final bool duplicate =
+      await mining.isDuplicate(expression: expression, reading: reading);
+  return <String, dynamic>{'duplicate': duplicate};
+}

@@ -53,6 +53,19 @@ class _FakeMining implements HibikiRemoteMiningService {
     immersionPayload = payload;
     return 'success';
   }
+
+  bool dupResult = false;
+  String? lastDupExpression;
+  String? lastDupReading;
+  @override
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async {
+    lastDupExpression = expression;
+    lastDupReading = reading;
+    return dupResult;
+  }
 }
 
 String _basic(String token) =>
@@ -193,6 +206,48 @@ void main() {
         <String, dynamic>{'sentence': 'no fields'},
       );
       expect(resp.statusCode, 400);
+      await resp.drain<void>();
+    });
+
+    test('/api/duplicate returns real duplicate flag (TODO-1176)', () async {
+      await startServer(apiKey: 'k123');
+      mining.dupResult = true;
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/duplicate',
+        <String, dynamic>{'expression': '走る', 'reading': 'はしる'},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      expect((await _json(resp))['duplicate'], true);
+      expect(mining.lastDupExpression, '走る');
+      expect(mining.lastDupReading, 'はしる');
+    });
+
+    test('/api/duplicate empty expression → false without hitting backend',
+        () async {
+      await startServer(apiKey: 'k123');
+      mining.dupResult = true;
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/duplicate',
+        <String, dynamic>{'expression': ''},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      expect((await _json(resp))['duplicate'], false);
+      expect(mining.lastDupExpression, isNull);
+    });
+
+    test('/api/duplicate wrong token → 401', () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/duplicate',
+        <String, dynamic>{'expression': '猫'},
+        auth: _basic('WRONG'),
+      );
+      expect(resp.statusCode, 401);
       await resp.drain<void>();
     });
   });

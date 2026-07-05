@@ -22,6 +22,19 @@ class _FakeMining implements HibikiRemoteMiningService {
     lastImmersion = payload;
     return 'success';
   }
+
+  bool dupResult = false;
+  String? lastDupExpression;
+  String? lastDupReading;
+  @override
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async {
+    lastDupExpression = expression;
+    lastDupReading = reading;
+    return dupResult;
+  }
 }
 
 Future<HttpClientResponse> _post(
@@ -100,6 +113,58 @@ void main() {
     final r = await c.post('127.0.0.1', server.port, '/api/mine');
     r.headers.contentType = ContentType.json;
     r.write('{}');
+    final resp = await r.close();
+    expect(resp.statusCode, 401);
+    await server.stop();
+  });
+
+  test('POST /api/duplicate returns real duplicate flag (TODO-1176)', () async {
+    final mining = _FakeMining()..dupResult = true;
+    final server = HibikiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: mining);
+    await server.start();
+    final resp = await _post(server.port, '/api/duplicate',
+        {'expression': '分かる', 'reading': 'わかる'}, 'tok');
+    expect(resp.statusCode, 200);
+    final out = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(out['duplicate'], true);
+    expect(mining.lastDupExpression, '分かる');
+    expect(mining.lastDupReading, 'わかる');
+    await server.stop();
+  });
+
+  test('POST /api/duplicate with empty expression short-circuits to false',
+      () async {
+    final mining = _FakeMining()..dupResult = true;
+    final server = HibikiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: mining);
+    await server.start();
+    final resp =
+        await _post(server.port, '/api/duplicate', {'expression': ''}, 'tok');
+    expect(resp.statusCode, 200);
+    final out = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(out['duplicate'], false);
+    expect(mining.lastDupExpression, isNull); // 未触达后端
+    await server.stop();
+  });
+
+  test('POST /api/duplicate without auth is 401', () async {
+    final server = HibikiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: _FakeMining());
+    await server.start();
+    final c = HttpClient();
+    final r = await c.post('127.0.0.1', server.port, '/api/duplicate');
+    r.headers.contentType = ContentType.json;
+    r.write('{"expression":"猫"}');
     final resp = await r.close();
     expect(resp.statusCode, 401);
     await server.stop();
