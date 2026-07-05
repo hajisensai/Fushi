@@ -148,7 +148,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
             body: HibikiTextField(
               controller: controller,
               labelText: 'URL',
-              hintText: 'https://192.168.1.100:38765',
+              hintText: 'http://192.168.1.100:38765',
               keyboardType: TextInputType.url,
             ),
             footer: Wrap(
@@ -174,6 +174,14 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     );
     controller.dispose();
     if (result == null || result.isEmpty) return;
+    final String normalizedResult;
+    try {
+      normalizedResult = normalizeHibikiInterconnectManualUrl(result);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.addHibikiUrl', e, stack);
+      if (mounted) _showSnackBar(context, t.sync_connection_failed);
+      return;
+    }
 
     bool added = false;
     setState(() {
@@ -181,13 +189,13 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
       if (index != null) {
         final bool dupElsewhere = copy.asMap().entries.any(
             (MapEntry<int, HibikiClientUrl> e) =>
-                e.key != index && e.value.url == result);
+                e.key != index && e.value.url == normalizedResult);
         if (!dupElsewhere) {
           // 编辑保留已有指纹/展示名（copyWith），只换 URL 文本。
-          copy[index] = copy[index].copyWith(url: result);
+          copy[index] = copy[index].copyWith(url: normalizedResult);
         }
-      } else if (!copy.any((HibikiClientUrl u) => u.url == result)) {
-        copy.add(HibikiClientUrl(url: result));
+      } else if (!copy.any((HibikiClientUrl u) => u.url == normalizedResult)) {
+        copy.add(HibikiClientUrl(url: normalizedResult));
         added = true;
       }
       _urls = copy;
@@ -199,7 +207,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     // token + 指纹（免手粘 token）。探测失败 / 非 hibiki 时静默保留地址（向后兼容：
     // 用户仍可手填 token）。
     if (added) {
-      await _attemptManualPair(result);
+      await _attemptManualPair(normalizedResult);
     }
   }
 
