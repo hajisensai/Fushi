@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/anki/ankimobile_repository.dart';
@@ -147,5 +148,107 @@ void main() {
     expect(launched.single.queryParameters['fldSentence'], '黒い猫です。');
     expect(launched.single.queryParameters['tags'], 'custom hibiki book');
     expect(launched.single.queryParameters, isNot(contains('dupes')));
+  });
+
+  test('mineEntry embeds local media for AnkiMobile instead of raw paths',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('ankimobile-media-');
+    addTearDown(() async {
+      if (temp.existsSync()) {
+        await temp.delete(recursive: true);
+      }
+    });
+
+    final cover = File('${temp.path}/clip.gif');
+    await cover.writeAsBytes(<int>[0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+    final sentenceAudio = File('${temp.path}/sentence.aac');
+    await sentenceAudio.writeAsBytes(<int>[0xff, 0xf1, 0x50, 0x80]);
+    final wordAudio = File('${temp.path}/word.mp3');
+    await wordAudio.writeAsBytes(<int>[0x49, 0x44, 0x33, 0x04]);
+
+    const dictMediaPath = 'gaiji/ios-test.svg';
+    final dictCacheDir = Directory(ankiDictionaryMediaCacheDirPath());
+    if (!dictCacheDir.existsSync()) dictCacheDir.createSync(recursive: true);
+    final dictFile = File(
+      '${dictCacheDir.path}/${ankiDictionaryMediaCacheFilename(dictMediaPath)}',
+    );
+    await dictFile.writeAsString('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    addTearDown(() {
+      if (dictFile.existsSync()) dictFile.deleteSync();
+    });
+
+    final launched = <Uri>[];
+    final repo = AnkiMobileRepository(
+      openUrl: (uri) async {
+        launched.add(uri);
+        return true;
+      },
+      readInfoForAddingJson: () async => null,
+    );
+    await repo.saveSettings(const AnkiSettings(
+      selectedDeckId: 0,
+      selectedDeckName: 'Japanese',
+      selectedNoteTypeId: 0,
+      selectedNoteTypeName: 'Lapis',
+      availableDecks: <AnkiDeck>[AnkiDeck(id: 0, name: 'Japanese')],
+      availableNoteTypes: <AnkiNoteType>[
+        AnkiNoteType(
+          id: 0,
+          name: 'Lapis',
+          fields: <String>[
+            'ExpressionAudio',
+            'SentenceAudio',
+            'Picture',
+            'Glossary',
+          ],
+        ),
+      ],
+      fieldMappings: <String, String>{
+        'ExpressionAudio': '{audio}',
+        'SentenceAudio': '{sasayaki-audio}',
+        'Picture': '{book-cover}',
+        'Glossary': '{glossary}',
+      },
+    ));
+
+    final outcome = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(<String, Object?>{
+        'expression': '猫',
+        'audio': wordAudio.path,
+        'glossary': '<img class="gloss-image" src="hoshi_dict_0.svg">',
+        'dictionaryMedia': <Object>[
+          <String, String>{
+            'dictionary': '明鏡国語辞典 第三版',
+            'path': dictMediaPath,
+            'filename': 'hoshi_dict_0.svg',
+          },
+        ],
+      }),
+      context: AnkiMiningContext(
+        sentence: '',
+        coverPath: cover.path,
+        sasayakiAudioPath: sentenceAudio.path,
+      ),
+    );
+
+    expect(outcome.result, MineResult.success);
+    expect(launched, hasLength(1));
+    final fields = launched.single.queryParameters;
+    expect(fields['fldExpressionAudio'], startsWith('data:audio/mpeg;base64,'));
+    expect(fields['fldSentenceAudio'], startsWith('data:audio/aac;base64,'));
+    expect(fields['fldPicture'], startsWith('data:image/gif;base64,'));
+    expect(
+      fields['fldGlossary'],
+      contains('src="data:image/svg+xml;base64,'),
+    );
+    for (final value in <String>[
+      fields['fldExpressionAudio']!,
+      fields['fldSentenceAudio']!,
+      fields['fldPicture']!,
+      fields['fldGlossary']!,
+    ]) {
+      expect(value, isNot(contains(temp.path)));
+      expect(value, isNot(contains('hoshi_dict_0.svg')));
+    }
   });
 }

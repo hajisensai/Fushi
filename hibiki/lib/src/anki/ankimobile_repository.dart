@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -180,12 +182,12 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       );
     }
 
-    final fields = buildMinedFields(
-      fieldMappings: settings.fieldMappings,
+    final rendered = await _renderMinedFieldsForAnkiMobile(
+      settings: settings,
       payload: payload,
       context: context,
-      dictionaryMediaTags: const <String, String>{},
     );
+    final fields = rendered.fields;
     if (fields.isEmpty) {
       return MineOutcome.failure(
         'All fields are empty — refusing to create a blank card. '
@@ -220,7 +222,108 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         'Could not open AnkiMobile. Install AnkiMobile and try again.',
       );
     }
-    return const MineOutcome.success();
+    return MineOutcome.success(audioWarning: rendered.audioWarning);
+  }
+
+  Future<RenderedMinedFields> _renderMinedFieldsForAnkiMobile({
+    required AnkiSettings settings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+  }) async {
+    final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
+      context.coverPath != null
+          ? _dataUrlForLocalFile(context.coverPath!)
+          : Future<String?>.value(null),
+      context.sasayakiAudioPath != null
+          ? _dataUrlForLocalFile(context.sasayakiAudioPath!)
+          : Future<String?>.value(null),
+      _audioFieldForAnkiMobile(payload.audio),
+      buildDictionaryMediaTags(
+        payload.dictionaryMedia,
+        _dictionaryMediaDataUrl,
+      ),
+    ];
+    final mediaResults = await Future.wait(mediaFutures);
+    final String? coverDataUrl = mediaResults[0] as String?;
+    final String? sasayakiDataUrl = mediaResults[1] as String?;
+    final _AnkiMobileAudioField audio =
+        mediaResults[2] as _AnkiMobileAudioField;
+    final Map<String, String> dictionaryMediaTags =
+        mediaResults[3] as Map<String, String>;
+
+    final mediaContext = AnkiMiningContext(
+      sentence: context.sentence,
+      cueSentence: context.cueSentence,
+      documentTitle: context.documentTitle,
+      coverPath: coverDataUrl,
+      sasayakiAudioPath: sasayakiDataUrl,
+      sentenceOffset: context.sentenceOffset,
+      source: context.source,
+      bookTitleTag: context.bookTitleTag,
+    );
+
+    final mediaPayload = AnkiMiningPayload(
+      expression: payload.expression,
+      reading: payload.reading,
+      matched: payload.matched,
+      furiganaPlain: payload.furiganaPlain,
+      frequenciesHtml: payload.frequenciesHtml,
+      freqHarmonicRank: payload.freqHarmonicRank,
+      glossary: payload.glossary,
+      glossaryFirst: payload.glossaryFirst,
+      singleGlossaries: payload.singleGlossaries,
+      pitchPositions: payload.pitchPositions,
+      pitchCategories: payload.pitchCategories,
+      popupSelectionText: payload.popupSelectionText,
+      audio: audio.fieldValue,
+      selectedDictionary: payload.selectedDictionary,
+      dictionaryMedia: payload.dictionaryMedia,
+    );
+
+    return RenderedMinedFields(
+      buildMinedFields(
+        fieldMappings: settings.fieldMappings,
+        payload: mediaPayload,
+        context: mediaContext,
+        dictionaryMediaTags: dictionaryMediaTags,
+      ),
+    );
+  }
+
+  Future<_AnkiMobileAudioField> _audioFieldForAnkiMobile(String audio) async {
+    switch (AnkiAudioRef.classify(audio)) {
+      case AnkiAudioRefKind.empty:
+        return const _AnkiMobileAudioField('');
+      case AnkiAudioRefKind.remoteUrl:
+        return _AnkiMobileAudioField(audio);
+      case AnkiAudioRefKind.localFile:
+        final path = AnkiAudioRef.localPath(audio);
+        final dataUrl = await _dataUrlForLocalFile(path);
+        if (dataUrl != null) return _AnkiMobileAudioField(dataUrl);
+        return const _AnkiMobileAudioField('');
+    }
+  }
+
+  Future<String?> _dictionaryMediaDataUrl(DictionaryMedia media) {
+    final filename = ankiDictionaryMediaCacheFilename(media.path);
+    final path = '${ankiDictionaryMediaCacheDirPath()}/$filename';
+    return _dataUrlForLocalFile(path, mimePath: filename);
+  }
+
+  Future<String?> _dataUrlForLocalFile(
+    String filePath, {
+    String? mimePath,
+  }) async {
+    try {
+      final file = File(filePath);
+      if (!file.existsSync()) return null;
+      final bytes = await file.readAsBytes();
+      final mime = mimeTypeForPath(mimePath ?? file.path);
+      return 'data:$mime;base64,${base64Encode(bytes)}';
+    } catch (e, stack) {
+      debugPrint('AnkiMobileRepository._dataUrlForLocalFile: $e\n$stack');
+      return null;
+    }
   }
 
   @override
@@ -231,6 +334,12 @@ class AnkiMobileRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> createDeck(String name) async => false;
+}
+
+class _AnkiMobileAudioField {
+  const _AnkiMobileAudioField(this.fieldValue);
+
+  final String fieldValue;
 }
 
 class AnkiMobileInfoForAdding {
