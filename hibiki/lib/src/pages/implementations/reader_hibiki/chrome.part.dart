@@ -389,7 +389,66 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         : null;
     // BUG-492：原生选区路径同样锁定所属章号（详见 _cachedSelectionSectionIndex）。
     _cachedSelectionSectionIndex = _lookupSectionIndex;
+    // TODO-1127：与选区状态同批抽取选区里夹带的 EPUB 插图（供片段导出把图渲进卡片）。
+    // 选区仍在（我们正读它），此刻抽取 src + 归一化位置最稳。无图 → 空列表，零副作用。
+    _cachedSelectionImages = await _extractSelectionClipImages();
     return data;
+  }
+
+  /// TODO-1127：从**当前原生选区**抽取夹带的 EPUB 插图字节（供片段导出渲进卡片）。
+  /// JS `nativeSelectionImages` 返回图的绝对 URL + 归一化文档位置；这里把每个 URL 经
+  /// [_readerImageFileForUrl] 解析成解压目录文件（**不走网络**），读字节、按需降采样
+  /// （复用 [downsampleCardScreenshot] 护体积）。裸矢量 `.svg` 文件 `Image.memory` 无法
+  /// 解码 → 跳过并记日志（光栅封面 <svg><image> 的内层位图已由 JS 侧解析为真实位图 URL）。
+  Future<List<({int normOffset, Uint8List bytes})>>
+      _extractSelectionClipImages() async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) {
+      return const <({int normOffset, Uint8List bytes})>[];
+    }
+    Object? raw;
+    try {
+      raw = await controller.evaluateJavascript(
+        source: ReaderSelectionScripts.nativeSelectionImagesInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.extractSelectionClipImages.eval', e, stack);
+      return const <({int normOffset, Uint8List bytes})>[];
+    }
+    if (!mounted) return const <({int normOffset, Uint8List bytes})>[];
+    final List<({String src, int normOffset})> refs =
+        ReaderSelectionScripts.clipSelectionImagesFromResult(raw);
+    if (refs.isEmpty) return const <({int normOffset, Uint8List bytes})>[];
+    final List<({int normOffset, Uint8List bytes})> images =
+        <({int normOffset, Uint8List bytes})>[];
+    for (final ({String src, int normOffset}) ref in refs) {
+      final File? file = _readerImageFileForUrl(ref.src);
+      if (file == null) continue;
+      final String ext = p.extension(file.path).toLowerCase();
+      if (ext == '.svg') {
+        // 裸矢量 SVG：Image.memory 不解码矢量图，跳过（光栅封面内层位图另由 JS 解析）。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.extractSelectionClipImages.skipSvg',
+          'skip vector SVG clip image (Image.memory cannot decode): '
+              '${file.path}',
+          StackTrace.current,
+        );
+        continue;
+      }
+      try {
+        final Uint8List bytes = await file.readAsBytes();
+        if (bytes.isEmpty) continue;
+        // 降采样护体积（长边 1000px / JPEG q90，与制卡截图同档）；小图/无法解码时
+        // downsampleCardScreenshot 原样返回，绝不把有效插图变空。
+        final Uint8List downsampled = downsampleCardScreenshot(bytes);
+        images.add((normOffset: ref.normOffset, bytes: downsampled));
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibiki.extractSelectionClipImages.read', e, stack);
+      }
+    }
+    return images;
   }
 
   // TODO-954：从当前**原生选区**解析句级 cue 区间后走既有导出链 [_exportAudiobookClip]。

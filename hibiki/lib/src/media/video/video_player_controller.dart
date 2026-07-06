@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/video/video_black_flicker_detector.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/startup/media_handle_registry.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -383,6 +384,26 @@ class VideoPlayerController extends ChangeNotifier
   /// libmpv error / log 流、缓冲态——拿到日志后据其分支定位（hwdec 失败 / 纹理未建 /
   /// 解码未出帧 / 轨道问题）。
   void Function(String message)? onDiagLog;
+
+  /// TODO-1119：疑似「Windows 高显卡占用黑屏闪烁」运行时回调。页面（仅在 Windows）在
+  /// [load] 前挂它；null 时**完全不采样**（零开销、零行为变化）。判据在
+  /// [_blackFlickerDetector] 里，持续采样 libmpv 迟帧/丢帧计数器（经 getProperty，
+  /// 独立于 msg-level 日志级别），连续多秒迟帧率超阈值即回调一次（每控制器生命周期一次）。
+  void Function()? onSuspectedBlackFlicker;
+
+  /// TODO-1119：黑闪判据（纯逻辑，见 [VideoBlackFlickerDetector]）。控制器生命周期内
+  /// 只触发一次；换片（换集）只复位采样窗基线、不复位「已触发」。
+  final VideoBlackFlickerDetector _blackFlickerDetector =
+      VideoBlackFlickerDetector();
+
+  /// 上次黑闪采样时刻（节流到 >=1s 一次），null=尚未采样过 / 换片后复位。
+  DateTime? _lastFlickerSampleAt;
+
+  /// 黑闪采样异步读属性期间的重入闸（防 125ms tick 叠发多次 getProperty）。
+  bool _flickerSampleInFlight = false;
+
+  /// hwdec 是否活跃的缓存（黑闪判据前置条件）：null=未查；查不到时 fail-open 视为活跃。
+  bool? _flickerHwdecActive;
 
   /// TODO-984：libmpv `error` / `log` / `videoParams` / `buffering` 流订阅
   /// （仅 [onDiagLog] 非空、即诊断开启时挂）。每次 [load] 重挂、[dispose] 取消，
@@ -1018,6 +1039,11 @@ class VideoPlayerController extends ChangeNotifier
     // 绑同一实例 → 新视频正常渲染；也是 media_kit 切播放列表的正规姿势。
     _tick?.cancel();
     _tick = null;
+    // TODO-1119：换片复位黑闪采样窗基线（新片计数器从头；不复位「已触发」——每控制器
+    // 生命周期只提示一次，换集不再重复弹）。
+    _blackFlickerDetector.resetWindows();
+    _lastFlickerSampleAt = null;
+    _flickerHwdecActive = null;
     await _playingSub?.cancel();
     _playingSub = null;
     await _completedSub?.cancel();
@@ -1282,6 +1308,9 @@ class VideoPlayerController extends ChangeNotifier
       final Player? p = _player;
       if (p == null) return;
       updateCueForPosition(p.state.position.inMilliseconds);
+      // TODO-1119：同一 tick 里顺带做黑闪采样（内部自节流到 >=1s、仅 Windows 挂了
+      // 回调时才真正读属性），不新起定时器。
+      _maybeSampleBlackFlicker(p, loadToken);
     });
 
     // 自动播放：进页面/换集后直接开播（用户偏好）。放在恢复 seek **之后**（否则
@@ -1321,6 +1350,88 @@ class VideoPlayerController extends ChangeNotifier
 
   bool _isCurrentLoad(Player player, int loadToken) =>
       _player == player && _loadToken == loadToken;
+
+  /// TODO-1119：黑闪采样节流入口（每 125ms tick 调一次，内部自节流到 >=1s）。仅当页面
+  /// 挂了 [onSuspectedBlackFlicker]（页面只在 Windows 挂）且尚未触发、且无在途读时才采样。
+  void _maybeSampleBlackFlicker(Player player, int loadToken) {
+    if (onSuspectedBlackFlicker == null) return;
+    if (_blackFlickerDetector.hasFired) return;
+    if (_flickerSampleInFlight) return;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastFlickerSampleAt;
+    if (last != null && now.difference(last).inMilliseconds < 1000) return;
+    final int windowMs =
+        last == null ? 1000 : now.difference(last).inMilliseconds;
+    _lastFlickerSampleAt = now;
+    _flickerSampleInFlight = true;
+    unawaited(_sampleBlackFlicker(player, loadToken, windowMs));
+  }
+
+  /// TODO-1119：读一次 libmpv 迟帧/丢帧计数器喂判据。经 `player.platform`（NativePlayer）
+  /// 的 `getProperty`——仅 libmpv 后端有效，属性读取**独立于 msg-level 日志级别**（故
+  /// TODO-1232 诊断探针 log 级别卡 error 不影响本采样）。每个 await 后用 [_isCurrentLoad]
+  /// 双判据重校验，过期立即放弃（防向已释放 NativePlayer 读属性 = 原生 UAF，与本文件其它
+  /// 异步 mpv 路径一致）。任何属性不可读时静默按 0，绝不抛、不影响播放。
+  Future<void> _sampleBlackFlicker(
+    Player player,
+    int loadToken,
+    int windowMs,
+  ) async {
+    try {
+      final dynamic native = player.platform;
+      if (native == null) return; // 非 libmpv 后端：无属性可读。
+      // hwdec 前置条件：黑闪与 GPU 硬解/共享纹理路径相关，只在硬解活跃时检测。只查一次并
+      // 缓存；查不到时 fail-open（视为活跃，仍受 Windows-gate + 可关闭提示兜底）。
+      if (_flickerHwdecActive == null) {
+        try {
+          final String hwdec =
+              (await native.getProperty('hwdec-current')).toString();
+          if (!_isCurrentLoad(player, loadToken)) return;
+          final String v = hwdec.trim().toLowerCase();
+          _flickerHwdecActive = v.isNotEmpty && v != 'no' && v != 'null';
+        } catch (_) {
+          _flickerHwdecActive = true; // fail-open：读不到 hwdec 也允许检测。
+        }
+      }
+      if (_flickerHwdecActive == false) return; // 软解路径：不检测。
+
+      int readCounter(Object? raw) {
+        final int? n = int.tryParse(raw?.toString().trim() ?? '');
+        return (n == null || n < 0) ? 0 : n;
+      }
+
+      int delayed = 0;
+      int dropped = 0;
+      try {
+        delayed =
+            readCounter(await native.getProperty('vo-delayed-frame-count'));
+      } catch (_) {
+        // 属性不可读：按 0（不致命）。
+      }
+      if (!_isCurrentLoad(player, loadToken)) return;
+      try {
+        dropped = readCounter(await native.getProperty('frame-drop-count'));
+      } catch (_) {
+        // 属性不可读：按 0（不致命）。
+      }
+      if (!_isCurrentLoad(player, loadToken)) return;
+
+      final bool fired = _blackFlickerDetector.addSample(VideoFlickerSample(
+        cumulativeLateFrames: delayed + dropped,
+        windowMs: windowMs,
+        playing: isPlaying,
+      ));
+      if (fired) {
+        _diag(
+          'suspected black flicker: delayed=$delayed dropped=$dropped '
+          'window=${windowMs}ms',
+        );
+        onSuspectedBlackFlicker?.call();
+      }
+    } finally {
+      _flickerSampleInFlight = false;
+    }
+  }
 
   void _clearChaptersForNewLoad() {
     if (_chapters.isEmpty) return;

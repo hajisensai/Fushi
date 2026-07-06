@@ -65,8 +65,30 @@ void main() {
       'video.quality.hwdec',
       'video.quality.deband',
       'video.quality.loop',
+      // TODO-1247 image-quality parity: remaining mpv pure-pref toggles moved
+      // from the in-player sheet so home can change them too.
+      'video.quality.dither',
+      'video.quality.interpolation',
+      'video.quality.deinterlace',
+      'video.quality.correct_downscale',
+      // TODO-1247 geometry parity (mpv videoMpvConfig, applies on next open).
+      'video.geometry.rotate',
+      'video.geometry.aspect',
+      'video.geometry.zoom',
+      'video.geometry.panscan',
+      // TODO-1247 color-balance parity.
+      'video.color.brightness',
+      'video.color.contrast',
+      'video.color.saturation',
+      'video.color.gamma',
+      'video.color.hue',
+      // TODO-1247 audio parity.
+      'video.audio.pitch',
+      'video.audio.channels',
+      'video.audio.normalize_downmix',
       // Subtitle appearance
       'video.subtitle.obscure',
+      'video.subtitle.respect_ass_style', // TODO-1247 respect .ass style parity
       'video.subtitle.font_size',
       'video.subtitle.font_weight',
       'video.subtitle.shadow',

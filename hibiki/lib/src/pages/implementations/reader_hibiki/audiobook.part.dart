@@ -1119,11 +1119,27 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       maxDurationMs: _kAudiobookClipMaxDurationMs,
     );
     if (!result.isExportable) return null;
+    // TODO-1127：把选区里抽取到的插图按归一化文档位置分配到各 cue 段之后。cue 的
+    // normCharStart 从 sasayaki 编码的 textFragmentId 解出（解不出的 cue 传 null，不作
+    // 归属锚点）；`span` 与 result.cueSpans 同序等长（classify 只包一层不可变拷贝），故
+    // 下标对齐。选区无夹图时 _cachedSelectionImages 为空 → 分配结果全空列表，零差异。
+    final List<int?> cueNormStarts = span.map((AudioCue c) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(c.textFragmentId);
+      return (frag != null && frag.normCharStart >= 0)
+          ? frag.normCharStart
+          : null;
+    }).toList(growable: false);
+    final List<List<Uint8List>> imagesByCueIndex = assignClipImagesToCues(
+      cueNormStarts: cueNormStarts,
+      images: _cachedSelectionImages,
+    );
     return _AudiobookClipDynamicPlan(
       audioFileIndex: result.audioFileIndex,
       globalStartMs: result.globalStartMs,
       globalEndMs: result.globalEndMs,
       cueSpans: result.cueSpans,
+      imagesByCueIndex: imagesByCueIndex,
     );
   }
 
@@ -1401,10 +1417,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     );
     if (frames.isEmpty) return false;
 
-    // 去重要渲的高亮下标（每句只渲一次），再批量离屏渲 PNG。
-    final List<AudiobookClipTextSegment> segments = plan.cueSpans
-        .map((AudiobookClipCueSpan s) => AudiobookClipTextSegment(text: s.text))
-        .toList(growable: false);
+    // 去重要渲的高亮下标（每句只渲一次），再批量离屏渲 PNG。TODO-1127：把该句后夹带的
+    // 插图（plan.imagesByCueIndex[i]）一并挂进 segment，渲染层会渲在该句文本之下。
+    final List<AudiobookClipTextSegment> segments = <AudiobookClipTextSegment>[
+      for (int i = 0; i < plan.cueSpans.length; i++)
+        AudiobookClipTextSegment(
+          text: plan.cueSpans[i].text,
+          images: i < plan.imagesByCueIndex.length
+              ? plan.imagesByCueIndex[i]
+              : const <Uint8List>[],
+        ),
+    ];
     final List<int> distinctIndices = <int>[];
     for (final ClipFrameSpec spec in frames) {
       if (!distinctIndices.contains(spec.highlightCueIndex)) {
@@ -1620,10 +1643,15 @@ class _AudiobookClipDynamicPlan {
     required this.globalStartMs,
     required this.globalEndMs,
     required this.cueSpans,
+    this.imagesByCueIndex = const <List<Uint8List>>[],
   });
 
   final int audioFileIndex;
   final int globalStartMs;
   final int globalEndMs;
   final List<AudiobookClipCueSpan> cueSpans;
+
+  /// TODO-1127：与 [cueSpans] 同下标对齐的「每句后夹带插图」列表（选区里夹在该句之后的
+  /// EPUB 插图字节，已降采样）。绝大多数句子为空列表；空则等价旧行为（只渲文本）。
+  final List<List<Uint8List>> imagesByCueIndex;
 }

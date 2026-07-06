@@ -2140,5 +2140,7 @@
   "backup_import_validating_hint": "Checking and previewing the backup file. This may take a moment.",
   "video_quality": "Quality",
   "video_quality_auto": "Auto",
-  "video_quality_switched": "Quality: $label"
+  "video_quality_switched": "Quality: $label",
+  "video_black_flash_notice_action": "View suggestions",
+  "video_black_flash_notice_dont_show_again": "Don't show again"
 }

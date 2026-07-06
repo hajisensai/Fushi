@@ -283,21 +283,23 @@ Future<void> _waitForNextFrame() {
 // 换成多句段落、按 highlightCueIndex 给指定句涂 highlight 衬底、其余句常态 fg。
 // ─────────────────────────────────────────────────────────────────────────
 
-/// 多句整段文本的一段（一句 / 一个 cue 对应的文本 + 可选图片）。
+/// 多句整段文本的一段（一句 / 一个 cue 对应的文本 + 该句后夹带的 EPUB 插图）。
 @immutable
 class AudiobookClipTextSegment {
   const AudiobookClipTextSegment({
     required this.text,
-    this.imageBytes,
+    this.images = const <Uint8List>[],
   });
 
   /// 该句文本（cue.text）。
   final String text;
 
-  /// TODO-1127：该句区间内夹带的 EPUB 插图字节（PNG/JPEG，可空）。当前导出路径
-  /// 尚未从 WebView 抽取插图字节，故常为 null——保留字段+渲染分支，owner 后续接
-  /// 图片抽取时无需改渲染层。
-  final Uint8List? imageBytes;
+  /// TODO-1127：该句文本之后、下一句之前在 DOM 文档序里夹带的 EPUB 插图字节
+  /// （PNG/JPEG，已从 WebView 选区抽取并按需降采样）。空列表 = 该句无夹图（绝大多数
+  /// 句子），此时渲染与旧行为逐字节一致（never break userspace）。用 `List` 而非单个
+  /// `Uint8List?`：一句后可能连着多张插图，列表按文档序保留插入顺序，消除「一段只能挂
+  /// 一张图」的特殊情况。
+  final List<Uint8List> images;
 }
 
 /// TODO-1167 流式渲染回调：渲染层每产出一帧就调一次。[highlightIndex] 是这一帧高亮的
@@ -503,8 +505,9 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
     for (int i = 0; i < widget.segments.length; i++) {
       final AudiobookClipTextSegment segment = widget.segments[i];
       final bool isHighlighted = i == widget.highlightIndex;
-      // TODO-1127：句内夹带插图与文本同层渲进整段图。当前导出路径尚未抽取插图字节，
-      // imageBytes 常为 null → 只渲文本；接上抽取后此分支自动生效，不改渲染层。
+      // TODO-1127：句内夹带插图与文本同层渲进整段图。segment.images 为该句后（下一句前）
+      // 在 DOM 文档序里的 EPUB 插图字节，绝大多数句子为空列表 → 只渲文本（与旧行为逐字节
+      // 一致）；非空时把每张图按序渲在该句文本之下。
       final Widget lineText = Text(
         segment.text,
         style: textStyle,
@@ -529,19 +532,20 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
               ),
               child: lineText,
             );
-      if (segment.imageBytes != null) {
+      if (segment.images.isNotEmpty) {
         lines.add(
           Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               line,
-              Padding(
-                padding: EdgeInsets.only(top: highlightPadV),
-                child: Image.memory(
-                  segment.imageBytes!,
-                  fit: BoxFit.contain,
+              for (final Uint8List imageBytes in segment.images)
+                Padding(
+                  padding: EdgeInsets.only(top: highlightPadV),
+                  child: Image.memory(
+                    imageBytes,
+                    fit: BoxFit.contain,
+                  ),
                 ),
-              ),
             ],
           ),
         );

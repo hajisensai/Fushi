@@ -125,10 +125,14 @@ void main() {
         equals(4),
         reason: '_documentsRoot 定义 1 次 + 三个持久目录方法各调用 1 次 = 4',
       );
+      // TODO-1236：_documentsRoot 改为 resolver 注入优先、path_provider 兜底
+      // ——仍是
+      // 包内唯一直连 path_provider 的表达式，只是被注入点门控（app 层注入 AppPaths）。
       expect(
-        RegExp(r'=>\s*getApplicationDocumentsDirectory\(\)').hasMatch(src),
+        RegExp(r'documentsRootResolver \?\? getApplicationDocumentsDirectory')
+            .hasMatch(src),
         isTrue,
-        reason: '_documentsRoot 应是唯一直连 path_provider 的表达式',
+        reason: '_documentsRoot 应是唯一直连 path_provider 的表达式（经 resolver 门控）',
       );
     });
   });
