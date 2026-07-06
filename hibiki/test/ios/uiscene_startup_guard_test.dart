@@ -54,4 +54,31 @@ void main() {
     expect(appDelegate, contains('getSplashColor'));
     expect(appDelegate, contains('LaunchScreen'));
   });
+
+  test('iOS does not opt into minimum frame duration override on phone', () {
+    final String plist = File('ios/Runner/Info.plist').readAsStringSync();
+    const String key = '<key>CADisableMinimumFrameDurationOnPhone</key>';
+    final int keyIndex = plist.indexOf(key);
+
+    expect(
+      keyIndex,
+      isNonNegative,
+      reason: 'BUG-567: keep the iOS frame pacing override explicit so Xcode '
+          'or Flutter template churn cannot silently re-enable it.',
+    );
+
+    final String valueAfterKey = plist.substring(keyIndex + key.length);
+    final int nextKeyIndex = valueAfterKey.indexOf('<key>');
+    final String valueBlock = nextKeyIndex == -1
+        ? valueAfterKey
+        : valueAfterKey.substring(0, nextKeyIndex);
+
+    expect(
+      valueBlock,
+      contains('<false/>'),
+      reason: 'BUG-567: iOS 27 beta on iPhone 17 crashes in FlutterEngine '
+          'VSyncClient/createTouchRateCorrectionVSyncClientIfNeeded when '
+          'CADisableMinimumFrameDurationOnPhone is true.',
+    );
+  });
 }
