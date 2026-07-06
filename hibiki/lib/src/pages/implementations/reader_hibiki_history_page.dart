@@ -572,26 +572,89 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     return _buildSortItems();
   }
 
-  /// TODO-947 方案A ③④⑤：在排序页内点进一个折叠系列卡——复用现有 [SeriesDetailPage]
-  /// （它已提供成员拖出 setSeriesForEntry(null) + 成员重排）。本页导航内推入子页，返回
-  /// 同折叠视图；拖出只改 seriesId 归属（不动 sortOrder），天然可逆。
+  /// TODO-947 方案A ③④⑤ + P3：在排序页内点进一个折叠系列卡 → 进入「带框成员视图」
+  /// （用户拍板：合集成员用框圈起来、拖出框 = 移出合集）。改 push 一个带 [seriesFrame]
+  /// 的 [ShelfReorderPage]：一层完成成员重排（onPersist 平铺回写 ShelfEntries.sortOrder）
+  /// 与拖出框移出（onRemove 弹确认 + 共享 helper 写库）。SeriesDetailPage 本体不动，仍供
+  /// 主书架路径（[_openSeriesDetail]）使用。返回后折叠条目由上层 [_onActivate.rebuildItems]
+  /// （[_rebuildSortItems]）统一重取刷新。
   Future<void> _enterSeriesInSort(int seriesId) async {
     final SeriesRow? series = _seriesById[seriesId];
+    final String seriesName = series?.name ?? t.series;
+    // 取系列成员，按 sortOrder 构造可重排条目（找不到卡片的成员——已删/远端离线——跳过）。
+    final List<ShelfEntryRow> rows =
+        await appModel.database.getShelfEntriesBySeries(seriesId);
+    rows.sort((ShelfEntryRow a, ShelfEntryRow b) {
+      final int c = a.sortOrder.compareTo(b.sortOrder);
+      return c != 0 ? c : a.entryKey.compareTo(b.entryKey);
+    });
+    final List<ShelfReorderItem> items = <ShelfReorderItem>[];
+    for (final ShelfEntryRow row in rows) {
+      final Widget? card = _buildSeriesMemberCard(row);
+      if (card == null) continue;
+      items.add(ShelfReorderItem(
+        mediaType: row.mediaType,
+        entryKey: row.entryKey,
+        card: card,
+      ));
+    }
+    if (!mounted) return;
     await Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
-        builder: (_) => SeriesDetailPage(
-          database: appModel.database,
-          seriesId: seriesId,
-          initialName: series?.name ?? t.series,
-          memberCardBuilder: _buildSeriesMemberCard,
-          onChanged: () {
-            _shelfOrderFuture = _loadShelfOrder();
-            if (mounted) setState(() {});
-          },
+        builder: (_) => ShelfReorderPage(
+          title: seriesName,
+          initialItems: items,
+          cellExtent: 180,
+          childAspectRatio: kShelfBookCardAspectRatio,
+          feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
+          onPersist: _persistSeriesMemberOrder,
+          seriesFrame: ShelfReorderSeriesFrame(seriesName: seriesName),
+          onRemove: (ShelfReorderItem item) =>
+              _removeMemberFromSeriesInSort(seriesId, item),
         ),
       ),
     );
+  }
+
+  /// TODO-947 P3：带框成员重排页退出时把成员顺序平铺回写 ShelfEntries.sortOrder（成员是
+  /// 系列内的真书条目，走 [batchUpsertShelfOrder] 单事务；不涉及 [splitShelfReorderOrders]
+  /// 的系列卡分流）。空列表跳过（移出到空系列时不做无谓写）。
+  Future<void> _persistSeriesMemberOrder(List<ShelfReorderItem> ordered) async {
+    if (ordered.isEmpty) return;
+    final List<({String mediaType, String entryKey, int sortOrder})> orders =
+        <({String mediaType, String entryKey, int sortOrder})>[
+      for (int i = 0; i < ordered.length; i++)
+        (
+          mediaType: ordered[i].mediaType,
+          entryKey: ordered[i].entryKey,
+          sortOrder: i,
+        ),
+    ];
+    await appModel.database.batchUpsertShelfOrder(orders);
+  }
+
+  /// TODO-947 P3：带框成员视图「拖出框 / 点移出按钮」移出一个成员。弹既有确认框
+  /// （[showRemoveFromSeriesConfirm]），确认后经共享 helper [removeEntryFromSeries] 写库
+  /// （setSeriesForEntry null + 空系列清理），刷新书架归属映射，返回结果给重排页决定是否
+  /// pop（系列清空 → 退回折叠层）。
+  Future<ShelfRemoveResult> _removeMemberFromSeriesInSort(
+      int seriesId, ShelfReorderItem item) async {
+    if (!await showRemoveFromSeriesConfirm(context)) {
+      return const ShelfRemoveResult(removed: false, seriesEmptied: false);
+    }
+    final bool emptied = await removeEntryFromSeries(
+      database: appModel.database,
+      seriesId: seriesId,
+      mediaType: item.mediaType,
+      entryKey: item.entryKey,
+    );
+    _shelfOrderFuture = _loadShelfOrder();
+    if (mounted) {
+      HibikiToast.show(msg: t.removed_from_series);
+      setState(() {});
+    }
+    return ShelfRemoveResult(removed: true, seriesEmptied: emptied);
   }
 
   /// TODO-947-② PR2：把被拖条目 [dragged] 合并进目标条目 [target]。复用既有 Series

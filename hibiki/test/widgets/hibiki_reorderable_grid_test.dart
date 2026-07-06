@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
@@ -313,6 +314,88 @@ void main() {
       expect(reorders, <int>[0, 4], reason: 'canMergeInto=false 退化为重排');
     });
   });
+
+  group('移出与焦点操作 (TODO-947 P3)', () {
+    testWidgets('拖成员出网格边界 → onRemoveOutside(index)，不走 onReorder',
+        (WidgetTester tester) async {
+      final List<int> removed = <int>[];
+      final List<int> reorders = <int>[];
+      // 400x400 网格居中于 800x600 窗口（四周留 margin，才有「框外」可拖）。2 列 200x200，
+      // items [a b / c]。a 中心全局 (300,200)。
+      await tester.pumpWidget(_RemoveHarness(
+        onRemoveOutside: (int i) => removed.add(i),
+        onReorder: (int from, int to) => reorders
+          ..add(from)
+          ..add(to),
+      ));
+      await tester.pumpAndSettle();
+      // 把 a 拖到网格上方（全局 y=40 < 网格顶 y=100）→ 浮层中心出界 → 移出候选。
+      await _dragTo(tester, 'a', const Offset(300, 40));
+      expect(removed, <int>[0], reason: '拖出网格边界移出 a(0)');
+      expect(reorders, isEmpty, reason: '移出落点不得走 onReorder');
+    });
+
+    testWidgets('不传 onRemoveOutside → 拖出边界退化为 clamp 重排（零回归守卫）',
+        (WidgetTester tester) async {
+      final List<int> reorders = <int>[];
+      await tester.pumpWidget(_RemoveHarness(
+        onRemoveOutside: null,
+        onReorder: (int from, int to) => reorders
+          ..add(from)
+          ..add(to),
+      ));
+      await tester.pumpAndSettle();
+      // 把 a 拖到窗口右下（远出网格 400x400 之外）→ 无移出回调 → 命中 clamp 到末格(2)。
+      await _dragTo(tester, 'a', const Offset(760, 560));
+      expect(reorders, <int>[0, 2], reason: '不传回调时拖出边界仍是 clamp 重排 a(0)→末(2)');
+    });
+
+    testWidgets('overlay 移出按钮可聚焦 + Enter 触发；卡片被 ExcludeFocus 不可聚焦',
+        (WidgetTester tester) async {
+      int cardTaps = 0;
+      int removeTaps = 0;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: HibikiReorderableGrid(
+                itemCount: 2,
+                cellExtent: 300,
+                childAspectRatio: 1,
+                keyForIndex: (int i) => ValueKey<String>('k$i'),
+                onReorder: (int from, int to) {},
+                // 焦点驱动移出按钮（在 IgnorePointer/ExcludeFocus 之外，可聚焦）。
+                overlayActionBuilder: (BuildContext ctx, int i) =>
+                    ElevatedButton(
+                  key: ValueKey<String>('rm$i'),
+                  onPressed: () => removeTaps++,
+                  child: const Text('x'),
+                ),
+                // 卡片 = 书架卡（InkWell.onTap = 打开书），应被 ExcludeFocus 排除焦点。
+                itemBuilder: (BuildContext ctx, int i) => Material(
+                  child: InkWell(
+                    onTap: () => cardTaps++,
+                    child: Center(child: Text('item$i')),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      // 禁 tap 坐标：纯焦点驱动。第一次 Tab 应落到 overlay 移出按钮（卡片被排除焦点）。
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(removeTaps, greaterThanOrEqualTo(1),
+          reason: 'Tab 落到 overlay 移出按钮，Enter 触发移出');
+      expect(cardTaps, 0, reason: '卡片被 ExcludeFocus，焦点不落卡片，Enter 不会开书');
+    });
+  });
 }
 
 /// 缩放用例的内层网格（与 _GridHarness 同配置，但直接被 HibikiAppUiScale 包裹）。
@@ -382,6 +465,54 @@ class _MergeHarnessState extends State<_MergeHarness> {
               keyForIndex: (int i) => ValueKey<String>(_items[i]),
               canMergeInto: widget.canMergeInto,
               onMergeIntoTarget: widget.onMergeIntoTarget,
+              onReorder: (int from, int to) {
+                setState(() {
+                  final String it = _items.removeAt(from);
+                  _items.insert(to, it);
+                });
+                widget.onReorder(from, to);
+              },
+              itemBuilder: (BuildContext context, int i) => SizedBox(
+                key: ValueKey<String>('cell_${_items[i]}'),
+                child: Center(child: Text(_items[i])),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 网格小于视口（居中留 margin），才有「框外」可拖：用于 TODO-947 P3 拖出移出用例。
+/// 400x400 网格 + cellExtent 200 → 2 列 200x200，items [a b / c]。
+class _RemoveHarness extends StatefulWidget {
+  const _RemoveHarness(
+      {required this.onRemoveOutside, required this.onReorder});
+  final void Function(int index)? onRemoveOutside;
+  final void Function(int from, int to) onReorder;
+
+  @override
+  State<_RemoveHarness> createState() => _RemoveHarnessState();
+}
+
+class _RemoveHarnessState extends State<_RemoveHarness> {
+  final List<String> _items = <String>['a', 'b', 'c'];
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 400,
+            height: 400,
+            child: HibikiReorderableGrid(
+              itemCount: _items.length,
+              cellExtent: 200,
+              childAspectRatio: 1,
+              keyForIndex: (int i) => ValueKey<String>(_items[i]),
+              onRemoveOutside: widget.onRemoveOutside,
               onReorder: (int from, int to) {
                 setState(() {
                   final String it = _items.removeAt(from);

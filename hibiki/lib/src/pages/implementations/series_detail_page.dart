@@ -99,34 +99,23 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   }
 
   Future<void> _removeMember(ShelfEntryRow row) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => _SeriesConfirmDialog(
-        title: t.remove_from_series,
-        message: t.remove_from_series_confirm,
-        confirmLabel: t.remove_from_series,
-        onConfirm: () => Navigator.pop(ctx, true),
-      ),
+    // 确认 + DB 移出 + 空系列清理统一走共享 helper（TODO-947 P3：与带框成员重排页复用
+    // 同一 UX/原语）。emptied=true 表示移出的是最后一个成员，系列已删，退回上层。
+    if (!await showRemoveFromSeriesConfirm(context)) return;
+    final bool emptied = await removeEntryFromSeries(
+      database: widget.database,
+      seriesId: widget.seriesId,
+      mediaType: row.mediaType,
+      entryKey: row.entryKey,
     );
-    if (confirmed != true) return;
-    await widget.database.setSeriesForEntry(row.mediaType, row.entryKey, null);
-    // M2（TODO-947）：移出最后一个成员后系列已空，删掉它避免留孤儿 Series 行（否则折叠
-    // 视图会显示一张 0 成员的空系列卡）。deleteSeries 走 FK onDelete:setNull，只删 Series
-    // 行、不连坐删成员条目（此刻本成员 seriesId 已被上面置 NULL，无成员可散回），是干净原语。
-    final List<ShelfEntryRow> remaining =
-        await widget.database.getShelfEntriesBySeries(widget.seriesId);
-    if (remaining.isEmpty) {
-      await widget.database.deleteSeries(widget.seriesId);
-      if (!mounted) return;
-      widget.onChanged();
-      HibikiToast.show(msg: t.removed_from_series);
+    if (!mounted) return;
+    widget.onChanged();
+    HibikiToast.show(msg: t.removed_from_series);
+    if (emptied) {
       Navigator.of(context).maybePop();
       return;
     }
-    if (!mounted) return;
-    widget.onChanged();
     await _reload();
-    HibikiToast.show(msg: t.removed_from_series);
   }
 
   Future<void> _reorderMembers() async {
@@ -243,6 +232,41 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       ),
     );
   }
+}
+
+/// TODO-947 P3 共享：弹「移出系列」确认框（平白话文案，复用既有 [_SeriesConfirmDialog]）。
+/// 返回 true = 用户确认移出。抽自 [SeriesDetailPage._removeMember]，供成员视图（带框重排
+/// 页）与详情页复用同一确认 UX。
+Future<bool> showRemoveFromSeriesConfirm(BuildContext context) async {
+  final bool? confirmed = await showAppDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) => _SeriesConfirmDialog(
+      title: t.remove_from_series,
+      message: t.remove_from_series_confirm,
+      confirmLabel: t.remove_from_series,
+      onConfirm: () => Navigator.pop(ctx, true),
+    ),
+  );
+  return confirmed == true;
+}
+
+/// TODO-947 P3 共享：把某条目移出系列（setSeriesForEntry null）；若移出后系列已空则删除
+/// 该 Series 行（避免留 0 成员孤儿卡）。返回系列是否已清空（true → 调用方应 pop）。抽自
+/// [SeriesDetailPage._removeMember] 的 DB 部分，纯 DB 无 UI，供多入口复用同一清理原语。
+Future<bool> removeEntryFromSeries({
+  required HibikiDatabase database,
+  required int seriesId,
+  required String mediaType,
+  required String entryKey,
+}) async {
+  await database.setSeriesForEntry(mediaType, entryKey, null);
+  final List<ShelfEntryRow> remaining =
+      await database.getShelfEntriesBySeries(seriesId);
+  if (remaining.isEmpty) {
+    await database.deleteSeries(seriesId);
+    return true;
+  }
+  return false;
 }
 
 Future<String?> showSeriesNameDialog({

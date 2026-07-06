@@ -31,6 +31,23 @@ typedef HibikiGridMergeCallback = void Function(
 /// null（默认）= 不识别 tap = 与历史逐像素一致（纯拖拽，无点击语义）。
 typedef HibikiGridActivateCallback = void Function(int index);
 
+/// 「把被拖格 [draggingIndex] 拖出网格边界外松手 → 移出」（TODO-947 P3：成员视图
+/// 「拖成员出框 = 移出合集」）。落点校验由网格做：浮层中心落在网格自身 Rect 之外即
+/// 判定移出候选，松手时优先于普通 onReorder 调用本回调。null（默认）= 不接移出 = 拖出
+/// 边界只按 clamp 落到边缘格重排（与历史逐像素一致）。
+typedef HibikiGridRemoveOutsideCallback = void Function(int draggingIndex);
+
+/// 「移出候选态翻转」通知（TODO-947 P3）：浮层中心跨过网格边界（进入/离开移出区）时
+/// 回调，供调用方给「框」换视觉（边框转 error 色 + 显示移出 chip）。网格本身不画框——
+/// 框是调用方（成员视图）的 chrome。null（默认）= 不通知。
+typedef HibikiGridRemoveCandidateChanged = void Function(bool active);
+
+/// 为格 [index] 叠一层可聚焦的悬浮操作层（TODO-947 P3：焦点驱动移出按钮）。返回 null =
+/// 该格无操作。该层叠在卡片 IgnorePointer/ExcludeFocus **之外**，故其内部控件可接收指针
+/// 与键盘焦点（Tab 可达 + Enter 触发）。null（默认）= 不叠 = 网格无焦点操作层。
+typedef HibikiGridOverlayActionBuilder = Widget? Function(
+    BuildContext context, int index);
+
 /// 自实现的二维拖拽重排网格，是 [HibikiReorderableColumn] 的网格版（TODO-616 B2）。
 /// 浮层渲染在本组件自身 Stack 内 + 全程 globalToLocal 把指针转本地坐标，在祖先
 /// Transform.scale（HibikiAppUiScale 整体缩放）下零偏移跟手。
@@ -54,6 +71,9 @@ class HibikiReorderableGrid extends StatefulWidget {
     this.canMergeInto,
     this.onMergeIntoTarget,
     this.onActivate,
+    this.onRemoveOutside,
+    this.onRemoveCandidateChanged,
+    this.overlayActionBuilder,
     super.key,
   });
 
@@ -100,6 +120,16 @@ class HibikiReorderableGrid extends StatefulWidget {
   /// null（默认）= 网格不识别 tap，行为与历史一致（卡片只是拖拽把手，点击落空）。
   final HibikiGridActivateCallback? onActivate;
 
+  /// 「被拖格拖出网格边界外松手 → 移出」回调（TODO-947 P3）。null（默认）= 不启用移出
+  /// 手势（拖出边界只 clamp 落边缘格重排，与历史一致）。非空时启用「拖出框 = 移出合集」。
+  final HibikiGridRemoveOutsideCallback? onRemoveOutside;
+
+  /// 移出候选态翻转通知（TODO-947 P3），供调用方给外框换视觉。null（默认）= 不通知。
+  final HibikiGridRemoveCandidateChanged? onRemoveCandidateChanged;
+
+  /// 每格可聚焦悬浮操作层构造器（TODO-947 P3：焦点驱动移出按钮）。null（默认）= 无操作层。
+  final HibikiGridOverlayActionBuilder? overlayActionBuilder;
+
   @override
   State<HibikiReorderableGrid> createState() => _HibikiReorderableGridState();
 }
@@ -114,6 +144,11 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   /// 且 canMergeInto 放行）。null = 不是合并候选 = 松手走普通 onReorder。仅在同时
   /// 提供 canMergeInto + onMergeIntoTarget 时才可能非空（不传回调=永远 null=纯重排）。
   int? _mergeTarget;
+
+  /// 当前是否「移出候选」= 浮层中心落在网格自身 Rect 之外且 [widget.onRemoveOutside] 非空
+  /// （TODO-947 P3）。true = 松手走移出（优先于 onReorder）+ 边缘 auto-scroll 抑制。不传
+  /// onRemoveOutside 时恒为 false，移出分支彻底不触发（与纯重排逐像素一致）。
+  bool _removeCandidate = false;
 
   /// 合并命中半径系数：浮层中心距目标格中心 < min(cellW,cellH) * 此系数 即判定合并。
   static const double _mergeRadiusFactor = 0.30;
@@ -149,6 +184,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       _dragOriginal = null;
       _dropTarget = null;
       _mergeTarget = null;
+      _removeCandidate = false;
     }
   }
 
@@ -201,6 +237,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       _dragStartDi = original;
       _dropTarget = original;
       _mergeTarget = null;
+      _removeCandidate = false;
       _grabOffset = Offset(
         (local.dx - slot.dx).clamp(0.0, _cellSize.width),
         (local.dy - slot.dy).clamp(0.0, _cellSize.height),
@@ -222,16 +259,25 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     final Offset local = _localOffset(globalPosition);
     setState(() => _feedbackTopLeft = local - _grabOffset);
 
-    // auto-scroll：浮层矩形撞上下边缘时滚动（转全局矩形喂 autoScroller）。
+    // 浮层中心（本地坐标）——移出候选、命中、合并三处判据共用，提前算。
+    final Offset center =
+        _feedbackTopLeft + Offset(_cellSize.width / 2, _cellSize.height / 2);
+
+    // 移出候选判据（TODO-947 P3）：浮层中心落网格自身 Rect 之外且 onRemoveOutside 非空。
+    // 不传回调时恒 false。
+    final bool removeCand = _resolveRemoveCandidate(center);
+    _setRemoveCandidate(removeCand);
+
+    // auto-scroll：浮层矩形撞上下边缘时滚动（转全局矩形喂 autoScroller）。修订1（TODO-947
+    // P3）：移出候选激活时**跳过** auto-scroll——否则向框外（上/下）拖会先触发边缘自动滚动
+    // 抖动，与「拖出框移出」手势打架（浮层中心刚跨出边界那一刻两者会争）。
     final RenderObject? ro = _rootKey.currentContext?.findRenderObject();
-    if (ro is RenderBox && ro.hasSize && _autoScroller != null) {
+    if (ro is RenderBox && ro.hasSize && _autoScroller != null && !removeCand) {
       final Offset topLeftGlobal = ro.localToGlobal(_feedbackTopLeft);
       _autoScroller!.startAutoScrollIfNecessary(topLeftGlobal & _cellSize);
     }
 
     // 2D 命中：浮层中心 → (col,row) → display 下标 → clamp itemCount（防 off-by-one）。
-    final Offset center =
-        _feedbackTopLeft + Offset(_cellSize.width / 2, _cellSize.height / 2);
     final double innerX = center.dx - widget.padding.left;
     final double innerY = center.dy - widget.padding.top + _scrollOffset;
     final int col = (innerX / _strideX).floor().clamp(0, _crossCount - 1);
@@ -268,6 +314,23 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     return target;
   }
 
+  /// 计算浮层中心 [center]（网格本地坐标）是否构成「移出候选」——落在网格自身 Rect 之外
+  /// 且 [widget.onRemoveOutside] 非空（TODO-947 P3）。判据锚网格自身 _rootKey 的 RenderBox
+  /// 尺寸（框留 margin 时框内=网格内、框外/margin 区=网格外，近似等价）；不传回调恒 false。
+  bool _resolveRemoveCandidate(Offset center) {
+    if (widget.onRemoveOutside == null) return false;
+    final RenderObject? ro = _rootKey.currentContext?.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) return false;
+    return !(Offset.zero & ro.size).contains(center);
+  }
+
+  /// 翻转 _removeCandidate 并（仅在真变化时）通知调用方换外框视觉。
+  void _setRemoveCandidate(bool value) {
+    if (_removeCandidate == value) return;
+    setState(() => _removeCandidate = value);
+    widget.onRemoveCandidateChanged?.call(value);
+  }
+
   void _endDrag() {
     final int? dragged = _dragOriginal;
     if (dragged == null) return;
@@ -275,12 +338,22 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     final int from = _dragStartDi;
     final int to = _dropTarget ?? from;
     final int? mergeTarget = _mergeTarget;
+    final bool removeCand = _removeCandidate;
+    // 先清态再回调：确认框/移出流程在 onRemoveOutside 里异步弹出时，网格已无活跃浮层。
     setState(() {
       _dragOriginal = null;
       _dropTarget = null;
       _mergeTarget = null;
+      _removeCandidate = false;
     });
-    // 合并候选优先：落在目标格中心 mergeRadius 区内且 canMergeInto 放行 → 走合并，
+    if (removeCand) widget.onRemoveCandidateChanged?.call(false);
+    // 移出候选最优先（TODO-947 P3）：浮层中心落网格外 + onRemoveOutside 非空 → 走移出，
+    // 不走合并/重排（onRemoveOutside 在 _resolveRemoveCandidate 已验证非空）。
+    if (removeCand) {
+      widget.onRemoveOutside!(from);
+      return;
+    }
+    // 合并候选次之：落在目标格中心 mergeRadius 区内且 canMergeInto 放行 → 走合并，
     // 不走 onReorder（onMergeIntoTarget 在 _resolveMergeTarget 已验证非空）。
     if (mergeTarget != null) {
       widget.onMergeIntoTarget!(from, mergeTarget);
@@ -293,17 +366,21 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   void _cancelDrag() {
     if (_dragOriginal == null) return;
     _autoScroller?.stopAutoScroll();
+    final bool wasRemoveCand = _removeCandidate;
     if (!mounted) {
       _dragOriginal = null;
       _dropTarget = null;
       _mergeTarget = null;
+      _removeCandidate = false;
       return;
     }
     setState(() {
       _dragOriginal = null;
       _dropTarget = null;
       _mergeTarget = null;
+      _removeCandidate = false;
     });
+    if (wasRemoveCand) widget.onRemoveCandidateChanged?.call(false);
   }
 
   Drag _onMultiDragStart(int original, Offset globalPosition) {
@@ -377,7 +454,14 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     // TODO-947：编辑排序态下卡片只是拖拽把手——把渲染出的卡片包进 IgnorePointer，
     // 让卡片内的手势（书架/视频卡片的 InkWell.onTap = 打开书）完全不注册，干净点击
     // 不再穿透打开书；拖拽仍由本格外层 RawGestureDetector（translucent）独立接收指针。
-    final Widget inert = IgnorePointer(child: content);
+    Widget inert = IgnorePointer(child: content);
+    // 修订3（TODO-947 P3）：提供 overlayActionBuilder（成员视图）时，inert 卡再包一层
+    // ExcludeFocus——IgnorePointer 只挡指针，卡片内 InkWell 仍可键盘/手柄聚焦，Tab 落到
+    // 书卡上按 Enter 会开书（违背「排序态点书不开书」）。排除其焦点后 Tab 只落 overlay
+    // 移出按钮（+ 返回按钮）。不传 overlayActionBuilder 时不包，其余页焦点行为不变。
+    if (widget.overlayActionBuilder != null) {
+      inert = ExcludeFocus(child: inert);
+    }
     // 被拖格在原位透明占位（随实时重排移动的空位），可见的是浮层复制。
     Widget slot =
         _dragOriginal == original ? Opacity(opacity: 0.0, child: inert) : inert;
@@ -386,6 +470,21 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     // 卡片渲染/命中。不传合并回调时 _mergeTarget 恒为 null，此分支永不进入。
     if (_mergeTarget == original) {
       slot = _wrapMergeHighlight(slot);
+    }
+    // 焦点驱动移出（TODO-947 P3）：叠一层可聚焦悬浮操作（在 IgnorePointer/ExcludeFocus
+    // 之外），Tab 可达 + Enter 触发。仅 overlayActionBuilder 非空（成员视图）时叠；被拖
+    // 格自身叠上会随浮层一起遮挡，故拖拽中（_dragOriginal==original）不叠。
+    final Widget? overlayAction = _dragOriginal == original
+        ? null
+        : widget.overlayActionBuilder?.call(context, original);
+    if (overlayAction != null) {
+      slot = Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          slot,
+          PositionedDirectional(top: 0, end: 0, child: overlayAction),
+        ],
+      );
     }
     return RawGestureDetector(
       key: widget.keyForIndex(original),
@@ -449,6 +548,10 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
               itemCount: widget.itemCount,
               itemBuilder: (BuildContext context, int i) => _buildCell(i),
             ),
+            // 修订2（TODO-947 P3）：根 Stack 默认 Clip.hardEdge。拖成员出框（浮层中心
+            // 跨出网格边界）时，浮层复制被裁到网格边界外「消失」——这是**刻意选择**的
+            // 预期行为：以「外框转 error 色 + 移出 chip」为唯一拖出反馈，不改 Clip.none
+            // （改了会让浮层溢出到框外/其它区域，反而更乱）。
             if (dragged != null)
               Positioned(
                 left: _feedbackTopLeft.dx,
