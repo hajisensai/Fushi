@@ -237,17 +237,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// 重新定位断链音频：让用户重选文件 → 重写 [SrtBook.audioPaths] → 落库。
   /// 复用与导入一致的「引用原路径」语义（重选的桌面真实路径直接存）。
   Future<void> _relocateSrtBookAudio(SrtBook book) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-    if (result == null || !mounted) return;
-    final List<String> picked = result.files
-        .map((PlatformFile f) => f.path)
-        .whereType<String>()
-        .toList()
-      ..sort(compareAudioFilePath);
-    if (picked.isEmpty) return;
+    final List<String> picked = await _pickSrtAudioFiles();
+    if (picked.isEmpty || !mounted) return;
     book.audioPaths = picked;
     await SrtBookRepository(appModel.database).save(book);
     if (mounted) {
@@ -571,17 +562,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// 与「重新定位」/阅读器内导入归一；旧实现误弹 AudiobookImportDialog 把音频写进
   /// Audiobooks 表，导致 SrtBook 音频对话框查不到、显示空表单。
   Future<void> _openAudioImport(SrtBook book) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-    if (result == null || !mounted) return;
-    final List<String> picked = result.files
-        .map((PlatformFile f) => f.path)
-        .whereType<String>()
-        .toList()
-      ..sort(compareAudioFilePath);
-    if (picked.isEmpty) return;
+    final List<String> picked = await _pickSrtAudioFiles();
+    if (picked.isEmpty || !mounted) return;
 
     HibikiToast.show(msg: t.dialog_importing);
     try {
@@ -597,6 +579,19 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       debugPrint('[ReaderHistory] openAudioImport failed: $e');
       if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
     }
+  }
+
+  Future<List<String>> _pickSrtAudioFiles() async {
+    final Set<String> audioExtensions = AudiobookStorage.audioExtensions
+        .map((String ext) => ext.replaceFirst('.', ''))
+        .toSet();
+    final List<String> paths = await pickRealFilePaths(
+      context: context,
+      appModel: appModel,
+      allowedExtensions: audioExtensions,
+    );
+    paths.sort(compareAudioFilePath);
+    return paths;
   }
 
   Future<void> _openAudiobookImport(MediaItem item, String bookKey) async {

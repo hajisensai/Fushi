@@ -1,8 +1,10 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
     show BookImportDialog, writeEpubBackedSrtBook;
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -487,21 +489,23 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   // ── 文件/目录选择 ────────────────────────────────────────────────────────────
 
+  static final Set<String> _audioExtensions = AudiobookStorage.audioExtensions
+      .map((String ext) => ext.replaceFirst('.', ''))
+      .toSet();
+
   Future<void> _pickAudioFiles() async {
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.audio,
-        allowMultiple: true,
+      final AppModel appModel =
+          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final List<String> paths = await pickRealFilePaths(
+        context: context,
+        appModel: appModel,
+        allowedExtensions: _audioExtensions,
       );
-      if (result == null || !mounted) return;
-
-      final List<String> paths = result.files
-          .map((f) => f.path)
-          .whereType<String>()
-          .toList()
-        ..sort(compareAudioFilePath);
+      if (!mounted) return;
+      paths.sort(compareAudioFilePath);
 
       if (paths.isNotEmpty) {
         setState(() {
@@ -514,7 +518,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
   }
 
-  static const List<String> _alignmentExtensions = [
+  static const Set<String> _alignmentExtensions = {
     'smil',
     'srt',
     'lrc',
@@ -522,36 +526,28 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     'ass',
     'ssa',
     'json',
-  ];
+  };
 
   Future<void> _pickAlignment() async {
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
+      final AppModel appModel =
+          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final String? path = await pickRealFilePath(
+        context: context,
+        appModel: appModel,
         allowedExtensions: _alignmentExtensions,
       );
-      final PlatformFile? file = result?.files.single;
-      final String? path = file?.path;
-      if (path == null || file == null || !mounted) return;
-      const Set<String> allowed = {
-        'smil',
-        'srt',
-        'lrc',
-        'vtt',
-        'ass',
-        'ssa',
-        'json'
-      };
+      if (path == null || !mounted) return;
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
-      if (!allowed.contains(ext)) {
+      if (!_alignmentExtensions.contains(ext)) {
         HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
         return;
       }
       setState(() {
         _alignmentPath = path;
-        _alignmentName = file.name;
+        _alignmentName = p.basename(path);
         _probedCues = null;
         _probedCuesSourcePath = null;
       });

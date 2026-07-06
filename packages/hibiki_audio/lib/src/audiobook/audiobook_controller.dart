@@ -906,6 +906,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     final AudioSession session = await AudioSession.instance;
     await session.configure(
       const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.none,
+        avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+        avAudioSessionRouteSharingPolicy:
+            AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
         androidAudioAttributes: AndroidAudioAttributes(
           contentType: AndroidAudioContentType.music,
           usage: AndroidAudioUsage.media,

@@ -1642,15 +1642,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   }
 
   Future<void> _pickSrtAudioFiles(BuildContext dialogContext) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-    if (result == null) return;
-    final List<String> paths = result.files
-        .map((f) => f.path)
-        .whereType<String>()
-        .toList()
+    final Set<String> audioExtensions = AudiobookStorage.audioExtensions
+        .map((String ext) => ext.replaceFirst('.', ''))
+        .toSet();
+    final List<String> paths = await pickRealFilePaths(
+      context: dialogContext,
+      appModel: appModel,
+      allowedExtensions: audioExtensions,
+    )
       ..sort(compareAudioFilePath);
     if (paths.isNotEmpty && dialogContext.mounted) {
       Navigator.pop(dialogContext, paths);

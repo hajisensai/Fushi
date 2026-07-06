@@ -37,6 +37,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';

@@ -190,6 +190,72 @@ void main() {
       );
     });
 
+    test('audiobook audio/subtitle rows use file picker helper', () {
+      final String audiobook =
+          File('lib/src/media/audiobook/audiobook_import_dialog.dart')
+              .readAsStringSync();
+      final String book =
+          File('lib/src/media/audiobook/book_import_dialog.dart')
+              .readAsStringSync();
+
+      final String audiobookAudio =
+          _methodBody(audiobook, 'Future<void> _pickAudioFiles()');
+      final String bookAudio = _methodBody(book, 'Future<void> _pickAudio()');
+      final String audiobookAlignment =
+          _methodBody(audiobook, 'Future<void> _pickAlignment()');
+      final String bookSubtitle =
+          _methodBody(book, 'Future<void> _pickSubtitle()');
+
+      expect(
+        audiobookAudio.contains('pickRealFilePaths('),
+        isTrue,
+        reason: '有声书补音频必须走文件选择 helper；iOS 的 FileType.audio '
+            '会打开 MPMediaPickerController 资料库入口',
+      );
+      expect(
+        bookAudio.contains('pickRealFilePaths('),
+        isTrue,
+        reason: '书籍导入附带音频必须走文件选择 helper；不得打开 iOS 资料库',
+      );
+      for (final String body in <String>[audiobookAudio, bookAudio]) {
+        expect(body.contains('FileType.audio'), isFalse,
+            reason: 'iOS FileType.audio 会走媒体资料库，不是 Files 文件选择');
+        expect(body.contains('FilePicker.platform.pickFiles'), isFalse,
+            reason: '音频选择应集中到 helper，避免各入口重新踩 iOS 分流');
+      }
+
+      expect(
+        audiobookAlignment.contains('pickRealFilePath('),
+        isTrue,
+        reason: '有声书对齐字幕/SMIL/JSON 必须复用文件 helper，'
+            'iOS 上由 helper 避开 .srt UTI 过滤问题',
+      );
+      expect(
+        bookSubtitle.contains('pickRealFilePath('),
+        isTrue,
+        reason: '书籍导入字幕必须复用文件 helper，和视频字幕路径保持一致',
+      );
+    });
+
+    test('production code never opens iOS media library via FileType.audio',
+        () {
+      final Directory libDir = Directory('lib');
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String src = entity.readAsStringSync();
+        if (src.contains('FileType.audio')) offenders.add(entity.path);
+      }
+
+      expect(
+        offenders,
+        isEmpty,
+        reason: 'iOS FileType.audio opens MPMediaPickerController / media '
+            'library. Audio-file imports must use pickRealFilePath(s) so the '
+            'user stays in Files and .srt/audio sidecars share one path.',
+      );
+    });
+
     test('pickRealFilePath falls back to file_picker without full access', () {
       final String src =
           File('lib/src/media/import/real_path_directory_picker.dart')
@@ -203,6 +269,25 @@ void main() {
         fileEntry.contains('_fallbackPickFile'),
         isTrue,
         reason: '桌面/iOS 及安卓无全文件访问必须回退 file_picker（逃生口）',
+      );
+    });
+
+    test('iOS filtered files are validated after picking public items', () {
+      final String src =
+          File('lib/src/media/import/real_path_directory_picker.dart')
+              .readAsStringSync();
+      expect(
+        src.contains('Future<List<String>> pickRealFilePaths('),
+        isTrue,
+        reason: '有声书音频多选需要公共多文件 helper',
+      );
+      expect(
+        src.contains('defaultTargetPlatform == TargetPlatform.iOS') &&
+            src.contains('FileType.any') &&
+            src.contains('_filterPickedFilesByExtension'),
+        isTrue,
+        reason: 'iOS .srt 等扩展可能解析成 dyn.* UTI，被 custom 过滤器隐藏；'
+            '应先用 public.item 打开 Files，再按扩展名校验',
       );
     });
   });
