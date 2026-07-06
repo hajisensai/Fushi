@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "비디오 자막 색상은 비디오 플레이어 안에서 설정합니다.",
   "theme_seed_preview_hint": "아래 색상 견본은 시드 색상에서 실제로 생성된 색을 미리 보여 줍니다. 특정 색을 주요 강조색으로 고정하려면 「주요 색」 토글을 켜고 직접 선택하세요.",
   "backup_export_categories_title": "내보낼 항목 선택",
-  "backup_export_categories_hint": "선택한 항목이 백업에 포함됩니다. 데이터베이스(책, 통계, 즐겨찾기, 프로필, 설정)는 항상 포함됩니다.",
   "backup_category_dictionary": "사전",
   "backup_category_books": "책 내용",
   "backup_category_audiobooks": "오디오북 오디오",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

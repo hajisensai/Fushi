@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "Altyazı renkleri video oynatıcı içinde ayarlanır.",
   "theme_seed_preview_hint": "Aşağıdaki örnekler, tohum renginizden gerçekte üretilen renkleri önizler. Belirli bir rengi birincil vurgu olarak zorlamak için Birincil anahtarını açıp rengi açıkça seçin.",
   "backup_export_categories_title": "Neyin dışa aktarılacağını seçin",
-  "backup_export_categories_hint": "Seçilen kategoriler yedeğe paketlenir. Veritabanı (kitaplar, istatistikler, sık kullanılanlar, profiller, ayarlar) her zaman dahil edilir.",
   "backup_category_dictionary": "Sözlükler",
   "backup_category_books": "Kitaplar",
   "backup_category_audiobooks": "Sesli kitap sesi",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

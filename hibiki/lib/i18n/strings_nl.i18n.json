@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "Ondertitelkleuren stel je in de videospeler in.",
   "theme_seed_preview_hint": "De stalen hieronder tonen een voorbeeld van de kleuren die daadwerkelijk uit je startkleur worden gegenereerd. Om een specifieke kleur als primaire accentkleur af te dwingen, zet je de schakelaar Primair aan en kies je hem expliciet.",
   "backup_export_categories_title": "Kies wat je wilt exporteren",
-  "backup_export_categories_hint": "De geselecteerde categorieën worden in de back-up verpakt. De database (boeken, statistieken, favorieten, profielen, instellingen) wordt altijd meegenomen.",
   "backup_category_dictionary": "Woordenboeken",
   "backup_category_books": "Boeken",
   "backup_category_audiobooks": "Luisterboekaudio",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "Màu phụ đề video được đặt trong trình phát video.",
   "theme_seed_preview_hint": "Các ô màu bên dưới xem trước những màu thực sự được tạo từ màu hạt giống của bạn. Để buộc một màu cụ thể làm màu nhấn chính, hãy bật công tắc Màu chính và chọn nó rõ ràng.",
   "backup_export_categories_title": "Chọn nội dung để xuất",
-  "backup_export_categories_hint": "Các hạng mục đã chọn sẽ được đóng gói vào bản sao lưu. Cơ sở dữ liệu (sách, thống kê, mục yêu thích, hồ sơ, cài đặt) luôn được bao gồm.",
   "backup_category_dictionary": "Từ điển",
   "backup_category_books": "Nội dung sách",
   "backup_category_audiobooks": "Âm thanh sách nói",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

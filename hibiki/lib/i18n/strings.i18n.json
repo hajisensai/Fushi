@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "Subtitle colors are set inside the video player.",
   "theme_seed_preview_hint": "Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly.",
   "backup_export_categories_title": "Choose what to export",
-  "backup_export_categories_hint": "Selected categories are packed into the backup. Your reading data (progress, statistics, favorites, profiles, settings) is always included in the database. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import.",
   "backup_category_dictionary": "Dictionaries",
   "backup_category_books": "Books",
   "backup_category_audiobooks": "Audiobook audio",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

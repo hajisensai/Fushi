@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "สีของคำบรรยายวิดีโอตั้งค่าได้ภายในโปรแกรมเล่นวิดีโอ",
   "theme_seed_preview_hint": "ตัวอย่างสีด้านล่างคือสีที่สร้างจริงจากสีเริ่มต้นของคุณ หากต้องการกำหนดสีใดเป็นสีเน้นหลักโดยเฉพาะ ให้เปิดสวิตช์ \"สีหลัก\" แล้วเลือกสีนั้นโดยตรง",
   "backup_export_categories_title": "เลือกสิ่งที่จะส่งออก",
-  "backup_export_categories_hint": "หมวดที่เลือกจะถูกแพ็กลงในไฟล์สำรอง ฐานข้อมูล (หนังสือ สถิติ รายการโปรด โปรไฟล์ การตั้งค่า) จะรวมอยู่เสมอ",
   "backup_category_dictionary": "พจนานุกรม",
   "backup_category_books": "เนื้อหาหนังสือ",
   "backup_category_audiobooks": "เสียงหนังสือเสียง",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

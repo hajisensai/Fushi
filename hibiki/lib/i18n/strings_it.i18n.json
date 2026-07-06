@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "I colori dei sottotitoli si impostano all'interno del lettore video.",
   "theme_seed_preview_hint": "I campioni qui sotto mostrano in anteprima i colori effettivamente generati dal tuo colore seme. Per forzare un colore specifico come accento primario, attiva l'opzione Primario e selezionalo esplicitamente.",
   "backup_export_categories_title": "Scegli cosa esportare",
-  "backup_export_categories_hint": "Le categorie selezionate vengono incluse nel backup. Il database (libri, statistiche, preferiti, profili, impostazioni) è sempre incluso.",
   "backup_category_dictionary": "Dizionari",
   "backup_category_books": "Libri",
   "backup_category_audiobooks": "Audio degli audiolibri",
@@ -2130,5 +2129,10 @@
   "video_loading_connecting": "Connecting to stream…",
   "video_loading_subtitle": "Downloading subtitles…",
   "video_loading_buffering": "Buffering…",
-  "video_loading_preparing": "Preparing…"
+  "video_loading_preparing": "Preparing…",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

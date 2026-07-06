@@ -50,6 +50,35 @@ enum BackupCategory {
   /// the `localAudio/` archive prefix; these sets can be large (Forvo-style
   /// audio), so the UI leaves this opt-in by default like videos.
   localAudio,
+
+  /// Reading progress: where you left off in every book. Covers the
+  /// `reader_positions` + `bookmarks` tables and the `audiobook_pos_*`
+  /// preference rows. When unticked these rows are stripped from the exported
+  /// DB copy, so the backup carries the library WITHOUT any position/bookmark.
+  /// Included by default.
+  progress,
+
+  /// Reading / video / mining statistics + favorite words. Covers
+  /// `reading_statistics`, `reading_hourly_logs`, `video_watch_statistics`,
+  /// `video_hourly_logs`, `mining_statistics`, `lookup_mining_counters`,
+  /// `mined_sentences` and `favorite_words`. Stripped from the DB copy when
+  /// unticked. Included by default.
+  statistics,
+
+  /// App + reader settings -- the `preferences` table's pure-settings rows
+  /// (everything EXCEPT audiobook positions/progress, favorite sentences, and
+  /// the content-registry prefs owned by the fonts / local-audio / audio
+  /// categories; see [BackupService.settingsPrefPredicate]). Stripped from the
+  /// DB copy when unticked; on import the LOCAL device's settings are preserved
+  /// instead of being wiped to empty (never turn "exclude settings" into "wipe
+  /// settings"). Included by default.
+  settings,
+
+  /// Configuration profiles -- the `profiles`, `profile_settings`,
+  /// `media_type_profiles` and `book_profiles` tables. Stripped from the DB
+  /// copy when unticked; on import the LOCAL device's profiles are preserved
+  /// instead of being wiped to empty. Included by default.
+  profiles,
 }
 
 /// Rewrites an absolute [oldPath] that lives under [oldRoot] so it lives under
@@ -234,6 +263,7 @@ class BackupMeta {
     this.fontsRoot,
     this.localAudioRoot,
     this.videoFiles = const <String, String>{},
+    this.excludedCategories = const <String>{},
   });
 
   final String appVersion;
@@ -274,6 +304,12 @@ class BackupMeta {
   /// chosen local video restore root.
   final Map<String, String> videoFiles;
 
+  /// Enum names ([BackupCategory.name]) of the categories the user UNTICKED for
+  /// this export (TODO-1193). Import reads `settings` / `profiles` from here to
+  /// know a layer is empty BY CHOICE and must be preserved from the local
+  /// device rather than restored empty. Empty for a legacy backup (all-in).
+  final Set<String> excludedCategories;
+
   Map<String, dynamic> toJson() => {
         'appVersion': appVersion,
         'schemaVersion': schemaVersion,
@@ -285,6 +321,8 @@ class BackupMeta {
         if (fontsRoot != null) 'fontsRoot': fontsRoot,
         if (localAudioRoot != null) 'localAudioRoot': localAudioRoot,
         if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
+        if (excludedCategories.isNotEmpty)
+          'excludedCategories': excludedCategories.toList(),
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -301,6 +339,10 @@ class BackupMeta {
         videoFiles: (json['videoFiles'] as Map?)?.map(
                 (dynamic k, dynamic v) => MapEntry(k as String, v as String)) ??
             const <String, String>{},
+        excludedCategories: (json['excludedCategories'] as List?)
+                ?.map((dynamic e) => e as String)
+                .toSet() ??
+            const <String>{},
       );
 
   static BackupMeta? tryParse(String source) {
@@ -387,6 +429,67 @@ class BackupService {
     'src:reader_ttu:dict_fonts',
     'src:reader_ttu:video_sub_fonts',
   ];
+
+  /// Preference key holding the favorite-sentence JSON list (mirrors
+  /// `FavoriteSentenceRepository._key` / `BackupMergeEngine`). It is CONTENT
+  /// (favorite sentences travel / merge as content), so the `settings` category
+  /// strip must never delete it.
+  static const String _favoriteSentencesPrefKey = 'favorite_sentences';
+
+  /// Content tables stripped from the exported DB copy when the `statistics`
+  /// category is unticked (TODO-1193). None is FK-targeted by another content
+  /// table, so a wholesale DELETE is safe.
+  static const List<String> _statisticsTables = <String>[
+    'reading_statistics',
+    'reading_hourly_logs',
+    'video_watch_statistics',
+    'video_hourly_logs',
+    'mining_statistics',
+    'lookup_mining_counters',
+    'mined_sentences',
+    'favorite_words',
+  ];
+
+  /// The four profile-layer tables in CHILD-first order, so a DELETE sweep of
+  /// the `profiles` category (TODO-1193) never trips an enforced FK to
+  /// `profiles`. The reverse of [_settingsLayerTables] (which is parent-first
+  /// for INSERT).
+  static const List<String> _profilesLayerTablesChildFirst = <String>[
+    'profile_settings',
+    'media_type_profiles',
+    'book_profiles',
+    'profiles',
+  ];
+
+  /// SQL predicate selecting the `preferences` rows the `settings` backup
+  /// category governs (TODO-1193): the PURE app/reader settings only. It
+  /// EXCLUDES (preserves) the rows owned by other categories or that are
+  /// content, so an "exclude settings" export never collaterally drops them:
+  ///   - `audiobook_pos_*`         -> progress (the `progress` category)
+  ///   - `sync_*`                  -> device-local sync config (never travels)
+  ///   - `favorite_sentences`      -> favorites content (travels / merges)
+  ///   - `local_audio_dbs`         -> local-audio registry (`localAudio`)
+  ///   - `audio_source_configs`    -> audio-source config
+  ///   - font catalog + legacy font prefs -> font registry (`fonts`)
+  /// Used SYMMETRICALLY by the export strip and the import preserve-from-bak so
+  /// a `settings`-excluded backup and its restore never diverge.
+  static final String settingsPrefPredicate = _buildSettingsPrefPredicate();
+
+  static String _buildSettingsPrefPredicate() {
+    final List<String> preservedExactKeys = <String>[
+      _favoriteSentencesPrefKey,
+      _localAudioDbsPrefKey,
+      _audioSourceConfigsPrefKey,
+      _fontCatalogPrefKey,
+      ..._legacyFontPrefKeys,
+    ];
+    final String notIn = preservedExactKeys
+        .map((String k) => "'${k.replaceAll("'", "''")}'")
+        .join(', ');
+    return "key NOT LIKE 'audiobook_pos_%' "
+        "AND key NOT LIKE 'sync_%' "
+        'AND key NOT IN ($notIn)';
+  }
 
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
@@ -486,6 +589,28 @@ class BackupService {
         await _retainBooks(tmpDir.path, retainBookKeys);
       }
 
+      // TODO-1193: the four data categories (progress / statistics / settings /
+      // profiles) live only in the DB blob, so when the user unticks any of
+      // them the matching rows are DELETEd from the standalone DB COPY (never
+      // the live user DB). Excluding settings/profiles is made safe on import
+      // by _restoreExcludedSettingsLayers preserving the LOCAL layer from bak.
+      final bool includeProgress = wants(BackupCategory.progress);
+      final bool includeStatistics = wants(BackupCategory.statistics);
+      final bool includeSettings = wants(BackupCategory.settings);
+      final bool includeProfiles = wants(BackupCategory.profiles);
+      if (!includeProgress ||
+          !includeStatistics ||
+          !includeSettings ||
+          !includeProfiles) {
+        await _stripExcludedDataCategories(
+          tmpDir.path,
+          stripProgress: !includeProgress,
+          stripStatistics: !includeStatistics,
+          stripSettings: !includeSettings,
+          stripProfiles: !includeProfiles,
+        );
+      }
+
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
       // The count reported to the import confirm dialog must reflect what is
@@ -520,7 +645,9 @@ class BackupService {
         schemaVersion: _db.schemaVersion,
         createdAt: DateTime.now(),
         bookCount: exportedBookCount,
-        statsCount: stats.length,
+        // Honest to what actually travels: a statistics-excluded backup reports
+        // zero even though the live library has stats (mirrors bookCount).
+        statsCount: includeStatistics ? stats.length : 0,
         // Only record a tree's source root when that tree is actually packed,
         // so import never rebases stored paths against a tree the backup never
         // carried (a no-op for the missing tree either way, but keeping the
@@ -531,6 +658,13 @@ class BackupService {
         fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
         localAudioRoot: wants(BackupCategory.localAudio) ? _dbDirectory : null,
         videoFiles: videoFiles,
+        // Record every unticked category by enum name so import knows a layer is
+        // empty BY CHOICE (vs a genuinely empty DB). Only settings/profiles are
+        // acted on at import; the rest is diagnostic / future-proofing.
+        excludedCategories: <String>{
+          for (final BackupCategory c in BackupCategory.values)
+            if (!wants(c)) c.name,
+        },
       );
 
       if (includeDictionary) {
@@ -687,6 +821,59 @@ class BackupService {
     }
   }
 
+  /// Strips the four DB-only data categories (TODO-1193) from the standalone
+  /// exported DB copy in [dbDirectory] when the user unticked them. Opened via
+  /// [HibikiDatabase] (the copy is already at the current schema, so no
+  /// migration runs). Operates ONLY on the export copy — the live user DB is
+  /// never touched.
+  ///
+  /// - [stripProgress]   : `reader_positions`, `bookmarks`, and the
+  ///   `audiobook_pos_*` preference rows.
+  /// - [stripStatistics] : [_statisticsTables].
+  /// - [stripSettings]   : the pure-settings `preferences` rows
+  ///   ([settingsPrefPredicate]) — progress / favorites / content-registry /
+  ///   sync prefs are deliberately preserved.
+  /// - [stripProfiles]   : the four profile-layer tables (child-first so an
+  ///   enforced FK to `profiles` never blocks the sweep).
+  ///
+  /// A single VACUUM + checkpoint afterwards keeps the deleted rows out of the
+  /// freelist pages so they cannot be recovered from the shared backup.
+  static Future<void> _stripExcludedDataCategories(
+    String dbDirectory, {
+    required bool stripProgress,
+    required bool stripStatistics,
+    required bool stripSettings,
+    required bool stripProfiles,
+  }) async {
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      if (stripProgress) {
+        await db.customStatement('DELETE FROM reader_positions');
+        await db.customStatement('DELETE FROM bookmarks');
+        await db.customStatement(
+            "DELETE FROM preferences WHERE key LIKE 'audiobook_pos_%'");
+      }
+      if (stripStatistics) {
+        for (final String table in _statisticsTables) {
+          await db.customStatement('DELETE FROM $table');
+        }
+      }
+      if (stripSettings) {
+        await db.customStatement(
+            'DELETE FROM preferences WHERE $settingsPrefPredicate');
+      }
+      if (stripProfiles) {
+        for (final String table in _profilesLayerTablesChildFirst) {
+          await db.customStatement('DELETE FROM $table');
+        }
+      }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
   /// Validate a backup ZIP. Returns metadata if valid.
   ///
   /// Streams the central directory via [InputFileStream] instead of reading the
@@ -784,6 +971,19 @@ class BackupService {
       if (metaFile != null) {
         meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
       }
+      // TODO-1193: a backup that unticked `settings` / `profiles` carries an
+      // EMPTY settings / profiles layer BY CHOICE. On an overwrite import the DB
+      // is replaced wholesale, so without a guard those empty layers would WIPE
+      // this device's settings/profiles. Detect the choice from the meta and
+      // preserve the LOCAL layer from bak below (mirrors BUG-454's dictionary
+      // preserve-on-absent). importSettings=false already keeps the whole
+      // settings layer from bak, so it is inherently safe.
+      final bool backupSettingsExcluded =
+          meta?.excludedCategories.contains(BackupCategory.settings.name) ??
+              false;
+      final bool backupProfilesExcluded =
+          meta?.excludedCategories.contains(BackupCategory.profiles.name) ??
+              false;
 
       final String? dictionaryRestoreDirectory = dictionaryResourceDirectory;
       List<MapEntry<ArchiveFile, String>>? dictionaryRestorePlan;
@@ -818,9 +1018,18 @@ class BackupService {
       if (haveCurrent) {
         if (importSettings) {
           preservedSync = await _readDeviceLocalPrefs(dbDirectory);
-          if (preservedSync.isNotEmpty) {
-            await sidecar.writeAsString(jsonEncode(
-                <String, dynamic>{'mode': 'prefs', 'prefs': preservedSync}));
+          // Write the sidecar whenever there is anything to re-apply on crash
+          // recovery: device-local sync prefs AND/OR a settings/profiles layer
+          // that must be preserved from bak because the backup excluded it.
+          if (preservedSync.isNotEmpty ||
+              backupSettingsExcluded ||
+              backupProfilesExcluded) {
+            await sidecar.writeAsString(jsonEncode(<String, dynamic>{
+              'mode': 'prefs',
+              'prefs': preservedSync,
+              if (backupSettingsExcluded) 'preserveSettings': true,
+              if (backupProfilesExcluded) 'preserveProfiles': true,
+            }));
           }
         } else {
           await sidecar
@@ -939,6 +1148,19 @@ class BackupService {
       // 3) Restore what must stay on this device — inline, not deferred to
       //    startup, so the common path never depends on bak surviving a restart.
       if (importSettings) {
+        // TODO-1193: the backup EXCLUDED settings and/or profiles → its DB blob
+        // has those layers empty by choice. Preserve THIS device's layer from
+        // bak FIRST so the overwrite never wipes settings/profiles to empty.
+        // Runs before the sync re-apply so _applyPreservedConfig stays the
+        // authoritative last word on sync config (and clears the folder cache).
+        if ((backupSettingsExcluded || backupProfilesExcluded) && haveCurrent) {
+          await _restoreExcludedSettingsLayers(
+            dbDirectory,
+            bakPath,
+            restoreSettings: backupSettingsExcluded,
+            restoreProfiles: backupProfilesExcluded,
+          );
+        }
         // Re-apply device-local sync config (preferences is schema-stable).
         if (preservedSync.isNotEmpty) {
           await _applyPreservedConfig(dbDirectory, preservedSync);
@@ -1319,6 +1541,19 @@ class BackupService {
         await _restoreSettingsLayer(dbDirectory);
       } else {
         // 'prefs' mode, or a legacy bare-map sidecar (no 'mode' field).
+        // TODO-1193: preserve the LOCAL settings/profiles layer from bak first
+        // (a settings/profiles-excluded backup crashed mid-import), then re-apply
+        // device-local sync config — same order as the inline path.
+        final bool preserveSettings = decoded['preserveSettings'] == true;
+        final bool preserveProfiles = decoded['preserveProfiles'] == true;
+        if (preserveSettings || preserveProfiles) {
+          await _restoreExcludedSettingsLayers(
+            dbDirectory,
+            p.join(dbDirectory, '$_dbName.pre-restore.bak'),
+            restoreSettings: preserveSettings,
+            restoreProfiles: preserveProfiles,
+          );
+        }
         final Map<String, dynamic> prefsRaw =
             (decoded['prefs'] as Map<String, dynamic>?) ?? decoded;
         final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
@@ -1368,6 +1603,66 @@ class BackupService {
         }
       });
       await db.customStatement('DETACH DATABASE bak');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Restores ONLY the excluded settings and/or profiles layers from [bakPath]
+  /// (this device's pre-import snapshot) into the freshly-overwritten DB, so a
+  /// backup that UNTICKED the `settings` / `profiles` category never wipes this
+  /// device's settings/profiles to empty (TODO-1193). The exact mirror of the
+  /// export strip:
+  ///  - [restoreSettings]: the pure-settings preference rows
+  ///    ([settingsPrefPredicate]) — progress / favorites / content-registry /
+  ///    sync prefs stay from the backup (they are content or handled elsewhere).
+  ///  - [restoreProfiles]: the four profile-layer tables (child-first DELETE
+  ///    then parent-first INSERT for FK-safety).
+  /// Runs while both DBs are at the current schema (bak is a copy of the live
+  /// DB), so `SELECT *` columns align. No-op (logged) if bak is gone.
+  static Future<void> _restoreExcludedSettingsLayers(
+    String dbDirectory,
+    String bakPath, {
+    required bool restoreSettings,
+    required bool restoreProfiles,
+  }) async {
+    if (!restoreSettings && !restoreProfiles) return;
+    if (!File(bakPath).existsSync()) {
+      // bak is the only copy of this device's settings/profiles after the
+      // overwrite. Missing it means a crash + external deletion before this ran;
+      // surface loudly rather than silently wiping the layer to empty.
+      debugPrint('BackupService._restoreExcludedSettingsLayers: '
+          'pre-restore.bak missing — local settings/profiles could not be '
+          'preserved for a settings/profiles-excluded backup.');
+      return;
+    }
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      final String safeBak =
+          bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
+      await db.customStatement("ATTACH DATABASE '$safeBak' AS setbak");
+      await db.transaction(() async {
+        if (restoreSettings) {
+          await db.customStatement(
+              'DELETE FROM preferences WHERE $settingsPrefPredicate');
+          await db.customStatement(
+              'INSERT INTO preferences SELECT * FROM setbak.preferences '
+              'WHERE $settingsPrefPredicate');
+        }
+        if (restoreProfiles) {
+          // Child-first DELETE so an enforced FK to `profiles` never blocks the
+          // wipe; parent-first INSERT ([_settingsLayerTables]) so children land
+          // after their profile row.
+          for (final String t in _profilesLayerTablesChildFirst) {
+            await db.customStatement('DELETE FROM $t');
+          }
+          for (final String t in _settingsLayerTables) {
+            await db.customStatement('INSERT INTO $t SELECT * FROM setbak.$t');
+          }
+        }
+      });
+      await db.customStatement('DETACH DATABASE setbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
