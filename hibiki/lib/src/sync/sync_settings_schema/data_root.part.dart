@@ -97,10 +97,11 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     });
   }
 
-  /// 当前数据根展示串：有自定义 data_root（存在）显示其绝对路径，否则显示默认位置 +
-  /// 真实路径。data_root pref 是 DB 外通道，启动早期即可读，故优先用它判定；只有展示
-  /// 默认位置的真实路径时才去读 appDirectory（late 字段），并对其未初始化兜底（早期
-  /// 设置页 / 测试夹具里 AppModel 可能尚未跑完 _prepareRuntimeDirectories）。
+  /// 当前数据根展示串：有自定义 data_root（存在）显示其绝对路径，否则直接显示默认根的
+  /// 真实路径（不再加「默认位置」前缀）。data_root pref 是 DB 外通道，启动早期即可读，
+  /// 故优先用它判定；只有展示默认根真实路径时才去读 appDirectory（late 字段），并对其未
+  /// 初始化兜底（早期设置页 / 测试夹具里 AppModel 可能尚未跑完 _prepareRuntimeDirectories），
+  /// 兜底时才回退到「默认位置」标签。
   String _currentLocationLabel() {
     final String? custom = _prefs?.getString(AppPaths.dataRootPrefKey);
     if (custom != null && custom.trim().isNotEmpty) {
@@ -114,9 +115,9 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     } on Error {
       defaultRootPath = null; // late 未初始化 → 只显示「默认位置」不带路径。
     }
-    return defaultRootPath == null
-        ? t.data_storage_location_default
-        : '${t.data_storage_location_default} - $defaultRootPath';
+    // TODO-1211：直接显示实际路径，不再加「默认位置」前缀；仅 late 未初始化的
+    // 罕见边界回退到标签。
+    return defaultRootPath ?? t.data_storage_location_default;
   }
 
   Future<void> _changeLocation() async {
