@@ -724,11 +724,14 @@ enum ClipGapHighlight {
 /// 全局裁剪窗口 `[globalStartMs, globalEndMs)` 与帧率 [fps]，排出每帧「高亮哪一句」。
 ///
 /// 帧数 = ceil((globalEndMs - globalStartMs) / (1000/fps))，至少 1 帧。第 i 帧的显示
-/// 区间是 `[globalStartMs + i*Δ, globalStartMs + (i+1)*Δ)`（Δ=1000/fps），在其**帧尾**
-/// （下一帧起点前 1ms）采样：在 [cues] 里找**包含该时刻**的 cue（`startMs <= t < endMs`）
-/// → 该帧高亮它。这样句起点被哪一帧的显示区间覆盖，哪一帧就先亮——高亮切换永不
-/// 晚于句起点（最多提前 <Δ ms，宁早不晚，TODO-1147 用户回访「高亮迟钝」）。落在任何 cue 之外（句间 gap / 头尾 padding）
-/// 时按 [gapHighlight] 决定：默认 [ClipGapHighlight.holdPrevious] 保持上一句。
+/// 区间是 `[globalStartMs + i*Δ, globalStartMs + (i+1)*Δ)`（Δ=1000/fps），在其**帧中心**
+/// （`globalStartMs + (i+0.5)*Δ`）采样：在 [cues] 里找**包含该时刻**的 cue（`startMs <= t < endMs`）
+/// → 该帧高亮它。导出视频音视频锁定，第 i 帧播放的音频是 `[globalStartMs+i*Δ,
+/// globalStartMs+(i+1)*Δ)`，某句声音在视频时刻 `S-globalStartMs` 被听到，帧中心采样让
+/// 高亮切换帧落在离句起点**最近**的帧边界（`round((S-globalStartMs)/Δ)`）——对称误差 ≤Δ/2，
+/// 既不迟钝（帧起点采样 = ceil = 最多晚 Δ）也不提前太多（帧尾采样 = floor = 最多早 Δ，
+/// TODO-1147 矫枉过正的根因，TODO-1256 用户回访「对不上」）。落在任何 cue 之外（句间 gap
+/// / 头尾 padding）时按 [gapHighlight] 决定：默认 [ClipGapHighlight.holdPrevious] 保持上一句。
 ///
 /// 相邻相同 highlightCueIndex 的帧合并计数（每句只渲一次 PNG）。返回 [ClipFrameSpec] 列表，
 /// 其 [ClipFrameSpec.frameCount] 之和 == 总帧数。
@@ -760,11 +763,12 @@ List<ClipFrameSpec> clipFramePlan({
   int lastHighlight = _kNoHighlight;
 
   for (int i = 0; i < frameCount; i++) {
-    // TODO-1147（用户回访「高亮迟钝」根因）：原来在**帧起点** t=i*Δ 采样「此刻在读
-    // 哪句」，句起点落在帧中间时要等下一帧才切换——每次切换固定迟 0..Δ ms（12fps
-    // 下最多 83ms、平均约 42ms，且永远只迟不早）。改为在**帧尾**（下一帧起点前
-    // 1ms）采样：切换帧对齐句起点向前取整，永不晚于句起点。
-    final int t = globalStartMs + ((i + 1) * msPerFrame).round() - 1;
+    // TODO-1256（用户回访「对不上」根因·帧-cue 对齐）：帧起点采样（t=i*Δ）= ceil =
+    // 高亮切换最多晚 Δ ms（迟钝，1147 前的老问题）；TODO-1147 曾改成帧尾采样
+    // （t=(i+1)*Δ-1）= floor = 高亮覆盖整帧含声音前那段 = 最多**早** Δ ms（矫枉过正，
+    // 用户觉得提前太多、对不上）。改在**帧中心**（t=(i+0.5)*Δ）采样 = round = 切换帧落在
+    // 离句起点最近的帧边界，对称误差 ≤Δ/2，既不迟钝也不提前太多，真正「对上」句起点。
+    final int t = globalStartMs + ((i + 0.5) * msPerFrame).round();
     int frameIndex = _cueIndexAt(cues, t);
     if (frameIndex == _kNoHighlight) {
       // 句间 gap / 头尾 padding：按策略处理。
