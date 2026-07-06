@@ -463,8 +463,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   Future<void> _openJimakuDialog(VideoPlayerController controller) async {
     final String? query = _jimakuQuery();
     if (query == null) return;
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final String saveDir = p.join(docs.path, 'video_subtitles');
+    // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根 → `<dataRoot>/documents/`
+    // `video_subtitles`；默认根仍是平台 Documents），与 TODO-1226 迁移白名单一致。
+    final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
     if (!context.mounted) return;
     // 语言记忆按系列（番名）粒度：seriesKey = query 归一（小写 + trim），与
     // PreferencesRepository 的 map key 约定一致。打开时读上次语言、选中时写回。
@@ -645,8 +646,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       _showOsd(t.video_subtitle_import_unsupported);
       return;
     }
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final Directory destDir = Directory(p.join(docs.path, 'video_subtitles'));
+    // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根），与迁移白名单 `video_subtitles`
+    // 一致；导入字幕副本落数据根而非平台 Documents。
+    final Directory destDir = await AppPaths.videoSubtitlesDirectory();
     await destDir.create(recursive: true);
     final String dest = p.join(destDir.path, p.basename(srcPath));
     if (!p.equals(srcPath, dest)) {
