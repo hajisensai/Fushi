@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 class AnkiDeck {
@@ -607,16 +608,21 @@ String mimeTypeForPath(String path) {
 String ankiDictionaryMediaCacheDirPath() =>
     '${Directory.systemTemp.path}/anki-media';
 
-/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<path.hashCode>.<ext>`。
+/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<sha1(path)>.<ext>`。
 ///
 /// 无扩展名（path 不含 `.` 或以 `.` 结尾）时回退 `bin`（HBK-AUDIT-062：旧
 /// `split('.').last` 在无点时返回整串当扩展名）。
+///
+/// 不使用 [String.hashCode]：它不是持久化文件名契约，跨运行时/平台/编译模式不保证
+/// 稳定。writer 与各 Anki backend 都通过这个 helper 读写缓存，稳定 SHA-1 文件名可避免
+/// iOS/Android/桌面制卡时偶发读不到外字 SVG。
 String ankiDictionaryMediaCacheFilename(String path) {
   final lastDot = path.lastIndexOf('.');
   final ext = (lastDot >= 0 && lastDot < path.length - 1)
       ? path.substring(lastDot + 1)
       : 'bin';
-  return 'hibiki_dict_${path.hashCode}.$ext';
+  final digest = sha1.convert(utf8.encode(path)).toString();
+  return 'hibiki_dict_$digest.$ext';
 }
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the
