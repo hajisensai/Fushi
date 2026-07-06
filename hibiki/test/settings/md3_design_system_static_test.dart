@@ -831,6 +831,11 @@ void main() {
               'ListTile track rows are the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling subtitle/chapter side panels.',
+      'lib/src/pages/implementations/video_hibiki/quality.part.dart':
+          'HLS quality side panel chrome (variant-list ListTile rows, TODO-1158) '
+              'is the same reviewed media-page exception class as the sibling '
+              'audio_track.part.dart / subtitle side panels — a translucent video '
+              'side-panel list of playable stream qualities, not ordinary page chrome.',
       'lib/src/pages/implementations/video_hibiki/layout.part.dart':
           'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
               'extracted verbatim from video_hibiki_page.dart (TODO-590 '

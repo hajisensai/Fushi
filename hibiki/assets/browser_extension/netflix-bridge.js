@@ -1,8 +1,87 @@
 // TODO-1000 主世界桥（manifest 里 world:MAIN 注入）：content script 跑在隔离世界，够不到页面的
 // window.netflix。这里接 content 发来的 postMessage，用 Netflix **官方播放器 API** seek——走它正规
 // 的缓冲/授权通道，和你手动拖进度条一样，不会 desync → 不触发 M7375（直接改 video.currentTime 才炸）。
+//
+// TODO-1219 P1：本文件 run_at 已改为 document_start（manifest.json），以便在 Netflix 发出播放清单
+// **之前**装好 JSON.parse hook，拦到整集字幕轨。seek 路径不受影响：nfSeek 里 videoPlayer 是收到
+// seek 消息时才惰性解析（非脚本加载时），document_start 只是提前注册 listener + hook，安全。
 (function () {
   var ORIGIN = window.location.origin;
+
+  // ── TODO-1219 P1：整集字幕拦截（数据源） ──
+  // Netflix 播放清单 timedtexttracks[] 列出每条字幕轨的下载地址（明文 WebVTT/TTML，非 DRM；只有
+  // 视频帧/音频受 DRM）。这里用 JSON.parse hook 嗅探清单 → 页面 origin 带 cookie 抓字幕原文 →
+  // 跨世界 postMessage 送隔离世界 content.js 解析。切集/切轨会产生新清单，hook 自然重放刷新。
+  var FMT_PREF = ['webvtt-lssdh-ios8', 'webvtt', 'dfxp-ls-sdh', 'imsc1.1', 'simplesdh', 'nflx-cmisc'];
+  var seenTimedTextUrls = Object.create(null); // URL 去重，同一轨只抓一次
+
+  function pickTrackUrl(track) {
+    var dls = track && track.ttDownloadables;
+    if (!dls) return null;
+    var keys = FMT_PREF.slice();
+    for (var k in dls) { if (keys.indexOf(k) < 0) keys.push(k); } // 未知格式兜底
+    for (var i = 0; i < keys.length; i++) {
+      var dl = dls[keys[i]];
+      if (!dl) continue;
+      var isVtt = keys[i].indexOf('vtt') >= 0 || keys[i] === 'webvtt';
+      var fmt = isVtt ? 'webvtt' : 'ttml';
+      // 新形状 urls:[{url,cdnId}]；旧形状 downloadUrls:{cdnId:url}。
+      if (dl.urls && dl.urls.length && dl.urls[0] && dl.urls[0].url) return { url: dl.urls[0].url, format: fmt };
+      if (dl.downloadUrls) { for (var c in dl.downloadUrls) { if (dl.downloadUrls[c]) return { url: dl.downloadUrls[c], format: fmt }; } }
+    }
+    return null;
+  }
+
+  function langOf(track) {
+    return (track && (track.language || track.bcp47 || track.new_track_id)) || 'und';
+  }
+
+  function fetchCues(videoId, track) {
+    try {
+      if (track && (track.isNoneTrack || track.isForcedNarrative)) return; // 跳过 [None]/强制窄轨
+      var picked = pickTrackUrl(track);
+      if (!picked || seenTimedTextUrls[picked.url]) return;
+      seenTimedTextUrls[picked.url] = 1;
+      var lang = langOf(track);
+      fetch(picked.url, { credentials: 'include' })
+        .then(function (r) { return r.text(); })
+        .then(function (text) {
+          if (!text) return;
+          try {
+            window.postMessage({ __hibikiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text }, ORIGIN);
+          } catch (_) {}
+        })
+        .catch(function () {});
+    } catch (_) {}
+  }
+
+  function harvestManifest(manifest) {
+    try {
+      if (!manifest || !Array.isArray(manifest.timedtexttracks)) return;
+      var videoId = String(manifest.movieId || manifest.viewableId || '');
+      var tracks = manifest.timedtexttracks;
+      for (var i = 0; i < tracks.length; i++) fetchCues(videoId, tracks[i]);
+    } catch (_) {}
+  }
+
+  // JSON.parse 纯透传 hook（红线）：先原样拿到 Netflix 自己的解析结果，再旁路嗅探，任何异常绝不
+  // 外泄——绝不能连带炸 Netflix 自身的解析/播放。
+  var origParse = JSON.parse;
+  JSON.parse = function () {
+    var r = origParse.apply(this, arguments);
+    try {
+      if (r && typeof r === 'object') {
+        if (Array.isArray(r.timedtexttracks)) harvestManifest(r);
+        if (r.result) {
+          if (Array.isArray(r.result.timedtexttracks)) harvestManifest(r.result);
+          if (Array.isArray(r.result.manifests)) {
+            for (var i = 0; i < r.result.manifests.length; i++) harvestManifest(r.result.manifests[i]);
+          }
+        }
+      }
+    } catch (_) {}
+    return r;
+  };
 
   // TODO-1217：player.seek(ms) **返回 ≠ 视频真正重定位完成**。若调完就立刻回 seekDone，content 侧
   // seekTo 会在 Netflix 实际跳转**前**就 resolve → 先 play/录、Netflix 随后才跳 → 用户看到「跳过去又
