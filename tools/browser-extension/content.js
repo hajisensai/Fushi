@@ -5,6 +5,15 @@ console.log('[Hibiki] content script v39 loaded (queue clears on success|duplica
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
 try { document.documentElement.setAttribute('data-hibiki-cs', 'v39'); } catch (_) {}
+// TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
+// （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
+// 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
+// （用户报「浏览器还是没高亮」的根因——1150 只补了调用，没绕开这条平台限制）。故在扩展里
+// 强制 selection.js 回落到 **DOM 包裹**路径（<span class="hoshi-dict-highlight"> 直接改共享 DOM，
+// 页面渲染引擎必然绘制，与世界隔离无关；关窗时 clearSelection→clearHighlightWrappers 还原）。
+// selection.js 先于本脚本加载，这里覆盖它探测出的 true。app 内查词 selection.js 跑在主世界，
+// 不加载 content.js，CSS 高亮照常，互不影响。
+window.__hoshiCssHighlightsSupported = false;
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -705,6 +714,25 @@ document.addEventListener('mousemove', (e) => {
   }
 });
 
+// TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →
+// callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
+// #entries-container 重渲染（yomitan 式单弹窗内导航），对齐 app 的「点释义里的词继续查」。
+window.__hibikiOnLinkClick = function (query) {
+  const term = (query || '').trim();
+  if (!term) return;
+  if (!hibikiExtAlive()) return;
+  try {
+    chrome.runtime.sendMessage({ type: 'lookup', term }, (resp) => {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (!resp || !resp.ok || !resp.data || !resp.data.popupJson) return;
+      const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
+        ? resp.data.result.bestLength : 0;
+      const termLen = best > 0 ? best : term.length;
+      hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
+    });
+  } catch (_) { /* 扩展上下文失效：静默 */ }
+};
+
 function hibikiRender(popupJson, termLen, theme) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
@@ -749,8 +777,12 @@ function hibikiRender(popupJson, termLen, theme) {
     if (left < 8) left = 8;
     if (top + rect.height > vh - 8) top = Math.max(8, ay - rect.height - 4); // 下溢出→翻到词上方
     if (top < 8) top = 8;
-    c.style.left = left + 'px';
-    c.style.top = top + 'px';
+    // TODO-1185：#entries-container 消费 --hibiki-popup-zoom（content.css: zoom: var(...)）。
+    // CSS zoom 会把 fixed 元素的 left/top 也乘以 zoom，直接写视口坐标会被放大偏移。写入前除以
+    // zoom，使渲染用值(styleLeft*zoom) 落回目标视口坐标；zoom 缺省=1（旧 server 无此变量）时零影响。
+    const zoom = parseFloat(getComputedStyle(c).getPropertyValue('--hibiki-popup-zoom')) || 1;
+    c.style.left = (left / zoom) + 'px';
+    c.style.top = (top / zoom) + 'px';
     c.style.visibility = 'visible';
   };
   requestAnimationFrame(place);

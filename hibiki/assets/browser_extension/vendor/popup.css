@@ -46,6 +46,9 @@ body {
 body {
     overflow-x: hidden;
     padding: 0 10px 10px;
+    /* TODO-1185：消费查词响应下发的 --hibiki-popup-zoom（词典字号，跟随 app 弹窗字号设置）。
+       与 in-app 弹窗把 documentElement.style.zoom 缩放同效；缺省 1 = 零影响。 */
+    zoom: var(--hibiki-popup-zoom, 1);
 }
 
 .entry {
@@ -480,8 +483,17 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     margin-top: 0;
 }
 
+/* TODO-1185：消费 --dict-columns（词典多列布局，1..4）。与 content.css / in-app popup.css
+   同款 grid：只用 column-gap，行距靠 glossary-group 的 margin（grid 不折叠 item margin）；
+   min-width:0 防长内容撑宽 1fr 轨溢出。N=1 是未改动的经典单列。 */
+.glossary-section > .category-body {
+    display: grid;
+    grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
+    column-gap: 6px;
+}
 .glossary-section > .category-body > .glossary-group {
     margin-top: 3px;
+    min-width: 0;
 }
 
 .pitch-list {
