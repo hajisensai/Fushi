@@ -137,6 +137,12 @@ function hibikiCurrentCueWindowV() {
 }
 try { setInterval(hibikiSampleCue, 200); } catch (_) {}
 
+// TODO-1219 P3：面板行「精确窗」制卡——从字幕面板行查词时带上该行整集拦截的精确 [startMs,endMs]
+// 窗（胜过 hibikiCurrentCueWindowV 的 DOM 采样窗，DOM 采样在暂停/回放/字幕未渲染时不稳）。契约：
+// 每次查词都刷新此变量——面板行查词（hibikiLookupAtPoint 带 cueWindow）设精确窗；mousemove 划词
+// （无 cueWindow）清成 null 回落 DOM 采样。制卡入口 hibikiEnqueue 优先消费它。null 表示无精确窗。
+let hibikiPendingCueWindow = null;
+
 // ── TODO-1219 P1：整集字幕（主世界 netflix-bridge.js 抓清单 timedtext → 这里解析存档）──
 // P1 仅存档 + console 验证；P2 面板消费 hibikiEpisodeCues。DOM 采样 hibikiCueHist 仍作回退不删。
 // 解析器 parseWebVtt / parseTtml 定义在 subtitle-adapters.js（同隔离世界、先于 content.js 加载）。
@@ -211,7 +217,11 @@ function hibikiQueueKey(q) {
   return String(word) + ' ' + String(sent) + ' ' + String(site) + ' ' + String(vid);
 }
 window.hibikiEnqueue = function (fields, sentence) {
-  const w = hibikiCurrentCueWindowV();
+  // TODO-1219 P3：若本次查词来自字幕面板行（hibikiPendingCueWindow 非空），用该行整集拦截的精确
+  // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 hibikiCurrentCueWindowV 的 DOM 采样窗。下方
+  // startV-200/endV+200 录制边距 + hibikiQueueKey 去重两路不变。
+  const cw = hibikiPendingCueWindow;
+  const w = cw ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs } : hibikiCurrentCueWindowV();
   if (!w) return { ok: false, reason: 'no-cue' };
   const site = hibikiSite();
   const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
@@ -322,6 +332,9 @@ async function hibikiRunNetflixBatch() {
     '.watch-video--bottom-controls-container,.PlayerControlsNeo__layout,' +
     '[data-uia="controls-standard"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
+  // TODO-1219 P3：撤销字幕面板对播放器的推挤（video 恢复全宽），否则录制画面右侧带面板留出的
+  // 黑边。面板此刻已被 hideStyle 隐藏；这里只还原播放器宽度。finally 里 hideStyle.remove() 后重挂。
+  try { if (typeof window.hibikiSubtitlePanelSuspendPush === 'function') window.hibikiSubtitlePanelSuspendPush(); } catch (_) {}
   const prevCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
   let done = 0, fail = 0, unconfigured = 0;
@@ -410,6 +423,8 @@ async function hibikiRunNetflixBatch() {
     // V16#3：无论批量循环正常结束还是中途抛错，都必还原隐藏字幕的样式 + 光标，绝不把
     // cursor:none / 藏字幕样式泄漏到用户可见界面（循环外抛异常留可见副作用的根因）。
     try { hideStyle.remove(); } catch (_) {}
+    // TODO-1219 P3：录制结束（成功或异常）后重挂面板推挤，播放器回到收窄态、面板重新贴右显示。
+    try { if (typeof window.hibikiSubtitlePanelResumePush === 'function') window.hibikiSubtitlePanelResumePush(); } catch (_) {}
     document.body.style.cursor = prevCursor;
     // TODO-1175/1217：仅当批量前正在播放时才回原位并续播（暂停态制卡不回跳，消除「跳过去又秒挑
     // 回来」的刺眼跳动）；批量前是暂停态则停在当前句、不回跳。
@@ -648,7 +663,10 @@ document.addEventListener('mousemove', (e) => {
 // 弹窗），冻结 video.currentTime → 句子窗口停在句末，offscreen 随之暂停录制保住这句 → 制卡得整句、
 // 干净。YouTube 走服务端裁剪路径不需暂停；普通网页背景视频更不该被查词误暂停。仅在播放时暂停、不
 // 自动恢复（用户查完自己按空格续播）。幂等（重复调用只在 !paused 时暂停）。
-function hibikiSendLookup(term, anchorRect) {
+function hibikiSendLookup(term, anchorRect, cueWindow) {
+  // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
+  // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
+  hibikiPendingCueWindow = cueWindow || null;
   if (!term || !term.trim()) return;
   if (hibikiSite() === 'netflix') {
     try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}
@@ -685,7 +703,7 @@ function hibikiSendLookup(term, anchorRect) {
 // TODO-1219 P2：面板行内文本「显式点击查词」的入口（供 subtitle-panel.js 调用）。点击命中的
 // (clientX,clientY) 复用与 mousemove 划词同一套 hoshiSelection 取词（含流媒体字幕覆盖层兜底），
 // 选中后走 hibikiSendLookup 发查词 + 渲染弹窗，取词/高亮/锚点与全局划词完全一致。
-window.hibikiLookupAtPoint = function (clientX, clientY) {
+window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow) {
   if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
   let hit = window.hoshiSelection.getCharacterAtPoint(clientX, clientY);
   if (!hit) {
@@ -703,7 +721,7 @@ window.hibikiLookupAtPoint = function (clientX, clientY) {
     }
   } catch (_) { anchorRect = null; }
   hibikiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
-  hibikiSendLookup(term, anchorRect);
+  hibikiSendLookup(term, anchorRect, cueWindow); // TODO-1219 P3：面板行传入精确窗
 };
 
 // TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →

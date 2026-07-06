@@ -28,6 +28,7 @@
     activeLang: null, videoId: null, cues: [], rowEls: [], currentIndex: -1,
     autoScroll: true, fontScaleIndex: 1, hidden: false, panel: null, listEl: null,
     langSelect: null, builtLang: null, builtLen: -1, pushedEl: null, prevWidth: '', tickTimer: null,
+    pushSuspended: false,
   };
 
   function nfVideoId() {
@@ -85,7 +86,8 @@
   }
 
   function applyPush() {
-    if (st.pushedEl) return;
+    // TODO-1219 P3：录制期间推挤被挂起（video 需全宽），此时不重挂（refresh/fullscreenchange 也不）。
+    if (st.pushSuspended || st.pushedEl) return;
     for (var i = 0; i < PUSH_SELECTORS.length; i++) {
       var el = document.querySelector(PUSH_SELECTORS[i]);
       if (el) {
@@ -245,7 +247,8 @@
     text.addEventListener('click', function (e) {
       e.stopPropagation();
       if (typeof window.hibikiLookupAtPoint === 'function') {
-        window.hibikiLookupAtPoint(e.clientX, e.clientY);
+        // TODO-1219 P3：带上该行整集拦截的精确窗，制卡（hibikiEnqueue）用它而非 DOM 采样。
+        window.hibikiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text });
       } else {
         seekTo(cue.startMs);
       }
@@ -321,6 +324,17 @@
     st.currentIndex = -1;
     tick();
   }
+
+  // TODO-1219 P3：Netflix 批量录制（content.js hibikiRunNetflixBatch）录整标签页前调用，撤销推挤让
+  // 播放器全宽（录制画面不带面板黑边）；录完调 resume 重挂。挂起期间 applyPush 被 pushSuspended 门控。
+  window.hibikiSubtitlePanelSuspendPush = function () {
+    st.pushSuspended = true;
+    clearPush();
+  };
+  window.hibikiSubtitlePanelResumePush = function () {
+    st.pushSuspended = false;
+    if (!st.hidden && st.panel && st.panel.parentNode) applyPush();
+  };
 
   window.hibikiSubtitlePanelOnCues = function (_key) {
     if (st.hidden) { showReopen(); return; }

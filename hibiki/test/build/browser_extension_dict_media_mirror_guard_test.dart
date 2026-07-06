@@ -126,6 +126,67 @@ void main() {
         expect(src.contains('#hibiki-subtitle-panel'), isTrue,
             reason: '$root vendor/content.css missing subtitle panel styles');
       });
+
+      // TODO-1219 P3：精确窗制卡——面板行制卡用该行整集拦截的精确 [startMs,endMs] 覆盖 DOM 采样窗。
+      test('[$name] content.js mines with the panel row precise window', () {
+        final String src = File('$root/content.js').readAsStringSync();
+        // hibikiEnqueue 优先消费面板行查词设下的精确窗（hibikiPendingCueWindow），否则回落 DOM 采样。
+        expect(src.contains('hibikiPendingCueWindow'), isTrue,
+            reason:
+                '$root content.js must thread a precise cue window for panel-row mining');
+        expect(
+            src.contains(
+                'cw ? { text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs } : hibikiCurrentCueWindowV()'),
+            isTrue,
+            reason:
+                '$root content.js hibikiEnqueue must prefer the precise window over DOM sampling');
+        // 录制边距 + 去重不得丢（复核修订 5 红线）。
+        expect(
+            src.contains(
+                'startV: Math.max(0, w.startV - 200), endV: w.endV + 200'),
+            isTrue,
+            reason: '$root content.js must keep the -200/+200 record margins');
+        expect(src.contains('hibikiQueueKey'), isTrue,
+            reason: '$root content.js must keep TODO-1222 dedup');
+      });
+
+      // TODO-1219 P3：录制前撤推挤——批量录制整标签页前恢复播放器全宽（录制画面不带面板黑边）。
+      test('[$name] batch capture suspends and resumes the panel push', () {
+        final String src = File('$root/content.js').readAsStringSync();
+        expect(src.contains('window.hibikiSubtitlePanelSuspendPush()'), isTrue,
+            reason:
+                '$root content.js hibikiRunNetflixBatch must un-push the player before capture');
+        expect(src.contains('window.hibikiSubtitlePanelResumePush()'), isTrue,
+            reason:
+                '$root content.js must re-apply the panel push after capture');
+        final int suspend = src.indexOf('hibikiSubtitlePanelSuspendPush()');
+        final int resume = src.indexOf('hibikiSubtitlePanelResumePush()');
+        expect(suspend >= 0 && resume > suspend, isTrue,
+            reason:
+                '$root content.js must suspend push before capture and resume after');
+      });
+
+      test(
+          '[$name] subtitle-panel.js exposes push suspend/resume + precise row window',
+          () {
+        final String src = File('$root/subtitle-panel.js').readAsStringSync();
+        expect(src.contains('window.hibikiSubtitlePanelSuspendPush'), isTrue,
+            reason:
+                '$root subtitle-panel.js must expose SuspendPush for batch capture');
+        expect(src.contains('window.hibikiSubtitlePanelResumePush'), isTrue,
+            reason:
+                '$root subtitle-panel.js must expose ResumePush for batch capture');
+        expect(src.contains('st.pushSuspended'), isTrue,
+            reason:
+                '$root subtitle-panel.js applyPush must be gated while suspended');
+        // 行文本查词把该行精确 [startMs,endMs] 传进 hibikiLookupAtPoint。
+        expect(
+            src.contains(
+                'window.hibikiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text })'),
+            isTrue,
+            reason:
+                '$root subtitle-panel.js row lookup must carry the precise cue window');
+      });
     });
   });
 
