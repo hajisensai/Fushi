@@ -314,6 +314,48 @@ void main() {
     });
   });
 
+  group('ReaderContentStyles ruby highlight lane', () {
+    test('vertical ruby highlights draw only the base text lane', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('vertical-rl');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+
+      expect(css, contains('--hoshi-ruby-highlight-color'),
+          reason: 'ruby 高亮颜色应先落到变量，再由窄背景条统一绘制');
+      expect(css, contains('background-size: 1em 100% !important'),
+          reason: '竖排 ruby 高亮只能占正文基字的 1em 横向宽度，不能包含 rt 注音轨');
+      expect(css, contains('background-position: left center !important'),
+          reason: 'vertical-rl 下 rt 在右侧，正文基字窄条应钉在左侧');
+
+      final int sasayakiStart =
+          css.indexOf('ruby.hoshi-sasayaki-ruby-active {');
+      expect(sasayakiStart, isNonNegative);
+      final String sasayakiBlock = css.substring(
+        sasayakiStart,
+        css.indexOf('}', sasayakiStart),
+      );
+      expect(
+        sasayakiBlock,
+        isNot(contains(
+            'background-color: var(--hoshi-sasayaki-background-color)')),
+        reason: 'sasayaki 不能再直接给整个 ruby 容器刷背景，否则有振假名时条会变宽',
+      );
+    });
+
+    test('horizontal ruby highlights draw only the base text lane', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('horizontal-tb');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+
+      expect(css, contains('background-size: 100% 1em !important'),
+          reason: '横排 ruby 高亮只能占正文基字的 1em 纵向高度，不能包含上方 rt 注音轨');
+      expect(css, contains('background-position: left bottom !important'),
+          reason: 'horizontal-tb 默认 rt 在上方，正文基字窄条应钉在底部');
+    });
+  });
+
   group('ReaderLayoutDefaults', () {
     test('constants are consistent', () {
       expect(ReaderLayoutDefaults.fontSizePx, 22);
