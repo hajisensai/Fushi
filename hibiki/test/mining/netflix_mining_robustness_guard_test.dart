@@ -143,43 +143,22 @@ void main() {
     });
   });
 
-  // TODO-1170：网飞制卡提示不再在右下角常驻小控件，改成「中间下方短暂 toast」。
-  // 源码扫描守卫（不依赖真机/真浏览器），两份镜像都守；内容不变，只改位置 + 停留。
-  group('TODO-1170 网飞制卡提示：中下短暂 toast、非右下常驻', () {
+  // TODO-1170 → TODO-1221：网飞制卡提示走「中间下方短暂 toast」；页面右下角常驻队列 chip 已
+  // 整体删除（队列 UI 迁到工具栏图标 popup）。守卫收敛为：content.js 绝无页面浮层常驻 chip
+  // （hibikiChip/hibikiRenderQueueList 符号不复活），且 toast 仍是中下短暂定位。源码扫描守卫
+  // （不依赖真机/真浏览器），两份镜像都守。
+  group('TODO-1170/1221 网飞制卡提示：中下短暂 toast、无右下常驻 chip', () {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
-        test('Netflix 分支隐藏常驻 chip、只在队列增长时弹短暂 toast（内容不变）', () {
+        test('绝无页面浮层常驻 chip（hibikiChip 已删，队列 UI 迁到 action-popup）', () {
           final String src = content.readAsStringSync();
-          // Netflix 走短暂提示：隐藏右下角常驻 chip。
-          expect(
-              src.contains(
-                  "if (hibikiChip) hibikiChip.style.display = 'none';"),
-              isTrue,
-              reason: '${content.path} Netflix 未隐藏右下角常驻 chip');
-          // 只在队列**增长**时弹一次（避免加载/删除/跨标签同步刷屏）。
-          expect(
-              src.contains(
-                  "if (total > hibikiLastQueueTotal && typeof window.hibikiToast === 'function')"),
-              isTrue,
-              reason: '${content.path} Netflix toast 未按队列增长门控');
-          // 提示内容保持不变（与旧 chip 文案一致）。
-          expect(
-              src.contains(
-                  "window.hibikiToast('制卡队列 ' + total + ' · 点扩展图标生成本片 ' + here);"),
-              isTrue,
-              reason: '${content.path} Netflix 提示文案被改动');
-        });
-
-        test('Netflix 分支在常驻 chip 创建之前 return（绝不落右下角）', () {
-          final String src = content.readAsStringSync();
-          final int nfIdx =
-              src.indexOf("if (hibikiChip) hibikiChip.style.display = 'none';");
-          final int chipIdx =
-              src.indexOf('hibikiChip = document.createElement');
-          expect(nfIdx, greaterThanOrEqualTo(0),
-              reason: '${content.path} 缺 Netflix 短暂 toast 分支');
-          expect(chipIdx, greaterThan(nfIdx),
-              reason: '${content.path} Netflix 分支须在常驻 chip 创建前 return');
+          // TODO-1221：右下角常驻 chip 及其渲染彻底删除，绝不复活（否则又落右下角常驻控件）。
+          expect(src.contains('hibikiChip'), isFalse,
+              reason: '${content.path} 复活了页面浮层常驻 chip（hibikiChip）');
+          expect(src.contains('hibikiRenderQueueList'), isFalse,
+              reason: '${content.path} 复活了页面内队列列表渲染（应在 action-popup.js）');
+          expect(src.contains('document.createElement'), isTrue,
+              reason: '${content.path} sanity: 应仍有 DOM 创建（toast 等）');
         });
 
         test('hibikiToast 定位为中间下方、非 sticky 时 5s 自动淡出（短暂）', () {
@@ -201,11 +180,12 @@ void main() {
     }
   });
 
-  // TODO-1175：网飞批量制卡结束后视频回到批量前的位置并恢复原播放/暂停态。
-  // 批量循环逐句 seekTo + 暂停会把视频停在最后一句 + 暂停态；必须在进入批量前记录
-  // currentTime/paused，并在外层 finally（成功或异常都走）里 seek 回 + 恢复播放态。
-  // 源码扫描守卫（不依赖真机/真浏览器），两份镜像都守。
-  group('TODO-1175 网飞批量制卡后回到原播放位置/态', () {
+  // TODO-1175 → TODO-1217：网飞批量制卡结束后回到批量前位置并恢复原播放态。批量循环逐句
+  // seekTo + 暂停会把视频停在最后一句 + 暂停态；进入批量前记录 currentTime/paused，在外层
+  // finally（成功或异常都走）里还原。TODO-1217seek 细化：**仅当批量前正在播放**才回位并续播
+  // （暂停态制卡不回跳，消除「跳过去又秒挑回来」的跳动），即 seekTo(resumeAt) 与 v.play() 都
+  // 门控进 `if (wasPlaying)`。源码扫描守卫（不依赖真机/真浏览器），两份镜像都守。
+  group('TODO-1175/1217 网飞批量制卡后按 wasPlaying 回到原播放位置/态', () {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
         test('批量前记录 resumeAt/wasPlaying（video 元素取到之后）', () {
@@ -216,23 +196,31 @@ void main() {
               reason: '${content.path} 未记录批量前播放态 wasPlaying');
         });
 
-        test('外层 finally 里 seek 回 resumeAt + 按 wasPlaying 恢复播放', () {
+        test('外层 finally 里按 wasPlaying 门控 seek 回 resumeAt + 续播', () {
           final String src = content.readAsStringSync();
           // 用现有 seekTo（走官方 API seek）回到原位。
           expect(src.contains('try { await seekTo(resumeAt); } catch (_) {}'),
               isTrue,
               reason: '${content.path} finally 未 seek 回批量前位置');
-          // 原来在播才恢复播放，原本暂停则保持暂停。
-          expect(
-              src.contains(
-                  'if (wasPlaying) { try { await v.play(); } catch (_) {} }'),
-              isTrue,
-              reason: '${content.path} finally 未按 wasPlaying 恢复播放态');
+          // 原来在播才回位并续播；原本暂停则不回跳、保持暂停（TODO-1217seek）。
+          expect(src.contains('try { await v.play(); } catch (_) {}'), isTrue,
+              reason: '${content.path} finally 未续播 v.play()');
+          // 回位 + 续播都必须门控进 if (wasPlaying)：门在两者之前。
+          final int gateIdx = src.indexOf('if (wasPlaying) {');
+          final int seekBackIdx =
+              src.indexOf('try { await seekTo(resumeAt); } catch (_) {}');
+          final int playIdx = src.indexOf(
+              'try { await v.play(); } catch (_) {}',
+              seekBackIdx >= 0 ? seekBackIdx : 0);
+          expect(gateIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} 缺 if (wasPlaying) 门控');
+          expect(seekBackIdx, greaterThan(gateIdx),
+              reason: '${content.path} seek 回位未门控进 wasPlaying');
+          expect(playIdx, greaterThan(seekBackIdx),
+              reason: '${content.path} 续播未门控进 wasPlaying（应在 seek 之后）');
           // 还原必须在外层 finally（还原光标那块）里，才能成功/异常都走到。
           final int cursorIdx =
               src.indexOf('document.body.style.cursor = prevCursor;');
-          final int seekBackIdx =
-              src.indexOf('try { await seekTo(resumeAt); } catch (_) {}');
           expect(cursorIdx, greaterThanOrEqualTo(0));
           expect(seekBackIdx, greaterThan(cursorIdx),
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');

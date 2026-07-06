@@ -8,12 +8,20 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-1184：制卡队列永不清 + 无限循环 —— 根因是出队判据只认 `success`，`duplicate`
 ///   （卡已存在再制命中 Anki 查重）被判非 ok 永久滞留 → 队列永不清。修复：出队判据放宽为
 ///   `success || duplicate`（经 hibikiClassifyMineResp 分类），并加逐项删除 UI。
+///   TODO-1221 后续：页面右下角常驻队列 chip 已删，队列 UI（列表 + 逐项删除）统一迁到浏览器
+///   工具栏图标 popup（`vendor/action-popup.js`）；出队分类器仍在 content.js，逐项删除守卫
+///   随之指向 action-popup.js 的 hibikiFilterQueue/removeItem/hp-del（语义契约「队列可逐项
+///   删除」不变，仅承载点迁移）。
 /// TODO-1185：查词弹窗撑满全屏 —— 根因是 `#entries-container` 只有 position/z-index 无宽高
 ///   约束。修复：content.css 给 `#entries-container` 补 width/max-height/overflow-y 有界约束。
 void main() {
   // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
   final File toolsContent = File('../tools/browser-extension/content.js');
+  final File assetsActionPopup =
+      File('assets/browser_extension/vendor/action-popup.js');
+  final File toolsActionPopup =
+      File('../tools/browser-extension/vendor/action-popup.js');
   final File assetsCss = File('assets/browser_extension/vendor/content.css');
   final File toolsCss = File('../tools/browser-extension/vendor/content.css');
   // 服务端主题下发弹窗尺寸的真值源（app_model.browserExtensionThemeColors）。
@@ -62,15 +70,32 @@ void main() {
           expect(src.contains("resp.data.result === 'success'"), isFalse,
               reason: '${content.path} 仍残留「仅 success 出队」硬判据（duplicate 会滞留）');
         });
+      });
+    }
 
-        test('逐项删除 UI：展开列表 + 删除按钮调 hibikiRemoveQueued([id])', () {
-          final String src = content.readAsStringSync();
-          expect(src.contains('function hibikiRenderQueueList('), isTrue,
-              reason: '${content.path} 缺可展开队列列表渲染');
-          expect(src.contains("className = 'hibiki-queue-row-del'"), isTrue,
-              reason: '${content.path} 缺逐项删除按钮');
-          expect(src.contains('hibikiRemoveQueued([id])'), isTrue,
-              reason: '${content.path} 删除按钮未调 hibikiRemoveQueued([id])');
+    // TODO-1221：逐项删除 UI 已从页面浮层 chip 迁到工具栏图标 popup（action-popup.js）。
+    // 语义契约「队列可逐项删除」不变，守卫指向新承载点：纯剔除函数 hibikiFilterQueue +
+    // 逐项删除 removeItem + 删除按钮 hp-del（点击调 removeItem(id)）。
+    for (final File popup in <File>[assetsActionPopup, toolsActionPopup]) {
+      group('action-popup.js ${popup.path}', () {
+        test('文件存在', () {
+          expect(popup.existsSync(), isTrue, reason: 'missing ${popup.path}');
+        });
+
+        test('逐项删除 UI：列表渲染 + 删除按钮调 removeItem(id)（剔除走 hibikiFilterQueue）', () {
+          final String src = popup.readAsStringSync();
+          // 纯剔除函数（读-改-写核心，node 测试也守）。
+          expect(src.contains('function hibikiFilterQueue('), isTrue,
+              reason: '${popup.path} 缺队列剔除纯函数 hibikiFilterQueue');
+          // 逐项删除入口。
+          expect(src.contains('async function removeItem('), isTrue,
+              reason: '${popup.path} 缺逐项删除 removeItem');
+          // 删除按钮。
+          expect(src.contains("del.className = 'hp-del';"), isTrue,
+              reason: '${popup.path} 缺逐项删除按钮 hp-del');
+          // 按钮点击调 removeItem(id)。
+          expect(src.contains('if (id) removeItem(id);'), isTrue,
+              reason: '${popup.path} 删除按钮未调 removeItem(id)');
         });
       });
     }
@@ -137,6 +162,11 @@ void main() {
     test('content.css', () {
       expect(assetsCss.readAsBytesSync(), toolsCss.readAsBytesSync(),
           reason: 'content.css 两份镜像不一致');
+    });
+    test('action-popup.js', () {
+      expect(assetsActionPopup.readAsBytesSync(),
+          toolsActionPopup.readAsBytesSync(),
+          reason: 'action-popup.js 两份镜像不一致');
     });
   });
 }
