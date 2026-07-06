@@ -726,6 +726,66 @@ function testBackgroundFiresTapOutsideRegardlessOfChild() {
   }
 }
 
+// ── TODO-1189：点收藏 ☆ 永不触发文档 dismiss（守卫加 .favorite-button）─────────
+// .audio-button / .mine-button 早退守卫一直有，但 .favorite-button 漏了：父卡片
+// （hasChild=true）点收藏 ☆ 会落到 .entry 卡片分支 → 发 tapOutside →
+// dismissDescendantsOf(parent) 误关子弹窗（app 内 bug）；app 外覆盖窗里同理会连累
+// 整栈。守卫把 .favorite-button 与 audio/mine 同列，点收藏永远 return（不发
+// tapOutside、不选词），无论本层是否有子弹窗。
+
+// 把 target 放进一个 .entry 卡片根内（父层有子弹窗的最坏情形），点收藏按钮本身。
+function buildFavoriteButtonInEntry(context) {
+  const entry = new FakeElement('div');
+  entry.classList.add('entry');
+  const favBtn = new FakeElement('div');
+  favBtn.classList.add('favorite-button');
+  context.document.body.appendChild(entry);
+  entry.appendChild(favBtn);
+  return {entry, favBtn};
+}
+
+// (1189-1) 有子弹窗时点 .favorite-button → 不发 tapOutside、不选词（守卫早退）。
+// 若守卫漏了 .favorite-button，收藏按钮在 .entry 内会走卡片分支发 tapOutside，
+// 关掉子弹窗——本断言就会红。
+function testFavoriteButtonWithChildDoesNotDismiss() {
+  const context = loadPopup();
+  const {favBtn} = buildFavoriteButtonInEntry(context);
+  const result = fireDocumentClick(context, favBtn, 50, 50, {hasChild: true});
+  assert.equal(result.tapOutsideCalls, 0,
+    'clicking the favorite ☆ must NOT fire tapOutside (guard early-return), even with a child popup open');
+  assert.equal(result.selectCalls, 0,
+    'clicking the favorite ☆ must NOT select a word');
+}
+
+// (1189-2) 无子弹窗（叶子层）点 .favorite-button → 同样早退，不选词/不 dismiss。
+function testFavoriteButtonWithoutChildDoesNotDismiss() {
+  const context = loadPopup();
+  const {favBtn} = buildFavoriteButtonInEntry(context);
+  const result = fireDocumentClick(context, favBtn, 50, 50, {hasChild: false});
+  assert.equal(result.tapOutsideCalls, 0,
+    'leaf layer: clicking the favorite ☆ must NOT fire tapOutside');
+  assert.equal(result.selectCalls, 0,
+    'leaf layer: clicking the favorite ☆ must NOT select a word');
+}
+
+// (1189-3) 回归护栏：audio/mine 早退仍生效（同一条守卫），点它们也不 dismiss。
+function testAudioAndMineButtonsStillGuarded() {
+  for (const cls of ['audio-button', 'mine-button']) {
+    const context = loadPopup();
+    const entry = new FakeElement('div');
+    entry.classList.add('entry');
+    const btn = new FakeElement('div');
+    btn.classList.add(cls);
+    context.document.body.appendChild(entry);
+    entry.appendChild(btn);
+    const result = fireDocumentClick(context, btn, 50, 50, {hasChild: true});
+    assert.equal(result.tapOutsideCalls, 0,
+      `clicking .${cls} must NOT fire tapOutside (guard intact)`);
+    assert.equal(result.selectCalls, 0,
+      `clicking .${cls} must NOT select a word`);
+  }
+}
+
 // ── TODO-859 症状B: image lightbox hit-box narrowed to real image pixels ────
 // The .gloss-image-link click listener opens the fullscreen lightbox. Its box is
 // widened by .gloss-image-container min-width:min(100%,200px) and horizontally
@@ -1734,6 +1794,9 @@ testKanjiSectionWhitespaceWithChildFiresTapOutside();
 testKanjiSectionWhitespaceWithoutChildKeepsLayer();
 testGlossaryTextWithChildClosesDescendants();
 testBackgroundFiresTapOutsideRegardlessOfChild();
+testFavoriteButtonWithChildDoesNotDismiss();
+testFavoriteButtonWithoutChildDoesNotDismiss();
+testAudioAndMineButtonsStillGuarded();
 testTapOnImagePixelsOpensLightbox();
 testTapInImageContainerWhitespaceDoesNotOpenLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
