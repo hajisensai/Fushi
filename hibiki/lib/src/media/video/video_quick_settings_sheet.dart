@@ -104,7 +104,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 一键字幕自动对轴（TODO-701 阶段1）：抽音频能量包络与字幕 cue 互相关求整体平移，
   /// 经现有 [onSetDelay] 写穿延迟落盘。回调内部负责 OSD/低置信提示；本面板只在其
   /// `await` 期间显示按钮 loading。null=不显示自动对轴按钮（无字幕/无视频路径时）。
-  final Future<void> Function()? onAutoAlign;
+  ///
+  /// TODO-1206：回调返回本次实际写穿的整体平移 offset（毫秒），面板据此把滑条 / 数值
+  /// 输入框 / 波形预览同步刷新到自动算出的延迟；返回 null（低置信 / noData / 无输入）时
+  /// 不改动面板当前值。
+  final Future<int?> Function()? onAutoAlign;
 
   /// TODO-1051 阶段B：字幕对轴波形面板的输入。当前字幕 cue 列表（画边界线，只读）。
   /// 空 = 无字幕，不显示波形面板。
@@ -713,16 +717,22 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   /// TODO-701 阶段1：触发一键自动对轴。回调（[VideoQuickSettingsSheet.onAutoAlign]）
   /// 内部抽音频能量包络、与字幕 cue 互相关求整体平移，再经 [onSetDelay] 写穿延迟并弹
-  /// OSD/低置信提示；本面板只在其执行期间把按钮切成 spinner 并禁用（防重入）。完成后
-  /// 把权威 [_delayMs] 与输入框文本同步成回调可能改写后的 [VideoQuickSettingsSheet.initialDelayMs]
-  /// ——但面板在独立路由里、父 setState 不重建它，故这里不读父 widget，改由回调
-  /// 内部经 [onSetDelay] 路径在下次打开面板时反映；本轮仅复位 loading。
+  /// OSD/低置信提示；本面板只在其执行期间把按钮切成 spinner 并禁用（防重入）。
+  ///
+  /// TODO-1206（修「自动对轴后面板不刷新」）：回调返回本次实际平移 offset（毫秒）。拿到
+  /// 非 null 值就走 [_commitDelay] 把权威 [_delayMs] + 数值输入框文本同步刷新（[_commitDelay]
+  /// 再经 [onSetDelay] 幂等写穿 controller/DB——页面侧对同值早退，不重复 OSD）；本地
+  /// setState 触发重建，波形面板经其 didUpdateWidget 把预览延迟同步到新值，cue 线随之
+  /// 整体平移。返回 null（低置信 / noData）则不动面板当前值。
   Future<void> _runAutoAlign() async {
-    final Future<void> Function()? cb = widget.onAutoAlign;
+    final Future<int?> Function()? cb = widget.onAutoAlign;
     if (cb == null || _autoAligning) return;
     setState(() => _autoAligning = true);
     try {
-      await cb();
+      final int? alignedOffsetMs = await cb();
+      if (mounted && alignedOffsetMs != null) {
+        await _commitDelay(alignedOffsetMs);
+      }
     } finally {
       if (mounted) setState(() => _autoAligning = false);
     }
@@ -864,21 +874,22 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             },
           ),
           // TODO-1051 阶段B：音频波形对轴可视化面板（有字幕 cue + 可抽波形时才挂）。
-          // 面板本地拖动预览字幕平移、松手才经 [_commitDelay] 落盘（唯一写回点）；拿不到
-          // 波形（移动端 ffmpeg 无逐帧行）时面板内部退化成纯 stepper，不崩不空白。
+          // TODO-1207：面板只做「波形 + cue 线」可视化，不再自带调轴滑条（与上方 ± /
+          // 滑条 / 数值输入框完全冗余，已删）。cue 线整体平移的预览延迟经 [initialDelayMs]
+          // 从上方权威 [_delayMs] 传入，面板 didUpdateWidget 同步——上方任意手动调轴 /
+          // 自动对轴改 [_delayMs] 后波形随之平移。拿不到波形（移动端 ffmpeg 无逐帧行）时
+          // 面板内部收起（纯可视化，无控件），不崩不空白。
           if (widget.loadSubtitleWaveform != null &&
               widget.subtitleWaveformCues.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
             SubtitleWaveformAlignPanel(
               key: ValueKey<int>(widget.subtitleWaveformCues.length),
               initialDelayMs: _delayMs,
-              clampMs: _subtitleSyncClampMs,
               cues: widget.subtitleWaveformCues,
               durationMs: widget.videoDurationMs,
               loadWaveform: widget.loadSubtitleWaveform!,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
-              onCommitDelay: (int ms) => _commitDelay(ms),
             ),
           ],
         ],

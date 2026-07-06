@@ -884,15 +884,19 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   /// 输入不足（无 cue/无视频路径/无音频包络）或置信度低于阈值时**不**改动延迟，仅弹
   /// 低置信 OSD（避免乱平移）。移动端 [KitFfmpegBackend] 拿不到逐帧 RMS 时包络为空，
   /// 走 noData 分支安全降级（[extractAudioEnergyEnvelope] 已 debugPrint 诊断）。
-  Future<void> _autoAlignSubtitle() async {
+  ///
+  /// TODO-1206：返回本次实际写穿的整体平移 offset（毫秒），供快速设置面板把滑条/数值
+  /// 输入框/波形预览同步刷新到自动算出的延迟；低置信 / noData / 输入不足等**不改延迟**
+  /// 的分支返回 null（面板据此保持原值不动）。
+  Future<int?> _autoAlignSubtitle() async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) return null;
     final List<AudioCue> cues = controller.cues;
     final String? videoPath = controller.videoPath;
     final int? durationMs = controller.durationMs;
     if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
       _showOsd(t.video_subtitle_auto_align_low_confidence);
-      return;
+      return null;
     }
     // 时长缺失时用最后一条 cue 的结束时间兜底（cue 升序由 setCues 保证），仍能栅格化。
     final int rawDurationMs =
@@ -915,7 +919,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       audioStreamCount: controller.realAudioStreamCount,
       limitMs: kSubtitleAutoAlignProbeLimitMs,
     );
-    if (!mounted) return;
+    if (!mounted) return null;
 
     final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
     final List<double> cueActivity = buildCueActivityEnvelope(
@@ -933,16 +937,17 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       case SubtitleAutoAlignStatus.aligned:
         // 走现有写穿路径：controller 即时重算 cue + 落盘 delayMs + 角标 OSD。
         await _setDelayMs(result.offsetMs);
-        if (!mounted) return;
+        if (!mounted) return null;
         _showOsd(
           t.video_subtitle_auto_align_done(ms: result.offsetMs),
           icon: Icons.auto_fix_high,
         );
-        break;
+        // TODO-1206：回传实际平移量，让面板把滑条/数值/波形同步到新延迟。
+        return result.offsetMs;
       case SubtitleAutoAlignStatus.lowConfidence:
       case SubtitleAutoAlignStatus.noData:
         _showOsd(t.video_subtitle_auto_align_low_confidence);
-        break;
+        return null;
     }
   }
 

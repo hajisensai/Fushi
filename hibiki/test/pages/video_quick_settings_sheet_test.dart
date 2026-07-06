@@ -37,7 +37,7 @@ VideoQuickSettingsSheet _sheet({
   VideoSubtitleStyle? initialSubtitleStyle,
   void Function(VideoSubtitleStyle)? onSubtitleStylePreview,
   void Function(VideoSubtitleStyle)? onSubtitleStyleCommit,
-  Future<void> Function()? onAutoAlign,
+  Future<int?> Function()? onAutoAlign,
 }) {
   return VideoQuickSettingsSheet(
     initialDelayMs: initialDelayMs,
@@ -861,7 +861,10 @@ void main() {
       bool autoAlignCalled = false;
       await _pump(
         tester,
-        _sheet(onAutoAlign: () async => autoAlignCalled = true),
+        _sheet(onAutoAlign: () async {
+          autoAlignCalled = true;
+          return null;
+        }),
       );
 
       // 字幕调轴行存在（手动对轴照常可用）。
@@ -905,6 +908,92 @@ void main() {
       await tester.pumpAndSettle();
       expect(autoAlignCalled, isTrue,
           reason: 'TODO-413：点击自动对轴按钮应触发 onAutoAlign 回调');
+    },
+  );
+
+  testWidgets(
+    'TODO-1206：自动对轴返回 offset 时同步刷新延迟（滑条/数值/onSetDelay）',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      int? committedDelay;
+      await _pump(
+        tester,
+        _sheet(
+          initialDelayMs: 0,
+          onSetDelay: (int v) => committedDelay = v,
+          // 回调返回算出的整体平移（如互相关求得 +750ms）。
+          onAutoAlign: () async => 750,
+        ),
+      );
+
+      final Finder delayRow = find.widgetWithText(
+        AdaptiveSettingsRow,
+        t.video_setting_av_delay,
+      );
+      final Finder autoAlignBtn = find.descendant(
+        of: delayRow,
+        matching: find.byIcon(Icons.auto_fix_high),
+      );
+      await tester.ensureVisible(autoAlignBtn);
+      await tester.tap(autoAlignBtn);
+      await tester.pumpAndSettle();
+
+      // 回传非 null offset => 经 _commitDelay 写穿 onSetDelay + 同步本地权威值。
+      expect(committedDelay, 750,
+          reason: 'TODO-1206：自动对轴返回值应经 _commitDelay 写穿 onSetDelay');
+      // 数值输入框文本同步到新延迟。
+      expect(
+        find.descendant(
+          of: delayRow,
+          matching: find.widgetWithText(TextField, '750'),
+        ),
+        findsOneWidget,
+        reason: 'TODO-1206：数值输入框应同步刷新到自动算出的延迟',
+      );
+      // 归零标签同步显示 +750 ms（滑条把手 clamp 到端点，标签为权威值）。
+      expect(
+        find.descendant(of: delayRow, matching: find.text('+750 ms')),
+        findsOneWidget,
+        reason: 'TODO-1206：延迟标签应刷新到自动算出的延迟',
+      );
+    },
+  );
+
+  testWidgets(
+    'TODO-1206：自动对轴返回 null（低置信）时不改延迟',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      int? committedDelay;
+      await _pump(
+        tester,
+        _sheet(
+          initialDelayMs: 0,
+          onSetDelay: (int v) => committedDelay = v,
+          onAutoAlign: () async => null,
+        ),
+      );
+
+      final Finder delayRow = find.widgetWithText(
+        AdaptiveSettingsRow,
+        t.video_setting_av_delay,
+      );
+      final Finder autoAlignBtn = find.descendant(
+        of: delayRow,
+        matching: find.byIcon(Icons.auto_fix_high),
+      );
+      await tester.ensureVisible(autoAlignBtn);
+      await tester.tap(autoAlignBtn);
+      await tester.pumpAndSettle();
+
+      // 低置信 / noData 回 null => 不调 onSetDelay、延迟保持 0。
+      expect(committedDelay, isNull, reason: 'TODO-1206：返回 null 时不应写穿延迟');
+      expect(
+        find.descendant(of: delayRow, matching: find.text('+0 ms')),
+        findsOneWidget,
+        reason: 'TODO-1206：返回 null 时延迟标签保持 0',
+      );
     },
   );
 
