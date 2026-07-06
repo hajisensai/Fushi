@@ -869,11 +869,17 @@ class GlobalLookupController {
     if (model == null) {
       return;
     }
-    unawaited(model.database
-        .addLookupCount(sourceType: kStatSourceBook, dateKey: statTodayKey())
-        .catchError((Object e, StackTrace st) {
-      glog('lookup-count: EXCEPTION $e\n$st');
-    }));
+    // best-effort：连同同步阶段（[AppModel.database] late 字段 getter 在 DB 未初始化时
+    // 会抛 LateInitializationError）一起吞掉——查词计数是旁路埋点，绝不打断查词回复。
+    try {
+      unawaited(model.database
+          .addLookupCount(sourceType: kStatSourceBook, dateKey: statTodayKey())
+          .catchError((Object e, StackTrace st) {
+        glog('lookup-count: EXCEPTION $e\n$st');
+      }));
+    } catch (e, st) {
+      glog('lookup-count: EXCEPTION (sync) $e\n$st');
+    }
   }
 
   /// TODO-1188 follow-up — records one mined-count + one mined-sentence history

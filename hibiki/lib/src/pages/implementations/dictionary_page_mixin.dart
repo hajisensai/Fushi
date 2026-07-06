@@ -291,17 +291,24 @@ mixin DictionaryPageMixin {
   /// controller 后调 [attachLookupCounter] 接线。best-effort。
   @protected
   void recordLookup() {
-    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
-    unawaited(mixinAppModel.database
-        .addLookupCount(
-      bookKey: identity?.bookKey,
-      title: identity?.title ?? '',
-      sourceType: dictionarySourceType,
-      dateKey: _statTodayKey(),
-    )
-        .catchError((Object e, StackTrace st) {
-      debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
-    }));
+    // best-effort：连同同步阶段（[mixinAppModel.database] late 字段 getter 在 DB 未
+    // 初始化时会抛 LateInitializationError）一起吞掉——查词计数是旁路埋点，任何异常
+    // 都不得打断弹窗查词流程。
+    try {
+      final ({String? bookKey, String? title})? identity = lookupBookIdentity;
+      unawaited(mixinAppModel.database
+          .addLookupCount(
+        bookKey: identity?.bookKey,
+        title: identity?.title ?? '',
+        sourceType: dictionarySourceType,
+        dateKey: _statTodayKey(),
+      )
+          .catchError((Object e, StackTrace st) {
+        debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
+      }));
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] addLookupCount failed (sync): $e\n$st');
+    }
   }
 
   /// TODO-1204：把 [recordLookup] 挂到 [controller] 的查词开始回调上。各 mixin 宿主
