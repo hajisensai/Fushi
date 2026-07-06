@@ -149,6 +149,52 @@ class AppPaths {
         Directory(p.join(dataRootPath, _dataRootSupportChild)),
       );
 
+  /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
+  ///
+  /// 默认数据根时 documents 根 = 整个用户 `Documents`（共享目录，含用户自己的文件和
+  /// shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，绝不整树搬移 /
+  /// 整树删除用户 `Documents`。每一项都必须对应仓库里一个真实的派生点：
+  ///
+  ///  - `audiobooks` —— [audiobooksDirectory]；`AppModel` 各处
+  ///    `join(appDirectory, 'audiobooks')`；`AudiobookStorage.ensurePersistDir`。
+  ///  - `hoshi_books` —— [epubBooksDirectory]；`EpubStorage`；backup restore。
+  ///  - `video_covers` —— [videoCoversDirectory]；`VideoStorage.coversDirName`。
+  ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
+  ///  - `mpv_shaders` —— [mpvShadersDirectory]。
+  ///  - `remote_videos` —— [remoteVideosDirectory]。
+  ///  - `videos` —— backup restore 的视频落点（`backup.part.dart`
+  ///    `join(appDirectory, 'videos')`）。
+  ///  - `custom_fonts` —— 字体导入/加载（`custom_fonts_page.dart` 等
+  ///    `join(appDirectory, 'custom_fonts')`）。
+  ///  - `hibikiExport` —— `AppModel.prepareFallbackHibikiDirectory`。
+  ///  - `browser` / `thumbnails` / `dictionaryResources` /
+  ///    `dictionaryImportWorkingDirectory` / `webArchive` ——
+  ///    `AppModel` 运行时目录系列派生。
+  ///
+  /// **刻意不收**：`error_log.txt` / `*_breadcrumb.txt`（`ErrorLogService` 直连
+  /// `getApplicationDocumentsDirectory()`，固定落平台 Documents、不随数据根走，搬走
+  /// 反而让服务失去续写目标）；`video_clips` 与桌面导出目录 `Hibiki`（同样直连
+  /// path_provider 的用户可见导出物，属用户文件语义）。
+  ///
+  /// 守卫测试 `test/storage/documents_whitelist_guard_test.dart` 扫描源码派生点，
+  /// 新增 `<documents>/<child>` 派生而漏加这里会红。
+  static const Set<String> hibikiOwnedDocumentsEntries = <String>{
+    'audiobooks',
+    'hoshi_books',
+    'video_covers',
+    'video_subtitles',
+    'mpv_shaders',
+    'remote_videos',
+    'videos',
+    'custom_fonts',
+    'hibikiExport',
+    'browser',
+    'thumbnails',
+    'dictionaryResources',
+    'dictionaryImportWorkingDirectory',
+    'webArchive',
+  };
+
   // ---- 静态便捷层（给无 AppModel 实例的 static 存储助手） ----
 
   /// 内容/书库根目录。等价于过去散落各处的 `getApplicationDocumentsDirectory()`。
