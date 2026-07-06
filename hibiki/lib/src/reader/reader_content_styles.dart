@@ -280,7 +280,7 @@ svg.block-img.blurred {
         : '';
 
     final String furiganaCss = _furiganaCss(settings.furiganaMode);
-    final String rubyHighlightLaneCss = _rubyHighlightLaneCss(isVertical);
+    final String highlightLaneCss = _highlightLaneCss(isVertical);
 
     final String textIndentCss = settings.textIndentation > 0
         ? 'text-indent: ${settings.textIndentation}em !important;'
@@ -518,7 +518,7 @@ ruby > rt, ruby > rp {
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
    加 class，背景画在元素上只画一遍。移植自 Hoshi-Reader-Android。 */
 ruby.hoshi-selection-ruby-active {
-  --hoshi-ruby-highlight-color: $selectionOpaque;
+  --hoshi-highlight-lane-color: $selectionOpaque;
   color: inherit;
 }
 /* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
@@ -533,7 +533,7 @@ ruby.hoshi-hl-yellow-ruby-active {
   text-underline-offset: 0.18em;
 }
 ruby.hoshi-hl-yellow-ruby-active {
-  --hoshi-ruby-highlight-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
+  --hoshi-highlight-lane-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
 }
 ::highlight(hoshi-hl-green),
 .hoshi-hl-green,
@@ -545,7 +545,7 @@ ruby.hoshi-hl-green-ruby-active {
   text-underline-offset: 0.18em;
 }
 ruby.hoshi-hl-green-ruby-active {
-  --hoshi-ruby-highlight-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
+  --hoshi-highlight-lane-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
 }
 ::highlight(hoshi-hl-blue),
 .hoshi-hl-blue,
@@ -557,7 +557,7 @@ ruby.hoshi-hl-blue-ruby-active {
   text-underline-offset: 0.18em;
 }
 ruby.hoshi-hl-blue-ruby-active {
-  --hoshi-ruby-highlight-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
+  --hoshi-highlight-lane-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
 }
 ::highlight(hoshi-hl-pink),
 .hoshi-hl-pink,
@@ -569,7 +569,7 @@ ruby.hoshi-hl-pink-ruby-active {
   text-underline-offset: 0.18em;
 }
 ruby.hoshi-hl-pink-ruby-active {
-  --hoshi-ruby-highlight-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
+  --hoshi-highlight-lane-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
 }
 ::highlight(hoshi-hl-purple),
 .hoshi-hl-purple,
@@ -581,7 +581,7 @@ ruby.hoshi-hl-purple-ruby-active {
   text-underline-offset: 0.18em;
 }
 ruby.hoshi-hl-purple-ruby-active {
-  --hoshi-ruby-highlight-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
+  --hoshi-highlight-lane-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
 }
 .hoshi-dict-highlight {
   background-color: $selectionOpaque !important;
@@ -589,20 +589,20 @@ ruby.hoshi-hl-purple-ruby-active {
 }
 ::highlight(hoshi-sasayaki) {
   color: var(--hoshi-sasayaki-text-color);
-  background-color: var(--hoshi-sasayaki-background-color);
+  background-color: transparent;
 }
 /* BUG-110：sasayaki 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
 ruby.hoshi-sasayaki-ruby-active {
   color: var(--hoshi-sasayaki-text-color) !important;
-  --hoshi-ruby-highlight-color: var(--hoshi-sasayaki-background-color);
+  --hoshi-highlight-lane-color: var(--hoshi-sasayaki-background-color);
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
    高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
 ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
-  --hoshi-ruby-highlight-color: $selectionOpaque;
+  --hoshi-highlight-lane-color: $selectionOpaque;
   color: inherit !important;
 }
-$rubyHighlightLaneCss
+$highlightLaneCss
 ::highlight(hoshi-search) {
   background-color: rgba(255, 200, 0, 0.45);
 }
@@ -611,7 +611,8 @@ $rubyHighlightLaneCss
 }
 .hoshi-sasayaki-cue.hoshi-sasayaki-active {
   color: var(--hoshi-sasayaki-text-color) !important;
-  background-color: var(--hoshi-sasayaki-background-color) !important;
+  line-height: 1 !important;
+  --hoshi-highlight-lane-color: var(--hoshi-sasayaki-background-color);
 }
 a {
   color: ${linkColor ?? colors.linkColor}$readerStylePriority;
@@ -619,12 +620,13 @@ a {
 ''';
   }
 
-  static String _rubyHighlightLaneCss(bool isVertical) {
+  static String _highlightLaneCss(bool isVertical) {
     final String size = isVertical ? '1em 100%' : '100% 1em';
     final String position = isVertical ? 'left center' : 'left bottom';
     return '''
-/* BUG-568：ruby 元素的盒子包含 rt/rp 注音轨。ruby 分流 class 只能把背景画在
-   正文基字 lane 上，否则竖排有振假名时高亮条会横向变宽。 */
+/* BUG-568：ruby 元素的盒子包含 rt/rp 注音轨，CSS Highlight 在竖排会按行盒刷宽。
+   ruby 与 sasayaki 普通正文都只把背景画在正文基字 lane 上，避免有无振假名宽度不一。 */
+.hoshi-sasayaki-cue.hoshi-sasayaki-active,
 ruby.hoshi-selection-ruby-active,
 ruby.hoshi-sasayaki-ruby-active,
 ruby.hoshi-hl-yellow-ruby-active,
@@ -633,7 +635,7 @@ ruby.hoshi-hl-blue-ruby-active,
 ruby.hoshi-hl-pink-ruby-active,
 ruby.hoshi-hl-purple-ruby-active {
   background-color: transparent !important;
-  background-image: linear-gradient(var(--hoshi-ruby-highlight-color, transparent), var(--hoshi-ruby-highlight-color, transparent)) !important;
+  background-image: linear-gradient(var(--hoshi-highlight-lane-color, transparent), var(--hoshi-highlight-lane-color, transparent)) !important;
   background-repeat: no-repeat !important;
   background-size: $size !important;
   background-position: $position !important;

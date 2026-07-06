@@ -314,15 +314,15 @@ void main() {
     });
   });
 
-  group('ReaderContentStyles ruby highlight lane', () {
+  group('ReaderContentStyles audiobook highlight lane', () {
     test('vertical ruby highlights draw only the base text lane', () async {
       final ReaderSettings settings = await _defaultSettings();
       await settings.setWritingMode('vertical-rl');
 
       final String css = ReaderContentStyles.css(settings: settings);
 
-      expect(css, contains('--hoshi-ruby-highlight-color'),
-          reason: 'ruby 高亮颜色应先落到变量，再由窄背景条统一绘制');
+      expect(css, contains('--hoshi-highlight-lane-color'),
+          reason: '高亮颜色应先落到 lane 变量，再由窄背景条统一绘制');
       expect(css, contains('background-size: 1em 100% !important'),
           reason: '竖排 ruby 高亮只能占正文基字的 1em 横向宽度，不能包含 rt 注音轨');
       expect(css, contains('background-position: left center !important'),
@@ -340,6 +340,43 @@ void main() {
         isNot(contains(
             'background-color: var(--hoshi-sasayaki-background-color)')),
         reason: 'sasayaki 不能再直接给整个 ruby 容器刷背景，否则有振假名时条会变宽',
+      );
+    });
+
+    test('vertical sasayaki text spans draw only the base text lane', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('vertical-rl');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+
+      expect(
+        css,
+        contains('.hoshi-sasayaki-cue.hoshi-sasayaki-active'),
+        reason: '普通正文 cue 也必须有 active span 样式，不能只靠 CSS Highlight',
+      );
+      expect(
+        css,
+        contains('.hoshi-sasayaki-cue.hoshi-sasayaki-active,\nruby.'),
+        reason: '普通正文 cue span 必须进入同一套窄 lane 选择器，宽度才和 ruby 一致',
+      );
+
+      final int activeStart =
+          css.indexOf('.hoshi-sasayaki-cue.hoshi-sasayaki-active {');
+      expect(activeStart, isNonNegative);
+      final String activeBlock = css.substring(
+        activeStart,
+        css.indexOf('}', activeStart),
+      );
+      expect(
+        activeBlock,
+        isNot(contains(
+            'background-color: var(--hoshi-sasayaki-background-color)')),
+        reason: '普通正文 sasayaki 不能直接给整个 span 行盒刷背景，否则无振假名句子也会变宽',
+      );
+      expect(
+        activeBlock,
+        contains('line-height: 1 !important'),
+        reason: '普通正文 cue span 必须把自身背景盒压到 1em；继承正文 1.65 line-height 会让无振假名句子变宽',
       );
     });
 
