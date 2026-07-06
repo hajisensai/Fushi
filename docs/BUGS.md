@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-564](bugs/BUG-564-remote-book-download-rename-notempty.md) | ✅ | ✅ | 远端书下载改名到已存在书目录 ENOTEMPTY 失败 |
+| [BUG-565](bugs/BUG-565-remote-book-download-rename-notempty.md) | ✅ | ✅ | 远端书下载改名到已存在书目录 ENOTEMPTY 失败 |
 | [BUG-564](bugs/BUG-564-dataroot-migrate-moves-whole-documents.md) | ✅ | ✅ | Windows 数据根迁移整树搬移并删除用户整个 Documents（默认根） |
 | [BUG-563](bugs/BUG-563-gameinput-dll-missing-startup-crash.md) | ✅ | ✅ | 无GameInput.dll的Windows机器启动即崩 |
 | [BUG-562](bugs/BUG-562-ankimobile-background-media-download.md) | ✅ | ✅ | iOS AnkiMobile 视频句音频导入后仍保留 localhost URL |
