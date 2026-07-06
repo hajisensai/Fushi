@@ -55,6 +55,15 @@ class GlobalLookupController {
   // the OS hotkey immediately, instead of the key being a compile-time const.
   HibikiShortcutRegistry? _registry;
   bool _started = false;
+  // TODO-1233 -- optional consumer notified when the overlay is GENUINELY
+  // dismissed (foreground hook / click-outside / JS dismiss), so a caller can
+  // hang a resume-on-dismiss. The video subtitle lookup (path A) would use this
+  // for BUG-072 pause/resume IF it routed through the overlay; today it stays
+  // in-app to keep the rich screenshot + sentence-audio mining context the
+  // app-agnostic overlay cannot provide (see the TODO-1233 decision). Wired now
+  // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
+  // fired for the between-lookups reset (that hide passes notify=false).
+  void Function()? onHidden;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
   // lookup so a new card re-sizes from scratch.
@@ -139,6 +148,7 @@ class GlobalLookupController {
     GlobalLookupChannel.setHandlers(
       onGetMedia: _resolveMedia,
       onJsMessage: _onJsMessage,
+      onOverlayHidden: _onOverlayHidden,
     );
 
     // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
@@ -296,7 +306,10 @@ class GlobalLookupController {
       // previous card vanish immediately. _lookupExternal hides again right
       // before showAt (idempotent + cheap: SW_HIDE + unhook), which is what
       // keeps the programmatic lookupText path equally clean.
-      GlobalLookupChannel.hide();
+      // TODO-1233 — notify:false: this is the between-lookups reset, NOT a user
+      // dismissal, so it must not fire overlayHidden (which would resume a paused
+      // video mid re-lookup).
+      GlobalLookupChannel.hide(notify: false);
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
       // in (shown in the popup). On any miss (no UIA text element, non-Windows,
@@ -367,7 +380,9 @@ class GlobalLookupController {
       // up front collapses both sides to a known-hidden state before showAt
       // re-arms them, so every lookup starts clean. Cheap (SW_HIDE + unhook)
       // and the prewarmed WebView2 survives it.
-      GlobalLookupChannel.hide();
+      // TODO-1233 — notify:false: same between-lookups reset as _onHotKey; must
+      // not look like a user dismissal.
+      GlobalLookupChannel.hide(notify: false);
       _currentSentence = sentence;
 
       final DictionarySearchResult result = await model.searchDictionary(
@@ -526,6 +541,25 @@ class GlobalLookupController {
     } catch (_) {
       return Uint8List(0);
     }
+  }
+
+  /// TODO-1233 — the native overlay was GENUINELY dismissed (foreground hook /
+  /// click-outside / JS 'dismiss'/'tapOutside'). Resets this controller's
+  /// reveal/measurement state so the next lookup starts clean (the reveal-safety
+  /// timer is cancelled; a stale _revealed would otherwise let the ready-driven
+  /// fallback or the box de-dup misbehave on the next card), then notifies the
+  /// optional [onHidden] consumer (resume-on-dismiss). NOT called for the
+  /// between-lookups reset (that hide passes notify:false, so native suppresses
+  /// the callback) — only for a real user dismissal.
+  void _onOverlayHidden() {
+    _revealSafety?.cancel();
+    _revealed = false;
+    _lastSentWidth = -1;
+    _lastSentHeight = -1;
+    _lastSentDx = 0;
+    _lastSentDy = 0;
+    glog('overlayHidden: dismissed — reveal state reset');
+    onHidden?.call();
   }
 
   void _onJsMessage(Map<String, Object?> message) {

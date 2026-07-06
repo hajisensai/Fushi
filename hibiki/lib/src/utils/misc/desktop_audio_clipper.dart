@@ -4,10 +4,10 @@ import 'dart:io';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
 // 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
@@ -588,8 +588,10 @@ Future<String?> extractVideoCover({
   required String bookUid,
   double atSeconds = 10.0,
 }) async {
-  final Directory docs = await getApplicationDocumentsDirectory();
-  final Directory coverDir = Directory(p.join(docs.path, 'video_covers'));
+  // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
+  // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
+  // 迁移白名单 `video_covers` 一致，避免自定义数据根下新封面落回平台 Documents。
+  final Directory coverDir = await AppPaths.videoCoversDirectory();
   final String outputPath = p.join(coverDir.path, videoCoverFileName(bookUid));
   // ① 优先视频自带封面（attached_pic）。
   final String? embedded = await extractEmbeddedVideoCoverViaFfmpeg(

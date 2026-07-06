@@ -46,6 +46,12 @@ class GlobalLookupWindow {
   // TODO-1153 -- receives a native bring-up error message (WebView2 environment
   // /controller create failure) so Dart can surface it via ErrorLogService.
   using ErrorCallback = std::function<void(const std::string& message)>;
+  // TODO-1233 -- fired when the overlay transitions from on-screen to hidden via
+  // a GENUINE dismissal (foreground hook / click-outside / JS dismiss), so Dart
+  // can hang a resume-on-dismiss (video subtitle lookup BUG-072 pause/resume) or
+  // reset its own reveal state. NOT fired for the programmatic reset Hide() that
+  // precedes a fresh lookup (see Hide(bool)).
+  using HiddenCallback = std::function<void()>;
 
   GlobalLookupWindow();
   ~GlobalLookupWindow();
@@ -92,7 +98,10 @@ class GlobalLookupWindow {
   // px). Clamps to the monitor work area like Reveal/ResizeTo.
   void RevealStack(int dx, int dy, int width, int height,
                    double bbox_left, double bbox_top);
-  void Hide();
+  // TODO-1233 -- [notify]=true (default) fires the HiddenCallback on a genuine
+  // dismissal; the programmatic reset before a fresh lookup passes false so the
+  // between-lookups reset does not look like a user dismissal.
+  void Hide(bool notify = true);
   bool IsShowing() const;
 
   // Injects |popup_json| and calls window.renderPopup(). Cached until the
@@ -114,6 +123,10 @@ class GlobalLookupWindow {
   // TODO-1153 -- wires the native overlay-error reporter (see ReportOverlayError).
   void SetErrorCallback(ErrorCallback cb) {
     error_cb_ = std::move(cb);
+  }
+  // TODO-1233 -- wires the overlay-dismissed reporter (see HiddenCallback).
+  void SetHiddenCallback(HiddenCallback cb) {
+    hidden_cb_ = std::move(cb);
   }
 
  private:
@@ -165,6 +178,7 @@ class GlobalLookupWindow {
   MediaResolver media_resolver_;
   MessageCallback message_cb_;
   ErrorCallback error_cb_;
+  HiddenCallback hidden_cb_;
 };
 
 #endif  // RUNNER_GLOBAL_LOOKUP_WINDOW_H_

@@ -839,6 +839,16 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         "nativeError", std::make_unique<flutter::EncodableValue>(message));
   });
 
+  // TODO-1233 -- the overlay dismissed (foreground hook / click-outside / JS
+  // dismiss) -> Dart, so a resume-on-dismiss (video subtitle lookup BUG-072) or
+  // the controller's own reveal-state reset can hang off it. Not fired for the
+  // programmatic reset Hide(false) before a fresh lookup (see the "hide" method
+  // below + GlobalLookupWindow::Hide). Fires on the platform thread.
+  global_lookup_window_->SetHiddenCallback([this]() {
+    global_lookup_channel_->InvokeMethod(
+        "overlayHidden", std::make_unique<flutter::EncodableValue>());
+  });
+
   global_lookup_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
@@ -950,7 +960,10 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
               StringFromValue(args, "value", "null"));
           result->Success();
         } else if (method == "hide") {
-          global_lookup_window_->Hide();
+          // TODO-1233 -- notify defaults true (genuine dismiss); the controller
+          // passes notify=false for the reset that precedes a fresh lookup so it
+          // does not fire overlayHidden between two lookups.
+          global_lookup_window_->Hide(BoolFromValue(args, "notify", true));
           result->Success();
         } else if (method == "isShowing") {
           result->Success(
