@@ -2117,5 +2117,14 @@
   "backup_import_merge_preview": "合并将新增 $bookCount 本书、更新 $progressCount 条阅读进度。",
   "stat_lookup": "查词",
   "stat_delete_message": "删除该项的时长、字数与查词/制卡统计？你收藏的单词和句子不受影响。",
-  "stat_delete_title": "删除统计数据"
+  "stat_delete_title": "删除统计数据",
+  "video_subtitle_waveform_open": "波形对轴",
+  "video_subtitle_waveform_open_hint": "点击放大查看并对轴",
+  "video_subtitle_waveform_legend_energy": "响度",
+  "video_subtitle_waveform_legend_cue": "字幕边界",
+  "video_subtitle_waveform_legend_playhead": "播放头",
+  "video_subtitle_waveform_scroll_hint": "横向拖动查看时间轴，用下方控件对齐字幕",
+  "video_subtitle_waveform_jump_playhead": "跳到播放头",
+  "video_subtitle_waveform_zoom_in": "放大",
+  "video_subtitle_waveform_zoom_out": "缩小"
 }
