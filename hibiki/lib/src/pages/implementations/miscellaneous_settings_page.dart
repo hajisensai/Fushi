@@ -1,7 +1,7 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/base_page.dart';
@@ -186,20 +186,26 @@ class _MiscellaneousSettingsBodyState
     );
     if (confirmed != true) return;
 
-    final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery);
-    if (file == null) return;
+    // 选图统一走 file_picker：image_picker 在桌面（Windows）无平台实现，直接调
+    // pickImage 会抛 MissingPluginException（TODO-1239）。file_picker 已是本仓库
+    // 依赖且在 Android/Windows 均有实现，覆盖两个平台。
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    if (result == null) return;
+    final String? pickedPath = result.files.first.path;
+    if (pickedPath == null) return;
 
     bool ok = false;
     if (Platform.isAndroid) {
-      final bytes = await file.readAsBytes();
+      final bytes = await File(pickedPath).readAsBytes();
       ok = (await HibikiChannels.iconSwitch.invokeMethod<bool>(
             'createCustomShortcut',
             {'imageBytes': bytes},
           )) ==
           true;
     } else if (Platform.isWindows) {
-      final String persisted = await persistCustomIconFile(file.path);
+      final String persisted = await persistCustomIconFile(pickedPath);
       ok = await WindowCaptionChannel.setWindowIcon(persisted);
       if (ok) {
         await saveCustomIconPath(persisted);
