@@ -317,8 +317,9 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
     );
   }
 
-  // 单条 OSD 卡片。普通通知沿用左上角小角标；TODO-971 突出变体（制卡成功）改成
-  // 居中、更大字号、更厚卡片，醒目区别于音量/亮度被动小角标。
+  // 单条 OSD 卡片。普通通知沿用左上角小角标；TODO-971 突出变体（制卡成功）用更大字号、
+  // 更厚卡片、勾图标醒目区别于音量/亮度被动小角标。TODO-1254：突出变体不再居中
+  // （居中会遮挡画面、干扰观看），与被动 OSD 同锚点回归左上角，仅保留醒目卡片样式。
   Widget _buildOsdCard(_VideoOsdMessage osd) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool prominent = osd.prominent;
@@ -328,11 +329,8 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
         ? const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
         : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     final BorderRadius radius = BorderRadius.circular(prominent ? 12 : 6);
-    final AlignmentGeometry alignment =
-        prominent ? Alignment.center : Alignment.topLeft;
-    final EdgeInsets outerPadding = prominent
-        ? const EdgeInsets.all(24)
-        : const EdgeInsets.only(left: 16, top: 52);
+    const AlignmentGeometry alignment = Alignment.topLeft;
+    const EdgeInsets outerPadding = EdgeInsets.only(left: 16, top: 52);
     return Align(
       alignment: alignment,
       child: Padding(
