@@ -45,10 +45,14 @@ Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de
 
 **Demo de creación de tarjetas Anki con un toque**
 
-<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
+<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
+     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
+     conventional workaround. To restore a real inline player, upload the mp4 in
+     the GitHub web editor and replace the img below with the generated
+     https://github.com/user-attachments/assets/<uuid> video tag. -->
+<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-> ¿No se muestra el vídeo? [Ver la demo de creación de tarjetas con un clic ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
-
+<sub>[Ver la demo de creación de tarjetas con un clic ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Características
