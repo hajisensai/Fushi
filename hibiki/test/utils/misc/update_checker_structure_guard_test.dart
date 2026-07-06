@@ -68,8 +68,15 @@ void main() {
     // 共享同一 library 私有作用域（part 契约禁止 part 内 import 无法拆库）。download 净增
     // ~55 行到 1641，故把 download 天花板从 1650 上调到 1700（留 ~59 行合理余量，与既有余量
     // 风格一致）。
+    //
+    // TODO-1205 / BUG-1205：又加入「按所选平台 asset 自身版本判更新/显示/下载/退避」的真实
+    // 跨切功能——buildReleaseFromManifest 透传 per-asset version 印记 +
+    // selectUpdateReleaseForCurrentPlatform 用 asset 版本判定回填 + _check 全程改用
+    // selection.version（修「顶层 6636 但安卓装 6621」死循环），均须与 release 检查/版本比较
+    // 共享同一 library 私有作用域（part 契约禁止 part 内 import 无法拆库）。release 净增
+    // ~30 行到 ~1616，故把 release 天花板从 1600 上调到 1650（留 ~34 行合理余量，与既有风格一致）。
     const int kDownloadCeiling = 1700;
-    const int kReleaseCeiling = 1600;
+    const int kReleaseCeiling = 1650;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download

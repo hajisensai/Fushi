@@ -261,21 +261,23 @@ class UpdateChecker {
       }
       final Map<String, dynamic> json = selection.release;
 
-      final String? tagName =
-          normalizeReleaseVersionTag(json['tag_name'] as String? ?? '');
-      if (tagName == null || tagName.isEmpty) {
-        // tag 为空 = 等价「无可更新版本」（TODO-898）。
+      // TODO-1205：判更新/显示/下载/退避一律用 selection.version（= 所选平台 asset
+      // 自身版本，已在 selection 里按 asset 版本判定回填），而非顶层 tag（全平台最大
+      // seq）——否则落后平台会「顶层 6636 但安卓装 6621」无限提示死循环（BUG-1205）。
+      final String version = selection.version;
+      if (version.isEmpty) {
+        // 无有效版本 = 等价「无可更新版本」（TODO-898，防御性）。
         onUpToDate?.call();
         return;
       }
 
-      // TODO-1024 / BUG-479：一次成功网络检查已拿到本通道最新 tag，写回缓存供下次
-      // 「检查更新」乐观即时显示（不再每次冷查 GitHub 才知道结果）。写缓存的失败绝不
-      // 能影响本轮检查流程，吞掉并记日志即可。
+      // TODO-1024 / BUG-479：写回缓存供下次「检查更新」乐观即时显示。TODO-1205：latestTag
+      // 用 per-平台 effective 版本（与主判定同源），避免乐观提示显示顶层 6636 而实际只能
+      // 装 6621 的误导。写缓存失败不影响检查流程，吞掉并记日志即可。
       if (cacheWriter != null) {
         final UpdateCheckCacheEntry entry = UpdateCheckCacheEntry(
           lastCheckEpochMs: DateTime.now().toUtc().millisecondsSinceEpoch,
-          latestTag: tagName,
+          latestTag: version,
           htmlUrl: (json['html_url'] as String?) ?? '',
           channel: channel,
         );
@@ -286,7 +288,8 @@ class UpdateChecker {
         }
       }
 
-      if (!isUpdateVersionNewer(tagName, currentVersion, channel)) {
+      // selection 非空即已按 asset 版本判定为「比本机新」；这里保留防御性再判一次。
+      if (!isUpdateVersionNewer(version, currentVersion, channel)) {
         // 已是最新（TODO-898）。
         onUpToDate?.call();
         return;
@@ -294,18 +297,15 @@ class UpdateChecker {
 
       final releaseBody = json['body'] as String? ?? '';
 
-      final assets = json['assets'] as List<dynamic>? ?? [];
-      final List<Map<String, dynamic>> assetMaps =
-          assets.whereType<Map<String, dynamic>>().toList(growable: false);
-      final UpdateAsset? asset =
-          await updater.selectAsset(assetMaps, channel: channel);
+      // 用 selection 里已按平台/ABI 选定的同一个 asset，不再重选（免重读设备 ABI）。
+      final UpdateAsset? asset = selection.asset;
       final String? downloadUrl = asset?.url;
 
       // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
       if (downloadUrl == null) {
         final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null && context.mounted) {
-          _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
+          _showFallbackDialog(context, version, releaseBody, htmlUrl);
         }
         return;
       }
@@ -314,23 +314,24 @@ class UpdateChecker {
       // 下载前先读 handoff 标记：若这个**确切目标版本**上一轮握手没装成（标记仍在），
       // 退避——改弹手动确认对话框让用户自行决定，不再静默重下重启。换成新版本会重置
       // 退避（见 WindowsUpdateHandoff.shouldBackOffAutoInstall）。读标记出错则 fail-open
-      // 照常自动装，绝不「一次失败就永久不更新」。
+      // 照常自动装，绝不「一次失败就永久不更新」。TODO-1205：candidateVersion 用
+      // selection.version（与 marker 的 targetVersion = WindowsUpdater.apply 写入的版本同源，不错位）。
       final bool autoInstallBackoff = canInstall &&
           autoInstall &&
           Platform.isWindows &&
-          await _shouldBackOffWindowsAutoInstall(tagName);
+          await _shouldBackOffWindowsAutoInstall(version);
       if (!context.mounted) return;
       if (canInstall && autoInstall && !autoInstallBackoff) {
-        _downloadAndInstall(context, asset!, tagName, updater,
+        _downloadAndInstall(context, asset!, version, updater,
             customProxy: customProxy);
       } else if (canInstall) {
-        _showUpdateDialog(context, tagName, releaseBody, asset!, updater,
+        _showUpdateDialog(context, version, releaseBody, asset!, updater,
             customProxy: customProxy);
       } else {
         // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
         final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null) {
-          _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
+          _showFallbackDialog(context, version, releaseBody, htmlUrl);
         }
       }
     } catch (e, stack) {
@@ -1336,10 +1337,26 @@ Map<String, dynamic>? buildReleaseFromManifest(
       final Object? downloadUrl = entry['browser_download_url'];
       if (name is! String || name.isEmpty) continue;
       if (downloadUrl is! String || downloadUrl.isEmpty) continue;
-      assets.add(<String, dynamic>{
+      final Map<String, dynamic> asset = <String, dynamic>{
         'name': name,
         'browser_download_url': downloadUrl,
-      });
+      };
+      // TODO-1205：透传 CI `merge_update_manifest.py` `_stamp` 写的 per-asset 印记（version/
+      // tag/releaseSequence）。之前只留 name+url 丢了它们，客户端只能用顶层 tag（全平台
+      // 最大 seq）判更新，落后平台被误判死循环；下游 UpdateAsset 读 version 按 asset 版本判。
+      final Object? assetVersion = entry['version'];
+      if (assetVersion is String && assetVersion.trim().isNotEmpty) {
+        asset['version'] = assetVersion.trim();
+      }
+      final Object? assetTag = entry['tag'];
+      if (assetTag is String && assetTag.trim().isNotEmpty) {
+        asset['tag'] = assetTag.trim();
+      }
+      final Object? assetSeq = entry['releaseSequence'];
+      if (assetSeq is int) {
+        asset['releaseSequence'] = assetSeq;
+      }
+      assets.add(asset);
     }
   }
   if (assets.isEmpty) return null;
@@ -1374,10 +1391,12 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
   UpdateReleaseSelection? fallback;
   for (final Map<String, dynamic> release in releases) {
     if (!releaseMatchesUpdateChannel(release, channel)) continue;
-    final String? version =
+    final String? topVersion =
         normalizeReleaseVersionTag(release['tag_name'] as String? ?? '');
-    if (version == null || version.isEmpty) continue;
-    if (!isUpdateVersionNewer(version, currentVersion, channel)) continue;
+    if (topVersion == null || topVersion.isEmpty) continue;
+    // 粗过滤：顶层 tag 是全平台最大 seq（TODO-1173），连它都不比本机新，
+    // 本 release 对任何平台都无更新。保留这层既避开 up-to-date 时多余的 selectAsset。
+    if (!isUpdateVersionNewer(topVersion, currentVersion, channel)) continue;
 
     final List<Map<String, dynamic>> assetMaps =
         (release['assets'] as List<dynamic>? ?? <dynamic>[])
@@ -1385,9 +1404,22 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
             .toList(growable: false);
     final UpdateAsset? asset =
         await updater.selectAsset(assetMaps, channel: channel);
+
+    // TODO-1205：用**所选 asset 自身版本**判更新 + 显示，而非顶层 tag（全平台最大 seq）。
+    // 顶层 6636 但安卓 asset=6621==本机时，用顶层会「有更新」→装回 6621→再提示的死循环。
+    // 无版本印记（API/合成 stable/旧 manifest）→ fail-open 回退顶层。平台通用，非安卓特例。
+    final String? assetVersion =
+        asset == null ? null : normalizeReleaseVersionTag(asset.version ?? '');
+    final String effectiveVersion = assetVersion ?? topVersion;
+    if (asset != null &&
+        !isUpdateVersionNewer(effectiveVersion, currentVersion, channel)) {
+      // 顶层更新但本平台 asset 已是本机版本（或更旧）→ 对本机不是更新，跳过。
+      continue;
+    }
+
     final UpdateReleaseSelection selection = UpdateReleaseSelection(
       release: release,
-      version: version,
+      version: effectiveVersion,
       releaseNotes: release['body'] as String? ?? '',
       asset: asset,
     );

@@ -24,6 +24,7 @@ class UpdateAsset {
     required this.url,
     this.sizeBytes,
     this.sha256Digest,
+    this.version,
   });
 
   factory UpdateAsset.fromReleaseAsset(Map<String, dynamic> asset) {
@@ -32,6 +33,7 @@ class UpdateAsset {
       url: asset['browser_download_url'] as String? ?? '',
       sizeBytes: _assetSizeBytes(asset['size']),
       sha256Digest: _assetSha256Digest(asset['digest'] ?? asset['sha256']),
+      version: _assetVersionStamp(asset['version']),
     );
   }
 
@@ -40,17 +42,28 @@ class UpdateAsset {
   final int? sizeBytes;
   final String? sha256Digest;
 
+  /// TODO-1205：CI 的 `merge_update_manifest.py` `_stamp` 写在**每个 manifest asset**
+  /// 上的「本资产自身版本」（如 `1.0.1-debug.6621`）。manifest 顶层 `tag`/`version` 是
+  /// **全平台最大 seq**（TODO-1173 单调 guard），落后平台的 asset 停在自己更旧的 seq；
+  /// 判「有无更新」/显示版本必须用**这个 asset 自身版本**而不是顶层 tag，否则会出现
+  /// 「顶层 6636 但安卓装的是 6621」→ 判有更新 → 装回 6621 → 再判有更新的死循环
+  /// （TODO-1205 症状）。非 manifest 来源（GitHub API / 合成 stable 资产 / 旧 manifest 无
+  /// 此印记）→ null，调用方 fail-open 回退顶层 tag（保持旧行为，不因缺印记卡住更新）。
+  final String? version;
+
   UpdateAsset copyWith({
     String? name,
     String? url,
     int? sizeBytes,
     String? sha256Digest,
+    String? version,
   }) =>
       UpdateAsset(
         name: name ?? this.name,
         url: url ?? this.url,
         sizeBytes: sizeBytes ?? this.sizeBytes,
         sha256Digest: sha256Digest ?? this.sha256Digest,
+        version: version ?? this.version,
       );
 }
 
@@ -71,6 +84,17 @@ String? _assetSha256Digest(Object? raw) {
       ? normalized.substring('sha256:'.length)
       : normalized;
   return RegExp(r'^[0-9a-f]{64}$').hasMatch(digest) ? digest : null;
+}
+
+/// TODO-1205：读 manifest asset 上由 `merge_update_manifest.py` `_stamp` 写的 per-asset
+/// `version` 印记（如 `1.0.1-debug.6621`）。只做非空字符串取出 + trim；版本串
+/// 的归一化（去前导 v / 剪 build metadata）由消费方（update_checker 库）调
+/// `normalizeReleaseVersionTag` 处理（本文件不属那个库，拿不到该函数）。非字符
+/// 串 / 空串 → null（fail-open，调用方回退顶层 tag）。
+String? _assetVersionStamp(Object? raw) {
+  if (raw is! String) return null;
+  final String trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
