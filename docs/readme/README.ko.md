@@ -45,10 +45,14 @@ hibiki는 당신이 읽는 소설, 챙겨 보는 애니, 듣는 오디오북을 
 
 **원탭 Anki 카드 생성 데모**
 
-<video src="https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4" controls muted width="100%"></video>
+<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
+     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
+     conventional workaround. To restore a real inline player, upload the mp4 in
+     the GitHub web editor and replace the img below with the generated
+     https://github.com/user-attachments/assets/<uuid> video tag. -->
+<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-> 동영상이 표시되지 않나요? [원클릭 카드 제작 데모 보기 ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)
-
+<sub>[원클릭 카드 제작 데모 보기 ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## 기능
