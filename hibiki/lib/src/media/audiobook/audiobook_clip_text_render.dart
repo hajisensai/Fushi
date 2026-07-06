@@ -16,8 +16,9 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 /// 布局参数（尺寸/字号/内边距/竖排）抽成纯函数 [computeClipTextLayout] 便于守卫测试，
 /// 渲染本身要 BuildContext + 真实 pipeline 不可纯单测（合成由真机验）。
 
-/// 片段分享文本图的布局规格（纯数据）。竖屏 1080×1920（D3，TODO-1147 把栅格化+输出
-/// 分辨率从 720×1280 提到 1080×1920 消除文字模糊），沿用阅读主题色（D2）。
+/// 片段分享文本图的布局规格（纯数据）。输出分辨率按写排方向取默认手机屏尺寸——
+/// 竖排=竖屏 1080×1920、横排=横屏 1920×1080（TODO-1147 用户回访「分辨率不对」；
+/// 此前横排也塞竖屏 1080×1920 画布），沿用阅读主题色（D2）。
 @immutable
 class AudiobookClipTextLayout {
   const AudiobookClipTextLayout({
@@ -69,7 +70,9 @@ class AudiobookClipTextLayout {
 /// - [vertical] / [lineHeight] / [background] / [foreground]：沿用阅读主题（D2）。
 /// - [highlight]：逐句高亮跟随色（`ReaderThemeColors.sasayaki`，TODO-1013），作为整句
 ///   背景衬底涂在文字之下，复刻有声书当前句跟读高亮。
-/// - [width] / [height]：输出分辨率（默认竖屏 1080×1920，D3；TODO-1147 提分辨率消模糊）。
+/// - [width] / [height]：输出分辨率。不传（null）时按 [vertical] 取默认手机屏尺寸：
+///   竖排=竖屏 1080×1920、横排=横屏 1920×1080（TODO-1147 用户回访）。渲染画布 /
+///   JPG 帧 / ffmpeg scale+pad 全链共用 layout.width/height 单一真相源，无二次缩放。
 ///
 /// 字号自适应规则（粗略但确定，避免巨图/截断）：以 [baseFontSize] 为上限，文本越长
 /// 越往下收，最低 [minFontSize]。padding 取较小边的 8%，给文本留呼吸空间。
@@ -81,11 +84,15 @@ AudiobookClipTextLayout computeClipTextLayout({
   required Color background,
   required Color foreground,
   required Color highlight,
-  int width = 1080,
-  int height = 1920,
+  int? width,
+  int? height,
   double minFontSize = 18,
   double maxFontSize = 144,
 }) {
+  // TODO-1147（用户回访「分辨率不对」）：默认输出尺寸跟写排方向走——竖排文字用
+  // 竖屏 1080×1920，横排文字用横屏 1920×1080（默认手机竖/横屏标准尺寸）。
+  final int outWidth = width ?? (vertical ? 1080 : 1920);
+  final int outHeight = height ?? (vertical ? 1920 : 1080);
   // 自适应字号：短句用接近正文 2 倍的大字（分享卡片观感），长句逐级收。
   final double base = baseFontSize <= 0 ? 22 : baseFontSize;
   final double desired = base * 2.0;
@@ -95,11 +102,12 @@ AudiobookClipTextLayout computeClipTextLayout({
       ? desired
       : (desired * (12 / safeLen)).clamp(minFontSize, desired);
   final double fontSize = scaledByLength.clamp(minFontSize, maxFontSize);
-  final double shorterEdge = (width < height ? width : height).toDouble();
+  final double shorterEdge =
+      (outWidth < outHeight ? outWidth : outHeight).toDouble();
   final double padding = (shorterEdge * 0.08).clamp(24.0, 96.0);
   return AudiobookClipTextLayout(
-    width: width,
-    height: height,
+    width: outWidth,
+    height: outHeight,
     padding: padding,
     fontSize: fontSize,
     lineHeight: lineHeight <= 0 ? 1.6 : lineHeight,
