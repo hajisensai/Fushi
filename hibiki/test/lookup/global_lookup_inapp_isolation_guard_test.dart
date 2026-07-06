@@ -226,6 +226,69 @@ void main() {
               'native RevealStack positions + sizes the window to the bbox');
     });
 
+    test('TODO-1231 P1: __hasChildPopup rides its own channel, not the body',
+        () {
+      // Baking the flag into the per-frame body made the parent settingsJs change
+      // on every nested open/close, so the host re-eval'd the WHOLE body (a
+      // renderPopup() card rebuild) = the "父弹窗闪烁". It now rides a dedicated
+      // descriptor field + a host applyHasChildPopup one-liner, so the body stays
+      // byte-identical and renderPayload can SKIP the re-render. BUG-434 behaviour
+      // (parent-card tap closes the child) is preserved (popup.js reads it live).
+      expect(render.contains("map['hasChildPopup'] = i < payloads.length - 1"),
+          isTrue,
+          reason:
+              'has-child is a per-frame descriptor field (index<len-1), NOT '
+              'baked into settingsJs');
+      expect(render.contains('window.__hasChildPopup ='), isFalse,
+          reason: 'the settings body must NOT bake __hasChildPopup anymore '
+              '(that forced a full re-render on every nested open/close)');
+      expect(hostJs.contains('function applyHasChildPopup('), isTrue,
+          reason: 'the host applies __hasChildPopup on its own cheap channel');
+      expect(hostJs.contains('window.__hasChildPopup ='), isTrue,
+          reason:
+              'applyHasChildPopup evals the boolean inside the frame realm');
+      // renderPayload must gate the full re-eval on a real body change.
+      expect(
+          hostJs
+              .contains('record.injectedSettingsJs !== descriptor.settingsJs'),
+          isTrue,
+          reason:
+              'renderPayload re-evals the body ONLY when it actually changed '
+              '(otherwise a nested open/close rebuilt the parent card)');
+    });
+
+    test('TODO-1231 P2: layer shift is C++-ordered after SetWindowPos', () {
+      // measureAndReport must NOT shift the layer synchronously (that raced the
+      // window move across vsync -> the parent card lurched then snapped back).
+      // The shift rides commitLayerShift, which C++ RevealStack calls AFTER
+      // SetWindowPos so the window move and content shift are causally ordered.
+      expect(hostJs.contains('function commitLayerShift('), isTrue,
+          reason:
+              'the host exposes a commit hook for the deferred layer shift');
+      final int mAt = hostJs.indexOf('function measureAndReport(');
+      final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
+      expect(mAt >= 0 && mEnd > mAt, isTrue);
+      final String measureBody = hostJs.substring(mAt, mEnd);
+      expect(measureBody.contains('layerEl.style.left'), isFalse,
+          reason: 'measureAndReport must not shift the layer synchronously '
+              '(TODO-1231 P2: it races the window move across vsync)');
+      // C++ RevealStack triggers the commit AFTER SetWindowPos.
+      final int rsAt = cpp.indexOf('void GlobalLookupWindow::RevealStack(');
+      expect(rsAt, greaterThan(-1));
+      final int rsEnd = cpp.indexOf('void GlobalLookupWindow::ResizeTo(', rsAt);
+      expect(rsEnd, greaterThan(rsAt));
+      final String rsBody = cpp.substring(rsAt, rsEnd);
+      expect(rsBody.contains('commitLayerShift'), isTrue,
+          reason: 'RevealStack calls commitLayerShift via ExecuteScript');
+      expect(
+          rsBody.indexOf('SetWindowPos') < rsBody.indexOf('commitLayerShift'),
+          isTrue,
+          reason: 'the window moves FIRST, then the layer shift is applied');
+      // The bbox origin (CSS px) is carried to native so the host negates it.
+      expect(channel.contains("'left': left"), isTrue,
+          reason: 'revealStack forwards the bbox origin (CSS px) to native');
+    });
+
     test('D1: two-flag reveal gate hides a shell until content + geometry', () {
       // The gate is a declarative CSS attribute selector (single visibility
       // source) flipped by two independent flags; JS never sets inline

@@ -60,6 +60,13 @@ class GlobalLookupController {
   // lookup so a new card re-sizes from scratch.
   int _lastSentWidth = -1;
   int _lastSentHeight = -1;
+  // TODO-1231 P2 — the last window offset (physical px) pushed via revealStack.
+  // The bbox ORIGIN (dx/dy) can change while the SIZE (w/h) stays equal (a
+  // left/up cascade that shifts the window without growing it), so the resize
+  // de-dup must also fire on a dx/dy change — otherwise the window would not move
+  // and the host's commitLayerShift (which pins the root) would never run.
+  int _lastSentDx = 0;
+  int _lastSentDy = 0;
   // The overlay renders off-screen until the first self-measurement, then is
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
@@ -1288,17 +1295,24 @@ class GlobalLookupController {
       _revealSafety?.cancel();
       _lastSentWidth = w;
       _lastSentHeight = h;
+      _lastSentDx = dx;
+      _lastSentDy = dy;
       glog('reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
           '-> dx=$dx dy=$dy w=$w h=$h');
-      unawaited(
-          GlobalLookupChannel.revealStack(dx: dx, dy: dy, width: w, height: h));
-    } else if (w != _lastSentWidth || h != _lastSentHeight) {
+      unawaited(GlobalLookupChannel.revealStack(
+          dx: dx, dy: dy, width: w, height: h, left: left, top: top));
+    } else if (w != _lastSentWidth ||
+        h != _lastSentHeight ||
+        dx != _lastSentDx ||
+        dy != _lastSentDy) {
       _lastSentWidth = w;
       _lastSentHeight = h;
+      _lastSentDx = dx;
+      _lastSentDy = dy;
       glog('resize(box): dpr=$dpr box=($left,$top,$width,$height) '
           '-> dx=$dx dy=$dy w=$w h=$h');
-      unawaited(
-          GlobalLookupChannel.revealStack(dx: dx, dy: dy, width: w, height: h));
+      unawaited(GlobalLookupChannel.revealStack(
+          dx: dx, dy: dy, width: w, height: h, left: left, top: top));
     }
   }
 

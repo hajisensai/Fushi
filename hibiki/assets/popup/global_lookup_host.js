@@ -572,6 +572,9 @@
       record.loaded = true;
       wrapFrameBridge(record);
       injectContent(record);
+      // TODO-1231 P1 — seed the has-child flag on cold load (mirrors the in-app
+      // cold-load _setHasChildPopupJs); renderPayload keeps it in sync after.
+      applyHasChildPopup(record);
       observeContent(record);
       scheduleMeasure();
     });
@@ -689,9 +692,45 @@
       if (typeof d.settingsJs === 'string' && d.settingsJs.length) {
         win.eval(d.settingsJs);
       }
+      // TODO-1231 P1 — remember the body last eval'd into this frame so
+      // renderPayload can SKIP re-evaling an UNCHANGED body (a full renderPopup()
+      // card teardown+rebuild = the "父弹窗闪烁") on a nested open/close. Recorded
+      // even for an empty body so the equality check stays stable.
+      record.injectedSettingsJs =
+          (typeof d.settingsJs === 'string') ? d.settingsJs : '';
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  // TODO-1231 P1 — apply THIS frame's has-child-popup boolean on its own cheap
+  // channel: a single `window.__hasChildPopup` assignment inside the frame realm,
+  // mirroring the in-app _setHasChildPopupJs. Kept OFF settingsJs so a nested
+  // open/close never re-evals the whole card body. popup.js reads
+  // window.__hasChildPopup LIVE at click time (parent-card tap -> close the
+  // child), so setting the variable alone — no renderPopup() — is sufficient
+  // (BUG-434 behaviour preserved). Guarded on the last-applied value so an
+  // unchanged re-render posts nothing.
+  function applyHasChildPopup(record) {
+    var desired = !!(record.descriptor && record.descriptor.hasChildPopup);
+    if (record.hasChildPopup === desired) {
+      return;
+    }
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win || typeof win.eval !== 'function') {
+      return;
+    }
+    try {
+      win.eval('window.__hasChildPopup = ' + (desired ? 'true' : 'false') + ';');
+      record.hasChildPopup = desired;
+    } catch (e) {
+      // No realm yet (node harness / not loaded) -> the next render/load applies.
     }
   }
 
@@ -711,8 +750,17 @@
     setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
     if (record.loaded) {
       wrapFrameBridge(record);
-      injectContent(record);
-      observeContent(record);
+      // TODO-1231 P1 — only re-run the FULL body (which ends in renderPopup() = a
+      // card DOM teardown+rebuild) when it ACTUALLY changed. A nested open/close
+      // leaves the parent's body byte-identical (has-child now rides its own
+      // channel below), so re-evaling it needlessly rebuilt the card, dropped its
+      // scroll, and re-fired favorite/duplicate/audio probes — the "父弹窗闪烁".
+      // Skip it; the one thing that changed rides applyHasChildPopup.
+      if (record.injectedSettingsJs !== descriptor.settingsJs) {
+        injectContent(record);
+        observeContent(record);
+      }
+      applyHasChildPopup(record);
     }
     return record;
   }
@@ -853,21 +901,20 @@
         !isFinite(maxRight) || !isFinite(maxBottom)) {
       return;
     }
-    // Shift the layer so the bbox top-left maps to the window origin: the C++
-    // window moves to (cursor + minLeft, cursor + minTop) and grows to the bbox
-    // size (E1), so shifting the layer by (-minLeft, -minTop) keeps the ROOT
-    // card pinned at the cursor while the whole cascade fits inside the window.
-    var layerEl = document.getElementById(LAYER_ID);
-    if (layerEl) {
-      layerEl.style.left = (-minLeft) + 'px';
-      layerEl.style.top = (-minTop) + 'px';
-    }
-    // TODO-1189 — remember the applied layer translation so frameIdAtPoint can
-    // map shell coords back to WINDOW coords when hit-testing. The layer is
-    // shifted by (-minLeft, -minTop); the amount a shell's window position is
-    // reduced by is therefore (minLeft, minTop).
-    layerOffsetLeft = minLeft;
-    layerOffsetTop = minTop;
+    // TODO-1231 P2 — do NOT shift the host layer (nor set layerOffset*) HERE. The
+    // layer translation (-minLeft,-minTop) that pins the ROOT card at the cursor
+    // while the window covers the whole cascade bbox must be applied ONLY AFTER
+    // C++ SetWindowPos has moved the window to the new bbox origin. When the host
+    // shifted the layer synchronously (WebView2 compositor, immediate) but the
+    // window only moved a full Dart round-trip later, the two compensating moves
+    // landed on DIFFERENT vsync frames and the parent card visibly lurched then
+    // snapped back (the "几何跳动" half of TODO-1231). C++ RevealStack now calls
+    // commitLayerShift(box.left, box.top) right AFTER SetWindowPos so the window
+    // move and the content shift are causally ordered (window first, content ~1
+    // frame later) instead of racing. Mitigation, not a true atomic commit: the
+    // DWM window and the WebView2 surface cannot move in the SAME frame across the
+    // JS/window boundary, so a ~1 frame residual remains (vs the old multi-frame
+    // desync) — and only for a left/up cascade (dx/dy != 0; down-right stays 0).
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
     var box = {
@@ -903,6 +950,27 @@
     } catch (e) {
       return 0;
     }
+  }
+
+  // TODO-1231 P2 — apply the layer translation that pins the ROOT card at the
+  // cursor while the window covers the whole cascade bounding box. Called by C++
+  // RevealStack AFTER SetWindowPos (see measureAndReport), so the window has
+  // already moved to the bbox origin before the content compensates. [bboxLeft]/
+  // [bboxTop] are the union bbox origin (window-local CSS px — the SAME values
+  // Dart sized/positioned the window from), so the layer is translated by their
+  // negation and layerOffset* is kept in lock-step for the hit-test (TODO-1189).
+  // CSS px only (no dpr; the dpr boundary is the C++ window). Bad args default to
+  // 0 (no shift), matching a single popup / down-right cascade.
+  function commitLayerShift(bboxLeft, bboxTop) {
+    var l = (typeof bboxLeft === 'number' && isFinite(bboxLeft)) ? bboxLeft : 0;
+    var t = (typeof bboxTop === 'number' && isFinite(bboxTop)) ? bboxTop : 0;
+    var layerEl = document.getElementById(LAYER_ID);
+    if (layerEl) {
+      layerEl.style.left = (-l) + 'px';
+      layerEl.style.top = (-t) + 'px';
+    }
+    layerOffsetLeft = l;
+    layerOffsetTop = t;
   }
 
   // TODO-890 — slide the ROOT card off-screen, THEN post dismiss. Adds the
@@ -1167,6 +1235,7 @@
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,
+    commitLayerShift: commitLayerShift,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
     _frames: frames,

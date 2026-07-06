@@ -47,7 +47,6 @@ String buildFrameSettingsJs({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  bool hasChildPopup = false,
   String sentence = '',
 }) {
   final String settingsJs = buildPopupSettingsJs(
@@ -56,14 +55,19 @@ String buildFrameSettingsJs({
     result: result,
     options: const PopupSettingsOptions(globalLookup: true),
   );
-  // TODO-1067 (子4) — wire the SAME __hasChildPopup guard the in-app popup uses
-  // (BUG-434): when this frame has a child card stacked on top, popup.js's
-  // document click handler must post `tapOutside` (close the child) instead of
-  // selecting/return when the user taps the parent card body / glossary text.
-  // The app-external overlay never set this flag, so tapping the parent card did
-  // nothing and the child popup could not be closed. A leaf frame (no child)
-  // leaves it false, so TODO-859 (tap card whitespace keeps the layer) still
-  // holds. This runs inside the frame's own iframe realm (contentWindow.eval).
+  // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
+  // anymore. The flag flips whenever a child card opens/closes on top of THIS
+  // frame, but everything else in the body (theme/zoom/entries/sentence) is
+  // invariant across that. Baking the flag in (TODO-1067 子4) made the parent's
+  // settingsJs change on every nested open/close, so global_lookup_host.js
+  // re-eval'd the WHOLE body — which ends in renderPopup() = a full card DOM
+  // teardown+rebuild (scroll lost, favorite/duplicate/audio probes re-fired):
+  // the visible "父弹窗闪烁". The flag now rides its OWN per-frame descriptor
+  // channel (see buildStackRenderScript -> host applyHasChildPopup), so the body
+  // stays byte-identical and the host can SKIP the re-render. This mirrors the
+  // in-app _setHasChildPopupJs, which is likewise a lone evaluateJavascript,
+  // never part of _pushResults. BUG-434 behaviour (parent-card tap closes the
+  // child) is preserved — popup.js reads the flag live at click time.
   //
   // TODO-1067 (子2) — inject the shared top-pull swipe-close JS
   // (kPopupTopPullReleaseJs) into the overlay iframe too. It was only injected on
@@ -74,7 +78,6 @@ String buildFrameSettingsJs({
   // the controller already gates on the enableSwipeToClose preference.
   return '''
     $settingsJs
-    window.__hasChildPopup = $hasChildPopup;
     $kPopupTopPullReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
@@ -222,14 +225,16 @@ String buildStackRenderScript({
       appModel: appModel,
       result: p.result,
       sentence: p.sentence,
-      // TODO-1067 (子4) — a frame has a child popup iff it is not the deepest
-      // (last) frame in the stack, mirroring the in-app `index < entries.length
-      // - 1` derivation (BUG-434). Drives popup.js's __hasChildPopup guard so
-      // tapping a parent card closes the child.
-      hasChildPopup: i < payloads.length - 1,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
+    // TODO-1231 P1 / TODO-1067 (子4) — a frame has a child popup iff it is not the
+    // deepest (last) frame in the stack, mirroring the in-app `index <
+    // entries.length - 1` derivation (BUG-434). Carried as its OWN descriptor
+    // field (NOT baked into settingsJs) so a nested open/close leaves the parent
+    // body byte-identical and the host skips the full re-render; host.js
+    // applyHasChildPopup evals only this one boolean inside the frame realm.
+    map['hasChildPopup'] = i < payloads.length - 1;
     map['frame'] = _frameRectMap(
       anchorRect: p.anchorRect,
       depth: i,

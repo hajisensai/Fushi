@@ -167,12 +167,22 @@ abstract final class GlobalLookupChannel {
     required int dy,
     required int width,
     required int height,
+    double left = 0,
+    double top = 0,
   }) =>
       _channel.invokeMethod<void>('revealStack', <String, Object?>{
         'dx': dx,
         'dy': dy,
         'width': width,
         'height': height,
+        // TODO-1231 P2 — the union bbox origin in window-local CSS px. Native
+        // RevealStack forwards it to the host's commitLayerShift AFTER SetWindowPos
+        // so the compensating layer shift lands only once the window has moved
+        // (window first, content ~1 frame later), killing the cross-vsync geometry
+        // lurch of a left/up nested cascade. dx/dy stay the physical-px window
+        // offset; left/top are the CSS-px values the host negates for the layer.
+        'left': left,
+        'top': top,
       });
 
   static Future<void> hide() => _channel.invokeMethod<void>('hide');

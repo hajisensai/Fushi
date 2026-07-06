@@ -464,18 +464,27 @@ void main() {
       controller = read('lib/src/lookup/global_lookup_controller.dart');
     });
 
-    test('子4 — buildFrameSettingsJs wires window.__hasChildPopup (BUG-434)',
+    test('子4/TODO-1231 — __hasChildPopup rides its own channel (BUG-434 kept)',
         () {
-      // The app-external overlay never set __hasChildPopup, so popup.js's click
-      // handler never posted tapOutside on a parent-card tap -> the child popup
-      // could not be closed. The per-frame settings body must now inject it.
-      expect(render.contains('window.__hasChildPopup ='), isTrue,
-          reason: 'the overlay frame must inject the __hasChildPopup guard');
-      expect(render.contains('bool hasChildPopup'), isTrue,
-          reason: 'buildFrameSettingsJs must take a hasChildPopup param');
-      // Derived as "not the deepest frame" == the in-app index<len-1 rule.
-      expect(render.contains('hasChildPopup: i < payloads.length - 1'), isTrue,
-          reason: 'a frame has a child iff it is not the last in the stack');
+      // BUG-434 behaviour preserved: a parent frame still learns it has a child so
+      // popup.js's click handler posts tapOutside on a parent-card tap. TODO-1231:
+      // the flag is NO LONGER baked into the per-frame settings body (that made the
+      // parent body change on every nested open/close -> the host re-eval'd the
+      // whole body = renderPopup() card rebuild = 父弹窗闪烁). It now rides a
+      // dedicated descriptor field + the host applyHasChildPopup one-liner, so the
+      // body stays byte-identical and the host skips the full re-render.
+      expect(render.contains("map['hasChildPopup'] = i < payloads.length - 1"),
+          isTrue,
+          reason: 'a frame has a child iff it is not the last in the stack, '
+              'carried as its own descriptor field');
+      expect(render.contains('window.__hasChildPopup ='), isFalse,
+          reason: 'the settings body must NOT bake __hasChildPopup anymore '
+              '(TODO-1231: that forced a full re-render on every nested toggle)');
+      expect(host.contains('function applyHasChildPopup('), isTrue,
+          reason: 'the host applies __hasChildPopup on its own cheap channel');
+      expect(host.contains('window.__hasChildPopup ='), isTrue,
+          reason:
+              'host applyHasChildPopup evals the boolean in the frame realm');
     });
 
     test('子2 — buildFrameSettingsJs injects the shared swipe-close JS', () {

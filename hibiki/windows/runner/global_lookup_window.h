@@ -90,7 +90,8 @@ class GlobalLookupWindow {
   // host bbox origin × dpr) so a left/up cascade shifts the window while the root
   // card stays pinned at the cursor; |width|/|height| are the bbox size (physical
   // px). Clamps to the monitor work area like Reveal/ResizeTo.
-  void RevealStack(int dx, int dy, int width, int height);
+  void RevealStack(int dx, int dy, int width, int height,
+                   double bbox_left, double bbox_top);
   void Hide();
   bool IsShowing() const;
 

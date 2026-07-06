@@ -356,7 +356,8 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   }
 }
 
-void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height) {
+void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
+                                     double bbox_left, double bbox_top) {
   if (hwnd_ == nullptr || width <= 0 || height <= 0) {
     return;
   }
@@ -385,6 +386,21 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height) {
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
+  // TODO-1231 P2 — now that the window sits at the new bbox origin, tell the host
+  // to apply the compensating layer shift (pin the ROOT card at the cursor while
+  // the window covers the whole cascade). Done AFTER SetWindowPos so the window
+  // move and the content shift are causally ordered (window first, content ~1
+  // frame later) instead of the host shifting its layer a full Dart round-trip
+  // BEFORE the window moved (the cross-vsync "几何跳动"). bbox_left/top are
+  // window-local CSS px (the host negates them for the layer translate).
+  // std::to_wstring on a double yields a plain decimal literal JS parses.
+  if (webview_ != nullptr) {
+    std::wstring shift_script =
+        L"window.__globalLookupHost && "
+        L"window.__globalLookupHost.commitLayerShift(" +
+        std::to_wstring(bbox_left) + L", " + std::to_wstring(bbox_top) + L");";
+    webview_->ExecuteScript(shift_script.c_str(), nullptr);
+  }
   // Arm the click-outside dismiss hooks now that the stack is on-screen (the
   // first reveal arms; later resizes are idempotent re-arms).
   s_hook_owner_ = this;

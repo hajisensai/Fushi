@@ -458,7 +458,11 @@ function descriptor(id, parentIndex, settingsJs) {
 }
 
 // 11. D2 overlaySize: the host reports the UNION bounding box of all shells
-//     (window-local CSS px) + dpr; the layer is shifted by (-minLeft,-minTop).
+//     (window-local CSS px) + dpr. TODO-1231 P2: measureAndReport NO LONGER
+//     shifts the layer synchronously (that raced the window move across vsync ->
+//     geometry lurch); the shift is applied by commitLayerShift, which C++
+//     RevealStack calls AFTER SetWindowPos. So the layer stays un-shifted until
+//     commitLayerShift(box.left, box.top) runs.
 {
   const { host, document, window } = freshHost();
   window.devicePixelRatio = 1.5;
@@ -477,10 +481,16 @@ function descriptor(id, parentIndex, settingsJs) {
   assert.strictEqual(box.top, 0, 'bbox top = min shell top');
   assert.strictEqual(box.width, 140, 'bbox width = maxRight - minLeft');
   assert.strictEqual(box.height, 140, 'bbox height = maxBottom - minTop');
-  // layer shifted so the bbox origin maps to the window origin.
+  // TODO-1231 P2: measureAndReport must NOT have shifted the layer yet (it only
+  // reports the bbox; the shift is C++-ordered after SetWindowPos).
   const layer = document.getElementById('global-lookup-host-layer');
-  assert.strictEqual(layer.style.left, '40px', 'layer shifted by -minLeft');
-  assert.strictEqual(layer.style.top, '0px', 'layer shifted by -minTop');
+  assert.strictEqual(layer.style.left, '0', 'layer NOT shifted by measureAndReport');
+  assert.strictEqual(layer.style.top, '0', 'layer NOT shifted by measureAndReport');
+  // commitLayerShift (called by C++ RevealStack after the window moved) applies
+  // the compensating translation so the bbox origin maps to the window origin.
+  host.commitLayerShift(box.left, box.top);
+  assert.strictEqual(layer.style.left, '40px', 'commitLayerShift shifts by -minLeft');
+  assert.strictEqual(layer.style.top, '0px', 'commitLayerShift shifts by -minTop');
 }
 
 // Flush all captured safety timers (simulate the timeout firing).
@@ -1149,6 +1159,11 @@ function flushTimers() {
       { id: 'frame-1', parentIndex: 0, frame: { left: -50, top: -50, width: 100, height: 100 }, settingsJs: '' },
     ],
   });
+  // TODO-1231 P2: the layer shift is now applied by commitLayerShift (called by
+  // C++ RevealStack after SetWindowPos), NOT synchronously in measureAndReport.
+  // Drive it here with the reported bbox origin (minLeft=minTop=-50).
+  const box34 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  host.commitLayerShift(box34.left, box34.top);
   // The layer got shifted (proves minLeft/minTop < 0 translation happened).
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '50px', 'layer shifted by -minLeft (=50)');
@@ -1196,6 +1211,10 @@ function flushTimers() {
       { id: 'frame-1', parentIndex: 0, frame: { left: 60, top: 40, width: 100, height: 100 }, settingsJs: '' },
     ],
   });
+  // TODO-1231 P2: C++ RevealStack -> commitLayerShift runs even for the offset-0
+  // case (box origin 0,0), a no-op shift that leaves the layer at the origin.
+  const box35 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  host.commitLayerShift(box35.left, box35.top);
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '0px', 'no layer shift (minLeft=0)');
   assert.strictEqual(layer.style.top, '0px', 'no layer shift (minTop=0)');
@@ -1211,6 +1230,74 @@ function flushTimers() {
   assert.strictEqual(gap, false, 'offset=0: a gap click still misses');
   assert.ok(hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
     'offset=0: a gap click still dismisses the root');
+}
+
+// 36. TODO-1231 P1 (no parent re-render): re-rendering an ALREADY-loaded frame
+//     with an UNCHANGED settingsJs body must NOT re-eval the body. Baking a
+//     changing __hasChildPopup into the body used to force a full renderPopup()
+//     rebuild of the parent card on every nested open/close = the "父弹窗闪烁".
+{
+  const { host } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1, '/* BODY-V1 */')] });
+  const bodyEvals = () =>
+    evalLog.filter((e) => e.frameId === 'frame-0' && /BODY-V1/.test(e.code)).length;
+  assert.strictEqual(bodyEvals(), 1, "parent body eval'd once on first render");
+  // Push a child: Dart re-sends the parent's UNCHANGED body + the new child.
+  host.renderStack({
+    popups: [
+      descriptor('frame-0', -1, '/* BODY-V1 */'),
+      descriptor('frame-1', 0, '/* CHILD-BODY */'),
+    ],
+  });
+  assert.strictEqual(bodyEvals(), 1,
+    'unchanged parent body is NOT re-rendered on nested open (no card rebuild)');
+  // Close the child: parent body still unchanged -> still not re-rendered.
+  host.renderStack({ popups: [descriptor('frame-0', -1, '/* BODY-V1 */')] });
+  assert.strictEqual(bodyEvals(), 1,
+    'unchanged parent body is NOT re-rendered on nested close either');
+  // A genuinely changed body (new lookup word) DOES re-render.
+  host.renderStack({ popups: [descriptor('frame-0', -1, '/* BODY-V2 */')] });
+  assert.strictEqual(
+    evalLog.filter((e) => e.frameId === 'frame-0' && /BODY-V2/.test(e.code)).length,
+    1,
+    'a CHANGED body is re-rendered (new lookup still renders)');
+}
+
+// 37. TODO-1231 P1 (__hasChildPopup on its OWN channel): the flag is applied by a
+//     lone `window.__hasChildPopup = <bool>` eval inside the frame realm, NOT
+//     baked into the body, and flips as children open/close WITHOUT re-rendering
+//     the parent body (BUG-434 behaviour preserved, flicker removed).
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, hasChildPopup: true,
+        frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '/* ROOT-BODY */' },
+      { id: 'frame-1', parentIndex: 0, hasChildPopup: false,
+        frame: { left: 40, top: 60, width: 360, height: 480 }, settingsJs: '/* CHILD-BODY */' },
+    ],
+  });
+  const rootBody = evalLog.find((e) => e.frameId === 'frame-0' && /ROOT-BODY/.test(e.code));
+  assert.ok(rootBody, 'root body rendered');
+  assert.ok(!/__hasChildPopup/.test(rootBody.code),
+    'the body does NOT bake __hasChildPopup (rides its own channel)');
+  assert.ok(
+    evalLog.some((e) => e.frameId === 'frame-0' && /window\.__hasChildPopup = true/.test(e.code)),
+    'root __hasChildPopup=true applied on the dedicated channel');
+  const logLen = evalLog.length;
+  // Close the child: parent alone, hasChildPopup now false.
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, hasChildPopup: false,
+        frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '/* ROOT-BODY */' },
+    ],
+  });
+  const afterClose = evalLog.slice(logLen);
+  assert.ok(!afterClose.some((e) => /ROOT-BODY/.test(e.code)),
+    'unchanged parent body NOT re-rendered on child close (no flicker)');
+  assert.ok(
+    afterClose.some((e) => e.frameId === 'frame-0' && /window\.__hasChildPopup = false/.test(e.code)),
+    'child close flips __hasChildPopup=false via the dedicated channel');
 }
 
 console.log('global_lookup_host_test: PASS');
