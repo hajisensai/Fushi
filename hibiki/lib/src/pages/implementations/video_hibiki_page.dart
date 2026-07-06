@@ -22,6 +22,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/video_loading_overlay.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
@@ -275,6 +276,11 @@ String videoFavoriteCacheKey({
 
 /// TODO-897：缺失资源对话框的用户选择。
 enum _MissingResourceChoice { relink, reimport, delete, cancel }
+
+/// TODO-1213：视频（尤其网络流）加载阶段。裸转圈无反馈会让用户以为卡死，
+/// [_VideoHibikiPageState._buildLoadingBody] 据此显示对应阶段文案：连接流 → 下载
+/// 字幕 → 缓冲 → 准备。纯 UI 状态，不影响 controller.load 时序。
+enum _VideoLoadPhase { connecting, downloadingSubtitle, buffering, preparing }
 
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
@@ -733,6 +739,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoPlayerController? _chapterListenerController;
   VoidCallback? _chapterListener;
   bool _failed = false;
+
+  /// TODO-1213：当前加载阶段（网络流 / 本地共用）。非就绪态时 [_buildScaffold] 的
+  /// spinner 分支据此显示带上下文的加载态（标题 + 返回 + 阶段文案）。默认 preparing，
+  /// 首帧即有文案；[_loadRemoteEpisode] / [_applyLoad] 各阶段推进。就绪 / 失败 / 缺失
+  /// 态走其它分支、不看它。
+  _VideoLoadPhase _loadingPhase = _VideoLoadPhase.preparing;
+
+  /// TODO-1213：字幕下载阶段的确定性进度（0..1）。仅当 host 端
+  /// [RemoteVideoClient.getRemoteVideoSubtitle] 回调 onProgress 时非空 → 显进度条 +
+  /// 百分比；否则 null → indeterminate spinner + 阶段文案。
+  double? _subtitleProgress;
 
   /// TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）。置位后
   /// [_buildScaffold] 在转圈判据之前短路成「资源缺失」态，不再无限转圈。
@@ -1365,6 +1382,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// TODO-1213：切换加载阶段并刷新加载态 UI（mounted 守卫）。离开「下载字幕」阶段时
+  /// 一并清字幕进度（其它阶段无确定性进度，转 indeterminate）。
+  void _setLoadingPhase(_VideoLoadPhase phase) {
+    if (!mounted) return;
+    setState(() {
+      _loadingPhase = phase;
+      if (phase != _VideoLoadPhase.downloadingSubtitle) {
+        _subtitleProgress = null;
+      }
+    });
+  }
+
   Future<void> _init() async {
     // TODO-1063: 视频毕业为常驻媒体类型后，配置方案的「媒体类型绑定」也支持
     // 绑定 profile 到 'video'。打开视频即解析并应用绑定的 profile（与阅读器
@@ -1477,6 +1506,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final int seq = ++_episodeLoadSeq;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
+    // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
+    _setLoadingPhase(_VideoLoadPhase.connecting);
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
         info.id,
@@ -1490,6 +1521,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty) {
         cues = client.preresolvedCues;
       } else if (urls.subtitleUrl != null) {
+        // TODO-1213：进入「正在下载字幕…」阶段（host 若回调 onProgress 则显确定性进度）。
+        _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
         final Directory temp = await getTemporaryDirectory();
         final File subtitle = File(
           p.join(
@@ -1504,6 +1537,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           info.id,
           subtitle,
           episodeIndex: index,
+          onProgress: (double progress) {
+            // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
+            if (!mounted) return;
+            setState(() => _subtitleProgress = progress);
+          },
         );
         externalSub = subtitle.path;
         _remoteSubtitlePath = subtitle.path;
@@ -2046,6 +2084,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'renderGraphicStreamIndex=$renderGraphicStreamIndex '
           'fitMode=$_videoFitMode platform=${Platform.operatingSystem}',
     );
+    // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
+    // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
+    _setLoadingPhase(_VideoLoadPhase.buffering);
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -4723,7 +4764,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           : _missingResource
               ? _buildMissingResourceBody(cs)
               : (controller == null || videoController == null)
-                  ? const Center(child: CircularProgressIndicator())
+                  ? _buildLoadingBody()
                   : _withPageSpaceOverride(
                       controller,
                       _pageDropTarget(
@@ -4732,6 +4773,40 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       ),
                     ),
     );
+  }
+
+  /// TODO-1213：有上下文加载态（替代裸 `CircularProgressIndicator`）。标题（让用户知道
+  /// 在加载哪个视频）+ 顶部返回入口（加载中随时可退出、不卡死，走 [_handleBackOrExit]
+  /// 与正常退出同路径）+ 阶段文案（连接流 / 下载字幕 / 缓冲 / 准备）+ 字幕下载确定性
+  /// 进度。纯 UI，不碰 controller.load 时序。
+  Widget _buildLoadingBody() {
+    final String title = _titleNotifier.value ??
+        _title ??
+        widget.remoteInfo?.title ??
+        _bookRow?.title ??
+        '';
+    return VideoLoadingOverlay(
+      title: title,
+      phaseText: _loadingPhaseLabel(_loadingPhase),
+      progress: _loadingPhase == _VideoLoadPhase.downloadingSubtitle
+          ? _subtitleProgress
+          : null,
+      onBack: () => unawaited(_handleBackOrExit()),
+    );
+  }
+
+  /// TODO-1213：加载阶段 → 本地化文案。
+  String _loadingPhaseLabel(_VideoLoadPhase phase) {
+    switch (phase) {
+      case _VideoLoadPhase.connecting:
+        return t.video_loading_connecting;
+      case _VideoLoadPhase.downloadingSubtitle:
+        return t.video_loading_subtitle;
+      case _VideoLoadPhase.buffering:
+        return t.video_loading_buffering;
+      case _VideoLoadPhase.preparing:
+        return t.video_loading_preparing;
+    }
   }
 
   /// TODO-897：本地资源缺失态正文（不转圈）。中性图标 + 文案 + 「重新导入 / 删除

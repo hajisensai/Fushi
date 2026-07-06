@@ -2126,5 +2126,9 @@
   "video_subtitle_waveform_scroll_hint": "横向拖动查看时间轴，用下方控件对齐字幕",
   "video_subtitle_waveform_jump_playhead": "跳到播放头",
   "video_subtitle_waveform_zoom_in": "放大",
-  "video_subtitle_waveform_zoom_out": "缩小"
+  "video_subtitle_waveform_zoom_out": "缩小",
+  "video_loading_connecting": "正在连接视频流…",
+  "video_loading_subtitle": "正在下载字幕…",
+  "video_loading_buffering": "正在缓冲…",
+  "video_loading_preparing": "正在准备…"
 }
