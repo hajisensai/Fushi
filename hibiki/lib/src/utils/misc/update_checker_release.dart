@@ -96,7 +96,10 @@ class UpdateChecker {
     return completer.future;
   }
 
-  static Future<void> _cleanupOldApks(String _) async {
+  static Future<void> _cleanupOldApks(
+    String _, {
+    String? activeAssetFileName,
+  }) async {
     try {
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
       if (!updatesDir.existsSync()) return;
@@ -132,7 +135,10 @@ class UpdateChecker {
 
       final List<UpdateDirEntry> dirEntries = <UpdateDirEntry>[];
       for (final FileSystemEntity entity in updatesDir.listSync()) {
-        final String name = entity.uri.pathSegments.last;
+        // TODO-1149 根因修复：目录条目的 `entity.uri.pathSegments.last` 恒为空串（Dart
+        // 给目录 URI 补尾斜杠），此前使 `.staging` 根永不匹配 `.endsWith('.staging')`、
+        // GC 形同虚设。改用按 `.path` 取叶子名，目录/文件一致可靠。
+        final String name = _leafName(entity.path);
         if (entity is Directory) {
           // TODO-1149：目录也带**真实 mtime** 进 GC 决策——`.staging` 下载暂存根按自身
           // mtime 与安装包同策由 selectStaleUpdateArtifacts 一并回收（活跃下载 root mtime
@@ -183,6 +189,7 @@ class UpdateChecker {
       final List<String> stale = selectStaleUpdateArtifacts(
         entries: dirEntries,
         cutoff: cutoff,
+        activeAssetFileName: activeAssetFileName,
         handoffInstallerFileName: handoffInstallerName,
       );
       for (final String name in stale) {
@@ -919,6 +926,14 @@ class UpdateChecker {
           customProxy: customProxy,
         ),
       );
+
+      // TODO-1149：下载完成即回收同通道旧包 / 残留 staging 根（不等下次 GC / 启动 reconcile）。
+      // 高频下载场景下每下一个新版就顺手清掉超出保留名额的旧安装包 + 空 staging 根，从源头
+      // 抑制堆积。protect 刚下好的这个包（activeAssetFileName）——它正等安装 / handoff，绝不
+      // 能被回收；handoff marker 尚未写入时靠这个名字排除，marker 写入后由 GC 自身保护。
+      // best-effort：GC 全程 try/catch 吞异常，失败绝不影响安装流程。
+      await _cleanupOldApks(version,
+          activeAssetFileName: _leafName(outFile.path));
 
       status.value = t.update_installing;
 

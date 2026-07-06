@@ -75,7 +75,15 @@ void main() {
     // selection.version（修「顶层 6636 但安卓装 6621」死循环），均须与 release 检查/版本比较
     // 共享同一 library 私有作用域（part 契约禁止 part 内 import 无法拆库）。release 净增
     // ~30 行到 ~1616，故把 release 天花板从 1600 上调到 1650（留 ~34 行合理余量，与既有风格一致）。
-    const int kDownloadCeiling = 1700;
+    //
+    // TODO-1149（数量封顶 + promote 删空 staging 根）：又加入真实跨切功能——
+    // selectStaleUpdateArtifacts 增加 keepNewestInstallers / keepNewestStaging「保留最新 N」
+    // 数量回收（高频下载 7 天内也不再无界堆积）+ 共享纯函数 _selectStaleByCountAndAge +
+    // _promoteCompleteDownload 成功后 _pruneEmptyStagingRoot 删空根（从源头消灭空 staging 根
+    // 堆积），均带 @visibleForTesting / 专用测试覆盖，且必须与下载 / staging 引擎共享同一
+    // library 私有作用域（part 契约禁止 part 内 import 无法拆库）。download 净增 ~77 行到
+    // 1718，故把 download 天花板从 1700 上调到 1780（留 ~62 行合理余量，与既有余量风格一致）。
+    const int kDownloadCeiling = 1780;
     const int kReleaseCeiling = 1650;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {

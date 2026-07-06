@@ -179,6 +179,135 @@ void main() {
         isEmpty,
       );
     });
+
+    // ---- TODO-1149：数量封顶（高频下载 7 天内也不再无界堆积）----
+    final DateTime h1 = now.subtract(const Duration(hours: 1)); // 最新
+    final DateTime h2 = now.subtract(const Duration(hours: 2));
+    final DateTime h3 = now.subtract(const Duration(hours: 3));
+    final DateTime h4 = now.subtract(const Duration(hours: 4)); // 最旧但仍 <7 天
+
+    test('数量封顶：超出 keepNewestInstallers 的近期包也回收（默认保留最新 2 个）', () {
+      // 根因：旧逻辑只按 7 天 cutoff，全部近期包永不回收 → 高频下载一直堆积。现在保留
+      // 最新 N（默认 2），超出的即便仍在 7 天内也回收。
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _f('Hibiki-1.0.3-windows-setup.exe', h1),
+          _f('Hibiki-1.0.2-windows-setup.exe', h2),
+          _f('Hibiki-1.0.1-windows-setup.exe', h3),
+          _f('Hibiki-1.0.0-windows-setup.exe', h4),
+        ],
+        cutoff: cutoff,
+      );
+      // 保留最新 2（h1/h2），回收较旧的两个近期包（h3/h4）。
+      expect(
+        stale,
+        containsAll(<String>[
+          'Hibiki-1.0.1-windows-setup.exe',
+          'Hibiki-1.0.0-windows-setup.exe',
+        ]),
+      );
+      expect(stale, hasLength(2));
+    });
+
+    test('keepNewestInstallers 显式=1：只保留最新 1 个近期包', () {
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _f('Hibiki-1.0.2-windows-setup.exe', h1),
+          _f('Hibiki-1.0.1-windows-setup.exe', h2),
+          _f('Hibiki-1.0.0-windows-setup.exe', h3),
+        ],
+        cutoff: cutoff,
+        keepNewestInstallers: 1,
+      );
+      expect(
+        stale,
+        containsAll(<String>[
+          'Hibiki-1.0.1-windows-setup.exe',
+          'Hibiki-1.0.0-windows-setup.exe',
+        ]),
+      );
+      expect(stale, isNot(contains('Hibiki-1.0.2-windows-setup.exe')));
+      expect(stale, hasLength(2));
+    });
+
+    test('数量封顶 + 超 7 天叠加：过期的一律回收，最新名额只保留近期', () {
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _f('Hibiki-1.0.2-windows-setup.exe', h1),
+          _f('Hibiki-1.0.1-windows-setup.exe', old), // 超 7 天
+        ],
+        cutoff: cutoff,
+        keepNewestInstallers: 2,
+      );
+      // h1 在名额内且近期 → 保留；old 超 7 天 → 回收（即便在名额内）。
+      expect(stale, <String>['Hibiki-1.0.1-windows-setup.exe']);
+    });
+
+    test('handoff 待装包超出保留名额也绝不回收（保护优先于数量封顶）', () {
+      // handoff 是最旧那个（排名靠后），数量封顶会把它排出名额——但它正等重启安装，
+      // 必须保护不删。
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _f('Hibiki-1.0.3-windows-setup.exe', h1),
+          _f('Hibiki-1.0.2-windows-setup.exe', h2),
+          _f('Hibiki-1.0.1-windows-setup.exe', h3),
+          _f('Hibiki-1.0.0-windows-setup.exe', h4), // handoff 待装
+        ],
+        cutoff: cutoff,
+        keepNewestInstallers: 1,
+        handoffInstallerFileName: 'Hibiki-1.0.0-windows-setup.exe',
+      );
+      // 保留最新 1（h1）+ handoff（受保护）；回收中间两个（h2/h3）。
+      expect(
+        stale,
+        containsAll(<String>[
+          'Hibiki-1.0.2-windows-setup.exe',
+          'Hibiki-1.0.1-windows-setup.exe',
+        ]),
+      );
+      expect(stale, isNot(contains('Hibiki-1.0.0-windows-setup.exe')));
+      expect(stale, hasLength(2));
+    });
+
+    test('.staging 数量封顶：超出 keepNewestStaging 的近期暂存根也回收（中断下载残留）', () {
+      // 下载被中断留下 staging 根；高频中断在 7 天内堆一批。默认只保留最新 1 个。
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _d('.Hibiki-1.0.2-windows-setup.exe.staging', h1),
+          _d('.Hibiki-1.0.1-windows-setup.exe.staging', h2),
+          _d('.Hibiki-1.0.0-windows-setup.exe.staging', h3),
+        ],
+        cutoff: cutoff,
+      );
+      expect(
+        stale,
+        containsAll(<String>[
+          '.Hibiki-1.0.1-windows-setup.exe.staging',
+          '.Hibiki-1.0.0-windows-setup.exe.staging',
+        ]),
+      );
+      expect(
+        stale,
+        isNot(contains('.Hibiki-1.0.2-windows-setup.exe.staging')),
+      );
+      expect(stale, hasLength(2));
+    });
+
+    test('安装包与 .staging 名额相互独立（各留各的最新 N）', () {
+      final List<String> stale = selectStaleUpdateArtifacts(
+        entries: <UpdateDirEntry>[
+          _f('Hibiki-1.0.2-windows-setup.exe', h1),
+          _f('Hibiki-1.0.1-windows-setup.exe', h2),
+          _d('.Hibiki-1.0.2-windows-setup.exe.staging', h1),
+          _d('.Hibiki-1.0.1-windows-setup.exe.staging', h2),
+        ],
+        cutoff: cutoff,
+        keepNewestInstallers: 2,
+        keepNewestStaging: 1,
+      );
+      // 安装包 keep 2 → 都保留；staging keep 1 → 回收较旧的那个。
+      expect(stale, <String>['.Hibiki-1.0.1-windows-setup.exe.staging']);
+    });
   });
 
   group(
@@ -451,6 +580,30 @@ void main() {
         isTrue,
         reason: 'TODO-1149：staging 删除失败必须记 best-effort 日志（deleteStaging），'
             '由下次 GC 按 mtime 兜底',
+      );
+    });
+
+    test(
+        'TODO-1149：下载完成后立刻 prune（_cleanupOldApks 带 activeAssetFileName）'
+        '——不等 GC / 启动 reconcile', () {
+      // 根因：GC 只在检查更新 / Windows 启动 reconcile 才跑，高频下载之间旧包一直堆到
+      // 下次 GC。下载完成是回收同通道旧包的最早确定时机——`_runDownloadAndInstall` 拿到
+      // outFile 后必须立刻调 `_cleanupOldApks(..., activeAssetFileName: ...)`（保护刚下好
+      // 的包）。源码扫描守卫锚定这条接线，防未来重构悄悄摘掉复发。
+      final int idx =
+          source.indexOf('static Future<void> _runDownloadAndInstall(');
+      expect(idx, greaterThanOrEqualTo(0),
+          reason: '_runDownloadAndInstall 必须存在');
+      final int end =
+          source.indexOf('reconcilePendingWindowsInstallerHandoff(', idx);
+      expect(end, greaterThan(idx));
+      final String body = source.substring(idx, end);
+      expect(
+        body.contains('_cleanupOldApks(') &&
+            body.contains('activeAssetFileName:'),
+        isTrue,
+        reason: 'TODO-1149：下载完成后必须以刚下好的包为 active 立刻 prune 同通道旧包，'
+            '否则高频下载之间旧安装包持续堆积到下次 GC',
       );
     });
   });

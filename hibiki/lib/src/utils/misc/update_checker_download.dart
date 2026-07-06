@@ -198,7 +198,10 @@ bool _isUpdateTempFileName(String name) {
 /// - 排除 [activeAssetFileName]（当前正在下载/即将安装、可复用的包）。
 /// - 排除 [handoffInstallerFileName]（Windows 待重启安装的 handoff 安装包）。
 /// - 排除 [markerFileName]（handoff 标记 JSON 本身）。
-/// - 只删 [cutoff] 之前修改的项；当前活跃文件即便 mtime 很老也不删（已被名字排除）。
+/// - 数量优先（TODO-1149）：安装包按 mtime 降序保留最新 [keepNewestInstallers] 个、
+///   `.staging` 根保留最新 [keepNewestStaging] 个；**超出名额的无视 [cutoff] 一并回收**
+///   （高频下载 7 天内也不再无界堆积），再叠加早于 [cutoff] 的一并回收。preserved
+///   （active/handoff/marker）永不回收，但仍占最新名额（keepNewest 语义"含 handoff"）。
 ///
 /// 返回应删除的叶子名列表（调用方按名字后缀区分：`.staging` 递归删目录，其余删文件），
 /// 保持确定性顺序。
@@ -206,6 +209,8 @@ bool _isUpdateTempFileName(String name) {
 List<String> selectStaleUpdateArtifacts({
   required List<UpdateDirEntry> entries,
   required DateTime cutoff,
+  int keepNewestInstallers = 2,
+  int keepNewestStaging = 1,
   String? activeAssetFileName,
   String? handoffInstallerFileName,
   String markerFileName = 'update-handoff.json',
@@ -217,25 +222,63 @@ List<String> selectStaleUpdateArtifacts({
     if (handoffInstallerFileName != null && handoffInstallerFileName.isNotEmpty)
       handoffInstallerFileName,
   };
-  final List<String> stale = <String>[];
+  // 分两类分别回收（TODO-1149）：完整安装包（普通文件、非临时/元数据）与 `.staging`
+  // 下载暂存根（目录）。各按自身 mtime 降序 + 各自的保留名额封顶，互不干扰——其它任何
+  // 目录一律不碰（绝不误删用户数据）。
+  final List<UpdateDirEntry> installers = <UpdateDirEntry>[];
+  final List<UpdateDirEntry> stagingDirs = <UpdateDirEntry>[];
   for (final UpdateDirEntry entry in entries) {
-    final String name = entry.name;
-    if (preserved.contains(name)) continue;
     if (entry.isDirectory) {
-      // 目录里唯一的 GC 对象是下载 `.staging` 暂存根（TODO-1149）：按目录自身 mtime 与
-      // 安装包同策回收。其它非 `.staging` 目录一律跳过（绝不误删用户数据）。
-      if (!name.endsWith('.staging')) continue;
-      if (!entry.modified.isBefore(cutoff)) continue;
-      stale.add(name);
+      if (entry.name.endsWith('.staging')) stagingDirs.add(entry);
       continue;
     }
-    // 临时/元数据文件由既有清理路径按同一 cutoff 处理；此函数只回收完整安装包，
-    // 避免重复删除职责交叠。
-    if (_isUpdateTempFileName(name)) continue;
-    if (!entry.modified.isBefore(cutoff)) continue;
-    stale.add(name);
+    if (_isUpdateTempFileName(entry.name)) continue;
+    installers.add(entry);
   }
+  final List<String> stale = <String>[];
+  _selectStaleByCountAndAge(
+    candidates: installers,
+    keepNewest: keepNewestInstallers,
+    cutoff: cutoff,
+    preserved: preserved,
+    out: stale,
+  );
+  _selectStaleByCountAndAge(
+    candidates: stagingDirs,
+    keepNewest: keepNewestStaging,
+    cutoff: cutoff,
+    preserved: preserved,
+    out: stale,
+  );
   return stale;
+}
+
+/// **纯函数（TODO-1149）**：一类候选（安装包或 `.staging` 根）的「数量 + 时间」回收选择。
+///
+/// 把 [candidates] 按 mtime 降序（同刻用名字兜底，保证确定性、不依赖 listSync 顺序），
+/// 保留最新 [keepNewest] 个；其余**超出名额的无视 [cutoff] 一并回收**（高频下载 7 天内
+/// 也不再无界堆积），再叠加早于 [cutoff] 的一并回收。[preserved] 里的项永不回收，但仍
+/// 占据最新名额，使 keepNewest 的语义「含 handoff 待装 / 当前活跃包」。回收项追加进 [out]。
+void _selectStaleByCountAndAge({
+  required List<UpdateDirEntry> candidates,
+  required int keepNewest,
+  required DateTime cutoff,
+  required Set<String> preserved,
+  required List<String> out,
+}) {
+  final List<UpdateDirEntry> sorted = <UpdateDirEntry>[...candidates];
+  sorted.sort((UpdateDirEntry a, UpdateDirEntry b) {
+    final int byTime = b.modified.compareTo(a.modified);
+    return byTime != 0 ? byTime : a.name.compareTo(b.name);
+  });
+  final int keep = keepNewest < 0 ? 0 : keepNewest;
+  for (int i = 0; i < sorted.length; i++) {
+    final UpdateDirEntry entry = sorted[i];
+    if (preserved.contains(entry.name)) continue;
+    final bool beyondKeep = i >= keep;
+    final bool tooOld = entry.modified.isBefore(cutoff);
+    if (beyondKeep || tooOld) out.add(entry.name);
+  }
 }
 
 /// **纯函数（TODO-1089）**：Windows 更新握手确认「已成功安装到目标版本」后，挑出应
@@ -1393,6 +1436,10 @@ Future<File> _promoteCompleteDownload(
     await _deleteFile(paths.ownerFile);
     await _deleteFile(stagingPaths.metadataFile);
     await _deleteDirectory(stagingPaths.directory);
+    // TODO-1149 根因修复：删掉内层 `{id}` 子目录后，若 `.{name}.staging` 根已空则一并
+    // 删除，从源头消灭空 staging 根堆积（此前根从不在 promote 删，只靠 GC 兜底，而 GC
+    // 的目录名解析 bug 又让它长期不生效）。
+    await _pruneEmptyStagingRoot(paths.stagingRoot);
     return promoted;
   } catch (e, stack) {
     ErrorLogService.instance.log('UpdateChecker.promoteDownload', e, stack);
@@ -1400,7 +1447,22 @@ Future<File> _promoteCompleteDownload(
     await metadata.write(stagingPaths.metadataFile);
     await _deleteFile(paths.partFile);
     await _deleteFile(paths.ownerFile);
+    // 失败分支保留 completed 于内层子目录，根非空 → 下面是安全 no-op；根若已空也顺带清。
+    await _pruneEmptyStagingRoot(paths.stagingRoot);
     return completed;
+  }
+}
+
+/// promote 删掉内层 `{id}` 子目录后，若 `.{name}.staging` 根已空则删除它（TODO-1149）。
+/// best-effort：根不存在 / 非空（并发下载 / 失败分支残留文件）/ 删除失败都安全跳过，留给
+/// 下次 GC 按 mtime 兜底。
+Future<void> _pruneEmptyStagingRoot(Directory stagingRoot) async {
+  try {
+    if (!await stagingRoot.exists()) return;
+    final bool empty = await stagingRoot.list().isEmpty;
+    if (empty) await stagingRoot.delete();
+  } catch (_) {
+    // Best-effort cleanup only.
   }
 }
 

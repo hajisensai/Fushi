@@ -265,6 +265,41 @@ void main() {
       expect(paths.partFile.existsSync(), isFalse);
     });
 
+    test('TODO-1149：fresh 下载 promote 后删空 .staging 根（不留空根堆积）', () async {
+      // 根因：promote 只删内层 {id} 子目录，留下空 `.<name>.staging` 根；长期堆几十上百
+      // 个空目录。现在 promote 成功后 `_pruneEmptyStagingRoot` 一并删空根。
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final UpdateDownloadPaths paths =
+          UpdateDownloadPaths.forAsset(updatesDir, asset);
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        connectionCount: 1,
+        openUrl: (_, __) async {
+          return UpdateDownloadResponse.bytes(
+            statusCode: HttpStatus.ok,
+            body: payload,
+            headers: <String, String>{
+              HttpHeaders.contentLengthHeader: '${payload.length}',
+            },
+          );
+        },
+      );
+
+      expect(await file.readAsBytes(), payload);
+      expect(paths.file.existsSync(), isTrue);
+      // 内层 {id} 子目录 + `.<name>.staging` 空根都不应残留。
+      expect(
+        paths.stagingRoot.existsSync(),
+        isFalse,
+        reason: 'promote 成功后空 staging 根必须被删除，消除空根堆积',
+      );
+    });
+
     test('does not reuse a truncated final package even with an MZ header',
         () async {
       final List<int> payload = _payload();
