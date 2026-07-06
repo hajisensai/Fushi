@@ -184,13 +184,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_chrome_floating_test.dart',
   'reading/Auto-hide floating controls after':
       'test/reader/reader_chrome_floating_test.dart',
-  // TODO-1168（实验性）：悬浮底栏毛玻璃 + 半透明。纯视觉外观（BackdropFilter +
-  // 背景 alpha），不改 t1RenderInput 探针（WebView 渲染输入），生效由专项守卫
-  // 覆盖：默认关=底栏无毛玻璃/零回归 + 底栏预留高不受影响。
-  'reading/Frosted floating bottom bar':
-      'test/pages/reader_frosted_bottom_bar_guard_test.dart',
-  'reading/Bottom bar opacity':
-      'test/pages/reader_frosted_bottom_bar_guard_test.dart',
   'reading/Invert swipe page turn direction': 'DEVICE: WebView swipe direction',
   // TODO-120: 反转键盘方向键翻页方向——生效点在 reader 键盘处理器（纯函数
   // resolveReaderArrowPageTurn 的 reverse 参数），由专项纯函数测试覆盖。
