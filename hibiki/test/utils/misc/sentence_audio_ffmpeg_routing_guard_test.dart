@@ -68,28 +68,44 @@ void main() {
               'desktop ffmpeg-min cannot mux it (BUG-460).');
     });
 
-    test('video sentence-audio output is .m4a for AnkiMobile media download',
-        () {
+    test(
+        'video sentence-audio container is platform-aware '
+        '(iOS .m4a / desktop+Android .aac), TODO-1217', () {
       // TODO-1000: video sentence-audio cutting moved out of _mineVideoCard
       // (lookup_mining.part.dart) into the shared ImmersionMiningEngine, which
-      // cuts the clip via extractAudioSegmentViaFfmpeg to `immersion_audio.m4a`
-      // (the old video-only `video_mine_audio.aac` name folded into the shared
-      // engine). The video shell just delegates to the engine (asserted by the
-      // customization guard).
+      // cuts the clip via extractAudioSegmentViaFfmpeg.
+      //
+      // TODO-1217 regression fix: the container extension is now chosen at
+      // runtime by immersionMiningAudioExtension() — iOS gets `.m4a` (AnkiMobile
+      // only auto-downloads media-recognized URLs; ffmpeg-kit has the ipod
+      // muxer), desktop/Android get `.aac` (the desktop bundled ffmpeg-min has
+      // NO ipod/mp4 muxer, so a hardcoded `.m4a` exits -22 → null audio →
+      // silent Netflix/YouTube/in-app cards). Hardcoding either suffix breaks
+      // one platform; the engine must go through the helper, never a literal.
       final String engine =
           libFile('lib/src/mining/immersion_mining_engine.dart');
-      expect(engine, contains(r"outputPath: '$tempDir/immersion_audio.m4a'"),
-          reason: 'AnkiMobile only auto-downloads URLs it recognizes as media; '
-              'video cards must not hand it a raw .aac URL.');
+      expect(
+          engine,
+          contains(
+              r"'$tempDir/immersion_audio.${immersionMiningAudioExtension()}'"),
+          reason: 'Immersion sentence audio must derive its container from '
+              'immersionMiningAudioExtension() (iOS m4a / desktop+Android aac), '
+              'never a hardcoded suffix — a literal .m4a exits -22 on the '
+              'desktop ffmpeg-min build (TODO-1217).');
+      expect(engine.contains("immersion_audio.m4a'"), isFalse,
+          reason: 'Do not hardcode .m4a for immersion sentence audio: the '
+              'bundled desktop ffmpeg-min cannot mux it (no ipod muxer) → '
+              'exit -22 → silent cards (TODO-1217/BUG-460).');
+      expect(engine.contains("immersion_audio.aac'"), isFalse,
+          reason: 'Do not hardcode .aac either: iOS AnkiMobile leaves a raw '
+              '.aac localhost URL as visible text (da22cd42a). Use the '
+              'platform-aware helper.');
       expect(engine, contains('await _audio('),
           reason: 'Sentence audio must be cut via the ffmpeg audio extractor '
               '(_audio defaults to extractAudioSegmentViaFfmpeg), TODO-1000.');
       expect(engine.contains('extractAudioSegmentViaFfmpeg'), isTrue,
           reason: 'The engine audio extractor default must be the ffmpeg path '
               '(never the native Transformer handler), TODO-970/TODO-1000.');
-      expect(engine.contains('immersion_audio.aac'), isFalse,
-          reason: 'Do not regress to .aac for immersion sentence audio: '
-              'AnkiMobile leaves that localhost URL as visible text.');
     });
   });
 }

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 
 ImmersionMinePayload _payload({Uint8List? shot}) => ImmersionMinePayload(
@@ -27,7 +28,8 @@ void main() {
       expect(req.providedCoverName, 'netflix_clip.gif');
       expect(req.providedCoverBytes, [1]);
       expect(req.providedAudioBytes, [2]);
-      expect(req.providedAudioName, 'netflix_audio.m4a');
+      expect(req.providedAudioName,
+          'netflix_audio.${immersionMiningAudioExtension()}');
       expect(req.requireAudio, true);
       expect(req.mediaSource, isNull);
       expect(req.documentTitle, 'Netflix');
@@ -54,7 +56,8 @@ void main() {
       expect(req.providedCoverName, 'netflix_shot.jpg');
       expect(req.providedCoverBytes, [7]);
       expect(req.providedAudioBytes, [2]);
-      expect(req.providedAudioName, 'netflix_audio.m4a');
+      expect(req.providedAudioName,
+          'netflix_audio.${immersionMiningAudioExtension()}');
       expect(req.requireAudio, true);
     });
 

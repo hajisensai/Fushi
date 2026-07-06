@@ -1,6 +1,25 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMiningSource;
+
+/// 沉浸制卡片段音频的容器扩展名，按平台分（TODO-1217 / BUG-460）：
+/// - iOS：`m4a`——AnkiMobile 只自动下载它识别为媒体的 localhost URL，`.aac` 裸流会被当成
+///   可见文本不下载（da22cd42a）；iOS 端 ffmpeg-kit 自带 ipod muxer，能产出 `.m4a`。
+/// - 桌面 / Android：`aac`（adts）——桌面捆绑的 ffmpeg-min
+///   （`tool/ffmpeg-min/build-ffmpeg-min.sh` 的 MUXERS 白名单只有 adts，无 ipod/mp4/m4a）
+///   写 `.m4a` 会自动选一个不存在的 ipod muxer → `Unable to choose output format` /
+///   exit -22 → `extractAudioSegmentViaFfmpeg` 返 null → 音频丢（桌面网飞/YouTube/应用内
+///   视频制卡有图无声，正是 da22cd42a 的桌面回归）；Android AnkiDroid 历来接受 `.aac`（BUG-460）。
+///
+/// 纯逻辑放在 [immersionMiningAudioExtensionFor]，便于对两分支单测（测试宿主上
+/// `Platform.isIOS` 恒为 false，无法直接覆盖 iOS 分支）。
+String immersionMiningAudioExtensionFor({required bool isIOS}) =>
+    isIOS ? 'm4a' : 'aac';
+
+/// 当前运行平台下沉浸制卡片段音频的容器扩展名（见 [immersionMiningAudioExtensionFor]）。
+String immersionMiningAudioExtension() =>
+    immersionMiningAudioExtensionFor(isIOS: Platform.isIOS);
 
 /// 统一沉浸制卡请求。任何来源（本地/YouTube/Netflix）都构造这个喂 [ImmersionMiningEngine]。
 ///

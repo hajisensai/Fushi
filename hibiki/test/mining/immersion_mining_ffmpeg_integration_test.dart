@@ -124,7 +124,7 @@ void main() {
       expect(
           File(repo.minedContext!.coverPath!).lengthSync(), greaterThan(100));
       expect(repo.minedContext!.sasayakiAudioPath,
-          endsWith('immersion_audio.m4a'));
+          endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
       expect(File(repo.minedContext!.sasayakiAudioPath!).lengthSync(),
           greaterThan(100));
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
@@ -145,7 +145,19 @@ void main() {
       expect(String.fromCharCodes(cap.gifBytes!.take(3)), 'GIF');
       expect(cap.audioBytes, isNotNull);
       expect(cap.audioBytes!.length, greaterThan(100));
-      expect(String.fromCharCodes(cap.audioBytes!.skip(4).take(4)), 'ftyp');
+      // TODO-1217: the clip audio container is platform-aware. iOS produces an
+      // MP4/M4A ('ftyp' box at offset 4); desktop/Android produce raw ADTS AAC
+      // (the desktop ffmpeg-min has no ipod muxer), whose first frame starts
+      // with the 12-bit 0xFFF sync word.
+      if (immersionMiningAudioExtension() == 'm4a') {
+        expect(String.fromCharCodes(cap.audioBytes!.skip(4).take(4)), 'ftyp');
+      } else {
+        expect(cap.audioBytes![0], 0xFF,
+            reason: 'desktop/Android clip audio must be ADTS AAC (.aac), the '
+                'only container the bundled ffmpeg-min can mux (TODO-1217).');
+        expect(cap.audioBytes![1] & 0xF0, 0xF0,
+            reason: 'ADTS sync word high nibble.');
+      }
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
   });
 }

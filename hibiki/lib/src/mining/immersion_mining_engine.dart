@@ -115,14 +115,16 @@ class ImmersionMiningEngine {
     if (req.providedAudioBytes != null) {
       audioPath = await _writeBytes(
           tempDir,
-          req.providedAudioName ?? 'immersion_audio.m4a',
+          req.providedAudioName ??
+              'immersion_audio.${immersionMiningAudioExtension()}',
           req.providedAudioBytes!);
     } else if (audioSrc != null && req.hasRange) {
       audioPath = await _audio(
         inputPath: audioSrc,
         startMs: req.clipStartMs,
         endMs: req.clipEndMs,
-        outputPath: '$tempDir/immersion_audio.m4a',
+        outputPath:
+            '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
         audioStreamIndex: req.audioStreamIndex,
         audioStreamCount: req.audioStreamCount,
         audioChannels: compression.audioChannels,
