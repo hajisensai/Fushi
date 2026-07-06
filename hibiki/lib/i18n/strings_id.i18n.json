@@ -2134,5 +2134,7 @@
   "backup_category_statistics": "Statistics",
   "backup_category_settings": "Settings",
   "backup_category_profiles": "Profiles",
-  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import.",
+  "sync_server_tls_enable": "Interconnect encryption (HTTPS/TLS)",
+  "sync_server_tls_repair_hint": "Changing this requires paired devices to pair again"
 }

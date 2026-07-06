@@ -27,6 +27,7 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pair_v2_client.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_ping_client.dart';
+import 'package:hibiki/src/sync/pairing/discovered_pairing_probe.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tofu_probe.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';

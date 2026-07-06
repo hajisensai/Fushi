@@ -15,7 +15,16 @@ class _HibikiServerConfigWidget extends StatefulWidget {
       _HibikiServerConfigWidgetState();
 }
 
-class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
+class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
+    with _PairingV2FlowMixin<_HibikiServerConfigWidget> {
+  @override
+  SettingsContext get _pairSettingsContext => widget.settingsContext;
+
+  @override
+  void _setPairV2Busy(bool active) {
+    if (mounted) setState(() => _pairingManual = active);
+  }
+
   late final TextEditingController _tokenController;
   late final FocusNode _tokenFocus;
   List<HibikiClientUrl> _urls = <HibikiClientUrl>[];
@@ -255,257 +264,13 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     );
   }
 
-  /// TODO-963 M2: 双确认 v2 配对的共享编排（手动 IP + 可选 LAN 复用）。
-  /// 第一步弹窗确认 host 身份（展示名 + 指纹），第二步收 6 位 PIN（host pinRequired
-  /// 时），随后跑 [HibikiPairV2Client.pair]，成功后经 TOFU 记录器落 url+指纹+token。
-  /// [fingerprint] 为 null 表示明文 http（无钉扎，pinned 探测退化为普通连接）。
-  Future<void> _runPairingV2({
-    required String baseUrl,
-    required String? fingerprint,
-    String? deviceName,
-  }) async {
-    // 第一重确认：核对要连接的设备身份（展示名 + 证书指纹）。
-    final bool confirmed = await _confirmPairIdentity(
-      deviceName: deviceName,
-      fingerprint: fingerprint,
-    );
-    if (!mounted || !confirmed) return;
-
-    // 第二重：收 PIN（公网/host 要求时）。LAN 免 PIN 时 host 会返回 pinRequired:false，
-    // pair() 不带 proof；这里仍先收 PIN（可留空）以覆盖公网强制场景——pair() 内部按
-    // pinRequired 决定是否真正使用。
-    final String? pin = await _promptPairPinInput();
-    if (!mounted || pin == null) return; // 取消。
-
-    setState(() => _pairingManual = true);
-    String message;
-    try {
-      final HibikiPairV2Client client = HibikiPairV2Client(
-        baseUrl: baseUrl,
-        // 明文 http 无指纹钉扎：传空指纹时 pinned client 仍会构造但 http 不触发
-        // 证书校验，故安全；真正的 https 必有指纹。
-        expectedFingerprint: fingerprint ?? '',
-      );
-      // TODO-961 M1b: 上报本机稳定 deviceId，host 据此发 per-peer token 并落库。
-      final String clientDeviceId = await _repo.getOrCreateDeviceId();
-      final HibikiPairV2Outcome outcome = await client.pair(
-        deviceName: _localDeviceName(),
-        pin: pin.isEmpty ? null : pin,
-        clientDeviceId: clientDeviceId,
-      );
-      if (!mounted) return;
-      switch (outcome) {
-        case HibikiPairV2Success(:final String token):
-          message = await _onPairSuccess(baseUrl, token, fingerprint);
-        case HibikiPairV2Failure(:final String reason):
-          message = _pairV2FailureMessage(reason);
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('ManualPair:$baseUrl', e, stack);
-      message = t.sync_pair_failed;
-    } finally {
-      if (mounted) setState(() => _pairingManual = false);
-    }
-    if (mounted) _showSnackBar(context, message);
-  }
-
-  /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
-  /// [HibikiFingerprintMismatchException] → 告警，绝不覆盖），落 token，刷新 UI。
-  Future<String> _onPairSuccess(
-    String baseUrl,
-    String token,
-    String? fingerprint,
-  ) async {
-    try {
-      await _repo.addHibikiClientUrl(
-        baseUrl,
-        fingerprint: fingerprint,
-        deviceName: null,
-      );
-    } on HibikiFingerprintMismatchException catch (e, stack) {
-      ErrorLogService.instance.log('ManualPair.fingerprintChanged', e, stack);
-      return t.sync_pair_fingerprint_changed;
-    }
-    await _repo.setHibikiClientToken(token);
-    await _reloadFromStore();
-    _syncSettings(widget.settingsContext).reloadClientConfig();
-    return t.sync_pair_success;
-  }
-
-  String _pairV2FailureMessage(String reason) {
-    switch (reason) {
-      case 'pin':
-        return t.sync_pair_pin_wrong;
-      case 'declined':
-        return t.sync_pair_denied;
-      case 'unavailable':
-        return t.sync_pair_unavailable;
-      default:
-        return t.sync_pair_failed;
-    }
-  }
-
-  /// 第一重确认弹窗：展示要连接的设备身份（名 + 指纹），让用户核对后再继续。
-  Future<bool> _confirmPairIdentity({
-    String? deviceName,
-    String? fingerprint,
-  }) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
-          maxWidth: 460,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: HibikiModalSheetFrame(
-            title: t.sync_pair_confirm_identity_title,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.sync_pair_confirm_identity_body(
-                  device: (deviceName != null && deviceName.trim().isNotEmpty)
-                      ? deviceName
-                      : t.sync_pair_unknown_device,
-                )),
-                if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  Text(t.sync_pair_fingerprint_label,
-                      style: Theme.of(ctx).textTheme.labelSmall),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    fingerprint,
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
-                  ),
-                ],
-              ],
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(t.sync_pair_continue),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    return ok ?? false;
-  }
-
-  /// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
-  Future<String?> _promptPairPinInput() async {
-    final TextEditingController pinController = TextEditingController();
-    final String? pin = await showAppDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
-          maxWidth: 420,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: HibikiModalSheetFrame(
-            title: t.sync_pair_enter_pin_title,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.sync_pair_enter_pin_body),
-                SizedBox(height: tokens.spacing.gap),
-                HibikiTextField(
-                  controller: pinController,
-                  labelText: t.sync_pair_enter_pin_title,
-                  keyboardType: TextInputType.number,
-                ),
-              ],
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () =>
-                      Navigator.pop(ctx, pinController.text.trim()),
-                  child: Text(t.sync_pair_continue),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    pinController.dispose();
-    return pin;
-  }
-
-  /// This device's own advertised name, sent to the host so its approval prompt
-  /// can identify who is asking. Mirrors [_LanDiscoveryWidgetState._localDeviceName].
-  String _localDeviceName() {
-    try {
-      final String host = Platform.localHostname;
-      if (host.trim().isNotEmpty) return 'Hibiki · $host';
-    } catch (_) {/* localHostname can throw on some platforms */}
-    return 'Hibiki';
-  }
-
   Future<void> _toggleUrl(int index) async {
     setState(() {
       final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
       final HibikiClientUrl u = copy[index];
-      copy[index] = HibikiClientUrl(url: u.url, enabled: !u.enabled);
+      // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
+      // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
+      copy[index] = u.copyWith(enabled: !u.enabled);
       _urls = copy;
     });
     await _persistUrls();
@@ -699,6 +464,269 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
   }
 }
 
+// ── Shared v2 pairing orchestration ─────────────────────────────────
+
+/// TODO-961: v2 配对编排共享层——手动 IP（[_HibikiServerConfigWidget]）与 LAN 发现
+/// （[_LanDiscoveryWidget]）共用同一套「确认身份 → 收 PIN → pair/v2 → 落
+/// token+指纹」流程，杜绝两份编排漂移。宿主只需提供 [SettingsContext] 与忙态回调。
+mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
+  /// 宿主 widget 的 SettingsContext（读 AppModel/database + 广播配置刷新）。
+  SettingsContext get _pairSettingsContext;
+
+  /// 配对进行中的忙态（宿主用它驱动 spinner / 禁点；可为 no-op，若宿主在外层
+  /// 自己管理忙态）。
+  void _setPairV2Busy(bool active);
+
+  SyncRepository get _pairRepo =>
+      SyncRepository(_pairSettingsContext.appModel.database);
+
+  /// TODO-963 M2: 双确认 v2 配对的共享编排（手动 IP + LAN 发现复用）。
+  /// 第一步弹窗确认 host 身份（展示名 + 指纹），第二步收 6 位 PIN（host pinRequired
+  /// 时），随后跑 [HibikiPairV2Client.pair]，成功后经 TOFU 记录器落 url+指纹+token。
+  /// [fingerprint] 为 null 表示明文 http（无钉扎，pinned 探测退化为普通连接）。
+  Future<void> _runPairingV2({
+    required String baseUrl,
+    required String? fingerprint,
+    String? deviceName,
+  }) async {
+    // 第一重确认：核对要连接的设备身份（展示名 + 证书指纹）。
+    final bool confirmed = await _confirmPairIdentity(
+      deviceName: deviceName,
+      fingerprint: fingerprint,
+    );
+    if (!mounted || !confirmed) return;
+
+    // 第二重：收 PIN（公网/host 要求时）。LAN 免 PIN 时 host 会返回 pinRequired:false，
+    // pair() 不带 proof；这里仍先收 PIN（可留空）以覆盖公网强制场景——pair() 内部按
+    // pinRequired 决定是否真正使用。
+    final String? pin = await _promptPairPinInput();
+    if (!mounted || pin == null) return; // 取消。
+
+    _setPairV2Busy(true);
+    String message;
+    try {
+      final HibikiPairV2Client client = HibikiPairV2Client(
+        baseUrl: baseUrl,
+        // 明文 http 无指纹钉扎：传空指纹时 pinned client 仍会构造但 http 不触发
+        // 证书校验，故安全；真正的 https 必有指纹。
+        expectedFingerprint: fingerprint ?? '',
+      );
+      // TODO-961 M1b: 上报本机稳定 deviceId，host 据此发 per-peer token 并落库。
+      final String clientDeviceId = await _pairRepo.getOrCreateDeviceId();
+      final HibikiPairV2Outcome outcome = await client.pair(
+        deviceName: _localDeviceName(),
+        pin: pin.isEmpty ? null : pin,
+        clientDeviceId: clientDeviceId,
+      );
+      if (!mounted) return;
+      switch (outcome) {
+        case HibikiPairV2Success(:final String token):
+          message = await _onPairSuccess(baseUrl, token, fingerprint);
+        case HibikiPairV2Failure(:final String reason):
+          message = _pairV2FailureMessage(reason);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('PairV2:$baseUrl', e, stack);
+      message = t.sync_pair_failed;
+    } finally {
+      _setPairV2Busy(false);
+    }
+    if (mounted) _showSnackBar(context, message);
+  }
+
+  /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
+  /// [HibikiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
+  /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
+  Future<String> _onPairSuccess(
+    String baseUrl,
+    String token,
+    String? fingerprint,
+  ) async {
+    try {
+      await _pairRepo.addHibikiClientUrl(
+        baseUrl,
+        fingerprint: fingerprint,
+        deviceName: null,
+      );
+    } on HibikiFingerprintMismatchException catch (e, stack) {
+      ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
+      return t.sync_pair_fingerprint_changed;
+    }
+    await _pairRepo.setHibikiClientToken(token);
+    _syncSettings(_pairSettingsContext).reloadClientConfig();
+    return t.sync_pair_success;
+  }
+
+  String _pairV2FailureMessage(String reason) {
+    switch (reason) {
+      case 'pin':
+        return t.sync_pair_pin_wrong;
+      case 'declined':
+        return t.sync_pair_denied;
+      case 'unavailable':
+        return t.sync_pair_unavailable;
+      default:
+        return t.sync_pair_failed;
+    }
+  }
+
+  /// 第一重确认弹窗：展示要连接的设备身份（名 + 指纹），让用户核对后再继续。
+  Future<bool> _confirmPairIdentity({
+    String? deviceName,
+    String? fingerprint,
+  }) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 460,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
+          ),
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.sync_pair_confirm_identity_title,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.sync_pair_confirm_identity_body(
+                  device: (deviceName != null && deviceName.trim().isNotEmpty)
+                      ? deviceName
+                      : t.sync_pair_unknown_device,
+                )),
+                if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(t.sync_pair_fingerprint_label,
+                      style: Theme.of(ctx).textTheme.labelSmall),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    fingerprint,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                  ),
+                ],
+              ],
+            ),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.sync_pair_continue),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return ok ?? false;
+  }
+
+  /// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
+  Future<String?> _promptPairPinInput() async {
+    final TextEditingController pinController = TextEditingController();
+    final String? pin = await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 420,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
+          ),
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.sync_pair_enter_pin_title,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.sync_pair_enter_pin_body),
+                SizedBox(height: tokens.spacing.gap),
+                HibikiTextField(
+                  controller: pinController,
+                  labelText: t.sync_pair_enter_pin_title,
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+            ),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  onPressed: () =>
+                      Navigator.pop(ctx, pinController.text.trim()),
+                  child: Text(t.sync_pair_continue),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    pinController.dispose();
+    return pin;
+  }
+
+  /// This device's own advertised name, sent to the host so its approval prompt
+  /// can identify who is asking.
+  String _localDeviceName() {
+    try {
+      final String host = Platform.localHostname;
+      if (host.trim().isNotEmpty) return 'Hibiki · $host';
+    } catch (_) {/* localHostname can throw on some platforms */}
+    return 'Hibiki';
+  }
+}
+
 // ── Server mode widget ──────────────────────────────────────────────
 
 class _ServerModeWidget extends StatefulWidget {
@@ -712,6 +740,9 @@ class _ServerModeWidget extends StatefulWidget {
 class _ServerModeWidgetState extends State<_ServerModeWidget> {
   bool _enabled = false;
   int _port = SyncRepository.defaultServerPort;
+  // TODO-961: 互联加密（HTTPS/TLS + TOFU 指纹钉扎）开关状态，镜像
+  // sync_server_tls_enabled 偏好。
+  bool _tlsEnabled = false;
   String? _token;
   late final TextEditingController _portController;
   bool _loaded = false;
@@ -762,6 +793,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     final enabled = await repo.isServerEnabled();
     final port = await repo.getServerPort();
+    final bool tlsEnabled = await repo.getServerTlsEnabled();
     var token = await repo.getServerPassword();
     if (token == null) {
       token = HibikiSyncServer.generateToken();
@@ -773,6 +805,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     if (mounted) {
       setState(() {
         _enabled = enabled;
+        _tlsEnabled = tlsEnabled;
         _port = port;
         _portController.text = '$port';
         _token = token;
@@ -818,6 +851,17 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     if (_serverController.isRunning) await _serverController.restart();
   }
 
+  /// TODO-961: 切换互联加密（HTTPS/TLS）。持久化后若 host 正在运行则重启使新
+  /// scheme 立即生效（含 mDNS TXT tls 标志随广播更新）；scheme 变了已配对设备的
+  /// 存量 URL/指纹不再匹配，提示需重新配对。
+  Future<void> _setTlsEnabled(bool v) async {
+    setState(() => _tlsEnabled = v);
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .setServerTlsEnabled(v);
+    if (_serverController.isRunning) await _serverController.restart();
+    if (mounted) _showSnackBar(context, t.sync_server_tls_repair_hint);
+  }
+
   /// TODO-961 M1b: 重新拉取已配对设备列表（吊销 / 页面重进后刷新）。
   Future<void> _reloadPairedPeers() async {
     final List<HibikiPairedPeerRow> peers =
@@ -859,6 +903,14 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 ? null
                 : (bool v) async {
                     if (v) {
+                      // TODO-961 B 段：全新设备首次启用 hosting 默认勾上 TLS（仅当
+                      // TLS 与 serverEnabled 两个偏好 key 都从未写入过；存量用户
+                      // 保持现状不动，见 applyFirstHostingTlsDefault 文档）。
+                      final bool tlsDefaulted = await SyncRepository(
+                              widget.settingsContext.appModel.database)
+                          .applyFirstHostingTlsDefault();
+                      if (!mounted) return;
+                      if (tlsDefaulted) setState(() => _tlsEnabled = true);
                       // Reflect the toggle while starting; the controller
                       // persists enabled on success and resets it on failure
                       // (HBK-AUDIT-167).
@@ -910,6 +962,15 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                     '${t.sync_server_running}: ${_serverController.boundPort}',
                     style: Theme.of(context).textTheme.bodySmall),
               ),
+            const SizedBox(height: 8),
+            // TODO-961: 互联加密开关——接 setServerTlsEnabled（自签证书 + TOFU
+            // 指纹钉扎的用户入口）。
+            AdaptiveSettingsSwitchRow(
+              title: t.sync_server_tls_enable,
+              subtitle: t.sync_server_tls_repair_hint,
+              value: _tlsEnabled,
+              onChanged: (bool v) => _setTlsEnabled(v),
+            ),
             const SizedBox(height: 12),
             Text(t.sync_server_token,
                 style: Theme.of(context).textTheme.labelSmall),
@@ -999,7 +1060,16 @@ class _LanDiscoveryWidget extends StatefulWidget {
   State<_LanDiscoveryWidget> createState() => _LanDiscoveryWidgetState();
 }
 
-class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
+class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
+    with _PairingV2FlowMixin<_LanDiscoveryWidget> {
+  @override
+  SettingsContext get _pairSettingsContext => widget.settingsContext;
+
+  /// 忙态由 [_pairingUrl] 在 [_connectToDevice] 全程驱动（进入即设、finally 清、
+  /// 覆盖整个 v2 编排 await），无需在编排回调里二次翻转。
+  @override
+  void _setPairV2Busy(bool active) {}
+
   LanDiscoveryService? _discovery;
   List<HibikiDevice> _devices = <HibikiDevice>[];
   bool _scanning = false;
@@ -1085,21 +1155,66 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
     }
   }
 
+  /// TODO-961: 发现列表点击配对走 v2——先探测 scheme（TXT tls 标志定顺序、
+  /// /api/ping 定案；https 先 TOFU 捕获指纹再钉扎读），再复用与手动 IP 同一条
+  /// [_runPairingV2] 编排（TOFU→PIN→token+指纹落库）。老 host（无 /api/ping 或
+  /// 不支持 v2）回落 [_pairLegacyV1] 明文老路径，行为零变化。
   Future<void> _connectToDevice(HibikiDevice device) async {
-    // One pairing attempt at a time: the awaited request can hang for up to a
+    // One pairing attempt at a time: the awaited flow can hang for up to a
     // minute waiting on the host's approval dialog.
     if (_pairingUrl != null) return;
     final state = _syncSettings(widget.settingsContext);
     state.backendType = SyncBackendType.hibikiServer;
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setBackendType(SyncBackendType.hibikiServer);
+
+    setState(() => _pairingUrl = device.webDavUrl);
+    try {
+      final DiscoveredPairingProbeResult? probe =
+          await probeDiscoveredPairingEndpoint(
+        host: device.host,
+        port: device.port,
+        tlsAdvertised: device.tlsEnabled,
+      );
+      if (!mounted) return;
+      if (probe != null && probe.ping.supportsPairV2) {
+        // 先记录探明 scheme 的地址（host 拒绝也保留，可回退手粘 token）；钉扎
+        // 指纹在配对成功后经 _onPairSuccess 落库（TOFU 记录器）。
+        await repo.addHibikiClientUrl(probe.baseUrl);
+        // A client connection now exists → lock this device out of server mode.
+        state.setHasClientConnection(true);
+        await _runPairingV2(
+          baseUrl: probe.baseUrl,
+          fingerprint: probe.fingerprint,
+          deviceName: (probe.ping.deviceName?.trim().isNotEmpty ?? false)
+              ? probe.ping.deviceName
+              : device.name,
+        );
+        return;
+      }
+      // 旧版 host：无 /api/ping 或不支持 v2 → v1 明文配对老路径（行为零变化）。
+      await _pairLegacyV1(device, repo, state);
+    } finally {
+      if (mounted) setState(() => _pairingUrl = null);
+      // Single source of truth bumped → client-config widget reloads URL + token.
+      state.reloadClientConfig();
+      widget.settingsContext.refresh();
+    }
+  }
+
+  /// v1 明文配对（旧版 host 兼容路径，与 v2 化前的实现一致）：直接 POST
+  /// /api/pair 等 host 审批发 token。仅在对端不支持 v2 时走到。
+  Future<void> _pairLegacyV1(
+    HibikiDevice device,
+    SyncRepository repo,
+    _SyncSettingsState state,
+  ) async {
     // Always record the address (deduped) so the user keeps the URL even if
     // the host declines and they fall back to pasting the token.
     await repo.addHibikiClientUrl(device.webDavUrl);
     // A client connection now exists → lock this device out of server mode.
     state.setHasClientConnection(true);
 
-    setState(() => _pairingUrl = device.webDavUrl);
     String message;
     try {
       final http.Response resp = await http
@@ -1132,13 +1247,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
       ErrorLogService.instance
           .log('LanDiscovery.pair:${device.webDavUrl}', e, stack);
       message = t.sync_pair_failed;
-    } finally {
-      if (mounted) setState(() => _pairingUrl = null);
     }
-
-    // Single source of truth bumped → client-config widget reloads URL + token.
-    state.reloadClientConfig();
-    widget.settingsContext.refresh();
     if (mounted) _showSnackBar(context, '${device.name}: $message');
   }
 
@@ -1154,16 +1263,6 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
       }
     } catch (_) {/* older peers reply with a plain-text 403 body */}
     return t.sync_pair_unavailable;
-  }
-
-  /// This device's own advertised name, sent to the host so its approval prompt
-  /// can identify who is asking. Mirrors the server widget's [_deviceName].
-  String _localDeviceName() {
-    try {
-      final String host = Platform.localHostname;
-      if (host.trim().isNotEmpty) return 'Hibiki · $host';
-    } catch (_) {/* localHostname can throw on some platforms */}
-    return 'Hibiki';
   }
 
   @override
