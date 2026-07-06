@@ -26,15 +26,21 @@ class AggregateSnapshot {
     this.favoriteSentences = const <FavoriteSentence>[],
   });
 
-  /// Wire format version. A peer reading an unknown higher version treats it as
-  /// empty (forward-compatible no-op) rather than crashing (see fromJson).
+  /// Wire format version. It is reserved for a genuinely BREAKING change (one
+  /// that would make an old build mis-parse the payload); [fromJson] rejects a
+  /// strictly-higher version by degrading to an empty snapshot. It is therefore
+  /// deliberately NOT bumped for an ADDITIVE optional field.
   ///
-  /// v2 adds `lookupMiningCounters` (TODO-1204 phase 2). A v1 payload simply
-  /// lacks that key; [fromJson] tolerates the missing list, so a v2 device reads
-  /// a v1 peer's snapshot (folding every other family) and a v1 device ignores
-  /// the extra key it does not know. Only a HIGHER-than-known version degrades
-  /// the whole snapshot to empty.
-  static const int currentVersion = 2;
+  /// Forward/backward compatibility for additive fields (e.g. TODO-1204's
+  /// `lookupMiningCounters`) rides on two invariants instead of the version:
+  ///   - an OLD build reads a NEW payload and simply ignores the extra key it
+  ///     does not know (it only reads the keys it asks for);
+  ///   - a NEW build reads an OLD payload whose key is absent and defaults that
+  ///     list to empty ([_decodeList] returns `[]` for a missing/non-list).
+  /// Every family still folds either way. Bumping the version for an additive
+  /// field would instead make every older peer reject the WHOLE snapshot, so the
+  /// version stays put until a real incompatible reshape lands.
+  static const int currentVersion = 1;
 
   final List<ReadingStatRecord> readingStats;
   final List<VideoStatRecord> videoStats;
@@ -80,10 +86,13 @@ class AggregateSnapshot {
             favoriteSentences.map((FavoriteSentence s) => s.toJson()).toList(),
       };
 
-  /// Decodes a snapshot from a backend JSON asset. A null / non-map / unknown
-  /// higher-version payload yields an empty snapshot (a peer snapshot the device
-  /// cannot understand must degrade to a no-op, never abort the sweep).
-  /// Malformed individual rows are skipped, not fatal.
+  /// Decodes a snapshot from a backend JSON asset. A null / non-map payload, or
+  /// one whose version is strictly HIGHER than [currentVersion] (a future
+  /// breaking reshape this build cannot understand), yields an empty snapshot —
+  /// a peer snapshot the device cannot understand must degrade to a no-op, never
+  /// abort the sweep. An equal / older version, or an additive key this build
+  /// does not know, is read best-effort: known families fold, missing lists
+  /// default to empty, and malformed individual rows are skipped, not fatal.
   static AggregateSnapshot fromJson(Object? json) {
     if (json is! Map) return const AggregateSnapshot();
     final Object? version = json['version'];

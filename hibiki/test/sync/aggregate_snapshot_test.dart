@@ -312,12 +312,12 @@ void main() {
   });
 
   group('version compatibility', () {
-    test('a v1 payload (no lookupMiningCounters key) decodes without crash',
+    test('an OLD payload missing lookupMiningCounters defaults it to empty',
         () {
-      // An old peer still speaks version 1 and never wrote the counters key.
+      // An older peer never wrote the counters key at all.
       final AggregateSnapshot snap =
           AggregateSnapshot.fromJson(<String, Object?>{
-        'version': 1,
+        'version': AggregateSnapshot.currentVersion,
         'miningStats': <Object?>[
           <String, Object?>{
             'sourceType': 'book',
@@ -329,6 +329,77 @@ void main() {
       // Every other family still folds; the missing list is simply empty.
       expect(snap.miningStats.single.count, 5);
       expect(snap.lookupMiningCounters, isEmpty);
+    });
+
+    test('an additive UNKNOWN key at the same version is ignored, not dropped',
+        () {
+      // A FUTURE build adds an optional family WITHOUT bumping the version (the
+      // discipline this snapshot mandates). An old build must still fold every
+      // family it knows and simply ignore the key it does not — the whole
+      // snapshot must NOT degrade to empty.
+      final AggregateSnapshot snap =
+          AggregateSnapshot.fromJson(<String, Object?>{
+        'version': AggregateSnapshot.currentVersion,
+        'miningStats': <Object?>[
+          <String, Object?>{'sourceType': 'book', 'dateKey': 'd', 'count': 7},
+        ],
+        'lookupMiningCounters': <Object?>[
+          <String, Object?>{
+            'title': 'Book A',
+            'sourceType': 'book',
+            'dateKey': 'd',
+            'lookupCount': 3,
+            'mineCount': 1,
+          },
+        ],
+        // An unknown future family key the current build has no decoder for.
+        'someFutureFamily': <Object?>[
+          <String, Object?>{'anything': 1},
+        ],
+      });
+      expect(snap.isEmpty, isFalse); // NOT wholesale-rejected
+      expect(snap.miningStats.single.count, 7);
+      expect(snap.lookupMiningCounters.single.lookupCount, 3);
+    });
+
+    test('a payload with NO version field still decodes best-effort', () {
+      // A version-less blob (e.g. a lenient encoder) is read, not rejected: the
+      // higher-version guard only fires on an int strictly above currentVersion.
+      final AggregateSnapshot snap =
+          AggregateSnapshot.fromJson(<String, Object?>{
+        'lookupMiningCounters': <Object?>[
+          <String, Object?>{
+            'title': 'Book A',
+            'sourceType': 'book',
+            'dateKey': 'd',
+            'lookupCount': 9,
+            'mineCount': 2,
+          },
+        ],
+      });
+      expect(snap.lookupMiningCounters.single.lookupCount, 9);
+      expect(snap.lookupMiningCounters.single.mineCount, 2);
+    });
+
+    test(
+        'only a strictly-HIGHER version (a breaking reshape) degrades to empty',
+        () {
+      // The version is reserved for genuinely breaking changes; a higher one is
+      // rejected wholesale so this build never mis-parses a shape it cannot read.
+      final AggregateSnapshot snap =
+          AggregateSnapshot.fromJson(<String, Object?>{
+        'version': AggregateSnapshot.currentVersion + 1,
+        'lookupMiningCounters': <Object?>[
+          <String, Object?>{
+            'title': 'Book A',
+            'sourceType': 'book',
+            'dateKey': 'd',
+            'lookupCount': 5,
+            'mineCount': 5,
+          },
+        ],
+      });
+      expect(snap.isEmpty, isTrue);
     });
   });
 }
