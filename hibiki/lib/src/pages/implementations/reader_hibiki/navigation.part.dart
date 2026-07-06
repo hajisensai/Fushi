@@ -366,6 +366,21 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _restoreCompleter = null;
   }
 
+  /// TODO-1128：把一个导航目标章号解析成真正拥有虚拟页的章号。开启「图片合并」
+  /// (`mergeImagePages`) 后，被吸收进后续文本章的单图片章（[EpubSpreadMap.isAbsorbedImageChapter]）
+  /// 没有自己的页——它的 `<img>` 直接内联注入到宿主文本章正文顶部（见
+  /// `webview.part.dart _injectMergedChapterImages`）。若裸导航直接落到被吸收章，会
+  /// 加载它自己的独立单图页（第 1 份）+ 宿主正文顶部又注入同图（第 2 份）=**图片重复**。
+  /// 本 helper 把这类目标重定向到其宿主文本章（该章虚拟页拥有那张内联图）；其余章号原样
+  /// 返回（幂等——宿主本身绝不会被吸收）。spread map 未就绪或合并关闭时 no-op。
+  int _resolveNavChapter(int index) {
+    final EpubSpreadMap? map = _spreadMap;
+    if (map == null) return index;
+    if (!map.isAbsorbedImageChapter(index)) return index;
+    final int virtual = map.virtualPageForChapter(index);
+    return map.entryAt(virtual).chapterIndex;
+  }
+
   Future<void> _navigateToChapter(
     int index, {
     double progress = 0.0,
@@ -377,6 +392,15 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     }
     if (_controller == null) {
       return;
+    }
+    // TODO-1128：目标是被吸收的单图片章时，重定向到其宿主文本章的章首——被吸收图片只在
+    // 宿主正文顶部内联注入那一份，绝不再加载独立单图页（消除重复）。charOffset 归零锚
+    // （宿主顶部即那张图），progress 强制 0.0（内联图在最开头）。宿主本身不会被吸收，故幂等。
+    final int resolvedChapter = _resolveNavChapter(index);
+    if (resolvedChapter != index) {
+      index = resolvedChapter;
+      progress = 0.0;
+      charOffset = null;
     }
     // TODO-807（纵深防御）：被动（有声书跟随）导航绝不落到 EPUB 目录/nav 页——
     // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
@@ -413,6 +437,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     int index, {
     bool manual = false,
   }) async {
+    // TODO-1128：被吸收图片章会被 _navigateToChapter 重定向到宿主文本章，落地后
+    // _currentChapter == 宿主 ≠ 传入的 index。成功判定必须对齐**重定向后的目标**，
+    // 否则有声书跨章遇被吸收图片章会误判 loaded=false → 跳过 imagePauseSec 停留
+    // （图片等待对合并书彻底失效）。非吸收章 resolved==index，行为不变。
+    final int resolvedChapter = _resolveNavChapter(index);
     await _navigateToChapter(index, manual: manual);
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
@@ -425,7 +454,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           },
         ) ??
         false;
-    return success && _currentChapter == index;
+    return success && _currentChapter == resolvedChapter;
   }
 
   // BUG-117: shared internal-link handler. Called both from the JS click
@@ -463,6 +492,15 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       {bool manual = false}) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
+
+    // TODO-1128：EPUB 内链目标是被吸收单图片章时重定向到宿主文本章章首（消除重复）。
+    // 被吸收章的正文已被再注入到宿主顶部（只有 <img>，原文档 id 不保留），fragment 锚
+    // 无法在合并后解析 → 丢弃 fragment，落宿主顶部那张内联图。非吸收章行为不变。
+    final int resolvedChapter = _resolveNavChapter(index);
+    if (resolvedChapter != index) {
+      index = resolvedChapter;
+      fragment = null;
+    }
 
     _progressPollTimer?.cancel();
     if (manual) {
@@ -566,6 +604,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   Future<void> _navigateToVirtualPage(
     int virtualIndex, {
     double progress = 0.0,
+    bool manual = false,
   }) async {
     if (_spreadMap == null) return;
     if (virtualIndex < 0 || virtualIndex >= _spreadMap!.length) return;
@@ -573,7 +612,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     if (entry.isSpread) {
       await _navigateToSpread(entry);
     } else {
-      await _navigateToChapter(entry.chapterIndex, progress: progress);
+      await _navigateToChapter(entry.chapterIndex,
+          progress: progress, manual: manual);
     }
   }
 
@@ -681,21 +721,29 @@ window.flutter_inappwebview.callHandler('spreadReady');
         'chapter=$_currentChapter spread=${_spreadMap != null}');
     _audiobookController?.noteManualReaderNavigation();
 
-    if (_spreadMap != null && _settings?.spreadMode != 'off') {
+    // TODO-1128：翻页统一走虚拟页 map（含 spreadMode=='off'）。off 模式无合并时 map 是
+    // identity（每章一页，与旧裸翻章逐章等价）；开启图片合并后被吸收单图片章没有自己的
+    // 虚拟页，虚拟页翻页天然跳过它（前进落宿主正文顶部内联图，后退越过整段被吸收 run 到
+    // 前一页），从源头消除「被吸收章被当独立页翻到 → 重复」。off 模式保留 manual=true 语义
+    // （与旧裸 _navigateToChapter(manual:true) 一致）；spread 模式沿用 manual=false。
+    if (_spreadMap != null) {
       final int currentVirtual =
           _spreadMap!.virtualPageForChapter(_currentChapter);
+      final bool manual = _settings?.spreadMode == 'off';
       if (direction == 'forward') {
         if (currentVirtual + 1 < _spreadMap!.length) {
-          _navigateToVirtualPage(currentVirtual + 1);
+          _navigateToVirtualPage(currentVirtual + 1, manual: manual);
         }
       } else {
         if (currentVirtual > 0) {
-          _navigateToVirtualPage(currentVirtual - 1, progress: 0.99);
+          _navigateToVirtualPage(currentVirtual - 1,
+              progress: 0.99, manual: manual);
         }
       }
       return;
     }
 
+    // 兜底：spread map 尚未构建（book/settings 未就绪，翻页前罕见）时退回裸翻章。
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
         _navigateToChapter(_currentChapter + 1, manual: true);

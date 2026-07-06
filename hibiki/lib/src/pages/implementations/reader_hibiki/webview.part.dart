@@ -1436,6 +1436,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           _loadLyricsPage();
         } else {
           _restoreInFlight = true;
+          // TODO-1128：开书恢复落到被吸收单图片章（如封面 ch0 被吸收进 ch1，或旧存档
+          // 停在某图片章后再开启合并）时，重定向到宿主文本章——只加载宿主（图片内联在
+          // 顶部）那一份，绝不加载独立单图页（否则往后翻同图又在宿主顶部出现=重复）。
+          final int hostChapter = _resolveNavChapter(_currentChapter);
+          if (hostChapter != _currentChapter) {
+            _currentChapter = hostChapter;
+            _lastProgressSection = _currentChapter;
+          }
           _loadChapterDirectly(_currentChapter);
         }
 

@@ -711,8 +711,15 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 见序列在途即保持守卫不放、不重算，序列收尾置回 false 由落到目标章的导航正常清。
     controller.setImageChapterPauseActive(true);
     try {
+      // TODO-1128：被吸收单图片章与其宿主文本章共享同一虚拟页（图片内联在宿主顶部）。
+      // 连续多张被吸收图片会 resolve 到同一宿主——只在该宿主上停留一次，不逐图重载宿主
+      // （避免闪烁 + 重复停留）。非吸收图片章 resolve 到自身，行为不变。
+      int lastResolved = -1;
       for (final int chapter in imageChapters) {
         if (!mounted || _lyricsMode) break;
+        final int resolved = _resolveNavChapter(chapter);
+        if (resolved == lastResolved) continue;
+        lastResolved = resolved;
         // 中间章载入完成会清掉 _chapterTransition；序列未结束前重新持住，防重入跨章。
         controller.holdChapterTransition();
         final bool loaded = await _navigateToChapterAndWait(chapter);
