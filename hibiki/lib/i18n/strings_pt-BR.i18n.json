@@ -2126,5 +2126,9 @@
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
   "video_subtitle_waveform_jump_playhead": "Jump to playhead",
   "video_subtitle_waveform_zoom_in": "Zoom in",
-  "video_subtitle_waveform_zoom_out": "Zoom out"
+  "video_subtitle_waveform_zoom_out": "Zoom out",
+  "video_loading_connecting": "Connecting to stream…",
+  "video_loading_subtitle": "Downloading subtitles…",
+  "video_loading_buffering": "Buffering…",
+  "video_loading_preparing": "Preparing…"
 }
