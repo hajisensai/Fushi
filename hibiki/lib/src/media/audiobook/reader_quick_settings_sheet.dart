@@ -677,6 +677,26 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
+  /// 「编辑书籍 CSS」入口行的外层 section。与主题卡（`_buildThemeSelectorSection`）
+  /// 同构：普通布局子页与歌词模式子页里，它与走 `buildDetailContent` 的 schema
+  /// section（layout 配置项组）并列同一 Column，而 Material 的 `buildDetailContent`
+  /// 正文额外套了 `detailHorizontalInsets` 的横向缩进。CSS 入口条若裸放 section 就会
+  /// 比上方配置项组更宽、左右对不齐（BUG-573，同 BUG-545 的主题卡）。故仅 Material
+  /// 补这层缩进（Cupertino 渲染器 `buildDetailContent` 本就无横向内边距），两处共用
+  /// 同一真相源 `detailHorizontalInsets`，消除等宽特例。
+  Widget _buildBookCssEditorSection() {
+    final Widget section = AdaptiveSettingsSection(
+      children: <Widget>[_buildBookCssEditorRow()],
+    );
+    if (isCupertinoPlatform(context)) return section;
+    return Padding(
+      padding: MaterialSettingsRenderer.detailHorizontalInsets(
+        HibikiDesignTokens.of(context),
+      ),
+      child: section,
+    );
+  }
+
   /// 「布局与显示」子页详情：主题选择器（TODO-802 并入）→ layout schema 行 →
   /// 可选「编辑书籍 CSS」行。窄窗 push 子页与宽窗右 pane 共用（经
   /// [_subPageContent] 的 'layout' 分支）。
@@ -689,10 +709,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: <Widget>[
         _buildThemeSelectorSection(),
         layoutContent,
-        if (widget.extractDir != null)
-          AdaptiveSettingsSection(
-            children: <Widget>[_buildBookCssEditorRow()],
-          ),
+        if (widget.extractDir != null) _buildBookCssEditorSection(),
       ],
     );
   }
@@ -1361,10 +1378,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: <Widget>[
         _buildThemeSelectorSection(),
         _buildLyricsMarginSection(),
-        if (widget.extractDir != null)
-          AdaptiveSettingsSection(
-            children: <Widget>[_buildBookCssEditorRow()],
-          ),
+        if (widget.extractDir != null) _buildBookCssEditorSection(),
       ],
     );
   }
