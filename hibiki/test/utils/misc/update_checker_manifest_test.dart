@@ -101,7 +101,8 @@ void main() {
           .cast<Map<String, dynamic>>()
           .firstWhere((Map<String, dynamic> a) =>
               (a['name'] as String).endsWith('.apk'));
-      // downstream UpdateAsset.fromReleaseAsset only reads browser_download_url.
+      // downstream UpdateAsset.fromReleaseAsset reads browser_download_url
+      // (and, TODO-1205, the per-asset `version` stamp when present).
       expect(
         apk['browser_download_url'],
         'https://github.com/hajisensai/hibiki/releases/download/v0.10.1-beta.162/hibiki-0.10.1-arm64-v8a.apk',

@@ -24,12 +24,12 @@ void main() {
     final int writeIdx = src.indexOf('await cacheWriter(entry);');
     expect(writeIdx, isNonNegative, reason: '_check 必须写回缓存');
     final int newerIdx =
-        src.indexOf('if (!isUpdateVersionNewer(tagName, currentVersion');
+        src.indexOf('if (!isUpdateVersionNewer(version, currentVersion');
     expect(newerIdx, isNonNegative);
     expect(writeIdx, lessThan(newerIdx),
         reason: '写缓存须在「是否更新」判断之前，覆盖 up-to-date 与 newer 两路');
     // 缓存条目带本通道 + tag + html + 时间戳。
-    expect(src, contains('latestTag: tagName,'));
+    expect(src, contains('latestTag: version,'));
     expect(src, contains('channel: channel,'));
     expect(src, contains('lastCheckEpochMs:'));
     // 写缓存失败不得影响检查流程（吞 + 记日志）。
