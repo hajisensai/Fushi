@@ -242,4 +242,105 @@ plain.mkv
       expect(playlistEpisodeCount('garbage'), 0);
     });
   });
+
+  group('HLS master playlist（parseM3u8Master / isHlsMasterPlaylist）', () {
+    const String masterSample = '''
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=1280000,RESOLUTION=640x360,CODECS="avc1.4d401e,mp4a.40.2"
+360p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2560000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2",FRAME-RATE=29.970
+720p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+https://cdn.example.com/1080p/index.m3u8
+''';
+
+    // 无 STREAM-INF 的 media playlist（分段列表），不是 master。
+    const String mediaSample = '''
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXTINF:9.009,
+seg0.ts
+#EXTINF:9.009,
+seg1.ts
+#EXT-X-ENDLIST
+''';
+
+    test('解析 master：3 个 variant，属性 + 相对 URL 按 URL 语义解析', () {
+      final List<HlsVariant> variants = parseM3u8Master(
+        content: masterSample,
+        baseUrl: 'https://host.example/hls/master.m3u8',
+      );
+      expect(variants.length, 3);
+
+      expect(variants[0].bandwidth, 1280000);
+      expect(variants[0].resolution, '640x360');
+      // 引号感知：CODECS 内部逗号不被当属性分隔符。
+      expect(variants[0].codecs, 'avc1.4d401e,mp4a.40.2');
+      expect(variants[0].height, 360);
+      expect(variants[0].width, 640);
+      expect(variants[0].url, 'https://host.example/hls/360p/index.m3u8');
+
+      // BANDWIDTH 优先于 AVERAGE-BANDWIDTH；FRAME-RATE 解析。
+      expect(variants[1].bandwidth, 2560000);
+      expect(variants[1].resolution, '1280x720');
+      expect(variants[1].frameRate, closeTo(29.970, 0.001));
+      expect(variants[1].url, 'https://host.example/hls/720p/index.m3u8');
+
+      // 绝对 URL 原样保留（不再相对 master 解析）。
+      expect(variants[2].bandwidth, 5000000);
+      expect(variants[2].height, 1080);
+      expect(variants[2].codecs, isNull);
+      expect(variants[2].url, 'https://cdn.example.com/1080p/index.m3u8');
+    });
+
+    test('qualityLabel：分辨率 + 码率标注', () {
+      const HlsVariant v = HlsVariant(
+        url: 'x',
+        bandwidth: 5000000,
+        resolution: '1920x1080',
+      );
+      expect(v.qualityLabel, '1080p · 5.0 Mbps');
+      const HlsVariant lowBitrate =
+          HlsVariant(url: 'x', bandwidth: 800000, resolution: '640x360');
+      expect(lowBitrate.qualityLabel, '360p · 800 kbps');
+      const HlsVariant noRes = HlsVariant(url: 'x', bandwidth: 3000000);
+      expect(noRes.qualityLabel, '3.0 Mbps');
+      const HlsVariant bare = HlsVariant(url: 'x');
+      expect(bare.qualityLabel, 'HLS');
+    });
+
+    test('sortedHlsVariantsByQualityDesc：高度降序（1080/720/360）', () {
+      final List<HlsVariant> variants = parseM3u8Master(
+        content: masterSample,
+        baseUrl: 'https://host.example/hls/master.m3u8',
+      );
+      final List<HlsVariant> sorted = sortedHlsVariantsByQualityDesc(variants);
+      expect(sorted.map((HlsVariant v) => v.height).toList(),
+          <int?>[1080, 720, 360]);
+      // 纯函数不改入参顺序。
+      expect(variants[0].height, 360);
+    });
+
+    test('media playlist（EXTINF 分段）→ 非 master、variant 为空', () {
+      expect(isHlsMasterPlaylist(mediaSample), isFalse);
+      expect(
+        parseM3u8Master(content: mediaSample, baseUrl: 'https://h/x.m3u8'),
+        isEmpty,
+      );
+    });
+
+    test('本地多集文件清单（parseM3u8 的输入）绝不被当作 HLS master', () {
+      // 红线：TODO-1237 的分集清单只有 #EXTINF，无 STREAM-INF，不得误判为 HLS。
+      expect(isHlsMasterPlaylist(_dragonMaidSample), isFalse);
+      expect(
+        parseM3u8Master(content: _dragonMaidSample, baseUrl: '/base'),
+        isEmpty,
+      );
+      // 且 parseM3u8（本地清单解析）对真 HLS master 仍走文件路径语义、与 master
+      // 解析互不干扰（isHlsMasterPlaylist 在上层做分流，这里只验两函数互不误伤）。
+      expect(isHlsMasterPlaylist(masterSample), isTrue);
+    });
+  });
 }

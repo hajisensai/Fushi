@@ -92,6 +92,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return t.video_audio_track;
       case _VideoSidePanelKind.chapters:
         return t.video_chapters;
+      case _VideoSidePanelKind.quality:
+        return t.video_quality;
     }
   }
 
@@ -105,6 +107,7 @@ extension _VideoSidePanel on _VideoHibikiPageState {
       case _VideoSidePanelKind.secondarySubtitleSources:
       case _VideoSidePanelKind.audioTracks:
       case _VideoSidePanelKind.speed:
+      case _VideoSidePanelKind.quality:
         return 320;
     }
   }
@@ -126,6 +129,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return _buildAudioTracksSidePanel(controller);
       case _VideoSidePanelKind.chapters:
         return _buildChapterSidePanel(controller);
+      case _VideoSidePanelKind.quality:
+        return _buildQualitySidePanel(controller);
     }
   }
 

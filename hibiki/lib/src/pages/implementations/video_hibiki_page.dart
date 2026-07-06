@@ -15,6 +15,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -108,6 +109,7 @@ part 'video_hibiki/controls_popover.part.dart';
 part 'video_hibiki/volume_osd.part.dart';
 part 'video_hibiki/chapter.part.dart';
 part 'video_hibiki/audio_track.part.dart';
+part 'video_hibiki/quality.part.dart';
 part 'video_hibiki/side_panel.part.dart';
 part 'video_hibiki/controls_theme.part.dart';
 part 'video_hibiki/speed.part.dart';
@@ -488,6 +490,7 @@ enum _VideoSidePanelKind {
   secondarySubtitleSources,
   audioTracks,
   chapters,
+  quality,
 }
 
 class _VideoSidePanelState {
@@ -1207,6 +1210,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
   /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
   String? _currentAudioTrackId;
+
+  /// HLS 画质（TODO-1158）：当前视频若是 HLS master playlist（m3u8 直链，含多档码率
+  /// variant），[_hlsMasterUri] 记 master URL、[_hlsVariants] 是解析出的档位（高到低
+  /// 排序）、[_selectedHlsVariantIndex] 是当前选中档（-1=自动/master ABR）。非 HLS /
+  /// media playlist 时三者为空态（无画质菜单）。切档走 [_switchHlsVariant]（换 variant
+  /// URL 重载，保持播放位置）。[_hlsDetectSeq] 是异步探测去重位（换片时旧探测结果丢弃）。
+  String? _hlsMasterUri;
+  List<HlsVariant> _hlsVariants = const <HlsVariant>[];
+  int _selectedHlsVariantIndex = -1;
+  int _hlsDetectSeq = 0;
 
   bool _clipExportMarking = false;
   bool _clipExporting = false;
@@ -2045,6 +2058,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
+    // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
+    // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
+    bool detectHls = true,
   }) async {
     // TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）前置短路。
     // libmpv 对失效本地路径静默失败（不抛、不回调），下面的 try/catch 与页级
@@ -2148,6 +2164,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
     controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
+    // TODO-1158：探测当前流是否为 HLS master（多档画质），填充画质菜单。仅常规载入
+    // 触发（画质切档的重载 detectHls=false）；网络 .m3u8 直链才 fetch，best-effort。
+    if (detectHls) {
+      unawaited(_detectHlsVariantsForLoad(mediaUri));
+    }
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
@@ -4676,6 +4697,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
       onEditControlsOnscreen: _showVideoControlEditOverlay,
+      // TODO-1158：HLS 多档画质入口（跨平台，经设置面板「播放」分类可达）。仅当探测到
+      // HLS master variant 时给入口；点开画质侧栏（替换当前设置侧栏）。
+      qualityOptionCount: _hlsVariants.length,
+      qualityCurrentLabel: _hlsVariants.isEmpty
+          ? null
+          : (_selectedHlsVariantIndex < 0 ||
+                  _selectedHlsVariantIndex >= _hlsVariants.length
+              ? t.video_quality_auto
+              : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
+      onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
@@ -5215,6 +5246,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         t.video_audio_track,
         () => _showAudioTrackMenu(controller),
       ),
+      // TODO-1158：仅当当前流是 HLS master（探测到多档码率 variant）才给画质入口。
+      if (_hlsVariants.isNotEmpty)
+        item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(

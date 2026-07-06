@@ -2138,6 +2138,9 @@
   "icon_transparent": "透明",
   "backup_import_validating_title": "正在读取备份…",
   "backup_import_validating_hint": "正在校验并预览备份内容，请稍候。",
+  "video_quality": "画质",
+  "video_quality_auto": "自动",
+  "video_quality_switched": "画质：$label",
   "video_black_flash_notice_action": "查看建议",
   "video_black_flash_notice_dont_show_again": "不再提示"
 }
