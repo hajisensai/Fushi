@@ -295,8 +295,12 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     return true;
   }
 
-  /// Routes a tap on the desktop floating-lyric strip through the **clipboard
-  /// lookup pipeline** (TODO-376). The strip is a separate native always-on-top
+  /// Routes a tap on the desktop floating-lyric strip. TODO-872：Windows 上
+  /// **优先**弹 867 app 外全局查词覆盖窗（[tryFloatingLyricGlobalLookup] →
+  /// [GlobalLookupController.lookupText]，与全局热键同款 NOACTIVATE、跟光标的
+  /// 卡片）——主窗被最小化/遮挡着听书时结果也看得见。覆盖窗不可用（控制器未
+  /// start / 非 Windows 桌面）才回落下方原 **clipboard lookup pipeline**
+  /// (TODO-376). The strip is a separate native always-on-top
   /// window with no DOM selection, so we segment the tapped word
   /// ([floatingLyricSearchTerm] via [Language.wordFromIndex], the same extractor
   /// the Android popup uses) and hand it to [DesktopLookupService.triggerLookup]
@@ -314,6 +318,15 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
   /// 它在 initState 无条件消费已存在的 [DesktopLookupService.pendingText] 并展示——
   /// pending 必须在请求切 tab **之前**就位（这里顺序即如此），否则页面挂载时读不到。
   Future<void> _lookupFromFloatingLyric(String text, int index) async {
+    if (!mounted) return;
+    // TODO-872 — 覆盖窗接手即返回；false 时继续原「切主窗词典 tab」回落路由。
+    if (await tryFloatingLyricGlobalLookup(
+      appModel: appModel,
+      text: text,
+      index: index,
+    )) {
+      return;
+    }
     if (!mounted) return;
     final String searchTerm = floatingLyricSearchTerm(
       text: text,

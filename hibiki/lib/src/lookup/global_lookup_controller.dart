@@ -79,7 +79,7 @@ class GlobalLookupController {
   // TODO-1030 M0 — the current sentence for THIS lookup (UIA context capture),
   // shown as a context banner in the root popup card. Empty when context
   // capture is off / unavailable (clipboard fallback), in which case the banner
-  // is not rendered. Reset per hotkey lookup in _onHotKey.
+  // is not rendered. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
@@ -284,14 +284,11 @@ class GlobalLookupController {
         glog('hotkey: appModel null — abort');
         return;
       }
-      // TODO-1079 (D) — reset native + Dart reveal state from zero every
-      // lookup. The native visible_/revealed_ and this controller's
-      // _revealed used to drift out of sync across lookups (an in-flight
-      // Hide() could swallow the next window; a stale revealed_ let the
-      // foreground hook self-close the fresh card). An unconditional hide()
-      // up front collapses both sides to a known-hidden state before showAt
-      // re-arms them, so every lookup starts clean. Cheap (SW_HIDE + unhook)
-      // and the prewarmed WebView2 survives it.
+      // TODO-1079 (D) — collapse native + Dart reveal state to known-hidden
+      // BEFORE the (possibly slow) selection capture, so a re-press makes the
+      // previous card vanish immediately. _lookupExternal hides again right
+      // before showAt (idempotent + cheap: SW_HIDE + unhook), which is what
+      // keeps the programmatic lookupText path equally clean.
       GlobalLookupChannel.hide();
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
@@ -318,13 +315,59 @@ class GlobalLookupController {
         glog('hotkey: empty selection — abort');
         return;
       }
+      await _lookupExternal(text, sentence: sentence);
+    } catch (e, st) {
+      glog('hotkey: EXCEPTION $e\n$st');
+    }
+  }
+
+  /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word
+  /// tap etc.). [text] is the already-segmented term; [sentence] is the line it
+  /// came from, shown as the root card's context banner and fed to mining's
+  /// sentence field ('' = no banner). Opens the SAME overlay card as the global
+  /// hotkey, at the OS cursor (the click that triggered this just happened
+  /// there — the native floating-lyric strip reports text+index only, no
+  /// coordinates). Returns false when the overlay cannot take the lookup
+  /// (unsupported platform / [start] never ran / blank term) so the caller
+  /// falls back to its existing in-app route — a tap is never silently lost.
+  Future<bool> lookupText(String text, {String sentence = ''}) async {
+    final String term = text.trim();
+    if (!isSupported || !_started || _appModel == null || term.isEmpty) {
+      return false;
+    }
+    glog('lookupText: "$term"');
+    await _lookupExternal(term, sentence: sentence);
+    return true;
+  }
+
+  /// TODO-872 — the shared app-external lookup chain for BOTH triggers (the
+  /// global hotkey and the programmatic [lookupText] entry): unconditional
+  /// hide → searchDictionary → reset reveal state → seed the stack root →
+  /// showAt(atCursor) → renderStack → auto-read → ready-driven reveal safety.
+  /// Never throws (logs and swallows, matching the old _onHotKey contract).
+  Future<void> _lookupExternal(String text, {required String sentence}) async {
+    final AppModel? model = _appModel;
+    if (model == null) {
+      glog('lookup: appModel null — abort');
+      return;
+    }
+    try {
+      // TODO-1079 (D) — reset native + Dart reveal state from zero every
+      // lookup. The native visible_/revealed_ and this controller's
+      // _revealed used to drift out of sync across lookups (an in-flight
+      // Hide() could swallow the next window; a stale revealed_ let the
+      // foreground hook self-close the fresh card). An unconditional hide()
+      // up front collapses both sides to a known-hidden state before showAt
+      // re-arms them, so every lookup starts clean. Cheap (SW_HIDE + unhook)
+      // and the prewarmed WebView2 survives it.
+      GlobalLookupChannel.hide();
       _currentSentence = sentence;
 
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: text,
         searchWithWildcards: false,
       );
-      glog('hotkey: searched "$text" -> entries=${result.entries.length}');
+      glog('lookup: searched "$text" -> entries=${result.entries.length}');
       // New card: forget the previous size + reveal state so the overlay
       // re-measures and reveals from scratch.
       _lastSentWidth = -1;
@@ -384,7 +427,7 @@ class GlobalLookupController {
       _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
       _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
       await _renderStack();
-      glog('hotkey: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
+      glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
       _autoReadFirstEntry(model, result);
       // TODO-1079 (B) — READY-DRIVEN reveal fallback (was a blind 450ms timeout).
@@ -401,7 +444,7 @@ class GlobalLookupController {
       final int safeH = (cardH * dpr).round();
       _scheduleReadyDrivenSafety(safeW, safeH, attempt: 0);
     } catch (e, st) {
-      glog('hotkey: EXCEPTION $e\n$st');
+      glog('lookup: EXCEPTION $e\n$st');
     }
   }
 
