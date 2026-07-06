@@ -977,45 +977,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
-  // TODO-1168（实验性）：底栏毛玻璃 + 半透明开关（per-reader，分层同上）。默认 false
-  // = 现状（不透明底栏，零回归）。纯视觉，不改底栏预留高。
-  bool get frostedBottomBar =>
-      readerSettings?.frostedBottomBar ??
-      getPreference<bool>(key: 'frosted_bottom_bar', defaultValue: false);
-
-  void toggleFrostedBottomBar() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setFrostedBottomBar(!frostedBottomBar);
-      return;
-    }
-    await setPreference<bool>(
-      key: 'frosted_bottom_bar',
-      value: !frostedBottomBar,
-    );
-  }
-
-  // TODO-1168（实验性）：底栏背景不透明度（分层同上），经 ReaderSettings 归一到
-  // [0.15, 1.0]，默认 0.6。仅当 frostedBottomBar 开启时消费。
-  double get bottomBarOpacity =>
-      readerSettings?.bottomBarOpacity ??
-      ReaderSettings.normalizeBottomBarOpacity(
-        getPreference<double>(key: 'bottom_bar_opacity', defaultValue: 0.6),
-      );
-
-  void setBottomBarOpacity(double value) async {
-    final double normalized = ReaderSettings.normalizeBottomBarOpacity(value);
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setBottomBarOpacity(normalized);
-      return;
-    }
-    await setPreference<double>(
-      key: 'bottom_bar_opacity',
-      value: normalized,
-    );
-  }
-
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
   double get ttuFontSize =>
