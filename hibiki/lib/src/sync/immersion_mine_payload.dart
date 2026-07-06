@@ -56,13 +56,21 @@ class ImmersionMinePayload {
     }
     final Map<String, String> fields = <String, String>{
       for (final MapEntry<Object?, Object?> e in rawFields.entries)
-        '${e.key}': '${e.value}',
+        '${e.key}': _normalizeIncomingText('${e.value}'),
     };
+    final String? sentence = json['sentence'] as String?;
+    final String? cueSentence = json['cueSentence'] as String?;
+    final String? documentTitle = json['documentTitle'] as String?;
     return ImmersionMinePayload(
       fields: fields,
-      sentence: (json['sentence'] as String?) ?? (fields['sentence'] ?? ''),
-      cueSentence: json['cueSentence'] as String?,
-      documentTitle: json['documentTitle'] as String?,
+      sentence: sentence == null
+          ? (fields['sentence'] ?? '')
+          : _normalizeIncomingText(sentence),
+      cueSentence:
+          cueSentence == null ? null : _normalizeIncomingText(cueSentence),
+      documentTitle: documentTitle == null
+          ? null
+          : _stripImmersionAudioPaths(_normalizeIncomingText(documentTitle)),
       timestampMs: (json['timestampMs'] as num?)?.round(),
       clipStartMs: (json['clipStartMs'] as num?)?.round(),
       clipEndMs: (json['clipEndMs'] as num?)?.round(),
@@ -86,3 +94,96 @@ class ImmersionMinePayload {
     }
   }
 }
+
+final RegExp _percentEscape = RegExp(r'%[0-9A-Fa-f]{2}');
+final RegExp _japaneseOrCjk = RegExp(r'[\u3040-\u30ff\u3400-\u9fff]');
+final RegExp _immersionAudioPath = RegExp(
+  r'''(^|\s)(?:/var/mobile/[^\s<>"']*|[^\s<>"']*[/\\])immersion_audio\.(?:aac|m4a|mp3|wav)\b''',
+);
+
+String _normalizeIncomingText(String value) {
+  final hasPercentEscape = _percentEscape.hasMatch(value);
+  final separatorPlusCount = _separatorPlusCount(value);
+  final shouldTreatPlusAsSpace = hasPercentEscape ||
+      separatorPlusCount >= 2 ||
+      (separatorPlusCount == 1 && _japaneseOrCjk.hasMatch(value));
+  if (!hasPercentEscape && !shouldTreatPlusAsSpace) return value;
+
+  final candidate =
+      shouldTreatPlusAsSpace ? _replaceSeparatorPluses(value) : value;
+  if (!hasPercentEscape) return candidate;
+  return _decodePercentEscapes(candidate);
+}
+
+int _separatorPlusCount(String value) {
+  var count = 0;
+  for (var i = 0; i < value.length; i++) {
+    if (value.codeUnitAt(i) != 0x2b) continue;
+    final prevIsPlus = i > 0 && value.codeUnitAt(i - 1) == 0x2b;
+    final nextIsPlus = i + 1 < value.length && value.codeUnitAt(i + 1) == 0x2b;
+    if (!prevIsPlus && !nextIsPlus) count++;
+  }
+  return count;
+}
+
+String _replaceSeparatorPluses(String value) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < value.length; i++) {
+    final codeUnit = value.codeUnitAt(i);
+    if (codeUnit != 0x2b) {
+      buffer.writeCharCode(codeUnit);
+      continue;
+    }
+    final prevIsPlus = i > 0 && value.codeUnitAt(i - 1) == 0x2b;
+    final nextIsPlus = i + 1 < value.length && value.codeUnitAt(i + 1) == 0x2b;
+    buffer.write(prevIsPlus || nextIsPlus ? '+' : ' ');
+  }
+  return buffer.toString();
+}
+
+String _decodePercentEscapes(String value) {
+  final buffer = StringBuffer();
+  final bytes = <int>[];
+
+  void flushBytes() {
+    if (bytes.isEmpty) return;
+    buffer.write(utf8.decode(bytes, allowMalformed: true));
+    bytes.clear();
+  }
+
+  for (var i = 0; i < value.length; i++) {
+    final codeUnit = value.codeUnitAt(i);
+    if (codeUnit == 0x25 && i + 2 < value.length) {
+      final byte = _hexByte(value.codeUnitAt(i + 1), value.codeUnitAt(i + 2));
+      if (byte != null) {
+        bytes.add(byte);
+        i += 2;
+        continue;
+      }
+    }
+    flushBytes();
+    buffer.writeCharCode(codeUnit);
+  }
+  flushBytes();
+  return buffer.toString();
+}
+
+int? _hexByte(int high, int low) {
+  final highNibble = _hexNibble(high);
+  final lowNibble = _hexNibble(low);
+  if (highNibble == null || lowNibble == null) return null;
+  return (highNibble << 4) | lowNibble;
+}
+
+int? _hexNibble(int codeUnit) {
+  if (codeUnit >= 0x30 && codeUnit <= 0x39) return codeUnit - 0x30;
+  if (codeUnit >= 0x41 && codeUnit <= 0x46) return codeUnit - 0x41 + 10;
+  if (codeUnit >= 0x61 && codeUnit <= 0x66) return codeUnit - 0x61 + 10;
+  return null;
+}
+
+String _stripImmersionAudioPaths(String value) => value
+    .replaceAll(_immersionAudioPath, ' ')
+    .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+    .replaceAll(RegExp(r'\n{2,}'), '\n')
+    .trim();

@@ -68,29 +68,28 @@ void main() {
               'desktop ffmpeg-min cannot mux it (BUG-460).');
     });
 
-    test('video sentence-audio output is .aac (adts), the cross-platform muxer',
+    test('video sentence-audio output is .m4a for AnkiMobile media download',
         () {
       // TODO-1000: video sentence-audio cutting moved out of _mineVideoCard
       // (lookup_mining.part.dart) into the shared ImmersionMiningEngine, which
-      // cuts the clip via extractAudioSegmentViaFfmpeg to `immersion_audio.aac`
+      // cuts the clip via extractAudioSegmentViaFfmpeg to `immersion_audio.m4a`
       // (the old video-only `video_mine_audio.aac` name folded into the shared
-      // engine). Same invariant, new home: assert the engine cuts to a `.aac`
-      // (adts) output via ffmpeg and never `.m4a` (BUG-460 muxer). The video
-      // shell just delegates to the engine (asserted by the customization guard).
+      // engine). The video shell just delegates to the engine (asserted by the
+      // customization guard).
       final String engine =
           libFile('lib/src/mining/immersion_mining_engine.dart');
-      expect(engine, contains(r"outputPath: '$tempDir/immersion_audio.aac'"),
-          reason: 'Video (and all immersion) sentence audio must stay .aac '
-              '(adts) for the cross-platform muxer reason (BUG-460).');
+      expect(engine, contains(r"outputPath: '$tempDir/immersion_audio.m4a'"),
+          reason: 'AnkiMobile only auto-downloads URLs it recognizes as media; '
+              'video cards must not hand it a raw .aac URL.');
       expect(engine, contains('await _audio('),
           reason: 'Sentence audio must be cut via the ffmpeg audio extractor '
               '(_audio defaults to extractAudioSegmentViaFfmpeg), TODO-1000.');
       expect(engine.contains('extractAudioSegmentViaFfmpeg'), isTrue,
           reason: 'The engine audio extractor default must be the ffmpeg path '
               '(never the native Transformer handler), TODO-970/TODO-1000.');
-      expect(engine.contains('immersion_audio.m4a'), isFalse,
-          reason: 'Do not switch immersion sentence audio to .m4a (no desktop '
-              'm4a/ipod muxer, BUG-460).');
+      expect(engine.contains('immersion_audio.aac'), isFalse,
+          reason: 'Do not regress to .aac for immersion sentence audio: '
+              'AnkiMobile leaves that localhost URL as visible text.');
     });
   });
 }

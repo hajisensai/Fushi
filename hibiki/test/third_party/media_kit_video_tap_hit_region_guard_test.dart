@@ -14,8 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 修法：拆成两层——① 全画面 tap/long-press/double-tap 层（无 bottom 内缩，承载
 /// `onTap: onTap`）；② 仅拖动识别器的 inset 层（保留 `bottom: 16.0 + ...` 边缘
-/// buffer）；inset 拖动层在上并标 `HitTestBehavior.translucent`，让指针继续命中
-/// 下方 tap 层，两层同进竞技场（边缘拖动归拖动、平单击归 onTap）。
+/// buffer）。关键是 inset 拖动层必须嵌在全画面 tap 层内部，形成同一条 hit-test
+/// 父子路径；若作为 Stack 上层 sibling，即使标 `HitTestBehavior.translucent`，
+/// Stack 也不会继续命中下方 tap sibling，画面中部单击会被截断。
 ///
 /// 真实竞技场时序 / 命中几何 headless 跑不了，故锁 vendored 源码结构不变量。
 void main() {
@@ -76,8 +77,51 @@ void main() {
     expect(dragLayer.contains('onTap: onTap'), isFalse,
         reason: 'TODO-1073：tap 已迁到全画面层，inset 拖动层不得再承载 onTap');
 
-    // inset 拖动层在上、必须 translucent，才能让指针继续命中下方全画面 tap 层。
+    // inset 拖动层在全画面 tap 层内部；保留 translucent 让它在自身无实绘内容处
+    // 仍加入竞技场，父级 tap detector 也会同时在 hit-test 路径里。
     expect(dragLayer.contains('behavior: HitTestBehavior.translucent'), isTrue,
-        reason: 'TODO-1073：inset 拖动层须 translucent，否则不透明子会吞掉落到 tap 层的单击');
+        reason: 'TODO-1073：inset 拖动层应保留 translucent，以便与父级 tap detector 同场仲裁');
   });
+
+  test('inset 拖动层必须嵌在全画面 tap 层内部，而不是作为上层 sibling 截断 hit test', () {
+    final int onTapIdx = src.indexOf('onTap: onTap');
+    expect(onTapIdx, greaterThanOrEqualTo(0),
+        reason: 'toggle 控制栏必须仍走 onTap: onTap');
+
+    final int tapGestureStart = src.lastIndexOf('GestureDetector(', onTapIdx);
+    expect(tapGestureStart, greaterThanOrEqualTo(0),
+        reason: 'onTap 必须挂在全画面 GestureDetector 上');
+    final int tapGestureEnd = _balancedInvocationEnd(src, tapGestureStart);
+    expect(tapGestureEnd, greaterThan(onTapIdx),
+        reason: '无法定位承载 onTap 的 GestureDetector 结尾');
+
+    final int dragBottomIdx =
+        src.indexOf('bottom: 16.0 + subtitleVerticalShiftOffset,');
+    expect(dragBottomIdx, greaterThanOrEqualTo(0),
+        reason: '拖动层必须保留 16px + subtitleVerticalShiftOffset 边缘 buffer');
+
+    expect(
+      dragBottomIdx,
+      inInclusiveRange(tapGestureStart, tapGestureEnd),
+      reason: 'Flutter Stack hit test 命中上层子节点后不会继续命中后面的 sibling；'
+          'inset 拖动层若作为 full-screen onTap 层之上的 sibling，会挡住画面中部 tap，'
+          '导致 iOS 只能在 inset 外的上下边缘唤出控制栏。',
+    );
+  });
+}
+
+int _balancedInvocationEnd(String source, int invocationStart) {
+  final int open = source.indexOf('(', invocationStart);
+  if (open < 0) return -1;
+  var depth = 0;
+  for (var i = open; i < source.length; i++) {
+    final String char = source[i];
+    if (char == '(') {
+      depth++;
+    } else if (char == ')') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
 }

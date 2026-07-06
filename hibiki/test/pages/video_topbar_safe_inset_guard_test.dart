@@ -29,19 +29,20 @@ void main() {
         reason: '移动 theme 必须把顶栏 margin 接到系统安全区折算的 _videoTopBarMargin()');
   });
 
-  test('_videoTopBarMargin 读 MediaQuery.padding 并经纯函数 videoTopBarMargin 折算',
-      () {
+  test('_videoTopBarMargin 读 padding/viewPadding，并用系统栏可见性门控顶部 inset', () {
     final int fn = src.indexOf('EdgeInsets _videoTopBarMargin()');
     expect(fn, greaterThanOrEqualTo(0),
         reason: '应有 _videoTopBarMargin 计算顶栏 margin');
     final int fnEnd = src.indexOf(';', fn);
     final String body = src.substring(fn, fnEnd);
-    // 读 padding（非 viewPadding）：避免 immersiveSticky 隐栏后 viewPadding.top 仍恒
-    // 上报状态栏区高度把顶栏永久顶低一段空白（BUG-370 同型陷阱）。
+    // BUG-545：top 不可再直接等于 padding.top。iOS 横竖屏切换 / 系统栏临时显隐时，
+    // padding.top 可能带着过渡态安全区值；顶部避让要像底栏一样由系统栏真实可见性门控。
     expect(body, contains('MediaQuery.of(context).padding'),
-        reason: '顶栏 inset 应读 MediaQuery.padding（隐栏收敛到刘海/0），非 viewPadding');
-    expect(body, isNot(contains('viewPadding')),
-        reason: '不应用 viewPadding.top（隐栏恒上报状态栏区高 -> 过度内缩，BUG-370 同型）');
+        reason: '顶栏折算仍需读取 padding，避免键盘/系统 inset 概念混淆');
+    expect(body, contains('MediaQuery.of(context).viewPadding'),
+        reason: '横屏 cutout 左右避让应读取 viewPadding，避免状态栏显隐影响左右安全区');
+    expect(body, contains('_systemBarsVisible'),
+        reason: '顶部 inset 必须由系统栏真实可见性门控，隐栏时不吃过渡态 padding.top');
     expect(body, contains('videoTopBarMargin('),
         reason: 'margin 折算应经纯函数 videoTopBarMargin（页面/测试同源）');
   });

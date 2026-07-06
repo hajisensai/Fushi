@@ -27,6 +27,7 @@ void main() {
       expect(req.providedCoverName, 'netflix_clip.gif');
       expect(req.providedCoverBytes, [1]);
       expect(req.providedAudioBytes, [2]);
+      expect(req.providedAudioName, 'netflix_audio.m4a');
       expect(req.requireAudio, true);
       expect(req.mediaSource, isNull);
       expect(req.documentTitle, 'Netflix');
@@ -53,6 +54,7 @@ void main() {
       expect(req.providedCoverName, 'netflix_shot.jpg');
       expect(req.providedCoverBytes, [7]);
       expect(req.providedAudioBytes, [2]);
+      expect(req.providedAudioName, 'netflix_audio.m4a');
       expect(req.requireAudio, true);
     });
 

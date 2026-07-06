@@ -109,4 +109,27 @@ void main() {
     expect(p.screenshotBytes, isNull);
     expect(p.sentence, 's'); // 卡照常可组（文本），不因坏媒体失败
   });
+
+  test('normalizes form-encoded text without corrupting literal plus signs',
+      () {
+    final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+      'fields': <String, dynamic>{
+        'glossary': '(明鏡国語辞典+第三版)+たい%E3%81%9D%E3%81%86',
+        'note': 'C++ primer',
+      },
+      'sentence':
+          '%E3%81%86%E3%82%8D%E8%A6%9A%E3%81%88%E3%83%A9%E3%82%B8%E3%82%AA%E4%BD%93%E6%93%8D%E3%81%A7%E3%82%82%E3%81%97%E3%82%88%E3%81%86%EF%BC%81',
+      'documentTitle':
+          '[Kamigami]+Himouto%21+Umaru-chan+-+10+%5B1920x1080+x264+AAC%5D\n'
+              '/var/mobile/Containers/Data/Application/ABC/Library/Caches/immersion_audio.aac',
+    });
+
+    expect(p.fields['glossary'], '(明鏡国語辞典 第三版) たいそう');
+    expect(p.fields['note'], 'C++ primer');
+    expect(p.sentence, 'うろ覚えラジオ体操でもしよう！');
+    expect(
+      p.documentTitle,
+      '[Kamigami] Himouto! Umaru-chan - 10 [1920x1080 x264 AAC]',
+    );
+  });
 }

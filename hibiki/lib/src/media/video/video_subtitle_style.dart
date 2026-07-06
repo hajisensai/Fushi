@@ -455,18 +455,25 @@ List<Shadow> buildSubtitleShadows(Color color, double thickness) {
 /// 移动端视频永不进 media_kit 全屏路由（BUG-221），而 fork 的 [MaterialVideoControls]
 /// 只在**全屏**分支给顶栏 Column 套 `MediaQuery.padding` 顶部内缩、窗口分支恒
 /// `EdgeInsets.zero` → 顶栏按钮永远贴 `y=0`，被状态栏 / 刘海盖住、点不到（用户报「顶栏
-/// 的按钮会被挡住」）。本纯函数把系统安全区 [systemPadding] 折成顶栏 margin：
-/// - `top`：直接取 `systemPadding.top`（状态栏唤出高 / 顶部刘海高；隐栏且无刘海时为 0）。
+/// 的按钮会被挡住」）。本纯函数把系统安全区折成顶栏 margin：
+/// - `top`：由 [systemBarsVisible] 门控，系统栏真实可见时取 [systemViewPadding].top，
+///   隐栏时归零，避免 iOS 横竖屏切换 / 系统栏临时显隐期间残留的 `padding.top`
+///   过渡值把顶栏偶发下压。
 /// - `left` / `right`：与浮动侧栏 `_mergeRailSafeAreaPadding` 同款逐边取 `max(16, inset)`
 ///   ——横屏短边刘海下顶栏左 / 右按钮也避开 cutout，又不在无刘海时把默认 16 叠成双重留白。
 ///
-/// 调用方传 `MediaQuery.padding`（**非** `viewPadding`）：immersiveSticky 隐栏后
-/// `viewPadding.top` 仍恒上报状态栏区高度，单读它会把顶栏永久顶低一段空白（BUG-370 同型
-/// 陷阱）；`padding.top` 才是顶栏需要避让的真实物理 inset。
-EdgeInsets videoTopBarMargin(EdgeInsets systemPadding) {
+/// 调用方同时传 `MediaQuery.padding` 与 `MediaQuery.viewPadding`：top 与底栏
+/// `_videoBottomSystemInset` 一样由系统栏真实可见性决定；左右 cutout 则用更稳定的
+/// viewPadding 与 padding 逐边取 max。
+EdgeInsets videoTopBarMargin({
+  required EdgeInsets systemPadding,
+  required EdgeInsets systemViewPadding,
+  required bool systemBarsVisible,
+}) {
   return EdgeInsets.only(
-    left: math.max(16.0, systemPadding.left),
-    right: math.max(16.0, systemPadding.right),
-    top: systemPadding.top,
+    left: math.max(16.0, math.max(systemPadding.left, systemViewPadding.left)),
+    right:
+        math.max(16.0, math.max(systemPadding.right, systemViewPadding.right)),
+    top: systemBarsVisible ? systemViewPadding.top : 0.0,
   );
 }

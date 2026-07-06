@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -117,8 +118,26 @@ void main() {
     expect(res.aborted, false);
     expect(repo.minedContext!.sentence, '走り出した。');
     expect(repo.minedContext!.coverPath, endsWith('.gif'));
-    expect(repo.minedContext!.sasayakiAudioPath, isNotNull);
+    expect(
+        repo.minedContext!.sasayakiAudioPath, endsWith('immersion_audio.m4a'));
     expect(repo.minedContext!.source, AnkiMiningSource.video);
+  });
+
+  test('provided audio bytes use the AnkiMobile-downloadable m4a filename',
+      () async {
+    final repo = _FakeRepo();
+    await build(gif: nullGif, audio: nullAudio, frame: nullFrame).mine(
+        ImmersionMiningRequest(
+            fields: const {'expression': 'x'},
+            clipStartMs: 0,
+            clipEndMs: 0,
+            sentence: 's',
+            providedAudioBytes: Uint8List.fromList(<int>[1, 2, 3])),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo);
+    expect(
+        repo.minedContext!.sasayakiAudioPath, endsWith('immersion_audio.m4a'));
   });
 
   test('gif fails -> frame fallback yields still cover', () async {

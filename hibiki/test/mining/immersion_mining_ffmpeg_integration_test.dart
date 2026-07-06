@@ -123,7 +123,8 @@ void main() {
       expect(repo.minedContext!.coverPath, endsWith('.gif'));
       expect(
           File(repo.minedContext!.coverPath!).lengthSync(), greaterThan(100));
-      expect(repo.minedContext!.sasayakiAudioPath, isNotNull);
+      expect(repo.minedContext!.sasayakiAudioPath,
+          endsWith('immersion_audio.m4a'));
       expect(File(repo.minedContext!.sasayakiAudioPath!).lengthSync(),
           greaterThan(100));
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
@@ -144,6 +145,7 @@ void main() {
       expect(String.fromCharCodes(cap.gifBytes!.take(3)), 'GIF');
       expect(cap.audioBytes, isNotNull);
       expect(cap.audioBytes!.length, greaterThan(100));
+      expect(String.fromCharCodes(cap.audioBytes!.skip(4).take(4)), 'ftyp');
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
   });
 }
