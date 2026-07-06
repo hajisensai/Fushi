@@ -101,6 +101,7 @@ part 'video_hibiki/danmaku.part.dart';
 part 'video_hibiki/clip_export.part.dart';
 part 'video_hibiki/controls_visibility.part.dart';
 part 'video_hibiki/episode.part.dart';
+part 'video_hibiki/flicker_notice.part.dart';
 part 'video_hibiki/subtitle.part.dart';
 part 'video_hibiki/controls_popover.part.dart';
 part 'video_hibiki/volume_osd.part.dart';
@@ -880,6 +881,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// Page-level level HUD value (0..100). Null means hidden.
   final ValueNotifier<_VideoLevelHudState?> _levelHudNotifier =
       ValueNotifier<_VideoLevelHudState?>(null);
+
+  /// TODO-1119 / BUG-545：Windows「高显卡占用黑屏闪烁」运行时提示条可见性。控制器判定
+  /// 疑似黑闪时经 [_handleSuspectedBlackFlicker] 置 true；用 [ValueNotifier] 而非 setState
+  /// （提示条挂在 media_kit controls builder 的 Stack，全屏路由也需即时开关，与其它 OSD
+  /// 同源，BUG-120）。方法域在 flicker_notice.part.dart。
+  final ValueNotifier<bool> _blackFlickerNoticeNotifier =
+      ValueNotifier<bool>(false);
+
+  /// 本会话是否已弹过一次黑闪提示（每会话最多一次；与偏好「不再提示」共同门控）。
+  bool _blackFlickerNoticeShown = false;
 
   /// Auto-hide timer for the page-level level HUD.
   Timer? _levelHudTimer;
@@ -2075,6 +2086,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     controller.onDiagLog = (String message) {
       ErrorLogService.instance.log('VideoHibiki.diag', message);
     };
+    // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
+    // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
+    controller.onSuspectedBlackFlicker =
+        Platform.isWindows ? _handleSuspectedBlackFlicker : null;
     ErrorLogService.instance.log(
       'VideoHibiki.diag',
       '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
@@ -2586,6 +2601,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _autoAdvanceCountdownNotifier.dispose();
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
+    _blackFlickerNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
     _videoControlsVisible.dispose();
