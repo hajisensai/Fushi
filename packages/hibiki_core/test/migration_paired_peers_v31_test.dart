@@ -87,7 +87,10 @@ void main() {
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(ver.read<int>('user_version'), db.schemaVersion,
         reason: 'migration must land on the current schema version');
-    expect(db.schemaVersion, 31, reason: 'TODO-1017 阶段1 bump 到 v31');
+    // hibiki_paired_peers 自 v31（TODO-1017 阶段1）引入；断言下界而非瞬时值，
+    // 使后续 schema bump 不会把这个迁移守护测试拖 stale。
+    expect(db.schemaVersion, greaterThanOrEqualTo(31),
+        reason: 'hibiki_paired_peers 自 v31 引入，schema 版本不应回退到其之前');
 
     // Old epub_books row survived the upgrade untouched (Never break userspace).
     final List<EpubBookRow> books = await db.getAllEpubBooks();
