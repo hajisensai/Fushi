@@ -4156,7 +4156,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `topButtonBarMargin.top` 显式补这一段，与底栏 [_videoBottomSystemInset] 对称。
   ///
   /// **为何同时读 `padding` / `viewPadding` 并用 [_systemBarsVisible] 门控 top**
-  /// （BUG-545）：immersiveSticky 隐栏后 `viewPadding.top` 仍可恒上报状态栏区高度，单读它
+  /// （BUG-556）：immersiveSticky 隐栏后 `viewPadding.top` 仍可恒上报状态栏区高度，单读它
   /// 会把顶栏永久顶低一段空白；但 iOS 横竖屏切换 / 系统栏临时显隐期间，`padding.top`
   /// 也可能带着过渡态旧值，单读它会让顶栏“有时候”被下压到不准位置。故顶部与底栏
   /// [_videoBottomSystemInset] 对齐：只有系统栏真实可见时才吃 `viewPadding.top`，隐栏时

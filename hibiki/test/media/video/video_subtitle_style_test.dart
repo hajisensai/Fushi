@@ -386,7 +386,7 @@ void main() {
     });
   });
 
-  group('videoTopBarMargin (BUG-463/BUG-545 顶栏避让状态栏/刘海)', () {
+  group('videoTopBarMargin (BUG-463/BUG-556 顶栏避让状态栏/刘海)', () {
     test('无系统 inset 时左右回退到默认 16、顶部为 0', () {
       // 隐栏 + 无刘海（padding 全 0）：左右不被叠出多余留白、顶部不下压。
       final EdgeInsets m = videoTopBarMargin(
@@ -400,7 +400,7 @@ void main() {
     });
 
     test('隐栏时即使 padding.top 残留过渡值，顶部也不被下压', () {
-      // BUG-545：iOS 横竖屏切换 / 系统栏临时显隐期间，padding.top 可能短暂带旧值。
+      // BUG-556：iOS 横竖屏切换 / 系统栏临时显隐期间，padding.top 可能短暂带旧值。
       // 系统栏真实不可见时 top 必须归零，避免顶栏偶发下沉。
       final EdgeInsets m = videoTopBarMargin(
         systemPadding: const EdgeInsets.only(top: 42),

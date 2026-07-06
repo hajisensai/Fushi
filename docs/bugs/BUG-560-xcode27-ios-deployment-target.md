@@ -1,4 +1,4 @@
-## BUG-549 · Xcode 27 真机编译失败：iOS deployment target 低于 15.0
+## BUG-560 · Xcode 27 真机编译失败：iOS deployment target 低于 15.0
 - **报告**：2026-07-05（用户：wight）
 - **真实性**：✅ 真 bug。Xcode 27 beta 真机编译日志拒绝 iOS deployment target 低于 15.0；修复前根因是 Runner 工程在 `hibiki/ios/Runner.xcodeproj/project.pbxproj:390` / `:476` / `:525` 使用 `13.0`，Podfile 在 `hibiki/ios/Podfile:2` 使用 `13.0`，HoshiDicts CMake 默认值在 `hibiki/ios/build_hoshidicts_ffi.sh:44` 使用 `13.0`。
 - **[x] ① 已修复** — Runner / Podfile / HoshiDicts FFI 默认 deployment target 统一升到 iOS 15.0；Pod post_install 强制所有 Pod target 也使用 15.0，避免第三方 podspec 写入 9/10/12/13 后被 Xcode 27 拒绝。（提交：`cabb53121`）

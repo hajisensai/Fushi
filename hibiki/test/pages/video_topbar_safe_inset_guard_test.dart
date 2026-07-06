@@ -35,7 +35,7 @@ void main() {
         reason: '应有 _videoTopBarMargin 计算顶栏 margin');
     final int fnEnd = src.indexOf(';', fn);
     final String body = src.substring(fn, fnEnd);
-    // BUG-545：top 不可再直接等于 padding.top。iOS 横竖屏切换 / 系统栏临时显隐时，
+    // BUG-556：top 不可再直接等于 padding.top。iOS 横竖屏切换 / 系统栏临时显隐时，
     // padding.top 可能带着过渡态安全区值；顶部避让要像底栏一样由系统栏真实可见性门控。
     expect(body, contains('MediaQuery.of(context).padding'),
         reason: '顶栏折算仍需读取 padding，避免键盘/系统 inset 概念混淆');

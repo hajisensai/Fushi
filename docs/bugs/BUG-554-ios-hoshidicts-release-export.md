@@ -1,4 +1,4 @@
-## BUG-543 · iOS release startup fails: hoshidicts_import symbol not found
+## BUG-554 · iOS release startup fails: hoshidicts_import symbol not found
 - **报告**：2026-07-04（用户：iOS 截图反馈 Initialisation failed / `hoshidicts_import` symbol not found）
 - **真实性**：✅ 真 bug。沿 iOS device release 真实构建链路验证：`flutter build ios --release --no-codesign --no-pub` 生成的 `libhoshidicts_ffi_merged.a` 里有 `_hoshidicts_import`，但最终 `build/ios/iphoneos/Runner.app/Runner` 没有导出该符号，导致 `packages/hibiki_dictionary/lib/src/ffi/hoshidicts_ffi_bindings.dart:10` 的 `DynamicLibrary.process()` 在 iOS release 启动时无法 `dlsym` 到 FFI 入口。根因在 `hibiki/ios/Runner.xcodeproj/project.pbxproj:415` / `:551` / `:581`：Runner 只 `-force_load` 静态归档，未让主可执行导出这些全局符号；Release strip 后符号不可见。
 - **[x] ① 已修复** — 在 iOS Debug/Profile/Release 的 `OTHER_LDFLAGS` 中加入 `-Wl,-export_dynamic`，让 force-loaded 的 HoshiDicts FFI 入口保留为 `DynamicLibrary.process()` 可解析的导出符号。（提交：本提交）

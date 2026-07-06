@@ -1,4 +1,4 @@
-## BUG-544 · iOS 视频画面中部点击无法唤出控制栏
+## BUG-555 · iOS 视频画面中部点击无法唤出控制栏
 - **报告**：2026-07-05（用户：iOS 视频触摸功能栏只有顶部和底部能打开，需要点每个地方都能打开）
 - **真实性**：✅ 真 bug。沿真实视频触摸路径定位：Hibiki 外层 `_handleVideoPointerUp` 在移动端明确不自己 toggle 控制栏，而是让同一次触摸下探到 vendored `media_kit_video` 的移动端 `onTap`（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material.dart:1022`）作为单一真实显隐源，避免 TODO-364 的双源相位反。BUG-498 把全画面 tap 层与 inset 拖动层拆成两个 Stack sibling，并误以为上层拖动层 `HitTestBehavior.translucent` 会让命中继续落到下方 tap sibling；但 Flutter Stack hit test 命中上层子节点后不会继续命中后面的 sibling。结果 `bottom: 16.0 + subtitleVerticalShiftOffset` 的 inset 拖动层覆盖了画面中部，截断下方 `onTap`，只有 inset 外的上下/边缘区域还能唤出控制栏。根因点：`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material.dart:993`。
 - **[x] ① 已修复** — `third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material.dart`：保留“tap 全画面、drag 有边缘 buffer”的分工，但把结构改成父子 hit-test 路径：全画面 `GestureDetector` 作为父层承载 `onTap` / long-press / double-tap，内部 `Stack` 再嵌入 inset `GestureDetector` 只承载横/竖拖动（`bottom: 16.0 + subtitleVerticalShiftOffset` 保留）。这样画面任意位置单击都会进入父级 tap detector；中部拖动仍由子级 drag detector 同场仲裁，边缘系统手势 buffer 语义不回退。提交：本提交。

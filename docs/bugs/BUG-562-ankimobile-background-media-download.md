@@ -1,4 +1,4 @@
-## BUG-551 · iOS AnkiMobile 视频句音频导入后仍保留 localhost URL
+## BUG-562 · iOS AnkiMobile 视频句音频导入后仍保留 localhost URL
 - **报告**：2026-07-06（用户：）
 - **真实性**：✅ 真 bug。`55645be21` 修掉了 server/background-task 生命周期，但用户 2026-07-06 最新真机截图仍显示 `http://127.0.0.1:.../immersion_audio.aac`。剩余根因是 `hibiki/lib/src/mining/immersion_mining_engine.dart:118` / `:125` 和 `hibiki/lib/src/mining/immersion_capture_channel.dart:119` 仍把视频/沉浸句音频命名为 `.aac`；AnkiMobile URL scheme 只会对识别为媒体扩展名的 URL 下载并替换字段，`.aac` 会被保留为普通文本 URL。
 - **[x] ① 已修复** — `55645be21`：有本地媒体时在跳转 AnkiMobile 前启动 background task，并用同一个关闭路径管理 server / background task 生命周期；`openUrl` 失败或异常时立即关闭。`5c84a6911`：沉浸/视频制卡的 ffmpeg 输出、provided audio 默认文件名、Netflix clip 转码输出和 capture request 文件名统一改为 `.m4a`，对齐 Hoshi Reader 的 Anki 媒体命名方式，让 AnkiMobile 将 localhost URL 当作可下载音频。

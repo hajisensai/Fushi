@@ -1,4 +1,4 @@
-## BUG-545 · iOS 视频顶部功能栏偶发位置不准
+## BUG-556 · iOS 视频顶部功能栏偶发位置不准
 - **报告**：2026-07-05（用户：）
 - **真实性**：✅ 真 bug。根因：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:4107` 的 `_videoTopBarMargin()` 只把 `MediaQuery.padding` 交给 `videoTopBarMargin`；iOS 横竖屏切换 / 系统栏临时显隐时 `padding.top` 可能带着过渡态旧值，导致顶部功能栏偶发下沉或贴边不准。
 - **[x] ① 根因修复** — `hibiki/lib/src/media/video/video_subtitle_style.dart:437` 改为同时接收 `padding`、`viewPadding` 与 `_systemBarsVisible`：顶部 inset 只在系统栏真实可见时使用 `viewPadding.top`，隐栏时归零；左右 cutout 仍逐边取安全区最大值。提交：本提交。

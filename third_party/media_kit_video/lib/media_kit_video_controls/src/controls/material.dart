@@ -990,7 +990,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                           color: _theme(context).backdropColor,
                         ),
                       ),
-                      // Hibiki patch (TODO-1073/BUG-544): tap hit-region MUST
+                      // Hibiki patch (TODO-1073/BUG-555): tap hit-region MUST
                       // cover the whole video area, otherwise a single tap in an
                       // inset band can no longer toggle the controls back on.
                       // Upstream lumped the "show controls" [onTap] together
@@ -1056,7 +1056,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                               // (e.g. swiping to: show status-bar, show
                               // navigation-bar, go back in navigation) not
                               // activate the swipe gesture annoyingly.
-                              // Hibiki patch (TODO-1073/BUG-544): this layer
+                              // Hibiki patch (TODO-1073/BUG-555): this layer
                               // carries ONLY drag recognizers; tap/long-press
                               // stay on the full-cover parent so every point can
                               // reveal the controls.
