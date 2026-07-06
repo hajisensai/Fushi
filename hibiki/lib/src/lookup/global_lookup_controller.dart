@@ -662,6 +662,28 @@ class GlobalLookupController {
       unawaited(_handleDuplicateBridge(message));
       return;
     }
+    // TODO-1225 — 覆写制卡（✓↩）也是 DEFERRED 桥，补上 1188 只做了新建/查重后缺的那半：
+    //   - overwriteTargetNoteId：popup.js 查词时若 duplicateCheck 命中已存在卡（且非本
+    //     会话最近），await callHandler('overwriteTargetNoteId', {expression,reading}) 拿
+    //     一张可覆写的 note id（仅 AnkiSettings.overwriteScope=all 且 AnkiConnect 后端返回
+    //     非空），据此把已存在卡提升到 ✓↩「最新可改」态，一点即覆写。
+    //   - updateEntry：点 ✓↩ 时 await callHandler('updateEntry', {noteId,fields}) 按 id
+    //     真实覆盖字段（不新增卡、不查重、不记账）——与 in-app DictionaryPageMixin
+    //     .findOverwriteTargetNoteId / onUpdateEntry 同 repo.findOverwriteTargetNoteId /
+    //     repo.updateMinedNote 路径，别发明新协议。
+    // 两者过去在 C++ 都被当只读即时 null-resolve（overwriteTargetNoteId 拿 null=永不进
+    // ✓↩、updateEntry 拿 null=覆写静默失败），本次一并纳入 deferred 由 Dart 权威回复。
+    // minedCardAction（点普通 ✓ 弹「覆写哪张/新增重复/查看」操作面板）仍保持即时 null
+    // 降级——它需在前台弹 Flutter 底栏，而 app 外主窗被外部应用挡在后台无法呈现（见
+    // C++ 注释），故 app 外覆写只走 overwriteTargetNoteId + updateEntry 的 ✓↩ 就地覆写。
+    if (handler == 'overwriteTargetNoteId') {
+      unawaited(_handleOverwriteTargetBridge(message));
+      return;
+    }
+    if (handler == 'updateEntry') {
+      unawaited(_handleUpdateBridge(message));
+      return;
+    }
     // TODO-867 P3c D2 — size + place the overlay window from the host's stack
     // self-measurement. The host reports overlaySize = [dpr, box] where box is
     // the UNION bounding box of all card shells in window-local CSS px
@@ -1031,6 +1053,131 @@ class GlobalLookupController {
       glog('duplicate: duplicateCheck -> reply=$reply (id=$id)');
       unawaited(GlobalLookupChannel.resolveBridge(id, reply));
     }
+  }
+
+  /// TODO-1225 — resolves a DEFERRED `overwriteTargetNoteId` probe: reverse-looks
+  /// up an EXISTING note id that [expression]/[reading] can overwrite in place via
+  /// [BaseAnkiRepository.findOverwriteTargetNoteId] — the SAME path the in-app
+  /// popup uses ([DictionaryPageMixin.findOverwriteTargetNoteId]). Only returns a
+  /// non-null id when the user set [AnkiSettings.overwriteScope] to `all` AND the
+  /// backend (AnkiConnect) can resolve one; otherwise (default `latest` / AnkiDroid)
+  /// it stays `null` and popup.js keeps the ordinary +/✓ two-state (Never break
+  /// userspace). A real id promotes the earlier card to popup.js's editable ✓↩
+  /// state so a single click overwrites it (updateEntry). popup.js expects a BARE
+  /// number (or null), so the reply is the raw `int?` — NOT wrapped in a map.
+  /// Always resolves — even on error / no model — so the ✓/+ paint never hangs
+  /// (mirrors [_handleDuplicateBridge]).
+  Future<void> _handleOverwriteTargetBridge(
+      Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    int? reply;
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> data =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final String expression = data['expression']?.toString() ?? '';
+      final String reading = data['reading']?.toString() ?? '';
+      if (model != null && expression.isNotEmpty) {
+        final BaseAnkiRepository repo =
+            model.platformServices.createAnkiRepository();
+        reply = await repo.findOverwriteTargetNoteId(expression, reading);
+      }
+    } catch (e, st) {
+      glog('overwrite-target: EXCEPTION $e\n$st');
+      reply = null;
+    }
+    if (id != null) {
+      glog('overwrite-target: overwriteTargetNoteId -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
+  }
+
+  /// TODO-1225 — resolves a DEFERRED `updateEntry` bridge call: OVERWRITES an
+  /// EXISTING note ([noteId]) in place with freshly-built fields through
+  /// [BaseAnkiRepository.updateMinedNote] — the SAME contract the in-app popup uses
+  /// ([DictionaryPageMixin.onUpdateEntry]). Reuses the mineEntry field/media path
+  /// (flushes gaiji [writeDictionaryMediaCache] first so overwrite carries the same
+  /// dictionary media) but does NOT create a new card and does NOT record mining
+  /// stats — an overwrite fixes an existing card in place (mirrors the in-app
+  /// `describeMineOutcome(overwrite: true)`, which does not count). popup.js's
+  /// `updateEntry` sends `{ noteId, fields }` (NOT the flat mineEntry payload), so
+  /// the fields live one level down under `fields`. Pushes the popup.js-shaped
+  /// {ankiConnect, noteId} reply back so the ✓↩ button refreshes. Always resolves —
+  /// even on error / no model / missing note id — so the ✓↩ button never freezes
+  /// (same contract as [_handleMineBridge]).
+  Future<void> _handleUpdateBridge(Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    Map<String, Object?> reply = const <String, Object?>{
+      'ankiConnect': false,
+      'noteId': null,
+    };
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> envelope =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final int? noteId = (envelope['noteId'] is num)
+          ? (envelope['noteId'] as num).toInt()
+          : null;
+      final Object? rawFields = envelope['fields'];
+      final Map<Object?, Object?> raw =
+          rawFields is Map ? rawFields : const <Object?, Object?>{};
+      final Map<String, String> fields = <String, String>{
+        for (final MapEntry<Object?, Object?> e in raw.entries)
+          e.key.toString(): e.value?.toString() ?? '',
+      };
+      final String expression = fields['expression'] ?? '';
+      if (model != null && noteId != null && expression.isNotEmpty) {
+        reply = await _updateEntry(model, noteId, fields);
+      }
+    } catch (e, st) {
+      glog('update: EXCEPTION $e\n$st');
+      reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
+    }
+    if (id != null) {
+      glog('update: updateEntry -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
+  }
+
+  /// TODO-1225 — overwrites note [noteId] with [fields] through the same
+  /// [BaseAnkiRepository.updateMinedNote] path the in-app popup uses
+  /// ([DictionaryPageMixin.onUpdateEntry]). Flushes gaiji dictionary media first
+  /// (as [_mineEntry] does) so the overwrite carries identical media, then updates
+  /// by id WITHOUT recording stats (overwrite does not count). Returns the
+  /// popup.js-shaped {ankiConnect, noteId} reply (ankiConnect=true + noteId only on
+  /// [MineResult.success]; AnkiDroid's default-degrade [updateMinedNote] returns
+  /// failure → false+null, keeping the ✓↩ path a no-op there, Never break userspace).
+  Future<Map<String, Object?>> _updateEntry(
+    AppModel model,
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+    final BaseAnkiRepository repo =
+        model.platformServices.createAnkiRepository();
+    final MineOutcome outcome = await repo.updateMinedNote(
+      noteId: noteId,
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: fields['sentence'] ?? '',
+        source: AnkiMiningSource.book,
+      ),
+    );
+    final bool success = outcome.result == MineResult.success;
+    return <String, Object?>{
+      'ankiConnect': success,
+      'noteId': success ? outcome.noteId : null,
+    };
   }
 
   /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。

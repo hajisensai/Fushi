@@ -729,9 +729,22 @@ void GlobalLookupWindow::ConfigureWebView() {
               // duplicateCheck with null (never mined), so app-external mining
               // silently did nothing. Dart computes both replies and
               // ResolveBridge()s them; the host router returns each reply to the
-              // source iframe (no host.js change needed). Read-only probes
-              // (overwriteTargetNoteId) still get an immediate null -- that is a
-              // valid "no overwrite target" reply, so they stay non-deferred.
+              // source iframe (no host.js change needed).
+              // TODO-1225 follow-up -- overwriteTargetNoteId + updateEntry are the
+              // OTHER half of the overwrite (✓↩) panel and are now DEFERRED
+              // too: popup.js awaits overwriteTargetNoteId's real note id (Dart
+              // repo.findOverwriteTargetNoteId; non-null only when overwrite scope =
+              // all) to promote an existing card to the editable ✓↩ state,
+              // and awaits updateEntry's real {ankiConnect,noteId}
+              // (repo.updateMinedNote) to overwrite that note in place. An immediate
+              // null here would resolve overwriteTargetNoteId with null (card never
+              // promoted, no overwrite affordance) and updateEntry with null
+              // (parseMineResult -> overwrite silently did nothing), so app-external
+              // overwrite could never work. minedCardAction (the "overwrite which /
+              // add duplicate / view" action SHEET) stays NON-deferred -> immediate
+              // null: it needs a foreground Flutter bottom sheet, but the main window
+              // is backgrounded behind the external app and cannot present over it,
+              // so app-external overwrite is the ✓↩ in-place path only.
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
@@ -739,7 +752,9 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"favoriteEntry\"") != std::string::npos ||
                   body.find("\"favoriteCheck\"") != std::string::npos ||
                   body.find("\"mineEntry\"") != std::string::npos ||
-                  body.find("\"duplicateCheck\"") != std::string::npos;
+                  body.find("\"duplicateCheck\"") != std::string::npos ||
+                  body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
+                  body.find("\"updateEntry\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
