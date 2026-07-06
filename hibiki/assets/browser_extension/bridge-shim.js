@@ -18,7 +18,8 @@ window.flutter_inappwebview = {
           var sentence = cueText || (args[0] && args[0].popupSelectionText) || '';
           var res = (typeof window.hibikiEnqueue === 'function')
             ? window.hibikiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
-          if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
+          if (res && res.ok && res.duplicate) toast('✓ 已在制卡队列中（' + res.count + '）');
+          else if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
           else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
           else toast('✗ 入队失败');
           resolve(!!(res && res.ok));

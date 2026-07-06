@@ -59,6 +59,11 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       listEl.appendChild(empty);
       return;
     }
+    // TODO-1222：给队列列表加一行标题头（与顶部应用标题区分：这里标注下方是「待生成的卡片」）。
+    const heading = document.createElement('div');
+    heading.className = 'hp-list-title';
+    heading.textContent = '待生成的卡片（' + list.length + '）';
+    listEl.appendChild(heading);
     for (const q of list) {
       const row = document.createElement('div');
       row.className = 'hp-row';
