@@ -1745,6 +1745,14 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   }
 
   void onPointerMove(PointerMoveEvent e, BoxConstraints constraints) {
+    // Hibiki patch (BUG-566, mirrors BUG-235): bail out if this State was
+    // already disposed. `controller(context)` below dereferences
+    // `State.context`; after dispose (Hibiki tears down the controls subtree
+    // on fullscreen enter/exit and on episode switch via
+    // VideoControlsFocusGate) that throws
+    // "Null check operator used on a null value". Mirrors the existing
+    // `if (mounted)` guard in `setState`. See third_party/media_kit_video/PATCHES.md.
+    if (!mounted) return;
     final percent = e.localPosition.dx / constraints.maxWidth;
     setState(() {
       tapped = true;
@@ -1761,6 +1769,15 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   }
 
   void onPointerUp() {
+    // Hibiki patch (BUG-566, mirrors BUG-235): guard against use-after-dispose.
+    // The pointer-up event can arrive after the controls widget tree is
+    // unmounted (release the seek bar drag right as the player exits
+    // fullscreen / switches episode), and `controller(context)` below
+    // dereferences the now-null `State.context`, crashing with
+    // "Null check operator used on a null value" at this line. Bail out when
+    // unmounted, matching the State's existing `if (mounted)` setState guard.
+    // See third_party/media_kit_video/PATCHES.md.
+    if (!mounted) return;
     widget.onSeekEnd?.call();
     setState(() {
       // Explicitly set the position to prevent the slider from jumping.

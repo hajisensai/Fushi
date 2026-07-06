@@ -30,6 +30,27 @@ only calls `setState` (already guarded), so it is left unchanged.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
 
+## BUG-566: mobile seek bar use-after-dispose (mirror of BUG-235)
+
+`lib/media_kit_video_controls/src/controls/material.dart`,
+`MaterialSeekBarState`.
+
+The *mobile* controls have the exact same defect BUG-235 fixed on desktop:
+`onPointerMove()` and `onPointerUp()` unconditionally call
+`controller(context).player.seek(...)`, dereferencing `State.context` with no
+`mounted` guard. Hibiki tears down the controls subtree on fullscreen
+enter/exit and episode switch (`VideoControlsFocusGate`), so a drag released
+right then lands on a disposed `State` (`context` is null) and crashes with
+`Null check operator used on a null value`; the seek is lost either way.
+
+The patch adds `if (!mounted) return;` to the top of both handlers, mirroring
+the BUG-235 desktop patch and the State's existing `if (mounted)` setState
+guard. `onPointerDown()` and the `onPan*` handlers only call `setState`
+(already guarded) / widget callbacks and do not dereference `context`, so they
+are left unchanged — same as desktop.
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+
 ## TODO-364: publish real controls visibility (`visibilityNotifier`)
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart` and

@@ -19,11 +19,20 @@ import 'package:flutter_test/flutter_test.dart';
 /// `if (mounted)` setState guard). This test guards the *patch* — if a future
 /// re-vendor of media_kit_video drops the guard, the crash returns and this
 /// goes red. See `third_party/media_kit_video/PATCHES.md`.
+///
+/// BUG-566: the *mobile* controls (`material.dart`, `MaterialSeekBarState`)
+/// have the exact same unguarded `controller(context)` dereference in their
+/// `onPointerMove()`/`onPointerUp()`; BUG-235 only patched the desktop file.
+/// The mobile handlers carry the same `if (!mounted) return;` guard, asserted
+/// by the mirrored group below.
 void main() {
   // Tests run with CWD = `hibiki/`; vendored packages live at the workspace root.
   const String controlsPath =
       '../third_party/media_kit_video/lib/media_kit_video_controls/'
       'src/controls/material_desktop.dart';
+  const String mobileControlsPath =
+      '../third_party/media_kit_video/lib/media_kit_video_controls/'
+      'src/controls/material.dart';
 
   test('vendored media_kit_video override is wired in pubspec', () {
     final String pubspec = File('pubspec.yaml').readAsStringSync();
@@ -86,6 +95,55 @@ void main() {
         isTrue,
         reason: 'onPointerMove also dereferences controller(context); it must '
             'bail out with `if (!mounted) return;` (BUG-235).',
+      );
+    });
+  });
+
+  group('MaterialSeekBarState (mobile) pointer handlers guard !mounted', () {
+    late String source;
+
+    setUp(() {
+      source = File(mobileControlsPath).readAsStringSync();
+    });
+
+    /// Same brace-matching body extraction as the desktop group, applied to
+    /// the mobile `material.dart`.
+    String bodyOf(String name) {
+      final int sig = source.indexOf(RegExp('void\\s+$name\\s*\\('));
+      expect(sig, isNonNegative,
+          reason: 'expected a `void $name(` handler in $mobileControlsPath');
+      final int open = source.indexOf('{', sig);
+      expect(open, isNonNegative);
+      int depth = 0;
+      for (int i = open; i < source.length; i++) {
+        final String c = source[i];
+        if (c == '{') depth++;
+        if (c == '}') {
+          depth--;
+          if (depth == 0) return source.substring(open, i + 1);
+        }
+      }
+      fail('unbalanced braces in $name body of $mobileControlsPath');
+    }
+
+    test('onPointerUp returns early when unmounted', () {
+      expect(
+        bodyOf('onPointerUp')
+            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        isTrue,
+        reason: 'mobile onPointerUp dereferences controller(context); it must '
+            'bail out with `if (!mounted) return;` before that, or the '
+            'disposed-State crash (BUG-566, mobile mirror of BUG-235) returns.',
+      );
+    });
+
+    test('onPointerMove returns early when unmounted', () {
+      expect(
+        bodyOf('onPointerMove')
+            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        isTrue,
+        reason: 'mobile onPointerMove also dereferences controller(context); '
+            'it must bail out with `if (!mounted) return;` (BUG-566).',
       );
     });
   });
