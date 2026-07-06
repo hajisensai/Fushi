@@ -1231,41 +1231,24 @@ class ReaderPaginationScripts {
       console.log('[sasayaki-hl] applySasayakiCues payloadCues=' + n);
     } catch (e) {}
     var cueSegments = this.collectSasayakiCueRanges(cues);
-    if (window.__hoshiCssHighlightsSupported) {
-      // BUG-110：在 <ruby> 内的节点不放进 ::highlight range（竖排下 ::highlight 会把
-      // ruby 基字盒画两遍 → 半透明叠加成深色带遮字）；改把 <ruby> 元素本身收集起来，
-      // 高亮时给它加 class（背景画在元素上、只画一遍）。普通文字仍走 ::highlight。
-      // 移植自 Hoshi-Reader-Android buildSasayakiHighlightRanges。
-      for (var i = 0; i < cueSegments.length; i++) {
-        var id = cueSegments[i].id;
-        var segments = cueSegments[i].ranges;
-        if (!segments.length) continue;
-        var ranges = [];
-        var rubyElements = [];
-        for (var j = 0; j < segments.length; j++) {
-          var ruby = this.rubyForNode(segments[j].node);
-          if (ruby) {
-            if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
-            continue;
-          }
-          try {
-            var r = document.createRange();
-            r.setStart(segments[j].node, segments[j].start);
-            r.setEnd(segments[j].node, segments[j].end);
-            ranges.push(r);
-          } catch (e) {}
+    // BUG-568：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
+    // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
+    // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 hoshi-sasayaki-cue span，
+    // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
+    var range = document.createRange();
+    for (var i = cueSegments.length - 1; i >= 0; i--) {
+      var id = cueSegments[i].id;
+      var segments = cueSegments[i].ranges;
+      if (!segments.length) continue;
+      var wrappers = [];
+      var rubyElements = [];
+      for (var j = segments.length - 1; j >= 0; j--) {
+        var ruby = this.rubyForNode(segments[j].node);
+        if (ruby) {
+          if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+          continue;
         }
-        if (ranges.length) this.cueRangesMap.set(id, ranges);
-        if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
-      }
-    } else {
-      var range = document.createRange();
-      for (var i = cueSegments.length - 1; i >= 0; i--) {
-        var id = cueSegments[i].id;
-        var segments = cueSegments[i].ranges;
-        if (!segments.length) continue;
-        var wrappers = [];
-        for (var j = segments.length - 1; j >= 0; j--) {
+        try {
           range.setStart(segments[j].node, segments[j].start);
           range.setEnd(segments[j].node, segments[j].end);
           var wrapper = document.createElement('span');
@@ -1273,12 +1256,14 @@ class ReaderPaginationScripts {
           wrapper.appendChild(range.extractContents());
           range.insertNode(wrapper);
           wrappers.push(wrapper);
-        }
-        wrappers.reverse();
-        this.cueWrappers.set(id, wrappers);
+        } catch (e) {}
       }
-      this.buildNodeOffsets();
+      wrappers.reverse();
+      rubyElements.reverse();
+      if (wrappers.length) this.cueWrappers.set(id, wrappers);
+      if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
     }
+    this.buildNodeOffsets();
   },
   rubyForNode: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -1286,35 +1271,20 @@ class ReaderPaginationScripts {
   },
   highlightSasayakiCue: function(cueId, reveal) {
     this.clearSasayakiCue();
-    if (window.__hoshiCssHighlightsSupported) {
-      var ranges = this.cueRangesMap.get(cueId) || [];
-      var rubyElements = this.cueRubyElements.get(cueId) || [];
-      // TODO-630/BUG-366 observability：本 cue 拿到几个 range/ruby；0+0 → 直接 return null（不高亮）。
-      try { console.log('[sasayaki-hl] highlightCue ranges=' + ranges.length + ' ruby=' + rubyElements.length +
-        (!ranges.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
-      if (!ranges.length && !rubyElements.length) return null;
-      this.activeCueId = cueId;
-      if (ranges.length) CSS.highlights.set('hoshi-sasayaki', new Highlight(...ranges));
-      // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
-      rubyElements.forEach(function(ruby) { ruby.classList.add('hoshi-sasayaki-ruby-active'); });
-      if (reveal) {
-        var anchor = ranges.length ? ranges[0] : null;
-        if (anchor) {
-          if (this.scrollToRange) {
-            if (this.scrollToRange(anchor)) return this.calculateProgress();
-          } else if (this.scrollToTarget) {
-            if (this.scrollToTarget(anchor)) return this.calculateProgress();
-          }
-        } else if (rubyElements[0] && this.revealElement) {
-          if (this.revealElement(rubyElements[0])) return this.calculateProgress();
-        }
-      }
-    } else {
-      var wrappers = this.cueWrappers.get(cueId);
-      if (!wrappers || !wrappers.length) return null;
-      this.activeCueId = cueId;
-      wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
-      if (reveal && this.revealElement(wrappers[0])) {
+    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sasayaki');
+    var wrappers = this.cueWrappers.get(cueId) || [];
+    var rubyElements = this.cueRubyElements.get(cueId) || [];
+    // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
+    try { console.log('[sasayaki-hl] highlightCue ranges=' + wrappers.length + ' ruby=' + rubyElements.length +
+      (!wrappers.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
+    if (!wrappers.length && !rubyElements.length) return null;
+    this.activeCueId = cueId;
+    wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
+    // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
+    rubyElements.forEach(function(ruby) { ruby.classList.add('hoshi-sasayaki-ruby-active'); });
+    if (reveal) {
+      var target = wrappers.length ? wrappers[0] : rubyElements[0];
+      if (target && this.revealElement && this.revealElement(target)) {
         return this.calculateProgress();
       }
     }
@@ -1370,30 +1340,24 @@ class ReaderPaginationScripts {
   },
   clearSasayakiCue: function() {
     if (!this.activeCueId) return;
-    if (window.__hoshiCssHighlightsSupported) {
-      CSS.highlights.delete('hoshi-sasayaki');
-      var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
-      rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
-    } else {
-      var wrappers = this.cueWrappers.get(this.activeCueId) || [];
-      wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
-    }
+    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sasayaki');
+    var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
+    rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
+    var wrappers = this.cueWrappers.get(this.activeCueId) || [];
+    wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
     this.activeCueId = null;
   },
   resetSasayakiCues: function() {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
-    if (window.__hoshiCssHighlightsSupported) {
-      CSS.highlights.delete('hoshi-sasayaki');
-      this.cueRubyElements.forEach(function(rubyElements) {
-        rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
-      });
-      this.cueRubyElements.clear();
-      this.cueRangesMap.clear();
-    } else {
-      var self = this;
-      this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
-      this.cueWrappers.clear();
-    }
+    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sasayaki');
+    this.cueRubyElements.forEach(function(rubyElements) {
+      rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
+    });
+    this.cueRubyElements.clear();
+    this.cueRangesMap.clear();
+    var self = this;
+    this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    this.cueWrappers.clear();
     this.activeCueId = null;
   },
   unwrap: function(wrappers) {
