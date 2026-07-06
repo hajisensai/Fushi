@@ -4155,18 +4155,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 顶栏按钮永远贴 `y=0`，被状态栏 / 刘海盖住。故在 [_mobileControlsTheme] 的
   /// `topButtonBarMargin.top` 显式补这一段，与底栏 [_videoBottomSystemInset] 对称。
   ///
-  /// **为何读 `padding` 而非 `viewPadding`**（避免 BUG-370 式过度内缩）：
-  /// immersiveSticky 隐栏后 `viewPadding.top` 仍恒上报状态栏区高度，单读它会把顶栏永久
-  /// 顶低一段空白。`padding.top` 在隐栏且无顶部刘海时收敛到 0、有刘海时为刘海高、状态栏
-  /// 被上划临时唤出时为状态栏高——正是顶栏需要避让的真实物理 inset。桌面无系统栏语义，
-  /// [_isDesktopVideoControls] 恒走桌面 theme（不调本 helper），且桌面 `padding` 亦为 0。
+  /// **为何同时读 `padding` / `viewPadding` 并用 [_systemBarsVisible] 门控 top**
+  /// （BUG-556）：immersiveSticky 隐栏后 `viewPadding.top` 仍可恒上报状态栏区高度，单读它
+  /// 会把顶栏永久顶低一段空白；但 iOS 横竖屏切换 / 系统栏临时显隐期间，`padding.top`
+  /// 也可能带着过渡态旧值，单读它会让顶栏“有时候”被下压到不准位置。故顶部与底栏
+  /// [_videoBottomSystemInset] 对齐：只有系统栏真实可见时才吃 `viewPadding.top`，隐栏时
+  /// 归零。左右 cutout 不受系统栏显隐影响，持续用 viewPadding/padding 逐边取 max。
   ///
-  /// 左 / 右用 `max(16, padding.left/right)`：与浮动侧栏 [_mergeRailSafeAreaPadding] 同款
+  /// 左 / 右用 `max(16, padding/viewPadding.left/right)`：与浮动侧栏 [_mergeRailSafeAreaPadding] 同款
   /// 逐边取 max——横屏刘海手机（cutout 落在短边 = 左 / 右）下顶栏左 / 右按钮也避开刘海，
   /// 又不在无刘海时把默认 16 叠加成双重留白。几何收敛进纯函数 [videoTopBarMargin]
   /// （页面与测试同源调用）。
-  EdgeInsets _videoTopBarMargin() =>
-      videoTopBarMargin(MediaQuery.of(context).padding);
+  EdgeInsets _videoTopBarMargin() => videoTopBarMargin(
+        systemPadding: MediaQuery.of(context).padding,
+        systemViewPadding: MediaQuery.of(context).viewPadding,
+        systemBarsVisible: _systemBarsVisible,
+      );
 
   /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
   /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条

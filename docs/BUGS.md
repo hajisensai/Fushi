@@ -27,10 +27,19 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 539 条。点号进各自文件。
+> 共 548 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-562](bugs/BUG-562-ankimobile-background-media-download.md) | ✅ | ✅ | iOS AnkiMobile 视频句音频导入后仍保留 localhost URL |
+| [BUG-561](bugs/BUG-561-ankimobile-media-url-plus-payload.md) | ✅ | ✅ | iOS AnkiMobile 制卡音频不播放且词典/详情字段出现加号和本地路径 |
+| [BUG-560](bugs/BUG-560-xcode27-ios-deployment-target.md) | ✅ | ✅ | Xcode 27 真机编译失败：iOS deployment target 低于 15.0 |
+| [BUG-559](bugs/BUG-559-ankimobile-local-media-fields.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地音频图片未嵌入 |
+| [BUG-558](bugs/BUG-558-ankimobile-query-plus-encoding.md) | ✅ | ✅ | iOS AnkiMobile 制卡字段空格显示成加号 |
+| [BUG-557](bugs/BUG-557-interconnect-manual-url-scheme.md) | ✅ | ✅ | Hibiki互联手动地址提示HTTPS导致默认HTTP主机无法连接 |
+| [BUG-556](bugs/BUG-556-ios-video-topbar-transient-inset.md) | ✅ | ✅ | iOS 视频顶部功能栏偶发位置不准 |
+| [BUG-555](bugs/BUG-555-ios-video-controls-tap-anywhere.md) | ✅ | ✅ | iOS 视频画面中部点击无法唤出控制栏 |
+| [BUG-554](bugs/BUG-554-ios-hoshidicts-release-export.md) | ✅ | ✅ | iOS release startup fails: hoshidicts_import symbol not found |
 | [BUG-553](bugs/BUG-553-subtitle-tap-swallow-controls.md) | ✅ | ✅ | 字幕盒吞掉唤出视频控制条的点击 |
 | [BUG-552](bugs/BUG-552-android-clip-export-anr-oom.md) | ✅ | ✅ | 安卓导出片段视频ANR/OOM崩溃 |
 | [BUG-551](bugs/BUG-551-dict-result-webview-lower-half-blank.md) | ✅ | ✅ | in-app 查词结果区 WebView 下半屏空白(Windows WebView2/WGC 渲染完 idle 无 damage) |

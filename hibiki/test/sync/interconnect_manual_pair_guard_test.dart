@@ -30,7 +30,7 @@ void main() {
     );
     // 新增地址后必须调用手动配对编排（探测 + 配对），否则手输 IP 只是死存地址。
     expect(
-      source.contains('await _attemptManualPair(result);'),
+      source.contains('await _attemptManualPair(normalizedResult);'),
       isTrue,
       reason: '_addOrEditUrl 新增地址后未触发 _attemptManualPair（探测+配对闭环断裂）',
     );
