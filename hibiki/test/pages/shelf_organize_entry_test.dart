@@ -80,9 +80,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ShelfReorderPage), findsOneWidget);
 
-      // 点左上角返回（AppBar leading BackButton）。旧实现这里会陷入
+      // 点左上角返回（TODO-1228 后 AppBar leading 改显式 HibikiIconButton(Icons.arrow_back)
+      // 取代隐式 BackButton，删 ✓ 后仍保留可聚焦退出件）。旧实现这里会陷入
       // maybePop → PopScope(canPop:false) → _finish → maybePop 死循环，页面退不出。
-      final Finder back = find.byType(BackButton);
+      final Finder back = find.byIcon(Icons.arrow_back);
       expect(back, findsOneWidget, reason: 'AppBar 应有左上角返回按钮');
       await tester.tap(back);
       await tester.pumpAndSettle();
@@ -92,61 +93,6 @@ void main() {
       expect(persisted, isFalse, reason: '未拖动则不落盘');
     },
   );
-
-  testWidgets('重排页勾选「完成」按钮也能退出（同根因覆盖）', (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(800, 1200);
-    addTearDown(tester.view.reset);
-
-    bool persisted = false;
-
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (BuildContext context) => Center(
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ShelfReorderPage(
-                          title: 'Edit order',
-                          cellExtent: 180,
-                          initialItems: const <ShelfReorderItem>[
-                            ShelfReorderItem(
-                              mediaType: 'epub',
-                              entryKey: 'a',
-                              card: SizedBox(width: 80, height: 120),
-                            ),
-                          ],
-                          onPersist: (_) async {
-                            persisted = true;
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text('open'),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ShelfReorderPage), findsOneWidget);
-
-    // 勾选「完成」（AppBar action 的 check 图标）必须真退出。
-    await tester.tap(find.byIcon(Icons.check));
-    await tester.pumpAndSettle();
-    expect(find.byType(ShelfReorderPage), findsNothing,
-        reason: '「完成」也必须真退出重排页');
-    expect(persisted, isFalse, reason: '未拖动则不落盘');
-  });
 
   test('书架页头删掉独立「编辑排序」(swap_vert) 入口，整理入口移到标签栏', () {
     final String shelf =
@@ -268,9 +214,11 @@ void main() {
       );
       await _dragCardTo(tester, 'A', 'S');
       expect(merges, isEmpty, reason: 'same-series drop does not merge');
-      // Exit via the check action; same-series drop fell back to reorder ->
-      // dirty -> persists on exit.
-      await tester.tap(find.byIcon(Icons.check));
+      // Exit via the back path (maybePop -> PopScope -> _finish; the confirm
+      // check was removed by TODO-1228 -- exits always auto-save). Same-series
+      // drop fell back to reorder -> dirty -> persists on exit.
+      await Navigator.of(tester.element(find.byType(ShelfReorderPage)))
+          .maybePop();
       await tester.pumpAndSettle();
       expect(persisted, isTrue,
           reason: 'same-series drop degraded to reorder -> persisted on exit');
@@ -295,8 +243,10 @@ void main() {
       );
       await _dragCardTo(tester, 'A', 'B');
       // No onMerge -> grid never receives merge callbacks -> drop on B center is
-      // a pure reorder of A into B's slot. Exit to flush persist.
-      await tester.tap(find.byIcon(Icons.check));
+      // a pure reorder of A into B's slot. Exit via the back path (maybePop;
+      // confirm check removed by TODO-1228) to flush persist.
+      await Navigator.of(tester.element(find.byType(ShelfReorderPage)))
+          .maybePop();
       await tester.pumpAndSettle();
       expect(persisted, isTrue, reason: 'pure reorder A->B persisted on exit');
     });

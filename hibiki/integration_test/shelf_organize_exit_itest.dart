@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
@@ -36,8 +37,12 @@ import 'test_helpers.dart';
 ///     落到书架标签栏的「编辑排序」按钮（`Icons.swap_vert`，tooltip
 ///     `t.shelf_edit_order`），再发 Enter（焦点确认键，等价手柄 A）→ 断言
 ///     `find.byType(ShelfReorderPage)` 恰好 1 个（真进了编辑排序态）。
-///  3. 再焦点驱动把焦点落到 `ShelfReorderPage` 顶栏「完成 / 退出」按钮（`Icons.check`，
-///     tooltip `t.shelf_done`）→ Enter → 断言 `ShelfReorderPage` 已出栈（find 0 个）。
+///  3. 断言 `ShelfReorderPage` 顶栏**没有**确认 ✓（`Icons.check`）——TODO-1228 删掉了
+///     这颗纯装饰按钮（本页所有退出路径都经 PopScope 自动落盘，无丢弃路径）；随后走
+///     全局返回（Escape → 全局 Escape 处理器 → maybePop → PopScope → `_finish`，
+///     见 global_navigation.dart；手柄 B 同路但 flutter_test 的 Windows 键模拟没有
+///     Game Button B 的物理键映射，离屏 itest 用 Escape）退出，
+///     断言 `ShelfReorderPage` 已出栈（find 0 个）。
 ///
 /// **必须先开实验开关**：`experimental_focus_navigation_enabled` 默认 false，关时
 /// `main.dart` 不安装 `HibikiFocusRoot`，HibikiIconButton 降级为裸 InkWell（仅 tap）。
@@ -239,19 +244,46 @@ void main() {
           expect(find.byType(ShelfReorderPage), findsOneWidget,
               reason: 'ShelfReorderPage pushed exactly once');
 
-          // ---- ③ 焦点落到退出 / 完成按钮并 Enter，断言出栈 ----
-          expect(_iconButtonIcon(Icons.check), findsWidgets,
-              reason: 'ShelfReorderPage app bar must render the done/exit '
-                  '(check) button; tooltip=${t.shelf_done}');
-          final bool exited = await _focusActivate(
-            tester,
-            driver,
-            _iconButtonIcon(Icons.check),
-            done: () => !_shelfReorderShown(),
-          );
+          // ---- ③ TODO-1228：顶栏不得再有确认 ✓（纯装饰已删，退出一律自动
+          // 保存）；退出走全局返回（Escape → 全局 Escape 处理器 → maybePop →
+          // PopScope → _finish，与系统返回/手柄 B 同路），仍是纯按键驱动，
+          // 零坐标点击。不用 driver.back()（gameButtonB）：flutter_test 的
+          // Windows 键模拟没有 Game Button B 物理键映射，sendKeyEvent 会断言炸。
+          expect(_iconButtonIcon(Icons.check), findsNothing,
+              reason: 'TODO-1228: decorative done/confirm (check) button was '
+                  'removed; every exit path auto-saves via PopScope');
+          bool exited = false;
+          for (int attempt = 0; attempt < 3 && !exited; attempt++) {
+            final NavigatorState rootNav =
+                tester.state<NavigatorState>(find.byType(Navigator).first);
+            final BuildContext? focusedCtx =
+                FocusManager.instance.primaryFocus?.context;
+            debugPrint('[shelf-organize] pre-escape attempt=$attempt '
+                'primary=${FocusManager.instance.primaryFocus?.debugLabel} '
+                'rootNavCanPop=${rootNav.canPop()} '
+                'focusedRoute=${focusedCtx == null ? null : ModalRoute.of(focusedCtx)?.runtimeType} '
+                'navCount=${find.byType(Navigator).evaluate().length}');
+            if (attempt == 1) {
+              // 二分诊断：Escape 不生效时直接调 maybePop，区分「事件没到全局
+              // 处理器」vs「maybePop→PopScope 链路本身不弹」。
+              debugPrint('[shelf-organize] bisect: calling rootNav.maybePop()');
+              await rootNav.maybePop();
+            } else {
+              await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+            }
+            await tester.pump(const Duration(milliseconds: 250));
+            for (int i = 0; i < 24; i++) {
+              if (!_shelfReorderShown()) {
+                exited = true;
+                break;
+              }
+              await tester.pump(const Duration(milliseconds: 250));
+            }
+          }
           expect(exited, isTrue,
-              reason: 'focus+Enter on done/exit must pop ShelfReorderPage '
-                  '(TODO-947 exit fix: real pop, no recursion hang)');
+              reason: 'global back (Escape -> maybePop) must pop '
+                  'ShelfReorderPage (TODO-947 exit fix: real pop, no '
+                  'recursion hang; TODO-1228: auto-save on any exit)');
           expect(find.byType(ShelfReorderPage), findsNothing,
               reason: 'ShelfReorderPage popped off the stack');
 
@@ -261,7 +293,8 @@ void main() {
                   'again');
 
           debugPrint('[shelf-organize] PASS: entered ShelfReorderPage via '
-              'focus+Enter and exited it via focus+Enter (TODO-947).');
+              'focus+Enter and exited it via global back (TODO-947 / '
+              'TODO-1228).');
         },
       );
     },

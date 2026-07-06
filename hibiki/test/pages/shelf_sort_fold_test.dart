@@ -387,4 +387,77 @@ void main() {
           reason: 'R4: single-member series still enterable');
     });
   });
+
+  group('TODO-1228 auto-save semantics: no confirm check, exit persists', () {
+    testWidgets(
+        'AppBar has no Icons.check action; back (maybePop) persists dirty '
+        'order and pops', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(700, 700);
+      addTearDown(tester.view.reset);
+
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      List<String>? persistedOrder;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navKey,
+            home: const Scaffold(body: SizedBox()),
+          ),
+        ),
+      );
+      navKey.currentState!.push(MaterialPageRoute<void>(
+        builder: (_) => ShelfReorderPage(
+          title: 'Edit order',
+          cellExtent: 200,
+          childAspectRatio: 1,
+          initialItems: const <ShelfReorderItem>[
+            ShelfReorderItem(
+              mediaType: 'epub',
+              entryKey: 'bookA',
+              card: Center(child: Text('BOOKA')),
+            ),
+            ShelfReorderItem(
+              mediaType: 'epub',
+              entryKey: 'bookB',
+              card: Center(child: Text('BOOKB')),
+            ),
+          ],
+          onPersist: (List<ShelfReorderItem> ordered) async {
+            persistedOrder = <String>[
+              for (final ShelfReorderItem it in ordered) it.entryKey,
+            ];
+          },
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // TODO-1228：确认 ✓ 纯装饰（所有退出路径都经 PopScope 自动落盘，无丢弃路径），
+      // 已删除——重排页 AppBar 不得再出现 check 动作，防止暗示「不点就不保存」。
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsNothing,
+        reason:
+            'TODO-1228: decorative confirm check removed; exits always save',
+      );
+
+      // 拖动重排置脏，再走返回路径（系统返回 / AppBar back 同经 maybePop ->
+      // PopScope(canPop:false) -> _finish 落盘后真正 pop）。
+      final HibikiReorderableGrid grid = tester
+          .widget<HibikiReorderableGrid>(find.byType(HibikiReorderableGrid));
+      grid.onReorder(1, 0);
+      await tester.pump();
+
+      await navKey.currentState!.maybePop();
+      await tester.pumpAndSettle();
+
+      expect(persistedOrder, <String>['bookB', 'bookA'],
+          reason: 'back exit auto-saves the reordered order (no confirm)');
+      expect(find.byType(ShelfReorderPage), findsNothing,
+          reason: 'page actually pops after persisting');
+    });
+  });
 }
