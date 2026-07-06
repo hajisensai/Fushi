@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 551 条。点号进各自文件。
+> 共 552 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-566](bugs/BUG-566-ios-epub-import-orphan-dir.md) | ✅ | ✅ | iOS EPUB 导入同名残留目录失败 |
 | [BUG-565](bugs/BUG-565-ios-audiobook-silent.md) | ✅ | ✅ | iOS 有声书播放没声音 |
 | [BUG-564](bugs/BUG-564-ankimobile-svg-cache-hash.md) | ✅ | ✅ | iOS/Anki 制卡外字 SVG 偶发读不到（词典媒体缓存名使用 String.hashCode） |
 | [BUG-563](bugs/BUG-563-gameinput-dll-missing-startup-crash.md) | ✅ | ✅ | 无GameInput.dll的Windows机器启动即崩 |
