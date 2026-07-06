@@ -498,6 +498,20 @@ class BackupService {
 
   String get _dbPath => p.join(_dbDirectory, _dbName);
 
+  /// A streaming (URL) video book — its `video_path` is an http(s) URL and it is
+  /// self-contained (re-opens by URL, needs no packed file). Mirrors the merge
+  /// engine's SQL predicate so export counts and import filtering stay aligned
+  /// (TODO-1261).
+  static bool _isStreamingVideoPath(String videoPath) =>
+      videoPath.startsWith('http://') || videoPath.startsWith('https://');
+
+  /// COUNT(*) of a table on the live DB (used to report honest export totals).
+  Future<int> _countRows(String table) async {
+    final row =
+        await _db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
+    return row.data['c'] as int;
+  }
+
   /// Create a backup ZIP file at [outputPath].
   ///
   /// [categories] selects which optional file trees are packed. A null set
@@ -637,6 +651,26 @@ class BackupService {
         await _collectLocalAudioFiles(files);
       }
 
+      // TODO-1261: the confirm dialog's "N books" must count EVERY shelf item
+      // that will travel usably, not just EPUBs. A video book travels usably iff
+      // its file was packed (in [videoFiles]) or it is a streaming book (http(s)
+      // URL, self-contained) — the SAME reachability the merge/preview enforce,
+      // so a video-only backup no longer reports "0 books" while 19 videos land.
+      final List<VideoBookRow> allVideos = await _db.allVideoBooks();
+      final int usableVideoCount = allVideos
+          .where((VideoBookRow v) =>
+              _isStreamingVideoPath(v.videoPath) ||
+              videoFiles.containsKey(v.videoPath))
+          .length;
+
+      // "Statistics records" spans reading + video + mining buckets, not reading
+      // alone, so a video-watcher's backup no longer reports "0 statistics".
+      final int totalStatsCount = includeStatistics
+          ? stats.length +
+              await _countRows('video_watch_statistics') +
+              await _countRows('mining_statistics')
+          : 0;
+
       // Record the SOURCE-device content roots so import can rebase the stored
       // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
       // importing device's roots. Null roots → legacy db-only backup.
@@ -644,10 +678,10 @@ class BackupService {
         appVersion: _appVersion,
         schemaVersion: _db.schemaVersion,
         createdAt: DateTime.now(),
-        bookCount: exportedBookCount,
+        bookCount: exportedBookCount + usableVideoCount,
         // Honest to what actually travels: a statistics-excluded backup reports
         // zero even though the live library has stats (mirrors bookCount).
-        statsCount: includeStatistics ? stats.length : 0,
+        statsCount: totalStatsCount,
         // Only record a tree's source root when that tree is actually packed,
         // so import never rebases stored paths against a tree the backup never
         // carried (a no-op for the missing tree either way, but keeping the
@@ -1314,7 +1348,14 @@ class BackupService {
             mergeSrcPath.replaceAll(r'\', '/').replaceAll("'", "''");
         await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
         try {
-          await BackupMergeEngine(db).merge();
+          // TODO-1261: only import video rows whose file travelled (or streaming
+          // URLs) so a backup never lands a dead "empty video" shell. The carried
+          // set is the exact video files packed by export (meta.videoFiles keys).
+          await BackupMergeEngine(
+            db,
+            carriedVideoSourcePaths:
+                meta?.videoFiles.keys.toSet() ?? const <String>{},
+          ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
         }
@@ -1422,6 +1463,17 @@ class BackupService {
       final ArchiveFile? dbFile = archive.findFile(_dbName);
       if (dbFile == null) return null;
 
+      // TODO-1261: the merge only materialises REACHABLE video rows (streaming
+      // or a local file the backup carried), so the preview must count with the
+      // same predicate. The carried set is the packed video files (meta.videoFiles).
+      BackupMeta? meta;
+      final ArchiveFile? metaFile = archive.findFile(_metaName);
+      if (metaFile != null) {
+        meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
+      }
+      final Set<String> carriedVideoSourcePaths =
+          meta?.videoFiles.keys.toSet() ?? const <String>{};
+
       await _safeDelete(tmpSrc);
       await _safeDelete('$tmpSrc-wal');
       await _safeDelete('$tmpSrc-shm');
@@ -1446,8 +1498,11 @@ class BackupService {
       final String safeSrc = tmpSrc.replaceAll(r'\', '/').replaceAll("'", "''");
       await liveDb.customStatement("ATTACH DATABASE '$safeSrc' AS previewsrc");
       try {
-        return await BackupMergeEngine(liveDb, srcAlias: 'previewsrc')
-            .preview();
+        return await BackupMergeEngine(
+          liveDb,
+          srcAlias: 'previewsrc',
+          carriedVideoSourcePaths: carriedVideoSourcePaths,
+        ).preview();
       } finally {
         await liveDb.customStatement('DETACH DATABASE previewsrc');
       }
