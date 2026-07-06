@@ -664,6 +664,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// TODO-1119 / BUG-545：用户是否已在「Windows 黑屏闪烁」运行时提示里点了「不再提示」。
+  /// 默认 false = 允许提示。置 true 后播放器不再弹该运行时提示条（静态「已知问题」说明行
+  /// 仍在画质设置里）。getPref 仅在该 key 从未写过时返回默认 false。
+  bool get videoBlackFlickerNoticeSuppressed =>
+      getPref('video_black_flicker_notice_suppressed', defaultValue: false)
+          as bool;
+
+  Future<void> setVideoBlackFlickerNoticeSuppressed(bool value) async {
+    await setPref('video_black_flicker_notice_suppressed', value);
+    notifyListeners();
+  }
+
   /// 视频弹幕 overlay 开关：默认开启，只在有本地/在线弹幕源时显示。
   bool get videoDanmakuEnabled =>
       getPref('video_danmaku_enabled', defaultValue: true) as bool;

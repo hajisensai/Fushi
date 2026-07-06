@@ -900,4 +900,29 @@ void main() {
       expect(repo.readingGoalWeeklyChars, 10000000);
     });
   });
+
+  // ── TODO-1119: Windows 黑闪运行时提示「不再提示」偏好 ───────────────────
+
+  group('videoBlackFlickerNoticeSuppressed (TODO-1119)', () {
+    test('defaults to false (提示允许弹)', () {
+      expect(repo.videoBlackFlickerNoticeSuppressed, false);
+    });
+
+    test('set true 写穿并跨新实例从 DB 恢复', () async {
+      await repo.setVideoBlackFlickerNoticeSuppressed(true);
+      expect(repo.videoBlackFlickerNoticeSuppressed, true);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.videoBlackFlickerNoticeSuppressed, true);
+    });
+
+    test('set false 可复位', () async {
+      await repo.setVideoBlackFlickerNoticeSuppressed(true);
+      expect(repo.videoBlackFlickerNoticeSuppressed, true);
+      await repo.setVideoBlackFlickerNoticeSuppressed(false);
+      expect(repo.videoBlackFlickerNoticeSuppressed, false);
+    });
+  });
 }

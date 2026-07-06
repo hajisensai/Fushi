@@ -395,6 +395,10 @@ extension _VideoLayout on _VideoHibikiPageState {
                       // TODO-1154：长按倍速徽章跟随指针（在 OSD 之后、其余 chrome 之前挂）。
                       _buildLongPressSpeedBadgeOverlay(),
                       _buildAutoAdvanceOverlay(),
+                      // TODO-1119：Windows 黑闪运行时提示条（可点按钮，非
+                      // IgnorePointer；隐藏态零尺寸）。挂在 auto-advance 之后、
+                      // level HUD 之前，与其它 chrome overlay 同源。
+                      _buildBlackFlickerNoticeOverlay(),
                       _buildLevelHudOverlay(),
                       _buildVideoSideActionRail(controller),
                       _buildVideoSidePanelOverlay(controller),
