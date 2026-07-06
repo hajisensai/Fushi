@@ -663,3 +663,24 @@ class BookTombstones extends Table {
   @override
   Set<Column> get primaryKey => {bookKey};
 }
+
+// ── statistics_tombstones ───────────────────────────────────────────
+// TODO-1204 后续：per-book/video 统计删除墓碑。用户在统计页长按某本书/视频那一行
+// 确认「删除该项统计」时，记一条 (title, sourceType) 墓碑（+删除时刻）。统计聚合表
+// （reading_statistics / video_watch_statistics / lookup_mining_counters）都按
+// title 聚合、跨设备/备份走 MAX-union 只增不减，若只本地删行、下次云同步 / 备份合并
+// 会把 peer 快照里的旧数字加回来（复活）。墓碑让 aggregate_sync 的
+// applySnapshotToLocal 与 backup_merge_engine 的 MAX-union INSERT 跳过被删的
+// (title, sourceType)，删掉的书统计不复活。用户又读该书 / 查词（addReadingStatistic
+// / addVideoWatchStatistic / addLookupCount / addMineCountPerBook 新建当日行）会清
+// 除其墓碑，让该书统计重新生效（范式仿 [BookTombstones] 的插书清墓碑）。sourceType
+// 与统计来源同值（'book' | 'video'）——同名书与视频各自独立立碑 / 清碑。
+@DataClassName('StatisticsTombstoneRow')
+class StatisticsTombstones extends Table {
+  TextColumn get title => text()();
+  TextColumn get sourceType => text()(); // 'book' | 'video'
+  IntColumn get deletedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {title, sourceType};
+}

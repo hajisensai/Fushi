@@ -890,4 +890,61 @@ void main() {
     expect(preview != null, true);
     expect(preview!.newEpubBooks, 1); // only 'fresh' — 'gone' is tombstoned
   });
+
+  test(
+      'a tombstoned book stat is not resurrected by a backup merge '
+      '(TODO-1204 后续)', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    // Device once had "A" stats then the user deleted them -> tombstone, and a
+    // surviving "Keep" book.
+    await cur.addReadingStatistic(
+        title: 'A', dateKey: '2026-01-01', charsRead: 100, timeMs: 6000);
+    await cur.addLookupCount(
+        bookKey: 'book/A',
+        title: 'A',
+        sourceType: 'book',
+        dateKey: '2026-01-01');
+    await cur.deleteReadingStatisticsForTitle('A');
+    await cur.addReadingStatistic(
+        title: 'Keep', dateKey: '2026-01-01', charsRead: 10, timeMs: 600);
+    await cur.close();
+
+    // An old backup still carries A's stats + counters.
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    await src.addReadingStatistic(
+        title: 'A', dateKey: '2026-01-01', charsRead: 999, timeMs: 99999);
+    await src.addLookupCount(
+        bookKey: 'book/A',
+        title: 'A',
+        sourceType: 'book',
+        dateKey: '2026-01-01');
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeImportBackupFiles(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
+
+    final after = HibikiDatabase(curDir.path);
+    addTearDown(after.close);
+    final Set<String> titles = (await after.getAllReadingStatistics())
+        .map((ReadingStatisticRow r) => r.title)
+        .toSet();
+    expect(titles, <String>{'Keep'},
+        reason: 'tombstoned "A" must not be re-inserted from the backup');
+    final Set<String> counterTitles =
+        (await after.getLookupMiningCountersBySource('book'))
+            .map((LookupMiningCounterRow r) => r.title)
+            .toSet();
+    expect(counterTitles.contains('A'), false,
+        reason: 'tombstoned "A" lookup counter must not resurrect either');
+  });
 }

@@ -13521,6 +13521,243 @@ class LookupMiningCountersCompanion
   }
 }
 
+class $StatisticsTombstonesTable extends StatisticsTombstones
+    with TableInfo<$StatisticsTombstonesTable, StatisticsTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StatisticsTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sourceTypeMeta =
+      const VerificationMeta('sourceType');
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+      'source_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+      'deleted_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [title, sourceType, deletedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'statistics_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<StatisticsTombstoneRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+          _sourceTypeMeta,
+          sourceType.isAcceptableOrUnknown(
+              data['source_type']!, _sourceTypeMeta));
+    } else if (isInserting) {
+      context.missing(_sourceTypeMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {title, sourceType};
+  @override
+  StatisticsTombstoneRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StatisticsTombstoneRow(
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      sourceType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}deleted_at'])!,
+    );
+  }
+
+  @override
+  $StatisticsTombstonesTable createAlias(String alias) {
+    return $StatisticsTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class StatisticsTombstoneRow extends DataClass
+    implements Insertable<StatisticsTombstoneRow> {
+  final String title;
+  final String sourceType;
+  final int deletedAt;
+  const StatisticsTombstoneRow(
+      {required this.title, required this.sourceType, required this.deletedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['title'] = Variable<String>(title);
+    map['source_type'] = Variable<String>(sourceType);
+    map['deleted_at'] = Variable<int>(deletedAt);
+    return map;
+  }
+
+  StatisticsTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return StatisticsTombstonesCompanion(
+      title: Value(title),
+      sourceType: Value(sourceType),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory StatisticsTombstoneRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StatisticsTombstoneRow(
+      title: serializer.fromJson<String>(json['title']),
+      sourceType: serializer.fromJson<String>(json['sourceType']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'title': serializer.toJson<String>(title),
+      'sourceType': serializer.toJson<String>(sourceType),
+      'deletedAt': serializer.toJson<int>(deletedAt),
+    };
+  }
+
+  StatisticsTombstoneRow copyWith(
+          {String? title, String? sourceType, int? deletedAt}) =>
+      StatisticsTombstoneRow(
+        title: title ?? this.title,
+        sourceType: sourceType ?? this.sourceType,
+        deletedAt: deletedAt ?? this.deletedAt,
+      );
+  StatisticsTombstoneRow copyWithCompanion(StatisticsTombstonesCompanion data) {
+    return StatisticsTombstoneRow(
+      title: data.title.present ? data.title.value : this.title,
+      sourceType:
+          data.sourceType.present ? data.sourceType.value : this.sourceType,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StatisticsTombstoneRow(')
+          ..write('title: $title, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(title, sourceType, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StatisticsTombstoneRow &&
+          other.title == this.title &&
+          other.sourceType == this.sourceType &&
+          other.deletedAt == this.deletedAt);
+}
+
+class StatisticsTombstonesCompanion
+    extends UpdateCompanion<StatisticsTombstoneRow> {
+  final Value<String> title;
+  final Value<String> sourceType;
+  final Value<int> deletedAt;
+  final Value<int> rowid;
+  const StatisticsTombstonesCompanion({
+    this.title = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StatisticsTombstonesCompanion.insert({
+    required String title,
+    required String sourceType,
+    required int deletedAt,
+    this.rowid = const Value.absent(),
+  })  : title = Value(title),
+        sourceType = Value(sourceType),
+        deletedAt = Value(deletedAt);
+  static Insertable<StatisticsTombstoneRow> custom({
+    Expression<String>? title,
+    Expression<String>? sourceType,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (title != null) 'title': title,
+      if (sourceType != null) 'source_type': sourceType,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StatisticsTombstonesCompanion copyWith(
+      {Value<String>? title,
+      Value<String>? sourceType,
+      Value<int>? deletedAt,
+      Value<int>? rowid}) {
+    return StatisticsTombstonesCompanion(
+      title: title ?? this.title,
+      sourceType: sourceType ?? this.sourceType,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StatisticsTombstonesCompanion(')
+          ..write('title: $title, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -13575,6 +13812,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
   late final $LookupMiningCountersTable lookupMiningCounters =
       $LookupMiningCountersTable(this);
+  late final $StatisticsTombstonesTable statisticsTombstones =
+      $StatisticsTombstonesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -13614,7 +13853,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         shelfEntries,
         hibikiPairedPeers,
         bookTombstones,
-        lookupMiningCounters
+        lookupMiningCounters,
+        statisticsTombstones
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -22883,6 +23123,155 @@ typedef $$LookupMiningCountersTableProcessedTableManager
         ),
         LookupMiningCounterRow,
         PrefetchHooks Function()>;
+typedef $$StatisticsTombstonesTableCreateCompanionBuilder
+    = StatisticsTombstonesCompanion Function({
+  required String title,
+  required String sourceType,
+  required int deletedAt,
+  Value<int> rowid,
+});
+typedef $$StatisticsTombstonesTableUpdateCompanionBuilder
+    = StatisticsTombstonesCompanion Function({
+  Value<String> title,
+  Value<String> sourceType,
+  Value<int> deletedAt,
+  Value<int> rowid,
+});
+
+class $$StatisticsTombstonesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $StatisticsTombstonesTable> {
+  $$StatisticsTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$StatisticsTombstonesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $StatisticsTombstonesTable> {
+  $$StatisticsTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$StatisticsTombstonesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $StatisticsTombstonesTable> {
+  $$StatisticsTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$StatisticsTombstonesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $StatisticsTombstonesTable,
+    StatisticsTombstoneRow,
+    $$StatisticsTombstonesTableFilterComposer,
+    $$StatisticsTombstonesTableOrderingComposer,
+    $$StatisticsTombstonesTableAnnotationComposer,
+    $$StatisticsTombstonesTableCreateCompanionBuilder,
+    $$StatisticsTombstonesTableUpdateCompanionBuilder,
+    (
+      StatisticsTombstoneRow,
+      BaseReferences<_$HibikiDatabase, $StatisticsTombstonesTable,
+          StatisticsTombstoneRow>
+    ),
+    StatisticsTombstoneRow,
+    PrefetchHooks Function()> {
+  $$StatisticsTombstonesTableTableManager(
+      _$HibikiDatabase db, $StatisticsTombstonesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StatisticsTombstonesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$StatisticsTombstonesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$StatisticsTombstonesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> title = const Value.absent(),
+            Value<String> sourceType = const Value.absent(),
+            Value<int> deletedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              StatisticsTombstonesCompanion(
+            title: title,
+            sourceType: sourceType,
+            deletedAt: deletedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String title,
+            required String sourceType,
+            required int deletedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              StatisticsTombstonesCompanion.insert(
+            title: title,
+            sourceType: sourceType,
+            deletedAt: deletedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$StatisticsTombstonesTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $StatisticsTombstonesTable,
+        StatisticsTombstoneRow,
+        $$StatisticsTombstonesTableFilterComposer,
+        $$StatisticsTombstonesTableOrderingComposer,
+        $$StatisticsTombstonesTableAnnotationComposer,
+        $$StatisticsTombstonesTableCreateCompanionBuilder,
+        $$StatisticsTombstonesTableUpdateCompanionBuilder,
+        (
+          StatisticsTombstoneRow,
+          BaseReferences<_$HibikiDatabase, $StatisticsTombstonesTable,
+              StatisticsTombstoneRow>
+        ),
+        StatisticsTombstoneRow,
+        PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -22957,4 +23346,6 @@ class $HibikiDatabaseManager {
       $$BookTombstonesTableTableManager(_db, _db.bookTombstones);
   $$LookupMiningCountersTableTableManager get lookupMiningCounters =>
       $$LookupMiningCountersTableTableManager(_db, _db.lookupMiningCounters);
+  $$StatisticsTombstonesTableTableManager get statisticsTombstones =>
+      $$StatisticsTombstonesTableTableManager(_db, _db.statisticsTombstones);
 }

@@ -9,6 +9,21 @@ Future<HibikiDatabase> _openDb() async {
   return db;
 }
 
+/// Opens a `user_version = 33` database that lacks the statistics_tombstones
+/// table, forcing the real `if (from < 34) createTable(statisticsTombstones)`
+/// onUpgrade branch (TODO-1204 后续) to run when HibikiDatabase opens it.
+Future<HibikiDatabase> _openV33DbWithoutStatisticsTombstones() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA user_version = 33');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 /// Opens a `user_version = 14` database that lacks the sync_baselines table,
 /// forcing the real `if (from < 15) createTable(syncBaselines)` onUpgrade
 /// branch in database.dart to run when HibikiDatabase opens it.
@@ -873,9 +888,9 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 33,
-          reason: 'global schemaVersion is now 33 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32 + TODO-1204 v33); TODO-894 backfill behavior '
+      expect(db.schemaVersion, 34,
+          reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones); TODO-894 backfill behavior '
               'asserted by the srt_books '
               'checks below');
 
@@ -1058,9 +1073,9 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 33,
-          reason: 'global schemaVersion is now 33 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32 + TODO-1204 v33); v29->v30 series/shelf_entries '
+      expect(db.schemaVersion, 34,
+          reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34); v29->v30 series/shelf_entries '
               'creation asserted below');
 
       // Both new tables now exist.
@@ -1108,7 +1123,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 33);
+      expect(db.schemaVersion, 34);
     });
 
     test(
@@ -1117,8 +1132,8 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 33,
-          reason: 'TODO-1204 bumps the global schemaVersion to 33');
+      expect(db.schemaVersion, 34,
+          reason: 'TODO-1204后续 bumps the global schemaVersion to 34');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1142,6 +1157,49 @@ void main() {
             'lookup_count',
             'mine_count',
           ]));
+    });
+
+    test(
+        'fresh DB (v34) has statistics_tombstones with the expected columns '
+        '(TODO-1204 后续)', () async {
+      final db = await _openDb();
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+      expect(db.schemaVersion, 34,
+          reason: 'TODO-1204后续 bumps the global schemaVersion to 34');
+
+      final tableNames = (await db
+              .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
+              .get())
+          .map((r) => r.data['name'] as String)
+          .toSet();
+      expect(tableNames, contains('statistics_tombstones'));
+
+      final cols = await db
+          .customSelect("PRAGMA table_info('statistics_tombstones')")
+          .get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames,
+          containsAll(<String>['title', 'source_type', 'deleted_at']));
+    });
+
+    test(
+        'real v33->v34 creates statistics_tombstones, bumps user_version to 34 '
+        '(TODO-1204 后续)', () async {
+      final db = await _openV33DbWithoutStatisticsTombstones();
+      // Opening triggers the from<34 branch; the table must now exist and a
+      // tombstone round-trips.
+      final tableNames = (await db
+              .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
+              .get())
+          .map((r) => r.data['name'] as String)
+          .toSet();
+      expect(tableNames, contains('statistics_tombstones'),
+          reason: 'from<34 must createTable(statisticsTombstones)');
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 34);
+      await db.insertStatisticsTombstone('A', 'book');
+      expect(await db.getStatisticsTombstoneKeys(), contains(('A', 'book')));
     });
   });
 }

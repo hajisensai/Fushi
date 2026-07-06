@@ -2115,5 +2115,7 @@
   "backup_export_no_books": "No books to choose from",
   "backup_export_books_selected": "$count books selected",
   "backup_import_merge_preview": "Merge will add $bookCount books and update $progressCount reading positions.",
-  "stat_lookup": "查詞"
+  "stat_lookup": "查詞",
+  "stat_delete_message": "Delete this item's time, character count, and lookup/mining statistics? Your saved words and sentences are not affected.",
+  "stat_delete_title": "Delete statistics"
 }

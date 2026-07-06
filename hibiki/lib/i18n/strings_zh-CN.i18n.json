@@ -2115,5 +2115,7 @@
   "backup_export_no_books": "没有可选的书籍",
   "backup_export_books_selected": "已选 $count 本书",
   "backup_import_merge_preview": "合并将新增 $bookCount 本书、更新 $progressCount 条阅读进度。",
-  "stat_lookup": "查词"
+  "stat_lookup": "查词",
+  "stat_delete_message": "删除该项的时长、字数与查词/制卡统计？你收藏的单词和句子不受影响。",
+  "stat_delete_title": "删除统计数据"
 }
