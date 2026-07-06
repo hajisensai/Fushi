@@ -107,6 +107,71 @@ class EpubParser {
     );
   }
 
+  /// TODO-1234: enumerate the book's CSS files straight from the OPF manifest
+  /// (`media-type="text/css"`), reading only `META-INF/container.xml` + the OPF
+  /// (two small XML files) instead of walking the entire extracted tree.
+  ///
+  /// The old CSS-editor discovery ([BookCssRepository]) recursively listed the
+  /// whole extract dir — thousands of image/font/xhtml entries for a manga or
+  /// image-heavy EPUB — just to keep the handful of `.css` files (BUG-040 moved
+  /// that walk off the UI thread but never reduced its O(all-files) cost, so the
+  /// editor still spun for seconds). Manifest lookup is O(manifest).
+  ///
+  /// Returns extractDir-relative, forward-slash paths for the CSS items that
+  /// actually exist on disk and stay inside [extractDir]. Never throws: if the
+  /// OPF can't be located/parsed the CSS editor degrades to "no CSS files"
+  /// rather than crashing (a book that opened at all has a valid OPF, so this
+  /// only bites genuinely broken packages).
+  static List<String> discoverCssRelativePaths(String extractDir) {
+    try {
+      final File? containerFile = _findContainerXml(extractDir);
+      if (containerFile == null) {
+        return const <String>[];
+      }
+      final XmlDocument containerXml =
+          XmlDocument.parse(_readText(containerFile));
+      final String? rootfilePath = _findRootfilePath(containerXml);
+      if (rootfilePath == null) {
+        return const <String>[];
+      }
+      final File opfFile = File(p.join(extractDir, rootfilePath));
+      if (!opfFile.existsSync()) {
+        return const <String>[];
+      }
+      final String opfDir = p.dirname(opfFile.path);
+      final XmlDocument opfXml = XmlDocument.parse(_readText(opfFile));
+      final Map<String, _ManifestItem> manifest =
+          _parseManifest(opfXml, opfDir, extractDir);
+
+      final String canonExtract = p.canonicalize(extractDir);
+      final List<String> cssPaths = <String>[];
+      for (final _ManifestItem item in manifest.values) {
+        if (item.mediaType.toLowerCase().trim() != 'text/css') {
+          continue;
+        }
+        // Mirror _safeArchivePath / resource-map handling: validate the zip-slip
+        // boundary with the canonicalized path (lower-cased on Windows), but
+        // build the on-disk/relative path with the case-preserving normalized
+        // form so display titles and reads keep their real casing.
+        final String absNormalized = p.normalize(p.join(opfDir, item.href));
+        if (!p.isWithin(canonExtract, p.canonicalize(absNormalized))) {
+          continue;
+        }
+        if (!File(absNormalized).existsSync()) {
+          continue;
+        }
+        final String relPath =
+            p.relative(absNormalized, from: extractDir).replaceAll('\\', '/');
+        cssPaths.add(relPath);
+      }
+      return cssPaths;
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('EpubParser.discoverCssRelativePaths', e, stack);
+      return const <String>[];
+    }
+  }
+
   // ── Extract ────────────────────────────────────────────────────────────────
 
   static void _extractArchive(Archive archive, String extractDir) {
