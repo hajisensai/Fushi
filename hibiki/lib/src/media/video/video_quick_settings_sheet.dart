@@ -74,6 +74,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.initialControlLayout,
     this.onControlLayoutChanged,
     this.onEditControlsOnscreen,
+    this.qualityOptionCount = 0,
+    this.qualityCurrentLabel,
+    this.onOpenQuality,
     this.isTouchControls = false,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
@@ -212,6 +215,16 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 从设置页进入播放器画面内的拖拽编辑叠层（TODO-440）。
   final VoidCallback? onEditControlsOnscreen;
+
+  /// HLS 画质档数（TODO-1158）：当前视频是 HLS master（多档码率 variant）时 >0，据此
+  /// 在「播放」分类给一个「画质」入口行；0=非 HLS，不显示。
+  final int qualityOptionCount;
+
+  /// 当前选中的画质档标签（如 `1080p · 5.0 Mbps` / 自动），显示在画质入口行副标题。
+  final String? qualityCurrentLabel;
+
+  /// 打开画质侧栏（关本设置面板、开画质面板）。[qualityOptionCount]>0 时才接线。
+  final VoidCallback? onOpenQuality;
 
   /// 触屏控件（无右键菜单兜底）。为 true 时，控件布局编辑区禁止把「设置」按钮
   /// （玩家内进入设置/控件编辑器的唯一入口）拖入 hidden 移除，避免触屏用户把
@@ -613,6 +626,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   Widget _buildPlaybackDetail() {
     return _settingsSection(
       children: <Widget>[
+        // TODO-1158：HLS 多档画质入口（仅当前流是 HLS master 时显示）。点开画质侧栏。
+        if (widget.qualityOptionCount > 0 && widget.onOpenQuality != null)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.high_quality_outlined),
+            title: Text(t.video_quality),
+            subtitle: widget.qualityCurrentLabel != null
+                ? Text(widget.qualityCurrentLabel!)
+                : null,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: widget.onOpenQuality,
+          ),
         _buildVideoFitModeRow(),
         if (isDesktopPlatform)
           AdaptiveSettingsSwitchRow(

@@ -15,6 +15,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -103,11 +104,13 @@ part 'video_hibiki/danmaku.part.dart';
 part 'video_hibiki/clip_export.part.dart';
 part 'video_hibiki/controls_visibility.part.dart';
 part 'video_hibiki/episode.part.dart';
+part 'video_hibiki/flicker_notice.part.dart';
 part 'video_hibiki/subtitle.part.dart';
 part 'video_hibiki/controls_popover.part.dart';
 part 'video_hibiki/volume_osd.part.dart';
 part 'video_hibiki/chapter.part.dart';
 part 'video_hibiki/audio_track.part.dart';
+part 'video_hibiki/quality.part.dart';
 part 'video_hibiki/side_panel.part.dart';
 part 'video_hibiki/controls_theme.part.dart';
 part 'video_hibiki/speed.part.dart';
@@ -488,6 +491,7 @@ enum _VideoSidePanelKind {
   secondarySubtitleSources,
   audioTracks,
   chapters,
+  quality,
 }
 
 class _VideoSidePanelState {
@@ -888,6 +892,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<_VideoLevelHudState?> _levelHudNotifier =
       ValueNotifier<_VideoLevelHudState?>(null);
 
+  /// TODO-1119 / BUG-545：Windows「高显卡占用黑屏闪烁」运行时提示条可见性。控制器判定
+  /// 疑似黑闪时经 [_handleSuspectedBlackFlicker] 置 true；用 [ValueNotifier] 而非 setState
+  /// （提示条挂在 media_kit controls builder 的 Stack，全屏路由也需即时开关，与其它 OSD
+  /// 同源，BUG-120）。方法域在 flicker_notice.part.dart。
+  final ValueNotifier<bool> _blackFlickerNoticeNotifier =
+      ValueNotifier<bool>(false);
+
+  /// 本会话是否已弹过一次黑闪提示（每会话最多一次；与偏好「不再提示」共同门控）。
+  bool _blackFlickerNoticeShown = false;
+
   /// Auto-hide timer for the page-level level HUD.
   Timer? _levelHudTimer;
 
@@ -1202,6 +1216,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
   /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
   String? _currentAudioTrackId;
+
+  /// HLS 画质（TODO-1158）：当前视频若是 HLS master playlist（m3u8 直链，含多档码率
+  /// variant），[_hlsMasterUri] 记 master URL、[_hlsVariants] 是解析出的档位（高到低
+  /// 排序）、[_selectedHlsVariantIndex] 是当前选中档（-1=自动/master ABR）。非 HLS /
+  /// media playlist 时三者为空态（无画质菜单）。切档走 [_switchHlsVariant]（换 variant
+  /// URL 重载，保持播放位置）。[_hlsDetectSeq] 是异步探测去重位（换片时旧探测结果丢弃）。
+  String? _hlsMasterUri;
+  List<HlsVariant> _hlsVariants = const <HlsVariant>[];
+  int _selectedHlsVariantIndex = -1;
+  int _hlsDetectSeq = 0;
 
   bool _clipExportMarking = false;
   bool _clipExporting = false;
@@ -1699,10 +1723,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String? externalSub = paths.subtitleSource;
     int? graphicStreamIndex;
 
+    // TODO-1246：外挂文本字幕（.srt/.ass/.ssa/.vtt）的真相源是磁盘档案，不是 DB 缓存。
+    // DB 里的 AudioCue **不携带**解析期的行内/cue 级样式 markup（[AudioCue.markup] 瞬态、
+    // DB 往返丢弃，见 audiobook_model.dart），故单视频重开时 loadCues 命中的 cue 恒
+    // `markup==null` → 字幕 overlay 的「尊重字幕自带样式」开关（respectAssStyle）拿不到
+    // cueStyle，字幕永远退回 app 统一样式（用户报：开了开关 .ass 自带字体/主色/描边仍不
+    // 生效）。当持久化字幕源是仍在磁盘上的外挂文本档案时，直接重解析档案拿回带 markup 的
+    // cue（重解析文本档案廉价，不触发 BUG-081 关注的内嵌轨 ffmpeg 重抽取）；重解析空
+    // （档案被删/损坏）时保留 DB 缓存 cue（内容仍在、仅缺样式），不倒退功能。
+    // 播放列表换集走 _restorePersistedSubtitle→loadCuesForSource 已是重解析、天然带 markup，
+    // 故只需修单视频路径。
+    final String? rehydratePath = subtitleExplicitlyOff
+        ? null
+        : _rehydratableExternalSubtitlePath(externalSub);
+
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
     // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
     if (subtitleExplicitlyOff) {
       cues = const <AudioCue>[];
+    } else if (rehydratePath != null) {
+      // 外挂文本字幕：重解析磁盘档案作为真相源，恢复 cue 级 / 行内样式 markup（TODO-1246）。
+      final List<AudioCue> reparsed =
+          await _loadExternalSubtitleCues(rehydratePath, widget.bookUid);
+      if (reparsed.isNotEmpty) {
+        cues = reparsed;
+      }
+      // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
     } else if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
@@ -1971,6 +2017,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 若 [source] 是仍在磁盘上的**外挂文本字幕档案**（.srt/.ass/.ssa/.vtt），返回其路径供
+  /// 重解析拿回样式 markup（TODO-1246）；否则返回 null：内嵌轨（`embedded:<n>` 无扩展名，
+  /// [subtitleFormatForPath] 判 null）、关闭哨兵、`null`/空、或档案已不在磁盘上（重解析无源）。
+  /// 内嵌轨不在此重解析（避免 BUG-081 关注的 ffmpeg 重抽取），保留 DB 缓存 cue。
+  String? _rehydratableExternalSubtitlePath(String? source) {
+    if (source == null || source.isEmpty) return null;
+    if (SubtitleSource.isOff(source)) return null;
+    if (subtitleFormatForPath(source) == null) return null;
+    if (!File(source).existsSync()) return null;
+    return source;
+  }
+
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
   ///
   /// 按 app 学习语言优先（学日语 → `.ja.srt > .ja.ass > … > .srt > .ass …`，
@@ -2040,6 +2098,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
+    // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
+    // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
+    bool detectHls = true,
   }) async {
     // TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）前置短路。
     // libmpv 对失效本地路径静默失败（不抛、不回调），下面的 try/catch 与页级
@@ -2082,6 +2143,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     controller.onDiagLog = (String message) {
       ErrorLogService.instance.log('VideoHibiki.diag', message);
     };
+    // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
+    // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
+    controller.onSuspectedBlackFlicker =
+        Platform.isWindows ? _handleSuspectedBlackFlicker : null;
     ErrorLogService.instance.log(
       'VideoHibiki.diag',
       '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
@@ -2139,6 +2204,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
     controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
+    // TODO-1158：探测当前流是否为 HLS master（多档画质），填充画质菜单。仅常规载入
+    // 触发（画质切档的重载 detectHls=false）；网络 .m3u8 直链才 fetch，best-effort。
+    if (detectHls) {
+      unawaited(_detectHlsVariantsForLoad(mediaUri));
+    }
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
@@ -2593,6 +2663,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _autoAdvanceCountdownNotifier.dispose();
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
+    _blackFlickerNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
     _videoControlsVisible.dispose();
@@ -4673,6 +4744,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
       onEditControlsOnscreen: _showVideoControlEditOverlay,
+      // TODO-1158：HLS 多档画质入口（跨平台，经设置面板「播放」分类可达）。仅当探测到
+      // HLS master variant 时给入口；点开画质侧栏（替换当前设置侧栏）。
+      qualityOptionCount: _hlsVariants.length,
+      qualityCurrentLabel: _hlsVariants.isEmpty
+          ? null
+          : (_selectedHlsVariantIndex < 0 ||
+                  _selectedHlsVariantIndex >= _hlsVariants.length
+              ? t.video_quality_auto
+              : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
+      onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
@@ -5212,6 +5293,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         t.video_audio_track,
         () => _showAudioTrackMenu(controller),
       ),
+      // TODO-1158：仅当当前流是 HLS master（探测到多档码率 variant）才给画质入口。
+      if (_hlsVariants.isNotEmpty)
+        item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(

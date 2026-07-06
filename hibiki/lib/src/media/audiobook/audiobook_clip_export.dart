@@ -139,6 +139,49 @@ List<AudiobookClipCueSpan> clipCueSpansWithDelay({
 /// unsupportedRange / exportable，语义同单句版。exportable 时 [cueSpans] 非空且
 /// 已按 startMs 升序、同一 [audioFileIndex]，[globalStartMs]/[globalEndMs] 是整段
 /// 完整音频的裁剪窗口（首句 head-padded start .. 末句 tail-padded end）。
+/// TODO-1127：把从阅读器选区抽取到的 EPUB 插图按归一化文档偏移分配到各 cue 段（插图
+/// 渲在其归属 cue 文本之后）。纯函数、可单测，与 [classifyAudiobookClipMultiCue] 解耦。
+///
+/// - [cueNormStarts]：每个 cue 段的 `normCharStart`（整书归一化字符偏移，跟
+///   `SasayakiFragment.normCharStart` 同基准）；无法解码归一化偏移的 cue 传 `null`——
+///   不作为归属锚点。长度必须与 cue 段数一致。
+/// - [images]：抽取到的插图，每张带 [normOffset]（该图在 DOM 文档序里的归一化位置，由
+///   JS `nativeSelectionImages` 用图片相邻文本节点算出）+ 载荷 [bytes]。
+///
+/// 归属规则：一张图挂到「归一化起点 `<=` 图片 normOffset 的最后一个 cue」之后——即这张
+/// 图在 DOM 里出现在该句文本之后、下一句之前，正是「选区中间夹图」的相对顺序。没有任何
+/// cue 起点 `<=` 图片偏移（图在所有 cue 之前，或所有 cue 都无法解码偏移）时兜底挂到第 0
+/// 段最前，**绝不丢图**。多张图先按 normOffset 升序，保持文档序稳定。
+///
+/// 返回 `length == cueNormStarts.length` 的 `List<List<Uint8List>>`：第 i 项是第 i 个 cue
+/// 段之后要渲的插图字节列表（顺序即文档序）。
+List<List<Uint8List>> assignClipImagesToCues({
+  required List<int?> cueNormStarts,
+  required List<({int normOffset, Uint8List bytes})> images,
+}) {
+  final int cueCount = cueNormStarts.length;
+  final List<List<Uint8List>> assigned = List<List<Uint8List>>.generate(
+    cueCount,
+    (_) => <Uint8List>[],
+    growable: false,
+  );
+  if (cueCount == 0) return assigned;
+  final List<({int normOffset, Uint8List bytes})> sorted =
+      List<({int normOffset, Uint8List bytes})>.of(images)
+        ..sort((({int normOffset, Uint8List bytes}) a,
+                ({int normOffset, Uint8List bytes}) b) =>
+            a.normOffset.compareTo(b.normOffset));
+  for (final ({int normOffset, Uint8List bytes}) image in sorted) {
+    int target = 0; // 兜底：图在所有 cue 之前 / 无可用锚点 → 挂最前一段，绝不丢。
+    for (int i = 0; i < cueCount; i++) {
+      final int? start = cueNormStarts[i];
+      if (start != null && start <= image.normOffset) target = i;
+    }
+    assigned[target].add(image.bytes);
+  }
+  return assigned;
+}
+
 class AudiobookClipMultiCueResult {
   const AudiobookClipMultiCueResult({
     required this.kind,

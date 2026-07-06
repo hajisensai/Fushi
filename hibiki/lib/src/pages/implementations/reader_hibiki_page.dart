@@ -32,6 +32,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
@@ -2351,6 +2352,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ({int offset, int length})? _cachedSentenceRange;
   int? _cachedSentenceOffset;
 
+  /// TODO-1127：选区那一刻抽取到的、夹在选区里的 EPUB 插图（`normOffset` = 图在整书归一化
+  /// 文本坐标里的位置，`-1` = 未知 → 兜底挂最前段；`bytes` = 已按需降采样的 PNG/JPEG）。
+  /// 与 [_cachedSelectionRange] 同一次原生选区解析原子写入，供片段导出把插图按相对顺序渲进
+  /// 卡片；空列表 = 选区无夹图（导出行为与旧版逐字节一致）。
+  List<({int normOffset, Uint8List bytes})> _cachedSelectionImages =
+      const <({int normOffset, Uint8List bytes})>[];
+
   /// BUG-492 (TODO-1053 Bug A)。选区发生那一刻 [_lookupSectionIndex] 的快照。收藏 /
   /// 制卡写入的 `sectionIndex` 必须绑定到「选中该句时」渲染的真实章号，而不是写入时刻
   /// 再读裸 [_currentChapter]——有声书连续推进 / 跨章滚动会在选区与写入之间异步改写
@@ -2398,6 +2406,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
     _cachedSentenceOffset = null;
+    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
     _cachedSelectionSectionIndex = null;
     _currentSentenceIsFavorited = false;
     _currentFavoriteId = null;
