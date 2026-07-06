@@ -39,10 +39,10 @@ function rewriteDictLinks(html, dictName) {
         // 之后据此 fetch→blob 补 src（token 只在 fetch 调用里）。app 内（该全局未设）保持原样。
         const media = (typeof window !== 'undefined') ? window.__hibikiDictMedia : null;
         if (media && media.base && media.token) {
-            return match.replace(/src=(['"])([^'"]+)/i,
+            return match.replace(/src=(['"])([^'"]+)\1/i,
                 `data-hibiki-media-dict="${encodeURIComponent(dictName)}" data-hibiki-media-path="${encodeURIComponent(src)}"`);
         }
-        return match.replace(/src=(['"])([^'"]+)/i, `src=${quote}${rewritten}${quote}`);
+        return match.replace(/src=(['"])([^'"]+)\1/i, `src=${quote}${rewritten}${quote}`);
     });
 }
 
