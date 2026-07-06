@@ -80,11 +80,13 @@ extension _ReaderMining on _ReaderHibikiPageState {
         final File inputFile = audioFiles[clip.audioFileIndex];
         sasayakiTempDir =
             Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
-        // 句子音频输出 `.aac`（adts 容器）。桌面捆绑的 ffmpeg-min 是
-        // `--disable-everything` 极简构建，muxer 白名单只有 adts 没有 mp4/ipod/m4a
-        // （BUG-460：写 `.m4a` 会让桌面 ffmpeg exit -22 EINVAL）。adts 是全平台唯一
-        // 都能 mux 的音频容器，故输出后缀全平台统一保持 `.aac`，不改。
-        final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
+        // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
+        // 把 localhost URL 当作可下载音频；桌面/Android 继续用 `.aac`（adts），避免
+        // 桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-569）。
+        final String outputPath = p.join(
+          sasayakiTempDir.path,
+          'sentence.${immersionMiningAudioExtension()}',
+        );
         requestedSentenceAudioClip = true;
         // TODO-757 压缩开关：默认压缩档（单声道 64k=现状），关闭压缩走立体声 128k。
         // TODO-970：句子音频已全平台统一走 ffmpeg（extractAudioSegment 不再有 Android
