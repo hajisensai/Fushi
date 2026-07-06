@@ -800,6 +800,13 @@ void main() {
               'source side panel rows, caption font scales with appUiScale) is '
               'the same reviewed media-page exception class as the parent '
               'video player page allowlist entry.',
+      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+          'Black-flicker warning banner chrome (errorContainer '
+              'BorderRadius.circular(12) frame + fontSize title/body '
+              'labels) added by TODO-1119/BUG-545 as an errorContainer-'
+              'semantic notice bar over the video controls; same reviewed '
+              'media-page exception class as the parent video player page '
+              'allowlist entry.',
       'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
           'Volume / playback-speed compact control popover chrome '
               '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
