@@ -7,6 +7,7 @@
   iOS 上重开大字幕书容易触发内容 ready 超时，严重时 WebView 白屏。
 - **[x] ① 已修复** — fresh reader open 固定回正文模式：初始化时先 `_lyricsMode = false`，
   只清掉旧的 persisted `lyrics_mode`，不再把它恢复成 UI 模式。用户仍可在当前 reader 会话内手动切歌词模式。
+  提交：`774acf3e7`。
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_lyrics_mode_reopen_guard_static_test.dart`
   守卫 `_initBookInner` 不得恢复 `savedLyricsMode`，并必须清理旧 `lyrics_mode`。
 - **备注**：RED 已确认旧代码缺少 `_lyricsMode = false` 且恢复 `savedLyricsMode`；修复后该守卫通过。
