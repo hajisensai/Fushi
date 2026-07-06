@@ -1570,6 +1570,18 @@ $blurFn
         if (_hoshiClassifyBlockImg(img)) {
           var r = window.hoshiReader;
           if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
+          // TODO-1229 案B：懒加载 block 图 load 后整章几何后移，冻结的 restore scrollTop
+          // 错一行（Chromium 只在 scrollTop=0 自愈）。若最近落点是章首/章末粗粒度语义
+          // 且其后无用户翻页(__imgReanchorProgress 非 null)，用刚失效的 metrics 重建几何
+          // 后重放 scrollToProgressPaged 语义重锚。属程序化滚动，不污染 TODO-798
+          // userDriven 因果门；有用户输入(paginate 已清资格)则不动。
+          if (r && r.__imgReanchorProgress != null &&
+              typeof r.scrollToProgressPaged === 'function') {
+            var rctx = r.getScrollContext();
+            if (rctx && rctx.pageSize > 0) {
+              r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
+            }
+          }
         }
       });
     }
@@ -1957,6 +1969,10 @@ $_sharedJs
     await document.fonts.ready;
     var context = this.getScrollContext();
     this.scrollToProgressPaged(context, progress);
+    // TODO-1229 案B：记录本次是章首(0)/章末(>=0.99)粗粒度 progress 落点，允许懒加载
+    // block 图 load 后（整章几何后移、冻结 scrollTop 错一行）语义重锚。中段 progress 与
+    // 精确 char 锚不登记（重锚到粗 progress 反更差）。任一用户翻页(paginate)清资格。
+    this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99) ? progress : null;
     var pos = this.getPagePosition(context);
     var self = this;
     setTimeout(function() {
@@ -2012,6 +2028,9 @@ $_sharedJs
     return true;
   },
   paginate: function(direction) {
+    // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
+    // 拽回章首/章末（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
+    this.__imgReanchorProgress = null;
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return "limit";
     var currentScroll = this.getPagePosition(context);

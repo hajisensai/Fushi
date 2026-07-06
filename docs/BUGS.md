@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 553 条。点号进各自文件。
+> 共 554 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-568](bugs/BUG-568-chapter-jump-skips-first-page.md) | ✅ | ✅ | 竖排跳章落点错误(章界输入穿透+图片late-load冻结) |
 | [BUG-567](bugs/BUG-567-nested-lookup-parent-flicker.md) | ✅ | ✅ | Windows app 外查词嵌套时父弹窗闪烁 |
 | [BUG-566](bugs/BUG-566-mobile-seekbar-use-after-dispose.md) | ✅ | ✅ | 移动版进度条 onPointerMove/onPointerUp 拖动中控件销毁后崩溃 |
 | [BUG-565](bugs/BUG-565-remote-book-download-rename-notempty.md) | ✅ | ✅ | 远端书下载改名到已存在书目录 ENOTEMPTY 失败 |

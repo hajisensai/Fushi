@@ -1623,6 +1623,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           handlerName: 'onBoundarySwipe',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
+            // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
+            // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
+            // 加载未落定时再次跨章 → 跳两章。与 _paginate 入口同一 _paginationInFlight。
+            if (_paginationInFlight) return;
             // Boundary swipe → chapter turn also stole focus to the WebView
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _reclaimReaderFocusAfterGesture();

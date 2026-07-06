@@ -32,11 +32,28 @@ part of '../reader_hibiki_page.dart';
 const double _kBottomChromeBlurSigma = 18;
 
 extension _ReaderChrome on _ReaderHibikiPageState {
+  /// TODO-1229 案A：章界连续输入穿透守卫。滚轮惯性节流（450ms）远短于换章加载
+  /// （数百 ms restore），跨章那一下之后排队的翻页 tick 会在新章 restore 未落定时
+  /// 立即再翻——章首插图页/首页整页被越过；更糟 hoshiReader 尚未就绪时
+  /// evaluateJavascript 返 null → _didScroll(null)=false → 又 _handlePageTurnLimit →
+  /// **跳两章**。本 getter 只在「导航在飞（_isNavigatingToChapter）/ 恢复在飞
+  /// （_restoreInFlight）/ 内容未就绪（!_readerContentReady）」这三个瞬态窗口为真；
+  /// 正常连续翻页三者皆稳态（false/false/true），不受影响。内容就绪有 8s 兜底超时
+  /// （_startContentReadyTimeout）强制置真，故绝不会永久卡死翻页。
+  bool get _paginationInFlight =>
+      _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
+
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
     int throttleMs = 0,
   }) async {
     if (_controller == null) {
+      return;
+    }
+    // TODO-1229 案A：导航/恢复在飞窗口直接丢弃输入（放在节流戳之前，被丢弃的输入
+    // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
+    // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
+    if (_paginationInFlight) {
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
