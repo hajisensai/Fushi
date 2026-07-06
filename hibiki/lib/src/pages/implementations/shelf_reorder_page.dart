@@ -263,15 +263,20 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
         _finish();
       },
       child: Scaffold(
+        // TODO-1228：不放确认 ✓ 动作——本页语义是「自动保存」：拖合并/移出是即时 DB
+        // 写，重排顺序由上面的 PopScope 在任何退出路径（返回键/手势/AppBar back）统一
+        // 经 [_finish] 落盘，不存在丢弃路径，确认按钮纯装饰反而暗示「不点就不保存」。
+        // leading 用共享 [HibikiIconButton]（自动注册焦点目标）而非隐式 BackButton：
+        // 本页网格无焦点目标，删 ✓ 后若无它，键盘/手柄焦点导航（实验开关）在本页将
+        // 无任何可聚焦退出件（✓ 之前恰好兼任此角色）；返回箭头语义是「退出」不是
+        // 「确认保存」，与自动保存语义一致（先例 HibikiSettingsSubPageHeader）。
         appBar: AppBar(
+          leading: HibikiIconButton(
+            tooltip: t.back,
+            icon: Icons.arrow_back,
+            onTap: _finish,
+          ),
           title: Text(widget.title),
-          actions: <Widget>[
-            HibikiIconButton(
-              tooltip: t.shelf_done,
-              icon: Icons.check,
-              onTap: _finish,
-            ),
-          ],
         ),
         body: SafeArea(
           child: HibikiReorderableGrid(
