@@ -900,6 +900,14 @@ void main() {
               'verbatim — design tokens are not reliably available there, so it '
               'uses raw fontSize + ColorScheme roles, the same reviewed '
               'startup-chrome exception class as the main.dart splash branches.',
+      'lib/src/startup/loading_watchdog_view.dart':
+          'TODO-1260 startup loading/timeout escape view is pre-init startup '
+              'chrome (rendered while isInitialised=false, extracted verbatim '
+              'from the main.dart loading scaffold) — design tokens are not '
+              'reliably available there, so it uses raw fontSize + ColorScheme '
+              'roles, the same reviewed startup-chrome exception class as the '
+              'data-root migration / backup import overlays and the main.dart '
+              'splash branches.',
       'lib/src/sync/backup_import_overlay_view.dart':
           'TODO-1151 backup import/restore overlay is pre-init startup chrome '
               '(rendered while the DB is closed / isInitialised=false during the '

@@ -38,6 +38,7 @@ import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
+import 'package:hibiki/src/startup/loading_watchdog_view.dart';
 import 'package:hibiki/src/sync/backup_import_overlay_view.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart'
     show backupImportRestart, dataRootMigrationRestart;
@@ -473,6 +474,17 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// 守卫：Windows 安装器 handoff reconcile 的 post-frame 调度只挂一个。
   bool _windowsUpdateHandoffScheduled = false;
 
+  /// TODO-1260：启动加载「看门狗」。裸 loading 分支（[!appModel.isInitialised]）此前只有
+  /// 一个**无超时**的 [CircularProgressIndicator]——若 `initialise()` 因某早期 IO（掉线
+  /// 数据根盘的 stat / 目录创建）永不返回，就无限转圈、无任何逃生口（TODO-1260「偶发
+  /// 无限加载」根因之一）。看门狗在进入裸加载态时启动，超过 [_loadingWatchdogTimeout]
+  /// 仍未初始化完成就翻 [_loadingTimedOut]，加载分支改渲染「耗时超预期 + 说明 + 重试」
+  /// 逃生 UI，消除「无 escape」的结构缺陷（Layer 1/2 的数据根超时降级是主修，这层是
+  /// 兜底：任何未预见的启动挂起都有可点的出口，而非死转圈）。
+  static const Duration _loadingWatchdogTimeout = Duration(seconds: 20);
+  Timer? _loadingWatchdog;
+  bool _loadingTimedOut = false;
+
   /// 守卫：Windows 安装器 handoff marker 只在拿到真实 Navigator 后 reconcile 一次。
   bool _windowsUpdateHandoffChecked = false;
   StreamSubscription<String>? _iosUrlSubscription;
@@ -711,6 +723,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     _intentsSubscription?.cancel();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
+    _loadingWatchdog?.cancel();
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -942,8 +955,32 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     });
   }
 
+  /// TODO-1260：进入裸加载态时启动看门狗（只挂一个；已翻超时标记则不再重启）。
+  void _startLoadingWatchdogIfNeeded() {
+    if (_loadingWatchdog != null || _loadingTimedOut) return;
+    _loadingWatchdog = Timer(_loadingWatchdogTimeout, () {
+      if (mounted) setState(() => _loadingTimedOut = true);
+    });
+  }
+
+  /// TODO-1260：离开裸加载态（初始化完成 / 落错误屏 / 迁移 / 备份导入遮罩）或用户手动
+  /// 重试时取消看门狗并复位，让下一轮加载重新计时、避免过时 timer 空转触发无用 setState。
+  void _cancelLoadingWatchdog() {
+    _loadingWatchdog?.cancel();
+    _loadingWatchdog = null;
+    _loadingTimedOut = false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    // TODO-1260：只要不再处于「裸加载」态（已初始化 / 已落错误屏 / 迁移或备份导入有自己
+    // 的进度遮罩），就撤掉加载看门狗，避免它在这些态里事后空转触发一次无用重建。
+    if (appModel.isInitialised ||
+        appModel.initError != null ||
+        appModel.dataRootMigrationActive ||
+        appModel.backupImportActive) {
+      _cancelLoadingWatchdog();
+    }
     // Fields like locales/targetLanguage/theme are late and only available
     // after initialise() completes. Return a minimal app while loading and
     // render the spinner directly instead of going through LoadingPage.
@@ -1202,6 +1239,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       );
     }
     if (!appModel.isInitialised) {
+      // TODO-1260：进入裸加载态即挂看门狗；超时前显示转圈，超时后显示逃生 UI。
+      _startLoadingWatchdogIfNeeded();
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final cs = ColorScheme.fromSeed(
@@ -1214,8 +1253,15 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
-            body: Center(
-              child: CircularProgressIndicator(color: cs.primary),
+            body: LoadingWatchdogView(
+              timedOut: _loadingTimedOut,
+              colorScheme: cs,
+              onRetry: () {
+                // 复位看门狗，让重试触发的新一轮加载重新计时。retryInitialise 先退回
+                // 默认根（Layer 1 的 2s 超时降级）再重跑 init，通常即成功。
+                _cancelLoadingWatchdog();
+                appModel.retryInitialise();
+              },
             ),
           ),
         ),

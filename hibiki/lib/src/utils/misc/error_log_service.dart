@@ -84,6 +84,15 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// 带崩 + 崩时第几层」。与导入面包屑分文件，互不覆盖。
   File? _lookupBreadcrumbFile;
 
+  /// TODO-1260：**启动步进面包屑**文件（`init_step_breadcrumb.txt`，独立于导入 /
+  /// 查词面包屑）。app 启动的「无限加载」根因是某早期 IO（对掉线的自定义数据根盘做
+  /// stat / 目录创建）永不返回，`initialise()` 无逃生口 → 卡死首帧。这类 hang 不是
+  /// 崩溃（没有异常、进程还在），只能靠用户「强杀重开」。在 `initialise()` 每个高风险
+  /// IO 步骤前**同步**写入当前步骤名，正常跑完清空；下次启动若读到残留，说明上次卡在
+  /// 这一步没返回，折成 `AppInit.hangRecovered` 写进错误日志，让 hang 可从 error_log.txt
+  /// 精确定位到哪一步。必须同步落盘，否则强杀时异步缓冲来不及写盘。
+  File? _initStepFile;
+
   static String _trimToMaxUtf8Bytes(
     String content, {
     int maxBytes = _maxFileBytes,
@@ -171,6 +180,7 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     // 文件名必须与 native `import_breadcrumb::kStepFileName` 完全一致（TODO-892）。
     _importStepFile = File('${dir.path}/import_step_breadcrumb.txt');
     _lookupBreadcrumbFile = File('${dir.path}/lookup_crash_breadcrumb.txt');
+    _initStepFile = File('${dir.path}/init_step_breadcrumb.txt');
     try {
       if (await _logFile!.exists()) {
         final bytes = await _logFile!.readAsBytes();
@@ -219,6 +229,20 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       }
     } catch (e) {
       debugPrint('[ErrorLogService] lookup breadcrumb recovery failed: $e');
+    }
+    // TODO-1260：启动 hang 恢复。上次有**启动步进**面包屑残留 = 进程在某启动步骤活跃时
+    // 没跑完就被（用户强杀 / OS 杀）终止，最可能是那一步的 IO（掉线数据根盘）永不返回。
+    // 折成 `AppInit.hangRecovered`（日志 label，非 i18n key），记下卡在哪一步。
+    try {
+      final String? initStep = readAndClearBreadcrumb(_initStepFile!);
+      if (initStep != null) {
+        log(
+            'AppInit.hangRecovered',
+            '上次启动疑似卡在某步没返回（无限加载 / 首帧不出，多半是自定义数据根所在磁盘'
+                '掉线致早期 IO 永不返回）：$initStep');
+      }
+    } catch (e) {
+      debugPrint('[ErrorLogService] init-step breadcrumb recovery failed: $e');
     }
   }
 
@@ -307,6 +331,30 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       // 删不掉就留着，下次启动再试；不影响本次恢复。
     }
     return content.isEmpty ? null : content;
+  }
+
+  /// TODO-1260：在 `AppModel.initialise()` 每个高风险 IO 步骤**前**同步写一条启动步进
+  /// 面包屑（带时间戳）。若这一步的 IO 永不返回（掉线数据根盘），进程被强杀后下次启动
+  /// 会从 [_initStepFile] 残留读到 `[时间] $step`，折成 `AppInit.hangRecovered`。必须
+  /// 同步落盘（`flush: true`），否则 hang→强杀期间异步缓冲来不及写盘。
+  void markInitStep(String step) {
+    try {
+      _initStepFile?.writeAsStringSync('[${DateTime.now()}] $step',
+          flush: true);
+    } catch (e) {
+      debugPrint('[ErrorLogService] markInitStep failed: $e');
+    }
+  }
+
+  /// 启动正常跑完（`initialise()` DONE）后清掉启动步进面包屑——此后再被杀与启动无关，
+  /// 避免把「开完 app 很久后正常退出」误报成启动 hang。
+  void clearInitStep() {
+    try {
+      final f = _initStepFile;
+      if (f != null && f.existsSync()) f.deleteSync();
+    } catch (e) {
+      debugPrint('[ErrorLogService] clearInitStep failed: $e');
+    }
   }
 
   void log(String source, Object error, [StackTrace? stack]) {

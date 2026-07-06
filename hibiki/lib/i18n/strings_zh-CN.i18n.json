@@ -2139,5 +2139,7 @@
   "video_quality_switched": "画质：$label",
   "video_black_flash_notice_action": "查看建议",
   "video_black_flash_notice_dont_show_again": "不再提示",
-  "popup_no_audio_available": "暂无发音"
+  "popup_no_audio_available": "暂无发音",
+  "loading_slow_title": "启动耗时超出预期",
+  "loading_slow_message": "如果你把数据存储位置设在了当前未连接的网络盘 / 移动盘上，启动可能卡住。点「重试」即可用默认存储位置启动本次会话；你的数据仍保留在原位置不动。"
 }

@@ -35,7 +35,9 @@ void main() {
       final String src = read('lib/src/storage/app_paths.dart');
       final int restoreIdx =
           src.indexOf('MacOSDataRootAccess.startAccessingStoredBookmark');
-      final int existsIdx = src.indexOf('if (!dir.existsSync()) return null');
+      // TODO-1260：existsSync() 已换成带超时的异步 exists() 探测（掉线盘不 hang）；
+      // 顺序契约不变——恢复 bookmark 仍须在探测数据根存在**之前**。
+      final int existsIdx = src.indexOf('exists = await dir');
       expect(restoreIdx, greaterThan(0));
       expect(existsIdx, greaterThan(0));
       expect(restoreIdx, lessThan(existsIdx),

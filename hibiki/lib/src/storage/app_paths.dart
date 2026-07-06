@@ -110,7 +110,26 @@ class AppPaths {
     }
     if (raw == null || raw.trim().isEmpty) return null;
     final Directory dir = Directory(raw);
-    if (!dir.existsSync()) return null; // 失效路径（盘符没挂/被删）→ 退回默认根
+    // TODO-1260：自定义数据根可能落在网络盘 / 移动盘上。盘**掉线**（而非被删）时，
+    // 旧代码的同步 `existsSync()`（底层是一次阻塞式 `stat`）会在**主 isolate** 上一直
+    // 卡到 OS 层超时（Windows 对断链网络盘可达数十秒），而它跑在 app 启动最早期、
+    // `initialise()` 又对 hang 无逃生口 → 表现为「偶发无限加载」。
+    //
+    // 改用**带超时的异步探测**：异步 `exists()` 本身不阻塞主 isolate，再叠一个 2s
+    // 超时兜底断链盘上连异步 stat 都不回的极端情况。2s 内没确认存在就当数据根**本次
+    // 启动不可用**，返回 null → 调用方退回 `path_provider` 默认根。**数据安全**：pref
+    // 里的自定义根路径原样保留、原盘上的数据一字节不动；仅本次启动改用默认根让 app 能
+    // 开，盘恢复后下次启动 `exists()` 秒回 true 即自动重新用回自定义根（无迁移、无覆盖）。
+    bool exists;
+    try {
+      exists = await dir
+          .exists()
+          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+    } catch (_) {
+      // 断链盘的异步 stat 也可能直接抛（而非挂起）→ 同样当作不可用，退回默认根。
+      exists = false;
+    }
+    if (!exists) return null; // 失效 / 掉线路径（盘符没挂 / 被删）→ 退回默认根
     return dir;
   }
 

@@ -2139,5 +2139,7 @@
   "video_quality_switched": "Quality: $label",
   "video_black_flash_notice_action": "View suggestions",
   "video_black_flash_notice_dont_show_again": "Don't show again",
-  "popup_no_audio_available": "No audio available"
+  "popup_no_audio_available": "No audio available",
+  "loading_slow_title": "Startup is taking longer than usual",
+  "loading_slow_message": "If your data storage location is on a network or removable drive that is currently disconnected, startup can stall. Tap Retry to launch using the default storage location for this session; your data stays where it is."
 }

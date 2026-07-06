@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 557 条。点号进各自文件。
+> 共 558 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-572](bugs/BUG-572-app-init-infinite-loading-dataroot-hang.md) | ✅ | ✅ | App 偶发无限加载：自定义数据根掉线盘早期同步 IO 永不返回 |
 | [BUG-571](bugs/BUG-571-respect-ass-style-reload.md) | ✅ | ✅ | 尊重字幕自带样式开关重开视频后失效 |
 | [BUG-570](bugs/BUG-570-windows-msvcp140-crash-stale-redist.md) | ✅ | ✅ | Windows app crashes at launch (MSVCP140.dll c0000005) on machines with stale VC++ Redistributable |
 | [BUG-569](bugs/BUG-569-tls-cover-not-pinned.md) | ✅ | ✅ | TLS 默认开后对端封面空白（Image.network 无法钉扎自签证书） |

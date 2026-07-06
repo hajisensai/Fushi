@@ -1689,6 +1689,25 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// TODO-1260：启动期对**数据根**做 IO 的关键 await 的超时上限。旧代码这些 await 若
+  /// 因自定义数据根所在磁盘掉线而永不返回，会让 `initialise()` 无限挂起（首帧不出、
+  /// 无限加载），而 `initialise()` 的顶层 try/catch 只接异常、接不住 hang。给这些 await
+  /// 叠超时后，超时抛 [TimeoutException]→落顶层 catch→`_initError` 错误屏（有 Retry），
+  /// 把「无逃生的无限 hang」变成「可重试的错误」。取 12s：远大于本机盘正常耗时（毫秒级），
+  /// 只在盘真掉线 / 卡死时触发。
+  static const Duration _initIoTimeout = Duration(seconds: 12);
+
+  /// 给启动关键 IO 的 [Future] 叠一层超时：超时抛带**步骤名**的 [TimeoutException]，
+  /// 让错误屏文案能指出卡在哪一步。
+  Future<T> _guardInitIo<T>(String step, Future<T> future) => future.timeout(
+        _initIoTimeout,
+        onTimeout: () => throw TimeoutException(
+          'AppModel.initialise 卡在「$step」超过 ${_initIoTimeout.inSeconds}s 未返回'
+          '（多半是自定义数据根所在磁盘掉线 / 卡死）',
+          _initIoTimeout,
+        ),
+      );
+
   /// Prepare application data and state to be ready of use upon starting up
   /// the application. [AppModel] is initialised in the main function before
   /// [runApp] is executed.
@@ -1714,9 +1733,15 @@ class AppModel with ChangeNotifier {
       await platformServices.init();
 
       debugPrint('[Hibiki] init: directories (early, needed for DB)');
-      await _prepareRuntimeDirectories();
+      // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
+      // 故写启动面包屑 + 叠超时（超时→错误屏 Retry，不再无限加载）。
+      ErrorLogService.instance
+          .markInitStep('resolve-data-roots（AppPaths.resolve / 数据根 stat）');
+      await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
 
       debugPrint('[Hibiki] init: Drift database');
+      ErrorLogService.instance
+          .markInitStep('open-database（Drift 打开 hibiki.db）');
       _database = HibikiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
 
@@ -1767,18 +1792,27 @@ class AppModel with ChangeNotifier {
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));
 
-      await Future.wait(<Future<void>>[
-        thumbnailsDirectory.create(recursive: true),
-        dictionaryImportWorkingDirectory.create(recursive: true),
-        dictionaryResourceDirectory.create(recursive: true),
-        refreshSystemPalette(),
-        () async {
-          _exportDirectory = await prepareFallbackHibikiDirectory();
-          _alternateExportDirectory = _exportDirectory;
-        }(),
-      ]);
+      // TODO-1260：这些目录都派生自数据根（documentsRoot）；盘掉线时 create() 会 hang。
+      ErrorLogService.instance.markInitStep(
+          'create-runtime-dirs（thumbnails / dictionaryResources 等目录创建）');
+      await _guardInitIo(
+        'create-runtime-dirs',
+        Future.wait(<Future<void>>[
+          thumbnailsDirectory.create(recursive: true),
+          dictionaryImportWorkingDirectory.create(recursive: true),
+          dictionaryResourceDirectory.create(recursive: true),
+          refreshSystemPalette(),
+          () async {
+            _exportDirectory = await prepareFallbackHibikiDirectory();
+            _alternateExportDirectory = _exportDirectory;
+          }(),
+        ]),
+      );
 
-      await _rebuildDictPathsCacheAsync();
+      // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
+      ErrorLogService.instance
+          .markInitStep('rebuild-dict-paths（词典资源目录 exists 探测）');
+      await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
 
       _localAudioManager = LocalAudioManager(
         prefsRepo: prefsRepo,
@@ -1886,6 +1920,8 @@ class AppModel with ChangeNotifier {
       }));
 
       debugPrint('[Hibiki] init: DONE');
+      // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
+      ErrorLogService.instance.clearInitStep();
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
       // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
