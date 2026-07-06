@@ -259,3 +259,42 @@ touch gestures (`material.dart`) and the long-press temporary speed-up
 and untouched.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_desktop_drag_volume_guard_test.dart`.
+
+## TODO-1243: quantize controls playback position (integrated-GPU 100% load)
+
+`lib/media_kit_video_controls/src/controls/extensions/duration.dart`
+(`kPositionUiThrottleStep` + `DurationExtension.floorTo`), and the four
+`player.stream.position` listeners in
+`lib/media_kit_video_controls/src/controls/material_desktop.dart`
+(`MaterialDesktopSeekBarState`, `MaterialDesktopPositionIndicatorState`) and
+`lib/media_kit_video_controls/src/controls/material.dart`
+(`MaterialSeekBarState`, `MaterialPositionIndicatorState`).
+
+Users on integrated GPUs (`gpu0`) reported the raster thread pinned at 100%
+whenever the playback-controls overlay is shown (TODO-1119/1201/1203 family:
+the black-flicker under high GPU load). Root cause: libmpv publishes `time-pos`
+at the *video frame rate*, so `player.stream.position` emits ~60/s. Both the
+seek bar and the `mm:ss` position clock subscribe to it and `setState` on every
+emit, so while the overlay is visible the seek bar fill re-rasters (and the
+surrounding controls picture re-paints) ~60x/s — layered on top of the video
+texture the compositor already redraws every frame. On an integrated GPU that
+saturates raster.
+
+The patch quantizes the displayed position to `kPositionUiThrottleStep`
+(200 ms) via `Duration.floorTo` and skips `setState` when the quantized value is
+unchanged, so the controls rebuild at ~5 fps instead of ~60 fps. 200 ms divides
+1000 ms evenly, so the `mm:ss` clock text is byte-identical (the floor stays
+inside the same whole second); the seek bar fill advances in 200 ms steps, which
+is imperceptible and standard for a scrubber. Seeking is untouched — the drag
+path uses the pointer-derived `slider`, and the quantized `position` is only the
+resting fill. The `if (click)` / `if (tapped)` early-return also drops the
+upstream redundant `setState` that fired during a drag (position was ignored
+there anyway).
+
+The real-time paths are deliberately left alone: Hibiki's `VideoSubtitleOverlay`,
+danmaku overlay and chapter markers read the controller position on their own
+(un-throttled) channels, so cue-sync / highlight latency is unchanged. The
+black-flicker detector (`VideoBlackFlickerDetector`, TODO-1119) samples mpv frame
+counters on its own 1 s timer and is independent of these listeners.
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_position_throttle_test.dart`.
