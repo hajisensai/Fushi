@@ -18,7 +18,8 @@ window.flutter_inappwebview = {
           var sentence = cueText || (args[0] && args[0].popupSelectionText) || '';
           var res = (typeof window.hibikiEnqueue === 'function')
             ? window.hibikiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
-          if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
+          if (res && res.ok && res.duplicate) toast('✓ 已在制卡队列中（' + res.count + '）');
+          else if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
           else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
           else toast('✗ 入队失败');
           resolve(!!(res && res.ok));
@@ -56,3 +57,30 @@ window.flutter_inappwebview = {
     }
   },
 };
+
+// TODO-1215: 词典媒体（gaiji / 声调 accent 的 SVG 等）在真实浏览器无 image:// scheme
+// handler 会裂图。向 background 取当前 server 配置（base + token，源同 lookup/mine 的
+// cfg()：hibiki-defaults.js 安装期注入的真值，或 options 手改覆盖），存进
+// window.__hibikiDictMedia，供共享的 vendor/dict-media.js 里 rewriteDictionaryMediaPath
+// 同步读取，改写成 GET /api/media/dictionary?dictionary=&path=&token= 直连（loopback，
+// host_permissions 已含 localhost/127.0.0.1）。
+(function loadHibikiDictMediaConfig() {
+  function apply(resp) {
+    if (resp && resp.ok && resp.base && resp.token) {
+      window.__hibikiDictMedia = { base: resp.base, token: resp.token };
+    }
+  }
+  function refresh() {
+    try {
+      chrome.runtime.sendMessage({ type: 'dictMediaConfig' }, apply);
+    } catch (_) {
+      // background 不可达：dict-media.js 回退 image://。
+    }
+  }
+  refresh();
+  try {
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area === 'local') refresh();
+    });
+  } catch (_) { /* no chrome.storage: skip */ }
+})();

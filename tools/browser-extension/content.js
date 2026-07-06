@@ -14,6 +14,10 @@ try { document.documentElement.setAttribute('data-hibiki-cs', 'v39'); } catch (_
 // selection.js 先于本脚本加载，这里覆盖它探测出的 true。app 内查词 selection.js 跑在主世界，
 // 不加载 content.js，CSS 高亮照常，互不影响。
 window.__hoshiCssHighlightsSupported = false;
+// TODO-1218①：标记「本页由扩展注入」。popup.js 的页面级 selectText 监听器本为 app 内嵌套弹窗
+// 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
+// popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
+window.__hibikiExtension = true;
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
@@ -149,7 +153,6 @@ async function hibikiRemoveQueued(okIds) {
     const remaining = fresh.filter((q) => okIds.indexOf(q.id) < 0);
     hibikiQueue = remaining;
     await chrome.storage.local.set({ hibikiQueue: remaining });
-    hibikiUpdateQueueChip();
   } catch (_) {}
 }
 // 制卡结果分类（TODO-1184）：卡已建(success)或已存在(duplicate) → 出队(done，队列才会清)；
@@ -166,24 +169,38 @@ function hibikiQueueLoad() {
   try {
     chrome.storage.local.get(['hibikiQueue'], (r) => {
       hibikiQueue = Array.isArray(r && r.hibikiQueue) ? r.hibikiQueue : [];
-      hibikiUpdateQueueChip();
     });
-  } catch (_) { hibikiUpdateQueueChip(); }
+  } catch (_) {}
+}
+// TODO-1222：队列去重唯一键 = 词 + 句 + 站点 + 视频ID（同一字幕行重复点「制卡」视为同一条）。
+function hibikiQueueKey(q) {
+  const word = (q && q.fields && (q.fields.expression || q.fields.word || q.fields.term)) || '';
+  const sent = (q && q.sentence) || '';
+  const site = (q && q.site) || '';
+  const vid = (q && (q.youtubeId || q.netflixId)) || '';
+  return String(word) + ' ' + String(sent) + ' ' + String(site) + ' ' + String(vid);
 }
 window.hibikiEnqueue = function (fields, sentence) {
   const w = hibikiCurrentCueWindowV();
   if (!w) return { ok: false, reason: 'no-cue' };
   const site = hibikiSite();
-  hibikiQueue.push({
+  const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
+  const netflixId = site === 'netflix' ? hibikiNetflixId() : null;
+  const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',
     startV: Math.max(0, w.startV - 200), endV: w.endV + 200,
     site: site,
-    youtubeId: site === 'youtube' ? hibikiYoutubeId() : null,
-    netflixId: site === 'netflix' ? hibikiNetflixId() : null,
-  });
+    youtubeId: youtubeId,
+    netflixId: netflixId,
+  };
+  // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
+  const key = hibikiQueueKey(item);
+  if (hibikiQueue.some((q) => hibikiQueueKey(q) === key)) {
+    return { ok: true, count: hibikiQueue.length, duplicate: true };
+  }
+  hibikiQueue.push(item);
   hibikiQueueSave();
-  hibikiUpdateQueueChip();
   return { ok: true, count: hibikiQueue.length };
 };
 // 跨标签/重载同步：storage 变了就刷新内存镜像 + 计数。
@@ -191,127 +208,12 @@ try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.hibikiQueue) {
       hibikiQueue = Array.isArray(changes.hibikiQueue.newValue) ? changes.hibikiQueue.newValue : [];
-      hibikiUpdateQueueChip();
     }
   });
 } catch (_) {}
 
-// 浮动小控件：显示总队列数 + 本页可生成数；YouTube 点即生成，Netflix 提示点扩展图标。
-let hibikiChip = null;
-// 队列列表是否展开（点 chip 头部切换）。跨 storage.onChanged 重渲染保留展开态。
-let hibikiChipExpanded = false;
-// Netflix 用：只在制卡队列**增长**时弹一次中间下方短暂提示，避免加载/删除/跨标签同步也刷屏。
-let hibikiLastQueueTotal = 0;
-function hibikiGenerableCount() {
-  const site = hibikiSite();
-  if (site === 'youtube') return hibikiQueue.filter((q) => q.site === 'youtube').length;
-  if (site === 'netflix') {
-    const id = hibikiNetflixId();
-    return hibikiQueue.filter((q) => q.site === 'netflix' && q.netflixId === id).length;
-  }
-  return 0;
-}
-function hibikiUpdateQueueChip() {
-  const total = hibikiQueue.length;
-  const here = hibikiGenerableCount();
-  // Netflix：不再在右下角常驻小控件（长期遮挡视频/字幕）。改为「中间下方短暂提示」——
-  // 复用 hibikiToast（left:50% + bottom，5s 自动淡出），只在队列新增时弹一次、内容不变。
-  // 生成仍走浏览器工具栏的 Hibiki 图标（Netflix 录屏需手势），不依赖常驻控件。
-  if (hibikiSite() === 'netflix') {
-    if (hibikiChip) hibikiChip.style.display = 'none';
-    if (total > hibikiLastQueueTotal && typeof window.hibikiToast === 'function') {
-      window.hibikiToast('制卡队列 ' + total + ' · 点扩展图标生成本片 ' + here);
-    }
-    hibikiLastQueueTotal = total;
-    return;
-  }
-  hibikiLastQueueTotal = total;
-  if (!hibikiChip) {
-    hibikiChip = document.createElement('div');
-    hibikiChip.id = 'hibiki-queue-chip';
-    // 样式全在 content.css（#hibiki-queue-chip 作用域，不污染宿主页）。结构：头部 pill（计数 +
-    // 「生成」按钮，点头部展开/收起列表）+ 列表（每项一行 + 删除按钮，TODO-1184 逐项删）。
-    const header = document.createElement('div');
-    header.className = 'hibiki-queue-header';
-    const label = document.createElement('span');
-    label.className = 'hibiki-queue-label';
-    header.appendChild(label);
-    const gen = document.createElement('button');
-    gen.className = 'hibiki-queue-gen';
-    gen.type = 'button';
-    gen.textContent = '生成';
-    gen.addEventListener('click', (e) => {
-      e.stopPropagation(); // 生成按钮独立，不触发头部的展开/收起
-      if (hibikiSite() === 'youtube') {
-        if (typeof window.hibikiGenerateAll === 'function') window.hibikiGenerateAll();
-      } else if (typeof window.hibikiToast === 'function') {
-        window.hibikiToast('点浏览器工具栏的 Hibiki 图标生成本片的 ' + hibikiGenerableCount() + ' 条（Netflix 录屏需此手势）');
-      }
-    });
-    header.appendChild(gen);
-    header.addEventListener('click', () => {
-      hibikiChipExpanded = !hibikiChipExpanded;
-      hibikiRenderQueueList();
-    });
-    const list = document.createElement('div');
-    list.className = 'hibiki-queue-list';
-    list.style.display = 'none';
-    hibikiChip.appendChild(header);
-    hibikiChip.appendChild(list);
-    (document.fullscreenElement || document.body).appendChild(hibikiChip);
-  } else if (hibikiChip.parentNode !== (document.fullscreenElement || document.body)) {
-    (document.fullscreenElement || document.body).appendChild(hibikiChip);
-  }
-  if (total === 0) { hibikiChip.style.display = 'none'; hibikiChipExpanded = false; return; }
-  hibikiChip.style.display = 'block';
-  const labelEl = hibikiChip.querySelector('.hibiki-queue-label');
-  if (labelEl) {
-    labelEl.textContent = hibikiSite() === 'youtube'
-      ? '制卡队列 ' + total + ' · 点此展开 · 可生成 ' + here
-      : '制卡队列 ' + total + ' · 点此展开';
-  }
-  const genEl = hibikiChip.querySelector('.hibiki-queue-gen');
-  if (genEl) genEl.style.display = hibikiSite() === 'youtube' ? 'inline-block' : 'none';
-  hibikiRenderQueueList();
-}
-
-// 队列项的简短标签：优先入队时存的句子，其次表达/词字段，末尾回退站点名。
-function hibikiQueueItemLabel(q) {
-  const raw = (q && (q.sentence || (q.fields && (q.fields.expression || q.fields.word || q.fields.term)))) || '';
-  const txt = String(raw).trim();
-  if (txt) return txt.length > 30 ? txt.slice(0, 30) + '…' : txt;
-  return (q && q.site) ? q.site : '(空)';
-}
-
-// 渲染/刷新展开的队列列表：每项一行（简短标签 + 删除按钮）。删除按 id 走 hibikiRemoveQueued。
-function hibikiRenderQueueList() {
-  if (!hibikiChip) return;
-  const list = hibikiChip.querySelector('.hibiki-queue-list');
-  if (!list) return;
-  list.textContent = '';
-  list.style.display = hibikiChipExpanded ? 'block' : 'none';
-  if (!hibikiChipExpanded) return;
-  for (const q of hibikiQueue) {
-    const row = document.createElement('div');
-    row.className = 'hibiki-queue-row';
-    const text = document.createElement('span');
-    text.className = 'hibiki-queue-row-text';
-    text.textContent = hibikiQueueItemLabel(q);
-    const del = document.createElement('button');
-    del.className = 'hibiki-queue-row-del';
-    del.type = 'button';
-    del.textContent = '×';
-    del.title = '从队列移除';
-    const id = q.id;
-    del.addEventListener('click', (e) => {
-      e.stopPropagation(); // 别冒泡到头部触发折叠
-      hibikiRemoveQueued([id]);
-    });
-    row.appendChild(text);
-    row.appendChild(del);
-    list.appendChild(row);
-  }
-}
+// TODO-1221：页面右下角制卡队列 chip 已删——队列 UI 统一到浏览器工具栏图标 popup（vendor/action-popup.html）。
+// 队列数据仍以 chrome.storage.local 的 hibikiQueue 为单一真相源，供图标 popup 读取/删除/生成。
 try { hibikiQueueLoad(); } catch (_) {}
 
 /**
@@ -369,7 +271,11 @@ let hibikiNfBatchRunning = false;
 // （跨集续用，由 nfFinish 收尾）。只移除成功的本集项。
 async function hibikiRunNetflixBatch() {
   const nfId = hibikiNetflixId();
-  const items = hibikiQueue.filter((q) => q.site === 'netflix' && q.netflixId === nfId);
+  // TODO-1217：按视频时间升序，逐句 seek 单调前进（乱序会往回跳，放大抖动）。filter 已产生新数组，
+  // sort 不影响作为跨标签真相源的 hibikiQueue。
+  const items = hibikiQueue
+    .filter((q) => q.site === 'netflix' && q.netflixId === nfId)
+    .sort((a, b) => (a.startV || 0) - (b.startV || 0));
   if (!items.length) return;
   const v = document.querySelector('video');
   if (!v) return;
@@ -378,7 +284,12 @@ async function hibikiRunNetflixBatch() {
   const wasPlaying = !v.paused;
   const hideStyle = document.createElement('style');
   hideStyle.id = 'hibiki-nf-hide-sub';
-  hideStyle.textContent = '.player-timedtext{visibility:hidden!important}';
+  // TODO-1216：藏字幕轨（GIF 不烧字幕）+ 藏 Netflix 控制/进度条——逐句 seek 与结尾 pause 会强制
+  // Netflix 显控制条，落在录制窗会被录进 clip。多选择器兜底 Netflix 改类名（同下方字幕兜底策略）。
+  hideStyle.textContent =
+    '.player-timedtext{visibility:hidden!important}' +
+    '.watch-video--bottom-controls-container,.PlayerControlsNeo__layout,' +
+    '[data-uia="controls-standard"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
   const prevCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
@@ -394,7 +305,8 @@ async function hibikiRunNetflixBatch() {
       try { window.removeEventListener('message', onMsg); } catch (_) {}
       resolve();
     };
-    const onSeeked = () => finish();
+    // TODO-1217：落点接近目标才算完成，避免上一次滞后的 seeked 事件提前满足本次 seek。
+    const onSeeked = () => { if (Math.abs(v.currentTime * 1000 - ms) < 400) finish(); };
     const onMsg = (e) => { if (e.source === window && e.data && e.data.__hibikiNf === 'seekDone') finish(); };
     v.addEventListener('seeked', onSeeked);
     window.addEventListener('message', onMsg);
@@ -468,9 +380,12 @@ async function hibikiRunNetflixBatch() {
     // cursor:none / 藏字幕样式泄漏到用户可见界面（循环外抛异常留可见副作用的根因）。
     try { hideStyle.remove(); } catch (_) {}
     document.body.style.cursor = prevCursor;
-    // TODO-1175：批量停在最后一句 + 暂停态 → 回到批量前的位置并恢复原播放/暂停态。
-    try { await seekTo(resumeAt); } catch (_) {}
-    if (wasPlaying) { try { await v.play(); } catch (_) {} }
+    // TODO-1175/1217：仅当批量前正在播放时才回原位并续播（暂停态制卡不回跳，消除「跳过去又秒挑
+    // 回来」的刺眼跳动）；批量前是暂停态则停在当前句、不回跳。
+    if (wasPlaying) {
+      try { await seekTo(resumeAt); } catch (_) {}
+      try { await v.play(); } catch (_) {}
+    }
   }
   await hibikiRemoveQueued(okIds);
   if (unconfigured > 0 && typeof window.hibikiToast === 'function') {
@@ -676,6 +591,15 @@ document.addEventListener('mousemove', (e) => {
   // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 hoshiSelection.selection，
   // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 在扩展里经 bridge-shim 是 no-op（无副作用）。
   const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, HIBIKI_MAX_LEN, e.clientX, e.clientY);
+  // TODO-1218②：立刻快照被查词的锚点几何（selection.js getSelectionRect）。不能等响应回来才量——
+  // 那时并发的 selectText 可能已清掉 hoshiSelection.selection → highlightSelection 返回 null → 锚点
+  // 退回鼠标坐标（弹窗比词底高半行）。随响应传给 hibikiRender 作回退锚点。
+  let hibikiAnchorRect = null;
+  try {
+    if (window.hoshiSelection && typeof window.hoshiSelection.getSelectionRect === 'function') {
+      hibikiAnchorRect = window.hoshiSelection.getSelectionRect(e.clientX, e.clientY);
+    }
+  } catch (_) { hibikiAnchorRect = null; }
   try { document.documentElement.dataset.hibikiTerm = term || ''; } catch (_) {}
   if (!term || !term.trim()) return;
   if (term === hibikiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
@@ -707,7 +631,7 @@ document.addEventListener('mousemove', (e) => {
         ? resp.data.result.bestLength
         : 0;
       const termLen = best > 0 ? best : term.length;
-      hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
+      hibikiRender(resp.data.popupJson, termLen, resp.data.theme, hibikiAnchorRect);
     });
   } catch (_) {
     hibikiPending = false; // 「Extension context invalidated」：静默，等用户重载页面
@@ -733,7 +657,7 @@ window.__hibikiOnLinkClick = function (query) {
   } catch (_) { /* 扩展上下文失效：静默 */ }
 };
 
-function hibikiRender(popupJson, termLen, theme) {
+function hibikiRender(popupJson, termLen, theme, anchorRect) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
   // （改主题下次查词即变）。无 theme 时用 popup.css 里的深色兜底。
@@ -752,6 +676,8 @@ function hibikiRender(popupJson, termLen, theme) {
       wordRect = window.hoshiSelection.highlightSelection(termLen);
     }
   } catch (_) { wordRect = null; }
+  // TODO-1218②：高亮丢失（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。
+  if (!wordRect && anchorRect) wordRect = anchorRect;
   // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';

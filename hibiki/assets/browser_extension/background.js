@@ -145,7 +145,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     const { base, token } = await cfg();
     try {
-      if (msg.type === 'lookup') {
+      if (msg.type === 'dictMediaConfig') {
+        // TODO-1215: content-script dict media image rewrite needs the server
+        // base URL + token to build GET /api/media/dictionary. Same source as
+        // lookup/mine (cfg()): installer-injected defaults or options override.
+        sendResponse({ ok: true, base, token });
+      } else if (msg.type === 'lookup') {
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },

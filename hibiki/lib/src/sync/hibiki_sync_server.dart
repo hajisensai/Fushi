@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/dictionary/dictionary_media_types.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart'
     show
         EmbeddedSubtitleTrack,
@@ -108,6 +109,18 @@ bool isAddressInUseError(SocketException e) {
       message.contains('shared flag to bind');
 }
 
+/// TODO-1215: dictionary media endpoint accepts these query token param
+/// names (aligned with yomitan-api server). A browser <img> GET carries no
+/// Authorization header, so it authenticates via ?token= instead.
+const List<String> _kDictionaryMediaTokenParams = <String>[
+  'token',
+  'apiKey',
+  'api_key',
+  'key',
+  'yomitanApiKey',
+  'yomitan_api_key',
+];
+
 class HibikiSyncServer {
   HibikiSyncServer({
     required String syncDataDir,
@@ -122,6 +135,8 @@ class HibikiSyncServer {
     String? hostFingerprint,
     String? deviceName,
     DateTime Function()? now,
+    Uint8List? Function(String dictionary, String path)?
+        dictionaryMediaProvider,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
@@ -133,6 +148,7 @@ class HibikiSyncServer {
         _miningService = miningService,
         _historyService = historyService,
         _libraryService = libraryService,
+        _dictionaryMediaProvider = dictionaryMediaProvider,
         _now = now ?? DateTime.now;
 
   final String syncDataDir;
@@ -155,6 +171,13 @@ class HibikiSyncServer {
   final HibikiRemoteMiningService? _miningService;
   final HibikiRemoteHistoryService? _historyService;
   final HibikiLibraryHostService? _libraryService;
+
+  /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
+  /// Injected rather than depending on the HoshiDicts singleton directly, so
+  /// the server has no compile-time coupling to the dictionary engine and
+  /// stays unit-testable. Returns null -> the media endpoint answers 404.
+  final Uint8List? Function(String dictionary, String path)?
+      _dictionaryMediaProvider;
   final DateTime Function() _now;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
@@ -294,6 +317,16 @@ class HibikiSyncServer {
         if (_isLookupAudioFilePath(request.url.path)) {
           return innerHandler(request);
         }
+        // TODO-1215: the dictionary media endpoint is fetched by a web page
+        // <img src> GET, which carries no Authorization header (same as
+        // /api/lookup/audio/file). It authenticates via a ?token= query
+        // param instead; a valid token passes here, an invalid/absent one
+        // falls through to the Basic check below (in-app / Basic clients
+        // still work) and ultimately 401s.
+        if (_isDictionaryMediaPath(request.url.path) &&
+            _dictionaryMediaTokenValid(request)) {
+          return innerHandler(request);
+        }
         final auth = request.headers['authorization'];
         if (auth == null || !await _validateAuth(auth)) {
           return shelf.Response(401,
@@ -395,6 +428,10 @@ class HibikiSyncServer {
     if (reqPath == '/api/mine') {
       if (method != 'POST') return shelf.Response(405);
       return _handleMine(request);
+    }
+    if (reqPath == '/api/media/dictionary') {
+      if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
+      return _handleDictionaryMedia(request, method == 'HEAD');
     }
     if (reqPath == '/api/duplicate') {
       if (method != 'POST') return shelf.Response(405);
@@ -806,6 +843,63 @@ class HibikiSyncServer {
         'url': null,
         'contentType': null,
       });
+
+  static bool _isDictionaryMediaPath(String urlPath) =>
+      urlPath == 'api/media/dictionary';
+
+  /// Validates that [request]'s query token (?token= etc.) equals [_token].
+  /// Used to admit the dictionary media endpoint without Basic auth (a web
+  /// page <img> GET has no Authorization header). Constant-time comparison.
+  bool _dictionaryMediaTokenValid(shelf.Request request) {
+    for (final String name in _kDictionaryMediaTokenParams) {
+      final String? value = request.url.queryParameters[name];
+      if (value != null &&
+          _constantTimeEquals(
+            Uint8List.fromList(utf8.encode(value)),
+            Uint8List.fromList(utf8.encode(_token)),
+          )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// TODO-1215: GET /api/media/dictionary?dictionary=<name>&path=<rel>&token=<t>
+  /// -- dictionary gaiji / pitch-accent SVG (etc.) media bytes. The browser
+  /// extension popup rewrites a term's <img src> from the in-app image:// URL
+  /// to this endpoint (a real browser has no image:// handler). Bytes are
+  /// resolved by the injected [_dictionaryMediaProvider] (bridged to
+  /// HoshiDicts.getMediaFile in-app); the MIME reuses the same
+  /// [dictionaryMediaMimeType] as the app scheme handler.
+  shelf.Response _handleDictionaryMedia(shelf.Request request, bool headOnly) {
+    final Uint8List? Function(String, String)? provider =
+        _dictionaryMediaProvider;
+    if (provider == null) return shelf.Response.notFound('Media off');
+    final String dictionary = request.url.queryParameters['dictionary'] ?? '';
+    final String path = normalizeDictionaryMediaPath(
+      request.url.queryParameters['path'] ?? '',
+    );
+    if (dictionary.isEmpty || path.isEmpty) {
+      return shelf.Response.notFound('Not found');
+    }
+    final Uint8List? bytes = provider(dictionary, path);
+    if (bytes == null || bytes.isEmpty) {
+      return shelf.Response.notFound('Not found');
+    }
+    final String mime = dictionaryMediaMimeType(path);
+    return shelf.Response.ok(
+      headOnly ? null : bytes,
+      headers: <String, String>{
+        'Content-Type': mime,
+        'Content-Length': '${bytes.length}',
+        // The extension loads the image cross-origin on a real web page (and
+        // may drawImage it onto a canvas for monochrome recolor); allow CORS
+        // so any read-back path never taints the canvas. Media is
+        // non-sensitive and already token-authenticated.
+        'Access-Control-Allow-Origin': '*',
+      },
+    );
+  }
 
   Future<shelf.Response> _handleMine(shelf.Request request) async {
     final HibikiRemoteMiningService? svc = _miningService;

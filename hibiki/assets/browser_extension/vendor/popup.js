@@ -322,6 +322,35 @@ function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
     return Math.abs(Math.log(naturalInvAspectRatio / invAspectRatio)) > Math.log(1.5);
 }
 
+// TODO-1215 安全：扩展环境下别把带 sync token 的媒体 URL 塞进宿主页 DOM——宿主页任意脚本可读
+// <img src> 抠出原始 sync token（该 token 授权 /api/lookup、/api/mine、DELETE /api/library/* 与整棵
+// sync-data WebDAV 读写删）。改在隔离世界（content-script 世界有 localhost host_permissions）自己
+// fetch 媒体字节 → blob: URL 设给 <img>，token 只出现在 fetch 调用里（URL query），绝不进 DOM。
+// app 内（window.__hibikiDictMedia 未设）保持原 URL 不变（image:// 由 app WebView 解析），零影响。
+function hibikiDictMediaIsExtension() {
+    return !!(typeof window !== 'undefined' && window.__hibikiDictMedia);
+}
+// 把 imageUrl 设给 imgEl：扩展 http 媒体端点 → fetch→blob（token 不进 DOM）；否则原样。
+// 失败走 onError（复现原 <img> error 路径）。load/error 后 revoke blob，防泄漏。
+function hibikiSetImageSrc(imgEl, imageUrl, onError) {
+    if (!hibikiDictMediaIsExtension() || !/^https?:\/\//i.test(imageUrl)) {
+        imgEl.src = imageUrl; // app 内或非 http（image://）：原样，token 场景不适用
+        return;
+    }
+    fetch(imageUrl).then((r) => {
+        if (!r.ok) throw new Error('media ' + r.status);
+        return r.blob();
+    }).then((blob) => {
+        const objUrl = URL.createObjectURL(blob);
+        const revoke = () => { try { URL.revokeObjectURL(objUrl); } catch (_) {} };
+        imgEl.addEventListener('load', revoke, { once: true });
+        imgEl.addEventListener('error', revoke, { once: true });
+        imgEl.src = objUrl;
+    }).catch((e) => {
+        if (typeof onError === 'function') onError(e);
+    });
+}
+
 function closeImageLightbox() {
     document.querySelector('.dict-image-lightbox')?.remove();
 }
@@ -335,7 +364,7 @@ function openImageLightbox(imageUrl, alt) {
 
     const image = document.createElement('img');
     image.className = 'dict-image-lightbox-image';
-    image.src = imageUrl;
+    hibikiSetImageSrc(image, imageUrl); // TODO-1215：token 不进 DOM
     image.alt = alt || '';
     overlay.appendChild(image);
 
@@ -716,7 +745,11 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 console.log('[IMG_ERROR]', path, imageUrl);
                 imageContainer.style.display = 'none';
             }, {once: true});
-            img.src = imageUrl;
+            // TODO-1215：扩展下 fetch→blob（token 不进 DOM）；fetch 失败走 onError 复现原 [IMG_ERROR] 路径。
+            hibikiSetImageSrc(img, imageUrl, () => {
+                console.log('[IMG_ERROR]', path, imageUrl);
+                imageContainer.style.display = 'none';
+            });
             imageContainer.appendChild(img);
         }
     } else {
@@ -767,7 +800,7 @@ function createDefinitionImageCanvas(imageUrl, alt, onLoad) {
     sourceImage.addEventListener('load', () => {
         onLoad(canvas, sourceImage);
     }, {once: true});
-    sourceImage.src = imageUrl;
+    hibikiSetImageSrc(sourceImage, imageUrl); // TODO-1215：token 不进 DOM（blob 同源，canvas 亦不被 taint）
     
     return canvas;
 }
@@ -1590,6 +1623,19 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
                 if (/<[a-z][\s\S]*>/i.test(content)) {
                     const wrapper = el('div');
                     wrapper.innerHTML = rewriteDictLinks(content, dictName);
+                    // TODO-1215 安全：扩展环境下 rewriteDictLinks 对相对路径 <img> 只写了无 token 的
+                    // 占位 data-* 属性（src 留空）；这里逐个走 fetch→blob 补 src——token 只在 fetch 调用里，
+                    // 绝不进宿主页 DOM。app 内不产生这些占位属性 → 此循环空转，行为不变。
+                    wrapper.querySelectorAll('img[data-hibiki-media-path]').forEach((img) => {
+                        const mediaPath = decodeURIComponent(img.dataset.hibikiMediaPath || '');
+                        const mediaDict = decodeURIComponent(img.dataset.hibikiMediaDict || '');
+                        const mediaUrl = rewriteDictionaryMediaPath(mediaPath, mediaDict);
+                        if (mediaUrl === null) return;
+                        hibikiSetImageSrc(img, mediaUrl, () => {
+                            console.log('[IMG_ERROR]', mediaPath, mediaUrl);
+                            img.style.display = 'none';
+                        });
+                    });
                     parent.appendChild(wrapper);
                 } else {
                     renderStructuredContent(parent, content, null, dictName);
@@ -1824,12 +1870,23 @@ window.updatePopupIncremental = function() {
 };
 
 
+// TODO-1218①：popup.js 这些页面级 selectText 监听器本为 app 内嵌套弹窗设计；扩展注入宿主页后，
+// 宿主页自身的 hover/click 会误触 selectText→clearSelection，拆掉 content.js 刚画的划词高亮
+// （用户报「高亮闪一下就没」+ 弹窗比词高半行）。故扩展环境只处理落在弹窗容器 #entries-container 内
+// 的事件（content.js 设 window.__hibikiExtension；同隔离世界共享 window）。app 内此 flag 未设，行为不变。
+function hibikiPopupEventOutside(target) {
+    if (!window.__hibikiExtension) return false;
+    const el = (target && target.nodeType === Node.TEXT_NODE) ? target.parentElement : target;
+    return !(el && el.closest && el.closest('#entries-container'));
+}
+
 let _popupMouseDownPos = null;
 document.addEventListener('mousedown', (e) => {
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
 });
 
 document.addEventListener('click', (e) => {
+    if (hibikiPopupEventOutside(e.target)) return; // TODO-1218①：宿主页点击不触发弹窗内 selectText
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
         const dy = e.clientY - _popupMouseDownPos.y;
@@ -1860,6 +1917,7 @@ document.addEventListener('click', (e) => {
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 document.addEventListener('mousemove', function(e) {
+    if (hibikiPopupEventOutside(e.target)) return; // TODO-1218①：宿主页 Shift-hover 不触发 selectText→clearSelection
     if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;
