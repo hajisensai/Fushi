@@ -101,6 +101,20 @@
   // caller that still rotates the root id (nested-only rebuilds, tests).
   var lastRootId = null;
 
+  // TODO-1189 — the layer translation applied by measureAndReport so the union
+  // bbox top-left maps to the window origin. The layer element is shifted by
+  // (-minLeft, -minTop); a shell's REAL position relative to the window is
+  // therefore (shell.style.left - layerOffsetLeft, shell.style.top -
+  // layerOffsetTop). Hit-testing (frameIdAtPoint) compares C++-forwarded clicks
+  // in WINDOW coordinates, so it MUST subtract these offsets — otherwise nested
+  // sub-popups pushed up/left off the cursor (screen-edge second lookup, minLeft/
+  // minTop < 0) hit-test against un-shifted shell coords and a click ON the card
+  // is misread as an empty gap, dismissing the whole stack. Kept as host-scope
+  // fields (minLeft/minTop are locals inside measureAndReport). Default 0 = no
+  // shift (single popup / down-right cascade), matching the un-shifted layer.
+  var layerOffsetLeft = 0;
+  var layerOffsetTop = 0;
+
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
   // it identically to popup.js-originated messages. Read-only host messages need
@@ -848,6 +862,12 @@
       layerEl.style.left = (-minLeft) + 'px';
       layerEl.style.top = (-minTop) + 'px';
     }
+    // TODO-1189 — remember the applied layer translation so frameIdAtPoint can
+    // map shell coords back to WINDOW coords when hit-testing. The layer is
+    // shifted by (-minLeft, -minTop); the amount a shell's window position is
+    // reduced by is therefore (minLeft, minTop).
+    layerOffsetLeft = minLeft;
+    layerOffsetTop = minTop;
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
     var box = {
@@ -946,8 +966,17 @@
   function frameIdAtPoint(x, y) {
     var deepest = null;
     frames.forEach(function (record, id) {
-      var left = parseFloat(record.shell.style.left) || 0;
-      var top = parseFloat(record.shell.style.top) || 0;
+      // TODO-1189 — record.shell.style.left/top are coordinates INSIDE the layer,
+      // which measureAndReport shifted by (-layerOffsetLeft, -layerOffsetTop) to
+      // pin the union bbox to the window origin. The incoming (x, y) is in WINDOW
+      // coordinates (C++ WH_MOUSE_LL forwards window-relative CSS px), so map each
+      // shell back to window space by subtracting the layer offset. Without this
+      // a nested sub-popup pushed off the cursor (minLeft/minTop < 0) is hit-
+      // tested against stale un-shifted coords and a click ON its card is misread
+      // as an empty gap, wrongly dismissing the whole stack. Offsets are 0 for a
+      // single popup / down-right cascade, so this is a no-op there.
+      var left = (parseFloat(record.shell.style.left) || 0) - layerOffsetLeft;
+      var top = (parseFloat(record.shell.style.top) || 0) - layerOffsetTop;
       var width = parseFloat(record.shell.style.width) || 0;
       var height = parseFloat(record.shell.style.height) || 0;
       if (x >= left && x <= left + width && y >= top && y <= top + height) {

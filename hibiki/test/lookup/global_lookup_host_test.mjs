@@ -1128,4 +1128,89 @@ function flushTimers() {
   );
 }
 
+// 34. TODO-1189 (layer-shift hit-test): when a nested sub-popup is pushed
+//     UP/LEFT off the cursor (screen-edge second lookup -> minLeft/minTop < 0),
+//     measureAndReport shifts the layer by (-minLeft,-minTop) so the union bbox
+//     top-left maps to the window origin. frameIdAtPoint receives clicks in
+//     WINDOW coords (C++ WH_MOUSE_LL), so it MUST subtract the recorded layer
+//     offset to map each shell back to window space. Regression: before the fix
+//     it compared window clicks against un-shifted shell coords, so a click ON
+//     the parent card (window space) fell in NO raw rect -> misread as an empty
+//     gap -> dismissRootWithSlide() closed the WHOLE stack (the reported bug:
+//     tap child audio/favorite, parent stack vanishes).
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      // Root pinned at (200,200); child pushed to NEGATIVE coords (off the
+      // cursor toward the screen edge) so minLeft=minTop=-50 and the layer is
+      // shifted by (50,50). Window rects: root (250..350), child (0..100).
+      { id: 'frame-0', parentIndex: -1, frame: { left: 200, top: 200, width: 100, height: 100 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -50, top: -50, width: 100, height: 100 }, settingsJs: '' },
+    ],
+  });
+  // The layer got shifted (proves minLeft/minTop < 0 translation happened).
+  const layer = document.getElementById('global-lookup-host-layer');
+  assert.strictEqual(layer.style.left, '50px', 'layer shifted by -minLeft (=50)');
+  assert.strictEqual(layer.style.top, '50px', 'layer shifted by -minTop (=50)');
+  hostPostLog = [];
+  // (a) A click on the ROOT card at its WINDOW position (330,330): inside the
+  //     root's window rect (250..350) but OUTSIDE every RAW shell rect
+  //     (root raw 200..300, child raw -50..50) — the exact coordinate that the
+  //     un-shifted hit-test misread as a gap and dismissed the stack.
+  const rootHit = host.handleGlobalClick(330, 330);
+  assert.strictEqual(rootHit, true,
+    'a click on the parent card (window coords) hits the shell, not a gap');
+  assert.strictEqual(host.frameIdAtPoint(330, 330), 'frame-0',
+    'window (330,330) maps back to the ROOT shell after offset compensation');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'TODO-1189: a click on the shifted parent card does NOT dismiss the stack');
+  // (b) A click on the CHILD card at its WINDOW position (30,30): child window
+  //     rect is (0..100) after the shift -> deepest hit is frame-1, no dismiss.
+  hostPostLog = [];
+  assert.strictEqual(host.handleGlobalClick(30, 30), true,
+    'a click on the shifted child card hits its shell');
+  assert.strictEqual(host.frameIdAtPoint(30, 30), 'frame-1',
+    'window (30,30) maps back to the CHILD shell (deepest)');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'TODO-1189: a click on the shifted child card does NOT dismiss the stack');
+  // (c) A TRUE gap (outside every WINDOW rect) still dismisses the root — the
+  //     fix compensates the offset, it does not disable gap-dismiss.
+  hostPostLog = [];
+  assert.strictEqual(host.handleGlobalClick(500, 500), false,
+    'a click outside every window rect misses all shells');
+  const dismiss = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(dismiss, 'TODO-1189: a genuine gap click still dismisses the root');
+  assert.strictEqual(dismiss.args[0], 0, 'gap dismiss targets the root (index 0)');
+}
+
+// 35. TODO-1189 regression (offset=0): a single popup / down-right cascade has
+//     minLeft=minTop=0, so the layer is NOT shifted and hit-testing uses shell
+//     coords directly (window == layer space). Confirms the offset compensation
+//     is a no-op in the common case (no behavior change).
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 100 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 60, top: 40, width: 100, height: 100 }, settingsJs: '' },
+    ],
+  });
+  const layer = document.getElementById('global-lookup-host-layer');
+  assert.strictEqual(layer.style.left, '0px', 'no layer shift (minLeft=0)');
+  assert.strictEqual(layer.style.top, '0px', 'no layer shift (minTop=0)');
+  hostPostLog = [];
+  // Click on the child card at its (unshifted) coords -> deepest hit, no dismiss.
+  assert.strictEqual(host.frameIdAtPoint(80, 60), 'frame-1',
+    'offset=0: hit-test uses shell coords directly (child on top)');
+  assert.strictEqual(host.handleGlobalClick(10, 10), true,
+    'offset=0: a click on the root card still hits');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'offset=0: card clicks do not dismiss (no regression)');
+  const gap = host.handleGlobalClick(400, 400);
+  assert.strictEqual(gap, false, 'offset=0: a gap click still misses');
+  assert.ok(hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'offset=0: a gap click still dismisses the root');
+}
+
 console.log('global_lookup_host_test: PASS');

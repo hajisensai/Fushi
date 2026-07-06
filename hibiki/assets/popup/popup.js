@@ -2867,7 +2867,14 @@ document.addEventListener('click', (e) => {
     }
 
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
-    if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
+    // TODO-1189 — audio/mine/favorite are per-entry action buttons; a click on any
+    // of them must NEVER reach the document dismiss path. .favorite-button was
+    // missing here, so tapping ☆ on a PARENT card fell through to the .entry
+    // branch below: with __hasChildPopup true it posted tapOutside ->
+    // dismissDescendantsOf(parent), wrongly closing the child sub-popup (app-in).
+    // It also hardens the app-OUT global overlay path (host frameIdAtPoint).
+    if (target?.closest('.mine-button') || target?.closest('.audio-button') ||
+        target?.closest('.favorite-button')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
         if (target?.closest('a[href]')) return;
