@@ -148,6 +148,100 @@ void main() {
     });
   });
 
+  group('BackupImportOverlayView（TODO-1151 validating：读取/预览遮罩）', () {
+    testWidgets('进入：validating 显示「正在读取备份…」+ 校验提示 + 不确定进度条 + 取消按钮，无重启',
+        (WidgetTester tester) async {
+      // 根治：选完文件后 validate + 合并预览要数十秒，旧版只有设置行 24px 小圈。
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            ),
+            home: BackupImportOverlayView(
+              phase: BackupImportPhase.validating,
+              onRestart: () {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // 明确告知用户在读取/校验备份——这正是缺口窗口期缺的语义反馈。
+      expect(find.text(t.backup_import_validating_title), findsOneWidget);
+      expect(find.text(t.backup_import_validating_hint), findsOneWidget);
+      // 读取/预览无字节进度 → 不确定进度条（value 为 null）。
+      final LinearProgressIndicator bar =
+          tester.widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator));
+      expect(bar.value, isNull);
+      // validating 期给「取消」出口（DB 仍打开，可安全中断回设置页）。
+      expect(find.text(t.dialog_cancel), findsOneWidget);
+      // 尚未结束/未确认，不得出现「立即重启」出口或绿✓。
+      expect(find.text(t.backup_import_restart_button), findsNothing);
+      expect(find.byIcon(Icons.check_circle), findsNothing);
+      // 背景非纯黑。
+      final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+      expect(scaffold.backgroundColor, isNot(equals(Colors.black)));
+    });
+
+    testWidgets('取消：点「取消」触发 onCancel（作废校验 token + 退出遮罩回设置页）',
+        (WidgetTester tester) async {
+      int cancels = 0;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            ),
+            home: BackupImportOverlayView(
+              phase: BackupImportPhase.validating,
+              onRestart: () {},
+              onCancel: () => cancels++,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(cancels, 0);
+      await tester.tap(find.byType(OutlinedButton));
+      await tester.pump();
+      expect(cancels, 1);
+    });
+
+    testWidgets('推进到确认：running 相位不再显示取消按钮（validating→确认后进入的下一相位）',
+        (WidgetTester tester) async {
+      // validating 退出遮罩、弹确认框、确认后进入 running；running 期是不可取消的关库解压，
+      // 故取消按钮只属于 validating，running 不得再出现（相位流转的边界守卫）。
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            ),
+            home: BackupImportOverlayView(
+              phase: BackupImportPhase.running,
+              onRestart: () {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text(t.backup_import_overlay_title), findsOneWidget);
+      expect(find.byType(OutlinedButton), findsNothing);
+      expect(find.text(t.dialog_cancel), findsNothing);
+      // validating 的读取文案不得泄漏到 running。
+      expect(find.text(t.backup_import_validating_title), findsNothing);
+    });
+  });
+
   group('源码守卫 (TODO-1151)', () {
     File readSource(String rel) {
       final File f = File(rel);
@@ -216,6 +310,60 @@ void main() {
       final String fnBody = src.substring(fnIdx, fnIdx + 200);
       expect(fnBody.contains('FlutterExitApp.exitApp()'), isTrue);
       expect(fnBody.contains('exit(0)'), isTrue);
+    });
+
+    test('app_model：BackupImportPhase 含 validating 相位 + token/取消/退出方法', () {
+      final String src =
+          readSource('lib/src/models/app_model.dart').readAsStringSync();
+      expect(
+        src.contains(
+            'enum BackupImportPhase { validating, running, done, failed }'),
+        isTrue,
+        reason: 'validating 必须是 BackupImportPhase 的首个相位',
+      );
+      // 干净 token/flag 机制：进入校验、判定是否最新、取消作废、成功退出。
+      expect(src.contains('int beginBackupValidating()'), isTrue);
+      expect(src.contains('bool isBackupValidatingCurrent(int token)'), isTrue);
+      expect(src.contains('void cancelBackupValidating()'), isTrue);
+      expect(src.contains('void endBackupValidating()'), isTrue);
+    });
+
+    test('backup.part：validate/preview 期用 validating 遮罩，退出后经全局 navigator 弹确认框',
+        () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
+              .readAsStringSync();
+      final int importIdx = src.indexOf('Future<void> _import()');
+      final int beginValIdx =
+          src.indexOf('appModel.beginBackupValidating()', importIdx);
+      final int endValIdx =
+          src.indexOf('appModel.endBackupValidating()', importIdx);
+      final int confirmIdx = src.indexOf('_showConfirmDialog(', importIdx);
+      final int beginImportIdx =
+          src.indexOf('appModel.beginBackupImport()', importIdx);
+      expect(beginValIdx, greaterThan(0),
+          reason: 'validate/preview 前必须先上屏 validating 遮罩');
+      // 流转：进 validating → 退 validating → 弹确认框 → 进 running。
+      expect(beginValIdx, lessThan(endValIdx),
+          reason: '先进 validating 遮罩，再在 preview 完成后退出');
+      expect(endValIdx, lessThan(confirmIdx),
+          reason: '必须先退出遮罩再弹确认框（确认框不能弹在被替换掉的遮罩树里）');
+      expect(confirmIdx, lessThan(beginImportIdx),
+          reason: '确认后才进 running 导入相位');
+      // 确认框宿主是全局 navigatorKey 的正常 MaterialApp（本设置页此刻已卸载）。
+      expect(src.contains('appModel.navigatorKey.currentContext'), isTrue,
+          reason: '退出遮罩后须经全局 navigatorKey 取 root context 弹确认框');
+      // in-flight 后台 isolate 结果回来若已取消/被取代则丢弃（token 判定，不吞异常硬编码）。
+      expect(
+          src.contains('appModel.isBackupValidatingCurrent(validatingToken)'),
+          isTrue,
+          reason: 'validate/preview 结果消费前必须用 token 判定是否仍是最新');
+    });
+
+    test('main.dart：validating 遮罩接线 onCancel（cancelBackupValidating）', () {
+      final String src = readSource('lib/main.dart').readAsStringSync();
+      expect(src.contains('onCancel: appModel.cancelBackupValidating'), isTrue,
+          reason: 'validating 遮罩的取消按钮须接 cancelBackupValidating');
     });
   });
 }
