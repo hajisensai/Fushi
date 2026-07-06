@@ -1194,6 +1194,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             // TODO-1183: 确定进度条监听（只进度条重建，不整树重绘）。
             progress: appModel.backupImportProgress,
             onRestart: backupImportRestart,
+            // TODO-1151: validating 相位的「取消」——作废 in-flight 校验 token 并退出
+            // 遮罩回设置页（其它相位本视图不渲染取消按钮）。
+            onCancel: appModel.cancelBackupValidating,
           ),
         ),
       );
