@@ -80,9 +80,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ShelfReorderPage), findsOneWidget);
 
-      // 点左上角返回（AppBar leading BackButton）。旧实现这里会陷入
+      // 点左上角返回（TODO-1228 后 AppBar leading 改显式 HibikiIconButton(Icons.arrow_back)
+      // 取代隐式 BackButton，删 ✓ 后仍保留可聚焦退出件）。旧实现这里会陷入
       // maybePop → PopScope(canPop:false) → _finish → maybePop 死循环，页面退不出。
-      final Finder back = find.byType(BackButton);
+      final Finder back = find.byIcon(Icons.arrow_back);
       expect(back, findsOneWidget, reason: 'AppBar 应有左上角返回按钮');
       await tester.tap(back);
       await tester.pumpAndSettle();
