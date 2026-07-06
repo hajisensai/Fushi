@@ -961,17 +961,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// （顶层 / 嵌套 / 重复查各一次）累加 [HibikiDatabase.addLookupCount]。best-effort，
   /// 失败吞掉并记日志（与 [addMiningCount] 记账同容错口径）。
   void _recordLookupCounter() {
-    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
-    unawaited(appModel.database
-        .addLookupCount(
-      bookKey: identity?.bookKey,
-      title: identity?.title ?? '',
-      sourceType: dictionarySourceType,
-      dateKey: statTodayKey(),
-    )
-        .catchError((Object e, StackTrace st) {
-      debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
-    }));
+    // best-effort：连同同步阶段（[AppModel.database] late 字段 getter 在 DB 未初始化
+    // 时会抛 LateInitializationError）一起吞掉——查词计数是旁路埋点，任何异常都不得
+    // 打断弹窗查词流程（否则 [DictionaryPopupController.beginTop] 会随查词一起崩）。
+    try {
+      final ({String? bookKey, String? title})? identity = lookupBookIdentity;
+      unawaited(appModel.database
+          .addLookupCount(
+        bookKey: identity?.bookKey,
+        title: identity?.title ?? '',
+        sourceType: dictionarySourceType,
+        dateKey: statTodayKey(),
+      )
+          .catchError((Object e, StackTrace st) {
+        debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
+      }));
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] addLookupCount failed (sync): $e\n$st');
+    }
   }
 
   /// TODO-948②：弹窗右部「收藏」按钮回调（阅读器 EPUB 走本基类的 [_buildPopupLayer]，
