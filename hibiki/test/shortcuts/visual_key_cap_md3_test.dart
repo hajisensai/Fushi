@@ -15,6 +15,12 @@ void main() {
   final String layoutSrc = File(
     'lib/src/shortcuts/visual/keyboard_layout_view.dart',
   ).readAsStringSync();
+  final String gamepadLayoutSrc = File(
+    'lib/src/shortcuts/visual/gamepad_layout_view.dart',
+  ).readAsStringSync();
+  final String gamepadButtonSrc = File(
+    'lib/src/shortcuts/visual/gamepad_button_widget.dart',
+  ).readAsStringSync();
 
   const List<String> forbidden = <String>[
     'BorderRadius.circular(',
@@ -37,6 +43,30 @@ void main() {
           reason:
               'KeyboardLayoutView must not reopen MD3 decision via "$token"');
     }
+  });
+
+  test('gamepad layout view stays free of bare MD3 literals (TODO-942 P1)', () {
+    for (final String token in forbidden) {
+      expect(gamepadLayoutSrc.contains(token), isFalse,
+          reason:
+              'GamepadLayoutView must not reopen MD3 decision via "$token"');
+    }
+  });
+
+  test('gamepad button widget stays free of bare MD3 literals', () {
+    for (final String token in forbidden) {
+      expect(gamepadButtonSrc.contains(token), isFalse,
+          reason:
+              'GamepadButtonWidget must not reopen MD3 decision via "$token"');
+    }
+  });
+
+  test('gamepad figure shell routes radius/border through tokens', () {
+    expect(gamepadLayoutSrc.contains('HibikiDesignTokens.of(context)'), isTrue);
+    expect(gamepadLayoutSrc.contains('tokens.radii.'), isTrue,
+        reason: 'shell corner radius must come from the token scale');
+    expect(gamepadLayoutSrc.contains('outlineVariant'), isTrue,
+        reason: 'shell outline must use the outlineVariant scheme role');
   });
 
   test('key cap routes radii/surfaces through HibikiDesignTokens', () {

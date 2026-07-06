@@ -60,6 +60,7 @@ import 'package:hibiki/src/models/audio_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
@@ -532,10 +533,21 @@ class AppModel with ChangeNotifier {
     floatingLyricContextLines: () => floatingLyricContextLines,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
     onFloatingLyricLookup: (String text, int index) {
-      // app 级（无 reader attach）桌面悬浮窗点词：路由进常驻主窗口的查词宿主
-      // [FloatingLyricLookupHost]（main.dart 根 builder 挂载），不依赖进任何书
-      // （TODO-354 ①）。reader attach 时会换成 reader 的弹窗查词处理器。
-      FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+      // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
+      // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
+      // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
+      // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
+      // reader 的点词处理器。
+      unawaited(() async {
+        if (await tryFloatingLyricGlobalLookup(
+          appModel: this,
+          text: text,
+          index: index,
+        )) {
+          return;
+        }
+        FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+      }());
     },
     controlStreams: AudioControlStreams(
       playStream: audioCtrl.playStream,
