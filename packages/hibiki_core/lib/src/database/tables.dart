@@ -394,6 +394,14 @@ class VideoBooks extends Table {
       .nullable()
       .references(MediaSources, #id, onDelete: KeyAction.setNull)();
 
+  /// TODO-1157：流媒体书的重开规格（JSON）。非空当且仅当这是一条「粘贴 URL 导入」的
+  /// 流媒体书（判据以 [videoPath] 是 http/https 为准，本列只补 videoPath 装不下的
+  /// 外挂字幕 URL / 防盗链 header）：`{subtitleUrl,subtitleFileName,referer,userAgent}`。
+  /// 本地文件视频恒 null。存的是「原始粘贴 URL」侧信息，重开时据此重建
+  /// UrlStreamVideoClient（YouTube 按 videoPath 重解析），使流媒体像本地视频一样入库、
+  /// 在书架持久、可重复打开。null = 无外挂字幕/header 的直链流或本地视频。
+  TextColumn get streamSpecJson => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {bookUid};
 }

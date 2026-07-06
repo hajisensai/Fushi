@@ -24,6 +24,42 @@ Future<HibikiDatabase> _openV33DbWithoutStatisticsTombstones() async {
   return db;
 }
 
+/// Opens a `user_version = 34` database whose video_books table lacks the
+/// stream_spec_json column, forcing the real `if (from < 35) addColumn(
+/// videoBooks.streamSpecJson)` onUpgrade branch (TODO-1157) to run.
+Future<HibikiDatabase> _openV34DbWithoutStreamSpecJson() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Minimal video_books shaped like the v34 schema (no stream_spec_json).
+        rawDb.execute('CREATE TABLE video_books ('
+            'book_uid TEXT NOT NULL PRIMARY KEY, '
+            'title TEXT NOT NULL, '
+            'video_path TEXT NOT NULL, '
+            'subtitle_source TEXT, '
+            'secondary_subtitle_source TEXT, '
+            'subtitle_format TEXT, '
+            'embedded_subtitle_track INTEGER, '
+            'cover_path TEXT, '
+            'last_position_ms INTEGER NOT NULL DEFAULT 0, '
+            'imported_at INTEGER, '
+            'playlist_json TEXT, '
+            'current_episode INTEGER NOT NULL DEFAULT 0, '
+            'audio_track_id TEXT, '
+            'delay_ms INTEGER NOT NULL DEFAULT 0, '
+            'completed_at INTEGER, '
+            'source_id INTEGER)');
+        rawDb.execute('INSERT INTO video_books (book_uid, title, video_path, '
+            'last_position_ms, current_episode, delay_ms) VALUES '
+            "('video/stream/x', 't', 'https://x/y.m3u8', 0, 0, 0)");
+        rawDb.execute('PRAGMA user_version = 34');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 /// Opens a `user_version = 14` database that lacks the sync_baselines table,
 /// forcing the real `if (from < 15) createTable(syncBaselines)` onUpgrade
 /// branch in database.dart to run when HibikiDatabase opens it.
@@ -888,9 +924,9 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 34,
+      expect(db.schemaVersion, 35,
           reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones); TODO-894 backfill behavior '
+              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + TODO-1157 v35 stream_spec_json); TODO-894 backfill behavior '
               'asserted by the srt_books '
               'checks below');
 
@@ -1073,9 +1109,9 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 34,
+      expect(db.schemaVersion, 35,
           reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34); v29->v30 series/shelf_entries '
+              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 + TODO-1157 v35); v29->v30 series/shelf_entries '
               'creation asserted below');
 
       // Both new tables now exist.
@@ -1123,7 +1159,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 34);
+      expect(db.schemaVersion, 35);
     });
 
     test(
@@ -1132,8 +1168,8 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 34,
-          reason: 'TODO-1204后续 bumps the global schemaVersion to 34');
+      expect(db.schemaVersion, 35,
+          reason: 'TODO-1157 bumps the global schemaVersion to 35');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1165,8 +1201,8 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 34,
-          reason: 'TODO-1204后续 bumps the global schemaVersion to 34');
+      expect(db.schemaVersion, 35,
+          reason: 'TODO-1157 bumps the global schemaVersion to 35');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1197,9 +1233,40 @@ void main() {
       expect(tableNames, contains('statistics_tombstones'),
           reason: 'from<34 must createTable(statisticsTombstones)');
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 34);
+      expect(version.read<int>('user_version'), db.schemaVersion);
       await db.insertStatisticsTombstone('A', 'book');
       expect(await db.getStatisticsTombstoneKeys(), contains(('A', 'book')));
+    });
+    test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
+        () async {
+      final db = await _openDb();
+      expect(db.schemaVersion, 35);
+      final cols =
+          await db.customSelect("PRAGMA table_info('video_books')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('stream_spec_json'),
+          reason: 'fresh createAll must include TODO-1157 stream_spec_json');
+    });
+
+    test(
+        'real v34->v35 adds video_books.stream_spec_json, preserves rows, '
+        'bumps user_version (TODO-1157)', () async {
+      final db = await _openV34DbWithoutStreamSpecJson();
+      // Opening triggers from<35 addColumn(streamSpecJson).
+      final cols =
+          await db.customSelect("PRAGMA table_info('video_books')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('stream_spec_json'),
+          reason: 'from<35 must addColumn(videoBooks.streamSpecJson)');
+      // 既有行保留、新列默认 NULL（无损迁移）。
+      final rows = await db
+          .customSelect(
+              "SELECT stream_spec_json FROM video_books WHERE book_uid='video/stream/x'")
+          .get();
+      expect(rows, hasLength(1));
+      expect(rows.single.data['stream_spec_json'], isNull);
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
     });
   });
 }

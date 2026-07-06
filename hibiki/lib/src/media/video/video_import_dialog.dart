@@ -13,11 +13,8 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
@@ -146,8 +143,11 @@ bool videoImportCanImport({
   required String? videoPath,
   required String? subtitlePath,
   required bool busy,
+  String? streamUrl,
 }) {
   if (busy) return false;
+  // TODO-1157：粘贴了可播流 URL 即可导入（把流媒体当视频源之一，像本地视频一样入库）。
+  if (streamUrl != null && isPlayableStreamUrl(streamUrl)) return true;
   if (videoPath == null) return false;
   // subtitlePath 可为 null：未选外挂字幕时用内嵌字幕轨。
   return true;
@@ -225,6 +225,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   bool get _canImport => videoImportCanImport(
         videoPath: _videoPath,
         subtitlePath: _subtitlePath,
+        streamUrl: _streamUrlController.text,
         busy: _busy,
       );
 
@@ -430,6 +431,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
 
   Future<void> _doImport() async {
     if (!_canImport) return;
+    // TODO-1157：粘贴了可播流 URL 时优先把它当视频源导入（进书架、可重开）；无 URL 才走
+    // 本地文件导入。流媒体与本地文件互斥填写，故 URL 有效即短路本地路径。
+    final String streamUrl = _streamUrlController.text.trim();
+    if (isPlayableStreamUrl(streamUrl)) {
+      await _importStreamUrl(streamUrl);
+      return;
+    }
     final String videoPath = _videoPath!;
     final String? subtitlePath = _subtitlePath;
     setState(() => _busy = true);
@@ -490,121 +498,43 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 当前粘贴的视频 URL 是否可播（http/https 直链）。空串/非法 scheme → false。
   bool get _streamUrlValid => isPlayableStreamUrl(_streamUrlController.text);
 
-  /// 当前粘贴的 URL 是否命中已知网页视频站（YouTube/Netflix 等）。命中时显示软警告
-  /// 并在点播放前弹「仍要尝试/取消」确认——不阻断、不按后缀硬拒（TODO-1000 part-A1）。
-  bool get _streamUrlIsWebPage =>
-      isKnownWebPageVideoUrl(_streamUrlController.text) &&
-      !isYoutubeUrl(_streamUrlController.text);
-
-  /// 「播放流」（TODO-850 阶段①）：把粘贴的 URL + 可选字幕 URL + 可选防盗链 header
-  /// 包成 [UrlStreamVideoClient] 喂进既有远端播放链（[VideoHibikiPage.neutralizedRemote]）。
-  ///
-  /// 阶段①只播不入库：不写 VideoBooks、不碰 DB schema。bookUid 由 [streamVideoBookUid]
-  /// 派生（同一 URL 稳定，断点 prefs 续看可对齐）。直接 push 远端播放页后 pop(null)——
-  /// 调用方（home_video / 书架）把 null 当「无新增入库，不刷新书架」，既有 import 路径
-  /// 行为不变（Never break userspace）。
-  /// 「播放流」入口：URL 命中已知网页视频站时先弹软警告确认（带「仍要尝试」逃生口），
-  /// 用户确认后或非网页站时直接走 [_playStreamUrlConfirmed]。不据域名硬拒。
-  Future<void> _playStreamUrl() async {
-    final String url = _streamUrlController.text.trim();
-    if (!isPlayableStreamUrl(url)) return;
-    // TODO-1159：YouTube 已由 resolveYoutubeSource 支持解析播放，不再弹「网页地址」软警告；
-    // 其它网页视频站（Netflix/bilibili 等）无解析器，仍弹确认（带「仍要尝试」逃生口）。
-    if (isKnownWebPageVideoUrl(url) && !isYoutubeUrl(url)) {
-      final bool proceed = await _confirmWebPageUrl();
-      if (!proceed || !mounted) return;
-    }
-    await _playStreamUrlConfirmed();
-  }
-
-  /// 网页视频站 URL 软警告确认框：标题 + 正文说明「网页地址非直链、Hibiki 暂不解析」，
-  /// 「取消」返回 false、「仍要尝试」返回 true（逃生口，避免误伤边缘合法情况）。
-  Future<bool> _confirmWebPageUrl() async {
-    final bool? proceed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.video_import_webpage_url_warning_title),
-        content: Text(t.video_import_webpage_url_warning_body),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.video_import_webpage_url_try_anyway),
-          ),
-        ],
-      ),
-    );
-    return proceed ?? false;
-  }
-
-  /// 实际把粘贴的流 URL 包成 [UrlStreamVideoClient] 喂进远端播放链（原 _playStreamUrl 主体）。
-  ///
-  /// TODO-1000：YouTube URL 先经 [resolveYoutubeSource] 解析出最高清 video-only + audio-only
-  /// 分离流 + timedtext 字幕 cue（muxed 限 360p，不用），再包成 client 喂同一条远端播放链。
-  Future<void> _playStreamUrlConfirmed() async {
-    final String url = _streamUrlController.text.trim();
-    if (!isPlayableStreamUrl(url)) return;
-
-    final String bookUid = streamVideoBookUid(url);
-    final UrlStreamVideoClient client;
-    final String title;
-
-    if (isYoutubeUrl(url)) {
-      final YoutubeResolvedSource resolved;
-      try {
-        resolved = await resolveYoutubeSource(url);
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(t.video_file_error_content)),
-          );
-        }
-        return;
-      }
-      if (!mounted) return;
-      client = UrlStreamVideoClient(
-        streamUrl: resolved.streamUrl,
-        audioStreamUrl: resolved.audioStreamUrl,
-        miningVideoUrl: resolved.miningVideoUrl,
-        preresolvedCues: resolved.cues,
-        httpHeaderFields: resolved.httpHeaders,
-      );
-      title = resolved.title;
-    } else {
+  /// TODO-1157：把粘贴的流媒体 URL 当作一种视频源**导入**（像本地视频一样落 VideoBooks、
+  /// 进书架、可重复打开），而不再「即播不入库」。videoPath 存原始 URL（YouTube=watch URL、
+  /// 直链/HLS=直链），外挂字幕 URL + 防盗链 header 存进 [VideoBooks.streamSpecJson]；
+  /// 重开时由 [buildStreamVideoLaunch] 据此重建流客户端（YouTube 重解析）。导入后 pop 回
+  /// bookUid（与本地导入一致，回书架而非立即播放），身份 [streamVideoBookUid] 稳定去重。
+  Future<void> _importStreamUrl(String url) async {
+    setState(() => _busy = true);
+    try {
+      final String bookUid = await _uniqueBookUid(streamVideoBookUid(url));
       final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
       final String? subtitleUrl =
           isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
-      final Map<String, String> headers = <String, String>{};
       final String referer = _streamRefererController.text.trim();
       final String userAgent = _streamUserAgentController.text.trim();
-      if (referer.isNotEmpty) headers['Referer'] = referer;
-      if (userAgent.isNotEmpty) headers['User-Agent'] = userAgent;
-      client = UrlStreamVideoClient(
-        streamUrl: url,
+      final StreamVideoSpec spec = StreamVideoSpec(
         subtitleUrl: subtitleUrl,
         subtitleFileName:
             subtitleUrl == null ? null : _subtitleFileNameForUrl(subtitleUrl),
-        httpHeaderFields: headers,
+        referer: referer.isEmpty ? null : referer,
+        userAgent: userAgent.isEmpty ? null : userAgent,
       );
-      title = _streamTitleForUrl(url);
+      await widget.repo.saveVideoBook(VideoBooksCompanion(
+        bookUid: Value(bookUid),
+        title: Value(_streamTitleForUrl(url)),
+        videoPath: Value(url),
+        streamSpecJson: Value<String?>(spec.toStorageJson()),
+        importedAt: Value(DateTime.now()),
+      ));
+      if (!mounted) return;
+      debugPrint(
+        '[hibiki-drop] [video-import] importedStream bookUid=$bookUid '
+        'url=$url',
+      );
+      Navigator.pop(context, bookUid);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-
-    final RemoteVideoInfo info = RemoteVideoInfo(id: bookUid, title: title);
-    final NavigatorState navigator = Navigator.of(context);
-    // 先关本对话框（避免播放页叠在对话框之上），再 push 远端播放页。
-    navigator.pop();
-    navigator.push(
-      adaptivePageRoute<void>(
-        builder: (_) => VideoHibikiPage.neutralizedRemote(
-          info: info,
-          repo: widget.repo,
-          client: client,
-        ),
-      ),
-    );
   }
 
   /// 从字幕 URL 末段取文件名（保留扩展名给字幕格式路由）；取不到回退 `subtitle`。
@@ -673,7 +603,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
                 ),
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) {
-                  if (_streamUrlValid) _playStreamUrl();
+                  if (_streamUrlValid) _doImport();
                 },
               ),
               const SizedBox(height: 4),
@@ -681,30 +611,6 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
                 t.video_import_stream_url_hint,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-              // 网页视频站 URL 软警告内联条（TODO-1000 part-A1）：命中 YouTube/Netflix 等
-              // 网页地址时提示「非直链、暂不解析」；不禁用播放按钮，仅在点播时弹确认。
-              if (_streamUrlIsWebPage) ...<Widget>[
-                const SizedBox(height: 4),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        t.video_import_webpage_url_warning_body,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
               const SizedBox(height: 8),
               TextField(
                 controller: _streamSubtitleUrlController,
@@ -753,15 +659,6 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
                   ),
                 ),
               ],
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: (_busy || !_streamUrlValid) ? null : _playStreamUrl,
-                icon: const Icon(Icons.play_circle_outline),
-                label: Text(
-                  t.video_import_stream_play,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
               const Divider(height: 24),
               FilledButton.tonalIcon(
                 onPressed: _busy ? null : _pickFolder,

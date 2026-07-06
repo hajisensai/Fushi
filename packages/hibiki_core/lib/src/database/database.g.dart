@@ -9018,6 +9018,12 @@ class $VideoBooksTable extends VideoBooks
       requiredDuringInsert: false,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES media_sources (id) ON DELETE SET NULL'));
+  static const VerificationMeta _streamSpecJsonMeta =
+      const VerificationMeta('streamSpecJson');
+  @override
+  late final GeneratedColumn<String> streamSpecJson = GeneratedColumn<String>(
+      'stream_spec_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         bookUid,
@@ -9035,7 +9041,8 @@ class $VideoBooksTable extends VideoBooks
         audioTrackId,
         delayMs,
         completedAt,
-        sourceId
+        sourceId,
+        streamSpecJson
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -9138,6 +9145,12 @@ class $VideoBooksTable extends VideoBooks
       context.handle(_sourceIdMeta,
           sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
     }
+    if (data.containsKey('stream_spec_json')) {
+      context.handle(
+          _streamSpecJsonMeta,
+          streamSpecJson.isAcceptableOrUnknown(
+              data['stream_spec_json']!, _streamSpecJsonMeta));
+    }
     return context;
   }
 
@@ -9180,6 +9193,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
       sourceId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}source_id']),
+      streamSpecJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}stream_spec_json']),
     );
   }
 
@@ -9225,6 +9240,14 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留视频（归 NULL），不连坐删条目。
   final int? sourceId;
+
+  /// TODO-1157：流媒体书的重开规格（JSON）。非空当且仅当这是一条「粘贴 URL 导入」的
+  /// 流媒体书（判据以 [videoPath] 是 http/https 为准，本列只补 videoPath 装不下的
+  /// 外挂字幕 URL / 防盗链 header）：`{subtitleUrl,subtitleFileName,referer,userAgent}`。
+  /// 本地文件视频恒 null。存的是「原始粘贴 URL」侧信息，重开时据此重建
+  /// UrlStreamVideoClient（YouTube 按 videoPath 重解析），使流媒体像本地视频一样入库、
+  /// 在书架持久、可重复打开。null = 无外挂字幕/header 的直链流或本地视频。
+  final String? streamSpecJson;
   const VideoBookRow(
       {required this.bookUid,
       required this.title,
@@ -9241,7 +9264,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       this.audioTrackId,
       required this.delayMs,
       this.completedAt,
-      this.sourceId});
+      this.sourceId,
+      this.streamSpecJson});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -9281,6 +9305,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     }
     if (!nullToAbsent || sourceId != null) {
       map['source_id'] = Variable<int>(sourceId);
+    }
+    if (!nullToAbsent || streamSpecJson != null) {
+      map['stream_spec_json'] = Variable<String>(streamSpecJson);
     }
     return map;
   }
@@ -9323,6 +9350,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       sourceId: sourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceId),
+      streamSpecJson: streamSpecJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(streamSpecJson),
     );
   }
 
@@ -9348,6 +9378,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       delayMs: serializer.fromJson<int>(json['delayMs']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
+      streamSpecJson: serializer.fromJson<String?>(json['streamSpecJson']),
     );
   }
   @override
@@ -9371,6 +9402,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'delayMs': serializer.toJson<int>(delayMs),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
+      'streamSpecJson': serializer.toJson<String?>(streamSpecJson),
     };
   }
 
@@ -9390,7 +9422,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           Value<String?> audioTrackId = const Value.absent(),
           int? delayMs,
           Value<DateTime?> completedAt = const Value.absent(),
-          Value<int?> sourceId = const Value.absent()}) =>
+          Value<int?> sourceId = const Value.absent(),
+          Value<String?> streamSpecJson = const Value.absent()}) =>
       VideoBookRow(
         bookUid: bookUid ?? this.bookUid,
         title: title ?? this.title,
@@ -9416,6 +9449,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
         delayMs: delayMs ?? this.delayMs,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
         sourceId: sourceId.present ? sourceId.value : this.sourceId,
+        streamSpecJson:
+            streamSpecJson.present ? streamSpecJson.value : this.streamSpecJson,
       );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
@@ -9453,6 +9488,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      streamSpecJson: data.streamSpecJson.present
+          ? data.streamSpecJson.value
+          : this.streamSpecJson,
     );
   }
 
@@ -9474,7 +9512,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
           ..write('completedAt: $completedAt, ')
-          ..write('sourceId: $sourceId')
+          ..write('sourceId: $sourceId, ')
+          ..write('streamSpecJson: $streamSpecJson')
           ..write(')'))
         .toString();
   }
@@ -9496,7 +9535,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       audioTrackId,
       delayMs,
       completedAt,
-      sourceId);
+      sourceId,
+      streamSpecJson);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -9516,7 +9556,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.audioTrackId == this.audioTrackId &&
           other.delayMs == this.delayMs &&
           other.completedAt == this.completedAt &&
-          other.sourceId == this.sourceId);
+          other.sourceId == this.sourceId &&
+          other.streamSpecJson == this.streamSpecJson);
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
@@ -9536,6 +9577,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> delayMs;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
+  final Value<String?> streamSpecJson;
   final Value<int> rowid;
   const VideoBooksCompanion({
     this.bookUid = const Value.absent(),
@@ -9554,6 +9596,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.delayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.streamSpecJson = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   VideoBooksCompanion.insert({
@@ -9573,6 +9616,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.delayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.streamSpecJson = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : bookUid = Value(bookUid),
         title = Value(title),
@@ -9594,6 +9638,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? delayMs,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
+    Expression<String>? streamSpecJson,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -9615,6 +9660,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (delayMs != null) 'delay_ms': delayMs,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
+      if (streamSpecJson != null) 'stream_spec_json': streamSpecJson,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -9636,6 +9682,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int>? delayMs,
       Value<DateTime?>? completedAt,
       Value<int?>? sourceId,
+      Value<String?>? streamSpecJson,
       Value<int>? rowid}) {
     return VideoBooksCompanion(
       bookUid: bookUid ?? this.bookUid,
@@ -9656,6 +9703,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       delayMs: delayMs ?? this.delayMs,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
+      streamSpecJson: streamSpecJson ?? this.streamSpecJson,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -9713,6 +9761,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (sourceId.present) {
       map['source_id'] = Variable<int>(sourceId.value);
     }
+    if (streamSpecJson.present) {
+      map['stream_spec_json'] = Variable<String>(streamSpecJson.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -9738,6 +9789,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('delayMs: $delayMs, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
+          ..write('streamSpecJson: $streamSpecJson, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -20244,6 +20296,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> delayMs,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
+  Value<String?> streamSpecJson,
   Value<int> rowid,
 });
 typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
@@ -20263,6 +20316,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> delayMs,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
+  Value<String?> streamSpecJson,
   Value<int> rowid,
 });
 
@@ -20364,6 +20418,10 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get streamSpecJson => $composableBuilder(
+      column: $table.streamSpecJson,
+      builder: (column) => ColumnFilters(column));
 
   $$MediaSourcesTableFilterComposer get sourceId {
     final $$MediaSourcesTableFilterComposer composer = $composerBuilder(
@@ -20470,6 +20528,10 @@ class $$VideoBooksTableOrderingComposer
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get streamSpecJson => $composableBuilder(
+      column: $table.streamSpecJson,
+      builder: (column) => ColumnOrderings(column));
+
   $$MediaSourcesTableOrderingComposer get sourceId {
     final $$MediaSourcesTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -20544,6 +20606,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get streamSpecJson => $composableBuilder(
+      column: $table.streamSpecJson, builder: (column) => column);
 
   $$MediaSourcesTableAnnotationComposer get sourceId {
     final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
@@ -20628,6 +20693,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> delayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
+            Value<String?> streamSpecJson = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion(
@@ -20647,6 +20713,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             delayMs: delayMs,
             completedAt: completedAt,
             sourceId: sourceId,
+            streamSpecJson: streamSpecJson,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -20666,6 +20733,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> delayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
+            Value<String?> streamSpecJson = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion.insert(
@@ -20685,6 +20753,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             delayMs: delayMs,
             completedAt: completedAt,
             sourceId: sourceId,
+            streamSpecJson: streamSpecJson,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

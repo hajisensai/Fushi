@@ -30,6 +30,7 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
@@ -1280,7 +1281,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   AppModel get appModel => _appModel;
 
-  bool get _isRemote => widget.remoteInfo != null;
+  /// TODO-1157：书架里「粘贴 URL 导入」的流媒体书（[isStreamVideoBook]）在 [_init] 里
+  /// 按 videoPath/streamSpecJson 重建的播放客户端 + info。非流媒体书 / LAN 远端书恒 null。
+  /// 让流媒体书像本地视频一样从书架点开，却复用与「导入即播」完全一致的远端播放路径
+  /// （prefs 断点、无本地文件），行为与旧临时流播放一致（Never break userspace）。
+  RemoteVideoInfo? _resolvedStreamInfo;
+  UrlStreamVideoClient? _resolvedStreamClient;
+
+  /// 有效远端 info/client：LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用
+  /// [_init] 重建的 _resolvedStream*。二者互斥、至多一个非空。
+  RemoteVideoInfo? get _effectiveRemoteInfo =>
+      widget.remoteInfo ?? _resolvedStreamInfo;
+  RemoteVideoClient? get _effectiveRemoteClient =>
+      widget.remoteClient ?? _resolvedStreamClient;
+
+  bool get _isRemote => _effectiveRemoteInfo != null;
 
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => appModel.targetLanguage.locale.languageCode;
@@ -1436,6 +1451,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     _bookRow = row;
 
+    // TODO-1157：书架里「粘贴 URL 导入」的流媒体书（videoPath 是 http/https）不走本地
+    // 文件加载路径，而是按 videoPath/streamSpecJson 重建流客户端，复用与「导入即播」一致
+    // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
+    // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
+    if (isStreamVideoBook(row)) {
+      try {
+        final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
+            await buildStreamVideoLaunch(row);
+        if (!mounted) return;
+        _resolvedStreamInfo = launch.info;
+        _resolvedStreamClient = launch.client;
+      } catch (e) {
+        debugPrint('[VideoHibikiPage] stream book launch build failed: $e');
+        if (mounted) setState(() => _failed = true);
+        return;
+      }
+      await _initRemote();
+      return;
+    }
+
     // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）+ 音画延迟
     // （跨重启保留）+ 播放倍速（per-book 偏好，速度记忆）。
     _currentSubtitleSource = row.subtitleSource;
@@ -1487,7 +1522,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Future<void> _initRemote() async {
-    final RemoteVideoInfo info = widget.remoteInfo!;
+    final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     _currentAudioTrackId = null;
@@ -1526,8 +1561,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     int? initialPositionMsOverride,
   }) async {
-    final RemoteVideoInfo info = widget.remoteInfo!;
-    final RemoteVideoClient client = widget.remoteClient!;
+    final RemoteVideoInfo info = _effectiveRemoteInfo!;
+    final RemoteVideoClient client = _effectiveRemoteClient!;
     final int seq = ++_episodeLoadSeq;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
@@ -1691,7 +1726,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         .setPref(videoRemotePositionEpisodePrefKey(uid, episodeIndex), clamped);
     await appModel.prefsRepo
         .setPref(videoRemotePositionEpisodeAtPrefKey(uid, episodeIndex), nowMs);
-    final RemoteVideoClient? client = widget.remoteClient;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
       await client.putRemoteVideoPosition(
@@ -2078,7 +2113,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 其它远端/本地播放恒返回空 map（[applyHttpHeaderFieldsToPlayer] 据此 no-op，
   /// 既有播放路径零影响）。
   Map<String, String> get _streamHttpHeaderFields {
-    final RemoteVideoClient? client = widget.remoteClient;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client is UrlStreamVideoClient) return client.httpHeaderFields;
     return const <String, String>{};
   }
@@ -4864,7 +4899,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Widget _buildLoadingBody() {
     final String title = _titleNotifier.value ??
         _title ??
-        widget.remoteInfo?.title ??
+        _effectiveRemoteInfo?.title ??
         _bookRow?.title ??
         '';
     return VideoLoadingOverlay(

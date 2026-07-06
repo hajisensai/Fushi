@@ -81,6 +81,84 @@ bool isKnownWebPageVideoUrl(String url) {
 /// [playlistBookUid]（`video/playlist/`）命名族同构、前缀不撞，保证同一 URL 每次
 /// 命中同一身份（幂等，阶段②入库去重 / 断点续看稳定）。URL 先 `trim` 再哈希，避免
 /// 首尾空白派生出不同 uid。
+/// 流媒体书重开规格（TODO-1157）：把「粘贴 URL 导入」流媒体像本地视频一样入库后，
+/// 重开时据此重建 [UrlStreamVideoClient]。存的是 `video_books.videoPath`（即原始粘贴
+/// URL）**装不下**的侧信息——外挂字幕 URL / 文件名 + 防盗链 header（Referer / User-Agent）。
+/// 直链流无这些时整条 spec 为空，落库时存 null（书仍是流媒体，判据看 videoPath 是 http）。
+///
+/// 不含 [streamUrl] 本身（它是 `videoPath`，是书的身份来源），避免两处真值不一致。
+/// YouTube 的临时解析流 URL / 分离音轨 / cue **不入 spec**（会过期）——重开时按
+/// videoPath（watch URL）重新 [resolveYoutubeSource]。
+class StreamVideoSpec {
+  const StreamVideoSpec({
+    this.subtitleUrl,
+    this.subtitleFileName,
+    this.referer,
+    this.userAgent,
+  });
+
+  /// 可选外挂字幕 URL（http/https）。
+  final String? subtitleUrl;
+
+  /// 字幕文件名（保留扩展名给字幕格式路由）。
+  final String? subtitleFileName;
+
+  /// 防盗链 Referer header。
+  final String? referer;
+
+  /// 防盗链 User-Agent header。
+  final String? userAgent;
+
+  /// 四项全空 = 无需持久化任何侧信息（直链流），落库存 null。
+  bool get isEmpty =>
+      (subtitleUrl == null || subtitleUrl!.isEmpty) &&
+      (subtitleFileName == null || subtitleFileName!.isEmpty) &&
+      (referer == null || referer!.isEmpty) &&
+      (userAgent == null || userAgent!.isEmpty);
+
+  /// 组装防盗链 header map（空值不写入）。
+  Map<String, String> get httpHeaderFields {
+    final Map<String, String> headers = <String, String>{};
+    if (referer != null && referer!.isNotEmpty) headers['Referer'] = referer!;
+    if (userAgent != null && userAgent!.isNotEmpty) {
+      headers['User-Agent'] = userAgent!;
+    }
+    return headers;
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        if (subtitleUrl != null && subtitleUrl!.isNotEmpty)
+          'subtitleUrl': subtitleUrl,
+        if (subtitleFileName != null && subtitleFileName!.isNotEmpty)
+          'subtitleFileName': subtitleFileName,
+        if (referer != null && referer!.isNotEmpty) 'referer': referer,
+        if (userAgent != null && userAgent!.isNotEmpty) 'userAgent': userAgent,
+      };
+
+  /// 落库字符串：空 spec → null（不占列）；否则 JSON。
+  String? toStorageJson() => isEmpty ? null : jsonEncode(toJson());
+
+  factory StreamVideoSpec.fromJson(Map<String, dynamic> json) =>
+      StreamVideoSpec(
+        subtitleUrl: json['subtitleUrl'] as String?,
+        subtitleFileName: json['subtitleFileName'] as String?,
+        referer: json['referer'] as String?,
+        userAgent: json['userAgent'] as String?,
+      );
+
+  /// 从落库字符串解析（null / 空 / 非法 JSON → 空 spec，绝不抛，重开不因脏数据崩）。
+  factory StreamVideoSpec.fromStorageJson(String? raw) {
+    if (raw == null || raw.isEmpty) return const StreamVideoSpec();
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return StreamVideoSpec.fromJson(decoded);
+      }
+    } catch (_) {}
+    return const StreamVideoSpec();
+  }
+}
+
 String streamVideoBookUid(String url) {
   final String normalized = url.trim();
   final String digest =

@@ -227,4 +227,48 @@ void main() {
       }
     });
   });
+
+  group('StreamVideoSpec (TODO-1157 流媒体入库重开规格)', () {
+    test('empty spec -> isEmpty true, toStorageJson null', () {
+      const StreamVideoSpec spec = StreamVideoSpec();
+      expect(spec.isEmpty, isTrue);
+      expect(spec.toStorageJson(), isNull);
+      expect(spec.httpHeaderFields, isEmpty);
+    });
+
+    test('round-trip via storage json preserves fields', () {
+      const StreamVideoSpec spec = StreamVideoSpec(
+        subtitleUrl: 'https://cdn.example.com/sub.srt',
+        subtitleFileName: 'sub.srt',
+        referer: 'https://example.com/',
+        userAgent: 'HibikiAgent/1.0',
+      );
+      expect(spec.isEmpty, isFalse);
+      final String? json = spec.toStorageJson();
+      expect(json, isNotNull);
+      final StreamVideoSpec back = StreamVideoSpec.fromStorageJson(json);
+      expect(back.subtitleUrl, spec.subtitleUrl);
+      expect(back.subtitleFileName, spec.subtitleFileName);
+      expect(back.referer, spec.referer);
+      expect(back.userAgent, spec.userAgent);
+      expect(back.httpHeaderFields, <String, String>{
+        'Referer': 'https://example.com/',
+        'User-Agent': 'HibikiAgent/1.0',
+      });
+    });
+
+    test('fromStorageJson tolerates null/empty/garbage -> empty spec', () {
+      expect(StreamVideoSpec.fromStorageJson(null).isEmpty, isTrue);
+      expect(StreamVideoSpec.fromStorageJson('').isEmpty, isTrue);
+      expect(StreamVideoSpec.fromStorageJson('not json').isEmpty, isTrue);
+      expect(StreamVideoSpec.fromStorageJson('[1,2]').isEmpty, isTrue);
+    });
+
+    test('httpHeaderFields omits empty referer/userAgent', () {
+      const StreamVideoSpec spec =
+          StreamVideoSpec(subtitleUrl: 'https://x/y.srt');
+      expect(spec.isEmpty, isFalse);
+      expect(spec.httpHeaderFields, isEmpty);
+    });
+  });
 }
