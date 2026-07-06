@@ -133,6 +133,47 @@ class ReaderSelectionScripts {
   static String nativeSelectionSentenceRangeInvocation() =>
       'JSON.stringify(window.hoshiSelection.nativeSelectionSentenceRange())';
 
+  /// TODO-1127：取**当前原生选区**内夹带的 EPUB 插图（<img> / 光栅封面 <svg><image>）。
+  /// 回传 JSON 数组，每项 `{src, normOffset}`，由 [clipSelectionImagesFromResult] 解析。
+  /// 供有声书片段导出把「选区中间的插图」按相对顺序渲进卡片。
+  static String nativeSelectionImagesInvocation() =>
+      'JSON.stringify(window.hoshiSelection.nativeSelectionImages())';
+
+  /// 解析 [nativeSelectionImagesInvocation] 的结果为选区插图列表：每项 [src]（可交给
+  /// 宿主 `_readerImageFileForUrl` 解析成解压目录文件的绝对 URL）+ [normOffset]（该图在
+  /// 整书归一化文本坐标里的位置；JS 端 `imageNormOffset` 取不到时回传 null → 这里归一为
+  /// `-1`，宿主据此把图兜底挂到最前一段）。无选区 / 无图 / 解析失败 → 空列表。
+  static List<({String src, int normOffset})> clipSelectionImagesFromResult(
+    Object? raw,
+  ) {
+    if (raw == null) return const <({String src, int normOffset})>[];
+    try {
+      final Object decoded;
+      if (raw is String) {
+        final String trimmed = raw.trim();
+        if (trimmed.isEmpty || trimmed == 'null') {
+          return const <({String src, int normOffset})>[];
+        }
+        decoded = jsonDecode(trimmed) as Object;
+      } else {
+        decoded = raw;
+      }
+      if (decoded is! List) return const <({String src, int normOffset})>[];
+      final List<({String src, int normOffset})> result =
+          <({String src, int normOffset})>[];
+      for (final Object? item in decoded) {
+        if (item is! Map) continue;
+        final String src = item['src']?.toString() ?? '';
+        if (src.isEmpty) continue;
+        final int normOffset = (item['normOffset'] as num?)?.toInt() ?? -1;
+        result.add((src: src, normOffset: normOffset));
+      }
+      return result;
+    } catch (_) {
+      return const <({String src, int normOffset})>[];
+    }
+  }
+
   static bool didSelectNothing(String? result) {
     if (result == null) return true;
     final String trimmed = result.trim().replaceAll('"', '');
@@ -692,6 +733,79 @@ window.hoshiSelection = {
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength
     };
+  },
+  // TODO-1127：抽取**当前原生选区**内夹带的 EPUB 插图（<img> 与光栅封面 <svg><image>），
+  // 供有声书片段导出把「选区中间的插图」渲进卡片。返回按文档序的数组，每项
+  // { src, normOffset }：src 是可交给宿主 _readerImageFileForUrl 解析成解压目录文件的绝对
+  // URL（hoshi.local/epub/...），normOffset 是该图在整书归一化文本坐标里的位置（用相邻文本
+  // 节点算，供宿主把图挂到相对顺序正确的 cue 段后）。选区无图 / 无原生选区 → 空数组。
+  nativeSelectionImages: function() {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!sel || sel.rangeCount === 0) return [];
+    var candidates = document.querySelectorAll('img, svg');
+    var out = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var inSel = false;
+      try {
+        inSel = sel.containsNode ? sel.containsNode(el, true) : false;
+      } catch (e) {
+        inSel = false;
+      }
+      if (!inSel) continue;
+      var src = this.resolveClipImageSrc(el);
+      if (!src) continue;
+      out.push({ src: src, normOffset: this.imageNormOffset(el) });
+    }
+    return out;
+  },
+  // 解析一个图节点的可下载源 URL。<img>（跳过外字 gaiji 内联小图）→ el.src；光栅封面
+  // <svg><image xlink:href=..>（BUG-025 先例）→ 内层 <image> 的解析后绝对 href；纯矢量
+  // svg（无 <image>）无对应文件 → null（宿主跳过并记日志）。
+  resolveClipImageSrc: function(el) {
+    var tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (tag === 'img') {
+      if (el.classList &&
+          (el.classList.contains('gaiji') ||
+           el.classList.contains('gaiji-line'))) {
+        return null;
+      }
+      return el.src || el.getAttribute('src') || null;
+    }
+    if (tag === 'svg') {
+      var inner = el.querySelector('image');
+      if (!inner) return null;
+      var raw = (inner.href && inner.href.baseVal) ||
+        inner.getAttribute('xlink:href') || inner.getAttribute('href');
+      if (!raw) return null;
+      try {
+        return new URL(raw, document.baseURI).href;
+      } catch (e) {
+        return raw;
+      }
+    }
+    return null;
+  },
+  // 图节点在整书归一化文本坐标里的位置：优先取图**后**第一个正文文本节点的归一化偏移
+  // （图排在这句之前），取不到再退到图**前**最后一个文本节点的末端偏移。无 hoshiReader
+  // （无归一化映射）时返回 null，宿主兜底挂到最前一段。
+  imageNormOffset: function(el) {
+    if (!window.hoshiReader) return null;
+    var w = this.createWalker(document.body);
+    w.currentNode = el;
+    var after = w.nextNode();
+    if (after) {
+      var o = this.getNormalizedOffset(after, 0);
+      if (o !== null) return o;
+    }
+    var w2 = this.createWalker(document.body);
+    w2.currentNode = el;
+    var before = w2.previousNode();
+    if (before) {
+      var o2 = this.getNormalizedOffset(before, before.textContent.length);
+      if (o2 !== null) return o2;
+    }
+    return null;
   },
   // 从任意节点下钻到它包含的第一个非空文本节点（含自身），返回 {node, offset:0}。
   firstTextNode: function(node) {
