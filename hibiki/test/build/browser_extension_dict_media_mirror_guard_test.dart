@@ -49,6 +49,41 @@ void main() {
             reason:
                 '$root background.js dictMediaConfig must return base+token');
       });
+
+      // TODO-1219 P1：Netflix 整集字幕拦截链存在性守卫（数据源 + 解析器 + 跨世界桥 + run_at）。
+      test('[$name] netflix-bridge.js hooks manifest & bridges cues', () {
+        final String src = File('$root/netflix-bridge.js').readAsStringSync();
+        expect(src.contains('JSON.parse'), isTrue,
+            reason: '$root netflix-bridge.js missing JSON.parse hook');
+        expect(src.contains('timedtexttracks'), isTrue,
+            reason: '$root netflix-bridge.js missing timedtexttracks sniff');
+        expect(src.contains("__hibikiNf: 'cues'"), isTrue,
+            reason: '$root netflix-bridge.js missing cross-world cues bridge');
+      });
+
+      test('[$name] subtitle-adapters.js exposes VTT/TTML parsers', () {
+        final String src =
+            File('$root/subtitle-adapters.js').readAsStringSync();
+        expect(src.contains('function parseWebVtt'), isTrue,
+            reason: '$root subtitle-adapters.js missing parseWebVtt');
+        expect(src.contains('function parseTtml'), isTrue,
+            reason: '$root subtitle-adapters.js missing parseTtml');
+      });
+
+      test('[$name] content.js receives full-episode cues', () {
+        final String src = File('$root/content.js').readAsStringSync();
+        expect(src.contains("e.data.__hibikiNf !== 'cues'"), isTrue,
+            reason: '$root content.js missing full-episode cues receiver');
+        expect(src.contains('hibikiEpisodeCues'), isTrue,
+            reason: '$root content.js missing hibikiEpisodeCues store');
+      });
+
+      test('[$name] netflix-bridge runs at document_start', () {
+        final String src = File('$root/manifest.json').readAsStringSync();
+        expect(src.contains('"run_at": "document_start"'), isTrue,
+            reason:
+                '$root manifest.json netflix-bridge must run at document_start');
+      });
     });
   });
 
@@ -57,6 +92,11 @@ void main() {
       'vendor/dict-media.js',
       'bridge-shim.js',
       'background.js',
+      // TODO-1219 P1：Netflix 整集字幕拦截链改动的共享文件，纳入字节守卫防两镜像漂移。
+      'netflix-bridge.js',
+      'subtitle-adapters.js',
+      'content.js',
+      'manifest.json',
     ]) {
       test(rel, () {
         final List<int> tools =

@@ -137,6 +137,27 @@ function hibikiCurrentCueWindowV() {
 }
 try { setInterval(hibikiSampleCue, 200); } catch (_) {}
 
+// ── TODO-1219 P1：整集字幕（主世界 netflix-bridge.js 抓清单 timedtext → 这里解析存档）──
+// P1 仅存档 + console 验证；P2 面板消费 hibikiEpisodeCues。DOM 采样 hibikiCueHist 仍作回退不删。
+// 解析器 parseWebVtt / parseTtml 定义在 subtitle-adapters.js（同隔离世界、先于 content.js 加载）。
+const hibikiEpisodeCues = Object.create(null); // key: `${videoId}|${lang}` -> [{startMs,endMs,text}]
+function hibikiOnFullEpisodeCues(msg) {
+  try {
+    const cues = msg.format === 'ttml' ? parseTtml(msg.text) : parseWebVtt(msg.text);
+    if (!cues || !cues.length) return;
+    const vid = String(msg.videoId || netflixVideoIdFromPath(location.pathname) || '');
+    const key = vid + '|' + (msg.lang || 'und');
+    hibikiEpisodeCues[key] = cues;
+    try {
+      console.log('[Hibiki][TODO-1219] full-episode cues intercepted:', key, cues.length, 'cues; first:', cues.slice(0, 3));
+    } catch (_) {}
+  } catch (_) {}
+}
+window.addEventListener('message', (e) => {
+  if (e.source !== window || !e.data || e.data.__hibikiNf !== 'cues') return;
+  hibikiOnFullEpisodeCues(e.data);
+});
+
 // ── 制卡队列（持久化：chrome.storage.local，跨刷新/跨剧集/跨会话累积，随时点击生成）──
 // 内存镜像 hibikiQueue 以 storage 为真相源；storage.onChanged 让多标签/重载后计数一致。
 let hibikiQueue = [];
