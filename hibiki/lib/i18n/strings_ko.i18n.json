@@ -2115,5 +2115,14 @@
   "backup_export_no_books": "No books to choose from",
   "backup_export_books_selected": "$count books selected",
   "backup_import_merge_preview": "Merge will add $bookCount books and update $progressCount reading positions.",
-  "stat_lookup": "검색"
+  "stat_lookup": "검색",
+  "video_subtitle_waveform_open": "Waveform alignment",
+  "video_subtitle_waveform_open_hint": "Tap to zoom in and align",
+  "video_subtitle_waveform_legend_energy": "Loudness",
+  "video_subtitle_waveform_legend_cue": "Subtitle cue",
+  "video_subtitle_waveform_legend_playhead": "Playhead",
+  "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
+  "video_subtitle_waveform_jump_playhead": "Jump to playhead",
+  "video_subtitle_waveform_zoom_in": "Zoom in",
+  "video_subtitle_waveform_zoom_out": "Zoom out"
 }

@@ -873,12 +873,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               _commitDelay(parsed);
             },
           ),
-          // TODO-1051 阶段B：音频波形对轴可视化面板（有字幕 cue + 可抽波形时才挂）。
-          // TODO-1207：面板只做「波形 + cue 线」可视化，不再自带调轴滑条（与上方 ± /
-          // 滑条 / 数值输入框完全冗余，已删）。cue 线整体平移的预览延迟经 [initialDelayMs]
-          // 从上方权威 [_delayMs] 传入，面板 didUpdateWidget 同步——上方任意手动调轴 /
-          // 自动对轴改 [_delayMs] 后波形随之平移。拿不到波形（移动端 ffmpeg 无逐帧行）时
-          // 面板内部收起（纯可视化，无控件），不崩不空白。
+          // TODO-1051 阶段B：音频波形对轴入口（有字幕 cue + 可抽波形时才挂）。
+          // TODO-1207：面板收敛成一个紧凑入口（标签 + 迷你波形缩略图 + 放大图标），点击
+          // 弹出放大的可交互视图：横向拖动查看整条时间轴、底部调轴条把 cue 线对齐到波形
+          // 语音峰值。调轴经 onCommitDelay 写回权威 [_delayMs]（同源、零第二套状态）；缩略图
+          // cue 线随 [_delayMs] 经 didUpdateWidget 平移。拿不到波形（移动端 ffmpeg 无逐帧行）
+          // 时入口收起，不崩不空白、不显示按钮。
           if (widget.loadSubtitleWaveform != null &&
               widget.subtitleWaveformCues.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
@@ -888,6 +888,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               cues: widget.subtitleWaveformCues,
               durationMs: widget.videoDurationMs,
               loadWaveform: widget.loadSubtitleWaveform!,
+              // TODO-1207：放大波形视图里的调轴经此写回顶部权威 _delayMs（_commitDelay
+              // 三处同步 + onSetDelay 落盘），与顶部滑条 / 步进 / 自动对轴同源，零第二套状态。
+              onCommitDelay: _commitDelay,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
             ),

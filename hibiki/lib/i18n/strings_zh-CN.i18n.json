@@ -2115,5 +2115,14 @@
   "backup_export_no_books": "没有可选的书籍",
   "backup_export_books_selected": "已选 $count 本书",
   "backup_import_merge_preview": "合并将新增 $bookCount 本书、更新 $progressCount 条阅读进度。",
-  "stat_lookup": "查词"
+  "stat_lookup": "查词",
+  "video_subtitle_waveform_open": "波形对轴",
+  "video_subtitle_waveform_open_hint": "点击放大查看并对轴",
+  "video_subtitle_waveform_legend_energy": "响度",
+  "video_subtitle_waveform_legend_cue": "字幕边界",
+  "video_subtitle_waveform_legend_playhead": "播放头",
+  "video_subtitle_waveform_scroll_hint": "横向拖动查看时间轴，用下方控件对齐字幕",
+  "video_subtitle_waveform_jump_playhead": "跳到播放头",
+  "video_subtitle_waveform_zoom_in": "放大",
+  "video_subtitle_waveform_zoom_out": "缩小"
 }
