@@ -27,10 +27,6 @@ part of '../reader_hibiki_page.dart';
 /// `_readerChromeBaseHeight` / `_readerPopupHeaderBaseHeight` constants) cannot
 /// live on an extension and stay in the shell, reachable via the shared private
 /// class scope.
-/// TODO-1168（实验性）：底栏毛玻璃的高斯模糊 sigma。固定值（用户只调不透明度，不调
-/// 模糊强度），复用顶部进度条同款 [ImageFilter.blur] 配方，底栏面积更大故略强。
-const double _kBottomChromeBlurSigma = 18;
-
 extension _ReaderChrome on _ReaderHibikiPageState {
   /// TODO-1229 案A：章界连续输入穿透守卫。滚轮惯性节流（450ms）远短于换章加载
   /// （数百 ms restore），跨章那一下之后排队的翻页 tick 会在新章 restore 未落定时
@@ -859,33 +855,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
-  /// TODO-1168（实验性）：底栏背景填充色。开启毛玻璃时用当前阅读主题背景色叠加
-  /// 用户可调 alpha（半透明，让毛玻璃透出下层正文）；关闭时返回不透明主题背景色 =
-  /// 现状，零回归。底栏两处背景（内容行 / 系统底部 inset）与有声书条都取此单一真相。
-  Color _bottomChromeFillColor() {
-    final Color base = _themeBackgroundColor();
-    if (!ReaderHibikiSource.instance.frostedBottomBar) return base;
-    return base.withValues(alpha: ReaderHibikiSource.instance.bottomBarOpacity);
-  }
-
-  /// TODO-1168（实验性）：开启毛玻璃时用 `ClipRect > BackdropFilter` 把底栏矩形内的
-  /// 下层内容做高斯模糊（复用顶部进度条同款配方，见 [_buildTopProgressBar]）。关闭时
-  /// 原样返回 [child]，零回归（不引入任何包裹层）。**不改变 [child] 的布局尺寸**——
-  /// ClipRect / BackdropFilter 都取子级大小，底栏预留高（[bottomChromeReserve]）不受
-  /// 影响，「视觉高 ≡ 预留高」铁律保持。
-  Widget _wrapBottomChromeFrost(Widget child) {
-    if (!ReaderHibikiSource.instance.frostedBottomBar) return child;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: _kBottomChromeBlurSigma,
-          sigmaY: _kBottomChromeBlurSigma,
-        ),
-        child: child,
-      ),
-    );
-  }
-
   Widget _buildBottomChrome() {
     // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
     // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的
@@ -923,39 +892,36 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           child: ExcludeFocus(
             child: FocusScope(
               node: _chromeFocusScope,
-              child: _wrapBottomChromeFrost(
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    ReaderChromeScaler(
-                      scale: _readerChromeScale,
-                      baseHeight:
-                          _ReaderHibikiPageState._readerChromeBaseHeight,
-                      child: AudiobookPlayBar(
-                        controller: ctrl,
-                        skipActionSeconds:
-                            ReaderHibikiSource.instance.skipActionSeconds,
-                        onOpenSettings: _showAppearanceSheet,
-                        backgroundColor: _bottomChromeFillColor(),
-                        foregroundColor: _themeTextColor(),
-                        reversed: appModel.reverseReaderBottomBar,
-                        // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
-                        // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
-                        invertSkip: ReaderHibikiSource
-                            .instance.invertAudiobookSkipDirection,
-                        // TODO-728: per-reader toggle for the current-sentence cue.
-                        showCue: ReaderHibikiSource.instance.showBottomBarCue,
-                      ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  ReaderChromeScaler(
+                    scale: _readerChromeScale,
+                    baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                    child: AudiobookPlayBar(
+                      controller: ctrl,
+                      skipActionSeconds:
+                          ReaderHibikiSource.instance.skipActionSeconds,
+                      onOpenSettings: _showAppearanceSheet,
+                      backgroundColor: _themeBackgroundColor(),
+                      foregroundColor: _themeTextColor(),
+                      reversed: appModel.reverseReaderBottomBar,
+                      // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
+                      // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
+                      invertSkip: ReaderHibikiSource
+                          .instance.invertAudiobookSkipDirection,
+                      // TODO-728: per-reader toggle for the current-sentence cue.
+                      showCue: ReaderHibikiSource.instance.showBottomBarCue,
                     ),
-                    ColoredBox(
-                      color: _bottomChromeFillColor(),
-                      child: SizedBox(
-                        height: _stableBottomInset,
-                        width: double.infinity,
-                      ),
+                  ),
+                  ColoredBox(
+                    color: _themeBackgroundColor(),
+                    child: SizedBox(
+                      height: _stableBottomInset,
+                      width: double.infinity,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1001,37 +967,35 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       child: ExcludeFocus(
         child: FocusScope(
           node: _chromeFocusScope,
-          child: _wrapBottomChromeFrost(
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                ReaderChromeScaler(
-                  scale: _readerChromeScale,
-                  baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                  child: ColoredBox(
-                    color: _bottomChromeFillColor(),
-                    child: SizedBox(
-                      height: _ReaderHibikiPageState._readerChromeBaseHeight,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: tokens.spacing.gap),
-                        child: Row(
-                          children:
-                              reversed ? barItems.reversed.toList() : barItems,
-                        ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ReaderChromeScaler(
+                scale: _readerChromeScale,
+                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                child: ColoredBox(
+                  color: _themeBackgroundColor(),
+                  child: SizedBox(
+                    height: _ReaderHibikiPageState._readerChromeBaseHeight,
+                    child: Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+                      child: Row(
+                        children:
+                            reversed ? barItems.reversed.toList() : barItems,
                       ),
                     ),
                   ),
                 ),
-                ColoredBox(
-                  color: _bottomChromeFillColor(),
-                  child: SizedBox(
-                    height: _stableBottomInset,
-                    width: double.infinity,
-                  ),
+              ),
+              ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _stableBottomInset,
+                  width: double.infinity,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
