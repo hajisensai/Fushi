@@ -73,7 +73,13 @@ void main() {
     expect(epubActions, contains('t.book_css_editor_edit_css'));
     expect(epubActions, contains('floating_lyric_toggle_action'));
 
-    expect(srtActions, contains('t.srt_import_pick_cover'));
+    // TODO-1191：SRT 卡长按菜单不再列冗余的「选择封面图片」——选封面统一走
+    // 「编辑信息」弹窗（MediaItemEditDialogPage 的封面覆盖字段）。
+    expect(
+      srtActions,
+      isNot(contains('t.srt_import_pick_cover')),
+      reason: 'TODO-1191：SRT 卡长按菜单移除冗余「选择封面图片」，走编辑信息弹窗。',
+    );
     expect(srtActions, contains('t.audio_import'));
     expect(srtActions, contains('t.profile_book_profile'));
     expect(srtActions, contains('t.book_css_editor_edit_css'));
@@ -120,11 +126,13 @@ void main() {
       contains('_epubBackedBookKeys.contains(bookKey)'),
       reason: 'SRT 卡「查看插画」必须按 EPUB-backing 门控（纯 SRT 无 EPUB 不显示）。',
     );
-    // 「选择封面图片」照旧保留（EPUB 卡不能选封面、SRT 卡可选是合理差异）。
+    // TODO-1191（用户反馈）：外层「选择封面图片」与「编辑信息」弹窗重复，移除；
+    // 选封面统一走编辑信息弹窗，且封面在 SRT 卡上经 override thumbnail 真正生效
+    //（见下方 _buildSrtCover override 守卫）。
     expect(
       srtActions,
-      contains('t.srt_import_pick_cover'),
-      reason: '补「查看插画」不得删除 SRT 卡专有的「选择封面图片」。',
+      isNot(contains('t.srt_import_pick_cover')),
+      reason: 'TODO-1191：SRT 卡长按菜单移除冗余「选择封面图片」。',
     );
   });
 
@@ -143,11 +151,33 @@ void main() {
     );
   });
 
+  test('SRT 卡封面尊重编辑信息弹窗写入的 override thumbnail（TODO-1191）', () {
+    // 移除外层「选择封面图片」后，选封面唯一入口是编辑信息弹窗，它经
+    // MediaSource.setOverrideThumbnailFromMediaItem 写 override thumbnail 文件。
+    // 因此 SRT 卡封面渲染必须优先读该 override（否则编辑信息里选的封面不生效）。
+    final String srtCover = _sectionSource(
+      src,
+      'Widget _buildSrtCover(SrtBook book',
+      '  MediaItem _srtBookMediaItem(SrtBook book) {',
+    );
+    expect(
+      srtCover,
+      contains('getOverrideThumbnailFilename'),
+      reason: 'SRT 卡封面必须优先读编辑信息弹窗写入的 override thumbnail（TODO-1191）。',
+    );
+    // 仍保留 book.coverPath 回退，向后兼容历史外层「选择封面图片」写入的封面。
+    expect(
+      srtCover,
+      contains('book.coverPath'),
+      reason: '无 override 时仍回退历史 book.coverPath（向后兼容）。',
+    );
+  });
+
   test('书籍长按对话框隐藏阅读按钮，点击卡片仍负责阅读', () {
     final String srtDialog = _sectionSource(
       src,
       'Future<void> _showSrtBookDialog(SrtBook book) async {',
-      '  Future<void> _pickSrtBookCover(',
+      '  bool _srtBookHasMissingAudio(',
     );
     final String epubDialog = _sectionSource(
       src,

@@ -79,6 +79,20 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final IconData fallbackIcon = isEpubBackedAudiobookSrt(book)
         ? Icons.headphones_outlined
         : Icons.subtitles_outlined;
+    // TODO-1191：SRT 卡封面优先用「编辑信息」弹窗写入的 override thumbnail（经
+    // [MediaSource.setOverrideThumbnailFromMediaItem]，与 EPUB 等其它书卡同源）。
+    // 以前 SRT 卡只读 book.coverPath（旧外层「选择封面图片」专有写入），忽略
+    // override，导致在编辑信息弹窗里选的封面在网格卡上不生效。现在统一到 override，
+    // 无 override 再退回 book.coverPath（向后兼容历史外层写入的封面）与关联 EPUB 封面。
+    final String overrideCoverPath =
+        ReaderHibikiSource.instance.getOverrideThumbnailFilename(
+      appModel: appModel,
+      item: _srtBookMediaItem(book),
+    );
+    final String? existingOverride = _existingCoverFilePath(overrideCoverPath);
+    if (existingOverride != null) {
+      return _buildFileCover(existingOverride, fallbackIcon);
+    }
     final String? ownCoverPath = _existingCoverFilePath(book.coverPath);
     if (ownCoverPath != null) {
       return _buildFileCover(ownCoverPath, fallbackIcon);
@@ -135,14 +149,6 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         onPressed: () async {
           Navigator.pop(dialogContext);
           await _confirmDeleteSrtBook(book);
-        },
-      ),
-      DialogQuickAction(
-        label: t.srt_import_pick_cover,
-        icon: Icons.image_outlined,
-        onPressed: () async {
-          Navigator.pop(dialogContext);
-          await _pickSrtBookCover(book);
         },
       ),
       if (_srtBookHasMissingAudio(book))
@@ -217,25 +223,6 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         extraActions: (_) => _srtExtraActions(ctx, book),
       ),
     );
-    if (mounted) _rebuild(() {});
-  }
-
-  Future<void> _pickSrtBookCover(SrtBook book) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    if (result == null || !mounted) return;
-    final String? pickedPath = result.files.first.path;
-    if (pickedPath == null) return;
-
-    final Directory persistDir =
-        await AudiobookStorage.ensurePersistDir(book.uid);
-    final String ext = p.extension(pickedPath);
-    final String dest = p.join(persistDir.path, 'cover$ext');
-    await File(pickedPath).copy(dest);
-
-    book.coverPath = dest;
-    await SrtBookRepository(appModel.database).save(book);
     if (mounted) _rebuild(() {});
   }
 
