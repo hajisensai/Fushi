@@ -1,8 +1,16 @@
 name: Build Android APK
+# TODO-1208: this workflow no longer runs on push to main/develop. On push it
+# never built an APK anyway (the R8/proguard/native "Verify release build" steps
+# below are all `if: pull_request`), so its analyze + unit/package tests were a
+# byte-for-byte duplicate of release.yml's early analyze+test stage that already
+# runs on every push (release.yml then goes on to build+publish the debug-channel
+# APK). Dropping the push trigger removes that ~41m duplicate job per push while
+# keeping main.yml as the SOLE R8/proguard/native gate on PRs (release.yml has no
+# pull_request trigger). workflow_dispatch stays for manual re-runs.
 on:
-  push:
+  pull_request:
     branches: ['main', 'develop']
-    paths: &ci_paths
+    paths:
       - 'hibiki/**'
       - 'packages/**'
       - 'ci/**'
@@ -10,17 +18,14 @@ on:
       - 'melos.yaml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
-  pull_request:
-    branches: ['main', 'develop']
-    paths: *ci_paths
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Cancel a superseded PR run when the PR is updated; never cancel a
-# push-to-main/develop or release build mid-way (each commit's build matters
-# for bisecting the previously-untested develop history).
+# Cancel a superseded PR run when the PR is force-pushed. (This workflow only
+# runs on pull_request / workflow_dispatch now -- see the TODO-1208 note above --
+# so there is no push-to-main/develop run to protect from cancellation.)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -59,6 +64,7 @@ jobs:
     - uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.44.0'
+        cache: true
 
     - name: Remove local proxy from gradle.properties
       working-directory: hibiki/android
@@ -95,6 +101,30 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
+
+    # TODO-1208: cache the resolved pub packages so pub get is near-instant on a
+    # warm runner. apply-patches.sh is idempotent (cp -r overwrite), so a restored
+    # already-patched cache re-patches to the same bytes. Cache miss auto-rebuilds.
+    - name: Cache pub packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.pub-cache
+        key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-pubcache-
+
+    # TODO-1208: cache Gradle's dependency + wrapper caches for the PR-only
+    # release-verify APK build. Keyed on the gradle build/wrapper files so a
+    # toolchain bump invalidates it; a miss just re-downloads.
+    - name: Cache Gradle caches
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
 
     - name: Flutter pub get
       working-directory: hibiki

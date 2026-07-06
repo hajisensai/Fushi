@@ -1,8 +1,24 @@
 name: Build Desktop and Apple Release Artifacts
 
 on:
+  # TODO-1208: docs-only / repo-chore pushes should not fire the full desktop +
+  # Apple release build. Scope the PUSH trigger to build-relevant paths. The
+  # `release` and `workflow_dispatch` triggers stay UNfiltered so manual
+  # beta/formal publishes always run. A version bump lives under hibiki/** so it
+  # still triggers; rolling debug seq = commit count, so skipping a seq on a
+  # docs-only push is harmless.
   push:
     branches: ['main', 'develop']
+    paths:
+      - 'hibiki/**'
+      - 'packages/**'
+      - 'ci/**'
+      - 'tool/**'
+      - 'third_party/**'
+      - '.github/workflows/**'
+      - 'melos.yaml'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
   release:
     types: [published]
   workflow_dispatch:
@@ -42,6 +58,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -214,6 +231,28 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: cache resolved pub packages. Windows Dart pub cache defaults to
+      # %LOCALAPPDATA%\Pub\Cache (apply-patches.sh resolves the same path).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
+      # downloads from GitHub into the CMake binary dir (hibiki/build/windows/x64).
+      # media_kit's download_and_verify skips the download when the archive exists
+      # with a matching MD5, so restoring just the .7z blobs (NOT the build tree /
+      # CMakeCache -- avoids stale-abspath breakage) cuts the slow GitHub fetch.
+      # Keyed on pubspec.lock so a media_kit version bump re-fetches.
+      - name: Cache media_kit Windows mpv/ANGLE archives
+        uses: actions/cache@v4
+        with:
+          path: hibiki/build/windows/x64/*.7z
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('hibiki/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -548,6 +587,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       - name: Resolve Apple release channel
         id: channel
         shell: bash
@@ -696,6 +736,29 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: cache resolved pub packages (macOS/iOS default ~/.pub-cache).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
+      # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
+      # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
+      # re-downloads.
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+            hibiki/ios/Pods
+            hibiki/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get

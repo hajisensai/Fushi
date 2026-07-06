@@ -1,8 +1,24 @@
 name: Build Release APK
 
 on:
+  # TODO-1208: docs-only / repo-chore pushes (docs/**, *.md, board files) should
+  # not fire the full ~49m release build. Scope the PUSH trigger to build-relevant
+  # paths. The `release` and `workflow_dispatch` triggers below are intentionally
+  # left UNfiltered so manual beta/formal publishes always run regardless of what
+  # changed. A version bump lives in hibiki/pubspec.yaml (under hibiki/**) so it
+  # still triggers; the rolling debug seq = commit count, so skipping a seq on a
+  # docs-only push is harmless.
   push:
     branches: ['main', 'develop']
+    paths:
+      - 'hibiki/**'
+      - 'packages/**'
+      - 'ci/**'
+      - 'tool/**'
+      - '.github/workflows/**'
+      - 'melos.yaml'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
   release:
     types: [published]
   workflow_dispatch:
@@ -51,6 +67,7 @@ jobs:
     - uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.44.0'
+        cache: true
 
     - name: Resolve Android release channel
       id: channel
@@ -298,6 +315,27 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
         fi
+
+    # TODO-1208: cache resolved pub packages + Gradle caches to shave minutes off
+    # every push/release build. apply-patches.sh is idempotent so a warm cache is
+    # safe; a miss auto-rebuilds. Keyed on lockfiles/gradle files.
+    - name: Cache pub packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.pub-cache
+        key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-pubcache-
+
+    - name: Cache Gradle caches
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
 
     - name: Flutter pub get
       working-directory: hibiki
