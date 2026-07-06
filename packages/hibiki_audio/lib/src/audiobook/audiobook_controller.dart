@@ -1467,6 +1467,40 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _teardownForDispose();
+    // 同步 dispose 无法 await stop（会与 just_audio 异步平台切换竞争），止声职责
+    // 交给停止路径（[AudiobookSession.stop] → [stopPlayback]）在 dispose 前完成；
+    // 这里只做 just_audio 自身的资源释放。fire-and-forget（同步签名无法 await）——
+    // 进程退出等不关心文件句柄何时真正放掉的路径用这条。
+    _clipPlayer?.dispose();
+    _clipPlayer = null;
+    _player.dispose();
+    super.dispose();
+  }
+
+  /// 可 await 的释放（TODO-1212）：先 `await` 掉底层 [AudioPlayer.dispose]（这一步才
+  /// 真正释放 native/libmpv 音频文件句柄），再走 [dispose] 同样的同步清理。
+  ///
+  /// 根因：[dispose] 里 `_player.dispose()` 是 fire-and-forget（`void dispose()`
+  /// 同步签名丢弃了 Future），返回给调用方时底层文件句柄仍在异步释放中。数据根迁移
+  /// （桌面「数据存储位置」）要在停音频后立即 rename 数据根子树，此时句柄未放 →
+  /// Windows 同盘 rename 撞「文件被占用」硬失败。本方法把释放做成可等待，
+  /// [AudiobookSession.stop] 改调它，确保 stop 返回时音频文件句柄**真已放掉**。
+  ///
+  /// 与 [dispose] 二选一调用（都会 `super.dispose()`，不得对同一实例都调）。
+  Future<void> disposeAndRelease() async {
+    _teardownForDispose();
+    // 先 await clip / 主播放器的底层释放——句柄真放掉再返回（迁移 rename 前提）。
+    await _clipPlayer?.dispose();
+    _clipPlayer = null;
+    await _player.dispose();
+    super.dispose();
+  }
+
+  /// [dispose] 与 [disposeAndRelease] 共用的同步清理（取消订阅/定时器、dispose
+  /// 各 notifier、force-flush 位置）；不含底层播放器释放（两条路径对它处理不同：
+  /// 同步 fire-and-forget vs 可 await 释放）。
+  void _teardownForDispose() {
     _maybeSavePosition(force: true);
     _imagePauseTimer?.cancel();
     _positionSub?.cancel();
@@ -1477,13 +1511,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     imagePauseSec.dispose();
     _clipStateSub?.cancel();
     _clipStateSub = null;
-    // 同步 dispose 无法 await stop（会与 just_audio 异步平台切换竞争），止声职责
-    // 交给停止路径（[AudiobookSession.stop] → [stopPlayback]）在 dispose 前完成；
-    // 这里只做 just_audio 自身的资源释放。
-    _clipPlayer?.dispose();
-    _clipPlayer = null;
-    _player.dispose();
-    super.dispose();
   }
 
   Future<void> playRange(AudioPlaybackRange range) async {

@@ -10,6 +10,7 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/startup/media_handle_registry.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/storage/data_root_migrator.dart';
 import 'package:hibiki/src/storage/macos_data_root_access.dart';

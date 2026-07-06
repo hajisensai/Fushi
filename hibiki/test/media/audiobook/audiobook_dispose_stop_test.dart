@@ -93,6 +93,42 @@ void main() {
     });
   });
 
+  group('AudiobookPlayerController.disposeAndRelease (TODO-1212)', () {
+    test('awaits the native player release before returning (handle freed)',
+        () async {
+      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      final File audioFile = _tempAudio('hibiki-audiobook-migrate-release.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+      await controller.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(controller.debugMainPlayerPlaying, isTrue,
+          reason: 'precondition: 播放器应处于播放态（native 平台活跃、持文件句柄）');
+
+      final int disposeBefore = plat.disposePlayerCalls;
+
+      // TODO-1212：disposeAndRelease 必须 await 底层 AudioPlayer.dispose（这一步才
+      // 真正释放 native/libmpv 音频文件句柄）。await 返回时 disposePlayer/
+      // disposeAllPlayers 必已被调用完成——**无需任何额外 pump/delay**。这正是数据根
+      // 迁移依赖的契约：stop 返回 = 音频文件句柄已放，rename 数据根不再撞「文件被占用」。
+      // 旧的 fire-and-forget `dispose()`（丢弃 `_player.dispose()` 的 Future）做不到。
+      await controller.disposeAndRelease();
+
+      expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
+          reason: 'disposeAndRelease 必须 await 到底层 native 释放完成再返回，'
+              '否则迁移 rename 时句柄仍在异步释放中会撞「文件被占用」');
+      // 已 super.dispose()——不再 addTearDown(controller.dispose)（避免二次 dispose）。
+    });
+  });
+
   group('AudiobookSession.stop source guard (BUG-278)', () {
     test('stop() releases the controller via stopPlayback() before dispose()',
         () {
@@ -115,6 +151,34 @@ void main() {
       // 守卫回归：不得退回到只 pause（pause 不释放 native，停止后仍在响）。
       expect(stopBody.contains('await controller.pause()'), isFalse,
           reason: 'stop() 不应只 controller.pause()（pause 不释放 native 资源）');
+      // TODO-1212：stop() 必须用可 await 的 disposeAndRelease 释放句柄（真放掉 libmpv
+      // 音频文件句柄再返回），不得退回同步 controller.dispose()（fire-and-forget，返回
+      // 时句柄仍异步释放中 → 数据根迁移 rename 撞「文件被占用」）。
+      expect(stopBody.contains('await controller.disposeAndRelease()'), isTrue,
+          reason: 'stop() 必须 await controller.disposeAndRelease() 真放掉音频文件句柄');
+      expect(stopBody.contains('controller.dispose();'), isFalse,
+          reason: 'stop() 不应用同步 controller.dispose()（fire-and-forget 释放句柄）');
+    });
+
+    test('disposeAndRelease awaits the underlying _player.dispose()', () {
+      final File controllerFile = File(
+        '${Directory.current.path}/../packages/hibiki_audio/lib/src/audiobook/'
+        'audiobook_controller.dart',
+      );
+      expect(controllerFile.existsSync(), isTrue,
+          reason: 'audiobook_controller.dart 应存在于预期路径');
+      final String source = controllerFile.readAsStringSync();
+
+      final int idx =
+          source.indexOf('Future<void> disposeAndRelease() async {');
+      expect(idx, greaterThanOrEqualTo(0),
+          reason: 'AudiobookPlayerController 应有 disposeAndRelease() 方法');
+      final String body =
+          source.substring(idx, (idx + 400).clamp(0, source.length));
+      // 关键不变量：底层释放必须被 await（`await _player.dispose()`），否则句柄仍
+      // fire-and-forget 释放，迁移撞占用。
+      expect(body.contains('await _player.dispose();'), isTrue,
+          reason: 'disposeAndRelease 必须 await _player.dispose()（真释放文件句柄）');
     });
   });
 }
