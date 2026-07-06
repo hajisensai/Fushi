@@ -60,7 +60,7 @@
 		<key>UIStatusBarHidden</key>
 		<false/>
 			<key>CADisableMinimumFrameDurationOnPhone</key>
-			<true/>
+			<false/>
 			<key>UIApplicationSceneManifest</key>
 			<dict>
 				<key>UIApplicationSupportsMultipleScenes</key>
