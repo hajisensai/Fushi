@@ -1714,10 +1714,16 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
             });
           }),
           controller(context).player.stream.position.listen((event) {
+            // Hibiki patch (TODO-1243): mirror of the desktop seek bar. Drop
+            // redundant frame-rate rebuilds — drag already suppresses position
+            // (uses `slider`); while not dragging, quantize to
+            // kPositionUiThrottleStep so the fill re-rasters at ~5fps instead of
+            // the libmpv frame rate (integrated-GPU load when controls visible).
+            if (tapped) return;
+            final Duration next = event.floorTo(kPositionUiThrottleStep);
+            if (next == position) return;
             setState(() {
-              if (!tapped) {
-                position = event;
-              }
+              position = next;
             });
           }),
           controller(context).player.stream.duration.listen((event) {
@@ -2161,8 +2167,14 @@ class MaterialPositionIndicatorState extends State<MaterialPositionIndicator> {
       subscriptions.addAll(
         [
           controller(context).player.stream.position.listen((event) {
+            // Hibiki patch (TODO-1243): the clock text only shows whole seconds,
+            // so quantizing to kPositionUiThrottleStep (which divides 1000ms)
+            // yields the identical string while collapsing ~60fps rebuilds to
+            // ~5fps. Skip setState entirely when the quantized value is unchanged.
+            final Duration next = event.floorTo(kPositionUiThrottleStep);
+            if (next == position) return;
             setState(() {
-              position = event;
+              position = next;
             });
           }),
           controller(context).player.stream.duration.listen((event) {
