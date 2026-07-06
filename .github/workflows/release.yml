@@ -15,6 +15,7 @@ on:
       - 'packages/**'
       - 'ci/**'
       - 'tool/**'
+      - 'third_party/**'
       - '.github/workflows/**'
       - 'melos.yaml'
       - 'pubspec.yaml'
