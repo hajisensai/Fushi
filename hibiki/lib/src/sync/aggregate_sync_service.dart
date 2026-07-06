@@ -463,7 +463,17 @@ class AggregateSyncService {
   /// words through the idempotent addFavoriteWord, and favorite sentences
   /// through the same pure fold + pref write BackupMergeEngine uses.
   Future<void> applySnapshotToLocal(AggregateSnapshot snapshot) async {
+    // TODO-1204 后续：统计删除墓碑。用户在统计页删掉某本书/视频的统计后，本地行已删、
+    // 但 peer 快照仍带该书的旧 MAX 值——[mergeSnapshots] 会把它 union 回 merged，若直接
+    // 写回就复活了。这里按 (title, sourceType) 跳过被删的书统计，让本设备删掉的书不被
+    // peer 快照复活（墓碑本地生效；用户重读该书 / 查词会清墓碑，见 database.dart 的
+    // add* 方法）。reading→'book'、video→'video'、lookup_mining_counters 用其 sourceType。
+    final Set<(String, String)> tombstoned =
+        await _db.getStatisticsTombstoneKeys();
     for (final ReadingStatRecord r in snapshot.readingStats) {
+      if (tombstoned.contains((r.title, HibikiDatabase.statSourceBook))) {
+        continue;
+      }
       await _db.setReadingStatistic(ReadingStatisticsCompanion(
         title: Value(r.title),
         dateKey: Value(r.dateKey),
@@ -473,6 +483,9 @@ class AggregateSyncService {
       ));
     }
     for (final VideoStatRecord r in snapshot.videoStats) {
+      if (tombstoned.contains((r.title, HibikiDatabase.statSourceVideo))) {
+        continue;
+      }
       await _db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
         title: Value(r.title),
         dateKey: Value(r.dateKey),
@@ -503,6 +516,8 @@ class AggregateSyncService {
       );
     }
     for (final LookupMiningRecord r in snapshot.lookupMiningCounters) {
+      // TODO-1204 后续：跳过被删书的查词/制卡计数（按 (title, sourceType) 命中墓碑）。
+      if (tombstoned.contains((r.title, r.sourceType))) continue;
       // Both setters are MAX-union on {title, sourceType, dateKey}: setLookupCount
       // creates or lifts the row's lookupCount, then setMineCountPerBook lifts
       // the same row's mineCount. Order is safe because the first call

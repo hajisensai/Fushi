@@ -3,6 +3,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
+import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -385,6 +386,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 长按 / 右键某个视频那一行 → 确认 → 删除该视频的纯统计并写 video 墓碑防复活，
+  /// 再从 DB 重新聚合刷新（TODO-1204 后续）。
+  Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
+    final bool confirmed = await confirmDeleteStatistics(context, video.title);
+    if (!confirmed || !mounted) return;
+    await appModelNoUpdate.database.deleteVideoStatisticsForTitle(video.title);
+    if (!mounted) return;
+    await _loadFromDatabase();
+  }
+
   Widget _buildVideoTile(VideoStatBookData video) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
@@ -396,52 +407,60 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap / 2,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            video.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium,
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
+        onLongPress: () => _confirmAndDeleteVideo(video),
+        onSecondaryTap: () => _confirmAndDeleteVideo(video),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.gap / 2,
           ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: tokens.radii.chipRadius,
-                  child: LinearProgressIndicator(
-                    value: fraction,
-                    minHeight: 8,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
-              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Text(
-                _formatTime(video.ms),
+                video.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: tokens.radii.chipRadius,
+                      child: LinearProgressIndicator(
+                        value: fraction,
+                        minHeight: 8,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+                  Text(
+                    _formatTime(video.ms),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Text(
+                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
               ),
+              SizedBox(height: tokens.spacing.gap / 2),
             ],
           ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-        ],
+        ),
       ),
     );
   }

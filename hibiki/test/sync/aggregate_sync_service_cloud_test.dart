@@ -275,4 +275,45 @@ void main() {
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
     expect((await dbB.getAllFavoriteWords()).length, 1);
   });
+
+  test(
+      'a tombstoned book stat is NOT resurrected by a peer snapshot '
+      '(TODO-1204 后续)', () async {
+    final FakeAssetStore store = FakeAssetStore();
+    final HibikiDatabase dbA = await _freshDb('agg_tombA_');
+    addTearDown(dbA.close);
+    await dbA.addReadingStatistic(
+        title: 'Ghost', dateKey: '2026-06-01', charsRead: 100, timeMs: 6000);
+    await dbA.addLookupCount(
+        bookKey: 'book/Ghost',
+        title: 'Ghost',
+        sourceType: 'book',
+        dateKey: '2026-06-01');
+    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+
+    final HibikiDatabase dbB = await _freshDb('agg_tombB_');
+    addTearDown(dbB.close);
+    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+    expect((await dbB.getAllReadingStatistics()).length, 1,
+        reason: 'B pulled Ghost from A');
+
+    // User deletes Ghost's stats on B -> local rows gone + tombstone written.
+    await dbB.deleteReadingStatisticsForTitle('Ghost');
+    expect(await dbB.getAllReadingStatistics(), isEmpty);
+
+    // A's snapshot still carries Ghost; a re-sync folds it into merged, but the
+    // tombstone must make applySnapshotToLocal skip it -> Ghost stays gone.
+    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+    expect(await dbB.getAllReadingStatistics(), isEmpty,
+        reason: 'tombstone blocks resurrection of the deleted book stat');
+    expect(await dbB.getLookupMiningCountersBySource('book'), isEmpty,
+        reason: 'tombstone also blocks the lookup counter resurrection');
+
+    // Re-reading Ghost on B clears the tombstone; future syncs may revive it
+    // (matching the "重加书清墓碑" intent).
+    await dbB.addReadingStatistic(
+        title: 'Ghost', dateKey: '2026-06-02', charsRead: 5, timeMs: 60);
+    expect(await dbB.getStatisticsTombstoneKeys(),
+        isNot(contains(('Ghost', 'book'))));
+  });
 }

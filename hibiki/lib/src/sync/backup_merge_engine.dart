@@ -229,7 +229,10 @@ class BackupMergeEngine {
       'SELECT title, date_key, characters_read, reading_time_ms, '
       'last_statistic_modified FROM $_srcAlias.reading_statistics AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM reading_statistics AS t '
-      'WHERE t.title = s.title AND t.date_key = s.date_key)',
+      'WHERE t.title = s.title AND t.date_key = s.date_key) '
+      // TODO-1204 后续：用户删过该书统计（book 墓碑）→ 旧备份不得复活它。
+      'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
+      "WHERE source_type = 'book')",
     );
     await _db.customStatement(
       'UPDATE reading_statistics SET '
@@ -259,7 +262,10 @@ class BackupMergeEngine {
       'SELECT title, date_key, subtitle_chars, watch_time_ms, last_modified '
       'FROM $_srcAlias.video_watch_statistics AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM video_watch_statistics AS t '
-      'WHERE t.title = s.title AND t.date_key = s.date_key)',
+      'WHERE t.title = s.title AND t.date_key = s.date_key) '
+      // TODO-1204 后续：用户删过该视频统计（video 墓碑）→ 旧备份不得复活它。
+      'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
+      "WHERE source_type = 'video')",
     );
     await _db.customStatement(
       'UPDATE video_watch_statistics SET '
@@ -326,13 +332,15 @@ class BackupMergeEngine {
   /// (mirrors setLookupCount / setMineCountPerBook). Keyed by {title,
   /// source_type, date_key} exactly like the table's unique key.
   ///
-  /// Like reading_statistics / mining_statistics (also title / source keyed,
-  /// monotonic aggregates), this deliberately has NO book_tombstones guard: the
-  /// counters are per-title historical activity, not per-book_key content, and a
-  /// deleted book must not silently erase the day's lookup/mine totals. On the
-  /// INSERT of a bucket the target lacks, the src book_key travels; on an UPDATE
-  /// the target keeps its own book_key unless it was null, in which case it
-  /// adopts the src's non-null value (COALESCE) so book identity converges.
+  /// This has NO book_tombstones guard (per-title activity, not per-book_key
+  /// content), but DOES honour statistics_tombstones (TODO-1204 后续): once the
+  /// user explicitly deleted a book/video's stats in the stats page, an old
+  /// backup must not resurrect its lookup/mine counters. The INSERT below skips
+  /// src rows whose (title, source_type) is tombstoned; the UPDATE only touches
+  /// buckets the target already has (deleted buckets are gone), so it needs no
+  /// guard. On the INSERT of a bucket the target lacks, the src book_key travels;
+  /// on an UPDATE the target keeps its own book_key unless it was null, in which
+  /// case it adopts the src's non-null value (COALESCE) so book identity converges.
   Future<void> _mergeLookupMiningCounters() async {
     await _db.customStatement(
       'INSERT INTO lookup_mining_counters '
@@ -341,7 +349,10 @@ class BackupMergeEngine {
       'FROM $_srcAlias.lookup_mining_counters AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM lookup_mining_counters AS t '
       'WHERE t.title = s.title AND t.source_type = s.source_type '
-      'AND t.date_key = s.date_key)',
+      'AND t.date_key = s.date_key) '
+      // TODO-1204 后续：用户删过该 (title, sourceType) 统计 → 旧备份不得复活其计数。
+      'AND NOT EXISTS (SELECT 1 FROM statistics_tombstones st '
+      'WHERE st.title = s.title AND st.source_type = s.source_type)',
     );
     await _db.customStatement(
       'UPDATE lookup_mining_counters SET '
