@@ -1717,10 +1717,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String? externalSub = paths.subtitleSource;
     int? graphicStreamIndex;
 
+    // TODO-1246：外挂文本字幕（.srt/.ass/.ssa/.vtt）的真相源是磁盘档案，不是 DB 缓存。
+    // DB 里的 AudioCue **不携带**解析期的行内/cue 级样式 markup（[AudioCue.markup] 瞬态、
+    // DB 往返丢弃，见 audiobook_model.dart），故单视频重开时 loadCues 命中的 cue 恒
+    // `markup==null` → 字幕 overlay 的「尊重字幕自带样式」开关（respectAssStyle）拿不到
+    // cueStyle，字幕永远退回 app 统一样式（用户报：开了开关 .ass 自带字体/主色/描边仍不
+    // 生效）。当持久化字幕源是仍在磁盘上的外挂文本档案时，直接重解析档案拿回带 markup 的
+    // cue（重解析文本档案廉价，不触发 BUG-081 关注的内嵌轨 ffmpeg 重抽取）；重解析空
+    // （档案被删/损坏）时保留 DB 缓存 cue（内容仍在、仅缺样式），不倒退功能。
+    // 播放列表换集走 _restorePersistedSubtitle→loadCuesForSource 已是重解析、天然带 markup，
+    // 故只需修单视频路径。
+    final String? rehydratePath = subtitleExplicitlyOff
+        ? null
+        : _rehydratableExternalSubtitlePath(externalSub);
+
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
     // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
     if (subtitleExplicitlyOff) {
       cues = const <AudioCue>[];
+    } else if (rehydratePath != null) {
+      // 外挂文本字幕：重解析磁盘档案作为真相源，恢复 cue 级 / 行内样式 markup（TODO-1246）。
+      final List<AudioCue> reparsed =
+          await _loadExternalSubtitleCues(rehydratePath, widget.bookUid);
+      if (reparsed.isNotEmpty) {
+        cues = reparsed;
+      }
+      // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
     } else if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
@@ -1987,6 +2009,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       externalSubtitlePath: externalSub,
       renderGraphicStreamIndex: graphicStreamIndex,
     );
+  }
+
+  /// 若 [source] 是仍在磁盘上的**外挂文本字幕档案**（.srt/.ass/.ssa/.vtt），返回其路径供
+  /// 重解析拿回样式 markup（TODO-1246）；否则返回 null：内嵌轨（`embedded:<n>` 无扩展名，
+  /// [subtitleFormatForPath] 判 null）、关闭哨兵、`null`/空、或档案已不在磁盘上（重解析无源）。
+  /// 内嵌轨不在此重解析（避免 BUG-081 关注的 ffmpeg 重抽取），保留 DB 缓存 cue。
+  String? _rehydratableExternalSubtitlePath(String? source) {
+    if (source == null || source.isEmpty) return null;
+    if (SubtitleSource.isOff(source)) return null;
+    if (subtitleFormatForPath(source) == null) return null;
+    if (!File(source).existsSync()) return null;
+    return source;
   }
 
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
