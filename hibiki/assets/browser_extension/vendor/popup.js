@@ -1623,6 +1623,19 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
                 if (/<[a-z][\s\S]*>/i.test(content)) {
                     const wrapper = el('div');
                     wrapper.innerHTML = rewriteDictLinks(content, dictName);
+                    // TODO-1215 安全：扩展环境下 rewriteDictLinks 对相对路径 <img> 只写了无 token 的
+                    // 占位 data-* 属性（src 留空）；这里逐个走 fetch→blob 补 src——token 只在 fetch 调用里，
+                    // 绝不进宿主页 DOM。app 内不产生这些占位属性 → 此循环空转，行为不变。
+                    wrapper.querySelectorAll('img[data-hibiki-media-path]').forEach((img) => {
+                        const mediaPath = decodeURIComponent(img.dataset.hibikiMediaPath || '');
+                        const mediaDict = decodeURIComponent(img.dataset.hibikiMediaDict || '');
+                        const mediaUrl = rewriteDictionaryMediaPath(mediaPath, mediaDict);
+                        if (mediaUrl === null) return;
+                        hibikiSetImageSrc(img, mediaUrl, () => {
+                            console.log('[IMG_ERROR]', mediaPath, mediaUrl);
+                            img.style.display = 'none';
+                        });
+                    });
                     parent.appendChild(wrapper);
                 } else {
                     renderStructuredContent(parent, content, null, dictName);

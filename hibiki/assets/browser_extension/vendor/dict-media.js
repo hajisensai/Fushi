@@ -33,7 +33,16 @@ function rewriteDictLinks(html, dictName) {
         if (rewritten === null) {
             return match;
         }
-        return match.replace(/\bsrc=(['"])([^'"]+)\1/i, `src=${quote}${rewritten}${quote}`);
+        // TODO-1215 安全：扩展环境（window.__hibikiDictMedia 已设）下，这段 HTML 会经 innerHTML
+        // 直落宿主页 DOM——绝不能把带原始 sync token 的媒体 URL 写进 <img src>（哪怕只存在一帧也会被
+        // MutationObserver 截获）。改成无 token 的占位 data-* 属性（去掉 src），popup.js 在 innerHTML
+        // 之后据此 fetch→blob 补 src（token 只在 fetch 调用里）。app 内（该全局未设）保持原样。
+        const media = (typeof window !== 'undefined') ? window.__hibikiDictMedia : null;
+        if (media && media.base && media.token) {
+            return match.replace(/src=(['"])([^'"]+)/i,
+                `data-hibiki-media-dict="${encodeURIComponent(dictName)}" data-hibiki-media-path="${encodeURIComponent(src)}"`);
+        }
+        return match.replace(/src=(['"])([^'"]+)/i, `src=${quote}${rewritten}${quote}`);
     });
 }
 
