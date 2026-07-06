@@ -113,7 +113,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   @override
   void initState() {
     super.initState();
-    _future = widget.repo.listAll();
+    // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+    _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
     // TODO-616 A2: also prefetch order / series maps on first frame (order
     // defaulting to 0 was harmless before, but series grouping needs
@@ -136,7 +137,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   void _refresh() {
     setState(() {
-      _future = widget.repo.listAll();
+      // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+      _future = widget.repo.listForShelf();
       _remoteFuture = _loadRemoteVideos();
     });
     _loadVideoOrder();

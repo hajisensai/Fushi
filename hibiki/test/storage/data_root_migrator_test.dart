@@ -57,6 +57,10 @@ void main() {
     File(p.join(oldSupport.path, 'local_audio_1.db'))
       ..createSync(recursive: true)
       ..writeAsBytesSync(<int>[9, 9, 9]);
+    // TODO-1255：视频封面落 <documents>/video_covers（应用自有资产，随根迁移）。
+    File(p.join(oldDocs.path, 'video_covers', 'video_Bk.jpg'))
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(<int>[10, 11, 12]);
 
     final HibikiDatabase db = HibikiDatabase(oldSupportPath);
     try {
@@ -91,6 +95,16 @@ void main() {
         coverPath: Value(p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'c.jpg')),
         importedAt: 1234,
         bookKey: const Value(''),
+      ));
+      // TODO-1255：视频书。videoPath 是用户原位外部视频（不以旧根开头 → rebasePath
+      // 天然跳过），coverPath 是应用自有封面（落 <documents>/video_covers，必须 rebase）。
+      // 旧 bug：video_books 只 rebase video_path/playlist_json，videoPath 未变时整行被
+      // 跳过，cover_path 永远留在旧根 → 迁移搬走封面文件后书架全占位。
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/Bk',
+        title: 'Video Bk',
+        videoPath: p.join('E:', 'anime', 'Bk.mkv'),
+        coverPath: Value(p.join(oldDocsPath, 'video_covers', 'video_Bk.jpg')),
       ));
       // local_audio_dbs pref points at the internal copy under support root.
       await db.setPref(
@@ -183,6 +197,13 @@ void main() {
         final List<dynamic> srtAudioPaths =
             jsonDecode(s.audioPathsJson!) as List<dynamic>;
         expect(srtAudioPaths.single as String, startsWith(newDocs.path));
+
+        // TODO-1255：video_books.cover_path 已 rebase 到新根（即便 video_path 是外部
+        // 路径未变），且封面文件随迁移搬到新根。videoPath 是外部路径，仍留原位不变。
+        final VideoBookRow vb = (await db.allVideoBooks()).single;
+        expect(vb.coverPath, startsWith(newDocs.path));
+        expect(File(vb.coverPath!).existsSync(), isTrue);
+        expect(vb.videoPath, equals(p.join('E:', 'anime', 'Bk.mkv')));
 
         final Map<String, String> prefs = await db.getAllPrefs();
         // local_audio_dbs rebased onto new support root.

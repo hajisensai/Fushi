@@ -718,20 +718,30 @@ class DataRootMigrator {
         );
       }
 
-      // ── video_books：video_path / playlist_json（仅当原本指向 documents 根下的内部
-      //    副本时才改写；用户原位外部视频不以旧根开头 → rebasePath 天然跳过）。
+      // ── video_books：video_path / playlist_json / cover_path。video_path 与
+      //    playlist_json 仅当原本指向 documents 根下的内部副本时才改写（用户原位外部
+      //    视频不以旧根开头 → rebasePath 天然跳过）；cover_path 是应用自有资产，恒落
+      //    `<documents>/video_covers`，随数据根整树搬移，必须 rebase——TODO-1255：
+      //    历史上此处漏改 cover_path（epub_books / srt_books 都改了，只有 video_books
+      //    落下），迁移把 `video_covers/*` 物理搬到新根后，DB 里的旧封面绝对路径指向
+      //    已空的旧 Documents，导致视频库封面全占位。
       for (final VideoBookRow v in await db.allVideoBooks()) {
         final String newVideoPath =
             rebasePath(v.videoPath, oldDocumentsRoot, newDocumentsRoot);
         final String? newPlaylist = _rebasePlaylistJson(
             v.playlistJson, oldDocumentsRoot, newDocumentsRoot);
-        if (newVideoPath == v.videoPath && newPlaylist == v.playlistJson) {
+        final String? newCover = v.coverPath == null
+            ? null
+            : rebasePath(v.coverPath!, oldDocumentsRoot, newDocumentsRoot);
+        if (newVideoPath == v.videoPath &&
+            newPlaylist == v.playlistJson &&
+            newCover == v.coverPath) {
           continue;
         }
         await db.customStatement(
-          'UPDATE video_books SET video_path = ?, playlist_json = ? '
-          'WHERE book_uid = ?',
-          <Object?>[newVideoPath, newPlaylist, v.bookUid],
+          'UPDATE video_books SET video_path = ?, playlist_json = ?, '
+          'cover_path = ? WHERE book_uid = ?',
+          <Object?>[newVideoPath, newPlaylist, newCover, v.bookUid],
         );
       }
 

@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -42,6 +45,49 @@ class VideoBookRepository {
       _db.getVideoBookByBookUid(bookUid);
 
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
+
+  /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
+  /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
+  /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。
+  Future<List<VideoBookRow>> listForShelf() async =>
+      _repairMovedCoverPaths(await _db.allVideoBooks());
+
+  /// TODO-1255：自愈被数据根迁移遗弃的封面绝对路径。
+  ///
+  /// 视频封面（[extractVideoCover] / 手动设封面）恒落 `<documents>/video_covers`，
+  /// DB `cover_path` 存的是**绝对路径**。桌面自定义数据根迁移会把 `video_covers/*`
+  /// 物理搬到新根，但历史迁移漏改 `video_books.cover_path`（epub/srt 都改了），使这些
+  /// 行的封面路径指向已空的旧 Documents → 书架封面全占位。迁移侧已补 rebase
+  /// （[DataRootMigrator]），但**已经迁移过的旧库**里的坏路径无法再靠迁移修复。
+  ///
+  /// 这里在列出时兜底：某行 `cover_path` 非空且**文件不存在**，但当前
+  /// [VideoStorage.coversDir] 里有同名文件（封面文件名由 bookUid 派生、1:1 对应），
+  /// 就把 `cover_path` 回写到当前根下的真实位置（幂等、只指向已存在的文件、不搬不删，
+  /// 修好后后续 [File.existsSync] 命中不再触发写）。文件名兜底同时也让**未来任何一次
+  /// 数据根变动**都能自愈，不依赖迁移逐列覆盖。远端视频（`RemoteVideoInfo`，coverUrl）
+  /// 不经本表，天然不受影响。
+  Future<List<VideoBookRow>> _repairMovedCoverPaths(
+    List<VideoBookRow> rows,
+  ) async {
+    Directory? coversDir;
+    final List<VideoBookRow> out = <VideoBookRow>[];
+    for (final VideoBookRow row in rows) {
+      final String? cover = row.coverPath;
+      if (cover == null || cover.isEmpty || File(cover).existsSync()) {
+        out.add(row);
+        continue;
+      }
+      coversDir ??= await VideoStorage.coversDir();
+      final String candidate = p.join(coversDir.path, p.basename(cover));
+      if (candidate != cover && File(candidate).existsSync()) {
+        await _db.updateVideoBookCover(row.bookUid, candidate);
+        out.add(row.copyWith(coverPath: Value<String?>(candidate)));
+      } else {
+        out.add(row);
+      }
+    }
+    return out;
+  }
 
   Future<void> updatePosition(String bookUid, int positionMs) =>
       _db.updateVideoBookPosition(bookUid, positionMs);
