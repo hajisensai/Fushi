@@ -497,14 +497,23 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               child: SegmentedButton<bool>(
                 key: const Key('shortcut_view_toggle'),
                 showSelectedIcon: false,
-                segments: const <ButtonSegment<bool>>[
+                segments: <ButtonSegment<bool>>[
                   ButtonSegment<bool>(
                     value: false,
-                    icon: Icon(Icons.list_outlined),
+                    icon: const Icon(Icons.list_outlined),
+                    tooltip: t.shortcut_view_list,
                   ),
                   ButtonSegment<bool>(
                     value: true,
-                    icon: Icon(Icons.keyboard_outlined),
+                    // TODO-942 discoverability: the visual segment opens the
+                    // gamepad/keyboard skin overview (GamepadLayoutView). Its
+                    // icon used to be a plain keyboard glyph, which read as a
+                    // mere keyboard view and hid the controller layout — users
+                    // asked "where is the controller diagram?". A controller
+                    // glyph tells the user at a glance that this segment shows
+                    // the gamepad visual layout.
+                    icon: const Icon(Icons.sports_esports_outlined),
+                    tooltip: t.shortcut_view_visual,
                   ),
                 ],
                 selected: <bool>{_visualMode},

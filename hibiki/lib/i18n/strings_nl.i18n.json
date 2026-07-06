@@ -2142,5 +2142,7 @@
   "popup_no_audio_available": "No audio available",
   "loading_slow_title": "Startup is taking longer than usual",
   "loading_slow_message": "If your data storage location is on a network or removable drive that is currently disconnected, startup can stall. Tap Retry to launch using the default storage location for this session; your data stays where it is.",
-  "shortcut_gamepad_unavailable_hint": "GameInput component not detected — gamepad support is unavailable. Install the Windows Gaming Services to enable controller support."
+  "shortcut_gamepad_unavailable_hint": "GameInput component not detected — gamepad support is unavailable. Install the Windows Gaming Services to enable controller support.",
+  "shortcut_view_list": "List view",
+  "shortcut_view_visual": "Controller layout"
 }

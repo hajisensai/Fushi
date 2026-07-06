@@ -2142,5 +2142,7 @@
   "popup_no_audio_available": "暂无发音",
   "loading_slow_title": "启动耗时超出预期",
   "loading_slow_message": "如果你把数据存储位置设在了当前未连接的网络盘 / 移动盘上，启动可能卡住。点「重试」即可用默认存储位置启动本次会话；你的数据仍保留在原位置不动。",
-  "shortcut_gamepad_unavailable_hint": "未检测到 GameInput 组件，手柄功能不可用。可安装 Windows「游戏服务(Gaming Services)」以启用手柄支持。"
+  "shortcut_gamepad_unavailable_hint": "未检测到 GameInput 组件，手柄功能不可用。可安装 Windows「游戏服务(Gaming Services)」以启用手柄支持。",
+  "shortcut_view_list": "列表视图",
+  "shortcut_view_visual": "手柄可视化图"
 }
