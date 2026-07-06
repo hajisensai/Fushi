@@ -333,11 +333,14 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       );
     }
     final String? coverUrl = book.coverUrl;
-    if (coverUrl != null && coverUrl.isNotEmpty) {
-      return Image.network(
-        coverUrl,
+    // TODO-1235（TODO-961 回归）：封面走互联同款钉扎客户端拉取，不再用 Image.network
+    // （Flutter 内部 HttpClient 无 badCertificateCallback，https 自签握手必失败）。
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(_remoteBookClient);
+    if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      return Image(
+        image: RemoteCoverImage(coverUrl, fetcher),
         key: ValueKey<String>('remote_book_cover_$safeKey'),
-        headers: remoteCoverHeadersFor(_remoteBookClient),
         alignment: Alignment.topCenter,
         fit: _bookCardCoverFit,
         errorBuilder: (_, __, ___) =>
