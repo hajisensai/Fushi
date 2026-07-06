@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// 首页「正在听书」迷你条（TODO-291 阶段2）。
@@ -146,11 +147,18 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
   /// 提示，与 reader 的同名开关一致。
   Future<void> _toggleFloatingLyric(AppModel appModel) async {
     final bool ok = await appModel.toggleFloatingLyricFromControls();
-    if (!mounted) return;
     if (!ok) {
-      final String hint = Platform.isAndroid
-          ? t.floating_lyric_permission_hint
-          : t.floating_lyric_unavailable_hint;
+      // TODO-1227: ColorOS OEMs may refuse the overlay permission outright —
+      // OPPO-family devices get workaround guidance instead of the plain
+      // "grant the permission" hint.
+      final String? maker = Platform.isAndroid
+          ? await appModel.platformServices.deviceInfo.manufacturer
+          : null;
+      if (!mounted) return;
+      final String hint = floatingLyricFailureHint(
+        isAndroid: Platform.isAndroid,
+        manufacturer: maker,
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(hint),
@@ -159,6 +167,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
       );
       return;
     }
+    if (!mounted) return;
     setState(() {});
   }
 

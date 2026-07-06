@@ -79,7 +79,8 @@ class MiningMediaCompression {
   /// cue 封面 GIF 帧率（`fps=`）。压缩档 8，高保真档 12。
   final int gifFps;
 
-  /// cue 封面 GIF 宽度（`scale=W:-2`）。压缩档 480，高保真档 720（TODO-1145 拉高）。
+  /// cue 封面 GIF 宽度（`scale=W:-2`）。压缩档 480，高保真档 720（TODO-1145 拉高；
+  /// 网飞与 app 内视频制卡共用本档位，GIF 输出天然一致）。
   final int gifWidth;
 
   /// 帧截图封面降采样长边（px）。压缩档 1000，高保真档 2000。
@@ -618,7 +619,7 @@ List<String> buildFfmpegClipGifArgs({
   required int endMs,
   required String outputPath,
   // TODO-646 近无损压缩 + TODO-757 压缩开关：压缩档 cue 封面动图 480px/8fps
-  // （TODO-1145 从 320 拉高）；高保真档 720px/12fps（关闭压缩=满捕获宽不降采样）。
+  // （TODO-1145 从 320 拉高）；高保真档 720px/12fps（与 app 内视频制卡共用档位）。
   // 默认值保持压缩档（现状），由调用点据压缩开关传值，纯函数不读全局偏好。仍走
   // palettegen/paletteuse 双遍避免抖动。
   int fps = 8,
@@ -662,7 +663,7 @@ Future<String?> extractClipGifViaFfmpeg({
   required String outputPath,
   FfmpegFailureReporter? onFailure,
   // TODO-757 压缩开关：默认压缩档（480px/8fps，TODO-1145 拉高）；关闭压缩时调用点
-  // 传高保真档（720px/12fps，满捕获宽不降采样）。
+  // 传高保真档（720px/12fps，与 app 内视频制卡共用档位）。
   int fps = 8,
   int width = 320,
 }) async {

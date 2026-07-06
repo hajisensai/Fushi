@@ -2134,5 +2134,6 @@
   "backup_category_statistics": "Statistics",
   "backup_category_settings": "Settings",
   "backup_category_profiles": "Profiles",
-  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import.",
+  "floating_lyric_permission_hint_coloros": "If the system keeps refusing the overlay permission: reinstall this app's APK once with a file manager, or turn off permission monitoring in Developer options, then try again."
 }
