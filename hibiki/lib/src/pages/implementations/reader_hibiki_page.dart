@@ -1637,10 +1637,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _syncDictionaryTheme();
 
-    final bool savedLyricsMode =
-        _audiobookController != null && ReaderHibikiSource.instance.lyricsMode;
-    _lyricsMode = savedLyricsMode;
-    if (!savedLyricsMode) {
+    // 歌词模式是当前 reader 页面的瞬时显示态。fresh open 时若恢复上个会话的
+    // persisted lyrics_mode，会让 WebView 跳过 EPUB 正文，直接加载整本歌词 HTML；
+    // iOS 上大字幕书容易触发内容超时甚至白屏。
+    _lyricsMode = false;
+    if (ReaderHibikiSource.instance.lyricsMode) {
       await ReaderHibikiSource.instance.setLyricsMode(false);
       if (!mounted) return;
     }
