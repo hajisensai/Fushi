@@ -51,7 +51,42 @@ window.flutter_inappwebview = {
         try { window.open(args[0], '_blank'); } catch (_) { /* no-op */ }
         return Promise.resolve(null);
       case 'resolveWordAudio':
+        // 单词音频①解析：popup.js 点 ♪ → 传 {expression,reading}。经 background 向 server
+        // POST /api/lookup/audio（Basic auth，与 lookup/mine 同链路），拿回可直接播放的
+        // /api/lookup/audio/file?id= 短命 URL（不新协议，复用 sync server 既有音频端点）。
+        // 命中返 URL 字符串，未命中/失败返 null → popup 显示 ✕（graceful，与 app 一致）。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'lookupAudio',
+              expression: a.expression || '',
+              reading: a.reading || '',
+            });
+            return (resp && resp.ok && resp.url) ? resp.url : null;
+          } catch (_) {
+            return null;
+          }
+        })();
       case 'playWordAudio':
+        // 单词音频②播放：拿 resolveWordAudio 返回的 file URL 用 HTML5 Audio 播（扩展宿主是
+        // 真实浏览器，直接 new Audio(url).play()）。mode==='interrupt' 时先掐掉上一段。
+        // 成功 resolve(true)、失败 resolve(false) → popup 显示 ✕。
+        return (async function () {
+          try {
+            var opts = args[0] || {};
+            if (!opts.url) return false;
+            if ((opts.mode || 'interrupt') === 'interrupt' && window.__hibikiWordAudio) {
+              try { window.__hibikiWordAudio.pause(); } catch (_) {}
+            }
+            var audio = new Audio(opts.url);
+            window.__hibikiWordAudio = audio;
+            await audio.play();
+            return true;
+          } catch (_) {
+            return false;
+          }
+        })();
       default:
         return Promise.resolve(null);
     }

@@ -11,6 +11,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// - #3 MediaRecorder 孤儿防御（offscreen beginClip 先停旧 recorder）+ hideStyle/cursor 还原放 finally。
 /// - #4 每句时间窗死代码已删（扩展 mineClip 不发段内窗/gifEnd；dart transcodeClipToCapture 去掉
 ///   windowStartMs/windowEndMs/gifEndMs；payload 去掉 clipGifEndMs）。
+///
+/// TODO-1132 追加（V16 主修遗留、无守卫的两处真实缺口）：
+/// - #5 offscreen.endClip() 的 recorder.stop() 异常路径也解绑 onstop/ondataavailable 并
+///   清 recorder/chunks（原来只 resolve → 孤儿 recorder + 陈旧 chunks 滞留）。
+/// - #6 content.hibikiMaybeResumeNetflixBatch 外层 finally 兜底发 nfStopCapture（原来只在
+///   正常路径停录；批量抛错时 tabCapture 流不释放 → M7375 + 流泄漏）。
 void main() {
   // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
@@ -82,6 +88,24 @@ void main() {
           expect(src.contains('clipGifEndMs'), isFalse,
               reason: '${content.path} 残留 clipGifEndMs 死偏移');
         });
+
+        test('#6 批量外层 finally 兜底 nfStopCapture（异常路径也释放 tabCapture 流）', () {
+          final String src = content.readAsStringSync();
+          // 外层 finally（复位 hibikiNfBatchRunning 处）内必须发 nfStopCapture：
+          // hibikiRunNetflixBatch 抛错时也释放 tabCapture 流，避开 M7375 + 流泄漏。
+          final int finallyIdx = src.lastIndexOf('} finally {');
+          final int resetIdx =
+              src.indexOf('hibikiNfBatchRunning = false;', finallyIdx);
+          expect(finallyIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} 缺外层 finally');
+          expect(resetIdx, greaterThan(finallyIdx));
+          expect(
+            src.substring(finallyIdx, resetIdx).contains(
+                "chrome.runtime.sendMessage({ type: 'nfStopCapture' })"),
+            isTrue,
+            reason: '${content.path} 外层 finally 未兜底 nfStopCapture',
+          );
+        });
       });
     }
 
@@ -95,6 +119,24 @@ void main() {
           isTrue,
           reason: '${offscreen.path} beginClip 未先停旧 recorder（孤儿泄漏）',
         );
+      });
+
+      test('#5 offscreen ${offscreen.path} endClip 异常路径清理 recorder/chunks', () {
+        final String src = offscreen.readAsStringSync();
+        // recorder.stop() 抛异常时的 catch 块须清理 recorder/chunks（并解绑回调），
+        // 否则孤儿 recorder + 陈旧 chunks 滞留在流上。定位到该 catch 块内断言。
+        final int stopFailedIdx = src.indexOf("error: 'stop failed'");
+        expect(stopFailedIdx, greaterThanOrEqualTo(0),
+            reason: '${offscreen.path} 缺 endClip 错误路径');
+        final int catchIdx = src.lastIndexOf('} catch (_) {', stopFailedIdx);
+        expect(catchIdx, greaterThanOrEqualTo(0));
+        final String catchBlock = src.substring(catchIdx, stopFailedIdx);
+        expect(catchBlock.contains('recorder = null;'), isTrue,
+            reason: '${offscreen.path} endClip 错误路径未清 recorder');
+        expect(catchBlock.contains('chunks = [];'), isTrue,
+            reason: '${offscreen.path} endClip 错误路径未清 chunks');
+        expect(catchBlock.contains('recorder.ondataavailable = null;'), isTrue,
+            reason: '${offscreen.path} endClip 错误路径未解绑 ondataavailable');
       });
     }
 
@@ -226,12 +268,12 @@ void main() {
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');
         });
 
-        test('内容脚本版本标记 bump 到 v39（用户可确认新版）', () {
+        test('内容脚本版本标记 bump 到 v40（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-hibiki-cs', 'v39'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v39');
-          expect(src.contains('content script v39 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v39');
+          expect(src.contains("'data-hibiki-cs', 'v40'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v40');
+          expect(src.contains('content script v40 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v40');
         });
       });
     }

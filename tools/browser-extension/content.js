@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v39 loaded (queue clears on success|duplicate + per-item delete UI; bounded popup)');
+console.log('[Hibiki] content script v40 loaded (endClip/nfStopCapture leak fixes + word audio in lookup popup)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v39'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v40'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -457,6 +457,11 @@ async function hibikiMaybeResumeNetflixBatch(fromLoad) {
       window.hibikiToast('✓ 全部剧集生成完成');
     }
   } finally {
+    // V16 遗留缺口：跳集前停录（第 449 行）在正常路径；若 hibikiRunNetflixBatch 抛错
+    // 向上传播，该行被跳过 → offscreen 的 MediaStream 不释放、继续录，随后切集导航就
+    // 变成「加载中录屏」(M7375) + 流泄漏。故在 finally 里兜底停录（stopTabCapture 幂等，
+    // 正常路径已停时重复调用无害）。
+    try { await chrome.runtime.sendMessage({ type: 'nfStopCapture' }); } catch (_) {}
     hibikiNfBatchRunning = false;
   }
 }
@@ -631,6 +636,9 @@ document.addEventListener('mousemove', (e) => {
         ? resp.data.result.bestLength
         : 0;
       const termLen = best > 0 ? best : term.length;
+      // 单词音频：查词响应带回 app 已启用的音频源（enabledAudioSources），非空时 popup.js
+      // 的 createEntryHeader 才渲染 ♪ 按钮（与 app 内 window.audioSources 注入一致）。
+      window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       hibikiRender(resp.data.popupJson, termLen, resp.data.theme, hibikiAnchorRect);
     });
   } catch (_) {
@@ -652,6 +660,7 @@ window.__hibikiOnLinkClick = function (query) {
       const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
         ? resp.data.result.bestLength : 0;
       const termLen = best > 0 ? best : term.length;
+      window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
     });
   } catch (_) { /* 扩展上下文失效：静默 */ }

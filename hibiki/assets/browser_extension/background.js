@@ -157,6 +157,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ term: msg.term, record: msg.record === true }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'lookupAudio') {
+        // 单词音频：POST /api/lookup/audio {expression,reading}（Basic auth）→ server 用
+        // 与 app 同一 lookupAudio（本地音频库）解析出音频字节，回 {url,contentType}，url 是
+        // 免鉴权短命 /api/lookup/audio/file?id=。content-script 的 HTML5 Audio 直接播该 url。
+        const r = await fetch(base + '/api/lookup/audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
+        });
+        if (!r.ok) { sendResponse({ ok: false, status: r.status, url: null }); return; }
+        const data = await r.json();
+        sendResponse({ ok: !!(data && data.url), url: (data && data.url) || null, contentType: (data && data.contentType) || null });
       } else if (msg.type === 'mine') {
         // 纯文本挖词（非流媒体页 / 回落）：直接 POST {fields,sentence}，无媒体。
         const r = await fetch(base + '/api/mine', {

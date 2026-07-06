@@ -2134,5 +2134,6 @@
   "backup_export_categories_hint": "所选类别会打包进备份。数据库中的书籍记录始终包含；阅读进度、统计、设置、配置方案可在上方分别选择排除。取消勾选「书籍」会完全排除这些书——正文文件和书籍记录一并排除——导入后不会出现这些书。",
   "floating_lyric_permission_hint_coloros": "系统拒绝授予悬浮窗权限时：请用文件管理器找到安装包覆盖安装一次，或在开发者选项中关闭权限监控后重试。",
   "sync_server_tls_enable": "互联加密（HTTPS/TLS）",
-  "sync_server_tls_repair_hint": "切换后已配对设备需重新配对"
+  "sync_server_tls_repair_hint": "切换后已配对设备需重新配对",
+  "icon_transparent": "透明"
 }

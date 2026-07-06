@@ -2,5 +2,9 @@
 <resources>
     <color name="ic_launcher_background">#9BCAF8</color>
     <color name="ic_launcher_full_background">#FFFFFF</color>
-    <color name="ic_launcher_minimal_background">#FFFFFF</color>
+    <!-- 默认档「白色圆角方形（squircle）」背景：不透明白，任意壁纸下可见（TODO-1241）。 -->
+    <color name="ic_launcher_squircle_background">#FFFFFF</color>
+    <!-- 「透明（无背景）」备选档：自适应背景设为全透明，启动器上只显示藏青 wordmark
+         本体，无白底方块（TODO-1241）。 -->
+    <color name="ic_launcher_minimal_background">#00000000</color>
 </resources>

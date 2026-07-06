@@ -22,6 +22,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -132,6 +133,29 @@ void main() {
       final ScanPlan plan = planScanFromFileList(const <SourceFileEntry>[]);
       expect(plan.books, isEmpty);
       expect(plan.videos, isEmpty);
+      expect(plan.playlists, isEmpty);
+    });
+
+    // TODO-1237: .m3u8/.m3u manifests classify as PLAYLISTS (multi-episode),
+    // reusing the drag-drop kDragPlaylistExtensions whitelist. They must NOT be
+    // silently ignored (the reported bug) nor mis-classified as single videos.
+    test('m3u8 / m3u manifests classify as playlists, not videos', () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/series.m3u8'),
+        _file('/lib/other.m3u'),
+        _file('/lib/movie.mp4'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      expect(
+        plan.playlists.map((ScanPlaylistItem i) => i.playlistPath).toList(),
+        <String>['/lib/series.m3u8', '/lib/other.m3u'],
+        reason: 'both m3u8 and m3u land in playlists',
+      );
+      // The single .mp4 stays a video; the manifests are not double-counted.
+      expect(
+        plan.videos.map((ScanVideoItem i) => i.videoPath).toList(),
+        <String>['/lib/movie.mp4'],
+      );
     });
 
     // TODO-946: a book with a same-stem sidecar subtitle AND audio becomes an
@@ -477,6 +501,101 @@ void main() {
       expect(books.single.title, 'SameTitle');
       final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
+    });
+  });
+
+  // ── TODO-1237: video-source folder scan imports m3u8/m3u playlists ─────
+  // A .m3u8 manifest sitting in a scanned video source folder must import as a
+  // PLAYLIST VideoBook (playlistJson carrying the parsed episodes), NOT be
+  // ignored (the reported bug) and NOT be mis-imported as a single video.
+  // Reuses parseM3u8 + saveVideoBook, the same persistence as the manual
+  // "playlist" button and the drag-drop importNewPlaylist path.
+  group('MediaSourceScanner.scan video playlist (TODO-1237)', () {
+    late Directory tmp;
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('todo1237_scan_');
+    });
+    tearDown(() {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    test('m3u8 manifest imports as a playlist VideoBook (episodes + sourceId)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      // A 2-episode m3u8; relative paths resolve against the manifest's dir.
+      // Only the manifest sits in the folder (episodes referenced by the m3u8,
+      // not standalone files) so the scan yields exactly one playlist VideoBook
+      // and no standalone single-video rows to disambiguate against.
+      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync(
+        '''
+#EXTM3U
+#EXTINF:-1,Episode 1
+ep1.mp4
+#EXTINF:-1,Episode 2
+ep2.mp4
+''',
+      );
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+
+      final List<VideoBookRow> videos = await repo.listAll();
+      expect(videos, hasLength(1),
+          reason: 'the m3u8 manifest imports as one playlist VideoBook');
+      final VideoBookRow row = videos.single;
+      expect(row.sourceId, sid,
+          reason: 'scanned playlist must be backfilled with its source id');
+      // Persisted as a playlist (2 episodes), not a single video.
+      expect(playlistEpisodeCount(row.playlistJson), 2,
+          reason: 'the two m3u8 entries must be parsed into playlistJson');
+      expect(row.bookUid, startsWith('video/playlist/'),
+          reason: 'playlist identity namespace, distinct from single videos');
+      // First episode is the initial videoPath, resolved against the manifest.
+      expect(row.videoPath, p.normalize(p.join(tmp.path, 'ep1.mp4')));
+
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1);
+      expect(after.lastScanError, isNull);
+    });
+
+    test('empty / comment-only m3u8 imports nothing (skipped, no error)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      // Only the header -> parseM3u8 yields no entries -> nothing inserted.
+      File(p.join(tmp.path, 'empty.m3u8')).writeAsStringSync('''
+#EXTM3U
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+
+      expect(await repo.listAll(), isEmpty,
+          reason: 'an empty manifest must not create an orphan VideoBook');
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 0);
+      expect(after.lastScanError, isNull);
     });
   });
 

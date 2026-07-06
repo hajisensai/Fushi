@@ -4042,6 +4042,9 @@ class AppModel with ChangeNotifier {
       historyService: createRemoteHistoryService(),
       // BUG-530：主题色随查词响应下发，扩展弹窗实时跟随用户主题色（改主题即生效）。
       themeColorsProvider: browserExtensionThemeColors,
+      // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
+      // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
+      audioSourcesProvider: () => enabledAudioSources,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';

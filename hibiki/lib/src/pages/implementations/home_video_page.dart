@@ -37,7 +37,7 @@ import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
-import 'package:hibiki/src/sync/remote_cover_headers.dart';
+import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -1364,11 +1364,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       );
     }
     final String? coverUrl = video.coverUrl;
-    if (coverUrl != null && coverUrl.isNotEmpty) {
-      return Image.network(
-        coverUrl,
+    // TODO-1235（TODO-961 回归）：封面走互联同款钉扎客户端拉取，不再用 Image.network
+    // （Flutter 内部 HttpClient 无 badCertificateCallback，https 自签握手必失败）。
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(_remoteVideoClient);
+    if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      return Image(
+        image: RemoteCoverImage(coverUrl, fetcher),
         key: ValueKey<String>('remote_video_cover_$safeKey'),
-        headers: remoteCoverHeadersFor(_remoteVideoClient),
         // TODO-616 phase C: 同上，远端云视频封面也用 contain 完整显示不裁切。
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _coverPlaceholder(),

@@ -61,6 +61,30 @@ typedef ShelfReorderMerge = Future<int?> Function(
 /// 本页用 [ShelfReorderRebuild] 重取折叠条目刷新（成员可能已被拖出/重排）。
 typedef ShelfReorderEnterSeries = Future<void> Function(int seriesId);
 
+/// TODO-947 P3：成员视图的「框」描述——把网格包进带系列名 header + 主题色圆角边框的
+/// Container，四周留 margin 让「框外」可见，并启用「拖成员出框 = 移出系列」。
+class ShelfReorderSeriesFrame {
+  const ShelfReorderSeriesFrame({required this.seriesName});
+  final String seriesName;
+}
+
+/// 拖出框 / 点 overlay 移出按钮对某成员条目执行移出的结果（TODO-947 P3）。
+class ShelfRemoveResult {
+  const ShelfRemoveResult({required this.removed, required this.seriesEmptied});
+
+  /// 是否真的移出了（用户确认并写库）；false = 取消 / 未变。
+  final bool removed;
+
+  /// 移出后系列是否已空（true → 本页应 pop 回折叠层）。
+  final bool seriesEmptied;
+}
+
+/// 移出某成员条目回调（TODO-947 P3）。由调用方弹确认框 + 执行真实 DB 移出
+/// （setSeriesForEntry null + 空系列清理），返回 [ShelfRemoveResult]。null（默认）= 不
+/// 启用移出；必须与 [ShelfReorderPage.seriesFrame] 搭配。
+typedef ShelfReorderRemove = Future<ShelfRemoveResult> Function(
+    ShelfReorderItem item);
+
 /// 进入系列成员视图返回后重取折叠条目（TODO-947 方案A）：成员被拖出会让系列成员数变化
 /// （甚至系列清空后消失），本页据此重建 [ShelfReorderPage.initialItems] 的当前快照，
 /// 避免显示过期折叠卡。null（默认，如系列成员子页自身）= 不重取。
@@ -85,6 +109,8 @@ class ShelfReorderPage extends StatefulWidget {
     this.onMerge,
     this.onEnterSeries,
     this.rebuildItems,
+    this.seriesFrame,
+    this.onRemove,
     super.key,
   });
 
@@ -111,6 +137,13 @@ class ShelfReorderPage extends StatefulWidget {
   /// 进入成员视图返回后重取折叠条目（TODO-947 方案A）。null = 不重取（保持当前 _items）。
   final ShelfReorderRebuild? rebuildItems;
 
+  /// 成员视图「框」（TODO-947 P3）。null（默认，如书架折叠排序页）= 无框、网格铺满，
+  /// 行为与历史一致。非空时把网格包进带边框 + 系列名 header 的 Container，并启用拖出移出。
+  final ShelfReorderSeriesFrame? seriesFrame;
+
+  /// 拖出框 / 焦点移出按钮触发的移出回调（TODO-947 P3）。null（默认）= 不启用移出。
+  final ShelfReorderRemove? onRemove;
+
   @override
   State<ShelfReorderPage> createState() => _ShelfReorderPageState();
 }
@@ -119,6 +152,10 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
   /// 当前顺序（拖拽实时改）。下标即新 sortOrder。
   late List<ShelfReorderItem> _items;
   bool _dirty = false;
+
+  /// TODO-947 P3：当前拖拽浮层是否落在框外（移出候选态），由网格 onRemoveCandidateChanged
+  /// 驱动。true 时外框转 error 色 + 顶部浮出「移出系列」chip（拖出框的唯一反馈）。
+  bool _removeHot = false;
 
   @override
   void initState() {
@@ -225,6 +262,152 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     });
   }
 
+  /// TODO-947 P3：把某成员条目移出系列——拖出框松手或点 overlay 移出按钮触发。委托
+  /// [ShelfReorderPage.onRemove] 弹确认 + 真实 DB 写；确认移出后本地从 _items 摘掉该条目
+  /// （移出改的是 seriesId 归属、不动其余成员 sortOrder，故不置 _dirty）。系列被清空则退回
+  /// 折叠层（经 [_finish] 统一收口落盘 + pop）。
+  Future<void> _onRemoveOutside(int index) async {
+    final ShelfReorderRemove? onRemove = widget.onRemove;
+    if (onRemove == null || index < 0 || index >= _items.length) return;
+    final ShelfReorderItem item = _items[index];
+    final ShelfRemoveResult result = await onRemove(item);
+    if (!mounted || !result.removed) return;
+    if (result.seriesEmptied) {
+      await _finish();
+      return;
+    }
+    setState(() => _items.removeAt(index));
+  }
+
+  /// 每格右上角焦点驱动移出按钮（TODO-947 P3）。用 [HibikiIconButton]（自动注册焦点目标，
+  /// Tab 可达 + Enter 触发），点击/确认走同一 [_onRemoveOutside] 移出流程。
+  Widget _buildRemoveOverlay(int index) {
+    return Material(
+      color: Colors.transparent,
+      child: HibikiIconButton(
+        tooltip: t.remove_from_series,
+        icon: Icons.remove_circle_outline,
+        onTap: () => _onRemoveOutside(index),
+      ),
+    );
+  }
+
+  /// 构造重排网格（含 P3 移出/焦点操作接线）。不传 onRemove/seriesFrame 时新回调全为
+  /// null，网格行为与历史逐像素一致（书架折叠排序页走这条）。
+  Widget _buildGrid() {
+    return HibikiReorderableGrid(
+      itemCount: _items.length,
+      cellExtent: widget.cellExtent,
+      childAspectRatio: widget.childAspectRatio,
+      mainAxisExtent: widget.mainAxisExtent,
+      crossAxisSpacing: widget.crossAxisSpacing,
+      mainAxisSpacing: widget.mainAxisSpacing,
+      padding: const EdgeInsets.all(12),
+      feedbackBorderRadius: widget.feedbackBorderRadius,
+      keyForIndex: (int i) => ValueKey<String>(
+          'reorder_${_items[i].mediaType}_${_items[i].entryKey}'),
+      itemBuilder: (BuildContext context, int i) => _items[i].card,
+      onReorder: _onReorder,
+      // 仅当调用方提供 onMerge 时才启用拖合并手势；否则两回调为 null，网格走纯重排
+      // （与历史逐像素一致，绝不破坏现有行为）。
+      canMergeInto: widget.onMerge == null ? null : _canMergeInto,
+      onMergeIntoTarget: widget.onMerge == null ? null : _onMergeIntoTarget,
+      // 仅当调用方提供 onEnterSeries 时才识别 tap（进折叠系列卡成员视图）；否则 null =
+      // 网格不装 tap 识别器 = 纯拖拽（与历史一致，散书页/成员子页不受影响）。
+      onActivate: widget.onEnterSeries == null ? null : _onActivate,
+      // TODO-947 P3：仅当调用方提供 onRemove 时才启用「拖出框移出」+ 焦点移出按钮；否则
+      // 全为 null，网格无移出语义（书架折叠排序页/无框页不受影响）。
+      onRemoveOutside: widget.onRemove == null ? null : _onRemoveOutside,
+      onRemoveCandidateChanged: widget.seriesFrame == null
+          ? null
+          : (bool hot) {
+              if (mounted && _removeHot != hot) {
+                setState(() => _removeHot = hot);
+              }
+            },
+      overlayActionBuilder: widget.onRemove == null
+          ? null
+          : (BuildContext ctx, int i) => _buildRemoveOverlay(i),
+    );
+  }
+
+  /// TODO-947 P3：把网格包进「框」——非空 seriesFrame 时加系列名 header + 主题色圆角边框
+  /// Container（四周留 12px margin 让「框外」可见），移出候选态（_removeHot）边框转 error
+  /// 色 + 顶部浮出「移出系列」chip。null 时直接返回裸网格（书架折叠排序页铺满，行为不变）。
+  Widget _buildFramedBody(BuildContext context) {
+    final Widget grid = _buildGrid();
+    final ShelfReorderSeriesFrame? frame = widget.seriesFrame;
+    if (frame == null) return grid;
+    final ThemeData theme = Theme.of(context);
+    final Color accent = theme.colorScheme.primary;
+    final Color danger = theme.colorScheme.error;
+    final Color borderColor = _removeHot ? danger : accent;
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Stack(
+        children: <Widget>[
+          DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: borderColor, width: 2),
+              borderRadius: HibikiBorderRadius.group,
+            ),
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.collections_bookmark_outlined,
+                          size: 18, color: borderColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          frame.seriesName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: grid),
+              ],
+            ),
+          ),
+          if (_removeHot)
+            PositionedDirectional(
+              top: 8,
+              start: 0,
+              end: 0,
+              child: Center(
+                child: Material(
+                  color: danger,
+                  borderRadius: HibikiBorderRadius.chip,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(Icons.remove_circle_outline,
+                            size: 16, color: theme.colorScheme.onError),
+                        const SizedBox(width: 6),
+                        Text(
+                          t.remove_from_series,
+                          style: TextStyle(color: theme.colorScheme.onError),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// 正在执行退出收口（落盘 -> 真正 pop）。置位后 [PopScope.canPop] 翻成 true，
   /// 使我们手动发起的 pop 直接放行，不再被本 PopScope 二次拦截。
   bool _finishing = false;
@@ -278,30 +461,7 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
           ),
           title: Text(widget.title),
         ),
-        body: SafeArea(
-          child: HibikiReorderableGrid(
-            itemCount: _items.length,
-            cellExtent: widget.cellExtent,
-            childAspectRatio: widget.childAspectRatio,
-            mainAxisExtent: widget.mainAxisExtent,
-            crossAxisSpacing: widget.crossAxisSpacing,
-            mainAxisSpacing: widget.mainAxisSpacing,
-            padding: const EdgeInsets.all(12),
-            feedbackBorderRadius: widget.feedbackBorderRadius,
-            keyForIndex: (int i) => ValueKey<String>(
-                'reorder_${_items[i].mediaType}_${_items[i].entryKey}'),
-            itemBuilder: (BuildContext context, int i) => _items[i].card,
-            onReorder: _onReorder,
-            // 仅当调用方提供 onMerge 时才启用拖合并手势；否则两回调为 null，网格走
-            // 纯重排（与历史逐像素一致，绝不破坏现有行为）。
-            canMergeInto: widget.onMerge == null ? null : _canMergeInto,
-            onMergeIntoTarget:
-                widget.onMerge == null ? null : _onMergeIntoTarget,
-            // 仅当调用方提供 onEnterSeries 时才识别 tap（进折叠系列卡成员视图）；否则
-            // null = 网格不装 tap 识别器 = 纯拖拽（与历史一致，散书页/成员子页不受影响）。
-            onActivate: widget.onEnterSeries == null ? null : _onActivate,
-          ),
-        ),
+        body: SafeArea(child: _buildFramedBody(context)),
       ),
     );
   }

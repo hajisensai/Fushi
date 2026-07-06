@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
@@ -40,6 +42,7 @@ class YomitanApiServer {
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
+    List<String> Function()? audioSourcesProvider,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -49,6 +52,7 @@ class YomitanApiServer {
         _tokenizer = tokenizer,
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
+        _audioSourcesProvider = audioSourcesProvider,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -60,10 +64,17 @@ class YomitanApiServer {
   final ReadingResolver _readingResolver;
   // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。
   final Map<String, String> Function()? _themeColorsProvider;
+  // 单词音频：当前 app 已启用的音频源供给器，随查词响应下发给扩展弹窗。
+  final List<String> Function()? _audioSourcesProvider;
   final String? _apiKey;
   final bool _allowLan;
 
   HttpServer? _server;
+
+  // 单词音频短命 token（与 HibikiSyncServer 同款模型）：/api/lookup/audio 存字节、返
+  // 免鉴权的 /api/lookup/audio/file?id= URL；命中即续期，5 分钟无访问后 prune。
+  final Map<String, _YomitanAudioToken> _remoteAudioTokens =
+      <String, _YomitanAudioToken>{};
 
   bool get isRunning => _server != null;
   int get port => _server?.port ?? _requestedPort;
@@ -95,6 +106,9 @@ class YomitanApiServer {
   shelf.Middleware _authMiddleware() {
     return (shelf.Handler inner) {
       return (shelf.Request request) async {
+        // 单词音频文件端点是裸 GET（HTML5 Audio 无 Authorization）→ 免鉴权放行，靠
+        // 不可猜的短命 id 兜底（与 HibikiSyncServer 的 /api/lookup/audio/file 同策略）。
+        if (request.url.path == 'api/lookup/audio/file') return inner(request);
         final String? key = _apiKey;
         if (key == null || key.isEmpty) return inner(request);
 
@@ -163,10 +177,18 @@ class YomitanApiServer {
   }
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
-    if (request.method.toUpperCase() != 'POST') {
+    final String path = '/${request.url.path}';
+    final String method = request.method.toUpperCase();
+    // 单词音频文件是裸 GET/HEAD（不是 POST）→ 在 405 门之前单独处理。
+    if (path == '/api/lookup/audio/file') {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      return _handleAudioFile(request, headOnly: method == 'HEAD');
+    }
+    if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
     }
-    final String path = '/${request.url.path}';
     switch (path) {
       case '/serverVersion':
         return _json(<String, dynamic>{'version': 1});
@@ -178,6 +200,8 @@ class YomitanApiServer {
         return _handleTokenize(request);
       case '/api/lookup/dictionary':
         return _handleDictionaryLookup(request);
+      case '/api/lookup/audio':
+        return _handleAudioLookup(request);
       case '/api/mine':
         return _handleMine(request);
       case '/api/duplicate':
@@ -196,6 +220,7 @@ class YomitanApiServer {
       lookup: _lookup,
       history: _history,
       themeColorsProvider: _themeColorsProvider,
+      audioSourcesProvider: _audioSourcesProvider,
     ));
   }
 
@@ -224,6 +249,76 @@ class YomitanApiServer {
       return _json(<String, dynamic>{'duplicate': false});
     }
     return _json(await buildRemoteDuplicateResponse(body, mining: mining));
+  }
+
+  /// 单词音频①解析：POST /api/lookup/audio {expression,reading}。用与 app 同一
+  /// [HibikiRemoteLookupService.lookupAudio]（本地音频库）解析出字节，存进短命 token，
+  /// 返回免鉴权的 /api/lookup/audio/file?id= URL 供扩展 HTML5 Audio 直接播放。未命中
+  /// 返回 {url:null}（弹窗降级为 ✕，与 app 一致）。与 HibikiSyncServer 同款实现。
+  Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final String expression = body['expression']?.toString() ?? '';
+    final String reading = body['reading']?.toString() ?? '';
+    if (expression.trim().isEmpty) return _audioMissResponse();
+    final RemoteAudioLookup? lookup = await _lookup.lookupAudio(
+      expression: expression,
+      reading: reading,
+    );
+    if (lookup == null) return _audioMissResponse();
+    final String id = _generateAudioToken();
+    _remoteAudioTokens[id] = _YomitanAudioToken(
+      bytes: lookup.bytes,
+      contentType: lookup.contentType,
+      createdAt: DateTime.now(),
+    );
+    final Uri url = request.requestedUri.replace(
+      path: '/api/lookup/audio/file',
+      queryParameters: <String, String>{'id': id},
+    );
+    return _json(<String, dynamic>{
+      'type': 'audioResult',
+      'url': url.toString(),
+      'contentType': lookup.contentType,
+    });
+  }
+
+  /// 单词音频②取字节：GET /api/lookup/audio/file?id=（免鉴权，靠不可猜 id）。命中即续期
+  /// 5 分钟窗口，使正在播放的音频不会中途被 prune。
+  shelf.Response _handleAudioFile(shelf.Request request,
+      {required bool headOnly}) {
+    _pruneAudioTokens();
+    final String? id = request.url.queryParameters['id'];
+    final _YomitanAudioToken? token =
+        id == null ? null : _remoteAudioTokens[id];
+    if (token == null) return shelf.Response.notFound('Not found');
+    token.createdAt = DateTime.now();
+    return shelf.Response.ok(
+      headOnly ? null : token.bytes,
+      headers: <String, String>{
+        'Content-Type': token.contentType,
+        'Content-Length': '${token.bytes.length}',
+      },
+    );
+  }
+
+  shelf.Response _audioMissResponse() => _json(<String, dynamic>{
+        'type': 'audioResult',
+        'url': null,
+        'contentType': null,
+      });
+
+  String _generateAudioToken() {
+    final Random random = Random.secure();
+    final List<int> bytes = List<int>.generate(18, (_) => random.nextInt(256));
+    return base64UrlEncode(bytes);
+  }
+
+  void _pruneAudioTokens() {
+    final DateTime cutoff = DateTime.now().subtract(const Duration(minutes: 5));
+    _remoteAudioTokens.removeWhere(
+      (String _, _YomitanAudioToken token) => token.createdAt.isBefore(cutoff),
+    );
   }
 
   Future<shelf.Response> _handleTermEntries(shelf.Request request) async {
@@ -294,4 +389,19 @@ class YomitanApiServer {
           'Content-Type': 'application/json; charset=utf-8'
         },
       );
+}
+
+/// 单词音频短命 token（[YomitanApiServer] 私有，镜像 HibikiSyncServer 的同款模型）。
+/// createdAt 非 final——每次被 [YomitanApiServer._handleAudioFile] 命中即刷新，重置 5
+/// 分钟过期窗口，使正在被访问的音频不会中途过期。
+class _YomitanAudioToken {
+  _YomitanAudioToken({
+    required this.bytes,
+    required this.contentType,
+    required this.createdAt,
+  });
+
+  final Uint8List bytes;
+  final String contentType;
+  DateTime createdAt;
 }

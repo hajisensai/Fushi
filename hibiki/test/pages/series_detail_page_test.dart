@@ -150,4 +150,38 @@ void main() {
     expect(shelfRow!.seriesId, sid, reason: '取消后归属不变，未误移出');
     expect(await db.getShelfEntriesBySeries(sid), hasLength(1));
   });
+
+  // TODO-947 P3 共享 helper removeEntryFromSeries（详情页 + 带框成员重排页复用同一原语）。
+  group('removeEntryFromSeries 共享 helper (TODO-947 P3)', () {
+    test('非空系列：移出一个成员返回 false，系列保留、成员归属归 NULL', () async {
+      final int sid = await db.createSeries('S');
+      await db.setSeriesForEntry('epub', 'A', sid);
+      await db.setSeriesForEntry('epub', 'B', sid);
+      final bool emptied = await removeEntryFromSeries(
+        database: db,
+        seriesId: sid,
+        mediaType: 'epub',
+        entryKey: 'A',
+      );
+      expect(emptied, isFalse, reason: '还剩 B，系列未空');
+      expect(await db.getSeriesById(sid), isNotNull, reason: '非空系列不删');
+      expect((await db.getShelfEntry('epub', 'A'))!.seriesId, isNull);
+      expect(await db.getShelfEntriesBySeries(sid), hasLength(1));
+    });
+
+    test('移出最后一个成员：返回 true 并删除空系列（不留孤儿卡）', () async {
+      final int sid = await db.createSeries('S');
+      await db.setSeriesForEntry('epub', 'A', sid);
+      final bool emptied = await removeEntryFromSeries(
+        database: db,
+        seriesId: sid,
+        mediaType: 'epub',
+        entryKey: 'A',
+      );
+      expect(emptied, isTrue, reason: '移出最后成员 → 系列已空');
+      expect(await db.getSeriesById(sid), isNull, reason: '空系列被删');
+      expect((await db.getShelfEntry('epub', 'A'))!.seriesId, isNull,
+          reason: 'FK setNull 散回，不删 shelf_entry 行');
+    });
+  });
 }
