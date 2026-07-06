@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
@@ -14,7 +15,9 @@ import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
@@ -445,37 +448,37 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
-  static const List<String> _subtitleExtensions = [
+  static const Set<String> _subtitleExtensions = {
     'srt',
     'lrc',
     'vtt',
     'ass',
     'ssa',
-  ];
+  };
 
   Future<void> _pickSubtitle() async {
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
+      final AppModel appModel =
+          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final String? path = await pickRealFilePath(
+        context: context,
+        appModel: appModel,
         allowedExtensions: _subtitleExtensions,
       );
-      final PlatformFile? file = result?.files.single;
-      final String? path = file?.path;
-      if (path == null || file == null || !mounted) return;
-      const Set<String> allowed = {'srt', 'lrc', 'vtt', 'ass', 'ssa'};
+      if (path == null || !mounted) return;
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
-      if (!allowed.contains(ext)) {
+      if (!_subtitleExtensions.contains(ext)) {
         HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
         return;
       }
 
       setState(() {
         _subtitlePath = path;
-        _subtitleName = file.name;
+        _subtitleName = p.basename(path);
         if (_titleCtrl.text.isEmpty) {
-          final String name = file.name;
+          final String name = p.basename(path);
           final int dot = name.lastIndexOf('.');
           _titleCtrl.text = dot > 0 ? name.substring(0, dot) : name;
         }
@@ -485,21 +488,23 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
+  static final Set<String> _audioExtensions = AudiobookStorage.audioExtensions
+      .map((String ext) => ext.replaceFirst('.', ''))
+      .toSet();
+
   Future<void> _pickAudio() async {
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.audio,
-        allowMultiple: true,
+      final AppModel appModel =
+          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final List<String> paths = await pickRealFilePaths(
+        context: context,
+        appModel: appModel,
+        allowedExtensions: _audioExtensions,
       );
-      if (result == null || !mounted) return;
-
-      final List<String> paths = result.files
-          .map((f) => f.path)
-          .whereType<String>()
-          .toList()
-        ..sort(compareAudioFilePath);
+      if (!mounted) return;
+      paths.sort(compareAudioFilePath);
 
       if (paths.isNotEmpty) {
         setState(() {
