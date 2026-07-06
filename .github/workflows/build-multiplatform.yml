@@ -59,6 +59,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       # google_oauth_secret.dart is gitignored (the real client secret lives only
       # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails to
       # compile. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, bake the
@@ -102,6 +103,24 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
+      # is idempotent so a warm cache is safe).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -182,6 +201,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       # See the android job: bake the real OAuth secret in when the
       # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
       # so the import in google_drive_auth.dart compiles (TODO-045).
@@ -221,6 +241,15 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
+      # is idempotent so a warm cache is safe).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -311,6 +340,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       # See the android job: bake the real OAuth secret in when the
       # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
       # so the import in google_drive_auth.dart compiles (TODO-045).
@@ -350,6 +380,29 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
+      # is idempotent so a warm cache is safe).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      # TODO-1208: cache CocoaPods spec repos, downloaded pod source and generated
+      # Pods dirs. Keyed on Podfile.lock/pubspec.lock; CocoaPods re-installs on a
+      # mismatch and a miss just re-downloads.
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+            hibiki/ios/Pods
+            hibiki/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -398,6 +451,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       # See the android job: bake the real OAuth secret in when the
       # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
       # so the import in google_drive_auth.dart compiles (TODO-045).
@@ -432,6 +486,29 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
+      # is idempotent so a warm cache is safe).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      # TODO-1208: cache CocoaPods spec repos, downloaded pod source and generated
+      # Pods dirs. Keyed on Podfile.lock/pubspec.lock; CocoaPods re-installs on a
+      # mismatch and a miss just re-downloads.
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+            hibiki/ios/Pods
+            hibiki/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -464,6 +541,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+          cache: true
       # See the android job: bake the real OAuth secret in when the
       # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
       # so the import in google_drive_auth.dart compiles (TODO-045).
@@ -503,6 +581,25 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
+      # TODO-1208: Windows Dart pub cache defaults to %LOCALAPPDATA%\Pub\Cache.
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      # TODO-1208: cache media_kit's libmpv + ANGLE .7z archives it downloads into
+      # the CMake binary dir (hibiki/build/windows/x64). media_kit skips the
+      # download when the .7z exists with a matching MD5, so caching just the
+      # blobs (NOT the build tree / CMakeCache) cuts the slow GitHub fetch.
+      - name: Cache media_kit Windows mpv/ANGLE archives
+        uses: actions/cache@v4
+        with:
+          path: hibiki/build/windows/x64/*.7z
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('hibiki/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
