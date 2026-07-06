@@ -349,9 +349,11 @@ DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   return null;
 }
 
-/// TODO-1151：本地备份导入/恢复的全屏遮罩阶段。[running] 正在解压落盘（阻塞、请勿
-/// 关闭）；[done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
-enum BackupImportPhase { running, done, failed }
+/// TODO-1151：本地备份导入/恢复的全屏遮罩阶段。[validating] 选完文件后正在读取/校验
+/// 备份并生成合并预览（DB 仍打开、可取消）——旧实现这段只有设置行 24px 小圈，大 zip
+/// 校验/预览要数十秒无明显反馈；[running] 正在解压落盘（DB 已关、阻塞、请勿关闭）；
+/// [done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
+enum BackupImportPhase { validating, running, done, failed }
 
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
@@ -800,6 +802,45 @@ class AppModel with ChangeNotifier {
   /// 解压 isolate 的 SendPort 消息驱动）。夹紧到 [0,1]。
   void reportBackupImportProgress(double fraction) {
     backupImportProgress.value = fraction.clamp(0.0, 1.0);
+  }
+
+  /// TODO-1151：备份「读取/校验」阶段的作废 token。选完文件后 validate + previewMerge
+  /// 会跑数十秒（后台 isolate，UI 不冻结但只有 24px 小圈）。进入 [beginBackupValidating]
+  /// 时自增；用户点「取消」或开启新一轮校验会再自增作废旧 token——in-flight 的后台 isolate
+  /// 结果回来时用 [isBackupValidatingCurrent] 判断是否仍是最新，陈旧结果**直接丢弃**（不吞
+  /// 异常、不硬编码分支，纯 token 判定）。
+  int _backupValidatingToken = 0;
+
+  /// 进入「读取/校验备份 + 生成合并预览」的全屏遮罩（DB 仍打开，可取消）。返回本轮
+  /// 校验 token；调用方在每个 await 后用 [isBackupValidatingCurrent] 校验后再消费结果。
+  int beginBackupValidating() {
+    _backupImportPhase = BackupImportPhase.validating;
+    _backupImportMessage = null;
+    backupImportProgress.value = 0.0;
+    final int token = ++_backupValidatingToken;
+    notifyListeners();
+    return token;
+  }
+
+  /// 该 [token] 是否仍是最新校验轮（未被取消、未被新一轮校验取代）。
+  bool isBackupValidatingCurrent(int token) => _backupValidatingToken == token;
+
+  /// 用户在 validating 遮罩点「取消」：作废 in-flight token（后台结果回来即丢弃）并退出
+  /// 遮罩回到正常 app 树（设置页）。仅在仍处于 validating 相位时生效（避免误清掉已进入
+  /// running 的导入态）。
+  void cancelBackupValidating() {
+    if (_backupImportPhase != BackupImportPhase.validating) return;
+    _backupValidatingToken++;
+    _backupImportPhase = null;
+    notifyListeners();
+  }
+
+  /// 校验成功、预览就绪：退出 validating 遮罩，切回正常 app 树，好在其上（经全局
+  /// [navigatorKey]）弹确认对话框。不作废 token（调用方已确认本轮仍是最新）。
+  void endBackupValidating() {
+    if (_backupImportPhase != BackupImportPhase.validating) return;
+    _backupImportPhase = null;
+    notifyListeners();
   }
 
   /// 进入导入态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 解压落盘」的

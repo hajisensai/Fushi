@@ -625,44 +625,6 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeChanged(settingsContext);
             },
           ),
-          // TODO-1168（实验性）：悬浮/挤压底栏毛玻璃 + 半透明开关。纯视觉、不改底栏
-          // 预留高 → 走 chrome 刷新即可（无需重锚）。默认关 = 现状（不透明底栏）。
-          SettingsSwitchItem(
-            id: 'reading_controls.frosted_bottom_bar',
-            title: t.reader_frosted_bottom_bar,
-            subtitle: t.reader_frosted_bottom_bar_hint +
-                t.settings_experimental_suffix,
-            icon: Icons.blur_on_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 20,
-            ),
-            value: (SettingsContext c) => c.readerSource.frostedBottomBar,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.toggleFrostedBottomBar();
-              notifyReaderChromeChanged(c);
-            },
-          ),
-          // TODO-1168（实验性）：底栏背景不透明度，仅当毛玻璃开启时可见。纯视觉刷新。
-          SettingsSliderItem(
-            id: 'reading_controls.bottom_bar_opacity',
-            title: t.reader_bottom_bar_opacity,
-            icon: Icons.opacity_outlined,
-            min: 0.15,
-            max: 1.0,
-            divisions: 17,
-            visible: (SettingsContext c) => c.readerSource.frostedBottomBar,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 21,
-            ),
-            value: (SettingsContext c) => c.readerSource.bottomBarOpacity,
-            label: (double value) => '${(value * 100).round()}%',
-            onChanged: (SettingsContext c, double value) {
-              c.readerSource.setBottomBarOpacity(value);
-              notifyReaderChromeChanged(c);
-            },
-          ),
           // TODO-728: per-reader toggle for the audiobook bottom-bar current
           // sentence. behavior group order 14 (15/16 reserved for the progress
           // position + gamepad-immersive items added in the same TODO).

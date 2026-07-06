@@ -438,11 +438,20 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     if (!mounted) return;
 
     setState(() => _isImporting = true);
-    // appModel 在 try 外声明：导入执行期 beginBackupImport 会切走本设置页（tree swap），
-    // 此后 catch/finally 仍需经 appModel 驱动遮罩（不再依赖已卸载的本页 context）。
-    final appModel = widget.settingsContext.appModel;
+    // appModel 在遮罩流程外声明：validating/running 遮罩都会切走本设置页（tree swap），
+    // 此后不再依赖已卸载的本页 `mounted`/context，全程经 appModel 驱动遮罩；确认对话框也
+    // 改由全局 [AppModel.navigatorKey] 宿主弹出（退出遮罩、切回正常 app 树后再弹）。
+    final AppModel appModel = widget.settingsContext.appModel;
+    final String filePath = result.files.single.path!;
+
+    // TODO-1151: 先上屏「正在读取备份…」全屏遮罩（validating 相位），再跑 validate + 合并
+    // 预览——大 zip 这段要数十秒，旧版只有设置行 24px 小圈无明显反馈。beginBackupValidating
+    // 返回本轮 token；用户点「取消」或新一轮校验会作废它，in-flight 后台 isolate 结果回来
+    // 时用 isBackupValidatingCurrent 判断是否仍是最新，陈旧结果直接丢弃（干净 token 判定）。
+    final int validatingToken = appModel.beginBackupValidating();
+    BackupMeta? meta;
+    BackupMergePreview? mergePreview;
     try {
-      final filePath = result.files.single.path!;
       final service = BackupService(
         db: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
@@ -450,49 +459,75 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         appVersion: appModel.packageInfo.version,
       );
 
-      final meta = await service.validateBackup(filePath);
-      if (meta == null) {
-        if (mounted) _showSnackBar(context, t.backup_import_invalid);
+      final BackupMeta? validated = await service.validateBackup(filePath);
+      // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
+      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+      if (validated == null) {
+        await _endValidatingThenSnack(appModel, t.backup_import_invalid);
+        if (mounted) setState(() => _isImporting = false);
         return;
       }
-
-      if (meta.schemaVersion > appModel.database.schemaVersion) {
-        if (mounted) {
-          _showSnackBar(
-            context,
-            t.backup_schema_newer(version: meta.schemaVersion.toString()),
-          );
-        }
+      if (validated.schemaVersion > appModel.database.schemaVersion) {
+        await _endValidatingThenSnack(
+          appModel,
+          t.backup_schema_newer(version: validated.schemaVersion.toString()),
+        );
+        if (mounted) setState(() => _isImporting = false);
         return;
       }
-
-      if (!mounted) return;
 
       // TODO-1195 part B: best-effort merge preview for the confirm dialog.
       // Runs against the still-open live DB; null on any failure → generic UI.
-      final BackupMergePreview? mergePreview =
+      final BackupMergePreview? preview =
           await BackupService.previewMergeImport(
         liveDb: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
       );
-      if (!mounted) return;
+      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+      meta = validated;
+      mergePreview = preview;
+    } catch (e) {
+      // validate/preview 阶段异常：DB 仍打开，无需重启进程。作废本轮、退出遮罩回设置页并
+      // 提示（与 running 阶段的 failBackupImport「必须重启」出口区分）。
+      if (appModel.isBackupValidatingCurrent(validatingToken)) {
+        await _endValidatingThenSnack(
+          appModel,
+          t.backup_import_failed(message: friendlySyncErrorDetail(e)),
+        );
+      }
+      if (mounted) setState(() => _isImporting = false);
+      return;
+    }
 
-      final _BackupImportChoice? choice =
-          await _showConfirmDialog(meta, mergePreview);
-      if (choice == null || !mounted) return;
+    // 校验成功、合并预览就绪：退出 validating 遮罩，等根 widget 切回正常 app 树、全局
+    // navigator 重新挂载后，在其 context 上弹确认对话框（本设置页此刻已卸载，不能用本页
+    // context——遮罩是根 build 替换模型，宿主是 appModel.navigatorKey 的正常 MaterialApp）。
+    appModel.endBackupValidating();
+    final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+    if (rootCtx == null || !rootCtx.mounted) {
+      if (mounted) setState(() => _isImporting = false);
+      return;
+    }
 
-      final String booksRoot =
-          p.join(appModel.appDirectory.path, 'hoshi_books');
-      final String audiobooksRoot =
-          p.join(appModel.appDirectory.path, 'audiobooks');
-      final String fontsRoot =
-          p.join(appModel.appDirectory.path, 'custom_fonts');
-      final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+    final _BackupImportChoice? choice =
+        await _showConfirmDialog(rootCtx, meta, mergePreview);
+    if (choice == null) {
+      // 用户取消确认 → 彻底退出遮罩态，回到设置页（validating 遮罩已退出）。
+      if (mounted) setState(() => _isImporting = false);
+      return;
+    }
 
-      // TODO-1151: 先上屏全屏「正在导入备份，请勿关闭」遮罩，再关库解压。beginBackupImport
-      // notifyListeners → 根 widget 切到 BackupImportOverlayView（本设置页随之卸载，故此后
-      // 不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
+    final String booksRoot = p.join(appModel.appDirectory.path, 'hoshi_books');
+    final String audiobooksRoot =
+        p.join(appModel.appDirectory.path, 'audiobooks');
+    final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
+    final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+
+    try {
+      // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
+      // 再关库解压。beginBackupImport notifyListeners → 根 widget 切到 running 遮罩（本
+      // 设置页随之卸载，故此后不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
       appModel.beginBackupImport();
       await appModel.closeDatabase();
       if (choice.mode == _BackupImportMode.merge) {
@@ -545,11 +580,33 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     }
   }
 
+  /// 退出 validating 遮罩后，等根 widget 切回正常 app 树、全局 navigator 重新挂载，返回
+  /// 可用于弹对话框 / snackbar 的 root context（挂载失败返回 null）。endBackupValidating 的
+  /// notifyListeners 触发的根重建在下一帧完成，故须等帧后 navigatorKey.currentContext 才有效。
+  Future<BuildContext?> _rootContextAfterOverlay(AppModel appModel) async {
+    for (int i = 0; i < 2; i++) {
+      await WidgetsBinding.instance.endOfFrame;
+      final BuildContext? ctx = appModel.navigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) return ctx;
+    }
+    return null;
+  }
+
+  /// validate/preview 阶段的失败/无效出口：退出 validating 遮罩、切回设置页后用 root
+  /// context 弹 snackbar（本设置页此刻已卸载，用本页 context 无效）。
+  Future<void> _endValidatingThenSnack(
+      AppModel appModel, String message) async {
+    appModel.endBackupValidating();
+    final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+    if (rootCtx != null && rootCtx.mounted) _showSnackBar(rootCtx, message);
+  }
+
   /// Asks how to apply the backup (TODO-888): OVERWRITE the whole library
   /// (legacy default) or MERGE into the current one. For overwrite, a secondary
   /// switch chooses whether to also pull the backup's settings layer. Returns
   /// the choice, or `null` if the user cancels.
   Future<_BackupImportChoice?> _showConfirmDialog(
+    BuildContext dialogContext,
     BackupMeta meta,
     BackupMergePreview? preview,
   ) async {
@@ -560,7 +617,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     _BackupImportMode mode = _BackupImportMode.overwrite;
     bool importSettings = false;
     final bool? confirmed = await showAppDialog<bool>(
-      context: context,
+      context: dialogContext,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) {
           final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
