@@ -10692,6 +10692,19 @@ class $FavoriteWordsTable extends FavoriteWords
   late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
       'source_type', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _dateKeyMeta =
       const VerificationMeta('dateKey');
   @override
@@ -10705,8 +10718,17 @@ class $FavoriteWordsTable extends FavoriteWords
       'created_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, expression, reading, glossary, sourceType, dateKey, createdAt];
+  List<GeneratedColumn> get $columns => [
+        id,
+        expression,
+        reading,
+        glossary,
+        sourceType,
+        bookKey,
+        title,
+        dateKey,
+        createdAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -10744,6 +10766,14 @@ class $FavoriteWordsTable extends FavoriteWords
     } else if (isInserting) {
       context.missing(_sourceTypeMeta);
     }
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    }
     if (data.containsKey('date_key')) {
       context.handle(_dateKeyMeta,
           dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
@@ -10779,6 +10809,10 @@ class $FavoriteWordsTable extends FavoriteWords
           .read(DriftSqlType.string, data['${effectivePrefix}glossary'])!,
       sourceType: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key']),
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
       dateKey: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
       createdAt: attachedDatabase.typeMapping
@@ -10798,6 +10832,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
   final String reading;
   final String glossary;
   final String sourceType;
+  final String? bookKey;
+  final String title;
   final String dateKey;
   final int createdAt;
   const FavoriteWordRow(
@@ -10806,6 +10842,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       required this.reading,
       required this.glossary,
       required this.sourceType,
+      this.bookKey,
+      required this.title,
       required this.dateKey,
       required this.createdAt});
   @override
@@ -10816,6 +10854,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     map['reading'] = Variable<String>(reading);
     map['glossary'] = Variable<String>(glossary);
     map['source_type'] = Variable<String>(sourceType);
+    if (!nullToAbsent || bookKey != null) {
+      map['book_key'] = Variable<String>(bookKey);
+    }
+    map['title'] = Variable<String>(title);
     map['date_key'] = Variable<String>(dateKey);
     map['created_at'] = Variable<int>(createdAt);
     return map;
@@ -10828,6 +10870,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       reading: Value(reading),
       glossary: Value(glossary),
       sourceType: Value(sourceType),
+      bookKey: bookKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookKey),
+      title: Value(title),
       dateKey: Value(dateKey),
       createdAt: Value(createdAt),
     );
@@ -10842,6 +10888,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       reading: serializer.fromJson<String>(json['reading']),
       glossary: serializer.fromJson<String>(json['glossary']),
       sourceType: serializer.fromJson<String>(json['sourceType']),
+      bookKey: serializer.fromJson<String?>(json['bookKey']),
+      title: serializer.fromJson<String>(json['title']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
@@ -10855,6 +10903,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       'reading': serializer.toJson<String>(reading),
       'glossary': serializer.toJson<String>(glossary),
       'sourceType': serializer.toJson<String>(sourceType),
+      'bookKey': serializer.toJson<String?>(bookKey),
+      'title': serializer.toJson<String>(title),
       'dateKey': serializer.toJson<String>(dateKey),
       'createdAt': serializer.toJson<int>(createdAt),
     };
@@ -10866,6 +10916,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           String? reading,
           String? glossary,
           String? sourceType,
+          Value<String?> bookKey = const Value.absent(),
+          String? title,
           String? dateKey,
           int? createdAt}) =>
       FavoriteWordRow(
@@ -10874,6 +10926,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
         reading: reading ?? this.reading,
         glossary: glossary ?? this.glossary,
         sourceType: sourceType ?? this.sourceType,
+        bookKey: bookKey.present ? bookKey.value : this.bookKey,
+        title: title ?? this.title,
         dateKey: dateKey ?? this.dateKey,
         createdAt: createdAt ?? this.createdAt,
       );
@@ -10886,6 +10940,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       glossary: data.glossary.present ? data.glossary.value : this.glossary,
       sourceType:
           data.sourceType.present ? data.sourceType.value : this.sourceType,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      title: data.title.present ? data.title.value : this.title,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -10899,6 +10955,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           ..write('reading: $reading, ')
           ..write('glossary: $glossary, ')
           ..write('sourceType: $sourceType, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -10906,8 +10964,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, expression, reading, glossary, sourceType, dateKey, createdAt);
+  int get hashCode => Object.hash(id, expression, reading, glossary, sourceType,
+      bookKey, title, dateKey, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -10917,6 +10975,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           other.reading == this.reading &&
           other.glossary == this.glossary &&
           other.sourceType == this.sourceType &&
+          other.bookKey == this.bookKey &&
+          other.title == this.title &&
           other.dateKey == this.dateKey &&
           other.createdAt == this.createdAt);
 }
@@ -10927,6 +10987,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
   final Value<String> reading;
   final Value<String> glossary;
   final Value<String> sourceType;
+  final Value<String?> bookKey;
+  final Value<String> title;
   final Value<String> dateKey;
   final Value<int> createdAt;
   const FavoriteWordsCompanion({
@@ -10935,6 +10997,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.reading = const Value.absent(),
     this.glossary = const Value.absent(),
     this.sourceType = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.title = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
@@ -10944,6 +11008,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.reading = const Value.absent(),
     this.glossary = const Value.absent(),
     required String sourceType,
+    this.bookKey = const Value.absent(),
+    this.title = const Value.absent(),
     required String dateKey,
     required int createdAt,
   })  : expression = Value(expression),
@@ -10956,6 +11022,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     Expression<String>? reading,
     Expression<String>? glossary,
     Expression<String>? sourceType,
+    Expression<String>? bookKey,
+    Expression<String>? title,
     Expression<String>? dateKey,
     Expression<int>? createdAt,
   }) {
@@ -10965,6 +11033,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       if (reading != null) 'reading': reading,
       if (glossary != null) 'glossary': glossary,
       if (sourceType != null) 'source_type': sourceType,
+      if (bookKey != null) 'book_key': bookKey,
+      if (title != null) 'title': title,
       if (dateKey != null) 'date_key': dateKey,
       if (createdAt != null) 'created_at': createdAt,
     });
@@ -10976,6 +11046,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       Value<String>? reading,
       Value<String>? glossary,
       Value<String>? sourceType,
+      Value<String?>? bookKey,
+      Value<String>? title,
       Value<String>? dateKey,
       Value<int>? createdAt}) {
     return FavoriteWordsCompanion(
@@ -10984,6 +11056,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       reading: reading ?? this.reading,
       glossary: glossary ?? this.glossary,
       sourceType: sourceType ?? this.sourceType,
+      bookKey: bookKey ?? this.bookKey,
+      title: title ?? this.title,
       dateKey: dateKey ?? this.dateKey,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -11007,6 +11081,12 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     if (sourceType.present) {
       map['source_type'] = Variable<String>(sourceType.value);
     }
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
     if (dateKey.present) {
       map['date_key'] = Variable<String>(dateKey.value);
     }
@@ -11024,6 +11104,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
           ..write('reading: $reading, ')
           ..write('glossary: $glossary, ')
           ..write('sourceType: $sourceType, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -21500,6 +21582,8 @@ typedef $$FavoriteWordsTableCreateCompanionBuilder = FavoriteWordsCompanion
   Value<String> reading,
   Value<String> glossary,
   required String sourceType,
+  Value<String?> bookKey,
+  Value<String> title,
   required String dateKey,
   required int createdAt,
 });
@@ -21510,6 +21594,8 @@ typedef $$FavoriteWordsTableUpdateCompanionBuilder = FavoriteWordsCompanion
   Value<String> reading,
   Value<String> glossary,
   Value<String> sourceType,
+  Value<String?> bookKey,
+  Value<String> title,
   Value<String> dateKey,
   Value<int> createdAt,
 });
@@ -21537,6 +21623,12 @@ class $$FavoriteWordsTableFilterComposer
 
   ColumnFilters<String> get sourceType => $composableBuilder(
       column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get dateKey => $composableBuilder(
       column: $table.dateKey, builder: (column) => ColumnFilters(column));
@@ -21569,6 +21661,12 @@ class $$FavoriteWordsTableOrderingComposer
   ColumnOrderings<String> get sourceType => $composableBuilder(
       column: $table.sourceType, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get dateKey => $composableBuilder(
       column: $table.dateKey, builder: (column) => ColumnOrderings(column));
 
@@ -21599,6 +21697,12 @@ class $$FavoriteWordsTableAnnotationComposer
 
   GeneratedColumn<String> get sourceType => $composableBuilder(
       column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
 
   GeneratedColumn<String> get dateKey =>
       $composableBuilder(column: $table.dateKey, builder: (column) => column);
@@ -21639,6 +21743,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             Value<String> reading = const Value.absent(),
             Value<String> glossary = const Value.absent(),
             Value<String> sourceType = const Value.absent(),
+            Value<String?> bookKey = const Value.absent(),
+            Value<String> title = const Value.absent(),
             Value<String> dateKey = const Value.absent(),
             Value<int> createdAt = const Value.absent(),
           }) =>
@@ -21648,6 +21754,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             reading: reading,
             glossary: glossary,
             sourceType: sourceType,
+            bookKey: bookKey,
+            title: title,
             dateKey: dateKey,
             createdAt: createdAt,
           ),
@@ -21657,6 +21765,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             Value<String> reading = const Value.absent(),
             Value<String> glossary = const Value.absent(),
             required String sourceType,
+            Value<String?> bookKey = const Value.absent(),
+            Value<String> title = const Value.absent(),
             required String dateKey,
             required int createdAt,
           }) =>
@@ -21666,6 +21776,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             reading: reading,
             glossary: glossary,
             sourceType: sourceType,
+            bookKey: bookKey,
+            title: title,
             dateKey: dateKey,
             createdAt: createdAt,
           ),

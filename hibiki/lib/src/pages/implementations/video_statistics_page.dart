@@ -39,6 +39,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Map<String, ({int lookups, int mines})> _videoCounters =
       <String, ({int lookups, int mines})>{};
 
+  // per-video 收藏计数（TODO-1252：按 title 聚合当前收藏活行，无书收藏 title='' 跳过，
+  // 只进汇总面板）。收藏取消即删行 → 聚合活行天然回落。
+  Map<String, int> _videoFavorites = <String, int>{};
+
   // 今日每小时观看时长（0-23，毫秒）。
   List<int> _hourlyMs = List.filled(24, 0);
 
@@ -92,6 +96,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         now,
       );
       _videoCounters = _aggregateCountersByTitle(counters);
+      _videoFavorites = _aggregateFavoritesByTitle(favs);
       // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
@@ -142,6 +147,17 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         lookups: prev.lookups + r.lookupCount,
         mines: prev.mines + r.mineCount,
       );
+    }
+    return out;
+  }
+
+  /// TODO-1252：收藏活行按 [FavoriteWordRow.title] 聚合成每个视频的收藏数，供 per-video
+  /// tile 展示（无书收藏 title 空跳过，只进汇总）。
+  Map<String, int> _aggregateFavoritesByTitle(List<FavoriteWordRow> rows) {
+    final Map<String, int> out = <String, int>{};
+    for (final FavoriteWordRow r in rows) {
+      if (r.title.isEmpty) continue;
+      out[r.title] = (out[r.title] ?? 0) + 1;
     }
     return out;
   }
@@ -400,6 +416,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _videoCounters[video.title] ?? (lookups: 0, mines: 0);
+    final int favorites = _videoFavorites[video.title] ?? 0;
     // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
     final maxMs =
         _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
@@ -452,7 +469,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
               ),
               SizedBox(height: tokens.spacing.gap / 2),
               Text(
-                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
+                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),

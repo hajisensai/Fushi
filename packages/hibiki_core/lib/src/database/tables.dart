@@ -434,6 +434,15 @@ class FavoriteWords extends Table {
   TextColumn get reading => text().withDefault(const Constant(''))();
   TextColumn get glossary => text().withDefault(const Constant(''))();
   TextColumn get sourceType => text()(); // 'book' | 'video'
+  // TODO-1252：收藏归属的书 / 视频身份（[bookKey] 存书身份 / 视频 bookUid，[title] 存
+  // 书 / 视频标题），在收藏那一刻从阅读器 / 视频页的书上下文写入，供统计页 per-book /
+  // per-video tile 按 [title] 聚合展示「收藏 N」（与查词 / 制卡 tile 同源同样式）。
+  // uniqueKey 不变（仍 {expression, reading, sourceType} 全局去重）→ 汇总面板计数与
+  // 云同步 / 备份合并契约完全不变；无书上下文（首页 / 独立查词 / 歌词 / 外部覆盖窗 /
+  // 同步回灌）时 [title]='' → 只进汇总，不落任何 per-book / per-video tile。收藏是可
+  // 增删的集合（取消收藏即删行），tile 聚合活行 → 取消收藏后该书计数自然回落。
+  TextColumn get bookKey => text().nullable()();
+  TextColumn get title => text().withDefault(const Constant(''))();
   TextColumn get dateKey => text()();
   IntColumn get createdAt => integer()();
 

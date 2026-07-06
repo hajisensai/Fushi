@@ -60,6 +60,34 @@ Future<HibikiDatabase> _openV34DbWithoutStreamSpecJson() async {
   return db;
 }
 
+/// Opens a `user_version = 35` database whose favorite_words table lacks the
+/// book_key / title columns, forcing the real `if (from < 36) addColumn(
+/// favoriteWords.bookKey / .title)` onUpgrade branch (TODO-1252) to run.
+Future<HibikiDatabase> _openV35DbWithoutFavoriteBookColumns() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Minimal favorite_words shaped like the v35 schema (no book_key/title).
+        rawDb.execute('CREATE TABLE favorite_words ('
+            'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+            'expression TEXT NOT NULL, '
+            'reading TEXT NOT NULL, '
+            'glossary TEXT NOT NULL, '
+            'source_type TEXT NOT NULL, '
+            'date_key TEXT NOT NULL, '
+            'created_at INTEGER NOT NULL, '
+            'UNIQUE (expression, reading, source_type))');
+        rawDb.execute('INSERT INTO favorite_words (expression, reading, '
+            'glossary, source_type, date_key, created_at) VALUES '
+            "('語', 'ご', 'g', 'book', '2026-07-06', 1)");
+        rawDb.execute('PRAGMA user_version = 35');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 /// Opens a `user_version = 14` database that lacks the sync_baselines table,
 /// forcing the real `if (from < 15) createTable(syncBaselines)` onUpgrade
 /// branch in database.dart to run when HibikiDatabase opens it.
@@ -924,7 +952,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 35,
+      expect(db.schemaVersion, 36,
           reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + TODO-1157 v35 stream_spec_json); TODO-894 backfill behavior '
               'asserted by the srt_books '
@@ -1109,7 +1137,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 35,
+      expect(db.schemaVersion, 36,
           reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 + TODO-1157 v35); v29->v30 series/shelf_entries '
               'creation asserted below');
@@ -1159,7 +1187,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 35);
+      expect(db.schemaVersion, 36);
     });
 
     test(
@@ -1168,8 +1196,9 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 35,
-          reason: 'TODO-1157 bumps the global schemaVersion to 35');
+      expect(db.schemaVersion, 36,
+          reason:
+              'TODO-1252 bumps the global schemaVersion to 36 (favorite_words book_key/title)');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1201,8 +1230,9 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 35,
-          reason: 'TODO-1157 bumps the global schemaVersion to 35');
+      expect(db.schemaVersion, 36,
+          reason:
+              'TODO-1252 bumps the global schemaVersion to 36 (favorite_words book_key/title)');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1240,7 +1270,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 35);
+      expect(db.schemaVersion, 36);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1265,6 +1295,40 @@ void main() {
           .get();
       expect(rows, hasLength(1));
       expect(rows.single.data['stream_spec_json'], isNull);
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+    });
+
+    test(
+        'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
+        () async {
+      final db = await _openDb();
+      expect(db.schemaVersion, 36);
+      final cols =
+          await db.customSelect("PRAGMA table_info('favorite_words')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, containsAll(<String>['book_key', 'title']),
+          reason: 'fresh createAll must include TODO-1252 book_key/title');
+    });
+
+    test(
+        'real v35->v36 adds favorite_words.book_key + title, preserves rows, '
+        'bumps user_version (TODO-1252)', () async {
+      final db = await _openV35DbWithoutFavoriteBookColumns();
+      // Opening triggers from<36 addColumn(bookKey/title).
+      final cols =
+          await db.customSelect("PRAGMA table_info('favorite_words')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, containsAll(<String>['book_key', 'title']),
+          reason: 'from<36 must addColumn(favoriteWords.bookKey/.title)');
+      // 既有行保留、新列 book_key 默认 NULL / title 默认空串（无损迁移）。
+      final rows = await db
+          .customSelect(
+              "SELECT book_key, title FROM favorite_words WHERE source_type='book'")
+          .get();
+      expect(rows, hasLength(1));
+      expect(rows.single.data['book_key'], isNull);
+      expect(rows.single.data['title'], '');
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
     });

@@ -53,6 +53,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   Map<String, ({int lookups, int mines})> _bookCounters =
       <String, ({int lookups, int mines})>{};
 
+  // per-book 收藏计数（TODO-1252：按 title 聚合当前收藏活行，无书收藏 title='' 跳过，
+  // 只进汇总面板）。收藏取消即删行 → 聚合活行天然回落。
+  Map<String, int> _bookFavorites = <String, int>{};
+
   // 按书聚合
   List<_BookData> _bookData = [];
 
@@ -109,6 +113,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         now,
       );
       _bookCounters = _aggregateCountersByTitle(counters);
+      _bookFavorites = _aggregateFavoritesByTitle(favs);
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
       // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
       final List<FavoriteSentence> favSentences =
@@ -155,6 +160,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         lookups: prev.lookups + r.lookupCount,
         mines: prev.mines + r.mineCount,
       );
+    }
+    return out;
+  }
+
+  /// TODO-1252：把收藏活行按 [FavoriteWordRow.title] 聚合成每本书的收藏数，供 per-book
+  /// tile 展示。无书收藏（title 空）不入 tile，只进汇总面板。聚合键与查词/制卡 tile 的
+  /// title 一致。
+  Map<String, int> _aggregateFavoritesByTitle(List<FavoriteWordRow> rows) {
+    final Map<String, int> out = <String, int>{};
+    for (final FavoriteWordRow r in rows) {
+      if (r.title.isEmpty) continue;
+      out[r.title] = (out[r.title] ?? 0) + 1;
     }
     return out;
   }
@@ -934,6 +951,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _bookCounters[book.title] ?? (lookups: 0, mines: 0);
+    final int favorites = _bookFavorites[book.title] ?? 0;
     // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
     final double topMetric =
         _bookData.isEmpty ? 0 : _sortMetric(_bookData.first);
@@ -986,7 +1004,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               ),
               SizedBox(height: tokens.spacing.gap / 2),
               Text(
-                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
+                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
