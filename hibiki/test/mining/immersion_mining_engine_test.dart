@@ -118,12 +118,12 @@ void main() {
     expect(res.aborted, false);
     expect(repo.minedContext!.sentence, '走り出した。');
     expect(repo.minedContext!.coverPath, endsWith('.gif'));
-    expect(
-        repo.minedContext!.sasayakiAudioPath, endsWith('immersion_audio.m4a'));
+    expect(repo.minedContext!.sasayakiAudioPath,
+        endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
     expect(repo.minedContext!.source, AnkiMiningSource.video);
   });
 
-  test('provided audio bytes use the AnkiMobile-downloadable m4a filename',
+  test('provided audio bytes use the platform-aware immersion audio filename',
       () async {
     final repo = _FakeRepo();
     await build(gif: nullGif, audio: nullAudio, frame: nullFrame).mine(
@@ -136,8 +136,8 @@ void main() {
         compression: MiningMediaCompression.compressed,
         tempDir: tmp.path,
         repo: repo);
-    expect(
-        repo.minedContext!.sasayakiAudioPath, endsWith('immersion_audio.m4a'));
+    expect(repo.minedContext!.sasayakiAudioPath,
+        endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
   });
 
   test('gif fails -> frame fallback yields still cover', () async {

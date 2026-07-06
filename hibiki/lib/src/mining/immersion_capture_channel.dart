@@ -84,7 +84,9 @@ ImmersionMiningRequest buildImmersionRequest(
     providedCoverBytes: cover,
     providedCoverName: coverIsGif ? 'netflix_clip.gif' : 'netflix_shot.jpg',
     providedAudioBytes: audio,
-    providedAudioName: audio == null ? null : 'netflix_audio.m4a',
+    providedAudioName: audio == null
+        ? null
+        : 'netflix_audio.${immersionMiningAudioExtension()}',
     requireAudio: audio != null,
   );
 }
@@ -124,7 +126,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
       inputPath: clip.path,
       startMs: 0,
       endMs: endMs,
-      outputPath: '${dir.path}/clip.m4a',
+      outputPath: '${dir.path}/clip.${immersionMiningAudioExtension()}',
       audioChannels: compression.audioChannels,
       audioBitrate: compression.audioBitrate,
     );

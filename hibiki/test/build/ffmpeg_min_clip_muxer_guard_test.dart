@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
 
 /// BUG-460 source-scan guard: the audiobook clip-export pipeline must only emit
 /// containers the bundled "ffmpeg-min" desktop build can actually mux.
@@ -67,5 +68,62 @@ void main() {
             'bundled ffmpeg-min build). BUG-460.');
     expect(pipeline.contains(r"'$base.mp4'"), isFalse,
         reason: 'clip pipeline must not write .mp4 (no mp4 muxer). BUG-460.');
+  });
+
+  // TODO-1217: the immersion mining engine (Netflix/YouTube/in-app video cards)
+  // shares the same desktop ffmpeg-min constraint. da22cd42a hardcoded the clip
+  // audio to `.m4a` for iOS AnkiMobile, but the desktop bundled build cannot mux
+  // ipod/mp4 → `.m4a` exits -22 → null audio → silent cards. The fix routes the
+  // container through immersionMiningAudioExtension() (iOS m4a / desktop+Android
+  // aac). These guards pin both the helper's mapping and that the engine + the
+  // Netflix capture channel go through it (never a hardcoded suffix).
+  test('immersion audio extension is desktop/Android=aac, iOS=m4a', () {
+    expect(immersionMiningAudioExtensionFor(isIOS: false), 'aac',
+        reason: 'Desktop + Android must use .aac (adts): the bundled '
+            'ffmpeg-min has no ipod/mp4 muxer, so .m4a exits -22 (TODO-1217).');
+    expect(immersionMiningAudioExtensionFor(isIOS: true), 'm4a',
+        reason: 'iOS AnkiMobile only auto-downloads media-recognized URLs; it '
+            'needs .m4a, and iOS ffmpeg-kit has the ipod muxer (da22cd42a).');
+  });
+
+  test('the desktop immersion audio container is muxable by ffmpeg-min', () {
+    // The desktop/Android branch container (.aac → adts muxer) MUST be in the
+    // build whitelist, otherwise desktop immersion cards go silent (TODO-1217).
+    final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
+    final RegExp muxers = RegExp(r'^MUXERS="([^"]*)"', multiLine: true);
+    final List<String> list = muxers.firstMatch(script)!.group(1)!.split(',');
+    // desktop/Android extension .aac is muxed by 'adts'.
+    expect(immersionMiningAudioExtensionFor(isIOS: false), 'aac');
+    expect(list, contains('adts'),
+        reason: 'desktop immersion clip audio writes .aac (adts container); '
+            'without the adts muxer the card has no audio (TODO-1217).');
+    expect(list, isNot(contains('ipod')),
+        reason: 'ffmpeg-min still has no ipod muxer — proof the desktop branch '
+            'must NOT use .m4a (TODO-1217).');
+  });
+
+  test(
+      'immersion engine + capture channel derive the audio container from the '
+      'platform-aware helper, never a hardcoded .m4a/.mp4', () {
+    final String engine =
+        libFile('lib/src/mining/immersion_mining_engine.dart');
+    final String capture =
+        libFile('lib/src/mining/immersion_capture_channel.dart');
+    for (final MapEntry<String, String> e in <String, String>{
+      'immersion_mining_engine.dart': engine,
+      'immersion_capture_channel.dart': capture,
+    }.entries) {
+      expect(e.value.contains(r'.${immersionMiningAudioExtension()}'), isTrue,
+          reason: '${e.key} must build the clip audio filename from '
+              'immersionMiningAudioExtension() (TODO-1217).');
+      expect(
+          e.value.contains('immersion_audio.m4a') ||
+              e.value.contains('clip.m4a') ||
+              e.value.contains('netflix_audio.m4a'),
+          isFalse,
+          reason: '${e.key} must not hardcode a .m4a clip audio name — the '
+              'desktop ffmpeg-min cannot mux it → exit -22 → silent cards '
+              '(TODO-1217/BUG-460).');
+    }
   });
 }
