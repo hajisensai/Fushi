@@ -16,6 +16,9 @@ import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
 
 class _FakeLookup implements HibikiRemoteLookupService {
   String? lastTerm;
+  RemoteAudioLookup? audioResult;
+  String? lastAudioExpression;
+  String? lastAudioReading;
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
@@ -32,8 +35,11 @@ class _FakeLookup implements HibikiRemoteLookupService {
   Future<RemoteAudioLookup?> lookupAudio({
     required String expression,
     required String reading,
-  }) async =>
-      null;
+  }) async {
+    lastAudioExpression = expression;
+    lastAudioReading = reading;
+    return audioResult;
+  }
 }
 
 class _FakeMining implements HibikiRemoteMiningService {
@@ -92,6 +98,20 @@ Future<Map<String, dynamic>> _json(HttpClientResponse resp) async {
   return jsonDecode(s) as Map<String, dynamic>;
 }
 
+Future<HttpClientResponse> _get(String url) async {
+  final HttpClient c = HttpClient();
+  final HttpClientRequest req = await c.getUrl(Uri.parse(url));
+  return req.close();
+}
+
+Future<List<int>> _collectBytes(HttpClientResponse resp) async {
+  final List<int> out = <int>[];
+  await for (final List<int> chunk in resp) {
+    out.addAll(chunk);
+  }
+  return out;
+}
+
 void main() {
   const Tokenizer tok = _noopTokenize;
   const ReadingResolver rr = _noopReading;
@@ -104,6 +124,7 @@ void main() {
     Future<void> startServer({
       String? apiKey,
       Map<String, String> Function()? themeColorsProvider,
+      List<String> Function()? audioSourcesProvider,
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
@@ -114,6 +135,7 @@ void main() {
         tokenizer: tok,
         readingResolver: rr,
         themeColorsProvider: themeColorsProvider,
+        audioSourcesProvider: audioSourcesProvider,
         apiKey: apiKey,
       );
       await server.start();
@@ -282,6 +304,100 @@ void main() {
       expect(resp.statusCode, 200);
       expect((await _json(resp))['duplicate'], false);
       expect(mining.lastDupExpression, isNull);
+    });
+
+    test('单词音频①②：/api/lookup/audio 返 file url，GET file 免鉴权返字节', () async {
+      await startServer(apiKey: 'k123');
+      lookup.audioResult = RemoteAudioLookup(
+        bytes: Uint8List.fromList(<int>[9, 8, 7]),
+        contentType: 'audio/mpeg',
+      );
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/audio',
+        <String, dynamic>{'expression': '走る', 'reading': 'はしる'},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      expect(j['type'], 'audioResult');
+      expect(j['contentType'], 'audio/mpeg');
+      expect(lookup.lastAudioExpression, '走る');
+      expect(lookup.lastAudioReading, 'はしる');
+      final String url = j['url'] as String;
+      expect(url, contains('/api/lookup/audio/file?id='));
+      // 文件端点裸 GET（HTML5 Audio 无 Authorization）→ 免鉴权返回字节。
+      final HttpClientResponse fileResp = await _get(url);
+      expect(fileResp.statusCode, 200);
+      expect(fileResp.headers.contentType.toString(), contains('audio/mpeg'));
+      expect(await _collectBytes(fileResp), <int>[9, 8, 7]);
+    });
+
+    test('/api/lookup/audio 未命中 → url null（弹窗降级 ✕）', () async {
+      await startServer(apiKey: 'k123');
+      lookup.audioResult = null;
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/audio',
+        <String, dynamic>{'expression': '走る', 'reading': 'はしる'},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      expect(j['type'], 'audioResult');
+      expect(j['url'], isNull);
+    });
+
+    test('/api/lookup/audio 空 expression → url null（不打后端）', () async {
+      await startServer(apiKey: 'k123');
+      lookup.audioResult = RemoteAudioLookup(
+        bytes: Uint8List.fromList(<int>[1]),
+        contentType: 'audio/mpeg',
+      );
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/audio',
+        <String, dynamic>{'expression': ''},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      expect((await _json(resp))['url'], isNull);
+      expect(lookup.lastAudioExpression, isNull);
+    });
+
+    test('/api/lookup/audio/file 未知 id → 404', () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _get(
+          'http://127.0.0.1:${server.port}/api/lookup/audio/file?id=nope');
+      expect(resp.statusCode, 404);
+      await resp.drain<void>();
+    });
+
+    test('查词响应带 audioSources（provider 非空 → 渲染 ♪ 按钮）', () async {
+      await startServer(
+          apiKey: 'k123',
+          audioSourcesProvider: () => <String>['hibiki://audio']);
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '猫', 'record': false},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      expect(j['audioSources'], <String>['hibiki://audio']);
+    });
+
+    test('查词响应无 provider 时省略 audioSources（向后兼容）', () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '猫', 'record': false},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      expect((await _json(resp)).containsKey('audioSources'), isFalse);
     });
 
     test('/api/duplicate wrong token → 401', () async {

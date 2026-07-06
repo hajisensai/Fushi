@@ -26,8 +26,13 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   required HibikiRemoteLookupService lookup,
   HibikiRemoteHistoryService? history,
   Map<String, String> Function()? themeColorsProvider,
+  List<String> Function()? audioSourcesProvider,
 }) async {
   final Map<String, String>? theme = themeColorsProvider?.call();
+  // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
+  // window.audioSources（非空 → popup.js 渲染 ♪ 按钮）。null（未注入，如 sync host）
+  // 时不带该字段（向后兼容）。
+  final List<String>? audioSources = audioSourcesProvider?.call();
   final String term = body['term']?.toString() ?? '';
   if (term.trim().isEmpty) {
     return <String, dynamic>{
@@ -35,6 +40,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       'result': null,
       'popupJson': null,
       if (theme != null) 'theme': theme,
+      if (audioSources != null) 'audioSources': audioSources,
     };
   }
   final bool wildcards = body['wildcards'] as bool? ?? false;
@@ -52,6 +58,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     'result': result == null ? null : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
     if (theme != null) 'theme': theme,
+    if (audioSources != null) 'audioSources': audioSources,
   };
 }
 
