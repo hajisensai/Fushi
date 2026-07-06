@@ -15,16 +15,22 @@ void main() {
     if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
   });
 
-  group('discoverCssFiles', () {
+  group('discoverCssFiles (TODO-1234: OPF-manifest discovery, no tree walk)',
+      () {
     test('returns empty list when extractDir does not exist', () {
       final repo = BookCssRepository(p.join(tmpDir.path, 'nonexistent'));
       expect(repo.discoverCssFiles(), isEmpty);
     });
 
-    test('discovers CSS files recursively', () {
-      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'body{}');
-      _createFile(tmpDir, 'OEBPS/Styles/fonts.css', '@font-face{}');
-      _createFile(tmpDir, 'OEBPS/Text/chapter1.xhtml', '<html/>');
+    test('discovers CSS files declared in the OPF manifest', () {
+      _seedEpub(
+        tmpDir,
+        {
+          'OEBPS/Styles/style.css': 'body{}',
+          'OEBPS/Styles/fonts.css': '@font-face{}',
+        },
+        otherFiles: ['OEBPS/Text/chapter1.xhtml'],
+      );
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -36,8 +42,56 @@ void main() {
       );
     });
 
-    test('excludes .original backup files', () {
-      _createFile(tmpDir, 'OEBPS/style.css', 'body{}');
+    test('TODO-1234: ignores undeclared CSS files on disk (no full-tree walk)',
+        () {
+      // A manga-shaped extract: one declared stylesheet, an undeclared orphan
+      // stylesheet, and a heavy pile of images that the old recursive walk had
+      // to enumerate. Manifest-driven discovery must return only the declared
+      // CSS and never touch the rest of the tree.
+      _seedEpub(
+        tmpDir,
+        {'OEBPS/Styles/book.css': 'body{}'},
+        otherFiles: ['OEBPS/Text/ch1.xhtml'],
+      );
+      _createFile(tmpDir, 'OEBPS/Styles/orphan.css', '.orphan{}');
+      for (int i = 0; i < 40; i++) {
+        _createFile(tmpDir, 'OEBPS/Images/img$i.jpg', 'binary');
+      }
+
+      final repo = BookCssRepository(tmpDir.path);
+      final files = repo.discoverCssFiles();
+
+      expect(
+          files.map((f) => f.relativePath).toList(), ['OEBPS/Styles/book.css']);
+      expect(files.any((f) => f.relativePath.contains('orphan')), isFalse);
+    });
+
+    test('TODO-1234: returns empty (no crash) when OPF/container is missing',
+        () {
+      // Files on disk but no META-INF/container.xml: an unopenable package
+      // degrades to "no CSS files" instead of walking the tree or throwing.
+      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'body{}');
+      final repo = BookCssRepository(tmpDir.path);
+      expect(repo.discoverCssFiles(), isEmpty);
+    });
+
+    test('TODO-1234: skips manifest CSS items that are absent on disk', () {
+      _seedEpub(
+        tmpDir,
+        {'OEBPS/Styles/present.css': 'body{}'},
+      );
+      // Declare a second CSS item in the manifest but never write the file.
+      _declareExtraManifestItem(tmpDir, 'OEBPS/Styles/ghost.css', 'text/css');
+
+      final repo = BookCssRepository(tmpDir.path);
+      final files = repo.discoverCssFiles();
+
+      expect(files.map((f) => f.relativePath).toList(),
+          ['OEBPS/Styles/present.css']);
+    });
+
+    test('excludes undeclared .original backup files', () {
+      _seedEpub(tmpDir, {'OEBPS/style.css': 'body{}'});
       _createFile(tmpDir, 'OEBPS/style.css.original', 'old{}');
 
       final repo = BookCssRepository(tmpDir.path);
@@ -47,9 +101,12 @@ void main() {
       expect(files.first.relativePath, 'OEBPS/style.css');
     });
 
-    test('matches CSS extension case-insensitively', () {
-      _createFile(tmpDir, 'OEBPS/STYLE.CSS', 'body{}');
-      _createFile(tmpDir, 'OEBPS/Mixed.Css', 'body{}');
+    test('includes items keyed by text/css media-type regardless of extension',
+        () {
+      _seedEpub(tmpDir, {
+        'OEBPS/STYLE.CSS': 'body{}',
+        'OEBPS/Mixed.Css': 'body{}',
+      });
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -58,7 +115,7 @@ void main() {
     });
 
     test('relativePaths use forward slashes', () {
-      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'body{}');
+      _seedEpub(tmpDir, {'OEBPS/Styles/style.css': 'body{}'});
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -68,9 +125,11 @@ void main() {
     });
 
     test('results are sorted by relativePath', () {
-      _createFile(tmpDir, 'z/z.css', 'z');
-      _createFile(tmpDir, 'a/a.css', 'a');
-      _createFile(tmpDir, 'm/m.css', 'm');
+      _seedEpub(tmpDir, {
+        'z/z.css': 'z',
+        'a/a.css': 'a',
+        'm/m.css': 'm',
+      });
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -80,17 +139,22 @@ void main() {
     });
   });
 
-  group('loadSnapshots (BUG-040: off-UI-thread discover + read)', () {
+  group(
+      'loadSnapshots (BUG-040 off-UI-thread reads, TODO-1234 manifest discovery)',
+      () {
     test('returns one snapshot per CSS file with disk content', () async {
-      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'body{color:red}');
-      _createFile(tmpDir, 'OEBPS/Styles/fonts.css', '@font-face{}');
-      _createFile(tmpDir, 'OEBPS/Text/chapter1.xhtml', '<html/>');
+      _seedEpub(
+        tmpDir,
+        {
+          'OEBPS/Styles/style.css': 'body{color:red}',
+          'OEBPS/Styles/fonts.css': '@font-face{}',
+        },
+        otherFiles: ['OEBPS/Text/chapter1.xhtml'],
+      );
 
       final repo = BookCssRepository(tmpDir.path);
       final snapshots = await repo.loadSnapshots();
 
-      // Same discovery contract as discoverCssFiles (sorted, xhtml excluded),
-      // but each entry already carries its on-disk content.
       expect(snapshots.map((s) => s.entry.relativePath).toList(),
           ['OEBPS/Styles/fonts.css', 'OEBPS/Styles/style.css']);
       expect(snapshots[0].content, '@font-face{}');
@@ -105,8 +169,10 @@ void main() {
 
   group('displayTitle shortest unique suffix', () {
     test('unique basenames use basename only', () {
-      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'a');
-      _createFile(tmpDir, 'OEBPS/Styles/fonts.css', 'b');
+      _seedEpub(tmpDir, {
+        'OEBPS/Styles/style.css': 'a',
+        'OEBPS/Styles/fonts.css': 'b',
+      });
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -116,8 +182,10 @@ void main() {
     });
 
     test('duplicate basenames get parent prefix', () {
-      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'a');
-      _createFile(tmpDir, 'OEBPS/Alt/style.css', 'b');
+      _seedEpub(tmpDir, {
+        'OEBPS/Styles/style.css': 'a',
+        'OEBPS/Alt/style.css': 'b',
+      });
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -127,9 +195,11 @@ void main() {
     });
 
     test('triple collision adds enough prefix', () {
-      _createFile(tmpDir, 'a/common/style.css', '1');
-      _createFile(tmpDir, 'b/common/style.css', '2');
-      _createFile(tmpDir, 'c/other/style.css', '3');
+      _seedEpub(tmpDir, {
+        'a/common/style.css': '1',
+        'b/common/style.css': '2',
+        'c/other/style.css': '3',
+      });
 
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
@@ -144,7 +214,7 @@ void main() {
 
   group('readCss', () {
     test('reads file content as UTF-8', () {
-      _createFile(tmpDir, 'style.css', 'body { color: red; }');
+      _seedEpub(tmpDir, {'style.css': 'body { color: red; }'});
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
       expect(repo.readCssSync(entry), 'body { color: red; }');
@@ -153,7 +223,7 @@ void main() {
 
   group('saveCss', () {
     test('first save creates .original backup', () {
-      _createFile(tmpDir, 'style.css', 'original content');
+      _seedEpub(tmpDir, {'style.css': 'original content'});
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
 
@@ -165,7 +235,7 @@ void main() {
     });
 
     test('saving same content as disk is a no-op (no .original created)', () {
-      _createFile(tmpDir, 'style.css', 'same');
+      _seedEpub(tmpDir, {'style.css': 'same'});
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
 
@@ -175,7 +245,7 @@ void main() {
     });
 
     test('saving back to original content deletes .original', () {
-      _createFile(tmpDir, 'style.css', 'original');
+      _seedEpub(tmpDir, {'style.css': 'original'});
       final repo = BookCssRepository(tmpDir.path);
       var entry = repo.discoverCssFiles().first;
 
@@ -189,7 +259,7 @@ void main() {
     });
 
     test('second save does not overwrite .original', () {
-      _createFile(tmpDir, 'style.css', 'v1');
+      _seedEpub(tmpDir, {'style.css': 'v1'});
       final repo = BookCssRepository(tmpDir.path);
       var entry = repo.discoverCssFiles().first;
 
@@ -204,14 +274,14 @@ void main() {
 
   group('isDifferentFromOriginal', () {
     test('returns false when no .original exists', () {
-      _createFile(tmpDir, 'style.css', 'body{}');
+      _seedEpub(tmpDir, {'style.css': 'body{}'});
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
       expect(entry.isDifferentFromOriginal(), isFalse);
     });
 
     test('returns true when content differs from .original', () {
-      _createFile(tmpDir, 'style.css', 'modified');
+      _seedEpub(tmpDir, {'style.css': 'modified'});
       _createFile(tmpDir, 'style.css.original', 'original');
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
@@ -219,7 +289,7 @@ void main() {
     });
 
     test('returns false when content matches .original', () {
-      _createFile(tmpDir, 'style.css', 'same');
+      _seedEpub(tmpDir, {'style.css': 'same'});
       _createFile(tmpDir, 'style.css.original', 'same');
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
@@ -229,7 +299,7 @@ void main() {
 
   group('resetFile', () {
     test('restores content from .original and deletes backup', () {
-      _createFile(tmpDir, 'style.css', 'modified');
+      _seedEpub(tmpDir, {'style.css': 'modified'});
       _createFile(tmpDir, 'style.css.original', 'original');
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
@@ -241,7 +311,7 @@ void main() {
     });
 
     test('no-op when no .original exists', () {
-      _createFile(tmpDir, 'style.css', 'content');
+      _seedEpub(tmpDir, {'style.css': 'content'});
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
 
@@ -253,10 +323,12 @@ void main() {
 
   group('resetAll', () {
     test('resets all files that have .original backups', () {
-      _createFile(tmpDir, 'a.css', 'modified-a');
+      _seedEpub(tmpDir, {
+        'a.css': 'modified-a',
+        'b.css': 'untouched-b',
+        'c.css': 'modified-c',
+      });
       _createFile(tmpDir, 'a.css.original', 'original-a');
-      _createFile(tmpDir, 'b.css', 'untouched-b');
-      _createFile(tmpDir, 'c.css', 'modified-c');
       _createFile(tmpDir, 'c.css.original', 'original-c');
 
       final repo = BookCssRepository(tmpDir.path);
@@ -279,4 +351,73 @@ void _createFile(Directory root, String relativePath, String content) {
       File(p.join(root.path, relativePath.replaceAll('/', p.separator)));
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(content);
+}
+
+/// TODO-1234: seed a minimal EPUB (META-INF/container.xml + root content.opf)
+/// whose manifest declares [cssFiles] (media-type text/css) and [otherFiles]
+/// (application/xhtml+xml). The OPF sits at the extract-dir root, so manifest
+/// hrefs equal the extract-dir-relative paths. CSS file bodies come from the
+/// map values; other files get a stub body.
+void _seedEpub(
+  Directory root,
+  Map<String, String> cssFiles, {
+  List<String> otherFiles = const <String>[],
+}) {
+  cssFiles.forEach((rel, content) => _createFile(root, rel, content));
+  for (final String rel in otherFiles) {
+    _createFile(root, rel, '<html/>');
+  }
+
+  final StringBuffer items = StringBuffer();
+  int i = 0;
+  cssFiles.forEach((rel, _) {
+    items.writeln('    <item id="css$i" href="$rel" media-type="text/css"/>');
+    i++;
+  });
+  for (final String rel in otherFiles) {
+    items.writeln(
+        '    <item id="doc$i" href="$rel" media-type="application/xhtml+xml"/>');
+    i++;
+  }
+
+  _createFile(
+    root,
+    'META-INF/container.xml',
+    '<?xml version="1.0"?>\n'
+        '<container version="1.0" '
+        'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
+        '  <rootfiles>\n'
+        '    <rootfile full-path="content.opf" '
+        'media-type="application/oebps-package+xml"/>\n'
+        '  </rootfiles>\n'
+        '</container>\n',
+  );
+  _createFile(
+    root,
+    'content.opf',
+    '<?xml version="1.0"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">\n'
+        '  <manifest>\n'
+        '$items'
+        '  </manifest>\n'
+        '  <spine/>\n'
+        '</package>\n',
+  );
+}
+
+/// Append one extra manifest item to an already-seeded OPF without writing the
+/// file on disk — used to prove absent manifest CSS items are skipped.
+void _declareExtraManifestItem(
+  Directory root,
+  String href,
+  String mediaType,
+) {
+  final File opf = File(p.join(root.path, 'content.opf'));
+  final String xml = opf.readAsStringSync();
+  final String injected = xml.replaceFirst(
+    '  </manifest>',
+    '    <item id="extra" href="$href" media-type="$mediaType"/>\n'
+        '  </manifest>',
+  );
+  opf.writeAsStringSync(injected);
 }
