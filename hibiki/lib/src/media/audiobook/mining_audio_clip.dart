@@ -723,9 +723,11 @@ enum ClipGapHighlight {
 /// 纯函数：给定**有序** cue 列表 [cues]（[miningSentenceCueSpan] 产出，已单文件+升序）、
 /// 全局裁剪窗口 `[globalStartMs, globalEndMs)` 与帧率 [fps]，排出每帧「高亮哪一句」。
 ///
-/// 帧数 = ceil((globalEndMs - globalStartMs) / (1000/fps))，至少 1 帧。第 i 帧的时刻
-/// `t = globalStartMs + i * (1000/fps)`；在 [cues] 里找**包含 t** 的 cue
-/// （`startMs <= t < endMs`）→ 该帧高亮它。落在任何 cue 之外（句间 gap / 头尾 padding）
+/// 帧数 = ceil((globalEndMs - globalStartMs) / (1000/fps))，至少 1 帧。第 i 帧的显示
+/// 区间是 `[globalStartMs + i*Δ, globalStartMs + (i+1)*Δ)`（Δ=1000/fps），在其**帧尾**
+/// （下一帧起点前 1ms）采样：在 [cues] 里找**包含该时刻**的 cue（`startMs <= t < endMs`）
+/// → 该帧高亮它。这样句起点被哪一帧的显示区间覆盖，哪一帧就先亮——高亮切换永不
+/// 晚于句起点（最多提前 <Δ ms，宁早不晚，TODO-1147 用户回访「高亮迟钝」）。落在任何 cue 之外（句间 gap / 头尾 padding）
 /// 时按 [gapHighlight] 决定：默认 [ClipGapHighlight.holdPrevious] 保持上一句。
 ///
 /// 相邻相同 highlightCueIndex 的帧合并计数（每句只渲一次 PNG）。返回 [ClipFrameSpec] 列表，
@@ -758,7 +760,11 @@ List<ClipFrameSpec> clipFramePlan({
   int lastHighlight = _kNoHighlight;
 
   for (int i = 0; i < frameCount; i++) {
-    final int t = globalStartMs + (i * msPerFrame).round();
+    // TODO-1147（用户回访「高亮迟钝」根因）：原来在**帧起点** t=i*Δ 采样「此刻在读
+    // 哪句」，句起点落在帧中间时要等下一帧才切换——每次切换固定迟 0..Δ ms（12fps
+    // 下最多 83ms、平均约 42ms，且永远只迟不早）。改为在**帧尾**（下一帧起点前
+    // 1ms）采样：切换帧对齐句起点向前取整，永不晚于句起点。
+    final int t = globalStartMs + ((i + 1) * msPerFrame).round() - 1;
     int frameIndex = _cueIndexAt(cues, t);
     if (frameIndex == _kNoHighlight) {
       // 句间 gap / 头尾 padding：按策略处理。

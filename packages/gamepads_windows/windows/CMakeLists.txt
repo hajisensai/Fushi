@@ -48,6 +48,15 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 
+# GameInput.dll is NOT present on every Windows install (no Gaming Services /
+# older Windows 10 without the GameInput redistributable). A normal static
+# import would make the loader fail the whole process at startup with
+# "GameInput.dll not found" before any Dart code runs (TODO-1223). Delay-load
+# it instead, so the DLL is only resolved on first call; Gamepads::init()
+# probes with LoadLibrary first and degrades to no-gamepad when it is missing.
+target_link_libraries(${PLUGIN_NAME} PRIVATE delayimp)
+target_link_options(${PLUGIN_NAME} PRIVATE "/DELAYLOAD:GameInput.dll")
+
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.

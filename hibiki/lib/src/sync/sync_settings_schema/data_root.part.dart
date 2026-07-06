@@ -166,6 +166,20 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       return;
     }
 
+    // TODO-1226：判定旧 documents 根是否就是**共享的平台 Documents**（默认数据根）。
+    // 不看 data_root pref（pref 存了失效路径时 AppPaths 仍回退默认根，此时按 pref 判
+    // 会把共享 Documents 误当专属根整树搬走）——直接与平台 Documents 实路径比对。
+    // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
+    bool sharedDocumentsRoot;
+    try {
+      final Directory platformDocuments =
+          await getApplicationDocumentsDirectory();
+      sharedDocumentsRoot = p.equals(oldDocs, platformDocuments.path);
+    } catch (_) {
+      sharedDocumentsRoot = true;
+    }
+    if (!mounted) return;
+
     setState(() => _migrating = true);
     // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置
     // isInitialised=false）。这样 DB 关闭引发的根 widget rebuild 命中迁移遮罩分支，而不
@@ -210,6 +224,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
             appModel.updateDataRootMigrationProgress(copied, total),
         // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
         resolvedExecutablePath: Platform.resolvedExecutable,
+        // TODO-1226：默认根 = 共享用户 Documents → 只搬 Hibiki 自有顶层项白名单，
+        // 且迁移引擎绝不删除 Documents 本体；自定义专属根（<root>/documents）→ 整树。
+        documentsTopLevelIncludeNames:
+            sharedDocumentsRoot ? AppPaths.hibikiOwnedDocumentsEntries : null,
       );
       await const DataRootMigrator().migrate(req);
 
@@ -410,7 +428,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   static bool _dirExistsAndHasFiles(String absolutePath) {
     final Directory dir = Directory(absolutePath);
     if (!dir.existsSync()) return false;
-    for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+    // followLinks: false —— 用户挑的目录可能含 shell junction（ACL 全拒），追进去
+    // listSync 直接 errno 5 硬炸（TODO-1226）。
+    for (final FileSystemEntity e
+        in dir.listSync(recursive: true, followLinks: false)) {
       if (e is File) return true;
     }
     return false;
