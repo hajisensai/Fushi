@@ -1626,7 +1626,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
             // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
             // 加载未落定时再次跨章 → 跳两章。与 _paginate 入口同一 _paginationInFlight。
-            if (_paginationInFlight) return;
+            // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗。
+            if (_paginationInFlight) {
+              _noteChapterTurnInput();
+              return;
+            }
             // Boundary swipe → chapter turn also stole focus to the WebView
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _reclaimReaderFocusAfterGesture();
@@ -1644,9 +1648,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                   DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
               if (elapsedMs < throttleMs) return;
             }
+            // TODO-1229 v2：跨章冷却闸门——同一惯性手势落地短章(插图/单页)后残余惯性
+            // 在新章边界的二次跨章被拦（并滑动冷却窗）。onBoundarySwipe 仅惯性/触摸路径，
+            // 无键盘调用，故无条件过闸门。
+            if (_chapterTurnCoolingDown()) return;
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
                 'chapter=$_currentChapter');
+            _noteChapterTurnInput();
             if (dir == 'forward') {
               _handlePageTurnLimit('forward');
             } else if (dir == 'backward') {
