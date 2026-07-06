@@ -48,6 +48,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.subtitleWaveformCues = const <AudioCue>[],
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
+    this.onPlaySubtitleCue,
     this.subtitlePositionListenable,
     this.currentSubtitlePositionMs,
     required this.onPreviewSpeed,
@@ -121,6 +122,10 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 由页面经 `extractAudioEnergyEnvelope` 提供；移动端拿不到逐帧行时返回空列表，面板据此
   /// 退化成纯 stepper。
   final Future<List<double>> Function()? loadSubtitleWaveform;
+
+  /// TODO-1244：波形对轴视图的逐句试听回调。点某句 → 播放器 seek 到该句（叠加当前预览
+  /// 延迟后的）时间并播放，复用现有播放器。null = 不显示逐句播放按钮。
+  final Future<void> Function(int startMs)? onPlaySubtitleCue;
 
   /// 可选：播放位置变化通知源（`VideoPlayerController`），驱动波形面板重绘播放头。
   final Listenable? subtitlePositionListenable;
@@ -891,6 +896,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               // TODO-1207：放大波形视图里的调轴经此写回顶部权威 _delayMs（_commitDelay
               // 三处同步 + onSetDelay 落盘），与顶部滑条 / 步进 / 自动对轴同源，零第二套状态。
               onCommitDelay: _commitDelay,
+              onPlayCue: widget.onPlaySubtitleCue,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
             ),
