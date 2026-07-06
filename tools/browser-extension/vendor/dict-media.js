@@ -8,6 +8,19 @@ function rewriteDictionaryMediaPath(rawPath, dictName) {
         return null;
     }
     const normalized = normalizeDictMediaPath(rawPath);
+    // TODO-1215: a real browser has no image:// scheme handler, so gaiji /
+    // pitch-accent SVG images would break (ERR_UNKNOWN_URL_SCHEME). In the
+    // extension, bridge-shim.js pre-fills window.__hibikiDictMedia with the
+    // running server's base URL + token (from background cfg()); when present,
+    // rewrite to the server's http media endpoint. In-app that global is unset
+    // -> the original image:// path is kept (the app WebView resolves it).
+    const media = (typeof window !== 'undefined') ? window.__hibikiDictMedia : null;
+    if (media && media.base && media.token) {
+        return `${media.base}/api/media/dictionary` +
+            `?dictionary=${encodeURIComponent(dictName)}` +
+            `&path=${encodeURIComponent(normalized)}` +
+            `&token=${encodeURIComponent(media.token)}`;
+    }
     return `image://?dictionary=${encodeURIComponent(dictName)}&path=${encodeURIComponent(normalized)}`;
 }
 

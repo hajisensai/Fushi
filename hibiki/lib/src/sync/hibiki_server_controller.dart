@@ -14,6 +14,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 /// Result of a [HibikiSyncServerController.start] attempt, so the caller (the
 /// settings toggle) can surface the right message while a headless app-init
@@ -205,6 +206,14 @@ class HibikiSyncServerController extends ChangeNotifier {
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
       deviceName: _deviceName(),
+      // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
+      // FFI engine so the browser extension's rewritten <img> GET can fetch
+      // them. Null-safe: before the engine is initialised it yields null and
+      // the endpoint answers 404.
+      dictionaryMediaProvider: (String dict, String mediaPath) =>
+          HoshiDicts.isInitialized
+              ? HoshiDicts.instance.getMediaFile(dict, mediaPath)
+              : null,
     )
       ..onPairRequest = _promptPairApproval
       // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。

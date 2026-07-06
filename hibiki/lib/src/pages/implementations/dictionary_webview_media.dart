@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/dictionary/dictionary_media_types.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
@@ -89,7 +90,7 @@ CustomSchemeResponse? dictionaryMediaCustomSchemeResponse(Uri url) {
 _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
   if (url.scheme == 'image') {
     final String dictName = url.queryParameters['dictionary'] ?? '';
-    final String mediaPath = _normalizeMediaPath(
+    final String mediaPath = normalizeDictionaryMediaPath(
       url.queryParameters['path'] ?? '',
     );
     if (dictName.isEmpty || mediaPath.isEmpty) {
@@ -103,7 +104,7 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
         mediaPath,
       );
       if (data != null) {
-        final String mime = _mimeTypeForPath(mediaPath);
+        final String mime = dictionaryMediaMimeType(mediaPath);
         return _DictionaryMediaResponse.ok(
           data: data,
           contentType: mime,
@@ -119,7 +120,8 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
 
   if (url.scheme == 'dictmedia') {
     final String dictName = url.queryParameters['dictionary'] ?? '';
-    final String mediaPath = _normalizeMediaPath(Uri.decodeComponent(url.host));
+    final String mediaPath =
+        normalizeDictionaryMediaPath(Uri.decodeComponent(url.host));
     if (dictName.isEmpty || mediaPath.isEmpty) {
       return _DictionaryMediaResponse.notFound();
     }
@@ -139,29 +141,6 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
   }
 
   return null;
-}
-
-String _normalizeMediaPath(String path) {
-  return path.trim().replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
-}
-
-String _mimeTypeForPath(String path) {
-  final String ext = path.split('.').last.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    default:
-      return 'application/octet-stream';
-  }
 }
 
 class _DictionaryMediaResponse {
