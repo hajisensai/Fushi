@@ -109,6 +109,30 @@ class AudiobookClipCueSpan {
   final int endMs;
 }
 
+/// 纯函数：把原始 cue span 转成导出用 [AudiobookClipCueSpan]，并应用 A/V 偏移
+/// [delayMs]（TODO-1147 用户回访「高亮迟钝」第二根因·时基不一致）。
+///
+/// 时基契约：导出音频窗口（`clipExportGlobalRange`）已被 `_shiftRange` 平移
+/// +delayMs——播放侧 `effectiveMs = pos - delayMs` 的镜像，即 cue 在音频里真实
+/// 出现于 `startMs + delayMs`。帧计划（`clipFramePlan`）拿这个**已平移**的窗口当
+/// 时间轴，cue 起止若不同步平移，逐句高亮整体偏移 delayMs（delay<0 时表现为固定
+/// 迟钝、delay>0 时固定提前）。clamp 语义镜像 `_shiftRange`：起点不下穿 0，终点恒
+/// > 起点。
+List<AudiobookClipCueSpan> clipCueSpansWithDelay({
+  required List<AudioCue> span,
+  required int delayMs,
+}) {
+  return span.map((AudioCue c) {
+    final int startMs = (c.startMs + delayMs).clamp(0, 1 << 30);
+    final int endMs = (c.endMs + delayMs).clamp(startMs + 1, 1 << 30);
+    return AudiobookClipCueSpan(
+      text: c.text,
+      startMs: startMs,
+      endMs: endMs,
+    );
+  }).toList(growable: false);
+}
+
 /// 多句片段导出的分类结果（纯数据）。
 ///
 /// [kind] 复用 [AudiobookClipBoundaryKind]：emptySelection / noAudio /

@@ -25,6 +25,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
@@ -62,6 +63,7 @@ import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
 import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
@@ -136,20 +138,6 @@ ReaderCaretMoveOutcome readerCaretMoveOutcome(
   if (status == 'pageForward') return ReaderCaretMoveOutcome.paginateForward;
   if (status == 'pageBackward') return ReaderCaretMoveOutcome.paginateBackward;
   return ReaderCaretMoveOutcome.none;
-}
-
-/// 桌面悬浮字幕条点词时，从整句文本与点击字符索引解析出真正要查的词
-/// （TODO-376）。优先用语言分词器 [Language.wordFromIndex] 切出的 [word]；切不出
-/// （空白 / 标点 / 引擎未就绪）则回退整句 [text]。两者皆空返回空串，调用方据此
-/// no-op。提取成顶层纯函数便于单测，不必驱动整个阅读器页面。
-String floatingLyricSearchTerm({
-  required String text,
-  required int index,
-  required String word,
-}) {
-  final String trimmedWord = word.trim();
-  if (trimmedWord.isNotEmpty) return trimmedWord;
-  return text.trim();
 }
 
 /// Whether a handled reader-WebView pointer gesture (swipe / wheel / boundary

@@ -135,6 +135,8 @@ void main() {
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         newDataRoot: newDataRoot,
+        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+        documentsTopLevelIncludeNames: null,
         closeResources: () async => closed = true,
         writeDataRootPref: (String r) async => wroteDataRoot = r,
       ));
@@ -216,6 +218,8 @@ void main() {
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
           newDataRoot: newDataRoot,
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
           closeResources: () async {},
           writeDataRootPref: (String r) async => wrote = true,
         )),
@@ -242,6 +246,8 @@ void main() {
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
           newDataRoot: newDataRoot,
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
           closeResources: () async {},
           writeDataRootPref: (String r) async {
             writeAttempts++;
@@ -365,6 +371,8 @@ void main() {
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         newDataRoot: newDataRoot,
+        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+        documentsTopLevelIncludeNames: null,
         closeResources: () async {},
         writeDataRootPref: (String r) async => wroteDataRoot = r,
       ));
@@ -433,6 +441,8 @@ void main() {
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         newDataRoot: newDataRoot,
+        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+        documentsTopLevelIncludeNames: null,
         closeResources: () async {},
         writeDataRootPref: (String r) async => wroteDataRoot = r,
       ));
@@ -481,6 +491,8 @@ void main() {
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
           newDataRoot: newDataRoot,
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
           closeResources: () async {},
           writeDataRootPref: (String r) async {},
         )),
@@ -489,6 +501,142 @@ void main() {
 
       // 旧根原样保留。
       expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
+    });
+  });
+
+  group('TODO-1226：共享默认根白名单迁移（绝不整搬/整删用户 Documents）', () {
+    test('白名单模式：只搬 Hibiki 自有顶层项，用户文件/junction 不动，Documents 本体保留', () async {
+      await seedDb();
+      // 模拟共享 Documents：用户自己的文件 + 目录 + shell junction（Link 指向别处）。
+      final File userDoc = File(p.join(oldDocsPath, 'my_essay.docx'))
+        ..writeAsStringSync('user data, do not touch');
+      final Directory userDir = Directory(p.join(oldDocsPath, 'My Projects'))
+        ..createSync();
+      File(p.join(userDir.path, 'notes.txt')).writeAsStringSync('notes');
+      final Directory linkTarget = Directory(p.join(tmp.path, 'link_target'))
+        ..createSync(recursive: true);
+      File(p.join(linkTarget.path, 'inside.txt')).writeAsStringSync('x');
+      final Link junction = Link(p.join(oldDocsPath, 'My Music'))
+        ..createSync(linkTarget.path);
+      // 白名单里的另一个目录也铺数据。
+      File(p.join(oldDocsPath, 'custom_fonts', 'f1.ttf'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[1, 2]);
+
+      final String newDataRoot = p.join(tmp.path, 'new_whitelist');
+      String? wrote;
+      final (Directory newDocs, Directory newSupport) =
+          await const DataRootMigrator().migrate(DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        newDataRoot: newDataRoot,
+        closeResources: () async {},
+        writeDataRootPref: (String r) async => wrote = r,
+        documentsTopLevelIncludeNames: const <String>{
+          'hoshi_books',
+          'audiobooks',
+          'custom_fonts',
+        },
+      ));
+
+      // 白名单项已到新根。
+      expect(
+          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+              .existsSync(),
+          isTrue);
+      expect(
+          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue);
+      expect(File(p.join(newDocs.path, 'custom_fonts', 'f1.ttf')).existsSync(),
+          isTrue);
+      // 白名单项已离开源根（搬移即移除，不靠删整目录）。
+      expect(
+          Directory(p.join(oldDocsPath, 'hoshi_books')).existsSync(), isFalse);
+      expect(
+          Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(), isFalse);
+      // Documents 本体 + 用户文件 + junction 原样保留（P0：绝不删用户 Documents）。
+      expect(oldDocs.existsSync(), isTrue);
+      expect(userDoc.existsSync(), isTrue);
+      expect(userDoc.readAsStringSync(), equals('user data, do not touch'));
+      expect(File(p.join(userDir.path, 'notes.txt')).existsSync(), isTrue);
+      expect(junction.existsSync(), isTrue);
+      expect(File(p.join(linkTarget.path, 'inside.txt')).existsSync(), isTrue);
+      // 用户文件/junction 不被复制/搬移到新根。
+      expect(File(p.join(newDocs.path, 'my_essay.docx')).existsSync(), isFalse);
+      expect(
+          Directory(p.join(newDocs.path, 'My Projects')).existsSync(), isFalse);
+      expect(Link(p.join(newDocs.path, 'My Music')).existsSync(), isFalse);
+      // pref 已写、DB 绝对路径已 rebase 到新根。
+      expect(wrote, equals(newDataRoot));
+      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      try {
+        final EpubBookRow b = (await db.getAllEpubBooks()).single;
+        expect(b.epubPath, startsWith(newDocs.path));
+      } finally {
+        await db.close();
+      }
+    });
+
+    test('白名单模式回滚：pref 写失败 → 白名单项搬回 Documents，用户文件不动、新根子树清理', () async {
+      await seedDb();
+      final File userDoc = File(p.join(oldDocsPath, 'keep.txt'))
+        ..writeAsStringSync('keep');
+      final String newDataRoot = p.join(tmp.path, 'wl_rollback');
+
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: newDataRoot,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async =>
+              throw StateError('prefs unavailable'),
+          documentsTopLevelIncludeNames: const <String>{
+            'hoshi_books',
+            'audiobooks',
+          },
+        )),
+        throwsA(isA<DataRootMigrationException>()),
+      );
+
+      // 白名单项已合并搬回 Documents，用户文件毫发无损。
+      expect(
+          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          isTrue);
+      expect(
+          File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue);
+      expect(userDoc.existsSync(), isTrue);
+      expect(oldDocs.existsSync(), isTrue);
+      // 新根迁移自建子树已清理。
+      expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
+      expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
+    });
+
+    test('_countFiles 不追链接：进度分母只计真实文件（followLinks: false，TODO-1226）', () async {
+      // src 有 1 个真实文件 + 1 个指向含文件目录的链接 → 分母恒为 1，链接不被复制。
+      final Directory src = Directory(p.join(tmp.path, 'fl_src'))
+        ..createSync(recursive: true);
+      File(p.join(src.path, 'real.txt')).writeAsStringSync('r');
+      final Directory tgt = Directory(p.join(tmp.path, 'fl_tgt'))
+        ..createSync(recursive: true);
+      File(p.join(tgt.path, 'linked.txt')).writeAsStringSync('L');
+      Link(p.join(src.path, 'lnk')).createSync(tgt.path);
+      final Directory dst = Directory(p.join(tmp.path, 'fl_dst'));
+
+      final List<(int, int)> reports = <(int, int)>[];
+      await const DataRootMigrator().copyTreeWithProgressForTesting(
+        src,
+        dst,
+        (int copied, int total) => reports.add((copied, total)),
+      );
+
+      expect(reports.map(((int, int) r) => r.$2).toSet(), equals(<int>{1}));
+      expect(File(p.join(dst.path, 'real.txt')).existsSync(), isTrue);
+      // 链接目标内容不被当作真实文件复制。
+      expect(File(p.join(dst.path, 'lnk', 'linked.txt')).existsSync(), isFalse);
+      // 链接目标本体不受影响。
+      expect(File(p.join(tgt.path, 'linked.txt')).existsSync(), isTrue);
     });
   });
 
@@ -508,6 +656,8 @@ void main() {
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
           newDataRoot: newDataRoot,
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
           closeResources: () async {},
           writeDataRootPref: (String r) async => wrote = true,
           resolvedExecutablePath: exe,
@@ -539,6 +689,8 @@ void main() {
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
           newDataRoot: newDataRoot,
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
           closeResources: () async {},
           writeDataRootPref: (String r) async {},
           resolvedExecutablePath: exe,
@@ -563,6 +715,8 @@ void main() {
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         newDataRoot: newDataRoot,
+        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+        documentsTopLevelIncludeNames: null,
         closeResources: () async {},
         writeDataRootPref: (String r) async => wrote = r,
         resolvedExecutablePath: exe,
@@ -589,6 +743,8 @@ void main() {
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
           newDataRoot: newDataRoot,
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
           closeResources: () async {},
           writeDataRootPref: (String r) async =>
               throw StateError('prefs unavailable'),

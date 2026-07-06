@@ -1103,13 +1103,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       allCues: allCues,
       delayMs: ctrl.delayMs.value,
     );
-    final List<AudiobookClipCueSpan> cueSpans = span
-        .map((AudioCue c) => AudiobookClipCueSpan(
-              text: c.text,
-              startMs: c.startMs,
-              endMs: c.endMs,
-            ))
-        .toList(growable: false);
+    // TODO-1147（用户回访「高亮迟钝」第二根因·时基不一致）：globalRange 已按 A/V
+    // 偏移平移 +delayMs（cue 在音频里真实出现于 startMs+delayMs），帧计划拿它当
+    // 时间轴；cue 起止必须同步平移，否则逐句高亮整体偏移 delayMs。
+    final List<AudiobookClipCueSpan> cueSpans = clipCueSpansWithDelay(
+      span: span,
+      delayMs: ctrl.delayMs.value,
+    );
 
     final AudiobookClipMultiCueResult result = classifyAudiobookClipMultiCue(
       selectedText: classifyText,
