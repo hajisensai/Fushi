@@ -152,8 +152,13 @@ void main() {
     );
 
     // 退出即停：stop 同步段一跑完就清空会话 + notifyListeners（修复前清空被拖到
-    // 末尾 await 之后）。await 完成后 pump 一帧让监听者 rebuild。
-    await session.stop();
+    // 末尾 await 之后）。
+    // TODO-1212 起 stop() 会 await just_audio 播放器的真实异步释放
+    // （disposeAndRelease → _player.dispose/stop，依赖真实定时器/流事件才 settle）；
+    // 在 testWidgets 的 FakeAsync 时钟下直接 await 会死锁（假时钟不推进这些定时器）。
+    // 用 tester.runAsync 让停止 teardown 在真实异步区跑（与生产同路径），停止的同步段
+    // （清空会话 + notifyListeners）仍在其中同步跑，本测试钉的结果不变量不受影响。
+    await tester.runAsync(() => session.stop());
     await tester.pump();
 
     // 结果不变量：会话已空 → 迷你条收成 SizedBox.shrink，播放条整个消失。
@@ -262,7 +267,11 @@ void main() {
 
     Future<void>? stopping;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      stopping = session.stop();
+      // stop() 的同步段（清空会话 + notifyListeners）在此 post-frame（非 idle 调度
+      // 相位）内同步跑，正是要触发的 _onSessionChanged 延后分支；用 tester.runAsync
+      // 让其后 TODO-1212 引入的真实异步播放器 teardown（FakeAsync 下会死锁）在真实
+      // 异步区完成，不改变同步 notify 落在 post-frame 相位这一被测行为。
+      stopping = tester.runAsync(() => session.stop());
     });
 
     await tester.pump();
@@ -276,6 +285,9 @@ void main() {
 
     await tester.pump();
     await pendingStop;
+    // 延后分支的 setState 以 post-frame 回调形式安排，需再 pump 一帧真正重建，
+    // 迷你条才收成 SizedBox.shrink——这正是本测试要证明的「安排的后续帧真生效」。
+    await tester.pump();
     expect(find.text('Test Book'), findsNothing);
   });
 

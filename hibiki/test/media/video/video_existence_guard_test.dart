@@ -35,14 +35,17 @@ void main() {
   });
 
   test('缺失态 _missingResource 在 spinner 判据之前短路', () {
-    // build 域内 _missingResource 分支必须在 CircularProgressIndicator 转圈判据之前
-    // （否则缺失时 _controller==null 仍落进转圈分支无限转）。
+    // build 域内 _missingResource 分支必须在「加载中转圈」判据之前
+    // （否则缺失时 _controller==null 仍落进加载分支无限转）。
+    // TODO-1213 起裸 `CircularProgressIndicator()` 被有上下文的 `_buildLoadingBody()`
+    // （渲染 VideoLoadingOverlay，内部仍是转圈）替代，故加载分支的稳定标记改用
+    // `_buildLoadingBody()` 调用点；顺序契约（缺失分支必须在加载分支前）不变。
     final int branchAt = source.indexOf(': _missingResource');
-    final int spinnerAt = source.indexOf('CircularProgressIndicator()');
+    final int loadingAt = source.indexOf('_buildLoadingBody()');
     expect(branchAt, greaterThanOrEqualTo(0),
         reason: 'build 必须有 _missingResource 分支');
-    expect(spinnerAt, greaterThan(branchAt),
-        reason: '_missingResource 分支必须在转圈判据之前（否则仍无限转圈）');
+    expect(loadingAt, greaterThan(branchAt),
+        reason: '_missingResource 分支必须在加载转圈判据之前（否则仍无限转圈）');
   });
 
   test('缺失态删除复用既有删除序列 + 二次确认', () {

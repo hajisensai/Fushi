@@ -735,6 +735,16 @@ void main() {
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
+      'lib/src/media/video/subtitle_waveform_align_panel.dart':
+          'TODO-1051/1207 subtitle-sync waveform panel: the audio-energy '
+              'waveform is a CustomPaint chart, so the chart-canvas frame '
+              '(surfaceContainerHighest tonal surface + rounded clip) and the '
+              'legend color swatches (1-2px markers) are visualization content, '
+              'not ordinary page chrome — same content rationale as the '
+              'allowlisted reading/video statistics pages. Interactive chrome '
+              '(entry button surface, delay/view controls) routes through '
+              'HibikiDesignTokens + shared MD3 components (HibikiIconButton / '
+              'adaptiveSlider / AdaptiveSettingsTextField).',
       'lib/src/media/video/video_danmaku_overlay.dart':
           'Danmaku overlay renders timed video content text, not app chrome.',
       'lib/src/media/video/video_thumbnail_preview_overlay.dart':

@@ -194,7 +194,7 @@ class _SubtitleWaveformAlignPanelState
     final double gap = tokens.spacing.gap;
     return Material(
       key: const ValueKey<String>('subtitle-waveform-open-button'),
-      color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+      color: tokens.surfaces.overlay.withValues(alpha: 0.5),
       borderRadius: tokens.radii.cardRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
