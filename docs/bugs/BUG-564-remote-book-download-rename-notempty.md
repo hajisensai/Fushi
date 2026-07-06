@@ -1,6 +1,6 @@
 ## BUG-564 · 远端书下载改名到已存在书目录 ENOTEMPTY 失败
 - **报告**：2026-07-06（用户：Android 下载对端书失败，TODO-1230）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/epub/epub_importer.dart:167`（修复前）：`_persistParsed` 用裸 `srcDir.renameSync(realDir)` 把 `.tmp-<ts>` 解压临时目录改名到 `hoshi_books/<bookKey>`；当目标目录已存在且非空（上次导入中途崩溃残留、或删书后磁盘清理失败的孤儿目录——`resolveBookTitleConflict` 只保证与**在册行**的 key 不冲突，管不到无主磁盘目录），Linux `rename(2)` 必抛 ENOTEMPTY（errno 39），整个导入失败。调用链：`reader_history/remote.part.dart:377 _downloadRemoteBook → _importRemoteBookFile → EpubImporter.importFromPath → _persistParsed`。
-- **[x] ① 已修复** — `epub_importer.dart` 新增 `moveExtractedDirIntoPlace`：目标不存在→正常 rename；目标存在但无任何在册行 `extract_dir` 指向它（孤儿残留）→原子替换（旧目录 rename 为 `.bak-<ts>` → 新目录进位 → 删 `.bak`；进位失败把 `.bak` 改回、绝不 delete-再-rename 以免中途崩溃两份全丢）；目标被某在册书 `extract_dir` 占用（legacy 命名，列才是真相）→绝不碰它，新书落唯一兄弟目录 `<key>~N`（extract_dir 列记真实路径）。DB 层同名冲突语义不变（远端下载为程序化路径，仍走自动后缀「X (2)」）。提交见本分支 fix commit。
+- **[x] ① 已修复** — `epub_importer.dart` 新增 `moveExtractedDirIntoPlace`：目标不存在→正常 rename；目标存在但无任何在册行 `extract_dir` 指向它（孤儿残留）→原子替换（旧目录 rename 为 `.bak-<ts>` → 新目录进位 → 删 `.bak`；进位失败把 `.bak` 改回、绝不 delete-再-rename 以免中途崩溃两份全丢）；目标被某在册书 `extract_dir` 占用（legacy 命名，列才是真相）→绝不碰它，新书落唯一兄弟目录 `<key>~N`（extract_dir 列记真实路径）。DB 层同名冲突语义不变（远端下载为程序化路径，仍走自动后缀「X (2)」）。提交 d8ae86f14。
 - **[x] ② 已加自动化测试** — `hibiki/test/epub/epub_importer_existing_target_dir_test.dart`：helper 单测（正常 rename / 孤儿原子替换无 `.bak` 残留 / 替换中断回滚还原旧目录 / 在册目录不被动 + `~N` 递增），及真 `importFromPath` e2e（孤儿目录不再让导入失败=原始失败路径；在册行占用 key 目录时该目录保全、新书落 `~2`）。
 - **备注**：真机验收口径：Android 上删过书但目录残留（或上次下载中途被杀）后，从对端重新下载同一本书应成功入库并可打开。
