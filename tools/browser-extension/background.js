@@ -127,14 +127,21 @@ async function hibikiIconClick(tab) {
   }
 }
 
-chrome.action.onClicked.addListener((tab) => {
-  if (!tab || tab.id == null) return;
-  hibikiIconClick(tab).catch(() => {});
-});
+// TODO-1184：manifest 的 action 现在设了 default_popup（vendor/action-popup.html）→ 点图标只会
+// 打开 popup，chrome.action.onClicked **永不触发**（故不再注册它）。原「点图标起录/跑队列」入口
+// 迁到 action-popup.js 的「开始生成/录制」按钮：按钮点击是用户手势，query 到当前 tab 后发
+// hibikiIconAction 消息到这里，由下方 onMessage 分支调用同一个 hibikiIconClick（逻辑不变，只换触发口）。
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
+  // TODO-1184：来自 action popup「开始生成/录制」按钮的手势入口（替代已失效的 onClicked）。
+  // popup 已 query 到当前 tab（{id,url}），这里直接跑原 hibikiIconClick（Netflix 就地录 / YouTube 队列）。
+  if (msg && msg.type === 'hibikiIconAction') {
+    hibikiIconClick(msg.tab || {}).catch(() => {});
+    sendResponse({ ok: true });
+    return true;
+  }
   (async () => {
     const { base, token } = await cfg();
     try {

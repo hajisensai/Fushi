@@ -70,6 +70,24 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding: 0 10px 10px;
+    /* TODO-1185：消费查词响应下发的 --hibiki-popup-zoom（词典字号，跟随 app 弹窗字号设置）。
+       用 CSS zoom 整体缩放弹窗内容（与 in-app 弹窗把 documentElement.style.zoom 缩放同效）；
+       content.js place() 会按此 zoom 除算 fixed 定位坐标，避免放大偏移。缺省 1 = 零影响。 */
+    zoom: var(--hibiki-popup-zoom, 1);
+}
+
+/* TODO-1185：消费 --dict-columns（词典多列布局，1..4）。glossary body 每个词典一
+   <details.glossary-group>；N=1 是未改动的经典单列。与 in-app popup.css 同款 grid：只用
+   column-gap，行距仍靠 .glossary-group 的 margin-top（grid 不折叠 item margin），避免 N=1
+   时 gap+margin 叠成双倍行距。min-width:0 防长词典内容把 1fr 轨撑宽溢出弹窗。 */
+.glossary-section > .category-body {
+    display: grid;
+    grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
+    column-gap: 6px;
+}
+.glossary-section > .category-body > .glossary-group {
+    margin-top: 5px;
+    min-width: 0;
 }
 
 .entry {
