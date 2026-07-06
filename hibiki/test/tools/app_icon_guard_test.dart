@@ -12,16 +12,52 @@ void main() {
     return f.readAsStringSync();
   }
 
-  test('Android 默认启动器图标引用文字 wordmark 资源', () {
+  test('Android 默认启动器图标引用不透明白 squircle 资源（TODO-1241）', () {
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
-    // <application> 与 .MainActivityDefault 都应引用 launcher_icon_minimal。
-    expect(manifest.contains('@mipmap/launcher_icon_minimal'), isTrue);
-    // 默认 alias 应引用文字 wordmark（launcher_icon_minimal），而非旧的響书本。
+    // <application> 默认图标应指向 squircle（不透明白，任意壁纸可见）。
+    final RegExp appIcon = RegExp(
+      r'android:name="\$\{applicationName\}"[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
+    );
+    expect(appIcon.hasMatch(manifest), isTrue,
+        reason: '<application> 默认图标应引用 launcher_icon_squircle');
+    // 默认 alias 也应引用 squircle。
     final RegExp defaultAlias = RegExp(
-      r'MainActivityDefault[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
+      r'MainActivityDefault[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
     );
     expect(defaultAlias.hasMatch(manifest), isTrue,
-        reason: '.MainActivityDefault 应引用 launcher_icon_minimal');
+        reason: '.MainActivityDefault 应引用 launcher_icon_squircle');
+    // squircle mipmap 资源（自适应 xml + 至少一档 legacy png）必须存在。
+    expect(
+        File('android/app/src/main/res/mipmap-anydpi-v26/launcher_icon_squircle.xml')
+            .existsSync(),
+        isTrue,
+        reason: '缺失 launcher_icon_squircle 自适应图标 xml');
+    expect(
+        File('android/app/src/main/res/mipmap-xxxhdpi/launcher_icon_squircle.png')
+            .existsSync(),
+        isTrue,
+        reason: '缺失 launcher_icon_squircle legacy png');
+  });
+
+  test('Android 透明（无背景）档保留为独立可选 alias（TODO-1241）', () {
+    final String manifest = read('android/app/src/main/AndroidManifest.xml');
+    // 透明档 alias 存在、默认禁用、引用透明 wordmark（launcher_icon_minimal）。
+    final RegExp transparentAlias = RegExp(
+      r'MainActivityHibikiTransparent[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
+    );
+    expect(transparentAlias.hasMatch(manifest), isTrue,
+        reason:
+            '.MainActivityHibikiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
+    // 透明档在原生映射与预设映射里都可选。
+    final String helper = read(
+        'android/app/src/main/java/app/hibiki/reader/IconSwitchHelper.java');
+    expect(helper.contains('"hibiki_transparent"'), isTrue,
+        reason: 'IconSwitchHelper 应把 hibiki_transparent 列为可选档');
+    expect(helper.contains('.MainActivityHibikiTransparent'), isTrue);
+    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
+    expect(prefs.contains("'hibiki_transparent':"), isTrue);
+    expect(prefs.contains('assets/meta/launcher_icon_squircle.png'), isTrue,
+        reason: 'default 预设预览应指向 squircle 资源');
   });
 
   test('Windows runner 暴露 setWindowIcon 通道方法', () {
@@ -82,17 +118,21 @@ void main() {
     }
   });
 
-  test('TODO-868 去重：图标选择器只剩 default+full 两档，无重复的简约档', () {
-    // 预设映射只剩两档，且不含 hibiki_minimal。
+  test('TODO-868/1241：预设三档 default+hibiki_transparent+full，无重复的 hibiki_minimal',
+      () {
+    // 预设映射为三档，且不含去重掉的 hibiki_minimal。
     final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
     expect(prefs.contains("'hibiki_minimal':"), isFalse,
-        reason: 'presetIconAssets 不应再映射 hibiki_minimal（与 default 重复）');
+        reason: 'presetIconAssets 不应再映射已去重的 hibiki_minimal');
     expect(prefs.contains("'default':"), isTrue);
+    expect(prefs.contains("'hibiki_transparent':"), isTrue);
     expect(prefs.contains("'hibiki_full':"), isTrue);
 
-    // 设置页不再渲染 hibiki_minimal tile，也不再引用 t.icon_minimal label。
+    // 设置页渲染三档 tile（含新透明档），仍不引用已删除的 hibiki_minimal / icon_minimal。
     final String page =
         read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    expect(page.contains("key: 'hibiki_transparent'"), isTrue,
+        reason: '设置页应渲染 hibiki_transparent 预设 tile');
     expect(page.contains("key: 'hibiki_minimal'"), isFalse,
         reason: '设置页不应再渲染 hibiki_minimal 预设 tile');
     expect(page.contains('t.icon_minimal'), isFalse,

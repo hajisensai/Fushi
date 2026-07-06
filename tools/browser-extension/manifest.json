@@ -16,7 +16,7 @@
       "matches": ["*://*.netflix.com/*"],
       "js": ["netflix-bridge.js"],
       "world": "MAIN",
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "options_page": "options.html",

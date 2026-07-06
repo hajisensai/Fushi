@@ -10,7 +10,10 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+
+const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
 class _FakeLibraryService implements HibikiLibraryHostService {
   @override
@@ -29,6 +32,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     subtitleFile.writeAsStringSync(
       'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nテスト\n',
     );
+    coverFile = File('${tmp.path}/cover.png')..writeAsBytesSync(_coverBytes);
   }
 
   static const String videoId = 'video/sample';
@@ -36,6 +40,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   late final File videoFile;
   late final File subtitleFile;
+  late final File coverFile;
 
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
@@ -47,6 +52,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
         title: 'Sample Video',
         sizeBytes: 16,
         hasSubtitle: true,
+        coverPath: coverFile.path,
         positionMs: p.positionMs,
         positionUpdatedAtMs: p.updatedAtMs,
       ),
@@ -379,6 +385,99 @@ void main() {
         await backend.remoteVideoPosition('video/does-not-exist');
     expect(read.positionMs, 0);
     expect(read.updatedAtMs, 0);
+  });
+
+  // ── TODO-1235（TODO-961 回归）：封面走互联同款钉扎客户端 ─────────────────────
+  // Image.network 走 Flutter 内部 HttpClient，拿不到 TOFU 钉扎指纹，https 自签握手
+  // 必失败 → 空封面。这里端到端证明 fetchRemoteCover 复用 pinned client 能拉回封面。
+  group('TODO-1235 pinned cover fetch over TLS', () {
+    late HibikiSyncServer tlsServer;
+    late String tlsBase;
+    late String fingerprint;
+
+    setUp(() async {
+      final ({String certificatePem, String privateKeyPem}) cert =
+          HibikiSelfSignedCertGenerator.generate(
+        commonName: 'hibiki-test',
+        sanIpAddresses: <String>['127.0.0.1'],
+      );
+      fingerprint = HibikiTlsIdentityStore.fingerprintOf(cert.certificatePem);
+      final SecurityContext ctx = SecurityContext()
+        ..useCertificateChainBytes(cert.certificatePem.codeUnits)
+        ..usePrivateKeyBytes(cert.privateKeyPem.codeUnits);
+      tlsServer = HibikiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk_tls_cover').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: _FakeLibraryService(),
+        securityContext: ctx,
+        hostFingerprint: fingerprint,
+      );
+      await tlsServer.start();
+      tlsBase = 'https://127.0.0.1:${tlsServer.port}';
+    });
+
+    tearDown(() async => tlsServer.stop());
+
+    Future<HibikiClientSyncBackend> buildPinnedBackend(String? fp) async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(() async => db.close());
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setHibikiClientUrls(<HibikiClientUrl>[
+        HibikiClientUrl(url: tlsBase, enabled: true, fingerprintSha256: fp),
+      ]);
+      await repo.setHibikiClientToken(token);
+      final HibikiClientSyncBackend backend =
+          HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+      await backend.restoreAuth(repo);
+      await backend.authenticate(repo: repo);
+      return backend;
+    }
+
+    test('fetchRemoteCover pulls cover bytes over pinned https', () async {
+      final HibikiClientSyncBackend backend =
+          await buildPinnedBackend(fingerprint);
+      final List<RemoteVideoInfo> videos = await backend.listRemoteVideos();
+      final String? coverUrl = videos.single.coverUrl;
+      expect(coverUrl, isNotNull, reason: 'host 应回填 https coverUrl');
+      expect(coverUrl, startsWith('https://'),
+          reason: 'TLS 开启时封面 URL 必须是 https');
+
+      final Uint8List bytes = await backend.fetchRemoteCover(coverUrl!);
+      expect(bytes, _coverBytes, reason: '钉扎客户端应握手成功并拉回真封面字节');
+    });
+
+    test('cover fetch with wrong fingerprint is rejected by pinning',
+        () async {
+      final String wrongFp = fingerprint.startsWith('00:')
+          ? '11:${fingerprint.substring(3)}'
+          : '00:${fingerprint.substring(3)}';
+      // 错误指纹下，钉扎在地址解析的 TLS 探测阶段就拒绝（reachability 失败），或退一
+      // 步在 fetchRemoteCover 握手时拒绝——两处都是钉扎生效，故把整条链一起断言抛出，
+      // 证明「绝不放行任意自签证书」。
+      Future<Uint8List> attempt() async {
+        final HibikiClientSyncBackend backend =
+            await buildPinnedBackend(wrongFp);
+        return backend.fetchRemoteCover(
+          '$tlsBase/api/library/videos/video%2Fsample/cover',
+        );
+      }
+
+      await expectLater(attempt(), throwsA(anything),
+          reason: '指纹不符必须被钉扎拒绝，绝不放行任意自签证书');
+    });
+  });
+
+  test('fetchRemoteCover still works over plaintext http (老路径零破坏)', () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final List<RemoteVideoInfo> videos = await backend.listRemoteVideos();
+    final String? coverUrl = videos.single.coverUrl;
+    expect(coverUrl, isNotNull);
+    expect(coverUrl, startsWith('http://'));
+    final Uint8List bytes = await backend.fetchRemoteCover(coverUrl!);
+    expect(bytes, _coverBytes);
   });
 }
 

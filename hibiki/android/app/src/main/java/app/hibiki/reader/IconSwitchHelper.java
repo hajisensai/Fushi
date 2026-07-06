@@ -19,15 +19,19 @@ public class IconSwitchHelper {
 
     private static final String PACKAGE_NAME = "app.hibiki.reader";
 
-    // 当前对外提供的两套预设（default + full）。第三档 hibiki_minimal 与 default
-    // 映射同一张图（重复选项），已从 UI/选择列表去重移除（TODO-868）。
+    // 对外提供的三套预设：default（不透明白 squircle，任意壁纸可见）+ hibiki_transparent
+    // （藏青 wordmark，透明无背景）+ full（响·书本精绘）。TODO-1241 把默认档从透明
+    // wordmark 换成 squircle，并把透明档保留为独立可选项（与旧的去重 hibiki_minimal
+    // 不同：hibiki_minimal 曾与 default 是同一张图，而 hibiki_transparent 是独立的透明档）。
     private static final List<String> ALIAS_NAMES = Arrays.asList(
         ".MainActivityDefault",
+        ".MainActivityHibikiTransparent",
         ".MainActivityHibikiFull"
     );
 
     private static final List<String> ALIAS_KEYS = Arrays.asList(
         "default",
+        "hibiki_transparent",
         "hibiki_full"
     );
 
@@ -55,17 +59,21 @@ public class IconSwitchHelper {
         return "default";
     }
 
-    /// 若退役的 hibiki_minimal alias 当前为启用态，先启用 default alias 再禁用它，
-    /// 把老用户的启动器入口迁回 default（图标相同）。先启用后禁用，避免出现零
-    /// LAUNCHER 入口的瞬态。已迁移过（minimal 非启用）则为 no-op。
+    /// 若退役的 hibiki_minimal alias 当前为启用态，先启用 hibiki_transparent alias 再
+    /// 禁用它，把老用户的启动器入口迁到透明档。退役 minimal 与 hibiki_transparent 都指向
+    /// launcher_icon_minimal（透明 wordmark），字节相同、真正无视觉变化；不迁到 default，
+    /// 因为 TODO-1241 后 default 已变成不透明白 squircle（会改变观感）。先启用后禁用，避免
+    /// 出现零 LAUNCHER 入口的瞬态。已迁移过（minimal 非启用）则为 no-op。
     private static void migrateRetiredMinimalIfEnabled(Context context, PackageManager pm) {
         ComponentName minimal = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + RETIRED_MINIMAL_ALIAS);
         int minimalState = pm.getComponentEnabledSetting(minimal);
         if (minimalState != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
             return;
         }
-        ComponentName def = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + ALIAS_NAMES.get(0));
-        pm.setComponentEnabledSetting(def,
+        int transparentIndex = ALIAS_KEYS.indexOf("hibiki_transparent");
+        ComponentName transparent = new ComponentName(
+            PACKAGE_NAME, PACKAGE_NAME + ALIAS_NAMES.get(transparentIndex));
+        pm.setComponentEnabledSetting(transparent,
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP);
         pm.setComponentEnabledSetting(minimal,
