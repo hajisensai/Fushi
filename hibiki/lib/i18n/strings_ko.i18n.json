@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "비디오 자막 색상은 비디오 플레이어 안에서 설정합니다.",
   "theme_seed_preview_hint": "아래 색상 견본은 시드 색상에서 실제로 생성된 색을 미리 보여 줍니다. 특정 색을 주요 강조색으로 고정하려면 「주요 색」 토글을 켜고 직접 선택하세요.",
   "backup_export_categories_title": "내보낼 항목 선택",
-  "backup_export_categories_hint": "선택한 항목이 백업에 포함됩니다. 데이터베이스(책, 통계, 즐겨찾기, 프로필, 설정)는 항상 포함됩니다.",
   "backup_category_dictionary": "사전",
   "backup_category_books": "책 내용",
   "backup_category_audiobooks": "오디오북 오디오",
@@ -2126,5 +2125,10 @@
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
   "video_subtitle_waveform_jump_playhead": "Jump to playhead",
   "video_subtitle_waveform_zoom_in": "Zoom in",
-  "video_subtitle_waveform_zoom_out": "Zoom out"
+  "video_subtitle_waveform_zoom_out": "Zoom out",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "선택한 항목이 백업에 포함됩니다. 데이터베이스의 책 레코드는 항상 포함되지만, 읽기 진행 상황·통계·설정·프로필은 위에서 각각 제외할 수 있습니다. '책' 체크를 해제하면 해당 책은 본문 파일과 레코드가 모두 제외되어 가져오기 후에 표시되지 않습니다."
 }

@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "動画の字幕の色はプレーヤー内で設定します。",
   "theme_seed_preview_hint": "下のスウォッチは、シードカラーから実際に生成される色をプレビューしています。特定の色をメインのアクセントとして固定したい場合は、「メインカラー」をオンにして明示的に指定してください。",
   "backup_export_categories_title": "書き出す内容を選択",
-  "backup_export_categories_hint": "選択した項目がバックアップに含まれます。データベース（書籍、統計、お気に入り、プロファイル、設定）は常に含まれます。",
   "backup_category_dictionary": "辞書",
   "backup_category_books": "書籍の内容",
   "backup_category_audiobooks": "オーディオブックの音声",
@@ -2126,5 +2125,10 @@
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
   "video_subtitle_waveform_jump_playhead": "Jump to playhead",
   "video_subtitle_waveform_zoom_in": "Zoom in",
-  "video_subtitle_waveform_zoom_out": "Zoom out"
+  "video_subtitle_waveform_zoom_out": "Zoom out",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "選択した項目がバックアップに含まれます。データベース内の書籍レコードは常に含まれますが、読書の進捗・統計・設定・プロファイルは上でそれぞれ除外できます。「書籍」のチェックを外すと、その書籍は本文ファイルもレコードも完全に除外され、インポート後に表示されません。"
 }

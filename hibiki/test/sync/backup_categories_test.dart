@@ -128,6 +128,57 @@ void main() {
     return HibikiDatabase(dir.path);
   }
 
+  Future<int> countRows(HibikiDatabase db, String table) async {
+    final row =
+        await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
+    return row.data['c'] as int;
+  }
+
+  Future<({BackupService service, HibikiDatabase db, String dbDir})>
+      buildDataSource() async {
+    final String dbDir = p.join(src.path, 'db');
+    Directory(dbDir).createSync(recursive: true);
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'Bk',
+      title: 'Bk',
+      epubPath: 'x',
+      extractDir: 'y',
+      chapterCount: 1,
+      chaptersJson: '["c"]',
+      importedAt: 0,
+    ));
+    await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
+        bookKey: 'Bk', sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
+    await db.into(db.bookmarks).insert(BookmarksCompanion.insert(
+        bookKey: 'Bk',
+        sectionIndex: 0,
+        normCharOffset: 100,
+        label: 'bm',
+        createdAt: 1));
+    await db.setPref('audiobook_pos_Bk', '12345');
+    await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+        title: 'Bk',
+        dateKey: '2026-01-01',
+        charactersRead: 10,
+        readingTimeMs: 1000,
+        lastStatisticModified: 1));
+    await db.setPref('theme_mode', 'dark');
+    await db.setPref('favorite_sentences', '[]');
+    await db.setPref('local_audio_dbs', '[]');
+    final int pid = await db.insertProfile(
+        ProfilesCompanion.insert(name: 'P1', createdAt: 1, updatedAt: 1));
+    await db.upsertProfileSetting(ProfileSettingsCompanion.insert(
+        profileId: pid, category: 'reader', key: 'k', value: 'v'));
+    final BackupService service =
+        BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
+    return (service: service, db: db, dbDir: dbDir);
+  }
+
+  Set<BackupCategory> allExcept(BackupCategory c) =>
+      BackupCategory.values.toSet()..remove(c);
+
   test('null categories packs every tree (legacy all-in export)', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'all.zip');
@@ -275,8 +326,8 @@ void main() {
         reason: 'audio tree absent from backup → existing tree untouched');
   });
   test(
-      'BackupCategory enumerates exactly the six optional sidecar trees '
-      '(db is never a category)', () {
+      'BackupCategory enumerates the six sidecar trees plus the four DB-only '
+      'data categories (db is never itself a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
       BackupCategory.books,
@@ -284,7 +335,24 @@ void main() {
       BackupCategory.fonts,
       BackupCategory.videos,
       BackupCategory.localAudio,
+      BackupCategory.progress,
+      BackupCategory.statistics,
+      BackupCategory.settings,
+      BackupCategory.profiles,
     });
+  });
+
+  test('export UI labels the four data categories', () {
+    final String schemaSrc = readSyncSettingsSchemaSource();
+    for (final String key in <String>[
+      'backup_category_progress',
+      'backup_category_statistics',
+      'backup_category_settings',
+      'backup_category_profiles',
+    ]) {
+      expect(schemaSrc.contains(key), isTrue,
+          reason: '$key must be shown in the export category picker');
+    }
   });
 
   // Source guards: the export UI must (1) gate behind a category picker that
@@ -575,6 +643,160 @@ void main() {
       final Set<String> keys =
           (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
       expect(keys, <String>{'Bk'});
+    } finally {
+      await restored.close();
+    }
+  });
+
+  // ── TODO-1193: DB-only data categories (progress/statistics/settings/
+  //    profiles) selectable to EXCLUDE ────────────────────────────────
+  test(
+      'unticking progress strips reader_positions/bookmarks/audiobook_pos_ '
+      '(statistics + settings kept)', () async {
+    final built = await buildDataSource();
+    final zip = p.join(src.path, 'no_progress.zip');
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.progress));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'reader_positions'), 0);
+      expect(await countRows(db, 'bookmarks'), 0);
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(prefs.keys.any((String k) => k.startsWith('audiobook_pos_')),
+          isFalse);
+      expect(await countRows(db, 'reading_statistics'), 1);
+      expect(prefs['theme_mode'], 'dark');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('unticking statistics strips the statistics tables (progress kept)',
+      () async {
+    final built = await buildDataSource();
+    final zip = p.join(src.path, 'no_stats.zip');
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.statistics));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'reading_statistics'), 0);
+      expect(await countRows(db, 'reader_positions'), 1);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test(
+      'unticking settings strips pure settings prefs but keeps audiobook '
+      'positions / favorite_sentences / local_audio_dbs', () async {
+    final built = await buildDataSource();
+    final zip = p.join(src.path, 'no_settings.zip');
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.settings));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(prefs.containsKey('theme_mode'), isFalse,
+          reason: 'pure setting stripped');
+      expect(prefs['audiobook_pos_Bk'], '12345',
+          reason: 'progress pref preserved under a settings strip');
+      expect(prefs.containsKey('favorite_sentences'), isTrue,
+          reason: 'favorites content preserved');
+      expect(prefs.containsKey('local_audio_dbs'), isTrue,
+          reason: 'local-audio registry preserved');
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('unticking profiles strips the four profile-layer tables', () async {
+    final built = await buildDataSource();
+    final zip = p.join(src.path, 'no_profiles.zip');
+    await built.service
+        .exportBackup(zip, categories: allExcept(BackupCategory.profiles));
+    await built.db.close();
+
+    final HibikiDatabase db = await openBackupDb(zip, dst);
+    try {
+      expect(await countRows(db, 'profiles'), 0);
+      expect(await countRows(db, 'profile_settings'), 0);
+      expect(await countRows(db, 'media_type_profiles'), 0);
+      expect(await countRows(db, 'book_profiles'), 0);
+    } finally {
+      await db.close();
+    }
+  });
+
+  // Import-safety invariant (RED LINE): excluding settings/profiles on export
+  // must NEVER wipe the importing device's local settings/profiles to empty.
+  test(
+      'overwrite import (importSettings=true) of a settings+profiles-excluded '
+      'backup preserves the LOCAL settings + profiles (never wiped empty)',
+      () async {
+    final built = await buildDataSource();
+    final zip = p.join(src.path, 'no_set_prof.zip');
+    await built.service.exportBackup(zip,
+        categories: BackupCategory.values.toSet()
+          ..remove(BackupCategory.settings)
+          ..remove(BackupCategory.profiles));
+    await built.db.close();
+
+    final String dstDbDir = p.join(dst.path, 'db');
+    Directory(dstDbDir).createSync(recursive: true);
+    final HibikiDatabase local = HibikiDatabase(dstDbDir);
+    await local.setPref('theme_mode', 'local_dark');
+    await local.insertProfile(ProfilesCompanion.insert(
+        name: 'LocalProfile', createdAt: 9, updatedAt: 9));
+    await local.close();
+
+    await BackupService.importBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+    );
+
+    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    try {
+      expect((await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet(),
+          contains('Bk'));
+      final Map<String, String> prefs = await restored.getAllPrefs();
+      expect(prefs['theme_mode'], 'local_dark',
+          reason:
+              'local setting preserved, not wiped by an empty backup layer');
+      expect((await restored.getAllProfiles()).map((r) => r.name).toSet(),
+          contains('LocalProfile'),
+          reason: 'local profile preserved');
+    } finally {
+      await restored.close();
+    }
+  });
+
+  test(
+      'overwrite import (importSettings=true) of an all-in backup applies the '
+      'backup settings (preserve does NOT trigger)', () async {
+    final built = await buildDataSource();
+    final zip = p.join(src.path, 'full.zip');
+    await built.service.exportBackup(zip);
+    await built.db.close();
+
+    final String dstDbDir = p.join(dst.path, 'db');
+    Directory(dstDbDir).createSync(recursive: true);
+    final HibikiDatabase local = HibikiDatabase(dstDbDir);
+    await local.setPref('theme_mode', 'local_dark');
+    await local.close();
+
+    await BackupService.importBackupFiles(dbDirectory: dstDbDir, zipPath: zip);
+
+    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    try {
+      final Map<String, String> prefs = await restored.getAllPrefs();
+      expect(prefs['theme_mode'], 'dark',
+          reason: 'all-in backup: settings come from backup, not preserved');
     } finally {
       await restored.close();
     }

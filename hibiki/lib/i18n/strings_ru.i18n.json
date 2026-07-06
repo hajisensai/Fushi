@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "Цвета субтитров задаются внутри видеоплеера.",
   "theme_seed_preview_hint": "Образцы ниже показывают цвета, фактически сгенерированные из вашего исходного цвета. Чтобы закрепить определённый цвет как основной акцент, включите переключатель «Основной» и выберите его явно.",
   "backup_export_categories_title": "Выберите, что экспортировать",
-  "backup_export_categories_hint": "Выбранные категории попадут в резервную копию. База данных (книги, статистика, избранное, профили, настройки) включается всегда.",
   "backup_category_dictionary": "Словари",
   "backup_category_books": "Книги",
   "backup_category_audiobooks": "Аудио аудиокниг",
@@ -2126,5 +2125,10 @@
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
   "video_subtitle_waveform_jump_playhead": "Jump to playhead",
   "video_subtitle_waveform_zoom_in": "Zoom in",
-  "video_subtitle_waveform_zoom_out": "Zoom out"
+  "video_subtitle_waveform_zoom_out": "Zoom out",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }

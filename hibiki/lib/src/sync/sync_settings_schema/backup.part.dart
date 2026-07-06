@@ -143,6 +143,14 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
           return t.backup_category_videos;
         case BackupCategory.localAudio:
           return t.backup_category_local_audio;
+        case BackupCategory.progress:
+          return t.backup_category_progress;
+        case BackupCategory.statistics:
+          return t.backup_category_statistics;
+        case BackupCategory.settings:
+          return t.backup_category_settings;
+        case BackupCategory.profiles:
+          return t.backup_category_profiles;
       }
     }
 

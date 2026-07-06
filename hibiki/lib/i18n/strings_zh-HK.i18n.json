@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "影片字幕顏色於影片播放器內設定。",
   "theme_seed_preview_hint": "下方色板預覽由種子色實際產生的顏色。若想固定以某個顏色作為主要強調色，請開啟「主色」開關並明確指定。",
   "backup_export_categories_title": "選擇要匯出的內容",
-  "backup_export_categories_hint": "勾選的類別會打包進備份。資料庫（書籍、統計、收藏、Profile、設定）必定包含在內。",
   "backup_category_dictionary": "詞典",
   "backup_category_books": "書籍內容",
   "backup_category_audiobooks": "有聲書音訊",
@@ -2126,5 +2125,10 @@
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
   "video_subtitle_waveform_jump_playhead": "Jump to playhead",
   "video_subtitle_waveform_zoom_in": "Zoom in",
-  "video_subtitle_waveform_zoom_out": "Zoom out"
+  "video_subtitle_waveform_zoom_out": "Zoom out",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "所選類別會打包進備份。資料庫中的書籍記錄必定包含；閱讀進度、統計、設定、Profile 可在上方分別選擇排除。取消勾選「書籍」會完全排除這些書——連同正文檔案與書籍記錄——匯入後不會出現這些書。"
 }

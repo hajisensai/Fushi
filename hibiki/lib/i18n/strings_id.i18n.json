@@ -1498,7 +1498,6 @@
   "video_subtitle_color_note": "Warna subtitle video diatur di dalam pemutar video.",
   "theme_seed_preview_hint": "Petak warna di bawah menampilkan pratinjau warna yang sebenarnya dihasilkan dari warna benih kamu. Untuk memaksa warna tertentu sebagai aksen utama, aktifkan toggle Primer dan pilih warnanya secara eksplisit.",
   "backup_export_categories_title": "Pilih yang akan diekspor",
-  "backup_export_categories_hint": "Kategori yang dipilih dikemas ke dalam cadangan. Basis data (buku, statistik, favorit, profil, setelan) selalu disertakan.",
   "backup_category_dictionary": "Kamus",
   "backup_category_books": "Buku",
   "backup_category_audiobooks": "Audio buku audio",
@@ -2126,5 +2125,10 @@
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
   "video_subtitle_waveform_jump_playhead": "Jump to playhead",
   "video_subtitle_waveform_zoom_in": "Zoom in",
-  "video_subtitle_waveform_zoom_out": "Zoom out"
+  "video_subtitle_waveform_zoom_out": "Zoom out",
+  "backup_category_progress": "Reading progress",
+  "backup_category_statistics": "Statistics",
+  "backup_category_settings": "Settings",
+  "backup_category_profiles": "Profiles",
+  "backup_export_categories_hint": "Selected categories are packed into the backup. Book records are always kept in the database; reading progress, statistics, settings and profiles can each be excluded above. Unchecking Books excludes those books entirely — both their content files and their records — so they will not appear after import."
 }
