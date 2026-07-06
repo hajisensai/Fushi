@@ -12,12 +12,17 @@ class HibikiDevice {
     required this.host,
     required this.port,
     required this.deviceId,
+    this.tlsEnabled = false,
   });
 
   final String name;
   final String host;
   final int port;
   final String deviceId;
+
+  /// TODO-961: host 在 mDNS TXT 里自报「已开 HTTPS」（`tls=1`）。旧版 host 不带
+  /// 该属性 → false（明文老路径）。仅作探测顺序提示，真实 scheme 以 /api/ping 为准。
+  final bool tlsEnabled;
 
   String get webDavUrl => 'http://$host:$port';
 
@@ -26,6 +31,7 @@ class HibikiDevice {
         'host': host,
         'port': port,
         'deviceId': deviceId,
+        'tlsEnabled': tlsEnabled,
       };
 
   factory HibikiDevice.fromJson(Map<String, dynamic> json) => HibikiDevice(
@@ -33,6 +39,7 @@ class HibikiDevice {
         host: json['host'] as String,
         port: json['port'] as int,
         deviceId: json['deviceId'] as String,
+        tlsEnabled: json['tlsEnabled'] as bool? ?? false,
       );
 
   /// Builds a device from a *resolved* Bonsoir service. Returns null when the
@@ -51,6 +58,7 @@ class HibikiDevice {
       port: service.port,
       deviceId:
           service.attributes[LanDiscoveryService.attributeId] ?? service.name,
+      tlsEnabled: service.attributes[LanDiscoveryService.attributeTls] == '1',
     );
   }
 }
@@ -61,6 +69,10 @@ class LanDiscoveryService {
 
   static const String serviceType = '_hibiki-sync._tcp';
   static const String attributeId = 'id';
+
+  /// TODO-961: TXT 属性——host 已开 HTTPS 时广播 `tls=1`。旧客户端忽略未知
+  /// TXT key（向后兼容）。
+  static const String attributeTls = 'tls';
 
   /// Our own id, used to filter our own advertisement out of the results.
   final String deviceId;
@@ -199,11 +211,16 @@ class LanBroadcastService {
     required this.deviceName,
     required this.deviceId,
     required this.port,
+    this.tlsEnabled = false,
   });
 
   final String deviceName;
   final String deviceId;
   final int port;
+
+  /// TODO-961: 本机 host 是否以 HTTPS 服务；true 时 TXT 广播 `tls=1`，供发现方
+  /// 优先走 https 探测。旧客户端忽略该属性，行为不变。
+  final bool tlsEnabled;
 
   BonsoirBroadcast? _broadcast;
   bool get isBroadcasting => _broadcast != null;
@@ -214,7 +231,10 @@ class LanBroadcastService {
       name: deviceName,
       type: LanDiscoveryService.serviceType,
       port: port,
-      attributes: <String, String>{LanDiscoveryService.attributeId: deviceId},
+      attributes: <String, String>{
+        LanDiscoveryService.attributeId: deviceId,
+        if (tlsEnabled) LanDiscoveryService.attributeTls: '1',
+      },
     );
     final BonsoirBroadcast broadcast = BonsoirBroadcast(service: service);
     try {

@@ -86,6 +86,61 @@ void main() {
       expect(device, isNotNull);
       expect(device!.deviceId, 'Laptop');
     });
+
+    // TODO-961: TXT tls=1 → tlsEnabled；旧版 host 不带该属性 → false（零破坏）。
+    test('parses the tls TXT attribute; absent means plaintext host', () {
+      final tlsDevice = HibikiDevice.fromResolvedService(
+        _resolved(
+          attributes: const <String, String>{'id': 'abc123', 'tls': '1'},
+        ),
+      );
+      expect(tlsDevice, isNotNull);
+      expect(tlsDevice!.tlsEnabled, isTrue);
+
+      final plainDevice = HibikiDevice.fromResolvedService(_resolved());
+      expect(plainDevice, isNotNull);
+      expect(plainDevice!.tlsEnabled, isFalse);
+    });
+
+    test('tlsEnabled round-trips through JSON and defaults to false', () {
+      final device = HibikiDevice(
+        name: 'Test',
+        host: '192.168.1.50',
+        port: 9999,
+        deviceId: 'x',
+        tlsEnabled: true,
+      );
+      expect(HibikiDevice.fromJson(device.toJson()).tlsEnabled, isTrue);
+
+      // 旧序列化数据（无 tlsEnabled 字段）读回 false。
+      final legacy = HibikiDevice.fromJson(<String, dynamic>{
+        'name': 'Old',
+        'host': '10.0.0.2',
+        'port': 38765,
+        'deviceId': 'y',
+      });
+      expect(legacy.tlsEnabled, isFalse);
+    });
+  });
+
+  group('LanBroadcastService', () {
+    // TODO-961: host 开 TLS 时 TXT 必须广播 tls=1（发现方据此优先 https 探测）。
+    test('advertises tls flag in TXT only when enabled', () {
+      final LanBroadcastService tlsBroadcast = LanBroadcastService(
+        deviceName: 'Hibiki · pc',
+        deviceId: 'abc',
+        port: 38765,
+        tlsEnabled: true,
+      );
+      expect(tlsBroadcast.tlsEnabled, isTrue);
+
+      final LanBroadcastService plainBroadcast = LanBroadcastService(
+        deviceName: 'Hibiki · pc',
+        deviceId: 'abc',
+        port: 38765,
+      );
+      expect(plainBroadcast.tlsEnabled, isFalse);
+    });
   });
 
   group('LanDiscoveryService', () {

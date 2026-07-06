@@ -229,7 +229,8 @@ class HibikiSyncServerController extends ChangeNotifier {
       await repo.setServerEnabled(true);
       // Advertise the ACTUAL bound port so peers discover the host even when the
       // requested port was 0/auto or differs from the configured one.
-      await _startBroadcast(server.port);
+      // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
+      await _startBroadcast(server.port, tlsEnabled: securityContext != null);
       notifyListeners();
       return const HibikiServerStarted();
     } on SyncServerPortInUseException catch (e) {
@@ -266,13 +267,17 @@ class HibikiSyncServerController extends ChangeNotifier {
     return start();
   }
 
-  Future<void> _startBroadcast(int boundPort) async {
+  Future<void> _startBroadcast(
+    int boundPort, {
+    required bool tlsEnabled,
+  }) async {
     final SyncRepository repo = _repo;
     final String deviceId = await repo.getOrCreateDeviceId();
     _broadcast = LanBroadcastService(
       deviceName: _deviceName(),
       deviceId: deviceId,
       port: boundPort,
+      tlsEnabled: tlsEnabled,
     );
     await _broadcast!.start();
   }
