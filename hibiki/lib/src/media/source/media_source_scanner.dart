@@ -15,6 +15,7 @@
 // still a placeholder (NetworkSourceFileSystem throws UnimplementedError); M1b
 // does not connect to any network and does not touch credentials.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -27,8 +28,11 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
+    show kDragPlaylistExtensions;
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -105,12 +109,34 @@ class ScanVideoItem {
   int get hashCode => Object.hash(videoPath, subtitlePath);
 }
 
+/// One pending playlist item: an m3u8/m3u manifest scanned in a video source.
+///
+/// TODO-1237: folder scan treats `.m3u8`/`.m3u` as multi-episode playlist
+/// manifests, same semantics as the drag-drop path (kDragPlaylistExtensions /
+/// DropIntent.importNewPlaylist): not a single video file but a parseM3u8'd
+/// episode list persisted as one playlist VideoBook.
+@immutable
+class ScanPlaylistItem {
+  const ScanPlaylistItem({required this.playlistPath});
+
+  /// Full m3u8/m3u file path (source namespace).
+  final String playlistPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanPlaylistItem && other.playlistPath == playlistPath;
+
+  @override
+  int get hashCode => playlistPath.hashCode;
+}
+
 /// Classification result of one scan (pure data).
 @immutable
 class ScanPlan {
   const ScanPlan({
     this.books = const <ScanBookItem>[],
     this.videos = const <ScanVideoItem>[],
+    this.playlists = const <ScanPlaylistItem>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -118,6 +144,9 @@ class ScanPlan {
 
   /// Pending video items (with associated subtitles).
   final List<ScanVideoItem> videos;
+
+  /// Pending playlist items (m3u8/m3u multi-episode manifests, TODO-1237).
+  final List<ScanPlaylistItem> playlists;
 }
 
 /// Extension of an entry name (lowercase, no leading dot).
@@ -146,10 +175,19 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
 
   final List<ScanBookItem> books = <ScanBookItem>[];
   final List<ScanVideoItem> videos = <ScanVideoItem>[];
+  final List<ScanPlaylistItem> playlists = <ScanPlaylistItem>[];
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
     final String ext = _extOf(e.name);
+    // TODO-1237: m3u8/m3u playlist manifest, reusing the drag-drop path's own
+    // [kDragPlaylistExtensions] whitelist. Checked before the video branch
+    // (m3u8 is not in kVideoExtensions, the two are disjoint; ordering is only
+    // for clarity).
+    if (kDragPlaylistExtensions.contains(ext)) {
+      playlists.add(ScanPlaylistItem(playlistPath: e.path));
+      continue;
+    }
     if (kScanEpubExtensions.contains(ext)) {
       // TODO-946：EPUB 同目录扫同名字幕 + 音频（wantAudio:true，字幕扩展含 lrc）。
       // 命中音频 -> 导成有声书（字幕作对齐源）；否则纯 EPUB。同目录作用域，与
@@ -184,7 +222,7 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
     }
   }
 
-  return ScanPlan(books: books, videos: videos);
+  return ScanPlan(books: books, videos: videos, playlists: playlists);
 }
 
 /// Source-library scanner: scans one [MediaSourceRow] root, inserts the media
@@ -224,7 +262,10 @@ class MediaSourceScanner {
       if (source.mediaKind == 'book') {
         mediaCount = await _importBooks(plan, source.id, files);
       } else if (source.mediaKind == 'video') {
+        // Video source imports both single videos and m3u8/m3u playlists
+        // (TODO-1237).
         mediaCount = await _importVideos(plan, source.id, files);
+        mediaCount += await _importPlaylists(plan, source.id, files);
       } else {
         throw ArgumentError.value(
           source.mediaKind,
@@ -395,6 +436,100 @@ class MediaSourceScanner {
       if (subtitleTmp != null) {
         try {
           subtitleTmp.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// Imports every m3u8/m3u playlist in the plan into a playlist VideoBook;
+  /// returns the count successfully inserted (TODO-1237).
+  ///
+  /// Mirrors the dialog's manual / drag-drop playlist import but headless:
+  /// [parseM3u8] parses the manifest (relative episode paths resolved against
+  /// the m3u8's own directory, source namespace), derives a cross-device stable
+  /// [playlistBookUid], silently suffix-dedups against existing book_uids
+  /// ([uniqueVideoBookUid], matching [_importVideos]), and persists one
+  /// VideoBook carrying [VideoBooksCompanion.playlistJson] (the episode list).
+  ///
+  /// [fs] is the source file system: the manifest is read via
+  /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
+  /// downloaded to a temp dir) then decoded with [readTextWithEncoding], reusing
+  /// the same charset detection as [_importVideos]. Cover extraction needs a
+  /// local path so it only runs for local transport (like [_importVideos]);
+  /// ffmpeg-missing / any failure degrades to a null cover (shelf placeholder)
+  /// and never aborts the scan. An empty / unparsable manifest inserts nothing
+  /// (skipped, not counted, not an error).
+  Future<int> _importPlaylists(
+    ScanPlan plan,
+    int sourceId,
+    SourceFileSystem fs,
+  ) async {
+    if (plan.playlists.isEmpty) return 0;
+    // Existing book_uid set for silent same-name dedup (matches _importVideos).
+    final Set<String> existingKeys =
+        (await _videoRepo.listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+
+    // Temp dir only used by non-local transports (copyToLocal downloads here);
+    // for local transport copyToLocal returns the original path unchanged.
+    Directory? playlistTmp;
+    try {
+      int count = 0;
+      for (final ScanPlaylistItem item in plan.playlists) {
+        playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
+        final String localM3u8 =
+            await fs.copyToLocal(item.playlistPath, playlistTmp.path);
+        final String content = await readTextWithEncoding(File(localM3u8));
+        // baseDir is the ORIGINAL m3u8 path's directory (source namespace):
+        // locally the real on-disk dir, matching manual / drag-drop import when
+        // resolving relative episode paths.
+        final String baseDir = p.dirname(item.playlistPath);
+        final List<PlaylistEntry> entries =
+            parseM3u8(content: content, baseDir: baseDir);
+        if (entries.isEmpty) continue; // empty / not a playlist: skip silently.
+
+        final String bookUid = uniqueVideoBookUid(
+          playlistBookUid(item.playlistPath),
+          existingKeys,
+        );
+        existingKeys.add(bookUid);
+        final String playlistJson = jsonEncode(
+          entries.map((PlaylistEntry e) => e.toJson()).toList(),
+        );
+
+        // Cover from the first episode (local ffmpeg only); mobile / any failure
+        // -> null cover, never aborts the scan.
+        String? coverPath;
+        if (fs.isLocal) {
+          try {
+            coverPath = await extractVideoCover(
+              videoPath: entries.first.path,
+              bookUid: bookUid,
+            );
+          } catch (e) {
+            debugPrint('MediaSourceScanner playlist cover extract failed for '
+                '$bookUid: $e');
+          }
+        }
+
+        await _videoRepo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(item.playlistPath)),
+            videoPath: Value(entries.first.path),
+            playlistJson: Value(playlistJson),
+            currentEpisode: const Value<int>(0),
+            coverPath: Value<String?>(coverPath),
+            importedAt: Value(DateTime.now()),
+          ),
+          sourceId: sourceId,
+        );
+        count++;
+      }
+      return count;
+    } finally {
+      if (playlistTmp != null) {
+        try {
+          playlistTmp.deleteSync(recursive: true);
         } catch (_) {}
       }
     }
