@@ -84,6 +84,48 @@ void main() {
             reason:
                 '$root manifest.json netflix-bridge must run at document_start');
       });
+
+      // TODO-1219 P2：字幕列表面板存在性守卫（面板文件 + content.js 契约 + manifest bundle + CSS）。
+      test('[$name] subtitle-panel.js builds the Netflix subtitle list panel',
+          () {
+        final String src = File('$root/subtitle-panel.js').readAsStringSync();
+        expect(src.contains("'hibiki-subtitle-panel'"), isTrue,
+            reason: '$root subtitle-panel.js missing panel element id');
+        expect(src.contains('window.hibikiEpisodeCues'), isTrue,
+            reason: '$root subtitle-panel.js must consume hibikiEpisodeCues');
+        expect(src.contains("__hibikiNf: 'seek'"), isTrue,
+            reason: '$root subtitle-panel.js must reuse the P1 seek bridge');
+        expect(src.contains('window.hibikiSubtitlePanelOnCues'), isTrue,
+            reason: '$root subtitle-panel.js missing cues-update subscription');
+      });
+
+      test('[$name] content.js exposes cues store + lookup entry for the panel',
+          () {
+        final String src = File('$root/content.js').readAsStringSync();
+        expect(src.contains('window.hibikiEpisodeCues = hibikiEpisodeCues'),
+            isTrue,
+            reason: '$root content.js must expose hibikiEpisodeCues on window');
+        expect(src.contains('window.hibikiLookupAtPoint'), isTrue,
+            reason:
+                '$root content.js must expose hibikiLookupAtPoint for panel row lookup');
+        expect(src.contains('window.hibikiSubtitlePanelOnCues'), isTrue,
+            reason: '$root content.js must notify the panel on new cues');
+      });
+
+      test('[$name] manifest bundles subtitle-panel.js after content.js', () {
+        final String src = File('$root/manifest.json').readAsStringSync();
+        final int content = src.indexOf('content.js');
+        final int panel = src.indexOf('subtitle-panel.js');
+        expect(panel > content && content >= 0, isTrue,
+            reason:
+                '$root manifest.json must list subtitle-panel.js after content.js in the isolated bundle');
+      });
+
+      test('[$name] content.css styles the subtitle panel', () {
+        final String src = File('$root/vendor/content.css').readAsStringSync();
+        expect(src.contains('#hibiki-subtitle-panel'), isTrue,
+            reason: '$root vendor/content.css missing subtitle panel styles');
+      });
     });
   });
 
@@ -97,6 +139,9 @@ void main() {
       'subtitle-adapters.js',
       'content.js',
       'manifest.json',
+      // TODO-1219 P2：字幕列表面板新增/改动的共享文件，同样纳入字节守卫。
+      'subtitle-panel.js',
+      'vendor/content.css',
     ]) {
       test(rel, () {
         final List<int> tools =
