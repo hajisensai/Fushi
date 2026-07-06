@@ -268,15 +268,21 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final bool wasOn = appModel.showFloatingLyric;
     final bool ok = await appModel.toggleFloatingLyricFromControls();
     if (!ok) {
+      // Android needs the OS "draw over other apps" permission, so its
+      // failure is a permission prompt; ColorOS OEMs (OPPO / realme /
+      // OnePlus) may refuse to grant it outright, so they get workaround
+      // guidance instead (TODO-1227). The desktop strip is a runner-owned
+      // window with no such permission, so a failure there means window
+      // creation failed — show the generic hint instead of a false
+      // permission message.
+      final String? maker = Platform.isAndroid
+          ? await appModel.platformServices.deviceInfo.manufacturer
+          : null;
       if (mounted) {
-        // Android needs the OS "draw over other apps" permission, so its
-        // failure is a permission prompt. The desktop strip is a runner-owned
-        // window with no such permission, so a failure there means window
-        // creation failed — show the generic hint instead of a false
-        // permission message.
-        final String hint = Platform.isAndroid
-            ? t.floating_lyric_permission_hint
-            : t.floating_lyric_unavailable_hint;
+        final String hint = floatingLyricFailureHint(
+          isAndroid: Platform.isAndroid,
+          manufacturer: maker,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(hint),

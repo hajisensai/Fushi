@@ -62,6 +62,7 @@ import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
 import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';

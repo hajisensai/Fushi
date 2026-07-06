@@ -91,6 +91,7 @@ class FakeDeviceInfoService implements PlatformDeviceInfoService {
   int? sdk;
   String? model = 'test-device';
   String? os = 'test-os';
+  String? maker;
 
   @override
   Future<int?> get sdkVersion async => sdk;
@@ -100,6 +101,9 @@ class FakeDeviceInfoService implements PlatformDeviceInfoService {
 
   @override
   Future<String?> get osVersion async => os;
+
+  @override
+  Future<String?> get manufacturer async => maker;
 }
 
 // ── Builder ────────────────────────────────────────────────────────────────
