@@ -1764,6 +1764,40 @@ function showAudioError(button) {
     }, 1500);
 }
 
+// TODO-1251: 当词条本来就没有配置音频源（resolveWordAudio 返回 null）时，旧行为只瞬间
+// 把 ♪ 闪成 ✕ 再静默恢复，读起来像「点了没反应/出错了」，用户不知道是「这个
+// 词没有发音」。这里在按钮旁弹一个短暂的本地化提示（i18nNoAudioAvailable，宿主经
+// buildPopupSettingsJs 注入），并把按钮暂时切到静音态，明确「暂无发音」而非静默。提示
+// 锚定到按钮的屏幕坐标而非视口边缘，保证在 in-app 全窗弹窗和 app 外覆盖窗
+// （窗口被裁到卡片 bbox）两种表面都可见。区别于真正的播放失败（showAudioError）。
+function showNoAudioHint(button) {
+    const message = window.i18nNoAudioAvailable || '暂无发音';
+    button.textContent = '✕';
+    button.classList.add('audio-unavailable');
+    button.title = message;
+    // 移除可能残留的旧提示，避免叠加。
+    const stale = document.querySelector('.audio-hint');
+    if (stale) stale.remove();
+    const hint = el('div', { className: 'audio-hint', textContent: message });
+    document.body.appendChild(hint);
+    // 先量尺寸再定位：置于按钮上方居中，空间不足翻到下方，并夹在视口内。
+    const btnRect = button.getBoundingClientRect();
+    const hintRect = hint.getBoundingClientRect();
+    let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - hintRect.width - 4));
+    let top = btnRect.top - hintRect.height - 6;
+    if (top < 4) top = btnRect.bottom + 6;
+    hint.style.left = left + 'px';
+    hint.style.top = top + 'px';
+    requestAnimationFrame(() => hint.classList.add('visible'));
+    setTimeout(() => {
+        button.textContent = '♪';
+        button.classList.remove('audio-unavailable');
+        hint.classList.remove('visible');
+        setTimeout(() => hint.remove(), 220);
+    }, 1800);
+}
+
 function createAudioButton(expression, reading, entryIndex) {
     const button = el('button', {
         className: 'audio-button',
@@ -1771,7 +1805,8 @@ function createAudioButton(expression, reading, entryIndex) {
         onclick: async () => {
             const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
             if (!audioUrl) {
-                showAudioError(button);
+                // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
+                showNoAudioHint(button);
                 return;
             }
             if (!await playWordAudio(audioUrl)) {

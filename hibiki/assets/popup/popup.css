@@ -319,6 +319,36 @@ html {
     transform: translateY(1px);
 }
 
+/* TODO-1251：无音频源时的「暂无发音」反馈。showNoAudioHint 把按钮暂时加
+   .audio-unavailable（变灰），并在按钮旁弹一个锚定的 .audio-hint 提示。提示用
+   position:fixed + JS 算好的屏幕坐标，在 in-app 弹窗与 app 外覆盖窗都锚在按钮上/下方。 */
+.audio-button.audio-unavailable {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.audio-hint {
+    position: fixed;
+    z-index: 10000;
+    max-width: 220px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: nowrap;
+    color: var(--text-color, #fff);
+    background: var(--md-surface-container-high, rgba(30, 30, 30, 0.95));
+    border: 1px solid var(--md-outline-variant, rgba(255, 255, 255, 0.15));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.audio-hint.visible {
+    opacity: 1;
+}
+
 .entry-tags {
     margin-top: -4px;
     -webkit-user-select: none;

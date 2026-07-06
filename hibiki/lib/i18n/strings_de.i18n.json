@@ -2138,5 +2138,6 @@
   "video_quality_auto": "Auto",
   "video_quality_switched": "Quality: $label",
   "video_black_flash_notice_action": "View suggestions",
-  "video_black_flash_notice_dont_show_again": "Don't show again"
+  "video_black_flash_notice_dont_show_again": "Don't show again",
+  "popup_no_audio_available": "No audio available"
 }

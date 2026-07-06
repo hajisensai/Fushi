@@ -195,6 +195,7 @@ String buildPopupSettingsJs({
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;
+    window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window.embedMedia = true;

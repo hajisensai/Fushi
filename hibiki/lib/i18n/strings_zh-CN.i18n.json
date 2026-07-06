@@ -2138,5 +2138,6 @@
   "video_quality_auto": "自动",
   "video_quality_switched": "画质：$label",
   "video_black_flash_notice_action": "查看建议",
-  "video_black_flash_notice_dont_show_again": "不再提示"
+  "video_black_flash_notice_dont_show_again": "不再提示",
+  "popup_no_audio_available": "暂无发音"
 }
