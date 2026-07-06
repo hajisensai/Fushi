@@ -447,7 +447,11 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
-void GlobalLookupWindow::Hide() {
+void GlobalLookupWindow::Hide(bool notify) {
+  // Capture BEFORE clearing: the HiddenCallback must only fire on a transition
+  // FROM on-screen (was_showing) so a double dismiss (mouse hook then foreground
+  // hook, both fire on one click-outside) does not double-notify Dart.
+  const bool was_showing = visible_;
   visible_ = false;
   revealed_ = false;
   if (foreground_hook_ != nullptr) {
@@ -461,6 +465,18 @@ void GlobalLookupWindow::Hide() {
   s_hook_owner_ = nullptr;
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
+  }
+  // TODO-1233 -- tell Dart the overlay dismissed. The foreground hook, the
+  // click-outside mouse hook and the JS 'dismiss'/'tapOutside' path all funnel
+  // through Hide() (notify defaults true), so this is the single dismissal
+  // funnel. The programmatic reset that GlobalLookupController runs right BEFORE
+  // a fresh lookup passes notify=false, so the between-lookups collapse to
+  // known-hidden never looks like a user dismissal (which would spuriously
+  // resume a paused video mid re-lookup). Fires on the platform thread (hooks
+  // post to the creating thread's loop; the JS path is already there), so the
+  // channel InvokeMethod wired to this callback is safe.
+  if (notify && was_showing && hidden_cb_) {
+    hidden_cb_();
   }
 }
 
