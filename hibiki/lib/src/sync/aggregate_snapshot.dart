@@ -21,19 +21,31 @@ class AggregateSnapshot {
     this.readingHourly = const <HourlyRecord>[],
     this.videoHourly = const <HourlyRecord>[],
     this.miningStats = const <MiningRecord>[],
+    this.lookupMiningCounters = const <LookupMiningRecord>[],
     this.favoriteWords = const <FavoriteWordRecord>[],
     this.favoriteSentences = const <FavoriteSentence>[],
   });
 
   /// Wire format version. A peer reading an unknown higher version treats it as
   /// empty (forward-compatible no-op) rather than crashing (see fromJson).
-  static const int currentVersion = 1;
+  ///
+  /// v2 adds `lookupMiningCounters` (TODO-1204 phase 2). A v1 payload simply
+  /// lacks that key; [fromJson] tolerates the missing list, so a v2 device reads
+  /// a v1 peer's snapshot (folding every other family) and a v1 device ignores
+  /// the extra key it does not know. Only a HIGHER-than-known version degrades
+  /// the whole snapshot to empty.
+  static const int currentVersion = 2;
 
   final List<ReadingStatRecord> readingStats;
   final List<VideoStatRecord> videoStats;
   final List<HourlyRecord> readingHourly;
   final List<HourlyRecord> videoHourly;
   final List<MiningRecord> miningStats;
+
+  /// Per-book / per-video lookup + mine counters keyed by {title, sourceType,
+  /// dateKey} (TODO-1204). Each row carries BOTH counts (lookupCount, mineCount)
+  /// so the two columns of one `lookup_mining_counters` row travel together.
+  final List<LookupMiningRecord> lookupMiningCounters;
   final List<FavoriteWordRecord> favoriteWords;
   final List<FavoriteSentence> favoriteSentences;
 
@@ -45,6 +57,7 @@ class AggregateSnapshot {
       readingHourly.isEmpty &&
       videoHourly.isEmpty &&
       miningStats.isEmpty &&
+      lookupMiningCounters.isEmpty &&
       favoriteWords.isEmpty &&
       favoriteSentences.isEmpty;
 
@@ -58,6 +71,9 @@ class AggregateSnapshot {
             readingHourly.map((HourlyRecord r) => r.toJson()).toList(),
         'videoHourly': videoHourly.map((HourlyRecord r) => r.toJson()).toList(),
         'miningStats': miningStats.map((MiningRecord r) => r.toJson()).toList(),
+        'lookupMiningCounters': lookupMiningCounters
+            .map((LookupMiningRecord r) => r.toJson())
+            .toList(),
         'favoriteWords':
             favoriteWords.map((FavoriteWordRecord r) => r.toJson()).toList(),
         'favoriteSentences':
@@ -83,6 +99,8 @@ class AggregateSnapshot {
       readingHourly: _decodeList(json['readingHourly'], HourlyRecord.fromJson),
       videoHourly: _decodeList(json['videoHourly'], HourlyRecord.fromJson),
       miningStats: _decodeList(json['miningStats'], MiningRecord.fromJson),
+      lookupMiningCounters: _decodeList(
+          json['lookupMiningCounters'], LookupMiningRecord.fromJson),
       favoriteWords:
           _decodeList(json['favoriteWords'], FavoriteWordRecord.fromJson),
       favoriteSentences: _decodeFavoriteSentences(json['favoriteSentences']),
@@ -262,6 +280,63 @@ class MiningRecord {
       sourceType: sourceType,
       dateKey: dateKey,
       count: _asInt(json['count']),
+    );
+  }
+}
+
+/// One lookup/mining counter bucket keyed by {title, sourceType, dateKey}
+/// (TODO-1204). Mirrors one `lookup_mining_counters` row: both counters
+/// (lookupCount, mineCount) travel together and are MAX-ed independently on
+/// merge. [bookKey] is optional metadata (the book/video identity) that is NOT
+/// part of the dedupe key (a no-book lookup has title='' and bookKey=null); it
+/// travels so a peer-only bucket lands with its book identity, and on a key
+/// collision the merge keeps whichever side has a non-null bookKey.
+class LookupMiningRecord {
+  const LookupMiningRecord({
+    required this.bookKey,
+    required this.title,
+    required this.sourceType,
+    required this.dateKey,
+    required this.lookupCount,
+    required this.mineCount,
+  });
+
+  final String? bookKey;
+  final String title;
+  final String sourceType;
+  final String dateKey;
+  final int lookupCount;
+  final int mineCount;
+
+  /// Business identity for the MAX-union fold, exactly the table's unique key
+  /// {title, sourceType, dateKey}. Length-prefixed title / sourceType so a
+  /// separator inside a field cannot forge the boundary.
+  String get key =>
+      '${title.length}:$title|${sourceType.length}:$sourceType|$dateKey';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'bookKey': bookKey,
+        'title': title,
+        'sourceType': sourceType,
+        'dateKey': dateKey,
+        'lookupCount': lookupCount,
+        'mineCount': mineCount,
+      };
+
+  static LookupMiningRecord? fromJson(Map<String, Object?> json) {
+    final Object? title = json['title'];
+    final Object? sourceType = json['sourceType'];
+    final Object? dateKey = json['dateKey'];
+    if (title is! String || sourceType is! String || dateKey is! String) {
+      return null;
+    }
+    return LookupMiningRecord(
+      bookKey: json['bookKey'] as String?,
+      title: title,
+      sourceType: sourceType,
+      dateKey: dateKey,
+      lookupCount: _asInt(json['lookupCount']),
+      mineCount: _asInt(json['mineCount']),
     );
   }
 }

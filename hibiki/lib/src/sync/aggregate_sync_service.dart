@@ -169,6 +169,10 @@ class AggregateSyncService {
       readingHourly: _mergeHourly(local.readingHourly, remote.readingHourly),
       videoHourly: _mergeHourly(local.videoHourly, remote.videoHourly),
       miningStats: _mergeMining(local.miningStats, remote.miningStats),
+      lookupMiningCounters: _mergeLookupMining(
+        local.lookupMiningCounters,
+        remote.lookupMiningCounters,
+      ),
       favoriteWords: AggregateMergeService.mergeUniqueByKey<FavoriteWordRecord>(
         local.favoriteWords,
         remote.favoriteWords,
@@ -309,9 +313,63 @@ class AggregateSyncService {
     ];
   }
 
+  /// MAX-union of lookup/mining counter buckets keyed by {title, sourceType,
+  /// dateKey}. Both count columns (lookupCount, mineCount) are MAX-ed
+  /// independently through [StatBucket]; a bucket on only one side is kept
+  /// verbatim. [bookKey] is not part of the key: on a collision the side with a
+  /// non-null bookKey is retained (a null never overwrites a known book
+  /// identity), so the metadata converges regardless of merge order.
+  static List<LookupMiningRecord> _mergeLookupMining(
+    List<LookupMiningRecord> local,
+    List<LookupMiningRecord> remote,
+  ) {
+    final Map<String, StatBucket> localMap = <String, StatBucket>{
+      for (final LookupMiningRecord r in local)
+        r.key: StatBucket(<String, int>{
+          'lookupCount': r.lookupCount,
+          'mineCount': r.mineCount,
+        }),
+    };
+    final Map<String, StatBucket> remoteMap = <String, StatBucket>{
+      for (final LookupMiningRecord r in remote)
+        r.key: StatBucket(<String, int>{
+          'lookupCount': r.lookupCount,
+          'mineCount': r.mineCount,
+        }),
+    };
+    // Identity + bookKey resolution: local first, then let a remote row adopt
+    // the bucket only to supply a non-null bookKey the local side lacked.
+    final Map<String, LookupMiningRecord> metaByKey =
+        <String, LookupMiningRecord>{};
+    for (final LookupMiningRecord r in local) {
+      metaByKey[r.key] = r;
+    }
+    for (final LookupMiningRecord r in remote) {
+      final LookupMiningRecord? existing = metaByKey[r.key];
+      if (existing == null) {
+        metaByKey[r.key] = r;
+      } else if (existing.bookKey == null && r.bookKey != null) {
+        metaByKey[r.key] = r;
+      }
+    }
+    final Map<String, StatBucket> mergedMap =
+        AggregateMergeService.mergeStatBuckets(localMap, remoteMap);
+    return <LookupMiningRecord>[
+      for (final MapEntry<String, StatBucket> e in mergedMap.entries)
+        LookupMiningRecord(
+          bookKey: metaByKey[e.key]!.bookKey,
+          title: metaByKey[e.key]!.title,
+          sourceType: metaByKey[e.key]!.sourceType,
+          dateKey: metaByKey[e.key]!.dateKey,
+          lookupCount: e.value.fields['lookupCount']!,
+          mineCount: e.value.fields['mineCount']!,
+        ),
+    ];
+  }
+
   /// Reads the whole local aggregate state (four statistic tables + mining +
-  /// favorite words + favorite-sentence pref blob) into a snapshot. Pure read,
-  /// no mutation.
+  /// lookup/mine per-book counters + favorite words + favorite-sentence pref
+  /// blob) into a snapshot. Pure read, no mutation.
   Future<AggregateSnapshot> materializeLocalSnapshot() async {
     final List<ReadingStatisticRow> reading =
         await _db.getAllReadingStatistics();
@@ -322,6 +380,8 @@ class AggregateSyncService {
     final List<VideoHourlyLogRow> videoHourly =
         await _db.getAllVideoHourlyLogs();
     final List<MiningStatisticRow> mining = await _db.getAllMiningStatistics();
+    final List<LookupMiningCounterRow> lookupMining =
+        await _db.getAllLookupMiningCounters();
     final List<FavoriteWordRow> favWords = await _db.getAllFavoriteWords();
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
 
@@ -368,6 +428,17 @@ class AggregateSyncService {
             sourceType: r.sourceType,
             dateKey: r.dateKey,
             count: r.count,
+          ),
+      ],
+      lookupMiningCounters: <LookupMiningRecord>[
+        for (final LookupMiningCounterRow r in lookupMining)
+          LookupMiningRecord(
+            bookKey: r.bookKey,
+            title: r.title,
+            sourceType: r.sourceType,
+            dateKey: r.dateKey,
+            lookupCount: r.lookupCount,
+            mineCount: r.mineCount,
           ),
       ],
       favoriteWords: <FavoriteWordRecord>[
@@ -429,6 +500,26 @@ class AggregateSyncService {
         sourceType: r.sourceType,
         dateKey: r.dateKey,
         count: r.count,
+      );
+    }
+    for (final LookupMiningRecord r in snapshot.lookupMiningCounters) {
+      // Both setters are MAX-union on {title, sourceType, dateKey}: setLookupCount
+      // creates or lifts the row's lookupCount, then setMineCountPerBook lifts
+      // the same row's mineCount. Order is safe because the first call
+      // materialises the row the second one updates; re-applying is a no-op.
+      await _db.setLookupCount(
+        bookKey: r.bookKey,
+        title: r.title,
+        sourceType: r.sourceType,
+        dateKey: r.dateKey,
+        count: r.lookupCount,
+      );
+      await _db.setMineCountPerBook(
+        bookKey: r.bookKey,
+        title: r.title,
+        sourceType: r.sourceType,
+        dateKey: r.dateKey,
+        count: r.mineCount,
       );
     }
     for (final FavoriteWordRecord r in snapshot.favoriteWords) {

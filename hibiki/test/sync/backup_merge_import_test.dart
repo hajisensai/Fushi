@@ -213,6 +213,87 @@ void main() {
     expect(rows.single.count, 5); // max(5, 3), never 8
   });
 
+  test('lookup/mining counters MAX-union both columns (idempotent re-import)',
+      () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    // Device: lookup 10, mine 2 on Book A; a no-book lookup bucket (title='').
+    await cur.setLookupCount(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-03-03',
+      count: 10,
+    );
+    await cur.setMineCountPerBook(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-03-03',
+      count: 2,
+    );
+    await cur.setLookupCount(
+      title: '',
+      sourceType: 'book',
+      dateKey: '2026-03-03',
+      count: 3,
+    );
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    // Backup: lookup 4 (lower), mine 9 (higher) on the same Book A bucket, and a
+    // brand-new Book B bucket the device lacks.
+    await src.setLookupCount(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-03-03',
+      count: 4,
+    );
+    await src.setMineCountPerBook(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-03-03',
+      count: 9,
+    );
+    await src.setLookupCount(
+      bookKey: 'keyB',
+      title: 'Book B',
+      sourceType: 'book',
+      dateKey: '2026-03-04',
+      count: 6,
+    );
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // Import twice — must stay idempotent (MAX, never SUM).
+    await BackupService.mergeImportBackupFiles(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeImportBackupFiles(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = HibikiDatabase(curDir.path);
+    addTearDown(after.close);
+    final rows = await after.getLookupMiningCountersBySource('book');
+    final byTitle = {for (final r in rows) r.title: r};
+    // Shared bucket: lookup MAX(10,4)=10, mine MAX(2,9)=9 (each column).
+    expect(byTitle['Book A']!.lookupCount, 10);
+    expect(byTitle['Book A']!.mineCount, 9);
+    expect(byTitle['Book A']!.bookKey, 'keyA');
+    // Backup-only Book B bucket inserted verbatim.
+    expect(byTitle['Book B']!.lookupCount, 6);
+    // Device-only no-book bucket untouched.
+    expect(byTitle['']!.lookupCount, 3);
+    expect(rows, hasLength(3));
+  });
+
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));

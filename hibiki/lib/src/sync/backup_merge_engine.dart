@@ -19,8 +19,9 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// Conflict resolution mirrors the existing sync semantics:
 /// - content lists (books / videos / dictionaries / audio) -> push-only UNION.
 /// - progress (reader positions) -> LWW by `updatedAt` (larger wins).
-/// - statistics (reading / video / hourly / mining) -> per-bucket MAX-union, so
-///   re-importing the same backup is idempotent and never double-counts.
+/// - statistics (reading / video / hourly / mining / lookup+mine counters) ->
+///   per-bucket MAX-union, so re-importing the same backup is idempotent and
+///   never double-counts.
 /// - favorites / mined sentences -> dedupe-UNION (both kept, duplicates dropped).
 /// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
 ///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
@@ -66,6 +67,7 @@ class BackupMergeEngine {
       await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
       await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
       await _mergeMiningStatistics();
+      await _mergeLookupMiningCounters();
       await _mergeFavoriteWords();
       await _mergeMinedSentences();
       await _mergeFavoriteSentencePrefs();
@@ -315,6 +317,53 @@ class BackupMergeEngine {
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.mining_statistics AS s '
       'WHERE s.source_type = mining_statistics.source_type '
       'AND s.date_key = mining_statistics.date_key)',
+    );
+  }
+
+  /// LookupMiningCounters MAX-union per {title, sourceType, dateKey} (TODO-1204).
+  /// Both counter columns (lookup_count / mine_count) are MAX-ed independently,
+  /// so a re-import of the same backup stays idempotent and never double-counts
+  /// (mirrors setLookupCount / setMineCountPerBook). Keyed by {title,
+  /// source_type, date_key} exactly like the table's unique key.
+  ///
+  /// Like reading_statistics / mining_statistics (also title / source keyed,
+  /// monotonic aggregates), this deliberately has NO book_tombstones guard: the
+  /// counters are per-title historical activity, not per-book_key content, and a
+  /// deleted book must not silently erase the day's lookup/mine totals. On the
+  /// INSERT of a bucket the target lacks, the src book_key travels; on an UPDATE
+  /// the target keeps its own book_key unless it was null, in which case it
+  /// adopts the src's non-null value (COALESCE) so book identity converges.
+  Future<void> _mergeLookupMiningCounters() async {
+    await _db.customStatement(
+      'INSERT INTO lookup_mining_counters '
+      '(book_key, title, source_type, date_key, lookup_count, mine_count) '
+      'SELECT book_key, title, source_type, date_key, lookup_count, mine_count '
+      'FROM $_srcAlias.lookup_mining_counters AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM lookup_mining_counters AS t '
+      'WHERE t.title = s.title AND t.source_type = s.source_type '
+      'AND t.date_key = s.date_key)',
+    );
+    await _db.customStatement(
+      'UPDATE lookup_mining_counters SET '
+      'lookup_count = MAX(lookup_count, ('
+      'SELECT s.lookup_count FROM $_srcAlias.lookup_mining_counters AS s '
+      'WHERE s.title = lookup_mining_counters.title '
+      'AND s.source_type = lookup_mining_counters.source_type '
+      'AND s.date_key = lookup_mining_counters.date_key)), '
+      'mine_count = MAX(mine_count, ('
+      'SELECT s.mine_count FROM $_srcAlias.lookup_mining_counters AS s '
+      'WHERE s.title = lookup_mining_counters.title '
+      'AND s.source_type = lookup_mining_counters.source_type '
+      'AND s.date_key = lookup_mining_counters.date_key)), '
+      'book_key = COALESCE(book_key, ('
+      'SELECT s.book_key FROM $_srcAlias.lookup_mining_counters AS s '
+      'WHERE s.title = lookup_mining_counters.title '
+      'AND s.source_type = lookup_mining_counters.source_type '
+      'AND s.date_key = lookup_mining_counters.date_key)) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.lookup_mining_counters AS s '
+      'WHERE s.title = lookup_mining_counters.title '
+      'AND s.source_type = lookup_mining_counters.source_type '
+      'AND s.date_key = lookup_mining_counters.date_key)',
     );
   }
 

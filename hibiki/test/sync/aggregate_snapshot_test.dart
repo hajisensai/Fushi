@@ -33,6 +33,16 @@ AggregateSnapshot _sample() => AggregateSnapshot(
       miningStats: const <MiningRecord>[
         MiningRecord(sourceType: 'book', dateKey: '2026-06-01', count: 3),
       ],
+      lookupMiningCounters: const <LookupMiningRecord>[
+        LookupMiningRecord(
+          bookKey: 'bookA',
+          title: 'Book A',
+          sourceType: 'book',
+          dateKey: '2026-06-01',
+          lookupCount: 12,
+          mineCount: 4,
+        ),
+      ],
       favoriteWords: const <FavoriteWordRecord>[
         FavoriteWordRecord(
           expression: 'neko',
@@ -73,6 +83,10 @@ void main() {
       expect(back.videoHourly.single.durationMs, 30000);
       expect(back.miningStats.single.count, 3);
       expect(back.miningStats.single.sourceType, 'book');
+      expect(back.lookupMiningCounters.single.lookupCount, 12);
+      expect(back.lookupMiningCounters.single.mineCount, 4);
+      expect(back.lookupMiningCounters.single.bookKey, 'bookA');
+      expect(back.lookupMiningCounters.single.title, 'Book A');
       expect(back.favoriteWords.single.expression, 'neko');
       expect(back.favoriteSentences.single.text, 'sentence one');
       expect(back.favoriteSentences.single.normCharOffset, 10);
@@ -242,6 +256,79 @@ void main() {
           ba.readingStats.single.readingTimeMs);
       expect(ab.readingStats.single.charactersRead, 250);
       expect(ab.readingStats.single.readingTimeMs, 60000);
+    });
+
+    test('lookup/mine counters MAX both columns; bookKey prefers non-null', () {
+      const AggregateSnapshot a = AggregateSnapshot(
+        lookupMiningCounters: <LookupMiningRecord>[
+          LookupMiningRecord(
+            bookKey: null, // A had no book identity on this bucket
+            title: 'Book A',
+            sourceType: 'book',
+            dateKey: 'd',
+            lookupCount: 10,
+            mineCount: 2,
+          ),
+        ],
+      );
+      const AggregateSnapshot b = AggregateSnapshot(
+        lookupMiningCounters: <LookupMiningRecord>[
+          LookupMiningRecord(
+            bookKey: 'keyA', // B carries the book identity
+            title: 'Book A',
+            sourceType: 'book',
+            dateKey: 'd',
+            lookupCount: 4,
+            mineCount: 9,
+          ),
+          LookupMiningRecord(
+            bookKey: 'keyB',
+            title: 'Book B',
+            sourceType: 'book',
+            dateKey: 'd',
+            lookupCount: 1,
+            mineCount: 1,
+          ),
+        ],
+      );
+      final AggregateSnapshot ab = AggregateSyncService.mergeSnapshots(a, b);
+      final AggregateSnapshot ba = AggregateSyncService.mergeSnapshots(b, a);
+      // Two buckets: the shared {Book A} and the peer-only {Book B}.
+      expect(ab.lookupMiningCounters.length, 2);
+      final LookupMiningRecord sharedAb = ab.lookupMiningCounters
+          .firstWhere((LookupMiningRecord r) => r.title == 'Book A');
+      // lookupCount MAX(10,4)=10, mineCount MAX(2,9)=9 (each column independent).
+      expect(sharedAb.lookupCount, 10);
+      expect(sharedAb.mineCount, 9);
+      // The null bookKey is filled from the peer's non-null one.
+      expect(sharedAb.bookKey, 'keyA');
+      // bookKey resolution is order-independent (non-null wins either way).
+      final LookupMiningRecord sharedBa = ba.lookupMiningCounters
+          .firstWhere((LookupMiningRecord r) => r.title == 'Book A');
+      expect(sharedBa.bookKey, 'keyA');
+      expect(sharedBa.lookupCount, 10);
+      expect(sharedBa.mineCount, 9);
+    });
+  });
+
+  group('version compatibility', () {
+    test('a v1 payload (no lookupMiningCounters key) decodes without crash',
+        () {
+      // An old peer still speaks version 1 and never wrote the counters key.
+      final AggregateSnapshot snap =
+          AggregateSnapshot.fromJson(<String, Object?>{
+        'version': 1,
+        'miningStats': <Object?>[
+          <String, Object?>{
+            'sourceType': 'book',
+            'dateKey': 'd',
+            'count': 5,
+          },
+        ],
+      });
+      // Every other family still folds; the missing list is simply empty.
+      expect(snap.miningStats.single.count, 5);
+      expect(snap.lookupMiningCounters, isEmpty);
     });
   });
 }

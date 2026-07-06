@@ -154,6 +154,78 @@ void main() {
     expect(aReading.readingTimeMs, 5000);
   });
 
+  test('two devices converge lookup/mine counters to the per-column union',
+      () async {
+    final FakeAssetStore store = FakeAssetStore();
+
+    final HibikiDatabase dbA = await _freshDb('agg_lmcA_');
+    addTearDown(dbA.close);
+    // A: 10 lookups, 2 mines on Book A / 2026-06-01, plus a no-book lookup.
+    await dbA.setLookupCount(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 10,
+    );
+    await dbA.setMineCountPerBook(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 2,
+    );
+    await dbA.setLookupCount(
+      title: '', // no-book lookup (home / standalone window / lyrics)
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 7,
+    );
+    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+
+    final HibikiDatabase dbB = await _freshDb('agg_lmcB_');
+    addTearDown(dbB.close);
+    // B: 4 lookups (lower), 9 mines (higher) on the same bucket.
+    await dbB.setLookupCount(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 4,
+    );
+    await dbB.setMineCountPerBook(
+      bookKey: 'keyA',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 9,
+    );
+    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+
+    // B holds the union: lookup MAX(10,4)=10, mine MAX(2,9)=9 on the shared
+    // bucket, plus A's no-book lookup bucket (title='').
+    final List<LookupMiningCounterRow> bRows =
+        await dbB.getLookupMiningCountersBySource('book');
+    final LookupMiningCounterRow bShared =
+        bRows.firstWhere((LookupMiningCounterRow r) => r.title == 'Book A');
+    expect(bShared.lookupCount, 10);
+    expect(bShared.mineCount, 9);
+    expect(bShared.bookKey, 'keyA');
+    final LookupMiningCounterRow bNoBook =
+        bRows.firstWhere((LookupMiningCounterRow r) => r.title == '');
+    expect(bNoBook.lookupCount, 7);
+
+    // A syncs again and converges to the identical union; re-sync stays MAX,
+    // never SUM (idempotent, no double count).
+    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+    final LookupMiningCounterRow aShared =
+        (await dbA.getLookupMiningCountersBySource('book'))
+            .firstWhere((LookupMiningCounterRow r) => r.title == 'Book A');
+    expect(aShared.lookupCount, 10);
+    expect(aShared.mineCount, 9);
+  });
+
   test('re-syncing the same peer snapshot is idempotent (no double count)',
       () async {
     final FakeAssetStore store = FakeAssetStore();
