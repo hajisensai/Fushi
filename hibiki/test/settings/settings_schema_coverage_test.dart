@@ -148,6 +148,33 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
   'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
   'video/Loop file': 'test/media/video/video_mpv_config_test.dart',
+  // TODO-1247：把播放页内 mpv 详情（画质余项/几何/色彩/音频）平移到首页后，这些
+  // 纯 pref 项写穿 videoMpvConfig（下次开视频 applyMpvConfig 应用）；结构化字段
+  // round-trip + buildMpvProperties 生效由 video_mpv_config_test.dart 咬住，真实
+  // libmpv 渲染效果需桌面设备验（无 widget 探针）。
+  'video/Dithering': 'test/media/video/video_mpv_config_test.dart',
+  'video/Motion interpolation': 'test/media/video/video_mpv_config_test.dart',
+  'video/Deinterlace': 'test/media/video/video_mpv_config_test.dart',
+  'video/Linear downscaling': 'test/media/video/video_mpv_config_test.dart',
+  'video/Rotation': 'test/media/video/video_mpv_config_test.dart',
+  'video/Aspect ratio': 'test/media/video/video_mpv_config_test.dart',
+  'video/Zoom': 'test/media/video/video_mpv_config_test.dart',
+  'video/Pan & scan (crop borders)':
+      'test/media/video/video_mpv_config_test.dart',
+  'video/Brightness': 'test/media/video/video_mpv_config_test.dart',
+  'video/Contrast': 'test/media/video/video_mpv_config_test.dart',
+  'video/Saturation': 'test/media/video/video_mpv_config_test.dart',
+  'video/Gamma': 'test/media/video/video_mpv_config_test.dart',
+  'video/Hue': 'test/media/video/video_mpv_config_test.dart',
+  'video/Preserve pitch when speeding':
+      'test/media/video/video_mpv_config_test.dart',
+  'video/Channels': 'test/media/video/video_mpv_config_test.dart',
+  'video/Normalize downmix loudness':
+      'test/media/video/video_mpv_config_test.dart',
+  // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
+  // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
+  "video/Respect subtitle's own style":
+      'test/media/video/video_subtitle_overlay_markup_test.dart',
   'video/Font size':
       'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_overlay_test.dart',
   'video/Font weight':
