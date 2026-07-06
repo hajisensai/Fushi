@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/src/shortcuts/visual/key_cap_widget.dart';
 import 'package:hibiki/src/shortcuts/visual/reverse_binding_index.dart';
 
@@ -185,6 +182,10 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows() {
   ];
 }
 
+/// 键盘布局预览图（TODO-942 P1 起**只画键盘**）。
+///
+/// 手柄整图拆到独立的 `GamepadLayoutView`（gamepad_layout_view.dart），两块在
+/// 快捷键设置页各带标题分开展示——本 widget 不再接任何 gamepad 参数。
 class KeyboardLayoutView extends StatelessWidget {
   const KeyboardLayoutView({
     super.key,
@@ -192,9 +193,6 @@ class KeyboardLayoutView extends StatelessWidget {
     required this.scope,
     this.onKeyTap,
     this.onEmptyKeyTap,
-    this.onGamepadTap,
-    this.onEmptyGamepadTap,
-    this.gamepadBrand = GamepadBrand.xbox,
   });
 
   final HibikiShortcutRegistry registry;
@@ -207,17 +205,6 @@ class KeyboardLayoutView extends StatelessWidget {
   /// 点击一个**未绑**键位（key-first：回传裸逻辑键，由上层选 action 后分配）。
   /// null 时空键位恒不可点（旧「空键不可点」行为，TODO-1060② 前）。
   final void Function(LogicalKeyboardKey key)? onEmptyKeyTap;
-
-  /// 点击一个**已绑**手柄按钮（回传该按钮上的 action 列表）。
-  final void Function(GamepadButton button, List<ShortcutAction> boundActions)?
-      onGamepadTap;
-
-  /// 点击一个**未绑**手柄按钮（key-first：回传裸按钮，由上层选 action 后分配）。
-  final void Function(GamepadButton button)? onEmptyGamepadTap;
-
-  /// 手柄按钮图显示品牌（TODO-1050a）。当前无品牌检测/设置，默认 Xbox；
-  /// TODO-612 后续接入品牌检测或设置项后由上层传入。只换显示符号/配色，不改序列化。
-  final GamepadBrand gamepadBrand;
 
   /// 图上呈现的全部可绑逻辑键（排除留白占位与修饰键——修饰键只读分区不进绑定索引）。
   static Set<LogicalKeyboardKey> get presentedKeys => <LogicalKeyboardKey>{
@@ -252,28 +239,15 @@ class KeyboardLayoutView extends StatelessWidget {
             constraints.maxWidth.isFinite ? constraints.maxWidth : 640;
         final double fitUnit = (available - gap * (maxFlex - 1)) / maxFlex;
 
-        final Widget keyboard;
         if (fitUnit >= minReadableUnit) {
           // 宽屏：自适应填满（保留旧 clamp 上界，避免超大屏键帽过宽）。
           final double unit = fitUnit.clamp(minReadableUnit, 56.0);
-          keyboard = _buildKeyboard(index, rows, unit, gap);
-        } else {
-          // 窄屏：按理想固定 unit 绘制，外层横向滚动兜底。
-          keyboard = SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: _buildKeyboard(index, rows, idealUnit, gap),
-          );
+          return _buildKeyboard(index, rows, unit, gap);
         }
-
-        // TODO-1050a: 键盘图下方渲染手柄按钮图（数据层 GamepadGlyphs 已就绪，此处接线）。
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            keyboard,
-            SizedBox(height: gap * 3),
-            _buildGamepadPanel(index, gap),
-          ],
+        // 窄屏：按理想固定 unit 绘制，外层横向滚动兜底。
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: _buildKeyboard(index, rows, idealUnit, gap),
         );
       },
     );
@@ -356,79 +330,6 @@ class KeyboardLayoutView extends StatelessWidget {
       bound: bound,
       onTap: tap,
       width: width,
-    );
-  }
-
-  /// 手柄按钮图行组（TODO-1050a）。分面键 / 肩键扳机 / 方向键 / 系统键四段，每段一 Wrap。
-  /// 已绑按钮高亮 + 走 [onGamepadTap]；未绑按钮走 [onEmptyGamepadTap]（key-first 分配）。
-  /// 品牌显示走 [gamepadBrand]（默认 Xbox），只换符号/配色不改序列化。
-  Widget _buildGamepadPanel(ReverseBindingIndex index, double gap) {
-    const List<List<GamepadButton>> groups = <List<GamepadButton>>[
-      <GamepadButton>[
-        GamepadButton.a,
-        GamepadButton.b,
-        GamepadButton.x,
-        GamepadButton.y,
-      ],
-      <GamepadButton>[
-        GamepadButton.lb,
-        GamepadButton.rb,
-        GamepadButton.lt,
-        GamepadButton.rt,
-      ],
-      <GamepadButton>[
-        GamepadButton.dpadUp,
-        GamepadButton.dpadDown,
-        GamepadButton.dpadLeft,
-        GamepadButton.dpadRight,
-      ],
-      <GamepadButton>[
-        GamepadButton.thumbLeft,
-        GamepadButton.thumbRight,
-        GamepadButton.start,
-        GamepadButton.select,
-        GamepadButton.mode,
-      ],
-    ];
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        for (final List<GamepadButton> group in groups)
-          Padding(
-            padding: EdgeInsets.only(bottom: gap),
-            child: Wrap(
-              spacing: gap,
-              runSpacing: gap,
-              children: <Widget>[
-                for (final GamepadButton button in group)
-                  _buildGamepadButton(index, button),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildGamepadButton(ReverseBindingIndex index, GamepadButton button) {
-    final bool bound = index.isGamepadBound(button);
-    final List<ShortcutAction> actions = index.actionsForButton(button);
-    final VoidCallback? tap;
-    if (bound && onGamepadTap != null) {
-      tap = () => onGamepadTap!(button, actions);
-    } else if (!bound && onEmptyGamepadTap != null) {
-      tap = () => onEmptyGamepadTap!(button);
-    } else {
-      tap = null;
-    }
-
-    return GamepadButtonWidget(
-      key: Key('gamepad_btn_${button.label}'),
-      button: button,
-      brand: gamepadBrand,
-      bound: bound,
-      onTap: tap,
     );
   }
 }

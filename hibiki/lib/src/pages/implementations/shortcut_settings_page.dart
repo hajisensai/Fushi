@@ -15,6 +15,7 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:hibiki/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
 
 /// Localised label for a [ShortcutAction].
@@ -585,16 +586,44 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               horizontal: 12,
               vertical: 8,
             ),
-            child: KeyboardLayoutView(
-              registry: _registry,
-              scope: scope,
-              gamepadBrand: _gamepadBrand,
-              onKeyTap: _onKeyboardKeyTap,
-              onEmptyKeyTap: (LogicalKeyboardKey key) =>
-                  _onEmptyKeyboardKeyTap(scope, key),
-              onGamepadTap: _onGamepadButtonTap,
-              onEmptyGamepadTap: (GamepadButton button) =>
-                  _onEmptyGamepadButtonTap(scope, button),
+            // TODO-942 P1: keyboard / gamepad are two separately titled
+            // blocks — the gamepad is a full real-layout figure, no longer
+            // stacked below the keyboard inside one widget.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    t.shortcut_keyboard,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                KeyboardLayoutView(
+                  registry: _registry,
+                  scope: scope,
+                  onKeyTap: _onKeyboardKeyTap,
+                  onEmptyKeyTap: (LogicalKeyboardKey key) =>
+                      _onEmptyKeyboardKeyTap(scope, key),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    t.shortcut_gamepad,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                GamepadLayoutView(
+                  registry: _registry,
+                  scope: scope,
+                  gamepadBrand: _gamepadBrand,
+                  onGamepadTap: _onGamepadButtonTap,
+                  onEmptyGamepadTap: (GamepadButton button) =>
+                      _onEmptyGamepadButtonTap(scope, button),
+                ),
+              ],
             ),
           )
         else
