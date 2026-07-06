@@ -115,6 +115,20 @@ bool are_states_different(const GameInputGamepadState& a,
 }
 
 void Gamepads::init() {
+  // GameInput.dll is delay-loaded (see CMakeLists.txt /DELAYLOAD): it is not
+  // installed on every Windows machine (no Gaming Services / older Windows 10
+  // without the GameInput redistributable), and a static import would kill the
+  // whole process at load time before main() runs (TODO-1223). Probe for the
+  // DLL before the first GameInput call - calling a delay-loaded import whose
+  // DLL is missing raises an SEH exception instead of returning an error. The
+  // module handle is intentionally kept for the process lifetime so the
+  // delay-load helper's own LoadLibrary always succeeds after this probe.
+  if (::LoadLibraryW(L"GameInput.dll") == nullptr) {
+    std::cerr << "GameInput.dll not available; gamepad support disabled"
+              << std::endl;
+    return;
+  }
+
   GameInputCreate(&g_gameInput);
 
   if (g_gameInput != nullptr) {

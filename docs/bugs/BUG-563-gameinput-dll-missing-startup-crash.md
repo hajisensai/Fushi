@@ -1,0 +1,6 @@
+## BUG-563 · 无GameInput.dll的Windows机器启动即崩
+- **报告**：2026-07-06（用户：TODO-1223）
+- **真实性**：✅ 真 bug。根因 `packages/gamepads_windows/windows/gamepad.cpp:12` 的 `#pragma comment(lib, "GameInput.lib")` 把 GameInput.dll 作为**静态导入**链进 `gamepads_windows_plugin.dll`；用 pefile 实证已安装 app（D:\APP\Hibiki）中只有 `gamepads_windows_plugin.dll` 的静态 import 表含 `gameinput.dll`。无 GameInput.dll 的 Windows（无 Gaming Services / 未装 GameInput 可再分发包的老系统）上，加载器在进程启动时解析导入失败，整个 app 直接弹「由于找不到 GameInput.dll，无法继续执行代码」起不来。
+- **[x] ① 已修复** — 链接层 `packages/gamepads_windows/windows/CMakeLists.txt` 加 `/DELAYLOAD:GameInput.dll` + `delayimp`，把 GameInput.dll 从静态 import 表移到 delay-load 表（进程启动不再需要它）；运行时层 `Gamepads::init()`（`gamepad.cpp`）在首次 GameInput 调用前用 `LoadLibraryW(L"GameInput.dll")` 探测，缺失则优雅降级为无手柄（delay-load 导入在 DLL 缺失时被调用会抛 SEH 异常，故必须先探测）。提交：见本分支。
+- **[x] ② 已加自动化测试** — `hibiki/test/tools/gamepads_windows_delayload_guard_test.dart`（源码扫描守卫：CMakeLists 必须含 /DELAYLOAD:GameInput.dll + delayimp；gamepad.cpp 的 LoadLibraryW 探测必须在 GameInputCreate 之前）。构建产物级证据：pefile 复查 release 产物 `gamepads_windows_plugin.dll`，gameinput.dll 已从静态 import 表消失、出现在 delay-load 表。
+- **备注**：本机装有 GameInput，无法直接模拟「无 GameInput.dll」环境；以 import 表证据（静态导入→delay-load）+ 本机启动不回归作为验收口径。delay-load 语义：DLL 仅在首次调用其导出时才加载，而首次调用前已被 LoadLibrary 探测门控。
