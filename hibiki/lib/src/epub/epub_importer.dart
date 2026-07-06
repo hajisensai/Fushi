@@ -163,6 +163,10 @@ class EpubImporter {
       if (realDir != tempDir) {
         final Directory srcDir = Directory(tempDir);
         if (srcDir.existsSync()) {
+          _deleteUnreferencedDestination(
+            destinationPath: realDir,
+            existingBooks: existingBooks,
+          );
           try {
             srcDir.renameSync(realDir);
           } catch (e) {
@@ -209,6 +213,42 @@ class EpubImporter {
       rethrow;
     }
   }
+
+  static void _deleteUnreferencedDestination({
+    required String destinationPath,
+    required List<EpubBookRow> existingBooks,
+  }) {
+    final FileSystemEntityType type =
+        FileSystemEntity.typeSync(destinationPath, followLinks: false);
+    if (type == FileSystemEntityType.notFound) {
+      return;
+    }
+
+    final String normalizedDestination = _normalizePath(destinationPath);
+    final bool referencedByBook = existingBooks.any(
+      (EpubBookRow book) =>
+          _normalizePath(book.extractDir) == normalizedDestination,
+    );
+    if (referencedByBook) {
+      return;
+    }
+
+    try {
+      if (type == FileSystemEntityType.directory) {
+        Directory(destinationPath).deleteSync(recursive: true);
+      } else if (type == FileSystemEntityType.link) {
+        Link(destinationPath).deleteSync();
+      } else {
+        File(destinationPath).deleteSync();
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('EpubImporter.deleteOrphanDestination', e, stack);
+      rethrow;
+    }
+  }
+
+  static String _normalizePath(String path) => p.canonicalize(path);
 
   static void _tryDeleteDir(String path) {
     final Directory dir = Directory(path);
