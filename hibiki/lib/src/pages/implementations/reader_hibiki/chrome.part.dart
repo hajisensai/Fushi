@@ -39,6 +39,27 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   bool get _paginationInFlight =>
       _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
 
+  /// TODO-1229 v2：记一次「跨章相关的惯性输入」发生时刻，把跨章冷却窗滑到当下。
+  /// 在两处调用：① 惯性 tick 被 [_paginationInFlight] 丢弃时（换章加载期的残余惯性）；
+  /// ② 冷却期内被拒的跨章尝试。持续惯性会不断把冷却窗前推，直到输入静默才让窗关闭。
+  void _noteChapterTurnInput() {
+    _lastChapterTurnInputAt = DateTime.now();
+  }
+
+  /// TODO-1229 v2：跨章冷却闸门。距上次「跨章输入/跨章」不足 [_kChapterTurnCooldown] 则
+  /// 判为同一手势的残余惯性、拒绝本次跨章并把冷却窗滑到当下（返回 true=正在冷却=拦截）；
+  /// 已静默超过冷却窗则放行（返回 false），不刷新——让真正落地的那次跨章自行 stamp。
+  /// 只在惯性型输入(滚轮/触摸)的跨章决策处调用；键盘/手柄(throttleMs==0)不经此闸门。
+  bool _chapterTurnCoolingDown() {
+    final bool cooling = chapterTurnCoolingDown(
+      lastInputAt: _lastChapterTurnInputAt,
+      now: DateTime.now(),
+      cooldown: _ReaderHibikiPageState._kChapterTurnCooldown,
+    );
+    if (cooling) _lastChapterTurnInputAt = DateTime.now();
+    return cooling;
+  }
+
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
     int throttleMs = 0,
@@ -50,6 +71,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
     // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
     if (_paginationInFlight) {
+      // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗，避免
+      // restore 落定后残余惯性立刻在短章边界再次跨章（跳两章真因）。
+      if (throttleMs > 0) _noteChapterTurnInput();
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
@@ -82,6 +106,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       );
       if (!mounted || _controller == null) return;
       if (!_didScroll(result)) {
+        // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
+        // 在短章边界的二次跨章被拦（并滑动冷却窗）；键盘/手柄(throttleMs==0)不受限。
+        if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
+        _noteChapterTurnInput();
         _handlePageTurnLimit(direction.jsValue);
       } else {
         await _refreshProgress();
@@ -99,6 +127,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       if (!mounted || _controller == null) return;
       await _caretReanchor(direction);
     } else {
+      // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
+      if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
+      _noteChapterTurnInput();
       _handlePageTurnLimit(direction.jsValue);
     }
   }

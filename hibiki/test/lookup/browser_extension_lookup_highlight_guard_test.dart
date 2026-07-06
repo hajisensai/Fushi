@@ -22,33 +22,44 @@ void main() {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
         test('文件存在', () {
-          expect(content.existsSync(), isTrue, reason: 'missing ${content.path}');
+          expect(content.existsSync(), isTrue,
+              reason: 'missing ${content.path}');
         });
 
-        test('取词复用 hoshiSelection（getCharacterAtPoint + selectFromPosition）', () {
+        test('取词复用 hoshiSelection（getCharacterAtPoint + selectFromPosition）',
+            () {
           final String src = content.readAsStringSync();
-          expect(src.contains('window.hoshiSelection.getCharacterAtPoint('), isTrue,
-              reason: '${content.path} 未用 hoshiSelection.getCharacterAtPoint 取词');
-          expect(src.contains('window.hoshiSelection.selectFromPosition('), isTrue,
-              reason: '${content.path} 未用 hoshiSelection.selectFromPosition 扩词');
+          expect(src.contains('window.hoshiSelection.getCharacterAtPoint('),
+              isTrue,
+              reason:
+                  '${content.path} 未用 hoshiSelection.getCharacterAtPoint 取词');
+          expect(
+              src.contains('window.hoshiSelection.selectFromPosition('), isTrue,
+              reason:
+                  '${content.path} 未用 hoshiSelection.selectFromPosition 扩词');
           // 旧取词路径已删（否则说明回退）。
           expect(src.contains('hibikiCaretFromPoint'), isFalse,
               reason: '${content.path} 残留已删的 hibikiCaretFromPoint');
           expect(src.contains('expandWordWindow('), isFalse,
-              reason: '${content.path} 仍调用 expandWordWindow（应改走 hoshiSelection）');
+              reason:
+                  '${content.path} 仍调用 expandWordWindow（应改走 hoshiSelection）');
         });
 
         test('弹窗钉在被查词旁（高亮 rect 锚点，非鼠标坐标）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('window.hoshiSelection.highlightSelection(termLen)'),
+          expect(
+              src.contains('window.hoshiSelection.highlightSelection(termLen)'),
               isTrue,
-              reason: '${content.path} hibikiRender 未调用 highlightSelection 取词 bbox+高亮');
-          expect(src.contains('wordRect ? wordRect.x') &&
+              reason:
+                  '${content.path} hibikiRender 未调用 highlightSelection 取词 bbox+高亮');
+          expect(
+              src.contains('wordRect ? wordRect.x') &&
                   src.contains('wordRect ? wordRect.y'),
               isTrue,
               reason: '${content.path} 未按 highlightSelection 返回的词 bbox 锚定弹窗');
           // 旧的「贴鼠标坐标」渲染签名/实现已消失。
-          expect(src.contains('hibikiRender(resp.data.popupJson, px, py'), isFalse,
+          expect(
+              src.contains('hibikiRender(resp.data.popupJson, px, py'), isFalse,
               reason: '${content.path} 仍按鼠标 px/py 渲染弹窗');
           expect(src.contains('function hibikiRender(popupJson, x, y, theme)'),
               isFalse,
@@ -71,10 +82,40 @@ void main() {
           final int removeIdx = src.indexOf('function hibikiRemoveContainer()');
           expect(removeIdx, greaterThanOrEqualTo(0),
               reason: '${content.path} 缺 hibikiRemoveContainer');
-          final String removeBody = src.substring(
-              removeIdx, (removeIdx + 400).clamp(0, src.length));
+          final String removeBody =
+              src.substring(removeIdx, (removeIdx + 400).clamp(0, src.length));
           expect(removeBody.contains('clearSelection()'), isTrue,
-              reason: '${content.path} clearSelection 不在 hibikiRemoveContainer 关窗点');
+              reason:
+                  '${content.path} clearSelection 不在 hibikiRemoveContainer 关窗点');
+        });
+
+        test('Shift 悬停查词接线未断（mousemove→shiftKey→发 lookup）', () {
+          // TODO-1132 回归守卫：用户复诉「浏览器按 Shift 没反应」。5657c55d1 把发查词逻辑
+          // 从 mousemove 抽成 hibikiSendLookup、1219 P1-P3 又在前后加脚本——守住这条主查词
+          // 接线不被重构悄悄拆断。行为层实证见 tools/browser-extension/shift-hover.test.js。
+          final String src = content.readAsStringSync();
+          // 修饰键必须是 Shift，且 mousemove 顶层注册（不能被塞进只在某站点调用的函数里）。
+          expect(src.contains("const HIBIKI_MOD = 'shiftKey'"), isTrue,
+              reason: '${content.path} 查词修饰键不再是 Shift');
+          expect(
+              RegExp(r"^document\.addEventListener\('mousemove'",
+                      multiLine: true)
+                  .hasMatch(src),
+              isTrue,
+              reason: '${content.path} mousemove 监听器不在顶层，Shift 悬停可能永不触发');
+          // mousemove 分支必须以 Shift 为门（松开即复位）。
+          expect(src.contains('if (!e[HIBIKI_MOD])'), isTrue,
+              reason: '${content.path} mousemove 未以 Shift 为门');
+          // 取词后必须真的发出 lookup 查词消息（接线终点）。
+          expect(
+              src.contains(
+                  "chrome.runtime.sendMessage({ type: 'lookup', term }"),
+              isTrue,
+              reason: '${content.path} 未向 background 发 lookup 查词消息');
+          // mousemove 命中后调用 hibikiSendLookup（1132 抽取后的分发点）。
+          expect(
+              src.contains('hibikiSendLookup(term, hibikiAnchorRect)'), isTrue,
+              reason: '${content.path} mousemove 未调用 hibikiSendLookup 发查词');
         });
 
         test('未破坏 v35 Netflix 取词兜底 / 全屏挂载', () {

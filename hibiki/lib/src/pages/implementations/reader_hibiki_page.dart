@@ -372,6 +372,24 @@ int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
       : currentWatermark;
 }
 
+/// TODO-1229 v2：跨章去抖判据（纯函数，供单测锁定「一次连续手势=一次跨章」语义）。
+///
+/// BUG-568 案A 的 `_paginationInFlight` 守卫只覆盖「换章加载+restore」瞬态窗口，滚轮/
+/// 触控板一次连续惯性手势产生的 tick 流常长于该窗口+章内节流窗（两者都锚定手势起点）。
+/// 两窗口在手势中途失效后，残余惯性会在刚落地的短章(插图/单页章)边界再次触发跨章 →
+/// **跳两章**。本判据把「下一次跨章」冷却锚定到**输入真正停止**：距 [lastInputAt] 不足
+/// [cooldown] 即判为同一手势的残余惯性 → 返回 true（拦截）；调用方在拦截 / 丢弃惯性输入时
+/// 把 [lastInputAt] 滑到当下，冷却窗随惯性前推，惟有输入静默满 [cooldown] 才放行。
+/// [lastInputAt] 为 null（从未跨章）恒放行。
+bool chapterTurnCoolingDown({
+  required DateTime? lastInputAt,
+  required DateTime now,
+  required Duration cooldown,
+}) {
+  if (lastInputAt == null) return false;
+  return now.difference(lastInputAt) < cooldown;
+}
+
 /// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
 ///
 /// 这类页 `paginationMetrics.totalChars==0` → JS `hoshiProgressDetails()` 返空串
@@ -1025,6 +1043,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int _progressReanchorRetryCount = 0;
   static const int _kProgressRetryMax = 8;
   static const Duration _kProgressRetryDelay = Duration(milliseconds: 120);
+  // TODO-1229 v2：跨章去抖冷却窗（固定 450ms，对齐默认 wheelPageTurnInterval）。必须
+  // 足够长以桥接一次惯性手势内相邻 wheel/touch 事件的间隔(约 16~60ms，偶有尖峰)——冷却窗
+  // 若短于间隔会在手势中途重新开启而放行第二次跨章。用固定常量(不跟随用户可调的
+  // wheelPageTurnInterval)保证鲁棒：即便用户把章内翻页节流调得很小，跨章冷却仍稳定桥接惯性。
+  static const Duration _kChapterTurnCooldown = Duration(milliseconds: 450);
   // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
@@ -1051,6 +1074,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 时间戳语义（读 throttleMs 即生效，无残留 timer）。删了 JS _wheelTimer 双处后，
   // 这是滚轮/音量键翻页的唯一节流真相源。
   DateTime? _lastPaginateTime;
+  // TODO-1229 v2：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568 案A
+  // 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而 _lastPaginateTime
+  // 节流窗口锚定在手势起点(第一 tick)。滚轮/触控板一次连续惯性手势会持续产生 tick 达
+  // 数百 ms~1s，长于 restore 窗口与节流窗口——两窗口都在手势中途失效后，残余惯性 tick 会
+  // 在刚落地的短章(章首插图页/单页章)边界上再次触发跨章 → **跳两章**（用户复诉 6783 仍跳两次
+  // 的真因）。本时间戳把「下一次跨章」的冷却锚定到**输入真正停止**那一刻：每次被在飞守卫丢弃
+  // 的惯性输入、以及冷却期内被拒的跨章尝试都刷新它 → 冷却窗随惯性滑动，惟有输入静默
+  // [_kChapterTurnCooldown] 之后才允许下一次跨章。一次连续手势 = 一次跨章。只作用于惯性型
+  // 输入(滚轮/触摸，throttleMs>0)的跨章决策，不影响章内翻页，也不节流键盘/手柄(throttleMs=0)。
+  DateTime? _lastChapterTurnInputAt;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;

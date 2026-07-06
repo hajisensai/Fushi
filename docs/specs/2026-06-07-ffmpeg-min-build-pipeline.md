@@ -18,8 +18,10 @@
 | 句子音频 | `-ss -t -i in -vn -c:a aac out.aac` | audio decoder(opus/aac/ac3…) + swresample + encoder aac + muxer adts |
 | 视频帧/封面 | `-i in -frames:v 1 -update 1 out.jpg` | video decoder + encoder mjpeg + muxer image2 |
 | 片段导出（TODO-945） | `-loop 1 -i img.png -i clip.aac -c:v mjpeg -c:a aac -shortest out.mov` | encoder mjpeg+aac + **muxer mov**（容器需同时装视频+音频流）+ bsf aac_adtstoasc |
+| YouTube/远端制卡（TODO-1214） | `-user_agent .. -reconnect 1 .. -i https://..googlevideo..` | **--enable-network** + protocol http/https/tcp/tls + 平台 TLS 后端（schannel/securetransport/gnutls） |
+| 片段导出 mp4（TODO-1257） | `-i in -c:v libx264 -c:a aac out.mp4` | **encoder libx264（--enable-gpl）** + **muxer mp4** |
 
-**只解码 + native gif/aac/mjpeg 编码 → 不需要 `--enable-gpl`（无 x264/x265）。** 走 LGPL，体积/许可更干净。
+**编码器：native gif/aac/mjpeg/png + libx264（H.264，TODO-1214/1257）。** libx264 是 GPL，故本 build 传 `--enable-gpl` → 产物许可从 LGPL 变为 GPL（ffmpeg 作为独立可执行文件随 app 分发，源码即公开的 FFmpeg + x264，属分发合规范畴）。**网络**：`--enable-network` + http/https/tcp/tls 协议，TLS 后端走各平台原生库（Windows schannel / macOS SecureTransport 系统内置无外链；Linux gnutls，LGPL），无 openssl 许可麻烦。
 
 ## configure 白名单（见 build 脚本，需调优）
 

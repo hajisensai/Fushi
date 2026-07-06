@@ -82,8 +82,8 @@ void main() {
     expect(layoutDetailSource,
         contains('_buildReaderGroupContent(ReaderGroup.layout'),
         reason: 'layout 子页详情渲染 layout schema 行');
-    expect(layoutDetailSource, contains('_buildBookCssEditorRow()'),
-        reason: 'TODO-801：编辑书籍 CSS 行随 layout 子页详情渲染');
+    expect(layoutDetailSource, contains('_buildBookCssEditorSection()'),
+        reason: 'TODO-801/BUG-573：编辑书籍 CSS 行经等宽 section 随 layout 子页详情渲染');
     expect(layoutDetailSource, contains('widget.extractDir != null'),
         reason: 'extractDir 不可用时不渲染 CSS 行（保留显示条件）');
 
@@ -120,8 +120,8 @@ void main() {
     );
     expect(lyricsSource, contains('_buildThemeSelectorSection()'),
         reason: 'TODO-802：歌词模式必须能达到主题选择器');
-    expect(lyricsSource, contains('_buildBookCssEditorRow()'),
-        reason: 'TODO-802：歌词模式（extractDir 可用时）必须能达到编辑书籍 CSS');
+    expect(lyricsSource, contains('_buildBookCssEditorSection()'),
+        reason: 'TODO-802/BUG-573：歌词模式（extractDir 可用时）经等宽 section 达到编辑书籍 CSS');
     expect(lyricsSource, contains('widget.extractDir != null'));
   });
 
