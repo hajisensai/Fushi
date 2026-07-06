@@ -4,9 +4,15 @@
 #   - cue 动图（fps,scale,palettegen,paletteuse → gif）
 #   - 句子音频片段（解码 → aac/adts）
 #   - 视频帧/封面（-frames:v 1 → jpg/png）
+#   - YouTube/远端制卡（http(s) googlevideo 流 + -reconnect 系列网络韧性开关）
+#   - 片段导出 mp4（h264/libx264 + aac → .mp4，跨平台可打开，TODO-1257）
 #
-# 只解码 + 用 native gif/aac/mjpeg 编码 → 不需要任何 GPL 外部编码器（x264 等），
-# 故 LGPL（不传 --enable-gpl），体积与许可都更干净。
+# 编码器：native gif/aac/mjpeg/png + libx264（H.264，TODO-1214/1257）。
+# ⚠️ libx264 是 GPL，本 build 因此传 --enable-gpl → 产物许可从 LGPL 变为 GPL；
+# ffmpeg(.exe) 作为独立可执行文件随 app 分发，源码即公开的 FFmpeg + x264，属分发合规范畴。
+# 网络：--enable-network + http/https/tcp/tls 协议；TLS 后端走各平台原生库
+# （Windows schannel / macOS SecureTransport 系统内置无外链；Linux 用 LGPL 的 gnutls），
+# 无 openssl 许可麻烦。YouTube 制卡缺 network 会 AVERROR_OPTION_NOT_FOUND（-reconnect）。
 #
 # 用法：
 #   FFMPEG_REF=n7.1.5 OUT=$PWD/out ./build-ffmpeg-min.sh
@@ -41,7 +47,7 @@ cd "$SRC"
 # when processing input"），片段导出全挂（AudiobookClipSynthFailure.ffmpegFailed）。
 DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe"
 DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
-ENCODERS="gif,aac,mjpeg,png,ass,ssa,subrip,webvtt,pcm_s16le"
+ENCODERS="gif,aac,mjpeg,png,libx264,ass,ssa,subrip,webvtt,pcm_s16le"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。
@@ -49,7 +55,9 @@ ENCODERS="gif,aac,mjpeg,png,ass,ssa,subrip,webvtt,pcm_s16le"
 # 短视频，需要一个能同时装视频+音频流的容器；adts/gif/mjpeg/image2 都只能单流。
 # mov 是 LGPL、体积小，AAC 入 mov 自动经已编入的 aac_adtstoasc bsf（见 BSFS）。
 # null: audio_energy_probe.dart uses -f null - to discard output and read astats metadata from stderr (TODO-701 subtitle auto-align)
-MUXERS="gif,adts,image2,mjpeg,mov,srt,ass,webvtt,null"
+# mp4：片段导出 mp4（TODO-1257）把 libx264 视频 + aac 音频合成 .mp4（比 .mov 更
+# 通用、任意播放器/浏览器直接打开）；mp4 muxer 与 mov 同一 movenc，体积增量近零。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,srt,ass,webvtt,null"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -61,23 +69,31 @@ MUXERS="gif,adts,image2,mjpeg,mov,srt,ass,webvtt,null"
 FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
-PROTOCOLS="file,pipe"
+# http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo
+# 流输入。tls 协议需一个 TLS 后端（见下方按平台 --enable-schannel/securetransport/
+# gnutls）。缺 network 会让 -reconnect 系列报 AVERROR_OPTION_NOT_FOUND。
+PROTOCOLS="file,pipe,http,https,tcp,tls,crypto"
 
-EXTRA_CONFIG=""
+# TLS 后端按平台走系统原生库：Windows schannel（secur32，系统内置无额外 DLL）、
+# macOS SecureTransport（系统内置）、Linux gnutls（LGPL，CI 装 libgnutls28-dev）。
+# https(googlevideo) 输入的 tls 协议需要一个 TLS 后端，否则 configure 报错。
+EXTRA_CONFIG="--enable-gnutls"
 case "$(uname -s)" in
-  # Windows：静态链接，把 libwinpthread/zlib/libgcc 等折进 exe → 发布单文件，
-  # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。
-  MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static" ;;
+  # Windows：静态链接，把 libwinpthread/zlib/libgcc/x264 等折进 exe → 发布单文件，
+  # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。schannel 是系统 secur32，无外链。
+  MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel" ;;
+  Darwin) EXTRA_CONFIG="--enable-securetransport" ;;
 esac
 
 ./configure \
   --prefix="$OUT" \
   --disable-everything \
   --disable-doc --disable-htmlpages --disable-manpages --disable-podpages --disable-txtpages \
-  --disable-network --disable-autodetect --disable-debug \
+  --enable-network --disable-autodetect --disable-debug \
   --disable-ffplay --disable-ffprobe \
   --enable-ffmpeg \
   --enable-small --enable-zlib \
+  --enable-gpl --enable-libx264 \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \
