@@ -1,4 +1,4 @@
-## BUG-570 · 尊重字幕自带样式开关重开视频后失效
+## BUG-571 · 尊重字幕自带样式开关重开视频后失效
 - **报告**：2026-07-06（用户：ASSx2 .ass 字幕，打开「尊重字幕自带样式」仍走 app 样式）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:1692`（`_loadSingle` 用 `repo.loadCues` 从 DB 取 cue）+ `packages/hibiki_audio/lib/src/audiobook/audiobook_model.dart:92`（`AudioCue.markup` 瞬态、DB 往返不携带）。
   - 字幕 overlay `VideoSubtitleOverlay` 的 respectAssStyle 只在 `currentCue.markup != null` 时应用 `cueStyle`（V4+ Styles 字体/主色/描边）。首次加载外挂 .ass 走 parser（markup 在内存，开关生效）；单视频把 cue 落库（`saveSubtitleSelection`，markup 不入库）后**重开视频**，`_loadSingle` 直接用 `loadCues` 的无 markup cue → `currentCue.markup==null` → respectAssStyle 恒退回 app 统一样式。

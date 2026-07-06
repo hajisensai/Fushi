@@ -965,12 +965,19 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     if (controller == null || videoPath == null || videoPath.isEmpty) {
       return const <double>[];
     }
-    return extractAudioEnergyEnvelope(
-      videoPath: videoPath,
-      windowMs: kSubtitleAutoAlignBinMs,
-      audioStreamIndex: controller.currentAudioStreamIndex,
-      audioStreamCount: controller.realAudioStreamCount,
-      limitMs: kSubtitleAutoAlignProbeLimitMs,
+    // TODO-1244：按「视频路径 + 当前音轨」缓存已抽出的波形包络。同一视频/音轨重复打开
+    // 快速设置面板或波形对轴视图时直接复用，不再重跑 ffmpeg（抽整轨对大 REMUX 要数十秒）。
+    // 切视频或切音轨时 key 变化 → miss → 重抽（不显示旧音频波形），只缓存非空结果。
+    final String cacheKey = '$videoPath|${controller.currentAudioStreamIndex}';
+    return _subtitleWaveformCache.resolve(
+      cacheKey,
+      () => extractAudioEnergyEnvelope(
+        videoPath: videoPath,
+        windowMs: kSubtitleAutoAlignBinMs,
+        audioStreamIndex: controller.currentAudioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
+        limitMs: kSubtitleAutoAlignProbeLimitMs,
+      ),
     );
   }
 }

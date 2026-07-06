@@ -9,7 +9,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["bridge-shim.js", "subtitle-adapters.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "scan.js", "content.js"],
+      "js": ["bridge-shim.js", "subtitle-adapters.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "scan.js", "content.js", "subtitle-panel.js"],
       "css": ["vendor/content.css"]
     },
     {

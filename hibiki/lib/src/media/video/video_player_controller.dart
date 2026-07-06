@@ -455,6 +455,9 @@ class VideoPlayerController extends ChangeNotifier
 
   /// TODO-984：回读 libmpv 实际生效的渲染相关属性（hwdec / vo / gpu-context /
   /// gpu-api / current-vo / video-codec / hwdec-current）并各记一行诊断。
+  /// TODO-1232 A2 追加滤镜链 / 滤镜后输出参数（vf / video-out-params/* /
+  /// vo-configured / frame-drop-count / paused-for-cache），用来把 realme 8「mpv 侧
+  /// 全绿仍黑屏」分流成「降位滤镜没生效」vs「vo 上屏后 Flutter 不合成外部纹理」。
   ///
   /// 经 `player.platform`（NativePlayer）的 `getProperty`——仅 libmpv 后端有效；非
   /// libmpv / 属性不可读时单条静默跳过（与 [applyMpvConfigToPlayer] 同 best-effort
@@ -475,6 +478,25 @@ class VideoPlayerController extends ChangeNotifier
       'gpu-api',
       'video-codec',
       'video-format',
+      // TODO-1232 A2：滤镜链 + 滤镜后输出参数 —— 用来区分「降位滤镜根本没挂上」与
+      // 「滤镜挂了、vo 也上屏了，但 Flutter/Impeller 侧不合成外部纹理」。realme 8
+      // 上 mpv 侧全绿仍黑屏，需要这一层证据分流根因：
+      //   · `vf`＝当前视频滤镜链（降位 / 缩放滤镜是否真挂进管线；空＝没挂）。
+      //   · `video-out-params/*`＝**滤镜之后**的实际输出参数。`videoParams` 流读的是
+      //     `video-params`（解码器输出，10bit 机型恒 `yuv420p10`），证明不了降位是否
+      //     生效；只有滤镜后的 pixelformat 从 `yuv420p10` 变成 `yuv420p` 才说明降位
+      //     真落地（node 属性经 `mpv_get_property_string` 不可整体字符串化，故逐个读
+      //     `pixelformat` / `w` / `h` 叶子）。
+      'vf',
+      'video-out-params/pixelformat',
+      'video-out-params/w',
+      'video-out-params/h',
+      // vo 是否真被配置起来（`vo-configured`＝渲染输出就绪；结合 texture id 判 Impeller
+      // 合成盲区）；`frame-drop-count`＝丢帧计数；`paused-for-cache`＝是否卡在缓存等待
+      // （另一类「有帧但不显示」的黑屏疑因）。
+      'vo-configured',
+      'frame-drop-count',
+      'paused-for-cache',
     ];
     for (final String prop in props) {
       String value;
@@ -1082,7 +1104,22 @@ class VideoPlayerController extends ChangeNotifier
     // 与每次调速无关。**切勿**为「保音高」给这里的 `Player()` 传开启该配置的
     // `PlayerConfiguration`——那会让视频每次调速重写 af 滤镜图、在 Windows 上回归
     // TODO-070 的调速闪退。守卫：`hibiki/test/media/video/video_speed_pitch_guard_test.dart`。
-    final Player player = _player ?? Player();
+    // TODO-1232 A2：诊断开启（[onDiagLog] 非空）时用 verbose 客户端日志级构造 Player，
+    // 让 libmpv vo/vd 的 `v` 级行真正流进 `stream.log`。裸 `Player()` 默认
+    // `PlayerConfiguration.logLevel == MPVLogLevel.error` → 构造时
+    // `mpv_request_log_messages(ctx, "error")` 把**客户端订阅级**钉死在 error；后面那句
+    // `setProperty('msg-level', 'vd=v,vo=v,…')` 只改 mpv **内部**日志级、改不动客户端订阅级，
+    // 故 vo/vd 的 verbose 行永远到不了 log 流（TODO-1232 盲区①）。只在诊断开启时提级
+    // （`v` 而非 debug/trace，避免日志量爆炸），非诊断路径仍走裸 `Player()`。
+    // `PlayerConfiguration(logLevel:)` 不碰 `pitch`（默认仍 false），上面的 TODO-116
+    // 视频调速不闪退不变量不受影响（守卫 video_speed_pitch_guard_test）。
+    final Player player = _player ??
+        (onDiagLog != null
+            ? Player(
+                configuration:
+                    const PlayerConfiguration(logLevel: MPVLogLevel.v),
+              )
+            : Player());
     final bool playerNewlyCreated = _player == null;
     if (_player == null) {
       _player = player;

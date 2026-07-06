@@ -87,7 +87,7 @@ void main() {
     expect(
       crtIdx < isccIdx,
       isTrue,
-      reason: 'CRT DLL 必须在 ISCC 打包（Source: {#SourceDir}\*）之前落进 Release '
+      reason: 'CRT DLL 必须在 ISCC 打包（Source: {#SourceDir}\\*）之前落进 Release '
           '目录，否则打进安装包时 DLL 还不存在，等于没修（BUG-570）。',
     );
   });

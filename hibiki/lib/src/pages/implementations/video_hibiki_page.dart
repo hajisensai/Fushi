@@ -58,6 +58,7 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/audio_energy_probe.dart';
+import 'package:hibiki/src/media/video/waveform_envelope_cache.dart';
 import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
@@ -736,6 +737,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> debugPlay() async => _controller?.play();
 
   VideoPlayerController? _controller;
+
+  /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
+  /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
+  /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
+  final WaveformEnvelopeCache _subtitleWaveformCache = WaveformEnvelopeCache();
 
   /// 进度条 hover 缩略图预览调度器（TODO-669，方案 A）。仅桌面本地文件视频时创建；
   /// 移动端 / 远端流为 null（不取帧，仅经 [_onSeekBarHover] 走 timestampOnly）。
@@ -4706,6 +4712,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           : null,
       subtitlePositionListenable: _controller,
       currentSubtitlePositionMs: () => _controller?.positionMs ?? -1,
+      // TODO-1244：波形对轴视图逐句试听——seek 到该句时间并播放，复用现有播放器（不新建栈）。
+      onPlaySubtitleCue: (int startMs) async {
+        final VideoPlayerController? controller = _controller;
+        if (controller == null) return;
+        await controller.seekMs(startMs);
+        await controller.play();
+      },
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,

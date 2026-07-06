@@ -33,6 +33,7 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     required this.durationMs,
     required this.loadWaveform,
     this.onCommitDelay,
+    this.onPlayCue,
     this.positionListenable,
     this.currentPositionMs,
     this.height = 96.0,
@@ -57,6 +58,12 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   /// null = 放大视图只读（不显示调轴控件），但仍可查看波形。由 [VideoQuickSettingsSheet]
   /// 传 `(ms) => _commitDelay(ms)` 保证与顶部调轴同源、零第二套状态。
   final Future<void> Function(int delayMs)? onCommitDelay;
+
+  /// TODO-1244：逐句试听回调。放大对轴视图的每句字幕旁挂一个播放按钮，点击把播放器
+  /// seek 到该句（叠加当前预览延迟后的）时间并播放，方便用户核对「这段波形是哪句话」。
+  /// null = 不显示逐句播放按钮（无播放器 / 只读）。由页面传 `(ms) => seek+play`，复用现有
+  /// 播放器，不新建音频栈。
+  final Future<void> Function(int startMs)? onPlayCue;
 
   /// 可选：播放位置变化的通知源（如 VideoPlayerController），用于重绘播放头。
   final Listenable? positionListenable;
@@ -151,10 +158,11 @@ class _SubtitleWaveformAlignPanelState
       useRootNavigator: true,
       builder: (BuildContext _) => SubtitleWaveformZoomView(
         rawEnvelope: env,
-        cueBoundariesMs: _cueBoundariesMs,
+        cues: widget.cues,
         windowEndMs: _windowEndMs,
         initialDelayMs: widget.initialDelayMs,
         onCommitDelay: widget.onCommitDelay,
+        onPlayCue: widget.onPlayCue,
         positionListenable: widget.positionListenable,
         currentPositionMs: widget.currentPositionMs,
       ),
@@ -286,10 +294,11 @@ class _SubtitleWaveformAlignPanelState
 class SubtitleWaveformZoomView extends StatefulWidget {
   const SubtitleWaveformZoomView({
     required this.rawEnvelope,
-    required this.cueBoundariesMs,
+    required this.cues,
     required this.windowEndMs,
     required this.initialDelayMs,
     this.onCommitDelay,
+    this.onPlayCue,
     this.positionListenable,
     this.currentPositionMs,
     super.key,
@@ -298,8 +307,9 @@ class SubtitleWaveformZoomView extends StatefulWidget {
   /// 原始逐帧音频能量包络（未降采样）。按放大后的时间轴宽度降采样成波形桶。
   final List<double> rawEnvelope;
 
-  /// 字幕 cue 的时间边界（毫秒，未加延迟）。painter 内部叠加当前延迟。
-  final List<int> cueBoundariesMs;
+  /// 字幕 cue 列表（TODO-1244）。取 start/end 画边界竖线（painter 内部叠加当前延迟），
+  /// 并在波形下方的文本条里按各句时间位置显示句文本 + 逐句播放按钮。只读，绝不改 cue 本体。
+  final List<AudioCue> cues;
 
   /// 波形时间窗上界（毫秒）：与抽取探测上界同源。
   final int windowEndMs;
@@ -309,6 +319,10 @@ class SubtitleWaveformZoomView extends StatefulWidget {
 
   /// 调轴写回上方权威 `_delayMs`。null = 只读（不显示调轴控件）。
   final Future<void> Function(int delayMs)? onCommitDelay;
+
+  /// TODO-1244：逐句试听回调。文本条每句的播放按钮点击时把播放器 seek 到该句（叠加当前
+  /// 预览延迟后的）时间并播放。null = 不显示播放按钮。
+  final Future<void> Function(int startMs)? onPlayCue;
 
   /// 可选：播放位置变化通知源，驱动播放头重绘。
   final Listenable? positionListenable;
@@ -353,8 +367,55 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   static const int _sliderRangeMs = 10000;
   static const int _clampMs = 600000;
 
+  /// TODO-1244：波形下方 cue 文本条高度（逻辑像素）。
+  static const double _stripHeight = 56.0;
+
+  /// 文本条里每个 cue 片段的最小宽度（逻辑像素）：短句在时间轴上占位很窄，给个下限
+  /// 保证文字/播放按钮可点、可读。
+  static const double _minChipWidth = 48.0;
+
+  /// 视口外裁剪余量（逻辑像素）：只为落在「可见范围 ± 该余量」内的 cue 建文本片段，
+  /// 把上墙 widget 数从「窗内全部 cue」压到「可见的几十个」——密集字幕滚动/拖延迟不卡。
+  static const double _cullMarginPx = 400.0;
+
+  /// 降采样波形桶缓存：桶数只随缩放/视口宽变化，不随滚动/延迟变化。按目标桶数 memo，
+  /// 避免每次滚动 setState 都对整条包络重算降采样（[downsampleEnergyEnvelope] 是 O(n)）。
+  int _cachedBucketCount = -1;
+  List<double> _cachedBuckets = const <double>[];
+
+  @override
+  void initState() {
+    super.initState();
+    // 横向滚动时重建：文本条按新视口裁剪出可见 cue 片段（[_cullMarginPx] 余量）。
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (mounted) setState(() {});
+  }
+
+  /// cue 边界（start/end 混合，未加延迟）。painter 内部叠加延迟画竖线。
+  List<int> get _cueBoundariesMs {
+    final List<int> out = <int>[];
+    for (final AudioCue cue in widget.cues) {
+      out.add(cue.startMs);
+      out.add(cue.endMs);
+    }
+    return out;
+  }
+
+  /// 按目标桶数 memo 的降采样波形桶（见 [_cachedBucketCount]）。
+  List<double> _bucketsFor(int targetBuckets) {
+    if (targetBuckets == _cachedBucketCount) return _cachedBuckets;
+    _cachedBucketCount = targetBuckets;
+    _cachedBuckets =
+        downsampleEnergyEnvelope(widget.rawEnvelope, targetBuckets);
+    return _cachedBuckets;
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _delayController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -502,10 +563,15 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     );
   }
 
-  /// 可横向滚动的放大波形（横向拖动 = 平移查看时间轴；不改延迟）。
+  /// 可横向滚动的放大波形 + 下方 cue 文本条（横向拖动 = 平移查看时间轴；不改延迟）。
+  ///
+  /// TODO-1244：波形下方挂一条与波形同一个横向滚动的 cue 文本条——每句字幕按其时间位置
+  /// 铺在时间轴上显示句文本 + 逐句播放按钮，点句试听核对「这段波形是哪句话」。文本条与
+  /// 波形放在同一 [SingleChildScrollView] 里，一次横向滚动带动两者对齐。
   Widget _buildScrollableWaveform(ColorScheme cs) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        final ThemeData theme = Theme.of(context);
         final double viewWidth =
             constraints.maxWidth.isFinite ? constraints.maxWidth : 600.0;
         final double naturalWidth = widget.windowEndMs * _basePxPerMs * _zoom;
@@ -514,15 +580,15 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             naturalWidth < viewWidth ? viewWidth : naturalWidth;
         final int targetBuckets =
             (contentWidth / _barSlotPx).floor().clamp(1, 400000);
-        final List<double> buckets =
-            downsampleEnergyEnvelope(widget.rawEnvelope, targetBuckets);
+        final List<double> buckets = _bucketsFor(targetBuckets);
+        final List<int> boundaries = _cueBoundariesMs;
 
         SubtitleWaveformPainter buildPainter(int positionMs) {
           return SubtitleWaveformPainter(
             buckets: buckets,
             windowStartMs: 0,
             windowEndMs: widget.windowEndMs,
-            cueBoundariesMs: widget.cueBoundariesMs,
+            cueBoundariesMs: boundaries,
             previewDelayMs: _dragMs ?? _delayMs,
             currentPositionMs: positionMs,
             waveColor: cs.primary.withValues(alpha: 0.55),
@@ -546,8 +612,16 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                 painter: buildPainter(widget.currentPositionMs?.call() ?? -1),
               );
 
+        final Widget strip = _buildCueStrip(
+          theme: theme,
+          cs: cs,
+          delayMs: _dragMs ?? _delayMs,
+          contentWidth: contentWidth,
+          viewportWidth: viewWidth,
+        );
+
         return Container(
-          height: _waveHeight,
+          height: _waveHeight + _stripHeight,
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(8),
@@ -561,13 +635,135 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
               scrollDirection: Axis.horizontal,
               child: SizedBox(
                 width: contentWidth,
-                height: _waveHeight,
-                child: painted,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    SizedBox(
+                      width: contentWidth,
+                      height: _waveHeight,
+                      child: painted,
+                    ),
+                    strip,
+                  ],
+                ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  /// TODO-1244：波形下方的 cue 文本条。每句按时间位置（[AudioCue.startMs]/[endMs] 叠加
+  /// [delayMs]）铺在时间轴上，宽度 = 该句时长像素（下限 [_minChipWidth]）。视口外裁剪
+  /// （[_cullMarginPx] 余量）把上墙片段压到可见的几十个，密集字幕滚动/拖延迟不卡。
+  Widget _buildCueStrip({
+    required ThemeData theme,
+    required ColorScheme cs,
+    required int delayMs,
+    required double contentWidth,
+    required double viewportWidth,
+  }) {
+    final double viewLeft =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final double viewRight = viewLeft + viewportWidth;
+    final List<Widget> chips = <Widget>[];
+    for (final AudioCue cue in widget.cues) {
+      final String text = cue.text.trim();
+      if (text.isEmpty) continue;
+      final double startX = timeToX(
+        timeMs: cue.startMs + delayMs,
+        windowStartMs: 0,
+        windowEndMs: widget.windowEndMs,
+        width: contentWidth,
+      );
+      final double endX = timeToX(
+        timeMs: cue.endMs + delayMs,
+        windowStartMs: 0,
+        windowEndMs: widget.windowEndMs,
+        width: contentWidth,
+      );
+      if (startX.isNaN || endX.isNaN) continue;
+      final double left = startX < 0 ? 0.0 : startX;
+      if (left >= contentWidth) continue;
+      final double avail = contentWidth - left;
+      if (avail < 8) continue;
+      double width = endX - startX;
+      if (width < _minChipWidth) width = _minChipWidth;
+      if (width > avail) width = avail;
+      final double right = left + width;
+      // 视口裁剪：只为可见范围 ± 余量内的 cue 建片段（密集字幕不上墙全部）。
+      if (right < viewLeft - _cullMarginPx ||
+          left > viewRight + _cullMarginPx) {
+        continue;
+      }
+      chips.add(Positioned(
+        left: left,
+        top: 0,
+        bottom: 0,
+        width: width,
+        child: _buildCueChip(theme, cs, cue, text, delayMs),
+      ));
+    }
+    return SizedBox(
+      width: contentWidth,
+      height: _stripHeight,
+      child: Stack(clipBehavior: Clip.hardEdge, children: chips),
+    );
+  }
+
+  /// 单个 cue 文本片段：显示句文本 + 逐句播放按钮。整片可点 →
+  /// [SubtitleWaveformZoomView.onPlayCue] 把播放器 seek 到该句（叠加当前预览延迟后的）
+  /// 时间并播放，方便核对波形段=哪句话。
+  Widget _buildCueChip(
+    ThemeData theme,
+    ColorScheme cs,
+    AudioCue cue,
+    String text,
+    int delayMs,
+  ) {
+    final bool canPlay = widget.onPlayCue != null;
+    final int rawSeekMs = cue.startMs + delayMs;
+    final int seekMs = rawSeekMs < 0 ? 0 : rawSeekMs;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1.0, vertical: 3.0),
+      child: Material(
+        color: cs.secondaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(6),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: canPlay ? () => widget.onPlayCue!.call(seekMs) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (canPlay)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 2.0, top: 1.0),
+                    child: Icon(
+                      Icons.play_circle_outline,
+                      size: 16,
+                      color: cs.primary,
+                    ),
+                  ),
+                Expanded(
+                  child: Text(
+                    text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSecondaryContainer,
+                      height: 1.15,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
