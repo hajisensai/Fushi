@@ -269,7 +269,11 @@ class AudiobookSession extends ChangeNotifier {
       // Android 上表现为停止后仍在响）。stopPlayback 可 await 到平台切换 settle，
       // 也 force-flush 位置；之后 dispose 不再与异步平台切换竞争。
       await controller.stopPlayback();
-      controller.dispose();
+      // TODO-1212：用可 await 的 disposeAndRelease 取代同步 dispose()——后者的
+      // `_player.dispose()` 是 fire-and-forget，返回时 libmpv 音频文件句柄仍在异步
+      // 释放中；数据根迁移在停音频后立即 rename 数据根，句柄未放会撞「文件被占用」。
+      // disposeAndRelease 先 `await _player.dispose()` 真放掉句柄再返回。
+      await controller.disposeAndRelease();
     }
 
     await _stopBackgroundSurfaces();

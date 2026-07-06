@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
+import 'package:hibiki/src/startup/media_handle_registry.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_playback_source.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -198,6 +199,11 @@ class VideoPlayerController extends ChangeNotifier
     implements VideoPlaybackSource {
   Player? _player;
   VideoController? _videoController;
+
+  /// TODO-1212：本控制器持有的 libmpv Player 在 [MediaHandleRegistry] 的句柄释放
+  /// 登记（首次建 Player 时登记，[dispose] 注销）。数据根迁移前经注册表 `await`
+  /// [_releaseMediaHandles] 真放掉底层文件句柄，避免同盘 rename 撞「文件被占用」。
+  MediaHandleReleaseCallback? _mediaHandleRegistration;
 
   List<AudioCue> _cues = <AudioCue>[];
   AudioCue? _currentCue;
@@ -1055,6 +1061,9 @@ class VideoPlayerController extends ChangeNotifier
     if (_player == null) {
       _player = player;
       _videoController = VideoController(player);
+      // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
+      _mediaHandleRegistration ??=
+          MediaHandleRegistry.instance.register(_releaseMediaHandles);
     }
     // TODO-1110：挂纹理 id 监听（Android 无画面诊断）。放在 controller 就绪后、诊断
     // 订阅块之前——首个 id 变化（native 纹理握手成功）能被记进日志。换集复用同一
@@ -2483,12 +2492,32 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_diagBufferingSub?.cancel());
     _diagBufferingSub = null;
     _detachTextureIdDiag();
+    // TODO-1212：注销文件句柄释放登记（迁移路径不再触达已销毁的本控制器）。
+    final MediaHandleReleaseCallback? registration = _mediaHandleRegistration;
+    if (registration != null) {
+      MediaHandleRegistry.instance.unregister(registration);
+      _mediaHandleRegistration = null;
+    }
+    // dispose 同步签名无法 await——底层 libmpv 释放 fire-and-forget（若迁移
+    // 已先经 [_releaseMediaHandles] 放掉句柄并置 null，这里是 no-op）。
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();
+  }
+
+  /// TODO-1212：可 await 的文件句柄释放（[MediaHandleRegistry] 迁移前调用）。
+  /// 先 `await _player.dispose()` 真放掉底层 libmpv 视频/字幕文件句柄再返回，之后
+  /// 数据根 rename 不会撞「文件被占用」。置 `_player=null` 使后续 [dispose] 的
+  /// fire-and-forget 释放退化为 no-op（幂等，不会二次 dispose 同一 Player）。
+  Future<void> _releaseMediaHandles() async {
+    final Player? player = _player;
+    if (player == null) return;
+    _player = null;
+    _videoController = null;
+    await player.dispose();
   }
 
   /// 同步强制写一次当前位置（绕过整秒节流），供 [dispose] 兜底调用。

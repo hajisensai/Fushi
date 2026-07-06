@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/startup/media_handle_registry.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -289,6 +290,11 @@ class OffscreenVideoFrameGrabber {
   bool _disposed = false;
   int _ffmpegSeq = 0;
 
+  /// TODO-1212：离屏取帧 Player 在 [MediaHandleRegistry] 的句柄释放登记（首次建
+  /// Player 时登记，[dispose] 注销）。数据根迁移前经注册表 `await` 真放掉底层
+  /// libmpv 文件句柄，避免同盘 rename 撞「文件被占用」。
+  MediaHandleReleaseCallback? _mediaHandleRegistration;
+
   /// 懒创建离屏 Player（首次桌面取帧时）。
   Player _ensurePlayer() {
     final Player? existing = _player;
@@ -297,6 +303,9 @@ class OffscreenVideoFrameGrabber {
       configuration: const PlayerConfiguration(muted: true, vo: 'null'),
     );
     _player = player;
+    // TODO-1212：登记文件句柄释放（幂等，只在首次建离屏 Player 时登记一次）。
+    _mediaHandleRegistration ??=
+        MediaHandleRegistry.instance.register(_releaseMediaHandles);
     // 关键帧 seek 提速（TODO-1082 阶段①，对标 mpv 无感预览）：给离屏 Player 下发
     // `hr-seek=no`——seek 只解码最近的 1 个关键帧（I 帧），不再从关键帧逐帧精确解码
     // 到目标帧（长 GOP 精确 seek 数百 ms~1s+）；`hr-seek-framedrop=yes` 允许丢帧进一步
@@ -423,8 +432,26 @@ class OffscreenVideoFrameGrabber {
 
   void dispose() {
     _disposed = true;
+    // TODO-1212：注销文件句柄释放登记（迁移路径不再触达已销毁的取帧器）。
+    final MediaHandleReleaseCallback? registration = _mediaHandleRegistration;
+    if (registration != null) {
+      MediaHandleRegistry.instance.unregister(registration);
+      _mediaHandleRegistration = null;
+    }
     final Player? player = _player;
     _player = null;
+    // 若迁移已先经 [_releaseMediaHandles] 放掉句柄并置 null，这里是 no-op。
     if (player != null) unawaited(player.dispose());
+  }
+
+  /// TODO-1212：可 await 的文件句柄释放（[MediaHandleRegistry] 迁移前调用）。
+  /// 先 `await player.dispose()` 真放掉离屏 libmpv 文件句柄再返回，置 null 使
+  /// 后续 [dispose] 的 fire-and-forget 释放退化为 no-op（幂等）。
+  Future<void> _releaseMediaHandles() async {
+    _disposed = true;
+    final Player? player = _player;
+    if (player == null) return;
+    _player = null;
+    await player.dispose();
   }
 }

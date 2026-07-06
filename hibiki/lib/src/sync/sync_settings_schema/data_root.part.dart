@@ -279,6 +279,19 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       debugPrint(
           'DataRoot migrate: audioHandler.stop failed (best-effort): $e');
     }
+    // 1.5) TODO-1212：释放页面级媒体播放器的文件句柄（视频主播放器 / 离屏缩略图
+    //    取帧 Player）。有声书会话上面 stop() 已直接 await disposeAndRelease 释放；
+    //    这些视频侧 leaf 播放器是页面级、没有进程级持有者，迁移路径够不到——经
+    //    全局 [MediaHandleRegistry] 触达并逐个 await，确保 rename 数据根前底层
+    //    libmpv 视频/字幕文件句柄真放掉（收尾 TODO-935 的「无全局 registry 触达
+    //    页面级播放器」残余）。best-effort：释放失败不阻止迁移（引擎有锁重试 +
+    //    跨盘降级兜底）。
+    try {
+      await MediaHandleRegistry.instance.releaseAll();
+    } catch (e) {
+      debugPrint(
+          'DataRoot migrate: media handle release failed (best-effort): $e');
+    }
     // 2) 清 Flutter 图片缓存：释放封面/缩略图解码持有的解码资源。FileImage 通常读完
     //    即关句柄，此处更多是防御性清理（活图连带 clearLiveImages），成本极低。
     try {
