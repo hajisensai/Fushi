@@ -34,6 +34,7 @@ class DataRootMigrationRequest {
     required this.newDataRoot,
     required this.closeResources,
     required this.writeDataRootPref,
+    required this.documentsTopLevelIncludeNames,
     this.onProgress,
     this.resolvedExecutablePath,
   });
@@ -66,6 +67,19 @@ class DataRootMigrationRequest {
   /// 迁移搬大库遇文件锁失败时，回滚会试图删掉含运行 exe 的整个安装目录（删不掉、留半状态）。
   /// null（旧测试夹具/移动端）→ 跳过该校验，行为与 1182 前一致。
   final String? resolvedExecutablePath;
+
+  /// TODO-1226：documents 根搬移的**顶层项白名单**。
+  ///
+  /// - `null` ⇒ [oldDocumentsRoot] 是 Hibiki 专属目录（自定义数据根的
+  ///   `<root>/documents`）：整树搬移、迁移成功后整目录删除（原行为不变）。
+  /// - 非 null ⇒ [oldDocumentsRoot] 是**共享用户目录**（默认根 = 平台 `Documents`）：
+  ///   只搬基名命中白名单的顶层项（生产传 `AppPaths.hibikiOwnedDocumentsEntries`），
+  ///   用户自己的文件 / shell junction（My Music 等 ACL 全拒目录）一概不碰；迁移成功
+  ///   后**绝不删除** [oldDocumentsRoot] 本体（白名单项已随搬移离开源根）。
+  ///
+  /// 必填、无默认值：强制每个调用方显式声明源根是否共享目录，杜绝「忘传 → 整树搬走并
+  /// 删掉整个用户 Documents」的数据事故。
+  final Set<String>? documentsTopLevelIncludeNames;
 }
 
 /// 迁移过程中可恢复的失败：旧根保持完整、未切换、新根半成品已清理。
@@ -134,10 +148,12 @@ class DataRootMigrator {
     final Set<String> supportExclude =
         _prefsFileNamesToPreserveAt(req.oldSupportRoot);
     final List<_MovePlan> moves = <_MovePlan>[
+      // documents：共享默认根（白名单非 null）只搬 Hibiki 自有顶层项；自定义根整树搬。
       _MovePlan(req.oldDocumentsRoot, newDocs,
+          includeTopLevelNames: req.documentsTopLevelIncludeNames,
           excludeTopLevelNames: const <String>{}),
       _MovePlan(req.oldSupportRoot, newSupport,
-          excludeTopLevelNames: supportExclude),
+          includeTopLevelNames: null, excludeTopLevelNames: supportExclude),
     ];
     final List<_MovePlan> done = <_MovePlan>[];
     // 跨盘复制的进度状态：累积已复制文件数 + 两子树总文件数（同盘 rename 不计）。
@@ -146,7 +162,7 @@ class DataRootMigrator {
     try {
       newRoot.createSync(recursive: true);
       for (final _MovePlan m in moves) {
-        await _moveTree(m.src, m.dst, progress, m.excludeTopLevelNames);
+        await _moveTree(m, progress);
         done.add(m);
       }
     } catch (e) {
@@ -205,7 +221,13 @@ class DataRootMigrator {
     }
 
     // pref 已成功写入，现在删旧根（prefs-preserving）。
-    await _deleteOldRootAfterSwitch(req.oldDocumentsRoot);
+    //
+    // TODO-1226：documents 根仅在**整树搬移**（Hibiki 专属根）时删除本体。白名单模式
+    // 下源根是共享用户 `Documents`——白名单项已随搬移离开源根（同盘 rename 移走 /
+    // 跨盘 copy 校验后删源），剩下的全是用户自己的文件，**绝不**删除目录本体或残留。
+    if (req.documentsTopLevelIncludeNames == null) {
+      await _deleteOldRootAfterSwitch(req.oldDocumentsRoot);
+    }
     await _deleteOldSupportPreservingPrefs(req.oldSupportRoot, supportExclude);
 
     return (newDocs, newSupport);
@@ -244,24 +266,20 @@ class DataRootMigrator {
   /// 或沙箱/权限层拒绝 rename 但允许逐文件写入时，退回逐文件 copy + 字节数校验，校验
   /// 通过才删源。源不存在 → 视为空内容，建空目标根。
   ///
-  /// [excludeTopLevelNames] 非空时（默认根迁移的 support 搬移，需把 `shared_preferences*`
-  /// 留在原固定落点）**不能**用整目录 rename（会把 prefs 一起搬走），退回逐顶层项搬移，
-  /// 跳过被排除的 prefs 文件。为空（documents 搬移 / 自定义根 support 搬移）时保留原子
-  /// rename 快路径，行为逐字节不变。
-  Future<void> _moveTree(
-    Directory src,
-    Directory dst,
-    _CopyProgress progress,
-    Set<String> excludeTopLevelNames,
-  ) async {
+  /// [_MovePlan.isSelective]（prefs 排除项，或 TODO-1226 共享根白名单）时**不能**用
+  /// 整目录 rename（会把不该搬的项一起搬走），退回逐顶层项搬移。非选择性（自定义根的
+  /// documents / support 搬移）时保留原子 rename 快路径，行为逐字节不变。
+  Future<void> _moveTree(_MovePlan plan, _CopyProgress progress) async {
+    final Directory src = plan.src;
+    final Directory dst = plan.dst;
     if (!await src.exists()) {
       // 旧根某子树不存在（如全新装从未产出有声书目录）：建空目标，无内容可搬。
       await dst.create(recursive: true);
       return;
     }
-    if (excludeTopLevelNames.isNotEmpty) {
-      // 含排除项：逐顶层项选择性搬移，prefs 文件留在原地。
-      await _moveTreeSelective(src, dst, progress, excludeTopLevelNames);
+    if (plan.isSelective) {
+      // 选择性搬移：白名单外 / 被排除的顶层项留在原地（TODO-1226 / prefs 例外）。
+      await _moveTreeSelective(plan, progress);
       return;
     }
     await dst.parent.create(recursive: true);
@@ -278,21 +296,21 @@ class DataRootMigrator {
     await _deleteSourceAfterVerifiedCopy(src);
   }
 
-  /// 选择性搬移：逐个搬 [src] 顶层项到 [dst]，跳过基名命中 [excludeTopLevelNames] 的
-  /// prefs 文件（它们留在 src 原地）。每个顶层项优先同卷 `rename`；跨卷退回 copy+verify+
-  /// delete（子目录整树、文件逐个），保持与整目录搬移一致的字节校验与跨盘语义。被排除的
-  /// prefs 文件既不复制也不删除；搬完 [src] 里应只剩 prefs 文件。
+  /// 选择性搬移：逐个搬 [plan] 源根顶层项到目标根，跳过 [_MovePlan.shouldMoveTopLevel]
+  /// 判为不搬的项（prefs 排除项 / TODO-1226 白名单外的用户文件与 junction，留在源根
+  /// 原地）。每个顶层项优先同卷 `rename`；跨卷退回 copy+verify+delete（子目录整树、
+  /// 文件逐个），保持与整目录搬移一致的字节校验与跨盘语义。不搬的项既不复制也不删除。
   Future<void> _moveTreeSelective(
-    Directory src,
-    Directory dst,
+    _MovePlan plan,
     _CopyProgress progress,
-    Set<String> excludeTopLevelNames,
   ) async {
+    final Directory src = plan.src;
+    final Directory dst = plan.dst;
     await dst.create(recursive: true);
     for (final FileSystemEntity entity
         in src.listSync(recursive: false, followLinks: false)) {
       final String name = p.basename(entity.path);
-      if (excludeTopLevelNames.contains(name)) continue; // prefs 留原地。
+      if (!plan.shouldMoveTopLevel(name)) continue; // 白名单外 / prefs 留原地。
       final String target = p.join(dst.path, name);
       try {
         await _withLockRetry(() => entity.rename(target));
@@ -386,7 +404,10 @@ class DataRootMigrator {
   /// 同步数清目录树下的文件数（不含目录项）。用于跨盘复制前确定进度分母。
   static int _countFiles(Directory dir) {
     int count = 0;
-    for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+    // followLinks: false —— 绝不追 symlink/junction：用户 Documents 里的 shell
+    // junction（My Music 等）ACL 全拒，追进去 listSync 直接 errno 5 硬炸（TODO-1226）。
+    for (final FileSystemEntity e
+        in dir.listSync(recursive: true, followLinks: false)) {
       if (e is File) count++;
     }
     return count;
@@ -563,7 +584,8 @@ class DataRootMigrator {
   static Set<String> _prefsFileNamesToPreserveAt(Directory root) {
     if (!root.existsSync()) return const <String>{};
     final Set<String> names = <String>{};
-    for (final FileSystemEntity e in root.listSync(recursive: false)) {
+    for (final FileSystemEntity e
+        in root.listSync(recursive: false, followLinks: false)) {
       if (e is! File) continue;
       final String name = p.basename(e.path);
       if (_isPrefsFileName(name)) names.add(name);
@@ -594,7 +616,7 @@ class DataRootMigrator {
     }
     if (!await oldSupportRoot.exists()) return;
     for (final FileSystemEntity e
-        in oldSupportRoot.listSync(recursive: false)) {
+        in oldSupportRoot.listSync(recursive: false, followLinks: false)) {
       final String name = p.basename(e.path);
       if (preservedNames.contains(name)) continue; // 保住 prefs 本体。
       try {
@@ -621,7 +643,9 @@ class DataRootMigrator {
   }
 
   static bool _hasAnyFile(Directory dir) {
-    for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+    // followLinks: false —— 同 [_countFiles]：不追 junction/symlink（TODO-1226）。
+    for (final FileSystemEntity e
+        in dir.listSync(recursive: true, followLinks: false)) {
       if (e is File) return true;
     }
     return false;
@@ -806,16 +830,32 @@ class DataRootMigrator {
 }
 
 class _MovePlan {
-  _MovePlan(this.src, this.dst, {required this.excludeTopLevelNames});
+  _MovePlan(
+    this.src,
+    this.dst, {
+    required this.includeTopLevelNames,
+    required this.excludeTopLevelNames,
+  });
   final Directory src;
   final Directory dst;
+
+  /// TODO-1226：只允许搬移的顶层项基名白名单；null = 全部可搬（Hibiki 专属根整树
+  /// 语义）。非 null（共享用户 `Documents`）⇒ 白名单外的顶层项（用户文件、shell
+  /// junction）绝不触碰，回滚同样走合并式搬回。
+  final Set<String>? includeTopLevelNames;
 
   /// 搬移时需留在源根顶层的文件基名（prefs 文件）。非空 ⇒ 走选择性搬移（非整目录
   /// rename），回滚也走合并式（dst 顶层项逐个搬回 src，不能整目录 rename 覆盖 src——src
   /// 里还留着 prefs）。
   final Set<String> excludeTopLevelNames;
 
-  bool get isSelective => excludeTopLevelNames.isNotEmpty;
+  bool get isSelective =>
+      includeTopLevelNames != null || excludeTopLevelNames.isNotEmpty;
+
+  /// 顶层项 [name] 是否应被搬移：命中白名单（或无白名单）且不在排除集。
+  bool shouldMoveTopLevel(String name) =>
+      (includeTopLevelNames?.contains(name) ?? true) &&
+      !excludeTopLevelNames.contains(name);
 }
 
 /// 跨盘复制进度累加器：把多个子树的文件总数累进 [_total]，每复制完一个文件 [_copied]++

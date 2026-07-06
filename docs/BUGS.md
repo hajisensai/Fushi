@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 548 条。点号进各自文件。
+> 共 549 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-563](bugs/BUG-563-dataroot-migrate-moves-whole-documents.md) | ✅ | ✅ | Windows 数据根迁移整树搬移并删除用户整个 Documents（默认根） |
 | [BUG-562](bugs/BUG-562-ankimobile-background-media-download.md) | ✅ | ✅ | iOS AnkiMobile 视频句音频导入后仍保留 localhost URL |
 | [BUG-561](bugs/BUG-561-ankimobile-media-url-plus-payload.md) | ✅ | ✅ | iOS AnkiMobile 制卡音频不播放且词典/详情字段出现加号和本地路径 |
 | [BUG-560](bugs/BUG-560-xcode27-ios-deployment-target.md) | ✅ | ✅ | Xcode 27 真机编译失败：iOS deployment target 低于 15.0 |
