@@ -452,6 +452,85 @@ void main() {
         expect(map.entryAt(2).chapterIndex, 5);
         expect(map.entryAt(2).mergedImageChapters, <int>[4]);
       });
+
+      // ── TODO-1128 nav-guard: redirect + off-mode skip contract ──────────
+      // These lock the exact map computation the reader's `_resolveNavChapter`
+      // and unified page-turn use to dedupe absorbed image chapters (which
+      // otherwise load their own single-image page AND get injected inline at
+      // the host top = the same image twice).
+
+      // Mirror of `_resolveNavChapter`: an absorbed image chapter resolves to
+      // the text chapter whose virtual page owns its inline image; any other
+      // chapter passes through unchanged.
+      int resolveNavChapter(EpubSpreadMap map, int index) {
+        if (!map.isAbsorbedImageChapter(index)) return index;
+        return map.entryAt(map.virtualPageForChapter(index)).chapterIndex;
+      }
+
+      test(
+          'redirect: every absorbed image chapter resolves to its host text '
+          'chapter, and the host is never itself absorbed (idempotent)', () {
+        // cover(img), text, img, img, text  → ch0 absorbed into ch1;
+        // ch2,ch3 absorbed into ch4.
+        final EpubBook book = _makeBook(
+          count: 5,
+          imageOnly: <bool>[true, false, true, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // ch0 → host ch1; ch2,ch3 → host ch4.
+        expect(resolveNavChapter(map, 0), 1);
+        expect(resolveNavChapter(map, 2), 4);
+        expect(resolveNavChapter(map, 3), 4);
+        // Text chapters pass through untouched.
+        expect(resolveNavChapter(map, 1), 1);
+        expect(resolveNavChapter(map, 4), 4);
+        // Idempotent: resolving a host again is a no-op (host not absorbed).
+        for (int c = 0; c < 5; c++) {
+          final int host = resolveNavChapter(map, c);
+          expect(map.isAbsorbedImageChapter(host), isFalse);
+          expect(resolveNavChapter(map, host), host);
+        }
+      });
+
+      test(
+          'off mode + merge still absorbs: page-turn via virtual pages skips '
+          'every absorbed image chapter (both directions)', () {
+        // Same book as above, spreadMode == off (the mode that previously
+        // bypassed the virtual-page map and loaded absorbed chapters raw).
+        final EpubBook book = _makeBook(
+          count: 5,
+          imageOnly: <bool>[true, false, true, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // Merge runs regardless of spreadMode: absorbed chapters exist.
+        expect(map.isAbsorbedImageChapter(0), isTrue);
+        expect(map.isAbsorbedImageChapter(2), isTrue);
+        expect(map.isAbsorbedImageChapter(3), isTrue);
+        // Every virtual page hosts only a non-absorbed chapter → walking pages
+        // (a page turn) can never land on an absorbed single-image chapter.
+        for (int v = 0; v < map.length; v++) {
+          expect(
+              map.isAbsorbedImageChapter(map.entryAt(v).chapterIndex), isFalse,
+              reason: 'virtual page $v must not be an absorbed image chapter');
+        }
+        // Forward from the host of ch0 (=ch1, virtual 0) goes straight to ch4's
+        // page (virtual 1), never through the absorbed ch2/ch3 single pages.
+        expect(map.virtualPageForChapter(1), 0);
+        expect(map.virtualPageForChapter(4), 1);
+        expect(map.entryAt(1).chapterIndex, 4);
+        // Backward from ch4's page lands on ch1's page (skips absorbed run).
+        expect(map.entryAt(0).chapterIndex, 1);
+      });
     });
   });
 }

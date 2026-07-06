@@ -1368,6 +1368,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // map, so rebuild it from the current settings before reloading. Cheap and
     // idempotent when nothing structural changed.
     _rebuildSpreadMap();
+    // TODO-1128：结构性重载（含开/关「图片合并」）可能把当前章变成被吸收单图片章
+    // （它没有自己的页）。重建 map 后立即重定向到宿主文本章章首，使重载加载宿主
+    // （图片内联在顶部）而非独立单图页，避免重复。非吸收章 no-op。
+    final int hostChapter = _resolveNavChapter(_currentChapter);
+    if (hostChapter != _currentChapter) {
+      _currentChapter = hostChapter;
+      _lastProgressSection = _currentChapter;
+      _lastProgressValue = 0.0;
+      _lastProgressCharOffset = -1;
+    }
     if (_lyricsMode) {
       await _loadLyricsPage();
       return;
