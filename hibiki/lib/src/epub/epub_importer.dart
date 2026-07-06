@@ -159,19 +159,34 @@ class EpubImporter {
       final String bookKey = sanitizeTtuFilename(storedTitle);
 
       // Move the freshly-extracted temp dir to the key-named directory.
+      //
+      // BUG-564: the target dir may already exist on disk even though no live
+      // row owns the key (resolveBookTitleConflict guarantees key uniqueness
+      // against live rows): a crashed import or a failed post-delete disk
+      // cleanup leaves an orphan dir, and Linux rename(2) onto a non-empty
+      // target throws ENOTEMPTY (errno 39) -- e.g. re-downloading a remote
+      // book whose previous copy left a stale folder. Resolved by
+      // [moveExtractedDirIntoPlace] (atomic replace with .bak rollback;
+      // directories owned by a live row are never touched).
       final String realDir = await EpubStorage.bookPath(bookKey);
       if (realDir != tempDir) {
         final Directory srcDir = Directory(tempDir);
         if (srcDir.existsSync()) {
           try {
-            srcDir.renameSync(realDir);
+            extractDir = moveExtractedDirIntoPlace(
+              srcDir: srcDir,
+              targetDir: realDir,
+              liveExtractDirs:
+                  existingBooks.map((EpubBookRow b) => b.extractDir),
+            );
           } catch (e) {
             ErrorLogService.instance
                 .log('EpubImporter.rename', e, StackTrace.current);
             rethrow;
           }
+        } else {
+          extractDir = realDir;
         }
-        extractDir = realDir;
       }
 
       insertedKey = await db.insertEpubBook(
@@ -208,6 +223,69 @@ class EpubImporter {
       _tryDeleteDir(tempDir);
       rethrow;
     }
+  }
+
+  /// Move the freshly-extracted [srcDir] to [targetDir]; returns the
+  /// directory that finally holds the content (stored as `extract_dir`).
+  ///
+  /// [targetDir] may already exist on disk (BUG-564). Semantics:
+  /// - target missing -> plain rename (the normal path);
+  /// - target listed in [liveExtractDirs] (some live book's `extract_dir`
+  ///   points at it -- the column, not the folder name, is the truth for
+  ///   existing books) -> never touch it; the new book moves to a unique
+  ///   sibling `<targetDir>~<n>` instead;
+  /// - target exists but is unowned (leftover of a crashed import / a failed
+  ///   post-delete disk cleanup) -> atomic replace: rename it aside to a
+  ///   `.bak-<ts>` sibling, move [srcDir] into place, then delete the .bak.
+  ///   If the move fails the .bak is renamed back (rollback), so the previous
+  ///   content is never lost mid-way. Never delete-then-rename directly: a
+  ///   crash in between would lose both copies.
+  @visibleForTesting
+  static String moveExtractedDirIntoPlace({
+    required Directory srcDir,
+    required String targetDir,
+    required Iterable<String> liveExtractDirs,
+  }) {
+    final Directory target = Directory(targetDir);
+    if (!target.existsSync()) {
+      srcDir.renameSync(targetDir);
+      return targetDir;
+    }
+
+    final String canonicalTarget = p.canonicalize(targetDir);
+    final bool owned = liveExtractDirs.any((String dir) =>
+        dir.isNotEmpty && p.canonicalize(dir) == canonicalTarget);
+    if (owned) {
+      for (int i = 2;; i++) {
+        final String alt = '$targetDir~$i';
+        if (!Directory(alt).existsSync()) {
+          srcDir.renameSync(alt);
+          return alt;
+        }
+      }
+    }
+
+    final String bak =
+        '$targetDir.bak-${DateTime.now().millisecondsSinceEpoch}';
+    target.renameSync(bak);
+    try {
+      srcDir.renameSync(targetDir);
+    } catch (_) {
+      try {
+        Directory(bak).renameSync(targetDir);
+      } catch (rollbackError, stack) {
+        ErrorLogService.instance
+            .log('EpubImporter.replaceRollback', rollbackError, stack);
+      }
+      rethrow;
+    }
+    try {
+      Directory(bak).deleteSync(recursive: true);
+    } catch (e, stack) {
+      // A leftover .bak dir is inert (never a future rename target); log it.
+      ErrorLogService.instance.log('EpubImporter.deleteBak', e, stack);
+    }
+    return targetDir;
   }
 
   static void _tryDeleteDir(String path) {
