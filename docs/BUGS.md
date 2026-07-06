@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 555 条。点号进各自文件。
+> 共 556 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-570](bugs/BUG-570-ios-ankimobile-media-url-404.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地媒体 URL 404 |
 | [BUG-569](bugs/BUG-569-ios-audiobook-card-sentence-audio-aac.md) | ✅ | ✅ | iOS 有声书制卡句音频仍以 .aac localhost URL 入卡 |
 | [BUG-568](bugs/BUG-568-reader-ruby-highlight-wide.md) | ✅ | ✅ | 阅读器竖排 ruby 有声书高亮条包含振假名导致变宽 |
 | [BUG-567](bugs/BUG-567-ios27-vsync-startup-crash.md) | ✅ | ✅ | iOS 27 真机启动在 Flutter VSyncClient 崩溃 |
