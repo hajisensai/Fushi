@@ -217,5 +217,25 @@ void main() {
         isTrue,
       );
     });
+
+    test('TODO-1211: default location shows the real path, no prefix label',
+        () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/data_root.part.dart')
+              .readAsStringSync();
+      // 未迁移（默认根）分支直接返回真实路径，仅 late 未初始化时才回退到标签。
+      expect(
+        src.contains(
+            'return defaultRootPath ?? t.data_storage_location_default;'),
+        isTrue,
+      );
+      // 不再拼「默认位置 - 路径」前缀（旧实现）。
+      expect(
+        src.contains(
+            r"'${t.data_storage_location_default} - $defaultRootPath'"),
+        isFalse,
+        reason: 'TODO-1211：去掉「默认位置」前缀，直接显示实际路径',
+      );
+    });
   });
 }
