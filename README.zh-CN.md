@@ -209,9 +209,11 @@ hibiki 将导入的书籍、词典、字体、有声书数据、视频、阅读�
 
 ## Star 趋势
 
-[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://www.star-history.com/#hajisensai/hibiki&Date)
+[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/hibiki/stargazers)
 
-> 点击徽章可在 star-history.com 查看完整的 Star 趋势图。
+[![Star 趋势图](docs/assets/star-history.svg)](https://github.com/hajisensai/hibiki/stargazers)
+
+> 上图由本仓库内的脚本自动生成（不依赖任何第三方服务），并由 [Update Star History](.github/workflows/star-history.yml) 工作流每日刷新。
 
 ## 鸣谢
 
