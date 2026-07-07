@@ -217,7 +217,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+			shellScript = "PLIST=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nif [ -f \"$PLIST\" ]; then\n  if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n    /usr/libexec/PlistBuddy -c \"Set :CADisableMinimumFrameDurationOnPhone false\" \"$PLIST\" || /usr/libexec/PlistBuddy -c \"Add :CADisableMinimumFrameDurationOnPhone bool false\" \"$PLIST\"\n  else\n    /usr/libexec/PlistBuddy -c \"Set :CADisableMinimumFrameDurationOnPhone true\" \"$PLIST\" || /usr/libexec/PlistBuddy -c \"Add :CADisableMinimumFrameDurationOnPhone bool true\" \"$PLIST\"\n  fi\nfi\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
 		};
 		4A503E8BEA363684D8AE6DAF /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;

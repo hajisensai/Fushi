@@ -1222,6 +1222,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
   int _lyricsEntryCueIndex = 0;
+  int _lyricsCueIndexOffset = 0;
+  bool _lyricsCueWindowUsesAllBookCues = false;
   List<AudioCue> _lyricsCueList = const [];
 
   bool _pausedForLookup = false;
