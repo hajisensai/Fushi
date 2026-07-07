@@ -84,7 +84,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       if (!mounted) return;
 
       if (Platform.isAndroid || Platform.isIOS) {
-        await Share.shareXFiles(
+        await HibikiShare.shareFiles(
           [XFile(tmpPath, mimeType: 'application/zip')],
           subject: filename,
         );

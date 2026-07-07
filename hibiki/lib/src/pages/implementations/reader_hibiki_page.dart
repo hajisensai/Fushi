@@ -71,6 +71,7 @@ import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/serial_task_queue.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';

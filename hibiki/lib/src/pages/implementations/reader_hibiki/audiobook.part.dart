@@ -1384,7 +1384,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
         }
       } else {
-        await Share.shareXFiles(
+        await HibikiShare.shareFiles(
           <XFile>[XFile(outPath, mimeType: 'video/quicktime')],
           subject: text,
         );
