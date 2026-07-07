@@ -131,4 +131,57 @@ void main() {
       expect(m.cueStyle, isNull);
     });
   });
+
+  group(r'parseSubtitleMarkup \r reset tag (TODO-1246)', () {
+    test(r'\r reverts inline colour so the reset region is not coloured', () {
+      // Before the fix, \r was ignored and the leading red primary colour bled
+      // past the reset onto the trailing text -> wrong colour, defeating
+      // "respect subtitle's own style".
+      final SubtitleMarkup m =
+          parseSubtitleMarkup(r'{\c&H0000FF&}akai{\r}shiro');
+      expect(m.plainText, 'akaishiro');
+      // Only the pre-reset run carries the inline red span.
+      final Iterable<SubtitleSpan> coloured =
+          m.spans.where((SubtitleSpan s) => s.colorArgb != null);
+      expect(coloured, hasLength(1));
+      expect(coloured.single.colorArgb, 0xFFFF0000); // red, graphemes 0..4
+      expect(coloured.single.startGrapheme, 0);
+      expect(coloured.single.endGrapheme, 4);
+      // The reset run (graphemes 4..9 = "shiro") has no inline colour override.
+      for (final SubtitleSpan s in m.spans) {
+        if (s.startGrapheme >= 4) {
+          expect(s.colorArgb, isNull,
+              reason: r'\r must clear the earlier inline primary colour');
+        }
+      }
+    });
+
+    test(r'\r clears outline / bold / font overrides too', () {
+      final SubtitleMarkup m =
+          parseSubtitleMarkup(r'{\b1\3c&H0000FF&\fnArial\bord5}A{\r}B');
+      expect(m.plainText, 'AB');
+      final SubtitleSpan? resetSpan = m.spans.cast<SubtitleSpan?>().firstWhere(
+          (SubtitleSpan? s) => s != null && s.startGrapheme >= 1,
+          orElse: () => null);
+      // Either no span is emitted for the reset run (all fields cleared ->
+      // hasStyle false), or a span exists but carries none of the overrides.
+      if (resetSpan != null) {
+        expect(resetSpan.bold, isFalse);
+        expect(resetSpan.outlineColorArgb, isNull);
+        expect(resetSpan.outlineWidthPx, isNull);
+        expect(resetSpan.fontName, isNull);
+      }
+    });
+
+    test(r'\r<StyleName> is treated as a reset (baseline approximation)', () {
+      final SubtitleMarkup m =
+          parseSubtitleMarkup(r'{\c&H0000FF&}X{\rDefault}Y');
+      expect(m.plainText, 'XY');
+      for (final SubtitleSpan s in m.spans) {
+        if (s.startGrapheme >= 1) {
+          expect(s.colorArgb, isNull);
+        }
+      }
+    });
+  });
 }

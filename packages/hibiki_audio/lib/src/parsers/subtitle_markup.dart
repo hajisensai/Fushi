@@ -201,6 +201,25 @@ class _Style {
     ..outlineWidthPx = outlineWidthPx
     ..shadowDepthPx = shadowDepthPx;
 
+  /// Clears every accumulated inline override, returning to the "no override"
+  /// state (ASS `\r` reset-tag semantics, TODO-1246). A segment reset this way
+  /// reports [hasStyle] == false, so the renderer falls back to this cue's
+  /// [V4+ Styles] baseline ([SubtitleCueStyle]) instead of inheriting the
+  /// previous span's inline primary colour / outline / font.
+  void reset() {
+    italic = false;
+    bold = false;
+    underline = false;
+    strike = false;
+    colorArgb = null;
+    fontSizePx = null;
+    fontName = null;
+    outlineColorArgb = null;
+    shadowColorArgb = null;
+    outlineWidthPx = null;
+    shadowDepthPx = null;
+  }
+
   bool get hasStyle =>
       italic ||
       bold ||
@@ -443,6 +462,21 @@ void _applyOverrideBlock(
     final RegExpMatch? p1 = RegExp(r'^p(\d+)$').firstMatch(tag);
     if (p1 != null) {
       setDrawing(int.parse(p1.group(1)!) > 0);
+      continue;
+    }
+
+    // \r / \r<StyleName>: ASS reset tag. Clears every accumulated inline
+    // override so the reset region falls back to this cue's [V4+ Styles]
+    // baseline instead of inheriting the previous span's primary colour /
+    // outline / font (TODO-1246). Without it, `{\c&Hxxxxxx&}...{\r}...` bleeds
+    // the earlier colour past the reset and paints the wrong colour / stroke
+    // rather than honouring the subtitle's own style. The only ASS tag starting
+    // with a bare `r` is `\r` (`\frx` / `\fscx` start with `f`), so a prefix
+    // test is safe. Named-style `\r<StyleName>` switching needs the
+    // [V4+ Styles] map (not held here); a baseline reset is a safe approximation
+    // that at least stops stale overrides from leaking.
+    if (tag == 'r' || RegExp(r'^r[A-Za-z0-9_ \-]+$').hasMatch(tag)) {
+      style.reset();
       continue;
     }
 
