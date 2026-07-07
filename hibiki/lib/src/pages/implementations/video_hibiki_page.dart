@@ -2294,7 +2294,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'externalSubtitlePath=$externalSubtitlePath '
           'renderGraphicStreamIndex=$renderGraphicStreamIndex '
           'fitMode=$_videoFitMode platform=${Platform.operatingSystem} '
-          'impellerDisabledPref=${RenderBackendService.instance.impellerDisabled}',
+          'impellerDisabledPref=${RenderBackendService.instance.impellerDisabled} '
+          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
     );
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
@@ -2338,7 +2339,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'durationMs=${controller.durationMs} '
           'videoWidth=${controller.videoWidth} '
           'videoHeight=${controller.videoHeight} '
-          'videoController=${controller.videoController != null}',
+          'videoController=${controller.videoController != null} '
+          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
     );
     _syncVolumeDisplay(controller.volume);
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使

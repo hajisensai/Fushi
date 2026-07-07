@@ -153,6 +153,27 @@ void main() {
           reason: '诊断头须带 impellerDisabledPref，让导出日志自证渲染后端');
     });
 
+    test('诊断日志把「本次运行实际后端」记在抗环形缓冲淘汰的存活行上', () {
+      // realme 8 用户导出的日志里 `_applyLoad` 头部行常被 libmpv verbose 洪水挤出
+      // 环形缓冲（本次真实事故：impellerDisabledPref 头部行被淘汰、只剩 controller
+      // 层行）。故后端标识必须同时记在 `controller.load() returned ok` 这种更晚、能
+      // 存活于导出的行上，让任何导出都能无歧义自证测的是 Skia 还是 Impeller。
+      expect(pageSrc.contains('activeRenderBackend='), isTrue,
+          reason: '诊断须记录本次运行实际渲染后端（自证关 Impeller 复测测的是哪个后端）');
+      expect(
+          pageSrc.contains('RenderBackendService.instance.activeBackendLabel'),
+          isTrue,
+          reason: '后端标签取自本次运行快照 activeBackendLabel（非可翻的 impellerDisabled 意图）');
+      // 必须挂在 load 成功返回行（导出里存活），不能只挂在易被淘汰的 _applyLoad 头。
+      final int okAt =
+          pageSrc.indexOf('[VIDEO-DIAG] controller.load() returned ok');
+      expect(okAt, greaterThan(0));
+      final String okBlock =
+          pageSrc.substring(okAt, (okAt + 400).clamp(0, pageSrc.length));
+      expect(okBlock.contains('activeRenderBackend='), isTrue,
+          reason: 'load() 成功返回行须带 activeRenderBackend（抗环形缓冲淘汰的存活行）');
+    });
+
     test('设置页暴露 Android-only 的关 Impeller 开关', () {
       expect(settingsSrc.contains("'diagnostics.disable_impeller'"), isTrue,
           reason: '诊断分区须提供关 Impeller 试验开关');
