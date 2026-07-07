@@ -811,6 +811,7 @@ class RemoteVideoStreamUrls {
     this.subtitleFileName,
     this.audioStreamUrl,
     this.miningVideoUrl,
+    this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
   });
 
@@ -826,6 +827,11 @@ class RemoteVideoStreamUrls {
   /// 用的 [streamUrl] 可达 4K，从它抽 GIF 会网络超时；制卡封面只需小图，故另取小流。
   /// null=从 [streamUrl] 抽（本地文件 / 已是低分辨率流）。
   final String? miningVideoUrl;
+
+  /// TODO-1301（BUG-588）：[miningVideoUrl] 是否自带音轨（muxed）。true 时制卡音频从
+  /// [miningVideoUrl] 抽，播放页把制卡音频源置 null 回落 miningSource；false 时用
+  /// [audioStreamUrl]（分离 audio-only 流）。见 [UrlStreamVideoClient.miningVideoHasAudio]。
+  final bool miningVideoHasAudio;
   final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
@@ -834,6 +840,7 @@ class RemoteVideoStreamUrls {
     final String? subtitleFileName = _jsonString(json['subtitleFileName']);
     final String? audioStreamUrl = _jsonString(json['audioStreamUrl']);
     final String? miningVideoUrl = _jsonString(json['miningVideoUrl']);
+    final bool miningVideoHasAudio = json['miningVideoHasAudio'] == true;
     final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
         _jsonEmbeddedSubtitleTracks(json['embeddedSubtitleTracks']);
     return RemoteVideoStreamUrls(
@@ -842,6 +849,7 @@ class RemoteVideoStreamUrls {
       subtitleFileName: subtitleFileName,
       audioStreamUrl: audioStreamUrl,
       miningVideoUrl: miningVideoUrl,
+      miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
     );
   }

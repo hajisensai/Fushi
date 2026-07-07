@@ -186,6 +186,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     this.subtitleFileName,
     this.audioStreamUrl,
     this.miningVideoUrl,
+    this.miningVideoHasAudio = false,
     this.preresolvedCues = const <AudioCue>[],
     this.httpHeaderFields = const <String, String>{},
     http.Client? httpClient,
@@ -201,6 +202,12 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   /// TODO-1000（BUG-528）：制卡 GIF/帧专用的低分辨率视频流 URL（见
   /// [YoutubeResolvedSource.miningVideoUrl]）。null=用 [streamUrl] 抽。
   final String? miningVideoUrl;
+
+  /// TODO-1301（BUG-588）：[miningVideoUrl] 是否自带音轨（muxed）。true 时制卡音频从
+  /// [miningVideoUrl] 抽（audio-only DASH 流 ffmpeg `-ss` HTTP seek 会 stall→120s 超时→
+  /// 无句子音频），播放页据此把制卡音频源置 null 回落 miningSource。见
+  /// [YoutubeResolvedSource.miningVideoHasAudio]。经 [remoteVideoStreamUrls] 透传给播放页。
+  final bool miningVideoHasAudio;
 
   /// TODO-1000：预解析好的字幕 cue（YouTube timedtext 已转 [AudioCue]）；非空时播放页
   /// 直接用，跳过 [subtitleUrl] 下载+解析（YouTube XML 字幕现有解析器不识别）。
@@ -233,6 +240,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
       subtitleFileName: subtitleFileName,
       audioStreamUrl: audioStreamUrl,
       miningVideoUrl: miningVideoUrl,
+      miningVideoHasAudio: miningVideoHasAudio,
     );
   }
 

@@ -1688,12 +1688,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
         externalAudioTrackUrl: urls.audioStreamUrl,
       );
-      // TODO-1000：分离流（YouTube video-only）——把 audio-only 流设为制卡音频源（视频流无
-      // 音轨，音频段须从 audio-only 流裁）。播放音轨已在 _applyLoad→controller.load 内、
-      // seek/play 之前外挂（见上 externalAudioTrackUrl），此处只补制卡侧（时序无关）。
-      if (urls.audioStreamUrl != null) {
-        _controller?.setMiningAudioSourceOverride(urls.audioStreamUrl);
-      }
+      // TODO-1301（BUG-588）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
+      // 一致——muxed 挖矿流自带音轨时置 null，让引擎回落 miningSource(muxed 360p) 抽音频
+      // （实测 2s 出 AAC）；仅无 muxed 的纯分离流才指向 audio-only 流。此前无条件指向
+      // audio-only DASH 流 → ffmpeg `-ss` HTTP seek stall→120s 超时→无句子音频，且
+      // requireAudio 默认 true 致 mine 整卡 abort→已抽好的 GIF 连坐丢弃（既无音频也无 GIF）。
+      // 播放音轨已在 _applyLoad→controller.load 内、seek/play 之前外挂（见上
+      // externalAudioTrackUrl），此处只补制卡侧（时序无关）。
+      _controller?.setMiningAudioSourceOverride(
+        urls.miningVideoHasAudio ? null : urls.audioStreamUrl,
+      );
       // TODO-1000（BUG-528）：制卡 GIF/帧改用低分辨率流（muxed 360p 等）。_applyLoad 已把
       // miningSource 设成了播放流（可达 4K）——从 4K 流网络抽 GIF 会超时，这里覆盖成小流。
       if (urls.miningVideoUrl != null) {
