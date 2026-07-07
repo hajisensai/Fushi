@@ -468,6 +468,27 @@ ruby > rt, ruby > rp {
   -webkit-user-select: none;
   user-select: none;
 }
+/* TODO-1279：书籍里长按拖选正文时，WebView 引擎会把长按拖选翻译成**原生文本选区**
+   （蓝色 ::selection），与我们自绘的查词选区高亮（::highlight(hoshi-selection) /
+   .hoshi-dict-highlight）叠成「双选区并存」。查词命中不依赖原生选区——它走
+   getCharacterAtPoint → caretPositionFromPoint + Range + CSS Highlights API，与
+   user-select 无关（user-select 只管用户能否拖选、不影响程序化 Range/caret 与
+   ::highlight 绘制）。原生选区在触屏上唯一「消费者」并不存在：Ctrl+C 复制
+   （caret.part.dart 的 readerShouldHandleDesktopCopy）与右键「查词/复制/导出」菜单
+   （chrome.part.dart 的 _showReaderTextContextMenu）都 isWindowsPlatform / 桌面门控，
+   触屏没有任何路径读原生选区。故按指针类型消除这条特殊情况：粗指针（触屏，pointer:
+   coarse——手机/平板 WebView 报告的主指针）禁用原生 user-select + iOS 长按 callout，
+   长按拖选只留我们的查词高亮；细指针（鼠标，pointer: fine——桌面 WebView2 / WKWebView /
+   Linux）不受影响，桌面 Ctrl+C 复制与右键导出所依赖的 window.getSelection() 原生选区
+   照旧。这是 CSS 层的根因修复，不再靠 selectstart 的 <400ms 时窗 preventDefault
+   （长按天然 >400ms 会逃逸）去追着压制。 */
+@media (pointer: coarse) {
+  html, body, body * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
+}
 /* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
    priority=1，使其叠在音频(sasayaki, 默认 priority=0)之上 → 重叠处只显示这一层。 */
 ::highlight(hoshi-selection) {
