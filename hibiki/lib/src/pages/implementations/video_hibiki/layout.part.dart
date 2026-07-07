@@ -481,6 +481,46 @@ extension _VideoLayout on _VideoHibikiPageState {
     );
   }
 
+  /// TODO-1287（沉浸模式退出按钮「不消失」）：把沉浸退出 chrome 包进与 [_buildSideLockButton]
+  /// **同款**的 2s 自动淡出门控，用于「沉浸锁被用户拖到侧边 rail 槽」这条渲染路径。
+  ///
+  /// 根因：沉浸态下若锁按钮落在 screenLeft / screenRight 槽（`lockOnSideRail`），
+  /// [_buildVideoSideActionRail] 走 [_buildVideoSideRailFor]`(immersiveOnly: true)` 把它渲染成
+  /// **裸 IconButton**，缺失 [_buildSideLockButton] 的可见性门控（[_lockButtonVisible] ||
+  /// [_lockButtonHovered] 决定显隐 + [AnimatedOpacity] 淡入淡出 + [IgnorePointer] 淡出后不拦
+  /// 点击）→ 无操作 2s 后仍常驻可见，用户报「沉浸模式按钮不会消失」。对比默认（非 on-rail）
+  /// 路径会 2s 自动淡出，这条路径缺的正是同一层门控。
+  ///
+  /// 修复（消除两条路径的特殊情况差异）：把 on-rail 沉浸退出 chrome 用本 wrapper 包一层，
+  /// 判据 / 时长 / 曲线 / hover 保活全部与 [_buildSideLockButton] 对齐——`_lockButtonVisible ||
+  /// _lockButtonHovered` 决定显隐、[_videoControlsTransitionDuration] + easeInOut 淡入淡出、
+  /// 淡出时 [IgnorePointer] 不拦点击（Esc / Shift+L 始终另有退出口，故淡出不会让用户失去退出
+  /// 入口），[_lockButtonHoverKeepAlive] 让鼠标悬在按钮上时顶住可见并续命淡出定时。`_pokeLockButton`
+  /// 由画面 hover（[_handleVideoControlsHover]）与本 wrapper 的 keep-alive 共同武装 2s 定时，
+  /// 与默认路径同源。仅桌面有 hover 语义；移动端无 hover，可见性回落到 [_lockButtonVisible]
+  /// 的画面点触唤起 + 2s 淡出（与默认锁按钮一致）。
+  Widget _withImmersiveLockAutoHide({required Widget child}) {
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[
+        _lockButtonVisible,
+        _lockButtonHovered,
+      ]),
+      builder: (BuildContext _, __) {
+        final bool visible =
+            _lockButtonVisible.value || _lockButtonHovered.value;
+        return IgnorePointer(
+          ignoring: !visible,
+          child: AnimatedOpacity(
+            opacity: visible ? 1.0 : 0.0,
+            duration: _videoControlsTransitionDuration,
+            curve: Curves.easeInOut,
+            child: _lockButtonHoverKeepAlive(child: child),
+          ),
+        );
+      },
+    );
+  }
+
   /// 浮动侧栏（TODO-274/312 phase 2）：把 screenLeft / screenRight 两个屏幕侧槽
   /// （竖直居中浮条）的自定义按钮分别渲染。默认配置右侧保留学习按钮，左侧承接
   /// 可调整的沉浸锁；用户把按钮拖到任一侧后按真实 slot 显示。
@@ -533,11 +573,16 @@ extension _VideoLayout on _VideoHibikiPageState {
             if (!lockOnSideRail) {
               return Stack(children: <Widget>[_buildSideLockButton()]);
             }
-            return Stack(
-              children: <Widget>[
-                left(immersiveOnly: true),
-                right(immersiveOnly: true),
-              ],
+            // TODO-1287：on-rail 沉浸锁按钮必须与默认 [_buildSideLockButton] 一样 2s 自动
+            // 淡出（此前这条路径渲染成裸 IconButton 常驻可见 → 用户报「沉浸模式按钮不会消失」）。
+            // 用 [_withImmersiveLockAutoHide] 包一层同款可见性门控，两条路径淡出行为归一。
+            return _withImmersiveLockAutoHide(
+              child: Stack(
+                children: <Widget>[
+                  left(immersiveOnly: true),
+                  right(immersiveOnly: true),
+                ],
+              ),
             );
           }
           if (_videoSideActionRailStronglySuppressed) {
