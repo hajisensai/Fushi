@@ -106,6 +106,9 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     required SettingsDestination destination,
     ScrollController? scrollController,
     bool shrinkWrap = false,
+    // no-op：Cupertino 详情正文本就无横向内边距（靠 CupertinoListSection /
+    // 外层容器提供留白），故 [insetHorizontally] 对其无影响，仅为满足接口签名。
+    bool insetHorizontally = true,
   }) {
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);

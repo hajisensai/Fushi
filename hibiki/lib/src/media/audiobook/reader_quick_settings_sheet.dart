@@ -616,6 +616,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       settingsContext: settingsContext,
       destination: destination,
       shrinkWrap: true,
+      // 本面板已在外层 SingleChildScrollView 提供横向 padding（widePrimaryPadding /
+      // narrowPadding）；让渲染器别再自带横向缩进，否则 schema 投影子页（布局 / 阅读
+      // 控制 / 查词）会双重缩进、比 bespoke 的「导航 / 有声书」子页更窄（TODO-1321）。
+      insetHorizontally: false,
     );
   }
 
@@ -646,20 +650,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 删外观组后主题仍可达。主题行用专门的 [_themeSettingsContext]（换肤后还要
   /// `_syncThemeSelection` 落 reader 设置 + 触发词典/歌词联动）。
   Widget _buildThemeSelectorSection() {
-    final Widget section = AdaptiveSettingsSection(
-      children: <Widget>[buildThemeSelector(_themeSettingsContext())],
-    );
     // 主题卡与下方 layout schema section 并列同一 Column（见 _buildLayoutDetail）。
-    // schema section 走 MaterialSettingsRenderer.buildDetailContent，正文额外套了
-    // detailHorizontalInsets 的横向缩进；主题卡若裸放就会比配置行更宽、左右对不齐
-    // （BUG-545）。Cupertino 渲染器的 buildDetailContent 无横向内边距，故仅 Material
-    // 补这层缩进，两处共用同一真相源 detailHorizontalInsets，消除等宽特例。
-    if (isCupertinoPlatform(context)) return section;
-    return Padding(
-      padding: MaterialSettingsRenderer.detailHorizontalInsets(
-        HibikiDesignTokens.of(context),
-      ),
-      child: section,
+    // schema section 现走 buildDetailContent(insetHorizontally:false)，横向留白全部
+    // 由本面板外层 padding 统一提供，schema 正文不再自带横向缩进；主题卡也裸放（无额
+    // 外 Padding）即可与配置行、以及同面板 bespoke 的「导航 / 有声书」子页左右等宽、
+    // 同为宽版（BUG-545/546 的等宽仍成立，只是统一到更宽的外层 padding 宽度，TODO-1321）。
+    return AdaptiveSettingsSection(
+      children: <Widget>[buildThemeSelector(_themeSettingsContext())],
     );
   }
 
@@ -685,21 +682,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   /// 「编辑书籍 CSS」入口行的外层 section。与主题卡（`_buildThemeSelectorSection`）
   /// 同构：普通布局子页与歌词模式子页里，它与走 `buildDetailContent` 的 schema
-  /// section（layout 配置项组）并列同一 Column，而 Material 的 `buildDetailContent`
-  /// 正文额外套了 `detailHorizontalInsets` 的横向缩进。CSS 入口条若裸放 section 就会
-  /// 比上方配置项组更宽、左右对不齐（BUG-573，同 BUG-545 的主题卡）。故仅 Material
-  /// 补这层缩进（Cupertino 渲染器 `buildDetailContent` 本就无横向内边距），两处共用
-  /// 同一真相源 `detailHorizontalInsets`，消除等宽特例。
+  /// section（layout 配置项组）并列同一 Column。schema 正文现走
+  /// `insetHorizontally:false`、不再自带横向缩进，横向留白由本面板外层 padding 统一
+  /// 提供，故 CSS 入口条裸放 section 即与配置行等宽（BUG-573），且与 bespoke 的
+  /// 「导航 / 有声书」子页同为宽版（TODO-1321）。
   Widget _buildBookCssEditorSection() {
-    final Widget section = AdaptiveSettingsSection(
+    // 与 _buildThemeSelectorSection 同理：CSS 入口条裸放即可与上方 layout 配置行、
+    // 以及 bespoke 的「导航 / 有声书」子页左右等宽、同为宽版。横向留白由本面板外层
+    // padding 统一提供，schema 正文经 insetHorizontally:false 不再自带横向缩进
+    // （BUG-573 的等宽仍成立，统一到更宽的外层 padding 宽度，TODO-1321）。
+    return AdaptiveSettingsSection(
       children: <Widget>[_buildBookCssEditorRow()],
-    );
-    if (isCupertinoPlatform(context)) return section;
-    return Padding(
-      padding: MaterialSettingsRenderer.detailHorizontalInsets(
-        HibikiDesignTokens.of(context),
-      ),
-      child: section,
     );
   }
 
