@@ -142,11 +142,16 @@ void main() {
     );
     final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
     // 引擎：有区间却抽不出音频（audioPath==null）须被显式处理（中止），而非静默落空。
-    expect(engineNorm,
-        contains('req.requireAudio && req.hasRange && audioPath == null'),
-        reason: '抽段失败（有区间应带音频却 audioPath==null）须显式中止，而非静默落空。');
-    expect(engineNorm, contains('ImmersionMiningResult(aborted: true)'),
-        reason: '缺音频中止走 aborted 信号回 shell。');
+    // TODO-1303：中止判据在原「有区间缺音频」基础上扩展了 provided-bytes 路径
+    // （Netflix 录制片段无 range 却本应带音频），故守卫锚点随之更新为真实条件。
+    expect(
+        engineNorm,
+        contains(
+            'req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)'),
+        reason:
+            '抽段失败（有区间/或 provided-bytes 应带音频却 audioPath==null）须显式中止，而非静默落空。');
+    expect(engineNorm, contains("abortReason: 'required audio missing'"),
+        reason: '缺音频中止走 aborted 信号（带原因）回 shell。');
     // shell：res.aborted → 用户可见 OSD（复用现有 i18n card_export_failed_detail）。
     expect(mineCard, contains('res.aborted'),
         reason: '抽段失败须被 shell 显式处理（据 aborted），而非静默落空。');
@@ -169,7 +174,7 @@ void main() {
     // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
     // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
     final int engineAbortIdx =
-        engineNorm.indexOf('ImmersionMiningResult(aborted: true)');
+        engineNorm.indexOf("abortReason: 'required audio missing'");
     final int engineCtxIdx = engineNorm.indexOf('AnkiMiningContext context =');
     expect(engineAbortIdx, greaterThanOrEqualTo(0));
     expect(engineCtxIdx, greaterThan(engineAbortIdx),

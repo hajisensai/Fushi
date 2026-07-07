@@ -1,0 +1,12 @@
+## BUG-608 · apk ci编译失败(实为守卫单测阻断APK构建)
+- **报告**：2026-07-08（用户：TODO-1328「apk ci 编译失败」）
+- **真实性**：✅ 真 bug（CI 稳定红）。**并非 Android 编译错误**——`Build Release APK` / `Build Android APK` 两个 workflow 都是在 `Run unit tests (main app)` 步失败，其后的 APK 构建步全被跳过（never reached）；`dart analyze` 步通过。本地 `flutter build apk --debug` 成功（exit 0），证明 Android 原生/Kotlin/Java/R8 均正常。根因是 8 个静态守卫单测因近期重构（TODO-1303/1309①/947 等合并）markers 过时/误报 + 1 处真源码回归，阻断了 APK 产出。
+- **[x] ① 已修复** — 逐个定位到守卫单测的真实 file:line 并按正确层修复：
+  - 6/7 是**守卫 marker 过时/误报（改测试）**，源码行为契约均未丢，git 证据见下：
+    - `test/pages/video_mining_context_guard_test.dart`：TODO-1303 把无音频中止判据从 `req.requireAudio && req.hasRange && audioPath == null` 扩展为 `req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)`（immersion_mining_engine.dart:145-149，新增 Netflix provided-bytes 路径），守卫锚点更新为真实条件 + `abortReason: 'required audio missing'`。
+    - `test/pages/reader_appearance_sheet_reentrancy_guard_static_test.dart` / `reader_appearance_sheet_no_sync_guard_static_test.dart` / `test/reader/book_open_perf_wiring_guard_test.dart`：TODO-1309①（commit 376ed7ef9）给 `_showAppearanceSheet()` 加可选具名参 `{String? initialSubPage}`（chrome.part.dart:1123，行为不变），三处 start marker 同步更新。
+    - `test/anki/describe_mine_outcome_test.dart`：TODO-1303（commit 7703fe0ba）在 app_model.dart 新增 `remoteMineResultFromOutcome`（MineOutcome→RemoteMineResult 线协议，语义不同于用户消息 switch，且复用 logMineFailure 单一真相），守卫 `case MineResult.duplicate:` over-match；收紧为真实指纹 `t.card_duplicate`（仅 describeMineOutcome 独占）。
+    - `test/mining/mining_queue_and_popup_bounds_guard_test.dart`：TODO-1303（commit 7703fe0ba）把 content.js 出队分类器单行 `if (...) return 'done';` 展开为多行 block（加部分成功 toast），单行 `contains` 失配；改为语义锚点（success||duplicate 条件后紧跟 `return 'done'` 的 indexOf 顺序判据），仍守住「duplicate 与 success 同归 done」契约。
+  - 1/7 是**真源码回归（改源码）**：TODO-947（commit 11fd4aca2）新增的 `SeriesFolderCover`（series_shelf_card.dart:254/281）绕过了 TODO-552 已建立的 MD3 令牌纪律，裸用 `theme.colorScheme.surfaceContainerHighest` + `BorderRadius.circular(cellRadius)`。守卫判定正确，按其要求把源码改回走设计令牌：底色 → `tokens.surfaces.overlay`（≡ surfaceContainerHighest，颜色零变化）、单元圆角 → `const HibikiBorderRadius.chip`（并删已死的 cellRadius 参/字段）。
+- **[x] ② 已加自动化测试** — 修复对象即为这 6 个源码扫描守卫本身：修正后它们继续在源码层守住各自的行为契约（无音频中止、appearance sheet 重入保护/不重复持久化、收藏增删失效缓存、describeMineOutcome 单一真相、制卡队列 duplicate 出队、MD3 令牌纪律）。`md3_design_system_static_test.dart` 的 `SeriesFolderCover` 违规现由源码修复消解，守卫恢复牙齿。全部 7 文件本地 `flutter test --no-pub` 绿（+106），全量 `flutter analyze` No issues found。
+- **备注**：修复提交含 TODO-1328。CI 之所以显示为"编译失败"是因为整个 APK job 红，实际卡在测试步。APK 本体编译健康（本地 debug APK 构建通过）。

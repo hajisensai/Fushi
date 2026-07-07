@@ -230,15 +230,11 @@ class SeriesShelfCard extends StatelessWidget {
 class SeriesFolderCover extends StatelessWidget {
   const SeriesFolderCover({
     required this.covers,
-    this.cellRadius = 4,
     super.key,
   });
 
   /// 系列前 N 张成员封面（N 由调用方裁到 ≤4），[covers].first 为主封面（首卷）。
   final List<Widget> covers;
-
-  /// 每个网格单元的圆角半径（文件夹内小缩略图的描边圆角）。
-  final double cellRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -252,8 +248,9 @@ class SeriesFolderCover extends StatelessWidget {
     final double pad = tokens.spacing.gap / 2;
     // 文件夹底：微着色圆角容器 + 内边距，内嵌 2x2 成员封面网格。
     return DecoratedBox(
-      decoration:
-          BoxDecoration(color: theme.colorScheme.surfaceContainerHighest),
+      // MD3 令牌：文件夹底微着色走 surfaces.overlay（设计系统最高层表面别名），
+      // 不再裸用 ColorScheme 角色（TODO-552 守卫，TODO-947 回归修复）。
+      decoration: BoxDecoration(color: tokens.surfaces.overlay),
       child: Padding(
         padding: EdgeInsets.all(pad),
         child: Column(
@@ -278,7 +275,8 @@ class SeriesFolderCover extends StatelessWidget {
   }
 
   Widget _mosaicCell(ThemeData theme, int i) {
-    final BorderRadius radius = BorderRadius.circular(cellRadius);
+    // 网格单元圆角走设计系统 chip 半径（const），不裸用 BorderRadius.circular（TODO-552 守卫）。
+    const BorderRadius radius = HibikiBorderRadius.chip;
     if (i >= covers.length) {
       // 空槽：成员不足 4 本时补齐网格的占位底（更浅一档，视觉平衡）。
       return DecoratedBox(

@@ -98,8 +98,9 @@ void main() {
         final src = read(site);
         expect(src, contains('describeMineOutcome('),
             reason: '$site 应转调 describeMineOutcome');
-        expect(src.contains('case MineResult.duplicate:'), isFalse,
-            reason: '$site 不应再保留本地 MineResult switch');
+        expect(src.contains('t.card_duplicate'), isFalse,
+            reason:
+                '$site 不应再复制 describeMineOutcome 的用户消息 switch（duplicate→t.card_duplicate 由其独占）');
       });
     }
   });

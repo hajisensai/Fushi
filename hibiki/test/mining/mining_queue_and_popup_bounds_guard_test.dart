@@ -40,12 +40,16 @@ void main() {
           expect(src.contains('function hibikiClassifyMineResp('), isTrue,
               reason: '${content.path} 缺 hibikiClassifyMineResp 分类器');
           // duplicate 必须与 success 同归 done，否则永久滞留 = 队列永不清。
-          expect(
-            src.contains(
-                "if (r === 'success' || r === 'duplicate') return 'done';"),
-            isTrue,
-            reason: '${content.path} 出队判据未含 duplicate（队列永不清根因）',
-          );
+          // TODO-1303 把单行 `return 'done';` 展开成多行 block（加部分成功 toast），
+          // 故按语义锚点守：success||duplicate 条件后紧跟 return 'done'（不锁单行写法）。
+          final int dupCondIdx =
+              src.indexOf("r === 'success' || r === 'duplicate'");
+          expect(dupCondIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} 出队判据未把 duplicate 与 success 同归（队列永不清根因）');
+          final int doneIdx = src.indexOf("return 'done';", dupCondIdx);
+          expect(doneIdx, greaterThan(dupCondIdx),
+              reason:
+                  '${content.path} success||duplicate 分支未 return done（队列永不清根因）');
           // notConfigured 留队（提示配 Anki），error/网络失败留队重试。
           expect(
               src.contains("if (r === 'notConfigured') return 'unconfigured';"),
