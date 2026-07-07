@@ -144,7 +144,11 @@ class ReaderSelectionScripts {
       // preserving slow-steady-tap word lookup (TODO-971).
       window.hoshiSelection.selectText(x, y, LPS_MAXLEN);
     }
-    lpsReset();
+    // Keep __hoshiTextSelectDragActive true until the next touchstart resets it:
+    // a trailing compatibility pointerup (order vs touchend varies by WebView)
+    // must still see the flag so _gestureEnd bails -> no double lookup.
+    lpsClearTimer();
+    lpsActive = false;
   }, {passive: false});
   document.addEventListener('touchcancel', function() { lpsReset(); }, {passive: true});
 })();''';

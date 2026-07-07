@@ -567,7 +567,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var _hoshiReaderMouseDragPageDirection = null;
   var _hoshiReaderMouseDragSwipeSent = false;
   var _hoshiReaderMouseDragIgnoreTouchEnd = false;
-  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now();
+    // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
+    // inherits a prior drag-select's flag; the drag-select timer re-arms it.
+    window.__hoshiTextSelectDragActive = false; }
   // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
   // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
   // rather than a word. Text taps still go to onTap (word lookup).
