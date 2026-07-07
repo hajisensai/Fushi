@@ -95,6 +95,12 @@ class DataRootMigrationException implements Exception {
 class DataRootMigrator {
   const DataRootMigrator();
 
+  /// 仅供单测：强制走「跨盘 copy + 延迟删源」分支（跳过同盘 rename 快路径），
+  /// 让 TODO-1324 的中断安全（提交前绝不删源）在单卷临时目录里可确定性验证。
+  /// 生产恒 false。测试须在 try/finally 里复位，避免污染其它用例。
+  @visibleForTesting
+  static bool debugForceCopyFallback = false;
+
   /// SharedPreferences 落盘文件的**文件名前缀**族。桌面默认根迁移时，`oldSupportRoot`
   /// 恰好等于平台固定落点 `getApplicationSupportDirectory()`，`shared_preferences_windows`
   /// 插件把 `shared_preferences.json` 就存这个目录（见 `app_paths.dart:65-70` 的鸡生蛋
@@ -132,7 +138,7 @@ class DataRootMigrator {
     final (Directory newDocs, Directory newSupport) =
         AppPaths.rootsForDataRoot(req.newDataRoot);
 
-    _validateTarget(req, newDocs, newSupport);
+    await _validateTarget(req, newDocs, newSupport);
 
     // ① 先关运行时句柄（DB/FFI/音频），否则 Windows 上 rename/删源会被占用锁住。
     await req.closeResources();
@@ -156,13 +162,18 @@ class DataRootMigrator {
           includeTopLevelNames: null, excludeTopLevelNames: supportExclude),
     ];
     final List<_MovePlan> done = <_MovePlan>[];
+    // TODO-1324（数据完整性铁律）：跨盘复制阶段**刻意保留的源**，只有在 DB rebase + pref
+    // 提交都成功后才删除。任何在提交前的中断（崩溃 / 用户强杀卡住的迁移 / 任一步抛错）都能
+    // 从**完整未删的旧根**恢复；旧实现在搬移阶段就 `_deleteSourceAfterVerifiedCopy` 删源，
+    // 违反本类文档声明的「新根校验通过 + DB rebase 成功，才删旧根」，中断即丢已删源数据。
+    final List<FileSystemEntity> deferredSourceDeletions = <FileSystemEntity>[];
     // 跨盘复制的进度状态：累积已复制文件数 + 两子树总文件数（同盘 rename 不计）。
     // 跨盘搬移前一次性数清总数，便于 UI 显示稳定的百分比；同盘搬移此对象不被用到。
     final _CopyProgress progress = _CopyProgress(req.onProgress);
     try {
       newRoot.createSync(recursive: true);
       for (final _MovePlan m in moves) {
-        await _moveTree(m, progress);
+        await _moveTree(m, progress, deferredSourceDeletions);
         done.add(m);
       }
     } catch (e) {
@@ -220,7 +231,15 @@ class DataRootMigrator {
       throw DataRootMigrationException('写入新数据根设置失败，已回滚到旧根', cause: e);
     }
 
-    // pref 已成功写入，现在删旧根（prefs-preserving）。
+    // pref 已成功写入（提交完成）。此刻才删除跨盘复制阶段刻意保留的源——遵守本类的
+    // 「失败回滚铁律」：DB rebase + pref 提交成功前绝不删源。删源属提交后的清理，不再属
+    // 关键路径：源被顽固锁住（删不掉）不判失败——校验过的完整数据已在新根、pref 已写、
+    // 重启读新根；旧根残留留待后续清理（best-effort + 有界锁重试，与旧的删源语义一致）。
+    for (final FileSystemEntity src in deferredSourceDeletions) {
+      await _deleteSourceAfterVerifiedCopy(src);
+    }
+
+    // 现在删旧根（prefs-preserving）。
     //
     // TODO-1226：documents 根仅在**整树搬移**（Hibiki 专属根）时删除本体。白名单模式
     // 下源根是共享用户 `Documents`——白名单项已随搬移离开源根（同盘 rename 移走 /
@@ -233,11 +252,11 @@ class DataRootMigrator {
     return (newDocs, newSupport);
   }
 
-  void _validateTarget(
+  Future<void> _validateTarget(
     DataRootMigrationRequest req,
     Directory newDocs,
     Directory newSupport,
-  ) {
+  ) async {
     final String canonNew = p.canonicalize(req.newDataRoot);
     if (canonNew == p.canonicalize(req.oldDocumentsRoot.path) ||
         canonNew == p.canonicalize(req.oldSupportRoot.path) ||
@@ -256,8 +275,10 @@ class DataRootMigrator {
       }
     }
     // 目标 dataRoot 若已存在且其 documents/support 子树非空 → 拒绝（不覆盖已有数据）。
-    if ((newDocs.existsSync() && _hasAnyFile(newDocs)) ||
-        (newSupport.existsSync() && _hasAnyFile(newSupport))) {
+    // TODO-1324：用**异步** list 探测，绝不在主 isolate 上同步递归列目录——用户挑的目标可能
+    // 含庞大预存子树，同步 listSync(recursive) 会卡死 UI 线程（黑屏/转圈）。
+    if ((newDocs.existsSync() && await _hasAnyFileAsync(newDocs)) ||
+        (newSupport.existsSync() && await _hasAnyFileAsync(newSupport))) {
       throw const DataRootMigrationException('目标数据根已存在数据，拒绝覆盖');
     }
   }
@@ -269,7 +290,11 @@ class DataRootMigrator {
   /// [_MovePlan.isSelective]（prefs 排除项，或 TODO-1226 共享根白名单）时**不能**用
   /// 整目录 rename（会把不该搬的项一起搬走），退回逐顶层项搬移。非选择性（自定义根的
   /// documents / support 搬移）时保留原子 rename 快路径，行为逐字节不变。
-  Future<void> _moveTree(_MovePlan plan, _CopyProgress progress) async {
+  Future<void> _moveTree(
+    _MovePlan plan,
+    _CopyProgress progress,
+    List<FileSystemEntity> deferredSourceDeletions,
+  ) async {
     final Directory src = plan.src;
     final Directory dst = plan.dst;
     if (!await src.exists()) {
@@ -279,21 +304,26 @@ class DataRootMigrator {
     }
     if (plan.isSelective) {
       // 选择性搬移：白名单外 / 被排除的顶层项留在原地（TODO-1226 / prefs 例外）。
-      await _moveTreeSelective(plan, progress);
+      await _moveTreeSelective(plan, progress, deferredSourceDeletions);
       return;
     }
     await dst.parent.create(recursive: true);
-    try {
-      // Windows 上刚关闭的 DB/音频/FFI 句柄可能滞后释放，或 Defender/索引器短暂锁住
-      // 树里某个文件 → rename 返回锁码 5/32/33；有界退避重试把瞬态锁转成成功。
-      await _withLockRetry(() => src.rename(dst.path));
-      return;
-    } on FileSystemException catch (e) {
-      if (!_shouldCopyAfterRenameFailure(e)) rethrow;
+    if (!debugForceCopyFallback) {
+      try {
+        // Windows 上刚关闭的 DB/音频/FFI 句柄可能滞后释放，或 Defender/索引器短暂锁住
+        // 树里某个文件 → rename 返回锁码 5/32/33；有界退避重试把瞬态锁转成成功。
+        // 同盘原子 rename：源随之移走（单条 syscall、near-instant），无需延迟删源。
+        await _withLockRetry(() => src.rename(dst.path));
+        return;
+      } on FileSystemException catch (e) {
+        if (!_shouldCopyAfterRenameFailure(e)) rethrow;
+      }
     }
-    // 跨卷或 rename 被沙箱/权限层拒绝：copy + verify + delete。
+    // 跨卷或 rename 被沙箱/权限层拒绝：copy + verify，**不立即删源**。TODO-1324：把源
+    // 记入 deferredSourceDeletions，只有 DB rebase + pref 提交成功后才删（中断安全）。
     await _copyTreeVerified(src, dst, progress);
-    await _deleteSourceAfterVerifiedCopy(src);
+    plan.deferredCopy = true;
+    deferredSourceDeletions.add(src);
   }
 
   /// 选择性搬移：逐个搬 [plan] 源根顶层项到目标根，跳过 [_MovePlan.shouldMoveTopLevel]
@@ -303,25 +333,33 @@ class DataRootMigrator {
   Future<void> _moveTreeSelective(
     _MovePlan plan,
     _CopyProgress progress,
+    List<FileSystemEntity> deferredSourceDeletions,
   ) async {
     final Directory src = plan.src;
     final Directory dst = plan.dst;
     await dst.create(recursive: true);
+    // 顶层项列举（非递归）：仅一层、成本低，保持同步无碍主 isolate。递归大树的开销在
+    // _copyTreeVerified 的 _countFilesAsync（已异步化）里，不在此。
     for (final FileSystemEntity entity
         in src.listSync(recursive: false, followLinks: false)) {
       final String name = p.basename(entity.path);
       if (!plan.shouldMoveTopLevel(name)) continue; // 白名单外 / prefs 留原地。
       final String target = p.join(dst.path, name);
-      try {
-        await _withLockRetry(() => entity.rename(target));
-        continue;
-      } on FileSystemException catch (e) {
-        if (!_shouldCopyAfterRenameFailure(e)) rethrow;
+      if (!debugForceCopyFallback) {
+        try {
+          // 同盘 rename：源随之移走（原子、near-instant），无需延迟删源。
+          await _withLockRetry(() => entity.rename(target));
+          continue;
+        } on FileSystemException catch (e) {
+          if (!_shouldCopyAfterRenameFailure(e)) rethrow;
+        }
       }
-      // 跨卷或沙箱/权限拒绝 rename：整树复制校验后删源（目录）/ 单文件复制校验后删源。
+      // 跨卷或沙箱/权限拒绝 rename：整树复制校验（目录）/ 单文件复制校验，**不立即删源**。
+      // TODO-1324：把源记入 deferredSourceDeletions，只有 pref 提交成功后才删（中断安全）。
       if (entity is Directory) {
         await _copyTreeVerified(entity, Directory(target), progress);
-        await _deleteSourceAfterVerifiedCopy(entity);
+        plan.deferredCopy = true;
+        deferredSourceDeletions.add(entity);
       } else if (entity is File) {
         await File(target).parent.create(recursive: true);
         await entity.copy(target);
@@ -332,7 +370,8 @@ class DataRootMigrator {
               '跨盘复制校验失败：$name 字节数不一致（$srcLen != $dstLen）');
         }
         progress.fileCopied();
-        await _deleteSourceAfterVerifiedCopy(entity);
+        plan.deferredCopy = true;
+        deferredSourceDeletions.add(entity);
       }
     }
   }
@@ -380,7 +419,12 @@ class DataRootMigrator {
     await dst.create(recursive: true);
     // 进度模式：先一次性数清本子树的文件总数并并入全局分母，再逐文件复制时累加分子。
     // null（回滚路径）时不报告进度——回滚是异常清理，没有 UI 等它。
-    progress?.addToTotal(_countFiles(src));
+    // TODO-1324：用**异步** list 数文件——搬大库时同步 listSync(recursive) 会把主 isolate
+    // 卡到 OS 层遍历完（黑屏/转圈冻结、进度条不动、被误判死机）；异步遍历让事件循环得以
+    // 继续绘制遮罩与进度。
+    if (progress != null) {
+      progress.addToTotal(await _countFilesAsync(src));
+    }
     await for (final FileSystemEntity entity
         in src.list(recursive: true, followLinks: false)) {
       final String rel = p.relative(entity.path, from: src.path);
@@ -401,13 +445,14 @@ class DataRootMigrator {
     }
   }
 
-  /// 同步数清目录树下的文件数（不含目录项）。用于跨盘复制前确定进度分母。
-  static int _countFiles(Directory dir) {
+  /// 异步数清目录树下的文件数（不含目录项）。用于跨盘复制前确定进度分母。
+  /// TODO-1324：**异步** list（非 listSync）——绝不在主 isolate 上同步递归列大目录（冻结 UI）。
+  static Future<int> _countFilesAsync(Directory dir) async {
     int count = 0;
     // followLinks: false —— 绝不追 symlink/junction：用户 Documents 里的 shell
-    // junction（My Music 等）ACL 全拒，追进去 listSync 直接 errno 5 硬炸（TODO-1226）。
-    for (final FileSystemEntity e
-        in dir.listSync(recursive: true, followLinks: false)) {
+    // junction（My Music 等）ACL 全拒，追进去 list 直接 errno 5 硬炸（TODO-1226）。
+    await for (final FileSystemEntity e
+        in dir.list(recursive: true, followLinks: false)) {
       if (e is File) count++;
     }
     return count;
@@ -417,6 +462,12 @@ class DataRootMigrator {
     // 把已搬到新根的子树搬回旧根原位（尽力而为）。选择性搬移的 plan（support + prefs
     // 例外）：src 里还留着 prefs 文件，不能整目录 rename 覆盖 → 逐顶层项合并搬回。
     for (final _MovePlan m in done.reversed) {
+      if (m.deferredCopy) {
+        // TODO-1324：跨盘复制且源尚未删除（延迟到提交后）——源在旧根**完好无损**，无需搬回。
+        // 新根里的副本由随后的 _cleanupCreatedSubtrees 整目录清除。这是本次修复的核心不变量：
+        // 提交前绝不删源 → 任何失败/中断都能从完整旧根恢复，回滚只是清掉新根半成品。
+        continue;
+      }
       if (m.isSelective) {
         await _rollbackSelective(m);
         continue;
@@ -642,10 +693,11 @@ class DataRootMigrator {
     }
   }
 
-  static bool _hasAnyFile(Directory dir) {
-    // followLinks: false —— 同 [_countFiles]：不追 junction/symlink（TODO-1226）。
-    for (final FileSystemEntity e
-        in dir.listSync(recursive: true, followLinks: false)) {
+  /// TODO-1324：**异步** list（非 listSync）——绝不在主 isolate 上同步递归列大目录（冻结 UI）。
+  static Future<bool> _hasAnyFileAsync(Directory dir) async {
+    // followLinks: false —— 同 [_countFilesAsync]：不追 junction/symlink（TODO-1226）。
+    await for (final FileSystemEntity e
+        in dir.list(recursive: true, followLinks: false)) {
       if (e is File) return true;
     }
     return false;
@@ -858,6 +910,10 @@ class _MovePlan {
   /// rename），回滚也走合并式（dst 顶层项逐个搬回 src，不能整目录 rename 覆盖 src——src
   /// 里还留着 prefs）。
   final Set<String> excludeTopLevelNames;
+
+  /// TODO-1324：本 plan 走了「跨盘 copy 且源延迟到提交后才删」的路径。为 true 时源仍在
+  /// 旧根完好无损 → 回滚无需搬回（跳过 _rollbackMoves 的搬回逻辑），只清新根半成品。
+  bool deferredCopy = false;
 
   bool get isSelective =>
       includeTopLevelNames != null || excludeTopLevelNames.isNotEmpty;

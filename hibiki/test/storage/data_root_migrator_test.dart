@@ -849,6 +849,158 @@ void main() {
       expect(calls, equals(1));
     });
   });
+
+  group('TODO-1324：迁移卡死 + 目标文件夹/数据丢失（中断安全 + 不阻塞 + 幂等）', () {
+    test('中断安全：跨盘 copy 阶段绝不删源——pref 提交前失败 → 旧根完整、新根半成品清空', () async {
+      // 旧实现在搬移阶段就 `_deleteSourceAfterVerifiedCopy` 删源（DB rebase / pref 提交之前），
+      // 违反类文档「新根校验通过 + DB rebase 成功，才删旧根」的铁律：任何提交前的中断
+      // （崩溃 / 用户强杀卡住的迁移 / 任一步抛错）都会丢掉已删的源数据。修复后：跨盘 copy
+      // 只保留源、把删源延迟到 pref 提交成功之后，故提交前失败旧根必然完整。
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'defer_crash');
+      DataRootMigrator.debugForceCopyFallback =
+          true; // 强制走跨盘 copy 分支（单卷临时目录可测）。
+      try {
+        await expectLater(
+          const DataRootMigrator().migrate(DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            newDataRoot: newDataRoot,
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            // pref 提交失败 = 任意提交时点中断的代理。
+            writeDataRootPref: (String r) async =>
+                throw StateError('interrupted before commit'),
+          )),
+          throwsA(isA<DataRootMigrationException>()),
+        );
+      } finally {
+        DataRootMigrator.debugForceCopyFallback = false;
+      }
+
+      // 旧根**逐字节完整**：所有源文件仍在（跨盘 copy 阶段绝不删源）。
+      expect(
+          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          isTrue);
+      expect(
+          File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue);
+      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
+          isTrue);
+      // 新根半成品（documents/support 子树）已清理，用户选定的目标本体保留（此处为空目录）。
+      expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
+      expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
+      // 旧根 DB 从未被改写（原始 DB 仍指向旧路径）——数据可直接继续使用。
+      final HibikiDatabase db = HibikiDatabase(oldSupportPath);
+      try {
+        final EpubBookRow b = (await db.getAllEpubBooks()).single;
+        expect(b.epubPath, startsWith(oldDocsPath));
+        expect(b.extractDir, startsWith(oldDocsPath));
+      } finally {
+        await db.close();
+      }
+    });
+
+    test('跨盘 copy 成功路径：提交成功后才删源，新根齐全 + DB rebase + 旧根清空', () async {
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'defer_ok');
+      String? wrote;
+      DataRootMigrator.debugForceCopyFallback = true;
+      try {
+        final (Directory newDocs, Directory newSupport) =
+            await const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: newDataRoot,
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async => wrote = r,
+        ));
+        // 新根齐全。
+        expect(
+            File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+                .existsSync(),
+            isTrue);
+        expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+        expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+            isTrue);
+        // 提交后才删源 → 旧根已删。
+        expect(oldDocs.existsSync(), isFalse);
+        expect(oldSupport.existsSync(), isFalse);
+        expect(wrote, equals(newDataRoot));
+        // DB 内绝对路径已 rebase 到新根。
+        final HibikiDatabase db = HibikiDatabase(newSupport.path);
+        try {
+          final EpubBookRow b = (await db.getAllEpubBooks()).single;
+          expect(b.epubPath, startsWith(newDocs.path));
+        } finally {
+          await db.close();
+        }
+      } finally {
+        DataRootMigrator.debugForceCopyFallback = false;
+      }
+    });
+
+    test('不阻塞主 isolate：迁移引擎绝不用同步递归 listSync（recursive:true）数/扫目录', () {
+      // 卡死根因之一：搬大库时 `listSync(recursive: true)` 在主 isolate 同步遍历完整棵树，
+      // UI 事件循环被卡到 OS 层返回（黑屏/转圈冻结、进度条不动）。守卫：源码里递归列目录
+      // 只能用**异步** `list(recursive: true)`；顶层 `listSync(recursive: false)` 成本低，允许。
+      final String src = File(
+        p.join(
+          Directory.current.path,
+          'lib',
+          'src',
+          'storage',
+          'data_root_migrator.dart',
+        ),
+      ).readAsStringSync();
+      expect(src.contains('listSync(recursive: true'), isFalse,
+          reason: '迁移引擎不得在主 isolate 上同步递归列目录（会冻结 UI）');
+    });
+
+    test('幂等/防重入：对已含迁移数据的目标再次迁移 → 拒绝覆盖，源与目标均完整', () async {
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'idem');
+      // 第一次成功迁移到 newDataRoot（同盘 rename 路径）。
+      await const DataRootMigrator().migrate(DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        newDataRoot: newDataRoot,
+        documentsTopLevelIncludeNames: null,
+        closeResources: () async {},
+        writeDataRootPref: (String r) async {},
+      ));
+      final String newSupportPath = p.join(newDataRoot, 'support');
+      expect(File(p.join(newSupportPath, 'hibiki.db')).existsSync(), isTrue);
+
+      // 第二次：另一个源迁到**已含数据**的同一目标 → 目标非空拒绝，不覆盖不动源。
+      final Directory otherDocs = Directory(p.join(tmp.path, 'o2', 'documents'))
+        ..createSync(recursive: true);
+      final Directory otherSupport =
+          Directory(p.join(tmp.path, 'o2', 'support'))
+            ..createSync(recursive: true);
+      File(p.join(otherSupport.path, 'hibiki.db'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[7, 7, 7]);
+      bool wrote = false;
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: otherDocs,
+          oldSupportRoot: otherSupport,
+          newDataRoot: newDataRoot,
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          writeDataRootPref: (String r) async => wrote = true,
+        )),
+        throwsA(isA<DataRootMigrationException>()),
+      );
+      expect(wrote, isFalse);
+      // 目标里第一次迁移的数据完好；第二个源不动。
+      expect(File(p.join(newSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(otherSupport.path, 'hibiki.db')).existsSync(), isTrue);
+    });
+  });
 }
 
 /// 目录树下是否有任意文件（不含目录项）。用于断言回滚后 newRoot 下无迁移残留数据。
