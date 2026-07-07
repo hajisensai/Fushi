@@ -1839,6 +1839,16 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
 
   @override
   Widget build(BuildContext context) {
+    // Hibiki patch (TODO-1243): isolate the seek bar into its own compositor
+    // layer so its ~5fps fill re-raster (kPositionUiThrottleStep throttle) does
+    // not re-record the full-screen controls picture it shares with the
+    // full-video-area gradient scrims. Caps the re-raster to the thin seek bar
+    // bounds regardless of window size (integrated-GPU 100% load on large
+    // windows). See third_party/media_kit_video/PATCHES.md.
+    return RepaintBoundary(child: _buildSeekBarBody(context));
+  }
+
+  Widget _buildSeekBarBody(BuildContext context) {
     return Container(
       clipBehavior: Clip.none,
       margin: _theme(context).seekBarMargin,
@@ -2197,14 +2207,19 @@ class MaterialPositionIndicatorState extends State<MaterialPositionIndicator> {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      '${position.label(reference: duration)} / ${duration.label(reference: duration)}',
-      style: widget.style ??
-          TextStyle(
-            height: 1.0,
-            fontSize: 12.0,
-            color: _theme(context).buttonBarButtonColor,
-          ),
+    // Hibiki patch (TODO-1243): isolate the mm:ss clock so its second-boundary
+    // repaint does not re-raster the shared full-screen controls picture (same
+    // integrated-GPU root cause as the seek bar). See PATCHES.md.
+    return RepaintBoundary(
+      child: Text(
+        '${position.label(reference: duration)} / ${duration.label(reference: duration)}',
+        style: widget.style ??
+            TextStyle(
+              height: 1.0,
+              fontSize: 12.0,
+              color: _theme(context).buttonBarButtonColor,
+            ),
+      ),
     );
   }
 }

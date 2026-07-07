@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 586 条。点号进各自文件。
+> 共 587 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -36,6 +36,7 @@
 | [BUG-598](bugs/BUG-598-floating-sub-tap-no-lookup.md) | ✅ | ✅ | 悬浮字幕点击文字不出查词窗(Android) |
 | [BUG-597](bugs/BUG-597-android-video-black-texture.md) | ✅ | ✅ | 安卓视频解码正常但纹理合成黑屏 |
 | [BUG-596](bugs/BUG-596-yt-stream-dedup-cover.md) | ✅ | ✅ | 油管流去重无videoId规范化+非YouTube流无封面 |
+| [BUG-596](bugs/BUG-596-large-window-gpu-flicker.md) | ✅ | ✅ | 大窗集显呼出UI仍GPU100%闪烁 |
 | [BUG-595](bugs/BUG-595-mobile-mining-no-cover.md) | ✅ | ✅ | 手机制卡回退路径漏coverHref致无书籍封面 |
 | [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉） |
 | [BUG-593](bugs/BUG-593-netflix-card-subtitle-dup.md) | ✅ | ✅ | 网飞制卡卡片字幕重复两次+截取混入UI+少开头 |
