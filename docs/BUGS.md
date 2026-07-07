@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 576 条。点号进各自文件。
+> 共 577 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-591](bugs/BUG-591-floating-sub-tap-no-lookup.md) | ✅ | ✅ | 悬浮字幕点击文字不出查词窗(Android) |
 | [BUG-590](bugs/BUG-590-secondary-subtitle-race.md) | ✅ | ✅ | 副字幕轨就绪竞态致有时不显示 |
 | [BUG-589](bugs/BUG-589-waveform-density.md) | ✅ | ✅ | 字幕对轴波形显示密度不利于辨句 |
 | [BUG-588](bugs/BUG-588-stats-mobile-numbers.md) | ✅ | ✅ | 手机阅读统计页数字不可见 |
