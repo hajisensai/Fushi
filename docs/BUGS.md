@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 560 条。点号进各自文件。
+> 共 561 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-575](bugs/BUG-575-remote-audio-404-cooldown.md) | ✅ | ✅ | 可达远端发音源对缺词返回404被误冷却导致app外查词整段无音频 |
 | [BUG-574](bugs/BUG-574-ext-shift-hover-lookup.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词失效复诉 |
 | [BUG-573](bugs/BUG-573-css-editor-row-width.md) | ✅ | ✅ | 阅读器布局子页「编辑书籍 CSS」入口条比上方配置项组宽·左右不对齐 |
 | [BUG-572](bugs/BUG-572-app-init-infinite-loading-dataroot-hang.md) | ✅ | ✅ | App 偶发无限加载：自定义数据根掉线盘早期同步 IO 永不返回 |

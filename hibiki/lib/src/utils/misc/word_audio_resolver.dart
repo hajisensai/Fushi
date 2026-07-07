@@ -249,6 +249,17 @@ class WordAudioResolver {
     _remoteFailureCooldownUntil.clear();
   }
 
+  /// 测试钩子：读/换 [defaultFetchAudioSourceList] 底层 [_dio] 的 HTTP 适配器，
+  /// 以便用例注入可控 HTTP 响应（如 404）验证 badResponse 归一为空结果（TODO-1265）。
+  /// 生产代码从不调用；用例须在 tearDown 里还原原适配器，避免串味。
+  @visibleForTesting
+  static HttpClientAdapter get debugHttpClientAdapter => _dio.httpClientAdapter;
+
+  @visibleForTesting
+  static set debugHttpClientAdapter(HttpClientAdapter adapter) {
+    _dio.httpClientAdapter = adapter;
+  }
+
   static Future<List<String>> defaultFetchAudioSourceList(String url) async {
     try {
       final Response<dynamic> response = await _dio.get<dynamic>(url);
@@ -268,6 +279,16 @@ class WordAudioResolver {
           .where((value) => value.isNotEmpty)
           .toList(growable: false);
     } catch (e, stack) {
+      // TODO-1265 根因修：`badResponse`＝服务器**可达**并回了一个非 2xx（最典型是 404
+      // ——「这个源没有这个词的发音」），与 200 空 audioSources 语义完全相同，只是端点
+      // 用 HTTP 状态而非空列表表达「没有」。**绝不能把它当死源失败**：BUG-488 的冷却
+      // 是为「连不上的死源」（连接拒绝/超时/DNS）设计的；把可达源因某个词缺音频而
+      // host 级冷却 45s，会让**这个源有音频的其它词也一起没声音**（回归：查一个源没有
+      // 的词后，整段时间里该源全哑）。故 badResponse 直接当空结果返回：不记错误日志、
+      // 不 rethrow → resolveConfigured 不冷却、继续下一源、该源对下个词仍可用。
+      if (e is DioError && e.type == DioErrorType.badResponse) {
+        return const <String>[];
+      }
       final host = Uri.tryParse(url)?.host ?? url;
       final String detail;
       if (e is DioError) {
@@ -286,6 +307,7 @@ class WordAudioResolver {
       ErrorLogService.instance.log(detail, e, stack);
       // rethrow 让上层 resolveConfigured 把这次失败计入 host 冷却（TODO-1057）；
       // 日志已在此记过一次，冷却窗内 resolveConfigured 会短路不再重入此处，故不刷屏。
+      // 仅剩连接级失败（不可达/超时/DNS）走到这里——正是 BUG-488 要冷却的死源。
       rethrow;
     }
   }
