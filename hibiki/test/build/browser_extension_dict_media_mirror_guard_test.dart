@@ -187,6 +187,55 @@ void main() {
             reason:
                 '$root subtitle-panel.js row lookup must carry the precise cue window');
       });
+
+      // TODO-1219 用户诉求②：字幕列表面板默认关闭，由扩展 options 的开关（netflixSubtitlePanel）
+      // 驱动；键缺省或非 true 一律不显示。锁死「默认关 + 开关门控」防回归成默认打开。
+      test('[$name] subtitle-panel.js is gated off by default via a setting',
+          () {
+        final String src = File('$root/subtitle-panel.js').readAsStringSync();
+        expect(src.contains("'netflixSubtitlePanel'"), isTrue,
+            reason:
+                '$root subtitle-panel.js must read the netflixSubtitlePanel setting');
+        expect(src.contains('enabled: false'), isTrue,
+            reason:
+                '$root subtitle-panel.js must default the panel to disabled (off)');
+        expect(src.contains('if (!st.enabled) return;'), isTrue,
+            reason:
+                '$root subtitle-panel.js cue hook must no-op while disabled (no panel, no reopen chip)');
+        expect(src.contains('readEnabled(applyEnabled)'), isTrue,
+            reason:
+                '$root subtitle-panel.js must consult the setting on load instead of auto-showing');
+        expect(src.contains('chrome.storage.onChanged.addListener'), isTrue,
+            reason:
+                '$root subtitle-panel.js must react to the toggle live via storage.onChanged');
+      });
+
+      test('[$name] options expose the Netflix subtitle-list toggle', () {
+        final String html = File('$root/options.html').readAsStringSync();
+        final String js = File('$root/options.js').readAsStringSync();
+        expect(html.contains('id="nfSubList"'), isTrue,
+            reason: '$root options.html missing the subtitle-list toggle');
+        expect(js.contains('netflixSubtitlePanel'), isTrue,
+            reason:
+                '$root options.js must persist the netflixSubtitlePanel setting');
+      });
+
+      // TODO-1219 用户诉求①：整集字幕拦截必须与语言无关——harvest 遍历清单里的**每一条**
+      // timedtexttracks（用户选哪种字幕语言都在内），绝不硬编码只处理某种语言（如日语）。
+      test(
+          '[$name] netflix-bridge harvests every language track (no lang filter)',
+          () {
+        final String src = File('$root/netflix-bridge.js').readAsStringSync();
+        expect(
+            src.contains(
+                'for (var i = 0; i < tracks.length; i++) fetchCues(videoId, tracks[i]);'),
+            isTrue,
+            reason:
+                '$root netflix-bridge.js must harvest every timedtext track, not one language');
+        expect(RegExp("['\"]ja['\"]").hasMatch(src), isFalse,
+            reason:
+                '$root netflix-bridge.js must not hard-code a Japanese-only language filter');
+      });
     });
   });
 
@@ -203,6 +252,9 @@ void main() {
       // TODO-1219 P2：字幕列表面板新增/改动的共享文件，同样纳入字节守卫。
       'subtitle-panel.js',
       'vendor/content.css',
+      // TODO-1219：字幕列表面板默认关开关（options UI）——两镜像同步纳入字节守卫。
+      'options.html',
+      'options.js',
     ]) {
       test(rel, () {
         final List<int> tools =

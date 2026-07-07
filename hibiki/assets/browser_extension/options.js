@@ -25,6 +25,20 @@ $('save').onclick = async () => {
   $('status').textContent = ' Saved';
 };
 
+// TODO-1219：Netflix 整集字幕列表面板开关（默认关）。这是纯 UI 偏好，独立于 host/port/token 的
+// 自动配置——存在 chrome.storage.local 的 netflixSubtitlePanel（缺省即关），改动即时持久化，
+// subtitle-panel.js 通过 storage.onChanged 实时生效。Reset 按钮只清连接覆盖，不动此开关。
+const nfSubList = $('nfSubList');
+if (nfSubList) {
+  chrome.storage.local.get('netflixSubtitlePanel').then((c) => {
+    nfSubList.checked = !!(c && c.netflixSubtitlePanel === true);
+  });
+  nfSubList.onchange = async () => {
+    await chrome.storage.local.set({ netflixSubtitlePanel: nfSubList.checked });
+    $('status').textContent = nfSubList.checked ? ' Subtitle list on' : ' Subtitle list off';
+  };
+}
+
 // 一键回到自动配置：清空覆盖，cfg() 便回落 app 注入的默认。
 const resetBtn = $('reset');
 if (resetBtn) {

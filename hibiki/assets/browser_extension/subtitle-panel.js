@@ -24,12 +24,39 @@
   var FONT_STEPS = [0.85, 1.0, 1.15, 1.3];
   var PUSH_SELECTORS = ['.watch-video--player-view', '.watch-video', '.nfp.nf-player-container', '#appMountPoint'];
 
+  // TODO-1219：面板默认关闭——enabled 由扩展 options 的 netflixSubtitlePanel 开关驱动（默认 false）。
   var st = {
     activeLang: null, videoId: null, cues: [], rowEls: [], currentIndex: -1,
     autoScroll: true, fontScaleIndex: 1, hidden: false, panel: null, listEl: null,
     langSelect: null, builtLang: null, builtLen: -1, pushedEl: null, prevWidth: '', tickTimer: null,
-    pushSuspended: false,
+    pushSuspended: false, enabled: false,
   };
+
+  // ── TODO-1219：字幕列表面板开关（默认关）──
+  // 面板不再默认打开：只有用户在扩展 options 勾选「Netflix 字幕列表」（chrome.storage.local 的
+  // netflixSubtitlePanel === true）时才在 Netflix 播放页显示。键缺省或非 true 一律视为关闭，
+  // 即什么都不挂（无面板、无重开小按钮）。options 里改动经 chrome.storage.onChanged 实时生效。
+  var SETTING_KEY = 'netflixSubtitlePanel';
+  function readEnabled(cb) {
+    try {
+      var p = chrome.storage.local.get(SETTING_KEY);
+      if (p && typeof p.then === 'function') {
+        p.then(function (c) { cb(!!(c && c[SETTING_KEY] === true)); }, function () { cb(false); });
+      } else {
+        chrome.storage.local.get(SETTING_KEY, function (c) { cb(!!(c && c[SETTING_KEY] === true)); });
+      }
+    } catch (_) { cb(false); }
+  }
+  function teardownAll() {
+    clearPush();
+    if (st.panel && st.panel.parentNode) st.panel.parentNode.removeChild(st.panel);
+    hideReopen();
+  }
+  function applyEnabled(on) {
+    st.enabled = !!on;
+    if (!st.enabled) { teardownAll(); return; }
+    try { if (window.hibikiEpisodeCues && tracksForVideo().length) showPanel(); } catch (_) {}
+  }
 
   function nfVideoId() {
     var m = (location.pathname || '').match(/\/watch\/(\d+)/);
@@ -337,11 +364,13 @@
   };
 
   window.hibikiSubtitlePanelOnCues = function (_key) {
+    if (!st.enabled) return;
     if (st.hidden) { showReopen(); return; }
     refresh();
   };
 
   document.addEventListener('fullscreenchange', function () {
+    if (!st.enabled) return;
     clearPush();
     if (st.hidden) { if (document.getElementById(REOPEN_ID)) showReopen(); return; }
     ensureMounted();
@@ -352,13 +381,19 @@
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       st.builtLang = null; st.builtLen = -1; st.activeLang = null;
-      if (!st.hidden) refresh();
+      if (st.enabled && !st.hidden) refresh();
     }
   }, 500);
 
+  try {
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes || !changes[SETTING_KEY]) return;
+      applyEnabled(changes[SETTING_KEY].newValue === true);
+    });
+  } catch (_) {}
+
   st.tickTimer = setInterval(tick, 200);
 
-  try {
-    if (window.hibikiEpisodeCues && tracksForVideo().length) showPanel();
-  } catch (_) {}
+  // 默认关：读取开关，仅在开启（且已有整集字幕）时才自动显示面板。
+  readEnabled(applyEnabled);
 })();
