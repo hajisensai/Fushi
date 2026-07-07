@@ -828,7 +828,7 @@ class RemoteVideoStreamUrls {
   /// null=从 [streamUrl] 抽（本地文件 / 已是低分辨率流）。
   final String? miningVideoUrl;
 
-  /// TODO-1301（BUG-588）：[miningVideoUrl] 是否自带音轨（muxed）。true 时制卡音频从
+  /// TODO-1301（BUG-600）：[miningVideoUrl] 是否自带音轨（muxed）。true 时制卡音频从
   /// [miningVideoUrl] 抽，播放页把制卡音频源置 null 回落 miningSource；false 时用
   /// [audioStreamUrl]（分离 audio-only 流）。见 [UrlStreamVideoClient.miningVideoHasAudio]。
   final bool miningVideoHasAudio;

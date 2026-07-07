@@ -6,7 +6,7 @@ import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// TODO-1301（BUG-588）：油管应用内制卡「没句子音频、没 gif」的根因是应用内播放路径
+/// TODO-1301（BUG-600）：油管应用内制卡「没句子音频、没 gif」的根因是应用内播放路径
 /// **无条件**把制卡音频源指向 audio-only DASH 流（audioStreamUrl）——该流 ffmpeg `-ss`
 /// HTTP seek 会 stall→120s 超时→无音频，`requireAudio` 默认 true 又让整卡 abort→已抽好的
 /// GIF 连坐丢弃。批量路径（youtube_clip_miner.dart:67）用守卫
@@ -139,7 +139,7 @@ void main() {
       );
     });
 
-    test('不得再无条件把制卡音频源指向 audio-only DASH 流（旧根因 BUG-588）', () {
+    test('不得再无条件把制卡音频源指向 audio-only DASH 流（旧根因 BUG-600）', () {
       // 旧代码：if (urls.audioStreamUrl != null) setMiningAudioSourceOverride(urls.audioStreamUrl);
       expect(
         src.contains('setMiningAudioSourceOverride(urls.audioStreamUrl)'),

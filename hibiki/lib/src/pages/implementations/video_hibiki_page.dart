@@ -1688,7 +1688,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
         externalAudioTrackUrl: urls.audioStreamUrl,
       );
-      // TODO-1301（BUG-588）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
+      // TODO-1301（BUG-600）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
       // 一致——muxed 挖矿流自带音轨时置 null，让引擎回落 miningSource(muxed 360p) 抽音频
       // （实测 2s 出 AAC）；仅无 muxed 的纯分离流才指向 audio-only 流。此前无条件指向
       // audio-only DASH 流 → ffmpeg `-ss` HTTP seek stall→120s 超时→无句子音频，且

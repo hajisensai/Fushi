@@ -1,4 +1,4 @@
-## BUG-591 · 悬浮字幕点击文字不出查词窗(Android)
+## BUG-598 · 悬浮字幕点击文字不出查词窗(Android)
 - **报告**：2026-07-07（用户：TODO-1268 复诉「没反应」）
 - **真实性**：✅ 真 bug（根因 `hibiki/android/app/src/main/java/app/hibiki/reader/FloatingLyricService.java:396` 原 `startActivity(intent)`——从后台前台服务裸启动 `PopupDictFlutterActivity` 是一次 background activity launch，现代 Android/OEM ROM 会拦掉）
 - **[x] ① 已修复** — `FloatingLyricService.java` 把点词启动抽成弹性 helper `startLookupActivity`：API 34+ 走自发 `PendingIntent` + `ActivityOptions.setPendingIntentBackgroundActivityStartMode(MODE_BACKGROUND_ACTIVITY_START_ALLOWED)` 官方后台启动 opt-in；失败回退直接 `startActivity`，再失败回退 `bringAppToFront()`，每条 log。分支 `todo1268-floating-sub-tap-lookup`

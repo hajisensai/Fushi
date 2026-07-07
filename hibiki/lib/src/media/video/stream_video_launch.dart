@@ -34,7 +34,7 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       streamUrl: resolved.streamUrl,
       audioStreamUrl: resolved.audioStreamUrl,
       miningVideoUrl: resolved.miningVideoUrl,
-      // TODO-1301（BUG-588）：透传 muxed 挖矿流是否自带音轨，让应用内播放器复用批量制卡
+      // TODO-1301（BUG-600）：透传 muxed 挖矿流是否自带音轨，让应用内播放器复用批量制卡
       // 守卫（youtube_clip_miner.dart:67）——muxed 时把制卡音频源置 null 回落 miningSource
       // 抽音频，避免指向 audio-only DASH 流致 ffmpeg seek stall→无句子音频/GIF 连坐丢弃。
       miningVideoHasAudio: resolved.miningVideoHasAudio,

@@ -1,4 +1,4 @@
-## BUG-588 · 视频buffered已满仍卡加载态
+## BUG-599 · 视频buffered已满仍卡加载态
 - **报告**：2026-07-07（用户：TODO-1297）
 - **真实性**：✅ 真 bug（TODO-1276 首帧 gate 不完整）—— 根因
   `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:2381`（首开就绪判据

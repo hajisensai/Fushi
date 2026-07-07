@@ -27,10 +27,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 582 条。点号进各自文件。
+> 共 586 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-600](bugs/BUG-600-yt-inapp-mining-no-audio.md) | ✅ | ✅ | 油管应用内制卡音频源指向audio-only DASH致stall无音频gif连坐 |
+| [BUG-599](bugs/BUG-599-video-stuck-loading.md) | ✅ | ✅ | 视频buffered已满仍卡加载态 |
+| [BUG-598](bugs/BUG-598-floating-sub-tap-no-lookup.md) | ✅ | ✅ | 悬浮字幕点击文字不出查词窗(Android) |
+| [BUG-597](bugs/BUG-597-android-video-black-texture.md) | ✅ | ✅ | 安卓视频解码正常但纹理合成黑屏 |
 | [BUG-596](bugs/BUG-596-yt-stream-dedup-cover.md) | ✅ | ✅ | 油管流去重无videoId规范化+非YouTube流无封面 |
 | [BUG-595](bugs/BUG-595-mobile-mining-no-cover.md) | ✅ | ✅ | 手机制卡回退路径漏coverHref致无书籍封面 |
 | [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉） |

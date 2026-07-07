@@ -246,7 +246,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   /// [YoutubeResolvedSource.miningVideoUrl]）。null=用 [streamUrl] 抽。
   final String? miningVideoUrl;
 
-  /// TODO-1301（BUG-588）：[miningVideoUrl] 是否自带音轨（muxed）。true 时制卡音频从
+  /// TODO-1301（BUG-600）：[miningVideoUrl] 是否自带音轨（muxed）。true 时制卡音频从
   /// [miningVideoUrl] 抽（audio-only DASH 流 ffmpeg `-ss` HTTP seek 会 stall→120s 超时→
   /// 无句子音频），播放页据此把制卡音频源置 null 回落 miningSource。见
   /// [YoutubeResolvedSource.miningVideoHasAudio]。经 [remoteVideoStreamUrls] 透传给播放页。
