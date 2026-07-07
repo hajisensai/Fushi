@@ -866,6 +866,22 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<void> Function()? debugInjectAudiobookBridge;
 
+  /// Test hook: opens the in-reader quick settings sheet without relying on a
+  /// native-device tap. The bottom chrome intentionally stays outside normal
+  /// reader focus traversal, so device automation needs this debug entry point
+  /// before it can focus the sheet's own controls.
+  @visibleForTesting
+  static Future<void> Function()? debugOpenQuickSettings;
+
+  /// Test hook: toggles lyrics mode directly for lower-level integration tests.
+  @visibleForTesting
+  static Future<void> Function()? debugToggleLyricsMode;
+
+  /// Test hook: reports whether the current reader route is displaying a ready
+  /// LyricsModeHtml document.
+  @visibleForTesting
+  static bool Function()? debugLyricsModeReady;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -1251,6 +1267,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   @override
   void initState() {
     super.initState();
+    assert(() {
+      ReaderHibikiPage.debugOpenQuickSettings = () async {
+        unawaited(_showAppearanceSheet());
+        await Future<void>.delayed(Duration.zero);
+      };
+      ReaderHibikiPage.debugToggleLyricsMode = _toggleLyricsMode;
+      ReaderHibikiPage.debugLyricsModeReady =
+          () => mounted && _lyricsMode && _lyricsPageReady;
+      return true;
+    }());
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback =
         ExitFlushRegistry.instance.register(_flushAllForProcessExit);
@@ -1690,6 +1716,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugCaretSurface = null;
       ReaderHibikiPage.debugEvaluateTopPopup = null;
       ReaderHibikiPage.debugInjectAudiobookBridge = null;
+      ReaderHibikiPage.debugOpenQuickSettings = null;
+      ReaderHibikiPage.debugToggleLyricsMode = null;
+      ReaderHibikiPage.debugLyricsModeReady = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
@@ -2040,6 +2069,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                     if (_readerContentReady)
                       const SizedBox.shrink(
                           key: ValueKey<String>('hoshi_content_ready')),
+                    if (!kReleaseMode && _lyricsMode && _lyricsPageReady)
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        width: 1,
+                        height: 1,
+                        child: IgnorePointer(
+                          child: Semantics(
+                            container: true,
+                            identifier: 'hibiki.reader.lyrics.ready',
+                            label: 'lyrics ready',
+                            child: const SizedBox(
+                              key: ValueKey<String>('hoshi_lyrics_ready'),
+                              width: 1,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
                     // On-screen focus indicator for the "reading content" layer,
                     // matching the app's standard focus ring (HibikiFocusRing:
                     // colorScheme.primary, 2.5px, 8px radius). Shown while the reader

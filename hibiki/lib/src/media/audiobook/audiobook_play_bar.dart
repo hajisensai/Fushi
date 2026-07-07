@@ -188,6 +188,8 @@ class AudiobookPlayBar extends StatelessWidget {
       ),
       _FocusableBarButton(
         id: const HibikiFocusId('audiobook_settings'),
+        key: const ValueKey<String>('hoshi_reader_audiobook_settings_button'),
+        semanticsIdentifier: 'hibiki.reader.audiobook.settings',
         icon: const Icon(Icons.tune_outlined),
         iconSize: 20,
         style: flatStyle,
@@ -283,6 +285,8 @@ class _FocusableBarButton extends StatelessWidget {
     this.style,
     this.color,
     this.filledTonal = false,
+    this.semanticsIdentifier,
+    super.key,
   });
 
   final HibikiFocusId id;
@@ -300,9 +304,12 @@ class _FocusableBarButton extends StatelessWidget {
   /// true 时底层用 [IconButton.filledTonal]（播放/暂停键的 MD3 圆框 tonal 容器）。
   final bool filledTonal;
 
+  /// Stable native accessibility id for UI automation.
+  final String? semanticsIdentifier;
+
   @override
   Widget build(BuildContext context) {
-    final Widget button = filledTonal
+    Widget button = filledTonal
         ? IconButton.filledTonal(
             icon: icon,
             iconSize: iconSize,
@@ -319,6 +326,12 @@ class _FocusableBarButton extends StatelessWidget {
             tooltip: tooltip,
             onPressed: onPressed,
           );
+    if (semanticsIdentifier != null) {
+      button = Semantics(
+        identifier: semanticsIdentifier,
+        child: button,
+      );
+    }
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
