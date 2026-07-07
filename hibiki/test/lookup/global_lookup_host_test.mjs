@@ -1355,4 +1355,83 @@ function flushTimers() {
     'reused root re-reveals on an unchanged-body re-lookup');
 }
 
+// 40. TODO-1231 v2 (BUG-583): a freshly-opened, still-gated-hidden child must NOT
+//     drag the window-origin (bbox MIN-corner) outward. That origin move races
+//     the compensating commitLayerShift across the DWM/WebView2 boundary and
+//     lurches the pinned parent card ("父弹窗出现子弹窗时闪一下"). The origin now
+//     follows ONLY content-ready (visible) shells; the far edges (window size)
+//     still grow to cover the hidden child so it is not clipped when it paints.
+//     Once the child renders (content-ready) its up/left corner joins the origin
+//     — the single origin move coincides with the child's own appearance.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* R */' };
+  host.renderStack({ popups: [root] });
+  const rootIframe = shellsOf(document)[0].children
+    .find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120); // root visible (content-ready)
+  // Open an UP/LEFT child (negative left, below-anchored) — still gated-hidden.
+  const child = { id: 'frame-1', parentIndex: 0,
+    frame: { left: -40, top: 60, width: 200, height: 160 }, settingsJs: '/* C */' };
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child] });
+  assert.strictEqual(host.frameGateState('frame-1').contentReady, false,
+    'the just-opened child is still gated-hidden');
+  const openSize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(openSize, 'opening the child re-measures');
+  assert.strictEqual(openSize.args[1].left, 0,
+    'origin stays at the visible parent (0) — the hidden up/left child does NOT '
+    + 'drag it outward');
+  assert.strictEqual(openSize.args[1].top, 0, 'origin top stays at the parent');
+  // The far edges DID grow to cover the hidden child (no clip when it paints).
+  assert.ok(openSize.args[1].width >= 200 && openSize.args[1].height >= 220,
+    'the window pre-grows its far edges to cover the hidden child');
+  // Child renders -> content-ready -> NOW it joins the origin (single move,
+  // coincident with the child appearing).
+  const childIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  childIframe._renderContent(140);
+  const readySize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(readySize, 'the child becoming content-ready re-measures');
+  assert.strictEqual(readySize.args[1].left, -40,
+    'once the child is visible the origin moves outward to include it (one move)');
+}
+
+// 41. TODO-1231 v2 (BUG-583): a DOWN-RIGHT nested open never moves the origin at
+//     all — only the far edges grow — so the common cascade has ZERO parent
+//     lurch, before AND after the child paints.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* R */' };
+  host.renderStack({ popups: [root] });
+  const rootIframe = shellsOf(document)[0].children
+    .find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120);
+  const child = { id: 'frame-1', parentIndex: 0,
+    frame: { left: 120, top: 80, width: 200, height: 160 }, settingsJs: '/* C */' };
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child] });
+  const openSize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(openSize, 'opening the down-right child re-measures (far edges grow)');
+  assert.strictEqual(openSize.args[1].left, 0,
+    'down-right open: origin stays at the parent (0)');
+  assert.strictEqual(openSize.args[1].top, 0,
+    'down-right open: origin top stays at the parent');
+  const childIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  childIframe._renderContent(140);
+  const readySize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(readySize, 'the down-right child becoming content-ready re-measures');
+  assert.strictEqual(readySize.args[1].left, 0,
+    'down-right visible: origin still at the parent (never moves)');
+  assert.strictEqual(readySize.args[1].top, 0,
+    'down-right visible: origin top unchanged (parent perfectly still)');
+}
+
 console.log('global_lookup_host_test: PASS');
