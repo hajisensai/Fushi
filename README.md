@@ -210,9 +210,11 @@ Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth creden
 
 ## Star History
 
-[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://www.star-history.com/#hajisensai/hibiki&Date)
+[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/hibiki/stargazers)
 
-> Click the badge for the full star history chart on star-history.com.
+[![Star History](docs/assets/star-history.svg)](https://github.com/hajisensai/hibiki/stargazers)
+
+> The chart above is generated inside this repository (no third-party service) and refreshed daily by the [Update Star History](.github/workflows/star-history.yml) workflow.
 
 ## Acknowledgments
 
