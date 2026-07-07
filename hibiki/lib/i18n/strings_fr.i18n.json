@@ -2168,5 +2168,6 @@
   "render_impeller_disable_toggle": "Disable Impeller (use Skia renderer)",
   "render_impeller_disable_hint": "Falls back to the Skia renderer. Try this if a video plays but the screen stays black; takes effect after restarting the app.",
   "render_restart_required": "Takes effect after restarting the app",
-  "handlebar_card_image": "Card Image (Cover / GIF)"
+  "handlebar_card_image": "Card Image (Cover / GIF)",
+  "video_subtitle_youtube_captions": "YouTube captions"
 }

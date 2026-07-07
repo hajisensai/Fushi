@@ -23,6 +23,13 @@ part of '../video_hibiki_page.dart';
 /// `_videoWithSubtitlePanel`) stay in the main shell; the parents keep calling the
 /// extracted `_buildSubtitleSourcesSidePanel` / `_subtitleJumpSidePanel` through
 /// shared private scope.
+/// TODO-1302：YouTube 预解析字幕（[UrlStreamVideoClient.preresolvedCues]）的合成字幕源
+/// 哨兵。YouTube 字幕不是 host 外挂文件、也不是容器内嵌轨枚举，而是 resolver 预解析好的
+/// cue 直接注入 overlay。用一个非空源标识它，让远端字幕菜单能渲染并高亮「YouTube 字幕」行，
+/// 且「关闭」（[_currentSubtitleSource]==null 判据）不被误显选中（根因：此前不登记任何源，
+/// _currentSubtitleSource 留 null → 菜单无行 + 关闭高亮 → 选不到 YouTube 字幕）。
+const String _kYoutubeCaptionsSource = 'youtube:captions';
+
 extension _VideoSubtitle on _VideoHibikiPageState {
   /// 翻转字幕跳转列表面板可见性（TODO-069/TODO-314；裸 L 键 / 控制条入口按钮）。
   ///
@@ -146,6 +153,21 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                       : _selectSubtitleOff(controller),
                 ),
       ),
+      // TODO-1302：YouTube 预解析字幕行。preresolvedCues 注入 overlay 的字幕不是 host 外挂
+      // 文件（无 hostSub）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks 空），故单列一行
+      // 让远端字幕菜单能渲染并高亮它；点它经 [_applyYoutubeCaptions] 把预解析 cue 重挂 overlay
+      // （关闭后可再选回），选中态由合成源哨兵 [_kYoutubeCaptionsSource] 判定。
+      if (_isRemote && _youtubeCaptionsAvailable)
+        ListTile(
+          leading: const Icon(Icons.closed_caption_outlined),
+          title: Text(t.video_subtitle_youtube_captions),
+          selected: _currentSubtitleSource == _kYoutubeCaptionsSource,
+          selectedColor: cs.primary,
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_applyYoutubeCaptions(controller)),
+        ),
       if (_isRemote && hostSub != null)
         ListTile(
           leading: const Icon(Icons.cloud_done_outlined),
@@ -621,6 +643,32 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted) return;
     _rebuild(() => _currentSubtitleSource = null);
+  }
+
+  /// TODO-1302：当前有效远端客户端是否带 YouTube 预解析字幕 cue（[UrlStreamVideoClient]
+  /// 的 [UrlStreamVideoClient.preresolvedCues] 非空）。为真时远端字幕菜单渲染一条「YouTube
+  /// 字幕」行，可在「关闭 / YouTube 字幕」间切换。派生自真实客户端，无独立状态需同步。
+  bool get _youtubeCaptionsAvailable {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    return client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty;
+  }
+
+  /// TODO-1302：把 YouTube 预解析字幕 cue 重新挂回 overlay（用户从菜单点「YouTube 字幕」
+  /// 重新选中；初始 load 由 [_loadRemoteEpisode] 直接登记源指针）。与 [_applyRemoteSubtitle]
+  /// 对称，但 cue 源是内存里的 [UrlStreamVideoClient.preresolvedCues]（不下载、不落 DB），
+  /// 选中哨兵为 [_kYoutubeCaptionsSource]。客户端不带预解析 cue 时早返回（防御）。
+  Future<void> _applyYoutubeCaptions(VideoPlayerController controller) async {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient || client.preresolvedCues.isEmpty) {
+      return;
+    }
+    controller.setCues(client.preresolvedCues);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (!mounted) return;
+    _rebuild(() => _currentSubtitleSource = _kYoutubeCaptionsSource);
+    _showOsd(
+      t.video_subtitle_switched(label: t.video_subtitle_youtube_captions),
+    );
   }
 
   Future<void> _importExternalSubtitle(
