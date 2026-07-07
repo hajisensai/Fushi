@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 567 条。点号进各自文件。
+> 共 568 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-582](bugs/BUG-582-interconnect-audiobook-shown-as-plain-no-audio-sync.md) | ✅ | ✅ | 互联有声书显示成普通书且音频不同步 |
 | [BUG-581](bugs/BUG-581-nonvideo-mine-no-cue.md) | ✅ | ✅ | 普通网页制卡误报没找到当前字幕 |
 | [BUG-580](bugs/BUG-580-interconnect-audiobook-rename.md) | ✅ | ✅ | 互联下载有声书 EPUB 落盘 rename 失败中止导入 |
 | [BUG-579](bugs/BUG-579-youtube-external-audio-silent-until-seek.md) | ✅ | ✅ | YouTube 分离流初始无声，跳转后才有声（audio-only 音轨在 play 之后才外挂） |

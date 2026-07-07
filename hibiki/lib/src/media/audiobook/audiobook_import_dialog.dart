@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
-    show BookImportDialog;
+    show BookImportDialog, writeEpubBackedSrtBook;
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
@@ -761,6 +762,31 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         parsed.health.packInto(audiobook);
       }
       await widget.repo.saveAudiobook(audiobook);
+      // TODO-1288：EPUB-backed 有声书导入必须补写一条配对 srt_books 行，否则互联
+      // host 的 hasAudiobook 判据（app_model_library_host_service
+      // ._srtBackedAudiobookKeys 要求 audiobooks + srt_books 两表齐备）认不出这本
+      // 书 → 对端下载后显示成普通书、且 exportAudiobook 抛 StateError → 音频永不
+      // 同步。book_import_dialog / audiobook_alignment_service / v29 backfill 三处
+      // 均已补写，唯本对话框（给已有 EPUB 书加/换音频）遗漏，v29 之后的新导入不再
+      // 被一次性 backfill 覆盖。与它们共用同一稳定派生 uid（srtbook_epub_<bookKey>）
+      // 保持幂等。判据 = epub_books 存在（等价 v29 backfill 的 audiobooks JOIN
+      // epub_books）；standalone（无 EPUB backing）与 audioOnly（SrtBook 已存在）
+      // 天然豁免。非 audioOnly 路径在 line 637 已门控 alignment 非空，故
+      // persistedAlignment 此处必非 null。
+      if (!widget.audioOnly && persistedAlignment != null) {
+        final EpubBookRow? epubRow =
+            await widget.repo.database.getEpubBook(widget.bookKey);
+        if (epubRow != null) {
+          await writeEpubBackedSrtBook(
+            repo: SrtBookRepository(widget.repo.database),
+            bookKey: widget.bookKey,
+            title: epubRow.title,
+            author: epubRow.author,
+            srtPath: persistedAlignment,
+            audioPaths: persistedPaths,
+          );
+        }
+      }
       if (parsed != null) {
         // TODO-811: single-timeline subtitle formats (srt/lrc/vtt/ass) carry one
         // continuous timeline, so the parser sets every cue's audioFileIndex to 0.
