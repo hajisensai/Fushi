@@ -142,10 +142,16 @@ void main() {
     );
     final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
     // 引擎：有区间却抽不出音频（audioPath==null）须被显式处理（中止），而非静默落空。
-    expect(engineNorm,
-        contains('req.requireAudio && req.hasRange && audioPath == null'),
+    // TODO-1303：中止判据扩到「区间抽取 或 provided-bytes 路径」——
+    // `req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)`
+    // （Netflix 录制片段无 range 但有 providedCoverBytes 也要中止）。谓词随之改写。
+    expect(
+        engineNorm,
+        contains(
+            'req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)'),
         reason: '抽段失败（有区间应带音频却 audioPath==null）须显式中止，而非静默落空。');
-    expect(engineNorm, contains('ImmersionMiningResult(aborted: true)'),
+    expect(engineNorm,
+        contains("aborted: true, abortReason: 'required audio missing'"),
         reason: '缺音频中止走 aborted 信号回 shell。');
     // shell：res.aborted → 用户可见 OSD（复用现有 i18n card_export_failed_detail）。
     expect(mineCard, contains('res.aborted'),
@@ -169,7 +175,7 @@ void main() {
     // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
     // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
     final int engineAbortIdx =
-        engineNorm.indexOf('ImmersionMiningResult(aborted: true)');
+        engineNorm.indexOf("abortReason: 'required audio missing'");
     final int engineCtxIdx = engineNorm.indexOf('AnkiMiningContext context =');
     expect(engineAbortIdx, greaterThanOrEqualTo(0));
     expect(engineCtxIdx, greaterThan(engineAbortIdx),

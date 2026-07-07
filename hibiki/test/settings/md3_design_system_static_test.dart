@@ -649,6 +649,15 @@ void main() {
               'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
+      // TODO-947 系列/合集折叠卡的马赛克封面（2x2 成员封面网格）是书架内容/封面美术，
+      // 不是页面 chrome：letterbox 底 surfaceContainerHighest 与格子圆角
+      // BorderRadius.circular(cellRadius) 是封面拼图单元，同「书架封面/拖放」豁免类。
+      'lib/src/pages/implementations/series_shelf_card.dart':
+          'TODO-947 series/collection folder card paints a 2x2 mosaic of member '
+              'book covers; the letterbox surface (surfaceContainerHighest) and '
+              'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
+              'art / reader-shelf content, not ordinary page chrome — same '
+              'reviewed exception class as the reader-shelf book-cover overlays.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
