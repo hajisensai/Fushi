@@ -1238,10 +1238,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 源菜单高亮当前项。
   String? _currentSubtitleSource;
 
-  /// 当前选中的副字幕源持久化值（TODO-857 视频双字幕 Path A）：与
+  /// 当前选中的副字幕源持久化值（TODO-857 / TODO-1312 视频双字幕）：与
   /// [_currentSubtitleSource] 同款四态编码（外挂路径 / `embedded:<n>` / `off:` /
-  /// null）。副字幕由 libmpv `secondary-sid` 自渲染（不进 cue 流，不可查词），与主
-  /// 字幕独立；首版仅支持内嵌轨。用于副字幕源菜单高亮当前项。
+  /// null）。TODO-1312 起副字幕改走 Flutter overlay 副层 cue 流（[VideoPlayerController.
+  /// setSecondaryCues]，可逐字符查词），不再 libmpv `secondary-sid` 自渲染；持久化格式
+  /// 沿用不变。恢复仅支持内嵌轨。用于副字幕源菜单高亮当前项。
   String? _currentSecondarySubtitleSource;
 
   /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
@@ -2534,7 +2535,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
     // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
     unawaited(_restoreAudioTrack(controller));
-    // TODO-857：恢复用户选过的副字幕轨（libmpv secondary-sid 自渲染）。与主
+    // TODO-857 / TODO-1312：恢复用户选过的副字幕轨（Flutter overlay 副层 cue 流）。与主
     // 字幕独立，仅内嵌轨；其内部 _waitUntilSubtitleTracksReady 等轨就绪。
     unawaited(_restoreSecondarySubtitle(controller));
   }
