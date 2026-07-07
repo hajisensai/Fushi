@@ -1700,7 +1700,17 @@ $_sharedJs
     var fontFloor = parseFloat(cs.fontSize) || 1;
     contentBox = Math.max(fontFloor, contentBox);
     var gap = parseFloat(cs.columnGap) || 0;
-    var pageStep = contentBox + gap;
+    // TODO-1285（每页列数根因修复）：一页含 N 列（CSS column-count），页步 =
+    // N × 真实列周期(used column-width + gap)。N 从 getComputedStyle(body).columnCount
+    // 直接读——与上面读 column-width/column-gap 同一权威真值源（CSS 由
+    // reader_content_styles 按 pageColumns 成对发 column-count:N + 子列宽 column-width），
+    // 无需注入 state、绝不与 CSS 失步。pageColumns=0（自动/无 column-count）→ columnCount
+    // = 'auto' → parseInt → NaN → columns=1 → pageStep = contentBox + gap，与旧单列字节
+    // 等价（零行为变化）。子列宽 contentBox 由浏览器亚像素解析，N×(contentBox+gap) 恒等
+    // 整页 content-box + gap，翻页网格仍落真实列边界，无 TODO-753/792 亚像素漂移。
+    var columns = parseInt(cs.columnCount, 10);
+    if (!(columns > 0)) columns = 1;
+    var pageStep = columns * (contentBox + gap);
     // TODO-792（竖排「文字向下偏移」根因修复·已下沉到 CSS）：曾一度在这里给竖排 pageStep += O
     // 补偿「列被 V+O 容器拉伸」造成的 realPitch>pageStep，但那只治页间累积、治不了页内逐列斜置
     // （斜置同源于列拉伸）。根因修法是让多列容器 body 高 == 纯 V（reader_content_styles.dart 的

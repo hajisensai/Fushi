@@ -61,6 +61,28 @@ class ReaderContentStyles {
   }) =>
       'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - ${marginTopVh}vh - ${marginBottomVh}vh - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
 
+  /// TODO-1285：每页多列（pageColumns）的单个子列宽度。给定单列时的 content-box 基准
+  /// 表达式 [baseContentBoxCss]（横排=宽、竖排=高，均为 CSS calc/max 串），当
+  /// [pageColumns] ≥ 2 时返回 `(content-box − (N−1)·gap)/N`，浏览器据此在 content-box
+  /// 里正好排下 N 列（floor((content-box+gap)/(subW+gap)) == N，代数恒等）。[pageColumns]
+  /// ≤ 1（含 0=自动/单列）时原样返回 [baseContentBoxCss]，与旧单列几何字节等价。
+  ///
+  /// 与 JS getScrollContext 的 `pageStep = columnCount·(used column-width + gap)` 成对：
+  /// 每列真实周期 subW+gap，一页 N 列 → 页步 = N·(subW+gap) == content-box+gap，翻页网格
+  /// 仍落在真实列边界，不引入 TODO-753/792 亚像素漂移。[columnGapPx] 必须与 body 的
+  /// `column-gap` 常量（[ReaderLayoutDefaults.columnGapPx]）一致。
+  static String columnWidthForColumns({
+    required String baseContentBoxCss,
+    required int pageColumns,
+    required int columnGapPx,
+  }) {
+    if (pageColumns <= 1) return baseContentBoxCss;
+    final int totalGapPx = (pageColumns - 1) * columnGapPx;
+    // max(1px, ...) 兜底：坍塌视口 + 大 N 时裸 calc 可能 ≤0（非法列宽），钳到 1px；
+    // 正常视口远大于地板，max 取 calc，零行为变化。
+    return 'max(1px, calc(($baseContentBoxCss - ${totalGapPx}px) / $pageColumns))';
+  }
+
   /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
   /// 的 `max(F, calc(...))` 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
   /// V=视口高，F=字号，mt/mb=上下页边距(px)，cT/cB=chrome 上下 inset(px)。
@@ -185,13 +207,28 @@ class ReaderContentStyles {
     //    TODO-734：基准必须是纯视口高 V（--reader-viewport-height），不是含
     //    +bottomOverlap 的 --page-height（那是图片虚高用），否则列底边比视口底高
     //    (O−F)，字号 F<22 漏字进底栏。与 JS getScrollContext 的 viewportHeight 成对。
-    final String columnWidthCss = isVertical
+    // content-box 单列基准（turn 轴扣 padding，横排=宽、竖排=高）。单列时 column-width
+    // 直接用它；每页多列时下面 columnWidthForColumns 把它按 N 均分成子列宽。
+    final String baseColumnWidthCss = isVertical
         ? ReaderContentStyles.verticalColumnWidthCss(
             marginTopVh: mt,
             marginBottomVh: mb,
             fontSizePx: settings.fontSize.round(),
           )
         : 'calc(var(--page-width, 100vw) - ${ml}vw - ${mr}vw)';
+    // TODO-1285：每页列数（pageColumns）根因修复。旧实现只发 `column-count:N` 却把
+    // column-width 钉死在整页 content-box —— CSS multicol 规范下并存时实际列数 =
+    // min(N, floor((content-box+gap)/(column-width+gap))) = min(N,1) = 1，N 被整页列宽
+    // 压成 1 列，「每页列数」永不生效。正解：column-width 必须 = 单个子列宽 =
+    // (content-box − (N−1)·gap)/N，浏览器才在 content-box 里正好排下 N 列。与 JS
+    // getScrollContext 的 pageStep = columnCount·(used column-width + gap) 成对（见
+    // reader_pagination_scripts.dart）。pageColumns≤1 时返回原整页 content-box，
+    // 与旧行为字节等价（零回归，保 TODO-729/753/792 单列几何不变式）。
+    final String columnWidthCss = ReaderContentStyles.columnWidthForColumns(
+      baseContentBoxCss: baseColumnWidthCss,
+      pageColumns: settings.pageColumns,
+      columnGapPx: ReaderLayoutDefaults.columnGapPx,
+    );
 
     final String textSpacingCss =
         'line-height: ${settings.lineHeight} !important;';

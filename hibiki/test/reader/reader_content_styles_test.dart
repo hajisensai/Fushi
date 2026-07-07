@@ -461,13 +461,15 @@ void main() {
               'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)'));
     });
 
-    // TODO-729 双页 spread：pageColumns>0 → column-count:N。CSS 层守住单一量纲不变式
-    // （gap 仍固定 22px、column-width 仍 content-box）；列宽是否仍 = 一屏滚动量由 N
-    // 主导还是 column-width 主导，是 headless WebView 无法验证的几何点（decision #2），
-    // 留真机双页翻到章尾兜底。这里只锁 CSS 结构不回退。
-    test(
-        'double-page spread emits column-count but keeps fixed gap + content-box width',
-        () async {
+    // TODO-1285：每页列数（pageColumns）根因修复。旧实现（TODO-729 遗留）只发
+    // `column-count:N` 却把 column-width 钉死在整页 content-box —— CSS multicol 规范下并
+    // 存时实际列数 = min(N, floor((content-box+gap)/(column-width+gap))) = min(N,1) = 1，
+    // N 被整页列宽压成 1 列，「每页列数」永不生效（当年 headless 无法验证 → punt 成
+    // 「留真机兜底」，实为坏结构）。正解：column-width 必须 = 单个子列宽 =
+    // (content-box − (N−1)·gap)/N，浏览器才在 content-box 里正好排下 N 列；gap 仍固定
+    // 22px（单量纲）。与 JS getScrollContext 的 pageStep = columnCount·(usedColW+gap) 成对，
+    // N·(subW+gap) == content-box+gap，翻页网格不动（保 TODO-729/753/792 不变式）。
+    test('TODO-1285 每页 N 列：column-count:N + column-width 均分成子列宽（横排）', () async {
       final HibikiDatabase db =
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -478,13 +480,92 @@ void main() {
 
       final String css = ReaderContentStyles.css(settings: settings);
       expect(css, contains('column-count: 2 !important;'),
-          reason: '双页 spread 必须发 column-count');
-      // 单一量纲不变式：gap 仍固定常量、column-width 仍 content-box（不被 spread 破坏）。
+          reason: '每页列数 N 必须发 column-count:N');
+      // gap 仍固定常量（单量纲不变式）。
       expect(css, contains('column-gap: 22px !important;'));
+      // 根因修复断言：column-width 必须均分成子列宽 (content-box − (N−1)·22px)/N，
+      // 绝不再是整页 content-box（否则实际列数被压回 1 列，回归失效）。
+      final String base =
+          'calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)';
       expect(
           css,
           contains(
-              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)'));
+              'column-width: max(1px, calc(($base - 22px) / 2)) !important;'),
+          reason: 'N=2：子列宽 = (content-box − 22px)/2，浏览器才排下 2 列');
+      // 防回归：绝不能退回「整页 content-box 当 column-width」的坏结构。
+      expect(
+          css,
+          isNot(contains(
+              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw) !important;')),
+          reason: '整页列宽会把 column-count:N 压成 1 列 → 每页列数失效（旧 bug）');
+    });
+
+    test('TODO-1285 每页列数=0（自动/单列）：无 column-count、列宽仍整页（字节等价）', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+      // 默认 pageColumns=0。
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('column-count:')),
+          reason: 'pageColumns=0 不发 column-count');
+      // 单列列宽仍是整页 content-box（不被 max(1px,...) 包裹）——零回归。
+      expect(
+          css,
+          contains(
+              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw) !important;'));
+      expect(css, isNot(contains('max(1px, calc(')));
+    });
+
+    test('TODO-1285 竖排每页 3 列：子列宽 = (竖排 content-box − 2·22px)/3', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('vertical-rl');
+      await settings.setPageColumns(3);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('column-count: 3 !important;'));
+      // 竖排基准是 verticalColumnWidthCss 的 max(F, calc(...))，均分后包一层 max(1px, ...)。
+      final String base = ReaderContentStyles.verticalColumnWidthCss(
+        marginTopVh: settings.marginTop,
+        marginBottomVh: settings.marginBottom,
+        fontSizePx: settings.fontSize.round(),
+      );
+      // totalGap = (3-1)*22 = 44。
+      expect(
+          css,
+          contains(
+              'column-width: max(1px, calc(($base - 44px) / 3)) !important;'),
+          reason: '竖排 N=3：子列高 = (content-box − 44px)/3');
+    });
+
+    // 直接单测 helper 的均分代数（不经整条 css 组装）。
+    test('TODO-1285 columnWidthForColumns 均分代数（N≤1 原样、N≥2 均分）', () {
+      const String base = 'calc(100px)';
+      // N=0/1：原样返回（零行为变化）。
+      expect(
+          ReaderContentStyles.columnWidthForColumns(
+              baseContentBoxCss: base, pageColumns: 0, columnGapPx: 22),
+          base);
+      expect(
+          ReaderContentStyles.columnWidthForColumns(
+              baseContentBoxCss: base, pageColumns: 1, columnGapPx: 22),
+          base);
+      // N=2：(base − 22px)/2。
+      expect(
+          ReaderContentStyles.columnWidthForColumns(
+              baseContentBoxCss: base, pageColumns: 2, columnGapPx: 22),
+          'max(1px, calc((calc(100px) - 22px) / 2))');
+      // N=4：(base − 66px)/4。
+      expect(
+          ReaderContentStyles.columnWidthForColumns(
+              baseContentBoxCss: base, pageColumns: 4, columnGapPx: 22),
+          'max(1px, calc((calc(100px) - 66px) / 4))');
     });
   });
 
@@ -987,6 +1068,46 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
       expect(css, isNot(contains('.blurred')));
       expect(css, isNot(contains('filter: blur(24px)')));
+    });
+  });
+
+  // TODO-1285：每页列数设置写穿守卫——UI onChanged → source.setTtuPageColumns →
+  // ReaderSettings.setPageColumns → preferences 表 `ttu_page_columns`。getter 反读一致。
+  group('TODO-1285 每页列数写穿 DB', () {
+    test('setPageColumns 写穿 preferences 且 getter 反读一致', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+
+      expect(settings.pageColumns, 0, reason: '默认自动（0）');
+      await settings.setPageColumns(3);
+      expect(settings.pageColumns, 3, reason: 'getter 立即反读新值');
+
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(prefs['src:reader_ttu:ttu_page_columns'], '3',
+          reason: '每页列数必须落到 preferences 表（写穿）');
+
+      // 独立实例重新从 DB 加载，仍读到 3（真持久化，非内存态）。
+      final ReaderSettings reloaded = ReaderSettings(db);
+      await reloaded.refreshFromDb();
+      expect(reloaded.pageColumns, 3);
+    });
+
+    test('source.setTtuPageColumns 经 ReaderSettings 写穿并反读', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      ReaderHibikiSource.readerSettings = settings;
+      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+
+      await ReaderHibikiSource.instance.setTtuPageColumns(2);
+      expect(ReaderHibikiSource.instance.ttuPageColumns, 2);
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(prefs['src:reader_ttu:ttu_page_columns'], '2');
     });
   });
 }

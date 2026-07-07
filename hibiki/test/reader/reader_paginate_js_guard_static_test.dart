@@ -108,8 +108,14 @@ void main() {
       );
       expect(ctx.contains('columnPitch'), isFalse,
           reason: 'columnPitch 双量纲已废，只保留单一 pageStep');
-      expect(ctx.contains('var pageStep = contentBox + gap;'), isTrue,
-          reason: 'pageStep = content-box + gap 是唯一步进量纲');
+      // TODO-1285：单量纲泛化为「一页 N 列」——pageStep = columnCount × (content-box +
+      // gap)。N 从 getComputedStyle(body).columnCount 读；pageColumns=0/1 时 N=1，
+      // pageStep 退回 content-box + gap（与旧单列字节等价）。仍是唯一步进量纲。
+      expect(
+          ctx.contains('var pageStep = columns * (contentBox + gap);'), isTrue,
+          reason: 'pageStep = columnCount × (content-box + gap) 是唯一步进量纲');
+      expect(ctx.contains('parseInt(cs.columnCount, 10)'), isTrue,
+          reason: '每页列数 N 必须从 computed columnCount 读（与 columnWidth/gap 同源）');
       expect(ctx.contains('totalSize - pageStep'), isTrue,
           reason: 'maxScroll 减项必须是 pageStep（与对齐量同源），不是 clientSize');
       expect(ctx.contains('clientSize'), isFalse, reason: 'clientSize 双量纲减项已删');
