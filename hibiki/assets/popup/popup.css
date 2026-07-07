@@ -202,6 +202,41 @@ html {
     -webkit-user-select: none;
 }
 
+/* TODO-1325 #4: 内联 SVG 动作按钮共享基类。顶部发音/收藏/制卡、清空草稿、句子上下文
+   步进器全部挂 .inline-action-button：图标用 currentColor 跟随各按钮 color/opacity/
+   主题；SVG 尺寸随按钮 font-size 自适应（width/height:1em），故各角色类只保留自己的
+   font-size 与特例态（favorited 金色 / latest 绿色 / duplicate 位移等）。hover 提亮、
+   active 变淡、disabled 去手型——三态反馈统一。 */
+.inline-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.inline-action-button > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    /* 点到 SVG 也当成点了按钮：closest('.mine-button') 靠冒泡命中按钮，pointer-events
+       关掉子节点避免个别 WebView 把 target 停在 <path> 上导致 hit-test 抖动。 */
+    pointer-events: none;
+    fill: currentColor;
+}
+
+.inline-action-button:hover {
+    opacity: 1;
+}
+
+.inline-action-button:active {
+    opacity: 0.6;
+}
+
+.inline-action-button:disabled {
+    cursor: default;
+}
+
 .favorite-button.favorited {
     opacity: 1;
     color: #f5a623;
@@ -732,6 +767,15 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     font-size: 20px;
     line-height: 1;
     color: var(--on-surface-variant);
+    cursor: pointer;
+}
+
+/* TODO-1325 #4: 标签说明遮罩的关闭按钮同样走内联 SVG（× 图标），随 font-size 缩放。 */
+.overlay-close > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    fill: currentColor;
 }
 
 .category-section {
@@ -819,8 +863,25 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     -webkit-user-select: none;
 }
 
+/* TODO-1325 #1: 音高来源彩色药丸。此前 display:none 把音高词典名（如「NHK 日本語
+   発音アクセント辞典」）藏掉，用户看不到某条音高的出处。改成与 .frequency-dict-label
+   同一视觉家族的填充药丸：填充色接 MD3 --md-primary（Dart 注入的动态取色），文字用
+   配对的 --md-on-primary（同批注入），浅色主题得白字、深色主题得深字，两主题都保证
+   对比度（不写死 Niratan 的 #94a6eb）。圆角走满圆 pill。 */
 .pitch-dict-label {
-    display: none;
+    display: inline-block;
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 1px 6px;
+    margin-right: 4px;
+    border-radius: 999px;
+    background-color: var(--md-primary, var(--primary-color, #386A58));
+    color: var(--md-on-primary, #ffffff);
+    font-weight: 600;
+    white-space: nowrap;
+    vertical-align: middle;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .pitch-entries {

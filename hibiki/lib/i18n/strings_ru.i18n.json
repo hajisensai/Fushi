@@ -2176,5 +2176,6 @@
   "stat_clear_all_title": "Clear all statistics",
   "stat_clear_all_confirm": "Clear",
   "stat_clear_all_reading_message": "Clear all reading time, character counts, and lookup/mining counts? Your saved words, sentences, and mined cards are kept. This cannot be undone.",
-  "stat_clear_all_video_message": "Clear all watch time, subtitle character counts, and lookup/mining counts? Your saved words, sentences, and mined cards are kept. This cannot be undone."
+  "stat_clear_all_video_message": "Clear all watch time, subtitle character counts, and lookup/mining counts? Your saved words, sentences, and mined cards are kept. This cannot be undone.",
+  "card_mining_pending": "Adding card…"
 }

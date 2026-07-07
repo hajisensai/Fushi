@@ -98,8 +98,16 @@ void main() {
         final src = read(site);
         expect(src, contains('describeMineOutcome('),
             reason: '$site 应转调 describeMineOutcome');
-        expect(src.contains('case MineResult.duplicate:'), isFalse,
-            reason: '$site 不应再保留本地 MineResult switch');
+        // 精确判据：只有「重新复制了 describeMineOutcome 的**消息** switch」才算回退
+        // ——即同一文件里 `case MineResult.duplicate:` 与重复卡消息 `t.card_duplicate`
+        // 同时出现。仅有 `case MineResult.duplicate:`（如 app_model 的
+        // remoteMineResultFromOutcome：把 outcome 映射成浏览器扩展的 RemoteMineResult，
+        // TODO-1303）是合法的、与消息无关的另一种 switch，不算回退。
+        final bool duplicatesMessageSwitch =
+            src.contains('case MineResult.duplicate:') &&
+                src.contains('t.card_duplicate');
+        expect(duplicatesMessageSwitch, isFalse,
+            reason: '$site 不应再本地复制 describeMineOutcome 的消息 switch');
       });
     }
   });
