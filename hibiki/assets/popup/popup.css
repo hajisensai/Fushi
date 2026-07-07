@@ -810,6 +810,13 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     align-items: baseline;
     gap: 6px;
     margin-top: 2px;
+    /* TODO-1305 / BUG-pitch-reading-mined: 音高发音区（片假名 reading 逐 mora +
+       [n] 音高数字 + IPA）是纯展示，不参与查词/复制。加 user-select:none 杜绝拖选
+       把片假名 reading（如 カンロク）留在原生选区、制卡时被烤进 Anki 卡的
+       SelectionText 字段。词典正文 glossary 是独立兄弟区块，仍保留 user-select:text
+       可选中做嵌套查词，零影响。*/
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .pitch-dict-label {
