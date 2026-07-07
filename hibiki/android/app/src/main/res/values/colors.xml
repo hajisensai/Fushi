@@ -4,7 +4,10 @@
     <color name="ic_launcher_full_background">#FFFFFF</color>
     <!-- 默认档「白色圆角方形（squircle）」背景：不透明白，任意壁纸下可见（TODO-1241）。 -->
     <color name="ic_launcher_squircle_background">#FFFFFF</color>
-    <!-- 「透明（无背景）」备选档：自适应背景设为全透明，启动器上只显示藏青 wordmark
-         本体，无白底方块（TODO-1241）。 -->
-    <color name="ic_launcher_minimal_background">#00000000</color>
+    <!-- 「简约（wordmark）」备选档背景：不透明白（TODO-1269 回归修复）。
+         自适应图标（adaptive-icon）背景层不能用纯透明 #00000000——Android 会把它
+         合成到不透明底层上，多数启动器渲染成纯黑，导致老用户升级后图标背景全黑
+         （原 TODO-1241 想做「透明无背景」，但自适应图标物理上无法透明）。因此这里必须
+         是不透明色；沿用回归前的白，任意壁纸下可见、绝不发黑。 -->
+    <color name="ic_launcher_minimal_background">#FFFFFF</color>
 </resources>

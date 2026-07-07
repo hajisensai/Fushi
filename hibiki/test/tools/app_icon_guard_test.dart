@@ -156,4 +156,76 @@ void main() {
         reason: '必须提供老用户迁移逻辑，把启用的 minimal alias 迁回 default');
     expect(helper.contains('RETIRED_MINIMAL_ALIAS'), isTrue);
   });
+  test('TODO-1269 回归守卫：所有启动器自适应图标背景必须不透明且非纯黑（纯透明会被渲染成黑）', () {
+    // 根因：TODO-1241 把 ic_launcher_minimal_background 从 #FFFFFF 改成纯透明
+    // #00000000，adaptive-icon 背景层不能透明——Android 合成到不透明底层、多数
+    // 启动器渲染成纯黑，导致老用户（经 IconSwitchHelper 迁到 minimal wordmark）
+    // 升级后图标背景全黑。此守卫扫描所有 mipmap-anydpi-v26/launcher_icon*.xml，
+    // 解析其 <background> 引用的 @color，再从 values/colors.xml 解析真实色值，
+    // 断言：alpha == 0xFF（不透明）且 RGB 非纯黑 (0,0,0)。
+    final String colorsXml = read('android/app/src/main/res/values/colors.xml');
+    // 解析 colors.xml：name -> #RRGGBB / #AARRGGBB。
+    final Map<String, String> colorByName = <String, String>{};
+    final RegExp colorRe = RegExp(
+      r'<color\s+name="([^"]+)"\s*>\s*(#[0-9A-Fa-f]{6,8})\s*</color>',
+    );
+    for (final RegExpMatch m in colorRe.allMatches(colorsXml)) {
+      colorByName[m.group(1)!] = m.group(2)!;
+    }
+
+    // (alpha, r, g, b) 解析：#RRGGBB -> alpha 0xFF；#AARRGGBB -> 显式 alpha。
+    List<int> parseArgb(String hex) {
+      final String h = hex.substring(1);
+      if (h.length == 6) {
+        return <int>[
+          0xFF,
+          int.parse(h.substring(0, 2), radix: 16),
+          int.parse(h.substring(2, 4), radix: 16),
+          int.parse(h.substring(4, 6), radix: 16),
+        ];
+      }
+      return <int>[
+        int.parse(h.substring(0, 2), radix: 16),
+        int.parse(h.substring(2, 4), radix: 16),
+        int.parse(h.substring(4, 6), radix: 16),
+        int.parse(h.substring(6, 8), radix: 16),
+      ];
+    }
+
+    final Directory adaptiveDir =
+        Directory('android/app/src/main/res/mipmap-anydpi-v26');
+    expect(adaptiveDir.existsSync(), isTrue,
+        reason: '缺失自适应图标目录 mipmap-anydpi-v26');
+
+    final List<FileSystemEntity> iconXmls = adaptiveDir
+        .listSync()
+        .where((FileSystemEntity e) =>
+            e is File &&
+            e.uri.pathSegments.last.startsWith('launcher_icon') &&
+            e.path.endsWith('.xml'))
+        .toList();
+    expect(iconXmls, isNotEmpty, reason: '未发现任何 launcher_icon*.xml 自适应图标');
+
+    final RegExp bgRefRe = RegExp(
+      r'<background\s+android:drawable="@color/([^"]+)"',
+    );
+    for (final FileSystemEntity e in iconXmls) {
+      final String name = e.uri.pathSegments.last;
+      final String xml = (e as File).readAsStringSync();
+      final RegExpMatch? bg = bgRefRe.firstMatch(xml);
+      // 有的图标背景直接是 png drawable（非 @color），跳过——只校验 @color 背景。
+      if (bg == null) continue;
+      final String colorName = bg.group(1)!;
+      final String? hex = colorByName[colorName];
+      expect(hex, isNotNull,
+          reason: '$name 引用的 @color/$colorName 在 colors.xml 中未定义');
+      final List<int> argb = parseArgb(hex!);
+      expect(argb[0], 0xFF,
+          reason: '$name 背景 @color/$colorName = $hex 不是不透明（alpha != 0xFF）；'
+              '自适应图标背景纯/半透明会被渲染成黑（TODO-1269）');
+      final bool isPureBlack = argb[1] == 0 && argb[2] == 0 && argb[3] == 0;
+      expect(isPureBlack, isFalse,
+          reason: '$name 背景 @color/$colorName = $hex 是纯黑，图标会背景全黑（TODO-1269）');
+    }
+  });
 }
