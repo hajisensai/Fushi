@@ -228,6 +228,121 @@ void main() {
     });
   });
 
+  group('streamVideoBookUid YouTube canonicalization (TODO-1304 去重)', () {
+    // 同一支视频 dQw4w9WgXcQ 的各种 URL 写法（不同 host / 短链 / 追踪参数）都必须收敛
+    // 到同一 book_uid `video/stream/yt:<videoId>`，让 _uniqueBookUid 自然去重。
+    const String canonical = 'video/stream/yt:dQw4w9WgXcQ';
+
+    test('watch / youtu.be / shorts / m. / music. all converge to yt:<id>', () {
+      const List<String> variants = <String>[
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://music.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtu.be/dQw4w9WgXcQ',
+        'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+        'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      ];
+      for (final String url in variants) {
+        expect(streamVideoBookUid(url), canonical, reason: url);
+      }
+    });
+
+    test('tracking params (&t= &list= &si= &feature=) are stripped', () {
+      const List<String> tracked = <String>[
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc123',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&feature=share',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10&list=PLx&feature=youtu.be',
+        'https://youtu.be/dQw4w9WgXcQ?si=aBcDeFgH',
+        'https://youtu.be/dQw4w9WgXcQ?t=90&si=xyz',
+      ];
+      for (final String url in tracked) {
+        expect(streamVideoBookUid(url), canonical, reason: url);
+      }
+    });
+
+    test('leading/trailing whitespace does not change identity', () {
+      expect(
+        streamVideoBookUid('  https://youtu.be/dQw4w9WgXcQ?si=abc  '),
+        canonical,
+      );
+    });
+
+    test('different YouTube videos get different uids', () {
+      final String a = streamVideoBookUid('https://youtu.be/dQw4w9WgXcQ');
+      final String b = streamVideoBookUid('https://youtu.be/9bZkp7q19f0');
+      expect(a, 'video/stream/yt:dQw4w9WgXcQ');
+      expect(b, 'video/stream/yt:9bZkp7q19f0');
+      expect(a, isNot(b));
+    });
+
+    test('YouTube uid still 3-segment video/stream/ family (no prefix clash)',
+        () {
+      final String uid = streamVideoBookUid('https://youtu.be/dQw4w9WgXcQ');
+      expect(uid.startsWith('video/stream/'), isTrue);
+      expect(uid.startsWith('video/ext/'), isFalse);
+      expect(uid.startsWith('video/playlist/'), isFalse);
+      expect(uid.split('/').length, 3);
+    });
+
+    test('non-YouTube direct/HLS URLs keep sha1 identity (unchanged behavior)',
+        () {
+      // 直链保持原 sha1 行为：12 位 hex，不同 URL 各异（query 是签名/token 身份，不归一）。
+      const String hls = 'https://cdn.example.com/live.m3u8?token=abc';
+      final String uid = streamVideoBookUid(hls);
+      final String digest = uid.substring('video/stream/'.length);
+      expect(uid.startsWith('video/stream/'), isTrue);
+      expect(RegExp(r'^[0-9a-f]{12}$').hasMatch(digest), isTrue);
+      // 直链带不同 token → 不同身份（不被误合并）。
+      expect(
+        streamVideoBookUid('https://cdn.example.com/live.m3u8?token=xyz'),
+        isNot(uid),
+      );
+      // YouTube 与直链身份形状不同（前者 yt: 前缀，后者 hex）。
+      expect(digest.startsWith('yt:'), isFalse);
+    });
+
+    test('unparseable YouTube-host URL falls back to sha1 (no crash)', () {
+      // youtube.com 根 URL 无 videoId → youtubeVideoIdOrNull 返 null → 回退 sha1。
+      final String uid = streamVideoBookUid('https://www.youtube.com/');
+      final String digest = uid.substring('video/stream/'.length);
+      expect(RegExp(r'^[0-9a-f]{12}$').hasMatch(digest), isTrue);
+    });
+  });
+
+  group('streamImportCoverStrategy (TODO-1304 封面门控移除守卫)', () {
+    test('YouTube URLs -> youtubeThumbnail strategy', () {
+      for (final String url in <String>[
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtu.be/dQw4w9WgXcQ',
+        'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+      ]) {
+        expect(streamImportCoverStrategy(url),
+            StreamImportCoverStrategy.youtubeThumbnail,
+            reason: url);
+      }
+    });
+
+    test(
+        'REGRESSION: direct/HLS/m3u8 URLs -> ffmpegFrame (no longer coverless) '
+        '— 旧代码把下封面门控在 isYoutubeUrl 内，直链恒无封面', () {
+      for (final String url in <String>[
+        'https://cdn.example.com/movie.mp4',
+        'https://cdn.example.com/live.m3u8',
+        'https://192.168.1.34/stream.ts',
+        'https://example.com/playlist.m3u8?token=abc',
+        // 已知网页视频站但非 YouTube（无法抓缩略图）→ 仍走抽帧（best-effort）。
+        'https://www.bilibili.com/video/BVxxx',
+      ]) {
+        expect(streamImportCoverStrategy(url),
+            StreamImportCoverStrategy.ffmpegFrame,
+            reason: url);
+      }
+    });
+  });
+
   group('StreamVideoSpec (TODO-1157 流媒体入库重开规格)', () {
     test('empty spec -> isEmpty true, toStorageJson null', () {
       const StreamVideoSpec spec = StreamVideoSpec();

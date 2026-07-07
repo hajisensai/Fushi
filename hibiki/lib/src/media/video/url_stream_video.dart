@@ -7,6 +7,8 @@ import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+    show isYoutubeUrl, youtubeVideoIdOrNull;
 import 'package:http/http.dart' as http;
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
@@ -159,12 +161,53 @@ class StreamVideoSpec {
   }
 }
 
+/// 纯函数：从粘贴的流 URL 派生稳定 bookUid。
+///
+/// **YouTube**（[isYoutubeUrl]）：先用 [youtubeVideoIdOrNull] 解出 canonical videoId，
+/// 用 `video/stream/yt:<videoId>` 作身份——TODO-1304 修去重：同一视频的
+/// `watch?v=<id>` / `youtu.be/<id>` / `shorts/<id>` / `m.youtube.com` 各种写法、以及
+/// `&t=` / `&list=` / `&si=` / `&feature=` 追踪参数，旧逻辑（对整条 URL 直接 sha1）会各
+/// 得不同 uid → 全部重复导入；规范化后任意写法收敛到同一 book_uid，`_uniqueBookUid`
+/// 自然去重。videoId 解析失败（带 query 的 shorts 等）回退 sha1，不阻断导入。
+///
+/// **非 YouTube**（直链 / HLS / m3u8）：保持原行为——`sha1(url.trim())` 前 12 位。直链常
+/// 带签名 / 过期 token query，这些 query 往往正是身份的一部分，剥掉会误合并不同的流，故
+/// 不做 query 归一（Never break userspace：既有入库身份不变）。
+///
+/// 与 [singleVideoBookUid]（`video/`）/ [playlistBookUid]（`video/playlist/`）命名族
+/// 前缀不撞；结果恒是三段 `video/stream/<身份>`（split('/').length == 3）。
 String streamVideoBookUid(String url) {
   final String normalized = url.trim();
+  if (isYoutubeUrl(normalized)) {
+    final String? videoId = youtubeVideoIdOrNull(normalized);
+    if (videoId != null && videoId.isNotEmpty) {
+      return 'video/stream/yt:$videoId';
+    }
+  }
   final String digest =
       sha1.convert(utf8.encode(normalized)).toString().substring(0, 12);
   return 'video/stream/$digest';
 }
+
+/// 流媒体导入封面策略（TODO-1304）。数据结构化「怎么取封面」这个决策，消除
+/// `_importStreamUrl` 里「只有 isYoutubeUrl 才下封面、直链/HLS 落到无封面分支」的特殊情况。
+enum StreamImportCoverStrategy {
+  /// YouTube：videoPath 是 HTML watch URL、ffmpeg 抽帧不适用 → 走缩略图 URL 下载
+  /// （[youtubeThumbnailUrl] + downloadVideoCoverToPath）。
+  youtubeThumbnail,
+
+  /// 直链 / HLS / m3u8：videoPath 是可 seek 的流 URL → ffmpeg 直接抽帧
+  /// （extractVideoCover 经 _isRemoteFfmpegInput 放行远端 URL；移动端走 ffmpeg-kit）。
+  ffmpegFrame,
+}
+
+/// 纯函数：据 [url] 选流媒体导入封面策略。TODO-1304 修「非 YouTube 流恒无封面」——旧代码
+/// 把下封面整块门控在 `if (isYoutubeUrl(url))` 内，直链/HLS 落到无封面分支。现在两类都出
+/// 封面：YouTube 缩略图下载、其余 ffmpeg 抽帧。
+StreamImportCoverStrategy streamImportCoverStrategy(String url) =>
+    isYoutubeUrl(url)
+        ? StreamImportCoverStrategy.youtubeThumbnail
+        : StreamImportCoverStrategy.ffmpegFrame;
 
 /// 单 URL 流的 [RemoteVideoClient]（TODO-850 阶段①）：把「用户粘贴的一条流 URL +
 /// 可选外挂字幕 URL + 可选防盗链 header」喂进既有远端播放链
