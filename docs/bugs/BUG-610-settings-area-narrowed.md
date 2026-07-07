@@ -1,4 +1,4 @@
-## BUG-608 · 设置部分区域宽度变窄回归
+## BUG-610 · 设置部分区域宽度变窄回归
 - **报告**：2026-07-08（用户：TODO-1321）
 - **真实性**：✅ 真 bug。书内快捷设置面板（`ReaderQuickSettingsSheet`）宽/窄 master-detail 里，
   「导航」(location) 与「有声书」(audiobook) 子页是 bespoke widget，只吃外层 pane 的横向 padding；

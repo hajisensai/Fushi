@@ -17,7 +17,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';
 
-// Guards TODO-1321 / BUG-608: in the reader in-book quick-settings pane the
+// Guards TODO-1321 / BUG-610: in the reader in-book quick-settings pane the
 // schema-projected sub-pages (layout / reading-controls / lookup) are rendered
 // by [MaterialSettingsRenderer.buildDetailContent] embedded inside a
 // SingleChildScrollView that ALREADY applies horizontal padding. The renderer
@@ -121,7 +121,7 @@ Widget _harness({required Widget Function(SettingsContext) builder}) {
 void main() {
   testWidgets(
       'embedded body (insetHorizontally:false) spans full pane width and is '
-      'wider than the self-inset variant (TODO-1321/BUG-608)',
+      'wider than the self-inset variant (TODO-1321/BUG-610)',
       (WidgetTester tester) async {
     const double boxWidth = 500;
     late EdgeInsets shared;

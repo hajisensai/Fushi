@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 595 条。点号进各自文件。
+> 共 596 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-610](bugs/BUG-610-settings-area-narrowed.md) | ✅ | ✅ | 设置部分区域宽度变窄回归 |
 | [BUG-609](bugs/BUG-609-mobile-longpress-select.md) | ✅ | ✅ | 1279 coarse user-select:none禁了手机长按选中·补app选区手势 |
 | [BUG-608](bugs/BUG-608-share-callback-error.md) | ✅ | ✅ | 分享图片PlatformException share-sheet未回调重入 |
 | [BUG-607](bugs/BUG-607-pitch-reading-mined.md) | ✅ | ✅ | 词典音高片假名reading被拖选烤进制卡卡片 |
