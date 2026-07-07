@@ -33,6 +33,7 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     required this.durationMs,
     required this.loadWaveform,
     this.onCommitDelay,
+    this.onAutoAlign,
     this.onPlayCue,
     this.positionListenable,
     this.currentPositionMs,
@@ -59,6 +60,12 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   /// 传 `(ms) => _commitDelay(ms)` 保证与顶部调轴同源、零第二套状态。
   final Future<void> Function(int delayMs)? onCommitDelay;
 
+  /// TODO-1316：一键自动对轴回调（= 页面 `_autoAlignSubtitle`：抽音频能量与字幕 cue 互
+  /// 相关求整体平移并写穿延迟，返回本次实际平移 offset；低置信 / 无数据返回 null）。传入
+  /// 时放大对轴视图显示「自动对轴」按钮，与顶部快速设置的自动对轴按钮同一逻辑、零第二套
+  /// 状态。null = 不显示该按钮（无字幕 / 无视频路径）。
+  final Future<int?> Function()? onAutoAlign;
+
   /// TODO-1244：逐句试听回调。放大对轴视图的每句字幕旁挂一个播放按钮，点击把播放器
   /// seek 到该句（叠加当前预览延迟后的）时间并播放，方便用户核对「这段波形是哪句话」。
   /// null = 不显示逐句播放按钮（无播放器 / 只读）。由页面传 `(ms) => seek+play`，复用现有
@@ -81,66 +88,15 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
 
 class _SubtitleWaveformAlignPanelState
     extends State<SubtitleWaveformAlignPanel> {
-  /// 缩略图 / 放大视图初值使用的延迟（毫秒）。跟随 initialDelayMs（上方权威 `_delayMs`），
-  /// 经 [didUpdateWidget] 同步。
-  late int _renderDelayMs = widget.initialDelayMs;
+  /// TODO-1315 懒加载：波形探测（ffmpeg 抽逐帧能量包络，对 2h REMUX 要数十秒）只在用户
+  /// **点开放大对轴视图**时触发，不在面板挂载（进字幕设置分类）时预跑——弱设备开设置
+  /// 不再被 ffmpeg 抽轨拖卡。true = 点开后正 await [SubtitleWaveformAlignPanel.loadWaveform]，
+  /// 入口显示 spinner 并防重入。
+  bool _probing = false;
 
-  /// 原始逐帧音频能量包络（[loadWaveform] 一次性抽出）。null = 加载中；空 = 拿不到（降级）。
-  List<double>? _rawEnvelope;
-
-  /// 波形是否已加载完成（含空结果的降级态）。
-  bool _loaded = false;
-
-  /// 缩略图每根波形柱的目标像素宽（含间隙），据宽度算降采样桶数。
-  static const double _barSlotPx = 3.0;
-
-  /// 缩略波形缩略图目标宽度（逻辑像素）；入口行右侧的预览条。
-  static const double _thumbnailWidth = 96.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadWaveformOnce();
-  }
-
-  @override
-  void didUpdateWidget(SubtitleWaveformAlignPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 上方面板（手动调轴 / 自动对轴）改延迟后 setState 用新 initialDelayMs 重建本面板；
-    // 同步 [_renderDelayMs] 让缩略图 cue 线立即随之整体平移。
-    if (oldWidget.initialDelayMs != widget.initialDelayMs &&
-        _renderDelayMs != widget.initialDelayMs) {
-      setState(() => _renderDelayMs = widget.initialDelayMs);
-    }
-  }
-
-  Future<void> _loadWaveformOnce() async {
-    try {
-      final List<double> raw = await widget.loadWaveform();
-      if (!mounted) return;
-      setState(() {
-        _rawEnvelope = raw;
-        _loaded = true;
-      });
-    } catch (_) {
-      // 抽取失败一律降级（收起入口），不崩不空白。
-      if (!mounted) return;
-      setState(() {
-        _rawEnvelope = const <double>[];
-        _loaded = true;
-      });
-    }
-  }
-
-  /// cue 边界（start/end 混合，未加延迟）。painter 内部叠加延迟。
-  List<int> get _cueBoundariesMs {
-    final List<int> out = <int>[];
-    for (final AudioCue cue in widget.cues) {
-      out.add(cue.startMs);
-      out.add(cue.endMs);
-    }
-    return out;
-  }
+  /// 上次点开探测返回空包络（移动端拿不到逐帧行 / ffmpeg 不可用 / 超时的降级态）。true 时
+  /// 入口副标题改显「本设备无法生成波形」，不弹放大视图（不崩不空白）；再次点击重试时清零。
+  bool _probeUnavailable = false;
 
   /// 波形时间窗上界（毫秒）：与 extractAudioEnergyEnvelope 的探测上界同源
   /// （前 N 分钟截断），取 min(durationMs, probeLimit)；durationMs 未知时用探测上界。
@@ -150,9 +106,29 @@ class _SubtitleWaveformAlignPanelState
     return widget.durationMs < limit ? widget.durationMs : limit;
   }
 
+  /// TODO-1315 懒加载入口：点击才抽波形（[SubtitleWaveformAlignPanel.loadWaveform]，页面侧
+  /// 带缓存，二次点开命中缓存秒开），非空才弹放大视图；空包络（降级）改显不可用提示、不弹
+  /// 窗。放大视图关闭后本地不保留包络引用（`env` 仅在本作用域存活），退出即释放——弱设备
+  /// 内存/绘制零常驻。
   Future<void> _openZoomView() async {
-    final List<double>? env = _rawEnvelope;
-    if (env == null || env.isEmpty) return;
+    if (_probing) return;
+    setState(() {
+      _probing = true;
+      _probeUnavailable = false;
+    });
+    List<double> env;
+    try {
+      env = await widget.loadWaveform();
+    } catch (_) {
+      // 抽取失败一律降级：不弹窗、显示不可用提示（不崩不空白）。
+      env = const <double>[];
+    }
+    if (!mounted) return;
+    setState(() => _probing = false);
+    if (env.isEmpty) {
+      setState(() => _probeUnavailable = true);
+      return;
+    }
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
@@ -162,51 +138,39 @@ class _SubtitleWaveformAlignPanelState
         windowEndMs: _windowEndMs,
         initialDelayMs: widget.initialDelayMs,
         onCommitDelay: widget.onCommitDelay,
+        onAutoAlign: widget.onAutoAlign,
         onPlayCue: widget.onPlayCue,
         positionListenable: widget.positionListenable,
         currentPositionMs: widget.currentPositionMs,
       ),
     );
+    // 退出释放：env 随本作用域结束回收，面板不常驻波形（页面级缓存仍留一份供秒开）。
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-
-    // 有波形数据才显示入口；加载中出 spinner，空包络（移动端降级）收起。
-    final bool hasWaveform = _loaded && (_rawEnvelope?.isNotEmpty ?? false);
-
-    if (!_loaded) {
-      return SizedBox(
-        height: widget.height,
-        child: Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: cs.primary,
-            ),
-          ),
-        ),
-      );
-    }
-    if (!hasWaveform) return const SizedBox.shrink();
+    // TODO-1315：入口常驻可见（挂载即显、不预探测波形），点击才懒抽 + 弹放大视图。
     return _buildEntryButton(theme, cs);
   }
 
-  /// 紧凑入口：一行「标签 + 提示 + 迷你波形缩略图 + 放大图标」，整行可点开放大视图。
+  /// 紧凑入口：一行「图标 + 标签 + 提示 + 放大/加载图标」，整行可点。TODO-1315 起入口
+  /// **常驻可见**（挂载即显、不预探测），点击才懒抽波形并弹放大视图；探测中显示 spinner，
+  /// 空包络（降级）副标题改显不可用提示。
   Widget _buildEntryButton(ThemeData theme, ColorScheme cs) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
+    final String hint = _probeUnavailable
+        ? t.video_subtitle_waveform_unavailable
+        : t.video_subtitle_waveform_open_hint;
     return Material(
       key: const ValueKey<String>('subtitle-waveform-open-button'),
       color: tokens.surfaces.overlay.withValues(alpha: 0.5),
       borderRadius: tokens.radii.cardRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: _openZoomView,
+        onTap: _probing ? null : _openZoomView,
         child: Padding(
           padding: EdgeInsets.all(gap),
           child: Row(
@@ -225,9 +189,10 @@ class _SubtitleWaveformAlignPanelState
                       ),
                     ),
                     Text(
-                      t.video_subtitle_waveform_open_hint,
+                      hint,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
+                        color:
+                            _probeUnavailable ? cs.error : cs.onSurfaceVariant,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -236,41 +201,18 @@ class _SubtitleWaveformAlignPanelState
                 ),
               ),
               SizedBox(width: gap),
-              _buildThumbnail(cs),
-              SizedBox(width: gap / 2),
-              Icon(Icons.zoom_in, color: cs.onSurfaceVariant, size: 22),
+              _probing
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: cs.primary,
+                      ),
+                    )
+                  : Icon(Icons.zoom_in, color: cs.onSurfaceVariant, size: 22),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  /// 迷你波形缩略图（入口右侧预览，只读、无播放头，随延迟平移 cue 线）。
-  Widget _buildThumbnail(ColorScheme cs) {
-    const double h = 36.0;
-    final int buckets = (_thumbnailWidth / _barSlotPx).floor().clamp(1, 100000);
-    final List<double> down = downsampleEnergyEnvelope(
-      _rawEnvelope ?? const <double>[],
-      buckets,
-    );
-    return SizedBox(
-      width: _thumbnailWidth,
-      height: h,
-      child: CustomPaint(
-        size: const Size(_thumbnailWidth, h),
-        painter: SubtitleWaveformPainter(
-          buckets: down,
-          windowStartMs: 0,
-          windowEndMs: _windowEndMs,
-          cueBoundariesMs: _cueBoundariesMs,
-          previewDelayMs: _renderDelayMs,
-          currentPositionMs: -1,
-          waveColor: cs.primary.withValues(alpha: 0.55),
-          cueLineColor: cs.secondary,
-          playheadColor: cs.tertiary,
-          centerLineColor: cs.outlineVariant,
-          verticalPadding: 2.0,
         ),
       ),
     );
@@ -298,6 +240,7 @@ class SubtitleWaveformZoomView extends StatefulWidget {
     required this.windowEndMs,
     required this.initialDelayMs,
     this.onCommitDelay,
+    this.onAutoAlign,
     this.onPlayCue,
     this.positionListenable,
     this.currentPositionMs,
@@ -320,6 +263,11 @@ class SubtitleWaveformZoomView extends StatefulWidget {
   /// 调轴写回上方权威 `_delayMs`。null = 只读（不显示调轴控件）。
   final Future<void> Function(int delayMs)? onCommitDelay;
 
+  /// TODO-1316：一键自动对轴回调（同 [SubtitleWaveformAlignPanel.onAutoAlign]）。传入时
+  /// 放大对轴视图显示「自动对轴」按钮，点击调此回调求整体平移并经 [onCommitDelay] 同步；
+  /// null = 不显示按钮。
+  final Future<int?> Function()? onAutoAlign;
+
   /// TODO-1244：逐句试听回调。文本条每句的播放按钮点击时把播放器 seek 到该句（叠加当前
   /// 预览延迟后的）时间并播放。null = 不显示播放按钮。
   final Future<void> Function(int startMs)? onPlayCue;
@@ -341,6 +289,14 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   /// 拖动滑条时的临时预览值（松手才 [_commit] 落盘）。null = 未拖动。
   int? _dragMs;
+
+  /// TODO-1316：波形对轴视图内自动对轴进行中；true 时按钮切 spinner 并禁用（防重入）。
+  bool _autoAligning = false;
+
+  /// TODO-1316：上次自动对轴置信度低 / 无数据（[SubtitleWaveformZoomView.onAutoAlign] 返回
+  /// null），未改延迟。true 时按钮下方显示「未能可信对轴」提示（放大视图内自带反馈，不依赖
+  /// 被弹窗遮蔽的页面 OSD）；任一 [_commit]（手动或成功自动对轴）前清零。
+  bool _autoAlignLowConfidence = false;
 
   /// 时间轴缩放（每毫秒像素 = _basePxPerMs * _zoom）。放大看细节、缩小看全局。
   double _zoom = 1.0;
@@ -424,11 +380,42 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 调轴权威提交：clamp -> 本地 setState -> 可选回写输入框 -> 回调写回上方 `_delayMs`。
   Future<void> _commit(int next, {bool syncField = true}) async {
     final int clamped = next.clamp(-_clampMs, _clampMs);
-    if (mounted) setState(() => _delayMs = clamped);
+    if (mounted) {
+      setState(() {
+        _delayMs = clamped;
+        _autoAlignLowConfidence = false;
+      });
+    }
     if (syncField && _delayController.text != '$clamped') {
       _delayController.text = '$clamped';
     }
     await widget.onCommitDelay?.call(clamped);
+  }
+
+  /// TODO-1316：波形对轴视图内的一键自动对轴。调上方权威的
+  /// [SubtitleWaveformZoomView.onAutoAlign]（= 页面 `_autoAlignSubtitle`：抽音频能量与字幕 cue
+  /// 互相关求整体平移并写穿延迟，返回本次实际 offset；低置信 / 无数据返回 null）。拿到非 null
+  /// offset 就 [_commit] 同步本地 [_delayMs] + 输入框 + 波形 cue 线（与手动调轴 / 顶部自动对轴
+  /// 同源、零第二套状态）；返回 null 时置 [_autoAlignLowConfidence] 在按钮下方给不可信提示。
+  /// 执行期 [_autoAligning] 切 spinner 防重入。
+  Future<void> _runAutoAlign() async {
+    final Future<int?> Function()? cb = widget.onAutoAlign;
+    if (cb == null || _autoAligning) return;
+    setState(() {
+      _autoAligning = true;
+      _autoAlignLowConfidence = false;
+    });
+    try {
+      final int? alignedOffsetMs = await cb();
+      if (!mounted) return;
+      if (alignedOffsetMs != null) {
+        await _commit(alignedOffsetMs);
+      } else {
+        setState(() => _autoAlignLowConfidence = true);
+      }
+    } finally {
+      if (mounted) setState(() => _autoAligning = false);
+    }
   }
 
   void _zoomBy(double factor) {
@@ -794,7 +781,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     );
   }
 
-  /// 底部调轴控件条（滑条 / 步进 / 归零 / 数值输入）：写回上方权威 `_delayMs`。
+  /// 底部调轴控件条（自动对轴 / 滑条 / 步进 / 归零 / 数值输入）：写回上方权威 `_delayMs`。
   Widget _buildDelayControls(
       ThemeData theme, ColorScheme cs, HibikiDesignTokens tokens) {
     final int shownMs = _dragMs ?? _delayMs;
@@ -802,6 +789,41 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     final double sliderValue =
         shownMs.clamp(-_sliderRangeMs, _sliderRangeMs).toDouble();
     final double gap = tokens.spacing.gap;
+
+    // TODO-1316：波形对轴视图内的「自动对轴」按钮（复用上方权威 onAutoAlign 逻辑，不重写
+    // 算法）。成功后 cue 线随 [_commit] 平移、顶部标签更新即在弹窗内可见反馈；低置信在按钮
+    // 下方给文字提示。null = 无自动对轴回调（无字幕 / 无视频路径）时不显示。
+    final Widget? autoAlignButton = widget.onAutoAlign == null
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: _autoAligning ? null : _runAutoAlign,
+                icon: _autoAligning
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onSecondaryContainer,
+                        ),
+                      )
+                    : const Icon(Icons.auto_fix_high, size: 18),
+                label: Text(t.video_subtitle_auto_align),
+              ),
+              if (_autoAlignLowConfidence)
+                Padding(
+                  padding: EdgeInsets.only(top: gap / 2),
+                  child: Text(
+                    t.video_subtitle_auto_align_low_confidence,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(color: cs.error),
+                  ),
+                ),
+              SizedBox(height: gap),
+            ],
+          );
 
     final Widget buttons = Wrap(
       alignment: WrapAlignment.center,
@@ -855,6 +877,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (autoAlignButton != null) autoAlignButton,
         // 细调滑条（正负 10s）：拖动只本地预览，松手才落盘+实时生效。走 adaptiveSlider
         // 修全局 UI-scale 下裸 Slider 值指示器水平钳制错位（TODO-742 同款）。
         adaptiveSlider(

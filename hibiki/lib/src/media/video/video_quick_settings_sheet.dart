@@ -921,6 +921,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               // TODO-1207：放大波形视图里的调轴经此写回顶部权威 _delayMs（_commitDelay
               // 三处同步 + onSetDelay 落盘），与顶部滑条 / 步进 / 自动对轴同源，零第二套状态。
               onCommitDelay: _commitDelay,
+              // TODO-1316：放大波形对轴视图内的「自动对轴」按钮复用与顶部同一 onAutoAlign
+              // 逻辑（页面 _autoAlignSubtitle），成功后经上面的 onCommitDelay 同步权威延迟。
+              onAutoAlign: widget.onAutoAlign,
               onPlayCue: widget.onPlaySubtitleCue,
               positionListenable: widget.subtitlePositionListenable,
               currentPositionMs: widget.currentSubtitlePositionMs,
