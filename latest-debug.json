@@ -15,18 +15,18 @@
       "version": "1.0.1-debug.6886"
     },
     {
-      "name": "hibiki-1.0.1-debug.6887-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6887-ios.ipa",
-      "releaseSequence": 6887,
-      "tag": "v1.0.1-debug.6887+b84f8cb",
-      "version": "1.0.1-debug.6887"
+      "name": "hibiki-1.0.1-debug.6888-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6888-ios.ipa",
+      "releaseSequence": 6888,
+      "tag": "v1.0.1-debug.6888+9d3259f",
+      "version": "1.0.1-debug.6888"
     },
     {
-      "name": "hibiki-1.0.1-debug.6887-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6887-macos.zip",
-      "releaseSequence": 6887,
-      "tag": "v1.0.1-debug.6887+b84f8cb",
-      "version": "1.0.1-debug.6887"
+      "name": "hibiki-1.0.1-debug.6888-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6888-macos.zip",
+      "releaseSequence": 6888,
+      "tag": "v1.0.1-debug.6888+9d3259f",
+      "version": "1.0.1-debug.6888"
     },
     {
       "name": "hibiki-1.0.1-debug.6893-windows-setup.exe",
