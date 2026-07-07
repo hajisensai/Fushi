@@ -20,6 +20,11 @@ void main() {
       expect(m.spans.first.italic, isTrue);
     });
 
+    test('playResY passthrough for ASS font/shadow scaling (TODO-1246)', () {
+      expect(parseSubtitleMarkup('X', playResY: 1080).playResY, 1080);
+      expect(parseSubtitleMarkup('X').playResY, isNull);
+    });
+
     test('bold+underline combined, color BGR->ARGB, font size', () {
       final SubtitleMarkup m =
           parseSubtitleMarkup(r'{\b1\u1\c&H0000FF&\fs30}ab');

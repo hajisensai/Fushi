@@ -198,4 +198,158 @@ void main() {
         .firstWhere((Text t) => t.style?.foreground != null);
     expect(stroke.style?.foreground?.color, const Color(0xFF0000FF)); // outline
   });
+  // ---- TODO-1246: ASS 字号缩放 / 字重(bold) / 阴影(shadow) 映射到 overlay 渲染 ----
+  AudioCue cueFromMarkup(SubtitleMarkup m) => AudioCue()
+    ..bookKey = 'b'
+    ..chapterHref = 'c'
+    ..sentenceIndex = 0
+    ..textFragmentId = '[data-cue-id="0"]'
+    ..text = m.plainText
+    ..markup = m
+    ..startMs = 0
+    ..endMs = 5000
+    ..audioFileIndex = 0;
+
+  Future<void> pumpOverlay(
+    WidgetTester tester,
+    AudioCue cue, {
+    required bool respect,
+    double width = 640,
+    double height = 360,
+    int fontWeight = 400,
+  }) async {
+    final VideoPlayerController c = _stubWithCue(cue);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: VideoSubtitleOverlay(
+              controller: c,
+              textColor: const Color(0xFFFFFFFF),
+              fontSize: 36,
+              fontWeight: fontWeight,
+              shadowColor: const Color(0xFF000000),
+              shadowThickness: 5,
+              respectAssStyle: respect,
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+  }
+
+  // 填充层 foreground==null；描边层 foreground!=null（BUG-323/TODO-569 双层）。
+  Text fillOf(WidgetTester tester, String ch) => tester
+      .widgetList<Text>(find.text(ch))
+      .firstWhere((Text t) => t.style?.foreground == null);
+  Text strokeOf(WidgetTester tester, String ch) => tester
+      .widgetList<Text>(find.text(ch))
+      .firstWhere((Text t) => t.style?.foreground != null);
+
+  testWidgets(
+      'respectAssStyle ON: cueStyle Shadow depth + BackColour -> TextStyle.shadows '
+      'on bottom stroke layer, cleared on fill (TODO-1246)',
+      (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'S',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(shadowDepthPx: 3, shadowColorArgb: 0xFF112233),
+    ));
+    await pumpOverlay(tester, cue, respect: true);
+    final Text stroke = strokeOf(tester, 'S');
+    expect(stroke.style?.shadows, isNotNull);
+    expect(stroke.style!.shadows!.single.color, const Color(0xFF112233));
+    expect(stroke.style!.shadows!.single.offset, const Offset(3, 3));
+    final Text fill = fillOf(tester, 'S');
+    expect(fill.style?.shadows ?? const <Shadow>[], isEmpty);
+  });
+
+  testWidgets(
+      'respectAssStyle OFF: ASS Shadow ignored (no TextStyle.shadows), historical '
+      'look preserved (TODO-1246)', (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'S',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(shadowDepthPx: 3, shadowColorArgb: 0xFF112233),
+    ));
+    await pumpOverlay(tester, cue, respect: false);
+    expect(strokeOf(tester, 'S').style?.shadows ?? const <Shadow>[], isEmpty);
+    expect(fillOf(tester, 'S').style?.shadows ?? const <Shadow>[], isEmpty);
+  });
+
+  testWidgets(
+      'respectAssStyle ON: inline span shadow overrides cueStyle shadow (TODO-1246)',
+      (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'S',
+      spans: <SubtitleSpan>[
+        SubtitleSpan(
+          startGrapheme: 0,
+          endGrapheme: 1,
+          shadowDepthPx: 4,
+          shadowColorArgb: 0xFF445566,
+        ),
+      ],
+      cueStyle: SubtitleCueStyle(shadowDepthPx: 1, shadowColorArgb: 0xFF112233),
+    ));
+    await pumpOverlay(tester, cue, respect: true);
+    final Text stroke = strokeOf(tester, 'S');
+    expect(stroke.style!.shadows!.single.color, const Color(0xFF445566));
+    expect(stroke.style!.shadows!.single.offset, const Offset(4, 4));
+  });
+
+  testWidgets(
+      'respectAssStyle ON: cueStyle Bold -> FontWeight.bold over lighter user weight '
+      '(TODO-1246)', (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'B',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(bold: true),
+    ));
+    await pumpOverlay(tester, cue, respect: true, fontWeight: 400);
+    expect(fillOf(tester, 'B').style?.fontWeight, FontWeight.bold);
+  });
+
+  testWidgets(
+      'respectAssStyle OFF: cueStyle Bold ignored, user weight wins (TODO-1246)',
+      (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'B',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(bold: true),
+    ));
+    await pumpOverlay(tester, cue, respect: false, fontWeight: 400);
+    expect(fillOf(tester, 'B').style?.fontWeight, FontWeight.w400);
+  });
+
+  testWidgets(
+      'respectAssStyle ON: ASS font size scales by displayHeight / PlayResY '
+      '(48 @ PlayResY 720 in 360px area -> 24) (TODO-1246)',
+      (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'X',
+      spans: <SubtitleSpan>[
+        SubtitleSpan(startGrapheme: 0, endGrapheme: 1, fontSizePx: 48),
+      ],
+      playResY: 720,
+    ));
+    await pumpOverlay(tester, cue, respect: true, height: 360);
+    expect(fillOf(tester, 'X').style?.fontSize, 24.0);
+  });
+
+  testWidgets(
+      'respectAssStyle ON but no PlayResY: ASS font size used raw '
+      '(backward compatible) (TODO-1246)', (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'X',
+      spans: <SubtitleSpan>[
+        SubtitleSpan(startGrapheme: 0, endGrapheme: 1, fontSizePx: 48),
+      ],
+    ));
+    await pumpOverlay(tester, cue, respect: true, height: 360);
+    expect(fillOf(tester, 'X').style?.fontSize, 48.0);
+  });
 }
