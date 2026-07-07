@@ -90,6 +90,12 @@
     }
     .hp-del:hover { background: rgba(211, 47, 47, 0.85); color: #fff; opacity: 1; }
     .hp-empty { padding: 20px 14px 24px; text-align: center; opacity: 0.6; }
+    /* TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）。独立页脚区，不属于上方 1270 制卡队列。 */
+    .hp-settings { border-top: 1px solid rgba(128, 128, 128, 0.22); padding: 10px 14px 12px; }
+    .hp-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .hp-toggle input { flex: 0 0 auto; margin: 0; }
+    .hp-toggle-text { flex: 1 1 auto; }
+    .hp-toggle-hint { margin: 4px 0 0 24px; font-size: 11px; opacity: 0.55; }
   </style>
 </head>
 <body>
@@ -99,6 +105,13 @@
   </div>
   <button class="hp-gen" id="hp-gen" type="button">开始生成 / 录制</button>
   <div class="hp-list" id="hp-list"></div>
+  <div class="hp-settings">
+    <label class="hp-toggle">
+      <input type="checkbox" id="hp-nf-sublist">
+      <span class="hp-toggle-text">网飞字幕列表</span>
+    </label>
+    <div class="hp-toggle-hint">面板在网飞播放页侧栏</div>
+  </div>
   <script src="action-popup.js"></script>
 </body>
 </html>

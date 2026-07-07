@@ -220,6 +220,32 @@ void main() {
                 '$root options.js must persist the netflixSubtitlePanel setting');
       });
 
+      // TODO-1219 方案 B：字幕列表面板开关也放进扩展 action-popup（点扩展图标即可开），读写同一
+      // chrome.storage.local.netflixSubtitlePanel。守卫两镜像的 popup 里都有这个开关且读写正确。
+      test('[$name] action-popup exposes the Netflix subtitle-list toggle', () {
+        final String html =
+            File('$root/vendor/action-popup.html').readAsStringSync();
+        final String js =
+            File('$root/vendor/action-popup.js').readAsStringSync();
+        expect(html.contains('id="hp-nf-sublist"'), isTrue,
+            reason: '$root action-popup.html missing the subtitle-list toggle');
+        expect(html.contains('面板在网飞播放页侧栏'), isTrue,
+            reason: '$root action-popup.html missing the toggle hint text');
+        expect(js.contains('hibikiReadPanelEnabled'), isTrue,
+            reason:
+                '$root action-popup.js must read the panel setting via hibikiReadPanelEnabled');
+        expect(js.contains("chrome.storage.local.get(['netflixSubtitlePanel']"),
+            isTrue,
+            reason:
+                '$root action-popup.js must backfill the checkbox from netflixSubtitlePanel');
+        expect(
+            js.contains(
+                'chrome.storage.local.set({ netflixSubtitlePanel: nfToggle.checked })'),
+            isTrue,
+            reason:
+                '$root action-popup.js must persist the toggle to netflixSubtitlePanel');
+      });
+
       // TODO-1219 用户诉求①：整集字幕拦截必须与语言无关——harvest 遍历清单里的**每一条**
       // timedtexttracks（用户选哪种字幕语言都在内），绝不硬编码只处理某种语言（如日语）。
       test(
@@ -255,6 +281,9 @@ void main() {
       // TODO-1219：字幕列表面板默认关开关（options UI）——两镜像同步纳入字节守卫。
       'options.html',
       'options.js',
+      // TODO-1219 方案 B：字幕列表面板开关的第二入口（action-popup）——两镜像同步纳入字节守卫。
+      'vendor/action-popup.html',
+      'vendor/action-popup.js',
     ]) {
       test(rel, () {
         final List<int> tools =
