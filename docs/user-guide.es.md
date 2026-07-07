@@ -24,7 +24,7 @@ Android: elige **arm64**. Windows: elige el archivo **.exe**.
 
 ### 1. Importar los diccionarios recomendados y el audio local (opcional)
 
-[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1JYzv6dXB5sDPQBxttFLJzlmN3XTTo79S/view?usp=sharing)
+[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
 
 En la aplicación: Ajustes -> Sincronización y copia de seguridad -> toca **Importar copia de seguridad**.
 

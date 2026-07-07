@@ -24,7 +24,7 @@ Android：選擇 **arm64**。Windows：選擇 **.exe** 檔案。
 
 ### 1. 匯入推薦詞典與本機音訊（可選）
 
-[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1JYzv6dXB5sDPQBxttFLJzlmN3XTTo79S/view?usp=sharing)
+[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
 
 在 App 中：設定 -> 同步與備份 -> 點擊 **匯入備份**。
 

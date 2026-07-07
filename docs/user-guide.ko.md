@@ -24,7 +24,7 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 
 ### 1. 추천 사전과 로컬 오디오 가져오기(선택 사항)
 
-[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1JYzv6dXB5sDPQBxttFLJzlmN3XTTo79S/view?usp=sharing)
+[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
 
