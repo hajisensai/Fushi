@@ -2144,5 +2144,21 @@
   "loading_slow_message": "如果你把数据存储位置设在了当前未连接的网络盘 / 移动盘上，启动可能卡住。点「重试」即可用默认存储位置启动本次会话；你的数据仍保留在原位置不动。",
   "shortcut_gamepad_unavailable_hint": "未检测到 GameInput 组件，手柄功能不可用。可安装 Windows「游戏服务(Gaming Services)」以启用手柄支持。",
   "shortcut_view_list": "列表视图",
-  "shortcut_view_visual": "手柄可视化图"
+  "shortcut_view_visual": "手柄可视化图",
+  "stat_range_and_trend": "范围与趋势",
+  "stat_metric_chars": "字数",
+  "stat_metric_time": "时长",
+  "stat_metric_speed": "速度",
+  "stat_goal": "每日目标",
+  "stat_streak": "连续天数",
+  "stat_format_days": "$n 天",
+  "stat_bookshelf_compare": "书架对比",
+  "stat_speed_summary": "速度摘要",
+  "stat_weighted_avg_speed": "加权均速",
+  "stat_typical_day": "典型日",
+  "stat_recent_active": "近 7 日活跃",
+  "stat_vs_prev": "较前 14 天",
+  "stat_fastest_day": "最快日",
+  "stat_slowest_day": "最慢日",
+  "stat_col_book": "书籍"
 }

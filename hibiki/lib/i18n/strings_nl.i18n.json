@@ -2144,5 +2144,21 @@
   "loading_slow_message": "If your data storage location is on a network or removable drive that is currently disconnected, startup can stall. Tap Retry to launch using the default storage location for this session; your data stays where it is.",
   "shortcut_gamepad_unavailable_hint": "GameInput component not detected — gamepad support is unavailable. Install the Windows Gaming Services to enable controller support.",
   "shortcut_view_list": "List view",
-  "shortcut_view_visual": "Controller layout"
+  "shortcut_view_visual": "Controller layout",
+  "stat_range_and_trend": "Range & Trend",
+  "stat_metric_chars": "Characters",
+  "stat_metric_time": "Time",
+  "stat_metric_speed": "Speed",
+  "stat_goal": "Daily Goal",
+  "stat_streak": "Streak",
+  "stat_format_days": "$n days",
+  "stat_bookshelf_compare": "Bookshelf",
+  "stat_speed_summary": "Speed Summary",
+  "stat_weighted_avg_speed": "Weighted Avg",
+  "stat_typical_day": "Typical Day",
+  "stat_recent_active": "Active Days (7d)",
+  "stat_vs_prev": "vs prev 14d",
+  "stat_fastest_day": "Fastest Day",
+  "stat_slowest_day": "Slowest Day",
+  "stat_col_book": "Book"
 }
