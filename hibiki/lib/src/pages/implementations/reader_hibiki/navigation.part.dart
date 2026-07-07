@@ -149,6 +149,15 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 门控/序列见 [_reanchorContinuousAfterRestore]；分页/歌词/控制器释放等由门控抑制。
     _reanchorContinuousAfterRestore();
 
+    // TODO-1309：跨章「文本搜索跳转」的章内精确定位在恢复落定且 settle 之后应用（见
+    // [_applyPendingPreciseLocate]）。连续模式经上面 reanchor 的 onAfterCommit 在 commit
+    // 清旗 + 打 B-3 窗之后应用（settle 已定，尾沿 reflow 不能落库覆盖）；分页/VN 无
+    // reanchor settle 钩子，章节在 restore 完成即已分页 snap，直接应用（无 reflow 归零）。
+    // 分派互斥：onAfterCommit 只在连续模式跑，这里只在非连续模式跑，故 pending 恰被消费一次。
+    if (_settings?.isContinuousMode != true) {
+      unawaited(_applyPendingPreciseLocate());
+    }
+
     // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
     // (__hoshiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
     // 的元素，__hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
@@ -342,6 +351,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     String? fragment,
   }) {
     _restoreExpectedGeneration = ++_navigateGeneration;
+    // TODO-1309：新一次导航开始 → 作废上一次排队但未消费的章内精确定位（文本搜索
+    // 跳转）。用户在搜索跳转恢复途中翻页/再跳，旧的 scrollToSearchMatch 不该落到新章
+    // （代际守卫同样兜底，这里从源头清掉，belt-and-suspenders）。_navigateToChapterAndWait
+    // 在本方法返回后才写入本次的 pending，故不会误清本次。
+    _pendingPreciseLocate = null;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
@@ -442,13 +456,28 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   Future<bool> _navigateToChapterAndWait(
     int index, {
     bool manual = false,
+    double progress = 0.0,
+    String? preciseLocateJs,
   }) async {
     // TODO-1128：被吸收图片章会被 _navigateToChapter 重定向到宿主文本章，落地后
     // _currentChapter == 宿主 ≠ 传入的 index。成功判定必须对齐**重定向后的目标**，
     // 否则有声书跨章遇被吸收图片章会误判 loaded=false → 跳过 imagePauseSec 停留
     // （图片等待对合并书彻底失效）。非吸收章 resolved==index，行为不变。
     final int resolvedChapter = _resolveNavChapter(index);
-    await _navigateToChapter(index, manual: manual);
+    // TODO-1309：跨章精确跳转收敛为一次原子恢复链。[progress] 把目标章内分数烘进导航
+    // （书签/收藏/字符跳转）——单次 restore 直接落点、连续重锚采样保住，不再「先落章首
+    // 再抢发 restoreProgress」被 settle-reflow 冲回章首（双跳）。[preciseLocateJs]（文本
+    // 搜索跳转，分数无法表达）排进 _pendingPreciseLocate，由 _onRestoreComplete 在恢复
+    // 落定且 settle 之后应用（见 _applyPendingPreciseLocate）。
+    await _navigateToChapter(index, progress: progress, manual: manual);
+    if (preciseLocateJs != null) {
+      // 绑定本次导航代际（_beginNavigation 刚在 _navigateToChapter 里递增）：并发导航
+      // 顶掉后代际不匹配 → 消费时丢弃，绝不把搜索命中定位应用到错误章节。设在
+      // _navigateToChapter 之后（代际已定）、restore 完成之前（章节装载异步，
+      // _onRestoreComplete 稍后才触发），故稳被本次 _onRestoreComplete 消费。
+      _pendingPreciseLocate =
+          (generation: _navigateGeneration, js: preciseLocateJs);
+    }
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -461,6 +490,32 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         ) ??
         false;
     return success && _currentChapter == resolvedChapter;
+  }
+
+  /// TODO-1309：消费并应用排队的「章内精确定位」（当前仅跨章文本搜索跳转的
+  /// `scrollToSearchMatch`——分数无法表达文本命中，无法烘进 shell 恢复脚本，故走本队列）。
+  ///
+  /// 必须在恢复落定且 settle 之后调用（连续模式 = `_reanchorContinuousAfterRestore` 的
+  /// `onAfterCommit`：commit 已清 `_reanchorPending` 并打 B-3 settle 窗，落点不会被尾沿
+  /// reflow 归零冲回章首；分页/VN = restore 完成即已分页 snap，无 reflow 归零，直接应用）。
+  /// 这一步等价于「同章已 settle 时直接 restore」那条本就正常的路径，只是把跨章场景推迟到
+  /// 同样 settle 的时刻，从根上消除双跳（首跳只到章节）。
+  ///
+  /// 代际守卫：`pending.generation != _navigateGeneration` = 被更晚的导航顶掉 → 丢弃，
+  /// 绝不把搜索命中定位应用到错误章节。消费一次即清空（无论应用与否）。
+  Future<void> _applyPendingPreciseLocate() async {
+    final ({int generation, String js})? pending = _pendingPreciseLocate;
+    if (pending == null) return;
+    _pendingPreciseLocate = null;
+    if (pending.generation != _navigateGeneration) return;
+    if (!mounted || _controller == null) return;
+    try {
+      await _controller!.evaluateJavascript(source: pending.js);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki._applyPendingPreciseLocate', e, stack);
+      debugPrint('[ReaderHibiki] _applyPendingPreciseLocate failed: $e');
+    }
   }
 
   // BUG-117: shared internal-link handler. Called both from the JS click
@@ -1080,10 +1135,13 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
 
     if (target.chapter != _currentChapter) {
-      _navigateToChapter(
+      // TODO-1309：跨章字符跳转把章内分数烘进导航（progress）单次原子恢复直接落点、连续
+      // 重锚采样保住——与书签/收藏统一走 navigate-with-baked-progress 原子链，await 到恢复
+      // 落定，不再裸 fire-and-forget 只依赖 initialProgress（被后续 settle-reflow 冲掉）。
+      await _navigateToChapterAndWait(
         target.chapter,
-        progress: target.progress,
         manual: true,
+        progress: target.progress,
       );
     } else {
       await _controller!.evaluateJavascript(

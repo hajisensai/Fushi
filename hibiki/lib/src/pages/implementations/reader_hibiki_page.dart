@@ -1044,6 +1044,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 书签跳转恒 false，照常 debounce / 退出 flush 保存。
   bool _suppressPositionPersist = false;
   String? _initialFragment;
+  // TODO-1309: 跨章「文本搜索跳转」落定目标章后要执行的章内精确定位（scrollToSearchMatch
+  // 的 JS）+ 绑定的导航代际。旧两段式（调用方在 restore 完成微任务里抢发 scrollToSearchMatch）
+  // 会被随后的 settle-reflow / 连续重锚采样冲回章首（双跳）；改为排进队列，由
+  // _applyPendingPreciseLocate 在恢复落定且 settle 之后消费。代际用于并发导航去重（顶掉后
+  // 代际不匹配即丢弃，不误用到别的章）。null=无待处理。书签/收藏/字符跳转把分数烘进导航
+  // （_navigateToChapterAndWait 的 progress），单次原子恢复直接落点，不入本队列。
+  ({int generation, String js})? _pendingPreciseLocate;
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;

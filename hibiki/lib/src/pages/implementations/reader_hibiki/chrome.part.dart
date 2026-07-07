@@ -906,7 +906,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       // 置的 _reanchorPending=true，stableProgressInvocation 返 null → 早退 → _progressCurrentChars
       // 保持 null → 顶部进度条隐藏（要滑一下旗清后才出）。这里挂在清旗之后补刷，旗已清不再撞旗，
       // 首屏进度条确定性可见。只此恢复路径补刷；缩放/样式重锚不传 onAfterCommit，行为不变。
-      onAfterCommit: () => _refreshProgress(),
+      //
+      // TODO-1309：连续模式在 commit 清 `_reanchorPending` + 打 B-3 settle 窗**之后**应用
+      // 排队的章内精确定位（跨章文本搜索跳转的 scrollToSearchMatch）——此刻已 settle，落点
+      // 不会被尾沿 reflow 冲回章首；先应用再补刷，让随后的 _refreshProgress 读到并落库 match
+      // 位置（等价于「同章已 settle 时直接 scrollToSearchMatch」那条本就正常的路径）。
+      onAfterCommit: () async {
+        await _applyPendingPreciseLocate();
+        await _refreshProgress();
+      },
     );
   }
 
@@ -1205,12 +1213,24 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         onSearchJump: (BookSearchResult result, String query) async {
           if (_book == null || _controller == null) return;
           if (result.sectionIndex != _currentChapter) {
-            final bool ok = await _navigateToChapterAndWait(
+            // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
+            // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
+            // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
+            // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
+            // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
+            // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
+            await _navigateToChapterAndWait(
               result.sectionIndex,
               manual: true,
+              preciseLocateJs:
+                  ReaderPaginationScripts.scrollToSearchMatchInvocation(
+                query,
+                result.charOffset,
+              ),
             );
-            if (!ok || !mounted || _controller == null) return;
+            return;
           }
+          // 同章：章节已 settle，直接定位（既有正常路径，双跳的「第二次点」本就走这里）。
           await _controller!.evaluateJavascript(
             source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
               query,
@@ -1220,11 +1240,19 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         },
         bookmarks: bookmarks,
         onJumpToBookmark: (bm) async {
+          final double progress = bm.normCharOffset / 10000.0;
           if (bm.sectionIndex != _currentChapter) {
-            await _navigateToChapterAndWait(bm.sectionIndex, manual: true);
+            // TODO-1309：跨章书签跳转把目标分数烘进导航（progress），单次原子恢复直接落点、
+            // 连续重锚采样该位置保住——不再「先落章首再抢发 restoreProgress」被 settle-reflow
+            // 冲回章首（双跳）。同章不重载、直接 restoreProgress（既有行为）。
+            await _navigateToChapterAndWait(
+              bm.sectionIndex,
+              manual: true,
+              progress: progress,
+            );
+            return;
           }
           if (!mounted || _controller == null) return;
-          final double progress = bm.normCharOffset / 10000.0;
           await _controller!.evaluateJavascript(
             source:
                 'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
@@ -1255,12 +1283,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         },
         onJumpToFavorite: (fav) async {
           if (fav.sectionIndex == null) return;
+          final int? normCharOffset = fav.normCharOffset;
           if (fav.sectionIndex != _currentChapter) {
-            await _navigateToChapterAndWait(fav.sectionIndex!, manual: true);
+            // TODO-1309：跨章收藏跳转同书签——有分数就把它烘进导航（progress）单次原子恢复
+            // 落点；无分数（罕见旧数据）仅导航到章首（既有行为，无落点可定位）。都不再「先落
+            // 章首再抢发 restoreProgress」被 settle-reflow 冲回章首。
+            await _navigateToChapterAndWait(
+              fav.sectionIndex!,
+              manual: true,
+              progress: normCharOffset != null ? normCharOffset / 10000.0 : 0.0,
+            );
+            return;
           }
           if (!mounted || _controller == null) return;
-          if (fav.normCharOffset != null) {
-            final double progress = fav.normCharOffset! / 10000.0;
+          if (normCharOffset != null) {
+            final double progress = normCharOffset / 10000.0;
             await _controller!.evaluateJavascript(
               source:
                   'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
