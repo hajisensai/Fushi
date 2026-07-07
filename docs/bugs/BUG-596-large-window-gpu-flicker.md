@@ -1,0 +1,12 @@
+## BUG-596 · 大窗集显呼出UI仍GPU100%闪烁
+- **报告**：2026-07-07（用户：Intel HD Graphics 620，前修 1.0.1+527 后小窗不闪烁了，大窗（全屏/最大化）呼出播放 UI 仍 GPU 100% / 黑闪）
+- **真实性**：✅ 真 bug。根因是「重绘面积随窗口尺寸放大」，前修（TODO-1243 位置量化，29cc40efc）只降了重绘频率、没降单次重绘面积。根因 `file:line`：
+  - `third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material_desktop.dart:757-917`（`MaterialDesktopVideoControls` 的 controls `Stack`：AnimatedOpacity 内嵌一层 `Stack`，含两块**铺满整个视频区**的顶/底渐变 scrim `Container`，与 seek bar、按钮行同层，无 `RepaintBoundary`）。
+  - seek bar 叶子 `MaterialDesktopSeekBar`（`material_desktop.dart:864` 处挂载）的进度填充仍每 `kPositionUiThrottleStep`（200ms，~5fps）推进一次 → `markNeedsPaint` 上冒到最近的 RepaintBoundary（此处=整块全屏 controls picture）→ **每次填充推进都重录 + 重栅格化整块全屏 controls picture**（渐变 + 按钮行）。小窗 picture 小、5fps 也便宜；最大化/全屏 picture 铺满屏幕，5fps 重栅格化叠在每帧视频纹理合成之上 → HD 620 光栅线程打满 = 黑闪。频率与窗口尺寸无关（故前修修好了小窗），单次重绘**面积**随窗口尺寸线性放大（故大窗仍炸）。
+- **[x] ① 已修复** — 把 seek bar 与 `mm:ss` 时钟各自包一层 `RepaintBoundary`，把它们的重栅格化限制在各自那条细窄边界内、与窗口尺寸解耦；渐变 scrim + 按钮行只在稳态播放时栅格化一次并缓存。改动：
+  - `material_desktop.dart`：`MaterialDesktopSeekBarState.build` → `RepaintBoundary(child: _buildSeekBarBody(context))`（抽出 `_buildSeekBarBody`）；`MaterialDesktopPositionIndicatorState.build` → `RepaintBoundary(child: Text(...))`。
+  - `material.dart`：`MaterialSeekBarState.build` → `RepaintBoundary(child: _buildSeekBarBody(context))`；`MaterialPositionIndicatorState.build` → `RepaintBoundary(child: Text(...))`。
+  - 纯合成层隔离，无行为/几何/帧率/seek 变化；与前修的位置量化互补（量化限频率，边界限面积）。文档：`third_party/media_kit_video/PATCHES.md`（TODO-1243 follow-up 节）。
+  - 提交：<COMMIT>
+- **[x] ② 已加自动化测试** — 源码守卫 `hibiki/test/third_party/media_kit_video_seekbar_repaint_boundary_test.dart`：断言四个 State（桌面/移动 × seek bar/位置时钟）的 `build` 都在构造重内容前包了 `RepaintBoundary`，并交叉断言「位置量化 + RepaintBoundary 两个缓解都在」，防再 vendor media_kit 时丢边界（大窗闪烁复发）。旧的位置量化守卫 `media_kit_video_position_throttle_test.dart` 仍绿（无回归）。
+- **备注**：桌面 GPU 真机（HD 620 大窗/全屏观感）验收交用户；本端只离屏跑了源码守卫 + 位置量化守卫（均绿）。

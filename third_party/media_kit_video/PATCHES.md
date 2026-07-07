@@ -298,3 +298,41 @@ black-flicker detector (`VideoBlackFlickerDetector`, TODO-1119) samples mpv fram
 counters on its own 1 s timer and is independent of these listeners.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_position_throttle_test.dart`.
+
+## TODO-1243 follow-up: RepaintBoundary-isolate the seek bar + position clock (large-window iGPU 100%)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart`
+(`MaterialDesktopSeekBarState.build` → `_buildSeekBarBody`,
+`MaterialDesktopPositionIndicatorState.build`) and
+`lib/media_kit_video_controls/src/controls/material.dart`
+(`MaterialSeekBarState.build` → `_buildSeekBarBody`,
+`MaterialPositionIndicatorState.build`).
+
+After the position quantize above, users on integrated GPUs (Intel HD Graphics
+620) reported the flicker / 100% GPU **fixed in a small window but still present
+maximized / fullscreen**. The throttle cut the repaint *frequency* (which is
+window-size-independent), so the remaining cost had to be the per-repaint
+*area*, which scales with window size.
+
+Root cause: the seek bar (`MaterialDesktopSeekBar` / `MaterialSeekBar`) and the
+`mm:ss` position clock are leaves inside the controls `Stack` that also holds the
+two **full-video-area gradient scrim `Container`s** (top + bottom), with **no
+`RepaintBoundary`** between them. The seek bar fill still advances every
+`kPositionUiThrottleStep` (~5 fps), and `markNeedsPaint` on any leaf propagates
+up to the nearest boundary — here the whole full-screen controls picture — so
+each fill step re-records **and re-rasterises the entire full-screen controls
+picture** (gradients + button bars). Small window = small picture = cheap even
+at 5 fps; maximized / fullscreen = full-screen picture re-raster 5×/s on top of
+the per-frame video texture composite = HD 620 raster thread pinned.
+
+The fix wraps the seek bar and the position clock each in a `RepaintBoundary`,
+so a fill/clock repaint re-rasters only its own thin bounds (a full-width but
+~seek-bar-tall strip / a few-char text) instead of the full-screen picture. The
+gradient scrims + button bars now paint once and stay cached during steady
+playback. This decouples the per-repaint raster cost from window size, so the
+large-window case costs the same as the small-window case. Purely a compositor-
+layer isolation — no behaviour, geometry, frame rate or seeking change; the
+throttle above is unchanged and complementary (it bounds build/relayout
+frequency, the boundary bounds raster area).
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_repaint_boundary_test.dart`.
