@@ -15,7 +15,7 @@
 - host 显示 PIN 的唯一入口：`hibiki_server_controller.dart:398-416`（`_promptPairApproval` 内，仅 `request.pinRequired` 时）。
 - 死锁点（修复前）：`hibiki_sync_server.dart` `_handlePairConfirm` 在 pinProof 校验通过后才 `await approve(...)`。
 
-### [x] ① 已修复 — commit 7aed4effc
+### [x] ① 已修复 — commit f309c79e7
 `hibiki/lib/src/sync/hibiki_sync_server.dart`：把 **pinRequired 会话的 host 审批（含 PIN 显示）提前到 `/api/pair/v2` CREATE 阶段**（`_handlePairV2`：生成 PIN 后、存会话前 `await onPairRequest(pinRequired: true)`；拒绝则 403 declined，会话不落）。`_handlePairConfirm` 对 pinRequired 会话不再二次弹审批（会话存在即已被 host 允许），只校验 pinProof；免 PIN 会话审批仍留在 confirm（无 PIN 可显示，行为零变化）。双重确认仍成立：CREATE 阶段人工允许 + confirm 阶段 pinProof 校验。client / UI / per-peer token 路径无需改动。
 
 ### [x] ② 已加自动化测试 — `hibiki/test/sync/hibiki_sync_server_pair_v2_test.dart`
