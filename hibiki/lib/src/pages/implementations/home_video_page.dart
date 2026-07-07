@@ -552,10 +552,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       memberSeries,
       fallback: t.series_default_name,
     );
+    // TODO-947：把选中的前 4 个视频封面传进命名弹窗，铺成手机文件夹式网格缩略预览。
+    final List<Widget> previewCovers = <Widget>[
+      for (final VideoBookRow book in _visibleVideos)
+        if (selectedUids.contains(book.bookUid)) _buildCover(book),
+    ].take(4).toList();
     final String? name = await showSeriesNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,
+      previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
     final HibikiDatabase db = ref.read(appProvider).database;
@@ -1621,7 +1627,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // TODO-1125 A：前 3 张成员封面做「露出后面几本书」的堆叠视觉（首卷 = 主封面）；
     // 封面数据已在 group.items 里，无需额外查询，不足 3 张自动降级为单封面。
     final List<Widget> covers = <Widget>[
-      for (final ShelfOrderingItem<VideoBookRow> it in group.items.take(3))
+      for (final ShelfOrderingItem<VideoBookRow> it in group.items.take(4))
         _buildCover(it.payload),
     ];
     return SeriesShelfCard(

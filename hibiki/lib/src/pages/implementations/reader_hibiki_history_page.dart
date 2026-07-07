@@ -541,7 +541,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       // 系列折叠卡：同主网格的堆叠封面 + 角标渲染（前 3 张成员封面）。
       final SeriesRow? series = _seriesById[seriesId];
       final List<Widget> covers = <Widget>[
-        for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(3))
+        for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(4))
           _slotCover(it.payload, _epubCoverUrisByBookKey),
       ];
       out.add(ShelfReorderItem(
@@ -1084,7 +1084,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // （首卷在 first = 主封面；不足 3 张自动降级）。封面数据已在 group.items 里，无需
     // 额外查询。
     final List<Widget> covers = <Widget>[
-      for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(3))
+      for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(4))
         _slotCover(it.payload, epubCoverUrisByBookKey),
     ];
     return SeriesShelfCard(

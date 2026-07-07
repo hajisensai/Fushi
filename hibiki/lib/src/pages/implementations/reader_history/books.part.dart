@@ -438,10 +438,27 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       memberTitles,
       fallback: t.series_default_name,
     );
+    // TODO-947：把选中的前 4 本书封面传进命名弹窗，铺成手机文件夹式网格缩略预览，
+    // 让用户在确认合并时直观看到「我把哪几本合并进去了」。
+    final List<Widget> previewCovers = <Widget>[
+      for (final MediaItem item in _visibleEpubBooks)
+        if (_selectedKeys.contains(item.mediaIdentifier))
+          _slotCover(
+            _ShelfBookSlot(seq: 0, order: 0, epub: item),
+            _epubCoverUrisByBookKey,
+          ),
+      for (final SrtBook book in _visibleSrtBooks)
+        if (_selectedKeys.contains('srt_${book.uid}'))
+          _slotCover(
+            _ShelfBookSlot(seq: 0, order: 0, srt: book),
+            _epubCoverUrisByBookKey,
+          ),
+    ].take(4).toList();
     final String? name = await showSeriesNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,
+      previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
     final int seriesId = await appModel.database.createSeries(name);

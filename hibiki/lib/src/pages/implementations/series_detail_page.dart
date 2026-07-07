@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
 import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -273,18 +274,31 @@ Future<String?> showSeriesNameDialog({
   required BuildContext context,
   required String title,
   String initialName = '',
+  List<Widget> previewCovers = const <Widget>[],
 }) {
   return showAppDialog<String>(
     context: context,
-    builder: (_) => _SeriesNameDialog(title: title, initialName: initialName),
+    builder: (_) => _SeriesNameDialog(
+      title: title,
+      initialName: initialName,
+      previewCovers: previewCovers,
+    ),
   );
 }
 
 class _SeriesNameDialog extends StatefulWidget {
-  const _SeriesNameDialog({required this.title, required this.initialName});
+  const _SeriesNameDialog({
+    required this.title,
+    required this.initialName,
+    this.previewCovers = const <Widget>[],
+  });
 
   final String title;
   final String initialName;
+
+  /// TODO-947：多选「组合成系列」命名弹窗里，把选中的前 N 本书封面铺成手机文件夹式
+  /// 网格缩略预览，让用户在命名/确认时就直观看到「我把哪几本合并进去了」。空则不渲染。
+  final List<Widget> previewCovers;
 
   @override
   State<_SeriesNameDialog> createState() => _SeriesNameDialogState();
@@ -333,11 +347,34 @@ class _SeriesNameDialogState extends State<_SeriesNameDialog> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: HibikiTextField(
-          controller: _controller,
-          labelText: t.series_name_hint,
-          autofocus: true,
-          onSubmitted: (_) => _submit(),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (widget.previewCovers.isNotEmpty) ...<Widget>[
+              Center(
+                child: SizedBox(
+                  width: 92,
+                  height: 120,
+                  child: HibikiCard(
+                    padding: EdgeInsets.zero,
+                    margin: EdgeInsets.zero,
+                    child: ClipRRect(
+                      borderRadius: tokens.radii.cardRadius,
+                      child: SeriesFolderCover(covers: widget.previewCovers),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: tokens.spacing.gap),
+            ],
+            HibikiTextField(
+              controller: _controller,
+              labelText: t.series_name_hint,
+              autofocus: true,
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
         ),
         footer: Wrap(
           alignment: WrapAlignment.end,
