@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 557 条。点号进各自文件。
+> 共 559 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-574](bugs/BUG-574-ios-lyrics-mode-huge-html.md) | ✅ | ✅ | iOS 歌词模式整本字幕 HTML 导致打不开 |
+| [BUG-573](bugs/BUG-573-ios-profile-promotion-disabled.md) | ✅ | ✅ | iOS Profile/Release 未启用高刷新率 |
 | [BUG-571](bugs/BUG-571-ios-lyrics-mode-reopen-timeout.md) | ✅ | ✅ | iOS 重开书籍恢复歌词模式导致内容超时白屏 |
 | [BUG-570](bugs/BUG-570-ios-ankimobile-media-url-404.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地媒体 URL 404 |
 | [BUG-569](bugs/BUG-569-ios-audiobook-card-sentence-audio-aac.md) | ✅ | ✅ | iOS 有声书制卡句音频仍以 .aac localhost URL 入卡 |

@@ -513,17 +513,24 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     if (_lyricsMode) {
       if (_lyricsPageReady) {
-        final int idx = controller.allBookCuesSnapshot.isNotEmpty
+        final int sourceIdx = _lyricsCueWindowUsesAllBookCues
             ? controller.allBookCueIdx
             : controller.currentCueIdx;
+        final int idx = sourceIdx - _lyricsCueIndexOffset;
         if (idx >= 0) {
-          // followAudio OFF → pass scroll=false so the lyrics page updates the
-          // current-line highlight but does not auto-scroll (the toggle was a
-          // no-op before: __lyricsSetCue always scrolled regardless).
-          _controller!.evaluateJavascript(
-            source: 'if(window.__lyricsSetCue)'
-                'window.__lyricsSetCue($idx, ${controller.followAudio.value});',
-          );
+          if (idx < _lyricsCueList.length) {
+            // followAudio OFF → pass scroll=false so the lyrics page updates the
+            // current-line highlight but does not auto-scroll (the toggle was a
+            // no-op before: __lyricsSetCue always scrolled regardless).
+            _controller!.evaluateJavascript(
+              source: 'if(window.__lyricsSetCue)'
+                  'window.__lyricsSetCue($idx, ${controller.followAudio.value});',
+            );
+          } else if (_lyricsCueWindowUsesAllBookCues) {
+            unawaited(_loadLyricsPage());
+          }
+        } else if (_lyricsCueWindowUsesAllBookCues) {
+          unawaited(_loadLyricsPage());
         }
       }
       _syncPositionFromCurrentCue();

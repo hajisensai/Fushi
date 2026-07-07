@@ -1,6 +1,75 @@
 // GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch1).
 part of '../reader_hibiki_page.dart';
 
+const int kLyricsModeMaxInitialCues = 600;
+
+class LyricsCueWindow {
+  const LyricsCueWindow({
+    required this.cues,
+    required this.currentIndex,
+    required this.indexOffset,
+    required this.usesAllBookCues,
+  });
+
+  final List<AudioCue> cues;
+  final int currentIndex;
+  final int indexOffset;
+  final bool usesAllBookCues;
+
+  static LyricsCueWindow select({
+    required List<AudioCue> allBookCues,
+    required List<AudioCue> chapterCues,
+    required int allBookIndex,
+    required int chapterIndex,
+    int maxCues = kLyricsModeMaxInitialCues,
+  }) {
+    if (allBookCues.isEmpty) {
+      final int safeChapterIndex =
+          _clampIndex(chapterIndex, chapterCues.length);
+      return LyricsCueWindow(
+        cues: chapterCues,
+        currentIndex: safeChapterIndex,
+        indexOffset: 0,
+        usesAllBookCues: false,
+      );
+    }
+
+    final int safeAllBookIndex = _clampIndex(allBookIndex, allBookCues.length);
+    if (allBookCues.length <= maxCues) {
+      return LyricsCueWindow(
+        cues: allBookCues,
+        currentIndex: safeAllBookIndex,
+        indexOffset: 0,
+        usesAllBookCues: true,
+      );
+    }
+
+    final int half = maxCues ~/ 2;
+    int start = safeAllBookIndex - half;
+    if (start < 0) start = 0;
+    int end = start + maxCues;
+    if (end > allBookCues.length) {
+      end = allBookCues.length;
+      start = end - maxCues;
+      if (start < 0) start = 0;
+    }
+
+    return LyricsCueWindow(
+      cues: allBookCues.sublist(start, end),
+      currentIndex: safeAllBookIndex - start,
+      indexOffset: start,
+      usesAllBookCues: true,
+    );
+  }
+
+  static int _clampIndex(int index, int length) {
+    if (length <= 0) return 0;
+    if (index < 0) return 0;
+    if (index >= length) return length - 1;
+    return index;
+  }
+}
+
 /// lyrics + floating-lyric domain methods extracted via part-of (TODO-589
 /// batch1); shared private scope. Behaviour-preserving: bodies are verbatim
 /// except `setState(` forwarded through the main shell `_rebuild(` helper
@@ -68,19 +137,21 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
   Future<void> _loadLyricsPage() async {
     _lyricsPageReady = false;
     final AudiobookPlayerController ctrl = _audiobookController!;
-    _lyricsCueList = ctrl.allBookCuesSnapshot.isNotEmpty
-        ? ctrl.allBookCuesSnapshot
-        : ctrl.chapterCuesSnapshot;
+    final LyricsCueWindow cueWindow = LyricsCueWindow.select(
+      allBookCues: ctrl.allBookCuesSnapshot,
+      chapterCues: ctrl.chapterCuesSnapshot,
+      allBookIndex:
+          ctrl.allBookCueIdx >= 0 ? ctrl.allBookCueIdx : _lyricsEntryCueIndex,
+      chapterIndex:
+          ctrl.currentCueIdx >= 0 ? ctrl.currentCueIdx : _lyricsEntryCueIndex,
+    );
+    _lyricsCueList = cueWindow.cues;
+    _lyricsCueIndexOffset = cueWindow.indexOffset;
+    _lyricsCueWindowUsesAllBookCues = cueWindow.usesAllBookCues;
     if (_lyricsCueList.isEmpty) {
       await _exitLyricsMode();
       return;
     }
-
-    final int currentIdx = ctrl.allBookCuesSnapshot.isNotEmpty
-        ? ctrl.allBookCueIdx
-        : ctrl.currentCueIdx;
-    final int safeCurrentIdx =
-        currentIdx >= 0 ? currentIdx : _lyricsEntryCueIndex;
 
     final Color bg = _themeBackgroundColor();
     final Color fg = _lyricsTextColor();
@@ -90,7 +161,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
 
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
-      currentIndex: safeCurrentIdx.clamp(0, _lyricsCueList.length - 1),
+      currentIndex: cueWindow.currentIndex,
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
@@ -218,6 +289,8 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     }
 
     _lyricsPageReady = false;
+    _lyricsCueIndexOffset = 0;
+    _lyricsCueWindowUsesAllBookCues = false;
     _lyricsCueList = const [];
     await _navigateToChapter(targetChapter, progress: targetProgress);
   }
