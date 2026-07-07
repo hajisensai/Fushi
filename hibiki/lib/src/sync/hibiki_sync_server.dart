@@ -609,7 +609,7 @@ class HibikiSyncServer {
       clientDeviceId: clientDeviceId,
     );
 
-    // TODO-1296 / BUG-588: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
+    // TODO-1296 / BUG-592: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
     // 阶段就弹 host 审批——审批弹窗会显示本会话 PIN，让 client 被要求输入前 host 屏上
     // 已经有 PIN 可读。修复「公网配对根本看不到 PIN」的时序死锁：旧实现只在 confirm 且
     // pinProof 校验通过后才弹审批显示 PIN，而 client 必须先输对 PIN 才能过校验 → PIN 永
@@ -698,7 +698,7 @@ class HibikiSyncServer {
       }
     }
 
-    // TODO-1296 / BUG-588: pinRequired 会话的 host 审批已在 CREATE 阶段完成——会话能
+    // TODO-1296 / BUG-592: pinRequired 会话的 host 审批已在 CREATE 阶段完成——会话能
     // 存在于 _pairSessions 即代表 host 当时已点允许（见 _handlePairV2），故此处不再二次
     // 弹窗，只凭 pinProof 校验通过即派 token（双重确认 = 早前的人工允许 + 此刻的 proof
     // 校验，两者仍缺一不可）。免 PIN 会话（pinRequired=false）没有 CREATE 阶段审批，仍在

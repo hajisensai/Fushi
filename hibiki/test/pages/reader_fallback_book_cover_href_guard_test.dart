@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-1299 / BUG-588 源码守卫：手机（默认 lapis 卡组）制卡无书籍封面。
+/// TODO-1299 / BUG-595 源码守卫：手机（默认 lapis 卡组）制卡无书籍封面。
 ///
 /// 根因 = 制卡取封面的唯一入口 `mining.part.dart` 里
 ///   `if (_book?.coverHref != null && _extractDir != null) { coverPath = ... }`

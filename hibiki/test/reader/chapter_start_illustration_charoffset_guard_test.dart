@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-588 / TODO-1229（第 5 次复诉）源码/生成产物守卫：章节翻页初始正确后
+/// BUG-594 / TODO-1229（第 5 次复诉）源码/生成产物守卫：章节翻页初始正确后
 /// 异步跳过章首插图。
 ///
 /// 根因：`scrollToCharOffset` 只走文本节点（createWalker=SHOW_TEXT）。以插图页开篇

@@ -27,10 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 576 条。点号进各自文件。
+> 共 581 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-595](bugs/BUG-595-mobile-mining-no-cover.md) | ✅ | ✅ | 手机制卡回退路径漏coverHref致无书籍封面 |
+| [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉） |
+| [BUG-593](bugs/BUG-593-netflix-card-subtitle-dup.md) | ✅ | ✅ | 网飞制卡卡片字幕重复两次+截取混入UI+少开头 |
+| [BUG-592](bugs/BUG-592-interconnect-connect-fail.md) | ✅ | ✅ | 互联LAN token成功仍连失败+公网无pin |
+| [BUG-591](bugs/BUG-591-external-sub-style.md) | ✅ | ✅ | 外挂ASS字幕自带颜色描边不生效 |
 | [BUG-590](bugs/BUG-590-secondary-subtitle-race.md) | ✅ | ✅ | 副字幕轨就绪竞态致有时不显示 |
 | [BUG-589](bugs/BUG-589-waveform-density.md) | ✅ | ✅ | 字幕对轴波形显示密度不利于辨句 |
 | [BUG-588](bugs/BUG-588-stats-mobile-numbers.md) | ✅ | ✅ | 手机阅读统计页数字不可见 |

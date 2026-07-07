@@ -1,4 +1,4 @@
-## BUG-588 · 手机制卡回退路径漏coverHref致无书籍封面
+## BUG-595 · 手机制卡回退路径漏coverHref致无书籍封面
 - **报告**：2026-07-07（用户：）
 - **真实性**：✅ 真 bug —— 根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart` 的 `_buildBookFromDb`（`EpubBook(...)` 未设 `coverHref`）与 `_buildLegacyBook`（同样漏设）。制卡取封面唯一入口 `hibiki/lib/src/pages/implementations/reader_hibiki/mining.part.dart:30` 是 `if (_book?.coverHref != null && _extractDir != null)`；主解析 `parseBookOnly`（epub_parser.dart:76/103）会设 coverHref，但主解析抛 `FormatException`（reader_hibiki_page.dart:1512 附近）回退到这两个 DB/目录构造点时 `coverHref==null` → 制卡 coverPath 恒 null → 无书籍封面。DB 行 `EpubBooks.coverPath` 存的就是导入时落库的相对封面 href（epub_importer.dart:198-199 `coverPath: book.coverHref`），AnkiDroid / AnkiConnect 两端对称（均 `<img src>`），故根因在上游 coverPath 是否被赋值。
 - **[x] ① 已修复** —— `_buildBookFromDb` 的 `EpubBook(...)` 补 `coverHref: row.coverPath`；`_buildLegacyBook` 增 `{String? coverHref}` 形参并透传给 `EpubBook`，调用点传 `bookRow?.coverPath`。commit: 见分支 todo1299-mobile-cover HEAD（fix 与本文件同 commit）。

@@ -11,7 +11,7 @@ void main() {
   late Directory tempDir;
   late HibikiSyncServer server;
   String? shownPin;
-  // TODO-1296 / BUG-588: record each host-approval invocation's pinRequired so
+  // TODO-1296 / BUG-592: record each host-approval invocation's pinRequired so
   // tests can assert *when* (create vs confirm) the PIN-showing approval fires.
   late List<bool> approvalPinRequired;
 
@@ -137,9 +137,9 @@ void main() {
     expect((jsonDecode(resp.body) as Map<String, dynamic>)['reason'], 'pin');
   });
 
-  test('PIN-required host declines at CREATE yields 403 declined (BUG-588)',
+  test('PIN-required host declines at CREATE yields 403 declined (BUG-592)',
       () async {
-    // TODO-1296 / BUG-588: for a PIN-required session the host approval (which
+    // TODO-1296 / BUG-592: for a PIN-required session the host approval (which
     // shows the PIN) moved to the /api/pair/v2 CREATE step, so a decline now
     // surfaces there — the client never gets a session/hostNonce to even ask for
     // a PIN. This is what makes the PIN visible before the client must type it.
@@ -160,11 +160,11 @@ void main() {
     expect(approvalPinRequired, <bool>[true]);
   });
 
-  // TODO-1296 / BUG-588 regression: the PIN-showing host approval must fire at
+  // TODO-1296 / BUG-592 regression: the PIN-showing host approval must fire at
   // CREATE for a PIN-required session, so the host displays the PIN before the
   // client is asked to enter it. Previously it only fired at confirm AFTER
   // pinProof verification — an impossible ordering that hid the PIN forever.
-  test('PIN-required approval fires at CREATE not confirm (BUG-588)', () async {
+  test('PIN-required approval fires at CREATE not confirm (BUG-592)', () async {
     await startServer(lanRequiresPin: true);
     const String clientNonce = 'cn-create';
     // After CREATE the host has already been asked to approve+show the PIN.
@@ -194,7 +194,7 @@ void main() {
 
   // PIN-free (LAN auto-discovery) sessions keep the old behavior: no approval at
   // create (nothing to display), approval fires at confirm.
-  test('PIN-free approval fires at CONFIRM not create (BUG-588)', () async {
+  test('PIN-free approval fires at CONFIRM not create (BUG-592)', () async {
     await startServer(lanRequiresPin: false);
     final Map<String, dynamic> start = await startSession('cn-free-phase');
     expect(approvalPinRequired, isEmpty,

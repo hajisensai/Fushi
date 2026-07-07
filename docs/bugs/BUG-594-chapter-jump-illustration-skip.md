@@ -1,4 +1,4 @@
-## BUG-588 · 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉）
+## BUG-594 · 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉）
 - **报告**：2026-07-07（用户：看板 TODO-1229，「没区别，还是最开始是对的，然后一下子跳到错误的位置」，headless Chrome 真实渲染法证）
 - **真实性**：✅ 真 bug。前 4 次修复（图片 late-load 重锚 `__imgReanchorProgress`、spreadReady 门控、惯性跨章冷却/在飞守卫）都打在「输入穿透 / 跳两章」上，与本症状正交，故「没区别」。本症状是**章首插图页被一个异步的 charOffset 重锚越过**：
   - **根因**：`hibiki/lib/src/reader/reader_pagination_scripts.dart` 的 `scrollToCharOffset`（分页 line ~2182）只走文本节点（`createWalker` = SHOW_TEXT）。以插图页开篇的章节里，首个**文本**字符位于插图之后的下一页，故 `scrollToCharOffset(0)` 落到「首个文本页」而非插图页。`restoreToCharOffset(charOffset)`（分页 line ~2058、连续 line ~2830）对 `charOffset==0` 走 `scrollToCharOffset(0)`（**无 page-stable hint**），于是跳过插图。而 `restoreProgress(0)` 走 `scrollToProgressPaged(0)` → `minScroll`，`buildPaginationMetrics.firstContentEdge` 已含前导 block 图（media 循环 line 1977-1985），落点正确=插图页。两条章首语义路径不一致。
