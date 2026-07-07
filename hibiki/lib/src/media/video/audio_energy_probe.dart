@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
@@ -18,6 +19,12 @@ import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 /// 默认分析窗口（毫秒）。与 [kSubtitleAutoAlignBinMs] 对齐：100ms 一帧 RMS，既给互相关
 /// 足够分辨率，又把一部 2h 电影的样本控制在 ~72000 行内。
 const int kAudioEnergyWindowMs = 100;
+
+/// 字幕对轴**波形可视化**的分析窗口（毫秒）。比自动对轴的采样窗口（100ms = 10 帧/秒，
+/// 够互相关求整体平移，但画成波形只有 10 根柱/秒、粗得看不出句子）细 5 倍：20ms = 50
+/// 帧/秒，让波形密度接近成熟工具（Audacity / Aegisub），语音节奏与句间静音清晰可辨。
+/// 仅用于波形显示探测（`_loadSubtitleWaveformEnvelope`），不改自动对轴的采样率。
+const int kSubtitleWaveformWindowMs = 20;
 
 /// 自动对轴探测的默认时间上界（毫秒）：只抽视频前 20 分钟的音频能量。求一个**全局
 /// 固定整体平移**（与手动延迟同义）足够——整轨抽包络对 2h 4K REMUX 要数十秒~分钟
@@ -204,55 +211,88 @@ Future<List<double>> extractAudioEnergyEnvelope({
   }
 }
 
-/// **纯函数**：把逐帧 RMS 能量包络（[extractAudioEnergyEnvelope] 返回的 dB 序列，
-/// 越大越响，静音块为很低的有限值 [silenceDb]）降采样到 [targetBuckets] 个桶，并
-/// **归一化到 0..1**，供波形 painter 直接按桶宽绘制（TODO-1051 阶段A，字幕对轴波形可视化）。
+/// **纯函数**：把音频 RMS 电平（分贝 dBFS，≤0，越大越响）转成线性振幅（0..1）。
 ///
-/// **桶内取峰值（max），不取桶内 RMS**：入参 [frames] 本身已是逐帧 RMS 包络（≈100ms/帧，
-/// 见 [kAudioEnergyWindowMs]），再对每桶做二次 RMS 会二次平滑、淹没瞬态；波形可视化的目的
-/// 是让用户一眼看出响度尖峰的节奏以核对字幕对齐，故每桶取该区间**最大**能量，保留瞬态。
+/// 波形可视化的关键契约：**必须在线性振幅域画，不能直接线性拉伸分贝**。分贝是对数量纲——
+/// 房间底噪（约 -60~-80dB）与语音峰值（约 -15~-30dB）在分贝轴上只差几十，直接线性归一化后
+/// 底噪仍有 ~40% 柱高，语音和静音糊成一条均匀带，看不出句子边界。成熟波形工具
+/// （Audacity / Aegisub）画的都是线性 PCM 振幅：`amp = 10^(dB/20)`——静音塌到接近 0、语音
+/// 尖峰凸出，句间静音一眼可辨。[silenceDb]=-120dB → 1e-6 ≈ 0。dBFS ≤ 0 → 结果 ∈ (0, 1]。
+double dbToLinearAmplitude(double db) => math.pow(10.0, db / 20.0).toDouble();
+
+/// **纯函数**：取 [values] 的第 [percentile] 分位值（0..1，就地排序副本，不改入参）。
 ///
-/// **归一化**：dB 是负值域且绝对范围随内容浮动，取降采样后所有桶峰值的 min/max 做线性拉伸到
-/// 0..1（`(v - min) / (max - min)`）。全同值（含单一静音）时 `max == min`，输出全 0（不除零）。
+/// 波形归一化的「上限」用高分位（而非绝对最大值）：单个响亮瞬态（音效 / 配乐重音 / 爆音）
+/// 不会把整段语音压成贴地一条线。分位落点四舍五入到最近样本，空列表返回 0。
+double _percentileValue(List<double> values, double percentile) {
+  if (values.isEmpty) return 0.0;
+  final double p = percentile.clamp(0.0, 1.0).toDouble();
+  final List<double> sorted = List<double>.of(values)..sort();
+  final int idx = ((sorted.length - 1) * p).round();
+  return sorted[idx];
+}
+
+/// **纯函数**：把逐帧 RMS 能量包络（[extractAudioEnergyEnvelope] 返回的 dB 序列，越大越响，
+/// 静音块为很低的有限值 [silenceDb]）降采样到 [targetBuckets] 个桶，并**归一化到 0..1**，
+/// 供波形 painter 直接按桶宽绘制（TODO-1051 阶段A / TODO-1244，字幕对轴波形可视化）。
+///
+/// **分贝 → 线性振幅**（[dbToLinearAmplitude]）：先把每帧 dB 转成线性振幅再做峰值 / 归一化。
+/// 这是「波形密度 / 对比正确」的根因修——直接线性拉伸 dB 会让底噪几乎和语音一样高、糊成一条带
+/// （见 [dbToLinearAmplitude] 文档）；转到线性域后静音塌到接近 0、语音尖峰凸出，句子边界可辨。
+///
+/// **桶内取峰值（max），不取桶内 RMS**：入参 [frames] 本身已是逐帧 RMS 包络（见
+/// [kSubtitleWaveformWindowMs]），再对每桶做二次 RMS 会二次平滑、淹没瞬态；波形可视化要让
+/// 用户一眼看出响度尖峰的节奏以核对字幕对齐，故每桶取该区间**最大**线性振幅，保留瞬态。
+///
+/// **归一化**：以「桶内最小振幅」为地基、「第 [normalizeCeilingPercentile] 分位振幅」为上限做
+/// 线性拉伸 `(v - min) / (ceil - min)` 并 clamp 到 0..1。用高分位而非绝对峰值当上限，避免单个
+/// 响亮瞬态把整段语音压成贴地一线（[_percentileValue]，成熟波形工具同款离群点抑制）。全同值
+/// （含单一静音，`ceil == min`）时不除零、返回全 0。桶数很少（单测的 2~3 桶）时分位落到最大值，
+/// 退化为经典 min/max 归一化。
 ///
 /// **退化输入（一律 sane，不抛、不越界）**：
 /// - [frames] 空 或 [targetBuckets] <= 0 → 返回空列表 `[]`。
-/// - [targetBuckets] >= 帧数 → 每帧各占一桶（不上采样、不插值补桶），返回长度 = 帧数、
-///   桶数即帧数的归一化序列；不会试图产出比数据更多的桶。
+/// - [targetBuckets] >= 帧数 → 每帧各占一桶（不上采样、不插值补桶），返回长度 = 帧数。
 /// - 否则输出长度恰为 [targetBuckets]，第 i 桶覆盖 `frames[i*n/B .. (i+1)*n/B)`（末桶收尾到 n），
 ///   每桶至少含 1 帧，无空桶、无越界读。
 ///
 /// 幂等：无内部状态、无 IO，同输入恒定同输出。
-List<double> downsampleEnergyEnvelope(List<double> frames, int targetBuckets) {
+List<double> downsampleEnergyEnvelope(
+  List<double> frames,
+  int targetBuckets, {
+  double normalizeCeilingPercentile = 0.99,
+}) {
   final int n = frames.length;
   if (n == 0 || targetBuckets <= 0) return <double>[];
 
   // 桶数 >= 帧数：不上采样，每帧一桶（桶数收敛到帧数）。桶数 < 帧数：恰好 targetBuckets 桶。
   final int buckets = targetBuckets >= n ? n : targetBuckets;
 
-  // 第一趟：每桶取区间峰值（保留瞬态）。用 i*n/B 均分边界，末桶自然收尾到 n，
-  // 且因 buckets <= n，每桶起点严格递增、至少含 1 帧，无空桶。
+  // 第一趟：每桶取区间**线性振幅**峰值（先 dB→线性，再取 max，保留瞬态）。用 i*n/B 均分
+  // 边界，末桶自然收尾到 n，且因 buckets <= n，每桶起点严格递增、至少含 1 帧，无空桶。
   final List<double> peaks = List<double>.filled(buckets, 0.0);
   double minPeak = double.infinity;
-  double maxPeak = double.negativeInfinity;
   for (int b = 0; b < buckets; b++) {
     final int start = (b * n) ~/ buckets;
     final int end =
         ((b + 1) * n) ~/ buckets; // exclusive；因 buckets<=n 必有 end>start
-    double peak = frames[start];
+    double peak = dbToLinearAmplitude(frames[start]);
     for (int i = start + 1; i < end; i++) {
-      if (frames[i] > peak) peak = frames[i];
+      final double amp = dbToLinearAmplitude(frames[i]);
+      if (amp > peak) peak = amp;
     }
     peaks[b] = peak;
     if (peak < minPeak) minPeak = peak;
-    if (peak > maxPeak) maxPeak = peak;
   }
 
-  // 第二趟：min/max 线性归一化到 0..1。全同值（含单一静音）不除零，返回全 0。
-  final double range = maxPeak - minPeak;
+  // 第二趟：以最小振幅为地基、高分位振幅为上限线性归一化到 0..1（离群瞬态不压垮语音）。
+  // 全同值（含单一静音）时 ceil == min，不除零，返回全 0。
+  final double ceiling = _percentileValue(peaks, normalizeCeilingPercentile);
+  final double range = ceiling - minPeak;
   if (range <= 0) return List<double>.filled(buckets, 0.0);
   for (int b = 0; b < buckets; b++) {
-    peaks[b] = (peaks[b] - minPeak) / range;
+    final double v = (peaks[b] - minPeak) / range;
+    peaks[b] = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
   }
   return peaks;
 }
