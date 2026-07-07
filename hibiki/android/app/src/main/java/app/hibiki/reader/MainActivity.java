@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import android.net.Uri;
 
 import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.embedding.engine.FlutterShellArgs;
 import io.flutter.plugin.common.MethodChannel;
 
 import android.provider.Settings;
@@ -404,6 +405,29 @@ public class MainActivity extends AudioServiceActivity {
             }
         }
         f.delete();
+    }
+
+    // TODO-1232 A3: force the Skia rendering backend (disable Impeller) when the
+    // user opted in via Settings. The flag is persisted to a native prefs file
+    // (see the "render" MethodChannel in configureFlutterEngine) and read HERE,
+    // before the Flutter engine is created. A command-line
+    // "--enable-impeller=false" takes precedence over the AndroidManifest
+    // EnableImpeller default at engine init (see FlutterEngineFlags docs), so
+    // this flips the backend for THIS launch only -- no rebuild, no adb, exactly
+    // what the Mali-G76 black-video triage needs. Impeller stays the default;
+    // this overrides only when the user explicitly turns the experiment on.
+    @Override
+    public FlutterShellArgs getFlutterShellArgs() {
+        FlutterShellArgs args = super.getFlutterShellArgs();
+        if (isImpellerDisabledPref()) {
+            args.add(FlutterShellArgs.ARG_DISABLE_IMPELLER);
+        }
+        return args;
+    }
+
+    private boolean isImpellerDisabledPref() {
+        return getSharedPreferences(PreferenceKeys.FILE_RENDER, MODE_PRIVATE)
+                .getBoolean(PreferenceKeys.RENDER_IMPELLER_DISABLED, false);
     }
 
     @Override
@@ -922,6 +946,37 @@ public class MainActivity extends AudioServiceActivity {
                     default:
                         result.notImplemented();
                         break;
+                }
+            });
+
+        // TODO-1232 A3: render-backend experiment toggle. Dart writes the flag
+        // here; MainActivity.getFlutterShellArgs reads it at the NEXT launch to
+        // decide whether to disable Impeller (Skia fallback). Persisted to a
+        // native prefs file this app owns so it is readable pre-engine.
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(),
+                ChannelNames.RENDER)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "isImpellerDisabled":
+                        result.success(isImpellerDisabledPref());
+                        break;
+                    case "setImpellerDisabled": {
+                        final Object arg = call.arguments;
+                        if (!(arg instanceof Boolean)) {
+                            result.error("INVALID_ARG",
+                                "setImpellerDisabled requires a boolean", null);
+                            break;
+                        }
+                        getSharedPreferences(PreferenceKeys.FILE_RENDER, MODE_PRIVATE)
+                                .edit()
+                                .putBoolean(PreferenceKeys.RENDER_IMPELLER_DISABLED,
+                                        (Boolean) arg)
+                                .apply();
+                        result.success(null);
+                        break;
+                    }
+                    default:
+                        result.notImplemented();
                 }
             });
     }

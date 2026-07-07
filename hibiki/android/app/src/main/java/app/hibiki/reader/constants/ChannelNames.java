@@ -17,4 +17,8 @@ public final class ChannelNames {
     public static final String SAF = PREFIX + "/saf";
     public static final String ICON_SWITCH = PREFIX + "/icon_switch";
     public static final String SCREEN_BRIGHTNESS = PREFIX + "/screen_brightness";
+    // TODO-1232 A3: render-backend toggle (persist the "disable Impeller / use
+    // Skia" experiment flag; applied at next launch via MainActivity's
+    // getFlutterShellArgs override).
+    public static final String RENDER = PREFIX + "/render";
 }

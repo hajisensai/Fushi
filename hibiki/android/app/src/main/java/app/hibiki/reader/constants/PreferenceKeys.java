@@ -22,6 +22,23 @@ public final class PreferenceKeys {
     /** Prefs file used by {@code MainActivity} for splash/theme persistence. */
     public static final String FILE_SPLASH = "hibiki_splash";
 
+    /**
+     * Prefs file used by {@code MainActivity} for render-backend selection
+     * (TODO-1232 A3). Read in {@code getFlutterShellArgs} BEFORE the Flutter
+     * engine is created, so it must be a plain native SharedPreferences file
+     * that this app fully owns -- not the shared_preferences plugin's store.
+     */
+    public static final String FILE_RENDER = "hibiki_render";
+
+    /**
+     * When {@code true}, MainActivity appends {@code --enable-impeller=false} to
+     * the Flutter shell args at launch, forcing the Skia rendering backend
+     * instead of Impeller. Used to diagnose the Mali-G76 "video plays but stays
+     * black" case (TODO-1232): if Skia renders the frame, the external-texture
+     * composition under Impeller is implicated.
+     */
+    public static final String RENDER_IMPELLER_DISABLED = "impellerDisabled";
+
     // ── BaseFloatingService position keys ────────────────────────────────────
 
     /** Saved X position of a floating overlay window. */

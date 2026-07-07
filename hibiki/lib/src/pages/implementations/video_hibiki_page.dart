@@ -93,6 +93,7 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
@@ -2284,7 +2285,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'initialPositionMs=$initialPositionMs '
           'externalSubtitlePath=$externalSubtitlePath '
           'renderGraphicStreamIndex=$renderGraphicStreamIndex '
-          'fitMode=$_videoFitMode platform=${Platform.operatingSystem}',
+          'fitMode=$_videoFitMode platform=${Platform.operatingSystem} '
+          'impellerDisabledPref=${RenderBackendService.instance.impellerDisabled}',
     );
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。

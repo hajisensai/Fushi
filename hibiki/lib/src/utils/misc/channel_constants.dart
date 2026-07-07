@@ -27,4 +27,7 @@ abstract final class HibikiChannels {
   // TODO-617: drives the desktop global lookup overlay (bare WebView2 window).
   static const MethodChannel globalLookup =
       MethodChannel('$_prefix/global_lookup');
+  // TODO-1232 A3: render-backend experiment toggle (persist "disable Impeller"
+  // so MainActivity can force Skia at the next launch; Android-only).
+  static const MethodChannel render = MethodChannel('$_prefix/render');
 }

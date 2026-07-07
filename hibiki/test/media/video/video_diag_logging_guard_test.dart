@@ -13,11 +13,18 @@ void main() {
   final File page = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
   );
+  final File settings = File(
+    'lib/src/settings/settings_schema_system.dart',
+  );
 
   late final String controllerSrc;
   late final String pageSrc;
+  late final String settingsSrc;
 
   setUpAll(() {
+    expect(settings.existsSync(), isTrue,
+        reason: 'settings 源文件应存在: ${settings.path}');
+    settingsSrc = settings.readAsStringSync();
     expect(controller.existsSync(), isTrue,
         reason: 'controller 源文件应存在: ${controller.path}');
     expect(page.existsSync(), isTrue, reason: 'page 源文件应存在: ${page.path}');
@@ -132,6 +139,36 @@ void main() {
           reason: '缺 vo-configured：无法判 vo 是否真配置起来');
       expect(controllerSrc.contains("'frame-drop-count'"), isTrue);
       expect(controllerSrc.contains("'paused-for-cache'"), isTrue);
+    });
+  });
+
+  group('TODO-1232 A3 关 Impeller 试验开关接线', () {
+    test('视频诊断头记录渲染后端偏好（导出日志自证测的是哪个后端）', () {
+      // realme 8「mpv 全绿仍黑」需要区分 Impeller vs Skia：诊断头带上用户当前
+      // 关 Impeller 意图，用户导出的 [VIDEO-DIAG] 日志就能自证测的是哪个后端。
+      expect(
+          pageSrc.contains(
+              'impellerDisabledPref=\${RenderBackendService.instance.impellerDisabled}'),
+          isTrue,
+          reason: '诊断头须带 impellerDisabledPref，让导出日志自证渲染后端');
+    });
+
+    test('设置页暴露 Android-only 的关 Impeller 开关', () {
+      expect(settingsSrc.contains("'diagnostics.disable_impeller'"), isTrue,
+          reason: '诊断分区须提供关 Impeller 试验开关');
+      expect(settingsSrc.contains('t.render_impeller_disable_toggle'), isTrue);
+      // dart format 可能把 `RenderBackendService.instance.setImpellerDisabled`
+      // 换行，故只锁方法调用点（把意图持久化到 native 的地方）。
+      expect(settingsSrc.contains('.setImpellerDisabled(value)'), isTrue,
+          reason: '开关须把意图持久化到 native（下次启动应用）');
+      // Impeller shell arg 只在 native channel 已接线处（Android）由 MainActivity
+      // 注入，故开关按 RenderBackendService.isSupported 门控可见性。
+      final int at = settingsSrc.indexOf("'diagnostics.disable_impeller'");
+      final String around =
+          settingsSrc.substring(at, (at + 600).clamp(0, settingsSrc.length));
+      expect(
+          around.contains('RenderBackendService.instance.isSupported'), isTrue,
+          reason: '关 Impeller 开关须按 native channel 支持度门控（仅 Android 接线）');
     });
   });
 }
