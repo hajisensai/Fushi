@@ -246,6 +246,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// [_charHitTest] 按全局坐标反查命中的字符。
   final List<BuildContext> _charContexts = <BuildContext>[];
 
+  /// 最近一次 build 的字幕显示区高度（本 widget 的 LayoutBuilder 记录），供
+  /// [_styleForGrapheme] 把 ASS 绝对字号 / 阴影深度按 显示区高 / PlayResY 缩放
+  /// （TODO-1246）。在 LayoutBuilder builder 里赋值，早于 box 内各字符 Builder 回调
+  /// 求值（同帧生效）。null=尚未布局，缩放退回 1.0。
+  double? _lastLayoutHeight;
+
   /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_charHitTest] 命中的 grapheme 下标，
   /// onTapUp 用它经 [_charHitByIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
   /// 动画推移），而非 up 时刻的实时反查。-1 表示按下未命中字符。
@@ -561,6 +567,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         return LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final Size container = constraints.biggest;
+            // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
+            // 本 builder 早于 box 内字符 Builder 回调求值，故同帧写入即可被读到。
+            _lastLayoutHeight = container.height;
             final Offset? posScreen = _posScreen(markup, container);
             if (posScreen != null) {
               // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标。
@@ -607,8 +616,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     final (Color strokeColor, double strokeWidth) = _resolveStroke(i, markup);
     final Paint? strokePaint =
         buildSubtitleStrokePaint(strokeColor, strokeWidth);
-    final Widget fill = Text(char, style: fillStyle);
-    if (strokePaint == null) return fill;
+    if (strokePaint == null) {
+      // 无描边：单层 fill（自带 ASS 阴影，若有）。
+      return Text(char, style: fillStyle);
+    }
     // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
     // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
     final TextStyle strokeStyle = fillStyle.copyWith(
@@ -617,11 +628,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       // 描边层不画下划线/删除线，避免与 fill 层重叠加粗装饰线（fill 层已画）。
       decoration: TextDecoration.none,
     );
+    // 阴影只保留在描边层（最底）→ 正确 z 序（阴影 < 描边 < 填充）；填充层清空阴影防重叠。
+    final bool hasShadows =
+        fillStyle.shadows != null && fillStyle.shadows!.isNotEmpty;
+    final TextStyle fillTopStyle =
+        hasShadows ? fillStyle.copyWith(shadows: const <Shadow>[]) : fillStyle;
     return Stack(
       // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
       children: <Widget>[
         Text(char, style: strokeStyle),
-        fill,
+        Text(char, style: fillTopStyle),
       ],
     );
   }
@@ -676,8 +692,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     final Color baseColor = (respect && cue?.primaryColorArgb != null)
         ? Color(cue!.primaryColorArgb!)
         : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
-    final double baseFontSize =
-        (respect ? cue?.fontSizePx : null) ?? widget.fontSize;
+    // ASS 绝对字号（PlayRes 像素）按 显示区高 / PlayResY 缩放到播放尺寸（TODO-1246）；
+    // cueStyle 无字号时回退用户统一样式（已含 subtitleScreenScaleFactor）。
+    final double assFontScale = respect ? _assFontScale(markup) : 1.0;
+    final double? cueFontPx = respect ? cue?.fontSizePx : null;
+    final double baseFontSize = cueFontPx != null
+        ? _scaleAssFontSize(cueFontPx * assFontScale)
+        : widget.fontSize;
     final FontWeight baseWeight = (respect && (cue?.bold ?? false))
         ? FontWeight.bold
         : _fontWeight(widget.fontWeight);
@@ -696,6 +717,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       // cueStyle 的斜体 / 下划线 / 删除线（respect 时）作为基线，行内 span 可再覆盖。
       fontStyle: (respect && (cue?.italic ?? false)) ? FontStyle.italic : null,
       decoration: (respect) ? _cueDecoration(cue) : null,
+      // ASS 阴影（Shadow 深度 + BackColour；行内 span 覆盖 cueStyle 默认）映射成向右下
+      // 的硬投影（TODO-1246）。respect 关或无阴影时为 null，与历史像素级一致。
+      shadows: respect ? _resolveAssShadows(span, cue, assFontScale) : null,
     );
     if (span == null) return base;
 
@@ -709,7 +733,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       fontStyle: span.italic ? FontStyle.italic : null,
       fontWeight: span.bold ? FontWeight.bold : null,
       color: span.colorArgb != null ? Color(span.colorArgb!) : null,
-      fontSize: span.fontSizePx ?? base.fontSize,
+      // 行内字号（respect 时）同按 ASS 缩放；respect 关时保持历史裸像素（旧 span 行为）。
+      fontSize: span.fontSizePx != null
+          ? (respect
+              ? _scaleAssFontSize(span.fontSizePx! * assFontScale)
+              : span.fontSizePx!)
+          : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
     );
   }
@@ -726,6 +755,43 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   static FontWeight _fontWeight(int value) {
     final int index = ((value.clamp(100, 900) ~/ 100).clamp(1, 9)) - 1;
     return FontWeight.values[index];
+  }
+
+  /// ASS 字号 / 阴影深度是相对 [SubtitleMarkup.playResY] 的绝对像素（TODO-1246）；本因子把
+  /// 它们缩放到当前字幕显示区高度（[_lastLayoutHeight]，由 build 的 LayoutBuilder 记录）。
+  /// 缺 playResY / 未布局时返回 1.0（不缩放，历史行为）。
+  double _assFontScale(SubtitleMarkup? markup) {
+    final double? playResY = markup?.playResY;
+    final double? displayH = _lastLayoutHeight;
+    if (playResY == null ||
+        playResY <= 0 ||
+        displayH == null ||
+        displayH <= 0) {
+      return 1.0;
+    }
+    return displayH / playResY;
+  }
+
+  /// 缩放后的 ASS 字号夹到合理范围：下限 8px、上限 = 显示区高的 40%（防 PlayResY 缺失 /
+  /// 异常时字号撑爆整屏；PlayResY 正确时常规字号远低于该上限、不受影响）。
+  double _scaleAssFontSize(double px) {
+    final double maxPx = (_lastLayoutHeight ?? 720) * 0.4;
+    return px.clamp(8.0, maxPx > 8.0 ? maxPx : 8.0).toDouble();
+  }
+
+  /// 把 ASS 阴影（Shadow 深度 + BackColour 阴影色，行内 span 覆盖 cueStyle 默认）解析成
+  /// 向右下偏移的硬投影 [Shadow]（TODO-1246）。深度按 [scale] 与字号同步缩放。深度<=0 /
+  /// 无阴影返回 null（不加 shadows，历史像素级一致）。阴影色缺失时按 ASS 默认取黑，而非
+  /// 描边色（描边由 [_resolveStroke] 单独承载）。
+  List<Shadow>? _resolveAssShadows(
+      SubtitleSpan? span, SubtitleCueStyle? cue, double scale) {
+    final double? depth = span?.shadowDepthPx ?? cue?.shadowDepthPx;
+    if (depth == null || depth <= 0) return null;
+    final int? colorArgb = span?.shadowColorArgb ?? cue?.shadowColorArgb;
+    final Color color =
+        colorArgb != null ? Color(colorArgb) : const Color(0xFF000000);
+    final double off = (depth * scale).clamp(0.5, 24.0).toDouble();
+    return <Shadow>[Shadow(color: color, offset: Offset(off, off))];
   }
 
   /// \pos 映射到容器局部坐标；无 \pos 或视频未解码返回 null（走 anchor 对齐）。

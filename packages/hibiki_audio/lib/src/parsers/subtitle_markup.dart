@@ -165,12 +165,21 @@ class SubtitleMarkup {
   /// cue 级默认样式（来自 ASS `[V4+ Styles]`，TODO-1105）。null=无 Style 段/非 ASS。
   final SubtitleCueStyle? cueStyle;
 
+  /// ASS `[Script Info]` 的 `PlayResY`（脚本坐标系高度，TODO-1246）。ASS 的字号
+  /// （`Fontsize` / `\fs`）与阴影深度（`Shadow` / `\shad`）是**相对本高度的绝对像素**：
+  /// 渲染层据 `字幕显示区高度 / playResY` 把绝对值缩放到实际播放尺寸，否则大制作字幕
+  /// （PlayResY=1080、Fontsize=60）会以裸 60 逻辑像素在小屏撑爆、在大屏偏小。ass_parser
+  /// 缺省时按 ASS 规范回退 288（与 `\pos` 归一化同源）；srt/vtt 无 PlayRes 传 null →
+  /// 渲染层退回不缩放（历史行为）。
+  final double? playResY;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
     this.anchor,
     this.posFraction,
     this.cueStyle,
+    this.playResY,
   });
 }
 
@@ -346,6 +355,8 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     anchor: anchor ?? cueStyle?.anchor,
     posFraction: pos,
     cueStyle: cueStyle,
+    // PlayResY 原样透传，供渲染层把 ASS 绝对字号 / 阴影深度缩放到播放尺寸（TODO-1246）。
+    playResY: playResY,
   );
 }
 

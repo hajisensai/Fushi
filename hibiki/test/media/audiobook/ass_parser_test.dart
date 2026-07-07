@@ -164,6 +164,32 @@ ${header}Dialogue: 0,0:00:01.1,0:00:03.0,Default,,0,0,0,,十分の一秒テス�
       expect(cues.single.markup?.posFraction?.yFraction, closeTo(0.5, 1e-9));
     });
 
+    test('markup carries PlayResY for ASS font/shadow scaling (TODO-1246)', () {
+      const String ass = '''
+[Script Info]
+PlayResY: 1080
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,x
+''';
+      final List<AudioCue> cues =
+          AssParser.parseString(content: ass, bookKey: 'b');
+      expect(cues.single.markup?.playResY, 1080);
+    });
+
+    test('markup PlayResY falls back to ASS 288 default when absent (TODO-1246)',
+        () {
+      const String ass = '''
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,x
+''';
+      final List<AudioCue> cues =
+          AssParser.parseString(content: ass, bookKey: 'b');
+      expect(cues.single.markup?.playResY, 288);
+    });
+
     test('strips {\\an8} override into plain text + anchor (BUG-105)', () {
       const String ass = '[Events]\n'
           'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
