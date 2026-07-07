@@ -1515,7 +1515,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       debugPrint('[ReaderHibiki] EPUB parse failed ($e), trying DB metadata');
       _book = await _buildBookFromDb(db, widget.bookKey, extractDir);
       if (!mounted) return;
-      _book ??= _buildLegacyBook(extractDir);
+      _book ??= _buildLegacyBook(extractDir, coverHref: bookRow?.coverPath);
       if (bookRow != null) {
         charsFromDb = charCountsFromChaptersJson(
             bookRow.chaptersJson, _book!.chapters.length);
@@ -1749,11 +1749,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       author: row.author,
       chapters: chapters,
       toc: toc,
+      // TODO-1299: 主解析路径 parseBookOnly 会设 coverHref，制卡才能带书籍封面；
+      // 此 DB 元数据回退路径也必须带上，否则 mining 的 `_book?.coverHref != null`
+      // 分支永不进，制卡恒无封面。row.coverPath 正是导入时落库的相对封面路径
+      // （epub_importer.dart: coverPath = book.coverHref），与 _extractDir 拼接即封面文件。
+      coverHref: row.coverPath,
       rootDirectory: extractDir,
     );
   }
 
-  EpubBook _buildLegacyBook(String extractDir) {
+  EpubBook _buildLegacyBook(String extractDir, {String? coverHref}) {
     final List<FileSystemEntity> htmlFiles =
         Directory(extractDir).listSync(recursive: true).where((e) {
       if (e is! File) return false;
@@ -1777,6 +1782,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return EpubBook(
       title: t.untitled_book(id: widget.bookKey),
       chapters: chapters,
+      // TODO-1299: 传入 DB 行的 coverPath（旧书 / 无 DB 行时为 null），使制卡封面
+      // 链路在纯目录回退时也不丢封面。
+      coverHref: coverHref,
       rootDirectory: extractDir,
     );
   }
