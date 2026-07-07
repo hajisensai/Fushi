@@ -351,6 +351,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           enabled: !_loading,
           onTap: _syncAndLoad,
         ),
+        HibikiIconButton(
+          icon: Icons.delete_sweep_outlined,
+          tooltip: t.stat_clear_all,
+          enabled: !_loading,
+          onTap: _confirmAndClearAll,
+        ),
       ],
       body: _loading
           ? buildLoading()
@@ -1211,6 +1217,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final bool confirmed = await confirmDeleteStatistics(context, book.title);
     if (!confirmed || !mounted) return;
     await appModelNoUpdate.database.deleteReadingStatisticsForTitle(book.title);
+    if (!mounted) return;
+    await _loadFromDatabase();
+  }
+
+  /// TODO-1322：点顶栏「清空统计」→ 危险操作确认 → 清空**全部阅读统计**（阅读时长 /
+  /// 字数 / 时段日志 / 查词 / 制卡计数；不动收藏 / 制卡历史 / 书籍），再从 DB 重新聚合刷新。
+  Future<void> _confirmAndClearAll() async {
+    final bool confirmed = await confirmClearAllStatistics(
+      context,
+      t.stat_clear_all_reading_message,
+    );
+    if (!confirmed || !mounted) return;
+    await appModelNoUpdate.database.clearAllReadingStatistics();
     if (!mounted) return;
     await _loadFromDatabase();
   }
