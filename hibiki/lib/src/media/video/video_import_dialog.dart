@@ -13,6 +13,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -533,11 +534,32 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         referer: referer.isEmpty ? null : referer,
         userAgent: userAgent.isEmpty ? null : userAgent,
       );
+      // TODO-1281：YouTube 导入时用 watch URL 派生的标题恒是字面 "watch"（query 里的
+      // ?v= 才是视频标识），且流媒体无本地文件可 ffmpeg 抽封面 → 名字错 + 无封面。故对
+      // YouTube URL 轻量抓一次元数据（真实标题 + 缩略图 URL），落库真名 + 下载封面。
+      // best-effort：抓取失败退回 URL 派生标题 + 无封面，导入不中止（见
+      // [resolveYoutubeMetadata]）。直链/HLS 无此问题，保持原逻辑。
+      String title = _streamTitleForUrl(url);
+      String? coverPath;
+      if (isYoutubeUrl(url)) {
+        try {
+          final YoutubeMetadata meta = await resolveYoutubeMetadata(url);
+          if (meta.title.trim().isNotEmpty) title = meta.title.trim();
+          final Directory coverDir = await AppPaths.videoCoversDirectory();
+          coverPath = await downloadVideoCoverToPath(
+            coverUrl: meta.thumbnailUrl,
+            outputPath: p.join(coverDir.path, videoCoverFileName(bookUid)),
+          );
+        } catch (e) {
+          debugPrint('[hibiki][youtube] import metadata resolve failed: $e');
+        }
+      }
       await widget.repo.saveVideoBook(VideoBooksCompanion(
         bookUid: Value(bookUid),
-        title: Value(_streamTitleForUrl(url)),
+        title: Value(title),
         videoPath: Value(url),
         streamSpecJson: Value<String?>(spec.toStorageJson()),
+        coverPath: Value<String?>(coverPath),
         importedAt: Value(DateTime.now()),
       ));
       if (!mounted) return;

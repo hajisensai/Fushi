@@ -75,6 +75,51 @@ bool isYoutubeUrl(String url) {
       host.endsWith('youtube-nocookie.com');
 }
 
+/// 纯函数：由 YouTube [videoId] 拼缩略图 URL（TODO-1281 导入封面用）。
+///
+/// 用 `hqdefault.jpg`——它对**所有**视频都存在（480x360，YouTube 保证生成），不像
+/// `maxresdefault.jpg` 对未上传高清源的视频会 404。导入时据此下载书架封面（流媒体书
+/// videoPath 是 watch URL、ffmpeg 抽帧不适用，故走缩略图 URL）。
+String youtubeThumbnailUrl(String videoId) =>
+    'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+
+/// YouTube **导入元数据**：视频标题 + 缩略图 URL（TODO-1281）。
+///
+/// 与 [YoutubeResolvedSource]（含流/字幕，播放/制卡用）区分：导入只需标题 + 封面，
+/// 不需要昂贵的 `getManifest`（流）/字幕解析，故单独一个轻量结果对象。
+class YoutubeMetadata {
+  const YoutubeMetadata({required this.title, required this.thumbnailUrl});
+
+  /// 视频真实标题（`videoDetails.title`，经 youtube_explode）。
+  final String title;
+
+  /// 缩略图 URL（[youtubeThumbnailUrl]，hqdefault）。
+  final String thumbnailUrl;
+}
+
+/// IO：**只**取 YouTube 视频标题 + 缩略图 URL（TODO-1281 导入用）。
+///
+/// 只调 `videos.get`（拿 title + videoId），**跳过** [resolveYoutubeSource] 里的
+/// `getManifest`（流解析）与字幕解析（各 ~9~19s）——导入不需要可播流/cue，只要把
+/// 真实视频名 + 封面落库，故这条轻量路径快得多。临时流 URL 会过期、不在此缓存，重开仍由
+/// [resolveYoutubeSource] 重解析。超时/失败由调用方兜底（保留 URL 派生标题 + 无封面，
+/// 导入不因元数据抓取失败中止）。
+Future<YoutubeMetadata> resolveYoutubeMetadata(
+  String url, {
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final yt.YoutubeExplode client = yt.YoutubeExplode();
+  try {
+    final yt.Video video = await client.videos.get(url).timeout(timeout);
+    return YoutubeMetadata(
+      title: video.title,
+      thumbnailUrl: youtubeThumbnailUrl(video.id.value),
+    );
+  } finally {
+    client.close();
+  }
+}
+
 final HtmlUnescape _unescape = HtmlUnescape();
 
 AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) =>

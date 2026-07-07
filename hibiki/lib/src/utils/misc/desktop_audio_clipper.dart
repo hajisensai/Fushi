@@ -5,6 +5,7 @@ import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
 import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:http/http.dart' as http;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
@@ -570,6 +571,37 @@ Future<String?> extractVideoFrameViaFfmpeg({
 String videoCoverFileName(String bookUid) {
   final String safe = bookUid.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
   return '$safe.jpg';
+}
+
+/// TODO-1281：把**远端封面 URL**（YouTube 缩略图 [youtubeThumbnailUrl] 等）下载到
+/// [outputPath]（调用方用 [videoCoverFileName] + [AppPaths.videoCoversDirectory] 拼出
+/// 与 [extractVideoCover] 同目录同命名，书架显示逻辑复用），成功返回 [outputPath]，否则
+/// 返回 null（下载失败 / 非 2xx / 空体 / 非法 URL）——**best-effort**，绝不抛：导入仍成功，
+/// 书架显示占位。流媒体书 videoPath 是 URL、ffmpeg 抽帧不适用，故封面走缩略图 URL 下载。
+///
+/// [httpClient] 仅供测试注入（默认自建、用完关闭）；把「下载 IO」与「目录解析」分离，让
+/// 本函数无需 path_provider 即可单测（调用方负责解析 [outputPath]）。
+Future<String?> downloadVideoCoverToPath({
+  required String coverUrl,
+  required String outputPath,
+  http.Client? httpClient,
+}) async {
+  final Uri? uri = Uri.tryParse(coverUrl);
+  if (uri == null || !uri.hasScheme) return null;
+  final http.Client client = httpClient ?? http.Client();
+  try {
+    final http.Response res = await client.get(uri);
+    if (res.statusCode < 200 || res.statusCode >= 300) return null;
+    if (res.bodyBytes.isEmpty) return null;
+    final File output = File(outputPath);
+    await output.parent.create(recursive: true);
+    await output.writeAsBytes(res.bodyBytes, flush: true);
+    return outputPath;
+  } catch (_) {
+    return null;
+  } finally {
+    if (httpClient == null) client.close();
+  }
 }
 
 /// 提取 [videoPath] 的书架封面存进 app 文档目录的
