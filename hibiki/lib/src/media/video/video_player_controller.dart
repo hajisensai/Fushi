@@ -210,6 +210,23 @@ class VideoPlayerController extends ChangeNotifier
   AudioCue? _currentCue;
   int _currentCueIndex = -1;
 
+  /// TODO-1312：当前**主字幕**活动集（区间 [startMs,endMs] 覆盖 effective 位置的所有
+  /// cue 下标，升序）。[_currentCue]/[_currentCueIndex] 仍是「代表」单条（查词锚 / 跳句
+  /// / 收藏默认 / 暂停到句尾用，语义不变），本集额外承载「同一时刻重叠的多条 cue 都要
+  /// 渲染」——避免越过被选那条 end 落进 gap 时 overlay 闪烁 / 只显其一（重叠 cue 都显）。
+  /// [_activeCueIndices] 是下标（进 [_cues]），[setCues] 换 cue 列表时必须复位（否则旧
+  /// 下标对新 [_cues] 越界）。
+  List<int> _activeCueIndices = const <int>[];
+
+  /// TODO-1312：副字幕 cue 流。与主字幕 [_cues] 独立、同一 effective 位置各自求活动集，
+  /// 一起交给 Flutter overlay 多层渲染（不再走 libmpv `secondary-sid` 自渲染）——副字幕
+  /// 因此也可逐字符查词。空列表 = 无副字幕。按 startMs 升序（[setSecondaryCues] 保证）。
+  List<AudioCue> _secondaryCues = <AudioCue>[];
+
+  /// 副字幕当前活动集（下标进 [_secondaryCues]，升序）。[setSecondaryCues] /
+  /// [clearSecondaryCues] 换列表时复位。
+  List<int> _activeSecondaryCueIndices = const <int>[];
+
   /// 最近一次「主动跳转」([skipToCue]) 的目标 cue 下标；无主动跳转待落地时为 null。
   ///
   /// **修 TODO-565 字幕列表点击高亮 off-by-one。** 高亮真相源是「实时 position 经
@@ -597,6 +614,22 @@ class VideoPlayerController extends ChangeNotifier
 
   List<AudioCue> get cues => _cues;
 
+  /// TODO-1312：当前主字幕活动集（重叠 cue 全渲染用）。overlay 据此把同一时刻区间覆盖
+  /// 播放位置的所有 cue 竖排堆叠渲染；单条时与 [currentCue] 等价（退化成旧的一个字幕盒）。
+  List<AudioCue> get activeCues => <AudioCue>[
+        for (final int i in _activeCueIndices)
+          if (i >= 0 && i < _cues.length) _cues[i],
+      ];
+
+  /// TODO-1312：副字幕全量 cue（诊断 / 测试用）；空 = 无副字幕。
+  List<AudioCue> get secondaryCues => _secondaryCues;
+
+  /// TODO-1312：副字幕当前活动集（overlay 副层渲染用，可查词）。
+  List<AudioCue> get secondaryActiveCues => <AudioCue>[
+        for (final int i in _activeSecondaryCueIndices)
+          if (i >= 0 && i < _secondaryCues.length) _secondaryCues[i],
+      ];
+
   VideoController? get videoController => _videoController;
 
   /// 视频文件绝对路径（制卡裁字幕音频用）；未 [load] 时为空。
@@ -831,95 +864,9 @@ class VideoPlayerController extends ChangeNotifier
     return true;
   }
 
-  /// 选副字幕内嵌轨（TODO-857 视频双字幕 Path A）：副字幕由 libmpv `secondary-sid`
-  /// **自渲染**，与主字幕（可点 overlay + cue 流）完全独立。
-  ///
-  /// [streamIndex] 是 ffmpeg `0:s:N` 的字幕流相对序号（与 [SubtitleSource.streamIndex]
-  /// / [selectEmbeddedGraphicTrack] 同范式），映射到 libmpv `tracks.subtitle` 去掉
-  /// auto/no 后的第 N 条，取其 `.id` 当 libmpv 内部 track id 下发给 `secondary-sid`。
-  ///
-  /// **与主字幕选轨的关键差异**：
-  /// - **绝不调** [setCues] / [setSubtitleTrack]——那会动主字幕 cue 流与主 `sid`。
-  ///   副字幕完全不进 Dart cue 流，故**不可查词**（这是 Path A 的正解：副字幕=纯翻译
-  ///   参考，不要查词/高亮/遮蔽耦合）。
-  /// - 只经 [applySubtitleMpvPropertiesToPlayer] 裸下发 `secondary-sid` /
-  ///   `secondary-sub-visibility`（media_kit 无 `setSecondarySubtitleTrack` 高层 API）。
-  ///
-  /// 选中返回 true；未 [load] / 轨未就绪 / 序号越界 / 期间换片销毁返回 false。每个
-  /// await 后用 [_isCurrentLoad] 双判据（player identity + loadToken）重校验，过期立即
-  /// 放弃下发——裸 setProperty 向已释放的 libmpv NativePlayer 下发是原生 use-after-free
-  /// （与 [selectEmbeddedGraphicTrack] 同 UAF 防护范式）。
-  Future<bool> selectSecondarySubtitleTrack(int streamIndex) async {
-    final Player? player = _player;
-    if (player == null) return false;
-    final int loadToken = _loadToken;
-    // TODO-1295 根因修复：等**目标序号那条轨**（第 `streamIndex+1` 条）真正解析就绪，
-    // 而非「任意一条」就早退。容器多条内嵌字幕轨在 `player.open` 后逐条异步解析，选
-    // 第 2 条（`streamIndex=1`）时若这一刻只解析出第 1 条，旧实现 `real.length==1`、
-    // `streamIndex >= real.length` 越界，一次性放弃下发 → 副字幕「有时候不显示」
-    // （移动端 IO 慢更易命中）。改为等到目标轨就绪（或 5s 超时）再判越界。
-    await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
-    if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
-    final List<SubtitleTrack> real = player.state.tracks.subtitle
-        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
-        .toList(growable: false);
-    if (streamIndex < 0 || streamIndex >= real.length) return false;
-    await applySubtitleMpvPropertiesToPlayer(
-      player,
-      buildSecondarySubtitleProperties(real[streamIndex].id),
-    );
-    if (!_isCurrentLoad(player, loadToken)) return false; // 下发后换片/销毁。
-    // 诊断开启（[onDiagLog] 非空）时回读 libmpv `secondary-sid`，便于日后定位移动端
-    // libmpv 是否静默 no-op 掉 `secondary-sub-visibility`（best-effort，不抛不阻塞）。
-    await _logSecondarySubtitleState(player, loadToken, real[streamIndex].id);
-    return _isCurrentLoad(player, loadToken);
-  }
-
-  /// 回读副字幕 libmpv 状态到诊断日志：期望下发的 track id、实际 `secondary-sid`、
-  /// `secondary-sub-visibility`。仅 [onDiagLog] 非空时执行（否则零开销 no-op），经
-  /// `NativePlayer.getProperty` best-effort 读取，属性不可读 / 非 libmpv 单条静默跳过，
-  /// 绝不抛、不阻塞。每个 await 后用 [_isCurrentLoad] 双判据重校验（防向已释放
-  /// NativePlayer 读属性 = 原生 UAF）。
-  Future<void> _logSecondarySubtitleState(
-      Player player, int loadToken, String expectedTrackId) async {
-    if (onDiagLog == null) return;
-    final dynamic native = player.platform;
-    if (native == null) {
-      _diag('secondary-sub: platform is null (non-libmpv backend?)');
-      return;
-    }
-    _diag('secondary-sub: requested sid=$expectedTrackId');
-    for (final String prop in const <String>[
-      'secondary-sid',
-      'secondary-sub-visibility',
-    ]) {
-      String value;
-      try {
-        value = (await native.getProperty(prop)).toString();
-      } catch (_) {
-        continue; // 属性不可读 / 非 libmpv：跳过这条（不致命）。
-      }
-      if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁。
-      _diag('secondary-sub: $prop=$value');
-    }
-  }
-
-  /// 关闭副字幕（TODO-857）：把 libmpv `secondary-sid` 设回 `no`。未 [load] 时
-  /// no-op 安全；期间换片销毁则放弃下发（UAF 防护）。绝不碰主字幕 `sid`。
-  Future<void> clearSecondarySubtitleTrack() async {
-    final Player? player = _player;
-    if (player == null) return;
-    final int loadToken = _loadToken;
-    if (!_isCurrentLoad(player, loadToken)) return;
-    await applySubtitleMpvPropertiesToPlayer(
-      player,
-      buildSecondarySubtitleClearProperties(),
-    );
-  }
-
   /// 真实字幕轨（去掉 libmpv 的 `auto`/`no` 伪轨）条数。按 ffmpeg `0:s:N` 的
-  /// demux 顺序索引第 N 条时用它判「目标序号已解析就绪」（[selectSecondarySubtitleTrack]
-  /// / [selectEmbeddedGraphicTrack] 的越界判据）。
+  /// demux 顺序索引第 N 条时用它判「目标序号已解析就绪」
+  /// （[selectEmbeddedGraphicTrack] 的越界判据）。
   static int _realSubtitleCount(List<SubtitleTrack> subs) =>
       subs.where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no').length;
 
@@ -929,8 +876,8 @@ class VideoPlayerController extends ChangeNotifier
   /// **TODO-1295 根因**：容器多条内嵌字幕轨是 `player.open` 后**逐条异步**解析的。
   /// 旧实现只要「任意一条」真实轨就绪就早退（`minTrackCount` 恒等于 1），选副字幕
   /// （第 2 条，`streamIndex=1`）时若这一刻只解析出第 1 条，`real.length==1`、
-  /// `streamIndex >= real.length` 越界，[selectSecondarySubtitleTrack] 一次性放弃下发
-  /// → 副字幕「有时候不显示」（移动端 IO 慢更易命中）。故按 index 选轨的路径改传
+  /// `streamIndex >= real.length` 越界，按 index 选轨（如图形轨
+  /// [selectEmbeddedGraphicTrack]）一次性放弃下发。故按 index 选轨的路径改传
   /// `minTrackCount: streamIndex + 1`，等到**目标序号那条轨真正解析就绪**（或超时）
   /// 才继续，消除「越界早退」竞态。默认 `minTrackCount = 1` 保持其它调用者（默认文本
   /// 字幕加载 [_loadEmbeddedSubtitleIfNeeded]）的「任意一条即可」旧行为不变。
@@ -1039,9 +986,29 @@ class VideoPlayerController extends ChangeNotifier
     if (cues.isNotEmpty) _graphicSubtitleActive = false;
     _currentCue = null;
     _currentCueIndex = -1;
+    // TODO-1312：换主 cue 列表复位活动集（旧下标对新 [_cues] 已失效、会越界）。
+    _activeCueIndices = const <int>[];
     // 换字幕/换片（[load] 经此）复位主动跳转目标快照 + 在途 seek 宽限：旧目标下标对新
     // _cues 已失效，留着会让首个 tick 误 snap（TODO-565）。
     _clearSeekTargetSnap();
+    notifyListeners();
+  }
+
+  /// TODO-1312：设置**副字幕** cue 列表：拷贝并按 startMs 升序排序，复位副字幕活动集。
+  /// 副字幕与主字幕独立、同一 effective 位置各自求活动集，一起交给 Flutter overlay 多层
+  /// 渲染（不再走 libmpv `secondary-sid`）——副字幕因此也可逐字符查词。空列表 = 无副字幕。
+  void setSecondaryCues(List<AudioCue> cues) {
+    _secondaryCues = List<AudioCue>.of(cues)
+      ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+    _activeSecondaryCueIndices = const <int>[];
+    notifyListeners();
+  }
+
+  /// TODO-1312：关闭副字幕（清空副字幕 cue 流 + 活动集）。幂等：本就无副字幕时不通知。
+  void clearSecondaryCues() {
+    if (_secondaryCues.isEmpty && _activeSecondaryCueIndices.isEmpty) return;
+    _secondaryCues = <AudioCue>[];
+    _activeSecondaryCueIndices = const <int>[];
     notifyListeners();
   }
 
@@ -1178,6 +1145,11 @@ class VideoPlayerController extends ChangeNotifier
     _videoPath = videoFile?.path;
     final String sourceUri = mediaUri ?? mediaUriForVideoPath(videoFile!.path);
     debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
+    // TODO-1312：换片复位副字幕 cue 流（旧下标对新片失效；新集副字幕由页面
+    // _restoreSecondarySubtitle 重挂）。在 setCues 之前复位，让 setCues 的单次
+    // notify 已反映清空后的副字幕状态。
+    _secondaryCues = <AudioCue>[];
+    _activeSecondaryCueIndices = const <int>[];
     setCues(cues);
     _clearChaptersForNewLoad();
     // 换片（复用 player）复位图形字幕标志：新片默认非图形轨，仅当下面
@@ -1783,8 +1755,31 @@ class VideoPlayerController extends ChangeNotifier
     if (persistPosition) {
       _maybeSavePosition(posMs);
     }
-    if (_cues.isEmpty) return;
     final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
+
+    // TODO-1312：副字幕活动集（与主字幕独立、同一 effective 位置各自求；空副字幕恒空集）。
+    // 无论主字幕有无都要更新（副字幕可在无主字幕时单独显示），故放在主 cues 空判之前。
+    final List<int> nextSecondary = _secondaryCues.isEmpty
+        ? const <int>[]
+        : JsonAlignmentParser.findActiveCueIndices(
+            cues: _secondaryCues, positionMs: effectiveMs);
+    bool changed = !_intListEquals(nextSecondary, _activeSecondaryCueIndices);
+    if (changed) _activeSecondaryCueIndices = nextSecondary;
+
+    if (_cues.isEmpty) {
+      // 无主 cue：清主字幕代表 cue + 活动集残留，据 changed（含副字幕变化）决定是否通知。
+      if (_currentCueIndex != -1 ||
+          _currentCue != null ||
+          _activeCueIndices.isNotEmpty) {
+        _currentCueIndex = -1;
+        _currentCue = null;
+        _activeCueIndices = const <int>[];
+        changed = true;
+      }
+      if (changed) notifyListeners();
+      return;
+    }
+
     int idx = JsonAlignmentParser.findCueIndex(
       cues: _cues,
       positionMs: effectiveMs,
@@ -1800,24 +1795,62 @@ class VideoPlayerController extends ChangeNotifier
       _pauseAndSeekForSubtitleEnd(cue, _currentCueIndex);
       return;
     }
-    // Gap（两条字幕间的静音）或早于首句：清空当前字幕。视频底部字幕 overlay 与
-    // 有声书的「正文跟随高亮」语义不同——真实字幕在其时间窗 [startMs, endMs] 结束
-    // 后就该消失，不能像高亮那样在 gap 里保留上一句（否则一句播完到下一句开始前
-    // 字幕一直挂着，BUG-074）。findCueIndex 在 gap 返回 -1 正是「让上层清」的契约。
-    // 已无字幕（_currentCueIndex == -1）时直接返回，避免无谓 notify。
+
+    // TODO-1312：主字幕活动集（重叠 cue 全渲染）= 时间上区间覆盖 effective 的所有 cue，
+    // 并入被 snap 选中的代表 cue（[skipToCue] preRoll 期间 idx 已 snap 到目标句、但它此刻
+    // 可能还没到时间 → 也要渲染，与代表 cue「点跳即显」一致）。
+    final List<int> nextActive = _activeRenderIndices(idx, effectiveMs);
+    if (!_intListEquals(nextActive, _activeCueIndices)) {
+      _activeCueIndices = nextActive;
+      changed = true;
+    }
+
+    // Gap（两条字幕间的静音）或早于首句：清空**代表** cue。视频底部字幕 overlay 与
+    // 有声书的「正文跟随高亮」语义不同——真实字幕在其时间窗 [startMs, endMs] 结束后就该
+    // 消失，不能像高亮那样在 gap 里保留上一句（BUG-074）。findCueIndex 在 gap 返回 -1 正是
+    // 「让上层清」的契约。此刻活动集若仍非空（重叠 cue 尚在时间窗内），overlay 继续渲染那些
+    // cue（TODO-1312：越过被选那条 end 落 gap 不再整体清空 / 闪烁）。
     if (idx < 0) {
-      if (_currentCueIndex == -1) return;
-      _pauseForSubtitleEnd();
-      _currentCueIndex = -1;
-      _currentCue = null;
-      notifyListeners();
+      if (_currentCueIndex != -1) {
+        _pauseForSubtitleEnd();
+        _currentCueIndex = -1;
+        _currentCue = null;
+        changed = true;
+      }
+      if (changed) notifyListeners();
       return;
     }
-    if (idx == _currentCueIndex) return;
-    _currentCueIndex = idx;
-    _currentCue = _cues[idx];
-    debugPrint('[video-cue] idx=$idx pos=${posMs}ms text="${_cues[idx].text}"');
-    notifyListeners();
+    if (idx != _currentCueIndex) {
+      _currentCueIndex = idx;
+      _currentCue = _cues[idx];
+      debugPrint(
+          '[video-cue] idx=$idx pos=${posMs}ms text="${_cues[idx].text}"');
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// TODO-1312：主字幕活动渲染集 = 时间活动集（[JsonAlignmentParser.findActiveCueIndices]）
+  /// 并入被 snap 选中的代表 cue [primaryIdx]（若 >=0 且不在时间集里，多为 [skipToCue]
+  /// preRoll 在途）。升序返回，供 overlay 竖排堆叠多字幕盒。
+  List<int> _activeRenderIndices(int primaryIdx, int effectiveMs) {
+    final List<int> byTime = JsonAlignmentParser.findActiveCueIndices(
+      cues: _cues,
+      positionMs: effectiveMs,
+    );
+    if (primaryIdx < 0 || byTime.contains(primaryIdx)) return byTime;
+    final List<int> merged = <int>[...byTime, primaryIdx]..sort();
+    return merged;
+  }
+
+  /// 两个 int 列表逐元素相等（活动集变化判据，避免每 125ms tick 无谓 [notifyListeners]）。
+  static bool _intListEquals(List<int> a, List<int> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   /// 应用「主动跳转目标」snap（TODO-565 / BUG-378），并维护 [_seekTargetCueIndex] 生命周期。

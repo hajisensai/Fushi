@@ -242,9 +242,12 @@ const List<String> _kSubtitleCjkFallback = <String>[
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   bool _revealed = false;
 
-  /// 当前句各字符的 [BuildContext]（每帧 build 重建，下标==grapheme 下标），供
-  /// [_charHitTest] 按全局坐标反查命中的字符。
-  final List<BuildContext> _charContexts = <BuildContext>[];
+  /// TODO-1312：当前帧渲染的所有字幕字符登记表（每帧 build 重建）。主字幕活动集（重叠
+  /// cue 多个字幕盒）+ 副字幕活动集的**每个字符**各登记一条，携带所属整条 cue 文本、在该
+  /// cue 内的 grapheme 下标、字符 context（求全局矩形）、及该字符所在层是否模糊。命中反查
+  /// （[_hitEntryIndexAt] / [_charHitTest]）扫全表，故点主字幕 / 副字幕 / 重叠某条都能查到
+  /// 正确的整句 + grapheme。旧的一维 `_charContexts`（单 cue、下标==grapheme）升级为二维。
+  final List<_SubtitleCharEntry> _charEntries = <_SubtitleCharEntry>[];
 
   /// 最近一次 build 的字幕显示区高度（本 widget 的 LayoutBuilder 记录），供
   /// [_styleForGrapheme] 把 ASS 绝对字号 / 阴影深度按 显示区高 / PlayResY 缩放
@@ -252,47 +255,64 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 求值（同帧生效）。null=尚未布局，缩放退回 1.0。
   double? _lastLayoutHeight;
 
-  /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_charHitTest] 命中的 grapheme 下标，
-  /// onTapUp 用它经 [_charHitByIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
+  /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_hitEntryIndexAt] 命中的**登记表下标**
+  /// （非 grapheme——二维登记后同一 grapheme 下标可能属不同 cue，故锁扁平 entry 下标），
+  /// onTapUp 用它经 [_charHitByEntryIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
   /// 动画推移），而非 up 时刻的实时反查。-1 表示按下未命中字符。
-  int _pendingTapGrapheme = -1;
+  int _pendingTapEntry = -1;
 
   /// Shift-悬停查词的移动节流阈值（像素，TODO-756a）。与阅读器 `webview.part.dart` 的
   /// `dx*dx+dy*dy < 64`（8px）同构：鼠标移动距离平方未超 64 时不重新命中查词。
   static const double _kShiftHoverThresholdPx = 8;
 
-  /// 当前句文本与模糊态快照，供 [_charHitTest] 在 build 之外读取。
-  String _currentText = '';
-  bool _currentBlurred = false;
-
   /// Shift-悬停查词节流状态（TODO-756a，与阅读器 8px 阈值同构）：上次触发查词的全局 hover
-  /// 位置与命中的 grapheme 下标。鼠标移动未超 [_kShiftHoverThresholdPx]、或仍落在同一字符上
+  /// 位置与命中的**登记表下标**。鼠标移动未超 [_kShiftHoverThresholdPx]、或仍落在同一字符上
   /// 时不重复查词（避免每帧 hover 都查），命中新字符或越过阈值才再次触发。`松开 Shift` /
   /// 离开字幕在 [_handleShiftHover] 里复位为 [Offset.zero] / -1，使下次按 Shift 重新进入即触发。
   Offset _lastShiftHoverPos = Offset.zero;
-  int _lastShiftHoverGrapheme = -1;
+  int _lastShiftHoverEntry = -1;
 
-  /// 按全局坐标反查命中的字幕字符；模糊态/空句返回 null（与点击行为一致：模糊时不
-  /// 查词）。供 [VideoSubtitleHitTester] 绑定。
-  SubtitleCharHit? _charHitTest(Offset globalPos) {
-    if (_currentBlurred || _currentText.isEmpty) return null;
+  /// TODO-1312：按全局坐标在**全部**已渲染字幕字符（主字幕活动集含重叠 cue + 副字幕
+  /// 活动集）里反查命中的登记表下标；模糊层字符按 [Rect.zero] 跳过（不参与命中，与点击
+  /// 行为一致：模糊时不查词）。无命中返回 -1。是 [_charHitTest] / 竞技场门控 / 悬停查词
+  /// 的共享命中内核。
+  int _hitEntryIndexAt(Offset globalPos) {
+    if (_charEntries.isEmpty) return -1;
     final List<Rect> rects = <Rect>[
-      for (final BuildContext c in _charContexts) _globalRectOf(c),
+      for (final _SubtitleCharEntry e in _charEntries)
+        e.blurred ? Rect.zero : _globalRectOf(e.context),
     ];
-    final int i = resolveSubtitleCharHit(rects, globalPos);
-    if (i < 0) return null;
-    return (sentence: _currentText, graphemeIndex: i, charRect: rects[i]);
+    return resolveSubtitleCharHit(rects, globalPos);
   }
 
-  /// 按已知 grapheme 下标取命中三元组（TODO-916 症状④-A 的 down-snap 用）：down 时刻已
-  /// 经 [_charHitTest] 确定命中下标，up 时刻直接用该下标重算当前字符矩形即可，**不再**用
-  /// up 时刻的点重新反查——这样即便 down 唤起控制条致字幕盒在 down→up 间被避让动画上移，
-  /// 命中仍锁定按下瞄准的那个字符。下标越界 / 模糊态 / 空句返回 null。
-  SubtitleCharHit? _charHitByIndex(int graphemeIndex) {
-    if (_currentBlurred || _currentText.isEmpty) return null;
-    if (graphemeIndex < 0 || graphemeIndex >= _charContexts.length) return null;
-    final Rect r = _globalRectOf(_charContexts[graphemeIndex]);
-    return (sentence: _currentText, graphemeIndex: graphemeIndex, charRect: r);
+  /// 按全局坐标反查命中的字幕字符，返回其**所属整条 cue 文本** + 该 cue 内 grapheme 下标
+  /// + 字符全局矩形。模糊 / 空 / 无命中返回 null。供 [VideoSubtitleHitTester] 绑定，
+  /// 二维登记后点主字幕 / 副字幕 / 重叠某条都能查到正确的整句（TODO-1312）。
+  SubtitleCharHit? _charHitTest(Offset globalPos) {
+    final int i = _hitEntryIndexAt(globalPos);
+    if (i < 0) return null;
+    final _SubtitleCharEntry e = _charEntries[i];
+    return (
+      sentence: e.sentence,
+      graphemeIndex: e.graphemeIndex,
+      charRect: _globalRectOf(e.context),
+    );
+  }
+
+  /// 按已知**登记表下标**取命中三元组（TODO-916 症状④-A 的 down-snap 用）：down 时刻已
+  /// 经 [_hitEntryIndexAt] 确定命中的 entry 下标，up 时刻直接用该下标重算当前字符矩形即可，
+  /// **不再**用 up 时刻的点重新反查——这样即便 down 唤起控制条致字幕盒在 down→up 间被避让
+  /// 动画上移，命中仍锁定按下瞄准的那个字符。下标越界 / 模糊字符返回 null。
+  SubtitleCharHit? _charHitByEntryIndex(int entryIndex) {
+    if (entryIndex < 0 || entryIndex >= _charEntries.length) return null;
+    final _SubtitleCharEntry e = _charEntries[entryIndex];
+    if (e.blurred) return null;
+    final Rect r = _globalRectOf(e.context);
+    return (
+      sentence: e.sentence,
+      graphemeIndex: e.graphemeIndex,
+      charRect: r,
+    );
   }
 
   /// 桌面 Shift-鼠标悬停查词（TODO-756a）。仅在 [VideoSubtitleOverlay.onCharHover] 注册时由
@@ -317,23 +337,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       // 未开“悬停即查词”且未按 Shift：复位节流锚，使下次按 Shift 重新进入即触发
       // （不被旧锚误判为同位置）。
       _lastShiftHoverPos = Offset.zero;
-      _lastShiftHoverGrapheme = -1;
+      _lastShiftHoverEntry = -1;
       return;
     }
-    final SubtitleCharHit? hit = _charHitTest(event.position);
-    if (hit == null) return;
-    // 同一字符 + 未越过移动阈值 → 不重复触发（节流）。命中新字符立即放行（即使移动很小，
-    // 也应换词查词，与阅读器逐字符 hover 一致）。
+    final int entryIndex = _hitEntryIndexAt(event.position);
+    if (entryIndex < 0) return;
+    final _SubtitleCharEntry e = _charEntries[entryIndex];
+    // 同一字符（同一登记表下标）+ 未越过移动阈值 → 不重复触发（节流）。命中新字符立即放行
+    // （即使移动很小，也应换词查词，与阅读器逐字符 hover 一致）。
     final double dx = event.position.dx - _lastShiftHoverPos.dx;
     final double dy = event.position.dy - _lastShiftHoverPos.dy;
-    final bool sameGrapheme = hit.graphemeIndex == _lastShiftHoverGrapheme;
-    if (sameGrapheme &&
+    final bool sameEntry = entryIndex == _lastShiftHoverEntry;
+    if (sameEntry &&
         dx * dx + dy * dy < _kShiftHoverThresholdPx * _kShiftHoverThresholdPx) {
       return;
     }
     _lastShiftHoverPos = event.position;
-    _lastShiftHoverGrapheme = hit.graphemeIndex;
-    onCharHover(hit.sentence, hit.graphemeIndex, hit.charRect);
+    _lastShiftHoverEntry = entryIndex;
+    onCharHover(e.sentence, e.graphemeIndex, _globalRectOf(e.context));
   }
 
   @override
@@ -353,254 +374,282 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, _) {
-        // 遮蔽模式「隐藏」：主字幕整条不渲染，且清空命中状态 + 解绑命中句柄（返回
-        // null 让查词 barrier 走 dismiss，不会反查到一条不可见的字幕）。TODO-840 Part B。
-        if (widget.subtitleHidden) {
-          _charContexts.clear();
-          _currentText = '';
-          _currentBlurred = false;
-          widget.hitTester?.bindHitTest(_charHitTest);
-          return const SizedBox.shrink();
-        }
-        // 每帧重置字符命中状态并（重新）绑定句柄——空句也要绑定，使浮层打开但当前
-        // 无字幕时 hitTest 返回 null（barrier 走 dismiss）。
-        _charContexts.clear();
-        final String text = widget.controller.currentCue?.text ?? '';
-        _currentText = text;
+        // 每帧重置字符登记表并（重新）绑定命中句柄——空句也要绑定，使浮层打开但当前无字幕
+        // 时 hitTest 返回 null（barrier 走 dismiss）。TODO-1312：登记表二维（主 + 副字幕）。
+        _charEntries.clear();
         widget.hitTester?.bindHitTest(_charHitTest);
-        if (text.isEmpty) {
-          _currentBlurred = false;
+
+        // 主字幕活动集（重叠 cue 全渲染，TODO-1312）。遮蔽模式「隐藏」时主层不渲染
+        // （TODO-840 Part B）——只影响底部主字幕，不影响副字幕 / 查词 / 字幕列表。
+        final List<AudioCue> mainCues = widget.subtitleHidden
+            ? const <AudioCue>[]
+            : widget.controller.activeCues;
+        // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。
+        final List<AudioCue> secondaryCues =
+            widget.controller.secondaryActiveCues;
+
+        if (mainCues.isEmpty && secondaryCues.isEmpty) {
           return const SizedBox.shrink();
         }
-        final SubtitleMarkup? markup = widget.controller.currentCue?.markup;
-        final List<String> chars = text.characters.toList(growable: false);
-        // 听力沉浸模糊只在「播放中」生效：暂停（含查词暂停、用户手动暂停）时字幕一律
-        // 清晰。查词必然先暂停视频，旧实现靠桌面 hover 维持清晰，但查词浮层弹出后鼠标
-        // 移到浮层 → 字幕 MouseRegion 收到 onExit → _revealed 复位 → 字幕又变模糊
-        // （用户正盯着这句查词，却被打码，BUG-199）。沉浸模糊的语义本就是「播放中逼你
-        // 听」，暂停时没有在听、显形理所当然，故以 isPlaying 为闸根除该竞态——无需让
-        // overlay 感知浮层栈状态。
-        final bool blurred =
-            widget.blurEnabled && !_revealed && widget.controller.isPlaying;
-        _currentBlurred = blurred;
 
-        final Color backgroundColor = widget.backgroundOpacity <= 0
-            ? Colors.transparent
-            // TODO-1059 方案A：未显式设背景色时用固定半透明黑
-            // ([kDefaultSubtitleBackgroundColor])，不再跟随主题 `surface`（浅色
-            // 主题近白会让字幕背景泛白）。页面路径恒传非 null（已由
-            // [_subtitleBackgroundColor] 解析成该常量）；此 `??` 兜底测试/直接
-            // 构造场景，二者同色。
-            : (widget.backgroundColor ?? kDefaultSubtitleBackgroundColor)
-                .withValues(alpha: widget.backgroundOpacity);
-        Widget box = DecoratedBox(
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              children: <Widget>[
-                for (int i = 0; i < chars.length; i++)
-                  Builder(
-                    builder: (BuildContext charContext) {
-                      // 登记字符 context（下标==i==grapheme 下标）供全局坐标反查
-                      // （[_charHitTest]）。字符本身不再各自包 opaque GestureDetector
-                      // ——那样每个字符矩形都吞掉指针 hover hit-test，盖在其下的
-                      // media_kit `MouseRegion.onHover/onEnter` 收不到鼠标 → 鼠标移到
-                      // 字幕文字上时控制条不再被唤起、光标被字幕层吃掉（BUG-198）。
-                      // tap 命中改由下方整片 translucent GestureDetector + 本登记表
-                      // 反查承载。
-                      _charContexts.add(charContext);
-                      return _buildStrokedChar(chars[i], i, markup);
-                    },
-                  ),
-              ],
-            ),
-          ),
-        );
-
-        // 当前句已收藏：在字幕盒左上角外侧叠一枚实心星角标（TODO-301 / BUG-264），与
-        // 字幕列表行的收藏标记同语义。用 [Stack](clipBehavior: none) + [Positioned] 叠在
-        // 盒外，不挤压字符布局（不改字幕盒尺寸、不影响居中与字符 hit-test 几何）。
-        // [isCueFavorited] 为 null（测试 / 无收藏数据源）时不叠，外观像素级不变。
-        final AudioCue? currentCue = widget.controller.currentCue;
-        final bool favorited = currentCue != null &&
-            (widget.isCueFavorited?.call(currentCue) ?? false);
-        if (favorited) {
-          final Color starColor =
-              widget.textColor ?? Theme.of(context).colorScheme.tertiary;
-          box = Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              box,
-              Positioned(
-                left: -6,
-                top: -10,
-                child: Icon(
-                  Icons.star,
-                  size: widget.fontSize * 0.6,
-                  color: starColor,
-                  shadows: buildSubtitleShadows(
-                    widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
-                    widget.shadowThickness,
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-
-        // 字符点击查词：整片字幕盒一个 translucent [RawGestureDetector]，其 tap 识别器是
-        // [_SubtitleCharTapRecognizer]——**只在按下点命中某字符时才收指针、加入手势竞技场**。
-        // - translucent（命中 / hover hit-test 语义与旧实现逐字节不变，BUG-198 / 桌面 hover
-        //   行为原样保留）：本层始终在命中路径里但 `hitTest` 返回 false，盖在其下的 media_kit
-        //   `MouseRegion` 与控制条 `onTap` 仍进 path → 鼠标在字幕上时控制条照常唤起、不被吞。
-        // - 竞技场门控（BUG-553）：识别器 [_SubtitleCharTapRecognizer.isPointerAllowed] 仅在
-        //   按下点命中某字符（含 [resolveSubtitleCharHit] 字缝 / 描边容差）时才收下指针、加入
-        //   竞技场；本层在 Stack 上层、竞技场里排在 media_kit 之前 → 命中字符时赢得竞技场 →
-        //   查词，并截断 media_kit 的 `playAndPauseOnTap`（点字幕文字只查词、不顺手暂停，保留
-        //   旧行为）。按下点落在字幕盒内**字符间空白**（超容差）时识别器不收指针、不进竞技场
-        //   → 媒体层的 show-controls `onTap` 独占竞技场胜出 → 点字幕区空白照常唤出 / 隐藏控制
-        //   条。旧的整片 translucent [GestureDetector] 会无条件收下所有 tap、赢竞技场并 reject
-        //   掉 media_kit 的 onTap，移动端（无 hover 兜底）表现为「有字幕在屏时点画面唤不出控制
-        //   条」（BUG-553 根因）。
-        if (widget.onCharTap != null) {
-          box = RawGestureDetector(
-            behavior: HitTestBehavior.translucent,
-            gestures: <Type, GestureRecognizerFactory>{
-              _SubtitleCharTapRecognizer: GestureRecognizerFactoryWithHandlers<
-                  _SubtitleCharTapRecognizer>(
-                () => _SubtitleCharTapRecognizer(
-                  // 竞技场门控判据与查词完全一致：[_charHitTest] 命中某字符（模糊态 / 空句
-                  // 返回 null）才收指针。故 fall-through 边界与查词命中边界像素级重合。
-                  hitTestChar: (Offset globalPosition) =>
-                      _charHitTest(globalPosition) != null,
-                ),
-                (_SubtitleCharTapRecognizer instance) {
-                  instance
-                    // down-snap（TODO-916 ④-A）：按下时刻字幕盒尚未被控制条避让动画推移，
-                    // 此刻反查命中字符并记下其下标；up 时刻用该下标（[_charHitByIndex]）查词，
-                    // 即便控制条已唤起、字幕盒上移，命中仍锁按下瞄准的字符。
-                    ..onTapDown = (TapDownDetails details) {
-                      final SubtitleCharHit? hit =
-                          _charHitTest(details.globalPosition);
-                      _pendingTapGrapheme = hit?.graphemeIndex ?? -1;
-                    }
-                    ..onTapUp = (TapUpDetails details) {
-                      final SubtitleCharHit? hit =
-                          _charHitByIndex(_pendingTapGrapheme);
-                      _pendingTapGrapheme = -1;
-                      if (hit != null) {
-                        widget.onCharTap!(
-                            hit.sentence, hit.graphemeIndex, hit.charRect);
-                      }
-                    }
-                    ..onTapCancel = () {
-                      _pendingTapGrapheme = -1;
-                    };
-                },
-              ),
-            },
-            child: box,
-          );
-        }
-
-        if (blurred) {
-          // 模糊态：盖一层高斯模糊 + 拦截字符点击（避免误触查词），并提供显形热区。
-          box = Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: box,
-              ),
-              // 透明覆盖：拦字符点击（避免模糊态误触查词）+ 移动端点它显形。
-              // translucent（非 opaque）：tap 仍由本层（Stack 上层）赢手势竞技场、
-              // 截断 media_kit 暂停，但 hover hit-test 不被独占 → 鼠标在模糊字幕上时
-              // media_kit `MouseRegion` 照常收 hover、控制条可唤起、不被吞（BUG-198）。
-              Positioned.fill(
-                child: GestureDetector(
-                  key: const Key('video-subtitle-reveal'),
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () => _setRevealed(true),
-                ),
-              ),
-            ],
-          );
-        }
-
-        // 桌面悬停：①听力沉浸显形/复原（blurEnabled）②向页面回报 hover 字幕盒，让页面
-        // 唤回光标 + 续命控制条（[onHoverChanged]，BUG-283——鼠标停字幕上读字时不被
-        // media_kit 自动隐藏吞掉光标）③Shift-鼠标悬停查词（[onCharHover]，TODO-756a，与
-        // 阅读器 onShiftHover 同语义，经 onHover 在按 Shift 时对命中字符查词）。三者合一个
-        // MouseRegion。opaque:false：本 region 收 hover 的同时不阻断 hover hit-test 继续下探到
-        // media_kit 的 `MouseRegion` → 鼠标在字幕上时字幕显形 / 查词 / 控制条唤起并存、光标
-        // 不被吞（BUG-198）。仅在确需 hover（blur / onHoverChanged / onCharHover 任一）时挂，
-        // 否则透传 box（外观像素级不变）。
-        final bool needHover = widget.blurEnabled ||
-            widget.onHoverChanged != null ||
-            widget.onCharHover != null;
-        final Widget hoverable = needHover
-            ? MouseRegion(
-                opaque: false,
-                onEnter: (_) {
-                  if (widget.blurEnabled) _setRevealed(true);
-                  widget.onHoverChanged?.call(true);
-                },
-                // Shift-悬停查词（TODO-756a）：onHover 每次鼠标在字幕盒内移动都来，内部按
-                // Shift 门控 + 命中节流。onCharHover==null 时 _handleShiftHover 立即返回（零开销）。
-                onHover: _handleShiftHover,
-                onExit: (_) {
-                  if (widget.blurEnabled) _setRevealed(false);
-                  widget.onHoverChanged?.call(false);
-                  // 离开字幕盒：复位 Shift-悬停节流锚，下次进入即可触发（与松开 Shift 同处理）。
-                  _lastShiftHoverPos = Offset.zero;
-                  _lastShiftHoverGrapheme = -1;
-                },
-                child: box,
-              )
-            : box;
-
-        return LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final Size container = constraints.biggest;
-            // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
-            // 本 builder 早于 box 内字符 Builder 回调求值，故同帧写入即可被读到。
-            _lastLayoutHeight = container.height;
-            final Offset? posScreen = _posScreen(markup, container);
-            if (posScreen != null) {
-              // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标。
-              final SubtitleAnchor anchor = markup!.anchor ??
-                  const SubtitleAnchor(
-                      SubtitleVAlign.bottom, SubtitleHAlign.center);
-              return Stack(
-                children: <Widget>[
-                  Positioned(
-                    left: posScreen.dx,
-                    top: posScreen.dy,
-                    child: FractionalTranslation(
-                      translation: Offset(
-                        -_hFrac(anchor.horizontal),
-                        -_vFrac(anchor.vertical),
-                      ),
-                      child: hoverable,
-                    ),
-                  ),
-                ],
-              );
-            }
-            // 无 \pos：按 \an 锚点对齐（anchor==null → 历史底居中，像素级不变）。
-            return Align(
-              alignment: _alignFor(markup?.anchor),
-              child: _anchoredPadded(markup?.anchor, hoverable),
-            );
-          },
+        // 副字幕层放画面顶部（翻译参考，不夺主字幕位置）；主字幕层按 markup 锚点 / pos。
+        // 二者几何不重叠。单层时直接返回该层（无 Stack 包裹），保持历史单字幕盒几何。
+        final List<Widget> layers = <Widget>[
+          if (secondaryCues.isNotEmpty)
+            _buildSubtitleLayer(context, secondaryCues, isSecondary: true),
+          if (mainCues.isNotEmpty)
+            _buildSubtitleLayer(context, mainCues, isSecondary: false),
+        ];
+        if (layers.length == 1) return layers.single;
+        return Stack(
+          children: <Widget>[
+            for (final Widget layer in layers) Positioned.fill(child: layer),
+          ],
         );
       },
     );
+  }
+
+  /// TODO-1312：渲染一「层」字幕（主字幕或副字幕）：把该层的活动 cue 竖排堆叠成多个字幕盒
+  /// （[Column]），并统一套查词点击（[_SubtitleCharTapRecognizer]）、桌面 hover（听力沉浸
+  /// 显形 / 光标唤回 / Shift-悬停查词）、听力沉浸模糊（仅主层）与定位（pos / 锚点 / 底部
+  /// 控制条避让）。单条 cue 时 [Column] 只一个子 → 与历史单字幕盒几何等价。
+  ///
+  /// [isSecondary]：副字幕层——强制置顶、不吃自带 pos/anchor、不模糊、不显收藏角标（副字幕
+  /// = 纯翻译参考）；但仍逐字符可查词（登记进同一 [_charEntries]）。
+  Widget _buildSubtitleLayer(
+    BuildContext context,
+    List<AudioCue> cues, {
+    required bool isSecondary,
+  }) {
+    // 定位用「代表」markup：主层优先取 currentCue（pos/anchor 与历史单 cue 语义一致），
+    // 否则取活动集首条；副层强制顶部、不吃自带 pos。
+    final AudioCue? currentCue = widget.controller.currentCue;
+    final AudioCue repCue = (!isSecondary &&
+            currentCue != null &&
+            cues.any((AudioCue c) => identical(c, currentCue)))
+        ? currentCue
+        : cues.first;
+    final SubtitleMarkup? posMarkup = isSecondary ? null : repCue.markup;
+
+    // 听力沉浸模糊只主层、只播放中生效（暂停 / 查词时清晰，BUG-199；副字幕不模糊）。
+    final bool blurred = !isSecondary &&
+        widget.blurEnabled &&
+        !_revealed &&
+        widget.controller.isPlaying;
+
+    // 每条 cue 一个字幕盒，竖排堆叠：重叠主字幕多条 / 副字幕多行都在此堆叠（TODO-1312）。
+    Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        for (final AudioCue cue in cues)
+          _buildCueBox(context, cue,
+              isSecondary: isSecondary, blurred: blurred),
+      ],
+    );
+
+    // 字符点击查词：整层一片 translucent [RawGestureDetector]，其识别器只在按下点命中某
+    // 字符时才收指针进竞技场（BUG-553 门控）。命中反查扫全 [_charEntries]（含本层与它层），
+    // 但按下点几何落在本层 → 命中本层字符（主 / 副互不重叠）。translucent 保证 hover 透传、
+    // media_kit 控制条唤起不被吞（BUG-198）。
+    if (widget.onCharTap != null) {
+      content = RawGestureDetector(
+        behavior: HitTestBehavior.translucent,
+        gestures: <Type, GestureRecognizerFactory>{
+          _SubtitleCharTapRecognizer:
+              GestureRecognizerFactoryWithHandlers<_SubtitleCharTapRecognizer>(
+            () => _SubtitleCharTapRecognizer(
+              hitTestChar: (Offset globalPosition) =>
+                  _hitEntryIndexAt(globalPosition) >= 0,
+            ),
+            (_SubtitleCharTapRecognizer instance) {
+              instance
+                ..onTapDown = (TapDownDetails details) {
+                  _pendingTapEntry = _hitEntryIndexAt(details.globalPosition);
+                }
+                ..onTapUp = (TapUpDetails details) {
+                  final SubtitleCharHit? hit =
+                      _charHitByEntryIndex(_pendingTapEntry);
+                  _pendingTapEntry = -1;
+                  if (hit != null) {
+                    widget.onCharTap!(
+                        hit.sentence, hit.graphemeIndex, hit.charRect);
+                  }
+                }
+                ..onTapCancel = () {
+                  _pendingTapEntry = -1;
+                };
+            },
+          ),
+        },
+        child: content,
+      );
+    }
+
+    if (blurred) {
+      // 模糊态（仅主层）：盖一层高斯模糊 + 拦字符点击（避免误触查词）+ 显形热区。
+      content = Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: content,
+          ),
+          Positioned.fill(
+            child: GestureDetector(
+              key: const Key('video-subtitle-reveal'),
+              behavior: HitTestBehavior.translucent,
+              onTap: () => _setRevealed(true),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 桌面悬停：①听力沉浸显形/复原（主层 blurEnabled）②向页面回报 hover（唤回光标 + 续命
+    // 控制条，BUG-283/284）③Shift-鼠标悬停查词（TODO-756a）。三者合一个 opaque:false 的
+    // MouseRegion（不阻断 hover 下探 media_kit，BUG-198）。仅确需 hover 时挂（外观零变化）。
+    final bool needHover = (!isSecondary && widget.blurEnabled) ||
+        widget.onHoverChanged != null ||
+        widget.onCharHover != null;
+    final Widget hoverable = needHover
+        ? MouseRegion(
+            opaque: false,
+            onEnter: (_) {
+              if (!isSecondary && widget.blurEnabled) _setRevealed(true);
+              widget.onHoverChanged?.call(true);
+            },
+            onHover: _handleShiftHover,
+            onExit: (_) {
+              if (!isSecondary && widget.blurEnabled) _setRevealed(false);
+              widget.onHoverChanged?.call(false);
+              _lastShiftHoverPos = Offset.zero;
+              _lastShiftHoverEntry = -1;
+            },
+            child: content,
+          )
+        : content;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Size container = constraints.biggest;
+        // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
+        // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
+        _lastLayoutHeight = container.height;
+        final Offset? posScreen = _posScreen(posMarkup, container);
+        if (posScreen != null) {
+          // pos 绝对定位（仅主层）：把字幕盒的 an 锚点精确落到映射坐标。
+          final SubtitleAnchor anchor = posMarkup!.anchor ??
+              const SubtitleAnchor(
+                  SubtitleVAlign.bottom, SubtitleHAlign.center);
+          return Stack(
+            children: <Widget>[
+              Positioned(
+                left: posScreen.dx,
+                top: posScreen.dy,
+                child: FractionalTranslation(
+                  translation: Offset(
+                    -_hFrac(anchor.horizontal),
+                    -_vFrac(anchor.vertical),
+                  ),
+                  child: hoverable,
+                ),
+              ),
+            ],
+          );
+        }
+        // 副层强制顶部锚点（画面上方）；主层无 pos 按 markup 锚点（null → 历史底居中）。
+        final SubtitleAnchor? anchor = isSecondary
+            ? const SubtitleAnchor(SubtitleVAlign.top, SubtitleHAlign.center)
+            : posMarkup?.anchor;
+        return Align(
+          alignment: _alignFor(anchor),
+          child: _anchoredPadded(anchor, hoverable),
+        );
+      },
+    );
+  }
+
+  /// TODO-1312：渲染一条 cue 的字幕盒（背景盒 + 逐字符描边文本 + 主层收藏角标）。逐字符
+  /// 登记进 [_charEntries]（携带整条 cue 文本、该 cue 内 grapheme 下标、字符 context、模糊
+  /// 态），供全局坐标反查命中。空文本 cue 返回零尺寸盒（不占位）。
+  Widget _buildCueBox(
+    BuildContext context,
+    AudioCue cue, {
+    required bool isSecondary,
+    required bool blurred,
+  }) {
+    final String text = cue.text;
+    if (text.isEmpty) return const SizedBox.shrink();
+    final SubtitleMarkup? markup = cue.markup;
+    final List<String> chars = text.characters.toList(growable: false);
+
+    final Color backgroundColor = widget.backgroundOpacity <= 0
+        ? Colors.transparent
+        : (widget.backgroundColor ?? kDefaultSubtitleBackgroundColor)
+            .withValues(alpha: widget.backgroundOpacity);
+
+    Widget box = DecoratedBox(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          children: <Widget>[
+            for (int i = 0; i < chars.length; i++)
+              Builder(
+                builder: (BuildContext charContext) {
+                  // 登记字符（所属 cue 文本 + 该 cue 内 grapheme 下标 + context + 模糊态）
+                  // 供全局坐标反查。字符本身不各自包 opaque GestureDetector（会吞 hover /
+                  // 光标，BUG-198）；tap 命中由上层 translucent RawGestureDetector + 本登记
+                  // 表反查承载（BUG-553 竞技场门控）。
+                  _charEntries.add(_SubtitleCharEntry(
+                    sentence: text,
+                    graphemeIndex: i,
+                    context: charContext,
+                    blurred: blurred,
+                  ));
+                  return _buildStrokedChar(chars[i], i, markup);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+
+    // 当前句已收藏：字幕盒左上角外侧叠一枚实心星角标（TODO-301 / BUG-264）。仅主层
+    // （副字幕=翻译参考，不制卡/不收藏）。[isCueFavorited] 为 null（测试 / 无数据源）不叠。
+    if (!isSecondary) {
+      final bool favorited = widget.isCueFavorited?.call(cue) ?? false;
+      if (favorited) {
+        final Color starColor =
+            widget.textColor ?? Theme.of(context).colorScheme.tertiary;
+        box = Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            box,
+            Positioned(
+              left: -6,
+              top: -10,
+              child: Icon(
+                Icons.star,
+                size: widget.fontSize * 0.6,
+                color: starColor,
+                shadows: buildSubtitleShadows(
+                  widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
+                  widget.shadowThickness,
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+    }
+    return box;
   }
 
   /// 渲染单个字幕字符为**真描边**：底层 stroke [Text]（[buildSubtitleStrokePaint] 沿
@@ -893,6 +942,31 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     final Offset topLeft = ro.localToGlobal(Offset.zero);
     return topLeft & ro.size;
   }
+}
+
+/// TODO-1312：一个已渲染字幕字符的登记项（[_VideoSubtitleOverlayState._charEntries]
+/// 一条）。二维登记（主字幕活动集含重叠 cue + 副字幕活动集，每字符一条）后，按全局坐标
+/// 反查命中能回到「哪条 cue + 该 cue 内第几个 grapheme」，故点主 / 副 / 重叠某条都查得对。
+class _SubtitleCharEntry {
+  _SubtitleCharEntry({
+    required this.sentence,
+    required this.graphemeIndex,
+    required this.context,
+    required this.blurred,
+  });
+
+  /// 该字符所属的整条 cue 文本（查词 / 制卡取整句用）。
+  final String sentence;
+
+  /// 该字符在其所属 cue 内的 grapheme 下标（从该位置起最长匹配取词）。
+  final int graphemeIndex;
+
+  /// 字符 widget 的 [BuildContext]（求其全局屏幕矩形做命中 / 弹窗定位）。
+  final BuildContext context;
+
+  /// 该字符所在层是否模糊（听力沉浸主层模糊时为 true）——模糊字符不参与命中反查
+  /// （与点击不查词一致），命中扫描时按 [Rect.zero] 跳过。
+  final bool blurred;
 }
 
 /// 字幕盒的**按字符矩形门控** tap 识别器（BUG-553）。语义同普通 [TapGestureRecognizer]，
