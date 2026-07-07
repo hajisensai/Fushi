@@ -404,16 +404,118 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// conventional fallback names concurrently (HBK-AUDIT-128), with a
   /// last-good fallback so transient probe misses don't blank the cover
   /// (BUG-513).
-  Future<String?> _resolveCoverUrl(EpubBookRow book) {
-    return resolveCoverUrlFor(
+  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+    final List<String> candidates = coverCandidatePaths(
+      extractDir: book.extractDir,
+      coverPath: book.coverPath,
+    );
+    final String? direct = await resolveCoverUrlFor(
       bookKey: book.bookKey,
-      candidates: coverCandidatePaths(
-        extractDir: book.extractDir,
-        coverPath: book.coverPath,
-      ),
+      candidates: candidates,
       probe: (String path) => File(path).exists(),
       cache: _lastGoodCoverUrlByBookKey,
     );
+    if (direct != null) return direct;
+    // TODO-1319 / BUG-608: on a case-SENSITIVE filesystem (Android/Linux) the
+    // persisted coverPath may carry the wrong case. A book imported or backed
+    // up on a case-INSENSITIVE host (Windows/macOS) stored the cover href after
+    // p.canonicalize lower-cased it (epub_parser _itemRelHref), while the
+    // extracted files keep their real case (TODO-739). Once such a book reaches
+    // a case-sensitive device via backup restore or a raw data copy (both
+    // persist coverPath verbatim without re-parsing), File(join(extractDir,
+    // "oebps/images/cover.jpg")) misses the real "OEBPS/Images/Cover.jpg" and
+    // the cover -- though detected at import -- never renders. Resolve the
+    // declared cover (and the conventional fallbacks) case-insensitively against
+    // the real extracted files as a last resort so the cover still shows.
+    final String? resolved = resolveCaseInsensitive(
+      extractDir: book.extractDir,
+      relPaths: <String>[
+        if (book.coverPath != null && book.coverPath!.isNotEmpty)
+          book.coverPath!,
+        'cover.jpg',
+        'cover.jpeg',
+        'cover.png',
+      ],
+      listDir: _listDirEntries,
+    );
+    if (resolved != null && File(resolved).existsSync()) {
+      final String url = Uri.file(resolved).toString();
+      if (book.bookKey.isNotEmpty) {
+        _lastGoodCoverUrlByBookKey[book.bookKey] = url;
+      }
+      return url;
+    }
+    return null;
+  }
+
+  /// Real-filesystem child lister for [resolveCaseInsensitive]. Returns the
+  /// child entity paths of [dir], or an empty list if it is missing/unreadable.
+  static List<String> _listDirEntries(String dir) {
+    final Directory d = Directory(dir);
+    if (!d.existsSync()) return const <String>[];
+    try {
+      return d
+          .listSync(followLinks: false)
+          .map((FileSystemEntity e) => e.path)
+          .toList();
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-608).
+  ///
+  /// Walks each relative candidate in [relPaths] segment by segment under
+  /// [extractDir], matching each segment against the real directory entries
+  /// from [listDir] -- exact case first, then case-insensitively. Returns the
+  /// first candidate that fully resolves to an on-disk path, or null. This lets
+  /// a coverPath whose case was mangled by a case-insensitive host still find
+  /// the case-preserved extracted file on a case-sensitive device.
+  ///
+  /// Pure + injectable ([listDir]) so it is unit-testable with a mock
+  /// filesystem; the instance path wires in [_listDirEntries].
+  @visibleForTesting
+  static String? resolveCaseInsensitive({
+    required String extractDir,
+    required List<String> relPaths,
+    required List<String> Function(String dir) listDir,
+  }) {
+    for (final String rel in relPaths) {
+      if (rel.isEmpty || p.isAbsolute(rel)) continue;
+      final List<String> segs = p
+          .split(rel)
+          .where((String s) => s.isNotEmpty && s != '.' && s != '/')
+          .toList();
+      if (segs.isEmpty) continue;
+      String current = extractDir;
+      bool resolvedAll = true;
+      for (final String seg in segs) {
+        final List<String> children = listDir(current);
+        String? match;
+        for (final String child in children) {
+          if (p.basename(child) == seg) {
+            match = child;
+            break;
+          }
+        }
+        if (match == null) {
+          final String segLower = seg.toLowerCase();
+          for (final String child in children) {
+            if (p.basename(child).toLowerCase() == segLower) {
+              match = child;
+              break;
+            }
+          }
+        }
+        if (match == null) {
+          resolvedAll = false;
+          break;
+        }
+        current = match;
+      }
+      if (resolvedAll) return current;
+    }
+    return null;
   }
 
   /// Delete a book and all of its associated data.
