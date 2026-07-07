@@ -668,33 +668,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String leftUrl = rtl ? urlB : urlA;
     final String rightUrl = rtl ? urlA : urlB;
 
-    final String html = '''
-<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
-.spread{display:flex;width:100vw;height:100vh}
-.spread-half{flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
-.spread-half img{max-width:100%;max-height:100vh;object-fit:contain;cursor:pointer}
-</style>
-</head><body>
-<div class="spread">
-<div class="spread-half"><img src="$leftUrl" class="block-img"/></div>
-<div class="spread-half"><img src="$rightUrl" class="block-img"/></div>
-</div>
-<script>
-document.querySelectorAll('img').forEach(function(img){
-  img.addEventListener('click',function(){
-    window.flutter_inappwebview.callHandler('onImageTap',img.src);
-  });
-});
-window.flutter_inappwebview.callHandler('spreadReady');
-</script>
-</body></html>
-''';
+    final String html =
+        buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
 
     _isNavigatingToChapter = true;
     try {

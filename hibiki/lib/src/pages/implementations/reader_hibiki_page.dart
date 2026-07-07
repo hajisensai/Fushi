@@ -418,6 +418,89 @@ bool chapterTurnCoolingDown({
   return (currentChars: cumulativeChars[chapterIndex], totalChars: total);
 }
 
+/// TODO-1229（第三次复诉的新症状）：漫画「图片合并章节」(双页 spread) 跳章后**图片
+/// 闪现即消失**的根因修复。
+///
+/// spread 页是内联 HTML（两张整页 `<img>`）。旧实现的 `<script>` 在**解析那一刻**就
+/// 同步 `callHandler('spreadReady')`——**不等图片 decode**。cf0adf642（BUG-568 v3）把
+/// 跨章冷却窗重锚 `_noteChapterTurnSettledIfPending` 接在 spreadReady 上，本意是「新章
+/// 内容一就绪就开一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮」。但 spreadReady
+/// 早于图片可见，整页大图 decode 常 >450ms → 冷却窗在图片 paint 之前就过期 → 图片刚
+/// 出现（闪）时残余惯性滚轮不再被拦 → 二次跨章把图片翻走（消失）。单图章节（走分页壳）
+/// 不闪，是因为它 restore / `notifyRestoreComplete` 前有 `Promise.all(imagePromises)`
+/// 等图片 `load`，content-ready 天然对齐图片可见。
+///
+/// 修法：让 spread HTML 也**等两张图 `load`/`error` 后再发 spreadReady**，镜像分页壳的
+/// `Promise.all(imagePromises)` 契约——`img.complete` 已就绪同步短路、`error` 也算就绪
+/// 防坏图/慢图悬空、无图则立即就绪。这样冷却窗重锚对齐真实图片可见时刻，不动 cf0adf642
+/// 的冷却闸门/pending 机制，只把「就绪信号」挪到正确时机；Dart 侧 8s
+/// `_startContentReadyTimeout` 仍是最终兜底（与分页壳一致）。
+///
+/// [leftUrl] / [rightUrl] 是已解析的整页图 URL（调用方已按 RTL/LTR 排好左右）。纯字符串
+/// 生成、无副作用，供单测锁定「spreadReady 被图片 load 门控」（撤回同步触发 → 守卫转红）。
+String buildSpreadPageHtml({
+  required String leftUrl,
+  required String rightUrl,
+}) {
+  return '''
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
+.spread{display:flex;width:100vw;height:100vh}
+.spread-half{flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
+.spread-half img{max-width:100%;max-height:100vh;object-fit:contain;cursor:pointer}
+</style>
+</head><body>
+<div class="spread">
+<div class="spread-half"><img src="$leftUrl" class="block-img"/></div>
+<div class="spread-half"><img src="$rightUrl" class="block-img"/></div>
+</div>
+<script>
+(function(){
+  var imgs = Array.prototype.slice.call(document.querySelectorAll('img'));
+  imgs.forEach(function(img){
+    img.addEventListener('click',function(){
+      window.flutter_inappwebview.callHandler('onImageTap',img.src);
+    });
+  });
+  var signaled = false;
+  function signalReady(){
+    if (signaled) return;
+    signaled = true;
+    window.flutter_inappwebview.callHandler('spreadReady');
+  }
+  // TODO-1229：等两张整页图 decode 完（或 error）再发 spreadReady，让跨章冷却窗
+  // 重锚对齐图片真实可见时刻，避免大图 decode 期间冷却窗过早过期被残余滚轮二次跨章。
+  var pending = imgs.length;
+  if (pending === 0) {
+    signalReady();
+  } else {
+    imgs.forEach(function(img){
+      if (img.complete && img.naturalWidth > 0) {
+        pending -= 1;
+        if (pending <= 0) signalReady();
+      } else {
+        var onOne = function(){
+          img.removeEventListener('load', onOne);
+          img.removeEventListener('error', onOne);
+          pending -= 1;
+          if (pending <= 0) signalReady();
+        };
+        img.addEventListener('load', onOne);
+        img.addEventListener('error', onOne);
+      }
+    });
+  }
+})();
+</script>
+</body></html>
+''';
+}
+
 /// BUG-213：章内原生滚动回传（`onReaderScroll`）到来时，是否应刷新章内进度。
 ///
 /// 章内进度 UI 字段只在 `_refreshProgress()` 里写；原生滚动（连续模式 window 滚动、
