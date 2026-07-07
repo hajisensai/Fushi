@@ -13,4 +13,4 @@
   守卫 `_loadLyricsPage` 必须经过 `LyricsCueWindow`，并守卫 `_onCueChanged` 必须用
   `_lyricsCueIndexOffset` 转换索引且窗口外触发 `_loadLyricsPage()`。
 - **备注**：RED 已确认旧代码直接使用整本 `allBookCuesSnapshot` 且 cue 更新没有窗口
-  offset；修复后守卫通过。
+  offset；修复后守卫通过。修复提交：`54488bf7a`。
