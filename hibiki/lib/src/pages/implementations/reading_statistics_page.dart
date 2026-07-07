@@ -3,6 +3,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:hibiki/src/pages/implementations/stat_ring.dart';
 import 'package:hibiki/src/pages/implementations/stat_summary.dart';
 import 'package:hibiki/src/pages/implementations/stat_trends.dart';
@@ -453,62 +454,32 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   /// 顶部 KPI 概览条：全部字数 / 全部时长 / 书数 / 活跃天数。
+  /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，
+  /// 避免手机上四张卡挤到内宽 ~40px 把数值 ellipsis 截没（「看不到数字」）。
   Widget _buildKpiStrip() {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: _kpiTile(Icons.text_fields, formatStatCharsAxis(_allChars),
-              t.stat_metric_chars),
+    return StatKpiStrip(
+      items: <StatKpiItem>[
+        StatKpiItem(
+          icon: Icons.text_fields,
+          value: formatStatCharsAxis(_allChars),
+          label: t.stat_metric_chars,
         ),
-        Expanded(
-          child:
-              _kpiTile(Icons.schedule, _formatTime(_allMs), t.stat_metric_time),
+        StatKpiItem(
+          icon: Icons.schedule,
+          value: _formatTime(_allMs),
+          label: t.stat_metric_time,
         ),
-        Expanded(
-          child: _kpiTile(Icons.menu_book_outlined, _totalBooks.toString(),
-              t.stat_total_books),
+        StatKpiItem(
+          icon: Icons.menu_book_outlined,
+          value: _totalBooks.toString(),
+          label: t.stat_total_books,
         ),
-        Expanded(
-          child: _kpiTile(Icons.calendar_today_outlined, _activeDays.toString(),
-              t.stat_active_days),
+        StatKpiItem(
+          icon: Icons.calendar_today_outlined,
+          value: _activeDays.toString(),
+          label: t.stat_active_days,
         ),
       ],
-    );
-  }
-
-  Widget _kpiTile(IconData icon, String value, String label) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.only(right: tokens.spacing.gap),
-      child: HibikiCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(icon, size: 18, color: scheme.primary),
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
