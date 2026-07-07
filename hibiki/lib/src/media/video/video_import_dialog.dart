@@ -541,18 +541,18 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       // [resolveYoutubeMetadata]）。直链/HLS 无此问题，保持原逻辑。
       String title = _streamTitleForUrl(url);
       String? coverPath;
-      if (isYoutubeUrl(url)) {
-        try {
-          final YoutubeMetadata meta = await resolveYoutubeMetadata(url);
-          if (meta.title.trim().isNotEmpty) title = meta.title.trim();
-          final Directory coverDir = await AppPaths.videoCoversDirectory();
-          coverPath = await downloadVideoCoverToPath(
-            coverUrl: meta.thumbnailUrl,
-            outputPath: p.join(coverDir.path, videoCoverFileName(bookUid)),
+      switch (streamImportCoverStrategy(url)) {
+        case StreamImportCoverStrategy.youtubeThumbnail:
+          coverPath = await _resolveYoutubeImportCover(
+            url,
+            bookUid,
+            (String resolved) => title = resolved,
           );
-        } catch (e) {
-          debugPrint('[hibiki][youtube] import metadata resolve failed: $e');
-        }
+        case StreamImportCoverStrategy.ffmpegFrame:
+          // TODO-1304：直链/HLS 也出封面。videoPath 是可 seek 的流 URL → ffmpeg 抽一帧
+          // （桌面 CLI / 移动端 ffmpeg-kit，均支持 http 输入，经 _isRemoteFfmpegInput 放行）。
+          // 抽不到（无 ffmpeg / 流不可 seek）→ null，书架占位（与本地视频无 ffmpeg 一致，不中止）。
+          coverPath = await extractVideoCover(videoPath: url, bookUid: bookUid);
       }
       await widget.repo.saveVideoBook(VideoBooksCompanion(
         bookUid: Value(bookUid),
@@ -570,6 +570,50 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       Navigator.pop(context, bookUid);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// TODO-1304：YouTube 导入封面 + 真实标题（best-effort，绝不阻断导入）。
+  ///
+  /// watch URL 派生的标题恒是字面 "watch"（`?v=` 才是标识）、且流媒体无本地文件可 ffmpeg
+  /// 抽帧 → 用 [resolveYoutubeMetadata] 轻量抓一次真实标题（经 [onTitle] 回传）+ 缩略图
+  /// URL，再 [downloadVideoCoverToPath] 落封面。缩略图下载失败（[downloadVideoCoverToPath]
+  /// 返回 null）旧代码**完全静默**——无从区分「网络失败」与「没实现/URL 拼错」；这里**重试
+  /// 一次并记日志**留证。metadata 抓取抛异常（超时/网络）→ 记日志、退回 URL 派生标题 +
+  /// 无封面（导入仍成功）。
+  Future<String?> _resolveYoutubeImportCover(
+    String url,
+    String bookUid,
+    void Function(String title) onTitle,
+  ) async {
+    try {
+      final YoutubeMetadata meta = await resolveYoutubeMetadata(url);
+      if (meta.title.trim().isNotEmpty) onTitle(meta.title.trim());
+      final Directory coverDir = await AppPaths.videoCoversDirectory();
+      final String outputPath =
+          p.join(coverDir.path, videoCoverFileName(bookUid));
+      String? cover = await downloadVideoCoverToPath(
+        coverUrl: meta.thumbnailUrl,
+        outputPath: outputPath,
+      );
+      if (cover == null) {
+        // 一次重试：区分瞬时网络失败（重试常成功）与持续失败（记日志留证）。
+        debugPrint('[hibiki][youtube] 缩略图下载失败，重试一次：${meta.thumbnailUrl}');
+        cover = await downloadVideoCoverToPath(
+          coverUrl: meta.thumbnailUrl,
+          outputPath: outputPath,
+        );
+        if (cover == null) {
+          debugPrint(
+            '[hibiki][youtube] 缩略图重试仍失败（网络/URL 问题），书架用占位：'
+            '${meta.thumbnailUrl}',
+          );
+        }
+      }
+      return cover;
+    } catch (e) {
+      debugPrint('[hibiki][youtube] import metadata resolve failed: $e');
+      return null;
     }
   }
 

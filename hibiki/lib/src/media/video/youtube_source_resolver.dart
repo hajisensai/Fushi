@@ -75,6 +75,23 @@ bool isYoutubeUrl(String url) {
       host.endsWith('youtube-nocookie.com');
 }
 
+/// 纯函数：从任意 YouTube URL 写法解出 canonical 11 位 videoId；无法解析返回 null。
+///
+/// TODO-1304：复用 youtube_explode 的 [yt.VideoId] 解析器（与 [resolveYoutubeSource]
+/// 取流用的是同一份），覆盖 `watch?v=<id>` / `youtu.be/<id>` / `embed/<id>` /
+/// `shorts/<id>`，并**天然剥掉 `&t=` / `&list=` / `&si=` / `&feature=` 等追踪参数**
+/// （正则捕获停在首个 `&` / `?` / `/`）——令同一视频的任意 URL 写法收敛到同一 id，
+/// 供 [streamVideoBookUid] 派生稳定去重身份。解析失败（非 YouTube、带 query 的 shorts、
+/// 畸形 URL）抛 [ArgumentError]，此处吞掉返回 null，让调用方回退 sha1（不阻断导入）。
+/// 纯字符串解析，不联网。
+String? youtubeVideoIdOrNull(String url) {
+  try {
+    return yt.VideoId(url.trim()).value;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// 纯函数：由 YouTube [videoId] 拼缩略图 URL（TODO-1281 导入封面用）。
 ///
 /// 用 `hqdefault.jpg`——它对**所有**视频都存在（480x360，YouTube 保证生成），不像
