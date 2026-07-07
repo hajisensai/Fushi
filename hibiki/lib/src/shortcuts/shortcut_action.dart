@@ -57,6 +57,13 @@ enum ShortcutAction {
   // = _showAppearanceSheet）。与 readerToggleChrome 正交——后者只 show/hide 底栏，
   // 这个一键弹出设置面板，省去先开底栏再焦点移到齿轮按钮的来回。默认键盘 T。
   readerOpenMenu(ShortcutScope.reader, 'reader_open_menu'),
+  // TODO-1309①：一键打开阅读器「导航」界面（书内搜索 / 字符跳转 / 目录 / 书签 /
+  // 收藏，即快速设置面板的 location 分类）。与 readerOpenMenu 正交——后者落主菜单
+  // （窄窗）/ 默认分类（宽窗），这个直达导航子页。默认键盘 Ctrl+F：reader+audiobook
+  // co-active 组内 Ctrl+F 未被占用；home 组的 homeFocusSearch 也绑 Ctrl+F，但两组
+  // 不同 co-active 组、绝不同时激活，不构成冲突（no-shadow 守卫只扫同组）。执行体
+  // = _showAppearanceSheet(initialSubPage: 'location')。
+  readerOpenNavigation(ShortcutScope.reader, 'reader_open_navigation'),
   readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
   readerToggleBookmark(ShortcutScope.reader, 'reader_toggle_bookmark'),
   readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),

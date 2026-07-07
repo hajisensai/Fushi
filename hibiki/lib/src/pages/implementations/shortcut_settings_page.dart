@@ -30,6 +30,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_reader_toggle_chrome;
     case ShortcutAction.readerOpenMenu:
       return t.shortcut_action_reader_open_menu;
+    case ShortcutAction.readerOpenNavigation:
+      return t.shortcut_action_reader_open_navigation;
     case ShortcutAction.readerDismissDict:
       return t.shortcut_action_reader_dismiss_dict;
     case ShortcutAction.readerToggleBookmark:

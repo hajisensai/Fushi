@@ -83,6 +83,13 @@ class ShortcutDefaults {
     ShortcutAction.readerOpenMenu: _kb([
       _key(LogicalKeyboardKey.keyT),
     ]),
+    // TODO-1309①：一键打开阅读器「导航」界面直达 location 子页。键盘默认 Ctrl+F。
+    // reader+audiobook co-active 组内 Ctrl+F 未被占用；home 组的 homeFocusSearch 同绑
+    // Ctrl+F 但属不同 co-active 组、绝不同时激活，无 no-shadow 冲突。手柄留空（reader
+    // 组手柄键已被翻页/查词/句子导航占满，用户可自绑）。
+    ShortcutAction.readerOpenNavigation: _kb([
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
+    ]),
     // 阅读器内的「关词典 / 返回」键：有词典弹窗就关弹窗，否则退出书籍（执行体见
     // reader_hibiki_page 的 _executeShortcutAction）。键盘 Esc。**TODO-700 T1/T2：
     // 手柄 B 已从这里挪走** —— 阅读器内 B 现绑 audiobookPrevSentence（上一句），

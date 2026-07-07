@@ -66,6 +66,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onReloadChapter,
     this.onLyricsReload,
     this.onAudioImport,
+    this.initialSubPage,
     super.key,
   });
 
@@ -129,6 +130,11 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final Future<void> Function()? onLyricsReload;
   final VoidCallback? onAudioImport;
 
+  /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
+  /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
+  /// 之后由用户导航自行覆盖。
+  final String? initialSubPage;
+
   @override
   State<ReaderQuickSettingsSheet> createState() =>
       _ReaderQuickSettingsSheetState();
@@ -146,7 +152,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   bool _layoutReloading = false;
   bool _exitScheduled = false;
 
-  String? _subPage;
+  late String? _subPage = widget.initialSubPage;
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
