@@ -608,6 +608,24 @@ class HibikiSyncServer {
       createdAt: session.createdAt,
       clientDeviceId: clientDeviceId,
     );
+
+    // TODO-1296 / BUG-588: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
+    // 阶段就弹 host 审批——审批弹窗会显示本会话 PIN，让 client 被要求输入前 host 屏上
+    // 已经有 PIN 可读。修复「公网配对根本看不到 PIN」的时序死锁：旧实现只在 confirm 且
+    // pinProof 校验通过后才弹审批显示 PIN，而 client 必须先输对 PIN 才能过校验 → PIN 永
+    // 远不显示、配对永远走不通。免 PIN 会话（LAN 自动发现且 host 允许免 PIN）审批仍留在
+    // confirm（本就无 PIN 可显示，行为零变化，Never break userspace）。
+    if (pinRequired) {
+      final bool approved = await onPairRequest!(HibikiPairRequest(
+        deviceName: deviceName,
+        remoteAddress: remote,
+        // pinVerified 尚未校验（那在 confirm）；pinRequired=true 让审批弹窗显示 PIN。
+        pinVerified: null,
+        pinRequired: true,
+      ));
+      if (!approved) return _pairDenied('declined');
+    }
+
     _pairSessions[sessionId] = stored;
 
     // 响应只含 sessionId / pinRequired / hostNonce —— 绝不含 PIN 明文。
@@ -680,14 +698,20 @@ class HibikiSyncServer {
       }
     }
 
-    // 第二重确认：PIN 已对（或本会话免 PIN），仍要 host 人工点允许才派 token。
-    final bool approved = await approve(HibikiPairRequest(
-      deviceName: session.deviceName,
-      remoteAddress: session.remoteAddress,
-      pinVerified: true,
-      pinRequired: session.pinRequired,
-    ));
-    if (!approved) return _pairDenied('declined');
+    // TODO-1296 / BUG-588: pinRequired 会话的 host 审批已在 CREATE 阶段完成——会话能
+    // 存在于 _pairSessions 即代表 host 当时已点允许（见 _handlePairV2），故此处不再二次
+    // 弹窗，只凭 pinProof 校验通过即派 token（双重确认 = 早前的人工允许 + 此刻的 proof
+    // 校验，两者仍缺一不可）。免 PIN 会话（pinRequired=false）没有 CREATE 阶段审批，仍在
+    // 此弹审批（无 PIN 可显示，行为不变）。
+    if (!session.pinRequired) {
+      final bool approved = await approve(HibikiPairRequest(
+        deviceName: session.deviceName,
+        remoteAddress: session.remoteAddress,
+        pinVerified: true,
+        pinRequired: false,
+      ));
+      if (!approved) return _pairDenied('declined');
+    }
 
     // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
     if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);

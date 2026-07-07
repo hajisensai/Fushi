@@ -11,11 +11,15 @@ void main() {
   late Directory tempDir;
   late HibikiSyncServer server;
   String? shownPin;
+  // TODO-1296 / BUG-588: record each host-approval invocation's pinRequired so
+  // tests can assert *when* (create vs confirm) the PIN-showing approval fires.
+  late List<bool> approvalPinRequired;
 
   Future<void> startServer({
     required bool lanRequiresPin,
     bool approve = true,
   }) async {
+    approvalPinRequired = <bool>[];
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v2_test');
     server = HibikiSyncServer(
       syncDataDir: tempDir.path,
@@ -23,7 +27,10 @@ void main() {
       token: 'super-secret-token',
       allowLan: true,
     )
-      ..onPairRequest = ((HibikiPairRequest _) async => approve)
+      ..onPairRequest = ((HibikiPairRequest r) async {
+        approvalPinRequired.add(r.pinRequired);
+        return approve;
+      })
       ..onPairPinGenerated = ((HibikiPairSession s) {
         shownPin = '482913';
         return shownPin!;
@@ -130,10 +137,41 @@ void main() {
     expect((jsonDecode(resp.body) as Map<String, dynamic>)['reason'], 'pin');
   });
 
-  test('double confirm PIN ok but host declines yields 403 declined', () async {
+  test('PIN-required host declines at CREATE yields 403 declined (BUG-588)',
+      () async {
+    // TODO-1296 / BUG-588: for a PIN-required session the host approval (which
+    // shows the PIN) moved to the /api/pair/v2 CREATE step, so a decline now
+    // surfaces there — the client never gets a session/hostNonce to even ask for
+    // a PIN. This is what makes the PIN visible before the client must type it.
     await startServer(lanRequiresPin: true, approve: false);
-    const String clientNonce = 'cn-6';
+    final http.Response resp = await http.post(
+      v2Uri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'name': 'Galaxy S21',
+        'clientNonce': 'cn-6',
+      }),
+    );
+    expect(resp.statusCode, 403);
+    expect(
+        (jsonDecode(resp.body) as Map<String, dynamic>)['reason'], 'declined');
+    // Approval was consulted exactly once, at create, with pinRequired=true
+    // (i.e. the host was given the chance to display the PIN).
+    expect(approvalPinRequired, <bool>[true]);
+  });
+
+  // TODO-1296 / BUG-588 regression: the PIN-showing host approval must fire at
+  // CREATE for a PIN-required session, so the host displays the PIN before the
+  // client is asked to enter it. Previously it only fired at confirm AFTER
+  // pinProof verification — an impossible ordering that hid the PIN forever.
+  test('PIN-required approval fires at CREATE not confirm (BUG-588)', () async {
+    await startServer(lanRequiresPin: true);
+    const String clientNonce = 'cn-create';
+    // After CREATE the host has already been asked to approve+show the PIN.
     final Map<String, dynamic> start = await startSession(clientNonce);
+    expect(approvalPinRequired, <bool>[true],
+        reason: 'host approval (PIN display) must happen during /api/pair/v2');
+    // Confirm with the correct proof must NOT trigger a second approval prompt.
     final String pinProof = HibikiPairingProtocol.computePinProof(
       pin: shownPin!,
       clientNonce: clientNonce,
@@ -147,9 +185,29 @@ void main() {
         'pinProof': pinProof,
       }),
     );
-    expect(resp.statusCode, 403);
-    expect(
-        (jsonDecode(resp.body) as Map<String, dynamic>)['reason'], 'declined');
+    expect(resp.statusCode, 200);
+    expect((jsonDecode(resp.body) as Map<String, dynamic>)['token'],
+        'super-secret-token');
+    expect(approvalPinRequired, <bool>[true],
+        reason: 'confirm must not re-prompt: approval already done at create');
+  });
+
+  // PIN-free (LAN auto-discovery) sessions keep the old behavior: no approval at
+  // create (nothing to display), approval fires at confirm.
+  test('PIN-free approval fires at CONFIRM not create (BUG-588)', () async {
+    await startServer(lanRequiresPin: false);
+    final Map<String, dynamic> start = await startSession('cn-free-phase');
+    expect(approvalPinRequired, isEmpty,
+        reason: 'PIN-free create must not prompt the host (no PIN to show)');
+    final http.Response resp = await http.post(
+      confirmUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(
+          <String, String>{'sessionId': start['sessionId'] as String}),
+    );
+    expect(resp.statusCode, 200);
+    expect(approvalPinRequired, <bool>[false],
+        reason: 'PIN-free approval happens at confirm');
   });
 
   test('replay same sessionId confirmed twice is rejected', () async {
