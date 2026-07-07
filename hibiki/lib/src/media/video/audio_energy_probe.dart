@@ -44,6 +44,13 @@ const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 /// - `-t <limitSeconds>`（可选）：只抽前 [limitSeconds] 秒音频（大文件性能截断，与字幕
 ///   cue 栅格化上界同步，见 [kSubtitleAutoAlignProbeLimitMs]）。须置于输入**之后**（输出
 ///   选项），裁的是已解码音频时长。
+/// - `-vn`：丢弃视频流（TODO-1244 回归修复）。**必须**加——否则没有 `-map 0:a`（越界/无
+///   显式音轨的默认回退路径）时，ffmpeg 会把输入的视频流也映射进 `-f null -` 输出，并试图
+///   用 null 复用器的默认视频编码器 `wrapped_avframe` 编码它。桌面发布捆绑的**最小
+///   ffmpeg-min**（TODO-1214，编码器白名单只留 libx264/pcm）**没有** `wrapped_avframe`
+///   → 整条命令在打开输出阶段 `Encoder not found` 硬失败 → 零逐帧 RMS 行 → 空包络 →
+///   **对轴界面波形完全不显示**。`-vn` 只喂音频给 astats，与最小 ffmpeg 兼容，且省掉无谓的
+///   视频解码/编码（本就只要音频能量）。全量 ffmpeg 有 `wrapped_avframe` 也不受影响。
 /// - `-f null -`：丢弃音频输出，只要 stderr 上的元数据。
 ///
 /// 无 IO，可单测。
@@ -77,6 +84,10 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   if (limitSeconds != null && limitSeconds > 0) {
     args.addAll(<String>['-t', '$limitSeconds']);
   }
+  // TODO-1244 回归修复：丢弃视频流。没有 `-map 0:a` 时若不加 `-vn`，ffmpeg 会把视频流也
+  // 送进 `-f null -`，用 null 复用器的默认视频编码器 wrapped_avframe 编码——桌面捆绑的最小
+  // ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→空包络→波形不显示。只要音频。
+  args.add('-vn');
   args.addAll(<String>[
     '-af',
     'aresample=$rate,'
