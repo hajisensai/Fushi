@@ -309,6 +309,12 @@ class VideoPlayerController extends ChangeNotifier
   StreamSubscription<int?>? _widthSub;
   StreamSubscription<int?>? _heightSub;
 
+  /// TODO-1297：缓冲态变化订阅（始终挂，非诊断专用）。首开就绪判据
+  /// [isReadyForFirstPaint] 依赖「缓冲结束」翻真，而缓冲结束可能不伴随宽高/播放态
+  /// 变化，故单独订阅 `stream.buffering` 在其翻转时 [notifyListeners]，驱动页面
+  /// 重新评估就绪并挂载 [Video]（否则只能等兜底定时器）。
+  StreamSubscription<bool>? _bufferingReadySub;
+
   /// 媒体时长首次就绪订阅：duration > 0 是 media_kit/libmpv 已解析媒体头的真实信号。
   /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
   StreamSubscription<Duration>? _durationReadySub;
@@ -684,6 +690,30 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   static bool framePresent(int? width, int? height) =>
       width != null && width > 0 && height != null && height > 0;
+
+  /// libmpv 当前是否处于缓冲态（`core-idle` / `paused-for-cache`）。media_kit 的
+  /// 缓冲圈据同一 `player.state.buffering` 渲染，此处读同一真值让页面的首开就绪判据
+  /// 与之对齐。未 [load]（无 player）时视为非缓冲。
+  bool get isBuffering => _player?.state.buffering ?? false;
+
+  /// TODO-1297：首帧解码出画**且**已不再缓冲——「首开可挂载 [Video]」的完整就绪判据。
+  ///
+  /// TODO-1276 只用 [hasFirstFrame]（宽高解码出画）当就绪判据，但**首帧已解码 != 可稳定
+  /// 起播**：网络流常在解码出首帧（宽高就绪，[hasFirstFrame] 翻真）时仍在缓冲
+  /// （`paused-for-cache`），页面据 [hasFirstFrame] 提前挂载 [Video] 后，media_kit
+  /// 自带缓冲圈接着盖住画面——正是 TODO-1276 想消除的「第二个圈」，而进度条的
+  /// 已缓冲填充（`demuxer-cache-time`）此刻已可见，用户看到「进度条显示已经缓冲了、
+  /// 但还在加载」（TODO-1297）。故首开就绪必须叠加 [isBuffering] 取反：让 Hibiki 页级
+  /// 上下文加载层（[VideoLoadingOverlay]，带返回按钮、绝不困死用户）覆盖整个
+  /// 解码 + 缓冲窗口，直到有稳定帧且缓冲结束再让位给 media_kit，杜绝冗余第二个圈。
+  bool get isReadyForFirstPaint =>
+      readyForFirstPaint(videoWidth, videoHeight, isBuffering);
+
+  /// 纯函数：首帧已出画且未在缓冲即视为首开可挂载。抽出便于守卫测试
+  /// （media_kit 视频无法离屏跑，只能测这层判据逻辑）。
+  @visibleForTesting
+  static bool readyForFirstPaint(int? width, int? height, bool buffering) =>
+      framePresent(width, height) && !buffering;
 
   /// 当前音画延迟（毫秒）；设置面板显示用。
   int get delayMs => _delayMs;
@@ -1088,6 +1118,8 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     await _heightSub?.cancel();
     _heightSub = null;
+    await _bufferingReadySub?.cancel();
+    _bufferingReadySub = null;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
     // TODO-984：换集复用 player 时先取消上一片的诊断流订阅，重挂到新 load。
@@ -1360,6 +1392,14 @@ class VideoPlayerController extends ChangeNotifier
     });
     _heightSub = player.stream.height.listen((_) {
       _maybeLogFirstFrame();
+      notifyListeners();
+    });
+
+    // TODO-1297：缓冲态翻转即 notifyListeners，让页面首开就绪判据
+    // [isReadyForFirstPaint]（首帧已出画且缓冲结束）能在缓冲结束时被重新评估。
+    // 缓冲结束不一定伴随宽高/播放态变化，故必须独立驱动一次通知（否则页级加载层
+    // 只能靠兜底定时器让位，用户在缓冲结束后仍多看一段 media_kit 缓冲圈）。
+    _bufferingReadySub = player.stream.buffering.listen((_) {
       notifyListeners();
     });
 
@@ -2652,6 +2692,8 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     unawaited(_heightSub?.cancel());
     _heightSub = null;
+    unawaited(_bufferingReadySub?.cancel());
+    _bufferingReadySub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
     unawaited(_diagErrorSub?.cancel());

@@ -1462,12 +1462,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
-  /// TODO-1276：首开时武装「首帧就绪即挂载 [Video]」的监听 + 兜底定时器。
+  /// TODO-1276/1297：首开时武装「就绪即挂载 [Video]」的监听 + 兜底定时器。
   ///
-  /// [controller] 在宽高流（首帧解码出画）变化时 [notifyListeners]，
-  /// [_promoteVideoReadyOnFirstFrame] 据此把 [_videoReadyToShow] 翻真、挂载
-  /// media_kit（此刻已有帧、不缓冲 → 单圈）。若首帧永不就绪（解码异常机型 / 纯音频
-  /// 容器），[_firstFramePromoteTimer] 兜底超时仍切给 media_kit，绝不无限转圈。
+  /// [controller] 在宽高流（首帧解码出画）或缓冲流翻转时 [notifyListeners]，
+  /// [_promoteVideoReadyOnFirstFrame] 据此重评 [isReadyForFirstPaint]（首帧已出画且
+  /// 缓冲结束），就绪后把 [_videoReadyToShow] 翻真、挂载 media_kit（此刻已有帧、不缓冲
+  /// → 单圈，不会接力出第二个缓冲圈）。若始终不就绪（解码异常机型 / 纯音频容器 /
+  /// 缓冲久拖），[_firstFramePromoteTimer] 兜底超时仍切给 media_kit，绝不无限转圈。
   /// 幂等：重复武装先撤销旧监听/定时器。
   void _armFirstFramePromotion(VideoPlayerController controller) {
     _firstFramePromoteTimer?.cancel();
@@ -1482,7 +1483,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [VideoPlayerController] 宽高流回调：首帧解码出画后即提升可见态。
   void _promoteVideoReadyOnFirstFrame() {
     if (_videoReadyToShow) return;
-    if (_controller?.hasFirstFrame ?? false) _promoteVideoReady();
+    // TODO-1297：就绪 = 首帧已出画**且**缓冲结束（[isReadyForFirstPaint]），而非仅
+    // [hasFirstFrame]——否则解码出首帧但仍在缓冲时提前挂载 [Video]，media_kit 缓冲圈
+    // 接力显示成「进度条已缓冲但还在加载」的第二个圈。
+    if (_controller?.isReadyForFirstPaint ?? false) _promoteVideoReady();
   }
 
   /// 把 [_videoReadyToShow] 翻真（挂载 [Video]），并撤销首帧监听 + 兜底定时器。
@@ -2374,11 +2378,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
       // 切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
-      // TODO-1276：首开时页级加载态保持到首帧真正解码出画再让位给 media_kit——
-      // 快路径（本地文件 load 返回时首帧常已就绪）此处即 true、立即挂载 [Video]；
-      // 慢路径（首帧未就绪）保持 false，由下面 [_armFirstFramePromotion] 的宽高监听
-      // 在首帧就绪时翻真。换集（`!isInitialVideoOpen`）不改动，维持既有行为。
-      if (isInitialVideoOpen) _videoReadyToShow = controller.hasFirstFrame;
+      // TODO-1276/1297：首开时页级加载态保持到「首帧解码出画且缓冲结束」
+      // （[isReadyForFirstPaint]）再让位给 media_kit——快路径（本地文件 load 返回时
+      // 常已出画且不缓冲）此处即 true、立即挂载 [Video]；慢路径（仍在缓冲 / 首帧未就绪）
+      // 保持 false，由下面 [_armFirstFramePromotion] 的宽高 + 缓冲监听在真正就绪时翻真，
+      // 杜绝「进度条已缓冲但还在加载」的 media_kit 第二个圈。换集（`!isInitialVideoOpen`）
+      // 不改动，维持既有行为。
+      if (isInitialVideoOpen) {
+        _videoReadyToShow = controller.isReadyForFirstPaint;
+      }
     });
     if (isInitialVideoOpen && !_videoReadyToShow) {
       // load() 已返回但首帧尚未解码出画：进入「准备」阶段，页级加载态保持到首帧

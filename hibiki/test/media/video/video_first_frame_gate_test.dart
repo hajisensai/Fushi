@@ -65,15 +65,21 @@ void main() {
       expect(src.contains('isInitialVideoOpen'), isTrue,
           reason: '必须区分首开与换集：换集不得把 _videoReadyToShow 打回 false，'
               '否则会卸载正在复用的 Video（BUG-120/121 全屏路由风险）');
-      expect(src.contains('if (isInitialVideoOpen) _videoReadyToShow'), isTrue,
+      expect(
+          src.contains('if (isInitialVideoOpen) {') &&
+              src.contains(
+                  '_videoReadyToShow = controller.isReadyForFirstPaint'),
+          isTrue,
           reason: '可见态赋值必须门控在首开分支内');
     });
 
-    test('首帧就绪监听 + 兜底定时器齐备（首帧永不就绪也绝不无限转圈）', () {
-      expect(src.contains('hasFirstFrame'), isTrue,
-          reason: '首开慢路径靠 hasFirstFrame 首帧就绪后翻真可见态');
+    test('就绪监听 + 兜底定时器齐备（始终不就绪也绝不无限转圈）', () {
+      // TODO-1297：页面就绪判据从仅 hasFirstFrame 收紧为 isReadyForFirstPaint
+      // （首帧已出画且缓冲结束），故页级慢路径靠它翻真可见态。
+      expect(src.contains('isReadyForFirstPaint'), isTrue,
+          reason: '首开慢路径靠 isReadyForFirstPaint（首帧就绪且缓冲结束）后翻真可见态');
       expect(src.contains('_firstFramePromoteTimer'), isTrue,
-          reason: '解码异常机型 / 纯音频容器首帧永不就绪时须有兜底超时，避免无限转圈');
+          reason: '解码异常机型 / 纯音频容器 / 缓冲久拖始终不就绪时须有兜底超时，避免无限转圈');
     });
   });
 }
