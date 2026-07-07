@@ -83,10 +83,51 @@ void main() {
           expect(removeIdx, greaterThanOrEqualTo(0),
               reason: '${content.path} 缺 hibikiRemoveContainer');
           final String removeBody =
-              src.substring(removeIdx, (removeIdx + 400).clamp(0, src.length));
+              src.substring(removeIdx, (removeIdx + 800).clamp(0, src.length));
           expect(removeBody.contains('clearSelection()'), isTrue,
               reason:
                   '${content.path} clearSelection 不在 hibikiRemoveContainer 关窗点');
+        });
+
+        test('TODO-1272 被查词高亮走扩展自绘覆盖层（不改宿主页 DOM，保持到关窗）', () {
+          // 根因：旧实现走 selection.js DOM 包裹路径（<span class="hoshi-dict-highlight"> 直接裹
+          // 宿主页文本节点），动态站点框架 diff / MutationObserver 会在下一帧把它 revert 掉 →
+          // 高亮闪一下就没（用户报「非常容易消失」）。改画扩展自有的顶层 fixed 覆盖层。
+          final String src = content.readAsStringSync();
+          // 覆盖层的画/撤/取 rects 三个函数必须存在。
+          expect(src.contains('function hibikiDrawHighlightOverlay('), isTrue,
+              reason: '${content.path} 缺覆盖层高亮绘制 hibikiDrawHighlightOverlay');
+          expect(src.contains('function hibikiClearHighlightOverlay('), isTrue,
+              reason: '${content.path} 缺覆盖层高亮清除 hibikiClearHighlightOverlay');
+          expect(src.contains('function hibikiSelectionRects('), isTrue,
+              reason:
+                  '${content.path} 缺只读取 rects（不改 DOM）的 hibikiSelectionRects');
+          // 覆盖层是扩展自有的穿透点击顶层元素（宿主页事件碰不到它）。
+          expect(src.contains("layer.id = 'hibiki-highlight-overlay'"), isTrue,
+              reason: '${content.path} 覆盖层缺稳定 id hibiki-highlight-overlay');
+          expect(src.contains('pointer-events:none'), isTrue,
+              reason: '${content.path} 覆盖层未穿透点击');
+          // 取 rects 只读 selection.ranges + Range.getClientRects，不做 DOM 包裹。
+          final int rectsIdx = src.indexOf('function hibikiSelectionRects(');
+          final String rectsBody =
+              src.substring(rectsIdx, (rectsIdx + 900).clamp(0, src.length));
+          expect(
+              rectsBody.contains('window.hoshiSelection.selection') &&
+                  rectsBody.contains('.ranges') &&
+                  rectsBody.contains('getClientRects()'),
+              isTrue,
+              reason:
+                  '${content.path} hibikiSelectionRects 未从 selection.ranges 只读取 client rects');
+          // hibikiRender 主路径改画覆盖层（不再靠 DOM 包裹高亮做主高亮）。
+          expect(src.contains('hibikiDrawHighlightOverlay(hl.rects)'), isTrue,
+              reason: '${content.path} hibikiRender 未改画覆盖层高亮');
+          // 关窗即撤覆盖层高亮（高亮跟随弹窗生命周期）。
+          final int removeIdx2 =
+              src.indexOf('function hibikiRemoveContainer()');
+          final String removeBody2 = src.substring(
+              removeIdx2, (removeIdx2 + 800).clamp(0, src.length));
+          expect(removeBody2.contains('hibikiClearHighlightOverlay()'), isTrue,
+              reason: '${content.path} 关窗未撤覆盖层高亮（会残留在宿主页上）');
         });
 
         test('Shift 悬停查词接线未断（mousemove→shiftKey→发 lookup）', () {

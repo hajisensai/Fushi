@@ -552,9 +552,95 @@ function hibikiEnsureContainer() {
   return c;
 }
 
+// TODO-1272：被查词高亮的覆盖层（扩展自绘、不改宿主页 DOM）。null=未画。
+let hibikiHighlightLayer = null;
+
+// 撤掉覆盖层高亮。弹窗关闭 / 切到新词重画前调用。宿主页事件碰不到它，只有这里主动撤。
+function hibikiClearHighlightOverlay() {
+  if (hibikiHighlightLayer) {
+    try { hibikiHighlightLayer.remove(); } catch (_) { /* 已脱离文档 */ }
+    hibikiHighlightLayer = null;
+  }
+}
+
+// 从 hoshiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
+// Range.getClientRects，**不改宿主页 DOM**），并算出整体 bbox 作弹窗锚点。返回 {rects, bounds}。
+// 与 selection.js highlightSelection 的裁词逻辑同构，但不做 DOM 包裹。
+function hibikiSelectionRects(charCount) {
+  const rects = [];
+  let bx = null;
+  const sel = window.hoshiSelection && window.hoshiSelection.selection;
+  if (!sel || !Array.isArray(sel.ranges) || !sel.ranges.length) return { rects, bounds: null };
+  let remaining = charCount;
+  for (const r of sel.ranges) {
+    if (remaining <= 0) break;
+    const content = (r.node && r.node.textContent) || '';
+    let end = r.start;
+    while (end < r.end && remaining > 0) {
+      end += String.fromCodePoint(content.codePointAt(end)).length;
+      remaining--;
+    }
+    try {
+      const range = document.createRange();
+      range.setStart(r.node, r.start);
+      range.setEnd(r.node, end);
+      for (const cr of range.getClientRects()) {
+        if (!cr.width || !cr.height) continue;
+        rects.push({ left: cr.left, top: cr.top, width: cr.width, height: cr.height });
+        if (!bx) bx = { left: cr.left, top: cr.top, right: cr.right, bottom: cr.bottom };
+        else {
+          if (cr.left < bx.left) bx.left = cr.left;
+          if (cr.top < bx.top) bx.top = cr.top;
+          if (cr.right > bx.right) bx.right = cr.right;
+          if (cr.bottom > bx.bottom) bx.bottom = cr.bottom;
+        }
+      }
+    } catch (_) { /* 跨节点 range 失败：跳过该段 */ }
+  }
+  const bounds = bx
+    ? { x: bx.left, y: bx.top, width: bx.right - bx.left, height: bx.bottom - bx.top }
+    : null;
+  return { rects, bounds };
+}
+
+// 画覆盖层高亮：给每个 client rect 一个 position:fixed 的透明色块，装进扩展自有的顶层容器
+// （挂在 fullscreenElement||body，与弹窗同父，全屏也可见）。不写进宿主页文本节点 → 宿主页
+// 框架重渲染 / MutationObserver / 鼠标移动都动不了它，保持到 hibikiClearHighlightOverlay。
+function hibikiDrawHighlightOverlay(rects) {
+  hibikiClearHighlightOverlay();
+  if (!rects || !rects.length) return;
+  const parent = document.fullscreenElement || document.body;
+  if (!parent) return;
+  const layer = document.createElement('div');
+  layer.id = 'hibiki-highlight-overlay';
+  // 穿透点击、不进宿主页布局；z-index 比弹窗(2147483647)低 1 → 永远在宿主页之上、弹窗之下。
+  layer.style.cssText =
+    'position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;' +
+    'z-index:2147483646;pointer-events:none;';
+  // 高亮色跟随弹窗主题（--hoshi-primary-highlight 落在 #entries-container 上）；取不到用 content.css 同款兜底。
+  let color = 'rgba(160, 160, 160, 0.4)';
+  try {
+    if (hibikiContainer) {
+      const v = getComputedStyle(hibikiContainer).getPropertyValue('--hoshi-primary-highlight').trim();
+      if (v) color = v;
+    }
+  } catch (_) { /* getComputedStyle 不可用：用兜底色 */ }
+  for (const r of rects) {
+    const box = document.createElement('div');
+    box.style.cssText =
+      'position:fixed;pointer-events:none;border-radius:2px;background-color:' + color + ';' +
+      'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;';
+    layer.appendChild(box);
+  }
+  parent.appendChild(layer);
+  hibikiHighlightLayer = layer;
+}
+
 function hibikiRemoveContainer() {
   if (hibikiContainer) { hibikiContainer.remove(); hibikiContainer = null; }
-  // TODO-1150（yomitan 式）：关窗即撤被查词高亮。hoshiSelection 未加载/无选区时是 no-op。
+  // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
+  hibikiClearHighlightOverlay();
+  // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。hoshiSelection 未加载/无选区时是 no-op。
   try {
     if (window.hoshiSelection && typeof window.hoshiSelection.clearSelection === 'function') {
       window.hoshiSelection.clearSelection();
@@ -753,17 +839,23 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
       if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
     }
   }
-  // TODO-1150（yomitan 式）：高亮刚取的词并拿它的视口 bbox 作弹窗锚点（不再贴鼠标坐标）。
-  // highlightSelection 复用上一步 selectFromPosition 存进 hoshiSelection.selection 的 ranges，用
-  // CSS Custom Highlight API 高亮前 termLen 个字并返回其 getClientRects 视口系 bbox；同名高亮覆盖
-  // 上一次（切词自动换高亮）。拿不到 bbox（极少数取词失败）→ 回落到最后鼠标位置。
+  // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
+  // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
+  // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
+  // 会在下一帧把这个凭空多出的 span revert 掉 → 高亮闪一下就没（用户报「非常容易消失」）。改画
+  // 扩展自有的顶层 fixed 覆盖层：宿主页重绘/事件都碰不到它，保持到弹窗关闭。高亮前 termLen 个字。
   let wordRect = null;
   try {
-    if (window.hoshiSelection && typeof window.hoshiSelection.highlightSelection === 'function') {
+    const hl = hibikiSelectionRects(termLen);
+    if (hl.rects.length) {
+      hibikiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它
+      wordRect = hl.bounds;
+    } else if (window.hoshiSelection && typeof window.hoshiSelection.highlightSelection === 'function') {
+      // 兜底：selection 结构异常（无 ranges）时退回旧的 bbox 计算，只为拿锚点，不画 DOM 包裹高亮。
       wordRect = window.hoshiSelection.highlightSelection(termLen);
     }
   } catch (_) { wordRect = null; }
-  // TODO-1218②：高亮丢失（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。
+  // TODO-1218②：取词 rects 拿不到（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。
   if (!wordRect && anchorRect) wordRect = anchorRect;
   // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。

@@ -1,0 +1,10 @@
+## BUG-577 · 浏览器扩展查词高亮非常容易消失
+- **报告**：2026-07-07（用户：TODO-1272「浏览器扩展 Shift 悬停查词时，选中词的高亮非常容易消失」）
+- **真实性**：✅ 真 bug（平台/宿主页限制引发的实现缺陷）。根因 `tools/browser-extension/content.js`（旧 `hibikiRender` 高亮块，走 `vendor/selection.js:365-380` 的 DOM 包裹路径）。
+  - 扩展跑在**隔离世界**，CSS Custom Highlight API 注册的高亮不被宿主页渲染引擎绘制，故 TODO-1190 起强制 `window.__hoshiCssHighlightsSupported = false`，让 `highlightSelection` 回落到 **DOM 包裹**路径：`range.extractContents()` + `insertNode(<span class="hoshi-dict-highlight">)` **直接改宿主页文本节点**。
+  - 动态站点（React/Vue/SPA、YouTube/Netflix 逐帧重渲染字幕）框架的 virtual-DOM diff / `MutationObserver` 会在下一帧把这个「凭空多出来的 span」revert 掉 → 高亮闪一下就没（用户报「非常容易消失」）。BUG-574 已证实 Shift 悬停查词的**事件接线**完好、popup.js 的 1218 守卫也已挡住宿主页事件误触 `selectText`，剩下的唯一「易消失」成因就是这条 DOM 包裹被宿主页重绘冲掉。
+- **[x] ① 根因修复** — `tools/browser-extension/content.js`（+ 逐字节镜像 `hibiki/assets/browser_extension/content.js`）：被查词高亮改为**扩展自绘的顶层 `position:fixed` 覆盖层**（`hibikiDrawHighlightOverlay` / `hibikiClearHighlightOverlay` / `hibikiSelectionRects`）。只读 `hoshiSelection.selection.ranges` + `Range.getClientRects()` 取前 `termLen` 字的视口 rects，画进扩展自有的 `#hibiki-highlight-overlay`（挂 `fullscreenElement||body`、`pointer-events:none`、`z-index` 比弹窗低 1）。**不改宿主页 DOM** → 宿主页框架重绘 / `MutationObserver` / 鼠标移动都碰不到它，高亮保持到弹窗关闭（`hibikiRemoveContainer` 里 `hibikiClearHighlightOverlay()`，与 `clearSelection()` 并列）。选区结构异常时兜底退回旧 `highlightSelection` 仅取锚点。提交见本轮 commit。
+- **[x] ② 加自动化测试** —
+  - 行为守卫（最强层，vm 真加载 content.js）：`tools/browser-extension/highlight-overlay.test.js`（`node --test`，3 例：Shift 悬停后画出 `#hibiki-highlight-overlay` 且宿主页无 `hoshi-dict-highlight` 包裹 span / 无 Shift 的 mousemove 不撤高亮 / 关弹窗撤高亮）。
+  - 源码扫描守卫（跑在 `flutter test` 主门禁，两镜像 + 逐字节一致）：`hibiki/test/lookup/browser_extension_lookup_highlight_guard_test.dart` 新增「TODO-1272 覆盖层高亮」用例，守住 `hibikiDrawHighlightOverlay/ClearHighlightOverlay/SelectionRects`、`#hibiki-highlight-overlay`、`pointer-events:none`、`hibikiRender` 改画覆盖层、关窗撤覆盖层。
+- **备注**：不动 `vendor/selection.js`（DOM 包裹路径保留给弹窗内嵌套查词，`#entries-container` 是扩展自有稳定 DOM，不受宿主页重绘影响）；app 内查词走主世界 CSS 高亮，未受影响。两镜像逐字节一致（`browser_extension_dict_media_mirror_guard` + 本守卫双验）。真机验收：Shift 悬停任意网页/YouTube/Netflix 字幕上的词 → 高亮出现并**保持到关弹窗**，移动鼠标/宿主页重绘都不再让它闪没。
