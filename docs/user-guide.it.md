@@ -24,7 +24,7 @@ Android: scegli **arm64**. Windows: scegli il file **.exe**.
 
 ### 1. Importare i dizionari consigliati e l'audio locale (facoltativo)
 
-[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md)
+[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
 
 Nell'app: Impostazioni -> Sincronizzazione e backup -> tocca **Importa backup**.
 
