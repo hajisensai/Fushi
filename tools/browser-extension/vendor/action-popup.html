@@ -54,14 +54,27 @@
       border-radius: 6px;
     }
     .hp-row:hover { background: rgba(128, 128, 128, 0.16); }
-    .hp-row-text {
+    .hp-row-main {
       flex: 1 1 auto;
       min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .hp-row-text {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .hp-row-site { opacity: 0.55; font-size: 11px; margin-right: 2px; }
+    /* TODO-1270：暗色上下文句子行，让同句不同词的卡片区分开又保留语境。 */
+    .hp-row-sub {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      opacity: 0.55;
+    }
+    .hp-row-site { opacity: 0.55; font-size: 11px; margin-right: 2px; align-self: flex-start; margin-top: 1px; }
     .hp-del {
       flex: 0 0 auto;
       width: 22px;

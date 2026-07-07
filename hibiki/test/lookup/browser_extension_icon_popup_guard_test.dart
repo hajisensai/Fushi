@@ -105,6 +105,32 @@ void main() {
             isTrue,
             reason: '$root content.js 丢了 highlightSelection 调用');
       });
+
+      // TODO-1270：制卡队列每行主标签必须优先「词」，避免同一字幕行查多个词后队列显示「句子一模一样」。
+      test('1270 action-popup.js 队列标签优先词、句子降为暗色上下文行（不再句子一模一样）', () {
+        final String src = actionJs.readAsStringSync();
+        // 主标签取词字段(expression/word/term)在前、句子回落在后。
+        final int labelIdx = src.indexOf('function hibikiQueueItemLabel');
+        expect(labelIdx >= 0, isTrue,
+            reason: '$root action-popup.js 缺 hibikiQueueItemLabel');
+        final int labelEnd = src.indexOf('}', labelIdx);
+        final String labelBody = src.substring(labelIdx, labelEnd);
+        final int wordPos = labelBody.indexOf('q.fields');
+        final int sentPos = labelBody.indexOf('q.sentence');
+        expect(wordPos >= 0 && (sentPos < 0 || wordPos < sentPos), isTrue,
+            reason: '$root hibikiQueueItemLabel 未优先词字段（回退到句子优先=队列句子一模一样回归）');
+        // 上下文行 helper 存在，且渲染时挂出暗色 .hp-row-sub。
+        expect(src.contains('function hibikiQueueItemContext'), isTrue,
+            reason: '$root action-popup.js 缺 hibikiQueueItemContext（句子上下文行）');
+        expect(src.contains("'hp-row-sub'"), isTrue,
+            reason: '$root action-popup.js 未渲染 hp-row-sub 上下文行');
+      });
+
+      test('1270 action-popup.html 定义 .hp-row-sub 暗色上下文样式', () {
+        final String src = actionHtml.readAsStringSync();
+        expect(src.contains('.hp-row-sub'), isTrue,
+            reason: '$root action-popup.html 缺 .hp-row-sub 上下文行样式');
+      });
     });
   });
 }

@@ -11,17 +11,30 @@ function hibikiFilterQueue(queue, removeId) {
   return list.filter((q) => q && q.id !== removeId);
 }
 
-// 队列项的简短标签：优先入队时存的句子，其次表达/词字段。与 content.js 的 hibikiQueueItemLabel 同款。
+// 队列项主标签：优先「词」(制卡的主体)，无词才回落到句子。
+// TODO-1270：原实现优先句子——同一字幕行里查多个词各点「制卡」会入队多条，去重键是「词+句」
+// 所以它们是不同卡片，但标签只显示句子 → 队列里多行「句子一模一样」无法区分。改为主标签显词、
+// 句子降为下方暗色上下文行(hibikiQueueItemContext)，让同句不同词的卡片一眼可辨。
 function hibikiQueueItemLabel(q) {
-  const raw = (q && (q.sentence || (q.fields && (q.fields.expression || q.fields.word || q.fields.term)))) || '';
-  const txt = String(raw).trim();
-  if (txt) return txt.length > 40 ? txt.slice(0, 40) + '…' : txt;
+  const word = (q && q.fields && (q.fields.expression || q.fields.word || q.fields.term)) || '';
+  const raw = String(word).trim() || String((q && q.sentence) || '').trim();
+  if (raw) return raw.length > 40 ? raw.slice(0, 40) + '…' : raw;
   return '(空)';
+}
+
+// 队列项的上下文句子（主标签下方暗色次要行）。仅当主标签是「词」时才返回句子；无词时主标签已是
+// 句子本身，返回 '' 避免重复回显。
+function hibikiQueueItemContext(q) {
+  const word = (q && q.fields && (q.fields.expression || q.fields.word || q.fields.term)) || '';
+  if (!String(word).trim()) return '';
+  const sent = String((q && q.sentence) || '').trim();
+  if (!sent) return '';
+  return sent.length > 60 ? sent.slice(0, 60) + '…' : sent;
 }
 
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { hibikiFilterQueue, hibikiQueueItemLabel };
+  module.exports = { hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext };
 }
 
 if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.storage) {
@@ -73,10 +86,22 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
         site.textContent = q.site === 'netflix' ? 'NF' : (q.site === 'youtube' ? 'YT' : q.site);
         row.appendChild(site);
       }
+      // TODO-1270：主标签(词) + 下方暗色上下文句子；同一字幕行不同词的卡片靠「词」区分，不再一模一样。
+      const main = document.createElement('div');
+      main.className = 'hp-row-main';
       const text = document.createElement('span');
       text.className = 'hp-row-text';
-      text.textContent = hibikiQueueItemLabel(q);
-      text.title = text.textContent;
+      const label = hibikiQueueItemLabel(q);
+      text.textContent = label;
+      main.appendChild(text);
+      const context = hibikiQueueItemContext(q);
+      if (context) {
+        const sub = document.createElement('span');
+        sub.className = 'hp-row-sub';
+        sub.textContent = context;
+        main.appendChild(sub);
+      }
+      main.title = context ? (label + ' — ' + context) : label;
       const del = document.createElement('button');
       del.className = 'hp-del';
       del.type = 'button';
@@ -84,7 +109,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       del.title = '从队列移除';
       const id = q && q.id;
       del.addEventListener('click', () => { if (id) removeItem(id); });
-      row.appendChild(text);
+      row.appendChild(main);
       row.appendChild(del);
       listEl.appendChild(row);
     }
