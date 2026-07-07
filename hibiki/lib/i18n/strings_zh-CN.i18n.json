@@ -2169,5 +2169,6 @@
   "render_impeller_disable_hint": "改用 Skia 渲染后端。视频能播放但画面恒黑时可尝试；重启 App 后生效。",
   "render_restart_required": "重启 App 后生效",
   "handlebar_card_image": "卡片图片（封面 / 视频 GIF）",
-  "video_subtitle_youtube_captions": "YouTube 字幕"
+  "video_subtitle_youtube_captions": "YouTube 字幕",
+  "video_subtitle_waveform_unavailable": "本设备无法生成波形"
 }
