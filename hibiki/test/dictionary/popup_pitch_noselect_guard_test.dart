@@ -1,4 +1,4 @@
-// TODO-1305 / BUG-605 static guard: the dictionary popup's pitch-accent
+// TODO-1305 / BUG-607 static guard: the dictionary popup's pitch-accent
 // pronunciation area (katakana reading rendered mora-by-mora + the [n] pitch
 // number + IPA tags) must be non-selectable, so dragging across it does NOT
 // leave a native text selection that mining then bakes into the Anki card's

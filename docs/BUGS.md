@@ -31,9 +31,9 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-605](bugs/BUG-605-yt-slow-first-frame.md) | ✅ | ✅ | 油管首帧被字幕+title串行阻塞~28s |
+| [BUG-607](bugs/BUG-607-pitch-reading-mined.md) | ✅ | ✅ | 词典音高片假名reading被拖选烤进制卡卡片 |
+| [BUG-606](bugs/BUG-606-yt-slow-first-frame.md) | ✅ | ✅ | 油管首帧被字幕+title串行阻塞~28s |
 | [BUG-605](bugs/BUG-605-selectgraphic-loadtoken-uaf.md) | ✅ | ✅ | 1295 minTrackCount await破BUG-344 loadToken守卫 |
-| [BUG-605](bugs/BUG-605-pitch-reading-mined.md) | ✅ | ✅ | 词典音高片假名reading被拖选烤进制卡卡片 |
 | [BUG-604](bugs/BUG-604-ass-font-weight-shadow.md) | ✅ | ✅ | 外挂ASS字号字重阴影不尊重 |
 | [BUG-603](bugs/BUG-603-netflix-mine-false-success.md) | ✅ | ✅ | 网飞制卡失败报成功+诊断不回传 |
 | [BUG-602](bugs/BUG-602-yt-subtitle-not-in-track.md) | ✅ | ✅ | 油管字幕绕过远端字幕轨模型选不到 |
