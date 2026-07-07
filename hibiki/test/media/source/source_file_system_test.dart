@@ -158,6 +158,26 @@ void main() {
       expect(fs.isLocal, isFalse);
       expect(fs.config.isSftp, isTrue);
     });
+
+    test(
+        'NetworkSourceConfig webdav：isWebDav true、isSftp false（URL 承载 host/port）',
+        () {
+      const NetworkSourceConfig dav = NetworkSourceConfig(
+        transport: 'webdav',
+        host: '',
+        port: 443,
+        username: 'reader',
+        password: 'pw',
+      );
+      expect(dav.isWebDav, isTrue);
+      expect(dav.isSftp, isFalse);
+      expect(dav.username, 'reader');
+      expect(dav.password, 'pw');
+
+      final NetworkSourceFileSystem fs = NetworkSourceFileSystem(dav);
+      expect(fs.isLocal, isFalse);
+      expect(fs.config.isWebDav, isTrue);
+    });
   });
 
   group('命名守卫', () {

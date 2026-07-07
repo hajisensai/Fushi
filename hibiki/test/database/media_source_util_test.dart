@@ -43,6 +43,18 @@ void main() {
       );
     });
 
+    test('webdav: URL rootPath keeps scheme, trims trailing slash', () {
+      // TODO-1274: WebDAV 来源的 rootPath 即完整集合 URL；归一只去尾斜杠，不动
+      // scheme 的 `://`（FS 侧再按需补回集合尾斜杠给 PROPFIND）。
+      expect(
+        normalizeSourceRootPath(
+          'https://dav.example.com/dav/books/',
+          transport: 'webdav',
+        ),
+        'https://dav.example.com/dav/books',
+      );
+    });
+
     test('empty input returns empty', () {
       expect(normalizeSourceRootPath('', transport: 'local'), '');
     });
@@ -74,6 +86,16 @@ void main() {
       expect(
         defaultLabelFromRoot('sftp://host/share/Video', transport: 'sftp'),
         'Video',
+      );
+    });
+
+    test('webdav URL: last path segment as default label', () {
+      expect(
+        defaultLabelFromRoot(
+          'https://dav.example.com/dav/books',
+          transport: 'webdav',
+        ),
+        'books',
       );
     });
 

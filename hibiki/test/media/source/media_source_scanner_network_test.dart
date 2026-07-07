@@ -168,6 +168,22 @@ void main() {
       expect(cfg.password, isNull);
       expect(cfg.privateKey, isNull);
     });
+
+    test('webdav → NetworkSourceFileSystem，username 注入 + isWebDav 路由', () {
+      // WebDAV 的 configJson 只存 username（URL 即 rootPath，另行传入 host/port 仅
+      // 为字段对齐，NetworkSourceFileSystem 忽略）；密码经凭据存储注入。
+      final SourceFileSystem fs = MediaSourceScanner.buildNetworkFileSystem(
+        transport: 'webdav',
+        config: const <String, Object?>{'username': 'reader'},
+        password: 'pw',
+      );
+      expect(fs, isA<NetworkSourceFileSystem>());
+      final NetworkSourceConfig cfg = (fs as NetworkSourceFileSystem).config;
+      expect(cfg.transport, 'webdav');
+      expect(cfg.isWebDav, isTrue);
+      expect(cfg.username, 'reader');
+      expect(cfg.password, 'pw');
+    });
   });
 
   test(

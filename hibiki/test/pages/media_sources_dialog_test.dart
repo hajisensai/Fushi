@@ -350,6 +350,17 @@ void main() {
       expect(src.contains('ReorderableListView('), isFalse);
     });
 
+    test('webdav transport wired: segment + WebDavSyncBackend test connection',
+        () {
+      // TODO-1274: WebDAV 作为第三种网络传输接入——分段按钮含 webdav，测试连接复用
+      // sync 子系统的 WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面
+      // 的红线守卫覆盖），绝不作为列写进来源行。
+      expect(src.contains("value: 'webdav'"), isTrue,
+          reason: '网络来源分段必须提供 WebDAV 选项');
+      expect(src.contains('WebDavSyncBackend.instance.testConnection'), isTrue,
+          reason: 'WebDAV 测试连接必须复用 sync 的 WebDavSyncBackend');
+    });
+
     test('deletion goes through deleteMediaSource (FK setNull keeps media)',
         () {
       expect(src.contains('deleteMediaSource'), isTrue);

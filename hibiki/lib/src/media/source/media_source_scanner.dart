@@ -10,12 +10,14 @@
 // -> reuse existing importers (EpubImporter.importFromPath /
 // VideoBookRepository.saveVideoBook) with sourceId -> updateMediaSourceScanResult.
 //
-// TODO-1274: network transport (SFTP/FTP) is now wired for BOOK sources — the
-// transport is resolved from the row (local vs SFTP/FTP built from configJson +
-// MediaSourceCredentialStore), and remote EPUBs are downloaded via copyToLocal
-// before import. Network VIDEO sources are rejected (a raw SFTP/FTP path is not
-// playable). Existing manual import paths (dialogs) are untouched; sourceId
-// defaults to null.
+// TODO-1274: network transport (SFTP/FTP/WebDAV) is now wired for BOOK sources —
+// the transport is resolved from the row (local vs SFTP/FTP/WebDAV built from
+// configJson + MediaSourceCredentialStore), and remote EPUBs are downloaded via
+// copyToLocal before import. Routing is transport-agnostic here: any non-'local'
+// transport builds a NetworkSourceFileSystem which dispatches SFTP/FTP/WebDAV
+// internally, so [buildNetworkFileSystem] needs no per-transport branch. Network
+// VIDEO sources are rejected (a raw remote path is not playable). Existing manual
+// import paths (dialogs) are untouched; sourceId defaults to null.
 
 import 'dart:convert';
 import 'dart:io';
@@ -267,7 +269,8 @@ class MediaSourceScanner {
   }
 
   /// 纯构造：把 transport + 连接参数 + 凭据组装成 [SourceFileSystem]（无 I/O）。
-  /// 抽出供测试断言路由正确。
+  /// 抽出供测试断言路由正确。WebDAV 的 host/port/useTls 不参与传输（URL 即 rootPath，
+  /// 自带 scheme/host/端口），此处仍原样填入仅为字段对齐，NetworkSourceFileSystem 忽略。
   @visibleForTesting
   static SourceFileSystem buildNetworkFileSystem({
     required String transport,

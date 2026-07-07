@@ -1,16 +1,16 @@
 // TODO-817 M1a / TODO-1274 来源库文件系统抽象。
 //
-// 网络/本地来源库（local / sftp / ftp transport，见 hibiki_core
+// 网络/本地来源库（local / sftp / ftp / webdav transport，见 hibiki_core
 // MediaSources.transport）共用一套扫描契约：列目录、找同名 sidecar、读文本、
-// 把网络文件落到本地临时盘。M1b 扫描器据此实现 local，TODO-1274 接入 SFTP/FTP。
+// 把网络文件落到本地临时盘。M1b 扫描器据此实现 local，TODO-1274 接入 SFTP/FTP/WebDAV。
 //
 // 🔴 命名红线：本接口必须叫 [SourceFileSystem]，绝不能叫 MediaSource*——仓库已有
 // `abstract class MediaSource`（UI 源/标签页概念，hibiki/lib/src/media/media_source.dart）
 // 和 drift 生成行类 MediaSourceRow，重名会撞符号。守卫测试钉死。
 //
 // [NetworkSourceFileSystem] 复用 sync 子系统同款传输栈（dartssh2 for SFTP,
-// ftpconnect for FTP）；凭据不落 configJson，由 MediaSourceCredentialStore 解析后
-// 经 [NetworkSourceConfig] 注入（凭据红线）。
+// ftpconnect for FTP, WebDavOps for WebDAV）；凭据不落 configJson，由
+// MediaSourceCredentialStore 解析后经 [NetworkSourceConfig] 注入（凭据红线）。
 
 import 'dart:convert';
 import 'dart:io';
@@ -19,6 +19,8 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:ftpconnect/ftpconnect.dart';
 import 'package:path/path.dart' as p;
+
+import 'package:hibiki/src/sync/webdav_ops.dart';
 
 /// 来源文件系统列目录返回的单个条目（文件或子目录）。
 ///
@@ -169,7 +171,7 @@ class NetworkSourceConfig {
     this.useTls = false,
   });
 
-  /// 'sftp' | 'ftp'。
+  /// 'sftp' | 'ftp' | 'webdav'。
   final String transport;
 
   /// 远端主机名/IP。
@@ -191,12 +193,15 @@ class NetworkSourceConfig {
   final bool useTls;
 
   bool get isSftp => transport == 'sftp';
+
+  bool get isWebDav => transport == 'webdav';
 }
 
-/// 网络传输实现（SFTP via dartssh2 / FTP via ftpconnect）。
+/// 网络传输实现（SFTP via dartssh2 / FTP via ftpconnect / WebDAV via [WebDavOps]）。
 ///
 /// 连接惰性建立（首个列目录/下载时才连），跨调用复用同一连接，扫描结束由调用方
-/// [close]。所有远端路径统一用正斜杠拼接（[_joinRemote]），与本地平台分隔符无关。
+/// [close]。SFTP/FTP 远端路径统一用正斜杠拼接（[_joinRemote]），WebDAV 直接以完整
+/// URL（PROPFIND 返回的 href）作路径，二者都与本地平台分隔符无关。
 class NetworkSourceFileSystem implements SourceFileSystem {
   NetworkSourceFileSystem(this.config);
 
@@ -210,6 +215,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
   FTPConnect? _ftp;
   bool _ftpConnected = false;
   String _ftpHome = '/';
+
+  // WebDAV 连接状态（惰性建立，按首个访问路径的 origin 派生 baseUrl）。
+  WebDavOps? _dav;
 
   @override
   bool get isLocal => false;
@@ -437,6 +445,123 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return local;
   }
 
+  // ── WebDAV ───────────────────────────────────────────────────────
+
+  /// 惰性建 [WebDavOps]：baseUrl 取首个访问路径的 origin（scheme://host[:port]），
+  /// 用户名/密码来自注入的 [config]。WebDAV 走 Basic 认证，认证头与具体 URL 无关，
+  /// 故整个来源复用同一 ops（连接池），扫描结束由 [close] 释放。
+  WebDavOps _ensureDav(String anyUrl) {
+    final WebDavOps? existing = _dav;
+    if (existing != null) {
+      return existing;
+    }
+    final Uri u = Uri.parse(anyUrl);
+    final bool defaultPort =
+        (u.scheme == 'https' && (!u.hasPort || u.port == 443)) ||
+            (u.scheme == 'http' && (!u.hasPort || u.port == 80));
+    final String portSuffix = defaultPort ? '' : ':${u.port}';
+    final String origin = '${u.scheme}://${u.host}$portSuffix';
+    return _dav = WebDavOps(
+      baseUrl: origin,
+      username: config.username,
+      password: config.password ?? '',
+    );
+  }
+
+  /// 确保 WebDAV 集合路径以正斜杠结尾（PROPFIND 集合多需尾斜杠，否则部分服务器
+  /// 301 重定向；[WebDavOps] 关掉了 followRedirects）。
+  static String _ensureTrailingSlash(String url) =>
+      url.endsWith('/') ? url : '$url/';
+
+  static String _stripTrailingSlash(String url) =>
+      (url.length > 1 && url.endsWith('/'))
+          ? url.substring(0, url.length - 1)
+          : url;
+
+  /// 从完整 URL 取解码后的末段文件名（PROPFIND href 可能是百分号编码的）。
+  static String _urlBasename(String url) {
+    final Uri u = Uri.parse(url);
+    final List<String> segs =
+        u.pathSegments.where((String s) => s.isNotEmpty).toList();
+    return segs.isEmpty ? _remoteBasename(url) : segs.last;
+  }
+
+  Future<List<SourceFileEntry>> _listDav(
+    String dirPath,
+    bool recursive,
+  ) async {
+    final WebDavOps dav = _ensureDav(dirPath);
+    final List<SourceFileEntry> result = <SourceFileEntry>[];
+
+    Future<void> walk(String dirUrl) async {
+      final String dir = _ensureTrailingSlash(dirUrl);
+      final List<DavEntry> children = await dav.propfindChildren(dir);
+      final String dirKey = _stripTrailingSlash(dir);
+      for (final DavEntry e in children) {
+        // Depth:1 的 PROPFIND 会把集合自身也列出来，跳过（尾斜杠归一后相等）。
+        if (_stripTrailingSlash(e.href) == dirKey) {
+          continue;
+        }
+        if (e.isCollection) {
+          if (recursive) {
+            await walk(e.href);
+          } else {
+            result.add(SourceFileEntry(
+              name: e.displayName,
+              path: _stripTrailingSlash(e.href),
+              isDirectory: true,
+            ));
+          }
+        } else {
+          result.add(SourceFileEntry(
+            name: e.displayName,
+            path: e.href,
+            isDirectory: false,
+          ));
+        }
+      }
+    }
+
+    await walk(dirPath);
+    return result;
+  }
+
+  Future<String> _copyDav(String filePath, String destDir) async {
+    final WebDavOps dav = _ensureDav(filePath);
+    final String local = p.join(destDir, _urlBasename(filePath));
+    final HttpClientRequest req = await dav.buildRequest('GET', filePath);
+    final HttpClientResponse resp = await req.close();
+    dav.checkStatus(resp.statusCode, 'GET $filePath');
+    final IOSink sink = File(local).openWrite();
+    bool ok = false;
+    try {
+      await for (final List<int> chunk in resp) {
+        sink.add(chunk);
+      }
+      ok = true;
+    } finally {
+      await sink.close();
+      if (!ok) {
+        try {
+          File(local).deleteSync();
+        } catch (_) {}
+      }
+    }
+    return local;
+  }
+
+  Future<String> _readTextDav(String filePath) async {
+    final WebDavOps dav = _ensureDav(filePath);
+    final HttpClientRequest req = await dav.buildRequest('GET', filePath);
+    final HttpClientResponse resp = await req.close();
+    dav.checkStatus(resp.statusCode, 'GET $filePath');
+    final List<int> bytes = <int>[];
+    await for (final List<int> chunk in resp) {
+      bytes.addAll(chunk);
+    }
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
   // ── SourceFileSystem 契约 ────────────────────────────────────────
 
   @override
@@ -444,9 +569,13 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     String dirPath, {
     bool recursive = false,
   }) {
-    return config.isSftp
-        ? _listSftp(dirPath, recursive)
-        : _listFtp(dirPath, recursive);
+    if (config.isSftp) {
+      return _listSftp(dirPath, recursive);
+    }
+    if (config.isWebDav) {
+      return _listDav(dirPath, recursive);
+    }
+    return _listFtp(dirPath, recursive);
   }
 
   @override
@@ -468,6 +597,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     if (config.isSftp) {
       return _readTextSftp(filePath);
     }
+    if (config.isWebDav) {
+      return _readTextDav(filePath);
+    }
     // FTP 无随机读文本原语：下载到临时盘再读。
     final Directory tmp =
         Directory.systemTemp.createTempSync('net_src_ftp_read_');
@@ -486,13 +618,21 @@ class NetworkSourceFileSystem implements SourceFileSystem {
 
   @override
   Future<String> copyToLocal(String filePath, String destDir) {
-    return config.isSftp
-        ? _copySftp(filePath, destDir)
-        : _copyFtp(filePath, destDir);
+    if (config.isSftp) {
+      return _copySftp(filePath, destDir);
+    }
+    if (config.isWebDav) {
+      return _copyDav(filePath, destDir);
+    }
+    return _copyFtp(filePath, destDir);
   }
 
   /// 关闭底层连接（扫描结束调用，幂等）。
   Future<void> close() async {
+    try {
+      _dav?.close();
+    } catch (_) {}
+    _dav = null;
     try {
       _sftp?.close();
     } catch (_) {}

@@ -1,5 +1,5 @@
 // TODO-817 M1c / TODO-1274 来源库管理对话框：列出某媒体种类（'video' | 'book'）的
-// 来源库，支持添加本地文件夹、添加网络来源（SFTP/FTP，仅 'book'）、重新扫描、
+// 来源库，支持添加本地文件夹、添加网络来源（SFTP/FTP/WebDAV，仅 'book'）、重新扫描、
 // 打开文件夹（仅 Windows 本地）、移除来源、拖拽重排。
 //
 // 骨架抄自 LocalAudioSourcesDialog（HibikiDialogFrame + HibikiModalSheetFrame +
@@ -10,8 +10,9 @@
 // MediaSources.configJson；密码/私钥经 MediaSourceCredentialStore 以 base64 单独落
 // Preferences（键 `media_source_secret_<id>`），绝不进入 configJson。
 //
-// 网络来源只对 'book' 开放：EPUB 小体积、扫描时下载后导入；远端 SFTP/FTP 视频路径
-// 不可被播放器直接播放，故 'video' 只保留本地来源。
+// 网络来源只对 'book' 开放：EPUB 小体积、扫描时下载后导入；远端 SFTP/FTP/WebDAV 视频
+// 路径不可被播放器直接播放，故 'video' 只保留本地来源。WebDAV 的 rootPath 即完整集合
+// URL（scheme/host/端口/路径都在里面），无需单独存 host/port（见 NetworkSourceFileSystem）。
 
 import 'dart:io' show Platform, Process;
 
@@ -24,6 +25,7 @@ import 'package:hibiki/src/media/source/media_source_credential_store.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
+import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -595,6 +597,8 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
   final TextEditingController _keyController = TextEditingController();
   final TextEditingController _pathController = TextEditingController();
   final TextEditingController _labelController = TextEditingController();
+  // WebDAV 专用：完整集合 URL（既是连接目标，也是来源 rootPath）。
+  final TextEditingController _urlController = TextEditingController();
   bool _useTls = false;
   bool _testing = false;
   bool _portTouched = false;
@@ -608,10 +612,13 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     _keyController.dispose();
     _pathController.dispose();
     _labelController.dispose();
+    _urlController.dispose();
     super.dispose();
   }
 
   bool get _isSftp => _transport == 'sftp';
+
+  bool get _isWebDav => _transport == 'webdav';
 
   int get _port =>
       int.tryParse(_portController.text.trim()) ?? (_isSftp ? 22 : 21);
@@ -620,16 +627,30 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     if (value == _transport) return;
     setState(() {
       _transport = value;
-      // 未手动改过端口时，切协议自动填默认端口。
-      if (!_portTouched) {
+      // 未手动改过端口时，切协议自动填默认端口（WebDAV 无独立端口字段，端口在 URL 里）。
+      if (!_portTouched && !_isWebDav) {
         _portController.text = _isSftp ? '22' : '21';
       }
-      if (_isSftp) _useTls = false;
+      if (_isSftp || _isWebDav) _useTls = false;
     });
   }
 
-  /// 校验必填项：host / username / remotePath 非空，且密码或私钥至少一个。
+  /// 校验必填项：
+  /// - WebDAV：URL（http/https）+ 用户名 + 密码。
+  /// - SFTP/FTP：host / username / remotePath 非空，且密码或私钥至少一个。
   String? _validate() {
+    if (_isWebDav) {
+      final String url = _urlController.text.trim();
+      if (url.isEmpty ||
+          _userController.text.trim().isEmpty ||
+          _passwordController.text.isEmpty) {
+        return t.sync_webdav_missing_fields;
+      }
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return t.sync_webdav_missing_fields;
+      }
+      return null;
+    }
     if (_hostController.text.trim().isEmpty ||
         _userController.text.trim().isEmpty ||
         _pathController.text.trim().isEmpty) {
@@ -655,7 +676,14 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
       final String user = _userController.text.trim();
       final String pass = _passwordController.text;
       final String key = _keyController.text.trim();
-      if (_isSftp) {
+      if (_isWebDav) {
+        // 复用 sync 子系统的 WebDAV 后端探活（PROPFIND Depth:0）。
+        await WebDavSyncBackend.instance.testConnection(
+          url: _urlController.text.trim(),
+          username: user,
+          password: pass,
+        );
+      } else if (_isSftp) {
         await SftpSyncBackend.instance.testConnection(
           host: host,
           port: _port,
@@ -690,6 +718,25 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     }
     final String pass = _passwordController.text;
     final String key = _keyController.text.trim();
+    if (_isWebDav) {
+      // WebDAV：URL 既是连接目标也是来源 rootPath；host/port 仅供列表展示，从 URL 派生。
+      final String url = _urlController.text.trim();
+      final Uri u = Uri.tryParse(url) ?? Uri();
+      Navigator.pop(
+        context,
+        _NetworkSourceResult(
+          transport: 'webdav',
+          host: u.host,
+          port: u.hasPort ? u.port : (u.scheme == 'https' ? 443 : 80),
+          username: _userController.text.trim(),
+          remotePath: url,
+          label: _labelController.text,
+          password: pass.isEmpty ? null : pass,
+          useTls: false,
+        ),
+      );
+      return;
+    }
     Navigator.pop(
       context,
       _NetworkSourceResult(
@@ -721,25 +768,38 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                 segments: const <ButtonSegment<String>>[
                   ButtonSegment<String>(value: 'sftp', label: Text('SFTP')),
                   ButtonSegment<String>(value: 'ftp', label: Text('FTP')),
+                  ButtonSegment<String>(value: 'webdav', label: Text('WebDAV')),
                 ],
                 selected: <String>{_transport},
                 onSelectionChanged: (Set<String> s) =>
                     _onTransportChanged(s.first),
               ),
               const SizedBox(height: 12),
-              HibikiTextField(
-                controller: _hostController,
-                labelText: t.sync_host,
-                hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
-              ),
-              const SizedBox(height: 12),
-              HibikiTextField(
-                controller: _portController,
-                labelText: t.sync_port,
-                keyboardType: TextInputType.number,
-                onChanged: (_) => _portTouched = true,
-              ),
-              const SizedBox(height: 12),
+              // WebDAV：整库定位靠单个集合 URL（含 scheme/host/端口/路径），故不显示
+              // host/port/远端路径，只填 URL + 账号密码；SFTP/FTP 走 host/port/路径。
+              if (_isWebDav) ...<Widget>[
+                HibikiTextField(
+                  controller: _urlController,
+                  labelText: t.sync_webdav_url,
+                  hintText: 'https://dav.example.com/dav/books',
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (!_isWebDav) ...<Widget>[
+                HibikiTextField(
+                  controller: _hostController,
+                  labelText: t.sync_host,
+                  hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
+                ),
+                const SizedBox(height: 12),
+                HibikiTextField(
+                  controller: _portController,
+                  labelText: t.sync_port,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => _portTouched = true,
+                ),
+                const SizedBox(height: 12),
+              ],
               HibikiTextField(
                 controller: _userController,
                 labelText: t.sync_username,
@@ -759,7 +819,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                   maxLines: 4,
                 ),
               ],
-              if (!_isSftp) ...<Widget>[
+              if (!_isSftp && !_isWebDav) ...<Widget>[
                 const SizedBox(height: 4),
                 AdaptiveSettingsSwitchRow(
                   title: t.sync_use_tls,
@@ -767,12 +827,14 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                   onChanged: (bool v) => setState(() => _useTls = v),
                 ),
               ],
-              const SizedBox(height: 12),
-              HibikiTextField(
-                controller: _pathController,
-                labelText: t.media_source_network_remote_path,
-                hintText: '/books',
-              ),
+              if (!_isWebDav) ...<Widget>[
+                const SizedBox(height: 12),
+                HibikiTextField(
+                  controller: _pathController,
+                  labelText: t.media_source_network_remote_path,
+                  hintText: '/books',
+                ),
+              ],
               const SizedBox(height: 12),
               HibikiTextField(
                 controller: _labelController,

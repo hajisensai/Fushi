@@ -2161,7 +2161,7 @@
   "stat_fastest_day": "Fastest Day",
   "stat_slowest_day": "Slowest Day",
   "stat_col_book": "Book",
-  "media_source_network_subtitle": "SFTP / FTP remote library",
+  "media_source_network_subtitle": "SFTP / FTP / WebDAV remote library",
   "media_source_network_remote_path": "Remote path",
   "media_source_network_label_optional": "Display name (optional)",
   "media_source_network_missing_fields": "Enter host, username, remote path, and a password or key",
