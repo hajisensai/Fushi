@@ -6,6 +6,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
+import 'package:hibiki/src/shortcuts/visual/gamepad_button_assets.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
@@ -14,6 +15,25 @@ import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
 /// assignment) behavioural coverage on the standalone visual sub-widgets.
 /// TODO-942 P1: gamepad tests pump the new GamepadLayoutView full figure; the
 /// keyboard empty-tap tests keep pumping KeyboardLayoutView (now keyboard-only).
+/// Asserts the keyed gamepad button renders the expected Kenney asset image
+/// (TODO-942: real controller icons replaced the hand-drawn text glyphs).
+void expectButtonAsset(
+  WidgetTester tester,
+  String keyLabel,
+  GamepadButton button,
+  GamepadBrand brand,
+) {
+  final String? expected = GamepadButtonAssets.assetFor(button, brand);
+  expect(expected, isNotNull, reason: '$button must map to a $brand asset');
+  final Image image = tester.widget<Image>(
+    find.descendant(
+      of: find.byKey(Key('gamepad_btn_$keyLabel')),
+      matching: find.byType(Image),
+    ),
+  );
+  expect((image.image as AssetImage).assetName, expected);
+}
+
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -85,7 +105,7 @@ void main() {
   }
 
   testWidgets(
-      'gamepad face buttons render with Xbox glyphs (A/B/X/Y) by default',
+      'gamepad face buttons render with Xbox Kenney icons (A/B/X/Y) by default',
       (WidgetTester tester) async {
     final HibikiShortcutRegistry registry = buildRegistry();
     await pumpGamepadView(tester, registry, ShortcutScope.reader);
@@ -93,84 +113,58 @@ void main() {
     // The gamepad figure renders one keyed knob per known button.
     expect(find.byKey(const Key('gamepad_btn_A')), findsOneWidget);
     expect(find.byKey(const Key('gamepad_btn_B')), findsOneWidget);
-    // Xbox face-button symbols are letters.
     final GamepadButtonWidget aWidget = tester.widget<GamepadButtonWidget>(
       find.byKey(const Key('gamepad_btn_A')),
     );
     expect(aWidget.brand, GamepadBrand.xbox);
-    expect(
-        GamepadGlyphs.glyphFor(GamepadButton.a, GamepadBrand.xbox).symbol, 'A');
-    // The rendered text for A is the Xbox 'A' glyph.
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_A')),
-        matching: find.text('A'),
-      ),
-      findsOneWidget,
-    );
+    // TODO-942: face buttons now show the Xbox coloured-ABXY Kenney icons, not
+    // hand-drawn text glyphs.
+    expectButtonAsset(tester, 'A', GamepadButton.a, GamepadBrand.xbox);
+    expectButtonAsset(tester, 'B', GamepadButton.b, GamepadBrand.xbox);
+    expectButtonAsset(tester, 'X', GamepadButton.x, GamepadBrand.xbox);
+    expectButtonAsset(tester, 'Y', GamepadButton.y, GamepadBrand.xbox);
   });
 
-  testWidgets('PlayStation brand renders ✕○□△ face-button symbols',
+  testWidgets('PlayStation brand renders ✕○□△ Kenney face-button icons',
       (WidgetTester tester) async {
     final HibikiShortcutRegistry registry = buildRegistry();
     await pumpGamepadView(tester, registry, ShortcutScope.reader,
         brand: GamepadBrand.playstation);
 
-    // A -> ✕ under PlayStation.
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_A')),
-        matching: find.text('✕'),
-      ),
-      findsOneWidget,
-    );
-    // B -> ○.
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_B')),
-        matching: find.text('○'),
-      ),
-      findsOneWidget,
-    );
+    // A -> ✕ (cross), B -> ○ (circle): the PlayStation coloured Kenney icons.
+    expectButtonAsset(tester, 'A', GamepadButton.a, GamepadBrand.playstation);
+    expectButtonAsset(tester, 'B', GamepadButton.b, GamepadBrand.playstation);
+    expectButtonAsset(tester, 'X', GamepadButton.x, GamepadBrand.playstation);
+    expectButtonAsset(tester, 'Y', GamepadButton.y, GamepadBrand.playstation);
   });
 
   testWidgets(
-      'Nintendo Switch brand renders ABXY swapped (bottom .a -> B, right .b -> A)',
-      (WidgetTester tester) async {
+      'Nintendo Switch brand icons keep ABXY physical swap (.a -> B icon, '
+      '.b -> A icon)', (WidgetTester tester) async {
     final HibikiShortcutRegistry registry = buildRegistry();
     await pumpGamepadView(tester, registry, ShortcutScope.reader,
         brand: GamepadBrand.nintendoSwitch);
 
-    // Logical .a (bottom) shows Switch letter 'B'.
+    // The Kenney Switch icons keep the physical A/B, X/Y position swap that the
+    // glyph layer established: logical .a shows the physical 'B' icon, etc.
+    expectButtonAsset(
+        tester, 'A', GamepadButton.a, GamepadBrand.nintendoSwitch);
+    expectButtonAsset(
+        tester, 'B', GamepadButton.b, GamepadBrand.nintendoSwitch);
+    expectButtonAsset(
+        tester, 'X', GamepadButton.x, GamepadBrand.nintendoSwitch);
+    expectButtonAsset(
+        tester, 'Y', GamepadButton.y, GamepadBrand.nintendoSwitch);
+    // Pin the swap explicitly at the asset level.
     expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_A')),
-        matching: find.text('B'),
-      ),
-      findsOneWidget,
-    );
-    // Logical .b (right) shows Switch letter 'A'.
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_B')),
-        matching: find.text('A'),
-      ),
-      findsOneWidget,
-    );
-    // Logical .x (left) shows 'Y', .y (top) shows 'X'.
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_X')),
-        matching: find.text('Y'),
-      ),
-      findsOneWidget,
+      GamepadButtonAssets.assetFor(
+          GamepadButton.a, GamepadBrand.nintendoSwitch),
+      endsWith('switch_button_b.png'),
     );
     expect(
-      find.descendant(
-        of: find.byKey(const Key('gamepad_btn_Y')),
-        matching: find.text('X'),
-      ),
-      findsOneWidget,
+      GamepadButtonAssets.assetFor(
+          GamepadButton.b, GamepadBrand.nintendoSwitch),
+      endsWith('switch_button_a.png'),
     );
   });
 

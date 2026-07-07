@@ -5,6 +5,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
+import 'package:hibiki/src/shortcuts/visual/gamepad_button_assets.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_layout_view.dart';
 
@@ -247,20 +248,22 @@ void main() {
       }
     });
 
-    testWidgets('brand switch re-skins glyphs without touching keys',
+    testWidgets('brand switch re-skins icons without touching keys',
         (WidgetTester tester) async {
       final HibikiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader,
           brand: GamepadBrand.playstation);
-      // 面键符号来自 GamepadGlyphs（PS ✕），Key 命名保持 enum label。
-      expect(
+      // TODO-942: face buttons render the PlayStation Kenney icon (✕ cross),
+      // and the Key stays enum-labelled regardless of brand.
+      final Image aImage = tester.widget<Image>(
         find.descendant(
           of: find.byKey(const Key('gamepad_btn_A')),
-          matching: find.text(
-              GamepadGlyphs.glyphFor(GamepadButton.a, GamepadBrand.playstation)
-                  .symbol),
+          matching: find.byType(Image),
         ),
-        findsOneWidget,
+      );
+      expect(
+        (aImage.image as AssetImage).assetName,
+        GamepadButtonAssets.assetFor(GamepadButton.a, GamepadBrand.playstation),
       );
     });
   });

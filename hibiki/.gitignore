@@ -56,6 +56,9 @@ ui-*.xml
 # under test/goldens/failures/ stay ignored via the *.png rule above.
 !test/goldens/golden_files/
 !test/goldens/golden_files/*.png
+# TODO-942: Kenney Input Prompts controller icons (CC0) are bundled assets
+# and MUST be tracked despite the blanket *.png ignore above.
+!assets/gamepad/**
 test_screenshots/
 
 # Codex test outputs

@@ -244,6 +244,9 @@ flutter:
   assets:
     - assets/browser_extension/
     - assets/browser_extension/vendor/
+    - assets/gamepad/xbox/
+    - assets/gamepad/playstation/
+    - assets/gamepad/switch/
     - assets/licenses/
     - assets/meta/
     - assets/popup/
