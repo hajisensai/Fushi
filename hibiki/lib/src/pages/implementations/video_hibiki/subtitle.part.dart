@@ -971,9 +971,11 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     final String cacheKey = '$videoPath|${controller.currentAudioStreamIndex}';
     return _subtitleWaveformCache.resolve(
       cacheKey,
+      // TODO-1244：波形显示走更细的 [kSubtitleWaveformWindowMs]（20ms=50 帧/秒），密度接近
+      // 成熟波形工具、句间静音可辨；自动对轴仍用 100ms 采样，两者互不影响（独立探测/缓存）。
       () => extractAudioEnergyEnvelope(
         videoPath: videoPath,
-        windowMs: kSubtitleAutoAlignBinMs,
+        windowMs: kSubtitleWaveformWindowMs,
         audioStreamIndex: controller.currentAudioStreamIndex,
         audioStreamCount: controller.realAudioStreamCount,
         limitMs: kSubtitleAutoAlignProbeLimitMs,
