@@ -1,7 +1,7 @@
 // TODO-1184 守卫：action popup 队列删除 + 标签的纯逻辑单测（无 chrome/DOM 依赖）。
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext } = require('./vendor/action-popup.js');
+const { hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext, hibikiReadPanelEnabled } = require('./vendor/action-popup.js');
 
 test('hibikiFilterQueue removes only the matching id', () => {
   const q = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
@@ -39,4 +39,17 @@ test('hibikiQueueItemContext shows sentence only when label is a word', () => {
   // 超长句子截断到 60。
   const long = 'あ'.repeat(80);
   assert.strictEqual(hibikiQueueItemContext({ fields: { expression: '走る' }, sentence: long }), 'あ'.repeat(60) + '…');
+});
+
+// TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）读值纯函数守卫。默认关 + 只认 boolean
+// true——与 subtitle-panel.js 的 enabled:false 默认、options.js 的 === true 判据一致，防回归成默认打开。
+test('TODO-1219: hibikiReadPanelEnabled only true for boolean true (default off)', () => {
+  assert.strictEqual(hibikiReadPanelEnabled({ netflixSubtitlePanel: true }), true);
+  assert.strictEqual(hibikiReadPanelEnabled({ netflixSubtitlePanel: false }), false);
+  assert.strictEqual(hibikiReadPanelEnabled({}), false);
+  assert.strictEqual(hibikiReadPanelEnabled(null), false);
+  assert.strictEqual(hibikiReadPanelEnabled(undefined), false);
+  // 非严格 true 的真值一律当关（防 'true' 字符串/1 之类误开）。
+  assert.strictEqual(hibikiReadPanelEnabled({ netflixSubtitlePanel: 'true' }), false);
+  assert.strictEqual(hibikiReadPanelEnabled({ netflixSubtitlePanel: 1 }), false);
 });

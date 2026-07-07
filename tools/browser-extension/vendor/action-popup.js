@@ -32,9 +32,15 @@ function hibikiQueueItemContext(q) {
   return sent.length > 60 ? sent.slice(0, 60) + '…' : sent;
 }
 
+// TODO-1219：网飞字幕列表面板开关的读值纯函数（默认关 + 只认 boolean true）。抽出来供 node 测试，
+// 与 subtitle-panel.js 的 enabled:false 默认、options.js 的 === true 判据一致，防回归成默认打开。
+function hibikiReadPanelEnabled(stored) {
+  return !!(stored && stored.netflixSubtitlePanel === true);
+}
+
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext };
+  module.exports = { hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext, hibikiReadPanelEnabled };
 }
 
 if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.storage) {
@@ -132,6 +138,29 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
         });
       } catch (_) { window.close(); }
     });
+  }
+
+  // TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）。读写与 options 页同一
+  // chrome.storage.local.netflixSubtitlePanel（缺省即关），改动即时持久化；subtitle-panel.js 经
+  // storage.onChanged 实时生效。这里只加「点扩展图标即可开」的入口，不动上方 1270 制卡队列。
+  const nfToggle = document.getElementById('hp-nf-sublist');
+  if (nfToggle) {
+    try {
+      chrome.storage.local.get(['netflixSubtitlePanel'], (r) => {
+        nfToggle.checked = hibikiReadPanelEnabled(r);
+      });
+    } catch (_) {}
+    nfToggle.addEventListener('change', () => {
+      try { chrome.storage.local.set({ netflixSubtitlePanel: nfToggle.checked }); } catch (_) {}
+    });
+    // options 页或别处改了开关时，popup 若还开着即时反映勾选态（独立监听，不动队列监听）。
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.netflixSubtitlePanel) {
+          nfToggle.checked = changes.netflixSubtitlePanel.newValue === true;
+        }
+      });
+    } catch (_) {}
   }
 
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。
