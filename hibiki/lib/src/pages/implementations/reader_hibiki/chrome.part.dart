@@ -46,6 +46,24 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     _lastChapterTurnInputAt = DateTime.now();
   }
 
+  /// TODO-1229 第三次复诉：标记「一次惯性跨章已真正发起导航」。只在惯性输入
+  /// (滚轮/触摸，throttleMs>0)确实调 [_handlePageTurnLimit] 且其内部真的触发了
+  /// 导航时置位（末章/首章边界不导航则不置位，避免旗子悬空）。等新章 content-ready
+  /// 时由 [_noteChapterTurnSettledIfPending] 消费。
+  void _markInertiaChapterTurnPending() {
+    _inertiaChapterTurnPending = true;
+  }
+
+  /// TODO-1229 第三次复诉：惯性跨章落地的新章内容就绪那一刻，把跨章冷却窗重新 stamp
+  /// 到当下——保证新章刚出现时总有一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮/
+  /// 惯性，即使换章加载耗时超过冷却窗、期间没有续窗 tick（鼠标滚轮离散事件的真因）。
+  /// 只在 pending 时生效并复位旗子；非惯性来源(初次开书/恢复/键盘跨章)不置旗、不受影响。
+  void _noteChapterTurnSettledIfPending() {
+    if (!_inertiaChapterTurnPending) return;
+    _inertiaChapterTurnPending = false;
+    _noteChapterTurnInput();
+  }
+
   /// TODO-1229 v2：跨章冷却闸门。距上次「跨章输入/跨章」不足 [_kChapterTurnCooldown] 则
   /// 判为同一手势的残余惯性、拒绝本次跨章并把冷却窗滑到当下（返回 true=正在冷却=拦截）；
   /// 已静默超过冷却窗则放行（返回 false），不刷新——让真正落地的那次跨章自行 stamp。
@@ -110,7 +128,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         // 在短章边界的二次跨章被拦（并滑动冷却窗）；键盘/手柄(throttleMs==0)不受限。
         if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
         _noteChapterTurnInput();
-        _handlePageTurnLimit(direction.jsValue);
+        _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
       } else {
         await _refreshProgress();
         if (!mounted || _controller == null) return;
@@ -130,7 +148,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
       if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
       _noteChapterTurnInput();
-      _handlePageTurnLimit(direction.jsValue);
+      _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
     }
   }
 

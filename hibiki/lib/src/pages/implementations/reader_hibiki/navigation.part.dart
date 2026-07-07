@@ -47,6 +47,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           _readerContentReady = true;
           _hasEverLoaded = true;
         });
+        // TODO-1229 第三次复诉：兜底超时也算内容就绪，消费 pending 并 stamp 冷却窗，
+        // 避免惯性跨章后旗子悬空到下一次真实导航才被清（那会造成一次假冷却）。
+        _noteChapterTurnSettledIfPending();
         // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
         _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
@@ -67,6 +70,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   void _onRestoreComplete() {
     // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
     _clearContentReadyTimeout();
+    // TODO-1229 第三次复诉：惯性跨章落地的新章一就绪，就把跨章冷却窗 stamp 到当下，
+    // 挡住随后的残余滚轮/惯性在新章边界二次跨章（滚轮离散事件在长加载期间不续窗的真因）。
+    _noteChapterTurnSettledIfPending();
     if (!mounted) {
       return;
     }
@@ -712,7 +718,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return ReaderHibikiSource.epubUrl(resolved);
   }
 
-  void _handlePageTurnLimit(String direction) {
+  void _handlePageTurnLimit(String direction, {bool inertia = false}) {
     if (_book == null) {
       return;
     }
@@ -732,10 +738,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
       final bool manual = _settings?.spreadMode == 'off';
       if (direction == 'forward') {
         if (currentVirtual + 1 < _spreadMap!.length) {
+          if (inertia) _markInertiaChapterTurnPending();
           _navigateToVirtualPage(currentVirtual + 1, manual: manual);
         }
       } else {
         if (currentVirtual > 0) {
+          if (inertia) _markInertiaChapterTurnPending();
           _navigateToVirtualPage(currentVirtual - 1,
               progress: 0.99, manual: manual);
         }
@@ -746,10 +754,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // 兜底：spread map 尚未构建（book/settings 未就绪，翻页前罕见）时退回裸翻章。
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
+        if (inertia) _markInertiaChapterTurnPending();
         _navigateToChapter(_currentChapter + 1, manual: true);
       }
     } else {
       if (_currentChapter > 0) {
+        if (inertia) _markInertiaChapterTurnPending();
         _navigateToChapter(
           _currentChapter - 1,
           progress: 0.99,

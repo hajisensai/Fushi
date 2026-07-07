@@ -1084,6 +1084,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // [_kChapterTurnCooldown] 之后才允许下一次跨章。一次连续手势 = 一次跨章。只作用于惯性型
   // 输入(滚轮/触摸，throttleMs>0)的跨章决策，不影响章内翻页，也不节流键盘/手柄(throttleMs=0)。
   DateTime? _lastChapterTurnInputAt;
+  // TODO-1229 第三次复诉（滚轮仍双跳）：v2 冷却窗只靠「换章加载期不断到达的惯性 tick」
+  // (_paginationInFlight 分支的 _noteChapterTurnInput) 把时间戳滑到当下来维持。但鼠标滚轮
+  // 是**离散**事件流——用户拨两三格越过章末边界后 burst 就结束了，换章加载（整章解析+渲染
+  // +restore，常 >450ms）期间**没有**后续 tick 续窗；等新章(短插图/单页章)在边界上
+  // 出现时冷却窗早已过期(now - lastInputAt > 450ms)，紧随其后的残余滚动在新章边界二次跨章 →
+  // 「第一次正常然后很快又跳一次」。根因=冷却窗锚在「输入」，而危险窗其实是「新章刚出现的
+  // 那一刻」；长加载把两者拉开出一个洞。修法：惯性跨章真正发起导航时置本旗，等新章内容
+  // 就绪(content-ready)那一刻**重新把冷却窗 stamp 到当下**——无论加载多久、期间有没有
+  // 续窗 tick，新章一出现就有一个完整 [_kChapterTurnCooldown] 窗口挡住残余惯性。键盘/手柄
+  // 跨章(throttleMs==0)不置旗、也天然不过冷却闸门，逐次翻章不受影响。
+  bool _inertiaChapterTurnPending = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;

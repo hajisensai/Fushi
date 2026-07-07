@@ -1657,9 +1657,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 'chapter=$_currentChapter');
             _noteChapterTurnInput();
             if (dir == 'forward') {
-              _handlePageTurnLimit('forward');
+              _handlePageTurnLimit('forward', inertia: true);
             } else if (dir == 'backward') {
-              _handlePageTurnLimit('backward');
+              _handlePageTurnLimit('backward', inertia: true);
             }
             if (throttleMs > 0) {
               _lastPaginateTime = DateTime.now();
@@ -1722,6 +1722,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
                 _hasEverLoaded = true;
               });
+              // TODO-1229 第三次复诉：spread 内容就绪同样消费 pending 并 stamp 冷却窗，
+              // 挡住惯性跨章落地漫画页后残余滚轮的二次跨章（与 _onRestoreComplete 对齐）。
+              _noteChapterTurnSettledIfPending();
               // BUG-467：spread 内容就绪同样补下 chrome insets（_hasEverLoaded 刚翻 true，
               // 初始 HTML 漏了底栏预留）。
               _reapplyChromeInsetsAfterFirstLoad();
