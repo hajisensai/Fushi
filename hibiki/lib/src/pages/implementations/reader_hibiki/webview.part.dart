@@ -1877,32 +1877,37 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
   }
 
+  Future<void> _markLyricsPageReady(InAppWebViewController controller) async {
+    if (_lyricsPageReady) return;
+    if (!_readerContentReady) {
+      // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
+      _clearContentReadyTimeout();
+    }
+    _rebuild(() {
+      _readerContentReady = true;
+      _hasEverLoaded = true;
+      _lyricsPageReady = true;
+    });
+    // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
+    // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
+    await controller.evaluateJavascript(
+        source: ReaderLyricsCaretScripts.source());
+    if (mounted) {
+      await controller.evaluateJavascript(
+        source: ReaderLyricsCaretScripts.initInvocation(
+          color: _caretRingColorCss(),
+          insetTop: _readerTopOffset,
+          insetBottom: 0,
+        ),
+      );
+    }
+    _onCueChanged();
+    await _applyLyricsFavorites();
+  }
+
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     if (_lyricsMode) {
-      if (!_readerContentReady) {
-        // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
-        _clearContentReadyTimeout();
-        _rebuild(() {
-          _readerContentReady = true;
-          _hasEverLoaded = true;
-        });
-      }
-      _lyricsPageReady = true;
-      // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
-      // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
-      await controller.evaluateJavascript(
-          source: ReaderLyricsCaretScripts.source());
-      if (mounted) {
-        await controller.evaluateJavascript(
-          source: ReaderLyricsCaretScripts.initInvocation(
-            color: _caretRingColorCss(),
-            insetTop: _readerTopOffset,
-            insetBottom: 0,
-          ),
-        );
-      }
-      _onCueChanged();
-      await _applyLyricsFavorites();
+      await _markLyricsPageReady(controller);
       return;
     }
     final int gen = _navigateGeneration;

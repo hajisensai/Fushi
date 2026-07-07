@@ -180,6 +180,69 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       encoding: 'utf-8',
       baseUrl: WebUri('https://hoshi.local/lyrics'),
     );
+    unawaited(_probeLyricsPageReadyAfterLoadData().catchError(
+      (Object e, StackTrace stack) {
+        ErrorLogService.instance.log('ReaderHibiki.lyricsReadyProbe', e, stack);
+      },
+    ));
+  }
+
+  Future<void> _probeLyricsPageReadyAfterLoadData() async {
+    for (int i = 0; i < 180; i++) {
+      if (!mounted || !_lyricsMode || _lyricsPageReady) return;
+      final InAppWebViewController? controller = _controller;
+      if (controller == null) return;
+      if (await _isLoadedLyricsDocument(controller)) {
+        await _markLyricsPageReady(controller);
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  Future<Map<String, Object?>> _debugLyricsModeDiagnostics() async {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final Map<String, Object?> state = <String, Object?>{
+      'mounted': mounted,
+      'lyricsMode': _lyricsMode,
+      'lyricsModeTransition': _lyricsModeTransition,
+      'lyricsPageReady': _lyricsPageReady,
+      'readerContentReady': _readerContentReady,
+      'hasController': _controller != null,
+      'hasAudiobookController': ctrl != null,
+      'chapterCueCount': ctrl?.chapterCueCount,
+      'currentCueIdx': ctrl?.currentCueIdx,
+      'allBookCueIdx': ctrl?.allBookCueIdx,
+      'allBookCueCount': ctrl?.allBookCuesSnapshot.length,
+      'lyricsCueCount': _lyricsCueList.length,
+      'lyricsEntryChapter': _lyricsEntryChapter,
+      'lyricsEntryCueIndex': _lyricsEntryCueIndex,
+      'lyricsCueIndexOffset': _lyricsCueIndexOffset,
+      'lyricsCueWindowUsesAllBookCues': _lyricsCueWindowUsesAllBookCues,
+    };
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return state;
+    try {
+      state['webView'] = await controller.evaluateJavascript(source: '''
+(() => {
+  const body = document.body;
+  const root = document.documentElement;
+  return JSON.stringify({
+    href: location.href,
+    readyState: document.readyState,
+    title: document.title,
+    hasLyricsContainer: !!document.getElementById('lc'),
+    hasLyricsSetCue: typeof window.__lyricsSetCue === 'function',
+    bodyClass: body ? String(body.className) : null,
+    bodyText: body ? body.innerText.slice(0, 180) : null,
+    htmlStart: root ? root.outerHTML.slice(0, 240) : null
+  });
+})()
+''');
+    } catch (e) {
+      state['webViewError'] = '$e';
+    }
+    return state;
   }
 
   /// TODO-368: 歌词字幕文字色——用户设过自定义色（[ReaderHibikiSource.lyricsTextColor]

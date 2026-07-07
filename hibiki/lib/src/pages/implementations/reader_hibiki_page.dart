@@ -882,6 +882,11 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static bool Function()? debugLyricsModeReady;
 
+  /// Test hook: returns reader/WebView state when lyrics mode does not become
+  /// ready on a physical device. Kept debug-only through assert assignment.
+  @visibleForTesting
+  static Future<Map<String, Object?>> Function()? debugLyricsModeDiagnostics;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -1275,6 +1280,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugToggleLyricsMode = _toggleLyricsMode;
       ReaderHibikiPage.debugLyricsModeReady =
           () => mounted && _lyricsMode && _lyricsPageReady;
+      ReaderHibikiPage.debugLyricsModeDiagnostics = _debugLyricsModeDiagnostics;
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
@@ -1719,6 +1725,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugOpenQuickSettings = null;
       ReaderHibikiPage.debugToggleLyricsMode = null;
       ReaderHibikiPage.debugLyricsModeReady = null;
+      ReaderHibikiPage.debugLyricsModeDiagnostics = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;

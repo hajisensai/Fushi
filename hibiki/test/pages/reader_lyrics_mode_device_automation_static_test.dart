@@ -12,11 +12,13 @@ void main() {
     expect(source, contains('debugOpenQuickSettings'));
     expect(source, contains('debugToggleLyricsMode'));
     expect(source, contains('debugLyricsModeReady'));
+    expect(source, contains('debugLyricsModeDiagnostics'));
     expect(source, contains("ValueKey<String>('hoshi_lyrics_ready')"));
     expect(source, contains("identifier: 'hibiki.reader.lyrics.ready'"));
     expect(source, contains('debugOpenQuickSettings = null'));
     expect(source, contains('debugToggleLyricsMode = null'));
     expect(source, contains('debugLyricsModeReady = null'));
+    expect(source, contains('debugLyricsModeDiagnostics = null'));
   });
 
   test('settings and lyrics-mode controls expose native accessibility ids', () {

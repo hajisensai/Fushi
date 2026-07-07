@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -524,7 +525,13 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Design system override ────────────────────────────────────────
 
-  String get designSystem => _get('design_system', defaultValue: 'auto');
+  String get designSystem {
+    if (!_prefs.containsKey('design_system') &&
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      return 'material';
+    }
+    return _get('design_system', defaultValue: 'auto') as String;
+  }
 
   Future<void> setDesignSystem(String value) async {
     await _set('design_system', value);
