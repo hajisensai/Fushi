@@ -8,6 +8,7 @@
 //  3. **绝不覆盖**已有非空 token（覆盖会踢掉扩展已保存的 token → 401）。
 //  4. server 已启用 → 跳过不重启（不打断在跑的连接）。
 //  5. 生产接线守卫：设置页安装入口必须在注入扩展前调用该方法，且方法只在 token 为空时播种。
+//  6. 子系统隔离：装扩展只开 yomitan-api（查词 API），绝不启动 Hibiki 互联/同步 server。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -99,6 +100,34 @@ void main() {
     expect(ready, isTrue);
     expect(appModel.yomitanApiKey, isNotEmpty, reason: 'token 空则播种，非空才保留');
     expect(appModel.yomitanApiServerEnabled, isTrue);
+  });
+
+  // 用户诉求核心（TODO-1266 复核）：装扩展走 yomitan-api（查词 API），与「Hibiki 互联/
+  // 同步」是两个独立子系统。装扩展只能开 yomitan-api server，绝不能连带启动互联/同步
+  // server（HibikiSyncServerController）。本测试锁死子系统隔离，防止把「装扩展默认开」
+  // 误绑到互联子系统。
+  test('装扩展只开 yomitan-api server，绝不启动 Hibiki 互联/同步 server', () async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(db);
+    // 绑临时端口（0=系统分配空闲端口），仅让 yomitan-api server 起在空闲端口。
+    await appModel.setYomitanApiPort(0);
+    addTearDown(appModel.stopYomitanApiServer);
+
+    // 前置：互联/同步 server（HibikiSyncServerController）未启动。
+    expect(appModel.syncServerController.isRunning, isFalse,
+        reason: '前置：Hibiki 互联/同步 server 应处于未启动');
+
+    final bool ready =
+        await appModel.ensureYomitanApiServerForBrowserExtension();
+
+    expect(ready, isTrue);
+    // yomitan-api（查词 API）子系统已开——这是扩展真正要连的 server。
+    expect(appModel.yomitanApiServerEnabled, isTrue,
+        reason: '装扩展应开启 yomitan-api server（扩展查词走此 API）');
+    // 互联/同步 server 全程未被触碰——装扩展与设备互联无关。
+    expect(appModel.syncServerController.isRunning, isFalse,
+        reason: '装扩展绝不能连带启动 Hibiki 互联/同步 server（两者是独立子系统）');
   });
 
   test('生产接线守卫：安装入口在注入扩展前自动开启 server，且只在 token 为空时播种', () async {
