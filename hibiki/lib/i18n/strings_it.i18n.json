@@ -2176,5 +2176,11 @@
   "stat_clear_all_title": "Clear all statistics",
   "stat_clear_all_confirm": "Clear",
   "stat_clear_all_reading_message": "Clear all reading time, character counts, and lookup/mining counts? Your saved words, sentences, and mined cards are kept. This cannot be undone.",
-  "stat_clear_all_video_message": "Clear all watch time, subtitle character counts, and lookup/mining counts? Your saved words, sentences, and mined cards are kept. This cannot be undone."
+  "stat_clear_all_video_message": "Clear all watch time, subtitle character counts, and lookup/mining counts? Your saved words, sentences, and mined cards are kept. This cannot be undone.",
+  "video_setting_subtitle_text_color": "Text color",
+  "video_setting_subtitle_text_color_white": "White",
+  "video_setting_subtitle_text_color_yellow": "Yellow",
+  "video_setting_subtitle_text_color_cyan": "Cyan",
+  "video_setting_subtitle_text_color_green": "Green",
+  "video_setting_subtitle_text_color_red": "Red"
 }

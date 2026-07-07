@@ -2176,5 +2176,11 @@
   "stat_clear_all_title": "清空全部统计",
   "stat_clear_all_confirm": "清空",
   "stat_clear_all_reading_message": "确定清空全部阅读统计吗？将删除所有阅读时长、字数以及查词 / 制卡计数。你收藏的词、句子和已制卡片不受影响。此操作不可撤销。",
-  "stat_clear_all_video_message": "确定清空全部视频统计吗？将删除所有观看时长、字幕字数以及查词 / 制卡计数。你收藏的词、句子和已制卡片不受影响。此操作不可撤销。"
+  "stat_clear_all_video_message": "确定清空全部视频统计吗？将删除所有观看时长、字幕字数以及查词 / 制卡计数。你收藏的词、句子和已制卡片不受影响。此操作不可撤销。",
+  "video_setting_subtitle_text_color": "文字颜色",
+  "video_setting_subtitle_text_color_white": "白色",
+  "video_setting_subtitle_text_color_yellow": "黄色",
+  "video_setting_subtitle_text_color_cyan": "青色",
+  "video_setting_subtitle_text_color_green": "绿色",
+  "video_setting_subtitle_text_color_red": "红色"
 }
