@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 571 条。点号进各自文件。
+> 共 572 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-585](bugs/BUG-585-ffmpeg-audio-138.md) | ✅ | ✅ | 制卡句子音频 ffmpeg exit -138（googlevideo connect 阶段网络超时） |
+| [BUG-584](bugs/BUG-584-reader-restore-stale-charoffset.md) | ✅ | ✅ | 退出图1重进回图2·恢复位置错误 |
 | [BUG-584](bugs/BUG-584-image-spoiler-reveal-persist.md) | ✅ | ✅ | 图片防剧透遮罩点击揭开后又恢复 |
 | [BUG-583](bugs/BUG-583-global-lookup-flicker-residual.md) | ✅ | ✅ | app 外查词第一个弹窗出现/嵌套子弹窗消失时父卡残留闪烁 |
 | [BUG-582](bugs/BUG-582-interconnect-audiobook-shown-as-plain-no-audio-sync.md) | ✅ | ✅ | 互联有声书显示成普通书且音频不同步 |
