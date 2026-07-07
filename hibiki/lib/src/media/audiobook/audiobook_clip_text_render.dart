@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -74,8 +75,14 @@ class AudiobookClipTextLayout {
 ///   竖排=竖屏 1080×1920、横排=横屏 1920×1080（TODO-1147 用户回访）。渲染画布 /
 ///   JPG 帧 / ffmpeg scale+pad 全链共用 layout.width/height 单一真相源，无二次缩放。
 ///
-/// 字号自适应规则（粗略但确定，避免巨图/截断）：以 [baseFontSize] 为上限，文本越长
-/// 越往下收，最低 [minFontSize]。padding 取较小边的 8%，给文本留呼吸空间。
+/// 字号规则（TODO-1282 用户回访「字体太小·应按 EPUB 生成不是 SRT」）：分享卡片要像
+/// EPUB 书页那样大字铺满，而非 SRT 字幕小条。核心是「按可用画布面积自适应铺满」——
+/// CJK 近方块，每字占 fontSize × (fontSize × lineHeight)，可用面积（去 padding）里塞
+/// [textLength] 字、留 fillFactor 呼吸余量，解出字号 sqrt(area×fillFactor/(len×lineHeight))；
+/// 下限跟随 [baseFontSize]（EPUB 正文字号，reader 字号越大导出越大 → 真按 EPUB 走），
+/// 夹在 [minFontSize, maxFontSize]。竖排 WebView 的 `__clipFit` 与横排 FittedBox(scaleDown)
+/// 双双兜底溢出（只缩不放），故此处放心给大字，实际渲染再收敛到「铺满且不溢出」。
+/// padding 取较小边的 8%，给文本留呼吸空间。
 AudiobookClipTextLayout computeClipTextLayout({
   required int textLength,
   required double baseFontSize,
@@ -86,31 +93,40 @@ AudiobookClipTextLayout computeClipTextLayout({
   required Color highlight,
   int? width,
   int? height,
-  double minFontSize = 18,
+  double minFontSize = 32,
   double maxFontSize = 144,
 }) {
   // TODO-1147（用户回访「分辨率不对」）：默认输出尺寸跟写排方向走——竖排文字用
   // 竖屏 1080×1920，横排文字用横屏 1920×1080（默认手机竖/横屏标准尺寸）。
   final int outWidth = width ?? (vertical ? 1080 : 1920);
   final int outHeight = height ?? (vertical ? 1920 : 1080);
-  // 自适应字号：短句用接近正文 2 倍的大字（分享卡片观感），长句逐级收。
+  // 面积自适应字号（TODO-1282）：消除旧「12 字反比缩、18px 地板」的特殊情况——那让
+  // 一句普通日文正文在 1080/1920 画布上收到 ~18px 的字幕大小。改为按可用画布面积铺满。
   final double base = baseFontSize <= 0 ? 22 : baseFontSize;
-  final double desired = base * 2.0;
+  final double effectiveLineHeight = lineHeight <= 0 ? 1.6 : lineHeight;
   final int safeLen = textLength <= 0 ? 1 : textLength;
-  // 反比缩放：超过 12 字开始收，每多一截缩一点，夹在 [minFontSize, desired]。
-  final double scaledByLength = safeLen <= 12
-      ? desired
-      : (desired * (12 / safeLen)).clamp(minFontSize, desired);
-  final double fontSize = scaledByLength.clamp(minFontSize, maxFontSize);
   final double shorterEdge =
       (outWidth < outHeight ? outWidth : outHeight).toDouble();
   final double padding = (shorterEdge * 0.08).clamp(24.0, 96.0);
+  final double usableW =
+      (outWidth - padding * 2).clamp(1.0, outWidth.toDouble());
+  final double usableH =
+      (outHeight - padding * 2).clamp(1.0, outHeight.toDouble());
+  // fillFactor 0.55：留换行不满行 + 高亮衬底内边距的余量，避免一上来就被 fit 大幅回缩。
+  const double fillFactor = 0.55;
+  final double areaFit = math.sqrt(
+    usableW * usableH * fillFactor / (safeLen * effectiveLineHeight),
+  );
+  // 下限跟随 EPUB 正文字号（base×1.6），夹进 [minFontSize, maxFontSize]；再把面积解出的
+  // 字号夹进 [floor, maxFontSize]。短句 → 顶到 maxFontSize 大字；长句 → 逐级收但不塌成字幕。
+  final double floor = (base * 1.6).clamp(minFontSize, maxFontSize);
+  final double fontSize = areaFit.clamp(floor, maxFontSize);
   return AudiobookClipTextLayout(
     width: outWidth,
     height: outHeight,
     padding: padding,
     fontSize: fontSize,
-    lineHeight: lineHeight <= 0 ? 1.6 : lineHeight,
+    lineHeight: effectiveLineHeight,
     vertical: vertical,
     background: background,
     foreground: foreground,
