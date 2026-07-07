@@ -129,4 +129,57 @@ void main() {
         reason:
             'rehydration must re-parse the external file to restore markup');
   });
+
+  test(
+      'SubtitleSource.isEmbeddedPersisted only matches embedded:<n> sentinels '
+      '(TODO-1246 embedded rehydration discriminator)', () {
+    expect(SubtitleSource.isEmbeddedPersisted('embedded:0'), isTrue);
+    expect(SubtitleSource.isEmbeddedPersisted('embedded:3'), isTrue);
+    // 外挂绝对路径 / 关闭哨兵 / 空 / null 都不是内嵌轨。
+    expect(SubtitleSource.isEmbeddedPersisted('/movies/S01E01.ass'), isFalse);
+    expect(SubtitleSource.isEmbeddedPersisted('C:/movies/S01E01.ass'), isFalse);
+    expect(SubtitleSource.isEmbeddedPersisted(SubtitleSource.offSentinel),
+        isFalse);
+    expect(SubtitleSource.isEmbeddedPersisted(''), isFalse);
+    expect(SubtitleSource.isEmbeddedPersisted(null), isFalse);
+    // 与实际持久化值往返一致：内嵌源 toPersistedValue → isEmbeddedPersisted 真。
+    const SubtitleSource embedded = SubtitleSource.embedded(
+      streamIndex: 2,
+      label: 'JP',
+      codec: 'ass',
+    );
+    expect(SubtitleSource.isEmbeddedPersisted(embedded.toPersistedValue()),
+        isTrue);
+  });
+
+  test(
+      '_loadSingle re-parses embedded text tracks (cache hit, no ffmpeg) to '
+      'recover markup on reopen (TODO-1246 embedded call-site guard)', () {
+    // 根因守卫：单视频重开时 DB 缓存的内嵌轨 cue 无 markup（瞬态，DB 往返丢弃）→
+    // respectAssStyle 拿不到 cueStyle → 「尊重字幕自带样式」对内嵌轨完全不生效。修复须让
+    // _loadSingle 在持久化源是 embedded:<n> 且 DB 有文本 cue 时经 _restorePersistedSubtitle
+    // 重解析已抽取的缓存档案恢复 markup（与播放列表换集同路径，命中缓存不触发 ffmpeg 重抽取）。
+    final String src = readVideoHibikiSource();
+    final int start = src.indexOf('Future<void> _loadSingle(');
+    expect(start, greaterThanOrEqualTo(0));
+    final int end =
+        src.indexOf('_relocateSingleMediaPaths(VideoBookRow row)', start);
+    final String body = src.substring(start, end);
+
+    // 门控判据：仅内嵌轨 + DB 有文本 cue（cues 非空）+ 非外挂档案分支时才重解析，避免
+    // 抢图形轨（cues 为空 → 落 cues.isEmpty 分支经 libmpv 渲染，BUG-122 不倒退）。
+    expect(body.contains('SubtitleSource.isEmbeddedPersisted(externalSub)'),
+        isTrue,
+        reason: 'embedded rehydration must gate on embedded:<n> persisted');
+    expect(body.contains('cues.isNotEmpty'), isTrue,
+        reason:
+            'only re-parse when DB has text cues (graphic tracks keep libmpv path)');
+    // 走 _restorePersistedSubtitle（内嵌轨重解析路径），不新起 ffmpeg 抽取分支。
+    expect(
+        body.contains('rehydrateEmbedded') &&
+            body.contains('_restorePersistedSubtitle('),
+        isTrue,
+        reason:
+            'embedded rehydration must reuse _restorePersistedSubtitle (cache reparse)');
+  });
 }

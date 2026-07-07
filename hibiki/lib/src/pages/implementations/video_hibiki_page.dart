@@ -1772,6 +1772,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ? null
         : _rehydratableExternalSubtitlePath(externalSub);
 
+    // TODO-1246 补全：**内嵌** ASS/SSA 轨（anime MKV 最常见）的样式真相源是视频容器，
+    // 但抽取后的缓存档案（`sub_<n>.ass`，含 [V4+ Styles]）已是磁盘上物化的 .ass。外挂
+    // 档案分支（[_rehydratableExternalSubtitlePath]）只认绝对路径、拒 `embedded:<n>`，故
+    // 单视频重开内嵌轨仍拿 DB 缓存的无 markup cue（[loadCues] 命中且非空）→ cueStyle==null
+    // → 「尊重字幕自带样式」(respectAssStyle) 对内嵌轨完全不生效（用户报「现在完全没用」）。
+    // 修复：DB 命中的**文本** cue（cues 非空）且持久化源是内嵌轨时，经
+    // [_restorePersistedSubtitle]（与播放列表换集同一重解析路径）重解析已抽取的缓存档案，
+    // 恢复 cueStyle。缓存命中不触发 ffmpeg 重抽取；图形轨（无文本 cue → cues 为空）不进本
+    // 分支，仍由下方 `cues.isEmpty` 分支经 libmpv 画面渲染恢复（不倒退 BUG-122）。
+    final bool rehydrateEmbedded = !subtitleExplicitlyOff &&
+        rehydratePath == null &&
+        cues.isNotEmpty &&
+        SubtitleSource.isEmbeddedPersisted(externalSub);
+
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
     // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
     if (subtitleExplicitlyOff) {
@@ -1784,6 +1798,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         cues = reparsed;
       }
       // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
+    } else if (rehydrateEmbedded) {
+      // 内嵌文本轨：重解析已抽取的缓存档案恢复 cue 级 / 行内样式 markup（TODO-1246）。
+      final ({
+        String persisted,
+        List<AudioCue> cues,
+        int? graphicStreamIndex,
+      })? restored = await _restorePersistedSubtitle(
+        videoPath: paths.videoPath,
+        persisted: externalSub,
+        crossEpisode: false,
+      );
+      if (restored != null && restored.cues.isNotEmpty) {
+        cues = restored.cues;
+        externalSub = restored.persisted;
+      }
+      // restored 为空（缓存被清 / 容器不可读）：保留 DB 缓存 cues，仅缺样式不缺内容。
     } else if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
