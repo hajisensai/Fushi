@@ -78,27 +78,31 @@ void main() {
             'audio range, not export only the lookup cue.',
       );
       // TODO-393：句子音频区间解析下沉到参数化 helper _sentenceAudioRangeFor，当前句
-      // 经 _currentSentenceAudioRange 把 _cachedSentenceRange 的 offset/length 传进去。
+      // 经 _currentSentenceAudioRange 把归一化 offset/length 传进去。
       expect(
         source,
         contains('sentenceNormCharOffset: normOffset'),
         reason:
             'The parametrized helper takes the sentence normalized offset; the '
-            'current-sentence path feeds _cachedSentenceRange?.offset into it.',
+            'current-sentence path feeds the resolved span offset into it.',
       );
+      // TODO-1278：offset/length 主锚改走单一真相源 _miningSpanRange()（句级 span 缺失时
+      // 回退选区级 span），与收藏 / 制卡历史归一，消除导出误报「跨章」。
       expect(
         source,
-        contains('normOffset: _cachedSentenceRange?.offset'),
+        contains('normOffset: span?.offset'),
         reason:
-            'The cached JS sentence range is the strongest signal for the full '
-            'current-sentence audio span.',
+            'The current-sentence audio span now comes from _miningSpanRange() '
+            '(sentence range, falling back to the selection range) — the '
+            'strongest signal for the full current-sentence audio span.',
       );
       expect(
         source,
-        contains('normLength: _cachedSentenceRange?.length'),
+        contains('normLength: span?.length'),
         reason:
             'Without sentence length, the reader falls back to a single cue and '
-            'can cut off sentences split across multiple cues.',
+            'can cut off sentences split across multiple cues; the length now '
+            'comes from the shared _miningSpanRange() fallback (TODO-1278).',
       );
       expect(
         source,

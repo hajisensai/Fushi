@@ -861,12 +861,38 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   AudioPlaybackRange? _currentSentenceAudioRange() {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
+    final ({int offset, int length})? span = _miningSpanRange();
     return _sentenceAudioRangeFor(
       sentence: sentence,
       cue: _lookupCue,
-      normOffset: _cachedSentenceRange?.offset,
-      normLength: _cachedSentenceRange?.length,
+      normOffset: span?.offset,
+      normLength: span?.length,
     );
+  }
+
+  /// 归一化选区 span 的单一真相源（TODO-1278）：优先句级 span（[_cachedSentenceRange]），
+  /// 句级缺失时回退到词/选区级 span（[_cachedSelectionRange]）。
+  ///
+  /// 片段导出 / Anki 句子音频的位置锚点**必须**和收藏、制卡历史
+  /// （[_checkFavoriteStatus] / [_recordMinedSentence] / lookup.part / chrome.part）
+  /// 用同一套回退——否则句级 span 偶发缺失（拖选跨 block / ruby / 图片相邻节点未进归一化
+  /// 索引 → JS `sentenceNormalizedOffset` 为 null，见 reader_selection_scripts）时，导出
+  /// 侧独自丢掉位置锚点：[miningSentenceAudioRange] 拿不到 sectionIndex+offset+length，
+  /// 对 gap word（`_lookupCue==null`、currentSentence 为空）解析出 null 区间，被
+  /// [classifyAudiobookClipSelection] 归成 `unsupportedRange`，弹出误导的「跨章或跨音频
+  /// 文件」toast——而选区其实同章、Anki 收藏路径能正常定位。回退到选区级 span 后，位置
+  /// 匹配重新生效，同章选区正常进入导出管线。
+  ({int offset, int length})? _miningSpanRange() {
+    final ({int offset, int length})? sentenceRange = _cachedSentenceRange;
+    if (sentenceRange != null) {
+      return sentenceRange;
+    }
+    final ({int offset, int length, String text})? selectionRange =
+        _cachedSelectionRange;
+    if (selectionRange != null) {
+      return (offset: selectionRange.offset, length: selectionRange.length);
+    }
+    return null;
   }
 
   /// TODO-393：把任意一句（当前句或上下文句）按其整书归一化偏移解析成句子音频区间
@@ -1087,14 +1113,15 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // currentSentence.text，与静态侧 emptySelection 判据不同调（纯外字/无选区时可能一条
     // 判空、另一条判非空）。归一到同一真相源，消除两条路径的边界分歧。
     final String classifyText = _cachedSelectionRange?.text ?? sentence;
+    final ({int offset, int length})? spanRange = _miningSpanRange();
     final List<AudioCue> allCues = _sentenceAudioMiningCues(_lookupCue);
     final List<AudioCue> span = miningSentenceCueSpan(
       cues: allCues,
       cue: _lookupCue,
       sentence: sentence,
       sectionIndex: _lookupSectionIndex,
-      sentenceNormCharOffset: _cachedSentenceRange?.offset,
-      sentenceNormCharLength: _cachedSentenceRange?.length,
+      sentenceNormCharOffset: spanRange?.offset,
+      sentenceNormCharLength: spanRange?.length,
     );
     if (span.isEmpty) return null;
 
