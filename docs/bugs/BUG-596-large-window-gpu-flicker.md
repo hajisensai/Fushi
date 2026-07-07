@@ -7,6 +7,6 @@
   - `material_desktop.dart`：`MaterialDesktopSeekBarState.build` → `RepaintBoundary(child: _buildSeekBarBody(context))`（抽出 `_buildSeekBarBody`）；`MaterialDesktopPositionIndicatorState.build` → `RepaintBoundary(child: Text(...))`。
   - `material.dart`：`MaterialSeekBarState.build` → `RepaintBoundary(child: _buildSeekBarBody(context))`；`MaterialPositionIndicatorState.build` → `RepaintBoundary(child: Text(...))`。
   - 纯合成层隔离，无行为/几何/帧率/seek 变化；与前修的位置量化互补（量化限频率，边界限面积）。文档：`third_party/media_kit_video/PATCHES.md`（TODO-1243 follow-up 节）。
-  - 提交：<COMMIT>
+  - 提交：0d80e532f847ecf3cf772f618216066a5c81eb1c（TODO-1243 / BUG-596）
 - **[x] ② 已加自动化测试** — 源码守卫 `hibiki/test/third_party/media_kit_video_seekbar_repaint_boundary_test.dart`：断言四个 State（桌面/移动 × seek bar/位置时钟）的 `build` 都在构造重内容前包了 `RepaintBoundary`，并交叉断言「位置量化 + RepaintBoundary 两个缓解都在」，防再 vendor media_kit 时丢边界（大窗闪烁复发）。旧的位置量化守卫 `media_kit_video_position_throttle_test.dart` 仍绿（无回归）。
 - **备注**：桌面 GPU 真机（HD 620 大窗/全屏观感）验收交用户；本端只离屏跑了源码守卫 + 位置量化守卫（均绿）。
