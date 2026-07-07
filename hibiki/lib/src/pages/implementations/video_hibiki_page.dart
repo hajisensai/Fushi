@@ -1642,6 +1642,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
       if (client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty) {
         cues = client.preresolvedCues;
+        // TODO-1302：登记 YouTube 字幕轨。预解析 cue 直接注入 overlay，但既不是 host
+        // 外挂字幕（不写 _remoteSubtitlePath）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks
+        // 空），故远端字幕菜单原来渲染不出它、_currentSubtitleSource 留 null 让「关闭」被
+        // 误显选中、用户选不回来。用非空合成源哨兵 [_kYoutubeCaptionsSource] 标识它，让菜单
+        // 渲染并高亮「YouTube 字幕」行、「关闭」不再被误选。_applyLoad 内 externalSubtitlePath
+        // ==null 时保留 _currentSubtitleSource（见其 setState），故此处赋值在 load 后仍生效；
+        // 关闭走既有 _clearRemoteSubtitle（置 null）。
+        _currentSubtitleSource = _kYoutubeCaptionsSource;
       } else if (urls.subtitleUrl != null) {
         // TODO-1213：进入「正在下载字幕…」阶段（host 若回调 onProgress 则显确定性进度）。
         _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
