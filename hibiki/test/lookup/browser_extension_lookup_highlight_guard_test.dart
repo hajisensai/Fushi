@@ -166,6 +166,30 @@ void main() {
           expect(src.contains('document.fullscreenElement'), isTrue,
               reason: '${content.path} 丢了全屏 fullscreenElement 挂载');
         });
+
+        test('TODO-1279 查词清掉浏览器原生蓝色选区（只留覆盖层，纯悬停清、拖拽复制不清）', () {
+          // 根因：Shift 悬停取词时浏览器把原生文本选区从既有 caret 扩到指针，与自绘覆盖层叠出
+          // 一条多余蓝色原生选区。修复：纯悬停(e.buttons===0)清 window.getSelection()，拖拽划选
+          // (buttons!==0)保留复制能力。行为层实证见 tools/browser-extension/native-selection-clear.test.js。
+          final String src = content.readAsStringSync();
+          expect(src.contains('function hibikiClearNativeSelection('), isTrue,
+              reason:
+                  '${content.path} 缺清原生选区 helper hibikiClearNativeSelection');
+          expect(src.contains('removeAllRanges()'), isTrue,
+              reason: '${content.path} 未 removeAllRanges 清浏览器原生选区');
+          // 纯悬停(buttons===0)才清；拖拽划选(buttons!==0)不清，保住手动复制。
+          expect(src.contains('e.buttons === 0'), isTrue,
+              reason: '${content.path} 未按 e.buttons 门控（会误伤用户手动拖拽划选复制）');
+          // 清原生选区必须真接进 mousemove Shift 悬停查词路径。
+          final int mmIdx =
+              src.indexOf("document.addEventListener('mousemove'");
+          expect(mmIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} 缺 mousemove 监听器');
+          final String mmBody =
+              src.substring(mmIdx, (mmIdx + 900).clamp(0, src.length));
+          expect(mmBody.contains('hibikiClearNativeSelection()'), isTrue,
+              reason: '${content.path} mousemove Shift 悬停未清原生选区');
+        });
       });
     }
 

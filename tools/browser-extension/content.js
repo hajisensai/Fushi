@@ -563,6 +563,17 @@ function hibikiClearHighlightOverlay() {
   }
 }
 
+// TODO-1279：清掉浏览器原生文本选区（window.getSelection 的蓝色高亮）。只动原生 DOM Selection，
+// 不碰我们自绘的 #hibiki-highlight-overlay 覆盖层（独立 <div>，与原生选区无关），也不碰
+// hoshiSelection.selection（纯 JS 取词状态，覆盖层就从它的 ranges 只读取几何）。塌缩/空选区时
+// no-op：避免无谓清掉输入框 caret 或没有可见蓝色时反复调用。
+function hibikiClearNativeSelection() {
+  try {
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) sel.removeAllRanges();
+  } catch (_) { /* 某些跨域/detached 上下文 getSelection 可能抛：静默 */ }
+}
+
 // 从 hoshiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
 // Range.getClientRects，**不改宿主页 DOM**），并算出整体 bbox 作弹窗锚点。返回 {rects, bounds}。
 // 与 selection.js highlightSelection 的裁词逻辑同构，但不做 DOM 包裹。
@@ -700,6 +711,11 @@ function hibikiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (hibikiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   if (!e[HIBIKI_MOD]) { hibikiLastTerm = ''; return; } // 松开 Shift 复位，下次可重查同词
+  // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
+  // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
+  // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
+  // 高亮；用户手动按住键拖拽划选复制（e.buttons!==0）不清，保住其复制能力。
+  if (e.buttons === 0) hibikiClearNativeSelection();
   // 位移阈值：几乎没动就跳过（同一像素反复 mousemove 不重复取词）。
   if (Math.abs(e.clientX - hibikiLastX) < 4 && Math.abs(e.clientY - hibikiLastY) < 4) return;
   hibikiLastX = e.clientX;
@@ -800,6 +816,7 @@ window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow) {
   }
   if (!hit) return;
   const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, HIBIKI_MAX_LEN, clientX, clientY);
+  hibikiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮
   let anchorRect = null;
   try {
     if (window.hoshiSelection && typeof window.hoshiSelection.getSelectionRect === 'function') {
