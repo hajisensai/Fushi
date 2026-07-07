@@ -690,6 +690,21 @@ ep2.mp4
             'video/playlist scan must skip already-imported physical paths');
   });
 
+  // TODO-1284: the duplicate-skip branch must still attach a sidecar srt+audio
+  // added after first import. Guard the attach helper wiring so a future edit
+  // can't collapse the catch back to a bare skip that drops the new subtitle.
+  test('source guard: duplicate-skip attaches sidecar audiobook (TODO-1284)',
+      () {
+    final String src = File(
+      'lib/src/media/source/media_source_scanner.dart',
+    ).readAsStringSync();
+    expect(src.contains('_attachSidecarAudiobookToExisting'), isTrue,
+        reason:
+            'the duplicate-skip branch must call the sidecar-attach helper');
+    expect(src.contains('alignAndPersistAudiobook'), isTrue,
+        reason: 'the attach helper must align+persist the newly-added sidecar');
+  });
+
   // ── TODO-817 M1c T5: subtitle charset detection via copyToLocal ────────────
   // A real Shift-JIS .srt (Japanese cue) must decode correctly. These bytes
   // (こんにちは = 82 b1 82 f1 82 c9 82 bf 82 cd) are INVALID UTF-8, so the
@@ -867,6 +882,139 @@ ep2.mp4
           await db.getAudiobookByBookKey(books.single.bookKey);
       expect(ab, isNull,
           reason: 'no sibling audio -> plain EPUB, no audiobook promotion');
+    });
+  });
+
+  // ── TODO-1284: re-scan attaches a sidecar srt+audio ADDED after first import ─
+  // A book first imported as a plain EPUB (no sibling srt/audio yet) must be
+  // promoted to an audiobook on a later re-scan once the same-stem .srt + .mp3
+  // appear next to it. Before the fix, _importBooks caught the duplicate-title
+  // skip and returned without ever calling alignAndPersistAudiobook, so the
+  // newly-added subtitle/audio were silently ignored (the user's report: "这个
+  // 刷新应该附加上"). Attach is gated on the book having no audiobook yet, so a
+  // repeat re-scan is idempotent and never re-runs the matcher.
+  group('MediaSourceScanner.scan re-scan sidecar attach (TODO-1284)', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('todo1284_scan_');
+      pp = Directory.systemTemp.createTempSync('todo1284_pp_');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => pp.path,
+      );
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    testWidgets(
+        'srt+mp3 added after first import -> re-scan promotes to audiobook',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // First scan: only the EPUB is present -> imports as a plain text EPUB.
+      _writeEpub(p.join(tmp.path, 'book.epub'), 'RescanNovel');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      final String bookKey = books.single.bookKey;
+      expect(await db.getAudiobookByBookKey(bookKey), isNull,
+          reason: 'no sidecar yet -> plain EPUB after first scan');
+
+      // The user drops a same-stem .srt + .mp3 next to the book, then hits
+      // "重新扫描" (re-scan).
+      File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
+      File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
+
+      source = (await db.getMediaSourceById(sid))!;
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      // Same book row (no X (2) duplicate), now promoted to an audiobook.
+      final List<EpubBookRow> after = await db.getAllEpubBooks();
+      expect(after, hasLength(1),
+          reason: 're-scan must not create a duplicate book row');
+      final AudiobookRow? ab = await db.getAudiobookByBookKey(bookKey);
+      expect(ab, isNotNull,
+          reason: 're-scan must promote the existing book to an audiobook '
+              'once the sidecar srt+audio appear');
+      expect(ab!.audioPathsJson, isNotNull,
+          reason: 'the newly-added sibling audio must be persisted');
+
+      final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
+      expect(cues, isNotEmpty,
+          reason: 'the newly-added sidecar subtitle must be parsed into cues');
+      final SrtBookRow? srtBook = await db.getSrtBookByBookKey(bookKey);
+      expect(srtBook, isNotNull,
+          reason: 'epub-backed audiobook needs a paired srt_books row');
+
+      // Re-scan inserted no NEW book, so mediaCount reflects zero new inserts.
+      final MediaSourceRow scanned = (await db.getMediaSourceById(sid))!;
+      expect(scanned.mediaCount, 0,
+          reason: 'attaching an audiobook to an existing book is not a new '
+              'media insert');
+      expect(scanned.lastScanError, isNull);
+    });
+
+    testWidgets('a third re-scan is idempotent (already-attached audiobook)',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // Book + sidecar srt + mp3 all present up front -> first scan already an
+      // audiobook. A second scan must stay green and not duplicate anything.
+      _writeEpub(p.join(tmp.path, 'book.epub'), 'IdempotentNovel');
+      File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
+      File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+
+      for (int i = 0; i < 2; i++) {
+        final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+        await tester.runAsync(() async {
+          await MediaSourceScanner(db).scan(source);
+        });
+      }
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1),
+          reason: 'repeat scans keep a single book row');
+      final AudiobookRow? ab =
+          await db.getAudiobookByBookKey(books.single.bookKey);
+      expect(ab, isNotNull);
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull);
     });
   });
 }

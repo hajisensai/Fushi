@@ -34,6 +34,7 @@ import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
+import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -335,12 +336,47 @@ class MediaSourceScanner {
           );
         }
       } on DuplicateImportCancelledException catch (e) {
-        // Already-imported same-title book: silently skip (matches _importVideos).
+        // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
+        // 首次导入后才把同名字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
+        // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。仅当该书尚未挂任何有声书
+        // 时才对齐，保证重复重扫幂等、不重跑 matcher、不覆盖用户手动重匹配。
+        await _attachSidecarAudiobookToExisting(item, e.title, fs);
         debugPrint('MediaSourceScanner skip duplicate book '
             '${e.title} (${item.epubPath})');
       }
     }
     return count;
+  }
+
+  /// TODO-1284：重扫时把「首次导入后才新增到书旁的同名字幕+音频」补挂成有声书。
+  ///
+  /// [title] 是 [DuplicateImportCancelledException] 携带的冲突标题，其身份 key
+  /// （[sanitizeTtuFilename]）即已存在书的 bookKey。仅当本次扫描项确有 sidecar
+  /// 字幕+音频（[ScanBookItem.isAudiobook]）、传输为本地（service 直读磁盘路径）、
+  /// 该 bookKey 的书确实在库、且尚未挂任何有声书时才对齐落库；已挂则跳过，保证重扫
+  /// 幂等、不重跑 matcher、不覆盖用户手动重匹配。
+  Future<void> _attachSidecarAudiobookToExisting(
+    ScanBookItem item,
+    String title,
+    SourceFileSystem fs,
+  ) async {
+    if (!item.isAudiobook || !fs.isLocal) return;
+    final String bookKey = sanitizeTtuFilename(title);
+    final EpubBookRow? existingBook = await _db.getEpubBook(bookKey);
+    if (existingBook == null) return;
+    final AudiobookRepository audiobookRepo = AudiobookRepository(_db);
+    final Audiobook? alreadyAttached =
+        await audiobookRepo.findByBookKey(bookKey);
+    if (alreadyAttached != null) return;
+    await alignAndPersistAudiobook(
+      db: _db,
+      repo: SrtBookRepository(_db),
+      audiobookRepo: audiobookRepo,
+      bookKey: bookKey,
+      title: p.basenameWithoutExtension(item.epubPath),
+      subtitlePath: item.subtitlePath!,
+      audioPaths: item.audioPaths,
+    );
   }
 
   /// Imports every video in the plan (with sidecar subtitle cues); returns count.
