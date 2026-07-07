@@ -5,7 +5,7 @@
   - **Bug A（卡片字幕重复两次）**：`tools/browser-extension/subtitle-adapters.js:7` 的 `extractNetflixCueText` 用 `querySelectorAll('.player-timedtext-text-container span, span')` 抓所有 span，再把**每一层** span 的 `textContent` 拼接。Netflix 每行字幕是「外层定位 span > 内层样式 span」的嵌套结构，父 span 的 textContent 已含子 span 全文 → 同一句按嵌套层数被拼进两遍。该重复句经 `content.js` `hibikiEnqueue` 存进队列 `sentence`，再经 `mineClip`→`/api/mine`→`buildImmersionRequest`→`ImmersionMiningEngine` 写进卡片 `{sentence}` 字段 → 卡里字幕出现两次。
   - **Bug B（截取混入 UI）**：`content.js:329` 批量录制的 `hideStyle` 只隐藏了字幕轨 + 底部控制条 + 面板，**没**隐藏：① Hibiki 自己的「生成中」浮层 `#hibiki-toast`（`content.js:47`，sticky 常驻，被 tabCapture 录进 GIF）；② Netflix 顶部返回按钮 `.watch-video--back-container`（左上）与举报旗帜 `.watch-video--flag-container`（右上，见 `content.js:669` 覆盖层清单）。逐句 seek/pause 会强制 Netflix 显控件 → 落进录制窗。tabCapture 录的是合成帧，CSS `visibility:hidden` 即可把它们排除出画面。
   - **Bug C（少了一点开头）**：`content.js` 批量循环 seek 到 `cueStart-200`（入队时预留 200ms 头部提前量）后，用固定 `await sleep(200)`（失败再 200）的 warmup 让视频**播掉**这段提前量才 `beginClip` → 录制真实起点漂到 `cueStart` 甚至之后，头部被切。
-- **[x] ① 根因修复** — 提交 `ca1483e78`。
+- **[x] ① 根因修复** — 提交 `55ed2859d`。
   - A：`subtitle-adapters.js` 改为只取**叶子** span（`!(s.querySelector && s.querySelector('span'))`），每段文本恰好一次；扁平无嵌套时行为不变。
   - B：`content.js` `hideStyle` 加入 `#hibiki-toast`（Hibiki 自己的生成中浮层，进度改由扩展图标红点徽标传达）+ `.watch-video--back-container` / `.watch-video--flag-container` 等 Netflix 顶部返回/举报选择器（多选择器兜底改类名）。
   - C：`content.js` 把 play 后的固定双 200ms warmup 换成「一旦确认在播即刻 `beginClip`」的短轮询（`for (let i=0;i<8 && v.paused;i++){play; sleep(60)}`），不再吃掉入队预留的 200ms 头部提前量。
