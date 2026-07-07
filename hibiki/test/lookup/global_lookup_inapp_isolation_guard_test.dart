@@ -361,6 +361,49 @@ void main() {
           reason: 'the ratchet is reset to no-constraint per session');
     });
 
+    test(
+        'TODO-1231 v2 (BUG-583): the bbox MIN-corner (window origin) follows '
+        'only content-ready shells so a hidden child never lurches the parent',
+        () {
+      // The residual "父弹窗出现子弹窗时闪一下": a freshly-opened, still-gated-
+      // hidden child that cascades up/left used to drag the union bbox MIN-corner
+      // outward, moving the window origin (SetWindowPos) while the compensating
+      // commitLayerShift lands ~1 frame later across the DWM/WebView2 boundary ->
+      // the pinned parent card lurched. measureAndReport now sources the MIN-
+      // corner (origin -> window position + layer shift) ONLY from content-ready
+      // (visible) shells, while the MAX-corner (window size, which never moves the
+      // parent) still includes EVERY placed shell so the window pre-grows to cover
+      // the hidden child. A bootstrap fallback (no shell content-ready yet) keeps
+      // the first reveal byte-identical.
+      final int mAt = hostJs.indexOf('function measureAndReport(');
+      expect(mAt, greaterThan(-1));
+      final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
+      expect(mEnd, greaterThan(mAt));
+      final String measureBody = hostJs.substring(mAt, mEnd);
+      // The MIN-corner assignment must be gated on the shell being content-ready.
+      expect(measureBody.contains('if (record.contentReady) {'), isTrue,
+          reason:
+              'the window origin (min-corner) only follows content-ready shells '
+              '(a hidden child must not move the pinned parent — BUG-583)');
+      // The MAX-corner / bootstrap fallback tracks every placed shell.
+      expect(
+          measureBody.contains('minLeftAll') &&
+              measureBody.contains('minTopAll'),
+          isTrue,
+          reason:
+              'the far edges (window size) + the bootstrap origin fallback see '
+              'ALL placed shells so the window pre-grows to cover a hidden child');
+      // Bootstrap: before any shell is content-ready the origin falls back to all
+      // shells so the FIRST reveal geometry is unchanged (Never break userspace).
+      expect(
+          measureBody.contains('minLeft = minLeftAll') &&
+              measureBody.contains('minTop = minTopAll'),
+          isTrue,
+          reason:
+              'no-content-ready bootstrap falls back to all shells so the first '
+              'root reveal is byte-identical to the pre-fix behaviour');
+    });
+
     test('D1: two-flag reveal gate hides a shell until content + geometry', () {
       // The gate is a declarative CSS attribute selector (single visibility
       // source) flipped by two independent flags; JS never sets inline

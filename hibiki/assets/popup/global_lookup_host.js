@@ -913,8 +913,36 @@
     if (!frames.size) {
       return;
     }
+    // TODO-1231 v2 (BUG-583) — the union bbox has two independently-sourced
+    // corners because they drive DIFFERENT things:
+    //   * MIN-corner (origin): drives the window POSITION (SetWindowPos) AND the
+    //     compensating commitLayerShift(-min) that pins the ROOT card at the
+    //     cursor. A shell's on-screen position is (windowOrigin + layerShift +
+    //     shellLocal) = cursor + shellLocal, so moving the origin does NOT move a
+    //     card — EXCEPT for the ~1 frame where SetWindowPos has landed on the DWM
+    //     window but the commitLayerShift ExecuteScript has NOT yet re-composited
+    //     the WebView2 layer: during that gap the pinned parent card lurches by
+    //     the origin delta, then snaps back (the residual “父弹窗出现子弹窗时闪
+    //     一下”). So the origin must follow ONLY shells the user can already see
+    //     (content-ready): a freshly-opened, still-gated-hidden child that
+    //     cascades UP/LEFT must NOT drag the origin outward — and lurch the parent
+    //     — before it has even rendered. When that child becomes content-ready
+    //     (about to paint) it joins the origin set, so the single origin move
+    //     coincides with the child's own appearance frame (masked).
+    //   * MAX-corner (far edges): drives the window SIZE only. Growing it keeps
+    //     the origin (and thus the layer shift) fixed, so it never moves the
+    //     parent. It therefore includes EVERY placed shell — the window pre-grows
+    //     down/right to cover a not-yet-ready child so that child is not clipped
+    //     when it paints. A DOWN-RIGHT cascade only ever grows the max-corner, so
+    //     the parent is now PERFECTLY still throughout a nested open.
+    // Bootstrap: before ANY shell is content-ready (the very first root reveal,
+    // where there is no visible parent to lurch), the origin falls back to all
+    // placed shells — byte-identical to the pre-fix behaviour, so the first
+    // reveal is unchanged and the existing harness (#11/#15) still passes.
     var minLeft = Infinity;
     var minTop = Infinity;
+    var minLeftAll = Infinity;
+    var minTopAll = Infinity;
     var maxRight = -Infinity;
     var maxBottom = -Infinity;
     frames.forEach(function (record) {
@@ -926,11 +954,25 @@
       if (measured > 0 && (height <= 0 || measured < height)) {
         height = measured;
       }
-      if (left < minLeft) minLeft = left;
-      if (top < minTop) minTop = top;
+      // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
+      // shell, so the window pre-grows to cover a not-yet-ready child (no clip).
+      if (left < minLeftAll) minLeftAll = left;
+      if (top < minTopAll) minTopAll = top;
       if (left + width > maxRight) maxRight = left + width;
       if (top + height > maxBottom) maxBottom = top + height;
+      // MIN-corner (window origin / pin) follows ONLY shells the user can already
+      // see, so a hidden child never moves the pinned parent before it paints.
+      if (record.contentReady) {
+        if (left < minLeft) minLeft = left;
+        if (top < minTop) minTop = top;
+      }
     });
+    // No content-ready shell yet (bootstrap first reveal): follow all placed
+    // shells so the reveal geometry is identical to the pre-fix behaviour.
+    if (!isFinite(minLeft) || !isFinite(minTop)) {
+      minLeft = minLeftAll;
+      minTop = minTopAll;
+    }
     if (!isFinite(minLeft) || !isFinite(minTop) ||
         !isFinite(maxRight) || !isFinite(maxBottom)) {
       return;
