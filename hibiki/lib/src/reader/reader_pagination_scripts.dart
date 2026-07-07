@@ -2061,7 +2061,13 @@ $_sharedJs
     // BUG-492 (TODO-1053 Bug A) 越界兜底：旧脏收藏 charAnchor 属于相邻错章，恢复加载
     // 本章后可能超本章字符总数 → scrollToCharOffset 静默 no-op 停在页 1 附近。越界回退
     // 章首（scrollToProgressPaged 0），比静默停错位可诊断。范围内走精确定位，行为不变。
-    if (charOffset < 0 || !this.charOffsetInRange(charOffset)) {
+    // TODO-1229 (BUG-588)：charOffset 0 == 章节绝对起点（0 字已读）。若本章以插图页开篇，
+    // 首个文本字符位于插图之后的下一页，而 scrollToCharOffset 只走文本节点（createWalker）
+    // 会落到「首个文本页」跳过插图页。章首语义必须与 restoreProgress(0) 一致——scrollToProgressPaged(0)
+    // 走 minScroll，buildPaginationMetrics 的 firstContentEdge 已含前导 block 图，落点即插图页。
+    // 故 <=0 一律走 minScroll，绝不越过章首插图（跨章 renav / _syncPageSize 宽变重导以 charOffset 0
+    // 重锚时不再跳页）。>0 的精确锚行为不变。
+    if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {
       this.scrollToProgressPaged(context, 0);
     } else {
       this.scrollToCharOffset(charOffset);
@@ -2830,7 +2836,9 @@ $_sharedJs
   restoreToCharOffset: async function(charOffset, endCharOffset) {
     await document.fonts.ready;
     var self = this;
-    if (charOffset < 0) { this.scrollToChapterStart(); }
+    // TODO-1229 (BUG-588)：charOffset 0 == 章首（0 字已读）。连续模式章首插图同理不得越过，
+    // scrollToChapterStart 滚到顶（含前导图），与 restoreProgress 章首语义一致。>0 走精确锚不变。
+    if (charOffset <= 0) { this.scrollToChapterStart(); }
     else {
       // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
       // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
