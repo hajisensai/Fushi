@@ -1,0 +1,12 @@
+## BUG-605 · 词典音高片假名reading被拖选烤进制卡卡片
+- **报告**：2026-07-07（用户：查词弹窗里选词，制卡后 Anki 卡的「Text Selection」字段却是 `1/3 カンロク` 之类的片假名 reading，而不是我选中的词典释义/词条）
+- **真实性**：✅ 真 bug。根因是「音高发音区可被原生拖选，选区被制卡快照烤进 SelectionText」。根因 `file:line`：
+  - `hibiki/assets/popup/popup.js:1574-1613`（`createPitchHtml` / `createPitchGroup`：把 reading 按 kana mora 逐个渲染成 `.pronunciation-mora` span（`textContent` = 片假名，如 カ・ン・ロ・ク），外面包 `.pronunciation-text` → `.pitch-entries` → `.pitch-group`）。
+  - `hibiki/assets/popup/popup.css:637`（`.glossary-content`）与整份 popup 正文一样继承 `body` 的 `-webkit-user-select: text`（`popup.css:43`），`.pitch-group` 之前**没有**任何 `user-select` 覆写，所以音高发音区也能被原生拖选。
+  - `hibiki/assets/popup/popup.js` 的点击处理器在拖动 > 5px 时提前 `return`（不触发嵌套查词），于是这段原生选区存活；制卡时 `lastSelection = window.getSelection()?.toString()` 把它快照进 `popupSelectionText`，`hibiki/lib/src/creator/.../creator_field_values.dart` 再当 cloze-inside 写进 Lapis 的 SelectionText 字段 → 卡片里出现片假名 reading。
+- **[x] ① 已修复** — 给音高发音区容器 `.pitch-group` 加 `user-select:none; -webkit-user-select:none;`，杜绝把片假名 reading（及 `[n]` 音高数字、IPA 标签）拖进原生选区。`.pitch-group` 与 `.glossary-section` 是兄弟区块，词典正文 glossary 仍继承 `user-select:text`、可选中做嵌套查词，零影响。改动（三份镜像同步，两份 vendor 保持逐字节一致）：
+  - `hibiki/assets/popup/popup.css`（in-app 弹窗，真实 bug 路径）
+  - `hibiki/assets/browser_extension/vendor/popup.css` + `tools/browser-extension/vendor/popup.css`（浏览器扩展 vendor 副本，同样逐 mora 渲染音高；受 `browser_extension_installer_test` 逐字节漂移守卫约束，两份同改）
+  - 提交：分支 todo1305a-pitch-noselect（TODO-1305 / BUG-605）；合并进 develop 的最终 SHA 由 integration owner 分配
+- **[x] ② 已加自动化测试** — 源码守卫 `hibiki/test/dictionary/popup_pitch_noselect_guard_test.dart`：对三份 popup.css 断言 `.pitch-group` 规则含 `user-select:none` + `-webkit-user-select:none`；同时断言 popup 正文仍 `user-select:text`、`.glossary-content` 未被误加 `user-select:none`（正文选区保留、嵌套查词不破）；再断言两份 vendor 副本逐字节一致（补 `browser_extension_installer_test` 漂移守卫，保证修复同步落两份）。
+- **备注**：真机验收（词典弹窗拖选音高片假名不再进卡片、词典正文仍可选中查词）交用户；本端只离屏跑了源码守卫（绿）+ `flutter analyze`。
