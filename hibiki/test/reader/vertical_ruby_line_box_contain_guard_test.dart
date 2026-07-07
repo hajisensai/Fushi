@@ -4,7 +4,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 
-// BUG-608 / TODO-1308: 竖排(vertical-rl)+滚动(连续)模式下，经目录/书签/搜索跳转后，
+// BUG-611 / TODO-1308: 竖排(vertical-rl)+滚动(连续)模式下，经目录/书签/搜索跳转后，
 // 振假名(ruby <rt>)塌进基字/正文中间。根因是 html 规则里 legacy WebKit 属性
 // `-webkit-line-box-contain: block glyphs replaced`（从 Hoshi 整体搬来，注释自陈意图是
 // 「让 ruby/furigana 不撑高 line-box」）——它命令引擎把 line-box 尺寸只按 glyph 算，
@@ -33,7 +33,7 @@ Future<String> _readerCss({
 }
 
 void main() {
-  group('BUG-608 竖排 ruby 不被 -webkit-line-box-contain 抹掉标注预留', () {
+  group('BUG-611 竖排 ruby 不被 -webkit-line-box-contain 抹掉标注预留', () {
     test(
         '四组合(竖排/横排 × 连续/分页)生成的正文 CSS 都不含活的 '
         '-webkit-line-box-contain 声明', () async {
@@ -50,7 +50,7 @@ void main() {
           css.contains('-webkit-line-box-contain'),
           isFalse,
           reason: '${c.wm}/${c.vm}: 正文 CSS 不得发出 -webkit-line-box-contain '
-              '声明——它会抹掉竖排 ruby 交叉轴预留 → 振假名塌进基字(BUG-608)。'
+              '声明——它会抹掉竖排 ruby 交叉轴预留 → 振假名塌进基字(BUG-611)。'
               '删除后所有引擎回到默认 line-box 行为(为 ruby 预留空间)。',
         );
       }

@@ -416,7 +416,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       cache: _lastGoodCoverUrlByBookKey,
     );
     if (direct != null) return direct;
-    // TODO-1319 / BUG-608: on a case-SENSITIVE filesystem (Android/Linux) the
+    // TODO-1319 / BUG-612: on a case-SENSITIVE filesystem (Android/Linux) the
     // persisted coverPath may carry the wrong case. A book imported or backed
     // up on a case-INSENSITIVE host (Windows/macOS) stored the cover href after
     // p.canonicalize lower-cased it (epub_parser _itemRelHref), while the
@@ -463,7 +463,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     }
   }
 
-  /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-608).
+  /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-612).
   ///
   /// Walks each relative candidate in [relPaths] segment by segment under
   /// [extractDir], matching each segment against the real directory entries

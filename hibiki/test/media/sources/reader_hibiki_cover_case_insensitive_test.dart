@@ -7,7 +7,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
-/// TODO-1319 / BUG-608: a book cover is detected at import (coverPath persisted)
+/// TODO-1319 / BUG-612: a book cover is detected at import (coverPath persisted)
 /// yet never renders on a case-SENSITIVE device (Android/Linux). Root cause:
 /// coverPath is a relative href persisted verbatim and read back disk-direct
 /// (shelf coverCandidatePaths / mining File(join(extractDir, coverHref))). A
@@ -23,7 +23,7 @@ import 'package:path/path.dart' as p;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('resolveCaseInsensitive 纯函数逐段大小写不敏感解析 (BUG-608)', () {
+  group('resolveCaseInsensitive 纯函数逐段大小写不敏感解析 (BUG-612)', () {
     // Mock case-preserved tree:
     //   /x/Book/OEBPS/Images/Cover.jpg  (+ /x/Book/cover.jpg fallback)
     final Map<String, List<String>> tree = <String, List<String>>{
@@ -79,7 +79,7 @@ void main() {
     });
   });
 
-  group('书架封面 case-insensitive 兜底真实解析链 (BUG-608 端到端)', () {
+  group('书架封面 case-insensitive 兜底真实解析链 (BUG-612 端到端)', () {
     late Directory tempDir;
 
     setUp(() {
@@ -125,14 +125,14 @@ void main() {
           await ReaderHibikiSource.instance.mediaItemForBookKey('CaseBook');
       expect(item, isNotNull);
       expect(item!.imageUrl, isNotNull,
-          reason: '封面在盘上存在，只是 coverPath 大小写不符——不得塌成 null(BUG-608)');
+          reason: '封面在盘上存在，只是 coverPath 大小写不符——不得塌成 null(BUG-612)');
       final String resolvedPath = Uri.parse(item.imageUrl!).toFilePath();
       // 跨平台不变量：imageUrl 必须指向磁盘上真实存在的封面文件。
       // case-sensitive 平台(Linux CI)修复前直接探测按大小写落空 -> imageUrl==null
       // -> 此断言红(回归守卫)；修复后 case-insensitive 兜底命中真实文件 -> 绿。
       // case-insensitive 平台(Windows/macOS)直接探测即命中，恒绿。
       expect(File(resolvedPath).existsSync(), isTrue,
-          reason: '解析出的 imageUrl 必须指向磁盘上真实存在的封面文件(BUG-608)');
+          reason: '解析出的 imageUrl 必须指向磁盘上真实存在的封面文件(BUG-612)');
     });
   });
 }

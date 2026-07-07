@@ -27,10 +27,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 596 条。点号进各自文件。
+> 共 600 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-614](bugs/BUG-614-multicue-overlap-secondary.md) | ✅ | ✅ | 重叠cue跳+副字幕并入overlay多层渲染重构（TODO-1312 方案A） |
+| [BUG-613](bugs/BUG-613-data-migration-hang-folder-loss.md) | ✅ | ✅ | 改数据文件夹位置卡死+目标文件夹消失 |
+| [BUG-612](bugs/BUG-612-cover-not-showing-6897.md) | ✅ | ✅ | 6897书籍封面检测到却不显示回归（TODO-1319） |
+| [BUG-611](bugs/BUG-611-vertical-ruby-nav-misplace.md) | ✅ | ✅ | 竖排滚动导航后假名跑文字中间 |
 | [BUG-610](bugs/BUG-610-settings-area-narrowed.md) | ✅ | ✅ | 设置部分区域宽度变窄回归 |
 | [BUG-609](bugs/BUG-609-mobile-longpress-select.md) | ✅ | ✅ | 1279 coarse user-select:none禁了手机长按选中·补app选区手势 |
 | [BUG-608](bugs/BUG-608-share-callback-error.md) | ✅ | ✅ | 分享图片PlatformException share-sheet未回调重入 |

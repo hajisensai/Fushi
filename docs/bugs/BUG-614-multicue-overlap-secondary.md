@@ -1,4 +1,4 @@
-## BUG-608 · 重叠cue跳+副字幕并入overlay多层渲染重构（TODO-1312 方案A）
+## BUG-614 · 重叠cue跳+副字幕并入overlay多层渲染重构（TODO-1312 方案A）
 - **报告**：2026-07-08（用户：）
 - **真实性**：✅ 真 bug（架构约束，非偶发）。两诉求同一根因：cue 是单条模型。
   - `VideoPlayerController` 只维护一个代表 cue（`_currentCue`/`_currentCueIndex`），overlay 只渲染一条。
