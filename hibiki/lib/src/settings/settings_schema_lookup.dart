@@ -143,6 +143,12 @@ SettingsDestination buildLookupDestination() {
                 );
                 return;
               }
+              // TODO-1266：装扩展即默认开启 yomitan-api server（省得装完 401 连不上）。
+              // 幂等：已开则跳过不重启；token 为空才播种、绝不覆盖已有 token。必须在下面
+              // prepareBundledBrowserExtension 注入前完成，使注入扩展的 token 与 server
+              // 实际使用的 token 一致。端口占用（返 false）时下面横幅仍会据实提醒。
+              final bool serverReady =
+                  await appModel.ensureYomitanApiServerForBrowserExtension();
               // TODO-1087：解压时注入当前 server 真值（host 固定环回，port/token 取
               // AppModel），扩展默认即连本机 app，无需用户手填 host/port/token。
               final String dir = await prepareBundledBrowserExtension(
@@ -158,7 +164,10 @@ SettingsDestination buildLookupDestination() {
                 settingsContext,
                 (_) => _BrowserExtensionInstallDialog(
                   path: dir,
-                  serverEnabled: appModel.yomitanApiServerEnabled,
+                  // TODO-1266：横幅反映「自动开启后」的真实状态（端口占用时 serverReady=false，
+                  // 据实提醒；token 此时已就绪，故一般为已配对）。
+                  serverEnabled:
+                      serverReady && appModel.yomitanApiServerEnabled,
                   hasToken: appModel.yomitanApiKey.isNotEmpty,
                 ),
               );

@@ -4150,6 +4150,38 @@ class AppModel with ChangeNotifier {
     await _yomitanServerManager?.stop();
   }
 
+  /// TODO-1266：浏览器扩展「安装助手」调用——「装完即用」。确保 yomitan-api server 就绪，
+  /// 让扩展装完即可连上本机 app，不必用户再手动去设置里开 server（省掉装完 401 连不上）。
+  ///
+  /// 幂等 + 不覆盖既有真值（安全 + 向后兼容）：
+  /// - token：仅当 [yomitanApiKey] 为空时才生成一枚随机 token 并落盘；**绝不覆盖**用户手填
+  ///   或此前已配对的非空 token（覆盖会踢掉扩展已保存的 token 造成 401）。播种在启动/注入前
+  ///   完成，保证 server 实际使用的 token 与随后注入扩展 `hibiki-defaults.js` 的 token 一致。
+  /// - server：仅当当前未启用时才置位并启动；已启用则**跳过不重启**（不打断在跑的 server、
+  ///   不干扰活动连接）。[startYomitanApiServer] 本身也幂等（管理器 `if (_server != null)`）。
+  ///
+  /// 返回 true 表示 server 现在已启用（且预期在运行）；false 表示因端口占用启动失败
+  /// （此时 [startYomitanApiServer] 已把 [yomitanApiServerEnabled] 复位为 false，
+  /// 调用方据此提示用户端口冲突）。
+  Future<bool> ensureYomitanApiServerForBrowserExtension() async {
+    // token 就绪：空才播种，非空保留（不覆盖）。用与 sync server 同款的密码学安全随机源。
+    if (yomitanApiKey.isEmpty) {
+      await setYomitanApiKey(HibikiSyncServer.generateToken());
+    }
+    // 已启用：按「跳过不重启」要求直接返回；token 已就绪且与注入值一致。
+    if (yomitanApiServerEnabled) {
+      return true;
+    }
+    await setYomitanApiServerEnabled(true);
+    try {
+      await startYomitanApiServer();
+    } on SyncServerPortInUseException {
+      // startYomitanApiServer 已在抛前把开关复位为 false。
+      return false;
+    }
+    return true;
+  }
+
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────
 
   List<LocalAudioDbEntry> get localAudioDbs => _localAudioManager.entries;
