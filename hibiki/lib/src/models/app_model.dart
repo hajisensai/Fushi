@@ -26,6 +26,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:hibiki/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
@@ -3247,6 +3248,11 @@ class AppModel with ChangeNotifier {
     // Returning to the home/menu shell: hide the Android status bar again
     // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
     await setHomeShellSystemUiMode();
+    // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
+    // Windows OS drop registration in case an opened reader/video/lookup
+    // WebView2 usurped it, so drag-import works again after any media was
+    // opened. No-op off Windows / when desktop_drop lacks the reinitialize patch.
+    await DesktopDropReinitializer.reinitialize();
     await mediaSource.onSourceExit(
       appModel: this,
       ref: ref,
