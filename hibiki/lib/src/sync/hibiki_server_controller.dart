@@ -390,10 +390,12 @@ class HibikiSyncServerController extends ChangeNotifier {
                           fontWeight: FontWeight.w600,
                         ),
                   ),
-                  // TODO-961 M1: v2 配对（request.pinVerified != null）显示本会话
-                  // PIN，让用户口头/屏显把 PIN 念给 client 输入。PIN 只在 host 屏幕
-                  // 显示，绝不过线（client 只回传 HMAC proof）。
-                  if (request.pinVerified != null &&
+                  // TODO-961 M1 / TODO-1273: 仅当本会话**真的要求 PIN**
+                  // （request.pinRequired）才显示 PIN，让用户口头/屏显把 PIN 念给
+                  // client 输入。LAN 免 PIN 会话不显示 PIN——否则 host 屏上会出现一个
+                  // client 从未被要求输入的「幽灵 PIN」。PIN 只在 host 屏幕显示，绝不
+                  // 过线（client 只回传 HMAC proof）。
+                  if (request.pinRequired &&
                       _pendingPairPin != null) ...<Widget>[
                     SizedBox(height: tokens.spacing.gap),
                     Text(t.sync_pair_pin_label),

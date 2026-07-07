@@ -43,6 +43,7 @@ class HibikiPairRequest {
     required this.deviceName,
     required this.remoteAddress,
     this.pinVerified,
+    this.pinRequired = false,
   });
 
   /// Self-reported name from the client (may be null/empty if not sent).
@@ -57,6 +58,11 @@ class HibikiPairRequest {
   /// - false：理论上不出现——pinProof 校验失败时 server 直接 401，不会再问 host。
   /// 双重确认（设计稿 §3.1）：v2 路径要求 pinVerified==true **且** host 人工允许。
   final bool? pinVerified;
+
+  /// TODO-1273: 本会话是否真的要求 PIN（= host 的 pinRequired）。host 审批弹窗据此
+  /// 决定是否显示 PIN：LAN 免 PIN 会话（pinRequired=false）不显示 PIN，避免 host 屏上
+  /// 出现一个 client 从未被要求输入的「幽灵 PIN」。旧 /api/pair（v1，无 PIN）默认 false。
+  final bool pinRequired;
 }
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
@@ -679,6 +685,7 @@ class HibikiSyncServer {
       deviceName: session.deviceName,
       remoteAddress: session.remoteAddress,
       pinVerified: true,
+      pinRequired: session.pinRequired,
     ));
     if (!approved) return _pairDenied('declined');
 

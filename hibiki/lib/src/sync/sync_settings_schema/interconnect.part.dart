@@ -496,14 +496,13 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     );
     if (!mounted || !confirmed) return;
 
-    // 第二重：收 PIN（公网/host 要求时）。LAN 免 PIN 时 host 会返回 pinRequired:false，
-    // pair() 不带 proof；这里仍先收 PIN（可留空）以覆盖公网强制场景——pair() 内部按
-    // pinRequired 决定是否真正使用。
-    final String? pin = await _promptPairPinInput();
-    if (!mounted || pin == null) return; // 取消。
-
+    // 第二重：收 PIN——但**只有 host 要求 PIN 时才弹输入框**。是否需要 PIN 由 host 的
+    // pair/v2 响应（pinRequired）决定，client 不能在得到该响应前就盲目弹「输入对方
+    // PIN」（TODO-1273：LAN 免 PIN 时 host 根本不显示 PIN，旧实现却总是弹，造成「让我
+    // 输 PIN 但对方没 PIN、我没输 PIN 却还是配上了」的困惑）。故把 PIN 收集下沉为回调，
+    // 交给 pair() 在确认 pinRequired 后按需触发。
     _setPairV2Busy(true);
-    String message;
+    String? message;
     try {
       final HibikiPairV2Client client = HibikiPairV2Client(
         baseUrl: baseUrl,
@@ -515,7 +514,8 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       final String clientDeviceId = await _pairRepo.getOrCreateDeviceId();
       final HibikiPairV2Outcome outcome = await client.pair(
         deviceName: _localDeviceName(),
-        pin: pin.isEmpty ? null : pin,
+        // 仅当 host 回报 pinRequired 时才被调用；LAN 免 PIN 全程不弹 PIN 框。
+        pinProvider: _promptPairPinInput,
         clientDeviceId: clientDeviceId,
       );
       if (!mounted) return;
@@ -523,7 +523,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
         case HibikiPairV2Success(:final String token):
           message = await _onPairSuccess(baseUrl, token, fingerprint);
         case HibikiPairV2Failure(:final String reason):
-          message = _pairV2FailureMessage(reason);
+          // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
+          message =
+              reason == 'cancelled' ? null : _pairV2FailureMessage(reason);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('PairV2:$baseUrl', e, stack);
@@ -531,7 +533,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     } finally {
       _setPairV2Busy(false);
     }
-    if (mounted) _showSnackBar(context, message);
+    if (mounted && message != null) _showSnackBar(context, message);
   }
 
   /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
