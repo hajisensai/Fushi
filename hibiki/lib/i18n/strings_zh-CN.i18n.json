@@ -2171,5 +2171,10 @@
   "handlebar_card_image": "卡片图片（封面 / 视频 GIF）",
   "video_subtitle_youtube_captions": "YouTube 字幕",
   "video_subtitle_waveform_unavailable": "本设备无法生成波形",
-  "shortcut_action_reader_open_navigation": "打开导航"
+  "shortcut_action_reader_open_navigation": "打开导航",
+  "stat_clear_all": "清空统计",
+  "stat_clear_all_title": "清空全部统计",
+  "stat_clear_all_confirm": "清空",
+  "stat_clear_all_reading_message": "确定清空全部阅读统计吗？将删除所有阅读时长、字数以及查词 / 制卡计数。你收藏的词、句子和已制卡片不受影响。此操作不可撤销。",
+  "stat_clear_all_video_message": "确定清空全部视频统计吗？将删除所有观看时长、字幕字数以及查词 / 制卡计数。你收藏的词、句子和已制卡片不受影响。此操作不可撤销。"
 }
