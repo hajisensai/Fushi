@@ -32,6 +32,8 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -356,9 +358,17 @@ class MediaSourceScanner {
     SourceFileSystem fs,
   ) async {
     if (plan.videos.isEmpty) return 0;
+    final List<VideoBookRow> existingRows = await _videoRepo.listAll();
     // Existing book_uid set for silent same-name dedup (matches import dialog).
     final Set<String> existingKeys =
-        (await _videoRepo.listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    // TODO-1237 ②: existing physical paths (normalized) for re-scan dedup — a
+    // folder re-scan must SKIP files already imported instead of suffixing
+    // `X (2)` duplicates (mirrors _importBooks' skipIfExists, BUG-443). Grown as
+    // we insert so a same-batch duplicate path is skipped too.
+    final Set<String> existingPaths = existingRows
+        .map((VideoBookRow r) => normalizeVideoPath(r.videoPath))
+        .toSet();
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -367,6 +377,10 @@ class MediaSourceScanner {
     try {
       int count = 0;
       for (final ScanVideoItem item in plan.videos) {
+        // Skip already-imported physical files (library or same-batch dup).
+        if (!existingPaths.add(normalizeVideoPath(item.videoPath))) {
+          continue;
+        }
         final String bookUid = uniqueVideoBookUid(
           singleVideoBookUid(item.videoPath),
           existingKeys,
@@ -465,9 +479,15 @@ class MediaSourceScanner {
     SourceFileSystem fs,
   ) async {
     if (plan.playlists.isEmpty) return 0;
+    final List<VideoBookRow> existingRows = await _videoRepo.listAll();
     // Existing book_uid set for silent same-name dedup (matches _importVideos).
     final Set<String> existingKeys =
-        (await _videoRepo.listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    // TODO-1237 ②: existing physical paths (normalized) for re-scan dedup — a
+    // playlist whose first episode is already imported is SKIPPED, not suffixed.
+    final Set<String> existingPaths = existingRows
+        .map((VideoBookRow r) => normalizeVideoPath(r.videoPath))
+        .toSet();
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -486,6 +506,10 @@ class MediaSourceScanner {
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         if (entries.isEmpty) continue; // empty / not a playlist: skip silently.
+        // TODO-1237 ②: first-episode path already in library / same batch -> skip.
+        if (!existingPaths.add(normalizeVideoPath(entries.first.path))) {
+          continue;
+        }
 
         final String bookUid = uniqueVideoBookUid(
           playlistBookUid(item.playlistPath),
@@ -496,13 +520,13 @@ class MediaSourceScanner {
           entries.map((PlaylistEntry e) => e.toJson()).toList(),
         );
 
-        // Cover from the first episode (local ffmpeg only); mobile / any failure
-        // -> null cover, never aborts the scan.
+        // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only);
+        // mobile / any failure -> null cover, never aborts the scan.
         String? coverPath;
         if (fs.isLocal) {
           try {
-            coverPath = await extractVideoCover(
-              videoPath: entries.first.path,
+            coverPath = await extractPlaylistCover(
+              episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
               bookUid: bookUid,
             );
           } catch (e) {

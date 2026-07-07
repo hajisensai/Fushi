@@ -26,7 +26,7 @@ import 'package:path/path.dart' as p;
 // desktop_audio_clipper.dart（ffmpeg 封面抽取的归宿，使扫描器无需 import UI 层）；
 // 从这里 re-export 让既有调用点（home_video_page / playlist_book_uid_test）零改动。
 export 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
-    show videoCoverFileName, extractVideoCover;
+    show videoCoverFileName, extractVideoCover, extractPlaylistCover;
 
 /// 为 m3u8 播放列表生成跨设备稳定 bookUid：`video/playlist/<sanitize(文件名)>`。
 ///
@@ -313,9 +313,10 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       final String playlistJson = jsonEncode(
         entries.map((PlaylistEntry e) => e.toJson()).toList(),
       );
-      // 用第一集抽帧做播放列表封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
-      final String? coverPath = await extractVideoCover(
-        videoPath: entries.first.path,
+      // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集），
+      // 不再只认首集（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
+      final String? coverPath = await extractPlaylistCover(
+        episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
         bookUid: bookUid,
       );
       await widget.repo.saveVideoBook(VideoBooksCompanion(
@@ -365,13 +366,19 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       }
       final List<VideoGroup> groups = groupVideosIntoPlaylists(videos);
       String? lastBookUid;
+      int importedCount = 0;
       for (final VideoGroup group in groups) {
-        lastBookUid = await _importGroup(group);
+        // null = 该组文件已在库、被去重跳过（TODO-1237 ②）；只统计真正新导入的。
+        final String? uid = await _importGroup(group);
+        if (uid != null) {
+          lastBookUid = uid;
+          importedCount++;
+        }
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(t.video_import_folder_done(count: groups.length))),
+            content: Text(t.video_import_folder_done(count: importedCount))),
       );
       Navigator.pop(context, lastBookUid);
     } finally {
@@ -381,7 +388,14 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
 
   /// 导入一个系列分组：多集 → playlist VideoBook（身份 `video/playlist/<系列名>`），
   /// 单集 → 单片 VideoBook（内嵌默认字幕轨）。返回写入的 bookUid。
-  Future<String> _importGroup(VideoGroup group) async {
+  Future<String?> _importGroup(VideoGroup group) async {
+    // TODO-1237 ②：文件夹扫描去重——同一物理文件已在库则跳过，不再 uniqueVideoBookUid
+    // 加后缀建 `X (2)` 重复条目（对齐 EPUB 扫描的 skipIfExists，BUG-443）。以首集/单片
+    // 绝对路径判重（findByVideoPath 的单一真相，按 normalizeVideoPath 归一），返回 null
+    // 表示本组已导入、被跳过。
+    if (await widget.repo.isVideoPathReferenced(group.episodes.first.path)) {
+      return null;
+    }
     if (group.isPlaylist) {
       final List<PlaylistEntry> entries = group.episodes
           .map((VideoEpisode e) => PlaylistEntry(title: e.title, path: e.path))
@@ -390,8 +404,8 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
           'video/playlist/${sanitizeTtuFilename(group.series)}');
       final String playlistJson =
           jsonEncode(entries.map((PlaylistEntry e) => e.toJson()).toList());
-      final String? coverPath = await extractVideoCover(
-        videoPath: entries.first.path,
+      final String? coverPath = await extractPlaylistCover(
+        episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
         bookUid: bookUid,
       );
       await widget.repo.saveVideoBook(VideoBooksCompanion(

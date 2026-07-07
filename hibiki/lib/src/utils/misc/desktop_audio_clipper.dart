@@ -607,6 +607,45 @@ Future<String?> extractVideoCover({
   );
 }
 
+/// 视频封面抽取器签名（[extractVideoCover] 的形状）。仅供 [extractPlaylistCover]
+/// 注入测试替身，生产路径默认走 [extractVideoCover]。
+typedef VideoCoverExtractor = Future<String?> Function({
+  required String videoPath,
+  required String bookUid,
+  double atSeconds,
+});
+
+/// 播放列表封面：依次尝试 [episodePaths] 里的各集，返回**首个成功**抽到封面的绝对
+/// 路径；全部失败（首集缺失 / 远端占位 / 无可抽帧）返回 null。
+///
+/// TODO-1237 ①「m3u8 播放列表导入少封面」根因：旧路径只对 `entries.first.path` 调一次
+/// [extractVideoCover]，首集一旦不可用（文件缺失、OP/预告短片、远端 URL 占位、m3u8
+/// 相对路径没解析到真文件）就整张播放列表卡在书架占位图；而单视频天然只有一个候选、
+/// 有 ffmpeg 就有封面。这里遍历到**首个可用集**拿到有代表性的封面，与单视频对齐。单集
+/// 播放列表退化为一次 [extractVideoCover] 调用，行为不变。
+///
+/// [maxAttempts] 限制最多尝试的集数（默认 5），避免整列都不可用（尤其远端每集 ffmpeg
+/// 30s 超时）时把导入拖成分钟级。空路径跳过且不计入尝试次数。[extractor] 仅供测试注入。
+Future<String?> extractPlaylistCover({
+  required List<String> episodePaths,
+  required String bookUid,
+  double atSeconds = 10.0,
+  int maxAttempts = 5,
+  @visibleForTesting VideoCoverExtractor? extractor,
+}) async {
+  final VideoCoverExtractor extract = extractor ?? extractVideoCover;
+  int attempts = 0;
+  for (final String path in episodePaths) {
+    if (path.isEmpty) continue;
+    if (attempts >= maxAttempts) break;
+    attempts++;
+    final String? cover =
+        await extract(videoPath: path, bookUid: bookUid, atSeconds: atSeconds);
+    if (cover != null) return cover;
+  }
+  return null;
+}
+
 /// 视频制卡用：把 `[startMs, endMs)` 这段 cue 时间窗导出成**循环动图 GIF**
 /// （用户要的「cue 时间段的动图」而非单帧截图）。纯函数（无 IO），可单测。
 ///

@@ -597,6 +597,78 @@ ep2.mp4
       expect(after.mediaCount, 0);
       expect(after.lastScanError, isNull);
     });
+
+    // TODO-1237 ②: re-scanning the same video folder must NOT create `X (2)`
+    // duplicates — already-imported single videos are skipped (path dedup),
+    // mirroring _importBooks' skipIfExists (BUG-443).
+    test('re-scan skips already-imported single videos (no X (2) dup)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      // Two standalone videos (empty files: cover extraction just yields null,
+      // dedup is path-based, not content-based).
+      File(p.join(tmp.path, 'A.mp4')).writeAsBytesSync(<int>[0]);
+      File(p.join(tmp.path, 'B.mkv')).writeAsBytesSync(<int>[0]);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(2));
+
+      // Second scan of the unchanged folder: every file already imported.
+      await MediaSourceScanner(db).scan(source);
+      final List<VideoBookRow> after = await repo.listAll();
+      expect(after, hasLength(2),
+          reason: 're-scan must import nothing new (dedup), not X (2) rows');
+      expect(after.map((VideoBookRow r) => r.bookUid).toSet(), hasLength(2),
+          reason: 'no suffixed duplicate book_uid');
+      final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
+      expect(afterSrc.mediaCount, 0,
+          reason: 'second scan reports 0 newly-imported media');
+    });
+
+    // TODO-1237 ②: re-scanning a folder whose only manifest is a playlist must
+    // not duplicate the playlist VideoBook either.
+    test('re-scan skips already-imported m3u8 playlist (no duplicate)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+ep1.mp4
+#EXTINF:-1,Episode 2
+ep2.mp4
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(1));
+
+      await MediaSourceScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(1),
+          reason: 're-scan must not duplicate the playlist VideoBook');
+      final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
+      expect(afterSrc.mediaCount, 0,
+          reason: 'second scan reports 0 newly-imported playlists');
+    });
   });
 
   // Source guard: _importBooks must keep the BUG-443 dedup wiring so a future
@@ -610,6 +682,12 @@ ep2.mp4
         reason: '_importBooks must request silent dedup from the importer');
     expect(src.contains('DuplicateImportCancelledException'), isTrue,
         reason: '_importBooks must catch+skip the duplicate-cancel signal');
+    // TODO-1237 ②: _importVideos / _importPlaylists must keep the path-based
+    // re-scan dedup (existingPaths.add short-circuit) so a future edit can't
+    // silently reintroduce X (2) folder-scan duplicates.
+    expect(src.contains('existingPaths.add(normalizeVideoPath'), isTrue,
+        reason:
+            'video/playlist scan must skip already-imported physical paths');
   });
 
   // ── TODO-817 M1c T5: subtitle charset detection via copyToLocal ────────────
