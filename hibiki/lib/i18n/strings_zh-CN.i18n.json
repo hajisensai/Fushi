@@ -2182,5 +2182,6 @@
   "video_setting_subtitle_text_color_yellow": "黄色",
   "video_setting_subtitle_text_color_cyan": "青色",
   "video_setting_subtitle_text_color_green": "绿色",
-  "video_setting_subtitle_text_color_red": "红色"
+  "video_setting_subtitle_text_color_red": "红色",
+  "card_mining_pending": "制卡中…"
 }

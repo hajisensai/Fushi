@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/startup/test_environment.dart';
 import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -547,7 +548,8 @@ String? localizeAnkiMineError(String? code) {
 ///   `card_overwritten`、且 `record=false`（覆盖不计入制卡统计）。此前 reader/video/
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
 ///   + 不记账），一并收口于此。
-({String message, bool success, bool record}) describeMineOutcome(
+({String message, bool success, bool record, MineToastStatus status})
+    describeMineOutcome(
   MineOutcome outcome, {
   String deckName = '',
   bool overwrite = false,
@@ -569,16 +571,29 @@ String? localizeAnkiMineError(String? code) {
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
+        // TODO-1325 #6：新制与覆写成功都是绿色 added（覆写用 card_overwritten 文案区分）。
+        status: MineToastStatus.added,
       );
     case MineResult.duplicate:
-      return (message: t.card_duplicate, success: false, record: false);
+      return (
+        message: t.card_duplicate,
+        success: false,
+        record: false,
+        status: MineToastStatus.duplicate,
+      );
     case MineResult.notConfigured:
       return (
         message: t.card_export_not_configured,
         success: false,
         record: false,
+        status: MineToastStatus.failed,
       );
     case MineResult.error:
-      return (message: logMineFailure(outcome), success: false, record: false);
+      return (
+        message: logMineFailure(outcome),
+        success: false,
+        record: false,
+        status: MineToastStatus.failed,
+      );
   }
 }

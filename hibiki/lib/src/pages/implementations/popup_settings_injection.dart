@@ -91,6 +91,7 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');
       document.documentElement.style.setProperty('--md-on-surface-variant', '${_cssRgb(scheme.onSurfaceVariant)}');
       document.documentElement.style.setProperty('--md-primary', '${_cssRgb(scheme.primary)}');
+      document.documentElement.style.setProperty('--md-on-primary', '${_cssRgb(scheme.onPrimary)}');
       document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
       document.documentElement.style.setProperty('--dict-columns', '${appModel.popupDictionaryColumns}');
 ''';

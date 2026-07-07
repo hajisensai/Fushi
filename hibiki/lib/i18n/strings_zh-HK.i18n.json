@@ -2182,5 +2182,6 @@
   "video_setting_subtitle_text_color_yellow": "Yellow",
   "video_setting_subtitle_text_color_cyan": "Cyan",
   "video_setting_subtitle_text_color_green": "Green",
-  "video_setting_subtitle_text_color_red": "Red"
+  "video_setting_subtitle_text_color_red": "Red",
+  "card_mining_pending": "Adding card…"
 }

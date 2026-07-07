@@ -239,11 +239,11 @@ function buildSentenceContextPicker() {
             picker.dataset.busy = '';
         }
     };
-    const makeStepperBtn = function(dir, sign, symbol) {
+    const makeStepperBtn = function(dir, sign) {
         const btn = el('button', {
-            className: 'context-stepper-btn ' + sign,
-            textContent: symbol,
+            className: 'inline-action-button context-stepper-btn ' + sign,
         });
+        setButtonIcon(btn, sign === 'plus' ? 'add' : 'remove');
         btn.dataset.dir = dir;
         btn.onclick = function() {
             const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
@@ -257,11 +257,11 @@ function buildSentenceContextPicker() {
     const makeRow = function(dir, label) {
         const row = el('div', { className: 'context-row' });
         row.appendChild(el('span', { className: 'context-label', textContent: label }));
-        row.appendChild(makeStepperBtn(dir, 'minus', '➖'));
+        row.appendChild(makeStepperBtn(dir, 'minus'));
         const count = el('span', { className: 'context-count', textContent: '0' });
         count.dataset.dir = dir;
         row.appendChild(count);
-        row.appendChild(makeStepperBtn(dir, 'plus', '➕'));
+        row.appendChild(makeStepperBtn(dir, 'plus'));
         return row;
     };
     picker.appendChild(makeRow('prev', window.i18nContextPrevLabel || '上'));
@@ -285,6 +285,46 @@ function el(tag, props = {}, children = []) {
     }
     
     return element;
+}
+
+// TODO-1325 #4: 顶部动作按钮从纯文字字形（♪ ☆ ★ ✓ ✓↩ + × ➖ ➕）升级为内联
+// Material Symbols SVG 矢量图标（Niratan 同款观感，但走 fill:currentColor 而非
+// macOS-only 的 -webkit-mask 分支，Android WebView / Windows WebView2 一致渲染）。
+// 图标随按钮 color / opacity / 主题走；尺寸由 .inline-action-button > svg 的 CSS
+// （width/height:1em）跟随各按钮 font-size 自适应。每个按钮额外记 data-icon 作为
+// 当前图标名的可观测状态标记——弹窗跑在 WebView 里没有 headless，测试用 data-icon
+// 断言图标切换，不再依赖字形 textContent。
+const ICON_PATHS = {
+    // volume_up
+    audio: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
+    // volume_off（无音频 / 播放失败）
+    audioOff: 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z',
+    // star_border（未收藏）
+    favorite: 'M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z',
+    // star（已收藏）
+    favorited: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+    // add（可制卡 +）
+    add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    // check（已制卡 ✓）
+    check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+    // restore（最新可改 ✓↩：一键覆写最近那张卡）
+    restore: 'M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z',
+    // remove（步进器 ➖）
+    remove: 'M19 13H5v-2h14v2z',
+    // close（清空草稿 / 标签说明遮罩关闭 ×）
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+};
+
+function iconSvg(name) {
+    const d = ICON_PATHS[name] || '';
+    return '<svg class="inline-action-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="' + d + '"></path></svg>';
+}
+
+// 给一个动作按钮设置图标：记 data-icon（状态可观测），并把内容换成对应内联 SVG。
+function setButtonIcon(button, name) {
+    if (!button) return;
+    button.dataset.icon = name;
+    button.innerHTML = iconSvg(name);
 }
 
 function toHiragana(text) {
@@ -1758,9 +1798,9 @@ async function playWordAudio(audioUrl) {
 }
 
 function showAudioError(button) {
-    button.textContent = '✕';
+    setButtonIcon(button, 'audioOff');
     setTimeout(() => {
-        button.textContent = '♪';
+        setButtonIcon(button, 'audio');
     }, 1500);
 }
 
@@ -1772,7 +1812,7 @@ function showAudioError(button) {
 // （窗口被裁到卡片 bbox）两种表面都可见。区别于真正的播放失败（showAudioError）。
 function showNoAudioHint(button) {
     const message = window.i18nNoAudioAvailable || '暂无发音';
-    button.textContent = '✕';
+    setButtonIcon(button, 'audioOff');
     button.classList.add('audio-unavailable');
     button.title = message;
     // 移除可能残留的旧提示，避免叠加。
@@ -1791,7 +1831,7 @@ function showNoAudioHint(button) {
     hint.style.top = top + 'px';
     requestAnimationFrame(() => hint.classList.add('visible'));
     setTimeout(() => {
-        button.textContent = '♪';
+        setButtonIcon(button, 'audio');
         button.classList.remove('audio-unavailable');
         hint.classList.remove('visible');
         setTimeout(() => hint.remove(), 220);
@@ -1800,8 +1840,7 @@ function showNoAudioHint(button) {
 
 function createAudioButton(expression, reading, entryIndex) {
     const button = el('button', {
-        className: 'audio-button',
-        textContent: '♪',
+        className: 'inline-action-button audio-button',
         onclick: async () => {
             const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
             if (!audioUrl) {
@@ -1814,6 +1853,7 @@ function createAudioButton(expression, reading, entryIndex) {
             }
         }
     });
+    setButtonIcon(button, 'audio');
     return button;
 }
 
@@ -1821,14 +1861,13 @@ function createAudioButton(expression, reading, entryIndex) {
 // 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
 function createFavoriteButton(expression, reading) {
     const button = el('button', {
-        className: 'favorite-button',
-        textContent: '☆',
+        className: 'inline-action-button favorite-button',
         onclick: async () => {
             button.disabled = true;
             try {
                 const nowFav = await window.flutter_inappwebview.callHandler(
                     'favoriteEntry', { expression, reading });
-                button.textContent = nowFav ? '★' : '☆';
+                setButtonIcon(button, nowFav ? 'favorited' : 'favorite');
                 button.classList.toggle('favorited', !!nowFav);
             } catch (e) {
                 // 收藏失败不能让按钮卡死，恢复可点状态并记日志。
@@ -1838,10 +1877,11 @@ function createFavoriteButton(expression, reading) {
             }
         }
     });
-    // 初始状态：查询是否已收藏，设 ☆/★。
+    setButtonIcon(button, 'favorite');
+    // 初始状态：查询是否已收藏，设收藏图标。
     window.flutter_inappwebview.callHandler('favoriteCheck', { expression, reading })
         .then(isFav => {
-            button.textContent = isFav ? '★' : '☆';
+            setButtonIcon(button, isFav ? 'favorited' : 'favorite');
             button.classList.toggle('favorited', !!isFav);
         })
         .catch(() => {});
@@ -1956,7 +1996,7 @@ function createEntryHeader(entry, idx) {
         const latest = isMined && isLatestEditable(expression, reading);
         mineButton.dataset.mined = isMined ? '1' : '';
         mineButton.dataset.latest = latest ? '1' : '';
-        mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';
+        setButtonIcon(mineButton, isMined ? (latest ? 'restore' : 'check') : 'add');
         if (isMined) {
             mineButton.classList.add('duplicate');
         } else {
@@ -1969,8 +2009,7 @@ function createEntryHeader(entry, idx) {
         }
     };
     const mineButton = el('button', {
-        className: 'mine-button',
-        textContent: '+',
+        className: 'inline-action-button mine-button',
         ontouchstart: () => {
             lastSelection = window.getSelection()?.toString() || '';
         },
@@ -2080,6 +2119,7 @@ function createEntryHeader(entry, idx) {
             }
         }
     });
+    setButtonIcon(mineButton, 'add');
     buttonsContainer.appendChild(mineButton);
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
@@ -2121,8 +2161,7 @@ function createEntryHeader(entry, idx) {
         // TODO-382/393 可撤销：「清空已加句子」按钮（仅已选上下文时显示）。点一次把上下文
         // 句数归零（回到只制当前句），所有选择器同步——明确、可见的撤销入口。
         const clearButton = el('button', {
-            className: 'clear-draft-button',
-            textContent: '×',
+            className: 'inline-action-button clear-draft-button',
             onclick: async () => {
                 if (clearButton.dataset.busy === '1') return;
                 clearButton.dataset.busy = '1';
@@ -2138,6 +2177,7 @@ function createEntryHeader(entry, idx) {
                 }
             },
         });
+        setButtonIcon(clearButton, 'close');
         refreshClearDraftButton(clearButton);
         buttonsContainer.appendChild(clearButton);
     }

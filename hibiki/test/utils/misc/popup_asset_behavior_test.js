@@ -1199,7 +1199,7 @@ async function testLookupTimeDetectionSetsAccurateStateForExistingCard() {
   };
   const mineButton = buildMineHeader(context);
   await flush(); // initial lookup-time duplicateCheck resolves
-  assert.equal(mineButton.textContent, '✓', 'existing card detected at lookup time shows 已制卡 ✓');
+  assert.equal(mineButton.dataset.icon, 'check', 'existing card detected at lookup time shows 已制卡 check icon');
   assert.equal(mineButton.dataset.mined, '1', 'lookup-time detection records a real mined state');
   assert.ok(mineButton.classList.contains('duplicate'), '✓ carries the duplicate class');
 }
@@ -1213,7 +1213,7 @@ async function testLookupTimeDetectionSetsMineableStateForAbsentCard() {
   };
   const mineButton = buildMineHeader(context);
   await flush();
-  assert.equal(mineButton.textContent, '+', 'absent card detected at lookup time shows 可制卡 +');
+  assert.equal(mineButton.dataset.icon, 'add', 'absent card detected at lookup time shows 可制卡 add icon');
   assert.notEqual(mineButton.dataset.mined, '1', 'an absent card is not a mined state');
 }
 
@@ -1246,7 +1246,7 @@ async function testRelookupAfterDeletionDetectsMineableAndReMines() {
   const secondButton = buildMineHeader(context);
   await flush();
   assert.notEqual(secondButton.dataset.mined, '1', 're-lookup detects deletion -> 可制卡');
-  assert.equal(secondButton.textContent, '+', 're-lookup button is mineable again');
+  assert.equal(secondButton.dataset.icon, 'add', 're-lookup button is mineable again');
 
   // Clicking it re-mines the (now absent) card.
   await secondButton.onclick();
@@ -1304,7 +1304,7 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   await mineButton.onclick();
   await flush();
   assert.equal(actions.length, 1, 'clicking a mined ✓ invokes the host action sheet');
-  assert.equal(mineButton.textContent, '✓', 'after the host action the state is 已制卡 ✓');
+  assert.equal(mineButton.dataset.icon, 'check', 'after the host action the state is 已制卡 check icon');
   assert.equal(mineButton.disabled, false, 'button stays clickable, never a dead lock');
 }
 
@@ -1339,14 +1339,14 @@ async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
 
   const mineButton = buildMineHeader(context);
   await flush(); // initial lookup-time detection paints 已制卡 ✓
-  assert.equal(mineButton.textContent, '✓', 'lookup-time detection shows 已制卡 ✓ for an existing card');
+  assert.equal(mineButton.dataset.icon, 'check', 'lookup-time detection shows 已制卡 check icon for an existing card');
   assert.equal(mineButton.dataset.mined, '1', 'mined state is recorded');
 
   await mineButton.onclick();
   await flush();
   assert.equal(actions.length, 1, 'clicking ✓ surfaces the host action sheet');
   assert.equal(mined.length, 0, 'cancelling the action sheet must not duplicate the card');
-  assert.equal(mineButton.textContent, '✓', 'indicator stays 已制卡 ✓');
+  assert.equal(mineButton.dataset.icon, 'check', 'indicator stays 已制卡 check icon');
   assert.equal(mineButton.disabled, false, 'button is still clickable, never locked');
 }
 
@@ -1373,7 +1373,7 @@ async function testFailedMineDoesNotRefreshIntoSuccessAfterDuplicateCheck() {
 
   const mineButton = buildMineHeader(context);
   await flush();
-  assert.equal(mineButton.textContent, '+', 'initial state is mineable');
+  assert.equal(mineButton.dataset.icon, 'add', 'initial state is mineable');
   assert.equal(duplicateChecks, 1, 'initial lookup-time duplicateCheck ran');
 
   await mineButton.onclick();
@@ -1383,7 +1383,7 @@ async function testFailedMineDoesNotRefreshIntoSuccessAfterDuplicateCheck() {
     'failed/uncertain mine results must not run a delayed duplicateCheck');
   assert.equal(context.__timers.size, 0,
     'failed/uncertain mine results must not schedule delayed refresh timers');
-  assert.equal(mineButton.textContent, '+',
+  assert.equal(mineButton.dataset.icon, 'add',
     'a failed/uncertain mine must not later paint itself as success');
 }
 
@@ -1456,7 +1456,7 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
   await flush();
   assert.equal(mined.length, 1, 'first click mines a new card');
   assert.equal(mineButton.dataset.latest, '1', 'a mined card with a note id is the editable latest');
-  assert.equal(mineButton.textContent, '✓↩', 'latest editable shows the ✓ + undo glyph');
+  assert.equal(mineButton.dataset.icon, 'restore', 'latest editable shows the restore (✓ + undo) icon');
   assert.ok(mineButton.classList.contains('latest'), 'latest carries the .latest class');
 
   // Second click OVERWRITES the same note instead of mining again.
@@ -1546,7 +1546,7 @@ async function testNoNoteIdNeverBecomesEditableLatest() {
   await flush();
   assert.notEqual(mineButton.dataset.latest, '1',
     'no note id -> never the editable latest (AnkiDroid degrade)');
-  assert.equal(mineButton.textContent, '✓', 'shows an ordinary ✓, not the ✓↩ glyph');
+  assert.equal(mineButton.dataset.icon, 'check', 'shows an ordinary check icon, not the restore icon');
 
   // Clicking the (now mined, no-id) button routes to the host action sheet, NOT
   // an in-place updateEntry (no editable-latest note id to overwrite directly).
@@ -1585,7 +1585,7 @@ async function testOverwriteScopeAllPromotesEarlierCardToEditable() {
   assert.equal(mineButton.dataset.mined, '1', 'an existing card is detected as mined');
   assert.equal(mineButton.dataset.latest, '1',
     'scope=all promotes an earlier (never-this-session) card to the editable latest');
-  assert.equal(mineButton.textContent, '✓↩',
+  assert.equal(mineButton.dataset.icon, 'restore',
     'a promoted earlier card shows the ✓ + undo glyph');
 
   // Clicking it overwrites the earlier note in place (updateEntry, NOT a re-mine).
@@ -1615,7 +1615,7 @@ async function testOverwriteScopeLatestKeepsEarlierCardOrdinary() {
   assert.equal(mineButton.dataset.mined, '1', 'the existing card is still detected as mined');
   assert.notEqual(mineButton.dataset.latest, '1',
     'scope=latest must not promote an earlier card (old behaviour preserved)');
-  assert.equal(mineButton.textContent, '✓', 'an earlier card stays an ordinary ✓');
+  assert.equal(mineButton.dataset.icon, 'check', 'an earlier card stays an ordinary check icon');
 }
 
 // ── TODO-094 S5: kanji dictionary card ─────────────────────────────────────
@@ -1911,7 +1911,7 @@ async function testClickingMinedCheckInvokesHostActionSheet() {
   assert.equal(mineButton.dataset.mined, '1', 'existing card detected as mined');
   assert.notEqual(mineButton.dataset.latest, '1',
     'an ordinary existing card is not the editable latest');
-  assert.equal(mineButton.textContent, '✓', 'ordinary mined shows plain ✓');
+  assert.equal(mineButton.dataset.icon, 'check', 'ordinary mined shows plain check icon');
 
   await mineButton.onclick();
   await flush();

@@ -136,6 +136,12 @@ mixin DictionaryPageMixin {
       sentence: fields['sentence'] ?? '',
       source: _miningSource,
     );
+    // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
+    // pending toast 给即时反馈；结果 toast 会顶替它。
+    HibikiToast.showMine(
+      msg: t.card_mining_pending,
+      status: MineToastStatus.pending,
+    );
     final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
@@ -153,7 +159,9 @@ mixin DictionaryPageMixin {
     if (described.record) {
       unawaited(recordMinedSentence(fields, outcome.noteId));
     }
-    HibikiToast.show(msg: described.message);
+    // TODO-1325 #6：MD3 着色 + 图标 toast。着色状态由 describeMineOutcome 单一真相
+    // 带出（added 绿 / duplicate 橙 / failed 红），此处不再本地 switch。
+    HibikiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
@@ -174,6 +182,11 @@ mixin DictionaryPageMixin {
       sentence: fields['sentence'] ?? '',
       source: _miningSource,
     );
+    // TODO-1325 #6：覆写同样先弹 pending。
+    HibikiToast.showMine(
+      msg: t.card_mining_pending,
+      status: MineToastStatus.pending,
+    );
     final outcome = await repo.updateMinedNote(
       noteId: noteId,
       rawPayloadJson: jsonEncode(fields),
@@ -185,7 +198,8 @@ mixin DictionaryPageMixin {
         : '';
     final described =
         describeMineOutcome(outcome, deckName: deckName, overwrite: true);
-    HibikiToast.show(msg: described.message);
+    // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
+    HibikiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
