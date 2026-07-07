@@ -34,6 +34,8 @@ import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+    show resolveYoutubeCaptions;
 import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
@@ -1225,6 +1227,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
 
+  /// TODO-1307 字幕后置：用户在「字幕后置异步解析」间隙是否已显式关闭字幕
+  /// （[_clearRemoteSubtitle]）。为真时 [_resolveDeferredYoutubeCaptions] 只回填 cue 供菜单
+  /// 重选、不自动抢占应用（尊重用户选择）。每次 [_loadRemoteEpisode] 起播时重置为 false。
+  bool _remoteSubtitleUserDismissed = false;
+
   /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / `off:`=用户显式关闭哨兵
   /// （[SubtitleSource.offSentinel]，TODO-818） / null=无偏好或远端清字幕）；用于字幕
   /// 源菜单高亮当前项。
@@ -1522,6 +1529,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
+      // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
+      // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
+      _setLoadingPhase(_VideoLoadPhase.connecting);
       try {
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
             await buildStreamVideoLaunch(row);
@@ -1630,6 +1640,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     final RemoteVideoClient client = _effectiveRemoteClient!;
     final int seq = ++_episodeLoadSeq;
+    // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
+    // [_resolveDeferredYoutubeCaptions]）。
+    _remoteSubtitleUserDismissed = false;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
@@ -1711,12 +1724,56 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (urls.miningVideoUrl != null) {
         _controller?.setMiningSourceOverride(urls.miningVideoUrl);
       }
+      // TODO-1307 字幕后置：快解析 gate 起播时 preresolvedCues 为空（未阻塞首帧）。load 已
+      // 返回（首帧就绪），此处异步解析 YouTube 字幕、cue 就绪灌 1302 的 YouTube 字幕轨，不
+      // 阻塞播放。仅 YouTube 客户端（youtubeCaptionsUrl 非空）且尚无预解析 cue 时触发；已内联
+      // 带 cue 的旧路径（上方 preresolvedCues.isNotEmpty 分支）不重复解析。
+      if (client is UrlStreamVideoClient &&
+          client.preresolvedCues.isEmpty &&
+          client.youtubeCaptionsUrl != null) {
+        unawaited(_resolveDeferredYoutubeCaptions(client, seq));
+      }
     } catch (e, stack) {
       debugPrint(
         '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',
       );
       if (mounted) setState(() => _failed = true);
     }
+  }
+
+  /// TODO-1307 字幕后置：快解析 gate 起播后异步解析 YouTube 字幕（[resolveYoutubeCaptions]），
+  /// cue 就绪回填 [UrlStreamVideoClient.preresolvedCues]（供 1302 的 YouTube 字幕轨菜单渲染 /
+  /// 重选）并灌 overlay。best-effort：解析失败（空 cue / 无字幕）静默返回，视频照播。
+  ///
+  /// 保留 1302「字幕默认显示」行为：仅当 [seq] 仍是当前 load、页面仍挂载、且用户在解析间隙
+  /// 未显式选别的字幕（[_currentSubtitleSource]!=null）或关字幕（[_remoteSubtitleUserDismissed]）
+  /// 时，才自动把字幕应用为当前轨（[_kYoutubeCaptionsSource]）；否则只回填 cue、不抢占用户选择。
+  Future<void> _resolveDeferredYoutubeCaptions(
+    UrlStreamVideoClient client,
+    int seq,
+  ) async {
+    final String? captionsUrl = client.youtubeCaptionsUrl;
+    if (captionsUrl == null) return;
+    final List<AudioCue> cues = await resolveYoutubeCaptions(captionsUrl);
+    if (!mounted || seq != _episodeLoadSeq) return;
+    if (cues.isEmpty) return;
+    // 回填 client：让 1302 的 _youtubeCaptionsAvailable / _applyYoutubeCaptions 读到真实 cue。
+    client.setPreresolvedCues(cues);
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool userChoseSubtitle =
+        _currentSubtitleSource != null || _remoteSubtitleUserDismissed;
+    if (userChoseSubtitle) {
+      // 用户已选别的字幕 / 关字幕：只让菜单「YouTube 字幕」行出现（可再选），不覆盖选择。
+      setState(() {});
+      return;
+    }
+    // 默认自动应用（等价 1302 前置注入时字幕默认可见）：灌 cue overlay + 关 libmpv 画面字幕
+    // + 登记合成源哨兵（菜单高亮「YouTube 字幕」、「关闭」不被误选）。
+    controller.setCues(cues);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (!mounted || seq != _episodeLoadSeq) return;
+    setState(() => _currentSubtitleSource = _kYoutubeCaptionsSource);
   }
 
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。

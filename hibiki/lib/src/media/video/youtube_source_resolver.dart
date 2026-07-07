@@ -14,12 +14,13 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 // client 取 player response 的入口，故此处必须触达内部符号；一旦 youtube_explode 升级
 // 改了这些符号，守卫测试 test/media/video/youtube_resolver_impl_symbols_test.dart 会
 // 大声失败。依赖锁定在 youtube_explode_dart 2.5.x。
+// TODO-1307（A2）：androidVr getPlayerResponse **无需先取 WatchPage** 即返回全部
+// closedCaptionTrack（含 ja）——实测 dQw4w9WgXcQ 不带 watchPage 396ms 拿到 6 轨、带
+// watchPage 1674ms 拿到同 6 轨，WatchPage 是纯多余往返，故 [_resolveYoutubeCaptions]
+// 只做一次 getPlayerResponse，不再 import/使用 WatchPage。
 // ignore: implementation_imports
 import 'package:youtube_explode_dart/src/videos/video_controller.dart'
     show VideoController;
-// ignore: implementation_imports
-import 'package:youtube_explode_dart/src/reverse_engineering/pages/watch_page.dart'
-    show WatchPage;
 // ignore: implementation_imports
 import 'package:youtube_explode_dart/src/reverse_engineering/player/player_response.dart'
     show PlayerResponse, ClosedCaptionTrack;
@@ -175,6 +176,52 @@ List<AudioCue> parseYoutubeTimedTextToCues({
   return cues;
 }
 
+/// A1 多 client 兜底顺序（TODO-1307，借鉴 yt-dlp 多 client 抽流）：**androidVr 首选**——它
+/// 签发的直链无需签名解密、libmpv/ffmpeg 用普通浏览器 UA 即可拉取（默认 android/ios 直链
+/// 实测被 403）；仅 androidVr 取流失败/空流时才回落 ios、tv（覆盖部分地区限制/年龄门视频）。
+/// [ios] 是 `static final` 非 const，故整表用 `final` 而非 `const`。
+final List<yt.YoutubeApiClient> kYoutubeManifestClientFallback =
+    <yt.YoutubeApiClient>[
+  yt.YoutubeApiClient.androidVr,
+  yt.YoutubeApiClient.ios,
+  yt.YoutubeApiClient.tv,
+];
+
+/// A1（TODO-1307）：按 [ytClients] 顺序**逐个**取 manifest，首个拿到非空流的 client 即
+/// 返回。**不合并多 client 流**——youtube_explode 的 [StreamClient.getManifest] 传多个
+/// client 时会把各 client 的流全并进一个 manifest（androidVr 流与 ios/tv 直链混在一起），
+/// 而 [_pickPlaybackVideoUrl] 只按编码/分辨率挑、不看来源，可能选中 ios/tv 的 403 直链 →
+/// 回归。故此处对**单一** client 调 getManifest（其内部已做首流 HEAD 403 探测：403 抛异常
+/// = 该 client 失败），androidVr 成功即零回归返回，只有它失败才试下一个。全部失败抛最后异常。
+Future<yt.StreamManifest> _getManifestWithClientFallback(
+  yt.YoutubeExplode client,
+  yt.VideoId videoId,
+  List<yt.YoutubeApiClient> ytClients,
+) async {
+  Object? lastError;
+  for (final yt.YoutubeApiClient api in ytClients) {
+    try {
+      final yt.StreamManifest manifest =
+          await client.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: <yt.YoutubeApiClient>[api],
+      );
+      if (manifest.streams.isNotEmpty) return manifest;
+    } catch (e) {
+      // 单 client 失败（403 / 无流 / 限流）：记异常、试下一个兜底 client（非致命）。
+      lastError = e;
+    }
+  }
+  if (lastError != null) {
+    throw StateError(
+      'youtube manifest failed for all clients '
+      '(${ytClients.map((yt.YoutubeApiClient c) => c.apiUrl).toList()}): '
+      '$lastError',
+    );
+  }
+  throw StateError('youtube manifest: empty client fallback list');
+}
+
 /// IO：用 youtube_explode 解析可播放流 URL + 日文字幕（无则空）+ 标题。
 ///
 /// 流用 **ANDROID_VR** client 取：它签发的直链无需签名解密、且 libmpv/ffmpeg 用普通
@@ -185,12 +232,15 @@ List<AudioCue> parseYoutubeTimedTextToCues({
 Future<YoutubeResolvedSource> resolveYoutubeSource(
   String url, {
   String preferSubtitleLang = 'ja',
-  // 慢网下每个 youtube_explode 请求可达 7~9s：videos.get + getManifest 就 ~14s，再加字幕解析
-  // （另一次 WatchPage.get + player response + timedtext）总和常 >25s → 旧 25s 超时会误杀。放宽到 40s。
+  // 慢网下每个 youtube_explode 请求可达 7~9s。TODO-1307 后播放页走「快解析 gate」
+  // （withCaptions=false）：只 getManifest 取流即起播、跳过 videos.get（title 用 book.title）
+  // 与字幕（后置异步解析灌 1302 字幕轨），解析从 >25s 降到 ~getManifest。40s 仅作 tarpit 兜底。
   Duration timeout = const Duration(seconds: 40),
-  // 制卡只需流 URL，不需字幕 cue（扩展已给时间窗）→ 传 false 跳过昂贵的第二次字幕解析，
-  // 解析从 ~33s 降到 ~14s、稳进超时。仅应用内播放器（要显示字幕）用默认 true。
+  // 制卡 / 快解析 gate 只需流 URL，不需字幕 cue → 传 false 跳过 videos.get + 昂贵的字幕解析，
+  // 解析降到 ~getManifest。仅遗留「一次性同步取字幕」的调用方用默认 true。
   bool withCaptions = true,
+  // A1 多 client 兜底顺序（默认 [kYoutubeManifestClientFallback]=androidVr→ios→tv）。
+  List<yt.YoutubeApiClient>? ytClients,
 }) async {
   final yt.YoutubeExplode client = yt.YoutubeExplode();
   try {
@@ -198,8 +248,12 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
     // youtube_explode 内部无超时 → 会永久挂住，UI 表现为「点了没反应也没报错」。超时后
     // finally 关 client 取消挂起请求、抛 TimeoutException，让调用方给出明确「解析失败」反馈。
     return await _resolveYoutubeSourceInner(
-            client, url, preferSubtitleLang, withCaptions)
-        .timeout(timeout);
+      client,
+      url,
+      preferSubtitleLang,
+      withCaptions,
+      ytClients ?? kYoutubeManifestClientFallback,
+    ).timeout(timeout);
   } finally {
     client.close();
   }
@@ -210,6 +264,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   String url,
   String preferSubtitleLang,
   bool withCaptions,
+  List<yt.YoutubeApiClient> ytClients,
 ) async {
   // 制卡路径（withCaptions=false）直接从 URL 取 VideoId，**跳过 videos.get**（慢网下这一步就
   // ~9s）——制卡不需要标题/元数据，只要 getManifest 的流 URL。播放器路径仍取完整 Video（要标题）。
@@ -223,11 +278,9 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
     videoId = yt.VideoId(url);
     title = '';
   }
+  // A1（TODO-1307）：androidVr 首选、失败才回落 ios/tv（[_getManifestWithClientFallback]）。
   final yt.StreamManifest manifest =
-      await client.videos.streamsClient.getManifest(
-    videoId,
-    ytClients: <yt.YoutubeApiClient>[yt.YoutubeApiClient.androidVr],
-  );
+      await _getManifestWithClientFallback(client, videoId, ytClients);
   // 优先「video-only（编码优先 avc1>vp9>av01，≤1080p 最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
   // 否则回落 muxed（YouTube 把 muxed 限 ≤360p，故仅作最后兜底）。
   String streamUrl;
@@ -358,8 +411,31 @@ String? _pickMiningVideoUrl(yt.StreamManifest manifest) {
   return null;
 }
 
+/// IO：从 URL 解析 YouTube 字幕 cue（TODO-1307 字幕后置入口）。快解析 gate 起播后由播放页
+/// 异步调用，cue 就绪灌 1302 的 YouTube 字幕轨（[_kYoutubeCaptionsSource]）。best-effort：
+/// 任何失败（含 URL 解析不出 videoId）返回空 cue，绝不阻断已在播放的视频。
+Future<List<AudioCue>> resolveYoutubeCaptions(
+  String url, {
+  String preferSubtitleLang = 'ja',
+}) async {
+  final yt.VideoId videoId;
+  try {
+    videoId = yt.VideoId(url);
+  } catch (_) {
+    return const <AudioCue>[];
+  }
+  return _resolveYoutubeCaptions(
+    videoId,
+    bookKey: 'yt:${videoId.value}',
+    preferSubtitleLang: preferSubtitleLang,
+  );
+}
+
 /// IO：从 ANDROID_VR innertube player response 取字幕轨（公开 API 的 web 字幕 URL 已失效，
 /// 见文件头注释）。best-effort：任何失败都返回空 cue，**绝不让字幕失败阻断视频播放**。
+///
+/// TODO-1307（A2）：只做**一次** getPlayerResponse（androidVr），不再先取 WatchPage——实测
+/// androidVr 不带 watchPage 即返回全部字幕轨（含 ja）且省一次往返（见文件头）。
 Future<List<AudioCue>> _resolveYoutubeCaptions(
   yt.VideoId id, {
   required String bookKey,
@@ -367,10 +443,8 @@ Future<List<AudioCue>> _resolveYoutubeCaptions(
 }) async {
   final yt.YoutubeHttpClient http = yt.YoutubeHttpClient();
   try {
-    final WatchPage watchPage = await WatchPage.get(http, id.value);
     final PlayerResponse response = await VideoController(http)
-        .getPlayerResponse(id, yt.YoutubeApiClient.androidVr,
-            watchPage: watchPage);
+        .getPlayerResponse(id, yt.YoutubeApiClient.androidVr);
     final List<ClosedCaptionTrack> tracks = response.closedCaptionTrack;
     if (tracks.isEmpty) return const <AudioCue>[];
     ClosedCaptionTrack? chosen;
