@@ -21,6 +21,25 @@ test('extractNetflixCueText null container -> empty', () => {
   assert.strictEqual(extractNetflixCueText(null), '');
 });
 
+// TODO-1270 Bug A：Netflix 每行字幕是「外层定位 span > 内层样式 span」的嵌套结构，父 span 的
+// textContent 已含子全文。旧实现把每一层 span 都拼进来 → 同句字幕重复两遍（卡里字幕出现两次）。
+// 只取叶子 span，每段文本恰好一次。
+test('extractNetflixCueText de-dups nested Netflix spans (TODO-1270 Bug A)', () => {
+  const inner = { textContent: '今日はいい天気', querySelector: () => null };
+  const outer = { textContent: '今日はいい天気', querySelector: () => inner };
+  // querySelectorAll('...span, span') 同时返回外层与内层；断言不重复。
+  const container = { querySelectorAll: () => [outer, inner] };
+  assert.strictEqual(extractNetflixCueText(container), '今日はいい天気');
+});
+
+// 单行拆成多个并列叶子 span（无嵌套）仍应按序拼接，不受去重影响。
+test('extractNetflixCueText joins sibling leaf spans (no regression)', () => {
+  const a = { textContent: '走り', querySelector: () => null };
+  const b2 = { textContent: '出した', querySelector: () => null };
+  const container = { querySelectorAll: () => [a, b2] };
+  assert.strictEqual(extractNetflixCueText(container), '走り出した');
+});
+
 test('currentVideoTimeMs seconds -> ms; null-safe', () => {
   assert.strictEqual(currentVideoTimeMs({ currentTime: 12.34 }), 12340);
   assert.strictEqual(currentVideoTimeMs(null), null);

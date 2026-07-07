@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v40 loaded (endClip/nfStopCapture leak fixes + word audio in lookup popup)');
+console.log('[Hibiki] content script v41 loaded (TODO-1270: Netflix card subtitle de-dup + hide own overlay/back+flag in capture + pre-roll)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v40'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v41'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -328,8 +328,15 @@ async function hibikiRunNetflixBatch() {
   // Netflix 显控制条，落在录制窗会被录进 clip。多选择器兜底 Netflix 改类名（同下方字幕兜底策略）。
   hideStyle.textContent =
     // TODO-1219 P2：字幕列表面板 + 重开小片同批隐藏（GIF 不该录进面板）；P3 再补录制前撤推挤 margin。
-    '.player-timedtext,#hibiki-subtitle-panel,#hibiki-subtitle-reopen{visibility:hidden!important}' +
+    // TODO-1270 Bug B：Hibiki 自己的「生成中」浮层(#hibiki-toast)也在被 tabCapture 录进 GIF
+    // （用户报「底部生成中条送给了网飞」）→ 整场批量期间一并隐藏，进度改由扩展图标红点徽标传达。
+    '.player-timedtext,#hibiki-subtitle-panel,#hibiki-subtitle-reopen,#hibiki-toast{visibility:hidden!important}' +
+    // TODO-1270 Bug B：Netflix 自己的返回按钮(左上)+举报旗帜(右上)是顶部控制层，逐句 seek/pause
+    // 会强制其显示 → 落进录制窗。底部控制条之外再隐藏顶部返回/举报容器（多选择器兜底改类名）。
     '.watch-video--bottom-controls-container,.PlayerControlsNeo__layout,' +
+    '.watch-video--back-container,[data-uia="control-back"],[data-uia="back-to-browse"],' +
+    // 举报旗帜的真实容器 = .watch-video--flag-container（见本文件取词兜底覆盖层清单）。
+    '.watch-video--flag-container,[data-uia="player-report-a-problem"],[data-uia="report-a-problem-link"],' +
     '[data-uia="controls-standard"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
   // TODO-1219 P3：撤销字幕面板对播放器的推挤（video 恢复全宽），否则录制画面右侧带面板留出的
@@ -365,10 +372,11 @@ async function hibikiRunNetflixBatch() {
       try {
         await seekTo(Math.max(0, q.startV / 1000));
         await sleep(150); // 让首帧稳定
-        // 先确保真的在播（自动播放策略可能拦；重试一次）。仍暂停 → 跳过本句，不录一段冻结帧。
+        // TODO-1270 Bug C：先确保真的在播（自动播放策略可能拦），但**一旦在播立刻开录**——不要用
+        // 固定 warmup sleep 吃掉入队时预留的 200ms 头部提前量（seek 目标本就是 cueStart-200），
+        // 否则录制起点漂到 cueStart 之后 → 用户报「少了一点开头」。仍暂停 → 跳过本句，不录冻结帧。
         try { await v.play(); } catch (_) {}
-        await sleep(200);
-        if (v.paused) { try { await v.play(); } catch (_) {} await sleep(200); }
+        for (let i = 0; i < 8 && v.paused; i++) { try { await v.play(); } catch (_) {} await sleep(60); }
         if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
         const beginResp = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
         began = !!(beginResp && beginResp.ok);

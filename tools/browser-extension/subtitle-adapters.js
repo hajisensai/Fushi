@@ -5,7 +5,13 @@
 function extractNetflixCueText(container) {
   if (!container) return '';
   const spans = container.querySelectorAll('.player-timedtext-text-container span, span');
-  return Array.from(spans)
+  // TODO-1270 Bug A：Netflix 把每行字幕包成「外层定位 span > 内层样式 span」的嵌套结构，
+  // 父 span 的 textContent 已含子 span 全文。若把每一层 span 的 textContent 都拼进来，同一句
+  // 字幕会按嵌套层数重复（用户报「卡里字幕重复两次」）。只取**叶子** span（无后代 span），
+  // 每段文本恰好一次；扁平（无嵌套）时行为不变。
+  const leaves = Array.from(spans).filter(
+    (s) => !(s.querySelector && s.querySelector('span')));
+  return leaves
     .map((s) => s.textContent || '')
     .join('')
     .trim();
