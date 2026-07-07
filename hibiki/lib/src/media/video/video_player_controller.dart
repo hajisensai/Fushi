@@ -770,7 +770,9 @@ class VideoPlayerController extends ChangeNotifier
     // （[load] / [_refreshChaptersForLoad] 等）一致，**每个 await 后都用
     // [_isCurrentLoad] 双判据（player identity + loadToken）重校验**，过期立即放弃下发。
     final int loadToken = _loadToken;
-    await _waitUntilSubtitleTracksReady(player);
+    // 等**目标序号那条轨**解析就绪（不是「任意一条」），否则容器多轨逐条异步解析时
+    // 越界早退放弃（TODO-1295 同款竞态，与副字幕一致）。
+    await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
     if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
     final List<SubtitleTrack> real = player.state.tracks.subtitle
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
@@ -821,7 +823,12 @@ class VideoPlayerController extends ChangeNotifier
     final Player? player = _player;
     if (player == null) return false;
     final int loadToken = _loadToken;
-    await _waitUntilSubtitleTracksReady(player);
+    // TODO-1295 根因修复：等**目标序号那条轨**（第 `streamIndex+1` 条）真正解析就绪，
+    // 而非「任意一条」就早退。容器多条内嵌字幕轨在 `player.open` 后逐条异步解析，选
+    // 第 2 条（`streamIndex=1`）时若这一刻只解析出第 1 条，旧实现 `real.length==1`、
+    // `streamIndex >= real.length` 越界，一次性放弃下发 → 副字幕「有时候不显示」
+    // （移动端 IO 慢更易命中）。改为等到目标轨就绪（或 5s 超时）再判越界。
+    await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
     if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
     final List<SubtitleTrack> real = player.state.tracks.subtitle
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
@@ -831,7 +838,40 @@ class VideoPlayerController extends ChangeNotifier
       player,
       buildSecondarySubtitleProperties(real[streamIndex].id),
     );
+    if (!_isCurrentLoad(player, loadToken)) return false; // 下发后换片/销毁。
+    // 诊断开启（[onDiagLog] 非空）时回读 libmpv `secondary-sid`，便于日后定位移动端
+    // libmpv 是否静默 no-op 掉 `secondary-sub-visibility`（best-effort，不抛不阻塞）。
+    await _logSecondarySubtitleState(player, loadToken, real[streamIndex].id);
     return _isCurrentLoad(player, loadToken);
+  }
+
+  /// 回读副字幕 libmpv 状态到诊断日志：期望下发的 track id、实际 `secondary-sid`、
+  /// `secondary-sub-visibility`。仅 [onDiagLog] 非空时执行（否则零开销 no-op），经
+  /// `NativePlayer.getProperty` best-effort 读取，属性不可读 / 非 libmpv 单条静默跳过，
+  /// 绝不抛、不阻塞。每个 await 后用 [_isCurrentLoad] 双判据重校验（防向已释放
+  /// NativePlayer 读属性 = 原生 UAF）。
+  Future<void> _logSecondarySubtitleState(
+      Player player, int loadToken, String expectedTrackId) async {
+    if (onDiagLog == null) return;
+    final dynamic native = player.platform;
+    if (native == null) {
+      _diag('secondary-sub: platform is null (non-libmpv backend?)');
+      return;
+    }
+    _diag('secondary-sub: requested sid=$expectedTrackId');
+    for (final String prop in const <String>[
+      'secondary-sid',
+      'secondary-sub-visibility',
+    ]) {
+      String value;
+      try {
+        value = (await native.getProperty(prop)).toString();
+      } catch (_) {
+        continue; // 属性不可读 / 非 libmpv：跳过这条（不致命）。
+      }
+      if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁。
+      _diag('secondary-sub: $prop=$value');
+    }
   }
 
   /// 关闭副字幕（TODO-857）：把 libmpv `secondary-sid` 设回 `no`。未 [load] 时
@@ -847,18 +887,68 @@ class VideoPlayerController extends ChangeNotifier
     );
   }
 
-  /// 等 [player] 的字幕轨列表出现至少一条真实轨（`open` 后解析容器需要时间）。
-  /// 最多等 5 秒；已就绪立即返回，超时尽力继续（调用方自行判越界）。
-  Future<void> _waitUntilSubtitleTracksReady(Player player) async {
-    bool hasReal(List<SubtitleTrack> subs) =>
-        subs.any((SubtitleTrack t) => t.id != 'auto' && t.id != 'no');
-    if (hasReal(player.state.tracks.subtitle)) return;
+  /// 真实字幕轨（去掉 libmpv 的 `auto`/`no` 伪轨）条数。按 ffmpeg `0:s:N` 的
+  /// demux 顺序索引第 N 条时用它判「目标序号已解析就绪」（[selectSecondarySubtitleTrack]
+  /// / [selectEmbeddedGraphicTrack] 的越界判据）。
+  static int _realSubtitleCount(List<SubtitleTrack> subs) =>
+      subs.where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no').length;
+
+  /// 等 [player] 的字幕轨列表解析出**至少 [minTrackCount] 条**真实轨（`open` 后
+  /// 解析容器需要时间）。最多等 5 秒；已就绪立即返回，超时尽力继续（调用方自行判越界）。
+  ///
+  /// **TODO-1295 根因**：容器多条内嵌字幕轨是 `player.open` 后**逐条异步**解析的。
+  /// 旧实现只要「任意一条」真实轨就绪就早退（`minTrackCount` 恒等于 1），选副字幕
+  /// （第 2 条，`streamIndex=1`）时若这一刻只解析出第 1 条，`real.length==1`、
+  /// `streamIndex >= real.length` 越界，[selectSecondarySubtitleTrack] 一次性放弃下发
+  /// → 副字幕「有时候不显示」（移动端 IO 慢更易命中）。故按 index 选轨的路径改传
+  /// `minTrackCount: streamIndex + 1`，等到**目标序号那条轨真正解析就绪**（或超时）
+  /// 才继续，消除「越界早退」竞态。默认 `minTrackCount = 1` 保持其它调用者（默认文本
+  /// 字幕加载 [_loadEmbeddedSubtitleIfNeeded]）的「任意一条即可」旧行为不变。
+  Future<void> _waitUntilSubtitleTracksReady(
+    Player player, {
+    int minTrackCount = 1,
+  }) async {
+    await waitForSubtitleTrackCount(
+      currentRealCount: () => _realSubtitleCount(player.state.tracks.subtitle),
+      changes: player.stream.tracks,
+      minTrackCount: minTrackCount,
+    );
+  }
+
+  /// [_waitUntilSubtitleTracksReady] 的纯就绪等待内核（可单测，不依赖真 libmpv）。
+  ///
+  /// 事件驱动：订阅 [changes]（每次字幕轨列表变化都会发一次），每次醒来用
+  /// [currentRealCount] 复读**当前**真实轨数，直到 `>= [minTrackCount]` 立即完成；
+  /// 最多等 [timeout]（默认 5s，明确的超时上界，不是硬延迟）。返回 true＝目标轨数
+  /// 就绪，false＝超时仍不足（调用方据此按 `real.length` 越界返回 false）。
+  ///
+  /// **闭合 check-then-subscribe 竞态**：初始检查与 `listen` 注册之间轨列表可能已
+  /// 增长（此后不再有新事件）。`state.tracks` 恒为当前值，故 `listen` 之后**立即
+  /// 再复读一次**即可闭合竞态，无需轮询。
+  @visibleForTesting
+  Future<bool> waitForSubtitleTrackCount({
+    required int Function() currentRealCount,
+    required Stream<Object?> changes,
+    required int minTrackCount,
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (currentRealCount() >= minTrackCount) return true;
+    final Completer<bool> ready = Completer<bool>();
+    void checkReady() {
+      if (!ready.isCompleted && currentRealCount() >= minTrackCount) {
+        ready.complete(true);
+      }
+    }
+
+    final StreamSubscription<Object?> sub =
+        changes.listen((Object? _) => checkReady());
+    checkReady(); // 复读闭合 check-then-subscribe 竞态。
     try {
-      await player.stream.tracks
-          .firstWhere((Tracks t) => hasReal(t.subtitle))
-          .timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // 超时/异常：尽力继续（real 越界时 selectEmbeddedGraphicTrack 返 false）。
+      return await ready.future.timeout(timeout);
+    } on TimeoutException {
+      return currentRealCount() >= minTrackCount;
+    } finally {
+      await sub.cancel();
     }
   }
 

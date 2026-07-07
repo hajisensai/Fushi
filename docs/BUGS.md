@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-588](bugs/BUG-588-waveform-density.md) | ✅ | ✅ | 字幕对轴波形显示密度不利于辨句 |
+| [BUG-588](bugs/BUG-588-secondary-subtitle-race.md) | ✅ | ✅ | 副字幕轨就绪竞态致有时不显示 |
 | [BUG-587](bugs/BUG-587-reader-restore-stale-charoffset.md) | ✅ | ✅ | 退出图1重进回图2·恢复位置错误 |
 | [BUG-586](bugs/BUG-586-netflix-mine-queue-dup-sentence.md) | ✅ | ✅ | 网飞扩展制卡队列句子一模一样重复 |
 | [BUG-585](bugs/BUG-585-ffmpeg-audio-138.md) | ✅ | ✅ | 制卡句子音频 ffmpeg exit -138（googlevideo connect 阶段网络超时） |
