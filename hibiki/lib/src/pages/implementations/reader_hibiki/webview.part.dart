@@ -488,6 +488,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // 改同一全局，无需整章重注入。
     final bool hoverAutoLookup = ReaderHibikiSource.instance.hoverAutoLookup;
     final String selectionJs = ReaderSelectionScripts.source();
+    // TODO-1317: mobile long-press drag-select gesture IIFE (own touch
+    // listeners, coordinates via window.__hoshiTextSelectDragActive).
+    final String longPressDragJs =
+        ReaderSelectionScripts.longPressDragGestureScript();
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
     // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
@@ -563,7 +567,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var _hoshiReaderMouseDragPageDirection = null;
   var _hoshiReaderMouseDragSwipeSent = false;
   var _hoshiReaderMouseDragIgnoreTouchEnd = false;
-  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now();
+    // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
+    // inherits a prior drag-select's flag; the drag-select timer re-arms it.
+    window.__hoshiTextSelectDragActive = false; }
   // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
   // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
   // rather than a word. Text taps still go to onTap (word lookup).
@@ -773,6 +780,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }, {passive: false});
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
+    // TODO-1317: a mobile long-press drag-select owns this gesture (finalized
+    // by the drag-select IIFE); suppress tap / swipe / image-tap so there is
+    // no double lookup or accidental page turn.
+    if (window.__hoshiTextSelectDragActive) {
+      clearImageLongPressTimer();
+      imageLongPressConsumed = false;
+      hasStart = false;
+      return;
+    }
     clearImageLongPressTimer();
     if (imageLongPressConsumed) {
       imageLongPressConsumed = false;
@@ -1258,6 +1274,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     window.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
     document.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
   })();
+  $longPressDragJs
   var cloak = document.getElementById('hoshi-cloak');
   if (cloak) cloak.remove();
 })();

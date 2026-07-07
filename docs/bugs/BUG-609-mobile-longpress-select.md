@@ -1,0 +1,9 @@
+## BUG-609 · 1279 coarse user-select:none禁了手机长按选中·补app选区手势
+- **报告**：2026-07-08（用户：TODO-1317）
+- **真实性**：✅ 真 bug —— 根因 `hibiki/lib/src/reader/reader_content_styles.dart:487`（TODO-1279 `b84f8cbb8`）。触屏 `@media (pointer: coarse) { html, body, body * { user-select: none !important; -webkit-touch-callout: none !important } }` 为消除「原生蓝选区 + app 查词高亮」双选区，禁掉了触屏全部原生文本选区，**顺带禁了用户长按选中正文**（手机单击查词仍好，因走 JS 自绘 `hoshiSelection.selectText`，不碰 `window.getSelection`）。
+- **[x] ① 已修复**（`7edfec52c`）—— 方向 B 根因修复（**保留** user-select:none 不复活双选区，把移动端长按拖选绑到 app 自绘选区机器）：
+  - `hibiki/lib/src/reader/reader_selection_scripts.dart`：`window.hoshiSelection` 新增 `beginRangeSelection`/`updateRangeSelection`/`endRangeSelection`/`collectRangeBetween`/`renderSelectionHighlight`（长按定锚→拖动扩展跨文本节点区间→CSS Custom Highlight `hoshi-selection` 实时高亮，**绝不调 `window.getSelection`/`addRange`** → 永不产生原生选区）；抽出 `fireTextSelected`（tap 词路径与拖选路径共用同一 onTextSelected 契约）；新增静态 `longPressDragGestureScript()` 手势 IIFE（长按 500ms 进入拖选、移动 >10px 未及时限判为滑动/滚动放弃、松手 `endRangeSelection`→onTextSelected 复用查词/制卡、原地未拖动退回单击查词）。
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/webview.part.dart`：注入手势 IIFE；`_gestureEnd` 见 `window.__hoshiTextSelectDragActive` 即让路（消歧翻页 swipe / 图片长按 / 单击查词，避免拖选后误翻页 / 双查词）。
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart`：连续模式边界跨章 `_bEnd` 见同标志即让路（拖选不误跨章）。
+- **[x] ② 已加自动化测试**（`7edfec52c`）—— `hibiki/test/reader/reader_longpress_drag_select_guard_test.dart`（9 例，全绿）：钉住①拖选三段式 API + 共享 fireTextSelected 在位；②拖选只走 CSS Custom Highlight、helper 段不含 `window.getSelection`/`addRange`/`removeAllRanges`（不复活双选区）；③长按定时器 + 移动阈值 swipe 消歧 + 非被动 touchmove preventDefault + 全局标志消歧 + 未拖动退回单击查词；④连续模式 `_bEnd` 让路守卫；⑤TODO-1279 `@media (pointer: coarse) user-select:none` CSS 仍在（无双选区未破坏）。
+- **备注**：真机（Android/iOS）触屏长按拖选选中 + 查词/制卡、不出双选区待用户验收（离屏 `pointer: fine` 不触发 coarse，无法复现该路径）。桌面鼠标选区/复制/右键导出走 `pointer: fine` 分支，不受影响。

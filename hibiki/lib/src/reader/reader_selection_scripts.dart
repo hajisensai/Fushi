@@ -49,6 +49,111 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
 
+  /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
+  /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.hoshiSelection.updateRangeSelection`
+  /// 扩展 app 自绘选区（CSS Custom Highlight `hoshi-selection`，绝不建立原生选区，
+  /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 触发 onTextSelected 复用
+  /// 查词/制卡；原地未拖动退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
+  /// 未及 [delayMs] 判为滑动/滚动，放弃拖选（长按 vs swipe 消歧）。置全局标志
+  /// `window.__hoshiTextSelectDragActive`，翻页（`_gestureEnd`）与边界跨章（`_bEnd`）
+  /// 见到即让路，绝不与拖选争同一次触摸（消除拖选后误翻页 / 双查词）。
+  ///
+  /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
+  /// 550ms，仅命中图片才 arm）按命中元素天然互斥；多指触摸（缩放）直接不 arm。
+  static String longPressDragGestureScript({
+    int delayMs = 500,
+    int slop = 10,
+    int maxLength = 400,
+  }) {
+    final int slopSq = slop * slop;
+    return '''
+(function() {
+  var LPS_DELAY = $delayMs;
+  var LPS_SLOP_SQ = $slopSq;
+  var LPS_MAXLEN = $maxLength;
+  var lpsTimer = null;
+  var lpsActive = false;
+  var lpsStartX = 0, lpsStartY = 0;
+  window.__hoshiTextSelectDragActive = false;
+  function lpsClearTimer() { if (lpsTimer) { clearTimeout(lpsTimer); lpsTimer = null; } }
+  function lpsReset() {
+    lpsClearTimer();
+    lpsActive = false;
+    window.__hoshiTextSelectDragActive = false;
+  }
+  // Arm only over real matchable text, never over links / form controls / caret
+  // ring / block images (those own their own gestures). getCharacterAtPoint is
+  // the same hit test the tap path uses, so blank margins never arm.
+  function lpsAllowed(target, x, y) {
+    var el = target || document.elementFromPoint(x, y);
+    if (el && el.closest &&
+        el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring')) {
+      return false;
+    }
+    return !!(window.hoshiSelection && window.hoshiSelection.getCharacterAtPoint &&
+      window.hoshiSelection.getCharacterAtPoint(x, y));
+  }
+  document.addEventListener('touchstart', function(e) {
+    lpsReset();
+    // Only single-finger presses select; a second finger is pinch/zoom.
+    if (!e.touches || e.touches.length !== 1) return;
+    var t = e.touches[0];
+    if (!lpsAllowed(e.target, t.clientX, t.clientY)) return;
+    lpsStartX = t.clientX;
+    lpsStartY = t.clientY;
+    lpsTimer = setTimeout(function() {
+      lpsTimer = null;
+      if (window.hoshiSelection && window.hoshiSelection.beginRangeSelection &&
+          window.hoshiSelection.beginRangeSelection(lpsStartX, lpsStartY)) {
+        lpsActive = true;
+        // Set BEFORE touchend so tap/swipe (_gestureEnd) and boundary cross-chapter
+        // (_bEnd) both bail: the drag-select owns this touch exclusively.
+        window.__hoshiTextSelectDragActive = true;
+      }
+    }, LPS_DELAY);
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (!e.touches || !e.touches.length) return;
+    var t = e.touches[0];
+    if (lpsActive) {
+      // Own the gesture: block native scroll and extend the app-drawn selection.
+      if (e.cancelable) e.preventDefault();
+      if (window.hoshiSelection && window.hoshiSelection.updateRangeSelection) {
+        window.hoshiSelection.updateRangeSelection(t.clientX, t.clientY);
+      }
+      return;
+    }
+    if (lpsTimer) {
+      var dx = t.clientX - lpsStartX;
+      var dy = t.clientY - lpsStartY;
+      // Moved past slop before the long-press fired: it is a scroll/swipe, not a
+      // select; drop the arm and let the native scroll & swipe paths own it.
+      if ((dx * dx + dy * dy) > LPS_SLOP_SQ) lpsClearTimer();
+    }
+  }, {passive: false});
+  document.addEventListener('touchend', function(e) {
+    if (!lpsActive) { lpsClearTimer(); return; }
+    if (e.cancelable && e.preventDefault) e.preventDefault();
+    var t = (e.changedTouches && e.changedTouches[0]) || null;
+    var x = t ? t.clientX : lpsStartX;
+    var y = t ? t.clientY : lpsStartY;
+    var fired = window.hoshiSelection && window.hoshiSelection.endRangeSelection &&
+      window.hoshiSelection.endRangeSelection(x, y);
+    if (!fired && window.hoshiSelection && window.hoshiSelection.selectText) {
+      // Long-press without a drag: behave exactly like a tap (word lookup),
+      // preserving slow-steady-tap word lookup (TODO-971).
+      window.hoshiSelection.selectText(x, y, LPS_MAXLEN);
+    }
+    // Keep __hoshiTextSelectDragActive true until the next touchstart resets it:
+    // a trailing compatibility pointerup (order vs touchend varies by WebView)
+    // must still see the flag so _gestureEnd bails -> no double lookup.
+    lpsClearTimer();
+    lpsActive = false;
+  }, {passive: false});
+  document.addEventListener('touchcancel', function() { lpsReset(); }, {passive: true});
+})();''';
+  }
+
   /// BUG-402：取**浏览器原生选区**（`window.getSelection()`）的纯文本，给桌面
   /// Windows 的 Ctrl+C 复制兼容层用。刻意走原生 `getSelection()` 而非
   /// `window.hoshiSelection`（后者是查词选区，是另一套坐标/状态），因为短拖/竖拖
@@ -259,6 +364,10 @@ const JAPANESE_RANGES = [
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiSelection = {
   selection: null,
+  // TODO-1317: mobile long-press drag-select anchor / whether the finger
+  // actually dragged (vs a stationary long-press that falls back to word lookup).
+  dragAnchor: null,
+  dragMoved: false,
   highlightWrappers: [],
   selectionRubyElements: [],
   scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
@@ -914,6 +1023,18 @@ window.hoshiSelection = {
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+    return this.fireTextSelected(x, y);
+  },
+  // Fire onTextSelected for the current this.selection. Extracted verbatim from
+  // selectFromPosition's tail so both the tap/word path and the TODO-1317 mobile
+  // long-press drag path build the identical payload (text / sentence / rect /
+  // normalized offsets) and reuse the one dictionary/mining pipeline downstream.
+  fireTextSelected: function(x, y) {
+    if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) return null;
+    var startNode = this.selection.startNode;
+    var startOffset = this.selection.startOffset;
+    var ranges = this.selection.ranges;
+    var text = this.selection.text;
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
     var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(startNode, startOffset) : null;
     var normalizedLength = null;
@@ -943,6 +1064,112 @@ window.hoshiSelection = {
       sentenceNormalizedLength: sentenceNormalizedLength
     }));
     return text;
+  },
+  // -- TODO-1317: mobile long-press drag-select --------------------------------
+  // Direction B: keep TODO-1279's `@media (pointer: coarse) user-select:none`
+  // (touch never builds a native blue selection -> no double selection) and
+  // instead drive the *app-drawn* selection (this.selection + CSS Custom
+  // Highlight `hoshi-selection`) from a long-press drag. These never call
+  // window.getSelection()/addRange, so no native selection is ever created. On
+  // release fireTextSelected reuses the tap onTextSelected pipeline (lookup /
+  // mining). A stationary long-press (no drag) falls back to word lookup at the
+  // caller so slow-steady taps keep looking up the whole word.
+  //
+  // Build the ordered per-textnode ranges + concatenated text spanning the two
+  // character positions (drag anchor + current point). Endpoints are ordered by
+  // document position; the character under the later point is included (+1). The
+  // walker skips furigana (rt/rp) and whitespace-only nodes (createWalker), so a
+  // cross-paragraph drag yields clean matchable text.
+  collectRangeBetween: function(nodeA, offA, nodeB, offB) {
+    var startNode, startOffset, endNode, endOffset;
+    var before;
+    if (nodeA === nodeB) {
+      before = offA <= offB;
+    } else {
+      before = !!(nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    if (before) {
+      startNode = nodeA; startOffset = offA; endNode = nodeB; endOffset = offB + 1;
+    } else {
+      startNode = nodeB; startOffset = offB; endNode = nodeA; endOffset = offA + 1;
+    }
+    var walker = this.createWalker(document.body);
+    walker.currentNode = startNode;
+    var ranges = [];
+    var text = '';
+    var node = startNode;
+    var from = startOffset;
+    // Bound the walk so a broken node relationship can never spin forever.
+    var guard = 0;
+    while (node && guard++ < 100000) {
+      var content = node.textContent;
+      var to = (node === endNode) ? Math.min(endOffset, content.length) : content.length;
+      if (to > from) {
+        ranges.push({ node: node, start: from, end: to });
+        text += content.slice(from, to);
+      }
+      if (node === endNode) break;
+      node = walker.nextNode();
+      from = 0;
+    }
+    if (!text) return null;
+    return { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+  },
+  // Render the whole current this.selection via the same highlighter as the tap
+  // path. Only re-render per drag frame on the CSS Custom Highlight path (it is
+  // DOM-mutation-free); the wrapper fallback (extractContents) mutates the DOM,
+  // so it is left to render once post-lookup (highlightSelection from Dart).
+  renderSelectionHighlight: function() {
+    if (!this.selection || !this.selection.text) return;
+    if (window.__hoshiCssHighlightsSupported) {
+      this.highlightSelection(this.selection.text.length + 1);
+    }
+  },
+  beginRangeSelection: function(x, y) {
+    var el = document.elementFromPoint(x, y);
+    if (el && el.closest && el.closest('a')) return false;
+    var hit = this.getCharacterAtPoint(x, y);
+    if (!hit) return false;
+    this.clearSelection();
+    this.dragAnchor = { node: hit.node, offset: hit.offset };
+    this.dragMoved = false;
+    this.updateRangeSelection(x, y);
+    return true;
+  },
+  updateRangeSelection: function(x, y) {
+    if (!this.dragAnchor) return null;
+    var hit = this.getCharacterAtPoint(x, y);
+    // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
+    var endNode = hit ? hit.node : this.dragAnchor.node;
+    var endOffset = hit ? hit.offset : this.dragAnchor.offset;
+    if (hit && (hit.node !== this.dragAnchor.node || hit.offset !== this.dragAnchor.offset)) {
+      this.dragMoved = true;
+    }
+    var built = this.collectRangeBetween(
+      this.dragAnchor.node, this.dragAnchor.offset, endNode, endOffset);
+    if (!built) return null;
+    this.selection = {
+      startNode: built.startNode, startOffset: built.startOffset,
+      ranges: built.ranges, text: built.text
+    };
+    this.renderSelectionHighlight();
+    return built.text;
+  },
+  // Finalize the drag: extend to the release point, then fire onTextSelected iff
+  // the finger actually dragged. Returns true when it fired (caller does nothing
+  // more), false for a stationary long-press (caller falls back to word lookup).
+  endRangeSelection: function(x, y) {
+    var moved = this.dragMoved;
+    this.updateRangeSelection(x, y);
+    moved = moved || this.dragMoved;
+    this.dragAnchor = null;
+    this.dragMoved = false;
+    if (!moved || !this.selection || !this.selection.text) {
+      this.clearSelection();
+      return false;
+    }
+    this.fireTextSelected(x, y);
+    return true;
   },
   getSelectionRect: function(x, y) {
     if (!this.selection || !this.selection.ranges.length) return null;

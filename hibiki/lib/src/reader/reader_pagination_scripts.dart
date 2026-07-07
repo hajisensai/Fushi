@@ -3055,6 +3055,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   function _bEnd(x, y, src) {
     if (!hasDown) return;
     hasDown = false;
+    // TODO-1317: a mobile long-press drag-select owns this touch; never cross
+    // chapters from a selection gesture.
+    if (window.__hoshiTextSelectDragActive) return;
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
