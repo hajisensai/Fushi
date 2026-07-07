@@ -1,9 +1,10 @@
-// TODO-817 M1a SourceFileSystem 测试：
+// TODO-817 M1a / TODO-1274 SourceFileSystem 测试：
 //  ① LocalSourceFileSystem 在临时目录建 epub/mp4/srt → listFiles 返回正确 entries
 //     （isDirectory 正确 + recursive 行为）
 //  ② listSiblingNames 找同目录同名 sidecar 候选
 //  ③ readText 读回内容
-//  ④ NetworkSourceFileSystem 每个方法抛 UnimplementedError（占位守卫）
+//  ④ NetworkSourceFileSystem / NetworkSourceConfig 构造正确（isLocal false、
+//     isSftp 路由、凭据注入）；真实 SFTP/FTP I/O 需要服务器，由扫描器路由测试覆盖。
 //  ⑤ 命名守卫：SourceFileSystem 不与既有 abstract class MediaSource 撞名
 
 import 'dart:io';
@@ -116,31 +117,46 @@ void main() {
     });
   });
 
-  group('NetworkSourceFileSystem 占位守卫', () {
-    const NetworkSourceFileSystem fs = NetworkSourceFileSystem();
+  group('NetworkSourceConfig / NetworkSourceFileSystem 构造', () {
+    test('NetworkSourceConfig 字段 + isSftp 路由', () {
+      const NetworkSourceConfig sftp = NetworkSourceConfig(
+        transport: 'sftp',
+        host: 'ssh.example.com',
+        port: 2222,
+        username: 'reader',
+        privateKey: '-----BEGIN KEY-----',
+      );
+      expect(sftp.isSftp, isTrue);
+      expect(sftp.host, 'ssh.example.com');
+      expect(sftp.port, 2222);
+      expect(sftp.username, 'reader');
+      expect(sftp.privateKey, '-----BEGIN KEY-----');
+      expect(sftp.useTls, isFalse);
 
-    test('isLocal 恒 false', () {
+      const NetworkSourceConfig ftp = NetworkSourceConfig(
+        transport: 'ftp',
+        host: 'ftp.example.com',
+        port: 21,
+        username: 'u',
+        password: 'p',
+        useTls: true,
+      );
+      expect(ftp.isSftp, isFalse);
+      expect(ftp.useTls, isTrue);
+    });
+
+    test('NetworkSourceFileSystem.isLocal 恒 false（不连接即可判定）', () {
+      final NetworkSourceFileSystem fs = NetworkSourceFileSystem(
+        const NetworkSourceConfig(
+          transport: 'sftp',
+          host: 'h',
+          port: 22,
+          username: 'u',
+          password: 'p',
+        ),
+      );
       expect(fs.isLocal, isFalse);
-    });
-
-    test('listFiles 抛 UnimplementedError', () {
-      expect(() => fs.listFiles('/remote/dir'),
-          throwsA(isA<UnimplementedError>()));
-    });
-
-    test('listSiblingNames 抛 UnimplementedError', () {
-      expect(() => fs.listSiblingNames('/remote/book.epub'),
-          throwsA(isA<UnimplementedError>()));
-    });
-
-    test('readText 抛 UnimplementedError', () {
-      expect(() => fs.readText('/remote/book.srt'),
-          throwsA(isA<UnimplementedError>()));
-    });
-
-    test('copyToLocal 抛 UnimplementedError', () {
-      expect(() => fs.copyToLocal('/remote/book.epub', '/tmp'),
-          throwsA(isA<UnimplementedError>()));
+      expect(fs.config.isSftp, isTrue);
     });
   });
 
@@ -148,7 +164,15 @@ void main() {
     test('LocalSourceFileSystem / NetworkSourceFileSystem 都是 SourceFileSystem',
         () {
       const SourceFileSystem local = LocalSourceFileSystem();
-      const SourceFileSystem network = NetworkSourceFileSystem();
+      final SourceFileSystem network = NetworkSourceFileSystem(
+        const NetworkSourceConfig(
+          transport: 'ftp',
+          host: 'h',
+          port: 21,
+          username: 'u',
+          password: 'p',
+        ),
+      );
       expect(local, isA<SourceFileSystem>());
       expect(network, isA<SourceFileSystem>());
     });
@@ -168,7 +192,7 @@ void main() {
       // 守 MediaSource 撞名：匹配「行首的类声明」（多行模式），用单词边界排除
       // MediaSourceRow / 注释里的引用（注释行以 // 开头，不会命中行首 class）。
       final RegExp mediaSourceDecl =
-          RegExp(r'^(abstract )?class MediaSource', multiLine: true);
+          RegExp(r'^(abstract )?class MediaSource', multiLine: true);
       expect(mediaSourceDecl.hasMatch(text), isFalse,
           reason: '不得在本文件声明 MediaSource 类（已存在于 media_source.dart）');
     });

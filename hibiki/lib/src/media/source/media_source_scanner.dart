@@ -10,10 +10,12 @@
 // -> reuse existing importers (EpubImporter.importFromPath /
 // VideoBookRepository.saveVideoBook) with sourceId -> updateMediaSourceScanResult.
 //
-// Zero-behaviour-change: only a new scan entry is added; existing manual import
-// paths (dialogs) are untouched, sourceId defaults to null. Network transport is
-// still a placeholder (NetworkSourceFileSystem throws UnimplementedError); M1b
-// does not connect to any network and does not touch credentials.
+// TODO-1274: network transport (SFTP/FTP) is now wired for BOOK sources — the
+// transport is resolved from the row (local vs SFTP/FTP built from configJson +
+// MediaSourceCredentialStore), and remote EPUBs are downloaded via copyToLocal
+// before import. Network VIDEO sources are rejected (a raw SFTP/FTP path is not
+// playable). Existing manual import paths (dialogs) are untouched; sourceId
+// defaults to null.
 
 import 'dart:convert';
 import 'dart:io';
@@ -31,6 +33,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
+import 'package:hibiki/src/media/source/media_source_credential_store.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
@@ -170,10 +173,17 @@ String _extOf(String name) =>
 ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
   // parent dir -> all file basenames under it (for sidecar matching).
   final Map<String, List<String>> namesByDir = <String, List<String>>{};
+  // parent dir -> {basename: original full path} (for sidecar path lookup).
+  // TODO-1274: sidecar full paths are looked up here, NOT rebuilt via
+  // p.join(dir, name), so a remote source's forward-slash paths survive on a
+  // Windows host (p.join would inject backslashes).
+  final Map<String, Map<String, String>> pathByDir =
+      <String, Map<String, String>>{};
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
     final String dir = p.dirname(e.path);
     (namesByDir[dir] ??= <String>[]).add(e.name);
+    (pathByDir[dir] ??= <String, String>{})[e.name] = e.path;
   }
 
   final List<ScanBookItem> books = <ScanBookItem>[];
@@ -202,10 +212,12 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
         siblingNames: siblings,
         wantAudio: true,
       );
+      final Map<String, String> dirPaths =
+          pathByDir[dir] ?? const <String, String>{};
       books.add(ScanBookItem(
         epubPath: e.path,
-        subtitlePath: sel.subtitle == null ? null : p.join(dir, sel.subtitle!),
-        audioPaths: sel.audio.map((String n) => p.join(dir, n)).toList(),
+        subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
+        audioPaths: sel.audio.map((String n) => dirPaths[n] ?? n).toList(),
       ));
       continue;
     }
@@ -218,9 +230,11 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
         wantAudio: false,
         subtitleExts: kScanVideoSubtitleExts,
       );
+      final Map<String, String> dirPaths =
+          pathByDir[dir] ?? const <String, String>{};
       videos.add(ScanVideoItem(
         videoPath: e.path,
-        subtitlePath: sel.subtitle == null ? null : p.join(dir, sel.subtitle!),
+        subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
       ));
     }
   }
@@ -235,6 +249,48 @@ class MediaSourceScanner {
 
   final HibikiDatabase _db;
   final VideoBookRepository _videoRepo;
+
+  /// 从来源行解析文件系统：local → LocalSourceFileSystem；网络 → 解出连接参数
+  /// （configJson）+ 凭据（MediaSourceCredentialStore）构造 NetworkSourceFileSystem。
+  Future<SourceFileSystem> _resolveFileSystem(MediaSourceRow source) async {
+    if (source.transport == 'local') {
+      return const LocalSourceFileSystem();
+    }
+    final MediaSourceSecret secret =
+        await MediaSourceCredentialStore(_db).readSecret(source.id);
+    return buildNetworkFileSystem(
+      transport: source.transport,
+      config: decodeSourceConfig(source.configJson),
+      password: secret.password,
+      privateKey: secret.privateKey,
+    );
+  }
+
+  /// 纯构造：把 transport + 连接参数 + 凭据组装成 [SourceFileSystem]（无 I/O）。
+  /// 抽出供测试断言路由正确。
+  @visibleForTesting
+  static SourceFileSystem buildNetworkFileSystem({
+    required String transport,
+    required Map<String, Object?> config,
+    String? password,
+    String? privateKey,
+  }) {
+    if (transport == 'local') {
+      return const LocalSourceFileSystem();
+    }
+    final int port =
+        (config['port'] as num?)?.toInt() ?? (transport == 'sftp' ? 22 : 21);
+    return NetworkSourceFileSystem(NetworkSourceConfig(
+      transport: transport,
+      host: (config['host'] as String?) ?? '',
+      port: port,
+      username: (config['username'] as String?) ?? '',
+      password: (password != null && password.isNotEmpty) ? password : null,
+      privateKey:
+          (privateKey != null && privateKey.isNotEmpty) ? privateKey : null,
+      useTls: (config['useTls'] as bool?) ?? false,
+    ));
+  }
 
   /// Scans one source library.
   ///
@@ -252,10 +308,15 @@ class MediaSourceScanner {
     MediaSourceRow source, {
     SourceFileSystem? fs,
   }) async {
-    final SourceFileSystem files = fs ?? const LocalSourceFileSystem();
+    final SourceFileSystem files = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;
     try {
+      // 网络视频来源不受支持：远端 SFTP/FTP 路径不可被播放器直接播放（只支持网络
+      // 「书」来源——EPUB 小体积、扫描时下载后导入）。
+      if (!files.isLocal && source.mediaKind == 'video') {
+        throw StateError('Network video sources are not supported');
+      }
       final List<SourceFileEntry> entries = await files.listFiles(
         source.rootPath,
         recursive: source.recursive,
@@ -280,6 +341,11 @@ class MediaSourceScanner {
       scanError = e.toString();
       debugPrint('MediaSourceScanner.scan failed for '
           'source ${source.id} (${source.rootPath}): $e\n$stack');
+    } finally {
+      // 关闭网络连接（本地/注入的 fake 无需关闭）。
+      if (files is NetworkSourceFileSystem) {
+        await files.close();
+      }
     }
 
     await _db.updateMediaSourceScanResult(
@@ -307,15 +373,22 @@ class MediaSourceScanner {
     SourceFileSystem fs,
   ) async {
     int count = 0;
+    Directory? epubTmp;
     for (final ScanBookItem item in plan.books) {
       try {
+        // 网络来源：先把远端 EPUB 下载到临时盘（导入器只吃本地路径）；本地原样。
+        String localEpub = item.epubPath;
+        if (!fs.isLocal) {
+          epubTmp ??= Directory.systemTemp.createTempSync('m1c_scan_books_');
+          localEpub = await fs.copyToLocal(item.epubPath, epubTmp.path);
+        }
         // skipIfExists:true reuses the sanitizeTtuFilename identity key so a
         // re-scan / same-batch duplicate throws DuplicateImportCancelledException
         // (caught below) instead of a silent "X (2)" (BUG-443). The returned
         // bookKey is the audiobook anchor when a sidecar audio attaches.
         final String bookKey = await EpubImporter.importFromPath(
           db: _db,
-          filePath: item.epubPath,
+          filePath: localEpub,
           fileName: p.basename(item.epubPath),
           sourceId: sourceId,
           skipIfExists: true,
@@ -344,6 +417,11 @@ class MediaSourceScanner {
         debugPrint('MediaSourceScanner skip duplicate book '
             '${e.title} (${item.epubPath})');
       }
+    }
+    if (epubTmp != null) {
+      try {
+        epubTmp.deleteSync(recursive: true);
+      } catch (_) {}
     }
     return count;
   }

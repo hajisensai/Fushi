@@ -5,8 +5,9 @@
 //  (4) 移除来源 -> 确认对话框含 media_source_remove_keeps_media；确认后该来源消失，
 //      且预置的 VideoBook 仍在（FK setNull，条目保留）。
 //  (5) mediaKind='book' -> 统计文案用 media_source_count_book（N 本书）。
-//  (6) 凭据红线源码守卫：对话框源码不写任何 password/credential/secret，且网络分支
-//      不调 insertMediaSource、不传 configJson。
+//  (6) 凭据红线源码守卫（TODO-1274）：网络凭据经 MediaSourceCredentialStore 单独落库，
+//      绝不作为列塞进来源行；configJson 的值只能来自 encodeSourceConfig（白名单剥离
+//      password/privateKey）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -318,16 +319,30 @@ void main() {
       ).readAsStringSync();
     });
 
-    test('no password/credential/secret written by the dialog', () {
-      final RegExp banned =
-          RegExp(r'(password|credential|secret)', caseSensitive: false);
-      expect(banned.hasMatch(src), isFalse,
-          reason: 'M1c must not store any credentials (M3 decision point)');
+    test('secrets go through MediaSourceCredentialStore, not the source row',
+        () {
+      // TODO-1274: 网络凭据经 MediaSourceCredentialStore 单独落 Preferences（base64），
+      // 绝不作为列塞进 insertMediaSource 的 MediaSourcesCompanion。
+      expect(src.contains('MediaSourceCredentialStore'), isTrue,
+          reason: '网络凭据必须走独立凭据存储');
+      expect(src.contains('.saveSecret('), isTrue,
+          reason: '新增网络来源必须调 saveSecret 存凭据');
+      expect(src.contains('.deleteSecret('), isTrue, reason: '移除来源必须清除对应凭据');
+      // 密码/私钥绝不作为 drift 列写进来源行（表里也根本没有这些列）。
+      expect(RegExp(r'password:\s*Value\(').hasMatch(src), isFalse,
+          reason: '密码绝不作为列写进来源行');
+      expect(RegExp(r'privateKey:\s*Value\(').hasMatch(src), isFalse,
+          reason: '私钥绝不作为列写进来源行');
     });
 
-    test('configJson is never passed to insertMediaSource', () {
-      expect(src.contains('configJson:'), isFalse,
-          reason: 'configJson must never be passed (stays NULL in M1c)');
+    test('configJson value only ever comes from encodeSourceConfig', () {
+      // 网络分支确会传 configJson，但其值必须是 encodeSourceConfig(...) 的输出——
+      // 该白名单只保留 host/port/username/useTls，剥离 password/privateKey（见
+      // media_source_util_test 的红线用例），绝不手工把明文凭据拼进 JSON。
+      expect(src.contains('encodeSourceConfig('), isTrue,
+          reason: 'configJson 必须由白名单编码器生成');
+      expect(src.contains('configJson: Value(configJson)'), isTrue,
+          reason: '只把 encodeSourceConfig 的结果作为 configJson 落库');
     });
 
     test('uses HibikiReorderableColumn, not SDK ReorderableListView', () {

@@ -105,9 +105,10 @@ void main() {
       expect(plan.videos, hasLength(1));
       expect(plan.videos.single.videoPath, '/lib/movie.mp4');
       // Same-stem srt attaches to the video; .txt is ignored, dir skipped.
-      // subtitlePath is built via p.join(dir, name) -> use p.join to stay
-      // platform-agnostic (Windows uses a backslash separator).
-      expect(plan.videos.single.subtitlePath, p.join('/lib', 'movie.srt'));
+      // subtitlePath is the ORIGINAL sidecar entry path (TODO-1274: looked
+      // up from the entries, not rebuilt via p.join, so remote forward-slash
+      // paths survive on a Windows host).
+      expect(plan.videos.single.subtitlePath, '/lib/movie.srt');
     });
 
     test('video without a same-name subtitle has null subtitlePath', () {
@@ -170,8 +171,8 @@ void main() {
       expect(plan.books, hasLength(1));
       final ScanBookItem b = plan.books.single;
       expect(b.epubPath, '/lib/book.epub');
-      expect(b.subtitlePath, p.join('/lib', 'book.srt'));
-      expect(b.audioPaths, <String>[p.join('/lib', 'book.mp3')]);
+      expect(b.subtitlePath, '/lib/book.srt');
+      expect(b.audioPaths, <String>['/lib/book.mp3']);
       expect(b.isAudiobook, isTrue);
     });
 
@@ -182,7 +183,7 @@ void main() {
       ];
       final ScanPlan plan = planScanFromFileList(files);
       final ScanBookItem b = plan.books.single;
-      expect(b.subtitlePath, p.join('/lib', 'book.srt'));
+      expect(b.subtitlePath, '/lib/book.srt');
       expect(b.audioPaths, isEmpty);
       expect(b.isAudiobook, isFalse,
           reason: 'audio is required to import as an audiobook');

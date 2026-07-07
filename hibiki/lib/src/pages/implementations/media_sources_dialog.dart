@@ -1,12 +1,17 @@
-// TODO-817 M1c 来源库管理对话框：列出某媒体种类（'video' | 'book'）的来源库，
-// 支持添加本地文件夹、重新扫描、打开文件夹（仅 Windows）、移除来源、拖拽重排。
+// TODO-817 M1c / TODO-1274 来源库管理对话框：列出某媒体种类（'video' | 'book'）的
+// 来源库，支持添加本地文件夹、添加网络来源（SFTP/FTP，仅 'book'）、重新扫描、
+// 打开文件夹（仅 Windows 本地）、移除来源、拖拽重排。
 //
 // 骨架抄自 LocalAudioSourcesDialog（HibikiDialogFrame + HibikiModalSheetFrame +
-// HibikiReorderableColumn，三态 null/empty/列表），但各操作即时落库（无批量保存），
+// HibikiReorderableColumn，三态 null/empty/列表），各操作即时落库（无批量保存），
 // 数据来自 HibikiDatabase 的 MediaSources DAO。
 //
-// 凭据红线（M1c）：网络传输只渲染占位 UI——configJson 恒不传（NULL）、零密码
-// 输入落库、提交按钮 disabled。密码存储方案是 M3 决策点，本对话框不碰任何凭据。
+// 🔴 凭据红线（TODO-1274）：网络来源的连接参数（host/port/username/useTls）落
+// MediaSources.configJson；密码/私钥经 MediaSourceCredentialStore 以 base64 单独落
+// Preferences（键 `media_source_secret_<id>`），绝不进入 configJson。
+//
+// 网络来源只对 'book' 开放：EPUB 小体积、扫描时下载后导入；远端 SFTP/FTP 视频路径
+// 不可被播放器直接播放，故 'video' 只保留本地来源。
 
 import 'dart:io' show Platform, Process;
 
@@ -15,7 +20,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/source/media_source_credential_store.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
+import 'package:hibiki/src/sync/ftp_sync_backend.dart';
+import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -48,6 +56,9 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   /// ConsumerStatefulElement 已 dispose、ProviderScope 已销毁，
   /// `containerOf` 抛 `Bad state: No ProviderScope found`（BUG-513）。
   late final HibikiDatabase _db;
+
+  /// 网络来源仅对 'book' 开放（见文件头说明）。
+  bool get _networkSupported => widget.mediaKind == 'book';
 
   @override
   void initState() {
@@ -193,7 +204,10 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Icon(Icons.folder_outlined, color: cs.onSurfaceVariant),
+          Icon(
+            isLocal ? Icons.folder_outlined : Icons.cloud_outlined,
+            color: cs.onSurfaceVariant,
+          ),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Column(
@@ -207,7 +221,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  row.rootPath,
+                  _rowLocation(row),
                   style: subStyle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -233,9 +247,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
                 icon: Icons.folder_open,
                 size: 18,
                 tooltip: t.media_source_open_folder,
-                // 打开文件夹只在 Windows + 本地来源可用（仓库内唯一现成的跨平台
-                // 打开目录是 explorer，见 crash_dump_page.dart）；其它平台禁用，
-                // 不为此新造 mac/Linux 平台代码（TODO-817 M1c plan-review 决策）。
+                // 打开文件夹只在 Windows + 本地来源可用；网络来源无本地目录可开。
                 enabled: isLocal && Platform.isWindows,
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _openFolder(row),
@@ -253,6 +265,20 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
         ],
       ),
     );
+  }
+
+  /// 行副标题的「位置」文案：本地=路径；网络=`TRANSPORT · user@host  rootPath`。
+  String _rowLocation(MediaSourceRow row) {
+    if (row.transport == 'local') {
+      return row.rootPath;
+    }
+    final Map<String, Object?> config = decodeSourceConfig(row.configJson);
+    final String host = (config['host'] as String?) ?? '';
+    final String user = (config['username'] as String?) ?? '';
+    final String prefix = row.transport.toUpperCase();
+    final String authority =
+        user.isEmpty ? host : (host.isEmpty ? user : '$user@$host');
+    return '$prefix · $authority  ${row.rootPath}';
   }
 
   Widget _buildStatusLine(
@@ -302,8 +328,18 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     }
   }
 
-  /// 添加来源：先让用户选本地文件夹或网络（占位），本地走目录选择 +
-  /// 立即扫描；网络只弹占位提示（不落库、零凭据）。
+  /// 计算新来源的 sortOrder（现有最大值 +1，空则 0）。
+  int _nextSortOrder() {
+    final List<MediaSourceRow> existing = _rows ?? const <MediaSourceRow>[];
+    return existing.isEmpty
+        ? 0
+        : existing
+                .map((MediaSourceRow r) => r.sortOrder)
+                .reduce((int a, int b) => a > b ? a : b) +
+            1;
+  }
+
+  /// 添加来源：让用户选本地文件夹或网络来源（后者仅 'book' 开放）。
   Future<void> _addSource() async {
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
@@ -320,29 +356,30 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
               ],
             ),
           ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, _AddSourceChoice.network),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Icon(Icons.cloud_outlined),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(t.media_source_add_network),
-                      Text(
-                        t.media_source_network_coming_soon,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                    ],
+          if (_networkSupported)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, _AddSourceChoice.network),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Icon(Icons.cloud_outlined),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(t.media_source_add_network),
+                        Text(
+                          t.media_source_network_subtitle,
+                          style: Theme.of(ctx).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -351,8 +388,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
       case _AddSourceChoice.local:
         await _addLocalFolder();
       case _AddSourceChoice.network:
-        // 占位：M1c 不实现网络来源，不写库、不存凭据。
-        HibikiToast.show(msg: t.media_source_network_coming_soon);
+        await _addNetworkSource();
     }
   }
 
@@ -364,18 +400,13 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
     final List<MediaSourceRow> existing = _rows ?? const <MediaSourceRow>[];
-    final bool dup = existing.any((MediaSourceRow r) => r.rootPath == norm);
+    final bool dup = existing.any(
+        (MediaSourceRow r) => r.transport == 'local' && r.rootPath == norm);
     if (dup) {
       HibikiToast.show(msg: norm);
       return;
     }
 
-    final int nextOrder = existing.isEmpty
-        ? 0
-        : existing
-                .map((MediaSourceRow r) => r.sortOrder)
-                .reduce((int a, int b) => a > b ? a : b) +
-            1;
     final int newId = await _db.insertMediaSource(
       MediaSourcesCompanion(
         label: Value(defaultLabelFromRoot(norm, transport: 'local')),
@@ -383,12 +414,68 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
         transport: const Value('local'),
         rootPath: Value(norm),
         recursive: const Value(true),
-        sortOrder: Value(nextOrder),
+        sortOrder: Value(_nextSortOrder()),
         createdAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
     await _load();
     // 插入后立即扫描新行（拿回带 scanResult 的最新行刷新统计）。
+    final MediaSourceRow? fresh = await _db.getMediaSourceById(newId);
+    if (fresh != null) await _rescan(fresh);
+  }
+
+  /// 添加网络来源：弹连接表单（SFTP/FTP）→ 落库连接参数 + 单独存凭据 → 立即扫描。
+  Future<void> _addNetworkSource() async {
+    final _NetworkSourceResult? result =
+        await showAppDialog<_NetworkSourceResult>(
+      context: context,
+      builder: (BuildContext ctx) => const _NetworkSourceFormDialog(),
+    );
+    if (!mounted || result == null) return;
+
+    final String norm =
+        normalizeSourceRootPath(result.remotePath, transport: result.transport);
+    final List<MediaSourceRow> existing = _rows ?? const <MediaSourceRow>[];
+    // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。
+    final bool dup = existing.any((MediaSourceRow r) {
+      if (r.transport != result.transport || r.rootPath != norm) return false;
+      final Map<String, Object?> cfg = decodeSourceConfig(r.configJson);
+      return (cfg['host'] as String?) == result.host;
+    });
+    if (dup) {
+      HibikiToast.show(msg: norm);
+      return;
+    }
+
+    final String label = result.label.trim().isNotEmpty
+        ? result.label.trim()
+        : defaultLabelFromRoot(norm, transport: result.transport);
+    final String? configJson = encodeSourceConfig(<String, Object?>{
+      'host': result.host,
+      'port': result.port,
+      'username': result.username,
+      'useTls': result.useTls,
+    });
+
+    final int newId = await _db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: Value(label),
+        mediaKind: Value(widget.mediaKind),
+        transport: Value(result.transport),
+        rootPath: Value(norm),
+        configJson: Value(configJson),
+        recursive: const Value(true),
+        sortOrder: Value(_nextSortOrder()),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    // 凭据单独落库（绝不进 configJson）。
+    await MediaSourceCredentialStore(_db).saveSecret(
+      newId,
+      password: result.password,
+      privateKey: result.privateKey,
+    );
+    await _load();
     final MediaSourceRow? fresh = await _db.getMediaSourceById(newId);
     if (fresh != null) await _rescan(fresh);
   }
@@ -418,9 +505,9 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     }
   }
 
-  /// 打开来源根目录（仅 Windows，复用仓库唯一现成的 explorer 调用）。
+  /// 打开来源根目录（仅 Windows 本地来源，复用仓库唯一现成的 explorer 调用）。
   Future<void> _openFolder(MediaSourceRow row) async {
-    if (!Platform.isWindows) return;
+    if (!Platform.isWindows || row.transport != 'local') return;
     try {
       await Process.run('explorer', <String>[row.rootPath]);
     } catch (_) {
@@ -429,7 +516,8 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   }
 
   /// 移除来源：确认对话框强调移除来源不会删除已导入的媒体（FK setNull 自动
-  /// 把归属媒体的 source_id 归 NULL，条目保留）→ 确认则 deleteMediaSource → 刷新。
+  /// 把归属媒体的 source_id 归 NULL，条目保留）→ 确认则 deleteMediaSource +
+  /// 清除该来源的网络凭据 → 刷新。
   Future<void> _remove(MediaSourceRow row) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -453,9 +541,274 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     );
     if (!mounted || confirmed != true) return;
     await _db.deleteMediaSource(row.id);
+    // 网络来源凭据随行清除（本地来源无凭据，deleteSecret 幂等无副作用）。
+    await MediaSourceCredentialStore(_db).deleteSecret(row.id);
     await _load();
   }
 }
 
-/// 添加来源的两个 case：本地文件夹 / 网络（M1c 占位）。
+/// 添加来源的两个 case：本地文件夹 / 网络来源。
 enum _AddSourceChoice { local, network }
+
+/// 网络来源表单返回值（连接参数 + 凭据；凭据不落 configJson）。
+class _NetworkSourceResult {
+  const _NetworkSourceResult({
+    required this.transport,
+    required this.host,
+    required this.port,
+    required this.username,
+    required this.remotePath,
+    required this.label,
+    this.password,
+    this.privateKey,
+    this.useTls = false,
+  });
+
+  final String transport; // 'sftp' | 'ftp'
+  final String host;
+  final int port;
+  final String username;
+  final String remotePath;
+  final String label;
+  final String? password;
+  final String? privateKey;
+  final bool useTls;
+}
+
+/// 网络来源连接表单：SFTP/FTP 二选一，填 host/port/user/password（SFTP 可用私钥、
+/// FTP 可开 TLS）+ 远端根路径 + 可选显示名，附「测试连接」（复用 sync 后端）。
+class _NetworkSourceFormDialog extends StatefulWidget {
+  const _NetworkSourceFormDialog();
+
+  @override
+  State<_NetworkSourceFormDialog> createState() =>
+      _NetworkSourceFormDialogState();
+}
+
+class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
+  String _transport = 'sftp';
+  final TextEditingController _hostController = TextEditingController();
+  final TextEditingController _portController =
+      TextEditingController(text: '22');
+  final TextEditingController _userController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _keyController = TextEditingController();
+  final TextEditingController _pathController = TextEditingController();
+  final TextEditingController _labelController = TextEditingController();
+  bool _useTls = false;
+  bool _testing = false;
+  bool _portTouched = false;
+
+  @override
+  void dispose() {
+    _hostController.dispose();
+    _portController.dispose();
+    _userController.dispose();
+    _passwordController.dispose();
+    _keyController.dispose();
+    _pathController.dispose();
+    _labelController.dispose();
+    super.dispose();
+  }
+
+  bool get _isSftp => _transport == 'sftp';
+
+  int get _port =>
+      int.tryParse(_portController.text.trim()) ?? (_isSftp ? 22 : 21);
+
+  void _onTransportChanged(String value) {
+    if (value == _transport) return;
+    setState(() {
+      _transport = value;
+      // 未手动改过端口时，切协议自动填默认端口。
+      if (!_portTouched) {
+        _portController.text = _isSftp ? '22' : '21';
+      }
+      if (_isSftp) _useTls = false;
+    });
+  }
+
+  /// 校验必填项：host / username / remotePath 非空，且密码或私钥至少一个。
+  String? _validate() {
+    if (_hostController.text.trim().isEmpty ||
+        _userController.text.trim().isEmpty ||
+        _pathController.text.trim().isEmpty) {
+      return t.media_source_network_missing_fields;
+    }
+    final bool hasPass = _passwordController.text.isNotEmpty;
+    final bool hasKey = _isSftp && _keyController.text.trim().isNotEmpty;
+    if (!hasPass && !hasKey) {
+      return t.media_source_network_missing_fields;
+    }
+    return null;
+  }
+
+  Future<void> _testConnection() async {
+    final String? error = _validate();
+    if (error != null) {
+      HibikiToast.show(msg: error);
+      return;
+    }
+    setState(() => _testing = true);
+    try {
+      final String host = _hostController.text.trim();
+      final String user = _userController.text.trim();
+      final String pass = _passwordController.text;
+      final String key = _keyController.text.trim();
+      if (_isSftp) {
+        await SftpSyncBackend.instance.testConnection(
+          host: host,
+          port: _port,
+          username: user,
+          password: pass.isEmpty ? null : pass,
+          privateKey: key.isEmpty ? null : key,
+        );
+      } else {
+        await FtpSyncBackend.testConnection(
+          host: host,
+          port: _port,
+          username: user,
+          password: pass,
+          useTls: _useTls,
+        );
+      }
+      if (mounted) HibikiToast.show(msg: t.sync_connection_success);
+    } catch (e) {
+      if (mounted) {
+        HibikiToast.show(msg: '${t.sync_connection_failed}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  void _submit() {
+    final String? error = _validate();
+    if (error != null) {
+      HibikiToast.show(msg: error);
+      return;
+    }
+    final String pass = _passwordController.text;
+    final String key = _keyController.text.trim();
+    Navigator.pop(
+      context,
+      _NetworkSourceResult(
+        transport: _transport,
+        host: _hostController.text.trim(),
+        port: _port,
+        username: _userController.text.trim(),
+        remotePath: _pathController.text.trim(),
+        label: _labelController.text,
+        password: pass.isEmpty ? null : pass,
+        privateKey: _isSftp && key.isNotEmpty ? key : null,
+        useTls: _isSftp ? false : _useTls,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.media_source_add_network),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SegmentedButton<String>(
+                segments: const <ButtonSegment<String>>[
+                  ButtonSegment<String>(value: 'sftp', label: Text('SFTP')),
+                  ButtonSegment<String>(value: 'ftp', label: Text('FTP')),
+                ],
+                selected: <String>{_transport},
+                onSelectionChanged: (Set<String> s) =>
+                    _onTransportChanged(s.first),
+              ),
+              const SizedBox(height: 12),
+              HibikiTextField(
+                controller: _hostController,
+                labelText: t.sync_host,
+                hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
+              ),
+              const SizedBox(height: 12),
+              HibikiTextField(
+                controller: _portController,
+                labelText: t.sync_port,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => _portTouched = true,
+              ),
+              const SizedBox(height: 12),
+              HibikiTextField(
+                controller: _userController,
+                labelText: t.sync_username,
+              ),
+              const SizedBox(height: 12),
+              HibikiTextField(
+                controller: _passwordController,
+                labelText: t.sync_password,
+                obscureText: true,
+              ),
+              if (_isSftp) ...<Widget>[
+                const SizedBox(height: 12),
+                HibikiTextField(
+                  controller: _keyController,
+                  labelText: t.sync_private_key,
+                  hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
+                  maxLines: 4,
+                ),
+              ],
+              if (!_isSftp) ...<Widget>[
+                const SizedBox(height: 4),
+                AdaptiveSettingsSwitchRow(
+                  title: t.sync_use_tls,
+                  value: _useTls,
+                  onChanged: (bool v) => setState(() => _useTls = v),
+                ),
+              ],
+              const SizedBox(height: 12),
+              HibikiTextField(
+                controller: _pathController,
+                labelText: t.media_source_network_remote_path,
+                hintText: '/books',
+              ),
+              const SizedBox(height: 12),
+              HibikiTextField(
+                controller: _labelController,
+                labelText: t.media_source_network_label_optional,
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _testing
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: _testConnection,
+                        child: Text(t.sync_test_connection),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        adaptiveDialogAction(
+          context: context,
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+        adaptiveDialogAction(
+          context: context,
+          isDefaultAction: true,
+          onPressed: _submit,
+          child: Text(t.media_source_add),
+        ),
+      ],
+    );
+  }
+}

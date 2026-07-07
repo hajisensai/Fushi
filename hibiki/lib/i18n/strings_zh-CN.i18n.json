@@ -2160,5 +2160,9 @@
   "stat_vs_prev": "较前 14 天",
   "stat_fastest_day": "最快日",
   "stat_slowest_day": "最慢日",
-  "stat_col_book": "书籍"
+  "stat_col_book": "书籍",
+  "media_source_network_subtitle": "SFTP / FTP 远端书库",
+  "media_source_network_remote_path": "远端路径",
+  "media_source_network_label_optional": "显示名（可选）",
+  "media_source_network_missing_fields": "请填写主机、用户名、远端路径，以及密码或私钥"
 }

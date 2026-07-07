@@ -544,8 +544,9 @@ class MinedSentences extends Table {
 /// 扫描后产出多本书/视频（[EpubBooks].sourceId / [VideoBooks].sourceId 反向指向）。
 ///
 /// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源恒 NULL；网络来源（SFTP/
-/// FTP/HTTP，M3 才落）只存凭据「引用（键）」而非密码本体，密码存储方案（复用 base64
-/// vs 真 secure storage）是 M3 用户决策点，不在 M0 预判。
+/// FTP，TODO-1274 已接入）只存**非敏感连接参数** JSON（host/port/username/useTls）；
+/// 密码/私钥经 MediaSourceCredentialStore 以 base64 单独落 Preferences（键
+/// `media_source_secret_<id>`，按行 id 隐式引用），绝不进入 configJson。
 @DataClassName('MediaSourceRow')
 class MediaSources extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -564,7 +565,8 @@ class MediaSources extends Table {
   /// 本地绝对路径或网络根（含 scheme）。
   TextColumn get rootPath => text()();
 
-  /// 凭据引用（键）/ 网络配置 JSON。**绝不裸存明文密码**；本地恒 NULL。
+  /// 非敏感网络连接参数 JSON（host/port/username/useTls）。**绝不裸存明文密码/
+  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL。
   TextColumn get configJson => text().nullable()();
 
   /// 截图「媒体数」：上次扫描产出的条目数。
