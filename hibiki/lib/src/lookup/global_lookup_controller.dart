@@ -356,6 +356,19 @@ class GlobalLookupController {
       return false;
     }
     glog('lookupText: "$term"');
+    // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
+    // programmatic (desktop floating-lyric tap) path: AWAIT a leading
+    // hide(notify:false) so the overlay collapses to a confirmed-hidden state
+    // (SW_HIDE + unhook done on the platform thread) BEFORE _lookupExternal
+    // re-shows + re-renders. The hotkey path got this reset — plus a real
+    // event-loop settle — for free from its async selection-capture round-trip;
+    // lookupText fired _lookupExternal with zero latency, so a floating-lyric
+    // re-tap (or a tap while a previous card was still revealing) raced the
+    // shared reveal state / host content-ready gate and the overlay never
+    // emitted overlaySize — the card revealed blank via the READY-SAFETY
+    // fallback ("点击悬浮字幕文字没有出现查词窗口"). notify:false so this
+    // between-lookups reset is not seen as a user dismissal (TODO-1233).
+    await GlobalLookupChannel.hide(notify: false);
     await _lookupExternal(term, sentence: sentence);
     return true;
   }

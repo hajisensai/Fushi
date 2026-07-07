@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 563 条。点号进各自文件。
+> 共 564 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-578](bugs/BUG-578-desktop-floating-lyric-global-lookup-blank.md) | ✅ | ✅ | 桌面悬浮字幕点词全局查词覆盖窗空白/不出现 |
 | [BUG-577](bugs/BUG-577-ext-highlight-vanish.md) | ✅ | ✅ | 浏览器扩展查词高亮非常容易消失 |
 | [BUG-576](bugs/BUG-576-lan-pair-pin-prompt.md) | ✅ | ✅ | LAN配对总弹PIN框但对方无PIN |
 | [BUG-575](bugs/BUG-575-remote-audio-404-cooldown.md) | ✅ | ✅ | 可达远端发音源对缺词返回404被误冷却导致app外查词整段无音频 |

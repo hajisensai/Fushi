@@ -131,7 +131,7 @@ void main() {
     });
 
     test(
-        'controller：接 _onOverlayHidden + 两处 reset 用 notify:false + 暴露 onHidden',
+        'controller：接 _onOverlayHidden + 三处 reset 用 notify:false + 暴露 onHidden',
         () {
       final String c = read('lib/src/lookup/global_lookup_controller.dart');
       expect(c.contains('onOverlayHidden: _onOverlayHidden'), isTrue,
@@ -139,10 +139,12 @@ void main() {
       expect(c.contains('void Function()? onHidden;'), isTrue,
           reason: '必须暴露公开 onHidden 消费点（872 前置条件）');
       expect(c.contains('void _onOverlayHidden()'), isTrue);
-      // between-lookups 的两处 reset（_onHotKey + _lookupExternal）必须 notify:false，
-      // 真实关闭路径（_onJsMessage 的 dismiss/tapOutside）保持默认 notify:true。
-      expect('GlobalLookupChannel.hide(notify: false)'.allMatches(c).length, 2,
-          reason: '恰两处 between-lookups reset 用 notify:false');
+      // between-lookups 的三处 reset 必须 notify:false：_onHotKey（热键前导）、
+      // _lookupExternal（渲染前 TODO-1079 D）、lookupText（TODO-1268/BUG-578 程序化
+      // 悬浮字幕点词前导复位，与热键对齐）；真实关闭路径（_onJsMessage 的
+      // dismiss/tapOutside）保持默认 notify:true。
+      expect('GlobalLookupChannel.hide(notify: false)'.allMatches(c).length, 3,
+          reason: '恰三处 between-lookups reset 用 notify:false');
     });
   });
 }
