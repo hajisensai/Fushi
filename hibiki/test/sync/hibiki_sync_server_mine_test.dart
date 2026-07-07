@@ -10,17 +10,17 @@ class _FakeMining implements HibikiRemoteMiningService {
   String? lastSentence;
   ImmersionMinePayload? lastImmersion;
   @override
-  Future<String> mineEntry(
+  Future<RemoteMineResult> mineEntry(
       {required Map<String, String> fields, required String sentence}) async {
     lastFields = fields;
     lastSentence = sentence;
-    return 'success';
+    return const RemoteMineResult(result: 'success');
   }
 
   @override
-  Future<String> mineImmersion(ImmersionMinePayload payload) async {
+  Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     lastImmersion = payload;
-    return 'success';
+    return const RemoteMineResult(result: 'success');
   }
 
   bool dupResult = false;

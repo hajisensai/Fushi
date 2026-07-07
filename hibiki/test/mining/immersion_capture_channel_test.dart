@@ -24,6 +24,7 @@ void main() {
         ImmersionCaptureResult(
             gifBytes: Uint8List.fromList([1]),
             audioBytes: Uint8List.fromList([2])),
+        audioExpected: true,
       );
       expect(req.providedCoverName, 'netflix_clip.gif');
       expect(req.providedCoverBytes, [1]);
@@ -41,6 +42,7 @@ void main() {
       final req = buildImmersionRequest(
         _payload(shot: Uint8List.fromList([9])),
         const ImmersionCaptureResult(error: 'black frame'),
+        audioExpected: false,
       );
       expect(req.providedCoverName, 'netflix_shot.jpg');
       expect(req.providedCoverBytes, [9]);
@@ -52,6 +54,7 @@ void main() {
       final req = buildImmersionRequest(
         _payload(shot: Uint8List.fromList([7])),
         ImmersionCaptureResult(audioBytes: Uint8List.fromList([2])),
+        audioExpected: true,
       );
       expect(req.providedCoverName, 'netflix_shot.jpg');
       expect(req.providedCoverBytes, [7]);
@@ -65,6 +68,7 @@ void main() {
       final req = buildImmersionRequest(
         _payload(shot: Uint8List.fromList([5])),
         const ImmersionCaptureResult(error: 'skip'),
+        audioExpected: false,
       );
       expect(req.providedCoverBytes, [5]);
       expect(req.providedAudioBytes, isNull);

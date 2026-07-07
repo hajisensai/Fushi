@@ -196,9 +196,25 @@ async function hibikiRemoveQueued(okIds) {
 // 其余(error / 网络失败 / 上下文失效) → 留队下次重试。只有 done 才 push 进 okIds 被剔除。
 function hibikiClassifyMineResp(resp) {
   if (!resp || !resp.ok || !resp.data) return 'retry';
-  const r = resp.data.result;
-  if (r === 'success' || r === 'duplicate') return 'done';
+  const d = resp.data;
+  const r = d.result;
+  // TODO-1303：服务端现在回带诊断（message=失败原因/音频落空警告，
+  // detail=技术细节）。末尾弹 toast 显因，终结「制卡失败报成功 + 没提示」；
+  // app 侧已把失败写进错误日志。
+  const reason = (d.message || d.detail || '').toString();
+  if (r === 'success' || r === 'duplicate') {
+    // 部分成功：卡建好了但单词音频落空（message 非空）→ 与真成功区分，
+    // 弹警告但仍算 done（卡确实建了）。
+    if (r === 'success' && reason && typeof window.hibikiToast === 'function') {
+      try { window.hibikiToast('⚠ ' + reason); } catch (_) {}
+    }
+    return 'done';
+  }
   if (r === 'notConfigured') return 'unconfigured';
+  // error / 其它：失败，弹原因（无原因回落通用文案）后重试。
+  if (typeof window.hibikiToast === 'function') {
+    try { window.hibikiToast('✗ ' + (reason || '制卡失败，稍候再试')); } catch (_) {}
+  }
   return 'retry';
 }
 function hibikiQueueLoad() {

@@ -133,9 +133,26 @@ class ImmersionMiningEngine {
       );
     }
 
-    // requireAudio 且缺音频 → 中止（对齐 _mineVideoCard L409 的「不建无音频卡」）。
-    if (req.requireAudio && req.hasRange && audioPath == null) {
-      return const ImmersionMiningResult(aborted: true);
+    // TODO-1303：无音频中止——需要音频却最终没有音轨（不建无音频卡）。音频来自两条路：
+    //   ① 区间抽取路径（[hasRange]，YouTube/本地视频）——抽取失败 → audioPath==null。
+    //   ② provided 字节路径（Netflix 录制片段/后台软解，无 range 但有 providedCoverBytes）
+    //      ——本应带 [providedAudioBytes] 却为空（转码/抓取丢音轨）→ audioPath==null。
+    // 两条都要中止，回带原因供远端制卡写错误日志 + 回传诊断（BUG：制卡失败报成功）。
+    // in-app 视频「无 cue」路径（requireAudio 默认 true、无 range、走 stillFallback、
+    // providedCoverBytes==null）不落任一分支 → 不中止，仍出静帧卡（Never break userspace）。
+    final bool viaProvidedBytes =
+        req.providedCoverBytes != null && !req.hasRange;
+    if (req.requireAudio &&
+        audioPath == null &&
+        (req.hasRange || viaProvidedBytes)) {
+      return const ImmersionMiningResult(
+          aborted: true, abortReason: 'required audio missing');
+    }
+    // TODO-1303：空壳卡兜底——既无封面又无音频（截图/GIF/音频全失败），不建卡。这正是
+    // 「降级空壳卡仍报成功」的根：任何来源下都不该产出无媒体的卡。
+    if (coverPath == null && audioPath == null) {
+      return const ImmersionMiningResult(
+          aborted: true, abortReason: 'no cover and no audio produced');
     }
 
     final AnkiMiningContext context = AnkiMiningContext(

@@ -253,4 +253,48 @@ void main() {
         repo: repo);
     expect(repo.updatedNoteId, 7);
   });
+
+  // TODO-1303：Netflix provided-bytes 路径（无 range）本应带音频却丢音轨 → 中止而非静默出
+  // 无声卡。此前 requireAudio 被 `&& hasRange` 门控架空（Netflix clip 恒 hasRange=false），
+  // 音频丢时永不中止 → 「制卡失败报成功」的无声/空壳卡。带回 abortReason 供远端写日志 + 回传。
+  test('audio expected via provided cover but audio missing -> abort',
+      () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            ImmersionMiningRequest(
+                fields: const {'expression': 'x'},
+                clipStartMs: 0,
+                clipEndMs: 0,
+                sentence: 's',
+                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+                providedCoverName: 'netflix_clip.gif',
+                requireAudio: true),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason, contains('audio'));
+    expect(repo.minedContext, isNull);
+  });
+
+  // TODO-1303：空壳卡兜底——封面 + 音频全无（截图/GIF/音频全失败）→ 中止，绝不产出无媒体卡，
+  // 即便 requireAudio=false（这正是「降级空壳卡仍报成功」的根）。
+  test('empty shell (no cover, no audio) -> abort', () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            const ImmersionMiningRequest(
+                fields: {'expression': 'x'},
+                clipStartMs: 0,
+                clipEndMs: 0,
+                sentence: 's',
+                requireAudio: false),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason, contains('no cover'));
+    expect(repo.minedContext, isNull);
+  });
 }
