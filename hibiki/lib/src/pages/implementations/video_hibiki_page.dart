@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';

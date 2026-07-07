@@ -59,7 +59,7 @@ void main() {
     expect(source, contains('Future<void> _showReaderImageContextMenu('));
     expect(source, contains('Future<void> _shareReaderImage(String imgUrl)'));
     expect(source, contains('Future<void> _copyReaderImageToClipboard('));
-    expect(source, contains('Share.shareXFiles'));
+    expect(source, contains('HibikiShare.shareFiles'));
     expect(source, contains('XFile(file.path'));
     expect(source, contains('HibikiChannels.clipboardImage'));
     expect(source, contains('invokeMethod<void>('));

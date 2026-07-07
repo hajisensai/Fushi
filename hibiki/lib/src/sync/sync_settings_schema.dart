@@ -50,6 +50,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 
 part 'sync_settings_schema/account.part.dart';
 part 'sync_settings_schema/backend_config.part.dart';

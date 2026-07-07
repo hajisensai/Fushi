@@ -524,7 +524,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return;
     }
     try {
-      await Share.shareXFiles(
+      await HibikiShare.shareFiles(
         <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
         subject: p.basename(file.path),
       );

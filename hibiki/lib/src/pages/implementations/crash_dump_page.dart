@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 
 import 'package:gap/gap.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
@@ -61,7 +62,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
   /// 分享单个 `.dmp`（系统分享面板）。
   Future<void> _shareDump(File dump) async {
     try {
-      await Share.shareXFiles(
+      await HibikiShare.shareFiles(
         <XFile>[XFile(dump.path, mimeType: 'application/octet-stream')],
         subject: t.crash_dump_share_subject,
       );
