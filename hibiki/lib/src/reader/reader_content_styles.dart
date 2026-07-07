@@ -360,6 +360,8 @@ svg.block-img.blurred {
                 columnsCss: columnsCss,
                 clampedMarginTop: mt,
                 clampedMarginBottom: mb,
+                clampedMarginLeft: ml,
+                clampedMarginRight: mr,
                 contentClipCss: contentClipCss,
               );
 
@@ -600,6 +602,8 @@ a {
     required String columnsCss,
     required double clampedMarginTop,
     required double clampedMarginBottom,
+    required double clampedMarginLeft,
+    required double clampedMarginRight,
     required String contentClipCss,
   }) {
     return '''
@@ -637,6 +641,15 @@ body {
   height: var(--reader-viewport-height, 100vh) !important;
   column-width: $columnWidthCss !important;
   column-gap: $columnGapCss !important;
+  /* TODO-1285（每页列数分页·相邻页泄露根因修复其一）：分页多列(pageColumns≥2)是
+     固定高度 + 横/竖溢出的 multicol。CSS 默认 column-fill:balance 让引擎在末
+     fragmentainer把内容均摊成等高短列；Blink 在受限高度下退化成 auto(实测
+     balance==auto)故本机无差，但按规范其它引擎/旧 WebView 可对每个 fragment
+     都做均摊 → 列高不齐、列不落在 pageStep 网格 → 翻页时相邻页的列露进本页。
+     分页 multicol 必须显式 column-fill:auto(与 ttu 上游、本仓 horizontal_pitch
+     harness 一致)：逐列填满再溢出、列周期恒 == pageStep。单列(pageColumns≤1)同样
+     受用(1 列无可均摊，零行为变化)。 */
+  column-fill: auto !important;
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
   padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
@@ -653,6 +666,34 @@ body {
   $vertKerningCss
   $vpalCss
   $columnsCss
+}
+/* TODO-1285（相邻页/列泄露根因修复其二·overflow 裁剪失效兜底）：分页把整条内容当
+   一根 multicol 横/竖向溢出、靠 scrollTop/Left 移动 body 看每页；相邻页的列几何上
+   落在 body 的 padding(页边距)带里。body{overflow:hidden} 只在 border-box(=padding-box
+   外沿=视口帧)裁剪，**裁不掉 padding 带内**滚过的相邻列——唯一遮住它的是 body 的
+   clip-path(paint 期裁剪)。clip-path 是绘制期特性，一旦目标 WebView 不支持/不解析
+   `inset(calc(vh+var()) vw ...)`/滚动不重绘，padding 带里的相邻列就露出来；单列时那
+   只是相邻页整列的一条细边(不易察觉)，多列时 padding 带能容下一整根窄子列 → 用户看到
+   「上一页/下一页内容全露出来」。根因是「只靠 clip-path 这一个 paint 期机制遮 padding
+   带泄露」。这里在**未被 body clip-path 裁剪的** html 上加一层 ::before 覆盖条：position:
+   fixed 贴视口帧、四边 border 宽 == body 四边 padding(与 contentClipCss/padding 逐项一致)、
+   border-color=页背景色 → 用背景色不透明覆盖 padding 泄露带；中间内容盒透明(border 只占
+   四边)不挡正文；pointer-events:none 不拦选词/点按；极大 z-index 压在正文之上。clip-path
+   仍在(Blink 下它已把 padding 带显示成背景、本覆盖条与其同色零视觉变化、可回归验证)，
+   但即使 clip-path 失效，本覆盖条独立(html 无 clip-path)遮住泄露 → 引擎无关的兜底。 */
+html::before {
+  content: "" !important;
+  position: fixed !important;
+  top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  z-index: 2147483000 !important;
+  border-style: solid !important;
+  border-color: ${colors.backgroundColor} !important;
+  border-top-width: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
+  border-right-width: ${clampedMarginRight}vw !important;
+  border-bottom-width: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  border-left-width: ${clampedMarginLeft}vw !important;
 }''';
   }
 

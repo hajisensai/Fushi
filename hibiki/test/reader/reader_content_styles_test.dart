@@ -567,6 +567,85 @@ void main() {
               baseContentBoxCss: base, pageColumns: 4, columnGapPx: 22),
           'max(1px, calc((calc(100px) - 66px) / 4))');
     });
+
+    // TODO-1285（相邻页/列泄露根因修复）：headless Blink 实测 pageStep/列几何均正确、
+    // 且分页 CSS 一直缺 column-fill（默认 balance）——分页 multicol 规范要求显式
+    // column-fill:auto，否则按规范引擎可对每个 fragment 均摊列高 → 列不落 pageStep 网格
+    // → 相邻页列露出。守卫：分页 body 必发 column-fill:auto（横排/竖排/单列都发）。
+    test('TODO-1285 分页 multicol 必发 column-fill: auto（横排/竖排/单列）', () async {
+      for (final ({String mode, int cols}) c in <({String mode, int cols})>[
+        (mode: 'horizontal-tb', cols: 2),
+        (mode: 'vertical-rl', cols: 3),
+        (mode: 'horizontal-tb', cols: 0),
+      ]) {
+        final HibikiDatabase db =
+            HibikiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setWritingMode(c.mode);
+        await settings.setPageColumns(c.cols);
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('column-fill: auto !important;'),
+            reason:
+                '分页 multicol（${c.mode} pageColumns=${c.cols}）必须显式 column-fill:auto');
+      }
+    });
+
+    // TODO-1285（相邻页/列泄露根因修复其二·overflow 裁剪失效兜底）：截图实测证明——
+    // 相邻页的列几何上落在 body 的 padding(页边距)带里，body{overflow:hidden} 裁不掉它，
+    // 唯一遮住它的是 body 的 clip-path(paint 期特性，个别 WebView 不解析/滚动不重绘就漏)。
+    // 兜底：在未被 body clip-path 裁剪的 html 上加 ::before 覆盖条，四边 border 宽 == body
+    // 四边 padding、border-color=背景色、pointer-events:none、z-index 压正文之上但低于 caret。
+    test('TODO-1285 分页 html::before 覆盖条：引擎无关遮 padding 泄露带', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setPageColumns(2);
+      final String css = ReaderContentStyles.css(settings: settings);
+
+      expect(css, contains('html::before {'),
+          reason: '分页必须发 html::before 覆盖条兜底 padding 泄露');
+      expect(css, contains('position: fixed !important;'));
+      expect(css, contains('pointer-events: none !important;'),
+          reason: '覆盖条不得拦截选词/点按');
+      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）。
+      expect(
+          css,
+          contains(
+              'border-top-width: calc(${settings.marginTop}vh + var(--chrome-top-inset, 0px)) !important;'));
+      expect(
+          css,
+          contains(
+              'border-right-width: ${settings.marginRight}vw !important;'));
+      expect(
+          css,
+          contains(
+              'border-bottom-width: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;'));
+      expect(css,
+          contains('border-left-width: ${settings.marginLeft}vw !important;'));
+      // 覆盖条色 == 页背景色（不透明覆盖泄露文字）。
+      expect(css, contains('html::before {'));
+      // z-index 必须低于 caret（2147483646）以免遮住焦点/查词 caret。
+      expect(css, contains('z-index: 2147483000 !important;'));
+    });
+
+    // 覆盖条只属分页：连续模式不发 html::before（避免连续滚动被 padding 条错遮）。
+    test('TODO-1285 连续模式不发 html::before 覆盖条', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setViewMode('continuous');
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('html::before {')),
+          reason: '连续模式不是分页 padding 泄露模型，不应发覆盖条');
+    });
   });
 
   group('ReaderContentStyles themed scrollbar', () {
