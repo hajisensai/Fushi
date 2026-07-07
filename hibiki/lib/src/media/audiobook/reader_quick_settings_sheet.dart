@@ -1631,16 +1631,20 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: [
         if (widget.onToggleLyricsMode != null)
           Expanded(
-            child: _actionBtn(
-              context,
-              icon: widget.lyricsMode
-                  ? Icons.auto_stories_outlined
-                  : Icons.lyrics_outlined,
-              label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
-              onTap: () {
-                Navigator.of(context).pop();
-                widget.onToggleLyricsMode!();
-              },
+            child: Semantics(
+              identifier: 'hibiki.reader.quick_settings.lyrics_toggle',
+              child: _actionBtn(
+                context,
+                key: const ValueKey<String>('hoshi_lyrics_mode_toggle'),
+                icon: widget.lyricsMode
+                    ? Icons.auto_stories_outlined
+                    : Icons.lyrics_outlined,
+                label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  widget.onToggleLyricsMode!();
+                },
+              ),
             ),
           ),
         Expanded(
@@ -1678,6 +1682,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   Widget _actionBtn(
     BuildContext context, {
+    Key? key,
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -1685,6 +1690,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget button = InkWell(
+      key: key,
       onTap: onTap,
       // Under HibikiFocusRoot the registered HibikiActivatableFocusTarget below
       // is the single focus stop; keep the InkWell ripple for mouse/touch but
