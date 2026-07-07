@@ -36,6 +36,17 @@ bool debugIsRemoteFfmpegInput(String inputPath) =>
 /// 加 `-reconnect` 系列让 ffmpeg 自动重连（实测把间歇失败的 GIF 抽取变成稳定 277KB 产出）；
 /// `-user_agent` 与 libmpv 侧一致，规避个别流对 UA 的挑剔。本地路径返回空（不加网络开关）。
 /// 纯函数，便于单测。
+///
+/// TODO-1290：制卡句子音频（[extractAudioSegmentViaFfmpeg]）在 googlevideo 流上仍报
+/// `ffmpeg exit -138`。根因：`-138` 是 **打开/连接阶段** 的 TCP/TLS 网络错误
+/// （Windows/mingw errno 138 = ETIMEDOUT，即连接超时），而 `-reconnect` /
+/// `-reconnect_streamed` 只在「流传输中断 / EOF」时重连，**不覆盖 connect 阶段的网络错误**
+/// ——所以短音频段（每次都新开一条 googlevideo 连接、更常在 open 阶段撞上超时）依旧硬失败。
+/// 补 `-reconnect_on_network_error 1`：ffmpeg http 协议在 connect 阶段的 TCP/TLS 错误上
+/// 自动重连（配合已有的 `-reconnect_delay_max 5` 退避预算），正好命中 `-138` 这一类。
+/// 该选项 ffmpeg ≥4.3 即有，捆绑的 n7.1.5 已带；网络支持早在 ffmpeg-min recipe 编入
+/// （`--enable-network` + http/https/tcp/tls），**无需重编二进制**。remote-only、对本地
+/// 输入零影响。
 List<String> buildFfmpegRemoteInputArgs(String inputPath) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
   return const <String>[
@@ -44,6 +55,10 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath) {
     '-reconnect',
     '1',
     '-reconnect_streamed',
+    '1',
+    // TODO-1290：connect 阶段 TCP/TLS 错误（含 -138 / ETIMEDOUT）也自动重连——
+    // `-reconnect` 系列只管流中断/EOF，短音频段的失败几乎全在 open 阶段。
+    '-reconnect_on_network_error',
     '1',
     '-reconnect_delay_max',
     '5',
