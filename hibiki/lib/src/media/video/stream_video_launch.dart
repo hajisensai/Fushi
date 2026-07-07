@@ -16,8 +16,10 @@ bool isStreamVideoBook(VideoBookRow book) =>
 /// 让「粘贴 URL 导入」的流媒体像本地视频一样入库、在书架持久、可重复打开：重开时不复用
 /// 过期的临时解析结果，而是按 [VideoBookRow.videoPath]（原始 URL）+ [VideoBookRow.streamSpecJson]
 /// （外挂字幕 URL / 防盗链 header）重建客户端，与「导入即播」时 dialog 构建客户端的逻辑等价：
-/// - YouTube（[isYoutubeUrl]）：按 watch URL 重新 [resolveYoutubeSource]（临时流 URL 会过期，
-///   必须每次重解析），拿分离视频/音频流 + 预解析 cue + 防盗链 header 包成 client。
+/// - YouTube（[isYoutubeUrl]）：按 watch URL 走 TODO-1307 快解析 gate（[resolveYoutubeSource]
+///   `withCaptions:false`，临时流 URL 会过期必须每次重解析），只取分离视频/音频流 + 防盗链
+///   header 即可起播；字幕后置——watch URL 存进 [UrlStreamVideoClient.youtubeCaptionsUrl]，
+///   由播放页 load 返回后异步 [resolveYoutubeCaptions] 灌 1302 的 YouTube 字幕轨。
 /// - 直链 / HLS：直接用 videoPath 作流 URL，附上 spec 里的外挂字幕 URL + Referer/User-Agent。
 ///
 /// [RemoteVideoInfo.id] 用 [VideoBookRow.bookUid]（断点 prefs 按它 key，重开续看可对齐）。
@@ -29,7 +31,11 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       StreamVideoSpec.fromStorageJson(book.streamSpecJson);
   final UrlStreamVideoClient client;
   if (isYoutubeUrl(url)) {
-    final YoutubeResolvedSource resolved = await resolveYoutubeSource(url);
+    // TODO-1307 快解析 gate：只 getManifest 取流 URL 即起播，跳过 videos.get（title 用
+    // book.title）与字幕解析（旧串行 ~28s → ~getManifest）。preresolvedCues 留空，字幕由
+    // 播放页 load 返回后异步 resolveYoutubeCaptions(youtubeCaptionsUrl) 灌 1302 字幕轨。
+    final YoutubeResolvedSource resolved =
+        await resolveYoutubeSource(url, withCaptions: false);
     client = UrlStreamVideoClient(
       streamUrl: resolved.streamUrl,
       audioStreamUrl: resolved.audioStreamUrl,
@@ -38,7 +44,9 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       // 守卫（youtube_clip_miner.dart:67）——muxed 时把制卡音频源置 null 回落 miningSource
       // 抽音频，避免指向 audio-only DASH 流致 ffmpeg seek stall→无句子音频/GIF 连坐丢弃。
       miningVideoHasAudio: resolved.miningVideoHasAudio,
-      preresolvedCues: resolved.cues,
+      // 字幕后置：起播不带 cue（withCaptions=false → resolved.cues 恒空），watch URL 供
+      // 播放页 load 后异步解析字幕并灌 1302 字幕轨。
+      youtubeCaptionsUrl: url,
       httpHeaderFields: resolved.httpHeaders,
     );
   } else {

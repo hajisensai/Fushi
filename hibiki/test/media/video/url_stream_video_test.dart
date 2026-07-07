@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -384,6 +385,37 @@ void main() {
           StreamVideoSpec(subtitleUrl: 'https://x/y.srt');
       expect(spec.isEmpty, isFalse);
       expect(spec.httpHeaderFields, isEmpty);
+    });
+  });
+
+  group('UrlStreamVideoClient 字幕后置数据模型 (TODO-1307)', () {
+    test('preresolvedCues 起播为空、setPreresolvedCues 回填（1302 菜单数据源）', () {
+      final UrlStreamVideoClient client = UrlStreamVideoClient(
+        streamUrl: 'https://googlevideo.test/stream',
+        youtubeCaptionsUrl: 'https://youtu.be/abc',
+      );
+      expect(client.preresolvedCues, isEmpty);
+      expect(client.youtubeCaptionsUrl, 'https://youtu.be/abc');
+
+      final AudioCue cue = AudioCue()
+        ..bookKey = 'yt:abc'
+        ..sentenceIndex = 0
+        ..text = 'こんにちは'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      client.setPreresolvedCues(<AudioCue>[cue]);
+      expect(client.preresolvedCues.length, 1);
+      expect(client.preresolvedCues.first.text, 'こんにちは');
+      client.close();
+    });
+
+    test('非 YouTube 直链 client 无 youtubeCaptionsUrl（不触发字幕后置）', () {
+      final UrlStreamVideoClient client =
+          UrlStreamVideoClient(streamUrl: 'https://cdn.test/live.m3u8');
+      expect(client.youtubeCaptionsUrl, isNull);
+      expect(client.preresolvedCues, isEmpty);
+      client.close();
     });
   });
 }

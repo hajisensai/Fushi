@@ -231,6 +231,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     this.miningVideoUrl,
     this.miningVideoHasAudio = false,
     this.preresolvedCues = const <AudioCue>[],
+    this.youtubeCaptionsUrl,
     this.httpHeaderFields = const <String, String>{},
     http.Client? httpClient,
   }) : _httpClient = httpClient ?? http.Client();
@@ -252,9 +253,23 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   /// [YoutubeResolvedSource.miningVideoHasAudio]。经 [remoteVideoStreamUrls] 透传给播放页。
   final bool miningVideoHasAudio;
 
-  /// TODO-1000：预解析好的字幕 cue（YouTube timedtext 已转 [AudioCue]）；非空时播放页
-  /// 直接用，跳过 [subtitleUrl] 下载+解析（YouTube XML 字幕现有解析器不识别）。
-  final List<AudioCue> preresolvedCues;
+  /// TODO-1000 / TODO-1307：预解析好的字幕 cue（YouTube timedtext 已转 [AudioCue]）。
+  /// **字幕后置**（TODO-1307）：快解析 gate 起播时为空（未阻塞首帧），播放页 load 返回后
+  /// 据 [youtubeCaptionsUrl] 异步 [resolveYoutubeCaptions]，cue 就绪由 [setPreresolvedCues]
+  /// 回填——供 1302 的 YouTube 字幕轨菜单（`_youtubeCaptionsAvailable` / `_applyYoutubeCaptions`
+  /// 读此字段）渲染 / 重选。非空时播放页直接用，跳过 [subtitleUrl] 下载+解析。
+  List<AudioCue> preresolvedCues;
+
+  /// 回填字幕后置解析出的 cue（TODO-1307）。快解析 gate 起播后字幕异步就绪时由播放页调用，
+  /// 使 [preresolvedCues] 与真实字幕轨对齐（1302 菜单据此渲染「YouTube 字幕」行）。
+  void setPreresolvedCues(List<AudioCue> cues) {
+    preresolvedCues = cues;
+  }
+
+  /// TODO-1307：YouTube watch URL（字幕后置解析源）。快解析 gate 只取流起播、不解字幕，
+  /// 播放页 load 返回后据此异步 [resolveYoutubeCaptions] 灌 1302 字幕轨。null=非 YouTube
+  /// （直链/HLS 无 timedtext 字幕后置，字幕仍走 [subtitleUrl] 下载）。
+  final String? youtubeCaptionsUrl;
 
   /// 可选外挂字幕 URL（http/https）；非空时 [getRemoteVideoSubtitle] 下载到 dest。
   final String? subtitleUrl;

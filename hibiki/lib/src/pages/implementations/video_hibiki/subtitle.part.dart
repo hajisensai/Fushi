@@ -642,6 +642,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted) return;
+    // TODO-1307：用户显式关字幕后，字幕后置解析完成也不再自动抢占应用（尊重用户选择，
+    // 见 [_resolveDeferredYoutubeCaptions]）；仍回填 cue 使「YouTube 字幕」行可再手选。
+    _remoteSubtitleUserDismissed = true;
     _rebuild(() => _currentSubtitleSource = null);
   }
 
