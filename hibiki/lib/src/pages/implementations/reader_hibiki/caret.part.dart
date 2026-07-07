@@ -500,6 +500,16 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         }
         unawaited(_showAppearanceSheet());
         return KeyEventResult.handled;
+      case ShortcutAction.readerOpenNavigation:
+        // TODO-1309①：Ctrl+F 直接打开阅读器导航界面（直达 location 子页：书内搜索/
+        // 字符跳转/目录/书签/收藏）。与 readerOpenMenu 一样先关词典弹窗再开面板，
+        // 复用 _showAppearanceSheet 的重入守卫。
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
+        unawaited(_showAppearanceSheet(initialSubPage: 'location'));
+        return KeyEventResult.handled;
       case ShortcutAction.readerToggleBookmark:
         _addBookmarkAtCurrentPosition();
         return KeyEventResult.handled;

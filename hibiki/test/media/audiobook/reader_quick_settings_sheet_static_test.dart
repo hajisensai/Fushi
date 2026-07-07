@@ -578,6 +578,40 @@ void main() {
     expect(maxLines, greaterThan(kSettingsRowTitleMaxLines),
         reason: '章节名要能换行显示，titleMaxLines 必须大于默认 2 行 clamp');
   });
+
+  test(
+      'Ctrl+F opens the sheet straight to the navigation (location) sub-page '
+      '(TODO-1309①)', () {
+    final String sheetSource =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // The sheet takes an initialSubPage entry point and seeds _subPage from it,
+    // so a caller can open it already showing a chosen sub-page (窄窗直接落子页，
+    // 不必先停在主菜单再点一次导航)。宽窗 selectedId 早已默认 'location'。
+    expect(sheetSource, contains('final String? initialSubPage;'),
+        reason: 'sheet 必须暴露 initialSubPage 入口参数');
+    expect(sheetSource, contains('this.initialSubPage,'),
+        reason: 'initialSubPage 必须进构造函数');
+    expect(
+        sheetSource, contains('late String? _subPage = widget.initialSubPage;'),
+        reason: '_subPage 必须由 initialSubPage 初始化，否则窄窗仍落主菜单');
+
+    // The reader page routes the new readerOpenNavigation shortcut into
+    // _showAppearanceSheet(initialSubPage: 'location') so Ctrl+F lands on the
+    // navigation sub-page (search / char-jump / TOC / bookmarks / favorites).
+    final String readerSource = readReaderPageSource();
+    expect(readerSource,
+        contains('Future<void> _showAppearanceSheet({String? initialSubPage})'),
+        reason: '_showAppearanceSheet 必须接受 initialSubPage 并透传给 sheet');
+    expect(readerSource, contains('initialSubPage: initialSubPage,'),
+        reason: '打开 sheet 时必须把 initialSubPage 透传下去');
+    expect(readerSource, contains('case ShortcutAction.readerOpenNavigation:'),
+        reason: 'reader 执行体必须处理 readerOpenNavigation');
+    expect(readerSource,
+        contains("_showAppearanceSheet(initialSubPage: 'location')"),
+        reason: 'Ctrl+F 必须直达 location 导航子页');
+  });
 }
 
 String _withoutSharedIconButton(String source) {

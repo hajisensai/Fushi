@@ -2170,5 +2170,6 @@
   "render_restart_required": "重启 App 后生效",
   "handlebar_card_image": "卡片图片（封面 / 视频 GIF）",
   "video_subtitle_youtube_captions": "YouTube 字幕",
-  "video_subtitle_waveform_unavailable": "本设备无法生成波形"
+  "video_subtitle_waveform_unavailable": "本设备无法生成波形",
+  "shortcut_action_reader_open_navigation": "打开导航"
 }

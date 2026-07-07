@@ -2170,5 +2170,6 @@
   "render_restart_required": "Takes effect after restarting the app",
   "handlebar_card_image": "Card Image (Cover / GIF)",
   "video_subtitle_youtube_captions": "YouTube captions",
-  "video_subtitle_waveform_unavailable": "Waveform unavailable on this device"
+  "video_subtitle_waveform_unavailable": "Waveform unavailable on this device",
+  "shortcut_action_reader_open_navigation": "Open Navigation"
 }

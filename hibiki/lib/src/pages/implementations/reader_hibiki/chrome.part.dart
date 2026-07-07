@@ -1120,7 +1120,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     return _book!.chapterIndexForHref(href);
   }
 
-  Future<void> _showAppearanceSheet() async {
+  Future<void> _showAppearanceSheet({String? initialSubPage}) async {
     if (_settings == null || _controller == null || _book == null) return;
     // 重入守卫：快速连点时按钮按下到 show 之间的 DB 读 await 期间会二次进入、弹出
     // 两个面板。标志置位必须在第一个 await 之前，复位放 finally（异常也复位）。
@@ -1160,6 +1160,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         appModel: appModel,
         ref: ref,
         isHibikiReader: true,
+        initialSubPage: initialSubPage,
         onStyleChanged: _applyStylesLive,
         onThemeChanged: _onThemeChanged,
         extractDir: _extractDir,
