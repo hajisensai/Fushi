@@ -378,8 +378,25 @@ $pageBreakCss
   --hoshi-sasayaki-background-color: ${sasayakiColor ?? colors.sasayakiColor};
 }
 html {
-  /* block-container property: constrain line-box height so ruby/furigana won't expand it */
-  -webkit-line-box-contain: block glyphs replaced;
+  /* TODO-1308 (BUG): the legacy WebKit property
+     `-webkit-line-box-contain: block glyphs replaced` (cargo-ported from Hoshi
+     in ec4abf78a) has been REMOVED here. It told the engine to size line boxes
+     to glyphs only, i.e. to NOT reserve the extra leading a <ruby>'s <rt>
+     annotation needs. Current Blink dropped support for the property entirely
+     (CSS.supports('-webkit-line-box-contain', ...) === false on WebView2 /
+     recent Android WebView), so it was already a dead no-op for most users. But
+     on older Android System WebView that still honours it, the stripped reserve
+     means the furigana has nowhere to sit: in vertical-rl the annotation lives
+     on the column's cross axis (to the right of the base column), so with the
+     reserve gone the <rt> collapses INTO the base-character column — "假名跑到
+     文字中间". The overlap re-materialises after a TOC/bookmark/search jump
+     because `_applyChapterHighlights` (navigation.part.dart) forces a style
+     recalc / incremental relayout on the freshly-scrolled content, re-applying
+     the glyph-only line-box constraint. Removing the declaration restores the
+     default line-box behaviour (which reserves ruby space) on every engine —
+     exactly what current Blink already does correctly (zero regression there),
+     and the BUG-108 lesson that Blink WebViews do not add ruby leading unless
+     the line box is allowed to grow. */
   /* Themed scrollbar: the track stays transparent so it shows the page
      background, and the thumb takes the theme text colour (already alpha<1),
      so dark themes get a light thumb and light themes a dark one. The standard
