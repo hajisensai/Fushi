@@ -1183,6 +1183,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
 
+  // TODO-1289：图片防剧透遮罩「点击揭开」的本次阅读会话真相源。揭开只删 WebView 内
+  // DOM class，章节 (重)载 / 布局设置切换会重跑分页脚本重新遮罩；把已揭开图片的稳定
+  // key（绝对 URL）留在这套内存集里（随本 State 生命周期，覆盖整本书阅读会话），
+  // 重载章节时嵌回分页脚本让这些图片跳过重新遮罩。JS 侧经 onImageRevealed 回传。
+  final Set<String> _revealedImageKeys = <String>{};
+
   AudiobookPlayerController? _audiobookController;
   String? _audiobookBookKey;
   String? _srtBookUid;

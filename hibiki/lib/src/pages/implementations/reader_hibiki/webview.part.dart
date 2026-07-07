@@ -514,6 +514,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
         blurImages: s.blurImages,
+        // TODO-1289：把本次会话已揭开的防剧透图 key 嵌入分页脚本，重载时不再重新遮罩。
+        revealedKeysJson: jsonEncode(_revealedImageKeys.toList()),
         vnRevealSpeed: vnRevealSpeed,
         vnScreenMode: s.visualNovelScreenMode,
         vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
@@ -736,6 +738,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     var el = _hoshiResolveBlockImageElement(target);
     if (el && el.classList && el.classList.contains('blurred')) {
       el.classList.remove('blurred');
+      // TODO-1289：揭开状态持久——回传稳定 key 给 Dart 会话集，章节重载不再重新遮罩。
+      if (window.__hoshiImageRevealKey && window.flutter_inappwebview) {
+        var key = window.__hoshiImageRevealKey(el);
+        if (key) window.flutter_inappwebview.callHandler('onImageRevealed', key);
+      }
       return true;
     }
     return false;
@@ -1670,6 +1677,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onImageDetected',
           callback: (_) => _audiobookController?.triggerImagePause(),
+        );
+
+        // TODO-1289：JS 揭开防剧透图后回传稳定 key，登记进本次阅读会话内存集；
+        // 章节 (重)载时 _buildReaderHtml 会把该集嵌回分页脚本，跳过重新遮罩。
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageRevealed',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty) return;
+            final String key = args[0]?.toString() ?? '';
+            if (key.isEmpty) return;
+            _revealedImageKeys.add(key);
+          },
         );
 
         controller.addJavaScriptHandler(

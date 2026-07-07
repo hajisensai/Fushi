@@ -721,6 +721,7 @@ class ReaderPaginationScripts {
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    String revealedKeysJson = '[]',
     int vnRevealSpeed = 0,
     String vnScreenMode = 'block',
     int vnSentencesPerScreen = 1,
@@ -753,6 +754,7 @@ class ReaderPaginationScripts {
         dartPageWidth: dartPageWidth,
         dartPageHeight: dartPageHeight,
         blurImages: blurImages,
+        revealedKeysJson: revealedKeysJson,
       );
     }
     return _paginatedShellScript(
@@ -766,6 +768,7 @@ class ReaderPaginationScripts {
       dartPageWidth: dartPageWidth,
       dartPageHeight: dartPageHeight,
       blurImages: blurImages,
+      revealedKeysJson: revealedKeysJson,
     );
   }
 
@@ -1489,10 +1492,43 @@ class ReaderPaginationScripts {
   /// 大图（含 svg 封面）加 `blurred` 类（CSS 盖 24px 模糊），并装一次性点击监听揭开。
   /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
   /// 处理（见 `_hoshiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
-  static String _sharedInitImages({bool blurImages = false}) {
+  static String _sharedInitImages({
+    bool blurImages = false,
+    String revealedKeysJson = '[]',
+  }) {
+    // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
+    // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
+    // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
+    // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
+    // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
+    // baseURI 解析成绝对 URL）注入成 map，_hoshiBlurImage 命中则跳过重新遮罩。揭开
+    // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
+    // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
     final String blurFn = blurImages
         ? '''
+  var _hoshiRevealedKeys = Object.create(null);
+  (function() {
+    var keys = $revealedKeysJson;
+    if (keys && keys.length) {
+      for (var i = 0; i < keys.length; i++) { _hoshiRevealedKeys[keys[i]] = true; }
+    }
+  })();
+  function _hoshiImageRevealKey(element) {
+    if (!element) return '';
+    var raw = '';
+    if (element.tagName === 'IMG') {
+      raw = element.getAttribute('src') || element.src || '';
+    } else if (element.querySelector) {
+      var im = element.querySelector('image');
+      if (im) raw = im.getAttribute('xlink:href') || im.getAttribute('href') || '';
+    }
+    if (!raw) return '';
+    try { return new URL(raw, document.baseURI).href; } catch (e) { return raw; }
+  }
+  window.__hoshiImageRevealKey = _hoshiImageRevealKey;
   function _hoshiBlurImage(element) {
+    var key = _hoshiImageRevealKey(element);
+    if (key && _hoshiRevealedKeys[key]) return;
     element.classList.add('blurred');
   }'''
         : '';
@@ -1613,6 +1649,7 @@ if (document.readyState === 'complete') {
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    String revealedKeysJson = '[]',
   }) {
     // BUG-162: 优先精确字符偏移恢复（restoreToCharOffset），无精确锚（旧存档）才
     // 回退粗粒度 restoreProgress；书签/fragment 跳转仍走 jumpToFragment。
@@ -1631,7 +1668,8 @@ if (document.readyState === 'complete') {
     const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
     const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
 
-    final String initImages = _sharedInitImages(blurImages: blurImages);
+    final String initImages = _sharedInitImages(
+        blurImages: blurImages, revealedKeysJson: revealedKeysJson);
 
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
@@ -2495,6 +2533,7 @@ $_sharedInitBoot
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    String revealedKeysJson = '[]',
   }) {
     // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。BUG-461：收藏句跳转带句尾
     // 偏移（initialCharOffsetEnd>句首）时透传给 restoreToCharOffset 做整句区间对齐。
@@ -2513,7 +2552,8 @@ $_sharedInitBoot
 
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
-    final String initImages = _sharedInitImages(blurImages: blurImages);
+    final String initImages = _sharedInitImages(
+        blurImages: blurImages, revealedKeysJson: revealedKeysJson);
 
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
