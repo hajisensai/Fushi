@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 
-/// TODO-1302 / BUG-596 源码守卫 + 逻辑单测。
+/// TODO-1302 / BUG-602 源码守卫 + 逻辑单测。
 ///
 /// 根因：YouTube 走 `preresolvedCues` 路径（[video_hibiki_page.dart] 的
 /// `_loadRemoteEpisode`）把预解析 cue 直接注入 overlay，却绕过远端字幕轨模型——

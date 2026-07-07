@@ -1,6 +1,6 @@
-## BUG-596 · 油管字幕绕过远端字幕轨模型选不到
+## BUG-602 · 油管字幕绕过远端字幕轨模型选不到
 - **报告**：2026-07-07（用户：油管视频等，字幕没有出现在字幕轨上 / TODO-1302）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_loadRemoteEpisode`（约 :1643-1644）：YouTube 走 `preresolvedCues` 路径把预解析 cue 直接注入 overlay（画面字幕正常显示），却**绕过远端字幕轨模型**——不写 `_remoteSubtitlePath`、不加 `_remoteEmbeddedSubtitleTracks`、`_currentSubtitleSource` 留 null → 远端字幕菜单（`subtitle.part.dart:100-227`）渲染不出任何 YouTube 字幕行；且「关闭」项按 `_isRemote && _currentSubtitleSource == null` 被误显选中，用户在字幕轨选择器里根本选不到 YouTube 字幕。
 - **[x] ① 已修复** — 应用 `preresolvedCues` 时把 `_currentSubtitleSource` 设为非空合成源哨兵 `_kYoutubeCaptionsSource`（`'youtube:captions'`），远端字幕菜单据 `_youtubeCaptionsAvailable` 渲染一条「YouTube 字幕」行并高亮为选中（不再误显「关闭」）；关闭走既有 `_clearRemoteSubtitle`（置 null 清 cue）。改动集中 `video_hibiki_page.dart:1643-1674` + `subtitle.part.dart:100-227`，不动 resolver / 播放内核，向后兼容。合成哨兵不被 `SubtitleSource.isOff` 误判为「关闭」。
 - **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_youtube_subtitle_track_guard_test.dart`：① 源码语料守卫（切片 video_hibiki_page.dart + subtitle.part.dart 断言合成哨兵定义、preresolvedCues 分支登记 `_currentSubtitleSource`、菜单据 `_youtubeCaptionsAvailable` 渲染行均在位——同时防「引用未定义符号致不编译」回归）；② 逻辑单测断言合成哨兵不被 `SubtitleSource.isOff` 误判为关闭。
-- **备注**：commit 见提交哈希。`flutter analyze` 改动文件 No issues。⚠️ BUG-596 与 TODO-1304/1232 并发撞号，集成 owner 合入时改号。VideoHibikiPage 过重无法 widget test 拉起私有状态，故落源码守卫 + 逻辑单测最强可落地层。真机验收：开有 CC 的 YouTube 视频 → 字幕轨选择器出现该字幕行且高亮、可切「关闭」再切回。
+- **备注**：commit 见提交哈希。`flutter analyze` 改动文件 No issues。⚠️ BUG-602 与 TODO-1304/1232 并发撞号，集成 owner 合入时改号。VideoHibikiPage 过重无法 widget test 拉起私有状态，故落源码守卫 + 逻辑单测最强可落地层。真机验收：开有 CC 的 YouTube 视频 → 字幕轨选择器出现该字幕行且高亮、可切「关闭」再切回。

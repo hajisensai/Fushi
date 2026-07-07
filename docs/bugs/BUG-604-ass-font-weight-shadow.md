@@ -1,4 +1,4 @@
-## BUG-596 · 外挂ASS字号字重阴影不尊重
+## BUG-604 · 外挂ASS字号字重阴影不尊重
 - **报告**：2026-07-07（用户：反馈「是不是没尊重字号·字重·阴影」，TODO-1246 续）
 - **真实性**：✅ 真 bug（阴影分支真缺陷；字号分支渲染未缩放；字重本已尊重）。分层根因：
   - **阴影（真正的缺陷）**：ASS `Shadow`/`\shad` 深度 + `BackColour`/`\4c` 阴影色已解析进 `SubtitleCueStyle.shadowDepthPx/shadowColorArgb` 与 `SubtitleSpan.shadowDepthPx/shadowColorArgb`（`packages/hibiki_audio/lib/src/parsers/subtitle_markup.dart` + `ass_parser.dart`，TODO-1105），但渲染层 `_styleForGrapheme`（`hibiki/lib/src/media/video/video_subtitle_overlay.dart`）产出的 `TextStyle` **从不带 `shadows`** → ASS 阴影整条丢在渲染，`shadows` 只用于收藏星角标。
