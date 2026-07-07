@@ -6,12 +6,12 @@
     - `hibiki/lib/src/sync/sync_settings_schema/data_root.part.dart` 的 `_closeRuntimeResources`：`audiobookSession.stop()` / `audioHandler.stop()` / `wal_checkpoint` / **`closeDatabase()`（原无 try/catch 无超时）** 任一 await 永不完成即永久挂起遮罩。
     - 同文件 `_restartOrPromptManual`：迁移成功后自动重启若失败，回调用 `if (mounted) _showSnackBar(...)`，但 `beginDataRootMigration` 一开始就把根 widget 换成遮罩、本设置页 State 已 unmount（`mounted==false`）→ snackbar 静默丢失 → 遮罩永远停在转圈，无终态无出口。
   - **目标文件夹/数据丢失根因**：`data_root_migrator.dart` 的移动阶段 `_moveTree` / `_moveTreeSelective` 在**跨盘 copy 校验后立刻 `_deleteSourceAfterVerifiedCopy` 删源**（发生在 DB rebase 步③、pref 提交步④**之前**），**违反本类文档自己声明的「失败回滚铁律：新根校验通过 + DB rebase 成功，才删旧根」**。用户把「卡死」的 app 强杀（或任一步在删源与提交之间出错）时：已 copy 的子树已从旧根删除、pref 尚未写入 → 旧根残缺、新根半成品、无有效 pref 指向新根 → 数据被劈成两半、感知为「目标文件夹里的东西 / 我建的文件夹没了」。跨盘（用户把数据搬到另一块盘 = 最常见场景）copy 慢，删源与提交之间的窗口很长，中断即不可恢复丢数据。
-- **[x] ① 已修复** — commit `4a0784618`
+- **[x] ① 已修复** — commit `da09c88e7`
   - `_countFiles`→`_countFilesAsync`、`_hasAnyFile`→`_hasAnyFileAsync`：递归遍历改**异步** `list(recursive: true)`，不再冻结主 isolate（顶层 `listSync(recursive: false)` 成本低保留）。守卫见测试②。
   - `_closeRuntimeResources`：给停音频 / checkpoint（5s）/ closeDatabase（10s）加**有界超时**，把「永久挂起」降级为「超时放行继续 / 可恢复失败」。
   - `_restartOrPromptManual`：自动重启失败改走 `appModel.failDataRootMigration(message)`（不依赖已 unmount 的 State）→ 遮罩切到终态（消息 + 重启按钮），用户永不卡在转圈。
   - **数据完整性核心修复**：跨盘 copy **不再立即删源**，把源记入 `deferredSourceDeletions`，只有 **DB rebase + pref 提交都成功后**才删（`migrate()` 提交段）。回滚同步简化：`_MovePlan.deferredCopy` 为真的 plan 源完好无损、`_rollbackMoves` 跳过搬回、仅 `_cleanupCreatedSubtrees` 清新根半成品。任何提交前的中断（崩溃 / 强杀 / 任一步抛错）→ 旧根**逐字节完整**、原始 DB 从未被改写、可直接继续用。同盘 rename 是单条原子 syscall（near-instant），保留快路径。
-- **[x] ② 已加自动化测试** — `hibiki/test/storage/data_root_migrator_test.dart`（group「TODO-1324」，commit `4a0784618`）
+- **[x] ② 已加自动化测试** — `hibiki/test/storage/data_root_migrator_test.dart`（group「TODO-1324」，commit `da09c88e7`）
   - 中断安全：`debugForceCopyFallback` 强制跨盘 copy 分支 + pref 提交失败 → 断言旧根所有源文件/DB 完整、原始 DB 仍指旧路径、新根半成品已清。
   - 跨盘 copy 成功路径：提交成功后才删源，新根齐全 + DB rebase + 旧根清空。
   - 不阻塞守卫：源码不得出现 `listSync(recursive: true`（递归列目录必须异步）。
