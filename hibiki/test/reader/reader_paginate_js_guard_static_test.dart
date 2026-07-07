@@ -120,6 +120,40 @@ void main() {
           reason: 'maxScroll 减项必须是 pageStep（与对齐量同源），不是 clientSize');
       expect(ctx.contains('clientSize'), isFalse, reason: 'clientSize 双量纲减项已删');
     });
+
+    // TODO-1285 健壮化守卫（相邻页/上下页内容全露出来的复诉根因）：pageStep 绝不能在
+    // getComputedStyle(body).columnCount 回读成 'auto'（个别 WebView 在 column-count 与
+    // column-width 并存时如此）时把 columns 塌成 1 —— 那会让 pageStep = 单列步长而 CSS 仍
+    // 渲染 N 列 → 每次翻页只前进一列、相邻列与上一页重叠露出。columnCount 读不到有效数字时
+    // 必须从真实几何反推 N，而不是硬塌成 1。
+    test('TODO-1285 columnCount 回读失败时从几何反推 N（不塌成单列步长）', () {
+      final String source = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+      final String ctx = _functionSource(
+        source,
+        '  getScrollContext: function() {',
+        '  getPagePosition: function(',
+      );
+      // 旧的灾难性塌缩兜底必须删除：columnCount='auto' 时绝不能直接 columns=1。
+      expect(ctx.contains('if (!(columns > 0)) columns = 1;'), isFalse,
+          reason: 'columnCount 回读失败塌成 columns=1 = pageStep 塌成单列步长 → 相邻页泄露；'
+              '必须改为从几何反推 N');
+      // 反推公式：N = round((整 content-box + gap)/(used 子列宽 + gap))，代数上 == 名义列数。
+      expect(
+          ctx.contains('Math.round((fullTurnBox + gap) / (contentBox + gap))'),
+          isTrue,
+          reason:
+              'columnCount 不可读时必须用 round((整 content-box+gap)/(子列宽+gap)) 反推 N');
+      // 横排整 content-box 用 getBoundingClientRect().width（分数精度，避开整数 clientWidth
+      // 的 TODO-753 漂移）；竖排用 this.viewportHeight（与竖排 contentBox 兜底同源）。
+      expect(ctx.contains('scrollEl.getBoundingClientRect().width'), isTrue,
+          reason: '横排整 content-box 必须取分数精度 getBoundingClientRect().width 反推 N');
+      // pageStep 仍是 columns × (contentBox + gap) 单一量纲（columns 现在健壮）。
+      expect(
+          ctx.contains('var pageStep = columns * (contentBox + gap);'), isTrue,
+          reason: 'pageStep 单一量纲不变，只是 columns 来源变健壮');
+    });
   });
 
   // TODO-734：竖排列高几何「成对」守卫——CSS column-width 与 JS getScrollContext

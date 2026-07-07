@@ -1746,8 +1746,30 @@ $_sharedJs
     // = 'auto' → parseInt → NaN → columns=1 → pageStep = contentBox + gap，与旧单列字节
     // 等价（零行为变化）。子列宽 contentBox 由浏览器亚像素解析，N×(contentBox+gap) 恒等
     // 整页 content-box + gap，翻页网格仍落真实列边界，无 TODO-753/792 亚像素漂移。
+    // TODO-1285 健壮化根因修复（「相邻页/上下页内容全露出来」复诉）：pageStep 曾直接乘
+    // parseInt(cs.columnCount)，若回读到有效数字才对；但 column-count 与 column-width 并存时，
+    // 个别 WebView 会把 getComputedStyle(body).columnCount 回读成 'auto'（parseInt→NaN）。
+    // 旧兜底 `if(!(columns>0)) columns=1` 此时把 columns 塌成 1 → pageStep = contentBox+gap
+    // = **单列步长**，而 CSS 仍渲染 N 列 → 每次翻页只前进一列、视口内 N−1 列与上一页重叠
+    // 露出（正是复诉的「上一页和下一页内容全露出来」）。根因：pageStep 不该脆弱依赖单个
+    // columnCount 回读。columnCount 读不到有效数字时**绝不塌成 1**，改从真实几何反推 N——
+    // 一页恒等于整 content-box（turn 轴），故 N = round((整 content-box + gap)/(used 子列宽 +
+    // gap))，代数上 == 名义列数且不依赖 columnCount。整 content-box 从 turn 轴亚像素读：横排
+    // getBoundingClientRect().width−左右 padding（分数精度，避开 TODO-753 的整数 clientWidth），
+    // 竖排 this.viewportHeight−上下 padding（与上面竖排 contentBox 兜底同源）。columnCount 正常
+    // 回读为数字时仍走原快路径、字节不变（Chromium/WebView2 实测回读 == N，零回归）；pageColumns=0
+    // 单列(columnCount='auto')反推得 N=1、pageStep 退回 contentBox+gap，与旧单列字节等价。不改
+    // contentBox（仍是 used columnWidth），TODO-753/792 亚像素列周期原样保留。
     var columns = parseInt(cs.columnCount, 10);
-    if (!(columns > 0)) columns = 1;
+    if (!(columns > 0)) {
+      var fullTurnBox = vertical
+        ? ((this.viewportHeight || scrollEl.clientHeight || window.innerHeight)
+            - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0))
+        : ((scrollEl.getBoundingClientRect().width || scrollEl.clientWidth
+              || this.pageWidth || window.innerWidth)
+            - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0));
+      columns = Math.max(1, Math.round((fullTurnBox + gap) / (contentBox + gap)));
+    }
     var pageStep = columns * (contentBox + gap);
     // TODO-792（竖排「文字向下偏移」根因修复·已下沉到 CSS）：曾一度在这里给竖排 pageStep += O
     // 补偿「列被 V+O 容器拉伸」造成的 realPitch>pageStep，但那只治页间累积、治不了页内逐列斜置
