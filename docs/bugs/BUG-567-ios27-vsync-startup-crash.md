@@ -11,4 +11,5 @@
   前用 PlistBuddy 写最终 plist，Debug=`false`、Profile/Release=`true`。
 - **备注**：
   - 复测证据：改为 `false` 后，`flutter run -d 00008150-0002021A1478401C --debug --no-pub` 真机启动到书架；截图保存于 `hibiki/.codex-test/ios-device-logs/after-vsync-off-screen.png`。
+  - 后续高刷兼容提交：`54488bf7a`（Debug 保持 `false`，Profile/Release 最终 plist 写 `true`）。
   - Flutter VM Service 仍因无线调试/本地网络发现未连上，需 USB 或 iOS 本地网络权限进一步处理；但 UI 已从启动黑屏恢复。

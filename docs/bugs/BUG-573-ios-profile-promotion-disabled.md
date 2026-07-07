@@ -13,3 +13,4 @@
   `embed_and_thin` 前用 PlistBuddy 写入 Debug=`false`、Profile/Release=`true`。
 - **备注**：RED 已确认旧代码 Info.plist 写死 `<false/>`；修复后 Xcode
   Profile 最终 app plist 的 `CADisableMinimumFrameDurationOnPhone` 为 `true`。
+  修复提交：`54488bf7a`。
