@@ -2060,7 +2060,7 @@
   "browser_extension_step_dev_mode": "打开右上角的「开发者模式」开关。",
   "browser_extension_step_load_unpacked": "点击「加载已解压的扩展程序」。",
   "browser_extension_step_pick_folder": "选择下方的扩展文件夹（其路径已复制到剪贴板）。",
-  "browser_extension_step_done_auto": "完成。扩展已自动配置为连接本应用——无需填写 host/端口/token。",
+  "browser_extension_step_done_auto": "完成。已自动开启 Yomitan API 服务器，扩展已配置好连接本应用（查词 API，与设备互联/同步无关）——无需填写 host/端口/token。",
   "browser_extension_enable_server_first": "提示：请先在上方开启「Yomitan API 服务器」并设置 API 密钥，扩展才能被自动配置为可用连接。",
   "copied": "已复制",
   "shortcut_action_global_toggle_fullscreen": "全屏切换",
