@@ -420,4 +420,83 @@ void main() {
           reason: '深色徽章背景上图标必须是白色（可见）');
     });
   });
+
+  group('TODO-1320 · 主题卡片恒完整显示、下方无多余文字', () {
+    // 用户诉求：①删掉自定义主题底下的名字文字 ②所有主题卡片都完整显示配色，
+    // 而不是选中以后才完整。这里在 widget 行为层锁死：无论选中与否，swatch 都画
+    // 完整对角预览（含「文」glyph），且 swatch 自身结构里不含任何 Text caption
+    // （HibikiSchemeSwatch 已删除 label/textColor，无法再挂底部文字）。
+    const List<Color> colors = <Color>[
+      Color(0xFF112233),
+      Color(0xFF445566),
+      Color(0xFF778899),
+      Color(0xFFAABBCC),
+    ];
+
+    SchemeDiagonalPainter painterOf(WidgetTester tester) {
+      final CustomPaint cp = tester.widget<CustomPaint>(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is CustomPaint && w.painter is SchemeDiagonalPainter,
+          ),
+        ),
+      );
+      return cp.painter! as SchemeDiagonalPainter;
+    }
+
+    Future<void> pumpSwatch(
+      WidgetTester tester, {
+      required bool selected,
+      Widget? overlay,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: colors,
+                selected: selected,
+                overlay: overlay,
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('未选中的主题卡片也画完整对角预览（含「文」glyph）', (WidgetTester tester) async {
+      await pumpSwatch(tester, selected: false);
+      expect(painterOf(tester).showGlyph, isTrue,
+          reason: '未选中的主题卡片必须完整显示配色，而不是选中后才完整');
+    });
+
+    testWidgets('未选中的主题卡片内不含任何底部文字（Text）', (WidgetTester tester) async {
+      await pumpSwatch(tester, selected: false);
+      // 「文」glyph 由 CustomPaint/TextPainter 绘制，不是 Text widget；故 swatch
+      // 内出现 Text 只可能来自曾经的 caption。删除 label 后必须一个都没有。
+      expect(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+        reason: '主题卡片下方不能再有名称/说明文字',
+      );
+    });
+
+    testWidgets('选中的主题卡片同样完整预览且无底部文字', (WidgetTester tester) async {
+      await pumpSwatch(tester, selected: true, overlay: const Icon(Icons.add));
+      expect(painterOf(tester).showGlyph, isTrue);
+      expect(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+      );
+    });
+  });
 }

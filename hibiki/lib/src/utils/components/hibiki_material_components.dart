@@ -1362,8 +1362,6 @@ class HibikiSchemeSwatch extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.overlay,
-    this.label,
-    this.textColor,
     this.borderColor,
   }) : assert(colors.length == 4, 'scheme swatch needs exactly 4 colours');
 
@@ -1380,8 +1378,9 @@ class HibikiSchemeSwatch extends StatelessWidget {
 
   /// Centred badge icon for non-preset swatches (system = auto, custom = palette).
   final Widget? overlay;
-  final String? label;
-  final Color? textColor;
+  // TODO-1320: 主题卡片一律不带 caption 文字（无 label/textColor）——系统/预设/自定义
+  // 所有 swatch 统一只显示完整对角预览、无底部多余文字。带文字标签的单色 swatch 仍走
+  // HibikiColorSwatch（它保留 label/textColor）。
   final Color? borderColor;
 
   @override
@@ -1480,8 +1479,6 @@ class HibikiSchemeSwatch extends StatelessWidget {
       selected: selected,
       onTap: onTap,
       onLongPress: onLongPress,
-      label: label,
-      textColor: textColor,
     );
   }
 }

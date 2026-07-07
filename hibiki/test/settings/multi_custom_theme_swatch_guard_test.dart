@@ -44,9 +44,17 @@ void main() {
           reason: 'the focus/gamepad edit button was removed');
     });
 
-    test('default display name falls back to Custom N', () {
-      expect(actions.contains('t.custom_theme_default_name(n:'), isTrue,
-          reason: 'default-name helper must use the localized Custom N key');
+    test(
+        'TODO-1320: swatch row renders no name caption; Custom N default lives '
+        'in the editor only', () {
+      // TODO-1320: 主题卡片下方不再渲染主题名 caption——系统/预设/自定义所有主题
+      // 统一只显示完整对角预览、无底部多余文字。swatch 行不再需要 display-name
+      // 助手，settings_actions.dart 里 customThemeDisplayName 已删除。
+      expect(actions.contains('customThemeDisplayName'), isFalse,
+          reason: 'swatch row must not render a per-theme name caption');
+      // 「Custom N」默认名仍在——但只作为编辑页名称输入框未命名时的 hint 占位。
+      expect(page.contains('t.custom_theme_default_name(n:'), isTrue,
+          reason: 'default Custom N fallback must remain in the editor hint');
     });
   });
 
