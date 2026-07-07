@@ -618,13 +618,6 @@ class VideoPlayerController extends ChangeNotifier
   /// 制卡音频抽取源；null 时引擎回落 [miningSource]。
   String? get miningAudioSource => _miningAudioSourceOverride;
 
-  /// TODO-1000：外挂 audio-only 流为播放音轨（YouTube 分离流：视频流无音轨）。libmpv
-  /// 经 `AudioTrack.uri` 加载；http header 沿用 load 时下发的 `http-header-fields`。
-  /// 播放完成后 libmpv 自动卸载外挂轨（media_kit 契约）。
-  Future<void> setExternalAudioTrack(String url) async {
-    await _player?.setAudioTrack(AudioTrack.uri(url));
-  }
-
   /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
   /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」
   /// （BUG-199 听力沉浸）等以 [isPlaying] 为闸的逻辑。置非 null 时覆盖。
@@ -1047,6 +1040,12 @@ class VideoPlayerController extends ChangeNotifier
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     Map<String, String> httpHeaderFields = const <String, String>{},
     bool autoPlay = false,
+    // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
+    // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
+    // 才会让它随首个 seek / 起播与视频时间轴同步；若等 load 返回后再挂（play 已开始），新加的
+    // 音频 demuxer 从 0 起、不会自动 seek 到当前位置 → 无声，直到用户手动 seek 才重同步。null =
+    // 无分离音轨（本地文件 / muxed 自带音轨）。
+    String? externalAudioTrackUrl,
     void Function(DefaultEmbeddedSubtitleLoadResult result)?
         onEmbeddedSubtitleAutoLoad,
   }) async {
@@ -1229,7 +1228,7 @@ class VideoPlayerController extends ChangeNotifier
     // duration/position 永远 0（黑屏卡 loading）。media_kit 用 `on_load` hook 从 Media 缓存里
     // 取 httpHeaders 设 `http-header-fields` 后才真正打开 URL（media_kit-1.2.6 real.dart:2145），
     // 故 header 走 Media 构造参数才赶得上 open。open 后的 [applyHttpHeaderFieldsToPlayer] 保留，
-    // 为随后外挂的 audio-only 音轨（[setExternalAudioTrack]）设全局属性。
+    // 为随后（本方法内、seek/play 之前）外挂的 audio-only 音轨设全局属性（TODO-1280）。
     await player.open(
       Media(
         sourceUri,
@@ -1254,6 +1253,16 @@ class VideoPlayerController extends ChangeNotifier
     // 既有 `Media`/缓存判据（播放内核零改）。
     await applyHttpHeaderFieldsToPlayer(player, httpHeaderFields);
     if (!_isCurrentLoad(player, loadToken)) return; // header 注入后换片/销毁。
+
+    // TODO-1280：YouTube 分离流的 audio-only 音轨在此 `audio-add ... select` 外挂。**必须在
+    // 下面的恢复 seek + play() 之前**：libmpv 对 open 后运行中才 audio-add 的外挂音频不会自动
+    // seek 到当前时间轴，故在起播/首个 seek 之前挂上，才能随起播（位置 0）或恢复 seek（跳到断点）
+    // 与视频同步出声（修「初始无声、跳转后才有声」）。放在 header 注入之后——audio-only 流同走
+    // googlevideo，UA 不匹配首个请求会 403（http-header-fields 已设为全局属性，audio-add 继承）。
+    if (externalAudioTrackUrl != null && externalAudioTrackUrl.isNotEmpty) {
+      await player.setAudioTrack(AudioTrack.uri(externalAudioTrackUrl));
+      if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
+    }
 
     // 关闭 libmpv 画面字幕渲染——字幕统一走可点击 overlay（cue 同步 + 逐字查词）。
     // mkv 内嵌字幕会被 libmpv 默认渲染成画面像素（不可点）；用户点它会穿透到视频层

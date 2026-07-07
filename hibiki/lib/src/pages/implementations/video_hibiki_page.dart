@@ -1678,13 +1678,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         initialPositionMs: initialPositionMs,
         startIntent: startIntent,
         externalSubtitlePath: externalSub,
+        // TODO-1280：分离流的 audio-only 流作为播放音轨，随 load 在恢复 seek + play() 之前
+        // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
+        // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
+        externalAudioTrackUrl: urls.audioStreamUrl,
       );
-      // TODO-1000：分离流（YouTube video-only）——外挂 audio-only 流为播放音轨，并把它设为
-      // 制卡音频源（视频流无音轨，音频段须从 audio-only 流裁）。_applyLoad 已把 miningSource
-      // 设为视频流（GIF/帧从它裁），这里补音频侧。
+      // TODO-1000：分离流（YouTube video-only）——把 audio-only 流设为制卡音频源（视频流无
+      // 音轨，音频段须从 audio-only 流裁）。播放音轨已在 _applyLoad→controller.load 内、
+      // seek/play 之前外挂（见上 externalAudioTrackUrl），此处只补制卡侧（时序无关）。
       if (urls.audioStreamUrl != null) {
         _controller?.setMiningAudioSourceOverride(urls.audioStreamUrl);
-        await _controller?.setExternalAudioTrack(urls.audioStreamUrl!);
       }
       // TODO-1000（BUG-528）：制卡 GIF/帧改用低分辨率流（muxed 360p 等）。_applyLoad 已把
       // miningSource 设成了播放流（可达 4K）——从 4K 流网络抽 GIF 会超时，这里覆盖成小流。
@@ -2218,6 +2221,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
+    // TODO-1280：YouTube 分离流的 audio-only 流 URL，透传给 controller.load 在 seek/play 之前
+    // 外挂（null=无分离音轨）。
+    String? externalAudioTrackUrl,
     // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
     // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
     bool detectHls = true,
@@ -2302,6 +2308,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         mpvConfig: mpvConfig,
         httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: true,
+        externalAudioTrackUrl: externalAudioTrackUrl,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
