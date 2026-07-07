@@ -2171,5 +2171,11 @@
   "handlebar_card_image": "Card Image (Cover / GIF)",
   "video_subtitle_youtube_captions": "YouTube captions",
   "video_subtitle_waveform_unavailable": "Waveform unavailable on this device",
-  "shortcut_action_reader_open_navigation": "Open Navigation"
+  "shortcut_action_reader_open_navigation": "Open Navigation",
+  "video_setting_subtitle_text_color": "Text color",
+  "video_setting_subtitle_text_color_white": "White",
+  "video_setting_subtitle_text_color_yellow": "Yellow",
+  "video_setting_subtitle_text_color_cyan": "Cyan",
+  "video_setting_subtitle_text_color_green": "Green",
+  "video_setting_subtitle_text_color_red": "Red"
 }

@@ -2237,6 +2237,52 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     return 0;
   }
 
+  // ── 字幕文字颜色离散预设（TODO-1326）──────────────────────────────────
+  /// 字幕**文字**颜色离散预设。首项白色 = [VideoSubtitleStyle.defaults.textColor]
+  /// 默认；其余为高对比显式色（视频画面上易读）。全部为不透明 ARGB（`0xFF...`）显式色，
+  /// 逐字持久化进 [VideoSubtitleStyle.textColor]（编解码/copyWith 早已就位）。顺序即选择器
+  /// 顺序，与 [_textColorOptionIndex] 反查一致。与 [_bgColorPresets] 不同：文字色默认是
+  /// 显式白（非 null），故无「默认=null」项、无需 reset 标志。
+  ///
+  /// 与「尊重 .ass 自带样式」协调：respectAssStyle 开且 cue 带 \c 主色时，overlay 优先用
+  /// ASS 主色（[VideoSubtitleOverlay._styleForGrapheme]），本预设作为**统一外观**基线在
+  /// ASS 无主色 / respect 关时生效——与字号/描边/字重等其它统一外观项同一语义，无冲突。
+  List<({Color color, String label})> get _textColorPresets =>
+      <({Color color, String label})>[
+        (
+          color: const Color(0xFFFFFFFF),
+          label: t.video_setting_subtitle_text_color_white
+        ),
+        (
+          color: const Color(0xFFFFEB3B),
+          label: t.video_setting_subtitle_text_color_yellow
+        ),
+        (
+          color: const Color(0xFF00E5FF),
+          label: t.video_setting_subtitle_text_color_cyan
+        ),
+        (
+          color: const Color(0xFF00E676),
+          label: t.video_setting_subtitle_text_color_green
+        ),
+        (
+          color: const Color(0xFFFF5252),
+          label: t.video_setting_subtitle_text_color_red
+        ),
+      ];
+
+  /// 当前 [_style.textColor] 命中的预设下标：null（旧数据「跟随主题」）→ 0（白，默认）；
+  /// 显式色按 ARGB 相等匹配；不在预设内（旧数据存了别的色）也回落 0（选择器只展示预设，
+  /// 但不覆盖用户存的原值，直到用户主动选一项）。
+  int get _textColorOptionIndex {
+    final Color? current = _style.textColor;
+    if (current == null) return 0;
+    for (int i = 0; i < _textColorPresets.length; i++) {
+      if (_textColorPresets[i].color.toARGB32() == current.toARGB32()) return i;
+    }
+    return 0;
+  }
+
   Widget _buildSubtitleDetail() {
     final double uiScale = HibikiAppUiScale.normalize(widget.uiScale);
     final int resolvedFontWeight = _style.resolveFontWeight(uiScale);
@@ -2323,6 +2369,29 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                     _style.copyWith(fontWeight: v.round());
                 _previewStyle(next);
                 widget.onSubtitleStyleCommit(next);
+              },
+            ),
+            // 字幕**文字**颜色离散预设选择行（TODO-1326，用户报「字幕没办法改颜色」）。
+            // 此前面板只有字号/字重/描边/背景控件，正文颜色只能是默认白、无处可改。落
+            // [VideoSubtitleStyle.textColor]（编解码/copyWith 早已就位）。与「尊重 .ass 自带
+            // 样式」协调：respectAssStyle 开且 cue 带主色时 overlay 用 ASS 主色，本项作为
+            // 统一外观基线在 respect 关 / ASS 无主色时生效（与字号/描边同语义）。选色即
+            // 落盘 + 实时预览（[_applySubtitleStyle]，与背景色选择行一致）。
+            AdaptiveSettingsPickerRow<int>(
+              title: t.video_setting_subtitle_text_color,
+              icon: Icons.format_color_text,
+              selected: _textColorOptionIndex,
+              options: <AdaptiveSettingsPickerOption<int>>[
+                for (int i = 0; i < _textColorPresets.length; i++)
+                  AdaptiveSettingsPickerOption<int>(
+                    value: i,
+                    label: _textColorPresets[i].label,
+                  ),
+              ],
+              onChanged: (int index) {
+                _applySubtitleStyle(
+                  _style.copyWith(textColor: _textColorPresets[index].color),
+                );
               },
             ),
             AdaptiveSettingsSliderRow(
