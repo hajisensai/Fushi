@@ -1,119 +1,50 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/settings/material_settings_renderer.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
 
-/// Guards BUG-573 (TODO-1234): in the reader quick-settings 「布局与显示」 sub-page
-/// (and its lyrics-mode twin) the 「编辑书籍 CSS」 entry row sits in the same Column
-/// as the layout schema section. The schema section is rendered by
-/// [MaterialSettingsRenderer.buildDetailContent], whose body carries an extra
-/// horizontal inset; the CSS row used to be a bare [AdaptiveSettingsSection] with no
-/// such inset, so it stretched wider and its left/right edges did not line up with
-/// the config rows above. Same shape as the theme-card fix (BUG-545/546).
+/// Guards BUG-573 (TODO-1234) under the TODO-1321 unified-width model.
 ///
-/// Root fix: the CSS row is now wrapped by `_buildBookCssEditorSection`, which adds
-/// the shared [MaterialSettingsRenderer.detailHorizontalInsets] on Material (skips on
-/// Cupertino, whose buildDetailContent has no horizontal inset). Two layers:
-///   1. Behavioral — a card wrapped in the shared insets lines up pixel-exact with a
-///      card padded by the exact expression buildDetailContent applies.
-///   2. Source-scan — both call sites go through `_buildBookCssEditorSection` and it
-///      derives its inset from the shared helper (red if either drifts back to a bare
-///      section or a hardcoded pad).
+/// In the reader quick-settings 「布局与显示」 sub-page (and its lyrics-mode twin) the
+/// 「编辑书籍 CSS」 entry row sits in the same Column as the layout schema section.
+/// It must line up with the config rows above. Originally the schema body carried
+/// an extra horizontal inset, so the CSS row (a bare section) drifted; the first
+/// fix wrapped it in the same detailHorizontalInsets. TODO-1321 removed the
+/// double-indent: the schema body is projected with `insetHorizontally: false`, so
+/// the CSS row is a bare [AdaptiveSettingsSection] at the full pane width, equal to
+/// the config rows and to the bespoke 导航 / 有声书 sub-pages.
 void main() {
-  testWidgets(
-      'css editor row wrapped in shared insets aligns with detail-body content edges',
-      (WidgetTester tester) async {
-    const Key cssRowKey = Key('css-row');
-    const Key bodyCardKey = Key('body-card');
-
-    late EdgeInsets shared;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Builder(
-          builder: (BuildContext context) {
-            final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-            shared = MaterialSettingsRenderer.detailHorizontalInsets(tokens);
-            // buildDetailContent applies fromLTRB(horizontal.left, gap,
-            // horizontal.right, ...) around its schema sections. We stand in for
-            // that body with the exact same horizontal expression, and the CSS row
-            // path with the wrapper `_buildBookCssEditorSection` installs. Both wrap
-            // the same AdaptiveSettingsSection, so equal edges => equal width.
-            return Scaffold(
-              body: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    // Detail-body path: buildDetailContent's horizontal padding.
-                    Padding(
-                      padding: EdgeInsets.only(
-                        left: shared.left,
-                        right: shared.right,
-                      ),
-                      child: const AdaptiveSettingsSection(
-                        children: <Widget>[
-                          SizedBox(key: bodyCardKey, height: 40),
-                        ],
-                      ),
-                    ),
-                    // CSS row path: wrapper `_buildBookCssEditorSection` installs.
-                    Padding(
-                      padding: shared,
-                      child: const AdaptiveSettingsSection(
-                        children: <Widget>[
-                          SizedBox(key: cssRowKey, height: 40),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final Rect cssRect = tester.getRect(find.byKey(cssRowKey));
-    final Rect bodyRect = tester.getRect(find.byKey(bodyCardKey));
-
-    expect(shared.left, greaterThan(0),
-        reason: 'Material detail body must have a real left inset to match');
-    expect(cssRect.left, moreOrLessEquals(bodyRect.left, epsilon: 0.5),
-        reason: 'css row left edge must line up with detail-body content');
-    expect(cssRect.right, moreOrLessEquals(bodyRect.right, epsilon: 0.5),
-        reason: 'css row right edge must line up with detail-body content');
-    expect(cssRect.width, moreOrLessEquals(bodyRect.width, epsilon: 0.5),
-        reason: 'css row and config rows above must be equal width (BUG-573)');
-  });
-
-  test(
-      'book-css editor section wraps in shared insets and is the only call path',
-      () {
+  test('css editor section is bare and is the single call path', () {
     final String sheet =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    // The CSS section wrapper exists and derives its inset from the shared helper.
-    expect(sheet, contains('Widget _buildBookCssEditorSection()'),
-        reason: 'CSS 入口条必须有统一 section 包装器 _buildBookCssEditorSection');
-    expect(sheet, contains('MaterialSettingsRenderer.detailHorizontalInsets('),
-        reason: 'CSS 入口条 section 必须用同一 helper 取横向缩进，与配置行等宽（BUG-573）');
+    final int start = sheet.indexOf('Widget _buildBookCssEditorSection()');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: 'CSS editor section builder must exist');
+    final int end = sheet.indexOf('\n  }', start);
+    expect(end, greaterThan(start));
+    final String body = sheet.substring(start, end);
 
-    // Both layout sub-pages route through the wrapper, none re-wrap the raw row in a
-    // bare AdaptiveSettingsSection (which would drop the inset and go wider again).
+    // Bare section — no self horizontal inset (would misalign vs the flush schema
+    // body again, BUG-573).
+    expect(body.contains('AdaptiveSettingsSection('), isTrue,
+        reason: 'CSS row is a plain settings section');
+    expect(body.contains('Padding('), isFalse,
+        reason: 'CSS row must not re-wrap in a horizontal Padding');
+    expect(body.contains('detailHorizontalInsets'), isFalse,
+        reason: 'CSS row must not carry its own detailHorizontalInsets');
+
+    // Both layout sub-pages (normal + lyrics) route through the single wrapper;
+    // the raw row is wrapped in a section exactly once (no bare re-wrap at call
+    // sites that would drop the shared width).
     final int wrapperCalls =
         '_buildBookCssEditorSection()'.allMatches(sheet).length;
     expect(wrapperCalls, greaterThanOrEqualTo(2),
-        reason: '普通布局子页与歌词模式子页都必须经 _buildBookCssEditorSection');
+        reason:
+            'normal + lyrics layout sub-pages both route through the wrapper');
     final int bareRowSections =
         '<Widget>[_buildBookCssEditorRow()]'.allMatches(sheet).length;
     expect(bareRowSections, equals(1),
-        reason: 'CSS 入口条只能在 _buildBookCssEditorSection 内包一次；调用点不得再裸放 '
-            'AdaptiveSettingsSection（会丢缩进、比配置行宽）');
+        reason: 'the CSS row is wrapped in a section exactly once');
   });
 }
