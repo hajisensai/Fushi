@@ -229,7 +229,7 @@ class EpubImporter {
   /// directory that finally holds the content (stored as `extract_dir`).
   ///
   /// [targetDir] may already exist on disk (BUG-564). Semantics:
-  /// - target missing -> plain rename (the normal path);
+  /// - target missing -> move [srcDir] into place (the normal path);
   /// - target listed in [liveExtractDirs] (some live book's `extract_dir`
   ///   points at it -- the column, not the folder name, is the truth for
   ///   existing books) -> never touch it; the new book moves to a unique
@@ -240,15 +240,26 @@ class EpubImporter {
   ///   If the move fails the .bak is renamed back (rollback), so the previous
   ///   content is never lost mid-way. Never delete-then-rename directly: a
   ///   crash in between would lose both copies.
+  ///
+  /// TODO-1286: every `.tmp-<ts>` -> destination move goes through
+  /// [_moveDirInto], which falls back to a recursive copy+delete when the
+  /// platform rejects `rename(2)`. Android's app-storage layer (fuse/sdcardfs
+  /// and custom data roots on removable volumes) can reject a directory rename
+  /// even for a vacated same-parent sibling (`FileSystemException: Rename
+  /// failed, path = '.../hoshi_books/.tmp-<ts>'`); a bare `renameSync` there
+  /// aborts the whole remote-book download, so the audiobook never downloads
+  /// and the shelf/sync marker never updates. Copy+delete is the portable move
+  /// primitive and cannot fail with ENOTEMPTY/ENOTDIR/EXDEV the way rename can.
   @visibleForTesting
   static String moveExtractedDirIntoPlace({
     required Directory srcDir,
     required String targetDir,
     required Iterable<String> liveExtractDirs,
+    bool forceCopyFallback = false,
   }) {
     final Directory target = Directory(targetDir);
     if (!target.existsSync()) {
-      srcDir.renameSync(targetDir);
+      _moveDirInto(srcDir, targetDir, forceCopy: forceCopyFallback);
       return targetDir;
     }
 
@@ -259,7 +270,7 @@ class EpubImporter {
       for (int i = 2;; i++) {
         final String alt = '$targetDir~$i';
         if (!Directory(alt).existsSync()) {
-          srcDir.renameSync(alt);
+          _moveDirInto(srcDir, alt, forceCopy: forceCopyFallback);
           return alt;
         }
       }
@@ -269,8 +280,10 @@ class EpubImporter {
         '$targetDir.bak-${DateTime.now().millisecondsSinceEpoch}';
     target.renameSync(bak);
     try {
-      srcDir.renameSync(targetDir);
+      _moveDirInto(srcDir, targetDir, forceCopy: forceCopyFallback);
     } catch (_) {
+      // [_moveDirInto] cleans up any partial destination on failure, so the
+      // target path is clean here and the .bak restore lands on empty ground.
       try {
         Directory(bak).renameSync(targetDir);
       } catch (rollbackError, stack) {
@@ -286,6 +299,61 @@ class EpubImporter {
       ErrorLogService.instance.log('EpubImporter.deleteBak', e, stack);
     }
     return targetDir;
+  }
+
+  /// Move [src] to [dest] (which MUST NOT exist). Tries `rename(2)` first and,
+  /// when the platform rejects it (`FileSystemException`), falls back to a
+  /// recursive copy + delete of the source. On a mid-copy failure the partial
+  /// [dest] is removed so callers can safely roll back onto a clean path.
+  ///
+  /// [forceCopy] is a test seam: when true the rename attempt is skipped and
+  /// the copy+delete branch is exercised deterministically (real `rename(2)`
+  /// failures are not portably reproducible in unit tests).
+  static void _moveDirInto(
+    Directory src,
+    String dest, {
+    bool forceCopy = false,
+  }) {
+    if (!forceCopy) {
+      try {
+        src.renameSync(dest);
+        return;
+      } on FileSystemException catch (e) {
+        // Rename rejected (Android fuse/sdcardfs, custom data root on another
+        // volume, or a residual target): fall through to copy+delete.
+        ErrorLogService.instance
+            .log('EpubImporter.moveDirCopyFallback', e, StackTrace.current);
+      }
+    }
+    final Directory destDir = Directory(dest);
+    try {
+      _copyDirSync(src, destDir);
+      src.deleteSync(recursive: true);
+    } catch (_) {
+      // Remove the partially-copied destination so callers see a clean path.
+      try {
+        if (destDir.existsSync()) destDir.deleteSync(recursive: true);
+      } catch (cleanupError, stack) {
+        ErrorLogService.instance
+            .log('EpubImporter.moveDirCleanup', cleanupError, stack);
+      }
+      rethrow;
+    }
+  }
+
+  /// Recursively copy the contents of [src] into [dest] (created if missing).
+  /// EPUB extraction produces only regular files and directories; any other
+  /// entity type (e.g. a symlink) is skipped rather than followed.
+  static void _copyDirSync(Directory src, Directory dest) {
+    dest.createSync(recursive: true);
+    for (final FileSystemEntity entity in src.listSync(followLinks: false)) {
+      final String destPath = p.join(dest.path, p.basename(entity.path));
+      if (entity is Directory) {
+        _copyDirSync(entity, Directory(destPath));
+      } else if (entity is File) {
+        entity.copySync(destPath);
+      }
+    }
   }
 
   static void _tryDeleteDir(String path) {

@@ -200,6 +200,92 @@ void main() {
     });
   });
 
+  // TODO-1286: the `.tmp-<ts>` -> book-dir move must survive a platform that
+  // rejects rename(2) (Android fuse/sdcardfs / custom data root on another
+  // volume). moveExtractedDirIntoPlace routes every move through the
+  // copy+delete fallback; `forceCopyFallback: true` exercises that branch
+  // deterministically (real rename failures are not portably reproducible).
+  group(
+      'EpubImporter.moveExtractedDirIntoPlace copy+delete fallback (TODO-1286)',
+      () {
+    late Directory tmp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('todo1286_move_');
+    });
+    tearDown(() {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    test('target missing: recursive copy moves content and deletes source', () {
+      final String src = p.join(tmp.path, '.tmp-1');
+      _seedDir(src, 'top.txt');
+      // A nested subdirectory + file to prove the copy recurses.
+      _seedDir(p.join(src, 'OEBPS'), 'chapter.xhtml');
+      final String target = p.join(tmp.path, 'Book');
+
+      final String result = EpubImporter.moveExtractedDirIntoPlace(
+        srcDir: Directory(src),
+        targetDir: target,
+        liveExtractDirs: const <String>[],
+        forceCopyFallback: true,
+      );
+
+      expect(result, target);
+      expect(File(p.join(target, 'top.txt')).existsSync(), isTrue);
+      expect(
+          File(p.join(target, 'OEBPS', 'chapter.xhtml')).existsSync(), isTrue,
+          reason: 'nested content must be copied recursively');
+      expect(Directory(src).existsSync(), isFalse,
+          reason: 'source .tmp dir must be deleted after copy');
+    });
+
+    test('unowned non-empty target: replaced via copy, no .bak leftover', () {
+      final String src = p.join(tmp.path, '.tmp-1');
+      _seedDir(src, 'fresh.txt');
+      final String target = p.join(tmp.path, 'Book');
+      _seedDir(target, 'stale.txt');
+
+      final String result = EpubImporter.moveExtractedDirIntoPlace(
+        srcDir: Directory(src),
+        targetDir: target,
+        liveExtractDirs: <String>[p.join(tmp.path, 'OtherBook'), ''],
+        forceCopyFallback: true,
+      );
+
+      expect(result, target);
+      expect(File(p.join(target, 'fresh.txt')).existsSync(), isTrue,
+          reason: 'fresh download content must win');
+      expect(File(p.join(target, 'stale.txt')).existsSync(), isFalse,
+          reason: 'orphan leftover content must be gone');
+      expect(Directory(src).existsSync(), isFalse);
+      expect(_bakSiblings(target), isEmpty,
+          reason: 'the .bak staging dir must be cleaned up');
+    });
+
+    test('target owned by a live row: new book gets ~2 sibling via copy', () {
+      final String src = p.join(tmp.path, '.tmp-1');
+      _seedDir(src, 'fresh.txt');
+      final String target = p.join(tmp.path, 'Book');
+      _seedDir(target, 'owned.txt');
+
+      final String result = EpubImporter.moveExtractedDirIntoPlace(
+        srcDir: Directory(src),
+        targetDir: target,
+        liveExtractDirs: <String>[target],
+        forceCopyFallback: true,
+      );
+
+      expect(result, '$target~2');
+      expect(File(p.join(target, 'owned.txt')).existsSync(), isTrue,
+          reason: 'a live book directory must never be touched');
+      expect(File(p.join('$target~2', 'fresh.txt')).existsSync(), isTrue);
+      expect(Directory(src).existsSync(), isFalse);
+    });
+  });
+
   group('EpubImporter.importFromPath onto existing target dir (BUG-564)', () {
     late Directory tmp;
     late Directory pp;
