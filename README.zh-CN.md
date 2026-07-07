@@ -209,7 +209,9 @@ hibiki 将导入的书籍、词典、字体、有声书数据、视频、阅读�
 
 ## Star 趋势
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hajisensai/hibiki&type=Date)](https://www.star-history.com/#hajisensai/hibiki&Date)
+[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://www.star-history.com/#hajisensai/hibiki&Date)
+
+> 点击徽章可在 star-history.com 查看完整的 Star 趋势图。
 
 ## 鸣谢
 
