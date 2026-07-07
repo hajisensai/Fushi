@@ -738,6 +738,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   VideoPlayerController? _controller;
 
+  /// TODO-1276：首开视频「转两次圈」根治开关。
+  ///
+  /// 根因：首开路径有**两个独立的加载指示器**接力——① 页级 [VideoLoadingOverlay]
+  /// （[_buildLoadingBody]，在 `_controller`/`videoController` 为空时显示）覆盖
+  /// `controller.load()`（open+seek+play）阶段；② `load()` 返回、[Video] 挂载后，
+  /// media_kit 自带缓冲圈继续覆盖「已下发 play 但首帧尚未解码出画」的窗口。两个圈
+  /// 背景/样式不同（页级在 surface 底、media_kit 在纯黑底），用户看到转圈消失又出现
+  /// = 「转两次圈」。
+  ///
+  /// 修复：**首开**时把页级加载态保持到首帧真正解码出画
+  /// （[VideoPlayerController.hasFirstFrame]）再挂载 [Video]——此刻 media_kit 已有帧、
+  /// 不再缓冲 → 全程只有一个圈。换集（复用 controller，`_controller != null`）不改动
+  /// 此值（保持 true），维持既有「换集只走 media_kit 缓冲圈」行为，且不触碰全屏路由
+  /// 复用的同一 VideoController 实例（BUG-120/121）。
+  bool _videoReadyToShow = false;
+
+  /// TODO-1276：首帧就绪兜底定时器。解码异常机型（TODO-984「闪烁+空白无画面」）/ 纯
+  /// 音频容器首帧永不就绪时，超时后仍切给 media_kit 由其自有状态（黑屏/缓冲圈）接管，
+  /// 绝不无限转圈——只把「上界」从两个圈收敛为一个圈，保留旧行为下界。
+  Timer? _firstFramePromoteTimer;
+
   /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
   /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
   /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
@@ -1438,6 +1459,40 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _subtitleProgress = null;
       }
     });
+  }
+
+  /// TODO-1276：首开时武装「首帧就绪即挂载 [Video]」的监听 + 兜底定时器。
+  ///
+  /// [controller] 在宽高流（首帧解码出画）变化时 [notifyListeners]，
+  /// [_promoteVideoReadyOnFirstFrame] 据此把 [_videoReadyToShow] 翻真、挂载
+  /// media_kit（此刻已有帧、不缓冲 → 单圈）。若首帧永不就绪（解码异常机型 / 纯音频
+  /// 容器），[_firstFramePromoteTimer] 兜底超时仍切给 media_kit，绝不无限转圈。
+  /// 幂等：重复武装先撤销旧监听/定时器。
+  void _armFirstFramePromotion(VideoPlayerController controller) {
+    _firstFramePromoteTimer?.cancel();
+    controller.removeListener(_promoteVideoReadyOnFirstFrame);
+    controller.addListener(_promoteVideoReadyOnFirstFrame);
+    _firstFramePromoteTimer = Timer(
+      const Duration(milliseconds: 2500),
+      () => _promoteVideoReady(),
+    );
+  }
+
+  /// [VideoPlayerController] 宽高流回调：首帧解码出画后即提升可见态。
+  void _promoteVideoReadyOnFirstFrame() {
+    if (_videoReadyToShow) return;
+    if (_controller?.hasFirstFrame ?? false) _promoteVideoReady();
+  }
+
+  /// 把 [_videoReadyToShow] 翻真（挂载 [Video]），并撤销首帧监听 + 兜底定时器。
+  /// 一次性：已就绪则空转。首帧监听 / 兜底定时器 / 快路径三处都汇聚到此。
+  void _promoteVideoReady() {
+    if (_videoReadyToShow) return;
+    _firstFramePromoteTimer?.cancel();
+    _firstFramePromoteTimer = null;
+    _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
+    if (!mounted) return;
+    setState(() => _videoReadyToShow = true);
   }
 
   Future<void> _init() async {
@@ -2189,6 +2244,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       await _promptMissingResource(title);
       return;
     }
+    // TODO-1276：首开（此前无 controller）才把页级加载态保持到首帧就绪，杜绝与
+    // media_kit 缓冲圈接力成「转两次圈」；换集复用同一 controller 不改动
+    // [_videoReadyToShow]（维持既有行为、不碰全屏路由复用的同一实例，BUG-120/121）。
+    final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
@@ -2306,7 +2365,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
       // 切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
+      // TODO-1276：首开时页级加载态保持到首帧真正解码出画再让位给 media_kit——
+      // 快路径（本地文件 load 返回时首帧常已就绪）此处即 true、立即挂载 [Video]；
+      // 慢路径（首帧未就绪）保持 false，由下面 [_armFirstFramePromotion] 的宽高监听
+      // 在首帧就绪时翻真。换集（`!isInitialVideoOpen`）不改动，维持既有行为。
+      if (isInitialVideoOpen) _videoReadyToShow = controller.hasFirstFrame;
     });
+    if (isInitialVideoOpen && !_videoReadyToShow) {
+      // load() 已返回但首帧尚未解码出画：进入「准备」阶段，页级加载态保持到首帧
+      // 就绪，而非立刻把画面让给 media_kit 触发第二个缓冲圈（TODO-1276）。
+      _setLoadingPhase(_VideoLoadPhase.preparing);
+      _armFirstFramePromotion(controller);
+    }
     _syncControllerChapterAvailability(controller);
     // TODO-669：建立 / 重置进度条 hover 缩略图预览（桌面本地文件实时取帧；远端流 /
     // 移动端降级）。在 _currentVideoPath 更新后调，按新路径绑离屏取帧器。
@@ -2677,6 +2747,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _volumeDisplay.dispose();
     _watchTracker?.dispose();
     _watchTracker = null;
+    // TODO-1276：撤销首帧就绪监听 + 兜底定时器（回调读 _controller，须在 dispose 前摘）。
+    _firstFramePromoteTimer?.cancel();
+    _firstFramePromoteTimer = null;
+    _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
     _controller?.removeListener(_syncWindowAspectRatioLock);
     _detachControllerChapterListener();
     _controller?.setOnCompleted(null);
@@ -4923,7 +4997,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
           : _missingResource
               ? _buildMissingResourceBody(cs)
-              : (controller == null || videoController == null)
+              // TODO-1276：首开时把 `!_videoReadyToShow` 并入转圈判据——页级加载态
+              // 保持到首帧真正解码出画再挂载 [Video]，杜绝与 media_kit 缓冲圈接力成
+              // 「转两次圈」。换集 [_videoReadyToShow] 恒 true 不进此分支（行为不变）。
+              : (controller == null ||
+                      videoController == null ||
+                      !_videoReadyToShow)
                   ? _buildLoadingBody()
                   : _withPageSpaceOverride(
                       controller,

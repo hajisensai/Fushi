@@ -678,6 +678,20 @@ class VideoPlayerController extends ChangeNotifier
   int? get videoWidth => _player?.state.width;
   int? get videoHeight => _player?.state.height;
 
+  /// TODO-1276：首帧是否已解码出画（[videoWidth]/[videoHeight] 均为正）。
+  ///
+  /// 页面据此在**首开**时把页级加载态保持到首帧真正就绪再挂载 [Video]，杜绝页级
+  /// 加载圈与 media_kit 自带缓冲圈接力显示成「转两次圈」（页级圈在 surface 底、
+  /// media_kit 圈在纯黑底，用户看到转圈消失又出现）。libmpv 在 [VideoController]
+  /// 创建后即向纹理解码出帧，宽高流就绪早于 Flutter 侧 [Video] 挂载，故此判据可靠。
+  bool get hasFirstFrame => framePresent(videoWidth, videoHeight);
+
+  /// 纯函数：宽高均为非空正数即视为首帧已出画。抽出便于守卫测试
+  /// （media_kit 视频无法离屏跑，只能测这层判据逻辑）。
+  @visibleForTesting
+  static bool framePresent(int? width, int? height) =>
+      width != null && width > 0 && height != null && height > 0;
+
   /// 当前音画延迟（毫秒）；设置面板显示用。
   int get delayMs => _delayMs;
 
