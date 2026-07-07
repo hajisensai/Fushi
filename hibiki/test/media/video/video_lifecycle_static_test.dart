@@ -206,8 +206,14 @@ void main() {
         () {
       final String b = graphicBody();
       final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
+      // TODO-1295 给这条首 await 加了 `minTrackCount: streamIndex + 1`（等目标序号
+      // 那条轨真正就绪，不再「任意一条」早退）。守卫的语义不变量没变——loadToken 仍
+      // 在第一条 await **之前**捕获（源码实测 tokenAt < 此 await）——变的只是 await
+      // 的参数列表。故锚点从写死的整条调用 `...(player);` 收敛到稳定前缀
+      // `await _waitUntilSubtitleTracksReady(player`（不含参数），与本文件 BUG-528
+      // 把锚点收敛到 `await player.open(` 同法，避免合法加参把守卫误红（TODO-1311）。
       final int firstAwaitAt =
-          b.indexOf('await _waitUntilSubtitleTracksReady(player);');
+          b.indexOf('await _waitUntilSubtitleTracksReady(player');
       expect(tokenAt, greaterThanOrEqualTo(0),
           reason: '必须在第一个 await 前捕获 loadToken 快照');
       expect(firstAwaitAt, greaterThan(tokenAt),

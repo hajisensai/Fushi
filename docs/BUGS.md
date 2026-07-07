@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 586 条。点号进各自文件。
+> 共 587 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-601](bugs/BUG-601-selectgraphic-loadtoken-uaf.md) | ✅ | ✅ | 1295 minTrackCount await破BUG-344 loadToken守卫 |
 | [BUG-600](bugs/BUG-600-yt-inapp-mining-no-audio.md) | ✅ | ✅ | 油管应用内制卡音频源指向audio-only DASH致stall无音频gif连坐 |
 | [BUG-599](bugs/BUG-599-video-stuck-loading.md) | ✅ | ✅ | 视频buffered已满仍卡加载态 |
 | [BUG-598](bugs/BUG-598-floating-sub-tap-no-lookup.md) | ✅ | ✅ | 悬浮字幕点击文字不出查词窗(Android) |
