@@ -1,0 +1,14 @@
+## BUG-588 · 网飞制卡卡片字幕重复两次+截取混入UI+少开头
+- **报告**：2026-07-07（用户：「你卡里面字幕重复了两次。进度条能隐藏，返回和旗帜就隐藏不了了？底部条是我们的生成中 到你这就送给网飞了？」）。BUG-586 是同一诉求的旧号，但那次修错了靶子（只改了队列**标签**显示，没修真正生成的卡片内容，也把浮层/返回/旗帜误判成「不可删」）。
+- **真实性**：✅ 真 bug（三条）。
+- **根因说明**：
+  - **Bug A（卡片字幕重复两次）**：`tools/browser-extension/subtitle-adapters.js:7` 的 `extractNetflixCueText` 用 `querySelectorAll('.player-timedtext-text-container span, span')` 抓所有 span，再把**每一层** span 的 `textContent` 拼接。Netflix 每行字幕是「外层定位 span > 内层样式 span」的嵌套结构，父 span 的 textContent 已含子 span 全文 → 同一句按嵌套层数被拼进两遍。该重复句经 `content.js` `hibikiEnqueue` 存进队列 `sentence`，再经 `mineClip`→`/api/mine`→`buildImmersionRequest`→`ImmersionMiningEngine` 写进卡片 `{sentence}` 字段 → 卡里字幕出现两次。
+  - **Bug B（截取混入 UI）**：`content.js:329` 批量录制的 `hideStyle` 只隐藏了字幕轨 + 底部控制条 + 面板，**没**隐藏：① Hibiki 自己的「生成中」浮层 `#hibiki-toast`（`content.js:47`，sticky 常驻，被 tabCapture 录进 GIF）；② Netflix 顶部返回按钮 `.watch-video--back-container`（左上）与举报旗帜 `.watch-video--flag-container`（右上，见 `content.js:669` 覆盖层清单）。逐句 seek/pause 会强制 Netflix 显控件 → 落进录制窗。tabCapture 录的是合成帧，CSS `visibility:hidden` 即可把它们排除出画面。
+  - **Bug C（少了一点开头）**：`content.js` 批量循环 seek 到 `cueStart-200`（入队时预留 200ms 头部提前量）后，用固定 `await sleep(200)`（失败再 200）的 warmup 让视频**播掉**这段提前量才 `beginClip` → 录制真实起点漂到 `cueStart` 甚至之后，头部被切。
+- **[x] ① 根因修复** — 提交 `55ed2859d`。
+  - A：`subtitle-adapters.js` 改为只取**叶子** span（`!(s.querySelector && s.querySelector('span'))`），每段文本恰好一次；扁平无嵌套时行为不变。
+  - B：`content.js` `hideStyle` 加入 `#hibiki-toast`（Hibiki 自己的生成中浮层，进度改由扩展图标红点徽标传达）+ `.watch-video--back-container` / `.watch-video--flag-container` 等 Netflix 顶部返回/举报选择器（多选择器兜底改类名）。
+  - C：`content.js` 把 play 后的固定双 200ms warmup 换成「一旦确认在播即刻 `beginClip`」的短轮询（`for (let i=0;i<8 && v.paused;i++){play; sleep(60)}`），不再吃掉入队预留的 200ms 头部提前量。
+  - 两份 byte-identical 镜像同步改（`tools/browser-extension/` + `hibiki/assets/browser_extension/`）；content-script 版本标记 bump v40→v41。
+- **[x] ② 自动化测试** — `tools/browser-extension/subtitle-adapters.test.js`（node：嵌套 span 去重 + 并列叶子不回归）；`hibiki/test/mining/netflix_card_dedup_guard_test.dart`（两镜像源码守卫：A 叶子过滤存在、B hideStyle 含 `#hibiki-toast`+返回+`.watch-video--flag-container`、C 即刻开录轮询存在且 beginClip 前无固定 200ms warmup、-200ms 提前量红线仍在）；`netflix_mining_robustness_guard_test.dart` 版本标记同步 bump v41。
+- **备注**：Bug A/B（Hibiki 自己浮层部分）/C 均已在源码层根因修复并加守卫。Bug B 的 **Netflix 顶部返回/举报**与 Bug C 的**录制起点时序**依赖 Netflix 真实 DRM 播放页，本地无法复现渲染/时序，选择器与提前量效果需真机（关硬件加速 + 真实剧集）复测原始失败路径后最终确认。
