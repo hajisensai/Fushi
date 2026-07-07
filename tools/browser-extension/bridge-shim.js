@@ -16,6 +16,25 @@ window.flutter_inappwebview = {
           var cueText = (typeof extractNetflixCueText === 'function')
             ? extractNetflixCueText(netflixSubtitleContainer()) : '';
           var sentence = cueText || (args[0] && args[0].popupSelectionText) || '';
+          // TODO-1271：普通网页（非 YouTube/Netflix 流媒体）没有视频时间窗可裁，绝不进视频剪辑
+          // 队列——直接 POST {fields,sentence} 立即制卡（background 'mine' 分支：纯文本挖词回落），
+          // 也不误报「没找到当前字幕」（那条只对流媒体页字幕尚未采到时成立，此页压根没有字幕/视频，
+          // 用户报「这也不是视频，哪来的字幕」）。批量剪辑队列仅对 youtube/netflix 生效。
+          var site = (typeof hibikiSite === 'function') ? hibikiSite() : 'other';
+          if (site !== 'youtube' && site !== 'netflix') {
+            chrome.runtime.sendMessage(
+              { type: 'mine', fields: args[0], sentence: sentence },
+              (resp) => {
+                try { if (chrome.runtime.lastError) { toast('✗ 制卡失败'); resolve(false); return; } } catch (_) { /* no-op */ }
+                var dup = !!(resp && resp.ok && resp.data && resp.data.result === 'duplicate');
+                var ok = !!(resp && resp.ok && resp.data && resp.data.result === 'success');
+                if (dup) toast('✓ 该词卡片已存在');
+                else if (ok) toast('✓ 已制卡');
+                else toast('✗ 制卡失败');
+                resolve(ok || dup);
+              });
+            return;
+          }
           var res = (typeof window.hibikiEnqueue === 'function')
             ? window.hibikiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
           if (res && res.ok && res.duplicate) toast('✓ 已在制卡队列中（' + res.count + '）');

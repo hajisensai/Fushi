@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 566 条。点号进各自文件。
+> 共 567 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-581](bugs/BUG-581-nonvideo-mine-no-cue.md) | ✅ | ✅ | 普通网页制卡误报没找到当前字幕 |
 | [BUG-580](bugs/BUG-580-interconnect-audiobook-rename.md) | ✅ | ✅ | 互联下载有声书 EPUB 落盘 rename 失败中止导入 |
 | [BUG-579](bugs/BUG-579-youtube-external-audio-silent-until-seek.md) | ✅ | ✅ | YouTube 分离流初始无声，跳转后才有声（audio-only 音轨在 play 之后才外挂） |
 | [BUG-578](bugs/BUG-578-desktop-floating-lyric-global-lookup-blank.md) | ✅ | ✅ | 桌面悬浮字幕点词全局查词覆盖窗空白/不出现 |
