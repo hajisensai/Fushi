@@ -19,16 +19,18 @@ abstract class HibikiRemoteLookupService {
 
 /// 浏览器扩展挖词的窄接口（与查词分离，避免 server 直接依赖 AnkiRepository）。
 abstract class HibikiRemoteMiningService {
-  /// 返回 MineResult.name（'success'|'duplicate'|'notConfigured'|'error'）。
-  Future<String> mineEntry({
+  /// 返回 [RemoteMineResult]（结果名 + 失败/部分成功诊断）。
+  Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
   });
 
   /// TODO-1000：沉浸制卡（截图/GIF/音频 + 不回放）。实现方持 AnkiRepository，可调后台软解
   /// 实例（2B）；server 只解析 body 成 [ImmersionMinePayload] 后转发，不 new 引擎、不碰 repo。
-  /// 返回 MineResult.name。
-  Future<String> mineImmersion(ImmersionMinePayload payload);
+  /// TODO-1303：返回 [RemoteMineResult]——除结果名外还带 [RemoteMineResult.message]/
+  /// [RemoteMineResult.detail]（失败原因 / 音频落空警告），实现方须同时把失败写进错误日志，
+  /// 终结「制卡失败报成功 + 诊断黑洞」。
+  Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload);
 
   /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重（`+`→`✓`，与 app 内一致）。经 Anki 后端
   /// （AnkiConnect `findNotes` / AnkiDroid `findDuplicateNotes`）判断 [expression]/[reading]
@@ -53,4 +55,27 @@ class RemoteAudioLookup {
 
   final Uint8List bytes;
   final String contentType;
+}
+
+/// TODO-1303：远端制卡结果 + 诊断。此前挖词接口只回 `MineResult.name`，把
+/// [MineOutcome.errorDetail]/[MineOutcome.audioWarning] 和引擎中止原因全丢了 → 扩展
+/// 只能盲判「非 success 就重试」，用户看到「制卡失败报成功」而无从排查。
+///
+/// * [result]：`MineResult.name`（`'success'|'duplicate'|'notConfigured'|'error'`）。
+/// * [message]：人类可读的简短原因。`error` 时是失败文案；`success` 且单词音频落空
+///   （部分成功）时是音频警告——让扩展区分「真成功」与「卡建了但没音频」。
+/// * [detail]：更长的技术细节（如引擎中止原因 / errorDetail 原文），可空。
+///
+/// 由 [buildRemoteMineResponse] 摊进 `/api/mine` 响应体（`{result, message?, detail?}`），
+/// 浏览器扩展 content.js 读 `resp.data.message` 弹 toast 显因。
+class RemoteMineResult {
+  const RemoteMineResult({
+    required this.result,
+    this.message,
+    this.detail,
+  });
+
+  final String result;
+  final String? message;
+  final String? detail;
 }

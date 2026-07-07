@@ -89,6 +89,7 @@ class ImmersionMiningResult {
     required this.aborted,
     this.outcome,
     this.degradedToStill = false,
+    this.abortReason,
   });
 
   /// true = 因缺音频等前置条件中止，未调后端。
@@ -97,4 +98,9 @@ class ImmersionMiningResult {
   /// MineOutcome（成功路径）。
   final Object? outcome;
   final bool degradedToStill;
+
+  /// TODO-1303：仅在 [aborted] 时非空——中止的人类可读原因（缺音频 / 空壳卡）。远端
+  /// 制卡（浏览器扩展）据此把失败原因写进错误日志并随响应体回传，终结「制卡失败报成功
+  /// + 诊断黑洞」。null（成功路径）时无诊断。
+  final String? abortReason;
 }

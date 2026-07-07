@@ -4443,6 +4443,51 @@ class AppModel with ChangeNotifier {
 /// 是 const 构造，无法挂非 const 的可变缓存字段。
 final YoutubeClipMiner _youtubeClipMiner = YoutubeClipMiner();
 
+/// TODO-1303：把一次 [MineOutcome] 映射成 [RemoteMineResult]，并**把失败写进错误日志**。
+/// 远端挖词（浏览器扩展）此前只回结果名、失败既不回传原因也不记日志 → 「制卡失败报成功 +
+/// 诊断黑洞」。这里复用 app 内同一 [logMineFailure]（写 error+stack 进 [ErrorLogService]、
+/// 返回简短本地化文案）与 [MineOutcome.audioWarning]（部分成功：卡建了但单词音频落空）语义，
+/// 让远端与应用内的失败处理走同一条真相路径。
+RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
+  switch (outcome.result) {
+    case MineResult.error:
+      // logMineFailure：把完整诊断写进错误日志（用户可查/可导出），返回简短本地化文案。
+      final String reason = logMineFailure(outcome);
+      return RemoteMineResult(
+        result: outcome.result.name,
+        message: reason,
+        detail: outcome.errorDetail,
+      );
+    case MineResult.success:
+      final String? warn = outcome.audioWarning;
+      // 部分成功：卡建好了但单词远程音频落空 → 回传警告让扩展区分「真成功 / 没音频」。
+      return warn != null && warn.isNotEmpty
+          ? RemoteMineResult(result: outcome.result.name, message: warn)
+          : RemoteMineResult(result: outcome.result.name);
+    case MineResult.duplicate:
+    case MineResult.notConfigured:
+      return RemoteMineResult(result: outcome.result.name);
+  }
+}
+
+/// TODO-1303：远端制卡在**未产出 [MineOutcome]** 就失败（引擎中止：缺音频/空壳卡；
+/// YouTube 流解析超时；零长度窗）时的错误结果。把原因写进 [ErrorLogService]（不再只
+/// `debugPrint` 进黑洞）并回带诊断。[reason]=给用户的简短文案，[detail]=技术细节。
+RemoteMineResult remoteMineError(
+  String source,
+  String reason, {
+  String? detail,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
+  return RemoteMineResult(
+    result: MineResult.error.name,
+    message: reason,
+    detail: detail,
+  );
+}
+
 class _AppModelRemoteLookupService
     implements
         HibikiRemoteLookupService,
@@ -4453,7 +4498,7 @@ class _AppModelRemoteLookupService
   final AppModel _appModel;
 
   @override
-  Future<String> mineEntry({
+  Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
   }) async {
@@ -4463,7 +4508,8 @@ class _AppModelRemoteLookupService
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),
     );
-    return outcome.result.name;
+    // TODO-1303：回带诊断 + 失败写错误日志（单一真相：remoteMineResultFromOutcome）。
+    return remoteMineResultFromOutcome(outcome);
   }
 
   @override
@@ -4479,7 +4525,7 @@ class _AppModelRemoteLookupService
   }
 
   @override
-  Future<String> mineImmersion(ImmersionMinePayload payload) async {
+  Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     final MiningMediaCompression compression =
@@ -4493,7 +4539,12 @@ class _AppModelRemoteLookupService
       // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声/无 GIF 的静帧卡：服务端 YouTube 路径无
       // stillFallback，且 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成坏卡。
       if (payload.clipEndMs! <= payload.clipStartMs!) {
-        return MineResult.error.name;
+        return remoteMineError(
+          'Anki.mineImmersion.youtube',
+          'YouTube 字幕时间窗无效（零/负长度），未制卡',
+          detail: 'clip window <= 0 '
+              '(${payload.clipStartMs}..${payload.clipEndMs})',
+        );
       }
       final YoutubeClipRequest yt;
       try {
@@ -4509,8 +4560,14 @@ class _AppModelRemoteLookupService
       } catch (e, st) {
         // resolveYoutubeSource 会抛 TimeoutException / 视频不可用等；两个 server 的 /api/mine
         // 只 catch FormatException，这里不兜住会 500 整张卡。收敛成干净的 MineResult.error。
-        debugPrint('[yt-mine] resolve failed: $e\n$st');
-        return MineResult.error.name;
+        // TODO-1303：不再只 debugPrint 进黑洞——写进错误日志并回带诊断。
+        return remoteMineError(
+          'Anki.mineImmersion.youtube',
+          'YouTube 视频流解析失败，未制卡',
+          detail: 'resolve failed: $e',
+          error: e,
+          stackTrace: st,
+        );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
@@ -4530,10 +4587,16 @@ class _AppModelRemoteLookupService
         tempDir: Directory.systemTemp.path,
         repo: repo,
         // GIF/音频抽取失败摘要写日志，便于排查「没 gif / 只有图片」。
-        onFailure: (String s) => debugPrint('[yt-mine] extract: $s'),
+        // TODO-1303：GIF/音频抽取摘要进诊断日志（可导出、不计入用户错误计数）。
+        onFailure: (String s) => ErrorLogService.instance
+            .logDiagnostic('Anki.mineImmersion.youtube.extract', s),
       );
-      if (ytRes.aborted) return MineResult.error.name;
-      return (ytRes.outcome! as MineOutcome).result.name;
+      if (ytRes.aborted) {
+        return remoteMineError('Anki.mineImmersion.youtube',
+            'YouTube 制卡失败：${ytRes.abortReason ?? '媒体抽取失败'}',
+            detail: ytRes.abortReason);
+      }
+      return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
     }
     // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
@@ -4557,14 +4620,22 @@ class _AppModelRemoteLookupService
         clipEndMs: payload.clipEndMs!,
       );
     }
+    // TODO-1303：录制片段（clipBytes）来源本应带音频（Netflix 播放必有音轨）→ audioExpected，
+    // 引擎在最终无音频（转码丢音轨）时中止而非静默出无声卡；2A 截图 / 后台软解不可用 → 不强求
+    // （截图卡本就无音频不算失败）。
+    final bool audioExpected = payload.clipBytes != null;
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
-      buildImmersionRequest(payload, cap),
+      buildImmersionRequest(payload, cap, audioExpected: audioExpected),
       compression: compression,
       tempDir: Directory.systemTemp.path,
       repo: repo,
     );
-    if (res.aborted) return MineResult.error.name;
-    return (res.outcome! as MineOutcome).result.name;
+    if (res.aborted) {
+      return remoteMineError('Anki.mineImmersion.netflix',
+          'Netflix 制卡失败：${res.abortReason ?? '媒体抽取失败'}',
+          detail: res.abortReason);
+    }
+    return remoteMineResultFromOutcome(res.outcome! as MineOutcome);
   }
 
   @override

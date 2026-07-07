@@ -72,11 +72,18 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
   required HibikiRemoteMiningService mining,
 }) async {
   final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(body);
-  final String result = payload.isImmersion
+  // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
+  // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
+  // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。
+  final RemoteMineResult r = payload.isImmersion
       ? await mining.mineImmersion(payload)
       : await mining.mineEntry(
           fields: payload.fields, sentence: payload.sentence);
-  return <String, dynamic>{'result': result};
+  return <String, dynamic>{
+    'result': r.result,
+    if (r.message != null) 'message': r.message,
+    if (r.detail != null) 'detail': r.detail,
+  };
 }
 
 /// TODO-1176：`POST /api/duplicate` 的响应体。[body] 需含 `expression`（+可选 `reading`）。

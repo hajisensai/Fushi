@@ -63,10 +63,18 @@ class ImmersionCaptureResult {
 ///
 /// [cap] `ok` 时优先用后台抓的 GIF/音频（GIF 缺则回落截图）；失败时降级为 2A 截图卡
 /// （无音频，requireAudio=false 不中止）。任何情况下 mediaSource=null（Netflix 无本地源）。
+///
+/// TODO-1303：[audioExpected] 由调用方按来源判定「这条来源本应带音频」——录制片段
+/// （[ImmersionMinePayload.clipBytes] 非空，Netflix 播放必有音轨）恒为 true。为 true 时
+/// [requireAudio]=true → 引擎在最终无音频（转码/抓取丢音轨）时中止，不再静默降级成无声
+/// 卡还报成功（「只本应有音频却失败才算失败」）。为 false（2A 截图卡 / 后台软解不可用）时
+/// [requireAudio]=false → 截图卡本就无音频，不算失败。旧实现按 `audio != null` 推 requireAudio
+/// 是自毁的——音频恰好丢时反而关掉了守卫。
 ImmersionMiningRequest buildImmersionRequest(
   ImmersionMinePayload p,
-  ImmersionCaptureResult cap,
-) {
+  ImmersionCaptureResult cap, {
+  required bool audioExpected,
+}) {
   final bool useCapture = cap.ok;
   final Uint8List? cover =
       useCapture ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes;
@@ -87,7 +95,7 @@ ImmersionMiningRequest buildImmersionRequest(
     providedAudioName: audio == null
         ? null
         : 'netflix_audio.${immersionMiningAudioExtension()}',
-    requireAudio: audio != null,
+    requireAudio: audioExpected,
   );
 }
 
