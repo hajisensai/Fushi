@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 590 条。点号进各自文件。
+> 共 591 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-605](bugs/BUG-605-selectgraphic-loadtoken-uaf.md) | ✅ | ✅ | 1295 minTrackCount await破BUG-344 loadToken守卫 |
 | [BUG-604](bugs/BUG-604-ass-font-weight-shadow.md) | ✅ | ✅ | 外挂ASS字号字重阴影不尊重 |
 | [BUG-603](bugs/BUG-603-netflix-mine-false-success.md) | ✅ | ✅ | 网飞制卡失败报成功+诊断不回传 |
 | [BUG-602](bugs/BUG-602-yt-subtitle-not-in-track.md) | ✅ | ✅ | 油管字幕绕过远端字幕轨模型选不到 |
