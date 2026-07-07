@@ -1300,4 +1300,59 @@ function flushTimers() {
     'child close flips __hasChildPopup=false via the dedicated channel');
 }
 
+// 38. TODO-1231 (BUG-583): beginLookup must NOT trigger a premature overlaySize
+//     off the STALE previous card. The reused root iframe still holds the prior
+//     lookup's .glossary-content; before the fix beginLookup re-armed
+//     observeContent, which synchronously re-satisfied content-ready from that
+//     stale card and fired an overlaySize -> the window revealed the OLD card at
+//     the cursor for a frame ("第一个弹窗出现时闪") before the fresh render. Now
+//     beginLookup only re-gates content-ready=false (tearing down the stale
+//     observer/timer) and the reveal-driving overlaySize comes ONLY from the
+//     following renderStack.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const stableRoot = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* V1 */' };
+  host.renderStack({ popups: [stableRoot] });
+  const iframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  // Lookup 1: the card renders real content -> content-ready + one overlaySize.
+  iframe._renderContent(120);
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, true,
+    'lookup 1: reused root content-ready off its rendered card');
+  hostPostLog = [];
+  // Lookup 2 begins: re-gate. This must NOT measure/reveal off the stale card.
+  host.beginLookup('global-lookup-root');
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, false,
+    'beginLookup re-gates content-ready=false');
+  const premature = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.strictEqual(premature.length, 0,
+    'beginLookup posts NO overlaySize (no premature reveal off the stale card)');
+}
+
+// 39. TODO-1231 (BUG-583): after beginLookup, an UNCHANGED body (same-word
+//     re-lookup) must still flip content-ready in renderPayload — otherwise the
+//     re-gated frame (beginLookup no longer re-observes the stale card) would
+//     wait for a popupRendered that never comes and the card would only reveal
+//     via the Dart ready-safety (blank flash). A CHANGED body still waits for the
+//     new card's content signal.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const rootV1 = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* V1 */' };
+  host.renderStack({ popups: [rootV1] });
+  const iframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  iframe._renderContent(120);
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
+    'lookup 1 visible after content');
+  // Same word again: beginLookup re-gates, renderStack re-sends the IDENTICAL body.
+  host.beginLookup('global-lookup-root');
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, false,
+    'beginLookup re-gated to false');
+  host.renderStack({ popups: [rootV1] });
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, true,
+    'unchanged body re-marks content-ready (no stuck gate on same-word re-lookup)');
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
+    'reused root re-reveals on an unchanged-body re-lookup');
+}
+
 console.log('global_lookup_host_test: PASS');

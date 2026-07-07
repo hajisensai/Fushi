@@ -289,6 +289,78 @@ void main() {
           reason: 'revealStack forwards the bbox origin (CSS px) to native');
     });
 
+    test(
+        'TODO-1231 (BUG-583): beginLookup re-gates WITHOUT observing the stale '
+        'card (no premature reveal off the previous lookup)', () {
+      // beginLookup used to call observeContent, which synchronously re-satisfied
+      // content-ready off the reused iframe's still-present old .glossary-content
+      // and fired a premature overlaySize -> the OLD card flashed at the cursor
+      // before the fresh render ("第一个弹窗出现时闪"). It must now only re-gate
+      // content-ready=false + tear down the stale observer/timer; the fresh
+      // content-ready comes from the FOLLOWING renderStack, never here.
+      final int bAt = hostJs.indexOf('function beginLookup(');
+      expect(bAt, greaterThan(-1), reason: 'beginLookup must exist');
+      final int bEnd = hostJs.indexOf('function renderStack(', bAt);
+      expect(bEnd, greaterThan(bAt));
+      final String beginBody = hostJs.substring(bAt, bEnd);
+      expect(beginBody.contains('observeContent('), isFalse,
+          reason:
+              'beginLookup must NOT re-observe the stale card (that fired a '
+              'premature overlaySize off the previous lookup — BUG-583)');
+      expect(beginBody.contains("setAttribute(ATTR_CONTENT_READY, 'false')"),
+          isTrue,
+          reason:
+              'beginLookup still re-gates the content half of the reveal gate');
+      // renderPayload re-marks content-ready for an UNCHANGED body that already
+      // rendered, so a same-word re-lookup is not left waiting for a popupRendered
+      // that never comes now that beginLookup no longer re-observes.
+      final int rAt = hostJs.indexOf('function renderPayload(');
+      expect(rAt, greaterThan(-1));
+      final int rEnd = hostJs.indexOf('function removeMissing(', rAt);
+      expect(rEnd, greaterThan(rAt));
+      final String renderBody = hostJs.substring(rAt, rEnd);
+      expect(renderBody.contains('} else if (hasContent(record)) {'), isTrue,
+          reason:
+              'an unchanged body with rendered content re-marks the gate so a '
+              'same-word re-lookup reveals (no stuck gate — BUG-583)');
+    });
+
+    test(
+        'TODO-1231 (BUG-583): the overlay window origin is ratcheted '
+        'outward-only (nested close does not lurch the pinned root)', () {
+      // A nested up/left cascade CLOSE moved the window top-left back inward while
+      // the host layer shift lagged ~1 frame across the DWM/WebView2 boundary ->
+      // the pinned root card lurched ("消失第二个弹窗时闪"). _applyOverlayBox now
+      // ratchets the origin so the min-corner only ever moves OUTWARD within a
+      // session; on close the window top-left + layer shift hold and only the far
+      // edges shrink. The ratchet lives in a pure, unit-tested layout helper.
+      final String layout = read('lib/src/lookup/global_lookup_layout.dart');
+      expect(
+          layout.contains('RatchetedOverlayBox ratchetOverlayOrigin('), isTrue,
+          reason: 'the outward-only origin ratchet is a pure layout helper');
+      expect(controller.contains('ratchetOverlayOrigin('), isTrue,
+          reason: '_applyOverlayBox must route the bbox through the ratchet');
+      final int aAt = controller.indexOf('void _applyOverlayBox(');
+      expect(aAt, greaterThan(-1));
+      final int aEnd = controller.indexOf('void _applyOverlayScalar(', aAt);
+      expect(aEnd, greaterThan(aAt));
+      final String applyBody = controller.substring(aAt, aEnd);
+      expect(applyBody.contains('ratchetOverlayOrigin('), isTrue,
+          reason:
+              '_applyOverlayBox uses the ratchet to compute the window box');
+      expect(
+          applyBody.contains('ratcheted.left') &&
+              applyBody.contains('ratcheted.top'),
+          isTrue,
+          reason:
+              'revealStack is fed the ratcheted origin (window + layer shift '
+              'both use the held outward min-corner)');
+      // The ratchet is reset per fresh lookup + on dismiss so a session starts
+      // unconstrained (origin re-anchors at the cursor).
+      expect(controller.contains('_ratchetLeft = double.infinity'), isTrue,
+          reason: 'the ratchet is reset to no-constraint per session');
+    });
+
     test('D1: two-flag reveal gate hides a shell until content + geometry', () {
       // The gate is a declarative CSS attribute selector (single visibility
       // source) flipped by two independent flags; JS never sets inline

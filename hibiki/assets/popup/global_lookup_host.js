@@ -759,6 +759,19 @@
       if (record.injectedSettingsJs !== descriptor.settingsJs) {
         injectContent(record);
         observeContent(record);
+      } else if (hasContent(record)) {
+        // TODO-1231 (BUG-583) — the body did not change (same-word re-lookup, or
+        // a nested render re-sending the parent's identical body) AND the frame
+        // already holds a rendered card. That card IS this render's correct
+        // content, so satisfy the (possibly beginLookup-re-gated) content gate
+        // now. Without this, a same-word re-lookup — where renderPayload skips the
+        // re-eval and beginLookup no longer re-observes the stale card — would
+        // wait for a popupRendered that never comes and reveal blank via the Dart
+        // ready-safety only. Gated on hasContent so a freshly-created empty frame
+        // (whose body genuinely has not rendered yet) still follows the
+        // observeContent gate. markContentReady is a no-op when already satisfied
+        // (nested open of a live parent).
+        markContentReady(record);
       }
       applyHasChildPopup(record);
     }
@@ -835,9 +848,30 @@
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
     }
-    // Re-arm the content observer + safety timer so the fresh card re-signals
-    // content-ready (observeContent no-ops if contentReady were still true).
-    observeContent(record);
+    // TODO-1231 (BUG-583) -- tear down the PREVIOUS lookup's content observer +
+    // safety timer, but DO NOT re-arm an observer off the stale card here. The
+    // reused iframe still holds the previous lookup's `.glossary-content`, so
+    // calling observeContent now would synchronously re-satisfy content-ready
+    // from that STALE card and fire a premature overlaySize -- which revealed the
+    // OLD card at the cursor for a frame (the "第一个弹窗出现时闪") before showAt
+    // parked the window off-screen again for the fresh render. The content gate
+    // is instead re-armed by the FOLLOWING renderStack: a changed body runs
+    // injectContent + observeContent on the NEW card; an unchanged body (same
+    // word) markContentReady's the already-correct content in renderPayload. So
+    // the reveal-driving overlaySize now originates only from the fresh render,
+    // never from the stale card.
+    if (record.observer && typeof record.observer.disconnect === 'function') {
+      try {
+        record.observer.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.observer = null;
+    }
+    if (record.contentSafetyTimer != null) {
+      clearTimerSafe(record.contentSafetyTimer);
+      record.contentSafetyTimer = null;
+    }
   }
 
   function renderStack(payload) {

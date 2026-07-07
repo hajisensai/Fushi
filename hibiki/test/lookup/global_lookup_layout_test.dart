@@ -388,6 +388,100 @@ void main() {
       expect(a.hashCode, b.hashCode);
     });
   });
+
+  group('TODO-1231 (BUG-583) ratchetOverlayOrigin (outward-only origin)', () {
+    test('first box with no prior constraint takes the box origin as-is', () {
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: 0,
+        top: 0,
+        width: 200,
+        height: 160,
+        prevLeft: double.infinity,
+        prevTop: double.infinity,
+      );
+      expect(r.left, 0);
+      expect(r.top, 0);
+      expect(r.width, 200);
+      expect(r.height, 160);
+    });
+
+    test('down-right cascade keeps origin (0,0): pure no-op ratchet', () {
+      // A child cascading down-right leaves minLeft=minTop=0; growing the box
+      // only extends maxRight/maxBottom, so the origin never moves and width/
+      // height equal the raw box — identical to the pre-fix behaviour.
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: 0,
+        top: 0,
+        width: 340,
+        height: 500,
+        prevLeft: 0,
+        prevTop: 0,
+      );
+      expect(r.left, 0);
+      expect(r.top, 0);
+      expect(r.width, 340);
+      expect(r.height, 500);
+    });
+
+    test('up/left cascade OPEN moves the origin outward (adopts negative)', () {
+      // Nested open: the child extends left/up of the cursor, so the tight bbox
+      // origin goes negative. With no tighter prior constraint the ratchet adopts
+      // it (the window grows/moves outward — the open case, unchanged behaviour).
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: -60,
+        top: -40,
+        width: 400, // maxRight = 340
+        height: 520, // maxBottom = 480
+        prevLeft: 0,
+        prevTop: 0,
+      );
+      expect(r.left, -60,
+          reason: 'origin moved outward to the child min-corner');
+      expect(r.top, -40);
+      expect(r.width, 400, reason: 'maxRight(340) - originLeft(-60)');
+      expect(r.height, 520, reason: 'maxBottom(480) - originTop(-40)');
+    });
+
+    test(
+        'up/left cascade CLOSE HOLDS the outward origin, only far edges shrink',
+        () {
+      // The core fix: after an up/left child closes, the tight bbox origin snaps
+      // back toward (0,0) but the ratchet HOLDS the outermost (-60,-40) seen this
+      // session. So dx/dy (window top-left) do NOT change — only width/height
+      // shrink to the surviving root's extent — and the pinned root card never
+      // lurches ("消失第二个弹窗时闪" eliminated).
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: 0, // tight origin back at the root
+        top: 0,
+        width: 340, // root-only extent: maxRight = 340
+        height: 500, // maxBottom = 500
+        prevLeft: -60, // held from the earlier open
+        prevTop: -40,
+      );
+      expect(r.left, -60,
+          reason: 'origin HELD at the outward min-corner (no move)');
+      expect(r.top, -40);
+      expect(r.width, 400, reason: 'maxRight(340) - heldOrigin(-60) = 400');
+      expect(r.height, 540, reason: 'maxBottom(500) - heldOrigin(-40) = 540');
+    });
+
+    test('a partial cascade only ratchets the axis that moved outward', () {
+      // A child that extends left but stays below the cursor moves only the X
+      // origin; the Y origin holds at its prior (0) value.
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: -30,
+        top: 20,
+        width: 300, // maxRight = 270
+        height: 400, // maxBottom = 420
+        prevLeft: 0,
+        prevTop: 0,
+      );
+      expect(r.left, -30, reason: 'X origin moved outward');
+      expect(r.top, 0, reason: 'Y origin held (min(20,0)=0)');
+      expect(r.width, 300, reason: 'maxRight(270) - (-30)');
+      expect(r.height, 420, reason: 'maxBottom(420) - 0');
+    });
+  });
 }
 
 void _assertFinitePositive(GlobalLookupFrameRect r) {

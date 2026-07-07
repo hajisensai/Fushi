@@ -76,6 +76,19 @@ class GlobalLookupController {
   // and the host's commitLayerShift (which pins the root) would never run.
   int _lastSentDx = 0;
   int _lastSentDy = 0;
+  // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
+  // only ever moves OUTWARD (up/left) within one lookup session, never back
+  // inward. Moving it inward on a nested CLOSE slides the window top-left back
+  // toward the cursor while the host's compensating commitLayerShift lands ~1
+  // frame later (cross DWM/WebView2 boundary), so the pinned root card visibly
+  // lurches then snaps back ("消失第二个弹窗时闪"). Holding the origin at its
+  // outermost keeps the window top-left + layer shift fixed on close; only the
+  // far (bottom/right) edges shrink, which never moves the root card. Reset to
+  // "no constraint" (infinity) per fresh hotkey lookup and on dismiss. A
+  // down-right cascade keeps the origin at (0,0), so the ratchet is a no-op
+  // there (identical to the pre-fix geometry).
+  double _ratchetLeft = double.infinity;
+  double _ratchetTop = double.infinity;
   // The overlay renders off-screen until the first self-measurement, then is
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
@@ -409,6 +422,11 @@ class GlobalLookupController {
       _lastSentHeight = -1;
       _revealed = false;
       _revealSafety?.cancel();
+      // TODO-1231 (BUG-583) — a fresh hotkey lookup starts a new session: drop
+      // the origin ratchet so the single root card re-anchors at the cursor
+      // (origin 0,0) instead of inheriting a previous cascade's outward min-corner.
+      _ratchetLeft = double.infinity;
+      _ratchetTop = double.infinity;
 
       // TODO-867 P3c: a new hotkey lookup RESETS the whole stack to a single
       // root frame. The single-frame card is now stack depth 1 rendered through
@@ -571,6 +589,10 @@ class GlobalLookupController {
     _lastSentHeight = -1;
     _lastSentDx = 0;
     _lastSentDy = 0;
+    // TODO-1231 (BUG-583) — clear the origin ratchet on a genuine dismissal so
+    // the next session starts unconstrained.
+    _ratchetLeft = double.infinity;
+    _ratchetTop = double.infinity;
     glog('overlayHidden: dismissed — reveal state reset');
     onHidden?.call();
   }
@@ -1480,10 +1502,26 @@ class GlobalLookupController {
     if (width <= 0 || height <= 0) {
       return;
     }
-    final int dx = (left * dpr).round();
-    final int dy = (top * dpr).round();
-    final int w = (width * dpr).round();
-    final int h = (height * dpr).round();
+    // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
+    // never slides the window top-left back inward (which raced the host's
+    // compensating layer shift across the DWM/WebView2 boundary and lurched the
+    // pinned root card). The ratcheted box holds the outermost min-corner seen
+    // this session and recomputes width/height so the window still covers the
+    // real content extent (maxRight/maxBottom) from that held origin.
+    final RatchetedOverlayBox ratcheted = ratchetOverlayOrigin(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      prevLeft: _ratchetLeft,
+      prevTop: _ratchetTop,
+    );
+    _ratchetLeft = ratcheted.left;
+    _ratchetTop = ratcheted.top;
+    final int dx = (ratcheted.left * dpr).round();
+    final int dy = (ratcheted.top * dpr).round();
+    final int w = (ratcheted.width * dpr).round();
+    final int h = (ratcheted.height * dpr).round();
     if (!_revealed) {
       _revealed = true;
       _revealSafety?.cancel();
@@ -1492,9 +1530,15 @@ class GlobalLookupController {
       _lastSentDx = dx;
       _lastSentDy = dy;
       glog('reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
+          'ratchet=(${ratcheted.left},${ratcheted.top}) '
           '-> dx=$dx dy=$dy w=$w h=$h');
       unawaited(GlobalLookupChannel.revealStack(
-          dx: dx, dy: dy, width: w, height: h, left: left, top: top));
+          dx: dx,
+          dy: dy,
+          width: w,
+          height: h,
+          left: ratcheted.left,
+          top: ratcheted.top));
     } else if (w != _lastSentWidth ||
         h != _lastSentHeight ||
         dx != _lastSentDx ||
@@ -1504,9 +1548,15 @@ class GlobalLookupController {
       _lastSentDx = dx;
       _lastSentDy = dy;
       glog('resize(box): dpr=$dpr box=($left,$top,$width,$height) '
+          'ratchet=(${ratcheted.left},${ratcheted.top}) '
           '-> dx=$dx dy=$dy w=$w h=$h');
       unawaited(GlobalLookupChannel.revealStack(
-          dx: dx, dy: dy, width: w, height: h, left: left, top: top));
+          dx: dx,
+          dy: dy,
+          width: w,
+          height: h,
+          left: ratcheted.left,
+          top: ratcheted.top));
     }
   }
 

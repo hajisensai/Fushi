@@ -203,3 +203,77 @@ double pickScreenDim(double workDim, double boundsDim, double cardDim) {
   }
   return cardDim;
 }
+
+/// TODO-1231（BUG-583）——覆盖窗「原点棘轮」结果（CSS / 逻辑像素域，**不含 dpr**）。
+///
+/// [left]/[top] 是本次应用的窗口最小角（棘轮后：只向外移，绝不回内）；[width]/[height]
+/// 是从该最小角覆盖到真实内容右下极值（maxRight/maxBottom）所需的窗口尺寸。
+class RatchetedOverlayBox {
+  const RatchetedOverlayBox({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+  });
+
+  /// 棘轮后的窗口左上角 X（CSS px）。
+  final double left;
+
+  /// 棘轮后的窗口左上角 Y（CSS px）。
+  final double top;
+
+  /// 窗口宽度（CSS px，= maxRight - left）。
+  final double width;
+
+  /// 窗口高度（CSS px，= maxBottom - top）。
+  final double height;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RatchetedOverlayBox &&
+      other.left == left &&
+      other.top == top &&
+      other.width == width &&
+      other.height == height;
+
+  @override
+  int get hashCode => Object.hash(left, top, width, height);
+
+  @override
+  String toString() => 'RatchetedOverlayBox(left: $left, top: $top, '
+      'width: $width, height: $height)';
+}
+
+/// TODO-1231（BUG-583）——覆盖窗最小角「只向外、不回内」棘轮（纯函数，CSS px，**不乘 dpr**）。
+///
+/// 症状根因：嵌套子弹窗向左/上级联时窗口最小角（bbox 原点）变负、根卡片靠 host 的
+/// `commitLayerShift` 反向平移钉在光标处；子弹窗**消失**时窗口最小角要从负值回到 0，窗口
+/// 先 `SetWindowPos` 移回、host 的补偿平移经 `ExecuteScript` 慢约 1 帧才跟上（跨 DWM /
+/// WebView2 边界不可同帧原子提交），根卡片先跳后弹 =「消失第二个弹窗时闪」。把最小角**棘轮**
+/// 成「本次会话见过的最外值」后，关子弹窗时窗口左上角与图层平移都不动，只有右下（远端）边收缩，
+/// 根卡片零位移 → 关闭不闪。向右/下级联恒为 (0,0)，棘轮是 no-op，与旧行为逐字节一致。
+///
+/// - [left]/[top]/[width]/[height]：本帧 host 上报的**紧致** union bbox（CSS px）。
+/// - [prevLeft]/[prevTop]：本会话此前已棘轮的最小角（`double.infinity` = 尚无约束，取本帧值）。
+///
+/// 返回的宽高按棘轮后的最小角到真实内容右下极值（maxRight = left + width，
+/// maxBottom = top + height）重算，保证窗口仍覆盖真实内容，同时最小角绝不回内。
+RatchetedOverlayBox ratchetOverlayOrigin({
+  required double left,
+  required double top,
+  required double width,
+  required double height,
+  required double prevLeft,
+  required double prevTop,
+}) {
+  final double maxRight = left + width;
+  final double maxBottom = top + height;
+  final double originLeft = left < prevLeft ? left : prevLeft;
+  final double originTop = top < prevTop ? top : prevTop;
+  return RatchetedOverlayBox(
+    left: originLeft,
+    top: originTop,
+    width: maxRight - originLeft,
+    height: maxBottom - originTop,
+  );
+}
