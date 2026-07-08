@@ -670,6 +670,66 @@ ep2.mp4
       expect(afterSrc.mediaCount, 0,
           reason: 'second scan reports 0 newly-imported playlists');
     });
+
+    // TODO-1237 ②: the user's real bug — a manifest whose EPISODE PATHS change
+    // between scans (they edited relative paths into absolute ones) must still
+    // dedup by the STABLE m3u8 identity, NOT by the volatile first-episode path.
+    // The old first-episode-path key produced an `X (2)` duplicate here.
+    test(
+        're-scan after manifest episode paths change: identity dedup, no X (2)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      final File manifest = File(p.join(tmp.path, 'series.m3u8'));
+      manifest.writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+sub_a/ep1.mp4
+#EXTINF:-1,Episode 2
+sub_a/ep2.mp4
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+      final List<VideoBookRow> first = await repo.listAll();
+      expect(first, hasLength(1));
+      final String firstVideoPath = first.single.videoPath;
+
+      // The user edits the manifest so every episode path differs (here a
+      // different subdirectory), changing the resolved first-episode path — the
+      // OLD dedup key. The m3u8 identity (its basename) is unchanged.
+      manifest.writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+sub_b/ep1.mp4
+#EXTINF:-1,Episode 2
+sub_b/ep2.mp4
+''');
+
+      await MediaSourceScanner(db).scan(source);
+      final List<VideoBookRow> after = await repo.listAll();
+      expect(after, hasLength(1),
+          reason: 'identity dedup: same m3u8 => skip even though the '
+              'first-episode path changed (old key would make X (2))');
+      expect(
+          after.where((VideoBookRow r) => r.bookUid.contains('(2)')), isEmpty,
+          reason: 'no suffixed duplicate book_uid');
+      // The surviving row is the ORIGINAL import (skip, not overwrite).
+      expect(after.single.videoPath, firstVideoPath,
+          reason: 're-scan skips (does not rewrite) the already-imported row');
+      final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
+      expect(afterSrc.mediaCount, 0,
+          reason: 'second scan imported nothing new');
+    });
   });
 
   // Source guard: _importBooks must keep the BUG-443 dedup wiring so a future
@@ -683,12 +743,23 @@ ep2.mp4
         reason: '_importBooks must request silent dedup from the importer');
     expect(src.contains('DuplicateImportCancelledException'), isTrue,
         reason: '_importBooks must catch+skip the duplicate-cancel signal');
-    // TODO-1237 ②: _importVideos / _importPlaylists must keep the path-based
-    // re-scan dedup (existingPaths.add short-circuit) so a future edit can't
-    // silently reintroduce X (2) folder-scan duplicates.
+    // TODO-1237 ②: _importVideos keeps the physical-path re-scan dedup
+    // (existingPaths.add short-circuit) so a future edit can't silently
+    // reintroduce X (2) single-video folder-scan duplicates.
     expect(src.contains('existingPaths.add(normalizeVideoPath'), isTrue,
-        reason:
-            'video/playlist scan must skip already-imported physical paths');
+        reason: 'single-video scan must skip already-imported physical paths');
+    // TODO-1237 ②: _importPlaylists dedups by the STABLE playlist identity
+    // (playlistBookUid), skipping an already-imported manifest instead of
+    // suffixing an X (2) duplicate. Guard the identity-skip wiring so a future
+    // edit can't regress to the volatile first-episode-path key.
+    expect(
+        src.contains(
+            'final String bookUid = playlistBookUid(item.playlistPath);'),
+        isTrue,
+        reason: 'playlist scan must derive dedup identity from the m3u8 path');
+    expect(
+        src.contains('if (existingKeys.contains(bookUid)) continue;'), isTrue,
+        reason: 'playlist scan must skip an already-imported m3u8 identity');
   });
 
   // TODO-1284: the duplicate-skip branch must still attach a sidecar srt+audio

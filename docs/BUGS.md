@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 601 条。点号进各自文件。
+> 共 602 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-616](bugs/BUG-616-m3u8-playlist-dedup-identity.md) | ✅ | ✅ | m3u8 播放列表来源库重复扫描不去重、封面缺失（判重键错用首集易变路径） |
 | [BUG-615](bugs/BUG-615-nav-double-jump-first-chapter-only.md) | ✅ | ✅ | 导航跨章跳转首次只到章节需跳两次（TODO-1309 ②） |
 | [BUG-614](bugs/BUG-614-multicue-overlap-secondary.md) | ✅ | ✅ | 重叠cue跳+副字幕并入overlay多层渲染重构（TODO-1312 方案A） |
 | [BUG-613](bugs/BUG-613-data-migration-hang-folder-loss.md) | ✅ | ✅ | 改数据文件夹位置卡死+目标文件夹消失 |
