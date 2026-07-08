@@ -188,7 +188,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final ColorScheme colors = Theme.of(context).colorScheme;
     final ExternalWindowInfo? bound = _boundWindow;
     return Material(
-      color: colors.surfaceContainerHighest,
+      // 走共享设计 token 的语义 overlay 面（顶层容器面调性），不在页面里直接引原始
+      // ColorScheme 面 token（MD3 守卫要求 ordinary chrome 走共享组件）。
+      color: HibikiDesignTokens.of(context).surfaces.overlay,
       child: InkWell(
         onTap: _pickExternalWindow,
         child: Padding(
