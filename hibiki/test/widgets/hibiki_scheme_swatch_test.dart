@@ -446,6 +446,19 @@ void main() {
       return cp.painter! as SchemeDiagonalPainter;
     }
 
+    // TODO-1320 回归守卫：光有 painter.showGlyph==true 不够——若 CustomPaint 画布塌成
+    // Size.zero（childless CustomPaint 在父级 loose 约束下的默认行为），预览一个像素
+    // 都画不出来，卡片就是空白圆角块。这里量真实渲染尺寸，锁死画布非空。
+    Size paintSizeOf(WidgetTester tester) => tester.getSize(
+          find.descendant(
+            of: find.byType(HibikiSchemeSwatch),
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is CustomPaint && w.painter is SchemeDiagonalPainter,
+            ),
+          ),
+        );
+
     Future<void> pumpSwatch(
       WidgetTester tester, {
       required bool selected,
@@ -497,6 +510,27 @@ void main() {
         ),
         findsNothing,
       );
+    });
+
+    testWidgets('未选中的预设主题卡片预览画布必须非空（回归：TODO-1320 未选中空白卡）',
+        (WidgetTester tester) async {
+      // 预设 swatch 未选中时没有徽章 child（既非选中的对勾、也非 system/custom 的
+      // overlay）。修复前 CustomPaint 因此塌成 0x0，整张卡是空白圆角块——本用例正是
+      // 用真实渲染尺寸把它钉死：画布必须铺满卡片、非零，才能画出完整对角预览。
+      await pumpSwatch(tester, selected: false);
+      final Size size = paintSizeOf(tester);
+      expect(size.width, greaterThan(0), reason: '未选中预设卡片的预览画布宽度必须非零，否则整张卡空白');
+      expect(size.height, greaterThan(0), reason: '未选中预设卡片的预览画布高度必须非零，否则整张卡空白');
+    });
+
+    testWidgets('选中 / 系统 / 自定义 swatch 的预览画布同样非空', (WidgetTester tester) async {
+      // 反向对照：选中卡（对勾 child）与 system/custom（overlay child）本就非空，
+      // 一并守住，防止未来改动把「有 child 才非空」这个隐性依赖反向破坏掉。
+      await pumpSwatch(tester, selected: true);
+      expect(paintSizeOf(tester).shortestSide, greaterThan(0));
+      await pumpSwatch(tester,
+          selected: false, overlay: const Icon(Icons.auto_awesome));
+      expect(paintSizeOf(tester).shortestSide, greaterThan(0));
     });
   });
 }
