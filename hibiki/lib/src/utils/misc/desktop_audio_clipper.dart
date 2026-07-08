@@ -65,6 +65,119 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath) {
   ];
 }
 
+/// TODO-1314（B5，借鉴 yt-dlp 分片 range 下载）：把 googlevideo 流 URL 追加/覆盖
+/// `range=<start>-<end>` **查询参数**，构造一个 byte 区间请求 URL。纯函数，便于单测。
+///
+/// 根因：googlevideo 对 **audio-only DASH** 流施加 SABR/限速——不带 `range=` 的整段 GET
+/// 会被限到涓流甚至首个请求即超时（[extractAudioSegmentViaFfmpeg] 的 ffmpeg HTTP `-ss`
+/// seek 正撞上它 → 120s 超时 → 无句子音频，即 TODO-1301 用 muxed 绕行的技术债）。yt-dlp 对
+/// 这类流走 `range=` 分片顺序下载，每个分片是 full-speed 服务、不触发限速。此处按 yt-dlp
+/// 语义追加**查询参数**（而非 HTTP `Range` header——googlevideo 认查询参数那一路才不限速）。
+String buildGoogleVideoRangeUrl(String baseUrl, int start, int end) {
+  final Uri uri = Uri.parse(baseUrl);
+  final Map<String, String> q = Map<String, String>.from(uri.queryParameters);
+  q['range'] = '$start-$end';
+  return uri.replace(queryParameters: q).toString();
+}
+
+/// TODO-1314（B5）：把远端 **audio-only DASH** 流（googlevideo 分离音频轨）用 yt-dlp 式
+/// `range=` 分片顺序下载**整段物化到本地临时文件** [outputPath]，返回本地路径（成功）或
+/// null（失败 / 空流 / 非 http 输入）。**best-effort**，绝不抛。
+///
+/// 为什么必须整段物化而非只下 `[startMs,endMs)` 对应字节窗：audio-only DASH 流（webm/opus、
+/// m4a/aac）是带容器头/索引的**封装流**，中段裸字节切片不是合法容器（无 moov/Cues），ffmpeg
+/// 解不出 → 只能物化完整流再本地 seek。制卡音频流通常几 MB（几分钟片段），一次性下载可接受；
+/// [maxBytes] 兜底避免超长视频跑飞。物化后 ffmpeg 对**本地文件** `-ss` 是即时的（无网络 seek
+/// stall），故这条路径根治 audio-only 不可 seek、去掉对 muxed 的硬依赖。
+///
+/// 分片语义：从 byte 0 起每次请求 `range=start-(start+chunkBytes-1)`，googlevideo 对查询参数
+/// range 返回该窗口（HTTP 200，非 206）。返回体短于窗口 = 到流末尾（break）；HTTP 416 = 上一
+/// 片恰好是流末尾（EOF，break）；首片非 2xx / 网络异常 → 删半成品返回 null，让调用方回退
+/// （不建无音频卡，绝不喂 ffmpeg 半截流）。[httpClient] 仅供测试注入。
+Future<String?> materializeRemoteAudioViaRangeDownload({
+  required String audioUrl,
+  required String outputPath,
+  http.Client? httpClient,
+  int chunkBytes = 4 * 1024 * 1024,
+  int maxBytes = 128 * 1024 * 1024,
+  FfmpegFailureReporter? onFailure,
+}) async {
+  if (!_isRemoteFfmpegInput(audioUrl)) return null;
+  final http.Client client = httpClient ?? http.Client();
+  final File output = File(outputPath);
+  try {
+    await output.parent.create(recursive: true);
+  } catch (_) {}
+  final IOSink sink = output.openWrite();
+  bool closed = false;
+  Future<void> closeSink() async {
+    if (closed) return;
+    closed = true;
+    try {
+      await sink.flush();
+    } catch (_) {}
+    try {
+      await sink.close();
+    } catch (_) {}
+  }
+
+  void deletePartial() {
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  try {
+    int start = 0;
+    int total = 0;
+    while (start < maxBytes) {
+      final int end = start + chunkBytes - 1;
+      final http.Response res = await client.get(
+        Uri.parse(buildGoogleVideoRangeUrl(audioUrl, start, end)),
+        headers: const <String, String>{'User-Agent': 'Mozilla/5.0'},
+      );
+      // 416（range 越界）= 上一片恰好取到流末尾：正常 EOF，用已下载数据收尾。
+      if (res.statusCode == 416) break;
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        await closeSink();
+        deletePartial();
+        _reportFfmpegEarlyReturn(
+          'materializeRemoteAudioViaRangeDownload',
+          'range chunk HTTP ${res.statusCode} at byte $start; url=$audioUrl',
+          onFailure,
+        );
+        return null;
+      }
+      final int n = res.bodyBytes.length;
+      if (n == 0) break; // EOF
+      sink.add(res.bodyBytes);
+      total += n;
+      start += n;
+      if (n < chunkBytes) break; // 短读 = 流末尾
+    }
+    await closeSink();
+    if (total <= 0 || !output.existsSync() || output.lengthSync() <= 0) {
+      deletePartial();
+      return null;
+    }
+    return outputPath;
+  } catch (e, stack) {
+    await closeSink();
+    deletePartial();
+    _reportFfmpegUnexpectedException(
+      'materializeRemoteAudioViaRangeDownload',
+      e,
+      stack,
+      onFailure,
+    );
+    return null;
+  } finally {
+    if (httpClient == null) client.close();
+  }
+}
+
 /// TODO-757 制卡媒体压缩档位（音频 / GIF 封面 / 截图封面的编码参数集）。
 ///
 /// 压缩开关（`AppModel.compressMiningMedia`，默认开）选档：

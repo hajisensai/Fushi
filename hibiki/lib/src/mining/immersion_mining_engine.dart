@@ -36,6 +36,14 @@ typedef FrameExtractor = Future<String?> Function({
   FfmpegFailureReporter? onFailure,
 });
 
+/// TODO-1314（B5）：把远端 audio-only DASH 流物化到本地临时文件（yt-dlp 式 range 分片下载）
+/// 的注入点。默认指向 [materializeRemoteAudioViaRangeDownload] 真身；测试注入假件。
+typedef RemoteAudioMaterializer = Future<String?> Function({
+  required String audioUrl,
+  required String outputPath,
+  FfmpegFailureReporter? onFailure,
+});
+
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -45,13 +53,32 @@ class ImmersionMiningEngine {
     GifExtractor? gifExtractor,
     AudioExtractor? audioExtractor,
     FrameExtractor? frameExtractor,
+    RemoteAudioMaterializer? audioMaterializer,
   })  : _gif = gifExtractor ?? extractClipGifViaFfmpeg,
         _audio = audioExtractor ?? extractAudioSegmentViaFfmpeg,
-        _frame = frameExtractor ?? extractVideoFrameViaFfmpeg;
+        _frame = frameExtractor ?? extractVideoFrameViaFfmpeg,
+        _materialize = audioMaterializer ?? _defaultAudioMaterializer;
 
   final GifExtractor _gif;
   final AudioExtractor _audio;
   final FrameExtractor _frame;
+  final RemoteAudioMaterializer _materialize;
+
+  /// 默认物化器：包一层 [materializeRemoteAudioViaRangeDownload]（补齐其额外可选参数）。
+  static Future<String?> _defaultAudioMaterializer({
+    required String audioUrl,
+    required String outputPath,
+    FfmpegFailureReporter? onFailure,
+  }) =>
+      materializeRemoteAudioViaRangeDownload(
+        audioUrl: audioUrl,
+        outputPath: outputPath,
+        onFailure: onFailure,
+      );
+
+  /// 纯函数：判断 [s] 是否为远端 http(s) 输入（audio-only DASH 分离流 URL）。
+  static bool _isRemoteHttp(String s) =>
+      s.startsWith('http://') || s.startsWith('https://');
 
   Future<ImmersionMiningResult> mine(
     ImmersionMiningRequest req, {
@@ -119,8 +146,24 @@ class ImmersionMiningEngine {
               'immersion_audio.${immersionMiningAudioExtension()}',
           req.providedAudioBytes!);
     } else if (audioSrc != null && req.hasRange) {
+      // TODO-1314（B5）：audio-only DASH 分离流（req.audioSource 非空且为远端 http = YouTube
+      // 分离音频轨）的 ffmpeg HTTP `-ss` seek 会被 googlevideo 限速 stall→120s 超时→无句子音频
+      // （TODO-1301 曾用 muxed 绕行）。改为先用 yt-dlp 式 range 分片下载把整段音频物化到本地
+      // 临时文件、再对**本地文件**裁——本地 seek 即时、无网络 stall，根治 audio-only 不可 seek，
+      // 去掉对 muxed 的硬依赖。muxed 路径（audioSource==null → audioSrc==mediaSource，HTTP seek
+      // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
+      String cutInput = audioSrc;
+      String? materialized;
+      if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
+        materialized = await _materialize(
+          audioUrl: req.audioSource!,
+          outputPath: '$tempDir/immersion_audio_src',
+          onFailure: onFailure,
+        );
+        if (materialized != null) cutInput = materialized;
+      }
       audioPath = await _audio(
-        inputPath: audioSrc,
+        inputPath: cutInput,
         startMs: req.clipStartMs,
         endMs: req.clipEndMs,
         outputPath:
@@ -131,6 +174,12 @@ class ImmersionMiningEngine {
         audioBitrate: compression.audioBitrate,
         onFailure: onFailure,
       );
+      // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
+      if (materialized != null) {
+        try {
+          File(materialized).deleteSync();
+        } catch (_) {}
+      }
     }
 
     // TODO-1303：无音频中止——需要音频却最终没有音轨（不建无音频卡）。音频来自两条路：

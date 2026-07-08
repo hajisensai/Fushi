@@ -46,9 +46,13 @@ void main() {
   ImmersionMiningEngine build(
           {required GifExtractor gif,
           required AudioExtractor audio,
-          required FrameExtractor frame}) =>
+          required FrameExtractor frame,
+          RemoteAudioMaterializer? materializer}) =>
       ImmersionMiningEngine(
-          gifExtractor: gif, audioExtractor: audio, frameExtractor: frame);
+          gifExtractor: gif,
+          audioExtractor: audio,
+          frameExtractor: frame,
+          audioMaterializer: materializer);
 
   Future<String?> okGif(
           {required String inputPath,
@@ -192,11 +196,14 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
-  test('audioSource overrides mediaSource for audio extraction (youtube split)',
+  test(
+      'audioSource (youtube split) is materialized locally then cut (TODO-1314 B5)',
       () async {
     final repo = _FakeRepo();
     String? gifInput;
     String? audioInput;
+    String? materializedUrl;
+    final String localAudio = '${tmp.path}/materialized_audio_src';
     Future<String?> capGif(
         {required String inputPath,
         required int startMs,
@@ -223,19 +230,34 @@ void main() {
       return outputPath;
     }
 
-    await build(gif: capGif, audio: capAudio, frame: okFrame).mine(
-        const ImmersionMiningRequest(
-            fields: {'expression': 'x'},
-            mediaSource: 'https://video-only.example/v',
-            audioSource: 'https://audio-only.example/a',
-            clipStartMs: 0,
-            clipEndMs: 2000,
-            sentence: 's'),
-        compression: MiningMediaCompression.compressed,
-        tempDir: tmp.path,
-        repo: repo);
-    expect(gifInput, 'https://video-only.example/v'); // GIF 从视频流
-    expect(audioInput, 'https://audio-only.example/a'); // 音频从独立音频流
+    Future<String?> capMaterialize(
+        {required String audioUrl,
+        required String outputPath,
+        FfmpegFailureReporter? onFailure}) async {
+      materializedUrl = audioUrl;
+      return localAudio;
+    }
+
+    await build(
+            gif: capGif,
+            audio: capAudio,
+            frame: okFrame,
+            materializer: capMaterialize)
+        .mine(
+            const ImmersionMiningRequest(
+                fields: {'expression': 'x'},
+                mediaSource: 'https://video-only.example/v',
+                audioSource: 'https://audio-only.example/a',
+                clipStartMs: 0,
+                clipEndMs: 2000,
+                sentence: 's'),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(gifInput, 'https://video-only.example/v'); // GIF 仍从视频流
+    // 分离 audio-only 流先经 range 分片下载物化到本地，再对本地文件裁（不再对 URL 直接 HTTP seek）。
+    expect(materializedUrl, 'https://audio-only.example/a');
+    expect(audioInput, localAudio);
   });
 
   test('updateNoteId routes to updateMinedNote', () async {
