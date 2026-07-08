@@ -16,6 +16,28 @@ int playlistEpisodeCount(String? playlistJson) {
   return 0;
 }
 
+/// **纯函数**：视频库卡片的观看进度分数 [0,1]；返回 `null` = 无可展示进度（不画进度
+/// 条）。TODO-1346：`VideoBooks` 不持久化视频总时长（时长只在播放期从 controller 得到），
+/// 故无法对单视频算 `lastPositionMs / duration`。规则：
+/// - 已看完（[completed]，即 `completedAt != null`）→ 满格 `1.0`。
+/// - 多集播放列表（[episodeCount] ≥ 2）→ 按「看到第几集」到集粒度：`currentEpisode`
+///   是 0-based 当前集索引，其前的整集算已看，`currentEpisode / episodeCount`（clamp
+///   到 [0,1]）；为 0（还在第一集且未看完）时返回 `null` 不画。
+/// - 单视频 / 流：无总时长无法算章内百分比，未看完时返回 `null`（不误导）。
+double? videoWatchFraction({
+  required bool completed,
+  required int currentEpisode,
+  required int episodeCount,
+}) {
+  if (completed) return 1.0;
+  if (episodeCount >= 2) {
+    final double f =
+        (currentEpisode.clamp(0, episodeCount) / episodeCount).clamp(0.0, 1.0);
+    return f > 0 ? f : null;
+  }
+  return null;
+}
+
 /// 播放列表中的一集：标题 + 视频绝对路径 + 本集自己的播放进度。
 ///
 /// [path] 始终是绝对路径（由 [parseM3u8] 用 baseDir 解析 m3u8 中的相对路径得到，

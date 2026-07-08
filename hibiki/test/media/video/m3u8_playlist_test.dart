@@ -427,4 +427,57 @@ D:/video/Bocchi/S01E01.mp4
           reason: 'absolute entry must not be joined onto the m3u8 dir');
     });
   });
+
+  // TODO-1346：视频卡观看进度分数。无持久化总时长 → 多集按「看到第几集」到集粒度，
+  // 单视频仅「已看完」满格；无可展示进度返回 null（不画进度条）。
+  group('videoWatchFraction (TODO-1346 视频卡观看进度)', () {
+    test('多集按 currentEpisode/episodeCount 算，clamp 到 [0,1]', () {
+      // K-ON! 现场值：第 47 集 / 共 59 集 ≈ 0.797。
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 47, episodeCount: 59),
+        closeTo(47 / 59, 1e-9),
+      );
+      // currentEpisode 越界也不炸、绝不 >1。
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 999, episodeCount: 12),
+        1.0,
+      );
+    });
+
+    test('已看完（completed）恒满格，压过集数', () {
+      expect(
+        videoWatchFraction(
+            completed: true, currentEpisode: 0, episodeCount: 12),
+        1.0,
+      );
+      expect(
+        videoWatchFraction(completed: true, currentEpisode: 3, episodeCount: 0),
+        1.0,
+      );
+    });
+
+    test('多集停在第一集(0)且未看完 → null（不画空条）', () {
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 0, episodeCount: 24),
+        isNull,
+      );
+    });
+
+    test('单视频/流（episodeCount<2）未看完 → null（无总时长不误导）', () {
+      // 单视频起播中：有 lastPositionMs 但没时长可算 → 不画。
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 0, episodeCount: 0),
+        isNull,
+      );
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 0, episodeCount: 1),
+        isNull,
+      );
+    });
+  });
 }

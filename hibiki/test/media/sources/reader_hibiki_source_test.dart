@@ -801,4 +801,93 @@ void main() {
       expect(source, contains('setAuthorFromMediaItem'));
     });
   });
+
+  // TODO-1346：书架进度条 position/duration 计算。以前只累加 sectionIndex 之前各章
+  // 字数、忽略章内 charOffset，读到某章开头显示极低% → 用户以为「进度没了」。
+  group('computeBookProgress (TODO-1346 书架进度纳入 char_offset)', () {
+    // 安達としまむら2 现场值：39 章，前 12 章字数含前言共 184，当前章(12)字数 15521。
+    const List<int> adachi2 = <int>[
+      0, 0, 0, 0, 0, 0, 0, 0, 106, 78, 0, 0, //
+      15521, 2696, 0, 11427, 2101, 0, 12397, 2825, 0, 12296, 2108, 0, //
+      8952, 1452, 0, 14081, 2240, 0, 3556, 0, 1972, 525, 280, 0, 214, 163, 0,
+    ];
+
+    test('章内 charOffset 计入 position（同单位，直接相加）', () {
+      final int total = adachi2.reduce((int a, int b) => a + b);
+      final int before12 =
+          adachi2.take(12).reduce((int a, int b) => a + b); // = 184
+      // charOffset=0：只到本章开头。
+      final ({int position, int duration}) atStart = computeBookProgress(
+        sectionChars: adachi2,
+        sectionIndex: 12,
+        charOffset: 0,
+      );
+      expect(atStart.duration, total);
+      expect(atStart.position, before12);
+      // charOffset=12981（≤ 本章 15521）：章内进度必须被算进 position。
+      final ({int position, int duration}) mid = computeBookProgress(
+        sectionChars: adachi2,
+        sectionIndex: 12,
+        charOffset: 12981,
+      );
+      expect(mid.position, before12 + 12981);
+      expect(mid.position, greaterThan(atStart.position),
+          reason: '章内 charOffset 必须让进度前进，而非停在章首');
+    });
+
+    test('charOffset 超过本章字数 → clamp 进本章（绝不 >100%）', () {
+      final int total = adachi2.reduce((int a, int b) => a + b);
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: adachi2,
+        sectionIndex: 12,
+        charOffset: 999999, // 越界
+      );
+      expect(prog.position, lessThanOrEqualTo(total));
+      // 只 clamp 到「前 12 章 + 本章满字数」。
+      final int before12 = adachi2.take(12).reduce((int a, int b) => a + b);
+      expect(prog.position, before12 + adachi2[12]);
+    });
+
+    test('charOffset == -1（仅章节、章内未知）当 0，不减进度', () {
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: adachi2,
+        sectionIndex: 12,
+        charOffset: -1,
+      );
+      final int before12 = adachi2.take(12).reduce((int a, int b) => a + b);
+      expect(prog.position, before12);
+    });
+
+    test('老书无每章字数（全书字数=0）→ 回退章级 section/章数，不显 0%', () {
+      const List<int> noChars = <int>[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // 10 章全 0
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: noChars,
+        sectionIndex: 5,
+        charOffset: 0,
+      );
+      expect(prog.duration, 10);
+      expect(prog.position, 5); // 5/10 = 50% 粗粒度，而非 0%
+    });
+
+    test('无阅读位置（sectionIndex==null）→ 0 / 全书字数（0%，不崩）', () {
+      final int total = adachi2.reduce((int a, int b) => a + b);
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: adachi2,
+        sectionIndex: null,
+        charOffset: -1,
+      );
+      expect(prog.position, 0);
+      expect(prog.duration, total);
+    });
+
+    test('完全无章结构 → (0, 1)（0%，不除零）', () {
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: const <int>[],
+        sectionIndex: 3,
+        charOffset: 100,
+      );
+      expect(prog.position, 0);
+      expect(prog.duration, 1);
+    });
+  });
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -161,6 +162,94 @@ void main() {
       await orchestrator.pruneRootSpill('root', report);
       expect(report.rootSpillFilesRemoved, 0);
       expect(report.errors, isEmpty);
+    });
+
+    // TODO-1346「书架/视频进度好像没了」根因排查守卫。用户上报进度疑似丢失，怀疑本
+    // 云端根目录清扫会误删合法进度。定论：进度真值只在本地 Drift（reader_positions /
+    // video_books.playlist_json）里，而 pruneRootSpill 只操作 *云端* root 的直接子
+    // *文件*。这两条断言把该安全契约钉死，防止未来把清扫谓词放宽到会碰文件夹 / 本地库：
+    //   (1) `isFolder` 永远优先于名字——即使某本书的 sanitized 标题恰好撞上 per-book
+    //       文件名（`progress_1_6_...`），它作为文件夹绝不能被当成溢出删掉（书文件夹里
+    //       正是该书的真实进度 / 封面）。
+    //   (2) 一次 pruneRootSpill 后，本地 DB 的阅读位置与视频进度一字不动。
+    test(
+        'never deletes a folder colliding with the spill name, and leaves local '
+        'DB reading/video progress intact (TODO-1346)', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // 本地真值进度：一条阅读位置（章内精确 charOffset）+ 一个多集视频（进度都在
+      // playlist_json 各集 positionMs / current_episode，last_position_ms 对播放列表
+      // 恒为 0——与用户 DB 现象一致）。
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion(
+          bookKey: const Value('安達としまむら2'),
+          sectionIndex: const Value(12),
+          normCharOffset: const Value(8334),
+          charOffset: const Value(12981),
+          updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
+      await db.upsertVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/playlist/K-ON! 全集列表'),
+          title: Value('K-ON!'),
+          videoPath: Value(''),
+          currentEpisode: Value(47),
+          playlistJson: Value(
+              '[{"title":"ep47","path":"/ep47.mp4","positionMs":633174}]'),
+        ),
+      );
+
+      // 一个真会被清掉的溢出文件，加一个 *名字撞谓词但本体是文件夹* 的书文件夹。
+      await seedFile(store, 'root', _spilledProgress);
+      await store.ensureFolder('root', 'progress_1_6_collides_as_folder');
+      await seedFile(
+          store, 'root/progress_1_6_collides_as_folder', _spilledProgress);
+
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final SyncOrchestrator orchestrator = SyncOrchestrator(
+        db: db,
+        backend: FakeSyncBackend(store),
+        dictionaryResourceRoot: tmp,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+        syncLocalAudio: false,
+      );
+
+      final SyncRunReport report = SyncRunReport();
+      await orchestrator.pruneRootSpill('root', report);
+
+      // 只删了那一个溢出裸文件；名字撞谓词的文件夹被 `isFolder` 守卫放过。
+      expect(report.rootSpillFilesRemoved, 1);
+      expect(report.errors, isEmpty);
+      final Set<String> rootNames = (await store.listChildren('root'))
+          .map((AssetEntry e) => e.name)
+          .toSet();
+      expect(rootNames, contains('progress_1_6_collides_as_folder'),
+          reason: 'a folder must never be swept, even if its name matches the '
+              'per-book file pattern');
+      final AssetEntry? nested = await store.findAsset(
+          'root/progress_1_6_collides_as_folder', _spilledProgress);
+      expect(nested, isNotNull,
+          reason: 'files inside a book folder are legitimate progress');
+
+      // 本地库进度一字未动：阅读位置精确 charOffset + 视频按集进度都在。
+      final ReaderPositionRow? pos = await db.getReaderPosition('安達としまむら2');
+      expect(pos, isNotNull);
+      expect(pos!.charOffset, 12981);
+      expect(pos.sectionIndex, 12);
+      final VideoBookRow? vb =
+          await db.getVideoBookByBookUid('video/playlist/K-ON! 全集列表');
+      expect(vb, isNotNull);
+      expect(vb!.currentEpisode, 47);
+      expect(vb.playlistJson, contains('633174'));
     });
   });
 }
