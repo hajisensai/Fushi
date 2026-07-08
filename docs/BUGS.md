@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 615 条。点号进各自文件。
+> 共 616 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-630](bugs/BUG-630-netflix-mine-issue.md) | ✅ | ✅ | 网飞制卡有问题（未复现·待用户日志） |
 | [BUG-629](bugs/BUG-629-youtube-subtitle-vanish.md) | ✅ | ✅ | YouTube 字幕快加载后整个消失（回归） |
 | [BUG-628](bugs/BUG-628-ass-outline-width-scale.md) | ✅ | ✅ | 外挂ASS描边宽未随PlayResY缩放（尊重自带样式仍不够忠实） |
 | [BUG-627](bugs/BUG-627-m3u8-playlist-dedup-identity.md) | ✅ | ✅ | m3u8 播放列表来源库重复扫描不去重、封面缺失（判重键错用首集易变路径） |
