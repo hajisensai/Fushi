@@ -58,7 +58,7 @@
 | [BUG-597](bugs/BUG-597-android-video-black-texture.md) | ✅ | ✅ | 安卓视频解码正常但纹理合成黑屏 |
 | [BUG-596](bugs/BUG-596-yt-stream-dedup-cover.md) | ✅ | ✅ | 油管流去重无videoId规范化+非YouTube流无封面 |
 | [BUG-595](bugs/BUG-595-mobile-mining-no-cover.md) | ✅ | ✅ | 手机制卡回退路径漏coverHref致无书籍封面 |
-| [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉） |
+| [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5–6 次复诉） |
 | [BUG-593](bugs/BUG-593-netflix-card-subtitle-dup.md) | ✅ | ✅ | 网飞制卡卡片字幕重复两次+截取混入UI+少开头 |
 | [BUG-592](bugs/BUG-592-interconnect-connect-fail.md) | ✅ | ✅ | 互联LAN token成功仍连失败+公网无pin |
 | [BUG-591](bugs/BUG-591-external-sub-style.md) | ✅ | ✅ | 外挂ASS字幕自带颜色描边不生效 |
