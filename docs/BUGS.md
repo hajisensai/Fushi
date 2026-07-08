@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-620](bugs/BUG-620-subtitle-timing-entry.md) | ✅ | ✅ | 字幕调轴波形对轴入口在弱设备被隐藏（懒加载化后已改为常驻可见） |
+| [BUG-620](bugs/BUG-620-longpress-text-selection.md) | ✅ | ✅ | 手机长按丢了文本区间选择(复制)·回归 |
 | [BUG-619](bugs/BUG-619-cloud-folder-spill.md) | ✅ | ✅ | 云盘进度文件溢出到父目录 |
 | [BUG-618](bugs/BUG-618-interconnect-token-mismatch-confusion.md) | 🚧 | 🚧 | 互联访问令牌与桌面端不一致（per-peer token·非 bug 待确认） |
 | [BUG-617](bugs/BUG-617-interconnect-wan-pin-vanishes.md) | ✅ | ✅ | 公网配对 host 点允许即关窗抹掉 PIN·client 还没输就看不到 |
