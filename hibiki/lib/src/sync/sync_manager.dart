@@ -244,6 +244,16 @@ class SyncManager {
     bool syncContent = false,
     bool importOnly = false,
   }) async {
+    // BUG-616 / TODO-1329: an empty sanitized title has no unique bookKey and no
+    // per-book folder — `ensureBookFolder('')` collapses onto the sync root and
+    // scatters this book's progress_/statistics_/audioBook_ JSON (plus cover /
+    // epub) straight into `hibiki-data/` next to real book folders. Mirror the
+    // LAN audiobook sweep, which already filters empty keys via
+    // audiobookKeyFromPositionPrefKey — such a book is not syncable, skip it.
+    if (sanitizeTtuFilename(book.title).isEmpty) {
+      return SyncBookResult(direction: SyncResult.skipped, title: book.title);
+    }
+
     await _restoreDriveCache();
 
     final rootId = await _backend.findOrCreateRootFolder();

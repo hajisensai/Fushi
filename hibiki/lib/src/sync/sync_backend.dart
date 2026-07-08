@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 
@@ -38,6 +39,29 @@ class SyncAuthError implements Exception {
 
   @override
   String toString() => 'SyncAuthError: $message';
+}
+
+/// The per-book sync folder name for [bookTitle] (its sanitized title), or throw
+/// when that name would be empty.
+///
+/// `sanitizeTtuFilename('')` returns `''`, and every backend derives a per-book
+/// folder as `<root>/<sanitized>/`. An empty sanitized name therefore collapses
+/// that folder onto the sync root, scattering the book's `progress_*` /
+/// `statistics_*` / `audioBook_*` JSON (and cover / epub / audiobook package)
+/// directly into `hibiki-data/` next to real book folders (BUG-616, TODO-1329).
+/// An empty title also has no unique `bookKey`, so such a row is not syncable —
+/// refuse to resolve a folder for it instead of silently targeting the root.
+/// The single guarded chokepoint every backend's [SyncBackend.ensureBookFolder]
+/// funnels its title→folder-name derivation through.
+String requireBookFolderName(String bookTitle) {
+  final String name = sanitizeTtuFilename(bookTitle);
+  if (name.isEmpty) {
+    throw SyncBackendError(
+      'refusing to resolve a book sync folder for an empty title: '
+      'it would collapse onto the sync root',
+    );
+  }
+  return name;
 }
 
 abstract class SyncBackend implements SyncAssetStore {
