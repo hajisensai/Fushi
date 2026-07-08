@@ -80,9 +80,17 @@ void main() {
           reason: '右键菜单等无触发源入口不能打开无锚点浮层');
       expect(opensSidePanel('speed'), isTrue,
           reason: '无触发源入口应回退到可见 side panel');
-      expect(opensSidePanel('audioTracks'), isTrue, reason: '音轨菜单走 side panel');
-      expect(opensSidePanel('subtitleSources'), isTrue,
-          reason: '字幕源菜单走 side panel');
+      // TODO-1351：音轨/字幕轨切换收进设置面板对应 tab（audioTracks / subtitleSources
+      // 两个浮动 kind 已删），入口改为把设置面板开在 'audio' / 'subtitle' 分类（仍是
+      // side-panel 系统，单 ValueNotifier 互斥）。
+      expect(opensSidePanel('audioTracks'), isFalse,
+          reason: '浮动音轨侧栏已删（音轨收进设置面板「音频」分类）');
+      expect(opensSidePanel('subtitleSources'), isFalse,
+          reason: '浮动字幕源侧栏已删（字幕轨收进设置面板「字幕」分类）');
+      expect(RegExp(r"initialCategory: 'audio'").hasMatch(src), isTrue,
+          reason: '音轨菜单改为把设置面板开在「音频」分类');
+      expect(RegExp(r"initialCategory: 'subtitle'").hasMatch(src), isTrue,
+          reason: '字幕轨菜单改为把设置面板开在「字幕」分类');
       expect(opensSidePanel('settings'), isTrue,
           reason: '设置面板走 side panel（master-detail VideoQuickSettingsSheet）');
       expect(src, contains('VideoQuickSettingsSheet('),

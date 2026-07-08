@@ -223,8 +223,10 @@ void main() {
   test('TODO-573: 「自动获取字幕(Jimaku)」入口对本地和远端视频都显示', () {
     // 入口门控不再是 `!_isRemote`，否则远端视频整条 Jimaku 入口消失（用户报：
     // 远端视频字幕轨里没有「自动获取字幕」）。改为只要能算出非空番名 query 就显示。
+    // TODO-1351：字幕源侧栏收进设置面板「字幕」分类，字幕轨切换区行由
+    // _buildSubtitleTrackRows 构建（Jimaku 入口就在其中）。
     final String panel = region(
-      'Widget _buildSubtitleSourcesSidePanel(',
+      'Widget _buildSubtitleTrackRows(',
       'Future<void> _showSubtitleSourceMenu(',
     );
     expect(panel.contains('if (_jimakuQuery() != null)'), isTrue,

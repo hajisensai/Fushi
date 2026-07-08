@@ -2192,5 +2192,9 @@
   "sync_client_token_hint": "配对成功后由对端自动签发并填入；这是对端发给本设备的专属令牌，与对端服务器显示的共享令牌不同，两者都能连接。",
   "sync_server_token_self_hint": "本设备的服务器共享令牌；已配对的设备会另获各自的专属令牌，此共享令牌也可手动填入连接。",
   "theme_eyecare": "护眼",
-  "reader_theme_eyecare": "护眼"
+  "reader_theme_eyecare": "护眼",
+  "video_settings_cat_audio": "音频",
+  "video_setting_theme": "主题",
+  "video_setting_theme_hint": "切换应用配色主题",
+  "video_audio_track_empty": "没有可切换的音频轨"
 }

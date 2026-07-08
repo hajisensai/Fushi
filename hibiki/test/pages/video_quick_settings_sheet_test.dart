@@ -41,8 +41,22 @@ VideoQuickSettingsSheet _sheet({
   Future<int?> Function()? onAutoAlign,
   List<AudioCue> subtitleWaveformCues = const <AudioCue>[],
   Future<List<double>> Function()? loadSubtitleWaveform,
+  String? initialCategory,
+  Widget? audioTrackSection,
+  Widget? subtitleTrackSection,
+  List<VideoThemeOption> themeOptions = const <VideoThemeOption>[],
+  String? currentThemeKey,
+  void Function(String key)? onSelectThemeKey,
 }) {
   return VideoQuickSettingsSheet(
+    initialCategory: initialCategory,
+    audioTrackSection: audioTrackSection,
+    subtitleTrackSection: subtitleTrackSection,
+    themeOptions: themeOptions,
+    currentThemeKey: currentThemeKey,
+    onSelectThemeKey: onSelectThemeKey == null
+        ? null
+        : (String key) async => onSelectThemeKey(key),
     initialDelayMs: initialDelayMs,
     initialSpeed: 1.0,
     initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
@@ -2116,6 +2130,176 @@ void main() {
           reason: '纯图标 chip 须用分类标签作 tooltip（hover / 长按显示文字说明）');
       expect(src, contains('_buildWideDetailTitle('),
           reason: '宽窗详情顶部须渲染当前分类标题（纯图标顶栏后用户靠标题认当前项）');
+    });
+  });
+
+  // ── TODO-1350 / TODO-1351：检查器式整合（视频/音频/字幕 tab + 轨切换收进面板 +
+  //    视频主题按钮 + 字幕颜色/背景可调） ─────────────────────────────────────
+  group('TODO-1350/1351 inspector consolidation', () {
+    testWidgets('TODO-1351：顶栏含 视频/音频/字幕（playback/audio/subtitle）tab chips',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+      // 参考「检查器」的 视频 / 音频 / 字幕 tab 都在顶栏（按 id key 命中纯图标 chip）。
+      expect(_categoryChip('playback'), findsOneWidget);
+      expect(_categoryChip('audio'), findsOneWidget, reason: '音频 tab 必须存在');
+      expect(_categoryChip('subtitle'), findsOneWidget);
+    });
+
+    testWidgets('TODO-1351：音频分类展示传入的音轨切换区（取代外面浮的音轨侧栏）', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(
+        tester,
+        _sheet(
+          audioTrackSection: const Text('AUDIO_TRACK_SECTION_MARKER'),
+        ),
+      );
+      await _tapCategory(tester, 'audio', t.video_settings_cat_audio);
+      expect(find.text('AUDIO_TRACK_SECTION_MARKER'), findsOneWidget,
+          reason: '音频分类须渲染页面传入的音轨切换区');
+    });
+
+    testWidgets('TODO-1351：无音轨切换区时音频分类显示占位', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+      await _tapCategory(tester, 'audio', t.video_settings_cat_audio);
+      expect(find.text(t.video_audio_track_empty), findsOneWidget);
+    });
+
+    testWidgets('TODO-1351：字幕分类顶部展示字幕轨切换区，位于外观设置之上（外挂字幕→打开字幕）', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(
+        tester,
+        _sheet(
+          subtitleTrackSection: const Text('SUBTITLE_TRACK_SECTION_MARKER'),
+        ),
+      );
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
+      final Finder marker = find.text('SUBTITLE_TRACK_SECTION_MARKER');
+      expect(marker, findsOneWidget, reason: '字幕分类须渲染页面传入的字幕轨切换区');
+      // 字幕轨切换区在字幕外观（字号）之上（参考「检查器」字幕 tab 结构）。
+      final double trackY = tester.getTopLeft(marker).dy;
+      final double fontSizeY =
+          tester.getTopLeft(find.text(t.video_setting_subtitle_font_size)).dy;
+      expect(trackY, lessThan(fontSizeY), reason: '字幕轨切换区须在字幕外观设置之上');
+    });
+
+    testWidgets('TODO-1351：initialCategory 直接把面板开在目标分类（窄窗 push 音频）',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(420, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet(initialCategory: 'audio'));
+      // 窄窗直接 push 到「音频」子页：子页标题 + 返回箭头 + 占位（无 section 时）。
+      expect(find.text(t.video_settings_cat_audio), findsWidgets);
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      expect(find.text(t.video_audio_track_empty), findsOneWidget);
+    });
+
+    testWidgets('TODO-1350：提供主题选项+回调时播放分类显示主题切换行', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      String? picked;
+      await _pump(
+        tester,
+        _sheet(
+          themeOptions: const <VideoThemeOption>[
+            VideoThemeOption(key: 'system-theme', label: 'System'),
+            VideoThemeOption(key: 'ecru-theme', label: 'Ecru'),
+            VideoThemeOption(key: 'dark-theme', label: 'Dark'),
+          ],
+          currentThemeKey: 'system-theme',
+          onSelectThemeKey: (String key) => picked = key,
+        ),
+      );
+      // 播放（视频）分类默认选中，主题切换行标题可见。
+      expect(find.text(t.video_setting_theme), findsWidgets,
+          reason: '提供主题选项 + 回调时主题切换行须显示');
+      // 行是 int 索引的离散单选，回调仍连着（选中态不崩）。
+      expect(picked, isNull);
+    });
+
+    testWidgets('TODO-1350：不提供主题选项时不显示主题切换行', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+      expect(find.text(t.video_setting_theme), findsNothing,
+          reason: '无主题选项时不渲染主题切换行');
+    });
+
+    testWidgets('TODO-1350：字幕文字颜色 + 背景颜色在字幕设置里可调', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final List<VideoSubtitleStyle> commits = <VideoSubtitleStyle>[];
+      await _pump(
+        tester,
+        _sheet(onSubtitleStyleCommit: commits.add),
+      );
+      await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
+      // 字幕文字颜色（TODO-1326）+ 背景颜色（TODO-1059）选择行都在字幕外观里。
+      // 二者是 AdaptiveSettingsPickerRow：DropdownButton 为测宽离屏复刻一份标题，故
+      // findsWidgets（与 mpv hwdec 行同理）。
+      expect(find.text(t.video_setting_subtitle_text_color), findsWidgets,
+          reason: '字幕文字颜色须可调');
+      expect(find.text(t.video_setting_subtitle_bg_color), findsWidgets,
+          reason: '字幕背景颜色须可调');
+    });
+
+    test('源码守卫：设置面板含音频分类 + 主题行 + 轨/主题接线（TODO-1350/1351）', () {
+      final String src =
+          File('lib/src/media/video/video_quick_settings_sheet.dart')
+              .readAsStringSync();
+      // 视频/音频/字幕 tab：音频分类 id + 详情构建器。
+      expect(src, contains("id: 'audio'"), reason: '顶栏须含「音频」分类（收音频轨切换）');
+      expect(src, contains('_buildAudioDetail('), reason: '音频分类须有详情构建器');
+      // 轨切换区 + 主题行接线。
+      expect(src, contains('widget.audioTrackSection'),
+          reason: '音频分类须渲染页面传入的音轨切换区');
+      expect(src, contains('widget.subtitleTrackSection'),
+          reason: '字幕分类须渲染页面传入的字幕轨切换区');
+      expect(src, contains('_buildThemeRow('),
+          reason: '播放分类须有主题切换行（TODO-1350）');
+      expect(src, contains('onSelectThemeKey'),
+          reason: '主题切换须回调 onSelectThemeKey');
+      // 字幕颜色/背景（TODO-1350）可调。
+      expect(src, contains('video_setting_subtitle_text_color'),
+          reason: '字幕文字颜色须可调');
+      expect(src, contains('video_setting_subtitle_bg_color'),
+          reason: '字幕背景颜色须可调');
+    });
+
+    test('源码守卫：外面浮的音轨/字幕轨侧栏已删，按钮改开设置面板对应 tab（TODO-1351）', () {
+      final String sidePanel = File(
+        'lib/src/pages/implementations/video_hibiki/side_panel.part.dart',
+      ).readAsStringSync();
+      final String audioTrack = File(
+        'lib/src/pages/implementations/video_hibiki/audio_track.part.dart',
+      ).readAsStringSync();
+      final String subtitle = File(
+        'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+      ).readAsStringSync();
+      // 浮动轨切换器（audioTracks / subtitleSources 两个 side-panel kind + builder）已删。
+      expect(sidePanel, isNot(contains('_VideoSidePanelKind.audioTracks')),
+          reason: '浮动音轨侧栏 kind 必须删除（音频轨收进设置面板「音频」分类）');
+      expect(sidePanel, isNot(contains('_VideoSidePanelKind.subtitleSources')),
+          reason: '浮动字幕轨侧栏 kind 必须删除（字幕轨收进设置面板「字幕」分类）');
+      expect(audioTrack, isNot(contains('_buildAudioTracksSidePanel')),
+          reason: '浮动音轨侧栏构建器必须删除');
+      expect(subtitle, isNot(contains('_buildSubtitleSourcesSidePanel')),
+          reason: '浮动字幕轨侧栏构建器必须删除');
+      // 音频轨/字幕轨按钮改为把设置面板开在对应 tab（功能收进不丢）。
+      expect(audioTrack, contains("initialCategory: 'audio'"),
+          reason: '音频轨按钮须打开设置面板「音频」分类');
+      expect(subtitle, contains("initialCategory: 'subtitle'"),
+          reason: '字幕轨按钮须打开设置面板「字幕」分类');
+      // 轨切换区仍由页面构建（功能不丢）。
+      expect(audioTrack, contains('_buildAudioTrackSettingsSection('),
+          reason: '音轨切换区须仍由页面构建（收进面板不丢功能）');
+      expect(subtitle, contains('_buildSubtitleTrackSettingsSection('),
+          reason: '字幕轨切换区须仍由页面构建（收进面板不丢功能）');
     });
   });
 }

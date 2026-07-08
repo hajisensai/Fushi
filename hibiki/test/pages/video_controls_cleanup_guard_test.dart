@@ -79,29 +79,41 @@ void main() {
       return src.substring(start, end);
     }
 
-    test('音轨菜单是可滚动 ListView side panel（_buildAudioTracksSidePanel）', () {
+    // TODO-1351：音轨/字幕轨切换从「外面浮的轨切换侧栏」收进设置面板对应 tab
+    // （音频轨→「音频」分类、字幕轨→「字幕」分类顶部），浮动侧栏（audioTracks /
+    // subtitleSources kind + builder）已删；轨切换区仍由页面构建（功能不丢），列表用
+    // Column of ListTile，外层设置面板 SingleChildScrollView 负责滚动（长列表不裁底）。
+    test('音轨切换收进设置面板「音频」分类（TODO-1351，取代浮动音轨侧栏）', () {
       final String show = sourceMember(src, 'void _showAudioTrackMenu(');
-      expect(show, contains('_VideoSidePanelKind.audioTracks'),
-          reason: '音轨菜单走 side panel');
+      expect(show, contains("initialCategory: 'audio'"),
+          reason: '音轨按钮改为把设置面板开在「音频」分类');
       expect(show, contains('sourceSlot: sourceSlot'),
-          reason: '音轨菜单应把触发 slot 传给 side panel');
-      final String body =
-          panelBody('Widget _buildAudioTracksSidePanel(VideoPlayerController');
-      expect(body.contains('ListView.builder('), isTrue,
-          reason: '音轨面板须用可滚动 ListView.builder');
+          reason: '仍把触发 slot 传给设置面板');
+      expect(src, isNot(contains('_buildAudioTracksSidePanel')),
+          reason: '浮动音轨侧栏（builder）已删');
+      expect(src, isNot(contains('_VideoSidePanelKind.audioTracks')),
+          reason: '浮动音轨侧栏（kind）已删');
+      final String body = panelBody(
+          'Widget _buildAudioTrackSettingsSection(VideoPlayerController');
+      expect(body.contains('ListTile('), isTrue,
+          reason: '音轨切换区逐轨一行 ListTile（收进面板不丢功能）');
     });
 
-    test('字幕源菜单是可滚动 side panel（_buildSubtitleSourcesSidePanel）', () {
+    test('字幕轨切换收进设置面板「字幕」分类（TODO-1351，取代浮动字幕源侧栏）', () {
       expect(
-          RegExp(r'_showVideoSidePanel\(\s*_VideoSidePanelKind\.subtitleSources')
+          RegExp(r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'")
               .hasMatch(src),
           isTrue,
-          reason: '字幕源菜单走 side panel');
-      final String body = panelBody(
-          'Widget _buildSubtitleSourcesSidePanel(VideoPlayerController');
-      expect(body.contains('ListView.builder(') || body.contains('ListView('),
+          reason: '字幕轨菜单改为把设置面板开在「字幕」分类');
+      expect(src, isNot(contains('_buildSubtitleSourcesSidePanel')),
+          reason: '浮动字幕源侧栏（builder）已删');
+      expect(src, isNot(contains('_VideoSidePanelKind.subtitleSources')),
+          reason: '浮动字幕源侧栏（kind）已删');
+      final String body = panelBody('Widget _buildSubtitleTrackRows(');
+      expect(
+          body.contains('ListTile(') || body.contains('_subtitleMenuSources'),
           isTrue,
-          reason: '字幕源面板须可滚动（条目多时不裁底）');
+          reason: '字幕轨切换区含字幕源行（收进面板不丢功能）');
     });
   });
 

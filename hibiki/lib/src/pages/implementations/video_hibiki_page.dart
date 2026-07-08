@@ -503,9 +503,10 @@ abstract class VideoHibikiTestHooks {
 enum _VideoSidePanelKind {
   speed,
   settings,
-  subtitleSources,
+  // TODO-1351：`subtitleSources` / `audioTracks` 两个「外面浮的轨切换器」已删——字幕轨
+  // 收进设置面板「字幕」分类顶部、音频轨收进「音频」分类。副字幕仍是独立浮层
+  // （从字幕分类的「副字幕」入口打开）。
   secondarySubtitleSources,
-  audioTracks,
   chapters,
   quality,
 }
@@ -854,6 +855,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<bool> _episodeListVisible = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelState?>(null);
+
+  /// TODO-1351：下次构建设置面板时要定位到的分类（`audio` / `subtitle` / null=默认）。
+  /// 「音频轨」「字幕轨」按钮把轨切换收进设置面板对应 tab，靠它把面板直接开在目标分类。
+  String? _settingsInitialCategory;
 
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
@@ -5064,10 +5069,52 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
+      // TODO-1351：轨切换收进设置面板对应 tab（音频轨在「音频」、字幕轨在「字幕」顶部），
+      // 由页面构建内容（复用既有切轨/切源方法与数据），删掉外面浮的轨切换侧栏。
+      initialCategory: _settingsInitialCategory,
+      audioTrackSection: _controller != null
+          ? _buildAudioTrackSettingsSection(_controller!)
+          : null,
+      subtitleTrackSection: _controller != null
+          ? _buildSubtitleTrackSettingsSection(_controller!)
+          : null,
+      // TODO-1350：视频内也能切整个 app 的配色主题（跟随系统 + 预设含护眼米色 + 当前
+      // 自定义），复用全局 themePresets / setAppThemeKey。
+      themeOptions: _buildVideoThemeOptions(),
+      currentThemeKey: appModel.appThemeKey,
+      onSelectThemeKey: (String key) async {
+        await appModel.setAppThemeKey(key);
+        if (mounted) _rebuild(() {});
+      },
     );
   }
 
-  void _showPlayerSettings({VideoControlSlot? sourceSlot}) {
+  /// TODO-1350：构建视频设置面板的主题选项：跟随系统 + 全部预设主题（含护眼米色
+  /// `ecru-theme`）；当前若是自定义主题，把它也并进列表以便高亮当前选择。
+  List<VideoThemeOption> _buildVideoThemeOptions() {
+    final String currentKey = appModel.appThemeKey;
+    final List<VideoThemeOption> options = <VideoThemeOption>[
+      VideoThemeOption(key: 'system-theme', label: t.theme_system),
+      for (final String key in AppModel.themePresets.keys)
+        VideoThemeOption(key: key, label: AppModel.themeLabel(key)),
+    ];
+    if (!options.any((VideoThemeOption o) => o.key == currentKey)) {
+      options.add(VideoThemeOption(
+        key: currentKey,
+        label: appModel.activeCustomThemeEntry?.name ??
+            AppModel.themeLabel(currentKey),
+      ));
+    }
+    return options;
+  }
+
+  void _showPlayerSettings({
+    VideoControlSlot? sourceSlot,
+    String? initialCategory,
+  }) {
+    // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
+    // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
+    _settingsInitialCategory = initialCategory;
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,

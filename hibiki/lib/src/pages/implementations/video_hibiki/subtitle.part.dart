@@ -21,8 +21,9 @@ part of '../video_hibiki_page.dart';
 /// the subtitle-style helpers (`_persistSubtitleStyle` / `_toggleSubtitleBlur`),
 /// and the parent build subtrees (`_buildVideoSidePanelChild` /
 /// `_videoWithSubtitlePanel`) stay in the main shell; the parents keep calling the
-/// extracted `_buildSubtitleSourcesSidePanel` / `_subtitleJumpSidePanel` through
-/// shared private scope.
+/// extracted `_buildSubtitleTrackSettingsSection` (TODO-1351: subtitle-track
+/// switching folded into the settings sheet's `subtitle` category) /
+/// `_subtitleJumpSidePanel` through shared private scope.
 /// TODO-1302：YouTube 预解析字幕（[UrlStreamVideoClient.preresolvedCues]）的合成字幕源
 /// 哨兵。YouTube 字幕不是 host 外挂文件、也不是容器内嵌轨枚举，而是 resolver 预解析好的
 /// cue 直接注入 overlay。用一个非空源标识它，让远端字幕菜单能渲染并高亮「YouTube 字幕」行，
@@ -104,8 +105,24 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     unawaited(_lookupAt(sentence, graphemeIndex, charRect));
   }
 
-  Widget _buildSubtitleSourcesSidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
+  /// TODO-1351：字幕轨/字幕源切换区，收进设置面板「字幕」分类顶部（取代原来外面浮的
+  /// 字幕轨侧栏）。用 [Builder] 让配色随设置面板浅色 MD3 主题解析（而非视频 chrome 深色）；
+  /// 行内容（自动获取字幕 / 打开字幕文件 / 关闭 / 本地内嵌+外挂源 / 远端 YouTube+内嵌+host
+  /// / 副字幕入口）与选择逻辑与旧侧栏逐行一致，数据随视频页 `_rebuild` 重建。
+  Widget _buildSubtitleTrackSettingsSection(VideoPlayerController controller) {
+    return Builder(
+      builder: (BuildContext context) => _buildSubtitleTrackRows(
+        context,
+        controller,
+      ),
+    );
+  }
+
+  Widget _buildSubtitleTrackRows(
+    BuildContext context,
+    VideoPlayerController controller,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     final String? hostSub = _remoteSubtitlePath;
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
@@ -243,8 +260,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
               : () => unawaited(_showSecondarySubtitleSourceMenu(controller)),
         ),
     ];
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: rows,
     );
   }
@@ -309,10 +326,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
       });
-      _showVideoSidePanel(
-        _VideoSidePanelKind.subtitleSources,
-        sourceSlot: sourceSlot,
-      );
+      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
+      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
       return;
     }
     final String? videoPath = _currentVideoPath;
@@ -321,10 +336,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
       });
-      _showVideoSidePanel(
-        _VideoSidePanelKind.subtitleSources,
-        sourceSlot: sourceSlot,
-      );
+      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
+      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
       return;
     }
 
@@ -332,10 +345,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       _subtitleMenuSources = const <SubtitleSource>[];
       _subtitleMenuLoading = true;
     });
-    _showVideoSidePanel(
-      _VideoSidePanelKind.subtitleSources,
-      sourceSlot: sourceSlot,
-    );
+    // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
+    _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
     final List<SubtitleSource> sources;
     try {
       sources = await _subtitleSourcesForMenu(
@@ -776,12 +787,13 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     );
   }
 
-  /// 在字幕源侧栏里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
+  /// 在字幕源视图里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
+  /// TODO-1351：字幕源已收进设置面板「字幕」分类，加载态确保设置面板开在该分类可见。
   void _showSubtitleLoadingOverlay() {
     if (_subtitleLoadingShown || !mounted) return;
     _rebuild(() => _subtitleLoadingShown = true);
-    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.subtitleSources) {
-      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.settings) {
+      _showPlayerSettings(initialCategory: 'subtitle');
     }
   }
 

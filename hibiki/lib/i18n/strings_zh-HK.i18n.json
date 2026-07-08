@@ -2192,5 +2192,9 @@
   "sync_client_token_hint": "Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer's shared server token, and both can connect.",
   "sync_server_token_self_hint": "This device's shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.",
   "theme_eyecare": "護眼",
-  "reader_theme_eyecare": "護眼"
+  "reader_theme_eyecare": "護眼",
+  "video_settings_cat_audio": "Audio",
+  "video_setting_theme": "Theme",
+  "video_setting_theme_hint": "Switch the app color theme",
+  "video_audio_track_empty": "No switchable audio tracks"
 }
