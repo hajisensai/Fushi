@@ -689,9 +689,9 @@ void main() {
     });
   });
 
-  // ── 用例 B2：互联 live + 远端-only 带有声书自动灌 EPUB+音频（TODO-873）───
+  // ── 用例 B2：互联 live + 远端-only 带有声书**不再**自动灌 EPUB+音频（TODO-1291 决策 A）─
 
-  group('用例B2: 远端-only 带有声书 → 自动下载 EPUB+音频（TODO-873）', () {
+  group('用例B2: 远端-only 带有声书 → 不自动下载/灌书架，等手动下载（TODO-1291）', () {
     late HibikiSyncServer server;
     late HibikiDatabase hostDb;
     late String serverBase;
@@ -772,8 +772,8 @@ void main() {
     tearDown(() async => server.stop());
 
     test(
-        '远端-only 带有声书 → sweep 后本地有 EpubBooks + Audiobooks 行，'
-        '且 Audiobooks.bookKey == 本地 EpubBooks.bookKey（徽章配对硬断言）', () async {
+        'TODO-1291 解耦：远端-only 带有声书的书 → sweep 后本地**不**新增 '
+        'EpubBooks/Audiobooks 行（不自动灌书架，等手动下载）', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -792,40 +792,26 @@ void main() {
         syncAudioBookFiles: true,
       );
       final SyncRunReport report = SyncRunReport();
-      // 无 widget binding（保真 socket），真实事件循环直接推进 EpubImporter
-      // 的 compute + 文件 IO，无需 runAsync。
       await orch.syncAudiobooksLiveForTest(report, backend);
 
       expect(report.errors, isEmpty,
-          reason: 'remote-only full book sync 无错误: ${report.errors}');
-      expect(report.booksImported, greaterThanOrEqualTo(1),
-          reason: '远端-only 带有声书的 EPUB 应被自动拉入书架');
-      expect(report.audiobooksImported, greaterThanOrEqualTo(1),
-          reason: '远端-only 书的音频包应被自动拉取导入');
+          reason: 'remote-only 解耦 sweep 无错误: ${report.errors}');
+      // 决策 A：开启「同步有声书文件」不再把远端独有书自动拉进书架。
+      expect(report.booksImported, 0,
+          reason: '远端-only 书绝不应在自动同步里被灌入书架（TODO-1291 决策 A）');
+      expect(report.audiobooksImported, 0, reason: '本地没有这本书时不应自动拉其音频（等手动下载）');
 
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
-      expect(
-          localBooks.map((EpubBookRow b) => b.title), contains(remoteOnlyTitle),
-          reason: 'EPUB 应落本地书架');
+      expect(localBooks, isEmpty, reason: '本地书架不应新增远端-only 书');
+      expect(localBooks.map((EpubBookRow b) => b.title),
+          isNot(contains(remoteOnlyTitle)),
+          reason: '远端-only 带有声书的书不应落本地书架');
 
       final List<AudiobookRow> localAudiobooks =
           await localDb.getAllAudiobooks();
-      expect(localAudiobooks, isNotEmpty, reason: '本地应出现 Audiobooks 行（徽章亮的前提）');
-
-      // 徽章配对硬保证：Audiobooks 行的 bookKey 必须等于本地 EPUB 行的 bookKey，
-      // 否则书架显示成普通书（症状① 直接回归点）。
-      final EpubBookRow importedBook =
-          localBooks.firstWhere((EpubBookRow b) => b.title == remoteOnlyTitle);
-      expect(
-        localAudiobooks
-            .any((AudiobookRow a) => a.bookKey == importedBook.bookKey),
-        isTrue,
-        reason: 'Audiobooks.bookKey 必须与本地 EpubBooks.bookKey 配对，'
-            '否则书架徽章退化为普通书',
-      );
-      expect(
-          await localDb.getAudiobookByBookKey(importedBook.bookKey), isNotNull,
-          reason: '按本地 EPUB bookKey 应能查到 Audiobook 行');
+      expect(localAudiobooks, isEmpty, reason: '不灌书架 → 不应出现任何 Audiobooks 行');
+      expect(await localDb.getAudiobookByBookKey(remoteOnlyKey), isNull,
+          reason: '远端-only 书的音频不应被自动导入');
     });
 
     test('回归：远端-only 纯文本书（无有声书）→ sweep 后本地仍无此书（守边界）', () async {
@@ -847,7 +833,8 @@ void main() {
       await orch.syncAudiobooksLiveForTest(report, backend);
 
       expect(report.errors, isEmpty, reason: '无错误: ${report.errors}');
-      // 带有声书的书会被灌（booksImported>=1），但纯文本远端书绝不应进本地。
+      // TODO-1291 决策 A：带有声书的远端-only 书也不再自动灌，纯文本书更不该进本地。
+      expect(report.booksImported, 0, reason: '任何远端-only 书都不应被自动灌（TODO-1291）');
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
       expect(
         localBooks.map((EpubBookRow b) => b.title),
