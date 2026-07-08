@@ -182,8 +182,12 @@ void main() {
       expect(
           body.contains('off === undefined || off < 0) return false'), isTrue,
           reason: 'commit 必须在无有效暂存锚时整体 no-op，绝不误清别处重锚旗');
-      expect(body.contains('this.scrollToCharOffset(off)'), isTrue,
-          reason: 'commit 必须把锚滚回视口首边（settle 后的真实位置）');
+      // TODO-1229：commit 透传 begin 暂存的滚动位（<=0 章首区保位 hint，不弹回前导）。
+      expect(
+          body.contains(
+              'this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll)'),
+          isTrue,
+          reason: 'commit 必须把锚滚回视口首边并透传采到的滚动位（settle 后的真实位置）');
       // finally 清旗 + 清暂存，保证异常路径也不卡死 _reanchorPending（HBK-REG-004 同形）。
       expect(body.contains('finally'), isTrue,
           reason: 'commit 必须在 finally 清旗，异常路径也不能卡死 _reanchorPending');
@@ -191,6 +195,8 @@ void main() {
           reason: 'commit 必须清 _reanchorPending，否则后续滚动回传被永久挡住');
       expect(body.contains('this._uiScaleReanchorOffset = undefined'), isTrue,
           reason: 'commit 必须清暂存锚，避免下次缩放误用旧锚');
+      expect(body.contains('this._uiScaleReanchorScroll = undefined'), isTrue,
+          reason: 'commit 必须清暂存滚动位，避免下次缩放误用旧 hint');
     });
 
     test('两阶段重锚只存在于连续模式 shell（分页 shell 无此原语）', () {

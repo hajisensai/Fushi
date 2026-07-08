@@ -246,10 +246,11 @@ void main() {
 
     test('continuous vertical char restore uses viewport right edge', () {
       // BUG-461: 连续 scrollToCharOffset 增加可选 endCharOffset（句尾区间对齐）后签名变为
-      // (charOffset, endCharOffset)；竖排分支仍按视口右沿锚句首（与横排句尾对齐正交）。
+      // (charOffset, endCharOffset)；TODO-1229 又加第三参 hintScroll（<=0 章首区保位）。
+      // 竖排分支仍按视口右沿锚句首（与横排句尾对齐、章首区保位均正交）。
       final String body = _between(
         continuous,
-        'scrollToCharOffset: function(charOffset, endCharOffset) {',
+        'scrollToCharOffset: function(charOffset, endCharOffset, hintScroll) {',
         '  // BUG-162:',
       );
 

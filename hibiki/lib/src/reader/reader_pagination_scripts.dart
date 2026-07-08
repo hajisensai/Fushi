@@ -2186,13 +2186,26 @@ $_sharedJs
     return baseOffset + localChars;
   },
   scrollToCharOffset: function(charOffset, hintScroll) {
-    // TODO-1229 (BUG-594 第 6 次复诉)：分页版**不**在此对 charOffset<=0 归一。分页所有重锚
-    // 调用点（setChromeInsets/commitStyleReanchor）都带 page-stable hint（getPagePosition），
-    // 用「当前页 vs 目标字符页 ±1」区分「用户在插图页 0（char0 在下一页 → 保留页 0=插图）」和
-    // 「用户在首文本页 1（char0 就在本页顶 → 保留页 1）」——fvco==0 在这两种情形语义不同，唯有 hint
-    // 能判开。裸加 <=0→章首守卫会把「在首文本页」的用户误弹回插图页（回归）。插图页翻页不跳由
-    // hint 兜住（headless matrix_probe 证 image chromeInsets jumped=0）。真正无 hint、会越过插图的
-    // 是连续版 scrollToCharOffset（见那里的 <=0→scrollToChapterStart 归一）。
+    // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章首区（fvco 归 0：可能是「用户在前导
+    // 插图页」也可能是「用户在首文本页、char0 正在本页顶」——两者语义不同，唯有 hint 能判开）。
+    // 本函数只走文本节点（createWalker=SHOW_TEXT），下方 >0 逻辑对 charOffset 0 会算出**首个文本
+    // 字符所在页**（前导插图之后）→ 重锚越过插图。旧的 ±1 page-stable hint 只在「前导内容恰占 1
+    // 页」时兜住（charPage 与 origPage 差 1）；前导跨 ≥2 页（如扉页图+标题页、多张图）时差 ≥2、
+    // ±1 失效 → 越过整段前导跳到首文本（headless 证 2 张前导图 jumped=2）。根治：<=0 时**保住用户
+    // 当前页**（有 hint 走 origPage；无 hint 落 minScroll=章首含前导图），绝不按字符页跳——重锚本就
+    // 该保位，char0 的文本页不是用户所在页。>0 精确锚 + ±1 hint 逻辑不变。裸落章首会把「在首文本
+    // 页」的用户弹回插图页，故必须走 origPage（headless midChapter 守卫）。连续版无 hint，见那里
+    // 的 <=0→scrollToChapterStart 归一。
+    if (charOffset <= 0) {
+      var ctx0 = this.getScrollContext();
+      if (ctx0.pageSize > 0 && hintScroll !== undefined) {
+        this.setPagePosition(
+          ctx0, Math.round(hintScroll / ctx0.pageSize) * ctx0.pageSize);
+      } else {
+        this.setPagePosition(ctx0, this.contentFirstPageScroll(ctx0));
+      }
+      return;
+    }
     var walker = this.createWalker();
     var node;
     var runningOffset = 0;
@@ -2608,6 +2621,24 @@ $_sharedJs
     document.body.scrollTop = 0;
     document.body.scrollLeft = 0;
   },
+  // TODO-1229 (BUG-594 第 6 次复诉·续)：连续模式重锚保位读/写。连续无分页的
+  // getScrollContext/getPagePosition（那是分页专属），滚动位就是内容轴 raw scroll：横排
+  // 走 scrollTop、竖排走 window.scrollX（与 paginate 的轴判据同源）。重锚在 charOffset<=0
+  // （章首区，fvco 二义）时用它保住用户当前滚动位，不弹回章顶前导。
+  _readContinuousScroll: function() {
+    var root = document.scrollingElement || document.documentElement;
+    return this.isVertical() ? window.scrollX : root.scrollTop;
+  },
+  _writeContinuousScroll: function(pos) {
+    if (this.isVertical()) {
+      window.scrollTo(pos, 0);
+    } else {
+      var root = document.scrollingElement || document.documentElement;
+      root.scrollTop = pos;
+      document.documentElement.scrollTop = pos;
+      document.body.scrollTop = pos;
+    }
+  },
   // TODO-825：连续模式有声书逐句高亮跟随滚动用 behavior:'smooth' 平滑动画（用户要求恢复
   // 动画，禁止砍成 instant——见已撤的 TODO-803）。「滚动结束闪一下屏幕」的根因不是 smooth
   // 动画本身，而是这条**程序化跟随滚动没武装 settle 保护窗**：cue reveal 经 Dart
@@ -2787,16 +2818,29 @@ $_sharedJs
   // 多滚把句尾拉进可见区底沿（continuousFavoriteJumpScrollForTesting 的 JS 实现，整句完整
   // 可见、不被阅读底栏切尾）。不传 endCharOffset（setChromeInsets / 缩放 / 换样式重锚）
   // 时行为与旧版完全一致（句首贴顶，单点锚）。
-  scrollToCharOffset: function(charOffset, endCharOffset) {
-    // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章节绝对起点（0 字已读）。本函数只走
+  scrollToCharOffset: function(charOffset, endCharOffset, hintScroll) {
+    // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章节绝对起点区（fvco 归 0）。本函数只走
     // 文本节点（collapsedRangeAtCharOffset→createWalker=SHOW_TEXT），charOffset 0 的 range 落
     // 在**首个文本字符**——若本章以扉页插图开篇，该字符在插图之后，滚到它会跳过前导插图。
     // setChromeInsets / 缩放(commitUiScaleReanchor) / 换样式(commitStyleReanchor) 三条重锚都以
-    // getFirstVisibleCharOffset()==0 裸调本函数（无 hint；restoreToCharOffset 的 <=0 守卫只拦
-    // restore 入口、拦不到这些 reanchor）→ 初始 restore 落插图页后被它们二次跳到首文本（残留
-    // 第二跳）。在单一 choke point 归一：<=0 一律走 scrollToChapterStart()（滚到顶，含前导图），
-    // 与 restoreProgress(0) 章首语义一致；charOffset>0 精确锚（含收藏句区间 endCharOffset）不变。
-    if (charOffset <= 0) { this.scrollToChapterStart(); return; }
+    // getFirstVisibleCharOffset()==0 裸调本函数（restoreToCharOffset 的 <=0 守卫只拦 restore 入口、
+    // 拦不到这些 reanchor）→ 初始 restore 落插图页后被它们二次跳到首文本（残留第二跳）。
+    //
+    // 续修：fvco==0 二义——「用户在章顶前导插图」与「用户在首文本页（char0 正在视口首边）」都
+    // 报 0，唯有重锚前采到的滚动位 hintScroll 能判开。裸 scrollToChapterStart 修好了「章顶被弹到
+    // 首文本」却把「停在首文本页」的用户弹回章顶前导（headless continuous firstTextPage 守卫）。
+    // 故 <=0 时：有正 hint（用户已滚离章顶）→ 保住当前滚动位（重锚只该保位、不移动用户，与分页
+    // 版「<=0 保住当前页」同构）；hint 缺席/<=0（章顶前导页 or Dart 直接 scrollToCharOffset(0) 求
+    // 章首）→ scrollToChapterStart 滚到顶（含前导图，与 restoreProgress(0) 语义一致）。charOffset>0
+    // 精确锚（含收藏句区间 endCharOffset）不变。
+    if (charOffset <= 0) {
+      if (typeof hintScroll === 'number' && hintScroll > 0) {
+        this._writeContinuousScroll(hintScroll);
+      } else {
+        this.scrollToChapterStart();
+      }
+      return;
+    }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
     var rect = startRange.getBoundingClientRect();
@@ -2880,6 +2924,8 @@ $_sharedJs
     // failed node lookup can never leave the flag stuck. (HBK-REG-004)
     var inFlight = this._reanchorPending === true;
     var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
+    // TODO-1229：采样重锚前滚动位（<=0 章首区二义时保住当前位，不弹回章顶前导）。
+    var scrollBefore = inFlight ? 0 : this._readContinuousScroll();
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     if (inFlight || charOffset < 0) return;
@@ -2887,7 +2933,7 @@ $_sharedJs
     var self = this;
     requestAnimationFrame(function() {
       try {
-        self.scrollToCharOffset(charOffset);
+        self.scrollToCharOffset(charOffset, undefined, scrollBefore);
       } finally {
         self._reanchorPending = false;
       }
@@ -2912,6 +2958,8 @@ $_sharedJs
     if (charOffset < 0) return -1;
     this._reanchorPending = true;
     this._uiScaleReanchorOffset = charOffset;
+    // TODO-1229：暂存重锚前滚动位，commit 时用作 <=0 章首区保位 hint。
+    this._uiScaleReanchorScroll = this._readContinuousScroll();
     return charOffset;
   },
   commitUiScaleReanchor: function() {
@@ -2920,9 +2968,10 @@ $_sharedJs
     var off = this._uiScaleReanchorOffset;
     if (off === undefined || off < 0) return false;
     try {
-      this.scrollToCharOffset(off);
+      this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll);
     } finally {
       this._uiScaleReanchorOffset = undefined;
+      this._uiScaleReanchorScroll = undefined;
       this._reanchorPending = false;
     }
     return true;
@@ -2957,10 +3006,9 @@ $_sharedJs
       return -1;
     }
     var charOffset = this.getFirstVisibleCharOffset();
-    // 分页模式有 page-stable hint（getPagePosition），连续模式无 hint（undefined）。
-    var hint = (typeof this.getPagePosition === 'function' && typeof this.getScrollContext === 'function')
-      ? this.getPagePosition(this.getScrollContext())
-      : undefined;
+    // TODO-1229：连续模式采样 raw scroll 作 <=0 章首区保位 hint（getPagePosition 是分页专属，
+    // 连续用内容轴 scroll）。charOffset>0 精确锚不用 hint，故仅 <=0 二义时消歧、不影响正段落。
+    var hint = this._readContinuousScroll();
     if (styleEl) styleEl.textContent = css;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
     this._resetImageMaxVars();
@@ -2972,13 +3020,14 @@ $_sharedJs
   },
   // TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 _reanchorPending。
   // 仅当 beginStyleReanchor 成功暂存了有效锚时才生效，否则整体 no-op（绝不误清别处的旗，
-  // finally 只在本入口确实拥有旗时执行）。分页传 hint 保 ±1 列原页，连续 hint undefined。
+  // finally 只在本入口确实拥有旗时执行）。TODO-1229：连续 hint=raw scroll，作 3 参 hintScroll
+  // 传入（仅 <=0 章首区保位用；off>0 精确锚忽略，endCharOffset 传 undefined 保单点锚语义）。
   commitStyleReanchor: function() {
     var off = this._styleReanchorOffset;
     if (off === undefined || off < 0) return false;
     var hint = this._styleReanchorHint;
     try {
-      this.scrollToCharOffset(off, hint);
+      this.scrollToCharOffset(off, undefined, hint);
     } finally {
       this._styleReanchorOffset = undefined;
       this._styleReanchorHint = undefined;

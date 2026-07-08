@@ -53,10 +53,10 @@ void main() {
   });
 
   test('连续 scrollToCharOffset 接受 endCharOffset 并做句尾区间对齐 (BUG-461)', () {
-    // 连续 scrollToCharOffset 签名带第二参 endCharOffset。
+    // 连续 scrollToCharOffset 签名带第二参 endCharOffset（TODO-1229 又加第三参 hintScroll）。
     expect(
         jsSrc.contains(
-            'scrollToCharOffset: function(charOffset, endCharOffset)'),
+            'scrollToCharOffset: function(charOffset, endCharOffset, hintScroll)'),
         isTrue,
         reason: '连续 scrollToCharOffset 必须接受可选 endCharOffset 做整句区间对齐');
     // restoreToCharOffset 连续版把 endCharOffset 透传给 scrollToCharOffset。
