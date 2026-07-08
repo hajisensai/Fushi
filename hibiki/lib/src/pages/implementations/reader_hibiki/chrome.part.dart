@@ -360,6 +360,111 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
   }
 
+  // TODO-1317：移动端「长按拖选」松手后弹的选区菜单（复制 / 查词）。BUG-609 把拖选松手直接
+  // 送去查词，丢了「选中一段文本区间复制」的原有能力（用户报「长按没有选择了，变成长按选择
+  // 文字查词了」）。这里让拖选出的 app 自绘选区（`window.hoshiSelection.selection`，非原生
+  // 选区，不复活 TODO-1279 掉的双选区）在松手后弹菜单：选「复制」把整段选区文本进剪贴板，选
+  // 「查词」复用 tap 查词的 [_handleTextSelected]（查词弹窗内含制卡）。两者共存，不再二选一
+  // 只剩查词。锚点用与图片右键同一套「WebView 局部坐标经 [_webViewKey] RenderBox ->
+  // 全局 -> Overlay 本地」映射（BUG-381 范式，界面缩放被渲染变换链自动吸收）。菜单被取消或
+  // 复制完都清掉 app 选区高亮；查词路径由 [_handleTextSelected] 自行收敛到词典匹配长度。
+  Future<void> _handleSelectionMenu(ReaderSelectionData data) async {
+    if (!mounted) return;
+    if (data.text.isEmpty) {
+      await _clearReaderAppSelection();
+      return;
+    }
+
+    final RenderBox? webBox =
+        _webViewKey.currentContext?.findRenderObject() as RenderBox?;
+    final Map<String, double>? r = data.rect;
+    // Anchor just below the selection's start glyph (WebView-local coords).
+    final Offset localAnchor = r != null
+        ? Offset(r['x'] ?? 0, (r['y'] ?? 0) + (r['height'] ?? 0))
+        : Offset(
+            MediaQuery.of(context).size.width / 2,
+            MediaQuery.of(context).size.height / 2,
+          );
+    final Offset global = webBox?.localToGlobal(localAnchor) ?? localAnchor;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final Offset anchor = overlay.globalToLocal(global);
+    final double menuScale = _readerImageMenuScale;
+
+    final String? action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      constraints: BoxConstraints(
+        minWidth: 112.0 * menuScale,
+        maxWidth: 280.0 * menuScale,
+      ),
+      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
+      items: <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'search',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.search_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'copy',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'search':
+        // Reuse the tap lookup pipeline verbatim: the drag payload IS a
+        // ReaderSelectionData, so currentSentence / cue / highlight convergence
+        // / popup all behave exactly like a tap-word lookup.
+        await _handleTextSelected(data);
+        return;
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: data.text));
+        HibikiToast.show(msg: t.copied_to_clipboard);
+        await _clearReaderAppSelection();
+        return;
+      default:
+        // Dismissed: drop the app-drawn selection highlight (no lookup).
+        await _clearReaderAppSelection();
+        return;
+    }
+  }
+
+  // Clear the reader's app-drawn selection (hoshi-selection CSS Custom Highlight)
+  // without touching any native selection. Best-effort: a half-torn-down WebView
+  // throws MissingPluginException on eval; swallow it (nothing to clear).
+  Future<void> _clearReaderAppSelection() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.clearInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.clearReaderAppSelection', e, stack);
+    }
+  }
+
   // TODO-954 / BUG-455：把当前**原生选区**（`window.getSelection()`）解析成与 tap 查词
   // （onTextSelected → [_handleTextSelected]）等价的查词状态——currentSentence /
   // [_lookupCue] / [_cachedSelectionRange] / [_cachedSentenceRange] /

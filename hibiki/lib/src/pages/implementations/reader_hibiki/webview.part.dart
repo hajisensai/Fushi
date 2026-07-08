@@ -1487,6 +1487,26 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           },
         );
 
+        // TODO-1317: a mobile long-press *drag*-select fires this instead of
+        // onTextSelected. Dart shows a selection menu (Copy / Lookup) so a
+        // plain-text range selection (copy) and lookup/mining coexist -- the
+        // drag no longer forces an immediate lookup (BUG-609 regression).
+        controller.addJavaScriptHandler(
+          handlerName: 'onSelectionMenu',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            try {
+              final Map<String, dynamic> payload =
+                  jsonDecode(args[0] as String) as Map<String, dynamic>;
+              await _handleSelectionMenu(ReaderSelectionData.fromJson(payload));
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('ReaderHibiki.onSelectionMenu', e, stack);
+              debugPrint('[ReaderHibiki] onSelectionMenu error: $e');
+            }
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
           callback: (_) => _onRestoreComplete(),

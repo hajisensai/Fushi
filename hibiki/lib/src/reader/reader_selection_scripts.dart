@@ -52,8 +52,9 @@ class ReaderSelectionScripts {
   /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
   /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.hoshiSelection.updateRangeSelection`
   /// 扩展 app 自绘选区（CSS Custom Highlight `hoshi-selection`，绝不建立原生选区，
-  /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 触发 onTextSelected 复用
-  /// 查词/制卡；原地未拖动退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
+  /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 弹选区菜单（复制 / 查词，
+  /// 走 `onSelectionMenu`）—— 选区间(可复制)与查词/制卡共存，不再被强制查词；原地未拖动
+  /// 退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
   /// 未及 [delayMs] 判为滑动/滚动，放弃拖选（长按 vs swipe 消歧）。置全局标志
   /// `window.__hoshiTextSelectDragActive`，翻页（`_gestureEnd`）与边界跨章（`_bEnd`）
   /// 见到即让路，绝不与拖选争同一次触摸（消除拖选后误翻页 / 双查词）。
@@ -1025,11 +1026,13 @@ window.hoshiSelection = {
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
     return this.fireTextSelected(x, y);
   },
-  // Fire onTextSelected for the current this.selection. Extracted verbatim from
-  // selectFromPosition's tail so both the tap/word path and the TODO-1317 mobile
-  // long-press drag path build the identical payload (text / sentence / rect /
-  // normalized offsets) and reuse the one dictionary/mining pipeline downstream.
-  fireTextSelected: function(x, y) {
+  // Build the onTextSelected/onSelectionMenu payload for the current
+  // this.selection. Extracted verbatim from selectFromPosition's tail so the
+  // tap/word path (fireTextSelected), the TODO-1317 drag-select menu path
+  // (fireSelectionMenu) and the drag->lookup path all build the identical payload
+  // (text / sentence / rect / normalized offsets) and reuse one downstream
+  // dictionary/mining pipeline. Returns null when there is no live selection.
+  buildSelectionPayload: function(x, y) {
     if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) return null;
     var startNode = this.selection.startNode;
     var startOffset = this.selection.startOffset;
@@ -1053,7 +1056,7 @@ window.hoshiSelection = {
         sentenceNormalizedLength = Math.max(0, snEnd - snStart);
       }
     }
-    window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify({
+    return {
       text: text,
       sentence: sentenceContext.sentence,
       rect: this.getSelectionRect(x, y),
@@ -1062,8 +1065,27 @@ window.hoshiSelection = {
       sentenceOffset: sentenceContext.sentenceOffset,
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength
-    }));
-    return text;
+    };
+  },
+  // Fire onTextSelected for the current this.selection (tap/word lookup path and
+  // the caret/keyboard path). Goes straight to the dictionary/mining popup.
+  fireTextSelected: function(x, y) {
+    var payload = this.buildSelectionPayload(x, y);
+    if (!payload) return null;
+    window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
+    return payload.text;
+  },
+  // TODO-1317: mobile long-press *drag*-select ends here instead of firing
+  // lookup directly. Dart shows a selection menu (Copy / Lookup) so a plain-text
+  // range selection (copy) and lookup/mining coexist -- the user is no longer
+  // forced into an immediate lookup. this.selection (and its hoshi-selection
+  // highlight) is kept so the menu overlays the live selection; Dart clears it on
+  // copy/dismiss, or converges it to the match on lookup.
+  fireSelectionMenu: function(x, y) {
+    var payload = this.buildSelectionPayload(x, y);
+    if (!payload) return null;
+    window.flutter_inappwebview.callHandler('onSelectionMenu', JSON.stringify(payload));
+    return payload.text;
   },
   // -- TODO-1317: mobile long-press drag-select --------------------------------
   // Direction B: keep TODO-1279's `@media (pointer: coarse) user-select:none`
@@ -1071,9 +1093,10 @@ window.hoshiSelection = {
   // instead drive the *app-drawn* selection (this.selection + CSS Custom
   // Highlight `hoshi-selection`) from a long-press drag. These never call
   // window.getSelection()/addRange, so no native selection is ever created. On
-  // release fireTextSelected reuses the tap onTextSelected pipeline (lookup /
-  // mining). A stationary long-press (no drag) falls back to word lookup at the
-  // caller so slow-steady taps keep looking up the whole word.
+  // release a real drag hands Dart a selection menu (fireSelectionMenu ->
+  // onSelectionMenu) offering Copy / Lookup so plain-text selection (copy) and
+  // lookup/mining coexist. A stationary long-press (no drag) falls back to word
+  // lookup at the caller so slow-steady taps keep looking up the whole word.
   //
   // Build the ordered per-textnode ranges + concatenated text spanning the two
   // character positions (drag anchor + current point). Endpoints are ordered by
@@ -1155,9 +1178,13 @@ window.hoshiSelection = {
     this.renderSelectionHighlight();
     return built.text;
   },
-  // Finalize the drag: extend to the release point, then fire onTextSelected iff
-  // the finger actually dragged. Returns true when it fired (caller does nothing
-  // more), false for a stationary long-press (caller falls back to word lookup).
+  // Finalize the drag: extend to the release point, then present the selection
+  // menu (Copy / Lookup) iff the finger actually dragged a range. Returns true
+  // when it handled the release (caller does nothing more), false for a
+  // stationary long-press (caller falls back to single-word lookup, TODO-971).
+  // TODO-1317: a real drag no longer fires lookup directly -- it keeps
+  // this.selection (highlight stays up) and hands Dart a menu so a plain-text
+  // range selection (copy) and lookup/mining coexist instead of forcing lookup.
   endRangeSelection: function(x, y) {
     var moved = this.dragMoved;
     this.updateRangeSelection(x, y);
@@ -1168,7 +1195,7 @@ window.hoshiSelection = {
       this.clearSelection();
       return false;
     }
-    this.fireTextSelected(x, y);
+    this.fireSelectionMenu(x, y);
     return true;
   },
   getSelectionRect: function(x, y) {
