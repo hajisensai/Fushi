@@ -27,10 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 618 条。点号进各自文件。
+> 共 625 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-639](bugs/BUG-639-url-drag-import.md) | ✅ | ✅ | 拖动链接(URL)进桌面窗口直接添加为视频（TODO-1306，feature） |
+| [BUG-638](bugs/BUG-638-popup-close-latch.md) | ✅ | ✅ | 查词弹窗首次查词后关不掉(warm复用_isClosing闭锁永不复位) |
+| [BUG-637](bugs/BUG-637-interconnect-token-display.md) | ✅ | ✅ | 互联访问令牌两端显示不一致令用户困惑 |
+| [BUG-636](bugs/BUG-636-popup-expand-icon.md) | ✅ | ✅ | 查词弹窗词典分组展开/收起图标渲染不出来 |
+| [BUG-635](bugs/BUG-635-mining-marker-revert.md) | ✅ | ✅ | 查词弹窗制卡标记还原为 ✓✓↩ 文本标记 |
+| [BUG-634](bugs/BUG-634-page-columns-noop.md) | ✅ | ✅ | 阅读器每页列数(pageColumns)不生效 |
+| [BUG-633](bugs/BUG-633-floating-lyric-tap-slop.md) | ✅ | ✅ | 悬浮字幕点击文字没反应的更深根因：tap/drag 阈值低于平台 touch slop |
 | [BUG-632](bugs/BUG-632-netflix-record-wait-buffer.md) | ✅ | ✅ | 网飞制卡录制时长不准（未等缓冲就绪即开录·录进 stall 冻结帧） |
 | [BUG-631](bugs/BUG-631-extension-popup-word-audio-remote-source.md) | ✅ | ✅ | 扩展/远端查词弹窗无单词音频（server 只查本地库漏配置的远程源） |
 | [BUG-630](bugs/BUG-630-netflix-mine-issue.md) | ✅ | ✅ | 网飞制卡有问题（未复现·待用户日志） |

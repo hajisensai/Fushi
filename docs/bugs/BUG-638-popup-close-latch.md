@@ -1,4 +1,4 @@
-## BUG-622 · 查词弹窗首次查词后关不掉(warm复用_isClosing闭锁永不复位)
+## BUG-638 · 查词弹窗首次查词后关不掉(warm复用_isClosing闭锁永不复位)
 - **报告**：2026-07-08（用户：TODO-1336，TODO-1268 子代理附带发现）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`：`_isClosing`（`:70` 声明）在 `_close()`（`:192-201`，`:194` 置 `true`）首次关闭后永不复位，而 app 外查词弹窗走常驻热引擎复用（`hibiki/android/app/src/main/java/app/hibiki/reader/PopupEngineHolder.kt:70-116`：`FlutterEngineCache` 缓存 `:popup` 引擎，`finishPopup` 只触发 `onFinish` 隐藏 Activity、不销毁 `PopupDictionaryPage` State），下次外查词经 `onNewProcessText`→`didUpdateWidget`（`:125-142`）复用**同一 State**。`_isClosing` 残留 `true` → `_close()` 开头 `if (_isClosing) return;`（`:193`）早退 → 首次查词关闭后所有关闭路径（点 X / 点卡外 / 横滑 / 系统返回）全部失效，弹窗打开后关不掉。
 - **[x] ① 已修复** — commit `c8713dfe2055`：`didUpdateWidget` 在检出配置变化（宿主推来新词=重开）后、`isInitialised` 门控前复位 `_isClosing = false`（`popup_dictionary_page.dart:142`），使每轮 warm 复用重开都能正常关闭。顺带把 `hibiki/lib/popup_main.dart` warm-reuse 热路径的 `await appModel.refreshPrefCacheIfChanged()` 包进 `try/catch`（记 `ErrorLogService` 日志后带旧偏好缓存继续），防偏好版本读取/重载失败吞掉紧随其后投递新词的 `setState`——否则 `didUpdateWidget` 不触发、弹窗收不到新词并配合 `_isClosing` 残留一并卡死。根因修复状态机生命周期，无延迟/重试/吞异常/特例掩盖。

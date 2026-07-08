@@ -1,4 +1,4 @@
-## BUG-620 · 悬浮字幕点击文字没反应的更深根因：tap/drag 阈值低于平台 touch slop
+## BUG-633 · 悬浮字幕点击文字没反应的更深根因：tap/drag 阈值低于平台 touch slop
 - **报告**：2026-07-08（用户：TODO-1268 复诉「点击文字还是没反应」，BUG-598 修完 BAL 后仍无反应）
 - **真实性**：✅ 真 bug（根因 `hibiki/android/app/src/main/java/app/hibiki/reader/BaseFloatingService.java:255` 原 `Math.abs(dy) > 10`——拖动判别阈值硬编码 `10` **物理像素**，远低于平台 tap/drag 边界 `ViewConfiguration.getScaledTouchSlop()`（约 8dp ≈ 20-28px），普通点击手指滚动几 dp 就被判成拖动，`ACTION_UP` 走 drag 分支，`onOverlayTapped`/`handleTap` 从不触发 → 点词没反应）
 - **[x] ① 已修复** — `BaseFloatingService.java` 拖动阈值改用平台 `ViewConfiguration.getScaledTouchSlop()`：`onCreate` 解析一次存 `touchSlopPx`（`dragSlopPx()` helper 带 `<0` 懒解析兜底，任何触摸都拿到正值，绝不会看到哨兵 -1 使「一切皆拖动」），`ACTION_MOVE` 用 `> slop` 替换裸 `> 10`。同时覆盖复用同基类的 `FloatingDictService`。分支 `todo1268-floating-lyric-click`，commit 见提交。

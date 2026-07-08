@@ -1,4 +1,4 @@
-## BUG-620 · 阅读器每页列数(pageColumns)不生效
+## BUG-634 · 阅读器每页列数(pageColumns)不生效
 
 - **报告**：2026-07-08（用户：Windows 阅读器竖排书截图，进度 189/94990，改「每页列数」页面列数不变）
 - **真实性**：✅ 真 bug，但**已在当前 origin/develop 根因修复**（用户构建过旧）。修复由三个先行 commit 落地：`2ebaed004`（CSS 子列宽均分）、`eeca34e97`（JS pageStep 反推）、`339a433be`（相邻页泄露覆盖条）。核心根因 `hibiki/lib/src/reader/reader_content_styles.dart:219`（旧实现只发 `column-count:N` 却把 `column-width` 钉死在整页 content-box → CSS multicol 规范下实际列数 = min(N, floor((content-box+gap)/(column-width+gap))) = min(N,1) = 1，N 被整页列宽压回 1 列）。

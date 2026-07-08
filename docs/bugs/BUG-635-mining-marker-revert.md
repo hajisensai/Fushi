@@ -1,4 +1,4 @@
-## BUG-620 · 查词弹窗制卡标记还原为 ✓✓↩ 文本标记
+## BUG-635 · 查词弹窗制卡标记还原为 ✓✓↩ 文本标记
 - **报告**：2026-07-08（用户：TODO-1325 用户反馈）
 - **真实性**：✅ 真 bug（用户体验回退）——Niratan phase1（`2f920a80a`）把查词弹窗制卡按钮的 `+/✓/✓↩` 文本字形换成内联 SVG 图标（`add`/`check`/`restore`），用户明确要求换回 ✓✓↩ 文本标记。根因 `hibiki/assets/popup/popup.js:1999`（`setMineState` 用 `setButtonIcon` 设 SVG）+ `:2012` 挂 `inline-action-button` 基类 + `:2122` 初始 SVG。
 - **[x] ① 已修复** — `hibiki/assets/popup/popup.js`：`setMineState` 改回 `mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+'`；制卡按钮 `className` 去掉 `inline-action-button` 回到纯 `mine-button` 并恢复 `textContent: '+'`；删掉初始 `setButtonIcon(mineButton, 'add')`；删除制卡专用图标 `check`/`restore`（`add` 仍供句子上下文步进器 + 按钮）。仅还原制卡按钮，其余按钮（发音/收藏/清空草稿/步进器/遮罩关闭）与音高药丸保留 phase1 的 SVG/#1 视觉；制卡结果 MD3 着色 toast（`HibikiToast.showMine`）保留作辅助反馈（✓✓↩ 为主、toast 为辅）。四端（阅读器/词典页/视频/全局查词）共用同一 `popup.js`，一处还原即四端一致。提交见分支 `todo1325-mining-marker-revert`（TODO-1325）。
