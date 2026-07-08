@@ -148,8 +148,11 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
+  // run() sweeps the sync root for spilled per-book files (TODO-1340) before the
+  // per-book conflict pass; a real backend always lists its root. An empty root
+  // means nothing to prune.
   Future<List<AssetEntry>> listChildren(String namespaceId) async =>
-      throw UnimplementedError();
+      const <AssetEntry>[];
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
