@@ -1,4 +1,4 @@
-## BUG-657 · 视频制卡例句上下文疑似重复两遍(develop已单句·验旧包/残留队列)
+## BUG-660 · 视频制卡例句上下文疑似重复两遍(develop已单句·验旧包/残留队列)
 - **报告**：2026-07-09（用户图证：查词/制卡弹窗卡片里例句上下文重复显示两遍，图中アジア的例句「アジアのほとんどを埋める砂漠で——アジアのほとんどを埋める砂漠で——」同一句显示两次，卡片带视频 GIF 缩略图。此前 TODO-1335 ①「字幕重复了两句」曾归到 TODO-1270/BUG-593 修复）。
 - **真实性**：❌ 在当前 develroot（`814d14f20`）**未复现**——沿真实代码路径逐条追句上下文构建，所有来源都只产出**一份**当前句，无独立的「拼两遍」源。BUG-593 覆盖的只是浏览器扩展 Netflix DOM 路径，与本图（アジア，视频 in-app / YouTube）不是同一路径，但 in-app 路径**从来没有**那类嵌套 span 问题。判定为 **② 用户旧包 / 残留预修复队列项**。
 - **根因说明（沿真实代码路径逐条验，均单句）**：
@@ -9,5 +9,5 @@
   - **同步 / 批量沉浸制卡**：`buildImmersionRequest`（`hibiki/lib/src/mining/immersion_capture_channel.dart:88`）原样透传 `p.sentence`，不做任何句拼接。
   - **最可能的双份来源（旧包 / 残留队列）**：BUG-593 的去重只作用于**新入队**；扩展批量制卡把 `{fields, sentence}` 先存 `chrome.storage.local`（`content.js` hibikiQueue），"看完一次生成全部"。若某 Netflix 项在 `55ed2859d` 之前入队，其存下来的 `sentence` 仍是旧双份文本，之后更新扩展再生成 → 出双份卡。用户需**清空旧制卡队列 / 重新入队**，并确保 app + 扩展都更新到含 `55ed2859d` 的版本。
 - **[x] ① 根因修复** — develop 无独立重复源，**无需改代码**（`814d14f20` 已单句；BUG-593/`55ed2859d` 已在 develop）。判定为用户旧包 / 残留预修复队列项，遵「已修则留证据让用户装新包·别瞎改」。
-- **[x] ② 自动化测试** — `hibiki/test/media/audiobook/mining_sentence_draft_test.dart` 加 `BUG-657: empty draft never doubles the current sentence`：钉死默认单句查词（草稿空）时 `composeText(cue) == cue` 且当前句在合成文本里只出现一次（反重复不变量），防未来把当前句拼两遍回归。既有 `composeText with empty context equals the current sentence` / `mining_sentence_draft_test` 全组 + `netflix_card_dedup_guard_test`（BUG-593 叶子去重）+ `video_sentence_draft_wiring_guard_test`（视频接线）本轮全绿（33 passed）。
+- **[x] ② 自动化测试** — `hibiki/test/media/audiobook/mining_sentence_draft_test.dart` 加 `BUG-660: empty draft never doubles the current sentence`：钉死默认单句查词（草稿空）时 `composeText(cue) == cue` 且当前句在合成文本里只出现一次（反重复不变量），防未来把当前句拼两遍回归。既有 `composeText with empty context equals the current sentence` / `mining_sentence_draft_test` 全组 + `netflix_card_dedup_guard_test`（BUG-593 叶子去重）+ `video_sentence_draft_wiring_guard_test`（视频接线）本轮全绿（33 passed）。
 - **备注**：本 bug 与 BUG-593（浏览器扩展 Netflix 叶子 span 去重）是两条独立路径，不重复。真机确认口径：① 更新 app + 扩展到含 `55ed2859d` 的版本；② 清空扩展旧制卡队列后**重新**在 YouTube/Netflix 入队并生成，或在 in-app 播放本地/YouTube 视频点字幕制卡；③ 检查生成卡 Sentence 字段是否仍双份。若更新+清队列后仍双份，则属尚未定位的独立源，需带该卡的来源（站点 / in-app）与 note-type 字段映射重开。

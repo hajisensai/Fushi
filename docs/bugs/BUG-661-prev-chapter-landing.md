@@ -1,4 +1,4 @@
-## BUG-657 · 从目录往前翻落到封面而非封面章节最后部分（图片章章末落点塌缩）
+## BUG-661 · 从目录往前翻落到封面而非封面章节最后部分（图片章章末落点塌缩）
 - **报告**：2026-07-09（用户：）— 「安達としまむら2 从目录，往前翻，会去到封面，而不是封面章节的最后部分」
 - **真实性**：✅ 真 bug — 根因两处（图片章「章末」落点塌缩到章首）：
   - `hibiki/lib/src/reader/reader_pagination_scripts.dart` 连续模式 `restoreProgress`（原 `scrollToProgressContinuous(0.99)`）：只走文本节点 `findNodeAtProgress`，纯图片章无文本 → 返 null → 不滚动 → 停章首（封面）。

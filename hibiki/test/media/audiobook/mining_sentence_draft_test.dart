@@ -170,13 +170,13 @@ void main() {
       expect(draft.composeText('  唯一の一文。 '), '唯一の一文。');
     });
 
-    // BUG-657：用户报视频制卡例句「アジアのほとんどを埋める砂漠で」重复两遍。沿真实代码
+    // BUG-660：用户报视频制卡例句「アジアのほとんどを埋める砂漠で」重复两遍。沿真实代码
     // 路径（video_hibiki lookup_mining `_resolveVideoMiningRange` →
     // `_miningDraft.composeText(_lastLookupSentence)`）：默认单句查词（未点上下文步进器，
     // 草稿空）时合成 sentence 字段必须恰是当前 cue 一份，绝不出现「当前句 × 2」。develop
     // 已单句（本守卫锁死反重复不变量，防未来把当前句拼两遍回归；与浏览器扩展 Netflix
     // 叶子 span 去重 BUG-593 是两条独立路径）。
-    test('BUG-657: empty draft never doubles the current sentence', () {
+    test('BUG-660: empty draft never doubles the current sentence', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
       const String cue = 'アジアのほとんどを埋める砂漠で';
       final String composed = draft.composeText(cue);
