@@ -410,35 +410,113 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     );
   }
 
-  /// TODO-1312：渲染一「层」字幕（主字幕或副字幕）：把该层的活动 cue 竖排堆叠成多个字幕盒
-  /// （[Column]），并统一套查词点击（[_SubtitleCharTapRecognizer]）、桌面 hover（听力沉浸
-  /// 显形 / 光标唤回 / Shift-悬停查词）、听力沉浸模糊（仅主层）与定位（pos / 锚点 / 底部
-  /// 控制条避让）。单条 cue 时 [Column] 只一个子 → 与历史单字幕盒几何等价。
+  /// TODO-1312 / TODO-1341：渲染一「层」字幕（主字幕或副字幕）。
   ///
-  /// [isSecondary]：副字幕层——强制置顶、不吃自带 pos/anchor、不模糊、不显收藏角标（副字幕
-  /// = 纯翻译参考）；但仍逐字符可查词（登记进同一 [_charEntries]）。
+  /// 主字幕层可能同时有多条时间重叠、但**锚点各异**的 cue（如 OP/ED 的顶部 \an8 歌词与
+  /// 底部 \an2 对白同时在屏）。旧实现把整层所有活动 cue 塞进**一个** [Column]、再用单一
+  /// 「代表」cue（currentCue）的 pos/anchor 定位——两条锚点不同的字幕于是被裹挟到同一处，
+  /// 且代表 cue 随播放位置在两条间翻转时整列在顶 / 底来回跳（TODO-1341 根因）。
+  ///
+  /// 修复：按各自 markup 的 \pos / \an 锚点**分组**——同锚点的 cue 竖排堆叠进一个字幕盒，
+  /// 不同锚点的 cue 各自独立定位（[Stack] 叠放），两条字幕**各就各位**、不再来回跳。每条
+  /// cue 仍用**自己的** markup 逐字符描边 / 上色（双轨样式独立，各遵自带样式，TODO-1246）。
+  ///
+  /// [isSecondary]：副字幕层——强制置顶（画面顶部）、不吃自带 pos/anchor、不模糊、不显
+  /// 收藏角标（副字幕=纯翻译参考），全部 cue 归一到一个顶部盒；但仍逐字符可查词（登记进
+  /// 同一 [_charEntries]）。单组 / 单 cue 时结构退化为单字幕盒，与历史几何等价。
   Widget _buildSubtitleLayer(
     BuildContext context,
     List<AudioCue> cues, {
     required bool isSecondary,
   }) {
-    // 定位用「代表」markup：主层优先取 currentCue（pos/anchor 与历史单 cue 语义一致），
-    // 否则取活动集首条；副层强制顶部、不吃自带 pos。
-    final AudioCue? currentCue = widget.controller.currentCue;
-    final AudioCue repCue = (!isSecondary &&
-            currentCue != null &&
-            cues.any((AudioCue c) => identical(c, currentCue)))
-        ? currentCue
-        : cues.first;
-    final SubtitleMarkup? posMarkup = isSecondary ? null : repCue.markup;
-
     // 听力沉浸模糊只主层、只播放中生效（暂停 / 查词时清晰，BUG-199；副字幕不模糊）。
     final bool blurred = !isSecondary &&
         widget.blurEnabled &&
         !_revealed &&
         widget.controller.isPlaying;
 
-    // 每条 cue 一个字幕盒，竖排堆叠：重叠主字幕多条 / 副字幕多行都在此堆叠（TODO-1312）。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Size container = constraints.biggest;
+        // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
+        // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
+        _lastLayoutHeight = container.height;
+
+        // 按锚点 / \pos 分组：副层强制单组（顶部）；主层同位置的 cue 归一堆叠、不同位置的
+        // cue 各自成组独立定位（TODO-1341）。
+        final List<List<AudioCue>> groups = isSecondary
+            ? <List<AudioCue>>[cues]
+            : _groupMainCuesByPosition(cues);
+
+        final List<Widget> positioned = <Widget>[
+          for (final List<AudioCue> group in groups)
+            _positionCueGroup(
+              context,
+              group,
+              isSecondary: isSecondary,
+              blurred: blurred,
+              container: container,
+            ),
+        ];
+
+        // 单组：直接返回该定位盒（历史单字幕盒几何像素级不变）。多组：Stack 叠放，各组用
+        // Positioned.fill 填满同一层边界、按各自锚点定位互不重叠（TODO-1341）。
+        if (positioned.length == 1) return positioned.single;
+        return Stack(
+          children: <Widget>[
+            for (final Widget w in positioned) Positioned.fill(child: w),
+          ],
+        );
+      },
+    );
+  }
+
+  /// TODO-1341：把主字幕活动集按「有效定位」（\pos 分数 + 锚点，或纯锚点）分组，保留发现
+  /// 顺序。同组的 cue 共享一个位置、竖排堆叠；不同组各自独立定位，从而顶部歌词与底部对白
+  /// 不再被裹挟到同一处。返回每组的 cue 列表（组内顺序即活动集顺序）。
+  List<List<AudioCue>> _groupMainCuesByPosition(List<AudioCue> cues) {
+    final Map<String, List<AudioCue>> byKey = <String, List<AudioCue>>{};
+    final List<List<AudioCue>> order = <List<AudioCue>>[];
+    for (final AudioCue cue in cues) {
+      final String key = _positionKey(cue.markup);
+      final List<AudioCue>? existing = byKey[key];
+      if (existing != null) {
+        existing.add(cue);
+      } else {
+        final List<AudioCue> group = <AudioCue>[cue];
+        byKey[key] = group;
+        order.add(group);
+      }
+    }
+    return order;
+  }
+
+  /// 一条 cue 的「有效定位」分组键（TODO-1341）：有 \pos 时按分数（+ 锚点），否则按锚点
+  /// （竖直 + 水平对齐；null=历史底居中）。同键的 cue 同位置堆叠，不同键各自独立定位。
+  static String _positionKey(SubtitleMarkup? markup) {
+    final SubtitlePos? pf = markup?.posFraction;
+    final SubtitleAnchor? a = markup?.anchor;
+    final int av = a?.vertical.index ?? -1;
+    final int ah = a?.horizontal.index ?? -1;
+    if (pf != null) {
+      return 'p:${pf.xFraction.toStringAsFixed(4)},'
+          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah';
+    }
+    return 'a:$av:$ah';
+  }
+
+  /// TODO-1341：把一个位置分组（同锚点的 cue 列表）渲染成**定位好**的字幕盒——竖排堆叠成
+  /// [Column]、套查词点击 / 模糊 / 悬停交互（[_wrapInteractive]），再按该组代表 markup 的
+  /// \pos / 锚点定位。副层强制顶部、不吃自带 pos。返回填满层边界（[Align] / [Stack]）、可
+  /// 作 [Stack] 直接子的定位盒。
+  Widget _positionCueGroup(
+    BuildContext context,
+    List<AudioCue> cues, {
+    required bool isSecondary,
+    required bool blurred,
+    required Size container,
+  }) {
+    // 每条 cue 一个字幕盒，竖排堆叠（同锚点重叠 cue / 副字幕多行都在此堆叠，TODO-1312）。
     Widget content = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -449,10 +527,55 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       ],
     );
 
-    // 字符点击查词：整层一片 translucent [RawGestureDetector]，其识别器只在按下点命中某
-    // 字符时才收指针进竞技场（BUG-553 门控）。命中反查扫全 [_charEntries]（含本层与它层），
-    // 但按下点几何落在本层 → 命中本层字符（主 / 副互不重叠）。translucent 保证 hover 透传、
-    // media_kit 控制条唤起不被吞（BUG-198）。
+    content = _wrapInteractive(context, content,
+        isSecondary: isSecondary, blurred: blurred);
+
+    // 定位代表 markup：副层强制顶部、不吃自带 pos；主层取本组首条（同组锚点 / pos 等价）。
+    final SubtitleMarkup? posMarkup = isSecondary ? null : cues.first.markup;
+    final Offset? posScreen = _posScreen(posMarkup, container);
+    if (posScreen != null) {
+      // pos 绝对定位（仅主层）：把字幕盒的 an 锚点精确落到映射坐标。
+      final SubtitleAnchor anchor = posMarkup!.anchor ??
+          const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
+      return Stack(
+        children: <Widget>[
+          Positioned(
+            left: posScreen.dx,
+            top: posScreen.dy,
+            child: FractionalTranslation(
+              translation: Offset(
+                -_hFrac(anchor.horizontal),
+                -_vFrac(anchor.vertical),
+              ),
+              child: content,
+            ),
+          ),
+        ],
+      );
+    }
+    // 副层强制顶部锚点（画面上方）；主层无 pos 按 markup 锚点（null → 历史底居中）。
+    final SubtitleAnchor? anchor = isSecondary
+        ? const SubtitleAnchor(SubtitleVAlign.top, SubtitleHAlign.center)
+        : posMarkup?.anchor;
+    return Align(
+      alignment: _alignFor(anchor),
+      child: _anchoredPadded(anchor, content),
+    );
+  }
+
+  /// TODO-1312 / TODO-1341：给一「组」字幕盒套查词点击（[_SubtitleCharTapRecognizer]）、
+  /// 听力沉浸模糊（仅主层）、桌面 hover（显形 / 光标唤回 / Shift-悬停查词）。定位在
+  /// [_positionCueGroup] 里做，本方法只负责交互层包裹（原 _buildSubtitleLayer 中段抽出）。
+  ///
+  /// 字符点击查词：一片 translucent [RawGestureDetector]，其识别器只在按下点命中某字符时才
+  /// 收指针进竞技场（BUG-553 门控）。命中反查扫全 [_charEntries]（含各组各层）。translucent
+  /// 保证 hover 透传、media_kit 控制条唤起不被吞（BUG-198）。
+  Widget _wrapInteractive(
+    BuildContext context,
+    Widget content, {
+    required bool isSecondary,
+    required bool blurred,
+  }) {
     if (widget.onCharTap != null) {
       content = RawGestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -513,61 +636,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     final bool needHover = (!isSecondary && widget.blurEnabled) ||
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
-    final Widget hoverable = needHover
-        ? MouseRegion(
-            opaque: false,
-            onEnter: (_) {
-              if (!isSecondary && widget.blurEnabled) _setRevealed(true);
-              widget.onHoverChanged?.call(true);
-            },
-            onHover: _handleShiftHover,
-            onExit: (_) {
-              if (!isSecondary && widget.blurEnabled) _setRevealed(false);
-              widget.onHoverChanged?.call(false);
-              _lastShiftHoverPos = Offset.zero;
-              _lastShiftHoverEntry = -1;
-            },
-            child: content,
-          )
-        : content;
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final Size container = constraints.biggest;
-        // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
-        // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
-        _lastLayoutHeight = container.height;
-        final Offset? posScreen = _posScreen(posMarkup, container);
-        if (posScreen != null) {
-          // pos 绝对定位（仅主层）：把字幕盒的 an 锚点精确落到映射坐标。
-          final SubtitleAnchor anchor = posMarkup!.anchor ??
-              const SubtitleAnchor(
-                  SubtitleVAlign.bottom, SubtitleHAlign.center);
-          return Stack(
-            children: <Widget>[
-              Positioned(
-                left: posScreen.dx,
-                top: posScreen.dy,
-                child: FractionalTranslation(
-                  translation: Offset(
-                    -_hFrac(anchor.horizontal),
-                    -_vFrac(anchor.vertical),
-                  ),
-                  child: hoverable,
-                ),
-              ),
-            ],
-          );
-        }
-        // 副层强制顶部锚点（画面上方）；主层无 pos 按 markup 锚点（null → 历史底居中）。
-        final SubtitleAnchor? anchor = isSecondary
-            ? const SubtitleAnchor(SubtitleVAlign.top, SubtitleHAlign.center)
-            : posMarkup?.anchor;
-        return Align(
-          alignment: _alignFor(anchor),
-          child: _anchoredPadded(anchor, hoverable),
-        );
+    if (!needHover) return content;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) {
+        if (!isSecondary && widget.blurEnabled) _setRevealed(true);
+        widget.onHoverChanged?.call(true);
       },
+      onHover: _handleShiftHover,
+      onExit: (_) {
+        if (!isSecondary && widget.blurEnabled) _setRevealed(false);
+        widget.onHoverChanged?.call(false);
+        _lastShiftHoverPos = Offset.zero;
+        _lastShiftHoverEntry = -1;
+      },
+      child: content,
     );
   }
 
