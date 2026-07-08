@@ -262,17 +262,18 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     });
   }
 
-  /// TODO-947 P3：把某成员条目移出系列——拖出框松手或点 overlay 移出按钮触发。委托
-  /// [ShelfReorderPage.onRemove] 弹确认 + 真实 DB 写；确认移出后本地从 _items 摘掉该条目
-  /// （移出改的是 seriesId 归属、不动其余成员 sortOrder，故不置 _dirty）。系列被清空则退回
-  /// 折叠层（经 [_finish] 统一收口落盘 + pop）。
+  /// TODO-947 P3/P4：把某成员条目移出系列——带框成员子页拖出框松手、或任意页点 overlay
+  /// 移出按钮触发。委托 [ShelfReorderPage.onRemove] 弹确认 + 真实 DB 写；确认移出后本地从
+  /// _items 摘掉该条目（移出改的是 seriesId 归属、不动其余成员 sortOrder，故不置 _dirty）。
+  /// 仅**带框成员子页**（[seriesFrame] 非空）在系列被清空时退回上层（经 [_finish] 收口落盘
+  /// + pop）；书架内联排序页（seriesFrame 为 null）里系列清空只是那张成员卡消失，不 pop 整页。
   Future<void> _onRemoveOutside(int index) async {
     final ShelfReorderRemove? onRemove = widget.onRemove;
     if (onRemove == null || index < 0 || index >= _items.length) return;
     final ShelfReorderItem item = _items[index];
     final ShelfRemoveResult result = await onRemove(item);
     if (!mounted || !result.removed) return;
-    if (result.seriesEmptied) {
+    if (result.seriesEmptied && widget.seriesFrame != null) {
       await _finish();
       return;
     }
@@ -317,7 +318,11 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
       onActivate: widget.onEnterSeries == null ? null : _onActivate,
       // TODO-947 P3：仅当调用方提供 onRemove 时才启用「拖出框移出」+ 焦点移出按钮；否则
       // 全为 null，网格无移出语义（书架折叠排序页/无框页不受影响）。
-      onRemoveOutside: widget.onRemove == null ? null : _onRemoveOutside,
+      // 拖出框移出（onRemoveOutside）只在**带框成员子页**（seriesFrame 非空）启用——书架
+      // 内联排序页有散书混排，拖出边界只是重排，不能当移出。
+      onRemoveOutside: (widget.onRemove == null || widget.seriesFrame == null)
+          ? null
+          : _onRemoveOutside,
       onRemoveCandidateChanged: widget.seriesFrame == null
           ? null
           : (bool hot) {
@@ -325,9 +330,14 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
                 setState(() => _removeHot = hot);
               }
             },
+      // 焦点/点击移出按钮：带框成员子页所有格都挂；书架内联排序页只挂在**系列成员格**
+      // （seriesId 非空）上，散书格不挂（散书没有「移出系列」语义）。
       overlayActionBuilder: widget.onRemove == null
           ? null
-          : (BuildContext ctx, int i) => _buildRemoveOverlay(i),
+          : (BuildContext ctx, int i) =>
+              (widget.seriesFrame != null || _items[i].seriesId != null)
+                  ? _buildRemoveOverlay(i)
+                  : null,
     );
   }
 
@@ -490,5 +500,37 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
           .add((mediaType: it.mediaType, entryKey: it.entryKey, sortOrder: i));
     }
   }
+  return (entryOrders: entryOrders, seriesOrders: seriesOrders);
+}
+
+/// TODO-947 P4：书架「编辑排序」把系列**内联展开成员**（不折叠成一张卡）后的落盘拆分。
+/// 与 [splitShelfReorderOrders]（折叠系列卡模式）的关键区别：这里每个条目都是一条真实
+/// [ShelfEntries] 行（散书 + 系列成员一视同仁），下标 → [ShelfEntries.sortOrder]；每个系列
+/// 额外把 [SeriesRow.sortOrder] 设为该系列**首个成员的下标**（首次出现即最小下标）。这样回主
+/// 网格经 groupAndSortShelfEntries 混排后，系列落在其首成员位置、成员按 sortOrder 升序重新
+/// 聚拢在一起（即使用户在排序页里临时把成员拖散，退出重载后仍连续相邻）。纯函数，widget/
+/// DB-free，供单测直接断言「连续相邻」的落盘契约。
+({
+  List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
+  List<({int seriesId, int sortOrder})> seriesOrders,
+}) unfoldedShelfReorderOrders(List<ShelfReorderItem> ordered) {
+  final List<({String mediaType, String entryKey, int sortOrder})> entryOrders =
+      <({String mediaType, String entryKey, int sortOrder})>[];
+  // seriesId → 该系列首个成员的下标（首次出现即最小，因按序遍历）。
+  final Map<int, int> seriesFirstIndex = <int, int>{};
+  for (int i = 0; i < ordered.length; i++) {
+    final ShelfReorderItem it = ordered[i];
+    entryOrders
+        .add((mediaType: it.mediaType, entryKey: it.entryKey, sortOrder: i));
+    final int? sid = it.seriesId;
+    if (sid != null) {
+      seriesFirstIndex.putIfAbsent(sid, () => i);
+    }
+  }
+  final List<({int seriesId, int sortOrder})> seriesOrders =
+      <({int seriesId, int sortOrder})>[
+    for (final MapEntry<int, int> e in seriesFirstIndex.entries)
+      (seriesId: e.key, sortOrder: e.value),
+  ];
   return (entryOrders: entryOrders, seriesOrders: seriesOrders);
 }
