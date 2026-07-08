@@ -407,15 +407,13 @@ public class MainActivity extends AudioServiceActivity {
         f.delete();
     }
 
-    // TODO-1232 A3: force the Skia rendering backend (disable Impeller) when the
-    // user opted in via Settings. The flag is persisted to a native prefs file
-    // (see the "render" MethodChannel in configureFlutterEngine) and read HERE,
-    // before the Flutter engine is created. A command-line
-    // "--enable-impeller=false" takes precedence over the AndroidManifest
-    // EnableImpeller default at engine init (see FlutterEngineFlags docs), so
-    // this flips the backend for THIS launch only -- no rebuild, no adb, exactly
-    // what the Mali-G76 black-video triage needs. Impeller stays the default;
-    // this overrides only when the user explicitly turns the experiment on.
+    // TODO-1232: choose the rendering backend before the Flutter engine is
+    // created. A command-line "--enable-impeller=false" takes precedence over the
+    // AndroidManifest EnableImpeller default at engine init (see FlutterEngineFlags
+    // docs), so appending it here flips the backend for THIS launch only -- no
+    // rebuild, no adb. This runs at engine start, before any Dart code, so the
+    // resolution below is the AUTHORITATIVE decision; RenderBackendService in Dart
+    // only mirrors it for the settings toggle + diagnostics.
     @Override
     public FlutterShellArgs getFlutterShellArgs() {
         FlutterShellArgs args = super.getFlutterShellArgs();
@@ -425,9 +423,33 @@ public class MainActivity extends AudioServiceActivity {
         return args;
     }
 
+    // TODO-1232: the effective "disable Impeller (use Skia)" decision for THIS
+    // launch. Android DEFAULTS TO SKIA (disable Impeller) so media_kit's external
+    // SurfaceProducer video texture composites out of the box -- Impeller silently
+    // fails to composite it on some Android GPUs (e.g. Mali-G76 / Android 11,
+    // BUG-597), leaving video black while decode + texture handshake are fully
+    // green. An EXPLICIT user choice (Settings > Diagnostics switch) overrides this
+    // default in either direction (explicit > platform default); only the
+    // never-set case falls back to Skia. Mirrors
+    // RenderBackendService.resolveImpellerDisabled(storedPref, isAndroid: true).
     private boolean isImpellerDisabledPref() {
-        return getSharedPreferences(PreferenceKeys.FILE_RENDER, MODE_PRIVATE)
-                .getBoolean(PreferenceKeys.RENDER_IMPELLER_DISABLED, false);
+        Boolean raw = getImpellerDisabledRawPref();
+        return raw != null ? raw : true;
+    }
+
+    // TODO-1232: raw persisted intent as a tri-state -- null when the user has
+    // never touched the render-backend switch, else the stored boolean. Kept
+    // separate from isImpellerDisabledPref() so the "render" channel can hand Dart
+    // the same tri-state (RenderBackendService resolves the platform default),
+    // keeping the toggle/diagnostics mirror in lock-step with the engine-start
+    // decision above.
+    private Boolean getImpellerDisabledRawPref() {
+        SharedPreferences prefs =
+                getSharedPreferences(PreferenceKeys.FILE_RENDER, MODE_PRIVATE);
+        if (!prefs.contains(PreferenceKeys.RENDER_IMPELLER_DISABLED)) {
+            return null;
+        }
+        return prefs.getBoolean(PreferenceKeys.RENDER_IMPELLER_DISABLED, false);
     }
 
     @Override
@@ -958,7 +980,11 @@ public class MainActivity extends AudioServiceActivity {
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {
                     case "isImpellerDisabled":
-                        result.success(isImpellerDisabledPref());
+                        // TODO-1232: return the RAW tri-state (null = never set);
+                        // Dart applies the platform default so the toggle and the
+                        // engine-start decision (getFlutterShellArgs ->
+                        // isImpellerDisabledPref) agree on "unset -> Skia on Android".
+                        result.success(getImpellerDisabledRawPref());
                         break;
                     case "setImpellerDisabled": {
                         final Object arg = call.arguments;

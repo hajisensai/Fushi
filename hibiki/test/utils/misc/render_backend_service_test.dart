@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
@@ -108,5 +110,66 @@ void main() {
       expect(service.isSupported, isFalse);
       expect(service.activeBackendLabel, 'n/a');
     });
+  });
+
+  group('TODO-1232 三态默认解析（resolveImpellerDisabled，Android 默认走 Skia）', () {
+    test('未设置 + Android → true（默认关 Impeller / 走 Skia，视频开箱即用）', () {
+      expect(
+        RenderBackendService.resolveImpellerDisabled(
+            storedPref: null, isAndroid: true),
+        isTrue,
+        reason: '用户从未动开关时，Android 平台默认关 Impeller 走 Skia（BUG-597）',
+      );
+    });
+
+    test('未设置 + 非 Android → false（开关不适用，保持引擎默认 Impeller）', () {
+      expect(
+        RenderBackendService.resolveImpellerDisabled(
+            storedPref: null, isAndroid: false),
+        isFalse,
+        reason: '非 Android 平台此开关不适用，不擅自翻默认',
+      );
+    });
+
+    test('显式 false（用户选 Impeller）压过 Android 默认 → false', () {
+      expect(
+        RenderBackendService.resolveImpellerDisabled(
+            storedPref: false, isAndroid: true),
+        isFalse,
+        reason: '用户在设置里显式拨回「用 Impeller」时，显式选择 > 平台默认',
+      );
+    });
+
+    test('显式 true（用户选 Skia）→ true（无论平台）', () {
+      expect(
+        RenderBackendService.resolveImpellerDisabled(
+            storedPref: true, isAndroid: false),
+        isTrue,
+        reason: '显式选 Skia 直接遵从',
+      );
+    });
+  });
+
+  test('init 收到 null（用户未设置）→ 仍 supported，按平台默认解析', () async {
+    // native 未设置该开关时 channel 返回 null（三态）。init 必须仍标记 supported
+    // （channel 有响应＝已接线），并用 Platform.isAndroid 兜底平台默认——测试宿主
+    // 物理 OS 非 Android，故未设置态解析为 false（保持 Impeller），恰好锁「非 Android
+    // 不擅自翻默认」这条边。真机 Android 上同一路径解析为 true（走 Skia）。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(testChannel, (MethodCall call) async {
+      if (call.method == 'isImpellerDisabled') return null; // 未设置
+      return null;
+    });
+
+    await service.init();
+    expect(service.isSupported, isTrue,
+        reason: 'channel 有响应即已接线，null 只表示「未设置」而非不支持');
+    expect(
+        service.impellerDisabled,
+        RenderBackendService.resolveImpellerDisabled(
+            storedPref: null, isAndroid: Platform.isAndroid),
+        reason: 'init 须用同一三态 helper + 物理 OS 兜底未设置态');
+    expect(service.impellerDisabled, Platform.isAndroid,
+        reason: '未设置态在 Android 解析为 true（Skia）、非 Android 为 false（Impeller）');
   });
 }
