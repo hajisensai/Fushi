@@ -54,7 +54,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
   static const String kResourceScheme =
       ReaderCustomFontCss.kReaderResourceScheme;
 
-  static String mediaIdentifierFor(String bookKey) => 'hoshi://book/$bookKey';
+  // BUG-654 / TODO-1344: embed the bookKey RAW (no percent-encoding). The
+  // inverse [parseBookKey] slices the raw remainder back off, so the two are
+  // lossless for keys that contain literal `%XX` sanitize escapes. Both share
+  // the [_bookIdentifierPrefix] constant so the encode/decode pair can never
+  // drift apart.
+  static String mediaIdentifierFor(String bookKey) =>
+      '$_bookIdentifierPrefix$bookKey';
 
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
@@ -95,18 +101,31 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// unparseable identifier. The bookKey is the sanitized title (the EpubBooks
   /// primary key); legacy `hoshi://book/<int>` identifiers were rewritten to
   /// the key form by the v16 migration, so no int branch is needed.
+  ///
+  /// BUG-654 / TODO-1344: extract the RAW remainder after the fixed prefix —
+  /// this must be the exact inverse of [mediaIdentifierFor], which embeds the
+  /// key with plain string interpolation (`'hoshi://book/$bookKey'`, no
+  /// encoding). A sanitized bookKey can itself contain literal percent-escapes:
+  /// [sanitizeTtuFilename] maps every `/?<>\\:|%"*` in the title to its `%XX`
+  /// form, so a title like `Do Androids Dream of Electric Sheep?` or
+  /// `業物語 <物語> (講談社ＢＯＸ)` becomes the key `...Sheep%3F` /
+  /// `業物語 %3C物語%3E (...)`. The old implementation parsed the identifier via
+  /// `Uri.pathSegments`, which percent-DECODES (`%3F`->`?`, `%2F`->`/`, ...),
+  /// producing a key that no longer equals the stored EpubBooks primary key.
+  /// Such books imported fine but could then be neither opened
+  /// (`getEpubBook(decodedKey) == null` -> `book_file_not_found`) nor deleted
+  /// ([deleteBook] early-returns false). A raw string slice is lossless for
+  /// every key — with or without `%` — and identical to the old result for keys
+  /// that contain no `%` (the common case), so nothing that worked before
+  /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
+  /// [epubUrl]/[fontUrl].
+  static const String _bookIdentifierPrefix = 'hoshi://book/';
+
   static String? parseBookKey(String identifier) {
-    final Uri? uri = Uri.tryParse(identifier);
-    if (uri == null) return null;
-    if (uri.scheme == 'hoshi' &&
-        uri.host == 'book' &&
-        uri.pathSegments.isNotEmpty) {
-      // pathSegments are percent-decoded by Uri; rejoin in case a sanitized
-      // key itself contained an encoded '/' (it never does — sanitize escapes
-      // '/' — but be defensive and keep the full remainder).
-      return uri.pathSegments.join('/');
-    }
-    return null;
+    if (!identifier.startsWith(_bookIdentifierPrefix)) return null;
+    final String bookKey = identifier.substring(_bookIdentifierPrefix.length);
+    if (bookKey.isEmpty) return null;
+    return bookKey;
   }
 
   /// BUG-220: EPUB books carry an editable author column, so expose author

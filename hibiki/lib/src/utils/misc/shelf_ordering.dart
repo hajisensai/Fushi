@@ -275,13 +275,17 @@ String _longestCommonPrefix(List<String> items) {
 
 /// 内联解析 `hoshi://book/<bookKey>`（与 ReaderHibikiSource.parseBookKey 同语义，
 /// 复制到本 widget-free 文件以便纯函数单测，不引依赖）。
+///
+/// BUG-654 / TODO-1344：取前缀之后的 RAW 余串，绝不 percent-decode。sanitizeTtu
+/// Filename 会把标题里的 `/?<>\\:|%"*` 编成 `%XX`，因此合法 bookKey 本身可能含字面
+/// `%3F`/`%3C` 等（如 `業物語 %3C物語%3E (...)`、`...Sheep%3F`）。旧实现用
+/// `Uri.pathSegments` 解析会把这些反解码（`%3F`→`?`），得到的键与存库主键不符，
+/// 导致这类书排序错位、且与 ReaderHibikiSource.parseBookKey 的行为分叉。裸切片对含
+/// `%` 与不含 `%` 的键都无损，且与旧结果对不含 `%` 的键完全一致。
 String? _parseHoshiBookKey(String identifier) {
-  final Uri? uri = Uri.tryParse(identifier);
-  if (uri == null) return null;
-  if (uri.scheme == 'hoshi' &&
-      uri.host == 'book' &&
-      uri.pathSegments.isNotEmpty) {
-    return uri.pathSegments.join('/');
-  }
-  return null;
+  const String prefix = 'hoshi://book/';
+  if (!identifier.startsWith(prefix)) return null;
+  final String bookKey = identifier.substring(prefix.length);
+  if (bookKey.isEmpty) return null;
+  return bookKey;
 }

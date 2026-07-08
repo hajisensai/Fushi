@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 639 条。点号进各自文件。
+> 共 640 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-654](bugs/BUG-654-book-import-notfound.md) | ✅ | ✅ | 特殊字符标题EPUB导入后打不开/删不掉(bookKey含%XX被标识符round-trip解码) |
 | [BUG-653](bugs/BUG-653-cloud-spill-multiple.md) | ✅ | ✅ | 云盘 per-book 文件溢出根目录并累积多份（TODO-1340，BUG-619 复报） |
 | [BUG-652](bugs/BUG-652-page-edge-leak-v2.md) | ✅ | ✅ | 分页阅读器翻页看到上下页内容(相邻页泄露)复诉·真机WebView2实测已修 |
 | [BUG-651](bugs/BUG-651-dual-subtitle-position.md) | ✅ | ✅ | 双字幕同显但两条挤在同一位置来回变+样式没按各自轨道 |

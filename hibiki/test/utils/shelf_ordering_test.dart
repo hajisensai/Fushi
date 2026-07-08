@@ -169,6 +169,28 @@ void main() {
       expect(ref.entryKey, 'mybook_key');
     });
 
+    test(
+        'books surface: %-escaped bookKey 保留字面 %XX（BUG-654 / TODO-1344，'
+        '不 percent-decode 才与存库主键一致）', () {
+      // sanitizeTtuFilename encodes forbidden chars, so a real key can contain
+      // literal `%3F`/`%3C`/`%2F`. The old Uri-based parse decoded these,
+      // producing an entryKey that no longer matched epub_books.bookKey (shelf
+      // ordering / 组合成系列 for these books would silently target the wrong
+      // key). The raw slice must keep them verbatim.
+      const String key = '業物語 %3C物語%3E (講談社ＢＯＸ)';
+      final ShelfEntryRef? ref = shelfSelectionToEntry(
+          'hoshi://book/$key', ShelfSelectionSurface.books);
+      expect(ref, isNotNull);
+      expect(ref!.mediaType, 'epub');
+      expect(ref.entryKey, key,
+          reason: '%3C/%3E must NOT be decoded back to </>');
+
+      final ShelfEntryRef? ref2 = shelfSelectionToEntry(
+          'hoshi://book/Do Androids Dream of Electric Sheep%3F',
+          ShelfSelectionSurface.books);
+      expect(ref2!.entryKey, 'Do Androids Dream of Electric Sheep%3F');
+    });
+
     test('books surface: 无法识别的键 → null', () {
       expect(shelfSelectionToEntry('garbage', ShelfSelectionSurface.books),
           isNull);
