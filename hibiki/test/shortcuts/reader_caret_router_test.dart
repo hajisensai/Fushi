@@ -54,6 +54,19 @@ void main() {
       );
     });
 
+    test('. / , jump to next / previous word entry (TODO-1325 #5 part1)', () {
+      expect(
+        ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.period,
+            shift: false),
+        CaretAction.focusEntryNext,
+      );
+      expect(
+        ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.comma,
+            shift: false),
+        CaretAction.focusEntryPrev,
+      );
+    });
+
     test('Enter / game A activate; Escape / game B dismiss-or-exit', () {
       expect(
         ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.enter,

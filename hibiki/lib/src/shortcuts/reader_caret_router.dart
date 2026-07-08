@@ -40,6 +40,17 @@ enum CaretAction {
   /// Jump the caret to the PREVIOUS dictionary section header. Keyboard `[`,
   /// gamepad LT. See [jumpDictNext].
   jumpDictPrev,
+
+  /// TODO-1325 #5 part1: move the popup's ENTRY-level focus (the blue-triangle
+  /// `.entry-current` indicator) to the NEXT word entry in a multi-entry result.
+  /// Distinct from [jumpDictNext] (dictionary sections WITHIN one entry): this
+  /// steps between the top-level word entries. Keyboard `.` (`>`). Popup-only;
+  /// the reader/lyrics surfaces have no entries so it no-ops (JS 'blocked').
+  focusEntryNext,
+
+  /// TODO-1325 #5 part1: move the popup's ENTRY-level focus to the PREVIOUS word
+  /// entry. Keyboard `,` (`<`). See [focusEntryNext].
+  focusEntryPrev,
   dismissOrExit,
 }
 
@@ -67,6 +78,12 @@ class ReaderCaretRouter {
     // so jumpDict no-ops → blocked).
     if (key == LogicalKeyboardKey.bracketRight) return CaretAction.jumpDictNext;
     if (key == LogicalKeyboardKey.bracketLeft) return CaretAction.jumpDictPrev;
+    // TODO-1325 #5 part1: `.`(>) next entry / `,`(<) previous entry in a
+    // multi-entry popup. Free keys a keyboard user reaches without a chord; the
+    // reader has no entries so they no-op (JS 'blocked'). Distinct from `]`/`[`
+    // (jump dictionary section within one entry).
+    if (key == LogicalKeyboardKey.period) return CaretAction.focusEntryNext;
+    if (key == LogicalKeyboardKey.comma) return CaretAction.focusEntryPrev;
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.gameButtonA) {
       return CaretAction.activate;

@@ -131,15 +131,17 @@ void main() {
   // 清空草稿/步进器/遮罩关闭）与音高药丸保持 phase1 的 SVG/#1 视觉不变。制卡结果 MD3
   // 着色 toast 保留作辅助反馈（✓✓↩ 为主、toast 为辅）。
   group('TODO-1325 制卡按钮还原为 ✓✓↩ 文本标记', () {
-    test('制卡按钮用 ✓✓↩ 文本字形三态（+ / ✓ / ✓↩）', () {
+    test('制卡按钮用 ✓✓↩ 文本字形三态（+ / ✓ / ✓↩），TODO-1338 给 ↩ 加 VS15', () {
+      // 保留文本标记（应用户要求不走 SVG）；TODO-1338 在 ↩(U+21A9) 后追加 VS15(U+FE0E)
+      // 强制「文本呈现」，杜绝制卡后系统把 ↩ 走彩色 emoji 回退变乱码（字体隔离在
+      // popup.css .mine-button 单色符号栈里，此处 VS15 为双保险）。
       expect(
           js,
           contains(
-              "mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';"),
-          reason: '制卡按钮状态切换用 ✓✓↩ 文本字形');
+              "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : '+';"),
+          reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)');
       expect(
-          RegExp(r"className: 'mine-button',\s+textContent: '\+',")
-              .hasMatch(js),
+          RegExp(r"className: 'mine-button',\s+textContent: '\+',").hasMatch(js),
           isTrue,
           reason: '制卡按钮初始文本为 +（可制卡）');
     });
