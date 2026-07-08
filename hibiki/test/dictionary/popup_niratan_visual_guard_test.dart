@@ -48,8 +48,7 @@ void main() {
           reason: '填充色接注入的 --md-primary 动态取色');
       expect(body, contains('var(--md-on-primary'),
           reason: '文字色接配对的 --md-on-primary，浅色白字 / 深色深字，两主题对比达标');
-      expect(body.contains('#94a6eb'), isFalse,
-          reason: '禁止照抄 Niratan 的硬编码颜色');
+      expect(body.contains('#94a6eb'), isFalse, reason: '禁止照抄 Niratan 的硬编码颜色');
     });
 
     test('Dart 侧两个注入点都注入了 --md-on-primary（药丸文字色的真值来源）', () {
@@ -75,35 +74,36 @@ void main() {
       // 图标必须是矢量 SVG（fill:currentColor 随主题），不是 macOS-only 的 mask 分支。
       expect(js, contains('<svg'), reason: '用内联 SVG 矢量图标');
       expect(js, contains('fill="currentColor"'),
-          reason: 'SVG 用 currentColor 跟随按钮颜色/主题（而非 SF-symbol 的 -webkit-mask macOS-only 分支）');
+          reason:
+              'SVG 用 currentColor 跟随按钮颜色/主题（而非 SF-symbol 的 -webkit-mask macOS-only 分支）');
     });
 
-    test('五类动作按钮全部挂 inline-action-button 共享基类（不只换一半）', () {
-      // audio / favorite / mine 三顶部按钮 + Hibiki 独有的 clear-draft / 句子上下文步进器。
+    test('四类动作按钮挂 inline-action-button 共享基类（制卡按钮除外，见还原守卫）', () {
+      // audio / favorite 两顶部按钮 + Hibiki 独有的 clear-draft / 句子上下文步进器。
+      // 制卡按钮已按 TODO-1325 还原为 ✓✓↩ 文本标记，不挂 inline-action-button。
       for (final String cls in <String>[
         'inline-action-button audio-button',
         'inline-action-button favorite-button',
-        'inline-action-button mine-button',
         'inline-action-button clear-draft-button',
         'inline-action-button context-stepper-btn',
       ]) {
         expect(js, contains(cls), reason: '按钮 "$cls" 必须挂共享基类');
       }
+      expect(js.contains('inline-action-button mine-button'), isFalse,
+          reason: '制卡按钮已还原为 ✓✓↩ 文本标记，不再挂 inline-action-button');
     });
 
-    test('按钮状态切换走图标名而非文字字形（audio/favorite/mine 三态齐全）', () {
-      // 不再是文字字形；用具名图标切换。
+    test('audio/favorite 状态切换走图标名而非文字字形', () {
+      // 不再是文字字形；用具名图标切换（制卡按钮已还原为文本，见 ✓✓↩ 还原守卫组）。
       for (final String icon in <String>[
         "setButtonIcon(button, 'audio')",
         "setButtonIcon(button, nowFav ? 'favorited' : 'favorite')",
-        "setButtonIcon(mineButton, isMined ? (latest ? 'restore' : 'check') : 'add')",
       ]) {
         expect(js, contains(icon), reason: '状态切换应设图标 "$icon"');
       }
-      // 旧文字字形的按钮内容赋值不应残留。
+      // 旧文字字形的按钮内容赋值不应残留（audio/favorite）。
       expect(js.contains("textContent: '♪'"), isFalse);
       expect(js.contains("textContent: '☆'"), isFalse);
-      expect(js.contains('mineButton.textContent = '), isFalse);
     });
 
     test('.inline-action-button 有 hover / active / disabled 三态与 SVG 尺寸规则', () {
@@ -119,9 +119,46 @@ void main() {
     });
 
     test('标签说明遮罩的关闭按钮也换成内联 SVG（关闭图标一并统一）', () {
-      expect(html, contains('class="overlay-close"'), reason: 'overlay-close 结构保留');
+      expect(html, contains('class="overlay-close"'),
+          reason: 'overlay-close 结构保留');
       expect(RegExp(r'overlay-close"[^>]*>\s*<svg').hasMatch(html), isTrue,
           reason: 'overlay-close 用内联 SVG 而非 × 文字字形');
+    });
+  });
+
+  // TODO-1325 还原守卫：应用户要求，制卡按钮从 phase1 的 SVG 图标（add/check/restore）
+  // 换回 ✓✓↩ 文本标记（+ 可制卡 / ✓ 已制卡 / ✓↩ 最新可改）。其余按钮（audio/favorite/
+  // 清空草稿/步进器/遮罩关闭）与音高药丸保持 phase1 的 SVG/#1 视觉不变。制卡结果 MD3
+  // 着色 toast 保留作辅助反馈（✓✓↩ 为主、toast 为辅）。
+  group('TODO-1325 制卡按钮还原为 ✓✓↩ 文本标记', () {
+    test('制卡按钮用 ✓✓↩ 文本字形三态（+ / ✓ / ✓↩）', () {
+      expect(
+          js,
+          contains(
+              "mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';"),
+          reason: '制卡按钮状态切换用 ✓✓↩ 文本字形');
+      expect(
+          RegExp(r"className: 'mine-button',\s+textContent: '\+',")
+              .hasMatch(js),
+          isTrue,
+          reason: '制卡按钮初始文本为 +（可制卡）');
+    });
+
+    test('制卡按钮不再走 SVG setButtonIcon（不回退 phase1 图标）', () {
+      expect(js.contains('setButtonIcon(mineButton'), isFalse,
+          reason: '制卡按钮不得再用 setButtonIcon 设 SVG 图标');
+      // check / restore 图标为制卡按钮专用，还原后应删除；add 仍供步进器 + 按钮。
+      expect(js.contains("check: '"), isFalse, reason: 'check 图标制卡专用，已随还原删除');
+      expect(js.contains("restore: '"), isFalse,
+          reason: 'restore 图标制卡专用，已随还原删除');
+    });
+
+    test('MD3 着色 toast 保留作辅助反馈（✓✓↩ 为主、toast 为辅）', () {
+      final String mixin =
+          File('lib/src/pages/implementations/dictionary_page_mixin.dart')
+              .readAsStringSync();
+      expect(mixin, contains('HibikiToast.showMine'),
+          reason: '制卡结果仍弹 MD3 着色 toast（added/duplicate/failed/pending）作辅助反馈');
     });
   });
 
@@ -133,10 +170,12 @@ void main() {
     });
 
     test('.mine-button / .sentence-context-picker 仍不自带 margin-left', () {
-      expect(RegExp(r'\.mine-button\s*\{[^}]*margin-left').hasMatch(css), isFalse,
+      expect(
+          RegExp(r'\.mine-button\s*\{[^}]*margin-left').hasMatch(css), isFalse,
           reason: '.mine-button 不得自带 margin-left（间距走 gap）');
       expect(
-          RegExp(r'\.sentence-context-picker\s*\{[^}]*margin-left').hasMatch(css),
+          RegExp(r'\.sentence-context-picker\s*\{[^}]*margin-left')
+              .hasMatch(css),
           isFalse,
           reason: '.sentence-context-picker 不得自带 margin-left');
     });
