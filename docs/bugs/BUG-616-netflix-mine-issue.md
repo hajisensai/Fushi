@@ -1,0 +1,19 @@
+## BUG-616 · 网飞制卡有问题（未复现·待用户日志）
+- **报告**：2026-07-08（用户：网飞制卡有问题，你看日志 / TODO-1331）——用户未附日志，无具体错误可看。本条记录端到端排查结论 + 需用户提供的具体日志。
+- **真实性**：❓ 未复现（无用户日志）。沿真实代码路径通读网飞制卡端到端链（扩展录制 → /api/mine → 引擎抽取 → 落卡），未发现 BUG-530/BUG-603 修复后引入的新代码缺口；两镜像 tools/browser-extension/*.js 与 hibiki/assets/browser_extension/*.js 逐字节一致；desktop tool/ffmpeg-min/build-ffmpeg-min.sh 已含 opus/vp8/vp9 解码器 + matroska(webm) 解复用 + gif/aac 编码器 + adts 复用器，desktop 转码能力齐全。
+- **端到端链路（file:line）**：
+  - 扩展录制：tools/browser-extension/content.js:328-459（hibikiRunNetflixBatch：逐句 seek→play→beginClip→字幕变化停→pause→endClip）→ tools/browser-extension/offscreen.js:61-104（tabCapture getUserMedia 录 video/webm;codecs=vp8/vp9,opus，beginClip/endClip 出 base64）→ tools/browser-extension/background.js:202-209（mineClip：POST /api/mine {fields,sentence,clipBase64,clipDurationMs}，Basic auth）。
+  - server：hibiki/lib/src/sync/yomitan_api_server.dart:229-239（_handleMine，mining service 恒非空注入见 app_model.dart:4112-4114，不会 404 Mining off）→ hibiki/lib/src/sync/hibiki_remote_api_handlers.dart:70-87（buildRemoteMineResponse，payload.isImmersion→mineImmersion）。
+  - 引擎：hibiki/lib/src/models/app_model.dart:4528-4638（mineImmersion：audioExpected = payload.clipBytes != null = true）→ hibiki/lib/src/mining/immersion_capture_channel.dart:113-157（transcodeClipToCapture：ffmpeg 转 GIF + 抽音频）→ hibiki/lib/src/mining/immersion_mining_engine.dart:143-156（无音频/空壳卡中止）。
+- **最可能的失败点（2–3，按可能性排序）**：
+  1. **【最可能】录制片段丢音轨/黑帧 → BUG-603 无音频中止触发 → 制卡失败并写错误日志。** 机理：网飞受 Widevine DRM。tabCapture 录出的 webm 若（a）音轨缺失（标签页静音/系统音频未接入）→ extractAudioSegmentViaFfmpeg 无音频流失败 → audioPath==null，但 GIF 已产出 → immersion_mining_engine.dart:145-150 requireAudio && audioPath==null && viaProvidedBytes → **abort required audio missing**；或（b）Chrome 硬件加速未关 → 帧全黑（BUG-530 备注③已知前置），GIF 是黑的但非空 → 不 abort，卡建成但**画面全黑**。**BUG-603 修复后，以前「静默出无声/黑卡还报成功」的场景现在会明确失败**——这正是用户「制卡有问题」在修复后的新表现。App 错误日志会有 Anki.mineImmersion.netflix（app_model.dart:4634）+ 底层 extractAudioSegmentViaFfmpeg/extractClipGifViaFfmpeg（desktop_audio_clipper.dart 经 ErrorLogService）两条。扩展批量期间也会闪 ✗ Netflix 制卡失败：required audio missing toast（content.js:214-217）。
+  2. **HTTP 层失败被扩展静默吞掉（无 toast）。** content.js:198 hibikiClassifyMineResp：if (!resp || !resp.ok || !resp.data) return 'retry' ——401（token 错/hibiki-defaults.js 未注入）、连接被拒（Yomitan API server 开关没开、端口不对）、400/500 等 HTTP 级失败一律**静默 retry，不弹原因**。此路径 app 侧也可能无日志（401 卡在鉴权中间件之前、连接被拒根本没到 app）。若用户说「你看日志」却查不到条目，八成命中这里——属 BUG-603 未覆盖的诊断缺口（BUG-603 只覆盖 server 返回 {result:'error',message} 的场景）。
+  3. **server 平台不是 desktop 时 ffmpeg 缺 webm/opus 支持。** 若 Hibiki app（server）跑在 Android/iOS（扩展经 LAN 指向手机），自编 ffmpeg-kit 若未编 opus/matroska → GIF+音频双失败 → transcodeClipToCapture 返 clip transcode produced nothing → 因 mineClip **不带 screenshotBase64** → cover=null、audio=null → immersion_mining_engine.dart:153-156 abort no cover and no audio produced。常规用法（Chrome+网飞+Hibiki 同在 desktop）不命中。
+- **需用户提供的具体日志/信息（精准定位所需）**：
+  1. **App 内错误日志页**（设置 → 错误日志，error_log_page.dart）里制卡失败那一刻的条目原文——尤其 source 是 Anki.mineImmersion.netflix / extractAudioSegmentViaFfmpeg / extractClipGifViaFfmpeg 的整条 message（会写明是 required audio missing、no cover and no audio produced 还是某条 ffmpeg 退出码/stderr 摘要）。
+  2. **扩展批量制卡时页面底部/中部弹出的 toast 原文**（是否出现 ✗ … 或 ⚠ …，还是完全没有 toast 只见失败计数）。没有任何 toast → 指向失败点 2（HTTP 级）。
+  3. **是否已满足网飞前置**（BUG-530 备注）：② Yomitan API server 开关已开？③ Chrome 硬件加速已关（否则帧全黑）？④ 是点扩展图标启动录制？扩展 options 里的 token 是否与 app 一致。
+  4. 若怀疑失败点 2：**Chrome 扩展 Service Worker 的 console**（chrome://extensions → Hibiki → Service worker → 查 /api/mine fetch 的 HTTP 状态码，401/404/连接被拒/超时）。
+- **[ ] ① 未修复** — 无用户日志，未做代码改动（避免瞎改）。潜在改进（待日志确认再动）：content.js:197-219 hibikiClassifyMineResp 在 !resp.ok/!resp.data 分支也弹 toast 显 HTTP 状态/网络原因，补齐失败点 2 的诊断缺口（需同步两镜像 + 更新 netflix_mine_diagnostics_guard_test.dart）。
+- **[ ] ② 未加自动化测试** —
+- **备注**：TODO-1331。与 [[BUG-530]]（扩展↔server 接线）、[[BUG-603]]（假成功+诊断黑洞）同属 TODO-1000 网飞制卡链路；本条为无日志下的排查记录，取得用户日志后按命中失败点转真 bug 或结掉。
