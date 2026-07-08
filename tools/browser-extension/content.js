@@ -194,8 +194,29 @@ async function hibikiRemoveQueued(okIds) {
 // 制卡结果分类（TODO-1184）：卡已建(success)或已存在(duplicate) → 出队(done，队列才会清)；
 // Anki 未配置(notConfigured) → 留队 + 提示用户去配（配好再点生成即可，出队会静默丢词）；
 // 其余(error / 网络失败 / 上下文失效) → 留队下次重试。只有 done 才 push 进 okIds 被剔除。
+// TODO-1331：把制卡请求的 HTTP/网络层失败翻成用户能懂的原因。resp 形状见 background.js：
+// HTTP 成功 {ok:true,status,data}；非 2xx {ok:false,status,data:null}；fetch 抛异常
+// （连接被拒/超时/DNS）{ok:false,error}。据此分 401 鉴权 / 404 端点 / 4xx-5xx 服务端 /
+// 连不上（无 status）四类，让扩展弹明确 ✗ 原因，而不是静默 retry 到「你看日志却查不到」。
+function hibikiMineHttpFailureReason(resp) {
+  if (!resp) return '制卡无响应（扩展已更新？刷新页面 F5 重试）';
+  const status = typeof resp.status === 'number' ? resp.status : 0;
+  if (status === 401) return '鉴权失败(401)：扩展 token 与 Hibiki 不一致，去扩展设置核对 API key';
+  if (status === 404) return '端点不存在(404)：Hibiki 未开 Yomitan API server 或端口不对';
+  if (status >= 500) return '服务端错误(' + status + ')：制卡出错，去 Hibiki 错误日志页查详情';
+  if (status >= 400) return '请求被拒(' + status + ')：' + (resp.error || '检查扩展设置');
+  // ok:false 且无 status = fetch 抛异常（连接被拒/超时/DNS）：server 没开或主机/端口错。
+  return '连不上 Hibiki(' + (resp.error || '连接被拒/超时') + ')：确认已开 Yomitan API server 且主机/端口正确';
+}
 function hibikiClassifyMineResp(resp) {
-  if (!resp || !resp.ok || !resp.data) return 'retry';
+  // TODO-1331：HTTP/网络层失败不再静默 retry——弹 ✗ 原因让用户看得见（YouTube/Netflix
+  // 批量制卡共用本分类器，两条链路的 HTTP 失败都据此显因）。
+  if (!resp || !resp.ok || !resp.data) {
+    if (typeof window.hibikiToast === 'function') {
+      try { window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp)); } catch (_) {}
+    }
+    return 'retry';
+  }
   const d = resp.data;
   const r = d.result;
   // TODO-1303：服务端现在回带诊断（message=失败原因/音频落空警告，

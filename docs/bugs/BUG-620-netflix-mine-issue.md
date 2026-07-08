@@ -1,6 +1,6 @@
-## BUG-616 · 网飞制卡有问题（未复现·待用户日志）
+## BUG-620 · 网飞制卡有问题（未复现·待用户日志）
 - **报告**：2026-07-08（用户：网飞制卡有问题，你看日志 / TODO-1331）——用户未附日志，无具体错误可看。本条记录端到端排查结论 + 需用户提供的具体日志。
-- **真实性**：❓ 未复现（无用户日志）。沿真实代码路径通读网飞制卡端到端链（扩展录制 → /api/mine → 引擎抽取 → 落卡），未发现 BUG-530/BUG-603 修复后引入的新代码缺口；两镜像 tools/browser-extension/*.js 与 hibiki/assets/browser_extension/*.js 逐字节一致；desktop tool/ffmpeg-min/build-ffmpeg-min.sh 已含 opus/vp8/vp9 解码器 + matroska(webm) 解复用 + gif/aac 编码器 + adts 复用器，desktop 转码能力齐全。
+- **真实性**：混合——制卡**实际失败根因**待用户日志确认（沿真实代码路径通读端到端链未发现 BUG-530/BUG-603 修复后引入的新代码缺口；两镜像逐字节一致；desktop ffmpeg-min 已含 opus/vp8/vp9 解码 + matroska(webm) 解复用 + gif/aac 编码，转码能力齐全）；但**失败点 2（扩展 HTTP 层静默吞失败）是 ✅ 已确认真缺口**——401/连接拒绝/4xx/5xx 一律静默 retry 不弹原因，用户「你看日志」却查不到条目，BUG-603 只覆盖 server 回带诊断未覆盖 HTTP 层。本轮已对失败点 2 根因修复 + 加测试；失败点 1 仍待日志。
 - **端到端链路（file:line）**：
   - 扩展录制：tools/browser-extension/content.js:328-459（hibikiRunNetflixBatch：逐句 seek→play→beginClip→字幕变化停→pause→endClip）→ tools/browser-extension/offscreen.js:61-104（tabCapture getUserMedia 录 video/webm;codecs=vp8/vp9,opus，beginClip/endClip 出 base64）→ tools/browser-extension/background.js:202-209（mineClip：POST /api/mine {fields,sentence,clipBase64,clipDurationMs}，Basic auth）。
   - server：hibiki/lib/src/sync/yomitan_api_server.dart:229-239（_handleMine，mining service 恒非空注入见 app_model.dart:4112-4114，不会 404 Mining off）→ hibiki/lib/src/sync/hibiki_remote_api_handlers.dart:70-87（buildRemoteMineResponse，payload.isImmersion→mineImmersion）。
@@ -14,6 +14,6 @@
   2. **扩展批量制卡时页面底部/中部弹出的 toast 原文**（是否出现 ✗ … 或 ⚠ …，还是完全没有 toast 只见失败计数）。没有任何 toast → 指向失败点 2（HTTP 级）。
   3. **是否已满足网飞前置**（BUG-530 备注）：② Yomitan API server 开关已开？③ Chrome 硬件加速已关（否则帧全黑）？④ 是点扩展图标启动录制？扩展 options 里的 token 是否与 app 一致。
   4. 若怀疑失败点 2：**Chrome 扩展 Service Worker 的 console**（chrome://extensions → Hibiki → Service worker → 查 /api/mine fetch 的 HTTP 状态码，401/404/连接被拒/超时）。
-- **[ ] ① 未修复** — 无用户日志，未做代码改动（避免瞎改）。潜在改进（待日志确认再动）：content.js:197-219 hibikiClassifyMineResp 在 !resp.ok/!resp.data 分支也弹 toast 显 HTTP 状态/网络原因，补齐失败点 2 的诊断缺口（需同步两镜像 + 更新 netflix_mine_diagnostics_guard_test.dart）。
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复（诊断缺口·失败点 2）** — commit（本轮，见文末哈希）：`content.js` 两镜像逐字节一致新增纯函数 `hibikiMineHttpFailureReason(resp)`，`hibikiClassifyMineResp` 的 `!resp||!resp.ok||!resp.data` 分支不再静默 `return 'retry'`，改为弹 `✗ <原因>` toast——按 `resp.status` 分：401=token/鉴权不一致、404=Hibiki 未开 Yomitan API server 或端口错、4xx=请求被拒(带码)、5xx=服务端错(带码，去错误日志页)、无 status（fetch 抛异常）=连不上(连接拒绝/超时)。YouTube+Netflix 批量制卡共用本分类器，两链路 HTTP 失败都显因。**失败点 1（DRM/音频缺失/硬件加速黑帧导致的实际制卡失败/中止）仍需用户日志定位**，属环境/平台约束，非本轮代码可修。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/netflix_mine_diagnostics_guard_test.dart`：新增守卫断言两镜像 `content.js` 含 `hibikiMineHttpFailureReason` + HTTP 失败分支弹 `✗ ' + hibikiMineHttpFailureReason(resp)` toast + 区分 `鉴权失败(401)` + 提示去开 `Yomitan API server`；既有 message/detail 诊断 + audioWarning 区分 + 两镜像逐字节一致守卫不变。`node --check` 两镜像语法通过。
 - **备注**：TODO-1331。与 [[BUG-530]]（扩展↔server 接线）、[[BUG-603]]（假成功+诊断黑洞）同属 TODO-1000 网飞制卡链路；本条为无日志下的排查记录，取得用户日志后按命中失败点转真 bug 或结掉。

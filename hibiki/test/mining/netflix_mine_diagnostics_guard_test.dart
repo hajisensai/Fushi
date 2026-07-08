@@ -28,6 +28,21 @@ void main() {
             reason: '$root success+音频警告未弹 ⚠ toast');
         expect(src.contains("r === 'success' && reason"), isTrue,
             reason: '$root 未把 success+message 的部分成功与真成功区分');
+        // TODO-1331：HTTP/网络层失败（401/连接拒绝/404/4xx/5xx）不再静默 retry——
+        // 经 hibikiMineHttpFailureReason 区分鉴权/连不上/服务端后弹 ✗ 原因，终结
+        // 「你看日志却查不到条目」（BUG-603 只覆盖 server 回带诊断，未覆盖 HTTP 层）。
+        expect(
+            src.contains('function hibikiMineHttpFailureReason(resp)'), isTrue,
+            reason: '$root 未实现 HTTP 层失败原因翻译（静默吞失败）');
+        expect(
+            src.contains(
+                "window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp))"),
+            isTrue,
+            reason: '$root HTTP 失败分支未弹 ✗ 原因 toast');
+        expect(src.contains('鉴权失败(401)'), isTrue,
+            reason: '$root 未区分 401 鉴权失败原因');
+        expect(src.contains('Yomitan API server'), isTrue,
+            reason: '$root 未提示连不上/端点错时去开 Yomitan API server');
         // 三态返回契约不变。
         expect(src.contains("return 'done';"), isTrue);
         expect(src.contains("return 'unconfigured';"), isTrue);
