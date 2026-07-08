@@ -437,26 +437,40 @@ class AnkiMobileRepository extends BaseAnkiRepository {
 }
 
 class _AnkiMobileMediaServer {
-  _AnkiMobileMediaServer._(this._server) {
+  _AnkiMobileMediaServer._(this._server, this._tempDir) {
     _server.listen(_handleRequest);
   }
 
   final HttpServer _server;
+  final Directory _tempDir;
   final Map<String, _ServedAnkiMobileMedia> _files =
       <String, _ServedAnkiMobileMedia>{};
   var _nextId = 0;
   var _closed = false;
 
   static Future<_AnkiMobileMediaServer> start() async {
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    return _AnkiMobileMediaServer._(server);
+    final tempDir =
+        await Directory.systemTemp.createTemp('hibiki_ankimobile_media_');
+    try {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      return _AnkiMobileMediaServer._(server, tempDir);
+    } catch (_) {
+      if (tempDir.existsSync()) {
+        await tempDir.delete(recursive: true);
+      }
+      rethrow;
+    }
   }
 
   String addFile(File file, {String? mimePath}) {
     final sourceName = _safeMediaBasename(mimePath ?? file.path);
-    final path = '/media/${_nextId++}-$sourceName';
+    final id = _nextId++;
+    final path = '/media/$id-$sourceName';
+    final snapshot = File('${_tempDir.path}${Platform.pathSeparator}'
+        '$id-$sourceName');
+    file.copySync(snapshot.path);
     _files[path] = _ServedAnkiMobileMedia(
-      file: file,
+      file: snapshot,
       mimeType: mimeTypeForPath(mimePath ?? file.path),
     );
     return Uri(
@@ -470,7 +484,17 @@ class _AnkiMobileMediaServer {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    await _server.close(force: true);
+    try {
+      await _server.close(force: true);
+    } finally {
+      if (_tempDir.existsSync()) {
+        try {
+          await _tempDir.delete(recursive: true);
+        } catch (e, stack) {
+          debugPrint('AnkiMobile media temp cleanup failed: $e\n$stack');
+        }
+      }
+    }
   }
 
   Future<void> _handleRequest(HttpRequest request) async {

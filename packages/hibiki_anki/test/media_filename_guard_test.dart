@@ -154,6 +154,17 @@ void main() {
       );
     });
 
+    test('dictionary media cache names use stable SHA-1 path hashes', () {
+      expect(
+        ankiDictionaryMediaCacheFilename('gaiji/bs一.svg'),
+        'hibiki_dict_7de320e8f49c1e60a3ee86953fbafd6cadf701a7.svg',
+      );
+      expect(
+        ankiDictionaryMediaCacheFilename('gaiji/noext'),
+        'hibiki_dict_9b891374d454bc61cb63a8b3ac0e229da34e0107.bin',
+      );
+    });
+
     test(
         'AnkiDroid does not reuse preferred media names when a fixed local audio path changes content',
         () async {

@@ -17,6 +17,7 @@ void main() {
   String read(String path) => File(path).readAsStringSync();
 
   const String dialog = 'lib/src/media/audiobook/audiobook_import_dialog.dart';
+  const String picker = 'lib/src/media/import/real_path_directory_picker.dart';
 
   test('AudiobookImportDialog 不再提供「选目录」音频输入入口', () {
     final String src = read(dialog);
@@ -66,17 +67,39 @@ void main() {
       reason: '「选文件」多选入口必须保留，否则多段章节有声书无法导入',
     );
     // _pickAudioFiles 里的 file picker 必须仍是多选：一本多段有声书要能一次选 N 个
-    // 章节文件。切出方法体断言其 allowMultiple: true。
+    // 章节文件。对话框应调用多选 helper；helper 内部再统一处理 iOS Files
+    // 兜底和扩展名过滤。
     final int start = src.indexOf('Future<void> _pickAudioFiles(');
     expect(start, isNonNegative);
     final int end = src.indexOf('\n  Future<', start + 1);
     final String body =
         end >= 0 ? src.substring(start, end) : src.substring(start);
     expect(
-      RegExp(r'allowMultiple:\s*true').hasMatch(body),
+      body.contains('pickRealFilePaths('),
       isTrue,
-      reason: '「选文件」必须 allowMultiple: true——多段章节有声书需一次选多个章节文件，'
-          '不得因 TODO-1031 砍成单文件而破坏多段有声书语义',
+      reason: '「选文件」必须调用多选 helper pickRealFilePaths——多段章节有声书需一次选'
+          '多个章节文件，不得因 TODO-1031 砍成单文件而破坏多段有声书语义',
+    );
+    expect(
+      body.contains('pickRealFilePath('),
+      isFalse,
+      reason: '「选文件」不得调用单文件 helper pickRealFilePath',
+    );
+
+    final String pickerSrc = read(picker);
+    final int helperStart =
+        pickerSrc.indexOf('Future<List<String>> pickRealFilePaths(');
+    expect(helperStart, isNonNegative);
+    final int helperEnd =
+        pickerSrc.indexOf('\nFuture<String?> _fallbackPickFile(', helperStart);
+    final String helperBody = helperEnd >= 0
+        ? pickerSrc.substring(helperStart, helperEnd)
+        : pickerSrc.substring(helperStart);
+    expect(
+      RegExp(r'allowMultiple:\s*true').hasMatch(helperBody),
+      isTrue,
+      reason: 'pickRealFilePaths 内部必须 allowMultiple: true——多段章节有声书需一次选'
+          '多个章节文件，不得因 TODO-1031 砍成单文件而破坏多段有声书语义',
     );
   });
 }

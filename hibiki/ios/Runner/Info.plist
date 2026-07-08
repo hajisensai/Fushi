@@ -4,6 +4,8 @@
 	<dict>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Hibiki needs the microphone to record audio for your Anki cards.</string>
+		<key>NSAppleMusicUsageDescription</key>
+		<string>Hibiki accesses your media library to import audio files for audiobooks and Anki cards.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>Hibiki uses the camera to capture images to add to your Anki cards.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
@@ -58,7 +60,7 @@
 		<key>UIStatusBarHidden</key>
 		<false/>
 			<key>CADisableMinimumFrameDurationOnPhone</key>
-			<true/>
+			<false/>
 			<key>UIApplicationSceneManifest</key>
 			<dict>
 				<key>UIApplicationSupportsMultipleScenes</key>

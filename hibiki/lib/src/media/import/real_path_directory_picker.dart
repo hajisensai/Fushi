@@ -87,7 +87,10 @@ Future<String?> pickRealFilePath({
 }) async {
   // 桌面（Windows/macOS/Linux）与 iOS：`pickFiles()` 已返回真实路径、不复制。
   if (defaultTargetPlatform != TargetPlatform.android) {
-    return _fallbackPickFile(allowedExtensions);
+    return _fallbackPickFile(
+      context: context,
+      allowedExtensions: allowedExtensions,
+    );
   }
 
   // 安卓：先尝试确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权。
@@ -96,7 +99,11 @@ Future<String?> pickRealFilePath({
       await appModel.platformServices.permission.hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
-    return _fallbackPickFile(allowedExtensions);
+    if (!context.mounted) return null;
+    return _fallbackPickFile(
+      context: context,
+      allowedExtensions: allowedExtensions,
+    );
   }
 
   final List<String> roots =
@@ -115,20 +122,120 @@ Future<String?> pickRealFilePath({
   );
 }
 
+/// 「选多个文件并返回真实文件系统绝对路径」。
+///
+/// 当前真实路径浏览器只支持单文件点选；多选仍回退到 file_picker。iOS 上不能使用
+/// file_picker 的 audio 类型，它会打开 `MPMediaPickerController`（资料库）而不是 Files；
+/// 带扩展名过滤的入口统一由 [_fallbackPickFiles] 处理。
+Future<List<String>> pickRealFilePaths({
+  required BuildContext context,
+  required AppModel appModel,
+  Set<String>? allowedExtensions,
+}) async {
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    await appModel.requestExternalStoragePermissions();
+  }
+  if (!context.mounted) return const <String>[];
+  return _fallbackPickFiles(
+    context: context,
+    allowedExtensions: allowedExtensions,
+    allowMultiple: true,
+  );
+}
+
 /// 回退到 file_picker 选单个文件（安卓无全文件访问 / 桌面 / iOS）。
-/// [allowedExtensions] 非空 → 走 custom 类型按扩展名过滤；null → 任意文件。
-Future<String?> _fallbackPickFile(Set<String>? allowedExtensions) async {
+Future<String?> _fallbackPickFile({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) async {
+  final List<String> paths = await _fallbackPickFiles(
+    context: context,
+    allowedExtensions: allowedExtensions,
+    allowMultiple: false,
+  );
+  return paths.isEmpty ? null : paths.single;
+}
+
+/// 回退到 file_picker 选文件。iOS 对 `.srt` 等扩展名的 UTI 解析可能返回 dyn.*，
+/// 传给 `FileType.custom` 后会被原生插件丢弃；因此 iOS 先用 `FileType.any`
+/// 打开 Files，再按扩展名做 Dart 端校验。
+Future<List<String>> _fallbackPickFiles({
+  required BuildContext context,
+  required bool allowMultiple,
+  Set<String>? allowedExtensions,
+}) async {
+  final Set<String> normalizedExtensions =
+      _normalizeExtensions(allowedExtensions);
+  final bool filterAfterPick = defaultTargetPlatform == TargetPlatform.iOS &&
+      normalizedExtensions.isNotEmpty;
+
   final FilePickerResult? result;
-  if (allowedExtensions == null || allowedExtensions.isEmpty) {
-    result = await FilePicker.platform.pickFiles(allowMultiple: false);
+  if (filterAfterPick || normalizedExtensions.isEmpty) {
+    result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      allowMultiple: allowMultiple,
+    );
   } else {
     result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: allowedExtensions.toList(),
-      allowMultiple: false,
+      allowedExtensions: normalizedExtensions.toList(),
+      allowMultiple: allowMultiple,
     );
   }
-  return result?.files.single.path;
+
+  final List<String> paths =
+      result?.files.map((file) => file.path).whereType<String>().toList() ??
+          const <String>[];
+  if (!filterAfterPick) return paths;
+
+  // 页面若在原生文件选择器打开期间被销毁，仍按扩展名做纯过滤返回，只是无法
+  // 弹「不支持格式」提示（context 传 null，过滤逻辑不依赖 context）。
+  if (!context.mounted) {
+    return _filterPickedFilesByExtension(
+      context: null,
+      paths: paths,
+      allowedExtensions: normalizedExtensions,
+    );
+  }
+  return _filterPickedFilesByExtension(
+    context: context,
+    paths: paths,
+    allowedExtensions: normalizedExtensions,
+  );
+}
+
+Set<String> _normalizeExtensions(Set<String>? extensions) {
+  if (extensions == null || extensions.isEmpty) return const <String>{};
+  return extensions
+      .map((String ext) => ext.toLowerCase().replaceFirst('.', ''))
+      .where((String ext) => ext.isNotEmpty)
+      .toSet();
+}
+
+List<String> _filterPickedFilesByExtension({
+  required BuildContext? context,
+  required List<String> paths,
+  required Set<String> allowedExtensions,
+}) {
+  final List<String> accepted = <String>[];
+  final List<String> rejected = <String>[];
+  for (final String path in paths) {
+    final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
+    if (allowedExtensions.contains(ext)) {
+      accepted.add(path);
+    } else {
+      rejected.add(path);
+    }
+  }
+  if (rejected.isNotEmpty && context != null && context.mounted) {
+    final String ext = p.extension(rejected.first).toLowerCase();
+    HibikiToast.show(
+      msg: t.import_unsupported_file_format(
+        ext: ext.isEmpty ? p.basename(rejected.first) : ext,
+      ),
+    );
+  }
+  return accepted;
 }
 
 /// 列出 [directory] 的直接子目录绝对路径（已排序，目录不存在或无权限时返回空）。

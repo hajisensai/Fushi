@@ -1171,11 +1171,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         onPressed: _openGallery,
       ),
       const Spacer(),
-      IconButton(
-        icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
-        iconSize: 20,
-        tooltip: t.reader_settings_section,
-        onPressed: _showAppearanceSheet,
+      Semantics(
+        identifier: 'hibiki.reader.bottom.settings',
+        child: IconButton(
+          key: const ValueKey<String>('hoshi_reader_settings_button'),
+          icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
+          iconSize: 20,
+          tooltip: t.reader_settings_section,
+          onPressed: _showAppearanceSheet,
+        ),
       ),
     ];
     return Positioned(

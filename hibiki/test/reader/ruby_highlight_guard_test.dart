@@ -12,7 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 修复（移植 Hoshi-Reader-Android）：cue / 选区里位于 `<ruby>` 内的节点**不放进
 /// `::highlight` range**，改把 `<ruby>` 元素本身收集起来、高亮时加 class
 /// （`hoshi-sasayaki-ruby-active` / `hoshi-selection-ruby-active`），背景画在元素上
-/// 只画一遍；普通文字仍走 `::highlight`。清除时移除 class。
+/// 只画一遍；sasayaki 普通文字包 `.hoshi-sasayaki-cue` span 画同宽窄条。清除时
+/// 移除 class / active，reset 时 unwrap。
 ///
 /// 谁把 ruby 节点放回 `::highlight` range（删掉 rubyForNode 分流 / ruby class），
 /// 本测试红。
@@ -53,6 +54,31 @@ void main() {
           reason: 'reader CSS 须给 ruby.hoshi-sasayaki-ruby-active 设背景');
       expect(styles, contains('ruby.hoshi-selection-ruby-active'),
           reason: 'reader CSS 须给 ruby.hoshi-selection-ruby-active 设背景');
+    });
+
+    test('sasayaki：普通正文也不用 ::highlight，改由 cue span 画窄条', () {
+      expect(
+        pagination.contains("CSS.highlights.set('hoshi-sasayaki'"),
+        isFalse,
+        reason: 'sasayaki 普通正文不能再走 CSS Highlight；竖排下它会按行盒刷宽背景',
+      );
+      final int applyStart =
+          pagination.indexOf('applySasayakiCues: function(cues)');
+      expect(applyStart, isNonNegative);
+      final int applyEnd =
+          pagination.indexOf('rubyForNode: function', applyStart);
+      expect(applyEnd, isNonNegative);
+      final String applyBody = pagination.substring(applyStart, applyEnd);
+      expect(
+        applyBody,
+        contains("wrapper.className = 'hoshi-sasayaki-cue'"),
+        reason: 'CSS Highlight 支持时普通正文也要包 cue span，才能用 CSS 画 1em 窄条',
+      );
+      expect(
+        applyBody,
+        contains('this.cueWrappers.set(id, wrappers)'),
+        reason: 'cue span 必须按 cue id 保存，播放切句时才能只激活当前句',
+      );
     });
   });
 

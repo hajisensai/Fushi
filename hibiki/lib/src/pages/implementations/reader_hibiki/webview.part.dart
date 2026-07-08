@@ -1864,6 +1864,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         debugPrint('[ReaderHibiki] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode) {
+          if (!await _isLoadedLyricsDocument(controller)) {
+            debugPrint('[ReaderHibiki] onLoadStop: stale non-lyrics page '
+                'while lyrics mode is active, ignoring');
+            return;
+          }
           await _onChapterLoadComplete(controller);
           return;
         }
@@ -1927,6 +1932,21 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       },
       child: keyed,
     );
+  }
+
+  Future<bool> _isLoadedLyricsDocument(
+      InAppWebViewController controller) async {
+    try {
+      final dynamic result = await controller.evaluateJavascript(
+        source:
+            "Boolean(window.__lyricsSetCue && document.getElementById('lc'))",
+      );
+      return result == true || result == 'true' || result == 1 || result == '1';
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.isLoadedLyricsDocument', e, stack);
+      return false;
+    }
   }
 
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {

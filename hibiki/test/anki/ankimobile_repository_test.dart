@@ -273,4 +273,99 @@ void main() {
       'end-background-task',
     ]);
   });
+
+  test('media URLs survive source temp cleanup until AnkiMobile fetches',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('ankimobile-cleanup-');
+    final sentenceAudio = File('${temp.path}/sentence.m4a');
+    final bytes = <int>[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70];
+    await sentenceAudio.writeAsBytes(bytes);
+    addTearDown(() async {
+      if (temp.existsSync()) {
+        await temp.delete(recursive: true);
+      }
+    });
+
+    final launched = <Uri>[];
+    final repo = AnkiMobileRepository(
+      openUrl: (uri) async {
+        launched.add(uri);
+        return true;
+      },
+      readInfoForAddingJson: () async => null,
+      mediaServerLifetime: const Duration(milliseconds: 500),
+      beginMediaImportBackgroundTask: () async {},
+      endMediaImportBackgroundTask: () async {},
+    );
+    await repo.saveSettings(const AnkiSettings(
+      selectedDeckId: 0,
+      selectedDeckName: 'Japanese',
+      selectedNoteTypeId: 0,
+      selectedNoteTypeName: 'Lapis',
+      availableDecks: <AnkiDeck>[AnkiDeck(id: 0, name: 'Japanese')],
+      availableNoteTypes: <AnkiNoteType>[
+        AnkiNoteType(
+          id: 0,
+          name: 'Lapis',
+          fields: <String>['SentenceAudio'],
+        ),
+      ],
+      fieldMappings: <String, String>{
+        'SentenceAudio': '{sasayaki-audio}',
+      },
+    ));
+
+    final outcome = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(<String, Object?>{
+        'expression': '猫',
+      }),
+      context: AnkiMiningContext(
+        sentence: '',
+        sasayakiAudioPath: sentenceAudio.path,
+      ),
+    );
+    expect(outcome.result, MineResult.success);
+
+    await temp.delete(recursive: true);
+    final mediaUrl = launched.single.queryParameters['fldSentenceAudio'];
+    expect(mediaUrl, isNotNull);
+
+    final uri = Uri.parse(mediaUrl!);
+    final socket = await Socket.connect(uri.host, uri.port);
+    socket.add(utf8.encode(
+      'GET ${uri.path} HTTP/1.1\r\n'
+      'Host: ${uri.host}\r\n'
+      'Connection: close\r\n'
+      '\r\n',
+    ));
+    await socket.flush();
+    final rawResponse = await socket.fold<List<int>>(
+      <int>[],
+      (buffer, chunk) => buffer..addAll(chunk),
+    );
+    final headerEnd = _indexOfBytes(rawResponse, utf8.encode('\r\n\r\n'));
+    expect(headerEnd, greaterThanOrEqualTo(0));
+    final header = utf8.decode(rawResponse.sublist(0, headerEnd));
+    final statusLine = header.split('\r\n').first;
+    final responseBytes = rawResponse.sublist(headerEnd + 4);
+
+    expect(statusLine, startsWith('HTTP/1.1 200'));
+    expect(responseBytes, bytes);
+
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+  });
+}
+
+int _indexOfBytes(List<int> haystack, List<int> needle) {
+  for (var i = 0; i <= haystack.length - needle.length; i++) {
+    var matched = true;
+    for (var j = 0; j < needle.length; j++) {
+      if (haystack[i + j] != needle[j]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return i;
+  }
+  return -1;
 }

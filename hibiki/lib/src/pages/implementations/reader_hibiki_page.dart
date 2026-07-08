@@ -37,9 +37,12 @@ import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show immersionMiningAudioExtension;
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -968,6 +971,22 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<void> Function()? debugInjectAudiobookBridge;
 
+  /// Test hook: opens the in-reader quick settings sheet without relying on a
+  /// native-device tap. The bottom chrome intentionally stays outside normal
+  /// reader focus traversal, so device automation needs this debug entry point
+  /// before it can focus the sheet's own controls.
+  @visibleForTesting
+  static Future<void> Function()? debugOpenQuickSettings;
+
+  /// Test hook: toggles lyrics mode directly for lower-level integration tests.
+  @visibleForTesting
+  static Future<void> Function()? debugToggleLyricsMode;
+
+  /// Test hook: reports whether the current reader route is displaying a ready
+  /// LyricsModeHtml document.
+  @visibleForTesting
+  static bool Function()? debugLyricsModeReady;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -1220,6 +1239,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
   int _lyricsEntryCueIndex = 0;
+  int _lyricsCueIndexOffset = 0;
+  bool _lyricsCueWindowUsesAllBookCues = false;
   List<AudioCue> _lyricsCueList = const [];
 
   bool _pausedForLookup = false;
@@ -1390,6 +1411,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   @override
   void initState() {
     super.initState();
+    assert(() {
+      ReaderHibikiPage.debugOpenQuickSettings = () async {
+        unawaited(_showAppearanceSheet());
+        await Future<void>.delayed(Duration.zero);
+      };
+      ReaderHibikiPage.debugToggleLyricsMode = _toggleLyricsMode;
+      ReaderHibikiPage.debugLyricsModeReady =
+          () => mounted && _lyricsMode && _lyricsPageReady;
+      return true;
+    }());
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback =
         ExitFlushRegistry.instance.register(_flushAllForProcessExit);
@@ -1635,10 +1666,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _syncDictionaryTheme();
 
-    final bool savedLyricsMode =
-        _audiobookController != null && ReaderHibikiSource.instance.lyricsMode;
-    _lyricsMode = savedLyricsMode;
-    if (!savedLyricsMode) {
+    // 歌词模式是当前 reader 页面的瞬时显示态。fresh open 时若恢复上个会话的
+    // persisted lyrics_mode，会让 WebView 跳过 EPUB 正文，直接加载整本歌词 HTML；
+    // iOS 上大字幕书容易触发内容超时甚至白屏。
+    _lyricsMode = false;
+    if (ReaderHibikiSource.instance.lyricsMode) {
       await ReaderHibikiSource.instance.setLyricsMode(false);
       if (!mounted) return;
     }
@@ -1836,6 +1868,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugCaretSurface = null;
       ReaderHibikiPage.debugEvaluateTopPopup = null;
       ReaderHibikiPage.debugInjectAudiobookBridge = null;
+      ReaderHibikiPage.debugOpenQuickSettings = null;
+      ReaderHibikiPage.debugToggleLyricsMode = null;
+      ReaderHibikiPage.debugLyricsModeReady = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
@@ -2186,6 +2221,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                     if (_readerContentReady)
                       const SizedBox.shrink(
                           key: ValueKey<String>('hoshi_content_ready')),
+                    if (!kReleaseMode && _lyricsMode && _lyricsPageReady)
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        width: 1,
+                        height: 1,
+                        child: IgnorePointer(
+                          child: Semantics(
+                            container: true,
+                            identifier: 'hibiki.reader.lyrics.ready',
+                            label: 'lyrics ready',
+                            child: const SizedBox(
+                              key: ValueKey<String>('hoshi_lyrics_ready'),
+                              width: 1,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
                     // On-screen focus indicator for the "reading content" layer,
                     // matching the app's standard focus ring (HibikiFocusRing:
                     // colorScheme.primary, 2.5px, 8px radius). Shown while the reader

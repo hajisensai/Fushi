@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// An enhancement that can be used to select an audio file.
 class PickAudioEnhancement extends AudioEnhancement {
@@ -24,6 +25,10 @@ class PickAudioEnhancement extends AudioEnhancement {
   /// default mappings value of [AnkiMapping].
   static const String key = 'pick_audio';
 
+  static final Set<String> _audioExtensions = AudiobookStorage.audioExtensions
+      .map((String ext) => ext.replaceFirst('.', ''))
+      .toSet();
+
   @override
   String getLocalisedLabel(AppModel appModel) =>
       t.creator_enhancement_pick_audio;
@@ -37,15 +42,17 @@ class PickAudioEnhancement extends AudioEnhancement {
     required EnhancementTriggerCause cause,
   }) async {
     AudioExportField audioField = field as AudioExportField;
-    FilePickerResult? pickedFile = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
+    final String? pickedPath = await pickRealFilePath(
+      context: context,
+      appModel: appModel,
+      allowedExtensions: _audioExtensions,
     );
 
-    if (pickedFile == null) {
+    if (pickedPath == null) {
       return;
     }
 
-    File file = File(pickedFile.files.single.path!);
+    File file = File(pickedPath);
 
     Directory appDirDoc = await getApplicationSupportDirectory();
     String pickAudioPath = '${appDirDoc.path}/audioRecorder';

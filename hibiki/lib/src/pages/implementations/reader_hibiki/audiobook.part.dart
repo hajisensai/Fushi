@@ -513,17 +513,24 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     if (_lyricsMode) {
       if (_lyricsPageReady) {
-        final int idx = controller.allBookCuesSnapshot.isNotEmpty
+        final int sourceIdx = _lyricsCueWindowUsesAllBookCues
             ? controller.allBookCueIdx
             : controller.currentCueIdx;
+        final int idx = sourceIdx - _lyricsCueIndexOffset;
         if (idx >= 0) {
-          // followAudio OFF → pass scroll=false so the lyrics page updates the
-          // current-line highlight but does not auto-scroll (the toggle was a
-          // no-op before: __lyricsSetCue always scrolled regardless).
-          _controller!.evaluateJavascript(
-            source: 'if(window.__lyricsSetCue)'
-                'window.__lyricsSetCue($idx, ${controller.followAudio.value});',
-          );
+          if (idx < _lyricsCueList.length) {
+            // followAudio OFF → pass scroll=false so the lyrics page updates the
+            // current-line highlight but does not auto-scroll (the toggle was a
+            // no-op before: __lyricsSetCue always scrolled regardless).
+            _controller!.evaluateJavascript(
+              source: 'if(window.__lyricsSetCue)'
+                  'window.__lyricsSetCue($idx, ${controller.followAudio.value});',
+            );
+          } else if (_lyricsCueWindowUsesAllBookCues) {
+            unawaited(_loadLyricsPage());
+          }
+        } else if (_lyricsCueWindowUsesAllBookCues) {
+          unawaited(_loadLyricsPage());
         }
       }
       _syncPositionFromCurrentCue();
@@ -1642,15 +1649,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   }
 
   Future<void> _pickSrtAudioFiles(BuildContext dialogContext) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-    if (result == null) return;
-    final List<String> paths = result.files
-        .map((f) => f.path)
-        .whereType<String>()
-        .toList()
+    final Set<String> audioExtensions = AudiobookStorage.audioExtensions
+        .map((String ext) => ext.replaceFirst('.', ''))
+        .toSet();
+    final List<String> paths = await pickRealFilePaths(
+      context: dialogContext,
+      appModel: appModel,
+      allowedExtensions: audioExtensions,
+    )
       ..sort(compareAudioFilePath);
     if (paths.isNotEmpty && dialogContext.mounted) {
       Navigator.pop(dialogContext, paths);
