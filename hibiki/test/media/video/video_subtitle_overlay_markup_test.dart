@@ -352,4 +352,51 @@ void main() {
     await pumpOverlay(tester, cue, respect: true, height: 360);
     expect(fillOf(tester, 'X').style?.fontSize, 48.0);
   });
+
+  // ---- TODO-1246: ASS 描边宽（Outline/\bord）同字号按 显示区高/PlayResY 缩放 ----
+  // 根因：BUG-604 只缩放了字号，描边宽仍按裸 PlayRes 像素渲染 → 小屏上描边相对已缩放字号
+  // 偏粗，anime .ass（ScaledBorderAndShadow: yes、PlayResY=1080）设计的细描边被渲染成过重黑边，
+  // 「尊重自带样式」名不副实。守卫：ASS 描边宽随字号同源缩放；无 PlayResY 退回裸值；关时用统一宽。
+  testWidgets(
+      'respectAssStyle ON: ASS outline width scales by displayHeight / PlayResY '
+      '(4 @ PlayResY 720 in 360px area -> 2) (TODO-1246)',
+      (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'X',
+      spans: <SubtitleSpan>[],
+      cueStyle:
+          SubtitleCueStyle(outlineColorArgb: 0xFF0000FF, outlineWidthPx: 4),
+      playResY: 720,
+    ));
+    await pumpOverlay(tester, cue, respect: true, height: 360);
+    final Text stroke = strokeOf(tester, 'X');
+    expect(stroke.style?.foreground?.strokeWidth, 2.0); // 4 * 360/720
+    expect(stroke.style?.foreground?.color, const Color(0xFF0000FF));
+  });
+
+  testWidgets(
+      'respectAssStyle ON but no PlayResY: ASS outline width used raw '
+      '(backward compatible) (TODO-1246)', (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'X',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(outlineWidthPx: 4),
+    ));
+    await pumpOverlay(tester, cue, respect: true, height: 360);
+    expect(strokeOf(tester, 'X').style?.foreground?.strokeWidth, 4.0);
+  });
+
+  testWidgets(
+      'respectAssStyle OFF: outline width uses unified shadowThickness, ASS '
+      'Outline ignored (TODO-1246)', (WidgetTester tester) async {
+    final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
+      plainText: 'X',
+      spans: <SubtitleSpan>[],
+      cueStyle: SubtitleCueStyle(outlineWidthPx: 4),
+      playResY: 720,
+    ));
+    await pumpOverlay(tester, cue, respect: false, height: 360);
+    // pumpOverlay 传 shadowThickness: 5 → 关时描边宽恒统一值 5，不吃 ASS 的 4。
+    expect(strokeOf(tester, 'X').style?.foreground?.strokeWidth, 5.0);
+  });
 }

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 613 条。点号进各自文件。
+> 共 614 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-628](bugs/BUG-628-ass-outline-width-scale.md) | ✅ | ✅ | 外挂ASS描边宽未随PlayResY缩放（尊重自带样式仍不够忠实） |
 | [BUG-627](bugs/BUG-627-m3u8-playlist-dedup-identity.md) | ✅ | ✅ | m3u8 播放列表来源库重复扫描不去重、封面缺失（判重键错用首集易变路径） |
 | [BUG-626](bugs/BUG-626-merge-image-toc-lost.md) | ✅ | ✅ | 图片合并后章节列表消失 |
 | [BUG-625](bugs/BUG-625-theme-swatch-full-preview.md) | ✅ | ✅ | 未选中主题色卡空白·预览画布塌成0x0 |

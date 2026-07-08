@@ -695,7 +695,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   ///
   /// respectAssStyle 关：恒返回用户统一 (shadowColor, shadowThickness)——与历史像素级一致。
   /// respectAssStyle 开：描边色取 span.\3c ?? cueStyle.OutlineColour ?? 统一色；描边宽取
-  /// span.\bord ?? cueStyle.Outline ?? 统一宽（TODO-1105，行内覆盖 cue 默认覆盖统一样式）。
+  /// span.\bord ?? cueStyle.Outline ?? 统一宽（TODO-1105，行内覆盖 cue 默认覆盖统一样式），
+  /// 且 ASS 描边宽按 显示区高/PlayResY 与字号同源缩放（TODO-1246，见下）。
   (Color, double) _resolveStroke(int i, SubtitleMarkup? markup) {
     final Color baseColor =
         widget.shadowColor ?? Theme.of(context).colorScheme.shadow;
@@ -706,10 +707,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     final SubtitleSpan? span = _spanAt(i, markup);
     final SubtitleCueStyle? cue = markup.cueStyle;
     final int? outlineArgb = span?.outlineColorArgb ?? cue?.outlineColorArgb;
-    final double? outlineWidth = span?.outlineWidthPx ?? cue?.outlineWidthPx;
+    // ASS `Outline`/`\bord` 描边宽是相对 PlayResY 的**绝对像素**（`ScaledBorderAndShadow: yes`
+    // 时随画面缩放，anime .ass 普遍如此），必须与字号（BUG-604 已按 显示区高/PlayResY 缩放）
+    // **同源缩放**到显示尺寸；否则在小于 PlayResY 的显示区里，描边相对**已缩放**的字号偏粗——
+    // 大制作字幕（PlayResY=1080、Outline=2.5）设计的细描边被渲染成一圈过重的黑边，「尊重自带
+    // 样式」名不副实（用户报开关无明显区别；TODO-1246）。回退到用户统一描边宽（[baseWidth]，
+    // 已是逻辑像素）时不缩放。缩放结果夹到 [0.5, 24] 防 PlayResY 缺失/异常时描边消失或撑爆
+    // （与 _resolveAssShadows 阴影深度夹同量级）。
+    final double? outlineWidthAss = span?.outlineWidthPx ?? cue?.outlineWidthPx;
+    final double outlineWidth = outlineWidthAss != null
+        ? (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble()
+        : baseWidth;
     return (
       outlineArgb != null ? Color(outlineArgb) : baseColor,
-      outlineWidth ?? baseWidth,
+      outlineWidth,
     );
   }
 
