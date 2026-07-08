@@ -2197,5 +2197,13 @@
   "video_setting_theme": "主题",
   "video_setting_theme_hint": "切换应用配色主题",
   "video_audio_track_empty": "没有可切换的音频轨",
-  "dictionary_font_size_zoom_hint": "Ctrl+滚轮可直接缩放查词弹窗内容"
+  "dictionary_font_size_zoom_hint": "Ctrl+滚轮可直接缩放查词弹窗内容",
+  "external_window_none": "未绑定窗口（点此选择）",
+  "external_window_refresh": "刷新窗口列表",
+  "external_window_unbind": "解除窗口绑定",
+  "external_window_capture_failed": "窗口截图失败",
+  "external_window_unsupported": "外部窗口挖矿仅支持 Windows",
+  "external_window_no_windows": "未找到可捕获的窗口",
+  "external_window_mining": "外部窗口挖矿",
+  "external_window_select": "选择目标窗口"
 }

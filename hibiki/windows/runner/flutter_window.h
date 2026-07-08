@@ -80,6 +80,13 @@ class FlutterWindow : public Win32Window {
       foreground_selection_channel_;
   void RegisterForegroundSelectionChannel();
 
+  // TODO-1162 M0: window_capture channel (Windows-only external-window mining).
+  // listWindows enumerates top-level windows; captureWindow grabs a single WGC
+  // frame (PNG) off a worker thread. See window_capture.cpp / .h.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      window_capture_channel_;
+  void RegisterWindowCaptureChannel();
+
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);

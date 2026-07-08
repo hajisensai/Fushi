@@ -2197,5 +2197,13 @@
   "video_setting_theme": "Theme",
   "video_setting_theme_hint": "Switch the app color theme",
   "video_audio_track_empty": "No switchable audio tracks",
-  "dictionary_font_size_zoom_hint": "Ctrl + scroll wheel zooms the popup content"
+  "dictionary_font_size_zoom_hint": "Ctrl + scroll wheel zooms the popup content",
+  "external_window_none": "No window bound (tap to select)",
+  "external_window_refresh": "Refresh window list",
+  "external_window_unbind": "Unbind window",
+  "external_window_capture_failed": "Window capture failed",
+  "external_window_unsupported": "External window mining is Windows-only",
+  "external_window_no_windows": "No capturable windows found",
+  "external_window_mining": "External window mining",
+  "external_window_select": "Select target window"
 }

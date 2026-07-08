@@ -1,10 +1,21 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/mining/external_window_mining.dart';
+import 'package:hibiki/src/mining/immersion_mining_engine.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/media.dart';
@@ -29,6 +40,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     onLookupStackDepthChanged: recordLookupStackDepth,
   );
   final ScrollController _scroll = ScrollController();
+
+  /// TODO-1162 外部窗口挖矿模式（仅 Windows）：开启后制卡额外截绑定窗口当前帧作封面。
+  bool _externalWindowMode = false;
+
+  /// 已绑定的目标外部窗口（null = 未绑定；未绑定时制卡回落普通逐词制卡）。
+  ExternalWindowInfo? _boundWindow;
 
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
   /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
@@ -55,6 +72,157 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _popup.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// TODO-1162：外部窗口挖矿模式下覆写制卡——先截绑定窗口当前帧作封面，再连同当前句
+  /// 走 [ImmersionMiningEngine]（与 Netflix 后台捕获同形状）。未开启 / 未绑定 / 非
+  /// Windows 时回落 [DictionaryPageMixin.onMineEntry] 的普通逐词制卡（Never break）。
+  @override
+  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
+    final ExternalWindowInfo? bound = _boundWindow;
+    if (!_externalWindowMode || bound == null || !Platform.isWindows) {
+      return super.onMineEntry(fields);
+    }
+    HibikiToast.showMine(
+      msg: t.card_mining_pending,
+      status: MineToastStatus.pending,
+    );
+    final WindowCaptureResult cap =
+        await WindowCaptureChannel.captureWindow(bound.hwnd);
+    if (!cap.ok) {
+      // 截图失败：明确报错，不产出空壳卡（fail-open，不静默假成功）。
+      HibikiToast.showMine(
+        msg: cap.error != null
+            ? '${t.external_window_capture_failed}：${cap.error}'
+            : t.external_window_capture_failed,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
+    }
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    final MiningMediaCompression compression =
+        MiningMediaCompression.forCompressionEnabled(
+            mixinAppModel.compressMiningMedia);
+    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+      buildExternalWindowRequest(
+        fields: fields,
+        sentence: fields['sentence'] ?? '',
+        screenshotBytes: cap.pngBytes,
+        documentTitle: bound.title.isEmpty ? 'External window' : bound.title,
+      ),
+      compression: compression,
+      tempDir: Directory.systemTemp.path,
+      repo: repo,
+    );
+    if (res.aborted) {
+      HibikiToast.showMine(
+        msg: res.abortReason != null
+            ? '${t.external_window_capture_failed}：${res.abortReason}'
+            : t.external_window_capture_failed,
+        status: MineToastStatus.failed,
+      );
+      return const MinePopupResult();
+    }
+    final MineOutcome outcome = res.outcome! as MineOutcome;
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    final described = describeMineOutcome(outcome, deckName: deckName);
+    if (described.record) {
+      unawaited(recordMined());
+      unawaited(recordMinedSentence(fields, outcome.noteId));
+    }
+    HibikiToast.showMine(msg: described.message, status: described.status);
+    if (described.success) {
+      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+    }
+    return const MinePopupResult();
+  }
+
+  /// 切换外部窗口挖矿模式；首次开启且未绑定窗口时直接拉起窗口选择器。
+  void _toggleExternalWindowMode() {
+    setState(() => _externalWindowMode = !_externalWindowMode);
+    if (_externalWindowMode && _boundWindow == null) {
+      _pickExternalWindow();
+    }
+  }
+
+  /// 拉起窗口选择器：列 native 返回的可捕获顶层窗口，选一个绑定。native 不可用 /
+  /// 无窗口 / 非 Windows 时以 toast 明确提示（不静默）。
+  Future<void> _pickExternalWindow() async {
+    if (!Platform.isWindows) {
+      HibikiToast.show(msg: t.external_window_unsupported);
+      return;
+    }
+    final List<ExternalWindowInfo> windows =
+        await WindowCaptureChannel.listWindows();
+    if (windows.isEmpty) {
+      HibikiToast.show(msg: t.external_window_no_windows);
+      return;
+    }
+    if (!context.mounted) return;
+    final ExternalWindowInfo? picked = await showDialog<ExternalWindowInfo>(
+      context: context,
+      builder: (BuildContext ctx) => SimpleDialog(
+        title: Text(t.external_window_select),
+        children: <Widget>[
+          for (final ExternalWindowInfo w in windows)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(w),
+              child: Text(
+                w.title.isEmpty ? '#${w.hwnd}' : w.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _boundWindow = picked);
+    }
+  }
+
+  /// 外部窗口挖矿模式条：展示已绑定窗口标题 + 重选/解绑；未绑定时点击选窗口。
+  Widget _buildExternalWindowBar(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final ExternalWindowInfo? bound = _boundWindow;
+    return Material(
+      color: colors.surfaceContainerHighest,
+      child: InkWell(
+        onTap: _pickExternalWindow,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.crop_free, size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  bound == null
+                      ? t.external_window_none
+                      : (bound.title.isEmpty ? '#${bound.hwnd}' : bound.title),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              if (bound != null)
+                IconButton(
+                  tooltip: t.external_window_unbind,
+                  icon: const Icon(Icons.link_off, size: 18),
+                  onPressed: () => setState(() => _boundWindow = null),
+                ),
+              IconButton(
+                tooltip: t.external_window_refresh,
+                icon: const Icon(Icons.refresh, size: 18),
+                onPressed: _pickExternalWindow,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _onLines() {
@@ -112,6 +280,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       appBar: AppBar(
         title: Text(t.texthooker),
         actions: <Widget>[
+          if (Platform.isWindows)
+            IconButton(
+              tooltip: t.external_window_mining,
+              icon: Icon(
+                Icons.crop_free,
+                color: _externalWindowMode
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+              onPressed: _toggleExternalWindowMode,
+            ),
           IconButton(
             tooltip: t.clear,
             icon: const Icon(Icons.delete_outline),
@@ -124,6 +303,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           Column(
             children: <Widget>[
               _buildExperimentalBanner(context),
+              if (_externalWindowMode) _buildExternalWindowBar(context),
               Expanded(
                 child: ListView.builder(
                   controller: _scroll,
