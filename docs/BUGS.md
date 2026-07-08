@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 606 条。点号进各自文件。
+> 共 607 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-621](bugs/BUG-621-extension-popup-parity.md) | ✅ | ✅ | 浏览器扩展查词弹窗与 app 内不一致（丑/按钮位置不同） |
 | [BUG-620](bugs/BUG-620-sync-autodownload-decouple.md) | ✅ | ✅ | 同步误把远端独有书自动灌书架(syncAudioBookFiles 触发 TODO-873 自动下书) |
 | [BUG-619](bugs/BUG-619-cloud-folder-spill.md) | ✅ | ✅ | 云盘进度文件溢出到父目录 |
 | [BUG-618](bugs/BUG-618-interconnect-token-mismatch-confusion.md) | 🚧 | 🚧 | 互联访问令牌与桌面端不一致（per-peer token·非 bug 待确认） |
