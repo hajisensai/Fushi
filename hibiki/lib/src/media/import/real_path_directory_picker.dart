@@ -99,6 +99,7 @@ Future<String?> pickRealFilePath({
       await appModel.platformServices.permission.hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
+    if (!context.mounted) return null;
     return _fallbackPickFile(
       context: context,
       allowedExtensions: allowedExtensions,
@@ -134,6 +135,7 @@ Future<List<String>> pickRealFilePaths({
   if (defaultTargetPlatform == TargetPlatform.android) {
     await appModel.requestExternalStoragePermissions();
   }
+  if (!context.mounted) return const <String>[];
   return _fallbackPickFiles(
     context: context,
     allowedExtensions: allowedExtensions,
@@ -186,6 +188,15 @@ Future<List<String>> _fallbackPickFiles({
           const <String>[];
   if (!filterAfterPick) return paths;
 
+  // 页面若在原生文件选择器打开期间被销毁，仍按扩展名做纯过滤返回，只是无法
+  // 弹「不支持格式」提示（context 传 null，过滤逻辑不依赖 context）。
+  if (!context.mounted) {
+    return _filterPickedFilesByExtension(
+      context: null,
+      paths: paths,
+      allowedExtensions: normalizedExtensions,
+    );
+  }
   return _filterPickedFilesByExtension(
     context: context,
     paths: paths,
@@ -202,7 +213,7 @@ Set<String> _normalizeExtensions(Set<String>? extensions) {
 }
 
 List<String> _filterPickedFilesByExtension({
-  required BuildContext context,
+  required BuildContext? context,
   required List<String> paths,
   required Set<String> allowedExtensions,
 }) {
@@ -216,7 +227,7 @@ List<String> _filterPickedFilesByExtension({
       rejected.add(path);
     }
   }
-  if (rejected.isNotEmpty && context.mounted) {
+  if (rejected.isNotEmpty && context != null && context.mounted) {
     final String ext = p.extension(rejected.first).toLowerCase();
     HibikiToast.show(
       msg: t.import_unsupported_file_format(
