@@ -61,6 +61,13 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_screenshot_filename.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
+// TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
+// （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:hibiki/src/shortcuts/shortcut_action.dart'
+    show ShortcutAction, ShortcutScope;
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
@@ -3410,160 +3417,226 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     return buildVideoPlayerShortcutsFromRegistry(
       appModel.shortcutRegistry,
-      VideoPlayerShortcutActions(
-        togglePlayPause: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.playOrPause()),
-        ),
-        play: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.play()),
-        ),
-        pause: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.pause()),
-        ),
-        // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
-        // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
-        // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
-        // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
-        // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
-        previousSubtitle: () {
-          _runWhenImmersiveAllowsFullControls(() {
-            _pokeControlsVisible();
-            unawaited(
-              controller.skipToPrevCueOrSeekBack(
-                seekSeconds: _asbConfig.seekSeconds,
-              ),
-            );
-          });
-        },
-        nextSubtitle: () {
-          _runWhenImmersiveAllowsFullControls(() {
-            _pokeControlsVisible();
-            // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
-            // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
-            // skipToPrevCueOrSeekBack 对称，TODO-073）。
-            unawaited(
-              controller.skipToNextCueOrSeekForward(
-                seekSeconds: _asbConfig.seekSeconds,
-              ),
-            );
-          });
-        },
-        // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
-        seekBackward: () => _runWhenImmersiveAllowsFullControls(() {
+      _buildVideoShortcutActions(controller),
+    );
+  }
+
+  /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
+  /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
+  /// 经 [videoActionCallbacks]）共用同一份 [VideoPlayerShortcutActions]，保证两条输入
+  /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsFullControls] 沉浸门控与控制
+  /// 条唤醒），不产生两套语义、不引入手柄专属特例分支。
+  VideoPlayerShortcutActions _buildVideoShortcutActions(
+    VideoPlayerController controller,
+  ) {
+    return VideoPlayerShortcutActions(
+      togglePlayPause: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.playOrPause()),
+      ),
+      play: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.play()),
+      ),
+      pause: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.pause()),
+      ),
+      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
+      // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
+      // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
+      // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
+      // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
+      previousSubtitle: () {
+        _runWhenImmersiveAllowsFullControls(() {
           _pokeControlsVisible();
-          unawaited(controller.seekRelative(-_asbSeekMs));
-        }),
-        seekForward: () => _runWhenImmersiveAllowsFullControls(() {
+          unawaited(
+            controller.skipToPrevCueOrSeekBack(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
+          );
+        });
+      },
+      nextSubtitle: () {
+        _runWhenImmersiveAllowsFullControls(() {
           _pokeControlsVisible();
-          unawaited(controller.seekRelative(_asbSeekMs));
-        }),
-        toggleShaderCompare: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleShaderCompare()),
+          // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
+          // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
+          // skipToPrevCueOrSeekBack 对称，TODO-073）。
+          unawaited(
+            controller.skipToNextCueOrSeekForward(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
+          );
+        });
+      },
+      // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
+      seekBackward: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.seekRelative(-_asbSeekMs));
+      }),
+      seekForward: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.seekRelative(_asbSeekMs));
+      }),
+      toggleShaderCompare: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleShaderCompare()),
+      ),
+      volumeUp: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustVolume(_volumeStep)),
+      ),
+      volumeDown: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustVolume(-_volumeStep)),
+      ),
+      toggleMute: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleMute()),
+      ),
+      speedUp: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustSpeed(_speedStep)),
+      ),
+      speedDown: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustSpeed(-_speedStep)),
+      ),
+      resetSpeed: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_setSpeed(1.0)),
+      ),
+      previousFrame: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.frameStep(forward: false)),
+      ),
+      nextFrame: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.frameStep(forward: true)),
+      ),
+      screenshot: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_saveScreenshot()),
+      ),
+      toggleFullscreen: () => _runWhenImmersiveAllowsFullControls(() {
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted) {
+          unawaited(_toggleVideoFullscreen(ctx));
+        }
+      }),
+      // 'L' = 开/关字幕跳转列表（TODO-069）。
+      toggleSubtitleList: () => _runWhenImmersiveAllowsFullControls(
+        _toggleSubtitleJumpList,
+      ),
+      // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
+      toggleImmersiveLock: _toggleImmersiveLock,
+      // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
+      toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleSubtitleBlur()),
+      ),
+      // TODO-840 Part B：Shift+B 循环遮蔽三态；H 开/关「隐藏主字幕」。
+      cycleSubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_cycleSubtitleObscure()),
+      ),
+      toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleSubtitleHide()),
+      ),
+      toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleFavoriteCurrentCue()),
+      ),
+      replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_replayCurrentCueAndPokeControls()),
+      ),
+      // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
+      // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
+      // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
+      replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_replayPreviousCueAndPokeControls()),
+      ),
+      // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
+      // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
+      previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.previousChapter());
+      }),
+      nextChapter: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.nextChapter());
+      }),
+      escape: () {
+        if (_videoControlEditMode.value) {
+          _hideVideoControlEditOverlay(revealControls: false);
+          return;
+        }
+        // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
+        // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
+        // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
+        if (_subtitleListVisible.value) {
+          _toggleSubtitleJumpList();
+          return;
+        }
+        // TODO-638：剧集列表 push-aside 侧栏开着时，Esc 先关它（逐级退出）。
+        if (_episodeListVisible.value) {
+          _closeEpisodeList();
+          return;
+        }
+        if (_videoSidePanel.value != null) {
+          _hideVideoSidePanel();
+          return;
+        }
+        if (_immersiveLocked.value) {
+          _toggleImmersiveLock();
+          return;
+        }
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+          unawaited(_exitVideoFullscreen(ctx));
+        } else {
+          unawaited(_handleBackOrExit());
+        }
+      },
+    );
+  }
+
+  /// TODO-1342：把一次手柄按键解析成视频动作并执行。桌面（GameInput/GameController
+  /// 轮询）经外层 [Actions] 的 [GamepadButtonIntent] 派发到这里；Android/原生按键经
+  /// [_handleVideoGamepadNativeKey] 走同一入口。仅解析 [ShortcutScope.video]
+  /// 一个作用域——video 是独立 co-active 组，绝不与阅读器/主页的手柄导航冲突。命中
+  /// 返回 true（消费该键、抑制 [GamepadService] 的 A=激活 / B=全局返回 / dpad=移焦
+  /// 兜底）；未绑定返回 false，交回 [GamepadService] 的通用兜底（焦点移动等）。
+  /// 执行体与键盘快捷键共用 [_buildVideoShortcutActions]，行为完全一致。
+  bool _handleVideoGamepadButton(GamepadButton button) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+      button,
+      scope: ShortcutScope.video,
+    );
+    if (action == null) return false;
+    final VoidCallback? callback =
+        videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+    if (callback == null) return false;
+    callback();
+    return true;
+  }
+
+  /// TODO-1342：Android/原生手柄按键入口。控制器按键在移动端以 [KeyEvent] 到达，冒泡
+  /// 到本页最外层的 [Focus]（[canRequestFocus] 为 false、不参与遍历、不夺焦，只旁观
+  /// 冒泡）；仅当事件确实来自控制器类设备（[GamepadButton.fromKeyEvent] 非空）才接管，
+  /// 其余键（普通键盘键、方向键光标编辑等）一律放行不消费，交回既有解析路径。
+  KeyEventResult _handleVideoGamepadNativeKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final GamepadButton? button = GamepadButton.fromKeyEvent(event);
+    if (button == null) return KeyEventResult.ignored;
+    return _handleVideoGamepadButton(button)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
+
+  /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的
+  /// [GamepadButtonIntent]；内层 [Focus] 只旁观 Android 原生手柄按键的冒泡（不夺焦、
+  /// 不参与焦点遍历，故不干扰 [_videoFocusNode] 的键盘持焦与既有 [autofocus] 时序）。
+  Widget _wrapVideoGamepadControls(Widget child) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) =>
+              _handleVideoGamepadButton(intent.button),
         ),
-        volumeUp: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustVolume(_volumeStep)),
-        ),
-        volumeDown: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustVolume(-_volumeStep)),
-        ),
-        toggleMute: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleMute()),
-        ),
-        speedUp: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustSpeed(_speedStep)),
-        ),
-        speedDown: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustSpeed(-_speedStep)),
-        ),
-        resetSpeed: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_setSpeed(1.0)),
-        ),
-        previousFrame: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.frameStep(forward: false)),
-        ),
-        nextFrame: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.frameStep(forward: true)),
-        ),
-        screenshot: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_saveScreenshot()),
-        ),
-        toggleFullscreen: () => _runWhenImmersiveAllowsFullControls(() {
-          final BuildContext? ctx = _videoControlsContext;
-          if (ctx != null && ctx.mounted) {
-            unawaited(_toggleVideoFullscreen(ctx));
-          }
-        }),
-        // 'L' = 开/关字幕跳转列表（TODO-069）。
-        toggleSubtitleList: () => _runWhenImmersiveAllowsFullControls(
-          _toggleSubtitleJumpList,
-        ),
-        // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
-        toggleImmersiveLock: _toggleImmersiveLock,
-        // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
-        toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleSubtitleBlur()),
-        ),
-        // TODO-840 Part B：Shift+B 循环遮蔽三态；H 开/关「隐藏主字幕」。
-        cycleSubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_cycleSubtitleObscure()),
-        ),
-        toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleSubtitleHide()),
-        ),
-        toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleFavoriteCurrentCue()),
-        ),
-        replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_replayCurrentCueAndPokeControls()),
-        ),
-        // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
-        // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
-        // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
-        replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_replayPreviousCueAndPokeControls()),
-        ),
-        // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
-        // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
-        previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
-          _pokeControlsVisible();
-          unawaited(controller.previousChapter());
-        }),
-        nextChapter: () => _runWhenImmersiveAllowsFullControls(() {
-          _pokeControlsVisible();
-          unawaited(controller.nextChapter());
-        }),
-        escape: () {
-          if (_videoControlEditMode.value) {
-            _hideVideoControlEditOverlay(revealControls: false);
-            return;
-          }
-          // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
-          // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-          // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
-          if (_subtitleListVisible.value) {
-            _toggleSubtitleJumpList();
-            return;
-          }
-          // TODO-638：剧集列表 push-aside 侧栏开着时，Esc 先关它（逐级退出）。
-          if (_episodeListVisible.value) {
-            _closeEpisodeList();
-            return;
-          }
-          if (_videoSidePanel.value != null) {
-            _hideVideoSidePanel();
-            return;
-          }
-          if (_immersiveLocked.value) {
-            _toggleImmersiveLock();
-            return;
-          }
-          final BuildContext? ctx = _videoControlsContext;
-          if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-            unawaited(_exitVideoFullscreen(ctx));
-          } else {
-            unawaited(_handleBackOrExit());
-          }
-        },
+      },
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleVideoGamepadNativeKey,
+        child: child,
       ),
     );
   }
@@ -5059,19 +5132,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return PopScope(
-      // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-      // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-      // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-      // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-      // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-      // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? _) async {
-        if (didPop) return;
-        await _handleBackOrExit();
-      },
-      child: _buildScaffold(controller, videoController, cs),
+    // TODO-1342：最外层包一层手柄输入层，让桌面轮询的 [GamepadButtonIntent] 与
+    // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
+    // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
+    // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
+    return _wrapVideoGamepadControls(
+      PopScope(
+        // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+        // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+        // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+        // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+        // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+        // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, Object? _) async {
+          if (didPop) return;
+          await _handleBackOrExit();
+        },
+        child: _buildScaffold(controller, videoController, cs),
+      ),
     );
   }
 

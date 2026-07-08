@@ -16,7 +16,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 4;
+const int kShortcutSchemaVersion = 5;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -127,6 +127,30 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     // 只覆盖快照里显式出现的 key、保留缺席 key 的默认，故老用户升级后天然拿到默认
     // 热键，绝不误伤其已有的任何旧绑定。此处只需 bump 版本保持「快照版本 < 当前 ⇒
     // 跑迁移」不变式诚实。
+    //
+    // v4 -> v5（TODO-1342，视频播放器手柄映射）：给一批**已存在**的 video 动作新增
+    // 手柄默认绑定（A=播放/暂停、B=退出、LB/RB+dpad 左右=快退/快进、dpad 上下=音量、
+    // X/Y=上/下一句字幕、LT=重听、RT=全屏、Start=字幕列表）。这些动作在老快照里已
+    // 有键盘绑定但无手柄绑定，快照整体覆盖默认 ⇒ 新手柄键会被永久丢失（BUG-318 同型）。
+    // 这些迁移**只新增手柄绑定、不改键盘默认**，故用「键盘未动过」判据（键盘集仍等于
+    // 当前平台默认）即准确：命中即整组回到当前默认把新手柄键补回，用户改过键盘则不动。
+    if (from < 5) {
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.videoTogglePlayPause,
+        ShortcutAction.videoEscape,
+        ShortcutAction.videoSeekBackward,
+        ShortcutAction.videoSeekForward,
+        ShortcutAction.videoVolumeUp,
+        ShortcutAction.videoVolumeDown,
+        ShortcutAction.videoPreviousSubtitle,
+        ShortcutAction.videoNextSubtitle,
+        ShortcutAction.videoReplayCurrentSubtitle,
+        ShortcutAction.videoToggleFullscreen,
+        ShortcutAction.videoToggleSubtitleList,
+      ]) {
+        _restoreGamepadDefaultIfKeyboardUntouched(action, defaults);
+      }
+    }
   }
 
   /// 当 [action] 在快照里的键盘绑定**恰等于** [oldDefaultKeyboard]（无序集合相等，
