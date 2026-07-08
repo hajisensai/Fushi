@@ -322,8 +322,14 @@ void CaptureCore(HWND hwnd, WindowCaptureResult* out) {
     out->error = "event create failed";
     return;
   }
-  auto handler = Callback<ABI::Windows::Foundation::ITypedEventHandler<
-      WGC::Direct3D11CaptureFramePool*, IInspectable*>>(
+  // 免线程（agile）委托：FreeThreaded 帧池会在任意线程池线程回调 FrameArrived。
+  // 聚合 FtmBase 让委托 agile，避免非 agile 委托被 add_FrameArrived 拒绝
+  // （RO_E_MUST_BE_AGILE，见 texture_bridge.cc 对 timer 委托的同款处理）。
+  auto handler = Callback<Microsoft::WRL::Implements<
+      Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+      ABI::Windows::Foundation::ITypedEventHandler<
+          WGC::Direct3D11CaptureFramePool*, IInspectable*>,
+      Microsoft::WRL::FtmBase>>(
       [&grabbed, &frame, frame_event](WGC::IDirect3D11CaptureFramePool* pool,
                                       IInspectable*) -> HRESULT {
         bool expected = false;
