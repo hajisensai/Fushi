@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 616 条。点号进各自文件。
+> 共 618 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-632](bugs/BUG-632-netflix-record-wait-buffer.md) | ✅ | ✅ | 网飞制卡录制时长不准（未等缓冲就绪即开录·录进 stall 冻结帧） |
+| [BUG-631](bugs/BUG-631-extension-popup-word-audio-remote-source.md) | ✅ | ✅ | 扩展/远端查词弹窗无单词音频（server 只查本地库漏配置的远程源） |
 | [BUG-630](bugs/BUG-630-netflix-mine-issue.md) | ✅ | ✅ | 网飞制卡有问题（未复现·待用户日志） |
 | [BUG-629](bugs/BUG-629-youtube-subtitle-vanish.md) | ✅ | ✅ | YouTube 字幕快加载后整个消失（回归） |
 | [BUG-628](bugs/BUG-628-ass-outline-width-scale.md) | ✅ | ✅ | 外挂ASS描边宽未随PlayResY缩放（尊重自带样式仍不够忠实） |
