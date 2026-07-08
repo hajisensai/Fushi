@@ -96,12 +96,38 @@
 
 .entry {
     padding: 8px 0;
+    /* TODO-1325 #5 part1: hoshiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
+       避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
+    scroll-margin-top: 14px;
+    scroll-margin-bottom: 14px;
 }
 
 .entry-header {
     display: flex;
     align-items: center;
     padding-top: 4px;
+}
+
+/* TODO-1325 #5 part1: 多词条焦点导航——当前词条(.entry-current)在其标题行左侧画一枚
+   #1a73e8 蓝三角(纯 CSS 边框三角，零字体依赖，与折叠三角同法，且不受注入词典字体影响)。
+   焦点态由 hoshiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
+   hoshiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
+   10px 留白里，垂直居中于标题行，随字号自适应。 */
+.entry-current .entry-header {
+    position: relative;
+}
+
+.entry-current .entry-header::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid #1a73e8;
 }
 
 .expression-scroll {
@@ -240,6 +266,19 @@
 
 .mine-button:disabled {
     opacity: 0.15;
+}
+
+/* TODO-1338: 制卡后图标乱码根因修。制卡按钮的 +/✓/✓↩ 是「文本字形标记」(应用户要求保留
+   文本，不走 SVG，见 popup.js setMineState)。默认它会继承 Dart 注入到 html,body 的用户
+   自定义词典字体(popup_settings_injection.dartdictionaryFontStyleJs，!important)；若该字体
+   缺 U+2713/U+21A9 或把 ↩ 走彩色 emoji 呈现，制卡成功切成 ✓/✓↩ 时按钮就变豆腐块/彩色
+   emoji/乱码(与 TODO-1337 折叠三角乱码同根因)。这里给制卡按钮钉死一套「单色符号字体栈」
+   (不含 emoji 字体)，靠更高特指度(.mine-button 类 > body 元素；且直接声明恒压过继承)切断
+   对注入词典字体的继承，✓/✓↩ 稳定单色呈现。JS 侧另对 ↩ 追加 VS15(U+FE0E)强制文本呈现，
+   双保险。未制卡态 '+' 是 ASCII，任何字体都有，故制卡前从不乱码。 */
+.mine-button {
+    font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols2",
+        "Noto Sans Symbols", "DejaVu Sans", "Segoe UI", sans-serif !important;
 }
 
 /* TODO-393/405「查词窗口句子上下文制卡」：「上 N 句 / 下 N 句」上下文步进器。两行（上/下），
@@ -546,9 +585,31 @@
     background: transparent;
 }
 
+/* TODO-1325 #7（按用户 Niratan「卡片」决策，超越 TODO-877 的扁平化）：每部词典的义项块
+   (.glossary-group) 做成「玻璃卡片」——圆角(走 --hibiki-radius-card token，与弹窗其余卡片
+   统一) + 分层投影(近距 1px 贴地 + 远距柔性扩散) + 顶部内高光(inset 白线)营造玻璃质感；
+   展开/收起三角(下方 TODO-1337 纯 CSS 边框三角)作卡片头。皮肤纯 CSS，不改 DOM/JS，四端
+   (in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：行距仍走 margin-top
+   (grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距不撑 grid track。
+   暗色变体降内高光、加深投影。 */
 .glossary-group {
     position: relative;
     margin-top: 5px;
+    padding: 8px 10px;
+    border-radius: var(--hibiki-radius-card, 10px);
+    background: var(--surface-container);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.12),
+        0 2px 8px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+#entries-container[data-theme="dark"] .glossary-group {
+    background: var(--surface-container-high);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.5),
+        0 3px 10px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .glossary-group > summary {
@@ -816,14 +877,12 @@
     column-gap: 6px;
 }
 
-/* TODO-877: revert TODO-849's per-dictionary card (border / radius / surface /
-   padding) back to Hoshi's flat glossary block (Hoshi Features/Popup/popup.css
-   .glossary-group :239-242: position:relative; margin-top:5px). Dictionaries are
-   now separated only by whitespace, matching Pictures/popup_dict.PNG. The
-   TODO-776 grid spacing model is untouched: spacing still flows through
-   margin-top (grid does NOT collapse item margins, so the parent only sets
-   column-gap), and min-width:0 still keeps long glossary content from forcing the
-   grid track wider than its 1fr share (which would overflow the popup). */
+/* TODO-1325 #7（超越 TODO-877/TODO-849 的往返）：per-dictionary 卡片皮肤（圆角/投影/
+   底色/内边距/内高光）现由上面的基类规则 `.glossary-group` 统一承载（用户 Niratan 卡片
+   决策）。本节内规则只保留 TODO-776 的 grid 间距模型：行距走 margin-top（grid 不折叠 item
+   margin，父只设 column-gap），min-width:0 让长义项不把 1fr grid track 撑宽溢出弹窗。卡片的
+   padding 走 border-box 的内边距，不影响 grid track 宽度。切勿把卡片外观(border/radius/
+   background)搬到本节——统一在基类，避免两处皮肤漂移。 */
 .glossary-section > .category-body > .glossary-group {
     margin-top: 5px;
     min-width: 0;

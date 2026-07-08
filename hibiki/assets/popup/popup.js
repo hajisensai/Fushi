@@ -1994,7 +1994,9 @@ function createEntryHeader(entry, idx) {
         mineButton.dataset.latest = latest ? '1' : '';
         // TODO-1325 还原：应用户要求，制卡按钮回到 ✓✓↩ 文本标记（+ 可制卡 /
         // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
-        mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';
+        // TODO-1338：给 ↩ 追加 VS15(U+FE0E) 强制「文本呈现」，杜绝系统把 U+21A9 走彩色
+        // emoji 回退变乱码（字体隔离在 popup.css .mine-button 单色符号栈里，此处是双保险）。
+        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : '+';
         if (isMined) {
             mineButton.classList.add('duplicate');
         } else {
@@ -2193,6 +2195,100 @@ window.hoshiPopupMineFirstEntry = async function() {
     mineButton.click();
     return true;
 };
+
+// TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条
+// (.entry)，每条自成一栏（读音 + 词典释义）。这里提供纯 JS + CSS 的「当前词条」焦点指示：
+// 给每条打 data-hoshi-entry-index，给当前条加 .entry-current（popup.css 用
+// .entry-current .entry-header::before 画 #1a73e8 蓝三角，零字体依赖，与折叠三角同法），并
+// scrollIntoView 进视口。Dart 焦点驱动（阅读器 caret 管线 → DictionaryPopupWebViewState.
+// focusEntryMove → 这里）按 next/prev 调用。与逐字光标 hoshiCaret 正交：只移动词条级指示与
+// 视口，绝不触碰 caret ring；用户决策「咱们没有前进后退·咱们是嵌套查词」，故不做历史栈。
+(function() {
+    const CONTAINER_ID = 'entries-container';
+    const CURRENT_CLASS = 'entry-current';
+
+    // DOM 顺序的全部词条 <div.entry>（container 的直接子节点）。
+    function listEntries() {
+        const container = document.getElementById(CONTAINER_ID);
+        if (!container) return [];
+        return Array.prototype.slice.call(
+            container.querySelectorAll(':scope > .entry'));
+    }
+
+    // 给每条打 data-hoshi-entry-index（0-based，DOM 顺序），返回词条数组。每次导航前重建，
+    // 兼容增量渲染后词条集合变化。
+    function indexEntries() {
+        const entries = listEntries();
+        for (let i = 0; i < entries.length; i++) {
+            entries[i].setAttribute('data-hoshi-entry-index', String(i));
+        }
+        return entries;
+    }
+
+    // 当前 .entry-current 的下标；无当前项返回 -1。
+    function currentIndex(entries) {
+        for (let i = 0; i < entries.length; i++) {
+            if (entries[i].classList.contains(CURRENT_CLASS)) return i;
+        }
+        return -1;
+    }
+
+    // 把焦点落到下标 index 的词条：切 .entry-current 并滚入视口。index 越界即无操作交由
+    // 调用方（这里只在合法下标调用）。
+    function applyCurrent(entries, index) {
+        for (let i = 0; i < entries.length; i++) {
+            if (i === index) entries[i].classList.add(CURRENT_CLASS);
+            else entries[i].classList.remove(CURRENT_CLASS);
+        }
+        const target = entries[index];
+        if (target && target.scrollIntoView) {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    }
+
+    // 聚焦指定下标的词条（越界夹到 [0, n-1]）。返回 'moved'（已聚焦）/ 'blocked'（无词条）。
+    function focusEntry(index) {
+        const entries = indexEntries();
+        if (entries.length === 0) return 'blocked';
+        let target = index | 0;
+        if (target < 0) target = 0;
+        if (target > entries.length - 1) target = entries.length - 1;
+        applyCurrent(entries, target);
+        return 'moved';
+    }
+
+    // 相对移动：'next'/'down'/'forward' → 下一条；其余（'prev'/'up'/'backward'）→ 上一条。
+    // 到边界返回 'blocked'（不回绕）。首次无当前项时，next 落第 0 条、prev 落最后一条。
+    function moveEntry(direction) {
+        const entries = indexEntries();
+        if (entries.length === 0) return 'blocked';
+        const forward = direction === 'next' || direction === 'down'
+            || direction === 'forward';
+        const cur = currentIndex(entries);
+        let next;
+        if (cur < 0) {
+            next = forward ? 0 : entries.length - 1;
+        } else {
+            next = forward ? cur + 1 : cur - 1;
+        }
+        if (next < 0 || next > entries.length - 1) return 'blocked';
+        applyCurrent(entries, next);
+        return 'moved';
+    }
+
+    // 清除当前词条焦点（保留 data-hoshi-entry-index），返回词条数。
+    function resetEntry() {
+        const entries = indexEntries();
+        for (let i = 0; i < entries.length; i++) {
+            entries[i].classList.remove(CURRENT_CLASS);
+        }
+        return entries.length;
+    }
+
+    window.hoshiFocusDictionaryEntry = focusEntry;
+    window.hoshiFocusDictionaryEntryMove = moveEntry;
+    window.hoshiFocusDictionaryEntryReset = resetEntry;
+})();
 
 // TODO-845: `dictIdx` is the dictionary's global position within an entry's
 // glossary body (0-based). The popup auto-expands the leading

@@ -393,6 +393,22 @@ class DictionaryPopupWebViewState
     return ReaderCaretScripts.moveStatus(raw);
   }
 
+  /// TODO-1325 #5 part1: move the ENTRY-level focus (the blue-triangle
+  /// `.entry-current` indicator, driven by popup.js `hoshiFocusDictionaryEntryMove`)
+  /// to the next/previous word entry in a multi-entry result, scrolling it into
+  /// view. [forward] true → next entry below, false → previous above. Returns
+  /// 'moved' when the focus advanced or 'blocked' at the first/last entry (or a
+  /// single-entry / empty result). Orthogonal to the char caret — moves only the
+  /// entry indicator + viewport, never the caret ring.
+  Future<String> focusEntryMove(bool forward) async {
+    final Object? raw = await _controller?.evaluateJavascript(
+      source: 'window.hoshiFocusDictionaryEntryMove'
+          " ? window.hoshiFocusDictionaryEntryMove('${forward ? 'next' : 'prev'}')"
+          " : 'blocked'",
+    );
+    return raw?.toString() ?? 'blocked';
+  }
+
   Future<void> caretLookup() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.lookupInvocation());

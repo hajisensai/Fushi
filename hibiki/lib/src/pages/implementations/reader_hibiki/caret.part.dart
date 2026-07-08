@@ -639,9 +639,11 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       case CaretAction.lookup:
       case CaretAction.longPress:
       // 跳转词典是离散跳整段，每次按一下跳一本，绝不随长按连发（否则一口气
-      // 冲过所有词典段）。
+      // 冲过所有词典段）。词条级跳转（TODO-1325 #5）同理，一按跳一条，不连发。
       case CaretAction.jumpDictNext:
       case CaretAction.jumpDictPrev:
+      case CaretAction.focusEntryNext:
+      case CaretAction.focusEntryPrev:
       case CaretAction.dismissOrExit:
         return false;
     }
@@ -690,6 +692,12 @@ extension _ReaderCaret on _ReaderHibikiPageState {
           break;
         case CaretAction.jumpDictPrev:
           await _caretJumpDict(false);
+          break;
+        case CaretAction.focusEntryNext:
+          await _caretFocusEntry(true);
+          break;
+        case CaretAction.focusEntryPrev:
+          await _caretFocusEntry(false);
           break;
         case CaretAction.dismissOrExit:
           break; // handled above
@@ -866,6 +874,17 @@ extension _ReaderCaret on _ReaderHibikiPageState {
   Future<void> _caretJumpDict(bool forward) async {
     if (_caretSurface != CaretSurface.popup) return;
     await _caretTopPopupState?.caretJumpDict(forward);
+  }
+
+  /// TODO-1325 #5 part1: move the popup's ENTRY-level focus (the blue-triangle
+  /// `.entry-current` indicator) to the next/previous word entry in a
+  /// multi-entry result, and scroll it into view. Popup-only — the reader and
+  /// lyrics surfaces have no word entries, so this no-ops there. Distinct from
+  /// [_caretJumpDict] (dictionary sections within one entry); orthogonal to the
+  /// char caret ring (moves only the entry indicator + viewport).
+  Future<void> _caretFocusEntry(bool forward) async {
+    if (_caretSurface != CaretSurface.popup) return;
+    await _caretTopPopupState?.focusEntryMove(forward);
   }
 
   /// Place the reader cursor at the entering edge of the freshly paginated page.
