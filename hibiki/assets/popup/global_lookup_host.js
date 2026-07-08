@@ -66,6 +66,16 @@
   // content-ready after this budget so the card is not stuck invisible. Mirrors
   // the Dart 450ms reveal safety (controller.dart) one layer down.
   var CONTENT_READY_SAFETY_MS = 450;
+  // TODO-1231 v3 (BUG-583) — reveal-ready safety. A shell held hidden because the
+  // committed window origin does not YET cover it (an up/left-cascading child whose
+  // covering commitLayerShift is still round-tripping through Dart) must never be
+  // stuck: force reveal-ready after this budget so a lost/late commitLayerShift
+  // still shows the card (mildly-clipped fallback, never invisible). Mirrors
+  // CONTENT_READY_SAFETY_MS.
+  var REVEAL_READY_SAFETY_MS = 450;
+  // Sub-pixel slack for the origin-coverage compare (device-pixel-ratio
+  // rounding at the C++ window boundary) so an on-edge shell counts as covered.
+  var COVER_EPS = 0.5;
 
   // C1 — vertical offset (CSS px) from a frame shell top-left to the popup
   // CONTENT top. In Hibiki the iframe FILLS its shell and the star/audio header
@@ -565,6 +575,7 @@
       revealReady: false,
       observer: null,
       contentSafetyTimer: null,
+      revealSafetyTimer: null,
     };
     frameSources.set(iframe, descriptor.id);
 
@@ -590,6 +601,61 @@
     record[key] = true;
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(attr, 'true');
+    }
+  }
+
+  // TODO-1231 v3 (BUG-583) — a shell is "origin-covered" when the committed layer
+  // origin (layerOffsetLeft/Top — the window origin the C++ RevealStack actually
+  // moved to, set by commitLayerShift) is at or outside the shell's own top-left,
+  // i.e. the shell falls INSIDE the current window viewport. An up/left-cascading
+  // child placed at window-local coords LEFT/ABOVE the current origin is NOT covered
+  // until commitLayerShift moves the origin out to include it; revealing it before
+  // then paints it CLIPPED at the window edge for the whole Dart round-trip (the
+  // residual "子弹窗闪" — the child appears cut, then jumps into place). Down-right /
+  // already-ratcheted shells are covered immediately (unchanged). COVER_EPS absorbs
+  // sub-pixel rounding across the device-pixel-ratio boundary.
+  function shellCoveredByOrigin(record) {
+    if (!record || !record.shell) {
+      return false;
+    }
+    var left = parseFloat(record.shell.style.left) || 0;
+    var top = parseFloat(record.shell.style.top) || 0;
+    return left >= layerOffsetLeft - COVER_EPS &&
+        top >= layerOffsetTop - COVER_EPS;
+  }
+
+  // TODO-1231 v3 (BUG-583) — flip reveal-ready ONLY once the shell's geometry is
+  // placed AND the committed window origin covers it, so a shell never paints
+  // outside the window (clipped). A root / down-right child is covered from the
+  // start and flips immediately (byte-identical to the old unconditional flip). An
+  // up/left child is HELD until commitLayerShift extends the origin to reach it
+  // (re-checked there), so it first appears already in-position — no clipped-then-
+  // jump. A one-shot safety flips it regardless after REVEAL_READY_SAFETY_MS so a
+  // never-arriving commitLayerShift can never leave a card stuck hidden.
+  function maybeFlipRevealReady(record) {
+    if (!record) {
+      return;
+    }
+    if (record.revealReady) {
+      if (record.revealSafetyTimer != null) {
+        clearTimerSafe(record.revealSafetyTimer);
+        record.revealSafetyTimer = null;
+      }
+      return;
+    }
+    if (shellCoveredByOrigin(record)) {
+      if (record.revealSafetyTimer != null) {
+        clearTimerSafe(record.revealSafetyTimer);
+        record.revealSafetyTimer = null;
+      }
+      setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+      return;
+    }
+    if (record.revealSafetyTimer == null) {
+      record.revealSafetyTimer = setTimerSafe(function () {
+        record.revealSafetyTimer = null;
+        setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+      }, REVEAL_READY_SAFETY_MS);
     }
   }
 
@@ -744,10 +810,13 @@
       record.descriptor = descriptor;
     }
     applyShellStyle(record.shell, descriptor);
-    // D1 — geometry is placed for this layer -> reveal-ready. The shell still
-    // stays hidden until content-ready also flips (the CSS gate needs BOTH), so
-    // a placed-but-empty frame never flashes.
-    setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+    // D1 / TODO-1231 v3 — geometry is placed for this layer, so reveal-ready is
+    // eligible. The shell still stays hidden until content-ready also flips (the
+    // CSS gate needs BOTH). reveal-ready flips NOW only if the committed window
+    // origin already covers the shell (root / down-right child); an up/left child
+    // whose window has not yet moved to reach it is HELD so it never paints clipped
+    // — commitLayerShift flips it once the origin catches up.
+    maybeFlipRevealReady(record);
     if (record.loaded) {
       wrapFrameBridge(record);
       // TODO-1231 P1 — only re-run the FULL body (which ends in renderPopup() = a
@@ -805,6 +874,10 @@
           clearTimerSafe(record.contentSafetyTimer);
           record.contentSafetyTimer = null;
         }
+        if (record.revealSafetyTimer != null) {
+          clearTimerSafe(record.revealSafetyTimer);
+          record.revealSafetyTimer = null;
+        }
         if (record.shell && record.shell.parentNode) {
           record.shell.parentNode.removeChild(record.shell);
         }
@@ -836,6 +909,14 @@
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
   function beginLookup(rootId) {
     lastBBoxKey = '';
+    // TODO-1231 v3 (BUG-583) — a NEW hotkey lookup re-reveals the window from a
+    // fresh origin; drop the committed layer origin so a stale NEGATIVE origin left
+    // by a PREVIOUS lookup's up/left cascade cannot falsely mark THIS lookup's
+    // up/left child as already-covered (which would reveal it clipped). Mirrors the
+    // Dart ratchet reset (_ratchetLeft/_ratchetTop = infinity) one layer up. The
+    // real layer transform is re-applied by this lookup's first commitLayerShift.
+    layerOffsetLeft = 0;
+    layerOffsetTop = 0;
     if (typeof rootId !== 'string' || !rootId) {
       return;
     }
@@ -1047,6 +1128,15 @@
     }
     layerOffsetLeft = l;
     layerOffsetTop = t;
+    // TODO-1231 v3 (BUG-583) — the window just settled at this origin, so any shell
+    // held hidden because it fell OUTSIDE the previous (narrower) window is now
+    // covered; flip its reveal-ready so it paints IN PLACE, coincident with the
+    // window/layer settling — no clipped-then-jump. Idempotent (covered shells that
+    // already revealed are a no-op); content-ready is gated separately, so a child
+    // still waits for its own popupRendered before actually painting.
+    frames.forEach(function (record) {
+      maybeFlipRevealReady(record);
+    });
   }
 
   // TODO-890 — slide the ROOT card off-screen, THEN post dismiss. Adds the
