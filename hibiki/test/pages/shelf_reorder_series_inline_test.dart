@@ -189,5 +189,66 @@ void main() {
       expect(find.text('M1'), findsOneWidget);
       expect(find.text('M2'), findsOneWidget);
     });
+
+    // TODO-947：用户报「编辑排序里看不见边框」。根因——早期只画 2.5px 前景细线，
+    // 手机默认 [HibikiAppUiScale] FittedBox 缩小（<1）下压成亚像素而消失。修复后
+    // SeriesReorderFrame 用**实心 matte 背景**（同系列色，缩放下仍留可见带宽）+ 实心
+    // 3px 边框二者并存，保证任意缩放都看得见分组。本用例守住这两个实心视觉不被改回细线。
+    testWidgets('分组框：实心 matte 背景 + ≥3px 同色边框都在（缩放态仍可见的可视化守卫）',
+        (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 800);
+      addTearDown(tester.view.reset);
+
+      const Color seriesColor = Color(0xFF4F8DFD);
+      await tester.pumpWidget(host(
+        Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 200,
+              height: 320,
+              child: SeriesReorderFrame(
+                color: seriesColor,
+                showHeader: true,
+                seriesName: 'S',
+                memberCount: 2,
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: ColoredBox(color: Color(0xFFB0B8C0)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // 找到承载 matte 背景 + 边框的那个 Container：它 decoration/foregroundDecoration 双非空。
+      final Iterable<Container> containers = tester
+          .widgetList<Container>(find.descendant(
+            of: find.byType(SeriesReorderFrame),
+            matching: find.byType(Container),
+          ))
+          .where((Container c) =>
+              c.decoration is BoxDecoration &&
+              c.foregroundDecoration is BoxDecoration);
+      expect(containers, isNotEmpty,
+          reason: '分组框必须同时有背景 matte(decoration) 和边框(foregroundDecoration)');
+      final Container frame = containers.first;
+      final BoxDecoration bg = frame.decoration! as BoxDecoration;
+      final BoxDecoration fg = frame.foregroundDecoration! as BoxDecoration;
+
+      // 背景 matte：实心填充（非透明），色相取自系列色（缩放下留得住的可见带宽，不是细线）。
+      expect(bg.color, isNotNull, reason: 'matte 背景必须是实心填充色（细线在缩放下会消失）');
+      expect(bg.color!.a, greaterThan(0.0), reason: 'matte 不能全透明');
+      expect((bg.color!.r - seriesColor.r).abs(), lessThan(0.02),
+          reason: 'matte 色相取自系列色（同系列同色 → 读作一叠）');
+
+      // 前景边框：实心、同系列色、宽度 ≥3（早期 2.5px 太细）。
+      final BorderSide side = (fg.border! as Border).top;
+      expect(side.color, seriesColor, reason: '边框用系列色');
+      expect(side.width, greaterThanOrEqualTo(3.0),
+          reason: '边框 ≥3px（早期 2.5px 在缩放下看不见）');
+    });
   });
 }

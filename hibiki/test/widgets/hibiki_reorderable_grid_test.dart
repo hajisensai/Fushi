@@ -226,6 +226,64 @@ void main() {
       await _dragTo(tester, 'a', tester.getCenter(find.text('f')));
       expect(reorders, <int>[0, 5], reason: '缩放下 globalToLocal 抵消缩放，命中仍对');
     });
+
+    // TODO-947：用户报「手机上移动有问题·可能是界面大小的问题」。根因——边缘 auto-scroll
+    // 的浮层矩形旧实现是 `localToGlobal(topLeft) & _cellSize`：全局原点 + **本地**尺寸。
+    // 手机默认 [HibikiAppUiScale] FittedBox 缩放 s<1 时，全局尺寸应为 `_cellSize*s`，
+    // 旧矩形的底边比真实底边多伸 `_cellSize*(1-s)`（本例 0.5×200=100 全局像素）→ 浮层还
+    // 在视口里就被判为「已过底边」→ 手机上一拖就乱滚。修复用 MatrixUtils.transformRect
+    // 把整个矩形按祖先缩放映射到全局。守卫：缩放 0.5 下把浮层拖到「全局仍在视口内」的位置
+    // 不得触发 auto-scroll（旧实现会误滚），拖到真正底边则必须滚（修复不破坏正常边缘滚动）。
+    testWidgets('界面缩放 0.5 下边缘 auto-scroll 用全局尺寸：视口内不误滚、真到底边才滚',
+        (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 800);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+          body: HibikiAppUiScale(scale: 0.5, child: _ScrollGrid(count: 200)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final ScrollableState sc =
+          tester.state<ScrollableState>(find.byType(Scrollable).first);
+      expect(sc.position.maxScrollExtent, greaterThan(0),
+          reason: '内容需可滚动，边缘 auto-scroll 才有意义');
+      expect(sc.position.pixels, 0);
+
+      // 视口全局矩形（缩放 0.5：本地 1600 → 全局 800）。cell 全局高 = 200*0.5 = 100。
+      final RenderBox scBox = sc.context.findRenderObject()! as RenderBox;
+      final Rect scGlobal = MatrixUtils.transformRect(
+          scBox.getTransformTo(null), Offset.zero & scBox.size);
+
+      final Offset i0 = tester.getCenter(find.text('i0'));
+      final TestGesture g =
+          await tester.startGesture(i0, kind: PointerDeviceKind.touch);
+      await tester.pump(const Duration(milliseconds: 600)); // 触屏长按起拖
+
+      // 浮层中心拖到「视口底边上方 100px」：cell 全局底 = (bottom-100)+50 = bottom-50，
+      // 仍在视口内 → 修复后**不滚**。旧实现本地尺寸底边 = (bottom-150)+200 = bottom+50，
+      // 越过视口底 → 会误滚。
+      await g.moveTo(Offset(i0.dx, scGlobal.bottom - 100));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(sc.position.pixels, 0,
+          reason: '浮层全局矩形仍在视口内，不得 auto-scroll（旧本地尺寸实现会误滚）');
+
+      // 再拖到真正的底边：应触发 auto-scroll（修复不破坏正常边缘滚动）。
+      await g.moveTo(Offset(i0.dx, scGlobal.bottom - 3));
+      for (int k = 0; k < 12; k++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(sc.position.pixels, greaterThan(0),
+          reason: '真到视口底边，缩放下边缘 auto-scroll 仍正常工作');
+
+      await g.up();
+      await tester.pumpAndSettle();
+    });
   });
 
   group('HibikiReorderableGrid 合并手势（TODO-947 PR1 基建）', () {
@@ -396,6 +454,40 @@ void main() {
       expect(cardTaps, 0, reason: '卡片被 ExcludeFocus，焦点不落卡片，Enter 不会开书');
     });
   });
+}
+
+/// 可滚动网格（内容超视口），用于 TODO-947 界面缩放态边缘 auto-scroll 守卫。
+/// cellExtent 200 + aspect 1，200 项在缩放 0.5 的 1600 本地视口里 8 列 25 行 → 溢出可滚。
+class _ScrollGrid extends StatefulWidget {
+  const _ScrollGrid({required this.count});
+  final int count;
+  @override
+  State<_ScrollGrid> createState() => _ScrollGridState();
+}
+
+class _ScrollGridState extends State<_ScrollGrid> {
+  late final List<String> _items =
+      List<String>.generate(widget.count, (int i) => 'i$i');
+  @override
+  Widget build(BuildContext context) {
+    return HibikiReorderableGrid(
+      itemCount: _items.length,
+      cellExtent: 200,
+      childAspectRatio: 1,
+      keyForIndex: (int i) => ValueKey<String>(_items[i]),
+      onReorder: (int from, int to) {
+        setState(() {
+          final String it = _items.removeAt(from);
+          _items.insert(to, it);
+        });
+      },
+      itemBuilder: (BuildContext context, int i) => Container(
+        color: const Color(0xFF335533),
+        alignment: Alignment.center,
+        child: Text(_items[i]),
+      ),
+    );
+  }
 }
 
 /// 缩放用例的内层网格（与 _GridHarness 同配置，但直接被 HibikiAppUiScale 包裹）。

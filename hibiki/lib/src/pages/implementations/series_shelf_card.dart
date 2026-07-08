@@ -332,14 +332,25 @@ class SeriesReorderFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const BorderRadius radius = BorderRadius.all(Radius.circular(14));
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
-        // 前景描边：画在卡片之上、不占布局尺寸，故不撑破固定格子。
+        // 系列色「衬垫」+ 描边：书卡自带 12px 内边距（[_bookCardShell]），故本 Container
+        // 的**背景**在卡片四周露出一圈同系列色的实心 matte，前景再叠一道实心边框——
+        // 二者都是**填充/实心**而非早期的 2.5px 细线：细线在祖先 [HibikiAppUiScale]
+        // 的 FittedBox 缩小（手机默认缩放 <1）下会被压成亚像素而「看不见」，实心 matte
+        // 在任意缩放下都留得住可见宽度。同系列成员同色 matte → 读作「同一叠」。
+        // decoration（背景）画在卡片之下、只从 12px 内边距漏出，不会给不透明封面着色；
+        // foregroundDecoration（边框）画在卡片之上，保证边界永远可见。
         Container(
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.32),
+            borderRadius: radius,
+          ),
           foregroundDecoration: BoxDecoration(
-            border: Border.all(color: color, width: 2.5),
-            borderRadius: const BorderRadius.all(Radius.circular(12)),
+            border: Border.all(color: color, width: 3),
+            borderRadius: radius,
           ),
           child: child,
         ),
