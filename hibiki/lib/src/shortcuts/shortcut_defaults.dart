@@ -48,6 +48,8 @@ class ShortcutDefaults {
   static const _gA = GamepadBinding(GamepadButton.a);
   static const _gL3 = GamepadBinding(GamepadButton.thumbLeft);
   static const _gR3 = GamepadBinding(GamepadButton.thumbRight);
+  // TODO-1342：视频播放器手柄映射用到的额外按钮常量。
+  static const _gStart = GamepadBinding(GamepadButton.start);
 
   static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
     ShortcutAction.readerPageForward: _kb([
@@ -207,10 +209,17 @@ class ShortcutDefaults {
     // buildVideoPlayerShortcuts map exactly so migrating into the registry does
     // not change any default behaviour (Never break userspace). The video page
     // resolves only the video scope, so there is no cross-scope shadowing here.
+    // TODO-1342：视频播放器手柄映射（video 独立 co-active 组，与 reader/home 的手柄
+    // 键不同页面绝不同时激活，互不冲突；每个按钮在 video scope 内唯一归属一个动作，
+    // 由 shortcut_defaults_test 的 video no-shadow 守卫保证）。核心遥控键：
+    //   A=播放/暂停、B=退出全屏/返回、LB/RB 与 dpad 左右=快退/快进、dpad 上下=音量、
+    //   X/Y=上/下一句字幕、LT=重听当前句、RT=全屏、Start=字幕跳转列表。
     ShortcutAction.videoTogglePlayPause: _kb([
       _key(LogicalKeyboardKey.space),
       _key(LogicalKeyboardKey.keyP),
       _key(LogicalKeyboardKey.mediaPlayPause),
+    ], [
+      _gA
     ]),
     ShortcutAction.videoPlay: _kb([
       _key(LogicalKeyboardKey.mediaPlay),
@@ -222,20 +231,30 @@ class ShortcutDefaults {
     // arrows are time seek below.
     ShortcutAction.videoPreviousSubtitle: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl}),
+    ], [
+      _gX
     ]),
     ShortcutAction.videoNextSubtitle: _kb([
       _key(LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl}),
+    ], [
+      _gY
     ]),
     ShortcutAction.videoSeekBackward: _kb([
       _key(LogicalKeyboardKey.arrowLeft),
       _key(LogicalKeyboardKey.keyA),
       _key(LogicalKeyboardKey.keyJ),
+    ], [
+      _gLB,
+      _gDpadLeft
     ]),
     ShortcutAction.videoSeekForward: _kb([
       _key(LogicalKeyboardKey.arrowRight),
       _key(LogicalKeyboardKey.keyD),
       _key(LogicalKeyboardKey.keyI),
       _key(LogicalKeyboardKey.keyF, {ModifierKey.shift}),
+    ], [
+      _gRB,
+      _gDpadRight
     ]),
     ShortcutAction.videoToggleShaderCompare: _kb([
       _key(LogicalKeyboardKey.keyC),
@@ -243,10 +262,14 @@ class ShortcutDefaults {
     ShortcutAction.videoVolumeUp: _kb([
       _key(LogicalKeyboardKey.arrowUp),
       _key(LogicalKeyboardKey.digit0),
+    ], [
+      _gDpadUp
     ]),
     ShortcutAction.videoVolumeDown: _kb([
       _key(LogicalKeyboardKey.arrowDown),
       _key(LogicalKeyboardKey.digit9),
+    ], [
+      _gDpadDown
     ]),
     ShortcutAction.videoToggleMute: _kb([
       _key(LogicalKeyboardKey.keyM),
@@ -274,9 +297,13 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleFullscreen: _kb([
       _key(LogicalKeyboardKey.keyF),
       _key(LogicalKeyboardKey.f12),
+    ], [
+      _gRT
     ]),
     ShortcutAction.videoToggleSubtitleList: _kb([
       _key(LogicalKeyboardKey.keyL),
+    ], [
+      _gStart
     ]),
     ShortcutAction.videoToggleImmersiveLock: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.shift}),
@@ -289,6 +316,8 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.videoReplayCurrentSubtitle: _kb([
       _key(LogicalKeyboardKey.keyR),
+    ], [
+      _gLT
     ]),
     // 重播上一句（TODO-378，BUG-287）：Shift+R，纯句子后退到上一条 cue 起点（不退化）。
     ShortcutAction.videoReplayPreviousSubtitle: _kb([
@@ -304,6 +333,8 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.videoEscape: _kb([
       _key(LogicalKeyboardKey.escape),
+    ], [
+      _gB
     ]),
     // TODO-840 Part B：字幕遮蔽三态循环（不遮蔽→模糊→隐藏→…）默认 Shift+B，紧挨历史
     // 的「切换模糊」B 键（videoToggleSubtitleBlur 仍保留），video 独立 co-active 组内
