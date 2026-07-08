@@ -2186,6 +2186,13 @@ $_sharedJs
     return baseOffset + localChars;
   },
   scrollToCharOffset: function(charOffset, hintScroll) {
+    // TODO-1229 (BUG-594 第 6 次复诉)：分页版**不**在此对 charOffset<=0 归一。分页所有重锚
+    // 调用点（setChromeInsets/commitStyleReanchor）都带 page-stable hint（getPagePosition），
+    // 用「当前页 vs 目标字符页 ±1」区分「用户在插图页 0（char0 在下一页 → 保留页 0=插图）」和
+    // 「用户在首文本页 1（char0 就在本页顶 → 保留页 1）」——fvco==0 在这两种情形语义不同，唯有 hint
+    // 能判开。裸加 <=0→章首守卫会把「在首文本页」的用户误弹回插图页（回归）。插图页翻页不跳由
+    // hint 兜住（headless matrix_probe 证 image chromeInsets jumped=0）。真正无 hint、会越过插图的
+    // 是连续版 scrollToCharOffset（见那里的 <=0→scrollToChapterStart 归一）。
     var walker = this.createWalker();
     var node;
     var runningOffset = 0;
@@ -2781,6 +2788,15 @@ $_sharedJs
   // 可见、不被阅读底栏切尾）。不传 endCharOffset（setChromeInsets / 缩放 / 换样式重锚）
   // 时行为与旧版完全一致（句首贴顶，单点锚）。
   scrollToCharOffset: function(charOffset, endCharOffset) {
+    // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章节绝对起点（0 字已读）。本函数只走
+    // 文本节点（collapsedRangeAtCharOffset→createWalker=SHOW_TEXT），charOffset 0 的 range 落
+    // 在**首个文本字符**——若本章以扉页插图开篇，该字符在插图之后，滚到它会跳过前导插图。
+    // setChromeInsets / 缩放(commitUiScaleReanchor) / 换样式(commitStyleReanchor) 三条重锚都以
+    // getFirstVisibleCharOffset()==0 裸调本函数（无 hint；restoreToCharOffset 的 <=0 守卫只拦
+    // restore 入口、拦不到这些 reanchor）→ 初始 restore 落插图页后被它们二次跳到首文本（残留
+    // 第二跳）。在单一 choke point 归一：<=0 一律走 scrollToChapterStart()（滚到顶，含前导图），
+    // 与 restoreProgress(0) 章首语义一致；charOffset>0 精确锚（含收藏句区间 endCharOffset）不变。
+    if (charOffset <= 0) { this.scrollToChapterStart(); return; }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
     var rect = startRange.getBoundingClientRect();

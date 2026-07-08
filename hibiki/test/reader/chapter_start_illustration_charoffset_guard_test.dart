@@ -69,4 +69,41 @@ void main() {
     expect(js.contains('this.scrollToCharOffset(charOffset)'), isTrue,
         reason: 'charOffset>0 必须仍走精确 scrollToCharOffset');
   });
+
+  // ── TODO-1229 第 6 次复诉（残留第二跳）：单一 choke point 归一 ──────────────
+  //
+  // 第 5 次只补了 restoreToCharOffset 一个调用者，但连续模式的重锚
+  // （setChromeInsets / commitUiScaleReanchor / commitStyleReanchor）都以
+  // getFirstVisibleCharOffset()==0 裸调 scrollToCharOffset(0)（无 page-stable hint，
+  // restoreToCharOffset 的 <=0 守卫拦不到它们）→ 初始落插图页后二次跳到首文本。
+  // 根治：连续版 scrollToCharOffset 自身在入口归一 charOffset<=0 → scrollToChapterStart，
+  // 覆盖所有重锚调用者。headless 复现/验证见
+  // tool/reader_pitch_headless/chapter_start_reanchor_probe.mjs（CI 跑不到真 WebView）。
+
+  test(
+      '连续 scrollToCharOffset 入口把 charOffset<=0 归一为 scrollToChapterStart（覆盖所有重锚）',
+      () {
+    // 连续版体内必须有 `if (charOffset <= 0) { this.scrollToChapterStart(); return; }`，
+    // 挡住 setChromeInsets/缩放/换样式重锚以 fvco==0 裸调时越过前导插图。
+    expect(
+      n.contains(
+          'if (charOffset <= 0) { this.scrollToChapterStart(); return; }'),
+      isTrue,
+      reason:
+          '连续 scrollToCharOffset 必须在入口对 charOffset<=0 归一到 scrollToChapterStart，'
+          '否则 setChromeInsets/缩放/换样式重锚裸调 scrollToCharOffset(0) 会越过章首插图（残留第二跳）',
+    );
+  });
+
+  test('回归护栏：分页 scrollToCharOffset 保持 hint 消歧，不得裸加 <=0→章首', () {
+    // 分页版签名 (charOffset, hintScroll)：所有重锚带 page-stable hint 自行消歧
+    // 「插图页 fvco0」vs「首文本页 fvco0」。裸归一 <=0 会把「停在首文本页」的用户误弹回插图页。
+    expect(
+      n.contains(
+          'scrollToCharOffset: function(charOffset, hintScroll) { if (charOffset <= 0) { this.scrollToChapterStart(); return; }'),
+      isFalse,
+      reason: '分页 scrollToCharOffset 不得裸归一 charOffset<=0——分页靠 hint 区分插图页/首文本页，'
+          '裸归一会把「停在首文本页」的用户误弹回插图页（headless midChapter 守卫红）',
+    );
+  });
 }
