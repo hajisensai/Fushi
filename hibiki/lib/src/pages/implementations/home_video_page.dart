@@ -1686,6 +1686,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
+    // TODO-1346：视频观看进度分数（null=无可展示进度 → 不画进度条）。
+    final double? watchFrac = videoWatchFraction(
+      completed: book.completedAt != null,
+      currentEpisode: book.currentEpisode,
+      episodeCount: episodeCount,
+    );
     final bool selected = _selectedUids.contains(book.bookUid);
     final HibikiCard hibikiCard = HibikiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
@@ -1735,6 +1741,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                               .primary
                               .withValues(alpha: 0.12),
                         ),
+                      ),
+                    ),
+                  ),
+                // TODO-1346：观看进度条（贴封面底部，YouTube 式）。多集按「看到第几集」，
+                // 单视频仅已看完满格；无可展示进度（watchFrac==null）时不画。
+                if (watchFrac != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: LinearProgressIndicator(
+                        value: watchFrac,
+                        minHeight: 3,
+                        backgroundColor: Colors.black.withValues(alpha: 0.35),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),

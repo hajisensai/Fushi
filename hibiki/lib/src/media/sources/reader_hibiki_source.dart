@@ -32,6 +32,52 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   return SrtBookRepository(db).listAll();
 });
 
+/// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
+/// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
+/// （charOffset 再大也不计）时书架显示极低%，让用户以为「进度没了」。
+///
+/// - `sectionChars`：每章字数（来自 `epubBooks.chaptersJson[i].characters`，缺则 0）。
+/// - `charOffset` 与 `characters` **同单位**（都是字符计数；已核实每条真实进度
+///   `charOffset ≤ 当前章 characters`）。`-1` 是「仅章节、章内偏移未知」哨兵 → 当 0。
+///
+/// 计算：
+/// - 有每章字数（全书字数>0）：`position = Σ前面各章字数 + clamp(charOffset,0,本章字数)`，
+///   `duration = 全书字数`；position clamp 到 [0, 全书字数]（防 >100%）。
+/// - 老书无 `characters`（全书字数=0）但有章结构：回退章级 `sectionIndex / 章数`，
+///   避免恒显 0%。
+/// - 完全无章结构：`(0, 1)`（0%，不崩）。
+({int position, int duration}) computeBookProgress({
+  required List<int> sectionChars,
+  required int? sectionIndex,
+  required int charOffset,
+}) {
+  final int totalChars = sectionChars.fold<int>(0, (int a, int b) => a + b);
+  final int chapterCount = sectionChars.length;
+  if (totalChars > 0) {
+    if (sectionIndex == null || chapterCount == 0) {
+      return (position: 0, duration: totalChars);
+    }
+    final int clampedSection = sectionIndex.clamp(0, chapterCount - 1);
+    int charsRead = 0;
+    for (int i = 0; i < clampedSection; i++) {
+      charsRead += sectionChars[i];
+    }
+    final int intra =
+        charOffset < 0 ? 0 : charOffset.clamp(0, sectionChars[clampedSection]);
+    return (
+      position: (charsRead + intra).clamp(0, totalChars),
+      duration: totalChars,
+    );
+  }
+  if (chapterCount > 0 && sectionIndex != null) {
+    return (
+      position: sectionIndex.clamp(0, chapterCount),
+      duration: chapterCount,
+    );
+  }
+  return (position: 0, duration: 1);
+}
+
 class ReaderHibikiSource extends ReaderMediaSource {
   ReaderHibikiSource._()
       : super(
@@ -286,20 +332,17 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
     }
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
-    if (totalChars > 0) {
-      duration = totalChars;
-    }
 
+    // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
+    // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
     final pos = await posRepo.findByBookKey(book.bookKey);
-    if (pos != null && sectionChars.isNotEmpty) {
-      final int clampedSection =
-          pos.sectionIndex.clamp(0, sectionChars.length - 1);
-      int charsRead = 0;
-      for (int i = 0; i < clampedSection; i++) {
-        charsRead += sectionChars[i];
-      }
-      position = charsRead;
-    }
+    final ({int position, int duration}) prog = computeBookProgress(
+      sectionChars: sectionChars,
+      sectionIndex: pos?.sectionIndex,
+      charOffset: pos?.charOffset ?? -1,
+    );
+    position = prog.position;
+    duration = prog.duration;
 
     final String? imageUrl = await _resolveCoverUrl(book);
 
