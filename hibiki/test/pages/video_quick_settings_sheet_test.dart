@@ -18,6 +18,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 VideoQuickSettingsSheet _sheet({
   void Function(int)? onSetDelay,
@@ -38,6 +39,8 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoSubtitleStyle)? onSubtitleStylePreview,
   void Function(VideoSubtitleStyle)? onSubtitleStyleCommit,
   Future<int?> Function()? onAutoAlign,
+  List<AudioCue> subtitleWaveformCues = const <AudioCue>[],
+  Future<List<double>> Function()? loadSubtitleWaveform,
 }) {
   return VideoQuickSettingsSheet(
     initialDelayMs: initialDelayMs,
@@ -46,6 +49,9 @@ VideoQuickSettingsSheet _sheet({
     initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
     onSetDelay: (int v) async => onSetDelay?.call(v),
     onAutoAlign: onAutoAlign,
+    subtitleWaveformCues: subtitleWaveformCues,
+    videoDurationMs: 60000,
+    loadSubtitleWaveform: loadSubtitleWaveform,
     onPreviewSpeed: (double v) async => onPreviewSpeed?.call(v),
     onSetSpeed: (double v) async => onSetSpeed?.call(v),
     onSetSubtitleObscureMode: (_) async {},
@@ -1010,6 +1016,83 @@ void main() {
         findsNothing,
         reason: '无 onAutoAlign 回调时不应渲染自动对轴按钮',
       );
+    },
+  );
+
+  // 稳定 cue helper（波形入口只需非空 cue 列表）。
+  AudioCue makeCue(int startMs, int endMs) => AudioCue()
+    ..bookKey = ''
+    ..chapterHref = ''
+    ..sentenceIndex = 0
+    ..textFragmentId = ''
+    ..text = ''
+    ..startMs = startMs
+    ..endMs = endMs
+    ..audioFileIndex = 0;
+  final List<AudioCue> waveCues = <AudioCue>[
+    makeCue(1000, 2000),
+    makeCue(3000, 4000)
+  ];
+  const Key waveEntryKey = ValueKey<String>('subtitle-waveform-open-button');
+
+  // TODO-1315 回归守卫（BUG-620）：字幕调轴的「波形对轴」入口在 sheet 集成层
+  // 必须可达——有字幕 cue + 可抽波形（本地视频路径 => loadSubtitleWaveform 非空）时，进
+  // 「播放」分类详情就能看到并点到入口按钮。历史上入口曾因挂载时预探测、探测为空即收起
+  // 而「进不去」（用户报「字幕调轴入口也没了」）；这里锁死「入口在 playback 详情常驻可达」，
+  // 且**挂载不预探测**（懒抽保留）。此前 _sheet 从不传波形参数，本入口在 sheet 层无守卫。
+  testWidgets(
+    'TODO-1315 guard: 波形对轴入口在 playback 详情可达且挂载不预探测',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      int probes = 0;
+      await _pump(
+        tester,
+        _sheet(
+          subtitleWaveformCues: waveCues,
+          loadSubtitleWaveform: () async {
+            probes++;
+            return <double>[-60, -20, -40, -10, -30, -5];
+          },
+        ),
+      );
+
+      // 宽窗默认选中 playback；字幕调轴行 + 波形对轴入口都在，且入口可命中。
+      expect(find.text(t.video_setting_av_delay), findsOneWidget);
+      final Finder entry = find.byKey(waveEntryKey);
+      await tester.ensureVisible(entry);
+      await tester.pumpAndSettle();
+      expect(entry, findsOneWidget,
+          reason: 'TODO-1315：波形对轴入口必须在 playback 详情可达');
+      // 懒抽保留：挂载 + 单纯可见不得触发 ffmpeg 探测。
+      expect(probes, 0, reason: 'TODO-1315：入口挂载/可见不得预探测波形（点击才抽）');
+    },
+  );
+
+  // TODO-1315 回归守卫：窄窗（移动端）导航路径同样可达——主页点「播放」分类 push 详情，
+  // 详情里能滚到并点到波形对轴入口（移动端正是「进不去」的报障平台）。
+  testWidgets(
+    'TODO-1315 guard: 窄窗导航到 playback 后波形对轴入口可达',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(
+        tester,
+        _sheet(
+          subtitleWaveformCues: waveCues,
+          loadSubtitleWaveform: () async =>
+              <double>[-60, -20, -40, -10, -30, -5],
+        ),
+      );
+
+      // 主页分类导航行 → push playback 详情。
+      await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
+      expect(find.text(t.video_setting_av_delay), findsOneWidget);
+      final Finder entry = find.byKey(waveEntryKey);
+      await tester.ensureVisible(entry);
+      await tester.pumpAndSettle();
+      expect(entry, findsOneWidget,
+          reason: 'TODO-1315：窄窗 playback 详情里波形对轴入口必须可达');
     },
   );
 
