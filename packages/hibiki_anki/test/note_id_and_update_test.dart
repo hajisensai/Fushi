@@ -108,10 +108,8 @@ void main() {
         headers: <String, String>{'content-type': 'application/json'},
       );
     });
-    return http.runWithClient(
-      () => body(AnkiConnectService(host: '127.0.0.1', port: 8765)),
-      () => client,
-    );
+    return body(
+        AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
   }
 
   Map<String, dynamic> bodyOf(http.Request request) =>
