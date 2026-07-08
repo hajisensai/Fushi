@@ -356,4 +356,19 @@ extension _ReaderHistoryVideo on _ReaderHibikiHistoryPageState {
     );
     if (bookUid != null && mounted) _refreshVideoBooks();
   }
+
+  /// 书架拖入网络流 URL（浏览器地址栏/链接）→ 打开 [VideoImportDialog] 预填 URL，对话框
+  /// 可播时自动走 [_importStreamUrl] 导入（进视频书架），关闭后刷新视频列表（TODO-1306）。
+  Future<void> _openStreamImportPrefilled({
+    required String streamUrl,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: _videoRepo,
+        initialStreamUrl: streamUrl,
+      ),
+    );
+    if (bookUid != null && mounted) _refreshVideoBooks();
+  }
 }

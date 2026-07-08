@@ -19,9 +19,9 @@ import 'package:flutter/services.dart';
 /// desktop_drop's OS registration is a one-time C++ call that Dart cannot
 /// otherwise re-trigger.
 ///
-/// The vendored ci-patch to `desktop_drop` (see
-/// `ci/patches/hosted/desktop_drop-0.5.0/windows/desktop_drop_plugin.cpp`) adds
-/// a `reinitialize` method that re-runs `RevokeDragDrop` + `RegisterDragDrop`.
+/// The vendored fork of `desktop_drop` (see
+/// `third_party/desktop_drop/windows/desktop_drop_plugin.cpp`) adds a
+/// `reinitialize` method that re-runs `RevokeDragDrop` + `RegisterDragDrop`.
 /// [reinitialize] invokes it after media closes, restoring drag-import
 /// regardless of which controller usurped the window.
 class DesktopDropReinitializer {

@@ -11,9 +11,9 @@ import 'package:hibiki/src/media/drag_drop/desktop_drop_reinitializer.dart';
 /// `put_AllowExternalDrop(FALSE)` restores desktop_drop's registration — so
 /// drag-import shows the "forbidden" cursor app-wide until restart. The fix
 /// re-registers desktop_drop after media closes via a `reinitialize` method
-/// added by the vendored ci-patch. These tests pin the Dart wiring (channel +
-/// method name, error tolerance) and the C++ patch invariant (it must actually
-/// re-register, not stay a NotImplemented no-op).
+/// added by the vendored fork (third_party/desktop_drop). These tests pin the
+/// Dart wiring (channel + method name, error tolerance) and the C++ invariant (it
+/// must actually re-register, not stay a NotImplemented no-op).
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -48,17 +48,20 @@ void main() {
     await DesktopDropReinitializer.invokeReinitialize();
   });
 
-  test('desktop_drop ci-patch re-registers the OS drop target on reinitialize',
+  test(
+      'desktop_drop vendored fork re-registers the OS drop target on reinitialize',
       () {
+    // Vendored under third_party/ (TODO-1306 moved it off the pub-cache ci-patch);
+    // the reinitialize invariant now lives in the tracked fork source.
     final List<String> candidates = <String>[
-      '../ci/patches/hosted/desktop_drop-0.5.0/windows/desktop_drop_plugin.cpp',
-      'ci/patches/hosted/desktop_drop-0.5.0/windows/desktop_drop_plugin.cpp',
+      '../third_party/desktop_drop/windows/desktop_drop_plugin.cpp',
+      'third_party/desktop_drop/windows/desktop_drop_plugin.cpp',
     ];
     final File? patch = candidates.map(File.new).cast<File?>().firstWhere(
         (File? f) => f != null && f.existsSync(),
         orElse: () => null);
     expect(patch, isNotNull,
-        reason: 'desktop_drop ci-patch (reinitialize handler) not found');
+        reason: 'desktop_drop vendored fork (reinitialize handler) not found');
 
     final String src = patch!.readAsStringSync();
 

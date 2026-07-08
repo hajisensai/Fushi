@@ -667,6 +667,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         );
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
+      case DropIntent.importVideoUrl:
+        // 书架拖入网络流 URL → 自动切到视频导入（预填 URL 并入库），与拖视频文件的
+        // 自动切换一致（TODO-1306）。
+        _openStreamImportPrefilled(streamUrl: files.urls.first);
       case DropIntent.unsupportedSurface:
         debugPrint('[hibiki-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(

@@ -170,6 +170,7 @@ class VideoImportDialog extends StatefulWidget {
     this.initialVideoPath,
     this.initialSubtitlePath,
     this.initialPlaylistPath,
+    this.initialStreamUrl,
     super.key,
   });
 
@@ -181,6 +182,11 @@ class VideoImportDialog extends StatefulWidget {
   /// [_importPlaylistFromPath] 解析并导入（一次性，无需用户再点确认），与手动
   /// 点「播放列表」按钮的语义一致——播放列表无可附加的整本字幕/视频可调。
   final String? initialPlaylistPath;
+
+  /// 拖入网络流 URL（浏览器地址栏/链接拖进来）时预填的 URL。非空且可播时对话框打开后
+  /// 自动走 [_importStreamUrl] 导入（一次性、无需再点确认），与拖 m3u8 自动导入语义一致
+  /// （TODO-1306）；非可播 URL 只预填到 URL 输入框、不自动导入。
+  final String? initialStreamUrl;
 
   @override
   State<VideoImportDialog> createState() => _VideoImportDialogState();
@@ -211,6 +217,17 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _importPlaylistFromPath(dropped);
       });
+    }
+    // 拖入网络流 URL（TODO-1306）：预填 URL 输入框；可播则开窗后自动导入（首帧后执行，
+    // 与拖 m3u8 一致），非可播只预填不导入（isPlayableStreamUrl 兜底非法 scheme）。
+    final String? droppedUrl = widget.initialStreamUrl;
+    if (droppedUrl != null) {
+      _streamUrlController.text = droppedUrl;
+      if (isPlayableStreamUrl(droppedUrl)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _importStreamUrl(droppedUrl.trim());
+        });
+      }
     }
   }
 
