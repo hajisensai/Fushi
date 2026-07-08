@@ -576,11 +576,14 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
+            // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
+            // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
+            // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
             title: t.popup_max_width,
             icon: Icons.open_in_full_outlined,
             min: 250,
-            max: 1000,
-            divisions: 75,
+            max: 2000,
+            divisions: 175,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxWidth,
             label: (double value) => value.round().toString(),
@@ -695,6 +698,8 @@ Widget _buildDictionaryFontSizeField(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   return SettingsNumberField(
     title: t.dictionary_font_size,
+    // TODO-1353: 提示 Ctrl+滚轮可在查词弹窗内直接缩放（改的就是这个词典字号，持久化）。
+    subtitle: t.dictionary_font_size_zoom_hint,
     icon: Icons.format_size,
     suffixText: t.unit_pixels,
     initialValue: appModel.dictionaryFontSize.toString(),

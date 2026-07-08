@@ -2196,5 +2196,6 @@
   "video_settings_cat_audio": "Audio",
   "video_setting_theme": "Theme",
   "video_setting_theme_hint": "Switch the app color theme",
-  "video_audio_track_empty": "No switchable audio tracks"
+  "video_audio_track_empty": "No switchable audio tracks",
+  "dictionary_font_size_zoom_hint": "Ctrl + scroll wheel zooms the popup content"
 }

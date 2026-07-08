@@ -2196,5 +2196,6 @@
   "video_settings_cat_audio": "音频",
   "video_setting_theme": "主题",
   "video_setting_theme_hint": "切换应用配色主题",
-  "video_audio_track_empty": "没有可切换的音频轨"
+  "video_audio_track_empty": "没有可切换的音频轨",
+  "dictionary_font_size_zoom_hint": "Ctrl+滚轮可直接缩放查词弹窗内容"
 }

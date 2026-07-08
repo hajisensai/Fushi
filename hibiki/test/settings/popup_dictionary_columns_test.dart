@@ -38,7 +38,8 @@ void main() {
   }
 
   /// 轻量 AppModel：不跑 initialise()，但用真实 PreferencesRepository 接上
-  /// prefsRepo，让 appModel.popupDictionaryColumns 读到真实偏好（默认 1）。
+  /// prefsRepo，让 appModel.popupDictionaryColumns 读到真实偏好。TODO-1357 起未设过
+  /// 时按平台三态解析——flutter test 跑在桌面 host（isDesktopPlatform=true），故默认 2。
   Future<AppModel> prefsBackedAppModel(HibikiDatabase db) async {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -138,9 +139,9 @@ void main() {
       expect(slider.max, 4);
       expect(slider.divisions, 3, reason: '1..4 共 4 档 = 3 个 division');
 
-      // 标题 + 实时读数（titleReadout）。
-      expect(find.text('${t.popup_dictionary_columns} (1)'), findsOneWidget,
-          reason: '默认 1 列，标题带实时读数');
+      // 标题 + 实时读数（titleReadout）。TODO-1357：桌面（测试 host = 桌面）未设默认 2 列。
+      expect(find.text('${t.popup_dictionary_columns} (2)'), findsOneWidget,
+          reason: 'TODO-1357：桌面默认 2 列，标题带实时读数');
 
       // 副标题 = hint + 实验性后缀，渲染成单个 Text。
       final String expectedSubtitle =

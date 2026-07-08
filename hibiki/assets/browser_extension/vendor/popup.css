@@ -962,10 +962,29 @@ html[data-theme="dark"] .glossary-group {
     user-select: none;
 }
 
+/* TODO-1354（按 Niratan 文字位置对齐，参考 W1ght/Niratan compactPitchAccents）：音高
+   读音条从「circle 项目符号 + 每条各占一行」改为「行内单行、' | ' 分隔」。旧版把每条
+   音高（多词典 / 多读法）渲染成 list-item 竖排，音高数字 [n] 跟着各自换行、与来源药丸
+   (.pitch-dict-label)、读音基线错位，用户看到「音高数字浮动」。改为 inline 后：来源药丸 +
+   读音 + [n] 同一行基线平铺，多条用暗淡 ' | ' 分隔（单条无分隔，观感等同旧单行），与
+   Niratan 的整齐单行一致。IPA 转写(.pitch-transcriptions)是独立兄弟块、不受影响；音高
+   overline(.pronunciation-mora-line) 仍绝对定位在读音上方，逻辑不变。 */
 .pitch-entries {
-    list-style: circle inside;
+    list-style: none;
     margin: 0;
     padding: 0;
+    display: inline;
+}
+
+.pitch-entries > li {
+    display: inline;
+    white-space: nowrap;
+}
+
+.pitch-entries > li:not(:last-child)::after {
+    content: " | ";
+    opacity: 0.6;
+    white-space: normal;
 }
 
 /* TODO-688: IPA transcriptions rendered inside the pitch group, as small inline
