@@ -67,6 +67,38 @@ void main() {
     );
   });
 
+  // TODO-1343：用户报「自动更新和词典粘一块了」——AdaptiveSettingsScaffold 的
+  // children 之间不插任何间隔（见 settings_shared.dart 的 ListView/SliverList），
+  // 全靠每个子块自带分隔。词典列表 buildContent() 没有底部间距、自动更新设置卡
+  // 原来又只有底部间距，于是列表最后一张词典卡与自动更新卡直接贴在一起。守卫：
+  // _buildAutoUpdateCard() 必须给外层 Padding 补一段顶部间距，把两个分区分开。
+  test('dictionary auto-update card separates from the list above (TODO-1343)',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    final int cardStart = source.indexOf('  Widget _buildAutoUpdateCard() {');
+    final int cardEnd = source.indexOf('  Widget _buildActionBar() {');
+    expect(cardStart, isNonNegative);
+    expect(cardEnd, greaterThan(cardStart));
+
+    final String cardSource = source.substring(cardStart, cardEnd);
+
+    // 外层 Padding 必须带顶部间距（top:），且用 MD3 spacing token 表达，不硬编码。
+    expect(
+      cardSource,
+      contains('top: tokens.spacing.gap + tokens.spacing.gap / 2'),
+      reason: '自动更新卡必须与上方词典列表隔开顶部间距，避免粘连',
+    );
+    // 保底：不得退回「只有底部间距」的旧写法（粘连的根因）。
+    expect(
+      cardSource,
+      isNot(contains('padding: EdgeInsets.only(bottom: tokens.spacing.gap),')),
+      reason: '只有底部间距会让自动更新卡与词典列表粘一块（TODO-1343 回归）',
+    );
+  });
+
   test('dictionary manager settings entry pushes a page route', () {
     final String schemaSource =
         File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
