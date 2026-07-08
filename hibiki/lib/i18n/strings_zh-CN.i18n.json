@@ -2187,5 +2187,8 @@
   "sync_pair_pin_waiting": "等待对方设备输入此 PIN…",
   "sync_pair_repair": "重新配对",
   "video_subtitle_youtube_translated": "$lang（翻译）",
-  "video_subtitle_youtube_empty": "该字幕轨没有文字"
+  "video_subtitle_youtube_empty": "该字幕轨没有文字",
+  "sync_client_token": "对端访问令牌",
+  "sync_client_token_hint": "配对成功后由对端自动签发并填入；这是对端发给本设备的专属令牌，与对端服务器显示的共享令牌不同，两者都能连接。",
+  "sync_server_token_self_hint": "本设备的服务器共享令牌；已配对的设备会另获各自的专属令牌，此共享令牌也可手动填入连接。"
 }
