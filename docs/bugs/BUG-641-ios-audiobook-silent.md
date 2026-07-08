@@ -1,4 +1,4 @@
-## BUG-621 · iOS 有声书播放没声音
+## BUG-641 · iOS 有声书播放没声音
 - **报告**：2026-07-06（用户：wight）
 - **真实性**：✅ 真 bug。根因：`packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart:905` 的有声书 `_configureAudioSession()` 只设置了 Android audio attributes，未给 iOS 设置 `AVAudioSessionCategory.playback`；`audio_session` 在 iOS category 为空时 native fallback 到 `AVAudioSessionCategorySoloAmbient`（`audio_session-0.1.25/ios/.../DarwinAudioSession.m:118`），会受系统静音开关影响，表现为播放器状态正常但无声。
 - **[x] ① 已修复** — 提交 `97a39c410`：`packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart:909` 显式设置 iOS `AVAudioSessionCategory.playback` + `AVAudioSessionMode.spokenAudio`，保留 Android media 配置。

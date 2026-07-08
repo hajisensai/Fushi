@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// same contract as the desktop CLI backend) eliminates #1/#2 — ffmpeg decodes
 /// any container/codec. The output suffix still must be selected by platform:
 /// iOS AnkiMobile needs `.m4a`, while desktop/Android keep `.aac` for the
-/// bundled ffmpeg-min adts-only muxer (BUG-460 / BUG-624).
+/// bundled ffmpeg-min adts-only muxer (BUG-460 / BUG-644).
 void main() {
   String libFile(String relative) =>
       File(relative).readAsStringSync().replaceAll('\r\n', '\n');
@@ -55,7 +55,7 @@ void main() {
 
     test(
         'book sentence-audio container is platform-aware '
-        '(iOS .m4a / desktop+Android .aac), BUG-624', () {
+        '(iOS .m4a / desktop+Android .aac), BUG-644', () {
       final String source = libFile(
         'lib/src/pages/implementations/reader_hibiki/mining.part.dart',
       );
@@ -63,11 +63,11 @@ void main() {
           reason: 'Book/audiobook sentence audio must derive its container '
               'from immersionMiningAudioExtension() too. iOS AnkiMobile leaves '
               'raw .aac localhost URLs as visible text, while desktop '
-              'ffmpeg-min still needs .aac/adts (BUG-460 / BUG-624).');
+              'ffmpeg-min still needs .aac/adts (BUG-460 / BUG-644).');
       expect(source.contains("'sentence.aac'"), isFalse,
           reason: 'Do not hardcode .aac for book sentence audio: iOS '
               'AnkiMobile leaves the localhost URL visible instead of '
-              'embedding playable media (BUG-624).');
+              'embedding playable media (BUG-644).');
       expect(source.contains("'sentence.m4a'"), isFalse,
           reason: 'Do not switch book sentence audio to .m4a: the bundled '
               'desktop ffmpeg-min cannot mux it (BUG-460).');

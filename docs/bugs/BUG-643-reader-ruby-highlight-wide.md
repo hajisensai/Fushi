@@ -1,4 +1,4 @@
-## BUG-623 · 阅读器竖排 ruby 有声书高亮条包含振假名导致变宽
+## BUG-643 · 阅读器竖排 ruby 有声书高亮条包含振假名导致变宽
 - **报告**：2026-07-06（用户：wight）
 - **真实性**：✅ 真 bug。第一张截图里有声书逐句高亮命中 `<ruby>` 基字时，背景条比普通正文列更宽；随后 2026-07-07 用户复测指出同一句后半段「の顔色が変わった」这类无振假名正文仍然偏宽。根因有两层：
   1. `hibiki/lib/src/reader/reader_content_styles.dart` 旧实现直接给 `ruby.hoshi-sasayaki-ruby-active` 整个 `<ruby>` 容器设置 `background-color`，竖排 ruby 容器盒子包含 `rt/rp` 注音轨，导致带振假名时背景横向扩到注音区域。

@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Bonjour keys. On iOS the OS aborts the process when a privacy-sensitive API
 /// is hit with no purpose string, so mining a card via camera/gallery crashed.
 ///
-/// BUG-621: iOS 27 also aborts the process when the audiobook/audio import
+/// BUG-641: iOS 27 also aborts the process when the audiobook/audio import
 /// path opens `FilePicker` with `FileType.audio` unless Info.plist declares
 /// `NSAppleMusicUsageDescription`.
 ///
@@ -75,7 +75,7 @@ void main() {
     expect(libDir.existsSync(), isTrue,
         reason: 'lib/ must exist to scan for FileType.audio usage');
     expect(plistFile.existsSync(), isTrue,
-        reason: 'BUG-621 fix lives in this Info.plist');
+        reason: 'BUG-641 fix lives in this Info.plist');
 
     final String plist = plistFile.readAsStringSync();
     final bool usesAudioPicker = libUses('FileType.audio');
@@ -84,7 +84,7 @@ void main() {
       expect(
         plist.contains('<key>NSAppleMusicUsageDescription</key>'),
         isTrue,
-        reason: 'BUG-621: lib/ opens FilePicker with FileType.audio but '
+        reason: 'BUG-641: lib/ opens FilePicker with FileType.audio but '
             'ios/Runner/Info.plist is missing NSAppleMusicUsageDescription; '
             'iOS hard-crashes (SIGABRT/TCC) the first time audio import '
             'requests media access',

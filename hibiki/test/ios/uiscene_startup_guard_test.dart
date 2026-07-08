@@ -87,13 +87,13 @@ void main() {
     expect(
       thinBinaryScript,
       contains('Set :CADisableMinimumFrameDurationOnPhone false'),
-      reason: 'BUG-622: Debug keeps the override disabled because iOS 27 beta '
+      reason: 'BUG-642: Debug keeps the override disabled because iOS 27 beta '
           'crashes in FlutterEngine VSyncClient when the key is true.',
     );
     expect(
       thinBinaryScript,
       contains('Set :CADisableMinimumFrameDurationOnPhone true'),
-      reason: 'BUG-627: Profile/Release final app plists must opt into '
+      reason: 'BUG-647: Profile/Release final app plists must opt into '
           'iPhone ProMotion/high-refresh frame pacing.',
     );
     expect(
