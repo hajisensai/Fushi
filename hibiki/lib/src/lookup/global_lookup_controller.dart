@@ -89,6 +89,17 @@ class GlobalLookupController {
   // there (identical to the pre-fix geometry).
   double _ratchetLeft = double.infinity;
   double _ratchetTop = double.infinity;
+  // TODO-1345 (BUG-583 深层根因续) — the reserved cascade origin FLOOR for THIS
+  // lookup (window-local CSS px, <= 0), computed once from the real screen edges
+  // right after showAt and pushed to the host on every renderStack payload. It
+  // reserves headroom toward the screen interior so a subsequent up/left child
+  // lands inside the window origin committed at the first reveal — the origin then
+  // never moves when the child appears, so the pinned parent card has ZERO
+  // displacement (the true root fix for the residual BUG-583 parent lurch, which
+  // rounds 1-4 could only mask). 0 = no reservation (down-right / cursor at an edge
+  // / no work area) -> pre-fix origin. Reset to 0 on a genuine dismiss.
+  double _originFloorLeft = 0;
+  double _originFloorTop = 0;
   // The overlay renders off-screen until the first self-measurement, then is
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
@@ -479,6 +490,24 @@ class GlobalLookupController {
       // offset is physical px; convert to CSS px for the cascade layout domain.
       _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
       _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
+      // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
+      // interior so a subsequent up/left child lands INSIDE the window origin
+      // committed at THIS first reveal; the host then never moves the origin when
+      // the child appears -> the pinned parent card has ZERO displacement (the
+      // residual BUG-583 lurch rounds 1-4 could only mask). Bounded on-screen (see
+      // computeCascadeHeadroomSeed) so it never triggers the C++ RevealStack work-
+      // area clamp that would itself move the origin. 0 near an edge / no work area
+      // -> pre-fix geometry.
+      final ({double left, double top}) floor = computeCascadeHeadroomSeed(
+        cursorWorkX: _cursorWorkX,
+        cursorWorkY: _cursorWorkY,
+        screenWorkW: _screenWorkW,
+        screenWorkH: _screenWorkH,
+        cardW: cardW,
+        cardH: cardH,
+      );
+      _originFloorLeft = floor.left;
+      _originFloorTop = floor.top;
       await _renderStack();
       glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
@@ -593,6 +622,10 @@ class GlobalLookupController {
     // the next session starts unconstrained.
     _ratchetLeft = double.infinity;
     _ratchetTop = double.infinity;
+    // TODO-1345 (BUG-583 深层根因续) — clear the reserved cascade floor too so the
+    // next lookup re-computes its own from the fresh cursor position.
+    _originFloorLeft = 0;
+    _originFloorTop = 0;
     glog('overlayHidden: dismissed — reveal state reset');
     onHidden?.call();
   }
@@ -1452,6 +1485,11 @@ class GlobalLookupController {
       // work-area-absolute domain (shared zero point with screenW/H) before the
       // cascade math, then the builder shifts the result back to window-local.
       selectionScreenOffset: Offset(_cursorWorkX, _cursorWorkY),
+      // TODO-1345 (BUG-583 深层根因续) — this lookup's reserved cascade floor so the
+      // host commits the headroom-covered origin from the first reveal (an up/left
+      // child then never moves the origin -> zero parent displacement).
+      originFloorLeft: _originFloorLeft,
+      originFloorTop: _originFloorTop,
     ));
   }
 

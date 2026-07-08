@@ -482,6 +482,116 @@ void main() {
       expect(r.height, 420, reason: 'maxBottom(420) - 0');
     });
   });
+
+  group('TODO-1345 (BUG-583 deeper) computeCascadeHeadroomSeed', () {
+    const double cardW = 360;
+    const double cardH = 480;
+
+    test('cursor near the bottom-right reserves a full card up/left', () {
+      // Cursor deep inside a 1920x1040 work area: plenty of interior room, so the
+      // seed reserves a full card of headroom toward the top-left (where an up/left
+      // cascade child will land). Negative = the window origin extends up/left.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 1700,
+        cursorWorkY: 900,
+        screenWorkW: 1920,
+        screenWorkH: 1040,
+        cardW: cardW,
+        cardH: cardH,
+      );
+      expect(s.left, -cardW,
+          reason: 'full-card left headroom (ample interior)');
+      expect(s.top, -cardH, reason: 'full-card top headroom (ample interior)');
+    });
+
+    test(
+        'cursor against the LEFT/TOP edge reserves NOTHING (no up/left cascade)',
+        () {
+      // Near the top-left edge the cursor is close to both edges: the distance to
+      // the edge clamps the headroom to ~0, so the seed degenerates to (0,0) — an
+      // up/left cascade never happens there (children go down/right), and reserving
+      // headroom would push the window off-screen and trigger the C++ clamp.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 0,
+        cursorWorkY: 0,
+        screenWorkW: 1920,
+        screenWorkH: 1040,
+        cardW: cardW,
+        cardH: cardH,
+      );
+      expect(s.left, 0, reason: 'no left headroom at the left edge');
+      expect(s.top, 0, reason: 'no top headroom at the top edge');
+    });
+
+    test('headroom is clamped to the cursor-to-edge distance (stays on-screen)',
+        () {
+      // Cursor only 120 px from the left edge: the left headroom cannot exceed that
+      // distance (else the window would extend past the left edge -> C++ clamp ->
+      // origin move -> the very lurch we are eliminating). Top has ample room.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 120,
+        cursorWorkY: 900,
+        screenWorkW: 1920,
+        screenWorkH: 1040,
+        cardW: cardW,
+        cardH: cardH,
+      );
+      expect(s.left, -120,
+          reason: 'left headroom clamped to the 120px cursor-to-edge distance');
+      expect(s.top, -cardH, reason: 'top still reserves a full card');
+    });
+
+    test('headroom is clamped so card + headroom fits the work-area dimension',
+        () {
+      // A narrow 500 px work area: even with the cursor far right, headroom cannot
+      // exceed screenW - card = 140 (else card+headroom > screenW pushes off the
+      // opposite edge). The second clamp keeps the whole window on-screen.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 480,
+        cursorWorkY: 900,
+        screenWorkW: 500,
+        screenWorkH: 1040,
+        cardW: cardW, // 360
+        cardH: cardH,
+      );
+      expect(s.left, -140, reason: 'clamped to screenW(500) - card(360) = 140');
+    });
+
+    test('no work area reported (0) degenerates to no reservation (pre-fix)',
+        () {
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 0,
+        cursorWorkY: 0,
+        screenWorkW: 0,
+        screenWorkH: 0,
+        cardW: cardW,
+        cardH: cardH,
+      );
+      expect(s.left, 0, reason: 'no work area -> no floor (pre-fix geometry)');
+      expect(s.top, 0);
+    });
+
+    test('the seed is never positive (would clip the root inward)', () {
+      // Whatever the inputs, the floor only ever reserves OUTWARD (<= 0). A
+      // positive seed would pull the origin inward and clip the pinned root card.
+      for (final double cx in const <double>[0, 50, 200, 1000, 5000]) {
+        for (final double cy in const <double>[0, 50, 200, 1000, 5000]) {
+          final ({double left, double top}) s = computeCascadeHeadroomSeed(
+            cursorWorkX: cx,
+            cursorWorkY: cy,
+            screenWorkW: 1920,
+            screenWorkH: 1040,
+            cardW: cardW,
+            cardH: cardH,
+          );
+          expect(s.left, lessThanOrEqualTo(0),
+              reason: 'left seed never positive');
+          expect(s.top, lessThanOrEqualTo(0),
+              reason: 'top seed never positive');
+        }
+      }
+    });
+  });
 }
 
 void _assertFinitePositive(GlobalLookupFrameRect r) {

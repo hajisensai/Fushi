@@ -209,6 +209,8 @@ String buildStackRenderScript({
   required double maxWidth,
   required double maxHeight,
   Offset selectionScreenOffset = Offset.zero,
+  double originFloorLeft = 0,
+  double originFloorTop = 0,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -248,7 +250,21 @@ String buildStackRenderScript({
     map['settingsJs'] = settingsJs;
     popups.add(map);
   }
-  final String payloadJson = jsonEncode(<String, Object?>{'popups': popups});
+  final Map<String, Object?> payloadObj = <String, Object?>{'popups': popups};
+  // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
+  // interior so an up/left child lands INSIDE the window origin committed at the
+  // first reveal; the host's measureAndReport then never moves the origin when the
+  // child appears -> the pinned parent card has ZERO displacement (extends the
+  // down-right zero-lurch guarantee to up/left). Only carried when it actually
+  // reserves something (< 0), so a down-right / edge lookup sends the pre-fix
+  // payload verbatim (Never break userspace).
+  if (originFloorLeft < 0 || originFloorTop < 0) {
+    payloadObj['originFloor'] = <String, Object?>{
+      'left': originFloorLeft,
+      'top': originFloorTop,
+    };
+  }
+  final String payloadJson = jsonEncode(payloadObj);
   return 'window.__globalLookupHost && '
       'window.__globalLookupHost.renderStack($payloadJson);';
 }

@@ -1552,4 +1552,98 @@ function flushTimers() {
     'committing the new lookup origin covers frame-2 (reveals in place)');
 }
 
+// 46. TODO-1345 (BUG-583 deeper root cause): a per-lookup origin FLOOR (reserved
+//     cascade headroom toward the screen interior, pushed by Dart on the renderStack
+//     payload) pulls the union bbox MIN-corner (window origin) OUT to the floor from
+//     the FIRST reveal — so the window is committed already covering the region an
+//     up/left child will occupy, even though the only shell sits at (0,0).
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+    originFloor: { left: -140, top: -120 },
+  });
+  const size = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(size, 'overlaySize reported');
+  const box = size.args[1];
+  assert.strictEqual(box.left, -140,
+    'origin floored OUT to the reserved headroom left (single shell at 0)');
+  assert.strictEqual(box.top, -120, 'origin floored out to the reserved headroom top');
+  // Far edges still reach the root card from the floored origin (no clip).
+  assert.strictEqual(box.width, 340, 'width = maxRight(200) - flooredLeft(-140)');
+  assert.strictEqual(box.height, 280, 'height = maxBottom(160) - flooredTop(-120)');
+  // A floor of 0 (down-right / edge lookup) is a pure no-op: origin stays 0.
+  const { host: host2 } = freshHost();
+  host2.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+    originFloor: { left: 0, top: 0 },
+  });
+  const box2 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  assert.strictEqual(box2.left, 0, 'floor 0 leaves the origin byte-identical (left)');
+  assert.strictEqual(box2.top, 0, 'floor 0 leaves the origin byte-identical (top)');
+}
+
+// 47. TODO-1345 (BUG-583 deeper) — CORE: with the origin floor reserving up/left
+//     headroom, opening an up/left child that lands WITHIN the floor does NOT move
+//     the window origin — not at placement, and (critically) NOT when the child
+//     becomes content-ready. This is the true root fix for the residual "第二个弹窗
+//     出现导致第一个弹窗位置变动": rounds 1-4 let the origin move outward ONCE at the
+//     child's content-ready (harness #40 locked that "one move"), which still lurched
+//     the pinned parent across the DWM/WebView2 boundary. Reserving the headroom up
+//     front freezes the origin so the parent has ZERO displacement — the same
+//     guarantee BUG-583 already gave the down-right cascade, now extended to up/left.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* R */' };
+  const floor = { left: -140, top: -120 };
+  // Root reveal with the reserved floor (Dart computed it from the screen edges).
+  host.renderStack({ popups: [root], originFloor: floor });
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120); // root visible (content-ready)
+  const baseline = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  assert.strictEqual(baseline.left, -140, 'root origin sits at the reserved floor left');
+  assert.strictEqual(baseline.top, -120, 'root origin sits at the reserved floor top');
+  // Simulate C++ RevealStack committing that floored origin (window moved + layer
+  // shifted) so the reveal gate's coverage check sees it.
+  host.commitLayerShift(baseline.left, baseline.top);
+  // Open an up/left child that lands WITHIN the floor (-40,-30 is inside -140,-120).
+  const child = { id: 'frame-1', parentIndex: 0,
+    frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '/* C */' };
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child], originFloor: floor });
+  const openSize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  if (openSize) {
+    assert.strictEqual(openSize.args[1].left, -140,
+      'up/left child open does NOT move the origin (it is inside the reserved floor)');
+    assert.strictEqual(openSize.args[1].top, -120,
+      'up/left child open does NOT move the origin top');
+  }
+  // The child is covered by the committed floor origin FROM PLACEMENT, so it is
+  // reveal-ready without waiting for a window move (no clipped-then-jump either).
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'child covered by the reserved floor origin -> reveal-ready at placement');
+  // Child becomes content-ready: STILL no origin move (rounds 1-4 pulled it to -40
+  // here — the residual parent lurch; the floor freezes it at -140).
+  const childIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  childIframe._renderContent(140);
+  const readySize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  if (readySize) {
+    assert.strictEqual(readySize.args[1].left, -140,
+      'child content-ready does NOT pull the origin (frozen at the floor — zero '
+      + 'parent lurch, the deeper BUG-583 fix)');
+    assert.strictEqual(readySize.args[1].top, -120,
+      'child content-ready does NOT pull the origin top');
+  }
+}
+
 console.log('global_lookup_host_test: PASS');
