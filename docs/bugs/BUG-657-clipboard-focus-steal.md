@@ -11,7 +11,7 @@
   抢走焦点。`DesktopLookupForegroundPolicy.none` 早已定义但从未接线，剪贴板一直落到默认
   `bringToFront`。与窗口置顶策略（`DesktopClipboardWindowMode` normal/lookup/always）无关，
   任一策略下都抢焦点。
-- **[x] ① 已修复** — commit `<PENDING>`。剪贴板来源统一改带
+- **[x] ① 已修复** — commit `dbf83a5de`。剪贴板来源统一改带
   `DesktopLookupForegroundPolicy.none`：`submitText()` 显式传 `foregroundPolicy:
   DesktopLookupForegroundPolicy.none`（`desktop_lookup_service.dart`），消费侧原本已按
   `foregroundPolicy == bringToFront` 门控唤前台，故 `none` 只在后台准备查词结果（词典页照常
