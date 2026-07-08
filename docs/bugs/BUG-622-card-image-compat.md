@@ -1,4 +1,4 @@
-## BUG-616 · 老 {book-cover} 模板视频制卡也产 GIF（向后兼容超集，无需手改）
+## BUG-622 · 老 {book-cover} 模板视频制卡也产 GIF（向后兼容超集，无需手改）
 - **报告**：2026-07-08（用户：卡组里 Picture 字段还是 {book-cover}，担心必须手改成 {card-image}）
 - **真实性**：❌ 非代码 bug（已验证行为正确）。用户诉求「老 {book-cover} 模板视频制卡也要出图、不想手改」在 origin/develop 上**已满足**。沿真实代码路径核对：
   - `{card-image}` / `{book-cover}` / `{video-clip}` 三键都读同一个 `context.coverPath`：`packages/hibiki_anki/lib/src/anki_models.dart:462-469`。

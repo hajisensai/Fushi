@@ -1,4 +1,4 @@
-## BUG-620 · 手机长按丢了文本区间选择(复制)·回归
+## BUG-624 · 手机长按丢了文本区间选择(复制)·回归
 - **报告**：2026-07-08（用户：TODO-1317「书籍里面，长按没有选择了。变成长按选择文字查词了」）
 - **真实性**：✅ 真 bug —— 根因 `hibiki/lib/src/reader/reader_selection_scripts.dart` 的 `endRangeSelection`（BUG-609 / `7edfec52c`）。BUG-609 为「触屏长按拖选一段文字」把松手 `endRangeSelection` 直接 `fireTextSelected` → 走 `onTextSelected` → `_handleTextSelected` → **立刻弹查词**。于是手机长按拖选=选中即查词，丢了原有「长按拖选一段文本区间 → 复制/普通选择」的能力（TODO-1279 `user-select:none` 先掐掉原生触屏选区，BUG-609 只补回「拖选→查词」一条路，没补「拖选→复制」）。桌面（`pointer: fine`）本就有右键菜单「查词/复制/导出」共存（`chrome.part.dart:_showReaderTextContextMenu`），移动端缺这一层选择。
 - **[x] ① 已修复** —— 移动端拖选松手改为**弹选区菜单（复制 / 查词）共存**，照抄桌面右键范式（不复活原生双选区、保住 BUG-609 拖选高亮）：

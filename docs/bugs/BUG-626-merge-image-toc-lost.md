@@ -1,4 +1,4 @@
-## BUG-620 · 图片合并后章节列表消失
+## BUG-626 · 图片合并后章节列表消失
 - **报告**：2026-07-08（用户：）
 - **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/pages/implementations/reader_hibiki/chrome.part.dart:1464-1487`（旧 `_flattenTocToTtu`，随 TODO-1128 引入）。
 - **[x] ① 已修复** — 提交 本提交（分支 todo1333-merge-image-toc，commit 见 `git log --grep TODO-1333`）

@@ -133,7 +133,7 @@ void main() {
     expect(find.text(t.video_subtitle_waveform_unavailable), findsOneWidget);
   });
 
-  // TODO-1315 回归守卫（BUG-620）：入口按钮**永不**因波形探测结果消失。历史上
+  // TODO-1315 回归守卫（BUG-623）：入口按钮**永不**因波形探测结果消失。历史上
   // 挂载时预探测、探测为空即 [SizedBox.shrink] 收起整个入口，弱设备 / 移动端因此「字幕调轴
   // 入口也没了、进不去」。现在入口常驻可见：挂载即在、点击探测为空只内联提示不可用、入口
   // 仍在可重试。这三态（挂载 / 探测中 / 探测空）下入口 key 都必须 findsOneWidget。

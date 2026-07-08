@@ -27,11 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 606 条。点号进各自文件。
+> 共 612 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-620](bugs/BUG-620-merge-image-toc-lost.md) | ✅ | ✅ | 图片合并后章节列表消失 |
+| [BUG-626](bugs/BUG-626-merge-image-toc-lost.md) | ✅ | ✅ | 图片合并后章节列表消失 |
+| [BUG-625](bugs/BUG-625-theme-swatch-full-preview.md) | ✅ | ✅ | 未选中主题色卡空白·预览画布塌成0x0 |
+| [BUG-624](bugs/BUG-624-longpress-text-selection.md) | ✅ | ✅ | 手机长按丢了文本区间选择(复制)·回归 |
+| [BUG-623](bugs/BUG-623-subtitle-timing-entry.md) | ✅ | ✅ | 字幕调轴波形对轴入口在弱设备被隐藏（懒加载化后已改为常驻可见） |
+| [BUG-622](bugs/BUG-622-card-image-compat.md) | ✅ | ✅ | 老 {book-cover} 模板视频制卡也产 GIF（向后兼容超集，无需手改） |
+| [BUG-621](bugs/BUG-621-extension-popup-parity.md) | ✅ | ✅ | 浏览器扩展查词弹窗与 app 内不一致（丑/按钮位置不同） |
+| [BUG-620](bugs/BUG-620-sync-autodownload-decouple.md) | ✅ | ✅ | 同步误把远端独有书自动灌书架(syncAudioBookFiles 触发 TODO-873 自动下书) |
 | [BUG-619](bugs/BUG-619-cloud-folder-spill.md) | ✅ | ✅ | 云盘进度文件溢出到父目录 |
 | [BUG-618](bugs/BUG-618-interconnect-token-mismatch-confusion.md) | 🚧 | 🚧 | 互联访问令牌与桌面端不一致（per-peer token·非 bug 待确认） |
 | [BUG-617](bugs/BUG-617-interconnect-wan-pin-vanishes.md) | ✅ | ✅ | 公网配对 host 点允许即关窗抹掉 PIN·client 还没输就看不到 |
@@ -57,7 +63,7 @@
 | [BUG-597](bugs/BUG-597-android-video-black-texture.md) | ✅ | ✅ | 安卓视频解码正常但纹理合成黑屏 |
 | [BUG-596](bugs/BUG-596-yt-stream-dedup-cover.md) | ✅ | ✅ | 油管流去重无videoId规范化+非YouTube流无封面 |
 | [BUG-595](bugs/BUG-595-mobile-mining-no-cover.md) | ✅ | ✅ | 手机制卡回退路径漏coverHref致无书籍封面 |
-| [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5 次复诉） |
+| [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5–6 次复诉） |
 | [BUG-593](bugs/BUG-593-netflix-card-subtitle-dup.md) | ✅ | ✅ | 网飞制卡卡片字幕重复两次+截取混入UI+少开头 |
 | [BUG-592](bugs/BUG-592-interconnect-connect-fail.md) | ✅ | ✅ | 互联LAN token成功仍连失败+公网无pin |
 | [BUG-591](bugs/BUG-591-external-sub-style.md) | ✅ | ✅ | 外挂ASS字幕自带颜色描边不生效 |
@@ -68,7 +74,7 @@
 | [BUG-586](bugs/BUG-586-netflix-mine-queue-dup-sentence.md) | ✅ | ✅ | 网飞扩展制卡队列句子一模一样重复 |
 | [BUG-585](bugs/BUG-585-ffmpeg-audio-138.md) | ✅ | ✅ | 制卡句子音频 ffmpeg exit -138（googlevideo connect 阶段网络超时） |
 | [BUG-584](bugs/BUG-584-image-spoiler-reveal-persist.md) | ✅ | ✅ | 图片防剧透遮罩点击揭开后又恢复 |
-| [BUG-583](bugs/BUG-583-global-lookup-flicker-residual.md) | ✅ | ✅ | app 外查词第一个弹窗出现/嵌套子弹窗打开或消失时父卡残留闪烁 |
+| [BUG-583](bugs/BUG-583-global-lookup-flicker-residual.md) | ✅ | ✅ | app 外查词第一个弹窗出现/嵌套子弹窗打开或消失时父卡残留闪烁 + 子弹窗出现被裁一帧再跳进来 |
 | [BUG-582](bugs/BUG-582-interconnect-audiobook-shown-as-plain-no-audio-sync.md) | ✅ | ✅ | 互联有声书显示成普通书且音频不同步 |
 | [BUG-581](bugs/BUG-581-nonvideo-mine-no-cue.md) | ✅ | ✅ | 普通网页制卡误报没找到当前字幕 |
 | [BUG-580](bugs/BUG-580-interconnect-audiobook-rename.md) | ✅ | ✅ | 互联下载有声书 EPUB 落盘 rename 失败中止导入 |

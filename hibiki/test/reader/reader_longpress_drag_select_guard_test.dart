@@ -87,7 +87,7 @@ void main() {
           reason: 'touchmove/touchend 须非被动才能 preventDefault');
     });
 
-    // BUG-620：真拖动松手改弹选区菜单（复制/查词，走 endRangeSelection ->
+    // BUG-624：真拖动松手改弹选区菜单（复制/查词，走 endRangeSelection ->
     // fireSelectionMenu -> onSelectionMenu），不再直接查词；原地未拖动仍退回单击查词。
     test('松手结算走 endRangeSelection；原地未拖动退回单击查词', () {
       expect(js, contains('endRangeSelection'));

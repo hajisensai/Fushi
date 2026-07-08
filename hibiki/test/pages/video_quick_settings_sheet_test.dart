@@ -1035,7 +1035,7 @@ void main() {
   ];
   const Key waveEntryKey = ValueKey<String>('subtitle-waveform-open-button');
 
-  // TODO-1315 回归守卫（BUG-620）：字幕调轴的「波形对轴」入口在 sheet 集成层
+  // TODO-1315 回归守卫（BUG-623）：字幕调轴的「波形对轴」入口在 sheet 集成层
   // 必须可达——有字幕 cue + 可抽波形（本地视频路径 => loadSubtitleWaveform 非空）时，进
   // 「播放」分类详情就能看到并点到入口按钮。历史上入口曾因挂载时预探测、探测为空即收起
   // 而「进不去」（用户报「字幕调轴入口也没了」）；这里锁死「入口在 playback 详情常驻可达」，

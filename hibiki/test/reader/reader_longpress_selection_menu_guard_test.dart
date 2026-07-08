@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 
-/// BUG-620 / TODO-1317：手机「长按没有选择了，变成长按选择文字查词了」回归守卫。
+/// BUG-624 / TODO-1317：手机「长按没有选择了，变成长按选择文字查词了」回归守卫。
 ///
 /// 根因：BUG-609（7edfec52c）为「触屏长按拖选」把松手 `endRangeSelection` 直接
 /// `fireTextSelected` → onTextSelected → 立刻弹查词，于是拖选=选中即查词，丢了原有
