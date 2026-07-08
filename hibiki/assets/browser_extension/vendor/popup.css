@@ -581,14 +581,33 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     display: none;
 }
 
+/* TODO-1337: 词典分组的展开/收起三角用「纯 CSS 边框三角形」而非字体字形（旧: content:'▶'/'▼'）。
+   旧做法把三角当字体字形渲染，会继承弹窗当前字体——包括用户注入的自定义词典字体
+   (html,body{font-family:<custom>,...})；若该字体缺 U+25B6/U+25BC 或按 emoji 呈现，
+   某些平台/WebView（Android WebView、自定义词典字体、emoji 回退）下三角会渲染成空白/彩色
+   emoji/豆腐块，即「展开收起图标渲染不出来」。边框三角是纯几何，零字体依赖，全平台/全字体
+   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。 */
 .glossary-group > summary::before {
-    content: '▶ ';
-    font-size: 8px;
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    /* 收起态：右向三角（顶点朝右） */
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-right: 0;
+    border-left: 5px solid currentColor;
+    margin-right: 5px;
+    vertical-align: middle;
     opacity: 0.5;
 }
 
 .glossary-group[open] > summary::before {
-    content: '▼ ';
+    /* 展开态：下向三角（顶点朝下）——显式重设四边，避免残留收起态边框 */
+    border-top: 5px solid currentColor;
+    border-right: 4px solid transparent;
+    border-bottom: 0;
+    border-left: 4px solid transparent;
 }
 
 .glossary-group > div[data-dictionary] {

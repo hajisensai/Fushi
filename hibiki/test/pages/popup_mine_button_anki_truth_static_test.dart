@@ -35,7 +35,7 @@ void main() {
 
   setUpAll(() {
     source = File('assets/popup/popup.js').readAsStringSync();
-    final int start = source.indexOf("className: 'inline-action-button mine-button'");
+    final int start = source.indexOf("className: 'mine-button'");
     expect(start, greaterThanOrEqualTo(0),
         reason: 'mine button element not found');
     // Bound the block at the header appendChild that follows the initial

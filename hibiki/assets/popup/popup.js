@@ -303,12 +303,8 @@ const ICON_PATHS = {
     favorite: 'M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z',
     // star（已收藏）
     favorited: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
-    // add（可制卡 +）
+    // add（制卡按钮已回到 ✓✓↩ 文本标记；add 仅供句子上下文步进器的 + 按钮）
     add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
-    // check（已制卡 ✓）
-    check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
-    // restore（最新可改 ✓↩：一键覆写最近那张卡）
-    restore: 'M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z',
     // remove（步进器 ➖）
     remove: 'M19 13H5v-2h14v2z',
     // close（清空草稿 / 标签说明遮罩关闭 ×）
@@ -1996,7 +1992,9 @@ function createEntryHeader(entry, idx) {
         const latest = isMined && isLatestEditable(expression, reading);
         mineButton.dataset.mined = isMined ? '1' : '';
         mineButton.dataset.latest = latest ? '1' : '';
-        setButtonIcon(mineButton, isMined ? (latest ? 'restore' : 'check') : 'add');
+        // TODO-1325 还原：应用户要求，制卡按钮回到 ✓✓↩ 文本标记（+ 可制卡 /
+        // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
+        mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';
         if (isMined) {
             mineButton.classList.add('duplicate');
         } else {
@@ -2009,7 +2007,8 @@ function createEntryHeader(entry, idx) {
         }
     };
     const mineButton = el('button', {
-        className: 'inline-action-button mine-button',
+        className: 'mine-button',
+        textContent: '+',
         ontouchstart: () => {
             lastSelection = window.getSelection()?.toString() || '';
         },
@@ -2119,7 +2118,6 @@ function createEntryHeader(entry, idx) {
             }
         }
     });
-    setButtonIcon(mineButton, 'add');
     buttonsContainer.appendChild(mineButton);
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
