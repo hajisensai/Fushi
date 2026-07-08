@@ -18,8 +18,8 @@ part of '../video_hibiki_page.dart';
 ///
 /// The `_videoSidePanel` notifier, the `_VideoSidePanelState`/`_VideoSidePanelKind`
 /// types, the per-kind child builders (`_buildSpeedSidePanel`,
-/// `_buildVideoQuickSettingsSheet`, `_buildSubtitleSourcesSidePanel`,
-/// `_buildAudioTracksSidePanel`, `_buildChapterSidePanel`), the controls/rail
+/// `_buildVideoQuickSettingsSheet`, `_buildSecondarySubtitleSourcesSidePanel`,
+/// `_buildChapterSidePanel`), the controls/rail
 /// collaborators (`_clearRailHover`, `_hideVideoControlEditOverlay`,
 /// `_hideControlPopover`, `_markControlsVisible`, `_pokeControlsVisible`,
 /// `_refocusVideo`, `_clearSelectedMiningCues`), the `_subtitleListVisible` /
@@ -84,12 +84,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return t.video_setting_speed;
       case _VideoSidePanelKind.settings:
         return t.video_settings_title;
-      case _VideoSidePanelKind.subtitleSources:
-        return t.video_menu_subtitle_track;
       case _VideoSidePanelKind.secondarySubtitleSources:
         return t.video_secondary_subtitle_sources;
-      case _VideoSidePanelKind.audioTracks:
-        return t.video_audio_track;
       case _VideoSidePanelKind.chapters:
         return t.video_chapters;
       case _VideoSidePanelKind.quality:
@@ -103,9 +99,7 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return 560;
       case _VideoSidePanelKind.chapters:
         return 420;
-      case _VideoSidePanelKind.subtitleSources:
       case _VideoSidePanelKind.secondarySubtitleSources:
-      case _VideoSidePanelKind.audioTracks:
       case _VideoSidePanelKind.speed:
       case _VideoSidePanelKind.quality:
         return 320;
@@ -121,12 +115,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return _buildSpeedSidePanel();
       case _VideoSidePanelKind.settings:
         return _buildVideoQuickSettingsSheet();
-      case _VideoSidePanelKind.subtitleSources:
-        return _buildSubtitleSourcesSidePanel(controller);
       case _VideoSidePanelKind.secondarySubtitleSources:
         return _buildSecondarySubtitleSourcesSidePanel(controller);
-      case _VideoSidePanelKind.audioTracks:
-        return _buildAudioTracksSidePanel(controller);
       case _VideoSidePanelKind.chapters:
         return _buildChapterSidePanel(controller);
       case _VideoSidePanelKind.quality:

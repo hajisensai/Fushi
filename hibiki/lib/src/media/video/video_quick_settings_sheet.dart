@@ -26,6 +26,20 @@ import 'package:hibiki/utils.dart';
 /// 低相关一律不改 delayMs 仅提示，翻开关最坏只是「低置信」提示（降级非破坏）。
 const bool _kSubtitleAutoAlignButtonEnabled = true;
 
+/// 视频设置面板内的主题切换选项（TODO-1350）：复用全局 `themePresets`（含护眼米色
+/// `ecru-theme` / 跟随系统），让用户在视频里也能切换整个 app 的配色主题。`key` 是
+/// [ThemeNotifier] 的持久化主题键（`system-theme` / 预设键 / `custom-theme:<id>`），
+/// `label` 是已本地化的显示名。
+class VideoThemeOption {
+  const VideoThemeOption({required this.key, required this.label});
+
+  /// 持久化主题键，选中后原样交给 `setAppThemeKey`。
+  final String key;
+
+  /// 已本地化的显示名。
+  final String label;
+}
+
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
 /// （TODO-556：大分类从左栏移到顶栏横向 chip；详情独占整宽并独立滚动，分类条固定在
 /// 顶部），窄窗降级单列 push。书籍设置面板仍保持左右 master-detail，互不影响。
@@ -87,6 +101,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.onDanmakuEnabledChanged,
     this.onDanmakuOnlineEnabledChanged,
     this.onDanmakuMaxActiveChanged,
+    this.initialCategory,
+    this.audioTrackSection,
+    this.subtitleTrackSection,
+    this.themeOptions = const <VideoThemeOption>[],
+    this.currentThemeKey,
+    this.onSelectThemeKey,
     super.key,
   });
 
@@ -243,6 +263,29 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   final Future<void> Function(bool value)? onDanmakuOnlineEnabledChanged;
   final Future<void> Function(int value)? onDanmakuMaxActiveChanged;
 
+  /// TODO-1351：打开面板时直接定位到某个分类（`audio` / `subtitle` / ...）。null =
+  /// 用默认（宽窗 `playback`，窄窗主页导航列表）。由「音频轨」「字幕轨」按钮驱动，把
+  /// 原来「外面浮的轨切换器」收进本面板对应 tab。
+  final String? initialCategory;
+
+  /// TODO-1351：音频轨切换区（`音频` 分类的内容），由视频页构建（读 controller 的
+  /// audioTracks、当前选中轨、切轨回调）。null = 无音频轨可切换时显示占位。轨列表随视频
+  /// 页 `_rebuild` 重建，选中态即时刷新。
+  final Widget? audioTrackSection;
+
+  /// TODO-1351：字幕轨/字幕源切换区（`字幕` 分类顶部），由视频页构建（外挂字幕 + 打开
+  /// 字幕文件 + 关闭 + 内嵌/远端源）。null = 不显示（如无 controller / 测试）。
+  final Widget? subtitleTrackSection;
+
+  /// TODO-1350：可选主题列表（跟随系统 + 预设 + 当前自定义），空 = 不显示主题切换行。
+  final List<VideoThemeOption> themeOptions;
+
+  /// TODO-1350：当前生效的主题键（用于高亮当前项）。
+  final String? currentThemeKey;
+
+  /// TODO-1350：切主题回调（交给 `setAppThemeKey` 落盘 + 重建全局主题）。null = 不显示。
+  final Future<void> Function(String key)? onSelectThemeKey;
+
   @override
   State<VideoQuickSettingsSheet> createState() =>
       _VideoQuickSettingsSheetState();
@@ -307,7 +350,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   bool _autoAligning = false;
 
   /// 窄窗 push 选中的子页 id；null = 主页。宽窗下恒有选中（默认 playback）。
-  String? _subPage;
+  /// TODO-1351：初值取 [VideoQuickSettingsSheet.initialCategory]，让「音频轨/字幕轨」
+  /// 按钮直接把面板开在对应分类。
+  late String? _subPage = widget.initialCategory;
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗（供 PopScope.canPop 读取）。
   /// 按窗口宽高确定性判定（>= 共享常量阈值），与书籍设置同条件。
@@ -326,6 +371,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     if (oldWidget.initialControlLayout != widget.initialControlLayout) {
       _controlLayout =
           widget.initialControlLayout ?? VideoControlLayout.currentChrome;
+    }
+    // TODO-1351：面板已开着时用户又点了「音频轨/字幕轨」按钮 → initialCategory 变化，
+    // 跳到目标分类。只在收到「新的、非空」目标时强跳，避免覆盖用户在面板内的手动导航
+    // （同值 rebuild 不触发，保留用户当前所在分类）。
+    if (widget.initialCategory != null &&
+        widget.initialCategory != oldWidget.initialCategory) {
+      _subPage = widget.initialCategory;
     }
   }
 
@@ -432,10 +484,22 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 分类项（宽窗顶部 chip 行 + 窄窗导航行共用；id 与 [_subPageContent] 的 case 对齐）。
   List<({String id, IconData icon, String label})> _categories() {
     return <({String id, IconData icon, String label})>[
+      // TODO-1351：顶栏前三项即参考「检查器」的 视频 / 音频 / 字幕 tab——轨切换收进对应
+      // 分类（音频轨在「音频」、字幕轨在「字幕」顶部），删掉外面浮的轨切换器。
       (
         id: 'playback',
         icon: Icons.play_circle_outline,
         label: t.video_settings_cat_playback,
+      ),
+      (
+        id: 'audio',
+        icon: Icons.audiotrack_outlined,
+        label: t.video_settings_cat_audio,
+      ),
+      (
+        id: 'subtitle',
+        icon: Icons.subtitles_outlined,
+        label: t.video_settings_cat_subtitle,
       ),
       (
         id: 'shaders',
@@ -443,11 +507,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         label: t.video_settings_cat_shaders,
       ),
       (id: 'mpv', icon: Icons.tune, label: t.video_settings_cat_mpv),
-      (
-        id: 'subtitle',
-        icon: Icons.subtitles_outlined,
-        label: t.video_settings_cat_subtitle,
-      ),
       (
         id: 'danmaku',
         icon: Icons.forum_outlined,
@@ -588,6 +647,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     switch (page) {
       case 'playback':
         return _buildPlaybackDetail();
+      case 'audio':
+        return _buildAudioDetail();
       case 'shaders':
         return _buildShadersDetail();
       case 'mpv':
@@ -607,6 +668,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     switch (page) {
       case 'playback':
         return t.video_settings_cat_playback;
+      case 'audio':
+        return t.video_settings_cat_audio;
       case 'shaders':
         return t.video_settings_cat_shaders;
       case 'mpv':
@@ -626,6 +689,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   Widget _buildPlaybackDetail() {
     return _settingsSection(
       children: <Widget>[
+        // TODO-1350：主题切换行——复用全局 themePresets（含护眼米色 / 跟随系统），让用户
+        // 在视频里也能切整个 app 的配色主题。仅当调用方给了选项 + 回调时显示。
+        if (widget.themeOptions.isNotEmpty && widget.onSelectThemeKey != null)
+          _buildThemeRow(),
         // TODO-1158：HLS 多档画质入口（仅当前流是 HLS master 时显示）。点开画质侧栏。
         if (widget.qualityOptionCount > 0 && widget.onOpenQuality != null)
           ListTile(
@@ -657,6 +724,59 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         _buildDoubleTapRow(),
         _buildSpeedStepRow(),
         _buildPauseAtSubtitleEndRow(),
+      ],
+    );
+  }
+
+  /// TODO-1350：主题切换行。用离散单选（下拉）列出跟随系统 + 预设主题（含护眼米色）+
+  /// 当前自定义主题；选中即经 [VideoQuickSettingsSheet.onSelectThemeKey] 落盘 + 重建
+  /// 全局主题。`selected` 用当前主题键在 `themeOptions` 里反查下标，命中不到（罕见）回
+  /// 落 -1 → 不高亮（picker 容忍 selected 不在项内）。
+  Widget _buildThemeRow() {
+    final List<VideoThemeOption> options = widget.themeOptions;
+    int selectedIndex = -1;
+    for (int i = 0; i < options.length; i++) {
+      if (options[i].key == widget.currentThemeKey) {
+        selectedIndex = i;
+        break;
+      }
+    }
+    return AdaptiveSettingsPickerRow<int>(
+      title: t.video_setting_theme,
+      subtitle: t.video_setting_theme_hint,
+      icon: Icons.palette_outlined,
+      controlBelow: true,
+      materialWidth: double.infinity,
+      selected: selectedIndex,
+      options: <AdaptiveSettingsPickerOption<int>>[
+        for (int i = 0; i < options.length; i++)
+          AdaptiveSettingsPickerOption<int>(value: i, label: options[i].label),
+      ],
+      onChanged: (int index) async {
+        if (index < 0 || index >= options.length) return;
+        await widget.onSelectThemeKey!(options[index].key);
+      },
+    );
+  }
+
+  // ── 音频：轨切换（TODO-1351）─────────────────────────────────────────────
+  /// 「音频」分类：音频轨切换收进这里（参考「检查器」的音频 tab），取代原来外面浮的
+  /// 音轨侧栏。内容由视频页构建（[VideoQuickSettingsSheet.audioTrackSection]，读
+  /// controller 的 audioTracks + 当前轨 + 切轨回调），空时显示占位。
+  Widget _buildAudioDetail() {
+    final Widget? section = widget.audioTrackSection;
+    return _settingsSection(
+      title: t.video_audio_track,
+      children: <Widget>[
+        if (section != null)
+          section
+        else
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.audiotrack),
+            title: Text(t.video_audio_track_empty),
+            enabled: false,
+          ),
       ],
     );
   }
@@ -2289,10 +2409,23 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     final double resolvedShadowThickness =
         _style.resolveShadowThickness(uiScale);
 
+    final double gap = HibikiDesignTokens.of(context).spacing.gap;
+    final Widget? trackSection = widget.subtitleTrackSection;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        // TODO-1351：字幕轨/字幕源切换收进「字幕」分类顶部（参考「检查器」字幕 tab 的
+        // 「外挂字幕 → + 打开字幕」），取代原来外面浮的字幕轨侧栏。内容由视频页构建
+        // （外挂字幕 + 打开字幕文件 + 关闭 + 内嵌/远端源）。
+        if (trackSection != null) ...<Widget>[
+          _settingsSection(
+            title: t.video_menu_subtitle_track,
+            children: <Widget>[trackSection],
+          ),
+          SizedBox(height: gap),
+        ],
         _settingsSection(
           children: <Widget>[
             // TODO-840 Part B：遮蔽模式三态（不遮蔽 / 模糊 / 隐藏）。chips 分段、焦点

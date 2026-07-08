@@ -16,9 +16,9 @@ void main() {
   });
 
   test('远端模式在字幕菜单顶部分流，不走 videoPath==null 早返回', () {
-    // TODO-274：独立 _showRemoteSubtitleMenu 已并入 _showSubtitleSourceMenu —— 远端
-    // 与本地都走右侧 push-aside side panel（_VideoSidePanelKind.subtitleSources），
-    // 面板内容按 _isRemote 渲染远端/本地条目。不变式仍是：_isRemote 分支必须在
+    // TODO-274：独立 _showRemoteSubtitleMenu 已并入 _showSubtitleSourceMenu。
+    // TODO-1351：远端与本地都改为把设置面板开在「字幕」分类（字幕轨切换区按 _isRemote
+    // 渲染远端/本地条目）。不变式仍是：_isRemote 分支必须在
     // videoPath==null 早返回之前，否则远端永远先被 videoPath==null 卡死。
     final int menuIdx = src.indexOf('Future<void> _showSubtitleSourceMenu(');
     expect(menuIdx, greaterThanOrEqualTo(0));
@@ -26,19 +26,21 @@ void main() {
     final int remoteBranchIdx = src.indexOf('if (_isRemote) {', menuIdx);
     expect(remoteBranchIdx, greaterThanOrEqualTo(0));
     expect(remoteBranchIdx, lessThan(nullGuardIdx));
-    // 远端分支与统一字幕菜单都打开同一个 subtitleSources side panel。
+    // TODO-1351：字幕轨切换（含远端）从浮动字幕源侧栏收进设置面板「字幕」分类，远端与
+    // 本地分支都改为把设置面板开在 'subtitle' 分类（不变式仍是 _isRemote 分支先于
+    // videoPath==null 早返回）。
     expect(
-        src.contains(
-            '_showVideoSidePanel(_VideoSidePanelKind.subtitleSources)'),
+        RegExp(r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'")
+            .hasMatch(src),
         isTrue,
-        reason: '字幕源（含远端）菜单走统一 side panel');
+        reason: '字幕源（含远端）菜单改为把设置面板开在「字幕」分类');
   });
 
-  test('字幕源 side panel 远端分支提供 关闭 / host 字幕 / 本地导入', () {
-    // 远端三项接线（清除 / host 字幕 / 本地导入）仍在，只是从独立菜单挪进 side panel
-    // 内容构建器 _buildSubtitleSourcesSidePanel 的 _isRemote 分支。
-    expect(src.contains('Widget _buildSubtitleSourcesSidePanel('), isTrue,
-        reason: '字幕源 side panel 内容构建器存在');
+  test('字幕轨切换区远端分支提供 关闭 / host 字幕 / 本地导入', () {
+    // 远端三项接线（清除 / host 字幕 / 本地导入）仍在，TODO-1351 从独立浮动侧栏挪进设置
+    // 面板「字幕」分类的字幕轨切换区构建器 _buildSubtitleTrackRows 的 _isRemote 分支。
+    expect(src.contains('Widget _buildSubtitleTrackRows('), isTrue,
+        reason: '字幕轨切换区内容构建器存在');
     expect(src.contains('_clearRemoteSubtitle('), isTrue);
     expect(src.contains('_pickAndImportRemoteSubtitle('), isTrue);
     expect(src.contains('t.video_subtitle_remote_host'), isTrue);
