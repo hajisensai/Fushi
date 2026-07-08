@@ -10,6 +10,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/sync/ttu_filename.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -633,6 +634,133 @@ void main() {
             .deleteBook(db: db, bookKey: 'no-such-book'),
         isFalse,
       );
+    });
+  });
+
+  group(
+      'ReaderHibikiSource book-key identifier round-trip '
+      '(BUG-658 / TODO-1344 特殊字符标题导入后打不开/删不掉)', () {
+    // deleteBook resolves on-disk persist/extract dirs via path_provider.
+    final TestWidgetsFlutterBinding binding =
+        TestWidgetsFlutterBinding.ensureInitialized();
+    late Directory ppDir;
+    setUp(() {
+      ppDir = Directory.systemTemp.createTempSync('hibiki_bookkey_rt_pp');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => ppDir.path,
+      );
+    });
+    tearDown(() {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      if (ppDir.existsSync()) ppDir.deleteSync(recursive: true);
+    });
+
+    // Titles whose sanitized bookKey contains literal %XX escapes. These are
+    // the exact two files the user reported: 業物語 (dc:title carries `&lt;…&gt;`
+    // so the parsed title contains `<`/`>`) and Do Androids (dc:title ends in
+    // `?`). sanitizeTtuFilename percent-encodes each forbidden char, so the
+    // stored primary key contains `%3C`/`%3E`/`%3F`.
+    const String gouTitle = '業物語 <物語> (講談社ＢＯＸ)';
+    const String androidsTitle = 'Do Androids Dream of Electric Sheep?';
+
+    test(
+        'mediaIdentifierFor -> parseBookKey is a lossless round-trip for every '
+        'sanitize escape (the %-in-key regression)', () {
+      // One representative key per forbidden char sanitizeTtuFilename encodes,
+      // plus the two real book keys and the common no-% keys that must be
+      // unaffected.
+      final List<String> keys = <String>[
+        sanitizeTtuFilename(gouTitle), // 業物語 %3C物語%3E (講談社ＢＯＸ)
+        sanitizeTtuFilename(androidsTitle), // ...Sheep%3F
+        sanitizeTtuFilename('a/b'), // %2F
+        sanitizeTtuFilename('a?b'), // %3F
+        sanitizeTtuFilename('a<b>c'), // %3C %3E
+        sanitizeTtuFilename('a:b'), // %3A
+        sanitizeTtuFilename('a|b'), // %7C
+        sanitizeTtuFilename('a%b'), // %25 (literal percent in the title!)
+        sanitizeTtuFilename('a"b'), // %22
+        sanitizeTtuFilename(r'a\b'), // %5C
+        'Book A', // common case, no escape
+        'Solo~ttu-star~Book', // star sentinel, no %
+      ];
+      for (final String key in keys) {
+        final String id = ReaderHibikiSource.mediaIdentifierFor(key);
+        expect(
+          ReaderHibikiSource.parseBookKey(id),
+          key,
+          reason: 'identifier "$id" must decode back to the exact stored key',
+        );
+      }
+    });
+
+    test('the two real book keys survive the round-trip verbatim', () {
+      const String gouKey = '業物語 %3C物語%3E (講談社ＢＯＸ)';
+      const String androidsKey = 'Do Androids Dream of Electric Sheep%3F';
+      expect(sanitizeTtuFilename(gouTitle), gouKey);
+      expect(sanitizeTtuFilename(androidsTitle), androidsKey);
+      expect(
+        ReaderHibikiSource.parseBookKey(
+            ReaderHibikiSource.mediaIdentifierFor(gouKey)),
+        gouKey,
+      );
+      expect(
+        ReaderHibikiSource.parseBookKey(
+            ReaderHibikiSource.mediaIdentifierFor(androidsKey)),
+        androidsKey,
+      );
+    });
+
+    test('parseBookKey returns null for non-book identifiers', () {
+      expect(ReaderHibikiSource.parseBookKey('srt_abc'), isNull);
+      expect(ReaderHibikiSource.parseBookKey('about:blank'), isNull);
+      expect(ReaderHibikiSource.parseBookKey(''), isNull);
+      expect(ReaderHibikiSource.parseBookKey('hoshi://book/'), isNull,
+          reason: 'empty remainder is not a valid key');
+      expect(ReaderHibikiSource.parseBookKey('hoshi://video/x'), isNull);
+    });
+
+    test(
+        'end-to-end: a %-key book resolves and deletes through the shelf '
+        'identifier (import -> open lookup -> delete闭环)', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      // Persist the row exactly as EpubImporter does: primary key = sanitized
+      // title (import verified on-disk that this folder name is creatable).
+      final String key = sanitizeTtuFilename(androidsTitle);
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: key,
+        title: androidsTitle,
+        epubPath: '/tmp/x.epub',
+        extractDir: '/tmp/$key',
+        chapterCount: 1,
+        chaptersJson: '["ch1"]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+      // The shelf builds the MediaItem fresh from the row; opening/deleting
+      // parses the key back out of that identifier. Before the fix this decoded
+      // `%3F`->`?`, so the lookup returned null → book_file_not_found + delete
+      // returned false (the exact reported symptom).
+      final String identifier = ReaderHibikiSource.mediaIdentifierFor(key);
+      final String? parsed = ReaderHibikiSource.parseBookKey(identifier);
+      expect(parsed, key);
+
+      // Open path: getEpubBook(parsedKey) must find the row.
+      expect(await db.getEpubBook(parsed!), isNotNull,
+          reason: 'open lookup must resolve the %-key row');
+
+      // Delete path: deleteBook(parsedKey) must actually remove it and report
+      // success (not the false / "删不掉" dead-end).
+      final bool ok =
+          await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: parsed);
+      expect(ok, isTrue);
+      expect(await db.getEpubBook(key), isNull);
     });
   });
 

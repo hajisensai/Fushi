@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 643 条。点号进各自文件。
+> 共 644 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-658](bugs/BUG-658-book-import-notfound.md) | ✅ | ✅ | 特殊字符标题EPUB导入后打不开/删不掉(bookKey含%XX被标识符round-trip解码) |
 | [BUG-657](bugs/BUG-657-settings-autoupdate-dict-overlap.md) | ✅ | ✅ | 词典管理页自动更新卡与词典列表粘连 |
 | [BUG-656](bugs/BUG-656-merge-consecutive-images.md) | ✅ | ✅ | 图片合并两张连续图只有最后一张合并进章节 |
 | [BUG-655](bugs/BUG-655-mine-icon-garble.md) | ✅ | ✅ | 制卡后查词弹窗制卡图标(✓↩)变乱码 |
