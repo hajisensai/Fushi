@@ -7,6 +7,7 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -248,7 +249,7 @@ class GoogleDriveHandler {
     required String rootFolder,
     Uint8List? coverData,
   }) async {
-    final sanitized = sanitizeTtuFilename(bookTitle);
+    final sanitized = requireBookFolderName(bookTitle);
 
     // 双保险（BUG-202）：命中缓存仅在该 folderId 仍存在且未 trash 时才信任。
     // folderId 是不可变 ID，删后进回收站；陈旧命中会让上传打向 trashed 文件夹

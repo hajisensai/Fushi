@@ -39,7 +39,13 @@ const String _localAudioAssetSuffix = '.hibikiaudiolib';
 
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
+///
+/// An empty / whitespace-only name is also reserved: it is never a real book
+/// folder (a book's folder name is a non-empty sanitized title), and treating it
+/// as one would import the sync root itself or an orphan collapsed onto the root
+/// (BUG-619, TODO-1329).
 bool isReservedSyncFolderName(String name) =>
+    name.trim().isEmpty ||
     name == kSyncDictionaryNamespace ||
     name == kSyncLocalAudioNamespace ||
     name == kSyncAggregateNamespace;
@@ -1439,6 +1445,11 @@ class SyncOrchestrator {
       final EpubBookRow book = books[i];
       _emit(SyncPhase.audiobooks,
           itemIndex: i, itemTotal: total, title: book.title);
+      // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
+      // title, so an empty key means ensureBookFolder would collapse onto the
+      // sync root and scatter the .hibikiaudio package into hibiki-data/ instead
+      // of the per-book folder. (requireBookFolderName is the precise backstop.)
+      if (book.bookKey.isEmpty) continue;
       File? tmp;
       try {
         final String bookKey = book.bookKey;
