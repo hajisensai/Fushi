@@ -438,14 +438,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 书架是独立分区且归视频 tab 管，不纳入本页（在视频库页单独排序）。
   Future<void> _openShelfSort() async {
     if (_selectionMode) _exitSelectionMode();
-    // TODO-947 方案A：排序页先经 groupAndSortShelfEntries 折叠——系列渲染成一张
-    // SeriesShelfCard（与主网格对齐），散书渲染原卡。拖合并、点进成员视图均在本页内完成。
+    // TODO-947 P4：排序页把系列**内联展开成员**（不折叠成一张卡），同系列成员连续相邻并套
+    // 同色分组框（[SeriesReorderFrame]），首成员标系列名，让用户在编辑排序里一眼看出哪几本
+    // 属于同一合集、直接拖成员重排。拖合并（散书并入系列 / 建新系列）与成员级移出仍在本页内完成。
     final List<ShelfReorderItem> items = _buildSortItems();
-    // TODO-947-R4：折叠后可能仅一个 group（单系列 / 单散书），但只要存在任何系列卡就
-    // 应能进去拖出成员（单成员系列也算）；仅当既无系列卡又 <2 散书时才无事可做。
-    final bool hasSeriesCard =
-        items.any((ShelfReorderItem it) => it.seriesCardId != null);
-    if (items.length < 2 && !hasSeriesCard) {
+    // 只要有 >=2 个条目、或存在任一系列成员（可对其做移出），就值得进排序页；否则无事可做。
+    final bool hasSeriesMember =
+        items.any((ShelfReorderItem it) => it.seriesId != null);
+    if (items.length < 2 && !hasSeriesMember) {
       HibikiToast.show(msg: t.shelf_sort_saved);
       return;
     }
@@ -460,21 +460,23 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
           onPersist: _persistShelfOrder,
           onMerge: _mergeShelfEntries,
-          onEnterSeries: _enterSeriesInSort,
-          rebuildItems: _rebuildSortItems,
+          // 系列成员格右上角的焦点/点击「移出系列」按钮（散书格不挂）。seriesFrame 不传 =
+          // 无整页框、无拖出边界移出（书架有散书混排，拖出边界只当重排）。
+          onRemove: (ShelfReorderItem item) =>
+              _removeMemberFromSeriesInSort(item.seriesId!, item),
         ),
       ),
     );
-    // 重排页可能拖合并 / 拖出写过系列归属，回到书架后重载分组渲染（系列卡折叠）。
+    // 重排页可能拖合并 / 移出写过系列归属，回到书架后重载分组渲染（主网格仍折叠系列卡）。
     _shelfOrderFuture = _loadShelfOrder();
     if (mounted) _rebuild(() {});
   }
 
-  /// TODO-947 方案A：把当前可见 SRT + EPUB 经 [groupAndSortShelfEntries] 折叠成重排
-  /// 条目——散书（group.seriesId==null）渲染原卡并带上归属 seriesId（拖合判据）；系列
-  /// （group.seriesId!=null）折叠成一张 [SeriesShelfCard]，[ShelfReorderItem.seriesCardId]
-  /// = 系列 id（持久化时回写 Series.sortOrder、tap 时进成员视图），entryKey 用合成键
-  /// 'series_<id>'（不对应任何真书条目，仅作拖拽身份）。与主网格折叠排序自洽。
+  /// TODO-947 P4：把当前可见 SRT + EPUB 经 [groupAndSortShelfEntries] 分组后构造成重排条目。
+  /// 散书（group.seriesId==null）渲染原卡、无框、无归属；系列（group.seriesId!=null）**内联
+  /// 展开全部成员**（连续相邻，不再折叠成单张 [SeriesShelfCard]），逐本套 [SeriesReorderFrame]
+  /// 同色分组框、首成员叠系列名 header，每个成员条目携带真实 (mediaType, entryKey) + 归属
+  /// seriesId（供拖合并判据、移出按钮、落盘 [unfoldedShelfReorderOrders]）。主网格浏览仍折叠。
   List<ShelfReorderItem> _buildSortItems() {
     final List<ShelfOrderingItem<_ShelfBookSlot>> shelfItems =
         <ShelfOrderingItem<_ShelfBookSlot>>[
@@ -513,131 +515,92 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     for (final ShelfGroup<_ShelfBookSlot> group in groups) {
       final int? seriesId = group.seriesId;
       if (seriesId == null) {
-        final _ShelfBookSlot slot = group.coverItem.payload;
-        final SrtBook? srt = slot.srt;
-        if (srt != null) {
-          out.add(ShelfReorderItem(
-            mediaType: 'srt',
-            entryKey: srt.uid,
-            seriesId: null,
-            card: _buildSrtCard(
-              srt,
-              epubCoverUri: _epubCoverUrisByBookKey[srt.bookKey],
-            ),
-          ));
-        } else {
-          final MediaItem item = slot.epub!;
-          final String? bookKey = _parseBookKey(item.mediaIdentifier);
-          if (bookKey == null) continue;
-          out.add(ShelfReorderItem(
-            mediaType: 'epub',
-            entryKey: bookKey,
-            seriesId: null,
-            card: buildMediaItem(item),
-          ));
-        }
+        // 散书：原卡渲染、无框、无归属。
+        final ShelfReorderItem? item =
+            _sortItemForSlot(group.coverItem.payload, seriesId: null);
+        if (item != null) out.add(item);
         continue;
       }
-      // 系列折叠卡：同主网格的堆叠封面 + 角标渲染（前 3 张成员封面）。
+      // 系列：**内联展开全部成员**（连续相邻），逐本套同色分组框，首成员叠系列名 header。
+      // 成员本身携带 seriesId（供拖合并判据 + 移出按钮 + 落盘时把系列落回首成员位置）。
       final SeriesRow? series = _seriesById[seriesId];
-      final List<Widget> covers = <Widget>[
-        for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items.take(4))
-          _slotCover(it.payload, _epubCoverUrisByBookKey),
-      ];
-      out.add(ShelfReorderItem(
-        mediaType: 'series',
-        // 合成身份键：系列卡不对应 ShelfEntries 行，仅用作网格拖拽元素的稳定 Key。
-        entryKey: 'series_$seriesId',
-        // seriesId 与 seriesCardId 同值：前者供拖合判据（目标已属某系列），后者标识
-        // 本条目就是一张折叠系列卡（持久化分流 + tap 进入）。
-        seriesId: seriesId,
-        seriesCardId: seriesId,
-        card: SeriesShelfCard(
-          name: series?.name ?? t.series,
-          itemCount: group.items.length,
-          slotAspectRatio: kShelfBookCardAspectRatio,
-          covers: covers,
-          // 排序态 tap 由网格 onActivate 处理（此 onTap 被 IgnorePointer 吞）；占位无操作。
-          onTap: () {},
-        ),
-      ));
+      final String seriesName = series?.name ?? t.series;
+      final Color frameColor = _seriesFrameColor(seriesId);
+      final int memberCount = group.items.length;
+      bool first = true;
+      for (final ShelfOrderingItem<_ShelfBookSlot> it in group.items) {
+        final ShelfReorderItem? base =
+            _sortItemForSlot(it.payload, seriesId: seriesId);
+        if (base == null) continue;
+        final bool isHeader = first;
+        first = false;
+        out.add(ShelfReorderItem(
+          mediaType: base.mediaType,
+          entryKey: base.entryKey,
+          seriesId: seriesId,
+          card: SeriesReorderFrame(
+            color: frameColor,
+            showHeader: isHeader,
+            seriesName: seriesName,
+            memberCount: memberCount,
+            child: base.card,
+          ),
+        ));
+      }
     }
     return out;
   }
 
-  /// TODO-947 方案A：进入成员视图返回后重取折叠条目（成员可能已被拖出 / 系列已清空
-  /// 消失）。先重载归属映射再重建，保证折叠快照与 DB 一致。
-  Future<List<ShelfReorderItem>> _rebuildSortItems() async {
-    await _loadShelfOrder();
-    return _buildSortItems();
-  }
-
-  /// TODO-947 方案A ③④⑤ + P3：在排序页内点进一个折叠系列卡 → 进入「带框成员视图」
-  /// （用户拍板：合集成员用框圈起来、拖出框 = 移出合集）。改 push 一个带 [seriesFrame]
-  /// 的 [ShelfReorderPage]：一层完成成员重排（onPersist 平铺回写 ShelfEntries.sortOrder）
-  /// 与拖出框移出（onRemove 弹确认 + 共享 helper 写库）。SeriesDetailPage 本体不动，仍供
-  /// 主书架路径（[_openSeriesDetail]）使用。返回后折叠条目由上层 [_onActivate.rebuildItems]
-  /// （[_rebuildSortItems]）统一重取刷新。
-  Future<void> _enterSeriesInSort(int seriesId) async {
-    final SeriesRow? series = _seriesById[seriesId];
-    final String seriesName = series?.name ?? t.series;
-    // 取系列成员，按 sortOrder 构造可重排条目（找不到卡片的成员——已删/远端离线——跳过）。
-    final List<ShelfEntryRow> rows =
-        await appModel.database.getShelfEntriesBySeries(seriesId);
-    rows.sort((ShelfEntryRow a, ShelfEntryRow b) {
-      final int c = a.sortOrder.compareTo(b.sortOrder);
-      return c != 0 ? c : a.entryKey.compareTo(b.entryKey);
-    });
-    final List<ShelfReorderItem> items = <ShelfReorderItem>[];
-    for (final ShelfEntryRow row in rows) {
-      final Widget? card = _buildSeriesMemberCard(row);
-      if (card == null) continue;
-      items.add(ShelfReorderItem(
-        mediaType: row.mediaType,
-        entryKey: row.entryKey,
-        card: card,
-      ));
-    }
-    if (!mounted) return;
-    await Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        builder: (_) => ShelfReorderPage(
-          title: seriesName,
-          initialItems: items,
-          cellExtent: 180,
-          childAspectRatio: kShelfBookCardAspectRatio,
-          feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
-          onPersist: _persistSeriesMemberOrder,
-          seriesFrame: ShelfReorderSeriesFrame(seriesName: seriesName),
-          onRemove: (ShelfReorderItem item) =>
-              _removeMemberFromSeriesInSort(seriesId, item),
+  /// 把一个排序槽（散书或系列成员）构造成一条**未套框**的 [ShelfReorderItem]（原卡渲染）。
+  /// SRT / EPUB 各走既有卡片构造；EPUB bookKey 解析失败（脏 identifier）返回 null 跳过。
+  /// [seriesId] 只填进返回条目的归属字段；套框 / header 由调用方 [_buildSortItems] 决定。
+  ShelfReorderItem? _sortItemForSlot(
+    _ShelfBookSlot slot, {
+    required int? seriesId,
+  }) {
+    final SrtBook? srt = slot.srt;
+    if (srt != null) {
+      return ShelfReorderItem(
+        mediaType: 'srt',
+        entryKey: srt.uid,
+        seriesId: seriesId,
+        card: _buildSrtCard(
+          srt,
+          epubCoverUri: _epubCoverUrisByBookKey[srt.bookKey],
         ),
-      ),
+      );
+    }
+    final MediaItem item = slot.epub!;
+    final String? bookKey = _parseBookKey(item.mediaIdentifier);
+    if (bookKey == null) return null;
+    return ShelfReorderItem(
+      mediaType: 'epub',
+      entryKey: bookKey,
+      seriesId: seriesId,
+      card: buildMediaItem(item),
     );
   }
 
-  /// TODO-947 P3：带框成员重排页退出时把成员顺序平铺回写 ShelfEntries.sortOrder（成员是
-  /// 系列内的真书条目，走 [batchUpsertShelfOrder] 单事务；不涉及 [splitShelfReorderOrders]
-  /// 的系列卡分流）。空列表跳过（移出到空系列时不做无谓写）。
-  Future<void> _persistSeriesMemberOrder(List<ShelfReorderItem> ordered) async {
-    if (ordered.isEmpty) return;
-    final List<({String mediaType, String entryKey, int sortOrder})> orders =
-        <({String mediaType, String entryKey, int sortOrder})>[
-      for (int i = 0; i < ordered.length; i++)
-        (
-          mediaType: ordered[i].mediaType,
-          entryKey: ordered[i].entryKey,
-          sortOrder: i,
-        ),
+  /// TODO-947 P4：由系列 id 稳定映射到一个分组框颜色（相邻系列不同色，便于区分）。同一系列
+  /// 每次渲染同色。调色板取中饱和度、明暗背景都清晰的 8 色循环。
+  Color _seriesFrameColor(int seriesId) {
+    const List<Color> palette = <Color>[
+      Color(0xFF4F8DFD),
+      Color(0xFF2FB56B),
+      Color(0xFFF08A24),
+      Color(0xFFAF52DE),
+      Color(0xFF20B2C4),
+      Color(0xFFE45C8A),
+      Color(0xFF6C6BE0),
+      Color(0xFFB58A21),
     ];
-    await appModel.database.batchUpsertShelfOrder(orders);
+    return palette[seriesId.abs() % palette.length];
   }
 
-  /// TODO-947 P3：带框成员视图「拖出框 / 点移出按钮」移出一个成员。弹既有确认框
-  /// （[showRemoveFromSeriesConfirm]），确认后经共享 helper [removeEntryFromSeries] 写库
-  /// （setSeriesForEntry null + 空系列清理），刷新书架归属映射，返回结果给重排页决定是否
-  /// pop（系列清空 → 退回折叠层）。
+  /// TODO-947 P3/P4：把一个系列成员移出系列——内联排序页 / 带框成员子页点「移出」按钮
+  /// （或子页拖出框）触发。弹既有确认框（[showRemoveFromSeriesConfirm]），确认后经共享 helper
+  /// [removeEntryFromSeries] 写库（setSeriesForEntry null + 空系列清理），刷新书架归属映射，
+  /// 返回结果给重排页决定是否 pop（仅带框成员子页在系列清空时退回上层）。
   Future<ShelfRemoveResult> _removeMemberFromSeriesInSort(
       int seriesId, ShelfReorderItem item) async {
     if (!await showRemoveFromSeriesConfirm(context)) {
@@ -683,16 +646,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     return seriesId;
   }
 
-  /// TODO-947 方案A：把重排页给回的折叠顺序拆分回写——散书条目下标 →
-  /// ShelfEntries.sortOrder（[batchUpsertShelfOrder]，单事务）；折叠系列卡下标 →
-  /// Series.sortOrder（[updateSeriesSortOrder]，逐行）。拆分逻辑复用纯函数
-  /// [splitShelfReorderOrders]（与测试同一真相源）。同一折叠下标 i 喂两套目标，保证回
-  /// 主网格经 groupAndSortShelfEntries 混排后顺序与本页折叠视图一致。
+  /// TODO-947 P4：把内联排序页给回的顺序拆分回写——每个条目（散书 + 系列成员）下标 →
+  /// ShelfEntries.sortOrder（[batchUpsertShelfOrder]，单事务）；每个系列的 [SeriesRow.sortOrder]
+  /// 落该系列首成员下标（[updateSeriesSortOrder]，逐行）。拆分逻辑复用纯函数
+  /// [unfoldedShelfReorderOrders]（与测试同一真相源）。这样回主网格经 groupAndSortShelfEntries
+  /// 混排后，系列落在其首成员位置、成员按 sortOrder 升序重新聚拢，顺序与本页内联视图一致。
   Future<void> _persistShelfOrder(List<ShelfReorderItem> ordered) async {
     final ({
       List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
       List<({int seriesId, int sortOrder})> seriesOrders,
-    }) split = splitShelfReorderOrders(ordered);
+    }) split = unfoldedShelfReorderOrders(ordered);
     for (final ({int seriesId, int sortOrder}) so in split.seriesOrders) {
       await appModel.database.updateSeriesSortOrder(so.seriesId, so.sortOrder);
     }

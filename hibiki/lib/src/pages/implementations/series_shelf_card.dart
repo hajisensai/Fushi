@@ -296,3 +296,123 @@ class SeriesFolderCover extends StatelessWidget {
     );
   }
 }
+
+/// TODO-947 P4：书架「编辑排序」页里给**内联展开的系列成员卡**套的分组框。用户拍板：
+/// 编辑排序里合集成员要连续相邻 + 用框圈在一起，一眼看出哪几本是同一个合集。
+///
+/// 用 [Container.foregroundDecoration] 在成员卡**之上**画同色圆角边框——纯前景绘制，不占
+/// 布局尺寸，故不破坏等尺寸重排网格（[HibikiReorderableGrid] 每格固定 cellExtent×高）。同一
+/// 系列的每个成员卡都用同一个 [color]（由 seriesId 稳定映射到调色板，相邻系列颜色不同），
+/// 配上 groupAndSortShelfEntries 保证的连续相邻 → 读作「这一串同色框是一个合集」。首个成员
+/// （[showHeader]）左上角额外叠一个系列名 header chip（不改尺寸的 Positioned 叠层）标注名字。
+class SeriesReorderFrame extends StatelessWidget {
+  const SeriesReorderFrame({
+    required this.color,
+    required this.showHeader,
+    required this.seriesName,
+    required this.memberCount,
+    required this.child,
+    super.key,
+  });
+
+  /// 本系列的分组框颜色（同系列所有成员同色；由调用方按 seriesId 稳定分配）。
+  final Color color;
+
+  /// 是否本系列内联展开后的**首个成员**——仅首个成员叠系列名 header（避免每格都标名字）。
+  final bool showHeader;
+
+  /// 系列名（header 文本；无名兜底由调用方传 `t.series`）。
+  final String seriesName;
+
+  /// 系列成员总数（header 角标显示，配合连续相邻让用户数清一个合集有几本）。
+  final int memberCount;
+
+  /// 被套框的成员卡（书架既有卡片渲染，不重画）。
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        // 前景描边：画在卡片之上、不占布局尺寸，故不撑破固定格子。
+        Container(
+          foregroundDecoration: BoxDecoration(
+            border: Border.all(color: color, width: 2.5),
+            borderRadius: const BorderRadius.all(Radius.circular(12)),
+          ),
+          child: child,
+        ),
+        if (showHeader)
+          PositionedDirectional(
+            top: 6,
+            start: 6,
+            child: _SeriesFrameHeader(
+              color: color,
+              seriesName: seriesName,
+              memberCount: memberCount,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// [SeriesReorderFrame] 首成员左上角的系列名 chip（folder 图标 + 名字 + 数量）。白字铺在
+/// 系列色底上，与成员框同色，读作「这个合集叫 X、共 N 本，从这里开始」。
+class _SeriesFrameHeader extends StatelessWidget {
+  const _SeriesFrameHeader({
+    required this.color,
+    required this.seriesName,
+    required this.memberCount,
+  });
+
+  final Color color;
+  final String seriesName;
+  final int memberCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: const BorderRadius.all(Radius.circular(9)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+              color: Color(0x33000000), blurRadius: 3, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.collections_bookmark_outlined,
+              size: 12, color: Colors.white),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              seriesName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            t.series_item_count(n: memberCount),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
