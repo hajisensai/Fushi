@@ -1742,6 +1742,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       link: Color(0xFF3A5FAD),
       dark: false,
     ),
+    // 护眼（豆沙绿）：与 reader_content_styles `_themeColors['eyecare-theme']` 的
+    // rgba 预设逐一相等（ARGB 同值），作为五角色单一真相源透传。
+    'eyecare-theme': (
+      bg: Color(0xFFC7EDCC),
+      fg: Color(0xDE000000),
+      sasayaki: Color(0x66A0C878),
+      selection: Color(0x5988B583),
+      link: Color(0xFF4C7A3E),
+      dark: false,
+    ),
     'gray-theme': (
       bg: Color(0xFF23272A),
       fg: Color(0xDEFFFFFF),

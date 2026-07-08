@@ -963,6 +963,16 @@ body.show-all-rt rt {
           sasayakiColor: 'rgba(100, 180, 220, 0.40)',
           linkColor: '#3a5fad',
         );
+      case 'eyecare-theme':
+        // 护眼：豆沙绿正文底 (#c7edcc) + 深灰字，柔和低蓝光。角色色须与
+        // chrome.part.dart `_themeMap['eyecare-theme']` 逐一相等（BUG-396）。
+        return const _ThemeColors(
+          textColor: 'rgba(0, 0, 0, 0.87)',
+          backgroundColor: '#c7edcc',
+          selectionColor: 'rgba(136, 181, 131, 0.35)',
+          sasayakiColor: 'rgba(160, 200, 120, 0.40)',
+          linkColor: '#4c7a3e',
+        );
       case 'gray-theme':
         return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.87)',
