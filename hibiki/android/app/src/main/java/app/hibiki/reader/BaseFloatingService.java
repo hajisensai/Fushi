@@ -15,6 +15,7 @@ import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.view.WindowMetrics;
 
@@ -44,6 +45,18 @@ public abstract class BaseFloatingService extends Service {
     protected WindowManager windowManager;
     protected View rootView;
     protected WindowManager.LayoutParams layoutParams;
+
+    // TODO-1268: distance (physical px) a press may travel before it is treated
+    // as a drag instead of a tap. Resolved from the platform's own tap/drag
+    // boundary (ViewConfiguration.getScaledTouchSlop(), ~8dp ≈ 20-28px on modern
+    // phones) in onCreate. The old hardcoded 10px was FAR below the platform slop,
+    // so an ordinary finger tap that rolled a few dp was misclassified as a drag,
+    // ACTION_UP took the drag branch, onOverlayTapped never fired, and tapping a
+    // floating-subtitle word did nothing ("点击悬浮字幕文字没反应"). BUG-598 fixed
+    // the *launch* (background-activity-launch) but assumed the tap already
+    // reached handleTap; on high-density screens it often never did. -1 until
+    // onCreate resolves it (guards against a touch before onCreate).
+    private int touchSlopPx = -1;
 
     // ── Per-service config (set via constructor) ───────────────────────────────
 
@@ -129,6 +142,11 @@ public abstract class BaseFloatingService extends Service {
     public void onCreate() {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        // TODO-1268: use the platform tap/drag boundary so a genuine tap on a
+        // floating-subtitle word is not misclassified as a drag (which would
+        // swallow the word lookup). Resolved once here, before setupOverlay
+        // attaches the touch listener.
+        touchSlopPx = ViewConfiguration.get(this).getScaledTouchSlop();
         createNotificationChannel();
         startForeground(notificationId, buildNotification());
         rootView = createContentView();
@@ -251,9 +269,13 @@ public abstract class BaseFloatingService extends Service {
                     case MotionEvent.ACTION_MOVE: {
                         float dx = event.getRawX() - initialTouchX;
                         float dy = event.getRawY() - initialTouchY;
+                        // TODO-1268: promote to a drag only past the platform
+                        // tap/drag boundary, so a genuine tap (finger roll within
+                        // slop) stays a tap and still reaches onOverlayTapped.
+                        int slop = dragSlopPx();
                         boolean moved = getDragMode() == DragMode.FREE
-                                ? (Math.abs(dx) > 10 || Math.abs(dy) > 10)
-                                : (Math.abs(dy) > 10);
+                                ? (Math.abs(dx) > slop || Math.abs(dy) > slop)
+                                : (Math.abs(dy) > slop);
                         if (moved) isDragging = true;
                         if (isDragging && !isDragLocked()) {
                             if (getDragMode() == DragMode.FREE) {
@@ -280,6 +302,19 @@ public abstract class BaseFloatingService extends Service {
                 return false;
             }
         });
+    }
+
+    /**
+     * Physical-px tap/drag boundary ({@link ViewConfiguration#getScaledTouchSlop}).
+     * Normally resolved in {@link #onCreate}; resolves lazily as a safety net so a
+     * touch can never see the sentinel {@code -1} (which would make every gesture a
+     * drag and swallow taps). TODO-1268.
+     */
+    private int dragSlopPx() {
+        if (touchSlopPx < 0) {
+            touchSlopPx = ViewConfiguration.get(this).getScaledTouchSlop();
+        }
+        return touchSlopPx;
     }
 
     // ── Position persistence ──────────────────────────────────────────────────
