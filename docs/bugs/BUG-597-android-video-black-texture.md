@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug（Android 纹理**握手已成功**却仍黑屏）。根因在 Flutter Impeller 合成层，非解码/纹理握手层。证据链见下。
 - **[x] ① 根因定位 + 关 Impeller 复测闭环仪表化（根治手段=关 Impeller，已有 A3 开关；默认翻转待真机确认）** — 提交 <PENDING>
 - **[x] ② 自动化测试（源码扫描守卫 + 单测）** — `hibiki/test/utils/misc/render_backend_service_test.dart`（本次运行后端快照 / activeBackendLabel）+ `hibiki/test/media/video/video_diag_logging_guard_test.dart`（activeRenderBackend 必挂在抗环形缓冲淘汰的存活行）
-- **[x] 第2步①：Android 默认走 Skia（装新包即好，免用户开开关）** — `MainActivity.isImpellerDisabledPref()` 未设置态默认 `true`（关 Impeller）+ `getImpellerDisabledRawPref()` 三态；显式设置压过默认（`RenderBackendService.resolveImpellerDisabled`）— 提交 4536dd40e
+- **[x] 第2步①：Android 默认走 Skia（装新包即好，免用户开开关）** — `MainActivity.isImpellerDisabledPref()` 未设置态默认 `true`（关 Impeller）+ `getImpellerDisabledRawPref()` 三态；显式设置压过默认（`RenderBackendService.resolveImpellerDisabled`）— 提交 6f5f9d92b
 - **[x] 第2步②：默认翻转 + 显式优先守卫** — `hibiki/test/android/impeller_default_guard_test.dart`（源码扫描锁 native 未设置→Skia）+ `hibiki/test/utils/misc/render_backend_service_test.dart`（三态 helper 四态 + init 未设置管道）
 - **备注**：本 bug 是 BUG-535 的**下一环**。BUG-535（`EnableSurfaceControl=false`）修好了「纹理握手从未完成（wid=0 / vo=null / texture id 停 null）」；本机的新日志显示握手**已成功**（texture id=0 非空、wid=12866、vo=gpu、GL 出帧）却仍黑——正是 BUG-535:25/79 预言的分支「握手成功仍黑 → 试 `EnableImpeller=false`」。无安卓 realme 真机，「关 Impeller 是否解决」需用户真机复测（用现有设置开关，见下），故本次不擅自把全局默认翻成 Skia（A3 明确「非默认全局关」）。
 
