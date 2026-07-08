@@ -153,21 +153,22 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                       : _selectSubtitleOff(controller),
                 ),
       ),
-      // TODO-1302：YouTube 预解析字幕行。preresolvedCues 注入 overlay 的字幕不是 host 外挂
-      // 文件（无 hostSub）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks 空），故单列一行
-      // 让远端字幕菜单能渲染并高亮它；点它经 [_applyYoutubeCaptions] 把预解析 cue 重挂 overlay
-      // （关闭后可再选回），选中态由合成源哨兵 [_kYoutubeCaptionsSource] 判定。
-      if (_isRemote && _youtubeCaptionsAvailable)
-        ListTile(
-          leading: const Icon(Icons.closed_caption_outlined),
-          title: Text(t.video_subtitle_youtube_captions),
-          selected: _currentSubtitleSource == _kYoutubeCaptionsSource,
-          selectedColor: cs.primary,
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_applyYoutubeCaptions(controller)),
-        ),
+      // TODO-1302 track-list-first：每条 YouTube 字幕轨一行（元数据先来、cue 懒下载 on-select）。
+      // 轨列表由 [_resolveDeferredYoutubeCaptionTracks] 起播后回填 client（不依赖 cue 就绪 →
+      // 修「字幕整个消失」），点某行经 [_applyYoutubeCaptionTrack] 懒下载那一轨 cue 挂 overlay，
+      // 选中态由 [YoutubeCaptionTrack.trackKey] 判定；A3：人工>ASR 已在轨表排序，含母语对照变体。
+      if (_isRemote)
+        for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)
+          ListTile(
+            leading: const Icon(Icons.closed_caption_outlined),
+            title: Text(_youtubeCaptionTrackLabel(track)),
+            selected: _currentSubtitleSource == track.trackKey,
+            selectedColor: cs.primary,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(_applyYoutubeCaptionTrack(controller, track)),
+          ),
       if (_isRemote && hostSub != null)
         ListTile(
           leading: const Icon(Icons.cloud_done_outlined),
@@ -666,30 +667,64 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     _rebuild(() => _currentSubtitleSource = null);
   }
 
-  /// TODO-1302：当前有效远端客户端是否带 YouTube 预解析字幕 cue（[UrlStreamVideoClient]
-  /// 的 [UrlStreamVideoClient.preresolvedCues] 非空）。为真时远端字幕菜单渲染一条「YouTube
-  /// 字幕」行，可在「关闭 / YouTube 字幕」间切换。派生自真实客户端，无独立状态需同步。
-  bool get _youtubeCaptionsAvailable {
+  /// TODO-1302 track-list-first：当前有效远端客户端已解析好的 YouTube 字幕轨列表
+  /// （[UrlStreamVideoClient.youtubeCaptionTracks]，元数据，无 cue 正文）。字幕轨选择器据此每
+  /// 轨渲染一行；派生自真实客户端，无独立可失步状态。非 YouTube 客户端返回空表。
+  List<YoutubeCaptionTrack> get _youtubeCaptionTracks {
     final RemoteVideoClient? client = _effectiveRemoteClient;
-    return client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty;
+    return client is UrlStreamVideoClient
+        ? client.youtubeCaptionTracks
+        : const <YoutubeCaptionTrack>[];
   }
 
-  /// TODO-1302：把 YouTube 预解析字幕 cue 重新挂回 overlay（用户从菜单点「YouTube 字幕」
-  /// 重新选中；初始 load 由 [_loadRemoteEpisode] 直接登记源指针）。与 [_applyRemoteSubtitle]
-  /// 对称，但 cue 源是内存里的 [UrlStreamVideoClient.preresolvedCues]（不下载、不落 DB），
-  /// 选中哨兵为 [_kYoutubeCaptionsSource]。客户端不带预解析 cue 时早返回（防御）。
-  Future<void> _applyYoutubeCaptions(VideoPlayerController controller) async {
+  /// TODO-1302 track-list-first：字幕轨选择器行的显示名。原始轨用 YouTube 侧本地化名
+  /// （[YoutubeCaptionTrack.languageName]，ASR 轨 YouTube 常已含「(auto-generated)」标注，
+  /// A3 人工/ASR 由排序区分）；autoTranslate 母语对照变体加「(翻译)」标注区分。
+  String _youtubeCaptionTrackLabel(YoutubeCaptionTrack track) {
+    if (track.isTranslated) {
+      return t.video_subtitle_youtube_translated(lang: track.languageName);
+    }
+    return track.languageName;
+  }
+
+  /// TODO-1302 track-list-first 的 on-select：懒下载 [track] 的 cue（缓存命中直接用）→ 灌
+  /// overlay + 关 libmpv 画面字幕 + 登记 [YoutubeCaptionTrack.trackKey] 为当前源。用户从菜单点
+  /// 某轨、或 [_resolveDeferredYoutubeCaptionTracks] 自动应用最佳轨（[loadSeq] 非空校验仍是当前
+  /// load，防后置自动应用串到已切走的集）时调。best-effort：cue 空时手选提示无字幕、不改当前源。
+  Future<void> _applyYoutubeCaptionTrack(
+    VideoPlayerController controller,
+    YoutubeCaptionTrack track, {
+    int? loadSeq,
+  }) async {
     final RemoteVideoClient? client = _effectiveRemoteClient;
-    if (client is! UrlStreamVideoClient || client.preresolvedCues.isEmpty) {
+    if (client is! UrlStreamVideoClient) return;
+    List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
+    if (cues.isEmpty) {
+      if (mounted) _rebuild(() => _subtitleMenuLoading = true);
+      cues = await resolveYoutubeCaptionCues(track,
+          bookKey: 'yt:${widget.bookUid}');
+      if (!mounted) return;
+      if (loadSeq != null && loadSeq != _episodeLoadSeq) {
+        _rebuild(() => _subtitleMenuLoading = false);
+        return;
+      }
+      if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
+      _rebuild(() => _subtitleMenuLoading = false);
+    }
+    if (cues.isEmpty) {
+      // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
+      if (loadSeq == null) _showOsd(t.video_subtitle_youtube_empty);
       return;
     }
-    controller.setCues(client.preresolvedCues);
+    controller.setCues(cues);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted) return;
-    _rebuild(() => _currentSubtitleSource = _kYoutubeCaptionsSource);
-    _showOsd(
-      t.video_subtitle_switched(label: t.video_subtitle_youtube_captions),
-    );
+    _rebuild(() => _currentSubtitleSource = track.trackKey);
+    if (loadSeq == null) {
+      _showOsd(
+        t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
+      );
+    }
   }
 
   Future<void> _importExternalSubtitle(

@@ -36,7 +36,11 @@ import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
-    show resolveYoutubeCaptions;
+    show
+        YoutubeCaptionTrack,
+        resolveYoutubeCaptionTracks,
+        resolveYoutubeCaptionCues,
+        pickBestYoutubeCaptionTrack;
 import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
@@ -1726,14 +1730,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (urls.miningVideoUrl != null) {
         _controller?.setMiningSourceOverride(urls.miningVideoUrl);
       }
-      // TODO-1307 字幕后置：快解析 gate 起播时 preresolvedCues 为空（未阻塞首帧）。load 已
-      // 返回（首帧就绪），此处异步解析 YouTube 字幕、cue 就绪灌 1302 的 YouTube 字幕轨，不
-      // 阻塞播放。仅 YouTube 客户端（youtubeCaptionsUrl 非空）且尚无预解析 cue 时触发；已内联
-      // 带 cue 的旧路径（上方 preresolvedCues.isNotEmpty 分支）不重复解析。
-      if (client is UrlStreamVideoClient &&
-          client.preresolvedCues.isEmpty &&
-          client.youtubeCaptionsUrl != null) {
-        unawaited(_resolveDeferredYoutubeCaptions(client, seq));
+      // TODO-1302/1307 track-list-first：快解析 gate 起播后（首帧就绪、不阻塞播放）异步解析
+      // YouTube 字幕**轨列表**填字幕轨选择器 + 自动应用最佳轨（懒下载其 cue）。仅 YouTube 客户端
+      // （youtubeCaptionsUrl 非空）触发；见 [_resolveDeferredYoutubeCaptionTracks]。
+      if (client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null) {
+        unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq));
       }
     } catch (e, stack) {
       debugPrint(
@@ -1743,39 +1744,43 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// TODO-1307 字幕后置：快解析 gate 起播后异步解析 YouTube 字幕（[resolveYoutubeCaptions]），
-  /// cue 就绪回填 [UrlStreamVideoClient.preresolvedCues]（供 1302 的 YouTube 字幕轨菜单渲染 /
-  /// 重选）并灌 overlay。best-effort：解析失败（空 cue / 无字幕）静默返回，视频照播。
+  /// TODO-1302/1307 track-list-first：快解析 gate 起播后异步解析 YouTube 字幕**轨列表**
+  /// （[resolveYoutubeCaptionTracks]，单次 getPlayerResponse，**不下载 cue 正文**），回填
+  /// [UrlStreamVideoClient.youtubeCaptionTracks] 填字幕轨选择器——列表出现不依赖 cue 就绪，
+  /// 修「快加载致字幕整个消失」的回归。再自动应用最佳轨（人工>ASR·精确语言，
+  /// [pickBestYoutubeCaptionTrack]，懒下载其 cue）以保留「字幕默认显示」。
   ///
-  /// 保留 1302「字幕默认显示」行为：仅当 [seq] 仍是当前 load、页面仍挂载、且用户在解析间隙
-  /// 未显式选别的字幕（[_currentSubtitleSource]!=null）或关字幕（[_remoteSubtitleUserDismissed]）
-  /// 时，才自动把字幕应用为当前轨（[_kYoutubeCaptionsSource]）；否则只回填 cue、不抢占用户选择。
-  Future<void> _resolveDeferredYoutubeCaptions(
+  /// 用户在解析间隙已关字幕 / 选别的（[_currentSubtitleSource]!=null 或
+  /// [_remoteSubtitleUserDismissed]）时只填列表、不抢占。best-effort：无字幕轨静默返回，视频照播。
+  Future<void> _resolveDeferredYoutubeCaptionTracks(
     UrlStreamVideoClient client,
     int seq,
   ) async {
     final String? captionsUrl = client.youtubeCaptionsUrl;
     if (captionsUrl == null) return;
-    final List<AudioCue> cues = await resolveYoutubeCaptions(captionsUrl);
+    // 母语（autoTranslate 目标）= 当前 UI locale（TODO-1314 A3 母语对照）。
+    final String nativeLang = LocaleSettings.currentLocale.languageCode;
+    final List<YoutubeCaptionTrack> tracks = await resolveYoutubeCaptionTracks(
+      captionsUrl,
+      preferLang: _targetLangCode,
+      autoTranslateTo: nativeLang,
+    );
     if (!mounted || seq != _episodeLoadSeq) return;
-    if (cues.isEmpty) return;
-    // 回填 client：让 1302 的 _youtubeCaptionsAvailable / _applyYoutubeCaptions 读到真实 cue。
-    client.setPreresolvedCues(cues);
+    if (tracks.isEmpty) return;
+    // 列表先立即可见（字幕轨选择器渲染这些轨；不依赖 cue 下载成败）。
+    client.setYoutubeCaptionTracks(tracks);
+    setState(() {});
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final bool userChoseSubtitle =
         _currentSubtitleSource != null || _remoteSubtitleUserDismissed;
-    if (userChoseSubtitle) {
-      // 用户已选别的字幕 / 关字幕：只让菜单「YouTube 字幕」行出现（可再选），不覆盖选择。
-      setState(() {});
-      return;
-    }
-    // 默认自动应用（等价 1302 前置注入时字幕默认可见）：灌 cue overlay + 关 libmpv 画面字幕
-    // + 登记合成源哨兵（菜单高亮「YouTube 字幕」、「关闭」不被误选）。
-    controller.setCues(cues);
-    await controller.selectSubtitleTrack(SubtitleTrack.no());
-    if (!mounted || seq != _episodeLoadSeq) return;
-    setState(() => _currentSubtitleSource = _kYoutubeCaptionsSource);
+    // 用户已选别的字幕 / 关字幕：只填列表（可再选），不覆盖选择。
+    if (userChoseSubtitle) return;
+    // 默认自动应用最佳轨（等价「字幕默认可见」）：懒下载其 cue → overlay。
+    final YoutubeCaptionTrack? best =
+        pickBestYoutubeCaptionTrack(tracks, preferLang: _targetLangCode);
+    if (best == null) return;
+    await _applyYoutubeCaptionTrack(controller, best, loadSeq: seq);
   }
 
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。

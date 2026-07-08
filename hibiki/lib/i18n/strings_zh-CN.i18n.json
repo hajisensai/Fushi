@@ -2183,5 +2183,7 @@
   "video_setting_subtitle_text_color_cyan": "青色",
   "video_setting_subtitle_text_color_green": "绿色",
   "video_setting_subtitle_text_color_red": "红色",
-  "card_mining_pending": "制卡中…"
+  "card_mining_pending": "制卡中…",
+  "video_subtitle_youtube_translated": "$lang（翻译）",
+  "video_subtitle_youtube_empty": "该字幕轨没有文字"
 }

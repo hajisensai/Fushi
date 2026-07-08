@@ -51,36 +51,52 @@ void main() {
     );
   });
 
-  test('② 字幕后置接 1302 字幕轨：load 后异步解析 + 回填 client + 登记合成哨兵', () {
+  test('② track-list-first：load 后异步解析字幕轨列表 + 回填 client + 自动应用最佳轨', () {
+    // TODO-1302 回归修复：字幕轨**列表**（非单条 cue）后置解析，列表回填不依赖 cue 就绪 →
+    // 修「快加载 withCaptions:false 后字幕整个消失」。
     expect(
-      pageSrc
-          .contains('unawaited(_resolveDeferredYoutubeCaptions(client, seq))'),
+      pageSrc.contains(
+          'unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq))'),
       isTrue,
-      reason: 'load 后必须异步 kick 字幕后置解析（不阻塞首帧）',
+      reason: 'load 后必须异步 kick 字幕轨列表解析（不阻塞首帧）',
     );
     expect(
-      pageSrc.contains('resolveYoutubeCaptions(captionsUrl)'),
+      pageSrc.contains('resolveYoutubeCaptionTracks('),
       isTrue,
-      reason: '字幕后置必须走 resolveYoutubeCaptions 入口',
+      reason:
+          'track-list-first 必须走 resolveYoutubeCaptionTracks 入口（单次 getPlayerResponse 取轨表）',
     );
     expect(
-      pageSrc.contains('client.setPreresolvedCues(cues)'),
+      pageSrc.contains('client.setYoutubeCaptionTracks(tracks)'),
       isTrue,
-      reason: '字幕就绪必须回填 client.preresolvedCues，供 1302 菜单渲染/重选',
+      reason: '字幕轨列表必须回填 client.youtubeCaptionTracks，供字幕轨选择器渲染（不依赖 cue 就绪）',
     );
     expect(
-      pageSrc.contains('_currentSubtitleSource = _kYoutubeCaptionsSource'),
+      pageSrc.contains('pickBestYoutubeCaptionTrack(tracks'),
       isTrue,
-      reason: '自动应用必须登记 1302 合成源哨兵 _kYoutubeCaptionsSource',
+      reason: '默认自动应用必须按 A3（人工>ASR·精确语言）选最佳轨',
+    );
+    expect(
+      pageSrc.contains('_applyYoutubeCaptionTrack(controller, best'),
+      isTrue,
+      reason: '选中轨必须经 _applyYoutubeCaptionTrack 懒下载其 cue 挂 overlay',
     );
   });
 
-  test('② 只 YouTube 客户端且无既有 cue 时触发字幕后置（不重复解析）', () {
+  test('② 字幕轨列表回填不被「无 cue」门控（修回归：列表独立于 cue 解析）', () {
+    // 回归根因：旧 _resolveDeferredYoutubeCaptions 把字幕轨行 + overlay 都吊在一次 cue 解析成败上
+    // （preresolvedCues.isEmpty 门控），一次解析空/失败 → 选择器与 overlay 双空。新模型只以
+    // youtubeCaptionsUrl 非空触发轨列表解析，列表回填与 cue 下载解耦。
     expect(
-      pageSrc.contains('client.preresolvedCues.isEmpty &&') &&
-          pageSrc.contains('client.youtubeCaptionsUrl != null'),
+      pageSrc.contains(
+          'client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null'),
       isTrue,
-      reason: '字幕后置只在 YouTube 客户端(youtubeCaptionsUrl 非空)且尚无预解析 cue 时触发',
+      reason: '字幕轨后置只以 youtubeCaptionsUrl 非空触发，不再用 preresolvedCues.isEmpty 门控',
+    );
+    expect(
+      pageSrc.contains('client.preresolvedCues.isEmpty &&'),
+      isFalse,
+      reason: '不得再用 preresolvedCues.isEmpty 门控字幕轨后置（那把列表吊死在一次 cue 解析上）',
     );
   });
 

@@ -8,7 +8,7 @@ import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
-    show isYoutubeUrl, youtubeVideoIdOrNull;
+    show isYoutubeUrl, youtubeVideoIdOrNull, YoutubeCaptionTrack;
 import 'package:http/http.dart' as http;
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
@@ -264,6 +264,31 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   /// 使 [preresolvedCues] 与真实字幕轨对齐（1302 菜单据此渲染「YouTube 字幕」行）。
   void setPreresolvedCues(List<AudioCue> cues) {
     preresolvedCues = cues;
+  }
+
+  /// TODO-1302 track-list-first：起播后 [resolveYoutubeCaptionTracks] 拿到的字幕轨列表
+  /// （元数据，无 cue 正文）。字幕轨选择器据此渲染每条可选轨——**列表出现不依赖 cue 就绪**
+  /// （修「快加载 withCaptions:false 后字幕整个消失」）。空 = 尚未解析 / 无字幕轨。
+  List<YoutubeCaptionTrack> youtubeCaptionTracks =
+      const <YoutubeCaptionTrack>[];
+
+  /// 回填字幕轨列表（TODO-1302）。快解析 gate 起播后由播放页异步解析就绪时调用。
+  void setYoutubeCaptionTracks(List<YoutubeCaptionTrack> tracks) {
+    youtubeCaptionTracks = tracks;
+  }
+
+  /// per-track cue 缓存（[YoutubeCaptionTrack.trackKey] → 已懒下载的 cue）：重选同一轨不重复
+  /// 网络下载 timedtext。仅内存、session 内有效（换书重建 client 即清）。
+  final Map<String, List<AudioCue>> _captionCueCache =
+      <String, List<AudioCue>>{};
+
+  /// 读缓存的某轨 cue（未缓存 → 空表，由调用方 [resolveYoutubeCaptionCues] 懒下载）。
+  List<AudioCue> cachedCaptionCues(String trackKey) =>
+      _captionCueCache[trackKey] ?? const <AudioCue>[];
+
+  /// 缓存某轨懒下载好的 cue（TODO-1302）。
+  void cacheCaptionCues(String trackKey, List<AudioCue> cues) {
+    _captionCueCache[trackKey] = cues;
   }
 
   /// TODO-1307：YouTube watch URL（字幕后置解析源）。快解析 gate 只取流起播、不解字幕，

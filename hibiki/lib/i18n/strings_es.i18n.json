@@ -2183,5 +2183,7 @@
   "video_setting_subtitle_text_color_cyan": "Cyan",
   "video_setting_subtitle_text_color_green": "Green",
   "video_setting_subtitle_text_color_red": "Red",
-  "card_mining_pending": "Adding card…"
+  "card_mining_pending": "Adding card…",
+  "video_subtitle_youtube_translated": "$lang (translated)",
+  "video_subtitle_youtube_empty": "This caption track has no text"
 }
