@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 642 条。点号进各自文件。
+> 共 643 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-657](bugs/BUG-657-peer-device-name-localhost.md) | ✅ | ✅ | 互联已配对设备名显示 localhost 而非真实设备名 |
 | [BUG-656](bugs/BUG-656-merge-consecutive-images.md) | ✅ | ✅ | 图片合并两张连续图只有最后一张合并进章节 |
 | [BUG-655](bugs/BUG-655-mine-icon-garble.md) | ✅ | ✅ | 制卡后查词弹窗制卡图标(✓↩)变乱码 |
 | [BUG-654](bugs/BUG-654-reorder-frame-drag.md) | ✅ | ✅ | 编辑排序合集分组框看不见 + 手机缩放态拖动误滚(TODO-947) |

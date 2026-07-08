@@ -20,6 +20,7 @@ import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/interconnect_url.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';

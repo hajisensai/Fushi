@@ -543,7 +543,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       // TODO-961 M1b: 上报本机稳定 deviceId，host 据此发 per-peer token 并落库。
       final String clientDeviceId = await _pairRepo.getOrCreateDeviceId();
       final HibikiPairV2Outcome outcome = await client.pair(
-        deviceName: _localDeviceName(),
+        deviceName: await _localDeviceName(),
         // 仅当 host 回报 pinRequired 时才被调用；LAN 免 PIN 全程不弹 PIN 框。
         pinProvider: _promptPairPinInput,
         clientDeviceId: clientDeviceId,
@@ -749,14 +749,13 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   }
 
   /// This device's own advertised name, sent to the host so its approval prompt
-  /// can identify who is asking.
-  String _localDeviceName() {
-    try {
-      final String host = Platform.localHostname;
-      if (host.trim().isNotEmpty) return 'Hibiki · $host';
-    } catch (_) {/* localHostname can throw on some platforms */}
-    return 'Hibiki';
-  }
+  /// (and later its paired-devices list) can identify who is asking. Sourced
+  /// from the platform device-info service so mobile clients report their real
+  /// hardware model instead of Android's meaningless "localhost" hostname
+  /// (TODO-1356), never advertising "localhost" as the device name.
+  Future<String> _localDeviceName() => resolveInterconnectDeviceName(
+        _pairSettingsContext.appModel.platformServices.deviceInfo,
+      );
 }
 
 // ── Server mode widget ──────────────────────────────────────────────
@@ -1264,7 +1263,8 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           .post(
             Uri.parse('${device.webDavUrl}/api/pair'),
             headers: <String, String>{'Content-Type': 'application/json'},
-            body: jsonEncode(<String, String>{'name': _localDeviceName()}),
+            body:
+                jsonEncode(<String, String>{'name': await _localDeviceName()}),
           )
           // Outlast the host's 60s approval window so its auto-deny 403 reaches
           // us instead of us timing out first.

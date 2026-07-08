@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
@@ -15,6 +17,7 @@ import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:hibiki_platform/hibiki_platform.dart';
 
 /// Result of a [HibikiSyncServerController.start] attempt, so the caller (the
 /// settings toggle) can surface the right message while a headless app-init
@@ -58,13 +61,19 @@ class HibikiSyncServerController extends ChangeNotifier {
     HibikiRemoteMiningService Function()? miningServiceFactory,
     HibikiRemoteHistoryService Function()? historyServiceFactory,
     HibikiLibraryHostService Function()? libraryServiceFactory,
+    PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
         _database = database,
         _syncDataDir = syncDataDir,
         _remoteLookupServiceFactory = remoteLookupServiceFactory,
         _miningServiceFactory = miningServiceFactory,
         _historyServiceFactory = historyServiceFactory,
-        _libraryServiceFactory = libraryServiceFactory;
+        _libraryServiceFactory = libraryServiceFactory,
+        // Headless/test construction without an injected service falls back to
+        // the desktop (machine-hostname) source; production wires the real
+        // per-platform service so mobile hosts advertise their model, not
+        // Android's "localhost" (TODO-1356).
+        _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final HibikiDatabase Function() _database;
@@ -73,6 +82,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   final HibikiRemoteMiningService Function()? _miningServiceFactory;
   final HibikiRemoteHistoryService Function()? _historyServiceFactory;
   final HibikiLibraryHostService Function()? _libraryServiceFactory;
+  final PlatformDeviceInfoService _deviceInfo;
 
   HibikiSyncServer? _server;
   LanBroadcastService? _broadcast;
@@ -199,6 +209,7 @@ class HibikiSyncServerController extends ChangeNotifier {
         ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem));
       hostFingerprint = identity.fingerprintSha256;
     }
+    final String deviceName = await _deviceName();
     final HibikiSyncServer server = HibikiSyncServer(
       syncDataDir: _syncDataDir(),
       port: port,
@@ -210,7 +221,7 @@ class HibikiSyncServerController extends ChangeNotifier {
       libraryService: _libraryServiceFactory?.call(),
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
-      deviceName: _deviceName(),
+      deviceName: deviceName,
       // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
       // FFI engine so the browser extension's rewritten <img> GET can fetch
       // them. Null-safe: before the engine is initialised it yields null and
@@ -281,7 +292,7 @@ class HibikiSyncServerController extends ChangeNotifier {
     final SyncRepository repo = _repo;
     final String deviceId = await repo.getOrCreateDeviceId();
     _broadcast = LanBroadcastService(
-      deviceName: _deviceName(),
+      deviceName: await _deviceName(),
       deviceId: deviceId,
       port: boundPort,
       tlsEnabled: tlsEnabled,
@@ -289,15 +300,11 @@ class HibikiSyncServerController extends ChangeNotifier {
     await _broadcast!.start();
   }
 
-  /// Human-readable advertisement name. Platform.localHostname is the machine
-  /// name on desktop; falls back to a generic label on mobile or on error.
-  String _deviceName() {
-    try {
-      final String host = Platform.localHostname;
-      if (host.trim().isNotEmpty) return 'Hibiki · $host';
-    } catch (_) {/* localHostname can throw on some platforms */}
-    return 'Hibiki';
-  }
+  /// Human-readable advertisement name shown to peers (host `/api/ping` + LAN
+  /// broadcast). Sourced from the platform device-info service: the machine
+  /// hostname on desktop, the real hardware model on mobile — never Android's
+  /// meaningless "localhost" hostname (TODO-1356).
+  Future<String> _deviceName() => resolveInterconnectDeviceName(_deviceInfo);
 
   /// TODO-961 M1: server 在 pair/v2 创建会话时回调，host 生成本会话 6 位 PIN 并
   /// 暂存，供随后的 confirm 审批弹窗显示给用户。返回的 PIN 同时被 server 用于
