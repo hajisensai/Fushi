@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-657](bugs/BUG-657-sentence-context-dup.md) | ✅ | ✅ | 视频制卡例句上下文疑似重复两遍(develop已单句·验旧包/残留队列) |
+| [BUG-657](bugs/BUG-657-prev-chapter-landing.md) | ✅ | ✅ | 从目录往前翻落到封面而非封面章节最后部分（图片章章末落点塌缩） |
 | [BUG-656](bugs/BUG-656-merge-consecutive-images.md) | ✅ | ✅ | 图片合并两张连续图只有最后一张合并进章节 |
 | [BUG-655](bugs/BUG-655-mine-icon-garble.md) | ✅ | ✅ | 制卡后查词弹窗制卡图标(✓↩)变乱码 |
 | [BUG-654](bugs/BUG-654-reorder-frame-drag.md) | ✅ | ✅ | 编辑排序合集分组框看不见 + 手机缩放态拖动误滚(TODO-947) |
