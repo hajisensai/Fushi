@@ -27,11 +27,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 643 条。点号进各自文件。
+> 共 650 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-657](bugs/BUG-657-pitch-number-float-niratan.md) | ✅ | ✅ | 查词卡音高数字浮动/读音位置不如 Niratan 整齐 |
+| [BUG-664](bugs/BUG-664-pitch-number-float-niratan.md) | ✅ | ✅ | 查词卡音高数字浮动/读音位置不如 Niratan 整齐 |
+| [BUG-663](bugs/BUG-663-peer-device-name-localhost.md) | ✅ | ✅ | 互联已配对设备名显示 localhost 而非真实设备名 |
+| [BUG-662](bugs/BUG-662-clipboard-focus-steal.md) | ✅ | ✅ | 桌面剪贴板变化把 Hibiki 拉到前台/抢焦点打断用户 |
+| [BUG-661](bugs/BUG-661-prev-chapter-landing.md) | ✅ | ✅ | 从目录往前翻落到封面而非封面章节最后部分（图片章章末落点塌缩） |
+| [BUG-660](bugs/BUG-660-sentence-context-dup.md) | ✅ | ✅ | 视频制卡例句上下文疑似重复两遍(develop已单句·验旧包/残留队列) |
+| [BUG-659](bugs/BUG-659-progress-lost.md) | ✅ | ✅ | 书架/视频进度「好像没了」——非数据丢失，显示短板已修（TODO-1346） |
+| [BUG-658](bugs/BUG-658-book-import-notfound.md) | ✅ | ✅ | 特殊字符标题EPUB导入后打不开/删不掉(bookKey含%XX被标识符round-trip解码) |
+| [BUG-657](bugs/BUG-657-settings-autoupdate-dict-overlap.md) | ✅ | ✅ | 词典管理页自动更新卡与词典列表粘连 |
 | [BUG-656](bugs/BUG-656-merge-consecutive-images.md) | ✅ | ✅ | 图片合并两张连续图只有最后一张合并进章节 |
 | [BUG-655](bugs/BUG-655-mine-icon-garble.md) | ✅ | ✅ | 制卡后查词弹窗制卡图标(✓↩)变乱码 |
 | [BUG-654](bugs/BUG-654-reorder-frame-drag.md) | ✅ | ✅ | 编辑排序合集分组框看不见 + 手机缩放态拖动误滚(TODO-947) |

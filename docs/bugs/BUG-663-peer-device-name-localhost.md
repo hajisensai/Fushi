@@ -1,4 +1,4 @@
-## BUG-657 · 互联已配对设备名显示 localhost 而非真实设备名
+## BUG-663 · 互联已配对设备名显示 localhost 而非真实设备名
 
 - **报告**：2026-07-09（用户：TODO-1356）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/sync/sync_settings_schema/interconnect.part.dart:753`（`_localDeviceName()`）与 `hibiki/lib/src/sync/hibiki_server_controller.dart:294`（`_deviceName()`）均直接用 `Platform.localHostname` 拼「Hibiki · $host」当设备名。Android 上 `Platform.localHostname` 恒为常量 `"localhost"`（系统不向 app 暴露真实主机名），iOS 同样无意义。因此一台手机作为 client 配对到桌面 host 时，client 在 `/api/pair`(`interconnect.part.dart:1267`) 与 `/api/pair/v2`(`:546`) 上报的 `name` 就是「Hibiki · localhost」，host 端 `_handlePairV2` 把它原样写进 `hibiki_paired_peers.deviceName`（`hibiki_sync_server.dart:592/613/758` → `hibiki_server_controller.dart:320` `upsertPairedPeer`），设置页「已配对设备」列表(`interconnect.part.dart:1063`)于是渲染出 localhost。数据源取错（该用真实设备型号，不该用 Android 恒为 localhost 的 hostname），非渲染层问题。仓库已有 `PlatformDeviceInfoService.deviceModel` 抽象（Android/iOS 返真型号，Desktop 返 hostname），配对代码却绕过它。

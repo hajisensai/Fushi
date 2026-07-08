@@ -103,13 +103,16 @@ void main() {
       );
     });
 
-    test('keeps dictionary readable without wasting full desktop width', () {
+    test('dictionary content is full-bleed on wide desktop (TODO-1352)', () {
+      // TODO-1352 取消了查词页在宽屏上的 1040px 强制内容宽度上限，改为 null
+      // （占满，仅由 DesktopContentLayout 保留侧向留白）。权威契约见
+      // test/pages/popup_layout_width_columns_test.dart。
       expect(
         desktopContentMaxWidth(
           WindowSizeClass.expanded,
           DesktopContentKind.dictionary,
         ),
-        1040,
+        isNull,
       );
     });
 
@@ -183,7 +186,9 @@ void main() {
       expect(contentRect.right, lessThanOrEqualTo(320));
     });
 
-    testWidgets('constrains expanded desktop content to max width', (
+    testWidgets(
+        'full-bleed dictionary keeps side padding on wide desktop (TODO-1352)',
+        (
       WidgetTester tester,
     ) async {
       tester.view.devicePixelRatio = 1;
@@ -204,7 +209,9 @@ void main() {
         ),
       );
 
-      expect(tester.getSize(find.byKey(childKey)).width, 992);
+      // TODO-1352：dictionary 宽屏改为 full-bleed（null 上限），子内容宽度
+      // = 屏幕 1600 - 2×24 侧向留白 = 1552（不再锁 1040→992）。
+      expect(tester.getSize(find.byKey(childKey)).width, 1552);
     });
 
     testWidgets('keeps compact content full width without desktop padding', (
