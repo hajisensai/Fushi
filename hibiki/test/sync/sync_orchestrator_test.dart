@@ -600,4 +600,57 @@ void main() {
       expect(children.where((AssetEntry e) => !e.isFolder), isEmpty);
     });
   });
+
+  group('sync cooldown timestamp lifecycle (TODO-1332)', () {
+    test(
+        'run() records the cooldown timestamp only after a full sweep completes',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // 整轮 sweep 前：从未同步过 -> 无冷却时间戳。
+      expect(await SyncRepository(db).getLastSyncMs(), isNull);
+
+      await _orchestrator(db, backend, tmp, tmp, tmp).run();
+
+      // 整轮完成 -> 记录冷却时间戳（下次 app-open 在冷却窗内不再重复整轮 sweep）。
+      expect(await SyncRepository(db).getLastSyncMs(), isNotNull,
+          reason: '完整完成的 sweep 必须记录冷却时间戳');
+    });
+
+    test(
+        'an interrupted sweep leaves the cooldown timestamp unset so the next '
+        'app-open retries (discard incomplete, resync next startup)', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      // 书阶段（无书）之后、词典阶段 ensureNamespace 抛出 -> 模拟整轮 sweep 被中断。
+      final _InterruptDuringDictBackend backend =
+          _InterruptDuringDictBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      await expectLater(
+        _orchestrator(db, backend, tmp, tmp, tmp).run(),
+        throwsA(isA<StateError>()),
+      );
+
+      // 中断态被丢弃：lastSyncMs 未写 -> 下次 app-open 自动同步重新整轮重试。
+      expect(await SyncRepository(db).getLastSyncMs(), isNull,
+          reason: '被中断的残缺 sweep 不得记录冷却时间戳，否则会压制下次重试');
+    });
+  });
+}
+
+/// [FakeSyncBackend] 变体（TODO-1332 测试）：在词典阶段 [ensureNamespace] 抛出，
+/// 模拟整轮 sweep 在书阶段之后被中断（异常 / app 退出 / 进程被杀）。用于验证
+/// 被中断的 sweep 绝不记录同步冷却时间戳，故下次 app-open 会重新整轮重试。
+class _InterruptDuringDictBackend extends FakeSyncBackend {
+  _InterruptDuringDictBackend(super.store);
+
+  @override
+  Future<String> ensureNamespace(String name) async => throw StateError(
+      'sweep interrupted during dictionary phase (TODO-1332 test)');
 }

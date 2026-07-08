@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -322,6 +323,14 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
 
+    // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度
+    // / 聚合等所有阶段都已尝试、未被异常 / app 退出 / 进程终止打断）才记录同步冷却
+    // 时间戳。中断发生在本行之前 → lastSyncMs 保持不变，使下次 app-open 自动同步不被
+    // 冷却窗（[_syncCooldownMs]）压制、整轮重试——即「同步没完成就丢弃中间态、下次
+    // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
+    // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
+    await SyncRepository(_db)
+        .setLastSyncMs(DateTime.now().millisecondsSinceEpoch);
     return report;
   }
 

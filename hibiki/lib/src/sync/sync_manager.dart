@@ -230,7 +230,10 @@ class SyncManager {
       );
       results.add(result);
     }
-    await _repo.setLastSyncMs(DateTime.now().millisecondsSinceEpoch);
+    // TODO-1332: 不在此（书阶段末尾 / 整轮 sweep 中途）记录同步冷却时间戳。整轮 sweep
+    // 还有词典 / 本地音频 / 有声书 / live 进度 / 聚合等后续阶段；若在这里记 lastSyncMs，
+    // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
+    // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
     await _persistDriveCache();
     return results;
   }
