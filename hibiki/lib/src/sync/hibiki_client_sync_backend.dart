@@ -1230,14 +1230,22 @@ class HibikiClientSyncBackend extends SyncBackend
 
   // ── Test connection ───────────────────────────────────────────────
 
+  /// 测试单个互联地址是否可用。[fingerprint] 是该地址 TOFU 钉扎的自签证书 SHA-256
+  /// 指纹（https 端点必带，明文 http 为 null）。**必须**随地址一起传入：新版 host 默认
+  /// 开 TLS（applyFirstHostingTlsDefault），刚配对的地址就是 https + 自签证书；不带
+  /// 指纹的裸 WebDavOps 会在自签 TLS 握手处失败，把「其实能连」的 host 误报成
+  /// 连接失败（TODO-1330 / BUG：测试连接对已配对 https host 恒失败）。指纹非空 →
+  /// pinned client（仅接受指纹相等的自签证书）；null → 明文 http 老路径不变。
   Future<void> testConnection({
     required String url,
     required String token,
+    String? fingerprint,
   }) async {
     final ops = WebDavOps(
       baseUrl: WebDavOps.normalizeUrl(url),
       username: 'hibiki',
       password: token,
+      pinnedFingerprint: fingerprint,
     );
     try {
       await ops.testConnection();

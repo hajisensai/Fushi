@@ -230,6 +230,13 @@ class HibikiSyncServer {
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
   Future<bool> Function()? lanRequiresPinProvider;
 
+  /// TODO-1330 / BUG：pinRequired 会话的 client 提交了 confirm（PIN 已被对方读到并
+  /// 用于算 proof）时回调一次，让 host UI 关掉那个「一直显示 PIN、等对方输入」的审批
+  /// 弹窗。修的是「host 点允许即关窗抹掉 PIN → client 还没输就看不到 PIN」的时序死锁：
+  /// host 点允许后弹窗改为常驻显示 PIN，直到本回调（或用户手动关 / TTL 超时）才收起。
+  /// 免 PIN 会话不涉及（本就没有常驻 PIN 弹窗），故仅 pinRequired 分支触发。
+  void Function()? onPairSessionResolved;
+
   /// TODO-961 M1b: confirm 成功后把新派发的 per-peer 凭据交给 host 落库（写
   /// `hibiki_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
   /// null（未接线，如纯协议单测）时 confirm 回退派发共享 [_token]，不落 per-peer 行
@@ -660,6 +667,12 @@ class HibikiSyncServer {
     // 单次消费：无论本次成功失败，会话即作废，杜绝 nonce 重放。
     session.consumed = true;
     _pairSessions.remove(sessionId);
+
+    // TODO-1330 / BUG：pinRequired 会话一旦 confirm 到达，说明 client 已读到 host 屏上
+    // 的 PIN（用它算了 proof），host 那个常驻 PIN 弹窗就该收起——无论本次 proof 对错
+    // （PIN 已一次性消费，重试要走新会话拿新 PIN）。在此单点触发，避开后面多个 return
+    // 分支各自补一遍。免 PIN 会话没有常驻弹窗，不触发。
+    if (session.pinRequired) onPairSessionResolved?.call();
 
     // TODO-961 M3：本会话来源标识，供爆破限速按来源聚合失败计数。优先 client 自报的
     // 稳定 deviceId，回退来源 IP；二者都缺时为 null → 无稳定身份可锁，退化为不限速的

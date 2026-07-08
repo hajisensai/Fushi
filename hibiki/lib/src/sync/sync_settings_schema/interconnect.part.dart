@@ -305,8 +305,14 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
     for (final HibikiClientUrl u in _urls) {
       bool ok;
       try {
+        // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
+        // 让测试连接在 TLS 握手处失败，把可连的 host 误报成失败（TODO-1330）。
         await HibikiClientSyncBackend.instance
-            .testConnection(url: u.url, token: token)
+            .testConnection(
+              url: u.url,
+              token: token,
+              fingerprint: u.fingerprintSha256,
+            )
             .timeout(const Duration(seconds: 5));
         ok = true;
       } catch (e, stack) {
@@ -397,6 +403,17 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                           context: context,
                           value: u.enabled,
                           onChanged: (_) => _toggleUrl(index),
+                        ),
+                        // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
+                        // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
+                        // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
+                        // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
+                        HibikiIconButton(
+                          icon: Icons.sync,
+                          size: 18,
+                          tooltip: t.sync_pair_repair,
+                          enabled: !lockedByServer && !_pairingManual,
+                          onTap: () => _attemptManualPair(u.url),
                         ),
                         HibikiIconButton(
                           icon: Icons.delete_outline,

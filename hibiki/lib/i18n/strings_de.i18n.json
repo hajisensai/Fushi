@@ -2183,5 +2183,7 @@
   "video_setting_subtitle_text_color_cyan": "Cyan",
   "video_setting_subtitle_text_color_green": "Green",
   "video_setting_subtitle_text_color_red": "Red",
-  "card_mining_pending": "Adding card…"
+  "card_mining_pending": "Adding card…",
+  "sync_pair_pin_waiting": "Waiting for the other device to enter this PIN…",
+  "sync_pair_repair": "Pair again"
 }

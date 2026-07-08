@@ -2183,5 +2183,7 @@
   "video_setting_subtitle_text_color_cyan": "青色",
   "video_setting_subtitle_text_color_green": "绿色",
   "video_setting_subtitle_text_color_red": "红色",
-  "card_mining_pending": "制卡中…"
+  "card_mining_pending": "制卡中…",
+  "sync_pair_pin_waiting": "等待对方设备输入此 PIN…",
+  "sync_pair_repair": "重新配对"
 }
