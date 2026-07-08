@@ -1456,6 +1456,19 @@ class ReaderPaginationScripts {
   /// 大图（含 svg 封面）加 `blurred` 类（CSS 盖 24px 模糊），并装一次性点击监听揭开。
   /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
   /// 处理（见 `_hoshiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
+  /// TODO-1339 测试钩子：暴露共享图片初始化脚本，让 live-WebView 集成测试能证明
+  /// 图片合并注入的前导插图（`.hoshi-merged-image`）保持 eager（不被挂 lazy），
+  /// 从而 firstContentEdge 计入全部前导图、章首锚不跳过第一张。
+  @visibleForTesting
+  static String initImagesScriptForTesting({
+    bool blurImages = false,
+    String revealedKeysJson = '[]',
+  }) =>
+      _sharedInitImages(
+        blurImages: blurImages,
+        revealedKeysJson: revealedKeysJson,
+      );
+
   static String _sharedInitImages({
     bool blurImages = false,
     String revealedKeysJson = '[]',
@@ -1557,8 +1570,18 @@ $blurFn
   }
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
+    // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.hoshi-merged-image`
+    // 内，webview.part.dart _injectMergedChapterImages）是章首**结构性**内容——章首落点
+    // (restoreProgress/restoreToCharOffset <=0 走 minScroll) 依赖 buildPaginationMetrics
+    // 的 firstContentEdge，而 firstContentEdge 只计入**有非零尺寸**的媒体（0 尺寸被跳过）。
+    // 若给这些前导插图挂 loading="lazy"，离屏（离首个文本落点较远的**第一张**）永不进入
+    // 懒加载视口 margin → 永不 load → 保持 0 尺寸 → 被 firstContentEdge 排除 → 章首锚落到
+    // 最近的已加载图（**最后一张**）跳过第一张 =「两张连续图只有最后一张合并进章节」。
+    // 故与 gaiji 同理保持 eager：无条件 load、真实撑开尺寸，firstContentEdge 计入全部前导图，
+    // 章首锚落到第一张。仅影响合并书的少量前导插图，不回退 TODO-1074 普通图懒加载。
+    var isMergedLeadImg = img.closest && img.closest('.hoshi-merged-image');
     // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
-    if (!isGaiji) {
+    if (!isGaiji && !isMergedLeadImg) {
       img.setAttribute('loading', 'lazy');
     }
     img.setAttribute('decoding', 'async');
