@@ -2190,5 +2190,7 @@
   "video_subtitle_youtube_empty": "This caption track has no text",
   "sync_client_token": "Peer access token",
   "sync_client_token_hint": "Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer's shared server token, and both can connect.",
-  "sync_server_token_self_hint": "This device's shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect."
+  "sync_server_token_self_hint": "This device's shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.",
+  "theme_eyecare": "Eye Care",
+  "reader_theme_eyecare": "Eye Care"
 }

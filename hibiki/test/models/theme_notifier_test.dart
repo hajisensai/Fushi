@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
@@ -35,10 +36,37 @@ void main() {
   });
 
   group('ThemeNotifier presets', () {
-    test('has 6 built-in theme presets', () {
-      expect(ThemeNotifier.themePresets.length, 6);
+    test('has 7 built-in theme presets', () {
+      expect(ThemeNotifier.themePresets.length, 7);
       expect(ThemeNotifier.themePresets.containsKey('light-theme'), true);
       expect(ThemeNotifier.themePresets.containsKey('dark-theme'), true);
+    });
+
+    test('TODO-1347: eyecare-theme is a built-in light preset with a label',
+        () {
+      // 护眼主题必须存在于默认主题列表、是浅色（低蓝光暖色调），且有本地化名字
+      // （themeLabel 命中而非回退成裸 key）。删掉 preset 或漏配 label 本用例即红。
+      final preset = ThemeNotifier.themePresets['eyecare-theme'];
+      expect(preset, isNotNull, reason: '护眼主题不在默认主题列表里');
+      expect(preset!.brightness, Brightness.light, reason: '护眼主题应是浅色（豆沙绿柔和底）');
+      final String label = ThemeNotifier.themeLabel('eyecare-theme');
+      expect(label, isNotEmpty);
+      expect(label, isNot('eyecare-theme'),
+          reason: 'themeLabel 未命中 = 漏配 _themeLabelKeys / i18n key');
+    });
+
+    test(
+        'TODO-1347: reader availableThemes stays in sync with app themePresets',
+        () {
+      // 阅读器主题选择器（TtuReaderSettings.availableThemes）与应用主题预设
+      // （themePresets）是同一 app_theme_key 的两个并行列表；两者必须逐一对齐，
+      // 否则新增/删除主题时其一漂移（护眼主题只在一个列表出现）。
+      expect(
+        TtuReaderSettings.availableThemes.toSet(),
+        ThemeNotifier.themePresets.keys.toSet(),
+        reason: '阅读器主题列表与应用主题预设集合不一致',
+      );
+      expect(TtuReaderSettings.availableThemes, contains('eyecare-theme'));
     });
 
     test('themeLabel returns localized labels for known keys', () {
