@@ -115,7 +115,12 @@ double? desktopContentMaxWidth(
   if (sizeClass == WindowSizeClass.compact) return null;
   return switch (kind) {
     DesktopContentKind.readerShelf => 1280,
-    DesktopContentKind.dictionary => 1040,
+    // TODO-1352: 取消查词页（nav「查词」）在宽屏上的强制内容宽度上限。此前 1040px 把
+    // 查词结果区 WebView 居中锁死在窄栏，宽屏两侧大片留白、用户无法让词典正文占满。
+    // 返回 null 让 [DesktopContentLayout] 走 full-bleed 分支（仍保留 24px 侧向留白，
+    // 不贴边），词典正文随窗口放宽（可容纳更多 --dict-columns 与更长释义）。嵌套查词
+    // 弹窗渲染在根 Overlay、独立走 popupMaxWidth，不受此项影响。
+    DesktopContentKind.dictionary => null,
     DesktopContentKind.settings => 960,
   };
 }

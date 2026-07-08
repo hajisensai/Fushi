@@ -3890,11 +3890,35 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
 
-  int get popupDictionaryColumns => prefsRepo.popupDictionaryColumns;
+  /// TODO-1357: 查词弹窗「列数 / 自动展开词典数」的平台三态默认解析（纯函数，供守卫）。
+  /// - 用户显式设过（[hasExplicit]）→ 一律遵从其存储值 [stored]（尊重用户）。
+  /// - 从未设过：桌面（pointer:fine，[isDesktop]）→ 默认 2（Niratan 双栏观感）；
+  ///   移动端窄屏 → 默认 1（不硬塞两列 / 两词典，避免窄屏挤爆）。
+  static int resolvePopupDesktopDefault({
+    required bool hasExplicit,
+    required int stored,
+    required bool isDesktop,
+  }) =>
+      hasExplicit ? stored : (isDesktop ? 2 : 1);
+
+  /// TODO-1357: 查词弹窗默认列数（桌面未设 2 / 移动未设 1 / 显式遵从）。所有
+  /// `--dict-columns` 注入点（app_model / dictionary_popup_webview /
+  /// popup_settings_injection）都读本 getter，平台默认在此单点收口。
+  int get popupDictionaryColumns => resolvePopupDesktopDefault(
+        hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
+        stored: prefsRepo.popupDictionaryColumns,
+        isDesktop: isDesktopPlatform,
+      );
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
-  int get popupAutoExpandDictionaries => prefsRepo.popupAutoExpandDictionaries;
+  /// TODO-1357: 自动展开词典数（桌面未设 2 个 / 移动未设 1 个 / 显式遵从）——桌面上与
+  /// 2 列并排即 Niratan 双栏。
+  int get popupAutoExpandDictionaries => resolvePopupDesktopDefault(
+        hasExplicit: prefsRepo.hasExplicitPopupAutoExpandDictionaries,
+        stored: prefsRepo.popupAutoExpandDictionaries,
+        isDesktop: isDesktopPlatform,
+      );
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 

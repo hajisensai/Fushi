@@ -465,6 +465,11 @@ class PreferencesRepository extends ChangeNotifier {
   int get popupDictionaryColumns =>
       (getPref('popup_dictionary_columns', defaultValue: 1) as int).clamp(1, 4);
 
+  /// TODO-1357: 用户是否显式设过弹窗列数。区分「从未设→用平台默认（桌面 2 / 移动 1，
+  /// 在 [AppModel.popupDictionaryColumns] 解析）」与「显式设过→遵从其值」（三态）。
+  bool get hasExplicitPopupDictionaryColumns =>
+      containsKey('popup_dictionary_columns');
+
   Future<void> setPopupDictionaryColumns(int columns) async {
     await setPref('popup_dictionary_columns', columns.clamp(1, 4));
     notifyListeners();
@@ -479,6 +484,10 @@ class PreferencesRepository extends ChangeNotifier {
   int get popupAutoExpandDictionaries =>
       (getPref('popup_auto_expand_dictionaries', defaultValue: 1) as int)
           .clamp(0, 6);
+
+  /// TODO-1357: 用户是否显式设过自动展开词典数（三态，同 [hasExplicitPopupDictionaryColumns]）。
+  bool get hasExplicitPopupAutoExpandDictionaries =>
+      containsKey('popup_auto_expand_dictionaries');
 
   Future<void> setPopupAutoExpandDictionaries(int count) async {
     await setPref('popup_auto_expand_dictionaries', count.clamp(0, 6));
