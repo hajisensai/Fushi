@@ -9,23 +9,32 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 ///
 /// 挂在视频快速设置面板的「字幕调轴」区。TODO-1207 之前是一块**常驻的小波形**（纯
 /// [CustomPaint]，只能看不能操作，普通用户嫌它占地方又看不清）。现在收敛成一个
-/// **紧凑的可点击入口**（一行标签 + 迷你波形缩略图 + 放大图标）：点击弹出
+/// **紧凑的可点击入口**（一行图标 + 标签 + 提示 + 放大图标）：点击弹出
 /// [SubtitleWaveformZoomView]——放大的可交互视图，可横向拖动查看整条时间轴、用底部
 /// 调轴控件把字幕 cue 线对齐到波形语音峰值。
+///
+/// **入口常驻可见（TODO-1315，勿再回退）**：入口按钮挂载即显、绝不因波形探测结果收起。
+/// 它只是一个「点击进入波形对轴」的按钮，不承载任何波形数据，故不依赖探测成功与否——只
+/// 要上层 [VideoQuickSettingsSheet] 判定有字幕 cue + 可抽波形（本地视频路径）就挂上本面板，
+/// 入口就一直在、一直可点。历史上（TODO-1315 之前）本面板在挂载时预探测、探测返回空包络
+/// 即 [SizedBox.shrink] **把整个入口收起**，弱设备 / 移动端因此「入口没了、进不去」（用户
+/// 报「字幕调轴入口也没了」）；该「探测为空即隐藏入口」行为已废弃，**勿再引入**。
+///
+/// **懒探测（TODO-1315）**：波形数据来自 [loadWaveform]（页面经 ffmpeg 抽逐帧音频能量，对
+/// 长视频要数十秒）。**只在用户点击入口时**才调 [loadWaveform]，不在挂载时预跑——进字幕
+/// 设置分类不再被 ffmpeg 抽轨拖卡。放大视图关闭后本地不保留包络引用即释放（页面级
+/// `WaveformEnvelopeCache` 仍留一份供秒开）。点击时探测返回空包络（移动端拿不到逐帧行 /
+/// ffmpeg 不可用）就不弹窗、改在入口副标题内联提示「本设备无法生成波形」，入口仍在、可重试。
 ///
 /// **调轴同源、零第二套状态**：放大视图里的所有调轴都经 [onCommitDelay] 写回上方快速
 /// 设置的权威 `_delayMs`，与顶部滑条 / 步进 / 自动对轴完全同一个延迟值。本面板自身不落
 /// 任何新持久化字段。
 ///
-/// **cue 线随延迟平移**：要平移的延迟经 [initialDelayMs] 从上方权威传入，面板在
-/// [didUpdateWidget] 里同步（[_renderDelayMs]）——上方任意手动调轴 / 自动对轴改延迟后，
-/// 缩略图与（若打开的）放大视图初值随之平移。
+/// **cue 线随延迟平移**：要平移的延迟经 [initialDelayMs] 从上方权威传入，放大视图打开时
+/// 以它为初值——上方任意手动调轴 / 自动对轴改延迟后，（若打开的）放大视图 cue 线随之平移。
 ///
-/// **优雅降级**：波形数据来自 [loadWaveform]（页面经 ffmpeg 抽音频能量包络）。移动端拿
-/// 不到逐帧行返回空包络；此时入口收起（[SizedBox.shrink]），不崩不空白、不显示按钮。
-///
-/// 不在 paint 里跑 ffmpeg：[loadWaveform] 在 initState 只调一次，缓存原始逐帧包络；
-/// 降采样（[downsampleEnergyEnvelope]，纯函数）随目标宽度算，painter 只读 0..1 桶。
+/// 不在 paint 里跑 ffmpeg：[loadWaveform] 只在点击时调一次（页面侧带缓存），降采样
+/// （[downsampleEnergyEnvelope]，纯函数）随目标宽度算，painter 只读 0..1 桶。
 class SubtitleWaveformAlignPanel extends StatefulWidget {
   const SubtitleWaveformAlignPanel({
     required this.initialDelayMs,
@@ -37,12 +46,11 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     this.onPlayCue,
     this.positionListenable,
     this.currentPositionMs,
-    this.height = 96.0,
     super.key,
   });
 
   /// 当前字幕延迟（毫秒，正=字幕延后）。由上方快速设置面板的权威 `_delayMs` 传入；
-  /// 变化时经 [didUpdateWidget] 同步，缩略图 cue 线整体平移。
+  /// 作为（点击后打开的）放大对轴视图 cue 线的初值，随权威延迟一起整体平移。
   final int initialDelayMs;
 
   /// 当前字幕 cue 列表（取 start/end 画边界线）。不可变，面板只读，绝不改 cue 本体。
@@ -52,7 +60,8 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   final int durationMs;
 
   /// 抽音频能量包络（原始逐帧 dB 序列）。由页面提供（经 extractAudioEnergyEnvelope）；
-  /// 返回空列表 = 拿不到波形（移动端降级）。面板在 initState 只调一次。
+  /// 返回空列表 = 拿不到波形（移动端降级，入口内联提示不可用、不隐藏）。TODO-1315 起
+  /// **只在用户点击入口时**才调一次（懒探测），不在挂载时预跑。
   final Future<List<double>> Function() loadWaveform;
 
   /// 把放大视图里调出的延迟写回上方权威 `_delayMs`（-> `onSetDelay` 落盘 + 实时生效）。
@@ -77,9 +86,6 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
 
   /// 可选：读当前播放位置（毫秒）。null 时不画播放头。
   final int Function()? currentPositionMs;
-
-  /// 入口按钮高度（逻辑像素）。缩略波形按此高度收进入口行。
-  final double height;
 
   @override
   State<SubtitleWaveformAlignPanel> createState() =>

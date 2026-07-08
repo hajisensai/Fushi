@@ -1,0 +1,14 @@
+## BUG-620 · 字幕调轴波形对轴入口在弱设备被隐藏（懒加载化后已改为常驻可见）
+- **报告**：2026-07-08（用户：「入口也一块没了。。。我怎么点进去」，TODO-1315）
+- **真实性**：❌ 当前 develop 未复现（入口已常驻可见）——旧行为确曾隐藏入口，但已被 TODO-1315 懒加载改动修复。
+  - 用户症状真实：字幕调轴的「波形对轴」入口在弱设备 / 移动端「没了、进不去」。
+  - 旧根因（历史，TODO-1315 之前）：`hibiki/lib/src/media/video/subtitle_waveform_align_panel.dart` 的 `build()` 在挂载时**预探测**波形（`initState`→`_loadWaveformOnce`），并按结果分支：`if (!hasWaveform) return const SizedBox.shrink();`——移动端 / ffmpeg 拿不到逐帧能量 → 空包络 → **整个入口收起消失**。这就是「入口没了」。
+  - 现状根因已消除（develop `d0c7c8974`，随 `d40d5afc50` 合入）：`build()` 直接 `return _buildEntryButton(...)`，入口**常驻可见**、不再依赖探测结果；波形探测改为**点击入口时才抽**（懒抽），空包络只在入口副标题内联提示「本设备无法生成波形」、入口仍在可重试（`subtitle_waveform_align_panel.dart` 的 `build` 约 line 155、`_openZoomView` 约 line 109）。
+  - 上层接线未变且正确：`video_quick_settings_sheet.dart`（`if (loadSubtitleWaveform != null && subtitleWaveformCues.isNotEmpty)` 挂 `SubtitleWaveformAlignPanel`，在「播放」分类 `_buildDelayRow` 内）；页面 `video_hibiki/subtitle.part.dart:1031 _loadSubtitleWaveformEnvelope` 有 cue + 本地视频路径时提供 loader。
+  - 复现结论：widget 测试证明宽窗（1000×800）与窄窗（400×800，移动端导航路径）下，给 cue + loader 时波形对轴入口 key `subtitle-waveform-open-button` 均 `findsOneWidget` 可达；PM 假设「前修把入口删了」与代码相反——前修实为**修复**（隐藏→常驻）。
+- **[x] ① 根因修复** — 无需再改运行时（入口已常驻可见 + 懒抽，`d0c7c8974` 已修复）。本轮清理会诱导回退的隐患：`subtitle_waveform_align_panel.dart` 类/字段注释仍在描述已废弃的「探测为空即 `SizedBox.shrink` 收起入口 / `initState` 只调一次」旧行为，并留有旧缩略图布局的死字段 `height`（无人传、`build` 不用）；改正注释为「入口常驻可见 + 懒探测，勿再回退隐藏」并删除死字段 `height`，防未来 dev 误「恢复」隐藏逻辑重引本回归。提交 `<COMMIT>`。
+- **[x] ② 加自动化测试** — 补两级守卫，锁死「入口始终存在 + 懒抽保留」：
+  - panel 级 `hibiki/test/media/video/subtitle_waveform_align_panel_test.dart`：`TODO-1315 guard: entry button never disappears (mount / probing / empty)`——挂载 / 探测中 / 探测返回空三态下入口 key 都 `findsOneWidget`，永不 `SizedBox.shrink`。
+  - sheet 集成级 `hibiki/test/pages/video_quick_settings_sheet_test.dart`：`TODO-1315 guard: 波形对轴入口在 playback 详情可达且挂载不预探测`（宽窗，入口可达 + 挂载 `probes==0`）与 `TODO-1315 guard: 窄窗导航到 playback 后波形对轴入口可达`（移动端导航路径）。此前 `_sheet` helper 从不传波形参数，本入口在 sheet 层无任何守卫（真实盲区），本轮补上。
+  - 提交 `<COMMIT>`。
+- **备注**：与本地不入库的 `docs/REGRESSION_BUGS.md` 区分。懒抽性能优化（点击才抽 ffmpeg、关闭释放、页面级 `WaveformEnvelopeCache` 秒开）保留不动。若用户仍报「找不到入口」，属可发现性问题（入口在「播放」分类底部、图标 `graphic_eq` + 标签「波形对轴」），非「入口不存在」，另开条目讨论是否移到「字幕」分类或加视觉强化。

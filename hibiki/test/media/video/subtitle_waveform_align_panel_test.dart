@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -127,6 +129,36 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
+    expect(find.text(t.video_subtitle_waveform_unavailable), findsOneWidget);
+  });
+
+  // TODO-1315 回归守卫（BUG-620）：入口按钮**永不**因波形探测结果消失。历史上
+  // 挂载时预探测、探测为空即 [SizedBox.shrink] 收起整个入口，弱设备 / 移动端因此「字幕调轴
+  // 入口也没了、进不去」。现在入口常驻可见：挂载即在、点击探测为空只内联提示不可用、入口
+  // 仍在可重试。这三态（挂载 / 探测中 / 探测空）下入口 key 都必须 findsOneWidget。
+  testWidgets(
+      'TODO-1315 guard: entry button never disappears (mount / probing / empty)',
+      (WidgetTester tester) async {
+    final Completer<List<double>> gate = Completer<List<double>>();
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () => gate.future,
+    ));
+    await tester.pumpAndSettle();
+    // 挂载态：入口在，无 spinner（未预探测）。
+    expect(find.byKey(_openKey), findsOneWidget);
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
+
+    // 点击进入探测中态：入口仍在（切成 spinner），探测未完成。
+    await tester.tap(find.byKey(_openKey));
+    await tester.pump();
+    expect(find.byKey(_openKey), findsOneWidget);
+
+    // 探测返回空包络（移动端降级）：入口仍在、不弹窗、内联提示不可用。
+    gate.complete(const <double>[]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_openKey), findsOneWidget);
     expect(find.byType(SubtitleWaveformZoomView), findsNothing);
     expect(find.text(t.video_subtitle_waveform_unavailable), findsOneWidget);
   });
