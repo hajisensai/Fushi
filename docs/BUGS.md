@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-620](bugs/BUG-620-theme-swatch-full-preview.md) | ✅ | ✅ | 未选中主题色卡空白·预览画布塌成0x0 |
+| [BUG-620](bugs/BUG-620-merge-image-toc-lost.md) | ✅ | ✅ | 图片合并后章节列表消失 |
 | [BUG-619](bugs/BUG-619-cloud-folder-spill.md) | ✅ | ✅ | 云盘进度文件溢出到父目录 |
 | [BUG-618](bugs/BUG-618-interconnect-token-mismatch-confusion.md) | 🚧 | 🚧 | 互联访问令牌与桌面端不一致（per-peer token·非 bug 待确认） |
 | [BUG-617](bugs/BUG-617-interconnect-wan-pin-vanishes.md) | ✅ | ✅ | 公网配对 host 点允许即关窗抹掉 PIN·client 还没输就看不到 |

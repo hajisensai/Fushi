@@ -1561,34 +1561,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         (i) => TtuTocEntry(index: i, label: t.auto_chapter(n: i + 1)),
       );
     }
-    final List<TtuTocEntry> result = <TtuTocEntry>[];
-    _flattenTocToTtu(toc, result, null);
-    return result;
-  }
-
-  void _flattenTocToTtu(
-    List<EpubTocItem> items,
-    List<TtuTocEntry> result,
-    String? parentLabel,
-  ) {
-    for (final EpubTocItem item in items) {
-      final int index = _tocHrefToChapterIndex(item.href);
-      // TODO-1128: hide TOC entries for single-image chapters absorbed into a
-      // neighbouring text chapter (merge-image on) — they no longer own a
-      // virtual page, so a TOC jump there would land on a page that does not
-      // exist. UI-only: _book.toc (persistent) is untouched; children are still
-      // walked so a nested real chapter under an absorbed item is not lost.
-      final bool absorbed =
-          index >= 0 && (_spreadMap?.isAbsorbedImageChapter(index) ?? false);
-      if (index >= 0 && !absorbed) {
-        result.add(TtuTocEntry(
-          index: index,
-          label: item.label,
-          parent: parentLabel,
-        ));
-      }
-      _flattenTocToTtu(item.children, result, item.label);
-    }
+    // TODO-1333: 压平交给纯函数 flattenTtuTocEntries，它保留所有解析到的章、不再因
+    // 「图片合并」把被吸收的单图片章从目录里删掉（那会在整本书目录都指向被吸收图片章
+    // 时清空章节列表）。被吸收章的目录跳转由导航层 _resolveNavChapter 重定向到宿主章。
+    return flattenTtuTocEntries(toc, _tocHrefToChapterIndex);
   }
 
   Future<void> _reloadWithCurrentSettings() async {
