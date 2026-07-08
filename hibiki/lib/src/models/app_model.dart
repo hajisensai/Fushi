@@ -412,6 +412,9 @@ class AppModel with ChangeNotifier {
     remoteLookupServiceFactory: createRemoteLookupService,
     miningServiceFactory: createRemoteMiningService,
     historyServiceFactory: createRemoteHistoryService,
+    // TODO-1356: advertise this device's real per-platform name (hardware model
+    // on mobile, hostname on desktop) so peers never see "localhost".
+    deviceInfo: platformServices.deviceInfo,
     libraryServiceFactory: () => AppModelLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,

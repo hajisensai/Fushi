@@ -14,6 +14,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
@@ -528,7 +529,14 @@ class HibikiSyncServer {
     String? name;
     final Map<String, dynamic>? body = await _readJsonObject(request);
     final String? reported = body?['name']?.toString().trim();
-    if (reported != null && reported.isNotEmpty) name = reported;
+    // Reject a "localhost"/loopback advertisement so it is never stored as this
+    // peer's device name — the paired-devices list would otherwise show
+    // "localhost" instead of a real name (TODO-1356).
+    if (reported != null &&
+        reported.isNotEmpty &&
+        !isMeaninglessDeviceName(reported)) {
+      name = reported;
+    }
     final bool approved = await approve(HibikiPairRequest(
       deviceName: name,
       remoteAddress: _remoteAddress(request),
@@ -561,8 +569,13 @@ class HibikiSyncServer {
       return shelf.Response(400, body: 'Missing clientNonce');
     }
     final String? reportedName = body?['name']?.toString().trim();
-    final String? deviceName =
-        (reportedName != null && reportedName.isNotEmpty) ? reportedName : null;
+    // Drop a "localhost"/loopback advertisement (never a real device name) so it
+    // is not persisted as the peer's name in the paired-devices list (TODO-1356).
+    final String? deviceName = (reportedName != null &&
+            reportedName.isNotEmpty &&
+            !isMeaninglessDeviceName(reportedName))
+        ? reportedName
+        : null;
     // TODO-961 M1b: client 自报稳定 deviceId（per-peer token 落库的 UNIQUE 身份）。
     // 旧 client 不带此字段 → null → confirm 回退共享 token（兼容）。
     final String? reportedDeviceId = body?['clientDeviceId']?.toString().trim();
