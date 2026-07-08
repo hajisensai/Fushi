@@ -45,8 +45,13 @@ class DesktopLookupRequest {
 /// 这里不直接唤主窗前台：只有词典页实际消费 [pendingText] 并开始搜索时，
 /// 才由 UI 调用 [bringPendingLookupToFront]，避免任意剪贴板变化抢前台。
 ///
+/// TODO-1355：被动剪贴板变化（origin=clipboard）连消费侧也**不**唤前台——用户在别的
+/// 窗口工作时剪贴板一变就把 Hibiki 弹前面会打断用户。剪贴板来源统一带
+/// [DesktopLookupForegroundPolicy.none]，只在后台准备查词结果；唤前台只保留给显式
+/// 意图（全局热键 / 悬浮字幕点词）。
+///
 /// 窗口聚焦跟踪（[WindowListener]）用于区分「app 内复制」与「外部 app 复制」：
-/// 仅外部复制才自动弹查词；全局热键不受聚焦过滤约束（用户在别的 app 按热键
+/// 仅外部复制才自动查词（在后台）；全局热键不受聚焦过滤约束（用户在别的 app 按热键
 /// 查当前剪贴板属正常用法，即便随后 Hibiki 抢到前台）。
 class DesktopLookupService extends ChangeNotifier
     with ClipboardListener, WindowListener {
@@ -67,10 +72,19 @@ class DesktopLookupService extends ChangeNotifier
 
   bool get isRunning => _running;
 
+  /// TODO-1355：被动剪贴板变化（用户在**别的 app** 里复制）只把内容排进查词管线
+  /// 供词典页在后台准备结果，**绝不**唤主窗前台/抢焦点——用户此刻正在别的窗口工作，
+  /// 剪贴板一变就把 Hibiki 弹到前面会打断用户。故剪贴板来源统一用
+  /// [DesktopLookupForegroundPolicy.none]：消费侧（HomeDictionaryPage._runDesktopLookup）
+  /// 见 none 时只搜索、不调 [bringPendingLookupToFront]。想主动把查词唤到前台的用户
+  /// 仍可按全局热键（Ctrl+Shift+D，origin=hotkey）或在悬浮字幕上点词（origin=explicit）
+  /// ——那些是显式意图，保留 bringToFront。窗口置顶策略（[DesktopClipboardWindowMode]）
+  /// 不改变本约定：无论选哪种策略，被动剪贴板变化都不抢焦点。
   void submitText(String raw) {
     _queueLookupRequest(
       raw,
       origin: DesktopLookupOrigin.clipboard,
+      foregroundPolicy: DesktopLookupForegroundPolicy.none,
     );
   }
 

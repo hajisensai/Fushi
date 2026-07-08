@@ -50,9 +50,11 @@ void main() {
       DesktopLookupService.instance.pendingRequest?.origin,
       DesktopLookupOrigin.clipboard,
     );
+    // TODO-1355：被动剪贴板变化不抢焦点 → foregroundPolicy 必须是 none（不是
+    // bringToFront）。消费侧只在 bringToFront 时才唤前台。
     expect(
       DesktopLookupService.instance.pendingRequest?.foregroundPolicy,
-      DesktopLookupForegroundPolicy.bringToFront,
+      DesktopLookupForegroundPolicy.none,
     );
     expect(
         DesktopLookupService.instance.pendingRequest?.showSourcePanel, isTrue);
@@ -178,6 +180,11 @@ void main() {
     expect(svc.pendingText, '見る');
     expect(windowCalls, isNot(contains('show')));
     expect(windowCalls, isNot(contains('focus')));
+    // TODO-1355：外部复制的剪贴板命中排队后来源策略必须是 none（不抢焦点）。
+    expect(
+      svc.pendingRequest?.foregroundPolicy,
+      DesktopLookupForegroundPolicy.none,
+    );
 
     await svc.bringPendingLookupToFront();
 
@@ -550,6 +557,54 @@ void main() {
       DesktopLookupService.instance.pendingText!.characters.length,
       kMaxLookupInputChars,
     );
+  });
+
+  // TODO-1355：被动剪贴板变化不得把窗口拉前台/抢焦点。两道守卫：
+  //   ① 服务侧：clipboard 来源的排队请求带 foregroundPolicy.none（见上面 submitText 用例）。
+  //   ② 消费侧：HomeDictionaryPage._runDesktopLookup 只在 foregroundPolicy==bringToFront
+  //      时才调 bringPendingLookupToFront；none（剪贴板）只搜索、不唤前台。
+  // 本用例守护 ②：若有人把消费侧的策略门控删掉/改成无条件唤前台，剪贴板变化又会
+  // 抢焦点，测试立即红。
+  test(
+      'consumer only foregrounds when foregroundPolicy is bringToFront '
+      '(TODO-1355)', () {
+    final String page = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final int runStart = page.indexOf('void _runDesktopLookup(');
+    expect(runStart, isNonNegative,
+        reason: 'consumer entry _runDesktopLookup must exist.');
+    final int runEnd = page.indexOf('void _onFocusChanged()', runStart);
+    expect(runEnd, greaterThan(runStart));
+    final String body = page.substring(runStart, runEnd);
+
+    // 唤前台调用必须存在，但必须被 bringToFront 策略门控住。
+    final int guard =
+        body.indexOf('DesktopLookupForegroundPolicy.bringToFront');
+    final int foreground = body.indexOf('bringPendingLookupToFront');
+    expect(guard, isNonNegative,
+        reason: 'foreground must be gated on the bringToFront policy.');
+    expect(foreground, isNonNegative);
+    expect(guard < foreground, isTrue,
+        reason: 'the bringToFront policy check must precede the foreground '
+            'call so a clipboard (none) lookup never steals focus.');
+  });
+
+  // TODO-1355：submitText（剪贴板来源）源码必须显式带 foregroundPolicy.none，
+  // 不能回退到默认 bringToFront（默认值一旦被误用，剪贴板又会抢焦点）。
+  test(
+      'submitText source pins clipboard origin to foregroundPolicy.none '
+      '(TODO-1355)', () {
+    final String service =
+        File('lib/src/sync/desktop_lookup_service.dart').readAsStringSync();
+    final int start = service.indexOf('void submitText(String raw)');
+    expect(start, isNonNegative);
+    final int end = service.indexOf('void _queueLookupRequest(', start);
+    expect(end, greaterThan(start));
+    final String body = service.substring(start, end);
+    expect(body.contains('DesktopLookupForegroundPolicy.none'), isTrue,
+        reason: 'passive clipboard lookups must not bring the window to '
+            'the foreground / steal focus.');
   });
 
   test('emoji surrogate pairs are not split when capping (BUG-442)', () {
