@@ -484,6 +484,26 @@ svg.block-img {
 }
 $blurImagesCss
 $furiganaCss
+/* TODO-1308 (BUG-611 follow-up): the reader FORCES the writing mode, so it must
+   also own the <ruby> formatting context. Real vertical EPUBs (e.g. light novels)
+   ship legacy furigana CSS such as `rt { display: inline-block }` /
+   `ruby { display: inline-block }` — patterns that rendered under old WebKit's
+   ruby model but, under Blink's modern ruby (WebView2 / recent Android WebView),
+   drop the <rt> out of its annotation box. In vertical-rl the furigana then
+   collapses ~one base glyph DOWN the column: 貫(かん)禄(ろく) renders with かん
+   between 貫/禄 and ろく floating to the base's right at the wrong height
+   (measured dyRatio≈0.95 vs 0 correct). The reader style tag is injected LAST in
+   <head> (webview.part.dart `_buildSanitizedChapterHtmlBytes`), so these
+   !important rules win the cascade over the book stylesheet and re-assert the
+   correct ruby structure (rt display is owned by _furiganaCss so `hide` mode's
+   display:none still wins there). This is engine-agnostic and a no-op for books
+   that don't override the ruby display (these ARE the UA defaults). */
+ruby {
+  display: ruby !important;
+}
+ruby > rp {
+  display: none !important;
+}
 ruby > rt, ruby > rp {
   -webkit-user-select: none;
   user-select: none;
@@ -918,12 +938,19 @@ body {
   }
 
   static String _furiganaCss(String mode) {
+    // TODO-1308: when furigana is SHOWN, force `display: ruby-text !important` so
+    // a book stylesheet that sets `rt { display: inline-block/inline/block }`
+    // cannot pull the annotation out of its ruby box and collapse it into the
+    // base column in vertical writing (see the ruby rule in the main CSS). rt
+    // display is owned here (not globally) so the `hide` branch's display:none
+    // still wins for hidden furigana.
     switch (mode) {
       case 'hide':
         return 'rt { display: none !important; }';
       case 'partial':
         return '''
 rt {
+  display: ruby-text !important;
   font-size: 0.45em;
   visibility: hidden;
 }
@@ -933,6 +960,7 @@ ruby.show-rt rt {
       case 'toggle':
         return '''
 rt {
+  display: ruby-text !important;
   font-size: 0.45em;
   visibility: hidden;
 }
@@ -940,7 +968,7 @@ body.show-all-rt rt {
   visibility: visible !important;
 }''';
       default:
-        return 'rt { font-size: 0.45em; }';
+        return 'rt { display: ruby-text !important; font-size: 0.45em; }';
     }
   }
 
