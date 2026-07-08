@@ -96,6 +96,50 @@ void main() {
       expect(classifyDroppedFiles(['/x/a.zip']).hasAny, isTrue);
     });
 
+    // TODO-1306: 浏览器地址栏/链接拖进来的 http(s) URL 不是文件路径，按 scheme 甄别
+    // 落到 urls，绝不当 unknown 丢弃。
+    test('http/https url goes to urls (not unknown, not video)', () {
+      final r = classifyDroppedFiles(
+          ['https://youtu.be/abc', 'http://example.com/live']);
+      expect(r.urls, ['https://youtu.be/abc', 'http://example.com/live']);
+      expect(r.unknown, isEmpty);
+      expect(r.videos, isEmpty);
+      expect(r.hasAny, isTrue);
+    });
+
+    // URL 末段带 .mp4 也归 urls（交给流媒体导入），不被扩展名分类拽进 videos。
+    test('url with a video-looking path stays in urls (not videos)', () {
+      final r = classifyDroppedFiles(['https://cdn.test/movie.mp4']);
+      expect(r.urls, ['https://cdn.test/movie.mp4']);
+      expect(r.videos, isEmpty);
+      expect(r.audios, isEmpty);
+    });
+
+    // Windows 盘符路径 `C:\...` 的 Uri scheme 会被解析成 'c'，绝不能误判为 URL。
+    test('Windows drive path is NOT misclassified as a url', () {
+      final r = classifyDroppedFiles([r'C:\movies\a.mkv']);
+      expect(r.urls, isEmpty);
+      expect(r.videos, [r'C:\movies\a.mkv']);
+    });
+
+    // 非 http(s)（file:// / 裸路径 / ftp）不是可导入 URL。
+    test('non-http schemes and bare paths are not urls', () {
+      final r =
+          classifyDroppedFiles(['file:///x/a.mkv', '/x/a.epub', 'ftp://h/x']);
+      expect(r.urls, isEmpty);
+    });
+
+    // 混合拖入：URL + 本地文件各归各类。
+    test('mixed url + local file classify independently', () {
+      final r = classifyDroppedFiles(['https://x.test/v', r'C:\x\a.epub']);
+      expect(r.urls, ['https://x.test/v']);
+      expect(r.books, [r'C:\x\a.epub']);
+    });
+
+    test('url counts toward hasAny', () {
+      expect(classifyDroppedFiles(['https://x.test/v']).hasAny, isTrue);
+    });
+
     test('isEmpty true when nothing classified into media', () {
       expect(classifyDroppedFiles([]).hasAny, isFalse);
       expect(classifyDroppedFiles(['/x/a.epub']).hasAny, isTrue);

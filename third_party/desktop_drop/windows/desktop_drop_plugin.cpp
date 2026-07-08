@@ -1,6 +1,10 @@
 #include "include/desktop_drop/desktop_drop_plugin.h"
 
 #include <windows.h>
+// TODO-1306: CFSTR_INETURLW ("UniformResourceLocatorW") lives in <shlobj.h>; it
+// is the canonical clipboard format browsers use for address-bar / hyperlink
+// drags. Needed so URL drags (which carry no CF_HDROP) are not silently dropped.
+#include <shlobj.h>
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
@@ -90,6 +94,49 @@ namespace {
         return ret;
     }
 
+    // TODO-1306: browser address-bar / hyperlink drags carry the target URL as
+    // CFSTR_INETURLW (a registered "UniformResourceLocatorW" wide-string clipboard
+    // format) or plain CF_UNICODETEXT, NOT CF_HDROP -- so the file-only Drop() path
+    // yields nothing and the drop is silently lost. Pull the URL out of the data
+    // object as a UTF-8 string and hand it to Dart in the SAME performOperation
+    // list as file paths; the Dart classifier (classifyDroppedFiles) disambiguates
+    // URLs from file paths by scheme. Returns the URL (empty string if none).
+    std::string ExtractDroppedUrl(IDataObject *pDataObj) {
+        static const UINT cf_inet_url_w = RegisterClipboardFormat(CFSTR_INETURLW);
+        const UINT candidates[] = {cf_inet_url_w, CF_UNICODETEXT};
+        for (UINT cf : candidates) {
+            if (cf == 0) {
+                continue;
+            }
+            FORMATETC fmt = {(CLIPFORMAT) cf, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+            STGMEDIUM med;
+            if (pDataObj->QueryGetData(&fmt) != S_OK) {
+                continue;
+            }
+            if (pDataObj->GetData(&fmt, &med) != S_OK) {
+                continue;
+            }
+            std::string url;
+            PVOID data = GlobalLock(med.hGlobal);
+            if (data != nullptr) {
+                std::wstring wide(reinterpret_cast<const wchar_t *>(data));
+                url = ws2s(wide);
+                GlobalUnlock(med.hGlobal);
+            }
+            ReleaseStgMedium(&med);
+            // CF_UNICODETEXT can be arbitrary text; only accept it if it actually
+            // looks like an http(s) URL (CFSTR_INETURLW is already canonical). This
+            // keeps plain-text drops from masquerading as importable URLs.
+            if (cf == CF_UNICODETEXT && url.rfind("http://", 0) != 0 &&
+                url.rfind("https://", 0) != 0) {
+                continue;
+            }
+            if (!url.empty()) {
+                return url;
+            }
+        }
+        return {};
+    }
 
     class DesktopDropTarget : public IDropTarget {
     public:
@@ -281,6 +328,17 @@ namespace {
                 ReleaseStgMedium(&stgmed);
             }
         }
+
+        // TODO-1306: no files present (empty CF_HDROP) -- this may be a URL drag
+        // from a browser (CFSTR_INETURLW / CF_UNICODETEXT). Extract the URL and
+        // pass it through the SAME channel so Dart imports it as a stream video.
+        if (list.empty()) {
+            std::string url = ExtractDroppedUrl(pDataObj);
+            if (!url.empty()) {
+                list.push_back(flutter::EncodableValue(url));
+            }
+        }
+
         channel_->InvokeMethod("performOperation", std::make_unique<flutter::EncodableValue>(list));
 
         return 0;

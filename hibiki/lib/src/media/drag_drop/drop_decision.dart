@@ -8,6 +8,10 @@ enum DropIntent {
   importNewBook,
   importNewVideo,
   importNewPlaylist,
+
+  /// 拖入的可导入网络流 URL → 走视频「流媒体导入」（[_importStreamUrl]，入库进视频
+  /// 书架）。books/video 两表面都自动切到视频导入，与拖视频文件的自动切换一致（TODO-1306）。
+  importVideoUrl,
   attachToBookCard,
   attachToVideoCard,
   needCardTarget,
@@ -37,8 +41,9 @@ DropIntent decideDropIntent({
       if (cardHit && (files.subtitles.isNotEmpty || files.audios.isNotEmpty)) {
         return DropIntent.attachToBookCard;
       }
-      // 拖视频/播放列表到书架空白处 → 自动切到视频导入流程（带上文件），消除「视频在
-      // books 表面 unsupportedSurface 只提示」的特例（TODO-558 / BUG-326）。
+      // 拖视频/播放列表/URL 到书架空白处 → 自动切到视频导入流程（带上文件/URL），消除
+      // 「视频在 books 表面 unsupportedSurface 只提示」的特例（TODO-558 / BUG-326 / TODO-1306）。
+      if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
       if (files.videos.isNotEmpty) return DropIntent.importNewVideo;
       // 到此：非命中卡的纯字幕/音频 → 音频/字幕必须挂到某本书，提示需要目标卡。
@@ -48,6 +53,7 @@ DropIntent decideDropIntent({
       if (files.hasAny) return DropIntent.unsupportedSurface;
       return DropIntent.ignore;
     case DropSurface.video:
+      if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
       if (files.videos.isNotEmpty) return DropIntent.importNewVideo;
       if (files.subtitles.isNotEmpty) {

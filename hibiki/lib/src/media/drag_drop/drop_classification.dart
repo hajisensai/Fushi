@@ -95,6 +95,7 @@ class DroppedFiles {
     required this.audios,
     required this.playlists,
     required this.dictionaries,
+    required this.urls,
     required this.unknown,
   });
 
@@ -104,6 +105,13 @@ class DroppedFiles {
   final List<String> audios;
   final List<String> playlists;
   final List<String> dictionaries;
+
+  /// 拖入的可导入网络流 URL（http(s)，非文件路径）。浏览器地址栏/链接拖进来时，
+  /// 原生（Windows CFSTR_INETURLW / macOS public.url / Linux text/uri-list）把 URL
+  /// 当作一个「路径」字符串经同一通道传回，[classifyDroppedFiles] 按 scheme 从文件
+  /// 路径中甄别出来落到本类（TODO-1306），由落点决策路由到流媒体导入 [_importStreamUrl]。
+  final List<String> urls;
+
   final List<String> unknown;
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。
@@ -113,13 +121,29 @@ class DroppedFiles {
       subtitles.isNotEmpty ||
       audios.isNotEmpty ||
       playlists.isNotEmpty ||
-      dictionaries.isNotEmpty;
+      dictionaries.isNotEmpty ||
+      urls.isNotEmpty;
 }
 
 String _ext(String path) {
   final String e = p.extension(path); // 含前导点，如 ".EPUB"
   if (e.isEmpty) return '';
   return e.substring(1).toLowerCase();
+}
+
+/// 纯函数：判断拖入的字符串是否是一条可导入的网络流 URL（http/https + 非空 host）。
+///
+/// 语义与 `isPlayableStreamUrl`（url_stream_video.dart）钉死同步（守卫测试
+/// `url_drop_url_predicate_guard_test`），是「拖入的这条字符串到底是文件路径还是可
+/// 导入 URL」的单一判据：Windows 盘符路径 `C:\a.mp4` 的 scheme 会被解析成 `c`、UNC /
+/// POSIX 路径 scheme 为空，均非 http(s) → 判为文件路径，不会误吞。纯字符串判定，不碰
+/// 文件系统 / 网络（TODO-1306）。
+bool isImportableDropUrl(String candidate) {
+  final Uri? uri = Uri.tryParse(candidate.trim());
+  if (uri == null) return false;
+  final String scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return false;
+  return uri.host.isNotEmpty;
 }
 
 /// 把拖入文件路径按扩展名分类。纯函数，无副作用。
@@ -130,9 +154,16 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
   final List<String> audios = <String>[];
   final List<String> playlists = <String>[];
   final List<String> dictionaries = <String>[];
+  final List<String> urls = <String>[];
   final List<String> unknown = <String>[];
 
   for (final String path in paths) {
+    // URL（浏览器地址栏/链接拖入）不是文件路径，先按 scheme 甄别，命中即归 urls 并
+    // 跳过扩展名分类——URL 即便末段带 `.mp4` 也交给流媒体导入而非当本地文件（TODO-1306）。
+    if (isImportableDropUrl(path)) {
+      urls.add(path.trim());
+      continue;
+    }
     final String ext = _ext(path);
     bool matched = false;
     if (kDragBookExtensions.contains(ext)) {
@@ -169,6 +200,7 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
     audios: audios,
     playlists: playlists,
     dictionaries: dictionaries,
+    urls: urls,
     unknown: unknown,
   );
 }

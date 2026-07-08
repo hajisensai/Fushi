@@ -403,6 +403,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         );
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
+      case DropIntent.importVideoUrl:
+        // 拖入网络流 URL → 打开视频导入对话框预填 URL 并自动导入（TODO-1306）。
+        _openStreamImportPrefilled(streamUrl: files.urls.first);
       case DropIntent.attachToVideoCard:
         // 字幕拖到具体视频卡：直接挂到那张卡所代表的**现有**视频书（不重新导入）。
         // 旧实现走 _openVideoImportPrefilled→VideoImportDialog._doImport，对已存在
@@ -455,6 +458,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       builder: (_) => VideoImportDialog(
         repo: widget.repo,
         initialPlaylistPath: playlistPath,
+      ),
+    );
+    if (bookUid != null) _refresh();
+  }
+
+  /// 拖入网络流 URL（浏览器地址栏/链接）→ 打开 [VideoImportDialog] 预填 URL，对话框
+  /// 可播时自动走 [_importStreamUrl] 导入（进视频书架），关闭后刷新列表（TODO-1306）。
+  Future<void> _openStreamImportPrefilled({
+    required String streamUrl,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: widget.repo,
+        initialStreamUrl: streamUrl,
       ),
     );
     if (bookUid != null) _refresh();
