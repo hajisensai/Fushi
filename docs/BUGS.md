@@ -27,13 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 637 条。点号进各自文件。
+> 共 639 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-653](bugs/BUG-653-cloud-spill-multiple.md) | ✅ | ✅ | 云盘 per-book 文件溢出根目录并累积多份（TODO-1340，BUG-619 复报） |
+| [BUG-652](bugs/BUG-652-page-edge-leak-v2.md) | ✅ | ✅ | 分页阅读器翻页看到上下页内容(相邻页泄露)复诉·真机WebView2实测已修 |
 | [BUG-651](bugs/BUG-651-dual-subtitle-position.md) | ✅ | ✅ | 双字幕同显但两条挤在同一位置来回变+样式没按各自轨道 |
-| [BUG-651](bugs/BUG-651-page-edge-leak-v2.md) | ✅ | ✅ | 分页阅读器翻页看到上下页内容(相邻页泄露)复诉·真机WebView2实测已修 |
-| [BUG-651](bugs/BUG-651-cloud-spill-multiple.md) | ✅ | ✅ | 云盘 per-book 文件溢出根目录并累积多份（TODO-1340，BUG-619 复报） |
 | [BUG-650](bugs/BUG-650-sync-incomplete-discard.md) | ✅ | ✅ | 同步未完成被中断仍误记冷却时间戳·压制下次启动重试（应丢弃中间态并按时机重试） |
 | [BUG-649](bugs/BUG-649-ios-lyrics-mode-load-race.md) | ✅ | ✅ | iOS 歌词模式进入时旧页面 onLoadStop 误初始化 |
 | [BUG-648](bugs/BUG-648-ios-lyrics-mode-huge-html.md) | ✅ | ✅ | iOS 歌词模式整本字幕 HTML 导致打不开 |
