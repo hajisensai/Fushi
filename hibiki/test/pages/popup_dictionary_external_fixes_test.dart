@@ -247,4 +247,70 @@ void main() {
     expect(closeHeight, searchHeight,
         reason: '关闭按钮与搜索栏等高，消除 TODO-1144 的 8px 高差');
   });
+
+  group('TODO-1336: warm reuse resets the closing latch', () {
+    test('didUpdateWidget resets _isClosing so a reused warm page can reclose',
+        () {
+      final String src = popupSrc();
+      // warm 复用（Android FlutterEngineCache 缓存 :popup 引擎、finishPopup 只隐藏
+      // Activity 不销毁本 State；同一 State 经 didUpdateWidget 反复复用）下，_close 首次
+      // 把 _isClosing 置 true 后若不复位 → 首次查词关闭后所有关闭路径都被 _close 开头闭锁
+      // 卡死。复位必须落在 didUpdateWidget 里（宿主推来新词=重开），而不是别处。
+      final int idx = src.indexOf('void didUpdateWidget(PopupDictionaryPage');
+      expect(idx, greaterThanOrEqualTo(0), reason: 'didUpdateWidget 必须存在');
+      final int endIdx = src.indexOf('void dispose()', idx);
+      final String body =
+          endIdx > idx ? src.substring(idx, endIdx) : src.substring(idx);
+      expect(body, contains('_isClosing = false'),
+          reason: 'didUpdateWidget 复用热页时必须复位 _isClosing（TODO-1336）');
+    });
+
+    testWidgets(
+        'every warm reopen (didUpdateWidget) can close again, not just the first',
+        (WidgetTester tester) async {
+      int closeCount = 0;
+      final AppModel appModel = _PopupTestAppModel();
+
+      Widget build(int generation) => _wrap(
+            appModel,
+            PopupDictionaryPage(
+              searchTerm: 'neko',
+              searchGeneration: generation,
+              closeInApp: () => closeCount++,
+              autoSearchOnOpen: false,
+            ),
+          );
+
+      await tester.pumpWidget(build(0));
+      await tester.pump();
+
+      final Finder closeButton = find.byKey(
+        const ValueKey<String>('popup_dictionary_close_button'),
+      );
+
+      // 第一次关闭：_close 把 _isClosing false→true 并触发 closeInApp（计 1）。此 State
+      // 仍挂载（模拟 Android 缓存引擎下 finishPopup 不销毁 State 的 warm 复用）。
+      await tester.tap(closeButton);
+      await tester.pump();
+      expect(closeCount, 1, reason: '首次关闭必须生效');
+
+      // 模拟 warm 复用重开：宿主递增 generation → 同一 State 触发 didUpdateWidget。
+      await tester.pumpWidget(build(1));
+      await tester.pump();
+
+      // 第二次关闭：修复前 _isClosing 残留 true → _close 开头早退 → closeCount 卡在 1；
+      // 修复后 didUpdateWidget 已复位 _isClosing → 正常关闭 → closeCount == 2。
+      await tester.tap(closeButton);
+      await tester.pump();
+      expect(closeCount, 2,
+          reason: 'warm 复用重开后必须能再次关闭（_isClosing 已在 didUpdateWidget 复位）');
+
+      // 第三轮再复用 + 关闭，确认不是一次性复位而是每次重开都复位。
+      await tester.pumpWidget(build(2));
+      await tester.pump();
+      await tester.tap(closeButton);
+      await tester.pump();
+      expect(closeCount, 3, reason: '每次 warm 复用重开都要能关闭，不止一次');
+    });
+  });
 }
