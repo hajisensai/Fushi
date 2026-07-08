@@ -462,6 +462,56 @@ void main() {
               'stale negative origin cannot falsely mark a new child covered');
     });
 
+    test(
+        'TODO-1345 (BUG-583 deeper): a reserved origin FLOOR freezes the window '
+        'origin so an up/left child never lurches the pinned parent', () {
+      // The residual "第二个弹窗出现导致第一个弹窗位置变动": rounds 1-4 let the union
+      // bbox MIN-corner move outward ONCE when an up/left child became content-ready,
+      // which still lurched the pinned parent across the DWM/WebView2 boundary. The
+      // fix reserves cascade headroom toward the screen interior at the FIRST reveal
+      // (Dart computes it from the real screen edges) so the child lands INSIDE the
+      // committed origin and never moves it — zero parent displacement, extending the
+      // down-right zero-lurch guarantee to up/left.
+      final String layout = read('lib/src/lookup/global_lookup_layout.dart');
+      expect(layout.contains('}) computeCascadeHeadroomSeed('), isTrue,
+          reason:
+              'the screen-edge-aware headroom seed is a pure layout helper');
+      // The controller computes the floor from the real work area + pushes it.
+      expect(controller.contains('computeCascadeHeadroomSeed('), isTrue,
+          reason: 'the controller computes the reserved floor after showAt');
+      expect(
+          controller.contains('originFloorLeft: _originFloorLeft') &&
+              controller.contains('originFloorTop: _originFloorTop'),
+          isTrue,
+          reason: '_renderStack pushes the floor on the renderStack payload');
+      // The render builder only carries the floor when it actually reserves.
+      expect(render.contains("payloadObj['originFloor']"), isTrue,
+          reason:
+              'buildStackRenderScript carries the origin floor to the host');
+      // host.js applies the floor as an OUTWARD-only lower bound on the origin.
+      expect(hostJs.contains('function applyOriginFloor('), isTrue,
+          reason: 'the host reads the reserved floor from the render payload');
+      final int mAt = hostJs.indexOf('function measureAndReport(');
+      final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
+      final String measureBody = hostJs.substring(mAt, mEnd);
+      expect(
+          measureBody.contains('if (originFloorLeft < minLeft)') &&
+              measureBody.contains('if (originFloorTop < minTop)'),
+          isTrue,
+          reason: 'measureAndReport pulls the origin OUT to at least the floor '
+              '(a lower bound, never a cap — freezes the origin for an up/left '
+              'child within the floor)');
+      // beginLookup drops the previous lookup\'s floor so it cannot leak.
+      final int bAt = hostJs.indexOf('function beginLookup(');
+      final int bEnd = hostJs.indexOf('function renderStack(', bAt);
+      final String beginBody = hostJs.substring(bAt, bEnd);
+      expect(
+          beginBody.contains('originFloorLeft = 0') &&
+              beginBody.contains('originFloorTop = 0'),
+          isTrue,
+          reason: 'beginLookup resets the reserved floor per fresh lookup');
+    });
+
     test('D1: two-flag reveal gate hides a shell until content + geometry', () {
       // The gate is a declarative CSS attribute selector (single visibility
       // source) flipped by two independent flags; JS never sets inline

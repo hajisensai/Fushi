@@ -277,3 +277,55 @@ RatchetedOverlayBox ratchetOverlayOrigin({
     height: maxBottom - originTop,
   );
 }
+
+/// TODO-1345（BUG-583 深层根因续）—— 覆盖窗「级联余量地板」纯函数（CSS px·不含 dpr）。
+///
+/// 返回 union bbox 最小角（origin）应预留到的**内侧余量地板**（`left`/`top` 均 <= 0）。
+/// [GlobalLookupController] 在**根卡首次 reveal**把它经 renderStack payload 推给 host；
+/// `global_lookup_host.js` `measureAndReport` 把 origin 外拉到至少这个地板 → 窗口首帧就
+/// 覆盖后续**向左/上级联子卡**将占据的位置 → 子卡落地时 origin 已覆盖它，**绝不再移动
+/// 窗口原点** → 无 `SetWindowPos` + `commitLayerShift` 的跨 DWM/WebView2 边界补偿 →
+/// 钉住的父卡在子卡出现时**零位移**。BUG-583 前 4 轮只能把这次 origin 外移**掩盖**到与
+/// 子卡出现同帧（那 1 帧父卡跳动仍被用户看见）；本地板把它从根上**消除**，把前 4 轮对
+/// 向右/下级联达成的「origin 恒定、父卡零位移」扩展到向左/上。
+///
+/// 余量只朝**屏幕内侧**留（向左 / 向上），且被**双重夹紧**——绝不把窗口顶出屏幕左/上边
+/// （否则 C++ `RevealStack` 的工作区 clamp 会把窗口原点移回内侧、而 `commitLayerShift`
+/// 用的却是未 clamp 值 → 反而重引父卡位移）：
+///   headroom = min(card, 光标到该侧边距离, 工作区维度 - card)，再取负。
+/// 光标靠左/上边时该侧距离趋 0 → 余量趋 0（那侧本就不会向左/上级联·退化为修前几何·
+/// Never break userspace）。向右/下级联恒不需要向左/上余量·地板对其为 no-op（保持 0）。
+///
+/// 纯函数（无 IO / 无平台 / 无状态 / 无 dpr），便于对「余量朝内侧且夹在屏内」单测锁定。
+({double left, double top}) computeCascadeHeadroomSeed({
+  required double cursorWorkX,
+  required double cursorWorkY,
+  required double screenWorkW,
+  required double screenWorkH,
+  required double cardW,
+  required double cardH,
+}) {
+  return (
+    left: -_cascadeHeadroom(cursorWorkX, screenWorkW, cardW),
+    top: -_cascadeHeadroom(cursorWorkY, screenWorkH, cardH),
+  );
+}
+
+/// 单轴级联余量幅度（>= 0·CSS px）。见 [computeCascadeHeadroomSeed] 的双重夹紧规则。
+double _cascadeHeadroom(double cursorWork, double screenWork, double card) {
+  if (cursorWork <= 0 || screenWork <= 0 || card <= 0) {
+    return 0;
+  }
+  // 想留满一张卡的余量（单层向左/上级联子卡最远可达 ~1 张卡）。
+  double headroom = card;
+  // 夹紧①：不超过光标到该侧边的距离（否则窗口顶出屏幕该侧边）。
+  if (cursorWork < headroom) {
+    headroom = cursorWork;
+  }
+  // 夹紧②：窗口总跨度（card + headroom）不超过工作区维度（小屏兜底·同样防顶出对侧边）。
+  final double onScreenRoom = screenWork - card;
+  if (onScreenRoom < headroom) {
+    headroom = onScreenRoom;
+  }
+  return headroom > 0 ? headroom : 0;
+}

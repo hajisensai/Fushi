@@ -125,6 +125,22 @@
   var layerOffsetLeft = 0;
   var layerOffsetTop = 0;
 
+  // TODO-1345 (BUG-583 深层根因续) — reserved cascade origin FLOOR (window-local
+  // CSS px, always <= 0). Dart computes it per lookup from the REAL screen edges
+  // (headroom toward the screen interior, bounded so the window stays on-screen)
+  // and pushes it on the renderStack payload (applyOriginFloor). measureAndReport
+  // pulls the union bbox MIN-corner (origin) OUT to at least this floor, so the
+  // window is revealed already covering the region an up/left cascade child will
+  // occupy. The child then lands INSIDE the committed origin and never moves it —
+  // no SetWindowPos + commitLayerShift round-trip across the DWM/WebView2 boundary
+  // when the child appears, so the pinned PARENT card has ZERO displacement (the
+  // residual BUG-583 rounds 1-4 could only mask by coinciding the origin move with
+  // the child's appearance frame). 0 = no reservation (down-right cascade, or the
+  // cursor sits against an edge) -> the origin is byte-identical to the pre-fix
+  // behaviour, so the common cascade + first reveal are unchanged.
+  var originFloorLeft = 0;
+  var originFloorTop = 0;
+
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
   // it identically to popup.js-originated messages. Read-only host messages need
@@ -917,6 +933,11 @@
     // real layer transform is re-applied by this lookup's first commitLayerShift.
     layerOffsetLeft = 0;
     layerOffsetTop = 0;
+    // TODO-1345 (BUG-583 深层根因续) — drop the previous lookup's reserved cascade
+    // floor so it can never leak into a fresh lookup (a new lookup re-computes its
+    // own floor from the new cursor position and pushes it via the next renderStack).
+    originFloorLeft = 0;
+    originFloorTop = 0;
     if (typeof rootId !== 'string' || !rootId) {
       return;
     }
@@ -955,8 +976,31 @@
     }
   }
 
+  // TODO-1345 (BUG-583 深层根因续) — set the reserved cascade origin floor from the
+  // render payload (Dart's screen-edge-aware headroom). Called from renderStack so
+  // the floor is in place before the following measureAndReport reports the origin.
+  // Guarded: an absent / malformed value leaves the floor at its current (reset) 0
+  // (no reservation). The floor only ever reserves OUTWARD (<= 0); a positive value
+  // would pull the origin INWARD and clip the root, so it is clamped out to 0.
+  function applyOriginFloor(floor) {
+    if (!floor || typeof floor !== 'object') {
+      return;
+    }
+    var l = (typeof floor.left === 'number' && isFinite(floor.left))
+        ? floor.left
+        : 0;
+    var t = (typeof floor.top === 'number' && isFinite(floor.top))
+        ? floor.top
+        : 0;
+    originFloorLeft = l < 0 ? l : 0;
+    originFloorTop = t < 0 ? t : 0;
+  }
+
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
+    // measure so the very first reveal already commits the headroom-covered origin.
+    applyOriginFloor(payload && payload.originFloor);
     if (!popups.length) {
       removeMissing([]);
       lastBBoxKey = '';
@@ -1053,6 +1097,21 @@
     if (!isFinite(minLeft) || !isFinite(minTop)) {
       minLeft = minLeftAll;
       minTop = minTopAll;
+    }
+    // TODO-1345 (BUG-583 深层根因续) — pull the origin OUT to at least the reserved
+    // cascade floor. Applied AFTER the content-ready / bootstrap min so the floor is
+    // a lower bound on how far IN the origin can sit (it only ever moves the origin
+    // outward), never a cap. This is the root fix for the residual parent lurch: an
+    // up/left child that lands WITHIN the floor no longer pulls the origin when it
+    // becomes content-ready (min(shellLeft, floor) == floor while shellLeft >= floor)
+    // — the window origin is frozen from the first reveal, so the pinned parent card
+    // has ZERO displacement. 0 (default / down-right / cursor at an edge) leaves the
+    // origin byte-identical (min(x, 0) never pulls a non-positive x outward).
+    if (originFloorLeft < minLeft) {
+      minLeft = originFloorLeft;
+    }
+    if (originFloorTop < minTop) {
+      minTop = originFloorTop;
     }
     if (!isFinite(minLeft) || !isFinite(minTop) ||
         !isFinite(maxRight) || !isFinite(maxBottom)) {
