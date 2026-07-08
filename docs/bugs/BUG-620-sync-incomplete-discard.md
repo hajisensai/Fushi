@@ -1,0 +1,12 @@
+## BUG-620 · 同步未完成被中断仍误记冷却时间戳·压制下次启动重试（应丢弃中间态并按时机重试）
+- **报告**：2026-07-08（用户）
+- **真实性**：✅ 真 bug（状态机/生命周期缺陷，非 UI 假象）。根因 `hibiki/lib/src/sync/sync_manager.dart:233`（旧代码）——同步冷却时间戳 `lastSyncMs` 写在 `SyncManager.syncAllBooks` 的**书阶段末尾**，即整轮 sweep 的**中途**。
+- **现象/诉求**：用户看到「同步进行中 / 同步尚未完成」（`sync_exit_warning*`，`home_page.dart:924/931`），预期「同步没完成就丢弃中间态、等下次启动等时机再同步」，而不是残留卡在「进行中未完成」。
+- **根因分析**：
+  - 自动同步冷却门在 `hibiki/lib/src/sync/sync_auto_trigger.dart:166-168`：app-open sweep 前读 `getLastSyncMs()`，`now - lastSync < _syncCooldownMs(5min)` 则整轮跳过。
+  - 但 `lastSyncMs` 由 `SyncManager.syncAllBooks`（旧 `sync_manager.dart:233`）在**书阶段末尾**写入，而整轮 `SyncOrchestrator.run()`（`sync_orchestrator.dart`）在书阶段之后还有词典 / 本地音频 / 有声书 / live 进度 / 聚合等多个阶段。
+  - 于是「书阶段跑完、后续阶段被中断（app 退出 / 进程被杀 / 异常）」的**残缺同步**仍会误记 `lastSyncMs = now`，导致下次 app-open 在 5 分钟冷却窗内（含重启后）**整轮跳过**——残缺同步既没完成、也不被丢弃重试，正是用户报的「残留卡在进行中未完成、下次不重试」。
+  - `syncInProgress`（`sync_auto_trigger.dart:22`）为纯内存 `ValueNotifier`，重启自动归零，不是跨重启的持久残留；per-book baseline 已是原子写（BUG-201）无半提交损坏。真正违反「未完成即丢弃 + 下次重试」契约的是**冷却时间戳记在了 sweep 中途**。
+- **[x] ① 已修复** — 把 `lastSyncMs` 的写入从 sweep 中途（`syncAllBooks` 书阶段末尾）移到整轮完成处：`SyncOrchestrator.run()` 结尾、所有阶段都已尝试且未被异常/中断打断后才 `SyncRepository(_db).setLastSyncMs(...)`。中断发生在该行之前 → `lastSyncMs` 保持不变 → 下次 app-open 不被冷却窗压制、整轮重试（= 丢弃残缺中间态、下次启动再同步）。手动「立即同步」仍经 `run()`，完成时照常记录，向后兼容。`sync_manager.dart` `syncAllBooks` / `sync_orchestrator.dart` `run()`。提交见备注。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/sync_orchestrator_test.dart` group `sync cooldown timestamp lifecycle (TODO-1332)` 两例：(a) 完整 `run()` 后 `getLastSyncMs()` 非空；(b) 词典阶段抛出中断整轮 sweep 时 `run()` 抛异常且 `getLastSyncMs()` 仍为空（中断态被丢弃、下次重试）。
+- **备注**：TODO-1332。关联但未改（避免破坏 TODO-698 的退出告警 + 超出状态机范围）：`_SyncExitWarningDialog`「现在退出可能会丢失数据」的措辞——修复后残缺同步已可安全丢弃并重试，该措辞偏保守，是否软化留用户决策。另 `sync_http.dart` 响应体读取无超时（连接建立才有 60s 超时），极端弱网可能让单次 sweep 长时间挂起（`syncInProgress` 本会话内不归零），属网络健壮性单独议题，本次未动。提交哈希见分支 `todo1332-sync-incomplete-discard`。
