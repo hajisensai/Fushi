@@ -2185,5 +2185,7 @@
   "video_setting_subtitle_text_color_red": "Red",
   "card_mining_pending": "Adding card…",
   "sync_pair_pin_waiting": "Waiting for the other device to enter this PIN…",
-  "sync_pair_repair": "Pair again"
+  "sync_pair_repair": "Pair again",
+  "video_subtitle_youtube_translated": "$lang (translated)",
+  "video_subtitle_youtube_empty": "This caption track has no text"
 }

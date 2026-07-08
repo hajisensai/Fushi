@@ -2185,5 +2185,7 @@
   "video_setting_subtitle_text_color_red": "红色",
   "card_mining_pending": "制卡中…",
   "sync_pair_pin_waiting": "等待对方设备输入此 PIN…",
-  "sync_pair_repair": "重新配对"
+  "sync_pair_repair": "重新配对",
+  "video_subtitle_youtube_translated": "$lang（翻译）",
+  "video_subtitle_youtube_empty": "该字幕轨没有文字"
 }

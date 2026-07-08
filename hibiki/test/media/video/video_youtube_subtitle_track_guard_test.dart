@@ -2,23 +2,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 
-/// TODO-1302 / BUG-602 源码守卫 + 逻辑单测。
+/// TODO-1302 / BUG-602 + 回归 TODO-1302（「YouTube 字幕直接没了」）源码守卫 + 逻辑单测。
 ///
-/// 根因：YouTube 走 `preresolvedCues` 路径（[video_hibiki_page.dart] 的
-/// `_loadRemoteEpisode`）把预解析 cue 直接注入 overlay，却绕过远端字幕轨模型——
-/// 不写 `_remoteSubtitlePath`、不加 `_remoteEmbeddedSubtitleTracks`、`_currentSubtitleSource`
-/// 留 null → 远端字幕菜单（subtitle.part.dart）渲染不出任何 YouTube 字幕行、且「关闭」
-/// 项按 `_isRemote && _currentSubtitleSource == null` 被误显选中，用户根本选不到 YouTube 字幕。
+/// 演进：
+/// - BUG-602：YouTube 预解析 cue 直接注入 overlay 但绕过字幕轨模型 → 选择器无 YouTube 行。
+///   初版用单条合成哨兵 `_kYoutubeCaptionsSource` 让菜单渲染一行。
+/// - TODO-1307 快加载把字幕改后置：单条 `_resolveDeferredYoutubeCaptions` 把「字幕轨行 +
+///   overlay」双双吊在**一次** cue 解析成败上（`preresolvedCues.isEmpty` 门控），一次解析空/
+///   失败/未回来 → 选择器与 overlay 双空 =「字幕直接没了」的回归。
+/// - 本次修复（track-list-first + lazy-cue-on-select + A3）：起播后先一次 getPlayerResponse
+///   取**字幕轨列表**回填 `client.youtubeCaptionTracks`（列表出现**不依赖 cue 就绪**），字幕轨
+///   选择器每轨渲染一行；选中某轨才 [resolveYoutubeCaptionCues] 懒下载那一轨 cue 挂 overlay；
+///   默认自动应用最佳轨（[pickBestYoutubeCaptionTrack]：人工>ASR·精确语言），含 autoTranslate
+///   母语对照变体。
 ///
-/// 修复：应用 preresolvedCues 时把 `_currentSubtitleSource` 设为非空合成源哨兵
-/// `_kYoutubeCaptionsSource`，远端菜单据 `_youtubeCaptionsAvailable` 渲染一条「YouTube
-/// 字幕」行并高亮，关闭走既有 `_clearRemoteSubtitle`（置 null）。
-///
-/// VideoHibikiPage 过重（需完整 app + media_kit controller）无法在 widget test 拉起私有
-/// 状态与菜单构建，故这里落最强可落地层：① 源码语料守卫（切片两文件断言登记/渲染/符号
-/// 定义均在位，删任一即红——同时防上次「引用未定义符号致不编译」回归）；② 真逻辑单测断言
-/// 合成哨兵不被 `SubtitleSource.isOff` 误判为「关闭」。
+/// VideoHibikiPage 过重（需完整 app + media_kit controller）无法在 widget test 拉起私有状态
+/// 与菜单构建，故这里落最强可落地层：① 源码语料守卫（切片断言列表回填/菜单按轨表渲染/懒加载
+/// 均在位、且**不再**把行吊在 cue 门控上——删任一即红）；② 真逻辑单测（A3 选轨 + trackKey +
+/// 懒下载 URL + 合成源不被误判「关闭」）。
 void main() {
   late String pageSrc;
   late String subtitleSrc;
@@ -30,80 +33,195 @@ void main() {
         read('lib/src/pages/implementations/video_hibiki/subtitle.part.dart');
   });
 
-  test('subtitle part defines the synthetic YouTube captions source sentinel',
-      () {
-    expect(
-      subtitleSrc.contains('const String _kYoutubeCaptionsSource = '
-          "'youtube:captions';"),
-      isTrue,
-      reason: 'must define the non-null synthetic YouTube captions sentinel',
-    );
+  group('源码守卫：track-list-first + lazy-cue-on-select', () {
+    test('起播后回填字幕轨列表（不依赖 cue 就绪 → 修「字幕整个消失」）', () {
+      expect(
+        pageSrc.contains('client.setYoutubeCaptionTracks(tracks)'),
+        isTrue,
+        reason: '字幕轨列表必须回填 client，供字幕轨选择器渲染（与 cue 下载解耦）',
+      );
+      // 回填在 setState 之前（列表立即可见），且不被任何「cue 是否就绪」门控。
+      expect(
+        pageSrc.contains('client.preresolvedCues.isEmpty &&'),
+        isFalse,
+        reason: '不得把字幕轨行吊在一次 cue 解析成败上（回归根因）',
+      );
+    });
+
+    test('字幕轨选择器按轨表逐行渲染 + trackKey 高亮 + on-select 懒下载', () {
+      expect(
+        subtitleSrc.contains(
+            'for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)'),
+        isTrue,
+        reason: '菜单必须按 client 的字幕轨列表逐轨渲染一行',
+      );
+      expect(
+        subtitleSrc.contains('_currentSubtitleSource == track.trackKey'),
+        isTrue,
+        reason: '每行高亮判据 = 当前源等于该轨 trackKey',
+      );
+      expect(
+        subtitleSrc.contains('_applyYoutubeCaptionTrack(controller, track)'),
+        isTrue,
+        reason: '点某行必须 on-select 懒下载那一轨的 cue',
+      );
+    });
+
+    test('引用的 getter + helper 定义在同一私有作用域（防不编译回归）', () {
+      expect(
+        subtitleSrc
+            .contains('List<YoutubeCaptionTrack> get _youtubeCaptionTracks {'),
+        isTrue,
+        reason: '字幕轨列表 getter 必须在此定义',
+      );
+      expect(
+        subtitleSrc.contains('Future<void> _applyYoutubeCaptionTrack(\n'),
+        isTrue,
+        reason: 'on-select 懒加载 helper 必须在此定义',
+      );
+      // 派生自真实客户端的 youtubeCaptionTracks，无独立可失步状态。
+      expect(
+        subtitleSrc.contains('client.youtubeCaptionTracks'),
+        isTrue,
+        reason: '列表必须派生自 client.youtubeCaptionTracks',
+      );
+    });
+
+    test('on-select 懒下载有 per-track cue 缓存（重选不重复下载）', () {
+      expect(
+        subtitleSrc.contains('client.cachedCaptionCues(track.trackKey)'),
+        isTrue,
+        reason: '懒下载前先读缓存',
+      );
+      expect(
+        subtitleSrc.contains('client.cacheCaptionCues(track.trackKey, cues)'),
+        isTrue,
+        reason: '下载好的 cue 必须缓存供重选复用',
+      );
+    });
+
+    test('「关闭」高亮判据保持 isOff 或 remote-null（trackKey 非空 → 关闭不被误选）', () {
+      expect(
+        subtitleSrc
+                .contains('SubtitleSource.isOff(_currentSubtitleSource) ||') &&
+            subtitleSrc
+                .contains('(_isRemote && _currentSubtitleSource == null)'),
+        isTrue,
+        reason:
+            'off 行判据不变；YouTube 轨激活时 _currentSubtitleSource=trackKey 非空 → 关闭不被选',
+      );
+    });
   });
 
-  test('preresolvedCues branch registers the YouTube captions source', () {
-    // 登记源指针：预解析 cue 分支必须把 _currentSubtitleSource 设成合成哨兵，
-    // 否则 _applyLoad 内 externalSubtitlePath==null 会保留 null → 关闭被误选。
-    expect(
-      pageSrc.contains('cues = client.preresolvedCues;') &&
-          pageSrc.contains('_currentSubtitleSource = _kYoutubeCaptionsSource;'),
-      isTrue,
-      reason: 'preresolvedCues path must register the YouTube captions source',
-    );
+  group('A3 选轨逻辑单测（人工>ASR·精确语言·autoTranslate）', () {
+    YoutubeCaptionTrack t(String lang, {bool asr = false, String? tl}) =>
+        YoutubeCaptionTrack(
+          baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=$lang',
+          languageCode: lang,
+          languageName: lang,
+          isAutoGenerated: asr,
+          translateToCode: tl,
+        );
+
+    test('排序：精确语言人工 > 精确语言 ASR > 其它人工 > 其它 ASR > 翻译变体', () {
+      final List<YoutubeCaptionTrack> input = <YoutubeCaptionTrack>[
+        t('en'),
+        t('ja', asr: true),
+        t('en', asr: true),
+        t('ja'),
+      ];
+      final ordered = orderYoutubeCaptionTracks(input, preferLang: 'ja');
+      expect(ordered.map((e) => e.trackKey).toList(), <String>[
+        'youtube:captions:ja:human',
+        'youtube:captions:ja:asr',
+        'youtube:captions:en:human',
+        'youtube:captions:en:asr',
+      ]);
+    });
+
+    test('pickBest：优先精确语言人工轨（不盲选 tracks.first 的 ASR）', () {
+      final YoutubeCaptionTrack? best = pickBestYoutubeCaptionTrack(
+        <YoutubeCaptionTrack>[t('ja', asr: true), t('ja')],
+        preferLang: 'ja',
+      );
+      expect(best?.trackKey, 'youtube:captions:ja:human');
+    });
+
+    test('pickBest：只有 ASR 时退 ASR；空表返回 null', () {
+      expect(
+        pickBestYoutubeCaptionTrack(<YoutubeCaptionTrack>[t('ja', asr: true)],
+                preferLang: 'ja')
+            ?.trackKey,
+        'youtube:captions:ja:asr',
+      );
+      expect(
+        pickBestYoutubeCaptionTrack(const <YoutubeCaptionTrack>[],
+            preferLang: 'ja'),
+        isNull,
+      );
+    });
+
+    test('精确语言匹配含地区后缀（ja 匹配 ja-JP、不误匹配 jav）', () {
+      expect(captionLanguageMatches('ja', 'ja'), isTrue);
+      expect(captionLanguageMatches('ja-JP', 'ja'), isTrue);
+      expect(captionLanguageMatches('jav', 'ja'), isFalse);
+      expect(captionLanguageMatches('en', 'ja'), isFalse);
+    });
+
+    test('autoTranslate：为最佳源轨追加一条母语对照变体', () {
+      final ordered = orderYoutubeCaptionTracks(
+        <YoutubeCaptionTrack>[t('ja')],
+        preferLang: 'ja',
+      );
+      final withTl = withAutoTranslateVariant(ordered, translateTo: 'zh');
+      expect(withTl.length, 2);
+      expect(withTl.last.isTranslated, isTrue);
+      expect(withTl.last.trackKey, 'youtube:captions:ja:human:tl=zh');
+    });
+
+    test('autoTranslate：源语言即母语 / 已有母语原始轨 → 不追加', () {
+      final zhOnly = orderYoutubeCaptionTracks(<YoutubeCaptionTrack>[t('zh')],
+          preferLang: 'zh');
+      expect(withAutoTranslateVariant(zhOnly, translateTo: 'zh').length, 1);
+
+      final jaAndZh = orderYoutubeCaptionTracks(
+          <YoutubeCaptionTrack>[t('ja'), t('zh')],
+          preferLang: 'ja');
+      expect(withAutoTranslateVariant(jaAndZh, translateTo: 'zh').length, 2);
+    });
   });
 
-  test('remote subtitle menu renders + highlights a YouTube captions row', () {
-    expect(
-        subtitleSrc.contains('_isRemote && _youtubeCaptionsAvailable'), isTrue,
-        reason: 'menu must gate a dedicated YouTube captions row');
-    expect(subtitleSrc.contains('t.video_subtitle_youtube_captions'), isTrue,
-        reason: 'row must use the YouTube captions i18n title key');
-    expect(
-      subtitleSrc.contains(
-          'selected: _currentSubtitleSource == _kYoutubeCaptionsSource'),
-      isTrue,
-      reason: 'row must highlight when the synthetic sentinel is current',
-    );
-    expect(subtitleSrc.contains('_applyYoutubeCaptions(controller)'), isTrue,
-        reason: 'tapping the row must re-apply the preresolved cues');
-  });
+  group('YoutubeCaptionTrack 数据模型', () {
+    test('trackKey 编码：语言 + 人工/ASR + 翻译目标', () {
+      const YoutubeCaptionTrack human = YoutubeCaptionTrack(
+        baseUrl: 'u',
+        languageCode: 'ja',
+        languageName: '日本語',
+        isAutoGenerated: false,
+      );
+      expect(human.trackKey, 'youtube:captions:ja:human');
+      expect(
+          human.translatedTo('zh').trackKey, 'youtube:captions:ja:human:tl=zh');
+    });
 
-  test('referenced getter + helper are defined in the same private scope', () {
-    // 防上次失败回归：subtitle.part.dart 引用的 _youtubeCaptionsAvailable /
-    // _applyYoutubeCaptions 必须在同一 State 类私有作用域里定义，否则不编译。
-    expect(subtitleSrc.contains('bool get _youtubeCaptionsAvailable {'), isTrue,
-        reason: 'the availability getter must be defined here');
-    expect(
-      subtitleSrc.contains(
-          'Future<void> _applyYoutubeCaptions(VideoPlayerController controller)'),
-      isTrue,
-      reason: 'the apply helper must be defined here',
-    );
-    // 派生自真实客户端的 preresolvedCues，无独立可失步状态。
-    expect(
-      subtitleSrc.contains('client is UrlStreamVideoClient &&\n'
-              '        client.preresolvedCues.isNotEmpty') ||
-          subtitleSrc.contains(
-              'client is UrlStreamVideoClient && client.preresolvedCues'),
-      isTrue,
-      reason: 'availability must derive from the client preresolvedCues',
-    );
-  });
+    test('cueDownloadUrl 补 fmt=srv1；翻译变体再补 tlang', () {
+      const YoutubeCaptionTrack tr = YoutubeCaptionTrack(
+        baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=ja',
+        languageCode: 'ja',
+        languageName: '日本語',
+        isAutoGenerated: false,
+      );
+      expect(tr.cueDownloadUrl.contains('fmt=srv1'), isTrue);
+      expect(tr.cueDownloadUrl.contains('tlang='), isFalse);
+      final YoutubeCaptionTrack translated = tr.translatedTo('zh');
+      expect(translated.cueDownloadUrl.contains('fmt=srv1'), isTrue);
+      expect(translated.cueDownloadUrl.contains('tlang=zh'), isTrue);
+    });
 
-  test('off row selection still gates the remote-null case', () {
-    // 「关闭」高亮判据保持 SubtitleSource.isOff(...) || (_isRemote && ...==null)：
-    // 有了非空哨兵后，YouTube 字幕激活时 _currentSubtitleSource!=null → 关闭不再被选。
-    expect(
-      subtitleSrc.contains('SubtitleSource.isOff(_currentSubtitleSource) ||') &&
-          subtitleSrc.contains('(_isRemote && _currentSubtitleSource == null)'),
-      isTrue,
-      reason: 'off row must remain gated on isOff OR remote-null only',
-    );
-  });
-
-  test('the synthetic sentinel is not treated as an off sentinel', () {
-    // 真逻辑：合成哨兵不能被 isOff 误判为「关闭」，否则菜单又把关闭显选中。
-    expect(SubtitleSource.isOff('youtube:captions'), isFalse);
-    expect(SubtitleSource.isOff(SubtitleSource.offSentinel), isTrue);
-    expect(SubtitleSource.isOff(null), isFalse);
+    test('合成 trackKey 不被 SubtitleSource.isOff 误判为「关闭」', () {
+      expect(SubtitleSource.isOff('youtube:captions:ja:human'), isFalse);
+      expect(SubtitleSource.isOff(SubtitleSource.offSentinel), isTrue);
+      expect(SubtitleSource.isOff(null), isFalse);
+    });
   });
 }
