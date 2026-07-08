@@ -141,7 +141,8 @@ void main() {
               "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : '+';"),
           reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)');
       expect(
-          RegExp(r"className: 'mine-button',\s+textContent: '\+',").hasMatch(js),
+          RegExp(r"className: 'mine-button',\s+textContent: '\+',")
+              .hasMatch(js),
           isTrue,
           reason: '制卡按钮初始文本为 +（可制卡）');
     });
