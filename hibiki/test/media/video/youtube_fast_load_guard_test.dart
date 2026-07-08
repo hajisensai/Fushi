@@ -27,7 +27,8 @@ void main() {
   test('① 快解析 gate：buildStreamVideoLaunch 的 YouTube 分支用 withCaptions:false',
       () {
     expect(
-      launchSrc.contains('resolveYoutubeSource(url, withCaptions: false)'),
+      // TODO-1314：快解析 gate 现经可注入的默认 resolver 闭包（参数名 u）保留，行为不变。
+      launchSrc.contains('resolveYoutubeSource(u, withCaptions: false)'),
       isTrue,
       reason: 'YouTube 分支必须走快解析 gate（withCaptions:false），不前置阻塞字幕/title',
     );
