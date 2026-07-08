@@ -271,10 +271,19 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     // auto-scroll：浮层矩形撞上下边缘时滚动（转全局矩形喂 autoScroller）。修订1（TODO-947
     // P3）：移出候选激活时**跳过** auto-scroll——否则向框外（上/下）拖会先触发边缘自动滚动
     // 抖动，与「拖出框移出」手势打架（浮层中心刚跨出边界那一刻两者会争）。
+    // TODO-947 修订（界面缩放）：EdgeDraggingAutoScroller 要的是浮层在**全局坐标**里的
+    // 矩形。旧实现 `localToGlobal(topLeft) & _cellSize` 把全局原点和**本地**尺寸拼在一起：
+    // 祖先 [HibikiAppUiScale] 的 FittedBox 缩放 s≠1 时全局尺寸是 `_cellSize*s`，尺寸错了
+    // 1/s 倍——手机（默认缩放<1）上边缘 auto-scroll 会在错误位置触发/抖动（用户报「手机
+    // 移动有问题」）。改用 MatrixUtils.transformRect 把整个本地矩形经完整祖先变换映射到
+    // 全局，原点与尺寸都随缩放正确换算；s==1 时与旧式逐像素等价（无回归）。
     final RenderObject? ro = _rootKey.currentContext?.findRenderObject();
     if (ro is RenderBox && ro.hasSize && _autoScroller != null && !removeCand) {
-      final Offset topLeftGlobal = ro.localToGlobal(_feedbackTopLeft);
-      _autoScroller!.startAutoScrollIfNecessary(topLeftGlobal & _cellSize);
+      final Rect globalRect = MatrixUtils.transformRect(
+        ro.getTransformTo(null),
+        _feedbackTopLeft & _cellSize,
+      );
+      _autoScroller!.startAutoScrollIfNecessary(globalRect);
     }
 
     // 2D 命中：浮层中心 → (col,row) → display 下标 → clamp itemCount（防 off-by-one）。
