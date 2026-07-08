@@ -1,4 +1,4 @@
-## BUG-571 · iOS 重开书籍恢复歌词模式导致内容超时白屏
+## BUG-626 · iOS 重开书籍恢复歌词模式导致内容超时白屏
 - **报告**：2026-07-07（用户：）
 - **真实性**：✅ 真 bug。根因是 fresh open 时把上个会话持久化的 `lyrics_mode`
   恢复到 `_lyricsMode`（`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:1497`），

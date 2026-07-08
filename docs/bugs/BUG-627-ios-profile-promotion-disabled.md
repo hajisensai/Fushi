@@ -1,8 +1,8 @@
-## BUG-573 · iOS Profile/Release 未启用高刷新率
+## BUG-627 · iOS Profile/Release 未启用高刷新率
 - **报告**：2026-07-07（用户：）
 - **真实性**：✅ 真 bug。`hibiki/ios/Runner/Info.plist:62` 把
   `CADisableMinimumFrameDurationOnPhone` 写死为 `<false/>`，所有 iOS 构建配置
-  都禁用了 iPhone 高刷新率/ProMotion opt-in；这虽然规避了 BUG-567 的 iOS 27
+  都禁用了 iPhone 高刷新率/ProMotion opt-in；这虽然规避了 BUG-622 的 iOS 27
   Debug VSync 崩溃，但 Profile/Release 真机包也被一起锁成非高刷。
 - **[x] ① 已修复** — 源 Info.plist 保持 `<false/>` 作为 Debug 安全回退（也防止
   `flutter build` 自动把缺失 key 升回 `true`），并在 Runner 的 `Thin Binary`

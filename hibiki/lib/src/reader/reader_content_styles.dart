@@ -624,7 +624,7 @@ a {
     final String size = isVertical ? '1em 100%' : '100% 1em';
     final String position = isVertical ? 'left center' : 'left bottom';
     return '''
-/* BUG-568：ruby 元素的盒子包含 rt/rp 注音轨，CSS Highlight 在竖排会按行盒刷宽。
+/* BUG-623：ruby 元素的盒子包含 rt/rp 注音轨，CSS Highlight 在竖排会按行盒刷宽。
    ruby 与 sasayaki 普通正文都只把背景画在正文基字 lane 上，避免有无振假名宽度不一。 */
 .hoshi-sasayaki-cue.hoshi-sasayaki-active,
 ruby.hoshi-selection-ruby-active,

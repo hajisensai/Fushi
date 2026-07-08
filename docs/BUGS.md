@@ -27,10 +27,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 605 条。点号进各自文件。
+> 共 615 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-629](bugs/BUG-629-ios-lyrics-mode-load-race.md) | ✅ | ✅ | iOS 歌词模式进入时旧页面 onLoadStop 误初始化 |
+| [BUG-628](bugs/BUG-628-ios-lyrics-mode-huge-html.md) | ✅ | ✅ | iOS 歌词模式整本字幕 HTML 导致打不开 |
+| [BUG-627](bugs/BUG-627-ios-profile-promotion-disabled.md) | ✅ | ✅ | iOS Profile/Release 未启用高刷新率 |
+| [BUG-626](bugs/BUG-626-ios-lyrics-mode-reopen-timeout.md) | ✅ | ✅ | iOS 重开书籍恢复歌词模式导致内容超时白屏 |
+| [BUG-625](bugs/BUG-625-ios-ankimobile-media-url-404.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地媒体 URL 404 |
+| [BUG-624](bugs/BUG-624-ios-audiobook-card-sentence-audio-aac.md) | ✅ | ✅ | iOS 有声书制卡句音频仍以 .aac localhost URL 入卡 |
+| [BUG-623](bugs/BUG-623-reader-ruby-highlight-wide.md) | ✅ | ✅ | 阅读器竖排 ruby 有声书高亮条包含振假名导致变宽 |
+| [BUG-622](bugs/BUG-622-ios27-vsync-startup-crash.md) | ✅ | ✅ | iOS 27 真机启动在 Flutter VSyncClient 崩溃 |
+| [BUG-621](bugs/BUG-621-ios-audiobook-silent.md) | ✅ | ✅ | iOS 有声书播放没声音 |
+| [BUG-620](bugs/BUG-620-ankimobile-svg-cache-hash.md) | ✅ | ✅ | iOS/Anki 制卡外字 SVG 偶发读不到（词典媒体缓存名使用 String.hashCode） |
 | [BUG-619](bugs/BUG-619-cloud-folder-spill.md) | ✅ | ✅ | 云盘进度文件溢出到父目录 |
 | [BUG-618](bugs/BUG-618-interconnect-token-mismatch-confusion.md) | 🚧 | 🚧 | 互联访问令牌与桌面端不一致（per-peer token·非 bug 待确认） |
 | [BUG-617](bugs/BUG-617-interconnect-wan-pin-vanishes.md) | ✅ | ✅ | 公网配对 host 点允许即关窗抹掉 PIN·client 还没输就看不到 |

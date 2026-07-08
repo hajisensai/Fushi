@@ -1234,7 +1234,7 @@ class ReaderPaginationScripts {
       console.log('[sasayaki-hl] applySasayakiCues payloadCues=' + n);
     } catch (e) {}
     var cueSegments = this.collectSasayakiCueRanges(cues);
-    // BUG-568：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
+    // BUG-623：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
     // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
     // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 hoshi-sasayaki-cue span，
     // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
