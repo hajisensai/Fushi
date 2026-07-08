@@ -70,6 +70,8 @@ import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/sync/remote_audio_lookup_bytes.dart';
+import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -4671,46 +4673,46 @@ class _AppModelRemoteLookupService
     required String expression,
     required String reading,
   }) async {
-    final Map<String, dynamic>? info =
-        await TtsChannel.instance.queryLocalAudio(
+    // TODO-1335 ②：与 app 内查词弹窗同一条 resolveLookupAudioUrl 全源解析（本地库 +
+    // hibikiRemote + 远程 URL 模板），而非只查本地库——否则仅配了远程发音源（jpod/forvo）
+    // 的用户在扩展/远端查词弹窗里恒无单词音频。解析结果可能是本地文件路径或远程 http(s)
+    // URL，remoteAudioLookupFromResolvedUrl 统一归一成字节（远程下载、本地读文件），仍经
+    // 本地短命 token 播放。
+    final String? resolved = await resolveLookupAudioUrl(
+      _appModel,
       expression,
       reading,
     );
-    if (info == null) return null;
-    final String? file = info['file'] as String?;
-    final String? source = info['source'] as String?;
-    if (file == null || source == null) return null;
-    final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-    final String? resolved = await TtsChannel.instance.extractLocalAudio(
-      file,
-      source,
-      dbIndex: dbIndex,
-    );
-    if (resolved == null || resolved.isEmpty) return null;
-    final Uri? uri = Uri.tryParse(resolved);
-    final String filePath =
-        uri != null && uri.scheme == 'file' ? uri.toFilePath() : resolved;
-    final File audioFile = File(filePath);
-    if (!audioFile.existsSync()) return null;
-    return RemoteAudioLookup(
-      bytes: await audioFile.readAsBytes(),
-      contentType: _remoteAudioContentType(filePath),
+    return remoteAudioLookupFromResolvedUrl(
+      resolved,
+      downloadRemote: _downloadRemoteAudioBytes,
+      loadLocalFile: (String filePath) async {
+        final File audioFile = File(filePath);
+        if (!audioFile.existsSync()) return null;
+        return audioFile.readAsBytes();
+      },
     );
   }
 
-  String _remoteAudioContentType(String filePath) {
-    switch (path.extension(filePath).toLowerCase()) {
-      case '.mp3':
-        return 'audio/mpeg';
-      case '.m4a':
-      case '.m4b':
-        return 'audio/mp4';
-      case '.ogg':
-        return 'audio/ogg';
-      case '.flac':
-        return 'audio/flac';
-      default:
-        return 'application/octet-stream';
+  /// TODO-1335 ②：服务端下载远程发音源字节（Forvo/jpod/hibikiRemote 解析出的 http(s)
+  /// URL）。复用 AppModel 的 keep-alive http client；失败写错误日志并回 null（弹窗降级为
+  /// 无音频，绝不抛断查词）。
+  Future<RemoteAudioLookup?> _downloadRemoteAudioBytes(Uri uri) async {
+    try {
+      final http.Response resp = await _appModel._remoteLookupClient
+          .get(uri)
+          .timeout(kRemoteAudioReceiveTimeout);
+      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) return null;
+      return RemoteAudioLookup(
+        bytes: resp.bodyBytes,
+        contentType: remoteAudioContentTypeFromResponse(
+          uri,
+          resp.headers['content-type'],
+        ),
+      );
+    } catch (e, st) {
+      ErrorLogService.instance.log('lookupAudio.downloadRemote', e, st);
+      return null;
     }
   }
 }

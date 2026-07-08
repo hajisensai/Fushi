@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v41 loaded (TODO-1270: Netflix card subtitle de-dup + hide own overlay/back+flag in capture + pre-roll)');
+console.log('[Hibiki] content script v42 loaded (TODO-1335: wait for seek buffer ready before recording clip)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v41'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v42'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -387,7 +387,14 @@ async function hibikiRunNetflixBatch() {
       let cls = 'retry';
       try {
         await seekTo(Math.max(0, q.startV / 1000));
-        await sleep(150); // 让首帧稳定
+        // TODO-1335 ④：seek 落点后**先等缓冲就绪再开录**，且缓冲期保持暂停以不吃掉入队预留
+        // 的 200ms 头部提前量（seek 目标本就是 cueStart-200）。Netflix seek 完成(seeked)时数据
+        // 常还没缓冲到位(readyState=HAVE_CURRENT_DATA=2)，此刻 play+beginClip 会录进 stall 冻结
+        // 帧，而 offscreen 墙钟时长照走 → 录制起点是冻结帧、时长虚长不准（用户报「录制时长不
+        // 精准/没等缓冲完」）。暂停态等 readyState>=HAVE_FUTURE_DATA(3)（seek 目标已缓冲、可从该
+        // 点顺畅前进）再 play + beginClip，录制起点即 cueStart-200 缓冲点、内容立即推进。
+        try { v.pause(); } catch (_) {}
+        await hibikiWaitForBuffered(v, 3000);
         // TODO-1270 Bug C：先确保真的在播（自动播放策略可能拦），但**一旦在播立刻开录**——不要用
         // 固定 warmup sleep 吃掉入队时预留的 200ms 头部提前量（seek 目标本就是 cueStart-200），
         // 否则录制起点漂到 cueStart 之后 → 用户报「少了一点开头」。仍暂停 → 跳过本句，不录冻结帧。
@@ -461,6 +468,21 @@ async function hibikiRunNetflixBatch() {
   if (unconfigured > 0 && typeof window.hibikiToast === 'function') {
     window.hibikiToast('部分未生成：Anki 未配置，请在 Hibiki 中配置 Anki 后重试（保留 ' + fail + '）');
   }
+}
+
+// TODO-1335 ④：等 video 在当前播放点缓冲就绪（readyState>=HAVE_FUTURE_DATA=3，可从该点顺畅
+// 前进）。用于 seek 后、开录前的缓冲门（暂停态调用 → currentTime 不推进 → 不吃头部提前量）。
+// maxMs 上界兜底：弱网/受阻迟迟不就绪时也继续（退化到旧行为，绝不无限等卡死批量）。
+function hibikiWaitForBuffered(v, maxMs) {
+  return new Promise((resolve) => {
+    if (!v || v.readyState >= 3) { resolve(); return; }
+    const deadline = Date.now() + (maxMs || 3000);
+    const tick = () => {
+      if (!v || v.readyState >= 3 || Date.now() >= deadline) { resolve(); return; }
+      setTimeout(tick, 80);
+    };
+    setTimeout(tick, 80);
+  });
 }
 
 // 等 Netflix 播放器就绪（切集后 video 需时间加载）。

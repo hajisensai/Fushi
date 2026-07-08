@@ -268,12 +268,56 @@ void main() {
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');
         });
 
-        test('内容脚本版本标记 bump 到 v41（用户可确认新版）', () {
+        test('内容脚本版本标记 bump 到 v42（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-hibiki-cs', 'v41'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v41');
-          expect(src.contains('content script v41 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v41');
+          expect(src.contains("'data-hibiki-cs', 'v42'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v42');
+          expect(src.contains('content script v42 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v42');
+        });
+      });
+    }
+  });
+
+  // TODO-1335 ④：网飞回放录制在 seek 落点**等缓冲就绪再开录**。Netflix seek 完成(seeked)时
+  // 数据常还没缓冲到位(readyState=HAVE_CURRENT_DATA=2)，此刻 beginClip 会录进 stall 冻结帧，
+  // 而 offscreen 墙钟时长照走 → 录制起点是冻结帧、时长虚长不准。修复：暂停态等
+  // readyState>=HAVE_FUTURE_DATA(3) 再 play + beginClip（暂停不推进 currentTime → 保留 200ms
+  // 头部提前量）。源码扫描守卫，两份镜像都守。
+  group('TODO-1335 网飞录制 seek 后等缓冲就绪再开录', () {
+    for (final File content in <File>[assetsContent, toolsContent]) {
+      group('content.js ${content.path}', () {
+        test('有 hibikiWaitForBuffered 缓冲门（readyState>=HAVE_FUTURE_DATA=3）', () {
+          final String src = content.readAsStringSync();
+          expect(
+              src.contains('function hibikiWaitForBuffered(v, maxMs)'), isTrue,
+              reason: '${content.path} 缺 hibikiWaitForBuffered 缓冲就绪门');
+          expect(src.contains('v.readyState >= 3'), isTrue,
+              reason: '${content.path} 缓冲门未用 HAVE_FUTURE_DATA(3) 阈值');
+        });
+
+        test('beginClip 前先暂停 + 等缓冲就绪（不吃头部提前量）', () {
+          final String src = content.readAsStringSync();
+          // seek 后暂停态等缓冲：v.pause() 紧邻 hibikiWaitForBuffered 调用（相邻即
+          // 「暂停后立刻等缓冲」，暂停不推进 currentTime → 保留 200ms 头部提前量）。
+          final int pauseIdx = src.indexOf('try { v.pause(); } catch (_) {}');
+          final int bufIdx =
+              src.indexOf('await hibikiWaitForBuffered(v, 3000);');
+          final int beginIdx = src.indexOf("type: 'beginClip'");
+          expect(pauseIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} seek 后未暂停（保留头部提前量）');
+          expect(bufIdx, greaterThan(pauseIdx),
+              reason: '${content.path} 缓冲门未紧跟在暂停之后');
+          expect(bufIdx - pauseIdx, lessThan(80),
+              reason: '${content.path} 暂停与缓冲门不相邻');
+          expect(beginIdx, greaterThan(bufIdx),
+              reason: '${content.path} 缓冲门未排在 beginClip 之前');
+        });
+
+        test('旧的固定 sleep(150) 首帧稳定 warmup 已被缓冲门取代', () {
+          final String src = content.readAsStringSync();
+          expect(src.contains('await sleep(150); // 让首帧稳定'), isFalse,
+              reason: '${content.path} 仍残留固定 sleep(150) 首帧稳定 warmup');
         });
       });
     }
