@@ -1568,6 +1568,17 @@ $blurFn
     }
     return false;
   }
+  // TODO-1349：纯图片章（正文无任何可匹配文本、仅由整页封面/插图构成）的所有 <img> 都是
+  // 结构性内容。若挂 loading="lazy"，离屏图（分页远列 / 连续模式下方）永不进视口懒加载
+  // margin → 永不 load → 保持 0 尺寸 → 被 buildPaginationMetrics 的 first/lastContentEdge
+  // 排除 → 章末落点 maxScroll(contentLastPageScroll) 塌缩到章首 → 往前翻到本章停在封面（第
+  // 一张图）而非最后一张图（用户报「从目录往前翻会去到封面」在分页模式的根因；连续模式另由
+  // scrollToChapterEnd 覆盖，两墙互补）。与 gaiji / 合并前导插图同理保持 eager：无条件 load、
+  // 真实撑开尺寸，metrics 计入全部图。ttuRegex 单字符匹配（无 /g，test 无状态）在首个可匹配
+  // 字符即短路 → 文本章几乎零开销、只对纯图片章全扫（文本极少）。图文混排章仍 lazy（不回退
+  // TODO-1074 懒加载优化）；非图片章（有文本）完全 no-op（向后兼容）。
+  var __hoshiImageOnlyChapter =
+      !window.hoshiReader.ttuRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
     // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.hoshi-merged-image`
@@ -1581,7 +1592,8 @@ $blurFn
     // 章首锚落到第一张。仅影响合并书的少量前导插图，不回退 TODO-1074 普通图懒加载。
     var isMergedLeadImg = img.closest && img.closest('.hoshi-merged-image');
     // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
-    if (!isGaiji && !isMergedLeadImg) {
+    // TODO-1349：纯图片章的图同理 eager（见上 __hoshiImageOnlyChapter 长注释）。
+    if (!isGaiji && !isMergedLeadImg && !__hoshiImageOnlyChapter) {
       img.setAttribute('loading', 'lazy');
     }
     img.setAttribute('decoding', 'async');
@@ -2608,6 +2620,32 @@ $_sharedJs
     document.body.scrollTop = 0;
     document.body.scrollLeft = 0;
   },
+  // TODO-1349：连续模式「章末」落点——把正文最后一个可见内容元素对齐到滚动轴末端。
+  // 往前翻上一章走 restoreProgress(0.99)（章尾语义，与分页 contentLastPageScroll=maxScroll
+  // 对称）。但 scrollToProgressContinuous 只走文本节点（findNodeAtProgress）：纯图片/封面章
+  // 无文本节点 → 返 null → 不滚动 → 停在章首（=封面图），而非封面章节的最后部分（用户报
+  // 「从目录往前翻会去到封面」的根因）。这里用最后一个可见内容元素 scrollIntoView(block:'end')：
+  // block/inline 轴由 writing-mode 自动映射（横排 block=竖直落到内容底；竖排 vertical-rl
+  // block=横向 RTL 落到最左列 = 章末），故横排/竖排统一，且天然含尾部插图。无可见内容元素时
+  // 兜底滚到滚动轴物理末端（横排底、竖排 rl 最左）。
+  scrollToChapterEnd: function() {
+    var body = document.body;
+    var last = body.lastElementChild;
+    while (last) {
+      var tag = last.tagName;
+      var rect = last.getBoundingClientRect();
+      var visible = rect.width > 0 || rect.height > 0;
+      if (tag !== 'SCRIPT' && tag !== 'STYLE' && tag !== 'TEMPLATE' && visible) {
+        break;
+      }
+      last = last.previousElementSibling;
+    }
+    if (last) {
+      last.scrollIntoView({block: 'end', inline: 'nearest', behavior: 'instant'});
+    } else {
+      this._writeContinuousScroll(this.isVertical() ? -1e9 : 1e9);
+    }
+  },
   // TODO-1229 (BUG-594 第 6 次复诉·续)：连续模式重锚保位读/写。连续无分页的
   // getScrollContext/getPagePosition（那是分页专属），滚动位就是内容轴 raw scroll：横排
   // 走 scrollTop、竖排走 window.scrollX（与 paginate 的轴判据同源）。重锚在 charOffset<=0
@@ -2686,6 +2724,19 @@ $_sharedJs
       this.scrollToChapterStart();
       setTimeout(function() {
         self.scrollToChapterStart();
+        self.notifyRestoreComplete();
+      }, 16);
+      return;
+    }
+    // TODO-1349：progress>=0.99 = 章末（往前翻到上一章的落点），与分页版
+    // scrollToProgressPaged 的 `progress>=0.99 → contentLastPageScroll` 对称。走
+    // scrollToChapterEnd 落到正文末端（含纯图片/封面章、尾部插图），不再因
+    // scrollToProgressContinuous 只走文本节点而在图片章停回章首（封面）。双发一次
+    // 再确认对齐（防恢复后自发 reflow 把落点冲回，与 scrollToChapterStart 同构）。
+    if (progress >= 0.99) {
+      this.scrollToChapterEnd();
+      setTimeout(function() {
+        self.scrollToChapterEnd();
         self.notifyRestoreComplete();
       }, 16);
       return;
