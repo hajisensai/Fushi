@@ -14,12 +14,16 @@ void main() {
   // TODO-1296 / BUG-592: record each host-approval invocation's pinRequired so
   // tests can assert *when* (create vs confirm) the PIN-showing approval fires.
   late List<bool> approvalPinRequired;
+  // TODO-1330 / BUG-617: how many times the host was told "the client has
+  // submitted confirm, drop the lingering PIN dialog" (onPairSessionResolved).
+  late int sessionResolvedCount;
 
   Future<void> startServer({
     required bool lanRequiresPin,
     bool approve = true,
   }) async {
     approvalPinRequired = <bool>[];
+    sessionResolvedCount = 0;
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v2_test');
     server = HibikiSyncServer(
       syncDataDir: tempDir.path,
@@ -35,6 +39,7 @@ void main() {
         shownPin = '482913';
         return shownPin!;
       })
+      ..onPairSessionResolved = (() => sessionResolvedCount++)
       ..lanRequiresPinProvider = (() async => lanRequiresPin);
     await server.start();
   }
@@ -208,6 +213,69 @@ void main() {
     expect(resp.statusCode, 200);
     expect(approvalPinRequired, <bool>[false],
         reason: 'PIN-free approval happens at confirm');
+  });
+
+  // TODO-1330 / BUG-617: 公网 PIN 时序修复的服务端契约——pinRequired 会话一旦 client
+  // 提交 confirm，就通知 host 收起常驻显示 PIN 的弹窗（否则「点允许即关窗」会在 client
+  // 输 PIN 前抹掉 PIN）。免 PIN 会话没有常驻弹窗，绝不触发。
+  test('pinRequired confirm 触发 onPairSessionResolved 一次（BUG-617）', () async {
+    await startServer(lanRequiresPin: true);
+    const String clientNonce = 'cn-resolve';
+    final Map<String, dynamic> start = await startSession(clientNonce);
+    expect(sessionResolvedCount, 0,
+        reason: 'CREATE 阶段不算「已解决」——client 还没读到 PIN。');
+    final String pinProof = HibikiPairingProtocol.computePinProof(
+      pin: shownPin!,
+      clientNonce: clientNonce,
+      hostNonce: start['hostNonce'] as String,
+    );
+    final http.Response resp = await http.post(
+      confirmUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+        'pinProof': pinProof,
+      }),
+    );
+    expect(resp.statusCode, 200);
+    expect(sessionResolvedCount, 1,
+        reason: 'client 提交 confirm 后必须收起 host 常驻 PIN 弹窗一次。');
+  });
+
+  test('pinRequired 错 PIN 的 confirm 也触发 onPairSessionResolved（PIN 已消费）',
+      () async {
+    await startServer(lanRequiresPin: true);
+    const String clientNonce = 'cn-resolve-wrong';
+    final Map<String, dynamic> start = await startSession(clientNonce);
+    final String wrongProof = HibikiPairingProtocol.computePinProof(
+      pin: '000000',
+      clientNonce: clientNonce,
+      hostNonce: start['hostNonce'] as String,
+    );
+    final http.Response resp = await http.post(
+      confirmUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+        'pinProof': wrongProof,
+      }),
+    );
+    expect(resp.statusCode, 401);
+    // PIN 已被读到并一次性消费，host 常驻弹窗照样收起（重试走新会话拿新 PIN）。
+    expect(sessionResolvedCount, 1);
+  });
+
+  test('免 PIN 会话 confirm 不触发 onPairSessionResolved（无常驻弹窗）', () async {
+    await startServer(lanRequiresPin: false);
+    final Map<String, dynamic> start = await startSession('cn-resolve-free');
+    final http.Response resp = await http.post(
+      confirmUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(
+          <String, String>{'sessionId': start['sessionId'] as String}),
+    );
+    expect(resp.statusCode, 200);
+    expect(sessionResolvedCount, 0, reason: '免 PIN 会话没有常驻 PIN 弹窗，绝不触发收起回调。');
   });
 
   test('replay same sessionId confirmed twice is rejected', () async {
