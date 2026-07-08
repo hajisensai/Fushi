@@ -133,6 +133,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         oldWidget.anchorRect != widget.anchorRect ||
         oldWidget.subtitleWindowRect != widget.subtitleWindowRect;
     if (!changed) return;
+    // TODO-1336：warm 复用（Android 侧 FlutterEngineCache 缓存 :popup 引擎、finishPopup 只
+    // 隐藏 Activity 不销毁本 State；同一 PopupDictionaryPage 实例经 didUpdateWidget 反复复用）
+    // 下，宿主再次推来新词 == 重新打开这张常驻热页。_close() 首次关闭把 _isClosing 置 true
+    // 后此 State 不随关闭销毁 → 永不复位 → 首次查词关闭后所有关闭路径都被 _close 开头的
+    // 闭锁早退卡死（弹窗打开后关不掉）。每次「重开」在此复位闭锁，让每轮查词都能正常关闭。
+    // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
+    _isClosing = false;
     final String trimmed = widget.searchTerm.trim();
     if (trimmed.isEmpty || !appModel.isInitialised) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
