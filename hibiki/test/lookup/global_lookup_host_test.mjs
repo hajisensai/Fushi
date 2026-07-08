@@ -1434,4 +1434,122 @@ function flushTimers() {
     'down-right visible: origin top unchanged (parent perfectly still)');
 }
 
+// 42. TODO-1231 v3 (BUG-583): a DOWN-RIGHT child is origin-covered from placement
+//     (its top-left >= the window origin 0), so reveal-ready flips IMMEDIATELY —
+//     byte-identical to the old unconditional flip (no reveal delay for the common
+//     cascade, the case with ZERO parent lurch).
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 120, top: 80, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'down-right child (top-left >= origin) is covered -> reveal-ready immediately');
+  const rootShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'global-lookup-root');
+  assert.strictEqual(rootShell.getAttribute('data-reveal-ready'), 'true',
+    'root at the origin is covered -> reveal-ready immediately (unchanged)');
+}
+
+// 43. TODO-1231 v3 (BUG-583) — CORE: an UP/LEFT child is HELD reveal-ready=false
+//     even once its content renders (would-be visible), because the window origin
+//     (0) does not YET cover its negative top-left. Revealing it there paints it
+//     CLIPPED at the window edge for the whole Dart round-trip = the residual
+//     "子弹窗闪" (child appears cut, then jumps). commitLayerShift moving the origin
+//     out to reach the child flips reveal-ready, so the child first paints IN PLACE.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120); // root visible
+  // Open an up/left child (negative top-left).
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const childIframe = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'up/left child NOT reveal-ready at placement (origin 0 does not cover -40,-30)');
+  // Child content renders -> content-ready true, but STILL held (no clipped paint).
+  childIframe._renderContent(140);
+  assert.strictEqual(host.frameGateState('frame-1').contentReady, true,
+    'up/left child content-ready off its rendered card');
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'up/left child STILL held after content (would paint clipped otherwise)');
+  assert.strictEqual(host.frameGateState('frame-1').visible, false,
+    'up/left child NOT visible until the window origin covers it (no clipped flash)');
+  // C++ RevealStack moved the window to the child origin, then commitLayerShift.
+  host.commitLayerShift(-40, -30);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'commitLayerShift covering the child flips reveal-ready');
+  assert.strictEqual(host.frameGateState('frame-1').visible, true,
+    'up/left child reveals in-position once the window/layer settle (no clip, no jump)');
+}
+
+// 44. TODO-1231 v3 (BUG-583): if the covering commitLayerShift never arrives, the
+//     reveal-ready safety timer still flips a held up/left child so it is never
+//     stuck invisible (mildly-clipped fallback beats a lost card).
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const childIframe = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  childIframe._renderContent(140);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'up/left child held before the safety fires');
+  flushTimers(); // reveal-ready safety (+ any content safety) fire
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'reveal-ready safety flips a held child so it is never stuck hidden');
+  assert.strictEqual(host.frameGateState('frame-1').visible, true,
+    'held child eventually reveals via the safety path (no lost card)');
+}
+
+// 45. TODO-1231 v3 (BUG-583): beginLookup resets the committed origin so a stale
+//     NEGATIVE origin from a previous lookup's up/left cascade cannot falsely mark
+//     the NEXT lookup's up/left child as already-covered (the bug reappearing on the
+//     2nd lookup onward). After the reset the new child is correctly HELD.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  // Lookup 1: an up/left cascade pushes the committed origin to (-60,-50).
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -60, top: -50, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  host.commitLayerShift(-60, -50);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'lookup 1: committing the (-60,-50) origin covers frame-1');
+  // Lookup 2 begins: reset the origin to 0. A MILDER up/left child (-40,-30) must be
+  // HELD (fresh window origin 0 does not cover it) — a stale -60 origin would have
+  // wrongly said "covered" and revealed it clipped.
+  host.beginLookup('global-lookup-root');
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-2', parentIndex: 0, frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host.frameGateState('frame-2').revealReady, false,
+    'after beginLookup the origin is reset to 0, so a new up/left child is correctly held');
+  // And committing the fresh (-40,-30) origin reveals it in place.
+  host.commitLayerShift(-40, -30);
+  assert.strictEqual(host.frameGateState('frame-2').revealReady, true,
+    'committing the new lookup origin covers frame-2 (reveals in place)');
+}
+
 console.log('global_lookup_host_test: PASS');

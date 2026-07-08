@@ -404,6 +404,64 @@ void main() {
               'root reveal is byte-identical to the pre-fix behaviour');
     });
 
+    test(
+        'TODO-1231 v3 (BUG-583): reveal-ready is gated on the committed window '
+        'origin covering the shell so an up/left child never paints clipped',
+        () {
+      // The residual "子弹窗闪": an up/left-cascading child is placed at negative
+      // window-local coords, but the window origin only moves to cover it when it
+      // becomes content-ready (the MIN-corner split). Its CSS reveal gate opened at
+      // content-ready — BEFORE the window round-trips to cover it — so it painted
+      // CLIPPED at the window edge, then jumped in when commitLayerShift landed.
+      // reveal-ready now flips ONLY once the committed origin (layerOffsetLeft/Top,
+      // set by commitLayerShift = the window origin C++ actually moved to) covers
+      // the shell; commitLayerShift re-checks held shells so an up/left child first
+      // paints IN PLACE. Down-right / root shells stay covered-from-placement.
+      expect(hostJs.contains('function shellCoveredByOrigin('), isTrue,
+          reason:
+              'a shell is revealed only when the committed origin covers it');
+      expect(hostJs.contains('function maybeFlipRevealReady('), isTrue,
+          reason: 'reveal-ready flips through the coverage-gated helper');
+      // renderPayload must route reveal-ready through the gate, NOT flip it
+      // unconditionally (the old setGateFlag(..., ATTR_REVEAL_READY, ...) call).
+      final int rAt = hostJs.indexOf('function renderPayload(');
+      expect(rAt, greaterThan(-1));
+      final int rEnd = hostJs.indexOf('function removeMissing(', rAt);
+      expect(rEnd, greaterThan(rAt));
+      final String renderBody = hostJs.substring(rAt, rEnd);
+      expect(renderBody.contains('maybeFlipRevealReady(record)'), isTrue,
+          reason: 'renderPayload flips reveal-ready via the coverage gate');
+      expect(renderBody.contains('setGateFlag(record, ATTR_REVEAL_READY,'),
+          isFalse,
+          reason: 'renderPayload must NOT flip reveal-ready unconditionally '
+              '(an up/left child would paint clipped — BUG-583)');
+      // commitLayerShift re-checks held shells so a child covered by the new
+      // origin reveals coincident with the window/layer settling.
+      final int cAt = hostJs.indexOf('function commitLayerShift(');
+      expect(cAt, greaterThan(-1));
+      final int cEnd = hostJs.indexOf('function dismissRootWithSlide(', cAt);
+      expect(cEnd, greaterThan(cAt));
+      final String commitBody = hostJs.substring(cAt, cEnd);
+      expect(commitBody.contains('maybeFlipRevealReady(record)'), isTrue,
+          reason:
+              'commitLayerShift flips reveal-ready for shells the new origin '
+              'now covers (child appears in place, not clipped-then-jump)');
+      // beginLookup resets the committed origin so a stale negative origin from a
+      // previous up/left cascade cannot falsely mark the next child as covered.
+      final int bAt = hostJs.indexOf('function beginLookup(');
+      expect(bAt, greaterThan(-1));
+      final int bEnd = hostJs.indexOf('function renderStack(', bAt);
+      expect(bEnd, greaterThan(bAt));
+      final String beginBody = hostJs.substring(bAt, bEnd);
+      expect(
+          beginBody.contains('layerOffsetLeft = 0') &&
+              beginBody.contains('layerOffsetTop = 0'),
+          isTrue,
+          reason:
+              'beginLookup resets the committed origin per fresh lookup so a '
+              'stale negative origin cannot falsely mark a new child covered');
+    });
+
     test('D1: two-flag reveal gate hides a shell until content + geometry', () {
       // The gate is a declarative CSS attribute selector (single visibility
       // source) flipped by two independent flags; JS never sets inline
