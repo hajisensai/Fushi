@@ -17,7 +17,7 @@
   - 既有守卫 `hibiki/test/build/browser_extension_dict_media_mirror_guard_test.dart` 只在**两个扩展镜像
     之间**互比字节（清单里根本没有 popup.js/popup.css/popup.html/content.css），从不比对 app↔扩展 →
     漂移无人拦。
-- **[x] ① 已修复** — 提交 `9924602`
+- **[x] ① 已修复** — 提交 `9b3ee8d`
   1. re-vendor `popup.js`/`popup.html`/`popup.css`（app → 两个扩展镜像，字节拷贝）→ 扩展渲染同款 DOM。
      新版调用的 5 个新 handler 经 `bridge-shim.js` 的 `default` 分支 no-op（`Promise.resolve(null)`），
      popup.js 对 null 返回全部 graceful（favoriteCheck→未收藏态、setSentenceContext→0），不崩渲染。
