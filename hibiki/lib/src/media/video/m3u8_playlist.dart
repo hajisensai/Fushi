@@ -99,6 +99,66 @@ String? nextPlaylistPathToPrewarm({
   return path == lastPrewarmedPath ? null : path;
 }
 
+/// TODO-1237: resolve one m3u8 entry path [entryRaw] against the manifest dir
+/// [playlistDir]. Absoluteness is judged by STRING SHAPE
+/// ([_isAbsoluteM3uEntryPath]), not the host-dependent `p.isAbsolute`, so a
+/// `D:\...` entry stays absolute even on a non-Windows CI / after cross-device
+/// sync and is never mis-joined onto [playlistDir]:
+/// - Absolute (Windows drive root `X:\`/`X:/`, UNC `\host\share`/`//host/share`,
+///   POSIX `/...`): normalized and returned as-is (NOT joined with playlistDir;
+///   the old unconditional `p.join(baseDir, entry)` only "worked" on Windows by
+///   luck and turned UNC `\NAS\a` into `D:\NAS\a`).
+/// - Relative: both `\` and `/` treated as separators, resolved against
+///   [playlistDir] (the m3u8 file's own directory).
+///
+/// [context] is a test seam to inject a fixed [p.Context] (windows/posix) for
+/// deterministic assertions; production uses the host `p.context`, byte-for-byte
+/// identical to the old parseM3u8 relative-path resolution.
+String resolveM3uEntryPath(
+  String entryRaw,
+  String playlistDir, {
+  p.Context? context,
+}) {
+  final p.Context ctx = context ?? p.context;
+  final String entry = entryRaw.trim();
+  if (entry.isEmpty) return entry;
+  if (_isAbsoluteM3uEntryPath(entry)) {
+    // Absolute: normalize only; never join playlistDir (would break drive/UNC).
+    return ctx.normalize(entry);
+  }
+  // Relative: normalize both separators to `/`, resolve against the m3u8 dir.
+  final String rel = entry.replaceAll('\\', '/');
+  return ctx.normalize(ctx.join(playlistDir, rel));
+}
+
+/// Pure string test for whether m3u8 entry [entry] is an ABSOLUTE path (no IO,
+/// host-independent). True for: UNC prefix (`\`/`//`), Windows drive root
+/// (`X:\`/`X:/`), or POSIX root (single leading `/`). A drive-relative `X:foo`
+/// and ordinary relative paths return false.
+bool _isAbsoluteM3uEntryPath(String entry) {
+  if (entry.length >= 2) {
+    final String c0 = entry[0];
+    final String c1 = entry[1];
+    // UNC: \host\share or //host/share (mixed separators tolerated).
+    if ((c0 == '\\' || c0 == '/') && (c1 == '\\' || c1 == '/')) return true;
+    // Windows drive root: X:\ or X:/ (must carry a root separator).
+    if (_isDriveLetter(c0) &&
+        c1 == ':' &&
+        entry.length >= 3 &&
+        (entry[2] == '\\' || entry[2] == '/')) {
+      return true;
+    }
+  }
+  // POSIX absolute: single leading `/` (UNC's `//` already handled above).
+  return entry.startsWith('/');
+}
+
+/// Pure: is [ch] an ASCII letter (a Windows drive letter A-Z / a-z).
+bool _isDriveLetter(String ch) {
+  final int code = ch.codeUnitAt(0);
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
 /// 解析扩展 M3U（m3u8）播放列表为 [PlaylistEntry] 列表（纯函数，无 IO）。
 ///
 /// 语义：
@@ -130,8 +190,7 @@ List<PlaylistEntry> parseM3u8({
     }
 
     // 非注释非空行 = 视频相对/绝对路径。
-    final String relWithSlash = line.replaceAll('\\', '/');
-    final String absPath = p.normalize(p.join(baseDir, relWithSlash));
+    final String absPath = resolveM3uEntryPath(line, baseDir);
     final String title = (pendingTitle != null && pendingTitle.isNotEmpty)
         ? pendingTitle
         : p.basename(absPath);

@@ -576,11 +576,14 @@ class MediaSourceScanner {
   /// returns the count successfully inserted (TODO-1237).
   ///
   /// Mirrors the dialog's manual / drag-drop playlist import but headless:
-  /// [parseM3u8] parses the manifest (relative episode paths resolved against
-  /// the m3u8's own directory, source namespace), derives a cross-device stable
-  /// [playlistBookUid], silently suffix-dedups against existing book_uids
-  /// ([uniqueVideoBookUid], matching [_importVideos]), and persists one
-  /// VideoBook carrying [VideoBooksCompanion.playlistJson] (the episode list).
+  /// [parseM3u8] parses the manifest (episode paths resolved via
+  /// [resolveM3uEntryPath]: relative -> the m3u8's own dir, absolute /
+  /// backslash / UNC handled), derives a cross-device stable [playlistBookUid],
+  /// and persists one VideoBook carrying [VideoBooksCompanion.playlistJson].
+  /// Re-scan dedup keys on that STABLE identity (TODO-1237 (2)): a manifest
+  /// whose [playlistBookUid] already exists is SKIPPED (idempotent re-scan),
+  /// never suffixed into an `X (2)` duplicate -- unlike the old first-episode
+  /// path key that broke the moment the manifest's episode paths changed.
   ///
   /// [fs] is the source file system: the manifest is read via
   /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
@@ -597,14 +600,13 @@ class MediaSourceScanner {
   ) async {
     if (plan.playlists.isEmpty) return 0;
     final List<VideoBookRow> existingRows = await _videoRepo.listAll();
-    // Existing book_uid set for silent same-name dedup (matches _importVideos).
+    // A playlist's STABLE identity is playlistBookUid (derived from the m3u8
+    // file's own name, TODO-1237 (2)), NOT its volatile first-episode path.
+    // Keying re-scan dedup on the identity means editing the manifest (e.g.
+    // relative -> absolute episode paths) no longer makes an `X (2)` duplicate,
+    // and re-scanning the same folder is idempotent (skip, never suffix).
     final Set<String> existingKeys =
         existingRows.map((VideoBookRow r) => r.bookUid).toSet();
-    // TODO-1237 ②: existing physical paths (normalized) for re-scan dedup — a
-    // playlist whose first episode is already imported is SKIPPED, not suffixed.
-    final Set<String> existingPaths = existingRows
-        .map((VideoBookRow r) => normalizeVideoPath(r.videoPath))
-        .toSet();
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -612,6 +614,13 @@ class MediaSourceScanner {
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
+        // TODO-1237 (2): same m3u8 identity already imported -> skip
+        // (idempotent re-scan), never a silent `X (2)` duplicate. Checked
+        // before read/parse so an unchanged folder re-scan does no
+        // per-playlist IO.
+        final String bookUid = playlistBookUid(item.playlistPath);
+        if (existingKeys.contains(bookUid)) continue;
+
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
         final String localM3u8 =
             await fs.copyToLocal(item.playlistPath, playlistTmp.path);
@@ -623,15 +632,6 @@ class MediaSourceScanner {
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         if (entries.isEmpty) continue; // empty / not a playlist: skip silently.
-        // TODO-1237 ②: first-episode path already in library / same batch -> skip.
-        if (!existingPaths.add(normalizeVideoPath(entries.first.path))) {
-          continue;
-        }
-
-        final String bookUid = uniqueVideoBookUid(
-          playlistBookUid(item.playlistPath),
-          existingKeys,
-        );
         existingKeys.add(bookUid);
         final String playlistJson = jsonEncode(
           entries.map((PlaylistEntry e) => e.toJson()).toList(),

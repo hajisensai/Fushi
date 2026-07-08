@@ -343,4 +343,88 @@ seg1.ts
       expect(isHlsMasterPlaylist(masterSample), isTrue);
     });
   });
+  // TODO-1237: m3u8 entry path resolution — backslash / absolute / relative /
+  // UNC handled by string shape, host-independent (windows + posix contexts).
+  // Backslashes are built via String.fromCharCode(0x5c) so the source carries
+  // no literal backslash char (dodges shell/heredoc/tooling mangling).
+  group('resolveM3uEntryPath (TODO-1237)', () {
+    final p.Context win = p.Context(style: p.Style.windows);
+    final p.Context pos = p.Context(style: p.Style.posix);
+    final String bs = String.fromCharCode(0x5c);
+
+    test('windows: absolute drive path (backslashes) used as-is, not joined',
+        () {
+      final String entry = 'D:${bs}video${bs}Bocchi${bs}S01E01.mp4';
+      expect(
+          resolveM3uEntryPath(entry, 'D:${bs}playlists', context: win), entry,
+          reason: 'absolute entry must NOT be joined onto the m3u8 dir');
+    });
+
+    test('windows: absolute drive path (forward slashes) normalizes', () {
+      expect(
+          resolveM3uEntryPath('D:/video/Bocchi/E01.mp4', 'D:${bs}pl',
+              context: win),
+          'D:${bs}video${bs}Bocchi${bs}E01.mp4');
+    });
+
+    test('windows: relative backslash path resolves against the m3u8 dir', () {
+      expect(
+          resolveM3uEntryPath('Season 01${bs}E01.mp4', 'D:${bs}video${bs}pl',
+              context: win),
+          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4');
+    });
+
+    test('windows: relative forward-slash path resolves against the m3u8 dir',
+        () {
+      expect(
+          resolveM3uEntryPath('Season 01/E01.mp4', 'D:${bs}video${bs}pl',
+              context: win),
+          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4');
+    });
+
+    test('windows: UNC path preserved, never turned into a drive path', () {
+      final String unc = '$bs${bs}NAS${bs}share${bs}E01.mp4';
+      expect(resolveM3uEntryPath(unc, 'D:${bs}pl', context: win), unc,
+          reason: 'the old p.join turned UNC into a bogus D: drive path');
+    });
+
+    test('posix: absolute path used as-is', () {
+      expect(resolveM3uEntryPath('/mnt/media/E01.mp4', '/base', context: pos),
+          '/mnt/media/E01.mp4');
+    });
+
+    test('posix: relative path resolves against the m3u8 dir', () {
+      expect(resolveM3uEntryPath('sub/E01.mp4', '/base', context: pos),
+          '/base/sub/E01.mp4');
+    });
+
+    test('posix host: a Windows-absolute entry is still absolute (by shape)',
+        () {
+      // Cross-device sync / non-Windows CI: D:\... must not be joined onto the
+      // posix m3u8 dir. Absoluteness is judged by string shape, not host
+      // p.isAbsolute (which would call it relative on posix).
+      final String entry = 'D:${bs}video${bs}E01.mp4';
+      expect(resolveM3uEntryPath(entry, '/base', context: pos), entry);
+    });
+
+    test('empty / whitespace entry returns empty', () {
+      expect(resolveM3uEntryPath('   ', '/base', context: pos), '');
+    });
+
+    test('parseM3u8 routes an absolute entry through the resolver (not joined)',
+        () {
+      // Forward-slash absolute entry so the manifest carries no backslash; on
+      // any host it must resolve to an absolute path WITHOUT the m3u8 dir.
+      const String manifest = '''
+#EXTM3U
+#EXTINF:-1,Ep1
+D:/video/Bocchi/S01E01.mp4
+''';
+      final List<PlaylistEntry> entries =
+          parseM3u8(content: manifest, baseDir: 'D:${bs}playlists');
+      expect(entries, hasLength(1));
+      expect(entries.single.path.contains('playlists'), isFalse,
+          reason: 'absolute entry must not be joined onto the m3u8 dir');
+    });
+  });
 }
