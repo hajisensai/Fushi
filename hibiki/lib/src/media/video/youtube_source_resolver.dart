@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'package:flutter/foundation.dart';
 import 'package:html_unescape/html_unescape.dart';
+import 'package:http/http.dart' as http;
 import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 // TODO-1000 根因：YouTube 已对 web 端 timedtext（字幕）URL 加 proof-of-origin
@@ -101,6 +102,52 @@ String? youtubeVideoIdOrNull(String url) {
 String youtubeThumbnailUrl(String videoId) =>
     'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
 
+/// TODO-1314（C7，借鉴 yt-dlp 多缩略图回退）：由 [videoId] 拼**降序分辨率候选**缩略图 URL，
+/// 高清优先、末位恒是 [youtubeThumbnailUrl]（hqdefault，YouTube 对所有视频保证生成）。
+///
+/// - `maxresdefault.jpg`（1280x720，源级、无 4:3 黑边）——**对未上传高清源的视频会 404**；
+/// - `sddefault.jpg`（640x480）——多数视频有；
+/// - `hqdefault.jpg`（480x360）——**恒存在**的最终兜底。
+///
+/// 配合 [resolveBestThumbnailUrl] 逐个探测存在性、取首个可用者：高清缺失自动退次高，
+/// 收益是导入封面尽量取到无黑边的高清图，且绝不因 maxres 404 落到无封面。纯函数，便于单测。
+List<String> youtubeThumbnailCandidates(String videoId) => <String>[
+      'https://i.ytimg.com/vi/$videoId/maxresdefault.jpg',
+      'https://i.ytimg.com/vi/$videoId/sddefault.jpg',
+      youtubeThumbnailUrl(videoId),
+    ];
+
+/// TODO-1314（C7）：按 [youtubeThumbnailCandidates] 降序探测缩略图存在性，返回**首个可用**的
+/// URL；全部探测失败仍返回 [youtubeThumbnailUrl]（hqdefault 恒存在，= 旧行为，绝不无封面）。
+///
+/// [probe] 注入「某 URL 是否存在」的判定（生产走 HTTP HEAD，测试注入假件），把纯回退逻辑与
+/// 网络 IO 解耦，便于离线单测。单个 [probe] 抛异常视为「不存在」继续下一候选（best-effort）。
+Future<String> resolveBestThumbnailUrl(
+  String videoId, {
+  required Future<bool> Function(String url) probe,
+}) async {
+  for (final String candidate in youtubeThumbnailCandidates(videoId)) {
+    try {
+      if (await probe(candidate)) return candidate;
+    } catch (_) {
+      // 单个候选探测失败：退下一个更低分辨率候选（不阻断）。
+    }
+  }
+  return youtubeThumbnailUrl(videoId);
+}
+
+/// IO：HTTP HEAD 探测 [url] 是否存在（2xx）。任何异常/超时视为不存在（false，best-effort）。
+/// i.ytimg.com 对不存在的 `maxresdefault` 返回 404、存在则 200，故 HEAD 状态码即可判定。
+Future<bool> _thumbnailExistsViaHead(http.Client client, String url) async {
+  try {
+    final http.Response res =
+        await client.head(Uri.parse(url)).timeout(const Duration(seconds: 6));
+    return res.statusCode >= 200 && res.statusCode < 300;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// YouTube **导入元数据**：视频标题 + 缩略图 URL（TODO-1281）。
 ///
 /// 与 [YoutubeResolvedSource]（含流/字幕，播放/制卡用）区分：导入只需标题 + 封面，
@@ -125,14 +172,26 @@ class YoutubeMetadata {
 Future<YoutubeMetadata> resolveYoutubeMetadata(
   String url, {
   Duration timeout = const Duration(seconds: 20),
+  // TODO-1314（C7）：仅供测试注入缩略图存在性 HEAD 探测用的 http client。生产传 null → 自建、
+  // 用完关闭。把「videos.get 拿标题」（需真网络、外部契约）与「缩略图探测」（可离线注入）解耦。
+  http.Client? thumbnailProbeClient,
 }) async {
   final yt.YoutubeExplode client = yt.YoutubeExplode();
   try {
     final yt.Video video = await client.videos.get(url).timeout(timeout);
-    return YoutubeMetadata(
-      title: video.title,
-      thumbnailUrl: youtubeThumbnailUrl(video.id.value),
-    );
+    // TODO-1314（C7）：多分辨率缩略图回退——HEAD 探测 maxres→sd→hq，取首个可用者作导入封面
+    // 源（高清缺失自动退次高，绝不因 maxres 404 落到无封面）。best-effort：探测失败退 hqdefault
+    // （恒存在，= 旧行为）。探测在导入路径、一次性、有界（每候选 6s），换更清晰的书架封面。
+    final http.Client probeClient = thumbnailProbeClient ?? http.Client();
+    try {
+      final String bestThumbnail = await resolveBestThumbnailUrl(
+        video.id.value,
+        probe: (String u) => _thumbnailExistsViaHead(probeClient, u),
+      );
+      return YoutubeMetadata(title: video.title, thumbnailUrl: bestThumbnail);
+    } finally {
+      if (thumbnailProbeClient == null) probeClient.close();
+    }
   } finally {
     client.close();
   }
