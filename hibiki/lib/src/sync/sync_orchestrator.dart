@@ -107,6 +107,13 @@ class SyncRunReport {
   int audiobooksExported = 0;
   int localAudioImported = 0;
   int localAudioExported = 0;
+
+  /// Per-book metadata/cover files that had spilled directly into the sync root
+  /// and were swept back out this run (BUG-619 re-report / TODO-1340). Purely a
+  /// cleanup counter — spill removal is neither an import nor a failure, so it
+  /// never feeds [needsLocalLibraryRefresh] nor [errors].
+  int rootSpillFilesRemoved = 0;
+
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
@@ -226,6 +233,15 @@ class SyncOrchestrator {
   Future<SyncRunReport> run() async {
     final SyncRunReport report = SyncRunReport();
     final String root = await _backend.findOrCreateRootFolder();
+
+    // BUG-619 re-report / TODO-1340: sweep any per-book metadata/cover files
+    // that spilled directly into the sync root (from the old empty-title
+    // `ensureBookFolder('')` collapse, before TODO-1329 blocked it at the
+    // source). TODO-1329 stops new spills but never cleaned the accumulated
+    // residue, which piles into many duplicate copies. Runs before the per-book
+    // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
+    // remote state.
+    await pruneRootSpill(root, report);
 
     // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
     // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
@@ -1414,6 +1430,42 @@ class SyncOrchestrator {
         report.errors.add('audiobook "${book.title}": $e');
       } finally {
         _safeDelete(tmp);
+      }
+    }
+  }
+
+  /// Deletes per-book metadata/cover files that spilled directly into the sync
+  /// [root] (BUG-619 re-report / TODO-1340).
+  ///
+  /// A `progress_1_6_*` / `statistics_1_6_*` / `audioBook_1_6_*` / `cover_1_6.*`
+  /// file must ALWAYS live inside its book folder `<root>/<sanitizedTitle>/`;
+  /// one sitting as a direct child of the root is orphaned spill from the old
+  /// empty-title `ensureBookFolder('')` collapse. TODO-1329 blocked new spills
+  /// but never cleaned the residue, and the churning timestamp filenames plus
+  /// the single-file `findSyncFileByPrefix` dedup let those copies pile up into
+  /// many (`丢很多份`). Delete EVERY matching file, not just one.
+  ///
+  /// Only non-folder direct children are touched, so book folders and the
+  /// reserved `__dictionaries__` / `__local_audio__` / `__aggregate__`
+  /// namespaces (all folders) are never removed, and nothing legitimately
+  /// writes a bare file into the root. Best-effort: a listing or per-file delete
+  /// failure is recorded but never aborts the sweep.
+  @visibleForTesting
+  Future<void> pruneRootSpill(String root, SyncRunReport report) async {
+    final List<AssetEntry> children;
+    try {
+      children = await _backend.listChildren(root);
+    } catch (e) {
+      report.errors.add('prune root spill (list root): $e');
+      return;
+    }
+    for (final AssetEntry e in children) {
+      if (e.isFolder || !isTtuPerBookFileName(e.name)) continue;
+      try {
+        await _backend.deleteAsset(e.id);
+        report.rootSpillFilesRemoved++;
+      } catch (err) {
+        report.errors.add('prune root spill "${e.name}": $err');
       }
     }
   }
