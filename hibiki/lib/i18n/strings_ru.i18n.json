@@ -2185,5 +2185,8 @@
   "video_setting_subtitle_text_color_red": "Red",
   "card_mining_pending": "Adding card…",
   "sync_pair_pin_waiting": "Waiting for the other device to enter this PIN…",
-  "sync_pair_repair": "Pair again"
+  "sync_pair_repair": "Pair again",
+  "sync_client_token": "Peer access token",
+  "sync_client_token_hint": "Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer's shared server token, and both can connect.",
+  "sync_server_token_self_hint": "This device's shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect."
 }

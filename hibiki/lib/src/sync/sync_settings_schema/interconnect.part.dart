@@ -458,8 +458,21 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
           HibikiTextField(
             controller: _tokenController,
             focusNode: _tokenFocus,
-            labelText: t.sync_server_token,
+            // TODO-1330 ④：客户端令牌框显示的是「连接对端所用的令牌」，配对成功后由
+            // host 自动签发并填入。host 接线 onPeerPaired 且本机上报 clientDeviceId 时，
+            // host 会铸造一枚 per-peer token（≠ host 端显示的共享 sync_server_password，
+            // 见 hibiki_sync_server.dart _issuePeerToken），_validateAuth 同时受理共享
+            // 令牌与任一 per-peer token。故两端「访问令牌」天生不同——用独立标签 + 说明
+            // 消除「明明用互联连接了、两个数为何不一样」的困惑。
+            labelText: t.sync_client_token,
             onChanged: (_) => _saveToken(),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t.sync_client_token_hint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
           Align(
@@ -1000,6 +1013,17 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                     fontFamily: 'monospace',
                   ),
               maxLines: 2,
+            ),
+            const SizedBox(height: 4),
+            // TODO-1330 ④：点明这是「本设备的服务器共享令牌」。配对成功的设备会另获
+            // 各自的 per-peer token（见下方已配对设备列表 + hibiki_sync_server
+            // _issuePeerToken），故 client 端令牌框显示的值与此不同；此共享令牌仍可被
+            // 手动填入连接。与客户端「对端访问令牌」语义不同，避免用户误以为两端应相同。
+            Text(
+              t.sync_server_token_self_hint,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
             const SizedBox(height: 8),
             Row(
