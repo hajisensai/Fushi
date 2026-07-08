@@ -52,7 +52,8 @@ void main() {
     }
   });
 
-  testWidgets('added：toast 渲染绿色卡片 + check 图标 + 文案', (WidgetTester tester) async {
+  testWidgets('added：toast 渲染绿色卡片 + check 图标 + 文案',
+      (WidgetTester tester) async {
     await _pumpToastHost(tester);
     HibikiToast.showMine(msg: '已添加到牌组', status: MineToastStatus.added);
     await tester.pump();

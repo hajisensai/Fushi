@@ -448,8 +448,7 @@ void main() {
       expect(bytes, _coverBytes, reason: '钉扎客户端应握手成功并拉回真封面字节');
     });
 
-    test('cover fetch with wrong fingerprint is rejected by pinning',
-        () async {
+    test('cover fetch with wrong fingerprint is rejected by pinning', () async {
       final String wrongFp = fingerprint.startsWith('00:')
           ? '11:${fingerprint.substring(3)}'
           : '00:${fingerprint.substring(3)}';

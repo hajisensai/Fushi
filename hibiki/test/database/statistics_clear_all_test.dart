@@ -31,7 +31,8 @@ Future<void> _seedVideoStats(HibikiDatabase db) async {
       title: 'V', dateKey: '2026-07-05', subtitleChars: 10, watchTimeMs: 5000);
   await db.addVideoHourlyWatchTime(
       dateKey: '2026-07-05', hour: 11, deltaMs: 5000);
-  await db.addLookupCount(title: 'V', sourceType: 'video', dateKey: '2026-07-05');
+  await db.addLookupCount(
+      title: 'V', sourceType: 'video', dateKey: '2026-07-05');
   await db.addMiningCount(sourceType: 'video', dateKey: '2026-07-05');
 }
 

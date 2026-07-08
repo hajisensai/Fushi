@@ -178,7 +178,8 @@ Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,x
       expect(cues.single.markup?.playResY, 1080);
     });
 
-    test('markup PlayResY falls back to ASS 288 default when absent (TODO-1246)',
+    test(
+        'markup PlayResY falls back to ASS 288 default when absent (TODO-1246)',
         () {
       const String ass = '''
 [Events]

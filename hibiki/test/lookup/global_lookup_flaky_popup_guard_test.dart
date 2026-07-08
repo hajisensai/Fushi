@@ -113,8 +113,8 @@ void main() {
       // TODO-1233 — the reset hide now passes notify:false (between-lookups
       // reset, not a user dismissal → must not fire overlayHidden). The
       // unconditional-reset INTENT the guard protects is unchanged.
-      expect(prelude.contains('GlobalLookupChannel.hide(notify: false);'),
-          isTrue,
+      expect(
+          prelude.contains('GlobalLookupChannel.hide(notify: false);'), isTrue,
           reason:
               'each lookup must reset reveal state before showAt re-arms it');
     });

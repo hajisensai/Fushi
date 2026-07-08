@@ -13,7 +13,8 @@ void main() {
     final String js = File('assets/popup/popup.js').readAsStringSync();
     expect(js, contains('createFavoriteButton'), reason: '收藏按钮工厂必须存在');
     expect(js, contains("className: 'inline-action-button favorite-button'"),
-        reason: '必须创建 favorite-button 元素（TODO-1325 #4 挂 inline-action-button 图标基类）');
+        reason:
+            '必须创建 favorite-button 元素（TODO-1325 #4 挂 inline-action-button 图标基类）');
     expect(js, contains("'favoriteEntry'"),
         reason: '点击应调 favoriteEntry 桥写入 FavoriteWords');
     expect(js, contains("callHandler('favoriteCheck'"),

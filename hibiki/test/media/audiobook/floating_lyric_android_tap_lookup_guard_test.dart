@@ -42,8 +42,7 @@ void main() {
   String launchBody(String src) {
     const String sig = 'private void startLookupActivity(Intent intent)';
     final int at = src.indexOf(sig);
-    expect(at, greaterThanOrEqualTo(0),
-        reason: 'TODO-1268：必须有集中的弹性启动 helper');
+    expect(at, greaterThanOrEqualTo(0), reason: 'TODO-1268：必须有集中的弹性启动 helper');
     // 到下一个方法声明前（本 helper 后面紧跟 bringAppToFront 的 javadoc）。
     final int end = src.indexOf('private void bringAppToFront()', at);
     expect(end, greaterThan(at));
@@ -58,8 +57,7 @@ void main() {
               '必须走 startLookupActivity 的 opt-in + 回退');
     });
 
-    test('handleTap 仍保留点词契约（PopupDictFlutterActivity + 文本 + charIndex）',
-        () {
+    test('handleTap 仍保留点词契约（PopupDictFlutterActivity + 文本 + charIndex）', () {
       final String body = handleTapBody(read());
       expect(body.contains('new Intent(this, PopupDictFlutterActivity.class)'),
           isTrue,
@@ -76,7 +74,8 @@ void main() {
           reason: '后台启动 opt-in 门控在 API 34（Android 14）+');
       expect(body.contains('PendingIntent.getActivity('), isTrue,
           reason: '走自发 PendingIntent 以携带后台启动授权');
-      expect(body.contains('setPendingIntentBackgroundActivityStartMode'), isTrue,
+      expect(
+          body.contains('setPendingIntentBackgroundActivityStartMode'), isTrue,
           reason: 'BUG：必须用官方 opt-in 显式授予后台启动特权');
       expect(
           body.contains(

@@ -77,6 +77,7 @@ void main() {
         js,
         contains(
             'if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {'),
-        reason: '分页恢复越界 / charOffset<=0 章首回退 scrollToProgressPaged(context, 0)');
+        reason:
+            '分页恢复越界 / charOffset<=0 章首回退 scrollToProgressPaged(context, 0)');
   });
 }

@@ -133,8 +133,8 @@ void main() {
       final String source = File(path).readAsStringSync();
       expect(source.contains('floorTo(kPositionUiThrottleStep)'), isTrue,
           reason: 'position quantize (TODO-1243) must remain in $path');
-      expect(source.contains('RepaintBoundary(child: _buildSeekBarBody('),
-          isTrue,
+      expect(
+          source.contains('RepaintBoundary(child: _buildSeekBarBody('), isTrue,
           reason: 'seek bar RepaintBoundary (TODO-1243 follow-up) must remain '
               'in $path');
     }
