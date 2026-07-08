@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
@@ -21,6 +23,29 @@ class RenderBackendService {
 
   /// 单例：native channel 进程级，一个实例即可覆盖全 app。
   static final RenderBackendService instance = RenderBackendService._();
+
+  /// TODO-1232：把 native 持久化的「关闭 Impeller」意图（三态：`null`＝用户从未在
+  /// 设置里动过开关 / `true`＝显式选 Skia / `false`＝显式选 Impeller）解析成本平台
+  /// **实际生效**的「关闭 Impeller（走 Skia）」决定。显式设置 > 平台默认：
+  ///   * [storedPref] != null：用户显式设过 —— 直接遵从其选择，无视平台默认。
+  ///   * [storedPref] == null：用户从未设置 —— 回落到平台默认：
+  ///       - Android（[isAndroid]=true）：`true`（默认关 Impeller / 走 Skia），让
+  ///         media_kit 外部视频纹理（SurfaceProducer）开箱即出画。Impeller 在部分
+  ///         Android GPU（如 Mali-G76 / Android 11，见 BUG-597）静默不合成该外部纹理，
+  ///         解码/纹理握手全绿仍黑屏；Skia 是成熟稳定后端，作 Android 默认最简、覆盖
+  ///         最广，且可被本开关逆转。
+  ///       - 非 Android：`false`（此开关不适用，保持引擎默认 Impeller）。
+  ///
+  /// 纯函数、无副作用，便于离屏单测。与 native 权威决策同源：
+  /// `MainActivity.getFlutterShellArgs` 在引擎启动那一刻用等价逻辑（未设置→Android
+  /// 关 Impeller）决定是否追加 `--enable-impeller=false`；本函数是 Dart 侧镜像，供
+  /// 设置开关显示与诊断标签（守卫见 render_backend_service_test /
+  /// impeller_default_guard_test 锁两侧同默认）。
+  static bool resolveImpellerDisabled({
+    required bool? storedPref,
+    required bool isAndroid,
+  }) =>
+      storedPref ?? isAndroid;
 
   /// 可注入的 channel（测试替换成 mock messenger）；生产走真实 native channel。
   @visibleForTesting
@@ -62,9 +87,16 @@ class RenderBackendService {
   /// false 且 [isSupported] 为 false。幂等：可安全重复调用。
   Future<void> init() async {
     try {
-      final bool? value =
+      // native 返回三态：`null`＝用户从未设置该开关（按平台默认，Android 关 Impeller
+      // 走 Skia）；非 null＝用户显式设过，遵从其选择。channel 有响应即代表本平台已
+      // 接线（当前仅 Android），用 Platform.isAndroid（物理 OS，不受主题 target 平台
+      // 覆盖影响）兜底未设置态，与 native getFlutterShellArgs 的同默认保持一致。
+      final bool? storedPref =
           await channel.invokeMethod<bool>('isImpellerDisabled');
-      _impellerDisabled = value ?? false;
+      _impellerDisabled = resolveImpellerDisabled(
+        storedPref: storedPref,
+        isAndroid: Platform.isAndroid,
+      );
       // 首次 init 取「本次运行实际后端」快照：此刻（首帧前、无 UI）读到的 pref 即
       // 引擎启动那一刻 getFlutterShellArgs 读到的同一个值，故精确反映本运行后端。
       // 之后用户翻开关只改 _impellerDisabled（下次启动意图），本快照不动。
