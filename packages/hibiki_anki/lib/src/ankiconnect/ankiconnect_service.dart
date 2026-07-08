@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import '../anki_models.dart';
 import '../anki_service.dart';
 import '../lapis_note_type.dart';
@@ -15,16 +16,54 @@ class AnkiConnectService implements AnkiService {
   /// "valid api key must be provided". Empty means no key (the default).
   final String apiKey;
 
-  final http.Client _client;
+  /// Injected transport, or null to build [_defaultClient] lazily on first use.
+  final http.Client? _injectedClient;
+
+  /// Overall per-request budget (connect + send + receive). A reachable
+  /// AnkiConnect answers findNotes/addNote well under a second; 10s tolerates a
+  /// busy collection or a mid-sync Anki without hanging a mine indefinitely.
+  final Duration _timeout;
+
+  /// Connection-establishment budget for the lazily-built default client
+  /// (BUG-665). A live AnkiConnect (localhost/LAN) connects near-instantly, so
+  /// 5s is generous while still failing an unreachable host fast.
+  final Duration _connectionTimeout;
+
+  http.Client? _builtDefaultClient;
+
+  /// The transport. The default client is built on the **first request**, not
+  /// in the constructor, so subclasses that override the network methods — and
+  /// tests that install an HttpOverrides fake for the separate remote-audio
+  /// `HttpClient()` — never trigger a real [HttpClient] at construction time.
+  http.Client get _client =>
+      _injectedClient ??
+      (_builtDefaultClient ??= _defaultClient(_connectionTimeout));
 
   AnkiConnectService({
     this.host = 'localhost',
     this.port = 8765,
     this.apiKey = '',
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    Duration timeout = const Duration(seconds: 10),
+    Duration connectionTimeout = const Duration(seconds: 5),
+  })  : _injectedClient = client,
+        _timeout = timeout,
+        _connectionTimeout = connectionTimeout;
 
-  static const _timeout = Duration(seconds: 10);
+  /// Default HTTP client with an explicit **connection-establishment** timeout.
+  ///
+  /// BUG-665: the bare `http.Client()` had no connection timeout, so when the
+  /// configured AnkiConnect host is unreachable/black-holed (wrong host, VPN
+  /// down, firewall dropping SYNs, a remote host that never answers) the connect
+  /// phase dangled up to the full [_timeout] response budget before the combined
+  /// `.timeout` killed it as an opaque `TimeoutException: Future not completed`.
+  /// Bounding the connect phase separately (mirrors [syncHttpClient] in
+  /// sync_http.dart) makes an unreachable host fail fast with a clean
+  /// SocketException — classified as a connection error with an actionable
+  /// "is Anki running?" hint — instead of making a remote/extension mine wait
+  /// the whole response budget on every doomed AnkiConnect call.
+  static http.Client _defaultClient(Duration connectionTimeout) =>
+      IOClient(HttpClient()..connectionTimeout = connectionTimeout);
 
   Future<dynamic> _request(String action,
       [Map<String, dynamic>? params]) async {
