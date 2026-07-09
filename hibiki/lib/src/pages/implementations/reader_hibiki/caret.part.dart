@@ -100,6 +100,46 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       }
     }
 
+    // TODO-1370：长按方向键连续切句。按住一个绑定到「可重复」阅读器/有声书动作
+    // （翻页 或 有声书上一句/下一句）的键时，OS 自动重复的 [KeyRepeatEvent] 继续
+    // 触发同一动作，使长按连续前进/切句，而不是一次按下只走一步——与视频播放器
+    // （`SingleActivator(includeRepeats: true)`）、上面的字符光标重复、手柄 D-pad
+    // 长按（[GamepadFrameProcessor] 自动重复）对齐。只放行移动类动作
+    // （[isRepeatableReaderKeyboardShortcut]）；离散动作（查词/书签/关词典/播放暂停）
+    // 仍一次一按。仅键盘：原生手柄键（含 Android D-pad 的 KeyRepeat）保持按下沿路由
+    // （KeyDown 走 [_handleGamepadButton]）；字符光标激活时它自己的重复已在上面处理。
+    // 必须落在 KeyDown-only 闸门之前，否则闸门会先把 KeyRepeat 拦掉。
+    if (event is KeyRepeatEvent) {
+      if (_focusNavEnabled && _caretActive) return KeyEventResult.ignored;
+      if (GamepadButton.fromKeyEvent(event) != null) {
+        return KeyEventResult.ignored;
+      }
+      final Set<ModifierKey> repeatModifiers = _activeModifiers();
+      final PhysicalKeyboardKey? repeatImePhysicalKey =
+          focusedEditableText() == null ? event.physicalKey : null;
+      final ShortcutAction? repeatDirectReaderAction =
+          appModel.shortcutRegistry.resolveKeyboard(
+        event.logicalKey,
+        modifiers: repeatModifiers,
+        scope: ShortcutScope.reader,
+        physicalKey: repeatImePhysicalKey,
+      );
+      final ShortcutAction? repeatAction = _resolveReaderKeyboardShortcut(
+        event,
+        modifiers: repeatModifiers,
+        directReaderAction: repeatDirectReaderAction,
+        imeFallbackPhysicalKey: repeatImePhysicalKey,
+      );
+      if (repeatAction != null &&
+          isRepeatableReaderKeyboardShortcut(repeatAction)) {
+        return _executeShortcutAction(
+          repeatAction,
+          keyboardTriggerKey: event.logicalKey,
+        );
+      }
+      return KeyEventResult.ignored;
+    }
+
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final Set<ModifierKey> modifiers = _activeModifiers();
@@ -177,27 +217,41 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     // chrome route is gone). Down falls through to normal shortcut resolution
     // below; the bar is reached by touch/mouse, never by directional keys.
 
-    // 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例），先于
-    // reader scope 的「翻页」解析，否则 Space 永远被 reader scope 抢成翻页
-    // （翻页仍可用方向键/PageDown；Shift+Space 后退翻页、Ctrl+Space 原义不变）。
-    // TODO-847: 这两个 override 直读 logicalKey，IME 改写成 process 时也会失效
-    // （RTL 书翻页方向反转、有声书裸 Space 误翻页）。传 physicalKey 让它们在
-    // key==process 时按物理键还原 Space/方向键语义；文本框 composing 时为 null。
+    final ShortcutAction? action = _resolveReaderKeyboardShortcut(
+      event,
+      modifiers: modifiers,
+      directReaderAction: directReaderAction,
+      imeFallbackPhysicalKey: imeFallbackPhysicalKey,
+    );
+    if (action == null) return KeyEventResult.ignored;
+    return _executeShortcutAction(
+      action,
+      keyboardTriggerKey: event.logicalKey,
+    );
+  }
+
+  /// 把键盘 [event] 解析成它触发的阅读器/有声书 [ShortcutAction]，套用有声书裸
+  /// Space 覆写、RTL/reverse 方向键翻页覆写，以及 reader→audiobook 作用域回退。由
+  /// 按下沿（[KeyDownEvent]）与长按（[KeyRepeatEvent]，TODO-1370）两条路径共用，
+  /// 保证长按解析出的动作与按下沿完全一致。键未绑定任何 reader/audiobook 动作时返回
+  /// null。[directReaderAction] 由调用方预解析（reader scope）后传入，避免重复解析。
+  ///
+  /// 有声书激活时无修饰 Space 改作播放/暂停（媒体播放器惯例），先于 reader scope 的
+  /// 「翻页」解析（否则 Space 被抢成翻页）；BUG-099/TODO-992 裸左右键按阅读方向翻页
+  /// 且尊重用户改键。TODO-847：IME 把 logicalKey 改写成 process 时用 physicalKey 回退，
+  /// 文本框 composing 时调用方传 null 关闭回退。
+  ShortcutAction? _resolveReaderKeyboardShortcut(
+    KeyEvent event, {
+    required Set<ModifierKey> modifiers,
+    required ShortcutAction? directReaderAction,
+    required PhysicalKeyboardKey? imeFallbackPhysicalKey,
+  }) {
     final ShortcutAction? spaceOverride = resolveReaderSpaceOverride(
       key: event.logicalKey,
       modifiers: modifiers,
       hasActiveAudiobook: _hasActiveAudiobook,
       physicalKey: imeFallbackPhysicalKey,
     );
-    // BUG-099: bare Left/Right page-turn follows the reading direction (RTL book
-    // advances on Left). Resolved before the registry, which binds Right=forward
-    // unconditionally; null for any other key leaves default resolution intact.
-    // TODO-992: the direction override only applies when the bare key is still
-    // bound to a page-turn. Resolve the user's *current* bare-arrow binding across
-    // the reader + audiobook co-active group and pass it in; if the user remapped
-    // Left/Right to e.g. audiobook prev/next sentence (or cleared it), the override
-    // yields (null) so the registry resolves their real binding — fixing
-    // "scroll mode still only page-turns" identically in paged and continuous mode.
     final ShortcutAction? bareArrowBinding =
         appModel.shortcutRegistry.resolveKeyboard(
               event.logicalKey,
@@ -219,7 +273,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       reverse: ReaderHibikiSource.instance.reverseArrowPageTurn,
       physicalKey: imeFallbackPhysicalKey,
     );
-    ShortcutAction? action = spaceOverride ??
+    return spaceOverride ??
         arrowOverride ??
         directReaderAction ??
         appModel.shortcutRegistry.resolveKeyboard(
@@ -234,12 +288,6 @@ extension _ReaderCaret on _ReaderHibikiPageState {
           scope: ShortcutScope.audiobook,
           physicalKey: imeFallbackPhysicalKey,
         );
-
-    if (action == null) return KeyEventResult.ignored;
-    return _executeShortcutAction(
-      action,
-      keyboardTriggerKey: event.logicalKey,
-    );
   }
 
   /// TODO-1078：WebView 内容层捕获的裸 Space（Windows WebView2 抢走 OS 键盘焦点后

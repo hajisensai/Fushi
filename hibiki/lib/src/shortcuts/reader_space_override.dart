@@ -119,3 +119,30 @@ bool readerShouldHandleDesktopCopy({
   if (key != LogicalKeyboardKey.keyC) return false;
   return modifiers.length == 1 && modifiers.contains(ModifierKey.ctrl);
 }
+
+/// TODO-1370：长按方向键连续切句。判断一个已解析出的阅读器/有声书快捷动作是否应随
+/// OS 键盘自动重复（[KeyRepeatEvent]）连续触发。
+///
+/// 根因：阅读器 `_handleKeyEvent` 在解析快捷键前有 `event is! KeyDownEvent` 闸门，
+/// 把长按产生的 KeyRepeat 事件全部丢弃（字符光标除外），所以按住 Ctrl+←/→（或用户
+/// 改绑成裸 ←/→）的「上一句/下一句」只在按下瞬间触发一次，无法连续切句——而视频
+/// 播放器经 `SingleActivator(includeRepeats: true)`、手柄 D-pad 经 `GamepadFrameProcessor`
+/// 自动重复，两者都连续。本谓词让阅读器键盘路径与它们对齐。
+///
+/// 只放行「移动 / 前进后退」类动作：翻页（[ShortcutAction.readerPageForward] /
+/// [ShortcutAction.readerPageBackward]）与有声书上一句/下一句
+/// （[ShortcutAction.audiobookPrevSentence] / [ShortcutAction.audiobookNextSentence]）。
+/// 离散动作（查词 / 书签 / 关词典 / 打开菜单 / 播放暂停）必须一次一按，绝不随长按连发
+/// （否则按住会连续查词 / 反复开关播放），故默认一律返回 false；新增 action 也默认不
+/// 可重复，需显式加入白名单才连发。
+bool isRepeatableReaderKeyboardShortcut(ShortcutAction action) {
+  switch (action) {
+    case ShortcutAction.readerPageForward:
+    case ShortcutAction.readerPageBackward:
+    case ShortcutAction.audiobookNextSentence:
+    case ShortcutAction.audiobookPrevSentence:
+      return true;
+    default:
+      return false;
+  }
+}
