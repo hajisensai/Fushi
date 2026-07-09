@@ -1,0 +1,6 @@
+## BUG-666 · 竖排振假名翻到基字左侧+高亮带错位(阅读器未拥有 ruby-position)
+- **报告**：2026-07-09（用户：）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/reader/reader_content_styles.dart:501`（`ruby` 规则只拥有 `display: ruby !important`，未拥有 `ruby-position`）。
+- **[x] ① 已修复** — `hibiki/lib/src/reader/reader_content_styles.dart:501` 的 `ruby` 规则加 `ruby-position: over !important;`。提交见分支 `todo1308-ruby-position-fix`。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/vertical_ruby_display_context_guard_test.dart` 新增两个守卫：①四布局(竖/横 × 分页/连续)都必发 `ruby-position: over !important` 且不发 `under`；②竖排 `over`(基字在左) 与 `_highlightLaneCss` 竖排 `background-position: left center`(画基字列) 成对自洽。
+- **备注**：TODO-1308 (BUG-611 续) 让阅读器强制接管 `<ruby>` 的 `writing-mode` + `display`（`display:ruby` / `display:ruby-text`），但**没接管 `ruby-position`**。真书 legacy CSS 的 `ruby { ruby-position: under }`（或 WebKit 别名 `-webkit-ruby-position: after`）仍生效：在 vertical-rl 下把振假名甩到基字**左侧**（正确日文侧是右侧 = `over`）。同时 `_highlightLaneCss` 竖排把有声书/查词高亮 lane 画在 ruby 盒**左侧**（`background-position: left center`，假设基字在左），书本 `under` 让基字移到右侧后，lane 反而盖到振假名列 -> 用户截图里「懐かしい」的「なっ」落在基字左侧 + 蓝色高亮带与振假名错位。修复：`ruby` 规则加 `ruby-position: over !important`（阅读器 `<style>` 注入在 `<head>` 末尾，`!important` 压过书本；Blink 把 `-webkit-ruby-position` 别名解析到同一 `ruby-position` longhand，后声明的 !important 胜出）。`over` 横排=基字上方、竖排=基字右侧，两写向都是正确日文侧，同时让 lane 重新对齐基字。`display` 未动，65fd8d03d 的竖排不下塌（dyRatio≈0）保持。

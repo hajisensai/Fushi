@@ -497,9 +497,26 @@ $furiganaCss
    !important rules win the cascade over the book stylesheet and re-assert the
    correct ruby structure (rt display is owned by _furiganaCss so `hide` mode's
    display:none still wins there). This is engine-agnostic and a no-op for books
-   that don't override the ruby display (these ARE the UA defaults). */
+   that don't override the ruby display (these ARE the UA defaults).
+
+   BUG-666 (TODO-1308 follow-up): owning writing-mode + display is not enough —
+   the reader must ALSO own `ruby-position`. Legacy vertical EPUBs ship
+   `ruby { ruby-position: under }` (or the WebKit alias `-webkit-ruby-position:
+   after`), which in vertical-rl throws the furigana to the LEFT of the base
+   column instead of the correct Japanese side (the right). Blink resolves the
+   `-webkit-` alias onto the same `ruby-position` longhand, so this later
+   !important declaration wins the cascade over either spelling. `over` maps to
+   line-over in horizontal-tb (furigana ABOVE the base) and to the right in
+   vertical-rl (furigana RIGHT of the base) — the correct side for Japanese in
+   both writing modes. This also re-aligns the audiobook/selection highlight lane
+   (_highlightLaneCss paints `left center` in vertical, i.e. the base lane which
+   only sits on the left when annotations are on the right = `over`); with the
+   book's `under` the base moved right and the lane painted the furigana column
+   instead (the misaligned band seen on 「懐かしい」). display unchanged, so the
+   65fd8d03d non-collapse (dyRatio≈0) is preserved. */
 ruby {
   display: ruby !important;
+  ruby-position: over !important;
 }
 ruby > rp {
   display: none !important;
