@@ -475,7 +475,9 @@ class AppModel with ChangeNotifier {
       dictionarySearchAgainNotifier.notifyListeners();
     }
 
-    if (report.booksImported > 0 || report.audiobooksImported > 0) {
+    if (report.booksImported > 0 ||
+        report.audiobooksImported > 0 ||
+        report.localBookProgressPulled > 0) {
       ReaderMediaType.instance.refreshTab();
     }
 

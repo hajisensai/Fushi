@@ -238,6 +238,71 @@ void main() {
     });
   });
 
+  group('book progress pull flags shelf refresh (BUG-686)', () {
+    // Root cause: a host-newer book-progress pull upserts reader_positions but
+    // sets no report counter, so [SyncRunReport.needsLocalLibraryRefresh] stays
+    // false → refreshAfterSyncRun early-returns → the cached hibikiBooksProvider
+    // keeps the pre-sync progress bar → the user sees "book progress not synced"
+    // even though it landed in the DB. The audiobook resume path re-reads its
+    // pref at play time, so it looked like it synced — hence the asymmetry.
+    test('host-newer pull sets localBookProgressPulled + needsRefresh',
+        () async {
+      await _seedPosition(hostDb, 'BookRefresh',
+          section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
+
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookRefresh');
+      await _seedPosition(localDb, 'BookRefresh',
+          section: 1, norm: 100, charOffset: 1, updatedAt: 1000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tbr'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+
+      // Progress actually landed locally...
+      final ReaderPositionRow? localRow =
+          await localDb.getReaderPosition('BookRefresh');
+      expect(localRow!.sectionIndex, 9);
+      // ...and the run flags the shelf for a refresh so it becomes visible.
+      expect(report.localBookProgressPulled, 1,
+          reason: 'host-newer pull must count as a local progress change');
+      expect(report.needsLocalLibraryRefresh, isTrue,
+          reason: 'a progress-only pull must still refresh the shelf');
+    });
+
+    test('push-only (local newer) does not flag a shelf refresh', () async {
+      await _seedBook(hostDb, 'BookPushOnly');
+      await _seedPosition(hostDb, 'BookPushOnly',
+          section: 1, norm: 10, charOffset: 1, updatedAt: 1000);
+
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookPushOnly');
+      await _seedPosition(localDb, 'BookPushOnly',
+          section: 7, norm: 7000, charOffset: 70, updatedAt: 9000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tbp'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+
+      // Local was already newest → nothing pulled → no needless shelf refresh.
+      expect(report.localBookProgressPulled, 0,
+          reason: 'a pure push must not mark the local shelf dirty');
+      expect(report.needsLocalLibraryRefresh, isFalse);
+    });
+  });
+
   group('video progress full sweep', () {
     test('local has lastPositionMs, host none -> push to host video prefs',
         () async {
