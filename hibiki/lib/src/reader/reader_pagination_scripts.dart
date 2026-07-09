@@ -878,6 +878,20 @@ class ReaderPaginationScripts {
       this.setPagePosition(context, this.alignToPage(context, anchor));
     }
   },
+  // TODO-1349（续·用户复诉「文字少也会去到最开头」）：把仍标记 loading="lazy" 的图强制翻成
+  // eager 触发 load。往前翻到「文字少+图片」章的章末时，尾部整页插图仍是 lazy（非纯图片章
+  // __hoshiImageOnlyChapter=false），离屏 → 永不 load → 0 尺寸被 buildPaginationMetrics
+  // 排除（分页 maxScroll 塌缩到章首）/ 被 scrollToChapterEnd 可见性判据跳过（连续停章首），
+  // 且懒图 __imgReanchorProgress 重锚永不触发（尾图永不进视口 = 鸡生蛋）。这里在章末恢复时
+  // 强制 load 打破鸡生蛋，图尺寸解析后走既有 load 回调重锚（分页 scrollToProgressPaged /
+  // 连续 scrollToChapterEnd）落到含真实尾图几何的章末。仅往前翻到章末(restoreProgress>=0.99)
+  // 触发，正向阅读 / 精确 char 锚不动 → 不回退 TODO-1074 懒加载；幂等（无 lazy 则 no-op）。
+  forceLoadPendingImages: function() {
+    var imgs = document.querySelectorAll('img[loading="lazy"]');
+    for (var i = 0; i < imgs.length; i++) {
+      imgs[i].setAttribute('loading', 'eager');
+    }
+  },
   notifyRestoreComplete: function() {
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onRestoreComplete');
@@ -1610,11 +1624,18 @@ $blurFn
           // 且其后无用户翻页(__imgReanchorProgress 非 null)，用刚失效的 metrics 重建几何
           // 后重放 scrollToProgressPaged 语义重锚。属程序化滚动，不污染 TODO-798
           // userDriven 因果门；有用户输入(paginate 已清资格)则不动。
-          if (r && r.__imgReanchorProgress != null &&
-              typeof r.scrollToProgressPaged === 'function') {
-            var rctx = r.getScrollContext();
-            if (rctx && rctx.pageSize > 0) {
-              r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
+          if (r && r.__imgReanchorProgress != null) {
+            // TODO-1349（续）：判别连续 vs 分页用 scrollToChapterEnd（连续 shell 独有）——
+            // scrollToProgressPaged 在 _sharedJs 里两 shell 都有，不能用它判别（否则连续误走
+            // 分页分支，getScrollContext.pageSize 非分页量纲 → 不重锚，停章首）。
+            if (typeof r.scrollToChapterEnd === 'function') {
+              // 连续模式：尾部懒图 load 后重锚到章末；章首(<=0)不重锚——内容向下增长不移动 scroll 0。
+              if (r.__imgReanchorProgress >= 0.99) r.scrollToChapterEnd();
+            } else if (typeof r.scrollToProgressPaged === 'function') {
+              var rctx = r.getScrollContext();
+              if (rctx && rctx.pageSize > 0) {
+                r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
+              }
             }
           }
         }
@@ -2037,6 +2058,10 @@ $_sharedJs
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var context = this.getScrollContext();
+    // TODO-1349（续）：往前翻到章末(>=0.99)先强制 load 仍 lazy 的尾图（打破「尾图离屏永不
+    // load → maxScroll 塌缩 → 停章首 → 尾图永不进视口」鸡生蛋，见 forceLoadPendingImages）；
+    // 图 load 后 __imgReanchorProgress 回调按含真实尾图几何的 maxScroll 重锚。
+    if (progress >= 0.99) this.forceLoadPendingImages();
     this.scrollToProgressPaged(context, progress);
     // TODO-1229 案B：记录本次是章首(0)/章末(>=0.99)粗粒度 progress 落点，允许懒加载
     // block 图 load 后（整章几何后移、冻结 scrollTop 错一行）语义重锚。中段 progress 与
@@ -2721,6 +2746,7 @@ $_sharedJs
     await document.fonts.ready;
     var self = this;
     if (progress <= 0) {
+      this.__imgReanchorProgress = null;
       this.scrollToChapterStart();
       setTimeout(function() {
         self.scrollToChapterStart();
@@ -2734,6 +2760,11 @@ $_sharedJs
     // scrollToProgressContinuous 只走文本节点而在图片章停回章首（封面）。双发一次
     // 再确认对齐（防恢复后自发 reflow 把落点冲回，与 scrollToChapterStart 同构）。
     if (progress >= 0.99) {
+      // TODO-1349（续）：登记章末重锚资格 + 强制 load 尾部懒图（打破鸡生蛋，见
+      // forceLoadPendingImages）。16ms 双发太快等不到图 load，故尾图 load 后由
+      // _sharedInitImages 的 load 回调重锚 scrollToChapterEnd（连续分支）落到含尾图的真实章末。
+      this.__imgReanchorProgress = progress;
+      this.forceLoadPendingImages();
       this.scrollToChapterEnd();
       setTimeout(function() {
         self.scrollToChapterEnd();
@@ -2741,6 +2772,7 @@ $_sharedJs
       }, 16);
       return;
     }
+    this.__imgReanchorProgress = null;
     this.scrollToProgressContinuous(progress);
     setTimeout(function() {
       setTimeout(function() { self.notifyRestoreComplete(); }, 16);
@@ -2762,6 +2794,9 @@ $_sharedJs
     return true;
   },
   paginate: function(direction) {
+    // TODO-1349（续）：用户翻页即放弃章末尾图 late-load 重锚资格（镜像分页 paginate），
+    // 避免尾图 load 回调把用户已翻走的位置拽回章末。
+    this.__imgReanchorProgress = null;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var before = vertical ? window.scrollX : root.scrollTop;
