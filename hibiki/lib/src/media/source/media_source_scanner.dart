@@ -10,11 +10,16 @@
 // -> reuse existing importers (EpubImporter.importFromPath /
 // VideoBookRepository.saveVideoBook) with sourceId -> updateMediaSourceScanResult.
 //
-// Zero-behaviour-change: only a new scan entry is added; existing manual import
-// paths (dialogs) are untouched, sourceId defaults to null. Network transport is
-// still a placeholder (NetworkSourceFileSystem throws UnimplementedError); M1b
-// does not connect to any network and does not touch credentials.
+// TODO-1274: network transport (SFTP/FTP/WebDAV) is now wired for BOOK sources —
+// the transport is resolved from the row (local vs SFTP/FTP/WebDAV built from
+// configJson + MediaSourceCredentialStore), and remote EPUBs are downloaded via
+// copyToLocal before import. Routing is transport-agnostic here: any non-'local'
+// transport builds a NetworkSourceFileSystem which dispatches SFTP/FTP/WebDAV
+// internally, so [buildNetworkFileSystem] needs no per-transport branch. Network
+// VIDEO sources are rejected (a raw remote path is not playable). Existing manual
+// import paths (dialogs) are untouched; sourceId defaults to null.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -27,8 +32,15 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
+    show kDragPlaylistExtensions;
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
+import 'package:hibiki/src/media/source/media_source_credential_store.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/video/external_video.dart'
+    show normalizeVideoPath;
+import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -105,12 +117,34 @@ class ScanVideoItem {
   int get hashCode => Object.hash(videoPath, subtitlePath);
 }
 
+/// One pending playlist item: an m3u8/m3u manifest scanned in a video source.
+///
+/// TODO-1237: folder scan treats `.m3u8`/`.m3u` as multi-episode playlist
+/// manifests, same semantics as the drag-drop path (kDragPlaylistExtensions /
+/// DropIntent.importNewPlaylist): not a single video file but a parseM3u8'd
+/// episode list persisted as one playlist VideoBook.
+@immutable
+class ScanPlaylistItem {
+  const ScanPlaylistItem({required this.playlistPath});
+
+  /// Full m3u8/m3u file path (source namespace).
+  final String playlistPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanPlaylistItem && other.playlistPath == playlistPath;
+
+  @override
+  int get hashCode => playlistPath.hashCode;
+}
+
 /// Classification result of one scan (pure data).
 @immutable
 class ScanPlan {
   const ScanPlan({
     this.books = const <ScanBookItem>[],
     this.videos = const <ScanVideoItem>[],
+    this.playlists = const <ScanPlaylistItem>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -118,6 +152,9 @@ class ScanPlan {
 
   /// Pending video items (with associated subtitles).
   final List<ScanVideoItem> videos;
+
+  /// Pending playlist items (m3u8/m3u multi-episode manifests, TODO-1237).
+  final List<ScanPlaylistItem> playlists;
 }
 
 /// Extension of an entry name (lowercase, no leading dot).
@@ -138,18 +175,34 @@ String _extOf(String name) =>
 ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
   // parent dir -> all file basenames under it (for sidecar matching).
   final Map<String, List<String>> namesByDir = <String, List<String>>{};
+  // parent dir -> {basename: original full path} (for sidecar path lookup).
+  // TODO-1274: sidecar full paths are looked up here, NOT rebuilt via
+  // p.join(dir, name), so a remote source's forward-slash paths survive on a
+  // Windows host (p.join would inject backslashes).
+  final Map<String, Map<String, String>> pathByDir =
+      <String, Map<String, String>>{};
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
     final String dir = p.dirname(e.path);
     (namesByDir[dir] ??= <String>[]).add(e.name);
+    (pathByDir[dir] ??= <String, String>{})[e.name] = e.path;
   }
 
   final List<ScanBookItem> books = <ScanBookItem>[];
   final List<ScanVideoItem> videos = <ScanVideoItem>[];
+  final List<ScanPlaylistItem> playlists = <ScanPlaylistItem>[];
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
     final String ext = _extOf(e.name);
+    // TODO-1237: m3u8/m3u playlist manifest, reusing the drag-drop path's own
+    // [kDragPlaylistExtensions] whitelist. Checked before the video branch
+    // (m3u8 is not in kVideoExtensions, the two are disjoint; ordering is only
+    // for clarity).
+    if (kDragPlaylistExtensions.contains(ext)) {
+      playlists.add(ScanPlaylistItem(playlistPath: e.path));
+      continue;
+    }
     if (kScanEpubExtensions.contains(ext)) {
       // TODO-946：EPUB 同目录扫同名字幕 + 音频（wantAudio:true，字幕扩展含 lrc）。
       // 命中音频 -> 导成有声书（字幕作对齐源）；否则纯 EPUB。同目录作用域，与
@@ -161,10 +214,12 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
         siblingNames: siblings,
         wantAudio: true,
       );
+      final Map<String, String> dirPaths =
+          pathByDir[dir] ?? const <String, String>{};
       books.add(ScanBookItem(
         epubPath: e.path,
-        subtitlePath: sel.subtitle == null ? null : p.join(dir, sel.subtitle!),
-        audioPaths: sel.audio.map((String n) => p.join(dir, n)).toList(),
+        subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
+        audioPaths: sel.audio.map((String n) => dirPaths[n] ?? n).toList(),
       ));
       continue;
     }
@@ -177,14 +232,16 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
         wantAudio: false,
         subtitleExts: kScanVideoSubtitleExts,
       );
+      final Map<String, String> dirPaths =
+          pathByDir[dir] ?? const <String, String>{};
       videos.add(ScanVideoItem(
         videoPath: e.path,
-        subtitlePath: sel.subtitle == null ? null : p.join(dir, sel.subtitle!),
+        subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
       ));
     }
   }
 
-  return ScanPlan(books: books, videos: videos);
+  return ScanPlan(books: books, videos: videos, playlists: playlists);
 }
 
 /// Source-library scanner: scans one [MediaSourceRow] root, inserts the media
@@ -194,6 +251,49 @@ class MediaSourceScanner {
 
   final HibikiDatabase _db;
   final VideoBookRepository _videoRepo;
+
+  /// 从来源行解析文件系统：local → LocalSourceFileSystem；网络 → 解出连接参数
+  /// （configJson）+ 凭据（MediaSourceCredentialStore）构造 NetworkSourceFileSystem。
+  Future<SourceFileSystem> _resolveFileSystem(MediaSourceRow source) async {
+    if (source.transport == 'local') {
+      return const LocalSourceFileSystem();
+    }
+    final MediaSourceSecret secret =
+        await MediaSourceCredentialStore(_db).readSecret(source.id);
+    return buildNetworkFileSystem(
+      transport: source.transport,
+      config: decodeSourceConfig(source.configJson),
+      password: secret.password,
+      privateKey: secret.privateKey,
+    );
+  }
+
+  /// 纯构造：把 transport + 连接参数 + 凭据组装成 [SourceFileSystem]（无 I/O）。
+  /// 抽出供测试断言路由正确。WebDAV 的 host/port/useTls 不参与传输（URL 即 rootPath，
+  /// 自带 scheme/host/端口），此处仍原样填入仅为字段对齐，NetworkSourceFileSystem 忽略。
+  @visibleForTesting
+  static SourceFileSystem buildNetworkFileSystem({
+    required String transport,
+    required Map<String, Object?> config,
+    String? password,
+    String? privateKey,
+  }) {
+    if (transport == 'local') {
+      return const LocalSourceFileSystem();
+    }
+    final int port =
+        (config['port'] as num?)?.toInt() ?? (transport == 'sftp' ? 22 : 21);
+    return NetworkSourceFileSystem(NetworkSourceConfig(
+      transport: transport,
+      host: (config['host'] as String?) ?? '',
+      port: port,
+      username: (config['username'] as String?) ?? '',
+      password: (password != null && password.isNotEmpty) ? password : null,
+      privateKey:
+          (privateKey != null && privateKey.isNotEmpty) ? privateKey : null,
+      useTls: (config['useTls'] as bool?) ?? false,
+    ));
+  }
 
   /// Scans one source library.
   ///
@@ -211,10 +311,15 @@ class MediaSourceScanner {
     MediaSourceRow source, {
     SourceFileSystem? fs,
   }) async {
-    final SourceFileSystem files = fs ?? const LocalSourceFileSystem();
+    final SourceFileSystem files = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;
     try {
+      // 网络视频来源不受支持：远端 SFTP/FTP 路径不可被播放器直接播放（只支持网络
+      // 「书」来源——EPUB 小体积、扫描时下载后导入）。
+      if (!files.isLocal && source.mediaKind == 'video') {
+        throw StateError('Network video sources are not supported');
+      }
       final List<SourceFileEntry> entries = await files.listFiles(
         source.rootPath,
         recursive: source.recursive,
@@ -224,7 +329,10 @@ class MediaSourceScanner {
       if (source.mediaKind == 'book') {
         mediaCount = await _importBooks(plan, source.id, files);
       } else if (source.mediaKind == 'video') {
+        // Video source imports both single videos and m3u8/m3u playlists
+        // (TODO-1237).
         mediaCount = await _importVideos(plan, source.id, files);
+        mediaCount += await _importPlaylists(plan, source.id, files);
       } else {
         throw ArgumentError.value(
           source.mediaKind,
@@ -236,6 +344,11 @@ class MediaSourceScanner {
       scanError = e.toString();
       debugPrint('MediaSourceScanner.scan failed for '
           'source ${source.id} (${source.rootPath}): $e\n$stack');
+    } finally {
+      // 关闭网络连接（本地/注入的 fake 无需关闭）。
+      if (files is NetworkSourceFileSystem) {
+        await files.close();
+      }
     }
 
     await _db.updateMediaSourceScanResult(
@@ -263,15 +376,22 @@ class MediaSourceScanner {
     SourceFileSystem fs,
   ) async {
     int count = 0;
+    Directory? epubTmp;
     for (final ScanBookItem item in plan.books) {
       try {
+        // 网络来源：先把远端 EPUB 下载到临时盘（导入器只吃本地路径）；本地原样。
+        String localEpub = item.epubPath;
+        if (!fs.isLocal) {
+          epubTmp ??= Directory.systemTemp.createTempSync('m1c_scan_books_');
+          localEpub = await fs.copyToLocal(item.epubPath, epubTmp.path);
+        }
         // skipIfExists:true reuses the sanitizeTtuFilename identity key so a
         // re-scan / same-batch duplicate throws DuplicateImportCancelledException
         // (caught below) instead of a silent "X (2)" (BUG-443). The returned
         // bookKey is the audiobook anchor when a sidecar audio attaches.
         final String bookKey = await EpubImporter.importFromPath(
           db: _db,
-          filePath: item.epubPath,
+          filePath: localEpub,
           fileName: p.basename(item.epubPath),
           sourceId: sourceId,
           skipIfExists: true,
@@ -292,12 +412,52 @@ class MediaSourceScanner {
           );
         }
       } on DuplicateImportCancelledException catch (e) {
-        // Already-imported same-title book: silently skip (matches _importVideos).
+        // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
+        // 首次导入后才把同名字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
+        // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。仅当该书尚未挂任何有声书
+        // 时才对齐，保证重复重扫幂等、不重跑 matcher、不覆盖用户手动重匹配。
+        await _attachSidecarAudiobookToExisting(item, e.title, fs);
         debugPrint('MediaSourceScanner skip duplicate book '
             '${e.title} (${item.epubPath})');
       }
     }
+    if (epubTmp != null) {
+      try {
+        epubTmp.deleteSync(recursive: true);
+      } catch (_) {}
+    }
     return count;
+  }
+
+  /// TODO-1284：重扫时把「首次导入后才新增到书旁的同名字幕+音频」补挂成有声书。
+  ///
+  /// [title] 是 [DuplicateImportCancelledException] 携带的冲突标题，其身份 key
+  /// （[sanitizeTtuFilename]）即已存在书的 bookKey。仅当本次扫描项确有 sidecar
+  /// 字幕+音频（[ScanBookItem.isAudiobook]）、传输为本地（service 直读磁盘路径）、
+  /// 该 bookKey 的书确实在库、且尚未挂任何有声书时才对齐落库；已挂则跳过，保证重扫
+  /// 幂等、不重跑 matcher、不覆盖用户手动重匹配。
+  Future<void> _attachSidecarAudiobookToExisting(
+    ScanBookItem item,
+    String title,
+    SourceFileSystem fs,
+  ) async {
+    if (!item.isAudiobook || !fs.isLocal) return;
+    final String bookKey = sanitizeTtuFilename(title);
+    final EpubBookRow? existingBook = await _db.getEpubBook(bookKey);
+    if (existingBook == null) return;
+    final AudiobookRepository audiobookRepo = AudiobookRepository(_db);
+    final Audiobook? alreadyAttached =
+        await audiobookRepo.findByBookKey(bookKey);
+    if (alreadyAttached != null) return;
+    await alignAndPersistAudiobook(
+      db: _db,
+      repo: SrtBookRepository(_db),
+      audiobookRepo: audiobookRepo,
+      bookKey: bookKey,
+      title: p.basenameWithoutExtension(item.epubPath),
+      subtitlePath: item.subtitlePath!,
+      audioPaths: item.audioPaths,
+    );
   }
 
   /// Imports every video in the plan (with sidecar subtitle cues); returns count.
@@ -315,9 +475,17 @@ class MediaSourceScanner {
     SourceFileSystem fs,
   ) async {
     if (plan.videos.isEmpty) return 0;
+    final List<VideoBookRow> existingRows = await _videoRepo.listAll();
     // Existing book_uid set for silent same-name dedup (matches import dialog).
     final Set<String> existingKeys =
-        (await _videoRepo.listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    // TODO-1237 ②: existing physical paths (normalized) for re-scan dedup — a
+    // folder re-scan must SKIP files already imported instead of suffixing
+    // `X (2)` duplicates (mirrors _importBooks' skipIfExists, BUG-443). Grown as
+    // we insert so a same-batch duplicate path is skipped too.
+    final Set<String> existingPaths = existingRows
+        .map((VideoBookRow r) => normalizeVideoPath(r.videoPath))
+        .toSet();
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -326,6 +494,10 @@ class MediaSourceScanner {
     try {
       int count = 0;
       for (final ScanVideoItem item in plan.videos) {
+        // Skip already-imported physical files (library or same-batch dup).
+        if (!existingPaths.add(normalizeVideoPath(item.videoPath))) {
+          continue;
+        }
         final String bookUid = uniqueVideoBookUid(
           singleVideoBookUid(item.videoPath),
           existingKeys,
@@ -395,6 +567,110 @@ class MediaSourceScanner {
       if (subtitleTmp != null) {
         try {
           subtitleTmp.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// Imports every m3u8/m3u playlist in the plan into a playlist VideoBook;
+  /// returns the count successfully inserted (TODO-1237).
+  ///
+  /// Mirrors the dialog's manual / drag-drop playlist import but headless:
+  /// [parseM3u8] parses the manifest (episode paths resolved via
+  /// [resolveM3uEntryPath]: relative -> the m3u8's own dir, absolute /
+  /// backslash / UNC handled), derives a cross-device stable [playlistBookUid],
+  /// and persists one VideoBook carrying [VideoBooksCompanion.playlistJson].
+  /// Re-scan dedup keys on that STABLE identity (TODO-1237 (2)): a manifest
+  /// whose [playlistBookUid] already exists is SKIPPED (idempotent re-scan),
+  /// never suffixed into an `X (2)` duplicate -- unlike the old first-episode
+  /// path key that broke the moment the manifest's episode paths changed.
+  ///
+  /// [fs] is the source file system: the manifest is read via
+  /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
+  /// downloaded to a temp dir) then decoded with [readTextWithEncoding], reusing
+  /// the same charset detection as [_importVideos]. Cover extraction needs a
+  /// local path so it only runs for local transport (like [_importVideos]);
+  /// ffmpeg-missing / any failure degrades to a null cover (shelf placeholder)
+  /// and never aborts the scan. An empty / unparsable manifest inserts nothing
+  /// (skipped, not counted, not an error).
+  Future<int> _importPlaylists(
+    ScanPlan plan,
+    int sourceId,
+    SourceFileSystem fs,
+  ) async {
+    if (plan.playlists.isEmpty) return 0;
+    final List<VideoBookRow> existingRows = await _videoRepo.listAll();
+    // A playlist's STABLE identity is playlistBookUid (derived from the m3u8
+    // file's own name, TODO-1237 (2)), NOT its volatile first-episode path.
+    // Keying re-scan dedup on the identity means editing the manifest (e.g.
+    // relative -> absolute episode paths) no longer makes an `X (2)` duplicate,
+    // and re-scanning the same folder is idempotent (skip, never suffix).
+    final Set<String> existingKeys =
+        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+
+    // Temp dir only used by non-local transports (copyToLocal downloads here);
+    // for local transport copyToLocal returns the original path unchanged.
+    Directory? playlistTmp;
+    try {
+      int count = 0;
+      for (final ScanPlaylistItem item in plan.playlists) {
+        // TODO-1237 (2): same m3u8 identity already imported -> skip
+        // (idempotent re-scan), never a silent `X (2)` duplicate. Checked
+        // before read/parse so an unchanged folder re-scan does no
+        // per-playlist IO.
+        final String bookUid = playlistBookUid(item.playlistPath);
+        if (existingKeys.contains(bookUid)) continue;
+
+        playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
+        final String localM3u8 =
+            await fs.copyToLocal(item.playlistPath, playlistTmp.path);
+        final String content = await readTextWithEncoding(File(localM3u8));
+        // baseDir is the ORIGINAL m3u8 path's directory (source namespace):
+        // locally the real on-disk dir, matching manual / drag-drop import when
+        // resolving relative episode paths.
+        final String baseDir = p.dirname(item.playlistPath);
+        final List<PlaylistEntry> entries =
+            parseM3u8(content: content, baseDir: baseDir);
+        if (entries.isEmpty) continue; // empty / not a playlist: skip silently.
+        existingKeys.add(bookUid);
+        final String playlistJson = jsonEncode(
+          entries.map((PlaylistEntry e) => e.toJson()).toList(),
+        );
+
+        // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only);
+        // mobile / any failure -> null cover, never aborts the scan.
+        String? coverPath;
+        if (fs.isLocal) {
+          try {
+            coverPath = await extractPlaylistCover(
+              episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
+              bookUid: bookUid,
+            );
+          } catch (e) {
+            debugPrint('MediaSourceScanner playlist cover extract failed for '
+                '$bookUid: $e');
+          }
+        }
+
+        await _videoRepo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(item.playlistPath)),
+            videoPath: Value(entries.first.path),
+            playlistJson: Value(playlistJson),
+            currentEpisode: const Value<int>(0),
+            coverPath: Value<String?>(coverPath),
+            importedAt: Value(DateTime.now()),
+          ),
+          sourceId: sourceId,
+        );
+        count++;
+      }
+      return count;
+    } finally {
+      if (playlistTmp != null) {
+        try {
+          playlistTmp.deleteSync(recursive: true);
         } catch (_) {}
       }
     }

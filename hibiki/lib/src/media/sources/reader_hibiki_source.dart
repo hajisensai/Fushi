@@ -32,6 +32,74 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   return SrtBookRepository(db).listAll();
 });
 
+/// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
+/// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
+/// （charOffset 再大也不计）时书架显示极低%，让用户以为「进度没了」。
+///
+/// - `sectionChars`：每章字数（来自 `epubBooks.chaptersJson[i].characters`，缺则 0）。
+/// - `charOffset` 与 `characters` **同单位**（都是字符计数；已核实每条真实进度
+///   `charOffset ≤ 当前章 characters`）。`-1` 是「仅章节、章内偏移未知」哨兵 → 当 0。
+///
+/// 计算：
+/// - 有每章字数（全书字数>0）：`position = Σ前面各章字数 + clamp(charOffset,0,本章字数)`，
+///   `duration = 全书字数`；position clamp 到 [0, 全书字数]（防 >100%）。
+/// - 老书无 `characters`（全书字数=0）但有章结构：回退章级 `sectionIndex / 章数`，
+///   避免恒显 0%。
+/// - 完全无章结构：`(0, 1)`（0%，不崩）。
+({int position, int duration}) computeBookProgress({
+  required List<int> sectionChars,
+  required int? sectionIndex,
+  required int charOffset,
+}) {
+  final int totalChars = sectionChars.fold<int>(0, (int a, int b) => a + b);
+  final int chapterCount = sectionChars.length;
+  if (totalChars > 0) {
+    if (sectionIndex == null || chapterCount == 0) {
+      return (position: 0, duration: totalChars);
+    }
+    final int clampedSection = sectionIndex.clamp(0, chapterCount - 1);
+    int charsRead = 0;
+    for (int i = 0; i < clampedSection; i++) {
+      charsRead += sectionChars[i];
+    }
+    final int intra =
+        charOffset < 0 ? 0 : charOffset.clamp(0, sectionChars[clampedSection]);
+    return (
+      position: (charsRead + intra).clamp(0, totalChars),
+      duration: totalChars,
+    );
+  }
+  if (chapterCount > 0 && sectionIndex != null) {
+    return (
+      position: sectionIndex.clamp(0, chapterCount),
+      duration: chapterCount,
+    );
+  }
+  return (position: 0, duration: 1);
+}
+
+/// [ReaderHibikiSource.deleteBook] 的结果（TODO-1359）。
+///
+/// 旧接口只回 `Future<bool>`，删除失败时调用方拿不到任何原因，只能弹一个笼统的
+/// 「删除书籍失败」toast——用户「报错日志呢？为什么删不掉？」正是这个信息丢失的症
+/// 状。[failureReason] 在失败时携带面向诊断的原因（同一原因已写入
+/// `ErrorLogService`），供调用方在 toast 里一并展示。
+class DeleteBookResult {
+  const DeleteBookResult._(this.deleted, this.failureReason);
+
+  /// 成功删除（DB 行已删）。磁盘副本清理失败不影响成功判定，只记日志。
+  const DeleteBookResult.success() : this._(true, null);
+
+  /// 删除失败，[reason] 是面向诊断的原因（已写入 ErrorLogService）。
+  const DeleteBookResult.failure(String reason) : this._(false, reason);
+
+  /// 是否真正删除了这本书（以 DB 行是否被移除为准）。
+  final bool deleted;
+
+  /// 失败原因；[deleted] 为 true 时恒为 null。
+  final String? failureReason;
+}
+
 class ReaderHibikiSource extends ReaderMediaSource {
   ReaderHibikiSource._()
       : super(
@@ -54,7 +122,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
   static const String kResourceScheme =
       ReaderCustomFontCss.kReaderResourceScheme;
 
-  static String mediaIdentifierFor(String bookKey) => 'hoshi://book/$bookKey';
+  // BUG-658 / TODO-1344: embed the bookKey RAW (no percent-encoding). The
+  // inverse [parseBookKey] slices the raw remainder back off, so the two are
+  // lossless for keys that contain literal `%XX` sanitize escapes. Both share
+  // the [_bookIdentifierPrefix] constant so the encode/decode pair can never
+  // drift apart.
+  static String mediaIdentifierFor(String bookKey) =>
+      '$_bookIdentifierPrefix$bookKey';
 
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
@@ -95,18 +169,31 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// unparseable identifier. The bookKey is the sanitized title (the EpubBooks
   /// primary key); legacy `hoshi://book/<int>` identifiers were rewritten to
   /// the key form by the v16 migration, so no int branch is needed.
+  ///
+  /// BUG-658 / TODO-1344: extract the RAW remainder after the fixed prefix —
+  /// this must be the exact inverse of [mediaIdentifierFor], which embeds the
+  /// key with plain string interpolation (`'hoshi://book/$bookKey'`, no
+  /// encoding). A sanitized bookKey can itself contain literal percent-escapes:
+  /// [sanitizeTtuFilename] maps every `/?<>\\:|%"*` in the title to its `%XX`
+  /// form, so a title like `Do Androids Dream of Electric Sheep?` or
+  /// `業物語 <物語> (講談社ＢＯＸ)` becomes the key `...Sheep%3F` /
+  /// `業物語 %3C物語%3E (...)`. The old implementation parsed the identifier via
+  /// `Uri.pathSegments`, which percent-DECODES (`%3F`->`?`, `%2F`->`/`, ...),
+  /// producing a key that no longer equals the stored EpubBooks primary key.
+  /// Such books imported fine but could then be neither opened
+  /// (`getEpubBook(decodedKey) == null` -> `book_file_not_found`) nor deleted
+  /// ([deleteBook] early-returns false). A raw string slice is lossless for
+  /// every key — with or without `%` — and identical to the old result for keys
+  /// that contain no `%` (the common case), so nothing that worked before
+  /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
+  /// [epubUrl]/[fontUrl].
+  static const String _bookIdentifierPrefix = 'hoshi://book/';
+
   static String? parseBookKey(String identifier) {
-    final Uri? uri = Uri.tryParse(identifier);
-    if (uri == null) return null;
-    if (uri.scheme == 'hoshi' &&
-        uri.host == 'book' &&
-        uri.pathSegments.isNotEmpty) {
-      // pathSegments are percent-decoded by Uri; rejoin in case a sanitized
-      // key itself contained an encoded '/' (it never does — sanitize escapes
-      // '/' — but be defensive and keep the full remainder).
-      return uri.pathSegments.join('/');
-    }
-    return null;
+    if (!identifier.startsWith(_bookIdentifierPrefix)) return null;
+    final String bookKey = identifier.substring(_bookIdentifierPrefix.length);
+    if (bookKey.isEmpty) return null;
+    return bookKey;
   }
 
   /// BUG-220: EPUB books carry an editable author column, so expose author
@@ -286,20 +373,17 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
     }
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
-    if (totalChars > 0) {
-      duration = totalChars;
-    }
 
+    // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
+    // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
     final pos = await posRepo.findByBookKey(book.bookKey);
-    if (pos != null && sectionChars.isNotEmpty) {
-      final int clampedSection =
-          pos.sectionIndex.clamp(0, sectionChars.length - 1);
-      int charsRead = 0;
-      for (int i = 0; i < clampedSection; i++) {
-        charsRead += sectionChars[i];
-      }
-      position = charsRead;
-    }
+    final ({int position, int duration}) prog = computeBookProgress(
+      sectionChars: sectionChars,
+      sectionIndex: pos?.sectionIndex,
+      charOffset: pos?.charOffset ?? -1,
+    );
+    position = prog.position;
+    duration = prog.duration;
 
     final String? imageUrl = await _resolveCoverUrl(book);
 
@@ -404,16 +488,118 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// conventional fallback names concurrently (HBK-AUDIT-128), with a
   /// last-good fallback so transient probe misses don't blank the cover
   /// (BUG-513).
-  Future<String?> _resolveCoverUrl(EpubBookRow book) {
-    return resolveCoverUrlFor(
+  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+    final List<String> candidates = coverCandidatePaths(
+      extractDir: book.extractDir,
+      coverPath: book.coverPath,
+    );
+    final String? direct = await resolveCoverUrlFor(
       bookKey: book.bookKey,
-      candidates: coverCandidatePaths(
-        extractDir: book.extractDir,
-        coverPath: book.coverPath,
-      ),
+      candidates: candidates,
       probe: (String path) => File(path).exists(),
       cache: _lastGoodCoverUrlByBookKey,
     );
+    if (direct != null) return direct;
+    // TODO-1319 / BUG-612: on a case-SENSITIVE filesystem (Android/Linux) the
+    // persisted coverPath may carry the wrong case. A book imported or backed
+    // up on a case-INSENSITIVE host (Windows/macOS) stored the cover href after
+    // p.canonicalize lower-cased it (epub_parser _itemRelHref), while the
+    // extracted files keep their real case (TODO-739). Once such a book reaches
+    // a case-sensitive device via backup restore or a raw data copy (both
+    // persist coverPath verbatim without re-parsing), File(join(extractDir,
+    // "oebps/images/cover.jpg")) misses the real "OEBPS/Images/Cover.jpg" and
+    // the cover -- though detected at import -- never renders. Resolve the
+    // declared cover (and the conventional fallbacks) case-insensitively against
+    // the real extracted files as a last resort so the cover still shows.
+    final String? resolved = resolveCaseInsensitive(
+      extractDir: book.extractDir,
+      relPaths: <String>[
+        if (book.coverPath != null && book.coverPath!.isNotEmpty)
+          book.coverPath!,
+        'cover.jpg',
+        'cover.jpeg',
+        'cover.png',
+      ],
+      listDir: _listDirEntries,
+    );
+    if (resolved != null && File(resolved).existsSync()) {
+      final String url = Uri.file(resolved).toString();
+      if (book.bookKey.isNotEmpty) {
+        _lastGoodCoverUrlByBookKey[book.bookKey] = url;
+      }
+      return url;
+    }
+    return null;
+  }
+
+  /// Real-filesystem child lister for [resolveCaseInsensitive]. Returns the
+  /// child entity paths of [dir], or an empty list if it is missing/unreadable.
+  static List<String> _listDirEntries(String dir) {
+    final Directory d = Directory(dir);
+    if (!d.existsSync()) return const <String>[];
+    try {
+      return d
+          .listSync(followLinks: false)
+          .map((FileSystemEntity e) => e.path)
+          .toList();
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-612).
+  ///
+  /// Walks each relative candidate in [relPaths] segment by segment under
+  /// [extractDir], matching each segment against the real directory entries
+  /// from [listDir] -- exact case first, then case-insensitively. Returns the
+  /// first candidate that fully resolves to an on-disk path, or null. This lets
+  /// a coverPath whose case was mangled by a case-insensitive host still find
+  /// the case-preserved extracted file on a case-sensitive device.
+  ///
+  /// Pure + injectable ([listDir]) so it is unit-testable with a mock
+  /// filesystem; the instance path wires in [_listDirEntries].
+  @visibleForTesting
+  static String? resolveCaseInsensitive({
+    required String extractDir,
+    required List<String> relPaths,
+    required List<String> Function(String dir) listDir,
+  }) {
+    for (final String rel in relPaths) {
+      if (rel.isEmpty || p.isAbsolute(rel)) continue;
+      final List<String> segs = p
+          .split(rel)
+          .where((String s) => s.isNotEmpty && s != '.' && s != '/')
+          .toList();
+      if (segs.isEmpty) continue;
+      String current = extractDir;
+      bool resolvedAll = true;
+      for (final String seg in segs) {
+        final List<String> children = listDir(current);
+        String? match;
+        for (final String child in children) {
+          if (p.basename(child) == seg) {
+            match = child;
+            break;
+          }
+        }
+        if (match == null) {
+          final String segLower = seg.toLowerCase();
+          for (final String child in children) {
+            if (p.basename(child).toLowerCase() == segLower) {
+              match = child;
+              break;
+            }
+          }
+        }
+        if (match == null) {
+          resolvedAll = false;
+          break;
+        }
+        current = match;
+      }
+      if (resolvedAll) return current;
+    }
+    return null;
   }
 
   /// Delete a book and all of its associated data.
@@ -421,7 +607,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// Pass [appModel] to also clear the override thumbnail file (it is needed to
   /// resolve the thumbnails directory); the override title preference is always
   /// cleared regardless (HBK-AUDIT-040).
-  Future<bool> deleteBook({
+  Future<DeleteBookResult> deleteBook({
     required HibikiDatabase db,
     required String bookKey,
     AppModel? appModel,
@@ -444,49 +630,66 @@ class ReaderHibikiSource extends ReaderMediaSource {
       // BUG-439：bookKey 指向的行不存在（孤儿壳行 bookKey==''、key 不匹配、或重复
       // 删除）时，以前 deleteEpubBook 删 0 行后仍无条件 return true 谎报成功，调用方
       // 据此把这本计入「已删除 N 本」。这里在删之前就判定：没有任何对应行（EPUB 行
-      // 与按 bookKey 关联的 SRT 行都不存在）→ 真的没东西可删 → return false，不跑
-      // 磁盘清理/VACUUM，也不谎报成功。
+      // 与按 bookKey 关联的 SRT 行都不存在）→ 真的没东西可删 → 如实回报失败并带上
+      // 原因（TODO-1359 起写入 ErrorLogService），不跑磁盘清理/VACUUM，也不谎报成功。
       if (bookRow == null && srt == null) {
-        debugPrint(
-            '[ReaderHibikiSource] deleteBook: no rows for bookKey="$bookKey"');
-        return false;
+        final String reason = '找不到这本书的数据（bookKey="$bookKey" 无对应行，'
+            '可能已删除或书架条目已失效）';
+        ErrorLogService.instance
+            .logDiagnostic('ReaderHibikiSource.deleteBook', reason);
+        debugPrint('[ReaderHibikiSource] deleteBook: $reason');
+        return DeleteBookResult.failure(reason);
       }
 
       // TODO-1195 part B: a user shelf delete records a tombstone so a later
       // backup MERGE import never resurrects this book from an old backup.
       final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
 
-      // On-disk cleanups (not covered by the DB transaction). The audiobook
-      // persist dir is keyed by the book's own key now (no legacy uid).
-      await AudiobookStorage.deletePersistDir(bookKey);
-      if (srt != null) {
-        await AudiobookStorage.deletePersistDir(srt.uid);
-      }
-      // Locate the extracted dir by the stored extract_dir column (the on-disk
-      // folder name may still be the legacy int id; the column is the truth).
-      if (bookRow != null) {
-        await EpubStorage.deleteBookDir(bookRow.extractDir);
-      }
+      // TODO-1359 根因：DB 行（唯一真相源）此刻已删，这本书对用户已经消失。下面的
+      // 磁盘副本/偏好清理属于删完再打扫的尾活——Windows 上解压目录若被 WebView
+      // baseURI / 封面图句柄 / 杀软占用，dir.delete(recursive:true) 会抛 errno
+      // 32/145。以前这些清理在外层 try 里裸跑，一抛异常就落到最外层 catch 谎报「删除
+      // 失败」（尽管 DB 行早已删掉），调用方据此不刷新书架、书还挂在架上、解压目录也
+      // 泄漏——这正是用户「为什么删不掉」的真实根因。改为与下方 VACUUM 同一纪律：尾活
+      // 失败只记日志、不翻转删除结果（磁盘副本孤儿无害，DB 行已消失不会再被引用）。
+      try {
+        // On-disk cleanups (not covered by the DB transaction). The audiobook
+        // persist dir is keyed by the book's own key now (no legacy uid).
+        await AudiobookStorage.deletePersistDir(bookKey);
+        if (srt != null) {
+          await AudiobookStorage.deletePersistDir(srt.uid);
+        }
+        // Locate the extracted dir by the stored extract_dir column (the on-disk
+        // folder name may still be the legacy int id; the column is the truth).
+        if (bookRow != null) {
+          await EpubStorage.deleteBookDir(bookRow.extractDir);
+        }
 
-      // HBK-AUDIT-040: these books are created with canDelete:false, so the
-      // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
-      // runs for them. Clear the override title preference here, and the
-      // override thumbnail file when an AppModel is available, so renamed/
-      // recovered books do not leave orphaned override rows/files behind.
-      final MediaItem item = MediaItem(
-        mediaIdentifier: mediaIdentifierFor(bookKey),
-        title: '',
-        mediaTypeIdentifier: mediaType.uniqueKey,
-        mediaSourceIdentifier: uniqueKey,
-        position: 0,
-        duration: 1,
-        canDelete: false,
-        canEdit: true,
-      );
-      if (appModel != null) {
-        await clearOverrideValues(appModel: appModel, item: item);
-      } else {
-        await deletePreference(key: getOverrideTitleKey(item));
+        // HBK-AUDIT-040: these books are created with canDelete:false, so the
+        // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
+        // runs for them. Clear the override title preference here, and the
+        // override thumbnail file when an AppModel is available, so renamed/
+        // recovered books do not leave orphaned override rows/files behind.
+        final MediaItem item = MediaItem(
+          mediaIdentifier: mediaIdentifierFor(bookKey),
+          title: '',
+          mediaTypeIdentifier: mediaType.uniqueKey,
+          mediaSourceIdentifier: uniqueKey,
+          position: 0,
+          duration: 1,
+          canDelete: false,
+          canEdit: true,
+        );
+        if (appModel != null) {
+          await clearOverrideValues(appModel: appModel, item: item);
+        } else {
+          await deletePreference(key: getOverrideTitleKey(item));
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibikiSource.deleteBook.cleanup', e, stack);
+        debugPrint('[ReaderHibikiSource] deleteBook post-DB cleanup failed '
+            '(DB rows already removed; on-disk copy may leak): $e');
       }
 
       // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
@@ -503,11 +706,18 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
-      return deletedRows > 0 || srt != null;
+      if (deletedRows > 0 || srt != null) {
+        return const DeleteBookResult.success();
+      }
+      final String reason = 'DB 删除未移除任何行（bookKey="$bookKey"，deletedRows=0）';
+      ErrorLogService.instance
+          .logDiagnostic('ReaderHibikiSource.deleteBook', reason);
+      debugPrint('[ReaderHibikiSource] deleteBook: $reason');
+      return DeleteBookResult.failure(reason);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);
       debugPrint('[ReaderHibikiSource] deleteBook failed: $e');
-      return false;
+      return DeleteBookResult.failure(e.toString());
     }
   }
 
@@ -973,45 +1183,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
     }
     await setPreference<int>(
       key: 'auto_hide_chrome_millis',
-      value: normalized,
-    );
-  }
-
-  // TODO-1168（实验性）：底栏毛玻璃 + 半透明开关（per-reader，分层同上）。默认 false
-  // = 现状（不透明底栏，零回归）。纯视觉，不改底栏预留高。
-  bool get frostedBottomBar =>
-      readerSettings?.frostedBottomBar ??
-      getPreference<bool>(key: 'frosted_bottom_bar', defaultValue: false);
-
-  void toggleFrostedBottomBar() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setFrostedBottomBar(!frostedBottomBar);
-      return;
-    }
-    await setPreference<bool>(
-      key: 'frosted_bottom_bar',
-      value: !frostedBottomBar,
-    );
-  }
-
-  // TODO-1168（实验性）：底栏背景不透明度（分层同上），经 ReaderSettings 归一到
-  // [0.15, 1.0]，默认 0.6。仅当 frostedBottomBar 开启时消费。
-  double get bottomBarOpacity =>
-      readerSettings?.bottomBarOpacity ??
-      ReaderSettings.normalizeBottomBarOpacity(
-        getPreference<double>(key: 'bottom_bar_opacity', defaultValue: 0.6),
-      );
-
-  void setBottomBarOpacity(double value) async {
-    final double normalized = ReaderSettings.normalizeBottomBarOpacity(value);
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setBottomBarOpacity(normalized);
-      return;
-    }
-    await setPreference<double>(
-      key: 'bottom_bar_opacity',
       value: normalized,
     );
   }

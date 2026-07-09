@@ -23,6 +23,7 @@
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "foreground_selection.h"
+#include "window_capture.h"
 
 #pragma comment(lib, "windowscodecs.lib")
 
@@ -534,6 +535,7 @@ bool FlutterWindow::OnCreate() {
   RegisterFloatingLyricChannel();
   RegisterGlobalLookupChannel();
   RegisterForegroundSelectionChannel();
+  RegisterWindowCaptureChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -669,6 +671,16 @@ struct ForegroundSelectionPending {
   ForegroundSelectionResult capture;
   std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result;
   int64_t elapsed_ms = 0;
+};
+
+// TODO-1162 M0 — a completed window_capture WGC single-frame grab (run on a
+// worker thread) posted back to the UI thread, where the pending Flutter reply
+// is completed. LPARAM is a heap-owned WindowCapturePending* (deleted there).
+constexpr UINT WM_WINDOWCAP_DONE = WM_APP + 4;
+
+struct WindowCapturePending {
+  hibiki::WindowCaptureResult result;
+  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> reply;
 };
 
 }  // namespace
@@ -839,6 +851,16 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         "nativeError", std::make_unique<flutter::EncodableValue>(message));
   });
 
+  // TODO-1233 -- the overlay dismissed (foreground hook / click-outside / JS
+  // dismiss) -> Dart, so a resume-on-dismiss (video subtitle lookup BUG-072) or
+  // the controller's own reveal-state reset can hang off it. Not fired for the
+  // programmatic reset Hide(false) before a fresh lookup (see the "hide" method
+  // below + GlobalLookupWindow::Hide). Fires on the platform thread.
+  global_lookup_window_->SetHiddenCallback([this]() {
+    global_lookup_channel_->InvokeMethod(
+        "overlayHidden", std::make_unique<flutter::EncodableValue>());
+  });
+
   global_lookup_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
@@ -938,7 +960,9 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // TODO-867 P3c E1 — reveal/resize to the nested-stack union bbox.
           global_lookup_window_->RevealStack(
               IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
-              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0));
+              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
+              DoubleFromValue(args, "left", 0.0),
+              DoubleFromValue(args, "top", 0.0));
           result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
@@ -948,7 +972,10 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
               StringFromValue(args, "value", "null"));
           result->Success();
         } else if (method == "hide") {
-          global_lookup_window_->Hide();
+          // TODO-1233 -- notify defaults true (genuine dismiss); the controller
+          // passes notify=false for the reset that precedes a fresh lookup so it
+          // does not fire overlayHidden between two lookups.
+          global_lookup_window_->Hide(BoolFromValue(args, "notify", true));
           result->Success();
         } else if (method == "isShowing") {
           result->Success(
@@ -1008,6 +1035,76 @@ void FlutterWindow::RegisterForegroundSelectionChannel() {
           if (!PostMessage(hwnd, WM_FGSEL_CAPTURE_DONE, 0,
                            reinterpret_cast<LPARAM>(pending))) {
             pending->result->Success(flutter::EncodableValue());
+            delete pending;
+          }
+        }).detach();
+      });
+}
+
+// TODO-1162 M0 — window_capture channel (Windows-only external-window mining).
+// `listWindows` runs synchronously (EnumWindows is instant). `captureWindow`
+// runs the blocking WGC single-frame grab on a DETACHED worker thread and
+// marshals the PNG/error back to the UI thread via WM_WINDOWCAP_DONE (the
+// Flutter MethodResult is not thread-safe), mirroring the foreground-selection
+// channel. Both fail-open with an error map (never a silent success).
+void FlutterWindow::RegisterWindowCaptureChannel() {
+  window_capture_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/window_capture",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  window_capture_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const std::string& method = call.method_name();
+        if (method == "listWindows") {
+          const std::vector<hibiki::ExternalWindow> windows =
+              hibiki::EnumerateTopLevelWindows(GetHandle());
+          flutter::EncodableList list;
+          for (const auto& w : windows) {
+            list.push_back(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("hwnd"),
+                 flutter::EncodableValue(static_cast<int64_t>(
+                     reinterpret_cast<intptr_t>(w.hwnd)))},
+                {flutter::EncodableValue("title"),
+                 flutter::EncodableValue(w.title)},
+            }));
+          }
+          result->Success(flutter::EncodableValue(std::move(list)));
+          return;
+        }
+        if (method != "captureWindow") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        int64_t hwnd_val = 0;
+        if (args != nullptr) {
+          const auto it = args->find(flutter::EncodableValue("hwnd"));
+          if (it != args->end()) {
+            hwnd_val = it->second.TryGetLongValue().value_or(0);
+          }
+        }
+        if (hwnd_val == 0) {
+          result->Error("bad_args", "Missing hwnd");
+          return;
+        }
+        const HWND target =
+            reinterpret_cast<HWND>(static_cast<intptr_t>(hwnd_val));
+        const HWND host = GetHandle();
+        auto* pending = new WindowCapturePending();
+        pending->reply = std::move(result);
+        std::thread([target, host, pending]() {
+          pending->result = hibiki::CaptureWindowPng(target);
+          if (!PostMessage(host, WM_WINDOWCAP_DONE, 0,
+                           reinterpret_cast<LPARAM>(pending))) {
+            pending->reply->Success(
+                flutter::EncodableValue(flutter::EncodableMap{
+                    {flutter::EncodableValue("error"),
+                     flutter::EncodableValue(
+                         std::string("post message failed"))}}));
             delete pending;
           }
         }).detach();
@@ -1144,6 +1241,29 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                    static_cast<int>(pending->elapsed_ms))}}));
         } else {
           pending->result->Success(flutter::EncodableValue());
+        }
+        delete pending;
+      }
+      return 0;
+    }
+    case WM_WINDOWCAP_DONE: {
+      // TODO-1162 M0 — a worker-thread WGC capture finished; complete its
+      // pending Flutter reply on the UI thread. On success return
+      // {pngBytes: Uint8List}; on failure {error: String} (fail-open, never a
+      // silent empty success).
+      auto* pending = reinterpret_cast<WindowCapturePending*>(lparam);
+      if (pending != nullptr) {
+        if (pending->result.ok && !pending->result.png.empty()) {
+          pending->reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("pngBytes"),
+               flutter::EncodableValue(pending->result.png)}}));
+        } else {
+          const std::string err = pending->result.error.empty()
+                                      ? std::string("capture failed")
+                                      : pending->result.error;
+          pending->reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("error"),
+               flutter::EncodableValue(err)}}));
         }
         delete pending;
       }

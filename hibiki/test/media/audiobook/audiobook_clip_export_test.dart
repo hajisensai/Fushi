@@ -121,6 +121,47 @@ void main() {
       expect(clip.endMs, lessThanOrEqualTo(2000 + kMiningTailPadMs));
     });
   });
+
+  group('clipCueSpansWithDelay (TODO-1147 highlight timebase)', () {
+    test('delay 0 keeps cue times unchanged', () {
+      final List<AudiobookClipCueSpan> spans = clipCueSpansWithDelay(
+        span: <AudioCue>[
+          _cue(startMs: 1000, endMs: 2000, text: '一'),
+          _cue(startMs: 2000, endMs: 3000, text: '二'),
+        ],
+        delayMs: 0,
+      );
+      expect(spans, hasLength(2));
+      expect(spans[0].startMs, 1000);
+      expect(spans[0].endMs, 2000);
+      expect(spans[1].startMs, 2000);
+      expect(spans[1].endMs, 3000);
+      expect(spans[0].text, '一');
+    });
+
+    test('positive delay shifts cue spans onto the shifted audio window', () {
+      // 时基契约：音频窗口（clipExportGlobalRange）被 _shiftRange 平移 +delayMs，
+      // cue 在音频里真实出现于 startMs+delayMs——帧计划的 cue 起止必须同步平移，
+      // 否则逐句高亮整体偏移 delayMs（delay<0 时表现为固定迟钝）。
+      final List<AudiobookClipCueSpan> spans = clipCueSpansWithDelay(
+        span: <AudioCue>[_cue(startMs: 1000, endMs: 2000, text: '一')],
+        delayMs: 250,
+      );
+      expect(spans.single.startMs, 1250);
+      expect(spans.single.endMs, 2250);
+    });
+
+    test('negative delay shifts back, clamped at 0 with end > start', () {
+      final List<AudiobookClipCueSpan> spans = clipCueSpansWithDelay(
+        span: <AudioCue>[_cue(startMs: 100, endMs: 600, text: '一')],
+        delayMs: -300,
+      );
+      // 起点镜像 _shiftRange clamp：不下穿 0；终点恒 > 起点。
+      expect(spans.single.startMs, 0);
+      expect(spans.single.endMs, 300);
+      expect(spans.single.endMs, greaterThan(spans.single.startMs));
+    });
+  });
 }
 
 AudioCue _cue({

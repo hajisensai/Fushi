@@ -68,7 +68,7 @@ class LapisNoteType {
     'MainDefinition': '{glossary-first}',
     'Sentence': '{sentence}',
     'SentenceAudio': '{sasayaki-audio}',
-    'Picture': '{book-cover}',
+    'Picture': '{card-image}',
     'Glossary': '{glossary}',
     'PitchPosition': '{pitch-accent-positions}',
     'PitchCategories': '{pitch-accent-categories}',

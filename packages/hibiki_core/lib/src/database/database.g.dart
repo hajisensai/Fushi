@@ -9018,6 +9018,12 @@ class $VideoBooksTable extends VideoBooks
       requiredDuringInsert: false,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES media_sources (id) ON DELETE SET NULL'));
+  static const VerificationMeta _streamSpecJsonMeta =
+      const VerificationMeta('streamSpecJson');
+  @override
+  late final GeneratedColumn<String> streamSpecJson = GeneratedColumn<String>(
+      'stream_spec_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         bookUid,
@@ -9035,7 +9041,8 @@ class $VideoBooksTable extends VideoBooks
         audioTrackId,
         delayMs,
         completedAt,
-        sourceId
+        sourceId,
+        streamSpecJson
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -9138,6 +9145,12 @@ class $VideoBooksTable extends VideoBooks
       context.handle(_sourceIdMeta,
           sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
     }
+    if (data.containsKey('stream_spec_json')) {
+      context.handle(
+          _streamSpecJsonMeta,
+          streamSpecJson.isAcceptableOrUnknown(
+              data['stream_spec_json']!, _streamSpecJsonMeta));
+    }
     return context;
   }
 
@@ -9180,6 +9193,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
       sourceId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}source_id']),
+      streamSpecJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}stream_spec_json']),
     );
   }
 
@@ -9225,6 +9240,14 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留视频（归 NULL），不连坐删条目。
   final int? sourceId;
+
+  /// TODO-1157：流媒体书的重开规格（JSON）。非空当且仅当这是一条「粘贴 URL 导入」的
+  /// 流媒体书（判据以 [videoPath] 是 http/https 为准，本列只补 videoPath 装不下的
+  /// 外挂字幕 URL / 防盗链 header）：`{subtitleUrl,subtitleFileName,referer,userAgent}`。
+  /// 本地文件视频恒 null。存的是「原始粘贴 URL」侧信息，重开时据此重建
+  /// UrlStreamVideoClient（YouTube 按 videoPath 重解析），使流媒体像本地视频一样入库、
+  /// 在书架持久、可重复打开。null = 无外挂字幕/header 的直链流或本地视频。
+  final String? streamSpecJson;
   const VideoBookRow(
       {required this.bookUid,
       required this.title,
@@ -9241,7 +9264,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       this.audioTrackId,
       required this.delayMs,
       this.completedAt,
-      this.sourceId});
+      this.sourceId,
+      this.streamSpecJson});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -9281,6 +9305,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     }
     if (!nullToAbsent || sourceId != null) {
       map['source_id'] = Variable<int>(sourceId);
+    }
+    if (!nullToAbsent || streamSpecJson != null) {
+      map['stream_spec_json'] = Variable<String>(streamSpecJson);
     }
     return map;
   }
@@ -9323,6 +9350,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       sourceId: sourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceId),
+      streamSpecJson: streamSpecJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(streamSpecJson),
     );
   }
 
@@ -9348,6 +9378,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       delayMs: serializer.fromJson<int>(json['delayMs']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
+      streamSpecJson: serializer.fromJson<String?>(json['streamSpecJson']),
     );
   }
   @override
@@ -9371,6 +9402,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'delayMs': serializer.toJson<int>(delayMs),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
+      'streamSpecJson': serializer.toJson<String?>(streamSpecJson),
     };
   }
 
@@ -9390,7 +9422,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           Value<String?> audioTrackId = const Value.absent(),
           int? delayMs,
           Value<DateTime?> completedAt = const Value.absent(),
-          Value<int?> sourceId = const Value.absent()}) =>
+          Value<int?> sourceId = const Value.absent(),
+          Value<String?> streamSpecJson = const Value.absent()}) =>
       VideoBookRow(
         bookUid: bookUid ?? this.bookUid,
         title: title ?? this.title,
@@ -9416,6 +9449,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
         delayMs: delayMs ?? this.delayMs,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
         sourceId: sourceId.present ? sourceId.value : this.sourceId,
+        streamSpecJson:
+            streamSpecJson.present ? streamSpecJson.value : this.streamSpecJson,
       );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
@@ -9453,6 +9488,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      streamSpecJson: data.streamSpecJson.present
+          ? data.streamSpecJson.value
+          : this.streamSpecJson,
     );
   }
 
@@ -9474,7 +9512,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
           ..write('completedAt: $completedAt, ')
-          ..write('sourceId: $sourceId')
+          ..write('sourceId: $sourceId, ')
+          ..write('streamSpecJson: $streamSpecJson')
           ..write(')'))
         .toString();
   }
@@ -9496,7 +9535,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       audioTrackId,
       delayMs,
       completedAt,
-      sourceId);
+      sourceId,
+      streamSpecJson);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -9516,7 +9556,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.audioTrackId == this.audioTrackId &&
           other.delayMs == this.delayMs &&
           other.completedAt == this.completedAt &&
-          other.sourceId == this.sourceId);
+          other.sourceId == this.sourceId &&
+          other.streamSpecJson == this.streamSpecJson);
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
@@ -9536,6 +9577,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> delayMs;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
+  final Value<String?> streamSpecJson;
   final Value<int> rowid;
   const VideoBooksCompanion({
     this.bookUid = const Value.absent(),
@@ -9554,6 +9596,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.delayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.streamSpecJson = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   VideoBooksCompanion.insert({
@@ -9573,6 +9616,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.delayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.streamSpecJson = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : bookUid = Value(bookUid),
         title = Value(title),
@@ -9594,6 +9638,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? delayMs,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
+    Expression<String>? streamSpecJson,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -9615,6 +9660,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (delayMs != null) 'delay_ms': delayMs,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
+      if (streamSpecJson != null) 'stream_spec_json': streamSpecJson,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -9636,6 +9682,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int>? delayMs,
       Value<DateTime?>? completedAt,
       Value<int?>? sourceId,
+      Value<String?>? streamSpecJson,
       Value<int>? rowid}) {
     return VideoBooksCompanion(
       bookUid: bookUid ?? this.bookUid,
@@ -9656,6 +9703,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       delayMs: delayMs ?? this.delayMs,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
+      streamSpecJson: streamSpecJson ?? this.streamSpecJson,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -9713,6 +9761,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (sourceId.present) {
       map['source_id'] = Variable<int>(sourceId.value);
     }
+    if (streamSpecJson.present) {
+      map['stream_spec_json'] = Variable<String>(streamSpecJson.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -9738,6 +9789,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('delayMs: $delayMs, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
+          ..write('streamSpecJson: $streamSpecJson, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -10640,6 +10692,19 @@ class $FavoriteWordsTable extends FavoriteWords
   late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
       'source_type', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _dateKeyMeta =
       const VerificationMeta('dateKey');
   @override
@@ -10653,8 +10718,17 @@ class $FavoriteWordsTable extends FavoriteWords
       'created_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, expression, reading, glossary, sourceType, dateKey, createdAt];
+  List<GeneratedColumn> get $columns => [
+        id,
+        expression,
+        reading,
+        glossary,
+        sourceType,
+        bookKey,
+        title,
+        dateKey,
+        createdAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -10692,6 +10766,14 @@ class $FavoriteWordsTable extends FavoriteWords
     } else if (isInserting) {
       context.missing(_sourceTypeMeta);
     }
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    }
     if (data.containsKey('date_key')) {
       context.handle(_dateKeyMeta,
           dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
@@ -10727,6 +10809,10 @@ class $FavoriteWordsTable extends FavoriteWords
           .read(DriftSqlType.string, data['${effectivePrefix}glossary'])!,
       sourceType: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key']),
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
       dateKey: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
       createdAt: attachedDatabase.typeMapping
@@ -10746,6 +10832,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
   final String reading;
   final String glossary;
   final String sourceType;
+  final String? bookKey;
+  final String title;
   final String dateKey;
   final int createdAt;
   const FavoriteWordRow(
@@ -10754,6 +10842,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       required this.reading,
       required this.glossary,
       required this.sourceType,
+      this.bookKey,
+      required this.title,
       required this.dateKey,
       required this.createdAt});
   @override
@@ -10764,6 +10854,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     map['reading'] = Variable<String>(reading);
     map['glossary'] = Variable<String>(glossary);
     map['source_type'] = Variable<String>(sourceType);
+    if (!nullToAbsent || bookKey != null) {
+      map['book_key'] = Variable<String>(bookKey);
+    }
+    map['title'] = Variable<String>(title);
     map['date_key'] = Variable<String>(dateKey);
     map['created_at'] = Variable<int>(createdAt);
     return map;
@@ -10776,6 +10870,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       reading: Value(reading),
       glossary: Value(glossary),
       sourceType: Value(sourceType),
+      bookKey: bookKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookKey),
+      title: Value(title),
       dateKey: Value(dateKey),
       createdAt: Value(createdAt),
     );
@@ -10790,6 +10888,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       reading: serializer.fromJson<String>(json['reading']),
       glossary: serializer.fromJson<String>(json['glossary']),
       sourceType: serializer.fromJson<String>(json['sourceType']),
+      bookKey: serializer.fromJson<String?>(json['bookKey']),
+      title: serializer.fromJson<String>(json['title']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
@@ -10803,6 +10903,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       'reading': serializer.toJson<String>(reading),
       'glossary': serializer.toJson<String>(glossary),
       'sourceType': serializer.toJson<String>(sourceType),
+      'bookKey': serializer.toJson<String?>(bookKey),
+      'title': serializer.toJson<String>(title),
       'dateKey': serializer.toJson<String>(dateKey),
       'createdAt': serializer.toJson<int>(createdAt),
     };
@@ -10814,6 +10916,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           String? reading,
           String? glossary,
           String? sourceType,
+          Value<String?> bookKey = const Value.absent(),
+          String? title,
           String? dateKey,
           int? createdAt}) =>
       FavoriteWordRow(
@@ -10822,6 +10926,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
         reading: reading ?? this.reading,
         glossary: glossary ?? this.glossary,
         sourceType: sourceType ?? this.sourceType,
+        bookKey: bookKey.present ? bookKey.value : this.bookKey,
+        title: title ?? this.title,
         dateKey: dateKey ?? this.dateKey,
         createdAt: createdAt ?? this.createdAt,
       );
@@ -10834,6 +10940,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       glossary: data.glossary.present ? data.glossary.value : this.glossary,
       sourceType:
           data.sourceType.present ? data.sourceType.value : this.sourceType,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      title: data.title.present ? data.title.value : this.title,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -10847,6 +10955,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           ..write('reading: $reading, ')
           ..write('glossary: $glossary, ')
           ..write('sourceType: $sourceType, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -10854,8 +10964,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, expression, reading, glossary, sourceType, dateKey, createdAt);
+  int get hashCode => Object.hash(id, expression, reading, glossary, sourceType,
+      bookKey, title, dateKey, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -10865,6 +10975,8 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           other.reading == this.reading &&
           other.glossary == this.glossary &&
           other.sourceType == this.sourceType &&
+          other.bookKey == this.bookKey &&
+          other.title == this.title &&
           other.dateKey == this.dateKey &&
           other.createdAt == this.createdAt);
 }
@@ -10875,6 +10987,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
   final Value<String> reading;
   final Value<String> glossary;
   final Value<String> sourceType;
+  final Value<String?> bookKey;
+  final Value<String> title;
   final Value<String> dateKey;
   final Value<int> createdAt;
   const FavoriteWordsCompanion({
@@ -10883,6 +10997,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.reading = const Value.absent(),
     this.glossary = const Value.absent(),
     this.sourceType = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.title = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
@@ -10892,6 +11008,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.reading = const Value.absent(),
     this.glossary = const Value.absent(),
     required String sourceType,
+    this.bookKey = const Value.absent(),
+    this.title = const Value.absent(),
     required String dateKey,
     required int createdAt,
   })  : expression = Value(expression),
@@ -10904,6 +11022,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     Expression<String>? reading,
     Expression<String>? glossary,
     Expression<String>? sourceType,
+    Expression<String>? bookKey,
+    Expression<String>? title,
     Expression<String>? dateKey,
     Expression<int>? createdAt,
   }) {
@@ -10913,6 +11033,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       if (reading != null) 'reading': reading,
       if (glossary != null) 'glossary': glossary,
       if (sourceType != null) 'source_type': sourceType,
+      if (bookKey != null) 'book_key': bookKey,
+      if (title != null) 'title': title,
       if (dateKey != null) 'date_key': dateKey,
       if (createdAt != null) 'created_at': createdAt,
     });
@@ -10924,6 +11046,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       Value<String>? reading,
       Value<String>? glossary,
       Value<String>? sourceType,
+      Value<String?>? bookKey,
+      Value<String>? title,
       Value<String>? dateKey,
       Value<int>? createdAt}) {
     return FavoriteWordsCompanion(
@@ -10932,6 +11056,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       reading: reading ?? this.reading,
       glossary: glossary ?? this.glossary,
       sourceType: sourceType ?? this.sourceType,
+      bookKey: bookKey ?? this.bookKey,
+      title: title ?? this.title,
       dateKey: dateKey ?? this.dateKey,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -10955,6 +11081,12 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     if (sourceType.present) {
       map['source_type'] = Variable<String>(sourceType.value);
     }
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
     if (dateKey.present) {
       map['date_key'] = Variable<String>(dateKey.value);
     }
@@ -10972,6 +11104,8 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
           ..write('reading: $reading, ')
           ..write('glossary: $glossary, ')
           ..write('sourceType: $sourceType, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -20244,6 +20378,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> delayMs,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
+  Value<String?> streamSpecJson,
   Value<int> rowid,
 });
 typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
@@ -20263,6 +20398,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> delayMs,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
+  Value<String?> streamSpecJson,
   Value<int> rowid,
 });
 
@@ -20364,6 +20500,10 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get streamSpecJson => $composableBuilder(
+      column: $table.streamSpecJson,
+      builder: (column) => ColumnFilters(column));
 
   $$MediaSourcesTableFilterComposer get sourceId {
     final $$MediaSourcesTableFilterComposer composer = $composerBuilder(
@@ -20470,6 +20610,10 @@ class $$VideoBooksTableOrderingComposer
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get streamSpecJson => $composableBuilder(
+      column: $table.streamSpecJson,
+      builder: (column) => ColumnOrderings(column));
+
   $$MediaSourcesTableOrderingComposer get sourceId {
     final $$MediaSourcesTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -20544,6 +20688,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get streamSpecJson => $composableBuilder(
+      column: $table.streamSpecJson, builder: (column) => column);
 
   $$MediaSourcesTableAnnotationComposer get sourceId {
     final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
@@ -20628,6 +20775,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> delayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
+            Value<String?> streamSpecJson = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion(
@@ -20647,6 +20795,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             delayMs: delayMs,
             completedAt: completedAt,
             sourceId: sourceId,
+            streamSpecJson: streamSpecJson,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -20666,6 +20815,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> delayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
+            Value<String?> streamSpecJson = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion.insert(
@@ -20685,6 +20835,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             delayMs: delayMs,
             completedAt: completedAt,
             sourceId: sourceId,
+            streamSpecJson: streamSpecJson,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -21431,6 +21582,8 @@ typedef $$FavoriteWordsTableCreateCompanionBuilder = FavoriteWordsCompanion
   Value<String> reading,
   Value<String> glossary,
   required String sourceType,
+  Value<String?> bookKey,
+  Value<String> title,
   required String dateKey,
   required int createdAt,
 });
@@ -21441,6 +21594,8 @@ typedef $$FavoriteWordsTableUpdateCompanionBuilder = FavoriteWordsCompanion
   Value<String> reading,
   Value<String> glossary,
   Value<String> sourceType,
+  Value<String?> bookKey,
+  Value<String> title,
   Value<String> dateKey,
   Value<int> createdAt,
 });
@@ -21468,6 +21623,12 @@ class $$FavoriteWordsTableFilterComposer
 
   ColumnFilters<String> get sourceType => $composableBuilder(
       column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get dateKey => $composableBuilder(
       column: $table.dateKey, builder: (column) => ColumnFilters(column));
@@ -21500,6 +21661,12 @@ class $$FavoriteWordsTableOrderingComposer
   ColumnOrderings<String> get sourceType => $composableBuilder(
       column: $table.sourceType, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get dateKey => $composableBuilder(
       column: $table.dateKey, builder: (column) => ColumnOrderings(column));
 
@@ -21530,6 +21697,12 @@ class $$FavoriteWordsTableAnnotationComposer
 
   GeneratedColumn<String> get sourceType => $composableBuilder(
       column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
 
   GeneratedColumn<String> get dateKey =>
       $composableBuilder(column: $table.dateKey, builder: (column) => column);
@@ -21570,6 +21743,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             Value<String> reading = const Value.absent(),
             Value<String> glossary = const Value.absent(),
             Value<String> sourceType = const Value.absent(),
+            Value<String?> bookKey = const Value.absent(),
+            Value<String> title = const Value.absent(),
             Value<String> dateKey = const Value.absent(),
             Value<int> createdAt = const Value.absent(),
           }) =>
@@ -21579,6 +21754,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             reading: reading,
             glossary: glossary,
             sourceType: sourceType,
+            bookKey: bookKey,
+            title: title,
             dateKey: dateKey,
             createdAt: createdAt,
           ),
@@ -21588,6 +21765,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             Value<String> reading = const Value.absent(),
             Value<String> glossary = const Value.absent(),
             required String sourceType,
+            Value<String?> bookKey = const Value.absent(),
+            Value<String> title = const Value.absent(),
             required String dateKey,
             required int createdAt,
           }) =>
@@ -21597,6 +21776,8 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
             reading: reading,
             glossary: glossary,
             sourceType: sourceType,
+            bookKey: bookKey,
+            title: title,
             dateKey: dateKey,
             createdAt: createdAt,
           ),

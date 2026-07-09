@@ -1165,6 +1165,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         onLongPress: () => _showItemDialog(item),
         child: GestureDetector(
           onLongPress: () => _showItemDialog(item),
+          // Desktop: right-click (secondary tap) opens the same item menu a
+          // touch long-press does. The menu is a centered modal dialog, so the
+          // click position is irrelevant -- no positioning needed.
+          onSecondaryTap: () => _showItemDialog(item),
           child: HibikiListItem(
             leading: Column(
               mainAxisAlignment: MainAxisAlignment.center,

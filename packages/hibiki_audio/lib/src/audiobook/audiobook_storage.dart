@@ -25,14 +25,21 @@ abstract final class AudiobookStorage {
   static bool isAudioFile(String path) =>
       audioExtensions.contains(p.extension(path).toLowerCase());
 
-  /// TODO-935 E0：`hibiki_audio` 包内 documents 根的**单一解析点**。
+  /// TODO-1236：app 层注入的 documents 根解析器（默认平台 Documents）。
   ///
   /// 本包是 `hibiki` 的上游依赖（`hibiki_audio` 不依赖 `hibiki`），故**无法**导入 app
-  /// 层的 `AppPaths`。这里把包内三处原本各自直连的 `getApplicationDocumentsDirectory()`
-  /// 收敛成一处，与 app 层 `AppPaths.documentsRootDirectory()` 的解析**逐字节等价**
-  /// （E0 行为不变）；E1 换根时此处需与 `AppPaths` 同步（搜索 TODO-935）。
+  /// 层的 `AppPaths`。为让有声书持久写入随桌面「自定义数据根」走（否则新导入会落回平台
+  /// Documents，与 TODO-1226 迁移白名单里的 `audiobooks` 分家），app 启动期
+  /// (`AppModel._prepareRuntimeDirectories`) 把此钩子接到 `AppPaths.documentsRootDirectory`
+  /// ——单一真相源、自动跟随数据根、不在本包重复 SharedPreferences 解析逻辑。
+  ///
+  /// 未注入时（纯 Dart 单测 / 本包被上游独立使用）退回
+  /// `getApplicationDocumentsDirectory()`，与 TODO-1236 前逐字节等价。
+  static Future<Directory> Function()? documentsRootResolver;
+
+  /// `hibiki_audio` 包内 documents 根的**单一解析点**。
   static Future<Directory> _documentsRoot() =>
-      getApplicationDocumentsDirectory();
+      (documentsRootResolver ?? getApplicationDocumentsDirectory)();
 
   /// TODO-811: 逐个探测音频文件时长（毫秒），下标与 [paths] 对齐。某个文件探测失败
   /// （损坏/解码不支持）返回 0（调用方据此判定无法可靠分文件）。多文件单时间轴有声书

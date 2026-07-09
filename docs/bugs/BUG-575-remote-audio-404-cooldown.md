@@ -1,0 +1,9 @@
+## BUG-575 · 可达远端发音源对缺词返回404被误冷却导致app外查词整段无音频
+- **报告**：2026-07-07（用户：TODO-1265「电脑 app 外查词没有单词音频了」）
+- **真实性**：✅ 真 bug（回归，2026-07-01 引入）。根因 `hibiki/lib/src/utils/misc/word_audio_resolver.dart:defaultFetchAudioSourceList`（原 :270-289）：
+  - BUG-488（commit `ff1065119`）为「连不上的死源」加了 45s host 级失败冷却，改动把 `defaultFetchAudioSourceList` 的 catch 从「吞异常返回空列表」改为 **`rethrow`**，让 `resolveConfigured` 据此把失败 host 记入冷却。
+  - 但 `_dio.get` 对**任何非 2xx**（含 404）默认抛 `DioError(type: badResponse)`。很多 audioSourceList 端点用 **HTTP 404 表达「这个源没有这个词的发音」**（与 200 空 `audioSources` 列表语义相同）。于是：查一个该源缺失的词 → 404 → rethrow → `_markRemoteSourceFailed` 把整个 host 冷却 45s → 冷却窗内**该源有音频的其它词也被短路跳过 → 无声**。用户频繁查缺词时该源近乎永久冷却，表现为「app 外查词没有音频了」。
+  - 桥路无关：app 外覆盖窗音频桥（cpp deferred `resolveWordAudio`/`playWordAudio` + Dart `_handleAudioBridge` + host.js 路由）接线完整（mjs 往返测试 PASS），TODO-1188/1225 覆写/制卡改动未误伤音频桥；这是**共享解析层**的回归（app 内外同受影响，用户在 app 外注意到）。
+- **[x] ① 已修复** — 本 BUG-575 修复提交（fix(audio): treat reachable-source 404 …）。根因修（非补丁式绕过）：`defaultFetchAudioSourceList` catch 顶部加 `if (e is DioError && e.type == DioErrorType.badResponse) return const <String>[];` —— 可达服务器回非 2xx = 该源没有此词发音，归一为**空结果**（不记错误日志、不 rethrow → `resolveConfigured` 不冷却、继续下一源、该源对下个词仍可用）。只有**连接级失败**（不可达 / 连接超时 / DNS / SocketException）才 rethrow → 冷却，**完整保留 BUG-488 死源冷却意图**。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/word_audio_resolver_test.dart` 新增 group「badResponse (reachable, no audio) is NOT a source failure」2 用例（注入真实 Dio `HttpClientAdapter` 回 404）：① `defaultFetchAudioSourceList` 对 404 返回空而非抛；② 可达源回 404 后 `isRemoteSourceInCooldown` 为 false（守卫「不得冷却可达源」——回归一旦复发即红）。为可注入 404 加了 `@visibleForTesting debugHttpClientAdapter` seam。全 12 用例通过；全量 `flutter test` 9678 通过（仅并发已知 flaky `import_crash_breadcrumb` 失败，隔离重跑绿）。
+- **备注**：纯 Dart 单测层已覆盖真实代码路径（真实 Dio 404 → badResponse 分支）。仅 `AudioSourceKind.remoteAudio` 自定义 URL 模板源受此回归影响；本地音频 DB / hibikiRemote 不走 `fetchAudioSourceList`，不受影响。真机验收口径：配一个对缺词返回 404 的远端发音源，app 外查该源没有的词后立刻查该源有音频的词——修复后仍出声（回归前会整段静音）。

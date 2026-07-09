@@ -41,6 +41,23 @@ body {
     overscroll-behavior-y: contain;
     touch-action: auto;
     -webkit-user-select: text;
+    /* TODO-1354 (BUG-673): the dictionary card is Japanese / CJK dictionary
+       content and must always read left-to-right (headword on the left, example
+       padding-left indentation on the left), matching Niratan. The host WebView
+       forwards the Flutter ambient Directionality (RTL when the user picks an RTL
+       UI language, e.g. Arabic strings_ar) as the platform view's layoutDirection,
+       so the document root defaults to dir=rtl (neither popup.html nor the inline
+       HTML declares an explicit dir). Under RTL the .entry-header flex row reverses
+       its main axis: .expression-scroll (flex:1) lands at the right edge and
+       .header-buttons (margin-left:auto) is pushed to the left, so the headword
+       gets flung to the far right while the buttons + blue focus triangle cluster
+       on the left. Pinning direction:ltr in the author cascade overrides the UA
+       [dir=rtl] inheritance (author origin beats UA origin) and locks the whole
+       card LTR, fixing the headword position, pitch rows, glossary text and example
+       indentation in one shot. The content-css generator re-roots this html,body
+       rule at #entries-container, so in the browser extension it only affects the
+       popup container and never flips the host page's direction (zero leakage). */
+    direction: ltr;
 }
 
 /* TODO-893 v2 (symptom 2) — app-external global lookup ONLY: the visible card
@@ -118,12 +135,38 @@ html {
 
 .entry {
     padding: 8px 0;
+    /* TODO-1325 #5 part1: hoshiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
+       避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
+    scroll-margin-top: 14px;
+    scroll-margin-bottom: 14px;
 }
 
 .entry-header {
     display: flex;
     align-items: center;
     padding-top: 4px;
+}
+
+/* TODO-1325 #5 part1: 多词条焦点导航——当前词条(.entry-current)在其标题行左侧画一枚
+   #1a73e8 蓝三角(纯 CSS 边框三角，零字体依赖，与折叠三角同法，且不受注入词典字体影响)。
+   焦点态由 hoshiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
+   hoshiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
+   10px 留白里，垂直居中于标题行，随字号自适应。 */
+.entry-current .entry-header {
+    position: relative;
+}
+
+.entry-current .entry-header::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid #1a73e8;
 }
 
 .expression-scroll {
@@ -202,6 +245,41 @@ html {
     -webkit-user-select: none;
 }
 
+/* TODO-1325 #4: 内联 SVG 动作按钮共享基类。顶部发音/收藏/制卡、清空草稿、句子上下文
+   步进器全部挂 .inline-action-button：图标用 currentColor 跟随各按钮 color/opacity/
+   主题；SVG 尺寸随按钮 font-size 自适应（width/height:1em），故各角色类只保留自己的
+   font-size 与特例态（favorited 金色 / latest 绿色 / duplicate 位移等）。hover 提亮、
+   active 变淡、disabled 去手型——三态反馈统一。 */
+.inline-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.inline-action-button > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    /* 点到 SVG 也当成点了按钮：closest('.mine-button') 靠冒泡命中按钮，pointer-events
+       关掉子节点避免个别 WebView 把 target 停在 <path> 上导致 hit-test 抖动。 */
+    pointer-events: none;
+    fill: currentColor;
+}
+
+.inline-action-button:hover {
+    opacity: 1;
+}
+
+.inline-action-button:active {
+    opacity: 0.6;
+}
+
+.inline-action-button:disabled {
+    cursor: default;
+}
+
 .favorite-button.favorited {
     opacity: 1;
     color: #f5a623;
@@ -227,6 +305,19 @@ html {
 
 .mine-button:disabled {
     opacity: 0.15;
+}
+
+/* TODO-1338: 制卡后图标乱码根因修。制卡按钮的 +/✓/✓↩ 是「文本字形标记」(应用户要求保留
+   文本，不走 SVG，见 popup.js setMineState)。默认它会继承 Dart 注入到 html,body 的用户
+   自定义词典字体(popup_settings_injection.dartdictionaryFontStyleJs，!important)；若该字体
+   缺 U+2713/U+21A9 或把 ↩ 走彩色 emoji 呈现，制卡成功切成 ✓/✓↩ 时按钮就变豆腐块/彩色
+   emoji/乱码(与 TODO-1337 折叠三角乱码同根因)。这里给制卡按钮钉死一套「单色符号字体栈」
+   (不含 emoji 字体)，靠更高特指度(.mine-button 类 > body 元素；且直接声明恒压过继承)切断
+   对注入词典字体的继承，✓/✓↩ 稳定单色呈现。JS 侧另对 ↩ 追加 VS15(U+FE0E)强制文本呈现，
+   双保险。未制卡态 '+' 是 ASCII，任何字体都有，故制卡前从不乱码。 */
+.mine-button {
+    font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols2",
+        "Noto Sans Symbols", "DejaVu Sans", "Segoe UI", sans-serif !important;
 }
 
 /* TODO-393/405「查词窗口句子上下文制卡」：「上 N 句 / 下 N 句」上下文步进器。两行（上/下），
@@ -317,6 +408,36 @@ html {
 
 .audio-button {
     transform: translateY(1px);
+}
+
+/* TODO-1251：无音频源时的「暂无发音」反馈。showNoAudioHint 把按钮暂时加
+   .audio-unavailable（变灰），并在按钮旁弹一个锚定的 .audio-hint 提示。提示用
+   position:fixed + JS 算好的屏幕坐标，在 in-app 弹窗与 app 外覆盖窗都锚在按钮上/下方。 */
+.audio-button.audio-unavailable {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.audio-hint {
+    position: fixed;
+    z-index: 10000;
+    max-width: 220px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: nowrap;
+    color: var(--text-color, #fff);
+    background: var(--md-surface-container-high, rgba(30, 30, 30, 0.95));
+    border: 1px solid var(--md-outline-variant, rgba(255, 255, 255, 0.15));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.audio-hint.visible {
+    opacity: 1;
 }
 
 .entry-tags {
@@ -503,9 +624,31 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     background: transparent;
 }
 
+/* TODO-1325 #7（按用户 Niratan「卡片」决策，超越 TODO-877 的扁平化）：每部词典的义项块
+   (.glossary-group) 做成「玻璃卡片」——圆角(走 --hibiki-radius-card token，与弹窗其余卡片
+   统一) + 分层投影(近距 1px 贴地 + 远距柔性扩散) + 顶部内高光(inset 白线)营造玻璃质感；
+   展开/收起三角(下方 TODO-1337 纯 CSS 边框三角)作卡片头。皮肤纯 CSS，不改 DOM/JS，四端
+   (in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：行距仍走 margin-top
+   (grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距不撑 grid track。
+   暗色变体降内高光、加深投影。 */
 .glossary-group {
     position: relative;
     margin-top: 5px;
+    padding: 8px 10px;
+    border-radius: var(--hibiki-radius-card, 10px);
+    background: var(--surface-container);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.12),
+        0 2px 8px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme="dark"] .glossary-group {
+    background: var(--surface-container-high);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.5),
+        0 3px 10px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .glossary-group > summary {
@@ -516,14 +659,33 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     display: none;
 }
 
+/* TODO-1337: 词典分组的展开/收起三角用「纯 CSS 边框三角形」而非字体字形（旧: content:'▶'/'▼'）。
+   旧做法把三角当字体字形渲染，会继承弹窗当前字体——包括用户注入的自定义词典字体
+   (html,body{font-family:<custom>,...})；若该字体缺 U+25B6/U+25BC 或按 emoji 呈现，
+   某些平台/WebView（Android WebView、自定义词典字体、emoji 回退）下三角会渲染成空白/彩色
+   emoji/豆腐块，即「展开收起图标渲染不出来」。边框三角是纯几何，零字体依赖，全平台/全字体
+   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。 */
 .glossary-group > summary::before {
-    content: '▶ ';
-    font-size: 8px;
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    /* 收起态：右向三角（顶点朝右） */
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-right: 0;
+    border-left: 5px solid currentColor;
+    margin-right: 5px;
+    vertical-align: middle;
     opacity: 0.5;
 }
 
 .glossary-group[open] > summary::before {
-    content: '▼ ';
+    /* 展开态：下向三角（顶点朝下）——显式重设四边，避免残留收起态边框 */
+    border-top: 5px solid currentColor;
+    border-right: 4px solid transparent;
+    border-bottom: 0;
+    border-left: 4px solid transparent;
 }
 
 .glossary-group > div[data-dictionary] {
@@ -702,6 +864,15 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     font-size: 20px;
     line-height: 1;
     color: var(--on-surface-variant);
+    cursor: pointer;
+}
+
+/* TODO-1325 #4: 标签说明遮罩的关闭按钮同样走内联 SVG（× 图标），随 font-size 缩放。 */
+.overlay-close > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    fill: currentColor;
 }
 
 .category-section {
@@ -743,16 +914,24 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     display: grid;
     grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
     column-gap: 6px;
+    /* TODO-1325 / BUG-683 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
+       的词典卡片全部拉伸到该行最高卡片的高度。首行常含义项最多的词典（idx 0 那本），被
+       拉高后同行义项少的卡片下方留出大片空白玻璃盒，整体读作「第一个卡片特别高」。Niratan
+       的卡片是自然内容高度（单词典 display:block 单列，或多词典 JS masonry 按最短列打包，
+       从不等高拉伸，见 Features/Popup/popup.js layoutMasonry）。这里不改 DOM/JS、不引 JS
+       masonry（那是过度设计），只在锁死的多列 grid 上把纵轴对齐从 stretch 改成 start：每
+       张卡片贴其单元格顶部、取自身内容高度，首卡不再被行内最高卡片拉伸出特殊高度，观感与
+       Niratan 的自然高度玻璃卡片一致。列间距仍只用 column-gap，卡片间纵向间距仍由
+       .glossary-group 的 margin-top 提供（grid 不折叠 item margin），不产生双倍间距。 */
+    align-items: start;
 }
 
-/* TODO-877: revert TODO-849's per-dictionary card (border / radius / surface /
-   padding) back to Hoshi's flat glossary block (Hoshi Features/Popup/popup.css
-   .glossary-group :239-242: position:relative; margin-top:5px). Dictionaries are
-   now separated only by whitespace, matching Pictures/popup_dict.PNG. The
-   TODO-776 grid spacing model is untouched: spacing still flows through
-   margin-top (grid does NOT collapse item margins, so the parent only sets
-   column-gap), and min-width:0 still keeps long glossary content from forcing the
-   grid track wider than its 1fr share (which would overflow the popup). */
+/* TODO-1325 #7（超越 TODO-877/TODO-849 的往返）：per-dictionary 卡片皮肤（圆角/投影/
+   底色/内边距/内高光）现由上面的基类规则 `.glossary-group` 统一承载（用户 Niratan 卡片
+   决策）。本节内规则只保留 TODO-776 的 grid 间距模型：行距走 margin-top（grid 不折叠 item
+   margin，父只设 column-gap），min-width:0 让长义项不把 1fr grid track 撑宽溢出弹窗。卡片的
+   padding 走 border-box 的内边距，不影响 grid track 宽度。切勿把卡片外观(border/radius/
+   background)搬到本节——统一在基类，避免两处皮肤漂移。 */
 .glossary-section > .category-body > .glossary-group {
     margin-top: 5px;
     min-width: 0;
@@ -780,16 +959,59 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     align-items: baseline;
     gap: 6px;
     margin-top: 2px;
+    /* TODO-1305 / BUG-pitch-reading-mined: 音高发音区（片假名 reading 逐 mora +
+       [n] 音高数字 + IPA）是纯展示，不参与查词/复制。加 user-select:none 杜绝拖选
+       把片假名 reading（如 カンロク）留在原生选区、制卡时被烤进 Anki 卡的
+       SelectionText 字段。词典正文 glossary 是独立兄弟区块，仍保留 user-select:text
+       可选中做嵌套查词，零影响。*/
+    user-select: none;
+    -webkit-user-select: none;
 }
 
+/* TODO-1325 #1: 音高来源彩色药丸。此前 display:none 把音高词典名（如「NHK 日本語
+   発音アクセント辞典」）藏掉，用户看不到某条音高的出处。改成与 .frequency-dict-label
+   同一视觉家族的填充药丸：填充色接 MD3 --md-primary（Dart 注入的动态取色），文字用
+   配对的 --md-on-primary（同批注入），浅色主题得白字、深色主题得深字，两主题都保证
+   对比度（不写死 Niratan 的 #94a6eb）。圆角走满圆 pill。 */
 .pitch-dict-label {
-    display: none;
+    display: inline-block;
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 1px 6px;
+    margin-right: 4px;
+    border-radius: 999px;
+    background-color: var(--md-primary, var(--primary-color, #386A58));
+    color: var(--md-on-primary, #ffffff);
+    font-weight: 600;
+    white-space: nowrap;
+    vertical-align: middle;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
+/* TODO-1354（按 Niratan 文字位置对齐，参考 W1ght/Niratan compactPitchAccents）：音高
+   读音条从「circle 项目符号 + 每条各占一行」改为「行内单行、' | ' 分隔」。旧版把每条
+   音高（多词典 / 多读法）渲染成 list-item 竖排，音高数字 [n] 跟着各自换行、与来源药丸
+   (.pitch-dict-label)、读音基线错位，用户看到「音高数字浮动」。改为 inline 后：来源药丸 +
+   读音 + [n] 同一行基线平铺，多条用暗淡 ' | ' 分隔（单条无分隔，观感等同旧单行），与
+   Niratan 的整齐单行一致。IPA 转写(.pitch-transcriptions)是独立兄弟块、不受影响；音高
+   overline(.pronunciation-mora-line) 仍绝对定位在读音上方，逻辑不变。 */
 .pitch-entries {
-    list-style: circle inside;
+    list-style: none;
     margin: 0;
     padding: 0;
+    display: inline;
+}
+
+.pitch-entries > li {
+    display: inline;
+    white-space: nowrap;
+}
+
+.pitch-entries > li:not(:last-child)::after {
+    content: " | ";
+    opacity: 0.6;
+    white-space: normal;
 }
 
 /* TODO-688: IPA transcriptions rendered inside the pitch group, as small inline

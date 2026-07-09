@@ -60,6 +60,50 @@ void main() {
       expect(plan[1].frameCount, 5);
     });
 
+    test(
+        'mid-frame cue start switches on the covering frame '
+        '(early, never late; TODO-1147)', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 250),
+        _cue(startMs: 250, endMs: 900),
+      ];
+      // fps=10 → 100ms/frame，帧尾采样。cue1 起点 250ms 落在第 2 帧显示区间
+      // [200,300) 内 → 第 2 帧就切换（提前 50ms），绝不等到第 3 帧（迟 50ms）。
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 900,
+        fps: 10,
+      );
+      expect(plan.length, 2);
+      expect(plan[0], const ClipFrameSpec(highlightCueIndex: 0, frameCount: 2));
+      expect(plan[1], const ClipFrameSpec(highlightCueIndex: 1, frameCount: 7));
+    });
+
+    test(
+        '12fps: switch frame covers the cue start (frame 12 for a 1040ms '
+        'cue start), never one frame late (TODO-1147)', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 1040),
+        _cue(startMs: 1040, endMs: 2000),
+      ];
+      // fps=12 → Δ≈83.33ms，总帧数 ceil(2000/83.33)=24。cue1 起点 1040ms 落在
+      // 第 12 帧显示区间 [1000,1083) 内 → 第 12 帧切换（提前 40ms）；旧的帧起点
+      // 采样要等第 13 帧（1083ms 起，迟 43ms）——这正是 12fps 量化「只迟不早」
+      // 的迟钝方向，本用例钉死新方向。
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 2000,
+        fps: 12,
+      );
+      expect(plan.length, 2);
+      expect(
+          plan[0], const ClipFrameSpec(highlightCueIndex: 0, frameCount: 12));
+      expect(
+          plan[1], const ClipFrameSpec(highlightCueIndex: 1, frameCount: 12));
+    });
+
     test('adjacent same-index frames merge into one run', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(startMs: 0, endMs: 300),

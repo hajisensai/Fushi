@@ -1,0 +1,13 @@
+## BUG-574 · 浏览器扩展 Shift 悬停查词失效复诉
+- **报告**：2026-07-07（用户：TODO-1132 复诉「在浏览器按 shift 没反应了」）
+- **真实性**：❌ 代码层未复现——Shift 悬停查词主接线经实证驱动完好。怀疑对象（TODO-1132 v40、1219 P1/P2/P3、1263）均未拆断该路径。
+- **[x] ① 无需代码修复** — 沿真实代码路径逐一核验并实证驱动，查词主路径完好：
+  - 路径：`tools/browser-extension/content.js:614` 顶层 `document.addEventListener('mousemove')` → `:616` `if (!e[HIBIKI_MOD])`（`HIBIKI_MOD='shiftKey'` @ `:21`）→ `:625` `hoshiSelection.getCharacterAtPoint` → `:644` `selectFromPosition` → `:658` `hibikiSendLookup(term, hibikiAnchorRect)` → `:677` `chrome.runtime.sendMessage({ type:'lookup', term })` → `background.js:154` `POST /api/lookup/dictionary`。
+  - 5657c55d1（TODO-1132）只是把发查词从 mousemove 抽成 `hibikiSendLookup()`，行为等价；`vendor/selection.js`（`getCharacterAtPoint`/`selectFromPosition`）在 `18b241ce2..HEAD` **零改动**；`background.js` lookup 端点/`cfg()`/`authHeader` **零改动**；`hibiki-defaults.js` token 注入 **零改动**。
+  - `vendor/popup.js` 的 1218① 守卫（`hibikiPopupEventOutside`）是**修复**（把 popup.js 自带的 mousemove 限定在 `#entries-container` 内，不再在宿主页抢 `selectText` 拆掉 content.js 刚画的高亮），不是回归。`vendor/content.css` 全部作用域到 `#entries-container`（TODO-1090），不污染宿主页。
+  - 实证：vm 加载真实 content.js（仅 stub 浏览器全局），捕获其注册的 mousemove 监听器，用 `{shiftKey:true}` 触发 → `dataset.hibikiTerm='世界'` 且发出恰好一次 `{type:'lookup',term:'世界'}`；`shiftKey:false` 不发查词。
+  - **真实「没反应」的可控成因（需用户在真机确认，均非本仓库代码 bug）**：① 扩展是旧缓存版——页面 Console 应有 `[Hibiki] content script v40 loaded`，或 `document.documentElement.dataset.hibikiCs==='v40'`；缺失 → 重载页面/从 app 重装扩展。② app/sync server 未开或 token 不符 → 查词发出但 401/连不上 → 无弹窗；`curl -u hibiki:<token> -X POST http://127.0.0.1:19633/api/lookup/dictionary -H 'Content-Type: application/json' -d '{"term":"世界"}'` 期望 200（参考 BUG-530 / token 恢复）。③ 目标页文字非常规 DOM（canvas/shadow）导致 `getCharacterAtPoint` 命中失败——Shift 悬停时读 `dataset.hibikiCaret` 诊断（`null`＝没命中字）。
+- **[x] ② 加自动化测试** —
+  - 行为守卫（最强层，实证驱动真 content.js）：`tools/browser-extension/shift-hover.test.js`（`node --test`，3 例：注册 mousemove / Shift 命中发 lookup / 无 Shift 不发）。
+  - 源码扫描守卫（跑在 `flutter test` 主门禁，两镜像 + 逐字节一致）：`hibiki/test/lookup/browser_extension_lookup_highlight_guard_test.dart` 新增「Shift 悬停查词接线未断」用例，守住 `HIBIKI_MOD='shiftKey'`、顶层 mousemove、`if (!e[HIBIKI_MOD])` 门、`sendMessage({type:'lookup'})`、`hibikiSendLookup(term, hibikiAnchorRect)` 分发点。
+- **备注**：不改任何随包扩展文件，两镜像保持逐字节一致；未 bump 版本（无 shippable 改动，仅新增守卫测试）。后续若用户真机确认查词发出但无弹窗，按上面②走 BUG-530/token 恢复流程，不在 content.js 打补丁。

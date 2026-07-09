@@ -1,0 +1,40 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+
+/// 无头复现辅助（TODO-1229 / BUG-594）：把**真实**分页 / 连续横排 shell（`ReaderPaginationScripts
+/// .shellScript` 的完整产物，含 `_sharedJs` 与初始 `restoreProgress(0)` 引导）写到系统 temp，
+/// 供 `tool/reader_pitch_headless/*.mjs`（headless Chrome）注入真 shell 复现章首插图跳变。
+///
+/// CI 跑不到真 WebView，故真实渲染层的「初始落插图页后被重锚二次跳到首文本」只能靠 headless
+/// Chrome + 本 dump 复现。生成后跑：
+///   flutter test test/reader/reader_headless_shell_dump_test.dart   # 生成 shell 到 temp
+///   node tool/reader_pitch_headless/chapter_start_reanchor_probe.mjs # 复现/验证
+///
+/// 产物文件（systemTemp）：hoshi_shell_paginated.html / hoshi_shell_continuous.html
+/// （另写 hoshi_shell_fwd.html / hoshi_shell_bwd.html 兼容既有 matrix_probe.mjs）。
+/// 本测试永远 pass——它只是把真 shell 落盘，不断言渲染行为（那由 headless probe 断言）。
+void main() {
+  test('dump paginated + continuous horizontal shell to systemTemp', () {
+    final String paginated = ReaderPaginationScripts.shellScript(
+      initialProgress: 0.0,
+      initialCharOffset: -1,
+      continuousMode: false,
+      vnMode: false,
+    );
+    final String continuous = ReaderPaginationScripts.shellScript(
+      initialProgress: 0.0,
+      initialCharOffset: -1,
+      continuousMode: true,
+      vnMode: false,
+    );
+    final String tmp = Directory.systemTemp.path;
+    File('$tmp/hoshi_shell_paginated.html').writeAsStringSync(paginated);
+    File('$tmp/hoshi_shell_continuous.html').writeAsStringSync(continuous);
+    File('$tmp/hoshi_shell_fwd.html').writeAsStringSync(paginated);
+    File('$tmp/hoshi_shell_bwd.html').writeAsStringSync(paginated);
+    expect(paginated.contains('window.hoshiReader'), isTrue);
+    expect(continuous.contains('window.hoshiReader'), isTrue);
+  });
+}

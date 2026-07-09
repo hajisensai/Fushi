@@ -15,11 +15,14 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/video_loading_overlay.dart';
@@ -28,9 +31,16 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+    show
+        YoutubeCaptionTrack,
+        resolveYoutubeCaptionTracks,
+        resolveYoutubeCaptionCues,
+        pickBestYoutubeCaptionTrack;
 import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
@@ -51,10 +61,18 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_screenshot_filename.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
+// TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
+// （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:hibiki/src/shortcuts/shortcut_action.dart'
+    show ShortcutAction, ShortcutScope;
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/audio_energy_probe.dart';
+import 'package:hibiki/src/media/video/waveform_envelope_cache.dart';
 import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
@@ -89,6 +107,7 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
@@ -101,11 +120,13 @@ part 'video_hibiki/danmaku.part.dart';
 part 'video_hibiki/clip_export.part.dart';
 part 'video_hibiki/controls_visibility.part.dart';
 part 'video_hibiki/episode.part.dart';
+part 'video_hibiki/flicker_notice.part.dart';
 part 'video_hibiki/subtitle.part.dart';
 part 'video_hibiki/controls_popover.part.dart';
 part 'video_hibiki/volume_osd.part.dart';
 part 'video_hibiki/chapter.part.dart';
 part 'video_hibiki/audio_track.part.dart';
+part 'video_hibiki/quality.part.dart';
 part 'video_hibiki/side_panel.part.dart';
 part 'video_hibiki/controls_theme.part.dart';
 part 'video_hibiki/speed.part.dart';
@@ -482,10 +503,11 @@ abstract class VideoHibikiTestHooks {
 enum _VideoSidePanelKind {
   speed,
   settings,
-  subtitleSources,
-  secondarySubtitleSources,
-  audioTracks,
+  // TODO-1351：`subtitleSources` / `audioTracks` 两个「外面浮的轨切换器」已删——字幕轨
+  // 收进设置面板「字幕」分类顶部、音频轨收进「音频」分类。TODO-1350：`secondarySubtitleSources`
+  // 副字幕浮层也删——副字幕源改内联在「字幕」分类的可展开区里就地切换（不再跳独立窗口）。
   chapters,
+  quality,
 }
 
 class _VideoSidePanelState {
@@ -731,6 +753,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   VideoPlayerController? _controller;
 
+  /// TODO-1276：首开视频「转两次圈」根治开关。
+  ///
+  /// 根因：首开路径有**两个独立的加载指示器**接力——① 页级 [VideoLoadingOverlay]
+  /// （[_buildLoadingBody]，在 `_controller`/`videoController` 为空时显示）覆盖
+  /// `controller.load()`（open+seek+play）阶段；② `load()` 返回、[Video] 挂载后，
+  /// media_kit 自带缓冲圈继续覆盖「已下发 play 但首帧尚未解码出画」的窗口。两个圈
+  /// 背景/样式不同（页级在 surface 底、media_kit 在纯黑底），用户看到转圈消失又出现
+  /// = 「转两次圈」。
+  ///
+  /// 修复：**首开**时把页级加载态保持到首帧真正解码出画
+  /// （[VideoPlayerController.hasFirstFrame]）再挂载 [Video]——此刻 media_kit 已有帧、
+  /// 不再缓冲 → 全程只有一个圈。换集（复用 controller，`_controller != null`）不改动
+  /// 此值（保持 true），维持既有「换集只走 media_kit 缓冲圈」行为，且不触碰全屏路由
+  /// 复用的同一 VideoController 实例（BUG-120/121）。
+  bool _videoReadyToShow = false;
+
+  /// TODO-1276：首帧就绪兜底定时器。解码异常机型（TODO-984「闪烁+空白无画面」）/ 纯
+  /// 音频容器首帧永不就绪时，超时后仍切给 media_kit 由其自有状态（黑屏/缓冲圈）接管，
+  /// 绝不无限转圈——只把「上界」从两个圈收敛为一个圈，保留旧行为下界。
+  Timer? _firstFramePromoteTimer;
+
+  /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
+  /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
+  /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
+  final WaveformEnvelopeCache _subtitleWaveformCache = WaveformEnvelopeCache();
+
   /// 进度条 hover 缩略图预览调度器（TODO-669，方案 A）。仅桌面本地文件视频时创建；
   /// 移动端 / 远端流为 null（不取帧，仅经 [_onSeekBarHover] 走 timestampOnly）。
   /// 换集（视频路径变）时重建（绑新离屏取帧器），页面 dispose 时一并销毁。
@@ -807,6 +855,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelState?>(null);
 
+  /// TODO-1351：下次构建设置面板时要定位到的分类（`audio` / `subtitle` / null=默认）。
+  /// 「音频轨」「字幕轨」按钮把轨切换收进设置面板对应 tab，靠它把面板直接开在目标分类。
+  String? _settingsInitialCategory;
+
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
   final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
@@ -880,6 +932,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// Page-level level HUD value (0..100). Null means hidden.
   final ValueNotifier<_VideoLevelHudState?> _levelHudNotifier =
       ValueNotifier<_VideoLevelHudState?>(null);
+
+  /// TODO-1119 / BUG-545：Windows「高显卡占用黑屏闪烁」运行时提示条可见性。控制器判定
+  /// 疑似黑闪时经 [_handleSuspectedBlackFlicker] 置 true；用 [ValueNotifier] 而非 setState
+  /// （提示条挂在 media_kit controls builder 的 Stack，全屏路由也需即时开关，与其它 OSD
+  /// 同源，BUG-120）。方法域在 flicker_notice.part.dart。
+  final ValueNotifier<bool> _blackFlickerNoticeNotifier =
+      ValueNotifier<bool>(false);
+
+  /// 本会话是否已弹过一次黑闪提示（每会话最多一次；与偏好「不再提示」共同门控）。
+  bool _blackFlickerNoticeShown = false;
 
   /// Auto-hide timer for the page-level level HUD.
   Timer? _levelHudTimer;
@@ -1181,20 +1243,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
 
+  /// TODO-1307 字幕后置：用户在「字幕后置异步解析」间隙是否已显式关闭字幕
+  /// （[_clearRemoteSubtitle]）。为真时 [_resolveDeferredYoutubeCaptions] 只回填 cue 供菜单
+  /// 重选、不自动抢占应用（尊重用户选择）。每次 [_loadRemoteEpisode] 起播时重置为 false。
+  bool _remoteSubtitleUserDismissed = false;
+
   /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / `off:`=用户显式关闭哨兵
   /// （[SubtitleSource.offSentinel]，TODO-818） / null=无偏好或远端清字幕）；用于字幕
   /// 源菜单高亮当前项。
   String? _currentSubtitleSource;
 
-  /// 当前选中的副字幕源持久化值（TODO-857 视频双字幕 Path A）：与
+  /// 当前选中的副字幕源持久化值（TODO-857 / TODO-1312 视频双字幕）：与
   /// [_currentSubtitleSource] 同款四态编码（外挂路径 / `embedded:<n>` / `off:` /
-  /// null）。副字幕由 libmpv `secondary-sid` 自渲染（不进 cue 流，不可查词），与主
-  /// 字幕独立；首版仅支持内嵌轨。用于副字幕源菜单高亮当前项。
+  /// null）。TODO-1312 起副字幕改走 Flutter overlay 副层 cue 流（[VideoPlayerController.
+  /// setSecondaryCues]，可逐字符查词），不再 libmpv `secondary-sid` 自渲染；持久化格式
+  /// 沿用不变。恢复仅支持内嵌轨。用于副字幕源菜单高亮当前项。
   String? _currentSecondarySubtitleSource;
 
   /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
   /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
   String? _currentAudioTrackId;
+
+  /// HLS 画质（TODO-1158）：当前视频若是 HLS master playlist（m3u8 直链，含多档码率
+  /// variant），[_hlsMasterUri] 记 master URL、[_hlsVariants] 是解析出的档位（高到低
+  /// 排序）、[_selectedHlsVariantIndex] 是当前选中档（-1=自动/master ABR）。非 HLS /
+  /// media playlist 时三者为空态（无画质菜单）。切档走 [_switchHlsVariant]（换 variant
+  /// URL 重载，保持播放位置）。[_hlsDetectSeq] 是异步探测去重位（换片时旧探测结果丢弃）。
+  String? _hlsMasterUri;
+  List<HlsVariant> _hlsVariants = const <HlsVariant>[];
+  int _selectedHlsVariantIndex = -1;
+  int _hlsDetectSeq = 0;
 
   bool _clipExportMarking = false;
   bool _clipExporting = false;
@@ -1255,7 +1333,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   AppModel get appModel => _appModel;
 
-  bool get _isRemote => widget.remoteInfo != null;
+  /// TODO-1157：书架里「粘贴 URL 导入」的流媒体书（[isStreamVideoBook]）在 [_init] 里
+  /// 按 videoPath/streamSpecJson 重建的播放客户端 + info。非流媒体书 / LAN 远端书恒 null。
+  /// 让流媒体书像本地视频一样从书架点开，却复用与「导入即播」完全一致的远端播放路径
+  /// （prefs 断点、无本地文件），行为与旧临时流播放一致（Never break userspace）。
+  RemoteVideoInfo? _resolvedStreamInfo;
+  UrlStreamVideoClient? _resolvedStreamClient;
+
+  /// 有效远端 info/client：LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用
+  /// [_init] 重建的 _resolvedStream*。二者互斥、至多一个非空。
+  RemoteVideoInfo? get _effectiveRemoteInfo =>
+      widget.remoteInfo ?? _resolvedStreamInfo;
+  RemoteVideoClient? get _effectiveRemoteClient =>
+      widget.remoteClient ?? _resolvedStreamClient;
+
+  bool get _isRemote => _effectiveRemoteInfo != null;
 
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => appModel.targetLanguage.locale.languageCode;
@@ -1394,6 +1486,44 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
+  /// TODO-1276/1297：首开时武装「就绪即挂载 [Video]」的监听 + 兜底定时器。
+  ///
+  /// [controller] 在宽高流（首帧解码出画）或缓冲流翻转时 [notifyListeners]，
+  /// [_promoteVideoReadyOnFirstFrame] 据此重评 [isReadyForFirstPaint]（首帧已出画且
+  /// 缓冲结束），就绪后把 [_videoReadyToShow] 翻真、挂载 media_kit（此刻已有帧、不缓冲
+  /// → 单圈，不会接力出第二个缓冲圈）。若始终不就绪（解码异常机型 / 纯音频容器 /
+  /// 缓冲久拖），[_firstFramePromoteTimer] 兜底超时仍切给 media_kit，绝不无限转圈。
+  /// 幂等：重复武装先撤销旧监听/定时器。
+  void _armFirstFramePromotion(VideoPlayerController controller) {
+    _firstFramePromoteTimer?.cancel();
+    controller.removeListener(_promoteVideoReadyOnFirstFrame);
+    controller.addListener(_promoteVideoReadyOnFirstFrame);
+    _firstFramePromoteTimer = Timer(
+      const Duration(milliseconds: 2500),
+      () => _promoteVideoReady(),
+    );
+  }
+
+  /// [VideoPlayerController] 宽高流回调：首帧解码出画后即提升可见态。
+  void _promoteVideoReadyOnFirstFrame() {
+    if (_videoReadyToShow) return;
+    // TODO-1297：就绪 = 首帧已出画**且**缓冲结束（[isReadyForFirstPaint]），而非仅
+    // [hasFirstFrame]——否则解码出首帧但仍在缓冲时提前挂载 [Video]，media_kit 缓冲圈
+    // 接力显示成「进度条已缓冲但还在加载」的第二个圈。
+    if (_controller?.isReadyForFirstPaint ?? false) _promoteVideoReady();
+  }
+
+  /// 把 [_videoReadyToShow] 翻真（挂载 [Video]），并撤销首帧监听 + 兜底定时器。
+  /// 一次性：已就绪则空转。首帧监听 / 兜底定时器 / 快路径三处都汇聚到此。
+  void _promoteVideoReady() {
+    if (_videoReadyToShow) return;
+    _firstFramePromoteTimer?.cancel();
+    _firstFramePromoteTimer = null;
+    _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
+    if (!mounted) return;
+    setState(() => _videoReadyToShow = true);
+  }
+
   Future<void> _init() async {
     // TODO-1063: 视频毕业为常驻媒体类型后，配置方案的「媒体类型绑定」也支持
     // 绑定 profile 到 'video'。打开视频即解析并应用绑定的 profile（与阅读器
@@ -1410,6 +1540,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
     _bookRow = row;
+
+    // TODO-1157：书架里「粘贴 URL 导入」的流媒体书（videoPath 是 http/https）不走本地
+    // 文件加载路径，而是按 videoPath/streamSpecJson 重建流客户端，复用与「导入即播」一致
+    // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
+    // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
+    if (isStreamVideoBook(row)) {
+      // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
+      // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
+      _setLoadingPhase(_VideoLoadPhase.connecting);
+      try {
+        final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
+            await buildStreamVideoLaunch(row);
+        if (!mounted) return;
+        _resolvedStreamInfo = launch.info;
+        _resolvedStreamClient = launch.client;
+      } catch (e) {
+        debugPrint('[VideoHibikiPage] stream book launch build failed: $e');
+        if (mounted) setState(() => _failed = true);
+        return;
+      }
+      await _initRemote();
+      return;
+    }
 
     // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）+ 音画延迟
     // （跨重启保留）+ 播放倍速（per-book 偏好，速度记忆）。
@@ -1462,7 +1615,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Future<void> _initRemote() async {
-    final RemoteVideoInfo info = widget.remoteInfo!;
+    final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     _currentAudioTrackId = null;
@@ -1501,9 +1654,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     int? initialPositionMsOverride,
   }) async {
-    final RemoteVideoInfo info = widget.remoteInfo!;
-    final RemoteVideoClient client = widget.remoteClient!;
+    final RemoteVideoInfo info = _effectiveRemoteInfo!;
+    final RemoteVideoClient client = _effectiveRemoteClient!;
     final int seq = ++_episodeLoadSeq;
+    // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
+    // [_resolveDeferredYoutubeCaptions]）。
+    _remoteSubtitleUserDismissed = false;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
@@ -1520,6 +1676,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
       if (client is UrlStreamVideoClient && client.preresolvedCues.isNotEmpty) {
         cues = client.preresolvedCues;
+        // TODO-1302：登记 YouTube 字幕轨。预解析 cue 直接注入 overlay，但既不是 host
+        // 外挂字幕（不写 _remoteSubtitlePath）也不是内嵌轨枚举（_remoteEmbeddedSubtitleTracks
+        // 空），故远端字幕菜单原来渲染不出它、_currentSubtitleSource 留 null 让「关闭」被
+        // 误显选中、用户选不回来。用非空合成源哨兵 [_kYoutubeCaptionsSource] 标识它，让菜单
+        // 渲染并高亮「YouTube 字幕」行、「关闭」不再被误选。_applyLoad 内 externalSubtitlePath
+        // ==null 时保留 _currentSubtitleSource（见其 setState），故此处赋值在 load 后仍生效；
+        // 关闭走既有 _clearRemoteSubtitle（置 null）。
+        _currentSubtitleSource = _kYoutubeCaptionsSource;
       } else if (urls.subtitleUrl != null) {
         // TODO-1213：进入「正在下载字幕…」阶段（host 若回调 onProgress 则显确定性进度）。
         _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
@@ -1557,18 +1721,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         initialPositionMs: initialPositionMs,
         startIntent: startIntent,
         externalSubtitlePath: externalSub,
+        // TODO-1280：分离流的 audio-only 流作为播放音轨，随 load 在恢复 seek + play() 之前
+        // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
+        // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
+        externalAudioTrackUrl: urls.audioStreamUrl,
       );
-      // TODO-1000：分离流（YouTube video-only）——外挂 audio-only 流为播放音轨，并把它设为
-      // 制卡音频源（视频流无音轨，音频段须从 audio-only 流裁）。_applyLoad 已把 miningSource
-      // 设为视频流（GIF/帧从它裁），这里补音频侧。
-      if (urls.audioStreamUrl != null) {
-        _controller?.setMiningAudioSourceOverride(urls.audioStreamUrl);
-        await _controller?.setExternalAudioTrack(urls.audioStreamUrl!);
-      }
+      // TODO-1301（BUG-600）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
+      // 一致——muxed 挖矿流自带音轨时置 null，让引擎回落 miningSource(muxed 360p) 抽音频
+      // （实测 2s 出 AAC）；仅无 muxed 的纯分离流才指向 audio-only 流。此前无条件指向
+      // audio-only DASH 流 → ffmpeg `-ss` HTTP seek stall→120s 超时→无句子音频，且
+      // requireAudio 默认 true 致 mine 整卡 abort→已抽好的 GIF 连坐丢弃（既无音频也无 GIF）。
+      // 播放音轨已在 _applyLoad→controller.load 内、seek/play 之前外挂（见上
+      // externalAudioTrackUrl），此处只补制卡侧（时序无关）。
+      _controller?.setMiningAudioSourceOverride(
+        urls.miningVideoHasAudio ? null : urls.audioStreamUrl,
+      );
       // TODO-1000（BUG-528）：制卡 GIF/帧改用低分辨率流（muxed 360p 等）。_applyLoad 已把
       // miningSource 设成了播放流（可达 4K）——从 4K 流网络抽 GIF 会超时，这里覆盖成小流。
       if (urls.miningVideoUrl != null) {
         _controller?.setMiningSourceOverride(urls.miningVideoUrl);
+      }
+      // TODO-1302/1307 track-list-first：快解析 gate 起播后（首帧就绪、不阻塞播放）异步解析
+      // YouTube 字幕**轨列表**填字幕轨选择器 + 自动应用最佳轨（懒下载其 cue）。仅 YouTube 客户端
+      // （youtubeCaptionsUrl 非空）触发；见 [_resolveDeferredYoutubeCaptionTracks]。
+      if (client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null) {
+        unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq));
       }
     } catch (e, stack) {
       debugPrint(
@@ -1576,6 +1753,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
       if (mounted) setState(() => _failed = true);
     }
+  }
+
+  /// TODO-1302/1307 track-list-first：快解析 gate 起播后异步解析 YouTube 字幕**轨列表**
+  /// （[resolveYoutubeCaptionTracks]，单次 getPlayerResponse，**不下载 cue 正文**），回填
+  /// [UrlStreamVideoClient.youtubeCaptionTracks] 填字幕轨选择器——列表出现不依赖 cue 就绪，
+  /// 修「快加载致字幕整个消失」的回归。再自动应用最佳轨（人工>ASR·精确语言，
+  /// [pickBestYoutubeCaptionTrack]，懒下载其 cue）以保留「字幕默认显示」。
+  ///
+  /// 用户在解析间隙已关字幕 / 选别的（[_currentSubtitleSource]!=null 或
+  /// [_remoteSubtitleUserDismissed]）时只填列表、不抢占。best-effort：无字幕轨静默返回，视频照播。
+  Future<void> _resolveDeferredYoutubeCaptionTracks(
+    UrlStreamVideoClient client,
+    int seq,
+  ) async {
+    final String? captionsUrl = client.youtubeCaptionsUrl;
+    if (captionsUrl == null) return;
+    // 母语（autoTranslate 目标）= 当前 UI locale（TODO-1314 A3 母语对照）。
+    final String nativeLang = LocaleSettings.currentLocale.languageCode;
+    final List<YoutubeCaptionTrack> tracks = await resolveYoutubeCaptionTracks(
+      captionsUrl,
+      preferLang: _targetLangCode,
+      autoTranslateTo: nativeLang,
+    );
+    if (!mounted || seq != _episodeLoadSeq) return;
+    if (tracks.isEmpty) return;
+    // 列表先立即可见（字幕轨选择器渲染这些轨；不依赖 cue 下载成败）。
+    client.setYoutubeCaptionTracks(tracks);
+    setState(() {});
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool userChoseSubtitle =
+        _currentSubtitleSource != null || _remoteSubtitleUserDismissed;
+    // 用户已选别的字幕 / 关字幕：只填列表（可再选），不覆盖选择。
+    if (userChoseSubtitle) return;
+    // 默认自动应用最佳轨（等价「字幕默认可见」）：懒下载其 cue → overlay。
+    final YoutubeCaptionTrack? best =
+        pickBestYoutubeCaptionTrack(tracks, preferLang: _targetLangCode);
+    if (best == null) return;
+    await _applyYoutubeCaptionTrack(controller, best, loadSeq: seq);
   }
 
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
@@ -1666,7 +1882,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         .setPref(videoRemotePositionEpisodePrefKey(uid, episodeIndex), clamped);
     await appModel.prefsRepo
         .setPref(videoRemotePositionEpisodeAtPrefKey(uid, episodeIndex), nowMs);
-    final RemoteVideoClient? client = widget.remoteClient;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
       await client.putRemoteVideoPosition(
@@ -1692,10 +1908,62 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String? externalSub = paths.subtitleSource;
     int? graphicStreamIndex;
 
+    // TODO-1246：外挂文本字幕（.srt/.ass/.ssa/.vtt）的真相源是磁盘档案，不是 DB 缓存。
+    // DB 里的 AudioCue **不携带**解析期的行内/cue 级样式 markup（[AudioCue.markup] 瞬态、
+    // DB 往返丢弃，见 audiobook_model.dart），故单视频重开时 loadCues 命中的 cue 恒
+    // `markup==null` → 字幕 overlay 的「尊重字幕自带样式」开关（respectAssStyle）拿不到
+    // cueStyle，字幕永远退回 app 统一样式（用户报：开了开关 .ass 自带字体/主色/描边仍不
+    // 生效）。当持久化字幕源是仍在磁盘上的外挂文本档案时，直接重解析档案拿回带 markup 的
+    // cue（重解析文本档案廉价，不触发 BUG-081 关注的内嵌轨 ffmpeg 重抽取）；重解析空
+    // （档案被删/损坏）时保留 DB 缓存 cue（内容仍在、仅缺样式），不倒退功能。
+    // 播放列表换集走 _restorePersistedSubtitle→loadCuesForSource 已是重解析、天然带 markup，
+    // 故只需修单视频路径。
+    final String? rehydratePath = subtitleExplicitlyOff
+        ? null
+        : _rehydratableExternalSubtitlePath(externalSub);
+
+    // TODO-1246 补全：**内嵌** ASS/SSA 轨（anime MKV 最常见）的样式真相源是视频容器，
+    // 但抽取后的缓存档案（`sub_<n>.ass`，含 [V4+ Styles]）已是磁盘上物化的 .ass。外挂
+    // 档案分支（[_rehydratableExternalSubtitlePath]）只认绝对路径、拒 `embedded:<n>`，故
+    // 单视频重开内嵌轨仍拿 DB 缓存的无 markup cue（[loadCues] 命中且非空）→ cueStyle==null
+    // → 「尊重字幕自带样式」(respectAssStyle) 对内嵌轨完全不生效（用户报「现在完全没用」）。
+    // 修复：DB 命中的**文本** cue（cues 非空）且持久化源是内嵌轨时，经
+    // [_restorePersistedSubtitle]（与播放列表换集同一重解析路径）重解析已抽取的缓存档案，
+    // 恢复 cueStyle。缓存命中不触发 ffmpeg 重抽取；图形轨（无文本 cue → cues 为空）不进本
+    // 分支，仍由下方 `cues.isEmpty` 分支经 libmpv 画面渲染恢复（不倒退 BUG-122）。
+    final bool rehydrateEmbedded = !subtitleExplicitlyOff &&
+        rehydratePath == null &&
+        cues.isNotEmpty &&
+        SubtitleSource.isEmbeddedPersisted(externalSub);
+
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
     // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
     if (subtitleExplicitlyOff) {
       cues = const <AudioCue>[];
+    } else if (rehydratePath != null) {
+      // 外挂文本字幕：重解析磁盘档案作为真相源，恢复 cue 级 / 行内样式 markup（TODO-1246）。
+      final List<AudioCue> reparsed =
+          await _loadExternalSubtitleCues(rehydratePath, widget.bookUid);
+      if (reparsed.isNotEmpty) {
+        cues = reparsed;
+      }
+      // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
+    } else if (rehydrateEmbedded) {
+      // 内嵌文本轨：重解析已抽取的缓存档案恢复 cue 级 / 行内样式 markup（TODO-1246）。
+      final ({
+        String persisted,
+        List<AudioCue> cues,
+        int? graphicStreamIndex,
+      })? restored = await _restorePersistedSubtitle(
+        videoPath: paths.videoPath,
+        persisted: externalSub,
+        crossEpisode: false,
+      );
+      if (restored != null && restored.cues.isNotEmpty) {
+        cues = restored.cues;
+        externalSub = restored.persisted;
+      }
+      // restored 为空（缓存被清 / 容器不可读）：保留 DB 缓存 cues，仅缺样式不缺内容。
     } else if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
@@ -1964,6 +2232,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 若 [source] 是仍在磁盘上的**外挂文本字幕档案**（.srt/.ass/.ssa/.vtt），返回其路径供
+  /// 重解析拿回样式 markup（TODO-1246）；否则返回 null：内嵌轨（`embedded:<n>` 无扩展名，
+  /// [subtitleFormatForPath] 判 null）、关闭哨兵、`null`/空、或档案已不在磁盘上（重解析无源）。
+  /// 内嵌轨不在此重解析（避免 BUG-081 关注的 ffmpeg 重抽取），保留 DB 缓存 cue。
+  String? _rehydratableExternalSubtitlePath(String? source) {
+    if (source == null || source.isEmpty) return null;
+    if (SubtitleSource.isOff(source)) return null;
+    if (subtitleFormatForPath(source) == null) return null;
+    if (!File(source).existsSync()) return null;
+    return source;
+  }
+
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
   ///
   /// 按 app 学习语言优先（学日语 → `.ja.srt > .ja.ass > … > .srt > .ass …`，
@@ -2019,7 +2299,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 其它远端/本地播放恒返回空 map（[applyHttpHeaderFieldsToPlayer] 据此 no-op，
   /// 既有播放路径零影响）。
   Map<String, String> get _streamHttpHeaderFields {
-    final RemoteVideoClient? client = widget.remoteClient;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client is UrlStreamVideoClient) return client.httpHeaderFields;
     return const <String, String>{};
   }
@@ -2033,6 +2313,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required EpisodeStartIntent startIntent,
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
+    // TODO-1280：YouTube 分离流的 audio-only 流 URL，透传给 controller.load 在 seek/play 之前
+    // 外挂（null=无分离音轨）。
+    String? externalAudioTrackUrl,
+    // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
+    // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
+    bool detectHls = true,
   }) async {
     // TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）前置短路。
     // libmpv 对失效本地路径静默失败（不抛、不回调），下面的 try/catch 与页级
@@ -2056,6 +2342,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       await _promptMissingResource(title);
       return;
     }
+    // TODO-1276：首开（此前无 controller）才把页级加载态保持到首帧就绪，杜绝与
+    // media_kit 缓冲圈接力成「转两次圈」；换集复用同一 controller 不改动
+    // [_videoReadyToShow]（维持既有行为、不碰全屏路由复用的同一实例，BUG-120/121）。
+    final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
@@ -2075,6 +2365,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     controller.onDiagLog = (String message) {
       ErrorLogService.instance.log('VideoHibiki.diag', message);
     };
+    // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
+    // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
+    controller.onSuspectedBlackFlicker =
+        Platform.isWindows ? _handleSuspectedBlackFlicker : null;
     ErrorLogService.instance.log(
       'VideoHibiki.diag',
       '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
@@ -2082,7 +2376,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'initialPositionMs=$initialPositionMs '
           'externalSubtitlePath=$externalSubtitlePath '
           'renderGraphicStreamIndex=$renderGraphicStreamIndex '
-          'fitMode=$_videoFitMode platform=${Platform.operatingSystem}',
+          'fitMode=$_videoFitMode platform=${Platform.operatingSystem} '
+          'impellerDisabledPref=${RenderBackendService.instance.impellerDisabled} '
+          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
     );
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
@@ -2106,6 +2402,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         mpvConfig: mpvConfig,
         httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: true,
+        externalAudioTrackUrl: externalAudioTrackUrl,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
@@ -2125,13 +2422,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           'durationMs=${controller.durationMs} '
           'videoWidth=${controller.videoWidth} '
           'videoHeight=${controller.videoHeight} '
-          'videoController=${controller.videoController != null}',
+          'videoController=${controller.videoController != null} '
+          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
     );
     _syncVolumeDisplay(controller.volume);
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
     controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
+    // TODO-1158：探测当前流是否为 HLS master（多档画质），填充画质菜单。仅常规载入
+    // 触发（画质切档的重载 detectHls=false）；网络 .m3u8 直链才 fetch，best-effort。
+    if (detectHls) {
+      unawaited(_detectHlsVariantsForLoad(mediaUri));
+    }
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
@@ -2164,7 +2467,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
       // 切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
+      // TODO-1276/1297：首开时页级加载态保持到「首帧解码出画且缓冲结束」
+      // （[isReadyForFirstPaint]）再让位给 media_kit——快路径（本地文件 load 返回时
+      // 常已出画且不缓冲）此处即 true、立即挂载 [Video]；慢路径（仍在缓冲 / 首帧未就绪）
+      // 保持 false，由下面 [_armFirstFramePromotion] 的宽高 + 缓冲监听在真正就绪时翻真，
+      // 杜绝「进度条已缓冲但还在加载」的 media_kit 第二个圈。换集（`!isInitialVideoOpen`）
+      // 不改动，维持既有行为。
+      if (isInitialVideoOpen) {
+        _videoReadyToShow = controller.isReadyForFirstPaint;
+      }
     });
+    if (isInitialVideoOpen && !_videoReadyToShow) {
+      // load() 已返回但首帧尚未解码出画：进入「准备」阶段，页级加载态保持到首帧
+      // 就绪，而非立刻把画面让给 media_kit 触发第二个缓冲圈（TODO-1276）。
+      _setLoadingPhase(_VideoLoadPhase.preparing);
+      _armFirstFramePromotion(controller);
+    }
     _syncControllerChapterAvailability(controller);
     // TODO-669：建立 / 重置进度条 hover 缩略图预览（桌面本地文件实时取帧；远端流 /
     // 移动端降级）。在 _currentVideoPath 更新后调，按新路径绑离屏取帧器。
@@ -2233,7 +2551,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
     // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
     unawaited(_restoreAudioTrack(controller));
-    // TODO-857：恢复用户选过的副字幕轨（libmpv secondary-sid 自渲染）。与主
+    // TODO-857 / TODO-1312：恢复用户选过的副字幕轨（Flutter overlay 副层 cue 流）。与主
     // 字幕独立，仅内嵌轨；其内部 _waitUntilSubtitleTracksReady 等轨就绪。
     unawaited(_restoreSecondarySubtitle(controller));
   }
@@ -2535,6 +2853,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _volumeDisplay.dispose();
     _watchTracker?.dispose();
     _watchTracker = null;
+    // TODO-1276：撤销首帧就绪监听 + 兜底定时器（回调读 _controller，须在 dispose 前摘）。
+    _firstFramePromoteTimer?.cancel();
+    _firstFramePromoteTimer = null;
+    _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
     _controller?.removeListener(_syncWindowAspectRatioLock);
     _detachControllerChapterListener();
     _controller?.setOnCompleted(null);
@@ -2586,6 +2908,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _autoAdvanceCountdownNotifier.dispose();
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
+    _blackFlickerNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
     _videoControlsVisible.dispose();
@@ -3098,160 +3421,226 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     return buildVideoPlayerShortcutsFromRegistry(
       appModel.shortcutRegistry,
-      VideoPlayerShortcutActions(
-        togglePlayPause: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.playOrPause()),
-        ),
-        play: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.play()),
-        ),
-        pause: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.pause()),
-        ),
-        // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
-        // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
-        // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
-        // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
-        // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
-        previousSubtitle: () {
-          _runWhenImmersiveAllowsFullControls(() {
-            _pokeControlsVisible();
-            unawaited(
-              controller.skipToPrevCueOrSeekBack(
-                seekSeconds: _asbConfig.seekSeconds,
-              ),
-            );
-          });
-        },
-        nextSubtitle: () {
-          _runWhenImmersiveAllowsFullControls(() {
-            _pokeControlsVisible();
-            // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
-            // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
-            // skipToPrevCueOrSeekBack 对称，TODO-073）。
-            unawaited(
-              controller.skipToNextCueOrSeekForward(
-                seekSeconds: _asbConfig.seekSeconds,
-              ),
-            );
-          });
-        },
-        // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
-        seekBackward: () => _runWhenImmersiveAllowsFullControls(() {
+      _buildVideoShortcutActions(controller),
+    );
+  }
+
+  /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
+  /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
+  /// 经 [videoActionCallbacks]）共用同一份 [VideoPlayerShortcutActions]，保证两条输入
+  /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsFullControls] 沉浸门控与控制
+  /// 条唤醒），不产生两套语义、不引入手柄专属特例分支。
+  VideoPlayerShortcutActions _buildVideoShortcutActions(
+    VideoPlayerController controller,
+  ) {
+    return VideoPlayerShortcutActions(
+      togglePlayPause: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.playOrPause()),
+      ),
+      play: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.play()),
+      ),
+      pause: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.pause()),
+      ),
+      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
+      // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
+      // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
+      // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
+      // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
+      previousSubtitle: () {
+        _runWhenImmersiveAllowsFullControls(() {
           _pokeControlsVisible();
-          unawaited(controller.seekRelative(-_asbSeekMs));
-        }),
-        seekForward: () => _runWhenImmersiveAllowsFullControls(() {
+          unawaited(
+            controller.skipToPrevCueOrSeekBack(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
+          );
+        });
+      },
+      nextSubtitle: () {
+        _runWhenImmersiveAllowsFullControls(() {
           _pokeControlsVisible();
-          unawaited(controller.seekRelative(_asbSeekMs));
-        }),
-        toggleShaderCompare: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleShaderCompare()),
+          // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
+          // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
+          // skipToPrevCueOrSeekBack 对称，TODO-073）。
+          unawaited(
+            controller.skipToNextCueOrSeekForward(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
+          );
+        });
+      },
+      // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
+      seekBackward: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.seekRelative(-_asbSeekMs));
+      }),
+      seekForward: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.seekRelative(_asbSeekMs));
+      }),
+      toggleShaderCompare: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleShaderCompare()),
+      ),
+      volumeUp: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustVolume(_volumeStep)),
+      ),
+      volumeDown: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustVolume(-_volumeStep)),
+      ),
+      toggleMute: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleMute()),
+      ),
+      speedUp: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustSpeed(_speedStep)),
+      ),
+      speedDown: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_adjustSpeed(-_speedStep)),
+      ),
+      resetSpeed: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_setSpeed(1.0)),
+      ),
+      previousFrame: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.frameStep(forward: false)),
+      ),
+      nextFrame: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(controller.frameStep(forward: true)),
+      ),
+      screenshot: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_saveScreenshot()),
+      ),
+      toggleFullscreen: () => _runWhenImmersiveAllowsFullControls(() {
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted) {
+          unawaited(_toggleVideoFullscreen(ctx));
+        }
+      }),
+      // 'L' = 开/关字幕跳转列表（TODO-069）。
+      toggleSubtitleList: () => _runWhenImmersiveAllowsFullControls(
+        _toggleSubtitleJumpList,
+      ),
+      // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
+      toggleImmersiveLock: _toggleImmersiveLock,
+      // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
+      toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleSubtitleBlur()),
+      ),
+      // TODO-840 Part B：Shift+B 循环遮蔽三态；H 开/关「隐藏主字幕」。
+      cycleSubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_cycleSubtitleObscure()),
+      ),
+      toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleSubtitleHide()),
+      ),
+      toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_toggleFavoriteCurrentCue()),
+      ),
+      replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_replayCurrentCueAndPokeControls()),
+      ),
+      // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
+      // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
+      // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
+      replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
+        () => unawaited(_replayPreviousCueAndPokeControls()),
+      ),
+      // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
+      // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
+      previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.previousChapter());
+      }),
+      nextChapter: () => _runWhenImmersiveAllowsFullControls(() {
+        _pokeControlsVisible();
+        unawaited(controller.nextChapter());
+      }),
+      escape: () {
+        if (_videoControlEditMode.value) {
+          _hideVideoControlEditOverlay(revealControls: false);
+          return;
+        }
+        // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
+        // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
+        // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
+        if (_subtitleListVisible.value) {
+          _toggleSubtitleJumpList();
+          return;
+        }
+        // TODO-638：剧集列表 push-aside 侧栏开着时，Esc 先关它（逐级退出）。
+        if (_episodeListVisible.value) {
+          _closeEpisodeList();
+          return;
+        }
+        if (_videoSidePanel.value != null) {
+          _hideVideoSidePanel();
+          return;
+        }
+        if (_immersiveLocked.value) {
+          _toggleImmersiveLock();
+          return;
+        }
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+          unawaited(_exitVideoFullscreen(ctx));
+        } else {
+          unawaited(_handleBackOrExit());
+        }
+      },
+    );
+  }
+
+  /// TODO-1342：把一次手柄按键解析成视频动作并执行。桌面（GameInput/GameController
+  /// 轮询）经外层 [Actions] 的 [GamepadButtonIntent] 派发到这里；Android/原生按键经
+  /// [_handleVideoGamepadNativeKey] 走同一入口。仅解析 [ShortcutScope.video]
+  /// 一个作用域——video 是独立 co-active 组，绝不与阅读器/主页的手柄导航冲突。命中
+  /// 返回 true（消费该键、抑制 [GamepadService] 的 A=激活 / B=全局返回 / dpad=移焦
+  /// 兜底）；未绑定返回 false，交回 [GamepadService] 的通用兜底（焦点移动等）。
+  /// 执行体与键盘快捷键共用 [_buildVideoShortcutActions]，行为完全一致。
+  bool _handleVideoGamepadButton(GamepadButton button) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+      button,
+      scope: ShortcutScope.video,
+    );
+    if (action == null) return false;
+    final VoidCallback? callback =
+        videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+    if (callback == null) return false;
+    callback();
+    return true;
+  }
+
+  /// TODO-1342：Android/原生手柄按键入口。控制器按键在移动端以 [KeyEvent] 到达，冒泡
+  /// 到本页最外层的 [Focus]（[canRequestFocus] 为 false、不参与遍历、不夺焦，只旁观
+  /// 冒泡）；仅当事件确实来自控制器类设备（[GamepadButton.fromKeyEvent] 非空）才接管，
+  /// 其余键（普通键盘键、方向键光标编辑等）一律放行不消费，交回既有解析路径。
+  KeyEventResult _handleVideoGamepadNativeKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final GamepadButton? button = GamepadButton.fromKeyEvent(event);
+    if (button == null) return KeyEventResult.ignored;
+    return _handleVideoGamepadButton(button)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
+
+  /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的
+  /// [GamepadButtonIntent]；内层 [Focus] 只旁观 Android 原生手柄按键的冒泡（不夺焦、
+  /// 不参与焦点遍历，故不干扰 [_videoFocusNode] 的键盘持焦与既有 [autofocus] 时序）。
+  Widget _wrapVideoGamepadControls(Widget child) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) =>
+              _handleVideoGamepadButton(intent.button),
         ),
-        volumeUp: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustVolume(_volumeStep)),
-        ),
-        volumeDown: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustVolume(-_volumeStep)),
-        ),
-        toggleMute: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleMute()),
-        ),
-        speedUp: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustSpeed(_speedStep)),
-        ),
-        speedDown: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_adjustSpeed(-_speedStep)),
-        ),
-        resetSpeed: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_setSpeed(1.0)),
-        ),
-        previousFrame: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.frameStep(forward: false)),
-        ),
-        nextFrame: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(controller.frameStep(forward: true)),
-        ),
-        screenshot: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_saveScreenshot()),
-        ),
-        toggleFullscreen: () => _runWhenImmersiveAllowsFullControls(() {
-          final BuildContext? ctx = _videoControlsContext;
-          if (ctx != null && ctx.mounted) {
-            unawaited(_toggleVideoFullscreen(ctx));
-          }
-        }),
-        // 'L' = 开/关字幕跳转列表（TODO-069）。
-        toggleSubtitleList: () => _runWhenImmersiveAllowsFullControls(
-          _toggleSubtitleJumpList,
-        ),
-        // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
-        toggleImmersiveLock: _toggleImmersiveLock,
-        // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
-        toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleSubtitleBlur()),
-        ),
-        // TODO-840 Part B：Shift+B 循环遮蔽三态；H 开/关「隐藏主字幕」。
-        cycleSubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_cycleSubtitleObscure()),
-        ),
-        toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleSubtitleHide()),
-        ),
-        toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_toggleFavoriteCurrentCue()),
-        ),
-        replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_replayCurrentCueAndPokeControls()),
-        ),
-        // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
-        // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
-        // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
-        replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_replayPreviousCueAndPokeControls()),
-        ),
-        // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
-        // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
-        previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
-          _pokeControlsVisible();
-          unawaited(controller.previousChapter());
-        }),
-        nextChapter: () => _runWhenImmersiveAllowsFullControls(() {
-          _pokeControlsVisible();
-          unawaited(controller.nextChapter());
-        }),
-        escape: () {
-          if (_videoControlEditMode.value) {
-            _hideVideoControlEditOverlay(revealControls: false);
-            return;
-          }
-          // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
-          // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-          // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
-          if (_subtitleListVisible.value) {
-            _toggleSubtitleJumpList();
-            return;
-          }
-          // TODO-638：剧集列表 push-aside 侧栏开着时，Esc 先关它（逐级退出）。
-          if (_episodeListVisible.value) {
-            _closeEpisodeList();
-            return;
-          }
-          if (_videoSidePanel.value != null) {
-            _hideVideoSidePanel();
-            return;
-          }
-          if (_immersiveLocked.value) {
-            _toggleImmersiveLock();
-            return;
-          }
-          final BuildContext? ctx = _videoControlsContext;
-          if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-            unawaited(_exitVideoFullscreen(ctx));
-          } else {
-            unawaited(_handleBackOrExit());
-          }
-        },
+      },
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleVideoGamepadNativeKey,
+        child: child,
       ),
     );
   }
@@ -4599,6 +4988,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           : null,
       subtitlePositionListenable: _controller,
       currentSubtitlePositionMs: () => _controller?.positionMs ?? -1,
+      // TODO-1244：波形对轴视图逐句试听——seek 到该句时间并播放，复用现有播放器（不新建栈）。
+      onPlaySubtitleCue: (int startMs) async {
+        final VideoPlayerController? controller = _controller;
+        if (controller == null) return;
+        await controller.seekMs(startMs);
+        await controller.play();
+      },
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
@@ -4659,13 +5055,68 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
       onEditControlsOnscreen: _showVideoControlEditOverlay,
+      // TODO-1158：HLS 多档画质入口（跨平台，经设置面板「播放」分类可达）。仅当探测到
+      // HLS master variant 时给入口；点开画质侧栏（替换当前设置侧栏）。
+      qualityOptionCount: _hlsVariants.length,
+      qualityCurrentLabel: _hlsVariants.isEmpty
+          ? null
+          : (_selectedHlsVariantIndex < 0 ||
+                  _selectedHlsVariantIndex >= _hlsVariants.length
+              ? t.video_quality_auto
+              : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
+      onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
+      // TODO-1351：轨切换收进设置面板对应 tab（音频轨在「音频」、字幕轨在「字幕」顶部），
+      // 由页面构建内容（复用既有切轨/切源方法与数据），删掉外面浮的轨切换侧栏。
+      initialCategory: _settingsInitialCategory,
+      audioTrackSection: _controller != null
+          ? _buildAudioTrackSettingsSection(_controller!)
+          : null,
+      subtitleTrackSection: _controller != null
+          ? _buildSubtitleTrackSettingsSection(_controller!)
+          : null,
+      // TODO-1350（字幕轨即时加载）：进入「字幕」分类时（重新）枚举当前视频字幕源，让
+      // 字幕轨列表在打开分类那一刻就加载，不再依赖「字幕轨」按钮预填 / 关掉重开。
+      onSubtitleCategoryShown: _ensureSubtitleMenuSourcesLoaded,
+      // TODO-1350：视频内也能切整个 app 的配色主题（跟随系统 + 预设含护眼米色 + 当前
+      // 自定义），复用全局 themePresets / setAppThemeKey。
+      themeOptions: _buildVideoThemeOptions(),
+      currentThemeKey: appModel.appThemeKey,
+      onSelectThemeKey: (String key) async {
+        await appModel.setAppThemeKey(key);
+        if (mounted) _rebuild(() {});
+      },
     );
   }
 
-  void _showPlayerSettings({VideoControlSlot? sourceSlot}) {
+  /// TODO-1350：构建视频设置面板的主题选项：跟随系统 + 全部预设主题（含护眼米色
+  /// `ecru-theme`）；当前若是自定义主题，把它也并进列表以便高亮当前选择。
+  List<VideoThemeOption> _buildVideoThemeOptions() {
+    final String currentKey = appModel.appThemeKey;
+    final List<VideoThemeOption> options = <VideoThemeOption>[
+      VideoThemeOption(key: 'system-theme', label: t.theme_system),
+      for (final String key in AppModel.themePresets.keys)
+        VideoThemeOption(key: key, label: AppModel.themeLabel(key)),
+    ];
+    if (!options.any((VideoThemeOption o) => o.key == currentKey)) {
+      options.add(VideoThemeOption(
+        key: currentKey,
+        label: appModel.activeCustomThemeEntry?.name ??
+            AppModel.themeLabel(currentKey),
+      ));
+    }
+    return options;
+  }
+
+  void _showPlayerSettings({
+    VideoControlSlot? sourceSlot,
+    String? initialCategory,
+  }) {
+    // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
+    // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
+    _settingsInitialCategory = initialCategory;
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,
@@ -4730,19 +5181,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return PopScope(
-      // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-      // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-      // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-      // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-      // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-      // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? _) async {
-        if (didPop) return;
-        await _handleBackOrExit();
-      },
-      child: _buildScaffold(controller, videoController, cs),
+    // TODO-1342：最外层包一层手柄输入层，让桌面轮询的 [GamepadButtonIntent] 与
+    // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
+    // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
+    // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
+    return _wrapVideoGamepadControls(
+      PopScope(
+        // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+        // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+        // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+        // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+        // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+        // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, Object? _) async {
+          if (didPop) return;
+          await _handleBackOrExit();
+        },
+        child: _buildScaffold(controller, videoController, cs),
+      ),
     );
   }
 
@@ -4763,7 +5220,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
           : _missingResource
               ? _buildMissingResourceBody(cs)
-              : (controller == null || videoController == null)
+              // TODO-1276：首开时把 `!_videoReadyToShow` 并入转圈判据——页级加载态
+              // 保持到首帧真正解码出画再挂载 [Video]，杜绝与 media_kit 缓冲圈接力成
+              // 「转两次圈」。换集 [_videoReadyToShow] 恒 true 不进此分支（行为不变）。
+              : (controller == null ||
+                      videoController == null ||
+                      !_videoReadyToShow)
                   ? _buildLoadingBody()
                   : _withPageSpaceOverride(
                       controller,
@@ -4782,7 +5244,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Widget _buildLoadingBody() {
     final String title = _titleNotifier.value ??
         _title ??
-        widget.remoteInfo?.title ??
+        _effectiveRemoteInfo?.title ??
         _bookRow?.title ??
         '';
     return VideoLoadingOverlay(
@@ -5198,6 +5660,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         t.video_audio_track,
         () => _showAudioTrackMenu(controller),
       ),
+      // TODO-1158：仅当当前流是 HLS master（探测到多档码率 variant）才给画质入口。
+      if (_hlsVariants.isNotEmpty)
+        item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(

@@ -3,6 +3,9 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
+import 'package:hibiki/src/pages/implementations/stat_ring.dart';
+import 'package:hibiki/src/pages/implementations/stat_summary.dart';
 import 'package:hibiki/src/pages/implementations/stat_trends.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -10,6 +13,14 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 「按书」列表的排序键：字数 / 时长 / 阅读速度（cph）。
 enum _BookSort { chars, time, speed }
+
+/// 「今天」环形进度在用户未设目标时的回退目标（仅用于可视化，不写库）。
+const int _kDailyCharGoalFallback = 5000;
+const int _kDailyTimeGoalMinutes = 60;
+
+/// 宽屏断点：>= 此宽度时「今天」与「速度摘要」并排，内容整体居中限宽。
+const double _kWideBreakpoint = 720;
+const double _kMaxContentWidth = 1040;
 
 class ReadingStatisticsPage extends BasePage {
   const ReadingStatisticsPage({super.key});
@@ -53,17 +64,26 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   Map<String, ({int lookups, int mines})> _bookCounters =
       <String, ({int lookups, int mines})>{};
 
+  // per-book 收藏计数（TODO-1252：按 title 聚合当前收藏活行，无书收藏 title='' 跳过，
+  // 只进汇总面板）。收藏取消即删行 → 聚合活行天然回落。
+  Map<String, int> _bookFavorites = <String, int>{};
+
   // 按书聚合
   List<_BookData> _bookData = [];
 
   // 总览：总书数 / 活跃天数 / 日期范围（min/max dateKey，可空表示无数据）。
   int _totalBooks = 0;
   int _activeDays = 0;
+  int _streak = 0;
   String? _firstDateKey;
   String? _lastDateKey;
 
-  // 速度趋势折线图的聚合粒度（日 / 周 / 月）。
+  // 速度摘要（从最近 30 天纯函数算出）。
+  SpeedSummary? _speedSummary;
+
+  // 范围与趋势折线图的聚合粒度（日 / 周 / 月）与指标（字数 / 时长 / 速度）。
   StatTrendGranularity _trendGranularity = StatTrendGranularity.daily;
+  StatTrendMetric _trendMetric = StatTrendMetric.chars;
 
   // 「按书」列表的排序键。
   _BookSort _bookSort = _BookSort.chars;
@@ -109,6 +129,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         now,
       );
       _bookCounters = _aggregateCountersByTitle(counters);
+      _bookFavorites = _aggregateFavoritesByTitle(favs);
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
       // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
       final List<FavoriteSentence> favSentences =
@@ -155,6 +176,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         lookups: prev.lookups + r.lookupCount,
         mines: prev.mines + r.mineCount,
       );
+    }
+    return out;
+  }
+
+  /// TODO-1252：把收藏活行按 [FavoriteWordRow.title] 聚合成每本书的收藏数，供 per-book
+  /// tile 展示。无书收藏（title 空）不入 tile，只进汇总面板。聚合键与查词/制卡 tile 的
+  /// title 一致。
+  Map<String, int> _aggregateFavoritesByTitle(List<FavoriteWordRow> rows) {
+    final Map<String, int> out = <String, int>{};
+    for (final FavoriteWordRow r in rows) {
+      if (r.title.isEmpty) continue;
+      out[r.title] = (out[r.title] ?? 0) + 1;
     }
     return out;
   }
@@ -222,6 +255,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final Set<String> activeDayKeys =
         _allStats.map((ReadingStatisticRow s) => s.dateKey).toSet();
     _activeDays = activeDayKeys.length;
+    _streak = computeReadingStreak(activeDayKeys, now);
     if (activeDayKeys.isEmpty) {
       _firstDateKey = null;
       _lastDateKey = null;
@@ -230,6 +264,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _firstDateKey = sortedKeys.first;
       _lastDateKey = sortedKeys.last;
     }
+
+    _speedSummary = computeSpeedSummary(_dailyData);
 
     _bookData = bookMap.values.toList();
     _sortBookData();
@@ -292,6 +328,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return '$first ~ $last';
   }
 
+  /// 指标名（趋势图图例 / 表头共用）。
+  static String _metricLabel(StatTrendMetric m) {
+    switch (m) {
+      case StatTrendMetric.chars:
+        return t.stat_metric_chars;
+      case StatTrendMetric.time:
+        return t.stat_metric_time;
+      case StatTrendMetric.speed:
+        return t.stat_metric_speed;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return HibikiPageScaffold(
@@ -302,6 +350,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           tooltip: t.stat_refresh,
           enabled: !_loading,
           onTap: _syncAndLoad,
+        ),
+        HibikiIconButton(
+          icon: Icons.delete_sweep_outlined,
+          tooltip: t.stat_clear_all,
+          enabled: !_loading,
+          onTap: _confirmAndClearAll,
         ),
       ],
       body: _loading
@@ -320,36 +374,150 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildContent() {
-    final tokens = HibikiDesignTokens.of(context);
-
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(child: _buildGoalPanel()),
-        SliverToBoxAdapter(child: _buildOverviewPanel()),
-        SliverToBoxAdapter(child: _buildHourlyChart()),
-        SliverToBoxAdapter(child: _buildDailyChart()),
-        SliverToBoxAdapter(child: _buildSpeedTrendChart()),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.card + tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.gap,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double card = tokens.spacing.card;
+    final EdgeInsets hPad = EdgeInsets.symmetric(horizontal: card);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide = constraints.maxWidth >= _kWideBreakpoint;
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(card, card, card, card),
+                    child: _buildKpiStrip(),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding:
+                        EdgeInsets.only(left: card, right: card, bottom: card),
+                    child: _buildTrendPanel(),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding:
+                        EdgeInsets.only(left: card, right: card, bottom: card),
+                    child: _buildMidSection(wide),
+                  ),
+                ),
+                SliverToBoxAdapter(child: _buildSummaryCards()),
+                SliverToBoxAdapter(child: _buildGoalPanel()),
+                SliverToBoxAdapter(child: _buildHourlyChart()),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(card,
+                        card + tokens.spacing.gap, card, tokens.spacing.gap),
+                    child: _buildByBookHeader(),
+                  ),
+                ),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => Padding(
+                      padding: hPad,
+                      child: _buildBookTile(_bookData[index]),
+                    ),
+                    childCount: _bookData.length,
+                  ),
+                ),
+                SliverPadding(padding: EdgeInsets.only(bottom: card * 2)),
+              ],
             ),
-            child: _buildByBookHeader(),
           ),
+        );
+      },
+    );
+  }
+
+  /// 「今天」环 + 「速度摘要」：宽屏并排，窄屏堆叠。
+  Widget _buildMidSection(bool wide) {
+    final double gap = HibikiDesignTokens.of(context).spacing.card;
+    final Widget today = _buildTodayPanel();
+    final Widget summary = _buildSpeedSummaryPanel();
+    if (wide) {
+      return IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(child: today),
+            SizedBox(width: gap),
+            Expanded(child: summary),
+          ],
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _buildBookTile(_bookData[index]),
-            childCount: _bookData.length,
-          ),
-        ),
-        SliverPadding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.card * 2)),
+      );
+    }
+    return Column(
+      children: <Widget>[
+        today,
+        SizedBox(height: gap),
+        summary,
       ],
+    );
+  }
+
+  /// 顶部 KPI 概览条：全部字数 / 全部时长 / 书数 / 活跃天数。
+  /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，
+  /// 避免手机上四张卡挤到内宽 ~40px 把数值 ellipsis 截没（「看不到数字」）。
+  Widget _buildKpiStrip() {
+    return StatKpiStrip(
+      items: <StatKpiItem>[
+        StatKpiItem(
+          icon: Icons.text_fields,
+          value: formatStatCharsAxis(_allChars),
+          label: t.stat_metric_chars,
+        ),
+        StatKpiItem(
+          icon: Icons.schedule,
+          value: _formatTime(_allMs),
+          label: t.stat_metric_time,
+        ),
+        StatKpiItem(
+          icon: Icons.menu_book_outlined,
+          value: _totalBooks.toString(),
+          label: t.stat_total_books,
+        ),
+        StatKpiItem(
+          icon: Icons.calendar_today_outlined,
+          value: _activeDays.toString(),
+          label: t.stat_active_days,
+        ),
+      ],
+    );
+  }
+
+  /// 卡片外壳：标题 + 可选 trailing + 内容。
+  Widget _card({
+    required String title,
+    required Widget child,
+    Widget? trailing,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (trailing != null) Flexible(child: trailing),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.card),
+          child,
+        ],
+      ),
     );
   }
 
@@ -450,294 +618,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         ),
       ),
     );
-  }
-
-  Widget _buildHourlyChart() {
-    final tokens = HibikiDesignTokens.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t.stat_today_hourly,
-              style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          SizedBox(
-            height: 140,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: StatHourlyChartPainter(
-                hourlyMs: _hourlyMs,
-                barColor: colorScheme.tertiary,
-                barRadius: tokens.radii.chipCorner,
-                labelColor: colorScheme.onSurfaceVariant,
-                labelStyle: tokens.type.metadata.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDailyChart() {
-    final tokens = HibikiDesignTokens.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t.stat_last_30_days,
-              style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          SizedBox(
-            height: 160,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: StatBarChartPainter(
-                data: _dailyData,
-                barColor: colorScheme.primary,
-                barRadius: tokens.radii.chipCorner,
-                labelColor: colorScheme.onSurfaceVariant,
-                labelStyle: tokens.type.metadata.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// overview card: total books / active days / avg speed (cph) / date range.
-  Widget _buildOverviewPanel() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double avgCph = computeCph(_allChars, _allMs);
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: HibikiCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(t.stat_overview,
-                style: Theme.of(context).textTheme.titleMedium),
-            SizedBox(height: tokens.spacing.gap),
-            Row(
-              children: <Widget>[
-                Expanded(
-                    child: _overviewMetric(
-                        t.stat_total_books, _totalBooks.toString())),
-                Expanded(
-                    child: _overviewMetric(
-                        t.stat_active_days, _activeDays.toString())),
-                Expanded(
-                    child: _overviewMetric(
-                        t.stat_reading_speed, _formatCph(avgCph))),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            _overviewMetric(t.stat_date_range, _formatDateRange()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _overviewMetric(String label, String value) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                )),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Text(value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.bold,
-                )),
-      ],
-    );
-  }
-
-  Widget _buildSpeedTrendChart() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
-    final List<StatTrendPoint> points =
-        aggregateTrend(_dailyData, _trendGranularity);
-    final List<double> cphValues =
-        points.map((StatTrendPoint p) => p.cph).toList();
-    final int window = _trendGranularity == StatTrendGranularity.daily ? 7 : 3;
-    final List<double> avgValues = movingAverage(cphValues, window);
-    final List<bool> anomalies = detectAnomalies(cphValues);
-    final List<String> xLabels =
-        points.map((StatTrendPoint p) => p.label).toList();
-    final int labelEvery =
-        _trendGranularity == StatTrendGranularity.daily ? 5 : 1;
-
-    final TextStyle labelStyle = tokens.type.metadata.copyWith(
-      color: colorScheme.onSurfaceVariant,
-    );
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
-          Text(t.stat_speed_trend,
-              style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: tokens.spacing.gap),
-          _trendGranularityChips(),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          SizedBox(
-            height: 180,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: StatLineChartPainter(
-                series: <StatLineSeries>[
-                  StatLineSeries(
-                    values: cphValues,
-                    color: colorScheme.primary,
-                  ),
-                  StatLineSeries(
-                    values: avgValues,
-                    color: colorScheme.tertiary,
-                    strokeWidth: 1.5,
-                    dashed: true,
-                  ),
-                ],
-                xLabels: xLabels,
-                anomalies: anomalies,
-                anomalyColor: colorScheme.error,
-                labelColor: colorScheme.onSurfaceVariant,
-                labelStyle: labelStyle,
-                labelFormatter: _cphAxisLabel,
-                labelEvery: labelEvery,
-              ),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          _trendLegend(),
-        ],
-      ),
-    );
-  }
-
-  String _cphAxisLabel(double v) => v.round().toString();
-
-  Widget _trendGranularityChips() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Wrap(
-      spacing: tokens.spacing.gap,
-      children: <Widget>[
-        HibikiSelectableChip(
-          label: t.stat_trend_daily,
-          selected: _trendGranularity == StatTrendGranularity.daily,
-          onSelected: (_) =>
-              setState(() => _trendGranularity = StatTrendGranularity.daily),
-        ),
-        HibikiSelectableChip(
-          label: t.stat_trend_weekly,
-          selected: _trendGranularity == StatTrendGranularity.weekly,
-          onSelected: (_) =>
-              setState(() => _trendGranularity = StatTrendGranularity.weekly),
-        ),
-        HibikiSelectableChip(
-          label: t.stat_trend_monthly,
-          selected: _trendGranularity == StatTrendGranularity.monthly,
-          onSelected: (_) =>
-              setState(() => _trendGranularity = StatTrendGranularity.monthly),
-        ),
-      ],
-    );
-  }
-
-  Widget _trendLegend() {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final TextStyle? style = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: colorScheme.onSurfaceVariant,
-        );
-    return Wrap(
-      spacing: tokens.spacing.card,
-      runSpacing: tokens.spacing.gap / 2,
-      children: <Widget>[
-        _legendItem(colorScheme.primary, t.stat_reading_speed, style),
-        _legendItem(colorScheme.tertiary, t.stat_speed_avg, style),
-        _legendItem(colorScheme.error, t.stat_speed_anomaly, style),
-      ],
-    );
-  }
-
-  Widget _legendItem(Color color, String label, TextStyle? style) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: tokens.radii.chipRadius,
-          ),
-        ),
-        SizedBox(width: tokens.spacing.gap / 2),
-        Text(label, style: style),
-      ],
-    );
-  }
-
-  Widget _buildByBookHeader() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(t.stat_by_book, style: Theme.of(context).textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap),
-        Wrap(
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            HibikiSelectableChip(
-              label: t.stat_sort_by_chars,
-              selected: _bookSort == _BookSort.chars,
-              onSelected: (_) => _changeBookSort(_BookSort.chars),
-            ),
-            HibikiSelectableChip(
-              label: t.stat_sort_by_time,
-              selected: _bookSort == _BookSort.time,
-              onSelected: (_) => _changeBookSort(_BookSort.time),
-            ),
-            HibikiSelectableChip(
-              label: t.stat_sort_by_speed,
-              selected: _bookSort == _BookSort.speed,
-              onSelected: (_) => _changeBookSort(_BookSort.speed),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  void _changeBookSort(_BookSort sort) {
-    if (_bookSort == sort) return;
-    setState(() {
-      _bookSort = sort;
-      _sortBookData();
-    });
   }
 
   /// TODO-1046: daily/weekly reading goal card. Both goals 0 => no card at all
@@ -920,6 +800,417 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     setState(() {});
   }
 
+  /// 「今天」环形进度卡：字数目标环（复用持久化每日目标，未设则回退默认仅作可视化）
+  /// + 时长目标环 + 速度 / 制卡 / 收藏迷你块。
+  Widget _buildTodayPanel() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+
+    final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
+    final int charGoal = dailyGoal > 0 ? dailyGoal : _kDailyCharGoalFallback;
+    final double charFrac = goalFraction(_todayChars, charGoal);
+    final int todayMinutes = _todayMs ~/ 60000;
+    final double timeFrac = goalFraction(todayMinutes, _kDailyTimeGoalMinutes);
+    final double todayCph = computeCph(_todayChars, _todayMs);
+
+    return _card(
+      title: t.stat_today,
+      trailing: Text(
+        _dateKey(DateTime.now()),
+        style: tokens.type.metadata.copyWith(color: scheme.onSurfaceVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Wrap(
+            alignment: WrapAlignment.spaceAround,
+            spacing: tokens.spacing.card,
+            runSpacing: tokens.spacing.card,
+            children: <Widget>[
+              StatRing(
+                fraction: charFrac,
+                color: scheme.primary,
+                trackColor: scheme.surfaceContainerHighest,
+                value: '${(charFrac * 100).round()}%',
+                detail: '$_todayChars/$charGoal',
+                caption: t.stat_goal,
+              ),
+              StatRing(
+                fraction: timeFrac,
+                color: scheme.tertiary,
+                trackColor: scheme.surfaceContainerHighest,
+                value: '${(timeFrac * 100).round()}%',
+                detail: _formatTime(_todayMs),
+                caption: t.stat_metric_time,
+              ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.card),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _miniStat(t.stat_metric_speed,
+                    todayCph > 0 ? _formatCph(todayCph) : '-'),
+              ),
+              Expanded(
+                child: _miniStat(t.stat_streak, t.stat_format_days(n: _streak)),
+              ),
+              Expanded(
+                child: _miniStat(t.stat_favorited, _favorited.today.toString()),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, String value) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Container(
+      margin: EdgeInsets.only(right: tokens.spacing.gap),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: tokens.radii.cardRadius,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 「速度摘要」卡：加权均速 / 典型日 / 近 7 活跃日 / 较前 14 天 / 最快·最慢日。
+  Widget _buildSpeedSummaryPanel() {
+    final SpeedSummary? s = _speedSummary;
+    return _card(
+      title: t.stat_speed_summary,
+      child: s == null
+          ? const SizedBox.shrink()
+          : Column(
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _summaryTile(t.stat_weighted_avg_speed,
+                          _formatCph(s.weightedAvgCph)),
+                    ),
+                    Expanded(
+                      child: _summaryTile(
+                          t.stat_typical_day,
+                          s.typicalDayCph != null
+                              ? _formatCph(s.typicalDayCph!)
+                              : '-'),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _summaryTile(t.stat_recent_active,
+                          t.stat_format_days(n: s.recentActiveDays)),
+                    ),
+                    Expanded(child: _deltaTile(s.deltaPercent)),
+                  ],
+                ),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                        child: _extremeTile(t.stat_fastest_day, s.fastestDay)),
+                    Expanded(
+                        child: _extremeTile(t.stat_slowest_day, s.slowestDay)),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _summaryTile(String label, String value, {Color? valueColor}) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.only(
+        right: tokens.spacing.gap,
+        bottom: tokens.spacing.card,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: valueColor ?? scheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deltaTile(double? delta) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    if (delta == null) {
+      return _summaryTile(t.stat_vs_prev, '-');
+    }
+    final bool up = delta >= 0;
+    final String sign = up ? '+' : '';
+    final Color color = up ? scheme.primary : scheme.error;
+    return _summaryTile(t.stat_vs_prev, '$sign${delta.toStringAsFixed(0)}%',
+        valueColor: color);
+  }
+
+  Widget _extremeTile(String label, StatExtremeDay? day) {
+    if (day == null) return _summaryTile(label, '-');
+    final String date =
+        day.dateKey.length >= 10 ? day.dateKey.substring(5) : day.dateKey;
+    return _summaryTile(label, '${_formatCph(day.cph)} · $date');
+  }
+
+  /// 「范围与趋势」折线卡：指标（字数/时长/速度）+ 粒度（日/周/月）切换 +
+  /// 原始线 + 移动平均虚线（速度指标额外标异常点）。
+  Widget _buildTrendPanel() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+
+    final List<StatTrendPoint> points =
+        aggregateTrend(_dailyData, _trendGranularity);
+    final List<double> values = points
+        .map((StatTrendPoint p) => trendMetricValue(p, _trendMetric))
+        .toList();
+    final int window = _trendGranularity == StatTrendGranularity.daily ? 7 : 3;
+    final List<double> avgValues = movingAverage(values, window);
+    final List<bool> anomalies = _trendMetric == StatTrendMetric.speed
+        ? detectAnomalies(values)
+        : List<bool>.filled(values.length, false);
+    final List<String> xLabels =
+        points.map((StatTrendPoint p) => p.label).toList();
+    final int labelEvery =
+        _trendGranularity == StatTrendGranularity.daily ? 5 : 1;
+    final TextStyle labelStyle = tokens.type.metadata.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+    final StatTrendMetric metric = _trendMetric;
+
+    return _card(
+      title: t.stat_range_and_trend,
+      trailing: Text(
+        _formatDateRange(),
+        textAlign: TextAlign.right,
+        overflow: TextOverflow.ellipsis,
+        style: tokens.type.metadata.copyWith(color: scheme.onSurfaceVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: StatTrendMetric.values
+                .map((StatTrendMetric m) => HibikiSelectableChip(
+                      label: _metricLabel(m),
+                      selected: _trendMetric == m,
+                      onSelected: (_) => setState(() => _trendMetric = m),
+                    ))
+                .toList(),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              _granChip(t.stat_trend_daily, StatTrendGranularity.daily),
+              _granChip(t.stat_trend_weekly, StatTrendGranularity.weekly),
+              _granChip(t.stat_trend_monthly, StatTrendGranularity.monthly),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.card),
+          SizedBox(
+            height: 200,
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: StatLineChartPainter(
+                series: <StatLineSeries>[
+                  StatLineSeries(values: values, color: scheme.primary),
+                  StatLineSeries(
+                    values: avgValues,
+                    color: scheme.tertiary,
+                    strokeWidth: 1.5,
+                    dashed: true,
+                  ),
+                ],
+                xLabels: xLabels,
+                anomalies: anomalies,
+                anomalyColor: scheme.error,
+                labelColor: scheme.onSurfaceVariant,
+                labelStyle: labelStyle,
+                labelFormatter: (double v) => trendMetricAxisLabel(v, metric),
+                labelEvery: labelEvery,
+              ),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          _trendLegend(),
+        ],
+      ),
+    );
+  }
+
+  Widget _granChip(String label, StatTrendGranularity g) {
+    return HibikiSelectableChip(
+      label: label,
+      selected: _trendGranularity == g,
+      onSelected: (_) => setState(() => _trendGranularity = g),
+    );
+  }
+
+  Widget _trendLegend() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle? style = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        );
+    return Wrap(
+      spacing: tokens.spacing.card,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        _legendItem(scheme.primary, _metricLabel(_trendMetric), style),
+        _legendItem(scheme.tertiary, t.stat_speed_avg, style),
+        if (_trendMetric == StatTrendMetric.speed)
+          _legendItem(scheme.error, t.stat_speed_anomaly, style),
+      ],
+    );
+  }
+
+  Widget _legendItem(Color color, String label, TextStyle? style) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: tokens.radii.chipRadius,
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap / 2),
+        Text(label, style: style),
+      ],
+    );
+  }
+
+  Widget _buildHourlyChart() {
+    final tokens = HibikiDesignTokens.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t.stat_today_hourly,
+              style: Theme.of(context).textTheme.titleMedium),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+          SizedBox(
+            height: 140,
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: StatHourlyChartPainter(
+                hourlyMs: _hourlyMs,
+                barColor: colorScheme.tertiary,
+                barRadius: tokens.radii.chipCorner,
+                labelColor: colorScheme.onSurfaceVariant,
+                labelStyle: tokens.type.metadata.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildByBookHeader() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(t.stat_bookshelf_compare,
+            style: Theme.of(context).textTheme.titleMedium),
+        SizedBox(height: tokens.spacing.gap),
+        Wrap(
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            HibikiSelectableChip(
+              label: t.stat_sort_by_chars,
+              selected: _bookSort == _BookSort.chars,
+              onSelected: (_) => _changeBookSort(_BookSort.chars),
+            ),
+            HibikiSelectableChip(
+              label: t.stat_sort_by_time,
+              selected: _bookSort == _BookSort.time,
+              onSelected: (_) => _changeBookSort(_BookSort.time),
+            ),
+            HibikiSelectableChip(
+              label: t.stat_sort_by_speed,
+              selected: _bookSort == _BookSort.speed,
+              onSelected: (_) => _changeBookSort(_BookSort.speed),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _changeBookSort(_BookSort sort) {
+    if (_bookSort == sort) return;
+    setState(() {
+      _bookSort = sort;
+      _sortBookData();
+    });
+  }
+
   /// 长按 / 右键某本书那一行 → 确认 → 删除该书的纯统计并写 book 墓碑防复活，再从
   /// DB 重新聚合刷新（TODO-1204 后续）。
   Future<void> _confirmAndDeleteBook(_BookData book) async {
@@ -930,10 +1221,24 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     await _loadFromDatabase();
   }
 
+  /// TODO-1322：点顶栏「清空统计」→ 危险操作确认 → 清空**全部阅读统计**（阅读时长 /
+  /// 字数 / 时段日志 / 查词 / 制卡计数；不动收藏 / 制卡历史 / 书籍），再从 DB 重新聚合刷新。
+  Future<void> _confirmAndClearAll() async {
+    final bool confirmed = await confirmClearAllStatistics(
+      context,
+      t.stat_clear_all_reading_message,
+    );
+    if (!confirmed || !mounted) return;
+    await appModelNoUpdate.database.clearAllReadingStatistics();
+    if (!mounted) return;
+    await _loadFromDatabase();
+  }
+
   Widget _buildBookTile(_BookData book) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _bookCounters[book.title] ?? (lookups: 0, mines: 0);
+    final int favorites = _bookFavorites[book.title] ?? 0;
     // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
     final double topMetric =
         _bookData.isEmpty ? 0 : _sortMetric(_bookData.first);
@@ -949,7 +1254,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         onSecondaryTap: () => _confirmAndDeleteBook(book),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
             vertical: tokens.spacing.gap / 2,
           ),
           child: Column(
@@ -986,7 +1290,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               ),
               SizedBox(height: tokens.spacing.gap / 2),
               Text(
-                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines}',
+                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),

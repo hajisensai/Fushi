@@ -830,6 +830,173 @@ void main() {
       expect(global.endMs, 2700);
     });
   });
+
+  // TODO-1256（用户回访「对不上」）: 逐句高亮切换帧必须对齐句音频起点。导出视频音视频
+  // 锁定——帧 i 播放音频 [globalStart+i*Δ, globalStart+(i+1)*Δ)，某句声音在视频时刻
+  // (S-globalStart) 被听到，切换帧应落在离它**最近**的帧边界 round((S-globalStart)/Δ)。
+  // 帧起点采样 = ceil = 最多晚 Δ（迟钝）；帧尾采样 = floor = 最多早 Δ（TODO-1147 矫枉过正
+  // 的「提前太多」）；帧中心采样 = round = 最近，对称误差 ≤Δ/2。这些用例把切换帧钉死在
+  // round 上，任一方向的回归（回退帧尾/帧起点采样）都会变红。
+  group('clipFramePlan (TODO-1256 帧-cue 对齐)', () {
+    // fps=10 → Δ=100ms，帧中心在 50,150,250,...。整段 [0,1000) 共 10 帧。
+    // 用「首段（第 0 句）持续帧数」= 切换到第 1 句的帧号，作为对齐判据。
+    int switchFrame(List<ClipFrameSpec> plan) {
+      expect(plan, isNotEmpty);
+      expect(plan.first.highlightCueIndex, 0);
+      return plan.first.frameCount;
+    }
+
+    test('rounds the switch UP when the cue start sits past the frame center',
+        () {
+      // 第二句起点 260ms：round(2.6)=3。帧尾采样(floor)会误在帧 2 切（早 60ms）。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 260, text: '一'),
+        _cue(startMs: 260, endMs: 1000, text: '二'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+      );
+      // 帧中心 = round：帧 3（视频 300ms，声音 260ms → 40ms 迟，最近边界）。
+      // 帧尾 = floor 会给 2（视频 200ms → 60ms 早）：回归即变红。
+      expect(switchFrame(plan), 3);
+    });
+
+    test(
+        'rounds the switch DOWN when the cue start sits before the frame center',
+        () {
+      // 第二句起点 240ms：round(2.4)=2。帧起点采样(ceil)会误在帧 3 切（晚 60ms，迟钝）。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 240, text: '一'),
+        _cue(startMs: 240, endMs: 1000, text: '二'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+      );
+      // 帧中心 = round：帧 2（视频 200ms，声音 240ms → 40ms 早）。
+      // 帧起点 = ceil 会给 3（视频 300ms → 60ms 迟）：回归即变红。
+      expect(switchFrame(plan), 2);
+    });
+
+    test('a cue starting at the window origin highlights from frame 0', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 500, text: '一'),
+        _cue(startMs: 500, endMs: 1000, text: '二'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+      );
+      // 500 是帧边界 → round=5，两侧采样一致，首句正好占前 5 帧。
+      expect(plan.first.highlightCueIndex, 0);
+      expect(switchFrame(plan), 5);
+    });
+
+    test(
+        'is translation-invariant: a shared A/V delay offset never shifts the '
+        'per-cue frame plan', () {
+      // 时基契约（TODO-1147 第二根因已修）：globalStart 与 cue 起止在导出侧被同一
+      // delayMs 平移，帧计划只取决于 (cueStart - globalStart)。给二者加同一偏移，
+      // 计划必须逐段完全一致——否则说明帧计划错误依赖了绝对时基（delay 会整体拉偏）。
+      List<ClipFrameSpec> planWith(int off) => clipFramePlan(
+            cues: <AudioCue>[
+              _cue(startMs: off + 0, endMs: off + 260, text: '一'),
+              _cue(startMs: off + 260, endMs: off + 1000, text: '二'),
+            ],
+            globalStartMs: off + 0,
+            globalEndMs: off + 1000,
+            fps: 10,
+          );
+      expect(planWith(500), planWith(0));
+      expect(planWith(-300), planWith(0));
+    });
+
+    test('frame counts sum to the total frame count', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 260, text: '一'),
+        _cue(startMs: 260, endMs: 1000, text: '二'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+      );
+      final int total =
+          plan.fold(0, (int a, ClipFrameSpec s) => a + s.frameCount);
+      expect(total, 10); // ceil(1000 / 100)
+    });
+
+    test('leading head-padding silence holds no highlight until the first cue',
+        () {
+      // globalStart 在首句前留 200ms head padding（帧 0/1 落在句前静音）。默认
+      // holdPrevious 但此前无句 → 前两帧无高亮(-1)，帧 2 起才亮第 0 句。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 200, endMs: 1000, text: '一'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+      );
+      expect(plan.first.highlightCueIndex, -1); // gap，无上一句可保持
+      expect(plan.first.frameCount, 2); // 帧 0(t=50)、帧 1(t=150) 都 < 200
+      expect(plan[1].highlightCueIndex, 0); // 帧 2(t=250) 起亮首句
+    });
+
+    test('empty cues yield an empty plan (caller falls back to static)', () {
+      expect(
+        clipFramePlan(
+          cues: const <AudioCue>[],
+          globalStartMs: 0,
+          globalEndMs: 1000,
+          fps: 10,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('holdPrevious keeps the previous cue over an inter-sentence gap', () {
+      // 两句之间有 [300,500) 的 gap（无 cue 覆盖）。默认 holdPrevious → gap 帧沿用
+      // 上一句（第 0 句），不产生 -1 段。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 300, text: '一'),
+        _cue(startMs: 500, endMs: 1000, text: '二'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+      );
+      // 不应出现任何 -1 段（gap 被上一句覆盖）。
+      expect(plan.any((ClipFrameSpec s) => s.highlightCueIndex == -1), isFalse);
+    });
+
+    test('ClipGapHighlight.none leaves inter-sentence gaps un-highlighted', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 0, endMs: 300, text: '一'),
+        _cue(startMs: 500, endMs: 1000, text: '二'),
+      ];
+      final List<ClipFrameSpec> plan = clipFramePlan(
+        cues: cues,
+        globalStartMs: 0,
+        globalEndMs: 1000,
+        fps: 10,
+        gapHighlight: ClipGapHighlight.none,
+      );
+      // gap [300,500) 帧应为 -1（无高亮）。
+      expect(plan.any((ClipFrameSpec s) => s.highlightCueIndex == -1), isTrue);
+    });
+  });
 }
 
 AudioCue _cue({

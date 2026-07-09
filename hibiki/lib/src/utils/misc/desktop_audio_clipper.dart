@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+    show kYoutubeStreamReplayUserAgent;
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
+import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:http/http.dart' as http;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
 // 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
@@ -35,18 +38,149 @@ bool debugIsRemoteFfmpegInput(String inputPath) =>
 /// 加 `-reconnect` 系列让 ffmpeg 自动重连（实测把间歇失败的 GIF 抽取变成稳定 277KB 产出）；
 /// `-user_agent` 与 libmpv 侧一致，规避个别流对 UA 的挑剔。本地路径返回空（不加网络开关）。
 /// 纯函数，便于单测。
+///
+/// TODO-1290：制卡句子音频（[extractAudioSegmentViaFfmpeg]）在 googlevideo 流上仍报
+/// `ffmpeg exit -138`。根因：`-138` 是 **打开/连接阶段** 的 TCP/TLS 网络错误
+/// （Windows/mingw errno 138 = ETIMEDOUT，即连接超时），而 `-reconnect` /
+/// `-reconnect_streamed` 只在「流传输中断 / EOF」时重连，**不覆盖 connect 阶段的网络错误**
+/// ——所以短音频段（每次都新开一条 googlevideo 连接、更常在 open 阶段撞上超时）依旧硬失败。
+/// 补 `-reconnect_on_network_error 1`：ffmpeg http 协议在 connect 阶段的 TCP/TLS 错误上
+/// 自动重连（配合已有的 `-reconnect_delay_max 5` 退避预算），正好命中 `-138` 这一类。
+/// 该选项 ffmpeg ≥4.3 即有，捆绑的 n7.1.5 已带；网络支持早在 ffmpeg-min recipe 编入
+/// （`--enable-network` + http/https/tcp/tls），**无需重编二进制**。remote-only、对本地
+/// 输入零影响。
 List<String> buildFfmpegRemoteInputArgs(String inputPath) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
-  return const <String>[
+  // TODO-1365（BUG-669）：`-user_agent` 与 libmpv 侧回放 UA 同源（[kYoutubeStreamReplayUserAgent]
+  // ＝youtube_explode 铸流 UA），规避 googlevideo svpuc 对残缺 UA 的 tarpit 超时。含常量故非 const。
+  return <String>[
     '-user_agent',
-    'Mozilla/5.0',
+    kYoutubeStreamReplayUserAgent,
     '-reconnect',
     '1',
     '-reconnect_streamed',
     '1',
+    // TODO-1290：connect 阶段 TCP/TLS 错误（含 -138 / ETIMEDOUT）也自动重连——
+    // `-reconnect` 系列只管流中断/EOF，短音频段的失败几乎全在 open 阶段。
+    '-reconnect_on_network_error',
+    '1',
     '-reconnect_delay_max',
     '5',
   ];
+}
+
+/// TODO-1314（B5，借鉴 yt-dlp 分片 range 下载）：把 googlevideo 流 URL 追加/覆盖
+/// `range=<start>-<end>` **查询参数**，构造一个 byte 区间请求 URL。纯函数，便于单测。
+///
+/// 根因：googlevideo 对 **audio-only DASH** 流施加 SABR/限速——不带 `range=` 的整段 GET
+/// 会被限到涓流甚至首个请求即超时（[extractAudioSegmentViaFfmpeg] 的 ffmpeg HTTP `-ss`
+/// seek 正撞上它 → 120s 超时 → 无句子音频，即 TODO-1301 用 muxed 绕行的技术债）。yt-dlp 对
+/// 这类流走 `range=` 分片顺序下载，每个分片是 full-speed 服务、不触发限速。此处按 yt-dlp
+/// 语义追加**查询参数**（而非 HTTP `Range` header——googlevideo 认查询参数那一路才不限速）。
+String buildGoogleVideoRangeUrl(String baseUrl, int start, int end) {
+  final Uri uri = Uri.parse(baseUrl);
+  final Map<String, String> q = Map<String, String>.from(uri.queryParameters);
+  q['range'] = '$start-$end';
+  return uri.replace(queryParameters: q).toString();
+}
+
+/// TODO-1314（B5）：把远端 **audio-only DASH** 流（googlevideo 分离音频轨）用 yt-dlp 式
+/// `range=` 分片顺序下载**整段物化到本地临时文件** [outputPath]，返回本地路径（成功）或
+/// null（失败 / 空流 / 非 http 输入）。**best-effort**，绝不抛。
+///
+/// 为什么必须整段物化而非只下 `[startMs,endMs)` 对应字节窗：audio-only DASH 流（webm/opus、
+/// m4a/aac）是带容器头/索引的**封装流**，中段裸字节切片不是合法容器（无 moov/Cues），ffmpeg
+/// 解不出 → 只能物化完整流再本地 seek。制卡音频流通常几 MB（几分钟片段），一次性下载可接受；
+/// [maxBytes] 兜底避免超长视频跑飞。物化后 ffmpeg 对**本地文件** `-ss` 是即时的（无网络 seek
+/// stall），故这条路径根治 audio-only 不可 seek、去掉对 muxed 的硬依赖。
+///
+/// 分片语义：从 byte 0 起每次请求 `range=start-(start+chunkBytes-1)`，googlevideo 对查询参数
+/// range 返回该窗口（HTTP 200，非 206）。返回体短于窗口 = 到流末尾（break）；HTTP 416 = 上一
+/// 片恰好是流末尾（EOF，break）；首片非 2xx / 网络异常 → 删半成品返回 null，让调用方回退
+/// （不建无音频卡，绝不喂 ffmpeg 半截流）。[httpClient] 仅供测试注入。
+Future<String?> materializeRemoteAudioViaRangeDownload({
+  required String audioUrl,
+  required String outputPath,
+  http.Client? httpClient,
+  int chunkBytes = 4 * 1024 * 1024,
+  int maxBytes = 128 * 1024 * 1024,
+  FfmpegFailureReporter? onFailure,
+}) async {
+  if (!_isRemoteFfmpegInput(audioUrl)) return null;
+  final http.Client client = httpClient ?? http.Client();
+  final File output = File(outputPath);
+  try {
+    await output.parent.create(recursive: true);
+  } catch (_) {}
+  final IOSink sink = output.openWrite();
+  bool closed = false;
+  Future<void> closeSink() async {
+    if (closed) return;
+    closed = true;
+    try {
+      await sink.flush();
+    } catch (_) {}
+    try {
+      await sink.close();
+    } catch (_) {}
+  }
+
+  void deletePartial() {
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  try {
+    int start = 0;
+    int total = 0;
+    while (start < maxBytes) {
+      final int end = start + chunkBytes - 1;
+      final http.Response res = await client.get(
+        Uri.parse(buildGoogleVideoRangeUrl(audioUrl, start, end)),
+        // TODO-1365（BUG-669）：range 下载 UA 与铸流 UA 一致，见 [kYoutubeStreamReplayUserAgent]。
+        headers: <String, String>{'User-Agent': kYoutubeStreamReplayUserAgent},
+      );
+      // 416（range 越界）= 上一片恰好取到流末尾：正常 EOF，用已下载数据收尾。
+      if (res.statusCode == 416) break;
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        await closeSink();
+        deletePartial();
+        _reportFfmpegEarlyReturn(
+          'materializeRemoteAudioViaRangeDownload',
+          'range chunk HTTP ${res.statusCode} at byte $start; url=$audioUrl',
+          onFailure,
+        );
+        return null;
+      }
+      final int n = res.bodyBytes.length;
+      if (n == 0) break; // EOF
+      sink.add(res.bodyBytes);
+      total += n;
+      start += n;
+      if (n < chunkBytes) break; // 短读 = 流末尾
+    }
+    await closeSink();
+    if (total <= 0 || !output.existsSync() || output.lengthSync() <= 0) {
+      deletePartial();
+      return null;
+    }
+    return outputPath;
+  } catch (e, stack) {
+    await closeSink();
+    deletePartial();
+    _reportFfmpegUnexpectedException(
+      'materializeRemoteAudioViaRangeDownload',
+      e,
+      stack,
+      onFailure,
+    );
+    return null;
+  } finally {
+    if (httpClient == null) client.close();
+  }
 }
 
 /// TODO-757 制卡媒体压缩档位（音频 / GIF 封面 / 截图封面的编码参数集）。
@@ -572,6 +706,37 @@ String videoCoverFileName(String bookUid) {
   return '$safe.jpg';
 }
 
+/// TODO-1281：把**远端封面 URL**（YouTube 缩略图 [youtubeThumbnailUrl] 等）下载到
+/// [outputPath]（调用方用 [videoCoverFileName] + [AppPaths.videoCoversDirectory] 拼出
+/// 与 [extractVideoCover] 同目录同命名，书架显示逻辑复用），成功返回 [outputPath]，否则
+/// 返回 null（下载失败 / 非 2xx / 空体 / 非法 URL）——**best-effort**，绝不抛：导入仍成功，
+/// 书架显示占位。流媒体书 videoPath 是 URL、ffmpeg 抽帧不适用，故封面走缩略图 URL 下载。
+///
+/// [httpClient] 仅供测试注入（默认自建、用完关闭）；把「下载 IO」与「目录解析」分离，让
+/// 本函数无需 path_provider 即可单测（调用方负责解析 [outputPath]）。
+Future<String?> downloadVideoCoverToPath({
+  required String coverUrl,
+  required String outputPath,
+  http.Client? httpClient,
+}) async {
+  final Uri? uri = Uri.tryParse(coverUrl);
+  if (uri == null || !uri.hasScheme) return null;
+  final http.Client client = httpClient ?? http.Client();
+  try {
+    final http.Response res = await client.get(uri);
+    if (res.statusCode < 200 || res.statusCode >= 300) return null;
+    if (res.bodyBytes.isEmpty) return null;
+    final File output = File(outputPath);
+    await output.parent.create(recursive: true);
+    await output.writeAsBytes(res.bodyBytes, flush: true);
+    return outputPath;
+  } catch (_) {
+    return null;
+  } finally {
+    if (httpClient == null) client.close();
+  }
+}
+
 /// 提取 [videoPath] 的书架封面存进 app 文档目录的
 /// `video_covers/<sanitized bookUid>.jpg`（持久路径，非 temp），返回封面绝对
 /// 路径；ffmpeg 缺失（移动端）/失败时返回 null（导入仍成功，书架显示占位）。
@@ -588,8 +753,10 @@ Future<String?> extractVideoCover({
   required String bookUid,
   double atSeconds = 10.0,
 }) async {
-  final Directory docs = await getApplicationDocumentsDirectory();
-  final Directory coverDir = Directory(p.join(docs.path, 'video_covers'));
+  // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
+  // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
+  // 迁移白名单 `video_covers` 一致，避免自定义数据根下新封面落回平台 Documents。
+  final Directory coverDir = await AppPaths.videoCoversDirectory();
   final String outputPath = p.join(coverDir.path, videoCoverFileName(bookUid));
   // ① 优先视频自带封面（attached_pic）。
   final String? embedded = await extractEmbeddedVideoCoverViaFfmpeg(
@@ -603,6 +770,45 @@ Future<String?> extractVideoCover({
     outputPath: outputPath,
     atSeconds: atSeconds,
   );
+}
+
+/// 视频封面抽取器签名（[extractVideoCover] 的形状）。仅供 [extractPlaylistCover]
+/// 注入测试替身，生产路径默认走 [extractVideoCover]。
+typedef VideoCoverExtractor = Future<String?> Function({
+  required String videoPath,
+  required String bookUid,
+  double atSeconds,
+});
+
+/// 播放列表封面：依次尝试 [episodePaths] 里的各集，返回**首个成功**抽到封面的绝对
+/// 路径；全部失败（首集缺失 / 远端占位 / 无可抽帧）返回 null。
+///
+/// TODO-1237 ①「m3u8 播放列表导入少封面」根因：旧路径只对 `entries.first.path` 调一次
+/// [extractVideoCover]，首集一旦不可用（文件缺失、OP/预告短片、远端 URL 占位、m3u8
+/// 相对路径没解析到真文件）就整张播放列表卡在书架占位图；而单视频天然只有一个候选、
+/// 有 ffmpeg 就有封面。这里遍历到**首个可用集**拿到有代表性的封面，与单视频对齐。单集
+/// 播放列表退化为一次 [extractVideoCover] 调用，行为不变。
+///
+/// [maxAttempts] 限制最多尝试的集数（默认 5），避免整列都不可用（尤其远端每集 ffmpeg
+/// 30s 超时）时把导入拖成分钟级。空路径跳过且不计入尝试次数。[extractor] 仅供测试注入。
+Future<String?> extractPlaylistCover({
+  required List<String> episodePaths,
+  required String bookUid,
+  double atSeconds = 10.0,
+  int maxAttempts = 5,
+  @visibleForTesting VideoCoverExtractor? extractor,
+}) async {
+  final VideoCoverExtractor extract = extractor ?? extractVideoCover;
+  int attempts = 0;
+  for (final String path in episodePaths) {
+    if (path.isEmpty) continue;
+    if (attempts >= maxAttempts) break;
+    attempts++;
+    final String? cover =
+        await extract(videoPath: path, bookUid: bookUid, atSeconds: atSeconds);
+    if (cover != null) return cover;
+  }
+  return null;
 }
 
 /// 视频制卡用：把 `[startMs, endMs)` 这段 cue 时间窗导出成**循环动图 GIF**

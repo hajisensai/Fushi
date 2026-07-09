@@ -458,7 +458,11 @@ function descriptor(id, parentIndex, settingsJs) {
 }
 
 // 11. D2 overlaySize: the host reports the UNION bounding box of all shells
-//     (window-local CSS px) + dpr; the layer is shifted by (-minLeft,-minTop).
+//     (window-local CSS px) + dpr. TODO-1231 P2: measureAndReport NO LONGER
+//     shifts the layer synchronously (that raced the window move across vsync ->
+//     geometry lurch); the shift is applied by commitLayerShift, which C++
+//     RevealStack calls AFTER SetWindowPos. So the layer stays un-shifted until
+//     commitLayerShift(box.left, box.top) runs.
 {
   const { host, document, window } = freshHost();
   window.devicePixelRatio = 1.5;
@@ -477,10 +481,16 @@ function descriptor(id, parentIndex, settingsJs) {
   assert.strictEqual(box.top, 0, 'bbox top = min shell top');
   assert.strictEqual(box.width, 140, 'bbox width = maxRight - minLeft');
   assert.strictEqual(box.height, 140, 'bbox height = maxBottom - minTop');
-  // layer shifted so the bbox origin maps to the window origin.
+  // TODO-1231 P2: measureAndReport must NOT have shifted the layer yet (it only
+  // reports the bbox; the shift is C++-ordered after SetWindowPos).
   const layer = document.getElementById('global-lookup-host-layer');
-  assert.strictEqual(layer.style.left, '40px', 'layer shifted by -minLeft');
-  assert.strictEqual(layer.style.top, '0px', 'layer shifted by -minTop');
+  assert.strictEqual(layer.style.left, '0', 'layer NOT shifted by measureAndReport');
+  assert.strictEqual(layer.style.top, '0', 'layer NOT shifted by measureAndReport');
+  // commitLayerShift (called by C++ RevealStack after the window moved) applies
+  // the compensating translation so the bbox origin maps to the window origin.
+  host.commitLayerShift(box.left, box.top);
+  assert.strictEqual(layer.style.left, '40px', 'commitLayerShift shifts by -minLeft');
+  assert.strictEqual(layer.style.top, '0px', 'commitLayerShift shifts by -minTop');
 }
 
 // Flush all captured safety timers (simulate the timeout firing).
@@ -1149,6 +1159,11 @@ function flushTimers() {
       { id: 'frame-1', parentIndex: 0, frame: { left: -50, top: -50, width: 100, height: 100 }, settingsJs: '' },
     ],
   });
+  // TODO-1231 P2: the layer shift is now applied by commitLayerShift (called by
+  // C++ RevealStack after SetWindowPos), NOT synchronously in measureAndReport.
+  // Drive it here with the reported bbox origin (minLeft=minTop=-50).
+  const box34 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  host.commitLayerShift(box34.left, box34.top);
   // The layer got shifted (proves minLeft/minTop < 0 translation happened).
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '50px', 'layer shifted by -minLeft (=50)');
@@ -1196,6 +1211,10 @@ function flushTimers() {
       { id: 'frame-1', parentIndex: 0, frame: { left: 60, top: 40, width: 100, height: 100 }, settingsJs: '' },
     ],
   });
+  // TODO-1231 P2: C++ RevealStack -> commitLayerShift runs even for the offset-0
+  // case (box origin 0,0), a no-op shift that leaves the layer at the origin.
+  const box35 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  host.commitLayerShift(box35.left, box35.top);
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '0px', 'no layer shift (minLeft=0)');
   assert.strictEqual(layer.style.top, '0px', 'no layer shift (minTop=0)');
@@ -1211,6 +1230,420 @@ function flushTimers() {
   assert.strictEqual(gap, false, 'offset=0: a gap click still misses');
   assert.ok(hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
     'offset=0: a gap click still dismisses the root');
+}
+
+// 36. TODO-1231 P1 (no parent re-render): re-rendering an ALREADY-loaded frame
+//     with an UNCHANGED settingsJs body must NOT re-eval the body. Baking a
+//     changing __hasChildPopup into the body used to force a full renderPopup()
+//     rebuild of the parent card on every nested open/close = the "父弹窗闪烁".
+{
+  const { host } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1, '/* BODY-V1 */')] });
+  const bodyEvals = () =>
+    evalLog.filter((e) => e.frameId === 'frame-0' && /BODY-V1/.test(e.code)).length;
+  assert.strictEqual(bodyEvals(), 1, "parent body eval'd once on first render");
+  // Push a child: Dart re-sends the parent's UNCHANGED body + the new child.
+  host.renderStack({
+    popups: [
+      descriptor('frame-0', -1, '/* BODY-V1 */'),
+      descriptor('frame-1', 0, '/* CHILD-BODY */'),
+    ],
+  });
+  assert.strictEqual(bodyEvals(), 1,
+    'unchanged parent body is NOT re-rendered on nested open (no card rebuild)');
+  // Close the child: parent body still unchanged -> still not re-rendered.
+  host.renderStack({ popups: [descriptor('frame-0', -1, '/* BODY-V1 */')] });
+  assert.strictEqual(bodyEvals(), 1,
+    'unchanged parent body is NOT re-rendered on nested close either');
+  // A genuinely changed body (new lookup word) DOES re-render.
+  host.renderStack({ popups: [descriptor('frame-0', -1, '/* BODY-V2 */')] });
+  assert.strictEqual(
+    evalLog.filter((e) => e.frameId === 'frame-0' && /BODY-V2/.test(e.code)).length,
+    1,
+    'a CHANGED body is re-rendered (new lookup still renders)');
+}
+
+// 37. TODO-1231 P1 (__hasChildPopup on its OWN channel): the flag is applied by a
+//     lone `window.__hasChildPopup = <bool>` eval inside the frame realm, NOT
+//     baked into the body, and flips as children open/close WITHOUT re-rendering
+//     the parent body (BUG-434 behaviour preserved, flicker removed).
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, hasChildPopup: true,
+        frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '/* ROOT-BODY */' },
+      { id: 'frame-1', parentIndex: 0, hasChildPopup: false,
+        frame: { left: 40, top: 60, width: 360, height: 480 }, settingsJs: '/* CHILD-BODY */' },
+    ],
+  });
+  const rootBody = evalLog.find((e) => e.frameId === 'frame-0' && /ROOT-BODY/.test(e.code));
+  assert.ok(rootBody, 'root body rendered');
+  assert.ok(!/__hasChildPopup/.test(rootBody.code),
+    'the body does NOT bake __hasChildPopup (rides its own channel)');
+  assert.ok(
+    evalLog.some((e) => e.frameId === 'frame-0' && /window\.__hasChildPopup = true/.test(e.code)),
+    'root __hasChildPopup=true applied on the dedicated channel');
+  const logLen = evalLog.length;
+  // Close the child: parent alone, hasChildPopup now false.
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, hasChildPopup: false,
+        frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '/* ROOT-BODY */' },
+    ],
+  });
+  const afterClose = evalLog.slice(logLen);
+  assert.ok(!afterClose.some((e) => /ROOT-BODY/.test(e.code)),
+    'unchanged parent body NOT re-rendered on child close (no flicker)');
+  assert.ok(
+    afterClose.some((e) => e.frameId === 'frame-0' && /window\.__hasChildPopup = false/.test(e.code)),
+    'child close flips __hasChildPopup=false via the dedicated channel');
+}
+
+// 38. TODO-1231 (BUG-583): beginLookup must NOT trigger a premature overlaySize
+//     off the STALE previous card. The reused root iframe still holds the prior
+//     lookup's .glossary-content; before the fix beginLookup re-armed
+//     observeContent, which synchronously re-satisfied content-ready from that
+//     stale card and fired an overlaySize -> the window revealed the OLD card at
+//     the cursor for a frame ("第一个弹窗出现时闪") before the fresh render. Now
+//     beginLookup only re-gates content-ready=false (tearing down the stale
+//     observer/timer) and the reveal-driving overlaySize comes ONLY from the
+//     following renderStack.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const stableRoot = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* V1 */' };
+  host.renderStack({ popups: [stableRoot] });
+  const iframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  // Lookup 1: the card renders real content -> content-ready + one overlaySize.
+  iframe._renderContent(120);
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, true,
+    'lookup 1: reused root content-ready off its rendered card');
+  hostPostLog = [];
+  // Lookup 2 begins: re-gate. This must NOT measure/reveal off the stale card.
+  host.beginLookup('global-lookup-root');
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, false,
+    'beginLookup re-gates content-ready=false');
+  const premature = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.strictEqual(premature.length, 0,
+    'beginLookup posts NO overlaySize (no premature reveal off the stale card)');
+}
+
+// 39. TODO-1231 (BUG-583): after beginLookup, an UNCHANGED body (same-word
+//     re-lookup) must still flip content-ready in renderPayload — otherwise the
+//     re-gated frame (beginLookup no longer re-observes the stale card) would
+//     wait for a popupRendered that never comes and the card would only reveal
+//     via the Dart ready-safety (blank flash). A CHANGED body still waits for the
+//     new card's content signal.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const rootV1 = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* V1 */' };
+  host.renderStack({ popups: [rootV1] });
+  const iframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  iframe._renderContent(120);
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
+    'lookup 1 visible after content');
+  // Same word again: beginLookup re-gates, renderStack re-sends the IDENTICAL body.
+  host.beginLookup('global-lookup-root');
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, false,
+    'beginLookup re-gated to false');
+  host.renderStack({ popups: [rootV1] });
+  assert.strictEqual(host.frameGateState('global-lookup-root').contentReady, true,
+    'unchanged body re-marks content-ready (no stuck gate on same-word re-lookup)');
+  assert.strictEqual(host.frameGateState('global-lookup-root').visible, true,
+    'reused root re-reveals on an unchanged-body re-lookup');
+}
+
+// 40. TODO-1231 v2 (BUG-583): a freshly-opened, still-gated-hidden child must NOT
+//     drag the window-origin (bbox MIN-corner) outward. That origin move races
+//     the compensating commitLayerShift across the DWM/WebView2 boundary and
+//     lurches the pinned parent card ("父弹窗出现子弹窗时闪一下"). The origin now
+//     follows ONLY content-ready (visible) shells; the far edges (window size)
+//     still grow to cover the hidden child so it is not clipped when it paints.
+//     Once the child renders (content-ready) its up/left corner joins the origin
+//     — the single origin move coincides with the child's own appearance.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* R */' };
+  host.renderStack({ popups: [root] });
+  const rootIframe = shellsOf(document)[0].children
+    .find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120); // root visible (content-ready)
+  // Open an UP/LEFT child (negative left, below-anchored) — still gated-hidden.
+  const child = { id: 'frame-1', parentIndex: 0,
+    frame: { left: -40, top: 60, width: 200, height: 160 }, settingsJs: '/* C */' };
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child] });
+  assert.strictEqual(host.frameGateState('frame-1').contentReady, false,
+    'the just-opened child is still gated-hidden');
+  const openSize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(openSize, 'opening the child re-measures');
+  assert.strictEqual(openSize.args[1].left, 0,
+    'origin stays at the visible parent (0) — the hidden up/left child does NOT '
+    + 'drag it outward');
+  assert.strictEqual(openSize.args[1].top, 0, 'origin top stays at the parent');
+  // The far edges DID grow to cover the hidden child (no clip when it paints).
+  assert.ok(openSize.args[1].width >= 200 && openSize.args[1].height >= 220,
+    'the window pre-grows its far edges to cover the hidden child');
+  // Child renders -> content-ready -> NOW it joins the origin (single move,
+  // coincident with the child appearing).
+  const childIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  childIframe._renderContent(140);
+  const readySize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(readySize, 'the child becoming content-ready re-measures');
+  assert.strictEqual(readySize.args[1].left, -40,
+    'once the child is visible the origin moves outward to include it (one move)');
+}
+
+// 41. TODO-1231 v2 (BUG-583): a DOWN-RIGHT nested open never moves the origin at
+//     all — only the far edges grow — so the common cascade has ZERO parent
+//     lurch, before AND after the child paints.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* R */' };
+  host.renderStack({ popups: [root] });
+  const rootIframe = shellsOf(document)[0].children
+    .find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120);
+  const child = { id: 'frame-1', parentIndex: 0,
+    frame: { left: 120, top: 80, width: 200, height: 160 }, settingsJs: '/* C */' };
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child] });
+  const openSize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(openSize, 'opening the down-right child re-measures (far edges grow)');
+  assert.strictEqual(openSize.args[1].left, 0,
+    'down-right open: origin stays at the parent (0)');
+  assert.strictEqual(openSize.args[1].top, 0,
+    'down-right open: origin top stays at the parent');
+  const childIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  childIframe._renderContent(140);
+  const readySize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(readySize, 'the down-right child becoming content-ready re-measures');
+  assert.strictEqual(readySize.args[1].left, 0,
+    'down-right visible: origin still at the parent (never moves)');
+  assert.strictEqual(readySize.args[1].top, 0,
+    'down-right visible: origin top unchanged (parent perfectly still)');
+}
+
+// 42. TODO-1231 v3 (BUG-583): a DOWN-RIGHT child is origin-covered from placement
+//     (its top-left >= the window origin 0), so reveal-ready flips IMMEDIATELY —
+//     byte-identical to the old unconditional flip (no reveal delay for the common
+//     cascade, the case with ZERO parent lurch).
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 120, top: 80, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'down-right child (top-left >= origin) is covered -> reveal-ready immediately');
+  const rootShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'global-lookup-root');
+  assert.strictEqual(rootShell.getAttribute('data-reveal-ready'), 'true',
+    'root at the origin is covered -> reveal-ready immediately (unchanged)');
+}
+
+// 43. TODO-1231 v3 (BUG-583) — CORE: an UP/LEFT child is HELD reveal-ready=false
+//     even once its content renders (would-be visible), because the window origin
+//     (0) does not YET cover its negative top-left. Revealing it there paints it
+//     CLIPPED at the window edge for the whole Dart round-trip = the residual
+//     "子弹窗闪" (child appears cut, then jumps). commitLayerShift moving the origin
+//     out to reach the child flips reveal-ready, so the child first paints IN PLACE.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120); // root visible
+  // Open an up/left child (negative top-left).
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const childIframe = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'up/left child NOT reveal-ready at placement (origin 0 does not cover -40,-30)');
+  // Child content renders -> content-ready true, but STILL held (no clipped paint).
+  childIframe._renderContent(140);
+  assert.strictEqual(host.frameGateState('frame-1').contentReady, true,
+    'up/left child content-ready off its rendered card');
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'up/left child STILL held after content (would paint clipped otherwise)');
+  assert.strictEqual(host.frameGateState('frame-1').visible, false,
+    'up/left child NOT visible until the window origin covers it (no clipped flash)');
+  // C++ RevealStack moved the window to the child origin, then commitLayerShift.
+  host.commitLayerShift(-40, -30);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'commitLayerShift covering the child flips reveal-ready');
+  assert.strictEqual(host.frameGateState('frame-1').visible, true,
+    'up/left child reveals in-position once the window/layer settle (no clip, no jump)');
+}
+
+// 44. TODO-1231 v3 (BUG-583): if the covering commitLayerShift never arrives, the
+//     reveal-ready safety timer still flips a held up/left child so it is never
+//     stuck invisible (mildly-clipped fallback beats a lost card).
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const childIframe = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  childIframe._renderContent(140);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'up/left child held before the safety fires');
+  flushTimers(); // reveal-ready safety (+ any content safety) fire
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'reveal-ready safety flips a held child so it is never stuck hidden');
+  assert.strictEqual(host.frameGateState('frame-1').visible, true,
+    'held child eventually reveals via the safety path (no lost card)');
+}
+
+// 45. TODO-1231 v3 (BUG-583): beginLookup resets the committed origin so a stale
+//     NEGATIVE origin from a previous lookup's up/left cascade cannot falsely mark
+//     the NEXT lookup's up/left child as already-covered (the bug reappearing on the
+//     2nd lookup onward). After the reset the new child is correctly HELD.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  // Lookup 1: an up/left cascade pushes the committed origin to (-60,-50).
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -60, top: -50, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  host.commitLayerShift(-60, -50);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'lookup 1: committing the (-60,-50) origin covers frame-1');
+  // Lookup 2 begins: reset the origin to 0. A MILDER up/left child (-40,-30) must be
+  // HELD (fresh window origin 0 does not cover it) — a stale -60 origin would have
+  // wrongly said "covered" and revealed it clipped.
+  host.beginLookup('global-lookup-root');
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1, frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+      { id: 'frame-2', parentIndex: 0, frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host.frameGateState('frame-2').revealReady, false,
+    'after beginLookup the origin is reset to 0, so a new up/left child is correctly held');
+  // And committing the fresh (-40,-30) origin reveals it in place.
+  host.commitLayerShift(-40, -30);
+  assert.strictEqual(host.frameGateState('frame-2').revealReady, true,
+    'committing the new lookup origin covers frame-2 (reveals in place)');
+}
+
+// 46. TODO-1345 (BUG-583 deeper root cause): a per-lookup origin FLOOR (reserved
+//     cascade headroom toward the screen interior, pushed by Dart on the renderStack
+//     payload) pulls the union bbox MIN-corner (window origin) OUT to the floor from
+//     the FIRST reveal — so the window is committed already covering the region an
+//     up/left child will occupy, even though the only shell sits at (0,0).
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+    originFloor: { left: -140, top: -120 },
+  });
+  const size = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(size, 'overlaySize reported');
+  const box = size.args[1];
+  assert.strictEqual(box.left, -140,
+    'origin floored OUT to the reserved headroom left (single shell at 0)');
+  assert.strictEqual(box.top, -120, 'origin floored out to the reserved headroom top');
+  // Far edges still reach the root card from the floored origin (no clip).
+  assert.strictEqual(box.width, 340, 'width = maxRight(200) - flooredLeft(-140)');
+  assert.strictEqual(box.height, 280, 'height = maxBottom(160) - flooredTop(-120)');
+  // A floor of 0 (down-right / edge lookup) is a pure no-op: origin stays 0.
+  const { host: host2 } = freshHost();
+  host2.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+    originFloor: { left: 0, top: 0 },
+  });
+  const box2 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  assert.strictEqual(box2.left, 0, 'floor 0 leaves the origin byte-identical (left)');
+  assert.strictEqual(box2.top, 0, 'floor 0 leaves the origin byte-identical (top)');
+}
+
+// 47. TODO-1345 (BUG-583 deeper) — CORE: with the origin floor reserving up/left
+//     headroom, opening an up/left child that lands WITHIN the floor does NOT move
+//     the window origin — not at placement, and (critically) NOT when the child
+//     becomes content-ready. This is the true root fix for the residual "第二个弹窗
+//     出现导致第一个弹窗位置变动": rounds 1-4 let the origin move outward ONCE at the
+//     child's content-ready (harness #40 locked that "one move"), which still lurched
+//     the pinned parent across the DWM/WebView2 boundary. Reserving the headroom up
+//     front freezes the origin so the parent has ZERO displacement — the same
+//     guarantee BUG-583 already gave the down-right cascade, now extended to up/left.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* R */' };
+  const floor = { left: -140, top: -120 };
+  // Root reveal with the reserved floor (Dart computed it from the screen edges).
+  host.renderStack({ popups: [root], originFloor: floor });
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120); // root visible (content-ready)
+  const baseline = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  assert.strictEqual(baseline.left, -140, 'root origin sits at the reserved floor left');
+  assert.strictEqual(baseline.top, -120, 'root origin sits at the reserved floor top');
+  // Simulate C++ RevealStack committing that floored origin (window moved + layer
+  // shifted) so the reveal gate's coverage check sees it.
+  host.commitLayerShift(baseline.left, baseline.top);
+  // Open an up/left child that lands WITHIN the floor (-40,-30 is inside -140,-120).
+  const child = { id: 'frame-1', parentIndex: 0,
+    frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '/* C */' };
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child], originFloor: floor });
+  const openSize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  if (openSize) {
+    assert.strictEqual(openSize.args[1].left, -140,
+      'up/left child open does NOT move the origin (it is inside the reserved floor)');
+    assert.strictEqual(openSize.args[1].top, -120,
+      'up/left child open does NOT move the origin top');
+  }
+  // The child is covered by the committed floor origin FROM PLACEMENT, so it is
+  // reveal-ready without waiting for a window move (no clipped-then-jump either).
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'child covered by the reserved floor origin -> reveal-ready at placement');
+  // Child becomes content-ready: STILL no origin move (rounds 1-4 pulled it to -40
+  // here — the residual parent lurch; the floor freezes it at -140).
+  const childIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  childIframe._renderContent(140);
+  const readySize = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  if (readySize) {
+    assert.strictEqual(readySize.args[1].left, -140,
+      'child content-ready does NOT pull the origin (frozen at the floor — zero '
+      + 'parent lurch, the deeper BUG-583 fix)');
+    assert.strictEqual(readySize.args[1].top, -120,
+      'child content-ready does NOT pull the origin top');
+  }
 }
 
 console.log('global_lookup_host_test: PASS');

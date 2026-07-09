@@ -1,0 +1,14 @@
+## BUG-604 · 外挂ASS字号字重阴影不尊重
+- **报告**：2026-07-07（用户：反馈「是不是没尊重字号·字重·阴影」，TODO-1246 续）
+- **真实性**：✅ 真 bug（阴影分支真缺陷；字号分支渲染未缩放；字重本已尊重）。分层根因：
+  - **阴影（真正的缺陷）**：ASS `Shadow`/`\shad` 深度 + `BackColour`/`\4c` 阴影色已解析进 `SubtitleCueStyle.shadowDepthPx/shadowColorArgb` 与 `SubtitleSpan.shadowDepthPx/shadowColorArgb`（`packages/hibiki_audio/lib/src/parsers/subtitle_markup.dart` + `ass_parser.dart`，TODO-1105），但渲染层 `_styleForGrapheme`（`hibiki/lib/src/media/video/video_subtitle_overlay.dart`）产出的 `TextStyle` **从不带 `shadows`** → ASS 阴影整条丢在渲染，`shadows` 只用于收藏星角标。
+  - **字号**：`Fontsize`/`\fs` 已解析并已映射，但按**裸 ASS 像素**渲染（ASS 字号是相对 PlayResY 的绝对像素），未按 `显示区高/PlayResY` 缩放 → 小屏偏大 / 大屏偏小，观感「没被尊重」。
+  - **字重**：`Bold`/`\b1` 早已解析且映射（cue 级 `baseWeight` + 行内 span），本就尊重；仅补测试锁死、无行为改动。
+- **[x] ① 已修复** — commit 09cac53f5
+  - 阴影映射：`_styleForGrapheme` 新增 `_resolveAssShadows`（行内 span 覆盖 cueStyle：深度+色 → `TextStyle.shadows` 向右下硬投影，随字号同缩放，阴影色缺省黑）；阴影绘在底部描边层（正确 z 序 阴影<描边<填充），填充层清空阴影防重叠（`_buildStrokedChar`）。
+  - 字号缩放：`SubtitleMarkup` 新增 `playResY`（ass_parser 原样透传，缺省按 ASS 规范 288）；overlay 在 LayoutBuilder 记录显示区高 `_lastLayoutHeight`，`_assFontScale`=显示区高/PlayResY 缩放 cue/span 字号，`_scaleAssFontSize` 夹 [8, 显示区高×0.4] 防撑爆；无 PlayResY 退回不缩放（向后兼容）。
+  - 仅 `respectAssStyle` 开时生效；关时 `shadows=null`、字号裸像素，与历史像素级一致。前次颜色/描边/`\r` 复位（BUG-591）未回退。
+- **[x] ② 已加自动化测试** —
+  - overlay 渲染行为（最强可落地层）：`hibiki/test/media/video/video_subtitle_overlay_markup_test.dart` 加 8 例——阴影 ON→`TextStyle.shadows` 落描边层(color/offset)+填充层清空；OFF→无 shadows；行内 span 阴影覆盖 cue；cue Bold ON→`FontWeight.bold` / OFF→用户字重；ASS 字号 48@PlayResY720 在 360px→24；无 PlayResY→裸 48。
+  - 解析：`hibiki/test/media/audiobook/ass_parser_test.dart`（markup.playResY=1080 / 缺省 288）、`subtitle_markup_test.dart`（parseSubtitleMarkup playResY 透传）。
+- **备注**：`flutter analyze` 干净；本地相关 test 全绿（overlay markup + ass_parser + subtitle_markup 51 例、广义 overlay 回归 46 例）。真机三平台字幕视觉验收交用户。

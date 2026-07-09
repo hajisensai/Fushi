@@ -1,0 +1,15 @@
+## BUG-637 · 互联访问令牌两端显示不一致令用户困惑
+- **报告**：2026-07-08（用户：坚持「访问令牌，服务端上显示和客户端上显示的不一样。明明是使用 hibiki 互联连接的」）
+- **真实性**：✅ 真 bug（UI 呈现困惑，可复现）。非功能故障——鉴权正常、连接可用；问题在两端同名标签「访问令牌」下取自不同源，用户无从理解为何数字不同。
+  - 根因链（origin/develop `fd4db9490`，均为 worktree 真实代码；主 checkout 落后 783 commit 勿据其判断）：
+    - 服务端（host）显示的是**共享服务器令牌** getServerPassword / `sync_server_password`：`hibiki/lib/src/sync/sync_settings_schema/interconnect.part.dart` `_ServerModeWidgetState._loadSettings` 读 `repo.getServerPassword()`，build 用 `t.sync_server_token` 显示；令牌本身即 host 启动时传入 server 的共享 `_token`（`hibiki/lib/src/sync/hibiki_server_controller.dart:177` `getServerPassword()` → `HibikiSyncServer(token:)`）。
+    - 客户端（phone）令牌框显示的是 host 配对时**按设备铸造的 per-peer token** getHibikiClientToken / `sync_hibiki_client_token`：`interconnect.part.dart` `_HibikiServerConfigWidgetState._load()` 读 `_repo.getHibikiClientToken()`；该 token 来自 v2 配对——client 上报 `clientDeviceId`（`interconnect.part.dart:542`）→ host `_issuePeerToken`（`hibiki/lib/src/sync/hibiki_sync_server.dart:744-762`，`onPeerPaired` 已接线时）铸造 per-peer token（≠ 共享 `_token`）落库并返回，client 存进 `sync_hibiki_client_token` 显示。
+    - server `_validateAuth`（`hibiki_sync_server.dart:368-397`）同时受理**共享 `_token` + 任一 per-peer token**——故连接照常可用（用户「明明连着」为真），但两端「访问令牌」显示天生是两个不同字符串。
+  - 判定：(b) per-peer 设计下两端令牌本就不同，但两处 UI 都用同一无修饰标签 `t.sync_server_token`（「访问令牌」）+ 无说明，误导用户以为「用互联连着就该相同」。之前 triage 的 per-peer 设计判定正确；改 UI 澄清而非改取值/鉴权。
+- **[x] ① 已修复** — 给两处令牌显示独立标签 + 说明文案，不改任何令牌取值/鉴权：
+  - 客户端令牌框改用独立标签 `t.sync_client_token`（「对端访问令牌」）+ 下方说明 `t.sync_client_token_hint`（「配对成功后由对端自动签发并填入；这是对端发给本设备的专属令牌，与对端服务器显示的共享令牌不同，两者都能连接。」）。`interconnect.part.dart` 客户端 build。
+  - 服务端令牌显示保留 `t.sync_server_token`，加说明 `t.sync_server_token_self_hint`（「本设备的服务器共享令牌；已配对的设备会另获各自的专属令牌，此共享令牌也可手动填入连接。」）。`interconnect.part.dart` `_ServerModeWidgetState` build。
+  - 新增 i18n key `sync_client_token` / `sync_client_token_hint` / `sync_server_token_self_hint`（`tool/i18n_sync.dart --add` 全 17 文件 + `dart run slang` 重生成 `strings.g.dart`）。
+  - 提交：见 ② 同一提交。
+- **[x] ② 已加自动化测试** — 源码扫描守卫 `hibiki/test/sync/interconnect_token_display_guard_test.dart`（4 用例）：client 用 `sync_client_token`+hint 且不再复用 `sync_server_token`；server 保留 `sync_server_token`+self_hint；令牌取值来源不被对调（client 读 `getHibikiClientToken`、server 读 `getServerPassword`）；`_validateAuth` 仍双接受共享 `_token`+per-peer token（`_peerTokens()`）。`flutter test` 该文件 + `interconnect_pairing_fixes_guard_test` + `hibiki_sync_server_peer_token_test` + `test/i18n`（含 zh-CN mojibake 守卫 BUG-234）全绿；`flutter analyze lib/src/sync test/sync` 净。
+- **备注**：不改令牌取值/鉴权，未破坏 `_validateAuth` 共享+per-peer 双接受。真机验收：一台桌面开互联服务器（记其「访问令牌」）、一台手机经互联 v2 配对连上——手机令牌框应显示「对端访问令牌」+说明、值与桌面不同但连接可用；桌面「已配对设备」列表出现该手机。剩余的其余 15 语言仅英文兜底，后续常规翻译补。

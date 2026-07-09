@@ -12,16 +12,52 @@ void main() {
     return f.readAsStringSync();
   }
 
-  test('Android 默认启动器图标引用文字 wordmark 资源', () {
+  test('Android 默认启动器图标引用不透明白 squircle 资源（TODO-1241）', () {
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
-    // <application> 与 .MainActivityDefault 都应引用 launcher_icon_minimal。
-    expect(manifest.contains('@mipmap/launcher_icon_minimal'), isTrue);
-    // 默认 alias 应引用文字 wordmark（launcher_icon_minimal），而非旧的響书本。
+    // <application> 默认图标应指向 squircle（不透明白，任意壁纸可见）。
+    final RegExp appIcon = RegExp(
+      r'android:name="\$\{applicationName\}"[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
+    );
+    expect(appIcon.hasMatch(manifest), isTrue,
+        reason: '<application> 默认图标应引用 launcher_icon_squircle');
+    // 默认 alias 也应引用 squircle。
     final RegExp defaultAlias = RegExp(
-      r'MainActivityDefault[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
+      r'MainActivityDefault[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
     );
     expect(defaultAlias.hasMatch(manifest), isTrue,
-        reason: '.MainActivityDefault 应引用 launcher_icon_minimal');
+        reason: '.MainActivityDefault 应引用 launcher_icon_squircle');
+    // squircle mipmap 资源（自适应 xml + 至少一档 legacy png）必须存在。
+    expect(
+        File('android/app/src/main/res/mipmap-anydpi-v26/launcher_icon_squircle.xml')
+            .existsSync(),
+        isTrue,
+        reason: '缺失 launcher_icon_squircle 自适应图标 xml');
+    expect(
+        File('android/app/src/main/res/mipmap-xxxhdpi/launcher_icon_squircle.png')
+            .existsSync(),
+        isTrue,
+        reason: '缺失 launcher_icon_squircle legacy png');
+  });
+
+  test('Android 透明（无背景）档保留为独立可选 alias（TODO-1241）', () {
+    final String manifest = read('android/app/src/main/AndroidManifest.xml');
+    // 透明档 alias 存在、默认禁用、引用透明 wordmark（launcher_icon_minimal）。
+    final RegExp transparentAlias = RegExp(
+      r'MainActivityHibikiTransparent[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
+    );
+    expect(transparentAlias.hasMatch(manifest), isTrue,
+        reason:
+            '.MainActivityHibikiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
+    // 透明档在原生映射与预设映射里都可选。
+    final String helper = read(
+        'android/app/src/main/java/app/hibiki/reader/IconSwitchHelper.java');
+    expect(helper.contains('"hibiki_transparent"'), isTrue,
+        reason: 'IconSwitchHelper 应把 hibiki_transparent 列为可选档');
+    expect(helper.contains('.MainActivityHibikiTransparent'), isTrue);
+    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
+    expect(prefs.contains("'hibiki_transparent':"), isTrue);
+    expect(prefs.contains('assets/meta/launcher_icon_squircle.png'), isTrue,
+        reason: 'default 预设预览应指向 squircle 资源');
   });
 
   test('Windows runner 暴露 setWindowIcon 通道方法', () {
@@ -82,17 +118,21 @@ void main() {
     }
   });
 
-  test('TODO-868 去重：图标选择器只剩 default+full 两档，无重复的简约档', () {
-    // 预设映射只剩两档，且不含 hibiki_minimal。
+  test('TODO-868/1241：预设三档 default+hibiki_transparent+full，无重复的 hibiki_minimal',
+      () {
+    // 预设映射为三档，且不含去重掉的 hibiki_minimal。
     final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
     expect(prefs.contains("'hibiki_minimal':"), isFalse,
-        reason: 'presetIconAssets 不应再映射 hibiki_minimal（与 default 重复）');
+        reason: 'presetIconAssets 不应再映射已去重的 hibiki_minimal');
     expect(prefs.contains("'default':"), isTrue);
+    expect(prefs.contains("'hibiki_transparent':"), isTrue);
     expect(prefs.contains("'hibiki_full':"), isTrue);
 
-    // 设置页不再渲染 hibiki_minimal tile，也不再引用 t.icon_minimal label。
+    // 设置页渲染三档 tile（含新透明档），仍不引用已删除的 hibiki_minimal / icon_minimal。
     final String page =
         read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    expect(page.contains("key: 'hibiki_transparent'"), isTrue,
+        reason: '设置页应渲染 hibiki_transparent 预设 tile');
     expect(page.contains("key: 'hibiki_minimal'"), isFalse,
         reason: '设置页不应再渲染 hibiki_minimal 预设 tile');
     expect(page.contains('t.icon_minimal'), isFalse,
@@ -115,5 +155,77 @@ void main() {
     expect(helper.contains('migrateRetiredMinimalIfEnabled'), isTrue,
         reason: '必须提供老用户迁移逻辑，把启用的 minimal alias 迁回 default');
     expect(helper.contains('RETIRED_MINIMAL_ALIAS'), isTrue);
+  });
+  test('TODO-1269 回归守卫：所有启动器自适应图标背景必须不透明且非纯黑（纯透明会被渲染成黑）', () {
+    // 根因：TODO-1241 把 ic_launcher_minimal_background 从 #FFFFFF 改成纯透明
+    // #00000000，adaptive-icon 背景层不能透明——Android 合成到不透明底层、多数
+    // 启动器渲染成纯黑，导致老用户（经 IconSwitchHelper 迁到 minimal wordmark）
+    // 升级后图标背景全黑。此守卫扫描所有 mipmap-anydpi-v26/launcher_icon*.xml，
+    // 解析其 <background> 引用的 @color，再从 values/colors.xml 解析真实色值，
+    // 断言：alpha == 0xFF（不透明）且 RGB 非纯黑 (0,0,0)。
+    final String colorsXml = read('android/app/src/main/res/values/colors.xml');
+    // 解析 colors.xml：name -> #RRGGBB / #AARRGGBB。
+    final Map<String, String> colorByName = <String, String>{};
+    final RegExp colorRe = RegExp(
+      r'<color\s+name="([^"]+)"\s*>\s*(#[0-9A-Fa-f]{6,8})\s*</color>',
+    );
+    for (final RegExpMatch m in colorRe.allMatches(colorsXml)) {
+      colorByName[m.group(1)!] = m.group(2)!;
+    }
+
+    // (alpha, r, g, b) 解析：#RRGGBB -> alpha 0xFF；#AARRGGBB -> 显式 alpha。
+    List<int> parseArgb(String hex) {
+      final String h = hex.substring(1);
+      if (h.length == 6) {
+        return <int>[
+          0xFF,
+          int.parse(h.substring(0, 2), radix: 16),
+          int.parse(h.substring(2, 4), radix: 16),
+          int.parse(h.substring(4, 6), radix: 16),
+        ];
+      }
+      return <int>[
+        int.parse(h.substring(0, 2), radix: 16),
+        int.parse(h.substring(2, 4), radix: 16),
+        int.parse(h.substring(4, 6), radix: 16),
+        int.parse(h.substring(6, 8), radix: 16),
+      ];
+    }
+
+    final Directory adaptiveDir =
+        Directory('android/app/src/main/res/mipmap-anydpi-v26');
+    expect(adaptiveDir.existsSync(), isTrue,
+        reason: '缺失自适应图标目录 mipmap-anydpi-v26');
+
+    final List<FileSystemEntity> iconXmls = adaptiveDir
+        .listSync()
+        .where((FileSystemEntity e) =>
+            e is File &&
+            e.uri.pathSegments.last.startsWith('launcher_icon') &&
+            e.path.endsWith('.xml'))
+        .toList();
+    expect(iconXmls, isNotEmpty, reason: '未发现任何 launcher_icon*.xml 自适应图标');
+
+    final RegExp bgRefRe = RegExp(
+      r'<background\s+android:drawable="@color/([^"]+)"',
+    );
+    for (final FileSystemEntity e in iconXmls) {
+      final String name = e.uri.pathSegments.last;
+      final String xml = (e as File).readAsStringSync();
+      final RegExpMatch? bg = bgRefRe.firstMatch(xml);
+      // 有的图标背景直接是 png drawable（非 @color），跳过——只校验 @color 背景。
+      if (bg == null) continue;
+      final String colorName = bg.group(1)!;
+      final String? hex = colorByName[colorName];
+      expect(hex, isNotNull,
+          reason: '$name 引用的 @color/$colorName 在 colors.xml 中未定义');
+      final List<int> argb = parseArgb(hex!);
+      expect(argb[0], 0xFF,
+          reason: '$name 背景 @color/$colorName = $hex 不是不透明（alpha != 0xFF）；'
+              '自适应图标背景纯/半透明会被渲染成黑（TODO-1269）');
+      final bool isPureBlack = argb[1] == 0 && argb[2] == 0 && argb[3] == 0;
+      expect(isPureBlack, isFalse,
+          reason: '$name 背景 @color/$colorName = $hex 是纯黑，图标会背景全黑（TODO-1269）');
+    }
   });
 }

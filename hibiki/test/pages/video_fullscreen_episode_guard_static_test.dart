@@ -26,9 +26,14 @@ void main() {
       '  Future<void> load({',
       '  Future<void> _loadEmbeddedSubtitleIfNeeded(',
     );
-    // 复用：用 `_player ?? Player()`，仅 _player==null 时建 VideoController。
-    expect(fn, contains('_player ?? Player()'),
-        reason: '换集必须复用同一 Player，否则全屏路由绑旧实例黑屏（BUG-120）');
+    // 复用：`_player ??` 命中已有实例（换集不重建），仅 _player==null 时才新建 Player
+    // + VideoController。TODO-1232 A2 给 null 分支加了「诊断开启则用 verbose logLevel
+    // 构造」的三元，故不再钉死裸 `_player ?? Player()` 整串，而是锁复用契约本身：
+    // ① `_player ??` 前缀（非空即复用）；② 仍保留裸 `Player()` 分支（pitch-safe 默认路径）。
+    expect(fn, contains('_player ??'),
+        reason: '换集必须复用同一 Player（_player 非空即复用），否则全屏路由绑旧实例黑屏（BUG-120）');
+    expect(fn, contains('Player()'),
+        reason: '_player==null 时仍走裸 Player()（诊断关闭路径），保 pitch 默认安全构造');
     expect(fn, contains('if (_player == null) {'),
         reason: 'VideoController 仅首次实例化，换集复用同一实例');
 

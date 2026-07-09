@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show base64Encode;
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
@@ -38,6 +39,12 @@ String buildAudiobookClipVerticalHtml({
       '<span class="clip-cue" data-index="$i">'
       '${_escapeHtml(segments[i].text)}</span>',
     );
+    // TODO-1127：把该句后夹带的 EPUB 插图按序注成 data-uri <img> 块（竖排 vertical-rl
+    // 流里作块级插图，随阅读顺序排在该句之后）。绝大多数句子 images 为空 → 无输出，
+    // 与旧行为逐字节一致。
+    for (final Uint8List image in segments[i].images) {
+      cueHtml.write('<img class="clip-img" src="${_imageDataUri(image)}">');
+    }
   }
 
   return _kClipHtmlHead
@@ -86,6 +93,13 @@ body {
   background-color: $HIGHLIGHT;
   border-radius: 0.18em;
   padding: 0.08em 0.12em;
+}
+.clip-img {
+  display: block;
+  max-width: 92%;
+  max-height: 60%;
+  margin: 0.4em auto;
+  object-fit: contain;
 }
 </style>
 </head>
@@ -302,6 +316,43 @@ String _clipColorToCssRgba(Color c) {
 String _num(double v) {
   if (v == v.roundToDouble()) return v.toInt().toString();
   return v.toString();
+}
+
+/// 把插图字节编码成 data-uri（按魔数区分 PNG/JPEG，其它按 png 兜底——浏览器仍会按真实
+/// 字节嗅探解码）。供竖排 WebView 帧把 EPUB 插图内联进 HTML（TODO-1127）。
+String _imageDataUri(Uint8List bytes) {
+  final String mime = _imageMimeType(bytes);
+  return 'data:$mime;base64,${base64Encode(bytes)}';
+}
+
+/// 按文件头魔数判断图片 MIME：JPEG（FF D8 FF）/ PNG（89 50 4E 47）/ GIF（47 49 46）/
+/// WebP（RIFF....WEBP）；无法识别按 image/png 兜底。
+String _imageMimeType(Uint8List b) {
+  if (b.length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) {
+    return 'image/jpeg';
+  }
+  if (b.length >= 4 &&
+      b[0] == 0x89 &&
+      b[1] == 0x50 &&
+      b[2] == 0x4E &&
+      b[3] == 0x47) {
+    return 'image/png';
+  }
+  if (b.length >= 3 && b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) {
+    return 'image/gif';
+  }
+  if (b.length >= 12 &&
+      b[0] == 0x52 &&
+      b[1] == 0x49 &&
+      b[2] == 0x46 &&
+      b[3] == 0x46 &&
+      b[8] == 0x57 &&
+      b[9] == 0x45 &&
+      b[10] == 0x42 &&
+      b[11] == 0x50) {
+    return 'image/webp';
+  }
+  return 'image/png';
 }
 
 String _escapeHtml(String text) {

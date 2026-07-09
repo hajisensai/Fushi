@@ -420,4 +420,117 @@ void main() {
           reason: '深色徽章背景上图标必须是白色（可见）');
     });
   });
+
+  group('TODO-1320 · 主题卡片恒完整显示、下方无多余文字', () {
+    // 用户诉求：①删掉自定义主题底下的名字文字 ②所有主题卡片都完整显示配色，
+    // 而不是选中以后才完整。这里在 widget 行为层锁死：无论选中与否，swatch 都画
+    // 完整对角预览（含「文」glyph），且 swatch 自身结构里不含任何 Text caption
+    // （HibikiSchemeSwatch 已删除 label/textColor，无法再挂底部文字）。
+    const List<Color> colors = <Color>[
+      Color(0xFF112233),
+      Color(0xFF445566),
+      Color(0xFF778899),
+      Color(0xFFAABBCC),
+    ];
+
+    SchemeDiagonalPainter painterOf(WidgetTester tester) {
+      final CustomPaint cp = tester.widget<CustomPaint>(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is CustomPaint && w.painter is SchemeDiagonalPainter,
+          ),
+        ),
+      );
+      return cp.painter! as SchemeDiagonalPainter;
+    }
+
+    // TODO-1320 回归守卫：光有 painter.showGlyph==true 不够——若 CustomPaint 画布塌成
+    // Size.zero（childless CustomPaint 在父级 loose 约束下的默认行为），预览一个像素
+    // 都画不出来，卡片就是空白圆角块。这里量真实渲染尺寸，锁死画布非空。
+    Size paintSizeOf(WidgetTester tester) => tester.getSize(
+          find.descendant(
+            of: find.byType(HibikiSchemeSwatch),
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is CustomPaint && w.painter is SchemeDiagonalPainter,
+            ),
+          ),
+        );
+
+    Future<void> pumpSwatch(
+      WidgetTester tester, {
+      required bool selected,
+      Widget? overlay,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: colors,
+                selected: selected,
+                overlay: overlay,
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('未选中的主题卡片也画完整对角预览（含「文」glyph）', (WidgetTester tester) async {
+      await pumpSwatch(tester, selected: false);
+      expect(painterOf(tester).showGlyph, isTrue,
+          reason: '未选中的主题卡片必须完整显示配色，而不是选中后才完整');
+    });
+
+    testWidgets('未选中的主题卡片内不含任何底部文字（Text）', (WidgetTester tester) async {
+      await pumpSwatch(tester, selected: false);
+      // 「文」glyph 由 CustomPaint/TextPainter 绘制，不是 Text widget；故 swatch
+      // 内出现 Text 只可能来自曾经的 caption。删除 label 后必须一个都没有。
+      expect(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+        reason: '主题卡片下方不能再有名称/说明文字',
+      );
+    });
+
+    testWidgets('选中的主题卡片同样完整预览且无底部文字', (WidgetTester tester) async {
+      await pumpSwatch(tester, selected: true, overlay: const Icon(Icons.add));
+      expect(painterOf(tester).showGlyph, isTrue);
+      expect(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('未选中的预设主题卡片预览画布必须非空（回归：TODO-1320 未选中空白卡）',
+        (WidgetTester tester) async {
+      // 预设 swatch 未选中时没有徽章 child（既非选中的对勾、也非 system/custom 的
+      // overlay）。修复前 CustomPaint 因此塌成 0x0，整张卡是空白圆角块——本用例正是
+      // 用真实渲染尺寸把它钉死：画布必须铺满卡片、非零，才能画出完整对角预览。
+      await pumpSwatch(tester, selected: false);
+      final Size size = paintSizeOf(tester);
+      expect(size.width, greaterThan(0), reason: '未选中预设卡片的预览画布宽度必须非零，否则整张卡空白');
+      expect(size.height, greaterThan(0), reason: '未选中预设卡片的预览画布高度必须非零，否则整张卡空白');
+    });
+
+    testWidgets('选中 / 系统 / 自定义 swatch 的预览画布同样非空', (WidgetTester tester) async {
+      // 反向对照：选中卡（对勾 child）与 system/custom（overlay child）本就非空，
+      // 一并守住，防止未来改动把「有 child 才非空」这个隐性依赖反向破坏掉。
+      await pumpSwatch(tester, selected: true);
+      expect(paintSizeOf(tester).shortestSide, greaterThan(0));
+      await pumpSwatch(tester,
+          selected: false, overlay: const Icon(Icons.auto_awesome));
+      expect(paintSizeOf(tester).shortestSide, greaterThan(0));
+    });
+  });
 }

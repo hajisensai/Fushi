@@ -61,6 +61,28 @@ class ReaderContentStyles {
   }) =>
       'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - ${marginTopVh}vh - ${marginBottomVh}vh - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
 
+  /// TODO-1285：每页多列（pageColumns）的单个子列宽度。给定单列时的 content-box 基准
+  /// 表达式 [baseContentBoxCss]（横排=宽、竖排=高，均为 CSS calc/max 串），当
+  /// [pageColumns] ≥ 2 时返回 `(content-box − (N−1)·gap)/N`，浏览器据此在 content-box
+  /// 里正好排下 N 列（floor((content-box+gap)/(subW+gap)) == N，代数恒等）。[pageColumns]
+  /// ≤ 1（含 0=自动/单列）时原样返回 [baseContentBoxCss]，与旧单列几何字节等价。
+  ///
+  /// 与 JS getScrollContext 的 `pageStep = columnCount·(used column-width + gap)` 成对：
+  /// 每列真实周期 subW+gap，一页 N 列 → 页步 = N·(subW+gap) == content-box+gap，翻页网格
+  /// 仍落在真实列边界，不引入 TODO-753/792 亚像素漂移。[columnGapPx] 必须与 body 的
+  /// `column-gap` 常量（[ReaderLayoutDefaults.columnGapPx]）一致。
+  static String columnWidthForColumns({
+    required String baseContentBoxCss,
+    required int pageColumns,
+    required int columnGapPx,
+  }) {
+    if (pageColumns <= 1) return baseContentBoxCss;
+    final int totalGapPx = (pageColumns - 1) * columnGapPx;
+    // max(1px, ...) 兜底：坍塌视口 + 大 N 时裸 calc 可能 ≤0（非法列宽），钳到 1px；
+    // 正常视口远大于地板，max 取 calc，零行为变化。
+    return 'max(1px, calc(($baseContentBoxCss - ${totalGapPx}px) / $pageColumns))';
+  }
+
   /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
   /// 的 `max(F, calc(...))` 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
   /// V=视口高，F=字号，mt/mb=上下页边距(px)，cT/cB=chrome 上下 inset(px)。
@@ -185,13 +207,28 @@ class ReaderContentStyles {
     //    TODO-734：基准必须是纯视口高 V（--reader-viewport-height），不是含
     //    +bottomOverlap 的 --page-height（那是图片虚高用），否则列底边比视口底高
     //    (O−F)，字号 F<22 漏字进底栏。与 JS getScrollContext 的 viewportHeight 成对。
-    final String columnWidthCss = isVertical
+    // content-box 单列基准（turn 轴扣 padding，横排=宽、竖排=高）。单列时 column-width
+    // 直接用它；每页多列时下面 columnWidthForColumns 把它按 N 均分成子列宽。
+    final String baseColumnWidthCss = isVertical
         ? ReaderContentStyles.verticalColumnWidthCss(
             marginTopVh: mt,
             marginBottomVh: mb,
             fontSizePx: settings.fontSize.round(),
           )
         : 'calc(var(--page-width, 100vw) - ${ml}vw - ${mr}vw)';
+    // TODO-1285：每页列数（pageColumns）根因修复。旧实现只发 `column-count:N` 却把
+    // column-width 钉死在整页 content-box —— CSS multicol 规范下并存时实际列数 =
+    // min(N, floor((content-box+gap)/(column-width+gap))) = min(N,1) = 1，N 被整页列宽
+    // 压成 1 列，「每页列数」永不生效。正解：column-width 必须 = 单个子列宽 =
+    // (content-box − (N−1)·gap)/N，浏览器才在 content-box 里正好排下 N 列。与 JS
+    // getScrollContext 的 pageStep = columnCount·(used column-width + gap) 成对（见
+    // reader_pagination_scripts.dart）。pageColumns≤1 时返回原整页 content-box，
+    // 与旧行为字节等价（零回归，保 TODO-729/753/792 单列几何不变式）。
+    final String columnWidthCss = ReaderContentStyles.columnWidthForColumns(
+      baseContentBoxCss: baseColumnWidthCss,
+      pageColumns: settings.pageColumns,
+      columnGapPx: ReaderLayoutDefaults.columnGapPx,
+    );
 
     final String textSpacingCss =
         'line-height: ${settings.lineHeight} !important;';
@@ -324,6 +361,8 @@ svg.block-img.blurred {
                 columnsCss: columnsCss,
                 clampedMarginTop: mt,
                 clampedMarginBottom: mb,
+                clampedMarginLeft: ml,
+                clampedMarginRight: mr,
                 contentClipCss: contentClipCss,
               );
 
@@ -340,8 +379,25 @@ $pageBreakCss
   --hoshi-sasayaki-background-color: ${sasayakiColor ?? colors.sasayakiColor};
 }
 html {
-  /* block-container property: constrain line-box height so ruby/furigana won't expand it */
-  -webkit-line-box-contain: block glyphs replaced;
+  /* TODO-1308 (BUG): the legacy WebKit property
+     `-webkit-line-box-contain: block glyphs replaced` (cargo-ported from Hoshi
+     in ec4abf78a) has been REMOVED here. It told the engine to size line boxes
+     to glyphs only, i.e. to NOT reserve the extra leading a <ruby>'s <rt>
+     annotation needs. Current Blink dropped support for the property entirely
+     (CSS.supports('-webkit-line-box-contain', ...) === false on WebView2 /
+     recent Android WebView), so it was already a dead no-op for most users. But
+     on older Android System WebView that still honours it, the stripped reserve
+     means the furigana has nowhere to sit: in vertical-rl the annotation lives
+     on the column's cross axis (to the right of the base column), so with the
+     reserve gone the <rt> collapses INTO the base-character column — "假名跑到
+     文字中间". The overlap re-materialises after a TOC/bookmark/search jump
+     because `_applyChapterHighlights` (navigation.part.dart) forces a style
+     recalc / incremental relayout on the freshly-scrolled content, re-applying
+     the glyph-only line-box constraint. Removing the declaration restores the
+     default line-box behaviour (which reserves ruby space) on every engine —
+     exactly what current Blink already does correctly (zero regression there),
+     and the BUG-108 lesson that Blink WebViews do not add ruby leading unless
+     the line box is allowed to grow. */
   /* Themed scrollbar: the track stays transparent so it shows the page
      background, and the thumb takes the theme text colour (already alpha<1),
      so dark themes get a light thumb and light themes a dark one. The standard
@@ -428,9 +484,67 @@ svg.block-img {
 }
 $blurImagesCss
 $furiganaCss
+/* TODO-1308 (BUG-611 follow-up): the reader FORCES the writing mode, so it must
+   also own the <ruby> formatting context. Real vertical EPUBs (e.g. light novels)
+   ship legacy furigana CSS such as `rt { display: inline-block }` /
+   `ruby { display: inline-block }` — patterns that rendered under old WebKit's
+   ruby model but, under Blink's modern ruby (WebView2 / recent Android WebView),
+   drop the <rt> out of its annotation box. In vertical-rl the furigana then
+   collapses ~one base glyph DOWN the column: 貫(かん)禄(ろく) renders with かん
+   between 貫/禄 and ろく floating to the base's right at the wrong height
+   (measured dyRatio≈0.95 vs 0 correct). The reader style tag is injected LAST in
+   <head> (webview.part.dart `_buildSanitizedChapterHtmlBytes`), so these
+   !important rules win the cascade over the book stylesheet and re-assert the
+   correct ruby structure (rt display is owned by _furiganaCss so `hide` mode's
+   display:none still wins there). This is engine-agnostic and a no-op for books
+   that don't override the ruby display (these ARE the UA defaults).
+
+   BUG-666 (TODO-1308 follow-up): owning writing-mode + display is not enough —
+   the reader must ALSO own `ruby-position`. Legacy vertical EPUBs ship
+   `ruby { ruby-position: under }` (or the WebKit alias `-webkit-ruby-position:
+   after`), which in vertical-rl throws the furigana to the LEFT of the base
+   column instead of the correct Japanese side (the right). Blink resolves the
+   `-webkit-` alias onto the same `ruby-position` longhand, so this later
+   !important declaration wins the cascade over either spelling. `over` maps to
+   line-over in horizontal-tb (furigana ABOVE the base) and to the right in
+   vertical-rl (furigana RIGHT of the base) — the correct side for Japanese in
+   both writing modes. This also re-aligns the audiobook/selection highlight lane
+   (_highlightLaneCss paints `left center` in vertical, i.e. the base lane which
+   only sits on the left when annotations are on the right = `over`); with the
+   book's `under` the base moved right and the lane painted the furigana column
+   instead (the misaligned band seen on 「懐かしい」). display unchanged, so the
+   65fd8d03d non-collapse (dyRatio≈0) is preserved. */
+ruby {
+  display: ruby !important;
+  ruby-position: over !important;
+}
+ruby > rp {
+  display: none !important;
+}
 ruby > rt, ruby > rp {
   -webkit-user-select: none;
   user-select: none;
+}
+/* TODO-1279：书籍里长按拖选正文时，WebView 引擎会把长按拖选翻译成**原生文本选区**
+   （蓝色 ::selection），与我们自绘的查词选区高亮（::highlight(hoshi-selection) /
+   .hoshi-dict-highlight）叠成「双选区并存」。查词命中不依赖原生选区——它走
+   getCharacterAtPoint → caretPositionFromPoint + Range + CSS Highlights API，与
+   user-select 无关（user-select 只管用户能否拖选、不影响程序化 Range/caret 与
+   ::highlight 绘制）。原生选区在触屏上唯一「消费者」并不存在：Ctrl+C 复制
+   （caret.part.dart 的 readerShouldHandleDesktopCopy）与右键「查词/复制/导出」菜单
+   （chrome.part.dart 的 _showReaderTextContextMenu）都 isWindowsPlatform / 桌面门控，
+   触屏没有任何路径读原生选区。故按指针类型消除这条特殊情况：粗指针（触屏，pointer:
+   coarse——手机/平板 WebView 报告的主指针）禁用原生 user-select + iOS 长按 callout，
+   长按拖选只留我们的查词高亮；细指针（鼠标，pointer: fine——桌面 WebView2 / WKWebView /
+   Linux）不受影响，桌面 Ctrl+C 复制与右键导出所依赖的 window.getSelection() 原生选区
+   照旧。这是 CSS 层的根因修复，不再靠 selectstart 的 <400ms 时窗 preventDefault
+   （长按天然 >400ms 会逃逸）去追着压制。 */
+@media (pointer: coarse) {
+  html, body, body * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
 }
 /* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
    priority=1，使其叠在音频(sasayaki, 默认 priority=0)之上 → 重叠处只显示这一层。 */
@@ -547,7 +661,7 @@ a {
     final String size = isVertical ? '1em 100%' : '100% 1em';
     final String position = isVertical ? 'left center' : 'left bottom';
     return '''
-/* BUG-568：ruby 元素的盒子包含 rt/rp 注音轨，CSS Highlight 在竖排会按行盒刷宽。
+/* BUG-643：ruby 元素的盒子包含 rt/rp 注音轨，CSS Highlight 在竖排会按行盒刷宽。
    ruby 与 sasayaki 普通正文都只把背景画在正文基字 lane 上，避免有无振假名宽度不一。 */
 .hoshi-sasayaki-cue.hoshi-sasayaki-active,
 ruby.hoshi-selection-ruby-active,
@@ -584,6 +698,8 @@ ruby.hoshi-hl-purple-ruby-active {
     required String columnsCss,
     required double clampedMarginTop,
     required double clampedMarginBottom,
+    required double clampedMarginLeft,
+    required double clampedMarginRight,
     required String contentClipCss,
   }) {
     return '''
@@ -621,6 +737,15 @@ body {
   height: var(--reader-viewport-height, 100vh) !important;
   column-width: $columnWidthCss !important;
   column-gap: $columnGapCss !important;
+  /* TODO-1285（每页列数分页·相邻页泄露根因修复其一）：分页多列(pageColumns≥2)是
+     固定高度 + 横/竖溢出的 multicol。CSS 默认 column-fill:balance 让引擎在末
+     fragmentainer把内容均摊成等高短列；Blink 在受限高度下退化成 auto(实测
+     balance==auto)故本机无差，但按规范其它引擎/旧 WebView 可对每个 fragment
+     都做均摊 → 列高不齐、列不落在 pageStep 网格 → 翻页时相邻页的列露进本页。
+     分页 multicol 必须显式 column-fill:auto(与 ttu 上游、本仓 horizontal_pitch
+     harness 一致)：逐列填满再溢出、列周期恒 == pageStep。单列(pageColumns≤1)同样
+     受用(1 列无可均摊，零行为变化)。 */
+  column-fill: auto !important;
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
   padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
@@ -637,6 +762,34 @@ body {
   $vertKerningCss
   $vpalCss
   $columnsCss
+}
+/* TODO-1285（相邻页/列泄露根因修复其二·overflow 裁剪失效兜底）：分页把整条内容当
+   一根 multicol 横/竖向溢出、靠 scrollTop/Left 移动 body 看每页；相邻页的列几何上
+   落在 body 的 padding(页边距)带里。body{overflow:hidden} 只在 border-box(=padding-box
+   外沿=视口帧)裁剪，**裁不掉 padding 带内**滚过的相邻列——唯一遮住它的是 body 的
+   clip-path(paint 期裁剪)。clip-path 是绘制期特性，一旦目标 WebView 不支持/不解析
+   `inset(calc(vh+var()) vw ...)`/滚动不重绘，padding 带里的相邻列就露出来；单列时那
+   只是相邻页整列的一条细边(不易察觉)，多列时 padding 带能容下一整根窄子列 → 用户看到
+   「上一页/下一页内容全露出来」。根因是「只靠 clip-path 这一个 paint 期机制遮 padding
+   带泄露」。这里在**未被 body clip-path 裁剪的** html 上加一层 ::before 覆盖条：position:
+   fixed 贴视口帧、四边 border 宽 == body 四边 padding(与 contentClipCss/padding 逐项一致)、
+   border-color=页背景色 → 用背景色不透明覆盖 padding 泄露带；中间内容盒透明(border 只占
+   四边)不挡正文；pointer-events:none 不拦选词/点按；极大 z-index 压在正文之上。clip-path
+   仍在(Blink 下它已把 padding 带显示成背景、本覆盖条与其同色零视觉变化、可回归验证)，
+   但即使 clip-path 失效，本覆盖条独立(html 无 clip-path)遮住泄露 → 引擎无关的兜底。 */
+html::before {
+  content: "" !important;
+  position: fixed !important;
+  top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  z-index: 2147483000 !important;
+  border-style: solid !important;
+  border-color: ${colors.backgroundColor} !important;
+  border-top-width: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
+  border-right-width: ${clampedMarginRight}vw !important;
+  border-bottom-width: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  border-left-width: ${clampedMarginLeft}vw !important;
 }''';
   }
 
@@ -802,12 +955,19 @@ body {
   }
 
   static String _furiganaCss(String mode) {
+    // TODO-1308: when furigana is SHOWN, force `display: ruby-text !important` so
+    // a book stylesheet that sets `rt { display: inline-block/inline/block }`
+    // cannot pull the annotation out of its ruby box and collapse it into the
+    // base column in vertical writing (see the ruby rule in the main CSS). rt
+    // display is owned here (not globally) so the `hide` branch's display:none
+    // still wins for hidden furigana.
     switch (mode) {
       case 'hide':
         return 'rt { display: none !important; }';
       case 'partial':
         return '''
 rt {
+  display: ruby-text !important;
   font-size: 0.45em;
   visibility: hidden;
 }
@@ -817,6 +977,7 @@ ruby.show-rt rt {
       case 'toggle':
         return '''
 rt {
+  display: ruby-text !important;
   font-size: 0.45em;
   visibility: hidden;
 }
@@ -824,7 +985,7 @@ body.show-all-rt rt {
   visibility: visible !important;
 }''';
       default:
-        return 'rt { font-size: 0.45em; }';
+        return 'rt { display: ruby-text !important; font-size: 0.45em; }';
     }
   }
 
@@ -846,6 +1007,16 @@ body.show-all-rt rt {
           selectionColor: 'rgba(200, 170, 110, 0.35)',
           sasayakiColor: 'rgba(100, 180, 220, 0.40)',
           linkColor: '#3a5fad',
+        );
+      case 'eyecare-theme':
+        // 护眼：豆沙绿正文底 (#c7edcc) + 深灰字，柔和低蓝光。角色色须与
+        // chrome.part.dart `_themeMap['eyecare-theme']` 逐一相等（BUG-396）。
+        return const _ThemeColors(
+          textColor: 'rgba(0, 0, 0, 0.87)',
+          backgroundColor: '#c7edcc',
+          selectionColor: 'rgba(136, 181, 131, 0.35)',
+          sasayakiColor: 'rgba(160, 200, 120, 0.40)',
+          linkColor: '#4c7a3e',
         );
       case 'gray-theme':
         return const _ThemeColors(

@@ -11,6 +11,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -29,6 +30,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_reader_toggle_chrome;
     case ShortcutAction.readerOpenMenu:
       return t.shortcut_action_reader_open_menu;
+    case ShortcutAction.readerOpenNavigation:
+      return t.shortcut_action_reader_open_navigation;
     case ShortcutAction.readerDismissDict:
       return t.shortcut_action_reader_dismiss_dict;
     case ShortcutAction.readerToggleBookmark:
@@ -249,10 +252,33 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   // serialization (GamepadButton.serialize stays A/B/X/Y regardless of brand).
   GamepadBrand _gamepadBrand = GamepadBrand.xbox;
 
+  /// TODO-1223: true once the async probe confirms the platform's controller
+  /// backend is unavailable (Windows without GameInput.dll — the +488 delay-load
+  /// fix degrades silently to no gamepad support). When set, a one-line hint
+  /// renders at the top of this (gamepad-related) page telling the user why the
+  /// controller is dead and how to enable it, instead of leaving them guessing.
+  /// Only ever flipped to true on a definitive `false` from the native probe, so
+  /// machines with a working backend (and every non-Windows platform) show
+  /// nothing.
+  bool _gameInputUnavailable = false;
+
   @override
   void initState() {
     super.initState();
     _gamepadBrand = ReaderHibikiSource.instance.gamepadGlyphBrand;
+    // Surface the hint only on a gamepad-related surface (this settings page),
+    // never as a startup popup — a mouse/keyboard-only user is not nagged.
+    unawaited(_checkGameInputAvailability());
+  }
+
+  /// TODO-1223: asks the platform whether the controller backend is available
+  /// and, only on a definitive unavailable result, flips [_gameInputUnavailable]
+  /// so the hint appears. Non-Windows / transient-failure cases resolve to
+  /// available and render nothing.
+  Future<void> _checkGameInputAvailability() async {
+    final bool available = await GamepadService.gameInputBackendAvailable();
+    if (!mounted || available) return;
+    setState(() => _gameInputUnavailable = true);
   }
 
   Future<void> _onGamepadBrandChanged(GamepadBrand brand) async {
@@ -446,6 +472,11 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // TODO-1223: hint shown only when the platform's controller backend is
+        // unavailable (Windows without GameInput.dll). Rendered here — on the
+        // gamepad-related settings surface — rather than as a startup popup, so
+        // it never interrupts a user who does not touch controller settings.
+        if (_gameInputUnavailable) _buildGameInputHint(context),
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Align(
@@ -468,14 +499,23 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               child: SegmentedButton<bool>(
                 key: const Key('shortcut_view_toggle'),
                 showSelectedIcon: false,
-                segments: const <ButtonSegment<bool>>[
+                segments: <ButtonSegment<bool>>[
                   ButtonSegment<bool>(
                     value: false,
-                    icon: Icon(Icons.list_outlined),
+                    icon: const Icon(Icons.list_outlined),
+                    tooltip: t.shortcut_view_list,
                   ),
                   ButtonSegment<bool>(
                     value: true,
-                    icon: Icon(Icons.keyboard_outlined),
+                    // TODO-942 discoverability: the visual segment opens the
+                    // gamepad/keyboard skin overview (GamepadLayoutView). Its
+                    // icon used to be a plain keyboard glyph, which read as a
+                    // mere keyboard view and hid the controller layout — users
+                    // asked "where is the controller diagram?". A controller
+                    // glyph tells the user at a glance that this segment shows
+                    // the gamepad visual layout.
+                    icon: const Icon(Icons.sports_esports_outlined),
+                    tooltip: t.shortcut_view_visual,
                   ),
                 ],
                 selected: <bool>{_visualMode},
@@ -490,6 +530,40 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         for (final ShortcutScope scope in ShortcutScope.values)
           _buildScopeSection(scope),
       ],
+    );
+  }
+
+  /// TODO-1223: one-line notice that the platform's controller backend is
+  /// unavailable (Windows without GameInput.dll → gamepad input silently does
+  /// nothing after the +488 delay-load crash fix). Tells the user why the
+  /// controller is dead and how to enable it. A styled inline banner (not a
+  /// blocking dialog) so it informs without interrupting.
+  Widget _buildGameInputHint(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color fg = theme.colorScheme.onSecondaryContainer;
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: Container(
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.secondaryContainer,
+          borderRadius: tokens.radii.cardRadius,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.info_outline, size: 20, color: fg),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Text(
+                t.shortcut_gamepad_unavailable_hint,
+                style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

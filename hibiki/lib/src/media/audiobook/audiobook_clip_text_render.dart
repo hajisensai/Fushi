@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -16,8 +17,9 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 /// 布局参数（尺寸/字号/内边距/竖排）抽成纯函数 [computeClipTextLayout] 便于守卫测试，
 /// 渲染本身要 BuildContext + 真实 pipeline 不可纯单测（合成由真机验）。
 
-/// 片段分享文本图的布局规格（纯数据）。竖屏 1080×1920（D3，TODO-1147 把栅格化+输出
-/// 分辨率从 720×1280 提到 1080×1920 消除文字模糊），沿用阅读主题色（D2）。
+/// 片段分享文本图的布局规格（纯数据）。输出分辨率按写排方向取默认手机屏尺寸——
+/// 竖排=竖屏 1080×1920、横排=横屏 1920×1080（TODO-1147 用户回访「分辨率不对」；
+/// 此前横排也塞竖屏 1080×1920 画布），沿用阅读主题色（D2）。
 @immutable
 class AudiobookClipTextLayout {
   const AudiobookClipTextLayout({
@@ -69,10 +71,18 @@ class AudiobookClipTextLayout {
 /// - [vertical] / [lineHeight] / [background] / [foreground]：沿用阅读主题（D2）。
 /// - [highlight]：逐句高亮跟随色（`ReaderThemeColors.sasayaki`，TODO-1013），作为整句
 ///   背景衬底涂在文字之下，复刻有声书当前句跟读高亮。
-/// - [width] / [height]：输出分辨率（默认竖屏 1080×1920，D3；TODO-1147 提分辨率消模糊）。
+/// - [width] / [height]：输出分辨率。不传（null）时按 [vertical] 取默认手机屏尺寸：
+///   竖排=竖屏 1080×1920、横排=横屏 1920×1080（TODO-1147 用户回访）。渲染画布 /
+///   JPG 帧 / ffmpeg scale+pad 全链共用 layout.width/height 单一真相源，无二次缩放。
 ///
-/// 字号自适应规则（粗略但确定，避免巨图/截断）：以 [baseFontSize] 为上限，文本越长
-/// 越往下收，最低 [minFontSize]。padding 取较小边的 8%，给文本留呼吸空间。
+/// 字号规则（TODO-1282 用户回访「字体太小·应按 EPUB 生成不是 SRT」）：分享卡片要像
+/// EPUB 书页那样大字铺满，而非 SRT 字幕小条。核心是「按可用画布面积自适应铺满」——
+/// CJK 近方块，每字占 fontSize × (fontSize × lineHeight)，可用面积（去 padding）里塞
+/// [textLength] 字、留 fillFactor 呼吸余量，解出字号 sqrt(area×fillFactor/(len×lineHeight))；
+/// 下限跟随 [baseFontSize]（EPUB 正文字号，reader 字号越大导出越大 → 真按 EPUB 走），
+/// 夹在 [minFontSize, maxFontSize]。竖排 WebView 的 `__clipFit` 与横排 FittedBox(scaleDown)
+/// 双双兜底溢出（只缩不放），故此处放心给大字，实际渲染再收敛到「铺满且不溢出」。
+/// padding 取较小边的 8%，给文本留呼吸空间。
 AudiobookClipTextLayout computeClipTextLayout({
   required int textLength,
   required double baseFontSize,
@@ -81,28 +91,42 @@ AudiobookClipTextLayout computeClipTextLayout({
   required Color background,
   required Color foreground,
   required Color highlight,
-  int width = 1080,
-  int height = 1920,
-  double minFontSize = 18,
+  int? width,
+  int? height,
+  double minFontSize = 32,
   double maxFontSize = 144,
 }) {
-  // 自适应字号：短句用接近正文 2 倍的大字（分享卡片观感），长句逐级收。
+  // TODO-1147（用户回访「分辨率不对」）：默认输出尺寸跟写排方向走——竖排文字用
+  // 竖屏 1080×1920，横排文字用横屏 1920×1080（默认手机竖/横屏标准尺寸）。
+  final int outWidth = width ?? (vertical ? 1080 : 1920);
+  final int outHeight = height ?? (vertical ? 1920 : 1080);
+  // 面积自适应字号（TODO-1282）：消除旧「12 字反比缩、18px 地板」的特殊情况——那让
+  // 一句普通日文正文在 1080/1920 画布上收到 ~18px 的字幕大小。改为按可用画布面积铺满。
   final double base = baseFontSize <= 0 ? 22 : baseFontSize;
-  final double desired = base * 2.0;
+  final double effectiveLineHeight = lineHeight <= 0 ? 1.6 : lineHeight;
   final int safeLen = textLength <= 0 ? 1 : textLength;
-  // 反比缩放：超过 12 字开始收，每多一截缩一点，夹在 [minFontSize, desired]。
-  final double scaledByLength = safeLen <= 12
-      ? desired
-      : (desired * (12 / safeLen)).clamp(minFontSize, desired);
-  final double fontSize = scaledByLength.clamp(minFontSize, maxFontSize);
-  final double shorterEdge = (width < height ? width : height).toDouble();
+  final double shorterEdge =
+      (outWidth < outHeight ? outWidth : outHeight).toDouble();
   final double padding = (shorterEdge * 0.08).clamp(24.0, 96.0);
+  final double usableW =
+      (outWidth - padding * 2).clamp(1.0, outWidth.toDouble());
+  final double usableH =
+      (outHeight - padding * 2).clamp(1.0, outHeight.toDouble());
+  // fillFactor 0.55：留换行不满行 + 高亮衬底内边距的余量，避免一上来就被 fit 大幅回缩。
+  const double fillFactor = 0.55;
+  final double areaFit = math.sqrt(
+    usableW * usableH * fillFactor / (safeLen * effectiveLineHeight),
+  );
+  // 下限跟随 EPUB 正文字号（base×1.6），夹进 [minFontSize, maxFontSize]；再把面积解出的
+  // 字号夹进 [floor, maxFontSize]。短句 → 顶到 maxFontSize 大字；长句 → 逐级收但不塌成字幕。
+  final double floor = (base * 1.6).clamp(minFontSize, maxFontSize);
+  final double fontSize = areaFit.clamp(floor, maxFontSize);
   return AudiobookClipTextLayout(
-    width: width,
-    height: height,
+    width: outWidth,
+    height: outHeight,
     padding: padding,
     fontSize: fontSize,
-    lineHeight: lineHeight <= 0 ? 1.6 : lineHeight,
+    lineHeight: effectiveLineHeight,
     vertical: vertical,
     background: background,
     foreground: foreground,
@@ -275,21 +299,23 @@ Future<void> _waitForNextFrame() {
 // 换成多句段落、按 highlightCueIndex 给指定句涂 highlight 衬底、其余句常态 fg。
 // ─────────────────────────────────────────────────────────────────────────
 
-/// 多句整段文本的一段（一句 / 一个 cue 对应的文本 + 可选图片）。
+/// 多句整段文本的一段（一句 / 一个 cue 对应的文本 + 该句后夹带的 EPUB 插图）。
 @immutable
 class AudiobookClipTextSegment {
   const AudiobookClipTextSegment({
     required this.text,
-    this.imageBytes,
+    this.images = const <Uint8List>[],
   });
 
   /// 该句文本（cue.text）。
   final String text;
 
-  /// TODO-1127：该句区间内夹带的 EPUB 插图字节（PNG/JPEG，可空）。当前导出路径
-  /// 尚未从 WebView 抽取插图字节，故常为 null——保留字段+渲染分支，owner 后续接
-  /// 图片抽取时无需改渲染层。
-  final Uint8List? imageBytes;
+  /// TODO-1127：该句文本之后、下一句之前在 DOM 文档序里夹带的 EPUB 插图字节
+  /// （PNG/JPEG，已从 WebView 选区抽取并按需降采样）。空列表 = 该句无夹图（绝大多数
+  /// 句子），此时渲染与旧行为逐字节一致（never break userspace）。用 `List` 而非单个
+  /// `Uint8List?`：一句后可能连着多张插图，列表按文档序保留插入顺序，消除「一段只能挂
+  /// 一张图」的特殊情况。
+  final List<Uint8List> images;
 }
 
 /// TODO-1167 流式渲染回调：渲染层每产出一帧就调一次。[highlightIndex] 是这一帧高亮的
@@ -495,8 +521,9 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
     for (int i = 0; i < widget.segments.length; i++) {
       final AudiobookClipTextSegment segment = widget.segments[i];
       final bool isHighlighted = i == widget.highlightIndex;
-      // TODO-1127：句内夹带插图与文本同层渲进整段图。当前导出路径尚未抽取插图字节，
-      // imageBytes 常为 null → 只渲文本；接上抽取后此分支自动生效，不改渲染层。
+      // TODO-1127：句内夹带插图与文本同层渲进整段图。segment.images 为该句后（下一句前）
+      // 在 DOM 文档序里的 EPUB 插图字节，绝大多数句子为空列表 → 只渲文本（与旧行为逐字节
+      // 一致）；非空时把每张图按序渲在该句文本之下。
       final Widget lineText = Text(
         segment.text,
         style: textStyle,
@@ -521,19 +548,20 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
               ),
               child: lineText,
             );
-      if (segment.imageBytes != null) {
+      if (segment.images.isNotEmpty) {
         lines.add(
           Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               line,
-              Padding(
-                padding: EdgeInsets.only(top: highlightPadV),
-                child: Image.memory(
-                  segment.imageBytes!,
-                  fit: BoxFit.contain,
+              for (final Uint8List imageBytes in segment.images)
+                Padding(
+                  padding: EdgeInsets.only(top: highlightPadV),
+                  child: Image.memory(
+                    imageBytes,
+                    fit: BoxFit.contain,
+                  ),
                 ),
-              ),
             ],
           ),
         );

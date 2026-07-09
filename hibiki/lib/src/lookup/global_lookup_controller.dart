@@ -55,11 +55,51 @@ class GlobalLookupController {
   // the OS hotkey immediately, instead of the key being a compile-time const.
   HibikiShortcutRegistry? _registry;
   bool _started = false;
+  // TODO-1233 -- optional consumer notified when the overlay is GENUINELY
+  // dismissed (foreground hook / click-outside / JS dismiss), so a caller can
+  // hang a resume-on-dismiss. The video subtitle lookup (path A) would use this
+  // for BUG-072 pause/resume IF it routed through the overlay; today it stays
+  // in-app to keep the rich screenshot + sentence-audio mining context the
+  // app-agnostic overlay cannot provide (see the TODO-1233 decision). Wired now
+  // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
+  // fired for the between-lookups reset (that hide passes notify=false).
+  void Function()? onHidden;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
   // lookup so a new card re-sizes from scratch.
   int _lastSentWidth = -1;
   int _lastSentHeight = -1;
+  // TODO-1231 P2 — the last window offset (physical px) pushed via revealStack.
+  // The bbox ORIGIN (dx/dy) can change while the SIZE (w/h) stays equal (a
+  // left/up cascade that shifts the window without growing it), so the resize
+  // de-dup must also fire on a dx/dy change — otherwise the window would not move
+  // and the host's commitLayerShift (which pins the root) would never run.
+  int _lastSentDx = 0;
+  int _lastSentDy = 0;
+  // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
+  // only ever moves OUTWARD (up/left) within one lookup session, never back
+  // inward. Moving it inward on a nested CLOSE slides the window top-left back
+  // toward the cursor while the host's compensating commitLayerShift lands ~1
+  // frame later (cross DWM/WebView2 boundary), so the pinned root card visibly
+  // lurches then snaps back ("消失第二个弹窗时闪"). Holding the origin at its
+  // outermost keeps the window top-left + layer shift fixed on close; only the
+  // far (bottom/right) edges shrink, which never moves the root card. Reset to
+  // "no constraint" (infinity) per fresh hotkey lookup and on dismiss. A
+  // down-right cascade keeps the origin at (0,0), so the ratchet is a no-op
+  // there (identical to the pre-fix geometry).
+  double _ratchetLeft = double.infinity;
+  double _ratchetTop = double.infinity;
+  // TODO-1345 (BUG-583 深层根因续) — the reserved cascade origin FLOOR for THIS
+  // lookup (window-local CSS px, <= 0), computed once from the real screen edges
+  // right after showAt and pushed to the host on every renderStack payload. It
+  // reserves headroom toward the screen interior so a subsequent up/left child
+  // lands inside the window origin committed at the first reveal — the origin then
+  // never moves when the child appears, so the pinned parent card has ZERO
+  // displacement (the true root fix for the residual BUG-583 parent lurch, which
+  // rounds 1-4 could only mask). 0 = no reservation (down-right / cursor at an edge
+  // / no work area) -> pre-fix origin. Reset to 0 on a genuine dismiss.
+  double _originFloorLeft = 0;
+  double _originFloorTop = 0;
   // The overlay renders off-screen until the first self-measurement, then is
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
@@ -132,6 +172,7 @@ class GlobalLookupController {
     GlobalLookupChannel.setHandlers(
       onGetMedia: _resolveMedia,
       onJsMessage: _onJsMessage,
+      onOverlayHidden: _onOverlayHidden,
     );
 
     // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
@@ -289,7 +330,10 @@ class GlobalLookupController {
       // previous card vanish immediately. _lookupExternal hides again right
       // before showAt (idempotent + cheap: SW_HIDE + unhook), which is what
       // keeps the programmatic lookupText path equally clean.
-      GlobalLookupChannel.hide();
+      // TODO-1233 — notify:false: this is the between-lookups reset, NOT a user
+      // dismissal, so it must not fire overlayHidden (which would resume a paused
+      // video mid re-lookup).
+      GlobalLookupChannel.hide(notify: false);
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
       // in (shown in the popup). On any miss (no UIA text element, non-Windows,
@@ -336,6 +380,19 @@ class GlobalLookupController {
       return false;
     }
     glog('lookupText: "$term"');
+    // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
+    // programmatic (desktop floating-lyric tap) path: AWAIT a leading
+    // hide(notify:false) so the overlay collapses to a confirmed-hidden state
+    // (SW_HIDE + unhook done on the platform thread) BEFORE _lookupExternal
+    // re-shows + re-renders. The hotkey path got this reset — plus a real
+    // event-loop settle — for free from its async selection-capture round-trip;
+    // lookupText fired _lookupExternal with zero latency, so a floating-lyric
+    // re-tap (or a tap while a previous card was still revealing) raced the
+    // shared reveal state / host content-ready gate and the overlay never
+    // emitted overlaySize — the card revealed blank via the READY-SAFETY
+    // fallback ("点击悬浮字幕文字没有出现查词窗口"). notify:false so this
+    // between-lookups reset is not seen as a user dismissal (TODO-1233).
+    await GlobalLookupChannel.hide(notify: false);
     await _lookupExternal(term, sentence: sentence);
     return true;
   }
@@ -360,7 +417,9 @@ class GlobalLookupController {
       // up front collapses both sides to a known-hidden state before showAt
       // re-arms them, so every lookup starts clean. Cheap (SW_HIDE + unhook)
       // and the prewarmed WebView2 survives it.
-      GlobalLookupChannel.hide();
+      // TODO-1233 — notify:false: same between-lookups reset as _onHotKey; must
+      // not look like a user dismissal.
+      GlobalLookupChannel.hide(notify: false);
       _currentSentence = sentence;
 
       final DictionarySearchResult result = await model.searchDictionary(
@@ -374,6 +433,11 @@ class GlobalLookupController {
       _lastSentHeight = -1;
       _revealed = false;
       _revealSafety?.cancel();
+      // TODO-1231 (BUG-583) — a fresh hotkey lookup starts a new session: drop
+      // the origin ratchet so the single root card re-anchors at the cursor
+      // (origin 0,0) instead of inheriting a previous cascade's outward min-corner.
+      _ratchetLeft = double.infinity;
+      _ratchetTop = double.infinity;
 
       // TODO-867 P3c: a new hotkey lookup RESETS the whole stack to a single
       // root frame. The single-frame card is now stack depth 1 rendered through
@@ -426,6 +490,27 @@ class GlobalLookupController {
       // offset is physical px; convert to CSS px for the cascade layout domain.
       _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
       _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
+      // TODO-1345 (BUG-583) / TODO-1231 (BUG-670 deep cascade) — reserve cascade
+      // headroom ALL THE WAY to the cursor monitor's work-area edge so a subsequent
+      // up/left child at ANY depth (child / grandchild / a card taller than one
+      // card) lands INSIDE the window origin committed at THIS first reveal; the
+      // host then never moves the origin when a nested card appears -> the pinned
+      // parent card has ZERO displacement at any cascade depth. TODO-1345 reserved
+      // only ONE card, so a deep cascade beyond it still moved the origin once (the
+      // residual 1-frame parent lurch users kept seeing). Reserving to the edge is
+      // the deterministic worst case: computeFrameRect clamps every cascade card
+      // on-screen, so no card can ever reach past the work-area edge. It stays
+      // clamp-safe because the reserved origin sits exactly on the C++ RevealStack
+      // work-area clamp target (see computeCascadeHeadroomSeed). 0 near an edge / no
+      // work area -> pre-fix geometry.
+      final ({double left, double top}) floor = computeCascadeHeadroomSeed(
+        cursorWorkX: _cursorWorkX,
+        cursorWorkY: _cursorWorkY,
+        screenWorkW: _screenWorkW,
+        screenWorkH: _screenWorkH,
+      );
+      _originFloorLeft = floor.left;
+      _originFloorTop = floor.top;
       await _renderStack();
       glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
@@ -519,6 +604,33 @@ class GlobalLookupController {
     } catch (_) {
       return Uint8List(0);
     }
+  }
+
+  /// TODO-1233 — the native overlay was GENUINELY dismissed (foreground hook /
+  /// click-outside / JS 'dismiss'/'tapOutside'). Resets this controller's
+  /// reveal/measurement state so the next lookup starts clean (the reveal-safety
+  /// timer is cancelled; a stale _revealed would otherwise let the ready-driven
+  /// fallback or the box de-dup misbehave on the next card), then notifies the
+  /// optional [onHidden] consumer (resume-on-dismiss). NOT called for the
+  /// between-lookups reset (that hide passes notify:false, so native suppresses
+  /// the callback) — only for a real user dismissal.
+  void _onOverlayHidden() {
+    _revealSafety?.cancel();
+    _revealed = false;
+    _lastSentWidth = -1;
+    _lastSentHeight = -1;
+    _lastSentDx = 0;
+    _lastSentDy = 0;
+    // TODO-1231 (BUG-583) — clear the origin ratchet on a genuine dismissal so
+    // the next session starts unconstrained.
+    _ratchetLeft = double.infinity;
+    _ratchetTop = double.infinity;
+    // TODO-1345 (BUG-583 深层根因续) — clear the reserved cascade floor too so the
+    // next lookup re-computes its own from the fresh cursor position.
+    _originFloorLeft = 0;
+    _originFloorTop = 0;
+    glog('overlayHidden: dismissed — reveal state reset');
+    onHidden?.call();
   }
 
   void _onJsMessage(Map<String, Object?> message) {
@@ -619,6 +731,28 @@ class GlobalLookupController {
     }
     if (handler == 'duplicateCheck') {
       unawaited(_handleDuplicateBridge(message));
+      return;
+    }
+    // TODO-1225 — 覆写制卡（✓↩）也是 DEFERRED 桥，补上 1188 只做了新建/查重后缺的那半：
+    //   - overwriteTargetNoteId：popup.js 查词时若 duplicateCheck 命中已存在卡（且非本
+    //     会话最近），await callHandler('overwriteTargetNoteId', {expression,reading}) 拿
+    //     一张可覆写的 note id（仅 AnkiSettings.overwriteScope=all 且 AnkiConnect 后端返回
+    //     非空），据此把已存在卡提升到 ✓↩「最新可改」态，一点即覆写。
+    //   - updateEntry：点 ✓↩ 时 await callHandler('updateEntry', {noteId,fields}) 按 id
+    //     真实覆盖字段（不新增卡、不查重、不记账）——与 in-app DictionaryPageMixin
+    //     .findOverwriteTargetNoteId / onUpdateEntry 同 repo.findOverwriteTargetNoteId /
+    //     repo.updateMinedNote 路径，别发明新协议。
+    // 两者过去在 C++ 都被当只读即时 null-resolve（overwriteTargetNoteId 拿 null=永不进
+    // ✓↩、updateEntry 拿 null=覆写静默失败），本次一并纳入 deferred 由 Dart 权威回复。
+    // minedCardAction（点普通 ✓ 弹「覆写哪张/新增重复/查看」操作面板）仍保持即时 null
+    // 降级——它需在前台弹 Flutter 底栏，而 app 外主窗被外部应用挡在后台无法呈现（见
+    // C++ 注释），故 app 外覆写只走 overwriteTargetNoteId + updateEntry 的 ✓↩ 就地覆写。
+    if (handler == 'overwriteTargetNoteId') {
+      unawaited(_handleOverwriteTargetBridge(message));
+      return;
+    }
+    if (handler == 'updateEntry') {
+      unawaited(_handleUpdateBridge(message));
       return;
     }
     // TODO-867 P3c D2 — size + place the overlay window from the host's stack
@@ -992,6 +1126,131 @@ class GlobalLookupController {
     }
   }
 
+  /// TODO-1225 — resolves a DEFERRED `overwriteTargetNoteId` probe: reverse-looks
+  /// up an EXISTING note id that [expression]/[reading] can overwrite in place via
+  /// [BaseAnkiRepository.findOverwriteTargetNoteId] — the SAME path the in-app
+  /// popup uses ([DictionaryPageMixin.findOverwriteTargetNoteId]). Only returns a
+  /// non-null id when the user set [AnkiSettings.overwriteScope] to `all` AND the
+  /// backend (AnkiConnect) can resolve one; otherwise (default `latest` / AnkiDroid)
+  /// it stays `null` and popup.js keeps the ordinary +/✓ two-state (Never break
+  /// userspace). A real id promotes the earlier card to popup.js's editable ✓↩
+  /// state so a single click overwrites it (updateEntry). popup.js expects a BARE
+  /// number (or null), so the reply is the raw `int?` — NOT wrapped in a map.
+  /// Always resolves — even on error / no model — so the ✓/+ paint never hangs
+  /// (mirrors [_handleDuplicateBridge]).
+  Future<void> _handleOverwriteTargetBridge(
+      Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    int? reply;
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> data =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final String expression = data['expression']?.toString() ?? '';
+      final String reading = data['reading']?.toString() ?? '';
+      if (model != null && expression.isNotEmpty) {
+        final BaseAnkiRepository repo =
+            model.platformServices.createAnkiRepository();
+        reply = await repo.findOverwriteTargetNoteId(expression, reading);
+      }
+    } catch (e, st) {
+      glog('overwrite-target: EXCEPTION $e\n$st');
+      reply = null;
+    }
+    if (id != null) {
+      glog('overwrite-target: overwriteTargetNoteId -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
+  }
+
+  /// TODO-1225 — resolves a DEFERRED `updateEntry` bridge call: OVERWRITES an
+  /// EXISTING note ([noteId]) in place with freshly-built fields through
+  /// [BaseAnkiRepository.updateMinedNote] — the SAME contract the in-app popup uses
+  /// ([DictionaryPageMixin.onUpdateEntry]). Reuses the mineEntry field/media path
+  /// (flushes gaiji [writeDictionaryMediaCache] first so overwrite carries the same
+  /// dictionary media) but does NOT create a new card and does NOT record mining
+  /// stats — an overwrite fixes an existing card in place (mirrors the in-app
+  /// `describeMineOutcome(overwrite: true)`, which does not count). popup.js's
+  /// `updateEntry` sends `{ noteId, fields }` (NOT the flat mineEntry payload), so
+  /// the fields live one level down under `fields`. Pushes the popup.js-shaped
+  /// {ankiConnect, noteId} reply back so the ✓↩ button refreshes. Always resolves —
+  /// even on error / no model / missing note id — so the ✓↩ button never freezes
+  /// (same contract as [_handleMineBridge]).
+  Future<void> _handleUpdateBridge(Map<String, Object?> message) async {
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
+    Map<String, Object?> reply = const <String, Object?>{
+      'ankiConnect': false,
+      'noteId': null,
+    };
+    try {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      final Map<Object?, Object?> envelope =
+          (args is List && args.isNotEmpty && args.first is Map)
+              ? (args.first as Map)
+              : const <Object?, Object?>{};
+      final int? noteId = (envelope['noteId'] is num)
+          ? (envelope['noteId'] as num).toInt()
+          : null;
+      final Object? rawFields = envelope['fields'];
+      final Map<Object?, Object?> raw =
+          rawFields is Map ? rawFields : const <Object?, Object?>{};
+      final Map<String, String> fields = <String, String>{
+        for (final MapEntry<Object?, Object?> e in raw.entries)
+          e.key.toString(): e.value?.toString() ?? '',
+      };
+      final String expression = fields['expression'] ?? '';
+      if (model != null && noteId != null && expression.isNotEmpty) {
+        reply = await _updateEntry(model, noteId, fields);
+      }
+    } catch (e, st) {
+      glog('update: EXCEPTION $e\n$st');
+      reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
+    }
+    if (id != null) {
+      glog('update: updateEntry -> reply=$reply (id=$id)');
+      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
+    }
+  }
+
+  /// TODO-1225 — overwrites note [noteId] with [fields] through the same
+  /// [BaseAnkiRepository.updateMinedNote] path the in-app popup uses
+  /// ([DictionaryPageMixin.onUpdateEntry]). Flushes gaiji dictionary media first
+  /// (as [_mineEntry] does) so the overwrite carries identical media, then updates
+  /// by id WITHOUT recording stats (overwrite does not count). Returns the
+  /// popup.js-shaped {ankiConnect, noteId} reply (ankiConnect=true + noteId only on
+  /// [MineResult.success]; AnkiDroid's default-degrade [updateMinedNote] returns
+  /// failure → false+null, keeping the ✓↩ path a no-op there, Never break userspace).
+  Future<Map<String, Object?>> _updateEntry(
+    AppModel model,
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+    final BaseAnkiRepository repo =
+        model.platformServices.createAnkiRepository();
+    final MineOutcome outcome = await repo.updateMinedNote(
+      noteId: noteId,
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: fields['sentence'] ?? '',
+        source: AnkiMiningSource.book,
+      ),
+    );
+    final bool success = outcome.result == MineResult.success;
+    return <String, Object?>{
+      'ankiConnect': success,
+      'noteId': success ? outcome.noteId : null,
+    };
+  }
+
   /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。
   /// 复用主 Dart 查词链路同一去重协调器 (LookupAutoReadCoordinator)，播放走 overlay
   /// 已有的两步音频桥 (resolveLookupAudioUrl -> TtsChannel.playAudioRef)，与手动 ♪
@@ -1229,6 +1488,11 @@ class GlobalLookupController {
       // work-area-absolute domain (shared zero point with screenW/H) before the
       // cascade math, then the builder shifts the result back to window-local.
       selectionScreenOffset: Offset(_cursorWorkX, _cursorWorkY),
+      // TODO-1345 (BUG-583 深层根因续) — this lookup's reserved cascade floor so the
+      // host commits the headroom-covered origin from the first reveal (an up/left
+      // child then never moves the origin -> zero parent displacement).
+      originFloorLeft: _originFloorLeft,
+      originFloorTop: _originFloorTop,
     ));
   }
 
@@ -1279,26 +1543,61 @@ class GlobalLookupController {
     if (width <= 0 || height <= 0) {
       return;
     }
-    final int dx = (left * dpr).round();
-    final int dy = (top * dpr).round();
-    final int w = (width * dpr).round();
-    final int h = (height * dpr).round();
+    // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
+    // never slides the window top-left back inward (which raced the host's
+    // compensating layer shift across the DWM/WebView2 boundary and lurched the
+    // pinned root card). The ratcheted box holds the outermost min-corner seen
+    // this session and recomputes width/height so the window still covers the
+    // real content extent (maxRight/maxBottom) from that held origin.
+    final RatchetedOverlayBox ratcheted = ratchetOverlayOrigin(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      prevLeft: _ratchetLeft,
+      prevTop: _ratchetTop,
+    );
+    _ratchetLeft = ratcheted.left;
+    _ratchetTop = ratcheted.top;
+    final int dx = (ratcheted.left * dpr).round();
+    final int dy = (ratcheted.top * dpr).round();
+    final int w = (ratcheted.width * dpr).round();
+    final int h = (ratcheted.height * dpr).round();
     if (!_revealed) {
       _revealed = true;
       _revealSafety?.cancel();
       _lastSentWidth = w;
       _lastSentHeight = h;
+      _lastSentDx = dx;
+      _lastSentDy = dy;
       glog('reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
+          'ratchet=(${ratcheted.left},${ratcheted.top}) '
           '-> dx=$dx dy=$dy w=$w h=$h');
-      unawaited(
-          GlobalLookupChannel.revealStack(dx: dx, dy: dy, width: w, height: h));
-    } else if (w != _lastSentWidth || h != _lastSentHeight) {
+      unawaited(GlobalLookupChannel.revealStack(
+          dx: dx,
+          dy: dy,
+          width: w,
+          height: h,
+          left: ratcheted.left,
+          top: ratcheted.top));
+    } else if (w != _lastSentWidth ||
+        h != _lastSentHeight ||
+        dx != _lastSentDx ||
+        dy != _lastSentDy) {
       _lastSentWidth = w;
       _lastSentHeight = h;
+      _lastSentDx = dx;
+      _lastSentDy = dy;
       glog('resize(box): dpr=$dpr box=($left,$top,$width,$height) '
+          'ratchet=(${ratcheted.left},${ratcheted.top}) '
           '-> dx=$dx dy=$dy w=$w h=$h');
-      unawaited(
-          GlobalLookupChannel.revealStack(dx: dx, dy: dy, width: w, height: h));
+      unawaited(GlobalLookupChannel.revealStack(
+          dx: dx,
+          dy: dy,
+          width: w,
+          height: h,
+          left: ratcheted.left,
+          top: ratcheted.top));
     }
   }
 

@@ -39,9 +39,10 @@ abstract final class SelectionCapture {
   static const int _keyUp = 0x0002; // KEYEVENTF_KEYUP
 
   // TODO-1030 M0 — the native UI Automation foreground-selection context
-  // channel (flutter_window.cpp RegisterForegroundSelectionChannel). Only used
-  // on Windows; a MissingPluginException / any failure falls back to the
-  // clipboard capture below.
+  // channel (Windows: flutter_window.cpp RegisterForegroundSelectionChannel;
+  // macOS: AppDelegate.swift foreground_selection channel). A
+  // MissingPluginException / any failure falls back to the clipboard capture
+  // below.
   static const MethodChannel _foregroundSelectionChannel =
       MethodChannel('app.hibiki.reader/foreground_selection');
 
@@ -85,21 +86,24 @@ abstract final class SelectionCapture {
   }
 
   /// TODO-1030 M0 — captures the foreground app's current selection PLUS its
-  /// surrounding context via Windows UI Automation, then trims it to the one
-  /// sentence the selection sits in (Yomitan {sentence}-style). Returns a
+  /// surrounding context via the native foreground-selection channel (Windows
+  /// UI Automation, macOS Accessibility/AX), then trims it to the one sentence
+  /// the selection sits in (Yomitan {sentence}-style). Returns a
   /// [ForegroundSelectionContext] with the selected term, the current sentence
-  /// and the term's offset inside it; or null when UIA has nothing (no focused
-  /// text element, empty selection, non-Windows, or the native channel is
-  /// unavailable) so the caller falls back to [captureForegroundSelection].
+  /// and the term's offset inside it; or null when the native side has nothing
+  /// (no focused text element, empty selection, unsupported platform, or the
+  /// native channel is unavailable) so the caller falls back to
+  /// [captureForegroundSelection].
   ///
-  /// Off-loads the UIA call to a native worker thread (see the native channel);
+  /// Off-loads the native capture to a worker thread (see the native channel);
   /// this future completes when the marshalled result returns. Never throws:
   /// any error resolves to null (never break the existing lookup path).
   static Future<ForegroundSelectionContext?> captureForegroundContext({
     int maxExpand = 600,
   }) async {
-    if (!Platform.isWindows) {
-      glog('context: unsupported (windows=${Platform.isWindows})');
+    if (!Platform.isWindows && !Platform.isMacOS) {
+      glog('context: unsupported (windows=${Platform.isWindows} '
+          'macos=${Platform.isMacOS})');
       return null;
     }
     try {

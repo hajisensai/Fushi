@@ -83,7 +83,15 @@ void main() {
     String read(String p) {
       if (p.endsWith('reader_hibiki_page.dart')) return readReaderPageSource();
       if (p.endsWith('video_hibiki_page.dart')) return readVideoHibikiSource();
-      return File(p).readAsStringSync();
+      final String src = File(p).readAsStringSync();
+      // TODO-1303：app_model 的 remoteMineResultFromOutcome 是「outcome → RemoteMineResult
+      // 远端契约」的单一真相（与 describeMineOutcome「outcome → 用户消息」正交），它合法地
+      // switch MineResult（含 case MineResult.duplicate）。它不是被 describeMineOutcome 取代
+      // 的本地消息 switch，故把该函数体排除出「不得残留本地 MineResult switch」的扫描范围。
+      if (p.endsWith('app_model.dart')) {
+        return _withoutRemoteMineResultSwitch(src);
+      }
+      return src;
     }
 
     final sites = <String>[
@@ -103,4 +111,18 @@ void main() {
       });
     }
   });
+}
+
+/// 从 app_model 源码里剔除 `remoteMineResultFromOutcome` 函数（TODO-1303：它是
+/// outcome→RemoteMineResult 的远端契约单一真相，合法 switch MineResult；不属于被
+/// describeMineOutcome 取代的本地消息 switch）。用其后紧邻的顶层声明 `remoteMineError`
+/// 夹住函数体并整段移除，避免其中的 `case MineResult.duplicate:` 误触发过广守卫。
+String _withoutRemoteMineResultSwitch(String source) {
+  const String start = 'RemoteMineResult remoteMineResultFromOutcome(';
+  const String end = 'RemoteMineResult remoteMineError(';
+  final int startIdx = source.indexOf(start);
+  if (startIdx < 0) return source;
+  final int endIdx = source.indexOf(end, startIdx);
+  if (endIdx < 0) return source;
+  return source.substring(0, startIdx) + source.substring(endIdx);
 }

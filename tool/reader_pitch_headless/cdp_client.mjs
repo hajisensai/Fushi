@@ -327,6 +327,29 @@ export async function launchChromeDriver() {
     return JSON.parse(res.result.value);
   }
 
+  async function snap(html, preExpr, vw, vh) {
+    if (vw && vh) {
+      await sock.send('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 1, mobile: false });
+    }
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    sock.events.length = 0;
+    await sock.send('Page.navigate', { url: dataUrl });
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      if (sock.events.some((e) => e.method === 'Page.loadEventFired')) break;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    if (preExpr) {
+      await sock.send('Runtime.evaluate', { expression: preExpr, returnByValue: true });
+    }
+    await sock.send('Runtime.evaluate', {
+      expression: 'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))',
+      awaitPromise: true,
+    });
+    const shot = await sock.send('Page.captureScreenshot', { format: 'png' });
+    return shot.data;
+  }
+
   function close() {
     try {
       sock && sock.close();
@@ -339,5 +362,5 @@ export async function launchChromeDriver() {
     } catch (_) {}
   }
 
-  return { evalOnPage, close };
+  return { evalOnPage, snap, close };
 }

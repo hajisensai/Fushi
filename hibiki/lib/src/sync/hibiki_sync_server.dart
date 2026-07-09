@@ -14,6 +14,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
@@ -43,6 +44,7 @@ class HibikiPairRequest {
     required this.deviceName,
     required this.remoteAddress,
     this.pinVerified,
+    this.pinRequired = false,
   });
 
   /// Self-reported name from the client (may be null/empty if not sent).
@@ -57,6 +59,11 @@ class HibikiPairRequest {
   /// - false：理论上不出现——pinProof 校验失败时 server 直接 401，不会再问 host。
   /// 双重确认（设计稿 §3.1）：v2 路径要求 pinVerified==true **且** host 人工允许。
   final bool? pinVerified;
+
+  /// TODO-1273: 本会话是否真的要求 PIN（= host 的 pinRequired）。host 审批弹窗据此
+  /// 决定是否显示 PIN：LAN 免 PIN 会话（pinRequired=false）不显示 PIN，避免 host 屏上
+  /// 出现一个 client 从未被要求输入的「幽灵 PIN」。旧 /api/pair（v1，无 PIN）默认 false。
+  final bool pinRequired;
 }
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
@@ -223,6 +230,13 @@ class HibikiSyncServer {
   /// TODO-961 M1: host 偏好「LAN 自动发现也要 PIN」的供给器（默认 false=自家免）。
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
   Future<bool> Function()? lanRequiresPinProvider;
+
+  /// TODO-1330 / BUG：pinRequired 会话的 client 提交了 confirm（PIN 已被对方读到并
+  /// 用于算 proof）时回调一次，让 host UI 关掉那个「一直显示 PIN、等对方输入」的审批
+  /// 弹窗。修的是「host 点允许即关窗抹掉 PIN → client 还没输就看不到 PIN」的时序死锁：
+  /// host 点允许后弹窗改为常驻显示 PIN，直到本回调（或用户手动关 / TTL 超时）才收起。
+  /// 免 PIN 会话不涉及（本就没有常驻 PIN 弹窗），故仅 pinRequired 分支触发。
+  void Function()? onPairSessionResolved;
 
   /// TODO-961 M1b: confirm 成功后把新派发的 per-peer 凭据交给 host 落库（写
   /// `hibiki_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
@@ -515,7 +529,14 @@ class HibikiSyncServer {
     String? name;
     final Map<String, dynamic>? body = await _readJsonObject(request);
     final String? reported = body?['name']?.toString().trim();
-    if (reported != null && reported.isNotEmpty) name = reported;
+    // Reject a "localhost"/loopback advertisement so it is never stored as this
+    // peer's device name — the paired-devices list would otherwise show
+    // "localhost" instead of a real name (TODO-1356).
+    if (reported != null &&
+        reported.isNotEmpty &&
+        !isMeaninglessDeviceName(reported)) {
+      name = reported;
+    }
     final bool approved = await approve(HibikiPairRequest(
       deviceName: name,
       remoteAddress: _remoteAddress(request),
@@ -548,8 +569,13 @@ class HibikiSyncServer {
       return shelf.Response(400, body: 'Missing clientNonce');
     }
     final String? reportedName = body?['name']?.toString().trim();
-    final String? deviceName =
-        (reportedName != null && reportedName.isNotEmpty) ? reportedName : null;
+    // Drop a "localhost"/loopback advertisement (never a real device name) so it
+    // is not persisted as the peer's name in the paired-devices list (TODO-1356).
+    final String? deviceName = (reportedName != null &&
+            reportedName.isNotEmpty &&
+            !isMeaninglessDeviceName(reportedName))
+        ? reportedName
+        : null;
     // TODO-961 M1b: client 自报稳定 deviceId（per-peer token 落库的 UNIQUE 身份）。
     // 旧 client 不带此字段 → null → confirm 回退共享 token（兼容）。
     final String? reportedDeviceId = body?['clientDeviceId']?.toString().trim();
@@ -602,6 +628,24 @@ class HibikiSyncServer {
       createdAt: session.createdAt,
       clientDeviceId: clientDeviceId,
     );
+
+    // TODO-1296 / BUG-592: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
+    // 阶段就弹 host 审批——审批弹窗会显示本会话 PIN，让 client 被要求输入前 host 屏上
+    // 已经有 PIN 可读。修复「公网配对根本看不到 PIN」的时序死锁：旧实现只在 confirm 且
+    // pinProof 校验通过后才弹审批显示 PIN，而 client 必须先输对 PIN 才能过校验 → PIN 永
+    // 远不显示、配对永远走不通。免 PIN 会话（LAN 自动发现且 host 允许免 PIN）审批仍留在
+    // confirm（本就无 PIN 可显示，行为零变化，Never break userspace）。
+    if (pinRequired) {
+      final bool approved = await onPairRequest!(HibikiPairRequest(
+        deviceName: deviceName,
+        remoteAddress: remote,
+        // pinVerified 尚未校验（那在 confirm）；pinRequired=true 让审批弹窗显示 PIN。
+        pinVerified: null,
+        pinRequired: true,
+      ));
+      if (!approved) return _pairDenied('declined');
+    }
+
     _pairSessions[sessionId] = stored;
 
     // 响应只含 sessionId / pinRequired / hostNonce —— 绝不含 PIN 明文。
@@ -636,6 +680,12 @@ class HibikiSyncServer {
     // 单次消费：无论本次成功失败，会话即作废，杜绝 nonce 重放。
     session.consumed = true;
     _pairSessions.remove(sessionId);
+
+    // TODO-1330 / BUG：pinRequired 会话一旦 confirm 到达，说明 client 已读到 host 屏上
+    // 的 PIN（用它算了 proof），host 那个常驻 PIN 弹窗就该收起——无论本次 proof 对错
+    // （PIN 已一次性消费，重试要走新会话拿新 PIN）。在此单点触发，避开后面多个 return
+    // 分支各自补一遍。免 PIN 会话没有常驻弹窗，不触发。
+    if (session.pinRequired) onPairSessionResolved?.call();
 
     // TODO-961 M3：本会话来源标识，供爆破限速按来源聚合失败计数。优先 client 自报的
     // 稳定 deviceId，回退来源 IP；二者都缺时为 null → 无稳定身份可锁，退化为不限速的
@@ -674,13 +724,20 @@ class HibikiSyncServer {
       }
     }
 
-    // 第二重确认：PIN 已对（或本会话免 PIN），仍要 host 人工点允许才派 token。
-    final bool approved = await approve(HibikiPairRequest(
-      deviceName: session.deviceName,
-      remoteAddress: session.remoteAddress,
-      pinVerified: true,
-    ));
-    if (!approved) return _pairDenied('declined');
+    // TODO-1296 / BUG-592: pinRequired 会话的 host 审批已在 CREATE 阶段完成——会话能
+    // 存在于 _pairSessions 即代表 host 当时已点允许（见 _handlePairV2），故此处不再二次
+    // 弹窗，只凭 pinProof 校验通过即派 token（双重确认 = 早前的人工允许 + 此刻的 proof
+    // 校验，两者仍缺一不可）。免 PIN 会话（pinRequired=false）没有 CREATE 阶段审批，仍在
+    // 此弹审批（无 PIN 可显示，行为不变）。
+    if (!session.pinRequired) {
+      final bool approved = await approve(HibikiPairRequest(
+        deviceName: session.deviceName,
+        remoteAddress: session.remoteAddress,
+        pinVerified: true,
+        pinRequired: false,
+      ));
+      if (!approved) return _pairDenied('declined');
+    }
 
     // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
     if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);

@@ -1009,12 +1009,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       HibikiToast.show(msg: t.word_favorite_removed);
       return false;
     }
+    // TODO-1252：把当前书身份（阅读器 / 有声书覆写 lookupBookIdentity）随收藏落库，
+    // 供统计页 per-book tile 聚合「收藏 N」；无书来源为 null / '' → 只进汇总。
+    final ({String? bookKey, String? title})? favIdentity = lookupBookIdentity;
     await db.addFavoriteWord(
       expression: expression,
       reading: reading,
       glossary: fields['glossary'] ?? '',
       sourceType: dictionarySourceType,
       dateKey: statTodayKey(),
+      bookKey: favIdentity?.bookKey,
+      title: favIdentity?.title ?? '',
     );
     HibikiToast.show(msg: t.word_favorite_added);
     return true;

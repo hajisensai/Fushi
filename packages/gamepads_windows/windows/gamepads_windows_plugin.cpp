@@ -89,6 +89,12 @@ void GamepadsWindowsPlugin::HandleMethodCall(
       list.push_back(flutter::EncodableValue(map));
     }
     result->Success(flutter::EncodableValue(list));
+  } else if (method_call.method_name().compare("gameInputAvailable") == 0) {
+    // TODO-1223: report whether init()'s delay-load probe found GameInput.dll.
+    // A false result means the controller backend silently degraded (missing
+    // DLL, +488) — Dart surfaces an in-app hint on the shortcut settings page
+    // instead of leaving the user to wonder why the controller is dead.
+    result->Success(flutter::EncodableValue(gamepads.game_input_available));
   } else {
     result->NotImplemented();
   }

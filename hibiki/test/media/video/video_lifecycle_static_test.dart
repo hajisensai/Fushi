@@ -180,14 +180,20 @@ void main() {
       () {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
+    // 索引式提取（非灾难性正则）：先定位 header，再在其后定位最近的 trailer，取二者之间。
+    // 语义等同旧的 `header(.*?)trailer`（非贪婪＝header 后第一处 trailer），但**不**用一条
+    // 跨全文件的 `.*?` dotAll 正则——Dart RegExp 引擎对超长（本文件 load() 体已 ~15KB）
+    // 非贪婪匹配会触及内部 step 上限、直接返回 null（实测 load() 体每增几百字符就翻车），
+    // 那是引擎限制而非「方法体真不存在」。改成两段短正则 + substring 后，方法体多大都稳。
     String methodBody(String headerRegex, String trailerRegex) {
-      final RegExpMatch? m = RegExp(
-        headerRegex + r'(.*?)' + trailerRegex,
-        dotAll: true,
-      ).firstMatch(src);
-      expect(m, isNotNull,
-          reason: '找不到方法体: header=$headerRegex trailer=$trailerRegex');
-      return m!.group(1)!;
+      final RegExpMatch? h = RegExp(headerRegex, dotAll: true).firstMatch(src);
+      expect(h, isNotNull, reason: '找不到方法头: header=$headerRegex');
+      final int start = h!.end;
+      final RegExpMatch? tr =
+          RegExp(trailerRegex, dotAll: true).firstMatch(src.substring(start));
+      expect(tr, isNotNull,
+          reason: '找不到方法尾: header=$headerRegex trailer=$trailerRegex');
+      return src.substring(start, start + tr!.start);
     }
 
     // ---- A 层：selectEmbeddedGraphicTrack ----
@@ -200,8 +206,14 @@ void main() {
         () {
       final String b = graphicBody();
       final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
+      // TODO-1295 给这条首 await 加了 `minTrackCount: streamIndex + 1`（等目标序号
+      // 那条轨真正就绪，不再「任意一条」早退）。守卫的语义不变量没变——loadToken 仍
+      // 在第一条 await **之前**捕获（源码实测 tokenAt < 此 await）——变的只是 await
+      // 的参数列表。故锚点从写死的整条调用 `...(player);` 收敛到稳定前缀
+      // `await _waitUntilSubtitleTracksReady(player`（不含参数），与本文件 BUG-528
+      // 把锚点收敛到 `await player.open(` 同法，避免合法加参把守卫误红（TODO-1311）。
       final int firstAwaitAt =
-          b.indexOf('await _waitUntilSubtitleTracksReady(player);');
+          b.indexOf('await _waitUntilSubtitleTracksReady(player');
       expect(tokenAt, greaterThanOrEqualTo(0),
           reason: '必须在第一个 await 前捕获 loadToken 快照');
       expect(firstAwaitAt, greaterThan(tokenAt),

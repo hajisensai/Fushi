@@ -1,0 +1,6 @@
+## BUG-657 · 词典管理页自动更新卡与词典列表粘连
+- **报告**：2026-07-09（用户：自动更新和词典粘一块了 / TODO-1343）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/dictionary_dialog_page.dart:98-99`（`_buildAutoUpdateCard()` 外层 `Padding` 原来只有底部间距 `EdgeInsets.only(bottom: gap)`）。词典管理页 `DictionaryDialogPage` 的正文由 `AdaptiveSettingsScaffold` 直接把 `children` 塞进 `ListView`/`SliverList`（`hibiki/lib/src/utils/components/settings_shared.dart:105-107`），子块之间不插任何间隔，全靠每个子块自带分隔（action bar / 分类选择器都用 `gap+gap/2` 的底部间距分隔下一块，见 `dictionary_dialog_page.dart:166-169` / `1066-1069`）。而 `buildContent()`（词典列表，`dictionary_dialog_page.dart:1045-1062`，`HibikiReorderableColumn` 仅在行间插 spacing、无尾部间距）没有底部间距，自动更新卡又只有底部间距，于是列表最后一张词典卡与自动更新设置卡直接贴在一起 = 用户看到的「自动更新和词典粘一块了」。
+- **[x] ① 已修复** — `dictionary_dialog_page.dart:98-107`：`_buildAutoUpdateCard()` 外层 `Padding` 改为 `EdgeInsets.only(top: gap + gap/2, bottom: gap)`，补上与 action bar / 分类选择器一致的顶部分隔间距，消除粘连。空词典态（`buildContent()` 返回 `buildEmptyMessage()`）同样受益，无特例分支。提交 `4da3992c5`。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/dictionary_dialog_layout_static_test.dart`：新增 `dictionary auto-update card separates from the list above (TODO-1343)`，锚定 `_buildAutoUpdateCard()` 方法体，断言外层 Padding 带 `top: tokens.spacing.gap + tokens.spacing.gap / 2` 顶部间距，并禁止退回旧的「只有底部间距」写法（回归守卫）。提交 `4da3992c5`。
+- **备注**：MD3 spacing token 单一真相源（`tokens.spacing.gap = 8`），未硬编码像素；向后兼容——只加顶部间距，不改任何词典/开关行为。

@@ -72,11 +72,12 @@ void main() {
     // 连续 shell：越界回退章首。
     expect(js, contains('if (!this.charOffsetInRange(charOffset)) {'),
         reason: '连续恢复越界回退 scrollToChapterStart');
-    // 分页 shell：越界回退章首（scrollToProgressPaged 0）。
+    // 分页 shell：越界 / 章首(charOffset<=0，BUG-594) 回退章首（scrollToProgressPaged 0）。
     expect(
         js,
         contains(
-            'if (charOffset < 0 || !this.charOffsetInRange(charOffset)) {'),
-        reason: '分页恢复越界回退 scrollToProgressPaged(context, 0)');
+            'if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {'),
+        reason:
+            '分页恢复越界 / charOffset<=0 章首回退 scrollToProgressPaged(context, 0)');
   });
 }

@@ -336,7 +336,7 @@ class DropboxSyncBackend extends SyncBackend {
     required String rootFolderId,
     Uint8List? coverData,
   }) async {
-    final sanitized = sanitizeTtuFilename(bookTitle);
+    final sanitized = requireBookFolderName(bookTitle);
 
     if (_titleToFolderId.containsKey(sanitized)) {
       return _titleToFolderId[sanitized]!;

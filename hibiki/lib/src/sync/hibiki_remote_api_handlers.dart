@@ -26,8 +26,13 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   required HibikiRemoteLookupService lookup,
   HibikiRemoteHistoryService? history,
   Map<String, String> Function()? themeColorsProvider,
+  List<String> Function()? audioSourcesProvider,
 }) async {
   final Map<String, String>? theme = themeColorsProvider?.call();
+  // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
+  // window.audioSources（非空 → popup.js 渲染 ♪ 按钮）。null（未注入，如 sync host）
+  // 时不带该字段（向后兼容）。
+  final List<String>? audioSources = audioSourcesProvider?.call();
   final String term = body['term']?.toString() ?? '';
   if (term.trim().isEmpty) {
     return <String, dynamic>{
@@ -35,6 +40,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       'result': null,
       'popupJson': null,
       if (theme != null) 'theme': theme,
+      if (audioSources != null) 'audioSources': audioSources,
     };
   }
   final bool wildcards = body['wildcards'] as bool? ?? false;
@@ -52,6 +58,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     'result': result == null ? null : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
     if (theme != null) 'theme': theme,
+    if (audioSources != null) 'audioSources': audioSources,
   };
 }
 
@@ -65,11 +72,18 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
   required HibikiRemoteMiningService mining,
 }) async {
   final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(body);
-  final String result = payload.isImmersion
+  // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
+  // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
+  // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。
+  final RemoteMineResult r = payload.isImmersion
       ? await mining.mineImmersion(payload)
       : await mining.mineEntry(
           fields: payload.fields, sentence: payload.sentence);
-  return <String, dynamic>{'result': result};
+  return <String, dynamic>{
+    'result': r.result,
+    if (r.message != null) 'message': r.message,
+    if (r.detail != null) 'detail': r.detail,
+  };
 }
 
 /// TODO-1176：`POST /api/duplicate` 的响应体。[body] 需含 `expression`（+可选 `reading`）。

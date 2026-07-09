@@ -1,0 +1,6 @@
+## BUG-625 · 未选中主题色卡空白·预览画布塌成0x0
+- **报告**：2026-07-08（用户：TODO-1320 复诉，前修 79205695c 未生效）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/utils/components/hibiki_material_components.dart:1450`（`HibikiSchemeSwatch.build` 里的 `CustomPaint`）。该 `CustomPaint` 没有显式 `size`，`child` 仅在有徽章时非空（选中=对勾 / system·custom=overlay）。预设 swatch 未选中时无徽章 → `child == null`；而父级 `AnimatedContainer` 带 `alignment: Alignment.center`（:1442）会把子级约束放松成 loose，childless 且默认 `size: Size.zero` 的 `CustomPaint` 在 loose 约束下塌成 `Size(0,0)`，`SchemeDiagonalPainter` 画在 0×0 画布上 → 整张卡空白。选中卡/系统卡/自定义卡因为有徽章 child 撑出尺寸而正常。前修 79205695c/TODO-138 只把 `showGlyph` 恒设 true，是 0×0 画布上的空操作，故未生效。复现证据：widget 量真实渲染尺寸得 未选中预设=Size(0,0)、选中=Size(42,42)、系统=Size(46,46)。
+- **[x] ① 已修复** — 给 `CustomPaint` 加 `size: Size.square(size)`，使无 child 时也按卡片尺寸铺满画布（loose 约束下 constrain 到 46/42，非零），所有主题卡（选中+未选中）统一画完整对角预览。修复后量得 未选中预设=Size(46,46)。commit：见分支 `todo1320-theme-swatch-full`。
+- **[x] ② 已加自动化测试** — `hibiki/test/widgets/hibiki_scheme_swatch_test.dart` 组「TODO-1320 · 主题卡片恒完整显示」新增两条量**真实渲染尺寸**的守卫：`未选中的预设主题卡片预览画布必须非空（回归：TODO-1320 未选中空白卡）` + `选中 / 系统 / 自定义 swatch 的预览画布同样非空`。旧守卫只查 `painter.showGlyph==true`（属性），量不出 0×0 画布，故 bug 漏网；新守卫量 `tester.getSize(CustomPaint)`。已验证：删除 `size:` 行时新守卫 FAIL，恢复后 20/20 PASS。
+- **备注**：TODO-1320。视觉验收：设置→外观→主题，未选中的预设主题卡应显完整配色预览（「文」字+双色对角+主色点），仅边框区分选中态。

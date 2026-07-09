@@ -51,8 +51,9 @@ void main() {
         isFalse,
         reason: 'overlapO 补偿逻辑必须已删（根因下沉到 CSS 容器高度）');
     // pageStep 仍是名义 contentBox + gap（不动）。
-    expect(js.contains('var pageStep = contentBox + gap;'), isTrue,
-        reason: '名义 pageStep = contentBox + gap 保持不变');
+    expect(js.contains('var pageStep = columns * (contentBox + gap);'), isTrue,
+        reason: 'TODO-1285：名义 pageStep = columnCount × (contentBox + gap)，'
+            '单列(N=1)时退回 contentBox + gap 保持不变');
   });
 
   test('列宽 CSS 仍用纯 V 基准（TODO-734 防漏字不回退）', () {

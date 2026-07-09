@@ -231,4 +231,44 @@ if ! "$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" -af "aresample=8000
 fi
 assert_log_contains "$WORK/rms.log" "lavfi.astats.Overall.RMS_level"
 
+echo "[ffmpeg-min-smoke] verifying network protocols (http/https/tls for YouTube mining)"
+# TODO-1214: YouTube/remote mining feeds ffmpeg an http(s) googlevideo stream and
+# adds -reconnect* input options (buildFfmpegRemoteInputArgs,
+# hibiki/lib/src/utils/misc/desktop_audio_clipper.dart). A build without
+# --enable-network has NO http/https protocol, so opening the URL and the
+# -reconnect option both fail (AVERROR_OPTION_NOT_FOUND). Assert the protocols
+# exist up front so a dropped --enable-network fails loudly here, not at runtime.
+"$FFMPEG_MIN" -hide_banner -protocols > "$WORK/protocols.txt" 2>&1
+for proto in http https tls tcp; do
+  if ! grep -qw "$proto" "$WORK/protocols.txt"; then
+    echo "MISSING PROTOCOL (need $proto for YouTube/remote mining, TODO-1214):"
+    cat "$WORK/protocols.txt"
+    exit 1
+  fi
+done
+
+echo "[ffmpeg-min-smoke] verifying libx264 encoder + mp4 clip export (TODO-1257)"
+# TODO-1257: clip export writes an H.264 .mp4 (universally openable in any
+# player/browser). Needs the libx264 encoder + mp4 muxer. Assert the encoder is
+# present, then actually re-encode to a real .mp4 and validate it with the
+# fixture build so a dropped libx264/mp4 fails the build, not the user.
+"$FFMPEG_MIN" -hide_banner -encoders > "$WORK/encoders2.txt" 2>&1
+if ! grep -qw libx264 "$WORK/encoders2.txt"; then
+  echo "MISSING ENCODER (need libx264 for h264 mp4 clip export, TODO-1257):"
+  cat "$WORK/encoders2.txt"
+  exit 1
+fi
+"$FFMPEG_MIN" -hide_banner -muxers > "$WORK/muxers2.txt" 2>&1
+if ! grep -qw mp4 "$WORK/muxers2.txt"; then
+  echo "MISSING MUXER (need mp4 for h264 clip export, TODO-1257):"
+  cat "$WORK/muxers2.txt"
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
+  -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -movflags +faststart \
+  "$WORK/clip.mp4"
+assert_nonempty "$WORK/clip.mp4"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mp4" -f null -
+
 echo "[ffmpeg-min-smoke] PASS"

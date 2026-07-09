@@ -22,6 +22,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -104,9 +105,10 @@ void main() {
       expect(plan.videos, hasLength(1));
       expect(plan.videos.single.videoPath, '/lib/movie.mp4');
       // Same-stem srt attaches to the video; .txt is ignored, dir skipped.
-      // subtitlePath is built via p.join(dir, name) -> use p.join to stay
-      // platform-agnostic (Windows uses a backslash separator).
-      expect(plan.videos.single.subtitlePath, p.join('/lib', 'movie.srt'));
+      // subtitlePath is the ORIGINAL sidecar entry path (TODO-1274: looked
+      // up from the entries, not rebuilt via p.join, so remote forward-slash
+      // paths survive on a Windows host).
+      expect(plan.videos.single.subtitlePath, '/lib/movie.srt');
     });
 
     test('video without a same-name subtitle has null subtitlePath', () {
@@ -132,6 +134,29 @@ void main() {
       final ScanPlan plan = planScanFromFileList(const <SourceFileEntry>[]);
       expect(plan.books, isEmpty);
       expect(plan.videos, isEmpty);
+      expect(plan.playlists, isEmpty);
+    });
+
+    // TODO-1237: .m3u8/.m3u manifests classify as PLAYLISTS (multi-episode),
+    // reusing the drag-drop kDragPlaylistExtensions whitelist. They must NOT be
+    // silently ignored (the reported bug) nor mis-classified as single videos.
+    test('m3u8 / m3u manifests classify as playlists, not videos', () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/series.m3u8'),
+        _file('/lib/other.m3u'),
+        _file('/lib/movie.mp4'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      expect(
+        plan.playlists.map((ScanPlaylistItem i) => i.playlistPath).toList(),
+        <String>['/lib/series.m3u8', '/lib/other.m3u'],
+        reason: 'both m3u8 and m3u land in playlists',
+      );
+      // The single .mp4 stays a video; the manifests are not double-counted.
+      expect(
+        plan.videos.map((ScanVideoItem i) => i.videoPath).toList(),
+        <String>['/lib/movie.mp4'],
+      );
     });
 
     // TODO-946: a book with a same-stem sidecar subtitle AND audio becomes an
@@ -146,8 +171,8 @@ void main() {
       expect(plan.books, hasLength(1));
       final ScanBookItem b = plan.books.single;
       expect(b.epubPath, '/lib/book.epub');
-      expect(b.subtitlePath, p.join('/lib', 'book.srt'));
-      expect(b.audioPaths, <String>[p.join('/lib', 'book.mp3')]);
+      expect(b.subtitlePath, '/lib/book.srt');
+      expect(b.audioPaths, <String>['/lib/book.mp3']);
       expect(b.isAudiobook, isTrue);
     });
 
@@ -158,7 +183,7 @@ void main() {
       ];
       final ScanPlan plan = planScanFromFileList(files);
       final ScanBookItem b = plan.books.single;
-      expect(b.subtitlePath, p.join('/lib', 'book.srt'));
+      expect(b.subtitlePath, '/lib/book.srt');
       expect(b.audioPaths, isEmpty);
       expect(b.isAudiobook, isFalse,
           reason: 'audio is required to import as an audiobook');
@@ -480,6 +505,233 @@ void main() {
     });
   });
 
+  // ── TODO-1237: video-source folder scan imports m3u8/m3u playlists ─────
+  // A .m3u8 manifest sitting in a scanned video source folder must import as a
+  // PLAYLIST VideoBook (playlistJson carrying the parsed episodes), NOT be
+  // ignored (the reported bug) and NOT be mis-imported as a single video.
+  // Reuses parseM3u8 + saveVideoBook, the same persistence as the manual
+  // "playlist" button and the drag-drop importNewPlaylist path.
+  group('MediaSourceScanner.scan video playlist (TODO-1237)', () {
+    late Directory tmp;
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('todo1237_scan_');
+    });
+    tearDown(() {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    test('m3u8 manifest imports as a playlist VideoBook (episodes + sourceId)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      // A 2-episode m3u8; relative paths resolve against the manifest's dir.
+      // Only the manifest sits in the folder (episodes referenced by the m3u8,
+      // not standalone files) so the scan yields exactly one playlist VideoBook
+      // and no standalone single-video rows to disambiguate against.
+      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync(
+        '''
+#EXTM3U
+#EXTINF:-1,Episode 1
+ep1.mp4
+#EXTINF:-1,Episode 2
+ep2.mp4
+''',
+      );
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+
+      final List<VideoBookRow> videos = await repo.listAll();
+      expect(videos, hasLength(1),
+          reason: 'the m3u8 manifest imports as one playlist VideoBook');
+      final VideoBookRow row = videos.single;
+      expect(row.sourceId, sid,
+          reason: 'scanned playlist must be backfilled with its source id');
+      // Persisted as a playlist (2 episodes), not a single video.
+      expect(playlistEpisodeCount(row.playlistJson), 2,
+          reason: 'the two m3u8 entries must be parsed into playlistJson');
+      expect(row.bookUid, startsWith('video/playlist/'),
+          reason: 'playlist identity namespace, distinct from single videos');
+      // First episode is the initial videoPath, resolved against the manifest.
+      expect(row.videoPath, p.normalize(p.join(tmp.path, 'ep1.mp4')));
+
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1);
+      expect(after.lastScanError, isNull);
+    });
+
+    test('empty / comment-only m3u8 imports nothing (skipped, no error)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      // Only the header -> parseM3u8 yields no entries -> nothing inserted.
+      File(p.join(tmp.path, 'empty.m3u8')).writeAsStringSync('''
+#EXTM3U
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+
+      expect(await repo.listAll(), isEmpty,
+          reason: 'an empty manifest must not create an orphan VideoBook');
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 0);
+      expect(after.lastScanError, isNull);
+    });
+
+    // TODO-1237 ②: re-scanning the same video folder must NOT create `X (2)`
+    // duplicates — already-imported single videos are skipped (path dedup),
+    // mirroring _importBooks' skipIfExists (BUG-443).
+    test('re-scan skips already-imported single videos (no X (2) dup)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      // Two standalone videos (empty files: cover extraction just yields null,
+      // dedup is path-based, not content-based).
+      File(p.join(tmp.path, 'A.mp4')).writeAsBytesSync(<int>[0]);
+      File(p.join(tmp.path, 'B.mkv')).writeAsBytesSync(<int>[0]);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(2));
+
+      // Second scan of the unchanged folder: every file already imported.
+      await MediaSourceScanner(db).scan(source);
+      final List<VideoBookRow> after = await repo.listAll();
+      expect(after, hasLength(2),
+          reason: 're-scan must import nothing new (dedup), not X (2) rows');
+      expect(after.map((VideoBookRow r) => r.bookUid).toSet(), hasLength(2),
+          reason: 'no suffixed duplicate book_uid');
+      final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
+      expect(afterSrc.mediaCount, 0,
+          reason: 'second scan reports 0 newly-imported media');
+    });
+
+    // TODO-1237 ②: re-scanning a folder whose only manifest is a playlist must
+    // not duplicate the playlist VideoBook either.
+    test('re-scan skips already-imported m3u8 playlist (no duplicate)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+ep1.mp4
+#EXTINF:-1,Episode 2
+ep2.mp4
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(1));
+
+      await MediaSourceScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(1),
+          reason: 're-scan must not duplicate the playlist VideoBook');
+      final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
+      expect(afterSrc.mediaCount, 0,
+          reason: 'second scan reports 0 newly-imported playlists');
+    });
+
+    // TODO-1237 ②: the user's real bug — a manifest whose EPISODE PATHS change
+    // between scans (they edited relative paths into absolute ones) must still
+    // dedup by the STABLE m3u8 identity, NOT by the volatile first-episode path.
+    // The old first-episode-path key produced an `X (2)` duplicate here.
+    test(
+        're-scan after manifest episode paths change: identity dedup, no X (2)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      final File manifest = File(p.join(tmp.path, 'series.m3u8'));
+      manifest.writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+sub_a/ep1.mp4
+#EXTINF:-1,Episode 2
+sub_a/ep2.mp4
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+      final List<VideoBookRow> first = await repo.listAll();
+      expect(first, hasLength(1));
+      final String firstVideoPath = first.single.videoPath;
+
+      // The user edits the manifest so every episode path differs (here a
+      // different subdirectory), changing the resolved first-episode path — the
+      // OLD dedup key. The m3u8 identity (its basename) is unchanged.
+      manifest.writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+sub_b/ep1.mp4
+#EXTINF:-1,Episode 2
+sub_b/ep2.mp4
+''');
+
+      await MediaSourceScanner(db).scan(source);
+      final List<VideoBookRow> after = await repo.listAll();
+      expect(after, hasLength(1),
+          reason: 'identity dedup: same m3u8 => skip even though the '
+              'first-episode path changed (old key would make X (2))');
+      expect(
+          after.where((VideoBookRow r) => r.bookUid.contains('(2)')), isEmpty,
+          reason: 'no suffixed duplicate book_uid');
+      // The surviving row is the ORIGINAL import (skip, not overwrite).
+      expect(after.single.videoPath, firstVideoPath,
+          reason: 're-scan skips (does not rewrite) the already-imported row');
+      final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
+      expect(afterSrc.mediaCount, 0,
+          reason: 'second scan imported nothing new');
+    });
+  });
+
   // Source guard: _importBooks must keep the BUG-443 dedup wiring so a future
   // edit can't silently drop it and re-introduce X (2) folder-scan duplicates.
   test('source guard: _importBooks passes skipIfExists for dedup (BUG-443)',
@@ -491,6 +743,38 @@ void main() {
         reason: '_importBooks must request silent dedup from the importer');
     expect(src.contains('DuplicateImportCancelledException'), isTrue,
         reason: '_importBooks must catch+skip the duplicate-cancel signal');
+    // TODO-1237 ②: _importVideos keeps the physical-path re-scan dedup
+    // (existingPaths.add short-circuit) so a future edit can't silently
+    // reintroduce X (2) single-video folder-scan duplicates.
+    expect(src.contains('existingPaths.add(normalizeVideoPath'), isTrue,
+        reason: 'single-video scan must skip already-imported physical paths');
+    // TODO-1237 ②: _importPlaylists dedups by the STABLE playlist identity
+    // (playlistBookUid), skipping an already-imported manifest instead of
+    // suffixing an X (2) duplicate. Guard the identity-skip wiring so a future
+    // edit can't regress to the volatile first-episode-path key.
+    expect(
+        src.contains(
+            'final String bookUid = playlistBookUid(item.playlistPath);'),
+        isTrue,
+        reason: 'playlist scan must derive dedup identity from the m3u8 path');
+    expect(
+        src.contains('if (existingKeys.contains(bookUid)) continue;'), isTrue,
+        reason: 'playlist scan must skip an already-imported m3u8 identity');
+  });
+
+  // TODO-1284: the duplicate-skip branch must still attach a sidecar srt+audio
+  // added after first import. Guard the attach helper wiring so a future edit
+  // can't collapse the catch back to a bare skip that drops the new subtitle.
+  test('source guard: duplicate-skip attaches sidecar audiobook (TODO-1284)',
+      () {
+    final String src = File(
+      'lib/src/media/source/media_source_scanner.dart',
+    ).readAsStringSync();
+    expect(src.contains('_attachSidecarAudiobookToExisting'), isTrue,
+        reason:
+            'the duplicate-skip branch must call the sidecar-attach helper');
+    expect(src.contains('alignAndPersistAudiobook'), isTrue,
+        reason: 'the attach helper must align+persist the newly-added sidecar');
   });
 
   // ── TODO-817 M1c T5: subtitle charset detection via copyToLocal ────────────
@@ -670,6 +954,139 @@ void main() {
           await db.getAudiobookByBookKey(books.single.bookKey);
       expect(ab, isNull,
           reason: 'no sibling audio -> plain EPUB, no audiobook promotion');
+    });
+  });
+
+  // ── TODO-1284: re-scan attaches a sidecar srt+audio ADDED after first import ─
+  // A book first imported as a plain EPUB (no sibling srt/audio yet) must be
+  // promoted to an audiobook on a later re-scan once the same-stem .srt + .mp3
+  // appear next to it. Before the fix, _importBooks caught the duplicate-title
+  // skip and returned without ever calling alignAndPersistAudiobook, so the
+  // newly-added subtitle/audio were silently ignored (the user's report: "这个
+  // 刷新应该附加上"). Attach is gated on the book having no audiobook yet, so a
+  // repeat re-scan is idempotent and never re-runs the matcher.
+  group('MediaSourceScanner.scan re-scan sidecar attach (TODO-1284)', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('todo1284_scan_');
+      pp = Directory.systemTemp.createTempSync('todo1284_pp_');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => pp.path,
+      );
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    testWidgets(
+        'srt+mp3 added after first import -> re-scan promotes to audiobook',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // First scan: only the EPUB is present -> imports as a plain text EPUB.
+      _writeEpub(p.join(tmp.path, 'book.epub'), 'RescanNovel');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      final String bookKey = books.single.bookKey;
+      expect(await db.getAudiobookByBookKey(bookKey), isNull,
+          reason: 'no sidecar yet -> plain EPUB after first scan');
+
+      // The user drops a same-stem .srt + .mp3 next to the book, then hits
+      // "重新扫描" (re-scan).
+      File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
+      File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
+
+      source = (await db.getMediaSourceById(sid))!;
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      // Same book row (no X (2) duplicate), now promoted to an audiobook.
+      final List<EpubBookRow> after = await db.getAllEpubBooks();
+      expect(after, hasLength(1),
+          reason: 're-scan must not create a duplicate book row');
+      final AudiobookRow? ab = await db.getAudiobookByBookKey(bookKey);
+      expect(ab, isNotNull,
+          reason: 're-scan must promote the existing book to an audiobook '
+              'once the sidecar srt+audio appear');
+      expect(ab!.audioPathsJson, isNotNull,
+          reason: 'the newly-added sibling audio must be persisted');
+
+      final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
+      expect(cues, isNotEmpty,
+          reason: 'the newly-added sidecar subtitle must be parsed into cues');
+      final SrtBookRow? srtBook = await db.getSrtBookByBookKey(bookKey);
+      expect(srtBook, isNotNull,
+          reason: 'epub-backed audiobook needs a paired srt_books row');
+
+      // Re-scan inserted no NEW book, so mediaCount reflects zero new inserts.
+      final MediaSourceRow scanned = (await db.getMediaSourceById(sid))!;
+      expect(scanned.mediaCount, 0,
+          reason: 'attaching an audiobook to an existing book is not a new '
+              'media insert');
+      expect(scanned.lastScanError, isNull);
+    });
+
+    testWidgets('a third re-scan is idempotent (already-attached audiobook)',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // Book + sidecar srt + mp3 all present up front -> first scan already an
+      // audiobook. A second scan must stay green and not duplicate anything.
+      _writeEpub(p.join(tmp.path, 'book.epub'), 'IdempotentNovel');
+      File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
+      File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+
+      for (int i = 0; i < 2; i++) {
+        final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+        await tester.runAsync(() async {
+          await MediaSourceScanner(db).scan(source);
+        });
+      }
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1),
+          reason: 'repeat scans keep a single book row');
+      final AudiobookRow? ab =
+          await db.getAudiobookByBookKey(books.single.bookKey);
+      expect(ab, isNotNull);
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull);
     });
   });
 }

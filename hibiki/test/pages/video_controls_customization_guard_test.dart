@@ -177,8 +177,11 @@ void main() {
     expect(page, contains('_showVideoSidePanel'));
     expect(page, contains('Positioned.fill'));
     expect(page, contains('_buildVideoSidePanelOverlay'));
-    expect(page, contains('_VideoSidePanelKind.subtitleSources'));
-    expect(page, contains('_VideoSidePanelKind.audioTracks'));
+    // TODO-1351：音轨/字幕轨切换从「外面浮的轨切换侧栏」收进设置面板对应 tab，
+    // audioTracks / subtitleSources 两个浮动 kind 已删；轨切换仍走半透明 side-panel 系统
+    // （设置面板本身就是一个 side-panel），故上面的通用 side-panel 不变量仍成立。
+    expect(page, isNot(contains('_VideoSidePanelKind.subtitleSources')));
+    expect(page, isNot(contains('_VideoSidePanelKind.audioTracks')));
 
     String body(String start, String end) {
       final int startIndex = page.indexOf(start);
@@ -192,11 +195,12 @@ void main() {
       'Future<void> _showSubtitleSourceMenu',
       'Future<void> _openJimakuDialog',
     );
-    // TODO-590 batch9：_showAudioTrackMenu 已抽到 video_hibiki/audio_track.part.dart
-    // （合并语料末段），其紧邻后继在 part 内是 _buildAudioTracksSidePanel，改用它作终点。
+    // TODO-590 batch9：_showAudioTrackMenu 已抽到 video_hibiki/audio_track.part.dart。
+    // TODO-1351：其紧邻后继改为 _buildAudioTrackSettingsSection（设置面板「音频」分类的
+    // 音轨切换区），改用它作终点。
     final String audioMenu = body(
       'void _showAudioTrackMenu',
-      'Widget _buildAudioTracksSidePanel(',
+      'Widget _buildAudioTrackSettingsSection(',
     );
     final String subtitleLoading = body(
       'void _showSubtitleLoadingOverlay',

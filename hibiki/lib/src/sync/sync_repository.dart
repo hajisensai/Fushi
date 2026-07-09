@@ -485,6 +485,18 @@ class SyncRepository {
   Future<void> setServerTlsEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyServerTlsEnabled, v);
 
+  /// TODO-961 B 段：全新设备**首次**启用 hosting 时默认打开 TLS。判据是
+  /// preferences 表里 [_keyServerTlsEnabled] 与 [_keyServerEnabled] 两个 key 都
+  /// **从未写入过**——存量 hosting（或曾 hosting）设备至少写过 serverEnabled，
+  /// 显式设置过 TLS 的更不动，保持明文现状（Never break userspace）。
+  /// 返回是否真的应用了默认值（供 UI 同步开关显示）。
+  Future<bool> applyFirstHostingTlsDefault() async {
+    if (await _getStringOrNull(_keyServerTlsEnabled) != null) return false;
+    if (await _getStringOrNull(_keyServerEnabled) != null) return false;
+    await setServerTlsEnabled(true);
+    return true;
+  }
+
   Future<String?> getServerPassword() async {
     final encoded = await _getStringOrNull(_keyServerPassword);
     return encoded != null ? _decodeSecret(encoded) : null;

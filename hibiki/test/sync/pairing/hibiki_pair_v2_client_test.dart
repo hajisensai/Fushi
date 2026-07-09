@@ -80,7 +80,7 @@ void main() {
   test('PIN required correct PIN yields success with token', () async {
     final HibikiPairV2Outcome outcome = await client(
       buildHost(pinRequired: true, approve: true),
-    ).pair(deviceName: 'My Phone', pin: hostPin);
+    ).pair(deviceName: 'My Phone', pinProvider: () async => hostPin);
     expect(outcome, isA<HibikiPairV2Success>());
     final HibikiPairV2Success success = outcome as HibikiPairV2Success;
     expect(success.token, 'granted-token');
@@ -90,13 +90,13 @@ void main() {
   test('PIN required wrong PIN yields failure pin', () async {
     final HibikiPairV2Outcome outcome = await client(
       buildHost(pinRequired: true, approve: true),
-    ).pair(deviceName: 'My Phone', pin: '000000');
+    ).pair(deviceName: 'My Phone', pinProvider: () async => '000000');
     expect(outcome, isA<HibikiPairV2Failure>());
     expect((outcome as HibikiPairV2Failure).reason, 'pin');
   });
 
-  test('PIN required but none provided yields failure pin before network',
-      () async {
+  test('PIN required but no pinProvider yields failure pin', () async {
+    // host 要 PIN 但调用方没接 pinProvider → 无从取得 PIN → 'pin'（非 'cancelled'）。
     final HibikiPairV2Outcome outcome = await client(
       buildHost(pinRequired: true, approve: true),
     ).pair(deviceName: 'My Phone');
@@ -116,5 +116,56 @@ void main() {
       buildHost(pinRequired: false, approve: false),
     ).pair(deviceName: 'My Phone');
     expect((outcome as HibikiPairV2Failure).reason, 'declined');
+  });
+
+  // TODO-1273 回归守卫：用户报「LAN 配对被要求输入对方 PIN，但对方根本没 PIN，且我
+  // 没输 PIN 却还是把地址配上了」。根因是 client 在得到 host 的 pinRequired 响应前就
+  // 盲目弹 PIN 输入框。修复后：pinRequired:false 的会话**绝不**调用 pinProvider。
+  test('LAN pinRequired:false never invokes pinProvider (TODO-1273)', () async {
+    bool pinAsked = false;
+    final HibikiPairV2Outcome outcome = await client(
+      buildHost(pinRequired: false, approve: true),
+    ).pair(
+      deviceName: 'My Phone',
+      pinProvider: () async {
+        pinAsked = true;
+        return '000000';
+      },
+    );
+    expect(outcome, isA<HibikiPairV2Success>());
+    expect(pinAsked, isFalse, reason: 'LAN 免 PIN 会话绝不能弹 PIN 输入框');
+  });
+
+  // pinRequired:true 时才调用 pinProvider（一次），确认回调确实按需触发。
+  test('PIN required invokes pinProvider exactly once (TODO-1273)', () async {
+    int calls = 0;
+    final HibikiPairV2Outcome outcome = await client(
+      buildHost(pinRequired: true, approve: true),
+    ).pair(
+      deviceName: 'My Phone',
+      pinProvider: () async {
+        calls++;
+        return hostPin;
+      },
+    );
+    expect(outcome, isA<HibikiPairV2Success>());
+    expect(calls, 1);
+  });
+
+  // 用户在 PIN 输入框点取消（pinProvider 返回 null）→ 'cancelled'，与 'pin' 区分，
+  // 调用方据此静默收场不弹「PIN 错误」提示。
+  test('pinProvider returning null yields cancelled (TODO-1273)', () async {
+    final HibikiPairV2Outcome outcome = await client(
+      buildHost(pinRequired: true, approve: true),
+    ).pair(deviceName: 'My Phone', pinProvider: () async => null);
+    expect((outcome as HibikiPairV2Failure).reason, 'cancelled');
+  });
+
+  // 空串（点了继续但没填）→ 'pin'（视为未输入，非取消）。
+  test('pinProvider returning empty yields pin (TODO-1273)', () async {
+    final HibikiPairV2Outcome outcome = await client(
+      buildHost(pinRequired: true, approve: true),
+    ).pair(deviceName: 'My Phone', pinProvider: () async => '');
+    expect((outcome as HibikiPairV2Failure).reason, 'pin');
   });
 }

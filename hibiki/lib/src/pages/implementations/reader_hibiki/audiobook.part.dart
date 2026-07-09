@@ -868,12 +868,38 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   AudioPlaybackRange? _currentSentenceAudioRange() {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
+    final ({int offset, int length})? span = _miningSpanRange();
     return _sentenceAudioRangeFor(
       sentence: sentence,
       cue: _lookupCue,
-      normOffset: _cachedSentenceRange?.offset,
-      normLength: _cachedSentenceRange?.length,
+      normOffset: span?.offset,
+      normLength: span?.length,
     );
+  }
+
+  /// 归一化选区 span 的单一真相源（TODO-1278）：优先句级 span（[_cachedSentenceRange]），
+  /// 句级缺失时回退到词/选区级 span（[_cachedSelectionRange]）。
+  ///
+  /// 片段导出 / Anki 句子音频的位置锚点**必须**和收藏、制卡历史
+  /// （[_checkFavoriteStatus] / [_recordMinedSentence] / lookup.part / chrome.part）
+  /// 用同一套回退——否则句级 span 偶发缺失（拖选跨 block / ruby / 图片相邻节点未进归一化
+  /// 索引 → JS `sentenceNormalizedOffset` 为 null，见 reader_selection_scripts）时，导出
+  /// 侧独自丢掉位置锚点：[miningSentenceAudioRange] 拿不到 sectionIndex+offset+length，
+  /// 对 gap word（`_lookupCue==null`、currentSentence 为空）解析出 null 区间，被
+  /// [classifyAudiobookClipSelection] 归成 `unsupportedRange`，弹出误导的「跨章或跨音频
+  /// 文件」toast——而选区其实同章、Anki 收藏路径能正常定位。回退到选区级 span 后，位置
+  /// 匹配重新生效，同章选区正常进入导出管线。
+  ({int offset, int length})? _miningSpanRange() {
+    final ({int offset, int length})? sentenceRange = _cachedSentenceRange;
+    if (sentenceRange != null) {
+      return sentenceRange;
+    }
+    final ({int offset, int length, String text})? selectionRange =
+        _cachedSelectionRange;
+    if (selectionRange != null) {
+      return (offset: selectionRange.offset, length: selectionRange.length);
+    }
+    return null;
   }
 
   /// TODO-393：把任意一句（当前句或上下文句）按其整书归一化偏移解析成句子音频区间
@@ -1094,14 +1120,15 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // currentSentence.text，与静态侧 emptySelection 判据不同调（纯外字/无选区时可能一条
     // 判空、另一条判非空）。归一到同一真相源，消除两条路径的边界分歧。
     final String classifyText = _cachedSelectionRange?.text ?? sentence;
+    final ({int offset, int length})? spanRange = _miningSpanRange();
     final List<AudioCue> allCues = _sentenceAudioMiningCues(_lookupCue);
     final List<AudioCue> span = miningSentenceCueSpan(
       cues: allCues,
       cue: _lookupCue,
       sentence: sentence,
       sectionIndex: _lookupSectionIndex,
-      sentenceNormCharOffset: _cachedSentenceRange?.offset,
-      sentenceNormCharLength: _cachedSentenceRange?.length,
+      sentenceNormCharOffset: spanRange?.offset,
+      sentenceNormCharLength: spanRange?.length,
     );
     if (span.isEmpty) return null;
 
@@ -1110,13 +1137,13 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       allCues: allCues,
       delayMs: ctrl.delayMs.value,
     );
-    final List<AudiobookClipCueSpan> cueSpans = span
-        .map((AudioCue c) => AudiobookClipCueSpan(
-              text: c.text,
-              startMs: c.startMs,
-              endMs: c.endMs,
-            ))
-        .toList(growable: false);
+    // TODO-1147（用户回访「高亮迟钝」第二根因·时基不一致）：globalRange 已按 A/V
+    // 偏移平移 +delayMs（cue 在音频里真实出现于 startMs+delayMs），帧计划拿它当
+    // 时间轴；cue 起止必须同步平移，否则逐句高亮整体偏移 delayMs。
+    final List<AudiobookClipCueSpan> cueSpans = clipCueSpansWithDelay(
+      span: span,
+      delayMs: ctrl.delayMs.value,
+    );
 
     final AudiobookClipMultiCueResult result = classifyAudiobookClipMultiCue(
       selectedText: classifyText,
@@ -1126,11 +1153,27 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       maxDurationMs: _kAudiobookClipMaxDurationMs,
     );
     if (!result.isExportable) return null;
+    // TODO-1127：把选区里抽取到的插图按归一化文档位置分配到各 cue 段之后。cue 的
+    // normCharStart 从 sasayaki 编码的 textFragmentId 解出（解不出的 cue 传 null，不作
+    // 归属锚点）；`span` 与 result.cueSpans 同序等长（classify 只包一层不可变拷贝），故
+    // 下标对齐。选区无夹图时 _cachedSelectionImages 为空 → 分配结果全空列表，零差异。
+    final List<int?> cueNormStarts = span.map((AudioCue c) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(c.textFragmentId);
+      return (frag != null && frag.normCharStart >= 0)
+          ? frag.normCharStart
+          : null;
+    }).toList(growable: false);
+    final List<List<Uint8List>> imagesByCueIndex = assignClipImagesToCues(
+      cueNormStarts: cueNormStarts,
+      images: _cachedSelectionImages,
+    );
     return _AudiobookClipDynamicPlan(
       audioFileIndex: result.audioFileIndex,
       globalStartMs: result.globalStartMs,
       globalEndMs: result.globalEndMs,
       cueSpans: result.cueSpans,
+      imagesByCueIndex: imagesByCueIndex,
     );
   }
 
@@ -1348,7 +1391,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
         }
       } else {
-        await Share.shareXFiles(
+        await HibikiShare.shareFiles(
           <XFile>[XFile(outPath, mimeType: 'video/quicktime')],
           subject: text,
         );
@@ -1408,10 +1451,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     );
     if (frames.isEmpty) return false;
 
-    // 去重要渲的高亮下标（每句只渲一次），再批量离屏渲 PNG。
-    final List<AudiobookClipTextSegment> segments = plan.cueSpans
-        .map((AudiobookClipCueSpan s) => AudiobookClipTextSegment(text: s.text))
-        .toList(growable: false);
+    // 去重要渲的高亮下标（每句只渲一次），再批量离屏渲 PNG。TODO-1127：把该句后夹带的
+    // 插图（plan.imagesByCueIndex[i]）一并挂进 segment，渲染层会渲在该句文本之下。
+    final List<AudiobookClipTextSegment> segments = <AudiobookClipTextSegment>[
+      for (int i = 0; i < plan.cueSpans.length; i++)
+        AudiobookClipTextSegment(
+          text: plan.cueSpans[i].text,
+          images: i < plan.imagesByCueIndex.length
+              ? plan.imagesByCueIndex[i]
+              : const <Uint8List>[],
+        ),
+    ];
     final List<int> distinctIndices = <int>[];
     for (final ClipFrameSpec spec in frames) {
       if (!distinctIndices.contains(spec.highlightCueIndex)) {
@@ -1626,10 +1676,15 @@ class _AudiobookClipDynamicPlan {
     required this.globalStartMs,
     required this.globalEndMs,
     required this.cueSpans,
+    this.imagesByCueIndex = const <List<Uint8List>>[],
   });
 
   final int audioFileIndex;
   final int globalStartMs;
   final int globalEndMs;
   final List<AudiobookClipCueSpan> cueSpans;
+
+  /// TODO-1127：与 [cueSpans] 同下标对齐的「每句后夹带插图」列表（选区里夹在该句之后的
+  /// EPUB 插图字节，已降采样）。绝大多数句子为空列表；空则等价旧行为（只渲文本）。
+  final List<List<Uint8List>> imagesByCueIndex;
 }

@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 1.0.1+490
+version: 1.0.1+611
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -143,6 +143,16 @@ dependencies:
   screen_retriever: ^0.2.0
   window_manager: ^0.5.1
 dependency_overrides:
+  # TODO-1306 / TODO-1275 / BUG-361: vendored desktop_drop 0.5.0. Adds (a) URL
+  # drag import — browsers drop a URL as CFSTR_INETURLW (Windows) / public.url
+  # (macOS) / an http(s) line in text/uri-list (Linux), all of which upstream
+  # discards, so a dragged link never reaches Dart; the fork extracts the URL and
+  # sends it through the same channel as file paths for the classifier to import
+  # as a stream video — and (b) the re-register-OLE-drop-target `reinitialize`
+  # method (BUG-361). Was a pub-cache ci-patch; vendored so the cross-platform
+  # native delta is tracked source. See third_party/desktop_drop/PATCHES.md.
+  desktop_drop:
+    path: ../third_party/desktop_drop
   # 自编 ffmpeg-kit（arthenica 源码重编，android 用 third_party 内自编 AAR；修 BUG-122
   # Android16 启动崩溃）。Dart API 与上游 ffmpeg_kit_flutter 6.0.3 一致。
   ffmpeg_kit_flutter:
@@ -244,6 +254,9 @@ flutter:
   assets:
     - assets/browser_extension/
     - assets/browser_extension/vendor/
+    - assets/gamepad/xbox/
+    - assets/gamepad/playstation/
+    - assets/gamepad/switch/
     - assets/licenses/
     - assets/meta/
     - assets/popup/

@@ -18,7 +18,7 @@ void main() {
   final String stripped = _stripLineComments(source);
   final String sheet = _functionSource(
     stripped,
-    '  Future<void> _showAppearanceSheet() async',
+    '  Future<void> _showAppearanceSheet(',
     '  Future<void> _addBookmarkAtCurrentPosition() async',
   );
 

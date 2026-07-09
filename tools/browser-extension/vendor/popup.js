@@ -44,6 +44,232 @@ let lastSelection = '';
 let currentDictionaryMedia = null;
 const selectedDictionaries = {};
 
+// TODO-270 D: tri-state mine button — "overwrite the latest mined card".
+//
+// After a successful mine that returned a backend note id (AnkiConnect only),
+// remember WHICH word was the latest card so its ✓ becomes a green
+// "editable" ✓⤺: clicking it again UPDATES that same note (repo.updateMinedNote)
+// instead of deleting+re-creating. Mining a different word, or re-querying,
+// supersedes the previous latest — only the single most-recently-mined word in
+// this popup session stays editable; older ones fall back to an ordinary ✓.
+//
+// `lastMinedNoteId` is the note id to overwrite; `lastMinedEntryKey` identifies
+// which expression / reading owns that id. AnkiDroid never returns an id
+// (noteId stays null) → the latest state is never entered → graceful degrade to
+// the existing two-state behaviour.
+let lastMinedNoteId = null;
+let lastMinedEntryKey = null;
+
+// Stable identity for a popup entry (expression + reading): the same key the
+// Dart side and the lookup-time duplicateCheck use.
+function mineEntryKey(expression, reading) {
+    return `${expression || ''}\u0000${reading || ''}`;
+}
+
+// Normalize the mineEntry/updateEntry handler reply into {ankiConnect, noteId}.
+// The Dart handler now returns the structured MinePopupResult JSON; older/edge
+// returns (a bare boolean, or null) are tolerated so a handler that has not been
+// wired for updates still drives the ✓ refresh exactly as before.
+function parseMineResult(reply) {
+    if (reply && typeof reply === 'object') {
+        const rawId = reply.noteId;
+        const noteId = (typeof rawId === 'number' && Number.isFinite(rawId))
+            ? rawId
+            : null;
+        return { ankiConnect: reply.ankiConnect === true, noteId };
+    }
+    return { ankiConnect: reply === true, noteId: null };
+}
+
+// Records the just-mined word as the editable "latest" card when the backend
+// returned a note id; clears it otherwise (AnkiDroid / failure) so the button
+// never shows a green ✓⤺ it cannot honour.
+function rememberLatestMined(expression, reading, noteId) {
+    if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+        lastMinedNoteId = noteId;
+        lastMinedEntryKey = mineEntryKey(expression, reading);
+    } else {
+        lastMinedNoteId = null;
+        lastMinedEntryKey = null;
+    }
+}
+
+// True when [expression]/[reading] is the single most-recently-mined word whose
+// card can still be overwritten in place (a real note id is held for it).
+function isLatestEditable(expression, reading) {
+    return lastMinedNoteId !== null &&
+        lastMinedEntryKey === mineEntryKey(expression, reading);
+}
+
+// TODO-393/405「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：弹窗里用「➕➖
+// 递增递减步进器」把当前正查句之前/之后的 N 句作上下文纳入这张制卡的 sentence 字段。
+//
+// 数据流：JS 不持有句子文本/音频区间（都由宿主 Dart 的 MiningSentenceDraft 拥有），只
+// 镜像两个标量「上几句 / 下几句」用于驱动步进器计数显示：
+//   - 点➕（该方向 n+=1）/ 点➖（该方向 max(0, n-1)）→ callHandler('setSentenceContext',
+//     {prev, next}) → 宿主按这两个数解析上下文句**整体替换**草稿 → 回传上下文句总数
+//     （上 N + 下 N）。JS 镜像的是「请求几句」，真实合成由宿主按真句边界封顶。
+//   - 制卡成功（mineEntry）/ 换词查词 → 宿主清空草稿 → JS 把两个镜像标量归零。
+// 上下文是「选多少句」的标量：➕➖只是把这个标量升 1 / 降 1（整体替换草稿），不是把句子
+// 越攒越多地累加进 JS。JS 不设硬上限——由宿主的段落/cue 边界天然封顶。
+let sentenceCtxPrev = 0;
+let sentenceCtxNext = 0;
+// 兼容守卫/旧调用：保留镜像总数（上 N + 下 N）。
+let sentenceDraftCount = 0;
+
+// 刷新页面上所有句子上下文选择器的视觉态（多词条头共享同一对镜像标量）。
+// querySelectorAll 不可用时（极端 fake DOM）静默跳过，不影响制卡主流程。
+function refreshAllSentenceContextPickers() {
+    sentenceDraftCount = sentenceCtxPrev + sentenceCtxNext;
+    if (typeof document.querySelectorAll !== 'function') return;
+    document.querySelectorAll('.sentence-context-picker')
+        .forEach(refreshSentenceContextPicker);
+    document.querySelectorAll('.clear-draft-button')
+        .forEach(refreshClearDraftButton);
+}
+
+// 把一个上下文步进器里两个方向的计数显示同步到镜像标量：更新计数文本、n>0 时给计数加
+// .selected（绿色高亮），并在 n<=0 时禁用对应方向的➖（不能再减到负）。
+function refreshSentenceContextPicker(picker) {
+    if (!picker || typeof picker.querySelectorAll !== 'function') return;
+    picker.querySelectorAll('.context-count').forEach(function(count) {
+        const dir = count.dataset.dir;
+        const n = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+        count.textContent = String(n);
+        count.classList.toggle('selected', n > 0);
+    });
+    picker.querySelectorAll('.context-stepper-btn.minus').forEach(function(btn) {
+        const dir = btn.dataset.dir;
+        const n = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+        btn.disabled = n <= 0;
+    });
+}
+
+// TODO-382/393 可撤销：刷新「清空已加句子」按钮可见性。仅在已选上下文（总数>0）时显示，
+// 给用户一个明确、可见的「回到只制当前句」入口。
+function refreshClearDraftButton(button) {
+    if (!button) return;
+    button.title = window.i18nClearSentenceDraftTooltip || '清空已加句子';
+    button.hidden = (sentenceCtxPrev + sentenceCtxNext) <= 0;
+}
+
+// 把当前两个镜像标量发给宿主整体设置上下文，回传上下文句总数。宿主未接入 / 出错时
+// 返回当前镜像总数（不漂移）。
+async function setSentenceContextOnHost() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler(
+            'setSentenceContext', { prev: sentenceCtxPrev, next: sentenceCtxNext });
+        const n = (typeof reply === 'number' && Number.isFinite(reply)) ? reply : 0;
+        return n >= 0 ? n : 0;
+    } catch (e) {
+        console.error('setSentenceContext failed', e);
+        return sentenceCtxPrev + sentenceCtxNext;
+    }
+}
+
+// 清空宿主草稿（回到只制当前句），回传清空后的句数（恒 0）。
+async function clearSentenceDraftOnHost() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler('clearSentenceDraft');
+        const n = (typeof reply === 'number' && Number.isFinite(reply)) ? reply : 0;
+        return n >= 0 ? n : 0;
+    } catch (e) {
+        console.error('clearSentenceDraft failed', e);
+        return sentenceCtxPrev + sentenceCtxNext;
+    }
+}
+
+// BUG-297 / TODO-393：把句子上下文镜像标量归零（不发宿主信号）。换词复用常驻热槽
+// WebView 时宿主只重注入 lookupEntries 再调 renderPopup()（不重载页面），这三个模块级
+// 标量不像页面刷新那样自动归零，renderPopup 据残留值会把上一个词的「上 N / 下 N」按钮
+// 着色成 selected、清空按钮显示出来，与宿主已清空的草稿不一致。宿主在换词注入脚本里调
+// 本函数把镜像与已清的草稿对齐，再 renderPopup() 重建选择器即回到初始 0/0 态。
+// 制卡成功(mineEntry)/点×清空两处已各自就地归零（同事件内同步），不依赖本函数。
+window.resetSentenceContextMirror = function() {
+    sentenceCtxPrev = 0;
+    sentenceCtxNext = 0;
+    sentenceDraftCount = 0;
+};
+
+// TODO-645 / BUG-358: the popup mining dictionary selection (selectedDictionaries[idx],
+// which fills the Anki {selected-glossary} field recording which dictionary an entry chose
+// as its preferred gloss) must be one-shot, matching the sentence-context mirror lifecycle
+// above: cleared for THIS entry after a successful mine, and cleared for ALL entries on a
+// word change / re-render. Otherwise, reusing the warm-slot WebView for the next lookup at
+// the same entryIdx leaves the stale pick in place and the next mined card silently carries
+// the previously selected dictionary.
+//
+// Two entry points: the mine-success branch calls resetSelectedDictionariesForEntry(idx) to
+// clear only the mined entry (per-entry selections are independent — mining one card must not
+// wipe a sibling card pick); the host word-change inject calls resetSelectedDictionaries() to
+// zero everything (renderPopup rebuilds the DOM, so the stored summary label refs go stale —
+// the whole map must reset back to the no-selection state). Clearing also strips the stored
+// summary .selected class so state and UI stay consistent while the DOM still exists.
+function clearSelectedDictionaryEntry(idx) {
+    const selected = selectedDictionaries[idx];
+    if (!selected) return;
+    selected.label?.classList?.remove('selected');
+    delete selectedDictionaries[idx];
+}
+
+window.resetSelectedDictionariesForEntry = function(idx) {
+    clearSelectedDictionaryEntry(idx || 0);
+};
+
+window.resetSelectedDictionaries = function() {
+    for (const idx of Object.keys(selectedDictionaries)) {
+        clearSelectedDictionaryEntry(idx);
+    }
+};
+
+// 构造一个句子上下文步进器：两行「上 [➖][N][➕]」+「下 [➖][N][➕]」。点➕该方向 n+=1、点
+// ➖该方向 max(0, n-1)，把该方向的上下文句数整组重发宿主。无 JS 硬上限——由宿主的段落/
+// cue 边界天然封顶（镜像可继续升、宿主合成时按真句封顶）。
+function buildSentenceContextPicker() {
+    const picker = el('div', { className: 'sentence-context-picker' });
+    const setDirCount = async function(dir, n) {
+        if (picker.dataset.busy === '1') return;
+        picker.dataset.busy = '1';
+        try {
+            if (dir === 'prev') sentenceCtxPrev = n;
+            else sentenceCtxNext = n;
+            sentenceDraftCount = await setSentenceContextOnHost();
+            refreshAllSentenceContextPickers();
+        } finally {
+            picker.dataset.busy = '';
+        }
+    };
+    const makeStepperBtn = function(dir, sign) {
+        const btn = el('button', {
+            className: 'inline-action-button context-stepper-btn ' + sign,
+        });
+        setButtonIcon(btn, sign === 'plus' ? 'add' : 'remove');
+        btn.dataset.dir = dir;
+        btn.onclick = function() {
+            const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+            const next = sign === 'plus' ? cur + 1 : Math.max(0, cur - 1);
+            // 已到 0 再点➖是空操作（避免无谓重发宿主）。
+            if (next === cur) return;
+            setDirCount(dir, next);
+        };
+        return btn;
+    };
+    const makeRow = function(dir, label) {
+        const row = el('div', { className: 'context-row' });
+        row.appendChild(el('span', { className: 'context-label', textContent: label }));
+        row.appendChild(makeStepperBtn(dir, 'minus'));
+        const count = el('span', { className: 'context-count', textContent: '0' });
+        count.dataset.dir = dir;
+        row.appendChild(count);
+        row.appendChild(makeStepperBtn(dir, 'plus'));
+        return row;
+    };
+    picker.appendChild(makeRow('prev', window.i18nContextPrevLabel || '上'));
+    picker.appendChild(makeRow('next', window.i18nContextNextLabel || '下'));
+    return picker;
+}
+
+
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
     for (const [key, value] of Object.entries(props)) {
@@ -59,6 +285,42 @@ function el(tag, props = {}, children = []) {
     }
     
     return element;
+}
+
+// TODO-1325 #4: 顶部动作按钮从纯文字字形（♪ ☆ ★ ✓ ✓↩ + × ➖ ➕）升级为内联
+// Material Symbols SVG 矢量图标（Niratan 同款观感，但走 fill:currentColor 而非
+// macOS-only 的 -webkit-mask 分支，Android WebView / Windows WebView2 一致渲染）。
+// 图标随按钮 color / opacity / 主题走；尺寸由 .inline-action-button > svg 的 CSS
+// （width/height:1em）跟随各按钮 font-size 自适应。每个按钮额外记 data-icon 作为
+// 当前图标名的可观测状态标记——弹窗跑在 WebView 里没有 headless，测试用 data-icon
+// 断言图标切换，不再依赖字形 textContent。
+const ICON_PATHS = {
+    // volume_up
+    audio: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
+    // volume_off（无音频 / 播放失败）
+    audioOff: 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z',
+    // star_border（未收藏）
+    favorite: 'M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z',
+    // star（已收藏）
+    favorited: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+    // add（制卡按钮已回到 ✓✓↩ 文本标记；add 仅供句子上下文步进器的 + 按钮）
+    add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    // remove（步进器 ➖）
+    remove: 'M19 13H5v-2h14v2z',
+    // close（清空草稿 / 标签说明遮罩关闭 ×）
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+};
+
+function iconSvg(name) {
+    const d = ICON_PATHS[name] || '';
+    return '<svg class="inline-action-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="' + d + '"></path></svg>';
+}
+
+// 给一个动作按钮设置图标：记 data-icon（状态可观测），并把内容换成对应内联 SVG。
+function setButtonIcon(button, name) {
+    if (!button) return;
+    button.dataset.icon = name;
+    button.innerHTML = iconSvg(name);
 }
 
 function toHiragana(text) {
@@ -288,9 +550,12 @@ function getMediaFilename(dictionary, path) {
 }
 
 // BUG-435 / BUG-478 / BUG-520 家族根因：词典 structured-content 节点自带的
-// inline float / position:absolute|fixed|sticky 会把文本节点推出行内流。
-// 上游 Yomitan 按 schema 白名单下发样式，这两族属性从不落地；这里在源头丢弃。
-// position:relative 不脱离文档流，保留。与 hibiki/assets/popup/popup.js 同步。
+// inline float / position:absolute|fixed|sticky 会把文本节点推出行内流（明鏡
+// 补足◆行开引号被推到行右上角）。上游 Yomitan 按 schema 白名单下发样式，这
+// 两族属性从不落地；这里在源头丢弃，而不是事后用一刀切 CSS 兜底——BUG-520
+// 就是那种兜底的代价：display:inline 打断了所有词典靠 div block 布局做的分行。
+// position:relative（及其 top/left 偏移）不脱离文档流，词典靠它做合法的字形
+// 微调，保留。
 function isFlowEscapingStructuredContentStyle(property, value) {
     if (property === 'float' || property === 'cssFloat') {
         return true;
@@ -322,35 +587,6 @@ function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
     return Math.abs(Math.log(naturalInvAspectRatio / invAspectRatio)) > Math.log(1.5);
 }
 
-// TODO-1215 安全：扩展环境下别把带 sync token 的媒体 URL 塞进宿主页 DOM——宿主页任意脚本可读
-// <img src> 抠出原始 sync token（该 token 授权 /api/lookup、/api/mine、DELETE /api/library/* 与整棵
-// sync-data WebDAV 读写删）。改在隔离世界（content-script 世界有 localhost host_permissions）自己
-// fetch 媒体字节 → blob: URL 设给 <img>，token 只出现在 fetch 调用里（URL query），绝不进 DOM。
-// app 内（window.__hibikiDictMedia 未设）保持原 URL 不变（image:// 由 app WebView 解析），零影响。
-function hibikiDictMediaIsExtension() {
-    return !!(typeof window !== 'undefined' && window.__hibikiDictMedia);
-}
-// 把 imageUrl 设给 imgEl：扩展 http 媒体端点 → fetch→blob（token 不进 DOM）；否则原样。
-// 失败走 onError（复现原 <img> error 路径）。load/error 后 revoke blob，防泄漏。
-function hibikiSetImageSrc(imgEl, imageUrl, onError) {
-    if (!hibikiDictMediaIsExtension() || !/^https?:\/\//i.test(imageUrl)) {
-        imgEl.src = imageUrl; // app 内或非 http（image://）：原样，token 场景不适用
-        return;
-    }
-    fetch(imageUrl).then((r) => {
-        if (!r.ok) throw new Error('media ' + r.status);
-        return r.blob();
-    }).then((blob) => {
-        const objUrl = URL.createObjectURL(blob);
-        const revoke = () => { try { URL.revokeObjectURL(objUrl); } catch (_) {} };
-        imgEl.addEventListener('load', revoke, { once: true });
-        imgEl.addEventListener('error', revoke, { once: true });
-        imgEl.src = objUrl;
-    }).catch((e) => {
-        if (typeof onError === 'function') onError(e);
-    });
-}
-
 function closeImageLightbox() {
     document.querySelector('.dict-image-lightbox')?.remove();
 }
@@ -364,18 +600,50 @@ function openImageLightbox(imageUrl, alt) {
 
     const image = document.createElement('img');
     image.className = 'dict-image-lightbox-image';
-    hibikiSetImageSrc(image, imageUrl); // TODO-1215：token 不进 DOM
+    image.src = imageUrl;
     image.alt = alt || '';
     overlay.appendChild(image);
 
+    // 点灯箱任何位置（含图片本身）都关闭：放大图 max-width/height:100% 几乎铺满
+    // 视口，用户必然点图片关闭。早先给图片 stopPropagation 拦掉了遮罩的关闭，导致
+    // 只有四周 16px 边距能关＝「关不掉」（BUG-107）。预览无任何图内交互，故让整个
+    // 灯箱统一 tap-to-close。
     overlay.addEventListener('click', () => closeImageLightbox());
-    image.addEventListener('click', (event) => event.stopPropagation());
 
     document.body.appendChild(overlay);
 }
 
+// TODO-859 症状B：图片预览的 click 监听挂在外层 .gloss-image-link 容器上，但
+// .gloss-image-container 被 popup.css 的 `min-width:min(100%,200px)` 撑到 >=200px，
+// 横向溢出盖住相邻正文。点正文却命中这个隐形大盒 → 触发全屏黑色灯箱遮罩（误触）。
+// 修法：保留外层 click 监听（不动 CSS 布局，避免 TODO-350 Sanseido em-accent 回归），
+// 但用 getBoundingClientRect 把命中收敛到真正渲染的图片像素（img.gloss-image 或
+// canvas）。点击点不在图片像素矩形内 = 落在容器留白上 = 不开灯箱（让事件继续冒泡，由
+// 上面的 tapOutside 正文判定接手）。命中图片像素才 preventDefault + 开灯箱。
+function pointHitsRenderedImagePixels(node, clientX, clientY) {
+    // 真正画出像素的元素：渲染到 canvas 的走 canvas，否则是 <img class="gloss-image">。
+    const pixelEl = (typeof node.querySelector === 'function')
+        ? (node.querySelector('img.gloss-image') || node.querySelector('canvas'))
+        : null;
+    if (!pixelEl || typeof pixelEl.getBoundingClientRect !== 'function') {
+        // 无法测量真实像素矩形时退回旧行为（整盒可点），不让预览功能失效。
+        return true;
+    }
+    const rect = pixelEl.getBoundingClientRect();
+    if (!rect || (rect.width <= 0 && rect.height <= 0)) {
+        return true;
+    }
+    return clientX >= rect.left && clientX <= rect.right
+        && clientY >= rect.top && clientY <= rect.bottom;
+}
+
 function enableDefinitionImagePreview(node, imageUrl, alt) {
     node.addEventListener('click', (event) => {
+        if (!pointHitsRenderedImagePixels(node, event.clientX, event.clientY)) {
+            // 点在容器留白（被 min-width 撑出的横向溢出区）上：不拦截，让外层 click
+            // 处理器按正文/背景判定决定选词还是关后代，避免误触全屏黑遮罩。
+            return;
+        }
         event.preventDefault();
         event.stopPropagation();
         openImageLightbox(imageUrl, alt);
@@ -429,7 +697,15 @@ function constructSingleGlossaryHtml(entryIndex) {
         currentGlossary = '';
     };
     
+    // TODO-865 / BUG-419 sibling: hidden term dictionaries stay registered in the
+    // FFI engine (see AppModel.bucketDictPaths — filtering happens at render time),
+    // so entry.glossaries still carries their definitions. The mining payload path
+    // (constructSingleGlossaryHtml / constructGlossaryHtml) must drop them too, the
+    // same way createGlossarySectionWrapper does for the lookup popup, so a disabled
+    // dictionary's glossary never ends up in an Anki card field.
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
         const dictName = g.dictionary;
         const dictChanged = lastDict !== dictName;
         if (dictChanged) {
@@ -485,7 +761,9 @@ function constructGlossaryHtml(entryIndex) {
     let prevTags = null;
     let index = 0;
     
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
         const dictName = g.dictionary;
 
         const tempDiv = document.createElement('div');
@@ -745,11 +1023,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 console.log('[IMG_ERROR]', path, imageUrl);
                 imageContainer.style.display = 'none';
             }, {once: true});
-            // TODO-1215：扩展下 fetch→blob（token 不进 DOM）；fetch 失败走 onError 复现原 [IMG_ERROR] 路径。
-            hibikiSetImageSrc(img, imageUrl, () => {
-                console.log('[IMG_ERROR]', path, imageUrl);
-                imageContainer.style.display = 'none';
-            });
+            img.src = imageUrl;
             imageContainer.appendChild(img);
         }
     } else {
@@ -800,7 +1074,7 @@ function createDefinitionImageCanvas(imageUrl, alt, onLoad) {
     sourceImage.addEventListener('load', () => {
         onLoad(canvas, sourceImage);
     }, {once: true});
-    hibikiSetImageSrc(sourceImage, imageUrl); // TODO-1215：token 不进 DOM（blob 同源，canvas 亦不被 taint）
+    sourceImage.src = imageUrl;
     
     return canvas;
 }
@@ -886,7 +1160,10 @@ function getFrequencyHarmonicRank(frequencies) {
     return String(Math.floor(values.length / sumOfReciprocals));
 }
 
-async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+// Builds the Anki field payload for a popup entry. Shared by mineEntry (create)
+// and updateEntry (overwrite the latest card) so both carry identical fields,
+// media, and audio — no second render path to drift (TODO-270 D).
+async function buildMinePayload(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
     currentDictionaryMedia = new Map();
@@ -899,19 +1176,36 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
-    
+
     const audioReading = reading || expression;
     let audio = '';
     if (window.audioSources?.length && window.needsAudio) {
-        audio = await resolveCachedAudioUrl(expression, audioReading, idx);
+        // TODO-766: mining must NOT reuse the playback cache. A remote host signs
+        // the audio file URL with a short-lived token (5 min). Playback resolves
+        // and plays it immediately so the token is still fresh, but mining can
+        // happen long after — reusing the cached URL hands Anki an expired token
+        // that 404s, and the card lands with an empty [sound:]. Force a fresh
+        // resolve here (re-signing a new token) and decouple it from the playback
+        // cache. If the fresh resolve fails (host has no audio for this word),
+        // fall back to whatever the cache holds rather than regressing to empty.
+        const fresh = await fetchAudioUrl(expression, audioReading);
+        if (fresh) {
+            audio = fresh;
+            audioUrls[idx] = { key: audioCacheKey(expression, audioReading), url: fresh };
+        } else {
+            const cached = audioUrls[idx];
+            if (cached?.key === audioCacheKey(expression, audioReading)) {
+                audio = cached.url;
+            }
+        }
     } else {
         const cached = audioUrls[idx];
         if (cached?.key === audioCacheKey(expression, audioReading)) {
             audio = cached.url;
         }
     }
-    
-    return await window.flutter_inappwebview.callHandler('mineEntry', {
+
+    return {
         expression,
         reading,
         matched,
@@ -927,7 +1221,35 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
-    });
+    };
+}
+
+async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const payload = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('mineEntry', payload);
+}
+
+// TODO-270 D: overwrite an EXISTING card ([noteId]) in place with freshly-built
+// fields (same payload as mineEntry). Used by the green ✓⤺ "latest editable"
+// state so "I mined the wrong content, fix the last card" truly updates that
+// note instead of creating a second one.
+async function updateEntry(noteId, expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const fields = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('updateEntry', { noteId, fields });
+}
+
+// TODO-1007/1008: clicking ✓ (the card already exists) hands the FULL mine
+// payload to the host, which finds every matching note in Anki and shows an
+// action sheet (overwrite which card / add a new duplicate / view & open in
+// Anki). The host returns the post-action {ankiConnect, noteId} so the button
+// can refresh. This replaces the old silent "re-verify then return with no
+// feedback" path (TODO-1007 root cause: clicking ✓ did nothing).
+async function minedCardAction(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const fields = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
 }
 
 const INLINE_HTML_RE = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
@@ -1032,6 +1354,17 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
     }
     
     if (Array.isArray(node)) {
+        // Yomitan "form-of"/non-lemma glossary: an array of [term, [tag, ...]]
+        // pairs (e.g. wty-ja-en alt-of entries arrive as
+        // [["时",["Hyōgai"]],["时",["alt-of"]],...]). The generic flattening
+        // below would emit bare adjacent text nodes with no spacing or styling
+        // → "时Hyōgai时alt-of时alternative时kanji", which reads as mojibake
+        // (BUG-057). Render each pair as its own line: term + tag chips.
+        if (node.length > 0 && node.every(isTaggedTermPair)) {
+            renderTaggedTermPairs(parent, node);
+            return;
+        }
+
         const isStringArray = node.every(item => typeof item === 'string');
         const insideSpan = parent.tagName === 'SPAN';
         if (isStringArray && node.length > 1 && !insideSpan) {
@@ -1170,6 +1503,36 @@ function createGlossaryTags(tags, className = 'glossary-tags') {
     return el('div', { className }, tags.map(tag => el('span', { className: 'glossary-tag', textContent: tag })));
 }
 
+// True for a Yomitan "form-of" glossary item: a [term, [tag, ...]] pair where
+// the term is a string and the tags are an array of strings. See the array
+// branch of renderStructuredContent (BUG-057).
+function isTaggedTermPair(item) {
+    return Array.isArray(item)
+        && item.length === 2
+        && typeof item[0] === 'string'
+        && Array.isArray(item[1])
+        && item[1].every(tag => typeof tag === 'string');
+}
+
+// Renders an array of [term, [tag, ...]] pairs as a readable list: each pair on
+// its own line with the referenced term followed by its tag chips. Replaces the
+// generic flattening that produced unspaced "时Hyōgai时alt-of…" mojibake.
+function renderTaggedTermPairs(parent, pairs) {
+    const list = el('div', { className: 'form-of-list' });
+    pairs.forEach(([term, tags]) => {
+        const item = el('div', { className: 'form-of-item' });
+        const termEl = el('span', { className: 'form-of-term', textContent: term });
+        termEl.style.marginRight = '4px';
+        item.appendChild(termEl);
+        const tagRow = createGlossaryTags(tags, 'glossary-tags form-of-tags');
+        if (tagRow) {
+            item.appendChild(tagRow);
+        }
+        list.appendChild(item);
+    });
+    parent.appendChild(list);
+}
+
 function createDeinflectionTag(tag) {
     return el('span', {
         className: 'deinflection-tag',
@@ -1267,19 +1630,41 @@ function createPitchHtml(reading, pitchValue) {
     return container;
 }
 
+// TODO-688: IPA transcriptions ship in popup JSON per pitch GROUP (alongside
+// `pitchPositions`, populated only for Yomitan `ipa`-mode dicts; empty for plain
+// pitch-accent dicts). They are phonetic notation — same nature as pitch — so we
+// render them inside the pitch group, as small `[ipa]` tags after the accent
+// list. An empty/absent transcriptions array renders nothing (plain pitch dicts
+// and dicts without IPA are untouched).
+function createTranscriptionsHtml(transcriptions) {
+    if (!transcriptions?.length) return null;
+    const list = el('ul', { className: 'pitch-transcriptions' });
+    transcriptions.forEach((ipa) => {
+        const li = el('li', { className: 'pitch-transcription' });
+        li.appendChild(el('span', { className: 'pitch-transcription-tag', textContent: `[${ipa}]` }));
+        list.appendChild(li);
+    });
+    return list;
+}
+
 function createPitchGroup(pitchData, reading) {
     const container = el('div', { className: 'pitch-group', 'data-details': pitchData.dictionary });
     container.appendChild(el('span', { className: 'pitch-dict-label', textContent: pitchData.dictionary }));
-    
+
     const list = el('ul', { className: 'pitch-entries' });
-    pitchData.pitchPositions.forEach((pitch) => {
+    (pitchData.pitchPositions || []).forEach((pitch) => {
         const li = el('li');
         li.appendChild(createPitchHtml(reading, pitch));
         li.appendChild(document.createTextNode(` [${pitch}]`));
         list.appendChild(li);
     });
     container.appendChild(list);
-    
+
+    const transcriptions = createTranscriptionsHtml(pitchData.transcriptions);
+    if (transcriptions) {
+        container.appendChild(transcriptions);
+    }
+
     return container;
 }
 
@@ -1340,10 +1725,16 @@ function createPitchSection(pitches, reading) {
     if (window.deduplicatePitchAccents) {
         const seen = new Set();
         pitches.forEach(pitch => {
-            const unique = pitch.pitchPositions.filter(pos => !seen.has(pos));
-            if (unique.length > 0) {
+            const unique = (pitch.pitchPositions || []).filter(pos => !seen.has(pos));
+            // TODO-688: a group with no unique pitch positions but with IPA
+            // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
+            // must still render, or the transcriptions are silently dropped.
+            const hasTranscriptions = pitch.transcriptions?.length;
+            if (unique.length > 0 || hasTranscriptions) {
                 unique.forEach(pos => seen.add(pos));
-                pitchContainer.appendChild(createPitchGroup({ dictionary: pitch.dictionary, pitchPositions: unique }, reading));
+                pitchContainer.appendChild(createPitchGroup(
+                    { dictionary: pitch.dictionary, pitchPositions: unique, transcriptions: pitch.transcriptions },
+                    reading));
             }
         });
     } else {
@@ -1355,8 +1746,18 @@ function createPitchSection(pitches, reading) {
 }
 
 function createGlossarySectionWrapper(entry) {
+    // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
+    // is added to hiddenDictionaryNames by the host. Term dictionaries are still
+    // registered in the native engine (see AppModel.bucketDictPaths — hidden term
+    // dicts stay in the bucket because filtering happens at render time), so the
+    // FFI lookup still returns their glossaries. Drop them here, the single
+    // grouping point shared by every term-glossary render path, so a disabled
+    // dictionary's definitions never surface in the lookup popup. Mirrors how
+    // collapsedDictionaryNames is consumed in createGlossarySection.
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     const grouped = {};
     entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
         grouped[g.dictionary].push({
             content: g.content,
@@ -1393,20 +1794,54 @@ async function playWordAudio(audioUrl) {
 }
 
 function showAudioError(button) {
-    button.textContent = '✕';
+    setButtonIcon(button, 'audioOff');
     setTimeout(() => {
-        button.textContent = '♪';
+        setButtonIcon(button, 'audio');
     }, 1500);
+}
+
+// TODO-1251: 当词条本来就没有配置音频源（resolveWordAudio 返回 null）时，旧行为只瞬间
+// 把 ♪ 闪成 ✕ 再静默恢复，读起来像「点了没反应/出错了」，用户不知道是「这个
+// 词没有发音」。这里在按钮旁弹一个短暂的本地化提示（i18nNoAudioAvailable，宿主经
+// buildPopupSettingsJs 注入），并把按钮暂时切到静音态，明确「暂无发音」而非静默。提示
+// 锚定到按钮的屏幕坐标而非视口边缘，保证在 in-app 全窗弹窗和 app 外覆盖窗
+// （窗口被裁到卡片 bbox）两种表面都可见。区别于真正的播放失败（showAudioError）。
+function showNoAudioHint(button) {
+    const message = window.i18nNoAudioAvailable || '暂无发音';
+    setButtonIcon(button, 'audioOff');
+    button.classList.add('audio-unavailable');
+    button.title = message;
+    // 移除可能残留的旧提示，避免叠加。
+    const stale = document.querySelector('.audio-hint');
+    if (stale) stale.remove();
+    const hint = el('div', { className: 'audio-hint', textContent: message });
+    document.body.appendChild(hint);
+    // 先量尺寸再定位：置于按钮上方居中，空间不足翻到下方，并夹在视口内。
+    const btnRect = button.getBoundingClientRect();
+    const hintRect = hint.getBoundingClientRect();
+    let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - hintRect.width - 4));
+    let top = btnRect.top - hintRect.height - 6;
+    if (top < 4) top = btnRect.bottom + 6;
+    hint.style.left = left + 'px';
+    hint.style.top = top + 'px';
+    requestAnimationFrame(() => hint.classList.add('visible'));
+    setTimeout(() => {
+        setButtonIcon(button, 'audio');
+        button.classList.remove('audio-unavailable');
+        hint.classList.remove('visible');
+        setTimeout(() => hint.remove(), 220);
+    }, 1800);
 }
 
 function createAudioButton(expression, reading, entryIndex) {
     const button = el('button', {
-        className: 'audio-button',
-        textContent: '♪',
+        className: 'inline-action-button audio-button',
         onclick: async () => {
             const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
             if (!audioUrl) {
-                showAudioError(button);
+                // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
+                showNoAudioHint(button);
                 return;
             }
             if (!await playWordAudio(audioUrl)) {
@@ -1414,6 +1849,38 @@ function createAudioButton(expression, reading, entryIndex) {
             }
         }
     });
+    setButtonIcon(button, 'audio');
+    return button;
+}
+
+// 收藏按钮（☆/★）：切换收藏当前词条。书内阅读与视频共用同一套弹窗，故两表面
+// 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
+function createFavoriteButton(expression, reading) {
+    const button = el('button', {
+        className: 'inline-action-button favorite-button',
+        onclick: async () => {
+            button.disabled = true;
+            try {
+                const nowFav = await window.flutter_inappwebview.callHandler(
+                    'favoriteEntry', { expression, reading });
+                setButtonIcon(button, nowFav ? 'favorited' : 'favorite');
+                button.classList.toggle('favorited', !!nowFav);
+            } catch (e) {
+                // 收藏失败不能让按钮卡死，恢复可点状态并记日志。
+                console.error('favorite button: favoriteEntry failed', e);
+            } finally {
+                button.disabled = false;
+            }
+        }
+    });
+    setButtonIcon(button, 'favorite');
+    // 初始状态：查询是否已收藏，设收藏图标。
+    window.flutter_inappwebview.callHandler('favoriteCheck', { expression, reading })
+        .then(isFav => {
+            setButtonIcon(button, isFav ? 'favorited' : 'favorite');
+            button.classList.toggle('favorited', !!isFav);
+        })
+        .catch(() => {});
     return button;
 }
 
@@ -1486,51 +1953,354 @@ function createEntryHeader(entry, idx) {
     if (window.audioSources?.length) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
     }
-    
+
+    buttonsContainer.appendChild(createFavoriteButton(expression, reading));
+
+    // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
+    // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.
+    //
+    // PRIMARY MECHANISM — detection at lookup time:
+    //   When the popup renders this word (createEntryHeader runs as part of
+    //   renderPopup, which rebuilds the DOM on every lookup), the initial
+    //   `duplicateCheck` below queries Anki live (AnkiConnect findNotes /
+    //   AnkiDroid findDuplicateNotes — both already real-time) and sets a real
+    //   `data-mined` state: card in Anki → 已制卡 ✓; card absent → 可制卡 +.
+    //   `data-mined` is the source of truth for what a click does, so the ✓ is
+    //   NOT decorative — it means "Anki has this card right now".
+    //
+    //   TODO-084 (re-look-up the word after deleting its card in Anki) is
+    //   satisfied for free: a fresh lookup re-renders → re-runs this detection →
+    //   card is gone → 可制卡 → can re-mine.
+    //
+    // EDGE-CASE FALLBACK — same popup, card deleted in Anki WITHOUT re-looking
+    //   up (TODO-087): a click on the 已制卡 ✓ button re-verifies against Anki
+    //   first; if the card is genuinely gone it re-mines, if it still exists
+    //   (dupes off) it just refreshes ✓ and adds nothing. This is a safety net
+    //   for stale state, not the primary path.
+    //
+    // TODO-270 D — THIRD STATE "latest editable": the single most-recently-mined
+    //   word (whose backend returned a real note id, AnkiConnect only) shows a
+    //   GREEN ✓ with an undo glyph (✓⤺) instead of an ordinary ✓. Clicking it
+    //   OVERWRITES that card (updateEntry → repo.updateMinedNote) so a mistake on
+    //   the last card is fixed in place — no delete-then-recreate. Mining another
+    //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
+    //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
+    const setMineState = (isMined) => {
+        // Single source of truth for the button's lookup-time-detected state.
+        // The optional second flag is the "latest editable" sub-state; it is only
+        // meaningful when the word is the current latest-mined card.
+        const latest = isMined && isLatestEditable(expression, reading);
+        mineButton.dataset.mined = isMined ? '1' : '';
+        mineButton.dataset.latest = latest ? '1' : '';
+        // TODO-1325 还原：应用户要求，制卡按钮回到 ✓✓↩ 文本标记（+ 可制卡 /
+        // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
+        // TODO-1338：给 ↩ 追加 VS15(U+FE0E) 强制「文本呈现」，杜绝系统把 U+21A9 走彩色
+        // emoji 回退变乱码（字体隔离在 popup.css .mine-button 单色符号栈里，此处是双保险）。
+        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : '+';
+        if (isMined) {
+            mineButton.classList.add('duplicate');
+        } else {
+            mineButton.classList.remove('duplicate');
+        }
+        if (latest) {
+            mineButton.classList.add('latest');
+        } else {
+            mineButton.classList.remove('latest');
+        }
+    };
     const mineButton = el('button', {
         className: 'mine-button',
         textContent: '+',
-        disabled: true,
         ontouchstart: () => {
             lastSelection = window.getSelection()?.toString() || '';
         },
         onclick: async () => {
+            // Single-flight guard against double-firing one click. Always cleared
+            // in finally — it is the ONLY thing that disables the button, never a
+            // permanent lock (BUG-077).
+            if (mineButton.dataset.mining === '1') return;
+            mineButton.dataset.mining = '1';
             mineButton.disabled = true;
-            const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
-            const checkDuplicate = async () => {
-                const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
-                mineButton.textContent = wasAdded ? '✓' : '+';
-                if (wasAdded) {
-                    mineButton.classList.add('duplicate');
+            try {
+                if (mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
+                    // TODO-270 D green ✓⤺: this is the latest mined card and it
+                    // carries a real note id → OVERWRITE that note in place with
+                    // the freshly-built fields (does NOT create a second card).
+                    const reply = await updateEntry(
+                        lastMinedNoteId, expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                    const result = parseMineResult(reply);
+                    // A successful update keeps the same note id (handler echoes it)
+                    // → stays the editable latest. A failed update drops the latest
+                    //   flag back to a plain ✓ (the card is still mined).
+                    rememberLatestMined(expression, reading, result.noteId);
+                    setMineState(true);
+                    return;
                 }
-                mineButton.disabled = wasAdded && !window.allowDupes;
-            };
-            
-            if (isAnkiConnect) {
-                await checkDuplicate();
-            } else {
-                setTimeout(checkDuplicate, 1000);
+
+                if (mineButton.dataset.mined === '1') {
+                    // TODO-1007/1008: the card already exists (detected at lookup
+                    // time, but NOT this session's editable latest). Instead of the
+                    // old silent re-verify-then-return (which made ✓ feel dead),
+                    // ALWAYS hand off to the host action sheet so the user can
+                    // explicitly choose: overwrite a specific matching card, add a
+                    // new duplicate, or view / open the card in Anki. Works for
+                    // cards created elsewhere / in a previous session.
+                    if (typeof window.flutter_inappwebview.callHandler === 'function') {
+                        const reply = await minedCardAction(
+                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                        const result = parseMineResult(reply);
+                        // The host applied the chosen action (or the user cancelled,
+                        // in which case it echoes the unchanged mined state). Refresh
+                        // from Anki and update the editable-latest flag.
+                        if (window.sentenceDraftEnabled) {
+                            sentenceCtxPrev = 0;
+                            sentenceCtxNext = 0;
+                            sentenceDraftCount = 0;
+                            refreshAllSentenceContextPickers();
+                        }
+                        window.resetSelectedDictionariesForEntry(idx);
+                        if (result.ankiConnect) {
+                            rememberLatestMined(expression, reading, result.noteId);
+                        }
+                        const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                        setMineState(stillMined);
+                        return;
+                    }
+                    // No bridge (degenerate harness): keep the old behaviour.
+                    const stillExists = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                    if (stillExists && !window.allowDupes) {
+                        setMineState(true);
+                        return;
+                    }
+                    // Deleted in Anki (or dupes allowed) → fall through and re-mine.
+                }
+
+                const reply = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                const result = parseMineResult(reply);
+                // TODO-393：制卡后宿主清空草稿（合并卡已落地），同步把 JS 两个镜像标量
+                // 归零并刷新上下文选择器，使两端状态在同一事件归零、不漂移。仅在启用草稿
+                // 的表面才动 DOM（纯查词页未接入时不渲染上下文选择器）。
+                if (window.sentenceDraftEnabled) {
+                    sentenceCtxPrev = 0;
+                    sentenceCtxNext = 0;
+                    sentenceDraftCount = 0;
+                    refreshAllSentenceContextPickers();
+                }
+                // TODO-645 / BUG-358: the dictionary pick is one-shot too — drop
+                // THIS entry selection so the next card mined from the same
+                // (reused warm-slot) entryIdx does not inherit it. Per-entry only:
+                // sibling entries keep their own picks.
+                window.resetSelectedDictionariesForEntry(idx);
+                const refreshFromAnki = async () => {
+                    // Re-detect from Anki so the post-mine state is the real one.
+                    const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                    setMineState(wasAdded);
+                };
+
+                if (result.ankiConnect) {
+                    // TODO-270 D: a freshly mined card with a real note id becomes
+                    // the new "latest editable"; this also supersedes any prior
+                    // latest word (only one editable card at a time).
+                    rememberLatestMined(expression, reading, result.noteId);
+                    await refreshFromAnki();
+                }
+            } catch (e) {
+                // BUG-077: a rejected mineEntry/duplicateCheck (Dart handler threw,
+                // or a JS payload-builder error) must never leave the button stuck
+                // disabled showing '+' with no feedback. Restore it to a clickable
+                // 可制卡 + so the user sees it failed and can retry.
+                console.error('mine button: mineEntry failed', e);
+                setMineState(false);
+            } finally {
+                // The single-flight guard is ALWAYS released; the button's
+                // long-term enabled/disabled is driven only by data-mined, never
+                // stuck disabled.
+                mineButton.dataset.mining = '';
+                mineButton.disabled = false;
             }
         }
     });
     buttonsContainer.appendChild(mineButton);
-    window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(isDuplicate => {
-        if (isDuplicate) {
-            mineButton.textContent = '✓';
-            mineButton.classList.add('duplicate');
+    // Lookup-time detection: query Anki's real card existence for THIS word as
+    // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
+    //
+    // TODO-614 (overwrite scope = all): when the card already exists but is NOT
+    // this session's most-recently-mined word, ask the host for an overwrite
+    // target note id. The host only returns a real id when the user set the
+    // overwrite range to "all" (AnkiConnect can resolve the id); it returns null
+    // for the default "latest" range or AnkiDroid. A real id promotes this
+    // earlier card to the editable ✓↩ latest state so a single click overwrites
+    // it in place — no need to have mined it in this popup session. A null reply
+    // keeps the ordinary two-state behaviour (Never break userspace).
+    window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(async isDuplicate => {
+        if (isDuplicate && !isLatestEditable(expression, reading)) {
+            try {
+                const noteId = await window.flutter_inappwebview.callHandler(
+                    'overwriteTargetNoteId', { expression, reading });
+                if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+                    rememberLatestMined(expression, reading, noteId);
+                }
+            } catch (e) {
+                // A failed overwrite-target probe must never break the ✓/+ paint;
+                // fall back to the ordinary mined state below.
+                console.error('overwriteTargetNoteId probe failed', e);
+            }
         }
-        mineButton.disabled = isDuplicate && !window.allowDupes;
+        setMineState(isDuplicate);
     });
-    
+
+    // TODO-393「查词窗口句子上下文制卡」：仅支持草稿的表面（书籍/有声书/视频；宿主接受
+    // setSentenceContext）渲染「上 N 句 / 下 N 句」上下文选择器。选「上 N」「下 N」把当前
+    // 句前/后 N 句作上下文整体设进宿主草稿；紧挨的「×」清空回到只制当前句。不碰 mineEntry
+    // 字段契约——只发上下文信号。
+    if (window.sentenceDraftEnabled) {
+        const picker = buildSentenceContextPicker();
+        refreshSentenceContextPicker(picker);
+        buttonsContainer.appendChild(picker);
+
+        // TODO-382/393 可撤销：「清空已加句子」按钮（仅已选上下文时显示）。点一次把上下文
+        // 句数归零（回到只制当前句），所有选择器同步——明确、可见的撤销入口。
+        const clearButton = el('button', {
+            className: 'inline-action-button clear-draft-button',
+            onclick: async () => {
+                if (clearButton.dataset.busy === '1') return;
+                clearButton.dataset.busy = '1';
+                clearButton.disabled = true;
+                try {
+                    sentenceCtxPrev = 0;
+                    sentenceCtxNext = 0;
+                    sentenceDraftCount = await clearSentenceDraftOnHost();
+                    refreshAllSentenceContextPickers();
+                } finally {
+                    clearButton.dataset.busy = '';
+                    clearButton.disabled = false;
+                }
+            },
+        });
+        setButtonIcon(clearButton, 'close');
+        refreshClearDraftButton(clearButton);
+        buttonsContainer.appendChild(clearButton);
+    }
+
     header.appendChild(buttonsContainer);
     
     return header;
 }
 
-function createGlossarySection(dictName, contents, isFirst, entryIdx) {
+window.hoshiPopupMineFirstEntry = async function() {
+    const mineButton = document.querySelector('.mine-button');
+    if (!mineButton || mineButton.disabled) {
+        return false;
+    }
+    mineButton.click();
+    return true;
+};
+
+// TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条
+// (.entry)，每条自成一栏（读音 + 词典释义）。这里提供纯 JS + CSS 的「当前词条」焦点指示：
+// 给每条打 data-hoshi-entry-index，给当前条加 .entry-current（popup.css 用
+// .entry-current .entry-header::before 画 #1a73e8 蓝三角，零字体依赖，与折叠三角同法），并
+// scrollIntoView 进视口。Dart 焦点驱动（阅读器 caret 管线 → DictionaryPopupWebViewState.
+// focusEntryMove → 这里）按 next/prev 调用。与逐字光标 hoshiCaret 正交：只移动词条级指示与
+// 视口，绝不触碰 caret ring；用户决策「咱们没有前进后退·咱们是嵌套查词」，故不做历史栈。
+(function() {
+    const CONTAINER_ID = 'entries-container';
+    const CURRENT_CLASS = 'entry-current';
+
+    // DOM 顺序的全部词条 <div.entry>（container 的直接子节点）。
+    function listEntries() {
+        const container = document.getElementById(CONTAINER_ID);
+        if (!container) return [];
+        return Array.prototype.slice.call(
+            container.querySelectorAll(':scope > .entry'));
+    }
+
+    // 给每条打 data-hoshi-entry-index（0-based，DOM 顺序），返回词条数组。每次导航前重建，
+    // 兼容增量渲染后词条集合变化。
+    function indexEntries() {
+        const entries = listEntries();
+        for (let i = 0; i < entries.length; i++) {
+            entries[i].setAttribute('data-hoshi-entry-index', String(i));
+        }
+        return entries;
+    }
+
+    // 当前 .entry-current 的下标；无当前项返回 -1。
+    function currentIndex(entries) {
+        for (let i = 0; i < entries.length; i++) {
+            if (entries[i].classList.contains(CURRENT_CLASS)) return i;
+        }
+        return -1;
+    }
+
+    // 把焦点落到下标 index 的词条：切 .entry-current 并滚入视口。index 越界即无操作交由
+    // 调用方（这里只在合法下标调用）。
+    function applyCurrent(entries, index) {
+        for (let i = 0; i < entries.length; i++) {
+            if (i === index) entries[i].classList.add(CURRENT_CLASS);
+            else entries[i].classList.remove(CURRENT_CLASS);
+        }
+        const target = entries[index];
+        if (target && target.scrollIntoView) {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    }
+
+    // 聚焦指定下标的词条（越界夹到 [0, n-1]）。返回 'moved'（已聚焦）/ 'blocked'（无词条）。
+    function focusEntry(index) {
+        const entries = indexEntries();
+        if (entries.length === 0) return 'blocked';
+        let target = index | 0;
+        if (target < 0) target = 0;
+        if (target > entries.length - 1) target = entries.length - 1;
+        applyCurrent(entries, target);
+        return 'moved';
+    }
+
+    // 相对移动：'next'/'down'/'forward' → 下一条；其余（'prev'/'up'/'backward'）→ 上一条。
+    // 到边界返回 'blocked'（不回绕）。首次无当前项时，next 落第 0 条、prev 落最后一条。
+    function moveEntry(direction) {
+        const entries = indexEntries();
+        if (entries.length === 0) return 'blocked';
+        const forward = direction === 'next' || direction === 'down'
+            || direction === 'forward';
+        const cur = currentIndex(entries);
+        let next;
+        if (cur < 0) {
+            next = forward ? 0 : entries.length - 1;
+        } else {
+            next = forward ? cur + 1 : cur - 1;
+        }
+        if (next < 0 || next > entries.length - 1) return 'blocked';
+        applyCurrent(entries, next);
+        return 'moved';
+    }
+
+    // 清除当前词条焦点（保留 data-hoshi-entry-index），返回词条数。
+    function resetEntry() {
+        const entries = indexEntries();
+        for (let i = 0; i < entries.length; i++) {
+            entries[i].classList.remove(CURRENT_CLASS);
+        }
+        return entries.length;
+    }
+
+    window.hoshiFocusDictionaryEntry = focusEntry;
+    window.hoshiFocusDictionaryEntryMove = moveEntry;
+    window.hoshiFocusDictionaryEntryReset = resetEntry;
+})();
+
+// TODO-845: `dictIdx` is the dictionary's global position within an entry's
+// glossary body (0-based). The popup auto-expands the leading
+// `window.autoExpandDictionaries` blocks even when collapseDictionaries is on
+// (default 1 = the historical "only the first dictionary expanded" behaviour,
+// where the leading block opened regardless of its per-dictionary collapse flag).
+function createGlossarySection(dictName, contents, dictIdx, entryIdx) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
-    if (isFirst || (!window.collapseDictionaries && !perDictCollapsed)) {
+    const autoExpandN = window.autoExpandDictionaries ?? 1;
+    const autoExpanded = dictIdx < autoExpandN;
+    if (autoExpanded || (!window.collapseDictionaries && !perDictCollapsed)) {
         details.open = true;
     }
 
@@ -1623,19 +2393,6 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
                 if (/<[a-z][\s\S]*>/i.test(content)) {
                     const wrapper = el('div');
                     wrapper.innerHTML = rewriteDictLinks(content, dictName);
-                    // TODO-1215 安全：扩展环境下 rewriteDictLinks 对相对路径 <img> 只写了无 token 的
-                    // 占位 data-* 属性（src 留空）；这里逐个走 fetch→blob 补 src——token 只在 fetch 调用里，
-                    // 绝不进宿主页 DOM。app 内不产生这些占位属性 → 此循环空转，行为不变。
-                    wrapper.querySelectorAll('img[data-hibiki-media-path]').forEach((img) => {
-                        const mediaPath = decodeURIComponent(img.dataset.hibikiMediaPath || '');
-                        const mediaDict = decodeURIComponent(img.dataset.hibikiMediaDict || '');
-                        const mediaUrl = rewriteDictionaryMediaPath(mediaPath, mediaDict);
-                        if (mediaUrl === null) return;
-                        hibikiSetImageSrc(img, mediaUrl, () => {
-                            console.log('[IMG_ERROR]', mediaPath, mediaUrl);
-                            img.style.display = 'none';
-                        });
-                    });
                     parent.appendChild(wrapper);
                 } else {
                     renderStructuredContent(parent, content, null, dictName);
@@ -1689,7 +2446,35 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     return details;
 }
 
+// TODO-833: predicate shared by every entry-render path (renderPopup first /
+// rest entries + updatePopupIncremental). A term entry only earns a card when
+// it has at least one *visible* glossary section, i.e. createGlossarySectionWrapper
+// returns non-null. The wrapper is the single point that applies the BUG-419
+// hidden-dictionary filter, so "glossaryWrapper === null" means every dictionary
+// for this entry was hidden (or the entry carried no glossary at all). In that
+// case header + frequency/pitch badges would render alone as an empty shell card
+// (BUG-419 only stripped the body, never the shell). The frequency badge is
+// redundant — the same expression's real card already carries it — so skipping
+// the whole entry loses no information. Kanji cards go through buildKanjiCards()
+// (a separate path) and never reach buildEntryElement, so this never affects them.
+//
+// Returns the prebuilt glossary wrapper (object) when the entry is renderable, or
+// null when it must be skipped. buildEntryElement reuses the same wrapper so the
+// hidden filter runs exactly once per entry.
+function entryGlossaryWrapperOrNull(entry) {
+    return createGlossarySectionWrapper(entry);
+}
+
 function buildEntryElement(entry, idx) {
+    // TODO-833: decide first whether this entry has any visible glossary. If the
+    // hidden-dictionary filter (BUG-419) removed every dictionary, this term entry
+    // would otherwise render as a header-only shell with a redundant frequency
+    // badge ("标题+频率徽章但正文空白"). Skip the whole card by returning null.
+    const glossaryWrapper = entryGlossaryWrapperOrNull(entry);
+    if (!glossaryWrapper) {
+        return null;
+    }
+
     const entryDiv = el('div', { className: 'entry' });
     entryDiv.appendChild(createEntryHeader(entry, idx));
 
@@ -1718,13 +2503,10 @@ function buildEntryElement(entry, idx) {
         entryDiv.appendChild(pitchSection);
     }
 
-    const glossaryWrapper = createGlossarySectionWrapper(entry);
-    if (glossaryWrapper) {
-        const { details, body, grouped, dictNames } = glossaryWrapper;
-        entryDiv.appendChild(details);
-        for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-            body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
-        }
+    const { details, body, grouped, dictNames } = glossaryWrapper;
+    entryDiv.appendChild(details);
+    for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
+        body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx, idx));
     }
 
     return entryDiv;
@@ -1761,56 +2543,273 @@ function applyCustomCSS() {
     }
 }
 
+// TODO-094 S5: kanji dictionary card. A single-character lookup carries
+// per-character kanji results (onyomi / kunyomi / radical / strokes / meanings)
+// on window.kanjiResults, injected alongside window.lookupEntries by
+// dictionary_popup_webview.dart. Rendered as its own card ABOVE the term
+// entries so the reading/meaning of the character itself is visible even when
+// the same character is also a term headword. Field names mirror
+// HoshiKanjiResult.toMap (Dart). Empty / missing -> nothing rendered, so
+// multi-char / kana / latin lookups are unaffected.
+function createKanjiReadingRow(label, value) {
+    if (!value) {
+        return null;
+    }
+    const row = el('div', { className: 'kanji-card-row' });
+    row.appendChild(el('span', { className: 'kanji-card-label', textContent: label }));
+    row.appendChild(el('span', { className: 'kanji-card-value', textContent: value }));
+    return row;
+}
+
+function createKanjiCard(kanji) {
+    if (!kanji || !kanji.character) {
+        return null;
+    }
+    const card = el('div', { className: 'kanji-card' });
+
+    const head = el('div', { className: 'kanji-card-head' });
+    const charEl = el('div', { className: 'kanji-card-char', textContent: kanji.character });
+    // Tapping the big character re-looks it up (consistent with the term
+    // headword + kanji-breakdown tags), so a kanji card is also a jump-off
+    // point for a fresh lookup.
+    charEl.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = charEl.getBoundingClientRect();
+        window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+        });
+    });
+    head.appendChild(charEl);
+
+    const headMeta = el('div', { className: 'kanji-card-meta' });
+    const radicalRow = createKanjiReadingRow(window._kanjiLabels?.radical || 'Radical', kanji.radical);
+    if (radicalRow) {
+        headMeta.appendChild(radicalRow);
+    }
+    if (typeof kanji.strokes === 'number' && kanji.strokes > 0) {
+        const strokesRow = createKanjiReadingRow(
+            window._kanjiLabels?.strokes || 'Strokes', String(kanji.strokes));
+        if (strokesRow) {
+            headMeta.appendChild(strokesRow);
+        }
+    }
+    if (headMeta.children.length > 0) {
+        head.appendChild(headMeta);
+    }
+    card.appendChild(head);
+
+    const onyomiRow = createKanjiReadingRow(window._kanjiLabels?.onyomi || 'On', kanji.onyomi);
+    if (onyomiRow) {
+        card.appendChild(onyomiRow);
+    }
+    const kunyomiRow = createKanjiReadingRow(window._kanjiLabels?.kunyomi || 'Kun', kanji.kunyomi);
+    if (kunyomiRow) {
+        card.appendChild(kunyomiRow);
+    }
+
+    const meanings = Array.isArray(kanji.meanings)
+        ? kanji.meanings.filter((m) => typeof m === 'string' && m.length > 0)
+        : [];
+    if (meanings.length > 0) {
+        const meaningEl = el('div', { className: 'kanji-card-meanings' });
+        meaningEl.textContent = meanings.join(', ');
+        card.appendChild(meaningEl);
+    }
+
+    if (kanji.dictName) {
+        card.appendChild(el('div', { className: 'kanji-card-dict', textContent: kanji.dictName }));
+    }
+
+    return card;
+}
+
+// Builds the container holding every kanji card for the current lookup, or null
+// when there are no kanji results. Each character in a multi-character (rare,
+// but the array supports it) result gets its own card.
+function buildKanjiCards() {
+    const kanji = window.kanjiResults;
+    if (!Array.isArray(kanji) || kanji.length === 0) {
+        return null;
+    }
+    const section = el('div', { className: 'kanji-card-section' });
+    let appended = 0;
+    for (const entry of kanji) {
+        const card = createKanjiCard(entry);
+        if (card) {
+            section.appendChild(card);
+            appended++;
+        }
+    }
+    return appended > 0 ? section : null;
+}
+
 window._renderGeneration = 0;
+
+// TODO-058 fail-safe: always notify Dart that rendering finished, even when
+// buildEntryElement / postProcessRuby throws. Without this a render exception
+// would swallow the `popupRendered` signal forever, leaving a cold nested popup
+// permanently hidden (pending reveal). Fired exactly once per render.
+function _firePopupRendered() {
+    try {
+        window.flutter_inappwebview.callHandler('popupRendered',
+            document.body.scrollHeight,
+            window.__hibikiRenderToken || 0);
+    } catch (e) {
+        console.error('[popup] popupRendered callHandler failed', e);
+    }
+}
+
+// TODO-1030 M0 — the app-external global-lookup capture (Windows UIA) hands the
+// popup the sentence the selected word sits in via window.__globalLookupSentence
+// (set per-render by buildFrameSettingsJs; empty for in-app popups and for
+// nested child cards). Build a small context banner shown above the entries so
+// the user sees the word IN CONTEXT (Yomitan {sentence}-style). Returns null
+// when there is no captured sentence, so the in-app / no-context paths render
+// exactly as before.
+function buildGlobalLookupSentenceBanner() {
+    const sentence = window.__globalLookupSentence;
+    if (typeof sentence !== 'string' || sentence.length === 0) {
+        return null;
+    }
+    const banner = el('div', { className: 'global-lookup-sentence' });
+    // textContent (not innerHTML) — the sentence is untrusted foreground-app
+    // text; never interpret it as markup.
+    banner.textContent = sentence;
+    return banner;
+}
+
+// Inserts the sentence-context banner (if any) as the FIRST child of the popup
+// entries container, above the kanji card / entries / no-results placeholder.
+// No-op when there is no captured sentence (in-app popups, nested cards).
+function prependSentenceBanner(container) {
+    const banner = buildGlobalLookupSentenceBanner();
+    if (!banner || !container) return;
+    if (container.firstChild) {
+        container.insertBefore(banner, container.firstChild);
+    } else {
+        container.appendChild(banner);
+    }
+}
 
 window.renderPopup = function() {
     const t0 = performance.now();
     const container = document.getElementById('entries-container');
-    if (!container) return;
+    if (!container) { _firePopupRendered(); return; }
 
     const entries = window.lookupEntries;
-    if (!entries || !entries.length) {
+    // TODO-094 S5: a kanji-dictionary card may be present even with NO term
+    // entries (a single kanji that is only in a kanji dictionary, not a term
+    // headword). Build it first so it sits above the terms, and so a kanji-only
+    // result still renders instead of falling through to "No results".
+    let kanjiSection = null;
+    try {
+        kanjiSection = buildKanjiCards();
+    } catch (e) {
+        console.error('[popup] renderPopup kanji card render failed', e);
+        kanjiSection = null;
+    }
+
+    if ((!entries || !entries.length) && !kanjiSection) {
         container.innerHTML = '<div class="no-results">'
             + '<div class="no-results-icon">&#x1F50D;</div>'
             + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
             + '</div>';
+        prependSentenceBanner(container);
         window._renderedGlossaryCounts = [];
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+        _firePopupRendered();
         return;
     }
 
     const gen = ++window._renderGeneration;
-    container.innerHTML = '';
 
-    const firstEntry = buildEntryElement(entries[0], 0);
-    container.appendChild(firstEntry);
-    postProcessRuby(firstEntry);
-    applyCustomCSS();
+    // TODO-833: entries that the hidden-dictionary filter leaves with no visible
+    // glossary are skipped (buildEntryElement returns null), so the rendered DOM
+    // `.entry` nodes are no longer 1:1 with `entries`. _entryDomIndex maps each
+    // entries index to its `.entry` DOM index (or -1 when skipped). _renderedGlossaryCounts
+    // stays length=entries.length (the per-entry glossary count we last rendered).
+    // updatePopupIncremental relies on this map to locate an entry's node — a bare
+    // existingEntries[idx] would otherwise pour entry A's definitions into entry B's
+    // card once any earlier entry was skipped.
+    let renderedDomCount = 0;
+    const entryDomIndex = new Array(entries.length).fill(-1);
+
+    // Kanji-only result (no term entries): render just the kanji card(s).
+    if (!entries || !entries.length) {
+        container.innerHTML = '';
+        prependSentenceBanner(container);
+        if (kanjiSection) {
+            container.appendChild(kanjiSection);
+        }
+        applyCustomCSS();
+        window._renderedGlossaryCounts = [];
+        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=0 kanji=1');
+        _firePopupRendered();
+        return;
+    }
+
+    try {
+        container.innerHTML = '';
+        prependSentenceBanner(container);
+
+        if (kanjiSection) {
+            container.appendChild(kanjiSection);
+        }
+        const firstEntry = buildEntryElement(entries[0], 0);
+        if (firstEntry) {
+            container.appendChild(firstEntry);
+            postProcessRuby(firstEntry);
+            entryDomIndex[0] = renderedDomCount++;
+        }
+        applyCustomCSS();
+    } catch (e) {
+        // 渲染抛错也发信号让 Dart 翻可见（哪怕内容不全），杜绝永久挂起。
+        console.error('[popup] renderPopup first-entry render failed', e);
+        window._renderedGlossaryCounts = [];
+        window._entryDomIndex = [];
+        _firePopupRendered();
+        return;
+    }
 
     if (entries.length === 1) {
         window._renderedGlossaryCounts = [entries[0].glossaries.length];
+        window._entryDomIndex = entryDomIndex;
         console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1');
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+        _firePopupRendered();
         return;
     }
 
     setTimeout(() => {
         if (gen !== window._renderGeneration) return;
-        const fragment = document.createDocumentFragment();
-        for (let idx = 1; idx < entries.length; idx++) {
-            const entry = entries[idx];
-            if (!entry) continue;
-            fragment.appendChild(document.createElement('hr'));
-            fragment.appendChild(buildEntryElement(entry, idx));
+        try {
+            const fragment = document.createDocumentFragment();
+            for (let idx = 1; idx < entries.length; idx++) {
+                const entry = entries[idx];
+                if (!entry) continue;
+                const element = buildEntryElement(entry, idx);
+                if (!element) continue;
+                // TODO-833: only insert a separator hr when there is already a
+                // rendered card before this one (kanji card or an earlier entry),
+                // never a leading hr nor an hr between two skipped entries.
+                if (renderedDomCount > 0 || kanjiSection) {
+                    fragment.appendChild(document.createElement('hr'));
+                }
+                fragment.appendChild(element);
+                entryDomIndex[idx] = renderedDomCount++;
+            }
+            container.appendChild(fragment);
+            postProcessRuby(container);
+            window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+            window._entryDomIndex = entryDomIndex;
+            console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
+        } catch (e) {
+            console.error('[popup] renderPopup rest-entries render failed', e);
         }
-        container.appendChild(fragment);
-        postProcessRuby(container);
-        window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
-        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+        // 无论后续词条渲染成功与否都发信号（首条已在上面渲染好）。
+        _firePopupRendered();
     }, 0);
 };
 
@@ -1820,65 +2819,200 @@ window.updatePopupIncremental = function() {
 
     const entries = window.lookupEntries;
     const prevCounts = window._renderedGlossaryCounts || [];
+    // TODO-833: existing `.entry` DOM nodes are NOT 1:1 with `entries` — skipped
+    // (empty after hidden-dictionary filter) entries have no node. _entryDomIndex
+    // maps each entries index to its `.entry` DOM index (-1 = no node). Index the
+    // live NodeList through this map, never by raw entries idx, or A's definitions
+    // land in B's card. Fall back to a full renderPopup() if the map is absent
+    // (e.g. a render path that predates it) or its length disagrees with prevCounts.
+    const domIndex = window._entryDomIndex;
     const existingEntries = container.querySelectorAll(':scope > .entry');
+    const mapUsable = Array.isArray(domIndex) && domIndex.length === prevCounts.length;
 
     for (let idx = 0; idx < entries.length; idx++) {
         const entry = entries[idx];
         const newCount = entry.glossaries.length;
 
         if (idx < prevCounts.length) {
-            if (newCount !== prevCounts[idx]) {
-                const entryDiv = existingEntries[idx];
-                const body = entryDiv.querySelector('.glossary-section .category-body');
-                if (body) {
-                    const existingDicts = new Set();
-                    body.querySelectorAll(':scope > .glossary-group > [data-dictionary]').forEach(
-                        node => existingDicts.add(node.getAttribute('data-dictionary')));
-                    const grouped = {};
-                    entry.glossaries.forEach(g => {
-                        if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
-                        grouped[g.dictionary].push({
-                            content: g.content,
-                            definitionTags: g.definitionTags,
-                            termTags: g.termTags,
-                        });
+            if (newCount === prevCounts[idx]) {
+                continue;
+            }
+            // TODO-833: the entry's visible-glossary status may flip when the load
+            // attaches a glossary from a non-hidden dictionary to a previously empty
+            // (skipped) entry, or removes the last visible one. The incremental
+            // in-place update can only patch an existing card; a skipped→visible (or
+            // the reverse) transition changes the card count and ordering, so rebuild
+            // the whole popup — correct over clever, and rare.
+            const nowRenderable = entryGlossaryWrapperOrNull(entry) !== null;
+            const domIdx = mapUsable ? domIndex[idx] : idx;
+            const hadCard = mapUsable ? domIdx >= 0 : true;
+            if (!mapUsable || nowRenderable !== hadCard) {
+                window.renderPopup();
+                return;
+            }
+            if (!nowRenderable) {
+                continue;
+            }
+            const entryDiv = existingEntries[domIdx];
+            if (!entryDiv) {
+                window.renderPopup();
+                return;
+            }
+            const body = entryDiv.querySelector('.glossary-section .category-body');
+            if (body) {
+                const existingDicts = new Set();
+                body.querySelectorAll(':scope > .glossary-group > [data-dictionary]').forEach(
+                    node => existingDicts.add(node.getAttribute('data-dictionary')));
+                const grouped = {};
+                const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
+                entry.glossaries.forEach(g => {
+                    if (hiddenDictionaryNames.includes(g.dictionary)) return;
+                    if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
+                    grouped[g.dictionary].push({
+                        content: g.content,
+                        definitionTags: g.definitionTags,
+                        termTags: g.termTags,
                     });
-                    for (const dictName of Object.keys(grouped)) {
-                        if (!existingDicts.has(dictName)) {
-                            const section = createGlossarySection(dictName, grouped[dictName], false, idx);
-                            body.appendChild(section);
-                            postProcessRuby(section);
-                        }
+                });
+                // TODO-845: the auto-expand threshold keys off each block's global
+                // index within the entry's glossary body. New blocks land *after*
+                // the already-rendered ones, so seed appendIndex with the live count
+                // of visible `.glossary-group` children and bump it per appended
+                // block — same `dictIdx < autoExpandN` rule as the first-paint loop,
+                // never a bare `false` (which would forbid any incremental expand).
+                let appendIndex =
+                    body.querySelectorAll(':scope > .glossary-group').length;
+                for (const dictName of Object.keys(grouped)) {
+                    if (!existingDicts.has(dictName)) {
+                        const section = createGlossarySection(dictName, grouped[dictName], appendIndex, idx);
+                        appendIndex++;
+                        body.appendChild(section);
+                        postProcessRuby(section);
                     }
                 }
             }
         } else {
+            // TODO-833: newly appended entry — skip it entirely (no card, no hr) when
+            // the hidden-dictionary filter leaves it with no visible glossary.
+            const newElement = buildEntryElement(entry, idx);
+            if (!newElement) {
+                continue;
+            }
             if (container.children.length > 0) {
                 container.appendChild(document.createElement('hr'));
             }
-            const newElement = buildEntryElement(entry, idx);
             container.appendChild(newElement);
             postProcessRuby(newElement);
         }
     }
 
+    // TODO-833: rebuild the dom-index map so a subsequent incremental call still
+    // locates nodes correctly (tail entries may have been skipped above).
+    const rebuiltDomIndex = new Array(entries.length).fill(-1);
+    const finalEntries = container.querySelectorAll(':scope > .entry');
+    let domCursor = 0;
+    for (let idx = 0; idx < entries.length; idx++) {
+        if (entryGlossaryWrapperOrNull(entries[idx]) !== null) {
+            rebuiltDomIndex[idx] = domCursor < finalEntries.length ? domCursor : -1;
+            domCursor++;
+        }
+    }
     window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+    window._entryDomIndex = rebuiltDomIndex;
     applyCustomCSS();
 
     window.flutter_inappwebview.callHandler('popupRendered',
-        document.body.scrollHeight);
+        document.body.scrollHeight,
+        window.__hibikiRenderToken || 0);
 };
 
 
-// TODO-1218①：popup.js 这些页面级 selectText 监听器本为 app 内嵌套弹窗设计；扩展注入宿主页后，
-// 宿主页自身的 hover/click 会误触 selectText→clearSelection，拆掉 content.js 刚画的划词高亮
-// （用户报「高亮闪一下就没」+ 弹窗比词高半行）。故扩展环境只处理落在弹窗容器 #entries-container 内
-// 的事件（content.js 设 window.__hibikiExtension；同隔离世界共享 window）。app 内此 flag 未设，行为不变。
-function hibikiPopupEventOutside(target) {
-    if (!window.__hibikiExtension) return false;
-    const el = (target && target.nodeType === Node.TEXT_NODE) ? target.parentElement : target;
-    return !(el && el.closest && el.closest('#entries-container'));
+// BUG-260: finer mouse-wheel scroll granularity for the lookup popup.
+//
+// The popup has no wheel listener of its own, so wheel events fell through to
+// the WebView's native page scroll, which steps a fixed, coarse number of CSS
+// px per notch. Worse, dictionary_popup_webview injects
+// `document.documentElement.style.zoom` (popupContentZoom, follows UI scale +
+// dictionary font size): a scroll of D *layout* px moves D*zoom px on screen,
+// so any zoom>1 amplifies the already-coarse native step and each notch jumps
+// even further. Result: scrolling feels chunky, unlike a normal web page.
+//
+// Take over 'wheel' (passive:false so preventDefault works), normalize the
+// delta across deltaMode (LINE/PAGE report in lines/pages, not px), apply a
+// smaller fraction so a single notch travels a browser-like distance, cap one
+// unusually large device delta in visual pixels, then divide the layout-px
+// scroll amount by the current zoom so the *visual* step is the same regardless
+// of zoom (a V-px visual move needs V/zoom layout px). behavior:auto keeps it
+// crisp (no smooth-scroll lag stacking up across rapid notches).
+//
+// Inner vertically-scrollable containers (the description overlay, any glossary
+// element with its own y-overflow) keep native scroll until they hit a boundary,
+// so nested scroll regions are not stolen — only the main document scroll, which
+// is the coarse one, is refined.
+const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
+const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
+const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
+function popupCurrentZoom() {
+    const z = parseFloat(document.documentElement.style.zoom);
+    return (Number.isFinite(z) && z > 0) ? z : 1;
 }
+// Normalize a wheel delta (any axis) to CSS pixels, accounting for deltaMode.
+function popupWheelDeltaToPixels(delta, deltaMode, pageExtent) {
+    if (deltaMode === 1 /* DOM_DELTA_LINE */) {
+        return delta * POPUP_WHEEL_LINE_HEIGHT;
+    }
+    if (deltaMode === 2 /* DOM_DELTA_PAGE */) {
+        return delta * (pageExtent || POPUP_WHEEL_LINE_HEIGHT);
+    }
+    return delta; // DOM_DELTA_PIXEL
+}
+function popupClampWheelVisualStep(step) {
+    if (!Number.isFinite(step) || step === 0) {
+        return 0;
+    }
+    if (Math.abs(step) <= POPUP_WHEEL_MAX_VISUAL_STEP) {
+        return step;
+    }
+    return Math.sign(step) * POPUP_WHEEL_MAX_VISUAL_STEP;
+}
+// Walk up from the event target looking for an ancestor that can still consume
+// this vertical wheel natively (it scrolls on Y and is not yet at the boundary
+// in the wheel's direction). If found we leave the event alone.
+function popupAncestorAbsorbsVerticalWheel(target, deltaPx) {
+    let node = (target && target.nodeType === Node.TEXT_NODE)
+        ? target.parentElement : target;
+    while (node && node !== document.body && node !== document.documentElement) {
+        const style = window.getComputedStyle(node);
+        const oy = style.overflowY;
+        const canScrollY = (oy === 'auto' || oy === 'scroll') &&
+            node.scrollHeight > node.clientHeight + 1;
+        if (canScrollY) {
+            const atTop = node.scrollTop <= 0;
+            const atBottom =
+                node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+            if ((deltaPx < 0 && !atTop) || (deltaPx > 0 && !atBottom)) {
+                return true;
+            }
+        }
+        node = node.parentElement;
+    }
+    return false;
+}
+document.addEventListener('wheel', (e) => {
+    // Ignore zoom gestures (ctrl+wheel / pinch) and pure horizontal scroll.
+    if (e.ctrlKey) return;
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
+    if (deltaPx === 0) return;
+    if (popupAncestorAbsorbsVerticalWheel(e.target, deltaPx)) return;
+    e.preventDefault();
+    // Scale each notch down first, cap unusually large visual deltas, then
+    // divide by zoom so the on-screen step is zoom-independent.
+    const visualStep = popupClampWheelVisualStep(deltaPx * POPUP_WHEEL_PIXEL_FACTOR);
+    const step = visualStep / popupCurrentZoom();
+    window.scrollBy({ top: step, behavior: 'auto' });
+}, { passive: false });
+
 
 let _popupMouseDownPos = null;
 document.addEventListener('mousedown', (e) => {
@@ -1886,7 +3020,6 @@ document.addEventListener('mousedown', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-    if (hibikiPopupEventOutside(e.target)) return; // TODO-1218①：宿主页点击不触发弹窗内 selectText
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
         const dy = e.clientY - _popupMouseDownPos.y;
@@ -1903,21 +3036,59 @@ document.addEventListener('click', (e) => {
     }
 
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
-    if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
+    // TODO-1189 — audio/mine/favorite are per-entry action buttons; a click on any
+    // of them must NEVER reach the document dismiss path. .favorite-button was
+    // missing here, so tapping ☆ on a PARENT card fell through to the .entry
+    // branch below: with __hasChildPopup true it posted tapOutside ->
+    // dismissDescendantsOf(parent), wrongly closing the child sub-popup (app-in).
+    // It also hardens the app-OUT global overlay path (host frameIdAtPoint).
+    if (target?.closest('.mine-button') || target?.closest('.audio-button') ||
+        target?.closest('.favorite-button')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
         if (target?.closest('a[href]')) return;
+        // TODO-869 收尾：词典释义正文（.glossary-content）是父卡片占面积最大的可点
+        // 区，也是用户说的「词典部分」。若本层有子弹窗（__hasChildPopup，宿主据
+        // index < entries.length-1 注入），点正文应先关掉后代层（dismissDescendantsOf），
+        // 与点卡片留白/背景同语义——否则点父窗正文只选词、子窗永远关不掉（用户原始
+        // 症状）。叶子层（__hasChildPopup falsy）仍选词，TODO-859 不回归。
+        if (window.__hasChildPopup) {
+            window.flutter_inappwebview.callHandler('tapOutside');
+            return;
+        }
         window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
         return;
     }
-    if (!target?.closest('.entry-header') && !target?.closest('.entry-tags') && !target?.closest('.glossary-group') && !target?.closest('.category-section')) {
-        window.flutter_inappwebview.callHandler('tapOutside');
+    // TODO-859 方案1：用「点击是否落在某张词条卡片内」的正向判定取代旧黑名单。旧逻辑
+    // 列举 .entry-header/.entry-tags/.glossary-group/.category-section「之外才发
+    // tapOutside」，但词条卡片(.entry)内还有这些选择器都覆盖不到的留白——li 外边距、
+    // category-body padding、词条之间、kanji-card-section、单义项的无 class wrapper——
+    // 点这些留白既不选词(上面 .glossary-content 分支只命中文字本体)也不发 tapOutside，
+    // 成了「关不掉子弹窗」的死区，用户得往父弹窗上面的真空白带才能关。
+    //
+    // 方案1语义：词条卡片区域(卡片本体文字+其留白)一律保留本层(点文字走上面的选词
+    // 分支)，只有点到所有卡片之外的纯弹窗背景(body/no-results 占位)才发 tapOutside 关
+    // 后代。卡片根=.entry(词条卡片) 或 .kanji-card-section(汉字卡片容器)。汉字卡片真正
+    // 的顶层根是 buildKanjiCards 建的 .kanji-card-section，.kanji-card 只是它的子节点；
+    // 用 .kanji-card 会漏掉「两张 kanji-card 之间的 4px 间隙」和「section 自身的上下外
+    // 边距」——点这些留白两个 closest 都不命中→落 tapOutside 关子窗=死区对汉字卡复发。
+    // 改判 .kanji-card-section 才能覆盖卡间留白 + section 外边距。
+    if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {
+        // TODO-869：点卡片本体留白本应保留本层（TODO-859 语义）。但若本层有子弹窗
+        // （__hasChildPopup，宿主据 index < entries.length-1 注入），点卡片区也得发
+        // tapOutside 让宿主关掉后代层（dismissDescendantsOf）——否则父窗点卡片关不掉子
+        // 窗（卡片占父弹窗绝大面积）。叶子层 __hasChildPopup falsy → 仍裸 return 保持
+        // 859 不回归。点文字本体走上面 .glossary-content 选词分支，不经这里。
+        if (window.__hasChildPopup) {
+            window.flutter_inappwebview.callHandler('tapOutside');
+        }
+        return;
     }
+    window.flutter_inappwebview.callHandler('tapOutside');
 });
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 document.addEventListener('mousemove', function(e) {
-    if (hibikiPopupEventOutside(e.target)) return; // TODO-1218①：宿主页 Shift-hover 不触发 selectText→clearSelection
     if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;

@@ -171,7 +171,7 @@ void main() {
           reason: '节流时间戳真相源 _lastPaginateTime 必须存在');
       // 闸门不放 _handlePageTurnLimit 本体（否则分页跨章经 _paginate 盖戳后自吞）。
       final int hpStart =
-          src.indexOf('void _handlePageTurnLimit(String direction)');
+          src.indexOf('void _handlePageTurnLimit(String direction');
       expect(hpStart, isNonNegative);
       final int hpEnd = src.indexOf('Future<void> _refreshProgress', hpStart);
       expect(hpEnd, greaterThan(hpStart),

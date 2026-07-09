@@ -105,7 +105,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
     if (result.isSuccess && exported != null) {
       _showOsd(t.video_clip_exported(path: exported));
       if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        await Share.shareXFiles(<XFile>[
+        await HibikiShare.shareFiles(<XFile>[
           XFile(exported),
         ], subject: p.basename(exported));
       }
@@ -225,7 +225,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
           _showOsd(t.video_screenshot_saved_to(path: finalPath));
         }
       } else {
-        await Share.shareXFiles(<XFile>[
+        await HibikiShare.shareFiles(<XFile>[
           XFile(tmp.path, mimeType: 'image/jpeg'),
         ], subject: screenshotName);
         _showOsd(t.video_screenshot_ready(file: screenshotName));

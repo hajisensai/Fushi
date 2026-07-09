@@ -1456,7 +1456,8 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
   await flush();
   assert.equal(mined.length, 1, 'first click mines a new card');
   assert.equal(mineButton.dataset.latest, '1', 'a mined card with a note id is the editable latest');
-  assert.equal(mineButton.textContent, '✓↩', 'latest editable shows the ✓ + undo glyph');
+  // TODO-1338: ↩(U+21A9) 后追加 VS15(U+FE0E) 强制文本呈现，杜绝制卡后 emoji 回退乱码。
+  assert.equal(mineButton.textContent, '✓↩︎', 'latest editable shows the ✓ + undo glyph (↩ + VS15)');
   assert.ok(mineButton.classList.contains('latest'), 'latest carries the .latest class');
 
   // Second click OVERWRITES the same note instead of mining again.
@@ -1585,8 +1586,8 @@ async function testOverwriteScopeAllPromotesEarlierCardToEditable() {
   assert.equal(mineButton.dataset.mined, '1', 'an existing card is detected as mined');
   assert.equal(mineButton.dataset.latest, '1',
     'scope=all promotes an earlier (never-this-session) card to the editable latest');
-  assert.equal(mineButton.textContent, '✓↩',
-    'a promoted earlier card shows the ✓ + undo glyph');
+  assert.equal(mineButton.textContent, '✓↩︎',
+    'a promoted earlier card shows the ✓ + undo glyph (TODO-1338: ↩ + VS15)');
 
   // Clicking it overwrites the earlier note in place (updateEntry, NOT a re-mine).
   await mineButton.onclick();

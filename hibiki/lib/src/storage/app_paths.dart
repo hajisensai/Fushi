@@ -110,7 +110,26 @@ class AppPaths {
     }
     if (raw == null || raw.trim().isEmpty) return null;
     final Directory dir = Directory(raw);
-    if (!dir.existsSync()) return null; // 失效路径（盘符没挂/被删）→ 退回默认根
+    // TODO-1260：自定义数据根可能落在网络盘 / 移动盘上。盘**掉线**（而非被删）时，
+    // 旧代码的同步 `existsSync()`（底层是一次阻塞式 `stat`）会在**主 isolate** 上一直
+    // 卡到 OS 层超时（Windows 对断链网络盘可达数十秒），而它跑在 app 启动最早期、
+    // `initialise()` 又对 hang 无逃生口 → 表现为「偶发无限加载」。
+    //
+    // 改用**带超时的异步探测**：异步 `exists()` 本身不阻塞主 isolate，再叠一个 2s
+    // 超时兜底断链盘上连异步 stat 都不回的极端情况。2s 内没确认存在就当数据根**本次
+    // 启动不可用**，返回 null → 调用方退回 `path_provider` 默认根。**数据安全**：pref
+    // 里的自定义根路径原样保留、原盘上的数据一字节不动；仅本次启动改用默认根让 app 能
+    // 开，盘恢复后下次启动 `exists()` 秒回 true 即自动重新用回自定义根（无迁移、无覆盖）。
+    bool exists;
+    try {
+      exists = await dir
+          .exists()
+          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+    } catch (_) {
+      // 断链盘的异步 stat 也可能直接抛（而非挂起）→ 同样当作不可用，退回默认根。
+      exists = false;
+    }
+    if (!exists) return null; // 失效 / 掉线路径（盘符没挂 / 被删）→ 退回默认根
     return dir;
   }
 
@@ -148,6 +167,52 @@ class AppPaths {
         Directory(p.join(dataRootPath, _dataRootDocumentsChild)),
         Directory(p.join(dataRootPath, _dataRootSupportChild)),
       );
+
+  /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
+  ///
+  /// 默认数据根时 documents 根 = 整个用户 `Documents`（共享目录，含用户自己的文件和
+  /// shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，绝不整树搬移 /
+  /// 整树删除用户 `Documents`。每一项都必须对应仓库里一个真实的派生点：
+  ///
+  ///  - `audiobooks` —— [audiobooksDirectory]；`AppModel` 各处
+  ///    `join(appDirectory, 'audiobooks')`；`AudiobookStorage.ensurePersistDir`。
+  ///  - `hoshi_books` —— [epubBooksDirectory]；`EpubStorage`；backup restore。
+  ///  - `video_covers` —— [videoCoversDirectory]；`VideoStorage.coversDirName`。
+  ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
+  ///  - `mpv_shaders` —— [mpvShadersDirectory]。
+  ///  - `remote_videos` —— [remoteVideosDirectory]。
+  ///  - `videos` —— backup restore 的视频落点（`backup.part.dart`
+  ///    `join(appDirectory, 'videos')`）。
+  ///  - `custom_fonts` —— 字体导入/加载（`custom_fonts_page.dart` 等
+  ///    `join(appDirectory, 'custom_fonts')`）。
+  ///  - `hibikiExport` —— `AppModel.prepareFallbackHibikiDirectory`。
+  ///  - `browser` / `thumbnails` / `dictionaryResources` /
+  ///    `dictionaryImportWorkingDirectory` / `webArchive` ——
+  ///    `AppModel` 运行时目录系列派生。
+  ///
+  /// **刻意不收**：`error_log.txt` / `*_breadcrumb.txt`（`ErrorLogService` 直连
+  /// `getApplicationDocumentsDirectory()`，固定落平台 Documents、不随数据根走，搬走
+  /// 反而让服务失去续写目标）；`video_clips` 与桌面导出目录 `Hibiki`（同样直连
+  /// path_provider 的用户可见导出物，属用户文件语义）。
+  ///
+  /// 守卫测试 `test/storage/documents_whitelist_guard_test.dart` 扫描源码派生点，
+  /// 新增 `<documents>/<child>` 派生而漏加这里会红。
+  static const Set<String> hibikiOwnedDocumentsEntries = <String>{
+    'audiobooks',
+    'hoshi_books',
+    'video_covers',
+    'video_subtitles',
+    'mpv_shaders',
+    'remote_videos',
+    'videos',
+    'custom_fonts',
+    'hibikiExport',
+    'browser',
+    'thumbnails',
+    'dictionaryResources',
+    'dictionaryImportWorkingDirectory',
+    'webArchive',
+  };
 
   // ---- 静态便捷层（给无 AppModel 实例的 static 存储助手） ----
 

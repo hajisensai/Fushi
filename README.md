@@ -10,7 +10,7 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[User Guide](docs/user-guide.md) | [Download Latest](https://github.com/hajisensai/hibiki/releases) | [Join our Discord](https://discord.gg/WhjwyGmm7f)
+[User Guide](docs/user-guide.md) | [Download Latest](https://github.com/hajisensai/hibiki/releases) · [OneDrive Mirror](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) | [Join our Discord](https://discord.gg/WhjwyGmm7f)
 
 > **Watch what you want to watch, and pick up the language along the way.**
 
@@ -138,7 +138,9 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) — Android APK and Windows installer are available.
+Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) or the [OneDrive mirror](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) — Android APK and Windows installer are available.
+>
+> The OneDrive mirror is provided for regions where GitHub is slow or unreachable.
 
 > Requires Android 7.0 (API 24) or higher.
 
@@ -208,7 +210,11 @@ Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth creden
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hajisensai/hibiki&type=Date)](https://star-history.com/#hajisensai/hibiki&Date)
+[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/hibiki/stargazers)
+
+[![Star History](docs/assets/star-history.svg)](https://github.com/hajisensai/hibiki/stargazers)
+
+> The chart above is generated inside this repository (no third-party service) and refreshed daily by the [Update Star History](.github/workflows/star-history.yml) workflow.
 
 ## Acknowledgments
 

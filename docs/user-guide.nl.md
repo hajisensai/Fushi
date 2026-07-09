@@ -24,7 +24,7 @@ Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 
 ### 1. Aanbevolen woordenboeken en lokale audio importeren (optioneel)
 
-[OneDrive](https://zfile.kanochi.cn/dl/Public/%E6%9D%82%E9%A1%B9/hibiki-backup-2026-06-29.hibiki.zip) / [Google Drive](https://drive.google.com/file/d/1JYzv6dXB5sDPQBxttFLJzlmN3XTTo79S/view?usp=sharing)
+[OneDrive](https://summersaltsea-my.sharepoint.com/:u:/g/personal/nonoka_summersaltsea_onmicrosoft_com/IQD1h7CwWz1hToQOwU1sNhBXAZi0td87k0EHDKMyJZMJyJc?e=5ah1Jn) / [Google Drive](https://drive.google.com/file/d/1Xz5WdoLCEaTLHXpTtHBwxjJGMgKQA0B6/view?usp=sharing)
 
 In de app: Instellingen -> Synchronisatie en back-up -> tik op **Back-up importeren**.
 

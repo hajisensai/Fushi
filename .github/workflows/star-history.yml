@@ -1,0 +1,52 @@
+# Self-hosted star-history chart (TODO-1294).
+#
+# Replaces the third-party star-history.com dependency (503 rate-limited) with
+# an in-repo SVG regenerated on a schedule. Uses only the built-in GITHUB_TOKEN
+# to read the public stargazers timeline; no PAT is ever stored in the repo.
+#
+# Release-channel safety: this workflow ONLY commits docs/assets/star-history.svg.
+# It never creates releases, tags, or touches any release channel. Commits are
+# pushed with GITHUB_TOKEN, which by GitHub design does NOT trigger downstream
+# workflows (no debug/prerelease build is kicked); [skip ci] is added as well.
+name: Update Star History
+
+on:
+  schedule:
+    # Daily at 03:17 UTC.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+# Serialize runs so two invocations never race the commit/push.
+concurrency:
+  group: star-history
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update-star-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate star history SVG
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 tool/gen_star_history_svg.py \
+            --repo "${{ github.repository }}" \
+            --out docs/assets/star-history.svg
+
+      - name: Commit refreshed chart
+        run: |
+          if [ -z "$(git status --porcelain docs/assets/star-history.svg)" ]; then
+            echo "Star history SVG unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/assets/star-history.svg
+          git commit -m 'chore(readme): refresh star history chart (TODO-1294) [skip ci]'
+          git push

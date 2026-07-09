@@ -40,11 +40,47 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// scan paths), `sync_baselines` (would corrupt later incremental sync fork
 /// detection), and device-local sync prefs ([SyncRepository.deviceLocalPrefKeys]).
 class BackupMergeEngine {
-  BackupMergeEngine(this._db, {String srcAlias = 'mergesrc'})
-      : _srcAlias = srcAlias;
+  BackupMergeEngine(
+    this._db, {
+    String srcAlias = 'mergesrc',
+    Set<String> carriedVideoSourcePaths = const <String>{},
+  })  : _srcAlias = srcAlias,
+        _carriedVideoSourcePaths = carriedVideoSourcePaths;
 
   final HibikiDatabase _db;
   final String _srcAlias;
+
+  /// Source-device absolute video paths whose file actually travelled inside the
+  /// backup (= `BackupMeta.videoFiles.keys`). A merged `video_books` row is only
+  /// materialised when it is REACHABLE on this device: either a streaming book
+  /// (its `video_path` is an `http(s)` URL, self-contained — re-opens by URL) or
+  /// a local-file book whose file is in this set (so `_copyTreeIfAbsent` lands it
+  /// and `_rebaseVideoPaths` re-points it). A local video whose file never
+  /// travelled would otherwise import as a dead "empty video" shell that can
+  /// never play (TODO-1261). The preview counter applies the SAME predicate so
+  /// the confirm dialog's "will add N" matches what the merge actually inserts.
+  final Set<String> _carriedVideoSourcePaths;
+
+  /// SQL fragment (on the src alias `s`) selecting only REACHABLE video rows —
+  /// streaming URLs plus local files carried by the backup. Empty carried set →
+  /// streaming only. Callers append this to the row's own NOT EXISTS guard.
+  String get _reachableVideoPredicate {
+    final StringBuffer buf = StringBuffer(
+      "(s.video_path LIKE 'http://%' OR s.video_path LIKE 'https://%'",
+    );
+    if (_carriedVideoSourcePaths.isNotEmpty) {
+      final String placeholders =
+          List<String>.filled(_carriedVideoSourcePaths.length, '?').join(', ');
+      buf.write(' OR s.video_path IN ($placeholders)');
+    }
+    buf.write(')');
+    return buf.toString();
+  }
+
+  /// Positional args matching the `?` placeholders in [_reachableVideoPredicate]
+  /// (the carried local-file paths, in a stable order). Same order as the set is
+  /// iterated when the predicate's placeholders are built.
+  List<String> get _reachableVideoArgs => _carriedVideoSourcePaths.toList();
 
   /// Preference key holding the favorite-sentence JSON list. Mirrors
   /// `FavoriteSentenceRepository._key`; kept in sync by
@@ -56,7 +92,7 @@ class BackupMergeEngine {
   Future<void> merge() async {
     await _db.transaction(() async {
       await _insertMissing('epub_books', 'book_key', skipBookTombstones: true);
-      await _insertMissing('video_books', 'book_uid');
+      await _insertMissingVideoBooks();
       await _insertMissing('dictionary_metadata', 'name');
       await _insertMissing('srt_books', 'uid');
       await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
@@ -90,7 +126,7 @@ class BackupMergeEngine {
   Future<BackupMergePreview> preview() async {
     final int epub =
         await _countMissing('epub_books', 'book_key', skipBookTombstones: true);
-    final int video = await _countMissing('video_books', 'book_uid');
+    final int video = await _countMissingVideoBooks();
     final int audio =
         await _countMissing('audiobooks', 'book_key', skipBookTombstones: true);
     final int positions = await _countReaderPositionChanges();
@@ -117,6 +153,25 @@ class BackupMergeEngine {
           'SELECT COUNT(*) AS c FROM $_srcAlias.$table AS s '
           'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
           'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
+        )
+        .getSingle();
+    return row.data['c'] as int;
+  }
+
+  /// Counts `video_books` rows the merge would ADD: absent from the target AND
+  /// REACHABLE ([_reachableVideoPredicate]) — streaming books or local files the
+  /// backup carried. Mirrors [_insertMissingVideoBooks]'s WHERE exactly so the
+  /// preview's "will add N" equals what the merge actually inserts (TODO-1261).
+  Future<int> _countMissingVideoBooks() async {
+    final row = await _db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $_srcAlias.video_books AS s '
+          'WHERE NOT EXISTS (SELECT 1 FROM video_books AS t '
+          'WHERE t.book_uid = s.book_uid) '
+          'AND $_reachableVideoPredicate',
+          variables: _reachableVideoArgs
+              .map((String p) => Variable<String>(p))
+              .toList(),
         )
         .getSingle();
     return row.data['c'] as int;
@@ -174,6 +229,25 @@ class BackupMergeEngine {
       'SELECT $colList FROM $_srcAlias.$table AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
       'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
+    );
+  }
+
+  /// Inserts every backup `video_books` row the target lacks, but ONLY when it
+  /// is REACHABLE on this device ([_reachableVideoPredicate]): a streaming book
+  /// (self-contained http(s) URL) or a local file the backup actually carried.
+  /// A local-file video whose file never travelled is skipped so it never lands
+  /// as a dead "empty video" shell that can't play (TODO-1261). `video_books`
+  /// has no autoincrement id (PK is `book_uid`), so every column travels.
+  Future<void> _insertMissingVideoBooks() async {
+    final List<String> cols = await _columnsExceptId('video_books');
+    final String colList = cols.join(', ');
+    await _db.customStatement(
+      'INSERT INTO video_books ($colList) '
+      'SELECT $colList FROM $_srcAlias.video_books AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM video_books AS t '
+      'WHERE t.book_uid = s.book_uid) '
+      'AND $_reachableVideoPredicate',
+      _reachableVideoArgs,
     );
   }
 

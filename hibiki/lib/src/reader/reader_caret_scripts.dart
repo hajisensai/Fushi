@@ -1008,6 +1008,11 @@ window.hoshiCaret = {
         // 而非放大；揭开后再次激活才走 onImageTap 放大（与指针点击语义一致）。
         if (this.el.classList && this.el.classList.contains('blurred')) {
           this.el.classList.remove('blurred');
+          // TODO-1289：键盘/手柄揭开也持久——回传稳定 key 给 Dart 会话集。
+          if (window.__hoshiImageRevealKey && window.flutter_inappwebview) {
+            var revealKey = window.__hoshiImageRevealKey(this.el);
+            if (revealKey) window.flutter_inappwebview.callHandler('onImageRevealed', revealKey);
+          }
           return 'activated';
         }
         window.flutter_inappwebview.callHandler('onImageTap', this.el.src);

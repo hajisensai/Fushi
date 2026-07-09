@@ -266,6 +266,34 @@ void main() {
       expect(mapIdx, greaterThanOrEqualTo(0));
       expect(args[mapIdx + 1], '0:a:1');
     });
+
+    // TODO-1244 回归守卫：波形抽取必须带 `-vn` 丢弃视频流。没有 `-map 0:a` 的默认回退路径
+    // 下，若视频流也进 `-f null -`，ffmpeg 会用 null 复用器默认视频编码器 wrapped_avframe
+    // 编码它——桌面捆绑的最小 ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→
+    // 空包络→「对轴界面波形完全不显示」。`-vn` 让最小 ffmpeg 也能只抽音频能量。
+    test('always drops video with -vn (no-map default path) — ffmpeg-min safe',
+        () {
+      // 无音轨参数 => 无 -map（默认轨回退路径），这正是最小 ffmpeg 会踩视频编码器的场景。
+      final List<String> noMap =
+          buildFfmpegPcmEnvelopeArgs(inputPath: '/tmp/v.mkv');
+      expect(noMap.contains('-map'), isFalse);
+      expect(noMap.contains('-vn'), isTrue,
+          reason: '无 -map 时若不丢视频，最小 ffmpeg 会 Encoder not found → 波形空');
+      // -vn 是输出选项，须在输入之后、`-f null -` 之前。
+      final int vnIdx = noMap.indexOf('-vn');
+      expect(vnIdx, greaterThan(noMap.indexOf('/tmp/v.mkv')));
+      expect(vnIdx, lessThan(noMap.indexOf('-f')));
+    });
+
+    test('-vn also present when -map is added (in-bounds track)', () {
+      final List<String> args = buildFfmpegPcmEnvelopeArgs(
+        inputPath: '/tmp/v.mkv',
+        audioStreamIndex: 0,
+        audioStreamCount: 1,
+      );
+      expect(args.contains('-vn'), isTrue);
+      expect(args.contains('-map'), isTrue);
+    });
   });
 
   // TODO-413 档C：截断到前 N 分钟后，喂合成「已知 offset」序列仍算出该 offset，

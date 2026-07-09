@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -39,7 +40,13 @@ const String _localAudioAssetSuffix = '.hibikiaudiolib';
 
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
+///
+/// An empty / whitespace-only name is also reserved: it is never a real book
+/// folder (a book's folder name is a non-empty sanitized title), and treating it
+/// as one would import the sync root itself or an orphan collapsed onto the root
+/// (BUG-619, TODO-1329).
 bool isReservedSyncFolderName(String name) =>
+    name.trim().isEmpty ||
     name == kSyncDictionaryNamespace ||
     name == kSyncLocalAudioNamespace ||
     name == kSyncAggregateNamespace;
@@ -100,6 +107,13 @@ class SyncRunReport {
   int audiobooksExported = 0;
   int localAudioImported = 0;
   int localAudioExported = 0;
+
+  /// Per-book metadata/cover files that had spilled directly into the sync root
+  /// and were swept back out this run (BUG-619 re-report / TODO-1340). Purely a
+  /// cleanup counter — spill removal is neither an import nor a failure, so it
+  /// never feeds [needsLocalLibraryRefresh] nor [errors].
+  int rootSpillFilesRemoved = 0;
+
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
@@ -220,6 +234,15 @@ class SyncOrchestrator {
     final SyncRunReport report = SyncRunReport();
     final String root = await _backend.findOrCreateRootFolder();
 
+    // BUG-619 re-report / TODO-1340: sweep any per-book metadata/cover files
+    // that spilled directly into the sync root (from the old empty-title
+    // `ensureBookFolder('')` collapse, before TODO-1329 blocked it at the
+    // source). TODO-1329 stops new spills but never cleaned the accumulated
+    // residue, which piles into many duplicate copies. Runs before the per-book
+    // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
+    // remote state.
+    await pruneRootSpill(root, report);
+
     // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
     // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
     final SyncBackend b = _backend;
@@ -316,6 +339,14 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
 
+    // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度
+    // / 聚合等所有阶段都已尝试、未被异常 / app 退出 / 进程终止打断）才记录同步冷却
+    // 时间戳。中断发生在本行之前 → lastSyncMs 保持不变，使下次 app-open 自动同步不被
+    // 冷却窗（[_syncCooldownMs]）压制、整轮重试——即「同步没完成就丢弃中间态、下次
+    // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
+    // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
+    await SyncRepository(_db)
+        .setLastSyncMs(DateTime.now().millisecondsSinceEpoch);
     return report;
   }
 
@@ -1158,37 +1189,22 @@ class SyncOrchestrator {
       remoteKeys: remoteKeys,
     );
 
-    // toPullAudioOnly（场景B 已绿）= 远端有 ∧ 本端无有声书 ∧ 本端已有同 bookKey
-    // EPUB → 只补音频不重导 EPUB（走下方现有 pull 循环，逻辑完全不动）。
+    // toPullAudioOnly（场景B）= 远端有 ∧ 本端无有声书 ∧ 本端已有同 bookKey
+    // EPUB → 只补音频不重导 EPUB。这是「同步有声书文件」开关下**唯一**的 pull
+    // 语义：只对本端已在库的书补/拉其音频文件。
+    //
+    // TODO-1291（用户决策 A · 解耦）：远端独有（本端完全没有这本书）的书
+    // **不**在自动同步里导入/灌书架，即便远端书带有声书且 hasContent。这类书回归
+    // 手动下载入口（compare 对比页 / 书架远端卡），与本类文档契约（见类头
+    // :126-130「remote-only EPUBs stay remote until the user explicitly
+    // downloads them」）一致。历史 TODO-873 的 toPullFullBook 自动灌书路径已在此
+    // 摘除——它把「开启同步有声书文件」误当成「自动把远端独有书拉进书架」。
     final List<String> toPullAudioOnly = <String>[
       for (final String key in diff.toPull)
         if (localBookKeys.contains(key)) key,
     ];
 
-    // toPullFullBook（场景A 新增 TODO-873）= 远端有有声书 ∧ 本端**完全没有这本书**
-    // （无 EPUB 行）∧ 远端书有可导出内容（hasContent==true）→ 先拉 EPUB 灌书架、
-    // 再拉音频。无内容的远端书跳过（无法导入 EPUB），只能等手动下载。
-    //
-    // 用 host 书清单解析每本远端书的 hasContent 与原始 title（端点按原始 title
-    // 寻址）。按 bookKey 匹配：host 清单条目带真实 bookKey（= EpubBooks PK），
-    // 缺省回退 sanitizeTtuFilename(title)（与 host listBooks 同源）。
-    final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
-    final Map<String, RemoteBookInfo> remoteBookByKey =
-        <String, RemoteBookInfo>{
-      for (final RemoteBookInfo r in remoteBooks)
-        (r.bookKey ?? sanitizeTtuFilename(r.title)): r,
-    };
-    final List<({String audiobookKey, String title})> toPullFullBook =
-        <({String audiobookKey, String title})>[
-      for (final String key in diff.toPull)
-        if (!localBookKeys.contains(key))
-          if (remoteBookByKey[key] case final RemoteBookInfo book
-              when book.hasContent)
-            (audiobookKey: key, title: book.title),
-    ];
-
-    final int total =
-        diff.toPush.length + toPullAudioOnly.length + toPullFullBook.length;
+    final int total = diff.toPush.length + toPullAudioOnly.length;
     int index = 0;
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
@@ -1252,69 +1268,6 @@ class SyncOrchestrator {
         _safeDelete(tmp);
       }
       index++;
-    }
-
-    // ── Pull B（场景A · TODO-873）：远端-only 带有声书的书 → 先拉 EPUB 灌书架、
-    // 再拉音频。配对纪律见 [_pullRemoteOnlyAudiobook]（BUG-414）。──────────────
-    for (final ({String audiobookKey, String title}) item in toPullFullBook) {
-      _emit(SyncPhase.audiobooks,
-          itemIndex: index, itemTotal: total, title: item.title);
-      await _pullRemoteOnlyAudiobook(
-        backend,
-        item.title,
-        item.audiobookKey,
-        report,
-      );
-      index++;
-    }
-  }
-
-  /// 拉取一本「远端-only 带有声书」的书：先拉 EPUB 灌本地书架，再用本地新 EPUB 的
-  /// bookKey 绑定拉音频包（TODO-873）。
-  ///
-  /// **BUG-414 配对纪律**：
-  /// - EPUB 用 [HibikiClientSyncBackend.getRemoteBook]（端点按原始 [title] 寻址）下载，
-  ///   经 [EpubImporter.importFromPath] 导入，返回值即本地新 `localBookKey`（=
-  ///   `sanitizeTtuFilename(storedTitle)`，本地唯一）。
-  /// - 音频用 host 清单里该书的真实 [remoteAudiobookKey] 下载（**不重算**
-  ///   `sanitizeTtuFilename(title)`），解包时 `bookKeyOverride: localBookKey` 绑定到
-  ///   本地刚导入的 EPUB，保证写入的 Audiobooks 行与本地 EPUB 行 bookKey 相等（书架
-  ///   类型徽章亮，否则退化为普通书）。
-  ///
-  /// 逐项 try/catch 进 [report.errors] 不中断整体；临时文件 finally 清理。
-  Future<void> _pullRemoteOnlyAudiobook(
-    HibikiClientSyncBackend backend,
-    String title,
-    String remoteAudiobookKey,
-    SyncRunReport report,
-  ) async {
-    File? epubTmp;
-    File? audioTmp;
-    try {
-      // ① 拉 EPUB → 导入书架，拿本地新 bookKey。
-      epubTmp = _tmpFile('.epub');
-      await backend.getRemoteBook(title, epubTmp);
-      final String localBookKey = await EpubImporter.importFromPath(
-        db: _db,
-        filePath: epubTmp.path,
-        fileName: '$title.epub',
-      );
-      report.booksImported++;
-
-      // ② 拉音频包 → 解包，bookKeyOverride 绑定本地 EPUB bookKey（徽章配对）。
-      audioTmp = _tmpFile('.hibikiaudio');
-      await backend.getRemoteAudiobook(remoteAudiobookKey, audioTmp);
-      await _packages.importAudioDatabasePackage(
-        packageFile: audioTmp,
-        audioDatabaseRoot: _audioDatabaseRoot,
-        bookKeyOverride: localBookKey,
-      );
-      report.audiobooksImported++;
-    } catch (e) {
-      report.errors.add('live pull remote-only audiobook "$title": $e');
-    } finally {
-      _safeDelete(epubTmp);
-      _safeDelete(audioTmp);
     }
   }
 
@@ -1439,6 +1392,11 @@ class SyncOrchestrator {
       final EpubBookRow book = books[i];
       _emit(SyncPhase.audiobooks,
           itemIndex: i, itemTotal: total, title: book.title);
+      // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
+      // title, so an empty key means ensureBookFolder would collapse onto the
+      // sync root and scatter the .hibikiaudio package into hibiki-data/ instead
+      // of the per-book folder. (requireBookFolderName is the precise backstop.)
+      if (book.bookKey.isEmpty) continue;
       File? tmp;
       try {
         final String bookKey = book.bookKey;
@@ -1472,6 +1430,42 @@ class SyncOrchestrator {
         report.errors.add('audiobook "${book.title}": $e');
       } finally {
         _safeDelete(tmp);
+      }
+    }
+  }
+
+  /// Deletes per-book metadata/cover files that spilled directly into the sync
+  /// [root] (BUG-619 re-report / TODO-1340).
+  ///
+  /// A `progress_1_6_*` / `statistics_1_6_*` / `audioBook_1_6_*` / `cover_1_6.*`
+  /// file must ALWAYS live inside its book folder `<root>/<sanitizedTitle>/`;
+  /// one sitting as a direct child of the root is orphaned spill from the old
+  /// empty-title `ensureBookFolder('')` collapse. TODO-1329 blocked new spills
+  /// but never cleaned the residue, and the churning timestamp filenames plus
+  /// the single-file `findSyncFileByPrefix` dedup let those copies pile up into
+  /// many (`丢很多份`). Delete EVERY matching file, not just one.
+  ///
+  /// Only non-folder direct children are touched, so book folders and the
+  /// reserved `__dictionaries__` / `__local_audio__` / `__aggregate__`
+  /// namespaces (all folders) are never removed, and nothing legitimately
+  /// writes a bare file into the root. Best-effort: a listing or per-file delete
+  /// failure is recorded but never aborts the sweep.
+  @visibleForTesting
+  Future<void> pruneRootSpill(String root, SyncRunReport report) async {
+    final List<AssetEntry> children;
+    try {
+      children = await _backend.listChildren(root);
+    } catch (e) {
+      report.errors.add('prune root spill (list root): $e');
+      return;
+    }
+    for (final AssetEntry e in children) {
+      if (e.isFolder || !isTtuPerBookFileName(e.name)) continue;
+      try {
+        await _backend.deleteAsset(e.id);
+        report.rootSpillFilesRemoved++;
+      } catch (err) {
+        report.errors.add('prune root spill "${e.name}": $err');
       }
     }
   }

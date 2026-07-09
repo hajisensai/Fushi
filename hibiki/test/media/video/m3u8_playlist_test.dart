@@ -242,4 +242,242 @@ plain.mkv
       expect(playlistEpisodeCount('garbage'), 0);
     });
   });
+
+  group('HLS master playlist（parseM3u8Master / isHlsMasterPlaylist）', () {
+    const String masterSample = '''
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=1280000,RESOLUTION=640x360,CODECS="avc1.4d401e,mp4a.40.2"
+360p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2560000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2",FRAME-RATE=29.970
+720p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+https://cdn.example.com/1080p/index.m3u8
+''';
+
+    // 无 STREAM-INF 的 media playlist（分段列表），不是 master。
+    const String mediaSample = '''
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXTINF:9.009,
+seg0.ts
+#EXTINF:9.009,
+seg1.ts
+#EXT-X-ENDLIST
+''';
+
+    test('解析 master：3 个 variant，属性 + 相对 URL 按 URL 语义解析', () {
+      final List<HlsVariant> variants = parseM3u8Master(
+        content: masterSample,
+        baseUrl: 'https://host.example/hls/master.m3u8',
+      );
+      expect(variants.length, 3);
+
+      expect(variants[0].bandwidth, 1280000);
+      expect(variants[0].resolution, '640x360');
+      // 引号感知：CODECS 内部逗号不被当属性分隔符。
+      expect(variants[0].codecs, 'avc1.4d401e,mp4a.40.2');
+      expect(variants[0].height, 360);
+      expect(variants[0].width, 640);
+      expect(variants[0].url, 'https://host.example/hls/360p/index.m3u8');
+
+      // BANDWIDTH 优先于 AVERAGE-BANDWIDTH；FRAME-RATE 解析。
+      expect(variants[1].bandwidth, 2560000);
+      expect(variants[1].resolution, '1280x720');
+      expect(variants[1].frameRate, closeTo(29.970, 0.001));
+      expect(variants[1].url, 'https://host.example/hls/720p/index.m3u8');
+
+      // 绝对 URL 原样保留（不再相对 master 解析）。
+      expect(variants[2].bandwidth, 5000000);
+      expect(variants[2].height, 1080);
+      expect(variants[2].codecs, isNull);
+      expect(variants[2].url, 'https://cdn.example.com/1080p/index.m3u8');
+    });
+
+    test('qualityLabel：分辨率 + 码率标注', () {
+      const HlsVariant v = HlsVariant(
+        url: 'x',
+        bandwidth: 5000000,
+        resolution: '1920x1080',
+      );
+      expect(v.qualityLabel, '1080p · 5.0 Mbps');
+      const HlsVariant lowBitrate =
+          HlsVariant(url: 'x', bandwidth: 800000, resolution: '640x360');
+      expect(lowBitrate.qualityLabel, '360p · 800 kbps');
+      const HlsVariant noRes = HlsVariant(url: 'x', bandwidth: 3000000);
+      expect(noRes.qualityLabel, '3.0 Mbps');
+      const HlsVariant bare = HlsVariant(url: 'x');
+      expect(bare.qualityLabel, 'HLS');
+    });
+
+    test('sortedHlsVariantsByQualityDesc：高度降序（1080/720/360）', () {
+      final List<HlsVariant> variants = parseM3u8Master(
+        content: masterSample,
+        baseUrl: 'https://host.example/hls/master.m3u8',
+      );
+      final List<HlsVariant> sorted = sortedHlsVariantsByQualityDesc(variants);
+      expect(sorted.map((HlsVariant v) => v.height).toList(),
+          <int?>[1080, 720, 360]);
+      // 纯函数不改入参顺序。
+      expect(variants[0].height, 360);
+    });
+
+    test('media playlist（EXTINF 分段）→ 非 master、variant 为空', () {
+      expect(isHlsMasterPlaylist(mediaSample), isFalse);
+      expect(
+        parseM3u8Master(content: mediaSample, baseUrl: 'https://h/x.m3u8'),
+        isEmpty,
+      );
+    });
+
+    test('本地多集文件清单（parseM3u8 的输入）绝不被当作 HLS master', () {
+      // 红线：TODO-1237 的分集清单只有 #EXTINF，无 STREAM-INF，不得误判为 HLS。
+      expect(isHlsMasterPlaylist(_dragonMaidSample), isFalse);
+      expect(
+        parseM3u8Master(content: _dragonMaidSample, baseUrl: '/base'),
+        isEmpty,
+      );
+      // 且 parseM3u8（本地清单解析）对真 HLS master 仍走文件路径语义、与 master
+      // 解析互不干扰（isHlsMasterPlaylist 在上层做分流，这里只验两函数互不误伤）。
+      expect(isHlsMasterPlaylist(masterSample), isTrue);
+    });
+  });
+  // TODO-1237: m3u8 entry path resolution — backslash / absolute / relative /
+  // UNC handled by string shape, host-independent (windows + posix contexts).
+  // Backslashes are built via String.fromCharCode(0x5c) so the source carries
+  // no literal backslash char (dodges shell/heredoc/tooling mangling).
+  group('resolveM3uEntryPath (TODO-1237)', () {
+    final p.Context win = p.Context(style: p.Style.windows);
+    final p.Context pos = p.Context(style: p.Style.posix);
+    final String bs = String.fromCharCode(0x5c);
+
+    test('windows: absolute drive path (backslashes) used as-is, not joined',
+        () {
+      final String entry = 'D:${bs}video${bs}Bocchi${bs}S01E01.mp4';
+      expect(
+          resolveM3uEntryPath(entry, 'D:${bs}playlists', context: win), entry,
+          reason: 'absolute entry must NOT be joined onto the m3u8 dir');
+    });
+
+    test('windows: absolute drive path (forward slashes) normalizes', () {
+      expect(
+          resolveM3uEntryPath('D:/video/Bocchi/E01.mp4', 'D:${bs}pl',
+              context: win),
+          'D:${bs}video${bs}Bocchi${bs}E01.mp4');
+    });
+
+    test('windows: relative backslash path resolves against the m3u8 dir', () {
+      expect(
+          resolveM3uEntryPath('Season 01${bs}E01.mp4', 'D:${bs}video${bs}pl',
+              context: win),
+          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4');
+    });
+
+    test('windows: relative forward-slash path resolves against the m3u8 dir',
+        () {
+      expect(
+          resolveM3uEntryPath('Season 01/E01.mp4', 'D:${bs}video${bs}pl',
+              context: win),
+          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4');
+    });
+
+    test('windows: UNC path preserved, never turned into a drive path', () {
+      final String unc = '$bs${bs}NAS${bs}share${bs}E01.mp4';
+      expect(resolveM3uEntryPath(unc, 'D:${bs}pl', context: win), unc,
+          reason: 'the old p.join turned UNC into a bogus D: drive path');
+    });
+
+    test('posix: absolute path used as-is', () {
+      expect(resolveM3uEntryPath('/mnt/media/E01.mp4', '/base', context: pos),
+          '/mnt/media/E01.mp4');
+    });
+
+    test('posix: relative path resolves against the m3u8 dir', () {
+      expect(resolveM3uEntryPath('sub/E01.mp4', '/base', context: pos),
+          '/base/sub/E01.mp4');
+    });
+
+    test('posix host: a Windows-absolute entry is still absolute (by shape)',
+        () {
+      // Cross-device sync / non-Windows CI: D:\... must not be joined onto the
+      // posix m3u8 dir. Absoluteness is judged by string shape, not host
+      // p.isAbsolute (which would call it relative on posix).
+      final String entry = 'D:${bs}video${bs}E01.mp4';
+      expect(resolveM3uEntryPath(entry, '/base', context: pos), entry);
+    });
+
+    test('empty / whitespace entry returns empty', () {
+      expect(resolveM3uEntryPath('   ', '/base', context: pos), '');
+    });
+
+    test('parseM3u8 routes an absolute entry through the resolver (not joined)',
+        () {
+      // Forward-slash absolute entry so the manifest carries no backslash; on
+      // any host it must resolve to an absolute path WITHOUT the m3u8 dir.
+      const String manifest = '''
+#EXTM3U
+#EXTINF:-1,Ep1
+D:/video/Bocchi/S01E01.mp4
+''';
+      final List<PlaylistEntry> entries =
+          parseM3u8(content: manifest, baseDir: 'D:${bs}playlists');
+      expect(entries, hasLength(1));
+      expect(entries.single.path.contains('playlists'), isFalse,
+          reason: 'absolute entry must not be joined onto the m3u8 dir');
+    });
+  });
+
+  // TODO-1346：视频卡观看进度分数。无持久化总时长 → 多集按「看到第几集」到集粒度，
+  // 单视频仅「已看完」满格；无可展示进度返回 null（不画进度条）。
+  group('videoWatchFraction (TODO-1346 视频卡观看进度)', () {
+    test('多集按 currentEpisode/episodeCount 算，clamp 到 [0,1]', () {
+      // K-ON! 现场值：第 47 集 / 共 59 集 ≈ 0.797。
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 47, episodeCount: 59),
+        closeTo(47 / 59, 1e-9),
+      );
+      // currentEpisode 越界也不炸、绝不 >1。
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 999, episodeCount: 12),
+        1.0,
+      );
+    });
+
+    test('已看完（completed）恒满格，压过集数', () {
+      expect(
+        videoWatchFraction(
+            completed: true, currentEpisode: 0, episodeCount: 12),
+        1.0,
+      );
+      expect(
+        videoWatchFraction(completed: true, currentEpisode: 3, episodeCount: 0),
+        1.0,
+      );
+    });
+
+    test('多集停在第一集(0)且未看完 → null（不画空条）', () {
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 0, episodeCount: 24),
+        isNull,
+      );
+    });
+
+    test('单视频/流（episodeCount<2）未看完 → null（无总时长不误导）', () {
+      // 单视频起播中：有 lastPositionMs 但没时长可算 → 不画。
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 0, episodeCount: 0),
+        isNull,
+      );
+      expect(
+        videoWatchFraction(
+            completed: false, currentEpisode: 0, episodeCount: 1),
+        isNull,
+      );
+    });
+  });
 }

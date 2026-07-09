@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -284,7 +285,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
       return;
     }
     try {
-      await Share.shareXFiles(
+      await HibikiShare.shareFiles(
         <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
         subject: p.basename(file.path),
       );

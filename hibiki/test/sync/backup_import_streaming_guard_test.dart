@@ -50,7 +50,10 @@ void main() {
 
     test('app_model：BackupImportPhase 具备 failed 态 + 确定进度 notifier', () {
       final String src = read('lib/src/models/app_model.dart');
-      expect(src.contains('enum BackupImportPhase { running, done, failed }'),
+      // TODO-1151 起 validating 相位加入（读取/预览遮罩）；此处只锁 failed 态仍在。
+      expect(
+          src.contains(
+              'enum BackupImportPhase { validating, running, done, failed }'),
           isTrue,
           reason: '必须有 failed 态，才能把失败画成错误图标而非绿✓');
       expect(src.contains('void failBackupImport('), isTrue);

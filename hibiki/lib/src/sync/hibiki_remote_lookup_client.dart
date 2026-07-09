@@ -11,19 +11,27 @@ class HibikiRemoteLookupClient {
   HibikiRemoteLookupClient({
     required SyncRepository repo,
     http.Client? httpClient,
+    http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration timeout = const Duration(seconds: 3),
   })  : _repo = repo,
         _httpClient = httpClient ?? http.Client(),
-        _injectedClient = httpClient != null,
+        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
         _timeout = timeout;
 
   final SyncRepository _repo;
+
+  /// 明文 http 候选共用的 client（生产由 AppModel 注入 keep-alive client 复用连接，
+  /// TODO-744）。**绝不**用于带指纹的 https 候选——那必须走钉扎 client
+  /// （TODO-961 gap①：注入生产 client 不得旁路证书钉扎）。
   final http.Client _httpClient;
 
-  /// 是否注入了外部 http client（测试缝）。注入时一律用 [_httpClient]，不为 https
-  /// 候选另起 pinned client（测试用 MockClient 拦截，无需真 TLS）。
-  final bool _injectedClient;
+  /// https 候选的钉扎 client 工厂（每候选一个、用完即关）。默认真钉扎
+  /// [createPinnedHttpPackageClient]；测试注入 MockClient 工厂即可拦截。
+  final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
   final Duration _timeout;
+
+  static http.Client _defaultPinnedClient(String expectedFingerprint) =>
+      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
 
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
@@ -96,13 +104,13 @@ class HibikiRemoteLookupClient {
     for (final HibikiClientUrl candidate in candidates) {
       final Uri? uri = _lookupUri(candidate.url, path);
       if (uri == null) continue;
-      // TODO-961 M1: https 候选（带指纹）用 pinned IOClient（除非外部注入了 client）。
-      // 明文 http 候选继续用共享 [_httpClient]（行为零变化）。
+      // TODO-961 M1/gap①: https 带指纹的候选**始终**走钉扎 client，与是否注入了
+      // 外部 client 无关（注入的 keep-alive client 只服务明文 http 候选，行为零变化）。
       final String? fp = candidate.fingerprintSha256;
-      final bool usePinned = !_injectedClient && fp != null && fp.isNotEmpty;
-      final http.Client client = usePinned
-          ? createPinnedHttpPackageClient(expectedFingerprint: fp)
-          : _httpClient;
+      final bool usePinned =
+          uri.isScheme('https') && fp != null && fp.isNotEmpty;
+      final http.Client client =
+          usePinned ? _pinnedClientFactory(fp) : _httpClient;
       try {
         final http.Response response = await client
             .post(

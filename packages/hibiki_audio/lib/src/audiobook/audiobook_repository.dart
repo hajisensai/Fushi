@@ -12,6 +12,10 @@ class AudiobookRepository {
 
   final HibikiDatabase _db;
 
+  /// 暴露底层数据库，供同库其它仓库（如 [SrtBookRepository]）在同一 app 流程内
+  /// 复用同一连接（TODO-1288：EPUB-backed 有声书导入后补写配对 srt_books 行）。
+  HibikiDatabase get database => _db;
+
   // ── audiobook CRUD ──────────────────────────────────────────────
 
   Future<Audiobook?> findByBookKey(String bookKey) async {

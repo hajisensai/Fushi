@@ -1040,8 +1040,16 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
             });
           }),
           controller(context).player.stream.position.listen((event) {
+            // Hibiki patch (TODO-1243): drop redundant frame-rate rebuilds. The
+            // drag path already suppresses position (uses `slider`), and while
+            // not dragging we quantize to kPositionUiThrottleStep so the seek bar
+            // fill re-rasters at ~5fps instead of the libmpv frame rate (the
+            // integrated-GPU 100% load when controls are visible).
+            if (click) return;
+            final Duration next = event.floorTo(kPositionUiThrottleStep);
+            if (next == position) return;
             setState(() {
-              if (!click) position = event;
+              position = next;
             });
           }),
           controller(context).player.stream.duration.listen((event) {
@@ -1160,6 +1168,20 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
 
   @override
   Widget build(BuildContext context) {
+    // Hibiki patch (TODO-1243): isolate the seek bar into its own compositor
+    // layer. Its fill advances every kPositionUiThrottleStep (~5fps), and the
+    // seek bar shares a single picture layer with the two *full-video-area*
+    // gradient scrims + button bars (no RepaintBoundary upstream), so without
+    // this boundary every fill repaint re-records/re-rasters the entire
+    // full-screen controls picture. That per-raster cost scales with window
+    // size -- which is why the position throttle alone fixed small windows but
+    // left maximized / fullscreen on integrated GPUs (HD Graphics 620) pinned
+    // at 100% GPU. The boundary caps the re-raster to the thin seek bar bounds
+    // regardless of window size. See third_party/media_kit_video/PATCHES.md.
+    return RepaintBoundary(child: _buildSeekBarBody(context));
+  }
+
+  Widget _buildSeekBarBody(BuildContext context) {
     return Container(
       clipBehavior: Clip.none,
       margin: _theme(context).seekBarMargin,
@@ -1694,8 +1716,14 @@ class MaterialDesktopPositionIndicatorState
       subscriptions.addAll(
         [
           controller(context).player.stream.position.listen((event) {
+            // Hibiki patch (TODO-1243): the clock text only shows whole seconds,
+            // so quantizing to kPositionUiThrottleStep (which divides 1000ms)
+            // yields the identical string while collapsing ~60fps rebuilds to
+            // ~5fps. Skip setState entirely when the quantized value is unchanged.
+            final Duration next = event.floorTo(kPositionUiThrottleStep);
+            if (next == position) return;
             setState(() {
-              position = event;
+              position = next;
             });
           }),
           controller(context).player.stream.duration.listen((event) {
@@ -1718,14 +1746,19 @@ class MaterialDesktopPositionIndicatorState
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      '${position.label(reference: duration)} / ${duration.label(reference: duration)}',
-      style: widget.style ??
-          TextStyle(
-            height: 1.0,
-            fontSize: 12.0,
-            color: _theme(context).buttonBarButtonColor,
-          ),
+    // Hibiki patch (TODO-1243): isolate the mm:ss clock so its second-boundary
+    // repaint does not re-raster the shared full-screen controls picture (same
+    // integrated-GPU root cause as the seek bar). See PATCHES.md.
+    return RepaintBoundary(
+      child: Text(
+        '${position.label(reference: duration)} / ${duration.label(reference: duration)}',
+        style: widget.style ??
+            TextStyle(
+              height: 1.0,
+              fontSize: 12.0,
+              color: _theme(context).buttonBarButtonColor,
+            ),
+      ),
     );
   }
 }

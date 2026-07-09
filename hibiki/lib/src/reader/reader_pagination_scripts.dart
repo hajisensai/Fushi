@@ -721,6 +721,7 @@ class ReaderPaginationScripts {
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    String revealedKeysJson = '[]',
     int vnRevealSpeed = 0,
     String vnScreenMode = 'block',
     int vnSentencesPerScreen = 1,
@@ -753,6 +754,7 @@ class ReaderPaginationScripts {
         dartPageWidth: dartPageWidth,
         dartPageHeight: dartPageHeight,
         blurImages: blurImages,
+        revealedKeysJson: revealedKeysJson,
       );
     }
     return _paginatedShellScript(
@@ -766,6 +768,7 @@ class ReaderPaginationScripts {
       dartPageWidth: dartPageWidth,
       dartPageHeight: dartPageHeight,
       blurImages: blurImages,
+      revealedKeysJson: revealedKeysJson,
     );
   }
 
@@ -781,6 +784,29 @@ class ReaderPaginationScripts {
   nodeStartOffsets: new WeakMap(),
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
+  },
+  // TODO-1285（图片挤压根因修复）：每页多列(pageColumns>=2)时 multicol 把「turn 轴」
+  // （横排=宽 / 竖排=高）切成 N 个子列，但图片 max 约束过去恒用整 content-box（cs.w/cs.h）
+  // → 整页插图按整页 turn 轴撑开，远超单个子列 → 溢出本列、盖住相邻列正文（用户报「图片
+  // 被挤压」的真相：宽插图横跨两列压字）。修复：turn 轴的图片 max 改用**浏览器 used 子列宽**
+  // getComputedStyle(body).columnWidth（与 getScrollContext 读的同一权威真值：横排=子列宽、
+  // 竖排=子列高），图片正好落进本列不越界；block 轴（横排=高 / 竖排=宽）仍用整 content-box
+  // （每列在 block 轴填满整页），不变。仅当 used 子列明显窄于整轴（真 pageColumns>=2）才夹到
+  // 子列；单列 / 连续 / VN（无 column-count → columnWidth=='auto'→NaN，或子列≈整轴）回退整轴、
+  // 与旧 cs.w/cs.h 字节等价（零回归，不碰 TODO-729/753/792 分页几何）。ratio 恒作用在宽（与旧同）。
+  _imageMaxBox: function() {
+    var cs = this._contentSize();
+    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
+    var vertical = this.isVertical();
+    var turnFull = vertical ? cs.h : cs.w;
+    var usedColW = parseFloat(getComputedStyle(document.body).columnWidth);
+    var multicol = usedColW > 0 && usedColW < turnFull - 1;
+    if (vertical) {
+      var h = multicol ? Math.round(usedColW) : cs.h;
+      return { w: Math.max(1, Math.floor(cs.w * ratio)), h: Math.max(1, h) };
+    }
+    var w = multicol ? usedColW : cs.w;
+    return { w: Math.max(1, Math.floor(w * ratio)), h: Math.max(1, cs.h) };
   },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -873,6 +899,20 @@ class ReaderPaginationScripts {
       var scroll = this.getPagePosition(context);
       var anchor = (context.vertical ? rect.top : rect.left) + scroll;
       this.setPagePosition(context, this.alignToPage(context, anchor));
+    }
+  },
+  // TODO-1349（续·用户复诉「文字少也会去到最开头」）：把仍标记 loading="lazy" 的图强制翻成
+  // eager 触发 load。往前翻到「文字少+图片」章的章末时，尾部整页插图仍是 lazy（非纯图片章
+  // __hoshiImageOnlyChapter=false），离屏 → 永不 load → 0 尺寸被 buildPaginationMetrics
+  // 排除（分页 maxScroll 塌缩到章首）/ 被 scrollToChapterEnd 可见性判据跳过（连续停章首），
+  // 且懒图 __imgReanchorProgress 重锚永不触发（尾图永不进视口 = 鸡生蛋）。这里在章末恢复时
+  // 强制 load 打破鸡生蛋，图尺寸解析后走既有 load 回调重锚（分页 scrollToProgressPaged /
+  // 连续 scrollToChapterEnd）落到含真实尾图几何的章末。仅往前翻到章末(restoreProgress>=0.99)
+  // 触发，正向阅读 / 精确 char 锚不动 → 不回退 TODO-1074 懒加载；幂等（无 lazy 则 no-op）。
+  forceLoadPendingImages: function() {
+    var imgs = document.querySelectorAll('img[loading="lazy"]');
+    for (var i = 0; i < imgs.length; i++) {
+      imgs[i].setAttribute('loading', 'eager');
     }
   },
   notifyRestoreComplete: function() {
@@ -1231,7 +1271,7 @@ class ReaderPaginationScripts {
       console.log('[sasayaki-hl] applySasayakiCues payloadCues=' + n);
     } catch (e) {}
     var cueSegments = this.collectSasayakiCueRanges(cues);
-    // BUG-568：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
+    // BUG-643：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
     // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
     // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 hoshi-sasayaki-cue span，
     // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
@@ -1453,10 +1493,62 @@ class ReaderPaginationScripts {
   /// 大图（含 svg 封面）加 `blurred` 类（CSS 盖 24px 模糊），并装一次性点击监听揭开。
   /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
   /// 处理（见 `_hoshiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
-  static String _sharedInitImages({bool blurImages = false}) {
+  /// TODO-1339 测试钩子：暴露共享图片初始化脚本，让 live-WebView 集成测试能证明
+  /// 图片合并注入的前导插图（`.hoshi-merged-image`）保持 eager（不被挂 lazy），
+  /// 从而 firstContentEdge 计入全部前导图、章首锚不跳过第一张。
+  @visibleForTesting
+  static String initImagesScriptForTesting({
+    bool blurImages = false,
+    String revealedKeysJson = '[]',
+  }) =>
+      _sharedInitImages(
+        blurImages: blurImages,
+        revealedKeysJson: revealedKeysJson,
+      );
+
+  static String _sharedInitImages({
+    bool blurImages = false,
+    String revealedKeysJson = '[]',
+  }) {
+    // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
+    // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
+    // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
+    // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
+    // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
+    // baseURI 解析成绝对 URL）注入成 map，_hoshiBlurImage 命中则跳过重新遮罩。揭开
+    // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
+    // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
     final String blurFn = blurImages
         ? '''
+  var _hoshiRevealedKeys = Object.create(null);
+  (function() {
+    var keys = $revealedKeysJson;
+    if (keys && keys.length) {
+      for (var i = 0; i < keys.length; i++) { _hoshiRevealedKeys[keys[i]] = true; }
+    }
+  })();
+  // TODO-1367：暴露给有声书桥接（audiobook_bridge）——音频跟随读过某张图时把它的稳定
+  // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _hoshiBlurImage
+  // 时命中 key 跳过遮罩，与点击 / 手柄揭开同一套「已揭开不再遮罩」真相源（会话内存活集）。
+  window.__hoshiMarkImageRevealed = function(key) {
+    if (key) _hoshiRevealedKeys[key] = true;
+  };
+  function _hoshiImageRevealKey(element) {
+    if (!element) return '';
+    var raw = '';
+    if (element.tagName === 'IMG') {
+      raw = element.getAttribute('src') || element.src || '';
+    } else if (element.querySelector) {
+      var im = element.querySelector('image');
+      if (im) raw = im.getAttribute('xlink:href') || im.getAttribute('href') || '';
+    }
+    if (!raw) return '';
+    try { return new URL(raw, document.baseURI).href; } catch (e) { return raw; }
+  }
+  window.__hoshiImageRevealKey = _hoshiImageRevealKey;
   function _hoshiBlurImage(element) {
+    var key = _hoshiImageRevealKey(element);
+    if (key && _hoshiRevealedKeys[key]) return;
     element.classList.add('blurred');
   }'''
         : '';
@@ -1519,10 +1611,32 @@ $blurFn
     }
     return false;
   }
+  // TODO-1349：纯图片章（正文无任何可匹配文本、仅由整页封面/插图构成）的所有 <img> 都是
+  // 结构性内容。若挂 loading="lazy"，离屏图（分页远列 / 连续模式下方）永不进视口懒加载
+  // margin → 永不 load → 保持 0 尺寸 → 被 buildPaginationMetrics 的 first/lastContentEdge
+  // 排除 → 章末落点 maxScroll(contentLastPageScroll) 塌缩到章首 → 往前翻到本章停在封面（第
+  // 一张图）而非最后一张图（用户报「从目录往前翻会去到封面」在分页模式的根因；连续模式另由
+  // scrollToChapterEnd 覆盖，两墙互补）。与 gaiji / 合并前导插图同理保持 eager：无条件 load、
+  // 真实撑开尺寸，metrics 计入全部图。ttuRegex 单字符匹配（无 /g，test 无状态）在首个可匹配
+  // 字符即短路 → 文本章几乎零开销、只对纯图片章全扫（文本极少）。图文混排章仍 lazy（不回退
+  // TODO-1074 懒加载优化）；非图片章（有文本）完全 no-op（向后兼容）。
+  var __hoshiImageOnlyChapter =
+      !window.hoshiReader.ttuRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
+    // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.hoshi-merged-image`
+    // 内，webview.part.dart _injectMergedChapterImages）是章首**结构性**内容——章首落点
+    // (restoreProgress/restoreToCharOffset <=0 走 minScroll) 依赖 buildPaginationMetrics
+    // 的 firstContentEdge，而 firstContentEdge 只计入**有非零尺寸**的媒体（0 尺寸被跳过）。
+    // 若给这些前导插图挂 loading="lazy"，离屏（离首个文本落点较远的**第一张**）永不进入
+    // 懒加载视口 margin → 永不 load → 保持 0 尺寸 → 被 firstContentEdge 排除 → 章首锚落到
+    // 最近的已加载图（**最后一张**）跳过第一张 =「两张连续图只有最后一张合并进章节」。
+    // 故与 gaiji 同理保持 eager：无条件 load、真实撑开尺寸，firstContentEdge 计入全部前导图，
+    // 章首锚落到第一张。仅影响合并书的少量前导插图，不回退 TODO-1074 普通图懒加载。
+    var isMergedLeadImg = img.closest && img.closest('.hoshi-merged-image');
     // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
-    if (!isGaiji) {
+    // TODO-1349：纯图片章的图同理 eager（见上 __hoshiImageOnlyChapter 长注释）。
+    if (!isGaiji && !isMergedLeadImg && !__hoshiImageOnlyChapter) {
       img.setAttribute('loading', 'lazy');
     }
     img.setAttribute('decoding', 'async');
@@ -1534,6 +1648,25 @@ $blurFn
         if (_hoshiClassifyBlockImg(img)) {
           var r = window.hoshiReader;
           if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
+          // TODO-1229 案B：懒加载 block 图 load 后整章几何后移，冻结的 restore scrollTop
+          // 错一行（Chromium 只在 scrollTop=0 自愈）。若最近落点是章首/章末粗粒度语义
+          // 且其后无用户翻页(__imgReanchorProgress 非 null)，用刚失效的 metrics 重建几何
+          // 后重放 scrollToProgressPaged 语义重锚。属程序化滚动，不污染 TODO-798
+          // userDriven 因果门；有用户输入(paginate 已清资格)则不动。
+          if (r && r.__imgReanchorProgress != null) {
+            // TODO-1349（续）：判别连续 vs 分页用 scrollToChapterEnd（连续 shell 独有）——
+            // scrollToProgressPaged 在 _sharedJs 里两 shell 都有，不能用它判别（否则连续误走
+            // 分页分支，getScrollContext.pageSize 非分页量纲 → 不重锚，停章首）。
+            if (typeof r.scrollToChapterEnd === 'function') {
+              // 连续模式：尾部懒图 load 后重锚到章末；章首(<=0)不重锚——内容向下增长不移动 scroll 0。
+              if (r.__imgReanchorProgress >= 0.99) r.scrollToChapterEnd();
+            } else if (typeof r.scrollToProgressPaged === 'function') {
+              var rctx = r.getScrollContext();
+              if (rctx && rctx.pageSize > 0) {
+                r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
+              }
+            }
+          }
         }
       });
     }
@@ -1565,6 +1698,7 @@ if (document.readyState === 'complete') {
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    String revealedKeysJson = '[]',
   }) {
     // BUG-162: 优先精确字符偏移恢复（restoreToCharOffset），无精确锚（旧存档）才
     // 回退粗粒度 restoreProgress；书签/fragment 跳转仍走 jumpToFragment。
@@ -1583,7 +1717,8 @@ if (document.readyState === 'complete') {
     const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
     const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
 
-    final String initImages = _sharedInitImages(blurImages: blurImages);
+    final String initImages = _sharedInitImages(
+        blurImages: blurImages, revealedKeysJson: revealedKeysJson);
 
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
@@ -1652,7 +1787,39 @@ $_sharedJs
     var fontFloor = parseFloat(cs.fontSize) || 1;
     contentBox = Math.max(fontFloor, contentBox);
     var gap = parseFloat(cs.columnGap) || 0;
-    var pageStep = contentBox + gap;
+    // TODO-1285（每页列数根因修复）：一页含 N 列（CSS column-count），页步 =
+    // N × 真实列周期(used column-width + gap)。N 从 getComputedStyle(body).columnCount
+    // 直接读——与上面读 column-width/column-gap 同一权威真值源（CSS 由
+    // reader_content_styles 按 pageColumns 成对发 column-count:N + 子列宽 column-width），
+    // 无需注入 state、绝不与 CSS 失步。pageColumns=0（自动/无 column-count）→ columnCount
+    // = 'auto' → parseInt → NaN → columns=1 → pageStep = contentBox + gap，与旧单列字节
+    // 等价（零行为变化）。子列宽 contentBox 由浏览器亚像素解析，N×(contentBox+gap) 恒等
+    // 整页 content-box + gap，翻页网格仍落真实列边界，无 TODO-753/792 亚像素漂移。
+    // TODO-1285 健壮化根因修复（「相邻页/上下页内容全露出来」复诉）：pageStep 曾直接乘
+    // parseInt(cs.columnCount)，若回读到有效数字才对；但 column-count 与 column-width 并存时，
+    // 个别 WebView 会把 getComputedStyle(body).columnCount 回读成 'auto'（parseInt→NaN）。
+    // 旧兜底 `if(!(columns>0)) columns=1` 此时把 columns 塌成 1 → pageStep = contentBox+gap
+    // = **单列步长**，而 CSS 仍渲染 N 列 → 每次翻页只前进一列、视口内 N−1 列与上一页重叠
+    // 露出（正是复诉的「上一页和下一页内容全露出来」）。根因：pageStep 不该脆弱依赖单个
+    // columnCount 回读。columnCount 读不到有效数字时**绝不塌成 1**，改从真实几何反推 N——
+    // 一页恒等于整 content-box（turn 轴），故 N = round((整 content-box + gap)/(used 子列宽 +
+    // gap))，代数上 == 名义列数且不依赖 columnCount。整 content-box 从 turn 轴亚像素读：横排
+    // getBoundingClientRect().width−左右 padding（分数精度，避开 TODO-753 的整数 clientWidth），
+    // 竖排 this.viewportHeight−上下 padding（与上面竖排 contentBox 兜底同源）。columnCount 正常
+    // 回读为数字时仍走原快路径、字节不变（Chromium/WebView2 实测回读 == N，零回归）；pageColumns=0
+    // 单列(columnCount='auto')反推得 N=1、pageStep 退回 contentBox+gap，与旧单列字节等价。不改
+    // contentBox（仍是 used columnWidth），TODO-753/792 亚像素列周期原样保留。
+    var columns = parseInt(cs.columnCount, 10);
+    if (!(columns > 0)) {
+      var fullTurnBox = vertical
+        ? ((this.viewportHeight || scrollEl.clientHeight || window.innerHeight)
+            - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0))
+        : ((scrollEl.getBoundingClientRect().width || scrollEl.clientWidth
+              || this.pageWidth || window.innerWidth)
+            - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0));
+      columns = Math.max(1, Math.round((fullTurnBox + gap) / (contentBox + gap)));
+    }
+    var pageStep = columns * (contentBox + gap);
     // TODO-792（竖排「文字向下偏移」根因修复·已下沉到 CSS）：曾一度在这里给竖排 pageStep += O
     // 补偿「列被 V+O 容器拉伸」造成的 realPitch>pageStep，但那只治页间累积、治不了页内逐列斜置
     // （斜置同源于列拉伸）。根因修法是让多列容器 body 高 == 纯 V（reader_content_styles.dart 的
@@ -1920,7 +2087,15 @@ $_sharedJs
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var context = this.getScrollContext();
+    // TODO-1349（续）：往前翻到章末(>=0.99)先强制 load 仍 lazy 的尾图（打破「尾图离屏永不
+    // load → maxScroll 塌缩 → 停章首 → 尾图永不进视口」鸡生蛋，见 forceLoadPendingImages）；
+    // 图 load 后 __imgReanchorProgress 回调按含真实尾图几何的 maxScroll 重锚。
+    if (progress >= 0.99) this.forceLoadPendingImages();
     this.scrollToProgressPaged(context, progress);
+    // TODO-1229 案B：记录本次是章首(0)/章末(>=0.99)粗粒度 progress 落点，允许懒加载
+    // block 图 load 后（整章几何后移、冻结 scrollTop 错一行）语义重锚。中段 progress 与
+    // 精确 char 锚不登记（重锚到粗 progress 反更差）。任一用户翻页(paginate)清资格。
+    this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99) ? progress : null;
     var pos = this.getPagePosition(context);
     var self = this;
     setTimeout(function() {
@@ -1939,7 +2114,13 @@ $_sharedJs
     // BUG-492 (TODO-1053 Bug A) 越界兜底：旧脏收藏 charAnchor 属于相邻错章，恢复加载
     // 本章后可能超本章字符总数 → scrollToCharOffset 静默 no-op 停在页 1 附近。越界回退
     // 章首（scrollToProgressPaged 0），比静默停错位可诊断。范围内走精确定位，行为不变。
-    if (charOffset < 0 || !this.charOffsetInRange(charOffset)) {
+    // TODO-1229 (BUG-594)：charOffset 0 == 章节绝对起点（0 字已读）。若本章以插图页开篇，
+    // 首个文本字符位于插图之后的下一页，而 scrollToCharOffset 只走文本节点（createWalker）
+    // 会落到「首个文本页」跳过插图页。章首语义必须与 restoreProgress(0) 一致——scrollToProgressPaged(0)
+    // 走 minScroll，buildPaginationMetrics 的 firstContentEdge 已含前导 block 图，落点即插图页。
+    // 故 <=0 一律走 minScroll，绝不越过章首插图（跨章 renav / _syncPageSize 宽变重导以 charOffset 0
+    // 重锚时不再跳页）。>0 的精确锚行为不变。
+    if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {
       this.scrollToProgressPaged(context, 0);
     } else {
       this.scrollToCharOffset(charOffset);
@@ -1976,6 +2157,9 @@ $_sharedJs
     return true;
   },
   paginate: function(direction) {
+    // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
+    // 拽回章首/章末（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
+    this.__imgReanchorProgress = null;
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return "limit";
     var currentScroll = this.getPagePosition(context);
@@ -2055,6 +2239,26 @@ $_sharedJs
     return baseOffset + localChars;
   },
   scrollToCharOffset: function(charOffset, hintScroll) {
+    // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章首区（fvco 归 0：可能是「用户在前导
+    // 插图页」也可能是「用户在首文本页、char0 正在本页顶」——两者语义不同，唯有 hint 能判开）。
+    // 本函数只走文本节点（createWalker=SHOW_TEXT），下方 >0 逻辑对 charOffset 0 会算出**首个文本
+    // 字符所在页**（前导插图之后）→ 重锚越过插图。旧的 ±1 page-stable hint 只在「前导内容恰占 1
+    // 页」时兜住（charPage 与 origPage 差 1）；前导跨 ≥2 页（如扉页图+标题页、多张图）时差 ≥2、
+    // ±1 失效 → 越过整段前导跳到首文本（headless 证 2 张前导图 jumped=2）。根治：<=0 时**保住用户
+    // 当前页**（有 hint 走 origPage；无 hint 落 minScroll=章首含前导图），绝不按字符页跳——重锚本就
+    // 该保位，char0 的文本页不是用户所在页。>0 精确锚 + ±1 hint 逻辑不变。裸落章首会把「在首文本
+    // 页」的用户弹回插图页，故必须走 origPage（headless midChapter 守卫）。连续版无 hint，见那里
+    // 的 <=0→scrollToChapterStart 归一。
+    if (charOffset <= 0) {
+      var ctx0 = this.getScrollContext();
+      if (ctx0.pageSize > 0 && hintScroll !== undefined) {
+        this.setPagePosition(
+          ctx0, Math.round(hintScroll / ctx0.pageSize) * ctx0.pageSize);
+      } else {
+        this.setPagePosition(ctx0, this.contentFirstPageScroll(ctx0));
+      }
+      return;
+    }
     var walker = this.createWalker();
     var node;
     var runningOffset = 0;
@@ -2348,9 +2552,9 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   window.hoshiReader.pageHeight = pageHeight;
   window.hoshiReader.viewportHeight = viewportHeight;
   window.hoshiReader.pageWidth = pageWidth;
@@ -2393,9 +2597,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   this.pageHeight = newHeight;
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
@@ -2430,6 +2634,7 @@ $_sharedInitBoot
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    String revealedKeysJson = '[]',
   }) {
     // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。BUG-461：收藏句跳转带句尾
     // 偏移（initialCharOffsetEnd>句首）时透传给 restoreToCharOffset 做整句区间对齐。
@@ -2448,7 +2653,8 @@ $_sharedInitBoot
 
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
-    final String initImages = _sharedInitImages(blurImages: blurImages);
+    final String initImages = _sharedInitImages(
+        blurImages: blurImages, revealedKeysJson: revealedKeysJson);
 
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
@@ -2467,6 +2673,50 @@ $_sharedJs
     document.documentElement.scrollLeft = 0;
     document.body.scrollTop = 0;
     document.body.scrollLeft = 0;
+  },
+  // TODO-1349：连续模式「章末」落点——把正文最后一个可见内容元素对齐到滚动轴末端。
+  // 往前翻上一章走 restoreProgress(0.99)（章尾语义，与分页 contentLastPageScroll=maxScroll
+  // 对称）。但 scrollToProgressContinuous 只走文本节点（findNodeAtProgress）：纯图片/封面章
+  // 无文本节点 → 返 null → 不滚动 → 停在章首（=封面图），而非封面章节的最后部分（用户报
+  // 「从目录往前翻会去到封面」的根因）。这里用最后一个可见内容元素 scrollIntoView(block:'end')：
+  // block/inline 轴由 writing-mode 自动映射（横排 block=竖直落到内容底；竖排 vertical-rl
+  // block=横向 RTL 落到最左列 = 章末），故横排/竖排统一，且天然含尾部插图。无可见内容元素时
+  // 兜底滚到滚动轴物理末端（横排底、竖排 rl 最左）。
+  scrollToChapterEnd: function() {
+    var body = document.body;
+    var last = body.lastElementChild;
+    while (last) {
+      var tag = last.tagName;
+      var rect = last.getBoundingClientRect();
+      var visible = rect.width > 0 || rect.height > 0;
+      if (tag !== 'SCRIPT' && tag !== 'STYLE' && tag !== 'TEMPLATE' && visible) {
+        break;
+      }
+      last = last.previousElementSibling;
+    }
+    if (last) {
+      last.scrollIntoView({block: 'end', inline: 'nearest', behavior: 'instant'});
+    } else {
+      this._writeContinuousScroll(this.isVertical() ? -1e9 : 1e9);
+    }
+  },
+  // TODO-1229 (BUG-594 第 6 次复诉·续)：连续模式重锚保位读/写。连续无分页的
+  // getScrollContext/getPagePosition（那是分页专属），滚动位就是内容轴 raw scroll：横排
+  // 走 scrollTop、竖排走 window.scrollX（与 paginate 的轴判据同源）。重锚在 charOffset<=0
+  // （章首区，fvco 二义）时用它保住用户当前滚动位，不弹回章顶前导。
+  _readContinuousScroll: function() {
+    var root = document.scrollingElement || document.documentElement;
+    return this.isVertical() ? window.scrollX : root.scrollTop;
+  },
+  _writeContinuousScroll: function(pos) {
+    if (this.isVertical()) {
+      window.scrollTo(pos, 0);
+    } else {
+      var root = document.scrollingElement || document.documentElement;
+      root.scrollTop = pos;
+      document.documentElement.scrollTop = pos;
+      document.body.scrollTop = pos;
+    }
   },
   // TODO-825：连续模式有声书逐句高亮跟随滚动用 behavior:'smooth' 平滑动画（用户要求恢复
   // 动画，禁止砍成 instant——见已撤的 TODO-803）。「滚动结束闪一下屏幕」的根因不是 smooth
@@ -2525,6 +2775,7 @@ $_sharedJs
     await document.fonts.ready;
     var self = this;
     if (progress <= 0) {
+      this.__imgReanchorProgress = null;
       this.scrollToChapterStart();
       setTimeout(function() {
         self.scrollToChapterStart();
@@ -2532,6 +2783,25 @@ $_sharedJs
       }, 16);
       return;
     }
+    // TODO-1349：progress>=0.99 = 章末（往前翻到上一章的落点），与分页版
+    // scrollToProgressPaged 的 `progress>=0.99 → contentLastPageScroll` 对称。走
+    // scrollToChapterEnd 落到正文末端（含纯图片/封面章、尾部插图），不再因
+    // scrollToProgressContinuous 只走文本节点而在图片章停回章首（封面）。双发一次
+    // 再确认对齐（防恢复后自发 reflow 把落点冲回，与 scrollToChapterStart 同构）。
+    if (progress >= 0.99) {
+      // TODO-1349（续）：登记章末重锚资格 + 强制 load 尾部懒图（打破鸡生蛋，见
+      // forceLoadPendingImages）。16ms 双发太快等不到图 load，故尾图 load 后由
+      // _sharedInitImages 的 load 回调重锚 scrollToChapterEnd（连续分支）落到含尾图的真实章末。
+      this.__imgReanchorProgress = progress;
+      this.forceLoadPendingImages();
+      this.scrollToChapterEnd();
+      setTimeout(function() {
+        self.scrollToChapterEnd();
+        self.notifyRestoreComplete();
+      }, 16);
+      return;
+    }
+    this.__imgReanchorProgress = null;
     this.scrollToProgressContinuous(progress);
     setTimeout(function() {
       setTimeout(function() { self.notifyRestoreComplete(); }, 16);
@@ -2553,6 +2823,9 @@ $_sharedJs
     return true;
   },
   paginate: function(direction) {
+    // TODO-1349（续）：用户翻页即放弃章末尾图 late-load 重锚资格（镜像分页 paginate），
+    // 避免尾图 load 回调把用户已翻走的位置拽回章末。
+    this.__imgReanchorProgress = null;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var before = vertical ? window.scrollX : root.scrollTop;
@@ -2647,7 +2920,29 @@ $_sharedJs
   // 多滚把句尾拉进可见区底沿（continuousFavoriteJumpScrollForTesting 的 JS 实现，整句完整
   // 可见、不被阅读底栏切尾）。不传 endCharOffset（setChromeInsets / 缩放 / 换样式重锚）
   // 时行为与旧版完全一致（句首贴顶，单点锚）。
-  scrollToCharOffset: function(charOffset, endCharOffset) {
+  scrollToCharOffset: function(charOffset, endCharOffset, hintScroll) {
+    // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章节绝对起点区（fvco 归 0）。本函数只走
+    // 文本节点（collapsedRangeAtCharOffset→createWalker=SHOW_TEXT），charOffset 0 的 range 落
+    // 在**首个文本字符**——若本章以扉页插图开篇，该字符在插图之后，滚到它会跳过前导插图。
+    // setChromeInsets / 缩放(commitUiScaleReanchor) / 换样式(commitStyleReanchor) 三条重锚都以
+    // getFirstVisibleCharOffset()==0 裸调本函数（restoreToCharOffset 的 <=0 守卫只拦 restore 入口、
+    // 拦不到这些 reanchor）→ 初始 restore 落插图页后被它们二次跳到首文本（残留第二跳）。
+    //
+    // 续修：fvco==0 二义——「用户在章顶前导插图」与「用户在首文本页（char0 正在视口首边）」都
+    // 报 0，唯有重锚前采到的滚动位 hintScroll 能判开。裸 scrollToChapterStart 修好了「章顶被弹到
+    // 首文本」却把「停在首文本页」的用户弹回章顶前导（headless continuous firstTextPage 守卫）。
+    // 故 <=0 时：有正 hint（用户已滚离章顶）→ 保住当前滚动位（重锚只该保位、不移动用户，与分页
+    // 版「<=0 保住当前页」同构）；hint 缺席/<=0（章顶前导页 or Dart 直接 scrollToCharOffset(0) 求
+    // 章首）→ scrollToChapterStart 滚到顶（含前导图，与 restoreProgress(0) 语义一致）。charOffset>0
+    // 精确锚（含收藏句区间 endCharOffset）不变。
+    if (charOffset <= 0) {
+      if (typeof hintScroll === 'number' && hintScroll > 0) {
+        this._writeContinuousScroll(hintScroll);
+      } else {
+        this.scrollToChapterStart();
+      }
+      return;
+    }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
     var rect = startRange.getBoundingClientRect();
@@ -2703,7 +2998,9 @@ $_sharedJs
   restoreToCharOffset: async function(charOffset, endCharOffset) {
     await document.fonts.ready;
     var self = this;
-    if (charOffset < 0) { this.scrollToChapterStart(); }
+    // TODO-1229 (BUG-594)：charOffset 0 == 章首（0 字已读）。连续模式章首插图同理不得越过，
+    // scrollToChapterStart 滚到顶（含前导图），与 restoreProgress 章首语义一致。>0 走精确锚不变。
+    if (charOffset <= 0) { this.scrollToChapterStart(); }
     else {
       // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
       // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
@@ -2729,6 +3026,8 @@ $_sharedJs
     // failed node lookup can never leave the flag stuck. (HBK-REG-004)
     var inFlight = this._reanchorPending === true;
     var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
+    // TODO-1229：采样重锚前滚动位（<=0 章首区二义时保住当前位，不弹回章顶前导）。
+    var scrollBefore = inFlight ? 0 : this._readContinuousScroll();
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     if (inFlight || charOffset < 0) return;
@@ -2736,7 +3035,7 @@ $_sharedJs
     var self = this;
     requestAnimationFrame(function() {
       try {
-        self.scrollToCharOffset(charOffset);
+        self.scrollToCharOffset(charOffset, undefined, scrollBefore);
       } finally {
         self._reanchorPending = false;
       }
@@ -2761,6 +3060,8 @@ $_sharedJs
     if (charOffset < 0) return -1;
     this._reanchorPending = true;
     this._uiScaleReanchorOffset = charOffset;
+    // TODO-1229：暂存重锚前滚动位，commit 时用作 <=0 章首区保位 hint。
+    this._uiScaleReanchorScroll = this._readContinuousScroll();
     return charOffset;
   },
   commitUiScaleReanchor: function() {
@@ -2769,9 +3070,10 @@ $_sharedJs
     var off = this._uiScaleReanchorOffset;
     if (off === undefined || off < 0) return false;
     try {
-      this.scrollToCharOffset(off);
+      this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll);
     } finally {
       this._uiScaleReanchorOffset = undefined;
+      this._uiScaleReanchorScroll = undefined;
       this._reanchorPending = false;
     }
     return true;
@@ -2783,10 +3085,9 @@ $_sharedJs
         ''' 原始串不插值），故每个 shell 的
   // initialize 把比值存到 this._imageWidthRatio，本 helper 读它，begin/reanchor 共用。
   _resetImageMaxVars: function() {
-    var cs = this._contentSize();
-    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
-    document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * ratio)) + 'px');
-    document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+    var box = this._imageMaxBox();
+    document.documentElement.style.setProperty('--hoshi-image-max-width', box.w + 'px');
+    document.documentElement.style.setProperty('--hoshi-image-max-height', box.h + 'px');
   },
   // TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的**第一阶段**，由 Dart 在换样式那一
   // 刻调用。与 beginUiScaleReanchor 区别：那对只采锚滚回**不换 CSS**（缩放重建用），改字号
@@ -2806,10 +3107,9 @@ $_sharedJs
       return -1;
     }
     var charOffset = this.getFirstVisibleCharOffset();
-    // 分页模式有 page-stable hint（getPagePosition），连续模式无 hint（undefined）。
-    var hint = (typeof this.getPagePosition === 'function' && typeof this.getScrollContext === 'function')
-      ? this.getPagePosition(this.getScrollContext())
-      : undefined;
+    // TODO-1229：连续模式采样 raw scroll 作 <=0 章首区保位 hint（getPagePosition 是分页专属，
+    // 连续用内容轴 scroll）。charOffset>0 精确锚不用 hint，故仅 <=0 二义时消歧、不影响正段落。
+    var hint = this._readContinuousScroll();
     if (styleEl) styleEl.textContent = css;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
     this._resetImageMaxVars();
@@ -2821,13 +3121,14 @@ $_sharedJs
   },
   // TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 _reanchorPending。
   // 仅当 beginStyleReanchor 成功暂存了有效锚时才生效，否则整体 no-op（绝不误清别处的旗，
-  // finally 只在本入口确实拥有旗时执行）。分页传 hint 保 ±1 列原页，连续 hint undefined。
+  // finally 只在本入口确实拥有旗时执行）。TODO-1229：连续 hint=raw scroll，作 3 参 hintScroll
+  // 传入（仅 <=0 章首区保位用；off>0 精确锚忽略，endCharOffset 传 undefined 保单点锚语义）。
   commitStyleReanchor: function() {
     var off = this._styleReanchorOffset;
     if (off === undefined || off < 0) return false;
     var hint = this._styleReanchorHint;
     try {
-      this.scrollToCharOffset(off, hint);
+      this.scrollToCharOffset(off, undefined, hint);
     } finally {
       this._styleReanchorOffset = undefined;
       this._styleReanchorHint = undefined;
@@ -2855,9 +3156,9 @@ $_sharedInitViewport
   var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
   var contHeight = dartH || window.innerHeight;
   document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
 $initImages
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
@@ -2885,9 +3186,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   if (inFlight || progress <= 0) return;
   this._reanchorPending = true;
   var self = this;
@@ -2920,6 +3221,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   function _bEnd(x, y, src) {
     if (!hasDown) return;
     hasDown = false;
+    // TODO-1317: a mobile long-press drag-select owns this touch; never cross
+    // chapters from a selection gesture.
+    if (window.__hoshiTextSelectDragActive) return;
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;

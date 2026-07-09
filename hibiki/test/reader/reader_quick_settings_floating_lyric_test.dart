@@ -50,11 +50,15 @@ void main() {
 
     test('desktop failure shows the generic hint, not a false permission hint',
         () {
-      final String src = readReaderPageSource();
-      // Android failure = overlay permission; desktop failure = window
-      // creation. Both branches must exist so desktop never shows the
-      // misleading overlay-permission message.
-      expect(src.contains('Platform.isAndroid'), isTrue);
+      // TODO-1227: the failure-hint selection moved out of the reader page into
+      // the shared pure helper floating_lyric_hint.dart (floatingLyricFailureHint).
+      // Assert the branching lives there: Android failure = overlay permission,
+      // desktop (!isAndroid) failure = generic unavailable hint, so desktop never
+      // shows the misleading overlay-permission message.
+      final String src = File(
+        'lib/src/utils/misc/floating_lyric_hint.dart',
+      ).readAsStringSync();
+      expect(src.contains('isAndroid'), isTrue);
       expect(src.contains('floating_lyric_permission_hint'), isTrue);
       expect(src.contains('floating_lyric_unavailable_hint'), isTrue);
     });

@@ -312,6 +312,37 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // TODO-1247：把播放页内 mpv 画质组里的其余布尔项平移到首页（纯 pref，下次开
+          // 视频 applyMpvConfig 应用），与播放页内设置同源，消除「首页改不了」。
+          _videoMpvSwitchItem(
+            id: 'video.quality.dither',
+            title: t.video_setting_mpv_dither,
+            icon: Icons.grain_outlined,
+            read: (VideoMpvConfig c) => c.dither,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(dither: v),
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.interpolation',
+            title: t.video_setting_mpv_interpolation,
+            icon: Icons.animation_outlined,
+            read: (VideoMpvConfig c) => c.interpolation,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(interpolation: v),
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.deinterlace',
+            title: t.video_setting_mpv_deinterlace,
+            icon: Icons.view_stream_outlined,
+            read: (VideoMpvConfig c) => c.deinterlace,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(deinterlace: v),
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.correct_downscale',
+            title: t.video_setting_mpv_correct_downscale,
+            icon: Icons.photo_size_select_small_outlined,
+            read: (VideoMpvConfig c) => c.correctDownscaling,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(correctDownscaling: v),
+          ),
           // 已知问题说明（TODO-1116/1119 / BUG-545）：Windows 渲染链在高显卡占用时
           // 可能黑屏闪烁；hwdec 真修属 device-gated 后续项，本轮先在画质组内明示，
           // 并指向上面真实存在的画质控件降低 GPU 负载。仅 Windows 展示。
@@ -319,6 +350,190 @@ SettingsDestination buildVideoDestination() {
             id: 'video.quality.windows_black_flash_notice',
             visible: (SettingsContext settingsContext) => isWindowsPlatform,
             builder: _buildWindowsBlackFlashNotice,
+          ),
+        ],
+      ),
+      // TODO-1247：把播放页内 mpv「画面几何 / 色彩均衡 / 音频」详情平移到首页，读写同一
+      // videoMpvConfig（纯 pref，下次开视频 applyMpvConfig 应用），与播放页内设置同源。
+      SettingsSection(
+        title: t.video_setting_mpv_group_geometry,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<int>(
+            id: 'video.geometry.rotate',
+            title: t.video_setting_mpv_rotate,
+            icon: Icons.screen_rotation_outlined,
+            options: const <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(value: 0, label: '0°'),
+              SettingsSegmentOption<int>(value: 90, label: '90°'),
+              SettingsSegmentOption<int>(value: 180, label: '180°'),
+              SettingsSegmentOption<int>(value: 270, label: '270°'),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                VideoMpvConfig.decode(
+              settingsContext.appModel.videoMpvConfig,
+            ).videoRotate,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await _commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(videoRotate: value),
+              );
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.geometry.aspect',
+            title: t.video_setting_mpv_aspect,
+            icon: Icons.aspect_ratio_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '-1',
+                label: t.video_setting_mpv_aspect_auto,
+              ),
+              const SettingsSegmentOption<String>(value: '16:9', label: '16:9'),
+              const SettingsSegmentOption<String>(value: '4:3', label: '4:3'),
+              const SettingsSegmentOption<String>(
+                value: '2.35:1',
+                label: '2.35:1',
+              ),
+              const SettingsSegmentOption<String>(value: '1:1', label: '1:1'),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                VideoMpvConfig.decode(
+              settingsContext.appModel.videoMpvConfig,
+            ).aspectOverride,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await _commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(aspectOverride: value),
+              );
+            },
+          ),
+          SettingsSliderItem(
+            id: 'video.geometry.zoom',
+            title: t.video_setting_mpv_zoom,
+            icon: Icons.zoom_out_map_outlined,
+            min: -2,
+            max: 2,
+            divisions: 40,
+            label: (double v) => v.toStringAsFixed(2),
+            value: (SettingsContext settingsContext) => VideoMpvConfig.decode(
+              settingsContext.appModel.videoMpvConfig,
+            ).videoZoom.clamp(-2.0, 2.0),
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await _commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(videoZoom: v),
+              );
+            },
+            onChanged: (SettingsContext settingsContext, double v) {},
+          ),
+          SettingsSliderItem(
+            id: 'video.geometry.panscan',
+            title: t.video_setting_mpv_panscan,
+            icon: Icons.crop_outlined,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            label: (double v) => v.toStringAsFixed(2),
+            value: (SettingsContext settingsContext) => VideoMpvConfig.decode(
+              settingsContext.appModel.videoMpvConfig,
+            ).panscan.clamp(0.0, 1.0),
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await _commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(panscan: v),
+              );
+            },
+            onChanged: (SettingsContext settingsContext, double v) {},
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.video_setting_mpv_group_color,
+        items: <SettingsItem>[
+          _videoMpvColorSliderItem(
+            id: 'video.color.brightness',
+            title: t.video_setting_mpv_brightness,
+            icon: Icons.brightness_6_outlined,
+            read: (VideoMpvConfig c) => c.brightness,
+            write: (VideoMpvConfig c, int v) => c.copyWith(brightness: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.contrast',
+            title: t.video_setting_mpv_contrast,
+            icon: Icons.contrast_outlined,
+            read: (VideoMpvConfig c) => c.contrast,
+            write: (VideoMpvConfig c, int v) => c.copyWith(contrast: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.saturation',
+            title: t.video_setting_mpv_saturation,
+            icon: Icons.invert_colors_outlined,
+            read: (VideoMpvConfig c) => c.saturation,
+            write: (VideoMpvConfig c, int v) => c.copyWith(saturation: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.gamma',
+            title: t.video_setting_mpv_gamma,
+            icon: Icons.tonality_outlined,
+            read: (VideoMpvConfig c) => c.gamma,
+            write: (VideoMpvConfig c, int v) => c.copyWith(gamma: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.hue',
+            title: t.video_setting_mpv_hue,
+            icon: Icons.colorize_outlined,
+            read: (VideoMpvConfig c) => c.hue,
+            write: (VideoMpvConfig c, int v) => c.copyWith(hue: v),
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.video_setting_mpv_group_audio,
+        items: <SettingsItem>[
+          _videoMpvSwitchItem(
+            id: 'video.audio.pitch',
+            title: t.video_setting_mpv_pitch,
+            icon: Icons.graphic_eq_outlined,
+            read: (VideoMpvConfig c) => c.audioPitchCorrection,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(audioPitchCorrection: v),
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.audio.channels',
+            title: t.video_setting_mpv_channels,
+            icon: Icons.surround_sound_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto-safe',
+                label: t.video_setting_mpv_channels_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'stereo',
+                label: t.video_setting_mpv_channels_stereo,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'mono',
+                label: t.video_setting_mpv_channels_mono,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                VideoMpvConfig.decode(
+              settingsContext.appModel.videoMpvConfig,
+            ).audioChannels,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await _commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(audioChannels: value),
+              );
+            },
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.audio.normalize_downmix',
+            title: t.video_setting_mpv_normalize,
+            icon: Icons.volume_up_outlined,
+            read: (VideoMpvConfig c) => c.normalizeDownmix,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(normalizeDownmix: v),
           ),
         ],
       ),
@@ -348,6 +563,20 @@ SettingsDestination buildVideoDestination() {
               VideoSubtitleObscureMode mode,
             ) async {
               await settingsContext.appModel.setVideoSubtitleObscureMode(mode);
+            },
+          ),
+          // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref，
+          // 下次开视频生效），与播放页内字幕设置同源。
+          SettingsSwitchItem(
+            id: 'video.subtitle.respect_ass_style',
+            title: t.video_setting_subtitle_respect_ass,
+            subtitle: t.video_setting_subtitle_respect_ass_hint,
+            icon: Icons.style_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoRespectAssStyle,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoRespectAssStyle(value);
+              settingsContext.refresh();
             },
           ),
           // 字幕外观（字号/字重/阴影/背景不透明度/位置）全序列化进 videoSubtitleStyle
@@ -616,6 +845,63 @@ Future<void> _commitVideoMpvConfig(
     VideoMpvConfig.encode(mutate(current)),
   );
   settingsContext.refresh();
+}
+
+/// TODO-1247：把播放页内 mpv 详情里的布尔开关平移到首页，读写同一
+/// [AppModel.videoMpvConfig]（纯 pref，下次开视频时 applyMpvConfig 应用）——与播放页内
+/// 设置同源，消除「首页改不了对应设置」。
+SettingsSwitchItem _videoMpvSwitchItem({
+  required String id,
+  required String title,
+  required IconData icon,
+  required bool Function(VideoMpvConfig config) read,
+  required VideoMpvConfig Function(VideoMpvConfig config, bool value) write,
+}) {
+  return SettingsSwitchItem(
+    id: id,
+    title: title,
+    icon: icon,
+    value: (SettingsContext settingsContext) => read(
+      VideoMpvConfig.decode(settingsContext.appModel.videoMpvConfig),
+    ),
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      await _commitVideoMpvConfig(
+        settingsContext,
+        (VideoMpvConfig config) => write(config, value),
+      );
+    },
+  );
+}
+
+/// TODO-1247：mpv 色彩均衡滑条（-100..100 整数）平移到首页；与播放页内详情同源
+/// （落 [AppModel.videoMpvConfig]，下次开视频应用）。松手（onChangeEnd）才落盘避免每
+/// tick 写 DB。
+SettingsSliderItem _videoMpvColorSliderItem({
+  required String id,
+  required String title,
+  required IconData icon,
+  required int Function(VideoMpvConfig config) read,
+  required VideoMpvConfig Function(VideoMpvConfig config, int value) write,
+}) {
+  return SettingsSliderItem(
+    id: id,
+    title: title,
+    icon: icon,
+    min: -100,
+    max: 100,
+    divisions: 200,
+    label: (double v) => v.round().toString(),
+    value: (SettingsContext settingsContext) => read(
+      VideoMpvConfig.decode(settingsContext.appModel.videoMpvConfig),
+    ).toDouble().clamp(-100, 100),
+    onChangeEnd: (SettingsContext settingsContext, double v) async {
+      await _commitVideoMpvConfig(
+        settingsContext,
+        (VideoMpvConfig config) => write(config, v.round()),
+      );
+    },
+    onChanged: (SettingsContext settingsContext, double v) {},
+  );
 }
 
 /// 「Windows 高显卡占用黑屏闪烁」已知问题说明行（TODO-1116/1119 / BUG-545）。

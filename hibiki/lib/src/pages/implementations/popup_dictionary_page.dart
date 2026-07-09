@@ -133,6 +133,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         oldWidget.anchorRect != widget.anchorRect ||
         oldWidget.subtitleWindowRect != widget.subtitleWindowRect;
     if (!changed) return;
+    // TODO-1336：warm 复用（Android 侧 FlutterEngineCache 缓存 :popup 引擎、finishPopup 只
+    // 隐藏 Activity 不销毁本 State；同一 PopupDictionaryPage 实例经 didUpdateWidget 反复复用）
+    // 下，宿主再次推来新词 == 重新打开这张常驻热页。_close() 首次关闭把 _isClosing 置 true
+    // 后此 State 不随关闭销毁 → 永不复位 → 首次查词关闭后所有关闭路径都被 _close 开头的
+    // 闭锁早退卡死（弹窗打开后关不掉）。每次「重开」在此复位闭锁，让每轮查词都能正常关闭。
+    // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
+    _isClosing = false;
     final String trimmed = widget.searchTerm.trim();
     if (trimmed.isEmpty || !appModel.isInitialised) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -254,6 +261,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
+  /// TODO-1352: 外部悬浮查词窗最大宽度 = 用户的 popupMaxWidth（与书内 / 首页查词弹窗
+  /// 同一真值，取消旧的硬编码 480）。appModel 未初始化时（如 widget 测试直接渲染卡片、
+  /// prefsRepo 尚未装配）回退到默认 400（= PreferencesRepository.defaultPopupMaxWidth），
+  /// 不触碰 prefsRepo 避免空解引用；生产路径仅在 isInitialised 后才有内容可查，回退窗口
+  /// 无内容、观感无影响。
+  double get _externalPopupMaxWidth =>
+      appModel.isInitialised ? appModel.popupMaxWidth : 400.0;
+
   /// TODO-872：anchorRect 为 null → 原 [Alignment.topCenter] 贴顶（**零变化**）；
   /// 非空 → 用 [computeFloatingLyricPopupRect] 算出贴被查字旁的矩形，[Positioned] 定位。
   Widget _buildPositionedCard(HibikiDesignTokens tokens, double gap) {
@@ -263,7 +278,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         alignment: Alignment.topCenter,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            const double maxCardWidth = 480;
+            // TODO-1352: 外部悬浮查词窗（PROCESS_TEXT / 悬浮字幕点字）宽度上限统一到
+            // 用户的「查词弹窗最大宽度」设置（popupMaxWidth），消除硬编码 480 魔法数，
+            // 与书内 / 首页查词弹窗同一真值。窄屏仍由下方 available 兜底取全宽。
+            final double maxCardWidth = _externalPopupMaxWidth;
             final double available = constraints.maxWidth - gap * 2;
             final double width =
                 available < maxCardWidth ? available : maxCardWidth;
@@ -285,7 +303,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final Rect avoidRect = widget.subtitleWindowRect ?? anchor;
     return LayoutBuilder(
       builder: (context, constraints) {
-        const double maxCardWidth = 480;
+        // TODO-1352: 同上——避让锚定分支也用用户的 popupMaxWidth，不再硬编码 480。
+        final double maxCardWidth = _externalPopupMaxWidth;
         final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
         final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
         final Rect rect = computeFloatingLyricPopupRect(

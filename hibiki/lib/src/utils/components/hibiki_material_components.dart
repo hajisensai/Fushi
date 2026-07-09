@@ -1362,8 +1362,6 @@ class HibikiSchemeSwatch extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.overlay,
-    this.label,
-    this.textColor,
     this.borderColor,
   }) : assert(colors.length == 4, 'scheme swatch needs exactly 4 colours');
 
@@ -1380,8 +1378,9 @@ class HibikiSchemeSwatch extends StatelessWidget {
 
   /// Centred badge icon for non-preset swatches (system = auto, custom = palette).
   final Widget? overlay;
-  final String? label;
-  final Color? textColor;
+  // TODO-1320: 主题卡片一律不带 caption 文字（无 label/textColor）——系统/预设/自定义
+  // 所有 swatch 统一只显示完整对角预览、无底部多余文字。带文字标签的单色 swatch 仍走
+  // HibikiColorSwatch（它保留 label/textColor）。
   final Color? borderColor;
 
   @override
@@ -1449,6 +1448,19 @@ class HibikiSchemeSwatch extends StatelessWidget {
       child: ClipRRect(
         borderRadius: tokens.radii.chipRadius,
         child: CustomPaint(
+          // TODO-1320: pin the painting surface to the card size. A childless
+          // CustomPaint with the default `size: Size.zero` collapses to zero
+          // under the LOOSE constraints the parent AnimatedContainer hands down
+          // (its `alignment: Alignment.center` loosens child constraints). So an
+          // unselected preset swatch — which has no badge child (badge is only
+          // the selection check or the system/custom overlay) — painted onto a
+          // 0x0 canvas and rendered as a blank rounded card. Selected / system /
+          // custom swatches escaped this only because their badge/overlay gave
+          // CustomPaint a non-null child that sized it. Sizing the canvas
+          // explicitly makes EVERY swatch paint the full diagonal preview,
+          // selected or not (the earlier `showGlyph: true` was a no-op on a
+          // zero-size canvas).
+          size: Size.square(size),
           painter: SchemeDiagonalPainter(
             textColor: textRole,
             backgroundColor: backgroundRole,
@@ -1480,8 +1492,6 @@ class HibikiSchemeSwatch extends StatelessWidget {
       selected: selected,
       onTap: onTap,
       onLongPress: onLongPress,
-      label: label,
-      textColor: textColor,
     );
   }
 }

@@ -1,8 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
 import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+    show YoutubeCaptionTrack;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -225,6 +228,238 @@ void main() {
         // The play button stays enabled; user keeps the escape hatch.
         expect(isPlayableStreamUrl(url), isTrue, reason: url);
       }
+    });
+  });
+
+  group('streamVideoBookUid YouTube canonicalization (TODO-1304 去重)', () {
+    // 同一支视频 dQw4w9WgXcQ 的各种 URL 写法（不同 host / 短链 / 追踪参数）都必须收敛
+    // 到同一 book_uid `video/stream/yt:<videoId>`，让 _uniqueBookUid 自然去重。
+    const String canonical = 'video/stream/yt:dQw4w9WgXcQ';
+
+    test('watch / youtu.be / shorts / m. / music. all converge to yt:<id>', () {
+      const List<String> variants = <String>[
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://music.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtu.be/dQw4w9WgXcQ',
+        'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+        'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      ];
+      for (final String url in variants) {
+        expect(streamVideoBookUid(url), canonical, reason: url);
+      }
+    });
+
+    test('tracking params (&t= &list= &si= &feature=) are stripped', () {
+      const List<String> tracked = <String>[
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc123',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&feature=share',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10&list=PLx&feature=youtu.be',
+        'https://youtu.be/dQw4w9WgXcQ?si=aBcDeFgH',
+        'https://youtu.be/dQw4w9WgXcQ?t=90&si=xyz',
+      ];
+      for (final String url in tracked) {
+        expect(streamVideoBookUid(url), canonical, reason: url);
+      }
+    });
+
+    test('leading/trailing whitespace does not change identity', () {
+      expect(
+        streamVideoBookUid('  https://youtu.be/dQw4w9WgXcQ?si=abc  '),
+        canonical,
+      );
+    });
+
+    test('different YouTube videos get different uids', () {
+      final String a = streamVideoBookUid('https://youtu.be/dQw4w9WgXcQ');
+      final String b = streamVideoBookUid('https://youtu.be/9bZkp7q19f0');
+      expect(a, 'video/stream/yt:dQw4w9WgXcQ');
+      expect(b, 'video/stream/yt:9bZkp7q19f0');
+      expect(a, isNot(b));
+    });
+
+    test('YouTube uid still 3-segment video/stream/ family (no prefix clash)',
+        () {
+      final String uid = streamVideoBookUid('https://youtu.be/dQw4w9WgXcQ');
+      expect(uid.startsWith('video/stream/'), isTrue);
+      expect(uid.startsWith('video/ext/'), isFalse);
+      expect(uid.startsWith('video/playlist/'), isFalse);
+      expect(uid.split('/').length, 3);
+    });
+
+    test('non-YouTube direct/HLS URLs keep sha1 identity (unchanged behavior)',
+        () {
+      // 直链保持原 sha1 行为：12 位 hex，不同 URL 各异（query 是签名/token 身份，不归一）。
+      const String hls = 'https://cdn.example.com/live.m3u8?token=abc';
+      final String uid = streamVideoBookUid(hls);
+      final String digest = uid.substring('video/stream/'.length);
+      expect(uid.startsWith('video/stream/'), isTrue);
+      expect(RegExp(r'^[0-9a-f]{12}$').hasMatch(digest), isTrue);
+      // 直链带不同 token → 不同身份（不被误合并）。
+      expect(
+        streamVideoBookUid('https://cdn.example.com/live.m3u8?token=xyz'),
+        isNot(uid),
+      );
+      // YouTube 与直链身份形状不同（前者 yt: 前缀，后者 hex）。
+      expect(digest.startsWith('yt:'), isFalse);
+    });
+
+    test('unparseable YouTube-host URL falls back to sha1 (no crash)', () {
+      // youtube.com 根 URL 无 videoId → youtubeVideoIdOrNull 返 null → 回退 sha1。
+      final String uid = streamVideoBookUid('https://www.youtube.com/');
+      final String digest = uid.substring('video/stream/'.length);
+      expect(RegExp(r'^[0-9a-f]{12}$').hasMatch(digest), isTrue);
+    });
+  });
+
+  group('streamImportCoverStrategy (TODO-1304 封面门控移除守卫)', () {
+    test('YouTube URLs -> youtubeThumbnail strategy', () {
+      for (final String url in <String>[
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtu.be/dQw4w9WgXcQ',
+        'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+      ]) {
+        expect(streamImportCoverStrategy(url),
+            StreamImportCoverStrategy.youtubeThumbnail,
+            reason: url);
+      }
+    });
+
+    test(
+        'REGRESSION: direct/HLS/m3u8 URLs -> ffmpegFrame (no longer coverless) '
+        '— 旧代码把下封面门控在 isYoutubeUrl 内，直链恒无封面', () {
+      for (final String url in <String>[
+        'https://cdn.example.com/movie.mp4',
+        'https://cdn.example.com/live.m3u8',
+        'https://192.168.1.34/stream.ts',
+        'https://example.com/playlist.m3u8?token=abc',
+        // 已知网页视频站但非 YouTube（无法抓缩略图）→ 仍走抽帧（best-effort）。
+        'https://www.bilibili.com/video/BVxxx',
+      ]) {
+        expect(streamImportCoverStrategy(url),
+            StreamImportCoverStrategy.ffmpegFrame,
+            reason: url);
+      }
+    });
+  });
+
+  group('StreamVideoSpec (TODO-1157 流媒体入库重开规格)', () {
+    test('empty spec -> isEmpty true, toStorageJson null', () {
+      const StreamVideoSpec spec = StreamVideoSpec();
+      expect(spec.isEmpty, isTrue);
+      expect(spec.toStorageJson(), isNull);
+      expect(spec.httpHeaderFields, isEmpty);
+    });
+
+    test('round-trip via storage json preserves fields', () {
+      const StreamVideoSpec spec = StreamVideoSpec(
+        subtitleUrl: 'https://cdn.example.com/sub.srt',
+        subtitleFileName: 'sub.srt',
+        referer: 'https://example.com/',
+        userAgent: 'HibikiAgent/1.0',
+      );
+      expect(spec.isEmpty, isFalse);
+      final String? json = spec.toStorageJson();
+      expect(json, isNotNull);
+      final StreamVideoSpec back = StreamVideoSpec.fromStorageJson(json);
+      expect(back.subtitleUrl, spec.subtitleUrl);
+      expect(back.subtitleFileName, spec.subtitleFileName);
+      expect(back.referer, spec.referer);
+      expect(back.userAgent, spec.userAgent);
+      expect(back.httpHeaderFields, <String, String>{
+        'Referer': 'https://example.com/',
+        'User-Agent': 'HibikiAgent/1.0',
+      });
+    });
+
+    test('fromStorageJson tolerates null/empty/garbage -> empty spec', () {
+      expect(StreamVideoSpec.fromStorageJson(null).isEmpty, isTrue);
+      expect(StreamVideoSpec.fromStorageJson('').isEmpty, isTrue);
+      expect(StreamVideoSpec.fromStorageJson('not json').isEmpty, isTrue);
+      expect(StreamVideoSpec.fromStorageJson('[1,2]').isEmpty, isTrue);
+    });
+
+    test('httpHeaderFields omits empty referer/userAgent', () {
+      const StreamVideoSpec spec =
+          StreamVideoSpec(subtitleUrl: 'https://x/y.srt');
+      expect(spec.isEmpty, isFalse);
+      expect(spec.httpHeaderFields, isEmpty);
+    });
+  });
+
+  group('UrlStreamVideoClient 字幕后置数据模型 (TODO-1307)', () {
+    test('preresolvedCues 起播为空、setPreresolvedCues 回填（1302 菜单数据源）', () {
+      final UrlStreamVideoClient client = UrlStreamVideoClient(
+        streamUrl: 'https://googlevideo.test/stream',
+        youtubeCaptionsUrl: 'https://youtu.be/abc',
+      );
+      expect(client.preresolvedCues, isEmpty);
+      expect(client.youtubeCaptionsUrl, 'https://youtu.be/abc');
+
+      final AudioCue cue = AudioCue()
+        ..bookKey = 'yt:abc'
+        ..sentenceIndex = 0
+        ..text = 'こんにちは'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      client.setPreresolvedCues(<AudioCue>[cue]);
+      expect(client.preresolvedCues.length, 1);
+      expect(client.preresolvedCues.first.text, 'こんにちは');
+      client.close();
+    });
+
+    test('非 YouTube 直链 client 无 youtubeCaptionsUrl（不触发字幕后置）', () {
+      final UrlStreamVideoClient client =
+          UrlStreamVideoClient(streamUrl: 'https://cdn.test/live.m3u8');
+      expect(client.youtubeCaptionsUrl, isNull);
+      expect(client.preresolvedCues, isEmpty);
+      client.close();
+    });
+  });
+
+  group('UrlStreamVideoClient 字幕轨列表 + per-track cue 缓存 (TODO-1302)', () {
+    test('setYoutubeCaptionTracks 回填字幕轨列表（选择器数据源，独立于 cue）', () {
+      final UrlStreamVideoClient client = UrlStreamVideoClient(
+        streamUrl: 'https://googlevideo.test/stream',
+        youtubeCaptionsUrl: 'https://youtu.be/abc',
+      );
+      expect(client.youtubeCaptionTracks, isEmpty);
+      client.setYoutubeCaptionTracks(const <YoutubeCaptionTrack>[
+        YoutubeCaptionTrack(
+          baseUrl: 'https://yt/timedtext?lang=ja',
+          languageCode: 'ja',
+          languageName: '日本語',
+          isAutoGenerated: false,
+        ),
+      ]);
+      expect(client.youtubeCaptionTracks.length, 1);
+      expect(client.youtubeCaptionTracks.first.trackKey,
+          'youtube:captions:ja:human');
+      client.close();
+    });
+
+    test('per-track cue 缓存：未缓存空、缓存后命中同轨（重选不重复下载）', () {
+      final UrlStreamVideoClient client = UrlStreamVideoClient(
+        streamUrl: 'https://googlevideo.test/stream',
+        youtubeCaptionsUrl: 'https://youtu.be/abc',
+      );
+      expect(client.cachedCaptionCues('youtube:captions:ja:human'), isEmpty);
+      final AudioCue cue = AudioCue()
+        ..bookKey = 'yt:abc'
+        ..sentenceIndex = 0
+        ..text = 'こんにちは'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      client.cacheCaptionCues('youtube:captions:ja:human', <AudioCue>[cue]);
+      expect(client.cachedCaptionCues('youtube:captions:ja:human').length, 1);
+      // 别的轨 key 仍空（缓存按 trackKey 隔离）。
+      expect(client.cachedCaptionCues('youtube:captions:en:asr'), isEmpty);
+      client.close();
     });
   });
 }

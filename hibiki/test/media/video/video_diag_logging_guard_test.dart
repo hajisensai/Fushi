@@ -13,11 +13,18 @@ void main() {
   final File page = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
   );
+  final File settings = File(
+    'lib/src/settings/settings_schema_system.dart',
+  );
 
   late final String controllerSrc;
   late final String pageSrc;
+  late final String settingsSrc;
 
   setUpAll(() {
+    expect(settings.existsSync(), isTrue,
+        reason: 'settings 源文件应存在: ${settings.path}');
+    settingsSrc = settings.readAsStringSync();
     expect(controller.existsSync(), isTrue,
         reason: 'controller 源文件应存在: ${controller.path}');
     expect(page.existsSync(), isTrue, reason: 'page 源文件应存在: ${page.path}');
@@ -86,6 +93,103 @@ void main() {
 
     test('本地资源缺失短路也落诊断行', () {
       expect(pageSrc, contains('local video resource missing'));
+    });
+  });
+
+  group('VideoPlayerController TODO-1232 A2 诊断增强', () {
+    test('诊断开启时以 verbose 日志级构造 Player（客户端订阅级真正提到 v）', () {
+      // 裸 Player() 默认 logLevel=error → mpv_request_log_messages 钉死在 error，
+      // vo/vd 的 verbose 行到不了 log 流。诊断开启必须用 PlayerConfiguration(logLevel: v)
+      // 构造，setProperty('msg-level',...) 改不动客户端订阅级。
+      expect(
+          controllerSrc
+              .contains('PlayerConfiguration(logLevel: MPVLogLevel.v)'),
+          isTrue,
+          reason: '诊断开启须用 verbose 客户端日志级构造 Player，否则 vo/vd verbose 行收不到');
+      // 提级只在诊断开启（onDiagLog 非空）时，非诊断路径仍走裸 Player() 零开销。
+      final int at =
+          controllerSrc.indexOf('PlayerConfiguration(logLevel: MPVLogLevel.v)');
+      expect(at, greaterThan(0));
+      final String around = controllerSrc.substring(
+          (at - 200).clamp(0, controllerSrc.length), at);
+      expect(around.contains('onDiagLog != null'), isTrue,
+          reason: 'logLevel 提级必须门控在 onDiagLog 非空，避免全局提级增日志量');
+    });
+
+    test('logLevel 提级不破坏 TODO-116 视频调速不闪退不变量', () {
+      // 仍保留裸 Player() 分支；绝不出现 Player(PlayerConfiguration...) 位置参数或 pitch:true。
+      expect(controllerSrc.contains('Player()'), isTrue,
+          reason: '非诊断路径须保留裸 Player()（默认 pitch=false 安全调速路径）');
+      expect(RegExp(r'Player\(\s*PlayerConfiguration').hasMatch(controllerSrc),
+          isFalse,
+          reason: '不得用位置参数 PlayerConfiguration 构造 Player（会触发 pitch 守卫红线）');
+      expect(controllerSrc.contains('pitch: true'), isFalse);
+    });
+
+    test('探针回读滤镜链 + 滤镜后输出参数（vf / video-out-params / vo-configured）', () {
+      // vf＝降位/缩放滤镜是否真挂进管线；video-out-params/*＝滤镜后实际输出（pixelformat
+      // 由 yuv420p10 变 yuv420p 才说明降位真生效），二者证明「降位没生效」vs「vo 上屏
+      // 后 Flutter 不合成」。
+      expect(controllerSrc.contains("'vf'"), isTrue,
+          reason: '缺 vf 回读：无法验证降位滤镜是否真挂进滤镜链');
+      expect(controllerSrc.contains("'video-out-params/pixelformat'"), isTrue,
+          reason: '缺滤镜后 pixelformat：无法验证降位是否真生效（yuv420p10→yuv420p）');
+      expect(controllerSrc.contains('video-out-params'), isTrue);
+      expect(controllerSrc.contains("'vo-configured'"), isTrue,
+          reason: '缺 vo-configured：无法判 vo 是否真配置起来');
+      expect(controllerSrc.contains("'frame-drop-count'"), isTrue);
+      expect(controllerSrc.contains("'paused-for-cache'"), isTrue);
+    });
+  });
+
+  group('TODO-1232 A3 关 Impeller 试验开关接线', () {
+    test('视频诊断头记录渲染后端偏好（导出日志自证测的是哪个后端）', () {
+      // realme 8「mpv 全绿仍黑」需要区分 Impeller vs Skia：诊断头带上用户当前
+      // 关 Impeller 意图，用户导出的 [VIDEO-DIAG] 日志就能自证测的是哪个后端。
+      expect(
+          pageSrc.contains(
+              'impellerDisabledPref=\${RenderBackendService.instance.impellerDisabled}'),
+          isTrue,
+          reason: '诊断头须带 impellerDisabledPref，让导出日志自证渲染后端');
+    });
+
+    test('诊断日志把「本次运行实际后端」记在抗环形缓冲淘汰的存活行上', () {
+      // realme 8 用户导出的日志里 `_applyLoad` 头部行常被 libmpv verbose 洪水挤出
+      // 环形缓冲（本次真实事故：impellerDisabledPref 头部行被淘汰、只剩 controller
+      // 层行）。故后端标识必须同时记在 `controller.load() returned ok` 这种更晚、能
+      // 存活于导出的行上，让任何导出都能无歧义自证测的是 Skia 还是 Impeller。
+      expect(pageSrc.contains('activeRenderBackend='), isTrue,
+          reason: '诊断须记录本次运行实际渲染后端（自证关 Impeller 复测测的是哪个后端）');
+      expect(
+          pageSrc.contains('RenderBackendService.instance.activeBackendLabel'),
+          isTrue,
+          reason: '后端标签取自本次运行快照 activeBackendLabel（非可翻的 impellerDisabled 意图）');
+      // 必须挂在 load 成功返回行（导出里存活），不能只挂在易被淘汰的 _applyLoad 头。
+      final int okAt =
+          pageSrc.indexOf('[VIDEO-DIAG] controller.load() returned ok');
+      expect(okAt, greaterThan(0));
+      final String okBlock =
+          pageSrc.substring(okAt, (okAt + 400).clamp(0, pageSrc.length));
+      expect(okBlock.contains('activeRenderBackend='), isTrue,
+          reason: 'load() 成功返回行须带 activeRenderBackend（抗环形缓冲淘汰的存活行）');
+    });
+
+    test('设置页暴露 Android-only 的关 Impeller 开关', () {
+      expect(settingsSrc.contains("'diagnostics.disable_impeller'"), isTrue,
+          reason: '诊断分区须提供关 Impeller 试验开关');
+      expect(settingsSrc.contains('t.render_impeller_disable_toggle'), isTrue);
+      // dart format 可能把 `RenderBackendService.instance.setImpellerDisabled`
+      // 换行，故只锁方法调用点（把意图持久化到 native 的地方）。
+      expect(settingsSrc.contains('.setImpellerDisabled(value)'), isTrue,
+          reason: '开关须把意图持久化到 native（下次启动应用）');
+      // Impeller shell arg 只在 native channel 已接线处（Android）由 MainActivity
+      // 注入，故开关按 RenderBackendService.isSupported 门控可见性。
+      final int at = settingsSrc.indexOf("'diagnostics.disable_impeller'");
+      final String around =
+          settingsSrc.substring(at, (at + 600).clamp(0, settingsSrc.length));
+      expect(
+          around.contains('RenderBackendService.instance.isSupported'), isTrue,
+          reason: '关 Impeller 开关须按 native channel 支持度门控（仅 Android 接线）');
     });
   });
 }

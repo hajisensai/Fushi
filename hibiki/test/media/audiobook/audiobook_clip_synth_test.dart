@@ -258,8 +258,8 @@ void main() {
     const Color highlight = Color(0x66FFCC00);
 
     test(
-        'default output is portrait 1080x1920 (TODO-1147 anti-blur) and carries '
-        'theme colors', () {
+        'horizontal default output is landscape 1920x1080 (TODO-1147) and '
+        'carries theme colors', () {
       final AudiobookClipTextLayout layout = computeClipTextLayout(
         textLength: 6,
         baseFontSize: 22,
@@ -269,16 +269,31 @@ void main() {
         foreground: fg,
         highlight: highlight,
       );
-      // TODO-1147 根因守卫：栅格化+输出分辨率 >= 1080x1920（旧 720x1280 致文字模糊）。
-      expect(layout.width, greaterThanOrEqualTo(1080));
-      expect(layout.height, greaterThanOrEqualTo(1920));
-      expect(layout.width, 1080);
-      expect(layout.height, 1920);
+      // TODO-1147 用户回访「分辨率不对」：横排文字默认横屏 1920×1080（此前统一
+      // 竖屏 1080×1920）。像素总量不低于旧 1080×1920（防模糊守卫保持）。
+      expect(layout.width, 1920);
+      expect(layout.height, 1080);
       expect(layout.background, bg);
       expect(layout.foreground, fg);
       // TODO-1013：逐句高亮跟随色（sasayaki）必须原样透传给渲染层。
       expect(layout.highlight, highlight);
       expect(layout.vertical, isFalse);
+    });
+
+    test('vertical default output is portrait 1080x1920 (TODO-1147)', () {
+      final AudiobookClipTextLayout layout = computeClipTextLayout(
+        textLength: 6,
+        baseFontSize: 22,
+        vertical: true,
+        lineHeight: 1.65,
+        background: bg,
+        foreground: fg,
+        highlight: highlight,
+      );
+      // 竖排保持竖屏 1080×1920（默认手机竖屏标准尺寸，防模糊守卫保持）。
+      expect(layout.width, 1080);
+      expect(layout.height, 1920);
+      expect(layout.vertical, isTrue);
     });
 
     test('long selections shrink the font (no overflow), short keep big', () {

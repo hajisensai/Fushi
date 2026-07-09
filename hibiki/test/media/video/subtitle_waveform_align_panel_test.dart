@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,14 +8,14 @@ import 'package:hibiki/src/media/video/subtitle_waveform_painter.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-/// TODO-1051 阶段B / TODO-1207：波形对轴入口面板（按钮触发放大可交互视图）widget 行为测试。
-AudioCue _cue(int startMs, int endMs) {
+/// TODO-1315 lazy waveform render / TODO-1316 in-zoom auto-align button tests.
+AudioCue _cue(int startMs, int endMs, {String text = ''}) {
   return AudioCue()
     ..bookKey = ''
     ..chapterHref = ''
     ..sentenceIndex = 0
     ..textFragmentId = ''
-    ..text = ''
+    ..text = text
     ..startMs = startMs
     ..endMs = endMs
     ..audioFileIndex = 0;
@@ -24,6 +26,8 @@ Widget _host({
   required Future<List<double>> Function() loadWaveform,
   int initialDelayMs = 0,
   Future<void> Function(int delayMs)? onCommitDelay,
+  Future<int?> Function()? onAutoAlign,
+  Future<void> Function(int startMs)? onPlayCue,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -36,6 +40,8 @@ Widget _host({
             durationMs: 60000,
             loadWaveform: loadWaveform,
             onCommitDelay: onCommitDelay,
+            onAutoAlign: onAutoAlign,
+            onPlayCue: onPlayCue,
           ),
         ),
       ),
@@ -43,16 +49,6 @@ Widget _host({
   );
 }
 
-/// 面板缩略图上墙的波形 painter（关闭放大视图时唯一的 SubtitleWaveformPainter）。
-SubtitleWaveformPainter _thumbPainter(WidgetTester tester) {
-  final CustomPaint paint =
-      tester.widgetList<CustomPaint>(find.byType(CustomPaint)).firstWhere(
-            (CustomPaint w) => w.painter is SubtitleWaveformPainter,
-          );
-  return paint.painter! as SubtitleWaveformPainter;
-}
-
-/// 放大视图里的波形 painter（限定在 SubtitleWaveformZoomView 子树内）。
 SubtitleWaveformPainter _zoomPainter(WidgetTester tester) {
   final CustomPaint paint = tester
       .widgetList<CustomPaint>(find.descendant(
@@ -65,76 +61,193 @@ SubtitleWaveformPainter _zoomPainter(WidgetTester tester) {
 
 const Key _openKey = ValueKey<String>('subtitle-waveform-open-button');
 
-void main() {
-  testWidgets('loaded => compact entry button, no dialog/slider yet',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(_host(
-      cues: <AudioCue>[_cue(1000, 2000), _cue(3000, 4000)],
-      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
-    ));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    await tester.pumpAndSettle();
-    // 入口按钮上墙；放大视图未打开。
-    expect(find.byKey(_openKey), findsOneWidget);
-    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
-    // 面板本体不含调轴滑条（调轴在放大视图里）。
-    expect(find.byType(Slider), findsNothing);
-  });
+/// TODO-1315: tapping the entry lazily probes then opens the zoom dialog.
+Future<void> _openZoom(WidgetTester tester) async {
+  await tester.tap(find.byKey(_openKey));
+  await tester.pumpAndSettle();
+}
 
-  testWidgets('empty envelope (mobile degrade) => no entry button, no painter',
+/// The zoom view's single FilledButton is the auto-align button (TODO-1316).
+Finder get _autoAlignButton => find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byType(FilledButton),
+    );
+
+void main() {
+  testWidgets('TODO-1315: mount does NOT probe waveform (lazy); entry visible',
       (WidgetTester tester) async {
+    int loads = 0;
     await tester.pumpWidget(_host(
       cues: <AudioCue>[_cue(1000, 2000)],
-      loadWaveform: () async => const <double>[],
+      loadWaveform: () async {
+        loads++;
+        return <double>[-60, -20, -40, -10, -30, -5];
+      },
     ));
     await tester.pumpAndSettle();
-    expect(find.byKey(_openKey), findsNothing);
+    expect(loads, 0);
+    expect(find.byKey(_openKey), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
     expect(
       find.byWidgetPredicate(
         (Widget w) => w is CustomPaint && w.painter is SubtitleWaveformPainter,
       ),
       findsNothing,
     );
-    expect(find.byType(Slider), findsNothing);
   });
 
   testWidgets(
-      'TODO-1206/1207: initialDelayMs change shifts thumbnail cue lines',
+      'TODO-1315: tap entry probes once then opens zoom (legend+slider)',
       (WidgetTester tester) async {
-    await tester.pumpWidget(_host(
-      cues: <AudioCue>[_cue(1000, 2000)],
-      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
-      initialDelayMs: 0,
-    ));
-    await tester.pumpAndSettle();
-    expect(_thumbPainter(tester).previewDelayMs, 0);
-    await tester.pumpWidget(_host(
-      cues: <AudioCue>[_cue(1000, 2000)],
-      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
-      initialDelayMs: 750,
-    ));
-    await tester.pumpAndSettle();
-    expect(_thumbPainter(tester).previewDelayMs, 750);
-  });
-
-  testWidgets('tap entry => opens zoom view with legend + align slider',
-      (WidgetTester tester) async {
+    int loads = 0;
     await tester.pumpWidget(_host(
       cues: <AudioCue>[_cue(1000, 2000), _cue(3000, 4000)],
-      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      loadWaveform: () async {
+        loads++;
+        return <double>[-60, -20, -40, -10, -30, -5];
+      },
       onCommitDelay: (int _) async {},
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(_openKey));
-    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(loads, 1);
     expect(find.byType(SubtitleWaveformZoomView), findsOneWidget);
-    // 图例三层都在。
     expect(find.text(t.video_subtitle_waveform_legend_energy), findsOneWidget);
     expect(find.text(t.video_subtitle_waveform_legend_cue), findsOneWidget);
     expect(
         find.text(t.video_subtitle_waveform_legend_playhead), findsOneWidget);
-    // 调轴滑条在放大视图里。
     expect(find.byType(Slider), findsOneWidget);
+  });
+
+  testWidgets(
+      'TODO-1315: empty envelope (mobile degrade) => unavailable hint, no dialog',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => const <double>[],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
+    expect(find.text(t.video_subtitle_waveform_unavailable), findsOneWidget);
+  });
+
+  // TODO-1315 回归守卫（BUG-623）：入口按钮**永不**因波形探测结果消失。历史上
+  // 挂载时预探测、探测为空即 [SizedBox.shrink] 收起整个入口，弱设备 / 移动端因此「字幕调轴
+  // 入口也没了、进不去」。现在入口常驻可见：挂载即在、点击探测为空只内联提示不可用、入口
+  // 仍在可重试。这三态（挂载 / 探测中 / 探测空）下入口 key 都必须 findsOneWidget。
+  testWidgets(
+      'TODO-1315 guard: entry button never disappears (mount / probing / empty)',
+      (WidgetTester tester) async {
+    final Completer<List<double>> gate = Completer<List<double>>();
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () => gate.future,
+    ));
+    await tester.pumpAndSettle();
+    // 挂载态：入口在，无 spinner（未预探测）。
+    expect(find.byKey(_openKey), findsOneWidget);
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
+
+    // 点击进入探测中态：入口仍在（切成 spinner），探测未完成。
+    await tester.tap(find.byKey(_openKey));
+    await tester.pump();
+    expect(find.byKey(_openKey), findsOneWidget);
+
+    // 探测返回空包络（移动端降级）：入口仍在、不弹窗、内联提示不可用。
+    gate.complete(const <double>[]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_openKey), findsOneWidget);
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
+    expect(find.text(t.video_subtitle_waveform_unavailable), findsOneWidget);
+  });
+
+  testWidgets(
+      'TODO-1315: closing zoom view releases envelope; re-open re-probes',
+      (WidgetTester tester) async {
+    int loads = 0;
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async {
+        loads++;
+        return <double>[-60, -20, -40, -10, -30, -5];
+      },
+      onCommitDelay: (int _) async {},
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(loads, 1);
+    expect(find.byType(SubtitleWaveformZoomView), findsOneWidget);
+    await tester.tap(find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byType(SubtitleWaveformZoomView), findsNothing);
+    await _openZoom(tester);
+    expect(loads, 2);
+    expect(find.byType(SubtitleWaveformZoomView), findsOneWidget);
+  });
+
+  testWidgets('TODO-1316: zoom auto-align button calls onAutoAlign + commits',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    int autoCalls = 0;
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int ms) async => committed.add(ms),
+      onAutoAlign: () async {
+        autoCalls++;
+        return 250;
+      },
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(_zoomPainter(tester).previewDelayMs, 0);
+    expect(_autoAlignButton, findsOneWidget);
+    await tester.ensureVisible(_autoAlignButton);
+    await tester.pumpAndSettle();
+    await tester.tap(_autoAlignButton);
+    await tester.pumpAndSettle();
+    expect(autoCalls, 1);
+    expect(committed, <int>[250]);
+    expect(_zoomPainter(tester).previewDelayMs, 250);
+  });
+
+  testWidgets('TODO-1316: auto-align low confidence (null) => hint, no commit',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int ms) async => committed.add(ms),
+      onAutoAlign: () async => null,
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    await tester.ensureVisible(_autoAlignButton);
+    await tester.pumpAndSettle();
+    await tester.tap(_autoAlignButton);
+    await tester.pumpAndSettle();
+    expect(committed, isEmpty);
+    expect(_zoomPainter(tester).previewDelayMs, 0);
+    expect(
+        find.text(t.video_subtitle_auto_align_low_confidence), findsOneWidget);
+  });
+
+  testWidgets('TODO-1316: no onAutoAlign => no auto-align button in zoom view',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int _) async {},
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byType(SubtitleWaveformZoomView), findsOneWidget);
+    expect(_autoAlignButton, findsNothing);
   });
 
   testWidgets('zoom view +50 step writes back _delayMs via onCommitDelay',
@@ -146,16 +259,16 @@ void main() {
       onCommitDelay: (int ms) async => committed.add(ms),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(_openKey));
-    await tester.pumpAndSettle();
+    await _openZoom(tester);
     expect(_zoomPainter(tester).previewDelayMs, 0);
-    // 点 +50ms 步进（放大视图里唯一的 chevron_right）。
-    await tester.tap(find.descendant(
+    final Finder plus = find.descendant(
       of: find.byType(SubtitleWaveformZoomView),
       matching: find.byIcon(Icons.chevron_right),
-    ));
+    );
+    await tester.ensureVisible(plus);
     await tester.pumpAndSettle();
-    // 写回上方权威 _delayMs（onCommitDelay 收到 50），波形 cue 线随之平移。
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
     expect(committed, <int>[50]);
     expect(_zoomPainter(tester).previewDelayMs, 50);
   });
@@ -169,10 +282,8 @@ void main() {
       onCommitDelay: (int ms) async => committed.add(ms),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(_openKey));
-    await tester.pumpAndSettle();
+    await _openZoom(tester);
     final int before = _zoomPainter(tester).previewDelayMs;
-    // 在波形区横向拖动（平移查看时间轴）——只滚动，不调轴。
     await tester.drag(
       find.descendant(
         of: find.byType(SubtitleWaveformZoomView),
@@ -181,8 +292,68 @@ void main() {
       const Offset(-160, 0),
     );
     await tester.pumpAndSettle();
-    // 无任何延迟提交，波形延迟不变（平移查看与调轴手势物理分离，永不冲突）。
     expect(committed, isEmpty);
     expect(_zoomPainter(tester).previewDelayMs, before);
+  });
+
+  testWidgets('TODO-1244: zoom view shows cue text on the aligned strip',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[
+        _cue(1000, 2000, text: 'ohayou'),
+        _cue(3000, 4000, text: 'konbanwa'),
+      ],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.text('ohayou'), findsOneWidget);
+    expect(find.text('konbanwa'), findsOneWidget);
+  });
+
+  testWidgets('TODO-1244: empty-text cues render no strip chip',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000)],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byIcon(Icons.play_circle_outline), findsNothing);
+  });
+
+  testWidgets('TODO-1244: tapping a cue chip seeks+plays that line (delay 0)',
+      (WidgetTester tester) async {
+    final List<int> played = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onPlayCue: (int startMs) async => played.add(startMs),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(find.byIcon(Icons.play_circle_outline), findsWidgets);
+    await tester.tap(find.text('ohayou'));
+    await tester.pumpAndSettle();
+    expect(played, <int>[1000]);
+  });
+
+  testWidgets(
+      'TODO-1244: per-cue play seeks to shifted time (start + preview delay)',
+      (WidgetTester tester) async {
+    final List<int> played = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      initialDelayMs: 200,
+      onCommitDelay: (int _) async {},
+      onPlayCue: (int startMs) async => played.add(startMs),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    expect(_zoomPainter(tester).previewDelayMs, 200);
+    await tester.tap(find.text('ohayou'));
+    await tester.pumpAndSettle();
+    expect(played, <int>[1200]);
   });
 }

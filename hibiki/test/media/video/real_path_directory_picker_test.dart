@@ -159,8 +159,11 @@ void main() {
       );
     });
 
-    // board 1112：单文件视频/字幕导入改走真实路径文件浏览器（不复制到 cache）。
-    test('video _pickVideo/_pickSubtitle call pickRealFilePath', () {
+    // board 1112：视频本体导入走真实路径文件浏览器（绝对路径不复制到 cache）。
+    // board 1360：字幕导入回退系统文件选择器（导入即消费、不长期引用绝对路径）。
+    test(
+        'video _pickVideo keeps real-path browser, '
+        '_pickSubtitle reverts to system picker', () {
       final String src = File('lib/src/media/video/video_import_dialog.dart')
           .readAsStringSync();
       final String pickVideo = _methodBody(src, 'Future<void> _pickVideo()');
@@ -171,7 +174,7 @@ void main() {
         pickVideo.contains('pickRealFilePath('),
         isTrue,
         reason: '单文件视频选择必须走真实路径文件浏览器，'
-            '而非直接 FilePicker.pickFiles（安卓会复制到 cache）',
+            '而非直接 FilePicker.pickFiles（安卓会复制到 cache、清缓存即失效）',
       );
       expect(
         pickVideo.contains('FilePicker.platform.pickFiles'),
@@ -179,14 +182,90 @@ void main() {
         reason: '_pickVideo 不得再直接调 FilePicker.pickFiles',
       );
       expect(
-        pickSubtitle.contains('pickRealFilePath('),
+        pickSubtitle.contains('pickSystemFilePath('),
         isTrue,
-        reason: '单文件字幕选择必须走真实路径文件浏览器',
+        reason: '字幕导入即被解析消费，维持系统文件选择器（board 1360 用户诉求）',
       );
       expect(
-        pickSubtitle.contains('FilePicker.platform.pickFiles'),
+        pickSubtitle.contains('pickRealFilePath('),
         isFalse,
-        reason: '_pickSubtitle 不得再直接调 FilePicker.pickFiles',
+        reason: '_pickSubtitle 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+      );
+    });
+
+    test('audiobook audio/subtitle rows use file picker helper', () {
+      final String audiobook =
+          File('lib/src/media/audiobook/audiobook_import_dialog.dart')
+              .readAsStringSync();
+      final String book =
+          File('lib/src/media/audiobook/book_import_dialog.dart')
+              .readAsStringSync();
+
+      final String audiobookAudio =
+          _methodBody(audiobook, 'Future<void> _pickAudioFiles()');
+      final String bookAudio = _methodBody(book, 'Future<void> _pickAudio()');
+      final String audiobookAlignment =
+          _methodBody(audiobook, 'Future<void> _pickAlignment()');
+      final String bookSubtitle =
+          _methodBody(book, 'Future<void> _pickSubtitle()');
+
+      expect(
+        audiobookAudio.contains('pickRealFilePaths('),
+        isTrue,
+        reason: '有声书补音频必须走文件选择 helper；iOS 的 FileType.audio '
+            '会打开 MPMediaPickerController 资料库入口',
+      );
+      expect(
+        bookAudio.contains('pickRealFilePaths('),
+        isTrue,
+        reason: '书籍导入附带音频必须走文件选择 helper；不得打开 iOS 资料库',
+      );
+      for (final String body in <String>[audiobookAudio, bookAudio]) {
+        expect(body.contains('FileType.audio'), isFalse,
+            reason: 'iOS FileType.audio 会走媒体资料库，不是 Files 文件选择');
+        expect(body.contains('FilePicker.platform.pickFiles'), isFalse,
+            reason: '音频选择应集中到 helper，避免各入口重新踩 iOS 分流');
+      }
+
+      expect(
+        audiobookAlignment.contains('pickSystemFilePath('),
+        isTrue,
+        reason: '有声书对齐字幕/SMIL/JSON 导入即被消费，维持系统文件选择器（board 1360）；'
+            'iOS .srt UTI 过滤问题由 helper 内部处理',
+      );
+      expect(
+        audiobookAlignment.contains('pickRealFilePath('),
+        isFalse,
+        reason: '_pickAlignment 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+      );
+      expect(
+        bookSubtitle.contains('pickSystemFilePath('),
+        isTrue,
+        reason: '书籍导入字幕导入即被消费，维持系统文件选择器（board 1360），和视频字幕一致',
+      );
+      expect(
+        bookSubtitle.contains('pickRealFilePath('),
+        isFalse,
+        reason: '_pickSubtitle 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+      );
+    });
+
+    test('production code never opens iOS media library via FileType.audio',
+        () {
+      final Directory libDir = Directory('lib');
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String src = entity.readAsStringSync();
+        if (src.contains('FileType.audio')) offenders.add(entity.path);
+      }
+
+      expect(
+        offenders,
+        isEmpty,
+        reason: 'iOS FileType.audio opens MPMediaPickerController / media '
+            'library. Audio-file imports must use pickRealFilePath(s) so the '
+            'user stays in Files and .srt/audio sidecars share one path.',
       );
     });
 

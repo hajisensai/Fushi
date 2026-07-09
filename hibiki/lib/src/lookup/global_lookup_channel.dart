@@ -167,15 +167,31 @@ abstract final class GlobalLookupChannel {
     required int dy,
     required int width,
     required int height,
+    double left = 0,
+    double top = 0,
   }) =>
       _channel.invokeMethod<void>('revealStack', <String, Object?>{
         'dx': dx,
         'dy': dy,
         'width': width,
         'height': height,
+        // TODO-1231 P2 — the union bbox origin in window-local CSS px. Native
+        // RevealStack forwards it to the host's commitLayerShift AFTER SetWindowPos
+        // so the compensating layer shift lands only once the window has moved
+        // (window first, content ~1 frame later), killing the cross-vsync geometry
+        // lurch of a left/up nested cascade. dx/dy stay the physical-px window
+        // offset; left/top are the CSS-px values the host negates for the layer.
+        'left': left,
+        'top': top,
       });
 
-  static Future<void> hide() => _channel.invokeMethod<void>('hide');
+  /// Hides the overlay. [notify] true (default) = a genuine dismissal that fires
+  /// the native `overlayHidden` callback (so a resume-on-dismiss / reveal-state
+  /// reset can hang off it, TODO-1233); false = the programmatic reset the
+  /// controller runs right BEFORE a fresh lookup, which must NOT look like a user
+  /// dismissal (else it would spuriously fire between two lookups).
+  static Future<void> hide({bool notify = true}) =>
+      _channel.invokeMethod<void>('hide', <String, Object?>{'notify': notify});
 
   static Future<bool> isShowing() async =>
       (await _channel.invokeMethod<bool>('isShowing')) ?? false;
@@ -186,6 +202,7 @@ abstract final class GlobalLookupChannel {
   static void setHandlers({
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,
+    void Function()? onOverlayHidden,
   }) {
     _channel.setMethodCallHandler((MethodCall call) async {
       switch (call.method) {
@@ -217,6 +234,12 @@ abstract final class GlobalLookupChannel {
               message,
             );
           }
+          return null;
+        case 'overlayHidden':
+          // TODO-1233 -- the native overlay dismissed (foreground hook / click
+          // outside / JS dismiss). Let the controller reset its reveal state /
+          // notify a resume-on-dismiss consumer (video subtitle lookup BUG-072).
+          onOverlayHidden?.call();
           return null;
         default:
           return null;

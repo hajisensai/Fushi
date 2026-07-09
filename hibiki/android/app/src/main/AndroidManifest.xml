@@ -14,7 +14,7 @@
     <application
         android:label="Hibiki"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon_minimal"
+        android:icon="@mipmap/launcher_icon_squircle"
         android:networkSecurityConfig="@xml/network_security_config"
         android:enableOnBackInvokedCallback="true"
         xmlns:tools="http://schemas.android.com/tools"
@@ -50,7 +50,7 @@
         <activity-alias
             android:name=".MainActivityDefault"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/launcher_icon_minimal"
+            android:icon="@mipmap/launcher_icon_squircle"
             android:label="Hibiki"
             android:enabled="true"
             android:exported="true">
@@ -67,6 +67,25 @@
             android:name=".MainActivityHibikiFull"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/launcher_icon_full"
+            android:label="Hibiki"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme"/>
+        </activity-alias>
+
+        <!-- 「透明（无背景）」备选档（TODO-1241）：藏青 wordmark，自适应背景全透明、
+             legacy png 也透明。默认档已改用不透明白 squircle（任意壁纸可见），此档保留
+             给偏好极简透明观感的用户。 -->
+        <activity-alias
+            android:name=".MainActivityHibikiTransparent"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/launcher_icon_minimal"
             android:label="Hibiki"
             android:enabled="false"
             android:exported="true">

@@ -40,6 +40,25 @@ void main() {
       expect(buildFfmpegRemoteInputArgs(r'D:\v\a.mkv'), isEmpty);
       expect(buildFfmpegRemoteInputArgs('/tmp/a.mp4'), isEmpty);
     });
+
+    // TODO-1290: `-138` (mingw errno ETIMEDOUT) 是 connect 阶段的 TCP/TLS 网络错误，
+    // `-reconnect`/`-reconnect_streamed` 只管流中断/EOF、不覆盖它 → 短音频段仍硬失败。
+    // 守卫 `-reconnect_on_network_error 1` 存在且成对（值紧跟在开关后），且 remote-only。
+    test('http(s) inputs reconnect on connect-stage network error (TODO-1290)',
+        () {
+      final List<String> args =
+          buildFfmpegRemoteInputArgs('https://x.googlevideo.com/videoplayback');
+      final int i = args.indexOf('-reconnect_on_network_error');
+      expect(i, greaterThanOrEqualTo(0),
+          reason: 'connect 阶段网络错误(含 -138)必须触发自动重连');
+      expect(args[i + 1], '1');
+    });
+    test('local paths get no reconnect_on_network_error flag (TODO-1290)', () {
+      expect(buildFfmpegRemoteInputArgs(r'D:\v\a.mkv'),
+          isNot(contains('-reconnect_on_network_error')));
+      expect(buildFfmpegRemoteInputArgs('/tmp/a.mp4'),
+          isNot(contains('-reconnect_on_network_error')));
+    });
   });
 
   group('stream extractors embed reconnect flags for URL inputs (BUG-528)', () {
@@ -62,6 +81,11 @@ void main() {
       );
       expect(args, contains('-reconnect'));
       expect(args.indexOf('-reconnect'), lessThan(args.indexOf('-i')));
+      // TODO-1290: connect 阶段网络错误(-138)的重连开关也要传到句子音频抽取命令，
+      // 且置于 -i 之前（http 输入选项）——这正是用户日志里崩 -138 的那条命令。
+      expect(args, contains('-reconnect_on_network_error'));
+      expect(args.indexOf('-reconnect_on_network_error'),
+          lessThan(args.indexOf('-i')));
     });
     test('frame args reconnect on http input, before -i', () {
       final List<String> args = buildFfmpegFrameArgs(

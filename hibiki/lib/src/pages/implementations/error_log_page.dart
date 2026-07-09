@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:hibiki/src/utils/misc/log_exporter.dart';
 import 'package:hibiki/src/utils/misc/log_upload_config.dart';
 import 'package:hibiki/src/utils/misc/log_uploader.dart';
@@ -71,7 +72,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
               name: 'hibiki_error_log.txt',
               mimeType: 'text/plain',
             );
-            Share.shareXFiles([xFile], subject: t.error_log_share_subject);
+            HibikiShare.shareFiles([xFile], subject: t.error_log_share_subject);
           },
         ),
         if (showUploadLogAction)

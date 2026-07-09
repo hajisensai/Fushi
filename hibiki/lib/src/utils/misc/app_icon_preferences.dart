@@ -10,13 +10,15 @@ const String iconPresetPrefKey = 'app_icon_preset';
 /// 用户自定义图标的本地文件路径偏好键（桌面端）。
 const String iconCustomPathPrefKey = 'app_icon_custom_path';
 
-/// 两套预设 key → 用于预览/桌面窗口图标的 asset 路径。
-/// `default` 指向文字 wordmark（与默认启动器图标一致）。
-/// 历史上曾有第三档 `hibiki_minimal`，但它与 `default` 映射同一张图（仓库只有
-/// full + minimal 两张图，无独立 default 图），属重复选项，已去重移除；
-/// 老用户残留的 `hibiki_minimal` 由 [windowIconAssetForPreset] 安全回退到 default。
+/// 三套预设 key → 用于预览/桌面窗口图标的 asset 路径。
+/// `default` 指向不透明白色圆角方形（squircle）图标（任意壁纸可见，TODO-1241 起为默认）；
+/// `hibiki_transparent` 指向透明无背景的藏青 wordmark（旧默认，保留为可选项）；
+/// `hibiki_full` 指向響·书本精绘图标。
+/// 历史上曾有 `hibiki_minimal` 档，但它与旧 `default` 映射同一张图（重复选项），已去重
+/// 移除；老用户残留的 `hibiki_minimal` 由 [windowIconAssetForPreset] 安全回退到 default。
 const Map<String, String> presetIconAssets = <String, String>{
-  'default': 'assets/meta/launcher_icon_minimal.png',
+  'default': 'assets/meta/launcher_icon_squircle.png',
+  'hibiki_transparent': 'assets/meta/launcher_icon_minimal.png',
   'hibiki_full': 'assets/meta/launcher_icon_full.png',
 };
 

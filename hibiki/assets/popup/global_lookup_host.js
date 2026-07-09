@@ -66,6 +66,16 @@
   // content-ready after this budget so the card is not stuck invisible. Mirrors
   // the Dart 450ms reveal safety (controller.dart) one layer down.
   var CONTENT_READY_SAFETY_MS = 450;
+  // TODO-1231 v3 (BUG-583) — reveal-ready safety. A shell held hidden because the
+  // committed window origin does not YET cover it (an up/left-cascading child whose
+  // covering commitLayerShift is still round-tripping through Dart) must never be
+  // stuck: force reveal-ready after this budget so a lost/late commitLayerShift
+  // still shows the card (mildly-clipped fallback, never invisible). Mirrors
+  // CONTENT_READY_SAFETY_MS.
+  var REVEAL_READY_SAFETY_MS = 450;
+  // Sub-pixel slack for the origin-coverage compare (device-pixel-ratio
+  // rounding at the C++ window boundary) so an on-edge shell counts as covered.
+  var COVER_EPS = 0.5;
 
   // C1 — vertical offset (CSS px) from a frame shell top-left to the popup
   // CONTENT top. In Hibiki the iframe FILLS its shell and the star/audio header
@@ -114,6 +124,22 @@
   // shift (single popup / down-right cascade), matching the un-shifted layer.
   var layerOffsetLeft = 0;
   var layerOffsetTop = 0;
+
+  // TODO-1345 (BUG-583 深层根因续) — reserved cascade origin FLOOR (window-local
+  // CSS px, always <= 0). Dart computes it per lookup from the REAL screen edges
+  // (headroom toward the screen interior, bounded so the window stays on-screen)
+  // and pushes it on the renderStack payload (applyOriginFloor). measureAndReport
+  // pulls the union bbox MIN-corner (origin) OUT to at least this floor, so the
+  // window is revealed already covering the region an up/left cascade child will
+  // occupy. The child then lands INSIDE the committed origin and never moves it —
+  // no SetWindowPos + commitLayerShift round-trip across the DWM/WebView2 boundary
+  // when the child appears, so the pinned PARENT card has ZERO displacement (the
+  // residual BUG-583 rounds 1-4 could only mask by coinciding the origin move with
+  // the child's appearance frame). 0 = no reservation (down-right cascade, or the
+  // cursor sits against an edge) -> the origin is byte-identical to the pre-fix
+  // behaviour, so the common cascade + first reveal are unchanged.
+  var originFloorLeft = 0;
+  var originFloorTop = 0;
 
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
@@ -565,6 +591,7 @@
       revealReady: false,
       observer: null,
       contentSafetyTimer: null,
+      revealSafetyTimer: null,
     };
     frameSources.set(iframe, descriptor.id);
 
@@ -572,6 +599,9 @@
       record.loaded = true;
       wrapFrameBridge(record);
       injectContent(record);
+      // TODO-1231 P1 — seed the has-child flag on cold load (mirrors the in-app
+      // cold-load _setHasChildPopupJs); renderPayload keeps it in sync after.
+      applyHasChildPopup(record);
       observeContent(record);
       scheduleMeasure();
     });
@@ -587,6 +617,61 @@
     record[key] = true;
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(attr, 'true');
+    }
+  }
+
+  // TODO-1231 v3 (BUG-583) — a shell is "origin-covered" when the committed layer
+  // origin (layerOffsetLeft/Top — the window origin the C++ RevealStack actually
+  // moved to, set by commitLayerShift) is at or outside the shell's own top-left,
+  // i.e. the shell falls INSIDE the current window viewport. An up/left-cascading
+  // child placed at window-local coords LEFT/ABOVE the current origin is NOT covered
+  // until commitLayerShift moves the origin out to include it; revealing it before
+  // then paints it CLIPPED at the window edge for the whole Dart round-trip (the
+  // residual "子弹窗闪" — the child appears cut, then jumps into place). Down-right /
+  // already-ratcheted shells are covered immediately (unchanged). COVER_EPS absorbs
+  // sub-pixel rounding across the device-pixel-ratio boundary.
+  function shellCoveredByOrigin(record) {
+    if (!record || !record.shell) {
+      return false;
+    }
+    var left = parseFloat(record.shell.style.left) || 0;
+    var top = parseFloat(record.shell.style.top) || 0;
+    return left >= layerOffsetLeft - COVER_EPS &&
+        top >= layerOffsetTop - COVER_EPS;
+  }
+
+  // TODO-1231 v3 (BUG-583) — flip reveal-ready ONLY once the shell's geometry is
+  // placed AND the committed window origin covers it, so a shell never paints
+  // outside the window (clipped). A root / down-right child is covered from the
+  // start and flips immediately (byte-identical to the old unconditional flip). An
+  // up/left child is HELD until commitLayerShift extends the origin to reach it
+  // (re-checked there), so it first appears already in-position — no clipped-then-
+  // jump. A one-shot safety flips it regardless after REVEAL_READY_SAFETY_MS so a
+  // never-arriving commitLayerShift can never leave a card stuck hidden.
+  function maybeFlipRevealReady(record) {
+    if (!record) {
+      return;
+    }
+    if (record.revealReady) {
+      if (record.revealSafetyTimer != null) {
+        clearTimerSafe(record.revealSafetyTimer);
+        record.revealSafetyTimer = null;
+      }
+      return;
+    }
+    if (shellCoveredByOrigin(record)) {
+      if (record.revealSafetyTimer != null) {
+        clearTimerSafe(record.revealSafetyTimer);
+        record.revealSafetyTimer = null;
+      }
+      setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+      return;
+    }
+    if (record.revealSafetyTimer == null) {
+      record.revealSafetyTimer = setTimerSafe(function () {
+        record.revealSafetyTimer = null;
+        setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+      }, REVEAL_READY_SAFETY_MS);
     }
   }
 
@@ -689,9 +774,45 @@
       if (typeof d.settingsJs === 'string' && d.settingsJs.length) {
         win.eval(d.settingsJs);
       }
+      // TODO-1231 P1 — remember the body last eval'd into this frame so
+      // renderPayload can SKIP re-evaling an UNCHANGED body (a full renderPopup()
+      // card teardown+rebuild = the "父弹窗闪烁") on a nested open/close. Recorded
+      // even for an empty body so the equality check stays stable.
+      record.injectedSettingsJs =
+          (typeof d.settingsJs === 'string') ? d.settingsJs : '';
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  // TODO-1231 P1 — apply THIS frame's has-child-popup boolean on its own cheap
+  // channel: a single `window.__hasChildPopup` assignment inside the frame realm,
+  // mirroring the in-app _setHasChildPopupJs. Kept OFF settingsJs so a nested
+  // open/close never re-evals the whole card body. popup.js reads
+  // window.__hasChildPopup LIVE at click time (parent-card tap -> close the
+  // child), so setting the variable alone — no renderPopup() — is sufficient
+  // (BUG-434 behaviour preserved). Guarded on the last-applied value so an
+  // unchanged re-render posts nothing.
+  function applyHasChildPopup(record) {
+    var desired = !!(record.descriptor && record.descriptor.hasChildPopup);
+    if (record.hasChildPopup === desired) {
+      return;
+    }
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win || typeof win.eval !== 'function') {
+      return;
+    }
+    try {
+      win.eval('window.__hasChildPopup = ' + (desired ? 'true' : 'false') + ';');
+      record.hasChildPopup = desired;
+    } catch (e) {
+      // No realm yet (node harness / not loaded) -> the next render/load applies.
     }
   }
 
@@ -705,14 +826,39 @@
       record.descriptor = descriptor;
     }
     applyShellStyle(record.shell, descriptor);
-    // D1 — geometry is placed for this layer -> reveal-ready. The shell still
-    // stays hidden until content-ready also flips (the CSS gate needs BOTH), so
-    // a placed-but-empty frame never flashes.
-    setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+    // D1 / TODO-1231 v3 — geometry is placed for this layer, so reveal-ready is
+    // eligible. The shell still stays hidden until content-ready also flips (the
+    // CSS gate needs BOTH). reveal-ready flips NOW only if the committed window
+    // origin already covers the shell (root / down-right child); an up/left child
+    // whose window has not yet moved to reach it is HELD so it never paints clipped
+    // — commitLayerShift flips it once the origin catches up.
+    maybeFlipRevealReady(record);
     if (record.loaded) {
       wrapFrameBridge(record);
-      injectContent(record);
-      observeContent(record);
+      // TODO-1231 P1 — only re-run the FULL body (which ends in renderPopup() = a
+      // card DOM teardown+rebuild) when it ACTUALLY changed. A nested open/close
+      // leaves the parent's body byte-identical (has-child now rides its own
+      // channel below), so re-evaling it needlessly rebuilt the card, dropped its
+      // scroll, and re-fired favorite/duplicate/audio probes — the "父弹窗闪烁".
+      // Skip it; the one thing that changed rides applyHasChildPopup.
+      if (record.injectedSettingsJs !== descriptor.settingsJs) {
+        injectContent(record);
+        observeContent(record);
+      } else if (hasContent(record)) {
+        // TODO-1231 (BUG-583) — the body did not change (same-word re-lookup, or
+        // a nested render re-sending the parent's identical body) AND the frame
+        // already holds a rendered card. That card IS this render's correct
+        // content, so satisfy the (possibly beginLookup-re-gated) content gate
+        // now. Without this, a same-word re-lookup — where renderPayload skips the
+        // re-eval and beginLookup no longer re-observes the stale card — would
+        // wait for a popupRendered that never comes and reveal blank via the Dart
+        // ready-safety only. Gated on hasContent so a freshly-created empty frame
+        // (whose body genuinely has not rendered yet) still follows the
+        // observeContent gate. markContentReady is a no-op when already satisfied
+        // (nested open of a live parent).
+        markContentReady(record);
+      }
+      applyHasChildPopup(record);
     }
     return record;
   }
@@ -743,6 +889,10 @@
         if (record.contentSafetyTimer != null) {
           clearTimerSafe(record.contentSafetyTimer);
           record.contentSafetyTimer = null;
+        }
+        if (record.revealSafetyTimer != null) {
+          clearTimerSafe(record.revealSafetyTimer);
+          record.revealSafetyTimer = null;
         }
         if (record.shell && record.shell.parentNode) {
           record.shell.parentNode.removeChild(record.shell);
@@ -775,6 +925,19 @@
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
   function beginLookup(rootId) {
     lastBBoxKey = '';
+    // TODO-1231 v3 (BUG-583) — a NEW hotkey lookup re-reveals the window from a
+    // fresh origin; drop the committed layer origin so a stale NEGATIVE origin left
+    // by a PREVIOUS lookup's up/left cascade cannot falsely mark THIS lookup's
+    // up/left child as already-covered (which would reveal it clipped). Mirrors the
+    // Dart ratchet reset (_ratchetLeft/_ratchetTop = infinity) one layer up. The
+    // real layer transform is re-applied by this lookup's first commitLayerShift.
+    layerOffsetLeft = 0;
+    layerOffsetTop = 0;
+    // TODO-1345 (BUG-583 深层根因续) — drop the previous lookup's reserved cascade
+    // floor so it can never leak into a fresh lookup (a new lookup re-computes its
+    // own floor from the new cursor position and pushes it via the next renderStack).
+    originFloorLeft = 0;
+    originFloorTop = 0;
     if (typeof rootId !== 'string' || !rootId) {
       return;
     }
@@ -787,13 +950,57 @@
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
     }
-    // Re-arm the content observer + safety timer so the fresh card re-signals
-    // content-ready (observeContent no-ops if contentReady were still true).
-    observeContent(record);
+    // TODO-1231 (BUG-583) -- tear down the PREVIOUS lookup's content observer +
+    // safety timer, but DO NOT re-arm an observer off the stale card here. The
+    // reused iframe still holds the previous lookup's `.glossary-content`, so
+    // calling observeContent now would synchronously re-satisfy content-ready
+    // from that STALE card and fire a premature overlaySize -- which revealed the
+    // OLD card at the cursor for a frame (the "第一个弹窗出现时闪") before showAt
+    // parked the window off-screen again for the fresh render. The content gate
+    // is instead re-armed by the FOLLOWING renderStack: a changed body runs
+    // injectContent + observeContent on the NEW card; an unchanged body (same
+    // word) markContentReady's the already-correct content in renderPayload. So
+    // the reveal-driving overlaySize now originates only from the fresh render,
+    // never from the stale card.
+    if (record.observer && typeof record.observer.disconnect === 'function') {
+      try {
+        record.observer.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.observer = null;
+    }
+    if (record.contentSafetyTimer != null) {
+      clearTimerSafe(record.contentSafetyTimer);
+      record.contentSafetyTimer = null;
+    }
+  }
+
+  // TODO-1345 (BUG-583 深层根因续) — set the reserved cascade origin floor from the
+  // render payload (Dart's screen-edge-aware headroom). Called from renderStack so
+  // the floor is in place before the following measureAndReport reports the origin.
+  // Guarded: an absent / malformed value leaves the floor at its current (reset) 0
+  // (no reservation). The floor only ever reserves OUTWARD (<= 0); a positive value
+  // would pull the origin INWARD and clip the root, so it is clamped out to 0.
+  function applyOriginFloor(floor) {
+    if (!floor || typeof floor !== 'object') {
+      return;
+    }
+    var l = (typeof floor.left === 'number' && isFinite(floor.left))
+        ? floor.left
+        : 0;
+    var t = (typeof floor.top === 'number' && isFinite(floor.top))
+        ? floor.top
+        : 0;
+    originFloorLeft = l < 0 ? l : 0;
+    originFloorTop = t < 0 ? t : 0;
   }
 
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
+    // measure so the very first reveal already commits the headroom-covered origin.
+    applyOriginFloor(payload && payload.originFloor);
     if (!popups.length) {
       removeMissing([]);
       lastBBoxKey = '';
@@ -831,8 +1038,36 @@
     if (!frames.size) {
       return;
     }
+    // TODO-1231 v2 (BUG-583) — the union bbox has two independently-sourced
+    // corners because they drive DIFFERENT things:
+    //   * MIN-corner (origin): drives the window POSITION (SetWindowPos) AND the
+    //     compensating commitLayerShift(-min) that pins the ROOT card at the
+    //     cursor. A shell's on-screen position is (windowOrigin + layerShift +
+    //     shellLocal) = cursor + shellLocal, so moving the origin does NOT move a
+    //     card — EXCEPT for the ~1 frame where SetWindowPos has landed on the DWM
+    //     window but the commitLayerShift ExecuteScript has NOT yet re-composited
+    //     the WebView2 layer: during that gap the pinned parent card lurches by
+    //     the origin delta, then snaps back (the residual “父弹窗出现子弹窗时闪
+    //     一下”). So the origin must follow ONLY shells the user can already see
+    //     (content-ready): a freshly-opened, still-gated-hidden child that
+    //     cascades UP/LEFT must NOT drag the origin outward — and lurch the parent
+    //     — before it has even rendered. When that child becomes content-ready
+    //     (about to paint) it joins the origin set, so the single origin move
+    //     coincides with the child's own appearance frame (masked).
+    //   * MAX-corner (far edges): drives the window SIZE only. Growing it keeps
+    //     the origin (and thus the layer shift) fixed, so it never moves the
+    //     parent. It therefore includes EVERY placed shell — the window pre-grows
+    //     down/right to cover a not-yet-ready child so that child is not clipped
+    //     when it paints. A DOWN-RIGHT cascade only ever grows the max-corner, so
+    //     the parent is now PERFECTLY still throughout a nested open.
+    // Bootstrap: before ANY shell is content-ready (the very first root reveal,
+    // where there is no visible parent to lurch), the origin falls back to all
+    // placed shells — byte-identical to the pre-fix behaviour, so the first
+    // reveal is unchanged and the existing harness (#11/#15) still passes.
     var minLeft = Infinity;
     var minTop = Infinity;
+    var minLeftAll = Infinity;
+    var minTopAll = Infinity;
     var maxRight = -Infinity;
     var maxBottom = -Infinity;
     frames.forEach(function (record) {
@@ -844,30 +1079,58 @@
       if (measured > 0 && (height <= 0 || measured < height)) {
         height = measured;
       }
-      if (left < minLeft) minLeft = left;
-      if (top < minTop) minTop = top;
+      // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
+      // shell, so the window pre-grows to cover a not-yet-ready child (no clip).
+      if (left < minLeftAll) minLeftAll = left;
+      if (top < minTopAll) minTopAll = top;
       if (left + width > maxRight) maxRight = left + width;
       if (top + height > maxBottom) maxBottom = top + height;
+      // MIN-corner (window origin / pin) follows ONLY shells the user can already
+      // see, so a hidden child never moves the pinned parent before it paints.
+      if (record.contentReady) {
+        if (left < minLeft) minLeft = left;
+        if (top < minTop) minTop = top;
+      }
     });
+    // No content-ready shell yet (bootstrap first reveal): follow all placed
+    // shells so the reveal geometry is identical to the pre-fix behaviour.
+    if (!isFinite(minLeft) || !isFinite(minTop)) {
+      minLeft = minLeftAll;
+      minTop = minTopAll;
+    }
+    // TODO-1345 (BUG-583 深层根因续) — pull the origin OUT to at least the reserved
+    // cascade floor. Applied AFTER the content-ready / bootstrap min so the floor is
+    // a lower bound on how far IN the origin can sit (it only ever moves the origin
+    // outward), never a cap. This is the root fix for the residual parent lurch: an
+    // up/left child that lands WITHIN the floor no longer pulls the origin when it
+    // becomes content-ready (min(shellLeft, floor) == floor while shellLeft >= floor)
+    // — the window origin is frozen from the first reveal, so the pinned parent card
+    // has ZERO displacement. 0 (default / down-right / cursor at an edge) leaves the
+    // origin byte-identical (min(x, 0) never pulls a non-positive x outward).
+    if (originFloorLeft < minLeft) {
+      minLeft = originFloorLeft;
+    }
+    if (originFloorTop < minTop) {
+      minTop = originFloorTop;
+    }
     if (!isFinite(minLeft) || !isFinite(minTop) ||
         !isFinite(maxRight) || !isFinite(maxBottom)) {
       return;
     }
-    // Shift the layer so the bbox top-left maps to the window origin: the C++
-    // window moves to (cursor + minLeft, cursor + minTop) and grows to the bbox
-    // size (E1), so shifting the layer by (-minLeft, -minTop) keeps the ROOT
-    // card pinned at the cursor while the whole cascade fits inside the window.
-    var layerEl = document.getElementById(LAYER_ID);
-    if (layerEl) {
-      layerEl.style.left = (-minLeft) + 'px';
-      layerEl.style.top = (-minTop) + 'px';
-    }
-    // TODO-1189 — remember the applied layer translation so frameIdAtPoint can
-    // map shell coords back to WINDOW coords when hit-testing. The layer is
-    // shifted by (-minLeft, -minTop); the amount a shell's window position is
-    // reduced by is therefore (minLeft, minTop).
-    layerOffsetLeft = minLeft;
-    layerOffsetTop = minTop;
+    // TODO-1231 P2 — do NOT shift the host layer (nor set layerOffset*) HERE. The
+    // layer translation (-minLeft,-minTop) that pins the ROOT card at the cursor
+    // while the window covers the whole cascade bbox must be applied ONLY AFTER
+    // C++ SetWindowPos has moved the window to the new bbox origin. When the host
+    // shifted the layer synchronously (WebView2 compositor, immediate) but the
+    // window only moved a full Dart round-trip later, the two compensating moves
+    // landed on DIFFERENT vsync frames and the parent card visibly lurched then
+    // snapped back (the "几何跳动" half of TODO-1231). C++ RevealStack now calls
+    // commitLayerShift(box.left, box.top) right AFTER SetWindowPos so the window
+    // move and the content shift are causally ordered (window first, content ~1
+    // frame later) instead of racing. Mitigation, not a true atomic commit: the
+    // DWM window and the WebView2 surface cannot move in the SAME frame across the
+    // JS/window boundary, so a ~1 frame residual remains (vs the old multi-frame
+    // desync) — and only for a left/up cascade (dx/dy != 0; down-right stays 0).
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
     var box = {
@@ -903,6 +1166,36 @@
     } catch (e) {
       return 0;
     }
+  }
+
+  // TODO-1231 P2 — apply the layer translation that pins the ROOT card at the
+  // cursor while the window covers the whole cascade bounding box. Called by C++
+  // RevealStack AFTER SetWindowPos (see measureAndReport), so the window has
+  // already moved to the bbox origin before the content compensates. [bboxLeft]/
+  // [bboxTop] are the union bbox origin (window-local CSS px — the SAME values
+  // Dart sized/positioned the window from), so the layer is translated by their
+  // negation and layerOffset* is kept in lock-step for the hit-test (TODO-1189).
+  // CSS px only (no dpr; the dpr boundary is the C++ window). Bad args default to
+  // 0 (no shift), matching a single popup / down-right cascade.
+  function commitLayerShift(bboxLeft, bboxTop) {
+    var l = (typeof bboxLeft === 'number' && isFinite(bboxLeft)) ? bboxLeft : 0;
+    var t = (typeof bboxTop === 'number' && isFinite(bboxTop)) ? bboxTop : 0;
+    var layerEl = document.getElementById(LAYER_ID);
+    if (layerEl) {
+      layerEl.style.left = (-l) + 'px';
+      layerEl.style.top = (-t) + 'px';
+    }
+    layerOffsetLeft = l;
+    layerOffsetTop = t;
+    // TODO-1231 v3 (BUG-583) — the window just settled at this origin, so any shell
+    // held hidden because it fell OUTSIDE the previous (narrower) window is now
+    // covered; flip its reveal-ready so it paints IN PLACE, coincident with the
+    // window/layer settling — no clipped-then-jump. Idempotent (covered shells that
+    // already revealed are a no-op); content-ready is gated separately, so a child
+    // still waits for its own popupRendered before actually painting.
+    frames.forEach(function (record) {
+      maybeFlipRevealReady(record);
+    });
   }
 
   // TODO-890 — slide the ROOT card off-screen, THEN post dismiss. Adds the
@@ -1167,6 +1460,7 @@
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,
+    commitLayerShift: commitLayerShift,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
     _frames: frames,

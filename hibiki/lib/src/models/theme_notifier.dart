@@ -402,6 +402,16 @@ class ThemeNotifier extends ChangeNotifier {
       brightness: Brightness.light,
       variant: DynamicSchemeVariant.tonalSpot,
     ),
+    // Eye-care (护眼): a warm, low-blue-light sage-green light theme. The seed is a
+    // muted bean-paste green (豆沙绿 family) so the whole app chrome carries a soft
+    // green cast that is easier on the eyes than pure white; the reader body gets an
+    // explicit bean-green background (#C7EDCC) via the reader `_themeMap` /
+    // `_themeColors` presets, matching the pronounced backgrounds of ecru/water.
+    'eyecare-theme': (
+      seed: Color(0xFF5E8C63),
+      brightness: Brightness.light,
+      variant: DynamicSchemeVariant.tonalSpot,
+    ),
     // The three dark presets share near-identical tonalSpot output (all collapse
     // to teal #8bd0ef on near-black), so each gets a distinct M3 scheme variant
     // to stay visibly apart (TODO-100):
@@ -430,6 +440,7 @@ class ThemeNotifier extends ChangeNotifier {
     'light-theme': 'theme_light',
     'ecru-theme': 'theme_ecru',
     'water-theme': 'theme_water',
+    'eyecare-theme': 'theme_eyecare',
     'gray-theme': 'theme_gray',
     'dark-theme': 'theme_dark',
     'black-theme': 'theme_black',
@@ -443,6 +454,8 @@ class ThemeNotifier extends ChangeNotifier {
         return t.theme_ecru;
       case 'theme_water':
         return t.theme_water;
+      case 'theme_eyecare':
+        return t.theme_eyecare;
       case 'theme_gray':
         return t.theme_gray;
       case 'theme_dark':

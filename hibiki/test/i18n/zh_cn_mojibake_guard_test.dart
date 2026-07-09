@@ -102,6 +102,19 @@ void main() {
       }
     });
 
+    // TODO-1238: 导出内容选择对话框（backup_export_categories_title「选择要导出的内容」）
+    // 的提示曾自相矛盾——先称「数据库中的书籍记录始终包含」，又称取消「书籍」会连书籍
+    // 记录一并排除。实际导出逻辑里书籍记录本就随「书籍」勾选联动（取消 BackupCategory.books
+    // → _retainBooks 剥离全部 epub_books 行，见 test/sync/backup_categories_test.dart 的
+    // ghost-book 用例）。删掉「始终包含」的误导措辞后，本守卫防止其回潮。
+    test(
+        'backup_export_categories_hint no longer claims book records are always kept',
+        () {
+      final String hint = zhStrings['backup_export_categories_hint']!;
+      expect(hint.contains('始终包含'), isFalse,
+          reason: '导出内容提示不得再声称书籍记录「始终包含」——书籍记录随「书籍」勾选联动：$hint');
+    });
+
     test('TODO-434 clip export keys use Chinese clip wording', () {
       const clipKeys = <String>[
         'video_clip_export',

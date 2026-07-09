@@ -339,20 +339,6 @@ Widget buildLanguageSelector(SettingsContext settingsContext) {
   );
 }
 
-/// TODO-930: a custom theme entry's display name. The name is optional
-/// (decision 3); an empty name falls back to the localized default
-/// `Custom N`, where N is the entry's 1-based position in the list. Pure so
-/// both the swatch row and the editor hint can share one source of truth.
-String customThemeDisplayName(AppModel appModel, CustomThemeEntry entry) {
-  if (entry.name.trim().isNotEmpty) return entry.name;
-  final int index = appModel.customThemes.indexWhere(
-    (CustomThemeEntry e) => e.id == entry.id,
-  );
-  final int position =
-      index >= 0 ? index + 1 : appModel.customThemes.length + 1;
-  return t.custom_theme_default_name(n: position);
-}
-
 /// TODO-930: the default seed for a brand-new custom theme. Sticks with the
 /// 928 brand-teal default (the new theme then follows the current global
 /// brightness, decision 6); kept as a helper so the swatch row and editor agree.
@@ -437,6 +423,9 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // （写 app_theme_key=custom-theme:<id>），长按=进编辑页编辑该主题。
         // 预览圈读各 entry 的种子+角色色 + 当前真实全局明暗（自定义主题跟随
         // 全局明暗，custom_theme_dark 已停写、不是真值）。
+        // TODO-1320: swatch 下不再渲染主题名 caption——系统/预设/自定义所有主题
+        // 卡片统一只显示完整对角预览、无底部多余文字（选中与否都完整、且高度一致，
+        // 不再因自定义带 label 而比预设高）。主题名仍可在长按/编辑按钮进入的编辑页查看修改。
         ...appModel.customThemes.map((CustomThemeEntry e) {
           final String key = 'custom-theme:${e.id}';
           return HibikiSchemeSwatch(
@@ -460,7 +449,6 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             selected: appModel.appThemeKey == key ||
                 (appModel.appThemeKey == 'custom-theme' &&
                     appModel.activeCustomThemeEntry?.id == e.id),
-            label: customThemeDisplayName(appModel, e),
             onTap: () async {
               await appModel.setAppThemeKey(key);
               notifyReaderSettingsChanged(settingsContext);

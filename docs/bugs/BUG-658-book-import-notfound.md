@@ -1,0 +1,15 @@
+## BUG-658 · 特殊字符标题EPUB导入后打不开/删不掉(bookKey含%XX被标识符round-trip解码)
+- **报告**：2026-07-09（用户：TODO-1344）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/sources/reader_hibiki_source.dart:98`（原 `parseBookKey` 用 `Uri.tryParse(identifier).pathSegments.join('/')` 解析 `hoshi://book/<bookKey>`，把 pathSegments **percent-decode**）。而 `mediaIdentifierFor`（同文件 line 57）用裸字符串插值嵌入 key（不编码）。`sanitizeTtuFilename`（`hibiki/lib/src/sync/ttu_filename.dart:19-25`）把标题里的 `/?<>\:|%"*` 编成 `%XX`，故合法 bookKey 本身含字面 `%3C`/`%3E`/`%3F`。round-trip 时 `%3F`→`?`、`%3C`→`<` 被解码，得到的 key ≠ 存库主键 → `getEpubBook(decodedKey)==null`。
+  - 用户两本书实读 dc:title（解压 OPF 验证）：
+    - `業物語 (講談社BOX)…epub` → dc:title `業物語 <物語> (講談社ＢＯＸ)`（OPF 里是 `&lt;物語&gt;`，XML `innerText` 解码成 `<`/`>`）→ bookKey `業物語 %3C物語%3E (講談社ＢＯＸ)`。
+    - `Do Androids Dream of Electric Sheep？.epub`（文件名全角？）→ dc:title `Do Androids Dream of Electric Sheep?`（半角?）→ bookKey `Do Androids Dream of Electric Sheep%3F`。
+  - 症状因果：
+    - 打开「找不到书籍」：`buildLaunchPage`→`_extractBookKey`→`parseBookKey`(解码 corrupted key)→`ReaderHibikiPage.bookKey`→`_locateBookOnDisk`→`getEpubBook(corrupted)==null`→`extractDir=''`→`bookDirExists('')==false`→`book_file_not_found` toast + pop（`reader_hibiki_page.dart:1532-1536,1688`）。
+    - 「删不掉」：删除动作 `_parseBookKey(item.mediaIdentifier)`→corrupted key→`deleteBook(corrupted)`→`getEpubBook==null && srt==null`→early-return `false`（`reader_hibiki_source.dart:551`）→调用方 `epub_delete_error` toast（`books.part.dart:536`）。
+  - 关键：导入本身正确（`EpubImporter._persistParsed` 用 `sanitizeTtuFilename(title)` 同时做主键与磁盘目录名，实测 Windows 能建这两个含 `%XX`/全角的文件夹）。**无脏数据落库，纯读侧标识符 round-trip bug**；不含 `%` 的键（99% 的书）round-trip 恒等，故只有特殊字符标题的书中招。同一潜在 bug 也在 `shelf_ordering.dart:278` 的 `_parseHoshiBookKey`。
+- **[x] ① 已修复** — commit `c70812163`。把 `parseBookKey`（`reader_hibiki_source.dart`）与 `_parseHoshiBookKey`（`shelf_ordering.dart`）改为「取 `hoshi://book/` 前缀之后的 RAW 余串，绝不 percent-decode」——裸切片是 `mediaIdentifierFor` 裸插值的精确逆运算，对含/不含 `%` 的键都无损，且对不含 `%` 的键与旧结果完全一致（零破坏）。并把 `mediaIdentifierFor` 与 `parseBookKey` 收敛到同一 `_bookIdentifierPrefix` 常量，使 encode/decode 对不再漂移。**修复本身即修复机制**：所有此前导入的特殊字符书在下次书架渲染时自动恢复可开/可删，无需迁移、无需用户操作、无脏数据清理。
+- **[x] ② 已加自动化测试** — commit `c70812163`。
+  - `hibiki/test/media/sources/reader_hibiki_source_test.dart`：新增 group「book-key identifier round-trip」——① `parseBookKey(mediaIdentifierFor(k))==k` 覆盖每个 sanitize 转义（`%2F %3F %3C %3E %3A %7C %25 %22 %5C`）+ 两本真实书 key + 无 `%` 常规键；② 两本真实标题 `sanitizeTtuFilename` 结果逐字断言；③ `parseBookKey` 对非书标识符返 null；④ **端到端闭环**：以真实 `%3F` key 插行→`mediaIdentifierFor`→`parseBookKey`→`getEpubBook` 命中→`deleteBook` 真删且返 true。
+  - `hibiki/test/utils/shelf_ordering_test.dart`：`shelfSelectionToEntry('hoshi://book/<%-key>')` 保留字面 `%XX`（不解码回 `</>/?`）。
+- **备注**：真机验收步骤（Windows / Android 皆可）：导入这两本 EPUB → 点开应正常进阅读器（非「找不到书籍」）→ 长按/详情删除应成功移除（非「删除失败」）。旧库里已中招的书升级后无需任何操作即自愈。

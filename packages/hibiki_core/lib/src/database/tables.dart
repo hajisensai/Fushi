@@ -394,6 +394,14 @@ class VideoBooks extends Table {
       .nullable()
       .references(MediaSources, #id, onDelete: KeyAction.setNull)();
 
+  /// TODO-1157：流媒体书的重开规格（JSON）。非空当且仅当这是一条「粘贴 URL 导入」的
+  /// 流媒体书（判据以 [videoPath] 是 http/https 为准，本列只补 videoPath 装不下的
+  /// 外挂字幕 URL / 防盗链 header）：`{subtitleUrl,subtitleFileName,referer,userAgent}`。
+  /// 本地文件视频恒 null。存的是「原始粘贴 URL」侧信息，重开时据此重建
+  /// UrlStreamVideoClient（YouTube 按 videoPath 重解析），使流媒体像本地视频一样入库、
+  /// 在书架持久、可重复打开。null = 无外挂字幕/header 的直链流或本地视频。
+  TextColumn get streamSpecJson => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {bookUid};
 }
@@ -426,6 +434,15 @@ class FavoriteWords extends Table {
   TextColumn get reading => text().withDefault(const Constant(''))();
   TextColumn get glossary => text().withDefault(const Constant(''))();
   TextColumn get sourceType => text()(); // 'book' | 'video'
+  // TODO-1252：收藏归属的书 / 视频身份（[bookKey] 存书身份 / 视频 bookUid，[title] 存
+  // 书 / 视频标题），在收藏那一刻从阅读器 / 视频页的书上下文写入，供统计页 per-book /
+  // per-video tile 按 [title] 聚合展示「收藏 N」（与查词 / 制卡 tile 同源同样式）。
+  // uniqueKey 不变（仍 {expression, reading, sourceType} 全局去重）→ 汇总面板计数与
+  // 云同步 / 备份合并契约完全不变；无书上下文（首页 / 独立查词 / 歌词 / 外部覆盖窗 /
+  // 同步回灌）时 [title]='' → 只进汇总，不落任何 per-book / per-video tile。收藏是可
+  // 增删的集合（取消收藏即删行），tile 聚合活行 → 取消收藏后该书计数自然回落。
+  TextColumn get bookKey => text().nullable()();
+  TextColumn get title => text().withDefault(const Constant(''))();
   TextColumn get dateKey => text()();
   IntColumn get createdAt => integer()();
 
@@ -527,8 +544,9 @@ class MinedSentences extends Table {
 /// 扫描后产出多本书/视频（[EpubBooks].sourceId / [VideoBooks].sourceId 反向指向）。
 ///
 /// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源恒 NULL；网络来源（SFTP/
-/// FTP/HTTP，M3 才落）只存凭据「引用（键）」而非密码本体，密码存储方案（复用 base64
-/// vs 真 secure storage）是 M3 用户决策点，不在 M0 预判。
+/// FTP，TODO-1274 已接入）只存**非敏感连接参数** JSON（host/port/username/useTls）；
+/// 密码/私钥经 MediaSourceCredentialStore 以 base64 单独落 Preferences（键
+/// `media_source_secret_<id>`，按行 id 隐式引用），绝不进入 configJson。
 @DataClassName('MediaSourceRow')
 class MediaSources extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -547,7 +565,8 @@ class MediaSources extends Table {
   /// 本地绝对路径或网络根（含 scheme）。
   TextColumn get rootPath => text()();
 
-  /// 凭据引用（键）/ 网络配置 JSON。**绝不裸存明文密码**；本地恒 NULL。
+  /// 非敏感网络连接参数 JSON（host/port/username/useTls）。**绝不裸存明文密码/
+  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL。
   TextColumn get configJson => text().nullable()();
 
   /// 截图「媒体数」：上次扫描产出的条目数。

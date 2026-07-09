@@ -127,9 +127,12 @@ void main() {
     });
 
     test('Esc 在剧集列表开着时先关它（经 _closeEpisodeList）', () {
+      // 断言语义而非硬编码缩进：某个 `if (_episodeListVisible.value) {` 的紧邻下一
+      // 语句是 `_closeEpisodeList();`（即 Esc 分支逐级退出）。用 \s* 容忍缩进/换行，
+      // 避免 escape 处理器被重构成不同嵌套深度（如 TODO-1342 手柄映射）时假红。
       expect(
-        src.contains('if (_episodeListVisible.value) {\n            '
-            '_closeEpisodeList();'),
+        RegExp(r'if \(_episodeListVisible\.value\) \{\s*_closeEpisodeList\(\);')
+            .hasMatch(src),
         isTrue,
         reason: 'Esc 分支应在剧集列表开着时调 _closeEpisodeList 逐级退出',
       );

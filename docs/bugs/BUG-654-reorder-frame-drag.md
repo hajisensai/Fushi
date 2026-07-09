@@ -1,0 +1,13 @@
+## BUG-654 · 编辑排序合集分组框看不见 + 手机缩放态拖动误滚(TODO-947)
+- **报告**：2026-07-09（用户：）
+- **真实性**：✅ 真 bug（两处，均与 [HibikiAppUiScale] 整体缩放相关）。
+  - **① 分组框看不见**：根因 `hibiki/lib/src/pages/implementations/series_shelf_card.dart:334`（`SeriesReorderFrame.build`）。旧实现只用 `foregroundDecoration` 画一道 **2.5px 前景细线**边框，且书卡自带 12px 内边距（`_bookCardShell`），边框落在格子外缘、离封面 12px 的间隙里。手机默认 `HibikiAppUiScale`（`hibiki/lib/src/utils/app_ui_scale.dart`，用 `FittedBox(BoxFit.fill)`）缩放 s<1 时 2.5px 被压成亚像素 → 边框「看不见」；即便看见也只是每格一圈脱离封面的细框，读不出「一叠合集」。诊断：无缩放渲染可见但脱框；缩放 0.5 下细线消失。
+  - **② 手机拖动误滚**：根因 `hibiki/lib/src/utils/components/hibiki_reorderable_grid.dart:276`（`_updateDrag` 里喂 `EdgeDraggingAutoScroller`）。旧实现 `localToGlobal(_feedbackTopLeft) & _cellSize` = **全局原点 + 本地尺寸**。`EdgeDraggingAutoScroller.startAutoScrollIfNecessary` 用 `proxyEnd > viewportEnd`（全局比较，无阈值余量）判边缘。缩放 s<1 时全局尺寸应为 `_cellSize*s`，旧矩形底边多伸 `_cellSize*(1-s)`（缩放 0.5、cell 200 → 多 100 全局像素）→ 浮层还在视口内就被判「已过底边」→ 一拖就误触发向下 auto-scroll，手机上表现为「移动有问题」。诊断实测（scale 0.5、cell 全局高 100、视口全局底 800）：浮层中心拖到 `bottom-100`（全局底 750，仍在视口内）旧实现会滚、修复后 `pixels==0` 不滚；真拖到底边两者都滚。
+  - 注：拖拽浮层跟手/落点命中本身在缩放下已正确（诊断实测 feedback 位移与手指位移 1:1，无飞出）——本 bug 不动那条已正确的坐标路径。
+- **[x] ① 已修复** — commit 见下。
+  - 边框：`series_shelf_card.dart` 改为**实心 matte 背景**（`decoration` 同系列色 alpha 0.32，从 12px 间隙漏出一圈可见带宽，缩放下留得住）+ **实心 3px 边框**（`foregroundDecoration`）二者并存；实心填充/带宽在任意缩放都可见，同系列同色 matte → 读作「一叠」。matte 在卡片之下、只从内边距漏出，不给不透明封面着色。
+  - auto-scroll：`hibiki_reorderable_grid.dart` 改用 `MatrixUtils.transformRect(ro.getTransformTo(null), _feedbackTopLeft & _cellSize)` 把整个浮层矩形按祖先缩放映射到全局，原点与尺寸都随缩放正确换算；s==1 与旧式逐像素等价（无回归）。
+- **[x] ② 已加自动化测试** —
+  - 边框可视化守卫：`hibiki/test/pages/shelf_reorder_series_inline_test.dart`「分组框：实心 matte 背景 + ≥3px 同色边框都在」——断言承载框的 Container `decoration`(实心 matte，色相取自系列色) 与 `foregroundDecoration`(系列色、宽 ≥3) 同时存在。
+  - 缩放态 auto-scroll 守卫：`hibiki/test/widgets/hibiki_reorderable_grid_test.dart`「界面缩放 0.5 下边缘 auto-scroll 用全局尺寸：视口内不误滚、真到底边才滚」——缩放 0.5 下把浮层拖到「全局仍在视口内」不得 auto-scroll（旧本地尺寸实现会误滚），拖到真底边则必须滚。
+- **备注**：验证 `flutter test`（两文件 20 用例绿）+ 全量 `flutter analyze` 净。真机验收：手机开书架「编辑排序」，界面大小设非 1.0（缩放态），看合集成员是否有同色实心分组框（一眼成叠）；长按拖动成员，浮层还在屏内时列表不得自己乱滚，只有拖到屏幕上/下边缘才滚动。

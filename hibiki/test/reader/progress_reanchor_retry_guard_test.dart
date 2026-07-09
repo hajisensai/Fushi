@@ -63,7 +63,17 @@ void main() {
   test('onAfterCommit 补刷仍在（重锚 commit 成功路径不回归）', () {
     final String chrome =
         read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
-    expect(chrome, contains('onAfterCommit: () => _refreshProgress(),'),
-        reason: 'TODO-933 的 commit 成功补刷路径保留，与新重试互补');
+    // TODO-1309：连续模式恢复的 onAfterCommit 从单行箭头改为 async 块——commit 清
+    // `_reanchorPending` + 打 B-3 settle 窗之后，先应用排队的章内精确定位
+    // （_applyPendingPreciseLocate，跨章搜索跳转的 scrollToSearchMatch），再
+    // _refreshProgress 补刷。TODO-933 的 commit 成功补刷路径（_refreshProgress）必须
+    // 保留，与 BUG-493 的 null 分支重试互补；空白归一后比对逻辑内容（dart format 折行）。
+    final String chromeFlat = chrome.replaceAll(RegExp(r'\s+'), ' ');
+    expect(
+        chromeFlat,
+        contains('onAfterCommit: () async { '
+            'await _applyPendingPreciseLocate(); '
+            'await _refreshProgress(); },'),
+        reason: 'TODO-933 的 commit 成功补刷路径保留（TODO-1309 后先应用精确定位再补刷）');
   });
 }

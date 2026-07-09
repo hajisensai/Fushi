@@ -66,6 +66,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onReloadChapter,
     this.onLyricsReload,
     this.onAudioImport,
+    this.initialSubPage,
     super.key,
   });
 
@@ -129,6 +130,11 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final Future<void> Function()? onLyricsReload;
   final VoidCallback? onAudioImport;
 
+  /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
+  /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
+  /// 之后由用户导航自行覆盖。
+  final String? initialSubPage;
+
   @override
   State<ReaderQuickSettingsSheet> createState() =>
       _ReaderQuickSettingsSheetState();
@@ -146,7 +152,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   bool _layoutReloading = false;
   bool _exitScheduled = false;
 
-  String? _subPage;
+  late String? _subPage = widget.initialSubPage;
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
@@ -610,6 +616,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       settingsContext: settingsContext,
       destination: destination,
       shrinkWrap: true,
+      // 本面板已在外层 SingleChildScrollView 提供横向 padding（widePrimaryPadding /
+      // narrowPadding）；让渲染器别再自带横向缩进，否则 schema 投影子页（布局 / 阅读
+      // 控制 / 查词）会双重缩进、比 bespoke 的「导航 / 有声书」子页更窄（TODO-1321）。
+      insetHorizontally: false,
     );
   }
 
@@ -640,20 +650,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 删外观组后主题仍可达。主题行用专门的 [_themeSettingsContext]（换肤后还要
   /// `_syncThemeSelection` 落 reader 设置 + 触发词典/歌词联动）。
   Widget _buildThemeSelectorSection() {
-    final Widget section = AdaptiveSettingsSection(
-      children: <Widget>[buildThemeSelector(_themeSettingsContext())],
-    );
     // 主题卡与下方 layout schema section 并列同一 Column（见 _buildLayoutDetail）。
-    // schema section 走 MaterialSettingsRenderer.buildDetailContent，正文额外套了
-    // detailHorizontalInsets 的横向缩进；主题卡若裸放就会比配置行更宽、左右对不齐
-    // （BUG-545）。Cupertino 渲染器的 buildDetailContent 无横向内边距，故仅 Material
-    // 补这层缩进，两处共用同一真相源 detailHorizontalInsets，消除等宽特例。
-    if (isCupertinoPlatform(context)) return section;
-    return Padding(
-      padding: MaterialSettingsRenderer.detailHorizontalInsets(
-        HibikiDesignTokens.of(context),
-      ),
-      child: section,
+    // schema section 现走 buildDetailContent(insetHorizontally:false)，横向留白全部
+    // 由本面板外层 padding 统一提供，schema 正文不再自带横向缩进；主题卡也裸放（无额
+    // 外 Padding）即可与配置行、以及同面板 bespoke 的「导航 / 有声书」子页左右等宽、
+    // 同为宽版（BUG-545/546 的等宽仍成立，只是统一到更宽的外层 padding 宽度，TODO-1321）。
+    return AdaptiveSettingsSection(
+      children: <Widget>[buildThemeSelector(_themeSettingsContext())],
     );
   }
 
@@ -677,6 +680,22 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
+  /// 「编辑书籍 CSS」入口行的外层 section。与主题卡（`_buildThemeSelectorSection`）
+  /// 同构：普通布局子页与歌词模式子页里，它与走 `buildDetailContent` 的 schema
+  /// section（layout 配置项组）并列同一 Column。schema 正文现走
+  /// `insetHorizontally:false`、不再自带横向缩进，横向留白由本面板外层 padding 统一
+  /// 提供，故 CSS 入口条裸放 section 即与配置行等宽（BUG-573），且与 bespoke 的
+  /// 「导航 / 有声书」子页同为宽版（TODO-1321）。
+  Widget _buildBookCssEditorSection() {
+    // 与 _buildThemeSelectorSection 同理：CSS 入口条裸放即可与上方 layout 配置行、
+    // 以及 bespoke 的「导航 / 有声书」子页左右等宽、同为宽版。横向留白由本面板外层
+    // padding 统一提供，schema 正文经 insetHorizontally:false 不再自带横向缩进
+    // （BUG-573 的等宽仍成立，统一到更宽的外层 padding 宽度，TODO-1321）。
+    return AdaptiveSettingsSection(
+      children: <Widget>[_buildBookCssEditorRow()],
+    );
+  }
+
   /// 「布局与显示」子页详情：主题选择器（TODO-802 并入）→ layout schema 行 →
   /// 可选「编辑书籍 CSS」行。窄窗 push 子页与宽窗右 pane 共用（经
   /// [_subPageContent] 的 'layout' 分支）。
@@ -689,10 +708,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: <Widget>[
         _buildThemeSelectorSection(),
         layoutContent,
-        if (widget.extractDir != null)
-          AdaptiveSettingsSection(
-            children: <Widget>[_buildBookCssEditorRow()],
-          ),
+        if (widget.extractDir != null) _buildBookCssEditorSection(),
       ],
     );
   }
@@ -1361,10 +1377,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: <Widget>[
         _buildThemeSelectorSection(),
         _buildLyricsMarginSection(),
-        if (widget.extractDir != null)
-          AdaptiveSettingsSection(
-            children: <Widget>[_buildBookCssEditorRow()],
-          ),
+        if (widget.extractDir != null) _buildBookCssEditorSection(),
       ],
     );
   }

@@ -50,7 +50,8 @@ void main() {
       expect(idx, greaterThanOrEqualTo(0),
           reason: 'base_source_page 缺 onLinkClick');
       // onLinkClick 之后必须有 highlightSelection（与 onTextSelected 对称）。
-      final String after = src.substring(idx, (idx + 1000).clamp(0, src.length));
+      final String after =
+          src.substring(idx, (idx + 1000).clamp(0, src.length));
       expect(
           after.contains('item.webViewKey.currentState?.highlightSelection('),
           isTrue,

@@ -239,11 +239,11 @@ function buildSentenceContextPicker() {
             picker.dataset.busy = '';
         }
     };
-    const makeStepperBtn = function(dir, sign, symbol) {
+    const makeStepperBtn = function(dir, sign) {
         const btn = el('button', {
-            className: 'context-stepper-btn ' + sign,
-            textContent: symbol,
+            className: 'inline-action-button context-stepper-btn ' + sign,
         });
+        setButtonIcon(btn, sign === 'plus' ? 'add' : 'remove');
         btn.dataset.dir = dir;
         btn.onclick = function() {
             const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
@@ -257,11 +257,11 @@ function buildSentenceContextPicker() {
     const makeRow = function(dir, label) {
         const row = el('div', { className: 'context-row' });
         row.appendChild(el('span', { className: 'context-label', textContent: label }));
-        row.appendChild(makeStepperBtn(dir, 'minus', '➖'));
+        row.appendChild(makeStepperBtn(dir, 'minus'));
         const count = el('span', { className: 'context-count', textContent: '0' });
         count.dataset.dir = dir;
         row.appendChild(count);
-        row.appendChild(makeStepperBtn(dir, 'plus', '➕'));
+        row.appendChild(makeStepperBtn(dir, 'plus'));
         return row;
     };
     picker.appendChild(makeRow('prev', window.i18nContextPrevLabel || '上'));
@@ -285,6 +285,42 @@ function el(tag, props = {}, children = []) {
     }
     
     return element;
+}
+
+// TODO-1325 #4: 顶部动作按钮从纯文字字形（♪ ☆ ★ ✓ ✓↩ + × ➖ ➕）升级为内联
+// Material Symbols SVG 矢量图标（Niratan 同款观感，但走 fill:currentColor 而非
+// macOS-only 的 -webkit-mask 分支，Android WebView / Windows WebView2 一致渲染）。
+// 图标随按钮 color / opacity / 主题走；尺寸由 .inline-action-button > svg 的 CSS
+// （width/height:1em）跟随各按钮 font-size 自适应。每个按钮额外记 data-icon 作为
+// 当前图标名的可观测状态标记——弹窗跑在 WebView 里没有 headless，测试用 data-icon
+// 断言图标切换，不再依赖字形 textContent。
+const ICON_PATHS = {
+    // volume_up
+    audio: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
+    // volume_off（无音频 / 播放失败）
+    audioOff: 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z',
+    // star_border（未收藏）
+    favorite: 'M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z',
+    // star（已收藏）
+    favorited: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+    // add（制卡按钮已回到 ✓✓↩ 文本标记；add 仅供句子上下文步进器的 + 按钮）
+    add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    // remove（步进器 ➖）
+    remove: 'M19 13H5v-2h14v2z',
+    // close（清空草稿 / 标签说明遮罩关闭 ×）
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+};
+
+function iconSvg(name) {
+    const d = ICON_PATHS[name] || '';
+    return '<svg class="inline-action-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="' + d + '"></path></svg>';
+}
+
+// 给一个动作按钮设置图标：记 data-icon（状态可观测），并把内容换成对应内联 SVG。
+function setButtonIcon(button, name) {
+    if (!button) return;
+    button.dataset.icon = name;
+    button.innerHTML = iconSvg(name);
 }
 
 function toHiragana(text) {
@@ -1758,20 +1794,54 @@ async function playWordAudio(audioUrl) {
 }
 
 function showAudioError(button) {
-    button.textContent = '✕';
+    setButtonIcon(button, 'audioOff');
     setTimeout(() => {
-        button.textContent = '♪';
+        setButtonIcon(button, 'audio');
     }, 1500);
+}
+
+// TODO-1251: 当词条本来就没有配置音频源（resolveWordAudio 返回 null）时，旧行为只瞬间
+// 把 ♪ 闪成 ✕ 再静默恢复，读起来像「点了没反应/出错了」，用户不知道是「这个
+// 词没有发音」。这里在按钮旁弹一个短暂的本地化提示（i18nNoAudioAvailable，宿主经
+// buildPopupSettingsJs 注入），并把按钮暂时切到静音态，明确「暂无发音」而非静默。提示
+// 锚定到按钮的屏幕坐标而非视口边缘，保证在 in-app 全窗弹窗和 app 外覆盖窗
+// （窗口被裁到卡片 bbox）两种表面都可见。区别于真正的播放失败（showAudioError）。
+function showNoAudioHint(button) {
+    const message = window.i18nNoAudioAvailable || '暂无发音';
+    setButtonIcon(button, 'audioOff');
+    button.classList.add('audio-unavailable');
+    button.title = message;
+    // 移除可能残留的旧提示，避免叠加。
+    const stale = document.querySelector('.audio-hint');
+    if (stale) stale.remove();
+    const hint = el('div', { className: 'audio-hint', textContent: message });
+    document.body.appendChild(hint);
+    // 先量尺寸再定位：置于按钮上方居中，空间不足翻到下方，并夹在视口内。
+    const btnRect = button.getBoundingClientRect();
+    const hintRect = hint.getBoundingClientRect();
+    let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - hintRect.width - 4));
+    let top = btnRect.top - hintRect.height - 6;
+    if (top < 4) top = btnRect.bottom + 6;
+    hint.style.left = left + 'px';
+    hint.style.top = top + 'px';
+    requestAnimationFrame(() => hint.classList.add('visible'));
+    setTimeout(() => {
+        setButtonIcon(button, 'audio');
+        button.classList.remove('audio-unavailable');
+        hint.classList.remove('visible');
+        setTimeout(() => hint.remove(), 220);
+    }, 1800);
 }
 
 function createAudioButton(expression, reading, entryIndex) {
     const button = el('button', {
-        className: 'audio-button',
-        textContent: '♪',
+        className: 'inline-action-button audio-button',
         onclick: async () => {
             const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
             if (!audioUrl) {
-                showAudioError(button);
+                // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
+                showNoAudioHint(button);
                 return;
             }
             if (!await playWordAudio(audioUrl)) {
@@ -1779,6 +1849,7 @@ function createAudioButton(expression, reading, entryIndex) {
             }
         }
     });
+    setButtonIcon(button, 'audio');
     return button;
 }
 
@@ -1786,14 +1857,13 @@ function createAudioButton(expression, reading, entryIndex) {
 // 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
 function createFavoriteButton(expression, reading) {
     const button = el('button', {
-        className: 'favorite-button',
-        textContent: '☆',
+        className: 'inline-action-button favorite-button',
         onclick: async () => {
             button.disabled = true;
             try {
                 const nowFav = await window.flutter_inappwebview.callHandler(
                     'favoriteEntry', { expression, reading });
-                button.textContent = nowFav ? '★' : '☆';
+                setButtonIcon(button, nowFav ? 'favorited' : 'favorite');
                 button.classList.toggle('favorited', !!nowFav);
             } catch (e) {
                 // 收藏失败不能让按钮卡死，恢复可点状态并记日志。
@@ -1803,10 +1873,11 @@ function createFavoriteButton(expression, reading) {
             }
         }
     });
-    // 初始状态：查询是否已收藏，设 ☆/★。
+    setButtonIcon(button, 'favorite');
+    // 初始状态：查询是否已收藏，设收藏图标。
     window.flutter_inappwebview.callHandler('favoriteCheck', { expression, reading })
         .then(isFav => {
-            button.textContent = isFav ? '★' : '☆';
+            setButtonIcon(button, isFav ? 'favorited' : 'favorite');
             button.classList.toggle('favorited', !!isFav);
         })
         .catch(() => {});
@@ -1921,7 +1992,11 @@ function createEntryHeader(entry, idx) {
         const latest = isMined && isLatestEditable(expression, reading);
         mineButton.dataset.mined = isMined ? '1' : '';
         mineButton.dataset.latest = latest ? '1' : '';
-        mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';
+        // TODO-1325 还原：应用户要求，制卡按钮回到 ✓✓↩ 文本标记（+ 可制卡 /
+        // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
+        // TODO-1338：给 ↩ 追加 VS15(U+FE0E) 强制「文本呈现」，杜绝系统把 U+21A9 走彩色
+        // emoji 回退变乱码（字体隔离在 popup.css .mine-button 单色符号栈里，此处是双保险）。
+        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : '+';
         if (isMined) {
             mineButton.classList.add('duplicate');
         } else {
@@ -2086,8 +2161,7 @@ function createEntryHeader(entry, idx) {
         // TODO-382/393 可撤销：「清空已加句子」按钮（仅已选上下文时显示）。点一次把上下文
         // 句数归零（回到只制当前句），所有选择器同步——明确、可见的撤销入口。
         const clearButton = el('button', {
-            className: 'clear-draft-button',
-            textContent: '×',
+            className: 'inline-action-button clear-draft-button',
             onclick: async () => {
                 if (clearButton.dataset.busy === '1') return;
                 clearButton.dataset.busy = '1';
@@ -2103,6 +2177,7 @@ function createEntryHeader(entry, idx) {
                 }
             },
         });
+        setButtonIcon(clearButton, 'close');
         refreshClearDraftButton(clearButton);
         buttonsContainer.appendChild(clearButton);
     }
@@ -2120,6 +2195,100 @@ window.hoshiPopupMineFirstEntry = async function() {
     mineButton.click();
     return true;
 };
+
+// TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条
+// (.entry)，每条自成一栏（读音 + 词典释义）。这里提供纯 JS + CSS 的「当前词条」焦点指示：
+// 给每条打 data-hoshi-entry-index，给当前条加 .entry-current（popup.css 用
+// .entry-current .entry-header::before 画 #1a73e8 蓝三角，零字体依赖，与折叠三角同法），并
+// scrollIntoView 进视口。Dart 焦点驱动（阅读器 caret 管线 → DictionaryPopupWebViewState.
+// focusEntryMove → 这里）按 next/prev 调用。与逐字光标 hoshiCaret 正交：只移动词条级指示与
+// 视口，绝不触碰 caret ring；用户决策「咱们没有前进后退·咱们是嵌套查词」，故不做历史栈。
+(function() {
+    const CONTAINER_ID = 'entries-container';
+    const CURRENT_CLASS = 'entry-current';
+
+    // DOM 顺序的全部词条 <div.entry>（container 的直接子节点）。
+    function listEntries() {
+        const container = document.getElementById(CONTAINER_ID);
+        if (!container) return [];
+        return Array.prototype.slice.call(
+            container.querySelectorAll(':scope > .entry'));
+    }
+
+    // 给每条打 data-hoshi-entry-index（0-based，DOM 顺序），返回词条数组。每次导航前重建，
+    // 兼容增量渲染后词条集合变化。
+    function indexEntries() {
+        const entries = listEntries();
+        for (let i = 0; i < entries.length; i++) {
+            entries[i].setAttribute('data-hoshi-entry-index', String(i));
+        }
+        return entries;
+    }
+
+    // 当前 .entry-current 的下标；无当前项返回 -1。
+    function currentIndex(entries) {
+        for (let i = 0; i < entries.length; i++) {
+            if (entries[i].classList.contains(CURRENT_CLASS)) return i;
+        }
+        return -1;
+    }
+
+    // 把焦点落到下标 index 的词条：切 .entry-current 并滚入视口。index 越界即无操作交由
+    // 调用方（这里只在合法下标调用）。
+    function applyCurrent(entries, index) {
+        for (let i = 0; i < entries.length; i++) {
+            if (i === index) entries[i].classList.add(CURRENT_CLASS);
+            else entries[i].classList.remove(CURRENT_CLASS);
+        }
+        const target = entries[index];
+        if (target && target.scrollIntoView) {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    }
+
+    // 聚焦指定下标的词条（越界夹到 [0, n-1]）。返回 'moved'（已聚焦）/ 'blocked'（无词条）。
+    function focusEntry(index) {
+        const entries = indexEntries();
+        if (entries.length === 0) return 'blocked';
+        let target = index | 0;
+        if (target < 0) target = 0;
+        if (target > entries.length - 1) target = entries.length - 1;
+        applyCurrent(entries, target);
+        return 'moved';
+    }
+
+    // 相对移动：'next'/'down'/'forward' → 下一条；其余（'prev'/'up'/'backward'）→ 上一条。
+    // 到边界返回 'blocked'（不回绕）。首次无当前项时，next 落第 0 条、prev 落最后一条。
+    function moveEntry(direction) {
+        const entries = indexEntries();
+        if (entries.length === 0) return 'blocked';
+        const forward = direction === 'next' || direction === 'down'
+            || direction === 'forward';
+        const cur = currentIndex(entries);
+        let next;
+        if (cur < 0) {
+            next = forward ? 0 : entries.length - 1;
+        } else {
+            next = forward ? cur + 1 : cur - 1;
+        }
+        if (next < 0 || next > entries.length - 1) return 'blocked';
+        applyCurrent(entries, next);
+        return 'moved';
+    }
+
+    // 清除当前词条焦点（保留 data-hoshi-entry-index），返回词条数。
+    function resetEntry() {
+        const entries = indexEntries();
+        for (let i = 0; i < entries.length; i++) {
+            entries[i].classList.remove(CURRENT_CLASS);
+        }
+        return entries.length;
+    }
+
+    window.hoshiFocusDictionaryEntry = focusEntry;
+    window.hoshiFocusDictionaryEntryMove = moveEntry;
+    window.hoshiFocusDictionaryEntryReset = resetEntry;
+})();
 
 // TODO-845: `dictIdx` is the dictionary's global position within an entry's
 // glossary body (0-based). The popup auto-expands the leading

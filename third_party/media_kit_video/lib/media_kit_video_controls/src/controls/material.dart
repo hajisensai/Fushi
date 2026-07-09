@@ -1714,10 +1714,16 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
             });
           }),
           controller(context).player.stream.position.listen((event) {
+            // Hibiki patch (TODO-1243): mirror of the desktop seek bar. Drop
+            // redundant frame-rate rebuilds — drag already suppresses position
+            // (uses `slider`); while not dragging, quantize to
+            // kPositionUiThrottleStep so the fill re-rasters at ~5fps instead of
+            // the libmpv frame rate (integrated-GPU load when controls visible).
+            if (tapped) return;
+            final Duration next = event.floorTo(kPositionUiThrottleStep);
+            if (next == position) return;
             setState(() {
-              if (!tapped) {
-                position = event;
-              }
+              position = next;
             });
           }),
           controller(context).player.stream.duration.listen((event) {
@@ -1745,6 +1751,14 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   }
 
   void onPointerMove(PointerMoveEvent e, BoxConstraints constraints) {
+    // Hibiki patch (BUG-566, mirrors BUG-235): bail out if this State was
+    // already disposed. `controller(context)` below dereferences
+    // `State.context`; after dispose (Hibiki tears down the controls subtree
+    // on fullscreen enter/exit and on episode switch via
+    // VideoControlsFocusGate) that throws
+    // "Null check operator used on a null value". Mirrors the existing
+    // `if (mounted)` guard in `setState`. See third_party/media_kit_video/PATCHES.md.
+    if (!mounted) return;
     final percent = e.localPosition.dx / constraints.maxWidth;
     setState(() {
       tapped = true;
@@ -1761,6 +1775,15 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   }
 
   void onPointerUp() {
+    // Hibiki patch (BUG-566, mirrors BUG-235): guard against use-after-dispose.
+    // The pointer-up event can arrive after the controls widget tree is
+    // unmounted (release the seek bar drag right as the player exits
+    // fullscreen / switches episode), and `controller(context)` below
+    // dereferences the now-null `State.context`, crashing with
+    // "Null check operator used on a null value" at this line. Bail out when
+    // unmounted, matching the State's existing `if (mounted)` setState guard.
+    // See third_party/media_kit_video/PATCHES.md.
+    if (!mounted) return;
     widget.onSeekEnd?.call();
     setState(() {
       // Explicitly set the position to prevent the slider from jumping.
@@ -1816,6 +1839,16 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
 
   @override
   Widget build(BuildContext context) {
+    // Hibiki patch (TODO-1243): isolate the seek bar into its own compositor
+    // layer so its ~5fps fill re-raster (kPositionUiThrottleStep throttle) does
+    // not re-record the full-screen controls picture it shares with the
+    // full-video-area gradient scrims. Caps the re-raster to the thin seek bar
+    // bounds regardless of window size (integrated-GPU 100% load on large
+    // windows). See third_party/media_kit_video/PATCHES.md.
+    return RepaintBoundary(child: _buildSeekBarBody(context));
+  }
+
+  Widget _buildSeekBarBody(BuildContext context) {
     return Container(
       clipBehavior: Clip.none,
       margin: _theme(context).seekBarMargin,
@@ -2144,8 +2177,14 @@ class MaterialPositionIndicatorState extends State<MaterialPositionIndicator> {
       subscriptions.addAll(
         [
           controller(context).player.stream.position.listen((event) {
+            // Hibiki patch (TODO-1243): the clock text only shows whole seconds,
+            // so quantizing to kPositionUiThrottleStep (which divides 1000ms)
+            // yields the identical string while collapsing ~60fps rebuilds to
+            // ~5fps. Skip setState entirely when the quantized value is unchanged.
+            final Duration next = event.floorTo(kPositionUiThrottleStep);
+            if (next == position) return;
             setState(() {
-              position = event;
+              position = next;
             });
           }),
           controller(context).player.stream.duration.listen((event) {
@@ -2168,14 +2207,19 @@ class MaterialPositionIndicatorState extends State<MaterialPositionIndicator> {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      '${position.label(reference: duration)} / ${duration.label(reference: duration)}',
-      style: widget.style ??
-          TextStyle(
-            height: 1.0,
-            fontSize: 12.0,
-            color: _theme(context).buttonBarButtonColor,
-          ),
+    // Hibiki patch (TODO-1243): isolate the mm:ss clock so its second-boundary
+    // repaint does not re-raster the shared full-screen controls picture (same
+    // integrated-GPU root cause as the seek bar). See PATCHES.md.
+    return RepaintBoundary(
+      child: Text(
+        '${position.label(reference: duration)} / ${duration.label(reference: duration)}',
+        style: widget.style ??
+            TextStyle(
+              height: 1.0,
+              fontSize: 12.0,
+              color: _theme(context).buttonBarButtonColor,
+            ),
+      ),
     );
   }
 }

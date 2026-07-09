@@ -35,10 +35,8 @@ void main() {
         headers: <String, String>{'content-type': 'application/json'},
       );
     });
-    return http.runWithClient(
-      () => body(AnkiConnectService(host: '127.0.0.1', port: 8765)),
-      () => client,
-    );
+    return body(
+        AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
   }
 
   Map<String, dynamic> bodyOf(http.Request request) =>
@@ -338,11 +336,9 @@ void main() {
           headers: <String, String>{'content-type': 'application/json'},
         );
       });
-      await http.runWithClient(
-        () => AnkiConnectService(host: '127.0.0.1', port: 8765, apiKey: apiKey)
-            .getDeckNames(),
-        () => client,
-      );
+      await AnkiConnectService(
+              host: '127.0.0.1', port: 8765, apiKey: apiKey, client: client)
+          .getDeckNames();
       return jsonDecode(issued.single.body) as Map<String, dynamic>;
     }
 
@@ -395,10 +391,8 @@ void main() {
 
     Future<T> run<T>(
         http.Client client, Future<T> Function(AnkiConnectService) body) {
-      return http.runWithClient(
-        () => body(AnkiConnectService(host: '127.0.0.1', port: 8765)),
-        () => client,
-      );
+      return body(
+          AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
     }
 
     test('retries on errno-coded connection drop (osError path)', () async {

@@ -51,15 +51,22 @@ class HibikiPairV2Client {
       _httpClient ??
       createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
 
-  /// 完整一键配对：pair/v2 创建会话 → 用 [pin] + 双 nonce 算 pinProof → confirm。
-  /// LAN 免 PIN（host 返回 pinRequired:false）时 [pin] 可为空（confirm 不带 proof）。
+  /// 完整一键配对：pair/v2 创建会话 → **仅当 host 回报 pinRequired 时** 才经
+  /// [pinProvider] 向调用方索取 6 位 PIN → 双 nonce 算 pinProof → confirm。
+  ///
+  /// TODO-1273 修复配对时序：PIN 是否需要由 host 的 pair/v2 响应（pinRequired）决定，
+  /// client 不能在收到该响应前就盲目弹 PIN 输入框。LAN 免 PIN（pinRequired:false）时
+  /// [pinProvider] **完全不会被调用**，用户不会看到「输入对方 PIN」的对话框；只有公网 /
+  /// host 强制 PIN 的会话才会调 [pinProvider] 取 PIN。返回 null 视为用户取消
+  /// （→ 'cancelled'），返回空串视为未输入（→ 'pin'）；不传 [pinProvider] 而 host 又
+  /// 要求 PIN 时同样判为 'pin'（无从取得 PIN）。
   ///
   /// [clientDeviceId] 是本机稳定 deviceId（TODO-961 M1b）：随 pair/v2 上报，host 用它
   /// 作 `hibiki_paired_peers.peerId` 落库并回派本设备专属 per-peer token。可空——host
   /// 侧无此字段时回退共享 token（向后兼容）。
   Future<HibikiPairV2Outcome> pair({
     required String deviceName,
-    String? pin,
+    Future<String?> Function()? pinProvider,
     String? clientDeviceId,
   }) async {
     final http.Client client = _client();
@@ -96,9 +103,14 @@ class HibikiPairV2Client {
         'sessionId': sessionId,
       };
       if (pinRequired) {
-        if (pin == null || pin.isEmpty) {
-          return const HibikiPairV2Failure('pin');
+        // 只有 host 明确要求 PIN 时才向调用方索取——LAN 免 PIN 分支到不了这里，
+        // 用户不会看到「输入对方 PIN」的对话框（TODO-1273）。
+        final String? pin = pinProvider == null ? null : await pinProvider();
+        if (pin == null) {
+          // pinProvider 返回 null = 用户取消；未接线（pinProvider==null）= 无从取得。
+          return HibikiPairV2Failure(pinProvider == null ? 'pin' : 'cancelled');
         }
+        if (pin.isEmpty) return const HibikiPairV2Failure('pin');
         confirmBody['pinProof'] = HibikiPairingProtocol.computePinProof(
           pin: pin,
           clientNonce: clientNonce,

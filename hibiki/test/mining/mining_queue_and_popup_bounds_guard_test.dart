@@ -40,11 +40,27 @@ void main() {
           expect(src.contains('function hibikiClassifyMineResp('), isTrue,
               reason: '${content.path} 缺 hibikiClassifyMineResp 分类器');
           // duplicate 必须与 success 同归 done，否则永久滞留 = 队列永不清。
+          // TODO-1303：判据从单行 return 改成多行块（success 但单词音频落空时先弹
+          // toast 再 return 'done'）。守卫改鲁棒语义——success||duplicate 组合谓词存在，
+          // 且其块内（notConfigured 分支之前）return 'done'——语义不变。
+          final int classifyIdx =
+              src.indexOf('function hibikiClassifyMineResp(');
+          final int doneBranchIdx = src.indexOf(
+              "if (r === 'success' || r === 'duplicate')", classifyIdx);
+          final int notConfiguredIdx =
+              src.indexOf("if (r === 'notConfigured')", classifyIdx);
+          expect(doneBranchIdx, greaterThan(classifyIdx),
+              reason: '${content.path} 缺 success||duplicate 组合出队判据（队列永不清根因）');
+          expect(notConfiguredIdx, greaterThan(doneBranchIdx),
+              reason:
+                  '${content.path} notConfigured 判据应在 success||duplicate 之后');
           expect(
-            src.contains(
-                "if (r === 'success' || r === 'duplicate') return 'done';"),
+            src
+                .substring(doneBranchIdx, notConfiguredIdx)
+                .contains("return 'done';"),
             isTrue,
-            reason: '${content.path} 出队判据未含 duplicate（队列永不清根因）',
+            reason:
+                '${content.path} success||duplicate 块内未 return done（duplicate 会滞留=队列永不清根因）',
           );
           // notConfigured 留队（提示配 Anki），error/网络失败留队重试。
           expect(

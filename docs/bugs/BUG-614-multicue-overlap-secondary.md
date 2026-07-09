@@ -1,0 +1,16 @@
+## BUG-614 · 重叠cue跳+副字幕并入overlay多层渲染重构（TODO-1312 方案A）
+- **报告**：2026-07-08（用户：）
+- **真实性**：✅ 真 bug（架构约束，非偶发）。两诉求同一根因：cue 是单条模型。
+  - `VideoPlayerController` 只维护一个代表 cue（`_currentCue`/`_currentCueIndex`），overlay 只渲染一条。
+  - `JsonAlignmentParser.findCueIndex`（`packages/hibiki_audio/lib/src/parsers/json_alignment_parser.dart:102`）假定时间轴不重叠、只回一个 index：两条重叠 cue 只显 startMs 更大的那条；越过被选那条 `end` 落进 gap 返回 -1 → overlay 清空（`video_player_controller.dart` `_syncCueForPosition` 的 `idx<0` 分支）→ 表现为闪烁 / 切换。
+  - 副字幕原走 libmpv `secondary-sid` 自渲染（旧 `video_player_controller.dart` `selectSecondarySubtitleTrack`），不进 Dart cue 流、不可查词。
+- **[x] ① 已修复** — 方案A「统一多层字幕渲染重构」（TODO-1312）：
+  - 数据层：新纯函数 `JsonAlignmentParser.findActiveCueIndices`（`json_alignment_parser.dart`）返回**所有**区间覆盖 pos 的 cue 下标（升序，endMs 闭区间）；保留 `findCueIndex` 供有声书正文高亮 / 查词锚 / 跳句旧路径不动。
+  - `VideoPlayerController`（`hibiki/lib/src/media/video/video_player_controller.dart`）：`_syncCueForPosition` 每 tick 额外算主字幕活动集 `_activeCueIndices`（并入 skipToCue preRoll 在途的 snap 代表 cue）+ 副字幕活动集 `_activeSecondaryCueIndices`；新增 `activeCues` / `secondaryActiveCues` getter、`setSecondaryCues` / `clearSecondaryCues`；代表 cue `_currentCue`/`_currentCueIndex` 语义不变（查词/跳句/收藏/暂停到句尾旧路径不回归）。退役 `selectSecondarySubtitleTrack` / `clearSecondarySubtitleTrack` / `_logSecondarySubtitleState` 及 `video_mpv_config.dart` 的 `buildSecondarySubtitleProperties`/`Clear` 两个 libmpv 下发 builder。
+  - 视图层：`video_subtitle_overlay.dart` 由「一个字幕盒」改「按 activeCues 竖排堆叠多字幕盒（Column）+ 副字幕层置画面顶部」；逐字符查词命中登记升级为二维 `_charEntries`（哪条 cue + 该 cue 内 grapheme），主/副/重叠某条都能查到正确整句；收藏角标、down-snap 锁定、控制条避让按多 cue 泛化；单主字幕无副字幕时退化为单字幕盒、历史几何像素级不变。
+  - 页面层：`subtitle.part.dart` 的 `_selectSecondarySubtitleSource`/`_selectSecondarySubtitleOff`/`_restoreSecondarySubtitle` 改走 `loadCuesForSource` 抽 cue → `setSecondaryCues`（不再 libmpv secondary-sid）；持久化格式 `embedded:<n>`/`off:`/外挂路径沿用不变。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/audiobook/find_active_cue_indices_test.dart`：纯函数守卫（空/单/非重叠/**重叠区全返回**/嵌套 cue 内层结束不闪/三重重叠）。
+  - `hibiki/test/media/video/video_subtitle_multicue_test.dart`：控制器 activeCues 重叠全渲染 + 越过一条 end 仍连续（不闪）+ gap 清空；副字幕 cue 流 setSecondaryCues→secondaryActiveCues→clear；overlay 重叠两盒都渲染、副字幕置顶、点副字幕字符 onCharTap 带副字幕整句（二维查词）、点主字幕不串层、hitTester 反查副字幕、单主字幕退化单盒。
+  - 既有 `video_player_controller_test.dart` / `json_alignment_parser_test.dart` / `video_subtitle_overlay(_markup)_test.dart` 覆盖代表 cue / findCueIndex / 单 cue 渲染旧路径不回归；`video_mpv_config_test.dart` 删掉已退役 builder 的两组。
+- **备注**：`flutter analyze`（lib+test，hibiki + hibiki_audio）No issues；`flutter test test/media/video test/media/audiobook` 全绿。真机验收（重叠 cue 都显不跳 / 副字幕与主字幕同显可查词）交用户。

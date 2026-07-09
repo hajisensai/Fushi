@@ -16,6 +16,25 @@ window.flutter_inappwebview = {
           var cueText = (typeof extractNetflixCueText === 'function')
             ? extractNetflixCueText(netflixSubtitleContainer()) : '';
           var sentence = cueText || (args[0] && args[0].popupSelectionText) || '';
+          // TODO-1271：普通网页（非 YouTube/Netflix 流媒体）没有视频时间窗可裁，绝不进视频剪辑
+          // 队列——直接 POST {fields,sentence} 立即制卡（background 'mine' 分支：纯文本挖词回落），
+          // 也不误报「没找到当前字幕」（那条只对流媒体页字幕尚未采到时成立，此页压根没有字幕/视频，
+          // 用户报「这也不是视频，哪来的字幕」）。批量剪辑队列仅对 youtube/netflix 生效。
+          var site = (typeof hibikiSite === 'function') ? hibikiSite() : 'other';
+          if (site !== 'youtube' && site !== 'netflix') {
+            chrome.runtime.sendMessage(
+              { type: 'mine', fields: args[0], sentence: sentence },
+              (resp) => {
+                try { if (chrome.runtime.lastError) { toast('✗ 制卡失败'); resolve(false); return; } } catch (_) { /* no-op */ }
+                var dup = !!(resp && resp.ok && resp.data && resp.data.result === 'duplicate');
+                var ok = !!(resp && resp.ok && resp.data && resp.data.result === 'success');
+                if (dup) toast('✓ 该词卡片已存在');
+                else if (ok) toast('✓ 已制卡');
+                else toast('✗ 制卡失败');
+                resolve(ok || dup);
+              });
+            return;
+          }
           var res = (typeof window.hibikiEnqueue === 'function')
             ? window.hibikiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
           if (res && res.ok && res.duplicate) toast('✓ 已在制卡队列中（' + res.count + '）');
@@ -51,7 +70,42 @@ window.flutter_inappwebview = {
         try { window.open(args[0], '_blank'); } catch (_) { /* no-op */ }
         return Promise.resolve(null);
       case 'resolveWordAudio':
+        // 单词音频①解析：popup.js 点 ♪ → 传 {expression,reading}。经 background 向 server
+        // POST /api/lookup/audio（Basic auth，与 lookup/mine 同链路），拿回可直接播放的
+        // /api/lookup/audio/file?id= 短命 URL（不新协议，复用 sync server 既有音频端点）。
+        // 命中返 URL 字符串，未命中/失败返 null → popup 显示 ✕（graceful，与 app 一致）。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'lookupAudio',
+              expression: a.expression || '',
+              reading: a.reading || '',
+            });
+            return (resp && resp.ok && resp.url) ? resp.url : null;
+          } catch (_) {
+            return null;
+          }
+        })();
       case 'playWordAudio':
+        // 单词音频②播放：拿 resolveWordAudio 返回的 file URL 用 HTML5 Audio 播（扩展宿主是
+        // 真实浏览器，直接 new Audio(url).play()）。mode==='interrupt' 时先掐掉上一段。
+        // 成功 resolve(true)、失败 resolve(false) → popup 显示 ✕。
+        return (async function () {
+          try {
+            var opts = args[0] || {};
+            if (!opts.url) return false;
+            if ((opts.mode || 'interrupt') === 'interrupt' && window.__hibikiWordAudio) {
+              try { window.__hibikiWordAudio.pause(); } catch (_) {}
+            }
+            var audio = new Audio(opts.url);
+            window.__hibikiWordAudio = audio;
+            await audio.play();
+            return true;
+          } catch (_) {
+            return false;
+          }
+        })();
       default:
         return Promise.resolve(null);
     }

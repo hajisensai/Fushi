@@ -10,6 +10,72 @@ Set<BackupCategory> defaultBackupExportCategories() => BackupCategory.values
         c != BackupCategory.videos && c != BackupCategory.localAudio)
     .toSet();
 
+/// Localised display name for a backup [category] (TODO-1358). Shared by the
+/// export picker and the import "what is inside / choose what to restore" list.
+String backupCategoryLabel(BackupCategory category) {
+  switch (category) {
+    case BackupCategory.dictionary:
+      return t.backup_category_dictionary;
+    case BackupCategory.books:
+      return t.backup_category_books;
+    case BackupCategory.audiobooks:
+      return t.backup_category_audiobooks;
+    case BackupCategory.fonts:
+      return t.backup_category_fonts;
+    case BackupCategory.videos:
+      return t.backup_category_videos;
+    case BackupCategory.localAudio:
+      return t.backup_category_local_audio;
+    case BackupCategory.progress:
+      return t.backup_category_progress;
+    case BackupCategory.statistics:
+      return t.backup_category_statistics;
+    case BackupCategory.settings:
+      return t.backup_category_settings;
+    case BackupCategory.profiles:
+      return t.backup_category_profiles;
+  }
+}
+
+/// One-line "what is it" description for a backup [category] (TODO-1358), shown
+/// as the subtitle in the export/import content manifests.
+String backupCategoryDescription(BackupCategory category) {
+  switch (category) {
+    case BackupCategory.dictionary:
+      return t.backup_category_dictionary_desc;
+    case BackupCategory.books:
+      return t.backup_category_books_desc;
+    case BackupCategory.audiobooks:
+      return t.backup_category_audiobooks_desc;
+    case BackupCategory.fonts:
+      return t.backup_category_fonts_desc;
+    case BackupCategory.videos:
+      return t.backup_category_videos_desc;
+    case BackupCategory.localAudio:
+      return t.backup_category_local_audio_desc;
+    case BackupCategory.progress:
+      return t.backup_category_progress_desc;
+    case BackupCategory.statistics:
+      return t.backup_category_statistics_desc;
+    case BackupCategory.settings:
+      return t.backup_category_settings_desc;
+    case BackupCategory.profiles:
+      return t.backup_category_profiles_desc;
+  }
+}
+
+/// Categories the user can individually skip when RESTORING an overwrite import
+/// (TODO-1358): the bulky sidecar file trees. Books stay (core library index);
+/// progress/statistics ride the DB blob; settings/profiles ride the
+/// "import settings and profiles" toggle.
+const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
+  BackupCategory.dictionary,
+  BackupCategory.audiobooks,
+  BackupCategory.fonts,
+  BackupCategory.videos,
+  BackupCategory.localAudio,
+};
+
 /// TODO-1151：备份导入完成后由 [BackupImportOverlayView] 的「立即重启」按钮触发的退出。
 /// 沿用旧导入实现的平台分支（移动端 [FlutterExitApp.exitApp]，桌面端 `exit(0)`），只把
 /// 触发时机从「延迟 500ms 自动退出」改为「用户点确认后退出」，退出行为本身不变
@@ -43,30 +109,33 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an export is running.
     if (_isExporting) return;
+    final appModel = widget.settingsContext.appModel;
+    final service = BackupService(
+      db: appModel.database,
+      dbDirectory: appModel.databaseDirectory.path,
+      dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
+      appVersion: appModel.packageInfo.version,
+      // Full-data backup: pack the book + audiobook content trees too. Roots
+      // are derived the same way the app lays them out under the documents
+      // dir (hoshi_books / audiobooks).
+      booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
+      audiobooksRootDirectory: p.join(appModel.appDirectory.path, 'audiobooks'),
+      // BUG-183: pack the imported custom fonts so they travel with their
+      // config; otherwise the restored config points at files that never
+      // crossed over and the fonts silently never apply.
+      fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+    );
+    // TODO-1358: summarize what is on this device so the category picker shows
+    // per-category counts (the database itself is always included).
+    final BackupContentSummary summary = await service.summarizeExportContent();
+    if (!mounted) return;
     // Ask which sidecar trees to include (default all). Null = the user
-    // cancelled the dialog → abort the export entirely (TODO-106).
-    final Set<BackupCategory>? categories = await _pickExportCategories();
+    // cancelled the dialog -> abort the export entirely (TODO-106).
+    final Set<BackupCategory>? categories =
+        await _pickExportCategories(summary);
     if (categories == null || !mounted) return;
     setState(() => _isExporting = true);
     try {
-      final appModel = widget.settingsContext.appModel;
-      final service = BackupService(
-        db: appModel.database,
-        dbDirectory: appModel.databaseDirectory.path,
-        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-        appVersion: appModel.packageInfo.version,
-        // Full-data backup: pack the book + audiobook content trees too. Roots
-        // are derived the same way the app lays them out under the documents
-        // dir (hoshi_books / audiobooks).
-        booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
-        audiobooksRootDirectory:
-            p.join(appModel.appDirectory.path, 'audiobooks'),
-        // BUG-183: pack the imported custom fonts so they travel with their
-        // config; otherwise the restored config points at files that never
-        // crossed over and the fonts silently never apply.
-        fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
-      );
-
       final tmpDir = await getTemporaryDirectory();
       final filename = service.defaultFilename();
       final tmpPath = p.join(tmpDir.path, filename);
@@ -84,7 +153,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       if (!mounted) return;
 
       if (Platform.isAndroid || Platform.isIOS) {
-        await Share.shareXFiles(
+        await HibikiShare.shareFiles(
           [XFile(tmpPath, mimeType: 'application/zip')],
           subject: filename,
         );
@@ -122,7 +191,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// All categories start ticked (the user asked for "default all selected"),
   /// so confirming without touching anything reproduces the legacy all-in
   /// export. Returns the chosen set, or null if the user cancelled.
-  Future<Set<BackupCategory>?> _pickExportCategories() async {
+  Future<Set<BackupCategory>?> _pickExportCategories(
+      BackupContentSummary summary) async {
     final Set<BackupCategory> selected = defaultBackupExportCategories();
     assert(!selected.contains(BackupCategory.videos));
     assert(!selected.contains(BackupCategory.localAudio));
@@ -193,6 +263,10 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                   for (final BackupCategory c in BackupCategory.values)
                     AdaptiveSettingsSwitchRow(
                       title: labelFor(c),
+                      subtitle: summary.counts.containsKey(c)
+                          ? '${backupCategoryDescription(c)} '
+                              '(${summary.countFor(c)})'
+                          : backupCategoryDescription(c),
                       value: selected.contains(c),
                       onChanged: (bool v) => setLocal(() {
                         if (v) {
@@ -410,9 +484,18 @@ enum _BackupImportMode { overwrite, merge }
 /// The user's choices from the import confirm dialog: which [mode] to apply and
 /// (overwrite-only) whether to also pull the backup's settings layer.
 class _BackupImportChoice {
-  const _BackupImportChoice({required this.mode, required this.importSettings});
+  const _BackupImportChoice({
+    required this.mode,
+    required this.importSettings,
+    required this.categories,
+  });
   final _BackupImportMode mode;
   final bool importSettings;
+
+  /// Categories to RESTORE on an overwrite import (TODO-1358): every
+  /// always-restored category plus the selectable ones the user kept ticked.
+  /// Forwarded to [BackupService.importBackupFiles]; ignored for merge.
+  final Set<BackupCategory> categories;
 }
 
 class _BackupImportWidget extends StatefulWidget {
@@ -438,11 +521,21 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     if (!mounted) return;
 
     setState(() => _isImporting = true);
-    // appModel 在 try 外声明：导入执行期 beginBackupImport 会切走本设置页（tree swap），
-    // 此后 catch/finally 仍需经 appModel 驱动遮罩（不再依赖已卸载的本页 context）。
-    final appModel = widget.settingsContext.appModel;
+    // appModel 在遮罩流程外声明：validating/running 遮罩都会切走本设置页（tree swap），
+    // 此后不再依赖已卸载的本页 `mounted`/context，全程经 appModel 驱动遮罩；确认对话框也
+    // 改由全局 [AppModel.navigatorKey] 宿主弹出（退出遮罩、切回正常 app 树后再弹）。
+    final AppModel appModel = widget.settingsContext.appModel;
+    final String filePath = result.files.single.path!;
+
+    // TODO-1151: 先上屏「正在读取备份…」全屏遮罩（validating 相位），再跑 validate + 合并
+    // 预览——大 zip 这段要数十秒，旧版只有设置行 24px 小圈无明显反馈。beginBackupValidating
+    // 返回本轮 token；用户点「取消」或新一轮校验会作废它，in-flight 后台 isolate 结果回来
+    // 时用 isBackupValidatingCurrent 判断是否仍是最新，陈旧结果直接丢弃（干净 token 判定）。
+    final int validatingToken = appModel.beginBackupValidating();
+    BackupMeta? meta;
+    BackupMergePreview? mergePreview;
+    BackupContentSummary? summary;
     try {
-      final filePath = result.files.single.path!;
       final service = BackupService(
         db: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
@@ -450,49 +543,82 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         appVersion: appModel.packageInfo.version,
       );
 
-      final meta = await service.validateBackup(filePath);
-      if (meta == null) {
-        if (mounted) _showSnackBar(context, t.backup_import_invalid);
+      final BackupMeta? validated = await service.validateBackup(filePath);
+      // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
+      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+      if (validated == null) {
+        await _endValidatingThenSnack(appModel, t.backup_import_invalid);
+        if (mounted) setState(() => _isImporting = false);
         return;
       }
-
-      if (meta.schemaVersion > appModel.database.schemaVersion) {
-        if (mounted) {
-          _showSnackBar(
-            context,
-            t.backup_schema_newer(version: meta.schemaVersion.toString()),
-          );
-        }
+      if (validated.schemaVersion > appModel.database.schemaVersion) {
+        await _endValidatingThenSnack(
+          appModel,
+          t.backup_schema_newer(version: validated.schemaVersion.toString()),
+        );
+        if (mounted) setState(() => _isImporting = false);
         return;
       }
-
-      if (!mounted) return;
 
       // TODO-1195 part B: best-effort merge preview for the confirm dialog.
       // Runs against the still-open live DB; null on any failure → generic UI.
-      final BackupMergePreview? mergePreview =
+      final BackupMergePreview? preview =
           await BackupService.previewMergeImport(
         liveDb: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
       );
-      if (!mounted) return;
+      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+      // TODO-1358: read the archive "what is inside" manifest for the confirm
+      // dialog (per-category counts + the restore toggles). Cheap central-dir
+      // read; an empty summary just hides the manifest.
+      final BackupContentSummary contentSummary =
+          await service.summarizeBackupZip(filePath);
+      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+      meta = validated;
+      mergePreview = preview;
+      summary = contentSummary;
+    } catch (e) {
+      // validate/preview 阶段异常：DB 仍打开，无需重启进程。作废本轮、退出遮罩回设置页并
+      // 提示（与 running 阶段的 failBackupImport「必须重启」出口区分）。
+      if (appModel.isBackupValidatingCurrent(validatingToken)) {
+        await _endValidatingThenSnack(
+          appModel,
+          t.backup_import_failed(message: friendlySyncErrorDetail(e)),
+        );
+      }
+      if (mounted) setState(() => _isImporting = false);
+      return;
+    }
 
-      final _BackupImportChoice? choice =
-          await _showConfirmDialog(meta, mergePreview);
-      if (choice == null || !mounted) return;
+    // 校验成功、合并预览就绪：退出 validating 遮罩，等根 widget 切回正常 app 树、全局
+    // navigator 重新挂载后，在其 context 上弹确认对话框（本设置页此刻已卸载，不能用本页
+    // context——遮罩是根 build 替换模型，宿主是 appModel.navigatorKey 的正常 MaterialApp）。
+    appModel.endBackupValidating();
+    final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+    if (rootCtx == null || !rootCtx.mounted) {
+      if (mounted) setState(() => _isImporting = false);
+      return;
+    }
 
-      final String booksRoot =
-          p.join(appModel.appDirectory.path, 'hoshi_books');
-      final String audiobooksRoot =
-          p.join(appModel.appDirectory.path, 'audiobooks');
-      final String fontsRoot =
-          p.join(appModel.appDirectory.path, 'custom_fonts');
-      final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+    final _BackupImportChoice? choice = await _showConfirmDialog(
+        rootCtx, meta, mergePreview, summary);
+    if (choice == null) {
+      // 用户取消确认 → 彻底退出遮罩态，回到设置页（validating 遮罩已退出）。
+      if (mounted) setState(() => _isImporting = false);
+      return;
+    }
 
-      // TODO-1151: 先上屏全屏「正在导入备份，请勿关闭」遮罩，再关库解压。beginBackupImport
-      // notifyListeners → 根 widget 切到 BackupImportOverlayView（本设置页随之卸载，故此后
-      // 不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
+    final String booksRoot = p.join(appModel.appDirectory.path, 'hoshi_books');
+    final String audiobooksRoot =
+        p.join(appModel.appDirectory.path, 'audiobooks');
+    final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
+    final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+
+    try {
+      // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
+      // 再关库解压。beginBackupImport notifyListeners → 根 widget 切到 running 遮罩（本
+      // 设置页随之卸载，故此后不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
       appModel.beginBackupImport();
       await appModel.closeDatabase();
       if (choice.mode == _BackupImportMode.merge) {
@@ -516,6 +642,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: filePath,
           importSettings: choice.importSettings,
+          categories: choice.categories,
           dictionaryResourceDirectory:
               appModel.dictionaryResourceDirectory.path,
           // Full-data restore: extract the content trees and rebase the DB's
@@ -545,13 +672,36 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     }
   }
 
+  /// 退出 validating 遮罩后，等根 widget 切回正常 app 树、全局 navigator 重新挂载，返回
+  /// 可用于弹对话框 / snackbar 的 root context（挂载失败返回 null）。endBackupValidating 的
+  /// notifyListeners 触发的根重建在下一帧完成，故须等帧后 navigatorKey.currentContext 才有效。
+  Future<BuildContext?> _rootContextAfterOverlay(AppModel appModel) async {
+    for (int i = 0; i < 2; i++) {
+      await WidgetsBinding.instance.endOfFrame;
+      final BuildContext? ctx = appModel.navigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) return ctx;
+    }
+    return null;
+  }
+
+  /// validate/preview 阶段的失败/无效出口：退出 validating 遮罩、切回设置页后用 root
+  /// context 弹 snackbar（本设置页此刻已卸载，用本页 context 无效）。
+  Future<void> _endValidatingThenSnack(
+      AppModel appModel, String message) async {
+    appModel.endBackupValidating();
+    final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+    if (rootCtx != null && rootCtx.mounted) _showSnackBar(rootCtx, message);
+  }
+
   /// Asks how to apply the backup (TODO-888): OVERWRITE the whole library
   /// (legacy default) or MERGE into the current one. For overwrite, a secondary
   /// switch chooses whether to also pull the backup's settings layer. Returns
   /// the choice, or `null` if the user cancels.
   Future<_BackupImportChoice?> _showConfirmDialog(
+    BuildContext dialogContext,
     BackupMeta meta,
     BackupMergePreview? preview,
+    BackupContentSummary summary,
   ) async {
     final dateStr =
         '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
@@ -559,8 +709,16 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     // within overwrite, keep this device's settings (importSettings=false).
     _BackupImportMode mode = _BackupImportMode.overwrite;
     bool importSettings = false;
+    // TODO-1358: the selectable content categories this backup actually carries,
+    // all ticked by default; unticking one skips restoring its files (overwrite
+    // only). Iterated in enum order for a stable layout.
+    final List<BackupCategory> selectablePresent = BackupCategory.values
+        .where((BackupCategory c) =>
+            importSelectableCategories.contains(c) && summary.has(c))
+        .toList();
+    final Set<BackupCategory> selectedRestore = selectablePresent.toSet();
     final bool? confirmed = await showAppDialog<bool>(
-      context: context,
+      context: dialogContext,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) {
           final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
@@ -630,6 +788,41 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                     onChanged: (_BackupImportMode? v) =>
                         setLocal(() => mode = v ?? _BackupImportMode.overwrite),
                   ),
+                  // TODO-1358: "what is inside" manifest + per-category restore
+                  // toggles. Overwrite: a live toggle (untick to skip a
+                  // category's files). Merge: read-only info (merge adds what is
+                  // missing). Books / reading data / settings are handled by the
+                  // rows above, so only the bulky sidecar trees appear here.
+                  if (selectablePresent.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text(
+                      t.backup_import_contents_title,
+                      style: Theme.of(ctx).textTheme.labelLarge,
+                    ),
+                    if (mode == _BackupImportMode.overwrite)
+                      Text(
+                        t.backup_import_contents_hint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                    for (final BackupCategory c in selectablePresent)
+                      AdaptiveSettingsSwitchRow(
+                        title: '${backupCategoryLabel(c)} '
+                            '(${summary.countFor(c)})',
+                        subtitle: backupCategoryDescription(c),
+                        value: mode == _BackupImportMode.overwrite
+                            ? selectedRestore.contains(c)
+                            : true,
+                        onChanged: mode == _BackupImportMode.overwrite
+                            ? (bool v) => setLocal(() {
+                                  if (v) {
+                                    selectedRestore.add(c);
+                                  } else {
+                                    selectedRestore.remove(c);
+                                  }
+                                })
+                            : null,
+                      ),
+                  ],
                   // The settings-layer toggle only applies to overwrite; merge
                   // always keeps this device's settings.
                   if (mode == _BackupImportMode.overwrite) ...<Widget>[
@@ -674,7 +867,19 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       ),
     );
     if (confirmed != true) return null;
-    return _BackupImportChoice(mode: mode, importSettings: importSettings);
+    // Everything not offered as a selectable toggle always restores (books /
+    // progress / statistics / settings / profiles); add the selectable ones the
+    // user kept ticked (TODO-1358).
+    final Set<BackupCategory> categories = BackupCategory.values
+        .where((BackupCategory c) =>
+            !importSelectableCategories.contains(c) ||
+            selectedRestore.contains(c))
+        .toSet();
+    return _BackupImportChoice(
+      mode: mode,
+      importSettings: importSettings,
+      categories: categories,
+    );
   }
 
   @override

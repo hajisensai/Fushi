@@ -47,6 +47,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           _readerContentReady = true;
           _hasEverLoaded = true;
         });
+        // TODO-1229 第三次复诉：兜底超时也算内容就绪，消费 pending 并 stamp 冷却窗，
+        // 避免惯性跨章后旗子悬空到下一次真实导航才被清（那会造成一次假冷却）。
+        _noteChapterTurnSettledIfPending();
         // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
         _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
@@ -67,6 +70,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   void _onRestoreComplete() {
     // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
     _clearContentReadyTimeout();
+    // TODO-1229 第三次复诉：惯性跨章落地的新章一就绪，就把跨章冷却窗 stamp 到当下，
+    // 挡住随后的残余滚轮/惯性在新章边界二次跨章（滚轮离散事件在长加载期间不续窗的真因）。
+    _noteChapterTurnSettledIfPending();
     if (!mounted) {
       return;
     }
@@ -142,6 +148,15 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // settle 后再把锚滚回。必须在下面 _refreshProgress() 之前——置旗后归零不会污染落库。
     // 门控/序列见 [_reanchorContinuousAfterRestore]；分页/歌词/控制器释放等由门控抑制。
     _reanchorContinuousAfterRestore();
+
+    // TODO-1309：跨章「文本搜索跳转」的章内精确定位在恢复落定且 settle 之后应用（见
+    // [_applyPendingPreciseLocate]）。连续模式经上面 reanchor 的 onAfterCommit 在 commit
+    // 清旗 + 打 B-3 窗之后应用（settle 已定，尾沿 reflow 不能落库覆盖）；分页/VN 无
+    // reanchor settle 钩子，章节在 restore 完成即已分页 snap，直接应用（无 reflow 归零）。
+    // 分派互斥：onAfterCommit 只在连续模式跑，这里只在非连续模式跑，故 pending 恰被消费一次。
+    if (_settings?.isContinuousMode != true) {
+      unawaited(_applyPendingPreciseLocate());
+    }
 
     // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
     // (__hoshiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
@@ -336,6 +351,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     String? fragment,
   }) {
     _restoreExpectedGeneration = ++_navigateGeneration;
+    // TODO-1309：新一次导航开始 → 作废上一次排队但未消费的章内精确定位（文本搜索
+    // 跳转）。用户在搜索跳转恢复途中翻页/再跳，旧的 scrollToSearchMatch 不该落到新章
+    // （代际守卫同样兜底，这里从源头清掉，belt-and-suspenders）。_navigateToChapterAndWait
+    // 在本方法返回后才写入本次的 pending，故不会误清本次。
+    _pendingPreciseLocate = null;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
@@ -436,13 +456,28 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   Future<bool> _navigateToChapterAndWait(
     int index, {
     bool manual = false,
+    double progress = 0.0,
+    String? preciseLocateJs,
   }) async {
     // TODO-1128：被吸收图片章会被 _navigateToChapter 重定向到宿主文本章，落地后
     // _currentChapter == 宿主 ≠ 传入的 index。成功判定必须对齐**重定向后的目标**，
     // 否则有声书跨章遇被吸收图片章会误判 loaded=false → 跳过 imagePauseSec 停留
     // （图片等待对合并书彻底失效）。非吸收章 resolved==index，行为不变。
     final int resolvedChapter = _resolveNavChapter(index);
-    await _navigateToChapter(index, manual: manual);
+    // TODO-1309：跨章精确跳转收敛为一次原子恢复链。[progress] 把目标章内分数烘进导航
+    // （书签/收藏/字符跳转）——单次 restore 直接落点、连续重锚采样保住，不再「先落章首
+    // 再抢发 restoreProgress」被 settle-reflow 冲回章首（双跳）。[preciseLocateJs]（文本
+    // 搜索跳转，分数无法表达）排进 _pendingPreciseLocate，由 _onRestoreComplete 在恢复
+    // 落定且 settle 之后应用（见 _applyPendingPreciseLocate）。
+    await _navigateToChapter(index, progress: progress, manual: manual);
+    if (preciseLocateJs != null) {
+      // 绑定本次导航代际（_beginNavigation 刚在 _navigateToChapter 里递增）：并发导航
+      // 顶掉后代际不匹配 → 消费时丢弃，绝不把搜索命中定位应用到错误章节。设在
+      // _navigateToChapter 之后（代际已定）、restore 完成之前（章节装载异步，
+      // _onRestoreComplete 稍后才触发），故稳被本次 _onRestoreComplete 消费。
+      _pendingPreciseLocate =
+          (generation: _navigateGeneration, js: preciseLocateJs);
+    }
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -455,6 +490,32 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         ) ??
         false;
     return success && _currentChapter == resolvedChapter;
+  }
+
+  /// TODO-1309：消费并应用排队的「章内精确定位」（当前仅跨章文本搜索跳转的
+  /// `scrollToSearchMatch`——分数无法表达文本命中，无法烘进 shell 恢复脚本，故走本队列）。
+  ///
+  /// 必须在恢复落定且 settle 之后调用（连续模式 = `_reanchorContinuousAfterRestore` 的
+  /// `onAfterCommit`：commit 已清 `_reanchorPending` 并打 B-3 settle 窗，落点不会被尾沿
+  /// reflow 归零冲回章首；分页/VN = restore 完成即已分页 snap，无 reflow 归零，直接应用）。
+  /// 这一步等价于「同章已 settle 时直接 restore」那条本就正常的路径，只是把跨章场景推迟到
+  /// 同样 settle 的时刻，从根上消除双跳（首跳只到章节）。
+  ///
+  /// 代际守卫：`pending.generation != _navigateGeneration` = 被更晚的导航顶掉 → 丢弃，
+  /// 绝不把搜索命中定位应用到错误章节。消费一次即清空（无论应用与否）。
+  Future<void> _applyPendingPreciseLocate() async {
+    final ({int generation, String js})? pending = _pendingPreciseLocate;
+    if (pending == null) return;
+    _pendingPreciseLocate = null;
+    if (pending.generation != _navigateGeneration) return;
+    if (!mounted || _controller == null) return;
+    try {
+      await _controller!.evaluateJavascript(source: pending.js);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki._applyPendingPreciseLocate', e, stack);
+      debugPrint('[ReaderHibiki] _applyPendingPreciseLocate failed: $e');
+    }
   }
 
   // BUG-117: shared internal-link handler. Called both from the JS click
@@ -662,33 +723,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String leftUrl = rtl ? urlB : urlA;
     final String rightUrl = rtl ? urlA : urlB;
 
-    final String html = '''
-<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
-.spread{display:flex;width:100vw;height:100vh}
-.spread-half{flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
-.spread-half img{max-width:100%;max-height:100vh;object-fit:contain;cursor:pointer}
-</style>
-</head><body>
-<div class="spread">
-<div class="spread-half"><img src="$leftUrl" class="block-img"/></div>
-<div class="spread-half"><img src="$rightUrl" class="block-img"/></div>
-</div>
-<script>
-document.querySelectorAll('img').forEach(function(img){
-  img.addEventListener('click',function(){
-    window.flutter_inappwebview.callHandler('onImageTap',img.src);
-  });
-});
-window.flutter_inappwebview.callHandler('spreadReady');
-</script>
-</body></html>
-''';
+    final String html =
+        buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
 
     _isNavigatingToChapter = true;
     try {
@@ -712,7 +748,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return ReaderHibikiSource.epubUrl(resolved);
   }
 
-  void _handlePageTurnLimit(String direction) {
+  void _handlePageTurnLimit(String direction, {bool inertia = false}) {
     if (_book == null) {
       return;
     }
@@ -732,10 +768,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
       final bool manual = _settings?.spreadMode == 'off';
       if (direction == 'forward') {
         if (currentVirtual + 1 < _spreadMap!.length) {
+          if (inertia) _markInertiaChapterTurnPending();
           _navigateToVirtualPage(currentVirtual + 1, manual: manual);
         }
       } else {
         if (currentVirtual > 0) {
+          if (inertia) _markInertiaChapterTurnPending();
           _navigateToVirtualPage(currentVirtual - 1,
               progress: 0.99, manual: manual);
         }
@@ -746,10 +784,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // 兜底：spread map 尚未构建（book/settings 未就绪，翻页前罕见）时退回裸翻章。
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
+        if (inertia) _markInertiaChapterTurnPending();
         _navigateToChapter(_currentChapter + 1, manual: true);
       }
     } else {
       if (_currentChapter > 0) {
+        if (inertia) _markInertiaChapterTurnPending();
         _navigateToChapter(
           _currentChapter - 1,
           progress: 0.99,
@@ -1095,10 +1135,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
 
     if (target.chapter != _currentChapter) {
-      _navigateToChapter(
+      // TODO-1309：跨章字符跳转把章内分数烘进导航（progress）单次原子恢复直接落点、连续
+      // 重锚采样保住——与书签/收藏统一走 navigate-with-baked-progress 原子链，await 到恢复
+      // 落定，不再裸 fire-and-forget 只依赖 initialProgress（被后续 settle-reflow 冲掉）。
+      await _navigateToChapterAndWait(
         target.chapter,
-        progress: target.progress,
         manual: true,
+        progress: target.progress,
       );
     } else {
       await _controller!.evaluateJavascript(

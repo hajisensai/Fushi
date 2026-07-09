@@ -1,6 +1,8 @@
 package app.hibiki.reader;
 
+import android.app.ActivityOptions;
 import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -9,11 +11,13 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.Bundle;
 import android.text.Layout;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -40,6 +44,8 @@ public class FloatingLyricService extends BaseFloatingService {
                 "Floating Lyric",
                 NotificationIds.FLOATING_LYRIC);
     }
+
+    private static final String TAG = "FloatingLyricService";
 
     private static final int DP_PAD_H = 16;
     private static final int DP_PAD_V = 8;
@@ -392,8 +398,63 @@ public class FloatingLyricService extends BaseFloatingService {
             intent.putExtra(PopupDictFlutterActivity.EXTRA_SUBTITLE_BOTTOM, subtitle.bottom);
         }
 
+        startLookupActivity(intent);
+    }
+
+    /**
+     * TODO-1268 / BUG — launch the tapped-word popup ({@link PopupDictFlutterActivity})
+     * from this background foreground-service reliably.
+     *
+     * The floating subtitle overlay is used precisely while Hibiki itself is NOT
+     * the foreground app (the whole point of drawing over other apps), so a bare
+     * {@link #startActivity} from here is a *background activity launch*. Android
+     * has blocked those by default since API 29; API 34 (targetSdk 34+) stops an
+     * app from silently inheriting its background-start privilege, and API 35
+     * (Android 15) narrows the SYSTEM_ALERT_WINDOW exemption to "permission
+     * granted AND a currently-visible overlay". On modern Android / stricter OEM
+     * ROMs the bare start is therefore dropped and the tap does nothing
+     * ("点击悬浮字幕文字没有出现查词窗口"). The earlier TODO-1268 fix only touched
+     * the Windows/global-lookup path ({@code global_lookup_controller.lookupText})
+     * and never reached this Android entry, so it could not have helped here.
+     *
+     * On API 34+ route the start through a self {@link PendingIntent} carrying
+     * {@link ActivityOptions#MODE_BACKGROUND_ACTIVITY_START_ALLOWED} — the
+     * documented opt-in that explicitly grants our own background-start privilege
+     * to the launch (we hold SYSTEM_ALERT_WINDOW and have a visible overlay while
+     * the strip is up). Older releases keep the direct start, whose
+     * SYSTEM_ALERT_WINDOW exemption is broad. Any failure falls back to a direct
+     * start and finally to foregrounding Hibiki, so a tap is never silently lost;
+     * each branch logs so a device repro can see which one fired.
+     *
+     * This is a platform-boundary compatibility layer for an uncontrollable OS
+     * restriction (background-activity-launch policy), not a symptom patch: the
+     * lookup contract (word + charIndex + anchor extras) is unchanged.
+     */
+    private void startLookupActivity(Intent intent) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(intent);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                PendingIntent pending = PendingIntent.getActivity(
+                        this, 0, intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                ActivityOptions options = ActivityOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityStartMode(
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                Bundle optionsBundle = options.toBundle();
+                pending.send(this, 0, null, null, null, null, optionsBundle);
+                return;
+            } catch (PendingIntent.CanceledException | RuntimeException e) {
+                Log.w(TAG, "floating-lyric lookup PendingIntent send failed; "
+                        + "falling back to direct startActivity", e);
+            }
+        }
+        try {
+            startActivity(intent);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "floating-lyric lookup startActivity was rejected "
+                    + "(background-activity-launch blocked); foregrounding Hibiki", e);
+            bringAppToFront();
+        }
     }
 
     /**

@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
@@ -15,6 +17,7 @@ import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:hibiki_platform/hibiki_platform.dart';
 
 /// Result of a [HibikiSyncServerController.start] attempt, so the caller (the
 /// settings toggle) can surface the right message while a headless app-init
@@ -58,13 +61,19 @@ class HibikiSyncServerController extends ChangeNotifier {
     HibikiRemoteMiningService Function()? miningServiceFactory,
     HibikiRemoteHistoryService Function()? historyServiceFactory,
     HibikiLibraryHostService Function()? libraryServiceFactory,
+    PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
         _database = database,
         _syncDataDir = syncDataDir,
         _remoteLookupServiceFactory = remoteLookupServiceFactory,
         _miningServiceFactory = miningServiceFactory,
         _historyServiceFactory = historyServiceFactory,
-        _libraryServiceFactory = libraryServiceFactory;
+        _libraryServiceFactory = libraryServiceFactory,
+        // Headless/test construction without an injected service falls back to
+        // the desktop (machine-hostname) source; production wires the real
+        // per-platform service so mobile hosts advertise their model, not
+        // Android's "localhost" (TODO-1356).
+        _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final HibikiDatabase Function() _database;
@@ -73,6 +82,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   final HibikiRemoteMiningService Function()? _miningServiceFactory;
   final HibikiRemoteHistoryService Function()? _historyServiceFactory;
   final HibikiLibraryHostService Function()? _libraryServiceFactory;
+  final PlatformDeviceInfoService _deviceInfo;
 
   HibikiSyncServer? _server;
   LanBroadcastService? _broadcast;
@@ -96,6 +106,11 @@ class HibikiSyncServerController extends ChangeNotifier {
   // TODO-961 M1: 最近一次 v2 配对会话 host 屏显的 6 位 PIN（pair/v2 阶段生成、
   // confirm 阶段的审批弹窗显示）。一次一会话（_pairDialogOpen 串行化），故单值即可。
   String? _pendingPairPin;
+
+  // TODO-1330 / BUG：pinRequired 会话在 host 点「允许」后，弹窗不关、常驻显示 PIN 等
+  // 对方输入；此句柄用于外部（client confirm 到达 / TTL）收起那个常驻弹窗。null=当前
+  // 没有常驻 PIN 弹窗。串行化同 _pairDialogOpen，故单值即可。
+  VoidCallback? _pendingPairPinDismiss;
 
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
@@ -194,6 +209,7 @@ class HibikiSyncServerController extends ChangeNotifier {
         ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem));
       hostFingerprint = identity.fingerprintSha256;
     }
+    final String deviceName = await _deviceName();
     final HibikiSyncServer server = HibikiSyncServer(
       syncDataDir: _syncDataDir(),
       port: port,
@@ -205,7 +221,7 @@ class HibikiSyncServerController extends ChangeNotifier {
       libraryService: _libraryServiceFactory?.call(),
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
-      deviceName: _deviceName(),
+      deviceName: deviceName,
       // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
       // FFI engine so the browser extension's rewritten <img> GET can fetch
       // them. Null-safe: before the engine is initialised it yields null and
@@ -218,6 +234,8 @@ class HibikiSyncServerController extends ChangeNotifier {
       ..onPairRequest = _promptPairApproval
       // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
       ..onPairPinGenerated = _generatePairPin
+      // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
+      ..onPairSessionResolved = _dismissPendingPairPinDialog
       ..lanRequiresPinProvider = _repo.getLanRequiresPin
       // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
       // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
@@ -229,7 +247,8 @@ class HibikiSyncServerController extends ChangeNotifier {
       await repo.setServerEnabled(true);
       // Advertise the ACTUAL bound port so peers discover the host even when the
       // requested port was 0/auto or differs from the configured one.
-      await _startBroadcast(server.port);
+      // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
+      await _startBroadcast(server.port, tlsEnabled: securityContext != null);
       notifyListeners();
       return const HibikiServerStarted();
     } on SyncServerPortInUseException catch (e) {
@@ -266,26 +285,26 @@ class HibikiSyncServerController extends ChangeNotifier {
     return start();
   }
 
-  Future<void> _startBroadcast(int boundPort) async {
+  Future<void> _startBroadcast(
+    int boundPort, {
+    required bool tlsEnabled,
+  }) async {
     final SyncRepository repo = _repo;
     final String deviceId = await repo.getOrCreateDeviceId();
     _broadcast = LanBroadcastService(
-      deviceName: _deviceName(),
+      deviceName: await _deviceName(),
       deviceId: deviceId,
       port: boundPort,
+      tlsEnabled: tlsEnabled,
     );
     await _broadcast!.start();
   }
 
-  /// Human-readable advertisement name. Platform.localHostname is the machine
-  /// name on desktop; falls back to a generic label on mobile or on error.
-  String _deviceName() {
-    try {
-      final String host = Platform.localHostname;
-      if (host.trim().isNotEmpty) return 'Hibiki · $host';
-    } catch (_) {/* localHostname can throw on some platforms */}
-    return 'Hibiki';
-  }
+  /// Human-readable advertisement name shown to peers (host `/api/ping` + LAN
+  /// broadcast). Sourced from the platform device-info service: the machine
+  /// hostname on desktop, the real hardware model on mobile — never Android's
+  /// meaningless "localhost" hostname (TODO-1356).
+  Future<String> _deviceName() => resolveInterconnectDeviceName(_deviceInfo);
 
   /// TODO-961 M1: server 在 pair/v2 创建会话时回调，host 生成本会话 6 位 PIN 并
   /// 暂存，供随后的 confirm 审批弹窗显示给用户。返回的 PIN 同时被 server 用于
@@ -329,114 +348,192 @@ class HibikiSyncServerController extends ChangeNotifier {
     return deleted > 0;
   }
 
+  /// TODO-1330 / BUG：client 提交 confirm 后收起 host 那个常驻显示 PIN 的审批弹窗
+  /// （见 [_promptPairApproval]）。作为 server 的 [HibikiSyncServer.onPairSessionResolved]
+  /// 回调接线；无常驻弹窗时（免 PIN / 已关）为 no-op。
+  void _dismissPendingPairPinDialog() {
+    _pendingPairPinDismiss?.call();
+  }
+
   /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the
   /// token handout via the app-wide navigator so the prompt appears even when
   /// the user is not on the sync page. Resolves false (refuse) on a stacked
   /// request, a missing context, an explicit deny, or a 60s no-answer timeout.
+  ///
+  /// TODO-1330 / BUG（公网配对 PIN 时序）：把「审批结果」与「弹窗生命周期」解耦。旧
+  /// 实现里 host 点「允许」会立刻 pop 弹窗并清 [_pendingPairPin]，但 client 要等
+  /// pair/v2 收到审批结果后才弹 PIN 输入框——于是 client 要输 PIN 时，host 屏上的 PIN
+  /// 早没了。现在：点允许即把结果交回 server（[approval] completer，好让 client 拿到
+  /// 会话去弹 PIN 框），但对 **pinRequired** 会话**不关窗**，继续常驻显示 PIN，直到
+  /// client 提交 confirm（[onPairSessionResolved] → [_dismissPendingPairPinDialog]）、
+  /// 用户手动关、或会话 TTL 超时。免 PIN 会话行为不变（无 PIN 可显示，点选即关）。
   Future<bool> _promptPairApproval(HibikiPairRequest request) async {
     if (_pairDialogOpen) return false;
     final BuildContext? ctx = _navigatorKey.currentContext;
     if (ctx == null) return false;
     _pairDialogOpen = true;
+
+    final Completer<bool> approval = Completer<bool>();
+    // 只有「真的要显示 PIN」的 pinRequired 会话才走常驻分支；免 PIN / 无 PIN 走旧的
+    // 「点选即关」行为（无 PIN 可留、留了也没意义）。
+    final bool lingerAfterApprove =
+        request.pinRequired && _pendingPairPin != null;
     Timer? autoDeny;
-    try {
-      final bool? approved = await showAppDialog<bool>(
-        context: ctx,
-        builder: (BuildContext dialogCtx) {
-          // Auto-refuse after 60s so a forgotten prompt never leaks the token
-          // and the waiting client gets a deterministic answer.
-          autoDeny ??= Timer(const Duration(seconds: 60), () {
-            if (Navigator.of(dialogCtx).canPop()) {
-              Navigator.pop(dialogCtx, false);
-            }
-          });
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogCtx);
-          return HibikiDialogFrame(
-            maxWidth: 420,
-            insetPadding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.card,
-            ),
-            scrollable: false,
-            child: HibikiModalSheetFrame(
-              title: t.sync_pair_request_title,
-              scrollable: true,
-              bodyPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
+    Timer? lingerTimeout;
+    BuildContext? dialogCtx;
+    StateSetter? setDialogState;
+    bool approvedPhase = false;
+    bool popped = false;
+
+    void popDialog() {
+      final BuildContext? dc = dialogCtx;
+      if (!popped && dc != null && Navigator.of(dc).canPop()) {
+        popped = true;
+        Navigator.pop(dc);
+      }
+    }
+
+    // 外部收起句柄（client confirm 到达 / TTL 超时经此收起常驻 PIN 弹窗）。
+    _pendingPairPinDismiss = popDialog;
+
+    void onDeny() {
+      if (!approval.isCompleted) approval.complete(false);
+      popDialog();
+    }
+
+    void onAllow() {
+      // 先把结果交回 server（免得 client 一直等），再决定是否关窗。
+      if (!approval.isCompleted) approval.complete(true);
+      if (lingerAfterApprove) {
+        // 常驻 PIN 阶段：不关窗，转成「等对方输入此 PIN」，直到 confirm / 手动 / TTL。
+        approvedPhase = true;
+        setDialogState?.call(() {});
+        // 安全兜底：对齐 server 会话 TTL（≈90s）到点仍没 confirm 就自动收起，避免
+        // host 屏上留一个永不消失的 PIN 弹窗。
+        lingerTimeout ??= Timer(const Duration(seconds: 90), popDialog);
+      } else {
+        popDialog();
+      }
+    }
+
+    unawaited(showAppDialog<void>(
+      context: ctx,
+      // 审批 / 常驻 PIN 阶段都统一走按钮，禁止点遮罩误关（PIN 要一直看得见）。
+      barrierDismissible: false,
+      builder: (BuildContext dCtx) {
+        dialogCtx = dCtx;
+        // Auto-refuse after 60s so a forgotten prompt never leaks the token and
+        // the waiting client gets a deterministic answer. 进入常驻 PIN 阶段
+        // （已允许）后失效——那时结果已交回，只等对方输入。
+        autoDeny ??= Timer(const Duration(seconds: 60), () {
+          if (!approvedPhase) onDeny();
+        });
+        return StatefulBuilder(
+          builder: (BuildContext c, StateSetter setLocal) {
+            setDialogState = setLocal;
+            final HibikiDesignTokens tokens = HibikiDesignTokens.of(c);
+            final bool waiting = approvedPhase;
+            // PIN 只在 host 屏幕显示，绝不过线（client 只回传 HMAC proof）。仅当本会话
+            // 真要求 PIN（request.pinRequired）才显示，免 PIN 会话不显示「幽灵 PIN」。
+            final bool showPin = request.pinRequired && _pendingPairPin != null;
+            return HibikiDialogFrame(
+              maxWidth: 420,
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.card,
+                vertical: tokens.spacing.card,
               ),
-              footerPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.card,
-              ),
-              body: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(t.sync_pair_request_body),
-                  SizedBox(height: tokens.spacing.gap),
-                  Text(
-                    _pairRequesterLabel(request),
-                    style: Theme.of(dialogCtx).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  // TODO-961 M1: v2 配对（request.pinVerified != null）显示本会话
-                  // PIN，让用户口头/屏显把 PIN 念给 client 输入。PIN 只在 host 屏幕
-                  // 显示，绝不过线（client 只回传 HMAC proof）。
-                  if (request.pinVerified != null &&
-                      _pendingPairPin != null) ...<Widget>[
-                    SizedBox(height: tokens.spacing.gap),
-                    Text(t.sync_pair_pin_label),
+              scrollable: false,
+              child: HibikiModalSheetFrame(
+                title: t.sync_pair_request_title,
+                scrollable: true,
+                bodyPadding: EdgeInsets.fromLTRB(
+                  tokens.spacing.card,
+                  0,
+                  tokens.spacing.card,
+                  tokens.spacing.gap,
+                ),
+                footerPadding: EdgeInsets.fromLTRB(
+                  tokens.spacing.card,
+                  tokens.spacing.gap,
+                  tokens.spacing.card,
+                  tokens.spacing.card,
+                ),
+                body: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    // 已允许 → 提示「等对方输入此 PIN」；未决 → 原「设备请求配对」文案。
+                    Text(waiting
+                        ? t.sync_pair_pin_waiting
+                        : t.sync_pair_request_body),
                     SizedBox(height: tokens.spacing.gap),
                     Text(
-                      _pendingPairPin!,
-                      style: Theme.of(dialogCtx)
-                          .textTheme
-                          .headlineMedium
-                          ?.copyWith(
-                        fontFeatures: const <FontFeature>[
-                          FontFeature.tabularFigures(),
-                        ],
-                        letterSpacing: 4,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      _pairRequesterLabel(request),
+                      style: Theme.of(c).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
+                    if (showPin) ...<Widget>[
+                      SizedBox(height: tokens.spacing.gap),
+                      Text(t.sync_pair_pin_label),
+                      SizedBox(height: tokens.spacing.gap),
+                      Text(
+                        _pendingPairPin!,
+                        style: Theme.of(c).textTheme.headlineMedium?.copyWith(
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                          letterSpacing: 4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
+                footer: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: tokens.spacing.gap,
+                  children: waiting
+                      // 常驻 PIN 阶段：只留「关闭」（结果已交回，用户输完后手动收起）。
+                      ? <Widget>[
+                          adaptiveDialogAction(
+                            context: c,
+                            isDefaultAction: true,
+                            onPressed: popDialog,
+                            child: Text(t.dialog_close),
+                          ),
+                        ]
+                      : <Widget>[
+                          adaptiveDialogAction(
+                            context: c,
+                            isDestructiveAction: true,
+                            onPressed: onDeny,
+                            child: Text(t.sync_pair_deny),
+                          ),
+                          adaptiveDialogAction(
+                            context: c,
+                            isDefaultAction: true,
+                            onPressed: onAllow,
+                            child: Text(t.sync_pair_allow),
+                          ),
+                        ],
+                ),
               ),
-              footer: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                children: <Widget>[
-                  adaptiveDialogAction(
-                    context: dialogCtx,
-                    isDestructiveAction: true,
-                    onPressed: () => Navigator.pop(dialogCtx, false),
-                    child: Text(t.sync_pair_deny),
-                  ),
-                  adaptiveDialogAction(
-                    context: dialogCtx,
-                    isDefaultAction: true,
-                    onPressed: () => Navigator.pop(dialogCtx, true),
-                    child: Text(t.sync_pair_allow),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-      return approved ?? false;
-    } finally {
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
       autoDeny?.cancel();
+      lingerTimeout?.cancel();
       _pairDialogOpen = false;
       _pendingPairPin = null;
-    }
+      _pendingPairPinDismiss = null;
+      // 弹窗被系统/其它路径关掉而用户没点过按钮时，兜底判为拒绝。
+      if (!approval.isCompleted) approval.complete(false);
+    }));
+
+    return approval.future;
   }
 
   /// "<name> · <ip>" when both are known, else whichever is present, else a

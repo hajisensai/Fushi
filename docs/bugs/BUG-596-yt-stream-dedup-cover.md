@@ -1,0 +1,8 @@
+## BUG-596 · 油管流去重无videoId规范化+非YouTube流无封面
+- **报告**：2026-07-07（用户：油管视频、新播放列表还是没封面，而且没去重，你真的做了功能吗？ / TODO-1304）
+- **真实性**：✅ 真 bug（油管流路径缺口；本地文件/播放列表去重 TODO-1237、油管标题+缩略图封面 TODO-1281 已实现，用户也可能测的是旧包）。根因两处：
+  - **去重**：`hibiki/lib/src/media/video/url_stream_video.dart` 的 `streamVideoBookUid(url)` 原为 `sha1(url.trim())[:12]`，**无 YouTube videoId 规范化** → 同一视频不同 URL 写法（`watch?v=<id>` / `youtu.be/<id>` / `shorts/<id>` / `m.youtube.com` / 带 `&t=`/`&list=`/`&si=`/`&feature=` 追踪参数）各得不同 uid → 全部重复导入（`_uniqueBookUid` 去重失效）。本地/播放列表去重（文件名身份 + 物理路径归一化）本就 OK。
+  - **封面**：`hibiki/lib/src/media/video/video_import_dialog.dart` 的 `_importStreamUrl` 把下封面整块门控在 `if (isYoutubeUrl(url))` 内 → 直链/HLS/m3u8 流落到无封面分支，恒无封面。
+- **[x] ① 已修复** — `url_stream_video.dart`：`streamVideoBookUid` 对 `isYoutubeUrl` 用 `youtubeVideoIdOrNull`（新增于 `youtube_source_resolver.dart`，从 `watch?v=`/`youtu.be/`/`shorts/` 解 canonical videoId）产 `video/stream/yt:<videoId>` 身份，剥追踪参数收敛到同一 book_uid；解析失败回退 sha1（不阻断导入）；非 YouTube 保持 sha1（带签名 token 的直链 query 是身份一部分，不归一，Never break userspace）。新增纯函数 `StreamImportCoverStrategy` 枚举（youtubeThumbnail / ffmpegFrame）消除封面门控特殊情况；`_importStreamUrl` 据策略两类都出封面（YouTube 缩略图下载、直链/HLS 走 `extractVideoCover` ffmpeg 抽帧，已经 `_isRemoteFfmpegInput` 放行远端 URL）。移动端 ffmpeg-kit 封面生效性需真机验证。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/url_stream_video_test.dart`：`streamVideoBookUid` YouTube 规范化（多种 URL 写法收敛同一 uid、追踪参数剥离、非 YouTube 各异、不可解析回退 sha1）+ `streamImportCoverStrategy` 守卫（YouTube→youtubeThumbnail、REGRESSION 直链/HLS/m3u8→ffmpegFrame 不再无封面）。全绿（32 passed）。
+- **备注**：commit 见提交哈希。仅改导入层（url_stream_video.dart / video_import_dialog.dart / youtube_source_resolver.dart + 测试），未碰播放层。`flutter analyze` 改动 4 文件 No issues。移动端 ffmpeg 封面 + 油管封面网络失败诊断为真机验收项。

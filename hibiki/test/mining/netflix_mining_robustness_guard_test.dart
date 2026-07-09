@@ -11,6 +11,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// - #3 MediaRecorder 孤儿防御（offscreen beginClip 先停旧 recorder）+ hideStyle/cursor 还原放 finally。
 /// - #4 每句时间窗死代码已删（扩展 mineClip 不发段内窗/gifEnd；dart transcodeClipToCapture 去掉
 ///   windowStartMs/windowEndMs/gifEndMs；payload 去掉 clipGifEndMs）。
+///
+/// TODO-1132 追加（V16 主修遗留、无守卫的两处真实缺口）：
+/// - #5 offscreen.endClip() 的 recorder.stop() 异常路径也解绑 onstop/ondataavailable 并
+///   清 recorder/chunks（原来只 resolve → 孤儿 recorder + 陈旧 chunks 滞留）。
+/// - #6 content.hibikiMaybeResumeNetflixBatch 外层 finally 兜底发 nfStopCapture（原来只在
+///   正常路径停录；批量抛错时 tabCapture 流不释放 → M7375 + 流泄漏）。
 void main() {
   // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
@@ -82,6 +88,24 @@ void main() {
           expect(src.contains('clipGifEndMs'), isFalse,
               reason: '${content.path} 残留 clipGifEndMs 死偏移');
         });
+
+        test('#6 批量外层 finally 兜底 nfStopCapture（异常路径也释放 tabCapture 流）', () {
+          final String src = content.readAsStringSync();
+          // 外层 finally（复位 hibikiNfBatchRunning 处）内必须发 nfStopCapture：
+          // hibikiRunNetflixBatch 抛错时也释放 tabCapture 流，避开 M7375 + 流泄漏。
+          final int finallyIdx = src.lastIndexOf('} finally {');
+          final int resetIdx =
+              src.indexOf('hibikiNfBatchRunning = false;', finallyIdx);
+          expect(finallyIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} 缺外层 finally');
+          expect(resetIdx, greaterThan(finallyIdx));
+          expect(
+            src.substring(finallyIdx, resetIdx).contains(
+                "chrome.runtime.sendMessage({ type: 'nfStopCapture' })"),
+            isTrue,
+            reason: '${content.path} 外层 finally 未兜底 nfStopCapture',
+          );
+        });
       });
     }
 
@@ -95,6 +119,24 @@ void main() {
           isTrue,
           reason: '${offscreen.path} beginClip 未先停旧 recorder（孤儿泄漏）',
         );
+      });
+
+      test('#5 offscreen ${offscreen.path} endClip 异常路径清理 recorder/chunks', () {
+        final String src = offscreen.readAsStringSync();
+        // recorder.stop() 抛异常时的 catch 块须清理 recorder/chunks（并解绑回调），
+        // 否则孤儿 recorder + 陈旧 chunks 滞留在流上。定位到该 catch 块内断言。
+        final int stopFailedIdx = src.indexOf("error: 'stop failed'");
+        expect(stopFailedIdx, greaterThanOrEqualTo(0),
+            reason: '${offscreen.path} 缺 endClip 错误路径');
+        final int catchIdx = src.lastIndexOf('} catch (_) {', stopFailedIdx);
+        expect(catchIdx, greaterThanOrEqualTo(0));
+        final String catchBlock = src.substring(catchIdx, stopFailedIdx);
+        expect(catchBlock.contains('recorder = null;'), isTrue,
+            reason: '${offscreen.path} endClip 错误路径未清 recorder');
+        expect(catchBlock.contains('chunks = [];'), isTrue,
+            reason: '${offscreen.path} endClip 错误路径未清 chunks');
+        expect(catchBlock.contains('recorder.ondataavailable = null;'), isTrue,
+            reason: '${offscreen.path} endClip 错误路径未解绑 ondataavailable');
       });
     }
 
@@ -226,12 +268,56 @@ void main() {
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');
         });
 
-        test('内容脚本版本标记 bump 到 v39（用户可确认新版）', () {
+        test('内容脚本版本标记 bump 到 v43（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-hibiki-cs', 'v39'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v39');
-          expect(src.contains('content script v39 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v39');
+          expect(src.contains("'data-hibiki-cs', 'v43'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v43');
+          expect(src.contains('content script v43 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v43');
+        });
+      });
+    }
+  });
+
+  // TODO-1335 ④：网飞回放录制在 seek 落点**等缓冲就绪再开录**。Netflix seek 完成(seeked)时
+  // 数据常还没缓冲到位(readyState=HAVE_CURRENT_DATA=2)，此刻 beginClip 会录进 stall 冻结帧，
+  // 而 offscreen 墙钟时长照走 → 录制起点是冻结帧、时长虚长不准。修复：暂停态等
+  // readyState>=HAVE_FUTURE_DATA(3) 再 play + beginClip（暂停不推进 currentTime → 保留 200ms
+  // 头部提前量）。源码扫描守卫，两份镜像都守。
+  group('TODO-1335 网飞录制 seek 后等缓冲就绪再开录', () {
+    for (final File content in <File>[assetsContent, toolsContent]) {
+      group('content.js ${content.path}', () {
+        test('有 hibikiWaitForBuffered 缓冲门（readyState>=HAVE_FUTURE_DATA=3）', () {
+          final String src = content.readAsStringSync();
+          expect(
+              src.contains('function hibikiWaitForBuffered(v, maxMs)'), isTrue,
+              reason: '${content.path} 缺 hibikiWaitForBuffered 缓冲就绪门');
+          expect(src.contains('v.readyState >= 3'), isTrue,
+              reason: '${content.path} 缓冲门未用 HAVE_FUTURE_DATA(3) 阈值');
+        });
+
+        test('beginClip 前先暂停 + 等缓冲就绪（不吃头部提前量）', () {
+          final String src = content.readAsStringSync();
+          // seek 后暂停态等缓冲：v.pause() 紧邻 hibikiWaitForBuffered 调用（相邻即
+          // 「暂停后立刻等缓冲」，暂停不推进 currentTime → 保留 200ms 头部提前量）。
+          final int pauseIdx = src.indexOf('try { v.pause(); } catch (_) {}');
+          final int bufIdx =
+              src.indexOf('await hibikiWaitForBuffered(v, 3000);');
+          final int beginIdx = src.indexOf("type: 'beginClip'");
+          expect(pauseIdx, greaterThanOrEqualTo(0),
+              reason: '${content.path} seek 后未暂停（保留头部提前量）');
+          expect(bufIdx, greaterThan(pauseIdx),
+              reason: '${content.path} 缓冲门未紧跟在暂停之后');
+          expect(bufIdx - pauseIdx, lessThan(80),
+              reason: '${content.path} 暂停与缓冲门不相邻');
+          expect(beginIdx, greaterThan(bufIdx),
+              reason: '${content.path} 缓冲门未排在 beginClip 之前');
+        });
+
+        test('旧的固定 sleep(150) 首帧稳定 warmup 已被缓冲门取代', () {
+          final String src = content.readAsStringSync();
+          expect(src.contains('await sleep(150); // 让首帧稳定'), isFalse,
+              reason: '${content.path} 仍残留固定 sleep(150) 首帧稳定 warmup');
         });
       });
     }

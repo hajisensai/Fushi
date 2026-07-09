@@ -166,6 +166,20 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       return;
     }
 
+    // TODO-1226：判定旧 documents 根是否就是**共享的平台 Documents**（默认数据根）。
+    // 不看 data_root pref（pref 存了失效路径时 AppPaths 仍回退默认根，此时按 pref 判
+    // 会把共享 Documents 误当专属根整树搬走）——直接与平台 Documents 实路径比对。
+    // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
+    bool sharedDocumentsRoot;
+    try {
+      final Directory platformDocuments =
+          await getApplicationDocumentsDirectory();
+      sharedDocumentsRoot = p.equals(oldDocs, platformDocuments.path);
+    } catch (_) {
+      sharedDocumentsRoot = true;
+    }
+    if (!mounted) return;
+
     setState(() => _migrating = true);
     // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置
     // isInitialised=false）。这样 DB 关闭引发的根 widget rebuild 命中迁移遮罩分支，而不
@@ -210,6 +224,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
             appModel.updateDataRootMigrationProgress(copied, total),
         // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
         resolvedExecutablePath: Platform.resolvedExecutable,
+        // TODO-1226：默认根 = 共享用户 Documents → 只搬 Hibiki 自有顶层项白名单，
+        // 且迁移引擎绝不删除 Documents 本体；自定义专属根（<root>/documents）→ 整树。
+        documentsTopLevelIncludeNames:
+            sharedDocumentsRoot ? AppPaths.hibikiOwnedDocumentsEntries : null,
       );
       await const DataRootMigrator().migrate(req);
 
@@ -269,16 +287,17 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     // 1) 停音频句柄（just_audio / AudiobookPlayerController；桌面经 just_audio_media_kit
     //    → libmpv 打开数据根内的音频文件，未停会锁住 rename/删源）。
     try {
-      await appModel.audiobookSession.stop();
+      await appModel.audiobookSession.stop().timeout(_closeResourceTimeout);
     } catch (e) {
       debugPrint(
-          'DataRoot migrate: audiobookSession.stop failed (best-effort): $e');
+          'DataRoot migrate: audiobookSession.stop failed/timeout (best-effort): $e');
     }
     try {
-      await appModel.audioHandler?.stop();
+      final Future<void>? stopFuture = appModel.audioHandler?.stop();
+      if (stopFuture != null) await stopFuture.timeout(_closeResourceTimeout);
     } catch (e) {
       debugPrint(
-          'DataRoot migrate: audioHandler.stop failed (best-effort): $e');
+          'DataRoot migrate: audioHandler.stop failed/timeout (best-effort): $e');
     }
     // 1.5) TODO-1212：释放页面级媒体播放器的文件句柄（视频主播放器 / 离屏缩略图
     //    取帧 Player）。有声书会话上面 stop() 已直接 await disposeAndRelease 释放；
@@ -307,13 +326,31 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     // 4) WAL checkpoint(TRUNCATE) 落盘 + 关 DB（释放文件锁）。
     try {
       await appModel.database
-          .customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+          .customStatement('PRAGMA wal_checkpoint(TRUNCATE)')
+          .timeout(_closeResourceTimeout);
     } catch (e) {
-      // best-effort：checkpoint 失败不致命，下面的 closeDatabase 仍会落盘+关库。
-      debugPrint('DataRoot migrate: wal_checkpoint failed (best-effort): $e');
+      // best-effort：checkpoint 失败/超时不致命，下面的 closeDatabase 仍会落盘+关库。
+      debugPrint(
+          'DataRoot migrate: wal_checkpoint failed/timeout (best-effort): $e');
     }
-    await appModel.closeDatabase();
+    // TODO-1324：closeDatabase 过去**无 try/catch 无超时**——若 Drift close 因某个未取消
+    // 的 stream/挂起操作永不完成，整个迁移就永远卡在这里（遮罩转圈永不结束）。加超时 +
+    // 兜底：超时则放行继续搬文件（真被占用会在 rename 阶段以「文件被占用」失败态醒目提示，
+    // 而不是静默永久挂起）。
+    try {
+      await appModel.closeDatabase().timeout(_closeDatabaseTimeout);
+    } catch (e) {
+      debugPrint(
+          'DataRoot migrate: closeDatabase failed/timeout (best-effort): $e');
+    }
   }
+
+  /// TODO-1324：迁移前关运行时句柄的单步硬上限。任一步（停音频 / checkpoint）卡住都不得
+  /// 无限拖住迁移——超时即放行，把「永久挂起」降级为「可恢复的失败/继续」。
+  static const Duration _closeResourceTimeout = Duration(seconds: 5);
+
+  /// 关 DB 单独给更长上限（checkpoint 落盘可能较慢），但仍有界，绝不永久挂起。
+  static const Duration _closeDatabaseTimeout = Duration(seconds: 10);
 
   /// 迁移成功后自动重启；不支持或失败提示用户手动重开。
   static Future<void> _restartOrPromptManualImpl(
@@ -337,7 +374,12 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
 
   Future<void> _restartOrPromptManual(AppModel appModel) =>
       _restartOrPromptManualImpl(appModel, (String message) {
-        if (mounted) _showSnackBar(context, message);
+        // TODO-1324：迁移已成功，只是自动重启失败。**绝不**依赖 `if (mounted) _showSnackBar`
+        // ——迁移一开始 beginDataRootMigration 就把根 widget 换成遮罩、本设置页 State 已
+        // unmount（mounted==false），snackbar 静默丢失 → 遮罩永远停在转圈（用户报的「转圈
+        // 永不完成」的根因之一）。改切到迁移遮罩的**终态**（消息 + 重启按钮，由 main.dart 注入
+        // onRestart），用户永远能看到结果并手动重启；数据已安全落在新根。
+        appModel.failDataRootMigration(message);
       });
 
   Future<bool> _confirmMigrate() async {
@@ -410,7 +452,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   static bool _dirExistsAndHasFiles(String absolutePath) {
     final Directory dir = Directory(absolutePath);
     if (!dir.existsSync()) return false;
-    for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+    // followLinks: false —— 用户挑的目录可能含 shell junction（ACL 全拒），追进去
+    // listSync 直接 errno 5 硬炸（TODO-1226）。
+    for (final FileSystemEntity e
+        in dir.listSync(recursive: true, followLinks: false)) {
       if (e is File) return true;
     }
     return false;

@@ -79,8 +79,8 @@ void main() {
 
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
-    // The lookup is an *external* copy: pin the foreground guard so the real
-    // Windows GetForegroundWindow FFI probe (added after this test) cannot
+    // The lookup targets an out-of-focus window: pin the foreground guard so the
+    // real Windows GetForegroundWindow FFI probe (added after this test) cannot
     // non-deterministically report Hibiki as already-foreground and early-return
     // bringPendingLookupToFront before it reaches the mocked window_manager.
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
@@ -98,8 +98,9 @@ void main() {
     DesktopLookupService.instance.debugReset();
   });
 
-  testWidgets('external desktop lookup searches before window focus completes',
-      (WidgetTester tester) async {
+  testWidgets(
+      'bring-to-front desktop lookup searches before window focus completes '
+      '(TODO-1355)', (WidgetTester tester) async {
     final _DesktopLookupLagAppModel appModel = _DesktopLookupLagAppModel();
     final Completer<void> showCompleter = Completer<void>();
     final Completer<void> focusCompleter = Completer<void>();
@@ -110,10 +111,11 @@ void main() {
       (MethodCall call) {
         windowCalls.add(call.method);
         if (call.method == 'isMinimized') return Future<bool>.value(false);
-        // External desktop lookup = Hibiki is NOT in the foreground (the user
-        // copied in another app). bringPendingLookupToFront only attempts the
-        // show/focus path when isFocused() is false (TODO-341 gates the path
-        // for an already-foreground window to avoid the Windows taskbar flash).
+        // The window is NOT in the foreground when the explicit lookup fires
+        // (user triggered it from the floating subtitle / hotkey while working
+        // elsewhere). bringPendingLookupToFront only attempts the show/focus
+        // path when isFocused() is false (TODO-341 gates the already-foreground
+        // window to avoid the Windows taskbar flash).
         if (call.method == 'isFocused') return Future<bool>.value(false);
         if (call.method == 'show') return showCompleter.future;
         if (call.method == 'focus') return focusCompleter.future;
@@ -124,7 +126,12 @@ void main() {
     await tester.pumpWidget(_wrap(appModel));
     await tester.pump();
 
-    DesktopLookupService.instance.submitText(' lookupterm ');
+    // TODO-1355: clipboard submitText now pins foregroundPolicy.none (never
+    // brings the window to front). The "search must not block on a slow OS
+    // foreground call" guard only applies to the bring-to-front path, so drive
+    // it through the explicit-intent origin (floating-subtitle / hotkey lookup),
+    // which keeps foregroundPolicy.bringToFront.
+    DesktopLookupService.instance.triggerLookup(' lookupterm ');
     expect(
       DesktopLookupService.instance.pendingText,
       isNull,

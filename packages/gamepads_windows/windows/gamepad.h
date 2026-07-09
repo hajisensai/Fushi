@@ -64,6 +64,14 @@ class Gamepads {
  public:
   std::optional<std::function<void(GamepadData* gamepad, const Event& event)>>
       event_emitter;
+  // TODO-1223: whether init()'s delay-load probe found GameInput.dll. Set once
+  // in init() and read back over the plugin's `gameInputAvailable` channel
+  // method so Dart can surface an in-app hint when the controller backend is
+  // unavailable (missing DLL -> silent degrade to no gamepad support, +488)
+  // instead of leaving the user to wonder why the controller is dead. Written
+  // and read only on the platform thread (init() runs in the plugin ctor;
+  // HandleMethodCall runs on the same thread), so a plain bool is race-free.
+  bool game_input_available = false;
   void init();
   void stop();
   std::list<GamepadData*> get_gamepads();

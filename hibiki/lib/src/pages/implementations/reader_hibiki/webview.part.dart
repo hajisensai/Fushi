@@ -488,6 +488,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // 改同一全局，无需整章重注入。
     final bool hoverAutoLookup = ReaderHibikiSource.instance.hoverAutoLookup;
     final String selectionJs = ReaderSelectionScripts.source();
+    // TODO-1317: mobile long-press drag-select gesture IIFE (own touch
+    // listeners, coordinates via window.__hoshiTextSelectDragActive).
+    final String longPressDragJs =
+        ReaderSelectionScripts.longPressDragGestureScript();
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
     // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
@@ -514,6 +518,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
         blurImages: s.blurImages,
+        // TODO-1289：把本次会话已揭开的防剧透图 key 嵌入分页脚本，重载时不再重新遮罩。
+        revealedKeysJson: jsonEncode(_revealedImageKeys.toList()),
         vnRevealSpeed: vnRevealSpeed,
         vnScreenMode: s.visualNovelScreenMode,
         vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
@@ -561,7 +567,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var _hoshiReaderMouseDragPageDirection = null;
   var _hoshiReaderMouseDragSwipeSent = false;
   var _hoshiReaderMouseDragIgnoreTouchEnd = false;
-  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now();
+    // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
+    // inherits a prior drag-select's flag; the drag-select timer re-arms it.
+    window.__hoshiTextSelectDragActive = false; }
   // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
   // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
   // rather than a word. Text taps still go to onTap (word lookup).
@@ -736,6 +745,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     var el = _hoshiResolveBlockImageElement(target);
     if (el && el.classList && el.classList.contains('blurred')) {
       el.classList.remove('blurred');
+      // TODO-1289：揭开状态持久——回传稳定 key 给 Dart 会话集，章节重载不再重新遮罩。
+      if (window.__hoshiImageRevealKey && window.flutter_inappwebview) {
+        var key = window.__hoshiImageRevealKey(el);
+        if (key) window.flutter_inappwebview.callHandler('onImageRevealed', key);
+      }
       return true;
     }
     return false;
@@ -766,6 +780,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }, {passive: false});
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
+    // TODO-1317: a mobile long-press drag-select owns this gesture (finalized
+    // by the drag-select IIFE); suppress tap / swipe / image-tap so there is
+    // no double lookup or accidental page turn.
+    if (window.__hoshiTextSelectDragActive) {
+      clearImageLongPressTimer();
+      imageLongPressConsumed = false;
+      hasStart = false;
+      return;
+    }
     clearImageLongPressTimer();
     if (imageLongPressConsumed) {
       imageLongPressConsumed = false;
@@ -1251,6 +1274,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     window.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
     document.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
   })();
+  $longPressDragJs
   var cloak = document.getElementById('hoshi-cloak');
   if (cloak) cloak.remove();
 })();
@@ -1463,6 +1487,26 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           },
         );
 
+        // TODO-1317: a mobile long-press *drag*-select fires this instead of
+        // onTextSelected. Dart shows a selection menu (Copy / Lookup) so a
+        // plain-text range selection (copy) and lookup/mining coexist -- the
+        // drag no longer forces an immediate lookup (BUG-609 regression).
+        controller.addJavaScriptHandler(
+          handlerName: 'onSelectionMenu',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            try {
+              final Map<String, dynamic> payload =
+                  jsonDecode(args[0] as String) as Map<String, dynamic>;
+              await _handleSelectionMenu(ReaderSelectionData.fromJson(payload));
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('ReaderHibiki.onSelectionMenu', e, stack);
+              debugPrint('[ReaderHibiki] onSelectionMenu error: $e');
+            }
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
           callback: (_) => _onRestoreComplete(),
@@ -1623,6 +1667,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           handlerName: 'onBoundarySwipe',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
+            // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
+            // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
+            // 加载未落定时再次跨章 → 跳两章。与 _paginate 入口同一 _paginationInFlight。
+            // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗。
+            if (_paginationInFlight) {
+              _noteChapterTurnInput();
+              return;
+            }
             // Boundary swipe → chapter turn also stole focus to the WebView
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _reclaimReaderFocusAfterGesture();
@@ -1640,13 +1692,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                   DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
               if (elapsedMs < throttleMs) return;
             }
+            // TODO-1229 v2：跨章冷却闸门——同一惯性手势落地短章(插图/单页)后残余惯性
+            // 在新章边界的二次跨章被拦（并滑动冷却窗）。onBoundarySwipe 仅惯性/触摸路径，
+            // 无键盘调用，故无条件过闸门。
+            if (_chapterTurnCoolingDown()) return;
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
                 'chapter=$_currentChapter');
+            _noteChapterTurnInput();
             if (dir == 'forward') {
-              _handlePageTurnLimit('forward');
+              _handlePageTurnLimit('forward', inertia: true);
             } else if (dir == 'backward') {
-              _handlePageTurnLimit('backward');
+              _handlePageTurnLimit('backward', inertia: true);
             }
             if (throttleMs > 0) {
               _lastPaginateTime = DateTime.now();
@@ -1657,6 +1714,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onImageDetected',
           callback: (_) => _audiobookController?.triggerImagePause(),
+        );
+
+        // TODO-1289：JS 揭开防剧透图后回传稳定 key，登记进本次阅读会话内存集；
+        // 章节 (重)载时 _buildReaderHtml 会把该集嵌回分页脚本，跳过重新遮罩。
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageRevealed',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty) return;
+            final String key = args[0]?.toString() ?? '';
+            if (key.isEmpty) return;
+            _revealedImageKeys.add(key);
+          },
         );
 
         controller.addJavaScriptHandler(
@@ -1709,6 +1778,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
                 _hasEverLoaded = true;
               });
+              // TODO-1229 第三次复诉：spread 内容就绪同样消费 pending 并 stamp 冷却窗，
+              // 挡住惯性跨章落地漫画页后残余滚轮的二次跨章（与 _onRestoreComplete 对齐）。
+              _noteChapterTurnSettledIfPending();
               // BUG-467：spread 内容就绪同样补下 chrome insets（_hasEverLoaded 刚翻 true，
               // 初始 HTML 漏了底栏预留）。
               _reapplyChromeInsetsAfterFirstLoad();
@@ -1877,37 +1949,32 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
   }
 
-  Future<void> _markLyricsPageReady(InAppWebViewController controller) async {
-    if (_lyricsPageReady) return;
-    if (!_readerContentReady) {
-      // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
-      _clearContentReadyTimeout();
-    }
-    _rebuild(() {
-      _readerContentReady = true;
-      _hasEverLoaded = true;
-      _lyricsPageReady = true;
-    });
-    // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
-    // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
-    await controller.evaluateJavascript(
-        source: ReaderLyricsCaretScripts.source());
-    if (mounted) {
-      await controller.evaluateJavascript(
-        source: ReaderLyricsCaretScripts.initInvocation(
-          color: _caretRingColorCss(),
-          insetTop: _readerTopOffset,
-          insetBottom: 0,
-        ),
-      );
-    }
-    _onCueChanged();
-    await _applyLyricsFavorites();
-  }
-
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     if (_lyricsMode) {
-      await _markLyricsPageReady(controller);
+      if (!_readerContentReady) {
+        // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
+        _clearContentReadyTimeout();
+        _rebuild(() {
+          _readerContentReady = true;
+          _hasEverLoaded = true;
+        });
+      }
+      _lyricsPageReady = true;
+      // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
+      // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
+      await controller.evaluateJavascript(
+          source: ReaderLyricsCaretScripts.source());
+      if (mounted) {
+        await controller.evaluateJavascript(
+          source: ReaderLyricsCaretScripts.initInvocation(
+            color: _caretRingColorCss(),
+            insetTop: _readerTopOffset,
+            insetBottom: 0,
+          ),
+        );
+      }
+      _onCueChanged();
+      await _applyLyricsFavorites();
       return;
     }
     final int gen = _navigateGeneration;

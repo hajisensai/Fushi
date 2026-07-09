@@ -9,6 +9,7 @@ DroppedFiles _files({
   List<String> audios = const [],
   List<String> playlists = const [],
   List<String> dictionaries = const [],
+  List<String> urls = const [],
 }) =>
     DroppedFiles(
         books: books,
@@ -17,6 +18,7 @@ DroppedFiles _files({
         audios: audios,
         playlists: playlists,
         dictionaries: dictionaries,
+        urls: urls,
         unknown: const []);
 
 void main() {
@@ -88,6 +90,27 @@ void main() {
       );
     });
 
+    // TODO-1306: 书架拖入网络流 URL → 自动切到视频导入（流媒体入库）。
+    test('http url on books surface -> importVideoUrl (auto-switch)', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(urls: ['https://youtu.be/abc']),
+            cardHit: false),
+        DropIntent.importVideoUrl,
+      );
+    });
+    // URL 优先于同拖的视频文件（浏览器拖来的是意图明确的链接）。
+    test('url wins over video file on books surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(urls: ['https://x.test/a'], videos: ['/a.mkv']),
+            cardHit: false),
+        DropIntent.importVideoUrl,
+      );
+    });
+
     test('unknown-only input -> ignore', () {
       expect(
         decideDropIntent(
@@ -99,6 +122,7 @@ void main() {
                 audios: [],
                 playlists: [],
                 dictionaries: [],
+                urls: [],
                 unknown: ['/a.bin']),
             cardHit: false),
         DropIntent.ignore,
@@ -114,6 +138,25 @@ void main() {
             files: _files(videos: ['/a.mkv']),
             cardHit: false),
         DropIntent.importNewVideo,
+      );
+    });
+    // TODO-1306: 视频表面拖入网络流 URL → importVideoUrl。
+    test('http url on video surface -> importVideoUrl', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(urls: ['https://example.com/a.mp4']),
+            cardHit: false),
+        DropIntent.importVideoUrl,
+      );
+    });
+    test('url wins over playlist on video surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(urls: ['https://x.test/a'], playlists: ['/a.m3u8']),
+            cardHit: false),
+        DropIntent.importVideoUrl,
       );
     });
     test('subtitle on a video card -> attachToVideoCard', () {

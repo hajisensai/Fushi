@@ -26,6 +26,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:hibiki/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
@@ -69,6 +70,8 @@ import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/sync/remote_audio_lookup_bytes.dart';
+import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -349,9 +352,11 @@ DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   return null;
 }
 
-/// TODO-1151：本地备份导入/恢复的全屏遮罩阶段。[running] 正在解压落盘（阻塞、请勿
-/// 关闭）；[done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
-enum BackupImportPhase { running, done, failed }
+/// TODO-1151：本地备份导入/恢复的全屏遮罩阶段。[validating] 选完文件后正在读取/校验
+/// 备份并生成合并预览（DB 仍打开、可取消）——旧实现这段只有设置行 24px 小圈，大 zip
+/// 校验/预览要数十秒无明显反馈；[running] 正在解压落盘（DB 已关、阻塞、请勿关闭）；
+/// [done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
+enum BackupImportPhase { validating, running, done, failed }
 
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
@@ -407,6 +412,9 @@ class AppModel with ChangeNotifier {
     remoteLookupServiceFactory: createRemoteLookupService,
     miningServiceFactory: createRemoteMiningService,
     historyServiceFactory: createRemoteHistoryService,
+    // TODO-1356: advertise this device's real per-platform name (hardware model
+    // on mobile, hostname on desktop) so peers never see "localhost".
+    deviceInfo: platformServices.deviceInfo,
     libraryServiceFactory: () => AppModelLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -800,6 +808,45 @@ class AppModel with ChangeNotifier {
   /// 解压 isolate 的 SendPort 消息驱动）。夹紧到 [0,1]。
   void reportBackupImportProgress(double fraction) {
     backupImportProgress.value = fraction.clamp(0.0, 1.0);
+  }
+
+  /// TODO-1151：备份「读取/校验」阶段的作废 token。选完文件后 validate + previewMerge
+  /// 会跑数十秒（后台 isolate，UI 不冻结但只有 24px 小圈）。进入 [beginBackupValidating]
+  /// 时自增；用户点「取消」或开启新一轮校验会再自增作废旧 token——in-flight 的后台 isolate
+  /// 结果回来时用 [isBackupValidatingCurrent] 判断是否仍是最新，陈旧结果**直接丢弃**（不吞
+  /// 异常、不硬编码分支，纯 token 判定）。
+  int _backupValidatingToken = 0;
+
+  /// 进入「读取/校验备份 + 生成合并预览」的全屏遮罩（DB 仍打开，可取消）。返回本轮
+  /// 校验 token；调用方在每个 await 后用 [isBackupValidatingCurrent] 校验后再消费结果。
+  int beginBackupValidating() {
+    _backupImportPhase = BackupImportPhase.validating;
+    _backupImportMessage = null;
+    backupImportProgress.value = 0.0;
+    final int token = ++_backupValidatingToken;
+    notifyListeners();
+    return token;
+  }
+
+  /// 该 [token] 是否仍是最新校验轮（未被取消、未被新一轮校验取代）。
+  bool isBackupValidatingCurrent(int token) => _backupValidatingToken == token;
+
+  /// 用户在 validating 遮罩点「取消」：作废 in-flight token（后台结果回来即丢弃）并退出
+  /// 遮罩回到正常 app 树（设置页）。仅在仍处于 validating 相位时生效（避免误清掉已进入
+  /// running 的导入态）。
+  void cancelBackupValidating() {
+    if (_backupImportPhase != BackupImportPhase.validating) return;
+    _backupValidatingToken++;
+    _backupImportPhase = null;
+    notifyListeners();
+  }
+
+  /// 校验成功、预览就绪：退出 validating 遮罩，切回正常 app 树，好在其上（经全局
+  /// [navigatorKey]）弹确认对话框。不作废 token（调用方已确认本轮仍是最新）。
+  void endBackupValidating() {
+    if (_backupImportPhase != BackupImportPhase.validating) return;
+    _backupImportPhase = null;
+    notifyListeners();
   }
 
   /// 进入导入态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 解压落盘」的
@@ -1648,6 +1695,25 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// TODO-1260：启动期对**数据根**做 IO 的关键 await 的超时上限。旧代码这些 await 若
+  /// 因自定义数据根所在磁盘掉线而永不返回，会让 `initialise()` 无限挂起（首帧不出、
+  /// 无限加载），而 `initialise()` 的顶层 try/catch 只接异常、接不住 hang。给这些 await
+  /// 叠超时后，超时抛 [TimeoutException]→落顶层 catch→`_initError` 错误屏（有 Retry），
+  /// 把「无逃生的无限 hang」变成「可重试的错误」。取 12s：远大于本机盘正常耗时（毫秒级），
+  /// 只在盘真掉线 / 卡死时触发。
+  static const Duration _initIoTimeout = Duration(seconds: 12);
+
+  /// 给启动关键 IO 的 [Future] 叠一层超时：超时抛带**步骤名**的 [TimeoutException]，
+  /// 让错误屏文案能指出卡在哪一步。
+  Future<T> _guardInitIo<T>(String step, Future<T> future) => future.timeout(
+        _initIoTimeout,
+        onTimeout: () => throw TimeoutException(
+          'AppModel.initialise 卡在「$step」超过 ${_initIoTimeout.inSeconds}s 未返回'
+          '（多半是自定义数据根所在磁盘掉线 / 卡死）',
+          _initIoTimeout,
+        ),
+      );
+
   /// Prepare application data and state to be ready of use upon starting up
   /// the application. [AppModel] is initialised in the main function before
   /// [runApp] is executed.
@@ -1655,6 +1721,10 @@ class AppModel with ChangeNotifier {
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
     // [hibikiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();
+    // TODO-1236：把上游 `hibiki_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
+    // AppPaths）。这样桌面自定义数据根生效后，有声书新导入落数据根下的 `audiobooks/`
+    // （与 TODO-1226 迁移白名单一致），而不是落回平台 Documents。
+    AudiobookStorage.documentsRootResolver = AppPaths.documentsRootDirectory;
     _temporaryDirectory = _appPaths.tempRoot;
     _appDirectory = _appPaths.documentsRoot;
     _databaseDirectory = _appPaths.supportRoot;
@@ -1669,9 +1739,15 @@ class AppModel with ChangeNotifier {
       await platformServices.init();
 
       debugPrint('[Hibiki] init: directories (early, needed for DB)');
-      await _prepareRuntimeDirectories();
+      // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
+      // 故写启动面包屑 + 叠超时（超时→错误屏 Retry，不再无限加载）。
+      ErrorLogService.instance
+          .markInitStep('resolve-data-roots（AppPaths.resolve / 数据根 stat）');
+      await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
 
       debugPrint('[Hibiki] init: Drift database');
+      ErrorLogService.instance
+          .markInitStep('open-database（Drift 打开 hibiki.db）');
       _database = HibikiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
 
@@ -1722,18 +1798,27 @@ class AppModel with ChangeNotifier {
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));
 
-      await Future.wait(<Future<void>>[
-        thumbnailsDirectory.create(recursive: true),
-        dictionaryImportWorkingDirectory.create(recursive: true),
-        dictionaryResourceDirectory.create(recursive: true),
-        refreshSystemPalette(),
-        () async {
-          _exportDirectory = await prepareFallbackHibikiDirectory();
-          _alternateExportDirectory = _exportDirectory;
-        }(),
-      ]);
+      // TODO-1260：这些目录都派生自数据根（documentsRoot）；盘掉线时 create() 会 hang。
+      ErrorLogService.instance.markInitStep(
+          'create-runtime-dirs（thumbnails / dictionaryResources 等目录创建）');
+      await _guardInitIo(
+        'create-runtime-dirs',
+        Future.wait(<Future<void>>[
+          thumbnailsDirectory.create(recursive: true),
+          dictionaryImportWorkingDirectory.create(recursive: true),
+          dictionaryResourceDirectory.create(recursive: true),
+          refreshSystemPalette(),
+          () async {
+            _exportDirectory = await prepareFallbackHibikiDirectory();
+            _alternateExportDirectory = _exportDirectory;
+          }(),
+        ]),
+      );
 
-      await _rebuildDictPathsCacheAsync();
+      // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
+      ErrorLogService.instance
+          .markInitStep('rebuild-dict-paths（词典资源目录 exists 探测）');
+      await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
 
       _localAudioManager = LocalAudioManager(
         prefsRepo: prefsRepo,
@@ -1841,6 +1926,8 @@ class AppModel with ChangeNotifier {
       }));
 
       debugPrint('[Hibiki] init: DONE');
+      // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
+      ErrorLogService.instance.clearInitStep();
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
       // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
@@ -3166,6 +3253,11 @@ class AppModel with ChangeNotifier {
     // Returning to the home/menu shell: hide the Android status bar again
     // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
     await setHomeShellSystemUiMode();
+    // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
+    // Windows OS drop registration in case an opened reader/video/lookup
+    // WebView2 usurped it, so drag-import works again after any media was
+    // opened. No-op off Windows / when desktop_drop lacks the reinitialize patch.
+    await DesktopDropReinitializer.reinitialize();
     await mediaSource.onSourceExit(
       appModel: this,
       ref: ref,
@@ -3801,11 +3893,35 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
 
-  int get popupDictionaryColumns => prefsRepo.popupDictionaryColumns;
+  /// TODO-1357: 查词弹窗「列数 / 自动展开词典数」的平台三态默认解析（纯函数，供守卫）。
+  /// - 用户显式设过（[hasExplicit]）→ 一律遵从其存储值 [stored]（尊重用户）。
+  /// - 从未设过：桌面（pointer:fine，[isDesktop]）→ 默认 2（Niratan 双栏观感）；
+  ///   移动端窄屏 → 默认 1（不硬塞两列 / 两词典，避免窄屏挤爆）。
+  static int resolvePopupDesktopDefault({
+    required bool hasExplicit,
+    required int stored,
+    required bool isDesktop,
+  }) =>
+      hasExplicit ? stored : (isDesktop ? 2 : 1);
+
+  /// TODO-1357: 查词弹窗默认列数（桌面未设 2 / 移动未设 1 / 显式遵从）。所有
+  /// `--dict-columns` 注入点（app_model / dictionary_popup_webview /
+  /// popup_settings_injection）都读本 getter，平台默认在此单点收口。
+  int get popupDictionaryColumns => resolvePopupDesktopDefault(
+        hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
+        stored: prefsRepo.popupDictionaryColumns,
+        isDesktop: isDesktopPlatform,
+      );
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
-  int get popupAutoExpandDictionaries => prefsRepo.popupAutoExpandDictionaries;
+  /// TODO-1357: 自动展开词典数（桌面未设 2 个 / 移动未设 1 个 / 显式遵从）——桌面上与
+  /// 2 列并排即 Niratan 双栏。
+  int get popupAutoExpandDictionaries => resolvePopupDesktopDefault(
+        hasExplicit: prefsRepo.hasExplicitPopupAutoExpandDictionaries,
+        stored: prefsRepo.popupAutoExpandDictionaries,
+        isDesktop: isDesktopPlatform,
+      );
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 
@@ -4042,6 +4158,9 @@ class AppModel with ChangeNotifier {
       historyService: createRemoteHistoryService(),
       // BUG-530：主题色随查词响应下发，扩展弹窗实时跟随用户主题色（改主题即生效）。
       themeColorsProvider: browserExtensionThemeColors,
+      // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
+      // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
+      audioSourcesProvider: () => enabledAudioSources,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4064,6 +4183,38 @@ class AppModel with ChangeNotifier {
 
   Future<void> stopYomitanApiServer() async {
     await _yomitanServerManager?.stop();
+  }
+
+  /// TODO-1266：浏览器扩展「安装助手」调用——「装完即用」。确保 yomitan-api server 就绪，
+  /// 让扩展装完即可连上本机 app，不必用户再手动去设置里开 server（省掉装完 401 连不上）。
+  ///
+  /// 幂等 + 不覆盖既有真值（安全 + 向后兼容）：
+  /// - token：仅当 [yomitanApiKey] 为空时才生成一枚随机 token 并落盘；**绝不覆盖**用户手填
+  ///   或此前已配对的非空 token（覆盖会踢掉扩展已保存的 token 造成 401）。播种在启动/注入前
+  ///   完成，保证 server 实际使用的 token 与随后注入扩展 `hibiki-defaults.js` 的 token 一致。
+  /// - server：仅当当前未启用时才置位并启动；已启用则**跳过不重启**（不打断在跑的 server、
+  ///   不干扰活动连接）。[startYomitanApiServer] 本身也幂等（管理器 `if (_server != null)`）。
+  ///
+  /// 返回 true 表示 server 现在已启用（且预期在运行）；false 表示因端口占用启动失败
+  /// （此时 [startYomitanApiServer] 已把 [yomitanApiServerEnabled] 复位为 false，
+  /// 调用方据此提示用户端口冲突）。
+  Future<bool> ensureYomitanApiServerForBrowserExtension() async {
+    // token 就绪：空才播种，非空保留（不覆盖）。用与 sync server 同款的密码学安全随机源。
+    if (yomitanApiKey.isEmpty) {
+      await setYomitanApiKey(HibikiSyncServer.generateToken());
+    }
+    // 已启用：按「跳过不重启」要求直接返回；token 已就绪且与注入值一致。
+    if (yomitanApiServerEnabled) {
+      return true;
+    }
+    await setYomitanApiServerEnabled(true);
+    try {
+      await startYomitanApiServer();
+    } on SyncServerPortInUseException {
+      // startYomitanApiServer 已在抛前把开关复位为 false。
+      return false;
+    }
+    return true;
   }
 
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────
@@ -4321,6 +4472,51 @@ class AppModel with ChangeNotifier {
 /// 是 const 构造，无法挂非 const 的可变缓存字段。
 final YoutubeClipMiner _youtubeClipMiner = YoutubeClipMiner();
 
+/// TODO-1303：把一次 [MineOutcome] 映射成 [RemoteMineResult]，并**把失败写进错误日志**。
+/// 远端挖词（浏览器扩展）此前只回结果名、失败既不回传原因也不记日志 → 「制卡失败报成功 +
+/// 诊断黑洞」。这里复用 app 内同一 [logMineFailure]（写 error+stack 进 [ErrorLogService]、
+/// 返回简短本地化文案）与 [MineOutcome.audioWarning]（部分成功：卡建了但单词音频落空）语义，
+/// 让远端与应用内的失败处理走同一条真相路径。
+RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
+  switch (outcome.result) {
+    case MineResult.error:
+      // logMineFailure：把完整诊断写进错误日志（用户可查/可导出），返回简短本地化文案。
+      final String reason = logMineFailure(outcome);
+      return RemoteMineResult(
+        result: outcome.result.name,
+        message: reason,
+        detail: outcome.errorDetail,
+      );
+    case MineResult.success:
+      final String? warn = outcome.audioWarning;
+      // 部分成功：卡建好了但单词远程音频落空 → 回传警告让扩展区分「真成功 / 没音频」。
+      return warn != null && warn.isNotEmpty
+          ? RemoteMineResult(result: outcome.result.name, message: warn)
+          : RemoteMineResult(result: outcome.result.name);
+    case MineResult.duplicate:
+    case MineResult.notConfigured:
+      return RemoteMineResult(result: outcome.result.name);
+  }
+}
+
+/// TODO-1303：远端制卡在**未产出 [MineOutcome]** 就失败（引擎中止：缺音频/空壳卡；
+/// YouTube 流解析超时；零长度窗）时的错误结果。把原因写进 [ErrorLogService]（不再只
+/// `debugPrint` 进黑洞）并回带诊断。[reason]=给用户的简短文案，[detail]=技术细节。
+RemoteMineResult remoteMineError(
+  String source,
+  String reason, {
+  String? detail,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
+  return RemoteMineResult(
+    result: MineResult.error.name,
+    message: reason,
+    detail: detail,
+  );
+}
+
 class _AppModelRemoteLookupService
     implements
         HibikiRemoteLookupService,
@@ -4331,7 +4527,7 @@ class _AppModelRemoteLookupService
   final AppModel _appModel;
 
   @override
-  Future<String> mineEntry({
+  Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
   }) async {
@@ -4341,7 +4537,8 @@ class _AppModelRemoteLookupService
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),
     );
-    return outcome.result.name;
+    // TODO-1303：回带诊断 + 失败写错误日志（单一真相：remoteMineResultFromOutcome）。
+    return remoteMineResultFromOutcome(outcome);
   }
 
   @override
@@ -4357,7 +4554,7 @@ class _AppModelRemoteLookupService
   }
 
   @override
-  Future<String> mineImmersion(ImmersionMinePayload payload) async {
+  Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     final MiningMediaCompression compression =
@@ -4371,7 +4568,12 @@ class _AppModelRemoteLookupService
       // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声/无 GIF 的静帧卡：服务端 YouTube 路径无
       // stillFallback，且 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成坏卡。
       if (payload.clipEndMs! <= payload.clipStartMs!) {
-        return MineResult.error.name;
+        return remoteMineError(
+          'Anki.mineImmersion.youtube',
+          'YouTube 字幕时间窗无效（零/负长度），未制卡',
+          detail: 'clip window <= 0 '
+              '(${payload.clipStartMs}..${payload.clipEndMs})',
+        );
       }
       final YoutubeClipRequest yt;
       try {
@@ -4387,8 +4589,14 @@ class _AppModelRemoteLookupService
       } catch (e, st) {
         // resolveYoutubeSource 会抛 TimeoutException / 视频不可用等；两个 server 的 /api/mine
         // 只 catch FormatException，这里不兜住会 500 整张卡。收敛成干净的 MineResult.error。
-        debugPrint('[yt-mine] resolve failed: $e\n$st');
-        return MineResult.error.name;
+        // TODO-1303：不再只 debugPrint 进黑洞——写进错误日志并回带诊断。
+        return remoteMineError(
+          'Anki.mineImmersion.youtube',
+          'YouTube 视频流解析失败，未制卡',
+          detail: 'resolve failed: $e',
+          error: e,
+          stackTrace: st,
+        );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
@@ -4408,10 +4616,16 @@ class _AppModelRemoteLookupService
         tempDir: Directory.systemTemp.path,
         repo: repo,
         // GIF/音频抽取失败摘要写日志，便于排查「没 gif / 只有图片」。
-        onFailure: (String s) => debugPrint('[yt-mine] extract: $s'),
+        // TODO-1303：GIF/音频抽取摘要进诊断日志（可导出、不计入用户错误计数）。
+        onFailure: (String s) => ErrorLogService.instance
+            .logDiagnostic('Anki.mineImmersion.youtube.extract', s),
       );
-      if (ytRes.aborted) return MineResult.error.name;
-      return (ytRes.outcome! as MineOutcome).result.name;
+      if (ytRes.aborted) {
+        return remoteMineError('Anki.mineImmersion.youtube',
+            'YouTube 制卡失败：${ytRes.abortReason ?? '媒体抽取失败'}',
+            detail: ytRes.abortReason);
+      }
+      return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
     }
     // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
@@ -4435,14 +4649,22 @@ class _AppModelRemoteLookupService
         clipEndMs: payload.clipEndMs!,
       );
     }
+    // TODO-1303：录制片段（clipBytes）来源本应带音频（Netflix 播放必有音轨）→ audioExpected，
+    // 引擎在最终无音频（转码丢音轨）时中止而非静默出无声卡；2A 截图 / 后台软解不可用 → 不强求
+    // （截图卡本就无音频不算失败）。
+    final bool audioExpected = payload.clipBytes != null;
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
-      buildImmersionRequest(payload, cap),
+      buildImmersionRequest(payload, cap, audioExpected: audioExpected),
       compression: compression,
       tempDir: Directory.systemTemp.path,
       repo: repo,
     );
-    if (res.aborted) return MineResult.error.name;
-    return (res.outcome! as MineOutcome).result.name;
+    if (res.aborted) {
+      return remoteMineError('Anki.mineImmersion.netflix',
+          'Netflix 制卡失败：${res.abortReason ?? '媒体抽取失败'}',
+          detail: res.abortReason);
+    }
+    return remoteMineResultFromOutcome(res.outcome! as MineOutcome);
   }
 
   @override
@@ -4478,46 +4700,46 @@ class _AppModelRemoteLookupService
     required String expression,
     required String reading,
   }) async {
-    final Map<String, dynamic>? info =
-        await TtsChannel.instance.queryLocalAudio(
+    // TODO-1335 ②：与 app 内查词弹窗同一条 resolveLookupAudioUrl 全源解析（本地库 +
+    // hibikiRemote + 远程 URL 模板），而非只查本地库——否则仅配了远程发音源（jpod/forvo）
+    // 的用户在扩展/远端查词弹窗里恒无单词音频。解析结果可能是本地文件路径或远程 http(s)
+    // URL，remoteAudioLookupFromResolvedUrl 统一归一成字节（远程下载、本地读文件），仍经
+    // 本地短命 token 播放。
+    final String? resolved = await resolveLookupAudioUrl(
+      _appModel,
       expression,
       reading,
     );
-    if (info == null) return null;
-    final String? file = info['file'] as String?;
-    final String? source = info['source'] as String?;
-    if (file == null || source == null) return null;
-    final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-    final String? resolved = await TtsChannel.instance.extractLocalAudio(
-      file,
-      source,
-      dbIndex: dbIndex,
-    );
-    if (resolved == null || resolved.isEmpty) return null;
-    final Uri? uri = Uri.tryParse(resolved);
-    final String filePath =
-        uri != null && uri.scheme == 'file' ? uri.toFilePath() : resolved;
-    final File audioFile = File(filePath);
-    if (!audioFile.existsSync()) return null;
-    return RemoteAudioLookup(
-      bytes: await audioFile.readAsBytes(),
-      contentType: _remoteAudioContentType(filePath),
+    return remoteAudioLookupFromResolvedUrl(
+      resolved,
+      downloadRemote: _downloadRemoteAudioBytes,
+      loadLocalFile: (String filePath) async {
+        final File audioFile = File(filePath);
+        if (!audioFile.existsSync()) return null;
+        return audioFile.readAsBytes();
+      },
     );
   }
 
-  String _remoteAudioContentType(String filePath) {
-    switch (path.extension(filePath).toLowerCase()) {
-      case '.mp3':
-        return 'audio/mpeg';
-      case '.m4a':
-      case '.m4b':
-        return 'audio/mp4';
-      case '.ogg':
-        return 'audio/ogg';
-      case '.flac':
-        return 'audio/flac';
-      default:
-        return 'application/octet-stream';
+  /// TODO-1335 ②：服务端下载远程发音源字节（Forvo/jpod/hibikiRemote 解析出的 http(s)
+  /// URL）。复用 AppModel 的 keep-alive http client；失败写错误日志并回 null（弹窗降级为
+  /// 无音频，绝不抛断查词）。
+  Future<RemoteAudioLookup?> _downloadRemoteAudioBytes(Uri uri) async {
+    try {
+      final http.Response resp = await _appModel._remoteLookupClient
+          .get(uri)
+          .timeout(kRemoteAudioReceiveTimeout);
+      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) return null;
+      return RemoteAudioLookup(
+        bytes: resp.bodyBytes,
+        contentType: remoteAudioContentTypeFromResponse(
+          uri,
+          resp.headers['content-type'],
+        ),
+      );
+    } catch (e, st) {
+      ErrorLogService.instance.log('lookupAudio.downloadRemote', e, st);
+      return null;
     }
   }
 }

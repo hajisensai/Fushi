@@ -11,4 +11,7 @@ class DesktopDeviceInfoService implements PlatformDeviceInfoService {
 
   @override
   Future<String?> get osVersion async => Platform.operatingSystemVersion;
+
+  @override
+  Future<String?> get manufacturer async => null;
 }

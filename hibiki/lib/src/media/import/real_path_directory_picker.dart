@@ -99,6 +99,7 @@ Future<String?> pickRealFilePath({
       await appModel.platformServices.permission.hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
+    if (!context.mounted) return null;
     return _fallbackPickFile(
       context: context,
       allowedExtensions: allowedExtensions,
@@ -121,6 +122,24 @@ Future<String?> pickRealFilePath({
   );
 }
 
+/// 「选一个文件、走系统文件选择器（安卓 SAF / iOS Files / 桌面原生），返回其路径」。
+///
+/// 与 [pickRealFilePath] 的分工：[pickRealFilePath] 面向**以绝对路径长期引用、导入时
+/// 不复制**的文件（视频——SAF 复制到 cache 的路径清缓存即悬空，故安卓改真实路径浏览
+/// 器）。而字幕 / 对齐文件（smil/srt/lrc/vtt/ass/json…）在导入时即被解析成 cues / 生成
+/// EPUB / 跑 matcher **当场消费**，SAF 复制到 cache 的临时副本读完即弃，不存在悬空问题。
+/// 因此这类文件维持系统文件选择器：用户熟悉，且能触达 Downloads / 云盘 / 最近文件等
+/// 真实路径浏览器覆盖不到的位置（board 1360——用户报「导入选字幕文件的选择器变了」）。
+///
+/// 安卓不需要 `MANAGE_EXTERNAL_STORAGE`（SAF 自带授权），桌面 / iOS 本就返回真实路径。
+/// [allowedExtensions] 为不带点的小写扩展名集；iOS 的 `.srt` 等 UTI 解析问题由
+/// [_fallbackPickFile] 内部统一处理（先 `FileType.any` 打开 Files，再按扩展名校验）。
+Future<String?> pickSystemFilePath({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) =>
+    _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
+
 /// 「选多个文件并返回真实文件系统绝对路径」。
 ///
 /// 当前真实路径浏览器只支持单文件点选；多选仍回退到 file_picker。iOS 上不能使用
@@ -134,6 +153,7 @@ Future<List<String>> pickRealFilePaths({
   if (defaultTargetPlatform == TargetPlatform.android) {
     await appModel.requestExternalStoragePermissions();
   }
+  if (!context.mounted) return const <String>[];
   return _fallbackPickFiles(
     context: context,
     allowedExtensions: allowedExtensions,
@@ -186,6 +206,15 @@ Future<List<String>> _fallbackPickFiles({
           const <String>[];
   if (!filterAfterPick) return paths;
 
+  // 页面若在原生文件选择器打开期间被销毁，仍按扩展名做纯过滤返回，只是无法
+  // 弹「不支持格式」提示（context 传 null，过滤逻辑不依赖 context）。
+  if (!context.mounted) {
+    return _filterPickedFilesByExtension(
+      context: null,
+      paths: paths,
+      allowedExtensions: normalizedExtensions,
+    );
+  }
   return _filterPickedFilesByExtension(
     context: context,
     paths: paths,
@@ -202,7 +231,7 @@ Set<String> _normalizeExtensions(Set<String>? extensions) {
 }
 
 List<String> _filterPickedFilesByExtension({
-  required BuildContext context,
+  required BuildContext? context,
   required List<String> paths,
   required Set<String> allowedExtensions,
 }) {
@@ -216,7 +245,7 @@ List<String> _filterPickedFilesByExtension({
       rejected.add(path);
     }
   }
-  if (rejected.isNotEmpty && context.mounted) {
+  if (rejected.isNotEmpty && context != null && context.mounted) {
     final String ext = p.extension(rejected.first).toLowerCase();
     HibikiToast.show(
       msg: t.import_unsupported_file_format(

@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 源码守卫（headless 无法真触发 PopupMenu / 系统分享面板，故守卫接线）：
 /// 1) 全屏画廊持有源磁盘文件 File（复制/分享 channel 需要真实路径）。
 /// 2) Windows 走原生剪贴板 channel `copyImageFile`，并提供右键菜单。
-/// 3) 移动端走 Share.shareXFiles，并提供长按手势。
+/// 3) 移动端走 HibikiShare.shareFiles，并提供长按手势。
 /// 4) 复用 TODO-023 已有 i18n key，不引入 Clipboard.setData 之类的伪复制。
 void main() {
   final String source = File(
@@ -32,7 +32,7 @@ void main() {
     expect(source, contains('HibikiChannels.clipboardImage'));
     expect(source, contains("'copyImageFile'"));
     // 移动端系统分享面板。
-    expect(source, contains('Share.shareXFiles'));
+    expect(source, contains('HibikiShare.shareFiles'));
     expect(source, contains('XFile(file.path'));
 
     // 不允许退化成纯文本伪复制。

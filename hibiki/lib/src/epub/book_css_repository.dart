@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/epub/epub_parser.dart';
+
 /// HBK-AUDIT-101: read a (possibly non-UTF-8) CSS file as text without throwing
 /// a FormatException. Malformed bytes are replaced rather than crashing the
 /// in-app CSS editor. Callers must check [File.existsSync] beforehand.
@@ -49,16 +51,18 @@ class BookCssRepository {
 
   final String extractDir;
 
-  /// BUG-040: discover CSS files and read their contents off the UI thread.
-  /// The recursive `listSync` over a fully-extracted EPUB (images/fonts/xhtml —
-  /// often thousands of entries) plus the per-file `readAsStringSync` used to
-  /// run synchronously inside the editor's `initState`, freezing the first
-  /// frame for the entire duration of the page-push transition. The async
-  /// `dart:io` walk + reads run the blocking syscalls on the Dart IO thread
-  /// pool and deliver results via the event loop, so the UI isolate is never
-  /// blocked and frames keep rendering (the editor shows a spinner meanwhile).
+  /// Load the editable CSS files plus their on-disk content for the editor.
+  ///
+  /// TODO-1234: discovery now reads the OPF manifest
+  /// ([EpubParser.discoverCssRelativePaths]) — two small XML files — instead of
+  /// recursively walking the fully-extracted EPUB (thousands of image/font/
+  /// xhtml entries for a manga). BUG-040 had moved that walk off the UI thread
+  /// but never cut its O(all-files) cost, so the editor still spun for seconds
+  /// on image-heavy books; manifest lookup is O(manifest). The per-file CSS
+  /// content reads stay async (`readCss`) so the heavier I/O never blocks the
+  /// UI isolate — the editor shows a spinner meanwhile.
   Future<List<CssFileSnapshot>> loadSnapshots() async {
-    final List<CssFileEntry> entries = await _discoverCssFilesAsync();
+    final List<CssFileEntry> entries = discoverCssFiles();
     final List<CssFileSnapshot> snapshots = <CssFileSnapshot>[];
     for (final CssFileEntry entry in entries) {
       snapshots
@@ -67,41 +71,22 @@ class BookCssRepository {
     return snapshots;
   }
 
-  Future<List<CssFileEntry>> _discoverCssFilesAsync() async {
-    final Directory dir = Directory(extractDir);
-    if (!await dir.exists()) return const [];
-
-    final List<String> cssFilePaths = <String>[];
-    await for (final FileSystemEntity entity in dir.list(recursive: true)) {
-      if (entity is! File) continue;
-      final String ext = p.extension(entity.path).toLowerCase();
-      if (ext == '.css' && !entity.path.endsWith('.original')) {
-        cssFilePaths.add(entity.path);
-      }
-    }
-    return _entriesFromCssPaths(cssFilePaths);
-  }
-
+  /// TODO-1234: discover the book's editable CSS files from the OPF manifest
+  /// (`media-type="text/css"`) — no full-tree walk. Returns sorted
+  /// [CssFileEntry]s with shortest-unique display titles. Books whose OPF is
+  /// missing/unparseable (never true for a book that actually opened) or that
+  /// declare no CSS yield an empty list rather than crashing.
   List<CssFileEntry> discoverCssFiles() {
-    final Directory dir = Directory(extractDir);
-    if (!dir.existsSync()) return const [];
-
-    final List<String> cssFilePaths = dir
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) {
-          final String ext = p.extension(f.path).toLowerCase();
-          return ext == '.css' && !f.path.endsWith('.original');
-        })
-        .map((f) => f.path)
+    final List<String> relativePaths =
+        EpubParser.discoverCssRelativePaths(extractDir);
+    final List<String> cssFilePaths = relativePaths
+        .map((rel) => p.join(extractDir, rel.replaceAll('/', p.separator)))
         .toList();
-
     return _entriesFromCssPaths(cssFilePaths);
   }
 
-  /// Pure transform shared by the sync and async discovery paths: map absolute
-  /// CSS file paths to sorted [CssFileEntry]s with shortest-unique display
-  /// titles.
+  /// Pure transform: map absolute CSS file paths to sorted [CssFileEntry]s
+  /// with shortest-unique display titles.
   List<CssFileEntry> _entriesFromCssPaths(List<String> cssFilePaths) {
     final List<String> relativePaths = cssFilePaths.map((path) {
       return p.relative(path, from: extractDir).replaceAll(r'\', '/');

@@ -65,8 +65,8 @@ void main() {
 
   group('TODO-1153 direction 2: create failures are never swallowed', () {
     test('a single non-swallowing failure sink exists', () {
-      expect(cpp.contains('void GlobalLookupWindow::ReportOverlayError('),
-          isTrue,
+      expect(
+          cpp.contains('void GlobalLookupWindow::ReportOverlayError('), isTrue,
           reason: 'a failure reporter must exist.');
       // It writes the native diagnostic log AND routes to the Dart error cb.
       expect(cpp.contains('NativeGlog(full)'), isTrue);
@@ -90,8 +90,8 @@ void main() {
       expect(cpp.contains('FAILED(ctrl_hr) || ctrl == nullptr'), isTrue,
           reason: 'a null controller must be reported before returning.');
       // The old bare early-return without logging must be gone.
-      final RegExp bareReturn = RegExp(
-          r'if \(ctrl == nullptr\) \{\s*return S_OK;\s*\}');
+      final RegExp bareReturn =
+          RegExp(r'if \(ctrl == nullptr\) \{\s*return S_OK;\s*\}');
       expect(bareReturn.hasMatch(cpp), isFalse,
           reason: 'the silent ctrl==nullptr early return must be replaced by a '
               'reported one.');

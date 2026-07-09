@@ -356,7 +356,8 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   }
 }
 
-void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height) {
+void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
+                                     double bbox_left, double bbox_top) {
   if (hwnd_ == nullptr || width <= 0 || height <= 0) {
     return;
   }
@@ -385,6 +386,21 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height) {
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
+  // TODO-1231 P2 — now that the window sits at the new bbox origin, tell the host
+  // to apply the compensating layer shift (pin the ROOT card at the cursor while
+  // the window covers the whole cascade). Done AFTER SetWindowPos so the window
+  // move and the content shift are causally ordered (window first, content ~1
+  // frame later) instead of the host shifting its layer a full Dart round-trip
+  // BEFORE the window moved (the cross-vsync "几何跳动"). bbox_left/top are
+  // window-local CSS px (the host negates them for the layer translate).
+  // std::to_wstring on a double yields a plain decimal literal JS parses.
+  if (webview_ != nullptr) {
+    std::wstring shift_script =
+        L"window.__globalLookupHost && "
+        L"window.__globalLookupHost.commitLayerShift(" +
+        std::to_wstring(bbox_left) + L", " + std::to_wstring(bbox_top) + L");";
+    webview_->ExecuteScript(shift_script.c_str(), nullptr);
+  }
   // Arm the click-outside dismiss hooks now that the stack is on-screen (the
   // first reveal arms; later resizes are idempotent re-arms).
   s_hook_owner_ = this;
@@ -431,7 +447,11 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
-void GlobalLookupWindow::Hide() {
+void GlobalLookupWindow::Hide(bool notify) {
+  // Capture BEFORE clearing: the HiddenCallback must only fire on a transition
+  // FROM on-screen (was_showing) so a double dismiss (mouse hook then foreground
+  // hook, both fire on one click-outside) does not double-notify Dart.
+  const bool was_showing = visible_;
   visible_ = false;
   revealed_ = false;
   if (foreground_hook_ != nullptr) {
@@ -445,6 +465,18 @@ void GlobalLookupWindow::Hide() {
   s_hook_owner_ = nullptr;
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
+  }
+  // TODO-1233 -- tell Dart the overlay dismissed. The foreground hook, the
+  // click-outside mouse hook and the JS 'dismiss'/'tapOutside' path all funnel
+  // through Hide() (notify defaults true), so this is the single dismissal
+  // funnel. The programmatic reset that GlobalLookupController runs right BEFORE
+  // a fresh lookup passes notify=false, so the between-lookups collapse to
+  // known-hidden never looks like a user dismissal (which would spuriously
+  // resume a paused video mid re-lookup). Fires on the platform thread (hooks
+  // post to the creating thread's loop; the JS path is already there), so the
+  // channel InvokeMethod wired to this callback is safe.
+  if (notify && was_showing && hidden_cb_) {
+    hidden_cb_();
   }
 }
 
@@ -697,9 +729,22 @@ void GlobalLookupWindow::ConfigureWebView() {
               // duplicateCheck with null (never mined), so app-external mining
               // silently did nothing. Dart computes both replies and
               // ResolveBridge()s them; the host router returns each reply to the
-              // source iframe (no host.js change needed). Read-only probes
-              // (overwriteTargetNoteId) still get an immediate null -- that is a
-              // valid "no overwrite target" reply, so they stay non-deferred.
+              // source iframe (no host.js change needed).
+              // TODO-1225 follow-up -- overwriteTargetNoteId + updateEntry are the
+              // OTHER half of the overwrite (✓↩) panel and are now DEFERRED
+              // too: popup.js awaits overwriteTargetNoteId's real note id (Dart
+              // repo.findOverwriteTargetNoteId; non-null only when overwrite scope =
+              // all) to promote an existing card to the editable ✓↩ state,
+              // and awaits updateEntry's real {ankiConnect,noteId}
+              // (repo.updateMinedNote) to overwrite that note in place. An immediate
+              // null here would resolve overwriteTargetNoteId with null (card never
+              // promoted, no overwrite affordance) and updateEntry with null
+              // (parseMineResult -> overwrite silently did nothing), so app-external
+              // overwrite could never work. minedCardAction (the "overwrite which /
+              // add duplicate / view" action SHEET) stays NON-deferred -> immediate
+              // null: it needs a foreground Flutter bottom sheet, but the main window
+              // is backgrounded behind the external app and cannot present over it,
+              // so app-external overwrite is the ✓↩ in-place path only.
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
@@ -707,7 +752,9 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"favoriteEntry\"") != std::string::npos ||
                   body.find("\"favoriteCheck\"") != std::string::npos ||
                   body.find("\"mineEntry\"") != std::string::npos ||
-                  body.find("\"duplicateCheck\"") != std::string::npos;
+                  body.find("\"duplicateCheck\"") != std::string::npos ||
+                  body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
+                  body.find("\"updateEntry\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {

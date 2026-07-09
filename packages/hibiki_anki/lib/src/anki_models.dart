@@ -457,11 +457,15 @@ class AnkiHandlebarRenderer {
         return payload.pitchCategories;
       case '{document-title}':
         return context.documentTitle ?? '';
+      // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
+      // 阅读器场景 coverPath 是书籍封面，视频场景 coverPath 是 GIF/降级帧（见 video
+      // lookup_mining）。这是 Lapis Picture 字段的默认映射（TODO-1298）。
+      case '{card-image}':
+        return context.coverPath ?? '';
+      // {book-cover} / {video-clip} 是 {card-image} 的旧别名（历史命名），保留以兼容
+      // 老配置与老卡片模板：三者都读同一个 coverPath，运行时零分叉、媒体嵌入零改动。
       case '{book-cover}':
         return context.coverPath ?? '';
-      // {video-clip} 是 {book-cover} 的语义别名：视频场景下 coverPath 本就是 GIF/
-      // 降级帧（见 video lookup_mining），让用户能给视频卡用语义清晰的字段名，而不必
-      // 借用 {book-cover}。两者读同一个 coverPath，运行时零分叉、媒体嵌入零改动。
       case '{video-clip}':
         return context.coverPath ?? '';
       case '{sasayaki-audio}':
@@ -536,6 +540,7 @@ class AnkiHandlebarOptions {
     '{pitch-accent-positions}',
     '{pitch-accent-categories}',
     '{document-title}',
+    '{card-image}',
     '{book-cover}',
     '{video-clip}',
     '{sasayaki-audio}',

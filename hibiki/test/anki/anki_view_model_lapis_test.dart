@@ -78,7 +78,7 @@ void main() {
     expect(s.selectedNoteTypeName, 'Lapis');
     expect(s.selectedDeckName, 'Lapis');
     expect(s.fieldMappings['Expression'], '{expression}');
-    expect(s.fieldMappings['Picture'], '{book-cover}');
+    expect(s.fieldMappings['Picture'], '{card-image}');
     expect(vm.state.isFetching, isFalse);
   });
 

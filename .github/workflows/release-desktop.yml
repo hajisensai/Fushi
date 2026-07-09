@@ -297,6 +297,69 @@ jobs:
           }
           Get-Item -LiteralPath ($runtimeFiles | ForEach-Object { Join-Path $targetDir $_ }) |
             Select-Object FullName, Length
+      # TODO-1242 (P0): hibiki's C++ modules link the MSVC CRT dynamically (/MD)
+      # and reference newer STL/EH symbols (VCRUNTIME140_1!__CxxFrameHandler4).
+      # The installer did NOT ship the CRT, so machines whose system VC++
+      # Redistributable is stale (stuck at 2019 14.24) lack those exports and
+      # hibiki.exe dies at launch with a faulting MSVCP140.dll / c0000005 access
+      # violation. Standard Flutter Windows distribution practice: copy the CRT
+      # DLLs next to the exe (app-directory DLL search precedes System32, needs
+      # no elevation) so the payload is self-contained regardless of the target
+      # machine's system redist. The DLLs land in the same Release dir that
+      # hibiki.iss packages via `Source: {#SourceDir}\*`, so they ride into the
+      # installer automatically. Sourced from the VS2022 redist on windows-2022.
+      - name: Bundle VC++ CRT runtime into Windows bundle
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
+          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            throw "Missing Windows release bundle directory: $targetDir"
+          }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+            throw "vswhere not found: $vswhere (cannot locate the VS redist CRT)"
+          }
+          $vsInstall = (& $vswhere -latest -products * -property installationPath | Select-Object -First 1)
+          if ([string]::IsNullOrWhiteSpace($vsInstall)) {
+            throw "vswhere could not resolve a Visual Studio installation path"
+          }
+          # Redist layout: <VSInstall>\VC\Redist\MSVC\<version>\x64\Microsoft.VC<NNN>.CRT\*.dll
+          # Both <version> and <NNN> vary per VS build -- glob them, never hardcode.
+          $redistRoot = Join-Path $vsInstall 'VC\Redist\MSVC'
+          if (-not (Test-Path -LiteralPath $redistRoot -PathType Container)) {
+            throw "VS redist root not found: $redistRoot"
+          }
+          $crtDir = Get-ChildItem -LiteralPath $redistRoot -Directory |
+            Sort-Object Name -Descending |
+            ForEach-Object { Get-ChildItem -Path (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue } |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'msvcp140.dll') -PathType Leaf } |
+            Select-Object -First 1
+          if ($null -eq $crtDir) {
+            throw "Could not find a Microsoft.VC*.CRT x64 folder with msvcp140.dll under $redistRoot"
+          }
+          Write-Host "Using VC++ CRT redist: $($crtDir.FullName)"
+          # Required trio: msvcp140 (STL) + vcruntime140 + vcruntime140_1 (the
+          # __CxxFrameHandler4 EH exports the stale 14.24 redist is missing).
+          # Absence must fail loudly -- silently skipping would ship a still-
+          # crashing installer for this P0.
+          $requiredDlls = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
+          foreach ($dll in $requiredDlls) {
+            $src = Join-Path $crtDir.FullName $dll
+            if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
+              throw "Required VC++ CRT DLL missing from redist: $src"
+            }
+            Copy-Item -LiteralPath $src -Destination (Join-Path $targetDir $dll) -Force
+          }
+          # Optional companions the same redist ships when present.
+          $optionalDlls = @('msvcp140_1.dll', 'msvcp140_2.dll', 'msvcp140_codecvt_ids.dll', 'concrt140.dll')
+          foreach ($dll in $optionalDlls) {
+            $src = Join-Path $crtDir.FullName $dll
+            if (Test-Path -LiteralPath $src -PathType Leaf) {
+              Copy-Item -LiteralPath $src -Destination (Join-Path $targetDir $dll) -Force
+            }
+          }
+          Get-ChildItem -LiteralPath $targetDir -Filter '*140*.dll' |
+            Select-Object FullName, Length
       # The bundled ffmpeg -version check below is the hard gate: it proves the
       # exact binary we ship in the installer payload executes. The fuller
       # smoke-test.sh comparison additionally needs a *fixture* full ffmpeg to

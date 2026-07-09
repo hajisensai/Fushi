@@ -77,7 +77,7 @@ void main() {
       for (final field in LapisNoteType.defaultFieldMappings.keys) {
         expect(LapisNoteType.fields, contains(field));
       }
-      expect(LapisNoteType.defaultFieldMappings['Picture'], '{book-cover}');
+      expect(LapisNoteType.defaultFieldMappings['Picture'], '{card-image}');
       expect(LapisNoteType.defaultFieldMappings['SentenceAudio'],
           '{sasayaki-audio}');
       expect(LapisNoteType.defaultFieldMappings['IsWordAndSentenceCard'], 'x');

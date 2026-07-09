@@ -41,27 +41,6 @@ Future<void> _pumpUntil(
   fail(reason);
 }
 
-Future<void> _waitForLyricsReadyOrFail(WidgetTester tester) async {
-  for (int i = 0; i < 120; i++) {
-    await tester.pump(const Duration(milliseconds: 500));
-    if (_lyricsReady()) return;
-  }
-  final Map<String, Object?>? diagnostics =
-      await ReaderHibikiPage.debugLyricsModeDiagnostics?.call();
-  Object? sentinel;
-  try {
-    sentinel = await ReaderHibikiPage.debugEvaluateJavascript?.call(
-      "Boolean(window.__lyricsSetCue && document.getElementById('lc'))",
-    );
-  } catch (e) {
-    sentinel = 'eval failed: $e';
-  }
-  fail(
-    'lyrics page must report ready after enabling lyrics mode; '
-    'diagnostics=$diagnostics; sentinel=$sentinel',
-  );
-}
-
 Future<AudiobookPlayerController> _waitForActiveAudiobook(
   WidgetTester tester,
   AppModel appModel,
@@ -140,15 +119,22 @@ void main() {
           expect(controller.chapterCueCount, greaterThan(0),
               reason: 'fixture must provide subtitle cues for lyrics mode');
 
-          expect(ReaderHibikiPage.debugToggleLyricsMode, isNotNull,
-              reason: 'profile/debug builds must expose lyrics-mode hook');
-          await ReaderHibikiSource.instance.setPreference<bool>(
-            key: 'lyrics_mode_hint_shown',
-            value: true,
-          );
-          await ReaderHibikiPage.debugToggleLyricsMode!();
+          expect(ReaderHibikiPage.debugOpenQuickSettings, isNotNull,
+              reason: 'profile/debug builds must expose quick-settings hook');
+          await ReaderHibikiPage.debugOpenQuickSettings!();
+          await tester.pump(const Duration(seconds: 1));
 
-          await _waitForLyricsReadyOrFail(tester);
+          final Finder lyricsToggle =
+              find.byKey(const ValueKey<String>('hoshi_lyrics_mode_toggle'));
+          expect(lyricsToggle, findsOneWidget,
+              reason: 'quick settings must expose the lyrics-mode action');
+          expect(await driver.focusWidget(lyricsToggle), isTrue,
+              reason: 'lyrics-mode action must be reachable by focus');
+          await driver.activate();
+
+          await _pumpUntil(tester, _lyricsReady,
+              reason:
+                  'lyrics page must report ready after enabling lyrics mode');
           expect(ReaderHibikiPage.debugLyricsModeReady?.call(), isTrue);
 
           final dynamic sentinel =

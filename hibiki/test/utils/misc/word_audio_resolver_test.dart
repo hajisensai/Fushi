@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -376,5 +377,85 @@ void main() {
         ),
       );
     });
+
+    // TODO-1265 — 回归守卫：可达远端源对某词返回 404（HTTP 表达「没有这个词的发音」）
+    // 绝不能被当成死源而 host 级冷却，否则该源有音频的其它词也一起没声音（用户报
+    // 「电脑 app 外查词没有单词音频了」的根因）。badResponse 必须归一为空结果。
+    group('badResponse (reachable, no audio) is NOT a source failure', () {
+      late HttpClientAdapter originalAdapter;
+      setUp(() {
+        originalAdapter = WordAudioResolver.debugHttpClientAdapter;
+      });
+      tearDown(() {
+        WordAudioResolver.debugHttpClientAdapter = originalAdapter;
+      });
+
+      test(
+          'defaultFetchAudioSourceList returns empty (not throw) on a 404 '
+          '(TODO-1265)', () async {
+        WordAudioResolver.debugHttpClientAdapter = _FixedStatusAdapter(404);
+        // 可达服务器回 404 = 这个源没有这个词的发音，与 200 空列表等价：返回空、不抛。
+        final List<String> urls =
+            await WordAudioResolver.defaultFetchAudioSourceList(
+          'https://reachable.test/audio?term=x',
+        );
+        expect(urls, isEmpty);
+      });
+
+      test(
+          'a 404 from a reachable remote source does NOT cool its host '
+          '(the source stays usable for words it has) (TODO-1265)', () async {
+        WordAudioResolver.debugHttpClientAdapter = _FixedStatusAdapter(404);
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+        );
+        const String template = 'https://reachable.test/audio?term={term}';
+
+        // 查一个该源没有的词：返回 null（无音频），但绝不冷却该 host。
+        final String? miss = await resolver.resolveConfigured(
+          expression: 'なし',
+          reading: 'なし',
+          sources: <AudioSourceConfig>[
+            AudioSourceConfig.remoteAudio(url: template),
+          ],
+        );
+        expect(miss, isNull);
+        // 关键断言：host 未进冷却窗——否则该源有音频的下一个词会被短路成静音。
+        expect(
+          WordAudioResolver.isRemoteSourceInCooldown(
+            'https://reachable.test/audio?term=x',
+          ),
+          isFalse,
+          reason: '可达源回 404 不得触发 host 冷却（回归：会让整段时间该源全哑）',
+        );
+      });
+    });
   });
+}
+
+/// 固定 HTTP 状态码的 Dio 适配器：用于把 [WordAudioResolver] 底层 [Dio] 的响应钉死成
+/// 某个状态码（如 404），验证 badResponse 归一为空结果而非死源失败（TODO-1265）。
+class _FixedStatusAdapter implements HttpClientAdapter {
+  _FixedStatusAdapter(this.statusCode);
+
+  final int statusCode;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString(
+      '',
+      statusCode,
+      headers: <String, List<String>>{
+        Headers.contentTypeHeader: <String>['text/plain'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

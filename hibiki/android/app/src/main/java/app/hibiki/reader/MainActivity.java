@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import android.net.Uri;
 
 import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.embedding.engine.FlutterShellArgs;
 import io.flutter.plugin.common.MethodChannel;
 
 import android.provider.Settings;
@@ -404,6 +405,51 @@ public class MainActivity extends AudioServiceActivity {
             }
         }
         f.delete();
+    }
+
+    // TODO-1232: choose the rendering backend before the Flutter engine is
+    // created. A command-line "--enable-impeller=false" takes precedence over the
+    // AndroidManifest EnableImpeller default at engine init (see FlutterEngineFlags
+    // docs), so appending it here flips the backend for THIS launch only -- no
+    // rebuild, no adb. This runs at engine start, before any Dart code, so the
+    // resolution below is the AUTHORITATIVE decision; RenderBackendService in Dart
+    // only mirrors it for the settings toggle + diagnostics.
+    @Override
+    public FlutterShellArgs getFlutterShellArgs() {
+        FlutterShellArgs args = super.getFlutterShellArgs();
+        if (isImpellerDisabledPref()) {
+            args.add(FlutterShellArgs.ARG_DISABLE_IMPELLER);
+        }
+        return args;
+    }
+
+    // TODO-1232: the effective "disable Impeller (use Skia)" decision for THIS
+    // launch. Android DEFAULTS TO SKIA (disable Impeller) so media_kit's external
+    // SurfaceProducer video texture composites out of the box -- Impeller silently
+    // fails to composite it on some Android GPUs (e.g. Mali-G76 / Android 11,
+    // BUG-597), leaving video black while decode + texture handshake are fully
+    // green. An EXPLICIT user choice (Settings > Diagnostics switch) overrides this
+    // default in either direction (explicit > platform default); only the
+    // never-set case falls back to Skia. Mirrors
+    // RenderBackendService.resolveImpellerDisabled(storedPref, isAndroid: true).
+    private boolean isImpellerDisabledPref() {
+        Boolean raw = getImpellerDisabledRawPref();
+        return raw != null ? raw : true;
+    }
+
+    // TODO-1232: raw persisted intent as a tri-state -- null when the user has
+    // never touched the render-backend switch, else the stored boolean. Kept
+    // separate from isImpellerDisabledPref() so the "render" channel can hand Dart
+    // the same tri-state (RenderBackendService resolves the platform default),
+    // keeping the toggle/diagnostics mirror in lock-step with the engine-start
+    // decision above.
+    private Boolean getImpellerDisabledRawPref() {
+        SharedPreferences prefs =
+                getSharedPreferences(PreferenceKeys.FILE_RENDER, MODE_PRIVATE);
+        if (!prefs.contains(PreferenceKeys.RENDER_IMPELLER_DISABLED)) {
+            return null;
+        }
+        return prefs.getBoolean(PreferenceKeys.RENDER_IMPELLER_DISABLED, false);
     }
 
     @Override
@@ -922,6 +968,41 @@ public class MainActivity extends AudioServiceActivity {
                     default:
                         result.notImplemented();
                         break;
+                }
+            });
+
+        // TODO-1232 A3: render-backend experiment toggle. Dart writes the flag
+        // here; MainActivity.getFlutterShellArgs reads it at the NEXT launch to
+        // decide whether to disable Impeller (Skia fallback). Persisted to a
+        // native prefs file this app owns so it is readable pre-engine.
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(),
+                ChannelNames.RENDER)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "isImpellerDisabled":
+                        // TODO-1232: return the RAW tri-state (null = never set);
+                        // Dart applies the platform default so the toggle and the
+                        // engine-start decision (getFlutterShellArgs ->
+                        // isImpellerDisabledPref) agree on "unset -> Skia on Android".
+                        result.success(getImpellerDisabledRawPref());
+                        break;
+                    case "setImpellerDisabled": {
+                        final Object arg = call.arguments;
+                        if (!(arg instanceof Boolean)) {
+                            result.error("INVALID_ARG",
+                                "setImpellerDisabled requires a boolean", null);
+                            break;
+                        }
+                        getSharedPreferences(PreferenceKeys.FILE_RENDER, MODE_PRIVATE)
+                                .edit()
+                                .putBoolean(PreferenceKeys.RENDER_IMPELLER_DISABLED,
+                                        (Boolean) arg)
+                                .apply();
+                        result.success(null);
+                        break;
+                    }
+                    default:
+                        result.notImplemented();
                 }
             });
     }

@@ -88,7 +88,18 @@ function endClip() {
       const b64 = await blobToBase64(blob);
       resolve({ ok: true, clipBase64: b64, clipDurationMs: durMs });
     };
-    try { recorder.stop(); } catch (_) { resolve({ ok: false, error: 'stop failed' }); }
+    try {
+      recorder.stop();
+    } catch (_) {
+      // V16 遗留缺口：stop() 抛异常时若只 resolve，第 85 行刚挂的 onstop、这个坏
+      // recorder、滞留的 chunks 都成孤儿仍挂在流上（下一段靠 beginClip 的孤儿守卫才被动
+      // 收；但 chunks 陈旧数据会污染）。与 beginClip/stopCapture 对称，就地解绑清理。
+      recorder.onstop = null;
+      recorder.ondataavailable = null;
+      recorder = null;
+      chunks = [];
+      resolve({ ok: false, error: 'stop failed' });
+    }
   });
 }
 

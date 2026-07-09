@@ -389,6 +389,12 @@ class SubtitleSource {
   /// `null`（旧数据/无偏好）返回 false。
   static bool isOff(String? persisted) => persisted == offSentinel;
 
+  /// 持久化值 [persisted] 是否代表**内嵌字幕轨**（`embedded:<n>`，见 [embeddedPrefix]）。
+  /// `null`（旧数据/无偏好）、外挂绝对路径、关闭哨兵 [offSentinel] 均返回 false
+  /// （TODO-1246：单视频重开内嵌轨样式重解析的判据）。
+  static bool isEmbeddedPersisted(String? persisted) =>
+      persisted != null && persisted.startsWith(embeddedPrefix);
+
   /// 持久化值：内嵌 → `embedded:<n>`，外挂 → 绝对路径。
   String toPersistedValue() =>
       isEmbedded ? '$embeddedPrefix$streamIndex' : externalPath!;

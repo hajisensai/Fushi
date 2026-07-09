@@ -37,7 +37,7 @@ import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
-import 'package:hibiki/src/sync/remote_cover_headers.dart';
+import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -113,7 +113,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   @override
   void initState() {
     super.initState();
-    _future = widget.repo.listAll();
+    // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+    _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
     // TODO-616 A2: also prefetch order / series maps on first frame (order
     // defaulting to 0 was harmless before, but series grouping needs
@@ -136,7 +137,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   void _refresh() {
     setState(() {
-      _future = widget.repo.listAll();
+      // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+      _future = widget.repo.listForShelf();
       _remoteFuture = _loadRemoteVideos();
     });
     _loadVideoOrder();
@@ -401,6 +403,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         );
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
+      case DropIntent.importVideoUrl:
+        // 拖入网络流 URL → 打开视频导入对话框预填 URL 并自动导入（TODO-1306）。
+        _openStreamImportPrefilled(streamUrl: files.urls.first);
       case DropIntent.attachToVideoCard:
         // 字幕拖到具体视频卡：直接挂到那张卡所代表的**现有**视频书（不重新导入）。
         // 旧实现走 _openVideoImportPrefilled→VideoImportDialog._doImport，对已存在
@@ -453,6 +458,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       builder: (_) => VideoImportDialog(
         repo: widget.repo,
         initialPlaylistPath: playlistPath,
+      ),
+    );
+    if (bookUid != null) _refresh();
+  }
+
+  /// 拖入网络流 URL（浏览器地址栏/链接）→ 打开 [VideoImportDialog] 预填 URL，对话框
+  /// 可播时自动走 [_importStreamUrl] 导入（进视频书架），关闭后刷新列表（TODO-1306）。
+  Future<void> _openStreamImportPrefilled({
+    required String streamUrl,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: widget.repo,
+        initialStreamUrl: streamUrl,
       ),
     );
     if (bookUid != null) _refresh();
@@ -550,10 +570,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       memberSeries,
       fallback: t.series_default_name,
     );
+    // TODO-947：把选中的前 4 个视频封面传进命名弹窗，铺成手机文件夹式网格缩略预览。
+    final List<Widget> previewCovers = <Widget>[
+      for (final VideoBookRow book in _visibleVideos)
+        if (selectedUids.contains(book.bookUid)) _buildCover(book),
+    ].take(4).toList();
     final String? name = await showSeriesNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,
+      previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
     final HibikiDatabase db = ref.read(appProvider).database;
@@ -1364,11 +1390,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       );
     }
     final String? coverUrl = video.coverUrl;
-    if (coverUrl != null && coverUrl.isNotEmpty) {
-      return Image.network(
-        coverUrl,
+    // TODO-1235（TODO-961 回归）：封面走互联同款钉扎客户端拉取，不再用 Image.network
+    // （Flutter 内部 HttpClient 无 badCertificateCallback，https 自签握手必失败）。
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(_remoteVideoClient);
+    if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      return Image(
+        image: RemoteCoverImage(coverUrl, fetcher),
         key: ValueKey<String>('remote_video_cover_$safeKey'),
-        headers: remoteCoverHeadersFor(_remoteVideoClient),
         // TODO-616 phase C: 同上，远端云视频封面也用 contain 完整显示不裁切。
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _coverPlaceholder(),
@@ -1616,7 +1645,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // TODO-1125 A：前 3 张成员封面做「露出后面几本书」的堆叠视觉（首卷 = 主封面）；
     // 封面数据已在 group.items 里，无需额外查询，不足 3 张自动降级为单封面。
     final List<Widget> covers = <Widget>[
-      for (final ShelfOrderingItem<VideoBookRow> it in group.items.take(3))
+      for (final ShelfOrderingItem<VideoBookRow> it in group.items.take(4))
         _buildCover(it.payload),
     ];
     return SeriesShelfCard(
@@ -1657,6 +1686,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
+    // TODO-1346：视频观看进度分数（null=无可展示进度 → 不画进度条）。
+    final double? watchFrac = videoWatchFraction(
+      completed: book.completedAt != null,
+      currentEpisode: book.currentEpisode,
+      episodeCount: episodeCount,
+    );
     final bool selected = _selectedUids.contains(book.bookUid);
     final HibikiCard hibikiCard = HibikiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
@@ -1706,6 +1741,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                               .primary
                               .withValues(alpha: 0.12),
                         ),
+                      ),
+                    ),
+                  ),
+                // TODO-1346：观看进度条（贴封面底部，YouTube 式）。多集按「看到第几集」，
+                // 单视频仅已看完满格；无可展示进度（watchFrac==null）时不画。
+                if (watchFrac != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: LinearProgressIndicator(
+                        value: watchFrac,
+                        minHeight: 3,
+                        backgroundColor: Colors.black.withValues(alpha: 0.35),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),

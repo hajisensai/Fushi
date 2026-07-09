@@ -41,24 +41,132 @@ body {
     overscroll-behavior-y: contain;
     touch-action: auto;
     -webkit-user-select: text;
+    /* TODO-1354 (BUG-673): the dictionary card is Japanese / CJK dictionary
+       content and must always read left-to-right (headword on the left, example
+       padding-left indentation on the left), matching Niratan. The host WebView
+       forwards the Flutter ambient Directionality (RTL when the user picks an RTL
+       UI language, e.g. Arabic strings_ar) as the platform view's layoutDirection,
+       so the document root defaults to dir=rtl (neither popup.html nor the inline
+       HTML declares an explicit dir). Under RTL the .entry-header flex row reverses
+       its main axis: .expression-scroll (flex:1) lands at the right edge and
+       .header-buttons (margin-left:auto) is pushed to the left, so the headword
+       gets flung to the far right while the buttons + blue focus triangle cluster
+       on the left. Pinning direction:ltr in the author cascade overrides the UA
+       [dir=rtl] inheritance (author origin beats UA origin) and locks the whole
+       card LTR, fixing the headword position, pitch rows, glossary text and example
+       indentation in one shot. The content-css generator re-roots this html,body
+       rule at #entries-container, so in the browser extension it only affects the
+       popup container and never flips the host page's direction (zero leakage). */
+    direction: ltr;
+}
+
+/* TODO-893 v2 (symptom 2) — app-external global lookup ONLY: the visible card
+   body is `body` (it draws the 1px border + 10px radius + padding). The `<html>`
+   documentElement otherwise fills the square iframe with the opaque
+   --background-color (set inline by popup_settings_injection), and the host
+   shell's border-radius:10px;overflow:hidden then clips that square fill into a
+   ring of opaque theme colour OUTSIDE the body's rounded border — read as a
+   "white frame" in light themes. Making documentElement transparent leaves only
+   body's rounded card; the clipped corners reveal the transparent WebView2
+   surface (desktop) instead of theme colour. Scoped to .global-lookup (added to
+   <html> only in the global-lookup path), so the in-app popup is unaffected
+   (zero regression). Higher specificity than the html,body var rule above, so no
+   !important needed. */
+html.global-lookup {
+    background: transparent;
+}
+
+/* TODO-1065 -- mobile / external floating-subtitle popup (popup_main host) ONLY:
+   same washout root cause as .global-lookup above, different host chrome. The
+   external popup runs inside a TRANSPARENT floating window whose rounded card is
+   a Flutter `HibikiPopupSurface` (Material radius/border/fill), NOT drawn by the
+   iframe. Left alone, the `<html>` documentElement fills the whole WebView
+   viewport with the opaque near-white --background-color (set inline by
+   dictionary_popup_webview / popup_settings_injection), which paints OVER the
+   Flutter card and reads as a full-viewport white wash in light themes. Making
+   documentElement transparent leaves only `<body>`'s themed fill (same var,
+   clipped by the Flutter card), so the card colour comes through with no wash.
+   Scoped to .mobile-external (added to <html> ONLY on the popup_main / external
+   popup path -- the in-app popup and desktop global-lookup never get it), so both
+   of those stay untouched (zero regression). Unlike .global-lookup this adds NO
+   body border/radius: the Flutter surface owns the card chrome. Higher
+   specificity than the html,body var rule above, so no !important needed. */
+html.mobile-external {
+    background: transparent;
 }
 
 body {
     overflow-x: hidden;
     padding: 0 10px 10px;
-    /* TODO-1185：消费查词响应下发的 --hibiki-popup-zoom（词典字号，跟随 app 弹窗字号设置）。
-       与 in-app 弹窗把 documentElement.style.zoom 缩放同效；缺省 1 = 零影响。 */
-    zoom: var(--hibiki-popup-zoom, 1);
+}
+
+/* Themed scrollbar (mirrors reader_content_styles.dart / lyrics_mode_html.dart).
+   The track stays transparent so it shows the popup background; the thumb takes
+   --text-color (onSurface, injected by dictionary_popup_webview _themeVariablesJs),
+   so dark themes get a light thumb and light themes a dark one. The standard
+   props cover Firefox/Chromium 121+; the -webkit pseudo-elements cover Android
+   WebView / Windows WebView2 / macOS WKWebView. color-scheme is pinned per theme
+   in the html[data-theme] blocks below -- WebView2's Fluent overlay scrollbar
+   ignores ::-webkit-scrollbar and only follows the UA color-scheme. */
+html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-color) transparent;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--text-color);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 8px;
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .entry {
     padding: 8px 0;
+    /* TODO-1325 #5 part1: hoshiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
+       避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
+    scroll-margin-top: 14px;
+    scroll-margin-bottom: 14px;
 }
 
 .entry-header {
     display: flex;
     align-items: center;
     padding-top: 4px;
+}
+
+/* TODO-1325 #5 part1: 多词条焦点导航——当前词条(.entry-current)在其标题行左侧画一枚
+   #1a73e8 蓝三角(纯 CSS 边框三角，零字体依赖，与折叠三角同法，且不受注入词典字体影响)。
+   焦点态由 hoshiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
+   hoshiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
+   10px 留白里，垂直居中于标题行，随字号自适应。 */
+.entry-current .entry-header {
+    position: relative;
+}
+
+.entry-current .entry-header::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid #1a73e8;
 }
 
 .expression-scroll {
@@ -120,10 +228,13 @@ body {
     align-items: center;
     flex-shrink: 0;
     margin-left: auto;
-    gap: 6px;
+    /* TODO-846: 顶部按钮间距加大（宽不够时自动缩小）。间距单一来源走 flex gap，
+       不再让 .mine-button / .sentence-context-picker 各自 margin-left 叠加导致不均匀。 */
+    gap: clamp(6px, 2.2vw, 12px);
 }
 
 .audio-button,
+.favorite-button,
 .mine-button {
     padding: 0 4px;
     border: none;
@@ -134,20 +245,199 @@ body {
     -webkit-user-select: none;
 }
 
-.mine-button {
-    margin-left: 6px;
+/* TODO-1325 #4: 内联 SVG 动作按钮共享基类。顶部发音/收藏/制卡、清空草稿、句子上下文
+   步进器全部挂 .inline-action-button：图标用 currentColor 跟随各按钮 color/opacity/
+   主题；SVG 尺寸随按钮 font-size 自适应（width/height:1em），故各角色类只保留自己的
+   font-size 与特例态（favorited 金色 / latest 绿色 / duplicate 位移等）。hover 提亮、
+   active 变淡、disabled 去手型——三态反馈统一。 */
+.inline-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.inline-action-button > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    /* 点到 SVG 也当成点了按钮：closest('.mine-button') 靠冒泡命中按钮，pointer-events
+       关掉子节点避免个别 WebView 把 target 停在 <path> 上导致 hit-test 抖动。 */
+    pointer-events: none;
+    fill: currentColor;
+}
+
+.inline-action-button:hover {
+    opacity: 1;
+}
+
+.inline-action-button:active {
+    opacity: 0.6;
+}
+
+.inline-action-button:disabled {
+    cursor: default;
+}
+
+.favorite-button.favorited {
+    opacity: 1;
+    color: #f5a623;
+}
+
+.favorite-button:disabled {
+    opacity: 0.15;
 }
 
 .mine-button.duplicate {
     transform: translateY(0.5px);
 }
 
+/* TODO-270 D: the "latest editable" ✓↩ — the single most-recently-mined card
+   that can be overwritten in place. Green + a slightly smaller glyph (it carries
+   the extra undo mark) + full opacity so it visibly reads as "click to fix the
+   last card", distinct from an ordinary mined ✓. */
+.mine-button.latest {
+    color: #2e9e4f;
+    opacity: 1;
+    font-size: 15px;
+}
+
 .mine-button:disabled {
+    opacity: 0.15;
+}
+
+/* TODO-1338: 制卡后图标乱码根因修。制卡按钮的 +/✓/✓↩ 是「文本字形标记」(应用户要求保留
+   文本，不走 SVG，见 popup.js setMineState)。默认它会继承 Dart 注入到 html,body 的用户
+   自定义词典字体(popup_settings_injection.dartdictionaryFontStyleJs，!important)；若该字体
+   缺 U+2713/U+21A9 或把 ↩ 走彩色 emoji 呈现，制卡成功切成 ✓/✓↩ 时按钮就变豆腐块/彩色
+   emoji/乱码(与 TODO-1337 折叠三角乱码同根因)。这里给制卡按钮钉死一套「单色符号字体栈」
+   (不含 emoji 字体)，靠更高特指度(.mine-button 类 > body 元素；且直接声明恒压过继承)切断
+   对注入词典字体的继承，✓/✓↩ 稳定单色呈现。JS 侧另对 ↩ 追加 VS15(U+FE0E)强制文本呈现，
+   双保险。未制卡态 '+' 是 ASCII，任何字体都有，故制卡前从不乱码。 */
+.mine-button {
+    font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols2",
+        "Noto Sans Symbols", "DejaVu Sans", "Segoe UI", sans-serif !important;
+}
+
+/* TODO-393/405「查词窗口句子上下文制卡」：「上 N 句 / 下 N 句」上下文步进器。两行（上/下），
+   每行一个方向标签 + [➖减][计数][➕加]：点➕该方向句数 +1、点➖ -1（递增递减，不是固定档）。
+   计数 n>0 时绿色高亮。整组挂在词条头按钮行里，紧凑、不抢制卡/发音按钮的位置。仅在宿主
+   接受 setSentenceContext 时渲染（书籍/有声书/视频；纯查词页无句子上下文不显示）。*/
+.sentence-context-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-self: center;
+}
+
+.sentence-context-picker .context-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.sentence-context-picker .context-label {
+    font-size: 11px;
+    opacity: 0.6;
+    min-width: 1.2em;
+    text-align: center;
+}
+
+.sentence-context-picker .context-stepper-btn {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    opacity: 0.55;
+    border-radius: 3px;
+    -webkit-user-select: none;
+}
+
+.sentence-context-picker .context-stepper-btn:hover {
+    opacity: 0.9;
+}
+
+.sentence-context-picker .context-stepper-btn:disabled {
+    opacity: 0.2;
+}
+
+.sentence-context-picker .context-count {
+    min-width: 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    opacity: 0.5;
+    -webkit-user-select: none;
+}
+
+.sentence-context-picker .context-count.selected {
+    color: #2e9e4f;
+    opacity: 1;
+    font-weight: 600;
+}
+
+/* TODO-382「+句」可撤销：紧挨「+句」的清空按钮。仅草稿非空时显示（refreshClearDraftButton
+   设 hidden）。比「+句」略小、半透明，悬浮升至不透明，读作「撤销 / 清掉已加句子」。 */
+.clear-draft-button {
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 16px;
+    opacity: 0.45;
+    -webkit-user-select: none;
+}
+
+.clear-draft-button:hover {
+    opacity: 0.9;
+}
+
+.clear-draft-button[hidden] {
+    display: none;
+}
+
+.clear-draft-button:disabled {
     opacity: 0.15;
 }
 
 .audio-button {
     transform: translateY(1px);
+}
+
+/* TODO-1251：无音频源时的「暂无发音」反馈。showNoAudioHint 把按钮暂时加
+   .audio-unavailable（变灰），并在按钮旁弹一个锚定的 .audio-hint 提示。提示用
+   position:fixed + JS 算好的屏幕坐标，在 in-app 弹窗与 app 外覆盖窗都锚在按钮上/下方。 */
+.audio-button.audio-unavailable {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.audio-hint {
+    position: fixed;
+    z-index: 10000;
+    max-width: 220px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: nowrap;
+    color: var(--text-color, #fff);
+    background: var(--md-surface-container-high, rgba(30, 30, 30, 0.95));
+    border: 1px solid var(--md-outline-variant, rgba(255, 255, 255, 0.15));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.audio-hint.visible {
+    opacity: 1;
 }
 
 .entry-tags {
@@ -305,6 +595,8 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .gloss-image-scroll {
+    display: inline-block;
+    vertical-align: inherit;
     overflow-x: auto;
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
@@ -332,9 +624,31 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     background: transparent;
 }
 
+/* TODO-1325 #7（按用户 Niratan「卡片」决策，超越 TODO-877 的扁平化）：每部词典的义项块
+   (.glossary-group) 做成「玻璃卡片」——圆角(走 --hibiki-radius-card token，与弹窗其余卡片
+   统一) + 分层投影(近距 1px 贴地 + 远距柔性扩散) + 顶部内高光(inset 白线)营造玻璃质感；
+   展开/收起三角(下方 TODO-1337 纯 CSS 边框三角)作卡片头。皮肤纯 CSS，不改 DOM/JS，四端
+   (in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：行距仍走 margin-top
+   (grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距不撑 grid track。
+   暗色变体降内高光、加深投影。 */
 .glossary-group {
     position: relative;
     margin-top: 5px;
+    padding: 8px 10px;
+    border-radius: var(--hibiki-radius-card, 10px);
+    background: var(--surface-container);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.12),
+        0 2px 8px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme="dark"] .glossary-group {
+    background: var(--surface-container-high);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.5),
+        0 3px 10px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .glossary-group > summary {
@@ -345,14 +659,33 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     display: none;
 }
 
+/* TODO-1337: 词典分组的展开/收起三角用「纯 CSS 边框三角形」而非字体字形（旧: content:'▶'/'▼'）。
+   旧做法把三角当字体字形渲染，会继承弹窗当前字体——包括用户注入的自定义词典字体
+   (html,body{font-family:<custom>,...})；若该字体缺 U+25B6/U+25BC 或按 emoji 呈现，
+   某些平台/WebView（Android WebView、自定义词典字体、emoji 回退）下三角会渲染成空白/彩色
+   emoji/豆腐块，即「展开收起图标渲染不出来」。边框三角是纯几何，零字体依赖，全平台/全字体
+   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。 */
 .glossary-group > summary::before {
-    content: '▶ ';
-    font-size: 8px;
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    /* 收起态：右向三角（顶点朝右） */
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-right: 0;
+    border-left: 5px solid currentColor;
+    margin-right: 5px;
+    vertical-align: middle;
     opacity: 0.5;
 }
 
 .glossary-group[open] > summary::before {
-    content: '▼ ';
+    /* 展开态：下向三角（顶点朝下）——显式重设四边，避免残留收起态边框 */
+    border-top: 5px solid currentColor;
+    border-right: 4px solid transparent;
+    border-bottom: 0;
+    border-left: 4px solid transparent;
 }
 
 .glossary-group > div[data-dictionary] {
@@ -391,6 +724,21 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     line-height: 1;
 }
 
+/* Wiktionary "form-of"/non-lemma glossary: an array of [term, [tag, ...]] pairs
+   rendered one per line (see renderTaggedTermPairs in popup.js, BUG-057). The
+   term and its tag chips sit on the same baseline; pairs stack with breathing
+   room so they read as a list, not a jammed run like "时Hyōgai时alt-of…". */
+.form-of-list {
+    margin: 2px 0;
+}
+
+.form-of-item {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin: 2px 0;
+}
+
 .gloss-sc-table-container {
     display: block;
     overflow-x: auto;
@@ -423,11 +771,62 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     padding: 0 8px;
 }
 
+/* Furigana inside dictionary glossary bodies. Two layout invariants live in
+   this rule pair and must stay together:
+     - Horizontal compaction (BUG-345 / TODO-620): popup.js's postProcessRuby
+       replaces each <ruby>'s base text node with a bare <span> so the ruby text
+       stays selectable (BUG-110/123/125/129), but that <span> is still a ruby
+       base box and Blink sizes every base box to max(base, rt). With
+       rt{font-size:0.5em} a >=3-kana reading is wider than its kanji, so each
+       ruby base would be stretched to its own annotation width and 明鏡-style
+       逐字 ruby lines go ragged. Keeping the <rt> out of the inline flow
+       (position:absolute) collapses every base box back to the kanji width
+       while centring the furigana above it.
+     - Vertical reserve, zoom-immune (BUG-108 + BUG-363 / TODO-643): the popup
+       scales its whole content with documentElement.style.zoom when the user
+       enlarges the dictionary font size or UI scale (dictionary_popup_webview
+       popupContentZoom). The old reserve borrowed the implicit line box's
+       half-leading via ruby{line-height:2} and anchored the <rt> with
+       bottom:100% — a percentage resolved against a per-fragment-rounded line
+       box that also depended on the PREVIOUS line's leading. Under zoom!=1 that
+       rounding (amplified by the zoom factor and real CJK line metrics) made the
+       furigana drift up and collide with the line above. The reserve is now
+       intrinsic to the ruby element and expressed purely in em: padding-top
+       reserves room for the <rt>, which anchors to the ruby's own top (top:0).
+       Reserve and annotation live on one element on one em chain, so they scale
+       together under any zoom and never depend on the neighbouring line. */
+:where(.glossary-group, .glossary-content) ruby {
+    display: inline-block;
+    position: relative;
+    line-height: 1;
+    padding-top: 0.55em;
+    vertical-align: baseline;
+}
+
+:where(.glossary-group, .glossary-content) rt {
+    font-size: 0.5em;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    text-align: center;
+    white-space: nowrap;
+    line-height: 1;
+}
+
 .dict-label {
+    /* TODO-877: revert TODO-849's clickable-bar card head back to Hoshi's flat
+       small caption (Hoshi Features/Popup/popup.css .dict-label :328-334:
+       font-size:10px; opacity:0.7; display:block). display:block still spans the
+       full row so the whole <summary> stays a collapse/expand hit target, but the
+       look is a plain dim caption - no padding / radius / surface, matching
+       Pictures/popup_dict.PNG. */
     font-size: 10px;
     opacity: 0.7;
-    display: inline;
-    margin-right: 4px;
+    display: block;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .dict-label.selected {
@@ -465,10 +864,29 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     font-size: 20px;
     line-height: 1;
     color: var(--on-surface-variant);
+    cursor: pointer;
+}
+
+/* TODO-1325 #4: 标签说明遮罩的关闭按钮同样走内联 SVG（× 图标），随 font-size 缩放。 */
+.overlay-close > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    fill: currentColor;
 }
 
 .category-section {
     margin-top: 2px;
+}
+
+/* When the pitch-accent section sits directly under the frequency section, give
+   it extra breathing room. The first pitch mora's high/low overline
+   (.pronunciation-mora-line, top: -2px) pokes above its line box and, with the
+   tight 2px section gap, butts up against / overlaps the frequency tag on the
+   line above. The adjacent-sibling selector only fires for this exact freq→pitch
+   stack, so a pitch-only entry keeps the compact 2px spacing (BUG-177). */
+.frequency-section + .pitch-section {
+    margin-top: 8px;
 }
 
 .category-body {
@@ -483,17 +901,52 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     margin-top: 0;
 }
 
-/* TODO-1185：消费 --dict-columns（词典多列布局，1..4）。与 content.css / in-app popup.css
-   同款 grid：只用 column-gap，行距靠 glossary-group 的 margin（grid 不折叠 item margin）；
-   min-width:0 防长内容撑宽 1fr 轨溢出。N=1 是未改动的经典单列。 */
+/* TODO-776: multi-dictionary-per-row layout (experimental). The glossary body
+   holds one <details.glossary-group> per dictionary; default N=1 keeps the
+   classic single vertical column. The column count is driven entirely by the
+   --dict-columns custom property injected from the host (1..4), so N=1 is the
+   untouched fall-through. Only column-gap is used here: the .glossary-group
+   already carries margin-top:3px (rule below) and grid does NOT collapse item
+   margins, so adding row-gap/gap would stack gap+margin into a DOUBLED vertical
+   gap at N=1 and break every existing user's default spacing. column-gap only
+   affects the inter-column distance and leaves the row margin untouched. */
 .glossary-section > .category-body {
     display: grid;
     grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
     column-gap: 6px;
+    /* TODO-1325 / BUG-683 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
+       的词典卡片全部拉伸到该行最高卡片的高度。首行常含义项最多的词典（idx 0 那本），被
+       拉高后同行义项少的卡片下方留出大片空白玻璃盒，整体读作「第一个卡片特别高」。Niratan
+       的卡片是自然内容高度（单词典 display:block 单列，或多词典 JS masonry 按最短列打包，
+       从不等高拉伸，见 Features/Popup/popup.js layoutMasonry）。这里不改 DOM/JS、不引 JS
+       masonry（那是过度设计），只在锁死的多列 grid 上把纵轴对齐从 stretch 改成 start：每
+       张卡片贴其单元格顶部、取自身内容高度，首卡不再被行内最高卡片拉伸出特殊高度，观感与
+       Niratan 的自然高度玻璃卡片一致。列间距仍只用 column-gap，卡片间纵向间距仍由
+       .glossary-group 的 margin-top 提供（grid 不折叠 item margin），不产生双倍间距。 */
+    align-items: start;
 }
+
+/* TODO-1325 #7（超越 TODO-877/TODO-849 的往返）：per-dictionary 卡片皮肤（圆角/投影/
+   底色/内边距/内高光）现由上面的基类规则 `.glossary-group` 统一承载（用户 Niratan 卡片
+   决策）。本节内规则只保留 TODO-776 的 grid 间距模型：行距走 margin-top（grid 不折叠 item
+   margin，父只设 column-gap），min-width:0 让长义项不把 1fr grid track 撑宽溢出弹窗。卡片的
+   padding 走 border-box 的内边距，不影响 grid track 宽度。切勿把卡片外观(border/radius/
+   background)搬到本节——统一在基类，避免两处皮肤漂移。 */
 .glossary-section > .category-body > .glossary-group {
-    margin-top: 3px;
+    margin-top: 5px;
     min-width: 0;
+}
+
+/* Cancel the first card's top margin so the glossary section doesn't start with
+   an extra gap above the first dictionary card. */
+.glossary-section > .category-body > .glossary-group:first-child {
+    margin-top: 0;
+}
+
+/* Wide dictionary images must shrink to the narrow column instead of pushing
+   the grid track past its 1fr share. */
+.glossary-group img {
+    max-width: 100%;
 }
 
 .pitch-list {
@@ -506,16 +959,84 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     align-items: baseline;
     gap: 6px;
     margin-top: 2px;
+    /* TODO-1305 / BUG-pitch-reading-mined: 音高发音区（片假名 reading 逐 mora +
+       [n] 音高数字 + IPA）是纯展示，不参与查词/复制。加 user-select:none 杜绝拖选
+       把片假名 reading（如 カンロク）留在原生选区、制卡时被烤进 Anki 卡的
+       SelectionText 字段。词典正文 glossary 是独立兄弟区块，仍保留 user-select:text
+       可选中做嵌套查词，零影响。*/
+    user-select: none;
+    -webkit-user-select: none;
 }
 
+/* TODO-1325 #1: 音高来源彩色药丸。此前 display:none 把音高词典名（如「NHK 日本語
+   発音アクセント辞典」）藏掉，用户看不到某条音高的出处。改成与 .frequency-dict-label
+   同一视觉家族的填充药丸：填充色接 MD3 --md-primary（Dart 注入的动态取色），文字用
+   配对的 --md-on-primary（同批注入），浅色主题得白字、深色主题得深字，两主题都保证
+   对比度（不写死 Niratan 的 #94a6eb）。圆角走满圆 pill。 */
 .pitch-dict-label {
-    display: none;
+    display: inline-block;
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 1px 6px;
+    margin-right: 4px;
+    border-radius: 999px;
+    background-color: var(--md-primary, var(--primary-color, #386A58));
+    color: var(--md-on-primary, #ffffff);
+    font-weight: 600;
+    white-space: nowrap;
+    vertical-align: middle;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
+/* TODO-1354（按 Niratan 文字位置对齐，参考 W1ght/Niratan compactPitchAccents）：音高
+   读音条从「circle 项目符号 + 每条各占一行」改为「行内单行、' | ' 分隔」。旧版把每条
+   音高（多词典 / 多读法）渲染成 list-item 竖排，音高数字 [n] 跟着各自换行、与来源药丸
+   (.pitch-dict-label)、读音基线错位，用户看到「音高数字浮动」。改为 inline 后：来源药丸 +
+   读音 + [n] 同一行基线平铺，多条用暗淡 ' | ' 分隔（单条无分隔，观感等同旧单行），与
+   Niratan 的整齐单行一致。IPA 转写(.pitch-transcriptions)是独立兄弟块、不受影响；音高
+   overline(.pronunciation-mora-line) 仍绝对定位在读音上方，逻辑不变。 */
 .pitch-entries {
-    list-style: circle inside;
+    list-style: none;
     margin: 0;
     padding: 0;
+    display: inline;
+}
+
+.pitch-entries > li {
+    display: inline;
+    white-space: nowrap;
+}
+
+.pitch-entries > li:not(:last-child)::after {
+    content: " | ";
+    opacity: 0.6;
+    white-space: normal;
+}
+
+/* TODO-688: IPA transcriptions rendered inside the pitch group, as small inline
+   tags after the accent list. Phonetic notation is the same nature as pitch. */
+.pitch-transcriptions {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+}
+
+.pitch-transcription {
+    display: inline-flex;
+}
+
+.pitch-transcription-tag {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 0 4px;
+    border-radius: 4px;
+    background-color: rgba(127, 127, 127, 0.16);
+    opacity: 0.85;
+    white-space: nowrap;
 }
 
 /* https://github.com/yomidevs/yomitan/blob/master/ext/css/display-pronunciation.css */
@@ -558,6 +1079,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 html[data-theme="light"] {
+    color-scheme: light;
     --background-color: #fff;
     --background-color-light: #fff;
     --text-color: #000;
@@ -571,6 +1093,7 @@ html[data-theme="light"] {
 }
 
 html[data-theme="dark"] {
+    color-scheme: dark;
     --background-color: #000;
     --background-color-light: #000;
     --text-color: #fff;
@@ -602,4 +1125,188 @@ html[data-theme="dark"] {
 .no-results-icon {
     font-size: 32px;
     opacity: 0.5;
+}
+
+/* TODO-094 S5: kanji dictionary card. Rendered above the term entries for a
+   single-character lookup, showing the character's own readings (on/kun),
+   radical, stroke count and meanings. Colours reuse the popup's existing MD3
+   surface / outline / primary variables so the card follows the active theme
+   (light / dark / dynamic colour) like the rest of the popup, never an
+   out-of-place hardcoded panel. */
+.kanji-card-section {
+    margin: 4px 0 6px;
+}
+
+.kanji-card {
+    margin-top: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--hibiki-radius-card, 10px);
+    background: var(--surface-container);
+}
+
+.kanji-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.kanji-card-char {
+    font-size: 36px;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-user-select: none;
+    color: var(--text-color);
+}
+
+.kanji-card-char:active {
+    opacity: 0.6;
+}
+
+.kanji-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kanji-card-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13px;
+    margin-top: 2px;
+}
+
+.kanji-card-head .kanji-card-row {
+    margin-top: 0;
+}
+
+.kanji-card-label {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--primary-color);
+    -webkit-user-select: none;
+}
+
+.kanji-card-value {
+    -webkit-user-select: text;
+}
+
+.kanji-card-meanings {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-user-select: text;
+}
+
+.kanji-card-dict {
+    margin-top: 4px;
+    font-size: 10px;
+    opacity: 0.6;
+    -webkit-user-select: none;
+}
+
+/* =====================================================================
+ * TODO-867 P2 — Windows app-OUTSIDE global lookup chrome (SCOPED).
+ *
+ * popup.css is SHARED by the in-app popup (dictionary_popup_webview, whose
+ * outer card chrome is a Flutter Material card, so the WebView body must stay
+ * transparent/flush) AND the app-outside global-lookup WebView2 window (where
+ * the WebView body IS the whole popup, so it needs its own card chrome).
+ *
+ * Every rule below is gated on `html.global-lookup`, a class that ONLY
+ * global_lookup_render.dart adds (in-app never does). So these rules are inert
+ * in-app — zero regression to the in-app popup or to the tested --dict-columns
+ * grid — and only style the bare WebView2 lookup window.
+ *
+ * Card chrome ports hoshi's reader-popup-host.js `.hoshi-reader-popup-shell`
+ * (border 1px rgba(120,120,128,0.36) / radius 10px). The opaque, NON-layered
+ * WebView2 window (see global_lookup_window.cpp: "No WS_EX_LAYERED") cannot
+ * carry a real drop-shadow inside CSS — that is a platform limitation, not an
+ * omission; the true rounded-corner + shadow is supplied by the native window
+ * region (SetWindowRgn) instead. The CSS here gives the content a clean inset
+ * border so it reads as a card, not raw text flush to the window edge.
+ * ===================================================================== */
+
+html.global-lookup body {
+    /* hoshi shell border (light). The dark variant follows below. Inset padding
+       lifts the content off the hard window edge so the border reads as a card
+       frame rather than a hairline glued to the glass. */
+    border: 1px solid rgba(120, 120, 128, 0.36);
+    border-radius: 10px;
+    padding: 8px 10px 10px;
+    min-height: 100%;
+}
+
+html.global-lookup[data-theme="dark"] body {
+    border-color: rgba(255, 255, 255, 0.34);
+}
+
+/* Sub-box layout (complaints #2 + #3): the in-app default is a fixed
+   --dict-columns grid (repeat(N, 1fr)) whose rows STRETCH every dictionary card
+   to the tallest in that row (CSS grid align-items:stretch). That stretch makes
+   the first (richest, most-dictionaries) result's boxes taller than later
+   results' (#2) and forces a rigid fixed-per-row equal-height layout (#3).
+   hoshi instead flows the boxes with flex-wrap at their natural content height:
+   collapsed boxes stay short, a row packs as many as fit, the per-row count is
+   not fixed. Override (not replace) the grid ONLY under .global-lookup so the
+   in-app grid + its source guard test stay intact. */
+html.global-lookup .glossary-section > .category-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start; /* content height, never stretched to row max */
+    column-gap: 6px;
+}
+
+html.global-lookup .glossary-section > .category-body > .glossary-group {
+    /* Each card sizes to its content. flex-basis lets a row hold a variable
+       number of cards (wide cards take a row, narrow collapsed ones pack many),
+       never a fixed 3-up grid. min-width keeps long glossary content from
+       blowing the row width. */
+    flex: 1 1 auto;
+    min-width: 160px;
+    max-width: 100%;
+    height: auto;
+    align-self: flex-start;
+}
+/* TODO-860 / BUG-435: 词典 structured-content 文本链接错位。
+   词典语法节点的 inline style（float / position:absolute|fixed，经
+   popup.js:516 setStructuredContentElementStyle 无白名单原样落 element.style，
+   次因为词典自带 styles.css 的 a{float/position}）会让文本链接 <a class="gloss-sc-a">
+   逃逸 inline 流跑到「旁边」。纯 CSS 兜底：强制文本链接回到 inline 流。
+   作用域铁律：选择器只限定标签+完整类名 a.gloss-sc-a，绝不命中图片链接
+   .gloss-image-link（TODO-859/350 图片合法依赖 position/float），也不碰 ruby/rt。 */
+.structured-content a.gloss-sc-a {
+    float: none !important;
+    position: static !important;
+    display: inline;
+}
+/* TODO-1022 / BUG-478 的修复已上移到源头：popup.js
+   isFlowEscapingStructuredContentStyle 在 setStructuredContentElementStyle
+   里丢弃词典 inline float / position:absolute|fixed|sticky，明鏡补足◆行开
+   引号不再需要 CSS 兜底。这里原来的一刀切规则
+   span/div[class*="gloss-sc-"]{float:none!important;position:static!important;display:inline}
+   是 BUG-520 的根因——display:inline 把所有词典靠 div block 布局做的分行
+   压成一行、行高为 0 的图标容器互相重叠，禁止再引入（守卫见
+   hibiki/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
+   上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
+   float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
+
+/* TODO-1030 M0 — app-external global-lookup sentence-context banner. Shows the
+   sentence the selected word sits in (captured via Windows UI Automation) above
+   the dictionary entries. Only rendered when window.__globalLookupSentence is
+   set (never for in-app popups). Uses the same injected theme vars as the rest
+   of the popup so it follows light/dark + ColorScheme. */
+.global-lookup-sentence {
+    margin: 0 0 8px 0;
+    padding: 8px 10px;
+    border-radius: var(--hibiki-radius-card, 10px);
+    background: var(--surface-variant, rgba(128, 128, 128, 0.12));
+    border-left: 3px solid var(--primary-color, #386A58);
+    color: var(--text-color-light1, #555555);
+    font-size: 0.85em;
+    line-height: 1.5;
+    word-break: break-word;
+    white-space: pre-wrap;
 }

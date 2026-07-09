@@ -491,6 +491,8 @@ String ankiHandlebarLabel(String option) {
       return t.handlebar_pitch_accent_categories;
     case '{document-title}':
       return t.handlebar_document_title;
+    case '{card-image}':
+      return t.handlebar_card_image;
     case '{book-cover}':
       return t.handlebar_book_cover;
     case '{video-clip}':

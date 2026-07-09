@@ -110,7 +110,11 @@ void main() {
       // The hide() reset must sit between the hotkey firing and selection
       // capture, so native + Dart reveal state collapse to known-hidden first.
       final String prelude = c.substring(fire, capture);
-      expect(prelude.contains('GlobalLookupChannel.hide();'), isTrue,
+      // TODO-1233 — the reset hide now passes notify:false (between-lookups
+      // reset, not a user dismissal → must not fire overlayHidden). The
+      // unconditional-reset INTENT the guard protects is unchanged.
+      expect(
+          prelude.contains('GlobalLookupChannel.hide(notify: false);'), isTrue,
           reason:
               'each lookup must reset reveal state before showAt re-arms it');
     });

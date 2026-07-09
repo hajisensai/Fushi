@@ -10,10 +10,11 @@ part of '../video_hibiki_page.dart';
 /// character-for-character.
 ///
 /// Covers persisted audio-track restoration ([_restoreAudioTrack]), explicit
-/// track selection ([_selectAudioTrack]), the side-panel entry point
-/// ([_showAudioTrackMenu]), the audio-track side panel UI
-/// ([_buildAudioTracksSidePanel]) and the shared track-label helper
-/// ([_trackLabel], also consumed by the subtitle/remote domains).
+/// track selection ([_selectAudioTrack]), the settings-panel entry point
+/// ([_showAudioTrackMenu], TODO-1351 now routes to the settings sheet's `audio`
+/// category), the in-panel audio-track UI ([_buildAudioTrackSettingsSection]) and
+/// the shared track-label helper ([_trackLabel], also consumed by the
+/// subtitle/remote domains).
 ///
 /// The instance field (`_currentAudioTrackId`), the `_VideoSidePanelKind` enum,
 /// and every collaborator getter/method (`_videoChromeColorScheme`,
@@ -59,50 +60,48 @@ extension _VideoAudioTrack on _VideoHibikiPageState {
     );
   }
 
-  /// 弹音轨菜单（顶栏 ♪ 按钮共用）。
+  /// 弹音轨切换（顶栏 ♪ 按钮 / 右键菜单共用）。TODO-1351：音轨切换收进设置面板的
+  /// 「音频」分类（取代原来外面浮的音轨侧栏），此入口直接把设置面板开在 `audio` tab。
   void _showAudioTrackMenu(
     VideoPlayerController _, {
     VideoControlSlot? sourceSlot,
   }) {
-    _showVideoSidePanel(
-      _VideoSidePanelKind.audioTracks,
-      sourceSlot: sourceSlot,
-    );
+    _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'audio');
   }
 
-  Widget _buildAudioTracksSidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    final List<AudioTrack> tracks = controller.audioTracks;
-    if (tracks.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.video_audio_track,
-            style: TextStyle(color: cs.onSurfaceVariant),
-          ),
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: tracks.length,
-      itemBuilder: (BuildContext _, int i) {
-        final AudioTrack track = tracks[i];
-        final String label = _trackLabel(
-          track.title,
-          track.language,
-          track.id,
-        );
-        final bool selected = _currentAudioTrackId == track.id;
-        return ListTile(
-          dense: true,
-          leading: const Icon(Icons.audiotrack),
-          title: Text(label),
-          selected: selected,
-          selectedColor: cs.primary,
-          trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
-          onTap: () => unawaited(_selectAudioTrack(controller, track)),
+  /// TODO-1351：设置面板「音频」分类里的音轨切换区（取代外面浮的音轨侧栏）。用
+  /// [Builder] 让配色随设置面板自身主题（浅色 MD3）解析，而非视频 chrome 深色。轨列表
+  /// 读 controller 的 audioTracks、选中态 [_currentAudioTrackId]，点某轨走既有
+  /// [_selectAudioTrack]（切轨 + 持久化 + OSD）。空列表显示占位。
+  Widget _buildAudioTrackSettingsSection(VideoPlayerController controller) {
+    return Builder(
+      builder: (BuildContext context) {
+        final ColorScheme cs = Theme.of(context).colorScheme;
+        final List<AudioTrack> tracks = controller.audioTracks;
+        if (tracks.isEmpty) {
+          return ListTile(
+            dense: true,
+            leading: const Icon(Icons.audiotrack),
+            title: Text(t.video_audio_track_empty),
+            enabled: false,
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final AudioTrack track in tracks)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.audiotrack),
+                title: Text(_trackLabel(track.title, track.language, track.id)),
+                selected: _currentAudioTrackId == track.id,
+                selectedColor: cs.primary,
+                trailing: _currentAudioTrackId == track.id
+                    ? Icon(Icons.check, color: cs.primary)
+                    : null,
+                onTap: () => unawaited(_selectAudioTrack(controller, track)),
+              ),
+          ],
         );
       },
     );

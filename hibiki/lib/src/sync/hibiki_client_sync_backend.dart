@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
-import 'package:hibiki/src/sync/remote_cover_headers.dart';
+import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -122,7 +122,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend
-    implements RemoteBookClient, RemoteVideoClient, RemoteCoverHeadersProvider {
+    implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
   static final HibikiClientSyncBackend instance = HibikiClientSyncBackend._();
@@ -291,7 +291,7 @@ class HibikiClientSyncBackend extends SyncBackend
     required String rootFolderId,
     Uint8List? coverData,
   }) async {
-    final sanitized = sanitizeTtuFilename(bookTitle);
+    final sanitized = requireBookFolderName(bookTitle);
 
     if (_titleToFolderId.containsKey(sanitized)) {
       return _titleToFolderId[sanitized]!;
@@ -609,13 +609,21 @@ class HibikiClientSyncBackend extends SyncBackend
   /// 故 /api 端点在 `${_apiBase}/api/...`）。
   String get _apiBase => _ops!.baseUrl;
 
+  /// TODO-1235（TODO-961 回归）：把对端封面拉成字节，复用互联其余流量同一条钉扎
+  /// 通路——[_ops.buildRequest] 对 https 用 pinned client（证书指纹相等才接受自签），
+  /// 对明文 http 用裸 client（老路径字节不变），并补 Basic auth。[coverUrl] 由 host
+  /// 依 client 实际请求地址回填（scheme/host 与已解析地址一致），故指纹钉扎匹配。
+  /// 非 2xx / 握手失败 / 网络异常抛出，由 [RemoteCoverImage] 转占位图。
   @override
-  Map<String, String> get remoteCoverHeaders {
-    final String? token = _token;
-    if (token == null || token.isEmpty) return const <String, String>{};
-    return <String, String>{
-      'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-    };
+  Future<Uint8List> fetchRemoteCover(String coverUrl) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest('GET', coverUrl);
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      await res.drain<void>();
+      throw SyncBackendError('GET cover -> ${res.statusCode}');
+    }
+    return consolidateHttpClientResponseBytes(res);
   }
 
   /// 列出对端 host 当前实时词典清单（直打 `/api/library/dictionaries`）。
@@ -1222,14 +1230,22 @@ class HibikiClientSyncBackend extends SyncBackend
 
   // ── Test connection ───────────────────────────────────────────────
 
+  /// 测试单个互联地址是否可用。[fingerprint] 是该地址 TOFU 钉扎的自签证书 SHA-256
+  /// 指纹（https 端点必带，明文 http 为 null）。**必须**随地址一起传入：新版 host 默认
+  /// 开 TLS（applyFirstHostingTlsDefault），刚配对的地址就是 https + 自签证书；不带
+  /// 指纹的裸 WebDavOps 会在自签 TLS 握手处失败，把「其实能连」的 host 误报成
+  /// 连接失败（TODO-1330 / BUG：测试连接对已配对 https host 恒失败）。指纹非空 →
+  /// pinned client（仅接受指纹相等的自签证书）；null → 明文 http 老路径不变。
   Future<void> testConnection({
     required String url,
     required String token,
+    String? fingerprint,
   }) async {
     final ops = WebDavOps(
       baseUrl: WebDavOps.normalizeUrl(url),
       username: 'hibiki',
       password: token,
+      pinnedFingerprint: fingerprint,
     );
     try {
       await ops.testConnection();

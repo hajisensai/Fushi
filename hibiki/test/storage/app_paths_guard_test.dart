@@ -125,11 +125,62 @@ void main() {
         equals(4),
         reason: '_documentsRoot 定义 1 次 + 三个持久目录方法各调用 1 次 = 4',
       );
+      // TODO-1236：_documentsRoot 改为 resolver 注入优先、path_provider 兜底
+      // ——仍是
+      // 包内唯一直连 path_provider 的表达式，只是被注入点门控（app 层注入 AppPaths）。
       expect(
-        RegExp(r'=>\s*getApplicationDocumentsDirectory\(\)').hasMatch(src),
+        RegExp(r'documentsRootResolver \?\? getApplicationDocumentsDirectory')
+            .hasMatch(src),
         isTrue,
-        reason: '_documentsRoot 应是唯一直连 path_provider 的表达式',
+        reason: '_documentsRoot 应是唯一直连 path_provider 的表达式（经 resolver 门控）',
       );
+    });
+  });
+  group('TODO-1263 写路径 caller 守卫：字幕/封面写目录经 AppPaths 不回退 path_provider', () {
+    String read(String relative) {
+      final File f = File(relative);
+      expect(f.existsSync(), isTrue, reason: '缺失文件: $relative');
+      return f.readAsStringSync();
+    }
+
+    // TODO-1263：1236 的端到端测试只直调 AppPaths getter，未守卫这两个真实写路径
+    // caller。有声书有 resolver 注入契约 + 上面的正则守卫，字幕/封面写路径此前无专属
+    // 守卫——加源码扫描防这两个 caller 回退直连 path_provider 数据根。
+    test('subtitle.part.dart 字幕写路径经 AppPaths.videoSubtitlesDirectory', () {
+      final String src =
+          read('lib/src/pages/implementations/video_hibiki/subtitle.part.dart');
+      // Jimaku 下载 saveDir(:468) 与外挂字幕导入 destDir(:651) 两处写目录都经
+      // AppPaths.videoSubtitlesDirectory()——跟随桌面自定义数据根，不落回平台 Documents。
+      expect(
+        'AppPaths.videoSubtitlesDirectory'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: '字幕下载 saveDir 与导入 destDir 都必须经 '
+            'AppPaths.videoSubtitlesDirectory 解析（至少 2 处）',
+      );
+      // 回退直连 documents/support 数据根就是本守卫要拦的回归；这两个 path_provider
+      // 入口在本文件没有任何合法用途（唯一合法的 getTemporaryDirectory 抽远端字幕临时
+      // 副本，:594，不在此禁列——只禁 documents/support 数据根）。
+      expect(src.contains('getApplicationDocumentsDirectory'), isFalse,
+          reason: '字幕写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths');
+      expect(src.contains('getApplicationSupportDirectory'), isFalse,
+          reason: '字幕写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths');
+    });
+
+    test(
+        'desktop_audio_clipper.dart extractVideoCover 封面写路径经 '
+        'AppPaths.videoCoversDirectory', () {
+      final String src = read('lib/src/utils/misc/desktop_audio_clipper.dart');
+      // extractVideoCover(:594) 封面目录经 AppPaths.videoCoversDirectory()——同上跟随
+      // 数据根，不落回平台 Documents。
+      expect(src.contains('AppPaths.videoCoversDirectory'), isTrue,
+          reason: 'extractVideoCover 封面目录必须经 AppPaths.videoCoversDirectory 解析');
+      // 封面写路径同样不得回退直连 documents/support 数据根；本文件其余 ffmpeg 逻辑无
+      // path_provider 合法用途（video_clips 导出走调用方传入的 outputPath，不在此文件
+      // 直连数据根）。
+      expect(src.contains('getApplicationDocumentsDirectory'), isFalse,
+          reason: '封面写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths');
+      expect(src.contains('getApplicationSupportDirectory'), isFalse,
+          reason: '封面写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths');
     });
   });
 }

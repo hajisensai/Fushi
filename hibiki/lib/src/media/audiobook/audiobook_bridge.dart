@@ -63,26 +63,53 @@ window.__hoshiImageBetween = function(prev, el) {
   return null;
 };
 
-// TODO-1178：揭开「上一句 prev → 当前句 el」区间内所有带 blurred 类的插图
-// （防剧透模糊遮罩，img.block-img.blurred / svg.block-img.blurred）。与
-// __hoshiImageBetween 的暂停判据平行、不改动它：那个只取第一张图作暂停锚点，
-// 本函数遍历区间全部 blurred 图一次全揭，一次推进跨多图也能全部去模糊。
-// 只揭音频已跨过（读到）的图；未读到的保持模糊。返回揭开的图片数量。
+// TODO-1178 / TODO-1367：揭开「上一句 prev → 当前句 el」区间内音频已读过的插图的防
+// 剧透模糊遮罩（blurred 类，CSS filter:blur 盖在 img.block-img.blurred /
+// svg.block-img.blurred 上）。与 __hoshiImageBetween 的暂停判据平行、不改动它：那个
+// 只取第一张图作暂停锚点，本函数遍历区间全部图一次全揭，一次推进跨多图也全揭。
+//
+// TODO-1367 根因（用户报「遮罩没去掉」）：旧实现只 querySelectorAll('img.blurred') +
+// classList.remove，两处漏洞：① 区间内的插图常是 loading=lazy 的离屏懒图，cue 推进跨
+// 过它时它还没 load、还没被 _hoshiClassifyBlockImg 加上 blurred 类 → 'img.blurred'
+// 选择器抓不到 → 随后图片暂停把视口滚到它、它才 load，此刻 _hoshiBlurImage 见 key 不在
+// 已揭活集 → 补加 blurred → 用户看到「暂停在一张仍然模糊的图上」。② 就算当场揭掉也不
+// 持久：章节 (重)载 / 布局切换重跑 _sharedInitImages 会无条件重加 blurred（TODO-1289
+// 同款重遮罩）。修法与点击 / 手柄揭开对齐：对区间内每张（含未 load 懒图）登记稳定 reveal
+// key 进「本会话已揭开」活集（__hoshiMarkImageRevealed，令日后 load 时 _hoshiBlurImage
+// 跳过遮罩）+ 有 blurred 类当场删除 + 回传 onImageRevealed 让 Dart 会话集持久（重载不再
+// 遮罩）。只揭音频已跨过（读到）的图；未读到的保持模糊。仅图片防剧透模糊开启时有效
+// （__hoshiImageRevealKey 只有 blurImages 才注入）；关闭时无 blurred 类 / 无 key 机制，
+// 前置守卫直接 no-op，绝不动懒加载 / DOM（向后兼容零副作用）。返回处理的图片数量。
 window.__hoshiRevealBlurredBetween = function(prev, el) {
   if (!prev || !el || prev === el || !document.contains(prev)) return 0;
+  if (typeof window.__hoshiImageRevealKey !== 'function') return 0;
   var a = prev, b = el;
   if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
     a = el; b = prev;
   }
-  var media = document.querySelectorAll('img.blurred, svg.blurred');
+  var media = document.querySelectorAll('img, svg');
   var revealed = 0;
   for (var i = 0; i < media.length; i++) {
     var m = media[i];
-    if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-        (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING)) {
-      m.classList.remove('blurred');
-      revealed++;
+    if (m.classList &&
+        (m.classList.contains('gaiji') || m.classList.contains('gaiji-line'))) {
+      continue;
     }
+    if (!((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+          (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING))) {
+      continue;
+    }
+    var key = window.__hoshiImageRevealKey(m);
+    if (key && typeof window.__hoshiMarkImageRevealed === 'function') {
+      window.__hoshiMarkImageRevealed(key);
+    }
+    if (m.classList && m.classList.contains('blurred')) {
+      m.classList.remove('blurred');
+    }
+    if (key && window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onImageRevealed', key);
+    }
+    revealed++;
   }
   return revealed;
 };
@@ -129,6 +156,16 @@ window.__hoshiImagePauseAdvance = function(el, reveal, pauseEnabled) {
     window.flutter_inappwebview.callHandler('onImageDetected');
   }
   if (reveal && pauseEnabled) {
+    // TODO-1367：命中的插图若是 loading=lazy 的离屏懒图，此刻尺寸为 0，scrollToRange
+    // 滚过去只落到空白流位置、图片暂停时用户看不到图。强制 eager + 触发解码，让 reveal
+    // 落到真实图盒、暂停真展示插图。svg 无 loading 语义、不动。
+    if (crossed.tagName === 'IMG' &&
+        crossed.getAttribute('loading') === 'lazy') {
+      crossed.setAttribute('loading', 'eager');
+      if (typeof crossed.decode === 'function') {
+        try { crossed.decode(); } catch (e) {}
+      }
+    }
     window.__hoshiRevealTarget(crossed);
     return true;
   }
@@ -770,6 +807,7 @@ class TtuReaderSettings {
     'light-theme',
     'ecru-theme',
     'water-theme',
+    'eyecare-theme',
     'gray-theme',
     'dark-theme',
     'black-theme',
@@ -779,6 +817,7 @@ class TtuReaderSettings {
         'light-theme': t.reader_theme_light,
         'ecru-theme': t.reader_theme_ecru,
         'water-theme': t.reader_theme_water,
+        'eyecare-theme': t.reader_theme_eyecare,
         'gray-theme': t.reader_theme_gray,
         'dark-theme': t.reader_theme_dark,
         'black-theme': t.reader_theme_black,

@@ -24,6 +24,70 @@ Future<HibikiDatabase> _openV33DbWithoutStatisticsTombstones() async {
   return db;
 }
 
+/// Opens a `user_version = 34` database whose video_books table lacks the
+/// stream_spec_json column, forcing the real `if (from < 35) addColumn(
+/// videoBooks.streamSpecJson)` onUpgrade branch (TODO-1157) to run.
+Future<HibikiDatabase> _openV34DbWithoutStreamSpecJson() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Minimal video_books shaped like the v34 schema (no stream_spec_json).
+        rawDb.execute('CREATE TABLE video_books ('
+            'book_uid TEXT NOT NULL PRIMARY KEY, '
+            'title TEXT NOT NULL, '
+            'video_path TEXT NOT NULL, '
+            'subtitle_source TEXT, '
+            'secondary_subtitle_source TEXT, '
+            'subtitle_format TEXT, '
+            'embedded_subtitle_track INTEGER, '
+            'cover_path TEXT, '
+            'last_position_ms INTEGER NOT NULL DEFAULT 0, '
+            'imported_at INTEGER, '
+            'playlist_json TEXT, '
+            'current_episode INTEGER NOT NULL DEFAULT 0, '
+            'audio_track_id TEXT, '
+            'delay_ms INTEGER NOT NULL DEFAULT 0, '
+            'completed_at INTEGER, '
+            'source_id INTEGER)');
+        rawDb.execute('INSERT INTO video_books (book_uid, title, video_path, '
+            'last_position_ms, current_episode, delay_ms) VALUES '
+            "('video/stream/x', 't', 'https://x/y.m3u8', 0, 0, 0)");
+        rawDb.execute('PRAGMA user_version = 34');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
+/// Opens a `user_version = 35` database whose favorite_words table lacks the
+/// book_key / title columns, forcing the real `if (from < 36) addColumn(
+/// favoriteWords.bookKey / .title)` onUpgrade branch (TODO-1252) to run.
+Future<HibikiDatabase> _openV35DbWithoutFavoriteBookColumns() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Minimal favorite_words shaped like the v35 schema (no book_key/title).
+        rawDb.execute('CREATE TABLE favorite_words ('
+            'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+            'expression TEXT NOT NULL, '
+            'reading TEXT NOT NULL, '
+            'glossary TEXT NOT NULL, '
+            'source_type TEXT NOT NULL, '
+            'date_key TEXT NOT NULL, '
+            'created_at INTEGER NOT NULL, '
+            'UNIQUE (expression, reading, source_type))');
+        rawDb.execute('INSERT INTO favorite_words (expression, reading, '
+            'glossary, source_type, date_key, created_at) VALUES '
+            "('語', 'ご', 'g', 'book', '2026-07-06', 1)");
+        rawDb.execute('PRAGMA user_version = 35');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 /// Opens a `user_version = 14` database that lacks the sync_baselines table,
 /// forcing the real `if (from < 15) createTable(syncBaselines)` onUpgrade
 /// branch in database.dart to run when HibikiDatabase opens it.
@@ -470,6 +534,105 @@ VALUES ('srtbook_222', 'Standalone Sub', '/abs/persist/S/s.srt',
   return db;
 }
 
+/// TODO-1288：打开一个 `user_version = 36` 的库，其 audiobooks/srt_books/epub_books
+/// 为当前形状，种入一条「EPUB-backed 但缺配对 srt_books 行」的有声书（key='B'）。
+///
+/// 这正是 TODO-1288 的病灶数据形状：`audiobook_import_dialog` 给已有 EPUB 书加/换
+/// 音频时只写 audiobooks 行、漏写配对 srt_books 行；而 v29 的一次性 backfill 只在
+/// 「升级跨过 29」时跑一次，故 DB 已 ≥29 后经该对话框新导入的有声书重新变回未配对，
+/// 不再被自愈。v37 self-heal（重跑幂等 backfill）必须把它治好。
+///
+/// 同时种一条 standalone 字幕书（有 srt_books、无 audiobooks 行）作对照，必须原封不动。
+Future<HibikiDatabase> _openV36DbWithUnpairedAudiobook() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA foreign_keys = OFF');
+        rawDb.execute('''
+CREATE TABLE epub_books (
+  book_key TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT,
+  cover_path TEXT,
+  epub_path TEXT NOT NULL,
+  extract_dir TEXT NOT NULL,
+  chapter_count INTEGER NOT NULL,
+  chapters_json TEXT NOT NULL,
+  toc_json TEXT,
+  source_metadata TEXT,
+  imported_at INTEGER NOT NULL,
+  source_id INTEGER
+)
+''');
+        rawDb.execute('''
+CREATE TABLE audiobooks (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  book_key TEXT NOT NULL UNIQUE,
+  audio_root TEXT,
+  audio_paths_json TEXT,
+  alignment_format TEXT NOT NULL,
+  alignment_path TEXT NOT NULL,
+  health_kind_raw TEXT,
+  match_rate_pct INTEGER,
+  health_measured_at INTEGER,
+  health_reason TEXT,
+  follow_audio INTEGER
+)
+''');
+        rawDb.execute('''
+CREATE TABLE srt_books (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  author TEXT,
+  audio_root TEXT,
+  audio_paths_json TEXT,
+  srt_path TEXT NOT NULL,
+  cover_path TEXT,
+  imported_at INTEGER NOT NULL,
+  book_key TEXT NOT NULL DEFAULT ''
+)
+''');
+
+        // (1) TODO-1288 bug shape：EPUB-backed 有声书 key='B'，无配对 srt_books 行
+        //     （模拟 v29 之后经 audiobook_import_dialog 新导入）。
+        rawDb.execute('''
+INSERT INTO epub_books
+(book_key, title, author, epub_path, extract_dir, chapter_count,
+ chapters_json, imported_at)
+VALUES ('B', 'よつばと！', 'あずまきよひこ', '/abs/B.epub',
+ '/abs/B/extract', 1, '["ch1"]', 333000)
+''');
+        rawDb.execute('''
+INSERT INTO audiobooks
+(book_key, audio_paths_json, alignment_format, alignment_path)
+VALUES ('B', '["/abs/persist/B/ch1.mp3"]', 'srt',
+ '/abs/persist/B/aligned.srt')
+''');
+
+        // (2) standalone 字幕书：有 srt_books、无 audiobooks 行 -> 必须原封不动。
+        rawDb.execute('''
+INSERT INTO epub_books
+(book_key, title, epub_path, extract_dir, chapter_count,
+ chapters_json, imported_at)
+VALUES ('StandaloneB', 'Standalone Sub B', '/abs/SB.epub',
+ '/abs/SB/extract', 1, '["ch1"]', 444000)
+''');
+        rawDb.execute('''
+INSERT INTO srt_books
+(uid, title, srt_path, imported_at, book_key)
+VALUES ('srtbook_444', 'Standalone Sub B', '/abs/persist/SB/sb.srt',
+ 444000, 'StandaloneB')
+''');
+
+        rawDb.execute('PRAGMA user_version = 36');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 /// Opens a minimal `user_version = 29` database for the TODO-616 v29->v30
 /// migration. It has the v29-shape epub_books table seeded with one row (to
 /// assert既有数据不丢 across the bump) and NO series / shelf_entries tables —
@@ -888,11 +1051,12 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 34,
-          reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones); TODO-894 backfill behavior '
-              'asserted by the srt_books '
-              'checks below');
+      expect(db.schemaVersion, 37,
+          reason: 'global schemaVersion is now 37 (TODO-616 v30 + TODO-1017 '
+              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
+              'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
+              'book_key/title + TODO-1288 v37 audiobook srt_books self-heal); '
+              'TODO-894 backfill behavior asserted by the srt_books checks below');
 
       // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
       final paired = await db.getSrtBookByBookKey('A');
@@ -944,6 +1108,51 @@ void main() {
       expect(healedAfter.uid, healedBefore.uid,
           reason: 'uid stable across runs');
       expect(healedAfter.uid, 'srtbook_epub_A');
+    });
+
+    test(
+        'real v36->v37 self-heals an EPUB-backed audiobook left unpaired by '
+        'audiobook_import_dialog after v29 (TODO-1288)', () async {
+      // TODO-1288: audiobook_import_dialog（给已有 EPUB 书加/换音频）在修复前只写
+      // audiobooks 行、漏写配对 srt_books 行。v29 的一次性 backfill 只在跨过 29 时
+      // 跑一次，故 DB 已 ≥29 后经该对话框新导入的有声书重新变回未配对 → 互联 host 的
+      // hasAudiobook 判据认不出 → 对端显示成普通书、音频永不同步。v37 self-heal
+      // （重跑幂等 backfill）必须治好这条历史破损数据。
+      final db = await _openV36DbWithUnpairedAudiobook();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+      expect(db.schemaVersion, 37,
+          reason:
+              'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
+
+      // 之前未配对的 EPUB-backed 有声书 'B' 现在有了配对 srt_books 行。
+      final paired = await db.getSrtBookByBookKey('B');
+      expect(paired, isNotNull,
+          reason: 'v37 self-heal 必须为 key B 补写缺失的配对 SrtBook');
+      expect(paired!.uid, 'srtbook_epub_B', reason: 'uid 必须是与导入路径共用的稳定派生');
+      expect(paired.title, 'よつばと！', reason: 'title from epub_books');
+      expect(paired.author, 'あずまきよひこ', reason: 'author from epub_books');
+      expect(paired.srtPath, '/abs/persist/B/aligned.srt',
+          reason: 'srt_path = audiobooks.alignment_path');
+      expect(paired.audioPathsJson, '["/abs/persist/B/ch1.mp3"]',
+          reason: 'audio_paths_json passed through from audiobooks');
+      expect(paired.coverPath, isNull,
+          reason: 'cover_path intentionally empty');
+      expect(paired.importedAt, 333000, reason: 'imported_at from epub_books');
+
+      // standalone 字幕书（无 audiobooks 行）原封不动。
+      final standalone = await db.getSrtBookByBookKey('StandaloneB');
+      expect(standalone, isNotNull);
+      expect(standalone!.uid, 'srtbook_444',
+          reason: 'standalone row must keep its original uid (untouched)');
+      expect(await db.getAudiobookByBookKey('StandaloneB'), isNull,
+          reason:
+              'self-heal must not invent an audiobook for standalone books');
+
+      // 总共两行 srt_books：治愈的 'B' + standalone。
+      final all = await db.getAllSrtBooks();
+      expect(all, hasLength(2));
     });
 
     test(
@@ -1073,10 +1282,10 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 34,
-          reason: 'global schemaVersion is now 34 (TODO-616 v30 + TODO-1017 '
-              'v31 + TODO-1195 v32 + TODO-1204 v33 + v34); v29->v30 series/shelf_entries '
-              'creation asserted below');
+      expect(db.schemaVersion, 37,
+          reason: 'global schemaVersion is now 37 (…v35 + TODO-1252 v36 + '
+              'TODO-1288 v37 audiobook srt_books self-heal); v29->v30 '
+              'series/shelf_entries creation asserted below');
 
       // Both new tables now exist.
       final tableNames = (await db
@@ -1123,7 +1332,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 34);
+      expect(db.schemaVersion, 37);
     });
 
     test(
@@ -1132,8 +1341,9 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 34,
-          reason: 'TODO-1204后续 bumps the global schemaVersion to 34');
+      expect(db.schemaVersion, 37,
+          reason:
+              'TODO-1288 bumps the global schemaVersion to 37 (v37 audiobook srt_books self-heal; v36 was TODO-1252 favorite_words book_key/title)');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1165,8 +1375,9 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 34,
-          reason: 'TODO-1204后续 bumps the global schemaVersion to 34');
+      expect(db.schemaVersion, 37,
+          reason:
+              'TODO-1288 bumps the global schemaVersion to 37 (v37 audiobook srt_books self-heal; v36 was TODO-1252 favorite_words book_key/title)');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1197,9 +1408,74 @@ void main() {
       expect(tableNames, contains('statistics_tombstones'),
           reason: 'from<34 must createTable(statisticsTombstones)');
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 34);
+      expect(version.read<int>('user_version'), db.schemaVersion);
       await db.insertStatisticsTombstone('A', 'book');
       expect(await db.getStatisticsTombstoneKeys(), contains(('A', 'book')));
+    });
+    test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
+        () async {
+      final db = await _openDb();
+      expect(db.schemaVersion, 37);
+      final cols =
+          await db.customSelect("PRAGMA table_info('video_books')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('stream_spec_json'),
+          reason: 'fresh createAll must include TODO-1157 stream_spec_json');
+    });
+
+    test(
+        'real v34->v35 adds video_books.stream_spec_json, preserves rows, '
+        'bumps user_version (TODO-1157)', () async {
+      final db = await _openV34DbWithoutStreamSpecJson();
+      // Opening triggers from<35 addColumn(streamSpecJson).
+      final cols =
+          await db.customSelect("PRAGMA table_info('video_books')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('stream_spec_json'),
+          reason: 'from<35 must addColumn(videoBooks.streamSpecJson)');
+      // 既有行保留、新列默认 NULL（无损迁移）。
+      final rows = await db
+          .customSelect(
+              "SELECT stream_spec_json FROM video_books WHERE book_uid='video/stream/x'")
+          .get();
+      expect(rows, hasLength(1));
+      expect(rows.single.data['stream_spec_json'], isNull);
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+    });
+
+    test(
+        'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
+        () async {
+      final db = await _openDb();
+      expect(db.schemaVersion, 37);
+      final cols =
+          await db.customSelect("PRAGMA table_info('favorite_words')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, containsAll(<String>['book_key', 'title']),
+          reason: 'fresh createAll must include TODO-1252 book_key/title');
+    });
+
+    test(
+        'real v35->v36 adds favorite_words.book_key + title, preserves rows, '
+        'bumps user_version (TODO-1252)', () async {
+      final db = await _openV35DbWithoutFavoriteBookColumns();
+      // Opening triggers from<36 addColumn(bookKey/title).
+      final cols =
+          await db.customSelect("PRAGMA table_info('favorite_words')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, containsAll(<String>['book_key', 'title']),
+          reason: 'from<36 must addColumn(favoriteWords.bookKey/.title)');
+      // 既有行保留、新列 book_key 默认 NULL / title 默认空串（无损迁移）。
+      final rows = await db
+          .customSelect(
+              "SELECT book_key, title FROM favorite_words WHERE source_type='book'")
+          .get();
+      expect(rows, hasLength(1));
+      expect(rows.single.data['book_key'], isNull);
+      expect(rows.single.data['title'], '');
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
     });
   });
 }

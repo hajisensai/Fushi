@@ -102,7 +102,7 @@ void main() {
   test('收藏新增删除会失效缓存再刷新高亮', () {
     expect(src, contains('void _invalidateFavoriteSentenceCache()'));
 
-    final int settingsIdx = src.indexOf('Future<void> _showAppearanceSheet()');
+    final int settingsIdx = src.indexOf('Future<void> _showAppearanceSheet(');
     final int progressIdx = src.indexOf('Widget _buildTopProgressBar()');
     final int toggleIdx = src.indexOf('Future<void> _toggleFavoriteSentence()');
     expect(settingsIdx, greaterThan(0));

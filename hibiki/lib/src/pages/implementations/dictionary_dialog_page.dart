@@ -95,8 +95,17 @@ class _DictionaryDialogPageState extends BasePageState {
     final String lastUpdateText = lastUpdate == null
         ? t.dict_auto_update_never
         : lastUpdate.toLocal().toString().split('.').first;
+    // TODO-1343：自动更新设置卡与上方词典列表之间补一段顶部间距。
+    // AdaptiveSettingsScaffold 的 children 之间不插任何间隔，靠每个子块自带
+    // 分隔（action bar / 分类选择器都用 gap+gap/2 的底部间距分隔下一块）；
+    // 而 buildContent()（词典列表）没有底部间距、本卡原来又只有底部间距，
+    // 于是列表最后一张词典卡与本卡直接贴在一起（用户报「自动更新和词典粘一
+    // 块了」）。这里给本卡补上与其它分块一致的 gap+gap/2 顶部分隔，消除粘连。
     return Padding(
-      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      padding: EdgeInsets.only(
+        top: tokens.spacing.gap + tokens.spacing.gap / 2,
+        bottom: tokens.spacing.gap,
+      ),
       child: HibikiCard(
         padding: EdgeInsets.zero,
         child: Column(

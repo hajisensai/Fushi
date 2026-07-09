@@ -388,6 +388,277 @@ void main() {
       expect(a.hashCode, b.hashCode);
     });
   });
+
+  group('TODO-1231 (BUG-583) ratchetOverlayOrigin (outward-only origin)', () {
+    test('first box with no prior constraint takes the box origin as-is', () {
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: 0,
+        top: 0,
+        width: 200,
+        height: 160,
+        prevLeft: double.infinity,
+        prevTop: double.infinity,
+      );
+      expect(r.left, 0);
+      expect(r.top, 0);
+      expect(r.width, 200);
+      expect(r.height, 160);
+    });
+
+    test('down-right cascade keeps origin (0,0): pure no-op ratchet', () {
+      // A child cascading down-right leaves minLeft=minTop=0; growing the box
+      // only extends maxRight/maxBottom, so the origin never moves and width/
+      // height equal the raw box — identical to the pre-fix behaviour.
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: 0,
+        top: 0,
+        width: 340,
+        height: 500,
+        prevLeft: 0,
+        prevTop: 0,
+      );
+      expect(r.left, 0);
+      expect(r.top, 0);
+      expect(r.width, 340);
+      expect(r.height, 500);
+    });
+
+    test('up/left cascade OPEN moves the origin outward (adopts negative)', () {
+      // Nested open: the child extends left/up of the cursor, so the tight bbox
+      // origin goes negative. With no tighter prior constraint the ratchet adopts
+      // it (the window grows/moves outward — the open case, unchanged behaviour).
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: -60,
+        top: -40,
+        width: 400, // maxRight = 340
+        height: 520, // maxBottom = 480
+        prevLeft: 0,
+        prevTop: 0,
+      );
+      expect(r.left, -60,
+          reason: 'origin moved outward to the child min-corner');
+      expect(r.top, -40);
+      expect(r.width, 400, reason: 'maxRight(340) - originLeft(-60)');
+      expect(r.height, 520, reason: 'maxBottom(480) - originTop(-40)');
+    });
+
+    test(
+        'up/left cascade CLOSE HOLDS the outward origin, only far edges shrink',
+        () {
+      // The core fix: after an up/left child closes, the tight bbox origin snaps
+      // back toward (0,0) but the ratchet HOLDS the outermost (-60,-40) seen this
+      // session. So dx/dy (window top-left) do NOT change — only width/height
+      // shrink to the surviving root's extent — and the pinned root card never
+      // lurches ("消失第二个弹窗时闪" eliminated).
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: 0, // tight origin back at the root
+        top: 0,
+        width: 340, // root-only extent: maxRight = 340
+        height: 500, // maxBottom = 500
+        prevLeft: -60, // held from the earlier open
+        prevTop: -40,
+      );
+      expect(r.left, -60,
+          reason: 'origin HELD at the outward min-corner (no move)');
+      expect(r.top, -40);
+      expect(r.width, 400, reason: 'maxRight(340) - heldOrigin(-60) = 400');
+      expect(r.height, 540, reason: 'maxBottom(500) - heldOrigin(-40) = 540');
+    });
+
+    test('a partial cascade only ratchets the axis that moved outward', () {
+      // A child that extends left but stays below the cursor moves only the X
+      // origin; the Y origin holds at its prior (0) value.
+      final RatchetedOverlayBox r = ratchetOverlayOrigin(
+        left: -30,
+        top: 20,
+        width: 300, // maxRight = 270
+        height: 400, // maxBottom = 420
+        prevLeft: 0,
+        prevTop: 0,
+      );
+      expect(r.left, -30, reason: 'X origin moved outward');
+      expect(r.top, 0, reason: 'Y origin held (min(20,0)=0)');
+      expect(r.width, 300, reason: 'maxRight(270) - (-30)');
+      expect(r.height, 420, reason: 'maxBottom(420) - 0');
+    });
+  });
+
+  group('TODO-1345/TODO-1231 (BUG-583/BUG-670) computeCascadeHeadroomSeed', () {
+    test('cursor deep inside reserves ALL the way to the work-area edge', () {
+      // TODO-1231 (BUG-670): the seed now reserves the FULL cursor-to-edge distance
+      // (not just one card) so a DEEP cascade (grandchild / a card taller than one
+      // card) can never reach past the reserved origin. Cursor 1700/900 into a
+      // 1920x1040 work area -> reserve -1700 left / -900 top (to the edge).
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 1700,
+        cursorWorkY: 900,
+        screenWorkW: 1920,
+        screenWorkH: 1040,
+      );
+      expect(s.left, -1700,
+          reason: 'left headroom reserved to the work-area edge');
+      expect(s.top, -900,
+          reason: 'top headroom reserved to the work-area edge');
+    });
+
+    test(
+        'cursor against the LEFT/TOP edge reserves NOTHING (no up/left cascade)',
+        () {
+      // At the top-left edge the cursor-to-edge distance is 0, so the seed
+      // degenerates to (0,0): an up/left cascade never happens there (children go
+      // down/right) and reserving headroom would push the window off-screen.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 0,
+        cursorWorkY: 0,
+        screenWorkW: 1920,
+        screenWorkH: 1040,
+      );
+      expect(s.left, 0, reason: 'no left headroom at the left edge');
+      expect(s.top, 0, reason: 'no top headroom at the top edge');
+    });
+
+    test('headroom is exactly the cursor-to-edge distance (reserve to edge)',
+        () {
+      // Cursor 120 px from the left edge, ample top room: left reserves exactly the
+      // 120px cursor-to-edge distance (window origin lands ON the work-area edge =
+      // the C++ clamp target, so no clamp mismatch); top reserves its full 900px.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 120,
+        cursorWorkY: 900,
+        screenWorkW: 1920,
+        screenWorkH: 1040,
+      );
+      expect(s.left, -120, reason: 'left reserved to the 120px edge distance');
+      expect(s.top, -900, reason: 'top reserved to its full edge distance');
+    });
+
+    test('headroom never exceeds the work-area dimension (dirty-data guard)',
+        () {
+      // A cursorWork wider than the work area (only reachable via inconsistent
+      // native data) is clamped to the work-area dimension so the reserved origin
+      // still lands on-screen. Normal data has cursorWork <= screenWork already.
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 5000,
+        cursorWorkY: 900,
+        screenWorkW: 500,
+        screenWorkH: 1040,
+      );
+      expect(s.left, -500, reason: 'clamped to the work-area width (500)');
+    });
+
+    test('no work area reported (0) degenerates to no reservation (pre-fix)',
+        () {
+      final ({double left, double top}) s = computeCascadeHeadroomSeed(
+        cursorWorkX: 0,
+        cursorWorkY: 0,
+        screenWorkW: 0,
+        screenWorkH: 0,
+      );
+      expect(s.left, 0, reason: 'no work area -> no floor (pre-fix geometry)');
+      expect(s.top, 0);
+    });
+
+    test('the seed is never positive (would clip the root inward)', () {
+      // Whatever the inputs, the floor only ever reserves OUTWARD (<= 0). A
+      // positive seed would pull the origin inward and clip the pinned root card.
+      for (final double cx in const <double>[0, 50, 200, 1000, 5000]) {
+        for (final double cy in const <double>[0, 50, 200, 1000, 5000]) {
+          final ({double left, double top}) s = computeCascadeHeadroomSeed(
+            cursorWorkX: cx,
+            cursorWorkY: cy,
+            screenWorkW: 1920,
+            screenWorkH: 1040,
+          );
+          expect(s.left, lessThanOrEqualTo(0),
+              reason: 'left seed never positive');
+          expect(s.top, lessThanOrEqualTo(0),
+              reason: 'top seed never positive');
+        }
+      }
+    });
+  });
+
+  // TODO-1231 (BUG-670) -- the CORE root-cause guard: the reserved cascade floor
+  // must be a lower bound on the window-local origin of EVERY cascade card that
+  // computeFrameRect can ever produce, at ANY depth. Because the host freezes the
+  // union-bbox origin at the floor (measureAndReport pulls minLeft out to the
+  // floor), a card whose window-local left/top is >= the floor NEVER moves the
+  // origin, so the pinned parent card has ZERO displacement when it appears. This
+  // sweeps every anchor position across the work area (a child/grandchild can be
+  // anchored anywhere inside an on-screen parent card) and asserts the invariant;
+  // the OLD one-card floor FAILED it whenever cursorWork > card (exactly the
+  // deep-cascade lurch users kept seeing).
+  group('TODO-1231 (BUG-670) floor covers every cascade card (geometric guard)',
+      () {
+    const double screenW = 1920;
+    const double screenH = 1040;
+    const double cardW = 360;
+    const double cardH = 480;
+
+    void assertFloorCoversAllAnchors({
+      required double cursorWorkX,
+      required double cursorWorkY,
+      required bool isVertical,
+    }) {
+      final ({double left, double top}) floor = computeCascadeHeadroomSeed(
+        cursorWorkX: cursorWorkX,
+        cursorWorkY: cursorWorkY,
+        screenWorkW: screenW,
+        screenWorkH: screenH,
+      );
+      // The window is positioned at the cursor; anchors + computeFrameRect work in
+      // the work-area-absolute domain, then map back to window-local by subtracting
+      // the cursor work-area offset (mirrors _frameRectMap / selectionScreenOffset
+      // in global_lookup_render.dart).
+      for (double ax = 0; ax <= screenW; ax += 160) {
+        for (double ay = 0; ay <= screenH; ay += 130) {
+          final GlobalLookupFrameRect r = computeFrameRect(
+            selectionRect: Rect.fromLTWH(ax, ay, 40, 18),
+            screenW: screenW,
+            screenH: screenH,
+            maxWidth: cardW,
+            maxHeight: cardH,
+            isVertical: isVertical,
+          );
+          final double windowLocalLeft = r.left - cursorWorkX;
+          final double windowLocalTop = r.top - cursorWorkY;
+          expect(windowLocalLeft, greaterThanOrEqualTo(floor.left - 1e-6),
+              reason: 'anchor ($ax,$ay) card left must be >= reserved floor '
+                  '(vertical=$isVertical cursor=$cursorWorkX,$cursorWorkY)');
+          expect(windowLocalTop, greaterThanOrEqualTo(floor.top - 1e-6),
+              reason: 'anchor ($ax,$ay) card top must be >= reserved floor '
+                  '(vertical=$isVertical cursor=$cursorWorkX,$cursorWorkY)');
+        }
+      }
+    }
+
+    test(
+        'horizontal cascade: floor covers all cards from a bottom-right cursor',
+        () {
+      // The exact user scenario: word near the bottom-right, children cascade
+      // up/left. The one-card floor (-360,-480) was exceeded by cards near the
+      // top-left edge (~ -1700,-900); the edge floor covers them all.
+      assertFloorCoversAllAnchors(
+          cursorWorkX: 1700, cursorWorkY: 900, isVertical: false);
+    });
+
+    test('vertical cascade: floor covers all cards from a bottom-right cursor',
+        () {
+      assertFloorCoversAllAnchors(
+          cursorWorkX: 1700, cursorWorkY: 900, isVertical: true);
+    });
+
+    test('floor covers all cards for cursors sampled across the work area', () {
+      for (final double cx in const <double>[300, 700, 1200, 1700]) {
+        for (final double cy in const <double>[200, 500, 800, 1000]) {
+          assertFloorCoversAllAnchors(
+              cursorWorkX: cx, cursorWorkY: cy, isVertical: false);
+          assertFloorCoversAllAnchors(
+              cursorWorkX: cx, cursorWorkY: cy, isVertical: true);
+        }
+      }
+    });
+  });
 }
 
 void _assertFinitePositive(GlobalLookupFrameRect r) {

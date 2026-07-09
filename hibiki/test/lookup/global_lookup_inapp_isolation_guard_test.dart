@@ -226,6 +226,292 @@ void main() {
               'native RevealStack positions + sizes the window to the bbox');
     });
 
+    test('TODO-1231 P1: __hasChildPopup rides its own channel, not the body',
+        () {
+      // Baking the flag into the per-frame body made the parent settingsJs change
+      // on every nested open/close, so the host re-eval'd the WHOLE body (a
+      // renderPopup() card rebuild) = the "父弹窗闪烁". It now rides a dedicated
+      // descriptor field + a host applyHasChildPopup one-liner, so the body stays
+      // byte-identical and renderPayload can SKIP the re-render. BUG-434 behaviour
+      // (parent-card tap closes the child) is preserved (popup.js reads it live).
+      expect(render.contains("map['hasChildPopup'] = i < payloads.length - 1"),
+          isTrue,
+          reason:
+              'has-child is a per-frame descriptor field (index<len-1), NOT '
+              'baked into settingsJs');
+      expect(render.contains('window.__hasChildPopup ='), isFalse,
+          reason: 'the settings body must NOT bake __hasChildPopup anymore '
+              '(that forced a full re-render on every nested open/close)');
+      expect(hostJs.contains('function applyHasChildPopup('), isTrue,
+          reason: 'the host applies __hasChildPopup on its own cheap channel');
+      expect(hostJs.contains('window.__hasChildPopup ='), isTrue,
+          reason:
+              'applyHasChildPopup evals the boolean inside the frame realm');
+      // renderPayload must gate the full re-eval on a real body change.
+      expect(
+          hostJs
+              .contains('record.injectedSettingsJs !== descriptor.settingsJs'),
+          isTrue,
+          reason:
+              'renderPayload re-evals the body ONLY when it actually changed '
+              '(otherwise a nested open/close rebuilt the parent card)');
+    });
+
+    test('TODO-1231 P2: layer shift is C++-ordered after SetWindowPos', () {
+      // measureAndReport must NOT shift the layer synchronously (that raced the
+      // window move across vsync -> the parent card lurched then snapped back).
+      // The shift rides commitLayerShift, which C++ RevealStack calls AFTER
+      // SetWindowPos so the window move and content shift are causally ordered.
+      expect(hostJs.contains('function commitLayerShift('), isTrue,
+          reason:
+              'the host exposes a commit hook for the deferred layer shift');
+      final int mAt = hostJs.indexOf('function measureAndReport(');
+      final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
+      expect(mAt >= 0 && mEnd > mAt, isTrue);
+      final String measureBody = hostJs.substring(mAt, mEnd);
+      expect(measureBody.contains('layerEl.style.left'), isFalse,
+          reason: 'measureAndReport must not shift the layer synchronously '
+              '(TODO-1231 P2: it races the window move across vsync)');
+      // C++ RevealStack triggers the commit AFTER SetWindowPos.
+      final int rsAt = cpp.indexOf('void GlobalLookupWindow::RevealStack(');
+      expect(rsAt, greaterThan(-1));
+      final int rsEnd = cpp.indexOf('void GlobalLookupWindow::ResizeTo(', rsAt);
+      expect(rsEnd, greaterThan(rsAt));
+      final String rsBody = cpp.substring(rsAt, rsEnd);
+      expect(rsBody.contains('commitLayerShift'), isTrue,
+          reason: 'RevealStack calls commitLayerShift via ExecuteScript');
+      expect(
+          rsBody.indexOf('SetWindowPos') < rsBody.indexOf('commitLayerShift'),
+          isTrue,
+          reason: 'the window moves FIRST, then the layer shift is applied');
+      // The bbox origin (CSS px) is carried to native so the host negates it.
+      expect(channel.contains("'left': left"), isTrue,
+          reason: 'revealStack forwards the bbox origin (CSS px) to native');
+    });
+
+    test(
+        'TODO-1231 (BUG-583): beginLookup re-gates WITHOUT observing the stale '
+        'card (no premature reveal off the previous lookup)', () {
+      // beginLookup used to call observeContent, which synchronously re-satisfied
+      // content-ready off the reused iframe's still-present old .glossary-content
+      // and fired a premature overlaySize -> the OLD card flashed at the cursor
+      // before the fresh render ("第一个弹窗出现时闪"). It must now only re-gate
+      // content-ready=false + tear down the stale observer/timer; the fresh
+      // content-ready comes from the FOLLOWING renderStack, never here.
+      final int bAt = hostJs.indexOf('function beginLookup(');
+      expect(bAt, greaterThan(-1), reason: 'beginLookup must exist');
+      final int bEnd = hostJs.indexOf('function renderStack(', bAt);
+      expect(bEnd, greaterThan(bAt));
+      final String beginBody = hostJs.substring(bAt, bEnd);
+      expect(beginBody.contains('observeContent('), isFalse,
+          reason:
+              'beginLookup must NOT re-observe the stale card (that fired a '
+              'premature overlaySize off the previous lookup — BUG-583)');
+      expect(beginBody.contains("setAttribute(ATTR_CONTENT_READY, 'false')"),
+          isTrue,
+          reason:
+              'beginLookup still re-gates the content half of the reveal gate');
+      // renderPayload re-marks content-ready for an UNCHANGED body that already
+      // rendered, so a same-word re-lookup is not left waiting for a popupRendered
+      // that never comes now that beginLookup no longer re-observes.
+      final int rAt = hostJs.indexOf('function renderPayload(');
+      expect(rAt, greaterThan(-1));
+      final int rEnd = hostJs.indexOf('function removeMissing(', rAt);
+      expect(rEnd, greaterThan(rAt));
+      final String renderBody = hostJs.substring(rAt, rEnd);
+      expect(renderBody.contains('} else if (hasContent(record)) {'), isTrue,
+          reason:
+              'an unchanged body with rendered content re-marks the gate so a '
+              'same-word re-lookup reveals (no stuck gate — BUG-583)');
+    });
+
+    test(
+        'TODO-1231 (BUG-583): the overlay window origin is ratcheted '
+        'outward-only (nested close does not lurch the pinned root)', () {
+      // A nested up/left cascade CLOSE moved the window top-left back inward while
+      // the host layer shift lagged ~1 frame across the DWM/WebView2 boundary ->
+      // the pinned root card lurched ("消失第二个弹窗时闪"). _applyOverlayBox now
+      // ratchets the origin so the min-corner only ever moves OUTWARD within a
+      // session; on close the window top-left + layer shift hold and only the far
+      // edges shrink. The ratchet lives in a pure, unit-tested layout helper.
+      final String layout = read('lib/src/lookup/global_lookup_layout.dart');
+      expect(
+          layout.contains('RatchetedOverlayBox ratchetOverlayOrigin('), isTrue,
+          reason: 'the outward-only origin ratchet is a pure layout helper');
+      expect(controller.contains('ratchetOverlayOrigin('), isTrue,
+          reason: '_applyOverlayBox must route the bbox through the ratchet');
+      final int aAt = controller.indexOf('void _applyOverlayBox(');
+      expect(aAt, greaterThan(-1));
+      final int aEnd = controller.indexOf('void _applyOverlayScalar(', aAt);
+      expect(aEnd, greaterThan(aAt));
+      final String applyBody = controller.substring(aAt, aEnd);
+      expect(applyBody.contains('ratchetOverlayOrigin('), isTrue,
+          reason:
+              '_applyOverlayBox uses the ratchet to compute the window box');
+      expect(
+          applyBody.contains('ratcheted.left') &&
+              applyBody.contains('ratcheted.top'),
+          isTrue,
+          reason:
+              'revealStack is fed the ratcheted origin (window + layer shift '
+              'both use the held outward min-corner)');
+      // The ratchet is reset per fresh lookup + on dismiss so a session starts
+      // unconstrained (origin re-anchors at the cursor).
+      expect(controller.contains('_ratchetLeft = double.infinity'), isTrue,
+          reason: 'the ratchet is reset to no-constraint per session');
+    });
+
+    test(
+        'TODO-1231 v2 (BUG-583): the bbox MIN-corner (window origin) follows '
+        'only content-ready shells so a hidden child never lurches the parent',
+        () {
+      // The residual "父弹窗出现子弹窗时闪一下": a freshly-opened, still-gated-
+      // hidden child that cascades up/left used to drag the union bbox MIN-corner
+      // outward, moving the window origin (SetWindowPos) while the compensating
+      // commitLayerShift lands ~1 frame later across the DWM/WebView2 boundary ->
+      // the pinned parent card lurched. measureAndReport now sources the MIN-
+      // corner (origin -> window position + layer shift) ONLY from content-ready
+      // (visible) shells, while the MAX-corner (window size, which never moves the
+      // parent) still includes EVERY placed shell so the window pre-grows to cover
+      // the hidden child. A bootstrap fallback (no shell content-ready yet) keeps
+      // the first reveal byte-identical.
+      final int mAt = hostJs.indexOf('function measureAndReport(');
+      expect(mAt, greaterThan(-1));
+      final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
+      expect(mEnd, greaterThan(mAt));
+      final String measureBody = hostJs.substring(mAt, mEnd);
+      // The MIN-corner assignment must be gated on the shell being content-ready.
+      expect(measureBody.contains('if (record.contentReady) {'), isTrue,
+          reason:
+              'the window origin (min-corner) only follows content-ready shells '
+              '(a hidden child must not move the pinned parent — BUG-583)');
+      // The MAX-corner / bootstrap fallback tracks every placed shell.
+      expect(
+          measureBody.contains('minLeftAll') &&
+              measureBody.contains('minTopAll'),
+          isTrue,
+          reason:
+              'the far edges (window size) + the bootstrap origin fallback see '
+              'ALL placed shells so the window pre-grows to cover a hidden child');
+      // Bootstrap: before any shell is content-ready the origin falls back to all
+      // shells so the FIRST reveal geometry is unchanged (Never break userspace).
+      expect(
+          measureBody.contains('minLeft = minLeftAll') &&
+              measureBody.contains('minTop = minTopAll'),
+          isTrue,
+          reason:
+              'no-content-ready bootstrap falls back to all shells so the first '
+              'root reveal is byte-identical to the pre-fix behaviour');
+    });
+
+    test(
+        'TODO-1231 v3 (BUG-583): reveal-ready is gated on the committed window '
+        'origin covering the shell so an up/left child never paints clipped',
+        () {
+      // The residual "子弹窗闪": an up/left-cascading child is placed at negative
+      // window-local coords, but the window origin only moves to cover it when it
+      // becomes content-ready (the MIN-corner split). Its CSS reveal gate opened at
+      // content-ready — BEFORE the window round-trips to cover it — so it painted
+      // CLIPPED at the window edge, then jumped in when commitLayerShift landed.
+      // reveal-ready now flips ONLY once the committed origin (layerOffsetLeft/Top,
+      // set by commitLayerShift = the window origin C++ actually moved to) covers
+      // the shell; commitLayerShift re-checks held shells so an up/left child first
+      // paints IN PLACE. Down-right / root shells stay covered-from-placement.
+      expect(hostJs.contains('function shellCoveredByOrigin('), isTrue,
+          reason:
+              'a shell is revealed only when the committed origin covers it');
+      expect(hostJs.contains('function maybeFlipRevealReady('), isTrue,
+          reason: 'reveal-ready flips through the coverage-gated helper');
+      // renderPayload must route reveal-ready through the gate, NOT flip it
+      // unconditionally (the old setGateFlag(..., ATTR_REVEAL_READY, ...) call).
+      final int rAt = hostJs.indexOf('function renderPayload(');
+      expect(rAt, greaterThan(-1));
+      final int rEnd = hostJs.indexOf('function removeMissing(', rAt);
+      expect(rEnd, greaterThan(rAt));
+      final String renderBody = hostJs.substring(rAt, rEnd);
+      expect(renderBody.contains('maybeFlipRevealReady(record)'), isTrue,
+          reason: 'renderPayload flips reveal-ready via the coverage gate');
+      expect(renderBody.contains('setGateFlag(record, ATTR_REVEAL_READY,'),
+          isFalse,
+          reason: 'renderPayload must NOT flip reveal-ready unconditionally '
+              '(an up/left child would paint clipped — BUG-583)');
+      // commitLayerShift re-checks held shells so a child covered by the new
+      // origin reveals coincident with the window/layer settling.
+      final int cAt = hostJs.indexOf('function commitLayerShift(');
+      expect(cAt, greaterThan(-1));
+      final int cEnd = hostJs.indexOf('function dismissRootWithSlide(', cAt);
+      expect(cEnd, greaterThan(cAt));
+      final String commitBody = hostJs.substring(cAt, cEnd);
+      expect(commitBody.contains('maybeFlipRevealReady(record)'), isTrue,
+          reason:
+              'commitLayerShift flips reveal-ready for shells the new origin '
+              'now covers (child appears in place, not clipped-then-jump)');
+      // beginLookup resets the committed origin so a stale negative origin from a
+      // previous up/left cascade cannot falsely mark the next child as covered.
+      final int bAt = hostJs.indexOf('function beginLookup(');
+      expect(bAt, greaterThan(-1));
+      final int bEnd = hostJs.indexOf('function renderStack(', bAt);
+      expect(bEnd, greaterThan(bAt));
+      final String beginBody = hostJs.substring(bAt, bEnd);
+      expect(
+          beginBody.contains('layerOffsetLeft = 0') &&
+              beginBody.contains('layerOffsetTop = 0'),
+          isTrue,
+          reason:
+              'beginLookup resets the committed origin per fresh lookup so a '
+              'stale negative origin cannot falsely mark a new child covered');
+    });
+
+    test(
+        'TODO-1345 (BUG-583 deeper): a reserved origin FLOOR freezes the window '
+        'origin so an up/left child never lurches the pinned parent', () {
+      // The residual "第二个弹窗出现导致第一个弹窗位置变动": rounds 1-4 let the union
+      // bbox MIN-corner move outward ONCE when an up/left child became content-ready,
+      // which still lurched the pinned parent across the DWM/WebView2 boundary. The
+      // fix reserves cascade headroom toward the screen interior at the FIRST reveal
+      // (Dart computes it from the real screen edges) so the child lands INSIDE the
+      // committed origin and never moves it — zero parent displacement, extending the
+      // down-right zero-lurch guarantee to up/left.
+      final String layout = read('lib/src/lookup/global_lookup_layout.dart');
+      expect(layout.contains('}) computeCascadeHeadroomSeed('), isTrue,
+          reason:
+              'the screen-edge-aware headroom seed is a pure layout helper');
+      // The controller computes the floor from the real work area + pushes it.
+      expect(controller.contains('computeCascadeHeadroomSeed('), isTrue,
+          reason: 'the controller computes the reserved floor after showAt');
+      expect(
+          controller.contains('originFloorLeft: _originFloorLeft') &&
+              controller.contains('originFloorTop: _originFloorTop'),
+          isTrue,
+          reason: '_renderStack pushes the floor on the renderStack payload');
+      // The render builder only carries the floor when it actually reserves.
+      expect(render.contains("payloadObj['originFloor']"), isTrue,
+          reason:
+              'buildStackRenderScript carries the origin floor to the host');
+      // host.js applies the floor as an OUTWARD-only lower bound on the origin.
+      expect(hostJs.contains('function applyOriginFloor('), isTrue,
+          reason: 'the host reads the reserved floor from the render payload');
+      final int mAt = hostJs.indexOf('function measureAndReport(');
+      final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
+      final String measureBody = hostJs.substring(mAt, mEnd);
+      expect(
+          measureBody.contains('if (originFloorLeft < minLeft)') &&
+              measureBody.contains('if (originFloorTop < minTop)'),
+          isTrue,
+          reason: 'measureAndReport pulls the origin OUT to at least the floor '
+              '(a lower bound, never a cap — freezes the origin for an up/left '
+              'child within the floor)');
+      // beginLookup drops the previous lookup\'s floor so it cannot leak.
+      final int bAt = hostJs.indexOf('function beginLookup(');
+      final int bEnd = hostJs.indexOf('function renderStack(', bAt);
+      final String beginBody = hostJs.substring(bAt, bEnd);
+      expect(
+          beginBody.contains('originFloorLeft = 0') &&
+              beginBody.contains('originFloorTop = 0'),
+          isTrue,
+          reason: 'beginLookup resets the reserved floor per fresh lookup');
+    });
+
     test('D1: two-flag reveal gate hides a shell until content + geometry', () {
       // The gate is a declarative CSS attribute selector (single visibility
       // source) flipped by two independent flags; JS never sets inline

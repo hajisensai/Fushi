@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v39 loaded (queue clears on success|duplicate + per-item delete UI; bounded popup)');
+console.log('[Hibiki] content script v43 loaded (TODO-1364: record clip tail pad past subtitle display end)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v39'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v43'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -137,6 +137,42 @@ function hibikiCurrentCueWindowV() {
 }
 try { setInterval(hibikiSampleCue, 200); } catch (_) {}
 
+// TODO-1219 P3：面板行「精确窗」制卡——从字幕面板行查词时带上该行整集拦截的精确 [startMs,endMs]
+// 窗（胜过 hibikiCurrentCueWindowV 的 DOM 采样窗，DOM 采样在暂停/回放/字幕未渲染时不稳）。契约：
+// 每次查词都刷新此变量——面板行查词（hibikiLookupAtPoint 带 cueWindow）设精确窗；mousemove 划词
+// （无 cueWindow）清成 null 回落 DOM 采样。制卡入口 hibikiEnqueue 优先消费它。null 表示无精确窗。
+let hibikiPendingCueWindow = null;
+
+// ── TODO-1219 P1：整集字幕（主世界 netflix-bridge.js 抓清单 timedtext → 这里解析存档）──
+// P1 仅存档 + console 验证；P2 面板消费 hibikiEpisodeCues。DOM 采样 hibikiCueHist 仍作回退不删。
+// 解析器 parseWebVtt / parseTtml 定义在 subtitle-adapters.js（同隔离世界、先于 content.js 加载）。
+const hibikiEpisodeCues = Object.create(null); // key: `${videoId}|${lang}` -> [{startMs,endMs,text}]
+// TODO-1219 P2：把整集字幕存档暴露到 window，供隔离世界内后加载的 subtitle-panel.js 消费
+// （面板只依赖 window.hibikiEpisodeCues 这一个契约，不跨文件依赖 const 词法作用域）。同一对象
+// 引用，后续 hibikiOnFullEpisodeCues 就地写入即对面板可见。
+window.hibikiEpisodeCues = hibikiEpisodeCues;
+function hibikiOnFullEpisodeCues(msg) {
+  try {
+    const cues = msg.format === 'ttml' ? parseTtml(msg.text) : parseWebVtt(msg.text);
+    if (!cues || !cues.length) return;
+    const vid = String(msg.videoId || netflixVideoIdFromPath(location.pathname) || '');
+    const key = vid + '|' + (msg.lang || 'und');
+    hibikiEpisodeCues[key] = cues;
+    try {
+      console.log('[Hibiki][TODO-1219] full-episode cues intercepted:', key, cues.length, 'cues; first:', cues.slice(0, 3));
+    } catch (_) {}
+    // TODO-1219 P2：通知面板有新轨可用（切集/切轨会重放清单）。面板在同一隔离世界、于 content.js
+    // 之后加载，注册此钩子；未加载时静默跳过。
+    try {
+      if (typeof window.hibikiSubtitlePanelOnCues === 'function') window.hibikiSubtitlePanelOnCues(key);
+    } catch (_) {}
+  } catch (_) {}
+}
+window.addEventListener('message', (e) => {
+  if (e.source !== window || !e.data || e.data.__hibikiNf !== 'cues') return;
+  hibikiOnFullEpisodeCues(e.data);
+});
+
 // ── 制卡队列（持久化：chrome.storage.local，跨刷新/跨剧集/跨会话累积，随时点击生成）──
 // 内存镜像 hibikiQueue 以 storage 为真相源；storage.onChanged 让多标签/重载后计数一致。
 let hibikiQueue = [];
@@ -158,11 +194,48 @@ async function hibikiRemoveQueued(okIds) {
 // 制卡结果分类（TODO-1184）：卡已建(success)或已存在(duplicate) → 出队(done，队列才会清)；
 // Anki 未配置(notConfigured) → 留队 + 提示用户去配（配好再点生成即可，出队会静默丢词）；
 // 其余(error / 网络失败 / 上下文失效) → 留队下次重试。只有 done 才 push 进 okIds 被剔除。
+// TODO-1331：把制卡请求的 HTTP/网络层失败翻成用户能懂的原因。resp 形状见 background.js：
+// HTTP 成功 {ok:true,status,data}；非 2xx {ok:false,status,data:null}；fetch 抛异常
+// （连接被拒/超时/DNS）{ok:false,error}。据此分 401 鉴权 / 404 端点 / 4xx-5xx 服务端 /
+// 连不上（无 status）四类，让扩展弹明确 ✗ 原因，而不是静默 retry 到「你看日志却查不到」。
+function hibikiMineHttpFailureReason(resp) {
+  if (!resp) return '制卡无响应（扩展已更新？刷新页面 F5 重试）';
+  const status = typeof resp.status === 'number' ? resp.status : 0;
+  if (status === 401) return '鉴权失败(401)：扩展 token 与 Hibiki 不一致，去扩展设置核对 API key';
+  if (status === 404) return '端点不存在(404)：Hibiki 未开 Yomitan API server 或端口不对';
+  if (status >= 500) return '服务端错误(' + status + ')：制卡出错，去 Hibiki 错误日志页查详情';
+  if (status >= 400) return '请求被拒(' + status + ')：' + (resp.error || '检查扩展设置');
+  // ok:false 且无 status = fetch 抛异常（连接被拒/超时/DNS）：server 没开或主机/端口错。
+  return '连不上 Hibiki(' + (resp.error || '连接被拒/超时') + ')：确认已开 Yomitan API server 且主机/端口正确';
+}
 function hibikiClassifyMineResp(resp) {
-  if (!resp || !resp.ok || !resp.data) return 'retry';
-  const r = resp.data.result;
-  if (r === 'success' || r === 'duplicate') return 'done';
+  // TODO-1331：HTTP/网络层失败不再静默 retry——弹 ✗ 原因让用户看得见（YouTube/Netflix
+  // 批量制卡共用本分类器，两条链路的 HTTP 失败都据此显因）。
+  if (!resp || !resp.ok || !resp.data) {
+    if (typeof window.hibikiToast === 'function') {
+      try { window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp)); } catch (_) {}
+    }
+    return 'retry';
+  }
+  const d = resp.data;
+  const r = d.result;
+  // TODO-1303：服务端现在回带诊断（message=失败原因/音频落空警告，
+  // detail=技术细节）。末尾弹 toast 显因，终结「制卡失败报成功 + 没提示」；
+  // app 侧已把失败写进错误日志。
+  const reason = (d.message || d.detail || '').toString();
+  if (r === 'success' || r === 'duplicate') {
+    // 部分成功：卡建好了但单词音频落空（message 非空）→ 与真成功区分，
+    // 弹警告但仍算 done（卡确实建了）。
+    if (r === 'success' && reason && typeof window.hibikiToast === 'function') {
+      try { window.hibikiToast('⚠ ' + reason); } catch (_) {}
+    }
+    return 'done';
+  }
   if (r === 'notConfigured') return 'unconfigured';
+  // error / 其它：失败，弹原因（无原因回落通用文案）后重试。
+  if (typeof window.hibikiToast === 'function') {
+    try { window.hibikiToast('✗ ' + (reason || '制卡失败，稍候再试')); } catch (_) {}
+  }
   return 'retry';
 }
 function hibikiQueueLoad() {
@@ -181,11 +254,21 @@ function hibikiQueueKey(q) {
   return String(word) + ' ' + String(sent) + ' ' + String(site) + ' ' + String(vid);
 }
 window.hibikiEnqueue = function (fields, sentence) {
-  const w = hibikiCurrentCueWindowV();
+  // TODO-1219 P3：若本次查词来自字幕面板行（hibikiPendingCueWindow 非空），用该行整集拦截的精确
+  // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 hibikiCurrentCueWindowV 的 DOM 采样窗。下方
+  // startV-200/endV+200 录制边距 + hibikiQueueKey 去重两路不变。
+  const cw = hibikiPendingCueWindow;
+  const w = cw ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs } : hibikiCurrentCueWindowV();
   if (!w) return { ok: false, reason: 'no-cue' };
   const site = hibikiSite();
   const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
   const netflixId = site === 'netflix' ? hibikiNetflixId() : null;
+  // BUG-676（TODO-1361 ③）：入队即抓当前网飞剧名（此刻在正确剧集页），随卡持久化 → 生成时发给
+  // 服务端当 documentTitle（Anki 视频名字段）。YouTube 走服务端解析标题，无需在此抓。
+  const documentTitle =
+      site === 'netflix' && typeof netflixDocumentTitle === 'function'
+          ? netflixDocumentTitle()
+          : '';
   const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',
@@ -193,6 +276,7 @@ window.hibikiEnqueue = function (fields, sentence) {
     site: site,
     youtubeId: youtubeId,
     netflixId: netflixId,
+    documentTitle: documentTitle,
   };
   // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
   const key = hibikiQueueKey(item);
@@ -287,10 +371,21 @@ async function hibikiRunNetflixBatch() {
   // TODO-1216：藏字幕轨（GIF 不烧字幕）+ 藏 Netflix 控制/进度条——逐句 seek 与结尾 pause 会强制
   // Netflix 显控制条，落在录制窗会被录进 clip。多选择器兜底 Netflix 改类名（同下方字幕兜底策略）。
   hideStyle.textContent =
-    '.player-timedtext{visibility:hidden!important}' +
+    // TODO-1219 P2：字幕列表面板 + 重开小片同批隐藏（GIF 不该录进面板）；P3 再补录制前撤推挤 margin。
+    // TODO-1270 Bug B：Hibiki 自己的「生成中」浮层(#hibiki-toast)也在被 tabCapture 录进 GIF
+    // （用户报「底部生成中条送给了网飞」）→ 整场批量期间一并隐藏，进度改由扩展图标红点徽标传达。
+    '.player-timedtext,#hibiki-subtitle-panel,#hibiki-subtitle-reopen,#hibiki-toast{visibility:hidden!important}' +
+    // TODO-1270 Bug B：Netflix 自己的返回按钮(左上)+举报旗帜(右上)是顶部控制层，逐句 seek/pause
+    // 会强制其显示 → 落进录制窗。底部控制条之外再隐藏顶部返回/举报容器（多选择器兜底改类名）。
     '.watch-video--bottom-controls-container,.PlayerControlsNeo__layout,' +
+    '.watch-video--back-container,[data-uia="control-back"],[data-uia="back-to-browse"],' +
+    // 举报旗帜的真实容器 = .watch-video--flag-container（见本文件取词兜底覆盖层清单）。
+    '.watch-video--flag-container,[data-uia="player-report-a-problem"],[data-uia="report-a-problem-link"],' +
     '[data-uia="controls-standard"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
+  // TODO-1219 P3：撤销字幕面板对播放器的推挤（video 恢复全宽），否则录制画面右侧带面板留出的
+  // 黑边。面板此刻已被 hideStyle 隐藏；这里只还原播放器宽度。finally 里 hideStyle.remove() 后重挂。
+  try { if (typeof window.hibikiSubtitlePanelSuspendPush === 'function') window.hibikiSubtitlePanelSuspendPush(); } catch (_) {}
   const prevCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
   let done = 0, fail = 0, unconfigured = 0;
@@ -320,11 +415,19 @@ async function hibikiRunNetflixBatch() {
       let cls = 'retry';
       try {
         await seekTo(Math.max(0, q.startV / 1000));
-        await sleep(150); // 让首帧稳定
-        // 先确保真的在播（自动播放策略可能拦；重试一次）。仍暂停 → 跳过本句，不录一段冻结帧。
+        // TODO-1335 ④：seek 落点后**先等缓冲就绪再开录**，且缓冲期保持暂停以不吃掉入队预留
+        // 的 200ms 头部提前量（seek 目标本就是 cueStart-200）。Netflix seek 完成(seeked)时数据
+        // 常还没缓冲到位(readyState=HAVE_CURRENT_DATA=2)，此刻 play+beginClip 会录进 stall 冻结
+        // 帧，而 offscreen 墙钟时长照走 → 录制起点是冻结帧、时长虚长不准（用户报「录制时长不
+        // 精准/没等缓冲完」）。暂停态等 readyState>=HAVE_FUTURE_DATA(3)（seek 目标已缓冲、可从该
+        // 点顺畅前进）再 play + beginClip，录制起点即 cueStart-200 缓冲点、内容立即推进。
+        try { v.pause(); } catch (_) {}
+        await hibikiWaitForBuffered(v, 3000);
+        // TODO-1270 Bug C：先确保真的在播（自动播放策略可能拦），但**一旦在播立刻开录**——不要用
+        // 固定 warmup sleep 吃掉入队时预留的 200ms 头部提前量（seek 目标本就是 cueStart-200），
+        // 否则录制起点漂到 cueStart 之后 → 用户报「少了一点开头」。仍暂停 → 跳过本句，不录冻结帧。
         try { await v.play(); } catch (_) {}
-        await sleep(200);
-        if (v.paused) { try { await v.play(); } catch (_) {} await sleep(200); }
+        for (let i = 0; i < 8 && v.paused; i++) { try { await v.play(); } catch (_) {} await sleep(60); }
         if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
         const beginResp = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
         began = !!(beginResp && beginResp.ok);
@@ -335,10 +438,17 @@ async function hibikiRunNetflixBatch() {
         // 作参照 ref），**再**录到字幕变成别句(=本句结束)才停。不能一开始就比 refText——seek 后先采到
         // 的是残留/空字幕，会被误判成「已结束」→ 录一瞬就停（用户报「一下就停了」根因）。
         // hardEnd 只是字幕检测失效（字幕关/相邻同文本）时的安全上限。
+        // TODO-1364：字幕清空/变句 = Netflix 字幕 **display end**，常早于本句 **语音 end**；且入队窗
+        // 的 200ms 尾部预留（q.endV = cueEnd+200）在回放录制侧从未被消费（见 hibikiCurrentCueWindowV
+        // 注释「Netflix 回放时会按字幕变化重新定 end」），录制侧只保头部 200ms、从不补尾 → 检测到句末
+        // 就立即 pause+endClip 会截掉尾段音频（用户报「音频少了后面一段」根因）。修复：检测到句末后不
+        // 立即停，再多录一段尾部余量（与 200ms 头部提前量对称、略放宽以覆盖字幕清空后的残余语音）再停。
         const startSec = Math.max(0, q.startV) / 1000;
         const hardEnd = startSec + 12; // 12s 硬上限
         const deadline = Date.now() + 16000;
+        const kNfClipTailPadSec = 0.35; // 句末尾部余量（秒）：覆盖字幕 display end 之后的残余语音，防截尾
         let ref = '';
+        let endAtSec = 0; // 检测到句末后的目标停录视频时间（= 句末视频时间 + 尾部余量）；0 = 尚未到句末
         while (v.currentTime < hardEnd && Date.now() < deadline) {
           await sleep(120);
           const nowText = hibikiSubtitleTextNow();
@@ -346,7 +456,11 @@ async function hibikiRunNetflixBatch() {
             if (nowText && v.currentTime > startSec + 0.3) ref = nowText; // 抓到本句字幕作参照
             continue;
           }
-          if (nowText !== ref) break; // 字幕变成别句 = 本句结束
+          if (!endAtSec) {
+            if (nowText !== ref) endAtSec = v.currentTime + kNfClipTailPadSec; // 句末：再录一段尾部余量
+            continue;
+          }
+          if (v.currentTime >= endAtSec) break; // 尾部余量录满 → 停录（尾段音频完整）
         }
         try { v.pause(); } catch (_) {}
         const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
@@ -354,7 +468,9 @@ async function hibikiRunNetflixBatch() {
         if (clip && clip.ok && clip.clipBase64) {
           cls = await new Promise((resolve) => {
             chrome.runtime.sendMessage(
-              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
+              // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
+              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
+                documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
                 try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
                 resolve(hibikiClassifyMineResp(resp));
@@ -379,6 +495,8 @@ async function hibikiRunNetflixBatch() {
     // V16#3：无论批量循环正常结束还是中途抛错，都必还原隐藏字幕的样式 + 光标，绝不把
     // cursor:none / 藏字幕样式泄漏到用户可见界面（循环外抛异常留可见副作用的根因）。
     try { hideStyle.remove(); } catch (_) {}
+    // TODO-1219 P3：录制结束（成功或异常）后重挂面板推挤，播放器回到收窄态、面板重新贴右显示。
+    try { if (typeof window.hibikiSubtitlePanelResumePush === 'function') window.hibikiSubtitlePanelResumePush(); } catch (_) {}
     document.body.style.cursor = prevCursor;
     // TODO-1175/1217：仅当批量前正在播放时才回原位并续播（暂停态制卡不回跳，消除「跳过去又秒挑
     // 回来」的刺眼跳动）；批量前是暂停态则停在当前句、不回跳。
@@ -391,6 +509,21 @@ async function hibikiRunNetflixBatch() {
   if (unconfigured > 0 && typeof window.hibikiToast === 'function') {
     window.hibikiToast('部分未生成：Anki 未配置，请在 Hibiki 中配置 Anki 后重试（保留 ' + fail + '）');
   }
+}
+
+// TODO-1335 ④：等 video 在当前播放点缓冲就绪（readyState>=HAVE_FUTURE_DATA=3，可从该点顺畅
+// 前进）。用于 seek 后、开录前的缓冲门（暂停态调用 → currentTime 不推进 → 不吃头部提前量）。
+// maxMs 上界兜底：弱网/受阻迟迟不就绪时也继续（退化到旧行为，绝不无限等卡死批量）。
+function hibikiWaitForBuffered(v, maxMs) {
+  return new Promise((resolve) => {
+    if (!v || v.readyState >= 3) { resolve(); return; }
+    const deadline = Date.now() + (maxMs || 3000);
+    const tick = () => {
+      if (!v || v.readyState >= 3 || Date.now() >= deadline) { resolve(); return; }
+      setTimeout(tick, 80);
+    };
+    setTimeout(tick, 80);
+  });
 }
 
 // 等 Netflix 播放器就绪（切集后 video 需时间加载）。
@@ -454,9 +587,28 @@ async function hibikiMaybeResumeNetflixBatch(fromLoad) {
       try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + st.episodes[next] }); } catch (_) {}
     } else {
       try { chrome.runtime.sendMessage({ type: 'nfFinish', originalUrl: st.originalUrl }); } catch (_) {}
-      window.hibikiToast('✓ 全部剧集生成完成');
+      // BUG-675（TODO-1361 ②）：录制失败的卡片留在队列（未丢失），但旧实现一律报「✓ 全部完成」
+      // 掩盖了被跳过的卡，用户以为都生成了。批量结束时清点本次剧集仍残留的网飞待生成项，>0 就明确
+      // 告知「N 张录制失败未生成，可再点生成重试」，把静默跳过变成可见可重试。
+      let hibikiRemainingNf = 0;
+      try {
+        const hibikiGot = await chrome.storage.local.get(['hibikiQueue']);
+        const hibikiQ = Array.isArray(hibikiGot.hibikiQueue) ? hibikiGot.hibikiQueue : [];
+        hibikiRemainingNf = hibikiQ.filter(
+            (it) => it && it.site === 'netflix' && st.episodes.indexOf(it.netflixId) >= 0).length;
+      } catch (_) {}
+      if (hibikiRemainingNf > 0) {
+        window.hibikiToast('✓ 生成完成：' + hibikiRemainingNf + ' 张录制失败未生成，可再点生成重试');
+      } else {
+        window.hibikiToast('✓ 全部剧集生成完成');
+      }
     }
   } finally {
+    // V16 遗留缺口：跳集前停录（第 449 行）在正常路径；若 hibikiRunNetflixBatch 抛错
+    // 向上传播，该行被跳过 → offscreen 的 MediaStream 不释放、继续录，随后切集导航就
+    // 变成「加载中录屏」(M7375) + 流泄漏。故在 finally 里兜底停录（stopTabCapture 幂等，
+    // 正常路径已停时重复调用无害）。
+    try { await chrome.runtime.sendMessage({ type: 'nfStopCapture' }); } catch (_) {}
     hibikiNfBatchRunning = false;
   }
 }
@@ -477,6 +629,47 @@ try {
   });
 } catch (_) {}
 try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } catch (_) {}
+
+// ── BUG-674（TODO-1361 ①）：隐藏网飞剧末「下一集」按钮 ──
+// 纯视觉：只注入 CSS 隐藏 Netflix 自己的 seamless「下一集」按钮 + 剧末续播卡，绝不碰 DRM/seek/自动
+// 切集计时器（不改变播放行为）。由 options 开关 netflixHideNextEpisode 门控——缺省=隐藏（用户诉求），
+// 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建按钮也照样命中。
+const HIBIKI_NF_HIDE_NEXT_ID = 'hibiki-nf-hide-next';
+function hibikiNetflixNextEpisodeSelectors() {
+  return [
+    '[data-uia="next-episode-seamless-button"]',
+    '[data-uia="next-episode-seamless-button-draining"]',
+    '[data-uia="watch-video-post-play-back-to-browse"]',
+    '.watch-video--evidence-overlay-container',
+    '.nfp.PostPlay',
+  ];
+}
+function hibikiApplyNetflixNextEpisodeHiding(hide) {
+  if (hibikiSite() !== 'netflix') return;
+  const existing = document.getElementById(HIBIKI_NF_HIDE_NEXT_ID);
+  if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
+  if (existing) return;
+  const style = document.createElement('style');
+  style.id = HIBIKI_NF_HIDE_NEXT_ID;
+  style.textContent =
+      hibikiNetflixNextEpisodeSelectors().join(',') + '{display:none!important}';
+  try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
+}
+function hibikiReadNextEpisodeHide() {
+  try {
+    chrome.storage.local.get(['netflixHideNextEpisode'], (r) => {
+      hibikiApplyNetflixNextEpisodeHiding(!(r && r.netflixHideNextEpisode === false));
+    });
+  } catch (_) { hibikiApplyNetflixNextEpisodeHiding(true); }
+}
+try {
+  hibikiReadNextEpisodeHide();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.netflixHideNextEpisode) {
+      hibikiApplyNetflixNextEpisodeHiding(changes.netflixHideNextEpisode.newValue !== false);
+    }
+  });
+} catch (_) {}
 
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见
@@ -501,9 +694,106 @@ function hibikiEnsureContainer() {
   return c;
 }
 
+// TODO-1272：被查词高亮的覆盖层（扩展自绘、不改宿主页 DOM）。null=未画。
+let hibikiHighlightLayer = null;
+
+// 撤掉覆盖层高亮。弹窗关闭 / 切到新词重画前调用。宿主页事件碰不到它，只有这里主动撤。
+function hibikiClearHighlightOverlay() {
+  if (hibikiHighlightLayer) {
+    try { hibikiHighlightLayer.remove(); } catch (_) { /* 已脱离文档 */ }
+    hibikiHighlightLayer = null;
+  }
+}
+
+// TODO-1279：清掉浏览器原生文本选区（window.getSelection 的蓝色高亮）。只动原生 DOM Selection，
+// 不碰我们自绘的 #hibiki-highlight-overlay 覆盖层（独立 <div>，与原生选区无关），也不碰
+// hoshiSelection.selection（纯 JS 取词状态，覆盖层就从它的 ranges 只读取几何）。塌缩/空选区时
+// no-op：避免无谓清掉输入框 caret 或没有可见蓝色时反复调用。
+function hibikiClearNativeSelection() {
+  try {
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) sel.removeAllRanges();
+  } catch (_) { /* 某些跨域/detached 上下文 getSelection 可能抛：静默 */ }
+}
+
+// 从 hoshiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
+// Range.getClientRects，**不改宿主页 DOM**），并算出整体 bbox 作弹窗锚点。返回 {rects, bounds}。
+// 与 selection.js highlightSelection 的裁词逻辑同构，但不做 DOM 包裹。
+function hibikiSelectionRects(charCount) {
+  const rects = [];
+  let bx = null;
+  const sel = window.hoshiSelection && window.hoshiSelection.selection;
+  if (!sel || !Array.isArray(sel.ranges) || !sel.ranges.length) return { rects, bounds: null };
+  let remaining = charCount;
+  for (const r of sel.ranges) {
+    if (remaining <= 0) break;
+    const content = (r.node && r.node.textContent) || '';
+    let end = r.start;
+    while (end < r.end && remaining > 0) {
+      end += String.fromCodePoint(content.codePointAt(end)).length;
+      remaining--;
+    }
+    try {
+      const range = document.createRange();
+      range.setStart(r.node, r.start);
+      range.setEnd(r.node, end);
+      for (const cr of range.getClientRects()) {
+        if (!cr.width || !cr.height) continue;
+        rects.push({ left: cr.left, top: cr.top, width: cr.width, height: cr.height });
+        if (!bx) bx = { left: cr.left, top: cr.top, right: cr.right, bottom: cr.bottom };
+        else {
+          if (cr.left < bx.left) bx.left = cr.left;
+          if (cr.top < bx.top) bx.top = cr.top;
+          if (cr.right > bx.right) bx.right = cr.right;
+          if (cr.bottom > bx.bottom) bx.bottom = cr.bottom;
+        }
+      }
+    } catch (_) { /* 跨节点 range 失败：跳过该段 */ }
+  }
+  const bounds = bx
+    ? { x: bx.left, y: bx.top, width: bx.right - bx.left, height: bx.bottom - bx.top }
+    : null;
+  return { rects, bounds };
+}
+
+// 画覆盖层高亮：给每个 client rect 一个 position:fixed 的透明色块，装进扩展自有的顶层容器
+// （挂在 fullscreenElement||body，与弹窗同父，全屏也可见）。不写进宿主页文本节点 → 宿主页
+// 框架重渲染 / MutationObserver / 鼠标移动都动不了它，保持到 hibikiClearHighlightOverlay。
+function hibikiDrawHighlightOverlay(rects) {
+  hibikiClearHighlightOverlay();
+  if (!rects || !rects.length) return;
+  const parent = document.fullscreenElement || document.body;
+  if (!parent) return;
+  const layer = document.createElement('div');
+  layer.id = 'hibiki-highlight-overlay';
+  // 穿透点击、不进宿主页布局；z-index 比弹窗(2147483647)低 1 → 永远在宿主页之上、弹窗之下。
+  layer.style.cssText =
+    'position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;' +
+    'z-index:2147483646;pointer-events:none;';
+  // 高亮色跟随弹窗主题（--hoshi-primary-highlight 落在 #entries-container 上）；取不到用 content.css 同款兜底。
+  let color = 'rgba(160, 160, 160, 0.4)';
+  try {
+    if (hibikiContainer) {
+      const v = getComputedStyle(hibikiContainer).getPropertyValue('--hoshi-primary-highlight').trim();
+      if (v) color = v;
+    }
+  } catch (_) { /* getComputedStyle 不可用：用兜底色 */ }
+  for (const r of rects) {
+    const box = document.createElement('div');
+    box.style.cssText =
+      'position:fixed;pointer-events:none;border-radius:2px;background-color:' + color + ';' +
+      'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;';
+    layer.appendChild(box);
+  }
+  parent.appendChild(layer);
+  hibikiHighlightLayer = layer;
+}
+
 function hibikiRemoveContainer() {
   if (hibikiContainer) { hibikiContainer.remove(); hibikiContainer = null; }
-  // TODO-1150（yomitan 式）：关窗即撤被查词高亮。hoshiSelection 未加载/无选区时是 no-op。
+  // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
+  hibikiClearHighlightOverlay();
+  // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。hoshiSelection 未加载/无选区时是 no-op。
   try {
     if (window.hoshiSelection && typeof window.hoshiSelection.clearSelection === 'function') {
       window.hoshiSelection.clearSelection();
@@ -563,6 +853,11 @@ function hibikiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (hibikiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   if (!e[HIBIKI_MOD]) { hibikiLastTerm = ''; return; } // 松开 Shift 复位，下次可重查同词
+  // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
+  // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
+  // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
+  // 高亮；用户手动按住键拖拽划选复制（e.buttons!==0）不清，保住其复制能力。
+  if (e.buttons === 0) hibikiClearNativeSelection();
   // 位移阈值：几乎没动就跳过（同一像素反复 mousemove 不重复取词）。
   if (Math.abs(e.clientX - hibikiLastX) < 4 && Math.abs(e.clientY - hibikiLastY) < 4) return;
   hibikiLastX = e.clientX;
@@ -604,11 +899,19 @@ document.addEventListener('mousemove', (e) => {
   if (!term || !term.trim()) return;
   if (term === hibikiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   hibikiLastTerm = term;
-  // 查词即自动暂停：**仅对 Netflix 播放器**（按域名判定，不碰别的站点/后台视频）。定格画面+字幕
-  // （方便看词/看弹窗），冻结 video.currentTime → 句子窗口停在句末，offscreen 随之暂停录制保住这
-  // 句 → 制卡得整句、干净（无鼠标/弹窗）。YouTube 走服务端裁剪路径不需暂停；普通网页的背景视频更
-  // 不该被查词误暂停（V16#1：原来对页面任意 <video> 都暂停 → UX 副作用）。
-  // 仅在播放时暂停（避免重复触发），不自动恢复（用户查完自己按空格续播）。
+  hibikiSendLookup(term, hibikiAnchorRect);
+});
+
+// 查词即自动暂停 + 发查词请求 + 渲染弹窗的共享收尾（mousemove 划词与面板行显式点击查词同源）。
+// 暂停：**仅对 Netflix 播放器**（按域名判定，不碰别的站点/后台视频）。定格画面+字幕（方便看词/看
+// 弹窗），冻结 video.currentTime → 句子窗口停在句末，offscreen 随之暂停录制保住这句 → 制卡得整句、
+// 干净。YouTube 走服务端裁剪路径不需暂停；普通网页背景视频更不该被查词误暂停。仅在播放时暂停、不
+// 自动恢复（用户查完自己按空格续播）。幂等（重复调用只在 !paused 时暂停）。
+function hibikiSendLookup(term, anchorRect, cueWindow) {
+  // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
+  // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
+  hibikiPendingCueWindow = cueWindow || null;
+  if (!term || !term.trim()) return;
   if (hibikiSite() === 'netflix') {
     try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}
   }
@@ -631,12 +934,40 @@ document.addEventListener('mousemove', (e) => {
         ? resp.data.result.bestLength
         : 0;
       const termLen = best > 0 ? best : term.length;
-      hibikiRender(resp.data.popupJson, termLen, resp.data.theme, hibikiAnchorRect);
+      // 单词音频：查词响应带回 app 已启用的音频源（enabledAudioSources），非空时 popup.js
+      // 的 createEntryHeader 才渲染 ♪ 按钮（与 app 内 window.audioSources 注入一致）。
+      window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
+      hibikiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
     });
   } catch (_) {
     hibikiPending = false; // 「Extension context invalidated」：静默，等用户重载页面
   }
-});
+}
+
+// TODO-1219 P2：面板行内文本「显式点击查词」的入口（供 subtitle-panel.js 调用）。点击命中的
+// (clientX,clientY) 复用与 mousemove 划词同一套 hoshiSelection 取词（含流媒体字幕覆盖层兜底），
+// 选中后走 hibikiSendLookup 发查词 + 渲染弹窗，取词/高亮/锚点与全局划词完全一致。
+window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow) {
+  if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
+  let hit = window.hoshiSelection.getCharacterAtPoint(clientX, clientY);
+  if (!hit) {
+    const subRange = hibikiSubtitleCaretAtPoint(clientX, clientY);
+    if (subRange && subRange.startContainer.nodeType === Node.TEXT_NODE) {
+      hit = { node: subRange.startContainer, offset: subRange.startOffset };
+    }
+  }
+  if (!hit) return;
+  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, HIBIKI_MAX_LEN, clientX, clientY);
+  hibikiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮
+  let anchorRect = null;
+  try {
+    if (window.hoshiSelection && typeof window.hoshiSelection.getSelectionRect === 'function') {
+      anchorRect = window.hoshiSelection.getSelectionRect(clientX, clientY);
+    }
+  } catch (_) { anchorRect = null; }
+  hibikiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
+  hibikiSendLookup(term, anchorRect, cueWindow); // TODO-1219 P3：面板行传入精确窗
+};
 
 // TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →
 // callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
@@ -652,6 +983,7 @@ window.__hibikiOnLinkClick = function (query) {
       const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
         ? resp.data.result.bestLength : 0;
       const termLen = best > 0 ? best : term.length;
+      window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
     });
   } catch (_) { /* 扩展上下文失效：静默 */ }
@@ -666,17 +998,23 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
       if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
     }
   }
-  // TODO-1150（yomitan 式）：高亮刚取的词并拿它的视口 bbox 作弹窗锚点（不再贴鼠标坐标）。
-  // highlightSelection 复用上一步 selectFromPosition 存进 hoshiSelection.selection 的 ranges，用
-  // CSS Custom Highlight API 高亮前 termLen 个字并返回其 getClientRects 视口系 bbox；同名高亮覆盖
-  // 上一次（切词自动换高亮）。拿不到 bbox（极少数取词失败）→ 回落到最后鼠标位置。
+  // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
+  // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
+  // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
+  // 会在下一帧把这个凭空多出的 span revert 掉 → 高亮闪一下就没（用户报「非常容易消失」）。改画
+  // 扩展自有的顶层 fixed 覆盖层：宿主页重绘/事件都碰不到它，保持到弹窗关闭。高亮前 termLen 个字。
   let wordRect = null;
   try {
-    if (window.hoshiSelection && typeof window.hoshiSelection.highlightSelection === 'function') {
+    const hl = hibikiSelectionRects(termLen);
+    if (hl.rects.length) {
+      hibikiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它
+      wordRect = hl.bounds;
+    } else if (window.hoshiSelection && typeof window.hoshiSelection.highlightSelection === 'function') {
+      // 兜底：selection 结构异常（无 ranges）时退回旧的 bbox 计算，只为拿锚点，不画 DOM 包裹高亮。
       wordRect = window.hoshiSelection.highlightSelection(termLen);
     }
   } catch (_) { wordRect = null; }
-  // TODO-1218②：高亮丢失（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。
+  // TODO-1218②：取词 rects 拿不到（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。
   if (!wordRect && anchorRect) wordRect = anchorRect;
   // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。

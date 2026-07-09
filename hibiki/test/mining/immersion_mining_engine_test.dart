@@ -46,9 +46,13 @@ void main() {
   ImmersionMiningEngine build(
           {required GifExtractor gif,
           required AudioExtractor audio,
-          required FrameExtractor frame}) =>
+          required FrameExtractor frame,
+          RemoteAudioMaterializer? materializer}) =>
       ImmersionMiningEngine(
-          gifExtractor: gif, audioExtractor: audio, frameExtractor: frame);
+          gifExtractor: gif,
+          audioExtractor: audio,
+          frameExtractor: frame,
+          audioMaterializer: materializer);
 
   Future<String?> okGif(
           {required String inputPath,
@@ -192,11 +196,14 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
-  test('audioSource overrides mediaSource for audio extraction (youtube split)',
+  test(
+      'audioSource (youtube split) is materialized locally then cut (TODO-1314 B5)',
       () async {
     final repo = _FakeRepo();
     String? gifInput;
     String? audioInput;
+    String? materializedUrl;
+    final String localAudio = '${tmp.path}/materialized_audio_src';
     Future<String?> capGif(
         {required String inputPath,
         required int startMs,
@@ -223,19 +230,34 @@ void main() {
       return outputPath;
     }
 
-    await build(gif: capGif, audio: capAudio, frame: okFrame).mine(
-        const ImmersionMiningRequest(
-            fields: {'expression': 'x'},
-            mediaSource: 'https://video-only.example/v',
-            audioSource: 'https://audio-only.example/a',
-            clipStartMs: 0,
-            clipEndMs: 2000,
-            sentence: 's'),
-        compression: MiningMediaCompression.compressed,
-        tempDir: tmp.path,
-        repo: repo);
-    expect(gifInput, 'https://video-only.example/v'); // GIF 从视频流
-    expect(audioInput, 'https://audio-only.example/a'); // 音频从独立音频流
+    Future<String?> capMaterialize(
+        {required String audioUrl,
+        required String outputPath,
+        FfmpegFailureReporter? onFailure}) async {
+      materializedUrl = audioUrl;
+      return localAudio;
+    }
+
+    await build(
+            gif: capGif,
+            audio: capAudio,
+            frame: okFrame,
+            materializer: capMaterialize)
+        .mine(
+            const ImmersionMiningRequest(
+                fields: {'expression': 'x'},
+                mediaSource: 'https://video-only.example/v',
+                audioSource: 'https://audio-only.example/a',
+                clipStartMs: 0,
+                clipEndMs: 2000,
+                sentence: 's'),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(gifInput, 'https://video-only.example/v'); // GIF 仍从视频流
+    // 分离 audio-only 流先经 range 分片下载物化到本地，再对本地文件裁（不再对 URL 直接 HTTP seek）。
+    expect(materializedUrl, 'https://audio-only.example/a');
+    expect(audioInput, localAudio);
   });
 
   test('updateNoteId routes to updateMinedNote', () async {
@@ -252,5 +274,49 @@ void main() {
         tempDir: tmp.path,
         repo: repo);
     expect(repo.updatedNoteId, 7);
+  });
+
+  // TODO-1303：Netflix provided-bytes 路径（无 range）本应带音频却丢音轨 → 中止而非静默出
+  // 无声卡。此前 requireAudio 被 `&& hasRange` 门控架空（Netflix clip 恒 hasRange=false），
+  // 音频丢时永不中止 → 「制卡失败报成功」的无声/空壳卡。带回 abortReason 供远端写日志 + 回传。
+  test('audio expected via provided cover but audio missing -> abort',
+      () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            ImmersionMiningRequest(
+                fields: const {'expression': 'x'},
+                clipStartMs: 0,
+                clipEndMs: 0,
+                sentence: 's',
+                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+                providedCoverName: 'netflix_clip.gif',
+                requireAudio: true),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason, contains('audio'));
+    expect(repo.minedContext, isNull);
+  });
+
+  // TODO-1303：空壳卡兜底——封面 + 音频全无（截图/GIF/音频全失败）→ 中止，绝不产出无媒体卡，
+  // 即便 requireAudio=false（这正是「降级空壳卡仍报成功」的根）。
+  test('empty shell (no cover, no audio) -> abort', () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            const ImmersionMiningRequest(
+                fields: {'expression': 'x'},
+                clipStartMs: 0,
+                clipEndMs: 0,
+                sentence: 's',
+                requireAudio: false),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason, contains('no cover'));
+    expect(repo.minedContext, isNull);
   });
 }

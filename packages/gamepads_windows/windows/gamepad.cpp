@@ -126,8 +126,14 @@ void Gamepads::init() {
   if (::LoadLibraryW(L"GameInput.dll") == nullptr) {
     std::cerr << "GameInput.dll not available; gamepad support disabled"
               << std::endl;
+    // game_input_available stays false: the plugin reports this over the
+    // gameInputAvailable channel method so Dart can hint the user (TODO-1223).
     return;
   }
+  // The DLL is present: mark the backend available so a gamepad-related surface
+  // (shortcut settings) does NOT nag the user with the "install Gaming
+  // Services" hint (TODO-1223).
+  game_input_available = true;
 
   GameInputCreate(&g_gameInput);
 

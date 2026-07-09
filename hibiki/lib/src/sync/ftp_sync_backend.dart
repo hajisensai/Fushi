@@ -208,7 +208,7 @@ class FtpSyncBackend extends SyncBackend {
     Uint8List? coverData,
   }) =>
       _opLock.withLock(() async {
-        final sanitized = sanitizeTtuFilename(bookTitle);
+        final sanitized = requireBookFolderName(bookTitle);
 
         if (_titleToFolderId.containsKey(sanitized)) {
           return _titleToFolderId[sanitized]!;

@@ -21,8 +21,16 @@ part of '../video_hibiki_page.dart';
 /// the subtitle-style helpers (`_persistSubtitleStyle` / `_toggleSubtitleBlur`),
 /// and the parent build subtrees (`_buildVideoSidePanelChild` /
 /// `_videoWithSubtitlePanel`) stay in the main shell; the parents keep calling the
-/// extracted `_buildSubtitleSourcesSidePanel` / `_subtitleJumpSidePanel` through
-/// shared private scope.
+/// extracted `_buildSubtitleTrackSettingsSection` (TODO-1351: subtitle-track
+/// switching folded into the settings sheet's `subtitle` category) /
+/// `_subtitleJumpSidePanel` through shared private scope.
+/// TODO-1302：YouTube 预解析字幕（[UrlStreamVideoClient.preresolvedCues]）的合成字幕源
+/// 哨兵。YouTube 字幕不是 host 外挂文件、也不是容器内嵌轨枚举，而是 resolver 预解析好的
+/// cue 直接注入 overlay。用一个非空源标识它，让远端字幕菜单能渲染并高亮「YouTube 字幕」行，
+/// 且「关闭」（[_currentSubtitleSource]==null 判据）不被误显选中（根因：此前不登记任何源，
+/// _currentSubtitleSource 留 null → 菜单无行 + 关闭高亮 → 选不到 YouTube 字幕）。
+const String _kYoutubeCaptionsSource = 'youtube:captions';
+
 extension _VideoSubtitle on _VideoHibikiPageState {
   /// 翻转字幕跳转列表面板可见性（TODO-069/TODO-314；裸 L 键 / 控制条入口按钮）。
   ///
@@ -97,8 +105,24 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     unawaited(_lookupAt(sentence, graphemeIndex, charRect));
   }
 
-  Widget _buildSubtitleSourcesSidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
+  /// TODO-1351：字幕轨/字幕源切换区，收进设置面板「字幕」分类顶部（取代原来外面浮的
+  /// 字幕轨侧栏）。用 [Builder] 让配色随设置面板浅色 MD3 主题解析（而非视频 chrome 深色）；
+  /// 行内容（自动获取字幕 / 打开字幕文件 / 关闭 / 本地内嵌+外挂源 / 远端 YouTube+内嵌+host
+  /// / 副字幕入口）与选择逻辑与旧侧栏逐行一致，数据随视频页 `_rebuild` 重建。
+  Widget _buildSubtitleTrackSettingsSection(VideoPlayerController controller) {
+    return Builder(
+      builder: (BuildContext context) => _buildSubtitleTrackRows(
+        context,
+        controller,
+      ),
+    );
+  }
+
+  Widget _buildSubtitleTrackRows(
+    BuildContext context,
+    VideoPlayerController controller,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     final String? hostSub = _remoteSubtitlePath;
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
@@ -146,6 +170,22 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                       : _selectSubtitleOff(controller),
                 ),
       ),
+      // TODO-1302 track-list-first：每条 YouTube 字幕轨一行（元数据先来、cue 懒下载 on-select）。
+      // 轨列表由 [_resolveDeferredYoutubeCaptionTracks] 起播后回填 client（不依赖 cue 就绪 →
+      // 修「字幕整个消失」），点某行经 [_applyYoutubeCaptionTrack] 懒下载那一轨 cue 挂 overlay，
+      // 选中态由 [YoutubeCaptionTrack.trackKey] 判定；A3：人工>ASR 已在轨表排序，含母语对照变体。
+      if (_isRemote)
+        for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)
+          ListTile(
+            leading: const Icon(Icons.closed_caption_outlined),
+            title: Text(_youtubeCaptionTrackLabel(track)),
+            selected: _currentSubtitleSource == track.trackKey,
+            selectedColor: cs.primary,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(_applyYoutubeCaptionTrack(controller, track)),
+          ),
       if (_isRemote && hostSub != null)
         ListTile(
           leading: const Icon(Icons.cloud_done_outlined),
@@ -205,40 +245,44 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                 ? null
                 : () => unawaited(_selectSubtitleSource(controller, source)),
           ),
-      // TODO-857 视频双字幕（Path A）：副字幕入口。副字幕走 libmpv secondary-sid
-      // 自渲染（不可查词），仅本地视频内嵌轨（远端无内嵌轨枚举，不显示）。
+      // TODO-857 / TODO-1312 视频双字幕：副字幕入口。副字幕走 Flutter overlay 副层
+      // cue 流（可逐字符查词），仅本地视频内嵌轨（远端无内嵌轨枚举，不显示）。
+      // TODO-1350：副字幕源改内联可展开区（ExpansionTile），在「字幕」分类里就地切换，
+      // 不再点一下跳到另一个浮层窗口（用户报「副字幕打开会去到另一个窗口」）。
       if (!_isRemote) const Divider(height: 1),
       if (!_isRemote)
-        ListTile(
+        ExpansionTile(
           leading: const Icon(Icons.subtitles_outlined),
           title: Text(t.video_secondary_subtitle_sources),
           subtitle: Text(t.video_secondary_subtitle_hint),
-          trailing: const Icon(Icons.chevron_right),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_showSecondarySubtitleSourceMenu(controller)),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: _buildSecondarySubtitleRows(context, controller),
         ),
     ];
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: rows,
     );
   }
 
-  /// 副字幕源 side panel（TODO-857 视频双字幕 Path A）：仅列内嵌字幕轨 + 顶部
-  /// 「关闭」项。副字幕走 libmpv `secondary-sid` 自渲染（**不可查词**），与主字幕
-  /// （可点 overlay）独立——故复用 [_subtitleMenuSources] 但只取内嵌轨（[_isEmbedded]
-  /// 且非图形位图轨同样可选：libmpv 自渲染位图也行，但首版与主字幕一致仅列文本/通用
-  /// 内嵌轨，图形轨交由 libmpv 自渲染亦无妨，统一不过滤 codec）。
-  Widget _buildSecondarySubtitleSourcesSidePanel(
+  /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 内嵌字幕轨（复用
+  /// [_subtitleMenuSources] 只取内嵌轨——图形位图轨抽不出文本 cue，选中时 loadCuesForSource
+  /// 返回空、诚实提示失败）。副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），与
+  /// 主字幕同款。TODO-1350：这些行以前住在一个独立浮层侧栏里（点「副字幕」跳到另一个窗口，
+  /// 用户报「副字幕打开会去到另一个窗口」）；现直接内联在「字幕」分类的可展开区里就地切换。
+  /// [context] 是设置面板（浅色 MD3）的构建上下文，配色随之解析（与主字幕轨行一致）。
+  List<Widget> _buildSecondarySubtitleRows(
+    BuildContext context,
     VideoPlayerController controller,
   ) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
     final List<SubtitleSource> embedded = _subtitleMenuSources
         .where((SubtitleSource s) => s.isEmbedded)
         .toList(growable: false);
-    final List<Widget> rows = <Widget>[
+    return <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
       ListTile(
         leading: const Icon(Icons.subtitles_off),
@@ -268,10 +312,6 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                   unawaited(_selectSecondarySubtitleSource(controller, source)),
         ),
     ];
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: rows,
-    );
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
@@ -287,10 +327,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
       });
-      _showVideoSidePanel(
-        _VideoSidePanelKind.subtitleSources,
-        sourceSlot: sourceSlot,
-      );
+      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
+      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
       return;
     }
     final String? videoPath = _currentVideoPath;
@@ -299,10 +337,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
       });
-      _showVideoSidePanel(
-        _VideoSidePanelKind.subtitleSources,
-        sourceSlot: sourceSlot,
-      );
+      // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
+      _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
       return;
     }
 
@@ -310,10 +346,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       _subtitleMenuSources = const <SubtitleSource>[];
       _subtitleMenuLoading = true;
     });
-    _showVideoSidePanel(
-      _VideoSidePanelKind.subtitleSources,
-      sourceSlot: sourceSlot,
-    );
+    // TODO-1351：字幕轨切换收进设置面板「字幕」分类顶部（取代外面浮的字幕轨侧栏）。
+    _showPlayerSettings(sourceSlot: sourceSlot, initialCategory: 'subtitle');
     final List<SubtitleSource> sources;
     try {
       sources = await _subtitleSourcesForMenu(
@@ -333,26 +367,32 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     });
   }
 
-  /// 弹「副字幕源」side panel（TODO-857 视频双字幕 Path A）。复用主字幕的源枚举
-  /// （[_subtitleSourcesForMenu]）填 [_subtitleMenuSources]，副字幕面板只取其中内嵌轨。
-  /// 远端 / 无本地视频路径时列空（远端无内嵌轨枚举）。
-  Future<void> _showSecondarySubtitleSourceMenu(
-    VideoPlayerController controller,
-  ) async {
+  /// TODO-1350（字幕轨即时加载）：进入设置面板「字幕」分类时（重新）枚举当前视频的字幕源
+  /// 填 [_subtitleMenuSources]（主字幕轨行 + 内联副字幕轨行都读它）。此前 [_subtitleMenuSources]
+  /// 只由「字幕轨」控制按钮的 [_showSubtitleSourceMenu] 预填——用户经设置齿轮进面板再点
+  /// 「字幕」分类 chip / 导航行时不走那条路径，字幕轨列表就空着，得关掉重开才加载（用户报
+  /// 「字幕轨不即时加载」）。改由「字幕分类被打开」事件
+  /// （[VideoQuickSettingsSheet.onSubtitleCategoryShown]）驱动，两个入口统一：
+  ///  - 远端 / 无本地视频路径：字幕轨走 [_youtubeCaptionTracks] / [_remoteEmbeddedSubtitleTracks]，
+  ///    本地源列表清空即可（[_buildSubtitleTrackRows] 远端分支不读 [_subtitleMenuSources]）。
+  ///  - 本地视频：ffprobe 枚举内嵌轨 + 同目录外挂（[_subtitleSourcesForMenu]，只探测轨元数据、
+  ///    非全量 demux，开销小），loading 期间字幕轨区顶部显 [LinearProgressIndicator]。
+  /// 已在枚举中（[_subtitleMenuLoading]）则跳过，避免与 [_showSubtitleSourceMenu] 的加载重复。
+  Future<void> _ensureSubtitleMenuSourcesLoaded() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
     final String? videoPath = _currentVideoPath;
     if (_isRemote || videoPath == null) {
-      _rebuild(() {
-        _subtitleMenuSources = const <SubtitleSource>[];
-        _subtitleMenuLoading = false;
-      });
-      _showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources);
+      if (_subtitleMenuSources.isNotEmpty || _subtitleMenuLoading) {
+        _rebuild(() {
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuLoading = false;
+        });
+      }
       return;
     }
-    _rebuild(() {
-      _subtitleMenuSources = const <SubtitleSource>[];
-      _subtitleMenuLoading = true;
-    });
-    _showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources);
+    if (_subtitleMenuLoading) return;
+    _rebuild(() => _subtitleMenuLoading = true);
     final List<SubtitleSource> sources;
     try {
       sources = await _subtitleSourcesForMenu(
@@ -372,21 +412,30 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     });
   }
 
-  /// 选中某副字幕源（TODO-857）：经 libmpv `secondary-sid` 自渲染 → 持久化
-  /// `embedded:<n>` → setState。**不抽 cue、不切主字幕轨**（副字幕不进 Dart cue 流，
-  /// 不可查词）。仅内嵌轨；选轨失败（轨未就绪/越界/换片）诚实提示且不持久化。
+  /// 选中某副字幕源（TODO-857 / TODO-1312）：抽 cue → [VideoPlayerController.setSecondaryCues]
+  /// 交给 Flutter overlay 副层渲染（**不再** libmpv `secondary-sid` 自渲染）→ 持久化
+  /// `embedded:<n>` / 外挂路径 → setState。副字幕因此与主字幕同款可逐字符查词。与主字幕
+  /// 复用同一 [loadCuesForSource]（内嵌走 ffmpeg demux、外挂读文件）；空 cue（图形位图轨 /
+  /// 抽取失败 / 坏轨）诚实提示失败、不切换、不持久化（不覆盖当前副字幕）。
   Future<bool> _selectSecondarySubtitleSource(
     VideoPlayerController controller,
     SubtitleSource source,
   ) async {
-    if (!source.isEmbedded || source.streamIndex == null) return false;
-    final bool shown =
-        await controller.selectSecondarySubtitleTrack(source.streamIndex!);
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return false;
+    _showSubtitleLoadingOverlay();
+    final List<AudioCue> cues;
+    try {
+      cues = await loadCuesForSource(source, videoPath, widget.bookUid);
+    } finally {
+      _hideSubtitleLoadingOverlay();
+    }
     if (!mounted) return false;
-    if (!shown) {
+    if (cues.isEmpty) {
       _showOsd(t.video_subtitle_load_failed(label: source.label));
       return false;
     }
+    controller.setSecondaryCues(cues);
     final String persisted = source.toPersistedValue();
     await widget.repo.updateSecondarySubtitleSource(widget.bookUid, persisted);
     if (!mounted) return false;
@@ -395,12 +444,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     return true;
   }
 
-  /// 关闭副字幕（TODO-857）：清 libmpv `secondary-sid` + 持久化「显式关闭」哨兵。
+  /// 关闭副字幕（TODO-857 / TODO-1312）：清副字幕 cue 流 + 持久化「显式关闭」哨兵。
   /// 与主字幕「关闭」对称（哨兵区分「无偏好 null」与「显式关闭」，恢复时不自动重选）。
   Future<void> _selectSecondarySubtitleOff(
     VideoPlayerController controller,
   ) async {
-    await controller.clearSecondarySubtitleTrack();
+    controller.clearSecondaryCues();
     await widget.repo.updateSecondarySubtitleSource(
       widget.bookUid,
       SubtitleSource.offSentinel,
@@ -410,10 +459,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
   }
 
-  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857）。仅内嵌轨（`embedded:<n>`）：
-  /// 解析 streamIndex 经 [VideoPlayerController.selectSecondarySubtitleTrack] 下发
-  /// `secondary-sid`（其内部 [_waitUntilSubtitleTracksReady] 等轨就绪 + UAF 防护）。
-  /// null=无偏好 / `off:`=显式关闭 / 外挂路径（首版不支持）都不下发，保持无副字幕。
+  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857 / TODO-1312）。仅内嵌轨（`embedded:<n>`）：
+  /// 解析 streamIndex → [loadCuesForSource] 抽 cue → [VideoPlayerController.setSecondaryCues]。
+  /// null=无偏好 / `off:`=显式关闭 / 外挂路径（首版恢复不支持）都不加载，保持无副字幕。
+  /// 空 cue（图形轨 / 抽取失败）静默跳过（不弹失败——恢复是后台行为，不打扰用户）。
   Future<void> _restoreSecondarySubtitle(
     VideoPlayerController controller,
   ) async {
@@ -425,8 +474,18 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       persisted.substring(SubtitleSource.embeddedPrefix.length),
     );
     if (streamIndex == null) return;
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
     if (!mounted || _controller != controller) return;
-    await controller.selectSecondarySubtitleTrack(streamIndex);
+    final SubtitleSource source = SubtitleSource.embedded(
+      streamIndex: streamIndex,
+      label: 'embedded:$streamIndex',
+    );
+    final List<AudioCue> cues =
+        await loadCuesForSource(source, videoPath, widget.bookUid);
+    if (!mounted || _controller != controller) return;
+    if (cues.isEmpty) return;
+    controller.setSecondaryCues(cues);
   }
 
   /// Jimaku 搜索用的番名 query。能算出非空 query 时返回它，否则返回 null
@@ -463,8 +522,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   Future<void> _openJimakuDialog(VideoPlayerController controller) async {
     final String? query = _jimakuQuery();
     if (query == null) return;
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final String saveDir = p.join(docs.path, 'video_subtitles');
+    // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根 → `<dataRoot>/documents/`
+    // `video_subtitles`；默认根仍是平台 Documents），与 TODO-1226 迁移白名单一致。
+    final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
     if (!context.mounted) return;
     // 语言记忆按系列（番名）粒度：seriesKey = query 归一（小写 + trim），与
     // PreferencesRepository 的 map key 约定一致。打开时读上次语言、选中时写回。
@@ -619,7 +679,70 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted) return;
+    // TODO-1307：用户显式关字幕后，字幕后置解析完成也不再自动抢占应用（尊重用户选择，
+    // 见 [_resolveDeferredYoutubeCaptions]）；仍回填 cue 使「YouTube 字幕」行可再手选。
+    _remoteSubtitleUserDismissed = true;
     _rebuild(() => _currentSubtitleSource = null);
+  }
+
+  /// TODO-1302 track-list-first：当前有效远端客户端已解析好的 YouTube 字幕轨列表
+  /// （[UrlStreamVideoClient.youtubeCaptionTracks]，元数据，无 cue 正文）。字幕轨选择器据此每
+  /// 轨渲染一行；派生自真实客户端，无独立可失步状态。非 YouTube 客户端返回空表。
+  List<YoutubeCaptionTrack> get _youtubeCaptionTracks {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    return client is UrlStreamVideoClient
+        ? client.youtubeCaptionTracks
+        : const <YoutubeCaptionTrack>[];
+  }
+
+  /// TODO-1302 track-list-first：字幕轨选择器行的显示名。原始轨用 YouTube 侧本地化名
+  /// （[YoutubeCaptionTrack.languageName]，ASR 轨 YouTube 常已含「(auto-generated)」标注，
+  /// A3 人工/ASR 由排序区分）；autoTranslate 母语对照变体加「(翻译)」标注区分。
+  String _youtubeCaptionTrackLabel(YoutubeCaptionTrack track) {
+    if (track.isTranslated) {
+      return t.video_subtitle_youtube_translated(lang: track.languageName);
+    }
+    return track.languageName;
+  }
+
+  /// TODO-1302 track-list-first 的 on-select：懒下载 [track] 的 cue（缓存命中直接用）→ 灌
+  /// overlay + 关 libmpv 画面字幕 + 登记 [YoutubeCaptionTrack.trackKey] 为当前源。用户从菜单点
+  /// 某轨、或 [_resolveDeferredYoutubeCaptionTracks] 自动应用最佳轨（[loadSeq] 非空校验仍是当前
+  /// load，防后置自动应用串到已切走的集）时调。best-effort：cue 空时手选提示无字幕、不改当前源。
+  Future<void> _applyYoutubeCaptionTrack(
+    VideoPlayerController controller,
+    YoutubeCaptionTrack track, {
+    int? loadSeq,
+  }) async {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient) return;
+    List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
+    if (cues.isEmpty) {
+      if (mounted) _rebuild(() => _subtitleMenuLoading = true);
+      cues = await resolveYoutubeCaptionCues(track,
+          bookKey: 'yt:${widget.bookUid}');
+      if (!mounted) return;
+      if (loadSeq != null && loadSeq != _episodeLoadSeq) {
+        _rebuild(() => _subtitleMenuLoading = false);
+        return;
+      }
+      if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
+      _rebuild(() => _subtitleMenuLoading = false);
+    }
+    if (cues.isEmpty) {
+      // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
+      if (loadSeq == null) _showOsd(t.video_subtitle_youtube_empty);
+      return;
+    }
+    controller.setCues(cues);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (!mounted) return;
+    _rebuild(() => _currentSubtitleSource = track.trackKey);
+    if (loadSeq == null) {
+      _showOsd(
+        t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
+      );
+    }
   }
 
   Future<void> _importExternalSubtitle(
@@ -645,8 +768,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       _showOsd(t.video_subtitle_import_unsupported);
       return;
     }
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final Directory destDir = Directory(p.join(docs.path, 'video_subtitles'));
+    // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根），与迁移白名单 `video_subtitles`
+    // 一致；导入字幕副本落数据根而非平台 Documents。
+    final Directory destDir = await AppPaths.videoSubtitlesDirectory();
     await destDir.create(recursive: true);
     final String dest = p.join(destDir.path, p.basename(srcPath));
     if (!p.equals(srcPath, dest)) {
@@ -670,12 +794,13 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     );
   }
 
-  /// 在字幕源侧栏里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
+  /// 在字幕源视图里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
+  /// TODO-1351：字幕源已收进设置面板「字幕」分类，加载态确保设置面板开在该分类可见。
   void _showSubtitleLoadingOverlay() {
     if (_subtitleLoadingShown || !mounted) return;
     _rebuild(() => _subtitleLoadingShown = true);
-    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.subtitleSources) {
-      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.settings) {
+      _showPlayerSettings(initialCategory: 'subtitle');
     }
   }
 
@@ -963,12 +1088,21 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     if (controller == null || videoPath == null || videoPath.isEmpty) {
       return const <double>[];
     }
-    return extractAudioEnergyEnvelope(
-      videoPath: videoPath,
-      windowMs: kSubtitleAutoAlignBinMs,
-      audioStreamIndex: controller.currentAudioStreamIndex,
-      audioStreamCount: controller.realAudioStreamCount,
-      limitMs: kSubtitleAutoAlignProbeLimitMs,
+    // TODO-1244：按「视频路径 + 当前音轨」缓存已抽出的波形包络。同一视频/音轨重复打开
+    // 快速设置面板或波形对轴视图时直接复用，不再重跑 ffmpeg（抽整轨对大 REMUX 要数十秒）。
+    // 切视频或切音轨时 key 变化 → miss → 重抽（不显示旧音频波形），只缓存非空结果。
+    final String cacheKey = '$videoPath|${controller.currentAudioStreamIndex}';
+    return _subtitleWaveformCache.resolve(
+      cacheKey,
+      // TODO-1244：波形显示走更细的 [kSubtitleWaveformWindowMs]（20ms=50 帧/秒），密度接近
+      // 成熟波形工具、句间静音可辨；自动对轴仍用 100ms 采样，两者互不影响（独立探测/缓存）。
+      () => extractAudioEnergyEnvelope(
+        videoPath: videoPath,
+        windowMs: kSubtitleWaveformWindowMs,
+        audioStreamIndex: controller.currentAudioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
+        limitMs: kSubtitleAutoAlignProbeLimitMs,
+      ),
     );
   }
 }

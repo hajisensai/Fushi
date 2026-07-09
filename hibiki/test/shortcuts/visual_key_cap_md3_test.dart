@@ -61,10 +61,14 @@ void main() {
     }
   });
 
-  test('gamepad figure shell routes radius/border through tokens', () {
+  test('gamepad figure shell routes surfaces/border through tokens', () {
+    // TODO-942 v2：机身外壳从「圆角矩形容器」改为贝塞尔轮廓 CustomPainter
+    // (_GamepadChassisPainter)，已无矩形圆角；外壳纪律改为「机身着色走
+    // tokens.surfaces.*、描边走 outlineVariant」，裸 surfaceContainerXxx 字面量仍由
+    // 上面「stays free of bare MD3 literals」守卫兜底。
     expect(gamepadLayoutSrc.contains('HibikiDesignTokens.of(context)'), isTrue);
-    expect(gamepadLayoutSrc.contains('tokens.radii.'), isTrue,
-        reason: 'shell corner radius must come from the token scale');
+    expect(gamepadLayoutSrc.contains('tokens.surfaces.'), isTrue,
+        reason: 'chassis body fill must come from semantic surface tokens');
     expect(gamepadLayoutSrc.contains('outlineVariant'), isTrue,
         reason: 'shell outline must use the outlineVariant scheme role');
   });

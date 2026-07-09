@@ -143,6 +143,39 @@ void main() {
     }
   });
 
+  test('TODO-942: the visual view-toggle segment uses a controller glyph', () {
+    // Discoverability fix: the visual segment opens the gamepad/keyboard layout
+    // figure, but its icon used to be Icons.keyboard_outlined so users read it
+    // as a plain keyboard view and asked where the controller diagram was. Pin
+    // the controller glyph so the entry is self-describing and cannot silently
+    // regress back to the keyboard glyph.
+    final int toggleStart = src.indexOf("Key('shortcut_view_toggle')");
+    expect(toggleStart, greaterThanOrEqualTo(0),
+        reason: 'the view-toggle SegmentedButton must stay addressable');
+    final int toggleEnd = src.indexOf('onSelectionChanged', toggleStart);
+    expect(toggleEnd, greaterThan(toggleStart),
+        reason: 'view-toggle block must close with onSelectionChanged');
+    final String toggleBlock = src.substring(toggleStart, toggleEnd);
+    expect(
+      toggleBlock.contains('Icons.keyboard_outlined'),
+      isFalse,
+      reason: 'visual segment must NOT hide the controller behind a keyboard '
+          'glyph (TODO-942 discoverability regression)',
+    );
+    expect(
+      toggleBlock.contains('Icons.sports_esports_outlined'),
+      isTrue,
+      reason: 'visual segment must advertise the gamepad layout with a '
+          'controller glyph',
+    );
+    // The two segments must also carry describing tooltips (hover / long-press
+    // discoverability on desktop) rather than being bare icons.
+    expect(toggleBlock.contains('tooltip: t.shortcut_view_list'), isTrue,
+        reason: 'list segment must expose a describing tooltip');
+    expect(toggleBlock.contains('tooltip: t.shortcut_view_visual'), isTrue,
+        reason: 'visual segment must expose a describing tooltip');
+  });
+
   test('TODO-1113: the chosen brand is threaded into the figure + list chips',
       () {
     // The figure re-skins with the selected brand...

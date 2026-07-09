@@ -48,4 +48,42 @@ void main() {
       );
     });
   });
+
+  group('videoImportCanImport (TODO-1157: stream url source)', () {
+    test('valid stream url, no local video -> can import', () {
+      expect(
+        videoImportCanImport(
+          videoPath: null,
+          subtitlePath: null,
+          streamUrl: 'https://cdn.example.com/live.m3u8',
+          busy: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('invalid stream url + no video -> cannot import', () {
+      expect(
+        videoImportCanImport(
+          videoPath: null,
+          subtitlePath: null,
+          streamUrl: 'not-a-url',
+          busy: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('busy + valid stream url -> cannot import', () {
+      expect(
+        videoImportCanImport(
+          videoPath: null,
+          subtitlePath: null,
+          streamUrl: 'https://cdn.example.com/live.m3u8',
+          busy: true,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

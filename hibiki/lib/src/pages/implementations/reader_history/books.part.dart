@@ -365,11 +365,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       } else {
         final String? bookKey = _parseBookKey(key);
         if (bookKey != null) {
-          final bool ok = await ReaderHibikiSource.instance.deleteBook(
+          final DeleteBookResult result =
+              await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: bookKey,
           );
-          if (ok) deleted++;
+          if (result.deleted) deleted++;
         }
       }
     }
@@ -429,10 +430,27 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       memberTitles,
       fallback: t.series_default_name,
     );
+    // TODO-947：把选中的前 4 本书封面传进命名弹窗，铺成手机文件夹式网格缩略预览，
+    // 让用户在确认合并时直观看到「我把哪几本合并进去了」。
+    final List<Widget> previewCovers = <Widget>[
+      for (final MediaItem item in _visibleEpubBooks)
+        if (_selectedKeys.contains(item.mediaIdentifier))
+          _slotCover(
+            _ShelfBookSlot(seq: 0, order: 0, epub: item),
+            _epubCoverUrisByBookKey,
+          ),
+      for (final SrtBook book in _visibleSrtBooks)
+        if (_selectedKeys.contains('srt_${book.uid}'))
+          _slotCover(
+            _ShelfBookSlot(seq: 0, order: 0, srt: book),
+            _epubCoverUrisByBookKey,
+          ),
+    ].take(4).toList();
     final String? name = await showSeriesNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,
+      previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
     final int seriesId = await appModel.database.createSeries(name);
@@ -511,13 +529,21 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       return;
     }
 
-    final bool ok = await ReaderHibikiSource.instance.deleteBook(
+    final DeleteBookResult result =
+        await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
     );
     if (!mounted) return;
-    if (!ok) {
-      HibikiToast.show(msg: t.epub_delete_error);
+    if (!result.deleted) {
+      // TODO-1359：不再只弹笼统的「删除书籍失败」——把 deleteBook 回报的原因（同时已
+      // 写入 ErrorLogService，可在日志页导出）拼进 toast，让用户知道为什么删不掉。
+      final String reason = result.failureReason ?? '';
+      HibikiToast.show(
+        msg: reason.isEmpty
+            ? t.epub_delete_error
+            : '${t.epub_delete_error}: $reason',
+      );
       return;
     }
     _refreshSrtBooks();
@@ -645,6 +671,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         );
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
+      case DropIntent.importVideoUrl:
+        // 书架拖入网络流 URL → 自动切到视频导入（预填 URL 并入库），与拖视频文件的
+        // 自动切换一致（TODO-1306）。
+        _openStreamImportPrefilled(streamUrl: files.urls.first);
       case DropIntent.unsupportedSurface:
         debugPrint('[hibiki-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(

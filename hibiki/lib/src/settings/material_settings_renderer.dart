@@ -124,6 +124,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required SettingsDestination destination,
     ScrollController? scrollController,
     bool shrinkWrap = false,
+    bool insetHorizontally = true,
   }) {
     final BuildContext context = settingsContext.context;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -135,7 +136,15 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // insets come from the shared [detailHorizontalInsets] so sibling cards that
     // must match this width (reader quick-settings 主题选择器) can reuse the same
     // source instead of hardcoding their own left/right padding.
-    final EdgeInsets horizontal = detailHorizontalInsets(tokens);
+    // Own horizontal insets only when NOT embedded in a parent that already
+    // pads horizontally. The reader quick-settings pane passes
+    // insetHorizontally:false (it applies its own widePrimaryPadding /
+    // narrowPadding), so its schema-projected sub-pages line up with the
+    // pane's bespoke 导航 / 有声书 sub-pages instead of double-indenting and
+    // rendering narrower (TODO-1321). Mirrors the Cupertino renderer, whose
+    // detail body never owns a horizontal inset.
+    final EdgeInsets horizontal =
+        insetHorizontally ? detailHorizontalInsets(tokens) : EdgeInsets.zero;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal.left,
       tokens.spacing.gap,

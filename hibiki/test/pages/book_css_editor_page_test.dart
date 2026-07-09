@@ -62,11 +62,50 @@ void main() {
     f.writeAsStringSync(content);
   }
 
+  // TODO-1234: book CSS discovery no longer walks the extract dir for *.css —
+  // it reads the OPF manifest (META-INF/container.xml -> content.opf -> items
+  // with media-type="text/css"). Seed a minimal EPUB package at the extract-dir
+  // root so `BookCssRepository.discoverCssFiles` finds the stylesheets written
+  // via createCss. The OPF sits at the root, so manifest hrefs equal the
+  // extract-dir-relative paths passed in [cssRelPaths].
+  void seedEpubManifest(Directory root, List<String> cssRelPaths) {
+    final StringBuffer items = StringBuffer();
+    for (int i = 0; i < cssRelPaths.length; i++) {
+      items.write(
+        '<item id="css$i" href="${cssRelPaths[i]}" media-type="text/css"/>',
+      );
+    }
+    createCss(
+      root,
+      'META-INF/container.xml',
+      '<?xml version="1.0"?>'
+          '<container version="1.0" '
+          'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+          '<rootfiles>'
+          '<rootfile full-path="content.opf" '
+          'media-type="application/oebps-package+xml"/>'
+          '</rootfiles>'
+          '</container>',
+    );
+    createCss(
+      root,
+      'content.opf',
+      '<?xml version="1.0"?>'
+          '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+          '<manifest>'
+          '$items'
+          '</manifest>'
+          '<spine/>'
+          '</package>',
+    );
+  }
+
   testWidgets(
     'BUG-040: opens off the UI thread — loading first frame, content after load',
     (WidgetTester tester) async {
       createCss(tmpDir, 'a.css', 'aaa');
       createCss(tmpDir, 'b.css', 'bbb');
+      seedEpubManifest(tmpDir, ['a.css', 'b.css']);
 
       await tester.pumpWidget(buildApp(tmpDir.path));
       // Only one frame — the discover-walk + reads are still in flight off the
@@ -94,6 +133,7 @@ void main() {
     (WidgetTester tester) async {
       createCss(tmpDir, 'a.css', 'aaa');
       createCss(tmpDir, 'b.css', 'bbb');
+      seedEpubManifest(tmpDir, ['a.css', 'b.css']);
 
       await pumpEditor(tester, tmpDir.path);
 
@@ -135,6 +175,7 @@ void main() {
 
       createCss(tmpDir, 'a.css', 'aaa');
       createCss(tmpDir, 'b.css', 'bbb');
+      seedEpubManifest(tmpDir, ['a.css', 'b.css']);
 
       await pumpEditor(tester, tmpDir.path);
 
@@ -153,6 +194,7 @@ void main() {
     'reset current discards editor changes when no .original exists',
     (WidgetTester tester) async {
       createCss(tmpDir, 'style.css', 'original content');
+      seedEpubManifest(tmpDir, ['style.css']);
 
       await pumpEditor(tester, tmpDir.path);
 
@@ -195,6 +237,7 @@ void main() {
       addTearDown(tester.view.reset);
 
       createCss(tmpDir, 'a.css', 'aaa');
+      seedEpubManifest(tmpDir, ['a.css']);
 
       await pumpEditor(tester, tmpDir.path);
 

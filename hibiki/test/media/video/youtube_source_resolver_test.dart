@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 
 void main() {
@@ -57,6 +58,35 @@ void main() {
     test('普通直链不警告', () {
       expect(warns('https://cdn.example.com/a.m3u8'), isFalse);
       expect(warns('https://example.com/video.mp4'), isFalse);
+    });
+  });
+
+  // TODO-1307 A1：多 client 兜底顺序——androidVr 首选（零回归），失败才回落 ios、tv。
+  group('A1 多 client 兜底顺序 (TODO-1307)', () {
+    test('kYoutubeManifestClientFallback = androidVr -> ios -> tv', () {
+      expect(kYoutubeManifestClientFallback.length, 3);
+      expect(
+        identical(
+            kYoutubeManifestClientFallback[0], yt.YoutubeApiClient.androidVr),
+        isTrue,
+        reason: 'androidVr 必须首选（其直链无需签名解密、libmpv 普通 UA 可拉取）',
+      );
+      expect(
+        identical(kYoutubeManifestClientFallback[1], yt.YoutubeApiClient.ios),
+        isTrue,
+      );
+      expect(
+        identical(kYoutubeManifestClientFallback[2], yt.YoutubeApiClient.tv),
+        isTrue,
+      );
+    });
+  });
+
+  // TODO-1307 字幕后置入口：best-effort，无法解析出 videoId 时返回空 cue，绝不抛/阻断播放。
+  group('resolveYoutubeCaptions best-effort (TODO-1307)', () {
+    test('无法解析的 URL -> 空 cue、不联网、不抛', () async {
+      expect(await resolveYoutubeCaptions('not a youtube url'), isEmpty);
+      expect(await resolveYoutubeCaptions(''), isEmpty);
     });
   });
 }

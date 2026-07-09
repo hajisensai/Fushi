@@ -83,7 +83,8 @@ void main() {
 
     test('pageStep/maxScroll 同源亚像素（无新双量纲）', () {
       // pageStep = contentBox + gap；maxScroll = totalSize - pageStep，二者同源。
-      expect(source.contains('var pageStep = contentBox + gap;'), isTrue);
+      expect(source.contains('var pageStep = columns * (contentBox + gap);'),
+          isTrue);
       expect(
           source.contains('var maxScroll = Math.max(0, totalSize - pageStep);'),
           isTrue,

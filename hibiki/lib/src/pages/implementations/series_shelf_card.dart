@@ -78,22 +78,13 @@ class SeriesShelfCard extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: <Widget>[
-                      // TODO-1125 A：堆叠样式——后层铺真实成员封面（露出后面几本书），
-                      // 首卷主封面在最前。成员不足 2 张时 _backCovers 为空 → 只画主
-                      // 封面，视觉退回单卡（never break 单封面书架）。
-                      ..._buildBackLayers(theme, tokens),
-                      Positioned(
-                        top: 4,
-                        left: 0,
-                        right: 6,
-                        bottom: 0,
+                      Positioned.fill(
                         child: HibikiCard(
                           padding: EdgeInsets.zero,
                           margin: EdgeInsets.zero,
-                          child: ClipRect(
-                            child: covers.isNotEmpty
-                                ? covers.first
-                                : const SizedBox.shrink(),
+                          child: ClipRRect(
+                            borderRadius: tokens.radii.cardRadius,
+                            child: SeriesFolderCover(covers: covers),
                           ),
                         ),
                       ),
@@ -177,57 +168,6 @@ class SeriesShelfCard extends StatelessWidget {
     return card;
   }
 
-  /// TODO-1125 A：后层堆叠封面。取 [covers] 里主封面之后的 1~2 张成员封面，各自
-  /// 向右下略偏移 + 缩小 + 描边/阴影铺在主封面后面，读作「一摞书」（苹果式）。
-  ///
-  /// 越靠后的成员偏移越大、越小（离读者越远），且先渲染（Stack 底层），故主封面最前。
-  /// 成员不足 2 张（[covers].length < 2）→ 返回空列表，视觉退回单封面无堆叠。
-  List<Widget> _buildBackLayers(ThemeData theme, HibikiDesignTokens tokens) {
-    if (covers.length < 2) return const <Widget>[];
-    // 最多两张后层（第 2、3 个成员封面）；离读者越远层级越靠后（先绘制）。
-    final List<Widget> back = covers.skip(1).take(2).toList(growable: false);
-    final List<Widget> layers = <Widget>[];
-    for (int i = back.length - 1; i >= 0; i--) {
-      // depth 1 = 紧贴主封面的一层；depth 2 = 更远一层。偏移/缩小随 depth 递增。
-      final int depth = i + 1;
-      final double dx = 6.0 * depth;
-      final double dy = 3.0 * depth;
-      final double scale = 1.0 - 0.05 * depth;
-      layers.add(Positioned(
-        // 稳定 Key，供测试精确统计后层数量（与主封面 / app 内部 Transform 区分）。
-        key: ValueKey<String>('series-stack-back-$depth'),
-        top: 4 + dy,
-        left: dx,
-        right: 6,
-        bottom: 0,
-        child: IgnorePointer(
-          child: Transform.scale(
-            scale: scale,
-            alignment: Alignment.topLeft,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: tokens.radii.cardRadius,
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 4,
-                    offset: const Offset(1, 2),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: tokens.radii.cardRadius,
-                child: back[i],
-              ),
-            ),
-          ),
-        ),
-      ));
-    }
-    return layers;
-  }
-
   Widget _countBadge(ThemeData theme, HibikiDesignTokens tokens) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -276,6 +216,229 @@ class SeriesShelfCard extends StatelessWidget {
           size: tokens.spacing.gap * 1.75,
           color: selected ? theme.colorScheme.onPrimary : Colors.transparent,
         ),
+      ),
+    );
+  }
+}
+
+/// TODO-947：手机文件夹式合集封面——把前 N 张成员封面（[covers]，首卷在 first）铺成
+/// 2x2 网格缩略（像 iOS/安卓桌面文件夹图标），让用户一眼看出合集里合并了哪几本书。
+///
+/// [SeriesShelfCard] 折叠卡与「组合成系列」命名弹窗预览共用本组件（同一视觉语言）。
+/// 成员不足 2 张优雅降级为整封面（无网格，never break 单成员）；成员多于 4 张只取前
+/// 4 张（配角标显示真实总数）。空 [covers] 渲染占位空盒（防御性，调用方保证非空）。
+class SeriesFolderCover extends StatelessWidget {
+  const SeriesFolderCover({
+    required this.covers,
+    this.cellRadius = 4,
+    super.key,
+  });
+
+  /// 系列前 N 张成员封面（N 由调用方裁到 ≤4），[covers].first 为主封面（首卷）。
+  final List<Widget> covers;
+
+  /// 每个网格单元的圆角半径（文件夹内小缩略图的描边圆角）。
+  final double cellRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 单张成员：整封面填满（与散书卡视觉一致，never break 单成员合集）。
+    if (covers.length <= 1) {
+      return covers.isEmpty ? const SizedBox.shrink() : covers.first;
+    }
+    final double gap = tokens.spacing.gap / 2;
+    final double pad = tokens.spacing.gap / 2;
+    // 文件夹底：微着色圆角容器 + 内边距，内嵌 2x2 成员封面网格。
+    return DecoratedBox(
+      decoration:
+          BoxDecoration(color: theme.colorScheme.surfaceContainerHighest),
+      child: Padding(
+        padding: EdgeInsets.all(pad),
+        child: Column(
+          children: <Widget>[
+            Expanded(child: _mosaicRow(theme, gap, 0, 1)),
+            SizedBox(height: gap),
+            Expanded(child: _mosaicRow(theme, gap, 2, 3)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mosaicRow(ThemeData theme, double gap, int a, int b) {
+    return Row(
+      children: <Widget>[
+        Expanded(child: _mosaicCell(theme, a)),
+        SizedBox(width: gap),
+        Expanded(child: _mosaicCell(theme, b)),
+      ],
+    );
+  }
+
+  Widget _mosaicCell(ThemeData theme, int i) {
+    final BorderRadius radius = BorderRadius.circular(cellRadius);
+    if (i >= covers.length) {
+      // 空槽：成员不足 4 本时补齐网格的占位底（更浅一档，视觉平衡）。
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainer,
+          borderRadius: radius,
+        ),
+      );
+    }
+    // 成员封面填满该单元并按各自 BoxFit 呈现，超出用圆角裁掉（center-crop 观感）。
+    return ClipRRect(
+      key: ValueKey<String>('series-folder-cell-$i'),
+      borderRadius: radius,
+      child: SizedBox.expand(child: covers[i]),
+    );
+  }
+}
+
+/// 编辑排序分组框的实心边框宽度（逻辑像素）。手机默认 [HibikiAppUiScale] FittedBox 会把它
+/// 连同整框一起缩小，取 4（缩放 ~0.65 后仍留 ~2.5px 可见边界），不是早期缩放下压成亚像素的 3px。
+const double _kSeriesFrameBorderWidth = 4;
+
+/// 编辑排序分组框把成员卡再向内缩的内边距——从这圈缩进漏出**保证宽度**的实心 matte 色带，
+/// 不再只靠成员卡自身内边距（那圈会随 FittedBox 缩放压窄到几乎看不见）。
+const double _kSeriesFrameInset = 4;
+
+/// 编辑排序分组框实心 matte 背景的不透明度。0.32 太淡（缩放后 premultiply ~82/255 几乎看不见），
+/// 提到 0.55 让同系列色块在任意缩放下都是明确可辨的一片。
+const double _kSeriesFrameMatteAlpha = 0.55;
+
+/// TODO-947 P4：书架「编辑排序」页里给**内联展开的系列成员卡**套的分组框。用户拍板：
+/// 编辑排序里合集成员要连续相邻 + 用框圈在一起，一眼看出哪几本是同一个合集。
+///
+/// 用 [Container.foregroundDecoration] 在成员卡**之上**画同色圆角边框——纯前景绘制，不占
+/// 布局尺寸，故不破坏等尺寸重排网格（[HibikiReorderableGrid] 每格固定 cellExtent×高）。同一
+/// 系列的每个成员卡都用同一个 [color]（由 seriesId 稳定映射到调色板，相邻系列颜色不同），
+/// 配上 groupAndSortShelfEntries 保证的连续相邻 → 读作「这一串同色框是一个合集」。首个成员
+/// （[showHeader]）左上角额外叠一个系列名 header chip（不改尺寸的 Positioned 叠层）标注名字。
+class SeriesReorderFrame extends StatelessWidget {
+  const SeriesReorderFrame({
+    required this.color,
+    required this.showHeader,
+    required this.seriesName,
+    required this.memberCount,
+    required this.child,
+    super.key,
+  });
+
+  /// 本系列的分组框颜色（同系列所有成员同色；由调用方按 seriesId 稳定分配）。
+  final Color color;
+
+  /// 是否本系列内联展开后的**首个成员**——仅首个成员叠系列名 header（避免每格都标名字）。
+  final bool showHeader;
+
+  /// 系列名（header 文本；无名兜底由调用方传 `t.series`）。
+  final String seriesName;
+
+  /// 系列成员总数（header 角标显示，配合连续相邻让用户数清一个合集有几本）。
+  final int memberCount;
+
+  /// 被套框的成员卡（书架既有卡片渲染，不重画）。
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    const BorderRadius radius = BorderRadius.all(Radius.circular(14));
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        // 系列色「衬垫」+ 描边（TODO-947 v2）：早期只靠成员卡自带 12px 内边距漏出的一圈
+        // matte + 3px 前景细线。实测（RepaintBoundary 取像素）在手机默认 [HibikiAppUiScale]
+        // FittedBox 缩放 s≈0.65 下，那圈只剩 ~6px 且 alpha 0.32 premultiply 后 ~82/255、边框
+        // 只剩 ~2px 同色细线——用户报「没有框」。这里三管齐下把框做「厚」：
+        //  ① 本 Container 额外内缩 [_kSeriesFrameInset]，让实心 matte 有一圈**保证宽度**的
+        //     可见色带（不再只依赖会随缩放压窄的卡片内边距）；
+        //  ② matte alpha 0.32 → [_kSeriesFrameMatteAlpha]（0.55），缩放后仍是明确的同系列色块；
+        //  ③ 边框 3 → [_kSeriesFrameBorderWidth]（4），缩放后仍留 ~2.5px 实心边界。
+        // decoration（背景 matte）画在卡片之下、只从内缩处漏出，不给不透明封面着色；
+        // foregroundDecoration（边框）画在卡片之上，保证边界永远可见。同系列成员同色 → 一叠。
+        Container(
+          padding: const EdgeInsets.all(_kSeriesFrameInset),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: _kSeriesFrameMatteAlpha),
+            borderRadius: radius,
+          ),
+          foregroundDecoration: BoxDecoration(
+            border: Border.all(color: color, width: _kSeriesFrameBorderWidth),
+            borderRadius: radius,
+          ),
+          child: child,
+        ),
+        if (showHeader)
+          PositionedDirectional(
+            top: 6,
+            start: 6,
+            child: _SeriesFrameHeader(
+              color: color,
+              seriesName: seriesName,
+              memberCount: memberCount,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// [SeriesReorderFrame] 首成员左上角的系列名 chip（folder 图标 + 名字 + 数量）。白字铺在
+/// 系列色底上，与成员框同色，读作「这个合集叫 X、共 N 本，从这里开始」。
+class _SeriesFrameHeader extends StatelessWidget {
+  const _SeriesFrameHeader({
+    required this.color,
+    required this.seriesName,
+    required this.memberCount,
+  });
+
+  final Color color;
+  final String seriesName;
+  final int memberCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: const BorderRadius.all(Radius.circular(9)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+              color: Color(0x33000000), blurRadius: 3, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.collections_bookmark_outlined,
+              size: 12, color: Colors.white),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              seriesName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            t.series_item_count(n: memberCount),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

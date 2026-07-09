@@ -14,7 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// M2（分类文本同源）：动态侧 [classifyAudiobookClipMultiCue] 的 selectedText 必须与静态
 /// 路径 [_exportAudiobookClip] 的 selectedText 同源——`_cachedSelectionRange?.text ??
 /// currentSentence.text`；此前动态侧只用 currentSentence.text，两条 emptySelection 判据
-/// 不同调。span 主锚（_cachedSentenceRange.offset/length）保持不变。
+/// 不同调。span 主锚仍是归一化 offset/length（非选区文本），但取值经单一真相源
+/// [_miningSpanRange]（句级 span 缺失时回退选区级 span，TODO-1278：消除导出误报跨章）。
 void main() {
   String libFile(String relative) =>
       File(relative).readAsStringSync().replaceAll('\r\n', '\n');
@@ -117,15 +118,24 @@ void main() {
     test('span anchor stays on currentSentence.text + norm offset/length', () {
       final String body = fnBody(
           audiobookPart, '_AudiobookClipDynamicPlan? _buildAudiobookClipPlan(');
-      // span 主锚不变：miningSentenceCueSpan 仍喂 sentence + _cachedSentenceRange。
+      // span 主锚不变：miningSentenceCueSpan 仍喂整句文本 sentence（不被选区文本替换）。
       expect(body.contains('sentence: sentence,'), isTrue,
           reason: 'M2：span 主锚必须仍用整句文本（sentence），不能被选区文本替换。');
-      expect(body,
-          contains('sentenceNormCharOffset: _cachedSentenceRange?.offset'),
-          reason: 'M2：span 主锚的归一化 offset 必须保持不变。');
-      expect(body,
-          contains('sentenceNormCharLength: _cachedSentenceRange?.length'),
-          reason: 'M2：span 主锚的归一化 length 必须保持不变。');
+      // TODO-1278：归一化 offset/length 主锚改走单一真相源 _miningSpanRange()（句级
+      // span 缺失时回退选区级 span），与收藏 / 制卡历史归一，消除导出误报「跨章」。仍是
+      // 归一化 offset/length（非选区文本），只是取值经共享回退——不得回退成裸
+      // _cachedSentenceRange?.offset（会丢选区级回退）。
+      expect(body.contains('sentenceNormCharOffset: spanRange?.offset'), isTrue,
+          reason: 'M2：span 主锚的归一化 offset 必须经 _miningSpanRange() 的 '
+              'spanRange（含选区级回退，TODO-1278）。');
+      expect(body.contains('sentenceNormCharLength: spanRange?.length'), isTrue,
+          reason: 'M2：span 主锚的归一化 length 必须经 _miningSpanRange() 的 '
+              'spanRange（含选区级回退，TODO-1278）。');
+      expect(
+          body.contains('sentenceNormCharOffset: _cachedSentenceRange?.offset'),
+          isFalse,
+          reason: 'M2：不得再裸读 _cachedSentenceRange?.offset（丢选区级回退 → '
+              'TODO-1278 误报跨章回归）。');
     });
   });
 }

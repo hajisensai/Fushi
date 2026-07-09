@@ -49,6 +49,112 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
 
+  /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
+  /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.hoshiSelection.updateRangeSelection`
+  /// 扩展 app 自绘选区（CSS Custom Highlight `hoshi-selection`，绝不建立原生选区，
+  /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 弹选区菜单（复制 / 查词，
+  /// 走 `onSelectionMenu`）—— 选区间(可复制)与查词/制卡共存，不再被强制查词；原地未拖动
+  /// 退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
+  /// 未及 [delayMs] 判为滑动/滚动，放弃拖选（长按 vs swipe 消歧）。置全局标志
+  /// `window.__hoshiTextSelectDragActive`，翻页（`_gestureEnd`）与边界跨章（`_bEnd`）
+  /// 见到即让路，绝不与拖选争同一次触摸（消除拖选后误翻页 / 双查词）。
+  ///
+  /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
+  /// 550ms，仅命中图片才 arm）按命中元素天然互斥；多指触摸（缩放）直接不 arm。
+  static String longPressDragGestureScript({
+    int delayMs = 500,
+    int slop = 10,
+    int maxLength = 400,
+  }) {
+    final int slopSq = slop * slop;
+    return '''
+(function() {
+  var LPS_DELAY = $delayMs;
+  var LPS_SLOP_SQ = $slopSq;
+  var LPS_MAXLEN = $maxLength;
+  var lpsTimer = null;
+  var lpsActive = false;
+  var lpsStartX = 0, lpsStartY = 0;
+  window.__hoshiTextSelectDragActive = false;
+  function lpsClearTimer() { if (lpsTimer) { clearTimeout(lpsTimer); lpsTimer = null; } }
+  function lpsReset() {
+    lpsClearTimer();
+    lpsActive = false;
+    window.__hoshiTextSelectDragActive = false;
+  }
+  // Arm only over real matchable text, never over links / form controls / caret
+  // ring / block images (those own their own gestures). getCharacterAtPoint is
+  // the same hit test the tap path uses, so blank margins never arm.
+  function lpsAllowed(target, x, y) {
+    var el = target || document.elementFromPoint(x, y);
+    if (el && el.closest &&
+        el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring')) {
+      return false;
+    }
+    return !!(window.hoshiSelection && window.hoshiSelection.getCharacterAtPoint &&
+      window.hoshiSelection.getCharacterAtPoint(x, y));
+  }
+  document.addEventListener('touchstart', function(e) {
+    lpsReset();
+    // Only single-finger presses select; a second finger is pinch/zoom.
+    if (!e.touches || e.touches.length !== 1) return;
+    var t = e.touches[0];
+    if (!lpsAllowed(e.target, t.clientX, t.clientY)) return;
+    lpsStartX = t.clientX;
+    lpsStartY = t.clientY;
+    lpsTimer = setTimeout(function() {
+      lpsTimer = null;
+      if (window.hoshiSelection && window.hoshiSelection.beginRangeSelection &&
+          window.hoshiSelection.beginRangeSelection(lpsStartX, lpsStartY)) {
+        lpsActive = true;
+        // Set BEFORE touchend so tap/swipe (_gestureEnd) and boundary cross-chapter
+        // (_bEnd) both bail: the drag-select owns this touch exclusively.
+        window.__hoshiTextSelectDragActive = true;
+      }
+    }, LPS_DELAY);
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (!e.touches || !e.touches.length) return;
+    var t = e.touches[0];
+    if (lpsActive) {
+      // Own the gesture: block native scroll and extend the app-drawn selection.
+      if (e.cancelable) e.preventDefault();
+      if (window.hoshiSelection && window.hoshiSelection.updateRangeSelection) {
+        window.hoshiSelection.updateRangeSelection(t.clientX, t.clientY);
+      }
+      return;
+    }
+    if (lpsTimer) {
+      var dx = t.clientX - lpsStartX;
+      var dy = t.clientY - lpsStartY;
+      // Moved past slop before the long-press fired: it is a scroll/swipe, not a
+      // select; drop the arm and let the native scroll & swipe paths own it.
+      if ((dx * dx + dy * dy) > LPS_SLOP_SQ) lpsClearTimer();
+    }
+  }, {passive: false});
+  document.addEventListener('touchend', function(e) {
+    if (!lpsActive) { lpsClearTimer(); return; }
+    if (e.cancelable && e.preventDefault) e.preventDefault();
+    var t = (e.changedTouches && e.changedTouches[0]) || null;
+    var x = t ? t.clientX : lpsStartX;
+    var y = t ? t.clientY : lpsStartY;
+    var fired = window.hoshiSelection && window.hoshiSelection.endRangeSelection &&
+      window.hoshiSelection.endRangeSelection(x, y);
+    if (!fired && window.hoshiSelection && window.hoshiSelection.selectText) {
+      // Long-press without a drag: behave exactly like a tap (word lookup),
+      // preserving slow-steady-tap word lookup (TODO-971).
+      window.hoshiSelection.selectText(x, y, LPS_MAXLEN);
+    }
+    // Keep __hoshiTextSelectDragActive true until the next touchstart resets it:
+    // a trailing compatibility pointerup (order vs touchend varies by WebView)
+    // must still see the flag so _gestureEnd bails -> no double lookup.
+    lpsClearTimer();
+    lpsActive = false;
+  }, {passive: false});
+  document.addEventListener('touchcancel', function() { lpsReset(); }, {passive: true});
+})();''';
+  }
+
   /// BUG-402：取**浏览器原生选区**（`window.getSelection()`）的纯文本，给桌面
   /// Windows 的 Ctrl+C 复制兼容层用。刻意走原生 `getSelection()` 而非
   /// `window.hoshiSelection`（后者是查词选区，是另一套坐标/状态），因为短拖/竖拖
@@ -132,6 +238,47 @@ class ReaderSelectionScripts {
   /// 让右键导出复用 tap 路径同一套选区→cue 状态，不另起特例。无选区回传 `null`。
   static String nativeSelectionSentenceRangeInvocation() =>
       'JSON.stringify(window.hoshiSelection.nativeSelectionSentenceRange())';
+
+  /// TODO-1127：取**当前原生选区**内夹带的 EPUB 插图（<img> / 光栅封面 <svg><image>）。
+  /// 回传 JSON 数组，每项 `{src, normOffset}`，由 [clipSelectionImagesFromResult] 解析。
+  /// 供有声书片段导出把「选区中间的插图」按相对顺序渲进卡片。
+  static String nativeSelectionImagesInvocation() =>
+      'JSON.stringify(window.hoshiSelection.nativeSelectionImages())';
+
+  /// 解析 [nativeSelectionImagesInvocation] 的结果为选区插图列表：每项 [src]（可交给
+  /// 宿主 `_readerImageFileForUrl` 解析成解压目录文件的绝对 URL）+ [normOffset]（该图在
+  /// 整书归一化文本坐标里的位置；JS 端 `imageNormOffset` 取不到时回传 null → 这里归一为
+  /// `-1`，宿主据此把图兜底挂到最前一段）。无选区 / 无图 / 解析失败 → 空列表。
+  static List<({String src, int normOffset})> clipSelectionImagesFromResult(
+    Object? raw,
+  ) {
+    if (raw == null) return const <({String src, int normOffset})>[];
+    try {
+      final Object decoded;
+      if (raw is String) {
+        final String trimmed = raw.trim();
+        if (trimmed.isEmpty || trimmed == 'null') {
+          return const <({String src, int normOffset})>[];
+        }
+        decoded = jsonDecode(trimmed) as Object;
+      } else {
+        decoded = raw;
+      }
+      if (decoded is! List) return const <({String src, int normOffset})>[];
+      final List<({String src, int normOffset})> result =
+          <({String src, int normOffset})>[];
+      for (final Object? item in decoded) {
+        if (item is! Map) continue;
+        final String src = item['src']?.toString() ?? '';
+        if (src.isEmpty) continue;
+        final int normOffset = (item['normOffset'] as num?)?.toInt() ?? -1;
+        result.add((src: src, normOffset: normOffset));
+      }
+      return result;
+    } catch (_) {
+      return const <({String src, int normOffset})>[];
+    }
+  }
 
   static bool didSelectNothing(String? result) {
     if (result == null) return true;
@@ -218,6 +365,10 @@ const JAPANESE_RANGES = [
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiSelection = {
   selection: null,
+  // TODO-1317: mobile long-press drag-select anchor / whether the finger
+  // actually dragged (vs a stationary long-press that falls back to word lookup).
+  dragAnchor: null,
+  dragMoved: false,
   highlightWrappers: [],
   selectionRubyElements: [],
   scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
@@ -693,6 +844,79 @@ window.hoshiSelection = {
       sentenceNormalizedLength: sentenceNormalizedLength
     };
   },
+  // TODO-1127：抽取**当前原生选区**内夹带的 EPUB 插图（<img> 与光栅封面 <svg><image>），
+  // 供有声书片段导出把「选区中间的插图」渲进卡片。返回按文档序的数组，每项
+  // { src, normOffset }：src 是可交给宿主 _readerImageFileForUrl 解析成解压目录文件的绝对
+  // URL（hoshi.local/epub/...），normOffset 是该图在整书归一化文本坐标里的位置（用相邻文本
+  // 节点算，供宿主把图挂到相对顺序正确的 cue 段后）。选区无图 / 无原生选区 → 空数组。
+  nativeSelectionImages: function() {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!sel || sel.rangeCount === 0) return [];
+    var candidates = document.querySelectorAll('img, svg');
+    var out = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var inSel = false;
+      try {
+        inSel = sel.containsNode ? sel.containsNode(el, true) : false;
+      } catch (e) {
+        inSel = false;
+      }
+      if (!inSel) continue;
+      var src = this.resolveClipImageSrc(el);
+      if (!src) continue;
+      out.push({ src: src, normOffset: this.imageNormOffset(el) });
+    }
+    return out;
+  },
+  // 解析一个图节点的可下载源 URL。<img>（跳过外字 gaiji 内联小图）→ el.src；光栅封面
+  // <svg><image xlink:href=..>（BUG-025 先例）→ 内层 <image> 的解析后绝对 href；纯矢量
+  // svg（无 <image>）无对应文件 → null（宿主跳过并记日志）。
+  resolveClipImageSrc: function(el) {
+    var tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (tag === 'img') {
+      if (el.classList &&
+          (el.classList.contains('gaiji') ||
+           el.classList.contains('gaiji-line'))) {
+        return null;
+      }
+      return el.src || el.getAttribute('src') || null;
+    }
+    if (tag === 'svg') {
+      var inner = el.querySelector('image');
+      if (!inner) return null;
+      var raw = (inner.href && inner.href.baseVal) ||
+        inner.getAttribute('xlink:href') || inner.getAttribute('href');
+      if (!raw) return null;
+      try {
+        return new URL(raw, document.baseURI).href;
+      } catch (e) {
+        return raw;
+      }
+    }
+    return null;
+  },
+  // 图节点在整书归一化文本坐标里的位置：优先取图**后**第一个正文文本节点的归一化偏移
+  // （图排在这句之前），取不到再退到图**前**最后一个文本节点的末端偏移。无 hoshiReader
+  // （无归一化映射）时返回 null，宿主兜底挂到最前一段。
+  imageNormOffset: function(el) {
+    if (!window.hoshiReader) return null;
+    var w = this.createWalker(document.body);
+    w.currentNode = el;
+    var after = w.nextNode();
+    if (after) {
+      var o = this.getNormalizedOffset(after, 0);
+      if (o !== null) return o;
+    }
+    var w2 = this.createWalker(document.body);
+    w2.currentNode = el;
+    var before = w2.previousNode();
+    if (before) {
+      var o2 = this.getNormalizedOffset(before, before.textContent.length);
+      if (o2 !== null) return o2;
+    }
+    return null;
+  },
   // 从任意节点下钻到它包含的第一个非空文本节点（含自身），返回 {node, offset:0}。
   firstTextNode: function(node) {
     // TODO-956：下钻首个**含可见文本**的节点。纯空白 / 纯换行文本节点不算正文（其
@@ -800,6 +1024,20 @@ window.hoshiSelection = {
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+    return this.fireTextSelected(x, y);
+  },
+  // Build the onTextSelected/onSelectionMenu payload for the current
+  // this.selection. Extracted verbatim from selectFromPosition's tail so the
+  // tap/word path (fireTextSelected), the TODO-1317 drag-select menu path
+  // (fireSelectionMenu) and the drag->lookup path all build the identical payload
+  // (text / sentence / rect / normalized offsets) and reuse one downstream
+  // dictionary/mining pipeline. Returns null when there is no live selection.
+  buildSelectionPayload: function(x, y) {
+    if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) return null;
+    var startNode = this.selection.startNode;
+    var startOffset = this.selection.startOffset;
+    var ranges = this.selection.ranges;
+    var text = this.selection.text;
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
     var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(startNode, startOffset) : null;
     var normalizedLength = null;
@@ -818,7 +1056,7 @@ window.hoshiSelection = {
         sentenceNormalizedLength = Math.max(0, snEnd - snStart);
       }
     }
-    window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify({
+    return {
       text: text,
       sentence: sentenceContext.sentence,
       rect: this.getSelectionRect(x, y),
@@ -827,8 +1065,138 @@ window.hoshiSelection = {
       sentenceOffset: sentenceContext.sentenceOffset,
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength
-    }));
-    return text;
+    };
+  },
+  // Fire onTextSelected for the current this.selection (tap/word lookup path and
+  // the caret/keyboard path). Goes straight to the dictionary/mining popup.
+  fireTextSelected: function(x, y) {
+    var payload = this.buildSelectionPayload(x, y);
+    if (!payload) return null;
+    window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
+    return payload.text;
+  },
+  // TODO-1317: mobile long-press *drag*-select ends here instead of firing
+  // lookup directly. Dart shows a selection menu (Copy / Lookup) so a plain-text
+  // range selection (copy) and lookup/mining coexist -- the user is no longer
+  // forced into an immediate lookup. this.selection (and its hoshi-selection
+  // highlight) is kept so the menu overlays the live selection; Dart clears it on
+  // copy/dismiss, or converges it to the match on lookup.
+  fireSelectionMenu: function(x, y) {
+    var payload = this.buildSelectionPayload(x, y);
+    if (!payload) return null;
+    window.flutter_inappwebview.callHandler('onSelectionMenu', JSON.stringify(payload));
+    return payload.text;
+  },
+  // -- TODO-1317: mobile long-press drag-select --------------------------------
+  // Direction B: keep TODO-1279's `@media (pointer: coarse) user-select:none`
+  // (touch never builds a native blue selection -> no double selection) and
+  // instead drive the *app-drawn* selection (this.selection + CSS Custom
+  // Highlight `hoshi-selection`) from a long-press drag. These never call
+  // window.getSelection()/addRange, so no native selection is ever created. On
+  // release a real drag hands Dart a selection menu (fireSelectionMenu ->
+  // onSelectionMenu) offering Copy / Lookup so plain-text selection (copy) and
+  // lookup/mining coexist. A stationary long-press (no drag) falls back to word
+  // lookup at the caller so slow-steady taps keep looking up the whole word.
+  //
+  // Build the ordered per-textnode ranges + concatenated text spanning the two
+  // character positions (drag anchor + current point). Endpoints are ordered by
+  // document position; the character under the later point is included (+1). The
+  // walker skips furigana (rt/rp) and whitespace-only nodes (createWalker), so a
+  // cross-paragraph drag yields clean matchable text.
+  collectRangeBetween: function(nodeA, offA, nodeB, offB) {
+    var startNode, startOffset, endNode, endOffset;
+    var before;
+    if (nodeA === nodeB) {
+      before = offA <= offB;
+    } else {
+      before = !!(nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    if (before) {
+      startNode = nodeA; startOffset = offA; endNode = nodeB; endOffset = offB + 1;
+    } else {
+      startNode = nodeB; startOffset = offB; endNode = nodeA; endOffset = offA + 1;
+    }
+    var walker = this.createWalker(document.body);
+    walker.currentNode = startNode;
+    var ranges = [];
+    var text = '';
+    var node = startNode;
+    var from = startOffset;
+    // Bound the walk so a broken node relationship can never spin forever.
+    var guard = 0;
+    while (node && guard++ < 100000) {
+      var content = node.textContent;
+      var to = (node === endNode) ? Math.min(endOffset, content.length) : content.length;
+      if (to > from) {
+        ranges.push({ node: node, start: from, end: to });
+        text += content.slice(from, to);
+      }
+      if (node === endNode) break;
+      node = walker.nextNode();
+      from = 0;
+    }
+    if (!text) return null;
+    return { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+  },
+  // Render the whole current this.selection via the same highlighter as the tap
+  // path. Only re-render per drag frame on the CSS Custom Highlight path (it is
+  // DOM-mutation-free); the wrapper fallback (extractContents) mutates the DOM,
+  // so it is left to render once post-lookup (highlightSelection from Dart).
+  renderSelectionHighlight: function() {
+    if (!this.selection || !this.selection.text) return;
+    if (window.__hoshiCssHighlightsSupported) {
+      this.highlightSelection(this.selection.text.length + 1);
+    }
+  },
+  beginRangeSelection: function(x, y) {
+    var el = document.elementFromPoint(x, y);
+    if (el && el.closest && el.closest('a')) return false;
+    var hit = this.getCharacterAtPoint(x, y);
+    if (!hit) return false;
+    this.clearSelection();
+    this.dragAnchor = { node: hit.node, offset: hit.offset };
+    this.dragMoved = false;
+    this.updateRangeSelection(x, y);
+    return true;
+  },
+  updateRangeSelection: function(x, y) {
+    if (!this.dragAnchor) return null;
+    var hit = this.getCharacterAtPoint(x, y);
+    // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
+    var endNode = hit ? hit.node : this.dragAnchor.node;
+    var endOffset = hit ? hit.offset : this.dragAnchor.offset;
+    if (hit && (hit.node !== this.dragAnchor.node || hit.offset !== this.dragAnchor.offset)) {
+      this.dragMoved = true;
+    }
+    var built = this.collectRangeBetween(
+      this.dragAnchor.node, this.dragAnchor.offset, endNode, endOffset);
+    if (!built) return null;
+    this.selection = {
+      startNode: built.startNode, startOffset: built.startOffset,
+      ranges: built.ranges, text: built.text
+    };
+    this.renderSelectionHighlight();
+    return built.text;
+  },
+  // Finalize the drag: extend to the release point, then present the selection
+  // menu (Copy / Lookup) iff the finger actually dragged a range. Returns true
+  // when it handled the release (caller does nothing more), false for a
+  // stationary long-press (caller falls back to single-word lookup, TODO-971).
+  // TODO-1317: a real drag no longer fires lookup directly -- it keeps
+  // this.selection (highlight stays up) and hands Dart a menu so a plain-text
+  // range selection (copy) and lookup/mining coexist instead of forcing lookup.
+  endRangeSelection: function(x, y) {
+    var moved = this.dragMoved;
+    this.updateRangeSelection(x, y);
+    moved = moved || this.dragMoved;
+    this.dragAnchor = null;
+    this.dragMoved = false;
+    if (!moved || !this.selection || !this.selection.text) {
+      this.clearSelection();
+      return false;
+    }
+    this.fireSelectionMenu(x, y);
+    return true;
   },
   getSelectionRect: function(x, y) {
     if (!this.selection || !this.selection.ranges.length) return null;

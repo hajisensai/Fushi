@@ -10,14 +10,15 @@ void main() {
 
 class _FakeMining implements HibikiRemoteMiningService {
   @override
-  Future<String> mineEntry({
+  Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
   }) async =>
-      'success';
+      const RemoteMineResult(result: 'success');
 
   @override
-  Future<String> mineImmersion(ImmersionMinePayload payload) async => 'success';
+  Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async =>
+      const RemoteMineResult(result: 'success');
 
   @override
   Future<bool> isDuplicate({

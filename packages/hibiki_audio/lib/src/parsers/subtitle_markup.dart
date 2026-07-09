@@ -165,12 +165,21 @@ class SubtitleMarkup {
   /// cue 级默认样式（来自 ASS `[V4+ Styles]`，TODO-1105）。null=无 Style 段/非 ASS。
   final SubtitleCueStyle? cueStyle;
 
+  /// ASS `[Script Info]` 的 `PlayResY`（脚本坐标系高度，TODO-1246）。ASS 的字号
+  /// （`Fontsize` / `\fs`）与阴影深度（`Shadow` / `\shad`）是**相对本高度的绝对像素**：
+  /// 渲染层据 `字幕显示区高度 / playResY` 把绝对值缩放到实际播放尺寸，否则大制作字幕
+  /// （PlayResY=1080、Fontsize=60）会以裸 60 逻辑像素在小屏撑爆、在大屏偏小。ass_parser
+  /// 缺省时按 ASS 规范回退 288（与 `\pos` 归一化同源）；srt/vtt 无 PlayRes 传 null →
+  /// 渲染层退回不缩放（历史行为）。
+  final double? playResY;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
     this.anchor,
     this.posFraction,
     this.cueStyle,
+    this.playResY,
   });
 }
 
@@ -200,6 +209,25 @@ class _Style {
     ..shadowColorArgb = shadowColorArgb
     ..outlineWidthPx = outlineWidthPx
     ..shadowDepthPx = shadowDepthPx;
+
+  /// Clears every accumulated inline override, returning to the "no override"
+  /// state (ASS `\r` reset-tag semantics, TODO-1246). A segment reset this way
+  /// reports [hasStyle] == false, so the renderer falls back to this cue's
+  /// [V4+ Styles] baseline ([SubtitleCueStyle]) instead of inheriting the
+  /// previous span's inline primary colour / outline / font.
+  void reset() {
+    italic = false;
+    bold = false;
+    underline = false;
+    strike = false;
+    colorArgb = null;
+    fontSizePx = null;
+    fontName = null;
+    outlineColorArgb = null;
+    shadowColorArgb = null;
+    outlineWidthPx = null;
+    shadowDepthPx = null;
+  }
 
   bool get hasStyle =>
       italic ||
@@ -327,6 +355,8 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     anchor: anchor ?? cueStyle?.anchor,
     posFraction: pos,
     cueStyle: cueStyle,
+    // PlayResY 原样透传，供渲染层把 ASS 绝对字号 / 阴影深度缩放到播放尺寸（TODO-1246）。
+    playResY: playResY,
   );
 }
 
@@ -443,6 +473,21 @@ void _applyOverrideBlock(
     final RegExpMatch? p1 = RegExp(r'^p(\d+)$').firstMatch(tag);
     if (p1 != null) {
       setDrawing(int.parse(p1.group(1)!) > 0);
+      continue;
+    }
+
+    // \r / \r<StyleName>: ASS reset tag. Clears every accumulated inline
+    // override so the reset region falls back to this cue's [V4+ Styles]
+    // baseline instead of inheriting the previous span's primary colour /
+    // outline / font (TODO-1246). Without it, `{\c&Hxxxxxx&}...{\r}...` bleeds
+    // the earlier colour past the reset and paints the wrong colour / stroke
+    // rather than honouring the subtitle's own style. The only ASS tag starting
+    // with a bare `r` is `\r` (`\frx` / `\fscx` start with `f`), so a prefix
+    // test is safe. Named-style `\r<StyleName>` switching needs the
+    // [V4+ Styles] map (not held here); a baseline reset is a safe approximation
+    // that at least stops stale overrides from leaking.
+    if (tag == 'r' || RegExp(r'^r[A-Za-z0-9_ \-]+$').hasMatch(tag)) {
+      style.reset();
       continue;
     }
 

@@ -37,6 +37,10 @@ void main() {
     expect(ankiHandlebarLabel('{book-cover}'), t.handlebar_book_cover);
   });
 
+  test('{card-image} maps to t.handlebar_card_image (TODO-1298)', () {
+    expect(ankiHandlebarLabel('{card-image}'), t.handlebar_card_image);
+  });
+
   test('unknown placeholder falls back to the raw literal', () {
     expect(ankiHandlebarLabel('{bogus}'), '{bogus}');
   });

@@ -32,6 +32,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
@@ -59,6 +60,7 @@ import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/reader/reader_gamepad_immersive.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
+import 'package:hibiki/src/reader/ttu_toc_flatten.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
@@ -66,12 +68,14 @@ import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
 import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/serial_task_queue.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -373,6 +377,24 @@ int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
       : currentWatermark;
 }
 
+/// TODO-1229 v2：跨章去抖判据（纯函数，供单测锁定「一次连续手势=一次跨章」语义）。
+///
+/// BUG-568 案A 的 `_paginationInFlight` 守卫只覆盖「换章加载+restore」瞬态窗口，滚轮/
+/// 触控板一次连续惯性手势产生的 tick 流常长于该窗口+章内节流窗（两者都锚定手势起点）。
+/// 两窗口在手势中途失效后，残余惯性会在刚落地的短章(插图/单页章)边界再次触发跨章 →
+/// **跳两章**。本判据把「下一次跨章」冷却锚定到**输入真正停止**：距 [lastInputAt] 不足
+/// [cooldown] 即判为同一手势的残余惯性 → 返回 true（拦截）；调用方在拦截 / 丢弃惯性输入时
+/// 把 [lastInputAt] 滑到当下，冷却窗随惯性前推，惟有输入静默满 [cooldown] 才放行。
+/// [lastInputAt] 为 null（从未跨章）恒放行。
+bool chapterTurnCoolingDown({
+  required DateTime? lastInputAt,
+  required DateTime now,
+  required Duration cooldown,
+}) {
+  if (lastInputAt == null) return false;
+  return now.difference(lastInputAt) < cooldown;
+}
+
 /// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
 ///
 /// 这类页 `paginationMetrics.totalChars==0` → JS `hoshiProgressDetails()` 返空串
@@ -399,6 +421,89 @@ int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
   final int total = cumulativeChars.last + charCounts.last;
   if (total <= 0) return null;
   return (currentChars: cumulativeChars[chapterIndex], totalChars: total);
+}
+
+/// TODO-1229（第三次复诉的新症状）：漫画「图片合并章节」(双页 spread) 跳章后**图片
+/// 闪现即消失**的根因修复。
+///
+/// spread 页是内联 HTML（两张整页 `<img>`）。旧实现的 `<script>` 在**解析那一刻**就
+/// 同步 `callHandler('spreadReady')`——**不等图片 decode**。cf0adf642（BUG-568 v3）把
+/// 跨章冷却窗重锚 `_noteChapterTurnSettledIfPending` 接在 spreadReady 上，本意是「新章
+/// 内容一就绪就开一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮」。但 spreadReady
+/// 早于图片可见，整页大图 decode 常 >450ms → 冷却窗在图片 paint 之前就过期 → 图片刚
+/// 出现（闪）时残余惯性滚轮不再被拦 → 二次跨章把图片翻走（消失）。单图章节（走分页壳）
+/// 不闪，是因为它 restore / `notifyRestoreComplete` 前有 `Promise.all(imagePromises)`
+/// 等图片 `load`，content-ready 天然对齐图片可见。
+///
+/// 修法：让 spread HTML 也**等两张图 `load`/`error` 后再发 spreadReady**，镜像分页壳的
+/// `Promise.all(imagePromises)` 契约——`img.complete` 已就绪同步短路、`error` 也算就绪
+/// 防坏图/慢图悬空、无图则立即就绪。这样冷却窗重锚对齐真实图片可见时刻，不动 cf0adf642
+/// 的冷却闸门/pending 机制，只把「就绪信号」挪到正确时机；Dart 侧 8s
+/// `_startContentReadyTimeout` 仍是最终兜底（与分页壳一致）。
+///
+/// [leftUrl] / [rightUrl] 是已解析的整页图 URL（调用方已按 RTL/LTR 排好左右）。纯字符串
+/// 生成、无副作用，供单测锁定「spreadReady 被图片 load 门控」（撤回同步触发 → 守卫转红）。
+String buildSpreadPageHtml({
+  required String leftUrl,
+  required String rightUrl,
+}) {
+  return '''
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
+.spread{display:flex;width:100vw;height:100vh}
+.spread-half{flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
+.spread-half img{max-width:100%;max-height:100vh;object-fit:contain;cursor:pointer}
+</style>
+</head><body>
+<div class="spread">
+<div class="spread-half"><img src="$leftUrl" class="block-img"/></div>
+<div class="spread-half"><img src="$rightUrl" class="block-img"/></div>
+</div>
+<script>
+(function(){
+  var imgs = Array.prototype.slice.call(document.querySelectorAll('img'));
+  imgs.forEach(function(img){
+    img.addEventListener('click',function(){
+      window.flutter_inappwebview.callHandler('onImageTap',img.src);
+    });
+  });
+  var signaled = false;
+  function signalReady(){
+    if (signaled) return;
+    signaled = true;
+    window.flutter_inappwebview.callHandler('spreadReady');
+  }
+  // TODO-1229：等两张整页图 decode 完（或 error）再发 spreadReady，让跨章冷却窗
+  // 重锚对齐图片真实可见时刻，避免大图 decode 期间冷却窗过早过期被残余滚轮二次跨章。
+  var pending = imgs.length;
+  if (pending === 0) {
+    signalReady();
+  } else {
+    imgs.forEach(function(img){
+      if (img.complete && img.naturalWidth > 0) {
+        pending -= 1;
+        if (pending <= 0) signalReady();
+      } else {
+        var onOne = function(){
+          img.removeEventListener('load', onOne);
+          img.removeEventListener('error', onOne);
+          pending -= 1;
+          if (pending <= 0) signalReady();
+        };
+        img.addEventListener('load', onOne);
+        img.addEventListener('error', onOne);
+      }
+    });
+  }
+})();
+</script>
+</body></html>
+''';
 }
 
 /// BUG-213：章内原生滚动回传（`onReaderScroll`）到来时，是否应刷新章内进度。
@@ -882,11 +987,6 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static bool Function()? debugLyricsModeReady;
 
-  /// Test hook: returns reader/WebView state when lyrics mode does not become
-  /// ready on a physical device. Kept debug-only through assert assignment.
-  @visibleForTesting
-  static Future<Map<String, Object?>> Function()? debugLyricsModeDiagnostics;
-
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -964,6 +1064,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 书签跳转恒 false，照常 debounce / 退出 flush 保存。
   bool _suppressPositionPersist = false;
   String? _initialFragment;
+  // TODO-1309: 跨章「文本搜索跳转」落定目标章后要执行的章内精确定位（scrollToSearchMatch
+  // 的 JS）+ 绑定的导航代际。旧两段式（调用方在 restore 完成微任务里抢发 scrollToSearchMatch）
+  // 会被随后的 settle-reflow / 连续重锚采样冲回章首（双跳）；改为排进队列，由
+  // _applyPendingPreciseLocate 在恢复落定且 settle 之后消费。代际用于并发导航去重（顶掉后
+  // 代际不匹配即丢弃，不误用到别的章）。null=无待处理。书签/收藏/字符跳转把分数烘进导航
+  // （_navigateToChapterAndWait 的 progress），单次原子恢复直接落点，不入本队列。
+  ({int generation, String js})? _pendingPreciseLocate;
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
@@ -1047,6 +1154,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int _progressReanchorRetryCount = 0;
   static const int _kProgressRetryMax = 8;
   static const Duration _kProgressRetryDelay = Duration(milliseconds: 120);
+  // TODO-1229 v2：跨章去抖冷却窗（固定 450ms，对齐默认 wheelPageTurnInterval）。必须
+  // 足够长以桥接一次惯性手势内相邻 wheel/touch 事件的间隔(约 16~60ms，偶有尖峰)——冷却窗
+  // 若短于间隔会在手势中途重新开启而放行第二次跨章。用固定常量(不跟随用户可调的
+  // wheelPageTurnInterval)保证鲁棒：即便用户把章内翻页节流调得很小，跨章冷却仍稳定桥接惯性。
+  static const Duration _kChapterTurnCooldown = Duration(milliseconds: 450);
   // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
@@ -1073,10 +1185,37 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 时间戳语义（读 throttleMs 即生效，无残留 timer）。删了 JS _wheelTimer 双处后，
   // 这是滚轮/音量键翻页的唯一节流真相源。
   DateTime? _lastPaginateTime;
+  // TODO-1229 v2：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568 案A
+  // 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而 _lastPaginateTime
+  // 节流窗口锚定在手势起点(第一 tick)。滚轮/触控板一次连续惯性手势会持续产生 tick 达
+  // 数百 ms~1s，长于 restore 窗口与节流窗口——两窗口都在手势中途失效后，残余惯性 tick 会
+  // 在刚落地的短章(章首插图页/单页章)边界上再次触发跨章 → **跳两章**（用户复诉 6783 仍跳两次
+  // 的真因）。本时间戳把「下一次跨章」的冷却锚定到**输入真正停止**那一刻：每次被在飞守卫丢弃
+  // 的惯性输入、以及冷却期内被拒的跨章尝试都刷新它 → 冷却窗随惯性滑动，惟有输入静默
+  // [_kChapterTurnCooldown] 之后才允许下一次跨章。一次连续手势 = 一次跨章。只作用于惯性型
+  // 输入(滚轮/触摸，throttleMs>0)的跨章决策，不影响章内翻页，也不节流键盘/手柄(throttleMs=0)。
+  DateTime? _lastChapterTurnInputAt;
+  // TODO-1229 第三次复诉（滚轮仍双跳）：v2 冷却窗只靠「换章加载期不断到达的惯性 tick」
+  // (_paginationInFlight 分支的 _noteChapterTurnInput) 把时间戳滑到当下来维持。但鼠标滚轮
+  // 是**离散**事件流——用户拨两三格越过章末边界后 burst 就结束了，换章加载（整章解析+渲染
+  // +restore，常 >450ms）期间**没有**后续 tick 续窗；等新章(短插图/单页章)在边界上
+  // 出现时冷却窗早已过期(now - lastInputAt > 450ms)，紧随其后的残余滚动在新章边界二次跨章 →
+  // 「第一次正常然后很快又跳一次」。根因=冷却窗锚在「输入」，而危险窗其实是「新章刚出现的
+  // 那一刻」；长加载把两者拉开出一个洞。修法：惯性跨章真正发起导航时置本旗，等新章内容
+  // 就绪(content-ready)那一刻**重新把冷却窗 stamp 到当下**——无论加载多久、期间有没有
+  // 续窗 tick，新章一出现就有一个完整 [_kChapterTurnCooldown] 窗口挡住残余惯性。键盘/手柄
+  // 跨章(throttleMs==0)不置旗、也天然不过冷却闸门，逐次翻章不受影响。
+  bool _inertiaChapterTurnPending = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
+
+  // TODO-1289：图片防剧透遮罩「点击揭开」的本次阅读会话真相源。揭开只删 WebView 内
+  // DOM class，章节 (重)载 / 布局设置切换会重跑分页脚本重新遮罩；把已揭开图片的稳定
+  // key（绝对 URL）留在这套内存集里（随本 State 生命周期，覆盖整本书阅读会话），
+  // 重载章节时嵌回分页脚本让这些图片跳过重新遮罩。JS 侧经 onImageRevealed 回传。
+  final Set<String> _revealedImageKeys = <String>{};
 
   AudiobookPlayerController? _audiobookController;
   String? _audiobookBookKey;
@@ -1280,7 +1419,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugToggleLyricsMode = _toggleLyricsMode;
       ReaderHibikiPage.debugLyricsModeReady =
           () => mounted && _lyricsMode && _lyricsPageReady;
-      ReaderHibikiPage.debugLyricsModeDiagnostics = _debugLyricsModeDiagnostics;
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
@@ -1417,7 +1555,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       debugPrint('[ReaderHibiki] EPUB parse failed ($e), trying DB metadata');
       _book = await _buildBookFromDb(db, widget.bookKey, extractDir);
       if (!mounted) return;
-      _book ??= _buildLegacyBook(extractDir);
+      _book ??= _buildLegacyBook(extractDir, coverHref: bookRow?.coverPath);
       if (bookRow != null) {
         charsFromDb = charCountsFromChaptersJson(
             bookRow.chaptersJson, _book!.chapters.length);
@@ -1652,11 +1790,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       author: row.author,
       chapters: chapters,
       toc: toc,
+      // TODO-1299: 主解析路径 parseBookOnly 会设 coverHref，制卡才能带书籍封面；
+      // 此 DB 元数据回退路径也必须带上，否则 mining 的 `_book?.coverHref != null`
+      // 分支永不进，制卡恒无封面。row.coverPath 正是导入时落库的相对封面路径
+      // （epub_importer.dart: coverPath = book.coverHref），与 _extractDir 拼接即封面文件。
+      coverHref: row.coverPath,
       rootDirectory: extractDir,
     );
   }
 
-  EpubBook _buildLegacyBook(String extractDir) {
+  EpubBook _buildLegacyBook(String extractDir, {String? coverHref}) {
     final List<FileSystemEntity> htmlFiles =
         Directory(extractDir).listSync(recursive: true).where((e) {
       if (e is! File) return false;
@@ -1680,6 +1823,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return EpubBook(
       title: t.untitled_book(id: widget.bookKey),
       chapters: chapters,
+      // TODO-1299: 传入 DB 行的 coverPath（旧书 / 无 DB 行时为 null），使制卡封面
+      // 链路在纯目录回退时也不丢封面。
+      coverHref: coverHref,
       rootDirectory: extractDir,
     );
   }
@@ -1725,7 +1871,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugOpenQuickSettings = null;
       ReaderHibikiPage.debugToggleLyricsMode = null;
       ReaderHibikiPage.debugLyricsModeReady = null;
-      ReaderHibikiPage.debugLyricsModeDiagnostics = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
@@ -2411,6 +2556,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ({int offset, int length})? _cachedSentenceRange;
   int? _cachedSentenceOffset;
 
+  /// TODO-1127：选区那一刻抽取到的、夹在选区里的 EPUB 插图（`normOffset` = 图在整书归一化
+  /// 文本坐标里的位置，`-1` = 未知 → 兜底挂最前段；`bytes` = 已按需降采样的 PNG/JPEG）。
+  /// 与 [_cachedSelectionRange] 同一次原生选区解析原子写入，供片段导出把插图按相对顺序渲进
+  /// 卡片；空列表 = 选区无夹图（导出行为与旧版逐字节一致）。
+  List<({int normOffset, Uint8List bytes})> _cachedSelectionImages =
+      const <({int normOffset, Uint8List bytes})>[];
+
   /// BUG-492 (TODO-1053 Bug A)。选区发生那一刻 [_lookupSectionIndex] 的快照。收藏 /
   /// 制卡写入的 `sectionIndex` 必须绑定到「选中该句时」渲染的真实章号，而不是写入时刻
   /// 再读裸 [_currentChapter]——有声书连续推进 / 跨章滚动会在选区与写入之间异步改写
@@ -2458,6 +2610,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
     _cachedSentenceOffset = null;
+    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
     _cachedSelectionSectionIndex = null;
     _currentSentenceIsFavorited = false;
     _currentFavoriteId = null;

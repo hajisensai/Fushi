@@ -39,8 +39,8 @@ void main() {
     // 打开文件夹：Process.run explorer（净新增能力）。
     expect(page.contains("Process.run('explorer'"), isTrue,
         reason: '打开文件夹用 explorer');
-    // 分享：Share.shareXFiles 分享 .dmp（净新增使用点）。
-    expect(page.contains('Share.shareXFiles'), isTrue);
+    // 分享：HibikiShare.shareFiles 分享 .dmp（净新增使用点）。
+    expect(page.contains('HibikiShare.shareFiles'), isTrue);
     // 打开文件夹的目录解析也走 Windows 门控的 resolveDumpDirectory。
     expect(
       page.contains('isWindows: Platform.isWindows'),

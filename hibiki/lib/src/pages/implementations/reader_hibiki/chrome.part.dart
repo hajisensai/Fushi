@@ -27,16 +27,71 @@ part of '../reader_hibiki_page.dart';
 /// `_readerChromeBaseHeight` / `_readerPopupHeaderBaseHeight` constants) cannot
 /// live on an extension and stay in the shell, reachable via the shared private
 /// class scope.
-/// TODO-1168（实验性）：底栏毛玻璃的高斯模糊 sigma。固定值（用户只调不透明度，不调
-/// 模糊强度），复用顶部进度条同款 [ImageFilter.blur] 配方，底栏面积更大故略强。
-const double _kBottomChromeBlurSigma = 18;
-
 extension _ReaderChrome on _ReaderHibikiPageState {
+  /// TODO-1229 案A：章界连续输入穿透守卫。滚轮惯性节流（450ms）远短于换章加载
+  /// （数百 ms restore），跨章那一下之后排队的翻页 tick 会在新章 restore 未落定时
+  /// 立即再翻——章首插图页/首页整页被越过；更糟 hoshiReader 尚未就绪时
+  /// evaluateJavascript 返 null → _didScroll(null)=false → 又 _handlePageTurnLimit →
+  /// **跳两章**。本 getter 只在「导航在飞（_isNavigatingToChapter）/ 恢复在飞
+  /// （_restoreInFlight）/ 内容未就绪（!_readerContentReady）」这三个瞬态窗口为真；
+  /// 正常连续翻页三者皆稳态（false/false/true），不受影响。内容就绪有 8s 兜底超时
+  /// （_startContentReadyTimeout）强制置真，故绝不会永久卡死翻页。
+  bool get _paginationInFlight =>
+      _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
+
+  /// TODO-1229 v2：记一次「跨章相关的惯性输入」发生时刻，把跨章冷却窗滑到当下。
+  /// 在两处调用：① 惯性 tick 被 [_paginationInFlight] 丢弃时（换章加载期的残余惯性）；
+  /// ② 冷却期内被拒的跨章尝试。持续惯性会不断把冷却窗前推，直到输入静默才让窗关闭。
+  void _noteChapterTurnInput() {
+    _lastChapterTurnInputAt = DateTime.now();
+  }
+
+  /// TODO-1229 第三次复诉：标记「一次惯性跨章已真正发起导航」。只在惯性输入
+  /// (滚轮/触摸，throttleMs>0)确实调 [_handlePageTurnLimit] 且其内部真的触发了
+  /// 导航时置位（末章/首章边界不导航则不置位，避免旗子悬空）。等新章 content-ready
+  /// 时由 [_noteChapterTurnSettledIfPending] 消费。
+  void _markInertiaChapterTurnPending() {
+    _inertiaChapterTurnPending = true;
+  }
+
+  /// TODO-1229 第三次复诉：惯性跨章落地的新章内容就绪那一刻，把跨章冷却窗重新 stamp
+  /// 到当下——保证新章刚出现时总有一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮/
+  /// 惯性，即使换章加载耗时超过冷却窗、期间没有续窗 tick（鼠标滚轮离散事件的真因）。
+  /// 只在 pending 时生效并复位旗子；非惯性来源(初次开书/恢复/键盘跨章)不置旗、不受影响。
+  void _noteChapterTurnSettledIfPending() {
+    if (!_inertiaChapterTurnPending) return;
+    _inertiaChapterTurnPending = false;
+    _noteChapterTurnInput();
+  }
+
+  /// TODO-1229 v2：跨章冷却闸门。距上次「跨章输入/跨章」不足 [_kChapterTurnCooldown] 则
+  /// 判为同一手势的残余惯性、拒绝本次跨章并把冷却窗滑到当下（返回 true=正在冷却=拦截）；
+  /// 已静默超过冷却窗则放行（返回 false），不刷新——让真正落地的那次跨章自行 stamp。
+  /// 只在惯性型输入(滚轮/触摸)的跨章决策处调用；键盘/手柄(throttleMs==0)不经此闸门。
+  bool _chapterTurnCoolingDown() {
+    final bool cooling = chapterTurnCoolingDown(
+      lastInputAt: _lastChapterTurnInputAt,
+      now: DateTime.now(),
+      cooldown: _ReaderHibikiPageState._kChapterTurnCooldown,
+    );
+    if (cooling) _lastChapterTurnInputAt = DateTime.now();
+    return cooling;
+  }
+
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
     int throttleMs = 0,
   }) async {
     if (_controller == null) {
+      return;
+    }
+    // TODO-1229 案A：导航/恢复在飞窗口直接丢弃输入（放在节流戳之前，被丢弃的输入
+    // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
+    // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
+    if (_paginationInFlight) {
+      // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗，避免
+      // restore 落定后残余惯性立刻在短章边界再次跨章（跳两章真因）。
+      if (throttleMs > 0) _noteChapterTurnInput();
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
@@ -69,7 +124,11 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       );
       if (!mounted || _controller == null) return;
       if (!_didScroll(result)) {
-        _handlePageTurnLimit(direction.jsValue);
+        // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
+        // 在短章边界的二次跨章被拦（并滑动冷却窗）；键盘/手柄(throttleMs==0)不受限。
+        if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
+        _noteChapterTurnInput();
+        _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
       } else {
         await _refreshProgress();
         if (!mounted || _controller == null) return;
@@ -86,7 +145,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       if (!mounted || _controller == null) return;
       await _caretReanchor(direction);
     } else {
-      _handlePageTurnLimit(direction.jsValue);
+      // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
+      if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
+      _noteChapterTurnInput();
+      _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
     }
   }
 
@@ -298,6 +360,111 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
   }
 
+  // TODO-1317：移动端「长按拖选」松手后弹的选区菜单（复制 / 查词）。BUG-609 把拖选松手直接
+  // 送去查词，丢了「选中一段文本区间复制」的原有能力（用户报「长按没有选择了，变成长按选择
+  // 文字查词了」）。这里让拖选出的 app 自绘选区（`window.hoshiSelection.selection`，非原生
+  // 选区，不复活 TODO-1279 掉的双选区）在松手后弹菜单：选「复制」把整段选区文本进剪贴板，选
+  // 「查词」复用 tap 查词的 [_handleTextSelected]（查词弹窗内含制卡）。两者共存，不再二选一
+  // 只剩查词。锚点用与图片右键同一套「WebView 局部坐标经 [_webViewKey] RenderBox ->
+  // 全局 -> Overlay 本地」映射（BUG-381 范式，界面缩放被渲染变换链自动吸收）。菜单被取消或
+  // 复制完都清掉 app 选区高亮；查词路径由 [_handleTextSelected] 自行收敛到词典匹配长度。
+  Future<void> _handleSelectionMenu(ReaderSelectionData data) async {
+    if (!mounted) return;
+    if (data.text.isEmpty) {
+      await _clearReaderAppSelection();
+      return;
+    }
+
+    final RenderBox? webBox =
+        _webViewKey.currentContext?.findRenderObject() as RenderBox?;
+    final Map<String, double>? r = data.rect;
+    // Anchor just below the selection's start glyph (WebView-local coords).
+    final Offset localAnchor = r != null
+        ? Offset(r['x'] ?? 0, (r['y'] ?? 0) + (r['height'] ?? 0))
+        : Offset(
+            MediaQuery.of(context).size.width / 2,
+            MediaQuery.of(context).size.height / 2,
+          );
+    final Offset global = webBox?.localToGlobal(localAnchor) ?? localAnchor;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final Offset anchor = overlay.globalToLocal(global);
+    final double menuScale = _readerImageMenuScale;
+
+    final String? action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      constraints: BoxConstraints(
+        minWidth: 112.0 * menuScale,
+        maxWidth: 280.0 * menuScale,
+      ),
+      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
+      items: <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'search',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.search_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'copy',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'search':
+        // Reuse the tap lookup pipeline verbatim: the drag payload IS a
+        // ReaderSelectionData, so currentSentence / cue / highlight convergence
+        // / popup all behave exactly like a tap-word lookup.
+        await _handleTextSelected(data);
+        return;
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: data.text));
+        HibikiToast.show(msg: t.copied_to_clipboard);
+        await _clearReaderAppSelection();
+        return;
+      default:
+        // Dismissed: drop the app-drawn selection highlight (no lookup).
+        await _clearReaderAppSelection();
+        return;
+    }
+  }
+
+  // Clear the reader's app-drawn selection (hoshi-selection CSS Custom Highlight)
+  // without touching any native selection. Best-effort: a half-torn-down WebView
+  // throws MissingPluginException on eval; swallow it (nothing to clear).
+  Future<void> _clearReaderAppSelection() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.clearInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.clearReaderAppSelection', e, stack);
+    }
+  }
+
   // TODO-954 / BUG-455：把当前**原生选区**（`window.getSelection()`）解析成与 tap 查词
   // （onTextSelected → [_handleTextSelected]）等价的查词状态——currentSentence /
   // [_lookupCue] / [_cachedSelectionRange] / [_cachedSentenceRange] /
@@ -376,7 +543,66 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         : null;
     // BUG-492：原生选区路径同样锁定所属章号（详见 _cachedSelectionSectionIndex）。
     _cachedSelectionSectionIndex = _lookupSectionIndex;
+    // TODO-1127：与选区状态同批抽取选区里夹带的 EPUB 插图（供片段导出把图渲进卡片）。
+    // 选区仍在（我们正读它），此刻抽取 src + 归一化位置最稳。无图 → 空列表，零副作用。
+    _cachedSelectionImages = await _extractSelectionClipImages();
     return data;
+  }
+
+  /// TODO-1127：从**当前原生选区**抽取夹带的 EPUB 插图字节（供片段导出渲进卡片）。
+  /// JS `nativeSelectionImages` 返回图的绝对 URL + 归一化文档位置；这里把每个 URL 经
+  /// [_readerImageFileForUrl] 解析成解压目录文件（**不走网络**），读字节、按需降采样
+  /// （复用 [downsampleCardScreenshot] 护体积）。裸矢量 `.svg` 文件 `Image.memory` 无法
+  /// 解码 → 跳过并记日志（光栅封面 <svg><image> 的内层位图已由 JS 侧解析为真实位图 URL）。
+  Future<List<({int normOffset, Uint8List bytes})>>
+      _extractSelectionClipImages() async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) {
+      return const <({int normOffset, Uint8List bytes})>[];
+    }
+    Object? raw;
+    try {
+      raw = await controller.evaluateJavascript(
+        source: ReaderSelectionScripts.nativeSelectionImagesInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.extractSelectionClipImages.eval', e, stack);
+      return const <({int normOffset, Uint8List bytes})>[];
+    }
+    if (!mounted) return const <({int normOffset, Uint8List bytes})>[];
+    final List<({String src, int normOffset})> refs =
+        ReaderSelectionScripts.clipSelectionImagesFromResult(raw);
+    if (refs.isEmpty) return const <({int normOffset, Uint8List bytes})>[];
+    final List<({int normOffset, Uint8List bytes})> images =
+        <({int normOffset, Uint8List bytes})>[];
+    for (final ({String src, int normOffset}) ref in refs) {
+      final File? file = _readerImageFileForUrl(ref.src);
+      if (file == null) continue;
+      final String ext = p.extension(file.path).toLowerCase();
+      if (ext == '.svg') {
+        // 裸矢量 SVG：Image.memory 不解码矢量图，跳过（光栅封面内层位图另由 JS 解析）。
+        ErrorLogService.instance.log(
+          'ReaderHibiki.extractSelectionClipImages.skipSvg',
+          'skip vector SVG clip image (Image.memory cannot decode): '
+              '${file.path}',
+          StackTrace.current,
+        );
+        continue;
+      }
+      try {
+        final Uint8List bytes = await file.readAsBytes();
+        if (bytes.isEmpty) continue;
+        // 降采样护体积（长边 1000px / JPEG q90，与制卡截图同档）；小图/无法解码时
+        // downsampleCardScreenshot 原样返回，绝不把有效插图变空。
+        final Uint8List downsampled = downsampleCardScreenshot(bytes);
+        images.add((normOffset: ref.normOffset, bytes: downsampled));
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibiki.extractSelectionClipImages.read', e, stack);
+      }
+    }
+    return images;
   }
 
   // TODO-954：从当前**原生选区**解析句级 cue 区间后走既有导出链 [_exportAudiobookClip]。
@@ -403,7 +629,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return;
     }
     try {
-      await Share.shareXFiles(
+      await HibikiShare.shareFiles(
         <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
         subject: p.basename(file.path),
       );
@@ -785,7 +1011,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       // 置的 _reanchorPending=true，stableProgressInvocation 返 null → 早退 → _progressCurrentChars
       // 保持 null → 顶部进度条隐藏（要滑一下旗清后才出）。这里挂在清旗之后补刷，旗已清不再撞旗，
       // 首屏进度条确定性可见。只此恢复路径补刷；缩放/样式重锚不传 onAfterCommit，行为不变。
-      onAfterCommit: () => _refreshProgress(),
+      //
+      // TODO-1309：连续模式在 commit 清 `_reanchorPending` + 打 B-3 settle 窗**之后**应用
+      // 排队的章内精确定位（跨章文本搜索跳转的 scrollToSearchMatch）——此刻已 settle，落点
+      // 不会被尾沿 reflow 冲回章首；先应用再补刷，让随后的 _refreshProgress 读到并落库 match
+      // 位置（等价于「同章已 settle 时直接 scrollToSearchMatch」那条本就正常的路径）。
+      onAfterCommit: () async {
+        await _applyPendingPreciseLocate();
+        await _refreshProgress();
+      },
     );
   }
 
@@ -842,33 +1076,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
-  /// TODO-1168（实验性）：底栏背景填充色。开启毛玻璃时用当前阅读主题背景色叠加
-  /// 用户可调 alpha（半透明，让毛玻璃透出下层正文）；关闭时返回不透明主题背景色 =
-  /// 现状，零回归。底栏两处背景（内容行 / 系统底部 inset）与有声书条都取此单一真相。
-  Color _bottomChromeFillColor() {
-    final Color base = _themeBackgroundColor();
-    if (!ReaderHibikiSource.instance.frostedBottomBar) return base;
-    return base.withValues(alpha: ReaderHibikiSource.instance.bottomBarOpacity);
-  }
-
-  /// TODO-1168（实验性）：开启毛玻璃时用 `ClipRect > BackdropFilter` 把底栏矩形内的
-  /// 下层内容做高斯模糊（复用顶部进度条同款配方，见 [_buildTopProgressBar]）。关闭时
-  /// 原样返回 [child]，零回归（不引入任何包裹层）。**不改变 [child] 的布局尺寸**——
-  /// ClipRect / BackdropFilter 都取子级大小，底栏预留高（[bottomChromeReserve]）不受
-  /// 影响，「视觉高 ≡ 预留高」铁律保持。
-  Widget _wrapBottomChromeFrost(Widget child) {
-    if (!ReaderHibikiSource.instance.frostedBottomBar) return child;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: _kBottomChromeBlurSigma,
-          sigmaY: _kBottomChromeBlurSigma,
-        ),
-        child: child,
-      ),
-    );
-  }
-
   Widget _buildBottomChrome() {
     // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
     // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的
@@ -906,39 +1113,36 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           child: ExcludeFocus(
             child: FocusScope(
               node: _chromeFocusScope,
-              child: _wrapBottomChromeFrost(
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    ReaderChromeScaler(
-                      scale: _readerChromeScale,
-                      baseHeight:
-                          _ReaderHibikiPageState._readerChromeBaseHeight,
-                      child: AudiobookPlayBar(
-                        controller: ctrl,
-                        skipActionSeconds:
-                            ReaderHibikiSource.instance.skipActionSeconds,
-                        onOpenSettings: _showAppearanceSheet,
-                        backgroundColor: _bottomChromeFillColor(),
-                        foregroundColor: _themeTextColor(),
-                        reversed: appModel.reverseReaderBottomBar,
-                        // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
-                        // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
-                        invertSkip: ReaderHibikiSource
-                            .instance.invertAudiobookSkipDirection,
-                        // TODO-728: per-reader toggle for the current-sentence cue.
-                        showCue: ReaderHibikiSource.instance.showBottomBarCue,
-                      ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  ReaderChromeScaler(
+                    scale: _readerChromeScale,
+                    baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                    child: AudiobookPlayBar(
+                      controller: ctrl,
+                      skipActionSeconds:
+                          ReaderHibikiSource.instance.skipActionSeconds,
+                      onOpenSettings: _showAppearanceSheet,
+                      backgroundColor: _themeBackgroundColor(),
+                      foregroundColor: _themeTextColor(),
+                      reversed: appModel.reverseReaderBottomBar,
+                      // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
+                      // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
+                      invertSkip: ReaderHibikiSource
+                          .instance.invertAudiobookSkipDirection,
+                      // TODO-728: per-reader toggle for the current-sentence cue.
+                      showCue: ReaderHibikiSource.instance.showBottomBarCue,
                     ),
-                    ColoredBox(
-                      color: _bottomChromeFillColor(),
-                      child: SizedBox(
-                        height: _stableBottomInset,
-                        width: double.infinity,
-                      ),
+                  ),
+                  ColoredBox(
+                    color: _themeBackgroundColor(),
+                    child: SizedBox(
+                      height: _stableBottomInset,
+                      width: double.infinity,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -988,37 +1192,35 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       child: ExcludeFocus(
         child: FocusScope(
           node: _chromeFocusScope,
-          child: _wrapBottomChromeFrost(
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                ReaderChromeScaler(
-                  scale: _readerChromeScale,
-                  baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                  child: ColoredBox(
-                    color: _bottomChromeFillColor(),
-                    child: SizedBox(
-                      height: _ReaderHibikiPageState._readerChromeBaseHeight,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: tokens.spacing.gap),
-                        child: Row(
-                          children:
-                              reversed ? barItems.reversed.toList() : barItems,
-                        ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ReaderChromeScaler(
+                scale: _readerChromeScale,
+                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                child: ColoredBox(
+                  color: _themeBackgroundColor(),
+                  child: SizedBox(
+                    height: _ReaderHibikiPageState._readerChromeBaseHeight,
+                    child: Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+                      child: Row(
+                        children:
+                            reversed ? barItems.reversed.toList() : barItems,
                       ),
                     ),
                   ),
                 ),
-                ColoredBox(
-                  color: _bottomChromeFillColor(),
-                  child: SizedBox(
-                    height: _stableBottomInset,
-                    width: double.infinity,
-                  ),
+              ),
+              ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _stableBottomInset,
+                  width: double.infinity,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1035,7 +1237,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     return _book!.chapterIndexForHref(href);
   }
 
-  Future<void> _showAppearanceSheet() async {
+  Future<void> _showAppearanceSheet({String? initialSubPage}) async {
     if (_settings == null || _controller == null || _book == null) return;
     // 重入守卫：快速连点时按钮按下到 show 之间的 DB 读 await 期间会二次进入、弹出
     // 两个面板。标志置位必须在第一个 await 之前，复位放 finally（异常也复位）。
@@ -1075,6 +1277,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         appModel: appModel,
         ref: ref,
         isHibikiReader: true,
+        initialSubPage: initialSubPage,
         onStyleChanged: _applyStylesLive,
         onThemeChanged: _onThemeChanged,
         extractDir: _extractDir,
@@ -1119,12 +1322,24 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         onSearchJump: (BookSearchResult result, String query) async {
           if (_book == null || _controller == null) return;
           if (result.sectionIndex != _currentChapter) {
-            final bool ok = await _navigateToChapterAndWait(
+            // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
+            // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
+            // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
+            // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
+            // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
+            // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
+            await _navigateToChapterAndWait(
               result.sectionIndex,
               manual: true,
+              preciseLocateJs:
+                  ReaderPaginationScripts.scrollToSearchMatchInvocation(
+                query,
+                result.charOffset,
+              ),
             );
-            if (!ok || !mounted || _controller == null) return;
+            return;
           }
+          // 同章：章节已 settle，直接定位（既有正常路径，双跳的「第二次点」本就走这里）。
           await _controller!.evaluateJavascript(
             source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
               query,
@@ -1134,11 +1349,19 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         },
         bookmarks: bookmarks,
         onJumpToBookmark: (bm) async {
+          final double progress = bm.normCharOffset / 10000.0;
           if (bm.sectionIndex != _currentChapter) {
-            await _navigateToChapterAndWait(bm.sectionIndex, manual: true);
+            // TODO-1309：跨章书签跳转把目标分数烘进导航（progress），单次原子恢复直接落点、
+            // 连续重锚采样该位置保住——不再「先落章首再抢发 restoreProgress」被 settle-reflow
+            // 冲回章首（双跳）。同章不重载、直接 restoreProgress（既有行为）。
+            await _navigateToChapterAndWait(
+              bm.sectionIndex,
+              manual: true,
+              progress: progress,
+            );
+            return;
           }
           if (!mounted || _controller == null) return;
-          final double progress = bm.normCharOffset / 10000.0;
           await _controller!.evaluateJavascript(
             source:
                 'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
@@ -1169,12 +1392,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         },
         onJumpToFavorite: (fav) async {
           if (fav.sectionIndex == null) return;
+          final int? normCharOffset = fav.normCharOffset;
           if (fav.sectionIndex != _currentChapter) {
-            await _navigateToChapterAndWait(fav.sectionIndex!, manual: true);
+            // TODO-1309：跨章收藏跳转同书签——有分数就把它烘进导航（progress）单次原子恢复
+            // 落点；无分数（罕见旧数据）仅导航到章首（既有行为，无落点可定位）。都不再「先落
+            // 章首再抢发 restoreProgress」被 settle-reflow 冲回章首。
+            await _navigateToChapterAndWait(
+              fav.sectionIndex!,
+              manual: true,
+              progress: normCharOffset != null ? normCharOffset / 10000.0 : 0.0,
+            );
+            return;
           }
           if (!mounted || _controller == null) return;
-          if (fav.normCharOffset != null) {
-            final double progress = fav.normCharOffset! / 10000.0;
+          if (normCharOffset != null) {
+            final double progress = normCharOffset / 10000.0;
             await _controller!.evaluateJavascript(
               source:
                   'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
@@ -1333,34 +1565,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         (i) => TtuTocEntry(index: i, label: t.auto_chapter(n: i + 1)),
       );
     }
-    final List<TtuTocEntry> result = <TtuTocEntry>[];
-    _flattenTocToTtu(toc, result, null);
-    return result;
-  }
-
-  void _flattenTocToTtu(
-    List<EpubTocItem> items,
-    List<TtuTocEntry> result,
-    String? parentLabel,
-  ) {
-    for (final EpubTocItem item in items) {
-      final int index = _tocHrefToChapterIndex(item.href);
-      // TODO-1128: hide TOC entries for single-image chapters absorbed into a
-      // neighbouring text chapter (merge-image on) — they no longer own a
-      // virtual page, so a TOC jump there would land on a page that does not
-      // exist. UI-only: _book.toc (persistent) is untouched; children are still
-      // walked so a nested real chapter under an absorbed item is not lost.
-      final bool absorbed =
-          index >= 0 && (_spreadMap?.isAbsorbedImageChapter(index) ?? false);
-      if (index >= 0 && !absorbed) {
-        result.add(TtuTocEntry(
-          index: index,
-          label: item.label,
-          parent: parentLabel,
-        ));
-      }
-      _flattenTocToTtu(item.children, result, item.label);
-    }
+    // TODO-1333: 压平交给纯函数 flattenTtuTocEntries，它保留所有解析到的章、不再因
+    // 「图片合并」把被吸收的单图片章从目录里删掉（那会在整本书目录都指向被吸收图片章
+    // 时清空章节列表）。被吸收章的目录跳转由导航层 _resolveNavChapter 重定向到宿主章。
+    return flattenTtuTocEntries(toc, _tocHrefToChapterIndex);
   }
 
   Future<void> _reloadWithCurrentSettings() async {
@@ -1532,6 +1740,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       sasayaki: Color(0x6664B4DC),
       selection: Color(0x59C8AA6E),
       link: Color(0xFF3A5FAD),
+      dark: false,
+    ),
+    // 护眼（豆沙绿）：与 reader_content_styles `_themeColors['eyecare-theme']` 的
+    // rgba 预设逐一相等（ARGB 同值），作为五角色单一真相源透传。
+    'eyecare-theme': (
+      bg: Color(0xFFC7EDCC),
+      fg: Color(0xDE000000),
+      sasayaki: Color(0x66A0C878),
+      selection: Color(0x5988B583),
+      link: Color(0xFF4C7A3E),
       dark: false,
     ),
     'gray-theme': (

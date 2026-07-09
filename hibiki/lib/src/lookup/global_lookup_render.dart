@@ -47,7 +47,6 @@ String buildFrameSettingsJs({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  bool hasChildPopup = false,
   String sentence = '',
 }) {
   final String settingsJs = buildPopupSettingsJs(
@@ -56,14 +55,19 @@ String buildFrameSettingsJs({
     result: result,
     options: const PopupSettingsOptions(globalLookup: true),
   );
-  // TODO-1067 (子4) — wire the SAME __hasChildPopup guard the in-app popup uses
-  // (BUG-434): when this frame has a child card stacked on top, popup.js's
-  // document click handler must post `tapOutside` (close the child) instead of
-  // selecting/return when the user taps the parent card body / glossary text.
-  // The app-external overlay never set this flag, so tapping the parent card did
-  // nothing and the child popup could not be closed. A leaf frame (no child)
-  // leaves it false, so TODO-859 (tap card whitespace keeps the layer) still
-  // holds. This runs inside the frame's own iframe realm (contentWindow.eval).
+  // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
+  // anymore. The flag flips whenever a child card opens/closes on top of THIS
+  // frame, but everything else in the body (theme/zoom/entries/sentence) is
+  // invariant across that. Baking the flag in (TODO-1067 子4) made the parent's
+  // settingsJs change on every nested open/close, so global_lookup_host.js
+  // re-eval'd the WHOLE body — which ends in renderPopup() = a full card DOM
+  // teardown+rebuild (scroll lost, favorite/duplicate/audio probes re-fired):
+  // the visible "父弹窗闪烁". The flag now rides its OWN per-frame descriptor
+  // channel (see buildStackRenderScript -> host applyHasChildPopup), so the body
+  // stays byte-identical and the host can SKIP the re-render. This mirrors the
+  // in-app _setHasChildPopupJs, which is likewise a lone evaluateJavascript,
+  // never part of _pushResults. BUG-434 behaviour (parent-card tap closes the
+  // child) is preserved — popup.js reads the flag live at click time.
   //
   // TODO-1067 (子2) — inject the shared top-pull swipe-close JS
   // (kPopupTopPullReleaseJs) into the overlay iframe too. It was only injected on
@@ -74,7 +78,6 @@ String buildFrameSettingsJs({
   // the controller already gates on the enableSwipeToClose preference.
   return '''
     $settingsJs
-    window.__hasChildPopup = $hasChildPopup;
     $kPopupTopPullReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
@@ -206,6 +209,8 @@ String buildStackRenderScript({
   required double maxWidth,
   required double maxHeight,
   Offset selectionScreenOffset = Offset.zero,
+  double originFloorLeft = 0,
+  double originFloorTop = 0,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -222,14 +227,16 @@ String buildStackRenderScript({
       appModel: appModel,
       result: p.result,
       sentence: p.sentence,
-      // TODO-1067 (子4) — a frame has a child popup iff it is not the deepest
-      // (last) frame in the stack, mirroring the in-app `index < entries.length
-      // - 1` derivation (BUG-434). Drives popup.js's __hasChildPopup guard so
-      // tapping a parent card closes the child.
-      hasChildPopup: i < payloads.length - 1,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
+    // TODO-1231 P1 / TODO-1067 (子4) — a frame has a child popup iff it is not the
+    // deepest (last) frame in the stack, mirroring the in-app `index <
+    // entries.length - 1` derivation (BUG-434). Carried as its OWN descriptor
+    // field (NOT baked into settingsJs) so a nested open/close leaves the parent
+    // body byte-identical and the host skips the full re-render; host.js
+    // applyHasChildPopup evals only this one boolean inside the frame realm.
+    map['hasChildPopup'] = i < payloads.length - 1;
     map['frame'] = _frameRectMap(
       anchorRect: p.anchorRect,
       depth: i,
@@ -243,7 +250,21 @@ String buildStackRenderScript({
     map['settingsJs'] = settingsJs;
     popups.add(map);
   }
-  final String payloadJson = jsonEncode(<String, Object?>{'popups': popups});
+  final Map<String, Object?> payloadObj = <String, Object?>{'popups': popups};
+  // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
+  // interior so an up/left child lands INSIDE the window origin committed at the
+  // first reveal; the host's measureAndReport then never moves the origin when the
+  // child appears -> the pinned parent card has ZERO displacement (extends the
+  // down-right zero-lurch guarantee to up/left). Only carried when it actually
+  // reserves something (< 0), so a down-right / edge lookup sends the pre-fix
+  // payload verbatim (Never break userspace).
+  if (originFloorLeft < 0 || originFloorTop < 0) {
+    payloadObj['originFloor'] = <String, Object?>{
+      'left': originFloorLeft,
+      'top': originFloorTop,
+    };
+  }
+  final String payloadJson = jsonEncode(payloadObj);
   return 'window.__globalLookupHost && '
       'window.__globalLookupHost.renderStack($payloadJson);';
 }

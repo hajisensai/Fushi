@@ -30,6 +30,7 @@ add_executable(${BINARY_NAME} WIN32
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
+  "window_capture.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -65,6 +66,11 @@ target_link_libraries(${BINARY_NAME} PRIVATE Shlwapi.lib)
 # IID_IUIAutomation*) used by foreground_selection.cpp to read the foreground
 # app's text selection + surrounding context (TODO-1030 M0 global lookup).
 target_link_libraries(${BINARY_NAME} PRIVATE uiautomationcore.lib)
+# TODO-1162: window_capture.cpp (external-window mining) — Windows.Graphics.Capture
+# single-frame screenshot needs D3D11 + DXGI + the WinRT activation runtime
+# (RoInitialize / RoGetActivationFactory / WindowsCreateStringReference) and WIC
+# for PNG encode.
+target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscodecs)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 

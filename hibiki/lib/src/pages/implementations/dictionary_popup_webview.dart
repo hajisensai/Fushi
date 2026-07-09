@@ -239,6 +239,61 @@ class DictionaryPopupWebViewState
     return raw.clamp(0.3, 8.0).toDouble();
   }
 
+  /// TODO-1353: Ctrl+滚轮缩放查词内容时词典字号的合法区间（与注入 JS 的 wheel 监听
+  /// [_zoomWheelJs] 用同一组界，两侧一致）。太小看不见、太大撑爆弹窗，故双侧夹死。
+  static const double _popupZoomFontMin = 8.0;
+  static const double _popupZoomFontMax = 72.0;
+
+  /// TODO-1353: 把词典字号夹进 [_popupZoomFontMin].._popupZoomFontMax（纯函数，供守卫）。
+  /// 非法（非有限 / 非正）值回退到 [_popupFontBaseline]。Ctrl+滚轮回传字号落 DB 前的
+  /// 权威兜底——即便 JS 侧越界也不会写坏 `dictionaryFontSize`。
+  static double clampPopupZoomFontSize(double fontSize) {
+    if (!fontSize.isFinite || fontSize <= 0) return _popupFontBaseline;
+    return fontSize.clamp(_popupZoomFontMin, _popupZoomFontMax).toDouble();
+  }
+
+  /// TODO-1353: 单格 Ctrl+滚轮的词典字号步进（纯函数，供守卫）。[zoomIn] 为 true（滚轮
+  /// 上滚 / deltaY<0）放大一档，否则缩小一档，结果经 [clampPopupZoomFontSize] 夹紧。
+  /// 与 [_zoomWheelJs] 里 `fs += (deltaY<0?1:-1)` 的语义镜像。
+  static double steppedPopupZoomFontSize(double current,
+      {required bool zoomIn}) {
+    final double base =
+        (current.isFinite && current > 0) ? current : _popupFontBaseline;
+    return clampPopupZoomFontSize(base + (zoomIn ? 1.0 : -1.0));
+  }
+
+  /// TODO-1353: Ctrl+滚轮缩放查词内容的 wheel 监听（onLoadStop 装一次，幂等 guard）。
+  /// 只拦 `e.ctrlKey` 的 wheel（普通滚动不受影响），preventDefault 抑制 WebView 自带的
+  /// 页面缩放，读注入的 `window.__hoshiPopupFontSize` / `__hoshiPopupUiScale`（见
+  /// popup_settings_injection buildPopupSettingsJs，每次注入刷新）算新字号并**就地**改
+  /// documentElement.style.zoom 给即时反馈，再回调 Dart 的 `popupZoomFont` 持久化到
+  /// `dictionaryFontSize`（下次开弹窗记住）。字号界与缩放界与 Dart 侧
+  /// [_popupZoomFontMin]/[_popupZoomFontMax] / [popupContentZoom] 一致。
+  static const String _zoomWheelJs = '''
+(function(){
+  if (window.__hoshiZoomWheelInstalled) return;
+  window.__hoshiZoomWheelInstalled = true;
+  var MIN = 8, MAX = 72, STEP = 1;
+  window.addEventListener('wheel', function(e){
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    var fs = window.__hoshiPopupFontSize;
+    if (typeof fs !== 'number' || !isFinite(fs) || fs <= 0) fs = 16;
+    fs += (e.deltaY < 0 ? STEP : -STEP);
+    if (fs < MIN) fs = MIN;
+    if (fs > MAX) fs = MAX;
+    window.__hoshiPopupFontSize = fs;
+    var scale = window.__hoshiPopupUiScale;
+    if (typeof scale !== 'number' || !isFinite(scale) || scale <= 0) scale = 1;
+    var z = scale * fs / 16;
+    if (z < 0.3) z = 0.3;
+    if (z > 8) z = 8;
+    document.documentElement.style.zoom = z.toFixed(4);
+    try { window.flutter_inappwebview.callHandler('popupZoomFont', fs); } catch (err) {}
+  }, { passive: false });
+})();
+''';
+
   static const String _scrollCheckJs = '''
 (function(){
   if(!window.__hoshiScrollInstalled){
@@ -391,6 +446,22 @@ class DictionaryPopupWebViewState
     final Object? raw = await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.jumpDictInvocation(forward));
     return ReaderCaretScripts.moveStatus(raw);
+  }
+
+  /// TODO-1325 #5 part1: move the ENTRY-level focus (the blue-triangle
+  /// `.entry-current` indicator, driven by popup.js `hoshiFocusDictionaryEntryMove`)
+  /// to the next/previous word entry in a multi-entry result, scrolling it into
+  /// view. [forward] true → next entry below, false → previous above. Returns
+  /// 'moved' when the focus advanced or 'blocked' at the first/last entry (or a
+  /// single-entry / empty result). Orthogonal to the char caret — moves only the
+  /// entry indicator + viewport, never the caret ring.
+  Future<String> focusEntryMove(bool forward) async {
+    final Object? raw = await _controller?.evaluateJavascript(
+      source: 'window.hoshiFocusDictionaryEntryMove'
+          " ? window.hoshiFocusDictionaryEntryMove('${forward ? 'next' : 'prev'}')"
+          " : 'blocked'",
+    );
+    return raw?.toString() ?? 'blocked';
   }
 
   Future<void> caretLookup() async {
@@ -555,6 +626,7 @@ class DictionaryPopupWebViewState
       document.documentElement.style.setProperty('--md-outline-variant', '${cssRgb(scheme.outlineVariant)}');
       document.documentElement.style.setProperty('--md-on-surface-variant', '${cssRgb(scheme.onSurfaceVariant)}');
       document.documentElement.style.setProperty('--md-primary', '${cssRgb(scheme.primary)}');
+      document.documentElement.style.setProperty('--md-on-primary', '${cssRgb(scheme.onPrimary)}');
       document.documentElement.style.setProperty('--hibiki-radius-card', '${HibikiRadii.cardValue.toInt()}px');
       document.documentElement.style.setProperty('--dict-columns', '$dictColumns');
 ''';
@@ -843,6 +915,33 @@ class DictionaryPopupWebViewState
               ErrorLogService.instance,
               () {
                 widget.onTapOutside?.call();
+                return null;
+              },
+            );
+          },
+        );
+
+        // TODO-1353: Ctrl+滚轮缩放回传的新词典字号 → 夹紧后持久化到 dictionaryFontSize。
+        // JS 侧已就地改了 zoom（即时反馈），这里落 DB 让缩放跨弹窗 / 重开后记住。
+        // setDictionaryFontSize 走 preferences（notifyListeners），下次 buildPopupSettingsJs
+        // 注入的 zoom 与 __hoshiPopupFontSize 即为新值，四端（书内 / 首页 / 视频 / 外部
+        // 悬浮）共用同一 WebView 均生效。
+        controller.addJavaScriptHandler(
+          handlerName: 'popupZoomFont',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupZoomFont',
+              null,
+              ErrorLogService.instance,
+              () {
+                final Object? raw = args.isNotEmpty ? args[0] : null;
+                final double? fs = raw is num
+                    ? raw.toDouble()
+                    : double.tryParse(raw?.toString() ?? '');
+                if (fs == null) return null;
+                ref
+                    .read(appProvider)
+                    .setDictionaryFontSize(clampPopupZoomFontSize(fs));
                 return null;
               },
             );
@@ -1319,6 +1418,8 @@ class DictionaryPopupWebViewState
         // has already defined window.hoshiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
         controller.evaluateJavascript(source: _topPullReleaseJs);
+        // TODO-1353: 装一次 Ctrl+滚轮缩放监听（幂等 guard；warm 热槽也只装一次）。
+        controller.evaluateJavascript(source: _zoomWheelJs);
         controller
             .evaluateJavascript(source: ReaderCaretScripts.source())
             .then((_) {

@@ -292,6 +292,42 @@ class GamepadService {
       Platform.isMacOS ||
       Platform.isLinux;
 
+  /// TODO-1223: the raw platform channel the vendored Windows `gamepads` plugin
+  /// exposes (`packages/gamepads_windows`). Used ONLY to query
+  /// [gameInputBackendAvailable]; normalized controller input still flows
+  /// through the `gamepads` package abstraction (`_PluginGamepadPoller`).
+  static const MethodChannel _windowsGamepadChannel =
+      MethodChannel('xyz.luan/gamepads');
+
+  /// TODO-1223: whether the platform's controller backend is actually usable.
+  ///
+  /// On Windows the native plugin delay-loads `GameInput.dll` so a machine
+  /// without it (no Gaming Services / older Windows 10) no longer crashes at
+  /// launch — it silently degrades to no gamepad support (+488). That silent
+  /// degrade left the user with a dead controller and no explanation, so the
+  /// native `init()` probe records whether the DLL was found and reports it here
+  /// over the `gameInputAvailable` channel method. A `false` result is the
+  /// signal the caller uses to surface an in-app hint ("install Gaming
+  /// Services") on a gamepad-related surface.
+  ///
+  /// Non-Windows platforms have no such optional DLL, so this returns `true`.
+  /// Any query failure also returns `true` — the hint is only shown on a
+  /// definitive `false`, so a transient channel error never nags the user.
+  static Future<bool> gameInputBackendAvailable() async {
+    if (!Platform.isWindows) return true;
+    try {
+      final bool? available =
+          await _windowsGamepadChannel.invokeMethod<bool>('gameInputAvailable');
+      return available ?? true;
+    } on MissingPluginException {
+      // Plugin not registered (should not happen on Windows) — do not nag.
+      return true;
+    } catch (e) {
+      debugPrint('[gamepad] gameInputAvailable query failed: $e');
+      return true;
+    }
+  }
+
   void start() {
     if (_inputRoutesInstalled) return; // already started (idempotent)
     // TODO-939: the input-device → highlight-strategy tracking runs on EVERY

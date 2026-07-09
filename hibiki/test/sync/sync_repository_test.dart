@@ -265,6 +265,39 @@ void main() {
       await repo.setServerTlsEnabled(true);
       expect(await repo.getServerTlsEnabled(), isTrue);
     });
+
+    // TODO-961 B 段：首次启用 hosting 默认开 TLS——判据是两个偏好 key 都从未写入。
+    test('applyFirstHostingTlsDefault 全新设备首次 hosting 默认开 TLS', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      expect(await repo.applyFirstHostingTlsDefault(), isTrue);
+      expect(await repo.getServerTlsEnabled(), isTrue);
+      // 幂等：已写入 TLS key 后再调是 no-op。
+      expect(await repo.applyFirstHostingTlsDefault(), isFalse);
+    });
+
+    test('applyFirstHostingTlsDefault 对存量 hosting 用户零破坏（不翻开 TLS）', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      // 存量用户：serverEnabled 写过（无论 true/false）→ 不动 TLS。
+      await repo.setServerEnabled(true);
+      expect(await repo.applyFirstHostingTlsDefault(), isFalse);
+      expect(await repo.getServerTlsEnabled(), isFalse);
+    });
+
+    test('applyFirstHostingTlsDefault 不覆盖显式关掉的 TLS', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      await repo.setServerTlsEnabled(false); // 用户显式选择明文。
+      expect(await repo.applyFirstHostingTlsDefault(), isFalse);
+      expect(await repo.getServerTlsEnabled(), isFalse);
+    });
   });
 
   group('audiobook position', () {

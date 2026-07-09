@@ -27,21 +27,131 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 560 条。点号进各自文件。
+> 共 670 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-575](bugs/BUG-575-ios-lyrics-mode-load-race.md) | ✅ | ✅ | iOS 歌词模式进入时旧页面 onLoadStop 误初始化 |
-| [BUG-574](bugs/BUG-574-ios-lyrics-mode-huge-html.md) | ✅ | ✅ | iOS 歌词模式整本字幕 HTML 导致打不开 |
-| [BUG-573](bugs/BUG-573-ios-profile-promotion-disabled.md) | ✅ | ✅ | iOS Profile/Release 未启用高刷新率 |
-| [BUG-571](bugs/BUG-571-ios-lyrics-mode-reopen-timeout.md) | ✅ | ✅ | iOS 重开书籍恢复歌词模式导致内容超时白屏 |
-| [BUG-570](bugs/BUG-570-ios-ankimobile-media-url-404.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地媒体 URL 404 |
-| [BUG-569](bugs/BUG-569-ios-audiobook-card-sentence-audio-aac.md) | ✅ | ✅ | iOS 有声书制卡句音频仍以 .aac localhost URL 入卡 |
-| [BUG-568](bugs/BUG-568-reader-ruby-highlight-wide.md) | ✅ | ✅ | 阅读器竖排 ruby 有声书高亮条包含振假名导致变宽 |
-| [BUG-567](bugs/BUG-567-ios27-vsync-startup-crash.md) | ✅ | ✅ | iOS 27 真机启动在 Flutter VSyncClient 崩溃 |
-| [BUG-566](bugs/BUG-566-ios-epub-import-orphan-dir.md) | ✅ | ✅ | iOS EPUB 导入同名残留目录失败 |
-| [BUG-565](bugs/BUG-565-ios-audiobook-silent.md) | ✅ | ✅ | iOS 有声书播放没声音 |
-| [BUG-564](bugs/BUG-564-ankimobile-svg-cache-hash.md) | ✅ | ✅ | iOS/Anki 制卡外字 SVG 偶发读不到（词典媒体缓存名使用 String.hashCode） |
+| [BUG-684](bugs/BUG-684-multi-subtitle-full.md) | ✅ | ✅ | 视频多字幕降级:同锚点MarginV裹挟+副字幕硬拽顶部 |
+| [BUG-683](bugs/BUG-683-first-card-taller.md) | ✅ | ✅ | 查词弹窗首个词典卡片比其他卡片高 |
+| [BUG-682](bugs/BUG-682-audio-image-mask-not-revealed.md) | ✅ | ✅ | 有声书音频跨过图片不去掉防剧透遮罩(未持久·懒图漏揭) |
+| [BUG-681](bugs/BUG-681-netflix-clip-audio-truncation.md) | ✅ | ✅ | Netflix 制卡句子音频尾段被截断（录制在字幕清空即停，无尾部余量） |
+| [BUG-680](bugs/BUG-680-bookshelf-progress-old-build.md) | ✅ | ✅ | 书架书籍进度「还是没有」——复诉根因=旧包(debug.6783)，BUG-659 修复已在 develop(TODO-1346) |
+| [BUG-679](bugs/BUG-679-column-image-squish.md) | ✅ | ✅ | 分页多列图片挤压/溢出盖住相邻列正文（TODO-1285 图片复诉） |
+| [BUG-678](bugs/BUG-678-youtube-stream-replay-ua.md) | ✅ | ✅ | YouTube 分离流回放 UA 残缺致 googlevideo tarpit 超时打不开 |
+| [BUG-677](bugs/BUG-677-subtitle-import-system-picker.md) | ✅ | ✅ | 导入选字幕文件的选择器变了 回退系统文件选择器 (board 1360) |
+| [BUG-676](bugs/BUG-676-netflix-mine-missing-video-name.md) | ✅ | ✅ | 网飞制卡缺少视频名（documentTitle） |
+| [BUG-675](bugs/BUG-675-netflix-batch-mine-silent-skip.md) | ✅ | ✅ | 网飞批量制卡有概率跳过某几张卡 |
+| [BUG-674](bugs/BUG-674-netflix-next-episode-hide.md) | ✅ | ✅ | 网飞剧末下一集按钮无法隐藏 |
+| [BUG-673](bugs/BUG-673-headword-ltr-rtl-flip.md) | ✅ | ✅ | 查词卡 headword 在 RTL UI 语言下被甩到最右 |
+| [BUG-672](bugs/BUG-672-video-subtitle-track-live-secondary.md) | ✅ | ✅ | 视频字幕轨切换不即时+副字幕跳到另一个窗口 |
+| [BUG-671](bugs/BUG-671-sparse-cover-prev-landing.md) | ✅ | ✅ | 文字少+图片封面章往前翻仍落章首（BUG-661 续） |
+| [BUG-670](bugs/BUG-670-parent-shift-deep-cascade.md) | ✅ | ✅ | app 外查词深层级联父弹窗残留 1 帧位移 |
+| [BUG-669](bugs/BUG-669-reorder-mode-group-frame-remove.md) | ✅ | ✅ | 编辑排序模式：合集分组框看不见、减号删除后书籍消失、减号遮挡类型徽章 |
+| [BUG-668](bugs/BUG-668-reimport-book-title-not-refreshing.md) | ✅ | ✅ | 重导入书选文件后书名不刷新 |
+| [BUG-667](bugs/BUG-667-delete-fail-diag.md) | ✅ | ✅ | 删除书籍失败无原因+磁盘清理异常翻转已提交删除 |
+| [BUG-666](bugs/BUG-666-vertical-ruby-position-flip.md) | ✅ | ✅ | 竖排振假名翻到基字左侧+高亮带错位(阅读器未拥有 ruby-position) |
+| [BUG-665](bugs/BUG-665-anki-mine-connect-timeout.md) | ✅ | ✅ | 远端制卡查重挂满 10s 超时（AnkiConnect 不可达/无响应，缺连接建立超时） |
+| [BUG-664](bugs/BUG-664-pitch-number-float-niratan.md) | ✅ | ✅ | 查词卡音高数字浮动/读音位置不如 Niratan 整齐 |
+| [BUG-663](bugs/BUG-663-peer-device-name-localhost.md) | ✅ | ✅ | 互联已配对设备名显示 localhost 而非真实设备名 |
+| [BUG-662](bugs/BUG-662-clipboard-focus-steal.md) | ✅ | ✅ | 桌面剪贴板变化把 Hibiki 拉到前台/抢焦点打断用户 |
+| [BUG-661](bugs/BUG-661-prev-chapter-landing.md) | ✅ | ✅ | 从目录往前翻落到封面而非封面章节最后部分（图片章章末落点塌缩） |
+| [BUG-660](bugs/BUG-660-sentence-context-dup.md) | ✅ | ✅ | 视频制卡例句上下文疑似重复两遍(develop已单句·验旧包/残留队列) |
+| [BUG-659](bugs/BUG-659-progress-lost.md) | ✅ | ✅ | 书架/视频进度「好像没了」——非数据丢失，显示短板已修（TODO-1346） |
+| [BUG-658](bugs/BUG-658-book-import-notfound.md) | ✅ | ✅ | 特殊字符标题EPUB导入后打不开/删不掉(bookKey含%XX被标识符round-trip解码) |
+| [BUG-657](bugs/BUG-657-settings-autoupdate-dict-overlap.md) | ✅ | ✅ | 词典管理页自动更新卡与词典列表粘连 |
+| [BUG-656](bugs/BUG-656-merge-consecutive-images.md) | ✅ | ✅ | 图片合并两张连续图只有最后一张合并进章节 |
+| [BUG-655](bugs/BUG-655-mine-icon-garble.md) | ✅ | ✅ | 制卡后查词弹窗制卡图标(✓↩)变乱码 |
+| [BUG-654](bugs/BUG-654-reorder-frame-drag.md) | ✅ | ✅ | 编辑排序合集分组框看不见 + 手机缩放态拖动误滚(TODO-947) |
+| [BUG-653](bugs/BUG-653-cloud-spill-multiple.md) | ✅ | ✅ | 云盘 per-book 文件溢出根目录并累积多份（TODO-1340，BUG-619 复报） |
+| [BUG-652](bugs/BUG-652-page-edge-leak-v2.md) | ✅ | ✅ | 分页阅读器翻页看到上下页内容(相邻页泄露)复诉·真机WebView2实测已修 |
+| [BUG-651](bugs/BUG-651-dual-subtitle-position.md) | ✅ | ✅ | 双字幕同显但两条挤在同一位置来回变+样式没按各自轨道 |
+| [BUG-650](bugs/BUG-650-sync-incomplete-discard.md) | ✅ | ✅ | 同步未完成被中断仍误记冷却时间戳·压制下次启动重试（应丢弃中间态并按时机重试） |
+| [BUG-649](bugs/BUG-649-ios-lyrics-mode-load-race.md) | ✅ | ✅ | iOS 歌词模式进入时旧页面 onLoadStop 误初始化 |
+| [BUG-648](bugs/BUG-648-ios-lyrics-mode-huge-html.md) | ✅ | ✅ | iOS 歌词模式整本字幕 HTML 导致打不开 |
+| [BUG-647](bugs/BUG-647-ios-profile-promotion-disabled.md) | ✅ | ✅ | iOS Profile/Release 未启用高刷新率 |
+| [BUG-646](bugs/BUG-646-ios-lyrics-mode-reopen-timeout.md) | ✅ | ✅ | iOS 重开书籍恢复歌词模式导致内容超时白屏 |
+| [BUG-645](bugs/BUG-645-ios-ankimobile-media-url-404.md) | ✅ | ✅ | iOS AnkiMobile 制卡本地媒体 URL 404 |
+| [BUG-644](bugs/BUG-644-ios-audiobook-card-sentence-audio-aac.md) | ✅ | ✅ | iOS 有声书制卡句音频仍以 .aac localhost URL 入卡 |
+| [BUG-643](bugs/BUG-643-reader-ruby-highlight-wide.md) | ✅ | ✅ | 阅读器竖排 ruby 有声书高亮条包含振假名导致变宽 |
+| [BUG-642](bugs/BUG-642-ios27-vsync-startup-crash.md) | ✅ | ✅ | iOS 27 真机启动在 Flutter VSyncClient 崩溃 |
+| [BUG-641](bugs/BUG-641-ios-audiobook-silent.md) | ✅ | ✅ | iOS 有声书播放没声音 |
+| [BUG-640](bugs/BUG-640-ankimobile-svg-cache-hash.md) | ✅ | ✅ | iOS/Anki 制卡外字 SVG 偶发读不到（词典媒体缓存名使用 String.hashCode） |
+| [BUG-639](bugs/BUG-639-url-drag-import.md) | ✅ | ✅ | 拖动链接(URL)进桌面窗口直接添加为视频（TODO-1306，feature） |
+| [BUG-638](bugs/BUG-638-popup-close-latch.md) | ✅ | ✅ | 查词弹窗首次查词后关不掉(warm复用_isClosing闭锁永不复位) |
+| [BUG-637](bugs/BUG-637-interconnect-token-display.md) | ✅ | ✅ | 互联访问令牌两端显示不一致令用户困惑 |
+| [BUG-636](bugs/BUG-636-popup-expand-icon.md) | ✅ | ✅ | 查词弹窗词典分组展开/收起图标渲染不出来 |
+| [BUG-635](bugs/BUG-635-mining-marker-revert.md) | ✅ | ✅ | 查词弹窗制卡标记还原为 ✓✓↩ 文本标记 |
+| [BUG-634](bugs/BUG-634-page-columns-noop.md) | ✅ | ✅ | 阅读器每页列数(pageColumns)不生效 |
+| [BUG-633](bugs/BUG-633-floating-lyric-tap-slop.md) | ✅ | ✅ | 悬浮字幕点击文字没反应的更深根因：tap/drag 阈值低于平台 touch slop |
+| [BUG-632](bugs/BUG-632-netflix-record-wait-buffer.md) | ✅ | ✅ | 网飞制卡录制时长不准（未等缓冲就绪即开录·录进 stall 冻结帧） |
+| [BUG-631](bugs/BUG-631-extension-popup-word-audio-remote-source.md) | ✅ | ✅ | 扩展/远端查词弹窗无单词音频（server 只查本地库漏配置的远程源） |
+| [BUG-630](bugs/BUG-630-netflix-mine-issue.md) | ✅ | ✅ | 网飞制卡有问题（未复现·待用户日志） |
+| [BUG-629](bugs/BUG-629-youtube-subtitle-vanish.md) | ✅ | ✅ | YouTube 字幕快加载后整个消失（回归） |
+| [BUG-628](bugs/BUG-628-ass-outline-width-scale.md) | ✅ | ✅ | 外挂ASS描边宽未随PlayResY缩放（尊重自带样式仍不够忠实） |
+| [BUG-627](bugs/BUG-627-m3u8-playlist-dedup-identity.md) | ✅ | ✅ | m3u8 播放列表来源库重复扫描不去重、封面缺失（判重键错用首集易变路径） |
+| [BUG-626](bugs/BUG-626-merge-image-toc-lost.md) | ✅ | ✅ | 图片合并后章节列表消失 |
+| [BUG-625](bugs/BUG-625-theme-swatch-full-preview.md) | ✅ | ✅ | 未选中主题色卡空白·预览画布塌成0x0 |
+| [BUG-624](bugs/BUG-624-longpress-text-selection.md) | ✅ | ✅ | 手机长按丢了文本区间选择(复制)·回归 |
+| [BUG-623](bugs/BUG-623-subtitle-timing-entry.md) | ✅ | ✅ | 字幕调轴波形对轴入口在弱设备被隐藏（懒加载化后已改为常驻可见） |
+| [BUG-622](bugs/BUG-622-card-image-compat.md) | ✅ | ✅ | 老 {book-cover} 模板视频制卡也产 GIF（向后兼容超集，无需手改） |
+| [BUG-621](bugs/BUG-621-extension-popup-parity.md) | ✅ | ✅ | 浏览器扩展查词弹窗与 app 内不一致（丑/按钮位置不同） |
+| [BUG-620](bugs/BUG-620-sync-autodownload-decouple.md) | ✅ | ✅ | 同步误把远端独有书自动灌书架(syncAudioBookFiles 触发 TODO-873 自动下书) |
+| [BUG-619](bugs/BUG-619-cloud-folder-spill.md) | ✅ | ✅ | 云盘进度文件溢出到父目录 |
+| [BUG-618](bugs/BUG-618-interconnect-token-mismatch-confusion.md) | 🚧 | 🚧 | 互联访问令牌与桌面端不一致（per-peer token·非 bug 待确认） |
+| [BUG-617](bugs/BUG-617-interconnect-wan-pin-vanishes.md) | ✅ | ✅ | 公网配对 host 点允许即关窗抹掉 PIN·client 还没输就看不到 |
+| [BUG-616](bugs/BUG-616-interconnect-test-connection-tls.md) | ✅ | ✅ | 互联测试连接对已配对 https host 恒失败（漏传钉扎指纹） |
+| [BUG-615](bugs/BUG-615-nav-double-jump-first-chapter-only.md) | ✅ | ✅ | 导航跨章跳转首次只到章节需跳两次（TODO-1309 ②） |
+| [BUG-614](bugs/BUG-614-multicue-overlap-secondary.md) | ✅ | ✅ | 重叠cue跳+副字幕并入overlay多层渲染重构（TODO-1312 方案A） |
+| [BUG-613](bugs/BUG-613-data-migration-hang-folder-loss.md) | ✅ | ✅ | 改数据文件夹位置卡死+目标文件夹消失 |
+| [BUG-612](bugs/BUG-612-cover-not-showing-6897.md) | ✅ | ✅ | 6897书籍封面检测到却不显示回归（TODO-1319） |
+| [BUG-611](bugs/BUG-611-vertical-ruby-nav-misplace.md) | ✅ | ✅ | 竖排滚动导航后假名跑文字中间 |
+| [BUG-610](bugs/BUG-610-settings-area-narrowed.md) | ✅ | ✅ | 设置部分区域宽度变窄回归 |
+| [BUG-609](bugs/BUG-609-mobile-longpress-select.md) | ✅ | ✅ | 1279 coarse user-select:none禁了手机长按选中·补app选区手势 |
+| [BUG-608](bugs/BUG-608-share-callback-error.md) | ✅ | ✅ | 分享图片PlatformException share-sheet未回调重入 |
+| [BUG-607](bugs/BUG-607-pitch-reading-mined.md) | ✅ | ✅ | 词典音高片假名reading被拖选烤进制卡卡片 |
+| [BUG-606](bugs/BUG-606-yt-slow-first-frame.md) | ✅ | ✅ | 油管首帧被字幕+title串行阻塞~28s |
+| [BUG-605](bugs/BUG-605-selectgraphic-loadtoken-uaf.md) | ✅ | ✅ | 1295 minTrackCount await破BUG-344 loadToken守卫 |
+| [BUG-604](bugs/BUG-604-ass-font-weight-shadow.md) | ✅ | ✅ | 外挂ASS字号字重阴影不尊重 |
+| [BUG-603](bugs/BUG-603-netflix-mine-false-success.md) | ✅ | ✅ | 网飞制卡失败报成功+诊断不回传 |
+| [BUG-602](bugs/BUG-602-yt-subtitle-not-in-track.md) | ✅ | ✅ | 油管字幕绕过远端字幕轨模型选不到 |
+| [BUG-601](bugs/BUG-601-large-window-gpu-flicker.md) | ✅ | ✅ | 大窗集显呼出UI仍GPU100%闪烁 |
+| [BUG-600](bugs/BUG-600-yt-inapp-mining-no-audio.md) | ✅ | ✅ | 油管应用内制卡音频源指向audio-only DASH致stall无音频gif连坐 |
+| [BUG-599](bugs/BUG-599-video-stuck-loading.md) | ✅ | ✅ | 视频buffered已满仍卡加载态 |
+| [BUG-598](bugs/BUG-598-floating-sub-tap-no-lookup.md) | ✅ | ✅ | 悬浮字幕点击文字不出查词窗(Android) |
+| [BUG-597](bugs/BUG-597-android-video-black-texture.md) | ✅ | ✅ | 安卓视频解码正常但纹理合成黑屏 |
+| [BUG-596](bugs/BUG-596-yt-stream-dedup-cover.md) | ✅ | ✅ | 油管流去重无videoId规范化+非YouTube流无封面 |
+| [BUG-595](bugs/BUG-595-mobile-mining-no-cover.md) | ✅ | ✅ | 手机制卡回退路径漏coverHref致无书籍封面 |
+| [BUG-594](bugs/BUG-594-chapter-jump-illustration-skip.md) | ✅ | ✅ | 章节翻页初始正确后异步跳过章首插图（TODO-1229 第 5–6 次复诉） |
+| [BUG-593](bugs/BUG-593-netflix-card-subtitle-dup.md) | ✅ | ✅ | 网飞制卡卡片字幕重复两次+截取混入UI+少开头 |
+| [BUG-592](bugs/BUG-592-interconnect-connect-fail.md) | ✅ | ✅ | 互联LAN token成功仍连失败+公网无pin |
+| [BUG-591](bugs/BUG-591-external-sub-style.md) | ✅ | ✅ | 外挂ASS字幕自带颜色描边不生效 |
+| [BUG-590](bugs/BUG-590-secondary-subtitle-race.md) | ✅ | ✅ | 副字幕轨就绪竞态致有时不显示 |
+| [BUG-589](bugs/BUG-589-waveform-density.md) | ✅ | ✅ | 字幕对轴波形显示密度不利于辨句 |
+| [BUG-588](bugs/BUG-588-stats-mobile-numbers.md) | ✅ | ✅ | 手机阅读统计页数字不可见 |
+| [BUG-587](bugs/BUG-587-reader-restore-stale-charoffset.md) | ✅ | ✅ | 退出图1重进回图2·恢复位置错误 |
+| [BUG-586](bugs/BUG-586-netflix-mine-queue-dup-sentence.md) | ✅ | ✅ | 网飞扩展制卡队列句子一模一样重复 |
+| [BUG-585](bugs/BUG-585-ffmpeg-audio-138.md) | ✅ | ✅ | 制卡句子音频 ffmpeg exit -138（googlevideo connect 阶段网络超时） |
+| [BUG-584](bugs/BUG-584-image-spoiler-reveal-persist.md) | ✅ | ✅ | 图片防剧透遮罩点击揭开后又恢复 |
+| [BUG-583](bugs/BUG-583-global-lookup-flicker-residual.md) | ✅ | ✅ | app 外查词第一个弹窗出现/嵌套子弹窗打开或消失时父卡残留闪烁 + 子弹窗出现被裁一帧再跳进来 |
+| [BUG-582](bugs/BUG-582-interconnect-audiobook-shown-as-plain-no-audio-sync.md) | ✅ | ✅ | 互联有声书显示成普通书且音频不同步 |
+| [BUG-581](bugs/BUG-581-nonvideo-mine-no-cue.md) | ✅ | ✅ | 普通网页制卡误报没找到当前字幕 |
+| [BUG-580](bugs/BUG-580-interconnect-audiobook-rename.md) | ✅ | ✅ | 互联下载有声书 EPUB 落盘 rename 失败中止导入 |
+| [BUG-579](bugs/BUG-579-youtube-external-audio-silent-until-seek.md) | ✅ | ✅ | YouTube 分离流初始无声，跳转后才有声（audio-only 音轨在 play 之后才外挂） |
+| [BUG-578](bugs/BUG-578-desktop-floating-lyric-global-lookup-blank.md) | ✅ | ✅ | 桌面悬浮字幕点词全局查词覆盖窗空白/不出现 |
+| [BUG-577](bugs/BUG-577-ext-highlight-vanish.md) | ✅ | ✅ | 浏览器扩展查词高亮非常容易消失 |
+| [BUG-576](bugs/BUG-576-lan-pair-pin-prompt.md) | ✅ | ✅ | LAN配对总弹PIN框但对方无PIN |
+| [BUG-575](bugs/BUG-575-remote-audio-404-cooldown.md) | ✅ | ✅ | 可达远端发音源对缺词返回404被误冷却导致app外查词整段无音频 |
+| [BUG-574](bugs/BUG-574-ext-shift-hover-lookup.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词失效复诉 |
+| [BUG-573](bugs/BUG-573-css-editor-row-width.md) | ✅ | ✅ | 阅读器布局子页「编辑书籍 CSS」入口条比上方配置项组宽·左右不对齐 |
+| [BUG-572](bugs/BUG-572-app-init-infinite-loading-dataroot-hang.md) | ✅ | ✅ | App 偶发无限加载：自定义数据根掉线盘早期同步 IO 永不返回 |
+| [BUG-571](bugs/BUG-571-respect-ass-style-reload.md) | ✅ | ✅ | 尊重字幕自带样式开关重开视频后失效 |
+| [BUG-570](bugs/BUG-570-windows-msvcp140-crash-stale-redist.md) | ✅ | ✅ | Windows app crashes at launch (MSVCP140.dll c0000005) on machines with stale VC++ Redistributable |
+| [BUG-569](bugs/BUG-569-tls-cover-not-pinned.md) | ✅ | ✅ | TLS 默认开后对端封面空白（Image.network 无法钉扎自签证书） |
+| [BUG-568](bugs/BUG-568-chapter-jump-skips-first-page.md) | ✅ | ✅ | 竖排跳章落点错误(章界输入穿透+图片late-load冻结) |
+| [BUG-567](bugs/BUG-567-nested-lookup-parent-flicker.md) | ✅ | ✅ | Windows app 外查词嵌套时父弹窗闪烁 |
+| [BUG-566](bugs/BUG-566-mobile-seekbar-use-after-dispose.md) | ✅ | ✅ | 移动版进度条 onPointerMove/onPointerUp 拖动中控件销毁后崩溃 |
+| [BUG-565](bugs/BUG-565-remote-book-download-rename-notempty.md) | ✅ | ✅ | 远端书下载改名到已存在书目录 ENOTEMPTY 失败 |
+| [BUG-564](bugs/BUG-564-dataroot-migrate-moves-whole-documents.md) | ✅ | ✅ | Windows 数据根迁移整树搬移并删除用户整个 Documents（默认根） |
 | [BUG-563](bugs/BUG-563-gameinput-dll-missing-startup-crash.md) | ✅ | ✅ | 无GameInput.dll的Windows机器启动即崩 |
 | [BUG-562](bugs/BUG-562-ankimobile-background-media-download.md) | ✅ | ✅ | iOS AnkiMobile 视频句音频导入后仍保留 localhost URL |
 | [BUG-561](bugs/BUG-561-ankimobile-media-url-plus-payload.md) | ✅ | ✅ | iOS AnkiMobile 制卡音频不播放且词典/详情字段出现加号和本地路径 |

@@ -1,0 +1,7 @@
+## BUG-576 · LAN配对总弹PIN框但对方无PIN
+
+- **报告**：2026-07-07（用户：LAN 配对被要求「输入另一台设备的 PIN 码」，但对方根本没有 PIN；且自己没输 PIN，地址却还是被添加了）
+- **真实性**：✅ 真 bug（非鉴权绕过，是配对时序/UX 缺陷）。根因 `hibiki/lib/src/sync/sync_settings_schema/interconnect.part.dart:502`（旧版行号）——`_runPairingV2` 无条件先调 `_promptPairPinInput()`，在拿到 host `pair/v2` 响应（`pinRequired`）之前就弹「输入对方 PIN」对话框。LAN 免 PIN 默认 `pinRequired:false`（`HibikiPairingProtocol.computePinRequired`，isLanPeer 且 lanRequiresPin=false），host 不显示任何 PIN，故用户「没 PIN 可输」；随后 `pair()` 免 proof + host 人工「允许」即配对成功。地址「没输 PIN 却被添加」是两层叠加：① 客户端在配对前就把 URL 落库（`_addOrEditUrl` 的 `_persistUrls()`，设计上保留 URL 供手填 token 回退）；② 免 PIN 成功后经 `_onPairSuccess` 正式落库。**token（真正凭据）始终要 host 人工审批才派发（`_promptPairApproval`），仅落地址不给任何访问权**，因此不是鉴权绕过。
+- **[x] ① 已修复** — 把 PIN 收集从「配对前无条件弹框」下沉为回调：`HibikiPairV2Client.pair` 用 `pinProvider` 取代预收的 `pin`，**仅当 host 回报 `pinRequired:true` 时才调用** `pinProvider`（`hibiki/lib/src/sync/pairing/hibiki_pair_v2_client.dart`）；`_runPairingV2` 传 `pinProvider: _promptPairPinInput` 并删除无条件预弹，取消（返回 null）映射为 `'cancelled'` 静默收场。host 侧再加固：`HibikiPairRequest.pinRequired` 传入审批弹窗，审批 UI 仅在 `pinRequired` 时显示 PIN，免 PIN 会话不再出现「幽灵 PIN」（`hibiki_sync_server.dart` / `hibiki_server_controller.dart`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/pairing/hibiki_pair_v2_client_test.dart` 新增守卫：`pinRequired:false` 时 `pinProvider` 绝不被调用；`pinRequired:true` 恰好调用一次；返回 null→`cancelled`、空串→`pin`、未接线→`pin`。
+- **备注**：遗留（非本次报告、需两设备真机）——公网/跨网段 `pinRequired:true` 路径 host 仅在 confirm 阶段的审批弹窗显示 PIN，晚于 client 计算 pinProof 所需时点，该场景仍难完成配对；根治需 host 在 `pair/v2` 建会话时即以非阻塞方式展示 PIN，属独立后续项。

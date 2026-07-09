@@ -88,6 +88,7 @@ class SettingsNumberField extends StatefulWidget {
     required this.onChanged,
     required this.onReset,
     this.suffixText,
+    this.subtitle,
   });
 
   final String title;
@@ -95,6 +96,10 @@ class SettingsNumberField extends StatefulWidget {
   final String initialValue;
   final String resetValue;
   final String? suffixText;
+
+  /// TODO-1353: 可选副标题（如「Ctrl+滚轮可直接缩放弹窗内容」提示）。null 时不渲染，
+  /// 现有调用点行为不变。
+  final String? subtitle;
   final ValueChanged<String> onChanged;
   final VoidCallback onReset;
 
@@ -121,6 +126,7 @@ class SettingsNumberFieldState extends State<SettingsNumberField> {
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
       title: widget.title,
+      subtitle: widget.subtitle,
       icon: widget.icon,
       controlBelow: true,
       trailing: HibikiTextField(

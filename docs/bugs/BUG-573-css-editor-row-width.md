@@ -1,0 +1,6 @@
+## BUG-573 · 阅读器布局子页「编辑书籍 CSS」入口条比上方配置项组宽·左右不对齐
+- **报告**：2026-07-07（用户：TODO-1234）
+- **真实性**：✅ 真 bug —— 根因 `hibiki/lib/src/media/audiobook/reader_quick_settings_sheet.dart:692-695`（普通布局子页）与 `:1364-1367`（歌词模式子页）：「编辑书籍 CSS」入口条裸放在 `AdaptiveSettingsSection` 里，与它并列同一 Column 的 layout 配置项组走 `MaterialSettingsRenderer.buildDetailContent`（`material_settings_renderer.dart:138-144`），Material 正文额外套了 `detailHorizontalInsets`（左 `page+gap`、右 `page`）的横向缩进；CSS 入口条没套这层缩进，于是 Material 下比上方配置项组更宽、左右边界对不齐。与 BUG-545/546 的主题卡完全同构（主题卡 `_buildThemeSelectorSection` 已补缩进，CSS 行漏补）。
+- **[x] ① 已修复** —— 抽 `_buildBookCssEditorSection()`（`reader_quick_settings_sheet.dart:680-698`）镜像 `_buildThemeSelectorSection`：Cupertino 直接返回裸 section（其 `buildDetailContent` 无横向内边距），Material 套 `MaterialSettingsRenderer.detailHorizontalInsets(HibikiDesignTokens.of(context))`，与配置项组共用同一真相源。两处调用点改为 `_buildBookCssEditorSection()`。提交：91d8cd45c
+- **[x] ② 已加自动化测试** —— `hibiki/test/settings/reader_layout_css_editor_row_width_test.dart`：① widget 层断言 CSS 行左右边界/宽度与走 `detailHorizontalInsets` 的 detail-body 内容像素级一致（epsilon 0.5）；② 源码扫描断言两处调用都经 `_buildBookCssEditorSection` 且不再裸放 `AdaptiveSettingsSection`。提交：91d8cd45c
+- **备注**：CSS 编辑器打开功能不变（点击仍 push `BookCssEditorPage`，manifest 优化 602679263 保留），本次只改入口条外层 section 的宽度对齐。

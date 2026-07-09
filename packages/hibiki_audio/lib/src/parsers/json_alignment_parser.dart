@@ -128,4 +128,32 @@ class JsonAlignmentParser {
     // 落在 gap：上游返回 nil。
     return -1;
   }
+
+  /// 返回**所有**闭区间 `[startMs, endMs]` 覆盖 [positionMs] 的 cue 下标（升序）。
+  ///
+  /// 与 [findCueIndex] 的关键差异：[findCueIndex] 只回一个「代表」下标（重叠区里回
+  /// startMs 更大的那条、gap 回 -1），用于有声书正文高亮 / 查词锚 / 跳句这些「同一
+  /// 时刻只关心一条」的旧路径；本函数回**整个活动集**，用于视频字幕 overlay 把同一轨
+  /// 上时间轴重叠的多条 cue 同时渲染出来（TODO-1312：重叠 cue 都显示、不因越过被选那
+  /// 条 end 落进 gap 而闪烁 / 切换）。
+  ///
+  /// 边界与 [findCueIndex] 一致：`startMs <= positionMs <= endMs`（endMs **闭区间**，
+  /// HBK-AUDIT-153）。空活动集返回空列表（调用方据此清空 overlay，与 gap 语义一致）。
+  ///
+  /// 要求 [cues] 已按 startMs 升序排序（[VideoPlayerController.setCues] /
+  /// [JsonAlignmentParser.parseString] 后调用方保证）：一旦某条 startMs > positionMs，
+  /// 其后的 cue startMs 只会更大、更不可能覆盖，故提前 break。endMs 因重叠可乱序，
+  /// 不能据 endMs 提前终止，只能对 startMs <= positionMs 的每条判 endMs。
+  static List<int> findActiveCueIndices({
+    required List<AudioCue> cues,
+    required int positionMs,
+  }) {
+    final List<int> active = <int>[];
+    for (int i = 0; i < cues.length; i++) {
+      final AudioCue cue = cues[i];
+      if (cue.startMs > positionMs) break;
+      if (positionMs <= cue.endMs) active.add(i);
+    }
+    return active;
+  }
 }

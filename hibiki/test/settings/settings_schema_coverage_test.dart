@@ -148,6 +148,33 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
   'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
   'video/Loop file': 'test/media/video/video_mpv_config_test.dart',
+  // TODO-1247：把播放页内 mpv 详情（画质余项/几何/色彩/音频）平移到首页后，这些
+  // 纯 pref 项写穿 videoMpvConfig（下次开视频 applyMpvConfig 应用）；结构化字段
+  // round-trip + buildMpvProperties 生效由 video_mpv_config_test.dart 咬住，真实
+  // libmpv 渲染效果需桌面设备验（无 widget 探针）。
+  'video/Dithering': 'test/media/video/video_mpv_config_test.dart',
+  'video/Motion interpolation': 'test/media/video/video_mpv_config_test.dart',
+  'video/Deinterlace': 'test/media/video/video_mpv_config_test.dart',
+  'video/Linear downscaling': 'test/media/video/video_mpv_config_test.dart',
+  'video/Rotation': 'test/media/video/video_mpv_config_test.dart',
+  'video/Aspect ratio': 'test/media/video/video_mpv_config_test.dart',
+  'video/Zoom': 'test/media/video/video_mpv_config_test.dart',
+  'video/Pan & scan (crop borders)':
+      'test/media/video/video_mpv_config_test.dart',
+  'video/Brightness': 'test/media/video/video_mpv_config_test.dart',
+  'video/Contrast': 'test/media/video/video_mpv_config_test.dart',
+  'video/Saturation': 'test/media/video/video_mpv_config_test.dart',
+  'video/Gamma': 'test/media/video/video_mpv_config_test.dart',
+  'video/Hue': 'test/media/video/video_mpv_config_test.dart',
+  'video/Preserve pitch when speeding':
+      'test/media/video/video_mpv_config_test.dart',
+  'video/Channels': 'test/media/video/video_mpv_config_test.dart',
+  'video/Normalize downmix loudness':
+      'test/media/video/video_mpv_config_test.dart',
+  // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
+  // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
+  "video/Respect subtitle's own style":
+      'test/media/video/video_subtitle_overlay_markup_test.dart',
   'video/Font size':
       'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_overlay_test.dart',
   'video/Font weight':
@@ -184,13 +211,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_chrome_floating_test.dart',
   'reading/Auto-hide floating controls after':
       'test/reader/reader_chrome_floating_test.dart',
-  // TODO-1168（实验性）：悬浮底栏毛玻璃 + 半透明。纯视觉外观（BackdropFilter +
-  // 背景 alpha），不改 t1RenderInput 探针（WebView 渲染输入），生效由专项守卫
-  // 覆盖：默认关=底栏无毛玻璃/零回归 + 底栏预留高不受影响。
-  'reading/Frosted floating bottom bar':
-      'test/pages/reader_frosted_bottom_bar_guard_test.dart',
-  'reading/Bottom bar opacity':
-      'test/pages/reader_frosted_bottom_bar_guard_test.dart',
   'reading/Invert swipe page turn direction': 'DEVICE: WebView swipe direction',
   // TODO-120: 反转键盘方向键翻页方向——生效点在 reader 键盘处理器（纯函数
   // resolveReaderArrowPageTurn 的 reverse 参数），由专项纯函数测试覆盖。

@@ -1,4 +1,4 @@
-# 构建 Hibiki 桌面用的「精简 ffmpeg」（~10MB 量级，LGPL，仅含 Hibiki 调用的组件）。
+# 构建 Hibiki 桌面用的「精简 ffmpeg」（~12MB 量级，GPL/含 libx264，仅含 Hibiki 调用的组件）。
 # 产物 ffmpeg(.exe) 放到 app 程序旁即被 resolveFfmpegExecutable() 优先选用
 # （见 hibiki/lib/src/media/video/ffmpeg_backend.dart）。
 #
@@ -7,6 +7,8 @@
 # workflow 下载 artifact，见 TODO-416）。需要刷新入库二进制时：手动跑此 workflow，
 # 下载对应平台 artifact，替换 third_party 下的 vendored 文件再提交。
 # configure 白名单调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
+# TODO-1214/1257：加 libx264(H.264,GPL) + --enable-network(schannel/securetransport/
+# gnutls TLS) → 需各平台 x264 dev 包 + Linux gnutls dev（下方 install 步已加）。
 name: ffmpeg-min
 
 on:
@@ -34,11 +36,11 @@ jobs:
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg nasm pkg-config
+        run: brew install ffmpeg nasm pkg-config x264
 
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
@@ -50,6 +52,7 @@ jobs:
             base-devel git
             mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkgconf mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-x264
             mingw-w64-x86_64-ffmpeg
 
       - name: Build (Linux/macOS)

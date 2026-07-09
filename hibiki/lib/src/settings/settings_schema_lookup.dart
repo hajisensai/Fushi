@@ -143,6 +143,12 @@ SettingsDestination buildLookupDestination() {
                 );
                 return;
               }
+              // TODO-1266：装扩展即默认开启 yomitan-api server（省得装完 401 连不上）。
+              // 幂等：已开则跳过不重启；token 为空才播种、绝不覆盖已有 token。必须在下面
+              // prepareBundledBrowserExtension 注入前完成，使注入扩展的 token 与 server
+              // 实际使用的 token 一致。端口占用（返 false）时下面横幅仍会据实提醒。
+              final bool serverReady =
+                  await appModel.ensureYomitanApiServerForBrowserExtension();
               // TODO-1087：解压时注入当前 server 真值（host 固定环回，port/token 取
               // AppModel），扩展默认即连本机 app，无需用户手填 host/port/token。
               final String dir = await prepareBundledBrowserExtension(
@@ -158,7 +164,10 @@ SettingsDestination buildLookupDestination() {
                 settingsContext,
                 (_) => _BrowserExtensionInstallDialog(
                   path: dir,
-                  serverEnabled: appModel.yomitanApiServerEnabled,
+                  // TODO-1266：横幅反映「自动开启后」的真实状态（端口占用时 serverReady=false，
+                  // 据实提醒；token 此时已就绪，故一般为已配对）。
+                  serverEnabled:
+                      serverReady && appModel.yomitanApiServerEnabled,
                   hasToken: appModel.yomitanApiKey.isNotEmpty,
                 ),
               );
@@ -567,11 +576,14 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
+            // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
+            // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
+            // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
             title: t.popup_max_width,
             icon: Icons.open_in_full_outlined,
             min: 250,
-            max: 1000,
-            divisions: 75,
+            max: 2000,
+            divisions: 175,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxWidth,
             label: (double value) => value.round().toString(),
@@ -686,6 +698,8 @@ Widget _buildDictionaryFontSizeField(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   return SettingsNumberField(
     title: t.dictionary_font_size,
+    // TODO-1353: 提示 Ctrl+滚轮可在查词弹窗内直接缩放（改的就是这个词典字号，持久化）。
+    subtitle: t.dictionary_font_size_zoom_hint,
     icon: Icons.format_size,
     suffixText: t.unit_pixels,
     initialValue: appModel.dictionaryFontSize.toString(),

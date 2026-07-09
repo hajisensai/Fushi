@@ -109,12 +109,79 @@ class AudiobookClipCueSpan {
   final int endMs;
 }
 
+/// 纯函数：把原始 cue span 转成导出用 [AudiobookClipCueSpan]，并应用 A/V 偏移
+/// [delayMs]（TODO-1147 用户回访「高亮迟钝」第二根因·时基不一致）。
+///
+/// 时基契约：导出音频窗口（`clipExportGlobalRange`）已被 `_shiftRange` 平移
+/// +delayMs——播放侧 `effectiveMs = pos - delayMs` 的镜像，即 cue 在音频里真实
+/// 出现于 `startMs + delayMs`。帧计划（`clipFramePlan`）拿这个**已平移**的窗口当
+/// 时间轴，cue 起止若不同步平移，逐句高亮整体偏移 delayMs（delay<0 时表现为固定
+/// 迟钝、delay>0 时固定提前）。clamp 语义镜像 `_shiftRange`：起点不下穿 0，终点恒
+/// > 起点。
+List<AudiobookClipCueSpan> clipCueSpansWithDelay({
+  required List<AudioCue> span,
+  required int delayMs,
+}) {
+  return span.map((AudioCue c) {
+    final int startMs = (c.startMs + delayMs).clamp(0, 1 << 30);
+    final int endMs = (c.endMs + delayMs).clamp(startMs + 1, 1 << 30);
+    return AudiobookClipCueSpan(
+      text: c.text,
+      startMs: startMs,
+      endMs: endMs,
+    );
+  }).toList(growable: false);
+}
+
 /// 多句片段导出的分类结果（纯数据）。
 ///
 /// [kind] 复用 [AudiobookClipBoundaryKind]：emptySelection / noAudio /
 /// unsupportedRange / exportable，语义同单句版。exportable 时 [cueSpans] 非空且
 /// 已按 startMs 升序、同一 [audioFileIndex]，[globalStartMs]/[globalEndMs] 是整段
 /// 完整音频的裁剪窗口（首句 head-padded start .. 末句 tail-padded end）。
+/// TODO-1127：把从阅读器选区抽取到的 EPUB 插图按归一化文档偏移分配到各 cue 段（插图
+/// 渲在其归属 cue 文本之后）。纯函数、可单测，与 [classifyAudiobookClipMultiCue] 解耦。
+///
+/// - [cueNormStarts]：每个 cue 段的 `normCharStart`（整书归一化字符偏移，跟
+///   `SasayakiFragment.normCharStart` 同基准）；无法解码归一化偏移的 cue 传 `null`——
+///   不作为归属锚点。长度必须与 cue 段数一致。
+/// - [images]：抽取到的插图，每张带 [normOffset]（该图在 DOM 文档序里的归一化位置，由
+///   JS `nativeSelectionImages` 用图片相邻文本节点算出）+ 载荷 [bytes]。
+///
+/// 归属规则：一张图挂到「归一化起点 `<=` 图片 normOffset 的最后一个 cue」之后——即这张
+/// 图在 DOM 里出现在该句文本之后、下一句之前，正是「选区中间夹图」的相对顺序。没有任何
+/// cue 起点 `<=` 图片偏移（图在所有 cue 之前，或所有 cue 都无法解码偏移）时兜底挂到第 0
+/// 段最前，**绝不丢图**。多张图先按 normOffset 升序，保持文档序稳定。
+///
+/// 返回 `length == cueNormStarts.length` 的 `List<List<Uint8List>>`：第 i 项是第 i 个 cue
+/// 段之后要渲的插图字节列表（顺序即文档序）。
+List<List<Uint8List>> assignClipImagesToCues({
+  required List<int?> cueNormStarts,
+  required List<({int normOffset, Uint8List bytes})> images,
+}) {
+  final int cueCount = cueNormStarts.length;
+  final List<List<Uint8List>> assigned = List<List<Uint8List>>.generate(
+    cueCount,
+    (_) => <Uint8List>[],
+    growable: false,
+  );
+  if (cueCount == 0) return assigned;
+  final List<({int normOffset, Uint8List bytes})> sorted =
+      List<({int normOffset, Uint8List bytes})>.of(images)
+        ..sort((({int normOffset, Uint8List bytes}) a,
+                ({int normOffset, Uint8List bytes}) b) =>
+            a.normOffset.compareTo(b.normOffset));
+  for (final ({int normOffset, Uint8List bytes}) image in sorted) {
+    int target = 0; // 兜底：图在所有 cue 之前 / 无可用锚点 → 挂最前一段，绝不丢。
+    for (int i = 0; i < cueCount; i++) {
+      final int? start = cueNormStarts[i];
+      if (start != null && start <= image.normOffset) target = i;
+    }
+    assigned[target].add(image.bytes);
+  }
+  return assigned;
+}
+
 class AudiobookClipMultiCueResult {
   const AudiobookClipMultiCueResult({
     required this.kind,

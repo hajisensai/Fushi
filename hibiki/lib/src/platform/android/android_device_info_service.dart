@@ -14,6 +14,9 @@ class AndroidDeviceInfoService implements PlatformDeviceInfoService {
   Future<String?> get deviceModel async => (await _getInfo()).model;
 
   @override
+  Future<String?> get manufacturer async => (await _getInfo()).manufacturer;
+
+  @override
   Future<String?> get osVersion async {
     final info = await _getInfo();
     return 'Android ${info.version.release} (SDK ${info.version.sdkInt})';

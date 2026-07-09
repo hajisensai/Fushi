@@ -649,6 +649,15 @@ void main() {
               'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
+      // TODO-947 系列/合集折叠卡的马赛克封面（2x2 成员封面网格）是书架内容/封面美术，
+      // 不是页面 chrome：letterbox 底 surfaceContainerHighest 与格子圆角
+      // BorderRadius.circular(cellRadius) 是封面拼图单元，同「书架封面/拖放」豁免类。
+      'lib/src/pages/implementations/series_shelf_card.dart':
+          'TODO-947 series/collection folder card paints a 2x2 mosaic of member '
+              'book covers; the letterbox surface (surfaceContainerHighest) and '
+              'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
+              'art / reader-shelf content, not ordinary page chrome — same '
+              'reviewed exception class as the reader-shelf book-cover overlays.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
@@ -800,6 +809,13 @@ void main() {
               'source side panel rows, caption font scales with appUiScale) is '
               'the same reviewed media-page exception class as the parent '
               'video player page allowlist entry.',
+      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+          'Black-flicker warning banner chrome (errorContainer '
+              'BorderRadius.circular(12) frame + fontSize title/body '
+              'labels) added by TODO-1119/BUG-545 as an errorContainer-'
+              'semantic notice bar over the video controls; same reviewed '
+              'media-page exception class as the parent video player page '
+              'allowlist entry.',
       'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
           'Volume / playback-speed compact control popover chrome '
               '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
@@ -831,6 +847,11 @@ void main() {
               'ListTile track rows are the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling subtitle/chapter side panels.',
+      'lib/src/pages/implementations/video_hibiki/quality.part.dart':
+          'HLS quality side panel chrome (variant-list ListTile rows, TODO-1158) '
+              'is the same reviewed media-page exception class as the sibling '
+              'audio_track.part.dart / subtitle side panels — a translucent video '
+              'side-panel list of playable stream qualities, not ordinary page chrome.',
       'lib/src/pages/implementations/video_hibiki/layout.part.dart':
           'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
               'extracted verbatim from video_hibiki_page.dart (TODO-590 '
@@ -888,6 +909,14 @@ void main() {
               'verbatim — design tokens are not reliably available there, so it '
               'uses raw fontSize + ColorScheme roles, the same reviewed '
               'startup-chrome exception class as the main.dart splash branches.',
+      'lib/src/startup/loading_watchdog_view.dart':
+          'TODO-1260 startup loading/timeout escape view is pre-init startup '
+              'chrome (rendered while isInitialised=false, extracted verbatim '
+              'from the main.dart loading scaffold) — design tokens are not '
+              'reliably available there, so it uses raw fontSize + ColorScheme '
+              'roles, the same reviewed startup-chrome exception class as the '
+              'data-root migration / backup import overlays and the main.dart '
+              'splash branches.',
       'lib/src/sync/backup_import_overlay_view.dart':
           'TODO-1151 backup import/restore overlay is pre-init startup chrome '
               '(rendered while the DB is closed / isInitialised=false during the '

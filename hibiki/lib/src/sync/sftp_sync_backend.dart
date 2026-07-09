@@ -143,7 +143,7 @@ class SftpSyncBackend extends SyncBackend {
     Uint8List? coverData,
   }) =>
       _guarded(() async {
-        final sanitized = sanitizeTtuFilename(bookTitle);
+        final sanitized = requireBookFolderName(bookTitle);
 
         if (_titleToFolderId.containsKey(sanitized)) {
           return _titleToFolderId[sanitized]!;
