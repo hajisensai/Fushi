@@ -530,18 +530,27 @@ class DictionaryPopupLayer extends StatelessWidget {
     final String backTooltip =
         MaterialLocalizations.of(context).backButtonTooltip;
     final List<Widget> actions = <Widget>[
-      if (onBack != null)
-        Align(
-          alignment: Alignment.centerLeft,
-          child: HibikiIconButton(
-            icon: Icons.arrow_back,
-            size: 20,
-            tooltip: backTooltip,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            onTap: onBack,
-          ),
+      // TODO-1353 复诉：左端固定渲染 A−/A+ 手动字号按钮（back 按钮存在时排它后面）。
+      // Ctrl+滚轮不可发现、触屏没有 Ctrl+滚轮，这对按钮是弹窗内容缩放的可见入口。
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (onBack != null)
+              HibikiIconButton(
+                icon: Icons.arrow_back,
+                size: 20,
+                tooltip: backTooltip,
+                constraints: _topActionConstraints,
+                padding: EdgeInsets.zero,
+                onTap: onBack,
+              ),
+            _buildZoomFontButton(context, zoomIn: false),
+            _buildZoomFontButton(context, zoomIn: true),
+          ],
         ),
+      ),
       if (onClose != null)
         Align(
           alignment: Alignment.centerRight,
@@ -569,6 +578,31 @@ class DictionaryPopupLayer extends StatelessWidget {
         headerWidget!,
         Positioned.fill(child: Stack(children: actions)),
       ],
+    );
+  }
+
+  /// TODO-1353 复诉：弹窗顶栏可见的 A−/A+ 手动字号按钮。点按经
+  /// [DictionaryPopupWebViewState.zoomFontStep] 走与 Ctrl+滚轮完全同一条 JS 步进路径
+  /// （同 [8,72] 夹紧、就地改 zoom 即时生效不闪烁、popupZoomFont 回调持久化到
+  /// dictionaryFontSize），三端一致；WebView 未挂载（无结果占位/搜索中）时安全 no-op。
+  /// 外层可见 [Tooltip]（桌面 hover / 移动端长按）给出按钮语义，桌面平台附带
+  /// 「Ctrl+滚轮也可缩放」提示（dictionary_font_size_zoom_hint）——解决缩放入口零提示。
+  Widget _buildZoomFontButton(BuildContext context, {required bool zoomIn}) {
+    final String label =
+        zoomIn ? t.popup_font_size_increase : t.popup_font_size_decrease;
+    final String message = isDesktopPlatform
+        ? '$label\n${t.dictionary_font_size_zoom_hint}'
+        : label;
+    return Tooltip(
+      message: message,
+      child: HibikiIconButton(
+        icon: zoomIn ? Icons.text_increase : Icons.text_decrease,
+        size: 20,
+        tooltip: label,
+        constraints: _topActionConstraints,
+        padding: EdgeInsets.zero,
+        onTap: () => webViewKey.currentState?.zoomFontStep(zoomIn: zoomIn),
+      ),
     );
   }
 

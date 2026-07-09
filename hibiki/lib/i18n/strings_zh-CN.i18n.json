@@ -2217,5 +2217,7 @@
   "backup_category_statistics_desc": "阅读、视频与制卡统计",
   "backup_category_settings_desc": "应用与阅读器设置",
   "backup_category_profiles_desc": "配置方案",
-  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。"
+  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。",
+  "popup_font_size_decrease": "缩小查词字号",
+  "popup_font_size_increase": "放大查词字号"
 }
