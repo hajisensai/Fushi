@@ -39,6 +39,20 @@ if (nfSubList) {
   };
 }
 
+// BUG-666（TODO-1361 ①）：网飞剧末「下一集」按钮隐藏开关。缺省=隐藏（只在显式存 false 时才显示，
+// 与 content.js 的默认隐藏判据一致）；纯 UI 偏好，存 chrome.storage.local.netflixHideNextEpisode，
+// content.js 经 storage.onChanged 实时生效。Reset 只清连接覆盖，不动此开关。
+const nfHideNext = $('nfHideNext');
+if (nfHideNext) {
+  chrome.storage.local.get('netflixHideNextEpisode').then((c) => {
+    nfHideNext.checked = !(c && c.netflixHideNextEpisode === false);
+  });
+  nfHideNext.onchange = async () => {
+    await chrome.storage.local.set({ netflixHideNextEpisode: nfHideNext.checked });
+    $('status').textContent = nfHideNext.checked ? ' Next-episode hidden' : ' Next-episode shown';
+  };
+}
+
 // 一键回到自动配置：清空覆盖，cfg() 便回落 app 注入的默认。
 const resetBtn = $('reset');
 if (resetBtn) {

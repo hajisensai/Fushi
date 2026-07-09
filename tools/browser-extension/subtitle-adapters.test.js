@@ -8,6 +8,7 @@ const {
   stripCueTags,
   parseWebVtt,
   parseTtml,
+  netflixDocumentTitle,
 } = require('./subtitle-adapters.js');
 
 test('extractNetflixCueText joins span lines', () => {
@@ -128,4 +129,45 @@ test('parseTtml honours ttp:tickRate offset times', () => {
   const cues = parseTtml(xml);
   assert.strictEqual(cues.length, 1);
   assert.deepStrictEqual(cues[0], { startMs: 1000, endMs: 3000, text: 'tick' });
+});
+
+
+// ── BUG-668（TODO-1361 ③）：网飞剧名抽取（Anki {document-title} 视频名字段）──
+function nfDoc(videoTitleEl, title) {
+  return {
+    title: title || '',
+    querySelector: (sel) => (sel === '[data-uia="video-title"]' ? videoTitleEl : null),
+  };
+}
+function nfEl(h4Text, spanTexts, whole) {
+  return {
+    textContent: whole || '',
+    querySelector: (sel) => (sel === 'h4' && h4Text != null ? { textContent: h4Text } : null),
+    querySelectorAll: (sel) => (sel === 'span' ? (spanTexts || []).map((t) => ({ textContent: t })) : []),
+  };
+}
+
+test('netflixDocumentTitle joins series + episode spans', () => {
+  const el = nfEl('SHERLOCK', ['第3話', 'The Great Game'], 'SHERLOCK第3話The Great Game');
+  assert.strictEqual(netflixDocumentTitle(nfDoc(el, 'x - Netflix')), 'SHERLOCK - 第3話 The Great Game');
+});
+
+test('netflixDocumentTitle movie (h4 only) -> series name', () => {
+  const el = nfEl('となりのトトロ', [], 'となりのトトロ');
+  assert.strictEqual(netflixDocumentTitle(nfDoc(el, 'ignored')), 'となりのトトロ');
+});
+
+test('netflixDocumentTitle de-dups repeated span text', () => {
+  const el = nfEl('Show', ['S1:E1', 'S1:E1'], '');
+  assert.strictEqual(netflixDocumentTitle(nfDoc(el, '')), 'Show - S1:E1');
+});
+
+test('netflixDocumentTitle falls back to document.title minus Netflix suffix', () => {
+  assert.strictEqual(netflixDocumentTitle(nfDoc(null, '呪術廻戦 - Netflix')), '呪術廻戦');
+  assert.strictEqual(netflixDocumentTitle(nfDoc(null, 'Alice in Borderland | Netflix')), 'Alice in Borderland');
+});
+
+test('netflixDocumentTitle null/empty doc -> empty string', () => {
+  assert.strictEqual(netflixDocumentTitle(null), '');
+  assert.strictEqual(netflixDocumentTitle(nfDoc(null, '')), '');
 });
