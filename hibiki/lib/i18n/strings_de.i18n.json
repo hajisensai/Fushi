@@ -2205,5 +2205,17 @@
   "external_window_unsupported": "External window mining is Windows-only",
   "external_window_no_windows": "No capturable windows found",
   "external_window_mining": "External window mining",
-  "external_window_select": "Select target window"
+  "external_window_select": "Select target window",
+  "backup_import_contents_title": "This backup contains",
+  "backup_category_dictionary_desc": "Imported dictionaries and their files",
+  "backup_category_books_desc": "Book files (EPUB and extracted content)",
+  "backup_category_audiobooks_desc": "Audiobook audio and alignment",
+  "backup_category_fonts_desc": "Imported custom font files",
+  "backup_category_videos_desc": "Local video files",
+  "backup_category_local_audio_desc": "Local pronunciation audio databases",
+  "backup_category_progress_desc": "Reading positions and bookmarks",
+  "backup_category_statistics_desc": "Reading, video and mining statistics",
+  "backup_category_settings_desc": "App and reader settings",
+  "backup_category_profiles_desc": "Configuration profiles",
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
 }

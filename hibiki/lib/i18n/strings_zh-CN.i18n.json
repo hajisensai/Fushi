@@ -2205,5 +2205,17 @@
   "external_window_unsupported": "外部窗口挖矿仅支持 Windows",
   "external_window_no_windows": "未找到可捕获的窗口",
   "external_window_mining": "外部窗口挖矿",
-  "external_window_select": "选择目标窗口"
+  "external_window_select": "选择目标窗口",
+  "backup_import_contents_title": "此备份包含",
+  "backup_category_dictionary_desc": "已导入的词典及其文件",
+  "backup_category_books_desc": "书籍文件（EPUB 及解压内容）",
+  "backup_category_audiobooks_desc": "有声书音频与对齐数据",
+  "backup_category_fonts_desc": "已导入的自定义字体文件",
+  "backup_category_videos_desc": "本地视频文件",
+  "backup_category_local_audio_desc": "本地发音音频库",
+  "backup_category_progress_desc": "阅读进度与书签",
+  "backup_category_statistics_desc": "阅读、视频与制卡统计",
+  "backup_category_settings_desc": "应用与阅读器设置",
+  "backup_category_profiles_desc": "配置方案",
+  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。"
 }
