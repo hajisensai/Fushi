@@ -1,4 +1,4 @@
-## BUG-677 · 书架书籍进度「还是没有」——复诉根因=旧包(debug.6783)，BUG-659 修复已在 develop(TODO-1346)
+## BUG-680 · 书架书籍进度「还是没有」——复诉根因=旧包(debug.6783)，BUG-659 修复已在 develop(TODO-1346)
 
 - **报告**：2026-07-09（用户复诉：「书籍的进度还是没有啊」，续 BUG-659「进度好像没了·显示短板已修」）。
 - **真实性**：❌ **非新 bug / 非「修了没接上」——疑旧包，已在 develop 修复且已被测试覆盖**。沿真实代码路径 + 比对用户本机 DB（`D:/APP/HIBIKI_date/support/hibiki.db`，只读）+ 用户安装记录逐条核实：BUG-659 的 `computeBookProgress` 修复正确、已接进渲染路径、已被单测覆盖用户真实书形状；用户仍看不到进度是因为**在跑修复前的旧包**。
@@ -36,7 +36,7 @@
 
 - **不改产品代码**：BUG-659 的 `computeBookProgress` 修复正确、已接进渲染、已被单测覆盖用户真实书形状。复诉根因是**用户仍在跑修复前的旧包 debug.6783（2026-07-06）**，需更新到含修复的构建（>= 首个 develop@+603 之后的 debug，约 debug.7xxx）。升级后今天在读的安達2 等会从近 0% 变为真实进度（安達2->12.88%）。
 - **[x] ① 无需修复（已在 develop 修复）** — 修复 commit `ae8ee3068`（`computeBookProgress` + `_bookToMediaItem` 接线），集成 `e86b82fae`（`1.0.1+603`）。用户升级即生效。
-- **[x] ② 已加回归守卫** — `hibiki/test/media/sources/reader_hibiki_source_test.dart` 新增「computeBookProgress wired + real-shelf data (BUG-677 复诉守卫)」组：(a) 源码守卫 `_bookToMediaItem` 必须调 `computeBookProgress` 且把 `prog.position/duration` 喂进 `MediaItem`（锁死「算了没接上=B」永不回归）；(b) 用户真实 リビルド 现场值(sec=8/co=11120) 断言章内 charOffset 让「旧包看着像 0」的书前进；(c) 安達9 现场值(sec=6/co=0，前节全前言) 断言诚实 0%（记录这是预期、不是 BUG-659 回归）。连同原 6 例共 9 例覆盖。
+- **[x] ② 已加回归守卫** — `hibiki/test/media/sources/reader_hibiki_source_test.dart` 新增「computeBookProgress wired + real-shelf data (BUG-680 复诉守卫)」组：(a) 源码守卫 `_bookToMediaItem` 必须调 `computeBookProgress` 且把 `prog.position/duration` 喂进 `MediaItem`（锁死「算了没接上=B」永不回归）；(b) 用户真实 リビルド 现场值(sec=8/co=11120) 断言章内 charOffset 让「旧包看着像 0」的书前进；(c) 安達9 现场值(sec=6/co=0，前节全前言) 断言诚实 0%（记录这是预期、不是 BUG-659 回归）。连同原 6 例共 9 例覆盖。
 
 - **备注**：
   - 复诉的根因链：BUG-659 修复(07-09) 晚于用户最后安装的 debug.6783(07-06)；`update_auto_install=false` → 用户未自动装到含修复的 7xxx。

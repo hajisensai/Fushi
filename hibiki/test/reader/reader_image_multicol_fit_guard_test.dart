@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-677 (TODO-1285) 源码守卫：分页多列(pageColumns>=2)时整页插图必须收进**子列**，
+/// BUG-679 (TODO-1285) 源码守卫：分页多列(pageColumns>=2)时整页插图必须收进**子列**，
 /// 不得按整 content-box 撑开越界盖住相邻列正文。根因是图片 max 约束过去恒用整
 /// content-box（`cs.w`/`cs.h`）；修复引入共享 helper `hoshiReader._imageMaxBox()`，turn 轴
 /// 图片 max 改读浏览器 used 子列宽 `getComputedStyle(document.body).columnWidth`（与

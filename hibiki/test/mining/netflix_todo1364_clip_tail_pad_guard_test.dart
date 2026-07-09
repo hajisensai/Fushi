@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-1364 / BUG-677 守卫：Netflix 逐句回放录制的**尾段音频完整性**。
+/// TODO-1364 / BUG-681 守卫：Netflix 逐句回放录制的**尾段音频完整性**。
 ///
 /// 根因：回放录制循环在「字幕文本变成别句/清空」（= Netflix 字幕 display end）时立即
 /// pause+endClip 停录，录制侧只保头部 200ms 提前量、从不补尾；而字幕 display end 常早于本句
@@ -46,7 +46,7 @@ void main() {
           // 旧的截尾写法（句末立即 break）不得残留。
           expect(src.contains('if (nowText !== ref) break; // 字幕变成别句 = 本句结束'),
               isFalse,
-              reason: '${content.path} 仍残留「句末立即 break」的截尾停录（回归 BUG-677）');
+              reason: '${content.path} 仍残留「句末立即 break」的截尾停录（回归 BUG-681）');
         });
       });
     }

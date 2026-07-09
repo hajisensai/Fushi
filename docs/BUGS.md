@@ -27,11 +27,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 663 条。点号进各自文件。
+> 共 668 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-677](bugs/BUG-677-audio-image-mask-not-revealed.md) | ✅ | ✅ | 有声书音频跨过图片不去掉防剧透遮罩(未持久·懒图漏揭) |
+| [BUG-682](bugs/BUG-682-audio-image-mask-not-revealed.md) | ✅ | ✅ | 有声书音频跨过图片不去掉防剧透遮罩(未持久·懒图漏揭) |
+| [BUG-681](bugs/BUG-681-netflix-clip-audio-truncation.md) | ✅ | ✅ | Netflix 制卡句子音频尾段被截断（录制在字幕清空即停，无尾部余量） |
+| [BUG-680](bugs/BUG-680-bookshelf-progress-old-build.md) | ✅ | ✅ | 书架书籍进度「还是没有」——复诉根因=旧包(debug.6783)，BUG-659 修复已在 develop(TODO-1346) |
+| [BUG-679](bugs/BUG-679-column-image-squish.md) | ✅ | ✅ | 分页多列图片挤压/溢出盖住相邻列正文（TODO-1285 图片复诉） |
+| [BUG-678](bugs/BUG-678-youtube-stream-replay-ua.md) | ✅ | ✅ | YouTube 分离流回放 UA 残缺致 googlevideo tarpit 超时打不开 |
+| [BUG-677](bugs/BUG-677-subtitle-import-system-picker.md) | ✅ | ✅ | 导入选字幕文件的选择器变了 回退系统文件选择器 (board 1360) |
 | [BUG-676](bugs/BUG-676-netflix-mine-missing-video-name.md) | ✅ | ✅ | 网飞制卡缺少视频名（documentTitle） |
 | [BUG-675](bugs/BUG-675-netflix-batch-mine-silent-skip.md) | ✅ | ✅ | 网飞批量制卡有概率跳过某几张卡 |
 | [BUG-674](bugs/BUG-674-netflix-next-episode-hide.md) | ✅ | ✅ | 网飞剧末下一集按钮无法隐藏 |

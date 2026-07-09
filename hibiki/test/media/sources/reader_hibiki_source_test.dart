@@ -1009,11 +1009,11 @@ void main() {
     });
   });
 
-  // BUG-677（TODO-1346 复诉「书籍的进度还是没有啊」）：验证 BUG-659 的 computeBookProgress
+  // BUG-680（TODO-1346 复诉「书籍的进度还是没有啊」）：验证 BUG-659 的 computeBookProgress
   // 修复确实接进渲染路径、并对用户真实书架数据算出与旧包(debug.6783 忽略 charOffset)判然
   // 有别的进度——复诉根因是旧包，不是「算了没接上」。把用户本机 DB 的真实章字数数组固化成
   // 回归守卫，锁死 PM 假设 B(修不足/没接上)永不回归。
-  group('computeBookProgress wired + real-shelf data (BUG-677 复诉守卫)', () {
+  group('computeBookProgress wired + real-shelf data (BUG-680 复诉守卫)', () {
     test(
         '_bookToMediaItem 把 computeBookProgress 结果喂进 MediaItem.position/duration '
         '(锁死「算了没接上」)', () {
