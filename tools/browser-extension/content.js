@@ -263,6 +263,12 @@ window.hibikiEnqueue = function (fields, sentence) {
   const site = hibikiSite();
   const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
   const netflixId = site === 'netflix' ? hibikiNetflixId() : null;
+  // BUG-668（TODO-1361 ③）：入队即抓当前网飞剧名（此刻在正确剧集页），随卡持久化 → 生成时发给
+  // 服务端当 documentTitle（Anki 视频名字段）。YouTube 走服务端解析标题，无需在此抓。
+  const documentTitle =
+      site === 'netflix' && typeof netflixDocumentTitle === 'function'
+          ? netflixDocumentTitle()
+          : '';
   const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',
@@ -270,6 +276,7 @@ window.hibikiEnqueue = function (fields, sentence) {
     site: site,
     youtubeId: youtubeId,
     netflixId: netflixId,
+    documentTitle: documentTitle,
   };
   // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
   const key = hibikiQueueKey(item);
@@ -450,7 +457,9 @@ async function hibikiRunNetflixBatch() {
         if (clip && clip.ok && clip.clipBase64) {
           cls = await new Promise((resolve) => {
             chrome.runtime.sendMessage(
-              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
+              // BUG-668（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
+              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
+                documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
                 try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
                 resolve(hibikiClassifyMineResp(resp));
@@ -567,7 +576,21 @@ async function hibikiMaybeResumeNetflixBatch(fromLoad) {
       try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + st.episodes[next] }); } catch (_) {}
     } else {
       try { chrome.runtime.sendMessage({ type: 'nfFinish', originalUrl: st.originalUrl }); } catch (_) {}
-      window.hibikiToast('✓ 全部剧集生成完成');
+      // BUG-667（TODO-1361 ②）：录制失败的卡片留在队列（未丢失），但旧实现一律报「✓ 全部完成」
+      // 掩盖了被跳过的卡，用户以为都生成了。批量结束时清点本次剧集仍残留的网飞待生成项，>0 就明确
+      // 告知「N 张录制失败未生成，可再点生成重试」，把静默跳过变成可见可重试。
+      let hibikiRemainingNf = 0;
+      try {
+        const hibikiGot = await chrome.storage.local.get(['hibikiQueue']);
+        const hibikiQ = Array.isArray(hibikiGot.hibikiQueue) ? hibikiGot.hibikiQueue : [];
+        hibikiRemainingNf = hibikiQ.filter(
+            (it) => it && it.site === 'netflix' && st.episodes.indexOf(it.netflixId) >= 0).length;
+      } catch (_) {}
+      if (hibikiRemainingNf > 0) {
+        window.hibikiToast('✓ 生成完成：' + hibikiRemainingNf + ' 张录制失败未生成，可再点生成重试');
+      } else {
+        window.hibikiToast('✓ 全部剧集生成完成');
+      }
     }
   } finally {
     // V16 遗留缺口：跳集前停录（第 449 行）在正常路径；若 hibikiRunNetflixBatch 抛错
@@ -595,6 +618,47 @@ try {
   });
 } catch (_) {}
 try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } catch (_) {}
+
+// ── BUG-666（TODO-1361 ①）：隐藏网飞剧末「下一集」按钮 ──
+// 纯视觉：只注入 CSS 隐藏 Netflix 自己的 seamless「下一集」按钮 + 剧末续播卡，绝不碰 DRM/seek/自动
+// 切集计时器（不改变播放行为）。由 options 开关 netflixHideNextEpisode 门控——缺省=隐藏（用户诉求），
+// 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建按钮也照样命中。
+const HIBIKI_NF_HIDE_NEXT_ID = 'hibiki-nf-hide-next';
+function hibikiNetflixNextEpisodeSelectors() {
+  return [
+    '[data-uia="next-episode-seamless-button"]',
+    '[data-uia="next-episode-seamless-button-draining"]',
+    '[data-uia="watch-video-post-play-back-to-browse"]',
+    '.watch-video--evidence-overlay-container',
+    '.nfp.PostPlay',
+  ];
+}
+function hibikiApplyNetflixNextEpisodeHiding(hide) {
+  if (hibikiSite() !== 'netflix') return;
+  const existing = document.getElementById(HIBIKI_NF_HIDE_NEXT_ID);
+  if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
+  if (existing) return;
+  const style = document.createElement('style');
+  style.id = HIBIKI_NF_HIDE_NEXT_ID;
+  style.textContent =
+      hibikiNetflixNextEpisodeSelectors().join(',') + '{display:none!important}';
+  try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
+}
+function hibikiReadNextEpisodeHide() {
+  try {
+    chrome.storage.local.get(['netflixHideNextEpisode'], (r) => {
+      hibikiApplyNetflixNextEpisodeHiding(!(r && r.netflixHideNextEpisode === false));
+    });
+  } catch (_) { hibikiApplyNetflixNextEpisodeHiding(true); }
+}
+try {
+  hibikiReadNextEpisodeHide();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.netflixHideNextEpisode) {
+      hibikiApplyNetflixNextEpisodeHiding(changes.netflixHideNextEpisode.newValue !== false);
+    }
+  });
+} catch (_) {}
 
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见
