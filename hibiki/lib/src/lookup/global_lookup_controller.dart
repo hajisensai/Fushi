@@ -490,21 +490,24 @@ class GlobalLookupController {
       // offset is physical px; convert to CSS px for the cascade layout domain.
       _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
       _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
-      // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
-      // interior so a subsequent up/left child lands INSIDE the window origin
-      // committed at THIS first reveal; the host then never moves the origin when
-      // the child appears -> the pinned parent card has ZERO displacement (the
-      // residual BUG-583 lurch rounds 1-4 could only mask). Bounded on-screen (see
-      // computeCascadeHeadroomSeed) so it never triggers the C++ RevealStack work-
-      // area clamp that would itself move the origin. 0 near an edge / no work area
-      // -> pre-fix geometry.
+      // TODO-1345 (BUG-583) / TODO-1231 (BUG-666 deep cascade) — reserve cascade
+      // headroom ALL THE WAY to the cursor monitor's work-area edge so a subsequent
+      // up/left child at ANY depth (child / grandchild / a card taller than one
+      // card) lands INSIDE the window origin committed at THIS first reveal; the
+      // host then never moves the origin when a nested card appears -> the pinned
+      // parent card has ZERO displacement at any cascade depth. TODO-1345 reserved
+      // only ONE card, so a deep cascade beyond it still moved the origin once (the
+      // residual 1-frame parent lurch users kept seeing). Reserving to the edge is
+      // the deterministic worst case: computeFrameRect clamps every cascade card
+      // on-screen, so no card can ever reach past the work-area edge. It stays
+      // clamp-safe because the reserved origin sits exactly on the C++ RevealStack
+      // work-area clamp target (see computeCascadeHeadroomSeed). 0 near an edge / no
+      // work area -> pre-fix geometry.
       final ({double left, double top}) floor = computeCascadeHeadroomSeed(
         cursorWorkX: _cursorWorkX,
         cursorWorkY: _cursorWorkY,
         screenWorkW: _screenWorkW,
         screenWorkH: _screenWorkH,
-        cardW: cardW,
-        cardH: cardH,
       );
       _originFloorLeft = floor.left;
       _originFloorTop = floor.top;
