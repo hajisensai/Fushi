@@ -108,6 +108,17 @@ class SyncRunReport {
   int localAudioImported = 0;
   int localAudioExported = 0;
 
+  /// Book reading positions pulled from the interconnect host into this device's
+  /// local `reader_positions` this run (host→local, newer-wins). A progress-only
+  /// pull writes no *content*, so it never bumps [booksImported]; yet the shelf's
+  /// cached `hibikiBooksProvider` still holds the pre-sync progress and must be
+  /// invalidated. Otherwise synced book progress lands in the DB but stays
+  /// invisible on the shelf until app restart (BUG-683: user saw "book progress
+  /// didn't sync" while audiobook resume worked — resume re-reads its pref at
+  /// play time, whereas the shelf progress bar is a cached snapshot of
+  /// reader_positions).
+  int localBookProgressPulled = 0;
+
   /// Per-book metadata/cover files that had spilled directly into the sync root
   /// and were swept back out this run (BUG-619 re-report / TODO-1340). Purely a
   /// cleanup counter — spill removal is neither an import nor a failure, so it
@@ -124,7 +135,8 @@ class SyncRunReport {
       booksImported > 0 ||
       dictionariesImported > 0 ||
       audiobooksImported > 0 ||
-      localAudioImported > 0;
+      localAudioImported > 0 ||
+      localBookProgressPulled > 0;
 }
 
 /// Orchestrates sync across any [SyncBackend].
@@ -613,6 +625,11 @@ class SyncOrchestrator {
             charOffset: Value(winner.charOffset),
             updatedAt: Value(winner.updatedAtMs),
           ));
+          // BUG-683: a host-newer progress pull lands in reader_positions but
+          // writes no book content, so it must still flag the shelf for a
+          // refresh — the cached hibikiBooksProvider otherwise keeps showing the
+          // pre-sync progress bar and the sync looks like it did nothing.
+          report.localBookProgressPulled++;
         }
       } catch (e) {
         report.errors.add('live book progress "${book.title}": $e');
