@@ -106,6 +106,7 @@ import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
@@ -2365,6 +2366,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     controller.onDiagLog = (String message) {
       ErrorLogService.instance.log('VideoHibiki.diag', message);
     };
+    // TODO-1232：verbose 视频诊断（libmpv verbose log / videoParams / buffering 每次
+    // 变化）只有用户开了「调试日志」开关才收——正常播放只留关键低频诊断行，避免刷爆
+    // 错误日志（realme 8 事故里 verbose 洪水把关键头部行挤出环形缓冲）。
+    controller.diagVerbose = DebugLogService.instance.enabled;
     // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
     // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
     controller.onSuspectedBlackFlicker =
