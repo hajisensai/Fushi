@@ -2218,9 +2218,11 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
-    // 内容缩放：与 in-app popupContentZoom 同公式，但扩展弹窗在宿主浏览器原生缩放下，
-    // 不叠加 app 的 appUiScale（那是 app 窗口的缩放，与浏览器无关）→ 只跟词典字号。
-    final double rawZoom = dictionaryFontSize / 16.0;
+    // BUG-666：内容缩放与 in-app popupContentZoom 完全同公式（appUiScale × 词典字号/16，
+    // 同 clamp）。原先扩展故意不叠加 appUiScale，导致用户把「界面大小」调大后 in-app 弹窗字
+    // 变大而扩展弹窗字仍小 → 两者「文字位置/大小」明显不一致。用户要求对齐 app，故跟随
+    // appUiScale（浏览器自身缩放是另一维度，不冲突）。
+    final double rawZoom = appUiScale * (dictionaryFontSize / 16.0);
     final double zoom =
         (rawZoom.isFinite && rawZoom > 0) ? rawZoom.clamp(0.3, 8.0) : 1.0;
     return <String, String>{
