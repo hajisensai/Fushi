@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 654 条。点号进各自文件。
+> 共 655 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-669](bugs/BUG-669-youtube-stream-replay-ua.md) | ✅ | ✅ | YouTube 分离流回放 UA 残缺致 googlevideo tarpit 超时打不开 |
 | [BUG-668](bugs/BUG-668-reimport-book-title-not-refreshing.md) | ✅ | ✅ | 重导入书选文件后书名不刷新 |
 | [BUG-667](bugs/BUG-667-delete-fail-diag.md) | ✅ | ✅ | 删除书籍失败无原因+磁盘清理异常翻转已提交删除 |
 | [BUG-666](bugs/BUG-666-vertical-ruby-position-flip.md) | ✅ | ✅ | 竖排振假名翻到基字左侧+高亮带错位(阅读器未拥有 ruby-position) |
