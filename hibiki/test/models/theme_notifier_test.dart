@@ -452,8 +452,7 @@ void main() {
       );
     });
 
-    test('absent design_system on non-iOS → defaults to auto', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    test('absent design_system → defaults to auto', () {
       notifier.loadFromPrefsSnapshot(<String, String>{});
 
       expect(notifier.designSystem, 'auto');
@@ -464,20 +463,7 @@ void main() {
       );
     });
 
-    test('absent design_system on iOS → defaults to material', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      notifier.loadFromPrefsSnapshot(<String, String>{});
-
-      expect(notifier.designSystem, 'material');
-      expect(notifier.designSystemTheme, HibikiDesignSystem.material);
-      expect(
-        notifier.theme.extension<HibikiDesignSystemTheme>()!.designSystem,
-        HibikiDesignSystem.material,
-      );
-    });
-
     test('explicit design_system=auto → designSystemTheme is auto', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       notifier.loadFromPrefsSnapshot(<String, String>{
         'design_system': PrefCodec.encode('auto'),
       });
