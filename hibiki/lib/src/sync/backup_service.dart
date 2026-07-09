@@ -356,6 +356,27 @@ class BackupMeta {
   }
 }
 
+/// Per-category presence + item counts describing what a backup carries, driving
+/// the "what's inside" manifest and the import "choose what to restore" toggles
+/// (TODO-1358). Counts use the natural unit per category (dictionaries / books /
+/// audiobooks / video files / font files / local-audio DBs). A category with no
+/// countable content is simply absent from both [counts] and [present].
+class BackupContentSummary {
+  const BackupContentSummary({
+    this.counts = const <BackupCategory, int>{},
+    this.present = const <BackupCategory>{},
+  });
+
+  /// Item count per category that carries countable content in this backup.
+  final Map<BackupCategory, int> counts;
+
+  /// Every category this backup / device carries content for.
+  final Set<BackupCategory> present;
+
+  int countFor(BackupCategory c) => counts[c] ?? 0;
+  bool has(BackupCategory c) => present.contains(c);
+}
+
 class BackupService {
   BackupService({
     required HibikiDatabase db,
@@ -415,6 +436,10 @@ class BackupService {
   /// never sweeps in `hibiki.db` or other unrelated support files.
   static final RegExp _localAudioFileName =
       RegExp(r'^local_audio_\d+\.db(-wal|-shm)?$');
+
+  /// Matches ONLY a packed local-audio database file (not its `-wal`/`-shm`
+  /// siblings), for counting distinct local-audio databases in a summary.
+  static final RegExp _localAudioDbOnly = RegExp(r'^local_audio_\d+\.db$');
 
   /// Persisted preference key (ReaderSettings prefix included) whose JSON
   /// value is the canonical catalog `{version, fonts:[{id, name, path}]}`.
@@ -510,6 +535,158 @@ class BackupService {
     final row =
         await _db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
     return row.data['c'] as int;
+  }
+
+  /// Item counts per file-tree category present in a backup's [archiveFileNames]
+  /// (posix or windows separators). Pure over the name list + [meta] so it is
+  /// trivially unit-testable and never opens the archive body / DB (TODO-1358).
+  ///
+  /// Counting unit per category: dictionaries / books / audiobooks = distinct
+  /// first path segment under the prefix (one directory each); fonts = font
+  /// files; videos = packed video files ([BackupMeta.videoFiles], else leaf
+  /// files); localAudio = `local_audio_<n>.db` files (the `-wal`/`-shm` siblings
+  /// are not separate databases).
+  static BackupContentSummary summarizeBackupArchive(
+    Iterable<String> archiveFileNames,
+    BackupMeta? meta,
+  ) {
+    final Set<String> dictDirs = <String>{};
+    final Set<String> bookDirs = <String>{};
+    final Set<String> audioDirs = <String>{};
+    int fontFiles = 0;
+    int videoFiles = 0;
+    int localAudioDbs = 0;
+    for (final String raw in archiveFileNames) {
+      final String name = raw.replaceAll(r'\', '/');
+      final String? dictSeg =
+          _firstSegmentUnder(name, _dictionaryResourcesPrefix);
+      if (dictSeg != null) {
+        dictDirs.add(dictSeg);
+        continue;
+      }
+      final String? bookSeg = _firstSegmentUnder(name, _booksPrefix);
+      if (bookSeg != null) {
+        bookDirs.add(bookSeg);
+        continue;
+      }
+      final String? audioSeg = _firstSegmentUnder(name, _audiobooksPrefix);
+      if (audioSeg != null) {
+        audioDirs.add(audioSeg);
+        continue;
+      }
+      if (name.startsWith('$_fontsPrefix/')) {
+        if (name.length > _fontsPrefix.length + 1) fontFiles++;
+        continue;
+      }
+      if (name.startsWith('$_videosPrefix/')) {
+        if (name.length > _videosPrefix.length + 1) videoFiles++;
+        continue;
+      }
+      if (name.startsWith('$_localAudioPrefix/')) {
+        final String base = name.substring(_localAudioPrefix.length + 1);
+        if (_localAudioDbOnly.hasMatch(base)) localAudioDbs++;
+      }
+    }
+    // Packed video files ([meta.videoFiles]) are authoritative when present (a
+    // per-episode playlist packs multiple files under one book directory).
+    final int videoCount = (meta != null && meta.videoFiles.isNotEmpty)
+        ? meta.videoFiles.length
+        : videoFiles;
+    final Map<BackupCategory, int> counts = <BackupCategory, int>{
+      if (dictDirs.isNotEmpty) BackupCategory.dictionary: dictDirs.length,
+      if (bookDirs.isNotEmpty) BackupCategory.books: bookDirs.length,
+      if (audioDirs.isNotEmpty) BackupCategory.audiobooks: audioDirs.length,
+      if (fontFiles > 0) BackupCategory.fonts: fontFiles,
+      if (videoCount > 0) BackupCategory.videos: videoCount,
+      if (localAudioDbs > 0) BackupCategory.localAudio: localAudioDbs,
+    };
+    return BackupContentSummary(counts: counts, present: counts.keys.toSet());
+  }
+
+  /// First path segment directly under `<prefix>/` in [posixName], or null when
+  /// [posixName] is not under [prefix].
+  static String? _firstSegmentUnder(String posixName, String prefix) {
+    final String withSlash = '$prefix/';
+    if (!posixName.startsWith(withSlash)) return null;
+    final String rest = posixName.substring(withSlash.length);
+    if (rest.isEmpty) return null;
+    final int slash = rest.indexOf('/');
+    return slash < 0 ? rest : rest.substring(0, slash);
+  }
+
+  /// Reads a backup ZIP's central directory (never its file bodies) and returns
+  /// the "what's inside" manifest for the import dialog (TODO-1358). Streams like
+  /// [validateBackup]; returns an empty summary on any read error.
+  Future<BackupContentSummary> summarizeBackupZip(String zipPath) async {
+    InputFileStream? input;
+    try {
+      input = InputFileStream(zipPath);
+      final Archive archive = ZipDecoder().decodeBuffer(input);
+      final ArchiveFile? metaFile = archive.findFile(_metaName);
+      final BackupMeta? meta = metaFile == null
+          ? null
+          : BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
+      final List<String> names = archive.files
+          .where((ArchiveFile f) => f.isFile)
+          .map((ArchiveFile f) => f.name)
+          .toList();
+      return summarizeBackupArchive(names, meta);
+    } catch (e, st) {
+      debugPrint(
+          'BackupService.summarizeBackupZip failed for $zipPath: $e\n$st');
+      return const BackupContentSummary();
+    } finally {
+      await input?.close();
+    }
+  }
+
+  /// Builds the export "what's inside" summary from the live DB + this device's
+  /// content roots (TODO-1358). Counts are the natural unit per category; a root
+  /// this service was built without counts as zero. Reads only counts, so it is
+  /// cheap even on a large library.
+  Future<BackupContentSummary> summarizeExportContent() async {
+    final int books = (await _db.getAllEpubBooks()).length;
+    final int audiobooks = (await _db.getAllAudiobooks()).length;
+    final int videos = (await _db.allVideoBooks()).length;
+    final int dictionaries = (await _db.getAllDictionaryMetadata()).length;
+    final int fonts = _fontsRootDirectory == null
+        ? 0
+        : await _countFilesInTree(Directory(_fontsRootDirectory));
+    final int localAudio = await _countLocalAudioDbs();
+    final Map<BackupCategory, int> counts = <BackupCategory, int>{
+      BackupCategory.dictionary: dictionaries,
+      BackupCategory.books: books,
+      BackupCategory.audiobooks: audiobooks,
+      BackupCategory.fonts: fonts,
+      BackupCategory.videos: videos,
+      BackupCategory.localAudio: localAudio,
+    };
+    return BackupContentSummary(
+      counts: counts,
+      present: counts.entries
+          .where((MapEntry<BackupCategory, int> e) => e.value > 0)
+          .map((MapEntry<BackupCategory, int> e) => e.key)
+          .toSet(),
+    );
+  }
+
+  static Future<int> _countFilesInTree(Directory root) async {
+    if (!await root.exists()) return 0;
+    int n = 0;
+    await for (final FileSystemEntity e in root.list(recursive: true)) {
+      if (e is File) n++;
+    }
+    return n;
+  }
+
+  Future<int> _countLocalAudioDbs() async {
+    final Directory root = Directory(_dbDirectory);
+    if (!await root.exists()) return 0;
+    int n = 0;
+    await for (final FileSystemEntity e in root.list()) {
+      if (e is File && _localAudioDbOnly.hasMatch(p.basename(e.path))) n++;
+    }
+    return n;
   }
 
   /// Create a backup ZIP file at [outputPath].
@@ -971,6 +1148,7 @@ class BackupService {
     required String dbDirectory,
     required String zipPath,
     bool importSettings = true,
+    Set<BackupCategory>? categories,
     String? dictionaryResourceDirectory,
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
@@ -1040,6 +1218,29 @@ class BackupService {
               .replaceAll(r'\', '/')
               .startsWith('$_dictionaryResourcesPrefix/'));
 
+      // TODO-1358: honour a per-category IMPORT selection (overwrite path only;
+      // merge always combines everything). A null [categories] restores every
+      // category the backup carries (legacy). Unticking a category on import:
+      //  - dictionary -> treat as if the backup carries no dictionaries so the
+      //    BUG-454 path preserves THIS device dictionaries (re-seated from bak).
+      //  - audiobooks / fonts / videos / localAudio -> skip restoring those files
+      //    (and skip rebasing their paths); the DB library index still restores.
+      // Books / progress / statistics always restore (the core library index in
+      // the overwrite DB blob); settings / profiles stay governed by
+      // [importSettings].
+      bool wants(BackupCategory c) =>
+          categories == null || categories.contains(c);
+      final bool effectiveHasDictionaries =
+          backupHasDictionaries && wants(BackupCategory.dictionary);
+      final String? effAudiobooksRoot =
+          wants(BackupCategory.audiobooks) ? audiobooksRootDirectory : null;
+      final String? effFontsRoot =
+          wants(BackupCategory.fonts) ? fontsRootDirectory : null;
+      final String? effVideosRoot =
+          wants(BackupCategory.videos) ? videosRootDirectory : null;
+      final String? effLocalAudioRoot =
+          wants(BackupCategory.localAudio) ? dbDirectory : null;
+
       final sidecar = File(p.join(dbDirectory, _preserveSidecar));
       final String bakPath = '$dbPath.pre-restore.bak';
       final currentDb = File(dbPath);
@@ -1092,7 +1293,7 @@ class BackupService {
         onBytes: reportBytes,
       );
 
-      if (backupHasDictionaries &&
+      if (effectiveHasDictionaries &&
           dictionaryRestorePlan != null &&
           dictionaryRestoreDirectory != null) {
         // Backup carries dictionaries → replace this device's resources with
@@ -1103,7 +1304,7 @@ class BackupService {
           dictionaryResourceDirectory: dictionaryRestoreDirectory,
           onBytes: reportBytes,
         );
-      } else if (!backupHasDictionaries &&
+      } else if (!effectiveHasDictionaries &&
           haveCurrent &&
           dictionaryRestoreDirectory != null) {
         // BUG-454: backup has NO dictionaries → keep this device's. The DB was
@@ -1132,37 +1333,37 @@ class BackupService {
                 onBytes: reportBytes)) {
           toCommit.add(booksRootDirectory);
         }
-        if (audiobooksRootDirectory != null &&
+        if (effAudiobooksRoot != null &&
             await _prepareTreeRestore(
-                zipPath, archive, _audiobooksPrefix, audiobooksRootDirectory,
+                zipPath, archive, _audiobooksPrefix, effAudiobooksRoot,
                 onBytes: reportBytes)) {
-          toCommit.add(audiobooksRootDirectory);
+          toCommit.add(effAudiobooksRoot);
         }
-        if (fontsRootDirectory != null &&
+        if (effFontsRoot != null &&
             await _prepareTreeRestore(
-                zipPath, archive, _fontsPrefix, fontsRootDirectory,
+                zipPath, archive, _fontsPrefix, effFontsRoot,
                 onBytes: reportBytes)) {
-          toCommit.add(fontsRootDirectory);
+          toCommit.add(effFontsRoot);
         }
-        if (videosRootDirectory != null &&
+        if (effVideosRoot != null &&
             await _prepareTreeRestore(
-                zipPath, archive, _videosPrefix, videosRootDirectory,
+                zipPath, archive, _videosPrefix, effVideosRoot,
                 onBytes: reportBytes)) {
-          toCommit.add(videosRootDirectory);
+          toCommit.add(effVideosRoot);
         }
       } catch (_) {
         // A write failed: drop every staged temp dir; no tree was swapped.
         if (booksRootDirectory != null) {
           await _abortPreparedTree(booksRootDirectory);
         }
-        if (audiobooksRootDirectory != null) {
-          await _abortPreparedTree(audiobooksRootDirectory);
+        if (effAudiobooksRoot != null) {
+          await _abortPreparedTree(effAudiobooksRoot);
         }
-        if (fontsRootDirectory != null) {
-          await _abortPreparedTree(fontsRootDirectory);
+        if (effFontsRoot != null) {
+          await _abortPreparedTree(effFontsRoot);
         }
-        if (videosRootDirectory != null) {
-          await _abortPreparedTree(videosRootDirectory);
+        if (effVideosRoot != null) {
+          await _abortPreparedTree(effVideosRoot);
         }
         rethrow;
       }
@@ -1176,8 +1377,10 @@ class BackupService {
       //     extracted file-by-file (never the destructive tree swap). When the
       //     backup carries no localAudio/ prefix the existing local-audio DBs
       //     are left untouched (same preserve-on-absent contract as the trees).
-      await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
-          onBytes: reportBytes);
+      if (wants(BackupCategory.localAudio)) {
+        await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+            onBytes: reportBytes);
+      }
 
       // 3) Restore what must stay on this device — inline, not deferred to
       //    startup, so the common path never depends on bak surviving a restart.
@@ -1213,7 +1416,7 @@ class BackupService {
           dbDirectory: dbDirectory,
           meta: meta,
           newBooksRoot: booksRootDirectory,
-          newAudiobooksRoot: audiobooksRootDirectory,
+          newAudiobooksRoot: effAudiobooksRoot,
         );
         // Custom-font config is content too (the files come from the backup),
         // so rebase its stored paths onto this device's font root. No-op for a
@@ -1222,7 +1425,7 @@ class BackupService {
         await _rebaseFontPaths(
           dbDirectory: dbDirectory,
           meta: meta,
-          newFontsRoot: fontsRootDirectory,
+          newFontsRoot: effFontsRoot,
         );
         // Local-audio DBs are content (their files come from the backup), so
         // rebase the stored `local_audio_dbs` pref paths onto this device's
@@ -1231,12 +1434,12 @@ class BackupService {
         await _rebaseLocalAudioPaths(
           dbDirectory: dbDirectory,
           meta: meta,
-          newLocalAudioRoot: dbDirectory,
+          newLocalAudioRoot: effLocalAudioRoot,
         );
         await _rebaseVideoPaths(
           dbDirectory: dbDirectory,
           meta: meta,
-          newVideosRoot: videosRootDirectory,
+          newVideosRoot: effVideosRoot,
         );
       }
 

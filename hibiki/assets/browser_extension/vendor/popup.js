@@ -1,4 +1,4 @@
-/* BUG-666: Shadow-DOM isolation. content.js renders this popup inside a shadow
+/* BUG-686: Shadow-DOM isolation. content.js renders this popup inside a shadow
    root (window.__hibikiRoot) so host-page CSS can't pierce it. Route every DOM
    lookup / overlay append / selection / height read through these helpers so they
    resolve inside the shadow (fall back to document before the shadow exists). */

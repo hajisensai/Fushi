@@ -1,0 +1,17 @@
+## BUG-667 · 删除书籍失败无原因+磁盘清理异常翻转已提交删除
+- **报告**：2026-07-09（用户：TODO-1359，截图书架顶部弹「删除书籍失败」，追问「报错日志呢？而且为什么删不掉」）
+- **真实性**：✅ 真 bug（两条独立缺陷叠加，与 BUG-658 不同源）。根因 file:line：
+  1. **「为什么删不掉」根因** `hibiki/lib/src/media/sources/reader_hibiki_source.dart` `deleteBook`（改前 588-676）：删除顺序是「先删 DB 行（`deleteEpubBook`，唯一真相源，一个事务里删掉 epub/reader_positions/bookmarks/srt/audio_cues/audiobooks 全部关联行）→ 再做磁盘副本清理（`AudiobookStorage.deletePersistDir` ×2、`EpubStorage.deleteBookDir(extractDir)`）」。这些磁盘清理**裸跑在最外层 try 里**：Windows 上解压目录若被 WebView baseURI / 封面图（network_to_file_image）句柄 / 杀软占用，`Directory.delete(recursive:true)` 抛 `PathAccessException`（errno 32「另一个程序正在使用此文件」/ 145）。异常一路冒泡到最外层 `catch`→`return false`。可 DB 行此刻**早已删掉**——删除对用户已成功，却谎报失败。调用方 `_confirmDeleteEpub`（`books.part.dart:531-539`）据此**提前 return、不刷新书架 provider**→书还挂在架上（`_refreshSrtBooks` / `ref.invalidate` 都没跑），解压目录也泄漏。这正是「删不掉」的真实机制。同函数里 VACUUM（BUG-276）**早已**用独立 `try/catch` 容错并注明「失败不应让删除整体失败（行已删），只记日志」，但磁盘清理被漏在容错纪律之外——属同类失败却双标处理。
+  2. **「报错日志呢」根因**：(a) `deleteBook` 的返回类型是 `Future<bool>`——**有损契约**，删除失败时调用方拿不到任何原因，只能弹一个笼统的 `t.epub_delete_error`（「删除书籍失败」）。(b) 无对应行的早退支（改前 `if (bookRow == null && srt == null)`）**只 `debugPrint`、从不写 `ErrorLogService`**——用户导出日志里根本没有这条，「报错日志呢」名副其实地查无此条。
+- **与 BUG-658 去重**：BUG-658（TODO-1344，已修 `c70812163`）修的是**特殊字符标题书 bookKey 被 percent-decode → key 不匹配 → getEpubBook==null → 早退 false** 的**打不开+删不掉**；那是标识符 round-trip 的读侧问题，在 develop 已根治且自愈。本 BUG-667 是**另一条删除失败路径**：书的 DB 行**存在且被成功删除**，但删完的磁盘清理异常把已提交的删除翻转成失败（Mode B），外加返回契约有损/早退不记日志（诊断缺失）。二者不同源：658 是「根本没删到（key 错）」，667 是「删到了却谎报没删（清理异常）+ 无原因可查」。
+- **[x] ① 已修复** — 本轮提交见文末。`reader_hibiki_source.dart`：
+  - 新增公开结果类型 `DeleteBookResult`（`deleted` + `failureReason`），`deleteBook` 返回类型 `Future<bool>`→`Future<DeleteBookResult>`。以 DB 行是否被移除（`deletedRows > 0 || srt != null`）作为**唯一**成功判据。
+  - **根因修复**：把删完后的磁盘副本/偏好清理（`deletePersistDir` ×2、`deleteBookDir`、`clearOverrideValues`/`deletePreference`）整体包进一个**只记日志、绝不翻转结果**的 `try/catch`（日志源 `ReaderHibikiSource.deleteBook.cleanup`），与下方 VACUUM 同一容错纪律。DB 行已删 → 这本书对用户已消失 → 清理异常只让磁盘副本无害泄漏（DB 行已消失不会再被引用），不再谎报「删除失败」。调用方遂正常刷新书架、书从架上消失。
+  - **暴露原因**：无对应行早退 + DB 删 0 行 + 最外层 catch 三条失败路径全部 `ErrorLogService.instance.logDiagnostic`/`log` 记入错误日志，并把原因带进 `DeleteBookResult.failure(reason)`。
+  - `books.part.dart` `_confirmDeleteEpub`：`!result.deleted` 时把 `result.failureReason` 拼进 toast（`'${t.epub_delete_error}: $reason'`），用户不再只看到笼统「删除书籍失败」；批量删 EPUB 分支改读 `result.deleted`。（复用已翻译好的 `epub_delete_error` key + 追加原始诊断串，不引入新 i18n key、零 locale 债。）
+- **[x] ② 已加自动化测试** — `hibiki/test/media/sources/reader_hibiki_source_test.dart` 新增 group「ReaderHibikiSource.deleteBook TODO-1359」：
+  - **行为（根因，Windows 实测 red→green）**：真解压目录里放一个用 `openSync(write)` 持有句柄的文件锁住整目录 → `deleteBook` 内 `deleteBookDir` 抛 `PathAccessException errno 32`（测试日志实证）→ 断言 `result.deleted==true` 且 DB 行已删。撤掉容错 wrapper 则 Windows 下转红（异常冒泡→false）。
+  - **源码守卫（跨平台确定性）**：断言 `deleteBook` 体内磁盘清理（`EpubStorage.deleteBookDir`）位于 `deleteEpubBook` 之后、`deleteBook.cleanup` 容错 catch 之内、VACUUM 之前——撤掉 wrapper 使 catch 消失即转红。
+  - **诊断（fix a）**：失败结果 `failureReason` 非空且含 bookKey（`ghost-shelf-entry` / `no-such-book`）；成功结果 `failureReason==null`。
+  - 同时更新 BUG-439 / BUG-658 既有用例由 `bool`→`.deleted` 契约。
+- **备注**：磁盘副本泄漏是有意的容错取舍（同 BUG-439 对孤儿壳行的结论：无可靠判据的启动期存量清理会误删合法数据，故不做；泄漏已记日志、DB 空间由 VACUUM 回收）。真机验收（Windows 优先）：书架长按删除一本刚在阅读器里打开过 / 封面正显示的书 → 应立刻从架上消失（非「删除书籍失败」停在原地）；若确实删不掉，toast 应带出具体原因且日志页可导出到 `ReaderHibikiSource.deleteBook*` 条目。

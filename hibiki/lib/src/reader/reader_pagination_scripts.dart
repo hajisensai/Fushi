@@ -785,6 +785,29 @@ class ReaderPaginationScripts {
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
   },
+  // TODO-1285（图片挤压根因修复）：每页多列(pageColumns>=2)时 multicol 把「turn 轴」
+  // （横排=宽 / 竖排=高）切成 N 个子列，但图片 max 约束过去恒用整 content-box（cs.w/cs.h）
+  // → 整页插图按整页 turn 轴撑开，远超单个子列 → 溢出本列、盖住相邻列正文（用户报「图片
+  // 被挤压」的真相：宽插图横跨两列压字）。修复：turn 轴的图片 max 改用**浏览器 used 子列宽**
+  // getComputedStyle(body).columnWidth（与 getScrollContext 读的同一权威真值：横排=子列宽、
+  // 竖排=子列高），图片正好落进本列不越界；block 轴（横排=高 / 竖排=宽）仍用整 content-box
+  // （每列在 block 轴填满整页），不变。仅当 used 子列明显窄于整轴（真 pageColumns>=2）才夹到
+  // 子列；单列 / 连续 / VN（无 column-count → columnWidth=='auto'→NaN，或子列≈整轴）回退整轴、
+  // 与旧 cs.w/cs.h 字节等价（零回归，不碰 TODO-729/753/792 分页几何）。ratio 恒作用在宽（与旧同）。
+  _imageMaxBox: function() {
+    var cs = this._contentSize();
+    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
+    var vertical = this.isVertical();
+    var turnFull = vertical ? cs.h : cs.w;
+    var usedColW = parseFloat(getComputedStyle(document.body).columnWidth);
+    var multicol = usedColW > 0 && usedColW < turnFull - 1;
+    if (vertical) {
+      var h = multicol ? Math.round(usedColW) : cs.h;
+      return { w: Math.max(1, Math.floor(cs.w * ratio)), h: Math.max(1, h) };
+    }
+    var w = multicol ? usedColW : cs.w;
+    return { w: Math.max(1, Math.floor(w * ratio)), h: Math.max(1, cs.h) };
+  },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return !!(el && el.closest('rt, rp'));
@@ -876,6 +899,20 @@ class ReaderPaginationScripts {
       var scroll = this.getPagePosition(context);
       var anchor = (context.vertical ? rect.top : rect.left) + scroll;
       this.setPagePosition(context, this.alignToPage(context, anchor));
+    }
+  },
+  // TODO-1349（续·用户复诉「文字少也会去到最开头」）：把仍标记 loading="lazy" 的图强制翻成
+  // eager 触发 load。往前翻到「文字少+图片」章的章末时，尾部整页插图仍是 lazy（非纯图片章
+  // __hoshiImageOnlyChapter=false），离屏 → 永不 load → 0 尺寸被 buildPaginationMetrics
+  // 排除（分页 maxScroll 塌缩到章首）/ 被 scrollToChapterEnd 可见性判据跳过（连续停章首），
+  // 且懒图 __imgReanchorProgress 重锚永不触发（尾图永不进视口 = 鸡生蛋）。这里在章末恢复时
+  // 强制 load 打破鸡生蛋，图尺寸解析后走既有 load 回调重锚（分页 scrollToProgressPaged /
+  // 连续 scrollToChapterEnd）落到含真实尾图几何的章末。仅往前翻到章末(restoreProgress>=0.99)
+  // 触发，正向阅读 / 精确 char 锚不动 → 不回退 TODO-1074 懒加载；幂等（无 lazy 则 no-op）。
+  forceLoadPendingImages: function() {
+    var imgs = document.querySelectorAll('img[loading="lazy"]');
+    for (var i = 0; i < imgs.length; i++) {
+      imgs[i].setAttribute('loading', 'eager');
     }
   },
   notifyRestoreComplete: function() {
@@ -1490,6 +1527,12 @@ class ReaderPaginationScripts {
       for (var i = 0; i < keys.length; i++) { _hoshiRevealedKeys[keys[i]] = true; }
     }
   })();
+  // TODO-1367：暴露给有声书桥接（audiobook_bridge）——音频跟随读过某张图时把它的稳定
+  // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _hoshiBlurImage
+  // 时命中 key 跳过遮罩，与点击 / 手柄揭开同一套「已揭开不再遮罩」真相源（会话内存活集）。
+  window.__hoshiMarkImageRevealed = function(key) {
+    if (key) _hoshiRevealedKeys[key] = true;
+  };
   function _hoshiImageRevealKey(element) {
     if (!element) return '';
     var raw = '';
@@ -1610,11 +1653,18 @@ $blurFn
           // 且其后无用户翻页(__imgReanchorProgress 非 null)，用刚失效的 metrics 重建几何
           // 后重放 scrollToProgressPaged 语义重锚。属程序化滚动，不污染 TODO-798
           // userDriven 因果门；有用户输入(paginate 已清资格)则不动。
-          if (r && r.__imgReanchorProgress != null &&
-              typeof r.scrollToProgressPaged === 'function') {
-            var rctx = r.getScrollContext();
-            if (rctx && rctx.pageSize > 0) {
-              r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
+          if (r && r.__imgReanchorProgress != null) {
+            // TODO-1349（续）：判别连续 vs 分页用 scrollToChapterEnd（连续 shell 独有）——
+            // scrollToProgressPaged 在 _sharedJs 里两 shell 都有，不能用它判别（否则连续误走
+            // 分页分支，getScrollContext.pageSize 非分页量纲 → 不重锚，停章首）。
+            if (typeof r.scrollToChapterEnd === 'function') {
+              // 连续模式：尾部懒图 load 后重锚到章末；章首(<=0)不重锚——内容向下增长不移动 scroll 0。
+              if (r.__imgReanchorProgress >= 0.99) r.scrollToChapterEnd();
+            } else if (typeof r.scrollToProgressPaged === 'function') {
+              var rctx = r.getScrollContext();
+              if (rctx && rctx.pageSize > 0) {
+                r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
+              }
             }
           }
         }
@@ -2037,6 +2087,10 @@ $_sharedJs
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var context = this.getScrollContext();
+    // TODO-1349（续）：往前翻到章末(>=0.99)先强制 load 仍 lazy 的尾图（打破「尾图离屏永不
+    // load → maxScroll 塌缩 → 停章首 → 尾图永不进视口」鸡生蛋，见 forceLoadPendingImages）；
+    // 图 load 后 __imgReanchorProgress 回调按含真实尾图几何的 maxScroll 重锚。
+    if (progress >= 0.99) this.forceLoadPendingImages();
     this.scrollToProgressPaged(context, progress);
     // TODO-1229 案B：记录本次是章首(0)/章末(>=0.99)粗粒度 progress 落点，允许懒加载
     // block 图 load 后（整章几何后移、冻结 scrollTop 错一行）语义重锚。中段 progress 与
@@ -2498,9 +2552,9 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   window.hoshiReader.pageHeight = pageHeight;
   window.hoshiReader.viewportHeight = viewportHeight;
   window.hoshiReader.pageWidth = pageWidth;
@@ -2543,9 +2597,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   this.pageHeight = newHeight;
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
@@ -2721,6 +2775,7 @@ $_sharedJs
     await document.fonts.ready;
     var self = this;
     if (progress <= 0) {
+      this.__imgReanchorProgress = null;
       this.scrollToChapterStart();
       setTimeout(function() {
         self.scrollToChapterStart();
@@ -2734,6 +2789,11 @@ $_sharedJs
     // scrollToProgressContinuous 只走文本节点而在图片章停回章首（封面）。双发一次
     // 再确认对齐（防恢复后自发 reflow 把落点冲回，与 scrollToChapterStart 同构）。
     if (progress >= 0.99) {
+      // TODO-1349（续）：登记章末重锚资格 + 强制 load 尾部懒图（打破鸡生蛋，见
+      // forceLoadPendingImages）。16ms 双发太快等不到图 load，故尾图 load 后由
+      // _sharedInitImages 的 load 回调重锚 scrollToChapterEnd（连续分支）落到含尾图的真实章末。
+      this.__imgReanchorProgress = progress;
+      this.forceLoadPendingImages();
       this.scrollToChapterEnd();
       setTimeout(function() {
         self.scrollToChapterEnd();
@@ -2741,6 +2801,7 @@ $_sharedJs
       }, 16);
       return;
     }
+    this.__imgReanchorProgress = null;
     this.scrollToProgressContinuous(progress);
     setTimeout(function() {
       setTimeout(function() { self.notifyRestoreComplete(); }, 16);
@@ -2762,6 +2823,9 @@ $_sharedJs
     return true;
   },
   paginate: function(direction) {
+    // TODO-1349（续）：用户翻页即放弃章末尾图 late-load 重锚资格（镜像分页 paginate），
+    // 避免尾图 load 回调把用户已翻走的位置拽回章末。
+    this.__imgReanchorProgress = null;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var before = vertical ? window.scrollX : root.scrollTop;
@@ -3021,10 +3085,9 @@ $_sharedJs
         ''' 原始串不插值），故每个 shell 的
   // initialize 把比值存到 this._imageWidthRatio，本 helper 读它，begin/reanchor 共用。
   _resetImageMaxVars: function() {
-    var cs = this._contentSize();
-    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
-    document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * ratio)) + 'px');
-    document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+    var box = this._imageMaxBox();
+    document.documentElement.style.setProperty('--hoshi-image-max-width', box.w + 'px');
+    document.documentElement.style.setProperty('--hoshi-image-max-height', box.h + 'px');
   },
   // TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的**第一阶段**，由 Dart 在换样式那一
   // 刻调用。与 beginUiScaleReanchor 区别：那对只采锚滚回**不换 CSS**（缩放重建用），改字号
@@ -3093,9 +3156,9 @@ $_sharedInitViewport
   var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
   var contHeight = dartH || window.innerHeight;
   document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
 $initImages
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
@@ -3123,9 +3186,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   if (inFlight || progress <= 0) return;
   this._reanchorPending = true;
   var self = this;

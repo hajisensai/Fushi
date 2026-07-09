@@ -35,6 +35,34 @@ function netflixVideoEl() {
   return typeof document !== 'undefined' ? document.querySelector('video') : null;
 }
 
+// BUG-676（TODO-1361 ③）：网飞制卡的「视频名」= Anki `{document-title}` 字段。扩展 mineClip 此前
+// 不发 documentTitle → 服务端 buildImmersionRequest 回落成字面「Netflix」(immersion_capture_channel.dart:90)，
+// 卡片视频名全是「Netflix」而非剧名（YouTube 由服务端解析真实标题，故有剧名 → 二者不一致）。
+// 这里从播放器标题栏 [data-uia="video-title"] 抽「系列名 - 集信息」(语言无关)，回落 document.title
+// 去掉尾部「- Netflix」。传 [doc] 便于 node 单测（缺省用全局 document）。
+function netflixDocumentTitle(doc) {
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  if (!d || typeof d.querySelector !== 'function') return '';
+  let el = null;
+  try { el = d.querySelector('[data-uia="video-title"]'); } catch (_) { el = null; }
+  if (el) {
+    const h4 = typeof el.querySelector === 'function' ? el.querySelector('h4') : null;
+    const series = h4 ? String(h4.textContent || '').trim() : '';
+    const spans = typeof el.querySelectorAll === 'function' ? el.querySelectorAll('span') : [];
+    const parts = [];
+    for (const s of spans) {
+      const t = String((s && s.textContent) || '').trim();
+      if (t && parts.indexOf(t) < 0) parts.push(t);
+    }
+    const episode = parts.join(' ').trim();
+    const combined = [series, episode].filter(Boolean).join(' - ');
+    if (combined) return combined;
+    const whole = String(el.textContent || '').trim();
+    if (whole) return whole;
+  }
+  return String((d.title) || '').replace(/\s*[-–—|]\s*Netflix\s*$/i, '').trim();
+}
+
 
 // ── TODO-1219 P1：整集字幕纯函数解析器 ──
 // 主世界 netflix-bridge.js 抓来 timedtext 原文（WebVTT / TTML），交给隔离世界这里解析。
@@ -155,5 +183,6 @@ if (typeof module !== 'undefined' && module.exports) {
     stripCueTags,
     parseWebVtt,
     parseTtml,
+    netflixDocumentTitle,
   };
 }

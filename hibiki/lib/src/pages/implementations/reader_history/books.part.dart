@@ -365,11 +365,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       } else {
         final String? bookKey = _parseBookKey(key);
         if (bookKey != null) {
-          final bool ok = await ReaderHibikiSource.instance.deleteBook(
+          final DeleteBookResult result =
+              await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: bookKey,
           );
-          if (ok) deleted++;
+          if (result.deleted) deleted++;
         }
       }
     }
@@ -528,13 +529,21 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       return;
     }
 
-    final bool ok = await ReaderHibikiSource.instance.deleteBook(
+    final DeleteBookResult result =
+        await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
     );
     if (!mounted) return;
-    if (!ok) {
-      HibikiToast.show(msg: t.epub_delete_error);
+    if (!result.deleted) {
+      // TODO-1359：不再只弹笼统的「删除书籍失败」——把 deleteBook 回报的原因（同时已
+      // 写入 ErrorLogService，可在日志页导出）拼进 toast，让用户知道为什么删不掉。
+      final String reason = result.failureReason ?? '';
+      HibikiToast.show(
+        msg: reason.isEmpty
+            ? t.epub_delete_error
+            : '${t.epub_delete_error}: $reason',
+      );
       return;
     }
     _refreshSrtBooks();

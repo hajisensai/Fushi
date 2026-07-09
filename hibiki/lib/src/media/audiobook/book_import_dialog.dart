@@ -66,6 +66,11 @@ class _BookImportDialogState extends State<BookImportDialog>
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _authorCtrl = TextEditingController();
 
+  /// 标题框当前内容的来源，决定选/重选文件时能否覆盖（见 [resolveImportTitle]，
+  /// TODO-1362）。用户在标题框手打即置 [ImportTitleSource.user]，此后自动派生不再
+  /// 覆盖；同来源重选（如再点一次「选书」换一本）刷新为新书名。
+  ImportTitleSource _titleSource = ImportTitleSource.none;
+
   String? _epubPath;
   String? _subtitlePath;
   List<String> _audioPaths = [];
@@ -100,6 +105,23 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   bool get _hasSubtitles => _subtitlePath != null;
 
+  /// 从所选文件名派生的书名 [derived] 回填标题框，覆盖决策委托纯函数
+  /// [resolveImportTitle]（[incoming] 为本次来源）：同来源重选或标题为空才刷新，
+  /// 跨来源保持「非空不覆盖」，用户手打的标题永不被覆盖（TODO-1362）。可从
+  /// initState / setState 内调用——只改字段与控制器，不自行触发 setState。
+  void _autoFillTitle(String derived, ImportTitleSource incoming) {
+    final ({String text, ImportTitleSource source}) next = resolveImportTitle(
+      currentText: _titleCtrl.text,
+      currentSource: _titleSource,
+      incoming: incoming,
+      derived: derived,
+    );
+    _titleSource = next.source;
+    if (next.text != _titleCtrl.text) {
+      _titleCtrl.text = next.text;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -107,9 +129,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (epub != null) {
       _epubPath = epub;
       _epubName = p.basename(epub);
-      if (_titleCtrl.text.isEmpty) {
-        _titleCtrl.text = p.basenameWithoutExtension(epub);
-      }
+      _autoFillTitle(p.basenameWithoutExtension(epub), ImportTitleSource.epub);
     }
     final String? sub = widget.initialSubtitlePath;
     if (sub != null) {
@@ -197,9 +217,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (droppedEpub != null) {
         _epubPath = droppedEpub;
         _epubName = p.basename(droppedEpub);
-        if (_titleCtrl.text.isEmpty) {
-          _titleCtrl.text = p.basenameWithoutExtension(droppedEpub);
-        }
+        _autoFillTitle(
+            p.basenameWithoutExtension(droppedEpub), ImportTitleSource.epub);
       }
       if (r.subtitlePath != null) {
         _subtitlePath = r.subtitlePath;
@@ -261,6 +280,10 @@ class _BookImportDialogState extends State<BookImportDialog>
         HibikiTextField(
           controller: _titleCtrl,
           labelText: t.srt_import_title_hint,
+          // 用户一旦在标题框手打即锁定来源为 user，此后重选文件不再覆盖（TODO-1362）。
+          // Flutter 不会为程序化的 controller.text= 触发 onChanged，故仅真实用户输入
+          // （含屏幕键盘/粘贴，经 HibikiTextField 转发）才置 user。
+          onChanged: (String _) => _titleSource = ImportTitleSource.user,
         ),
         SizedBox(height: tokens.spacing.gap),
         HibikiTextField(
@@ -397,13 +420,14 @@ class _BookImportDialogState extends State<BookImportDialog>
         setState(() {
           _epubPath = path;
           _epubName = file.name;
-          if (_titleCtrl.text.isEmpty) {
-            _titleCtrl.text = file.name.replaceAll(
+          _autoFillTitle(
+            file.name.replaceAll(
                 RegExp(
                     r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
                     caseSensitive: false),
-                '');
-          }
+                ''),
+            ImportTitleSource.epub,
+          );
         });
         await _autoAttachSidecars(path);
       }
@@ -460,11 +484,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
-      final String? path = await pickRealFilePath(
+      // 字幕导入时即被解析成 cues / 生成 EPUB 当场消费，不以绝对路径长期引用，故维持
+      // 系统文件选择器（board 1360）：用户熟悉，且能触达 Downloads / 云盘 / 最近文件。
+      final String? path = await pickSystemFilePath(
         context: context,
-        appModel: appModel,
         allowedExtensions: _subtitleExtensions,
       );
       if (path == null || !mounted) return;
@@ -477,11 +500,10 @@ class _BookImportDialogState extends State<BookImportDialog>
       setState(() {
         _subtitlePath = path;
         _subtitleName = p.basename(path);
-        if (_titleCtrl.text.isEmpty) {
-          final String name = p.basename(path);
-          final int dot = name.lastIndexOf('.');
-          _titleCtrl.text = dot > 0 ? name.substring(0, dot) : name;
-        }
+        final String name = p.basename(path);
+        final int dot = name.lastIndexOf('.');
+        _autoFillTitle(dot > 0 ? name.substring(0, dot) : name,
+            ImportTitleSource.subtitle);
       });
     } finally {
       _pickerActive = false;
@@ -583,11 +605,12 @@ class _BookImportDialogState extends State<BookImportDialog>
           await TtsChannel.instance.extractAudioMetadata(audioPath: audioPath);
       if (meta == null) continue;
       if (!mounted) return;
-      final bool fillTitle = _titleCtrl.text.isEmpty && meta.title != null;
       final bool fillAuthor = _authorCtrl.text.isEmpty && meta.author != null;
-      if (fillTitle || fillAuthor) {
+      if (meta.title != null || fillAuthor) {
         setState(() {
-          if (fillTitle) _titleCtrl.text = meta.title!;
+          if (meta.title != null) {
+            _autoFillTitle(meta.title!, ImportTitleSource.metadata);
+          }
           if (fillAuthor) _authorCtrl.text = meta.author!;
         });
       }
@@ -1075,6 +1098,49 @@ class BookImportDialogFrame extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 导入对话框标题框内容的来源。优先级不是全序：规则是「同来源重选或标题为空才刷新」，
+/// 跨来源保持既有「非空即不覆盖」语义（见 [resolveImportTitle]，TODO-1362）。
+enum ImportTitleSource {
+  /// 标题框为空、从未被任何来源填过。
+  none,
+
+  /// 从内嵌音频标签（M4B/MP3 等）自动读出的标题（TODO-1045）。
+  metadata,
+
+  /// 从字幕文件名派生的标题。
+  subtitle,
+
+  /// 从书文件（EPUB / txt 等）文件名派生的标题。
+  epub,
+
+  /// 用户在标题框手动输入的标题——永不被自动派生覆盖。
+  user,
+}
+
+/// 选/重选导入文件后，标题框应显示的书名及其来源（纯函数，TODO-1362 可测核心）。
+///
+/// 「先选魔眼再重选尸人、下方书名不刷新」的根因是各选文件点仅在标题为空时回填，
+/// 一旦有了自动派生书名，重选便永不更新。此函数用来源身份取代「仅空时回填」：
+/// - 标题被用户手打过（[currentSource] == user 且非空）→ 永不覆盖，尊重用户输入。
+/// - 标题为空、或本次来源 [incoming] 与当前来源相同（同槽位重选换一本）→ 刷新为
+///   新派生的 [derived]。
+/// - 否则（跨来源且标题非空，如已有 epub 书名时又选了字幕/读到音频标签）→ 保持不变，
+///   与旧「非空即不覆盖」行为逐位等价，零跨来源回归。
+@visibleForTesting
+({String text, ImportTitleSource source}) resolveImportTitle({
+  required String currentText,
+  required ImportTitleSource currentSource,
+  required ImportTitleSource incoming,
+  required String derived,
+}) {
+  final bool userOwned =
+      currentSource == ImportTitleSource.user && currentText.isNotEmpty;
+  if (!userOwned && (currentText.isEmpty || incoming == currentSource)) {
+    return (text: derived, source: incoming);
+  }
+  return (text: currentText, source: currentSource);
 }
 
 /// TODO-894：为一条 EPUB-backed 有声书补写配对的 srt_books 行。

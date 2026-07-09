@@ -47,11 +47,13 @@ VideoQuickSettingsSheet _sheet({
   List<VideoThemeOption> themeOptions = const <VideoThemeOption>[],
   String? currentThemeKey,
   void Function(String key)? onSelectThemeKey,
+  VoidCallback? onSubtitleCategoryShown,
 }) {
   return VideoQuickSettingsSheet(
     initialCategory: initialCategory,
     audioTrackSection: audioTrackSection,
     subtitleTrackSection: subtitleTrackSection,
+    onSubtitleCategoryShown: onSubtitleCategoryShown,
     themeOptions: themeOptions,
     currentThemeKey: currentThemeKey,
     onSelectThemeKey: onSelectThemeKey == null
@@ -526,6 +528,55 @@ void main() {
     );
     // 默认阴影粗细 TODO-051 加大到 5px；UI scale 2.0 下预览 = 5 * 2 = 10。
     expect(shadowRow.value, 10);
+  });
+
+  // ── BUG-672：字幕轨切换不即时加载（要重开才行）+ 副字幕跳到另一个窗口 ─────────
+  // 根因①：字幕源列表 _subtitleMenuSources 之前只由「字幕轨」控制按钮预填，用户经齿轮
+  // 进面板再点「字幕」分类时不加载。修复：面板进入「字幕」分类即回调 onSubtitleCategoryShown，
+  // 由视频页 _ensureSubtitleMenuSourcesLoaded 枚举字幕源。这里锁死「进入字幕分类必触发回调」。
+  testWidgets('BUG-672: 打开面板直达「字幕」分类即触发字幕源加载回调（宽窗）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int shown = 0;
+    await _pump(
+      tester,
+      _sheet(
+        initialCategory: 'subtitle',
+        subtitleTrackSection: const Text('SUBTITLE-TRACK-SECTION'),
+        onSubtitleCategoryShown: () => shown++,
+      ),
+    );
+    // onSubtitleCategoryShown 延后到帧后触发（避免 initState 内同步 setState 父页）。
+    await tester.pump();
+    expect(shown, greaterThanOrEqualTo(1),
+        reason: '打开面板直达字幕分类，必须触发字幕源加载回调（否则字幕轨列表不即时加载）');
+    // 字幕轨切换区内联渲染在「字幕」分类里（副字幕也在其中，不再跳独立窗口）。
+    expect(find.text('SUBTITLE-TRACK-SECTION'), findsOneWidget,
+        reason: '注入的字幕轨切换区必须内联渲染在字幕分类详情里');
+  });
+
+  testWidgets('BUG-672: 从别的分类点「字幕」chip 触发字幕源加载回调（宽窗）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int shown = 0;
+    await _pump(tester, _sheet(onSubtitleCategoryShown: () => shown++));
+    // 默认在 playback，尚未进入字幕分类 → 回调未触发。
+    expect(shown, 0);
+    // 点「字幕」分类 chip → 进入字幕分类 → 触发一次加载回调。
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
+    expect(shown, greaterThanOrEqualTo(1),
+        reason: '点字幕分类 chip 进入字幕分类，必须触发字幕源加载回调（字幕轨即时加载）');
+  });
+
+  testWidgets('BUG-672: 窄窗导航进「字幕」分类触发字幕源加载回调', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int shown = 0;
+    await _pump(tester, _sheet(onSubtitleCategoryShown: () => shown++));
+    expect(shown, 0);
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
+    expect(shown, greaterThanOrEqualTo(1),
+        reason: '窄窗点字幕导航行进入字幕分类，同样必须触发字幕源加载回调');
   });
 
   testWidgets(
@@ -2300,6 +2351,64 @@ void main() {
           reason: '音轨切换区须仍由页面构建（收进面板不丢功能）');
       expect(subtitle, contains('_buildSubtitleTrackSettingsSection('),
           reason: '字幕轨切换区须仍由页面构建（收进面板不丢功能）');
+    });
+
+    test('BUG-672 源码守卫：副字幕改内联可展开区，不再跳独立浮层窗口', () {
+      final String sidePanel = File(
+        'lib/src/pages/implementations/video_hibiki/side_panel.part.dart',
+      ).readAsStringSync();
+      final String subtitle = File(
+        'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+      ).readAsStringSync();
+      final String page = File(
+        'lib/src/pages/implementations/video_hibiki_page.dart',
+      ).readAsStringSync();
+      // 副字幕浮层 kind 已删（连同 title/width/child 三个 switch 分支）。
+      expect(page, isNot(contains('  secondarySubtitleSources,')),
+          reason: '副字幕浮层 _VideoSidePanelKind.secondarySubtitleSources 必须删除');
+      expect(sidePanel,
+          isNot(contains('_VideoSidePanelKind.secondarySubtitleSources')),
+          reason: '副字幕浮层 side-panel 分支必须删除（副字幕改内联）');
+      // 副字幕不再经 _showVideoSidePanel 跳独立窗口；旧的导航式菜单方法删除。
+      expect(subtitle, isNot(contains('_showSecondarySubtitleSourceMenu')),
+          reason: '副字幕跳浮层的 _showSecondarySubtitleSourceMenu 必须删除');
+      expect(
+          subtitle, isNot(contains('_buildSecondarySubtitleSourcesSidePanel')),
+          reason: '副字幕浮层侧栏构建器必须删除（改内联行构建器）');
+      // 副字幕源改为在「字幕」分类里内联可展开（ExpansionTile + 行构建器）。
+      expect(subtitle, contains('ExpansionTile('),
+          reason: '副字幕入口须是内联可展开区（ExpansionTile），就地切换不跳窗口');
+      expect(subtitle, contains('_buildSecondarySubtitleRows('),
+          reason: '副字幕源行改由内联行构建器 _buildSecondarySubtitleRows 渲染');
+    });
+
+    test('BUG-672 源码守卫：字幕分类被打开时驱动字幕源枚举（字幕轨即时加载）', () {
+      final String subtitle = File(
+        'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+      ).readAsStringSync();
+      final String page = File(
+        'lib/src/pages/implementations/video_hibiki_page.dart',
+      ).readAsStringSync();
+      final String sheet = File(
+        'lib/src/media/video/video_quick_settings_sheet.dart',
+      ).readAsStringSync();
+      // 视频页把「进入字幕分类」回调接到字幕源枚举 helper。
+      expect(page,
+          contains('onSubtitleCategoryShown: _ensureSubtitleMenuSourcesLoaded'),
+          reason:
+              '视频页须把 onSubtitleCategoryShown 接到 _ensureSubtitleMenuSourcesLoaded');
+      expect(
+          subtitle, contains('Future<void> _ensureSubtitleMenuSourcesLoaded()'),
+          reason: '须有按「进入字幕分类」事件驱动的字幕源枚举 helper');
+      expect(subtitle, contains('_subtitleSourcesForMenu('),
+          reason: '字幕源枚举 helper 须走 _subtitleSourcesForMenu 枚举内嵌轨 + 外挂');
+      // 面板进入字幕分类（chip / 导航行 / initialCategory）统一触发回调。
+      expect(sheet, contains('final VoidCallback? onSubtitleCategoryShown;'),
+          reason: '设置面板须暴露 onSubtitleCategoryShown 回调');
+      expect(sheet, contains('void _selectSubPage(String id)'),
+          reason: '分类切换须集中到 _selectSubPage，进入字幕分类时触发回调');
+      expect(sheet, contains('_notifySubtitleCategoryShownAfterFrame()'),
+          reason: 'initialCategory==subtitle 直达时须帧后触发回调');
     });
   });
 }

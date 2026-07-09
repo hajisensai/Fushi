@@ -122,6 +122,24 @@ Future<String?> pickRealFilePath({
   );
 }
 
+/// 「选一个文件、走系统文件选择器（安卓 SAF / iOS Files / 桌面原生），返回其路径」。
+///
+/// 与 [pickRealFilePath] 的分工：[pickRealFilePath] 面向**以绝对路径长期引用、导入时
+/// 不复制**的文件（视频——SAF 复制到 cache 的路径清缓存即悬空，故安卓改真实路径浏览
+/// 器）。而字幕 / 对齐文件（smil/srt/lrc/vtt/ass/json…）在导入时即被解析成 cues / 生成
+/// EPUB / 跑 matcher **当场消费**，SAF 复制到 cache 的临时副本读完即弃，不存在悬空问题。
+/// 因此这类文件维持系统文件选择器：用户熟悉，且能触达 Downloads / 云盘 / 最近文件等
+/// 真实路径浏览器覆盖不到的位置（board 1360——用户报「导入选字幕文件的选择器变了」）。
+///
+/// 安卓不需要 `MANAGE_EXTERNAL_STORAGE`（SAF 自带授权），桌面 / iOS 本就返回真实路径。
+/// [allowedExtensions] 为不带点的小写扩展名集；iOS 的 `.srt` 等 UTI 解析问题由
+/// [_fallbackPickFile] 内部统一处理（先 `FileType.any` 打开 Files，再按扩展名校验）。
+Future<String?> pickSystemFilePath({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) =>
+    _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
+
 /// 「选多个文件并返回真实文件系统绝对路径」。
 ///
 /// 当前真实路径浏览器只支持单文件点选；多选仍回退到 file_picker。iOS 上不能使用

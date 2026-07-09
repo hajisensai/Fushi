@@ -607,12 +607,14 @@ void main() {
       MediaSource.setDatabase(db);
       await db.insertEpubBook(epubBook('Kokoro'));
 
-      final bool ok = await ReaderHibikiSource.instance.deleteBook(
+      final DeleteBookResult result =
+          await ReaderHibikiSource.instance.deleteBook(
         db: db,
         bookKey: 'Kokoro',
       );
 
-      expect(ok, isTrue);
+      expect(result.deleted, isTrue);
+      expect(result.failureReason, isNull);
       expect(await db.getEpubBook('Kokoro'), isNull);
     });
 
@@ -625,15 +627,131 @@ void main() {
 
       // Empty key (the orphan-shell case) and an arbitrary missing key both
       // have nothing to delete: deleteBook must report failure, not lie.
-      expect(
-        await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: ''),
-        isFalse,
+      // TODO-1359：失败结果必须携带原因（供 toast 展示 + 已写入 ErrorLogService），
+      // 不能只回一个信息全无的 bool。
+      final DeleteBookResult emptyKeyResult =
+          await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: '');
+      expect(emptyKeyResult.deleted, isFalse);
+      expect(emptyKeyResult.failureReason, isNotNull);
+      final DeleteBookResult missingKeyResult = await ReaderHibikiSource
+          .instance
+          .deleteBook(db: db, bookKey: 'no-such-book');
+      expect(missingKeyResult.deleted, isFalse);
+      expect(missingKeyResult.failureReason, contains('no-such-book'));
+    });
+  });
+
+  group('ReaderHibikiSource.deleteBook TODO-1359 (删不掉 + 无原因)', () {
+    final TestWidgetsFlutterBinding binding =
+        TestWidgetsFlutterBinding.ensureInitialized();
+    late Directory ppDir;
+    setUp(() {
+      ppDir = Directory.systemTemp.createTempSync('hibiki_del1359_pp');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => ppDir.path,
       );
-      expect(
-        await ReaderHibikiSource.instance
-            .deleteBook(db: db, bookKey: 'no-such-book'),
-        isFalse,
+    });
+    tearDown(() {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
       );
+      if (ppDir.existsSync()) ppDir.deleteSync(recursive: true);
+    });
+
+    // 根因：DB 行（唯一真相源）删除成功后，磁盘解压目录清理若因 Windows 文件占用抛
+    // 异常，绝不能把已提交的删除翻转成「删除失败」。旧实现把 deleteBookDir 放在外层
+    // try 里裸跑，一抛就落到最外层 catch 返回失败——书还挂在架上、目录泄漏。
+    test(
+        'on-disk extract-dir cleanup failure does NOT flip a committed DB '
+        'delete to failure (Windows file-lock; deleted==true, row gone)',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      // A real extract dir with a file we hold open so recursive delete throws
+      // on Windows (POSIX allows unlink-while-open, so there the delete just
+      // succeeds — either way the committed DB delete must report success).
+      final Directory extractDir =
+          Directory.systemTemp.createTempSync('hibiki_del1359_extract');
+      final File inner = File(p.join(extractDir.path, 'content.xhtml'))
+        ..writeAsStringSync('<html></html>');
+      final RandomAccessFile handle = inner.openSync(mode: FileMode.write);
+      addTearDown(() {
+        handle.closeSync();
+        if (extractDir.existsSync()) {
+          extractDir.deleteSync(recursive: true);
+        }
+      });
+
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'LockedBook',
+        title: 'LockedBook',
+        epubPath: '/tmp/LockedBook.epub',
+        extractDir: extractDir.path,
+        chapterCount: 1,
+        chaptersJson: '["ch1"]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+      final DeleteBookResult result = await ReaderHibikiSource.instance
+          .deleteBook(db: db, bookKey: 'LockedBook');
+
+      // The DB row (source of truth) is gone → this book is deleted for the
+      // user; a leaked on-disk dir must not be reported as a delete failure.
+      expect(result.deleted, isTrue,
+          reason: 'committed DB delete must report success even if the '
+              'on-disk extract dir could not be removed');
+      expect(await db.getEpubBook('LockedBook'), isNull);
+    });
+
+    // 源码守卫（跨平台确定性）：磁盘/偏好清理必须被一个只记日志、不翻转结果的
+    // try/catch 包住，且位于 deleteEpubBook 之后、成功返回之前。撤掉这层 wrapper 会
+    // 让 deleteBookDir 抛出的异常重新冒泡到最外层 catch → 又回到「删不掉」。
+    test('post-DB on-disk cleanups are wrapped in a tolerant try/catch', () {
+      final String src = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf('Future<DeleteBookResult> deleteBook(');
+      final int end =
+          src.indexOf('static ReaderSettings? readerSettings', start);
+      expect(start, greaterThanOrEqualTo(0));
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+
+      final int rowDelete = body.indexOf('deleteEpubBook(bookKey');
+      final int cleanupCatch =
+          body.indexOf("'ReaderHibikiSource.deleteBook.cleanup'");
+      final int diskCleanup = body.indexOf('EpubStorage.deleteBookDir(');
+      final int vacuum = body.indexOf("customStatement('VACUUM')");
+      expect(rowDelete, greaterThanOrEqualTo(0));
+      expect(cleanupCatch, greaterThan(rowDelete),
+          reason: 'the tolerant cleanup catch must exist after the DB delete');
+      expect(diskCleanup, greaterThan(rowDelete),
+          reason: 'on-disk cleanup runs after the DB delete');
+      expect(diskCleanup, lessThan(cleanupCatch),
+          reason: 'the on-disk cleanup must sit inside the tolerant try, '
+              'before its catch');
+      expect(vacuum, greaterThan(cleanupCatch),
+          reason: 'VACUUM stays after the cleanup block');
+    });
+
+    // 失败结果必须携带面向用户/诊断的原因（fix (a)：不再只弹笼统 toast，用户「报错
+    // 日志呢」有据可查）。
+    test('failure result carries a non-empty reason mentioning the bookKey',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final DeleteBookResult result = await ReaderHibikiSource.instance
+          .deleteBook(db: db, bookKey: 'ghost-shelf-entry');
+      expect(result.deleted, isFalse);
+      expect(result.failureReason, isNotNull);
+      expect(result.failureReason!, isNotEmpty);
+      expect(result.failureReason!, contains('ghost-shelf-entry'));
     });
   });
 
@@ -757,9 +875,9 @@ void main() {
 
       // Delete path: deleteBook(parsedKey) must actually remove it and report
       // success (not the false / "删不掉" dead-end).
-      final bool ok =
+      final DeleteBookResult delResult =
           await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: parsed);
-      expect(ok, isTrue);
+      expect(delResult.deleted, isTrue);
       expect(await db.getEpubBook(key), isNull);
     });
   });
@@ -888,6 +1006,69 @@ void main() {
       );
       expect(prog.position, 0);
       expect(prog.duration, 1);
+    });
+  });
+
+  // BUG-680（TODO-1346 复诉「书籍的进度还是没有啊」）：验证 BUG-659 的 computeBookProgress
+  // 修复确实接进渲染路径、并对用户真实书架数据算出与旧包(debug.6783 忽略 charOffset)判然
+  // 有别的进度——复诉根因是旧包，不是「算了没接上」。把用户本机 DB 的真实章字数数组固化成
+  // 回归守卫，锁死 PM 假设 B(修不足/没接上)永不回归。
+  group('computeBookProgress wired + real-shelf data (BUG-680 复诉守卫)', () {
+    test(
+        '_bookToMediaItem 把 computeBookProgress 结果喂进 MediaItem.position/duration '
+        '(锁死「算了没接上」)', () {
+      final String source = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      // 修复必须真接上渲染：_bookToMediaItem 调 computeBookProgress 并用它的
+      // position/duration 建 MediaItem。断了这根线(PM 怀疑的「char_offset 纳入了但渲染
+      // 分支没走到」)就退回复诉症状。
+      expect(source, contains('computeBookProgress('));
+      expect(source, contains('position = prog.position'));
+      expect(source, contains('duration = prog.duration'));
+    });
+
+    test(
+        '用户真实 リビルド (sec=8, charOffset=11120)：章内 charOffset 让「旧包看着像 0%」'
+        '的在读书前进', () {
+      // 用户本机 reader_positions x epub_books 真值：前 8 章多为前言(0 字)，当前第 8 章
+      // 23707 字。旧包(debug.6783)忽略 charOffset -> 只算前 8 章 = 286 字(<0.2%，看着像空
+      // 条)；修复把章内 11120 计入。
+      const List<int> rebuild = <int>[
+        0, 0, 0, 0, 0, 110, 0, 176, //
+        23707, 10923, 9904, 24592, 9883, 14559, 16308, 8977, 14023, 13684, //
+        10311, 12330, 11187, 9891, 0, 0, 0, 0, 301, 351, 0,
+      ];
+      final int before8 = rebuild.take(8).reduce((int a, int b) => a + b);
+      expect(before8, 286); // 旧包忽略 charOffset 时的 position
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: rebuild,
+        sectionIndex: 8,
+        charOffset: 11120,
+      );
+      expect(prog.position, before8 + 11120); // 章内进度计入
+      expect(prog.position, greaterThan(before8),
+          reason: '修复必须让被旧包算成近 0 的在读书前进');
+      expect(prog.position / prog.duration, greaterThan(0.05),
+          reason: 'リビルド 现场进度应 ~5.96%(可见)，而非旧包的 0.15%');
+    });
+
+    test(
+        '用户真实 安達9 (sec=6, charOffset=0，前节全前言)：诚实 0%——'
+        '不是 BUG-659 回归也不灌水', () {
+      // 前 6 节全是前言(0 字)、第 6 节是首个内容页起点。读者停在正文开头前 -> 已读字符=0。
+      // 按字符计数的诚实结果(不为好看谎报进度)；用户升级后仍会见 0%，属预期。
+      const List<int> adachi9 = <int>[
+        0, 0, 0, 0, 0, 0, 106, 51, 0, 8760, 2017, 0, 19647, 0, //
+        429, 8510, 1717, 0, 10541, 2148, 0, 5738, 18, 0, 0, 206, 181, 0,
+      ];
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: adachi9,
+        sectionIndex: 6,
+        charOffset: 0,
+      );
+      expect(prog.position, 0, reason: '前节全前言 -> 已读正文字符=0，诚实 0%');
+      expect(prog.duration, greaterThan(0), reason: '全书有字数，分母非 0(不是老书回退分支)');
     });
   });
 }

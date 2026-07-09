@@ -99,6 +99,31 @@ void main() {
     });
   });
 
+  group('TODO-1354 查词卡钉死 LTR（RTL UI 语言下 headword 不再被甩到右）', () {
+    // 根因：宿主 WebView 把 Flutter 环境 Directionality（用户 UI 语言选阿拉伯语
+    // strings_ar 时为 RTL）作为 layoutDirection 传进平台视图，文档根默认方向变 rtl，
+    // 令 .entry-header flex 行翻转、headword 被甩到最右。作者层 direction:ltr 覆盖 UA
+    // 的 [dir=rtl] 继承，把整卡钉死 LTR（与 Niratan 一致，例句 padding-left 缩进也回正）。
+    final String css = File('assets/popup/popup.css').readAsStringSync();
+
+    test('popup.css 的 html,body 块声明 direction: ltr', () {
+      final RegExp rule =
+          RegExp(r'html,\s*body\s*\{([\s\S]*?)\}', multiLine: true);
+      final RegExpMatch? m = rule.firstMatch(css);
+      expect(m, isNotNull, reason: '应能定位 html, body 规则块');
+      final String body = m!.group(1)!;
+      expect(body.contains('direction: ltr'), isTrue,
+          reason: 'TODO-1354/BUG-673：查词卡必须钉死 LTR，'
+              '否则 RTL UI 语言下 headword 被 flex 行翻转甩到右侧');
+    });
+
+    test('阿拉伯语 i18n 存在（RTL 触发条件的真实性佐证）', () {
+      // 若某天移除阿拉伯语，本 RTL 触发路径的前提就变了；此断言让根因链保持可追溯。
+      expect(File('lib/i18n/strings_ar.i18n.json').existsSync(), isTrue,
+          reason: 'strings_ar 是本 bug 的 RTL 触发来源（用户 UI 语言可选阿拉伯语）');
+    });
+  });
+
   group('TODO-1357 桌面默认 2 列 + 2 词典（三态）', () {
     test('未设过：桌面默认 2、移动默认 1', () {
       expect(

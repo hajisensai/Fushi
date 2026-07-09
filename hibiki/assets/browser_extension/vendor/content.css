@@ -54,6 +54,23 @@
     overscroll-behavior-y: contain;
     touch-action: auto;
     -webkit-user-select: text;
+    /* TODO-1354 (BUG-673): the dictionary card is Japanese / CJK dictionary
+       content and must always read left-to-right (headword on the left, example
+       padding-left indentation on the left), matching Niratan. The host WebView
+       forwards the Flutter ambient Directionality (RTL when the user picks an RTL
+       UI language, e.g. Arabic strings_ar) as the platform view's layoutDirection,
+       so the document root defaults to dir=rtl (neither popup.html nor the inline
+       HTML declares an explicit dir). Under RTL the .entry-header flex row reverses
+       its main axis: .expression-scroll (flex:1) lands at the right edge and
+       .header-buttons (margin-left:auto) is pushed to the left, so the headword
+       gets flung to the far right while the buttons + blue focus triangle cluster
+       on the left. Pinning direction:ltr in the author cascade overrides the UA
+       [dir=rtl] inheritance (author origin beats UA origin) and locks the whole
+       card LTR, fixing the headword position, pitch rows, glossary text and example
+       indentation in one shot. The content-css generator re-roots this html,body
+       rule at #entries-container, so in the browser extension it only affects the
+       popup container and never flips the host page's direction (zero leakage). */
+    direction: ltr;
 }
 
 #entries-container {
@@ -875,6 +892,16 @@
     display: grid;
     grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
     column-gap: 6px;
+    /* TODO-1325 / BUG-683 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
+       的词典卡片全部拉伸到该行最高卡片的高度。首行常含义项最多的词典（idx 0 那本），被
+       拉高后同行义项少的卡片下方留出大片空白玻璃盒，整体读作「第一个卡片特别高」。Niratan
+       的卡片是自然内容高度（单词典 display:block 单列，或多词典 JS masonry 按最短列打包，
+       从不等高拉伸，见 Features/Popup/popup.js layoutMasonry）。这里不改 DOM/JS、不引 JS
+       masonry（那是过度设计），只在锁死的多列 grid 上把纵轴对齐从 stretch 改成 start：每
+       张卡片贴其单元格顶部、取自身内容高度，首卡不再被行内最高卡片拉伸出特殊高度，观感与
+       Niratan 的自然高度玻璃卡片一致。列间距仍只用 column-gap，卡片间纵向间距仍由
+       .glossary-group 的 margin-top 提供（grid 不折叠 item margin），不产生双倍间距。 */
+    align-items: start;
 }
 
 /* TODO-1325 #7（超越 TODO-877/TODO-849 的往返）：per-dictionary 卡片皮肤（圆角/投影/

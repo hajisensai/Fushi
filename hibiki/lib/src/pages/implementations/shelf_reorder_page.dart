@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
 import 'package:hibiki/utils.dart';
 
 /// 一个可重排条目的最小身份：稳定键 + 媒体类型（持久化到 ShelfEntries 用）+ 渲染载荷。
@@ -11,6 +12,7 @@ class ShelfReorderItem {
     required this.card,
     this.seriesId,
     this.seriesCardId,
+    this.seriesFrame,
   });
 
   /// 媒体种类：'epub' | 'srt' | 'video'。
@@ -19,7 +21,10 @@ class ShelfReorderItem {
   /// 稳定身份：本地 = bookKey/srtUid/videoBookUid；远端 = downloadId/video.id。
   final String entryKey;
 
-  /// 卡片渲染 widget（复用书架 / 视频库既有卡片构造，不重写渲染）。
+  /// 卡片渲染 widget（复用书架 / 视频库既有卡片构造，不重写渲染）。**未套分组框**——
+  /// 系列成员的同色分组框由重排页据 [seriesFrame] 在渲染时叠加（见
+  /// [_ShelfReorderPageState._buildItemCard]），不预先烘进本字段。这样「移出系列」把成员
+  /// 降为散书时只需清掉 [seriesFrame]（[copyAsLoose]）即可就地变回无框散书卡，不必丢弃条目。
   final Widget card;
 
   /// 本条目当前归属的系列 id（TODO-947-② PR2）。null = 散书（不属任何系列）。
@@ -34,6 +39,11 @@ class ShelfReorderItem {
   /// 也据此判定「进入系列成员视图」（散书 tap 不进入）。
   final int? seriesCardId;
 
+  /// 系列成员的分组框渲染参数（TODO-947-② v2）。非空 = 本条目是某系列的内联展开成员，
+  /// 重排页把 [card] 套进同色 [SeriesReorderFrame]；null = 散书 / 折叠系列卡 / 视频，无框
+  /// 渲染。点「移出系列」即把它清成 null（[copyAsLoose]）让成员就地变回散书。
+  final SeriesFrameData? seriesFrame;
+
   /// 复制本条目，仅覆盖 [seriesId]（合并后本地即时刷新 UI 用，避免整页重查）。
   /// [seriesCardId] 原样保留（散书合并不会把散书变成折叠卡，语义不变）。
   ShelfReorderItem copyWithSeriesId(int? newSeriesId) => ShelfReorderItem(
@@ -42,7 +52,46 @@ class ShelfReorderItem {
         card: card,
         seriesId: newSeriesId,
         seriesCardId: seriesCardId,
+        seriesFrame: seriesFrame,
       );
+
+  /// 把本条目降级为**散书**（TODO-947-② v2）：清掉系列归属与分组框，[card] 原样保留
+  /// （它本就是未套框的原卡）。于是重排页就地把它渲染成无框散书卡、继续留在编辑排序列表里
+  /// ——用户点「移出系列」后书籍不再凭空消失，而是变回一本散书（seriesId 已在调用方写库为
+  /// null）。[seriesCardId] 原样保留（内联成员本就为 null，语义不变）。
+  ShelfReorderItem copyAsLoose() => ShelfReorderItem(
+        mediaType: mediaType,
+        entryKey: entryKey,
+        card: card,
+        seriesId: null,
+        seriesCardId: seriesCardId,
+        seriesFrame: null,
+      );
+}
+
+/// 系列成员分组框（[SeriesReorderFrame]）的渲染参数（TODO-947-② v2）。由书架「编辑排序」
+/// 构造（见 `_buildSortItems`），重排页据此把成员卡套进同色分组框。把「是否套框 + 框参数」
+/// 放进数据、渲染留给页面，是为了让「移出系列」只清 [ShelfReorderItem.seriesFrame] 就能就地
+/// 把成员变回无框散书卡（原实现把框烘进 card、移出只能整条丢弃 → 书籍消失）。
+class SeriesFrameData {
+  const SeriesFrameData({
+    required this.color,
+    required this.showHeader,
+    required this.seriesName,
+    required this.memberCount,
+  });
+
+  /// 本系列分组框颜色（同系列所有成员同色；由调用方按 seriesId 稳定分配）。
+  final Color color;
+
+  /// 是否本系列内联展开后的首个成员（仅首个成员叠系列名 header）。
+  final bool showHeader;
+
+  /// 系列名（header 文本）。
+  final String seriesName;
+
+  /// 系列成员总数（header 角标）。
+  final int memberCount;
 }
 
 /// 退出重排时的批量持久化回调：把最终顺序（下标 = 新 sortOrder）交给调用方落盘。
@@ -111,6 +160,7 @@ class ShelfReorderPage extends StatefulWidget {
     this.rebuildItems,
     this.seriesFrame,
     this.onRemove,
+    this.overlayCornerBottomInset = 0,
     super.key,
   });
 
@@ -143,6 +193,12 @@ class ShelfReorderPage extends StatefulWidget {
 
   /// 拖出框 / 焦点移出按钮触发的移出回调（TODO-947 P3）。null（默认）= 不启用移出。
   final ShelfReorderRemove? onRemove;
+
+  /// overlayActionBuilder（「移出系列」按钮）在整格里额外抬高的底部内距（TODO-947-③）。
+  /// 书架书卡底部有 [kShelfTitleFooterHeight] 高的标题 footer，调用方传入其高度把按钮从格底
+  /// 抬到封面区、不压书名；视频/无 footer 页传 0（默认）。按钮放在封面**右下角**，避开右上角
+  /// 类型徽章（原实现放右上角把类型徽章挡住了）与左上角系列名 header。
+  final double overlayCornerBottomInset;
 
   @override
   State<ShelfReorderPage> createState() => _ShelfReorderPageState();
@@ -273,23 +329,62 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     final ShelfReorderItem item = _items[index];
     final ShelfRemoveResult result = await onRemove(item);
     if (!mounted || !result.removed) return;
-    if (result.seriesEmptied && widget.seriesFrame != null) {
-      await _finish();
+    // 带框成员子页（widget.seriesFrame 非空）：本页只展示单一系列的成员。移出的成员离开
+    // 本系列 → 系列被清空时收口落盘 + pop 回上层；否则该成员从子页网格摘除（其余成员
+    // 保留、页面留存）——它已不属本系列，不该继续留在成员视图里。
+    if (widget.seriesFrame != null) {
+      if (result.seriesEmptied) {
+        await _finish();
+      } else {
+        setState(() => _items.removeAt(index));
+      }
       return;
     }
-    setState(() => _items.removeAt(index));
+    // 书架内联排序页（widget.seriesFrame 为 null）：移出系列后书籍**不消失**——就地降级为
+    // 散书（copyAsLoose 清掉 seriesFrame → 无框散书卡；seriesId 归属已在 onRemove 里写库为
+    // null）继续留在编辑排序列表里。原实现 removeAt 让它凭空消失（用户报「点减号删除后书籍
+    // 不回到编辑排序里面」）。
+    setState(() => _items[index] = _items[index].copyAsLoose());
   }
 
   /// 每格右上角焦点驱动移出按钮（TODO-947 P3）。用 [HibikiIconButton]（自动注册焦点目标，
   /// Tab 可达 + Enter 触发），点击/确认走同一 [_onRemoveOutside] 移出流程。
   Widget _buildRemoveOverlay(int index) {
-    return Material(
-      color: Colors.transparent,
-      child: HibikiIconButton(
-        tooltip: t.remove_from_series,
-        icon: Icons.remove_circle_outline,
-        onTap: () => _onRemoveOutside(index),
+    // TODO-947-③：「移出系列」按钮放封面**右下角**——避开右上角书籍类型徽章（原实现把它
+    // 放右上角挡住了类型徽章）与左上角系列名 header。overlayActionBuilder 现在拿到满格空间
+    // （网格用 Positioned.fill），由这里自定位；[overlayCornerBottomInset] 把它从整格底部抬到
+    // 封面区，别压住书卡底部的标题 footer。
+    return Align(
+      alignment: AlignmentDirectional.bottomEnd,
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(
+          end: 4,
+          bottom: widget.overlayCornerBottomInset + 4,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: HibikiIconButton(
+            tooltip: t.remove_from_series,
+            icon: Icons.remove_circle_outline,
+            onTap: () => _onRemoveOutside(index),
+          ),
+        ),
       ),
+    );
+  }
+
+  /// 渲染一个重排条目（TODO-947-② v2）：系列成员（[ShelfReorderItem.seriesFrame] 非空）套
+  /// 同色 [SeriesReorderFrame] 分组框，其余（散书 / 折叠系列卡 / 视频）直接用原卡。框在此处
+  /// 按数据叠加，故「移出系列」清掉 seriesFrame 后同一条目就地变回无框散书卡（不再整条丢弃）。
+  Widget _buildItemCard(ShelfReorderItem item) {
+    final SeriesFrameData? frame = item.seriesFrame;
+    if (frame == null) return item.card;
+    return SeriesReorderFrame(
+      color: frame.color,
+      showHeader: frame.showHeader,
+      seriesName: frame.seriesName,
+      memberCount: frame.memberCount,
+      child: item.card,
     );
   }
 
@@ -307,7 +402,7 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
       feedbackBorderRadius: widget.feedbackBorderRadius,
       keyForIndex: (int i) => ValueKey<String>(
           'reorder_${_items[i].mediaType}_${_items[i].entryKey}'),
-      itemBuilder: (BuildContext context, int i) => _items[i].card,
+      itemBuilder: (BuildContext context, int i) => _buildItemCard(_items[i]),
       onReorder: _onReorder,
       // 仅当调用方提供 onMerge 时才启用拖合并手势；否则两回调为 null，网格走纯重排
       // （与历史逐像素一致，绝不破坏现有行为）。

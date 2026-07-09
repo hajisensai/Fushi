@@ -54,13 +54,49 @@ void main() {
       for (final ({String wm, String vm}) c in layouts) {
         final String css = await _readerCss(
             writingMode: c.wm, viewMode: c.vm, furiganaMode: 'show');
-        expect(css.contains('ruby { display: ruby !important; }'), isTrue,
+        expect(
+            css.contains(
+                'ruby { display: ruby !important; ruby-position: over !important; }'),
+            isTrue,
             reason: '${c.wm}/${c.vm}: 必须强制 ruby{display:ruby!important}，否则书本 '
                 '`ruby{display:inline-block}` 会破坏 ruby 上下文 → 竖排振假名塌进基字列');
         expect(css.contains('ruby > rp { display: none !important; }'), isTrue,
             reason: '${c.wm}/${c.vm}: 必须强制 ruby>rp{display:none!important}，防书本 '
                 '让 rp 括注显示');
       }
+    });
+
+    test('ruby-position: over 在所有布局都强制(!important) — 竖排振假名右侧+高亮对齐', () async {
+      // BUG-666：只拥有 display/writing-mode 不够，还得拥有 ruby-position。真书 legacy
+      // CSS 的 `ruby{ruby-position:under}`(或 -webkit-ruby-position:after) 在 vertical-rl
+      // 下把振假名甩到基字**左侧**(正确日文侧是右侧=over)，且让高亮 lane(竖排画 left
+      // center=基字列)错位到振假名列。over 横排=基字上方、竖排=基字右侧，两写向都对。
+      for (final ({String wm, String vm}) c in layouts) {
+        final String css = await _readerCss(
+            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'show');
+        expect(css.contains('ruby-position: over !important'), isTrue,
+            reason: '${c.wm}/${c.vm}: 必须强制 ruby-position:over!important，否则书本 '
+                '`ruby{ruby-position:under}` 竖排把振假名翻到基字左侧 + 高亮带错位');
+        // over 必须直接挂在 ruby 容器规则上(与 display:ruby 同一块)，不得写成 under。
+        expect(css.contains('ruby-position: under'), isFalse,
+            reason: '${c.wm}/${c.vm}: 阅读器不得发出 ruby-position:under(会把振假名翻错侧)');
+      }
+    });
+
+    test('竖排高亮 lane 画基字侧(left center) 与 ruby-position:over 基字在左自洽', () async {
+      // BUG-666 自洽守卫：_highlightLaneCss 竖排用 background-position:left center +
+      // size 1em 100% 把高亮画在 ruby 盒**左侧**基字列。仅当振假名在右(over)时基字才在
+      // 左、lane 才盖基字。若哪天 ruby-position 回退成 under(振假名翻左)，lane 就会盖到
+      // 振假名列 → 用户报的「蓝带与振假名错位」复活。锁死两者成对出现。
+      final String css = await _readerCss(
+          writingMode: 'vertical-rl',
+          viewMode: 'continuous',
+          furiganaMode: 'show');
+      expect(css.contains('ruby-position: over !important'), isTrue,
+          reason: '竖排必须 ruby-position:over(基字在左)');
+      expect(
+          css.contains('background-position: left center !important'), isTrue,
+          reason: '竖排高亮 lane 须画 left center(基字列)，与 over 的基字在左自洽');
     });
 
     test('振假名显示态(show/partial/toggle) rt 强制 display:ruby-text(!important)',
@@ -89,7 +125,10 @@ void main() {
       expect(css.contains('display: ruby-text !important'), isFalse,
           reason: 'hide 模式不得强制 rt display:ruby-text，否则会把隐藏的振假名显示出来');
       // ruby 容器仍强制(与振假名显隐无关)。
-      expect(css.contains('ruby { display: ruby !important; }'), isTrue,
+      expect(
+          css.contains(
+              'ruby { display: ruby !important; ruby-position: over !important; }'),
+          isTrue,
           reason: 'ruby 容器强制与 furigana 显隐正交，hide 模式也应保留');
     });
   });

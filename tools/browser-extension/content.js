@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v42 loaded (TODO-1335: wait for seek buffer ready before recording clip)');
+console.log('[Hibiki] content script v44 loaded (TODO-1361: wait seek settle + video advancing before Netflix clip record, BUG-685)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v42'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v44'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -263,6 +263,12 @@ window.hibikiEnqueue = function (fields, sentence) {
   const site = hibikiSite();
   const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
   const netflixId = site === 'netflix' ? hibikiNetflixId() : null;
+  // BUG-676（TODO-1361 ③）：入队即抓当前网飞剧名（此刻在正确剧集页），随卡持久化 → 生成时发给
+  // 服务端当 documentTitle（Anki 视频名字段）。YouTube 走服务端解析标题，无需在此抓。
+  const documentTitle =
+      site === 'netflix' && typeof netflixDocumentTitle === 'function'
+          ? netflixDocumentTitle()
+          : '';
   const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',
@@ -270,6 +276,7 @@ window.hibikiEnqueue = function (fields, sentence) {
     site: site,
     youtubeId: youtubeId,
     netflixId: netflixId,
+    documentTitle: documentTitle,
   };
   // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
   const key = hibikiQueueKey(item);
@@ -407,21 +414,25 @@ async function hibikiRunNetflixBatch() {
       let began = false; // beginClip 是否成功（决定 finally 是否需要收口 recorder）
       let cls = 'retry';
       try {
-        await seekTo(Math.max(0, q.startV / 1000));
-        // TODO-1335 ④：seek 落点后**先等缓冲就绪再开录**，且缓冲期保持暂停以不吃掉入队预留
-        // 的 200ms 头部提前量（seek 目标本就是 cueStart-200）。Netflix seek 完成(seeked)时数据
-        // 常还没缓冲到位(readyState=HAVE_CURRENT_DATA=2)，此刻 play+beginClip 会录进 stall 冻结
-        // 帧，而 offscreen 墙钟时长照走 → 录制起点是冻结帧、时长虚长不准（用户报「录制时长不
-        // 精准/没等缓冲完」）。暂停态等 readyState>=HAVE_FUTURE_DATA(3)（seek 目标已缓冲、可从该
-        // 点顺畅前进）再 play + beginClip，录制起点即 cueStart-200 缓冲点、内容立即推进。
+        const targetSec = Math.max(0, q.startV / 1000);
+        await seekTo(targetSec);
+        // TODO-1361 ⑤（BUG-685 seek-in-then-out 跳卡根因）：seek 落点后先确认 seek 真落到 <video>
+        // 元素层再开录。bridge 的 seekDone 只据 Netflix 播放器 API getCurrentTime 判定，MSE 下
+        // <video> 元素可能仍在 seeking / 停在旧位；不确认就 pause/play 会停在旧位、录错内容或空录。
+        // 暂停态等落定不推进 currentTime、不吃入队预留的 200ms 头部提前量（seek 目标本就是 cueStart-200）。
         try { v.pause(); } catch (_) {}
+        await hibikiWaitForSeekSettled(v, targetSec, 4000);
+        // TODO-1335 ④：落点后**先等缓冲就绪再开录**（readyState>=HAVE_FUTURE_DATA=3），暂停态等不推进
+        // currentTime → 不吃头部提前量，也不把 stall 冻结帧录进 clip（offscreen 墙钟时长照走 → 虚长）。
         await hibikiWaitForBuffered(v, 3000);
-        // TODO-1270 Bug C：先确保真的在播（自动播放策略可能拦），但**一旦在播立刻开录**——不要用
-        // 固定 warmup sleep 吃掉入队时预留的 200ms 头部提前量（seek 目标本就是 cueStart-200），
-        // 否则录制起点漂到 cueStart 之后 → 用户报「少了一点开头」。仍暂停 → 跳过本句，不录冻结帧。
-        try { await v.play(); } catch (_) {}
-        for (let i = 0; i < 8 && v.paused; i++) { try { await v.play(); } catch (_) {} await sleep(60); }
-        if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        // TODO-1361 ⑤（BUG-685）：以「currentTime 真正前进」为唯一判据有界等视频开录，期间反复补 play()。
+        // 旧实现只在固定 480ms（8×60ms）后单看一次 v.paused 就判跳——但 v.paused===false 不等于在播
+        // （可能仍 seeking 冻结），且 Netflix seek→恢复播放耗时多变，480ms 常不够 → 本可录的句被误判
+        // 「暂停」立即 seek 走（用户报「跳转过去以后马上跳转走了、根本没制卡」根因）。改为轮询到视频真
+        // 前进才开录；到 4s 上界仍推不动才按失败计（真 DRM/网络/自动播放失败，留队可重试，BUG-675 清点
+        // 不变），不再因 seek→播放时序把本可录的句误跳。
+        const advancing = await hibikiWaitForPlaying(v, 4000);
+        if (!advancing) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
         const beginResp = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
         began = !!(beginResp && beginResp.ok);
         if (!began) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
@@ -431,10 +442,17 @@ async function hibikiRunNetflixBatch() {
         // 作参照 ref），**再**录到字幕变成别句(=本句结束)才停。不能一开始就比 refText——seek 后先采到
         // 的是残留/空字幕，会被误判成「已结束」→ 录一瞬就停（用户报「一下就停了」根因）。
         // hardEnd 只是字幕检测失效（字幕关/相邻同文本）时的安全上限。
+        // TODO-1364：字幕清空/变句 = Netflix 字幕 **display end**，常早于本句 **语音 end**；且入队窗
+        // 的 200ms 尾部预留（q.endV = cueEnd+200）在回放录制侧从未被消费（见 hibikiCurrentCueWindowV
+        // 注释「Netflix 回放时会按字幕变化重新定 end」），录制侧只保头部 200ms、从不补尾 → 检测到句末
+        // 就立即 pause+endClip 会截掉尾段音频（用户报「音频少了后面一段」根因）。修复：检测到句末后不
+        // 立即停，再多录一段尾部余量（与 200ms 头部提前量对称、略放宽以覆盖字幕清空后的残余语音）再停。
         const startSec = Math.max(0, q.startV) / 1000;
         const hardEnd = startSec + 12; // 12s 硬上限
         const deadline = Date.now() + 16000;
+        const kNfClipTailPadSec = 0.35; // 句末尾部余量（秒）：覆盖字幕 display end 之后的残余语音，防截尾
         let ref = '';
+        let endAtSec = 0; // 检测到句末后的目标停录视频时间（= 句末视频时间 + 尾部余量）；0 = 尚未到句末
         while (v.currentTime < hardEnd && Date.now() < deadline) {
           await sleep(120);
           const nowText = hibikiSubtitleTextNow();
@@ -442,7 +460,11 @@ async function hibikiRunNetflixBatch() {
             if (nowText && v.currentTime > startSec + 0.3) ref = nowText; // 抓到本句字幕作参照
             continue;
           }
-          if (nowText !== ref) break; // 字幕变成别句 = 本句结束
+          if (!endAtSec) {
+            if (nowText !== ref) endAtSec = v.currentTime + kNfClipTailPadSec; // 句末：再录一段尾部余量
+            continue;
+          }
+          if (v.currentTime >= endAtSec) break; // 尾部余量录满 → 停录（尾段音频完整）
         }
         try { v.pause(); } catch (_) {}
         const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
@@ -450,7 +472,9 @@ async function hibikiRunNetflixBatch() {
         if (clip && clip.ok && clip.clipBase64) {
           cls = await new Promise((resolve) => {
             chrome.runtime.sendMessage(
-              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs },
+              // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
+              { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
+                documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
                 try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
                 resolve(hibikiClassifyMineResp(resp));
@@ -503,6 +527,45 @@ function hibikiWaitForBuffered(v, maxMs) {
       setTimeout(tick, 80);
     };
     setTimeout(tick, 80);
+  });
+}
+
+// TODO-1361 ⑤（BUG-685）：有界等 <video> 元素层 seek 真正落定——currentTime 逼近目标且不再
+// seeking。bridge 的 seekDone 只据 Netflix 播放器 API getCurrentTime 判定，MSE 下 <video> 元素可能滞后
+// （仍 seeking / 停在旧位）；不等它落定就 pause/play 会停在旧位、录错内容或空录。maxMs 上界兜底：
+// 迟迟不落定也继续（退化到旧行为，绝不无限等卡死批量）。
+function hibikiWaitForSeekSettled(v, targetSec, maxMs) {
+  return new Promise((resolve) => {
+    if (!v) { resolve(); return; }
+    const deadline = Date.now() + (maxMs || 4000);
+    const tick = () => {
+      if (!v || Date.now() >= deadline) { resolve(); return; }
+      // seeking 结束且 currentTime 落在目标 0.5s 内 = <video> 层已真正重定位到本句起点。
+      if (!v.seeking && Math.abs(v.currentTime - targetSec) < 0.5) { resolve(); return; }
+      setTimeout(tick, 80);
+    };
+    tick(); // 已落定则同步返回，正常句零额外延迟
+  });
+}
+
+// TODO-1361 ⑤（BUG-685）：有界等 video 真正在播放并前进（currentTime 相对开录基线单调增长），
+// 期间反复补发 play() 抵抗自动播放拦截 / Netflix 播放器状态机暂态回暂停。返回 true=已前进、可录；
+// false=到 maxMs 上界仍推不动（真失败，交调用方按失败计、留队重试）。判据用「currentTime 是否前进」
+// 而非「v.paused」——v.paused===false 不等于在播（seek 后可能仍 seeking 冻结），这是旧 480ms 单快照
+// gate 把本可录的句误跳的根因。
+function hibikiWaitForPlaying(v, maxMs) {
+  return new Promise((resolve) => {
+    if (!v) { resolve(false); return; }
+    const deadline = Date.now() + (maxMs || 4000);
+    const base = v.currentTime; // 开录基线（此刻暂停在 seek 落点）
+    const tick = async () => {
+      if (!v) { resolve(false); return; }
+      if (v.paused) { try { await v.play(); } catch (_) {} }
+      if (!v.paused && v.currentTime > base + 0.02) { resolve(true); return; } // 真前进了 → 可录
+      if (Date.now() >= deadline) { resolve(false); return; }
+      setTimeout(tick, 40);
+    };
+    tick();
   });
 }
 
@@ -567,7 +630,21 @@ async function hibikiMaybeResumeNetflixBatch(fromLoad) {
       try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + st.episodes[next] }); } catch (_) {}
     } else {
       try { chrome.runtime.sendMessage({ type: 'nfFinish', originalUrl: st.originalUrl }); } catch (_) {}
-      window.hibikiToast('✓ 全部剧集生成完成');
+      // BUG-675（TODO-1361 ②）：录制失败的卡片留在队列（未丢失），但旧实现一律报「✓ 全部完成」
+      // 掩盖了被跳过的卡，用户以为都生成了。批量结束时清点本次剧集仍残留的网飞待生成项，>0 就明确
+      // 告知「N 张录制失败未生成，可再点生成重试」，把静默跳过变成可见可重试。
+      let hibikiRemainingNf = 0;
+      try {
+        const hibikiGot = await chrome.storage.local.get(['hibikiQueue']);
+        const hibikiQ = Array.isArray(hibikiGot.hibikiQueue) ? hibikiGot.hibikiQueue : [];
+        hibikiRemainingNf = hibikiQ.filter(
+            (it) => it && it.site === 'netflix' && st.episodes.indexOf(it.netflixId) >= 0).length;
+      } catch (_) {}
+      if (hibikiRemainingNf > 0) {
+        window.hibikiToast('✓ 生成完成：' + hibikiRemainingNf + ' 张录制失败未生成，可再点生成重试');
+      } else {
+        window.hibikiToast('✓ 全部剧集生成完成');
+      }
     }
   } finally {
     // V16 遗留缺口：跳集前停录（第 449 行）在正常路径；若 hibikiRunNetflixBatch 抛错
@@ -595,6 +672,47 @@ try {
   });
 } catch (_) {}
 try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } catch (_) {}
+
+// ── BUG-674（TODO-1361 ①）：隐藏网飞剧末「下一集」按钮 ──
+// 纯视觉：只注入 CSS 隐藏 Netflix 自己的 seamless「下一集」按钮 + 剧末续播卡，绝不碰 DRM/seek/自动
+// 切集计时器（不改变播放行为）。由 options 开关 netflixHideNextEpisode 门控——缺省=隐藏（用户诉求），
+// 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建按钮也照样命中。
+const HIBIKI_NF_HIDE_NEXT_ID = 'hibiki-nf-hide-next';
+function hibikiNetflixNextEpisodeSelectors() {
+  return [
+    '[data-uia="next-episode-seamless-button"]',
+    '[data-uia="next-episode-seamless-button-draining"]',
+    '[data-uia="watch-video-post-play-back-to-browse"]',
+    '.watch-video--evidence-overlay-container',
+    '.nfp.PostPlay',
+  ];
+}
+function hibikiApplyNetflixNextEpisodeHiding(hide) {
+  if (hibikiSite() !== 'netflix') return;
+  const existing = document.getElementById(HIBIKI_NF_HIDE_NEXT_ID);
+  if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
+  if (existing) return;
+  const style = document.createElement('style');
+  style.id = HIBIKI_NF_HIDE_NEXT_ID;
+  style.textContent =
+      hibikiNetflixNextEpisodeSelectors().join(',') + '{display:none!important}';
+  try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
+}
+function hibikiReadNextEpisodeHide() {
+  try {
+    chrome.storage.local.get(['netflixHideNextEpisode'], (r) => {
+      hibikiApplyNetflixNextEpisodeHiding(!(r && r.netflixHideNextEpisode === false));
+    });
+  } catch (_) { hibikiApplyNetflixNextEpisodeHiding(true); }
+}
+try {
+  hibikiReadNextEpisodeHide();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.netflixHideNextEpisode) {
+      hibikiApplyNetflixNextEpisodeHiding(changes.netflixHideNextEpisode.newValue !== false);
+    }
+  });
+} catch (_) {}
 
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见

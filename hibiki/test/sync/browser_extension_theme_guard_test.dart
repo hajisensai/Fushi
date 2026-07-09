@@ -1,4 +1,4 @@
-// BUG-666：浏览器扩展查词弹窗「主题分裂」回归守卫。
+// BUG-686：浏览器扩展查词弹窗「主题分裂」回归守卫。
 //
 // 根因：扩展弹窗容器 #entries-container 的正文色/底色由 content.css 的
 // `color: var(--text-color)` / `background-color: var(--background-color)` 决定，而
@@ -16,7 +16,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('BUG-666 browser-extension popup theme single-source guard', () {
+  group('BUG-686 browser-extension popup theme single-source guard', () {
     test('browserExtensionThemeColors 下发 content.css 真正消费的核心色变量', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();

@@ -278,7 +278,8 @@ RatchetedOverlayBox ratchetOverlayOrigin({
   );
 }
 
-/// TODO-1345（BUG-583 深层根因续）—— 覆盖窗「级联余量地板」纯函数（CSS px·不含 dpr）。
+/// TODO-1345（BUG-583 深层根因续 · TODO-1231/BUG-670 深层级联根治）—— 覆盖窗「级联
+/// 余量地板」纯函数（CSS px·不含 dpr）。
 ///
 /// 返回 union bbox 最小角（origin）应预留到的**内侧余量地板**（`left`/`top` 均 <= 0）。
 /// [GlobalLookupController] 在**根卡首次 reveal**把它经 renderStack payload 推给 host；
@@ -289,43 +290,51 @@ RatchetedOverlayBox ratchetOverlayOrigin({
 /// 子卡出现同帧（那 1 帧父卡跳动仍被用户看见）；本地板把它从根上**消除**，把前 4 轮对
 /// 向右/下级联达成的「origin 恒定、父卡零位移」扩展到向左/上。
 ///
-/// 余量只朝**屏幕内侧**留（向左 / 向上），且被**双重夹紧**——绝不把窗口顶出屏幕左/上边
-/// （否则 C++ `RevealStack` 的工作区 clamp 会把窗口原点移回内侧、而 `commitLayerShift`
-/// 用的却是未 clamp 值 → 反而重引父卡位移）：
-///   headroom = min(card, 光标到该侧边距离, 工作区维度 - card)，再取负。
-/// 光标靠左/上边时该侧距离趋 0 → 余量趋 0（那侧本就不会向左/上级联·退化为修前几何·
-/// Never break userspace）。向右/下级联恒不需要向左/上余量·地板对其为 no-op（保持 0）。
+/// TODO-1231（BUG-670）深层级联根治：预留幅度改为**光标到工作区该侧边缘的整段距离**
+/// （reserve to the work-area edge），不再是 TODO-1345 的「一张卡」。因为
+/// [computeFrameRect] 把**任意层级**的级联子卡（子 / 孙 / 曾孙…）都夹在工作区内（中心
+/// clamp 进 `[w/2(+边距), screenW - w/2(-边距)]`），子卡最外边最远只能触到工作区该侧边。
+/// 预留「一张卡」时，深层级联（孙卡·或高过一张卡的高卡）越过它 → origin 在该子卡
+/// content-ready 那刻外移一次 → 跨 DWM/WebView2 补偿慢 ~1 帧 → 父卡残留 1 帧位移
+/// （BUG-583 前几轮报告自陈的「深层级联罕见 1 帧残留」= 用户第六轮复诉）。预留**到边**
+/// → origin 从首帧就覆盖所有层级的级联极值 → 任何深度的子卡落地都不再外移 origin →
+/// 父卡**任意层级都零位移**。
 ///
-/// 纯函数（无 IO / 无平台 / 无状态 / 无 dpr），便于对「余量朝内侧且夹在屏内」单测锁定。
+/// 为何预留到边**安全**（不触发 C++ `RevealStack` 工作区 clamp 的失配）：地板把窗口原点
+/// 恰好定在工作区该侧边（on-screen origin == `rcWork.left`/`top`），而这正是 C++ 左/上
+/// clamp（`if (x < rcWork.left) x = rcWork.left`）的**目标值**——即便远端内容让窗口比屏
+/// 还宽、C++ 先右/下再左/上双向 clamp，最终原点仍落在工作区边 == 本就意图值，故 origin
+/// 与 `commitLayerShift` 用的 bbox 值一致，**绝无失配位移**。（反而是 TODO-1345 的
+/// 「一张卡」地板在窗口过宽的退化场景才会失配：意图原点落在边内、C++ 却 clamp 到边 →
+/// 差值即位移。）光标贴左/上边时该侧距离趋 0 → 余量趋 0（那侧本就不向左/上级联·退化为
+/// 修前几何·Never break userspace）。
+///
+/// 纯函数（无 IO / 无平台 / 无状态 / 无 dpr），便于对「预留到边覆盖任意层级 + 夹在屏内」
+/// 单测锁定。
 ({double left, double top}) computeCascadeHeadroomSeed({
   required double cursorWorkX,
   required double cursorWorkY,
   required double screenWorkW,
   required double screenWorkH,
-  required double cardW,
-  required double cardH,
 }) {
   return (
-    left: -_cascadeHeadroom(cursorWorkX, screenWorkW, cardW),
-    top: -_cascadeHeadroom(cursorWorkY, screenWorkH, cardH),
+    left: -_cascadeHeadroom(cursorWorkX, screenWorkW),
+    top: -_cascadeHeadroom(cursorWorkY, screenWorkH),
   );
 }
 
-/// 单轴级联余量幅度（>= 0·CSS px）。见 [computeCascadeHeadroomSeed] 的双重夹紧规则。
-double _cascadeHeadroom(double cursorWork, double screenWork, double card) {
-  if (cursorWork <= 0 || screenWork <= 0 || card <= 0) {
+/// 单轴级联余量幅度（>= 0·CSS px）= 光标到工作区该侧边缘的整段距离（reserve to edge）。
+/// 见 [computeCascadeHeadroomSeed] 的「预留到边即覆盖任意层级级联 + 恰落在 C++ clamp
+/// 目标值故绝无失配」推导。TODO-1231（BUG-670）：由 TODO-1345 的「一张卡」改为整段。
+double _cascadeHeadroom(double cursorWork, double screenWork) {
+  if (cursorWork <= 0 || screenWork <= 0) {
     return 0;
   }
-  // 想留满一张卡的余量（单层向左/上级联子卡最远可达 ~1 张卡）。
-  double headroom = card;
-  // 夹紧①：不超过光标到该侧边的距离（否则窗口顶出屏幕该侧边）。
-  if (cursorWork < headroom) {
-    headroom = cursorWork;
-  }
-  // 夹紧②：窗口总跨度（card + headroom）不超过工作区维度（小屏兜底·同样防顶出对侧边）。
-  final double onScreenRoom = screenWork - card;
-  if (onScreenRoom < headroom) {
-    headroom = onScreenRoom;
+  // 预留到工作区该侧边：级联子卡（任意层级）最远只到该侧边，预留到边即全覆盖。
+  double headroom = cursorWork;
+  // 兜底夹紧：正常 cursorWork <= screenWork 恒成立（光标在工作区内）；防脏数据越界。
+  if (headroom > screenWork) {
+    headroom = screenWork;
   }
   return headroom > 0 ? headroom : 0;
 }

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -442,11 +443,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
         _lastLayoutHeight = container.height;
 
-        // 按锚点 / \pos 分组：副层强制单组（顶部）；主层同位置的 cue 归一堆叠、不同位置的
-        // cue 各自成组独立定位（TODO-1341）。
-        final List<List<AudioCue>> groups = isSecondary
-            ? <List<AudioCue>>[cues]
-            : _groupMainCuesByPosition(cues);
+        // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
+        // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
+        // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
+        // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
+        final List<List<AudioCue>> groups = _groupMainCuesByPosition(cues);
 
         final List<Widget> positioned = <Widget>[
           for (final List<AudioCue> group in groups)
@@ -502,7 +503,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       return 'p:${pf.xFraction.toStringAsFixed(4)},'
           '${pf.yFraction.toStringAsFixed(4)}:$av:$ah';
     }
-    return 'a:$av:$ah';
+    // MarginV（同锚点内不同竖直边距）纳入键：消除旧「同锚点不同 MarginV 被裹挟进一个
+    // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
+    // MarginV 仅 ASS 非空（srt/vtt 的 cueStyle 为 null），故 srt/vtt 分组行为像素级不变。
+    final int mv = (markup?.cueStyle?.marginV ?? -1).round();
+    return 'a:$av:$ah:$mv';
   }
 
   /// TODO-1341：把一个位置分组（同锚点的 cue 列表）渲染成**定位好**的字幕盒——竖排堆叠成
@@ -530,11 +535,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     content = _wrapInteractive(context, content,
         isSecondary: isSecondary, blurred: blurred);
 
-    // 定位代表 markup：副层强制顶部、不吃自带 pos；主层取本组首条（同组锚点 / pos 等价）。
-    final SubtitleMarkup? posMarkup = isSecondary ? null : cues.first.markup;
+    // 定位代表 markup（同组 \pos / \an / MarginV 等价，取首条）。副字幕若带**显式**位置
+    // （\pos 或 \an，即 ASS 副字幕）遵其自带位置（各遵自带位置，消除「副字幕总被拽到顶部」的
+    // 降级）；纯 SRT 副字幕（anchor / pos 皆空、无位置信息）才回退强制置顶（翻译参考，避让主
+    // 字幕底部，与历史一致）。
+    final SubtitleMarkup? ownMarkup = cues.first.markup;
+    // 副字幕默认置顶（翻译参考，避让主字幕底部对白）；但若它自带**非底部**位置——\pos，或
+    // \an 顶部 / 中部（作者本就把它放在别处，如顶部歌词 / 招牌 / 中部注释）——则遵其自带位置，
+    // 不再硬拽到顶（消除「副字幕总被降级到顶部」）。自带底部 / 无位置的副字幕（纯 SRT、\an2
+    // 对白）仍置顶，避免与主字幕底部对白撞在同一处（asbplayer 式双语上下分栏）。
+    final SubtitlePos? ownPos = ownMarkup?.posFraction;
+    final SubtitleAnchor? ownAnchor = ownMarkup?.anchor;
+    final bool ownNonBottom = ownPos != null ||
+        (ownAnchor != null && ownAnchor.vertical != SubtitleVAlign.bottom);
+    final bool forceTop = isSecondary && !ownNonBottom;
+    final SubtitleMarkup? posMarkup = forceTop ? null : ownMarkup;
     final Offset? posScreen = _posScreen(posMarkup, container);
     if (posScreen != null) {
-      // pos 绝对定位（仅主层）：把字幕盒的 an 锚点精确落到映射坐标。
+      // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标（\pos 覆盖 MarginV）。
       final SubtitleAnchor anchor = posMarkup!.anchor ??
           const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
       return Stack(
@@ -553,13 +571,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         ],
       );
     }
-    // 副层强制顶部锚点（画面上方）；主层无 pos 按 markup 锚点（null → 历史底居中）。
-    final SubtitleAnchor? anchor = isSecondary
+    // 无 \pos：纯 SRT 副字幕强制顶部锚点；否则按 markup 锚点（null → 历史底居中）。
+    final SubtitleAnchor? anchor = forceTop
         ? const SubtitleAnchor(SubtitleVAlign.top, SubtitleHAlign.center)
         : posMarkup?.anchor;
+    // ASS MarginV（同锚点内竖直边距）缩放到显示尺寸，作为该组距锚点边的偏移，使作者用
+    // MarginV 放在不同高度的同锚点 cue（标题 + 多行歌词）各就其位（TODO-1341 后续）。
+    final double? scaledMarginV = forceTop ? null : _scaledMarginV(posMarkup);
     return Align(
       alignment: _alignFor(anchor),
-      child: _anchoredPadded(anchor, content),
+      child: _anchoredPadded(anchor, content, scaledMarginV),
     );
   }
 
@@ -922,6 +943,18 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     return px.clamp(8.0, maxPx > 8.0 ? maxPx : 8.0).toDouble();
   }
 
+  /// ASS `MarginV`（竖直边距，PlayRes 像素）按 显示区高 / PlayResY 缩放到显示尺寸（与字号 /
+  /// 阴影同源，TODO-1246），供 [_paddingFor] 把同锚点不同 MarginV 的 cue（标题 + 多行歌词）
+  /// 各放到 authored 高度。无 MarginV / 无法缩放（<=0 / 缺 PlayResY）返回 null（回退历史
+  /// bottomPadding 基线）。夹到 [0, 显示区高]，防 PlayResY 异常时偏移撑爆。MarginV 仅 ASS
+  /// 非空（srt/vtt cueStyle 为 null），故 srt/vtt 恒 null、几何像素级不变。
+  double? _scaledMarginV(SubtitleMarkup? markup) {
+    final double? mv = markup?.cueStyle?.marginV;
+    if (mv == null || mv <= 0) return null;
+    final double h = _lastLayoutHeight ?? 720;
+    return (mv * _assFontScale(markup)).clamp(0.0, h).toDouble();
+  }
+
   /// 把 ASS 阴影（Shadow 深度 + BackColour 阴影色，行内 span 覆盖 cueStyle 默认）解析成
   /// 向右下偏移的硬投影 [Shadow]（TODO-1246）。深度按 [scale] 与字号同步缩放。深度<=0 /
   /// 无阴影返回 null（不加 shadows，历史像素级一致）。阴影色缺失时按 ASS 默认取黑，而非
@@ -986,17 +1019,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 在控制条可见时真正被抬升盖过被抬高的移动进度条。用户手选高位（> reserve）时 max 取其
   /// 值、不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回
   /// 原值。避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
-  EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible) {
+  EdgeInsets _paddingFor(
+      SubtitleAnchor? a, bool controlsVisible, double? scaledMarginV) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
+    // 底部锚点基线：用户 bottomPadding 与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
+    // 用户基线，保 TODO-129/161/238 控制条避让不回归；作者用大 MarginV 要求更高时才抬）。
+    final double bottomBase = scaledMarginV == null
+        ? widget.bottomPadding
+        : math.max(widget.bottomPadding, scaledMarginV);
     return switch (v) {
       SubtitleVAlign.bottom => EdgeInsets.only(
           bottom: controlsVisible
-              ? (widget.bottomPadding > widget.controlsBottomReserve
-                  ? widget.bottomPadding
-                  : widget.controlsBottomReserve)
-              : widget.bottomPadding,
+              ? math.max(bottomBase, widget.controlsBottomReserve)
+              : bottomBase,
         ),
-      SubtitleVAlign.top => EdgeInsets.only(top: widget.bottomPadding),
+      // 顶部锚点：有 ASS MarginV 时用缩放 MarginV 作顶部偏移（标题 / 多行歌词各就其位），
+      // 否则回退用户基线 bottomPadding（历史行为，像素级不变）。
+      SubtitleVAlign.top =>
+        EdgeInsets.only(top: scaledMarginV ?? widget.bottomPadding),
       SubtitleVAlign.middle => EdgeInsets.zero,
     };
   }
@@ -1008,10 +1048,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 底缘骑到控制条顶、躲开进度条）、隐藏 → 落回 bottomPadding 基线（TODO-129/161，几何
   /// 见 [_paddingFor]）。取下限而非加法，故基线 < 控制条高时不会把字幕顶飞、手选高位也
   /// 不被改写（同一字段无特例分支）。
-  Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child) {
+  Widget _anchoredPadded(
+      SubtitleAnchor? anchor, Widget child, double? scaledMarginV) {
     final ValueListenable<bool>? visible = widget.controlsVisible;
     if (visible == null) {
-      return Padding(padding: _paddingFor(anchor, false), child: child);
+      return Padding(
+          padding: _paddingFor(anchor, false, scaledMarginV), child: child);
     }
     return ValueListenableBuilder<bool>(
       valueListenable: visible,
@@ -1020,7 +1062,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
           // 与 media_kit 控制条淡入淡出同量级（~200ms），字幕上顶/落回跟随控制条显隐。
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          padding: _paddingFor(anchor, controlsVisible),
+          padding: _paddingFor(anchor, controlsVisible, scaledMarginV),
           child: padded,
         );
       },
