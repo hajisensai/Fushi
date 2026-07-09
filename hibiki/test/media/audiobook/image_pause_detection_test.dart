@@ -127,8 +127,11 @@ void main() {
     final int rbEnd = src.indexOf('};', rbIdx);
     expect(rbEnd, greaterThan(rbIdx));
     final String rbFn = src.substring(rbIdx, rbEnd);
-    expect(rbFn, contains("querySelectorAll('img.blurred, svg.blurred')"),
-        reason: '仅扫描带 blurred 类的插图；未开图片模糊时空集合 → 天然 no-op');
+    // TODO-1367：改为扫描区间内全部 img/svg（含尚未 load、此刻还没 blurred 类的懒图），
+    // 对每张登记 reveal key + 去 blurred；未开图片模糊由前置 __hoshiImageRevealKey 守卫早退
+    // 保证 no-op。
+    expect(rbFn, contains("querySelectorAll('img, svg')"),
+        reason: 'TODO-1367：须扫描区间全部 img/svg（含未 load 懒图）而非仅 img.blurred');
     expect(rbFn, contains("classList.remove('blurred')"),
         reason: '跨过（读到）的图须去掉 blurred 类揭开防剧透遮罩');
     expect(rbFn, contains('compareDocumentPosition'),
