@@ -192,4 +192,57 @@ void main() {
           reason: '关 Impeller 开关须按 native channel 支持度门控（仅 Android 接线）');
     });
   });
+
+  group('TODO-1232 冗余诊断降噪门控', () {
+    test('暴露 diagVerbose 开关（默认 false，正常播放只留关键低频诊断）', () {
+      expect(controllerSrc.contains('bool diagVerbose = false'), isTrue,
+          reason: '须有 diagVerbose 开关把 verbose 高频诊断与关键低频诊断分层');
+      expect(
+          pageSrc.contains(
+              'controller.diagVerbose = DebugLogService.instance.enabled'),
+          isTrue,
+          reason: '页面须按用户「调试日志」开关设置 verbose 诊断，正常不刷屏');
+    });
+
+    test('verbose Player 构造 + log verbose 级接收都门控在 diagVerbose', () {
+      final int vAt =
+          controllerSrc.indexOf('PlayerConfiguration(logLevel: MPVLogLevel.v)');
+      expect(vAt, greaterThan(0));
+      final String before = controllerSrc.substring(
+          (vAt - 140).clamp(0, controllerSrc.length), vAt);
+      expect(before.contains('diagVerbose'), isTrue,
+          reason: 'verbose 客户端日志级 Player 只在 diagVerbose 开时构造（正常不提级）');
+      expect(controllerSrc.contains("(diagVerbose && low == 'v')"), isTrue,
+          reason: 'libmpv verbose(v) 级 log 行只在 diagVerbose 开时收进诊断');
+    });
+
+    test('高频流诊断（videoParams / buffering / msg-level 提级）都在 diagVerbose 块内', () {
+      final int gate = controllerSrc.indexOf('if (diagVerbose) {');
+      expect(gate, greaterThan(0), reason: '高频诊断须有 diagVerbose 门控块');
+      expect(controllerSrc.indexOf("_diag('videoParams:"), greaterThan(gate),
+          reason: 'videoParams 每次变化诊断须在 diagVerbose 门控内');
+      expect(controllerSrc.indexOf("_diag('buffering="), greaterThan(gate),
+          reason: 'buffering 每次翻转诊断须在 diagVerbose 门控内');
+      // 格式化后真码里 setProperty( 与 'msg-level' 分行，且注释里也提到
+      // setProperty('msg-level',…)，故锚定只出现在真码里的 msg-level 取值串。
+      expect(
+          controllerSrc.indexOf("'vd=v,vo=v,ad=v,ffmpeg=v'"), greaterThan(gate),
+          reason: 'msg-level verbose 提级须在 diagVerbose 门控内（否则引出 verbose 洪水）');
+    });
+
+    test('关键低频诊断保持无条件（不被降噪误删）', () {
+      // 这些是黑屏/流问题的关键判据，降噪后必须仍在正常路径（onDiagLog 非空即发）：
+      expect(controllerSrc.contains('load start:'), isTrue);
+      expect(controllerSrc.contains('player.stream.error.listen'), isTrue,
+          reason: 'libmpv 真 error 流永远保留（最强根因信号）');
+      expect(controllerSrc.contains('open() returned; textureId='), isTrue);
+      expect(controllerSrc.contains('_logMpvRenderProperties'), isTrue,
+          reason: '渲染后端 hwdec/vo/gpu 回读永远保留');
+      expect(controllerSrc.contains('render state after'), isTrue,
+          reason: '纹理握手结果（TODO-1110）永远保留');
+      expect(controllerSrc.contains('first frame decoded'), isTrue);
+      expect(controllerSrc.contains('suspected black flicker'), isTrue,
+          reason: '黑闪判据（TODO-1119，一生命周期一次）永远保留');
+    });
+  });
 }

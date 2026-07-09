@@ -408,6 +408,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 解码未出帧 / 轨道问题）。
   void Function(String message)? onDiagLog;
 
+  /// TODO-1232 冗余诊断降噪开关：默认 false。为 false 时即便 [onDiagLog] 已接（页面
+  /// 常驻接它以便随时能定位黑屏），也只发**关键低频**诊断（load 事实 / libmpv 真
+  /// error / open+textureId / 渲染后端 hwdec·vo·gpu 回读 / 纹理握手 / 首帧出帧 / 黑闪）；
+  /// 正常播放不再把 libmpv verbose 日志、videoParams、buffering 每次变化刷进错误日志。
+  /// 为 true 时才用 verbose 客户端日志级构造 Player 并挂 videoParams / buffering 高频流
+  /// （深挖黑屏/流问题时用）。页面按用户「调试日志」开关（[DebugLogService.enabled]）设置。
+  bool diagVerbose = false;
+
   /// TODO-1119：疑似「Windows 高显卡占用黑屏闪烁」运行时回调。页面（仅在 Windows）在
   /// [load] 前挂它；null 时**完全不采样**（零开销、零行为变化）。判据在
   /// [_blackFlickerDetector] 里，持续采样 libmpv 迟帧/丢帧计数器（经 getProperty，
@@ -1221,7 +1229,7 @@ class VideoPlayerController extends ChangeNotifier
     // `PlayerConfiguration(logLevel:)` 不碰 `pitch`（默认仍 false），上面的 TODO-116
     // 视频调速不闪退不变量不受影响（守卫 video_speed_pitch_guard_test）。
     final Player player = _player ??
-        (onDiagLog != null
+        (onDiagLog != null && diagVerbose
             ? Player(
                 configuration:
                     const PlayerConfiguration(logLevel: MPVLogLevel.v),
@@ -1266,7 +1274,7 @@ class VideoPlayerController extends ChangeNotifier
           if (low.contains('error') ||
               low.contains('warn') ||
               low.contains('fatal') ||
-              low == 'v') {
+              (diagVerbose && low == 'v')) {
             final String prefix = (logEntry.prefix ?? '').toString();
             final String text = (logEntry.text ?? '').toString().trim();
             _diag('libmpv log[$level][$prefix] $text');
@@ -1276,35 +1284,42 @@ class VideoPlayerController extends ChangeNotifier
           _diag('libmpv log(raw): $logEntry');
         }
       });
-      _diagVideoParamsSub = player.stream.videoParams.listen((dynamic vp) {
-        // 视频参数（宽/高/像素格式/旋转等）首次解析就绪——解码出帧的强信号。
-        try {
-          final Object w = vp.w ?? vp.dw ?? '?';
-          final Object h = vp.h ?? vp.dh ?? '?';
-          _diag('videoParams: w=$w h=$h '
-              'pixelformat=${vp.pixelformat ?? '?'} '
-              'hwPixelformat=${vp.hwPixelformat ?? '?'} '
-              'colormatrix=${vp.colormatrix ?? '?'} '
-              'colorlevels=${vp.colorlevels ?? '?'} '
-              'primaries=${vp.primaries ?? '?'} '
-              'rotate=${vp.rotate ?? '?'}');
-        } catch (_) {
-          _diag('videoParams(raw): $vp');
-        }
-      });
-      _diagBufferingSub = player.stream.buffering.listen((bool b) {
-        _diag('buffering=$b');
-      });
-      // 把 libmpv 解码/输出/硬解模块的日志级别提到 verbose，让上面的 `log` 流真的
-      // 携带「HEVC 走 mediacodec / 软解回退」「vo/gpu 创建失败」「GL error」这类关键行
-      // （裸 Player() 默认 error 级，这些 info/v 级行收不到）。只提 vd/vo/ad/hwdec 四个
-      // 模块，避免 all=v 刷屏。runtime 可设属性，仅 libmpv 后端生效，best-effort。
-      final dynamic diagNative = player.platform;
-      if (diagNative != null) {
-        try {
-          await diagNative.setProperty('msg-level', 'vd=v,vo=v,ad=v,ffmpeg=v');
-        } catch (_) {
-          // 非 libmpv / 不支持：诊断日志退回 error 级，不致命。
+      // TODO-1232：高频/刷屏诊断（videoParams 每次变化 / buffering 每次翻转 / 把 libmpv
+      // 模块日志级提到 verbose 引出的 vo/vd verbose 洪水）只在 verbose 诊断开关开时才挂；
+      // 正常播放不发这些——首帧出帧由 [_maybeLogFirstFrame] 单独低频记，真 error 由上面的
+      // stream.error 捕获，关键渲染后端由 [_logMpvRenderProperties] 一次性回读。
+      if (diagVerbose) {
+        _diagVideoParamsSub = player.stream.videoParams.listen((dynamic vp) {
+          // 视频参数（宽/高/像素格式/旋转等）首次解析就绪——解码出帧的强信号。
+          try {
+            final Object w = vp.w ?? vp.dw ?? '?';
+            final Object h = vp.h ?? vp.dh ?? '?';
+            _diag('videoParams: w=$w h=$h '
+                'pixelformat=${vp.pixelformat ?? '?'} '
+                'hwPixelformat=${vp.hwPixelformat ?? '?'} '
+                'colormatrix=${vp.colormatrix ?? '?'} '
+                'colorlevels=${vp.colorlevels ?? '?'} '
+                'primaries=${vp.primaries ?? '?'} '
+                'rotate=${vp.rotate ?? '?'}');
+          } catch (_) {
+            _diag('videoParams(raw): $vp');
+          }
+        });
+        _diagBufferingSub = player.stream.buffering.listen((bool b) {
+          _diag('buffering=$b');
+        });
+        // 把 libmpv 解码/输出/硬解模块的日志级别提到 verbose，让上面的 `log` 流真的
+        // 携带「HEVC 走 mediacodec / 软解回退」「vo/gpu 创建失败」「GL error」这类关键行
+        // （裸 Player() 默认 error 级，这些 info/v 级行收不到）。只提 vd/vo/ad/hwdec 四个
+        // 模块，避免 all=v 刷屏。runtime 可设属性，仅 libmpv 后端生效，best-effort。
+        final dynamic diagNative = player.platform;
+        if (diagNative != null) {
+          try {
+            await diagNative.setProperty(
+                'msg-level', 'vd=v,vo=v,ad=v,ffmpeg=v');
+          } catch (_) {
+            // 非 libmpv / 不支持：诊断日志退回 error 级，不致命。
+          }
         }
       }
     }
