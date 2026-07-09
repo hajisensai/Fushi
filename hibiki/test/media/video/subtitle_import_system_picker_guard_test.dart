@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-669 / board 1360 守卫：安卓「导入选字幕文件」回退到系统文件选择器。
+/// BUG-677 / board 1360 守卫：安卓「导入选字幕文件」回退到系统文件选择器。
 ///
 /// board 1112 为「安卓单文件视频导入不复制到 cache（避免 videoPath 悬空）」引入了
 /// 真实路径文件浏览器 `pickRealFilePath`，并顺手把字幕/对齐选择器也改走它。字幕/对齐
@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2) 视频本体 `_pickVideo` **仍**走 `pickRealFilePath`（它以绝对路径引用、不复制，SAF
 ///    cache 路径会悬空——这是 board 1112/TODO-949 的真实修复，不能连同字幕一起回退）。
 void main() {
-  group('BUG-669 subtitle import reverts to system file picker', () {
+  group('BUG-677 subtitle import reverts to system file picker', () {
     test('video _pickSubtitle uses pickSystemFilePath, not pickRealFilePath',
         () {
       final String body = _methodBody(

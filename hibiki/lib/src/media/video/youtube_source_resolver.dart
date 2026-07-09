@@ -246,7 +246,7 @@ final List<yt.YoutubeApiClient> kYoutubeManifestClientFallback =
   yt.YoutubeApiClient.tv,
 ];
 
-/// TODO-1365（BUG-669）：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造 +
+/// TODO-1365（BUG-678）：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造 +
 /// 校验该流所用的 UA 完全一致**。[yt.YoutubeApiClient.androidVr] 的 innertube context 不带
 /// `userAgent`，故 youtube_explode 全程用 [yt.YoutubeHttpClient.defaultHeaders] 的**完整
 /// Chrome UA** 发 innertube player 请求铸出 googlevideo 直链、并对首流做 HEAD 403 探测

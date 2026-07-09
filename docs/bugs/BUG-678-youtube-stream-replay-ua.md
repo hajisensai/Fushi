@@ -1,4 +1,4 @@
-## BUG-669 · YouTube 分离流回放 UA 残缺致 googlevideo tarpit 超时打不开
+## BUG-678 · YouTube 分离流回放 UA 残缺致 googlevideo tarpit 超时打不开
 - **报告**：2026-07-09（用户：谷歌视频打不开 + VIDEO-DIAG 日志）
 - **真实性**：✅ 真 bug（代码级根因）。根因 `hibiki/lib/src/media/video/youtube_source_resolver.dart:372`（`httpHeaders: const {'User-Agent': 'Mozilla/5.0'}`）。
   - 现象：libmpv 打开 YouTube ANDROID_VR 分离流（video itag137 + audio-add itag251）两条 `videoplayback` 请求全 `[curl] error: Timeout was reached` 挂死超时（非 403）。

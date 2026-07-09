@@ -4,15 +4,15 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
-/// TODO-1365（BUG-669）守卫：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造
+/// TODO-1365（BUG-678）守卫：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造
 /// 该流所用的 UA 一致**，且不得回退到残缺的裸 `Mozilla/5.0`。
 ///
-/// 根因（见 BUG-669）：`androidVr` client 的 innertube context 不带 userAgent，youtube_explode
+/// 根因（见 BUG-678）：`androidVr` client 的 innertube context 不带 userAgent，youtube_explode
 /// 全程用 [yt.YoutubeHttpClient.defaultHeaders] 的完整 Chrome UA 铸流 + HEAD 403 探测；旧代码用
 /// 裸 `Mozilla/5.0` 回放 → googlevideo svpuc 对残缺 UA tarpit → libmpv/ffmpeg curl 超时打不开。
 /// 本测锁死「回放 UA＝铸流 UA」这一不变量（三处 googlevideo 回放点一致），live 播放需真机验。
 void main() {
-  group('YouTube 回放 UA 与 youtube_explode 铸流 UA 一致（BUG-669）', () {
+  group('YouTube 回放 UA 与 youtube_explode 铸流 UA 一致（BUG-678）', () {
     test('kYoutubeStreamReplayUserAgent 等于 youtube_explode 默认 UA', () {
       final String? mintingUa =
           yt.YoutubeHttpClient.defaultHeaders['user-agent'];
@@ -24,7 +24,7 @@ void main() {
 
     test('回放 UA 是完整浏览器 UA，绝非残缺裸 Mozilla/5.0', () {
       expect(kYoutubeStreamReplayUserAgent, isNot('Mozilla/5.0'),
-          reason: '裸 Mozilla/5.0 是 BUG-669 的 tarpit 根因，禁止回退');
+          reason: '裸 Mozilla/5.0 是 BUG-678 的 tarpit 根因，禁止回退');
       // 完整浏览器 UA 特征：带平台段 `(...)` + 浏览器/引擎 token。
       expect(kYoutubeStreamReplayUserAgent, contains('('),
           reason: '真实浏览器 UA 应含平台段（如 (Windows NT 10.0; ...)）');
