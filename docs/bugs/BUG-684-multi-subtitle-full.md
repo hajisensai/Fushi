@@ -1,4 +1,4 @@
-## BUG-677 · 视频多字幕降级:同锚点MarginV裹挟+副字幕硬拽顶部
+## BUG-684 · 视频多字幕降级:同锚点MarginV裹挟+副字幕硬拽顶部
 - **报告**：2026-07-09（用户：）· TODO-1341（续 BUG-651）
 - **真实性**：✅ 真 bug。BUG-651 修好了「同轨时间重叠、锚点各异」的双字幕定位（顶 vs 底），但用户复诉「为什么总要降级·2 条甚至 4 条都显示不全」。沿真实渲染路径 `hibiki/lib/src/media/video/video_subtitle_overlay.dart` 复现出**两处剩余降级**（overlay 覆盖字幕自带位置，非 mpv 式各就各位）：
   1. **同锚点不同 MarginV 被裹挟**：`_positionKey`（旧 `video_subtitle_overlay.dart:496-506`）只按 `\pos` 或 `\an` 锚点分组，**不含 MarginV**。OP/ED 里标题（`\an8` MarginV=60）与多行歌词（MarginV=150/240）同为顶部锚点 → 同键 → 被塞进**一个 Column** 贴着排（`_positionCueGroup` `Column`），丢掉各自 authored 高度。实测容器 H=450 时三条渲染在 dy 81/126/164（仅行高间距），而作者按 MarginV 意图的 dy≈31/68/106。

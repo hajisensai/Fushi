@@ -210,7 +210,7 @@ void main() {
     expect(fn, greaterThanOrEqualTo(0), reason: '_paddingFor 应存在');
     final int fnEnd = overlaySrc.indexOf('\n  }', fn);
     final String body = overlaySrc.substring(fn, fnEnd);
-    // 底部分支对控制条高取下限（BUG-677 起用 math.max 显式取下限；旧为等价三元），非加法。
+    // 底部分支对控制条高取下限（BUG-684 起用 math.max 显式取下限；旧为等价三元），非加法。
     expect(body, contains('math.max(bottomBase, widget.controlsBottomReserve)'),
         reason: '底部避让应对控制条高度取下限（max），让字幕底缘骑控制条顶、不飞');
     expect(body, isNot(contains('bottomPadding + ')),

@@ -90,7 +90,7 @@ void main() {
         reason: '选中态仍加粗');
   });
 
-  /// TODO-1325 / BUG-677：查词弹窗「第一个卡片比其他卡片高」。多词典时每部词典是一枚
+  /// TODO-1325 / BUG-683：查词弹窗「第一个卡片比其他卡片高」。多词典时每部词典是一枚
   /// `.glossary-group` 玻璃卡片，作为 `.glossary-section > .category-body` 的 grid 项
   /// （桌面默认 2 列）。grid 默认 `align-items:stretch` 会把同一行的卡片全部拉到该行最高
   /// 卡片的高度：首行含义项最多的词典被拉高后，同行义项少的卡片下方留出空白玻璃盒，读作
@@ -102,7 +102,7 @@ void main() {
   /// 只断言真实声明。
   String stripComments(String s) => s.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
 
-  test('首卡不被等高拉伸：.category-body grid 显式 align-items:start (BUG-677)', () {
+  test('首卡不被等高拉伸：.category-body grid 显式 align-items:start (BUG-683)', () {
     final int start = css.indexOf('.glossary-section > .category-body {');
     expect(start, isNonNegative, reason: 'in-app grid 容器规则必须存在');
     final int end = css.indexOf('}', start);
@@ -118,7 +118,7 @@ void main() {
     expect(rule.contains('repeat(var(--dict-columns'), isTrue);
   });
 
-  test('玻璃卡片不钉死高度，取自然内容高度 (BUG-677)', () {
+  test('玻璃卡片不钉死高度，取自然内容高度 (BUG-683)', () {
     final String body = stripComments(ruleBody(r'\.glossary-group'));
     expect(RegExp(r'(^|[;{\s])height\s*:').hasMatch(body), isFalse,
         reason: '卡片不能钉死 height，否则内容高度失真、又回到等高观感');

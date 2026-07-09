@@ -914,7 +914,7 @@ html[data-theme="dark"] .glossary-group {
     display: grid;
     grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
     column-gap: 6px;
-    /* TODO-1325 / BUG-677 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
+    /* TODO-1325 / BUG-683 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
        的词典卡片全部拉伸到该行最高卡片的高度。首行常含义项最多的词典（idx 0 那本），被
        拉高后同行义项少的卡片下方留出大片空白玻璃盒，整体读作「第一个卡片特别高」。Niratan
        的卡片是自然内容高度（单词典 display:block 单列，或多词典 JS masonry 按最短列打包，

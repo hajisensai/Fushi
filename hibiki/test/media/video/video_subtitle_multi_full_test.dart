@@ -4,7 +4,7 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-/// BUG-677 守卫（TODO-1341 续 / BUG-651 续）：视频多字幕**各遵自带位置**、消除降级。
+/// BUG-684 守卫（TODO-1341 续 / BUG-651 续）：视频多字幕**各遵自带位置**、消除降级。
 ///
 /// 两处历史降级：
 /// (1) 主字幕活动集里**同锚点不同 MarginV** 的 cue（OP/ED 标题 an8 MarginV=60 + 多行歌词
@@ -66,7 +66,7 @@ double _dy(WidgetTester tester, String label) =>
     tester.getTopLeft(find.text(label).first).dy;
 
 void main() {
-  group('BUG-677 主字幕同锚点不同 MarginV 各就其位（不再裹挟成一列）', () {
+  group('BUG-684 主字幕同锚点不同 MarginV 各就其位（不再裹挟成一列）', () {
     testWidgets('OP 标题 + 两行歌词按 MarginV 竖直分离（不挤成一列）',
         (WidgetTester tester) async {
       final List<AudioCue> cues =
@@ -129,7 +129,7 @@ void main() {
     });
   });
 
-  group('BUG-677 副字幕各遵自带位置（非底部遵其位，底部/无位置避让置顶）', () {
+  group('BUG-684 副字幕各遵自带位置（非底部遵其位，底部/无位置避让置顶）', () {
     testWidgets('副字幕自带底部锚点 → 仍置顶，不与主字幕底部对白撞位', (WidgetTester tester) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
