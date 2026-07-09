@@ -532,11 +532,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
-      final String? path = await pickRealFilePath(
+      // 对齐字幕 / SMIL / JSON 导入时即被解析跑 matcher 当场消费，不以绝对路径长期引用，
+      // 故维持系统文件选择器（board 1360）：用户熟悉，且能触达 Downloads / 云盘 / 最近文件。
+      final String? path = await pickSystemFilePath(
         context: context,
-        appModel: appModel,
         allowedExtensions: _alignmentExtensions,
       );
       if (path == null || !mounted) return;

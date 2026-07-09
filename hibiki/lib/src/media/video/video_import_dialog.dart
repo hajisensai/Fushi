@@ -281,14 +281,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   }
 
   Future<void> _pickSubtitle() async {
-    // 安卓：真实路径浏览器（按字幕扩展名过滤），拿绝对路径不复制到 cache；
-    // 桌面/iOS 及安卓无全文件访问时回退 file_picker（board 1112）。扩展名集与
-    // _autoAttachSubtitle / parseSubtitleCues 支持列表对齐。
-    final AppModel appModel =
-        ProviderScope.containerOf(context, listen: false).read(appProvider);
-    final String? path = await pickRealFilePath(
+    // 字幕在导入时即被解析成 cues 当场消费，不以绝对路径长期引用，故维持系统文件
+    // 选择器（board 1360——用户报「导入选字幕文件的选择器变了」）：用户熟悉，且能触达
+    // Downloads / 云盘 / 最近文件等真实路径浏览器覆盖不到的位置。视频本体仍走
+    // 真实路径浏览器（绝对路径不复制、清缓存不失效），只有字幕回退系统选择器。扩展名
+    // 集与 _autoAttachSubtitle / parseSubtitleCues 支持列表对齐。
+    final String? path = await pickSystemFilePath(
       context: context,
-      appModel: appModel,
       allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     if (path == null || !mounted) return;
