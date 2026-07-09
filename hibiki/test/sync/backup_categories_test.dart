@@ -362,7 +362,7 @@ void main() {
     // TODO-585: 导出 widget 现住 sync_settings_schema/backup.part.dart；
     // 读合并语料而不是单文件。
     final String src = readSyncSettingsSchemaSource();
-    expect(src.contains('_pickExportCategories()'), isTrue,
+    expect(src.contains('_pickExportCategories('), isTrue,
         reason: 'export must prompt for categories before running');
     expect(
       src.contains('defaultBackupExportCategories()'),
