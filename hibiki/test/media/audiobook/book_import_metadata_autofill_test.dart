@@ -4,10 +4,13 @@
 // have it clobbered when they then pick the audio. Cover already works; this
 // closes the title/author gap.
 //
-// Behavioral tests model the exact "fill-only-if-empty" gate. Source guards pin
-// that the production dialog (1) exposes `_tryExtractAudioMetadata`, (2) gates
-// each field on `.isEmpty`, and (3) fires the metadata probe from every audio
-// trigger point (pick / drop / sidecar / initState prefill) alongside the cover.
+// Behavioral tests model the fill-only-if-empty gate and the never-clobber-user
+// invariant. Source guards pin that the production dialog (1) exposes
+// `_tryExtractAudioMetadata`, (2) fills the title through the
+// ImportTitleSource-aware `_autoFillTitle` (BUG-668/TODO-1362) so user- and
+// cross-source titles are never clobbered, while author stays an `.isEmpty`
+// gate, and (3) fires the metadata probe from every audio trigger point
+// (pick / drop / sidecar / initState prefill) alongside the cover.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -86,16 +89,21 @@ void main() {
           reason: 'the metadata autofill helper must exist.');
     });
 
-    test('title/author fills are gated on .isEmpty (fill-only)', () {
+    test('title fills via _autoFillTitle; author gated on .isEmpty', () {
       final int start = source.indexOf('_tryExtractAudioMetadata() async');
       expect(start, isNonNegative);
       final int end = source.indexOf('\n  }', start);
       final String body = source.substring(start, end);
-      expect(body, contains('_titleCtrl.text.isEmpty'),
-          reason: 'title must only be filled when empty (never clobber user).');
+      // BUG-668/TODO-1362: title now routes through the ImportTitleSource-aware
+      // _autoFillTitle, which never clobbers a user-typed title and also
+      // preserves a non-empty cross-source title -- a superset of the old
+      // fill-only-if-empty guarantee.
+      expect(body,
+          contains('_autoFillTitle(meta.title!, ImportTitleSource.metadata)'),
+          reason: 'title must fill via _autoFillTitle so user/cross-source '
+              'titles are never clobbered.');
       expect(body, contains('_authorCtrl.text.isEmpty'),
           reason: 'author must only be filled when empty.');
-      expect(body, contains('_titleCtrl.text = meta.title!'));
       expect(body, contains('_authorCtrl.text = meta.author!'));
     });
 
