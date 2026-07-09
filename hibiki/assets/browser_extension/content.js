@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v43 loaded (TODO-1364: record clip tail pad past subtitle display end)');
+console.log('[Hibiki] content script v44 loaded (TODO-1361: wait seek settle + video advancing before Netflix clip record, BUG-685)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v43'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v44'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -414,21 +414,25 @@ async function hibikiRunNetflixBatch() {
       let began = false; // beginClip 是否成功（决定 finally 是否需要收口 recorder）
       let cls = 'retry';
       try {
-        await seekTo(Math.max(0, q.startV / 1000));
-        // TODO-1335 ④：seek 落点后**先等缓冲就绪再开录**，且缓冲期保持暂停以不吃掉入队预留
-        // 的 200ms 头部提前量（seek 目标本就是 cueStart-200）。Netflix seek 完成(seeked)时数据
-        // 常还没缓冲到位(readyState=HAVE_CURRENT_DATA=2)，此刻 play+beginClip 会录进 stall 冻结
-        // 帧，而 offscreen 墙钟时长照走 → 录制起点是冻结帧、时长虚长不准（用户报「录制时长不
-        // 精准/没等缓冲完」）。暂停态等 readyState>=HAVE_FUTURE_DATA(3)（seek 目标已缓冲、可从该
-        // 点顺畅前进）再 play + beginClip，录制起点即 cueStart-200 缓冲点、内容立即推进。
+        const targetSec = Math.max(0, q.startV / 1000);
+        await seekTo(targetSec);
+        // TODO-1361 ⑤（BUG-685 seek-in-then-out 跳卡根因）：seek 落点后先确认 seek 真落到 <video>
+        // 元素层再开录。bridge 的 seekDone 只据 Netflix 播放器 API getCurrentTime 判定，MSE 下
+        // <video> 元素可能仍在 seeking / 停在旧位；不确认就 pause/play 会停在旧位、录错内容或空录。
+        // 暂停态等落定不推进 currentTime、不吃入队预留的 200ms 头部提前量（seek 目标本就是 cueStart-200）。
         try { v.pause(); } catch (_) {}
+        await hibikiWaitForSeekSettled(v, targetSec, 4000);
+        // TODO-1335 ④：落点后**先等缓冲就绪再开录**（readyState>=HAVE_FUTURE_DATA=3），暂停态等不推进
+        // currentTime → 不吃头部提前量，也不把 stall 冻结帧录进 clip（offscreen 墙钟时长照走 → 虚长）。
         await hibikiWaitForBuffered(v, 3000);
-        // TODO-1270 Bug C：先确保真的在播（自动播放策略可能拦），但**一旦在播立刻开录**——不要用
-        // 固定 warmup sleep 吃掉入队时预留的 200ms 头部提前量（seek 目标本就是 cueStart-200），
-        // 否则录制起点漂到 cueStart 之后 → 用户报「少了一点开头」。仍暂停 → 跳过本句，不录冻结帧。
-        try { await v.play(); } catch (_) {}
-        for (let i = 0; i < 8 && v.paused; i++) { try { await v.play(); } catch (_) {} await sleep(60); }
-        if (v.paused) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        // TODO-1361 ⑤（BUG-685）：以「currentTime 真正前进」为唯一判据有界等视频开录，期间反复补 play()。
+        // 旧实现只在固定 480ms（8×60ms）后单看一次 v.paused 就判跳——但 v.paused===false 不等于在播
+        // （可能仍 seeking 冻结），且 Netflix seek→恢复播放耗时多变，480ms 常不够 → 本可录的句被误判
+        // 「暂停」立即 seek 走（用户报「跳转过去以后马上跳转走了、根本没制卡」根因）。改为轮询到视频真
+        // 前进才开录；到 4s 上界仍推不动才按失败计（真 DRM/网络/自动播放失败，留队可重试，BUG-675 清点
+        // 不变），不再因 seek→播放时序把本可录的句误跳。
+        const advancing = await hibikiWaitForPlaying(v, 4000);
+        if (!advancing) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
         const beginResp = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
         began = !!(beginResp && beginResp.ok);
         if (!began) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
@@ -523,6 +527,45 @@ function hibikiWaitForBuffered(v, maxMs) {
       setTimeout(tick, 80);
     };
     setTimeout(tick, 80);
+  });
+}
+
+// TODO-1361 ⑤（BUG-685）：有界等 <video> 元素层 seek 真正落定——currentTime 逼近目标且不再
+// seeking。bridge 的 seekDone 只据 Netflix 播放器 API getCurrentTime 判定，MSE 下 <video> 元素可能滞后
+// （仍 seeking / 停在旧位）；不等它落定就 pause/play 会停在旧位、录错内容或空录。maxMs 上界兜底：
+// 迟迟不落定也继续（退化到旧行为，绝不无限等卡死批量）。
+function hibikiWaitForSeekSettled(v, targetSec, maxMs) {
+  return new Promise((resolve) => {
+    if (!v) { resolve(); return; }
+    const deadline = Date.now() + (maxMs || 4000);
+    const tick = () => {
+      if (!v || Date.now() >= deadline) { resolve(); return; }
+      // seeking 结束且 currentTime 落在目标 0.5s 内 = <video> 层已真正重定位到本句起点。
+      if (!v.seeking && Math.abs(v.currentTime - targetSec) < 0.5) { resolve(); return; }
+      setTimeout(tick, 80);
+    };
+    tick(); // 已落定则同步返回，正常句零额外延迟
+  });
+}
+
+// TODO-1361 ⑤（BUG-685）：有界等 video 真正在播放并前进（currentTime 相对开录基线单调增长），
+// 期间反复补发 play() 抵抗自动播放拦截 / Netflix 播放器状态机暂态回暂停。返回 true=已前进、可录；
+// false=到 maxMs 上界仍推不动（真失败，交调用方按失败计、留队重试）。判据用「currentTime 是否前进」
+// 而非「v.paused」——v.paused===false 不等于在播（seek 后可能仍 seeking 冻结），这是旧 480ms 单快照
+// gate 把本可录的句误跳的根因。
+function hibikiWaitForPlaying(v, maxMs) {
+  return new Promise((resolve) => {
+    if (!v) { resolve(false); return; }
+    const deadline = Date.now() + (maxMs || 4000);
+    const base = v.currentTime; // 开录基线（此刻暂停在 seek 落点）
+    const tick = async () => {
+      if (!v) { resolve(false); return; }
+      if (v.paused) { try { await v.play(); } catch (_) {} }
+      if (!v.paused && v.currentTime > base + 0.02) { resolve(true); return; } // 真前进了 → 可录
+      if (Date.now() >= deadline) { resolve(false); return; }
+      setTimeout(tick, 40);
+    };
+    tick();
   });
 }
 
