@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v42 loaded (TODO-1335: wait for seek buffer ready before recording clip)');
+console.log('[Hibiki] content script v43 loaded (TODO-1364: record clip tail pad past subtitle display end)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v42'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v43'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -438,10 +438,17 @@ async function hibikiRunNetflixBatch() {
         // 作参照 ref），**再**录到字幕变成别句(=本句结束)才停。不能一开始就比 refText——seek 后先采到
         // 的是残留/空字幕，会被误判成「已结束」→ 录一瞬就停（用户报「一下就停了」根因）。
         // hardEnd 只是字幕检测失效（字幕关/相邻同文本）时的安全上限。
+        // TODO-1364：字幕清空/变句 = Netflix 字幕 **display end**，常早于本句 **语音 end**；且入队窗
+        // 的 200ms 尾部预留（q.endV = cueEnd+200）在回放录制侧从未被消费（见 hibikiCurrentCueWindowV
+        // 注释「Netflix 回放时会按字幕变化重新定 end」），录制侧只保头部 200ms、从不补尾 → 检测到句末
+        // 就立即 pause+endClip 会截掉尾段音频（用户报「音频少了后面一段」根因）。修复：检测到句末后不
+        // 立即停，再多录一段尾部余量（与 200ms 头部提前量对称、略放宽以覆盖字幕清空后的残余语音）再停。
         const startSec = Math.max(0, q.startV) / 1000;
         const hardEnd = startSec + 12; // 12s 硬上限
         const deadline = Date.now() + 16000;
+        const kNfClipTailPadSec = 0.35; // 句末尾部余量（秒）：覆盖字幕 display end 之后的残余语音，防截尾
         let ref = '';
+        let endAtSec = 0; // 检测到句末后的目标停录视频时间（= 句末视频时间 + 尾部余量）；0 = 尚未到句末
         while (v.currentTime < hardEnd && Date.now() < deadline) {
           await sleep(120);
           const nowText = hibikiSubtitleTextNow();
@@ -449,7 +456,11 @@ async function hibikiRunNetflixBatch() {
             if (nowText && v.currentTime > startSec + 0.3) ref = nowText; // 抓到本句字幕作参照
             continue;
           }
-          if (nowText !== ref) break; // 字幕变成别句 = 本句结束
+          if (!endAtSec) {
+            if (nowText !== ref) endAtSec = v.currentTime + kNfClipTailPadSec; // 句末：再录一段尾部余量
+            continue;
+          }
+          if (v.currentTime >= endAtSec) break; // 尾部余量录满 → 停录（尾段音频完整）
         }
         try { v.pause(); } catch (_) {}
         const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
