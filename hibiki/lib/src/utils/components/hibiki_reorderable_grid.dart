@@ -491,7 +491,11 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
         fit: StackFit.passthrough,
         children: <Widget>[
           slot,
-          PositionedDirectional(top: 0, end: 0, child: overlayAction),
+          // TODO-947-③：给 overlayActionBuilder 满格空间自定位——书架书卡把「移出系列」按钮
+          // 放**封面右下角**避开右上角类型徽章 + 左上角系列名 header（见
+          // ShelfReorderPage._buildRemoveOverlay）。空白区不含 RenderObject 不吃指针，卡片
+          // 拖拽仍由外层 translucent RawGestureDetector 接收。
+          Positioned.fill(child: overlayAction),
         ],
       );
     }

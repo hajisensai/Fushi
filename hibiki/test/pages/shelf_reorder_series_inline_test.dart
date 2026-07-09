@@ -12,12 +12,18 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///    groupAndSortShelfEntries 混排后系列成员重新聚拢在一起）。
 ///  - 分组视觉：同系列每个成员卡套 [SeriesReorderFrame] 同色边框，首成员叠系列名 header。
 ///  - 系列成员格挂「移出系列」按钮，散书格不挂。
-ShelfReorderItem _item(String key, {int? seriesId, Widget? card}) =>
+ShelfReorderItem _item(
+  String key, {
+  int? seriesId,
+  Widget? card,
+  SeriesFrameData? seriesFrame,
+}) =>
     ShelfReorderItem(
       mediaType: 'epub',
       entryKey: key,
       seriesId: seriesId,
       card: card ?? const SizedBox(),
+      seriesFrame: seriesFrame,
     );
 
 void main() {
@@ -145,12 +151,13 @@ void main() {
         _item(
           key,
           seriesId: seriesId,
-          card: SeriesReorderFrame(
+          card: Center(child: Text(key)),
+          // TODO-947-② v2：只带框参数，框由 ShelfReorderPage 据此叠加（不再预烘进 card）。
+          seriesFrame: SeriesFrameData(
             color: const Color(0xFF4F8DFD),
             showHeader: header,
             seriesName: 'MySeries',
             memberCount: 2,
-            child: Center(child: Text(key)),
           ),
         );
 
@@ -188,6 +195,80 @@ void main() {
       expect(find.text('L'), findsOneWidget);
       expect(find.text('M1'), findsOneWidget);
       expect(find.text('M2'), findsOneWidget);
+    });
+
+    // TODO-947-② v2：用户报「编辑排序里点减号删除某书后，书籍不回到编辑排序列表」。根因——
+    // 内联排序页 _onRemoveOutside 移出成员后 removeAt 把整条丢弃，书凭空消失（其实它只是被移出
+    // 系列、变回一本散书，本应就地留在列表里）。修复后移出即 copyAsLoose：脱框 + 清 seriesId，
+    // 条目就地变回无框散书卡留在列表里。本用例守住「移出后书不消失、脱框、不再挂移出按钮」。
+    testWidgets('点「移出系列」后成员降级为散书就地留在列表（不消失、脱框）', (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 800);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(host(ShelfReorderPage(
+        title: 'Edit order',
+        cellExtent: 200,
+        childAspectRatio: 1,
+        initialItems: <ShelfReorderItem>[
+          _item('L', card: const Center(child: Text('L'))),
+          framedMember('M1', 7, header: true),
+          framedMember('M2', 7, header: false),
+        ],
+        onPersist: (_) async {},
+        onRemove: (ShelfReorderItem item) async =>
+            const ShelfRemoveResult(removed: true, seriesEmptied: false),
+      )));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SeriesReorderFrame), findsNWidgets(2));
+      expect(find.byIcon(Icons.remove_circle_outline), findsNWidgets(2));
+
+      // 点第一个成员的「移出系列」按钮。
+      await tester.tap(find.byIcon(Icons.remove_circle_outline).first);
+      await tester.pumpAndSettle();
+
+      // 被移出的成员脱掉分组框（2 → 1）、不再挂移出按钮（2 → 1）……
+      expect(find.byType(SeriesReorderFrame), findsOneWidget,
+          reason: '被移出的成员脱掉分组框（变回散书）');
+      expect(find.byIcon(Icons.remove_circle_outline), findsOneWidget,
+          reason: '散书不再挂移出按钮');
+      // ……但三张卡都还在：被移出的书**没有消失**，只是就地变回散书留在编辑排序里。
+      expect(find.text('L'), findsOneWidget);
+      expect(find.text('M1'), findsOneWidget,
+          reason: '移出的书不消失、就地留在编辑排序列表里（原实现 removeAt 让它消失）');
+      expect(find.text('M2'), findsOneWidget);
+    });
+
+    // TODO-947-③：用户报「那个减号把书籍类型挡住了」。根因——移出按钮原放格子右上角
+    // （PositionedDirectional top:0,end:0），正压住书卡封面右上角的类型徽章。修复后按钮改到
+    // 封面**右下角**（bottomEnd + 抬过标题 footer）。本用例守住「按钮在这一格的下半 + 右半」，
+    // 绝不回到会遮挡右上角类型徽章 / 左上角系列名 header 的顶部。
+    testWidgets('移出按钮落在封面右下角（不遮挡右上角类型徽章 / 左上角 header）',
+        (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(400, 800);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(host(ShelfReorderPage(
+        title: 'Edit order',
+        cellExtent: 400, // 单列，方便定位单格几何
+        childAspectRatio: 1,
+        initialItems: <ShelfReorderItem>[
+          framedMember('M1', 7, header: true),
+        ],
+        onPersist: (_) async {},
+        onRemove: (ShelfReorderItem item) async =>
+            const ShelfRemoveResult(removed: true, seriesEmptied: false),
+      )));
+      await tester.pumpAndSettle();
+
+      final Rect frame = tester.getRect(find.byType(SeriesReorderFrame));
+      final Offset btn =
+          tester.getCenter(find.byIcon(Icons.remove_circle_outline));
+      expect(btn.dy, greaterThan(frame.center.dy),
+          reason: '移出按钮在下半区（不在顶部压类型徽章 / 系列名 header）');
+      expect(btn.dx, greaterThan(frame.center.dx), reason: '移出按钮在右半区（右下角）');
     });
 
     // TODO-947：用户报「编辑排序里看不见边框」。根因——早期只画 2.5px 前景细线，

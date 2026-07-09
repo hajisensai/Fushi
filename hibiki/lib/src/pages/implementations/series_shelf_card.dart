@@ -297,6 +297,18 @@ class SeriesFolderCover extends StatelessWidget {
   }
 }
 
+/// 编辑排序分组框的实心边框宽度（逻辑像素）。手机默认 [HibikiAppUiScale] FittedBox 会把它
+/// 连同整框一起缩小，取 4（缩放 ~0.65 后仍留 ~2.5px 可见边界），不是早期缩放下压成亚像素的 3px。
+const double _kSeriesFrameBorderWidth = 4;
+
+/// 编辑排序分组框把成员卡再向内缩的内边距——从这圈缩进漏出**保证宽度**的实心 matte 色带，
+/// 不再只靠成员卡自身内边距（那圈会随 FittedBox 缩放压窄到几乎看不见）。
+const double _kSeriesFrameInset = 4;
+
+/// 编辑排序分组框实心 matte 背景的不透明度。0.32 太淡（缩放后 premultiply ~82/255 几乎看不见），
+/// 提到 0.55 让同系列色块在任意缩放下都是明确可辨的一片。
+const double _kSeriesFrameMatteAlpha = 0.55;
+
 /// TODO-947 P4：书架「编辑排序」页里给**内联展开的系列成员卡**套的分组框。用户拍板：
 /// 编辑排序里合集成员要连续相邻 + 用框圈在一起，一眼看出哪几本是同一个合集。
 ///
@@ -336,20 +348,24 @@ class SeriesReorderFrame extends StatelessWidget {
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
-        // 系列色「衬垫」+ 描边：书卡自带 12px 内边距（[_bookCardShell]），故本 Container
-        // 的**背景**在卡片四周露出一圈同系列色的实心 matte，前景再叠一道实心边框——
-        // 二者都是**填充/实心**而非早期的 2.5px 细线：细线在祖先 [HibikiAppUiScale]
-        // 的 FittedBox 缩小（手机默认缩放 <1）下会被压成亚像素而「看不见」，实心 matte
-        // 在任意缩放下都留得住可见宽度。同系列成员同色 matte → 读作「同一叠」。
-        // decoration（背景）画在卡片之下、只从 12px 内边距漏出，不会给不透明封面着色；
-        // foregroundDecoration（边框）画在卡片之上，保证边界永远可见。
+        // 系列色「衬垫」+ 描边（TODO-947 v2）：早期只靠成员卡自带 12px 内边距漏出的一圈
+        // matte + 3px 前景细线。实测（RepaintBoundary 取像素）在手机默认 [HibikiAppUiScale]
+        // FittedBox 缩放 s≈0.65 下，那圈只剩 ~6px 且 alpha 0.32 premultiply 后 ~82/255、边框
+        // 只剩 ~2px 同色细线——用户报「没有框」。这里三管齐下把框做「厚」：
+        //  ① 本 Container 额外内缩 [_kSeriesFrameInset]，让实心 matte 有一圈**保证宽度**的
+        //     可见色带（不再只依赖会随缩放压窄的卡片内边距）；
+        //  ② matte alpha 0.32 → [_kSeriesFrameMatteAlpha]（0.55），缩放后仍是明确的同系列色块；
+        //  ③ 边框 3 → [_kSeriesFrameBorderWidth]（4），缩放后仍留 ~2.5px 实心边界。
+        // decoration（背景 matte）画在卡片之下、只从内缩处漏出，不给不透明封面着色；
+        // foregroundDecoration（边框）画在卡片之上，保证边界永远可见。同系列成员同色 → 一叠。
         Container(
+          padding: const EdgeInsets.all(_kSeriesFrameInset),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.32),
+            color: color.withValues(alpha: _kSeriesFrameMatteAlpha),
             borderRadius: radius,
           ),
           foregroundDecoration: BoxDecoration(
-            border: Border.all(color: color, width: 3),
+            border: Border.all(color: color, width: _kSeriesFrameBorderWidth),
             borderRadius: radius,
           ),
           child: child,

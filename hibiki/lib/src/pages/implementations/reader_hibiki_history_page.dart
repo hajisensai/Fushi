@@ -461,6 +461,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
           onPersist: _persistShelfOrder,
           onMerge: _mergeShelfEntries,
+          // TODO-947-③：书卡底部有 kShelfTitleFooterHeight 高的标题 footer，把「移出系列」
+          // 按钮从格底抬到封面右下角，别压住书名。
+          overlayCornerBottomInset: kShelfTitleFooterHeight,
           // 系列成员格右上角的焦点/点击「移出系列」按钮（散书格不挂）。seriesFrame 不传 =
           // 无整页框、无拖出边界移出（书架有散书混排，拖出边界只当重排）。
           onRemove: (ShelfReorderItem item) =>
@@ -535,16 +538,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         if (base == null) continue;
         final bool isHeader = first;
         first = false;
+        // TODO-947-② v2：不再把分组框预先烘进 card——只带 [SeriesFrameData] 参数，框由重排页
+        // 据此叠加（见 ShelfReorderPage._buildItemCard）。这样点「移出系列」把成员降为散书时，
+        // 重排页清掉 seriesFrame 就地把它渲染成无框散书卡、留在列表里（书籍不消失）。
         out.add(ShelfReorderItem(
           mediaType: base.mediaType,
           entryKey: base.entryKey,
           seriesId: seriesId,
-          card: SeriesReorderFrame(
+          card: base.card,
+          seriesFrame: SeriesFrameData(
             color: frameColor,
             showHeader: isHeader,
             seriesName: seriesName,
             memberCount: memberCount,
-            child: base.card,
           ),
         ));
       }
