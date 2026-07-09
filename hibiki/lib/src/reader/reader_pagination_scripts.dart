@@ -785,6 +785,29 @@ class ReaderPaginationScripts {
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
   },
+  // TODO-1285（图片挤压根因修复）：每页多列(pageColumns>=2)时 multicol 把「turn 轴」
+  // （横排=宽 / 竖排=高）切成 N 个子列，但图片 max 约束过去恒用整 content-box（cs.w/cs.h）
+  // → 整页插图按整页 turn 轴撑开，远超单个子列 → 溢出本列、盖住相邻列正文（用户报「图片
+  // 被挤压」的真相：宽插图横跨两列压字）。修复：turn 轴的图片 max 改用**浏览器 used 子列宽**
+  // getComputedStyle(body).columnWidth（与 getScrollContext 读的同一权威真值：横排=子列宽、
+  // 竖排=子列高），图片正好落进本列不越界；block 轴（横排=高 / 竖排=宽）仍用整 content-box
+  // （每列在 block 轴填满整页），不变。仅当 used 子列明显窄于整轴（真 pageColumns>=2）才夹到
+  // 子列；单列 / 连续 / VN（无 column-count → columnWidth=='auto'→NaN，或子列≈整轴）回退整轴、
+  // 与旧 cs.w/cs.h 字节等价（零回归，不碰 TODO-729/753/792 分页几何）。ratio 恒作用在宽（与旧同）。
+  _imageMaxBox: function() {
+    var cs = this._contentSize();
+    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
+    var vertical = this.isVertical();
+    var turnFull = vertical ? cs.h : cs.w;
+    var usedColW = parseFloat(getComputedStyle(document.body).columnWidth);
+    var multicol = usedColW > 0 && usedColW < turnFull - 1;
+    if (vertical) {
+      var h = multicol ? Math.round(usedColW) : cs.h;
+      return { w: Math.max(1, Math.floor(cs.w * ratio)), h: Math.max(1, h) };
+    }
+    var w = multicol ? usedColW : cs.w;
+    return { w: Math.max(1, Math.floor(w * ratio)), h: Math.max(1, cs.h) };
+  },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return !!(el && el.closest('rt, rp'));
@@ -2523,9 +2546,9 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   window.hoshiReader.pageHeight = pageHeight;
   window.hoshiReader.viewportHeight = viewportHeight;
   window.hoshiReader.pageWidth = pageWidth;
@@ -2568,9 +2591,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   this.pageHeight = newHeight;
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
@@ -3056,10 +3079,9 @@ $_sharedJs
         ''' 原始串不插值），故每个 shell 的
   // initialize 把比值存到 this._imageWidthRatio，本 helper 读它，begin/reanchor 共用。
   _resetImageMaxVars: function() {
-    var cs = this._contentSize();
-    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
-    document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * ratio)) + 'px');
-    document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+    var box = this._imageMaxBox();
+    document.documentElement.style.setProperty('--hoshi-image-max-width', box.w + 'px');
+    document.documentElement.style.setProperty('--hoshi-image-max-height', box.h + 'px');
   },
   // TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的**第一阶段**，由 Dart 在换样式那一
   // 刻调用。与 beginUiScaleReanchor 区别：那对只采锚滚回**不换 CSS**（缩放重建用），改字号
@@ -3128,9 +3150,9 @@ $_sharedInitViewport
   var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
   var contHeight = dartH || window.innerHeight;
   document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
 $initImages
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
@@ -3158,9 +3180,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  var __imgBox = this._imageMaxBox();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
   if (inFlight || progress <= 0) return;
   this._reanchorPending = true;
   var self = this;
