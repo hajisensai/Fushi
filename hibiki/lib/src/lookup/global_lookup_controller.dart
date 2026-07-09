@@ -490,7 +490,7 @@ class GlobalLookupController {
       // offset is physical px; convert to CSS px for the cascade layout domain.
       _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
       _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
-      // TODO-1345 (BUG-583) / TODO-1231 (BUG-666 deep cascade) — reserve cascade
+      // TODO-1345 (BUG-583) / TODO-1231 (BUG-670 deep cascade) — reserve cascade
       // headroom ALL THE WAY to the cursor monitor's work-area edge so a subsequent
       // up/left child at ANY depth (child / grandchild / a card taller than one
       // card) lands INSIDE the window origin committed at THIS first reveal; the

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
-/// TODO-1349（BUG-666，BUG-661 续）回归守卫（源码/生成产物扫描，CI 可跑）：
+/// TODO-1349（BUG-671，BUG-661 续）回归守卫（源码/生成产物扫描，CI 可跑）：
 /// 「文字少+图片」封面章（含少量文字 → 非纯图片章 → 尾部整页插图仍 loading="lazy"）往前翻
 /// `restoreProgress(0.99)`（章尾语义）必须落到该章**最后部分**（章末），而非章首（最开头）。
 ///
@@ -24,7 +24,7 @@ void main() {
   final String continuous = norm(ReaderPaginationScripts.shellScript(
       continuousMode: true, initialProgress: 0.99));
 
-  group('BUG-666 sparse cover chapter backward-turn lands at chapter end', () {
+  group('BUG-671 sparse cover chapter backward-turn lands at chapter end', () {
     test('forceLoadPendingImages exists and flips lazy -> eager (both shells)',
         () {
       for (final String shell in <String>[paged, continuous]) {

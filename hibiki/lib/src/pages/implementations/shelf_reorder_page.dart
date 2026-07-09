@@ -329,14 +329,21 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     final ShelfReorderItem item = _items[index];
     final ShelfRemoveResult result = await onRemove(item);
     if (!mounted || !result.removed) return;
-    if (result.seriesEmptied && widget.seriesFrame != null) {
-      await _finish();
+    // 带框成员子页（widget.seriesFrame 非空）：本页只展示单一系列的成员。移出的成员离开
+    // 本系列 → 系列被清空时收口落盘 + pop 回上层；否则该成员从子页网格摘除（其余成员
+    // 保留、页面留存）——它已不属本系列，不该继续留在成员视图里。
+    if (widget.seriesFrame != null) {
+      if (result.seriesEmptied) {
+        await _finish();
+      } else {
+        setState(() => _items.removeAt(index));
+      }
       return;
     }
-    // TODO-947-② v2：移出系列后书籍**不消失**——就地降级为散书（清掉 seriesFrame → 无框
-    // 散书卡；seriesId 归属已在 onRemove 里写库为 null）继续留在编辑排序列表里。原实现
-    // removeAt 让它凭空消失（用户报「点减号删除后书籍不回到编辑排序里面」）。仅**带框成员
-    // 子页**在系列清空时才 pop（上面已处理）；书架内联排序页走这里。
+    // 书架内联排序页（widget.seriesFrame 为 null）：移出系列后书籍**不消失**——就地降级为
+    // 散书（copyAsLoose 清掉 seriesFrame → 无框散书卡；seriesId 归属已在 onRemove 里写库为
+    // null）继续留在编辑排序列表里。原实现 removeAt 让它凭空消失（用户报「点减号删除后书籍
+    // 不回到编辑排序里面」）。
     setState(() => _items[index] = _items[index].copyAsLoose());
   }
 

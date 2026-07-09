@@ -483,9 +483,9 @@ void main() {
     });
   });
 
-  group('TODO-1345/TODO-1231 (BUG-583/BUG-666) computeCascadeHeadroomSeed', () {
+  group('TODO-1345/TODO-1231 (BUG-583/BUG-670) computeCascadeHeadroomSeed', () {
     test('cursor deep inside reserves ALL the way to the work-area edge', () {
-      // TODO-1231 (BUG-666): the seed now reserves the FULL cursor-to-edge distance
+      // TODO-1231 (BUG-670): the seed now reserves the FULL cursor-to-edge distance
       // (not just one card) so a DEEP cascade (grandchild / a card taller than one
       // card) can never reach past the reserved origin. Cursor 1700/900 into a
       // 1920x1040 work area -> reserve -1700 left / -900 top (to the edge).
@@ -578,7 +578,7 @@ void main() {
     });
   });
 
-  // TODO-1231 (BUG-666) -- the CORE root-cause guard: the reserved cascade floor
+  // TODO-1231 (BUG-670) -- the CORE root-cause guard: the reserved cascade floor
   // must be a lower bound on the window-local origin of EVERY cascade card that
   // computeFrameRect can ever produce, at ANY depth. Because the host freezes the
   // union-bbox origin at the floor (measureAndReport pulls minLeft out to the
@@ -588,7 +588,7 @@ void main() {
   // anchored anywhere inside an on-screen parent card) and asserts the invariant;
   // the OLD one-card floor FAILED it whenever cursorWork > card (exactly the
   // deep-cascade lurch users kept seeing).
-  group('TODO-1231 (BUG-666) floor covers every cascade card (geometric guard)',
+  group('TODO-1231 (BUG-670) floor covers every cascade card (geometric guard)',
       () {
     const double screenW = 1920;
     const double screenH = 1040;

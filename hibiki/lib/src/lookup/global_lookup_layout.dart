@@ -278,7 +278,7 @@ RatchetedOverlayBox ratchetOverlayOrigin({
   );
 }
 
-/// TODO-1345（BUG-583 深层根因续 · TODO-1231/BUG-666 深层级联根治）—— 覆盖窗「级联
+/// TODO-1345（BUG-583 深层根因续 · TODO-1231/BUG-670 深层级联根治）—— 覆盖窗「级联
 /// 余量地板」纯函数（CSS px·不含 dpr）。
 ///
 /// 返回 union bbox 最小角（origin）应预留到的**内侧余量地板**（`left`/`top` 均 <= 0）。
@@ -290,7 +290,7 @@ RatchetedOverlayBox ratchetOverlayOrigin({
 /// 子卡出现同帧（那 1 帧父卡跳动仍被用户看见）；本地板把它从根上**消除**，把前 4 轮对
 /// 向右/下级联达成的「origin 恒定、父卡零位移」扩展到向左/上。
 ///
-/// TODO-1231（BUG-666）深层级联根治：预留幅度改为**光标到工作区该侧边缘的整段距离**
+/// TODO-1231（BUG-670）深层级联根治：预留幅度改为**光标到工作区该侧边缘的整段距离**
 /// （reserve to the work-area edge），不再是 TODO-1345 的「一张卡」。因为
 /// [computeFrameRect] 把**任意层级**的级联子卡（子 / 孙 / 曾孙…）都夹在工作区内（中心
 /// clamp 进 `[w/2(+边距), screenW - w/2(-边距)]`），子卡最外边最远只能触到工作区该侧边。
@@ -325,7 +325,7 @@ RatchetedOverlayBox ratchetOverlayOrigin({
 
 /// 单轴级联余量幅度（>= 0·CSS px）= 光标到工作区该侧边缘的整段距离（reserve to edge）。
 /// 见 [computeCascadeHeadroomSeed] 的「预留到边即覆盖任意层级级联 + 恰落在 C++ clamp
-/// 目标值故绝无失配」推导。TODO-1231（BUG-666）：由 TODO-1345 的「一张卡」改为整段。
+/// 目标值故绝无失配」推导。TODO-1231（BUG-670）：由 TODO-1345 的「一张卡」改为整段。
 double _cascadeHeadroom(double cursorWork, double screenWork) {
   if (cursorWork <= 0 || screenWork <= 0) {
     return 0;

@@ -530,11 +530,11 @@ void main() {
     expect(shadowRow.value, 10);
   });
 
-  // ── BUG-666：字幕轨切换不即时加载（要重开才行）+ 副字幕跳到另一个窗口 ─────────
+  // ── BUG-672：字幕轨切换不即时加载（要重开才行）+ 副字幕跳到另一个窗口 ─────────
   // 根因①：字幕源列表 _subtitleMenuSources 之前只由「字幕轨」控制按钮预填，用户经齿轮
   // 进面板再点「字幕」分类时不加载。修复：面板进入「字幕」分类即回调 onSubtitleCategoryShown，
   // 由视频页 _ensureSubtitleMenuSourcesLoaded 枚举字幕源。这里锁死「进入字幕分类必触发回调」。
-  testWidgets('BUG-666: 打开面板直达「字幕」分类即触发字幕源加载回调（宽窗）', (tester) async {
+  testWidgets('BUG-672: 打开面板直达「字幕」分类即触发字幕源加载回调（宽窗）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int shown = 0;
@@ -555,7 +555,7 @@ void main() {
         reason: '注入的字幕轨切换区必须内联渲染在字幕分类详情里');
   });
 
-  testWidgets('BUG-666: 从别的分类点「字幕」chip 触发字幕源加载回调（宽窗）', (tester) async {
+  testWidgets('BUG-672: 从别的分类点「字幕」chip 触发字幕源加载回调（宽窗）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int shown = 0;
@@ -568,7 +568,7 @@ void main() {
         reason: '点字幕分类 chip 进入字幕分类，必须触发字幕源加载回调（字幕轨即时加载）');
   });
 
-  testWidgets('BUG-666: 窄窗导航进「字幕」分类触发字幕源加载回调', (tester) async {
+  testWidgets('BUG-672: 窄窗导航进「字幕」分类触发字幕源加载回调', (tester) async {
     await tester.binding.setSurfaceSize(const Size(420, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     int shown = 0;
@@ -2353,7 +2353,7 @@ void main() {
           reason: '字幕轨切换区须仍由页面构建（收进面板不丢功能）');
     });
 
-    test('BUG-666 源码守卫：副字幕改内联可展开区，不再跳独立浮层窗口', () {
+    test('BUG-672 源码守卫：副字幕改内联可展开区，不再跳独立浮层窗口', () {
       final String sidePanel = File(
         'lib/src/pages/implementations/video_hibiki/side_panel.part.dart',
       ).readAsStringSync();
@@ -2382,7 +2382,7 @@ void main() {
           reason: '副字幕源行改由内联行构建器 _buildSecondarySubtitleRows 渲染');
     });
 
-    test('BUG-666 源码守卫：字幕分类被打开时驱动字幕源枚举（字幕轨即时加载）', () {
+    test('BUG-672 源码守卫：字幕分类被打开时驱动字幕源枚举（字幕轨即时加载）', () {
       final String subtitle = File(
         'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
       ).readAsStringSync();

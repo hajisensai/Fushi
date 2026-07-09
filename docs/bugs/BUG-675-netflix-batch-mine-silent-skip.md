@@ -1,4 +1,4 @@
-## BUG-667 · 网飞批量制卡有概率跳过某几张卡
+## BUG-675 · 网飞批量制卡有概率跳过某几张卡
 - **报告**：2026-07-09（用户：制卡时好像有概率跳过某几张卡 / TODO-1361 ②）
 - **真实性**：⚠️ 部分真 + 部分需真机复现。沿真实批量制卡路径端到端通读结论：
   - **扩展队列/生成逻辑不丢卡**：`tools/browser-extension/content.js` `hibikiRunNetflixBatch` 逐句 seek→录→`mineClip`；`hibikiClassifyMineResp` 只在 `success`/`duplicate` 返 `done` → 入 `okIds`；`hibikiRemoveQueued(okIds)` 只按 id 剔除**成功**项（storage 读-改-写）。录制/HTTP 失败（`beginClip` 失败 / `v.paused` / 缺音频被 BUG-603 守卫中止 / 401/连接拒绝）一律 `fail++` 且**留在队列**（可再点生成重试），不会误删。去重键 `hibikiQueueKey`=词(`fields.expression`恒有值)+句+站点+视频ID，不同词→不同键→都入队，无误杀。故**队列层面无静默丢卡**。

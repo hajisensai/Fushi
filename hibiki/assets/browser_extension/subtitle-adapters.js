@@ -35,7 +35,7 @@ function netflixVideoEl() {
   return typeof document !== 'undefined' ? document.querySelector('video') : null;
 }
 
-// BUG-668（TODO-1361 ③）：网飞制卡的「视频名」= Anki `{document-title}` 字段。扩展 mineClip 此前
+// BUG-676（TODO-1361 ③）：网飞制卡的「视频名」= Anki `{document-title}` 字段。扩展 mineClip 此前
 // 不发 documentTitle → 服务端 buildImmersionRequest 回落成字面「Netflix」(immersion_capture_channel.dart:90)，
 // 卡片视频名全是「Netflix」而非剧名（YouTube 由服务端解析真实标题，故有剧名 → 二者不一致）。
 // 这里从播放器标题栏 [data-uia="video-title"] 抽「系列名 - 集信息」(语言无关)，回落 document.title

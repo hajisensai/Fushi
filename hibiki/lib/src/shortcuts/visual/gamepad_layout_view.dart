@@ -5,6 +5,7 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/src/shortcuts/visual/reverse_binding_index.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// 单个手柄按钮在整图上的纯数据描述（TODO-942 P1）。
 ///
@@ -204,6 +205,7 @@ class GamepadLayoutView extends StatelessWidget {
     double width,
   ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     // 基准直径随图宽缩放（480 宽 → 40，与旧面板圆钮同尺度）。
     final double baseDiameter = width / 12;
     final double height = width / figureAspectRatio;
@@ -220,8 +222,8 @@ class GamepadLayoutView extends StatelessWidget {
           Positioned.fill(
             child: CustomPaint(
               painter: _GamepadChassisPainter(
-                bodyTop: scheme.surfaceContainerHighest,
-                bodyBottom: scheme.surfaceContainerHigh,
+                bodyTop: tokens.surfaces.overlay,
+                bodyBottom: tokens.surfaces.search,
                 outline: scheme.outlineVariant,
                 shadow: scheme.shadow,
               ),

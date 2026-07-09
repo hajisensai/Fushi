@@ -41,7 +41,7 @@ body {
     overscroll-behavior-y: contain;
     touch-action: auto;
     -webkit-user-select: text;
-    /* TODO-1354 (BUG-666): the dictionary card is Japanese / CJK dictionary
+    /* TODO-1354 (BUG-673): the dictionary card is Japanese / CJK dictionary
        content and must always read left-to-right (headword on the left, example
        padding-left indentation on the left), matching Niratan. The host WebView
        forwards the Flutter ambient Directionality (RTL when the user picks an RTL

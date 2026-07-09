@@ -16,7 +16,7 @@ void main() {
   };
 
   mirrors.forEach((String name, String root) {
-    // ① BUG-666：隐藏网飞剧末「下一集」按钮（options 开关门控，缺省隐藏）。
+    // ① BUG-674：隐藏网飞剧末「下一集」按钮（options 开关门控，缺省隐藏）。
     test('[$name] hides Netflix next-episode button gated by a setting', () {
       final String content = File('$root/content.js').readAsStringSync();
       expect(content.contains('hibiki-nf-hide-next'), isTrue,
@@ -43,7 +43,7 @@ void main() {
           reason: '$root options.js must persist netflixHideNextEpisode');
     });
 
-    // ② BUG-667：批量结束不再一律报「全部完成」，残留（录制失败）项 >0 时明确告知可重试。
+    // ② BUG-675：批量结束不再一律报「全部完成」，残留（录制失败）项 >0 时明确告知可重试。
     test('[$name] surfaces un-generated Netflix cards at batch completion', () {
       final String content = File('$root/content.js').readAsStringSync();
       expect(content.contains('张录制失败未生成，可再点生成重试'), isTrue,
@@ -56,7 +56,7 @@ void main() {
               '$root content.js must count remaining netflix items for the run');
     });
 
-    // ③ BUG-668：网飞制卡带剧名 documentTitle（Anki 视频名字段），不再回落字面「Netflix」。
+    // ③ BUG-676：网飞制卡带剧名 documentTitle（Anki 视频名字段），不再回落字面「Netflix」。
     test('[$name] Netflix mining carries the show title (documentTitle)', () {
       final String adapters =
           File('$root/subtitle-adapters.js').readAsStringSync();

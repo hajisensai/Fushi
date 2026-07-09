@@ -1,4 +1,4 @@
-## BUG-668 · 网飞制卡缺少视频名（documentTitle）
+## BUG-676 · 网飞制卡缺少视频名（documentTitle）
 - **报告**：2026-07-09（用户：网飞制卡少了视频名标签 / TODO-1361 ③）
 - **真实性**：✅ 真 bug（功能差异）。根因：浏览器扩展的网飞 `mineClip` 请求**从不发 `documentTitle`**——`tools/browser-extension/background.js` 的 `mineClip` 分支 body 只有 `{fields,sentence,clipBase64,clipDurationMs}`。服务端 `hibiki/lib/src/mining/immersion_capture_channel.dart:90` `buildImmersionRequest` 用 `p.documentTitle ?? 'Netflix'` → payload 无 documentTitle 时回落**字面「Netflix」**，经 `ImmersionMiningEngine`（`immersion_mining_engine.dart:210` `documentTitle: req.documentTitle`）落到 `AnkiMiningContext.documentTitle` → Anki `{document-title}` 字段（`packages/hibiki_anki/lib/src/anki_models.dart:459`）→ 网飞卡视频名恒为「Netflix」。对比 YouTube：`app_model.dart:4610` `documentTitle: yt.documentTitle ?? 'YouTube'`，`yt.documentTitle` 由服务端 `youtube_clip_miner.dart:73` `?? src.title`（resolveYoutubeSource 真实标题）→ YouTube 卡有真剧名。二者不一致 = 用户报网飞「少了视频名」。
 - **[x] ① 根因修复** — 提交 `<PENDING>`（服务端映射链已就绪，仅补扩展侧发送 documentTitle，无 Dart 改动）：

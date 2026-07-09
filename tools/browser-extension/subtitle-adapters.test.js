@@ -132,7 +132,7 @@ test('parseTtml honours ttp:tickRate offset times', () => {
 });
 
 
-// ── BUG-668（TODO-1361 ③）：网飞剧名抽取（Anki {document-title} 视频名字段）──
+// ── BUG-676（TODO-1361 ③）：网飞剧名抽取（Anki {document-title} 视频名字段）──
 function nfDoc(videoTitleEl, title) {
   return {
     title: title || '',

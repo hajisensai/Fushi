@@ -113,7 +113,7 @@ void main() {
       expect(m, isNotNull, reason: '应能定位 html, body 规则块');
       final String body = m!.group(1)!;
       expect(body.contains('direction: ltr'), isTrue,
-          reason: 'TODO-1354/BUG-666：查词卡必须钉死 LTR，'
+          reason: 'TODO-1354/BUG-673：查词卡必须钉死 LTR，'
               '否则 RTL UI 语言下 headword 被 flex 行翻转甩到右侧');
     });
 

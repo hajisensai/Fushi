@@ -263,7 +263,7 @@ window.hibikiEnqueue = function (fields, sentence) {
   const site = hibikiSite();
   const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
   const netflixId = site === 'netflix' ? hibikiNetflixId() : null;
-  // BUG-668（TODO-1361 ③）：入队即抓当前网飞剧名（此刻在正确剧集页），随卡持久化 → 生成时发给
+  // BUG-676（TODO-1361 ③）：入队即抓当前网飞剧名（此刻在正确剧集页），随卡持久化 → 生成时发给
   // 服务端当 documentTitle（Anki 视频名字段）。YouTube 走服务端解析标题，无需在此抓。
   const documentTitle =
       site === 'netflix' && typeof netflixDocumentTitle === 'function'
@@ -457,7 +457,7 @@ async function hibikiRunNetflixBatch() {
         if (clip && clip.ok && clip.clipBase64) {
           cls = await new Promise((resolve) => {
             chrome.runtime.sendMessage(
-              // BUG-668（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
+              // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
               { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
                 documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
@@ -576,7 +576,7 @@ async function hibikiMaybeResumeNetflixBatch(fromLoad) {
       try { chrome.runtime.sendMessage({ type: 'nfNavigate', url: 'https://www.netflix.com/watch/' + st.episodes[next] }); } catch (_) {}
     } else {
       try { chrome.runtime.sendMessage({ type: 'nfFinish', originalUrl: st.originalUrl }); } catch (_) {}
-      // BUG-667（TODO-1361 ②）：录制失败的卡片留在队列（未丢失），但旧实现一律报「✓ 全部完成」
+      // BUG-675（TODO-1361 ②）：录制失败的卡片留在队列（未丢失），但旧实现一律报「✓ 全部完成」
       // 掩盖了被跳过的卡，用户以为都生成了。批量结束时清点本次剧集仍残留的网飞待生成项，>0 就明确
       // 告知「N 张录制失败未生成，可再点生成重试」，把静默跳过变成可见可重试。
       let hibikiRemainingNf = 0;
@@ -619,7 +619,7 @@ try {
 } catch (_) {}
 try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } catch (_) {}
 
-// ── BUG-666（TODO-1361 ①）：隐藏网飞剧末「下一集」按钮 ──
+// ── BUG-674（TODO-1361 ①）：隐藏网飞剧末「下一集」按钮 ──
 // 纯视觉：只注入 CSS 隐藏 Netflix 自己的 seamless「下一集」按钮 + 剧末续播卡，绝不碰 DRM/seek/自动
 // 切集计时器（不改变播放行为）。由 options 开关 netflixHideNextEpisode 门控——缺省=隐藏（用户诉求），
 // 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建按钮也照样命中。

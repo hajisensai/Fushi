@@ -1,4 +1,4 @@
-## BUG-666 · 网飞剧末下一集按钮无法隐藏
+## BUG-674 · 网飞剧末下一集按钮无法隐藏
 - **报告**：2026-07-09（用户：网飞剧末会有「下一集」按钮，看能不能取消/隐藏 / TODO-1361 ①）
 - **真实性**：✅ 真需求（非崩溃 bug）。「下一集」seamless 按钮是 **Netflix 自身播放器 UI**（剧末右下角 `[data-uia="next-episode-seamless-button"]` + 剧末续播卡 postplay），非扩展绘制。扩展此前对它无任何持久隐藏：`tools/browser-extension/content.js` 里 `hibiki-nf-hide-sub`（`hibikiRunNetflixBatch` 内）只在**批量录制期间**临时隐藏 Netflix 控制条/返回/举报，不含 next-episode，且录制结束即 `hideStyle.remove()` 还原——平时看片时按钮照常出现。可行方案：content-script 注入持久 CSS 隐藏该按钮（纯视觉，不碰 DRM/seek/自动切集计时器）。
 - **[x] ① 根因修复** — 提交 `<PENDING>`。`tools/browser-extension/content.js`（镜像 `hibiki/assets/browser_extension/content.js`，两份字节一致）新增 `hibikiApplyNetflixNextEpisodeHiding(hide)` + `hibikiNetflixNextEpisodeSelectors()`：在 Netflix 页注入 `<style id="hibiki-nf-hide-next">` 以 `display:none!important` 隐藏 `next-episode-seamless-button`(+draining) / postplay 续播卡 / `.watch-video--evidence-overlay-container` / `.nfp.PostPlay`。由 `chrome.storage.local.netflixHideNextEpisode` 门控——**缺省=隐藏**（仅显式存 `false` 才显示，符合用户诉求），`storage.onChanged` 实时生效。开关 UI 加进 `options.html`（`id="nfHideNext"`）+ `options.js`（持久化 `netflixHideNextEpisode`）。纯 CSS 视觉隐藏：不改变 Netflix 播放/自动切集行为（不停自动切集计时器，仅隐藏按钮，正是用户所求）。

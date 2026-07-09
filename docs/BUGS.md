@@ -27,13 +27,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 654 条。点号进各自文件。
+> 共 662 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-668](bugs/BUG-668-netflix-mine-missing-video-name.md) | ✅ | ✅ | 网飞制卡缺少视频名（documentTitle） |
-| [BUG-667](bugs/BUG-667-netflix-batch-mine-silent-skip.md) | ✅ | ✅ | 网飞批量制卡有概率跳过某几张卡 |
-| [BUG-666](bugs/BUG-666-netflix-next-episode-hide.md) | ✅ | ✅ | 网飞剧末下一集按钮无法隐藏 |
+| [BUG-676](bugs/BUG-676-netflix-mine-missing-video-name.md) | ✅ | ✅ | 网飞制卡缺少视频名（documentTitle） |
+| [BUG-675](bugs/BUG-675-netflix-batch-mine-silent-skip.md) | ✅ | ✅ | 网飞批量制卡有概率跳过某几张卡 |
+| [BUG-674](bugs/BUG-674-netflix-next-episode-hide.md) | ✅ | ✅ | 网飞剧末下一集按钮无法隐藏 |
+| [BUG-673](bugs/BUG-673-headword-ltr-rtl-flip.md) | ✅ | ✅ | 查词卡 headword 在 RTL UI 语言下被甩到最右 |
+| [BUG-672](bugs/BUG-672-video-subtitle-track-live-secondary.md) | ✅ | ✅ | 视频字幕轨切换不即时+副字幕跳到另一个窗口 |
+| [BUG-671](bugs/BUG-671-sparse-cover-prev-landing.md) | ✅ | ✅ | 文字少+图片封面章往前翻仍落章首（BUG-661 续） |
+| [BUG-670](bugs/BUG-670-parent-shift-deep-cascade.md) | ✅ | ✅ | app 外查词深层级联父弹窗残留 1 帧位移 |
+| [BUG-669](bugs/BUG-669-reorder-mode-group-frame-remove.md) | ✅ | ✅ | 编辑排序模式：合集分组框看不见、减号删除后书籍消失、减号遮挡类型徽章 |
+| [BUG-668](bugs/BUG-668-reimport-book-title-not-refreshing.md) | ✅ | ✅ | 重导入书选文件后书名不刷新 |
+| [BUG-667](bugs/BUG-667-delete-fail-diag.md) | ✅ | ✅ | 删除书籍失败无原因+磁盘清理异常翻转已提交删除 |
+| [BUG-666](bugs/BUG-666-vertical-ruby-position-flip.md) | ✅ | ✅ | 竖排振假名翻到基字左侧+高亮带错位(阅读器未拥有 ruby-position) |
 | [BUG-665](bugs/BUG-665-anki-mine-connect-timeout.md) | ✅ | ✅ | 远端制卡查重挂满 10s 超时（AnkiConnect 不可达/无响应，缺连接建立超时） |
 | [BUG-664](bugs/BUG-664-pitch-number-float-niratan.md) | ✅ | ✅ | 查词卡音高数字浮动/读音位置不如 Niratan 整齐 |
 | [BUG-663](bugs/BUG-663-peer-device-name-localhost.md) | ✅ | ✅ | 互联已配对设备名显示 localhost 而非真实设备名 |

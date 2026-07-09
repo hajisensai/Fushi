@@ -1,4 +1,4 @@
-## BUG-666 · 文字少+图片封面章往前翻仍落章首（BUG-661 续）
+## BUG-671 · 文字少+图片封面章往前翻仍落章首（BUG-661 续）
 - **报告**：2026-07-09（用户：）— 「安達としまむら2 从目录往前翻，还是会去到最开头，因为文字少的问题？」（BUG-661 修后复诉）
 - **真实性**：✅ 真 bug — 根因：BUG-661 只对**纯图片章**（`__hoshiImageOnlyChapter = !ttuRegex.test(document.body.textContent)`，即正文零可匹配字符）让 `<img>` 保持 eager。封面章含少量文字（题名/版权/页码，ttuRegex 匹配 `0-9A-Za-z`+CJK/kana，一个字符即命中）→ `__hoshiImageOnlyChapter=false` → 整页插图仍 `loading="lazy"`。真机 WebView 离屏懒图不发请求 → 0 尺寸 → 往前翻 `restoreProgress(0.99)`（章尾语义）章末落点两墙均塌缩到章首：
   - 分页：`hibiki/lib/src/reader/reader_pagination_scripts.dart` `buildPaginationMetrics`（`:1798` 附近 media 循环 `if (mediaRect.width<=0||mediaRect.height<=0) continue`）跳过 0 尺寸尾图 → `lastContentEdge` 只到少量文字 → `contentLastPageScroll`(maxScroll) 塌缩 → `scrollToProgressPaged(0.99)` 落章首。
