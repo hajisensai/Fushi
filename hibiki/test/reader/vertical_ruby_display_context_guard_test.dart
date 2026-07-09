@@ -54,7 +54,10 @@ void main() {
       for (final ({String wm, String vm}) c in layouts) {
         final String css = await _readerCss(
             writingMode: c.wm, viewMode: c.vm, furiganaMode: 'show');
-        expect(css.contains('ruby { display: ruby !important; ruby-position: over !important; }'), isTrue,
+        expect(
+            css.contains(
+                'ruby { display: ruby !important; ruby-position: over !important; }'),
+            isTrue,
             reason: '${c.wm}/${c.vm}: 必须强制 ruby{display:ruby!important}，否则书本 '
                 '`ruby{display:inline-block}` 会破坏 ruby 上下文 → 竖排振假名塌进基字列');
         expect(css.contains('ruby > rp { display: none !important; }'), isTrue,
@@ -122,7 +125,10 @@ void main() {
       expect(css.contains('display: ruby-text !important'), isFalse,
           reason: 'hide 模式不得强制 rt display:ruby-text，否则会把隐藏的振假名显示出来');
       // ruby 容器仍强制(与振假名显隐无关)。
-      expect(css.contains('ruby { display: ruby !important; ruby-position: over !important; }'), isTrue,
+      expect(
+          css.contains(
+              'ruby { display: ruby !important; ruby-position: over !important; }'),
+          isTrue,
           reason: 'ruby 容器强制与 furigana 显隐正交，hide 模式也应保留');
     });
   });
