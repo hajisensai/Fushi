@@ -1008,4 +1008,67 @@ void main() {
       expect(prog.duration, 1);
     });
   });
+
+  // BUG-677（TODO-1346 复诉「书籍的进度还是没有啊」）：验证 BUG-659 的 computeBookProgress
+  // 修复确实接进渲染路径、并对用户真实书架数据算出与旧包(debug.6783 忽略 charOffset)判然
+  // 有别的进度——复诉根因是旧包，不是「算了没接上」。把用户本机 DB 的真实章字数数组固化成
+  // 回归守卫，锁死 PM 假设 B(修不足/没接上)永不回归。
+  group('computeBookProgress wired + real-shelf data (BUG-677 复诉守卫)', () {
+    test(
+        '_bookToMediaItem 把 computeBookProgress 结果喂进 MediaItem.position/duration '
+        '(锁死「算了没接上」)', () {
+      final String source = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      // 修复必须真接上渲染：_bookToMediaItem 调 computeBookProgress 并用它的
+      // position/duration 建 MediaItem。断了这根线(PM 怀疑的「char_offset 纳入了但渲染
+      // 分支没走到」)就退回复诉症状。
+      expect(source, contains('computeBookProgress('));
+      expect(source, contains('position = prog.position'));
+      expect(source, contains('duration = prog.duration'));
+    });
+
+    test(
+        '用户真实 リビルド (sec=8, charOffset=11120)：章内 charOffset 让「旧包看着像 0%」'
+        '的在读书前进', () {
+      // 用户本机 reader_positions x epub_books 真值：前 8 章多为前言(0 字)，当前第 8 章
+      // 23707 字。旧包(debug.6783)忽略 charOffset -> 只算前 8 章 = 286 字(<0.2%，看着像空
+      // 条)；修复把章内 11120 计入。
+      const List<int> rebuild = <int>[
+        0, 0, 0, 0, 0, 110, 0, 176, //
+        23707, 10923, 9904, 24592, 9883, 14559, 16308, 8977, 14023, 13684, //
+        10311, 12330, 11187, 9891, 0, 0, 0, 0, 301, 351, 0,
+      ];
+      final int before8 = rebuild.take(8).reduce((int a, int b) => a + b);
+      expect(before8, 286); // 旧包忽略 charOffset 时的 position
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: rebuild,
+        sectionIndex: 8,
+        charOffset: 11120,
+      );
+      expect(prog.position, before8 + 11120); // 章内进度计入
+      expect(prog.position, greaterThan(before8),
+          reason: '修复必须让被旧包算成近 0 的在读书前进');
+      expect(prog.position / prog.duration, greaterThan(0.05),
+          reason: 'リビルド 现场进度应 ~5.96%(可见)，而非旧包的 0.15%');
+    });
+
+    test(
+        '用户真实 安達9 (sec=6, charOffset=0，前节全前言)：诚实 0%——'
+        '不是 BUG-659 回归也不灌水', () {
+      // 前 6 节全是前言(0 字)、第 6 节是首个内容页起点。读者停在正文开头前 -> 已读字符=0。
+      // 按字符计数的诚实结果(不为好看谎报进度)；用户升级后仍会见 0%，属预期。
+      const List<int> adachi9 = <int>[
+        0, 0, 0, 0, 0, 0, 106, 51, 0, 8760, 2017, 0, 19647, 0, //
+        429, 8510, 1717, 0, 10541, 2148, 0, 5738, 18, 0, 0, 206, 181, 0,
+      ];
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: adachi9,
+        sectionIndex: 6,
+        charOffset: 0,
+      );
+      expect(prog.position, 0, reason: '前节全前言 -> 已读正文字符=0，诚实 0%');
+      expect(prog.duration, greaterThan(0), reason: '全书有字数，分母非 0(不是老书回退分支)');
+    });
+  });
 }
