@@ -504,9 +504,8 @@ enum _VideoSidePanelKind {
   speed,
   settings,
   // TODO-1351：`subtitleSources` / `audioTracks` 两个「外面浮的轨切换器」已删——字幕轨
-  // 收进设置面板「字幕」分类顶部、音频轨收进「音频」分类。副字幕仍是独立浮层
-  // （从字幕分类的「副字幕」入口打开）。
-  secondarySubtitleSources,
+  // 收进设置面板「字幕」分类顶部、音频轨收进「音频」分类。TODO-1350：`secondarySubtitleSources`
+  // 副字幕浮层也删——副字幕源改内联在「字幕」分类的可展开区里就地切换（不再跳独立窗口）。
   chapters,
   quality,
 }
@@ -5078,6 +5077,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       subtitleTrackSection: _controller != null
           ? _buildSubtitleTrackSettingsSection(_controller!)
           : null,
+      // TODO-1350（字幕轨即时加载）：进入「字幕」分类时（重新）枚举当前视频字幕源，让
+      // 字幕轨列表在打开分类那一刻就加载，不再依赖「字幕轨」按钮预填 / 关掉重开。
+      onSubtitleCategoryShown: _ensureSubtitleMenuSourcesLoaded,
       // TODO-1350：视频内也能切整个 app 的配色主题（跟随系统 + 预设含护眼米色 + 当前
       // 自定义），复用全局 themePresets / setAppThemeKey。
       themeOptions: _buildVideoThemeOptions(),

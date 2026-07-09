@@ -1,0 +1,12 @@
+## BUG-666 · 视频字幕轨切换不即时+副字幕跳到另一个窗口
+- **报告**：2026-07-09（用户：）
+- **真实性**：✅ 真 bug（两处独立根因）
+  - ① **字幕轨列表不即时加载、要重开才行**：字幕源列表 `_subtitleMenuSources` 只由「字幕轨」控制按钮的 `_showSubtitleSourceMenu`（`hibiki/lib/src/pages/implementations/video_hibiki/subtitle.part.dart:320`）预填。用户经设置齿轮进面板（默认 `playback` 分类）再点顶栏「字幕」分类 chip / 窄窗导航行时，分类切换只在 `VideoQuickSettingsSheet` 内部 `setState(() => _subPage = ...)`（`hibiki/lib/src/media/video/video_quick_settings_sheet.dart:551/619`），从不回调页面枚举字幕源 → `_subtitleMenuSources` 保持空 → 字幕轨列表空白，得关掉、改用「字幕轨」按钮重开才加载。
+  - ② **副字幕打开跳到另一个窗口**：字幕轨切换区里「副字幕」项 `onTap` 走 `_showSecondarySubtitleSourceMenu` → `_showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources)`（`subtitle.part.dart:381/388`），打开一个独立的半透明浮层侧栏（`_VideoSidePanelKind.secondarySubtitleSources`，`video_hibiki_page.dart:509`）。主字幕轨切换早已收进设置面板「字幕」分类（TODO-1351），唯独副字幕仍是独立浮层，故点「副字幕」会跳出设置面板到另一个窗口。
+- **[x] ① 已修复** — 提交 `<pending>`
+  - ①：设置面板进入「字幕」分类时触发新回调 `onSubtitleCategoryShown`（`video_quick_settings_sheet.dart`：`_selectSubPage` 统一 chip/导航行入口、`initState`/`didUpdateWidget` 处理 `initialCategory=='subtitle'` 直达，帧后触发避免 build 期 setState 父页）；视频页接到 `_ensureSubtitleMenuSourcesLoaded`（`subtitle.part.dart`，`video_hibiki_page.dart:5082`），按「进入字幕分类」事件枚举 `_subtitleSourcesForMenu`（内嵌轨 ffprobe + 同目录外挂，`_subtitleMenuLoading` 期间顶部进度条，已在枚举则跳过）。两个入口（「字幕轨」按钮直达 + 齿轮进面板点分类）统一即时加载。
+  - ②：删 `_VideoSidePanelKind.secondarySubtitleSources` 及其 side-panel title/width/child 三分支（`side_panel.part.dart`）+ `_showSecondarySubtitleSourceMenu` + `_buildSecondarySubtitleSourcesSidePanel`；副字幕源改内联可展开区——「字幕」分类里的 `ExpansionTile`（`subtitle.part.dart:_buildSubtitleTrackRows`），children 由新的行构建器 `_buildSecondarySubtitleRows(context, controller)` 就地渲染（关闭项 + 内嵌轨，配色随设置面板浅色 MD3），切换副字幕不再跳独立窗口。副字幕 apply 逻辑（`_selectSecondarySubtitleSource`/`setSecondaryCues`）未动（避免与 TODO-1341 双字幕定位冲突）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_quick_settings_sheet_test.dart`
+  - Widget 行为：`BUG-666: 打开面板直达「字幕」分类即触发字幕源加载回调（宽窗）` / `从别的分类点「字幕」chip 触发...` / `窄窗导航进「字幕」分类触发...`（进入字幕分类必回调 `onSubtitleCategoryShown` + 注入的字幕轨切换区内联渲染）。
+  - 源码守卫：`BUG-666 源码守卫：副字幕改内联可展开区，不再跳独立浮层窗口`（enum/side-panel 分支/`_showSecondarySubtitleSourceMenu`/`_buildSecondarySubtitleSourcesSidePanel` 均删除，改 `ExpansionTile`+`_buildSecondarySubtitleRows`）/ `BUG-666 源码守卫：字幕分类被打开时驱动字幕源枚举`（`onSubtitleCategoryShown` 接 `_ensureSubtitleMenuSourcesLoaded`+`_selectSubPage`+帧后回调）。
+- **备注**：真机需复测（media_kit headless 不可用）：本地视频齿轮进面板→点「字幕」分类→字幕轨列表即时出现；点「副字幕」在原面板内联展开、就地切换不跳窗口。`flutter analyze` No issues；上述测试全绿。

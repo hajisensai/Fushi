@@ -107,6 +107,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.themeOptions = const <VideoThemeOption>[],
     this.currentThemeKey,
     this.onSelectThemeKey,
+    this.onSubtitleCategoryShown,
     super.key,
   });
 
@@ -286,6 +287,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// TODO-1350：切主题回调（交给 `setAppThemeKey` 落盘 + 重建全局主题）。null = 不显示。
   final Future<void> Function(String key)? onSelectThemeKey;
 
+  /// TODO-1350（字幕轨即时加载）：进入「字幕」分类时回调，让视频页（重新）枚举当前视频
+  /// 的字幕源填 [subtitleTrackSection]（内嵌轨 + 外挂 + 副字幕内嵌轨）。这样字幕轨列表在
+  /// 打开「字幕」分类那一刻就加载，而不再依赖专门的「字幕轨」按钮预填、也不用关掉再重开
+  /// 面板（用户报「字幕轨不即时加载、要重开」）。null = 不触发（如无 controller / 测试）。
+  final VoidCallback? onSubtitleCategoryShown;
+
   @override
   State<VideoQuickSettingsSheet> createState() =>
       _VideoQuickSettingsSheetState();
@@ -359,6 +366,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   bool _isWide = false;
 
   @override
+  void initState() {
+    super.initState();
+    // TODO-1350：直接开在「字幕」分类（如「字幕轨」按钮驱动 initialCategory=='subtitle'）时，
+    // 挂载即触发一次字幕源加载回调（延后到帧后，避免在 initState 阶段同步触发父页 setState）。
+    if (widget.initialCategory == 'subtitle') {
+      _notifySubtitleCategoryShownAfterFrame();
+    }
+  }
+
+  @override
   void dispose() {
     _rawConfController.dispose();
     _delayController.dispose();
@@ -378,6 +395,31 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     if (widget.initialCategory != null &&
         widget.initialCategory != oldWidget.initialCategory) {
       _subPage = widget.initialCategory;
+      // TODO-1350：面板已开着时用户又点「字幕轨」按钮（initialCategory 变成 'subtitle'）→
+      // 触发字幕源加载回调（延后到帧后）。
+      if (widget.initialCategory == 'subtitle') {
+        _notifySubtitleCategoryShownAfterFrame();
+      }
+    }
+  }
+
+  /// TODO-1350：触发「进入字幕分类」回调，让视频页枚举字幕源填字幕轨切换区。延后到当前
+  /// 帧结束再调，避免在 build / initState / didUpdateWidget 期间同步触发父页面 setState。
+  void _notifySubtitleCategoryShownAfterFrame() {
+    final VoidCallback? cb = widget.onSubtitleCategoryShown;
+    if (cb == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) cb();
+    });
+  }
+
+  /// 切换分类子页（顶栏 chip / 窄窗导航行共用）；进入「字幕」分类时触发字幕源加载回调
+  /// （TODO-1350），统一两个入口，避免「切到字幕分类却没加载字幕轨」的入口遗漏。
+  void _selectSubPage(String id) {
+    final bool enteringSubtitle = id == 'subtitle' && _subPage != 'subtitle';
+    setState(() => _subPage = id);
+    if (enteringSubtitle) {
+      widget.onSubtitleCategoryShown?.call();
     }
   }
 
@@ -548,7 +590,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 // 横向空间，根除「图标 + 长文字标签」挤不下 / 显示不全。
                 iconOnly: true,
                 tooltip: cat.label,
-                onSelected: (_) => setState(() => _subPage = cat.id),
+                onSelected: (_) => _selectSubPage(cat.id),
               ),
             ),
         ],
@@ -616,7 +658,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               AdaptiveSettingsNavigationRow(
                 title: cat.label,
                 icon: cat.icon,
-                onTap: () => setState(() => _subPage = cat.id),
+                onTap: () => _selectSubPage(cat.id),
               ),
           ],
         ),
