@@ -247,17 +247,19 @@ extension _VideoSubtitle on _VideoHibikiPageState {
           ),
       // TODO-857 / TODO-1312 视频双字幕：副字幕入口。副字幕走 Flutter overlay 副层
       // cue 流（可逐字符查词），仅本地视频内嵌轨（远端无内嵌轨枚举，不显示）。
+      // TODO-1350：副字幕源改内联可展开区（ExpansionTile），在「字幕」分类里就地切换，
+      // 不再点一下跳到另一个浮层窗口（用户报「副字幕打开会去到另一个窗口」）。
       if (!_isRemote) const Divider(height: 1),
       if (!_isRemote)
-        ListTile(
+        ExpansionTile(
           leading: const Icon(Icons.subtitles_outlined),
           title: Text(t.video_secondary_subtitle_sources),
           subtitle: Text(t.video_secondary_subtitle_hint),
-          trailing: const Icon(Icons.chevron_right),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_showSecondarySubtitleSourceMenu(controller)),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: _buildSecondarySubtitleRows(context, controller),
         ),
     ];
     return Column(
@@ -266,18 +268,21 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     );
   }
 
-  /// 副字幕源 side panel（TODO-857 / TODO-1312 视频双字幕）：仅列内嵌字幕轨 + 顶部
-  /// 「关闭」项。TODO-1312 起副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），
-  /// 与主字幕同款——复用 [_subtitleMenuSources] 但只取内嵌轨（图形位图轨抽不出文本 cue，
-  /// 选中时 loadCuesForSource 返回空、诚实提示失败）。
-  Widget _buildSecondarySubtitleSourcesSidePanel(
+  /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 内嵌字幕轨（复用
+  /// [_subtitleMenuSources] 只取内嵌轨——图形位图轨抽不出文本 cue，选中时 loadCuesForSource
+  /// 返回空、诚实提示失败）。副字幕走 Flutter overlay 副层 cue 流（**可逐字符查词**），与
+  /// 主字幕同款。TODO-1350：这些行以前住在一个独立浮层侧栏里（点「副字幕」跳到另一个窗口，
+  /// 用户报「副字幕打开会去到另一个窗口」）；现直接内联在「字幕」分类的可展开区里就地切换。
+  /// [context] 是设置面板（浅色 MD3）的构建上下文，配色随之解析（与主字幕轨行一致）。
+  List<Widget> _buildSecondarySubtitleRows(
+    BuildContext context,
     VideoPlayerController controller,
   ) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
     final List<SubtitleSource> embedded = _subtitleMenuSources
         .where((SubtitleSource s) => s.isEmbedded)
         .toList(growable: false);
-    final List<Widget> rows = <Widget>[
+    return <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
       ListTile(
         leading: const Icon(Icons.subtitles_off),
@@ -307,10 +312,6 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                   unawaited(_selectSecondarySubtitleSource(controller, source)),
         ),
     ];
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: rows,
-    );
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
@@ -366,26 +367,32 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     });
   }
 
-  /// 弹「副字幕源」side panel（TODO-857 视频双字幕 Path A）。复用主字幕的源枚举
-  /// （[_subtitleSourcesForMenu]）填 [_subtitleMenuSources]，副字幕面板只取其中内嵌轨。
-  /// 远端 / 无本地视频路径时列空（远端无内嵌轨枚举）。
-  Future<void> _showSecondarySubtitleSourceMenu(
-    VideoPlayerController controller,
-  ) async {
+  /// TODO-1350（字幕轨即时加载）：进入设置面板「字幕」分类时（重新）枚举当前视频的字幕源
+  /// 填 [_subtitleMenuSources]（主字幕轨行 + 内联副字幕轨行都读它）。此前 [_subtitleMenuSources]
+  /// 只由「字幕轨」控制按钮的 [_showSubtitleSourceMenu] 预填——用户经设置齿轮进面板再点
+  /// 「字幕」分类 chip / 导航行时不走那条路径，字幕轨列表就空着，得关掉重开才加载（用户报
+  /// 「字幕轨不即时加载」）。改由「字幕分类被打开」事件
+  /// （[VideoQuickSettingsSheet.onSubtitleCategoryShown]）驱动，两个入口统一：
+  ///  - 远端 / 无本地视频路径：字幕轨走 [_youtubeCaptionTracks] / [_remoteEmbeddedSubtitleTracks]，
+  ///    本地源列表清空即可（[_buildSubtitleTrackRows] 远端分支不读 [_subtitleMenuSources]）。
+  ///  - 本地视频：ffprobe 枚举内嵌轨 + 同目录外挂（[_subtitleSourcesForMenu]，只探测轨元数据、
+  ///    非全量 demux，开销小），loading 期间字幕轨区顶部显 [LinearProgressIndicator]。
+  /// 已在枚举中（[_subtitleMenuLoading]）则跳过，避免与 [_showSubtitleSourceMenu] 的加载重复。
+  Future<void> _ensureSubtitleMenuSourcesLoaded() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
     final String? videoPath = _currentVideoPath;
     if (_isRemote || videoPath == null) {
-      _rebuild(() {
-        _subtitleMenuSources = const <SubtitleSource>[];
-        _subtitleMenuLoading = false;
-      });
-      _showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources);
+      if (_subtitleMenuSources.isNotEmpty || _subtitleMenuLoading) {
+        _rebuild(() {
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuLoading = false;
+        });
+      }
       return;
     }
-    _rebuild(() {
-      _subtitleMenuSources = const <SubtitleSource>[];
-      _subtitleMenuLoading = true;
-    });
-    _showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources);
+    if (_subtitleMenuLoading) return;
+    _rebuild(() => _subtitleMenuLoading = true);
     final List<SubtitleSource> sources;
     try {
       sources = await _subtitleSourcesForMenu(
