@@ -1,4 +1,4 @@
-## BUG-666 · 重导入书选文件后书名不刷新
+## BUG-668 · 重导入书选文件后书名不刷新
 - **报告**：2026-07-09（用户：导入书对话框先选了 A（魔眼）又重选 B（尸人）替换，下方书名仍显示旧书 A 不刷新）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/audiobook/book_import_dialog.dart`（origin/develop 8ed9b92da）五个书名回填点全部以 `if (_titleCtrl.text.isEmpty)` 为闸门——`_pickEpub`:400、`initState`:110、`_handleDialogDrop`:200、`_pickSubtitle`:480、`_tryExtractAudioMetadata`:586。首次选文件把书名自动派生进标题框后标题非空，任何再选（含同一「选书」槽位换另一本）都被 `isEmpty` 闸门挡下，书名永不刷新。这是把「标题非空」当成「用户已定标题」的错误代理。
 - **[x] ① 已修复** — 引入标题来源身份 `ImportTitleSource{none,metadata,subtitle,epub,user}` 与纯函数 `resolveImportTitle`：覆盖决策改为「用户手打过（source==user 且非空）→ 永不覆盖；标题为空、或本次来源与当前来源相同（同槽位重选换一本）→ 刷新为新派生书名；否则（跨来源且非空）→ 保持不变」。跨来源保持旧「非空即不覆盖」语义逐位等价（字幕/音频标签不夺走 epub 书名），仅同来源重选新增刷新——即修复。五个回填点统一走 `_autoFillTitle(derived, incoming)`，标题框 `onChanged` 置 `user` 锁定手打。`hibiki/lib/src/media/audiobook/book_import_dialog.dart`。提交 50aa20a9f。

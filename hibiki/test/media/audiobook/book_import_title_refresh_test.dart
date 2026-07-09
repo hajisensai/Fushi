@@ -1,4 +1,4 @@
-// BUG-666 / TODO-1362：导入书对话框先选书 A（魔眼）又重选书 B（尸人）替换时，
+// BUG-668 / TODO-1362：导入书对话框先选书 A（魔眼）又重选书 B（尸人）替换时，
 // 下方标题框的书名不刷新。根因是五个书名回填点全部以 `if (_titleCtrl.text.isEmpty)`
 // 为闸门——首次自动派生书名后标题非空，任何再选（含同一「选书」槽位换另一本）都被挡下。
 //
@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 
 void main() {
-  group('resolveImportTitle — 同来源重选刷新（BUG-666 核心）', () {
+  group('resolveImportTitle — 同来源重选刷新（BUG-668 核心）', () {
     test('epub 先选 A 再重选 B → 书名刷新为 B', () {
       final r = resolveImportTitle(
         currentText: '魔眼',
@@ -136,7 +136,7 @@ void main() {
 
     test('标题回填不再用 `_titleCtrl.text.isEmpty` 闸门（那是本 bug 的根因）', () {
       expect(source.contains('_titleCtrl.text.isEmpty'), isFalse,
-          reason: '任何以标题为空判断是否回填的闸门都会复发 BUG-666，'
+          reason: '任何以标题为空判断是否回填的闸门都会复发 BUG-668，'
               '必须改走 _autoFillTitle + 来源身份。');
     });
 
