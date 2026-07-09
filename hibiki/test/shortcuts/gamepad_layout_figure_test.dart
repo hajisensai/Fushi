@@ -160,6 +160,31 @@ void main() {
       }
     });
 
+    testWidgets(
+        'the controller chassis silhouette is painted behind the buttons '
+        '(TODO-942 v2)', (WidgetTester tester) async {
+      final HibikiShortcutRegistry registry = buildRegistry();
+      await pumpView(tester, registry, ShortcutScope.reader);
+      // The "后面的手柄图案" the user demanded: a controller-body silhouette
+      // drawn behind the button icons. Pin its CustomPainter presence so a
+      // refactor cannot silently drop the chassis and regress to bare buttons
+      // floating on a rectangle again.
+      final Iterable<CustomPaint> paints = tester.widgetList<CustomPaint>(
+        find.descendant(
+          of: find.byType(GamepadLayoutView),
+          matching: find.byType(CustomPaint),
+        ),
+      );
+      expect(
+        paints.any((CustomPaint cp) =>
+            cp.painter?.runtimeType.toString().contains('GamepadChassis') ??
+            false),
+        isTrue,
+        reason: 'the gamepad figure must render a controller body silhouette '
+            'behind the button icons, not leave them on an empty rectangle',
+      );
+    });
+
     testWidgets('a bound button renders highlighted (bound=true)',
         (WidgetTester tester) async {
       final HibikiShortcutRegistry registry = buildRegistry();
