@@ -159,8 +159,11 @@ void main() {
       );
     });
 
-    // board 1112：单文件视频/字幕导入改走真实路径文件浏览器（不复制到 cache）。
-    test('video _pickVideo/_pickSubtitle call pickRealFilePath', () {
+    // board 1112：视频本体导入走真实路径文件浏览器（绝对路径不复制到 cache）。
+    // board 1360：字幕导入回退系统文件选择器（导入即消费、不长期引用绝对路径）。
+    test(
+        'video _pickVideo keeps real-path browser, '
+        '_pickSubtitle reverts to system picker', () {
       final String src = File('lib/src/media/video/video_import_dialog.dart')
           .readAsStringSync();
       final String pickVideo = _methodBody(src, 'Future<void> _pickVideo()');
@@ -171,7 +174,7 @@ void main() {
         pickVideo.contains('pickRealFilePath('),
         isTrue,
         reason: '单文件视频选择必须走真实路径文件浏览器，'
-            '而非直接 FilePicker.pickFiles（安卓会复制到 cache）',
+            '而非直接 FilePicker.pickFiles（安卓会复制到 cache、清缓存即失效）',
       );
       expect(
         pickVideo.contains('FilePicker.platform.pickFiles'),
@@ -179,14 +182,14 @@ void main() {
         reason: '_pickVideo 不得再直接调 FilePicker.pickFiles',
       );
       expect(
-        pickSubtitle.contains('pickRealFilePath('),
+        pickSubtitle.contains('pickSystemFilePath('),
         isTrue,
-        reason: '单文件字幕选择必须走真实路径文件浏览器',
+        reason: '字幕导入即被解析消费，维持系统文件选择器（board 1360 用户诉求）',
       );
       expect(
-        pickSubtitle.contains('FilePicker.platform.pickFiles'),
+        pickSubtitle.contains('pickRealFilePath('),
         isFalse,
-        reason: '_pickSubtitle 不得再直接调 FilePicker.pickFiles',
+        reason: '_pickSubtitle 不得再走真实路径浏览器（board 1360 回退系统选择器）',
       );
     });
 
@@ -225,15 +228,25 @@ void main() {
       }
 
       expect(
-        audiobookAlignment.contains('pickRealFilePath('),
+        audiobookAlignment.contains('pickSystemFilePath('),
         isTrue,
-        reason: '有声书对齐字幕/SMIL/JSON 必须复用文件 helper，'
-            'iOS 上由 helper 避开 .srt UTI 过滤问题',
+        reason: '有声书对齐字幕/SMIL/JSON 导入即被消费，维持系统文件选择器（board 1360）；'
+            'iOS .srt UTI 过滤问题由 helper 内部处理',
+      );
+      expect(
+        audiobookAlignment.contains('pickRealFilePath('),
+        isFalse,
+        reason: '_pickAlignment 不得再走真实路径浏览器（board 1360 回退系统选择器）',
+      );
+      expect(
+        bookSubtitle.contains('pickSystemFilePath('),
+        isTrue,
+        reason: '书籍导入字幕导入即被消费，维持系统文件选择器（board 1360），和视频字幕一致',
       );
       expect(
         bookSubtitle.contains('pickRealFilePath('),
-        isTrue,
-        reason: '书籍导入字幕必须复用文件 helper，和视频字幕路径保持一致',
+        isFalse,
+        reason: '_pickSubtitle 不得再走真实路径浏览器（board 1360 回退系统选择器）',
       );
     });
 

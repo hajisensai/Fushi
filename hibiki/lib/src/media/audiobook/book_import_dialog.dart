@@ -484,11 +484,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
-      final String? path = await pickRealFilePath(
+      // 字幕导入时即被解析成 cues / 生成 EPUB 当场消费，不以绝对路径长期引用，故维持
+      // 系统文件选择器（board 1360）：用户熟悉，且能触达 Downloads / 云盘 / 最近文件。
+      final String? path = await pickSystemFilePath(
         context: context,
-        appModel: appModel,
         allowedExtensions: _subtitleExtensions,
       );
       if (path == null || !mounted) return;
