@@ -338,3 +338,61 @@ double _cascadeHeadroom(double cursorWork, double screenWork) {
   }
   return headroom > 0 ? headroom : 0;
 }
+
+/// TODO-1231（BUG-583/670 续·「弹窗生成在窗口外」）——根卡 shell 的窗口本地偏移
+/// （CSS px·不含 dpr），把根卡整体钳进工作区。
+///
+/// 根因：根卡是整条级联里**唯一不经工作区 clamp 的卡**——级联子卡全部经
+/// [computeFrameRect] 夹进工作区，而根卡恒被钉在 window-local (0,0)（= 光标 + 8 的
+/// 屏幕位置）。历史上根卡的「进屏」由 C++ `Reveal`/`RevealStack` 的右/下边 clamp 滑动
+/// **整个窗口**兜底；reserve-to-edge 地板（[computeCascadeHeadroomSeed]·BUG-670）把
+/// 窗口原点钉死在工作区左上角、窗口尺寸夹到工作区大小之后，这两个 clamp 恒为 no-op
+/// （正是该修复的「绝无失配」证明），根卡从此失去唯一的 fit-to-screen 机制：光标距
+/// 右边缘 < 卡宽（或距底边 < 卡高）时，根卡越出工作区的部分被窗口右/下边（= 工作区
+/// 边）整条裁掉——右下角极端情形几乎整卡不可见（「弹窗直接生成在窗口外面」）。
+///
+/// 修复 = 消除特殊情况：根卡与子卡同规则，在 Dart 布局域按**同一 iOS 式 clamp**
+/// （[_clampLikeIos]，与 [computeFrameRect] 的中心 clamp 同语义）把根卡工作区位置
+/// 夹进 `[0, screenWork - cardDim]`，返回相对光标锚点（= window-local 原点）的偏移：
+///
+///   offset = clampLikeIos(cursorWork, 0, screenWork - cardDim) - cursorWork
+///
+/// 性质（均有单测锁定）：
+///   - 光标四周空间充足 → 偏移 (0,0)，逐字节等于修前几何（Never break userspace）。
+///   - 靠右/下 → 偏移为负 = 恰好回退越界量，根卡贴边完整可见（与修前 C++ 窗口滑动
+///     的落点一致）。
+///   - offset >= -cursorWork 恒成立（clamp 下界 0）→ 根卡 window-local 位置恒 >=
+///     reserve-to-edge 地板 → **窗口原点仍从首帧冻结**，BUG-670 的「父卡任意层级
+///     零位移」保证不回退；根卡 local 为负时首帧走 v3 reveal-ready 门（held 到
+///     commitLayerShift），不会先裁后跳。
+///   - 卡比工作区还大（screenWork - cardDim < 0）→ clampLikeIos 落在下界 0 → 根卡
+///     钉在工作区近边，远端裁切不可避免（屏幕物理极限）。
+///   - [screenWork] <= 0（native 未上报工作区，cursorWork 同为 0）→ 偏移 0，退化为
+///     修前几何。
+///
+/// 纯函数（无 IO / 无平台 / 无 dpr），Y 轴按卡**最大高**（cardH）悲观钳位——与
+/// [computeFrameRect] 对子卡的悲观放置一致（内容实测高度是异步到达的，布局域只知上限）。
+({double left, double top}) computeRootShellOffset({
+  required double cursorWorkX,
+  required double cursorWorkY,
+  required double screenWorkW,
+  required double screenWorkH,
+  required double cardW,
+  required double cardH,
+}) {
+  return (
+    left: _rootShellAxisOffset(cursorWorkX, screenWorkW, cardW),
+    top: _rootShellAxisOffset(cursorWorkY, screenWorkH, cardH),
+  );
+}
+
+/// 单轴根卡偏移：把 `cursorWork`（根卡期望的工作区位置 = 光标+8）夹进
+/// `[0, screenWork - cardDim]` 后与原位置作差。`screenWork <= 0` = 无工作区信息 →
+/// 0（修前几何）。见 [computeRootShellOffset]。
+double _rootShellAxisOffset(
+    double cursorWork, double screenWork, double cardDim) {
+  if (screenWork <= 0) {
+    return 0;
+  }
+  return _clampLikeIos(cursorWork, 0, screenWork - cardDim) - cursorWork;
+}

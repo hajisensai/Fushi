@@ -659,6 +659,174 @@ void main() {
       }
     });
   });
+
+  // TODO-1231（BUG-583/670 续·「弹窗生成在窗口外」）—— computeRootShellOffset 单测。
+  // 根卡是级联里唯一不经 computeFrameRect clamp 的卡；reserve-to-edge 地板把 C++ 的
+  // 窗口右/下 clamp 变成 no-op 后，光标靠屏右/下时根卡越出工作区被窗口边裁掉。该
+  // 纯函数把根卡（光标+8 的工作区位置）按子卡同语义 clamp 进 [0, screenWork - card]，
+  // 返回相对光标锚点的 window-local 偏移。
+  group('TODO-1231 computeRootShellOffset (root card clamped into work area)',
+      () {
+    const double screenW = 1920;
+    const double screenH = 1040;
+    const double cardW = 400; // defaultPopupMaxWidth
+    const double cardH = 360; // defaultPopupMaxHeight
+
+    ({double left, double top}) offsetFor(double cx, double cy) {
+      return computeRootShellOffset(
+        cursorWorkX: cx,
+        cursorWorkY: cy,
+        screenWorkW: screenW,
+        screenWorkH: screenH,
+        cardW: cardW,
+        cardH: cardH,
+      );
+    }
+
+    test('interior cursor with ample space -> (0,0), pre-fix geometry', () {
+      final ({double left, double top}) o = offsetFor(500, 300);
+      expect(o.left, 0);
+      expect(o.top, 0);
+    });
+
+    test(
+        'REGRESSION LOCK: cursor near the RIGHT edge -> pulled back left by '
+        'exactly the overflow', () {
+      // cursorWork 1700 + card 400 = 2100 > 1920 -> overflow 180.
+      final ({double left, double top}) o = offsetFor(1700, 300);
+      expect(o.left, -180);
+      expect(o.top, 0);
+      // The clamped root card fits the work area completely.
+      expect(1700 + o.left + cardW, lessThanOrEqualTo(screenW));
+      expect(1700 + o.left, greaterThanOrEqualTo(0));
+    });
+
+    test('REGRESSION LOCK: cursor near the BOTTOM edge -> pulled back up', () {
+      // cursorWork 900 + card 360 = 1260 > 1040 -> overflow 220.
+      final ({double left, double top}) o = offsetFor(300, 900);
+      expect(o.left, 0);
+      expect(o.top, -220);
+      expect(900 + o.top + cardH, lessThanOrEqualTo(screenH));
+    });
+
+    test(
+        'REGRESSION LOCK: bottom-right corner (the user acceptance geometry) '
+        '-> both axes clamped, card fully inside the work area', () {
+      // 修前：卡在 (1900,1030) 起步、窗口右/下边 == 工作区边 -> 几乎整卡被裁
+      // （「弹窗直接生成在窗口外面」）。修后：钳回 (1520,680)，完整可见。
+      final ({double left, double top}) o = offsetFor(1900, 1030);
+      expect(o.left, -380);
+      expect(o.top, -350);
+      expect(1900 + o.left, 1520); // == screenW - cardW
+      expect(1030 + o.top, 680); // == screenH - cardH
+    });
+
+    test(
+        'card wider/taller than the work area -> pinned at the near edge '
+        '(clampLikeIos lower bound wins)', () {
+      final ({double left, double top}) o = computeRootShellOffset(
+        cursorWorkX: 200,
+        cursorWorkY: 150,
+        screenWorkW: 300,
+        screenWorkH: 200,
+        cardW: 400,
+        cardH: 360,
+      );
+      expect(o.left, -200); // = -cursorWorkX: root pinned at the work edge.
+      expect(o.top, -150);
+    });
+
+    test('no work area reported (screenWork <= 0) -> (0,0), pre-fix geometry',
+        () {
+      final ({double left, double top}) o = computeRootShellOffset(
+        cursorWorkX: 0,
+        cursorWorkY: 0,
+        screenWorkW: 0,
+        screenWorkH: -1,
+        cardW: cardW,
+        cardH: cardH,
+      );
+      expect(o.left, 0);
+      expect(o.top, 0);
+    });
+
+    test(
+        'negative cursorWork (cursor over a LEFT-side taskbar, work origin '
+        'right of the cursor) -> positive offset pulls the card into work', () {
+      final ({double left, double top}) o = offsetFor(-20, 300);
+      expect(o.left, 20);
+      expect(o.top, 0);
+    });
+
+    test(
+        'cursorWork beyond the work far edge (cursor over a bottom taskbar) '
+        '-> clamped back inside', () {
+      final ({double left, double top}) o = offsetFor(300, 1100);
+      expect(o.top, 680 - 1100); // root top lands at screenH - cardH.
+    });
+
+    // 关键不变量：根卡偏移恒 >= reserve-to-edge 地板（clamp 下界 0 保证），因此
+    // measureAndReport 的 union-bbox 原点仍被地板托住、首帧后绝不再外移 ——
+    // BUG-670 的「父卡任意层级零位移」保证不因本修复回退。同时（卡放得下时）
+    // 根卡完整落在工作区内。
+    test(
+        'INVARIANT sweep: offset >= headroom floor (origin stays frozen) and '
+        'the clamped root card fits the work area', () {
+      for (double cx = 0; cx <= screenW; cx += 128) {
+        for (double cy = 0; cy <= screenH; cy += 104) {
+          final ({double left, double top}) o = offsetFor(cx, cy);
+          final ({double left, double top}) floor = computeCascadeHeadroomSeed(
+            cursorWorkX: cx,
+            cursorWorkY: cy,
+            screenWorkW: screenW,
+            screenWorkH: screenH,
+          );
+          expect(o.left, greaterThanOrEqualTo(floor.left - 1e-9),
+              reason: 'cursor ($cx,$cy): root offset must stay inside the '
+                  'reserved floor so the window origin never moves');
+          expect(o.top, greaterThanOrEqualTo(floor.top - 1e-9),
+              reason: 'cursor ($cx,$cy): root offset must stay inside the '
+                  'reserved floor so the window origin never moves');
+          final double rootLeft = cx + o.left;
+          final double rootTop = cy + o.top;
+          expect(rootLeft, greaterThanOrEqualTo(0));
+          expect(rootTop, greaterThanOrEqualTo(0));
+          expect(rootLeft + cardW, lessThanOrEqualTo(screenW + 1e-9),
+              reason: 'cursor ($cx,$cy): clamped root card must fit the work '
+                  'area horizontally');
+          expect(rootTop + cardH, lessThanOrEqualTo(screenH + 1e-9),
+              reason: 'cursor ($cx,$cy): clamped root card must fit the work '
+                  'area vertically');
+        }
+      }
+    });
+  });
+
+  // TODO-1231（BUG-583/670 续）—— source guard：render 建造器必须真把根卡钳位接线。
+  // 上面的行为锁只证明纯函数的数学；这里锁「谁在用它」——有人把 _frameRectMap 的
+  // anchorless 分支改回恒 (0,0)、或不再从 buildStackRenderScript 传 rootShellOffset，
+  // 本测试转红。
+  group('TODO-1231 root clamp render wiring guard', () {
+    test('buildStackRenderScript computes + threads computeRootShellOffset',
+        () {
+      final File render = File('lib/src/lookup/global_lookup_render.dart');
+      final String body = render.readAsStringSync();
+      expect(body.contains('computeRootShellOffset('), isTrue,
+          reason: 'the render builder must clamp the root via the pure helper');
+      expect(body.contains('rootShellOffset: rootShellOffset'), isTrue,
+          reason: 'the offset must be threaded into _frameRectMap');
+      expect(
+          body.contains(
+              "'left': rootShellOffset.left + (isVertical ? offset : 0.0)"),
+          isTrue,
+          reason: 'the anchorless branch must base its left on the root clamp');
+      expect(
+          body.contains(
+              "'top': rootShellOffset.top + (isVertical ? 0.0 : offset)"),
+          isTrue,
+          reason: 'the anchorless branch must base its top on the root clamp');
+    });
+  });
 }
 
 void _assertFinitePositive(GlobalLookupFrameRect r) {
