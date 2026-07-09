@@ -54,6 +54,23 @@
     overscroll-behavior-y: contain;
     touch-action: auto;
     -webkit-user-select: text;
+    /* TODO-1354 (BUG-666): the dictionary card is Japanese / CJK dictionary
+       content and must always read left-to-right (headword on the left, example
+       padding-left indentation on the left), matching Niratan. The host WebView
+       forwards the Flutter ambient Directionality (RTL when the user picks an RTL
+       UI language, e.g. Arabic strings_ar) as the platform view's layoutDirection,
+       so the document root defaults to dir=rtl (neither popup.html nor the inline
+       HTML declares an explicit dir). Under RTL the .entry-header flex row reverses
+       its main axis: .expression-scroll (flex:1) lands at the right edge and
+       .header-buttons (margin-left:auto) is pushed to the left, so the headword
+       gets flung to the far right while the buttons + blue focus triangle cluster
+       on the left. Pinning direction:ltr in the author cascade overrides the UA
+       [dir=rtl] inheritance (author origin beats UA origin) and locks the whole
+       card LTR, fixing the headword position, pitch rows, glossary text and example
+       indentation in one shot. The content-css generator re-roots this html,body
+       rule at #entries-container, so in the browser extension it only affects the
+       popup container and never flips the host page's direction (zero leakage). */
+    direction: ltr;
 }
 
 #entries-container {

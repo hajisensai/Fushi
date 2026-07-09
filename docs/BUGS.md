@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-666](bugs/BUG-666-video-subtitle-track-live-secondary.md) | ✅ | ✅ | 视频字幕轨切换不即时+副字幕跳到另一个窗口 |
+| [BUG-666](bugs/BUG-666-headword-ltr-rtl-flip.md) | ✅ | ✅ | 查词卡 headword 在 RTL UI 语言下被甩到最右 |
 | [BUG-665](bugs/BUG-665-anki-mine-connect-timeout.md) | ✅ | ✅ | 远端制卡查重挂满 10s 超时（AnkiConnect 不可达/无响应，缺连接建立超时） |
 | [BUG-664](bugs/BUG-664-pitch-number-float-niratan.md) | ✅ | ✅ | 查词卡音高数字浮动/读音位置不如 Niratan 整齐 |
 | [BUG-663](bugs/BUG-663-peer-device-name-localhost.md) | ✅ | ✅ | 互联已配对设备名显示 localhost 而非真实设备名 |
