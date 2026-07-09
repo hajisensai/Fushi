@@ -246,6 +246,30 @@ final List<yt.YoutubeApiClient> kYoutubeManifestClientFallback =
   yt.YoutubeApiClient.tv,
 ];
 
+/// TODO-1365（BUG-669）：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造 +
+/// 校验该流所用的 UA 完全一致**。[yt.YoutubeApiClient.androidVr] 的 innertube context 不带
+/// `userAgent`，故 youtube_explode 全程用 [yt.YoutubeHttpClient.defaultHeaders] 的**完整
+/// Chrome UA** 发 innertube player 请求铸出 googlevideo 直链、并对首流做 HEAD 403 探测
+/// （youtube_explode `stream_client.getManifest`）。旧代码把回放 UA 硬编码成**残缺**的裸
+/// `Mozilla/5.0`（不是任何真实浏览器会发的完整 UA）——googlevideo 的 svpuc 服务端校验对残缺/
+/// 可疑 UA 往往不是干脆 403，而是**吊住连接（tarpit）**：libmpv/ffmpeg 的 curl 请求一路挂到
+/// `network-timeout`(30s) 超时（video 主流 + audio-add 副音轨都超时打不开，即 TODO-1365 报告的
+/// 现象）。改为复用 youtube_explode 的同一完整 UA，令回放请求与铸流会话 UA 一致（yt-dlp 同
+/// 原则：以铸流 client 的 UA 回放）。youtube_explode 升级改了默认 UA 时本值**自动跟随**
+/// （非 const，运行时取）；守卫见 `test/media/video/youtube_stream_replay_ua_test.dart`。
+/// null 兜底：极端情况下 youtube_explode 默认头缺 `user-agent` 时退到内联完整 Chrome UA。
+final String kYoutubeStreamReplayUserAgent =
+    yt.YoutubeHttpClient.defaultHeaders['user-agent'] ??
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/96.0.4664.18 Safari/537.36';
+
+/// 纯函数：YouTube 分离流的回放 header（TODO-1365）。回放 UA 必须与 youtube_explode 铸流 UA
+/// 一致，见 [kYoutubeStreamReplayUserAgent]。播放页据此设 libmpv `http-header-fields`
+/// （video 主流经 `Media.httpHeaders`、audio-add 副音轨经全局属性继承）；制卡 ffmpeg 经
+/// `-user_agent` 复用同一常量（desktop_audio_clipper）。
+Map<String, String> youtubeStreamReplayHeaders() =>
+    <String, String>{'User-Agent': kYoutubeStreamReplayUserAgent};
+
 /// A1（TODO-1307）：按 [ytClients] 顺序**逐个**取 manifest，首个拿到非空流的 client 即
 /// 返回。**不合并多 client 流**——youtube_explode 的 [StreamClient.getManifest] 传多个
 /// client 时会把各 client 的流全并进一个 manifest（androidVr 流与 ios/tv 直链混在一起），
@@ -369,7 +393,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
     miningVideoUrl: miningVideoUrl,
     miningVideoHasAudio: miningVideoHasAudio,
     title: title,
-    httpHeaders: const <String, String>{'User-Agent': 'Mozilla/5.0'},
+    httpHeaders: youtubeStreamReplayHeaders(),
     cues: cues,
   );
 }

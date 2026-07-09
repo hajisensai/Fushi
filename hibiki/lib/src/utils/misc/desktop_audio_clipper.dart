@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+    show kYoutubeStreamReplayUserAgent;
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
 import 'package:hibiki/src/storage/app_paths.dart';
@@ -49,9 +51,11 @@ bool debugIsRemoteFfmpegInput(String inputPath) =>
 /// 输入零影响。
 List<String> buildFfmpegRemoteInputArgs(String inputPath) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
-  return const <String>[
+  // TODO-1365（BUG-669）：`-user_agent` 与 libmpv 侧回放 UA 同源（[kYoutubeStreamReplayUserAgent]
+  // ＝youtube_explode 铸流 UA），规避 googlevideo svpuc 对残缺 UA 的 tarpit 超时。含常量故非 const。
+  return <String>[
     '-user_agent',
-    'Mozilla/5.0',
+    kYoutubeStreamReplayUserAgent,
     '-reconnect',
     '1',
     '-reconnect_streamed',
@@ -136,7 +140,8 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
       final int end = start + chunkBytes - 1;
       final http.Response res = await client.get(
         Uri.parse(buildGoogleVideoRangeUrl(audioUrl, start, end)),
-        headers: const <String, String>{'User-Agent': 'Mozilla/5.0'},
+        // TODO-1365（BUG-669）：range 下载 UA 与铸流 UA 一致，见 [kYoutubeStreamReplayUserAgent]。
+        headers: <String, String>{'User-Agent': kYoutubeStreamReplayUserAgent},
       );
       // 416（range 越界）= 上一片恰好取到流末尾：正常 EOF，用已下载数据收尾。
       if (res.statusCode == 416) break;
