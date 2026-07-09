@@ -133,12 +133,15 @@ void main() {
         reason: 'wide categories must render in a top horizontal chip bar');
     expect(source, contains('HibikiSelectableChip('),
         reason: 'each top-bar category is a selectable chip');
-    // TODO-640：顶栏 chip 改纯图标 + tooltip（文字挤不下改 hover / 长按文字说明），
-    // 当前分类标题改在详情区顶部呈现。
-    expect(source, contains('iconOnly: true'),
-        reason: 'top-bar category chips are icon-only (TODO-640)');
-    expect(source, contains('tooltip: cat.label'),
-        reason: 'icon-only chips expose the category name via tooltip');
+    // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」，标签按固有宽度完整
+    // 渲染（allowLabelOverflow，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
+    expect(source, contains('allowLabelOverflow: true'),
+        reason: 'top-bar category chips render full labels (TODO-1351)');
+    expect(source, isNot(contains('iconOnly: true')),
+        reason:
+            'icon-only top-bar chips were rejected by the user (TODO-1351)');
+    expect(source, isNot(contains('tooltip: cat.label')),
+        reason: 'labels are inline now, not tooltip-only (TODO-1351)');
     expect(source, contains('_buildWideDetailTitle('),
         reason: 'the selected category title renders atop the detail pane');
     expect(source, contains('scrollDirection: Axis.horizontal'),
@@ -147,9 +150,10 @@ void main() {
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
     expect(source, contains("_subPage ?? 'playback'"));
-    // 六个分类齐全（chip 行 + 窄窗导航行共用 _categories）。
+    // 七个分类齐全（chip 行 + 窄窗导航行共用 _categories；TODO-1351 增「音频」）。
     for (final String id in <String>[
       "id: 'playback'",
+      "id: 'audio'",
       "id: 'shaders'",
       "id: 'mpv'",
       "id: 'subtitle'",

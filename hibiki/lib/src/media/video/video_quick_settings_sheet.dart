@@ -562,14 +562,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  /// 宽窗顶部横向分类条（TODO-556 / TODO-640）：大分类用横滑 chip 行，固定在 sheet
+  /// 宽窗顶部横向分类条（TODO-556 / TODO-1351）：大分类用横滑 chip 行，固定在 sheet
   /// 顶部、不随下方详情滚动；放不下时横向滚动（与窄窗 push 的导航行、宽窗左栏不同）。
   /// 选中 chip 高亮，点击切下方详情。
   ///
-  /// TODO-640：原来 chip 是「图标 + 文字」，长英文标签（含 UI scale 2.0）把顶栏挤到
-  /// 显示不全。改成 **仅图标** chip（[HibikiSelectableChip.iconOnly]）+ hover / 长按
-  /// [Tooltip] 给文字说明，把顶栏压成密度更高的纯图标条；选中分类的标题改在下方详情
-  /// 区顶部用一行大标题呈现（[_buildWideDetailTitle]），用户点进图标后仍知道当前在哪。
+  /// TODO-1351（用户复诉）：分类 tab 必须「图标 + 完整文字」显示（参考「检查器」式
+  /// tab），不得截成省略号、也不得压成纯图标 + tooltip（TODO-640 曾为省顶栏空间改
+  /// 仅图标，用户要求恢复完整文字标签）。标签经
+  /// [HibikiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染（无 ellipsis），
+  /// 顶栏放不下时整条横向滚动——窄窗 / 高 UI scale 下可横滑，单个标签永不截断。
   Widget _buildTopCategoryBar(String selectedId) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return SingleChildScrollView(
@@ -581,15 +582,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             Padding(
               padding: EdgeInsets.only(right: tokens.spacing.gap),
               child: HibikiSelectableChip(
-                // 稳定 key：纯图标 chip 无文字，测试 / 焦点驱动靠 id key 命中分类。
+                // 稳定 key：测试 / 焦点驱动靠 id key 命中分类（不依赖标签文案）。
                 key: ValueKey<String>('video-settings-cat-${cat.id}'),
                 label: cat.label,
                 leadingIcon: cat.icon,
                 selected: cat.id == selectedId,
-                // TODO-640：仅图标 chip——文字说明走 tooltip（hover / 长按），不再占顶栏
-                // 横向空间，根除「图标 + 长文字标签」挤不下 / 显示不全。
-                iconOnly: true,
-                tooltip: cat.label,
+                // TODO-1351：标签完整渲染、不省略；空间不够由外层横滑条兜底。
+                allowLabelOverflow: true,
                 onSelected: (_) => _selectSubPage(cat.id),
               ),
             ),
@@ -598,8 +597,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
-  /// 宽窗详情区顶部的当前分类标题（TODO-640）：顶栏 chip 改纯图标后，靠这行大标题
-  /// 告诉用户「点进的是哪一项」。与窄窗 push 子页头 [HibikiSettingsSubPageHeader] /
+  /// 宽窗详情区顶部的当前分类标题（TODO-640 引入，TODO-1351 顶栏恢复完整文字标签后
+  /// 保留作详情区页头）。与窄窗 push 子页头 [HibikiSettingsSubPageHeader] /
   /// 侧栏面板标题语义一致，但无返回箭头（宽窗顶栏不走 push）。
   Widget _buildWideDetailTitle(String selectedId) {
     final ThemeData theme = Theme.of(context);
