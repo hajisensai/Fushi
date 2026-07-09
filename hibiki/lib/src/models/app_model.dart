@@ -2218,11 +2218,11 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
-    // BUG-666：内容缩放与 in-app popupContentZoom 完全同公式（appUiScale × 词典字号/16，
-    // 同 clamp）。原先扩展故意不叠加 appUiScale，导致用户把「界面大小」调大后 in-app 弹窗字
-    // 变大而扩展弹窗字仍小 → 两者「文字位置/大小」明显不一致。用户要求对齐 app，故跟随
-    // appUiScale（浏览器自身缩放是另一维度，不冲突）。
-    final double rawZoom = appUiScale * (dictionaryFontSize / 16.0);
+    // BUG-666：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
+    // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
+    // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
+    // 是页面根 documentElement，无此问题；扩展只能缩放浮层嵌套容器）。要更大在词典字号设置里调。
+    final double rawZoom = dictionaryFontSize / 16.0;
     final double zoom =
         (rawZoom.isFinite && rawZoom > 0) ? rawZoom.clamp(0.3, 8.0) : 1.0;
     return <String, String>{
