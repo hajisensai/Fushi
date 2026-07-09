@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-677](bugs/BUG-677-first-card-taller.md) | ✅ | ✅ | 查词弹窗首个词典卡片比其他卡片高 |
+| [BUG-677](bugs/BUG-677-multi-subtitle-full.md) | ✅ | ✅ | 视频多字幕降级:同锚点MarginV裹挟+副字幕硬拽顶部 |
 | [BUG-676](bugs/BUG-676-netflix-mine-missing-video-name.md) | ✅ | ✅ | 网飞制卡缺少视频名（documentTitle） |
 | [BUG-675](bugs/BUG-675-netflix-batch-mine-silent-skip.md) | ✅ | ✅ | 网飞批量制卡有概率跳过某几张卡 |
 | [BUG-674](bugs/BUG-674-netflix-next-episode-hide.md) | ✅ | ✅ | 网飞剧末下一集按钮无法隐藏 |
