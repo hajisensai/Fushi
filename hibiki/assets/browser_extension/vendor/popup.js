@@ -1,3 +1,14 @@
+/* BUG-666: Shadow-DOM isolation. content.js renders this popup inside a shadow
+   root (window.__hibikiRoot) so host-page CSS can't pierce it. Route every DOM
+   lookup / overlay append / selection / height read through these helpers so they
+   resolve inside the shadow (fall back to document before the shadow exists). */
+function __hibikiRoot(){ return window.__hibikiRoot || document; }
+function __hibikiContainer(){ var r = window.__hibikiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
+function __hibikiOverlayParent(){ return window.__hibikiRoot || document.body; }
+function __hibikiScrollHeight(){ var c = __hibikiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
+function __hibikiSel(){ var r = window.__hibikiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
+function __hibikiEventTarget(e){ try { var p = e.composedPath && e.composedPath(); if (p && p.length) return p[0]; } catch(_){} return e.target; }
+
 //
 //  popup.js
 //  Hibiki (adapted from Hoshi Reader for Android InAppWebView)
@@ -122,9 +133,9 @@ let sentenceDraftCount = 0;
 function refreshAllSentenceContextPickers() {
     sentenceDraftCount = sentenceCtxPrev + sentenceCtxNext;
     if (typeof document.querySelectorAll !== 'function') return;
-    document.querySelectorAll('.sentence-context-picker')
+    __hibikiRoot().querySelectorAll('.sentence-context-picker')
         .forEach(refreshSentenceContextPicker);
-    document.querySelectorAll('.clear-draft-button')
+    __hibikiRoot().querySelectorAll('.clear-draft-button')
         .forEach(refreshClearDraftButton);
 }
 
@@ -371,13 +382,13 @@ function showDescription(element) {
     if (!description) {
         return;
     }
-    const overlay = document.querySelector('.overlay');
-    document.querySelector('.overlay-content').textContent = description;
+    const overlay = __hibikiRoot().querySelector('.overlay');
+    __hibikiRoot().querySelector('.overlay-content').textContent = description;
     overlay.style.display = 'block';
 }
 
 function closeOverlay() {
-    document.querySelector('.overlay').style.display = 'none';
+    __hibikiRoot().querySelector('.overlay').style.display = 'none';
 }
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
@@ -588,7 +599,7 @@ function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
 }
 
 function closeImageLightbox() {
-    document.querySelector('.dict-image-lightbox')?.remove();
+    __hibikiRoot().querySelector('.dict-image-lightbox')?.remove();
 }
 
 function openImageLightbox(imageUrl, alt) {
@@ -610,7 +621,7 @@ function openImageLightbox(imageUrl, alt) {
     // 灯箱统一 tap-to-close。
     overlay.addEventListener('click', () => closeImageLightbox());
 
-    document.body.appendChild(overlay);
+    __hibikiOverlayParent().appendChild(overlay);
 }
 
 // TODO-859 症状B：图片预览的 click 监听挂在外层 .gloss-image-link 容器上，但
@@ -1080,7 +1091,7 @@ function createDefinitionImageCanvas(imageUrl, alt, onLoad) {
 }
 
 function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio, appearance) {
-    const emSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const emSize = Number.parseFloat(getComputedStyle(__hibikiContainer() || document.documentElement).fontSize);
     const scaleFactor = Math.ceil(window.devicePixelRatio * 2);
     const pixelWidth = Math.round(usedWidth * emSize * scaleFactor);
     const pixelHeight = Math.round(usedWidth * emSize * invAspectRatio * scaleFactor);
@@ -1106,7 +1117,7 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
     
     if (appearance === 'monochrome') {
         context.globalCompositeOperation = 'source-in';
-        context.fillStyle = document.documentElement.getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000';
+        context.fillStyle = (__hibikiContainer() || document.documentElement).getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.globalCompositeOperation = 'source-over';
     }
@@ -1812,10 +1823,10 @@ function showNoAudioHint(button) {
     button.classList.add('audio-unavailable');
     button.title = message;
     // 移除可能残留的旧提示，避免叠加。
-    const stale = document.querySelector('.audio-hint');
+    const stale = __hibikiRoot().querySelector('.audio-hint');
     if (stale) stale.remove();
     const hint = el('div', { className: 'audio-hint', textContent: message });
-    document.body.appendChild(hint);
+    __hibikiOverlayParent().appendChild(hint);
     // 先量尺寸再定位：置于按钮上方居中，空间不足翻到下方，并夹在视口内。
     const btnRect = button.getBoundingClientRect();
     const hintRect = hint.getBoundingClientRect();
@@ -2012,7 +2023,7 @@ function createEntryHeader(entry, idx) {
         className: 'mine-button',
         textContent: '+',
         ontouchstart: () => {
-            lastSelection = window.getSelection()?.toString() || '';
+            lastSelection = __hibikiSel()?.toString() || '';
         },
         onclick: async () => {
             // Single-flight guard against double-firing one click. Always cleared
@@ -2188,7 +2199,7 @@ function createEntryHeader(entry, idx) {
 }
 
 window.hoshiPopupMineFirstEntry = async function() {
-    const mineButton = document.querySelector('.mine-button');
+    const mineButton = __hibikiRoot().querySelector('.mine-button');
     if (!mineButton || mineButton.disabled) {
         return false;
     }
@@ -2209,7 +2220,7 @@ window.hoshiPopupMineFirstEntry = async function() {
 
     // DOM 顺序的全部词条 <div.entry>（container 的直接子节点）。
     function listEntries() {
-        const container = document.getElementById(CONTAINER_ID);
+        const container = __hibikiContainer();
         if (!container) return [];
         return Array.prototype.slice.call(
             container.querySelectorAll(':scope > .entry'));
@@ -2525,12 +2536,12 @@ function postProcessRuby(container) {
 }
 
 function applyCustomCSS() {
-    document.querySelectorAll('style.hoshi-custom-css').forEach(el => el.remove());
+    __hibikiOverlayParent().querySelectorAll('style.hoshi-custom-css').forEach(el => el.remove());
     if (window.globalDictCSS) {
         const style = document.createElement('style');
         style.className = 'hoshi-custom-css';
         style.textContent = window.globalDictCSS;
-        document.body.appendChild(style);
+        __hibikiOverlayParent().appendChild(style);
     }
     if (window.customDictCSS && typeof window.customDictCSS === 'object') {
         for (const [dictName, css] of Object.entries(window.customDictCSS)) {
@@ -2538,7 +2549,7 @@ function applyCustomCSS() {
             const style = document.createElement('style');
             style.className = 'hoshi-custom-css';
             style.textContent = constructDictCss(css, dictName);
-            document.body.appendChild(style);
+            __hibikiOverlayParent().appendChild(style);
         }
     }
 }
@@ -2656,7 +2667,7 @@ window._renderGeneration = 0;
 function _firePopupRendered() {
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight,
+            __hibikiScrollHeight(),
             window.__hibikiRenderToken || 0);
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
@@ -2697,7 +2708,7 @@ function prependSentenceBanner(container) {
 
 window.renderPopup = function() {
     const t0 = performance.now();
-    const container = document.getElementById('entries-container');
+    const container = __hibikiContainer();
     if (!container) { _firePopupRendered(); return; }
 
     const entries = window.lookupEntries;
@@ -2814,7 +2825,7 @@ window.renderPopup = function() {
 };
 
 window.updatePopupIncremental = function() {
-    const container = document.getElementById('entries-container');
+    const container = __hibikiContainer();
     if (!container || !window.lookupEntries?.length) return;
 
     const entries = window.lookupEntries;
@@ -2922,7 +2933,7 @@ window.updatePopupIncremental = function() {
     applyCustomCSS();
 
     window.flutter_inappwebview.callHandler('popupRendered',
-        document.body.scrollHeight,
+        __hibikiScrollHeight(),
         window.__hibikiRenderToken || 0);
 };
 
@@ -2953,7 +2964,7 @@ const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
 function popupCurrentZoom() {
-    const z = parseFloat(document.documentElement.style.zoom);
+    const z = parseFloat(getComputedStyle(__hibikiContainer() || document.documentElement).getPropertyValue('--hibiki-popup-zoom'));
     return (Number.isFinite(z) && z > 0) ? z : 1;
 }
 // Normalize a wheel delta (any axis) to CSS pixels, accounting for deltaMode.
@@ -3004,13 +3015,13 @@ document.addEventListener('wheel', (e) => {
     if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
-    if (popupAncestorAbsorbsVerticalWheel(e.target, deltaPx)) return;
+    if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
     e.preventDefault();
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
     const visualStep = popupClampWheelVisualStep(deltaPx * POPUP_WHEEL_PIXEL_FACTOR);
     const step = visualStep / popupCurrentZoom();
-    window.scrollBy({ top: step, behavior: 'auto' });
+    { var _hc = __hibikiContainer(); if (_hc) { _hc.scrollBy({ top: step, behavior: 'auto' }); } else { window.scrollBy({ top: step, behavior: 'auto' }); } }
 }, { passive: false });
 
 
@@ -3029,13 +3040,13 @@ document.addEventListener('click', (e) => {
         }
     }
 
-    const sel = window.getSelection();
+    const sel = __hibikiSel();
     if (sel && sel.toString().length > 0) {
         sel.removeAllRanges();
         return;
     }
 
-    const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
+    const _t0 = __hibikiEventTarget(e); const target = _t0?.nodeType === Node.TEXT_NODE ? _t0.parentElement : _t0;
     // TODO-1189 — audio/mine/favorite are per-entry action buttons; a click on any
     // of them must NEVER reach the document dismiss path. .favorite-button was
     // missing here, so tapping ☆ on a PARENT card fell through to the .entry
