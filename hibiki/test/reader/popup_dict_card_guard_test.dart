@@ -89,4 +89,40 @@ void main() {
     expect(RegExp(r'font-weight\s*:\s*bold').hasMatch(body), isTrue,
         reason: '选中态仍加粗');
   });
+
+  /// TODO-1325 / BUG-677：查词弹窗「第一个卡片比其他卡片高」。多词典时每部词典是一枚
+  /// `.glossary-group` 玻璃卡片，作为 `.glossary-section > .category-body` 的 grid 项
+  /// （桌面默认 2 列）。grid 默认 `align-items:stretch` 会把同一行的卡片全部拉到该行最高
+  /// 卡片的高度：首行含义项最多的词典被拉高后，同行义项少的卡片下方留出空白玻璃盒，读作
+  /// 「首卡特别高」。修复 = 显式 `align-items:start`，卡片取自然内容高度（对齐 Niratan 的
+  /// 自然高度卡片，不等高拉伸）。
+  ///
+  /// 用 indexOf/substring 抽取规则块（与 popup_dictionary_columns_test 同法），再剥离
+  /// /* ... */ 注释——popup.css 的解释性注释里也写了「align-items:stretch / start」字样，
+  /// 只断言真实声明。
+  String stripComments(String s) => s.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+
+  test('首卡不被等高拉伸：.category-body grid 显式 align-items:start (BUG-677)', () {
+    final int start = css.indexOf('.glossary-section > .category-body {');
+    expect(start, isNonNegative, reason: 'in-app grid 容器规则必须存在');
+    final int end = css.indexOf('}', start);
+    expect(end, greaterThan(start));
+    final String rule = stripComments(css.substring(start, end));
+    expect(RegExp(r'align-items\s*:\s*start').hasMatch(rule), isTrue,
+        reason: '首卡偏高根因 = grid 默认 align-items:stretch 把同行卡片拉到最高；'
+            '必须显式 align-items:start 让卡片取自然内容高度');
+    expect(RegExp(r'align-items\s*:\s*stretch').hasMatch(rule), isFalse,
+        reason: '不得回退 stretch，否则首卡又被拉伸出空白玻璃盒');
+    // 仍是 --dict-columns 驱动的多列 grid（TODO-776/1357 未被破坏）。
+    expect(rule.contains('display: grid'), isTrue);
+    expect(rule.contains('repeat(var(--dict-columns'), isTrue);
+  });
+
+  test('玻璃卡片不钉死高度，取自然内容高度 (BUG-677)', () {
+    final String body = stripComments(ruleBody(r'\.glossary-group'));
+    expect(RegExp(r'(^|[;{\s])height\s*:').hasMatch(body), isFalse,
+        reason: '卡片不能钉死 height，否则内容高度失真、又回到等高观感');
+    expect(RegExp(r'min-height\s*:').hasMatch(body), isFalse,
+        reason: '卡片不能设 min-height 强制等高');
+  });
 }
