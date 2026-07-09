@@ -1504,6 +1504,12 @@ class ReaderPaginationScripts {
       for (var i = 0; i < keys.length; i++) { _hoshiRevealedKeys[keys[i]] = true; }
     }
   })();
+  // TODO-1367：暴露给有声书桥接（audiobook_bridge）——音频跟随读过某张图时把它的稳定
+  // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _hoshiBlurImage
+  // 时命中 key 跳过遮罩，与点击 / 手柄揭开同一套「已揭开不再遮罩」真相源（会话内存活集）。
+  window.__hoshiMarkImageRevealed = function(key) {
+    if (key) _hoshiRevealedKeys[key] = true;
+  };
   function _hoshiImageRevealKey(element) {
     if (!element) return '';
     var raw = '';
