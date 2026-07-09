@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 668 条。点号进各自文件。
+> 共 669 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-683](bugs/BUG-683-longpress-arrow-sentence.md) | ✅ | ✅ | 长按左右键无法连续切句/连续翻页 |
 | [BUG-682](bugs/BUG-682-audio-image-mask-not-revealed.md) | ✅ | ✅ | 有声书音频跨过图片不去掉防剧透遮罩(未持久·懒图漏揭) |
 | [BUG-681](bugs/BUG-681-netflix-clip-audio-truncation.md) | ✅ | ✅ | Netflix 制卡句子音频尾段被截断（录制在字幕清空即停，无尾部余量） |
 | [BUG-680](bugs/BUG-680-bookshelf-progress-old-build.md) | ✅ | ✅ | 书架书籍进度「还是没有」——复诉根因=旧包(debug.6783)，BUG-659 修复已在 develop(TODO-1346) |
