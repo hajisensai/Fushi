@@ -922,6 +922,12 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     for (const k in theme) {
       if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
     }
+    // BUG-666：data-theme 也跟 app 主题（--hibiki-color-scheme），覆盖 hibikiEnsureContainer
+    // 里基于宿主页 prefers-color-scheme 的初值。否则 app 浅色 + 宿主页深色时，content.css 的
+    // [data-theme="dark"] 块给黑底/白字，却套上 app 浅色的 --md-* 米白 surface = 主题分裂
+    // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
+    const cs = theme['--hibiki-color-scheme'];
+    if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
   }
   // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
   // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
