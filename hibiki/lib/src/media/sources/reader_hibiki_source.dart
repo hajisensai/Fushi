@@ -78,6 +78,28 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   return (position: 0, duration: 1);
 }
 
+/// [ReaderHibikiSource.deleteBook] 的结果（TODO-1359）。
+///
+/// 旧接口只回 `Future<bool>`，删除失败时调用方拿不到任何原因，只能弹一个笼统的
+/// 「删除书籍失败」toast——用户「报错日志呢？为什么删不掉？」正是这个信息丢失的症
+/// 状。[failureReason] 在失败时携带面向诊断的原因（同一原因已写入
+/// `ErrorLogService`），供调用方在 toast 里一并展示。
+class DeleteBookResult {
+  const DeleteBookResult._(this.deleted, this.failureReason);
+
+  /// 成功删除（DB 行已删）。磁盘副本清理失败不影响成功判定，只记日志。
+  const DeleteBookResult.success() : this._(true, null);
+
+  /// 删除失败，[reason] 是面向诊断的原因（已写入 ErrorLogService）。
+  const DeleteBookResult.failure(String reason) : this._(false, reason);
+
+  /// 是否真正删除了这本书（以 DB 行是否被移除为准）。
+  final bool deleted;
+
+  /// 失败原因；[deleted] 为 true 时恒为 null。
+  final String? failureReason;
+}
+
 class ReaderHibikiSource extends ReaderMediaSource {
   ReaderHibikiSource._()
       : super(
@@ -585,7 +607,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// Pass [appModel] to also clear the override thumbnail file (it is needed to
   /// resolve the thumbnails directory); the override title preference is always
   /// cleared regardless (HBK-AUDIT-040).
-  Future<bool> deleteBook({
+  Future<DeleteBookResult> deleteBook({
     required HibikiDatabase db,
     required String bookKey,
     AppModel? appModel,
@@ -608,49 +630,66 @@ class ReaderHibikiSource extends ReaderMediaSource {
       // BUG-439：bookKey 指向的行不存在（孤儿壳行 bookKey==''、key 不匹配、或重复
       // 删除）时，以前 deleteEpubBook 删 0 行后仍无条件 return true 谎报成功，调用方
       // 据此把这本计入「已删除 N 本」。这里在删之前就判定：没有任何对应行（EPUB 行
-      // 与按 bookKey 关联的 SRT 行都不存在）→ 真的没东西可删 → return false，不跑
-      // 磁盘清理/VACUUM，也不谎报成功。
+      // 与按 bookKey 关联的 SRT 行都不存在）→ 真的没东西可删 → 如实回报失败并带上
+      // 原因（TODO-1359 起写入 ErrorLogService），不跑磁盘清理/VACUUM，也不谎报成功。
       if (bookRow == null && srt == null) {
-        debugPrint(
-            '[ReaderHibikiSource] deleteBook: no rows for bookKey="$bookKey"');
-        return false;
+        final String reason = '找不到这本书的数据（bookKey="$bookKey" 无对应行，'
+            '可能已删除或书架条目已失效）';
+        ErrorLogService.instance
+            .logDiagnostic('ReaderHibikiSource.deleteBook', reason);
+        debugPrint('[ReaderHibikiSource] deleteBook: $reason');
+        return DeleteBookResult.failure(reason);
       }
 
       // TODO-1195 part B: a user shelf delete records a tombstone so a later
       // backup MERGE import never resurrects this book from an old backup.
       final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
 
-      // On-disk cleanups (not covered by the DB transaction). The audiobook
-      // persist dir is keyed by the book's own key now (no legacy uid).
-      await AudiobookStorage.deletePersistDir(bookKey);
-      if (srt != null) {
-        await AudiobookStorage.deletePersistDir(srt.uid);
-      }
-      // Locate the extracted dir by the stored extract_dir column (the on-disk
-      // folder name may still be the legacy int id; the column is the truth).
-      if (bookRow != null) {
-        await EpubStorage.deleteBookDir(bookRow.extractDir);
-      }
+      // TODO-1359 根因：DB 行（唯一真相源）此刻已删，这本书对用户已经消失。下面的
+      // 磁盘副本/偏好清理属于删完再打扫的尾活——Windows 上解压目录若被 WebView
+      // baseURI / 封面图句柄 / 杀软占用，dir.delete(recursive:true) 会抛 errno
+      // 32/145。以前这些清理在外层 try 里裸跑，一抛异常就落到最外层 catch 谎报「删除
+      // 失败」（尽管 DB 行早已删掉），调用方据此不刷新书架、书还挂在架上、解压目录也
+      // 泄漏——这正是用户「为什么删不掉」的真实根因。改为与下方 VACUUM 同一纪律：尾活
+      // 失败只记日志、不翻转删除结果（磁盘副本孤儿无害，DB 行已消失不会再被引用）。
+      try {
+        // On-disk cleanups (not covered by the DB transaction). The audiobook
+        // persist dir is keyed by the book's own key now (no legacy uid).
+        await AudiobookStorage.deletePersistDir(bookKey);
+        if (srt != null) {
+          await AudiobookStorage.deletePersistDir(srt.uid);
+        }
+        // Locate the extracted dir by the stored extract_dir column (the on-disk
+        // folder name may still be the legacy int id; the column is the truth).
+        if (bookRow != null) {
+          await EpubStorage.deleteBookDir(bookRow.extractDir);
+        }
 
-      // HBK-AUDIT-040: these books are created with canDelete:false, so the
-      // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
-      // runs for them. Clear the override title preference here, and the
-      // override thumbnail file when an AppModel is available, so renamed/
-      // recovered books do not leave orphaned override rows/files behind.
-      final MediaItem item = MediaItem(
-        mediaIdentifier: mediaIdentifierFor(bookKey),
-        title: '',
-        mediaTypeIdentifier: mediaType.uniqueKey,
-        mediaSourceIdentifier: uniqueKey,
-        position: 0,
-        duration: 1,
-        canDelete: false,
-        canEdit: true,
-      );
-      if (appModel != null) {
-        await clearOverrideValues(appModel: appModel, item: item);
-      } else {
-        await deletePreference(key: getOverrideTitleKey(item));
+        // HBK-AUDIT-040: these books are created with canDelete:false, so the
+        // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
+        // runs for them. Clear the override title preference here, and the
+        // override thumbnail file when an AppModel is available, so renamed/
+        // recovered books do not leave orphaned override rows/files behind.
+        final MediaItem item = MediaItem(
+          mediaIdentifier: mediaIdentifierFor(bookKey),
+          title: '',
+          mediaTypeIdentifier: mediaType.uniqueKey,
+          mediaSourceIdentifier: uniqueKey,
+          position: 0,
+          duration: 1,
+          canDelete: false,
+          canEdit: true,
+        );
+        if (appModel != null) {
+          await clearOverrideValues(appModel: appModel, item: item);
+        } else {
+          await deletePreference(key: getOverrideTitleKey(item));
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibikiSource.deleteBook.cleanup', e, stack);
+        debugPrint('[ReaderHibikiSource] deleteBook post-DB cleanup failed '
+            '(DB rows already removed; on-disk copy may leak): $e');
       }
 
       // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
@@ -667,11 +706,18 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
-      return deletedRows > 0 || srt != null;
+      if (deletedRows > 0 || srt != null) {
+        return const DeleteBookResult.success();
+      }
+      final String reason = 'DB 删除未移除任何行（bookKey="$bookKey"，deletedRows=0）';
+      ErrorLogService.instance
+          .logDiagnostic('ReaderHibikiSource.deleteBook', reason);
+      debugPrint('[ReaderHibikiSource] deleteBook: $reason');
+      return DeleteBookResult.failure(reason);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);
       debugPrint('[ReaderHibikiSource] deleteBook failed: $e');
-      return false;
+      return DeleteBookResult.failure(e.toString());
     }
   }
 

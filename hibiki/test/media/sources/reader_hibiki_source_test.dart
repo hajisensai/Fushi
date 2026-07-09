@@ -607,12 +607,14 @@ void main() {
       MediaSource.setDatabase(db);
       await db.insertEpubBook(epubBook('Kokoro'));
 
-      final bool ok = await ReaderHibikiSource.instance.deleteBook(
+      final DeleteBookResult result =
+          await ReaderHibikiSource.instance.deleteBook(
         db: db,
         bookKey: 'Kokoro',
       );
 
-      expect(ok, isTrue);
+      expect(result.deleted, isTrue);
+      expect(result.failureReason, isNull);
       expect(await db.getEpubBook('Kokoro'), isNull);
     });
 
@@ -625,15 +627,131 @@ void main() {
 
       // Empty key (the orphan-shell case) and an arbitrary missing key both
       // have nothing to delete: deleteBook must report failure, not lie.
-      expect(
-        await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: ''),
-        isFalse,
+      // TODO-1359：失败结果必须携带原因（供 toast 展示 + 已写入 ErrorLogService），
+      // 不能只回一个信息全无的 bool。
+      final DeleteBookResult emptyKeyResult =
+          await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: '');
+      expect(emptyKeyResult.deleted, isFalse);
+      expect(emptyKeyResult.failureReason, isNotNull);
+      final DeleteBookResult missingKeyResult = await ReaderHibikiSource
+          .instance
+          .deleteBook(db: db, bookKey: 'no-such-book');
+      expect(missingKeyResult.deleted, isFalse);
+      expect(missingKeyResult.failureReason, contains('no-such-book'));
+    });
+  });
+
+  group('ReaderHibikiSource.deleteBook TODO-1359 (删不掉 + 无原因)', () {
+    final TestWidgetsFlutterBinding binding =
+        TestWidgetsFlutterBinding.ensureInitialized();
+    late Directory ppDir;
+    setUp(() {
+      ppDir = Directory.systemTemp.createTempSync('hibiki_del1359_pp');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => ppDir.path,
       );
-      expect(
-        await ReaderHibikiSource.instance
-            .deleteBook(db: db, bookKey: 'no-such-book'),
-        isFalse,
+    });
+    tearDown(() {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
       );
+      if (ppDir.existsSync()) ppDir.deleteSync(recursive: true);
+    });
+
+    // 根因：DB 行（唯一真相源）删除成功后，磁盘解压目录清理若因 Windows 文件占用抛
+    // 异常，绝不能把已提交的删除翻转成「删除失败」。旧实现把 deleteBookDir 放在外层
+    // try 里裸跑，一抛就落到最外层 catch 返回失败——书还挂在架上、目录泄漏。
+    test(
+        'on-disk extract-dir cleanup failure does NOT flip a committed DB '
+        'delete to failure (Windows file-lock; deleted==true, row gone)',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      // A real extract dir with a file we hold open so recursive delete throws
+      // on Windows (POSIX allows unlink-while-open, so there the delete just
+      // succeeds — either way the committed DB delete must report success).
+      final Directory extractDir =
+          Directory.systemTemp.createTempSync('hibiki_del1359_extract');
+      final File inner = File(p.join(extractDir.path, 'content.xhtml'))
+        ..writeAsStringSync('<html></html>');
+      final RandomAccessFile handle = inner.openSync(mode: FileMode.write);
+      addTearDown(() {
+        handle.closeSync();
+        if (extractDir.existsSync()) {
+          extractDir.deleteSync(recursive: true);
+        }
+      });
+
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'LockedBook',
+        title: 'LockedBook',
+        epubPath: '/tmp/LockedBook.epub',
+        extractDir: extractDir.path,
+        chapterCount: 1,
+        chaptersJson: '["ch1"]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+      final DeleteBookResult result = await ReaderHibikiSource.instance
+          .deleteBook(db: db, bookKey: 'LockedBook');
+
+      // The DB row (source of truth) is gone → this book is deleted for the
+      // user; a leaked on-disk dir must not be reported as a delete failure.
+      expect(result.deleted, isTrue,
+          reason: 'committed DB delete must report success even if the '
+              'on-disk extract dir could not be removed');
+      expect(await db.getEpubBook('LockedBook'), isNull);
+    });
+
+    // 源码守卫（跨平台确定性）：磁盘/偏好清理必须被一个只记日志、不翻转结果的
+    // try/catch 包住，且位于 deleteEpubBook 之后、成功返回之前。撤掉这层 wrapper 会
+    // 让 deleteBookDir 抛出的异常重新冒泡到最外层 catch → 又回到「删不掉」。
+    test('post-DB on-disk cleanups are wrapped in a tolerant try/catch', () {
+      final String src = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf('Future<DeleteBookResult> deleteBook(');
+      final int end =
+          src.indexOf('static ReaderSettings? readerSettings', start);
+      expect(start, greaterThanOrEqualTo(0));
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+
+      final int rowDelete = body.indexOf('deleteEpubBook(bookKey');
+      final int cleanupCatch =
+          body.indexOf("'ReaderHibikiSource.deleteBook.cleanup'");
+      final int diskCleanup = body.indexOf('EpubStorage.deleteBookDir(');
+      final int vacuum = body.indexOf("customStatement('VACUUM')");
+      expect(rowDelete, greaterThanOrEqualTo(0));
+      expect(cleanupCatch, greaterThan(rowDelete),
+          reason: 'the tolerant cleanup catch must exist after the DB delete');
+      expect(diskCleanup, greaterThan(rowDelete),
+          reason: 'on-disk cleanup runs after the DB delete');
+      expect(diskCleanup, lessThan(cleanupCatch),
+          reason: 'the on-disk cleanup must sit inside the tolerant try, '
+              'before its catch');
+      expect(vacuum, greaterThan(cleanupCatch),
+          reason: 'VACUUM stays after the cleanup block');
+    });
+
+    // 失败结果必须携带面向用户/诊断的原因（fix (a)：不再只弹笼统 toast，用户「报错
+    // 日志呢」有据可查）。
+    test('failure result carries a non-empty reason mentioning the bookKey',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final DeleteBookResult result = await ReaderHibikiSource.instance
+          .deleteBook(db: db, bookKey: 'ghost-shelf-entry');
+      expect(result.deleted, isFalse);
+      expect(result.failureReason, isNotNull);
+      expect(result.failureReason!, isNotEmpty);
+      expect(result.failureReason!, contains('ghost-shelf-entry'));
     });
   });
 
@@ -757,9 +875,9 @@ void main() {
 
       // Delete path: deleteBook(parsedKey) must actually remove it and report
       // success (not the false / "删不掉" dead-end).
-      final bool ok =
+      final DeleteBookResult delResult =
           await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: parsed);
-      expect(ok, isTrue);
+      expect(delResult.deleted, isTrue);
       expect(await db.getEpubBook(key), isNull);
     });
   });

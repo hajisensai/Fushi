@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-666](bugs/BUG-666-vertical-ruby-position-flip.md) | ✅ | ✅ | 竖排振假名翻到基字左侧+高亮带错位(阅读器未拥有 ruby-position) |
+| [BUG-666](bugs/BUG-666-delete-fail-diag.md) | ✅ | ✅ | 删除书籍失败无原因+磁盘清理异常翻转已提交删除 |
 | [BUG-665](bugs/BUG-665-anki-mine-connect-timeout.md) | ✅ | ✅ | 远端制卡查重挂满 10s 超时（AnkiConnect 不可达/无响应，缺连接建立超时） |
 | [BUG-664](bugs/BUG-664-pitch-number-float-niratan.md) | ✅ | ✅ | 查词卡音高数字浮动/读音位置不如 Niratan 整齐 |
 | [BUG-663](bugs/BUG-663-peer-device-name-localhost.md) | ✅ | ✅ | 互联已配对设备名显示 localhost 而非真实设备名 |
