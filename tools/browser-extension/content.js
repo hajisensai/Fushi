@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v45 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers)');
+console.log('[Hibiki] content script v46 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v45'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v46'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -791,10 +791,11 @@ try {
 } catch (_) {}
 try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } catch (_) {}
 
-// ── BUG-674（TODO-1361 ①）：隐藏网飞剧末「下一集」按钮 ──
-// 纯视觉：只注入 CSS 隐藏 Netflix 自己的 seamless「下一集」按钮 + 剧末续播卡，绝不碰 DRM/seek/自动
+// ── BUG-674（TODO-1361 ①）+ BUG-702（TODO-1391）：隐藏网飞自己的干扰性播放器 UI ──
+// 纯视觉：只注入 CSS 隐藏 Netflix 自己的 seamless「下一集」按钮 + 剧末续播卡 + 剧集开头左上角的
+// 年龄分级/成熟度评级 overlay（TODO-1391：制卡录制会把它录进卡片截图/gif），绝不碰 DRM/seek/自动
 // 切集计时器（不改变播放行为）。由 options 开关 netflixHideNextEpisode 门控——缺省=隐藏（用户诉求），
-// 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建按钮也照样命中。
+// 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建元素也照样命中。
 const HIBIKI_NF_HIDE_NEXT_ID = 'hibiki-nf-hide-next';
 function hibikiNetflixNextEpisodeSelectors() {
   return [
@@ -803,6 +804,12 @@ function hibikiNetflixNextEpisodeSelectors() {
     '[data-uia="watch-video-post-play-back-to-browse"]',
     '.watch-video--evidence-overlay-container',
     '.nfp.PostPlay',
+    // TODO-1391 / BUG-702：剧集开头左上角短暂显示的年龄分级/成熟度评级 overlay。
+    // 播放器作用域（watch-video--maturity-rating 前缀 + .watch-video 后代），不误伤浏览页评级角标；
+    // class*= / data-uia*= 子串匹配兜住 Netflix 的哈希类名变体。
+    '[class*="watch-video--maturity-rating"]',
+    '.watch-video [data-uia*="maturity"]',
+    '.watch-video [class*="maturity-rating"]',
   ];
 }
 function hibikiApplyNetflixNextEpisodeHiding(hide) {
