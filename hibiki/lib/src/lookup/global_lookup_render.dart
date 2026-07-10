@@ -56,14 +56,14 @@ String buildFrameSettingsJs({
     result: result,
     options: const PopupSettingsOptions(globalLookup: true),
   );
-  // spec 2026-07-10 §6 — 半透明卡背景变量。仅面板路径传 <1（且仅当 Win11
-  // acrylic backdrop 可用）；默认 1.0 时注入空串——同一 alpha 下 settingsJs
-  // 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据，稳定即零多余重渲），
-  // 瞬态窗/面板共用本函数、in-app 路径不经此处。
-  final String cardBgAlphaLine = cardBgAlpha < 1.0
-      ? "document.documentElement.style.setProperty('--hibiki-card-bg-alpha', "
-          "'${cardBgAlpha.toStringAsFixed(2)}');\n"
-      : '';
+  // spec 2026-07-10 §6 — 半透明卡背景变量。面板路径传用户值（且仅当 Win11
+  // acrylic backdrop 可用），瞬态窗恒 1.0；in-app 路径不经此处。**恒注入**当前
+  // 值（审查修正：面板 WebView 常驻不重建，若 1.0 时不注入，从 0.85 调回 100%
+  // 后 documentElement 上的旧 0.85 残留、面板停在半透明）。同一 alpha 下
+  // settingsJs 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据）。
+  final String cardBgAlphaLine =
+      "document.documentElement.style.setProperty('--hibiki-card-bg-alpha', "
+      "'${cardBgAlpha.toStringAsFixed(2)}');\n";
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
   // frame, but everything else in the body (theme/zoom/entries/sentence) is

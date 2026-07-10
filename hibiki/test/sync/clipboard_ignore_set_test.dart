@@ -65,4 +65,49 @@ void main() {
       expect(DesktopLookupService.instance.pendingText, '単語');
     });
   });
+
+  // 审查修正（captured 回声时序缺口）：captured 事件可能在抓取轮询的 await
+  // 间隙**先于登记**到达——括号语义保证「事件先到」时序也被吞掉。
+  group('§8 捕获期括号（begin/endSelfInflictedCapture）', () {
+    setUp(() {
+      DesktopLookupService.instance.debugReset();
+      DesktopLookupService.instance.clipboardIgnores.consume('__flush__');
+      // 括号若被上个用例留开，end 一次收口（空集合，暂存即放行->再 reset）。
+      DesktopLookupService.instance.endSelfInflictedCapture(const <String>[]);
+      DesktopLookupService.instance.debugReset();
+    });
+
+    test('捕获期内先到的自产回声在收口对账时被吞（主泄漏路径）', () {
+      DesktopLookupService.instance.beginSelfInflictedCapture();
+      // 事件先到（登记还没发生）：
+      DesktopLookupService.instance.processClipboardText('選択テキスト');
+      expect(DesktopLookupService.instance.pendingRequest, isNull,
+          reason: '捕获期内暂存，不入队');
+      DesktopLookupService.instance
+          .endSelfInflictedCapture(<String>['選択テキスト', '旧值']);
+      expect(DesktopLookupService.instance.pendingRequest, isNull,
+          reason: '对账命中自产集合，丢弃');
+    });
+
+    test('捕获期内真实用户复制在收口后放行（不丢请求）', () {
+      DesktopLookupService.instance.beginSelfInflictedCapture();
+      DesktopLookupService.instance.processClipboardText('選択テキスト'); // 自产
+      DesktopLookupService.instance.processClipboardText('用户真实复制'); // 真实
+      DesktopLookupService.instance
+          .endSelfInflictedCapture(<String>['選択テキスト', '旧值']);
+      expect(DesktopLookupService.instance.pendingText, '用户真实复制');
+    });
+
+    test('收口后到达的恢复回声由登记集拦截（回放 miss 不清登记）', () {
+      DesktopLookupService.instance.beginSelfInflictedCapture();
+      DesktopLookupService.instance.processClipboardText('選択テキスト'); // 自产先到
+      DesktopLookupService.instance.processClipboardText('用户真实复制'); // 真实
+      DesktopLookupService.instance
+          .endSelfInflictedCapture(<String>['選択テキスト', '旧值']);
+      // 恢复写入的回声在收口之后才到：
+      DesktopLookupService.instance.processClipboardText('旧值');
+      expect(DesktopLookupService.instance.pendingText, '用户真实复制',
+          reason: '恢复回声被登记集吞掉，pending 仍是真实复制');
+    });
+  });
 }

@@ -22,6 +22,8 @@ import 'package:hibiki/src/lookup/global_lookup_stack.dart';
 import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
 import 'package:hibiki/src/lookup/overlay_window_channel.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -92,7 +94,14 @@ class ClipboardPanelController {
   /// 本次会话的工作拷贝。
   Rect _panelRect = kClipboardPanelDefaultRect;
 
-  /// 接线 channel 反向 handler + 预热面板 WebView2。幂等；仅 Windows。
+  /// 审查修正（latest-wins）：VN 台词流下 update 可并发在途（dispatcher
+  /// unawaited + searchDictionary 远程词典延迟波动），旧句结果可能后完成并
+  /// 覆盖新句。每次 update 领取单调序号，任何 await 之后发现自己已过期就放弃。
+  int _updateSeq = 0;
+
+  /// 接线 channel 反向 handler；仅 destination==panel 时预热（审查修正：默认
+  /// main 的用户不为面板常驻一整棵 WebView2 进程树——零破坏承诺的一部分）。
+  /// 幂等；仅 Windows。
   Future<void> start({required AppModel appModel}) async {
     if (!isSupported || _started) return;
     _started = true;
@@ -107,11 +116,18 @@ class ClipboardPanelController {
       onOverlayHidden: () => _visible = false,
     );
     await _channel.prepare(_popupAssetsDir());
-    unawaited(_prewarmPanel());
+    if (appModel.desktopClipboardDestination ==
+        DesktopClipboardDestination.panel) {
+      unawaited(ensurePrewarmed());
+    }
     glog('panel: started rect=$_panelRect');
   }
 
-  Future<void> _prewarmPanel() async {
+  /// 预热面板 WebView2（native 幂等，热了就 no-op）。启动时 destination==panel
+  /// 才调；用户在设置里切到 panel 时补调（冷路径由 native pending_json_ 缓存
+  /// 兜底，只慢首帧不丢帧）。
+  Future<void> ensurePrewarmed() async {
+    if (!_started) return;
     try {
       final double dpr = _devicePixelRatio();
       await _channel.prewarmWebView(
@@ -135,21 +151,44 @@ class ClipboardPanelController {
       return;
     }
     paused = false;
+    // latest-wins：领取序号；每个 await 后核对，过期即弃（VN 流乱序守卫）。
+    final int seq = ++_updateSeq;
     try {
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: request.text,
         searchWithWildcards: false,
       );
+      if (seq != _updateSeq) {
+        glog('panel: update superseded (seq=$seq)');
+        return;
+      }
+      _recordLookupCount(model);
       _currentSentence = request.text;
       _seedRootFrame(request.text, result);
       if (!_visible) {
         await _showPanel(model);
+        if (seq != _updateSeq) return;
       }
       await _renderPanel(model);
       glog('panel: updated "${request.text.length} chars" '
           'entries=${result.entries.length}');
     } catch (e, st) {
       glog('panel: update EXCEPTION $e\n$st');
+    }
+  }
+
+  /// TODO-1204 对齐——面板查词与瞬态覆盖窗同口径记一次查词计数（source
+  /// [kStatSourceBook]，无书 locator，只进统计页汇总）。best-effort：任何失败
+  /// 记日志吞掉，绝不打断查词。
+  void _recordLookupCount(AppModel model) {
+    try {
+      unawaited(model.database
+          .addLookupCount(sourceType: kStatSourceBook, dateKey: statTodayKey())
+          .catchError((Object e, StackTrace st) {
+        glog('panel: lookup-count EXCEPTION $e\n$st');
+      }));
+    } catch (e, st) {
+      glog('panel: lookup-count EXCEPTION (sync) $e\n$st');
     }
   }
 
@@ -207,12 +246,8 @@ class ClipboardPanelController {
     // spec §6 gate — 首次显示时申请 acrylic backdrop 并据结果门控透明度。
     _backdropApplied = await _channel.applyBackdrop();
     await _channel.setPinned(model.clipboardPanelPinned);
-    // 同步面板栏 pin 视觉态到 pref（真相源在 Dart）。
-    await _channel.render(
-      'window.__globalLookupHost && '
-      'window.__globalLookupHost.setPanelPinnedVisual('
-      '${model.clipboardPanelPinned});',
-    );
+    // pin 视觉态同步折进 _renderPanel 的渲染脚本（审查修正：native
+    // pending_json_ 是单槽缓存，独立发送会被随后的栈渲染覆盖丢失）。
     glog('panel: shown rect=$_panelRect backdrop=$_backdropApplied');
   }
 
@@ -254,7 +289,12 @@ class ClipboardPanelController {
       layoutMode: 'panel',
       cardBgAlpha: _backdropApplied ? model.clipboardPanelOpacity : 1.0,
     );
-    await _channel.render(script);
+    // pin 视觉态并进同一渲染脚本：native pending_json_ 是单槽缓存，冷启动时
+    // 独立脚本会互相覆盖；同一 ExecuteScript 保证 pin 图标与卡片同帧就位。
+    final String pinVisualJs = 'window.__globalLookupHost && '
+        'window.__globalLookupHost.setPanelPinnedVisual('
+        '${model.clipboardPanelPinned});';
+    await _channel.render('$script\n$pinVisualJs');
   }
 
   void _onJsMessage(Map<String, Object?> message) {
@@ -348,6 +388,7 @@ class ClipboardPanelController {
     final AppModel? model = _appModel;
     if (model == null) return;
     try {
+      _recordLookupCount(model);
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: query,
         searchWithWildcards: false,

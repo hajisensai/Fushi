@@ -46,9 +46,11 @@ void main() {
       expect(injectionDart.contains('_cssRgbTriplet'), isTrue);
     });
 
-    test('render 端仅 alpha<1 注入 alpha 变量（字节稳定）', () {
-      expect(renderDart.contains('cardBgAlpha < 1.0'), isTrue);
+    test('render 端恒注入 alpha 变量（1.0 也写——防调回 100% 后旧值残留）', () {
       expect(renderDart.contains('--hibiki-card-bg-alpha'), isTrue);
+      expect(renderDart.contains('cardBgAlpha.toStringAsFixed(2)'), isTrue);
+      expect(renderDart.contains('cardBgAlpha < 1.0'), isFalse,
+          reason: '条件注入会让常驻面板从 0.85 调回 1.0 后停在半透明（审查 #4）');
     });
 
     test('popup.css 卡背景消费两变量且默认 alpha=1（零回归）', () {

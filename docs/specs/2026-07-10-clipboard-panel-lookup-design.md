@@ -138,10 +138,19 @@ Ctrl+Alt+D 抓选区 = 存旧剪贴板 → 清空 → 注入 Ctrl+C（目标 app
 
 现状症状藏在主窗 tab 后台（不可见）；`destination=panel` 后会变成**可见的错句闪烁**。修法（数据契约，非时间窗 hack）：
 
-- `DesktopLookupService.ignoreClipboardTexts(Set<String> texts)`：按文本登记一次性忽略集；`_handleClipboardChange` 命中即消耗并跳过。
-- 登记时机：捕获流程里「读到选区文本之后、恢复旧值之前」登记 `[捕获文本, 旧剪贴板文本]`（清空步产生的空文本本就被 dedupe 吞掉，无需登记）；抓取失败/超时路径登记实际已写入剪贴板的值。
-- 纯函数化：`shouldIgnoreClipboardText(text, ignoreSet) → (ignore, nextSet)`，直接可测。
-- 实现计划中先真机复现现状泄漏（一条集成断言），修后同路径转绿——按 BUG 流程建档（`dart run tool/bug.dart new`）。
+- **实现期修正（代码审查发现）**：captured 回声可能在抓取轮询的 await 间隙
+  **先于事后登记**到达——单靠「读到文本后登记忽略集」拦不住主泄漏路径。方案
+  升级为**捕获期括号**（仍是文本契约，不是时间窗）：
+  - `DesktopLookupService.beginSelfInflictedCapture()`：抓取方在首次写剪贴板前
+    开括号，期间到达的剪贴板事件一律暂存（自产/真实此刻无法区分）；
+  - `endSelfInflictedCapture(ignoreTexts)`：抓取完成、恢复写入**之前**收口——
+    先登记 `[捕获文本, 旧剪贴板文本]`（拦截收口后才到的恢复回声），再回放暂存
+    事件：命中本次自产集合=丢弃，未命中=捕获窗口里的真实用户复制原样放行；
+  - `finally` 保证异常路径也收口（括号留开会把后续真实复制卡死在暂存里）。
+- 一次性忽略集（`ClipboardIgnoreSet`）保留：吞收口后到达的恢复回声；未命中的
+  真实复制使整批登记过期（防陈旧条目误吞用户后续复制）。
+- 已按 BUG 流程建档：`docs/bugs/`（selection-capture-clipboard-echo，编号见文件；
+  并发分支撞号由 integration owner 落地时统一改号 reindex）。
 
 ## 9. 测试与验证
 
@@ -181,3 +190,6 @@ Ctrl+Alt+D 抓选区 = 存旧剪贴板 → 清空 → 注入 Ctrl+C（目标 app
 | 抓选区泄漏 | 按文本一次性忽略集，随本期必修 | panel 模式下由隐性变显性；文本契约优于时间窗 |
 | texthooker 接入 | 本期不做，留 `ClipboardPanelController.update(text)` 入口 | WS 行流与剪贴板同形，后续一根线 |
 | macOS/Linux | 维持主窗 tab | 覆盖窗 Windows-only；需求未出现 |
+| 面板自动朗读 | 面板**故意不接** autoReadOnLookup | VN 台词流逐句自动发音会与游戏配音叠放刷屏；瞬态窗（单次显式查词）保持接入 |
+| 面板预热时机 | 仅 destination==panel 时预热第二 WebView2 | 默认 main 的用户不为面板常驻进程树（零破坏承诺）；切到 panel 时补预热 |
+| 面板更新并发 | latest-wins 序号（每个 await 后核对） | VN 流下旧句结果可能后完成覆盖新句（审查发现） |

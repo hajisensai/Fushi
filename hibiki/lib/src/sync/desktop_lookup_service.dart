@@ -225,10 +225,42 @@ class DesktopLookupService extends ChangeNotifier
     unawaited(_handleClipboardChange());
   }
 
-  /// spec 2026-07-10 §8 — 全局查词抓选区（selection_capture_ffi）写剪贴板前登记
-  /// 的一次性忽略集；[processClipboardText] 命中即吞掉该事件，防止「捕获文本」
-  /// 「恢复的旧文本」被当成用户复制排进查词管线（假查词/面板错句闪烁）。
+  /// spec 2026-07-10 §8 — 抓选区自产剪贴板事件的一次性忽略集。收口后到达的
+  /// 回声（典型是「恢复旧值」那次写入）由 [processClipboardText] 按文本命中
+  /// 吞掉。捕获期内先到的事件走 [_deferredDuringCapture]（见下）。
   final ClipboardIgnoreSet clipboardIgnores = ClipboardIgnoreSet();
+
+  /// §8 捕获期括号（审查修正：captured 回声可能在抓取轮询的 await 间隙**先于
+  /// 登记**到达——只靠事后登记拦不住主泄漏路径）。抓取方在写剪贴板前
+  /// [beginSelfInflictedCapture]，期间到达的事件全部暂存；抓取完成后
+  /// [endSelfInflictedCapture] 拿到「本次自产文本集合」对账：命中=自产回声丢弃，
+  /// 未命中=捕获窗口里的真实用户复制，原样放行（仍是文本契约，不是时间窗）。
+  bool _captureBracket = false;
+  final List<String> _deferredDuringCapture = <String>[];
+
+  void beginSelfInflictedCapture() {
+    _captureBracket = true;
+    _deferredDuringCapture.clear();
+  }
+
+  /// [ignoreTexts] = 本次抓取实际写入过剪贴板的文本（捕获到的选区 + 待恢复的
+  /// 旧值）。先登记（拦截收口**之后**才到的恢复回声），再回放暂存事件：自产
+  /// 回声按本次集合直接对账丢弃（不动 [clipboardIgnores]——回放 miss 不应
+  /// 清掉刚登记的恢复回声条目），真实复制走正常提交（去重仍生效）。
+  void endSelfInflictedCapture(Iterable<String> ignoreTexts) {
+    final Set<String> selfInflicted = <String>{
+      for (final String t in ignoreTexts)
+        if (t.trim().isNotEmpty) t.trim(),
+    };
+    clipboardIgnores.register(selfInflicted);
+    _captureBracket = false;
+    final List<String> deferred = List<String>.of(_deferredDuringCapture);
+    _deferredDuringCapture.clear();
+    for (final String text in deferred) {
+      if (selfInflicted.contains(text.trim())) continue;
+      submitText(text);
+    }
+  }
 
   Future<void> _handleClipboardChange() async {
     // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
@@ -244,6 +276,12 @@ class DesktopLookupService extends ChangeNotifier
   @visibleForTesting
   void processClipboardText(String text) {
     if (text.trim().isEmpty) return;
+    if (_captureBracket) {
+      // §8 捕获期：自产/真实无法当场区分（登记要等抓取读到文本才知道），
+      // 一律暂存，endSelfInflictedCapture 对账后放行或丢弃。
+      _deferredDuringCapture.add(text);
+      return;
+    }
     if (clipboardIgnores.consume(text)) return;
     submitText(text);
   }

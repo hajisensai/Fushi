@@ -9,6 +9,7 @@ import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 class DesktopLookupDispatcher {
@@ -32,9 +33,15 @@ class DesktopLookupDispatcher {
     final DesktopLookupRequest? request =
         DesktopLookupService.instance.pendingRequest;
     if (model == null || request == null) return;
+    // 与 HomeDictionaryPage 侧同构：AppModel 未初始化（prefsRepo 未就绪）时按
+    // 默认 main 分区（即不消费，留给页面）。生产不可达（dispatcher 在
+    // initialise 完成后启动），守卫只为两个消费者对同一输入保持对称。
+    final DesktopClipboardDestination destination = model.isInitialised
+        ? model.desktopClipboardDestination
+        : DesktopClipboardDestination.main;
     final DesktopLookupConsumer consumer = resolveDesktopLookupConsumer(
       origin: request.origin,
-      destination: model.desktopClipboardDestination,
+      destination: destination,
       overlayAvailable: GlobalLookupController.instance.isAvailable,
     );
     switch (consumer) {

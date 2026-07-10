@@ -374,10 +374,13 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel
                   .setDesktopClipboardDestination(value);
               // 去向切走时收起面板（不留孤儿常驻窗）；切到面板时解除 × 暂停
-              // （从设置重开面板的直觉路径，spec §5）。
+              // （从设置重开面板的直觉路径，spec §5）并补预热（启动预热仅
+              // destination==panel 时做——默认 main 不常驻第二 WebView2）。
               if (ClipboardPanelController.isSupported) {
                 if (value == DesktopClipboardDestination.panel) {
                   ClipboardPanelController.instance.paused = false;
+                  unawaited(
+                      ClipboardPanelController.instance.ensurePrewarmed());
                 } else {
                   await ClipboardPanelController.instance
                       .hidePanel(pause: false);

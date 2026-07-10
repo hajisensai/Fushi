@@ -536,10 +536,11 @@ Controller 骨架契约：
 ### Task 15: 真机 gate（`tool/run_windows_itest.ps1` + observe_capture 离屏抓像素）
 - [ ] **半透明 gate（spec §6/M0）**：面板下垫高对比背景截图，验证 acrylic backdrop 是否真透出（`applyBackdrop` 返回值 + 像素证据）；失败 → slider 保持隐藏、面板不透明，记录进 spec 修订
 - [ ] 面板显示/复制更新不闪/句子条点词嵌套/发音/制卡按钮
-- [ ] 拖动+位置记忆（windowMoved→pref→重启恢复）
+- [ ] 拖动+位置记忆（windowMoved→pref→重启恢复）；**拖动期间 VN 流推送**（native 模态移动循环与渲染并发，审查建议）
 - [ ] 图钉切换、×暂停、Ctrl+Shift+D 重唤
 - [ ] transient 去向：复制→光标处弹卡→点外收
-- [ ] 泄漏根修：Ctrl+Alt+D 后主窗 tab/面板无假更新
+- [ ] 泄漏根修：Ctrl+Alt+D 后主窗 tab/面板无假更新（含 captured 回声先到时序——括号方案见 spec §8 修订）
+- [ ] **面板内嵌套卡贴面板栏的 clamp**（anchor 坐标域含 28px 栏偏移，审查建议）
 - [ ] 证据存 `.codex-test/`（不入库），结果写回 spec「验证记录」节
 
 ### Task 16: 交付
