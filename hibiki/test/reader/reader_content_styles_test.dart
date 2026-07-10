@@ -375,9 +375,68 @@ void main() {
       );
       expect(
         activeBlock,
-        contains('line-height: 1 !important'),
-        reason: '普通正文 cue span 必须把自身背景盒压到 1em；继承正文 1.65 line-height 会让无振假名句子变宽',
+        isNot(contains('line-height')),
+        reason: 'TODO-1371/BUG-689：active 态禁止改写盒模型。旧 line-height:1 !important '
+            '会在书籍 CSS strut < 1em 时逐句增厚激活行盒，竖排下行盒厚度=列厚，'
+            '其后所有列随播放逐句平移；1em 窄条宽度由 background-size（绘制层）保证，'
+            '与 line-height 无关',
       );
+    });
+
+    test('active highlight blocks are paint-only in both writing modes',
+        () async {
+      // TODO-1371/BUG-689 守卫：跟随句/查词/收藏的运行时 toggle 高亮（-active 类、
+      // ::highlight、dict-highlight）只允许绘制层属性。任何盒模型/排版属性
+      // （line-height/margin/padding/font/…）都会让「高亮激活」改变文字位置。
+      const Set<String> paintOnlyAllowlist = <String>{
+        'color',
+        'background-color',
+        'background-image',
+        'background-repeat',
+        'background-size',
+        'background-position',
+        'text-decoration-line',
+        'text-decoration-color',
+        'text-decoration-thickness',
+        'text-underline-offset',
+        'box-decoration-break',
+        '-webkit-box-decoration-break',
+      };
+      final RegExp blockPattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
+      final RegExp declPattern = RegExp(r'^\s*([a-zA-Z-]+)\s*:');
+
+      for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode(mode);
+        final String css = ReaderContentStyles.css(settings: settings);
+
+        int enforcedBlocks = 0;
+        for (final RegExpMatch block in blockPattern.allMatches(css)) {
+          final String selector = block.group(1)!;
+          final bool isToggleHighlight = selector.contains('-active') ||
+              selector.contains('::highlight(') ||
+              selector.contains('.hoshi-dict-highlight');
+          if (!isToggleHighlight) continue;
+          enforcedBlocks++;
+          for (final String line in block.group(2)!.split('\n')) {
+            final String trimmed = line.trim();
+            if (trimmed.isEmpty || trimmed.startsWith('/*')) continue;
+            if (trimmed.startsWith('--')) continue; // 自定义变量本身不参与布局。
+            final RegExpMatch? decl = declPattern.firstMatch(trimmed);
+            if (decl == null) continue;
+            final String property = decl.group(1)!.toLowerCase();
+            expect(
+              paintOnlyAllowlist.contains(property),
+              isTrue,
+              reason: '[$mode] 高亮 toggle 规则出现非绘制层属性 `$property`（选择器：'
+                  '${selector.trim()}）。active 态改盒模型会让文字位置随高亮移动'
+                  '（TODO-1371/BUG-689）；确属纯绘制属性再显式加进 allowlist',
+            );
+          }
+        }
+        expect(enforcedBlocks, greaterThan(5),
+            reason: '[$mode] 守卫必须真扫到高亮 toggle 规则块，不能空转');
+      }
     });
 
     test('horizontal ruby highlights draw only the base text lane', () async {
