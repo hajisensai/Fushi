@@ -615,10 +615,12 @@ function flushTimers() {
 }
 
 // 16. F2 shell chrome: the injected gate <style> carries ONLY the hoshi radius +
-//     drop shadow, transparent background (the iframe paints the card fill + the
-//     single visible border), and a dark-variant shadow keyed on data-theme.
-//     TODO-893 symptom 1: the shell must NOT draw a second border (the
-//     double-border / "white frame"); the one border lives on the iframe body.
+//     transparent background (the iframe paints the card fill + the single
+//     visible border). It draws NO border (TODO-893 double-border) and NO
+//     box-shadow: the overlay HWND is non-layered/opaque, so a CSS shadow paints
+//     as an ~11px DARK HALO outside the card that SetWindowRgn cannot clip (the
+//     reported "black border outside the rounded corners") instead of a real
+//     translucent shadow. The rounded silhouette comes from SetWindowRgn.
 {
   const { host, document } = freshHost();
   host.renderStack({ popups: [descriptor('frame-0', -1)] });
@@ -630,12 +632,11 @@ function flushTimers() {
     'TODO-893: shell must NOT draw a border (single border lives on the iframe '
     + 'body) — this was the double-border main cause');
   assert.ok(/border-radius:10px/.test(css), 'hoshi 10px card radius');
-  assert.ok(/box-shadow:0 3px 12px rgba\(0,0,0,0\.22\)/.test(css),
-    'hoshi drop shadow');
+  assert.ok(!/box-shadow/.test(css),
+    'shell must cast NO box-shadow: on the non-layered opaque WebView2 window a '
+    + 'CSS shadow renders as a dark halo outside the card, not a real shadow');
   assert.ok(/background:transparent/.test(css),
     'shell background transparent (iframe paints the fill, no double layer)');
-  assert.ok(/\[data-theme="dark"\]/.test(css),
-    'dark variant keyed on data-theme');
 }
 
 // 17. F2 data-theme stamp: the render payload's `theme` is written onto the shell
