@@ -71,9 +71,14 @@ class AudiobookSession extends ChangeNotifier {
   void restoreDefaultSurfaces() {
     _floatingLyricStyle = _defaultFloatingLyricStyle;
     _onFloatingLyricLookup = _defaultFloatingLyricLookup;
+    // 无条件重接 channel 点词 handler：绝不能门控在 _showFloatingLyric()。悬浮条
+    // 可能在偏好 show_floating_lyric=false 时被临时拉起（手动 toggle），此时若跳过
+    // 重接线，channel 的 _onLookupText 会残留为已卸载 reader 页的
+    // _lookupFromFloatingLyric——它 `if (!mounted) return` 会静默吞掉每一次点词
+    // （tryFloatingLyricGlobalLookup 永不触发）。样式应用才需要条真在显示。
+    _setupFloatingLyricHandlers();
     if (_showFloatingLyric()) {
       unawaited(applyFloatingLyricStyle());
-      _setupFloatingLyricHandlers();
     }
   }
 
@@ -85,10 +90,12 @@ class AudiobookSession extends ChangeNotifier {
   }) {
     _floatingLyricStyle = floatingLyricStyle;
     _onFloatingLyricLookup = onFloatingLyricLookup;
-    // 已经拉起的悬浮窗换成 reader 主题样式 + reader 查词处理器（reader 进/重建后生效）。
+    // 无条件重接 handler（同 [restoreDefaultSurfaces] 的根因）：channel 点词路由
+    // 必须始终指向当前 _onFloatingLyricLookup，与偏好开关无关；只有样式应用门控在
+    // 条真在显示。
+    _setupFloatingLyricHandlers();
     if (_showFloatingLyric()) {
       unawaited(applyFloatingLyricStyle());
-      _setupFloatingLyricHandlers();
     }
   }
 
