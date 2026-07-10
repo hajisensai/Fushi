@@ -3053,17 +3053,6 @@ window.hoshiReader = {
 };
 
 
-// Hibiki adaptation: initialize on load (like paginated), then run the
-// restore script. restore* methods await ensureReady() internally, so the
-// order is safe whether or not initialize has resolved yet.
-window.addEventListener('load', function() {
-  window.hoshiReader.initialize();
-  $initialRestoreScript
-});
-if (document.readyState === 'complete') {
-  window.hoshiReader.initialize();
-  $initialRestoreScript
-}
 
 // ── Hibiki host-compat shims (TODO-909 M0) ───────────────────────────────────
 // The Dart side calls a few methods on window.hoshiReader that hoshi a's VN
@@ -3123,6 +3112,30 @@ if (document.readyState === 'complete') {
     };
   }
 })();
+
+// Hibiki adaptation: initialize on load, then run the restore script. This MUST
+// run AFTER the host-compat shim IIFE above: a charOffset restore calls
+// window.hoshiReader.restoreToCharOffset, which only the shim defines. Placed
+// before the shim it threw a synchronous TypeError that aborted the outer
+// reader-setup IIFE before its tail removed #hoshi-cloak, leaving the page
+// visibility:hidden (blank) on any restore-by-charOffset VN entry. The
+// try/catch also stops a future restore error from ever stranding the cloak.
+window.addEventListener('load', function() {
+  try {
+    window.hoshiReader.initialize();
+    $initialRestoreScript
+  } catch (e) {
+    try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
+  }
+});
+if (document.readyState === 'complete') {
+  try {
+    window.hoshiReader.initialize();
+    $initialRestoreScript
+  } catch (e) {
+    try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
+  }
+}
 </script>''';
   }
 }
