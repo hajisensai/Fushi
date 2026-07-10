@@ -3987,6 +3987,21 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  // spec 2026-07-10 剪贴板独立弹窗 — 剪贴板查词去向 + 面板窗四项偏好（转发）。
+  DesktopClipboardDestination get desktopClipboardDestination =>
+      prefsRepo.desktopClipboardDestination;
+  Future<void> setDesktopClipboardDestination(DesktopClipboardDestination v) =>
+      prefsRepo.setDesktopClipboardDestination(v);
+  double get clipboardPanelOpacity => prefsRepo.clipboardPanelOpacity;
+  Future<void> setClipboardPanelOpacity(double v) =>
+      prefsRepo.setClipboardPanelOpacity(v);
+  String get clipboardPanelRect => prefsRepo.clipboardPanelRect;
+  Future<void> setClipboardPanelRect(String v) =>
+      prefsRepo.setClipboardPanelRect(v);
+  bool get clipboardPanelPinned => prefsRepo.clipboardPanelPinned;
+  Future<void> setClipboardPanelPinned(bool v) =>
+      prefsRepo.setClipboardPanelPinned(v);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);
