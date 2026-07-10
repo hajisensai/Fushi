@@ -249,4 +249,65 @@ void main() {
     expect(state.controller.entries, hasLength(1));
     expect(state.controller.entries.single.isWarmSlot, isFalse);
   });
+
+  testWidgets(
+      'BUG-709: nested lookup keeps searching-UI off while a parent popup is '
+      'visible (no placeholder behind the parent -> no z-order flip)',
+      (WidgetTester tester) async {
+    final key = GlobalKey<MixinHostPageState>();
+    await tester.pumpWidget(
+      wrap(
+        MixinTestAppModel(
+          results: <DictionaryEntry>[
+            DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
+          ],
+        ),
+        key,
+      ),
+    );
+    key.currentState!.seedWarmSlot();
+    await tester.pump();
+    final state = key.currentState!;
+
+    // Open + reveal the top-level (parent) popup.
+    await state.lookup('親');
+    await tester.pump();
+    final DictionaryPopupEntry parent = state.controller.entries.single;
+    state.controller.revealRendered(parent);
+    state.controller.endSearchUi();
+    await tester.pump();
+    expect(parent.visible, isTrue);
+    expect(state.controller.hasVisiblePopup, isTrue);
+    expect(state.controller.isSearchingUi, isFalse);
+
+    // Nested lookup while the parent is visible. The searching placeholder must
+    // NOT engage: in the three mixin hosts (video / 首页 / 悬浮歌词) it is
+    // stacked BELOW the popup entries, so drawing it during a nested search
+    // paints the searching child *behind* the visible parent; when the child
+    // WebView renders it reveals on top -> the BUG-709 底层->上层 z-order flip.
+    // With the fix, isSearchingUi stays false and the hidden child simply
+    // reveals on top once rendered (reveal timing still guarded by BUG-170).
+    //
+    // Regression signature: beginSearchUi runs synchronously (before the first
+    // await) in pushNestedPopup, so the buggy path flips isSearchingUi true the
+    // moment a nested search starts. pushChild returns void (Future discarded),
+    // but the append + the gate both happen in that synchronous prefix, so a
+    // single pump captures the decision without racing the async lookup.
+    state.pushChild('子');
+    await tester.pump();
+    expect(state.controller.isSearchingUi, isFalse,
+        reason: 'nested search must not paint a loading placeholder behind the '
+            'already-visible parent popup');
+    expect(state.controller.entries.length, greaterThan(1));
+    expect(parent.visible, isTrue);
+    final DictionaryPopupEntry child = state.controller.entries.last;
+    expect(child.visible, isFalse);
+    expect(child.revealOnRender, isTrue);
+
+    // The renderable child armed a reveal-failsafe Timer (markPendingReveal,
+    // BUG-170). Cancel it so the harness's "no pending timers after dispose"
+    // invariant holds — mirrors the warm-slot reveal test above.
+    state.controller.revealRendered(child);
+    await tester.pump();
+  });
 }
