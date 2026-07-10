@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 687 条。点号进各自文件。
+> 共 689 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-703](bugs/BUG-703-mine-cover-case-insensitive.md) | ✅ | ✅ | 手机(Android)书籍阅读制卡缺封面(制卡与书架对封面路径大小写解析不对称) |
+| [BUG-702](bugs/BUG-702-netflix-maturity-overlay.md) | ✅ | ✅ | 网飞制卡时剧集开头的年龄分级 overlay 被录进卡片截图/gif（TODO-1391） |
 | [BUG-701](bugs/BUG-701-touchpad-wheel-subpixel.md) | ✅ | ✅ | 查词弹窗触控板滚轮亚像素步进丢帧（时好时坏） |
 | [BUG-700](bugs/BUG-700-desktop-clipboard-breakpoint.md) | ✅ | ✅ | 桌面剪贴板自动查词跨窗口尺寸断点后失效 |
 | [BUG-699](bugs/BUG-699-ghost-remote-book.md) | ✅ | ✅ | WebDAV-only 用户首屏闪现无内容的幽灵远端书 |
