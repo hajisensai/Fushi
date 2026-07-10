@@ -43,27 +43,24 @@ function parseRules(text) {
 const rules = parseRules(css);
 const find = (sel) => rules.filter((r) => r.selector === sel);
 
-// 1. in-app grid intact.
+// 1. in-app grid intact, and content-height for ALL surfaces via align-items:start.
 const inAppBody = find('.glossary-section > .category-body');
 assert.strictEqual(inAppBody.length, 1, 'in-app .category-body rule must exist exactly once');
 assert.ok(/display:\s*grid/.test(inAppBody[0].body), 'in-app .category-body must stay grid');
 assert.ok(/repeat\(var\(--dict-columns/.test(inAppBody[0].body),
   'in-app grid must keep the tested --dict-columns columns');
+assert.ok(/align-items:\s*start/.test(inAppBody[0].body),
+  'base grid align-items:start = content height for ALL surfaces (含 app 外)，'
+  + '这样删掉 global-lookup 的 flex 覆盖后首卡也不会被拉高');
 
-// 2. global-lookup override -> flex-wrap variable-height.
+// 2. global-lookup 不再用独立 flex-wrap 覆盖 .category-body（用户「左右动」根因修）。
+//    app 外/扩展与 in-app 共用固定列 grid + masonry，卡片不再按窗口宽左右重排漂移。
 const glBody = find('html.global-lookup .glossary-section > .category-body');
-assert.strictEqual(glBody.length, 1, 'global-lookup .category-body override must exist');
-assert.ok(/display:\s*flex/.test(glBody[0].body), 'global-lookup sub-box container must be flex');
-assert.ok(/flex-wrap:\s*wrap/.test(glBody[0].body), 'must flex-wrap (many per row, not fixed 3)');
-assert.ok(/align-items:\s*flex-start/.test(glBody[0].body),
-  'must NOT stretch to row max height (kills first-result-taller stretch)');
-assert.ok(!/grid-template-columns/.test(glBody[0].body),
-  'global-lookup override must not reintroduce a fixed-N grid');
-
-// glossary-group under global-lookup is content height (height:auto), not stretched.
+assert.strictEqual(glBody.length, 0,
+  'global-lookup 不得再有独立 flex-wrap 覆盖 .category-body（那是「左右动」根源）');
 const glGroup = find('html.global-lookup .glossary-section > .category-body > .glossary-group');
-assert.strictEqual(glGroup.length, 1, 'global-lookup glossary-group override must exist');
-assert.ok(/height:\s*auto/.test(glGroup[0].body), 'collapsed sub-box must be content-height');
+assert.strictEqual(glGroup.length, 0,
+  'global-lookup 不得再有 flex:1 1 auto 的 glossary-group 覆盖');
 
 // 3. card chrome gated on html.global-lookup body (never bare body{}).
 const glShell = find('html.global-lookup body');
