@@ -30,3 +30,35 @@
   - 与旧 decision 提及的 BUG-588「页边距泄露相邻页文字/覆盖条」是**另一问题**，其修复即 `339a433be`，已在 develop；本条专指「列数改了不变」，两者独立。
   - 用户侧行动建议：更新到含上述三个 commit 的构建即生效，无需任何设置迁移（`ttu_page_columns` key 不变）。
   - 未改任何阅读器 Dart 代码（避免重做已工作的修复引回归）；本条产物 = 本 BUG 文档 + 新增渲染层 headless 守卫。
+
+### 第三次复诉 · 真 WebView2 离屏闭环量测（2026-07-10）
+
+用户第三次报「每页列数不生效」。此前所有「列数真生效」证据都是 **headless Chrome**
+（`tool/reader_pitch_headless/columns_per_page_proof.mjs`）或纯字符串守卫，**从未在真
+WebView2 引擎上量过** —— headless Chrome 与用户实际渲染用的 fork
+`flutter_inappwebview_windows`（WebView2/Edge Chromium）不是同一构建。本次首次在**真
+WebView2** 上把真实 `ReaderContentStyles.css` 注进 live `InAppWebView`、回读
+`getComputedStyle`/`getBoundingClientRect` 闭环量测。
+
+Harness：`hibiki/integration_test/desktop_reader_columns_dom_test.dart`
+（`tool/run_windows_itest.ps1` 离屏跑，窗口 1265x682，All tests passed）。
+
+真 WebView2 实测（每页列数 N 真渲染 N 列 + JS pageStep == 真页步）：
+
+| 模式 | N | computedColumnCount | computedColumnWidth | 首屏列带 | 真页步 | JS pageStep |
+|---|---|---|---|---|---|---|
+| horizontal-tb | 1/2/3 | 1/2/3 | 1214 / 596 / 390px | 1/2/3 | 1237 | 1236.4（各 N 恒定）|
+| vertical-rl | 1/2/3 | 1/2/3 | 660 / 319 / 205px | 1/2/3 | 682 | 682（各 N 恒定）|
+
+- `computedColumnCount` / `columnWidth` 在真 WebView2 均回读为**干净数字**（不是 'auto'）——
+  eeca34e97 担心的「WebView 回读 columnCount='auto'」在 WebView2 上未出现，快路径直接命中。
+- JS pageStep == 真页步（差<1px），**无相邻页泄露**。
+- 图片夹取（BUG-679）真引擎复验：横排 N=2、子列 596px，无 `_imageMaxBox` clamp 时 1200px 宽图
+  渲染 1200px（溢出 2x 盖住相邻列 = 用户「图片挤压」症状）；把 `--hoshi-image-max-width` 设为
+  `getComputedStyle(body).columnWidth`（=596.193px）后夹到 596px。证明 clamp 承重且在真引擎生效。
+
+结论（更强证据下重申）：**develop（e096c594a）上每页列数 + 图片夹取在真 WebView2 均正常**，
+三个先行 commit + BUG-679 图片修复在真引擎全部有效。第三次复诉最可能是用户构建早于
+BUG-679 修复日（2026-07-09），或图多/短内容页的视觉错觉。**未改任何阅读器代码**（避免对已工作
+的几何引回归）；本轮产物 = 真 WebView2 离屏守卫 harness + 本节验证记录。证据：
+`.codex-test/todo1285-webview2-columns-measurement.md`。
