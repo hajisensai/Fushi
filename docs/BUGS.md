@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 702 条。点号进各自文件。
+> 共 703 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-717](bugs/BUG-717-clipboard-panel-close-drops-lookups.md) | ✅ | ✅ | 剪贴板面板关闭后被永久暂停：第二个词出不来 |
 | [BUG-716](bugs/BUG-716-bilingual-bottom-marginv-overlap.md) | ✅ | ✅ | 双语底部对白 MarginV 塌陷重叠 |
 | [BUG-715](bugs/BUG-715-nested-popup-searching-placeholder-zorder.md) | ✅ | ✅ | 嵌套查词子弹窗渲染前显示在父弹窗下方图层(视频/首页/悬浮歌词) |
 | [BUG-714](bugs/BUG-714-interconnect-live-book-push-500.md) | ✅ | ✅ | 互联 live 书籍推送全部 HTTP 500(host 未接线 importBookFromFile) |
