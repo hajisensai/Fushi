@@ -1,4 +1,4 @@
-// BUG-686 回归守卫：查词弹窗滚轮「表面感知」——滚动目标与 zoom 读取路径。
+// BUG-688 回归守卫：查词弹窗滚轮「表面感知」——滚动目标与 zoom 读取路径。
 //
 // 背景：popup.js 由 in-app 弹窗 WebView 与浏览器扩展浮动弹窗共享（TODO-1267 要求
 // assets/popup/popup.js 与两份扩展 vendor 镜像逐字节一致），但两个表面的滚动者不同：
@@ -25,7 +25,7 @@ void main() {
     '../tools/browser-extension/vendor/popup.js', // 扩展 tools 镜像
   ];
 
-  group('BUG-686 popup wheel-scroll surface guard', () {
+  group('BUG-688 popup wheel-scroll surface guard', () {
     for (final String path in popupCopies) {
       group('[$path]', () {
         final String src = File(path).readAsStringSync();

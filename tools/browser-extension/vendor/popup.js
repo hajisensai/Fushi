@@ -1,4 +1,4 @@
-/* BUG-686: Shadow-DOM isolation. content.js renders this popup inside a shadow
+/* BUG-688: Shadow-DOM isolation. content.js renders this popup inside a shadow
    root (window.__hibikiRoot) so host-page CSS can't pierce it. Route every DOM
    lookup / overlay append / selection / height read through these helpers so they
    resolve inside the shadow (fall back to document before the shadow exists). */
@@ -8,7 +8,7 @@ function __hibikiOverlayParent(){ return window.__hibikiRoot || document.body; }
 function __hibikiScrollHeight(){ var c = __hibikiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
 function __hibikiSel(){ var r = window.__hibikiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
 function __hibikiEventTarget(e){ try { var p = e.composedPath && e.composedPath(); if (p && p.length) return p[0]; } catch(_){} return e.target; }
-/* BUG-686: the extension floating popup scrolls on the SHADOW HOST
+/* BUG-688: the extension floating popup scrolls on the SHADOW HOST
    (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
    scrolls the document itself. These two resolve the wheel-scroll surface:
@@ -2979,7 +2979,7 @@ const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
 function popupCurrentZoom(scroller) {
-    // BUG-686: read the zoom of the surface we are about to scroll. The in-app
+    // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
     // documentElement.style.zoom); the extension floating popup zooms the shadow
     // host instead (content.js hibikiRender sets host.style.zoom).
@@ -3041,7 +3041,7 @@ document.addEventListener('wheel', (e) => {
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
     const visualStep = popupClampWheelVisualStep(deltaPx * POPUP_WHEEL_PIXEL_FACTOR);
-    // BUG-686: scroll the surface the wheel is actually over. Extension popup:
+    // BUG-688: scroll the surface the wheel is actually over. Extension popup:
     // the shadow host is the scroll container (the ancestor walk above cannot
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.

@@ -475,7 +475,9 @@ class AppModel with ChangeNotifier {
       dictionarySearchAgainNotifier.notifyListeners();
     }
 
-    if (report.booksImported > 0 || report.audiobooksImported > 0) {
+    if (report.booksImported > 0 ||
+        report.audiobooksImported > 0 ||
+        report.localBookProgressPulled > 0) {
       ReaderMediaType.instance.refreshTab();
     }
 
@@ -2218,7 +2220,7 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
-    // BUG-686：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
+    // BUG-688：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
     // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
     // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
     // 是页面根 documentElement，无此问题；扩展只能缩放浮层嵌套容器）。要更大在词典字号设置里调。
@@ -2226,13 +2228,13 @@ class AppModel with ChangeNotifier {
     final double zoom =
         (rawZoom.isFinite && rawZoom > 0) ? rawZoom.clamp(0.3, 8.0) : 1.0;
     return <String, String>{
-      // BUG-686：content.css/popup.css 的正文色/底色直接读 --text-color / --background-color
+      // BUG-688：content.css/popup.css 的正文色/底色直接读 --text-color / --background-color
       // （见 content.css `color: var(--text-color)` / `background-color: var(--background-color)`）。
       // 与 in-app _themeVariablesJs 一致地下发这两个核心变量；漏了它们会导致弹窗容器色回落到
       // data-theme 块的 #000/#fff 或宿主页继承（主题分裂：米卡 + 黑底 + 灰字）。
       '--text-color': rgb(s.onSurface),
       '--background-color': rgb(_overrideDictionaryColor ?? s.surface),
-      // BUG-686：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
+      // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
       // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
       '--hibiki-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
       '--md-surface-container-high':

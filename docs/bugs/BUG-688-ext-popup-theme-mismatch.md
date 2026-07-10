@@ -1,4 +1,4 @@
-## BUG-686 · 浏览器扩展查词弹窗主题分裂：data-theme跟宿主页/--md-*跟app且漏--text-color/--background-color
+## BUG-688 · 浏览器扩展查词弹窗主题分裂：data-theme跟宿主页/--md-*跟app且漏--text-color/--background-color
 - **报告**：2026-07-09（用户：截图——浏览器里查词弹窗与 app 内完全不一样，黑底 + 米白卡 + 灰字）
 - **真实性**：✅ 真 bug。curl 运行中的 yomitan-api server（`127.0.0.1:19633` `/api/lookup/dictionary`）确认响应 `theme` 字段只带 `--md-*`，**缺** `--text-color` / `--background-color`。根因两处：
   - `hibiki/lib/src/models/app_model.dart:2226`（`browserExtensionThemeColors()`）：下发 map 只有 `--md-*` / `--md-on-surface`，漏了 content.css 真正消费的 `--text-color`（`content.css:51` `color: var(--text-color)`）和 `--background-color`（`content.css:52` `background-color: var(--background-color, transparent)`）。
