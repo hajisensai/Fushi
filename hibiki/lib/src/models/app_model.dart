@@ -593,6 +593,17 @@ class AppModel with ChangeNotifier {
   /// behaviour is byte-for-byte preserved (Never break userspace).
   final ValueNotifier<bool> gamepadImmersiveActive = ValueNotifier<bool>(false);
 
+  /// TODO-1375：媒体（阅读器 / 视频）是否打开的**可靠**通知源，专供 macOS 原生壳的
+  /// 根 sidebar 显隐门控（main.dart 的 MacosWindow）。根因：sidebar 过去直接读
+  /// `isMediaOpen`（= `_currentMediaSource != null`）在 MaterialApp.builder 里求值，
+  /// 靠 `ref.watch(appProvider)` 重建——但 [openMedia] / [closeMedia] 只改
+  /// `_currentMediaSource` 却**从不** notifyListeners，于是退出阅读器后 builder 不重跑、
+  /// sidebar 卡在上一次求值的 `null`（永久消失 → 设置 tab 失去唯一切换出口 → 困死）。
+  /// 用这个独立 ValueNotifier 在 open/close 里精确 set，配合 ValueListenableBuilder，
+  /// 退出媒体必然重建并恢复 sidebar（单一真值源 + 保证通知），且不触发全局根重建。
+  /// 非 macOS 平台不读它（阅读器是盖满的整页路由，与壳 sidebar 无关），纯 no-op。
+  final ValueNotifier<bool> mediaOpenNotifier = ValueNotifier<bool>(false);
+
   /// Polls physical game controllers and dispatches them into the shortcut /
   /// focus pipeline on platforms where the Flutter engine does not deliver
   /// gameButton* key events (desktop). No-op on Android/iOS (native key events)
@@ -3190,6 +3201,8 @@ class AppModel with ChangeNotifier {
     if (item != null) {
       _currentMediaItem = item;
     }
+    // TODO-1375：把「媒体已打开」推给可靠通知源，让 macOS 根 sidebar 隐藏（阅读全宽）。
+    mediaOpenNotifier.value = true;
 
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
@@ -3242,6 +3255,9 @@ class AppModel with ChangeNotifier {
     mediaSource.clearExtraData();
     _currentMediaSource = null;
     _currentMediaItem = null;
+    // TODO-1375：把「媒体已关闭」推给可靠通知源，保证退出阅读器后 macOS 根 sidebar
+    // 必然重建恢复（不再依赖碰巧有别的 notifyListeners 触发 builder 重跑）。
+    mediaOpenNotifier.value = false;
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
     blockCreatorInitialMedia = false;
@@ -3833,6 +3849,7 @@ class AppModel with ChangeNotifier {
     databaseCloseNotifier.dispose();
     homeDictionaryTabRequest.dispose();
     gamepadImmersiveActive.dispose();
+    mediaOpenNotifier.dispose();
     // session 的控制流订阅引用 audioCtrl 的 stream，须在 audioCtrl.dispose 前拆。
     audiobookSession.dispose();
     audioCtrl.dispose();
