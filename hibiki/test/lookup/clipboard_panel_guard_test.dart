@@ -60,6 +60,49 @@ void main() {
     });
   });
 
+  // 真机反馈修复（2026-07-10）：面板窗必须与主窗解耦、拖动必须真能进模态循环。
+  group('面板窗解耦与拖动（真机修复回归钉）', () {
+    final String cpp =
+        File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+    final String fw =
+        File('windows/runner/flutter_window.cpp').readAsStringSync();
+
+    test('面板窗无 owner（owned 窗随主窗最小化隐藏 + Z 序连带拉主窗前台）', () {
+      final int start = fw.indexOf('RegisterClipboardPanelChannel() {');
+      expect(start, isNonNegative);
+      final String body = fw.substring(start);
+      final int prewarm =
+          body.indexOf('clipboard_panel_window_->PrewarmWebView');
+      final int showAt = body.indexOf('clipboard_panel_window_->ShowAt');
+      expect(prewarm, isNonNegative);
+      expect(showAt, isNonNegative);
+      expect(body.substring(prewarm, prewarm + 200).contains('nullptr'), isTrue,
+          reason: '面板 prewarm 不得把主窗 HWND 作 owner');
+      expect(body.substring(showAt, showAt + 200).contains('nullptr'), isTrue,
+          reason: '面板 showAt 不得把主窗 HWND 作 owner');
+      expect(body.substring(prewarm, prewarm + 200).contains('GetHandle()'),
+          isFalse);
+      expect(body.substring(showAt, showAt + 200).contains('GetHandle()'),
+          isFalse);
+    });
+
+    test('拖动经 PostMessage 进模态循环，结束由 WM_EXITSIZEMOVE 报 rect', () {
+      expect(cpp.contains('PostMessage(hwnd_, WM_NCLBUTTONDOWN'), isTrue,
+          reason: 'SendMessage 在 WebMessageReceived COM 回调栈里同步进模态'
+              '循环会挂住 WebView2 派发（真机=拖不动）');
+      expect(cpp.contains('SendMessage(hwnd_, WM_NCLBUTTONDOWN'), isFalse);
+      expect(cpp.contains('case WM_EXITSIZEMOVE:'), isTrue,
+          reason: '模态循环结束的 rect 回报唯一出口');
+    });
+
+    test('SetTopmost 带 SWP_NOOWNERZORDER（图钉不得连带主窗 Z 序）', () {
+      final int fn = cpp.indexOf('void GlobalLookupWindow::SetTopmost');
+      expect(fn, isNonNegative);
+      final String body = cpp.substring(fn, fn + 700);
+      expect(body.contains('SWP_NOOWNERZORDER'), isTrue);
+    });
+  });
+
   group('半透明卡背景（--hibiki-card-bg-* 三端契约）', () {
     test('注入端产出 rgb 三元组变量', () {
       expect(injectionDart.contains('--hibiki-card-bg-rgb'), isTrue);

@@ -76,7 +76,8 @@
 
 ## 5. 交互细节（面板窗）
 
-- **拖动**：host 顶部窄 grip 条，JS mousedown → `postMessage(dragStart)` → native `ReleaseCapture()` + `SendMessage(WM_NCLBUTTONDOWN, HTCAPTION)`。NOACTIVATE 窗拖动不夺焦点。松手后 native 读回 rect → Dart 存 pref。
+- **拖动**：host 顶部窄 grip 条，JS mousedown → `postMessage(beginWindowDrag)` → native `ReleaseCapture()` + **`PostMessage`**`(WM_NCLBUTTONDOWN, HTCAPTION)`（真机修复：SendMessage 在 WebMessageReceived COM 回调栈里同步进模态循环会挂住 WebView2 派发=拖不动；PostMessage 让模态循环从消息泵正常启动）。拖/拉结束由 `WM_EXITSIZEMOVE` 统一回报 rect → Dart 存 pref。NOACTIVATE 窗拖动不夺焦点。
+- **与主窗解耦（真机修复）**：面板窗**无 owner**（CreateWindowExW 传 nullptr，不传主窗 HWND）——owned 窗随 owner 最小化被系统隐藏（症状=最小化 app 面板跟着没了）、Z 序变更连带 owner（症状=点图钉把主 app 拉前台）。瞬态查词窗保持 owned（短命窗随主窗收纳合理）。`SetTopmost` 补 `SWP_NOOWNERZORDER` 兜底。
 - **图钉**：grip 条上按钮，切 `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`。默认钉住（游戏场景刚需）。注：独占全屏游戏 TOPMOST 也盖不住，文档注明需无边框窗口化——平台限制，不是 bug。
 - **×（关闭）**：藏窗 + 暂停面板路由（`ClipboardPanelController.paused=true`）。重唤两途：设置开关；或 Ctrl+Shift+D（现有热键语义=「立即查当前剪贴板」，destination=panel 时顺带取消暂停并显示面板——同一语义，零特殊分支）。
 - **点窗外 / 切前台**：**不关**（不装 dismiss 钩子）——这就是常驻语义本身，不是遗漏。
@@ -88,7 +89,7 @@
 
 - 逐像素透明底子已有：`put_DefaultBackgroundColor({0,0,0,0})`（`global_lookup_window.cpp:614-619`，TODO-893）。
 - 半透明 = 卡片背景 CSS `rgba`：注入 `--hibiki-card-bg-rgb` 三元组 + 面板路径注入 `--hibiki-card-bg-alpha`（默认 1，in-app 与瞬态窗零变化）。文字/外字图全不透明，只淡背景。
-- 设置滑杆 50%–100%，默认 85%。
+- 设置滑杆 50%–100%，默认 95%（真机反馈调高：85% 叠 acrylic 偏透）。
 - **实现期修正（2026-07-10）**：调查证实非 layered 顶层窗对桌面是不透明的
   （popup.css:1225 注释）——纯 CSS rgba 只对「窗口底色」半透明，**透不到底下
   的游戏**。真透视走 **Win11 `DWMWA_SYSTEMBACKDROP_TYPE`(acrylic) +
@@ -115,7 +116,7 @@
 | key | 类型/默认 | 说明 |
 |---|---|---|
 | `desktop_clipboard_destination` | string `panel`（默认，用户 2026-07-10 拍板改） | `main` / `panel` / `transient`；`panel`/`transient` 仅 Windows 且覆盖窗 `isSupported` 时可见；非 Windows 路由自动退回 main |
-| `clipboard_panel_opacity` | double `0.85` | 卡片背景不透明度，0.5–1.0 |
+| `clipboard_panel_opacity` | double `0.95`（真机反馈：0.85 叠 acrylic 偏透文字发虚） | 卡片背景不透明度，0.5–1.0 |
 | `clipboard_panel_rect` | string（逻辑像素 `x,y,w,h`） | 位置/尺寸记忆，恢复时 clamp 工作区 |
 | `clipboard_panel_pinned` | bool `true` | TOPMOST 图钉 |
 

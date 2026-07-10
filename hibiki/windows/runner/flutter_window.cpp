@@ -1061,9 +1061,14 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
               WideFromValue(args, "assetsDir", L""));
           result->Success();
         } else if (method == "prewarmWebView") {
+          // 真机修复：面板窗必须是**无 owner** 的顶层窗（nullptr，不传主窗
+          // HWND）。owned window 有两个致命联动：owner 最小化时被系统一并隐藏
+          // （真机症状=最小化 app 面板跟着消失），且 Z 序变更会连带 owner
+          // （点图钉把主 app 拉到前台）。常驻面板的生命周期必须与主窗解耦；
+          // 瞬态查词窗保持 owned 不变（短命窗，随主窗收纳是合理语义）。
           clipboard_panel_window_->PrewarmWebView(
               IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), GetHandle());
+              IntFromValue(args, "height", 600), nullptr);
           result->Success();
         } else if (method == "isWebViewReady") {
           result->Success(flutter::EncodableValue(
@@ -1082,9 +1087,10 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
               y = pt.y + 8;
             }
           }
+          // nullptr owner：同 prewarmWebView 的解耦理由（最小化联动/Z 序连带）。
           const bool ok = clipboard_panel_window_->ShowAt(
               x, y, IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), GetHandle());
+              IntFromValue(args, "height", 600), nullptr);
           int work_w = 0;
           int work_h = 0;
           int anchor_work_x = 0;

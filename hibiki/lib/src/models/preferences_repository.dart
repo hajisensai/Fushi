@@ -454,7 +454,9 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  final double defaultClipboardPanelOpacity = 0.85;
+  // 真机反馈（2026-07-10）：0.85 叠在 acrylic 模糊上整卡偏透、文字发虚——默认
+  // 提到 0.95（仍能透出底下画面轮廓，正文可读）；用户可用滑杆在 50%-100% 间调。
+  final double defaultClipboardPanelOpacity = 0.95;
 
   double get clipboardPanelOpacity => getPref('clipboard_panel_opacity',
       defaultValue: defaultClipboardPanelOpacity) as double;
