@@ -35,6 +35,7 @@ import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/src/utils/adaptive/hibiki_macos_theme.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
@@ -380,7 +381,11 @@ void main([List<String> args = const <String>[]]) {
           await GlobalLookupController.instance.start(appModel: appModel);
           // spec 2026-07-10 §4/§7 — 剪贴板监听 app 级启动（生命周期归 AppModel；
           // 覆盖窗控制器先启动，路由端 isAvailable 判定才准确）。dispatcher 先挂
-          // 监听再启服务，防首个剪贴板事件竞态。
+          // 监听再启服务，防首个剪贴板事件竞态。面板控制器只接线+预热，窗口
+          // 到首个 panel 分区请求才显示。
+          if (ClipboardPanelController.isSupported) {
+            await ClipboardPanelController.instance.start(appModel: appModel);
+          }
           DesktopLookupDispatcher.instance.start(appModel: appModel);
           await appModel.applyDesktopClipboardLifecycle();
         } catch (e) {

@@ -2222,5 +2222,7 @@
   "desktop_clipboard_destination_hint": "Where clipboard lookups appear",
   "desktop_clipboard_destination_main": "Main window",
   "desktop_clipboard_destination_panel": "Floating panel",
-  "desktop_clipboard_destination_transient": "Popup at cursor"
+  "desktop_clipboard_destination_transient": "Popup at cursor",
+  "clipboard_panel_opacity": "Panel opacity",
+  "clipboard_panel_opacity_hint": "Card background opacity of the floating lookup panel (requires Windows 11 backdrop)"
 }

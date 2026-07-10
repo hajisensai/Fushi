@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
+import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
@@ -354,6 +355,11 @@ SettingsDestination buildLookupDestination() {
                 tooltip: t.desktop_clipboard_destination_main,
               ),
               SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.panel,
+                label: t.desktop_clipboard_destination_panel,
+                tooltip: t.desktop_clipboard_destination_panel,
+              ),
+              SettingsSegmentOption<DesktopClipboardDestination>(
                 value: DesktopClipboardDestination.transient,
                 label: t.desktop_clipboard_destination_transient,
                 tooltip: t.desktop_clipboard_destination_transient,
@@ -367,7 +373,45 @@ SettingsDestination buildLookupDestination() {
             ) async {
               await settingsContext.appModel
                   .setDesktopClipboardDestination(value);
+              // 去向切走时收起面板（不留孤儿常驻窗）；切到面板时解除 × 暂停
+              // （从设置重开面板的直觉路径，spec §5）。
+              if (ClipboardPanelController.isSupported) {
+                if (value == DesktopClipboardDestination.panel) {
+                  ClipboardPanelController.instance.paused = false;
+                } else {
+                  await ClipboardPanelController.instance
+                      .hidePanel(pause: false);
+                }
+              }
               settingsContext.refresh();
+            },
+          ),
+          // spec 2026-07-10 §6 — 面板卡背景不透明度。仅 destination==panel 且
+          // Win11 acrylic backdrop 被 OS 接受（backdropOk）时显示；backdrop
+          // 不可用时面板恒不透明（降级），滑杆隐藏。
+          SettingsSliderItem(
+            id: 'lookup.clipboard_panel_opacity',
+            title: t.clipboard_panel_opacity,
+            subtitle: t.clipboard_panel_opacity_hint,
+            icon: Icons.opacity_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.panel &&
+                ClipboardPanelController.instance.backdropOk,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.clipboardPanelOpacity * 100,
+            min: 50,
+            max: 100,
+            divisions: 50,
+            step: 5,
+            titleReadout: true,
+            label: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setClipboardPanelOpacity(value / 100);
+              await ClipboardPanelController.instance.refreshOpacity();
             },
           ),
           // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键

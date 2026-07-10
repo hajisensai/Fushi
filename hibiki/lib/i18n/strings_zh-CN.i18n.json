@@ -2222,5 +2222,7 @@
   "desktop_clipboard_destination_hint": "剪贴板查词结果显示在哪里",
   "desktop_clipboard_destination_main": "主窗口",
   "desktop_clipboard_destination_panel": "悬浮面板",
-  "desktop_clipboard_destination_transient": "光标处弹卡"
+  "desktop_clipboard_destination_transient": "光标处弹卡",
+  "clipboard_panel_opacity": "面板不透明度",
+  "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）"
 }

@@ -5,6 +5,7 @@
 
 import 'dart:async';
 
+import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -40,8 +41,9 @@ class DesktopLookupDispatcher {
       case DesktopLookupConsumer.mainTab:
         return; // HomeDictionaryPage 消费。
       case DesktopLookupConsumer.panel:
-      // M2（ClipboardPanelController）接管 panel → 面板窗原地更新；在那之前
-      // 设置 UI 不暴露 panel 选项，此分支不可达，防御性回落瞬态弹卡。
+        DesktopLookupService.instance.clearPending();
+        // 常驻面板原地更新（paused 时仅 hotkey 显式意图解除并继续）。
+        unawaited(ClipboardPanelController.instance.update(request));
       case DesktopLookupConsumer.transient:
         DesktopLookupService.instance.clearPending();
         // 整句作 root 卡句子横幅 + 制卡 sentence 字段；查词词条由引擎按
