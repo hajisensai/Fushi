@@ -38,6 +38,18 @@ void main() {
         reason: '宿主 Stack 用 Clip.none，让屏外热槽不被裁掉仍预热');
   });
 
+  test('app 外查词窗 popup_dictionary_page: 隐藏层经 parkedPopupLayer 停真屏外', () {
+    final String src =
+        read('lib/src/pages/implementations/popup_dictionary_page.dart');
+    expect(src.contains('parkedPopupLayer('), isTrue,
+        reason: 'TODO-1379：卡片局部坐标 cardWidth+8 停靠在窄卡/宽屏时仍在屏内，'
+            '隐藏原生 WebView 截获触摸（弹窗滚动/点击全死）；必须经 BUG-135 收口停真屏外');
+    expect(src.contains('clipBehavior: Clip.none'), isTrue,
+        reason: '宿主 Stack 用 Clip.none，屏外热槽不被裁掉仍预热');
+    expect(src.contains('left: cardWidth + 8'), isFalse,
+        reason: '禁止回退到卡片局部坐标（屏内）停靠');
+  });
+
   test('video 弹窗 Overlay Stack 用 Clip.none', () {
     final String src =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
