@@ -43,7 +43,7 @@ class CloudRemoteBookClient implements RemoteBookClient {
 
   /// 内容探测失败（异常/超时）时的有界重试次数（默认 1）：吸收首启 autoSync 与书架
   /// 并发多路打同一 WebDAV 造成的瞬时超时/429。重试用尽仍失败即保守视为「未确证有
-  /// 内容」返 false，绝不 fail-open 放出幽灵书（BUG-689 / TODO-1384）。
+  /// 内容」返 false，绝不 fail-open 放出幽灵书（BUG-699 / TODO-1384）。
   final int contentProbeRetries;
 
   /// 每次内容探测重试前的退避（默认 300ms）：给过载云端喘息，避免同 tick 连打。
@@ -108,7 +108,7 @@ class CloudRemoteBookClient implements RemoteBookClient {
 
   /// 该书文件夹是否**确证**含可下载的 `.epub` 内容资产。
   ///
-  /// 保守语义（BUG-689 / TODO-1384）：只有 `listChildren` 成功**且**含 `.epub` 才返
+  /// 保守语义（BUG-699 / TODO-1384）：只有 `listChildren` 成功**且**含 `.epub` 才返
   /// true。「确定无内容」（列举成功但无 .epub）与「探测失败」（异常/超时——首启
   /// autoSync 与书架并发多路打同一 WebDAV 时的超时/429 是主因）**都返 false**：宁可
   /// 真书在网络抖动时暂时不显示、下次刷新/同步再出，也绝不 fail-open 放出无内容 /

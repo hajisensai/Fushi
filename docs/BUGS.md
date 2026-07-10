@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 684 条。点号进各自文件。
+> 共 687 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-701](bugs/BUG-701-touchpad-wheel-subpixel.md) | ✅ | ✅ | 查词弹窗触控板滚轮亚像素步进丢帧（时好时坏） |
+| [BUG-700](bugs/BUG-700-desktop-clipboard-breakpoint.md) | ✅ | ✅ | 桌面剪贴板自动查词跨窗口尺寸断点后失效 |
+| [BUG-699](bugs/BUG-699-ghost-remote-book.md) | ✅ | ✅ | WebDAV-only 用户首屏闪现无内容的幽灵远端书 |
 | [BUG-698](bugs/BUG-698-dual-subtitle-slot-snap.md) | ✅ | ✅ | 两条字幕同显时字幕盒随活动集增减跳动（组内堆叠槽位不稳定） |
 | [BUG-697](bugs/BUG-697-fullscreen-gamepad-dead.md) | ✅ | ✅ | 视频全屏路由内手柄仅B返回可用（A/D-pad静默no-op） |
 | [BUG-696](bugs/BUG-696-nav-jump-lands-chapter-start.md) | ✅ | ✅ | 导航跳转落章节开头而非目标文字 |

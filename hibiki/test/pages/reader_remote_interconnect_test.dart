@@ -151,7 +151,7 @@ void main() {
 
   testWidgets(
       'cloud backend shelf uses generic cloud labels, never interconnect '
-      '(BUG-689 / TODO-1384)', (WidgetTester tester) async {
+      '(BUG-699 / TODO-1384)', (WidgetTester tester) async {
     // WebDAV / GDrive 等云盘后端经 CloudRemoteBookClient 适配，来源类型是 cloud：
     // 分区必须用通用「云端书」文案，绝不显示「互联 / 对端设备」（WebDAV-only 用户
     // 从没配过互联）。

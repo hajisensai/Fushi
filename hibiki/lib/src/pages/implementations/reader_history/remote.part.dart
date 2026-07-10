@@ -82,7 +82,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     // 窄、卡片变小）。改为：只 header 自带水平 padding（对齐 _buildSectionHeader），
     // GridView 不裹水平 padding，与本地 sliver grid 同宽基准。
     final double headerPadding = tokens.spacing.rowHorizontal * 0.75;
-    // 分区文案按后端来源分流（BUG-689 / TODO-1384）：互联（对端设备）用
+    // 分区文案按后端来源分流（BUG-699 / TODO-1384）：互联（对端设备）用
     // 「互联 / 对端设备」；云盘备份（WebDAV / GDrive 等）用通用「云端书」，
     // 否则 WebDAV-only 用户会看到从没配过的「互联/对端设备」。
     final bool isCloud = state.sourceKind == RemoteBookSourceKind.cloud;

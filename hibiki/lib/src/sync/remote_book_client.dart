@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 
-/// 远端书来源类型：决定书架「远端书」分区的标题/副标题文案（BUG-689 / TODO-1384）。
+/// 远端书来源类型：决定书架「远端书」分区的标题/副标题文案（BUG-699 / TODO-1384）。
 ///
 /// * [interconnect]：Hibiki 互联——局域网对端设备（`HibikiClientSyncBackend`），有
 ///   live 库/进度/删除/有声书 API，文案用「互联 / 对端设备」。

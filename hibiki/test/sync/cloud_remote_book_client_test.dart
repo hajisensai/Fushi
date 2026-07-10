@@ -280,7 +280,7 @@ void main() {
 
     test(
         'content probe is conservative (hasContent=false) when listChildren '
-        'keeps throwing (BUG-689 / TODO-1384: no fail-open ghost book)',
+        'keeps throwing (BUG-699 / TODO-1384: no fail-open ghost book)',
         () async {
       final backend = _ControllableSyncBackend(
         folders: <DriveFile>[DriveFile(id: 'fid_x', name: 'Flaky Book')],
@@ -309,7 +309,7 @@ void main() {
 
     test(
         'content probe recovers a real book when a transient failure clears on '
-        'retry (BUG-689 / TODO-1384)', () async {
+        'retry (BUG-699 / TODO-1384)', () async {
       // 首次列举抛出（瞬时抖动），重试成功并看到 .epub → 真书仍被确证有内容。
       final backend = _FlakyThenOkSyncBackend(
         folders: <DriveFile>[DriveFile(id: 'fid_r', name: 'Recovering Book')],
