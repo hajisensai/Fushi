@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 684 条。点号进各自文件。
+> 共 685 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-702](bugs/BUG-702-min-window-dialog-overflow.md) | ✅ | ✅ | 最小窗高(TODO-1377 480px)下弹窗底部 RenderFlex 溢出 |
 | [BUG-698](bugs/BUG-698-dual-subtitle-slot-snap.md) | ✅ | ✅ | 两条字幕同显时字幕盒随活动集增减跳动（组内堆叠槽位不稳定） |
 | [BUG-697](bugs/BUG-697-fullscreen-gamepad-dead.md) | ✅ | ✅ | 视频全屏路由内手柄仅B返回可用（A/D-pad静默no-op） |
 | [BUG-696](bugs/BUG-696-nav-jump-lands-chapter-start.md) | ✅ | ✅ | 导航跳转落章节开头而非目标文字 |

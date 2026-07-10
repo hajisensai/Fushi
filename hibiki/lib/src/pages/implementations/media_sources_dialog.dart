@@ -135,7 +135,13 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
             maxWidth: double.maxFinite,
             maxHeight: maxHeight,
           ),
-          child: _buildBody(tokens),
+          // 整体可滚动：HibikiReorderableColumn 自身不带滚动（内部 Stack + Column.min），
+          // 来源多到超过 maxHeight 时会 RenderFlex 底部溢出、且下方行无法滚动查看
+          // （BUG-445；TODO-1389：桌面最小窗高降到 480 后 maxHeight 被 clamp 到 ~242px，
+          // ≥4 条来源即触发）。外层套 SingleChildScrollView：内容超高时整体滚动而非溢出，
+          // 行少时仍按内容收缩。与同款「本地音频来源」对话框
+          // （local_audio_sources_dialog）一致修法——此前独漏此层。
+          child: SingleChildScrollView(child: _buildBody(tokens)),
         ),
         footer: Row(
           children: <Widget>[
