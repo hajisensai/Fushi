@@ -2983,8 +2983,9 @@ function popupCurrentZoom(scroller) {
     // popup zooms document.documentElement (popup_settings_injection.dart sets
     // documentElement.style.zoom); the extension floating popup zooms the shadow
     // host instead (content.js hibikiRender sets host.style.zoom).
-    const el = scroller || document.documentElement;
-    const z = parseFloat(el.style && el.style.zoom);
+    const z = parseFloat(scroller
+        ? (scroller.style && scroller.style.zoom)
+        : document.documentElement.style.zoom);
     return (Number.isFinite(z) && z > 0) ? z : 1;
 }
 // Normalize a wheel delta (any axis) to CSS pixels, accounting for deltaMode.

@@ -53,10 +53,10 @@ void main() {
             () {
           expect(src, contains('function popupCurrentZoom(scroller)'),
               reason: 'popupCurrentZoom 必须接受表面滚动者参数');
-          expect(src, contains('scroller || document.documentElement'),
-              reason: 'in-app 必须回落读 documentElement（注入端设 style.zoom 的地方）');
-          expect(src, contains('el.style && el.style.zoom'),
-              reason: 'zoom 必须读元素 style.zoom（两表面的真值所在）');
+          expect(src, contains('document.documentElement.style.zoom'),
+              reason: 'in-app 必须回落读 documentElement.style.zoom（注入端设它）');
+          expect(src, contains('scroller.style && scroller.style.zoom'),
+              reason: '扩展表面必须读 shadow host 的 style.zoom（content.js 设它）');
           // 回归形态：读容器 --hibiki-popup-zoom 计算变量（in-app 从不下发 → 恒 1）。
           final RegExp brokenZoomRead = RegExp(
               r"popupCurrentZoom[\s\S]{0,400}?getPropertyValue\('--hibiki-popup-zoom'\)");
