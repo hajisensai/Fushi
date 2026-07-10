@@ -27,10 +27,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 678 条。点号进各自文件。
+> 共 684 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-698](bugs/BUG-698-dual-subtitle-slot-snap.md) | ✅ | ✅ | 两条字幕同显时字幕盒随活动集增减跳动（组内堆叠槽位不稳定） |
+| [BUG-697](bugs/BUG-697-fullscreen-gamepad-dead.md) | ✅ | ✅ | 视频全屏路由内手柄仅B返回可用（A/D-pad静默no-op） |
+| [BUG-696](bugs/BUG-696-nav-jump-lands-chapter-start.md) | ✅ | ✅ | 导航跳转落章节开头而非目标文字 |
+| [BUG-695](bugs/BUG-695-vertical-ruby-rtc-inline.md) | ✅ | ✅ | 竖排rtc形态振假名内联占字符格挤开基字 |
+| [BUG-694](bugs/BUG-694-logpanel-context-menu-crash.md) | ✅ | ✅ | 日志面板选中文本弹右键菜单崩溃（选区端点空断言） |
+| [BUG-693](bugs/BUG-693-overlay-webview-process-failed-selfheal.md) | ✅ | ✅ | 悬浮字幕点词覆盖窗死亡后永久没反应：overlay WebView2 无 ProcessFailed 自愈 |
 | [BUG-692](bugs/BUG-692-popup-dictionary-hidden-warm-webview-blocks-touch.md) | ✅ | ✅ | 安卓app外查词弹窗上下滑不动点击无反应（隐藏热槽屏内截触摸） |
 | [BUG-691](bugs/BUG-691-mine-icon-tofu-android.md) | ✅ | ✅ | 手机制完卡后制卡图标✓乱码/豆腐（Android WebView 缺符号字体） |
 | [BUG-690](bugs/BUG-690-sasayaki-active-lineheight-shift.md) | ✅ | ✅ | 竖排跟随句高亮激活时整段列平移（active 态 line-height:1 改写盒模型） |
