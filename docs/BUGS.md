@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 690 条。点号进各自文件。
+> 共 691 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-705](bugs/BUG-705-font-catalog-stale-path.md) | ✅ | ✅ | 字体库字体丢失：数据根迁移/备份恢复后 font_catalog 路径失联 |
 | [BUG-704](bugs/BUG-704-min-window-dialog-overflow.md) | ✅ | ✅ | 最小窗高(TODO-1377 480px)下弹窗底部 RenderFlex 溢出 |
 | [BUG-703](bugs/BUG-703-mine-cover-case-insensitive.md) | ✅ | ✅ | 手机(Android)书籍阅读制卡缺封面(制卡与书架对封面路径大小写解析不对称) |
 | [BUG-702](bugs/BUG-702-netflix-maturity-overlay.md) | ✅ | ✅ | 网飞制卡时剧集开头的年龄分级 overlay 被录进卡片截图/gif（TODO-1391） |

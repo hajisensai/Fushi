@@ -1862,6 +1862,24 @@ class AppModel with ChangeNotifier {
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
+      // TODO-1393 self-heal: recover custom-font entries whose stored absolute
+      // path went stale (data-root move / pre-fix backup restore that never
+      // rebased `font_catalog` / iOS reinstall / profile-import stripped path) by
+      // relocating them onto same-basename files still present under the current
+      // `<documents>/custom_fonts`. Runs before the font resolution below so the
+      // app-wide + subtitle fonts load from healed paths on first paint. Idempotent
+      // (a no-op DB touch when every path already resolves).
+      try {
+        final int relocated = await readerSettings.healMissingFontFilePaths(
+          path.join(appDirectory.path, 'custom_fonts'),
+        );
+        if (relocated > 0) {
+          debugPrint(
+              '[Hibiki] init: relocated $relocated stale custom-font path(s) to current custom_fonts dir');
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.healFontPaths', e, stack);
+      }
       // Register the user's custom app-wide font (first enabled entry) before
       // first paint so the global theme uses it without a flash. Reuses the
       // settings just loaded above to avoid a second prefs read.
