@@ -71,7 +71,10 @@ void main() {
     // step must divide by it (V px on screen needs V/zoom layout px).
     expect(js, contains('popupCurrentZoom'));
     expect(js, contains('document.documentElement.style.zoom'));
-    expect(js, contains('/ popupCurrentZoom()'));
+    // BUG-688: the popup.js is shared with the browser extension where the
+    // scroll surface is the shadow host; in-app resolves to null scroller and
+    // keeps dividing by the documentElement zoom exactly as before.
+    expect(js, contains('/ popupCurrentZoom(scroller)'));
   });
 
   test('leaves inner vertically-scrollable containers to native scroll', () {
@@ -79,8 +82,10 @@ void main() {
     // native scroll until they hit a boundary — only the main document scroll is
     // refined, not stolen.
     expect(js, contains('popupAncestorAbsorbsVerticalWheel'));
-    final absorbCheck =
-        js.indexOf('popupAncestorAbsorbsVerticalWheel(e.target, deltaPx)');
+    // BUG-688: the target is resolved through composedPath so the walk also
+    // works from inside the extension shadow root; in-app it equals e.target.
+    final absorbCheck = js.indexOf(
+        'popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)');
     final preventDefault = js.indexOf('e.preventDefault()', absorbCheck);
     expect(absorbCheck, greaterThanOrEqualTo(0));
     expect(preventDefault, greaterThan(absorbCheck));

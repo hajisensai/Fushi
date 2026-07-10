@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v44 loaded (TODO-1361: wait seek settle + video advancing before Netflix clip record, BUG-685)');
+console.log('[Hibiki] content script v45 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v44'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v45'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -21,6 +21,10 @@ window.__hibikiExtension = true;
 const HIBIKI_MOD = 'shiftKey';
 const HIBIKI_MAX_LEN = 12;
 let hibikiContainer = null;
+// BUG-688：弹窗渲染进 Shadow DOM，宿主网页 CSS 无法穿透 shadow 边界（ruby/行距/定位等
+// 与 in-app WebView 弹窗一致）。hibikiHost 是挂在宿主页的 shadow 宿主元素（负责 fixed 定位），
+// #entries-container 及全部弹窗内容在其 shadow root 内；window.__hibikiRoot 暴露给 popup.js。
+let hibikiHost = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
 let hibikiLastTerm = '';
@@ -718,23 +722,47 @@ function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见
   // （浏览器全屏只渲染 fullscreenElement 及其后代）→ shift 划词其实触发了但弹窗不可见=「没反应」。
   // 故挂到当前 fullscreenElement（无则 body），并用 position:fixed + 视口坐标，全屏/普通页都对。
+  // BUG-530：全屏时挂到 fullscreenElement（无则 body），position:fixed 全屏/普通页都可见。
   const parent = document.fullscreenElement || document.body;
-  if (hibikiContainer && hibikiContainer.parentNode === parent) return hibikiContainer;
-  let c = hibikiContainer || document.getElementById('entries-container');
-  if (!c) {
-    c = document.createElement('div');
-    c.id = 'entries-container';
-    // 不写死 max-width：宽/高/字号由 popup.css 的 --hibiki-popup-* 变量决定（查词响应下发配置），
-    // 取不到时 popup.css 兜底 400px。inline 样式会盖过 CSS，故这里只留定位/层级。
-    // 全屏可见性走下方 parent = fullscreenElement||body + position:fixed（BUG-530）。
-    c.style.cssText = 'position:fixed;z-index:2147483647;';
-    // content.css 把主题变量作用域到 #entries-container[data-theme]，
-    // 主题属性必须落在弹窗根上（不再改宿主 <html>），否则文字/背景色回退到空值（TODO-1090）。
-    c.setAttribute('data-theme', hibikiResolveTheme());
+  if (hibikiHost && hibikiHost.parentNode === parent && hibikiContainer) {
+    return hibikiContainer;
   }
-  if (c.parentNode !== parent) parent.appendChild(c); // 进/出全屏时迁到正确父节点
-  hibikiContainer = c;
-  return c;
+  if (!hibikiHost) {
+    // BUG-688：shadow 宿主元素只负责 fixed 定位 + 层级；弹窗内容全在其 shadow root 内，
+    // 宿主页 CSS 无法穿透 → 与 in-app 弹窗渲染一致（不再被宿主站点 line-height/ruby 等污染）。
+    hibikiHost = document.createElement('div');
+    hibikiHost.id = 'hibiki-popup-host';
+    // BUG-688：尺寸盒 + zoom 落在 host（视口坐标系，确定宽度），弹窗内容尺寸不再受
+    // 「CSS zoom × 100vw × shadow shrink-to-fit」相互作用干扰。host 宽/高/zoom 由 hibikiRender
+    // 按查词响应下发的 --hibiki-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
+    hibikiHost.style.cssText =
+        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;';
+    const shadow = hibikiHost.attachShadow({ mode: 'open' });
+    // 中和 content.css 里 #entries-container 自带的尺寸盒/zoom（那套是给「容器自身即 fixed 元素」
+    // 的旧模型用的）；现在 host 才是尺寸/缩放/定位主体，容器只做 100% 透传。
+    const norm = document.createElement('style');
+    norm.textContent =
+        '#entries-container{width:100%!important;max-width:none!important;' +
+        'max-height:none!important;overflow:visible!important;zoom:1!important;}';
+    shadow.appendChild(norm);
+    // 把弹窗样式注入 shadow：content.css 作为扩展资源经 <link> 加载（web_accessible_resources）。
+    // 其中宿主页级选择器（#hibiki-subtitle-panel/高亮层等）在 shadow 内无对应元素、天然失效；
+    // 弹窗选择器（#entries-container/.glossary-group/ruby…）在 shadow 内生效。
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = chrome.runtime.getURL('vendor/content.css');
+    shadow.appendChild(link);
+    const c = document.createElement('div');
+    c.id = 'entries-container';
+    // 主题落在弹窗根 #entries-container 上（content.css 作用域 #entries-container[data-theme]）；
+    // --md-* / --hibiki-popup-* 由 hibikiRender 直接 setProperty 到该元素，shadow 内可读。
+    c.setAttribute('data-theme', hibikiResolveTheme());
+    shadow.appendChild(c);
+    hibikiContainer = c;
+    window.__hibikiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+  }
+  if (hibikiHost.parentNode !== parent) parent.appendChild(hibikiHost); // 进/出全屏迁父节点
+  return hibikiContainer;
 }
 
 // TODO-1272：被查词高亮的覆盖层（扩展自绘、不改宿主页 DOM）。null=未画。
@@ -833,7 +861,11 @@ function hibikiDrawHighlightOverlay(rects) {
 }
 
 function hibikiRemoveContainer() {
-  if (hibikiContainer) { hibikiContainer.remove(); hibikiContainer = null; }
+  // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __hibikiRoot 让 popup.js
+  // 的 helper 回落到 document（下次开窗 hibikiEnsureContainer 会重建）。
+  if (hibikiHost) { hibikiHost.remove(); hibikiHost = null; }
+  hibikiContainer = null;
+  window.__hibikiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   hibikiClearHighlightOverlay();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。hoshiSelection 未加载/无选区时是 no-op。
@@ -1040,6 +1072,20 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     for (const k in theme) {
       if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
     }
+    // BUG-688：data-theme 也跟 app 主题（--hibiki-color-scheme），覆盖 hibikiEnsureContainer
+    // 里基于宿主页 prefers-color-scheme 的初值。否则 app 浅色 + 宿主页深色时，content.css 的
+    // [data-theme="dark"] 块给黑底/白字，却套上 app 浅色的 --md-* 米白 surface = 主题分裂
+    // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
+    const cs = theme['--hibiki-color-scheme'];
+    if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
+    // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
+    if (hibikiHost) {
+      hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';
+      hibikiHost.style.maxWidth = 'calc(100vw - 16px)';
+      hibikiHost.style.maxHeight =
+          'min(' + (theme['--hibiki-popup-max-height'] || '360px') + ', 80vh)';
+      hibikiHost.style.zoom = theme['--hibiki-popup-zoom'] || '1';
+    }
   }
   // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
   // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
@@ -1062,15 +1108,16 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
   // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';
-  c.style.left = '0px';
-  c.style.top = '0px';
+  if (hibikiHost) { hibikiHost.style.left = '0px'; hibikiHost.style.top = '0px'; }
   try { window.lookupEntries = JSON.parse(popupJson); }
   catch (_) { window.lookupEntries = []; }
   window._noResultsMessage = 'No results';
   window.__hibikiOnTapOutside = hibikiRemoveContainer;
   if (typeof window.renderPopup === 'function') window.renderPopup();
   const place = () => {
-    const rect = c.getBoundingClientRect();
+    // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸），不是容器（overflow:visible=全内容
+    // 高度，会把弹窗错误地翻到词上方）。host 无则回落容器。
+    const rect = (hibikiHost || c).getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
@@ -1084,17 +1131,20 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     if (left < 8) left = 8;
     if (top + rect.height > vh - 8) top = Math.max(8, ay - rect.height - 4); // 下溢出→翻到词上方
     if (top < 8) top = 8;
-    // TODO-1185：#entries-container 消费 --hibiki-popup-zoom（content.css: zoom: var(...)）。
-    // CSS zoom 会把 fixed 元素的 left/top 也乘以 zoom，直接写视口坐标会被放大偏移。写入前除以
-    // zoom，使渲染用值(styleLeft*zoom) 落回目标视口坐标；zoom 缺省=1（旧 server 无此变量）时零影响。
-    const zoom = parseFloat(getComputedStyle(c).getPropertyValue('--hibiki-popup-zoom')) || 1;
-    c.style.left = (left / zoom) + 'px';
-    c.style.top = (top / zoom) + 'px';
+    // BUG-688：host 现在带 zoom（尺寸盒随之缩放），故 fixed 定位坐标写入前除以 zoom，
+    // 使渲染值(styleLeft×zoom)落回目标视口坐标；zoom 缺省 1 时零影响。
+    const zoom = parseFloat(hibikiHost && hibikiHost.style.zoom) || 1;
+    if (hibikiHost) {
+      hibikiHost.style.left = (left / zoom) + 'px';
+      hibikiHost.style.top = (top / zoom) + 'px';
+    }
     c.style.visibility = 'visible';
   };
   requestAnimationFrame(place);
 }
 
 document.addEventListener('mousedown', (e) => {
-  if (hibikiContainer && !hibikiContainer.contains(e.target)) hibikiRemoveContainer();
+  // BUG-688：shadow 内点击 e.target 被 retarget 成 hibikiHost，故 contains 判定天然把
+  // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
+  if (hibikiHost && !hibikiHost.contains(e.target)) hibikiRemoveContainer();
 });
