@@ -24,6 +24,54 @@ function __hibikiWheelScroller(e){
     return null;
 }
 
+/* TODO-1392 观测性根治：查词弹窗 JS 渲染路径（renderPopup / __hibikiContainer 等）抛异常，
+   此前 caught 的只 console.error → onConsoleMessage → debugPrint（不进错误日志），uncaught
+   更彻底静默（本文件此前无 window.onerror）。BUG-706 那类 __hibikiRoot 命名冲突致 renderPopup
+   TypeError 中止时，用户看到「弹窗空白 + 错误日志为空」无从排查。这里在最顶层装全局错误上报：
+   uncaught error / 未处理 Promise rejection 经已有 flutter_inappwebview 桥把 {source,message,
+   stack} 回传到 Dart 的 reportJsError handler，落 ErrorLogService（错误日志页可见）。
+   window.__hibikiReportJsError 也暴露给渲染路径的 deliberate catch 显式上报（见 renderPopup）。
+   浏览器扩展镜像里 window.flutter_inappwebview 不存在，callHandler 缺失时静默 no-op（三镜像
+   逐字节一致，扩展侧安全）；上报本身失败绝不再抛，杜绝二次错误递归。 */
+window.__hibikiReportJsError = function(source, message, stack) {
+    try {
+        var bridge = window.flutter_inappwebview;
+        if (bridge && typeof bridge.callHandler === 'function') {
+            bridge.callHandler('reportJsError', {
+                source: String(source == null ? 'unknown' : source),
+                message: String(message == null ? '' : message),
+                stack: String(stack == null ? '' : stack)
+            });
+        }
+    } catch (_) { /* 上报失败静默，避免二次错误 */ }
+};
+// 只在真浏览器 / WebView（window.addEventListener 存在）注册全局监听。Node 行为测试
+// harness（vm.runInContext + stub window，无 addEventListener）与任何非浏览器宿主下跳过——
+// __hibikiReportJsError 仍已定义（渲染 catch 直接调），只是这里不挂 window 事件，故 popup.js
+// 在 node 单测里照常加载执行，不因顶层 addEventListener 抛错而整体加载失败。
+(function installPopupGlobalErrorListeners() {
+    if (typeof window === 'undefined'
+        || typeof window.addEventListener !== 'function') {
+        return;
+    }
+    window.addEventListener('error', function(e) {
+        /* 只报脚本运行时错误：资源加载错误（img/script 404）的 error 事件不冒泡到 window，
+           故 bubbling 阶段这里收到的都是 uncaught 脚本异常。有 error.stack 用它，否则退到
+           file:line:col。 */
+        var err = e && e.error;
+        var message = (e && e.message) ? e.message : (err ? String(err) : 'unknown error');
+        var stack = (err && err.stack) ? err.stack
+            : ((e && e.filename ? e.filename : '') + ':' + ((e && e.lineno) || 0) + ':' + ((e && e.colno) || 0));
+        window.__hibikiReportJsError('window.onerror', message, stack);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+        var reason = e && e.reason;
+        var message = (reason && reason.message) ? reason.message : String(reason);
+        var stack = (reason && reason.stack) ? reason.stack : '';
+        window.__hibikiReportJsError('unhandledrejection', message, stack);
+    });
+})();
+
 //
 //  popup.js
 //  Hibiki (adapted from Hoshi Reader for Android InAppWebView)
@@ -2760,6 +2808,7 @@ window.renderPopup = function() {
         kanjiSection = buildKanjiCards();
     } catch (e) {
         console.error('[popup] renderPopup kanji card render failed', e);
+        window.__hibikiReportJsError('renderPopup.kanjiCard', (e && e.message) || String(e), e && e.stack);
         kanjiSection = null;
     }
 
@@ -2818,6 +2867,7 @@ window.renderPopup = function() {
     } catch (e) {
         // 渲染抛错也发信号让 Dart 翻可见（哪怕内容不全），杜绝永久挂起。
         console.error('[popup] renderPopup first-entry render failed', e);
+        window.__hibikiReportJsError('renderPopup.firstEntry', (e && e.message) || String(e), e && e.stack);
         window._renderedGlossaryCounts = [];
         window._entryDomIndex = [];
         _firePopupRendered();
@@ -2857,6 +2907,7 @@ window.renderPopup = function() {
             console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
         } catch (e) {
             console.error('[popup] renderPopup rest-entries render failed', e);
+            window.__hibikiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
         }
         // 无论后续词条渲染成功与否都发信号（首条已在上面渲染好）。
         _firePopupRendered();
