@@ -86,13 +86,22 @@ void main() {
           reason: '回传必须走面板自己的 channel，与瞬态窗互不串线');
     });
 
-    test('渲染走 layoutMode panel + backdrop 门控 alpha', () {
+    test('渲染走 layoutMode panel；透明=整窗 LWA_ALPHA（spec §6 真机修正）', () {
       expect(controllerSrc.contains("layoutMode: 'panel'"), isTrue);
+      expect(controllerSrc.contains('setWindowAlpha'), isTrue,
+          reason: '真透视=整窗 alpha；acrylic 实测经 windowed WebView2 不透明');
+      expect(controllerSrc.contains('cardBgAlpha: 1.0'), isTrue,
+          reason: '卡背景恒不透明，避免与整窗 alpha 双重变淡');
+      expect(controllerSrc.contains('applyBackdrop'), isFalse,
+          reason: 'acrylic backdrop 路线废弃（毛玻璃≠透视），面板不再调用');
+    });
+
+    test('update 每次复核 native isShowing（防渲染进被系统藏掉的隐形窗）', () {
       expect(
-        controllerSrc
-            .contains('_backdropApplied ? model.clipboardPanelOpacity : 1.0'),
+        controllerSrc.contains('!_visible || !await _channel.isShowing()'),
         isTrue,
-        reason: 'backdrop 不可用时恒 alpha=1（spec §6 降级）',
+        reason: '真机症状「只显示一次」：窗口被藏后 Dart _visible 仍 true，'
+            '后续更新全进隐形窗',
       );
     });
 

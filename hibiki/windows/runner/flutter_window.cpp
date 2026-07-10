@@ -1157,6 +1157,12 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
           clipboard_panel_window_->SetTopmost(
               BoolFromValue(args, "pinned", true));
           result->Success();
+        } else if (method == "setWindowAlpha") {
+          // spec §6 真机修正 — 整窗 LWA_ALPHA 透明（真透视；acrylic 实测经
+          // windowed WebView2 呈现为不透明，且毛玻璃本就不是「看见底下」）。
+          clipboard_panel_window_->SetWindowAlpha(
+              IntFromValue(args, "percent", 100));
+          result->Success();
         } else {
           result->NotImplemented();
         }

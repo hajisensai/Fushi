@@ -2247,7 +2247,7 @@
   "desktop_clipboard_destination_panel": "悬浮面板",
   "desktop_clipboard_destination_transient": "光标处弹卡",
   "clipboard_panel_opacity": "面板不透明度",
-  "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）",
+  "clipboard_panel_opacity_hint": "整个面板的不透明度——可透视底下的游戏/网页",
   "sync_client_connected": "已连接",
   "sync_client_token_manual": "手动填写令牌",
   "popup_ctx_adjust_button": "调整上下文",

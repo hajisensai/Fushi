@@ -150,6 +150,17 @@ class GlobalLookupWindow {
   // or activating. No-op before the window exists.
   void SetTopmost(bool topmost);
 
+  // spec §6 真机修正 — WHOLE-WINDOW opacity via WS_EX_LAYERED +
+  // SetLayeredWindowAttributes(LWA_ALPHA). Real-device finding: the acrylic
+  // backdrop chain renders user-visibly OPAQUE through the windowed WebView2
+  // child — and frosted glass was never the ask anyway; the user wants to SEE
+  // the game/page beneath. LWA_ALPHA is the verified working path for WebView2
+  // hosts (whole window fades, incl. text; LWA_COLORKEY is NOT supported by
+  // WebView2) and works on Win10 too. [percent] clamped to 30..100; the
+  // layered bit sticks once set (a layered window does not render until
+  // SetLayeredWindowAttributes is called, so the call always follows).
+  void SetWindowAlpha(int percent);
+
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam) noexcept;

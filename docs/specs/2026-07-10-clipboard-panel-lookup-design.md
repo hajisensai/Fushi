@@ -89,7 +89,7 @@
 
 - 逐像素透明底子已有：`put_DefaultBackgroundColor({0,0,0,0})`（`global_lookup_window.cpp:614-619`，TODO-893）。
 - 半透明 = 卡片背景 CSS `rgba`：注入 `--hibiki-card-bg-rgb` 三元组 + 面板路径注入 `--hibiki-card-bg-alpha`（默认 1，in-app 与瞬态窗零变化）。文字/外字图全不透明，只淡背景。
-- 设置滑杆 50%–100%，默认 95%（真机反馈调高：85% 叠 acrylic 偏透）。
+- 设置滑杆 50%–100%，默认 85%（整窗 alpha：看清底下游戏与面板正文的平衡点）。
 - **实现期修正（2026-07-10）**：调查证实非 layered 顶层窗对桌面是不透明的
   （popup.css:1225 注释）——纯 CSS rgba 只对「窗口底色」半透明，**透不到底下
   的游戏**。真透视走 **Win11 `DWMWA_SYSTEMBACKDROP_TYPE`(acrylic) +
@@ -104,11 +104,21 @@
   命中；BLURBEHIND 无此 lag，仍是「模糊+半透明」。GradientColor 带 0x01 alpha
   黑 tint（部分版本 alpha=0 不生效）。透明度链：Win11 acrylic → Win10 blur →
   都不行才不透明。
-- **M0 gate（验证透明合成）**：真机验证 backdrop/accent + 透明 WebView2 像素
-  + rgba 卡背景的合成效果（能否真透出底下内容）。本机 Win11 验 acrylic 路；
-  Win10 accent 路无 Win10 真机时标注「机会性验证」。**gate 失败降级已实现**：
-  `applyBackdrop` 返回 false（两级都失败）时面板恒 alpha=1（不透明）、透明度
-  滑杆隐藏（`ClipboardPanelController.backdropOk` 门控）——设计其余部分不受影响。
+- **M0 gate 真机结论（2026-07-10 用户实测）：acrylic 路线判死**——①用户可见
+  面板完全不透明（backdrop 未能透过 windowed WebView2 子窗合成）；②即使合成
+  成功，acrylic 是毛玻璃（重度模糊+着色），本就看不清底下的游戏/网页，不满足
+  「透视」诉求。
+- **最终机制（第二轮修正）：整窗 LWA_ALPHA**——`WS_EX_LAYERED` +
+  `SetLayeredWindowAttributes(LWA_ALPHA)`（`GlobalLookupWindow::SetWindowAlpha`，
+  面板 channel `setWindowAlpha`）。整窗（含文字）统一变淡、真透视底下内容；
+  Win10/11 通用（无需能力探测，原 backdropOk 门控删除，滑杆恒可用）；查证
+  WebView2 + 整窗 LWA_ALPHA 有工作先例（CppWeb 样例 80%），不可行的是
+  LWA_COLORKEY。关键坑：设 layered 位后必须立刻调 SLWA 否则窗口不渲染。
+  注意与早前「WS_EX_LAYERED 与 WebView2 不共存」注释的区分：那是逐像素/
+  colorkey 路线的结论，整窗 uniform alpha 不受影响。
+- acrylic/accent 链（`ApplySystemBackdrop`）保留在 native 供未来（如 DComp
+  逐像素路线的降级）复用，面板不再调用；卡背景 CSS alpha 基建同理保留、面板
+  恒传 1.0（双重变淡会让文字更虚）。
 
 ## 7. 设置、生命周期与向后兼容
 
@@ -116,7 +126,7 @@
 | key | 类型/默认 | 说明 |
 |---|---|---|
 | `desktop_clipboard_destination` | string `panel`（默认，用户 2026-07-10 拍板改） | `main` / `panel` / `transient`；`panel`/`transient` 仅 Windows 且覆盖窗 `isSupported` 时可见；非 Windows 路由自动退回 main |
-| `clipboard_panel_opacity` | double `0.95`（真机反馈：0.85 叠 acrylic 偏透文字发虚） | 卡片背景不透明度，0.5–1.0 |
+| `clipboard_panel_opacity` | double `0.85` | **整窗**不透明度（LWA_ALPHA 真透视），0.5–1.0 |
 | `clipboard_panel_rect` | string（逻辑像素 `x,y,w,h`） | 位置/尺寸记忆，恢复时 clamp 工作区 |
 | `clipboard_panel_pinned` | bool `true` | TOPMOST 图钉 |
 

@@ -563,6 +563,23 @@ void GlobalLookupWindow::SetTopmost(bool topmost) {
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
+void GlobalLookupWindow::SetWindowAlpha(int percent) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  if (percent < 30) percent = 30;
+  if (percent > 100) percent = 100;
+  const LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
+  if ((ex & WS_EX_LAYERED) == 0) {
+    SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+  }
+  // A WS_EX_LAYERED window does not render AT ALL until
+  // SetLayeredWindowAttributes is called — always call it (100% => 255), and
+  // keep the layered bit once set (toggling it forces repaint quirks).
+  SetLayeredWindowAttributes(
+      hwnd_, 0, static_cast<BYTE>((255 * percent) / 100), LWA_ALPHA);
+}
+
 void GlobalLookupWindow::Hide(bool notify) {
   // Capture BEFORE clearing: the HiddenCallback must only fire on a transition
   // FROM on-screen (was_showing) so a double dismiss (mouse hook then foreground

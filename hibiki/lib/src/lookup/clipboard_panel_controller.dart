@@ -72,11 +72,13 @@ class ClipboardPanelController {
   bool _started = false;
   bool _visible = false;
 
-  bool _backdropApplied = false;
+  /// ×（面板栏关闭钮）后为 true：剪贴板事件不再更新面板，直到 Ctrl+Shift+D
+  /// （origin=hotkey 的显式意图）或重开设置开关解除。
+  bool paused = false;
 
-  /// spec §6 gate — Win11 acrylic backdrop 是否被 OS 接受。false（Win10 /
-  /// 旧 Win11）时透明度滑杆隐藏、卡背景恒 alpha=1（不透明降级）。
-  bool get backdropOk => _backdropApplied;
+  // spec §6 真机修正：acrylic backdrop 路线废弃（经 windowed WebView2 实测
+  // 不透明，且毛玻璃≠透视）。透明=整窗 LWA_ALPHA，Win10/11 通用、无需能力
+  // 探测，故原 backdropOk 门控删除、透明度滑杆恒可用。
 
   // 面板内嵌套栈（与瞬态窗同一纯栈模型 + per-frame result/anchor 侧表）。
   GlobalLookupStack _stack = GlobalLookupStack.empty;
@@ -162,7 +164,12 @@ class ClipboardPanelController {
       _recordLookupCount(model);
       _currentSentence = request.text;
       _seedRootFrame(request.text, result);
-      if (!_visible) {
+      // 真机修复（"只显示一次"）：不能只信 Dart 侧 _visible——窗口可能被系统
+      // 藏掉（历史 owned-minimize 联动、显式全屏切换等）而 Dart 不知情，之后
+      // 每次更新都渲染进隐形窗。native IsShowing 含 IsWindowVisible 真值，
+      // 每次更新复核，不可见就重新上屏。
+      if (!_visible || !await _channel.isShowing()) {
+        _visible = false;
         await _showPanel(model);
         if (seq != _updateSeq) return;
       }
@@ -189,11 +196,13 @@ class ClipboardPanelController {
     }
   }
 
-  /// 透明度滑杆变更后重渲 root，使新 alpha 生效（设置页调用）。
+  /// 透明度滑杆变更即时生效（设置页调用）。spec §6 真机修正：透明机制=整窗
+  /// LWA_ALPHA（真透视），不再走卡背景 CSS alpha（acrylic 实测经 windowed
+  /// WebView2 呈现为不透明，且毛玻璃本就看不清底下内容）。
   Future<void> refreshOpacity() async {
     final AppModel? model = _appModel;
-    if (!_started || model == null || _stack.isEmpty) return;
-    await _renderPanel(model);
+    if (!_started || model == null) return;
+    await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
   }
 
   /// 面板栏 × / root 卡 ×：藏窗即可。BUG-717：不再暂停路由——下一条剪贴板复制
@@ -240,12 +249,15 @@ class ClipboardPanelController {
       height: (_panelRect.height * dpr).round(),
     );
     _visible = true;
-    // spec §6 gate — 首次显示时申请 acrylic backdrop 并据结果门控透明度。
-    _backdropApplied = await _channel.applyBackdrop();
+    // spec §6 真机修正 — 透明=整窗 LWA_ALPHA（真透视，Win10/11 通用）。
+    // acrylic backdrop 链保留在 native（ApplySystemBackdrop）但面板不再调用：
+    // 真机实测它经 windowed WebView2 呈现为不透明，且毛玻璃≠「看见底下」。
+    await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
     await _channel.setPinned(model.clipboardPanelPinned);
     // pin 视觉态同步折进 _renderPanel 的渲染脚本（审查修正：native
     // pending_json_ 是单槽缓存，独立发送会被随后的栈渲染覆盖丢失）。
-    glog('panel: shown rect=$_panelRect backdrop=$_backdropApplied');
+    glog('panel: shown rect=$_panelRect '
+        'alpha=${(model.clipboardPanelOpacity * 100).round()}%');
   }
 
   /// 组栈渲染。screen/max 尺寸都以面板视口（CSS px）为边界：嵌套子卡的
@@ -284,7 +296,9 @@ class ClipboardPanelController {
       maxWidth: maxW,
       maxHeight: maxH,
       layoutMode: 'panel',
-      cardBgAlpha: _backdropApplied ? model.clipboardPanelOpacity : 1.0,
+      // spec §6 真机修正：透明改整窗 LWA_ALPHA，卡背景恒不透明（双重变淡会
+      // 让文字更虚；CSS alpha 基建保留供未来 DComp 逐像素路线复用）。
+      cardBgAlpha: 1.0,
     );
     // pin 视觉态并进同一渲染脚本：native pending_json_ 是单槽缓存，冷启动时
     // 独立脚本会互相覆盖；同一 ExecuteScript 保证 pin 图标与卡片同帧就位。
