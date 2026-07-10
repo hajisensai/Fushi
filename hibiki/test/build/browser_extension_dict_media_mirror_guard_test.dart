@@ -229,7 +229,7 @@ void main() {
             File('$root/vendor/action-popup.js').readAsStringSync();
         expect(html.contains('id="hp-nf-sublist"'), isTrue,
             reason: '$root action-popup.html missing the subtitle-list toggle');
-        expect(html.contains('面板在网飞播放页侧栏'), isTrue,
+        expect(html.contains('面板在视频播放页侧栏'), isTrue,
             reason: '$root action-popup.html missing the toggle hint text');
         expect(js.contains('hibikiReadPanelEnabled'), isTrue,
             reason:
@@ -261,6 +261,61 @@ void main() {
         expect(RegExp("['\"]ja['\"]").hasMatch(src), isFalse,
             reason:
                 '$root netflix-bridge.js must not hard-code a Japanese-only language filter');
+      });
+
+      // TODO-1219 复诉（勾选要刷新 + 面板空列表）根因守卫：主世界 bridge document_start 抓字幕，
+      // 隔离世界 content.js document_idle 才注册接收端——先于接收端 post 的 cue 消息永久丢失。
+      // bridge 必须存档已抓 cue 并响应 replayCues 重放；content.js 就绪后必须请求重放。
+      test('[$name] bridge archives cues and replays them on request', () {
+        final String src = File('$root/netflix-bridge.js').readAsStringSync();
+        expect(src.contains('cueArchive'), isTrue,
+            reason:
+                '$root netflix-bridge.js must archive fetched cue payloads');
+        expect(src.contains("d.__hibikiNf === 'replayCues'"), isTrue,
+            reason:
+                '$root netflix-bridge.js must replay archived cues on replayCues');
+      });
+
+      test('[$name] content.js requests a cue replay once its receiver is up',
+          () {
+        final String src = File('$root/content.js').readAsStringSync();
+        final int receiver = src.indexOf("e.data.__hibikiNf !== 'cues'");
+        final int replay = src.indexOf("{ __hibikiNf: 'replayCues' }");
+        expect(receiver >= 0 && replay > receiver, isTrue,
+            reason:
+                '$root content.js must post replayCues after registering the '
+                'cues receiver (injection-order race, TODO-1219)');
+      });
+
+      // TODO-1363 通用化守卫：面板不再是 Netflix 专属——数据源抽象（provider 全在 content.js，
+      // 面板消费同一个 store），面板文件不得再按 hostname 早退。
+      test('[$name] subtitle-panel.js is universal (no Netflix hostname gate)',
+          () {
+        final String src = File('$root/subtitle-panel.js').readAsStringSync();
+        expect(src.contains('.test(location.hostname)) return;'), isFalse,
+            reason:
+                '$root subtitle-panel.js must not early-return on non-Netflix '
+                'hosts (TODO-1363 universal panel)');
+        expect(src.contains('window.hibikiVideoKey'), isTrue,
+            reason: '$root subtitle-panel.js must key tracks via the shared '
+                'hibikiVideoKey contract');
+        expect(src.contains('v.currentTime = ms / 1000'), isTrue,
+            reason: '$root subtitle-panel.js must seek generic sites via '
+                'video.currentTime (Netflix keeps the DRM bridge)');
+      });
+
+      test('[$name] content.js provides universal subtitle providers', () {
+        final String src = File('$root/content.js').readAsStringSync();
+        expect(src.contains('function hibikiHarvestTextTracks'), isTrue,
+            reason: '$root content.js must harvest HTML5 video.textTracks '
+                '(generic full-track provider, TODO-1363)');
+        expect(src.contains('HIBIKI_LIVE_LANG'), isTrue,
+            reason:
+                '$root content.js must promote DOM-sampled cues into a live '
+                'track (YouTube/self-drawn captions, TODO-1363)');
+        expect(src.contains('window.hibikiVideoKey = hibikiVideoKey'), isTrue,
+            reason:
+                '$root content.js must expose the shared video-key contract');
       });
     });
   });

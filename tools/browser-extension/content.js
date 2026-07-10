@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v44 loaded (TODO-1361: wait seek settle + video advancing before Netflix clip record, BUG-685)');
+console.log('[Hibiki] content script v45 loaded (TODO-1219/1363: subtitle cue replay + universal subtitle-list providers)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v44'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v45'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -116,11 +116,20 @@ function hibikiSampleCue() {
   const jumped = hibikiLastSampleV && (nowV < hibikiLastSampleV - 400 || nowV > hibikiLastSampleV + 1500);
   hibikiLastSampleV = nowV;
   const text = hibikiSubtitleTextNow();
-  if (jumped) { hibikiCurText = text; hibikiCurStartV = text ? nowV : 0; return; }
+  if (jumped) {
+    hibikiCurText = text;
+    hibikiCurStartV = text ? nowV : 0;
+    hibikiLiveCueStart(text, nowV); // TODO-1363：seek 后的新句也入 live 轨（空文本时清掉悬挂引用）
+    return;
+  }
   if (text === hibikiCurText) return;
-  if (hibikiCurText) hibikiPushCueV(hibikiCurText, hibikiCurStartV, nowV); // 上一句定格
+  if (hibikiCurText) {
+    hibikiPushCueV(hibikiCurText, hibikiCurStartV, nowV); // 上一句定格
+    hibikiLiveCueEnd(hibikiCurText, nowV); // TODO-1363：live 轨同句定格真实 end
+  }
   hibikiCurText = text;
   hibikiCurStartV = text ? nowV : 0;
+  if (text) hibikiLiveCueStart(text, nowV); // TODO-1363：新句出现即入 live 轨（暂定 end）
 }
 // 当前句的视频时间窗：命中历史（倒退回看过的句）用其完整 [startV,endV]；否则用当前 start +
 // 现在的视频时间作暂定 end（Netflix 回放时会按字幕变化重新定 end；YouTube 用此窗即可）。
@@ -172,6 +181,111 @@ window.addEventListener('message', (e) => {
   if (e.source !== window || !e.data || e.data.__hibikiNf !== 'cues') return;
   hibikiOnFullEpisodeCues(e.data);
 });
+// TODO-1219/1363（勾选面板要刷新 + 面板空列表的根因）：本脚本 document_idle 注入，主世界
+// netflix-bridge.js document_start 就装好 hook——Netflix 播放清单/字幕轨常在**本 listener 注册前**
+// 就被抓取并 postMessage 出去，fire-and-forget 的消息永久丢失 → store 空、勾选开关无物可挂、
+// 面板只剩预取的下一集轨（列表空）。接收端就位后立刻请求 bridge 重放已存档的 cue 消息，消除时序运气。
+try { window.postMessage({ __hibikiNf: 'replayCues' }, location.origin); } catch (_) {}
+
+// ── TODO-1363：通用字幕轨 provider（所有站点） ──
+// 数据契约不变：window.hibikiEpisodeCues[`${videoKey}|${lang}`] = [{startMs,endMs,text}]，新数据到达
+// 即调 window.hibikiSubtitlePanelOnCues(key)。Netflix 整集拦截之外新增两条通用通道，站点差异全部
+// 收敛在「谁往 store 里写」，面板零站点特例：
+//   a) HTML5 video.textTracks 全量收割——任何用原生 <track>/TextTrack 的站点，cue 是结构化数据
+//      （精确起止 + 文本），整轨直接读出，随流媒体渐进加载增量刷新；
+//   b) DOM 字幕采样升格 live 轨——hibikiSampleCue 已在采字幕（YouTube .ytp-caption-segment /
+//      Netflix .player-timedtext 等既有通道），把采到的句子按视频时间有序去重进 `${videoKey}|live`
+//      轨，边看边长（YouTube 自绘字幕不走 textTracks，靠这条）。
+const HIBIKI_LIVE_LANG = 'live';
+function hibikiVideoKey() {
+  const site = hibikiSite();
+  if (site === 'netflix') {
+    const id = hibikiNetflixId();
+    if (id) return id; // 与整集拦截的 store key（manifest movieId）对齐
+  }
+  if (site === 'youtube') {
+    const id = hibikiYoutubeId();
+    if (id) return 'yt-' + id;
+  }
+  // 其它站点：host+path 即视频身份（'|' 是 store key 分隔符，替换掉防串 key）。
+  return (location.hostname + location.pathname).replace(/\|/g, '_');
+}
+// 面板（subtitle-panel.js，同隔离世界后加载）用同一把 key 过滤当前视频的轨。
+window.hibikiVideoKey = hibikiVideoKey;
+
+function hibikiNotifyPanel(key) {
+  try {
+    if (typeof window.hibikiSubtitlePanelOnCues === 'function') window.hibikiSubtitlePanelOnCues(key);
+  } catch (_) {}
+}
+
+// 有序插入 + 去重：同文本且句首相差 <750ms 视为同一句（倒退/回放重看不重复入轨）。返回是否真插入。
+function hibikiSortedCueInsert(cues, cue) {
+  let lo = 0;
+  let hi = cues.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid].startMs <= cue.startMs) lo = mid + 1; else hi = mid;
+  }
+  for (let i = lo - 1; i >= 0 && cue.startMs - cues[i].startMs < 750; i--) {
+    if (cues[i].text === cue.text) return false;
+  }
+  for (let j = lo; j < cues.length && cues[j].startMs - cue.startMs < 750; j++) {
+    if (cues[j].text === cue.text) return false;
+  }
+  cues.splice(lo, 0, cue);
+  return true;
+}
+
+// live 轨：句子出现即入轨（暂定 end，勾选开关立刻有内容可显示），句子结束时定格真实 end。
+let hibikiLiveCue = null; // 当前显示句在 live 轨里的对象引用
+function hibikiLiveCueStart(text, startV) {
+  if (!text) { hibikiLiveCue = null; return; }
+  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+  const track = hibikiEpisodeCues[key] || (hibikiEpisodeCues[key] = []);
+  const cue = { startMs: startV, endMs: startV + 1500, text: text };
+  if (hibikiSortedCueInsert(track, cue)) {
+    hibikiLiveCue = cue;
+    hibikiNotifyPanel(key);
+  } else {
+    hibikiLiveCue = null; // 回放已见过的句：不重复入轨，也不动旧句窗
+  }
+}
+function hibikiLiveCueEnd(text, endV) {
+  if (hibikiLiveCue && hibikiLiveCue.text === text && endV > hibikiLiveCue.startMs) {
+    hibikiLiveCue.endMs = endV;
+  }
+  hibikiLiveCue = null;
+}
+
+// a) textTracks 全量收割：轮询增量（cue 随流加载渐增，条数长了才重建该轨）。kind 只收
+// subtitles/captions；mode 为 disabled 时浏览器不加载 cues，跳过。
+function hibikiHarvestTextTracks() {
+  const v = document.querySelector('video');
+  if (!v || !v.textTracks || !v.textTracks.length) return;
+  const vidKey = hibikiVideoKey();
+  for (let i = 0; i < v.textTracks.length; i++) {
+    const tt = v.textTracks[i];
+    if (!tt || (tt.kind !== 'subtitles' && tt.kind !== 'captions')) continue;
+    if (tt.mode === 'disabled' || !tt.cues || !tt.cues.length) continue;
+    const lang = String(tt.language || tt.label || 'und').replace(/\|/g, '_');
+    const key = vidKey + '|' + lang;
+    const existing = hibikiEpisodeCues[key];
+    if (existing && existing.length >= tt.cues.length) continue;
+    const out = [];
+    for (let j = 0; j < tt.cues.length; j++) {
+      const c = tt.cues[j];
+      if (!c || typeof c.startTime !== 'number' || typeof c.endTime !== 'number') continue;
+      const text = stripCueTags(String(c.text || ''));
+      if (!text) continue;
+      out.push({ startMs: Math.round(c.startTime * 1000), endMs: Math.round(c.endTime * 1000), text: text });
+    }
+    if (!out.length) continue;
+    hibikiEpisodeCues[key] = out;
+    hibikiNotifyPanel(key);
+  }
+}
+try { setInterval(hibikiHarvestTextTracks, 1200); } catch (_) {}
 
 // ── 制卡队列（持久化：chrome.storage.local，跨刷新/跨剧集/跨会话累积，随时点击生成）──
 // 内存镜像 hibikiQueue 以 storage 为真相源；storage.onChanged 让多标签/重载后计数一致。

@@ -80,8 +80,9 @@ void main() {
 
       // Content-script version marker bumped so a stale cached extension is
       // visibly distinguishable.
-      expect(content.contains("data-hibiki-cs', 'v44'"), isTrue,
-          reason: '$root content.js version marker must be bumped to v44');
+      expect(content.contains("data-hibiki-cs', 'v45'"), isTrue,
+          reason: '$root content.js version marker must be bumped to v45 '
+              '(TODO-1219/1363 subtitle list replay + universal providers)');
 
       // Adjacent BUG-681 tail-pad fix must remain intact (no regression).
       expect(content.contains('kNfClipTailPadSec'), isTrue,

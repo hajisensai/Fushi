@@ -1,9 +1,11 @@
-// TODO-1219 P2：Netflix 整集字幕列表面板（content script 隔离世界，manifest bundle 里排在
-// content.js 之后加载）。消费 P1 拦截并存档到 window.hibikiEpisodeCues 的整集字幕，渲染成
+// TODO-1219 P2 / TODO-1363：通用字幕列表面板（content script 隔离世界，manifest bundle 里排在
+// content.js 之后加载，随 <all_urls> 注入所有站点）。消费 window.hibikiEpisodeCues 里按
+// `${videoKey}|${lang}` 存档的字幕轨——Netflix 走整集拦截、原生 TextTrack 站点走 textTracks 收割、
+// YouTube 等自绘字幕站点走 DOM 采样 live 轨（provider 全在 content.js，面板零站点特例）——渲染成
 // 近似 app 内 VideoSubtitleJumpPanel 的侧栏：头部标题 + 语言/轨切换 + A-/A+ 字号 + 自动滚动
 // 开关 + 关闭；每行时间戳 + 文本 + 当前句高亮。行为：
-//   · 时间戳点击 → 复用 P1 的 nfSeek（postMessage {__hibikiNf:'seek',ms}，走 Netflix 官方
-//     player.seek，不触发 M7375，不碰 DRM）。
+//   · 时间戳点击 → Netflix（DRM）复用 P1 的 nfSeek（postMessage {__hibikiNf:'seek',ms}，走
+//     Netflix 官方 player.seek，不触发 M7375，不碰 DRM）；其余站点直接 video.currentTime。
 //   · 文本点击 → window.hibikiLookupAtPoint（content.js 暴露，复用同一套 hoshiSelection 取词
 //     + 查词弹窗 hibikiRender）；文本保留真实 DOM，全局 mousemove+Shift 划词照常生效。
 //   · 制卡入口 = 上述查词弹窗自带的「制卡」按钮（bridge-shim mineEntry → window.hibikiEnqueue，
@@ -16,7 +18,6 @@
 (function () {
   'use strict';
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  if (!/(^|\.)netflix\.com$/.test(location.hostname)) return;
 
   var PANEL_ID = 'hibiki-subtitle-panel';
   var REOPEN_ID = 'hibiki-subtitle-reopen';
@@ -32,10 +33,11 @@
     pushSuspended: false, enabled: false,
   };
 
-  // ── TODO-1219：字幕列表面板开关（默认关）──
-  // 面板不再默认打开：只有用户在扩展 options 勾选「Netflix 字幕列表」（chrome.storage.local 的
-  // netflixSubtitlePanel === true）时才在 Netflix 播放页显示。键缺省或非 true 一律视为关闭，
-  // 即什么都不挂（无面板、无重开小按钮）。options 里改动经 chrome.storage.onChanged 实时生效。
+  // ── TODO-1219/1363：字幕列表面板开关（默认关，全站点）──
+  // 面板不默认打开：只有用户在扩展 options/action-popup 勾选「字幕列表」（chrome.storage.local 的
+  // netflixSubtitlePanel === true，键名保留旧名以兼容既有用户设置，语义已是全站点）时才在有字幕轨
+  // 的视频页显示。键缺省或非 true 一律视为关闭，即什么都不挂（无面板、无重开小按钮）。改动经
+  // chrome.storage.onChanged 实时生效，勾选即出、无需刷新（cue 存档由 bridge replay 兜底）。
   var SETTING_KEY = 'netflixSubtitlePanel';
   function readEnabled(cb) {
     try {
@@ -54,13 +56,29 @@
   }
   function applyEnabled(on) {
     st.enabled = !!on;
-    if (!st.enabled) { teardownAll(); return; }
-    try { if (window.hibikiEpisodeCues && tracksForVideo().length) showPanel(); } catch (_) {}
+    sync();
   }
 
-  function nfVideoId() {
+  // TODO-1363：挂载状态单一收敛点——面板/重开小片存在 ⇔ 开关开 && 当前视频有字幕轨。别的视频的
+  // cue 事件、SPA 换页、全屏切换全走这里，消除「空壳面板」挂载路径（TODO-1219 复诉「列表空」）。
+  function sync() {
+    if (!st.enabled) { teardownAll(); return; }
+    var tracks = [];
+    try { tracks = tracksForVideo(); } catch (_) { tracks = []; }
+    if (!tracks.length) { teardownAll(); return; }
+    if (st.hidden) { showReopen(); return; }
+    showPanel();
+  }
+
+  // 当前视频身份 key：与 content.js 各 provider 写 store 用的同一把 key（window.hibikiVideoKey
+  // 契约）。契约缺失（加载顺序异常/单测隔离）时本地回落同构实现。
+  function videoKey() {
+    try {
+      if (typeof window.hibikiVideoKey === 'function') return window.hibikiVideoKey();
+    } catch (_) {}
     var m = (location.pathname || '').match(/\/watch\/(\d+)/);
-    return m ? m[1] : null;
+    if (/(^|\.)netflix\.com$/.test(location.hostname) && m) return m[1];
+    return (location.hostname + location.pathname).replace(/\|/g, '_');
   }
   function videoEl() { return document.querySelector('video'); }
   function videoTimeMs() {
@@ -80,9 +98,11 @@
     return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   }
 
+  // DOM 采样 live 轨的伪语言码（content.js HIBIKI_LIVE_LANG）：排序垫底 + 显示中文标签。
+  var LIVE_LANG = 'live';
   function tracksForVideo() {
     var store = window.hibikiEpisodeCues || null;
-    var vid = nfVideoId();
+    var vid = videoKey();
     var out = [];
     if (!store || !vid) return out;
     for (var key in store) {
@@ -92,7 +112,12 @@
       var cues = store[key];
       if (cues && cues.length) out.push({ lang: key.slice(sep + 1), key: key, cues: cues });
     }
-    out.sort(function (a, b) { return a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0); });
+    out.sort(function (a, b) {
+      var al = a.lang === LIVE_LANG ? 1 : 0;
+      var bl = b.lang === LIVE_LANG ? 1 : 0;
+      if (al !== bl) return al - bl; // 整集轨（任何语言）在前，实时采集轨垫底
+      return a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0);
+    });
     return out;
   }
 
@@ -109,7 +134,14 @@
   function parentForOverlay() { return document.fullscreenElement || document.body; }
 
   function seekTo(ms) {
-    try { window.postMessage({ __hibikiNf: 'seek', ms: Math.max(0, Math.round(ms)) }, location.origin); } catch (_) {}
+    ms = Math.max(0, Math.round(ms));
+    if (/(^|\.)netflix\.com$/.test(location.hostname)) {
+      // Netflix（DRM 平台边界）：走主世界 bridge 的官方 player.seek（直接改 currentTime 会触发 M7375）。
+      try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, location.origin); } catch (_) {}
+      return;
+    }
+    var v = videoEl();
+    if (v) { try { v.currentTime = ms / 1000; } catch (_) {} }
   }
 
   function applyPush() {
@@ -219,7 +251,7 @@
       for (var j = 0; j < tracks.length; j++) {
         var o = document.createElement('option');
         o.value = tracks[j].lang;
-        o.textContent = tracks[j].lang;
+        o.textContent = tracks[j].lang === LIVE_LANG ? '实时采集' : tracks[j].lang;
         sel.appendChild(o);
       }
       sel.setAttribute('data-sig', sig);
@@ -241,7 +273,7 @@
     if (!st.cues.length) {
       var empty = document.createElement('div');
       empty.className = 'hibiki-sub-empty';
-      empty.textContent = '暂无整集字幕（切到有字幕的剧集或语言后自动出现）';
+      empty.textContent = '暂无字幕（站内开启字幕后自动采集出现）';
       list.appendChild(empty);
       st.builtLang = st.activeLang;
       st.builtLen = 0;
@@ -343,7 +375,7 @@
 
   function refresh() {
     if (st.hidden) return;
-    st.videoId = nfVideoId();
+    st.videoId = videoKey();
     var tracks = tracksForVideo();
     ensureMounted();
     refreshLangSelect(tracks);
@@ -365,15 +397,13 @@
 
   window.hibikiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
-    if (st.hidden) { showReopen(); return; }
-    refresh();
+    sync();
   };
 
   document.addEventListener('fullscreenchange', function () {
     if (!st.enabled) return;
     clearPush();
-    if (st.hidden) { if (document.getElementById(REOPEN_ID)) showReopen(); return; }
-    ensureMounted();
+    sync(); // 面板/重开小片迁到 fullscreenElement 正确父节点（无轨则拆）
   });
 
   var lastPath = location.pathname;
@@ -381,7 +411,7 @@
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       st.builtLang = null; st.builtLen = -1; st.activeLang = null;
-      if (st.enabled && !st.hidden) refresh();
+      sync(); // 新页有轨才挂；无轨（含离开视频页）拆干净
     }
   }, 500);
 
