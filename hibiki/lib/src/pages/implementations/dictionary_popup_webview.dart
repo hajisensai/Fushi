@@ -269,17 +269,19 @@ class DictionaryPopupWebViewState
   /// documentElement.style.zoom 给即时反馈，再回调 Dart 的 `popupZoomFont` 持久化到
   /// `dictionaryFontSize`（下次开弹窗记住）。字号界与缩放界与 Dart 侧
   /// [_popupZoomFontMin]/[_popupZoomFontMax] / [popupContentZoom] 一致。
+  ///
+  /// TODO-1353 复诉：步进本体抽成 `window.__hoshiPopupZoomStep(dir)`——Ctrl+滚轮与
+  /// 弹窗顶栏 A−/A+ 手动按钮（[zoomFontStep]，触屏没有 Ctrl+滚轮的唯一入口）共用同一
+  /// 份夹紧 + 就地 zoom + 持久化路径，杜绝两处步进语义漂移。
   static const String _zoomWheelJs = '''
 (function(){
   if (window.__hoshiZoomWheelInstalled) return;
   window.__hoshiZoomWheelInstalled = true;
   var MIN = 8, MAX = 72, STEP = 1;
-  window.addEventListener('wheel', function(e){
-    if (!e.ctrlKey) return;
-    e.preventDefault();
+  window.__hoshiPopupZoomStep = function(dir){
     var fs = window.__hoshiPopupFontSize;
     if (typeof fs !== 'number' || !isFinite(fs) || fs <= 0) fs = 16;
-    fs += (e.deltaY < 0 ? STEP : -STEP);
+    fs += (dir > 0 ? STEP : -STEP);
     if (fs < MIN) fs = MIN;
     if (fs > MAX) fs = MAX;
     window.__hoshiPopupFontSize = fs;
@@ -290,9 +292,26 @@ class DictionaryPopupWebViewState
     if (z > 8) z = 8;
     document.documentElement.style.zoom = z.toFixed(4);
     try { window.flutter_inappwebview.callHandler('popupZoomFont', fs); } catch (err) {}
+  };
+  window.addEventListener('wheel', function(e){
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    window.__hoshiPopupZoomStep(e.deltaY < 0 ? 1 : -1);
   }, { passive: false });
 })();
 ''';
+
+  /// TODO-1353 复诉：弹窗顶栏 A−/A+ 手动字号步进入口（用户复诉 Ctrl+滚轮不可发现，
+  /// 且 Android/iOS 触屏根本没有 Ctrl+滚轮）。直接调用注入的
+  /// `window.__hoshiPopupZoomStep`，与 Ctrl+滚轮完全同一条路径：同 [8,72] 夹紧、就地改
+  /// documentElement.style.zoom 即时生效不闪烁、经 `popupZoomFont` 回调持久化到
+  /// `dictionaryFontSize`。WebView 未就绪（controller 为空 / 监听未装）时安全 no-op。
+  void zoomFontStep({required bool zoomIn}) {
+    _controller?.evaluateJavascript(
+      source: 'window.__hoshiPopupZoomStep'
+          ' && window.__hoshiPopupZoomStep(${zoomIn ? 1 : -1});',
+    );
+  }
 
   static const String _scrollCheckJs = '''
 (function(){
