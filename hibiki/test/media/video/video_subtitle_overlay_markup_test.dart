@@ -46,7 +46,7 @@ void main() {
 
     // 顶部锚点：字幕盒落在 overlay 上半部。
     final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
-    // BUG-323/TODO-569：每字渲染为 stroke+fill 双层，取 .first（两层同位置）。
+    // 默认统一外观：每字单层 Text（Niratan 软投影），取 .first 兼容有无描边。
     final Offset boxCenter = tester.getCenter(find.text('プ').first);
     expect(boxCenter.dy, lessThan(overlayRect.center.dy));
 
@@ -63,7 +63,7 @@ void main() {
       home: Scaffold(body: VideoSubtitleOverlay(controller: c)),
     ));
     await tester.pump();
-    // BUG-323/TODO-569：每字 stroke+fill 双层，取填充层（foreground==null）断言样式。
+    // 取填充层（foreground==null）断言样式：默认单层即该层，ASS 尊重路径为双层的 fill 层。
     final Text a = tester
         .widgetList<Text>(find.text('A'))
         .firstWhere((Text t) => t.style?.foreground == null);
@@ -91,7 +91,7 @@ void main() {
     ));
     await tester.pump();
     final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
-    // 双层重叠，取 .first（BUG-323/TODO-569）。
+    // 默认单层 Text，取 .first 兼容有无描边。
     final Offset boxCenter = tester.getCenter(find.text('そ').first);
     expect(boxCenter.dy, greaterThan(overlayRect.center.dy)); // 底部
   });
@@ -114,7 +114,7 @@ void main() {
       ),
     ));
     await tester.pump();
-    // Fill layer: foreground == null (BUG-323/TODO-569 dual layer).
+    // Fill layer: foreground == null (default single layer; ASS-respect is dual).
     Text fillOff = tester
         .widgetList<Text>(find.text('A'))
         .firstWhere((Text t) => t.style?.foreground == null);
@@ -268,16 +268,24 @@ void main() {
   });
 
   testWidgets(
-      'respectAssStyle OFF: ASS Shadow ignored (no TextStyle.shadows), historical '
-      'look preserved (TODO-1246)', (WidgetTester tester) async {
+      'respectAssStyle OFF: ASS Shadow ignored, default soft drop shadow applied '
+      'instead (TODO-1246 / Niratan)', (WidgetTester tester) async {
     final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
       plainText: 'S',
       spans: <SubtitleSpan>[],
       cueStyle: SubtitleCueStyle(shadowDepthPx: 3, shadowColorArgb: 0xFF112233),
     ));
     await pumpOverlay(tester, cue, respect: false);
-    expect(strokeOf(tester, 'S').style?.shadows ?? const <Shadow>[], isEmpty);
-    expect(fillOf(tester, 'S').style?.shadows ?? const <Shadow>[], isEmpty);
+    // 关时单层 fill（无描边层）；.ass 的 \shad 硬投影（(3,3)、色 0xFF112233）被忽略，
+    // 改挂用户默认柔和投影（(0,1)、色=统一 shadowColor、模糊=统一 shadowThickness）。
+    expect(find.text('S'), findsOneWidget);
+    final List<Shadow> shadows =
+        fillOf(tester, 'S').style?.shadows ?? const <Shadow>[];
+    expect(shadows.length, 1, reason: '默认柔和投影单枚，非 ASS 硬投影');
+    expect(shadows.single.offset, const Offset(0, 1));
+    expect(shadows.single.color,
+        const Color(0xFF000000)); // pumpOverlay shadowColor
+    expect(shadows.single.blurRadius, 5); // pumpOverlay shadowThickness
   });
 
   testWidgets(
@@ -387,8 +395,8 @@ void main() {
   });
 
   testWidgets(
-      'respectAssStyle OFF: outline width uses unified shadowThickness, ASS '
-      'Outline ignored (TODO-1246)', (WidgetTester tester) async {
+      'respectAssStyle OFF: default soft shadow uses unified shadowThickness, ASS '
+      'Outline ignored (TODO-1246 / Niratan)', (WidgetTester tester) async {
     final AudioCue cue = cueFromMarkup(const SubtitleMarkup(
       plainText: 'X',
       spans: <SubtitleSpan>[],
@@ -396,8 +404,12 @@ void main() {
       playResY: 720,
     ));
     await pumpOverlay(tester, cue, respect: false, height: 360);
-    // pumpOverlay 传 shadowThickness: 5 → 关时描边宽恒统一值 5，不吃 ASS 的 4。
-    expect(strokeOf(tester, 'X').style?.foreground?.strokeWidth, 5.0);
+    // 关时无描边层，走默认柔和投影：模糊半径 = 统一 shadowThickness 5，不吃 ASS 的 \bord 4。
+    expect(find.text('X'), findsOneWidget);
+    final List<Shadow> shadows =
+        fillOf(tester, 'X').style?.shadows ?? const <Shadow>[];
+    expect(shadows.single.blurRadius, 5.0);
+    expect(shadows.single.offset, const Offset(0, 1));
   });
 
   // ---- TODO-1373: \blur 辉光 / \fad 淡入淡出 渲染门控 ----

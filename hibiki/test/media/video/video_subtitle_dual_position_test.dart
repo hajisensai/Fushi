@@ -72,9 +72,9 @@ void main() {
 
       await _pump(tester, VideoSubtitleOverlay(controller: c));
 
-      // 各自 stroke+fill 双层，两条都在屏。
-      expect(find.text('上'), findsNWidgets(2));
-      expect(find.text('下'), findsNWidgets(2));
+      // 默认统一外观：每字单层 Text（Niratan 软投影），两条都在屏 → 各 1 个。
+      expect(find.text('上'), findsOneWidget);
+      expect(find.text('下'), findsOneWidget);
 
       final Rect overlayRect =
           tester.getRect(find.byType(VideoSubtitleOverlay));

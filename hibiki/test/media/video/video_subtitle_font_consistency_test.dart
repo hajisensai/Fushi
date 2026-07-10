@@ -28,9 +28,9 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pump();
 }
 
-/// 取某字符的**填充层** [Text]（BUG-323 / TODO-569 起每字渲染成 stroke+fill 双层；
-/// 填充层 = `style.foreground == null` 的那个，描边层用 foreground 画笔）。回退链/字体
-/// 一致性断言只看填充层即可（描边层从填充层 copyWith 同源派生，几何属性一致）。
+/// 取某字符的**填充层** [Text]（`style.foreground == null` 的那个）。默认统一外观每字
+/// 单层即填充层；ASS 尊重路径为 stroke+fill 双层、填充层同样 foreground==null。回退链/
+/// 字体一致性断言只看填充层即可。
 Text _fillTextOf(WidgetTester tester, String ch) {
   final List<Text> all = tester.widgetList<Text>(find.text(ch)).toList();
   return all.firstWhere((Text t) => t.style?.foreground == null);

@@ -3,25 +3,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 
 void main() {
-  test('default is high-contrast white text + black outline (TODO-051)', () {
+  test('default is high-contrast white text + soft black shadow (Niratan)', () {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
     expect(s.fontSize, 36);
-    // 默认不再跟随主题：固定白字 + 黑描边，避免低对比主题下看不清。
+    // 默认不再跟随主题：固定白字 + 柔和黑投影（黑@0.9，抄 Niratan），低对比主题下也看清。
     expect(s.textColor, const Color(0xFFFFFFFF));
-    expect(s.shadowColor, const Color(0xFF000000));
-    // 显式白/黑：resolve 时即便给了主题色也不被它覆盖。
+    expect(s.shadowColor, const Color(0xE6000000));
+    // 显式白/黑@0.9：resolve 时即便给了主题色也不被它覆盖。
     expect(
         s.resolveTextColor(const Color(0xFF112233)), const Color(0xFFFFFFFF));
     expect(
       s.resolveShadowColor(const Color(0xFF112233)),
-      const Color(0xFF000000),
+      const Color(0xE6000000),
     );
     expect(s.fontWeight, isNull);
     expect(s.resolveFontWeight(1.0), 700);
-    // 阴影粗细加大：默认 3 -> 5（黑描边更明显）。
+    // 阴影半径改回 Niratan 默认 3（柔和投影模糊半径，不再是 5px 硬描边）。
     expect(s.shadowThickness, isNull);
-    expect(VideoSubtitleStyle.defaultShadowThickness, 5);
-    expect(s.resolveShadowThickness(1.0), 5);
+    expect(VideoSubtitleStyle.defaultShadowThickness, 3);
+    expect(s.resolveShadowThickness(1.0), 3);
     expect(s.backgroundColor, isNull);
     expect(s.backgroundOpacity, closeTo(0.0, 1e-9));
     // 默认位置是用户基线 75（TODO-129 反转 089 的恒抬升）：不再把控制条避让恒含进默认值，
@@ -33,9 +33,9 @@ void main() {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
 
     expect(s.resolveFontWeight(2.0), 900);
-    expect(s.resolveShadowThickness(2.0), 10); // 5 * 2.0
+    expect(s.resolveShadowThickness(2.0), 6); // 3 * 2.0
     expect(s.resolveFontWeight(0.5), 400);
-    expect(s.resolveShadowThickness(0.5), 2.5); // 5 * 0.5
+    expect(s.resolveShadowThickness(0.5), 1.5); // 3 * 0.5
   });
 
   test('null color still means follow the active theme (legacy data)', () {
@@ -74,17 +74,17 @@ void main() {
 
   test('default white/black round-trips and persists explicitly (TODO-051)',
       () {
-    // 新默认（白字黑描边）encode->decode 必须如实存住，不再被「白=折叠成 null」吃掉。
+    // 新默认（白字 + 黑@0.9 软投影）encode->decode 必须如实存住，不被「白=折叠成 null」吃掉。
     final VideoSubtitleStyle back = VideoSubtitleStyle.decode(
       VideoSubtitleStyle.encode(VideoSubtitleStyle.defaults),
     );
     expect(back.textColor, const Color(0xFFFFFFFF));
-    expect(back.shadowColor, const Color(0xFF000000));
-    // resolve 给主题色也不被覆盖（仍是显式白/黑）。
+    expect(back.shadowColor, const Color(0xE6000000));
+    // resolve 给主题色也不被覆盖（仍是显式白 / 黑@0.9）。
     expect(back.resolveTextColor(const Color(0xFF112233)),
         const Color(0xFFFFFFFF));
     expect(back.resolveShadowColor(const Color(0xFF112233)),
-        const Color(0xFF000000));
+        const Color(0xE6000000));
   });
 
   test('explicit white text color is no longer folded to null', () {
@@ -149,20 +149,20 @@ void main() {
     expect(VideoSubtitleStyle.decode('not json').textColor,
         const Color(0xFFFFFFFF));
     expect(VideoSubtitleStyle.decode('').textColor, const Color(0xFFFFFFFF));
-    expect(VideoSubtitleStyle.decode('').shadowColor, const Color(0xFF000000));
+    expect(VideoSubtitleStyle.decode('').shadowColor, const Color(0xE6000000));
   });
 
   test('decode migrates stored asb defaults to scale-derived defaults', () {
     // v1 数据存的是当时硬编码默认（fontWeight 700 / shadowThickness 3px）=「跟随
-    // UI scale」，迁移成 null，让其继续跟随缩放。TODO-051 把默认阴影加大到 5px 后，
-    // 这类「跟随默认」的旧数据 resolve 出新的 5px（享受加大阴影，非钉死在旧 3px）。
+    // UI scale」，迁移成 null，让其继续跟随缩放。默认阴影半径现为 Niratan 的 3，故这类
+    // 「跟随默认」的旧数据 resolve 出 3（与迁移锚点巧合同值，但语义各自独立）。
     final VideoSubtitleStyle s =
         VideoSubtitleStyle.decode('{"fontWeight":700,"shadowThickness":3}');
 
     expect(s.fontWeight, isNull);
     expect(s.shadowThickness, isNull);
     expect(s.resolveFontWeight(1.0), 700);
-    expect(s.resolveShadowThickness(1.0), 5); // 加大后的默认（TODO-051）。
+    expect(s.resolveShadowThickness(1.0), 3); // Niratan 默认半径。
   });
 
   group('dynamic subtitle dodge of the bottom controls bar (TODO-129)', () {
@@ -383,6 +383,35 @@ void main() {
       // 绝不像旧 8 层模糊 Shadow 那样在大 thickness 下外溢成第二个错位黑字。
       expect(buildSubtitleStrokePaint(c, 2)!.strokeWidth, 2);
       expect(buildSubtitleStrokePaint(c, 12)!.strokeWidth, 12);
+    });
+  });
+
+  group('buildSubtitleSoftShadow (抄 Niratan 默认统一外观的柔和投影)', () {
+    const Color c = Color(0xFF224466);
+
+    test('thickness<=0 无投影（空列表）', () {
+      expect(buildSubtitleSoftShadow(c, 0), isEmpty);
+      expect(buildSubtitleSoftShadow(c, -3), isEmpty);
+    });
+
+    test('正粗细生成单枚柔和投影：色 / 模糊半径 / 向下 1px 偏移', () {
+      final List<Shadow> shadows = buildSubtitleSoftShadow(c, 3);
+      // 单枚（不是 8 向伪描边）→ 不会重现 BUG-222/323 的残留黑字。
+      expect(shadows.length, 1);
+      final Shadow s = shadows.single;
+      expect(s.color, c);
+      expect(s.blurRadius, 3); // blurRadius == thickness（模糊半径）
+      // 向下偏移 1px（对应 Niratan `.shadow(..., y: 1)`）。
+      expect(s.offset, const Offset(0, 1));
+    });
+
+    test('blurRadius 随 thickness 线性变化（仍单枚、偏移恒 (0,1)）', () {
+      final Shadow s6 = buildSubtitleSoftShadow(c, 6).single;
+      expect(s6.blurRadius, 6);
+      expect(s6.offset, const Offset(0, 1));
+      final Shadow s12 = buildSubtitleSoftShadow(c, 12).single;
+      expect(s12.blurRadius, 12);
+      expect(s12.offset, const Offset(0, 1));
     });
   });
 

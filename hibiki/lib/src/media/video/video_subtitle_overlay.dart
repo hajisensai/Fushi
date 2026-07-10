@@ -912,7 +912,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                       blurred: blurred,
                     ));
                   }
-                  return _buildStrokedChar(chars[i], i, markup);
+                  return _buildSubtitleChar(chars[i], i, markup);
                 },
               ),
           ],
@@ -994,45 +994,68 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return fade.opacityAt(pos - cue.startMs, cue.endMs - cue.startMs);
   }
 
-  /// 渲染单个字幕字符为**真描边**：底层 stroke [Text]（[buildSubtitleStrokePaint] 沿
-  /// 字形轮廓描一圈）+ 上层 fill [Text]（正文填充色）精确重叠（BUG-323 / TODO-569）。
+  /// 渲染单个字幕字符。两条外观路径：
   ///
-  /// 描边色 / 描边宽默认取用户统一样式（[VideoSubtitleOverlay.shadowColor] /
-  /// [VideoSubtitleOverlay.shadowThickness]）；开 [VideoSubtitleOverlay.respectAssStyle]
-  /// 时优先取 .ass 的 \3c 描边色 / \bord 描边宽（行内 span > cueStyle，缺失回退统一样式，
-  /// TODO-1105）。thickness<=0（无描边）时 [buildSubtitleStrokePaint] 返回 null，直接渲染
-  /// 单层 fill [Text]（与历史无描边场景等价、零多余层）。
-  Widget _buildStrokedChar(String char, int i, SubtitleMarkup? markup) {
+  /// **① 默认统一外观**（`!respectAssStyle` 或非 .ass 字幕 markup==null）：单层 fill [Text]
+  /// + Niratan 式**柔和投影**（[buildSubtitleSoftShadow]，黑@0.9、模糊半径=shadowThickness、
+  /// 向下 1px）。这是用户开箱看到的「默认阴影」——按用户决策抄 mac 的 Niratan，放弃 BUG-323
+  /// 的锐利硬描边。单层软投影（仅一份拷贝、偏移 (0,1)）不会重现 BUG-222/323 的 8 层模糊
+  /// glyph 拷贝外溢残影。
+  ///
+  /// **② 尊重 .ass 自带样式**（[VideoSubtitleOverlay.respectAssStyle] 开且 cue 带 markup）：
+  /// 底层 stroke [Text]（[buildSubtitleStrokePaint] 沿字形轮廓描一圈 .ass 的 \bord/\3c 硬
+  /// 描边）+ 上层 fill [Text]，并保留 .ass 的 \shad 硬投影（[_styleForGrapheme] 的
+  /// `shadows`）。忠实还原 .ass 文件明示的描边/阴影语义（TODO-1105/1246），不被默认软投影
+  /// 覆盖。描边宽<=0 时降级为单层 fill。
+  ///
+  /// 两路径外均可套 \blur/\be 辉光（仅 respect 时）；命中矩形不因层数变化（ImageFiltered /
+  /// Stack 不改布局），逐字查词照常。
+  Widget _buildSubtitleChar(String char, int i, SubtitleMarkup? markup) {
     final TextStyle fillStyle = _styleForGrapheme(i, markup);
-    final (Color strokeColor, double strokeWidth) = _resolveStroke(i, markup);
-    final Paint? strokePaint =
-        buildSubtitleStrokePaint(strokeColor, strokeWidth);
+    final bool respect = widget.respectAssStyle && markup != null;
     final Widget glyph;
-    if (strokePaint == null) {
-      // 无描边：单层 fill（自带 ASS 阴影，若有）。
-      glyph = Text(char, style: fillStyle);
+    if (!respect) {
+      // 默认统一外观：Niratan 柔和投影。fillStyle 在非 respect 下 shadows==null，直接挂软
+      // 投影；thickness<=0（用户关阴影）时 soft 为空，渲染纯 fill（无投影、零多余层）。
+      final List<Shadow> soft = buildSubtitleSoftShadow(
+        widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
+        widget.shadowThickness,
+      );
+      glyph = Text(
+        char,
+        style: soft.isEmpty ? fillStyle : fillStyle.copyWith(shadows: soft),
+      );
     } else {
-      // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
-      // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
-      final TextStyle strokeStyle = fillStyle.copyWith(
-        color: null,
-        foreground: strokePaint,
-        // 描边层不画下划线/删除线，避免与 fill 层重叠加粗装饰线（fill 层已画）。
-        decoration: TextDecoration.none,
-      );
-      // 阴影只保留在描边层（最底）→ 正确 z 序（阴影 < 描边 < 填充）；填充层清空阴影防重叠。
-      final bool hasShadows =
-          fillStyle.shadows != null && fillStyle.shadows!.isNotEmpty;
-      final TextStyle fillTopStyle = hasShadows
-          ? fillStyle.copyWith(shadows: const <Shadow>[])
-          : fillStyle;
-      glyph = Stack(
-        // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
-        children: <Widget>[
-          Text(char, style: strokeStyle),
-          Text(char, style: fillTopStyle),
-        ],
-      );
+      // 尊重 .ass：\bord/\3c 真描边 + \shad ASS 硬投影（TODO-1105/1246），保持原样。
+      final (Color strokeColor, double strokeWidth) = _resolveStroke(i, markup);
+      final Paint? strokePaint =
+          buildSubtitleStrokePaint(strokeColor, strokeWidth);
+      if (strokePaint == null) {
+        // .ass 无描边（\bord 0）：单层 fill（自带 ASS 阴影，若有）。
+        glyph = Text(char, style: fillStyle);
+      } else {
+        // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
+        // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
+        final TextStyle strokeStyle = fillStyle.copyWith(
+          color: null,
+          foreground: strokePaint,
+          // 描边层不画下划线/删除线，避免与 fill 层重叠加粗装饰线（fill 层已画）。
+          decoration: TextDecoration.none,
+        );
+        // 阴影只保留在描边层（最底）→ 正确 z 序（阴影 < 描边 < 填充）；填充层清空阴影防重叠。
+        final bool hasShadows =
+            fillStyle.shadows != null && fillStyle.shadows!.isNotEmpty;
+        final TextStyle fillTopStyle = hasShadows
+            ? fillStyle.copyWith(shadows: const <Shadow>[])
+            : fillStyle;
+        glyph = Stack(
+          // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
+          children: <Widget>[
+            Text(char, style: strokeStyle),
+            Text(char, style: fillTopStyle),
+          ],
+        );
+      }
     }
     // \blur/\be 辉光（TODO-1373）：把合成字形（描边+填充+阴影）整体高斯模糊。仅 respectAssStyle
     // 开且该字符所在 span 带 blur 时包裹；ImageFiltered 不改布局尺寸，故字符命中矩形
@@ -1056,7 +1079,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return sigma < 0 ? 0 : (sigma > 24 ? 24 : sigma);
   }
 
-  /// 解析第 [i] 个 grapheme 的**描边色 + 描边宽**（[_buildStrokedChar] 用）。
+  /// 解析第 [i] 个 grapheme 的**描边色 + 描边宽**（[_buildSubtitleChar] 的 ASS 尊重分支用）。
   ///
   /// respectAssStyle 关：恒返回用户统一 (shadowColor, shadowThickness)——与历史像素级一致。
   /// respectAssStyle 开：描边色取 span.\3c ?? cueStyle.OutlineColour ?? 统一色；描边宽取
@@ -1098,8 +1121,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return null;
   }
 
-  /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式（**填充层**，不含描边——描边由
-  /// [_buildStrokedChar] 的底层 stroke [Text] 单独承载，BUG-323 / TODO-569）。
+  /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式（**填充层**）。默认统一外观下柔和
+  /// 投影由 [_buildSubtitleChar] 挂到本样式上；尊重 .ass 时描边由其底层 stroke [Text] 单独
+  /// 承载、.ass \shad 硬投影由本方法的 `shadows` 提供（BUG-323 / TODO-569 / TODO-1105）。
   ///
   /// respectAssStyle 关：只应用行内 `\i \b \u \s \c \fs` 这些历史就支持的 span 样式，字体 /
   /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
