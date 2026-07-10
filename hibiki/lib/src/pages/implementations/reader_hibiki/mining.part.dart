@@ -26,10 +26,19 @@ extension _ReaderMining on _ReaderHibikiPageState {
     // 直接 trim 返回）。音频区间同理合并（跨章/跨音频文件退化为只合文本）。
     final String sentence = _miningDraft.composeText(currentSentence);
 
+    // TODO-1388 / BUG-702：制卡封面解析必须与书架网格 (_resolveCoverUrl) 对称。
+    // 旧逻辑只有裸 File(p.join(_extractDir!, coverHref)).existsSync()，对大小写不
+    // 敏感。coverHref 在大小写不敏感宿主 (Windows/macOS) 导入时被 p.canonicalize
+    // 小写化 (epub_parser _itemRelHref)，解压文件却保留真实大小写 (TODO-739)；书到
+    // Android/Linux (大小写敏感 FS) 后裸探测按小写落空 → coverPath=null → 制出的卡
+    // 无封面（书架却因 case-insensitive 兜底正常显示）。复用书架同一个兜底
+    // (ReaderHibikiSource.resolveCoverFilePath) 命中真实文件，让制卡与显示一致。
     String? coverPath;
-    if (_book?.coverHref != null && _extractDir != null) {
-      final File coverFile = File(p.join(_extractDir!, _book!.coverHref));
-      if (coverFile.existsSync()) coverPath = coverFile.path;
+    if (_extractDir != null) {
+      coverPath = ReaderHibikiSource.resolveCoverFilePath(
+        extractDir: _extractDir!,
+        coverPath: _book?.coverHref,
+      );
     }
 
     // TODO-644 / BUG-357：在第一个 await（句子音频裁剪，可让出事件循环数百 ms）之前，

@@ -511,18 +511,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
     // the cover -- though detected at import -- never renders. Resolve the
     // declared cover (and the conventional fallbacks) case-insensitively against
     // the real extracted files as a last resort so the cover still shows.
-    final String? resolved = resolveCaseInsensitive(
+    // Shared with card mining via [resolveCoverFilePath] (TODO-1388 / BUG-702)
+    // so both surfaces resolve to the identical on-disk cover file.
+    final String? resolved = resolveCoverFilePath(
       extractDir: book.extractDir,
-      relPaths: <String>[
-        if (book.coverPath != null && book.coverPath!.isNotEmpty)
-          book.coverPath!,
-        'cover.jpg',
-        'cover.jpeg',
-        'cover.png',
-      ],
-      listDir: _listDirEntries,
+      coverPath: book.coverPath,
     );
-    if (resolved != null && File(resolved).existsSync()) {
+    if (resolved != null) {
       final String url = Uri.file(resolved).toString();
       if (book.bookKey.isNotEmpty) {
         _lastGoodCoverUrlByBookKey[book.bookKey] = url;
@@ -599,6 +594,42 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
       if (resolvedAll) return current;
     }
+    return null;
+  }
+
+  /// Resolve a book cover to its on-disk **file path** (not a `file://` URL),
+  /// reusing the exact same case-insensitive resolution the library grid uses
+  /// (`_resolveCoverUrl`) so card mining and shelf display agree on which cover
+  /// file to use (TODO-1388 / BUG-702). The declared [coverPath] wins over the
+  /// conventional `cover.jpg/jpeg/png` fallbacks; each candidate is matched
+  /// exact-case-first then case-insensitively against the real extracted files,
+  /// so a coverPath whose case was mangled by a case-insensitive import host
+  /// (Windows/macOS `p.canonicalize` lower-casing, epub_parser _itemRelHref)
+  /// still finds the case-preserved file on a case-sensitive device
+  /// (Android/Linux). Returns null when no candidate resolves to a real file.
+  ///
+  /// Static + wiring the real [_listDirEntries] lister so mining (which only
+  /// had a naive `File(join(extractDir, coverHref)).existsSync()` probe --
+  /// blind to case, hence the missing cover on Android) shares one resolution
+  /// with the grid instead of drifting.
+  ///
+  /// Not `@visibleForTesting`: this is genuine production API consumed by both
+  /// the shelf grid (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
+  static String? resolveCoverFilePath({
+    required String extractDir,
+    String? coverPath,
+  }) {
+    final String? resolved = resolveCaseInsensitive(
+      extractDir: extractDir,
+      relPaths: <String>[
+        if (coverPath != null && coverPath.isNotEmpty) coverPath,
+        'cover.jpg',
+        'cover.jpeg',
+        'cover.png',
+      ],
+      listDir: _listDirEntries,
+    );
+    if (resolved != null && File(resolved).existsSync()) return resolved;
     return null;
   }
 
