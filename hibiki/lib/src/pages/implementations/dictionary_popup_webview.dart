@@ -85,6 +85,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onAppendSentence,
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
+    this.onSentenceContextPreview,
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
@@ -161,6 +162,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 处理器触发本回调，宿主清空草稿并回传清空后句数（恒 0），popup 据此把所有「+句」
   /// 角标归零。非空才在 popup 渲染清空入口（与 [onAppendSentence] 同生命周期）。
   final Future<int> Function()? onClearSentenceDraft;
+
+  /// Niratan「制卡前调整·选择句子上下文」：popup 点「调整上下文」打开模态时经
+  /// `sentenceContextPreview` JS 处理器触发本回调，宿主把当前草稿的真实上下文句
+  /// （前/当前/后）+ 词在当前句的偏移打包成 JSON-safe Map（见 `buildSentenceContextPreview`）
+  /// 回给 popup 渲染三栏预览。非空才在 popup 渲染「调整上下文」按钮（与 [onSetSentenceContext]
+  /// 同生命周期；reader/视频启用）。
+  final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onTopPullReleased;
 
@@ -738,6 +746,28 @@ class DictionaryPopupWebViewState
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
       window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
+      // Niratan「制卡前调整·选择句子上下文」：独立于旧内联步进器（kSentenceContextPickerEnabled
+      // 恒 false）的新特性门控——宿主接入了预览回调（reader/有声书/视频，supportsSentenceDraft
+      // 为真）才为真，popup.js 据此渲染「调整上下文」按钮。app 外 / 悬浮独立窗不走本注入块，
+      // 该 flag undefined → 按钮不渲染。
+      window.sentenceContextPreviewEnabled = ${widget.onSentenceContextPreview != null};
+      // Niratan「制卡前调整·选择句子上下文」模态文案（popup.js 无自带 i18n，靠宿主注入）。
+      window.i18nCtx = {
+        adjust: ${jsonEncode(t.popup_ctx_adjust_button)},
+        eyebrow: ${jsonEncode(t.popup_ctx_modal_eyebrow)},
+        title: ${jsonEncode(t.popup_ctx_modal_title)},
+        count: ${jsonEncode(t.popup_ctx_modal_count)},
+        boxPrev: ${jsonEncode(t.popup_ctx_box_prev)},
+        boxCurrent: ${jsonEncode(t.popup_ctx_box_current)},
+        boxNext: ${jsonEncode(t.popup_ctx_box_next)},
+        boxEmpty: ${jsonEncode(t.popup_ctx_box_empty)},
+        prevMinus: ${jsonEncode(t.popup_ctx_prev_minus)},
+        prevPlus: ${jsonEncode(t.popup_ctx_prev_plus)},
+        nextMinus: ${jsonEncode(t.popup_ctx_next_minus)},
+        nextPlus: ${jsonEncode(t.popup_ctx_next_plus)},
+        confirm: ${jsonEncode(t.popup_ctx_confirm)},
+        cancel: ${jsonEncode(t.popup_ctx_cancel)},
+      };
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''').then((_) {
@@ -1339,6 +1369,26 @@ class DictionaryPopupWebViewState
                   return widget.onClearSentenceDraft!();
                 }
                 return 0;
+              },
+            );
+          },
+        );
+
+        // Niratan「制卡前调整·选择句子上下文」：popup 打开模态 / 每次调整后拉取当前草稿
+        // 的真实上下文句（前/当前/后）+ 词偏移做预览。只读，不改草稿（调整仍走
+        // setSentenceContext）。宿主未接入 / 出错时回传空 Map，popup 侧兜底不渲染文本。
+        controller.addJavaScriptHandler(
+          handlerName: 'sentenceContextPreview',
+          callback: (_) async {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.sentenceContextPreview',
+              const <String, Object?>{},
+              ErrorLogService.instance,
+              () async {
+                if (widget.onSentenceContextPreview == null) {
+                  return const <String, Object?>{};
+                }
+                return widget.onSentenceContextPreview!();
               },
             );
           },
