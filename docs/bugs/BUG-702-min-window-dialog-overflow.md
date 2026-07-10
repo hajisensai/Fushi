@@ -13,9 +13,9 @@
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/min_window_dialog_overflow_test.dart`（5 例，全绿）：
   - sasayaki(0.62 界)/series(0.74 界) 各一对——用真实 `HibikiDialogFrame` + `HibikiModalSheetFrame`：`scrollable:false` 在矮窗（360x400 / 360x320）下 `takeException()` 命中 `overflow`（锁根因），`scrollable:true` 无溢出且 body 落在滚动视口（证修法）。
   - `MediaSourcesDialog`（真实组件 + 内存库播种 24 条来源，360x440≈最小窗客户区）：无 RenderFlex 溢出、`HibikiReorderableColumn` 被外层 `Scrollable` 包住、`maxScrollExtent>0`（修前会溢出且无此滚动层）。
-  - 端到端补充：`hibiki/integration_test/min_window_size_surfaces_itest.dart` 追加 `media-sources` 表面——在真 app 里播种 24 条来源、最小窗高下打开对话框、扫掠断言无溢出（经 `tool/run_windows_itest.ps1` 离屏跑）。
+  - 端到端补充：`hibiki/integration_test/min_window_size_surfaces_itest.dart` 追加 `media-sources` 表面——在真 app 里播种 24 条来源、把真窗 resize 到 `360x480`（client `345x443`）后打开对话框、扫掠断言无溢出。经 `tool/run_windows_itest.ps1` 离屏跑：`All tests passed!`，shelf/video/lookup/settings/dict-dialog-compact/**media-sources** 全表面零溢出，截图 `min-window-media-sources.png`(38KB, 非空) 留证。
   - 全量 `flutter analyze`（含 test）No issues；全量 `flutter test` 全绿。
 - **备注**：
   - **未改回下限**：TODO-1377 的 `Size(360, 480)` 最小尺寸是用户明确诉求，未动；本 bug 只补弹窗的滚动兜底。
   - **审计覆盖 / 剩余候选**：沿全部 `HibikiModalSheetFrame`/`HibikiDialogFrame`（47 文件 60+ 处 `scrollable:false`）核查——设置子页（`switch_settings`/`master_detail_settings_sheet` 等）、同步/备份对话框、更新提示、词典设置等**均为安全范式**（内层 `scrollable:true` 或 body 自带 ListView），不溢出。仅上述 3 处漏兜底。
-  - **验证门（诚实标注）**：widget 层已用真实组件确定性复现 media_sources 溢出+修复；sasayaki/series 用真实框 + 忠实 body 复现机制（其对话框由私有/静态入口触发，不便在 widget 测试直接 pump）。真机对这 3 个对话框在 480px 窗下的端到端复测（media-sources 已进离屏 itest；sasayaki 需有声书、series 需系列文件夹态）为残留验证门。
+  - **验证门（诚实标注）**：media_sources 已 widget 层（真实组件）+ Windows 离屏 itest（真窗 360x480）双重确定性验证；sasayaki/series 用真实框 + 忠实 body 在 widget 层复现机制并证修法（其对话框由私有/静态入口触发，不便直接 pump 或在 smoke itest 里凑齐有声书/系列文件夹态）。sasayaki/series 的真机端到端复测为残留验证门（机制与 media_sources 同构，修法一致）。
