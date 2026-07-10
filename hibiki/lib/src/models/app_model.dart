@@ -1682,6 +1682,9 @@ class AppModel with ChangeNotifier {
   Future<void> injectAssetLicenses() async {
     final packageNames = [
       'ebook-reader',
+      // TODO-1368/BUG-685: "Hibiki Symbols" = renamed 3-glyph subset of
+      // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
+      'dejavu-fonts',
     ];
 
     for (String packageName in packageNames) {
