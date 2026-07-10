@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
+import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -296,9 +297,13 @@ SettingsDestination buildLookupDestination() {
             title: t.desktop_clipboard_window_mode,
             subtitle: t.desktop_clipboard_window_mode_hint,
             icon: Icons.vertical_align_top_outlined,
+            // spec 2026-07-10：本项管的是主窗置顶策略，仅 destination==main 时
+            // 有意义（面板/瞬态去向不经主窗显示结果）。
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled,
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.main,
             options: <SettingsSegmentOption<DesktopClipboardWindowMode>>[
               SettingsSegmentOption<DesktopClipboardWindowMode>(
                 value: DesktopClipboardWindowMode.normal,
@@ -325,6 +330,43 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel.setDesktopClipboardWindowMode(
                 value,
               );
+              settingsContext.refresh();
+            },
+          ),
+          // spec 2026-07-10 §4/§7 — 剪贴板查词去向三选。main = 主窗查词 tab
+          // （现状默认）；transient = 光标处瞬态弹卡（复用全局查词覆盖窗）；
+          // panel = 常驻悬浮面板（M2 落地后加入选项）。覆盖窗是 Windows-only
+          // （GlobalLookupController.isSupported），其余桌面平台不显示本项、
+          // 隐含恒为 main。
+          SettingsSegmentedItem<DesktopClipboardDestination>(
+            id: 'lookup.desktop_clipboard_destination',
+            title: t.desktop_clipboard_destination,
+            subtitle: t.desktop_clipboard_destination_hint,
+            icon: Icons.picture_in_picture_alt_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                GlobalLookupController.isSupported,
+            options: <SettingsSegmentOption<DesktopClipboardDestination>>[
+              SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.main,
+                label: t.desktop_clipboard_destination_main,
+                tooltip: t.desktop_clipboard_destination_main,
+              ),
+              SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.transient,
+                label: t.desktop_clipboard_destination_transient,
+                tooltip: t.desktop_clipboard_destination_transient,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.desktopClipboardDestination,
+            onChanged: (
+              SettingsContext settingsContext,
+              DesktopClipboardDestination value,
+            ) async {
+              await settingsContext.appModel
+                  .setDesktopClipboardDestination(value);
               settingsContext.refresh();
             },
           ),
