@@ -76,7 +76,18 @@ extension _VideoFullscreen on _VideoHibikiPageState {
       // 持有（见 _videoFullscreenActive 的文档）。
       if (mounted) _rebuild(() => _videoFullscreenActive = true);
       final PageRouteBuilder<void> fullscreenRoute = PageRouteBuilder<void>(
-        pageBuilder: (_, __, ___) => Material(
+        // BUG-686（TODO-1378）：全屏路由内容必须包进与窗口模式同一个
+        // [_wrapVideoGamepadControls]（Actions<GamepadButtonIntent> + 旁观 Focus）。
+        // 全屏是推到根 navigator 的独立路由，窗口侧 build() 外层的手柄输入层不是
+        // 这棵子树的祖先；桌面手柄轮询以 primaryFocus.context 为派发起点
+        // （gamepad_service._dispatchContext），进全屏后共享 [_videoFocusNode] 被
+        // 全屏侧 controls 持有，Actions.maybeInvoke 沿元素树向上找不到
+        // GamepadButtonIntent 处理器 → A/D-pad 落进 GamepadService 的
+        // ActivateIntent/焦点遍历兜底，在这棵无可聚焦兄弟的子树里静默 no-op；
+        // 只有 B 走 navigatorKey.maybePop 兜底还活着。同一个 wrapper 让全屏子树
+        // 拥有与窗口完全一致的手柄语义（A=播放/暂停、dpad=快进快退/音量、
+        // B=videoEscape 逐级退出……），不在 gamepad_service 里加全屏特判。
+        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(Material(
           child: HibikiAppUiScaleNeutralizer(
             child: MaterialVideoControlsTheme(
               normal:
@@ -156,7 +167,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
               ),
             ),
           ),
-        ),
+        )),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       );
