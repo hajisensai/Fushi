@@ -107,6 +107,69 @@ void main() {
         }
       }
     });
+
+    test(
+        'buttons sit at distinct physical spots: no overlap, all inside the '
+        'figure (TODO-942 v3)', () {
+      // 用户截图回归：Y 压在 RB 上、B 飘出机身、十字键散块。按渲染层同一套
+      // footprint 规则（圆钮=圆、肩键=胶囊矩形、十字四臂=一个整体簇）在 640 宽
+      // 的图上做像素级碰撞检查，三品牌全查。
+      const double width = 640;
+      const double height = width / GamepadLayoutView.figureAspectRatio;
+      const double base = width / 12;
+      Offset px(Offset c) => Offset(c.dx * width, c.dy * height);
+
+      for (final GamepadBrand brand in GamepadBrand.values) {
+        final List<GamepadPadSpec> specs = buildGamepadFigure(brand);
+        final List<_Footprint> prints = <_Footprint>[];
+        Offset clusterCenter = Offset.zero;
+        int dpadCount = 0;
+        for (final GamepadPadSpec s in specs) {
+          if (s.button.isDpad) {
+            clusterCenter += px(s.center);
+            dpadCount++;
+            continue;
+          }
+          final double d = base * s.size;
+          final bool isPill = s.shape == GamepadPadShape.pill;
+          final double w = isPill ? d * GamepadButtonWidget.pillWidthFactor : d;
+          final double h =
+              isPill ? d * GamepadButtonWidget.pillHeightFactor : d;
+          prints.add(_Footprint(
+            s.button.label,
+            Rect.fromCenter(center: px(s.center), width: w, height: h),
+            !isPill,
+          ));
+        }
+        clusterCenter = clusterCenter / dpadCount.toDouble();
+        const double clusterSize =
+            base * GamepadLayoutView.dpadClusterSizeFactor;
+        prints.add(_Footprint(
+          'DpadCluster',
+          Rect.fromCenter(
+              center: clusterCenter, width: clusterSize, height: clusterSize),
+          false,
+        ));
+
+        for (int i = 0; i < prints.length; i++) {
+          for (int j = i + 1; j < prints.length; j++) {
+            expect(_collides(prints[i], prints[j]), isFalse,
+                reason: '$brand: ${prints[i].name} overlaps ${prints[j].name} '
+                    '— every control must own a distinct physical spot');
+          }
+        }
+        final Rect figure =
+            const Rect.fromLTWH(0, 0, width, height).inflate(0.5);
+        for (final _Footprint f in prints) {
+          expect(
+            figure.contains(f.rect.topLeft) &&
+                figure.contains(f.rect.bottomRight),
+            isTrue,
+            reason: '$brand: ${f.name} escapes the figure bounds',
+          );
+        }
+      }
+    });
   });
 
   group('GamepadLayoutView (widget)', () {
@@ -183,6 +246,57 @@ void main() {
         reason: 'the gamepad figure must render a controller body silhouette '
             'behind the button icons, not leave them on an empty rectangle',
       );
+    });
+
+    testWidgets('the dpad renders as ONE unified cross cluster (TODO-942 v3)',
+        (WidgetTester tester) async {
+      final HibikiShortcutRegistry registry = buildRegistry();
+      await pumpView(tester, registry, ShortcutScope.reader);
+      // 用户截图回归：十字键不许再裂成四颗散装钮——四臂必须都住在同一个
+      // GamepadDpadCluster 里（视觉聚合），但每臂保留独立 Key/绑定/高亮。
+      expect(find.byType(GamepadDpadCluster), findsOneWidget,
+          reason: 'the four dpad arms must merge into one cross cluster');
+      for (final GamepadButton button
+          in GamepadButton.values.where((GamepadButton b) => b.isDpad)) {
+        expect(
+          find.descendant(
+            of: find.byType(GamepadDpadCluster),
+            matching: find.byKey(Key('gamepad_btn_${button.label}')),
+          ),
+          findsOneWidget,
+          reason: '${button.label} must live inside the unified cluster',
+        );
+      }
+    });
+
+    testWidgets(
+        'a dpad arm stays independently bindable and taps route with its '
+        'actions', (WidgetTester tester) async {
+      final HibikiShortcutRegistry registry = buildRegistry();
+      registry.updateBinding(
+        ShortcutAction.readerToggleBookmark,
+        const ShortcutBindingSet(
+          gamepadBindings: <GamepadBinding>[
+            GamepadBinding(GamepadButton.dpadUp),
+          ],
+        ),
+      );
+      GamepadButton? tapped;
+      List<ShortcutAction>? tappedActions;
+      await pumpView(
+        tester,
+        registry,
+        ShortcutScope.reader,
+        onGamepadTap: (GamepadButton b, List<ShortcutAction> actions) {
+          tapped = b;
+          tappedActions = actions;
+        },
+      );
+      await tester.tap(find.byKey(const Key('gamepad_btn_DpadUp')));
+      await tester.pumpAndSettle();
+      expect(tapped, GamepadButton.dpadUp,
+          reason: 'the up arm must route its own button identity');
+      expect(tappedActions, contains(ShortcutAction.readerToggleBookmark));
     });
 
     testWidgets('a bound button renders highlighted (bound=true)',
@@ -292,4 +406,34 @@ void main() {
       );
     });
   });
+}
+
+/// 一个按钮在 640 宽图上的碰撞 footprint（圆钮=内切圆、胶囊/簇=矩形）。
+class _Footprint {
+  const _Footprint(this.name, this.rect, this.isCircle);
+
+  final String name;
+  final Rect rect;
+  final bool isCircle;
+
+  double get radius => rect.width / 2;
+  Offset get center => rect.center;
+}
+
+/// 圆-圆按圆心距、圆-矩按最近点距、矩-矩按相交判碰撞。
+bool _collides(_Footprint a, _Footprint b) {
+  if (a.isCircle && b.isCircle) {
+    return (a.center - b.center).distance < a.radius + b.radius;
+  }
+  if (a.isCircle || b.isCircle) {
+    final _Footprint circle = a.isCircle ? a : b;
+    final _Footprint box = a.isCircle ? b : a;
+    final double nearestX =
+        circle.center.dx.clamp(box.rect.left, box.rect.right);
+    final double nearestY =
+        circle.center.dy.clamp(box.rect.top, box.rect.bottom);
+    return (circle.center - Offset(nearestX, nearestY)).distance <
+        circle.radius;
+  }
+  return a.rect.overlaps(b.rect);
 }

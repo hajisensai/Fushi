@@ -61,16 +61,25 @@ void main() {
     }
   });
 
-  test('gamepad figure shell routes surfaces/border through tokens', () {
-    // TODO-942 v2：机身外壳从「圆角矩形容器」改为贝塞尔轮廓 CustomPainter
-    // (_GamepadChassisPainter)，已无矩形圆角；外壳纪律改为「机身着色走
-    // tokens.surfaces.*、描边走 outlineVariant」，裸 surfaceContainerXxx 字面量仍由
-    // 上面「stays free of bare MD3 literals」守卫兜底。
-    expect(gamepadLayoutSrc.contains('HibikiDesignTokens.of(context)'), isTrue);
-    expect(gamepadLayoutSrc.contains('tokens.surfaces.'), isTrue,
-        reason: 'chassis body fill must come from semantic surface tokens');
-    expect(gamepadLayoutSrc.contains('outlineVariant'), isTrue,
-        reason: 'shell outline must use the outlineVariant scheme role');
+  test(
+      'gamepad figure shell derives visible contrast from onSurface '
+      '(TODO-942 v3)', () {
+    // v2 的旧契约「机身走 tokens.surfaces.* + outlineVariant 描边」正是用户截图里
+    // 手柄轮廓隐形的根因：surfaceContainer 系与设置面板背景明度几乎相同、
+    // outlineVariant 专为低对比分隔线设计——米色(ecru)主题下整只手柄融进背景。
+    // 新契约：外壳填充/描边一律从 onSurface 对 surface 的 alphaBlend 推导，
+    // 任何主题下都有确定的明度差。
+    expect(gamepadLayoutSrc.contains('Color.alphaBlend'), isTrue,
+        reason: 'chassis fill must blend onSurface over surface for a '
+            'guaranteed lightness delta in every theme');
+    expect(gamepadLayoutSrc.contains('scheme.onSurface'), isTrue,
+        reason: 'chassis colors must derive from the onSurface contrast role');
+    expect(gamepadLayoutSrc.contains('scheme.outlineVariant'), isFalse,
+        reason: 'outlineVariant melts into the settings panel (the TODO-942 '
+            'invisible-chassis root cause) and is banned in the chassis');
+    expect(gamepadLayoutSrc.contains('tokens.surfaces.'), isFalse,
+        reason: 'surface-container tokens carry no lightness delta against '
+            'the settings panel and are banned in the chassis');
   });
 
   test('key cap routes radii/surfaces through HibikiDesignTokens', () {
