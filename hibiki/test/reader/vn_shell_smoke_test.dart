@@ -215,4 +215,53 @@ void main() {
       reason: 'applyImageMaxVars is VN-only; paginated uses its own image vars',
     );
   });
+
+  // BUG-718：VN 模式按字符偏移恢复（restoreToCharOffset）时整页空白。根因——
+  // restoreToCharOffset 只由 boot 块之后的 host-compat shim IIFE 挂上，而 boot 的
+  // `if (document.readyState==='complete')` 分支在 setup 脚本注入时同步调用
+  // `window.hoshiReader.restoreToCharOffset(<offset>)`。shim 尚未定义 → TypeError →
+  // 中断整个外层 setup IIFE → 尾部的 `#hoshi-cloak` 移除永不执行 → body 保持
+  // visibility:hidden → 空白。根因修复：boot 块必须排在 shim IIFE 之后（restore*
+  // 方法先定义再被调用），且 boot restore 套 try/catch，任何 restore 错误都不再
+  // 连累 cloak 移除。headless WebView 跑不到真实 cloak 时序，这里钉死源码顺序契约。
+  test('BUG-718: charOffset-restore shim is defined BEFORE the boot calls it',
+      () {
+    const int offset = 22059;
+    final String shell =
+        ReaderVisualNovelScripts.vnShellScript(initialCharOffset: offset);
+    // boot must restore by charOffset for a saved position.
+    final int bootCall =
+        shell.indexOf('window.hoshiReader.restoreToCharOffset($offset)');
+    expect(bootCall, greaterThanOrEqualTo(0),
+        reason: 'charOffset restore must call restoreToCharOffset($offset)');
+    // the host-compat shim that defines restoreToCharOffset must appear earlier
+    // in the script than the boot call site (so it is not undefined when called).
+    final int shimDef = shell.indexOf('vn.restoreToCharOffset = ');
+    expect(shimDef, greaterThanOrEqualTo(0),
+        reason: 'restoreToCharOffset shim must exist');
+    expect(shimDef, lessThan(bootCall),
+        reason:
+            'restoreToCharOffset shim must be defined BEFORE the boot block '
+            'calls it — otherwise a synchronous TypeError aborts the setup IIFE '
+            'and #hoshi-cloak is never removed (BUG-718 blank screen)');
+    // boot restore must be wrapped so a future restore error cannot strand the
+    // cloak / caret / gesture setup that follows it in the outer IIFE.
+    final int loadListener =
+        shell.indexOf("window.addEventListener('load', function() {");
+    expect(loadListener, greaterThan(shimDef),
+        reason: 'boot (load listener) must come after the shim IIFE');
+    expect(shell.substring(loadListener).contains('try {'), isTrue,
+        reason: 'boot restore must be wrapped in try/catch');
+    // dispatch via shellScript(vnMode:true, initialCharOffset:) keeps the order.
+    final String viaShell = ReaderPaginationScripts.shellScript(
+      vnMode: true,
+      initialCharOffset: offset,
+    );
+    expect(
+      viaShell.indexOf('vn.restoreToCharOffset = ') <
+          viaShell.indexOf('window.hoshiReader.restoreToCharOffset($offset)'),
+      isTrue,
+      reason: 'dispatched VN shell must keep shim-before-boot ordering',
+    );
+  });
 }
