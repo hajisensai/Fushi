@@ -290,6 +290,20 @@ SettingsDestination buildLookupDestination() {
               // spec 2026-07-10 §7：setter 内部经 applyDesktopClipboardLifecycle
               // 幂等 start/stop，此处不再直接操作服务。
               await settingsContext.appModel.setDesktopClipboardEnabled(value);
+              // 默认去向=panel（用户拍板）：开总开关时若去向是面板则补预热
+              // （启动预热要求「开关开 且 去向 panel」双条件）；关总开关时收起
+              // 面板（服务已停，面板不该留着最后一句挂在屏上）。
+              if (ClipboardPanelController.isSupported) {
+                if (value &&
+                    settingsContext.appModel.desktopClipboardDestination ==
+                        DesktopClipboardDestination.panel) {
+                  unawaited(
+                      ClipboardPanelController.instance.ensurePrewarmed());
+                } else if (!value) {
+                  await ClipboardPanelController.instance
+                      .hidePanel(pause: false);
+                }
+              }
               settingsContext.refresh();
             },
           ),

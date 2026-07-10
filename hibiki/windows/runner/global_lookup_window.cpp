@@ -471,25 +471,85 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
+namespace {
+
+// spec §6 Win10 translucency fallback — the undocumented user32
+// SetWindowCompositionAttribute accent policy (the API TranslucentTB /
+// EarTrumpet shipped on for ~a decade; Win10 is feature-frozen so the removal
+// risk is effectively nil). Win10 has no documented per-window backdrop and
+// WS_EX_LAYERED is WebView2-incompatible, so this is the only viable
+// translucency path there. Deliberately ACCENT_ENABLE_BLURBEHIND (3), NOT
+// ACCENT_ENABLE_ACRYLICBLURBEHIND (4): the acrylic accent has a well-known,
+// never-fixed drag/resize lag regression since Win10 1903 — and the panel is
+// repositioned via the HTCAPTION modal drag loop, which would hit it head-on.
+// GradientColor is ABGR and must carry a non-zero alpha on some builds for the
+// blur to engage (0x01 black tint = visually neutral).
+struct AccentPolicy {
+  int accent_state;
+  int accent_flags;
+  DWORD gradient_color;
+  int animation_id;
+};
+
+struct WindowCompositionAttribData {
+  int attrib;
+  PVOID pv_data;
+  SIZE_T cb_data;
+};
+
+using SetWindowCompositionAttributeProc =
+    BOOL(WINAPI*)(HWND, WindowCompositionAttribData*);
+
+bool ApplyWin10AccentBlurBehind(HWND hwnd) {
+  const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+  if (user32 == nullptr) {
+    return false;
+  }
+  const auto set_wca = reinterpret_cast<SetWindowCompositionAttributeProc>(
+      GetProcAddress(user32, "SetWindowCompositionAttribute"));
+  if (set_wca == nullptr) {
+    return false;
+  }
+  AccentPolicy accent{};
+  accent.accent_state = 3;             // ACCENT_ENABLE_BLURBEHIND
+  accent.accent_flags = 0;
+  accent.gradient_color = 0x01000000;  // ABGR: alpha 0x01, black tint
+  accent.animation_id = 0;
+  WindowCompositionAttribData data{};
+  data.attrib = 19;  // WCA_ACCENT_POLICY
+  data.pv_data = &accent;
+  data.cb_data = sizeof(accent);
+  return set_wca(hwnd, &data) != FALSE;
+}
+
+}  // namespace
+
 bool GlobalLookupWindow::ApplySystemBackdrop() {
   if (hwnd_ == nullptr) {
     return false;
   }
-  // spec §6 semi-transparency gate — Win11 22H2+ system backdrop: DWM paints
-  // acrylic (blurred desktop content behind the window) wherever the client
-  // pixels are transparent; the WebView2 default background is already fully
-  // transparent (put_DefaultBackgroundColor A=0, TODO-893), so a CSS rgba card
-  // background composites over the acrylic. Extend the frame into the whole
-  // client area first — without it the backdrop only covers the (zero-size)
-  // frame region. On Win10 / pre-22H2 DwmSetWindowAttribute rejects the
-  // attribute and we report false: the panel stays opaque and Dart hides the
-  // opacity slider (graceful degrade, spec §6 fallback).
+  // spec §6 semi-transparency gate — translucency chain (first hit wins):
+  // 1) Win11 22H2+ system backdrop: DWM paints acrylic (blurred desktop
+  //    content behind the window) wherever the client pixels are transparent;
+  //    the WebView2 default background is already fully transparent
+  //    (put_DefaultBackgroundColor A=0, TODO-893), so a CSS rgba card
+  //    background composites over the acrylic. Extend the frame into the whole
+  //    client area first — without it the backdrop only covers the (zero-size)
+  //    frame region.
+  // 2) Win10 fallback: undocumented accent-policy blur-behind (see
+  //    ApplyWin10AccentBlurBehind above) — same WebView2 transparency
+  //    prerequisite, plain blur instead of acrylic.
+  // 3) Both unavailable -> false: the panel stays opaque and Dart hides the
+  //    opacity slider (graceful degrade, spec §6 fallback).
   const MARGINS margins{-1, -1, -1, -1};
   DwmExtendFrameIntoClientArea(hwnd_, &margins);
   int backdrop = 3;  // DWMSBT_TRANSIENTWINDOW (acrylic)
   const HRESULT hr = DwmSetWindowAttribute(
       hwnd_, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &backdrop, sizeof(backdrop));
-  return SUCCEEDED(hr);
+  if (SUCCEEDED(hr)) {
+    return true;
+  }
+  return ApplyWin10AccentBlurBehind(hwnd_);
 }
 
 void GlobalLookupWindow::SetTopmost(bool topmost) {

@@ -95,18 +95,26 @@
   `DwmExtendFrameIntoClientArea`**（`GlobalLookupWindow::ApplySystemBackdrop`，
   面板 channel `applyBackdrop` 返回 OS 是否接受）；`WS_EX_LAYERED` 仍不可用
   （与 WebView2 组合表面不共存），不碰。
-- **M0 gate（改为验证 acrylic 组合）**：真机验证 backdrop + 透明 WebView2 像素
-  + rgba 卡背景的合成效果（能否真透出底下内容）。**gate 失败降级已实现**：
-  `applyBackdrop` 返回 false（Win10 / 旧 Win11 / 组合失败）时面板恒 alpha=1
-  （不透明）、透明度滑杆隐藏（`ClipboardPanelController.backdropOk` 门控）——
-  设计其余部分不受影响。
+- **Win10 回退（2026-07-10 用户要求研究后补）**：Win10 无文档化 per-window
+  backdrop，唯一可行路 = 未文档化 `SetWindowCompositionAttribute` ACCENT_POLICY
+  （TranslucentTB/EarTrumpet 用了近十年；Win10 功能冻结，消失风险趋零）。刻意用
+  `ACCENT_ENABLE_BLURBEHIND(3)` 而非 `ACRYLICBLURBEHIND(4)`——acrylic accent 自
+  Win10 1903 起有从未修复的拖动/缩放卡顿回归，而面板靠 HTCAPTION 拖动摆位会正面
+  命中；BLURBEHIND 无此 lag，仍是「模糊+半透明」。GradientColor 带 0x01 alpha
+  黑 tint（部分版本 alpha=0 不生效）。透明度链：Win11 acrylic → Win10 blur →
+  都不行才不透明。
+- **M0 gate（验证透明合成）**：真机验证 backdrop/accent + 透明 WebView2 像素
+  + rgba 卡背景的合成效果（能否真透出底下内容）。本机 Win11 验 acrylic 路；
+  Win10 accent 路无 Win10 真机时标注「机会性验证」。**gate 失败降级已实现**：
+  `applyBackdrop` 返回 false（两级都失败）时面板恒 alpha=1（不透明）、透明度
+  滑杆隐藏（`ClipboardPanelController.backdropOk` 门控）——设计其余部分不受影响。
 
 ## 7. 设置、生命周期与向后兼容
 
 ### 新增/调整 prefs
 | key | 类型/默认 | 说明 |
 |---|---|---|
-| `desktop_clipboard_destination` | string `main`（默认） | `main` / `panel` / `transient`；`panel`/`transient` 仅 Windows 且覆盖窗 `isSupported` 时可见 |
+| `desktop_clipboard_destination` | string `panel`（默认，用户 2026-07-10 拍板改） | `main` / `panel` / `transient`；`panel`/`transient` 仅 Windows 且覆盖窗 `isSupported` 时可见；非 Windows 路由自动退回 main |
 | `clipboard_panel_opacity` | double `0.85` | 卡片背景不透明度，0.5–1.0 |
 | `clipboard_panel_rect` | string（逻辑像素 `x,y,w,h`） | 位置/尺寸记忆，恢复时 clamp 工作区 |
 | `clipboard_panel_pinned` | bool `true` | TOPMOST 图钉 |
@@ -123,7 +131,12 @@
 - `app_model.dart:882-886` / `home_page.dart:224,273-279` 的守卫注释同步改写，防后人按旧注释「修复」回去。
 
 ### 兼容红线（Never break userspace）
-- 默认 `destination=main` → 已开启剪贴板查词的存量用户升级后行为零变化。
+- **默认 `destination=panel`（2026-07-10 用户显式拍板，覆盖初版「默认 main 零
+  破坏」决策）**：Windows 存量用户若已开启剪贴板查词，升级后复制改弹独立面板
+  ——这是产品决策不是事故；显式选过 `main` 的用户不受影响（存值优先）。
+  macOS/Linux 覆盖窗不可用，路由自动退回主窗 tab，行为不变。
+- 预热双条件门控：仅「剪贴板查词开 且 destination==panel」才预热第二
+  WebView2——开关关着的用户（出厂默认）零额外进程。
 - 瞬态覆盖窗（Ctrl+Alt+D）的全部现状不动；面板是加窗，不改旧窗。
 - `desktop_clipboard_window_mode` 旧值与旧 bool 迁移链（`preferences_repository.dart:398-418`）不动。
 
@@ -185,7 +198,7 @@ Ctrl+Alt+D 抓选区 = 存旧剪贴板 → 清空 → 注入 Ctrl+C（目标 app
 | 半透明 | CSS 卡背景 rgba + 透明度滑杆；整窗 alpha 不做 | `WS_EX_LAYERED` 与 WebView2 组合表面不共存；只淡背景保文字可读 |
 | 主场景交互 | 常驻 + 原地更新 + 点外不关 + 默认置顶可解钉 | 用户确认主场景=游戏/VN 自动复制流；yomitan 三痛点反推 |
 | 副档 | `transient` 去向复用现有瞬态窗 | 成本≈0，覆盖「偶尔复制」场景 |
-| 剪贴板去向 | 三选 `main`/`panel`/`transient`，默认 `main` | 存量用户零破坏 |
+| 剪贴板去向 | 三选 `main`/`panel`/`transient`，默认 **`panel`** | 初版默认 main（零破坏）；2026-07-10 用户拍板改默认独立窗口——面板即本功能的本体 |
 | 服务生命周期 | 上移 AppModel，tab 退化为 main 消费者 | 面板要求 app 级监听；单一拥有者消灭双生命周期特例 |
 | 抓选区泄漏 | 按文本一次性忽略集，随本期必修 | panel 模式下由隐性变显性；文本契约优于时间窗 |
 | texthooker 接入 | 本期不做，留 `ClipboardPanelController.update(text)` 入口 | WS 行流与剪贴板同形，后续一根线 |

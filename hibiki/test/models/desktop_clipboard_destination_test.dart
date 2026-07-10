@@ -13,14 +13,14 @@ void main() {
       }
     });
 
-    test('未知/空值回退 main（存量用户零破坏）', () {
+    test('未知/空值回退 panel（用户拍板：默认独立窗口而非主窗口）', () {
       expect(
         DesktopClipboardDestination.fromStorage(''),
-        DesktopClipboardDestination.main,
+        DesktopClipboardDestination.panel,
       );
       expect(
         DesktopClipboardDestination.fromStorage('bogus'),
-        DesktopClipboardDestination.main,
+        DesktopClipboardDestination.panel,
       );
     });
 

@@ -40,6 +40,26 @@ void main() {
     });
   });
 
+  group('半透明窗底（native 透明链）', () {
+    final String cpp =
+        File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+
+    test('Win11 acrylic 优先，Win10 accent 回退（spec §6 透明度链）', () {
+      expect(cpp.contains('DWMWA_SYSTEMBACKDROP_TYPE'), isTrue);
+      expect(cpp.contains('SetWindowCompositionAttribute'), isTrue,
+          reason: 'Win10 唯一可行半透明路（未文档化 accent policy）');
+      expect(cpp.contains('ApplyWin10AccentBlurBehind(hwnd_)'), isTrue,
+          reason: 'Win11 backdrop 失败必须回退 Win10 accent，而不是直接放弃');
+    });
+
+    test('Win10 用 BLURBEHIND(3) 而非 ACRYLICBLURBEHIND(4)（拖动 lag 回归）', () {
+      expect(cpp.contains('accent.accent_state = 3;'), isTrue,
+          reason: 'acrylic accent 自 Win10 1903 有未修复的拖动卡顿，'
+              '面板靠 HTCAPTION 拖动摆位会正面命中');
+      expect(cpp.contains('accent.accent_state = 4;'), isFalse);
+    });
+  });
+
   group('半透明卡背景（--hibiki-card-bg-* 三端契约）', () {
     test('注入端产出 rgb 三元组变量', () {
       expect(injectionDart.contains('--hibiki-card-bg-rgb'), isTrue);

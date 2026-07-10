@@ -32,9 +32,11 @@ enum DesktopClipboardWindowMode {
 }
 
 /// 剪贴板查词去向（spec 2026-07-10 剪贴板独立弹窗）：
-/// main = 主窗查词 tab（默认，现状）；panel = 常驻悬浮面板（覆盖窗第二实例，
-/// 仅 Windows）；transient = 光标处瞬态弹卡（复用全局查词覆盖窗，仅 Windows）。
-/// 未知/空存值回退 main——存量用户升级后行为零变化。
+/// panel = 常驻悬浮面板（覆盖窗第二实例，仅 Windows，**默认**——用户 2026-07-10
+/// 拍板：默认独立窗口而非主窗口）；main = 主窗查词 tab；transient = 光标处
+/// 瞬态弹卡（复用全局查词覆盖窗，仅 Windows）。
+/// 未知/空存值回退 panel（=默认）。非 Windows 平台覆盖窗不可用，去向路由
+/// （resolveDesktopLookupConsumer）自动退回主窗 tab，行为不变。
 enum DesktopClipboardDestination {
   main('main'),
   panel('panel'),
@@ -49,7 +51,7 @@ enum DesktopClipboardDestination {
         in DesktopClipboardDestination.values) {
       if (d.storageValue == value) return d;
     }
-    return DesktopClipboardDestination.main;
+    return DesktopClipboardDestination.panel;
   }
 }
 

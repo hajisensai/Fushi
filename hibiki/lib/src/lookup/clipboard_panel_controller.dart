@@ -99,9 +99,10 @@ class ClipboardPanelController {
   /// 覆盖新句。每次 update 领取单调序号，任何 await 之后发现自己已过期就放弃。
   int _updateSeq = 0;
 
-  /// 接线 channel 反向 handler；仅 destination==panel 时预热（审查修正：默认
-  /// main 的用户不为面板常驻一整棵 WebView2 进程树——零破坏承诺的一部分）。
-  /// 幂等；仅 Windows。
+  /// 接线 channel 反向 handler；仅「剪贴板查词已开启 且 destination==panel」
+  /// 时预热（审查修正的推广：默认去向改 panel 后，开关关着的用户同样不该为
+  /// 面板常驻一整棵 WebView2 进程树——预热只给真会用到面板的人）。幂等；仅
+  /// Windows。
   Future<void> start({required AppModel appModel}) async {
     if (!isSupported || _started) return;
     _started = true;
@@ -116,8 +117,9 @@ class ClipboardPanelController {
       onOverlayHidden: () => _visible = false,
     );
     await _channel.prepare(_popupAssetsDir());
-    if (appModel.desktopClipboardDestination ==
-        DesktopClipboardDestination.panel) {
+    if (appModel.desktopClipboardEnabled &&
+        appModel.desktopClipboardDestination ==
+            DesktopClipboardDestination.panel) {
       unawaited(ensurePrewarmed());
     }
     glog('panel: started rect=$_panelRect');
