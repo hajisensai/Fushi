@@ -308,10 +308,12 @@ extension _VideoLayout on _VideoHibikiPageState {
                       _buildThumbnailPreviewOverlay(controller),
                       Positioned.fill(
                         child: VideoDanmakuOverlay(
-                          items: _danmakuItems,
+                          // TODO-1376：送屏蔽过滤后的可见弹幕 + 当前样式（字号/透明度/速度/区域）。
+                          items: _danmakuVisibleItems,
                           enabled: appModel.videoDanmakuEnabled,
                           maxActive: appModel.videoDanmakuMaxActive,
                           positionMs: () => controller.positionMs ?? 0,
+                          style: _danmakuStyle,
                         ),
                       ),
                       Positioned.fill(

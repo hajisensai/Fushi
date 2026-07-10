@@ -39,6 +39,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
@@ -2530,6 +2531,18 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoDanmakuEpisodeId(String bookUid, int episodeId) =>
       prefsRepo.setVideoDanmakuEpisodeId(bookUid, episodeId);
+
+  /// 弹幕样式（字号/不透明度/速度/显示区域，TODO-1376）。
+  VideoDanmakuStyle get videoDanmakuStyle => prefsRepo.videoDanmakuStyle;
+
+  Future<void> setVideoDanmakuStyle(VideoDanmakuStyle style) =>
+      prefsRepo.setVideoDanmakuStyle(style);
+
+  /// 弹幕屏蔽规则原始多行文本（每行一条，`/pattern/` 为正则，TODO-1376）。
+  String get videoDanmakuBlockRulesText => prefsRepo.videoDanmakuBlockRulesText;
+
+  Future<void> setVideoDanmakuBlockRulesText(String value) =>
+      prefsRepo.setVideoDanmakuBlockRulesText(value);
 
   /// 桌面视频页按视频原始比例锁定原生窗口；默认开启。
   bool get videoLockWindowAspectRatio => prefsRepo.videoLockWindowAspectRatio;
