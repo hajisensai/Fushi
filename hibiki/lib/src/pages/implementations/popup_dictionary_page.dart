@@ -409,19 +409,22 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Widget _buildStack(BuildContext context) {
     if (_popup.entries.isEmpty) return const SizedBox.shrink();
 
-    // TODO-951 症状C：常驻热槽（visible=false）也要进树保持其 WebView 预热，但要停到
-    // 卡片可视区之外，避免隐藏层（Android 原生 WebView）截获触摸盖住可见层（BUG-135
-    // 同范式，这里在卡片局部坐标系内停到卡片右外侧）。Clip.none 让停在外侧的层不被裁。
+    // TODO-951 症状C：常驻热槽（visible=false）也要进树保持其 WebView 预热；停靠几何
+    // 走共享 [parkedPopupLayer]（BUG-135 单一真相：真·屏外 screen.width+8 + Visibility），
+    // 与 reader/video/首页三宿主同机制（TODO-1379）。Clip.none 让停在屏外的层不被裁、
+    // 继续预热。
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double cardWidth =
             constraints.maxWidth.isFinite ? constraints.maxWidth : 0;
+        final double cardHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
         return Stack(
           key: _resultStackKey,
           clipBehavior: Clip.none,
           children: <Widget>[
             for (int i = 0; i < _popup.entries.length; i++)
-              _buildLayer(context, i, cardWidth: cardWidth),
+              _buildLayer(context, i, cardSize: Size(cardWidth, cardHeight)),
           ],
         );
       },
@@ -435,7 +438,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Widget _buildLayer(
     BuildContext context,
     int index, {
-    required double cardWidth,
+    required Size cardSize,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final DictionaryPopupEntry entry = _popup.entries[index];
@@ -497,18 +500,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
     );
 
-    // TODO-951 症状C：可见层满卡渲染（BUG-051）；隐藏层（常驻热槽 / 挂起冷层）停到卡片
-    // 右外侧继续预热，并用 IgnorePointer 兜住（Android 隐藏原生 WebView 仍可能截触摸，
-    // 与 BUG-135 parkedPopupLayer 同范式，这里在卡片局部坐标系内停到外侧）。
-    if (entry.visible) {
-      return Positioned.fill(child: layer);
-    }
-    return Positioned(
-      left: cardWidth + 8,
-      top: 0,
-      width: cardWidth > 0 ? cardWidth : null,
-      bottom: 0,
-      child: IgnorePointer(child: layer),
+    // TODO-951 症状C：可见层满卡渲染（BUG-051）；隐藏层（常驻热槽 / 挂起冷层）交给共享
+    // [parkedPopupLayer] 停到真·屏外继续预热（BUG-135 收口处，与 reader/video/首页同
+    // 机制）。TODO-1379：此前只在卡片局部坐标系挪 `cardWidth + 8` + IgnorePointer——
+    // 窄卡/宽屏下隐藏的 Android 原生 WebView 平台视图仍留在屏内，IgnorePointer 只挡
+    // Flutter 命中测试、挡不住原生视图直接截获触摸，弹窗内上下滚动/点击全被吃掉（横滑
+    // 关闭是 Flutter 层手势所以幸存）。screen 取窗口尺寸：卡片原点 ≥ 0，卡片局部
+    // x = screen.width + 8 必在窗外，原生视图放行触摸。
+    return parkedPopupLayer(
+      pos: Rect.fromLTWH(0, 0, cardSize.width, cardSize.height),
+      visible: entry.visible,
+      screen: MediaQuery.sizeOf(context),
+      child: layer,
     );
   }
 
