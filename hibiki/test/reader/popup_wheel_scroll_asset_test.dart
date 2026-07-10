@@ -91,8 +91,39 @@ void main() {
     expect(preventDefault, greaterThan(absorbCheck));
   });
 
-  test('ignores ctrl+wheel zoom gestures and pure horizontal scroll', () {
+  test('ignores ctrl+wheel zoom gestures and predominantly-horizontal scroll',
+      () {
     expect(js, contains('e.ctrlKey'));
-    expect(js, contains('Math.abs(e.deltaY) <= Math.abs(e.deltaX)'));
+    // TODO-1387: the horizontal-reject predicate was tightened from a coarse
+    // `deltaY <= deltaX` early-return to a strict lead plus a jitter margin, so
+    // equal-magnitude and jittery-vertical touchpad frames still scroll instead
+    // of being dropped. The old bare `<=` reject must be gone.
+    expect(js.contains('Math.abs(e.deltaY) <= Math.abs(e.deltaX)'), isFalse,
+        reason: 'the coarse <= horizontal reject dropped touchpad vertical '
+            'frames that carried horizontal jitter (TODO-1387); it must be gone');
+    expect(js, contains('POPUP_WHEEL_HORIZONTAL_MARGIN'));
+    expect(js, contains('absX > absY + POPUP_WHEEL_HORIZONTAL_MARGIN'));
+  });
+
+  // TODO-1387: a precision touchpad reports deltaMode=PIXEL with a tiny
+  // fractional deltaY; after the 0.24 factor and the zoom divide each frame is a
+  // fraction of a layout pixel. Without a cross-event accumulator the fraction
+  // was lost every frame (preventDefault killed native scroll while the popup
+  // advanced ~0px), so slow touchpad scrolling froze ("时好时坏"). The handler
+  // must carry the sub-pixel remainder and emit only whole pixels. Behavioural
+  // proof (real scroll displacement) lives in popup_wheel_scroll_behavior_test.
+  test('carries the sub-pixel wheel remainder across events (TODO-1387)', () {
+    expect(js, contains('_popupWheelResidual'),
+        reason:
+            'the wheel handler must keep a sub-pixel remainder accumulator');
+    expect(js, contains('const step = Math.trunc(_popupWheelResidual);'),
+        reason:
+            'only the whole-pixel part may be emitted; the fraction carries');
+    expect(js, contains('POPUP_WHEEL_RESIDUAL_IDLE_MS'),
+        reason: 'a stale remainder must be reset after an idle gap');
+    // The emitted scroll must be the truncated integer, never the raw fractional
+    // layout step (regression: scrollBy(fraction) loses the sub-pixel each frame).
+    expect(js, contains("scroller.scrollBy({ top: step, behavior: 'auto' })"));
+    expect(js, contains("window.scrollBy({ top: step, behavior: 'auto' })"));
   });
 }
