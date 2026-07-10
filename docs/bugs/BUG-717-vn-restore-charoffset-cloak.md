@@ -1,4 +1,4 @@
-## BUG-709 · VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白
+## BUG-717 · VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白
 - **报告**：2026-07-10（用户：Windows 桌面，视觉小说/VN 模式「遮罩没去掉、一直没画面」）
 - **真实性**：✅ 真 bug（Windows 桌面离屏真机复现 + uncloak 因果实验坐实，非假设）。根因 `hibiki/lib/src/reader/reader_visual_novel_scripts.dart`（VN shell boot 块调用晚定义的 `restoreToCharOffset` shim）。
 
@@ -22,5 +22,5 @@ VN（视觉小说）模式下，凡是**有保存阅读进度**的书（几乎�
 把 VN shell 的 boot 块（`window.addEventListener('load', …)` + `if (document.readyState==='complete') …`）**移到 host-compat shim IIFE 之后**，使 `restoreToCharOffset`（及其余 shim）在 boot 调用它之前就已定义 → 不再抛错 → 外层 setup IIFE 走到尾、cloak 正常移除。并给 boot 的 restore 调用套 `try/catch`（记录 `[HoshiVN] boot restore failed`），防止未来任何 restore 错误再次连累后续 setup 与 cloak 移除。仅 VN 模式改动，分页/连续零变化。
 
 - **[x] ① 已修复** — `hibiki/lib/src/reader/reader_visual_novel_scripts.dart`：boot 块移至 shim IIFE 之后 + try/catch 包裹。提交哈希见分支 `worktree-vn-mask-stale-restore`。
-- **[x] ② 已加自动化测试** — `hibiki/test/reader/vn_shell_smoke_test.dart`：新增 `BUG-709`——断言（含 `initialCharOffset>=0` 的 shell）里 `restoreToCharOffset` 的 shim 定义（`vn.restoreToCharOffset = `）出现在 boot 的 `window.hoshiReader.restoreToCharOffset(<offset>)` 调用**之前**，且 boot restore 被 `try {` 包裹。源码/生成器守卫层（headless WebView 跑不到真实 cloak 移除时序）。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/vn_shell_smoke_test.dart`：新增 `BUG-717`——断言（含 `initialCharOffset>=0` 的 shell）里 `restoreToCharOffset` 的 shim 定义（`vn.restoreToCharOffset = `）出现在 boot 的 `window.hoshiReader.restoreToCharOffset(<offset>)` 调用**之前**，且 boot restore 被 `try {` 包裹。源码/生成器守卫层（headless WebView 跑不到真实 cloak 移除时序）。
 - **备注**：真机 Gate 已在 Windows 桌面离屏复现并（待）复测——读到一半的书切 VN，应立即显文字/图片，无常驻空白、无需 uncloak。与 [BUG-516](BUG-516-vn-mode-mask-tiny-image.md)（VN initialize fail-open）同属 VN 遮罩家族但根因不同（本条是 restoreToCharOffset shim 定义时序 → cloak 未移除）。

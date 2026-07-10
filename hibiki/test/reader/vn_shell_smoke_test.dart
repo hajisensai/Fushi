@@ -216,7 +216,7 @@ void main() {
     );
   });
 
-  // BUG-709：VN 模式按字符偏移恢复（restoreToCharOffset）时整页空白。根因——
+  // BUG-717：VN 模式按字符偏移恢复（restoreToCharOffset）时整页空白。根因——
   // restoreToCharOffset 只由 boot 块之后的 host-compat shim IIFE 挂上，而 boot 的
   // `if (document.readyState==='complete')` 分支在 setup 脚本注入时同步调用
   // `window.hoshiReader.restoreToCharOffset(<offset>)`。shim 尚未定义 → TypeError →
@@ -224,7 +224,7 @@ void main() {
   // visibility:hidden → 空白。根因修复：boot 块必须排在 shim IIFE 之后（restore*
   // 方法先定义再被调用），且 boot restore 套 try/catch，任何 restore 错误都不再
   // 连累 cloak 移除。headless WebView 跑不到真实 cloak 时序，这里钉死源码顺序契约。
-  test('BUG-709: charOffset-restore shim is defined BEFORE the boot calls it',
+  test('BUG-717: charOffset-restore shim is defined BEFORE the boot calls it',
       () {
     const int offset = 22059;
     final String shell =
@@ -242,7 +242,7 @@ void main() {
     expect(shimDef, lessThan(bootCall),
         reason: 'restoreToCharOffset shim must be defined BEFORE the boot block '
             'calls it — otherwise a synchronous TypeError aborts the setup IIFE '
-            'and #hoshi-cloak is never removed (BUG-709 blank screen)');
+            'and #hoshi-cloak is never removed (BUG-717 blank screen)');
     // boot restore must be wrapped so a future restore error cannot strand the
     // cloak / caret / gesture setup that follows it in the outer IIFE.
     final int loadListener =

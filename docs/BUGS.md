@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-709](bugs/BUG-709-vn-restore-charoffset-cloak.md) | ✅ | ✅ | VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白 |
+| [BUG-717](bugs/BUG-717-vn-restore-charoffset-cloak.md) | ✅ | ✅ | VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白 |
 | [BUG-708](bugs/BUG-708-interconnect-repair-blocked-by-lingering-pin-dialog.md) | ✅ | ✅ | 公网PIN配对取消后重新配对被host常驻PIN弹窗挡成拒绝 |
 | [BUG-707](bugs/BUG-707-selection-capture-clipboard-echo.md) | ✅ | ✅ | 全局查词抓选区的剪贴板回声泄漏进剪贴板查词管线 |
 | [BUG-706](bugs/BUG-706-lookup-popup-blank.md) | ✅ | ✅ | 查词弹窗全空白: __hibikiRoot 函数名与 window.__hibikiRoot marker 冲突 |
