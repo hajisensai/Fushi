@@ -5,163 +5,61 @@
 // and answers the overlay's reverse calls: image:// gaiji bytes (getMedia) and
 // JS bridge messages (jsMessage — dismiss/audio in later phases).
 //
+// spec 2026-07-10 — the implementation moved to the instance-level
+// [OverlayWindowChannel] (shared with the persistent clipboard panel's second
+// window). This file stays as the zero-churn static facade the 1700-line
+// GlobalLookupController calls; every method is a one-line delegate to the
+// shared instance bound to the global_lookup MethodChannel.
+//
 // Native counterpart: windows/runner/global_lookup_window.cpp +
 // FlutterWindow::RegisterGlobalLookupChannel().
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/lookup/global_lookup_log.dart';
+import 'package:hibiki/src/lookup/overlay_window_channel.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
-/// Thin wrapper over [HibikiChannels.globalLookup]. Static because there is a
-/// single overlay per process.
-/// Native reply for [GlobalLookupChannel.showAt]: window-created flag plus the
-/// cursor monitor's work area in PHYSICAL px (0 when unavailable). Divide the
-/// work dimensions by the device pixel ratio to get CSS px for the cascade
-/// layout (TODO-893 symptom 2).
-class GlobalLookupShowResult {
-  const GlobalLookupShowResult({
-    required this.ok,
-    required this.workWidth,
-    required this.workHeight,
-    this.cursorWorkX = 0,
-    this.cursorWorkY = 0,
-  });
-
-  /// Whether the native overlay window was created.
-  final bool ok;
-
-  /// Cursor monitor work-area width in PHYSICAL px (0 when unavailable).
-  final double workWidth;
-
-  /// Cursor monitor work-area height in PHYSICAL px (0 when unavailable).
-  final double workHeight;
-
-  /// TODO-893 v2 (symptom 3) — the overlay window-local origin's offset from the
-  /// cursor monitor work-area origin, in PHYSICAL px (0 when unavailable). The
-  /// window-local (0,0) maps to (cursorWorkX, cursorWorkY) inside the work area;
-  /// divide by the device pixel ratio for CSS px. Used to translate the host's
-  /// window-local child anchor rect into the SAME work-area-absolute domain as
-  /// computeFrameRect's screenW/H, eliminating the zero-point mismatch.
-  final double cursorWorkX;
-
-  /// See [cursorWorkX]: the vertical component (PHYSICAL px).
-  final double cursorWorkY;
-}
+export 'package:hibiki/src/lookup/overlay_window_channel.dart'
+    show GlobalLookupShowResult;
 
 abstract final class GlobalLookupChannel {
-  static const MethodChannel _channel = HibikiChannels.globalLookup;
+  static const OverlayWindowChannel _impl =
+      OverlayWindowChannel(HibikiChannels.globalLookup);
 
-  /// Sets the absolute folder that holds popup.html / popup.js / popup.css and
-  /// popup_bridge_adapter.js (flutter_assets/assets/popup at runtime). Must be
-  /// called once before the first [showAt].
-  static Future<void> prepare(String assetsDir) =>
-      _channel.invokeMethod<void>('prepare', <String, Object?>{
-        'assetsDir': assetsDir,
-      });
+  static Future<void> prepare(String assetsDir) => _impl.prepare(assetsDir);
 
-  /// TODO-1079 — root-cause fix: build the overlay window + WebView2 OFF-SCREEN
-  /// and navigate to host.html at startup (after the first frame) so the first
-  /// hotkey lookup hits a WARM surface. Without this the very first (and any
-  /// post-idle) lookup raced a cold WebView2 create chain (environment ->
-  /// controller -> navigate -> load the popup.html child iframes, commonly
-  /// >450ms) while the reveal fired against a not-yet-ready surface -> "window
-  /// present but blank" / self-closed. Idempotent natively (no-op once warm).
   static Future<void> prewarmWebView({int width = 420, int height = 600}) =>
-      _channel.invokeMethod<void>('prewarmWebView', <String, Object?>{
-        'width': width,
-        'height': height,
-      });
+      _impl.prewarmWebView(width: width, height: height);
 
-  /// TODO-1079 — whether the overlay WebView2 finished its initial navigation
-  /// (host document + popup iframes loaded). The ready-driven reveal fallback
-  /// confirms this before revealing so a not-yet-loaded overlay never flashes as
-  /// a blank window. False on any non-bool native reply (treat as not ready).
-  static Future<bool> isWebViewReady() async =>
-      (await _channel.invokeMethod<bool>('isWebViewReady')) ?? false;
+  static Future<bool> isWebViewReady() => _impl.isWebViewReady();
 
-  /// Shows the overlay at screen coordinates (physical pixels) without stealing
-  /// focus. Returns the native reply: whether the window was created plus the
-  /// cursor monitor's work area in PHYSICAL px (TODO-893 — so the Dart cascade
-  /// layout reasons about the real display, not the off-screen measurement
-  /// canvas). `workW`/`workH` are 0 when the monitor could not be queried.
   static Future<GlobalLookupShowResult> showAt({
     required int x,
     required int y,
     int width = 420,
     int height = 600,
     bool atCursor = false,
-  }) async {
-    final Object? reply =
-        await _channel.invokeMethod<Object?>('showAt', <String, Object?>{
-      'x': x,
-      'y': y,
-      'width': width,
-      'height': height,
-      'atCursor': atCursor,
-    });
-    if (reply is Map) {
-      double num2(Object? v) => (v is num) ? v.toDouble() : 0;
-      return GlobalLookupShowResult(
-        ok: reply['ok'] == true,
-        workWidth: num2(reply['workW']),
-        workHeight: num2(reply['workH']),
-        cursorWorkX: num2(reply['cursorWorkX']),
-        cursorWorkY: num2(reply['cursorWorkY']),
+  }) =>
+      _impl.showAt(
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        atCursor: atCursor,
       );
-    }
-    // Legacy/native fallback (bool reply): no work-area reported.
-    return GlobalLookupShowResult(
-      ok: reply == true,
-      workWidth: 0,
-      workHeight: 0,
-    );
-  }
 
-  /// Injects [popupJson] and calls window.renderPopup() in the overlay WebView.
-  static Future<void> render(String popupJson) =>
-      _channel.invokeMethod<void>('render', <String, Object?>{
-        'json': popupJson,
-      });
+  static Future<void> render(String popupJson) => _impl.render(popupJson);
 
-  /// Resizes the overlay window (physical px), clamped to the work area by
-  /// native. Keeps the current top-left anchor.
   static Future<void> resize({required int width, required int height}) =>
-      _channel.invokeMethod<void>('resize', <String, Object?>{
-        'width': width,
-        'height': height,
-      });
+      _impl.resize(width: width, height: height);
 
-  /// Resolves a deferred JS bridge promise (audio handlers). The overlay adapter
-  /// does `JSON.parse(arg)` on the second argument of
-  /// window.__hibikiBridgeResolve(id, arg) — i.e. it expects a JS *string*
-  /// containing the reply's JSON. So we double-encode: the inner jsonEncode
-  /// produces the reply JSON text, the outer jsonEncode turns that into a JS
-  /// string literal native can splice in verbatim (keeping the native side free
-  /// of any escaping logic).
   static Future<void> resolveBridge(int id, Object? value) =>
-      _channel.invokeMethod<void>('resolveBridge', <String, Object?>{
-        'id': id,
-        'value': jsonEncode(jsonEncode(value)),
-      });
+      _impl.resolveBridge(id, value);
 
-  /// Moves the off-screen-rendered overlay to the cursor at its final size and
-  /// makes it visible. Called once per lookup after the page self-measures, so
-  /// the user never sees the measure→resize jitter.
   static Future<void> reveal({required int width, required int height}) =>
-      _channel.invokeMethod<void>('reveal', <String, Object?>{
-        'width': width,
-        'height': height,
-      });
+      _impl.reveal(width: width, height: height);
 
-  /// TODO-867 P3c E1 — reveals/resizes the overlay to the nested-stack union
-  /// bounding box. [dx]/[dy] offset the window from the cursor anchor (physical
-  /// px; the host bbox origin times dpr) so a child cascading left/up shifts the
-  /// window while keeping the root card pinned at the cursor; [width]/[height]
-  /// are the bbox size (physical px). Native clamps to the monitor work area.
   static Future<void> revealStack({
     required int dx,
     required int dy,
@@ -170,80 +68,27 @@ abstract final class GlobalLookupChannel {
     double left = 0,
     double top = 0,
   }) =>
-      _channel.invokeMethod<void>('revealStack', <String, Object?>{
-        'dx': dx,
-        'dy': dy,
-        'width': width,
-        'height': height,
-        // TODO-1231 P2 — the union bbox origin in window-local CSS px. Native
-        // RevealStack forwards it to the host's commitLayerShift AFTER SetWindowPos
-        // so the compensating layer shift lands only once the window has moved
-        // (window first, content ~1 frame later), killing the cross-vsync geometry
-        // lurch of a left/up nested cascade. dx/dy stay the physical-px window
-        // offset; left/top are the CSS-px values the host negates for the layer.
-        'left': left,
-        'top': top,
-      });
+      _impl.revealStack(
+        dx: dx,
+        dy: dy,
+        width: width,
+        height: height,
+        left: left,
+        top: top,
+      );
 
-  /// Hides the overlay. [notify] true (default) = a genuine dismissal that fires
-  /// the native `overlayHidden` callback (so a resume-on-dismiss / reveal-state
-  /// reset can hang off it, TODO-1233); false = the programmatic reset the
-  /// controller runs right BEFORE a fresh lookup, which must NOT look like a user
-  /// dismissal (else it would spuriously fire between two lookups).
-  static Future<void> hide({bool notify = true}) =>
-      _channel.invokeMethod<void>('hide', <String, Object?>{'notify': notify});
+  static Future<void> hide({bool notify = true}) => _impl.hide(notify: notify);
 
-  static Future<bool> isShowing() async =>
-      (await _channel.invokeMethod<bool>('isShowing')) ?? false;
+  static Future<bool> isShowing() => _impl.isShowing();
 
-  /// Wires the overlay's reverse calls. [onGetMedia] resolves gaiji bytes for an
-  /// `image://` url (via HoshiDicts.getMediaFile); [onJsMessage] receives raw
-  /// bridge messages decoded from JSON.
   static void setHandlers({
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,
     void Function()? onOverlayHidden,
-  }) {
-    _channel.setMethodCallHandler((MethodCall call) async {
-      switch (call.method) {
-        case 'getMedia':
-          final Map<Object?, Object?> args =
-              call.arguments as Map<Object?, Object?>;
-          final String url = args['url'] as String;
-          return await onGetMedia(url);
-        case 'jsMessage':
-          final Object? raw = call.arguments;
-          if (raw is String) {
-            final Object? decoded = jsonDecode(raw);
-            if (decoded is Map) {
-              onJsMessage(decoded.cast<String, Object?>());
-            }
-          }
-          return null;
-        case 'nativeError':
-          // TODO-1153 -- the native overlay reported a WebView2 bring-up failure
-          // (e.g. environment create 0x8007139F). Surface it in ErrorLogService
-          // (user-visible error log + copy/upload link) AND the glookup diagnostic
-          // file, so "app-external lookup shows no popup" is diagnosable rather
-          // than silently swallowed. Mirrors the TODO-1086 hotkey visibility fix.
-          final Object? message = call.arguments;
-          if (message is String && message.isNotEmpty) {
-            glog('nativeError: $message');
-            ErrorLogService.instance.log(
-              'GlobalLookupChannel.nativeError',
-              message,
-            );
-          }
-          return null;
-        case 'overlayHidden':
-          // TODO-1233 -- the native overlay dismissed (foreground hook / click
-          // outside / JS dismiss). Let the controller reset its reveal state /
-          // notify a resume-on-dismiss consumer (video subtitle lookup BUG-072).
-          onOverlayHidden?.call();
-          return null;
-        default:
-          return null;
-      }
-    });
-  }
+  }) =>
+      _impl.setHandlers(
+        onGetMedia: onGetMedia,
+        onJsMessage: onJsMessage,
+        onOverlayHidden: onOverlayHidden,
+      );
 }

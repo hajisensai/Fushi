@@ -73,6 +73,14 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<GlobalLookupWindow> global_lookup_window_;
   void RegisterGlobalLookupChannel();
 
+  // spec 2026-07-10: the persistent clipboard-lookup panel — a SECOND
+  // GlobalLookupWindow instance (no dismiss hooks, own WebView2 user-data
+  // folder) driven by its own channel. See global_lookup_window.h.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      clipboard_panel_channel_;
+  std::unique_ptr<GlobalLookupWindow> clipboard_panel_window_;
+  void RegisterClipboardPanelChannel();
+
   // TODO-1030 M0: Windows UIA foreground-selection context capture channel.
   // Dart calls captureContext; the UIA work runs on a worker thread and the
   // result is marshalled back via WM_FGSEL_CAPTURE_DONE (see flutter_window.cpp).

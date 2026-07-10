@@ -534,6 +534,7 @@ bool FlutterWindow::OnCreate() {
 
   RegisterFloatingLyricChannel();
   RegisterGlobalLookupChannel();
+  RegisterClipboardPanelChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
 
@@ -980,6 +981,176 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "isShowing") {
           result->Success(
               flutter::EncodableValue(global_lookup_window_->IsShowing()));
+        } else {
+          result->NotImplemented();
+        }
+      });
+}
+
+// spec 2026-07-10 — the persistent clipboard-lookup panel: a SECOND
+// GlobalLookupWindow instance on its own channel. Mirrors
+// RegisterGlobalLookupChannel wiring (media/message/error/hidden callbacks +
+// the same method set) with the panel differences applied as data:
+// - SetArmDismissHooks(false): click-outside / foreground-switch never close it
+//   (persistent semantics; it also never touches the hook-owner singleton).
+// - SetUserDataLeaf(ClipboardPanelWebView2): its own WebView2 profile folder so
+//   its environment options never have to match the lookup overlay's
+//   (same-folder different-options fails with 0x8007139F).
+// - Extra methods: applyBackdrop (Win11 acrylic semi-transparency gate,
+//   spec §6) and setPinned (panel pin toggles HWND_TOPMOST).
+void FlutterWindow::RegisterClipboardPanelChannel() {
+  clipboard_panel_window_ = std::make_unique<GlobalLookupWindow>();
+  clipboard_panel_window_->SetArmDismissHooks(false);
+  clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
+
+  clipboard_panel_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/clipboard_panel",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  clipboard_panel_window_->SetMediaResolver(
+      [this](const std::string& url,
+             std::function<void(std::vector<uint8_t>)> respond) {
+        auto args = std::make_unique<flutter::EncodableValue>(
+            flutter::EncodableMap{{flutter::EncodableValue("url"),
+                                   flutter::EncodableValue(url)}});
+        auto result = std::make_unique<
+            flutter::MethodResultFunctions<flutter::EncodableValue>>(
+            [respond](const flutter::EncodableValue* ok) {
+              std::vector<uint8_t> bytes;
+              if (ok != nullptr) {
+                if (const auto* b =
+                        std::get_if<std::vector<uint8_t>>(ok)) {
+                  bytes = *b;
+                }
+              }
+              respond(std::move(bytes));
+            },
+            [respond](const std::string&, const std::string&,
+                      const flutter::EncodableValue*) { respond({}); },
+            [respond]() { respond({}); });
+        clipboard_panel_channel_->InvokeMethod("getMedia", std::move(args),
+                                               std::move(result));
+      });
+
+  clipboard_panel_window_->SetMessageCallback([this](const std::string& json) {
+    clipboard_panel_channel_->InvokeMethod(
+        "jsMessage", std::make_unique<flutter::EncodableValue>(json));
+  });
+
+  clipboard_panel_window_->SetErrorCallback([this](const std::string& message) {
+    clipboard_panel_channel_->InvokeMethod(
+        "nativeError", std::make_unique<flutter::EncodableValue>(message));
+  });
+
+  clipboard_panel_window_->SetHiddenCallback([this]() {
+    clipboard_panel_channel_->InvokeMethod(
+        "overlayHidden", std::make_unique<flutter::EncodableValue>());
+  });
+
+  clipboard_panel_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const std::string& method = call.method_name();
+
+        if (method == "prepare") {
+          clipboard_panel_window_->SetPopupAssetsDir(
+              WideFromValue(args, "assetsDir", L""));
+          result->Success();
+        } else if (method == "prewarmWebView") {
+          clipboard_panel_window_->PrewarmWebView(
+              IntFromValue(args, "width", 420),
+              IntFromValue(args, "height", 600), GetHandle());
+          result->Success();
+        } else if (method == "isWebViewReady") {
+          result->Success(flutter::EncodableValue(
+              clipboard_panel_window_->IsWebViewReady()));
+        } else if (method == "showAt") {
+          // The panel is placed at a FIXED remembered rect (Dart passes the
+          // final x/y; atCursor stays supported for parity but is unused).
+          int x = IntFromValue(args, "x", 0);
+          int y = IntFromValue(args, "y", 0);
+          POINT anchor = {x, y};
+          if (BoolFromValue(args, "atCursor", false)) {
+            POINT pt;
+            if (GetCursorPos(&pt)) {
+              anchor = pt;
+              x = pt.x + 8;
+              y = pt.y + 8;
+            }
+          }
+          const bool ok = clipboard_panel_window_->ShowAt(
+              x, y, IntFromValue(args, "width", 420),
+              IntFromValue(args, "height", 600), GetHandle());
+          int work_w = 0;
+          int work_h = 0;
+          int anchor_work_x = 0;
+          int anchor_work_y = 0;
+          HMONITOR monitor =
+              MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
+          MONITORINFO mi = {};
+          mi.cbSize = sizeof(mi);
+          if (GetMonitorInfo(monitor, &mi)) {
+            work_w = mi.rcWork.right - mi.rcWork.left;
+            work_h = mi.rcWork.bottom - mi.rcWork.top;
+            anchor_work_x = x - mi.rcWork.left;
+            anchor_work_y = y - mi.rcWork.top;
+          }
+          flutter::EncodableMap reply = {
+              {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
+              {flutter::EncodableValue("workW"),
+               flutter::EncodableValue(work_w)},
+              {flutter::EncodableValue("workH"),
+               flutter::EncodableValue(work_h)},
+              {flutter::EncodableValue("cursorWorkX"),
+               flutter::EncodableValue(anchor_work_x)},
+              {flutter::EncodableValue("cursorWorkY"),
+               flutter::EncodableValue(anchor_work_y)},
+          };
+          result->Success(flutter::EncodableValue(reply));
+        } else if (method == "render") {
+          clipboard_panel_window_->RenderJson(
+              StringFromValue(args, "json", ""));
+          result->Success();
+        } else if (method == "resize") {
+          clipboard_panel_window_->ResizeTo(IntFromValue(args, "width", 0),
+                                            IntFromValue(args, "height", 0));
+          result->Success();
+        } else if (method == "reveal") {
+          clipboard_panel_window_->Reveal(IntFromValue(args, "width", 0),
+                                          IntFromValue(args, "height", 0));
+          result->Success();
+        } else if (method == "revealStack") {
+          clipboard_panel_window_->RevealStack(
+              IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
+              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
+              DoubleFromValue(args, "left", 0.0),
+              DoubleFromValue(args, "top", 0.0));
+          result->Success();
+        } else if (method == "resolveBridge") {
+          clipboard_panel_window_->ResolveBridge(
+              IntFromValue(args, "id", 0),
+              StringFromValue(args, "value", "null"));
+          result->Success();
+        } else if (method == "hide") {
+          clipboard_panel_window_->Hide(BoolFromValue(args, "notify", true));
+          result->Success();
+        } else if (method == "isShowing") {
+          result->Success(
+              flutter::EncodableValue(clipboard_panel_window_->IsShowing()));
+        } else if (method == "applyBackdrop") {
+          // spec §6 — Win11 acrylic backdrop behind the panel's transparent
+          // WebView2 pixels; returns whether the OS accepted it so Dart can
+          // gate the opacity slider (false -> panel stays opaque).
+          result->Success(flutter::EncodableValue(
+              clipboard_panel_window_->ApplySystemBackdrop()));
+        } else if (method == "setPinned") {
+          clipboard_panel_window_->SetTopmost(
+              BoolFromValue(args, "pinned", true));
+          result->Success();
         } else {
           result->NotImplemented();
         }

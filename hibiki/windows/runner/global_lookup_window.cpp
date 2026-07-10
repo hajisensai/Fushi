@@ -1,5 +1,6 @@
 #include "global_lookup_window.h"
 
+#include <dwmapi.h>
 #include <shlwapi.h>
 
 #include <fstream>
@@ -127,7 +128,11 @@ void NativeGlog(const std::string& message) {
 // environments register. Falls back to %TEMP% then to empty (default) as a last
 // resort; empty only re-risks the conflict, which the added error logging then
 // surfaces instead of swallowing.
-std::wstring OverlayUserDataFolder() {
+// spec 2026-07-10 — |leaf| is the per-instance profile directory name (lookup
+// overlay: GlobalLookupWebView2; clipboard panel: ClipboardPanelWebView2).
+// Separate folders keep the two instances' environment options independent
+// (same-folder different-options fails the second create with 0x8007139F).
+std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
   wchar_t buf[MAX_PATH];
   DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH);
   std::wstring base;
@@ -142,7 +147,7 @@ std::wstring OverlayUserDataFolder() {
   if (base.empty()) {
     return std::wstring();
   }
-  return base + L"\\Hibiki\\GlobalLookupWebView2";
+  return base + L"\\Hibiki\\" + leaf;
 }
 
 }  // namespace
@@ -201,7 +206,11 @@ GlobalLookupWindow::~GlobalLookupWindow() {
     UnhookWindowsHookEx(mouse_hook_);
     mouse_hook_ = nullptr;
   }
-  s_hook_owner_ = nullptr;
+  // Only clear the hook owner if it is ours (two instances share the static;
+  // see Hide()).
+  if (s_hook_owner_ == this) {
+    s_hook_owner_ = nullptr;
+  }
   if (controller_) {
     controller_->Close();
   }
@@ -209,13 +218,19 @@ GlobalLookupWindow::~GlobalLookupWindow() {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
   }
-  if (class_registered_) {
-    UnregisterClassW(kClassName, GetModuleHandle(nullptr));
-  }
+  // spec 2026-07-10 — the window class is PROCESS-scoped and shared by both
+  // instances (lookup overlay + clipboard panel), so no instance may
+  // UnregisterClassW it: destroying one window would rip the class out from
+  // under the other. The class stays registered for the process lifetime
+  // (registered once in EnsureWindowClass; the OS reclaims it at exit).
 }
 
 void GlobalLookupWindow::EnsureWindowClass() {
-  if (class_registered_) {
+  // Process-level once-guard: two instances share one class registration. The
+  // old per-instance bool re-ran RegisterClassExW (harmless but dirty) and let
+  // either destructor unregister the class the OTHER live window still used.
+  static bool s_class_registered = false;
+  if (s_class_registered) {
     return;
   }
   WNDCLASSEXW wc = {};
@@ -226,7 +241,7 @@ void GlobalLookupWindow::EnsureWindowClass() {
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
   wc.lpszClassName = kClassName;
   RegisterClassExW(&wc);
-  class_registered_ = true;
+  s_class_registered = true;
 }
 
 int GlobalLookupWindow::OffscreenX() const {
@@ -342,17 +357,23 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   visible_ = true;
   // Arm the click-outside dismiss only now that the card is on-screen (skip our
   // own process so interacting with the card / main window does not close it).
-  s_hook_owner_ = this;
-  if (foreground_hook_ == nullptr) {
-    foreground_hook_ = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
-        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-  }
-  if (mouse_hook_ == nullptr) {
-    mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
-                                   &GlobalLookupWindow::MouseHookProc,
-                                   GetModuleHandle(nullptr), 0);
+  // spec 2026-07-10 — the clipboard panel instance is PERSISTENT (click-outside
+  // / foreground-switch must not close it): it never arms these hooks and thus
+  // never touches the singleton s_hook_owner_, which stays owned by the
+  // transient lookup overlay.
+  if (arm_dismiss_hooks_) {
+    s_hook_owner_ = this;
+    if (foreground_hook_ == nullptr) {
+      foreground_hook_ = SetWinEventHook(
+          EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+          &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+          WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    }
+    if (mouse_hook_ == nullptr) {
+      mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
+                                     &GlobalLookupWindow::MouseHookProc,
+                                     GetModuleHandle(nullptr), 0);
+    }
   }
 }
 
@@ -402,18 +423,21 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     webview_->ExecuteScript(shift_script.c_str(), nullptr);
   }
   // Arm the click-outside dismiss hooks now that the stack is on-screen (the
-  // first reveal arms; later resizes are idempotent re-arms).
-  s_hook_owner_ = this;
-  if (foreground_hook_ == nullptr) {
-    foreground_hook_ = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
-        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-  }
-  if (mouse_hook_ == nullptr) {
-    mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
-                                   &GlobalLookupWindow::MouseHookProc,
-                                   GetModuleHandle(nullptr), 0);
+  // first reveal arms; later resizes are idempotent re-arms). The clipboard
+  // panel instance never arms them (persistent semantics, see Reveal).
+  if (arm_dismiss_hooks_) {
+    s_hook_owner_ = this;
+    if (foreground_hook_ == nullptr) {
+      foreground_hook_ = SetWinEventHook(
+          EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+          &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+          WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    }
+    if (mouse_hook_ == nullptr) {
+      mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
+                                     &GlobalLookupWindow::MouseHookProc,
+                                     GetModuleHandle(nullptr), 0);
+    }
   }
 }
 
@@ -447,6 +471,35 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
+bool GlobalLookupWindow::ApplySystemBackdrop() {
+  if (hwnd_ == nullptr) {
+    return false;
+  }
+  // spec §6 semi-transparency gate — Win11 22H2+ system backdrop: DWM paints
+  // acrylic (blurred desktop content behind the window) wherever the client
+  // pixels are transparent; the WebView2 default background is already fully
+  // transparent (put_DefaultBackgroundColor A=0, TODO-893), so a CSS rgba card
+  // background composites over the acrylic. Extend the frame into the whole
+  // client area first — without it the backdrop only covers the (zero-size)
+  // frame region. On Win10 / pre-22H2 DwmSetWindowAttribute rejects the
+  // attribute and we report false: the panel stays opaque and Dart hides the
+  // opacity slider (graceful degrade, spec §6 fallback).
+  const MARGINS margins{-1, -1, -1, -1};
+  DwmExtendFrameIntoClientArea(hwnd_, &margins);
+  int backdrop = 3;  // DWMSBT_TRANSIENTWINDOW (acrylic)
+  const HRESULT hr = DwmSetWindowAttribute(
+      hwnd_, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &backdrop, sizeof(backdrop));
+  return SUCCEEDED(hr);
+}
+
+void GlobalLookupWindow::SetTopmost(bool topmost) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  SetWindowPos(hwnd_, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
 void GlobalLookupWindow::Hide(bool notify) {
   // Capture BEFORE clearing: the HiddenCallback must only fire on a transition
   // FROM on-screen (was_showing) so a double dismiss (mouse hook then foreground
@@ -462,7 +515,12 @@ void GlobalLookupWindow::Hide(bool notify) {
     UnhookWindowsHookEx(mouse_hook_);
     mouse_hook_ = nullptr;
   }
-  s_hook_owner_ = nullptr;
+  // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
+  // clipboard panel never arms the hooks, and its Hide() must not disarm the
+  // transient lookup overlay's live click-outside callbacks.
+  if (s_hook_owner_ == this) {
+    s_hook_owner_ = nullptr;
+  }
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }
@@ -565,7 +623,7 @@ void GlobalLookupWindow::EnsureWebView() {
   // schemes never clash with the in-app fork environments on the shared default
   // folder (0x8007139F), which previously failed this create silently and left
   // the overlay a blank window.
-  const std::wstring overlay_folder = OverlayUserDataFolder();
+  const std::wstring overlay_folder = OverlayUserDataFolder(user_data_leaf_);
   HRESULT create_hr = CreateCoreWebView2EnvironmentWithOptions(
       nullptr, overlay_folder.empty() ? nullptr : overlay_folder.c_str(),
       options.Get(),
@@ -703,6 +761,39 @@ void GlobalLookupWindow::ConfigureWebView() {
             wil::unique_cotaskmem_string json;
             if (SUCCEEDED(args->get_WebMessageAsJson(&json))) {
               std::string body = WideToUtf8(json.get());
+              // spec 2026-07-10 panel — host-chrome window drag/resize. The
+              // client area is fully covered by the WebView2 child HWND, so
+              // WM_NCHITTEST never reaches this window; the panel grip posts
+              // {handler:'beginWindowDrag'/'beginWindowResize'} instead and we
+              // enter the modal move/size loop via the HTCAPTION trick.
+              // SendMessage returns when the drag ends — report the final rect
+              // so Dart persists the panel position. Handled natively and NOT
+              // forwarded as a jsMessage (Dart only sees the windowMoved
+              // result). Matching quoted handler names keeps glossary text that
+              // merely mentions the words from triggering this.
+              if (body.find("\"handler\":\"beginWindowDrag\"") !=
+                      std::string::npos ||
+                  body.find("\"handler\":\"beginWindowResize\"") !=
+                      std::string::npos) {
+                const bool resize =
+                    body.find("\"handler\":\"beginWindowResize\"") !=
+                    std::string::npos;
+                if (hwnd_ != nullptr) {
+                  ReleaseCapture();
+                  SendMessage(hwnd_, WM_NCLBUTTONDOWN,
+                              resize ? HTBOTTOMRIGHT : HTCAPTION, 0);
+                  if (message_cb_) {
+                    RECT r{};
+                    GetWindowRect(hwnd_, &r);
+                    message_cb_(
+                        std::string("{\"handler\":\"windowMoved\",\"args\":[") +
+                        std::to_string(r.left) + "," + std::to_string(r.top) +
+                        "," + std::to_string(r.right - r.left) + "," +
+                        std::to_string(r.bottom - r.top) + "]}");
+                  }
+                }
+                return S_OK;
+              }
               if (message_cb_) {
                 message_cb_(body);
               }

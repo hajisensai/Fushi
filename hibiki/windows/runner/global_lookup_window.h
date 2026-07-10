@@ -129,6 +129,27 @@ class GlobalLookupWindow {
     hidden_cb_ = std::move(cb);
   }
 
+  // spec 2026-07-10 clipboard panel — the persistent clipboard-panel window is
+  // a SECOND GlobalLookupWindow instance. Panel differences are data, not
+  // modes: it never arms the dismiss hooks (persistent semantics: click-outside
+  // / foreground-switch must NOT close it), and it gets its own WebView2
+  // user-data leaf so its environment options never have to match the lookup
+  // overlay's (same-folder different-options fails with 0x8007139F).
+  void SetArmDismissHooks(bool arm) { arm_dismiss_hooks_ = arm; }
+  void SetUserDataLeaf(std::wstring leaf) { user_data_leaf_ = std::move(leaf); }
+
+  // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
+  // behind the window's transparent WebView2 pixels. Returns whether the OS
+  // accepted it (Win10 / pre-22H2 -> false; the panel then stays opaque and
+  // Dart hides the opacity slider). Requires the window to exist (call after
+  // ShowAt/PrewarmWebView). Never touches WS_EX_LAYERED (incompatible with the
+  // WebView2 composition surface, see the CreateWindowExW comment).
+  bool ApplySystemBackdrop();
+
+  // spec 2026-07-10 panel pin — toggles HWND_TOPMOST without moving/resizing
+  // or activating. No-op before the window exists.
+  void SetTopmost(bool topmost);
+
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam) noexcept;
@@ -166,8 +187,11 @@ class GlobalLookupWindow {
   bool revealed_ = false;
   int pending_x_ = 0;
   int pending_y_ = 0;
-  bool class_registered_ = false;
   bool webview_ready_ = false;
+  // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
+  // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
+  bool arm_dismiss_hooks_ = true;
+  std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
 
