@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
@@ -241,8 +242,15 @@ const List<String> _kSubtitleCjkFallback = <String>[
   'MS Gothic',
 ];
 
-class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
+class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
+    with SingleTickerProviderStateMixin {
   bool _revealed = false;
+
+  /// `\fad`/`\fade` 淡入淡出逐帧刷新驱动（TODO-1373）：活动集里有带 fade 的 cue（且开
+  /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMs]
+  /// 重算各 cue 不透明度；否则停掉，避免无谓逐帧重建。读真实播放位置，故暂停 / 变速 / seek
+  /// 天然同步、无需额外门控。
+  Ticker? _fadeTicker;
 
   /// TODO-1312：当前帧渲染的所有字幕字符登记表（每帧 build 重建）。主字幕活动集（重叠
   /// cue 多个字幕盒）+ 副字幕活动集的**每个字符**各登记一条，携带所属整条 cue 文本、在该
@@ -376,6 +384,36 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _fadeTicker = createTicker((_) {
+      // 每帧强制重建：build 里按最新播放位置重算各 cue 的 fade 不透明度（值来自
+      // controller，不在此保存，故空 setState 足矣）。
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    // 停并释放 ticker：SingleTickerProviderStateMixin.dispose 会断言 ticker 不再 active，
+    // 故必须在 super.dispose 之前 dispose 掉它（dispose 内部会取消在途 tick）。
+    _fadeTicker?.dispose();
+    super.dispose();
+  }
+
+  /// 按当前活动集是否需要淡变动画幂等启停 [_fadeTicker]。build 期间调用安全：start 只是
+  /// 排下一帧回调、stop 立即止。
+  void _syncFadeTicker(bool needed) {
+    final Ticker? ticker = _fadeTicker;
+    if (ticker == null) return;
+    if (needed && !ticker.isActive) {
+      ticker.start();
+    } else if (!needed && ticker.isActive) {
+      ticker.stop();
+    }
+  }
+
+  @override
   void didUpdateWidget(VideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 关闭模糊时重置显形态，避免下次开启残留。
@@ -414,6 +452,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
           ..addAll(secondaryCues);
         _groupSlots.removeWhere((String key, List<_GroupSlot> slots) =>
             !slots.any((_GroupSlot s) => allActive.contains(s.cue)));
+
+        // \fad/\fade 淡入淡出（TODO-1373）：活动集里有带 fade 的 cue（且开 respectAssStyle）
+        // 时启动逐帧 ticker，让各 cue 不透明度随播放位置平滑变化；否则停掉（省重建）。
+        _syncFadeTicker(widget.respectAssStyle &&
+            allActive.any((AudioCue c) => c.markup?.fade != null));
 
         if (mainCues.isEmpty && secondaryCues.isEmpty) {
           return const SizedBox.shrink();
@@ -852,7 +895,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         );
       }
     }
-    return box;
+    // \fad/\fade 行级淡入淡出（TODO-1373）：整条 cue（含背景 / 收藏角标）按不透明度淡变。
+    // 仅 respectAssStyle 开且本 cue 带 fade 时包裹；Opacity 不改布局 / 命中几何，逐字查词
+    // 照常。隐形占位（registerHits=false）已在外层 Opacity(0)，此处叠乘不影响其为 0。
+    final SubtitleFade? fade = widget.respectAssStyle ? markup?.fade : null;
+    if (fade == null) return box;
+    return Opacity(opacity: _fadeOpacityFor(fade, cue), child: box);
+  }
+
+  /// 本条 cue 的 `\fad`/`\fade` 不透明度（0..1）。无位置信息（未 load）时恒 1（不淡）。
+  /// elapsed = 音画延迟校正后的等效位置 − cue 起点；duration = cue 时长。
+  double _fadeOpacityFor(SubtitleFade fade, AudioCue cue) {
+    final int? pos = widget.controller.effectivePositionMs;
+    if (pos == null) return 1.0;
+    return fade.opacityAt(pos - cue.startMs, cue.endMs - cue.startMs);
   }
 
   /// 渲染单个字幕字符为**真描边**：底层 stroke [Text]（[buildSubtitleStrokePaint] 沿
@@ -868,30 +924,53 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     final (Color strokeColor, double strokeWidth) = _resolveStroke(i, markup);
     final Paint? strokePaint =
         buildSubtitleStrokePaint(strokeColor, strokeWidth);
+    final Widget glyph;
     if (strokePaint == null) {
       // 无描边：单层 fill（自带 ASS 阴影，若有）。
-      return Text(char, style: fillStyle);
+      glyph = Text(char, style: fillStyle);
+    } else {
+      // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
+      // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
+      final TextStyle strokeStyle = fillStyle.copyWith(
+        color: null,
+        foreground: strokePaint,
+        // 描边层不画下划线/删除线，避免与 fill 层重叠加粗装饰线（fill 层已画）。
+        decoration: TextDecoration.none,
+      );
+      // 阴影只保留在描边层（最底）→ 正确 z 序（阴影 < 描边 < 填充）；填充层清空阴影防重叠。
+      final bool hasShadows =
+          fillStyle.shadows != null && fillStyle.shadows!.isNotEmpty;
+      final TextStyle fillTopStyle = hasShadows
+          ? fillStyle.copyWith(shadows: const <Shadow>[])
+          : fillStyle;
+      glyph = Stack(
+        // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
+        children: <Widget>[
+          Text(char, style: strokeStyle),
+          Text(char, style: fillTopStyle),
+        ],
+      );
     }
-    // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
-    // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
-    final TextStyle strokeStyle = fillStyle.copyWith(
-      color: null,
-      foreground: strokePaint,
-      // 描边层不画下划线/删除线，避免与 fill 层重叠加粗装饰线（fill 层已画）。
-      decoration: TextDecoration.none,
+    // \blur/\be 辉光（TODO-1373）：把合成字形（描边+填充+阴影）整体高斯模糊。仅 respectAssStyle
+    // 开且该字符所在 span 带 blur 时包裹；ImageFiltered 不改布局尺寸，故字符命中矩形
+    // （_charEntries）不变、逐字查词照常。sigma<=0 不包裹（外观像素级不变）。
+    final double sigma = _blurSigmaFor(i, markup);
+    if (sigma <= 0) return glyph;
+    return ImageFiltered(
+      imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      child: glyph,
     );
-    // 阴影只保留在描边层（最底）→ 正确 z 序（阴影 < 描边 < 填充）；填充层清空阴影防重叠。
-    final bool hasShadows =
-        fillStyle.shadows != null && fillStyle.shadows!.isNotEmpty;
-    final TextStyle fillTopStyle =
-        hasShadows ? fillStyle.copyWith(shadows: const <Shadow>[]) : fillStyle;
-    return Stack(
-      // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
-      children: <Widget>[
-        Text(char, style: strokeStyle),
-        Text(char, style: fillTopStyle),
-      ],
-    );
+  }
+
+  /// 覆盖第 [i] 个 grapheme 的 `\blur`/`\be` 换算成 Flutter 高斯模糊 sigma（逻辑像素）。
+  /// respectAssStyle 关 / 无 blur 返回 0。ASS blur 是相对 PlayResY 的绝对像素（与字号 / 描边 /
+  /// 阴影同源），故按 [_assFontScale] 缩放到显示尺寸，再夹到 [0,24] 防 PlayResY 异常时糊爆。
+  double _blurSigmaFor(int i, SubtitleMarkup? markup) {
+    if (!widget.respectAssStyle || markup == null) return 0;
+    final double? blur = _spanAt(i, markup)?.blur;
+    if (blur == null || blur <= 0) return 0;
+    final double sigma = blur * _assFontScale(markup);
+    return sigma < 0 ? 0 : (sigma > 24 ? 24 : sigma);
   }
 
   /// 解析第 [i] 个 grapheme 的**描边色 + 描边宽**（[_buildStrokedChar] 用）。

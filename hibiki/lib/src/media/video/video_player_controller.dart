@@ -692,12 +692,28 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前播放位置（毫秒）；未 [load] 时为 null。换集前用它补记当前集精确进度
   /// （tick 整秒节流外的尾差）。
   @override
-  int? get positionMs => _player?.state.position.inMilliseconds;
+  int? get positionMs =>
+      _debugPositionOverride ?? _player?.state.position.inMilliseconds;
+
+  /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
+  /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
+  /// [_effectivePositionMs] 流入字幕淡变）。传 null 还原真实来源。
+  int? _debugPositionOverride;
+
+  @visibleForTesting
+  void debugSetPositionForTesting(int? positionMs) {
+    _debugPositionOverride = positionMs;
+    notifyListeners();
+  }
 
   int? get _effectivePositionMs {
     final int? pos = positionMs;
     return pos == null ? null : effectiveSubtitlePositionMs(pos, _delayMs);
   }
+
+  /// 音画延迟校正后的等效播放位置（毫秒）；字幕 `\fad`/`\fade` 求「cue 内已播放时长」
+  /// 用（= 本值 − cue.startMs）。未 [load] / 无位置时为 null。
+  int? get effectivePositionMs => _effectivePositionMs;
 
   /// 测试可见：模拟媒体总时长（毫秒，驱动 seek bar 章节刻度按 start/duration 算比例，
   /// TODO-432）。传 null 还原真实来源（`_player.state.duration`）。

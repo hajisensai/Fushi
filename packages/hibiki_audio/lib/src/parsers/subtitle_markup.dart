@@ -32,6 +32,91 @@ class SubtitlePos {
   const SubtitlePos(this.xFraction, this.yFraction);
 }
 
+/// 行级淡入淡出（ASS `\fad` / `\fade`，TODO-1373）。以「不透明度包络」建模：三段平台
+/// 不透明度 (op1,op2,op3) + 四个时间边界 (t1<=t2<=t3<=t4)：
+/// - t<=t1 → op1；t1<t<t2 → op1..op2 线性；t2<=t<=t3 → op2；
+///   t3<t<t4 → op2..op3 线性；t>=t4 → op3。
+///
+/// `\fad(a,b)` 简式=淡入 a ms、淡出 b ms（op 0→1→0），收尾两点 t3=dur-b、t4=dur
+/// 依赖 cue 时长，故只存 (fadeInMs,fadeOutMs)，在 [opacityAt] 里用真实时长解析。
+/// `\fade(a1,a2,a3,t1,t2,t3,t4)` 全式：alpha 0..255（0=不透明）已换算成 op=1-alpha/255，
+/// 时间为绝对毫秒。两式最终归一到同一条 [_evaluate]，消除按标签分渲染的特例。纯 Dart。
+class SubtitleFade {
+  /// `\fad(fadeInMs, fadeOutMs)` 简式。
+  const SubtitleFade.simple(this.fadeInMs, this.fadeOutMs)
+      : _op1 = 0.0,
+        _op2 = 1.0,
+        _op3 = 0.0,
+        _t1 = null,
+        _t2 = null,
+        _t3 = null,
+        _t4 = null;
+
+  /// `\fade(...)` 全式（alpha 已换算成 op 0..1，时间为绝对毫秒）。
+  const SubtitleFade.full({
+    required double op1,
+    required double op2,
+    required double op3,
+    required int t1,
+    required int t2,
+    required int t3,
+    required int t4,
+  })  : fadeInMs = 0,
+        fadeOutMs = 0,
+        _op1 = op1,
+        _op2 = op2,
+        _op3 = op3,
+        _t1 = t1,
+        _t2 = t2,
+        _t3 = t3,
+        _t4 = t4;
+
+  /// 简式淡入 / 淡出毫秒（全式恒 0，收尾时间走 [_t3]/[_t4]）。
+  final int fadeInMs;
+  final int fadeOutMs;
+
+  final double _op1;
+  final double _op2;
+  final double _op3;
+  final int? _t1;
+  final int? _t2;
+  final int? _t3;
+  final int? _t4;
+
+  /// cue 内已播放 [elapsedMs]、cue 总时长 [durationMs] → 不透明度 0..1。简式收尾两点
+  /// 用 [durationMs] 解析；四个时间边界先夹成单调非减（短 cue 下 dur-fadeOut 可能 <
+  /// fadeIn，淡入淡出重叠），防反序求值。
+  double opacityAt(int elapsedMs, int durationMs) {
+    final int t1 = _t1 ?? 0;
+    int t2 = _t2 ?? fadeInMs;
+    int t3 = _t3 ?? (durationMs - fadeOutMs);
+    int t4 = _t4 ?? durationMs;
+    if (t2 < t1) t2 = t1;
+    if (t4 < t2) t4 = t2;
+    if (t3 < t2) t3 = t2;
+    if (t3 > t4) t3 = t4;
+    return _evaluate(elapsedMs, t1, t2, t3, t4, _op1, _op2, _op3);
+  }
+
+  static double _evaluate(int t, int t1, int t2, int t3, int t4, double op1,
+      double op2, double op3) {
+    // 淡入段（含之前）：仅当 t<t2 才可能是 op1 / 入坡。零宽入坡（t1==t2，如 \fad(0,..)）时
+    // t==t1 直接落到平台 op2（瞬时不透明），不会误显 op1（透明），也避免除零。
+    if (t < t2) {
+      if (t <= t1) return op1;
+      return _lerp(op1, op2, (t - t1) / (t2 - t1));
+    }
+    if (t <= t3) return op2;
+    if (t < t4) return _lerp(op2, op3, (t - t3) / (t4 - t3));
+    return op3;
+  }
+
+  static double _lerp(double a, double b, double f) {
+    final double c = f < 0.0 ? 0.0 : (f > 1.0 ? 1.0 : f);
+    return a + (b - a) * c;
+  }
+}
+
 /// plainText 上 [startGrapheme, endGrapheme) 半开区间的行内样式。
 class SubtitleSpan {
   final int startGrapheme;
@@ -62,6 +147,10 @@ class SubtitleSpan {
   /// `\shad` 阴影深度（px，TODO-1105）；null=默认。
   final double? shadowDepthPx;
 
+  /// `\blur`/`\be` 辉光模糊强度（ASS 目标分辨率像素下的高斯 sigma，TODO-1373）；null/0=无。
+  /// 本类只存 ASS 原值（不引 Flutter），换算成多少逻辑像素由 video 层按字号定。
+  final double? blur;
+
   const SubtitleSpan({
     required this.startGrapheme,
     required this.endGrapheme,
@@ -76,6 +165,7 @@ class SubtitleSpan {
     this.shadowColorArgb,
     this.outlineWidthPx,
     this.shadowDepthPx,
+    this.blur,
   });
 
   bool get hasStyle =>
@@ -89,7 +179,8 @@ class SubtitleSpan {
       outlineColorArgb != null ||
       shadowColorArgb != null ||
       outlineWidthPx != null ||
-      shadowDepthPx != null;
+      shadowDepthPx != null ||
+      (blur != null && blur! > 0);
 }
 
 /// 单条 cue 的**默认样式**：来自 ASS `[V4+ Styles]` 段里该 Dialogue 引用的 Style 行
@@ -173,6 +264,9 @@ class SubtitleMarkup {
   /// 渲染层退回不缩放（历史行为）。
   final double? playResY;
 
+  /// `\fad`/`\fade` 行级淡入淡出（TODO-1373）；null=无。渲染时按 cue 内已播放时长求不透明度。
+  final SubtitleFade? fade;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
@@ -180,6 +274,7 @@ class SubtitleMarkup {
     this.posFraction,
     this.cueStyle,
     this.playResY,
+    this.fade,
   });
 }
 
@@ -196,6 +291,7 @@ class _Style {
   int? shadowColorArgb;
   double? outlineWidthPx;
   double? shadowDepthPx;
+  double? blur;
 
   _Style clone() => _Style()
     ..italic = italic
@@ -208,7 +304,8 @@ class _Style {
     ..outlineColorArgb = outlineColorArgb
     ..shadowColorArgb = shadowColorArgb
     ..outlineWidthPx = outlineWidthPx
-    ..shadowDepthPx = shadowDepthPx;
+    ..shadowDepthPx = shadowDepthPx
+    ..blur = blur;
 
   /// Clears every accumulated inline override, returning to the "no override"
   /// state (ASS `\r` reset-tag semantics, TODO-1246). A segment reset this way
@@ -227,6 +324,7 @@ class _Style {
     shadowColorArgb = null;
     outlineWidthPx = null;
     shadowDepthPx = null;
+    blur = null;
   }
 
   bool get hasStyle =>
@@ -240,7 +338,8 @@ class _Style {
       outlineColorArgb != null ||
       shadowColorArgb != null ||
       outlineWidthPx != null ||
-      shadowDepthPx != null;
+      shadowDepthPx != null ||
+      (blur != null && blur! > 0);
 }
 
 /// 单条 cue 原文 → 结构化 markup。一趟扫描同时构建 plainText 与 span 边界。
@@ -249,8 +348,9 @@ class _Style {
 /// [cueStyle] 是本条 cue 引用的 ASS `[V4+ Styles]` 默认样式（TODO-1105）：原样透传到
 /// 返回的 [SubtitleMarkup.cueStyle]，供渲染层作行内 span 之下的基线；行内 `{...}` 覆盖
 /// 它。srt/vtt 无 Style 段传 null。
-/// 不支持的标签（卡拉OK `\k`、动画 `\t/\move/\fad`、绘图 `\p`、旋转缩放等）静默删除，
-/// 既不显示控制码也不产出样式。
+/// 支持行内 `\blur`/`\be`（辉光）与行级 `\fad`/`\fade`（淡入淡出，TODO-1373）。其余不支持
+/// 的标签（卡拉OK `\k`、动画 `\t/\move`、绘图 `\p`、旋转缩放等）静默删除，既不显示控制码
+/// 也不产出样式。
 SubtitleMarkup parseSubtitleMarkup(String raw,
     {double? playResX, double? playResY, SubtitleCueStyle? cueStyle}) {
   final List<({String text, _Style style})> segments =
@@ -259,6 +359,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
   final _Style style = _Style();
   SubtitleAnchor? anchor;
   SubtitlePos? pos;
+  SubtitleFade? fade;
   // ASS 绘图模式：\pN(N>0) 开启、\p0 关闭，作用域持续到本条 cue 结束。开启
   // 期间标签块之外的正文是矢量绘图命令（m/l/b 坐标），是图形不是文字，必须
   // 丢弃而非当 plainText 渲染（TODO-799 OP 卡拉OK 满屏坐标乱码）。
@@ -288,6 +389,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         (SubtitleAnchor a) => anchor = a,
         (SubtitlePos p) => pos = p,
         (bool on) => drawing.active = on,
+        (SubtitleFade f) => fade = f,
         playResX,
         playResY,
       );
@@ -342,6 +444,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         shadowColorArgb: seg.style.shadowColorArgb,
         outlineWidthPx: seg.style.outlineWidthPx,
         shadowDepthPx: seg.style.shadowDepthPx,
+        blur: seg.style.blur,
       ));
     }
     plain.write(seg.text);
@@ -357,16 +460,18 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     cueStyle: cueStyle,
     // PlayResY 原样透传，供渲染层把 ASS 绝对字号 / 阴影深度缩放到播放尺寸（TODO-1246）。
     playResY: playResY,
+    fade: fade,
   );
 }
 
-/// 解析单个 `{...}` 块内的 `\tag` 序列，更新样式/锚点/位置。未知标签忽略。
+/// 解析单个 `{...}` 块内的 `\tag` 序列，更新样式/锚点/位置/淡变。未知标签忽略。
 void _applyOverrideBlock(
   String block,
   _Style style,
   void Function(SubtitleAnchor) setAnchor,
   void Function(SubtitlePos) setPos,
   void Function(bool) setDrawing,
+  void Function(SubtitleFade) setFade,
   double? playResX,
   double? playResY,
 ) {
@@ -476,6 +581,46 @@ void _applyOverrideBlock(
       continue;
     }
 
+    // \blur<n> / \be<n>：辉光边缘模糊（TODO-1373）。两者都软化字形边缘成辉光，归一到
+    // 同一 `blur` 强度字段（span 级，随文本作用域），消除按标签特判。value<=0 视为无。
+    final RegExpMatch? blur =
+        RegExp(r'^(?:blur|be)(\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (blur != null) {
+      final double v = double.parse(blur.group(1)!);
+      style.blur = v > 0 ? v : null;
+      continue;
+    }
+
+    // \fad(t1,t2)：行级淡入 t1ms / 淡出 t2ms（收尾依赖 cue 时长，渲染时解析，TODO-1373）。
+    final RegExpMatch? fad =
+        RegExp(r'^fad\(\s*(\d+)\s*,\s*(\d+)\s*\)$').firstMatch(tag);
+    if (fad != null) {
+      setFade(SubtitleFade.simple(
+        int.parse(fad.group(1)!),
+        int.parse(fad.group(2)!),
+      ));
+      continue;
+    }
+
+    // \fade(a1,a2,a3,t1,t2,t3,t4)：行级七参淡变。alpha 0..255（0=不透明）→
+    // 不透明度 op=1-alpha/255；时间为绝对毫秒（TODO-1373）。
+    final RegExpMatch? fade = RegExp(
+            r'^fade\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$')
+        .firstMatch(tag);
+    if (fade != null) {
+      double toOp(String a) => 1.0 - (int.parse(a).clamp(0, 255) / 255.0);
+      setFade(SubtitleFade.full(
+        op1: toOp(fade.group(1)!),
+        op2: toOp(fade.group(2)!),
+        op3: toOp(fade.group(3)!),
+        t1: int.parse(fade.group(4)!),
+        t2: int.parse(fade.group(5)!),
+        t3: int.parse(fade.group(6)!),
+        t4: int.parse(fade.group(7)!),
+      ));
+      continue;
+    }
+
     // \r / \r<StyleName>: ASS reset tag. Clears every accumulated inline
     // override so the reset region falls back to this cue's [V4+ Styles]
     // baseline instead of inheriting the previous span's primary colour /
@@ -491,7 +636,7 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // 其余（\k \t \move \fad \frx \fscx \clip \xbord \ybord ...）忽略。
+    // 其余（\k \t \move \frx \fscx \clip \xbord \ybord ...）忽略。
   }
 }
 
