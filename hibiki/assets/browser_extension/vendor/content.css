@@ -619,31 +619,30 @@
     background: transparent;
 }
 
-/* TODO-1325 #7（按用户 Niratan「卡片」决策，超越 TODO-877 的扁平化）：每部词典的义项块
-   (.glossary-group) 做成「玻璃卡片」——圆角(走 --hibiki-radius-card token，与弹窗其余卡片
-   统一) + 分层投影(近距 1px 贴地 + 远距柔性扩散) + 顶部内高光(inset 白线)营造玻璃质感；
-   展开/收起三角(下方 TODO-1337 纯 CSS 边框三角)作卡片头。皮肤纯 CSS，不改 DOM/JS，四端
-   (in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：行距仍走 margin-top
-   (grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距不撑 grid track。
-   暗色变体降内高光、加深投影。 */
+/* 按用户「照抄 Niratan」决策（取代 TODO-1325 #7 的玻璃卡皮肤）：每部词典的义项块
+   (.glossary-group) 逐字对齐 Niratan Features/Popup/popup.css `.glossary-group` ——
+   描边卡而非填充玻璃卡：1px 半透明描边(rgba 0,0,0,.14) + 顶部 inset 白高光 + 薄贴地投影，
+   无 background 填充，观感更扁平、与 Niratan 一致。padding 6px 8px、radius 8px 亦照抄
+   (Niratan 的 calc(8px*--popup-scale) 在 Hibiki 走 documentElement.zoom 整体缩放，故直接 8px)。
+   皮肤纯 CSS，不改 DOM/JS，四端(in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：
+   行距仍走 margin-top(grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距
+   不撑 grid track。暗色变体：描边转白(rgba 255,255,255,.09) + 加深贴地投影(照抄 Niratan 暗色分支)。 */
 .glossary-group {
     position: relative;
     margin-top: 5px;
-    padding: 8px 10px;
-    border-radius: var(--hibiki-radius-card, 10px);
-    background: var(--surface-container);
+    min-width: 0;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.14);
     box-shadow:
-        0 1px 2px rgba(0, 0, 0, 0.12),
-        0 2px 8px rgba(0, 0, 0, 0.08),
-        inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        inset 0 0 0 1px rgba(255, 255, 255, 0.42),
+        0 0 0 1px rgba(255, 255, 255, 0.22),
+        0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 #entries-container[data-theme="dark"] .glossary-group {
-    background: var(--surface-container-high);
-    box-shadow:
-        0 1px 2px rgba(0, 0, 0, 0.5),
-        0 3px 10px rgba(0, 0, 0, 0.35),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.36);
 }
 
 .glossary-group > summary {
