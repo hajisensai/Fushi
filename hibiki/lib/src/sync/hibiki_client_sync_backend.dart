@@ -695,6 +695,11 @@ class HibikiClientSyncBackend extends SyncBackend
   // ── Live books (interconnect-only) ────────────────────────────────
   // 与 live dictionaries 对称：直打 /api/library/books，不经 WebDAV 暂存。
 
+  /// 互联（局域网对端设备）：书架远端分区用「互联 / 对端设备」文案。
+  @override
+  RemoteBookSourceKind get remoteSourceKind =>
+      RemoteBookSourceKind.interconnect;
+
   /// 列出对端 host 当前书库清单（直打 `/api/library/books`）。
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async {

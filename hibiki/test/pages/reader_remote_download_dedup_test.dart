@@ -158,6 +158,10 @@ class _ListFakeRemoteBookClient implements RemoteBookClient {
   final List<RemoteBookInfo> _books;
 
   @override
+  RemoteBookSourceKind get remoteSourceKind =>
+      RemoteBookSourceKind.interconnect;
+
+  @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => _books;
 
   @override
@@ -182,6 +186,10 @@ class _ListFakeRemoteBookClient implements RemoteBookClient {
 
 class _GatedFakeRemoteBookClient implements RemoteBookClient {
   final Completer<void> completer = Completer<void>();
+
+  @override
+  RemoteBookSourceKind get remoteSourceKind =>
+      RemoteBookSourceKind.interconnect;
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
