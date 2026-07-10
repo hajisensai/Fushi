@@ -60,6 +60,27 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   File? _logFile;
   String _persistedLog = '';
 
+  /// TODO-1383：[log] 的落盘走 fire-and-forget 的 [_appendToFile]（异步，不被调用方
+  /// await）。测试无从得知它何时真正写完，只能靠 `pumpEventQueue(times:N)` 猜时序；
+  /// 并发全量 `flutter test`（多进程抢盘 IO）下 N 次事件轮转不足以等落盘落定，于是
+  /// 断言读到半成品、或 append 落在 tearDown 删临时目录之后（Windows `errno 32` 占用 /
+  /// `PathNotFoundException`）而漂移误红。
+  ///
+  /// 这里把每次 append 挂进一条**串行链**（挂在上一条之后；[_appendToFile] 内部吞异常、
+  /// 永不 reject，链不会断），一举两得：① 串行化落盘，消除多条 append 各自
+  /// `writeAsString(append)`+回读裁剪的交错；② 给出一个可 await 的尾 future
+  /// [pendingFileWrite]，让测试**确定性**地等到所有在途落盘写完再断言 / 删临时目录。
+  /// 生产语义不变，[log] 仍不 await（热路径不受影响），[clear] 也**不**去 await 这条链
+  /// ——[clear] 会在 testWidgets 的 FakeAsync 区里被调到，await 真实 IO 会因续延不被
+  /// 泵到而死锁，故只在**纯 `test()`**（真实事件循环）里经 [pendingFileWrite] 排空。
+  Future<void> _pendingFileWrite = Future<void>.value();
+
+  /// 见 [_pendingFileWrite]：暴露给测试确定性 await「fire-and-forget 落盘」是否写完，
+  /// 取代靠 `pumpEventQueue(times:N)` 猜时序（并发跑时不足 → 竞态误红）。生产不读。
+  /// 只在纯 `test()`（真实事件循环）里 await；testWidgets 的 FakeAsync 区不要 await。
+  @visibleForTesting
+  Future<void> get pendingFileWrite => _pendingFileWrite;
+
   /// 导入面包屑文件：在每本词典调 native FFI 前**同步**写入，返回后清空。
   /// native 硬崩溃（访问违例 / 栈溢出）会绕过 Dart try/catch 直接带崩进程，
   /// 异步日志缓冲来不及落盘；这个文件因为同步写入而能存活崩溃，下次启动
@@ -370,7 +391,8 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       _entries.removeAt(0);
     }
     notifyListenersFrameSafe();
-    _appendToFile(entry);
+    // TODO-1383：挂入串行链（而非裸 fire-and-forget），串行化落盘 + 可被测试 await。
+    _pendingFileWrite = _pendingFileWrite.then((_) => _appendToFile(entry));
   }
 
   /// TODO-1083：记录**诊断/取证**信息（非用户可见「报错」）。用于既非应用错误、又不该
