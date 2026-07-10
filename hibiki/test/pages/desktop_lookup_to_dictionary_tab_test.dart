@@ -43,22 +43,22 @@ void main() {
         reason: '不能再假设 service 发现剪贴板文本时已唤前台');
   });
 
-  // spec 2026-07-10 §7 生命周期上移：start/stop 归 AppModel（app 级监听，面板/
-  // 瞬态去向要求 tab 卸载后监听继续跑）；页面退化为 mainTab 分区的消费者，消费
-  // 必须过 resolveDesktopLookupConsumer 路由（防与 DesktopLookupDispatcher 双消费）。
+  // TODO-1394 方案B：HomeDictionaryPage 恢复 1385 页级引用计数 start/stop（跨断点
+  // watcher 存活）；AppModel 仍持有 applyDesktopClipboardLifecycle 的 app 级 hold，
+  // 让独立面板/瞬态去向在 tab 未挂载时也收到 watcher 事件（refcount 令两持有者并存）；
+  // 消费仍过 resolveDesktopLookupConsumer 路由分区（防与 DesktopLookupDispatcher 双消费）。
   test(
-      'HomeDictionaryPage consumes mainTab partition; lifecycle owned by '
-      'AppModel (spec 2026-07-10 §7)', () {
+      'HomeDictionaryPage owns refcounted lifecycle (1385) + consumes mainTab '
+      'partition; AppModel holds app-level lifecycle (TODO-1394 plan B)', () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
     final String model = read('lib/src/models/app_model.dart');
-    expect(src.contains('DesktopLookupService.instance.start'), isFalse,
-        reason: '服务生命周期归 AppModel.applyDesktopClipboardLifecycle，'
-            '页面只消费不启动');
-    expect(src.contains('DesktopLookupService.instance.stop'), isFalse,
-        reason: '面板/瞬态去向要求监听在词典 tab 卸载后继续运行');
+    expect(src.contains('DesktopLookupService.instance.start'), isTrue,
+        reason: '恢复 1385 页级 start（BUG-700 断点重建守卫依赖）');
+    expect(src.contains('DesktopLookupService.instance.stop'), isTrue,
+        reason: '页级 stop（refcount -1；app 级 hold 仍保 watcher 存活）');
     expect(model.contains('applyDesktopClipboardLifecycle'), isTrue,
-        reason: '服务启停仍受用户设置控制（enabled 开关经 AppModel 应用）');
+        reason: '独立面板/瞬态去向要求 tab 未挂载也监听：app 级 hold 归 AppModel');
     expect(src.contains('DesktopLookupService.instance.addListener'), isTrue,
         reason: '查词页直接消费剪贴板/热键命中（mainTab 分区）');
     expect(src.contains('DesktopLookupService.instance.removeListener'), isTrue,
@@ -122,9 +122,9 @@ void main() {
       () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
-    // 挂载即排一帧无条件消费已存在 pending。spec 2026-07-10 §7 后页面已无
-    // 启停分支（旧守卫的 _startDesktopLookupIfEnabled 门控整体消失，消费天然
-    // 无条件），这里以消费回调为界扫描 initState 区段锁 post-frame 接线。
+    // 挂载即排一帧无条件消费已存在 pending（不被 desktopClipboardEnabled 门控）。
+    // TODO-1394 方案B 恢复了页级 _startDesktopLookupIfEnabled（1385），但 pending 的
+    // post-frame 消费仍独立于启停分支、无条件执行。
     final int initStart = src.indexOf('void initState()');
     final int initEnd = src.indexOf('void _onDesktopLookupPending');
     expect(initStart, isNonNegative);
@@ -134,8 +134,8 @@ void main() {
         reason: 'initState 必须排一帧消费已存在的 pending');
     expect(initBody.contains('_onDesktopLookupPending()'), isTrue,
         reason: 'initState 的 post-frame 必须无条件消费 pending（不受剪贴板开关门控）');
-    expect(src.contains('_startDesktopLookupIfEnabled'), isFalse,
-        reason: 'spec §7：页面级启停分支必须保持删除状态（生命周期归 AppModel）');
+    expect(src.contains('_startDesktopLookupIfEnabled'), isTrue,
+        reason: 'TODO-1394 方案B：恢复页级引用计数启停（受 enabled 门控）');
   });
 
   // TODO-376 返工守卫 B：桌面悬浮字幕点词是**显式**手势，由 reader 经

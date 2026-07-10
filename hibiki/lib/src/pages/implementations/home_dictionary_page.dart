@@ -111,9 +111,13 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.addListener(_onFocusSignal);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
-    // spec 2026-07-10 §7：剪贴板监听的 start/stop 已上移 AppModel
-    // （applyDesktopClipboardLifecycle，app 级生命周期），本页只做 mainTab 分区
-    // 的消费者，不再启动/停止服务。
+    // TODO-1394 方案B：恢复 1385（BUG-700）的页级引用计数生命周期——本页挂载时
+    // start()、卸载时 stop()（受 desktopClipboardEnabled 门控）；跨 600px 断点重建时
+    // 计数 1→2→1 恒 >0 使 watcher 存活（守卫 home_dictionary_clipboard_watcher_
+    // breakpoint_test.dart）。剪贴板独立面板/瞬态去向所需的「tab 未挂载也监听」由
+    // AppModel.applyDesktopClipboardLifecycle 的 app 级 hold 提供——refcount 让页级 +
+    // app 级两个持有者安全并存（见 desktop_lookup_service.dart 的 _startRefCount）。
+    unawaited(_startDesktopLookupIfEnabled());
     // TODO-376：无条件消费一次挂载前已排入的 pending（不被 desktopClipboardEnabled
     // 门控）。桌面悬浮字幕点词由 floatingLyricClickLookup 控制、与剪贴板监听无关：它
     // 在切到本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在
@@ -153,6 +157,22 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocusNode.requestFocus();
     });
+  }
+
+  /// TODO-1394 方案B / TODO-1385（BUG-700）：进入查词页时按引用计数 start（受
+  /// desktopClipboardEnabled 门控），离开时 stop（见 dispose）。与 AppModel 的 app 级
+  /// hold 经 [DesktopLookupService] 的 _startRefCount 安全并存（0→1 才真正挂 watcher，
+  /// 1→0 才真正拆）。
+  Future<void> _startDesktopLookupIfEnabled() async {
+    final AppModel model = appModelNoUpdate;
+    if (!DesktopLookupService.isDesktop || !model.desktopClipboardEnabled) {
+      return;
+    }
+    await DesktopLookupService.instance.start(
+      windowMode: model.desktopClipboardWindowMode,
+    );
+    // 已存在的 pending 由 initState 的 post-frame 无条件消费一次（不依赖剪贴板
+    // 是否开启），这里不再重复消费——start 之后的剪贴板/热键命中走 addListener。
   }
 
   void _onDesktopLookupPending() {
@@ -229,8 +249,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    // spec 2026-07-10 §7：服务生命周期归 AppModel，本页 dispose 不再 stop——
-    // 面板/瞬态去向要求监听在 tab 卸载后继续运行。
+    // TODO-1394 方案B：恢复 1385 页级 stop（受 enabled 门控，refcount -1）。app 级
+    // hold 仍保 watcher 在 tab 卸载后为剪贴板独立面板/瞬态去向运行（见 initState）。
+    if (DesktopLookupService.isDesktop &&
+        appModelNoUpdate.desktopClipboardEnabled) {
+      unawaited(DesktopLookupService.instance.stop());
+    }
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
