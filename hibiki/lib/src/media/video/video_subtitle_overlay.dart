@@ -453,10 +453,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         _groupSlots.removeWhere((String key, List<_GroupSlot> slots) =>
             !slots.any((_GroupSlot s) => allActive.contains(s.cue)));
 
-        // \fad/\fade 淡入淡出（TODO-1373）：活动集里有带 fade 的 cue（且开 respectAssStyle）
-        // 时启动逐帧 ticker，让各 cue 不透明度随播放位置平滑变化；否则停掉（省重建）。
+        // 逐帧 ticker：活动集里有随播放位置变化的 ASS 动画（\fad 淡变 TODO-1373 / \move 运动
+        // / \t 缩放动画 TODO-1374）且开 respectAssStyle 时启动，让各 cue 每帧按最新位置重算；
+        // 否则停掉（省重建）。静态 \frz 旋转 / 静态 \fscx\fscy 缩放不需 ticker（不随时间变）。
         _syncFadeTicker(widget.respectAssStyle &&
-            allActive.any((AudioCue c) => c.markup?.fade != null));
+            allActive.any((AudioCue c) {
+              final SubtitleMarkup? m = c.markup;
+              return m?.fade != null ||
+                  m?.move != null ||
+                  (m?.scale?.isAnimated ?? false);
+            }));
 
         if (mainCues.isEmpty && secondaryCues.isEmpty) {
           return const SizedBox.shrink();
@@ -563,6 +569,26 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         order.add((key, group));
       }
     }
+    // 组内按 MarginV 升序稳定排序：折进同一基线桶的底部双语（JP MarginV=4 + CH MarginV=30）
+    // 竖排堆叠时，MarginV 小的贴锚点（底部锚组 slot0 在底）、大的在上，复现 libass「MarginV
+    // 越大离底越远」的相对次序，不再依赖字幕文件里 JP/CH 的书写先后（本 BUG 的次序保证）。
+    // 稳定排序对同 MarginV（多行歌词 / 纯 SRT null）零改动，且只预排序 cue 顺序、不移动
+    // [_syncGroupSlots] 里按 identity 稳定的在屏槽位（BUG-698 不变量保持）。
+    double mvOf(AudioCue c) {
+      final double? mv = c.markup?.cueStyle?.marginV;
+      return (mv == null || mv <= 0) ? 0 : mv;
+    }
+
+    for (final (String, List<AudioCue>) entry in order) {
+      final List<AudioCue> group = entry.$2;
+      if (group.length < 2) continue;
+      // 稳定排序（List.sort 非稳定）：以原始下标做 tie-break，保证同 MarginV 保持发现次序。
+      final List<AudioCue> byIndex = List<AudioCue>.of(group);
+      group.sort((AudioCue a, AudioCue b) {
+        final int c = mvOf(a).compareTo(mvOf(b));
+        return c != 0 ? c : byIndex.indexOf(a).compareTo(byIndex.indexOf(b));
+      });
+    }
     return order;
   }
 
@@ -573,7 +599,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// [_paddingFor] / forceTop 判据全同构），把「MarginV<=0」当无 MarginV（[_scaledMarginV]
   /// 都回退历史基线）。归一进键后，渲染完全相同的 cue 必然同组堆叠，而不是分成两组叠印
   /// 在同一位置互相压字。
-  static String _positionKey(SubtitleMarkup? markup) {
+  ///
+  /// BUG-（双语底部对白 MarginV 塌陷重叠）：底部锚点的最终基线是
+  /// `max(bottomPadding, scaledMarginV)`（[_paddingFor]，单调抬升不越用户基线）。故**两条
+  /// 底部 cue 的 MarginV 都 <= 用户 bottomPadding 时会被 max 夹到同一基线**——若仍按原始
+  /// MarginV 拆成两组，两组各自定位却落在同一 y、互相压字（如典型双语 Dial_JP MarginV=4 +
+  /// Dial_CH MarginV=30，both < 默认 75）。修复：底部锚点先按**渲染后基线是否真的不同**归键
+  /// ——MarginV 缩放后 <= bottomPadding（会被 max 夹回基线）的一律折进基线桶（key mv=-1），
+  /// 使它们同组、竖排堆叠（libass 的碰撞下推同效果），不再叠印。真正超出基线（标题
+  /// MarginV=400 等）才保留各自 authored 高度（TODO-1341 行为不变）。顶部/中部锚点无 max
+  /// 夹逻辑（[_paddingFor] 直接用 scaledMarginV），保持按原始 MarginV 分键。
+  String _positionKey(SubtitleMarkup? markup) {
     final SubtitlePos? pf = markup?.posFraction;
     final SubtitleAnchor? a = markup?.anchor;
     final int av = (a?.vertical ?? SubtitleVAlign.bottom).index;
@@ -582,11 +618,28 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       return 'p:${pf.xFraction.toStringAsFixed(4)},'
           '${pf.yFraction.toStringAsFixed(4)}:$av:$ah';
     }
+    // \move（TODO-1374）：自带绝对位置（起点）→ 各自成组走绝对定位，不与锚点 cue 同组。
+    final SubtitleMove? move = widget.respectAssStyle ? markup?.move : null;
+    if (move != null) {
+      return 'mv:${move.x1Fraction.toStringAsFixed(4)},'
+          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah';
+    }
     // MarginV（同锚点内不同竖直边距）纳入键：消除旧「同锚点不同 MarginV 被裹挟进一个
     // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
     // MarginV 仅 ASS 非空（srt/vtt 的 cueStyle 为 null），故 srt/vtt 分组行为像素级不变。
     final double? mvRaw = markup?.cueStyle?.marginV;
-    final int mv = (mvRaw == null || mvRaw <= 0) ? -1 : mvRaw.round();
+    final SubtitleVAlign vertical = a?.vertical ?? SubtitleVAlign.bottom;
+    final int mv;
+    if (mvRaw == null || mvRaw <= 0) {
+      mv = -1;
+    } else if (vertical == SubtitleVAlign.bottom) {
+      // 底部锚点：只有缩放后真的超出用户基线（不会被 max 夹回）才算「不同位置」；否则
+      // 折进基线桶与同基线的其它底部 cue 同组堆叠，消除双语底部对白重叠（本 BUG）。
+      final double? smv = _scaledMarginV(markup);
+      mv = (smv == null || smv <= widget.bottomPadding) ? -1 : smv.round();
+    } else {
+      mv = mvRaw.round();
+    }
     return 'a:$av:$ah:$mv';
   }
 
@@ -645,6 +698,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final SubtitlePos? ownPos = ownMarkup?.posFraction;
     final SubtitleAnchor? ownAnchor = ownMarkup?.anchor;
     final bool ownNonBottom = ownPos != null ||
+        ownMarkup?.move != null || // \move 自带绝对位置，不被强制置顶（TODO-1374）
         (ownAnchor != null && ownAnchor.vertical != SubtitleVAlign.bottom);
     final bool forceTop = isSecondary && !ownNonBottom;
     final SubtitleMarkup? posMarkup = forceTop ? null : ownMarkup;
@@ -685,7 +739,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     content = _wrapInteractive(context, content,
         isSecondary: isSecondary, blurred: blurred);
 
-    final Offset? posScreen = _posScreen(posMarkup, container);
+    final Offset? posScreen = _posScreen(posMarkup, container, cue: cues.first);
     if (posScreen != null) {
       // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标（\pos 覆盖 MarginV）。
       final SubtitleAnchor anchor = posMarkup!.anchor ??
@@ -895,12 +949,41 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         );
       }
     }
+    // \frz 旋转 / \fscx\fscy 缩放（+ \t 缩放动画）：绕字幕盒中心变换（TODO-1374）。招牌类
+    // 字幕（\pos + \frz/缩放）据此复现 mpv/libass 摆位。Transform 不改布局尺寸（组内堆叠 /
+    // 命中登记按未变换盒几何），旋转招牌本就不查词，可接受命中矩形不随旋转。
+    box = _applyAssTransform(box, cue, markup);
+
     // \fad/\fade 行级淡入淡出（TODO-1373）：整条 cue（含背景 / 收藏角标）按不透明度淡变。
     // 仅 respectAssStyle 开且本 cue 带 fade 时包裹；Opacity 不改布局 / 命中几何，逐字查词
     // 照常。隐形占位（registerHits=false）已在外层 Opacity(0)，此处叠乘不影响其为 0。
     final SubtitleFade? fade = widget.respectAssStyle ? markup?.fade : null;
     if (fade == null) return box;
     return Opacity(opacity: _fadeOpacityFor(fade, cue), child: box);
+  }
+
+  /// `\frz` 旋转 + `\fscx`/`\fscy`（含 `\t` 动画）缩放：把字幕盒绕中心做仿射变换
+  /// （TODO-1374）。仅 respectAssStyle 开且本 cue 带旋转 / 缩放时包裹；否则原样返回（零多余
+  /// 层，历史几何不变）。缩放动画按 cue 内已播放时长逐帧插值（由 [_syncFadeTicker] 驱动）。
+  Widget _applyAssTransform(Widget box, AudioCue cue, SubtitleMarkup? markup) {
+    if (!widget.respectAssStyle || markup == null) return box;
+    final double? rot = markup.rotationDeg;
+    final SubtitleScale? sc = markup.scale;
+    if (rot == null && sc == null) return box;
+    double sx = 1.0;
+    double sy = 1.0;
+    if (sc != null) {
+      final int? posMs = widget.controller.effectivePositionMs;
+      final int elapsed = (posMs ?? cue.startMs) - cue.startMs;
+      final (double a, double b) = sc.scaleAt(elapsed, cue.endMs - cue.startMs);
+      sx = a;
+      sy = b;
+    }
+    final Matrix4 m = Matrix4.identity();
+    // ASS \frz 逆时针为正；Flutter rotateZ 顺时针为正，故取负。
+    if (rot != null) m.rotateZ(-rot * math.pi / 180.0);
+    if (sc != null) m.scale(sx, sy, 1.0);
+    return Transform(alignment: Alignment.center, transform: m, child: box);
   }
 
   /// 本条 cue 的 `\fad`/`\fade` 不透明度（0..1）。无位置信息（未 load）时恒 1（不淡）。
@@ -1149,8 +1232,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   }
 
   /// \pos 映射到容器局部坐标；无 \pos 或视频未解码返回 null（走 anchor 对齐）。
-  Offset? _posScreen(SubtitleMarkup? markup, Size container) {
-    final SubtitlePos? pf = markup?.posFraction;
+  Offset? _posScreen(SubtitleMarkup? markup, Size container, {AudioCue? cue}) {
+    SubtitlePos? pf = markup?.posFraction;
+    // \move(...)：无静态 \pos 时按 cue 内时间在起止点间线性插值（TODO-1374）。ticker 已在
+    // build 里对带 move 的活动 cue 启动，故每帧重算。
+    final SubtitleMove? move = widget.respectAssStyle ? markup?.move : null;
+    if (pf == null && move != null && cue != null) {
+      final int? posMs = widget.controller.effectivePositionMs;
+      final int elapsed = (posMs ?? cue.startMs) - cue.startMs;
+      pf = move.posAt(elapsed, cue.endMs - cue.startMs);
+    }
     if (pf == null) return null;
     final int? w = widget.controller.videoWidth;
     final int? h = widget.controller.videoHeight;
