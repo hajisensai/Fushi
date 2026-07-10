@@ -399,4 +399,91 @@ void main() {
     // pumpOverlay 传 shadowThickness: 5 → 关时描边宽恒统一值 5，不吃 ASS 的 4。
     expect(strokeOf(tester, 'X').style?.foreground?.strokeWidth, 5.0);
   });
+
+  // ---- TODO-1373: \blur 辉光 / \fad 淡入淡出 渲染门控 ----
+  testWidgets(r'respectAssStyle ON: \blur wraps glyph in ImageFiltered (glow)',
+      (WidgetTester tester) async {
+    final VideoPlayerController c = _stubWithCue(_cue(r'{\blur5}あ'));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      ),
+    ));
+    await tester.pump();
+    // 无 PlayResY → _assFontScale=1 → sigma=5 → 该字符包一层高斯模糊 ImageFiltered。
+    expect(find.byType(ImageFiltered), findsWidgets);
+  });
+
+  testWidgets(r'respectAssStyle OFF: \blur ignored (no ImageFiltered)',
+      (WidgetTester tester) async {
+    // blurEnabled 默认 false → 无听力沉浸 ImageFiltered；故有无 ImageFiltered 仅取决于 \blur。
+    final VideoPlayerController c = _stubWithCue(_cue(r'{\blur5}あ'));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, respectAssStyle: false),
+      ),
+    ));
+    await tester.pump();
+    expect(find.byType(ImageFiltered), findsNothing);
+  });
+
+  testWidgets(r'respectAssStyle ON: \blur keeps per-char lookup working',
+      (WidgetTester tester) async {
+    String? tapped;
+    int? idx;
+    final VideoPlayerController c = _stubWithCue(_cue(r'{\blur5}あい'));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          respectAssStyle: true,
+          onCharTap: (String s, int i, Rect r) {
+            tapped = s;
+            idx = i;
+          },
+        ),
+      ),
+    ));
+    await tester.pump();
+    // ImageFiltered 不改布局尺寸 → 命中矩形不变 → 逐字查词照常。
+    await tester.tapAt(tester.getCenter(find.text('い').first));
+    expect(tapped, 'あい');
+    expect(idx, 1);
+  });
+
+  testWidgets(
+      r'respectAssStyle ON: \fad fades cue opacity by playback position',
+      (WidgetTester tester) async {
+    final AudioCue cue = _cue(r'{\fad(160,160)}う', start: 1000, end: 5000);
+    final VideoPlayerController c = _stubWithCue(cue);
+    // 80ms into a 160ms fade-in → opacity 0.5.
+    c.debugSetPositionForTesting(1080);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      ),
+    ));
+    await tester.pump();
+    final Iterable<Opacity> ops =
+        tester.widgetList<Opacity>(find.byType(Opacity));
+    expect(ops.any((Opacity o) => (o.opacity - 0.5).abs() < 1e-6), isTrue,
+        reason: 'fade-in at 80/160ms should be ~0.5');
+  });
+
+  testWidgets(r'respectAssStyle OFF: \fad ignored (no partial opacity)',
+      (WidgetTester tester) async {
+    final AudioCue cue = _cue(r'{\fad(160,160)}う', start: 1000, end: 5000);
+    final VideoPlayerController c = _stubWithCue(cue);
+    c.debugSetPositionForTesting(1080);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, respectAssStyle: false),
+      ),
+    ));
+    await tester.pump();
+    // 关时不包 fade Opacity：不存在 opacity<1 的 Opacity（历史外观）。
+    final Iterable<Opacity> ops =
+        tester.widgetList<Opacity>(find.byType(Opacity));
+    expect(ops.every((Opacity o) => o.opacity >= 1.0), isTrue);
+  });
 }

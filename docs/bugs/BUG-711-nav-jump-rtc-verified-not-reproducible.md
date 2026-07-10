@@ -1,0 +1,16 @@
+## BUG-711 · 导航跳转落章首 TODO-1308 复诉在 develop 无法复现（已被 BUG-696 根治）
+- **报告**：2026-07-10（用户：TODO-1308 复诉「没修好，并且还是没跳转到对应的文字位置，只在章节开头」，附竖排振假名错位图 9bc642333046b2aa.png）。本条只处理**跳转**子问题；振假名子问题（BUG-695 系列）单独待用户 EPUB。
+- **真实性**：❌ **在 origin/develop 无法复现（已被 BUG-696 根治·非当前代码 bug）**。沿真实代码路径 + 两轮独立枚举 + 双模式真机 itest 核实：**所有跳转入口在 develop 上单位都正确、落点精确到目标句、不落章首**。
+  - **入口逐个核实**（都不把「章内绝对字符偏移」误当「/10000 进度分数」）：
+    - 书内收藏面板 `chrome.part.dart:2035 _jumpToFavoriteSentence` → `restoreToCharOffset(normCharOffset, charOffsetEnd)`（绝对锚）/ 跨章 `_navigateToChapterAndWait(charOffset:…)`（BUG-696 根因①已修 `/10000`）。
+    - 收藏页/制卡历史冷启动 `reader_hibiki_page.dart:1610` charAnchor（BUG-459 已修）。`collections_page.dart:400` 句子/制卡行传绝对 `charAnchor`。
+    - 搜索跨章 `chrome.part.dart:1405 onSearchJump` → `scrollToSearchMatch`（`reader_pagination_scripts.dart:1414`），连续兜底已从 `range.surroundContents(span)` 改 `scrollToTarget(range)`（BUG-696 根因②已修 rb/rtc `InvalidStateError`）。
+    - 书签 `chrome.part.dart:1435`：写入端 `_addBookmarkAtCurrentPosition:1562` 存 `(progress*10000)` 分数，读取端 `/10000`，**写读一致**（`Bookmarks` 表 tables.dart:118 只有 normCharOffset 无精确列，粗粒度分数是设计）。
+    - 续读冷启动 `reader_hibiki_page.dart:1651`：优先精确 `saved.charOffset`，分数仅兜底。
+    - 有声书 cue 用章内 0..1 进度分数（`audiobook.part.dart:667`）；caret 是字符级导航非恢复入口。
+  - **唯一确定性落章首处都是「有意兜底」非单位 bug**：`restoreToCharOffset` 在 `charOffset<=0` 或越界时 `scrollToChapterStart`（`reader_pagination_scripts.dart:3014/3022`）、连续 `scrollToCharOffset` 的 `Math.abs(hintScroll)>0`（BUG-696 根因③已修竖排死分支，:2950）。
+  - **写读字符计数同口径**：写侧 `getNormalizedOffset`（`reader_selection_scripts.dart:437`）与读侧 `createWalker`（`reader_pagination_scripts.dart:929`）都用 `isFurigana=closest('rt,rp')` REJECT 振假名——rb/rtc 群组振假名下基字（<rb>）计、振假名（<rtc><rt>）不计，两端一致，绝对偏移不会因 ruby 越界。
+- **[x] ① 无需修复（当前代码已正确）** — 报的「跳转只落章节开头」根因是 BUG-696 的 `/10000` 误算（+ 连续竖排死分支 + rb/rtc 搜索 InvalidStateError），已由 develop `5fcb25dd8`（合入 1.0.1+616）根治并在 develop 头 `44041323b`（1.0.1+617 起）在库。用户复诉「没修好」= **测的构建早于 BUG-696**（该修 2026-07-10 11:35 才落 develop，看板请用户验收的 decision 12:13 才发；无证据表明含 BUG-696 的发布包已到用户手上）。**未在当前代码引入任何跳转改动——对正确代码打补丁会违反根因修复原则。**
+- **[x] ② 已加自动化测试（回归守卫 + 用户 DOM 形态覆盖）** — 新增 `hibiki/integration_test/reader_favorite_jump_rtc_itest.dart`：用**用户确切 DOM 形态**（JIS mono-ruby `<ruby><rb>貫</rb><rb>禄</rb><rtc><rt>かん</rt><rt>ろく</rt></rtc></ruby>`，新增合成书第八章 `generate_test_epub.dart chapter_08_monoruby`）在**竖排 vertical-rl 的分页（app 默认）+ 连续两种模式**下量测收藏跳转（同章 + 真跨章 `_navigateToChapterAndWait` 运输）落点。真机 Windows 离屏证据 `win-itest-20260710-202946-a9d4e53e`：rb 元素 240、目标 3716，**分页 landed=3228（含目标句那页页首，非章首 0）、连续 landed=3708（距目标 8 字）**，`All tests passed`。补上了旧 `reader_favorite_jump_itest.dart` 只覆盖普通段落 + 连续模式的空档（rb/rtc 与分页收藏跳转此前零覆盖）。
+- **结论（面向用户·非「已修复」勿投票关闭）**：**无法复现你说的「跳转只落章节开头」**。我逐个核实了阅读器**全部**跳转入口在 develop 上都精确落到目标句、不落章首（收藏 in-book/收藏冷启动/搜索/书签/续读/全局字符偏移；TOC 按设计到章首），并在你确切的竖排 rb/rtc 振假名书形态上真机量测收藏跳转分页 landed=3228、连续 landed=3708（目标 3716，非章首 0）。要继续定位需要你两条材料：**① 你从哪个入口跳的**（收藏/搜索/书签/目录/续读）**② 你测的构建版本号**（BUG-696 修复 2026-07-10 才落 develop=1.0.1+616，早于此的构建不含修复；请确认 ≥1.0.1+616 或换最新构建再试）。若最新构建仍落章首，请把那本确切 EPUB 发我（与振假名子问题同一取证阻塞）。
+- **备注**：与 BUG-696 同一症状（TODO-1308 问题②）；本条是复诉的**复现结论 + 用户 DOM 硬化守卫**，不是新 bug、不是新代码修复（对已正确的入口打补丁违反根因修复原则）。提交哈希见 git log（test(reader) TODO-1308 BUG-711）。

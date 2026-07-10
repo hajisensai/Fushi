@@ -2189,8 +2189,6 @@
   "video_subtitle_youtube_translated": "$lang（翻译）",
   "video_subtitle_youtube_empty": "该字幕轨没有文字",
   "sync_client_token": "对端访问令牌",
-  "sync_client_token_hint": "配对成功后由对端自动签发并填入；这是对端发给本设备的专属令牌，与对端服务器显示的共享令牌不同，两者都能连接。",
-  "sync_server_token_self_hint": "本设备的服务器共享令牌；已配对的设备会另获各自的专属令牌，此共享令牌也可手动填入连接。",
   "theme_eyecare": "护眼",
   "reader_theme_eyecare": "护眼",
   "video_settings_cat_audio": "音频",
@@ -2249,5 +2247,7 @@
   "desktop_clipboard_destination_panel": "悬浮面板",
   "desktop_clipboard_destination_transient": "光标处弹卡",
   "clipboard_panel_opacity": "面板不透明度",
-  "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）"
+  "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）",
+  "sync_client_connected": "已连接",
+  "sync_client_token_manual": "手动填写令牌"
 }
