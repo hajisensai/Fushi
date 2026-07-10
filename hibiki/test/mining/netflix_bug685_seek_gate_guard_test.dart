@@ -82,7 +82,7 @@ void main() {
       // visibly distinguishable.
       expect(content.contains("data-hibiki-cs', 'v45'"), isTrue,
           reason: '$root content.js version marker must be bumped to v45 '
-              '(v44=seek gate, v45=BUG-686 shadow-DOM popup)');
+              '(v44=seek gate, v45=BUG-688 shadow-DOM popup + TODO-1219/1363 subtitle list replay/universal providers)');
 
       // Adjacent BUG-681 tail-pad fix must remain intact (no regression).
       expect(content.contains('kNfClipTailPadSec'), isTrue,

@@ -15,6 +15,16 @@
   var FMT_PREF = ['webvtt-lssdh-ios8', 'webvtt', 'dfxp-ls-sdh', 'imsc1.1', 'simplesdh', 'nflx-cmisc'];
   var seenTimedTextUrls = Object.create(null); // URL 去重，同一轨只抓一次
 
+  // TODO-1219/1363（面板要刷新/列表空的根因）：本脚本 document_start 抓字幕，隔离世界 content.js
+  // document_idle 才注册接收端——postMessage fire-and-forget，先于接收端发出的 cue 消息永久丢失。
+  // 抓到的 cue payload 一律存档；content.js 就绪后发 {__hibikiNf:'replayCues'} 请求，这里整批重放。
+  // 上限防呆：一部剧全部语言轨也就几十条，超上限丢最旧（绝不无界增长）。
+  var cueArchive = [];
+  var CUE_ARCHIVE_MAX = 80;
+  function postCuesMessage(payload) {
+    try { window.postMessage(payload, ORIGIN); } catch (_) {}
+  }
+
   function pickTrackUrl(track) {
     var dls = track && track.ttDownloadables;
     if (!dls) return null;
@@ -47,9 +57,10 @@
         .then(function (r) { return r.text(); })
         .then(function (text) {
           if (!text) return;
-          try {
-            window.postMessage({ __hibikiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text }, ORIGIN);
-          } catch (_) {}
+          var payload = { __hibikiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text };
+          cueArchive.push(payload);
+          if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
+          postCuesMessage(payload);
         })
         .catch(function () {});
     } catch (_) {}
@@ -107,7 +118,13 @@
   window.addEventListener('message', function (e) {
     if (e.origin !== ORIGIN || e.source !== window) return;
     var d = e.data;
-    if (!d || d.__hibikiNf !== 'seek') return;
+    if (!d) return;
+    if (d.__hibikiNf === 'replayCues') {
+      // content.js（隔离世界）接收端就绪：重放全部已存档 cue，消除注入时序竞态。
+      for (var i = 0; i < cueArchive.length; i++) postCuesMessage(cueArchive[i]);
+      return;
+    }
+    if (d.__hibikiNf !== 'seek') return;
     var replied = false;
     var reply = function (ok, err) {
       if (replied) return; replied = true;
