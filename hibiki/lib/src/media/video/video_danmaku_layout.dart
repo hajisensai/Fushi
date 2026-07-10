@@ -42,6 +42,8 @@ class VideoDanmakuLayout {
     required int maxLanes,
     Duration scrollDuration = kDefaultVideoDanmakuScrollDuration,
     Duration fixedDuration = kDefaultVideoDanmakuFixedDuration,
+    double fontScale = 1.0,
+    double areaFraction = 1.0,
   }) {
     if (items.isEmpty ||
         viewportSize.width <= 0 ||
@@ -76,8 +78,12 @@ class VideoDanmakuLayout {
     final int allowed = normalizeVideoDanmakuMaxActive(maxActive);
     final List<_ActiveItem> capped =
         active.length <= allowed ? active : active.sublist(0, allowed);
+    // TODO-1376：弹幕仅占画面顶部 [areaFraction] 高度带（默认满屏），把弹幕挤出底部
+    // 字幕区；lane 高度随字号缩放 [fontScale] 放大，避免大字号相邻行重叠。
+    final double band =
+        viewportSize.height * areaFraction.clamp(0.0, 1.0).toDouble();
     final double laneHeight =
-        math.max(18, viewportSize.height / math.max(1, maxLanes));
+        math.max(18 * fontScale, band / math.max(1, maxLanes));
     final List<int> nextFreeMs = List<int>.filled(maxLanes, -1);
     final List<VideoDanmakuLayoutEntry> entries = <VideoDanmakuLayoutEntry>[];
     for (final _ActiveItem activeItem in capped) {
@@ -89,7 +95,7 @@ class VideoDanmakuLayout {
       );
       final double top = (lane * laneHeight).clamp(
         0,
-        math.max(0, viewportSize.height - laneHeight),
+        math.max(0, band - laneHeight),
       );
       final double progress = _progressFor(
         activeItem,
@@ -98,13 +104,14 @@ class VideoDanmakuLayout {
       );
       final double x = switch (activeItem.item.mode) {
         VideoDanmakuMode.scroll => viewportSize.width -
-            (viewportSize.width + _estimatedWidth(activeItem.item.text)) *
+            (viewportSize.width +
+                    _estimatedWidth(activeItem.item.text, fontScale)) *
                 progress,
         VideoDanmakuMode.top => viewportSize.width * 0.5,
         VideoDanmakuMode.bottom => viewportSize.width * 0.5,
       };
       final double y = activeItem.item.mode == VideoDanmakuMode.bottom
-          ? viewportSize.height - laneHeight - top
+          ? band - laneHeight - top
           : top;
       entries.add(VideoDanmakuLayoutEntry(
         item: activeItem.item,
@@ -152,8 +159,8 @@ class VideoDanmakuLayout {
     return ((1 - progress) / 0.12).clamp(0.0, 1.0).toDouble();
   }
 
-  static double _estimatedWidth(String text) =>
-      (text.runes.length * 18.0).clamp(36.0, 420.0).toDouble();
+  static double _estimatedWidth(String text, double fontScale) =>
+      (text.runes.length * 18.0 * fontScale).clamp(36.0, 720.0).toDouble();
 }
 
 class _ActiveItem {

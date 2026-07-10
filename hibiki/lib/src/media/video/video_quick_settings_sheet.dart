@@ -101,6 +101,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.onDanmakuEnabledChanged,
     this.onDanmakuOnlineEnabledChanged,
     this.onDanmakuMaxActiveChanged,
+    this.initialDanmakuStyle = VideoDanmakuStyle.defaults,
+    this.onDanmakuStylePreview,
+    this.onDanmakuStyleCommit,
+    this.initialDanmakuBlockRules = '',
+    this.onDanmakuBlockRulesChanged,
+    this.onManualDanmakuMatch,
     this.initialCategory,
     this.audioTrackSection,
     this.subtitleTrackSection,
@@ -263,6 +269,16 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   final Future<void> Function(bool value)? onDanmakuEnabledChanged;
   final Future<void> Function(bool value)? onDanmakuOnlineEnabledChanged;
   final Future<void> Function(int value)? onDanmakuMaxActiveChanged;
+  final VideoDanmakuStyle initialDanmakuStyle;
+
+  /// 拖动中即时预览（不落盘），让弹幕样式在设置面板后方实时变化。
+  final ValueChanged<VideoDanmakuStyle>? onDanmakuStylePreview;
+
+  /// 拖动结束时提交并持久化样式。
+  final Future<void> Function(VideoDanmakuStyle style)? onDanmakuStyleCommit;
+  final String initialDanmakuBlockRules;
+  final Future<void> Function(String rulesText)? onDanmakuBlockRulesChanged;
+  final VoidCallback? onManualDanmakuMatch;
 
   /// TODO-1351：打开面板时直接定位到某个分类（`audio` / `subtitle` / ...）。null =
   /// 用默认（宽窗 `playback`，窄窗主页导航列表）。由「音频轨」「字幕轨」按钮驱动，把
@@ -322,6 +338,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late bool _danmakuOnlineEnabled = widget.initialDanmakuOnlineEnabled;
   late int _danmakuMaxActive =
       normalizeVideoDanmakuMaxActive(widget.initialDanmakuMaxActive);
+  late VideoDanmakuStyle _danmakuStyle =
+      widget.initialDanmakuStyle.normalized();
+  late final TextEditingController _danmakuBlockRulesController =
+      TextEditingController(text: widget.initialDanmakuBlockRules);
   late VideoControlLayout _controlLayout =
       widget.initialControlLayout ?? VideoControlLayout.currentChrome;
   String? _controlMoveRejectionMessage;
@@ -379,6 +399,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   void dispose() {
     _rawConfController.dispose();
     _delayController.dispose();
+    _danmakuBlockRulesController.dispose();
     super.dispose();
   }
 
@@ -2673,44 +2694,167 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   }
 
   Widget _buildDanmakuDetail() {
-    return _settingsSection(
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AdaptiveSettingsSwitchRow(
-          title: t.video_setting_danmaku_enabled,
-          subtitle: t.video_setting_danmaku_enabled_hint,
-          icon: Icons.forum_outlined,
-          value: _danmakuEnabled,
-          onChanged: (bool value) async {
-            setState(() => _danmakuEnabled = value);
-            await widget.onDanmakuEnabledChanged?.call(value);
-          },
+        _settingsSection(
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              title: t.video_setting_danmaku_enabled,
+              subtitle: t.video_setting_danmaku_enabled_hint,
+              icon: Icons.forum_outlined,
+              value: _danmakuEnabled,
+              onChanged: (bool value) async {
+                setState(() => _danmakuEnabled = value);
+                await widget.onDanmakuEnabledChanged?.call(value);
+              },
+            ),
+            AdaptiveSettingsSwitchRow(
+              title: t.video_setting_danmaku_online,
+              subtitle: t.video_setting_danmaku_online_hint,
+              icon: Icons.cloud_sync_outlined,
+              value: _danmakuOnlineEnabled,
+              onChanged: (bool value) async {
+                setState(() => _danmakuOnlineEnabled = value);
+                await widget.onDanmakuOnlineEnabledChanged?.call(value);
+              },
+            ),
+            // TODO-1376：自动匹配失败/错集时的手动搜索选集入口（回调由视频页开搜索侧栏）。
+            if (widget.onManualDanmakuMatch != null)
+              AdaptiveSettingsNavigationRow(
+                title: t.video_setting_danmaku_manual_match,
+                subtitle: t.video_setting_danmaku_manual_match_hint,
+                icon: Icons.manage_search_outlined,
+                showIcon: true,
+                onTap: () => widget.onManualDanmakuMatch!.call(),
+              ),
+            AdaptiveSettingsStepperRow(
+              title: t.video_setting_danmaku_max_active,
+              subtitle: t.video_setting_danmaku_max_active_hint,
+              icon: Icons.speed_outlined,
+              value: _danmakuMaxActive.toDouble(),
+              step: 10,
+              min: 10,
+              max: kMaxVideoDanmakuActive.toDouble(),
+              format: (double v) => v.round().toString(),
+              onChanged: (double value) async {
+                final int next = normalizeVideoDanmakuMaxActive(value.round());
+                setState(() => _danmakuMaxActive = next);
+                await widget.onDanmakuMaxActiveChanged?.call(next);
+              },
+            ),
+          ],
         ),
-        AdaptiveSettingsSwitchRow(
-          title: t.video_setting_danmaku_online,
-          subtitle: t.video_setting_danmaku_online_hint,
-          icon: Icons.cloud_sync_outlined,
-          value: _danmakuOnlineEnabled,
-          onChanged: (bool value) async {
-            setState(() => _danmakuOnlineEnabled = value);
-            await widget.onDanmakuOnlineEnabledChanged?.call(value);
-          },
+        // TODO-1376：弹幕样式（字号/不透明度/速度/显示区域）。拖动即时预览，松手落盘。
+        _settingsSection(
+          children: <Widget>[
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_danmaku_font_scale,
+              subtitle: t.video_setting_danmaku_font_scale_hint,
+              icon: Icons.format_size_outlined,
+              value: _danmakuStyle.fontScale,
+              min: VideoDanmakuStyle.minFontScale,
+              max: VideoDanmakuStyle.maxFontScale,
+              divisions: 15,
+              step: 0.1,
+              readout: '${_danmakuStyle.fontScale.toStringAsFixed(1)}x',
+              onChanged: (double v) =>
+                  _previewDanmakuStyle(_danmakuStyle.copyWith(fontScale: v)),
+              onChangeEnd: (double v) =>
+                  _commitDanmakuStyle(_danmakuStyle.copyWith(fontScale: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_danmaku_opacity,
+              subtitle: t.video_setting_danmaku_opacity_hint,
+              icon: Icons.opacity_outlined,
+              value: _danmakuStyle.opacity,
+              min: VideoDanmakuStyle.minOpacity,
+              max: VideoDanmakuStyle.maxOpacity,
+              divisions: 9,
+              step: 0.1,
+              readout: '${(_danmakuStyle.opacity * 100).round()}%',
+              onChanged: (double v) =>
+                  _previewDanmakuStyle(_danmakuStyle.copyWith(opacity: v)),
+              onChangeEnd: (double v) =>
+                  _commitDanmakuStyle(_danmakuStyle.copyWith(opacity: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_danmaku_speed,
+              subtitle: t.video_setting_danmaku_speed_hint,
+              icon: Icons.fast_forward_outlined,
+              value: _danmakuStyle.speedScale,
+              min: VideoDanmakuStyle.minSpeedScale,
+              max: VideoDanmakuStyle.maxSpeedScale,
+              divisions: 15,
+              step: 0.1,
+              readout: '${_danmakuStyle.speedScale.toStringAsFixed(1)}x',
+              onChanged: (double v) =>
+                  _previewDanmakuStyle(_danmakuStyle.copyWith(speedScale: v)),
+              onChangeEnd: (double v) =>
+                  _commitDanmakuStyle(_danmakuStyle.copyWith(speedScale: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_danmaku_area,
+              subtitle: t.video_setting_danmaku_area_hint,
+              icon: Icons.vertical_align_top_outlined,
+              value: _danmakuStyle.areaFraction,
+              min: VideoDanmakuStyle.minAreaFraction,
+              max: VideoDanmakuStyle.maxAreaFraction,
+              divisions: 15,
+              step: 0.05,
+              readout: '${(_danmakuStyle.areaFraction * 100).round()}%',
+              onChanged: (double v) =>
+                  _previewDanmakuStyle(_danmakuStyle.copyWith(areaFraction: v)),
+              onChangeEnd: (double v) =>
+                  _commitDanmakuStyle(_danmakuStyle.copyWith(areaFraction: v)),
+            ),
+          ],
         ),
-        AdaptiveSettingsStepperRow(
-          title: t.video_setting_danmaku_max_active,
-          subtitle: t.video_setting_danmaku_max_active_hint,
-          icon: Icons.speed_outlined,
-          value: _danmakuMaxActive.toDouble(),
-          step: 10,
-          min: 10,
-          max: kMaxVideoDanmakuActive.toDouble(),
-          format: (double v) => v.round().toString(),
-          onChanged: (double value) async {
-            final int next = normalizeVideoDanmakuMaxActive(value.round());
-            setState(() => _danmakuMaxActive = next);
-            await widget.onDanmakuMaxActiveChanged?.call(next);
-          },
+        // TODO-1376：屏蔽词/正则过滤（多行文本，每行一条，/pattern/ 为正则）。
+        _textFieldSection(
+          title: t.video_setting_danmaku_block_rules,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                t.video_setting_danmaku_block_rules_hint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              TextField(
+                key: const Key('danmaku-block-rules-field'),
+                controller: _danmakuBlockRulesController,
+                minLines: 3,
+                maxLines: 8,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: t.video_setting_danmaku_block_rules_placeholder,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (String v) => unawaited(
+                    widget.onDanmakuBlockRulesChanged?.call(v) ??
+                        Future<void>.value()),
+              ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  void _previewDanmakuStyle(VideoDanmakuStyle style) {
+    final VideoDanmakuStyle normalized = style.normalized();
+    setState(() => _danmakuStyle = normalized);
+    widget.onDanmakuStylePreview?.call(normalized);
+  }
+
+  Future<void> _commitDanmakuStyle(VideoDanmakuStyle style) async {
+    final VideoDanmakuStyle normalized = style.normalized();
+    setState(() => _danmakuStyle = normalized);
+    await widget.onDanmakuStyleCommit?.call(normalized);
   }
 }

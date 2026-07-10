@@ -176,6 +176,58 @@ class DandanplayFetchResult {
   final Object? error;
 }
 
+/// 手动搜索命中的一集（TODO-1376）：episodeId 用于拉取弹幕，标题供列表展示。
+@immutable
+class DandanplaySearchEpisode {
+  const DandanplaySearchEpisode({
+    required this.episodeId,
+    required this.episodeTitle,
+  });
+
+  final int episodeId;
+  final String episodeTitle;
+
+  static DandanplaySearchEpisode? fromJson(Map<dynamic, dynamic> json) {
+    final Object? id = json['episodeId'];
+    if (id is! num) return null;
+    return DandanplaySearchEpisode(
+      episodeId: id.toInt(),
+      episodeTitle: json['episodeTitle']?.toString() ?? '',
+    );
+  }
+}
+
+/// 手动搜索命中的一部番剧（TODO-1376）：含其下可选的分集列表。
+@immutable
+class DandanplaySearchAnime {
+  const DandanplaySearchAnime({
+    required this.animeId,
+    required this.animeTitle,
+    this.typeDescription,
+    this.episodes = const <DandanplaySearchEpisode>[],
+  });
+
+  final int animeId;
+  final String animeTitle;
+  final String? typeDescription;
+  final List<DandanplaySearchEpisode> episodes;
+}
+
+/// 手动搜索结果（TODO-1376）：复用 [DandanplayFetchStatus] 的 hit/noMatch/
+/// networkError/serverError 语义，[animes] 仅在 hit 时非空。
+@immutable
+class DandanplaySearchResult {
+  const DandanplaySearchResult({
+    required this.status,
+    this.animes = const <DandanplaySearchAnime>[],
+    this.error,
+  });
+
+  final DandanplayFetchStatus status;
+  final List<DandanplaySearchAnime> animes;
+  final Object? error;
+}
+
 class DandanplayClient {
   /// [config] 缺省读取进程级 [DandanplayConfig.current]（偏好仓库推送），使
   /// 播放页的零参 `DandanplayClient()` 自动吃到用户配置的服务器/凭据。显式 [baseUri]
@@ -326,6 +378,74 @@ class DandanplayClient {
       shiftMs: (match.shiftSeconds * 1000).round(),
     );
   }
+
+  /// 手动按番剧名 [keyword] 搜索候选集（TODO-1376，dandanplay `/api/v2/search/episodes`）。
+  /// 自动匹配（[matchFile]）失败或匹配错集时的用户兜底入口；结果按番剧分组、各含分集。
+  Future<DandanplaySearchResult> searchEpisodes(String keyword) async {
+    final String trimmed = keyword.trim();
+    if (trimmed.isEmpty) {
+      return const DandanplaySearchResult(
+          status: DandanplayFetchStatus.noMatch);
+    }
+    const String path = '/api/v2/search/episodes';
+    final Uri uri = _baseUri.replace(
+      path: path,
+      queryParameters: <String, String>{'anime': trimmed},
+    );
+    try {
+      final http.Response response =
+          await _client.get(uri, headers: _headersFor(path)).timeout(_timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return DandanplaySearchResult(
+          status: DandanplayFetchStatus.serverError,
+          error: response.statusCode,
+        );
+      }
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is! Map) {
+        return const DandanplaySearchResult(
+          status: DandanplayFetchStatus.serverError,
+        );
+      }
+      if (decoded['success'] == false) {
+        return DandanplaySearchResult(
+          status: DandanplayFetchStatus.serverError,
+          error: decoded['errorMessage'],
+        );
+      }
+      final List<DandanplaySearchAnime> animes =
+          _animesFromJson(decoded['animes']);
+      if (animes.isEmpty) {
+        return const DandanplaySearchResult(
+          status: DandanplayFetchStatus.noMatch,
+        );
+      }
+      return DandanplaySearchResult(
+        status: DandanplayFetchStatus.hit,
+        animes: animes,
+      );
+    } on SocketException catch (e) {
+      return DandanplaySearchResult(
+        status: DandanplayFetchStatus.networkError,
+        error: e,
+      );
+    } on http.ClientException catch (e) {
+      return DandanplaySearchResult(
+        status: DandanplayFetchStatus.networkError,
+        error: e,
+      );
+    } on TimeoutException catch (e) {
+      return DandanplaySearchResult(
+        status: DandanplayFetchStatus.networkError,
+        error: e,
+      );
+    } catch (e) {
+      return DandanplaySearchResult(
+        status: DandanplayFetchStatus.serverError,
+        error: e,
+      );
+    }
+  }
 }
 
 Future<String> dandanplayFileHash(File file) async {
@@ -341,5 +461,31 @@ List<DandanplayMatch> _matchesFromJson(Object? raw) {
       .whereType<Map>()
       .map(DandanplayMatch.fromJson)
       .whereType<DandanplayMatch>()
+      .toList(growable: false);
+}
+
+List<DandanplaySearchAnime> _animesFromJson(Object? raw) {
+  if (raw is! List) return const <DandanplaySearchAnime>[];
+  final List<DandanplaySearchAnime> out = <DandanplaySearchAnime>[];
+  for (final dynamic anime in raw) {
+    if (anime is! Map) continue;
+    final Object? id = anime['animeId'];
+    if (id is! num) continue;
+    out.add(DandanplaySearchAnime(
+      animeId: id.toInt(),
+      animeTitle: anime['animeTitle']?.toString() ?? '',
+      typeDescription: anime['typeDescription']?.toString(),
+      episodes: _searchEpisodesFromJson(anime['episodes']),
+    ));
+  }
+  return out;
+}
+
+List<DandanplaySearchEpisode> _searchEpisodesFromJson(Object? raw) {
+  if (raw is! List) return const <DandanplaySearchEpisode>[];
+  return raw
+      .whereType<Map>()
+      .map(DandanplaySearchEpisode.fromJson)
+      .whereType<DandanplaySearchEpisode>()
       .toList(growable: false);
 }

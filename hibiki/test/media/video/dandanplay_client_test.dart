@@ -345,4 +345,84 @@ void main() {
       expect(const DandanplayConfig().signatureHeaders('/x'), isEmpty);
     });
   });
+
+  group('DandanplayClient.searchEpisodes', () {
+    test('parses animes and their episodes on a successful search', () async {
+      final List<http.Request> requests = <http.Request>[];
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((http.Request request) async {
+          requests.add(request);
+          expect(request.url.path, '/api/v2/search/episodes');
+          expect(request.url.queryParameters['anime'], 'demo');
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'success': true,
+              'animes': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'animeId': 7,
+                  'animeTitle': 'Demo Show',
+                  'typeDescription': 'TV',
+                  'episodes': <Map<String, dynamic>>[
+                    <String, dynamic>{'episodeId': 71, 'episodeTitle': '01'},
+                    <String, dynamic>{'episodeId': 72, 'episodeTitle': '02'},
+                  ],
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final DandanplaySearchResult result = await client.searchEpisodes('demo');
+
+      expect(result.status, DandanplayFetchStatus.hit);
+      expect(result.animes, hasLength(1));
+      expect(result.animes.single.animeId, 7);
+      expect(result.animes.single.animeTitle, 'Demo Show');
+      expect(result.animes.single.episodes, hasLength(2));
+      expect(result.animes.single.episodes.first.episodeId, 71);
+      expect(result.animes.single.episodes.last.episodeTitle, '02');
+      expect(requests, hasLength(1));
+    });
+
+    test('empty keyword short-circuits with noMatch and no request', () async {
+      int calls = 0;
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((http.Request request) async {
+          calls++;
+          return http.Response('{}', 200);
+        }),
+      );
+      final DandanplaySearchResult result = await client.searchEpisodes('   ');
+      expect(result.status, DandanplayFetchStatus.noMatch);
+      expect(calls, 0);
+    });
+
+    test('empty animes list degrades to noMatch', () async {
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((http.Request request) async {
+          return http.Response(
+            jsonEncode(
+                <String, dynamic>{'success': true, 'animes': <dynamic>[]}),
+            200,
+          );
+        }),
+      );
+      final DandanplaySearchResult result =
+          await client.searchEpisodes('nothing');
+      expect(result.status, DandanplayFetchStatus.noMatch);
+      expect(result.animes, isEmpty);
+    });
+
+    test('network failure surfaces as networkError', () async {
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((http.Request request) async {
+          throw const SocketException('offline');
+        }),
+      );
+      final DandanplaySearchResult result = await client.searchEpisodes('demo');
+      expect(result.status, DandanplayFetchStatus.networkError);
+    });
+  });
 }

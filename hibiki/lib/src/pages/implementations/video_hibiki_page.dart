@@ -31,6 +31,7 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
@@ -495,6 +496,12 @@ abstract class VideoHibikiTestHooks {
   /// 测试直接打开章节侧栏，避免用坐标/私有控件路径模拟点击。
   void debugShowChapterPanel();
 
+  /// 测试直接打开弹幕设置分类（TODO-1376），避免坐标点击设置按钮再切分类。
+  void debugOpenDanmakuSettings();
+
+  /// 测试直接打开弹幕手动搜索/选集侧栏（TODO-1376）。
+  void debugOpenDanmakuMatch();
+
   /// 开始真实播放（驱动 libmpv），让位置自然前进。
   Future<void> debugPlay();
 }
@@ -509,6 +516,8 @@ enum _VideoSidePanelKind {
   // 副字幕浮层也删——副字幕源改内联在「字幕」分类的可展开区里就地切换（不再跳独立窗口）。
   chapters,
   quality,
+  // TODO-1376：弹幕手动搜索/选集匹配侧栏。
+  danmakuMatch,
 }
 
 class _VideoSidePanelState {
@@ -750,6 +759,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   @override
+  void debugOpenDanmakuSettings() {
+    _showPlayerSettings(initialCategory: 'danmaku');
+  }
+
+  @override
+  void debugOpenDanmakuMatch() {
+    _openDanmakuManualMatch();
+  }
+
+  @override
   Future<void> debugPlay() async => _controller?.play();
 
   VideoPlayerController? _controller;
@@ -821,7 +840,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 无需改模板。**只用于制卡 documentTitle**，不影响播放器标题栏（仍是剧集名 [_title]）。
   String? _playlistTitle;
   List<VideoDanmakuItem> _danmakuItems = const <VideoDanmakuItem>[];
+
+  /// TODO-1376：屏蔽规则过滤后、真正送进 overlay 的弹幕（[_danmakuItems] 为原始全集）。
+  /// 缓存而非每帧重算：overlay ticker 每帧 rebuild，过滤上千条会拖慢。规则或原始集
+  /// 变化时经 [_applyDanmakuItems] / [_setVideoDanmakuBlockRules] 重算一次。
+  List<VideoDanmakuItem> _danmakuVisibleItems = const <VideoDanmakuItem>[];
   int _danmakuLoadSeq = 0;
+
+  /// TODO-1376：弹幕样式（字号/不透明度/速度/显示区域）与屏蔽规则，源自全局偏好。
+  late VideoDanmakuStyle _danmakuStyle = appModel.videoDanmakuStyle;
+  late VideoDanmakuBlockRules _danmakuBlockRules =
+      parseVideoDanmakuBlockRules(appModel.videoDanmakuBlockRulesText);
 
   /// 库内 part 文件（extension）改状态的入口：扩展不被视作 State 子类实例成员，
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
@@ -5049,6 +5078,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
       onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive,
+      // TODO-1376：弹幕样式（拖动即时预览，松手落盘）+ 屏蔽词/正则过滤 + 手动匹配入口。
+      initialDanmakuStyle: _danmakuStyle,
+      onDanmakuStylePreview: _previewVideoDanmakuStyle,
+      onDanmakuStyleCommit: _setVideoDanmakuStyle,
+      initialDanmakuBlockRules: appModel.videoDanmakuBlockRulesText,
+      onDanmakuBlockRulesChanged: _setVideoDanmakuBlockRules,
+      onManualDanmakuMatch: _openDanmakuManualMatch,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
