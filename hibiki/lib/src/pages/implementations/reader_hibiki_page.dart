@@ -1446,6 +1446,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ErrorLogService.instance
             .log('ReaderHibiki.onSettingsChangedLive', e, s);
       }));
+      // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
+      _syncTapGateJs();
       setState(() {});
     };
     ReaderHibikiSource.onLayoutReloadLive = () {

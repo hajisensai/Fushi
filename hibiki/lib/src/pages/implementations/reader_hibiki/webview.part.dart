@@ -778,6 +778,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       e.clientY || 0
     );
   }, {passive: false});
+  // BUG-712 ①：点词门控只读镜像的初始值（chrome 可见性 / highlightOnTap / 选词扫描
+  // 上限）。Dart 是唯一写者：本脚本注入时带当前真值，之后 chrome 翻转与设置热更新由
+  // _syncTapGateJs 刷新。tap 手势据此在 JS 侧直接 selectText（见 _gestureEnd 的 tap
+  // 分支），砍掉 onTap→Dart→evaluateJavascript 的整个来回。
+  window.__hoshiTapGate = { chrome: $_showChrome, lookup: ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
     // TODO-1317: a mobile long-press drag-select owns this gesture (finalized
@@ -851,7 +856,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               + ' scrollX=' + window.scrollX + ' scrollY=' + window.scrollY);
           } catch (err) {}
         }
-        window.flutter_inappwebview.callHandler('onTap', x, y, !!(e && e.shiftKey));
+        var shiftTap = !!(e && e.shiftKey);
+        var tapGate = window.__hoshiTapGate;
+        if (tapGate && window.hoshiSelection &&
+            (shiftTap || (tapGate.chrome && tapGate.lookup))) {
+          // BUG-712 ①（查词时延）：门控通过时 JS 直接选词——与旧链 Dart onTap→
+          // _selectTextAt→evaluateJavascript(selectText) 跑的是完全同一个 selectText
+          // （命中→onTextSelected、空白→onTapEmpty、链接/同字 toggle→静默），只是
+          // 砍掉 JS→Dart→JS 一整个跨语言来回（Windows WebView2 单跳 5-15ms）。
+          // 门控镜像由 Dart 单写（_syncTapGateJs：chrome 翻转/设置热更新时刷新）；
+          // 镜像缺失或 hoshiSelection 未就绪时回落旧 onTap 链，行为不变。
+          window.hoshiSelection.selectText(x, y, tapGate.maxLen || 400, false);
+        } else {
+          window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);
+        }
       }
     }
   }

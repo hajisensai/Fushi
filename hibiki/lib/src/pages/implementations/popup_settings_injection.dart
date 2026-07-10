@@ -153,6 +153,19 @@ const String _globalLookupIconFontJs = '''
       }
     })();''';
 
+/// BUG-712 ③：静态设置负载的两半（词条行在原模板里插在 head 与 tail 之间）。
+/// [combined] 供 in-app 热槽路径做串级比对去重（变了才重发）；head+entries+tail
+/// 的拼接顺序与拆分前的单模板逐字节一致，合并调用方（全局查词栈 / 剪贴板面板）
+/// 输出不变。
+class PopupStaticSettingsJs {
+  const PopupStaticSettingsJs({required this.head, required this.tail});
+
+  final String head;
+  final String tail;
+
+  String get combined => '$head$tail';
+}
+
 /// THE single source of truth for the popup settings injection body. Emits the
 /// shared theme vars + dictionary font + content zoom + every `window.*` flag
 /// (audio, dedup/harmonic, collapse + autoExpandDictionaries, collapsed/hidden
@@ -162,10 +175,44 @@ const String _globalLookupIconFontJs = '''
 ///
 /// [globalLookup] frames also receive the `global-lookup` class (in the theme vars)
 /// and the monochrome icon-font override.
+///
+/// BUG-712 ③：本函数保持原签名与逐字节原输出（= static.head + entries + static.tail），
+/// 供全局查词栈 / 剪贴板面板整帧渲染继续使用；in-app 热槽路径改用
+/// [buildPopupStaticSettingsJs] + [buildPopupEntriesJs] 分开注入，静态段串级比对
+/// 去重（热槽 WebView 的 window.* 状态跨渲染持久，重复注入是纯带宽/解析浪费）。
 String buildPopupSettingsJs({
   required AppModel appModel,
   required ThemeData theme,
   required DictionarySearchResult result,
+  required PopupSettingsOptions options,
+}) {
+  final PopupStaticSettingsJs staticJs = buildPopupStaticSettingsJs(
+    appModel: appModel,
+    theme: theme,
+    options: options,
+  );
+  return '${staticJs.head}${buildPopupEntriesJs(result)}${staticJs.tail}';
+}
+
+/// 每次查词都会变化的动态负载：词条与汉字卡结果。与静态段分开注入后，热路径
+/// 每次只发这一段 + renderPopup 调用。
+String buildPopupEntriesJs(DictionarySearchResult result) {
+  final String entriesJson = result.popupJson ??
+      DictionaryPopupWebViewState.buildLookupEntriesJson(result);
+  final String kanjiResultsJson = jsonEncode(
+    result.kanjiResults.map((HoshiKanjiResult k) => k.toMap()).toList(),
+  );
+  return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
+    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
+''';
+}
+
+/// 静态设置负载（主题变量/词典字体/图标字体覆盖/zoom/开关/名单/词典样式/自定义
+/// CSS）：只随主题、设置、词典集变化，不随查词变化。in-app 路径对 [PopupStaticSettingsJs.combined]
+/// 做串级比对，变了才随下一次推送重发。
+PopupStaticSettingsJs buildPopupStaticSettingsJs({
+  required AppModel appModel,
+  required ThemeData theme,
   required PopupSettingsOptions options,
 }) {
   final String themeVarsJs = _themeVariablesJs(
@@ -180,11 +227,6 @@ String buildPopupSettingsJs({
     dictionaryFontSize: appModel.dictionaryFontSize,
   );
 
-  final String entriesJson = result.popupJson ??
-      DictionaryPopupWebViewState.buildLookupEntriesJson(result);
-  final String kanjiResultsJson = jsonEncode(
-    result.kanjiResults.map((HoshiKanjiResult k) => k.toMap()).toList(),
-  );
   final String stylesJson = DictionaryPopupWebViewState.dictionaryStylesJson();
   final String collapsedNames = jsonEncode(appModel.dictionaries
       .where((d) => d.isCollapsed(appModel.targetLanguage))
@@ -197,7 +239,7 @@ String buildPopupSettingsJs({
 
   final String iconFontJs = options.globalLookup ? _globalLookupIconFontJs : '';
 
-  return '''
+  final String head = '''
     $themeVarsJs
     $fontStyleJs
     $iconFontJs
@@ -221,10 +263,10 @@ String buildPopupSettingsJs({
     window.autoExpandDictionaries = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.hiddenDictionaryNames = $hiddenNames;
-    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
-    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
-    window.dictionaryStyles = $stylesJson;
+''';
+  final String tail = '''    window.dictionaryStyles = $stylesJson;
     window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
     window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
 ''';
+  return PopupStaticSettingsJs(head: head, tail: tail);
 }

@@ -120,11 +120,12 @@ void main() {
             'the kanji card and emits popupRendered.',
       );
 
-      // TODO-895: the entries / kanji / no-results flags moved into the single
-      // source of truth buildPopupSettingsJs (popup_settings_injection.dart),
-      // which _pushResults emits as `$sharedSettingsJs` BEFORE its own load-more
-      // vs scroll-reset `$beforeRenderJs` + renderPopup(). Verify the ordering
-      // across both halves so empty / kanji-only payloads still reach renderPopup.
+      // TODO-895 / BUG-712 ③: the entries / kanji / no-results flags live in the
+      // single source of truth popup_settings_injection.dart. Since BUG-712 ③ the
+      // in-app push splits it: `$entriesJs`（词条+汉字卡，每次推送必发）与
+      // `${staticChanged ? staticSettingsJs : ''}`（静态设置负载，串级比对变了才
+      // 重发），两者都必须先于 load-more vs scroll-reset 的 `$beforeRenderJs` +
+      // renderPopup()，空结果 / kanji-only 负载才能到达 renderPopup。
       final String injection = File(
         'lib/src/pages/implementations/popup_settings_injection.dart',
       ).readAsStringSync();
@@ -136,19 +137,25 @@ void main() {
       expect(noResultsAt, greaterThanOrEqualTo(0));
       expect(kanjiAt, greaterThan(entriesAt),
           reason: 'kanji results ride alongside the term entries in the shared '
-              'settings body, not a separate code path.');
+              'entries payload, not a separate code path.');
 
       final int pushStart = source.indexOf('void _pushResults()');
       expect(pushStart, greaterThanOrEqualTo(0));
       final String pushBody = source.substring(pushStart);
 
-      final int sharedAt = pushBody.indexOf(r'$sharedSettingsJs');
+      final int staticAt =
+          pushBody.indexOf(r"${staticChanged ? staticSettingsJs : ''}");
+      final int entriesJsAt = pushBody.indexOf(r'$entriesJs');
       final int beforeRenderAt = pushBody.indexOf(r'$beforeRenderJs');
-      expect(sharedAt, greaterThanOrEqualTo(0),
-          reason: 'the shared settings body (entries/kanji/no-results) must be '
-              'emitted into the WebView push');
-      expect(beforeRenderAt, greaterThan(sharedAt),
-          reason: 'the shared body must precede the load-more / scroll-reset '
+      expect(staticAt, greaterThanOrEqualTo(0),
+          reason:
+              'the static settings payload must be emitted into the WebView '
+              'push whenever its content changed (theme/settings/dictionaries)');
+      expect(entriesJsAt, greaterThan(staticAt),
+          reason: 'the entries/kanji/no-results payload must be emitted into '
+              'EVERY WebView push, after the (conditional) static payload');
+      expect(beforeRenderAt, greaterThan(entriesJsAt),
+          reason: 'both payloads must precede the load-more / scroll-reset '
               'beforeRenderJs so empty and kanji-only payloads reach '
               'renderPopup().');
       expect(pushBody, contains('window.renderPopup();'));

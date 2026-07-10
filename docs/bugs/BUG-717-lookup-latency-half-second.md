@@ -17,4 +17,9 @@
 - **备注**：Windows 离屏 itest 两级实测（debug 构建）：
   - 2 词条生成词典（`perf-after-01` vs 基线 `perf-base-01`）：renderPopup 2→1 次、全量注入 2→1 次（32+21ms→38ms）、persistHistory 移出弹窗帧前。
   - **真实词典组合**（大辞林第四版+三省堂国語第八版+Novel 频率+NHK 音调，`integration_test/lookup_latency_perf_itest.dart`，RunId `perf-real-01`）：**端到端（真实 DOM 点击→弹窗可见）冷 66ms、复查 40-47ms**；engine-only 整句探针（10 词条结果）首查 3-8ms、缓存命中 0ms——引擎段已到 Yomitan 的 10ms 量级。测量含 ~10-20ms 测试挟具开销（点击派发桥往返+8ms 轮询粒度），生产真实体感更低。
-  - 剩余 40ms 构成=跨语言桥往返×5-6（Windows WebView2 单跳 5-15ms：onTap→Dart、selectText eval、onTextSelected→Dart、结果注入、popupRendered 回调、高亮 eval）+2-3 帧界+注入 payload 解析。后续优化方向（未实施）：①触发段 JS 侧门控镜像，3 跳并 1 跳；②高亮 eval 与弹窗显示解耦（−1 串行跳，代价=锚点用选区矩形）；③注入 payload 拆分（settings 静态部分只发一次，每查词只发 entries+renderPopup）。
+  - 剩余 40ms 构成=跨语言桥往返×5-6（onTap→Dart、selectText eval、onTextSelected→Dart、结果注入、popupRendered 回调、高亮 eval）+2-3 帧界+注入 payload 解析。
+  - **第二轮（桥往返治理，①③ 已实施）**：
+    - ① 触发段 3 跳并 1 跳：点词门控（chrome 可见性/highlightOnTap）做成 Dart 单写、JS 只读的镜像 `window.__hoshiTapGate`（setup 脚本带初始真值，`_syncTapGateJs` 在 `_toggleChrome`/`_setChromeVisible`/onSettingsChangedLive 三个翻转点刷新）；门控通过时 tap 在 JS 侧直接跑同一个 `selectText`（命中/空白/链接/同字 toggle 四分支与旧链逐一相同），镜像缺失回落旧 onTap 链。运行时证据：itest 探针 `tapGate={"gate":{"chrome":true,"lookup":true,"maxLen":400},"sel":true}`。守卫：`test/reader/tap_gate_mirror_guard_test.dart`。
+    - ③ 注入 payload 拆分：`popup_settings_injection.dart` 拆 head/entries/tail 三段（合并输出对全局查词栈/剪贴板面板逐字节不变）；in-app 热槽对静态段（主题/字体/词典样式/自定义 CSS/开关/名单）串级比对、变了才重发，每次查词只发 entries+renderPopup，onLoadStop 重置基线。实测注入 eval 57/39ms→36/34/31/20ms（约 −40%）。守卫：`dictionary_popup_push_dedup_test.dart` BUG-712 ③ 组 + `dictionary_popup_webview_test.dart` 推送顺序守卫（更新为新契约）。
+    - 端到端效果的诚实说明：同代码两次 itest 运行 e2e 相差 ±16ms（机器负载噪声），热 WebView2 实测单跳仅约 3-5ms（此前按上限 15ms 估计偏高），故 ① 的 ~5-10ms 收益在该挟具噪声内不可分辨；③ 的注入耗时下降可直接测得。两项均为结构性止损（少 2 跳、少数十 KB/次重复解析），零权衡、带回落安全网。
+    - ② 高亮 eval 解耦**未实施**（绘制时序有可感变化：高亮从弹窗前变弹窗后 ~10ms，非零损，待用户拍板）。

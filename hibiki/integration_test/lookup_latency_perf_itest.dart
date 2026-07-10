@@ -132,6 +132,14 @@ void main() {
       final dynamic readerState = rawState;
       bool dictShown() => readerState.isDictionaryShown as bool;
 
+      // BUG-712 ①运行时证据：门控镜像必须已注入且放行（chrome+lookup 都 true 时
+      // tap 走 JS 直选路径，3 跳并 1 跳）；hoshiSelection 就绪是直选前提。
+      final dynamic gateRaw = await runInWebView(
+        'JSON.stringify({gate: window.__hoshiTapGate || null, '
+        'sel: !!window.hoshiSelection})',
+      );
+      debugPrint('[perf-e2e] tapGate=$gateRaw');
+
       // ── e2e：冷查词 1 次 + 复查 4 次 ──
       // 计时=派发点击瞬间到 isDictionaryShown 翻真；pump(8ms) 轮询，分辨率 ~10ms。
       for (int round = 0; round < 5; round++) {
