@@ -26,16 +26,19 @@ void main() {
   group('Dart controller: mine + duplicate bridge branches', () {
     late String src;
     setUpAll(() {
-      src = read('lib/src/lookup/global_lookup_controller.dart');
+      // spec 2026-07-10: 桥 handler 抽到 overlay_bridge_handlers.dart 与剪贴板
+      // 面板共享（红线：两表面不复制不漂移）；守卫扫 controller+共享实现拼接。
+      src = read('lib/src/lookup/global_lookup_controller.dart') +
+          read('lib/src/lookup/overlay_bridge_handlers.dart');
     });
 
     test('_onJsMessage routes mineEntry / duplicateCheck to deferred handlers',
         () {
-      expect(src.contains("if (handler == 'mineEntry')"), isTrue,
+      expect(src.contains("case 'mineEntry':"), isTrue,
           reason: '_onJsMessage 必须有制卡分支（过去根本没有 → ➕ 按钮永挂）');
       expect(src.contains('_handleMineBridge('), isTrue,
           reason: '制卡走独立 deferred 处理器');
-      expect(src.contains("if (handler == 'duplicateCheck')"), isTrue,
+      expect(src.contains("case 'duplicateCheck':"), isTrue,
           reason: '_onJsMessage 必须有查重分支（否则 ➕→✓ 永不切换）');
       expect(src.contains('_handleDuplicateBridge('), isTrue,
           reason: '查重走独立 deferred 处理器');
@@ -54,8 +57,7 @@ void main() {
       expect(src.contains('writeDictionaryMediaCache('), isTrue,
           reason: '制卡前必须落盘词典外字媒体缓存');
       // 回传 {ankiConnect,noteId} / bool 给 iframe（popup.js parseMineResult / ✓ 涂色）。
-      expect(
-          src.contains('GlobalLookupChannel.resolveBridge(id, reply)'), isTrue,
+      expect(src.contains('resolveBridge(id, reply)'), isTrue,
           reason: '制卡/查重结果必须 resolveBridge 回传');
     });
   });
