@@ -1377,20 +1377,34 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                       // via homeShellTabNotifier. Hide the sidebar while a media
                       // item (reader/video) is open so reading is full-width; the
                       // builder reruns when appModel notifies (openMedia/close).
+                      // TODO-1375：sidebar 显隐由 appModel.mediaOpenNotifier 驱动，
+                      // 不再直接读 appModel.isMediaOpen。根因：isMediaOpen 变化不
+                      // notifyListeners，退出阅读器后本 builder 不重跑、sidebar 卡在
+                      // stale null（永久消失→设置 tab 无出口→困死）。改用
+                      // ValueListenableBuilder 监听可靠通知源：退出媒体必重建恢复
+                      // sidebar。navigation（=整个 navigator）作为不变 child 透传，
+                      // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
                       navigation = MacosTheme(
                         data:
                             hibikiMacosThemeFromColorScheme(cs, cs.brightness),
-                        child: MacosWindow(
-                          sidebar: appModel.isMediaOpen
-                              ? null
-                              : buildHibikiMacosSidebar(
-                                  activeTabs: homeActiveTabs(
-                                    videoEnabled:
-                                        appModel.experimentalVideoEnabled,
-                                    texthookerEnabled:
-                                        appModel.texthookerEnabled,
-                                  ),
-                                ),
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: appModel.mediaOpenNotifier,
+                          builder: (BuildContext context, bool mediaOpen,
+                              Widget? child) {
+                            return MacosWindow(
+                              sidebar: mediaOpen
+                                  ? null
+                                  : buildHibikiMacosSidebar(
+                                      activeTabs: homeActiveTabs(
+                                        videoEnabled:
+                                            appModel.experimentalVideoEnabled,
+                                        texthookerEnabled:
+                                            appModel.texthookerEnabled,
+                                      ),
+                                    ),
+                              child: child!,
+                            );
+                          },
                           child: navigation,
                         ),
                       );

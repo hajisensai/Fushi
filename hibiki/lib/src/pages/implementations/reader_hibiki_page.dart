@@ -2155,8 +2155,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final EdgeInsets vp = MediaQuery.of(context).viewPadding;
+    // TODO-1375：inset（系统安全区 / notch / 全屏进出改变的 viewPadding）变化时，
+    // 过去只更新这两个 Dart 字段，却从不把新 inset 回喂给 WebView 的分页几何——
+    // padding-top/bottom 的 `--chrome-top/bottom-inset`、竖排 verticalColumnWidthCss
+    // 的列高扣项都读它。全屏 / 旋转 / notch 变化后若不回喂，JS 的 `--chrome-*-inset`
+    // 停在旧值：列高与边距按 stale inset 算，正文越出可视带、手调页边距被 stale inset
+    // 淹没（症状②「调上下边距没用」）。inset 真变时回喂并 re-anchor（复用
+    // setChromeInsets 的 `_reanchorPending` 串行契约，幂等）；reader 未就绪 / 歌词模式
+    // 由 [_applyChromeInsets] 内部早返回挡掉。桌面 inset 多为 0（此分支不触发，零变化）。
+    final bool insetChanged =
+        vp.top != _stableTopInset || vp.bottom != _stableBottomInset;
     _stableTopInset = vp.top;
     _stableBottomInset = vp.bottom;
+    if (insetChanged) {
+      unawaited(_applyChromeInsets());
+    }
   }
 
   // ── UI Build ──────────────────────────────────────────────────────
