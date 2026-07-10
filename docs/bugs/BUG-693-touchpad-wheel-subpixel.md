@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug。两个查词表面（reader/video in-app 弹窗 + 全局查词覆盖窗）共用 `hibiki/assets/popup/popup.js` 的 document wheel handler；原生层不处理 wheel，WebView2 直送 DOM。根因两处：
   - 主因 `hibiki/assets/popup/popup.js:3069-3070`（原）：`step = visualStep / popupCurrentZoom(scroller)` 后直接 `scrollBy({top: step})`，**无跨事件小数余量累加器**。系数为鼠标滚轮大固定 delta（deltaMode=0、deltaY≈100-120，×0.24≈24px）调的；精密触控板是 deltaMode=0 的小/分数 delta（慢滑 deltaY 只 1-4），×0.24 后 0.24-0.96px 再除 zoom（词典字号>16 时 zoom>1）→ 亚像素步进。每帧 `preventDefault` 压掉原生滚动却只推进亚像素、小数每帧丢弃 → 视觉不动；快甩 delta 大才过 1px → 「时好时坏」。
   - 助因 `hibiki/assets/popup/popup.js:3036`（原）：`if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;` 把触控板两指手势带横向抖动的帧（含相等帧）早退 → 手感断续。
-- **[x] ① 已修复** — commit <PENDING>
+- **[x] ① 已修复** — commit 0d9361069
   - 加跨事件小数余量累加器：`_popupWheelResidual` / `_popupWheelResidualSurface` / `_popupWheelResidualAt`（`popup.js:2984-2990` 常量+状态；`popup.js:3082-3092` 累加逻辑）。累积 layout px 余量，`Math.trunc` 只 `scrollBy` 整数部分、保留小数到下次；按滚动表面（window vs shadow host）与空闲间隔（`POPUP_WHEEL_RESIDUAL_IDLE_MS=200ms`）重置陈旧余量。鼠标滚轮大 delta 每帧即过 1px，累加器不改变其行为（每档仍 24px / zoom>1 时 12px）。
   - 横向丢帧判据收紧：`<=` → 严格 `>` + 抖动余量 `POPUP_WHEEL_HORIZONTAL_MARGIN=6`（`popup.js:3054-3057`）：`absY===0` 才当纯横向；仅当 `absX > absY + margin` 才当横向手势放行原生。相等帧/带横向抖动的纵向帧不再被丢。
   - 三份 popup.js 镜像逐字节同步（sha256 87b7a10d…）：`hibiki/assets/popup/popup.js` + `hibiki/assets/browser_extension/vendor/popup.js` + `tools/browser-extension/vendor/popup.js`。content.css 由 popup.css 生成、本次未改 popup.css 故不受影响。一处修复两处表面同时生效。
