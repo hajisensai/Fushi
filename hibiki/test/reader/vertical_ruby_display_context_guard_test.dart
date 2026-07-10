@@ -60,9 +60,14 @@ void main() {
             isTrue,
             reason: '${c.wm}/${c.vm}: 必须强制 ruby{display:ruby!important}，否则书本 '
                 '`ruby{display:inline-block}` 会破坏 ruby 上下文 → 竖排振假名塌进基字列');
-        expect(css.contains('ruby > rp { display: none !important; }'), isTrue,
-            reason: '${c.wm}/${c.vm}: 必须强制 ruby>rp{display:none!important}，防书本 '
-                '让 rp 括注显示');
+        expect(css.contains('ruby rp { display: none !important; }'), isTrue,
+            reason:
+                '${c.wm}/${c.vm}: 必须强制 ruby rp{display:none!important}(后代选择器，'
+                '覆盖 rtc/rb 嵌套里的 rp)，防书本让 rp 括注显示');
+        expect(css.contains('ruby rb { display: inline !important; }'), isTrue,
+            reason:
+                '${c.wm}/${c.vm}: 必须强制 ruby rb{display:inline!important}——Blink 无 '
+                'rb 支持，书本 rb{display:block/inline-block} 会改变基字几何');
       }
     });
 
@@ -115,15 +120,44 @@ void main() {
       }
     });
 
+    test('振假名显示态接管 <rtc>(Blink 无 rtc 支持) — rtc=注音级、rtc>rt=内联', () async {
+      // TODO-1308 复诉：真机(WebView2)量测证实 CSS.supports('display','ruby-base'|
+      // 'ruby-text-container')=false，rb/rtc 默认 inline。裸 rt{display:ruby-text}
+      // 会把 rtc 里的每个 <rt> 包进匿名 ruby，落在正文流原位=注音以整字格内联进基字列
+      // (用户截图：かん挤在貫/禄之间、ろく掉到词下方)。修复=显示态把 rtc 整个映射为
+      // 单一注音级(display:ruby-text)、其 rt 子元素归位 inline(在注音里当普通文本跑)。
+      for (final String fm in <String>['show', 'partial', 'toggle']) {
+        final String css = await _readerCss(
+            writingMode: 'vertical-rl',
+            viewMode: 'continuous',
+            furiganaMode: fm);
+        expect(
+            css.contains(
+                'rtc { display: ruby-text !important; font-size: 0.45em; }'),
+            isTrue,
+            reason: 'furigana=$fm: 显示态必须把 rtc 映射为单一注音级(ruby-text)');
+        expect(
+            css.contains(
+                'rtc > rt { display: inline !important; font-size: 1em; }'),
+            isTrue,
+            reason: 'furigana=$fm: rtc 里的 rt 必须归位 inline，否则被裸 rt 规则包成'
+                '匿名 ruby 内联进基字列(TODO-1308 复诉截图)');
+      }
+    });
+
     test('振假名 hide 模式 rt 仍是 display:none(强制显示不得覆盖隐藏)', () async {
       final String css = await _readerCss(
           writingMode: 'vertical-rl',
           viewMode: 'continuous',
           furiganaMode: 'hide');
-      expect(css.contains('rt { display: none !important; }'), isTrue,
-          reason: 'hide 模式必须保留 rt{display:none!important}(振假名隐藏)');
+      expect(css.contains('rt, rtc { display: none !important; }'), isTrue,
+          reason: 'hide 模式必须保留 rt,rtc{display:none!important}(振假名与 rtc 注音容器'
+              '一起隐藏，防空 rtc 注音盒继续占注音道)');
       expect(css.contains('display: ruby-text !important'), isFalse,
-          reason: 'hide 模式不得强制 rt display:ruby-text，否则会把隐藏的振假名显示出来');
+          reason: 'hide 模式不得强制 rt/rtc display:ruby-text，否则会把隐藏的振假名显示出来');
+      expect(css.contains('rtc > rt { display: inline !important'), isFalse,
+          reason: 'hide 模式不得发出 rtc>rt{display:inline!important}——它比裸 rt 选择器'
+              '更特异，会压过 rt{display:none} 把 rtc 里的振假名显示出来');
       // ruby 容器仍强制(与振假名显隐无关)。
       expect(
           css.contains(

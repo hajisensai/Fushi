@@ -1465,9 +1465,14 @@ class ReaderPaginationScripts {
     if (this.scrollToRange) {
       this.scrollToRange(range);
     } else if (this.scrollToTarget) {
-      var span = document.createElement('span');
-      range.surroundContents(span);
-      this.scrollToTarget(span);
+      // TODO-1308 问题②（BUG-696 根因②）：旧兜底 range.surroundContents(span) 在
+      // rb/rtc 形态书（JIS mono-ruby，如 <ruby><rb>貫</rb>…<rb>禄</rb>…）上，命中词
+      // 跨相邻 <rb> 基字时 Range 部分包含元素节点 → 抛 InvalidStateError → 滚动被
+      // 跳过；跨章搜索经 _applyPendingPreciseLocate（catch 后只记日志）确定性停在
+      // 章节开头。scrollToTarget → getRect 用 getClientRects()[0]，Range 原生支持
+      // → 直接滚 Range，不做 DOM 手术（旧 span 无高亮 class 只当滚动靶，且
+      // surroundContents 还会切开文本节点、永久残留 span、作废 nodeStartOffsets）。
+      this.scrollToTarget(range);
     }
     return this.calculateProgress();
   },
@@ -2936,7 +2941,13 @@ $_sharedJs
     // 章首）→ scrollToChapterStart 滚到顶（含前导图，与 restoreProgress(0) 语义一致）。charOffset>0
     // 精确锚（含收藏句区间 endCharOffset）不变。
     if (charOffset <= 0) {
-      if (typeof hintScroll === 'number' && hintScroll > 0) {
+      // TODO-1308 问题②（BUG-696 根因③）：连续滚动位横排是 scrollTop（>=0），竖排是
+      // window.scrollX（vertical-rl 滚离章顶后为**负**，见 _readContinuousScroll /
+      // scrollToChapterEnd 的 -1e9）。旧判据 hintScroll > 0 在竖排永假 → TODO-1229 的
+      // 「保住当前滚动位」分支在竖排是死代码：任何重锚（setChromeInsets / 缩放 /
+      // 换样式）一旦把 fvco 采成 0 就 scrollToChapterStart 把用户钉回章首。轴向归一：
+      // 非零即「已滚离章顶」（两轴章顶都是 0），_writeContinuousScroll 原样写回带号位。
+      if (typeof hintScroll === 'number' && Math.abs(hintScroll) > 0) {
         this._writeContinuousScroll(hintScroll);
       } else {
         this.scrollToChapterStart();

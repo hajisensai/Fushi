@@ -513,15 +513,37 @@ $furiganaCss
    only sits on the left when annotations are on the right = `over`); with the
    book's `under` the base moved right and the lane painted the furigana column
    instead (the misaligned band seen on 「懐かしい」). display unchanged, so the
-   65fd8d03d non-collapse (dyRatio≈0) is preserved. */
+   65fd8d03d non-collapse (dyRatio≈0) is preserved.
+
+   TODO-1308 (user re-report): owning ruby/rt display is STILL not enough for
+   <rb>/<rtc> markup (W3C ruby extensions / JIS mono-ruby, e.g.
+   <ruby><rb>貫</rb><rtc><rt>かん</rt></rtc><rb>禄</rb><rtc><rt>ろく</rt></rtc></ruby>).
+   Blink has NO rb/rtc support (CSS.supports('display','ruby-base') and
+   ('display','ruby-text-container') are both false on WebView2; the elements
+   default to inline), so an <rt> forced to display:ruby-text INSIDE an inline
+   <rtc> is wrapped in an ANONYMOUS ruby at its flow position: the annotation
+   becomes its own inline character slot in the BASE column (measured on the
+   real WebView2 by reader_vertical_ruby_forms_itest.dart: かん occupies a full
+   cell between 貫 and 禄, pushing 禄 one cell down; ろく lands below the
+   word) — exactly the user screenshot. Fix: the reader owns the layout role of
+   EVERY ruby descendant — rb → inline (base content), rtc → ruby-text (ONE
+   annotation level; the mode-dependent rtc display is owned by _furiganaCss
+   next to rt), rtc > rt → inline (a plain run INSIDE the rtc annotation, so
+   it pairs with the preceding base instead of spawning an anonymous ruby
+   slot). Interleaved per-base <rtc> regains correct mono pairing; a single
+   trailing <rtc> degrades to standard group-ruby rendering (annotation spans
+   the word). Both keep every annotation in the lane. */
 ruby {
   display: ruby !important;
   ruby-position: over !important;
 }
-ruby > rp {
+ruby rp {
   display: none !important;
 }
-ruby > rt, ruby > rp {
+ruby rb {
+  display: inline !important;
+}
+ruby rt, ruby rp {
   -webkit-user-select: none;
   user-select: none;
 }
@@ -965,10 +987,12 @@ body {
     // cannot pull the annotation out of its ruby box and collapse it into the
     // base column in vertical writing (see the ruby rule in the main CSS). rt
     // display is owned here (not globally) so the `hide` branch's display:none
-    // still wins for hidden furigana.
+    // still wins for hidden furigana. The shown modes also own <rtc> (see
+    // _rtcAnnotationCss); `hide` hides rtc together with rt so a hidden
+    // annotation container cannot keep reserving lane space.
     switch (mode) {
       case 'hide':
-        return 'rt { display: none !important; }';
+        return 'rt, rtc { display: none !important; }';
       case 'partial':
         return '''
 rt {
@@ -976,6 +1000,7 @@ rt {
   font-size: 0.45em;
   visibility: hidden;
 }
+$_rtcAnnotationCss
 ruby.show-rt rt {
   visibility: visible;
 }''';
@@ -986,13 +1011,37 @@ rt {
   font-size: 0.45em;
   visibility: hidden;
 }
+$_rtcAnnotationCss
 body.show-all-rt rt {
   visibility: visible !important;
 }''';
       default:
-        return 'rt { display: ruby-text !important; font-size: 0.45em; }';
+        return '''
+rt { display: ruby-text !important; font-size: 0.45em; }
+$_rtcAnnotationCss''';
     }
   }
+
+  /// TODO-1308 (user re-report): Blink has no <rtc> support (`display:
+  /// ruby-text-container` unsupported; the element defaults to inline), so a
+  /// shown <rtc> is remapped to ONE annotation level (`display: ruby-text`)
+  /// and its <rt> children are neutralized back to plain inline runs.
+  /// Without this, the bare `rt { display: ruby-text !important }` rule wraps
+  /// each rtc-nested <rt> in an anonymous ruby at its flow position, dropping
+  /// the annotation into the base column as its own character slot (the
+  /// 貫(かん)禄(ろく) screenshot: かん inline between 貫/禄, ろく below the
+  /// word). `rtc > rt` is MORE specific than the bare `rt` rule, so it must
+  /// only be emitted in shown modes — in `hide` it would defeat
+  /// `rt { display: none !important }` and un-hide rtc furigana.
+  static const String _rtcAnnotationCss = '''
+rtc {
+  display: ruby-text !important;
+  font-size: 0.45em;
+}
+rtc > rt {
+  display: inline !important;
+  font-size: 1em;
+}''';
 
   static _ThemeColors _themeColors(String theme,
       {String? customBg, String? customFg}) {

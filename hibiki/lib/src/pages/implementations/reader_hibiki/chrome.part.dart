@@ -1390,29 +1390,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
                 fav.sectionIndex ?? _currentChapter);
           }
         },
-        onJumpToFavorite: (fav) async {
-          if (fav.sectionIndex == null) return;
-          final int? normCharOffset = fav.normCharOffset;
-          if (fav.sectionIndex != _currentChapter) {
-            // TODO-1309：跨章收藏跳转同书签——有分数就把它烘进导航（progress）单次原子恢复
-            // 落点；无分数（罕见旧数据）仅导航到章首（既有行为，无落点可定位）。都不再「先落
-            // 章首再抢发 restoreProgress」被 settle-reflow 冲回章首。
-            await _navigateToChapterAndWait(
-              fav.sectionIndex!,
-              manual: true,
-              progress: normCharOffset != null ? normCharOffset / 10000.0 : 0.0,
-            );
-            return;
-          }
-          if (!mounted || _controller == null) return;
-          if (normCharOffset != null) {
-            final double progress = normCharOffset / 10000.0;
-            await _controller!.evaluateJavascript(
-              source:
-                  'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
-            );
-          }
-        },
+        onJumpToFavorite: _jumpToFavoriteSentence,
         onPlayFavorite: _audiobookController == null
             ? null
             : (fav) async {
@@ -1967,6 +1945,44 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       await _refreshSectionHighlights(section);
     }
     HibikiToast.show(msg: t.favorite_added);
+  }
+
+  /// TODO-1308 问题②（BUG-696 根因①）：书内收藏面板跳转的唯一真实路径——quick
+  /// settings sheet 的 onJumpToFavorite 与 debugJumpToFavorite 测试钩子都走这里。
+  Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {
+    if (fav.sectionIndex == null) return;
+    final int? normCharOffset = fav.normCharOffset;
+    // TODO-1308 问题②（BUG-696 根因①）：fav.normCharOffset 是写入端
+    // （lookup.part / mining.part 的 sentenceNormalizedOffset，即 JS
+    // getNormalizedOffset）产的**章内绝对可匹配字符索引**（0..数千），不是书签的
+    // 0-10000 进度分数。旧代码把它 /10000.0 当分数还原 → 0.0x 分数恒落章节开头。
+    // BUG-459 只修了收藏页冷启动入口（charAnchor 绝对锚），书内收藏面板这条
+    // 从未修到；TODO-1309 重写 handler 时又原样保留了 /10000。改走与冷启动
+    // 同构的绝对字符锚链：跨章把 charOffset（+句尾锚，BUG-461 整句对齐）烘进
+    // 导航原子恢复；同章直接 restoreToCharOffset（与 restoreProgress 同族
+    // restore 入口，notifyRestoreComplete 副作用形状一致）。书签（onJumpToBookmark）
+    // 的 normCharOffset 才是真分数，/10000 保持不变。
+    final int? favLen = fav.normCharLength;
+    final int charOffsetEnd =
+        (normCharOffset != null && favLen != null && favLen > 0)
+            ? normCharOffset + favLen
+            : -1;
+    if (fav.sectionIndex != _currentChapter) {
+      await _navigateToChapterAndWait(
+        fav.sectionIndex!,
+        manual: true,
+        charOffset: normCharOffset,
+        charOffsetEnd: charOffsetEnd,
+      );
+      return;
+    }
+    if (!mounted || _controller == null) return;
+    if (normCharOffset != null) {
+      await _controller!.evaluateJavascript(
+        source: 'window.hoshiReader && window.hoshiReader'
+            '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
+      );
+    }
   }
 }
 

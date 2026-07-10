@@ -80,7 +80,7 @@ void main() {
     expect(withoutCoarse, isNot(contains('body * {')),
         reason: '触屏门控外不得有 body * 无条件 user-select:none（会杀桌面复制）');
     // 剩下的 user-select:none 应只服务振假名列（rt/rp），细指针桌面正文可拖选。
-    expect(withoutCoarse, contains('ruby > rt, ruby > rp {'),
+    expect(withoutCoarse, contains('ruby rt, ruby rp {'),
         reason: '振假名 rt/rp 的 user-select:none 历史规则应保留');
   });
 }
