@@ -563,6 +563,26 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         order.add((key, group));
       }
     }
+    // 组内按 MarginV 升序稳定排序：折进同一基线桶的底部双语（JP MarginV=4 + CH MarginV=30）
+    // 竖排堆叠时，MarginV 小的贴锚点（底部锚组 slot0 在底）、大的在上，复现 libass「MarginV
+    // 越大离底越远」的相对次序，不再依赖字幕文件里 JP/CH 的书写先后（本 BUG 的次序保证）。
+    // 稳定排序对同 MarginV（多行歌词 / 纯 SRT null）零改动，且只预排序 cue 顺序、不移动
+    // [_syncGroupSlots] 里按 identity 稳定的在屏槽位（BUG-698 不变量保持）。
+    double mvOf(AudioCue c) {
+      final double? mv = c.markup?.cueStyle?.marginV;
+      return (mv == null || mv <= 0) ? 0 : mv;
+    }
+
+    for (final (String, List<AudioCue>) entry in order) {
+      final List<AudioCue> group = entry.$2;
+      if (group.length < 2) continue;
+      // 稳定排序（List.sort 非稳定）：以原始下标做 tie-break，保证同 MarginV 保持发现次序。
+      final List<AudioCue> byIndex = List<AudioCue>.of(group);
+      group.sort((AudioCue a, AudioCue b) {
+        final int c = mvOf(a).compareTo(mvOf(b));
+        return c != 0 ? c : byIndex.indexOf(a).compareTo(byIndex.indexOf(b));
+      });
+    }
     return order;
   }
 
@@ -573,7 +593,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// [_paddingFor] / forceTop 判据全同构），把「MarginV<=0」当无 MarginV（[_scaledMarginV]
   /// 都回退历史基线）。归一进键后，渲染完全相同的 cue 必然同组堆叠，而不是分成两组叠印
   /// 在同一位置互相压字。
-  static String _positionKey(SubtitleMarkup? markup) {
+  ///
+  /// BUG-（双语底部对白 MarginV 塌陷重叠）：底部锚点的最终基线是
+  /// `max(bottomPadding, scaledMarginV)`（[_paddingFor]，单调抬升不越用户基线）。故**两条
+  /// 底部 cue 的 MarginV 都 <= 用户 bottomPadding 时会被 max 夹到同一基线**——若仍按原始
+  /// MarginV 拆成两组，两组各自定位却落在同一 y、互相压字（如典型双语 Dial_JP MarginV=4 +
+  /// Dial_CH MarginV=30，both < 默认 75）。修复：底部锚点先按**渲染后基线是否真的不同**归键
+  /// ——MarginV 缩放后 <= bottomPadding（会被 max 夹回基线）的一律折进基线桶（key mv=-1），
+  /// 使它们同组、竖排堆叠（libass 的碰撞下推同效果），不再叠印。真正超出基线（标题
+  /// MarginV=400 等）才保留各自 authored 高度（TODO-1341 行为不变）。顶部/中部锚点无 max
+  /// 夹逻辑（[_paddingFor] 直接用 scaledMarginV），保持按原始 MarginV 分键。
+  String _positionKey(SubtitleMarkup? markup) {
     final SubtitlePos? pf = markup?.posFraction;
     final SubtitleAnchor? a = markup?.anchor;
     final int av = (a?.vertical ?? SubtitleVAlign.bottom).index;
@@ -586,7 +616,18 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
     // MarginV 仅 ASS 非空（srt/vtt 的 cueStyle 为 null），故 srt/vtt 分组行为像素级不变。
     final double? mvRaw = markup?.cueStyle?.marginV;
-    final int mv = (mvRaw == null || mvRaw <= 0) ? -1 : mvRaw.round();
+    final SubtitleVAlign vertical = a?.vertical ?? SubtitleVAlign.bottom;
+    final int mv;
+    if (mvRaw == null || mvRaw <= 0) {
+      mv = -1;
+    } else if (vertical == SubtitleVAlign.bottom) {
+      // 底部锚点：只有缩放后真的超出用户基线（不会被 max 夹回）才算「不同位置」；否则
+      // 折进基线桶与同基线的其它底部 cue 同组堆叠，消除双语底部对白重叠（本 BUG）。
+      final double? smv = _scaledMarginV(markup);
+      mv = (smv == null || smv <= widget.bottomPadding) ? -1 : smv.round();
+    } else {
+      mv = mvRaw.round();
+    }
     return 'a:$av:$ah:$mv';
   }
 
