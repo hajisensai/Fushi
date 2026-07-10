@@ -150,6 +150,7 @@ class GlobalLookupWindow {
   void ForwardGlobalClickToHost(int screen_x, int screen_y);
   void EnsureWindowClass();
   void EnsureWebView();
+  void RecoverDeadWebView(const std::string& replay_script);
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
   // swallows it) so the "app-external lookup shows no popup" cause is visible.
   void ReportOverlayError(const std::string& message, HRESULT hr);
@@ -168,6 +169,10 @@ class GlobalLookupWindow {
   int pending_y_ = 0;
   bool class_registered_ = false;
   bool webview_ready_ = false;
+  // TODO-1268 (BUG-685): a dead-surface rebuild is in flight; renders
+  // cache into pending_json_ until NavigationCompleted re-arms
+  // webview_ready_.
+  bool recovering_ = false;
   std::wstring popup_assets_dir_;
   std::string pending_json_;
 
