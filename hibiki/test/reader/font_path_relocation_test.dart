@@ -34,7 +34,10 @@ void main() {
         () {
       const String oldPath = r'C:\Users\me\Documents\custom_fonts\Klee_1.ttf';
       const String newDir = r'D:\data\documents\custom_fonts';
-      const String newPath = r'D:\data\documents\custom_fonts\Klee_1.ttf';
+      // Build the recovered path the SAME way the helper does (p.join uses
+      // the host separator) so this asserts real behavior on Windows AND on
+      // Linux/Android CI, never a hardcoded separator (BUG-710).
+      final String newPath = p.join(newDir, 'Klee_1.ttf');
       final String json = jsonEncode(<String, dynamic>{
         'version': 1,
         'fonts': <Map<String, dynamic>>[
@@ -145,6 +148,35 @@ void main() {
       expect(font['path'], recovered);
     });
 
+    test('relocates onto a POSIX current dir (Android/Linux data-root move)',
+        () {
+      // Regression guard for the CI-only failure (BUG-710) where the stored
+      // path is relocated onto a POSIX <documents>/custom_fonts: the helper
+      // must build the recovered path with p.join (host separator); a
+      // hardcoded Windows separator would never match on Linux/Android.
+      // fontPathBasename splits on either separator so the basename survives.
+      const String oldPath = '/old/container/custom_fonts/Gothic_7.ttf';
+      const String newDir = '/data/user/0/app.hibiki.reader/custom_fonts';
+      final String newPath = p.join(newDir, fontPathBasename(oldPath));
+      final String json = jsonEncode(<String, dynamic>{
+        'version': 1,
+        'fonts': <Map<String, dynamic>>[
+          <String, dynamic>{'id': 'f', 'name': 'Gothic', 'path': oldPath},
+        ],
+      });
+      final ({String json, int relocated}) out =
+          relocateMissingFontCatalogPaths(
+        json,
+        newDir,
+        existsIn(<String>{newPath}),
+      );
+      expect(out.relocated, 1);
+      final Map<String, dynamic> font =
+          (jsonDecode(out.json)['fonts'] as List<dynamic>).first
+              as Map<String, dynamic>;
+      expect(font['path'], newPath);
+    });
+
     test('returns malformed JSON verbatim', () {
       const String bad = 'not json {';
       final ({String json, int relocated}) out =
@@ -158,7 +190,9 @@ void main() {
     test('relocates missing shadow-list paths and keeps other fields', () {
       const String oldPath = r'C:\old\custom_fonts\Noto_2.ttf';
       const String newDir = r'D:\data\documents\custom_fonts';
-      const String newPath = r'D:\data\documents\custom_fonts\Noto_2.ttf';
+      // p.join (host separator), matching the helper's own construction, so
+      // the assertion holds on Windows AND Linux/Android CI (BUG-710).
+      final String newPath = p.join(newDir, 'Noto_2.ttf');
       final String json = jsonEncode(<Map<String, dynamic>>[
         <String, dynamic>{'name': 'Noto', 'path': oldPath, 'enabled': false},
       ]);
