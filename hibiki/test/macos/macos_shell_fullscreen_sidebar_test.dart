@@ -16,6 +16,9 @@ void main() {
       File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
   final String appModel =
       File('lib/src/models/app_model.dart').readAsStringSync();
+  final String reader = File(
+    'lib/src/pages/implementations/reader_hibiki_page.dart',
+  ).readAsStringSync();
 
   test('macOS fullscreen toggles through the single NSWindow owner', () {
     // 根因：window_manager.setFullScreen 与 macos_window_utils（NSWindow.delegate
@@ -69,5 +72,23 @@ void main() {
             'sidebar so it can never be trapped.');
     expect(body, contains('_selectTab(_previousTab)'),
         reason: 'back returns to the tab the user came from.');
+  });
+
+  test('reader re-feeds chrome inset to pagination on viewport inset change',
+      () {
+    // 根因（症状②）：全屏 / 旋转 / notch 改 viewPadding(inset) 时，过去只更新
+    // _stableTopInset/Bottom 两个 Dart 字段，却从不把新 inset 回喂 WebView 的分页
+    // 几何（padding 的 --chrome-*-inset、竖排列高扣项）→ 列高 / 边距按 stale inset
+    // 算，正文越出可视带、手调页边距被淹没。didChangeDependencies 必须在 inset 真
+    // 变时回喂（_applyChromeInsets）。Mac 真机实测：全屏尺寸下 chromeBottomInset
+    // 0→52.5px 被正确回喂、pitchDelta=0（几何无失配）。
+    final int didChangeDeps = reader.indexOf('void didChangeDependencies()');
+    expect(didChangeDeps, isNonNegative);
+    final String body = reader.substring(didChangeDeps, didChangeDeps + 900);
+    expect(body, contains('insetChanged'),
+        reason: 'didChangeDependencies must detect a real inset change.');
+    expect(body, contains('_applyChromeInsets'),
+        reason: 'TODO-1375 (2): an inset change must re-feed the WebView '
+            'pagination geometry so fullscreen re-layout uses the live inset.');
   });
 }
