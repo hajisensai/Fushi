@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/sentence_extraction.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 typedef _KeybdEventNative = Void Function(
     Uint8 bVk, Uint8 bScan, Uint32 dwFlags, IntPtr dwExtraInfo);
@@ -76,6 +77,14 @@ abstract final class SelectionCapture {
       }
     }
 
+    // spec 2026-07-10 §8 — 本函数的剪贴板写入（注入 Ctrl+C 的选区写入 + 下面的
+    // 旧值恢复）都会触发 WM_CLIPBOARDUPDATE；此刻 app 不在前台，剪贴板监听会把
+    // 它们当用户复制排进查词管线（假查词）。登记进一次性忽略集让监听端吞掉这批
+    // 自产事件。TODO-617 设计（design.md:74）规划过此护栏但从未实现——此即根修。
+    DesktopLookupService.instance.clipboardIgnores.register(<String>[
+      if (captured != null) captured,
+      if (oldText != null) oldText,
+    ]);
     if (oldText != null && oldText.isNotEmpty && captured != oldText) {
       await Clipboard.setData(ClipboardData(text: oldText));
     }

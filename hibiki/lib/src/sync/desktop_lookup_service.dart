@@ -225,12 +225,26 @@ class DesktopLookupService extends ChangeNotifier
     unawaited(_handleClipboardChange());
   }
 
+  /// spec 2026-07-10 §8 — 全局查词抓选区（selection_capture_ffi）写剪贴板前登记
+  /// 的一次性忽略集；[processClipboardText] 命中即吞掉该事件，防止「捕获文本」
+  /// 「恢复的旧文本」被当成用户复制排进查词管线（假查词/面板错句闪烁）。
+  final ClipboardIgnoreSet clipboardIgnores = ClipboardIgnoreSet();
+
   Future<void> _handleClipboardChange() async {
     // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
     final bool foreground = _focused || await _isHibikiForeground();
     if (!shouldTriggerOnClipboard(foreground)) return;
     final String? text = await _readClipboardText();
-    if (text == null || text.trim().isEmpty) return;
+    if (text == null) return;
+    processClipboardText(text);
+  }
+
+  /// 剪贴板事件读取成功后的统一入口。@visibleForTesting 使 §8 泄漏根修可离屏
+  /// 单测（真实剪贴板读取在测试环境不可驱动）。
+  @visibleForTesting
+  void processClipboardText(String text) {
+    if (text.trim().isEmpty) return;
+    if (clipboardIgnores.consume(text)) return;
     submitText(text);
   }
 
