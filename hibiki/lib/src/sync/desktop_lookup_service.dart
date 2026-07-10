@@ -65,12 +65,29 @@ class DesktopLookupService extends ChangeNotifier
   DesktopLookupRequest? get pendingRequest => _pendingRequest;
   String? get pendingText => _pendingRequest?.text;
   String? _lastText;
-  bool _running = false;
+
+  /// BUG-689 / TODO-1385：监听生命周期用**引用计数**而非裸 `bool _running`。
+  ///
+  /// 根因：本服务是 app 级单例，但其唯一 owner（[HomeDictionaryPage]）会在窗口物理宽
+  /// 跨 600px 断点时（`home_page.dart` 的 compact↔medium 布局切换，两套结构不同的
+  /// Scaffold）被 Flutter dispose+重建。Flutter 先挂新元素（initState→[start]）、帧末才
+  /// 卸旧元素（dispose→[stop]），于是同一帧内**短暂存在两个 owner**。裸 `bool` 无法建模
+  /// 这种瞬时重叠：新页 start 见 `_running==true` 短路 no-op（不重挂 addListener），随后
+  /// 旧页 stop 把 watcher 停掉、监听器摘掉 → 净结果 watcher 死掉、静默不查（缩回窗口偶尔
+  /// 又好是 start/stop 均 `unawaited` 异步穿插的非确定性）。
+  ///
+  /// 引用计数正确建模「N 个并发持有者」：每次 [start] 计数 +1，每次 [stop] 计数 -1，
+  /// 只有 0→1 才真正挂 watcher、只有 1→0 才真正拆。断点期计数 1→2→1 恒 >0，watcher 始终
+  /// 存活；真正切离查词 tab（无第二个 owner）时计数归 0 才拆，故仍满足「仅在查词界面监听
+  /// 剪贴板/全局热键」的既定契约（见设置文案 desktop_clipboard_window_mode_hint）。
+  /// 计数的自增/分支判定都在首个 `await` 之前同步完成，故与 start/stop 的 `unawaited`
+  /// 异步穿插无关，结果确定。
+  int _startRefCount = 0;
   DesktopClipboardWindowMode _windowMode = DesktopClipboardWindowMode.normal;
   bool _focused = true;
   HotKey? _hotKey;
 
-  bool get isRunning => _running;
+  bool get isRunning => _startRefCount > 0;
 
   /// TODO-1355：被动剪贴板变化（用户在**别的 app** 里复制）只把内容排进查词管线
   /// 供词典页在后台准备结果，**绝不**唤主窗前台/抢焦点——用户此刻正在别的窗口工作，
@@ -148,15 +165,29 @@ class DesktopLookupService extends ChangeNotifier
   void debugReset() {
     _pendingRequest = null;
     _lastText = null;
+    // BUG-689：跑过 start()/stop() 的用例可能留下非零计数 + 已挂的 Dart 侧监听器，
+    // 若不清会漏进后续用例。仅在确有累计计数时同步摘除监听并归零（未 start 的用例
+    // 计数恒 0，此块跳过，行为不变）。removeListener 对未注册的监听器是安全 no-op。
+    if (_startRefCount > 0) {
+      windowManager.removeListener(this);
+      clipboardWatcher.removeListener(this);
+      _startRefCount = 0;
+      _hotKey = null;
+    }
   }
 
   Future<void> start({required DesktopClipboardWindowMode windowMode}) async {
     if (!isDesktop) return;
-    if (_running) {
+    // 计数自增 + 分支判定在首个 await 之前同步完成（见 [_startRefCount] 说明）。
+    _startRefCount++;
+    if (_startRefCount > 1) {
+      // 已有 owner 在监听（老 owner，或跨断点重建时新旧页短暂重叠的第二个 owner）：
+      // watcher / 监听器 / 热键都还在位，只需按新 windowMode 重配一次；**绝不**重挂
+      // addListener（重挂无益，且过去与随后旧页的 stop 穿插正是 watcher 被拆死的根因）。
       await configureWindowMode(windowMode);
       return;
     }
-    _running = true;
+    // 首个 owner（0→1）：真正把剪贴板 watcher + 全局热键接上。
     await configureWindowMode(windowMode);
     windowManager.addListener(this);
     // 初始聚焦态：窗口可能尚未在前台（如开机自启），以平台真实状态为准。
@@ -172,8 +203,13 @@ class DesktopLookupService extends ChangeNotifier
   }
 
   Future<void> stop() async {
-    if (!_running) return;
-    _running = false;
+    // 计数递减 + 分支判定同步完成（见 [_startRefCount] 说明）。计数已为 0 时钳制成
+    // no-op（防重复 stop / 设置里关开关时词典页早已卸载→计数已为 0 的下溢）。
+    if (_startRefCount == 0) return;
+    _startRefCount--;
+    // 仍有其它 owner 持有（跨断点重建时新旧页短暂重叠）：保持 watcher 存活，
+    // 只有最后一个引用释放（1→0）才真正拆。这正是消除断点竞态的关键。
+    if (_startRefCount > 0) return;
     windowManager.removeListener(this);
     clipboardWatcher.removeListener(this);
     await clipboardWatcher.stop();
