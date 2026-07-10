@@ -2,7 +2,7 @@
    root (window.__hibikiRoot) so host-page CSS can't pierce it. Route every DOM
    lookup / overlay append / selection / height read through these helpers so they
    resolve inside the shadow (fall back to document before the shadow exists). */
-function __hibikiRoot(){ return window.__hibikiRoot || document; }
+function __hibikiRootNode(){ return window.__hibikiRoot || document; }
 function __hibikiContainer(){ var r = window.__hibikiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __hibikiOverlayParent(){ return window.__hibikiRoot || document.body; }
 function __hibikiScrollHeight(){ var c = __hibikiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
@@ -148,9 +148,9 @@ let sentenceDraftCount = 0;
 function refreshAllSentenceContextPickers() {
     sentenceDraftCount = sentenceCtxPrev + sentenceCtxNext;
     if (typeof document.querySelectorAll !== 'function') return;
-    __hibikiRoot().querySelectorAll('.sentence-context-picker')
+    __hibikiRootNode().querySelectorAll('.sentence-context-picker')
         .forEach(refreshSentenceContextPicker);
-    __hibikiRoot().querySelectorAll('.clear-draft-button')
+    __hibikiRootNode().querySelectorAll('.clear-draft-button')
         .forEach(refreshClearDraftButton);
 }
 
@@ -397,13 +397,13 @@ function showDescription(element) {
     if (!description) {
         return;
     }
-    const overlay = __hibikiRoot().querySelector('.overlay');
-    __hibikiRoot().querySelector('.overlay-content').textContent = description;
+    const overlay = __hibikiRootNode().querySelector('.overlay');
+    __hibikiRootNode().querySelector('.overlay-content').textContent = description;
     overlay.style.display = 'block';
 }
 
 function closeOverlay() {
-    __hibikiRoot().querySelector('.overlay').style.display = 'none';
+    __hibikiRootNode().querySelector('.overlay').style.display = 'none';
 }
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
@@ -614,7 +614,7 @@ function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
 }
 
 function closeImageLightbox() {
-    __hibikiRoot().querySelector('.dict-image-lightbox')?.remove();
+    __hibikiRootNode().querySelector('.dict-image-lightbox')?.remove();
 }
 
 function openImageLightbox(imageUrl, alt) {
@@ -1838,7 +1838,7 @@ function showNoAudioHint(button) {
     button.classList.add('audio-unavailable');
     button.title = message;
     // 移除可能残留的旧提示，避免叠加。
-    const stale = __hibikiRoot().querySelector('.audio-hint');
+    const stale = __hibikiRootNode().querySelector('.audio-hint');
     if (stale) stale.remove();
     const hint = el('div', { className: 'audio-hint', textContent: message });
     __hibikiOverlayParent().appendChild(hint);
@@ -2214,7 +2214,7 @@ function createEntryHeader(entry, idx) {
 }
 
 window.hoshiPopupMineFirstEntry = async function() {
-    const mineButton = __hibikiRoot().querySelector('.mine-button');
+    const mineButton = __hibikiRootNode().querySelector('.mine-button');
     if (!mineButton || mineButton.disabled) {
         return false;
     }
