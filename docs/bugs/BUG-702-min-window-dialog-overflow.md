@@ -6,7 +6,7 @@
     1. **`hibiki/lib/src/pages/implementations/media_sources_dialog.dart:133`**（「管理来源库」）：body 是 `ConstrainedBox(maxHeight=clamp(0.55h,160,480)≈242px) > HibikiReorderableColumn`（内部 Stack+Column.min，**不带滚动**），**独漏** `SingleChildScrollView`——兄弟对话框 `local_audio_sources_dialog.dart:97-103` 早在 BUG-445 就补了这层，此处照抄骨架时漏了。≥4 条来源即溢出（对应大额 384/1024px）。
     2. **`hibiki/lib/src/media/audiobook/sasayaki_rematch.dart:135`**（sasayaki 重匹配，桌面路径）：外层 `HibikiDialogFrame(maxHeightFactor:0.62, scrollable:false)`，内层 `HibikiModalSheetFrame` 默认 `scrollable:false` + 双滑条非滚动 Column（~270-300px）→ 0.62 界底下容不下（对应 108px）。
     3. **`hibiki/lib/src/pages/implementations/series_detail_page.dart:335`**（系列重命名 `_SeriesRenameDialog`）：外层 `maxHeightFactor:0.74, scrollable:false`，内层默认 `scrollable:false` + `Center(92x120 封面大图)+输入框` 非滚动 Column→矮窗顶破（对应 58/62px，大字号/紧凑更甚）。
-- **[x] ① 已修复** — `git commit 28ba01b11`（分支 `todo1389-minwindow-overflow`）。三处补滚动兜底，**不改回 TODO-1377 的最小尺寸下限**：
+- **[x] ① 已修复** — `git commit 6e34627ba`（分支 `todo1389-minwindow-overflow`）。三处补滚动兜底，**不改回 TODO-1377 的最小尺寸下限**：
   1. `media_sources_dialog.dart`：body 外层套 `SingleChildScrollView(child: _buildBody(tokens))`——内容超高整体滚动而非溢出，行少仍按内容收缩，与兄弟 `local_audio_sources_dialog` 一致（拖拽重排与滚动的手势竞技场分离由 `HibikiReorderableColumn` 处理，兄弟已验）。
   2. `sasayaki_rematch.dart`：内层 `HibikiModalSheetFrame(scrollable: true)`——body 在 `Flexible` 内滚动，矮窗可滚不溢出（桌面 + 移动路径共用同一 body，一处修覆盖两端）。
   3. `series_detail_page.dart`：内层 `HibikiModalSheetFrame(scrollable: true)`——封面+输入框在滚动视口内，矮窗可滚不溢出。
