@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Hibiki] content script v44 loaded (TODO-1361: wait seek settle + video advancing before Netflix clip record, BUG-685)');
+console.log('[Hibiki] content script v45 loaded (BUG-686: popup Shadow DOM isolation + theme single-sourced from app)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-hibiki-cs', 'v44'); } catch (_) {}
+try { document.documentElement.setAttribute('data-hibiki-cs', 'v45'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制

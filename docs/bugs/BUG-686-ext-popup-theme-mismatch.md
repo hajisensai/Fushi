@@ -9,6 +9,7 @@
   - 提交：（见 commit）
 - **[x] ② 已加自动化测试** — `hibiki/test/sync/browser_extension_theme_guard_test.dart`（源码契约守卫）：① provider 下发 `--text-color`/`--background-color`/`--hibiki-color-scheme`；② content.js 用 `--hibiki-color-scheme` 设 `data-theme`；③ content.css 确实读 `var(--text-color)`/`var(--background-color)`（契约方向自证）。既有 `yomitan_api_server_extension_endpoints_test.dart` 覆盖 handler 透传 theme。
 - **备注**：
-  - 真相源扩展是 `hibiki/assets/browser_extension/`（pubspec 打包 + `browser_extension_installer.dart` 解压到 `<appSupport>/hibiki-browser-extension/`）；`tools/browser-extension/` 是过时开发副本，不打包、未改。
+  - 打包扩展是 `hibiki/assets/browser_extension/`（pubspec 打包 + `browser_extension_installer.dart` 解压到 `<appSupport>/hibiki-browser-extension/`）。**镜像契约**：`tools/browser-extension/` 与 assets 必须逐字节一致（TODO-1000 installer 守卫），`vendor/popup.js` 还必须与 in-app 渲染器 `hibiki/assets/popup/popup.js` 逐字节一致（TODO-1267 parity 守卫）——落地时已同步四份并 bump content script 版本标记 v45。
+  - **滚轮表面回归修复**：Shadow DOM 化初版把滚轮目标写成 `#entries-container.scrollBy`（容器在两个表面都不可滚 = no-op）、zoom 改读容器 `--hibiki-popup-zoom` 计算变量（in-app 从不下发 → 恒 1）。已改为表面感知：扩展滚 shadow host（`__hibikiWheelScroller` 经 composedPath 判定）、in-app/宿主页回落 `window.scrollBy`；zoom 读 host.style.zoom（扩展）/ documentElement.style.zoom（in-app）。守卫：`hibiki/test/build/browser_extension_popup_wheel_surface_guard_test.dart`。
   - **用户侧生效条件**：需更新到含本修复的 app 构建，并在 app 内重新运行「安装扩展」助手（重解压新 content.js）+ 浏览器 reload 扩展。运行中的旧 app server 仍返回旧 theme（无新变量），故未更新前弹窗仍旧样。
   - 真实浏览器视觉复验待用户在更新后确认（bg 环境无法驱动浏览器扩展渲染）。
