@@ -83,7 +83,12 @@ void main() {
       ),
     );
 
-    // TODO-640：顶栏分类 chip 改纯图标（无文字），按稳定 id key 命中弹幕分类。
+    // 按稳定 id key 命中弹幕分类 chip（不依赖标签文案）。TODO-1351 全文标签把顶栏
+    // 撑宽，末位分类可能在横滑视口外，先滑入视口再点（模拟真实用户横滑）。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
     );
