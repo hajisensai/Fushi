@@ -2189,8 +2189,6 @@
   "video_subtitle_youtube_translated": "$lang (translated)",
   "video_subtitle_youtube_empty": "This caption track has no text",
   "sync_client_token": "Peer access token",
-  "sync_client_token_hint": "Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer's shared server token, and both can connect.",
-  "sync_server_token_self_hint": "This device's shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.",
   "theme_eyecare": "Eye Care",
   "reader_theme_eyecare": "Eye Care",
   "video_settings_cat_audio": "Audio",
@@ -2249,5 +2247,7 @@
   "desktop_clipboard_destination_panel": "Floating panel",
   "desktop_clipboard_destination_transient": "Popup at cursor",
   "clipboard_panel_opacity": "Panel opacity",
-  "clipboard_panel_opacity_hint": "Card background opacity of the floating lookup panel (requires Windows 11 backdrop)"
+  "clipboard_panel_opacity_hint": "Card background opacity of the floating lookup panel (requires Windows 11 backdrop)",
+  "sync_client_connected": "Connected",
+  "sync_client_token_manual": "Enter token manually"
 }
