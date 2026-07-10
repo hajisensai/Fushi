@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 706 条。点号进各自文件。
+> 共 707 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-722](bugs/BUG-722-popup-multibase-ruby-furigana-overlap.md) | ✅ | ✅ | 词典弹窗多基字词逐字振假名完全重叠(勝負/将棋) |
 | [BUG-721](bugs/BUG-721-clipboard-panel-close-drops-lookups.md) | ✅ | ✅ | 剪贴板面板关闭后被永久暂停：第二个词出不来 |
 | [BUG-720](bugs/BUG-720-sasayaki-lookup-ruby-lane-misalign.md) | ✅ | ✅ | 有声书/查词注音高亮 narrow-lane 错位 |
 | [BUG-718](bugs/BUG-718-vn-restore-charoffset-cloak.md) | ✅ | ✅ | VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白 |

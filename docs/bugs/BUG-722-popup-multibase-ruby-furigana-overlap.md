@@ -1,0 +1,17 @@
+## BUG-722 · 词典弹窗多基字词逐字振假名完全重叠(勝負/将棋)
+- **报告**：2026-07-11（用户：截图 小学館例解学習国語「終盤」例句「碁や将棋などで、勝負が終わり…」，勝負(しょう/ぶ)、将棋(しょう/ぎ) 注音重叠）
+- **真实性**：✅ 真 bug，根因 `hibiki/assets/popup/popup.css:822-831`（BUG-345/363 引入的 glossary `rt{position:absolute; left:0; right:0}`）+ `hibiki/assets/popup/popup.js:2589` `postProcessRuby`（只把基字裸文本换成 `<span>`，`<rt>` 仍是 `<ruby>` 的直接子）。
+- **[x] ① 已修复** — 分支 `worktree-popup-ruby-per-base-anchor`：把「每个 `<rt>` 的定位锚」从整个 `<ruby>` 下沉到**每基字**的 `<span class="ruby-unit">`。
+  - `popup.js` `postProcessRuby`：对每个 glossary `<ruby>`，把每个基字文本节点包成 `<span class="ruby-unit">`，并把紧随其后的该基字自己的 `<rt>`（跳过 `<rp>`/空白）`appendChild` **移进**该 span。基字文本仍是 `.ruby-unit` 里的活文本节点 → 划词选区不变量（BUG-110/123/125/129）不回退。
+  - `popup.css`：新增 `:where(.glossary-group,.glossary-content) .ruby-unit{display:inline-block;position:relative;line-height:1;padding-top:0.55em;vertical-align:baseline}`，把 BUG-345 横向紧凑 + BUG-363 纵向 em 预留从裸 `ruby` 迁到 `.ruby-unit`；裸 `ruby` 只保留 `inline-block;position:relative` 作 postProcess 失败时的兜底锚。`rt` 规则不变（`position:absolute;left:0;right:0;top:0`），现锚到 `.ruby-unit`（自身漢字宽）而非 `<ruby>`（整词宽）。
+  - 三镜像同步：`assets/popup/` → `assets/browser_extension/vendor/` + `tools/browser-extension/vendor/`（popup.js/popup.css 字节一致，TODO-1267 parity 守卫）；`content.css` 由 `tools/browser-extension/scripts/generate-content-css.mjs` 重新生成（两份 50140 bytes 一致）。Windows 端 `_winCss` 内联同一份 popup.css，自动覆盖。
+- **[x] ② 已加自动化测试** —
+  - 新增 `hibiki/test/pages/popup_glossary_ruby_per_base_anchor_guard_test.dart`：断言 popup.css 有 `.ruby-unit{position:relative}` 的 per-base 锚 + popup.js `postProcessRuby` 创建 `.ruby-unit` 且把 `<rt>`（`sib.tagName==='RT'`）`unit.appendChild(sib)` 移进单元（BUG-722 契约两端）。
+  - 更新既有两守卫把「横向紧凑 + 纵向 em 预留」的断言从裸 `ruby` 迁到 `.ruby-unit`：`popup_glossary_ruby_hspacing_guard_test.dart`、`popup_glossary_ruby_lineheight_guard_test.dart`（BUG-345/363 不回退，只是锚点下沉）。
+  - 全部通过（17/17，含 `browser_extension_popup_parity_guard_test.dart` 字节一致 + content.css 完整性）。
+- **备注**：
+  - **根因机理**：小学館等词典的例句振假名是**一个 `<ruby>` 里含多对「基字+`<rt>`」**（如 `<ruby>将<rt>しょう</rt>棋<rt>ぎ</rt></ruby>`）。BUG-345 为压紧基字把 `<rt>` 改 `position:absolute; left:0; right:0`——但绝对定位的 `left/right` 解析相对**最近定位祖先**。BUG-345/363 里那个祖先是整个 `position:relative` 的 `<ruby>`，于是一个词里的**每个 `<rt>` 都被拉成整词宽的同一条带、完全叠在一起**。BUG-345 的无头复现只喂了「单基字单 `<rt>`」的明鏡逐字 ruby（此时 ruby 宽=基字宽，`left:0;right:0` 恰好=单字，只 ~5px 墨迹外溢，可接受），从未覆盖多基字词 ruby，故漏了这个几何。
+  - **无头复现（Chrome/Blink CDP `getBoundingClientRect`，Windows 系统日文字体 Yu Gothic 20px）**：
+    - 修复前：`<ruby>将<rt>しょう</rt>棋<rt>ぎ</rt></ruby>` 里 しょう 与 ぎ 的 rt 盒坐标**完全相同**（left=172.89,right=212.89），相邻 rt 盒间距 **−40px（100% 重叠）**；勝負 同理。
+    - 修复后（`.ruby-unit` 逐字锚）：相邻 rt 盒间距 **0px（无重叠）**；每个读音居中于自身漢字（rt 中心 = 基字中心，delta 0）、rt 盒收敛到自身 20px 单元；基线与相邻纯假名对齐（delta 0）；纵向预留在 zoom=1/1.5/3 下对上一行墨迹均 **≥0（不撞行）**。残留仅：3 モーラ读音(しょう)对单漢字的 ~10px 右向墨迹外溢（BUG-345 既有可接受残留，非重叠）。
+  - **仍需真机验**：无头 Chromium 与 WebView2 同 Blink，但真机需用真实 WebView2(Win)/系统 WebView + 真实 Hiragino/Noto CJK，在词典弹窗打开 小学館「終盤」等含多基字词振假名的词条，确认：① 勝負/将棋 逐字注音各居其字、不重叠；② 划词仍可选中 ruby 文字并查词（BUG-110/123/125/129 不回退）；③ 词典字号调大档(zoom 1.5/2/3)注音不飘高、不压上行。
