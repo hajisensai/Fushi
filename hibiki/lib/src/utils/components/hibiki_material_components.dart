@@ -2301,6 +2301,18 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
 
   static List<String> _splitLines(String log) => log.split('\n');
 
+  // TODO-1380/BUG-694：右键/长按菜单的自持锚点——面板内最近一次 pointer down 的
+  // 全局坐标。框架的 SelectableRegionState.contextMenuAnchors 只在首帧用「右键
+  // 位置」当锚点（用一次即清空），之后每次 toolbar 重建（选区几何变化 →
+  // SelectionOverlay.markNeedsBuild → overlay entry 重建）都退回 glyph 路径，对
+  // startSelectionPoint/endSelectionPoint 做空断言；而本面板是懒加载 ListView +
+  // 持续追加的日志流，端点所在行可被滚动回收 / 内容更新 detach（框架
+  // getSelectionGeometry 明说 detached/off-screen 时端点可为 null）→ 菜单重建
+  // 即崩（Null check operator，崩溃栈见 docs/bugs/BUG-694）。菜单只能由面板内
+  // 的一次 pointer down（右键 / 长按）召出，外层 Listener 先于 SelectionArea
+  // 看到它；自持该坐标让每次重建都锚在召出位置，幂等且完全不依赖选区几何。
+  Offset? _lastPointerDownGlobalPosition;
+
   @override
   void didUpdateWidget(covariant HibikiLogPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -2359,7 +2371,13 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
       ),
     ];
     return AdaptiveTextSelectionToolbar.buttonItems(
-      anchors: selectableRegionState.contextMenuAnchors,
+      // TODO-1380/BUG-694：锚点自持（[_lastPointerDownGlobalPosition]），不读
+      // selectableRegionState.contextMenuAnchors——其 glyph 回退路径对选区端点
+      // 空断言，toolbar 重建即崩。null 分支不可达（菜单必由面板内 pointer down
+      // 召出），仅作类型收口。
+      anchors: TextSelectionToolbarAnchors(
+        primaryAnchor: _lastPointerDownGlobalPosition ?? Offset.zero,
+      ),
       buttonItems: items,
     );
   }
@@ -2383,6 +2401,9 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
                 children: <Widget>[
                   Listener(
                     onPointerDown: (PointerDownEvent event) {
+                      // TODO-1380：先记全局坐标当菜单锚点（右键/长按也走这里，
+                      // 见 [_lastPointerDownGlobalPosition]），再做主键判定。
+                      _lastPointerDownGlobalPosition = event.position;
                       if (event.buttons & kPrimaryButton == 0) return;
                       _scrollController.beginPointerSelection();
                     },
