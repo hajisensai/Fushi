@@ -140,5 +140,25 @@ void main() {
     test('popup.css 有逐字 hover 样式', () {
       expect(popupCss.contains('.global-lookup-sentence-char'), isTrue);
     });
+
+    test('句子条=普通搜索框外观（真机反馈：左侧强调竖条已删，不得复活）', () {
+      expect(
+        popupCss.contains('border-left: 3px solid var(--primary-color'),
+        isFalse,
+        reason: '左侧 3px 竖条在面板里像「搜索栏左边一块莫名深色」',
+      );
+    });
+  });
+
+  group('面板 root 卡无 per-shell ×（真机反馈：与面板栏 × 重复）', () {
+    test('host 标记 panel-root 且 CSS 隐藏其关闭钮', () {
+      expect(
+          hostJs.contains("setAttribute('data-panel-root', 'true')"), isTrue);
+      expect(
+        hostJs.contains('[data-panel-root="true"] '),
+        isTrue,
+        reason: 'CSS 规则隐藏 root 卡 ×；嵌套子卡的 × 保留（关子层有用）',
+      );
+    });
   });
 }

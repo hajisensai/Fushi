@@ -1672,6 +1672,12 @@ function flushTimers() {
     'calc(100% - 28px)',
     'panel root fills height below the bar',
   );
+  assert.strictEqual(
+    shell.getAttribute('data-panel-root'),
+    'true',
+    'panel root marked so CSS hides its per-shell close-X (panel bar × is the '
+      + 'single close affordance; real-device feedback)',
+  );
   assert.ok(
     !hostPostLog.some((m) => m.handler === 'overlaySize'),
     'panel mode never posts overlaySize (fixed window, no reveal-resize loop)',

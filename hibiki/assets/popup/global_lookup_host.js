@@ -360,7 +360,11 @@
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
-        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}';
+        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}' +
+        // 真机反馈：面板 root 卡不画 per-shell 关闭 ×（与面板栏 × 重复；
+        // 嵌套子卡的 × 保留）。
+        '.global-lookup-frame-shell[data-panel-root="true"] ' +
+        '.global-lookup-close{display:none;}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
@@ -516,6 +520,9 @@
       shell.style.height = 'calc(100% - ' + PANEL_BAR_HEIGHT + 'px)';
       shell.style.zIndex = '0';
       shell.style.pointerEvents = 'auto';
+      // 真机反馈：面板 root 卡的 per-shell 关闭 × 与面板栏的 × 重复——标记
+      // panel-root，CSS 隐藏 root 卡的 ×（嵌套子卡保留各自的 ×，关子层有用）。
+      shell.setAttribute('data-panel-root', 'true');
       return;
     }
     shell.style.position = 'absolute';

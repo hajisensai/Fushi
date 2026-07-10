@@ -1334,7 +1334,9 @@ html.global-lookup[data-theme="dark"] body {
     padding: 8px 10px;
     border-radius: var(--hibiki-radius-card, 10px);
     background: var(--surface-variant, rgba(128, 128, 128, 0.12));
-    border-left: 3px solid var(--primary-color, #386A58);
+    /* 真机反馈（2026-07-10）：左侧 3px 强调色竖条（引用块样式）在面板里像
+       「搜索栏左边一块莫名深色」——去掉竖条，改四边细边框的普通搜索框外观。 */
+    border: 1px solid var(--md-outline-variant, rgba(120, 120, 128, 0.32));
     color: var(--text-color-light1, #555555);
     font-size: 0.85em;
     line-height: 1.5;
