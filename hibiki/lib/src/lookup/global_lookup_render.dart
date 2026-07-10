@@ -48,6 +48,7 @@ String buildFrameSettingsJs({
   required AppModel appModel,
   required DictionarySearchResult result,
   String sentence = '',
+  double cardBgAlpha = 1.0,
 }) {
   final String settingsJs = buildPopupSettingsJs(
     appModel: appModel,
@@ -55,6 +56,14 @@ String buildFrameSettingsJs({
     result: result,
     options: const PopupSettingsOptions(globalLookup: true),
   );
+  // spec 2026-07-10 §6 — 半透明卡背景变量。仅面板路径传 <1（且仅当 Win11
+  // acrylic backdrop 可用）；默认 1.0 时注入空串——同一 alpha 下 settingsJs
+  // 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据，稳定即零多余重渲），
+  // 瞬态窗/面板共用本函数、in-app 路径不经此处。
+  final String cardBgAlphaLine = cardBgAlpha < 1.0
+      ? "document.documentElement.style.setProperty('--hibiki-card-bg-alpha', "
+          "'${cardBgAlpha.toStringAsFixed(2)}');\n"
+      : '';
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
   // frame, but everything else in the body (theme/zoom/entries/sentence) is
@@ -79,6 +88,7 @@ String buildFrameSettingsJs({
   return '''
     $settingsJs
     $kPopupTopPullReleaseJs
+    $cardBgAlphaLine
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.__globalLookupSentence = ${jsonEncode(sentence)};
@@ -211,6 +221,11 @@ String buildStackRenderScript({
   Offset selectionScreenOffset = Offset.zero,
   double originFloorLeft = 0,
   double originFloorTop = 0,
+  // spec 2026-07-10 — 'panel' = 常驻剪贴板面板（root 撑满固定视口、host 短路
+  // measureAndReport）。默认 'cascade' 时 payload 不带 layoutMode 键，瞬态窗
+  // 载荷与改动前逐字节相同（Never break userspace）。
+  String layoutMode = 'cascade',
+  double cardBgAlpha = 1.0,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -227,6 +242,7 @@ String buildStackRenderScript({
       appModel: appModel,
       result: p.result,
       sentence: p.sentence,
+      cardBgAlpha: cardBgAlpha,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
@@ -251,6 +267,10 @@ String buildStackRenderScript({
     popups.add(map);
   }
   final Map<String, Object?> payloadObj = <String, Object?>{'popups': popups};
+  // spec 2026-07-10 — 仅面板模式携带 layoutMode 键；cascade 载荷字节不变。
+  if (layoutMode == 'panel') {
+    payloadObj['layoutMode'] = 'panel';
+  }
   // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
   // interior so an up/left child lands INSIDE the window origin committed at the
   // first reveal; the host's measureAndReport then never moves the origin when the
