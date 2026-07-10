@@ -314,19 +314,36 @@ void main() {
     });
   });
 
-  group('ReaderContentStyles audiobook highlight lane', () {
-    test('vertical ruby highlights draw only the base text lane', () async {
+  group('ReaderContentStyles audiobook/selection highlight fill', () {
+    // BUG-716：narrow-lane(1em 窄条 + background-position:left) 在书籍行距≠字号
+    // 或 <ruby> 盒含注音轨时把条画偏（竖排往基字左侧偏移、有无振假名两种宽度不一），
+    // 用户实机确认有声书与查词的注音高亮都错位。回到整句 background-color 填充：
+    // 按元素 class 只刷一遍背景，注音轨天然在 ruby 元素背景盒外（BUG-110/643 不回归）。
+    test('narrow-lane mechanism is fully removed in both writing modes',
+        () async {
+      for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode(mode);
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, isNot(contains('--hoshi-highlight-lane-color')),
+            reason: '[$mode] BUG-716：高亮不再落到 lane 变量');
+        expect(css,
+            isNot(contains('linear-gradient(var(--hoshi-highlight-lane-color')),
+            reason: '[$mode] BUG-716：不再用窄条渐变绘制高亮');
+        expect(css, isNot(contains('background-size: 1em 100%')),
+            reason: '[$mode] BUG-716：竖排不再有 1em 窄条');
+        expect(css, isNot(contains('background-size: 100% 1em')),
+            reason: '[$mode] BUG-716：横排不再有 1em 窄条');
+      }
+    });
+
+    test(
+        'sasayaki ruby highlight fills the base box with full background-color',
+        () async {
       final ReaderSettings settings = await _defaultSettings();
       await settings.setWritingMode('vertical-rl');
 
       final String css = ReaderContentStyles.css(settings: settings);
-
-      expect(css, contains('--hoshi-highlight-lane-color'),
-          reason: '高亮颜色应先落到 lane 变量，再由窄背景条统一绘制');
-      expect(css, contains('background-size: 1em 100% !important'),
-          reason: '竖排 ruby 高亮只能占正文基字的 1em 横向宽度，不能包含 rt 注音轨');
-      expect(css, contains('background-position: left center !important'),
-          reason: 'vertical-rl 下 rt 在右侧，正文基字窄条应钉在左侧');
 
       final int sasayakiStart =
           css.indexOf('ruby.hoshi-sasayaki-ruby-active {');
@@ -337,13 +354,16 @@ void main() {
       );
       expect(
         sasayakiBlock,
-        isNot(contains(
-            'background-color: var(--hoshi-sasayaki-background-color)')),
-        reason: 'sasayaki 不能再直接给整个 ruby 容器刷背景，否则有振假名时条会变宽',
+        contains(
+            'background-color: var(--hoshi-sasayaki-background-color) !important'),
+        reason: 'BUG-716：ruby 有声书高亮整句填充；注音轨在 ruby 背景盒外，'
+            '有无振假名宽度一致',
       );
     });
 
-    test('vertical sasayaki text spans draw only the base text lane', () async {
+    test(
+        'sasayaki text span highlight fills with full background-color, no box model',
+        () async {
       final ReaderSettings settings = await _defaultSettings();
       await settings.setWritingMode('vertical-rl');
 
@@ -353,11 +373,6 @@ void main() {
         css,
         contains('.hoshi-sasayaki-cue.hoshi-sasayaki-active'),
         reason: '普通正文 cue 也必须有 active span 样式，不能只靠 CSS Highlight',
-      );
-      expect(
-        css,
-        contains('.hoshi-sasayaki-cue.hoshi-sasayaki-active,\nruby.'),
-        reason: '普通正文 cue span 必须进入同一套窄 lane 选择器，宽度才和 ruby 一致',
       );
 
       final int activeStart =
@@ -369,18 +384,35 @@ void main() {
       );
       expect(
         activeBlock,
-        isNot(contains(
-            'background-color: var(--hoshi-sasayaki-background-color)')),
-        reason: '普通正文 sasayaki 不能直接给整个 span 行盒刷背景，否则无振假名句子也会变宽',
+        contains(
+            'background-color: var(--hoshi-sasayaki-background-color) !important'),
+        reason: 'BUG-716：普通正文 sasayaki 整句 background-color 填充',
       );
       expect(
         activeBlock,
         isNot(contains('line-height')),
-        reason: 'TODO-1371/BUG-690：active 态禁止改写盒模型。旧 line-height:1 !important '
-            '会在书籍 CSS strut < 1em 时逐句增厚激活行盒，竖排下行盒厚度=列厚，'
-            '其后所有列随播放逐句平移；1em 窄条宽度由 background-size（绘制层）保证，'
-            '与 line-height 无关',
+        reason: 'active 态禁止改写盒模型。line-height:1 !important 会在书籍 CSS '
+            'strut < 1em 时逐句增厚激活行盒，竖排下行盒厚度=列厚，其后所有列随播放'
+            '逐句平移（TODO-1371/BUG-690）',
       );
+    });
+
+    test(
+        'selection (lookup) ruby highlight also fills with full background-color',
+        () async {
+      // 用户 re-report：查词的注音高亮也因 narrow-lane 错位。查词 ruby 同样回填充。
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('vertical-rl');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+
+      final int start = css.indexOf('ruby.hoshi-selection-ruby-active {');
+      expect(start, isNonNegative);
+      final String block = css.substring(start, css.indexOf('}', start));
+      expect(block, contains('background-color:'),
+          reason: 'BUG-716：查词 ruby 高亮回到整句填充');
+      expect(block, isNot(contains('--hoshi-highlight-lane-color')),
+          reason: 'BUG-716：查词 ruby 不再走窄 lane');
     });
 
     test('active highlight blocks are paint-only in both writing modes',
@@ -439,16 +471,23 @@ void main() {
       }
     });
 
-    test('horizontal ruby highlights draw only the base text lane', () async {
+    test('horizontal ruby highlight also fills with full background-color',
+        () async {
       final ReaderSettings settings = await _defaultSettings();
       await settings.setWritingMode('horizontal-tb');
 
       final String css = ReaderContentStyles.css(settings: settings);
 
-      expect(css, contains('background-size: 100% 1em !important'),
-          reason: '横排 ruby 高亮只能占正文基字的 1em 纵向高度，不能包含上方 rt 注音轨');
-      expect(css, contains('background-position: left bottom !important'),
-          reason: 'horizontal-tb 默认 rt 在上方，正文基字窄条应钉在底部');
+      final int start = css.indexOf('ruby.hoshi-sasayaki-ruby-active {');
+      expect(start, isNonNegative);
+      final String block = css.substring(start, css.indexOf('}', start));
+      expect(
+        block,
+        contains(
+            'background-color: var(--hoshi-sasayaki-background-color) !important'),
+        reason: 'BUG-716：横排 ruby 有声书高亮同样整句填充，rt 注音轨在上方、'
+            '在 ruby 元素背景盒外',
+      );
     });
   });
 
