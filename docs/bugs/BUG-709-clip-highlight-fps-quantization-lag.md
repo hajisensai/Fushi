@@ -1,0 +1,15 @@
+## BUG-709 · 有声书导出片段逐句高亮系统性滞后=12fps帧量化
+- **报告**：2026-07-10（用户：导出片段高亮进度慢了。追问确认=高亮单向滞后于声音，且测试用的是最新 develop 构建）
+- **真实性**：✅ 真 bug（纯函数确定性复现帧量化滞后；最终观感需真机导出复测）
+  - 功能：有声书「导出片段」的「多句连读 + 逐句高亮跟随」短视频。帧计划 `hibiki/lib/src/media/audiobook/mining_audio_clip.dart:763` `clipFramePlan` 逐帧算「此刻高亮哪句」，`_synthDynamicClipVideo`（`hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart:1442` 原 `const int fps = 12`）把去重母帧展开成 image2 序列帧 + 音频合成。
+  - 根因 `mining_audio_clip.dart:786`（帧中心采样 `t = globalStartMs + ((i+0.5)*msPerFrame).round()`）：逐句高亮切换被帧率量化到 Δ=1000/fps 的网格。句起点 S 的高亮在视频时刻 `round(S/Δ)·Δ` 出现，与锁定音频对称误差 ≤Δ/2。**12fps 下 Δ≈83ms，约一半 cue 的高亮晚最多 ~42ms**（越过人眼音画同步阈值 ≈45ms 的边缘）→ 用户主观「高亮进度慢/滞后」。
+  - 与播放侧对比确认这是导出独有：播放高亮走 `JsonAlignmentParser.findCueIndex`（`packages/hibiki_audio/lib/src/parsers/json_alignment_parser.dart:102`）按**连续**音频位置判 `startMs<=pos<=endMs`，卡着声音切换、无帧量化；导出侧被离散帧采样量化。`delayMs`（A/V 偏移）对音频窗口与 cue 起止**一致平移**（`audiobook.part.dart:1135-1145`）、帧编号 1:1（`audiobook.part.dart:1523-1540`），均无系统性偏移——唯一残差就是帧量化。
+  - 历史：原始帧起点采样（ceil）→ 最多晚 Δ（迟钝）；TODO-1147 帧尾采样（floor）→ 最多早 Δ（矫枉过正「对不上」）；TODO-1256 帧中心采样（round）→ 对称 ±Δ/2。**三次都只在 ±Δ 里挪、没动 Δ 本身**，故用户在 1256 上仍报滞后。真正的杠杆是 Δ=1000/fps。
+- **[x] ① 已修复** — 导出 fps `12 → 24`（`audiobook.part.dart:1442`，round 采样不变）。最大滞后 Δ/2 从 ≈41.7ms 降到 ≈20.8ms，两个方向都压到不可感知，从根上消除来回震荡。成本极小：母帧按去重 `highlightCueIndex` **逐句只渲一次**（渲染开销 = O(不同句数)，与 fps 无关），提 fps 只多廉价的 JPEG 母帧复制 + ffmpeg mjpeg 帧、不增内存（TODO-1167 流式，任一时刻只驻一帧）。提交：<本轮 commit>。
+  - 范围：只动动态高亮导出路径的 fps 常量；不碰单图静态路径（其 ffmpeg builder 默认 fps=12 仅用于单张静态图，无需高帧率）、不碰采样算法、不碰 cue→offset 链路。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/mining_audio_clip_highlight_lateness_test.dart`：
+  - 行为（确定性相位扫描 1..2000ms 驱动真实 `clipFramePlan`）：①「最大滞后 ≤ Δ/2 = 500/fps」对 fps=12/24 均成立；②红→绿「12fps 最大滞后 >40ms（可感知）、24fps ≤21ms（不可感知）」——证明提 fps 把滞后压到阈下。
+  - 源码守卫：动态导出路径 `const int fps = N` 必须 N≥24，防有人改回 12（或更低）令帧量化滞后回归。
+- **备注**：
+  - 验证：`flutter test test/media/audiobook`（含新守卫 + 帧计划/导出/合成/ANR-OOM 回归）全绿；`flutter analyze` 改动文件 No issues。
+  - **待真机**：最终观感需在真实有声书上导出一段多句片段、逐帧比对高亮与朗读声音，确认「滞后」主观消失、且 24fps 未显著拖慢移动端导出耗时 / 撑大文件体积到不可接受。

@@ -1430,7 +1430,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     required File videoFile,
     required bool isDesktop,
   }) async {
-    const int fps = 12;
+    // BUG-709（用户回访「导出片段高亮进度慢了」根因·帧量化残差）：逐句高亮切换被帧
+    // 率量化到 Δ=1000/fps 的网格上。clipFramePlan 用帧中心（round）采样后，句起点 S 的
+    // 高亮在视频时刻 round(S/Δ)·Δ 出现，与锁定音频对称误差 ≤Δ/2——12fps 下 Δ≈83ms、
+    // 约一半 cue 的高亮晚最多 42ms（>人眼音画同步阈值 ≈45ms 的边缘，主观「滞后」）。
+    // TODO-1147(floor→早)/TODO-1256(round→对称) 三次改采样都只在 ±Δ 里挪，没动 Δ 本身。
+    // 真正的杠杆是 Δ=1000/fps：母帧按去重的 highlightCueIndex 逐句只渲一次（渲染开销
+    // = O(不同句数)，与 fps 无关，见下方 distinctIndices），提 fps 只多廉价的 JPEG 母帧
+    // 复制 + ffmpeg mjpeg 帧，不增内存（TODO-1167 流式，任一时刻只驻一帧）。24fps →
+    // Δ≈41.7ms → 最大滞后 ≤20.8ms，两个方向都降到不可感知，从根上消除来回震荡。
+    const int fps = 24;
     // 帧计划：每帧此刻高亮哪一句（相邻同句合并计数）。
     final List<AudioCue> planCues = plan.cueSpans
         .map((AudiobookClipCueSpan s) => AudioCue()
