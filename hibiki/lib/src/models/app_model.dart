@@ -3073,10 +3073,14 @@ class AppModel with ChangeNotifier {
         results: ffiResults,
         maximumTerms: effectiveMaxTerms,
       );
-      result.popupJson = HoshiDicts.instance.lookupPopupJson(
-        searchTerm,
-        maxResults: maximumDictionarySearchResults,
-        maxTerms: effectiveMaxTerms,
+      // 性能：popupJson 从已拿到的 ffiResults 在 Dart 侧生成（buildPopupJsonFromLookup
+      // 与 C++ build_popup_json 逐字段对齐，parity 测试见 dictionary_popup_webview_test）。
+      // 此前这里调 lookupPopupJson 让 C++ 把同一个词的完整查询管线（scan×文本变体×
+      // 去屈折×hash 查询×排序×zstd 解压）从零再跑一遍——FFI 缓存命中/load-more 每页
+      // 也照跑。同源生成还消除了「entries 来自缓存、popupJson 来自新查询」的双源分叉。
+      result.popupJson = buildPopupJsonFromLookup(
+        results: ffiResults,
+        maximumTerms: effectiveMaxTerms,
       );
       result = result.withKanjiResults(kanjiResults);
       swBuild.stop();
@@ -3095,10 +3099,11 @@ class AppModel with ChangeNotifier {
           results: ffiResults,
           maximumTerms: effectiveMaxTerms,
         );
-        result.popupJson = HoshiDicts.instance.lookupPopupJson(
-          searchTerm,
-          maxResults: maximumDictionarySearchResults,
-          maxTerms: effectiveMaxTerms,
+        // 同上：popupJson 由本次 lookup 的 ffiResults 直接生成，砍掉第二次
+        // 完整 C++ 查询（原生查词成本 ×2 → ×1）。
+        result.popupJson = buildPopupJsonFromLookup(
+          results: ffiResults,
+          maximumTerms: effectiveMaxTerms,
         );
         result = result.withKanjiResults(kanjiResults);
       }

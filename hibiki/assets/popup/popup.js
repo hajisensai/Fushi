@@ -2741,7 +2741,15 @@ function _reportPopupHeight() {
     }
 }
 
-function _firePopupRendered() {
+// 性能（查词时延）：多词条渲染现在**双发**同一 token 的 popupRendered——首词条
+// 同步渲染完（build + 局部 postProcessRuby + applyCustomCSS）立即发第一次，宿主
+// 据此撤盖板/翻可见（首屏可见性只依赖首词条，Dart 侧全部消费方幂等）；尾批词条
+// 在宏任务里补建完成后发第二次（Windows global-lookup host 依赖第二发把窗口量到
+// 全高）。[stillRendering]=true 表示尾批仍在途：置 _renderInProgress 让
+// updatePopupIncremental 在此窗口内回退全量 renderPopup（临时 counts/domIndex
+// 不可做增量 diff）。
+function _firePopupRendered(stillRendering) {
+    window._renderInProgress = !!stillRendering;
     _reportPopupHeight();
     // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
     // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
@@ -3023,6 +3031,16 @@ window.renderPopup = function() {
         return;
     }
 
+    // 首词条已完整就绪（build + 局部 ruby + CSS），先发一次 popupRendered 让
+    // 宿主立即撤盖板/翻可见，可见时刻不再被尾批词条拖住（此前多词条结果要等
+    // 全部词条 build 完才发信号）。counts/domIndex 先写入仅含首词条的临时一致
+    // 视图；窗口期落进来的 updatePopupIncremental 由 _renderInProgress 强制
+    // 回退全量 renderPopup（换代自动取消下面的尾批，杜绝重复卡片）。
+    window._renderedGlossaryCounts = [entries[0].glossaries.length];
+    window._entryDomIndex = [entryDomIndex[0]];
+    console.log('[popup-perf] renderPopup first-entry: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
+    _firePopupRendered(true);
+
     setTimeout(() => {
         if (gen !== window._renderGeneration) return;
         try {
@@ -3050,7 +3068,9 @@ window.renderPopup = function() {
             console.error('[popup] renderPopup rest-entries render failed', e);
             window.__hibikiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
         }
-        // 无论后续词条渲染成功与否都发信号（首条已在上面渲染好）。
+        // 第二次发信号（同 token）：无论尾批成败都收尾（首条早已渲染好）。
+        // Dart 宿主对重复 popupRendered 全幂等；Windows global-lookup host 靠
+        // 这一发把窗口量到全部词条的真实高度。
         _firePopupRendered();
     }, 0);
 };
@@ -3058,6 +3078,14 @@ window.renderPopup = function() {
 window.updatePopupIncremental = function() {
     const container = __hibikiContainer();
     if (!container || !window.lookupEntries?.length) return;
+
+    // 首发 popupRendered 后、尾批完成前的窗口：counts/domIndex 是仅含首词条的
+    // 临时值，增量 diff 不可靠（else 分支会把尾批在建的词条当新增追加成重复
+    // 卡片）。全量重建：renderPopup 换代自动取消 pending 尾批。
+    if (window._renderInProgress) {
+        window.renderPopup();
+        return;
+    }
 
     const entries = window.lookupEntries;
     const prevCounts = window._renderedGlossaryCounts || [];

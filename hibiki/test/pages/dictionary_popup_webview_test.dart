@@ -168,7 +168,10 @@ void main() {
             'popup.html has finished loading; that request must be queued '
             'instead of dropped.',
       );
-      expect(source, contains('void refreshCurrentResult()'));
+      // BUG-712 P1：refreshCurrentResult 从 void 改为返回 bool（false=当前结果已
+      // 渲染完成、popupRendered 不会再来，宿主必须立即按已渲染处理；true=在途或
+      // 已补推）。行为守卫见 dictionary_popup_push_dedup_test.dart。
+      expect(source, contains('bool refreshCurrentResult()'));
       expect(
         source,
         contains('_refreshWhenReady = true;\n    _pushResults();'),
@@ -443,7 +446,93 @@ void main() {
           // assertion is hand-added together with the IPA fixture data above).
           expect(nPitches[j]['transcriptions'], oPitches[j]['transcriptions']);
         }
+
+        // BUG-712 P4：searchDictionary 改走 Dart 侧 buildPopupJsonFromLookup 后，
+        // deinflectionTrace 必须与旧路径（buildLookupEntriesJson）逐字段一致——
+        // fixture 的 matched(食べた)≠deinflected(食べる) 正好覆盖非空痕迹；丢了它
+        // 弹窗就不再显示「食べた → 食べる」的去屈折痕迹。
+        expect(n['deinflectionTrace'], o['deinflectionTrace']);
       }
+    });
+
+    test(
+        'deinflectionTrace: single "matched → deinflected" step, '
+        'only when they differ and deinflected is non-empty', () {
+      // 与 C++ build_popup_json（native/hoshidicts/hoshidicts_src/popup_json.cpp）
+      // 语义对齐：仅在 matched != deinflected 且 deinflected 非空时生成**单条**
+      // {"name":"matched → deinflected","description":""}，否则为空数组。
+      HoshiLookupResult make({
+        required String matched,
+        required String deinflected,
+      }) =>
+          HoshiLookupResult(
+            matched: matched,
+            deinflected: deinflected,
+            trace: [],
+            preprocessorSteps: 0,
+            term: HoshiTermResult(
+              expression: '食べる',
+              reading: 'たべる',
+              rules: '',
+              glossaries: [
+                HoshiGlossaryEntry(
+                  dictName: 'JMdict',
+                  glossary: jsonEncode(['to eat']),
+                  definitionTags: '',
+                  termTags: '',
+                ),
+              ],
+              frequencies: [],
+              pitches: [],
+            ),
+          );
+
+      // ① 屈折命中（matched≠deinflected 且非空）→ 恰好一条痕迹。
+      final withTrace = jsonDecode(buildPopupJsonFromLookup(
+        results: [make(matched: '食べた', deinflected: '食べる')],
+        maximumTerms: 100,
+      )) as List;
+      expect((withTrace.single as Map<String, dynamic>)['deinflectionTrace'], [
+        {'name': '食べた → 食べる', 'description': ''},
+      ]);
+
+      // ② 原形直查（matched == deinflected）→ 空数组，不生成自指痕迹。
+      final noInflection = jsonDecode(buildPopupJsonFromLookup(
+        results: [make(matched: '食べる', deinflected: '食べる')],
+        maximumTerms: 100,
+      )) as List;
+      expect(
+        (noInflection.single as Map<String, dynamic>)['deinflectionTrace'],
+        isEmpty,
+      );
+
+      // ③ 引擎未回填 deinflected（空串）→ 同样空数组，不生成「x → 」残缺痕迹。
+      final emptyDeinflected = jsonDecode(buildPopupJsonFromLookup(
+        results: [make(matched: '食べた', deinflected: '')],
+        maximumTerms: 100,
+      )) as List;
+      expect(
+        (emptyDeinflected.single as Map<String, dynamic>)['deinflectionTrace'],
+        isEmpty,
+      );
+
+      // ④ 与旧路径（buildResultFromLookup → buildLookupEntriesJson，即 P4 换掉的
+      //    渲染真值）对同一输入产出完全一致的痕迹。
+      final oldParsed = jsonDecode(
+        DictionaryPopupWebViewState.buildLookupEntriesJson(
+          buildResultFromLookup(
+            searchTerm: '食べた',
+            results: [make(matched: '食べた', deinflected: '食べる')],
+            maximumTerms: 100,
+          ),
+        ),
+      ) as List;
+      expect(
+        (oldParsed.single as Map<String, dynamic>)['deinflectionTrace'],
+        [
+          {'name': '食べた → 食べる', 'description': ''},
+        ],
+      );
     });
 
     test('respects maximumTerms limit', () {

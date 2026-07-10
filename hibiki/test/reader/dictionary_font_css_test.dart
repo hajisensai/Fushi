@@ -133,4 +133,104 @@ void main() {
     expect(result.fontFaces, contains('data:font/woff2;base64,'));
     expect(result.fontFaces, contains('format("woff2")'));
   });
+
+  // ── BUG-712 P3: (path → mtime+size) data-url 缓存 ─────────────────────
+  //
+  // 查词每次推结果都会重建注入串，导入字体无缓存时每次数十 ms 的同步读盘
+  // +base64 是查词热路径的纯浪费。缓存键是 (mtimeUs, size)：命中不重读盘，
+  // 文件被原地覆盖（mtime/size 变）自动失效。
+  //
+  // 缓存命中无法用 identical() 从公开 API 观测（dataUrl 会被插值进新建的
+  // @font-face 串），所以用更强的行为证据：覆写同 size 的不同内容并把 mtime
+  // 恢复原值——键不变时若返回的仍是旧字节的 base64，就证明没有重读磁盘。
+
+  test('BUG-712 P3: unchanged (mtime,size) hits the cache — no disk re-read',
+      () async {
+    final Directory dir =
+        await Directory.systemTemp.createTemp('hibiki_fontcache');
+    addTearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+    final File f = File('${dir.path}/Cached.ttf');
+    await f.writeAsBytes(<int>[0x00, 0x01, 0x02, 0x03]); // base64 AAECAw==
+    final DateTime mtime = f.statSync().modified;
+
+    final r1 = DictionaryFontCss.build(
+      <Map<String, dynamic>>[_e('Cached', path: f.path)],
+      allowedDirectories: <String>[dir.path],
+    );
+    expect(r1.fontFaces, contains('AAECAw=='));
+
+    // 同 size 覆写不同内容，再把 mtime 恢复原值：缓存键 (mtimeUs,size) 不变。
+    // 若缓存被删（每次重读盘），这里必然读到新字节 CQkJCQ==。
+    await f.writeAsBytes(<int>[0x09, 0x09, 0x09, 0x09]); // base64 CQkJCQ==
+    await f.setLastModified(mtime);
+
+    final r2 = DictionaryFontCss.build(
+      <Map<String, dynamic>>[_e('Cached', path: f.path)],
+      allowedDirectories: <String>[dir.path],
+    );
+    expect(r2.fontFaces, contains('AAECAw=='),
+        reason: '同 (path,mtime,size) 必须命中缓存，查词热路径不得重读盘');
+    expect(r2.fontFaces, r1.fontFaces);
+  });
+
+  test('BUG-712 P3: overwrite with a changed mtime invalidates the cache',
+      () async {
+    final Directory dir =
+        await Directory.systemTemp.createTemp('hibiki_fontstale');
+    addTearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+    final File f = File('${dir.path}/Stale.ttf');
+    await f.writeAsBytes(<int>[0x00, 0x01, 0x02, 0x03]); // base64 AAECAw==
+
+    final r1 = DictionaryFontCss.build(
+      <Map<String, dynamic>>[_e('Stale', path: f.path)],
+      allowedDirectories: <String>[dir.path],
+    );
+    expect(r1.fontFaces, contains('AAECAw==')); // 先进缓存
+
+    // 原地覆盖为不同内容（同 size），显式把 mtime 拨后 2s——比 sleep 20ms 更稳
+    // （不受文件系统 mtime 粒度影响），确保缓存键变化。
+    await f.writeAsBytes(<int>[0x09, 0x09, 0x09, 0x09]); // base64 CQkJCQ==
+    await f.setLastModified(DateTime.now().add(const Duration(seconds: 2)));
+
+    final r2 = DictionaryFontCss.build(
+      <Map<String, dynamic>>[_e('Stale', path: f.path)],
+      allowedDirectories: <String>[dir.path],
+    );
+    expect(r2.fontFaces, contains('CQkJCQ=='), reason: 'mtime 变化必须失效缓存并返回新内容');
+    expect(r2.fontFaces, isNot(contains('AAECAw==')),
+        reason: '旧内容的 stale dataUrl 不得存活');
+  });
+
+  test(
+      'BUG-712 P3: cached oversized font is still rejected by a smaller '
+      'maxFileBytes', () async {
+    // 守回归：maxBytes 检查必须留在缓存命中之前——大文件已被（默认上限的调用方）
+    // 缓存后，更小 maxFileBytes 的调用方仍须拒绝它，不得因命中缓存而绕过上限。
+    final Directory dir =
+        await Directory.systemTemp.createTemp('hibiki_fontcap');
+    addTearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+    final File big = File('${dir.path}/BigCached.ttf');
+    await big.writeAsBytes(List<int>.filled(64, 7));
+
+    final ok = DictionaryFontCss.build(
+      <Map<String, dynamic>>[_e('BigCached', path: big.path)],
+      allowedDirectories: <String>[dir.path],
+    );
+    expect(ok.fontFaces, contains('@font-face')); // 默认上限下成功 → 进缓存
+
+    final rejected = DictionaryFontCss.build(
+      <Map<String, dynamic>>[_e('BigCached', path: big.path)],
+      allowedDirectories: <String>[dir.path],
+      maxFileBytes: 16,
+    );
+    expect(rejected.fontFamily, isEmpty,
+        reason: '缓存命中不得绕过调用方更小的 maxFileBytes 上限');
+    expect(rejected.fontFaces, isEmpty);
+  });
 }

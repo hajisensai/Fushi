@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/lru_cache.dart';
 
@@ -14,10 +16,16 @@ import 'package:hibiki/src/utils/misc/lru_cache.dart';
 /// own ad-hoc notifiers after mutations instead (HBK-AUDIT-065).
 class DictionaryRepository {
   DictionaryRepository(this._db, {VoidCallback? onCacheRebuild})
-      : _onCacheRebuild = onCacheRebuild;
+      : _onCacheRebuild = onCacheRebuild {
+    // 查词历史持久化改为 debounce 写穿后，进程退出前必须 flush pending 变更
+    // （桌面点 X 快杀 / Android 退后台的保留式 flush 都走这条注册表）。
+    _historyExitFlush =
+        ExitFlushRegistry.instance.register(flushDictionaryHistoryNow);
+  }
 
   final HibikiDatabase _db;
   final VoidCallback? _onCacheRebuild;
+  late final ExitFlushCallback _historyExitFlush;
 
   List<Dictionary> _dictionariesCache = [];
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
@@ -49,6 +57,9 @@ class DictionaryRepository {
   // ── loadFromDb ───────────────────────────────────────────────────────
 
   Future<void> loadFromDb() async {
+    // 历史落库是 debounce 写穿：重载（启动 no-op / Profile 切换 TODO-1077）前
+    // 先 flush pending 变更，保持「变更先于重载落库」的旧语义，防旧快照复活。
+    await flushDictionaryHistoryNow();
     final dictRows = await _db.getAllDictionaryMetadata();
     _dictionariesCache = dictRows.map(_rowToDictionary).toList()
       ..sort((a, b) => a.order.compareTo(b.order));
@@ -236,6 +247,23 @@ class DictionaryRepository {
 
   // ── dictionary history ───────────────────────────────────────────────
 
+  /// 查词历史持久化的 trailing debounce 窗口与连续查词下的强制封顶。
+  ///
+  /// 性能背景：此前每次查词都在 UI isolate 上把**整份**历史（默认 10 条完整
+  /// [DictionarySearchResult]，生产库实测单条 54-231KB、整表 ~1.36MB）同步
+  /// toJson 再整表重写，序列化循环恰好卡在弹窗显示帧之前，是查词热路径上
+  /// 10-100ms 的纯阻塞。现在 add 只改内存，落库走 debounce + 逐条 memo。
+  static const Duration _historyPersistDebounce = Duration(milliseconds: 300);
+  static const Duration _historyPersistMaxDelay = Duration(seconds: 2);
+
+  Timer? _historyPersistTimer;
+  DateTime? _historyDirtySince;
+
+  /// 逐条序列化 memo（对象身份键，弱引用不阻回收）：历史 10 条里通常 9 条对象
+  /// 与上次完全相同，flush 时只需序列化新增那条。就地变更字段（scrollPosition）
+  /// 必须失效对应 memo。
+  final Expando<String> _historyJsonMemo = Expando<String>('dictHistoryJson');
+
   void addHistoryResult(DictionarySearchResult result, int maximumItems) {
     if (result.entries.isEmpty || result.searchTerm.isEmpty) return;
 
@@ -247,7 +275,7 @@ class DictionaryRepository {
       _dictionaryHistoryResults.removeAt(0);
     }
 
-    _persistDictionaryHistory();
+    _schedulePersistDictionaryHistory();
   }
 
   void updateDictionaryResultScrollIndex({
@@ -255,24 +283,59 @@ class DictionaryRepository {
     required int newIndex,
   }) {
     result.scrollPosition = newIndex;
-    _persistDictionaryHistory();
+    // scrollPosition 编进 resultJson，就地变更必须失效该条 memo。
+    _historyJsonMemo[result] = null;
+    _schedulePersistDictionaryHistory();
   }
 
   Future<void> clearDictionaryHistory() async {
+    // 先取消 pending flush：清空之后再触发的旧快照写回会把已清历史复活。
+    _cancelPendingHistoryPersist();
     await _db.clearDictionaryHistory();
     _dictionaryHistoryResults.clear();
   }
 
-  Future<void> _persistDictionaryHistory() async {
+  /// Trailing debounce：连续查词只落库一次；[_historyPersistMaxDelay] 封顶，
+  /// 防止 <300ms 间隔的连续查词把 flush 无限推迟（强杀丢整段）。
+  void _schedulePersistDictionaryHistory() {
+    final DateTime now = DateTime.now();
+    _historyDirtySince ??= now;
+    _historyPersistTimer?.cancel();
+    final bool capReached =
+        now.difference(_historyDirtySince!) >= _historyPersistMaxDelay;
+    _historyPersistTimer = Timer(
+      capReached ? Duration.zero : _historyPersistDebounce,
+      () => unawaited(_flushDictionaryHistory()),
+    );
+  }
+
+  void _cancelPendingHistoryPersist() {
+    _historyPersistTimer?.cancel();
+    _historyPersistTimer = null;
+    _historyDirtySince = null;
+  }
+
+  /// 立即写穿 pending 的历史变更；无 pending 时 no-op。退出 flush
+  /// （[ExitFlushRegistry]）与 [loadFromDb] 重载前对齐用。
+  Future<void> flushDictionaryHistoryNow() async {
+    if (_historyPersistTimer == null && _historyDirtySince == null) return;
+    await _flushDictionaryHistory();
+  }
+
+  Future<void> _flushDictionaryHistory() async {
+    _cancelPendingHistoryPersist();
     final swPersist = Stopwatch()..start();
     final items = <DictionaryHistoryCompanion>[];
     for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
+      final DictionarySearchResult r = _dictionaryHistoryResults[i];
       items.add(DictionaryHistoryCompanion.insert(
         position: i,
-        resultJson: _dictionaryHistoryResults[i].toJson(),
+        resultJson: _historyJsonMemo[r] ??= r.toJson(),
       ));
     }
     final swSerialize = swPersist.elapsedMilliseconds;
+    // 序列化段与上面的取消/快照在同一同步区间内完成；此后 clear 等竞态由
+    // drift 单连接 FIFO 保序（本次写先入队，后续 clear 的 DELETE 后到后赢）。
     await _db.replaceAllDictionaryHistory(items);
     swPersist.stop();
     debugPrint(
@@ -282,6 +345,8 @@ class DictionaryRepository {
   /// Release in-memory caches. Replaces the inherited ChangeNotifier.dispose
   /// that AppModel.dispose still calls (HBK-AUDIT-065).
   void dispose() {
+    _cancelPendingHistoryPersist();
+    ExitFlushRegistry.instance.unregister(_historyExitFlush);
     _dictionariesCache = const [];
     _dictionaryHistoryResults.clear();
     _dictionarySearchCache.clear();

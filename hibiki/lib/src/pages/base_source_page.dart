@@ -403,7 +403,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           !item.visible) {
         return;
       }
-      item.webViewKey.currentState?.refreshCurrentResult();
+      // refreshCurrentResult 已去重（同一结果不再全量重推）：返回 false 表示当前
+      // 结果**已经渲染完成**、popupRendered 不会再来（阅读器 deferDisplay 路径下
+      // 渲染信号可能早于盖板架起）——立即走同一条 rendered 路径撤盖板，不空等
+      // 1.8s failsafe。state 为 null（WebView 未挂载）时维持等待，交给 failsafe。
+      final bool renderPending =
+          item.webViewKey.currentState?.refreshCurrentResult() ?? true;
+      if (!renderPending) {
+        _onPopupLayerRendered(_popup.entries.indexOf(item), item);
+      }
     });
 
     _visibleRenderFailsafeTimer = Timer(
