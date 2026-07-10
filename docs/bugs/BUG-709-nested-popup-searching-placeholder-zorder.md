@@ -1,0 +1,12 @@
+## BUG-709 · 嵌套查词子弹窗渲染前显示在父弹窗下方图层(视频/首页/悬浮歌词)
+- **报告**：2026-07-10（用户：视频内嵌套查词，Windows）
+- **现象**：视频（及首页词典 / 悬浮歌词）里在已打开的查词弹窗内再点词查子弹窗时，子弹窗「还没渲染出来时在底层（父弹窗下方图层，只从父弹窗底边露出一条），内容渲染完成后才跳到上层覆盖父弹窗」——即出现明显的**图层（z-order）翻转**，不是位置动画。
+- **真实性**：✅ 真 bug。根因在三个 mixin 宿主的搜索期加载占位卡「层级」与「门控」：
+  - 加载占位卡在宿主 `Stack` 里排在 popup entries **之前** = 画在所有弹窗层**下方**：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:3393-3396`、`hibiki/lib/src/pages/implementations/home_dictionary_page.dart:873-874`、`hibiki/lib/src/media/audiobook/floating_lyric_lookup_host.dart:148-149`。
+  - 这三处只用 `_popup.isSearchingUi && pendingRect != null` 门控，**没有** `!hasVisiblePopup` 条件——嵌套查词时父弹窗仍 `visible`，占位卡就画在父弹窗下方，只从父弹窗底边露出（用户看到的「底层」）。
+  - 占位卡的「进入」由 mixin `pushNestedPopup` 无条件 `controller.beginSearchUi(rect)` 触发：`hibiki/lib/src/pages/implementations/dictionary_page_mixin.dart:590`（修复前）。
+  - 子层 WebView 渲染完 → `onRendered → revealRendered`（`dictionary_page_mixin.dart:455-461`）把子层 entry 翻可见，子层在 `Stack` 里排在父层**之后** = 画在上层 → 覆盖父弹窗（用户看到的「跳到上层」）。
+  - 对照：reader 家族 `base_source_page.dart:473-474` 的加载占位卡门控是 `searching && !hasVisiblePopup`（注释 `:541` 明说「嵌套搜索时父弹窗仍 visible，不显示占位」），故 reader 无此问题。mixin 家族三个宿主漏了这个门控。
+- **[x] ① 已修复** — 根因修复（单点收口，覆盖三宿主）：mixin `pushNestedPopup` 只在**无可见弹窗**（顶层查词）时 `beginSearchUi`，与 reader 的 `!hasVisiblePopup` 门控对齐。嵌套查词（父弹窗可见）不再进入搜索占位态 → 不画父弹窗下方的占位卡 → 无「底层」阶段；子层就绪即 `markPendingReveal → revealRendered` 直接在上层出现，无图层翻转（reveal 时序仍受 BUG-170 保护，父弹窗全程可见提供上下文）。`beginTop` 先执行，故顶层 `replaceStack`/`reuseWarmSlot` 时无可见弹窗 → 仍显示占位卡（顶层加载观感不变）。改动：`hibiki/lib/src/pages/implementations/dictionary_page_mixin.dart:589-597`。提交：<PENDING>。
+- **[x] ② 已加自动化测试** — widget 行为测试 `hibiki/test/pages/dictionary_page_mixin_warm_slot_test.dart`（`BUG-709: nested lookup keeps searching-UI off while a parent popup is visible`）：用现有 `MixinHostPage` 驱动真实 `pushNestedPopup`，先开+翻可见顶层父弹窗，再嵌套查词，断言 `isSearchingUi == false`（占位卡不进入）+ 父层仍 `visible` + 子层 `visible=false/revealOnRender=true`。回归签名：buggy 路径 `beginSearchUi` 无条件执行，而可渲染子层走 `markPendingReveal`（`revealOnRender=true`）使 `finally` 不调 `endSearchUi` → `isSearchingUi` 停在 `true`；撤掉门控（改回 `if (true)`）该测试转红（实测 `Expected: false / Actual: true`）。顶层占位卡仍显示由既有测试 `reuseWarmSlot with entries waits for popupRendered before reveal`（断言 `isSearchingUi == true`）守住，确保修复不越界。提交：<PENDING>。
+- **备注**：真机复测（视频内嵌套两层）需用户确认子弹窗不再「先底层后上层」；本修复只改「搜索占位态是否进入」，不碰 `calcPopupPosition` 定位几何（BUG-098/BUG-129 守卫不受影响），也不碰 reveal 时序（BUG-170）。三宿主宿主侧的占位卡门控保持 `isSearchingUi`（现由 controller 侧统一保证嵌套时不为真），无需逐宿主再加条件。
