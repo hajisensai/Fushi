@@ -123,22 +123,52 @@ void main() {
   });
 
   group('句子横幅逐字可点', () {
-    test('popup.js 逐字 span + 后缀 onLinkClick', () {
-      final int fn =
-          popupJs.indexOf('function buildGlobalLookupSentenceBanner');
+    final int fn = popupJs.indexOf('function buildGlobalLookupSentenceBanner');
+    final String bannerBody = fn < 0
+        ? ''
+        : popupJs.substring(
+            fn, popupJs.indexOf('function prependSentenceBanner'));
+
+    test('popup.js 逐字 span + 后缀查词', () {
       expect(fn, isNonNegative);
-      final String body = popupJs.substring(
-          fn, popupJs.indexOf('function prependSentenceBanner'));
-      expect(body.contains('global-lookup-sentence-char'), isTrue);
-      expect(body.contains('chars.slice(i).join('), isTrue,
+      expect(bannerBody.contains('global-lookup-sentence-char'), isTrue);
+      expect(bannerBody.contains('chars.slice(i).join('), isTrue,
           reason: '点字=该字到句尾后缀查词（同 in-app 剪贴板面板语义）');
-      expect(body.contains('callHandler(') && body.contains("'onLinkClick'"),
-          isTrue,
-          reason: '复用现有 onLinkClick 桥（host 重锚定 + 嵌套子卡）');
     });
 
-    test('popup.css 有逐字 hover 样式', () {
-      expect(popupCss.contains('.global-lookup-sentence-char'), isTrue);
+    test(
+        '真机第 4 轮：面板 root 点字=panelSentenceLookup 原地更新，'
+        '瞬态窗保持 onLinkClick 嵌套', () {
+      expect(bannerBody.contains('__globalLookupPanelRoot'), isTrue,
+          reason: '面板/瞬态分流判据由 settingsJs 注入（render 侧 panelRoot）');
+      expect(bannerBody.contains("'panelSentenceLookup', suffix, i"), isTrue,
+          reason: '面板：后缀 + 码点下标 → Dart 换根结果=底部原地变动');
+      expect(
+          bannerBody.contains("'onLinkClick'") &&
+              bannerBody.contains('getBoundingClientRect'),
+          isTrue,
+          reason: '瞬态窗路径保留：点字=onLinkClick 嵌套子卡（零回归）');
+      expect(bannerBody.contains('global-lookup-sentence-hit'), isTrue,
+          reason: '引擎 bestLength 整词高亮=「按正常的断词」');
+    });
+
+    test('popup.css：hover 格子只留瞬态窗，面板有整词高亮 + 正文字号', () {
+      expect(
+        popupCss.contains(
+            '.global-lookup-sentence:not(.global-lookup-sentence-panel)'),
+        isTrue,
+        reason: '逐字 hover 框在面板里=「按照字来划分」，必须作用域隔离',
+      );
+      expect(popupCss.contains('.global-lookup-sentence-hit'), isTrue);
+      final int panelRule = popupCss.indexOf('.global-lookup-sentence-panel {');
+      expect(panelRule, isNonNegative);
+      expect(
+        popupCss
+            .substring(panelRule, panelRule + 200)
+            .contains('font-size: 1em;'),
+        isTrue,
+        reason: '真机第 4 轮：选词区文字与底下词条正文一样大，不得回 0.85em',
+      );
     });
 
     test('句子条=普通搜索框外观（真机反馈：左侧强调竖条已删，不得复活）', () {
@@ -146,6 +176,57 @@ void main() {
         popupCss.contains('border-left: 3px solid var(--primary-color'),
         isFalse,
         reason: '左侧 3px 竖条在面板里像「搜索栏左边一块莫名深色」',
+      );
+    });
+  });
+
+  group('真机第 4 轮：选词区/释义分流 + 面板可激活', () {
+    final String controllerDart =
+        File('lib/src/lookup/clipboard_panel_controller.dart')
+            .readAsStringSync();
+    final String cpp =
+        File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+    final String fw =
+        File('windows/runner/flutter_window.cpp').readAsStringSync();
+
+    test('render 仅面板 root 注入 panelRoot 标记（cascade settingsJs 恒不带）', () {
+      expect(
+          renderDart
+              .contains("layoutMode == 'panel' && p.frame.parentIndex < 0"),
+          isTrue);
+      expect(renderDart.contains('__globalLookupPanelRoot = true'), isTrue);
+      expect(renderDart.contains('__globalLookupSentenceHit'), isTrue);
+    });
+
+    test('controller：panelSentenceLookup 换根，onLinkClick 走外部瞬态窗', () {
+      expect(controllerDart.contains("case 'panelSentenceLookup':"), isTrue);
+      expect(controllerDart.contains('_lookupFromBanner'), isTrue);
+      expect(controllerDart.contains('GlobalLookupController.instance'), isTrue,
+          reason: '释义点击=独立瞬态覆盖窗（可越出面板 HWND，点外即关）');
+      expect(controllerDart.contains('.lookupText(text, sentence: sentence)'),
+          isTrue);
+      expect(controllerDart.contains('await _lookupNested(query, anchorRect)'),
+          isTrue,
+          reason: '瞬态窗不可用时回退面板内嵌套卡，点击绝不静默丢失');
+    });
+
+    test('面板窗可激活（点击落焦点，滚轮不穿游戏）；瞬态窗保持 NOACTIVATE', () {
+      expect(
+        'activatable_ ? 0 : WS_EX_NOACTIVATE'.allMatches(cpp).length,
+        greaterThanOrEqualTo(2),
+        reason: 'ShowAt 与 PrewarmWebView 两处创建点都必须按 activatable_ 分流',
+      );
+      final int panelChannel = fw.indexOf('RegisterClipboardPanelChannel() {');
+      expect(panelChannel, isNonNegative);
+      expect(
+        fw.substring(panelChannel).contains('SetActivatable(true)'),
+        isTrue,
+        reason: '面板实例开激活旋钮（真机第 4 轮：滚轮把底下的游戏滚动）',
+      );
+      expect(
+        '->SetActivatable(true)'.allMatches(fw).length,
+        1,
+        reason: '只有面板实例可激活；瞬态覆盖窗抢焦点=违反 design §5 保证 3',
       );
     });
   });

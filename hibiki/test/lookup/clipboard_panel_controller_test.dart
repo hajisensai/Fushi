@@ -28,6 +28,24 @@ void main() {
     });
   });
 
+  group('hitLengthCodePoints（bestLength 码元 → 横幅码点，真机第 4 轮）', () {
+    test('BMP 文本码元=码点', () {
+      expect(ClipboardPanelController.hitLengthCodePoints(3, '食べていた'), 3);
+    });
+
+    test('代理对（emoji/罕见汉字）折算为码点数', () {
+      // '𠮟る' — '𠮟' 是 2 个 UTF-16 码元、1 个码点。
+      expect(ClipboardPanelController.hitLengthCodePoints(3, '𠮟る'), 2);
+    });
+
+    test('越界/非法 bestLength 钳位', () {
+      expect(ClipboardPanelController.hitLengthCodePoints(99, 'ある'), 2);
+      expect(ClipboardPanelController.hitLengthCodePoints(0, 'ある'), 0);
+      expect(ClipboardPanelController.hitLengthCodePoints(-1, 'ある'), 0);
+      expect(ClipboardPanelController.hitLengthCodePoints(2, ''), 0);
+    });
+  });
+
   test('面板栏高度与 host.js PANEL_BAR_HEIGHT 一致（跨端几何契约）', () {
     final String hostJs =
         File('assets/popup/global_lookup_host.js').readAsStringSync();

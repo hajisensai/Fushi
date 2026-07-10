@@ -137,6 +137,12 @@ class GlobalLookupWindow {
   // overlay's (same-folder different-options fails with 0x8007139F).
   void SetArmDismissHooks(bool arm) { arm_dismiss_hooks_ = arm; }
   void SetUserDataLeaf(std::wstring leaf) { user_data_leaf_ = std::move(leaf); }
+  // 真机第 4 轮 — 面板窗可被激活：不带 WS_EX_NOACTIVATE 创建，点击面板时焦点
+  // 落在面板上（游戏失焦，滚轮不再穿到底下的游戏）。程序化 show/update 仍全
+  // 走 SW_SHOWNOACTIVATE / SWP_NOACTIVATE，文本流更新绝不抢游戏焦点。瞬态
+  // 覆盖窗保持默认 false（查词卡出现时前台键盘焦点原地不动，design §5 保证 3）。
+  // 必须在首次 ShowAt/PrewarmWebView（窗口创建）前设置。
+  void SetActivatable(bool activatable) { activatable_ = activatable; }
 
   // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
   // behind the window's transparent WebView2 pixels. Returns whether the OS
@@ -207,6 +213,7 @@ class GlobalLookupWindow {
   // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;
+  bool activatable_ = false;
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;

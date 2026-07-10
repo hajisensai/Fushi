@@ -82,6 +82,10 @@
 - **×（关闭）**：藏窗 + 暂停面板路由（`ClipboardPanelController.paused=true`）。重唤两途：设置开关；或 Ctrl+Shift+D（现有热键语义=「立即查当前剪贴板」，destination=panel 时顺带取消暂停并显示面板——同一语义，零特殊分支）。
 - **点窗外 / 切前台**：**不关**（不装 dismiss 钩子）——这就是常驻语义本身，不是遗漏。
 - **嵌套卡**：句子条逐字点 / 卡内点词 → 现有 iframe 级联，`computeFrameRect` 边界参数从工作区换成面板 rect（纯函数换参，`global_lookup_layout.dart:92-169`）。子卡点空白处收子层、每层 × ——全现状。
+- **选词区/释义分流（真机第 4 轮修正，取代上一条的面板内语义）**：
+  - **选词区（句子条）**：字号与词条正文一致（`.global-lookup-sentence-panel`，1em 主色），视觉为连续正常文本（无逐字 hover 框；逐字 span 只作码点→点击位映射）。点字 → `panelSentenceLookup` 桥（后缀 + 码点下标）→ Dart `_lookupFromBanner` **换根结果=底部原地更新**（与剪贴板流同一 latest-wins 序列），不再嵌套压卡；引擎 `bestLength` 折算码点后经 `__globalLookupSentenceHit` 整词高亮（「按正常的断词」=词典引擎分词）。
+  - **释义文字点击**：`onLinkClick`/`textSelected` → **独立瞬态覆盖窗**（`GlobalLookupController.lookupText`，OS 光标处、点外即关、携带整句供制卡）——子 iframe 出不了面板 HWND，「弹窗可越出面板边界」唯一真解是第二个顶层窗。瞬态窗不可用时回退面板内嵌套卡（点击绝不丢）。瞬态窗自身的句子条/嵌套语义不变（`__globalLookupPanelRoot` 仅面板 root 注入）。
+- **焦点（真机第 4 轮）**：面板窗**可激活**（`SetActivatable(true)`：创建时不带 `WS_EX_NOACTIVATE`）——点击面板焦点落面板、游戏失焦，滚轮不再穿透滚动底下的游戏；程序化 show/update 全程 `SW_SHOWNOACTIVATE`/`SWP_NOACTIVATE`，台词流更新绝不抢游戏焦点。瞬态覆盖窗保持 NOACTIVATE（§5 保证 3）。
 - **调尺寸**：面板右下角 resize grip，同 HTCAPTION 手法发 `HTBOTTOMRIGHT`。存 pref。
 - **恢复位置**：启动/重唤时 rect clamp 到当前可见工作区（防显示器拔掉后窗丢屏外）。
 

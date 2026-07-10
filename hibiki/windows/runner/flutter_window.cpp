@@ -998,9 +998,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
 //   (same-folder different-options fails with 0x8007139F).
 // - Extra methods: applyBackdrop (Win11 acrylic semi-transparency gate,
 //   spec §6) and setPinned (panel pin toggles HWND_TOPMOST).
+// - SetActivatable(true)（真机第 4 轮）: 点击面板时焦点落面板（游戏失焦），
+//   滚轮只滚面板不再穿透游戏；瞬态覆盖窗保持 NOACTIVATE 不变。
 void FlutterWindow::RegisterClipboardPanelChannel() {
   clipboard_panel_window_ = std::make_unique<GlobalLookupWindow>();
   clipboard_panel_window_->SetArmDismissHooks(false);
+  clipboard_panel_window_->SetActivatable(true);
   clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
 
   clipboard_panel_channel_ =

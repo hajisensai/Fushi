@@ -268,10 +268,14 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // No WS_EX_LAYERED: WebView2 brings its own composition surface and does not
     // coexist with a layered window. WS_EX_NOACTIVATE keeps the foreground app's
     // keyboard focus intact when the card appears (design §5 guarantee 3).
+    // 真机第 4 轮 — 面板实例（activatable_）不带 NOACTIVATE：点击面板时焦点
+    // 落面板，滚轮不再穿到底下仍持焦点的游戏。程序化路径全程 SWP_NOACTIVATE /
+    // SW_SHOWNOACTIVATE，流式更新不抢焦点。
     hwnd_ = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName,
-        L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner, nullptr,
-        GetModuleHandle(nullptr), this);
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+            (activatable_ ? 0 : WS_EX_NOACTIVATE),
+        kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner,
+        nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
     }
@@ -307,8 +311,9 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   const int w = width > 0 ? width : 420;
   const int h = height > 0 ? height : 600;
   hwnd_ = CreateWindowExW(
-      WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName,
-      L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
+      WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+          (activatable_ ? 0 : WS_EX_NOACTIVATE),
+      kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
       GetModuleHandle(nullptr), this);
   if (hwnd_ == nullptr) {
     return;

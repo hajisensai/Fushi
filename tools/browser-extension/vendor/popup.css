@@ -1344,12 +1344,30 @@ html.global-lookup[data-theme="dark"] body {
     white-space: pre-wrap;
 }
 
-/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词，嵌套子卡）。 */
+/* 真机第 4 轮 — 面板 root 的句子条是「选词区」：字号与底下词条正文一致
+   （1em，不再缩小），用正文主色（不是弱化的 context 灰）。瞬态覆盖窗的
+   横幅保持 0.85em context 条外观不变。 */
+.global-lookup-sentence-panel {
+    font-size: 1em;
+    color: var(--text-color, #333333);
+}
+
+/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词）。 */
 .global-lookup-sentence-char {
     cursor: pointer;
 }
 
-.global-lookup-sentence-char:hover {
+/* 逐字 hover 框只留给瞬态窗（那里点字=嵌套子卡，需要逐字瞄准反馈）。
+   面板选词区是连续正常文本：不按字画格子，点击后由引擎分词结果整词高亮
+   （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
+.global-lookup-sentence:not(.global-lookup-sentence-panel)
+    .global-lookup-sentence-char:hover {
+    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    border-radius: 2px;
+}
+
+/* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
+.global-lookup-sentence-hit {
     background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }

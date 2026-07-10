@@ -3167,22 +3167,47 @@ function buildGlobalLookupSentenceBanner() {
     // spec 2026-07-10 — per-character spans: clicking any character looks up
     // the "char to sentence end" suffix (the same semantics as the in-app
     // ClipboardLookupTextPanel; the engine prefix/deinflection-matches from
-    // the clicked char). Rides the existing onLinkClick bridge (same path as
-    // kanji-tag clicks), so the overlay host re-anchors the rect and opens a
-    // nested child card. textContent per span (never innerHTML) — the sentence
+    // the clicked char). textContent per span (never innerHTML) — the sentence
     // is untrusted foreground-app/clipboard text, never interpreted as markup.
+    //
+    // 真机第 4 轮 — 面板 root（window.__globalLookupPanelRoot，settingsJs 注入）
+    // 的句子条是「选词区」：点字走 panelSentenceLookup 桥，Dart 换根结果=底部
+    // 原地更新，不再嵌套压卡；引擎匹配到的词以 __globalLookupSentenceHit
+    // {start,length}（码点下标）整词高亮——分词由词典引擎给出，视觉上是连续
+    // 正常文本（面板无逐字 hover 框，见 popup.css 的 :not() 作用域）。
+    // 瞬态覆盖窗保持原语义：点字=onLinkClick 嵌套子卡。
     const chars = Array.from(sentence);
+    const isPanelRoot = window.__globalLookupPanelRoot === true;
+    const hit = isPanelRoot ? window.__globalLookupSentenceHit : null;
+    const hitStart = hit && typeof hit.start === 'number' ? hit.start : -1;
+    const hitEnd = hitStart >= 0 && hit && typeof hit.length === 'number'
+        ? hitStart + hit.length
+        : -1;
+    if (isPanelRoot) {
+        banner.classList.add('global-lookup-sentence-panel');
+    }
     chars.forEach((ch, i) => {
         const span = el('span', {
-            className: 'global-lookup-sentence-char',
+            className: 'global-lookup-sentence-char'
+                + (i >= hitStart && i < hitEnd
+                    ? ' global-lookup-sentence-hit'
+                    : ''),
             textContent: ch,
         });
         span.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const suffix = chars.slice(i).join('');
+            if (isPanelRoot) {
+                // i = 码点下标（chars 是 Array.from 的码点数组），Dart 侧原样
+                // 作为高亮起点回注——两端同一单位，无 UTF-16 代理对错位。
+                window.flutter_inappwebview.callHandler(
+                    'panelSentenceLookup', suffix, i);
+                return;
+            }
             const rect = span.getBoundingClientRect();
             window.flutter_inappwebview.callHandler(
-                'onLinkClick', chars.slice(i).join(''), {
+                'onLinkClick', suffix, {
                 x: rect.left,
                 y: rect.top,
                 width: rect.width,

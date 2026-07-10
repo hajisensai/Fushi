@@ -15,7 +15,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart'
-    show GlobalLookupMediaRequest, resolveGlobalLookupMedia;
+    show
+        GlobalLookupController,
+        GlobalLookupMediaRequest,
+        resolveGlobalLookupMedia;
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
@@ -87,6 +90,15 @@ class ClipboardPanelController {
   final Map<String, Rect?> _frameAnchors = <String, Rect?>{};
   int _frameSeq = 0;
   String _currentSentence = '';
+
+  /// 真机第 4 轮 — 选词区当前查词起点（整句里的码点下标）。剪贴板更新回 0；
+  /// 点句子条某字后为该字下标，配合根结果 bestLength 在横幅整词高亮。
+  int _rootHitStart = 0;
+
+  /// 测试注入点：释义点击的外部瞬态弹窗路由。null 走真
+  /// [GlobalLookupController.instance.lookupText]。
+  @visibleForTesting
+  Future<bool> Function(String text, String sentence)? debugExternalLookup;
 
   /// 当前面板矩形（逻辑像素）。真相源是 pref（windowMoved 落库）；内存值只是
   /// 本次会话的工作拷贝。
@@ -163,6 +175,7 @@ class ClipboardPanelController {
       }
       _recordLookupCount(model);
       _currentSentence = request.text;
+      _rootHitStart = 0; // 新句：选词起点回句首（高亮引擎从句首匹配到的词）。
       _seedRootFrame(request.text, result);
       // 真机修复（"只显示一次"）：不能只信 Dart 侧 _visible——窗口可能被系统
       // 藏掉（历史 owned-minimize 联动、显式全屏切换等）而 Dart 不知情，之后
@@ -287,6 +300,14 @@ class ClipboardPanelController {
       ));
     }
     if (payloads.isEmpty) return;
+    // 真机第 4 轮 — 选词区整词高亮：起点=_rootHitStart（点击字/句首），长度=
+    // 根结果的引擎匹配长度（bestLength，即「正常的断词」），码点单位。
+    final DictionarySearchResult? rootResult =
+        _frameResults[kGlobalLookupRootFrameId];
+    final String rootQuery = _stack.isEmpty ? '' : _stack.frames.first.query;
+    final int hitLength = rootResult == null
+        ? 0
+        : _hitLengthCodePoints(rootResult.bestLength, rootQuery);
     final String script = buildStackRenderScript(
       context: ctx,
       appModel: model,
@@ -299,6 +320,8 @@ class ClipboardPanelController {
       // spec §6 真机修正：透明改整窗 LWA_ALPHA，卡背景恒不透明（双重变淡会
       // 让文字更虚；CSS alpha 基建保留供未来 DComp 逐像素路线复用）。
       cardBgAlpha: 1.0,
+      sentenceHitStart: hitLength > 0 ? _rootHitStart : -1,
+      sentenceHitLength: hitLength,
     );
     // pin 视觉态并进同一渲染脚本：native pending_json_ 是单槽缓存，冷启动时
     // 独立脚本会互相覆盖；同一 ExecuteScript 保证 pin 图标与卡片同帧就位。
@@ -373,15 +396,27 @@ class ClipboardPanelController {
           _pruneFrameSideTables();
           unawaited(_rerender());
         }
+      case 'panelSentenceLookup':
+        // 真机第 4 轮 — 选词区点字：底部原地重查（换根结果），不嵌套压卡。
+        // args = [点击字到句尾的后缀, 点击字的码点下标]。
+        final Object? args = message['args'];
+        if (args is! List || args.isEmpty) return;
+        final String suffix = args.first?.toString() ?? '';
+        if (suffix.isEmpty) return;
+        final int hitStart =
+            args.length >= 2 && args[1] is num ? (args[1] as num).toInt() : 0;
+        unawaited(_lookupFromBanner(suffix, hitStart));
       case 'onLinkClick':
       case 'textSelected':
+        // 真机第 4 轮 — 释义文字点击：弹独立瞬态覆盖窗（OS 光标处，越出面板
+        // 边界、点外即关），不再压面板内嵌套卡（固定 380×560 视口装不下级联）。
         final Object? args = message['args'];
         if (args is! List || args.isEmpty) return;
         final String query = args.first?.toString() ?? '';
         if (query.isEmpty) return;
         final Rect? anchor =
             args.length >= 2 ? _anchorRectFromArg(args[1]) : null;
-        unawaited(_lookupNested(query, anchor));
+        unawaited(_lookupExternal(query, anchor));
       // overlaySize：面板 host 已短路，不应到达；popupRendered/contentHeight/
       // topPullReleased（常驻不滑关）/dismiss：一律忽略。
       default:
@@ -394,6 +429,60 @@ class ClipboardPanelController {
     if (model == null || _stack.isEmpty) return;
     await _renderPanel(model);
   }
+
+  /// 真机第 4 轮 — 选词区点字（panelSentenceLookup 桥）：以后缀重查并**换根**
+  /// （底部原地更新），横幅继续显示整句（[_currentSentence] 不变），命中词由
+  /// [_rootHitStart] + bestLength 高亮。与剪贴板流共用同一 latest-wins 序列：
+  /// 点击后若新剪贴板句先到，旧点击结果作废，反之亦然。
+  Future<void> _lookupFromBanner(String suffix, int hitStart) async {
+    final AppModel? model = _appModel;
+    if (!_started || model == null) return;
+    final int seq = ++_updateSeq;
+    try {
+      _recordLookupCount(model);
+      final DictionarySearchResult result = await model.searchDictionary(
+        searchTerm: suffix,
+        searchWithWildcards: false,
+      );
+      if (seq != _updateSeq) return;
+      _rootHitStart = hitStart < 0 ? 0 : hitStart;
+      _seedRootFrame(suffix, result);
+      await _renderPanel(model);
+    } catch (e, st) {
+      glog('panel: banner lookup EXCEPTION $e\n$st');
+    }
+  }
+
+  /// 真机第 4 轮 — 释义文字点击走独立瞬态覆盖窗（「查词弹窗应该可以出这个
+  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。瞬态窗
+  /// 在 OS 光标处弹出（点击刚发生在那里）、点外即关、携带整句供制卡 sentence
+  /// 字段。lookupText 返回 false（未 start / 空词）时回退面板内嵌套卡——
+  /// 点击绝不静默丢失。
+  Future<void> _lookupExternal(String query, Rect? anchorRect) async {
+    try {
+      final Future<bool> Function(String text, String sentence) lookup =
+          debugExternalLookup ??
+              (String text, String sentence) => GlobalLookupController.instance
+                  .lookupText(text, sentence: sentence);
+      if (await lookup(query, _currentSentence)) return;
+    } catch (e, st) {
+      glog('panel: external lookup EXCEPTION $e\n$st');
+    }
+    await _lookupNested(query, anchorRect);
+  }
+
+  /// bestLength（引擎匹配长度，UTF-16 code units）转码点数——popup.js 的
+  /// 逐字 span 数组是 Array.from 的码点数组，两端必须同单位否则代理对
+  /// （emoji/罕见汉字）错位。纯函数，直接单测。
+  @visibleForTesting
+  static int hitLengthCodePoints(int bestLength, String query) {
+    if (bestLength <= 0 || query.isEmpty) return 0;
+    final int units = bestLength > query.length ? query.length : bestLength;
+    return query.substring(0, units).runes.length;
+  }
+
+  int _hitLengthCodePoints(int bestLength, String query) =>
+      hitLengthCodePoints(bestLength, query);
 
   Future<void> _lookupNested(String query, Rect? anchorRect) async {
     final AppModel? model = _appModel;
