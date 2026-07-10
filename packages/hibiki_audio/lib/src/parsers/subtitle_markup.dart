@@ -117,6 +117,77 @@ class SubtitleFade {
   }
 }
 
+/// ASS `\move(x1,y1,x2,y2[,t1,t2])` 行级运动（TODO-1374）。坐标已归一化到 0..1（同
+/// [SubtitlePos]，用 PlayResX/Y 归一），渲染层按 letterbox 映射到显示坐标。t1/t2 为绝对
+/// 毫秒；缺省（`\move(x1,y1,x2,y2)` 四参式）表示整条 cue 时长内匀速。渲染层按 cue 内已播放
+/// 时长在 (x1,y1)→(x2,y2) 线性插值定位（同 libass「移动」语义）。纯 Dart。
+class SubtitleMove {
+  final double x1Fraction;
+  final double y1Fraction;
+  final double x2Fraction;
+  final double y2Fraction;
+
+  /// 运动起止毫秒（相对 cue 起点）；null=整条 cue 时长。
+  final int? t1Ms;
+  final int? t2Ms;
+
+  const SubtitleMove(
+    this.x1Fraction,
+    this.y1Fraction,
+    this.x2Fraction,
+    this.y2Fraction, {
+    this.t1Ms,
+    this.t2Ms,
+  });
+
+  /// cue 内已播放 [elapsedMs]、cue 总时长 [durationMs] → 当前归一化位置。
+  SubtitlePos posAt(int elapsedMs, int durationMs) {
+    final int t1 = t1Ms ?? 0;
+    final int t2 = t2Ms ?? durationMs;
+    final double f = t2 <= t1
+        ? 1.0
+        : ((elapsedMs - t1) / (t2 - t1)).clamp(0.0, 1.0).toDouble();
+    return SubtitlePos(
+      x1Fraction + (x2Fraction - x1Fraction) * f,
+      y1Fraction + (y2Fraction - y1Fraction) * f,
+    );
+  }
+}
+
+/// ASS `\fscx`/`\fscy` 缩放（+ 可选 `\t` 动画，TODO-1374）。[fromX]/[fromY]/[toX]/[toY]
+/// 为倍数（1.0=100%）。无 `\t` 动画时 from==to（静态缩放）。[t1Ms]/[t2Ms] 为相对 cue 起点
+/// 的毫秒；缺省整条 cue 时长。渲染层按 cue 内时间在 from→to 线性插值。纯 Dart。
+class SubtitleScale {
+  final double fromX;
+  final double fromY;
+  final double toX;
+  final double toY;
+  final int? t1Ms;
+  final int? t2Ms;
+
+  const SubtitleScale({
+    required this.fromX,
+    required this.fromY,
+    required this.toX,
+    required this.toY,
+    this.t1Ms,
+    this.t2Ms,
+  });
+
+  bool get isAnimated => fromX != toX || fromY != toY;
+
+  /// cue 内已播放 [elapsedMs]、cue 总时长 [durationMs] → 当前 (scaleX, scaleY)。
+  (double, double) scaleAt(int elapsedMs, int durationMs) {
+    if (!isAnimated) return (fromX, fromY);
+    final int t1 = t1Ms ?? 0;
+    final int t2 = t2Ms ?? durationMs;
+    final double f = t2 <= t1
+        ? 1.0
+        : ((elapsedMs - t1) / (t2 - t1)).clamp(0.0, 1.0).toDouble();
+    return (fromX + (toX - fromX) * f, fromY + (toY - fromY) * f);
+  }
+}
+
 /// plainText 上 [startGrapheme, endGrapheme) 半开区间的行内样式。
 class SubtitleSpan {
   final int startGrapheme;
@@ -267,6 +338,17 @@ class SubtitleMarkup {
   /// `\fad`/`\fade` 行级淡入淡出（TODO-1373）；null=无。渲染时按 cue 内已播放时长求不透明度。
   final SubtitleFade? fade;
 
+  /// `\frz`（含旧式 `\fr`）行级 Z 轴旋转角（度，ASS 逆时针为正，TODO-1374）；null=无旋转。
+  /// 渲染层绕锚点旋转字幕盒。`\frx`/`\fry`（3D 旋转）不支持。
+  final double? rotationDeg;
+
+  /// `\fscx`/`\fscy`（+ `\t` 动画）行级缩放（TODO-1374）；null=无缩放（100%）。
+  final SubtitleScale? scale;
+
+  /// `\move(...)` 行级运动（TODO-1374）；null=无运动。有 [move] 时覆盖 [posFraction]，
+  /// 渲染层按 cue 内时间插值定位。
+  final SubtitleMove? move;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
@@ -275,7 +357,29 @@ class SubtitleMarkup {
     this.cueStyle,
     this.playResY,
     this.fade,
+    this.rotationDeg,
+    this.scale,
+    this.move,
   });
+}
+
+/// 扫描过程内部可变的行级变换状态（`\frz` 旋转 / `\fscx\fscy` 缩放 / `\t` 缩放动画 /
+/// `\move` 运动，TODO-1374）。跨同条 cue 的多个 `{...}` 块累积，扫描结束后归一成
+/// [SubtitleMarkup] 的 rotationDeg / scale / move。
+class _Transform {
+  double? rotationDeg;
+  double scaleX = 1.0;
+  double scaleY = 1.0;
+  bool scaleSet = false;
+  // \t(...) 缩放动画目标（相对当前 scaleX/scaleY 为起点）。
+  double? tScaleX;
+  double? tScaleY;
+  int? tStartMs;
+  int? tEndMs;
+  // \move(...)（归一化后坐标）。
+  double? mx1, my1, mx2, my2;
+  int? mt1, mt2;
+  bool moveSet = false;
 }
 
 /// 扫描过程内部可变样式状态。
@@ -348,9 +452,9 @@ class _Style {
 /// [cueStyle] 是本条 cue 引用的 ASS `[V4+ Styles]` 默认样式（TODO-1105）：原样透传到
 /// 返回的 [SubtitleMarkup.cueStyle]，供渲染层作行内 span 之下的基线；行内 `{...}` 覆盖
 /// 它。srt/vtt 无 Style 段传 null。
-/// 支持行内 `\blur`/`\be`（辉光）与行级 `\fad`/`\fade`（淡入淡出，TODO-1373）。其余不支持
-/// 的标签（卡拉OK `\k`、动画 `\t/\move`、绘图 `\p`、旋转缩放等）静默删除，既不显示控制码
-/// 也不产出样式。
+/// 支持行内 `\blur`/`\be`（辉光）、行级 `\fad`/`\fade`（淡入淡出，TODO-1373）、`\frz` 旋转
+/// / `\fscx`\`\fscy`(+`\t`) 缩放 / `\move` 运动（TODO-1374）。其余不支持的标签（卡拉OK `\k`、
+/// 3D 旋转 `\frx`/`\fry`、`\clip`、绘图 `\p` 正文等）静默删除，既不显示控制码也不产出样式。
 SubtitleMarkup parseSubtitleMarkup(String raw,
     {double? playResX, double? playResY, SubtitleCueStyle? cueStyle}) {
   final List<({String text, _Style style})> segments =
@@ -360,6 +464,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
   SubtitleAnchor? anchor;
   SubtitlePos? pos;
   SubtitleFade? fade;
+  final _Transform xf = _Transform();
   // ASS 绘图模式：\pN(N>0) 开启、\p0 关闭，作用域持续到本条 cue 结束。开启
   // 期间标签块之外的正文是矢量绘图命令（m/l/b 坐标），是图形不是文字，必须
   // 丢弃而非当 plainText 渲染（TODO-799 OP 卡拉OK 满屏坐标乱码）。
@@ -390,6 +495,7 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         (SubtitlePos p) => pos = p,
         (bool on) => drawing.active = on,
         (SubtitleFade f) => fade = f,
+        xf,
         playResX,
         playResY,
       );
@@ -451,6 +557,24 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     g += len;
   }
 
+  // 行级变换（\frz / \fscx\fscy / \t / \move，TODO-1374）归一：缩放取 (from)=静态
+  // \fscx\fscy、(to)=\t 目标（无 \t 时 to==from）；有 \t 或静态缩放非 100% 才产出。
+  final bool hasScale = xf.scaleSet || xf.tScaleX != null || xf.tScaleY != null;
+  final SubtitleScale? scale = hasScale
+      ? SubtitleScale(
+          fromX: xf.scaleX,
+          fromY: xf.scaleY,
+          toX: xf.tScaleX ?? xf.scaleX,
+          toY: xf.tScaleY ?? xf.scaleY,
+          t1Ms: xf.tStartMs,
+          t2Ms: xf.tEndMs,
+        )
+      : null;
+  final SubtitleMove? move = xf.moveSet
+      ? SubtitleMove(xf.mx1!, xf.my1!, xf.mx2!, xf.my2!,
+          t1Ms: xf.mt1, t2Ms: xf.mt2)
+      : null;
+
   return SubtitleMarkup(
     plainText: plain.toString(),
     spans: spans,
@@ -461,6 +585,9 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     // PlayResY 原样透传，供渲染层把 ASS 绝对字号 / 阴影深度缩放到播放尺寸（TODO-1246）。
     playResY: playResY,
     fade: fade,
+    rotationDeg: xf.rotationDeg,
+    scale: scale,
+    move: move,
   );
 }
 
@@ -472,11 +599,21 @@ void _applyOverrideBlock(
   void Function(SubtitlePos) setPos,
   void Function(bool) setDrawing,
   void Function(SubtitleFade) setFade,
+  _Transform xf,
   double? playResX,
   double? playResY,
 ) {
+  // \t(...) 动画：内含 \fscy 等带反斜杠的子标签，会被下面 split('\\') 打碎，故先整体抽出
+  // 记录目标，再从 block 里剔除（TODO-1374）。目标缩放的「起点」用后续静态 \fscx\fscy 累积值
+  // （在下方循环里设），故此处只记 (t1,t2) 与目标倍数，实际 from 在扫描结束时归一。
+  final String working =
+      block.replaceAllMapped(RegExp(r'\\t\(([^)]*)\)'), (Match m) {
+    _parseTransition(m.group(1) ?? '', xf);
+    return '';
+  });
+
   // 按 '\' 切分各 tag；首段（第一个 '\' 前，通常空或注释）忽略。
-  final List<String> tags = block.split(r'\');
+  final List<String> tags = working.split(r'\');
   for (int t = 1; t < tags.length; t++) {
     final String tag = tags[t].trim();
     if (tag.isEmpty) continue;
@@ -636,8 +773,67 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // 其余（\k \t \move \frx \fscx \clip \xbord \ybord ...）忽略。
+    // \frz<deg> / \fr<deg>（旧式 \fr 即 \frz，Z 轴旋转；ASS 逆时针为正，TODO-1374）。
+    // \frx / \fry（3D 旋转）不支持——`frz?` 的 z 可选但后面必须紧跟数字，`frx10` 的 x
+    // 非数字故不误命中。
+    final RegExpMatch? frz =
+        RegExp(r'^frz?(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (frz != null) {
+      xf.rotationDeg = double.parse(frz.group(1)!);
+      continue;
+    }
+
+    // \fscx<pct> / \fscy<pct> 横 / 纵缩放（百分比，TODO-1374）。
+    final RegExpMatch? fscx = RegExp(r'^fscx(\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (fscx != null) {
+      xf.scaleX = double.parse(fscx.group(1)!) / 100.0;
+      xf.scaleSet = true;
+      continue;
+    }
+    final RegExpMatch? fscy = RegExp(r'^fscy(\d+(?:\.\d+)?)$').firstMatch(tag);
+    if (fscy != null) {
+      xf.scaleY = double.parse(fscy.group(1)!) / 100.0;
+      xf.scaleSet = true;
+      continue;
+    }
+
+    // \move(x1,y1,x2,y2[,t1,t2])：行级运动（TODO-1374）。坐标按 PlayRes 归一化（同 \pos）。
+    final RegExpMatch? mv = RegExp(
+            r'^move\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(\d+)\s*,\s*(\d+)\s*)?\)$')
+        .firstMatch(tag);
+    if (mv != null &&
+        playResX != null &&
+        playResY != null &&
+        playResX > 0 &&
+        playResY > 0) {
+      xf.mx1 = double.parse(mv.group(1)!) / playResX;
+      xf.my1 = double.parse(mv.group(2)!) / playResY;
+      xf.mx2 = double.parse(mv.group(3)!) / playResX;
+      xf.my2 = double.parse(mv.group(4)!) / playResY;
+      xf.mt1 = mv.group(5) != null ? int.parse(mv.group(5)!) : null;
+      xf.mt2 = mv.group(6) != null ? int.parse(mv.group(6)!) : null;
+      xf.moveSet = true;
+      continue;
+    }
+
+    // 其余（\k \frx \fry \clip \xbord \ybord ...）忽略。
   }
+}
+
+/// 解析 `\t(...)` 内部（TODO-1374）：形如 `t1,t2[,accel],<子标签>` 或纯 `<子标签>`。仅取
+/// 时间边界 (t1,t2) 与 `\fscx`/`\fscy` 目标倍数（本项目支持的动画维度：缩放弹入）；accel 与
+/// 其它子标签（颜色/位置渐变等）忽略，取终值近似。
+void _parseTransition(String inner, _Transform xf) {
+  final RegExpMatch? times =
+      RegExp(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*,').firstMatch(inner);
+  if (times != null) {
+    xf.tStartMs = int.parse(times.group(1)!);
+    xf.tEndMs = int.parse(times.group(2)!);
+  }
+  final RegExpMatch? tx = RegExp(r'\\fscx(\d+(?:\.\d+)?)').firstMatch(inner);
+  if (tx != null) xf.tScaleX = double.parse(tx.group(1)!) / 100.0;
+  final RegExpMatch? ty = RegExp(r'\\fscy(\d+(?:\.\d+)?)').firstMatch(inner);
+  if (ty != null) xf.tScaleY = double.parse(ty.group(1)!) / 100.0;
 }
 
 /// ASS 颜色十六进制（BGR，可省前导零）→ 0xFFRRGGBB。
