@@ -62,3 +62,39 @@ Harness：`hibiki/integration_test/desktop_reader_columns_dom_test.dart`
 BUG-679 修复日（2026-07-09），或图多/短内容页的视觉错觉。**未改任何阅读器代码**（避免对已工作
 的几何引回归）；本轮产物 = 真 WebView2 离屏守卫 harness + 本节验证记录。证据：
 `.codex-test/todo1285-webview2-columns-measurement.md`。
+
+### 第四次复诉 · 真正根因 = 连续模式下设置项本就无效却仍可见（2026-07-10）
+
+用户第四次报「每页当前列数功能没法用」（Windows 竖排书截图）。**这次不是构建过旧** —— 直接
+量了用户本机：
+
+- 已安装构建 `debug.7338`（今日 18:23 装到 `D:\APP\Hibiki`）。TODO-1285 三个核心修复的
+  rev-count 为 6873 / 6897 / 6912，BUG-679 图片夹取为 7188，**全部 < 7338** → 用户构建
+  **已含**全部功能修复（7338 之后只有 7339 的真 WebView2 测试守卫与 7359 的 +625 版本 bump，
+  均不改阅读器行为）。前三轮「构建过旧」的结论对本次不成立。
+- 用户生产 DB（schema v37）实测：`ttu_view_mode = **continuous**`、`ttu_page_columns = 4`、
+  `ttu_writing_mode = vertical-rl`。
+
+**真正根因**：`ttu_view_mode = continuous`。CSS multicol 列模型只存在于翻页布局
+（`reader_content_styles.dart` 只把 `columnsCss` 传给 `_paginatedLayoutCss`；
+`_continuousLayoutCss` 连 `columnsCss` 形参都没有，VN 走 `_vnLayoutCss` 亦无）。连续滚动无
+「页」可分列，列数天生无效。但设置页 + 书内快捷面板在**连续/VN 模式下仍把「每页列数」显示为
+可调**，用户设成 4 无反应 → 误判「坏了」。这也是前三轮一直被引向「构建过旧」的元凶：没人查
+用户 DB 的 view_mode，只盯着渲染层。
+
+### 修复（第四轮）
+
+- **[x] ① 根因修复** — 非翻页模式隐藏「每页列数」项：`settings_schema_reading.dart` 加
+  `isPaginated(c) => c.readerSource.ttuViewMode == 'paginated'` 谓词，给
+  `reading_display.page_columns` 项加 `visible: isPaginated`。复用既有 `visible:` 门控惯例
+  （如同组 `isVertical` 门控竖排专属项），设置页与书内快捷面板共用 `section.visibleCopy` →
+  `isVisible` 过滤，一处谓词两处生效。连续/VN 模式下该项不再出现；切回「翻页」即出现并生效。
+  未改任何阅读器几何/CSS 代码（零回归风险）。
+- **[x] ② 自动化测试** — `hibiki/test/settings/page_columns_paginated_only_test.dart`：
+  ① schema 层——从生产 schema 取该项，断言 `paginated` 可见、`continuous`/`vn` 隐藏；
+  ② CSS 层——`pageColumns=4` 竖排下，连续模式生成的 CSS **不含** `column-count`、翻页模式
+  **含** `column-count: 4`，直接证明「连续下确实无效」（隐藏是对的，不是藏掉可工作功能）。
+  3 例全 PASS；`flutter analyze` 干净；相邻 `reader_content_styles_test` /
+  `reader_quick_settings_sheet_static_test` / `settings_redesign_static_test` 128 例无回归。
+- **用户侧即时解法**：阅读器设置 →「布局与显示」→「翻页 / 滚动」切到「翻页」，`每页列数=4`
+  即生效（竖排下每页沿上下分成 4 条列带）。

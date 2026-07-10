@@ -9,6 +9,12 @@ import 'package:hibiki/utils.dart';
 SettingsDestination buildReadingDestination() {
   bool isVertical(SettingsContext c) =>
       c.readerSource.ttuWritingMode.startsWith('vertical');
+  // 「每页列数」(pageColumns) 只在翻页(paginated)模式生效：CSS multicol 列模型只
+  // 存在于 _paginatedLayoutCss，连续(continuous)滚动与 VN 模式的布局根本不含
+  // column-count / 子列宽（reader_content_styles.dart 只把 columnsCss 传给
+  // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
+  bool isPaginated(SettingsContext c) =>
+      c.readerSource.ttuViewMode == 'paginated';
   return SettingsDestination(
     id: SettingsDestinationId.reading,
     title: t.settings_destination_reading,
@@ -177,6 +183,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_display.page_columns',
             title: t.columns_per_page,
             icon: Icons.view_column_outlined,
+            visible: isPaginated,
             min: 0,
             max: 4,
             step: 1,
