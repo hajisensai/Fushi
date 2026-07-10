@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 38012 (2236 per locale)
 ///
-/// Built on 2026-07-10 at 08:07 UTC
+/// Built on 2026-07-10 at 11:30 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2895,10 +2895,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       '${lang} (translated)';
   String get video_subtitle_youtube_empty => 'This caption track has no text';
   String get sync_client_token => 'Peer access token';
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
   String get theme_eyecare => 'Eye Care';
   String get reader_theme_eyecare => 'Eye Care';
   String get video_settings_cat_audio => 'Audio';
@@ -2968,6 +2964,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Network error. Check your connection and try again.';
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  String get sync_client_connected => 'Connected';
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -7906,12 +7904,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -8032,6 +8024,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -13093,12 +13089,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -13219,6 +13209,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -18297,12 +18291,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -18423,6 +18411,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -23520,12 +23512,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -23646,6 +23632,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -28645,12 +28635,6 @@ class _StringsId extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -28771,6 +28755,10 @@ class _StringsId extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -33831,12 +33819,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -33957,6 +33939,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -38743,12 +38729,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -38869,6 +38849,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -43659,12 +43643,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -43785,6 +43763,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -48813,12 +48795,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -48939,6 +48915,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -53990,12 +53970,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -54116,6 +54090,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -59142,12 +59120,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -59268,6 +59240,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -64207,12 +64183,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -64333,6 +64303,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -69327,12 +69301,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -69453,6 +69421,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -74422,12 +74394,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => 'Eye Care';
   @override
   String get reader_theme_eyecare => 'Eye Care';
@@ -74548,6 +74514,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -79185,12 +79155,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get sync_client_token => '对端访问令牌';
   @override
-  String get sync_client_token_hint =>
-      '配对成功后由对端自动签发并填入；这是对端发给本设备的专属令牌，与对端服务器显示的共享令牌不同，两者都能连接。';
-  @override
-  String get sync_server_token_self_hint =>
-      '本设备的服务器共享令牌；已配对的设备会另获各自的专属令牌，此共享令牌也可手动填入连接。';
-  @override
   String get theme_eyecare => '护眼';
   @override
   String get reader_theme_eyecare => '护眼';
@@ -79298,6 +79262,10 @@ class _StringsZhCn extends _StringsEn {
   String get video_danmaku_manual_network_error => '网络错误，请检查连接后重试。';
   @override
   String get video_danmaku_manual_server_error => '搜索失败，请稍后重试。';
+  @override
+  String get sync_client_connected => '已连接';
+  @override
+  String get sync_client_token_manual => '手动填写令牌';
 }
 
 // Path: retrying_in
@@ -83986,12 +83954,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get sync_client_token => 'Peer access token';
   @override
-  String get sync_client_token_hint =>
-      'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-  @override
-  String get sync_server_token_self_hint =>
-      'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
-  @override
   String get theme_eyecare => '護眼';
   @override
   String get reader_theme_eyecare => '護眼';
@@ -84112,6 +84074,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_danmaku_manual_server_error =>
       'Search failed. Try again later.';
+  @override
+  String get sync_client_connected => 'Connected';
+  @override
+  String get sync_client_token_manual => 'Enter token manually';
 }
 
 // Path: retrying_in
@@ -88614,10 +88580,6 @@ extension on _StringsEn {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -88722,6 +88684,10 @@ extension on _StringsEn {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -93184,10 +93150,6 @@ extension on _StringsAr {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -93292,6 +93254,10 @@ extension on _StringsAr {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -97776,10 +97742,6 @@ extension on _StringsDe {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -97884,6 +97846,10 @@ extension on _StringsDe {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -102366,10 +102332,6 @@ extension on _StringsEs {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -102474,6 +102436,10 @@ extension on _StringsEs {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -106963,10 +106929,6 @@ extension on _StringsFr {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -107071,6 +107033,10 @@ extension on _StringsFr {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -111540,10 +111506,6 @@ extension on _StringsId {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -111648,6 +111610,10 @@ extension on _StringsId {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -116134,10 +116100,6 @@ extension on _StringsIt {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -116242,6 +116204,10 @@ extension on _StringsIt {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -120686,10 +120652,6 @@ extension on _StringsJa {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -120794,6 +120756,10 @@ extension on _StringsJa {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -125241,10 +125207,6 @@ extension on _StringsKo {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -125349,6 +125311,10 @@ extension on _StringsKo {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -129828,10 +129794,6 @@ extension on _StringsNl {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -129936,6 +129898,10 @@ extension on _StringsNl {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -134412,10 +134378,6 @@ extension on _StringsPtBr {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -134520,6 +134482,10 @@ extension on _StringsPtBr {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -139000,10 +138966,6 @@ extension on _StringsRu {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -139108,6 +139070,10 @@ extension on _StringsRu {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -143570,10 +143536,6 @@ extension on _StringsTh {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -143678,6 +143640,10 @@ extension on _StringsTh {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -148149,10 +148115,6 @@ extension on _StringsTr {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -148257,6 +148219,10 @@ extension on _StringsTr {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -152722,10 +152688,6 @@ extension on _StringsVi {
         return 'This caption track has no text';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return 'Eye Care';
       case 'reader_theme_eyecare':
@@ -152830,6 +152792,10 @@ extension on _StringsVi {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
@@ -157261,10 +157227,6 @@ extension on _StringsZhCn {
         return '该字幕轨没有文字';
       case 'sync_client_token':
         return '对端访问令牌';
-      case 'sync_client_token_hint':
-        return '配对成功后由对端自动签发并填入；这是对端发给本设备的专属令牌，与对端服务器显示的共享令牌不同，两者都能连接。';
-      case 'sync_server_token_self_hint':
-        return '本设备的服务器共享令牌；已配对的设备会另获各自的专属令牌，此共享令牌也可手动填入连接。';
       case 'theme_eyecare':
         return '护眼';
       case 'reader_theme_eyecare':
@@ -157369,6 +157331,10 @@ extension on _StringsZhCn {
         return '网络错误，请检查连接后重试。';
       case 'video_danmaku_manual_server_error':
         return '搜索失败，请稍后重试。';
+      case 'sync_client_connected':
+        return '已连接';
+      case 'sync_client_token_manual':
+        return '手动填写令牌';
       default:
         return null;
     }
@@ -161805,10 +161771,6 @@ extension on _StringsZhHk {
         return '該字幕軌沒有文字';
       case 'sync_client_token':
         return 'Peer access token';
-      case 'sync_client_token_hint':
-        return 'Auto-filled after pairing: a device-specific token the peer issued to this device. It differs from the peer\'s shared server token, and both can connect.';
-      case 'sync_server_token_self_hint':
-        return 'This device\'s shared server token. Paired devices each get their own device-specific token; this shared token can also be entered manually to connect.';
       case 'theme_eyecare':
         return '護眼';
       case 'reader_theme_eyecare':
@@ -161913,6 +161875,10 @@ extension on _StringsZhHk {
         return 'Network error. Check your connection and try again.';
       case 'video_danmaku_manual_server_error':
         return 'Search failed. Try again later.';
+      case 'sync_client_connected':
+        return 'Connected';
+      case 'sync_client_token_manual':
+        return 'Enter token manually';
       default:
         return null;
     }
