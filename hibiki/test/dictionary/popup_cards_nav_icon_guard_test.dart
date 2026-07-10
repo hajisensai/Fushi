@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   #1338 制卡图标乱码：制卡按钮保留 ✓/✓↩ 文本标记（应用户要求不走 SVG），但用
 ///      `.mine-button` 单色符号字体栈切断对注入词典字体的继承，且 ↩ 追加 VS15(U+FE0E)
 ///      强制文本呈现——两处合力杜绝制卡后乱码。
-///   #1368/BUG-690 Android 豆腐：#1338 的字体栈全是桌面字体，Android WebView 按名
+///   #1368/BUG-691 Android 豆腐：#1338 的字体栈全是桌面字体，Android WebView 按名
 ///      解析不到、sans-serif=Roboto 又不含 U+2713/U+21A9 → 部分 ROM 制完卡 ✓ 变豆腐。
 ///      popup.css 内嵌 "Hibiki Symbols"(DejaVu Sans 子集) @font-face 兜底，本文件用
 ///      独立 WOFF/cmap 解析器锁「内嵌字体真含这三个码位」。
@@ -113,7 +113,7 @@ void main() {
     });
   });
 
-  group('内嵌 "Hibiki Symbols" 字形子集（TODO-1368/BUG-690）', () {
+  group('内嵌 "Hibiki Symbols" 字形子集（TODO-1368/BUG-691）', () {
     // content.css 是生成镜像：byte-parity 守卫不覆盖它对 popup.css 的 @font-face
     // 透传（completeness 检查只看类选择器），所以这里把两份 content.css 一并锁上。
     const Map<String, String> allCssMirrors = <String, String>{
@@ -135,7 +135,7 @@ void main() {
         expect(stack, contains('"Hibiki Symbols"'),
             reason: 'Android WebView 解析不到任何桌面符号字体、Roboto 又不含 '
                 'U+2713/U+21A9——必须保留内嵌 "Hibiki Symbols" 兜底，否则手机制完卡'
-                '✓ 在部分 ROM 上变豆腐（BUG-690）');
+                '✓ 在部分 ROM 上变豆腐（BUG-691）');
         expect(stack.indexOf('"DejaVu Sans"'),
             lessThan(stack.indexOf('"Hibiki Symbols"')),
             reason: '内嵌字体排在桌面符号字体之后：桌面三平台仍先命中系统字体，'

@@ -646,7 +646,7 @@ $highlightLaneCss
 .hoshi-sasayaki-cue {
   background-color: transparent;
 }
-/* TODO-1371/BUG-689：active 态只允许绘制层属性（color / 自定义变量 / lane 背景），
+/* TODO-1371/BUG-690：active 态只允许绘制层属性（color / 自定义变量 / lane 背景），
    禁止任何盒模型改写。旧实现的 line-height:1 !important 会在 strut < 1em（书籍 CSS
    行距小于字号）时逐句增厚激活行盒 —— 竖排下行盒厚度就是列厚，其后所有列随播放
    逐句平移。1em 窄条宽度本就由 _highlightLaneCss 的 background-size(绘制层)保证，

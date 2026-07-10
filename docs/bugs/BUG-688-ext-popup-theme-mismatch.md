@@ -1,0 +1,15 @@
+## BUG-688 · 浏览器扩展查词弹窗主题分裂：data-theme跟宿主页/--md-*跟app且漏--text-color/--background-color
+- **报告**：2026-07-09（用户：截图——浏览器里查词弹窗与 app 内完全不一样，黑底 + 米白卡 + 灰字）
+- **真实性**：✅ 真 bug。curl 运行中的 yomitan-api server（`127.0.0.1:19633` `/api/lookup/dictionary`）确认响应 `theme` 字段只带 `--md-*`，**缺** `--text-color` / `--background-color`。根因两处：
+  - `hibiki/lib/src/models/app_model.dart:2226`（`browserExtensionThemeColors()`）：下发 map 只有 `--md-*` / `--md-on-surface`，漏了 content.css 真正消费的 `--text-color`（`content.css:51` `color: var(--text-color)`）和 `--background-color`（`content.css:52` `background-color: var(--background-color, transparent)`）。
+  - `hibiki/assets/browser_extension/content.js:615`（`hibikiEnsureContainer`）：`data-theme` 取 `hibikiResolveTheme()` = 宿主网页 `prefers-color-scheme`，而 `--md-*` 来自 app 主题。app 浅色 + 宿主页深色时，`content.css:1046` `[data-theme="dark"]` 块给黑底/白字，却套上 app 浅色注入的 `--md-surface-container`（米白）→ 黑底 + 米白卡 + 灰字（`--text-color` 未注入，`color: var(--text-color)` 落空继承宿主页灰字）。app 内 `_themeVariablesJs`（`popup_settings_injection.dart:68-71`）data-theme 与全部颜色变量同源于 app ColorScheme，故不崩。
+- **[x] ① 已修复** — 让扩展弹窗主题**单一来源于 app**：
+  - `app_model.dart` provider 补 `--text-color`（onSurface）/ `--background-color`（overrideDictionaryColor ?? surface）/ `--hibiki-color-scheme`（app 明暗），对齐 in-app `_themeVariablesJs`。
+  - `content.js` `hibikiRender`（`:926-930`）用响应里的 `--hibiki-color-scheme` 把 `#entries-container` 的 `data-theme` 对齐 app，覆盖宿主页初值。content.css 零改动（inline 变量优先级本就覆盖 data-theme 块默认）。
+  - 提交：（见 commit）
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/browser_extension_theme_guard_test.dart`（源码契约守卫）：① provider 下发 `--text-color`/`--background-color`/`--hibiki-color-scheme`；② content.js 用 `--hibiki-color-scheme` 设 `data-theme`；③ content.css 确实读 `var(--text-color)`/`var(--background-color)`（契约方向自证）。既有 `yomitan_api_server_extension_endpoints_test.dart` 覆盖 handler 透传 theme。
+- **备注**：
+  - 打包扩展是 `hibiki/assets/browser_extension/`（pubspec 打包 + `browser_extension_installer.dart` 解压到 `<appSupport>/hibiki-browser-extension/`）。**镜像契约**：`tools/browser-extension/` 与 assets 必须逐字节一致（TODO-1000 installer 守卫），`vendor/popup.js` 还必须与 in-app 渲染器 `hibiki/assets/popup/popup.js` 逐字节一致（TODO-1267 parity 守卫）——落地时已同步四份并 bump content script 版本标记 v45。
+  - **滚轮表面回归修复**：Shadow DOM 化初版把滚轮目标写成 `#entries-container.scrollBy`（容器在两个表面都不可滚 = no-op）、zoom 改读容器 `--hibiki-popup-zoom` 计算变量（in-app 从不下发 → 恒 1）。已改为表面感知：扩展滚 shadow host（`__hibikiWheelScroller` 经 composedPath 判定）、in-app/宿主页回落 `window.scrollBy`；zoom 读 host.style.zoom（扩展）/ documentElement.style.zoom（in-app）。守卫：`hibiki/test/build/browser_extension_popup_wheel_surface_guard_test.dart`。
+  - **用户侧生效条件**：需更新到含本修复的 app 构建，并在 app 内重新运行「安装扩展」助手（重解压新 content.js）+ 浏览器 reload 扩展。运行中的旧 app server 仍返回旧 theme（无新变量），故未更新前弹窗仍旧样。
+  - 真实浏览器视觉复验待用户在更新后确认（bg 环境无法驱动浏览器扩展渲染）。

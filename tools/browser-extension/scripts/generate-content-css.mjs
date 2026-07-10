@@ -80,7 +80,7 @@ function transformSelector(raw) {
   // Named custom highlight (CSS Custom Highlight API) is global by design and its
   // name (hoshi-selection) is unique — keep verbatim.
   if (p.startsWith('::highlight')) return p;
-  // @font-face (TODO-1368/BUG-690: embedded "Hibiki Symbols" glyph subset for the
+  // @font-face (TODO-1368/BUG-691: embedded "Hibiki Symbols" glyph subset for the
   // mine button's ✓/✓↩ text marks) cannot be scoped by design — font-face rules
   // are document-global. Keep verbatim: the family name is app-namespaced and the
   // src is a self-contained data: URI, so nothing leaks from / depends on the host.

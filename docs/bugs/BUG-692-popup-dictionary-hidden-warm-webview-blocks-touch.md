@@ -1,4 +1,4 @@
-## BUG-691 · 安卓app外查词弹窗上下滑不动点击无反应（隐藏热槽屏内截触摸）
+## BUG-692 · 安卓app外查词弹窗上下滑不动点击无反应（隐藏热槽屏内截触摸）
 - **报告**：2026-07-10（用户：安卓查词弹窗有可能基本上下滑不动，点击也没反应，可以左右滑动关闭）· TODO-1379
 - **真实性**：✅ 真 bug，根因 `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart:503-512`（修复前行号，`_buildLayer` 隐藏分支）。
 

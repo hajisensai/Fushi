@@ -316,7 +316,7 @@ html {
    对注入词典字体的继承，✓/✓↩ 稳定单色呈现。JS 侧另对 ↩ 追加 VS15(U+FE0E)强制文本呈现，
    双保险。未制卡态 '+' 是 ASCII，任何字体都有，故制卡前从不乱码。
 
-   TODO-1368/BUG-690: 上面那套栈全是**桌面字体**，Android WebView 一个都按名解析不到——
+   TODO-1368/BUG-691: 上面那套栈全是**桌面字体**，Android WebView 一个都按名解析不到——
    Segoe UI Symbol/Apple Symbols/DejaVu Sans 是 Windows/macOS/Linux 字体，Noto Sans
    Symbols(2) 在 AOSP fonts.xml 里是无名 fallback 项（CSS 按名解析不到，部分 ROM 还直接
    缺失/被替换），兜底 sans-serif=Roboto 实测 cmap 不含 U+2713/U+21A9 → ✓ 只能赌系统

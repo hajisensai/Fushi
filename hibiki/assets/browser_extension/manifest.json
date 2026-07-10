@@ -19,6 +19,9 @@
       "run_at": "document_start"
     }
   ],
+  "web_accessible_resources": [
+    { "resources": ["vendor/content.css"], "matches": ["<all_urls>"] }
+  ],
   "options_page": "options.html",
   "action": { "default_title": "Hibiki Reader Bridge", "default_popup": "vendor/action-popup.html" }
 }

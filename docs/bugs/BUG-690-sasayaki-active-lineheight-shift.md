@@ -1,4 +1,4 @@
-## BUG-689 · 竖排跟随句高亮激活时整段列平移（active 态 line-height:1 改写盒模型）
+## BUG-690 · 竖排跟随句高亮激活时整段列平移（active 态 line-height:1 改写盒模型）
 - **报告**：2026-07-10（用户，TODO-1371；两图对比：跟随句高亮激活时其后所有列整体平移）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/reader/reader_content_styles.dart:651`（修复前）：
   `.hoshi-sasayaki-cue.hoshi-sasayaki-active { line-height: 1 !important }`。有声书跟随高亮

@@ -27,14 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 677 条。点号进各自文件。
+> 共 678 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-691](bugs/BUG-691-popup-dictionary-hidden-warm-webview-blocks-touch.md) | ✅ | ✅ | 安卓app外查词弹窗上下滑不动点击无反应（隐藏热槽屏内截触摸） |
-| [BUG-690](bugs/BUG-690-mine-icon-tofu-android.md) | ✅ | ✅ | 手机制完卡后制卡图标✓乱码/豆腐（Android WebView 缺符号字体） |
-| [BUG-689](bugs/BUG-689-sasayaki-active-lineheight-shift.md) | ✅ | ✅ | 竖排跟随句高亮激活时整段列平移（active 态 line-height:1 改写盒模型） |
-| [BUG-688](bugs/BUG-688-global-lookup-root-offwork-clip.md) | ✅ | ✅ | app外查词根卡靠屏右下生成在工作区外被裁 |
+| [BUG-692](bugs/BUG-692-popup-dictionary-hidden-warm-webview-blocks-touch.md) | ✅ | ✅ | 安卓app外查词弹窗上下滑不动点击无反应（隐藏热槽屏内截触摸） |
+| [BUG-691](bugs/BUG-691-mine-icon-tofu-android.md) | ✅ | ✅ | 手机制完卡后制卡图标✓乱码/豆腐（Android WebView 缺符号字体） |
+| [BUG-690](bugs/BUG-690-sasayaki-active-lineheight-shift.md) | ✅ | ✅ | 竖排跟随句高亮激活时整段列平移（active 态 line-height:1 改写盒模型） |
+| [BUG-689](bugs/BUG-689-global-lookup-root-offwork-clip.md) | ✅ | ✅ | app外查词根卡靠屏右下生成在工作区外被裁 |
+| [BUG-688](bugs/BUG-688-ext-popup-theme-mismatch.md) | ✅ | ✅ | 浏览器扩展查词弹窗主题分裂：data-theme跟宿主页/--md-*跟app且漏--text-color/--background-color |
 | [BUG-687](bugs/BUG-687-longpress-arrow-sentence.md) | ✅ | ✅ | 长按左右键无法连续切句/连续翻页 |
 | [BUG-686](bugs/BUG-686-interconnect-book-progress-shelf-stale.md) | ✅ | ✅ | 互联同步书籍进度后书架不刷新(收端显示旧进度·观感=书籍没同步·有声书resume现读故正常) |
 | [BUG-685](bugs/BUG-685-netflix-seek-in-then-out-skip.md) | ✅ | ✅ | 网飞批量制卡 seek 过去马上跳走没录制（seek-in-then-out） |

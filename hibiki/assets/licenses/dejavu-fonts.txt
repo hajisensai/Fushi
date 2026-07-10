@@ -5,7 +5,7 @@ The dictionary popup embeds a 3-glyph subset of DejaVu Sans 2.37
 (U+2713 CHECK MARK, U+21A9 LEFTWARDS ARROW WITH HOOK, plus an empty
 U+FE0E VS15 glyph) as the "Hibiki Symbols" @font-face inside
 assets/popup/popup.css, so the mine button's text marks render on any
-Android WebView without depending on system fonts (TODO-1368/BUG-690).
+Android WebView without depending on system fonts (TODO-1368/BUG-691).
 Per the license below, the modified (renamed, subsetted) font does not
 use the "Bitstream" or "Vera" names.
 

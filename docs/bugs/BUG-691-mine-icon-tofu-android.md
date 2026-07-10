@@ -1,4 +1,4 @@
-## BUG-690 · 手机制完卡后制卡图标✓乱码/豆腐（Android WebView 缺符号字体）
+## BUG-691 · 手机制完卡后制卡图标✓乱码/豆腐（Android WebView 缺符号字体）
 
 - **报告**：2026-07-10（用户：TODO-1368「手机制完卡图标会乱码」）
 - **真实性**：✅ 真 bug — 根因 `hibiki/assets/popup/popup.css:318-321`（BUG-655 给 `.mine-button` 钉的「单色符号字体栈」`"Segoe UI Symbol","Apple Symbols","Noto Sans Symbols2","Noto Sans Symbols","DejaVu Sans","Segoe UI",sans-serif !important` 全是桌面字体）。
@@ -8,6 +8,6 @@
   - `tools/browser-extension/scripts/generate-content-css.mjs`：`@font-face` 显式 verbatim 透传（原逻辑对未知 document-level 规则抛错）；popup.css 同步到两份扩展 vendor 镜像并重新生成两份 content.css。
   - 提交：`e714731bc`
 - **[x] ② 已加自动化测试** —
-  - `hibiki/test/dictionary/popup_cards_nav_icon_guard_test.dart` 新增「内嵌 Hibiki Symbols 字形子集（TODO-1368/BUG-690）」组：对 5 份 CSS 镜像（3 份 popup.css + 2 份生成的 content.css）断言 ①`.mine-button` 栈序=桌面字体→Hibiki Symbols→sans-serif；②`@font-face` data:URI 存在且用独立 Dart WOFF/cmap format-4 解析器验证内嵌字体**真含** U+2713/U+21A9/U+FE0E 字形（不是只查字符串）。
+  - `hibiki/test/dictionary/popup_cards_nav_icon_guard_test.dart` 新增「内嵌 Hibiki Symbols 字形子集（TODO-1368/BUG-691）」组：对 5 份 CSS 镜像（3 份 popup.css + 2 份生成的 content.css）断言 ①`.mine-button` 栈序=桌面字体→Hibiki Symbols→sans-serif；②`@font-face` data:URI 存在且用独立 Dart WOFF/cmap format-4 解析器验证内嵌字体**真含** U+2713/U+21A9/U+FE0E 字形（不是只查字符串）。
   - 提交：`e714731bc`
 - **备注**：候选方案 A「字体栈前置 Android 可按名解析的 family」被实证排除——Roboto cmap 无 U+2713/U+21A9，且 Android 无任何「一定按名可解析且一定含该码位」的系统 family；纯 SVG 方案此前已被用户显式否决（TODO-1325 还原为文本标记）。故取「内嵌字形子集」＝文本标记观感不变 + 字形随 CSS 自带。

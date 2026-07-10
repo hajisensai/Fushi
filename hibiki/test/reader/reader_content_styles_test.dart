@@ -376,7 +376,7 @@ void main() {
       expect(
         activeBlock,
         isNot(contains('line-height')),
-        reason: 'TODO-1371/BUG-689：active 态禁止改写盒模型。旧 line-height:1 !important '
+        reason: 'TODO-1371/BUG-690：active 态禁止改写盒模型。旧 line-height:1 !important '
             '会在书籍 CSS strut < 1em 时逐句增厚激活行盒，竖排下行盒厚度=列厚，'
             '其后所有列随播放逐句平移；1em 窄条宽度由 background-size（绘制层）保证，'
             '与 line-height 无关',
@@ -385,7 +385,7 @@ void main() {
 
     test('active highlight blocks are paint-only in both writing modes',
         () async {
-      // TODO-1371/BUG-689 守卫：跟随句/查词/收藏的运行时 toggle 高亮（-active 类、
+      // TODO-1371/BUG-690 守卫：跟随句/查词/收藏的运行时 toggle 高亮（-active 类、
       // ::highlight、dict-highlight）只允许绘制层属性。任何盒模型/排版属性
       // （line-height/margin/padding/font/…）都会让「高亮激活」改变文字位置。
       const Set<String> paintOnlyAllowlist = <String>{
@@ -430,7 +430,7 @@ void main() {
               isTrue,
               reason: '[$mode] 高亮 toggle 规则出现非绘制层属性 `$property`（选择器：'
                   '${selector.trim()}）。active 态改盒模型会让文字位置随高亮移动'
-                  '（TODO-1371/BUG-689）；确属纯绘制属性再显式加进 allowlist',
+                  '（TODO-1371/BUG-690）；确属纯绘制属性再显式加进 allowlist',
             );
           }
         }
