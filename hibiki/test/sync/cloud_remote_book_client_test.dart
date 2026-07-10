@@ -194,6 +194,30 @@ class _ControllableSyncBackend implements SyncBackend {
 
 AssetEntry _epub(String id, String name) => AssetEntry(id: id, name: name);
 
+/// Fake：对 [failFirstFor] 里的 folderId 首次 listChildren 抛异常、之后成功返回
+/// [epubChildById]。用于验证「一次瞬时失败 → 有界重试成功 → 真书不被误藏」。
+class _FlakyThenOkSyncBackend extends _ControllableSyncBackend {
+  _FlakyThenOkSyncBackend({
+    required super.folders,
+    required Map<String, List<AssetEntry>> epubChildById,
+    required this.failFirstFor,
+  }) : super(childrenByFolder: epubChildById);
+
+  final Set<String> failFirstFor;
+  final Map<String, int> _attempts = <String, int>{};
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    listChildrenCalls.add(namespaceId);
+    final int attempt = (_attempts[namespaceId] ?? 0);
+    _attempts[namespaceId] = attempt + 1;
+    if (failFirstFor.contains(namespaceId) && attempt == 0) {
+      throw SyncBackendError('transient boom: $namespaceId');
+    }
+    return childrenByFolder[namespaceId] ?? const <AssetEntry>[];
+  }
+}
+
 void main() {
   group('CloudRemoteBookClient.listRemoteBooks', () {
     test(
@@ -254,19 +278,55 @@ void main() {
       expect(backend.cachedFolders.map((f) => f.id), <String>['fid_real']);
     });
 
-    test('content probe is fail-open when listChildren throws', () async {
+    test(
+        'content probe is conservative (hasContent=false) when listChildren '
+        'keeps throwing (BUG-699 / TODO-1384: no fail-open ghost book)',
+        () async {
       final backend = _ControllableSyncBackend(
         folders: <DriveFile>[DriveFile(id: 'fid_x', name: 'Flaky Book')],
         childrenByFolder: const <String, List<AssetEntry>>{},
         throwOnListChildrenFor: <String>{'fid_x'},
       );
-      final client =
-          CloudRemoteBookClient(backend: backend, rootFolderId: 'root');
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        contentProbeRetryBackoff: Duration.zero,
+      );
 
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
 
-      expect(books.single.hasContent, isTrue,
-          reason: '瞬时列举失败不应隐藏真实远端书（fail-open）');
+      // 探测失败（异常/超时）绝不当「有内容」放出——修前 fail-open 会返 true 导致
+      // 无内容文件夹作幽灵书闪现。下游 `.where(hasContent)` 据此把它滤掉。
+      expect(books.single.hasContent, isFalse,
+          reason: '探测失败必须保守视为未确证有内容，不得 fail-open 放出幽灵书');
+      // 有界重试：默认重试 1 次 → 每个文件夹探测调用 listChildren 两次后放弃。
+      expect(
+        backend.listChildrenCalls.where((String c) => c == 'fid_x').length,
+        2,
+        reason: '失败时按 contentProbeRetries=1 做一次有界重试，仍失败即保守 false',
+      );
+    });
+
+    test(
+        'content probe recovers a real book when a transient failure clears on '
+        'retry (BUG-699 / TODO-1384)', () async {
+      // 首次列举抛出（瞬时抖动），重试成功并看到 .epub → 真书仍被确证有内容。
+      final backend = _FlakyThenOkSyncBackend(
+        folders: <DriveFile>[DriveFile(id: 'fid_r', name: 'Recovering Book')],
+        epubChildById: <String, List<AssetEntry>>{
+          'fid_r': <AssetEntry>[_epub('asset_r', 'Recovering Book.epub')],
+        },
+        failFirstFor: <String>{'fid_r'},
+      );
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        contentProbeRetryBackoff: Duration.zero,
+      );
+
+      final List<RemoteBookInfo> books = await client.listRemoteBooks();
+
+      expect(books.single.hasContent, isTrue, reason: '一次瞬时失败后重试成功，真书不应被误藏');
     });
 
     test('content probe respects concurrency cap (≤ contentProbeConcurrency)',

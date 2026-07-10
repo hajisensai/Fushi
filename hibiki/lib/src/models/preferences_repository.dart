@@ -799,6 +799,30 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
+  /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
+  VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(
+        getPref('video_danmaku_style', defaultValue: '') as String,
+      );
+
+  Future<void> setVideoDanmakuStyle(VideoDanmakuStyle style) async {
+    await setPref(
+      'video_danmaku_style',
+      VideoDanmakuStyle.encode(style.normalized()),
+    );
+    notifyListeners();
+  }
+
+  /// 弹幕屏蔽规则原始多行文本（每行一条，`/pattern/` 为正则，其余纯文本子串；
+  /// 解析见 [parseVideoDanmakuBlockRules]，TODO-1376）。原样存文本，编译在消费端做。
+  String get videoDanmakuBlockRulesText =>
+      getPref('video_danmaku_block_rules', defaultValue: '') as String;
+
+  Future<void> setVideoDanmakuBlockRulesText(String value) async {
+    await setPref('video_danmaku_block_rules', value);
+    notifyListeners();
+  }
+
   int? getVideoDanmakuEpisodeId(String bookUid) {
     final int value = getPref(
       'video_danmaku_episode/$bookUid',

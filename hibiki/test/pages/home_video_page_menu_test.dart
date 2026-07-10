@@ -215,7 +215,12 @@ void main() {
     WidgetTester tester,
     bool Function() isDone,
   ) async {
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 2));
+    // TODO-1383：轮询「页面卸载后的异步资产回收（跨临时目录删若干文件）」完成。原 2s
+    // 上界在并发全量 flutter test（8 个 isolate 抢盘 IO + CPU 时间片）下不够——回收本身
+    // 会完成，只是拿不到足够 wall-clock 片，2s 内没删完 → 后续 existsSync 断言误红。放宽
+    // 到 30s 纯属等待上界（isDone 一真即刻退出，通过路径零变慢），不弱化任何断言；若回收
+    // 真的永不完成（真 bug）仍会在更宽上界后照样失败。
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 30));
     while (!isDone() && DateTime.now().isBefore(deadline)) {
       await tester.pump(const Duration(milliseconds: 20));
       await tester.runAsync(() async {

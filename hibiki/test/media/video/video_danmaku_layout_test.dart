@@ -88,5 +88,38 @@ void main() {
         <String>['after seek'],
       );
     });
+
+    test('areaFraction shrinks the vertical band danmaku occupy', () {
+      final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
+        for (int i = 0; i < 4; i++) _item(i, 'c$i'),
+      ];
+      double maxYFor(double frac) => VideoDanmakuLayout.layout(
+            items: items,
+            positionMs: 100,
+            viewportSize: const Size(400, 200),
+            maxActive: 10,
+            maxLanes: 4,
+            areaFraction: frac,
+          )
+              .entries
+              .map((VideoDanmakuLayoutEntry e) => e.position.dy)
+              .reduce((double a, double b) => a > b ? a : b);
+      final double full = maxYFor(1.0);
+      final double half = maxYFor(0.5);
+      expect(half, lessThan(full), reason: '缩小显示区域把弹幕挤进更小的顶部带（最低一行的 y 更小）');
+    });
+
+    test('fontScale widens scrolling danmaku so mid-flight x shifts left', () {
+      final VideoDanmakuItem scroll = _item(0, 'wide wide wide');
+      double xFor(double fontScale) => VideoDanmakuLayout.layout(
+            items: <VideoDanmakuItem>[scroll],
+            positionMs: 2000,
+            viewportSize: const Size(400, 200),
+            maxActive: 10,
+            maxLanes: 4,
+            fontScale: fontScale,
+          ).entries.single.position.dx;
+      expect(xFor(2.0), lessThan(xFor(1.0)), reason: '大字号弹幕更宽，飞行途中 x 更靠左');
+    });
   });
 }

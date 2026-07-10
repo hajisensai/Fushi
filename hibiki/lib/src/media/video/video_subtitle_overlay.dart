@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -250,6 +251,22 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 正确的整句 + grapheme。旧的一维 `_charContexts`（单 cue、下标==grapheme）升级为二维。
   final List<_SubtitleCharEntry> _charEntries = <_SubtitleCharEntry>[];
 
+  /// TODO-1372/BUG-698：跨帧的组内槽位表——「层前缀|分组键」→ 槽位列表（**锚点侧在前**：
+  /// 底部锚组 slot0 是贴底那格，顶部/中部锚组 slot0 是贴锚那格）。
+  ///
+  /// 不变量（libass「Collisions: Normal」碰撞语义的槽位版）：**已在屏的 cue 在其可见期内
+  /// 槽位不变**，活动集增减不移动任何在屏字幕：
+  /// - 新进 cue 先补最靠锚点的空槽，没有才追加到远端（不挤动已有 cue）；
+  /// - cue 离场后，若远端仍有在屏 cue，其槽保留为**隐形占位**（保高度撑住别人的槽位）；
+  ///   远端空槽（不撑任何人）立即裁掉；
+  /// - 组内全部离场 → 状态清除（[build] 按当前活动集清扫），下一条回到锚点侧基线。
+  ///
+  /// 旧实现按活动集顺序直接塞 Column：重叠窗口内 cue 进出时贴锚格归属随集合翻转——底部组
+  /// 新 cue 抢贴底格把在屏 cue 顶上去、顶部组前一条离场后一条补位上跳，正是「两个字幕同时
+  /// 存在就时不时跳一下」的机制。
+  final Map<String, List<_GroupSlot>> _groupSlots =
+      <String, List<_GroupSlot>>{};
+
   /// 最近一次 build 的字幕显示区高度（本 widget 的 LayoutBuilder 记录），供
   /// [_styleForGrapheme] 把 ASS 绝对字号 / 阴影深度按 显示区高 / PlayResY 缩放
   /// （TODO-1246）。在 LayoutBuilder builder 里赋值，早于 box 内各字符 Builder 回调
@@ -389,6 +406,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         final List<AudioCue> secondaryCues =
             widget.controller.secondaryActiveCues;
 
+        // TODO-1372/BUG-698：清扫「组内已无任何在屏 cue」的槽位状态——整组离场即重置，
+        // 下一条从锚点侧基线重新开始；同一活动集重复 build 幂等。放在空集早退之前，
+        // 保证 gap 帧也把状态清干净。
+        final Set<AudioCue> allActive = HashSet<AudioCue>.identity()
+          ..addAll(mainCues)
+          ..addAll(secondaryCues);
+        _groupSlots.removeWhere((String key, List<_GroupSlot> slots) =>
+            !slots.any((_GroupSlot s) => allActive.contains(s.cue)));
+
         if (mainCues.isEmpty && secondaryCues.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -447,12 +473,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
         // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
         // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
-        final List<List<AudioCue>> groups = _groupMainCuesByPosition(cues);
+        final List<(String, List<AudioCue>)> groups =
+            _groupMainCuesByPosition(cues);
 
         final List<Widget> positioned = <Widget>[
-          for (final List<AudioCue> group in groups)
+          for (final (String key, List<AudioCue> group) in groups)
             _positionCueGroup(
               context,
+              // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
+              // （TODO-1372）。
+              '${isSecondary ? 's' : 'm'}|$key',
               group,
               isSecondary: isSecondary,
               blurred: blurred,
@@ -474,10 +504,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
 
   /// TODO-1341：把主字幕活动集按「有效定位」（\pos 分数 + 锚点，或纯锚点）分组，保留发现
   /// 顺序。同组的 cue 共享一个位置、竖排堆叠；不同组各自独立定位，从而顶部歌词与底部对白
-  /// 不再被裹挟到同一处。返回每组的 cue 列表（组内顺序即活动集顺序）。
-  List<List<AudioCue>> _groupMainCuesByPosition(List<AudioCue> cues) {
+  /// 不再被裹挟到同一处。返回每组的 (分组键, cue 列表)（组内顺序即活动集顺序；分组键给
+  /// [_syncGroupSlots] 作跨帧槽位状态的身份，TODO-1372）。
+  List<(String, List<AudioCue>)> _groupMainCuesByPosition(List<AudioCue> cues) {
     final Map<String, List<AudioCue>> byKey = <String, List<AudioCue>>{};
-    final List<List<AudioCue>> order = <List<AudioCue>>[];
+    final List<(String, List<AudioCue>)> order = <(String, List<AudioCue>)>[];
     for (final AudioCue cue in cues) {
       final String key = _positionKey(cue.markup);
       final List<AudioCue>? existing = byKey[key];
@@ -486,19 +517,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       } else {
         final List<AudioCue> group = <AudioCue>[cue];
         byKey[key] = group;
-        order.add(group);
+        order.add((key, group));
       }
     }
     return order;
   }
 
   /// 一条 cue 的「有效定位」分组键（TODO-1341）：有 \pos 时按分数（+ 锚点），否则按锚点
-  /// （竖直 + 水平对齐；null=历史底居中）。同键的 cue 同位置堆叠，不同键各自独立定位。
+  /// （竖直 + 水平对齐）+ MarginV。同键的 cue 同位置堆叠，不同键各自独立定位。
+  ///
+  /// TODO-1372/BUG-698 语义归一：渲染路径把「anchor 缺省」当底部居中（[_alignFor] /
+  /// [_paddingFor] / forceTop 判据全同构），把「MarginV<=0」当无 MarginV（[_scaledMarginV]
+  /// 都回退历史基线）。归一进键后，渲染完全相同的 cue 必然同组堆叠，而不是分成两组叠印
+  /// 在同一位置互相压字。
   static String _positionKey(SubtitleMarkup? markup) {
     final SubtitlePos? pf = markup?.posFraction;
     final SubtitleAnchor? a = markup?.anchor;
-    final int av = a?.vertical.index ?? -1;
-    final int ah = a?.horizontal.index ?? -1;
+    final int av = (a?.vertical ?? SubtitleVAlign.bottom).index;
+    final int ah = (a?.horizontal ?? SubtitleHAlign.center).index;
     if (pf != null) {
       return 'p:${pf.xFraction.toStringAsFixed(4)},'
           '${pf.yFraction.toStringAsFixed(4)}:$av:$ah';
@@ -506,36 +542,55 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     // MarginV（同锚点内不同竖直边距）纳入键：消除旧「同锚点不同 MarginV 被裹挟进一个
     // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
     // MarginV 仅 ASS 非空（srt/vtt 的 cueStyle 为 null），故 srt/vtt 分组行为像素级不变。
-    final int mv = (markup?.cueStyle?.marginV ?? -1).round();
+    final double? mvRaw = markup?.cueStyle?.marginV;
+    final int mv = (mvRaw == null || mvRaw <= 0) ? -1 : mvRaw.round();
     return 'a:$av:$ah:$mv';
   }
 
-  /// TODO-1341：把一个位置分组（同锚点的 cue 列表）渲染成**定位好**的字幕盒——竖排堆叠成
-  /// [Column]、套查词点击 / 模糊 / 悬停交互（[_wrapInteractive]），再按该组代表 markup 的
-  /// \pos / 锚点定位。副层强制顶部、不吃自带 pos。返回填满层边界（[Align] / [Stack]）、可
-  /// 作 [Stack] 直接子的定位盒。
+  /// TODO-1372/BUG-698：把一组的当前活动 cue 对齐进跨帧槽位表（不变量见 [_groupSlots]），
+  /// 返回本帧渲染用的槽位列表（锚点侧在前）。同一活动集重复调用幂等（布局重跑安全）。
+  List<_GroupSlot> _syncGroupSlots(String slotKey, List<AudioCue> cues) {
+    final List<_GroupSlot> slots =
+        _groupSlots.putIfAbsent(slotKey, () => <_GroupSlot>[]);
+    // ① 存活标记：槽主仍在活动集 → 在屏；否则离场（远端有人时渲染成隐形占位）。
+    final Set<AudioCue> pending = HashSet<AudioCue>.identity()..addAll(cues);
+    for (final _GroupSlot slot in slots) {
+      slot.alive = pending.remove(slot.cue);
+    }
+    // ② 新进 cue（按活动集顺序）：先补最靠锚点的空槽，没有才追加远端——都不挤动在屏 cue。
+    for (final AudioCue cue in cues) {
+      if (!pending.contains(cue)) continue;
+      final int free = slots.indexWhere((_GroupSlot s) => !s.alive);
+      if (free >= 0) {
+        slots[free]
+          ..cue = cue
+          ..alive = true;
+      } else {
+        slots.add(_GroupSlot(cue));
+      }
+    }
+    // ③ 远端的空槽不撑任何人，立即裁掉（在屏 cue 位置不受影响）。
+    while (slots.isNotEmpty && !slots.last.alive) {
+      slots.removeLast();
+    }
+    return slots;
+  }
+
+  /// TODO-1341：把一个位置分组（同锚点的 cue 列表）渲染成**定位好**的字幕盒——按跨帧稳定
+  /// 槽位竖排堆叠成 [Column]（TODO-1372，不变量见 [_groupSlots]）、套查词点击 / 模糊 / 悬停
+  /// 交互（[_wrapInteractive]），再按该组代表 markup 的 \pos / 锚点定位。无显式位置的副字幕
+  /// 组强制顶部。返回填满层边界（[Align] / [Stack]）、可作 [Stack] 直接子的定位盒。
+  /// [slotKey] 是带层前缀的分组键，作 [_groupSlots] 里槽位状态的身份。
   Widget _positionCueGroup(
     BuildContext context,
+    String slotKey,
     List<AudioCue> cues, {
     required bool isSecondary,
     required bool blurred,
     required Size container,
   }) {
-    // 每条 cue 一个字幕盒，竖排堆叠（同锚点重叠 cue / 副字幕多行都在此堆叠，TODO-1312）。
-    Widget content = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        for (final AudioCue cue in cues)
-          _buildCueBox(context, cue,
-              isSecondary: isSecondary, blurred: blurred),
-      ],
-    );
-
-    content = _wrapInteractive(context, content,
-        isSecondary: isSecondary, blurred: blurred);
-
-    // 定位代表 markup（同组 \pos / \an / MarginV 等价，取首条）。副字幕若带**显式**位置
+    // 定位代表 markup（分组键已把 \pos / \an / MarginV 语义归一，组内任取一条定位等价，
+    // 代表随活动集增减翻转不改变几何）。副字幕若带**显式**位置
     // （\pos 或 \an，即 ASS 副字幕）遵其自带位置（各遵自带位置，消除「副字幕总被拽到顶部」的
     // 降级）；纯 SRT 副字幕（anchor / pos 皆空、无位置信息）才回退强制置顶（翻译参考，避让主
     // 字幕底部，与历史一致）。
@@ -550,6 +605,43 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         (ownAnchor != null && ownAnchor.vertical != SubtitleVAlign.bottom);
     final bool forceTop = isSecondary && !ownNonBottom;
     final SubtitleMarkup? posMarkup = forceTop ? null : ownMarkup;
+    // 本组生效的竖直锚：决定堆叠增长方向（槽位远端在哪一侧）。
+    final SubtitleVAlign effectiveV = forceTop
+        ? SubtitleVAlign.top
+        : (ownAnchor?.vertical ?? SubtitleVAlign.bottom);
+
+    // TODO-1372/BUG-698：组内跨帧稳定槽位（锚点侧在前，不变量见 [_groupSlots]）。Column
+    // 自顶向下渲染：底部锚组反转（slot0 贴底、新 cue 往上长），顶部/中部锚组顺序（slot0
+    // 贴顶、新 cue 往下长；中部锚组增长对称外扩，重叠罕见，接受半高偏移）。
+    final List<_GroupSlot> slots = _syncGroupSlots(slotKey, cues);
+    final Iterable<_GroupSlot> topToBottom =
+        effectiveV == SubtitleVAlign.bottom ? slots.reversed : slots;
+    Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        for (final _GroupSlot slot in topToBottom)
+          if (slot.alive)
+            _buildCueBox(context, slot.cue,
+                isSecondary: isSecondary, blurred: blurred)
+          else
+            // 离场 cue 的隐形占位：保持原盒尺寸撑住远端在屏字幕的槽位（不登记查词命中、
+            // 不响应指针、无收藏角标）。libass「事件在屏期间位置不变」语义的槽位版。
+            IgnorePointer(
+              child: Opacity(
+                opacity: 0,
+                child: _buildCueBox(context, slot.cue,
+                    isSecondary: isSecondary,
+                    blurred: blurred,
+                    registerHits: false),
+              ),
+            ),
+      ],
+    );
+
+    content = _wrapInteractive(context, content,
+        isSecondary: isSecondary, blurred: blurred);
+
     final Offset? posScreen = _posScreen(posMarkup, container);
     if (posScreen != null) {
       // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标（\pos 覆盖 MarginV）。
@@ -678,11 +770,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// TODO-1312：渲染一条 cue 的字幕盒（背景盒 + 逐字符描边文本 + 主层收藏角标）。逐字符
   /// 登记进 [_charEntries]（携带整条 cue 文本、该 cue 内 grapheme 下标、字符 context、模糊
   /// 态），供全局坐标反查命中。空文本 cue 返回零尺寸盒（不占位）。
+  /// [registerHits] 为 false（隐形占位，TODO-1372）时跳过字符登记与收藏角标——离场 cue
+  /// 只保几何、不可交互。
   Widget _buildCueBox(
     BuildContext context,
     AudioCue cue, {
     required bool isSecondary,
     required bool blurred,
+    bool registerHits = true,
   }) {
     final String text = cue.text;
     if (text.isEmpty) return const SizedBox.shrink();
@@ -710,13 +805,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
                   // 登记字符（所属 cue 文本 + 该 cue 内 grapheme 下标 + context + 模糊态）
                   // 供全局坐标反查。字符本身不各自包 opaque GestureDetector（会吞 hover /
                   // 光标，BUG-198）；tap 命中由上层 translucent RawGestureDetector + 本登记
-                  // 表反查承载（BUG-553 竞技场门控）。
-                  _charEntries.add(_SubtitleCharEntry(
-                    sentence: text,
-                    graphemeIndex: i,
-                    context: charContext,
-                    blurred: blurred,
-                  ));
+                  // 表反查承载（BUG-553 竞技场门控）。隐形占位（TODO-1372，registerHits
+                  // 为 false）不登记：离场 cue 不可点、不可查词。
+                  if (registerHits) {
+                    _charEntries.add(_SubtitleCharEntry(
+                      sentence: text,
+                      graphemeIndex: i,
+                      context: charContext,
+                      blurred: blurred,
+                    ));
+                  }
                   return _buildStrokedChar(chars[i], i, markup);
                 },
               ),
@@ -726,8 +824,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     );
 
     // 当前句已收藏：字幕盒左上角外侧叠一枚实心星角标（TODO-301 / BUG-264）。仅主层
-    // （副字幕=翻译参考，不制卡/不收藏）。[isCueFavorited] 为 null（测试 / 无数据源）不叠。
-    if (!isSecondary) {
+    // （副字幕=翻译参考，不制卡/不收藏）。[isCueFavorited] 为 null（测试 / 无数据源）不叠；
+    // 隐形占位（registerHits=false）不叠（离场 cue 无角标语义）。
+    if (!isSecondary && registerHits) {
       final bool favorited = widget.isCueFavorited?.call(cue) ?? false;
       if (favorited) {
         final Color starColor =
@@ -1103,6 +1202,19 @@ class _SubtitleCharEntry {
   /// 该字符所在层是否模糊（听力沉浸主层模糊时为 true）——模糊字符不参与命中反查
   /// （与点击不查词一致），命中扫描时按 [Rect.zero] 跳过。
   final bool blurred;
+}
+
+/// [_VideoSubtitleOverlayState._groupSlots] 的一格（TODO-1372/BUG-698）：槽主 cue + 是否
+/// 仍在活动集。离场（[alive] 为 false）且远端仍有在屏 cue 时，本格以隐形占位渲染（保高度
+/// 撑住槽位不塌）。
+class _GroupSlot {
+  _GroupSlot(this.cue);
+
+  /// 槽主（可能已离场——那时本格作隐形占位保持高度）。新 cue 补空槽时顶替。
+  AudioCue cue;
+
+  /// 槽主是否仍在活动集。false = 隐形占位。
+  bool alive = true;
 }
 
 /// 字幕盒的**按字符矩形门控** tap 识别器（BUG-553）。语义同普通 [TapGestureRecognizer]，

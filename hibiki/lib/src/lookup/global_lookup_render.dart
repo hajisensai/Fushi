@@ -234,6 +234,19 @@ String buildStackRenderScript({
   // host.js sets data-theme on the shell.
   final String shellTheme =
       Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light';
+  // TODO-1231（BUG-583/670 续）——根卡（anchorless 分支）的工作区钳位偏移。根卡是
+  // 级联里唯一不经 computeFrameRect clamp 的卡；reserve-to-edge 地板把 C++ 的窗口
+  // 右/下 clamp 变成 no-op 后，光标靠屏右/下时根卡越出工作区被窗口边裁掉（「弹窗
+  // 直接生成在窗口外面」）。这里用与子卡同语义的 clamp 把根卡钳回工作区；偏移恒
+  // >= -cursorWork（= 地板），窗口原点仍从首帧冻结，父卡零位移保证不回退。
+  final ({double left, double top}) rootShellOffset = computeRootShellOffset(
+    cursorWorkX: selectionScreenOffset.dx,
+    cursorWorkY: selectionScreenOffset.dy,
+    screenWorkW: screenWidth,
+    screenWorkH: screenHeight,
+    cardW: maxWidth,
+    cardH: maxHeight,
+  );
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];
@@ -262,6 +275,7 @@ String buildStackRenderScript({
       maxHeight: maxHeight,
       isVertical: p.isVertical,
       selectionScreenOffset: selectionScreenOffset,
+      rootShellOffset: rootShellOffset,
     );
     map['settingsJs'] = settingsJs;
     popups.add(map);
@@ -302,6 +316,7 @@ Map<String, Object?> _frameRectMap({
   required double maxHeight,
   required bool isVertical,
   Offset selectionScreenOffset = Offset.zero,
+  ({double left, double top}) rootShellOffset = (left: 0.0, top: 0.0),
 }) {
   if (anchorRect != null && screenWidth > 0 && screenHeight > 0) {
     // TODO-893 v2 (symptom 3) — the host re-anchored the child's word rect to
@@ -339,10 +354,14 @@ Map<String, Object?> _frameRectMap({
   // so a single-frame lookup is unchanged. This branch is only reached when a
   // frame has no real anchorRect (host failed to re-anchor); with an anchor the
   // geometry comes from computeFrameRect above.
+  // TODO-1231（BUG-583/670 续）——anchorless 卡（根卡 depth 0 + 防御性 fan-out）以
+  // rootShellOffset 为基底：根卡从「恒钉 window-local (0,0) = 光标+8」改为「光标+8
+  // 经工作区钳位」（见 computeRootShellOffset），光标四周空间充足时偏移 (0,0) 逐字节
+  // 等于旧几何；防御性 fan-out（host 未能 re-anchor 的子卡）跟随根卡基底以保持贴近。
   final double offset = kGlobalLookupCascadeStep * depth;
   return <String, Object?>{
-    'left': isVertical ? offset : 0.0,
-    'top': isVertical ? 0.0 : offset,
+    'left': rootShellOffset.left + (isVertical ? offset : 0.0),
+    'top': rootShellOffset.top + (isVertical ? 0.0 : offset),
     'width': maxWidth,
     'height': maxHeight,
   };

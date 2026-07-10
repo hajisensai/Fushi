@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/font_catalog.dart';
@@ -647,6 +649,53 @@ class ReaderSettings {
       if (!state.hasTarget(key)) continue;
       _cache[key] = jsonEncode(state.fontListForTarget(key));
     }
+  }
+
+  /// TODO-1393 startup self-heal: recovers custom-font entries whose stored
+  /// absolute path no longer resolves by relocating them onto a same-basename
+  /// file under [currentFontsDir] (the current `<documents>/custom_fonts`). Heals
+  /// BOTH the canonical `font_catalog` pref and the 4 legacy shadow lists, keeping
+  /// them consistent, and persists every changed value so the repair is a one-time
+  /// write (idempotent: a no-op when all paths already resolve). Returns the total
+  /// number of relocated entries (for diagnostics).
+  ///
+  /// Covers font paths orphaned by a data-root move, a pre-fix backup restore (the
+  /// shadow-only window that never rebased `font_catalog`), an iOS reinstall's new
+  /// container UUID, or a profile-import stripped path — cases the forward rebase at
+  /// move/import time did not (or could not) fix. [fileExists] is injectable for
+  /// tests; production checks the real filesystem.
+  Future<int> healMissingFontFilePaths(
+    String currentFontsDir, {
+    bool Function(String path)? fileExists,
+  }) async {
+    final bool Function(String) exists =
+        fileExists ?? ((String path) => File(path).existsSync());
+    int healed = 0;
+
+    final dynamic catalog = _cache[fontCatalogKey];
+    if (catalog is String) {
+      final ({String json, int relocated}) r =
+          relocateMissingFontCatalogPaths(catalog, currentFontsDir, exists);
+      if (r.relocated > 0) {
+        _cache[fontCatalogKey] = r.json;
+        await _db.setPref('$_prefix$fontCatalogKey', r.json);
+        healed += r.relocated;
+      }
+    }
+
+    for (final String key in _fontTargetKeys) {
+      final dynamic raw = _cache[key];
+      if (raw is! String) continue;
+      final ({String json, int relocated}) r =
+          relocateMissingFontListPaths(raw, currentFontsDir, exists);
+      if (r.relocated > 0) {
+        _cache[key] = r.json;
+        await _db.setPref('$_prefix$key', r.json);
+        healed += r.relocated;
+      }
+    }
+
+    return healed;
   }
 
   List<Map<String, dynamic>> _fontListForTargetKey(String key) {

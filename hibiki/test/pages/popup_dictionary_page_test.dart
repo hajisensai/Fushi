@@ -379,12 +379,19 @@ void main() {
     expect(popup, contains('SourceLookupTextPanel'),
         reason: 'non-clipboard popup queries need the same clickable source '
             'text panel outside the WebView.');
-    // TODO-951 症状C：可见层满卡渲染、隐藏层（常驻热槽/挂起冷层）停到卡外继续预热
-    // （IgnorePointer 兜住触摸）。可见性闸门由 `if (entry.visible)` 分流，不再是裸
-    // Visibility(visible: entry.visible)。
-    expect(popup, contains('if (entry.visible) {'),
+    // TODO-951 症状C + TODO-1379：可见层满卡渲染、隐藏层（常驻热槽/挂起冷层）经共享
+    // parkedPopupLayer 停到真·屏外（screen.width+8）继续预热——BUG-135 单一真相，与
+    // reader/video/首页三宿主同机制。卡片局部坐标 `cardWidth + 8` + IgnorePointer 挡
+    // 不住 Android 原生 WebView 平台视图截触摸（弹窗滚动/点击全死），禁止回退。
+    expect(popup, contains('parkedPopupLayer('),
+        reason: 'external popup layers must run through the shared BUG-135 '
+            'parking geometry (true off-screen park).');
+    expect(popup, contains('visible: entry.visible'),
         reason: 'external popup layers must honor controller visibility before '
             'any hidden/preload state can be safe.');
+    expect(popup, isNot(contains('left: cardWidth + 8')),
+        reason: 'TODO-1379: card-local parking keeps the hidden native WebView '
+            'on-screen where it eats touches; park off-screen instead.');
     expect(popup, contains('keepWebViewWarm: entry.isWarmSlot'),
         reason: 'external popup must keep the warm slot WebView pre-warmed to '
             'kill the per-lookup flash (TODO-951 symptom C).');

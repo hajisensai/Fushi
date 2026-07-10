@@ -472,9 +472,10 @@ class GlobalLookupController {
       // cascade LAYOUT BOUNDS (window-local CSS px) so a nested child card has
       // room to cascade beside the root during measurement; D2's union bbox
       // (overlaySize) then reveals/resizes the window down to the real extent.
-      // The root card itself stays anchored at the window-local origin (its
-      // anchor is null), so a single-frame lookup still reveals exactly at the
-      // card size after the bbox trims the bounds — no regression.
+      // The root card itself stays anchorless (its anchor is null) and lands at
+      // the window-local origin clamped into the work area (TODO-1231
+      // computeRootShellOffset), so a single-frame lookup still reveals exactly
+      // at the card size after the bbox trims the bounds — no regression.
       final double cardW = model.popupMaxWidth * model.appUiScale;
       final double cardH = model.popupMaxHeight * model.appUiScale;
       _layoutBoundsW = cardW * kGlobalLookupLayoutBoundsWidthFactor;
@@ -914,8 +915,11 @@ class GlobalLookupController {
     );
     _stack = GlobalLookupStack(<GlobalLookupFrame>[root]);
     _frameResults[id] = result;
-    // Root anchor stays null: the window is positioned at the cursor, so the
-    // root card sits at the window-local origin (no cascade for the root).
+    // Root anchor stays null: the window is positioned at the cursor and the
+    // root card takes the anchorless branch of _frameRectMap (no cascade for
+    // the root). TODO-1231（BUG-583/670 续）: that branch now clamps the root
+    // into the work area via computeRootShellOffset (offset 0 away from the
+    // edges = the old window-local-origin geometry).
     _frameAnchors[id] = null;
   }
 

@@ -135,6 +135,11 @@ class SasayakiRematch {
       return HibikiModalSheetFrame(
         title: t.rematch_adjust_window,
         leadingIcon: Icons.manage_search_outlined,
+        // TODO-1389：桌面路径外层 HibikiDialogFrame(maxHeightFactor:0.62, scrollable:false)
+        // 只给有界高度；最小窗高 480（客户区≈440）下 0.62 界不足以容下双滑条 Column
+        // （~270-300px），非滚动 body 会 RenderFlex 底部溢出。scrollable:true 让 body
+        // 在 Flexible 内滚动，矮窗可滚不溢出。
+        scrollable: true,
         bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
         body: Column(
           mainAxisSize: MainAxisSize.min,

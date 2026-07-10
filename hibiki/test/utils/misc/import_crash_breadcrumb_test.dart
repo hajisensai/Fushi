@@ -102,7 +102,12 @@ void main() {
       'Runtime.bigAsync',
       '${'y' * (700 * 1024)}ASYNC_TAIL',
     );
-    await pumpEventQueue(times: 20);
+    // TODO-1383：log() 的落盘是 fire-and-forget 异步（error_log_service.dart 的
+    // _appendToFile）。原先靠 pumpEventQueue(times: 20) 猜时序，在并发全量 flutter
+    // test（多进程抢盘 IO）下 20 次事件轮转不足以等 700KB 写入+回读裁剪落定 →
+    // 断言读到半成品 / append 落在 tearDown 删目录之后（Windows errno 32 /
+    // PathNotFound）而漂移误红。改为确定性 await 串行落盘链，断言逻辑不变。
+    await ErrorLogService.instance.pendingFileWrite;
 
     final String content = logFile.readAsStringSync();
     expect(logFile.lengthSync(), lessThanOrEqualTo(512 * 1024));
@@ -180,6 +185,10 @@ void main() {
     });
 
     tearDown(() async {
+      // TODO-1383：这些用例经 init() 触发 log('DictImport.crashRecovered')，其
+      // fire-and-forget 落盘（_appendToFile）会与顶层 tearDown 的 deleteSync 竞态
+      // （Windows errno 32 / PathNotFound）。先确定性排空在途落盘链再清 + 删目录。
+      await ErrorLogService.instance.pendingFileWrite;
       await ErrorLogService.instance.clear();
     });
   });

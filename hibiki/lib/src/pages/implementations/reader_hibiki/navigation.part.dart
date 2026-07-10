@@ -348,6 +348,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     required int chapter,
     required double progress,
     required int charOffset,
+    int charOffsetEnd = -1,
     String? fragment,
   }) {
     _restoreExpectedGeneration = ++_navigateGeneration;
@@ -363,6 +364,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _currentChapter = chapter;
     _initialProgress = progress;
     _initialCharOffset = charOffset;
+    // TODO-1308 问题②：句尾锚归本方法拥有并每次导航复位——否则冷启动收藏跳转设过的
+    // _initialCharOffsetEnd 会泄漏进后续任意带 charOffset 的导航（如换样式重分页的
+    // 保不动点），把无关恢复当成收藏整句对齐多滚一段。只有显式带句尾锚的调用
+    // （书内收藏面板跳转）才传非 -1。
+    _initialCharOffsetEnd = charOffsetEnd;
     _lastProgressSection = chapter;
     _lastProgressValue = progress;
     // HBK-AUDIT-037: 清/设 fragment——上次内链导航的残留 fragment 不得漏进本次 setup
@@ -405,6 +411,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     int index, {
     double progress = 0.0,
     int? charOffset,
+    int charOffsetEnd = -1,
     bool manual = false,
   }) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
@@ -421,6 +428,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       index = resolvedChapter;
       progress = 0.0;
       charOffset = null;
+      charOffsetEnd = -1;
     }
     // TODO-807（纵深防御）：被动（有声书跟随）导航绝不落到 EPUB 目录/nav 页——
     // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
@@ -441,6 +449,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       chapter: index,
       progress: progress,
       charOffset: charOffset ?? -1,
+      charOffsetEnd: charOffsetEnd,
     );
     _lastProgressCharOffset = _initialCharOffset;
 
@@ -457,6 +466,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     int index, {
     bool manual = false,
     double progress = 0.0,
+    int? charOffset,
+    int charOffsetEnd = -1,
     String? preciseLocateJs,
   }) async {
     // TODO-1128：被吸收图片章会被 _navigateToChapter 重定向到宿主文本章，落地后
@@ -469,7 +480,15 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 再抢发 restoreProgress」被 settle-reflow 冲回章首（双跳）。[preciseLocateJs]（文本
     // 搜索跳转，分数无法表达）排进 _pendingPreciseLocate，由 _onRestoreComplete 在恢复
     // 落定且 settle 之后应用（见 _applyPendingPreciseLocate）。
-    await _navigateToChapter(index, progress: progress, manual: manual);
+    // TODO-1308 问题②：[charOffset]（章内绝对可匹配字符索引，getNormalizedOffset 口径）
+    // 把收藏句的精确字符锚烘进同一条原子恢复链（_beginNavigation → shell
+    // restoreToCharOffset），与冷启动 charAnchor 跳转（BUG-459）同构；[charOffsetEnd]
+    // 句尾锚透传做整句对齐（BUG-461）。分数与字符锚二选一：charOffset 非空时优先。
+    await _navigateToChapter(index,
+        progress: progress,
+        charOffset: charOffset,
+        charOffsetEnd: charOffsetEnd,
+        manual: manual);
     if (preciseLocateJs != null) {
       // 绑定本次导航代际（_beginNavigation 刚在 _navigateToChapter 里递增）：并发导航
       // 顶掉后代际不匹配 → 消费时丢弃，绝不把搜索命中定位应用到错误章节。设在

@@ -803,10 +803,77 @@ void GlobalLookupWindow::ConfigureWebView() {
           [this](ICoreWebView2*,
                  ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
             webview_ready_ = true;
+            // TODO-1268 (BUG-693) -- a recovery rebuild (RecoverDeadWebView)
+            // completes here: the new surface is ready, further renders may
+            // execute directly again.
+            recovering_ = false;
             if (!pending_json_.empty()) {
               std::string json = pending_json_;
               pending_json_.clear();
               RenderJson(json);
+            }
+            return S_OK;
+          })
+          .Get(),
+      nullptr);
+
+  // TODO-1268 (BUG-693) -- self-heal a dead overlay WebView2 process tree.
+  //
+  // The overlay is a prewarmed, hidden, hours-lived surface: it is created once
+  // at startup and only SW_HIDE'd between lookups for the rest of the app
+  // session. When its render or browser process dies mid-session (WebView2
+  // runtime update, GPU reset, OOM kill, renderer crash), the COM proxies here
+  // stayed alive and webview_ready_ stayed TRUE, so every later lookup
+  // ExecuteScript'ed into a dead page: the host never posted
+  // overlaySize/popupRendered again and Dart could only blank-reveal via the
+  // READY-SAFETY fallback until the app was restarted. That is the exact
+  // device-log signature of TODO-1268 ("lookupText -> searched -> showAt ->
+  // reveal: READY-SAFETY" with ZERO host messages, while the SAME session's
+  // earlier hotkey lookup worked): the floating-subtitle strip tap is the
+  // overlay's main mid-session consumer, so it was the reporter, but the
+  // global hotkey dies identically once the process is gone.
+  //
+  // Recovery follows the documented WebView2 contract:
+  //   - BROWSER_PROCESS_EXITED kills every COM object under env_ -> drop them
+  //     and rebuild the environment/controller/webview against the SAME hwnd_
+  //     (EnsureWebView -> ConfigureWebView re-registers these handlers on the
+  //     new instance and re-navigates the host document).
+  //   - RENDER_PROCESS_EXITED / RENDER_PROCESS_UNRESPONSIVE keep the browser
+  //     process alive -> Reload() the host document.
+  //   - Any other (extended) kind - GPU / utility / frame helper failures -
+  //     does not tear down the page: log only, and critically do NOT clear
+  //     webview_ready_ (nothing would re-arm it without a navigation).
+  // For the two recovered kinds webview_ready_ goes FALSE first, so
+  // RenderJson() caches the next lookup's script in pending_json_ instead of
+  // executing into the dead page, and NavigationCompleted (above) re-arms
+  // ready + flushes it -- the very next tap renders a REAL card again.
+  webview_->add_ProcessFailed(
+      Callback<ICoreWebView2ProcessFailedEventHandler>(
+          [this](ICoreWebView2*,
+                 ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT {
+            COREWEBVIEW2_PROCESS_FAILED_KIND kind =
+                COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED;
+            if (args != nullptr) {
+              args->get_ProcessFailedKind(&kind);
+            }
+            ReportOverlayError(
+                "overlay WebView2 process failed, kind=" +
+                    std::to_string(static_cast<int>(kind)) + "; recovering",
+                E_FAIL);
+            switch (kind) {
+              case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:
+              case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:
+              case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE:
+                // Same single rebuild path as the ExecuteScript liveness check
+                // (see RecoverDeadWebView): keep whatever render is already
+                // cached and rebuild the surface. Extended kinds (GPU/utility
+                // helper failures) do not tear down the page: log only, and
+                // critically do NOT clear webview_ready_ (nothing would re-arm
+                // it without a navigation).
+                RecoverDeadWebView(pending_json_);
+                break;
+              default:
+                break;
             }
             return S_OK;
           })
@@ -990,11 +1057,74 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // full_script is the complete JS built in Dart (settings + lookupEntries +
   // renderPopup), mirroring dictionary_popup_webview._pushResults. Cached until
   // the page finishes loading (renderPopup must exist).
-  if (!webview_ready_ || !webview_) {
+  if (recovering_ || !webview_ready_ || !webview_) {
     pending_json_ = full_script;
     return;
   }
-  webview_->ExecuteScript(Utf8ToWide(full_script).c_str(), nullptr);
+  // TODO-1268 (BUG-693) -- deterministic dead-surface detection. The overlay
+  // WebView2 is prewarmed once and lives (hidden) for the whole app session;
+  // when its process tree dies mid-session (runtime update, GPU reset, OOM
+  // kill, crash) the COM proxies stay alive and webview_ready_ stays TRUE, so
+  // this ExecuteScript used to be fired blind into a dead page: the host never
+  // posted overlaySize/popupRendered again and every later lookup could only
+  // blank-reveal via the Dart READY-SAFETY fallback until app restart -- the
+  // TODO-1268 device-log signature (lookupText -> searched -> showAt ->
+  // READY-SAFETY, zero host messages). The webview-level ProcessFailed event
+  // alone is NOT a reliable trigger for this (a force-killed process tree was
+  // observed to raise no event at all in the offscreen harness), so liveness
+  // is checked HERE, on the call itself: a FAILED synchronous HRESULT or a
+  // FAILED completion HRESULT can only mean an infra-dead surface (JS
+  // exceptions still complete with S_OK), and either one triggers
+  // RecoverDeadWebView which caches this script and rebuilds the
+  // environment/controller/webview; NavigationCompleted then replays it, so
+  // the very lookup that DISCOVERS the dead surface still renders a real card.
+  const std::string script_copy = full_script;
+  HRESULT sync_hr = webview_->ExecuteScript(
+      Utf8ToWide(full_script).c_str(),
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [this, script_copy](HRESULT error_code, LPCWSTR) -> HRESULT {
+            if (FAILED(error_code)) {
+              ReportOverlayError(
+                  "overlay ExecuteScript completed with failure; recovering",
+                  error_code);
+              RecoverDeadWebView(script_copy);
+            }
+            return S_OK;
+          })
+          .Get());
+  if (FAILED(sync_hr)) {
+    ReportOverlayError("overlay ExecuteScript call failed; recovering",
+                       sync_hr);
+    RecoverDeadWebView(full_script);
+  }
+}
+
+// TODO-1268 (BUG-693) -- rebuild a dead overlay WebView2 in place.
+//
+// [replay_script] is cached into pending_json_ (last-wins, the same contract
+// the not-ready path uses) and re-executed by NavigationCompleted once the
+// rebuilt surface finishes loading the host document. A burst of failed
+// renders (or a ProcessFailed racing the ExecuteScript failure path) triggers
+// exactly ONE rebuild via the recovering_ guard; later calls only refresh the
+// replay payload. The window itself (hwnd_) survives -- only the WebView2
+// environment/controller/webview are torn down and recreated, and
+// ConfigureWebView re-registers every handler on the new instance.
+void GlobalLookupWindow::RecoverDeadWebView(const std::string& replay_script) {
+  if (!replay_script.empty()) {
+    pending_json_ = replay_script;
+  }
+  webview_ready_ = false;
+  if (recovering_) {
+    return;
+  }
+  recovering_ = true;
+  // The old proxies point into a dead process tree; releasing them is safe.
+  controller_ = nullptr;
+  webview_ = nullptr;
+  env_ = nullptr;
+  if (hwnd_ != nullptr) {
+    EnsureWebView();
+  }
 }
 
 void GlobalLookupWindow::ResolveBridge(int64_t id,

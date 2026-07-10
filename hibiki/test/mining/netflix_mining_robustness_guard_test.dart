@@ -268,12 +268,12 @@ void main() {
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');
         });
 
-        test('内容脚本版本标记 bump 到 v43（用户可确认新版）', () {
+        test('内容脚本版本标记 bump 到 v46（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-hibiki-cs', 'v43'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v43');
-          expect(src.contains('content script v43 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v43');
+          expect(src.contains("'data-hibiki-cs', 'v46'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v46');
+          expect(src.contains('content script v46 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v46');
         });
       });
     }
@@ -296,20 +296,23 @@ void main() {
               reason: '${content.path} 缓冲门未用 HAVE_FUTURE_DATA(3) 阈值');
         });
 
-        test('beginClip 前先暂停 + 等缓冲就绪（不吃头部提前量）', () {
+        test('beginClip 前先暂停 + 等 seek 落定 + 等缓冲就绪（不吃头部提前量）', () {
           final String src = content.readAsStringSync();
-          // seek 后暂停态等缓冲：v.pause() 紧邻 hibikiWaitForBuffered 调用（相邻即
-          // 「暂停后立刻等缓冲」，暂停不推进 currentTime → 保留 200ms 头部提前量）。
+          // seek 后暂停态依次等待：v.pause() → hibikiWaitForSeekSettled →
+          // hibikiWaitForBuffered → beginClip（暂停不推进 currentTime → 保留 200ms
+          // 头部提前量）。TODO-1361（BUG-685）在暂停与缓冲门之间加了 seek 落定门。
           final int pauseIdx = src.indexOf('try { v.pause(); } catch (_) {}');
+          final int settledIdx = src
+              .indexOf('await hibikiWaitForSeekSettled(v, targetSec, 4000);');
           final int bufIdx =
               src.indexOf('await hibikiWaitForBuffered(v, 3000);');
           final int beginIdx = src.indexOf("type: 'beginClip'");
           expect(pauseIdx, greaterThanOrEqualTo(0),
               reason: '${content.path} seek 后未暂停（保留头部提前量）');
-          expect(bufIdx, greaterThan(pauseIdx),
-              reason: '${content.path} 缓冲门未紧跟在暂停之后');
-          expect(bufIdx - pauseIdx, lessThan(80),
-              reason: '${content.path} 暂停与缓冲门不相邻');
+          expect(settledIdx, greaterThan(pauseIdx),
+              reason: '${content.path} seek 落定门未排在暂停之后');
+          expect(bufIdx, greaterThan(settledIdx),
+              reason: '${content.path} 缓冲门未排在 seek 落定门之后');
           expect(beginIdx, greaterThan(bufIdx),
               reason: '${content.path} 缓冲门未排在 beginClip 之前');
         });

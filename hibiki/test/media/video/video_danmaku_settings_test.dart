@@ -140,6 +140,48 @@ void main() {
       reloaded.dispose();
     });
   });
+
+  group('PreferencesRepository video danmaku style + block rules', () {
+    late HibikiDatabase db;
+    late PreferencesRepository repo;
+
+    setUp(() async {
+      db = _testDb();
+      repo = PreferencesRepository(db);
+      await repo.loadFromDb();
+    });
+
+    tearDown(() async {
+      repo.dispose();
+      await db.close();
+    });
+
+    test('style + block rules default to neutral / empty', () {
+      expect(repo.videoDanmakuStyle, VideoDanmakuStyle.defaults);
+      expect(repo.videoDanmakuBlockRulesText, isEmpty);
+    });
+
+    test('persists style (clamped) and block rules across reload', () async {
+      await repo.setVideoDanmakuStyle(const VideoDanmakuStyle(
+        fontScale: 5.0,
+        opacity: 0.4,
+        speedScale: 1.5,
+        areaFraction: 0.6,
+      ));
+      await repo.setVideoDanmakuBlockRulesText('spoiler\n' r'/^\d+$/');
+
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      final VideoDanmakuStyle style = reloaded.videoDanmakuStyle;
+      expect(style.fontScale, VideoDanmakuStyle.maxFontScale,
+          reason: 'out-of-range font scale is clamped on the way in');
+      expect(style.opacity, 0.4);
+      expect(style.speedScale, 1.5);
+      expect(style.areaFraction, 0.6);
+      expect(reloaded.videoDanmakuBlockRulesText, 'spoiler\n' r'/^\d+$/');
+      reloaded.dispose();
+    });
+  });
 }
 
 Future<T> _withMultipleDatabaseWarningDisabled<T>(

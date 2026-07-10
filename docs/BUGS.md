@@ -27,11 +27,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 671 条。点号进各自文件。
+> 共 693 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-685](bugs/BUG-685-selection-capture-clipboard-echo.md) | ✅ | ✅ | 全局查词抓选区的剪贴板回声泄漏进剪贴板查词管线 |
+| [BUG-707](bugs/BUG-707-selection-capture-clipboard-echo.md) | ✅ | ✅ | 全局查词抓选区的剪贴板回声泄漏进剪贴板查词管线 |
+| [BUG-706](bugs/BUG-706-lookup-popup-blank.md) | ✅ | ✅ | 查词弹窗全空白: __hibikiRoot 函数名与 window.__hibikiRoot marker 冲突 |
+| [BUG-705](bugs/BUG-705-font-catalog-stale-path.md) | ✅ | ✅ | 字体库字体丢失：数据根迁移/备份恢复后 font_catalog 路径失联 |
+| [BUG-704](bugs/BUG-704-min-window-dialog-overflow.md) | ✅ | ✅ | 最小窗高(TODO-1377 480px)下弹窗底部 RenderFlex 溢出 |
+| [BUG-703](bugs/BUG-703-mine-cover-case-insensitive.md) | ✅ | ✅ | 手机(Android)书籍阅读制卡缺封面(制卡与书架对封面路径大小写解析不对称) |
+| [BUG-702](bugs/BUG-702-netflix-maturity-overlay.md) | ✅ | ✅ | 网飞制卡时剧集开头的年龄分级 overlay 被录进卡片截图/gif（TODO-1391） |
+| [BUG-701](bugs/BUG-701-touchpad-wheel-subpixel.md) | ✅ | ✅ | 查词弹窗触控板滚轮亚像素步进丢帧（时好时坏） |
+| [BUG-700](bugs/BUG-700-desktop-clipboard-breakpoint.md) | ✅ | ✅ | 桌面剪贴板自动查词跨窗口尺寸断点后失效 |
+| [BUG-699](bugs/BUG-699-ghost-remote-book.md) | ✅ | ✅ | WebDAV-only 用户首屏闪现无内容的幽灵远端书 |
+| [BUG-698](bugs/BUG-698-dual-subtitle-slot-snap.md) | ✅ | ✅ | 两条字幕同显时字幕盒随活动集增减跳动（组内堆叠槽位不稳定） |
+| [BUG-697](bugs/BUG-697-fullscreen-gamepad-dead.md) | ✅ | ✅ | 视频全屏路由内手柄仅B返回可用（A/D-pad静默no-op） |
+| [BUG-696](bugs/BUG-696-nav-jump-lands-chapter-start.md) | ✅ | ✅ | 导航跳转落章节开头而非目标文字 |
+| [BUG-695](bugs/BUG-695-vertical-ruby-rtc-inline.md) | ✅ | ✅ | 竖排rtc形态振假名内联占字符格挤开基字 |
+| [BUG-694](bugs/BUG-694-logpanel-context-menu-crash.md) | ✅ | ✅ | 日志面板选中文本弹右键菜单崩溃（选区端点空断言） |
+| [BUG-693](bugs/BUG-693-overlay-webview-process-failed-selfheal.md) | ✅ | ✅ | 悬浮字幕点词覆盖窗死亡后永久没反应：overlay WebView2 无 ProcessFailed 自愈 |
+| [BUG-692](bugs/BUG-692-popup-dictionary-hidden-warm-webview-blocks-touch.md) | ✅ | ✅ | 安卓app外查词弹窗上下滑不动点击无反应（隐藏热槽屏内截触摸） |
+| [BUG-691](bugs/BUG-691-mine-icon-tofu-android.md) | ✅ | ✅ | 手机制完卡后制卡图标✓乱码/豆腐（Android WebView 缺符号字体） |
+| [BUG-690](bugs/BUG-690-sasayaki-active-lineheight-shift.md) | ✅ | ✅ | 竖排跟随句高亮激活时整段列平移（active 态 line-height:1 改写盒模型） |
+| [BUG-689](bugs/BUG-689-global-lookup-root-offwork-clip.md) | ✅ | ✅ | app外查词根卡靠屏右下生成在工作区外被裁 |
+| [BUG-688](bugs/BUG-688-ext-popup-theme-mismatch.md) | ✅ | ✅ | 浏览器扩展查词弹窗主题分裂：data-theme跟宿主页/--md-*跟app且漏--text-color/--background-color |
+| [BUG-687](bugs/BUG-687-longpress-arrow-sentence.md) | ✅ | ✅ | 长按左右键无法连续切句/连续翻页 |
+| [BUG-686](bugs/BUG-686-interconnect-book-progress-shelf-stale.md) | ✅ | ✅ | 互联同步书籍进度后书架不刷新(收端显示旧进度·观感=书籍没同步·有声书resume现读故正常) |
+| [BUG-685](bugs/BUG-685-netflix-seek-in-then-out-skip.md) | ✅ | ✅ | 网飞批量制卡 seek 过去马上跳走没录制（seek-in-then-out） |
 | [BUG-684](bugs/BUG-684-multi-subtitle-full.md) | ✅ | ✅ | 视频多字幕降级:同锚点MarginV裹挟+副字幕硬拽顶部 |
 | [BUG-683](bugs/BUG-683-first-card-taller.md) | ✅ | ✅ | 查词弹窗首个词典卡片比其他卡片高 |
 | [BUG-682](bugs/BUG-682-audio-image-mask-not-revealed.md) | ✅ | ✅ | 有声书音频跨过图片不去掉防剧透遮罩(未持久·懒图漏揭) |

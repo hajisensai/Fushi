@@ -9,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart'
         Sidebar,
         SidebarItems,
         SidebarItem,
+        MacosBackButton,
         MacosIcon;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -662,10 +663,24 @@ class _HomePageState extends BasePageState<HomePage>
   /// list (video/texthooker toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
+    // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
+    // route.canPop 时生成返回键；home（含 settings）是顶层 route、tab 是 IndexedStack
+    // 切换非 route push，故永远 canPop=false、无返回键。设计假设「设置靠根 sidebar 切
+    // 走」，可一旦 sidebar 因任何原因没了，设置 tab 就零出口困死。给设置 tab 一个**不
+    // 依赖 sidebar**的显式返回出口（切回来源 tab），与桌面 _buildDesktopLayout 的
+    // showBackButton:true 对齐——即便 sidebar 缺席也永不困死。
+    final bool showSettingsBack = _visibleTab == HomeTab.settings;
     return KeyedSubtree(
       key: hibikiMacosNavKey,
       child: MacosScaffold(
         toolBar: ToolBar(
+          leading: showSettingsBack
+              ? MacosBackButton(
+                  fillColor: Colors.transparent,
+                  onPressed: () => _selectTab(_previousTab),
+                )
+              : null,
+          automaticallyImplyLeading: false,
           title: Text(currentItem.label),
           titleWidth: 240,
         ),

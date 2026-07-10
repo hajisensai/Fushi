@@ -26,7 +26,10 @@ class CloudRemoteBookClient implements RemoteBookClient {
     required this.backend,
     required this.rootFolderId,
     this.contentProbeConcurrency = 4,
-  }) : assert(contentProbeConcurrency >= 1);
+    this.contentProbeRetries = 1,
+    this.contentProbeRetryBackoff = const Duration(milliseconds: 300),
+  })  : assert(contentProbeConcurrency >= 1),
+        assert(contentProbeRetries >= 0);
 
   /// 远端存储后端；务必是 `resolveSyncBackend` 的产物（带解混淆装饰层）。
   final SyncBackend backend;
@@ -37,6 +40,19 @@ class CloudRemoteBookClient implements RemoteBookClient {
   /// 内容探测（每本书一次 `listChildren`）的并发上限，默认 4：避免串行慢、又不打爆
   /// 云端 API 速率。
   final int contentProbeConcurrency;
+
+  /// 内容探测失败（异常/超时）时的有界重试次数（默认 1）：吸收首启 autoSync 与书架
+  /// 并发多路打同一 WebDAV 造成的瞬时超时/429。重试用尽仍失败即保守视为「未确证有
+  /// 内容」返 false，绝不 fail-open 放出幽灵书（BUG-699 / TODO-1384）。
+  final int contentProbeRetries;
+
+  /// 每次内容探测重试前的退避（默认 300ms）：给过载云端喘息，避免同 tick 连打。
+  /// 测试可置 [Duration.zero] 保持快速。
+  final Duration contentProbeRetryBackoff;
+
+  /// 云盘备份后端：书架远端分区用通用「云端书」文案（非「互联/对端设备」）。
+  @override
+  RemoteBookSourceKind get remoteSourceKind => RemoteBookSourceKind.cloud;
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async {
@@ -90,17 +106,28 @@ class CloudRemoteBookClient implements RemoteBookClient {
     return results;
   }
 
-  /// 该书文件夹是否含可下载的 `.epub` 内容资产。
+  /// 该书文件夹是否**确证**含可下载的 `.epub` 内容资产。
   ///
-  /// 逻辑镜像对比弹窗 / orchestrator 的远端内容查找：列子项找 `.epub`，列举失败
-  /// fail-open 返 true，避免一次瞬时网络错误把真实远端书隐藏掉。
+  /// 保守语义（BUG-699 / TODO-1384）：只有 `listChildren` 成功**且**含 `.epub` 才返
+  /// true。「确定无内容」（列举成功但无 .epub）与「探测失败」（异常/超时——首启
+  /// autoSync 与书架并发多路打同一 WebDAV 时的超时/429 是主因）**都返 false**：宁可
+  /// 真书在网络抖动时暂时不显示、下次刷新/同步再出，也绝不 fail-open 放出无内容 /
+  /// 探测不确定的幽灵书。
+  ///
+  /// 失败时做至多 [contentProbeRetries] 次有界退避重试吸收瞬时抖动；仍失败即 false。
+  /// 正确性不依赖重试成功——重试只降低把真书误藏的概率。
   Future<bool> _remoteFolderHasContent(String folderId) async {
-    try {
-      final List<AssetEntry> children = await backend.listChildren(folderId);
-      return children.any((AssetEntry e) =>
-          !e.isFolder && e.name.toLowerCase().endsWith('.epub'));
-    } catch (_) {
-      return true;
+    for (int attempt = 0;; attempt++) {
+      try {
+        final List<AssetEntry> children = await backend.listChildren(folderId);
+        return children.any((AssetEntry e) =>
+            !e.isFolder && e.name.toLowerCase().endsWith('.epub'));
+      } catch (_) {
+        if (attempt >= contentProbeRetries) return false;
+        if (contentProbeRetryBackoff > Duration.zero) {
+          await Future<void>.delayed(contentProbeRetryBackoff);
+        }
+      }
     }
   }
 

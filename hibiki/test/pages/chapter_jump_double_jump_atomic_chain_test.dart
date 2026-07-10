@@ -37,19 +37,22 @@ void main() {
         reason: '必须能把目标章内分数烘进导航（书签/收藏/字符跳转）');
     expect(body, contains('String? preciseLocateJs,'),
         reason: '必须能排入章内文本定位（搜索跳转，分数无法表达文本命中）');
-    // progress 必须透传给 _navigateToChapter（否则烘进导航失效、退回章首）。
-    expect(
-        body,
-        contains(
-            '_navigateToChapter(index, progress: progress, manual: manual)'),
-        reason: 'progress 必须转发给 _navigateToChapter → _beginNavigation');
+    // progress + charOffset 必须透传给 _navigateToChapter（否则烘进导航失效、退回章首）。
+    // TODO-1308 问题②：转发调用升级为多参（progress/charOffset/charOffsetEnd），
+    // 收藏跳转靠 charOffset 走精确字符锚，书签/字符跳转仍可走 progress。
+    expect(body, contains('_navigateToChapter(index,'),
+        reason:
+            'progress/charOffset 必须转发给 _navigateToChapter → _beginNavigation');
+    expect(body, contains('charOffset: charOffset,'),
+        reason: 'charOffset 必须转发（收藏绝对字符锚运输通道）');
+    expect(body, contains('progress: progress,'),
+        reason: 'progress 仍必须转发（书签/字符跳转分数路径）');
     // pending 必须绑定本次导航代际（并发导航去重，防应用到错误章节）。
     expect(body,
         contains('(generation: _navigateGeneration, js: preciseLocateJs)'),
         reason: 'pending 必须绑定 _navigateGeneration');
     // 绑定必须在 _navigateToChapter（递增代际）之后。
-    final int navIdx =
-        body.indexOf('_navigateToChapter(index, progress: progress');
+    final int navIdx = body.indexOf('_navigateToChapter(index,');
     final int bindIdx =
         body.indexOf('generation: _navigateGeneration, js: preciseLocateJs');
     expect(bindIdx, greaterThan(navIdx),
@@ -129,13 +132,24 @@ void main() {
     expect('hoshiReader.restoreProgress('.allMatches(bm).length, 1,
         reason: '书签只在同章分支保留一条 restoreProgress 调用，跨章分支不再滞后抢发');
 
-    final String fav =
-        slice('onJumpToFavorite: (fav) async {', 'onPlayFavorite:');
+    // TODO-1308 问题②（BUG-696）：收藏跳转从「烘分数」升级为「烘绝对字符锚」——
+    // fav.normCharOffset 是 getNormalizedOffset 的章内绝对可匹配字符索引（不是
+    // 0-10000 分数），跨章烘进 _navigateToChapterAndWait(charOffset:)、同章直接
+    // restoreToCharOffset。原子链（单次恢复、跨章分支不滞后抢发）语义不变，只是
+    // 恢复目标由分数换成精确字符锚。闭包已抽成 _jumpToFavoriteSentence 方法。
+    final String fav = slice(
+        'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {',
+        'class _ReaderGalleryPage extends StatefulWidget {');
     expect(fav, contains('_navigateToChapterAndWait('),
-        reason: '收藏跨章走 navigate-with-baked-progress');
-    expect(fav, contains('progress:'), reason: '收藏把目标分数烘进导航');
-    expect('hoshiReader.restoreProgress('.allMatches(fav).length, 1,
-        reason: '收藏只在同章分支保留一条 restoreProgress 调用');
+        reason: '收藏跨章走 navigate-with-baked-charOffset（原子恢复链）');
+    expect(fav, contains('charOffset: normCharOffset'),
+        reason: '收藏把目标绝对字符锚烘进导航（不再 /10000 当分数落章首）');
+    expect(fav.contains('progress:'), isFalse,
+        reason: '收藏跳转不得再把绝对字符索引当分数烘进 progress');
+    expect('hoshiReader.restoreProgress('.allMatches(fav).length, 0,
+        reason: '收藏同章分支改用 restoreToCharOffset 精确锚，不再 restoreProgress');
+    expect('restoreToCharOffset('.allMatches(fav).length, 1,
+        reason: '收藏同章分支保留一条 restoreToCharOffset 直接锚');
 
     final String charJump = slice(
       'Future<void> _jumpToGlobalCharOffset(int globalOffset) async {',

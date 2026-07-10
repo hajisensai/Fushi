@@ -391,6 +391,56 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final Offset anchor = overlay.globalToLocal(global);
     final double menuScale = _readerImageMenuScale;
 
+    // TODO-1366: mobile drag-select "export clip" -- same gate (book has audio
+    // cues) and same backend as the desktop right-click / native ActionMode
+    // menus, driven from the app-drawn selection payload instead of a native
+    // selection (mobile touch never builds one, TODO-1279).
+    final bool hasAudio = _audiobookController != null &&
+        _audiobookController!.chapterCueCount > 0;
+    final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
+      PopupMenuItem<String>(
+        value: 'search',
+        height: kMinInteractiveDimension * menuScale,
+        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.search_outlined, size: 18.0 * menuScale),
+            SizedBox(width: 12.0 * menuScale),
+            Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
+          ],
+        ),
+      ),
+      PopupMenuItem<String>(
+        value: 'copy',
+        height: kMinInteractiveDimension * menuScale,
+        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.copy_outlined, size: 18.0 * menuScale),
+            SizedBox(width: 12.0 * menuScale),
+            Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
+          ],
+        ),
+      ),
+      if (hasAudio)
+        PopupMenuItem<String>(
+          value: 'export',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.movie_creation_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.audiobook_export_clip,
+                  style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+    ];
+
     final String? action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -402,41 +452,18 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         maxWidth: 280.0 * menuScale,
       ),
       menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
-      items: <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(
-          value: 'search',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(Icons.search_outlined, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
-              Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'copy',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
-              Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
-            ],
-          ),
-        ),
-      ],
+      items: items,
     );
     if (!mounted) return;
     switch (action) {
       case 'search':
         // Reuse the tap lookup pipeline verbatim: the drag payload IS a
         // ReaderSelectionData, so currentSentence / cue / highlight convergence
-        // / popup all behave exactly like a tap-word lookup.
+        // / popup all behave exactly like a tap-word lookup. The grips are for
+        // adjusting the range before lookup; once we converge to the matched
+        // word they no longer describe the selection, so drop the grips (the
+        // converged highlight stays for the popup).
+        await _hideReaderSelectionHandles();
         await _handleTextSelected(data);
         return;
       case 'copy':
@@ -444,9 +471,18 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         HibikiToast.show(msg: t.copied_to_clipboard);
         await _clearReaderAppSelection();
         return;
-      default:
-        // Dismissed: drop the app-drawn selection highlight (no lookup).
+      case 'export':
+        // TODO-1366: same backend as desktop (_exportAudiobookClip) but fed from
+        // the app-drawn selection payload; clear grips + highlight afterward.
+        await _exportAudiobookClipFromSelectionData(data);
         await _clearReaderAppSelection();
+        return;
+      default:
+        // TODO-1366: dismissing the menu no longer cancels the selection -- keep
+        // the highlight + grips live so the user can drag a handle to adjust the
+        // range and re-open the menu (lookup only on an explicit confirm). Any
+        // later tap clears it: tap on text -> selectText clears + looks up; tap
+        // on empty -> onTapEmpty -> _clearReaderAppSelection.
         return;
     }
   }
@@ -510,6 +546,24 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final ReaderSelectionData data = ReaderSelectionData.fromJson(json);
     if (data.text.isEmpty) return null;
 
+    // TODO-1366：状态填充与移动端拖选菜单「导出片段」共用 _fillLookupStateFromSelectionData
+    // （currentSentence 非空契约 + cue + 归一化区间 + 章号）。原生选区路径的选区此刻仍在，
+    // 故抽取选区夹带插图（extractNativeImages: true）；移动端自绘拖选无原生选区，传 false。
+    await _fillLookupStateFromSelectionData(data, extractNativeImages: true);
+    return data;
+  }
+
+  /// TODO-1366：把一个已解析的 [ReaderSelectionData]（tap 查词 / 移动端拖选菜单 payload /
+  /// 原生选区解析结果同构）填进导出/查词所需的选区状态——currentSentence（非空契约）、
+  /// [_lookupCue]、[_cachedSelectionRange]、[_cachedSentenceRange]、[_cachedSentenceOffset]、
+  /// [_cachedSelectionSectionIndex]——但**不**触发 highlight / 弹窗 / 暂停。
+  /// [extractNativeImages] 为 true 时（右键 / 原生 ActionMode 菜单，选区仍是原生选区）额外
+  /// 抽取选区夹带的 EPUB 插图；移动端自绘拖选无原生选区，传 false → 插图列表清空（不泄漏
+  /// 上一次原生选区抽出的图）。
+  Future<void> _fillLookupStateFromSelectionData(
+    ReaderSelectionData data, {
+    required bool extractNativeImages,
+  }) async {
     // currentSentence 非空契约（与 lookup.part.dart tap 写点一致）：句子优先、退回选中词。
     appModel.currentMediaSource?.setCurrentSentence(
       selection: HibikiTextSelection(
@@ -541,12 +595,41 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             length: data.sentenceNormalizedLength!,
           )
         : null;
-    // BUG-492：原生选区路径同样锁定所属章号（详见 _cachedSelectionSectionIndex）。
+    // BUG-492：选区路径同样锁定所属章号（详见 _cachedSelectionSectionIndex）。
     _cachedSelectionSectionIndex = _lookupSectionIndex;
     // TODO-1127：与选区状态同批抽取选区里夹带的 EPUB 插图（供片段导出把图渲进卡片）。
-    // 选区仍在（我们正读它），此刻抽取 src + 归一化位置最稳。无图 → 空列表，零副作用。
-    _cachedSelectionImages = await _extractSelectionClipImages();
-    return data;
+    _cachedSelectionImages = extractNativeImages
+        ? await _extractSelectionClipImages()
+        : const <({int normOffset, Uint8List bytes})>[];
+  }
+
+  /// TODO-1366：移动端拖选菜单「导出片段」。拖选是 app 自绘选区（无原生选区），故从菜单
+  /// payload [data]（含句级 normOffset/normLength，与 tap / 原生选区同构）填状态，再走既有
+  /// [_exportAudiobookClip] 导出链（四类边界兜底：空选区 / 无音频 / 跨章跨文件 / 可导出
+  /// 原样生效）。与桌面右键 / 原生 ActionMode 的「导出片段」共用同一后端动作。
+  Future<void> _exportAudiobookClipFromSelectionData(
+      ReaderSelectionData data) async {
+    if (data.text.isEmpty) {
+      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+      return;
+    }
+    await _fillLookupStateFromSelectionData(data, extractNativeImages: false);
+    if (!mounted) return;
+    _exportAudiobookClip();
+  }
+
+  /// TODO-1366：只隐藏拖选起止手柄（不清选区 / 高亮）——查词收敛到匹配词后，手柄不再描述
+  /// 整段拖选区间，隐藏它们但保留收敛后的查词高亮供弹窗用。半销毁 WebView 上 eval 抛异常，
+  /// 吞掉（无手柄可隐藏）。
+  Future<void> _hideReaderSelectionHandles() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: 'window.hoshiSelection.hideSelectionHandles()',
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.hideReaderSelectionHandles', e, stack);
+    }
   }
 
   /// TODO-1127：从**当前原生选区**抽取夹带的 EPUB 插图字节（供片段导出渲进卡片）。
@@ -1390,29 +1473,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
                 fav.sectionIndex ?? _currentChapter);
           }
         },
-        onJumpToFavorite: (fav) async {
-          if (fav.sectionIndex == null) return;
-          final int? normCharOffset = fav.normCharOffset;
-          if (fav.sectionIndex != _currentChapter) {
-            // TODO-1309：跨章收藏跳转同书签——有分数就把它烘进导航（progress）单次原子恢复
-            // 落点；无分数（罕见旧数据）仅导航到章首（既有行为，无落点可定位）。都不再「先落
-            // 章首再抢发 restoreProgress」被 settle-reflow 冲回章首。
-            await _navigateToChapterAndWait(
-              fav.sectionIndex!,
-              manual: true,
-              progress: normCharOffset != null ? normCharOffset / 10000.0 : 0.0,
-            );
-            return;
-          }
-          if (!mounted || _controller == null) return;
-          if (normCharOffset != null) {
-            final double progress = normCharOffset / 10000.0;
-            await _controller!.evaluateJavascript(
-              source:
-                  'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
-            );
-          }
-        },
+        onJumpToFavorite: _jumpToFavoriteSentence,
         onPlayFavorite: _audiobookController == null
             ? null
             : (fav) async {
@@ -1967,6 +2028,44 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       await _refreshSectionHighlights(section);
     }
     HibikiToast.show(msg: t.favorite_added);
+  }
+
+  /// TODO-1308 问题②（BUG-696 根因①）：书内收藏面板跳转的唯一真实路径——quick
+  /// settings sheet 的 onJumpToFavorite 与 debugJumpToFavorite 测试钩子都走这里。
+  Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {
+    if (fav.sectionIndex == null) return;
+    final int? normCharOffset = fav.normCharOffset;
+    // TODO-1308 问题②（BUG-696 根因①）：fav.normCharOffset 是写入端
+    // （lookup.part / mining.part 的 sentenceNormalizedOffset，即 JS
+    // getNormalizedOffset）产的**章内绝对可匹配字符索引**（0..数千），不是书签的
+    // 0-10000 进度分数。旧代码把它 /10000.0 当分数还原 → 0.0x 分数恒落章节开头。
+    // BUG-459 只修了收藏页冷启动入口（charAnchor 绝对锚），书内收藏面板这条
+    // 从未修到；TODO-1309 重写 handler 时又原样保留了 /10000。改走与冷启动
+    // 同构的绝对字符锚链：跨章把 charOffset（+句尾锚，BUG-461 整句对齐）烘进
+    // 导航原子恢复；同章直接 restoreToCharOffset（与 restoreProgress 同族
+    // restore 入口，notifyRestoreComplete 副作用形状一致）。书签（onJumpToBookmark）
+    // 的 normCharOffset 才是真分数，/10000 保持不变。
+    final int? favLen = fav.normCharLength;
+    final int charOffsetEnd =
+        (normCharOffset != null && favLen != null && favLen > 0)
+            ? normCharOffset + favLen
+            : -1;
+    if (fav.sectionIndex != _currentChapter) {
+      await _navigateToChapterAndWait(
+        fav.sectionIndex!,
+        manual: true,
+        charOffset: normCharOffset,
+        charOffsetEnd: charOffsetEnd,
+      );
+      return;
+    }
+    if (!mounted || _controller == null) return;
+    if (normCharOffset != null) {
+      await _controller!.evaluateJavascript(
+        source: 'window.hoshiReader && window.hoshiReader'
+            '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
+      );
+    }
   }
 }
 

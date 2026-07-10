@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 
@@ -267,13 +268,31 @@ KeyEventResult _handleGlobalToggleFullscreen(
 bool get _isDesktopWindow =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
-/// Flips the main window between fullscreen and windowed. Reads the current
-/// state with [WindowManager.isFullScreen] (same call
-/// [DesktopWindowPlacement.saveCurrentBoundsNow] uses) and inverts it. Any
-/// platform-channel failure is swallowed with a debug log so a stray key press
-/// can never crash the app.
+/// Flips the main window between fullscreen and windowed.
+///
+/// TODO-1375：全屏切换必须由 NSWindow 的**唯一所有者**执行。macOS 壳用
+/// macos_window_utils（[WindowManipulator]）持有 NSWindow.delegate（透明标题栏 /
+/// sidebar vibrancy / 全屏 presentation options 都挂它），而 window_manager 想把
+/// 自己设成 delegate 却在初始化时被 macos_window_utils 覆盖——两者各持一份 NSWindow
+/// 引用与各自的全屏认知。若 macOS 仍走 [WindowManager.setFullScreen]（内部
+/// `toggleFullScreen(nil)`），进出全屏时 delegate 通知全被 macos_window_utils 截获、
+/// window_manager 的 WindowListener 收不到，状态机在双栈间走岔（TODO-1375 症状①：
+/// 全屏退出后 sidebar 卡死）。故 macOS 全屏统一改走 [WindowManipulator]
+/// （enter/exit/isWindowFullscreened，底层同样是 `toggleFullScreen`，但由 delegate
+/// 所有者自洽驱动）。Windows / Linux 无此双栈问题，保持 window_manager。
+///
+/// 任何 platform-channel 失败都以 debug 日志吞掉，杂散按键永不崩应用。
 Future<void> _toggleWindowFullscreen() async {
   try {
+    if (Platform.isMacOS) {
+      final bool current = await WindowManipulator.isWindowFullscreened();
+      if (current) {
+        await WindowManipulator.exitFullscreen();
+      } else {
+        await WindowManipulator.enterFullscreen();
+      }
+      return;
+    }
     final bool current = await windowManager.isFullScreen();
     await windowManager.setFullScreen(!current);
   } catch (e) {

@@ -17,6 +17,11 @@ VideoQuickSettingsSheet _sheet({
   void Function(bool)? onDanmakuEnabledChanged,
   void Function(bool)? onDanmakuOnlineEnabledChanged,
   void Function(int)? onDanmakuMaxActiveChanged,
+  void Function(VideoDanmakuStyle)? onDanmakuStylePreview,
+  void Function(VideoDanmakuStyle)? onDanmakuStyleCommit,
+  void Function(String)? onDanmakuBlockRulesChanged,
+  VoidCallback? onManualDanmakuMatch,
+  String initialDanmakuBlockRules = '',
 }) {
   return VideoQuickSettingsSheet(
     initialDelayMs: 0,
@@ -53,6 +58,15 @@ VideoQuickSettingsSheet _sheet({
     onDanmakuMaxActiveChanged: (int value) async {
       onDanmakuMaxActiveChanged?.call(value);
     },
+    onDanmakuStylePreview: onDanmakuStylePreview,
+    onDanmakuStyleCommit: (VideoDanmakuStyle style) async {
+      onDanmakuStyleCommit?.call(style);
+    },
+    initialDanmakuBlockRules: initialDanmakuBlockRules,
+    onDanmakuBlockRulesChanged: (String value) async {
+      onDanmakuBlockRulesChanged?.call(value);
+    },
+    onManualDanmakuMatch: onManualDanmakuMatch,
   );
 }
 
@@ -83,7 +97,12 @@ void main() {
       ),
     );
 
-    // TODO-640：顶栏分类 chip 改纯图标（无文字），按稳定 id key 命中弹幕分类。
+    // 按稳定 id key 命中弹幕分类 chip（不依赖标签文案）。TODO-1351 全文标签把顶栏
+    // 撑宽，末位分类可能在横滑视口外，先滑入视口再点（模拟真实用户横滑）。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
     );
@@ -125,6 +144,76 @@ void main() {
     maxRow.onChanged(120);
     await tester.pump();
     expect(maxActive, 120);
+  });
+
+  testWidgets('video settings exposes danmaku style, filter and manual match',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    VideoDanmakuStyle? preview;
+    VideoDanmakuStyle? committed;
+    String? rules;
+    bool manualOpened = false;
+    await _pump(
+      tester,
+      _sheet(
+        onDanmakuStylePreview: (VideoDanmakuStyle s) => preview = s,
+        onDanmakuStyleCommit: (VideoDanmakuStyle s) => committed = s,
+        onDanmakuBlockRulesChanged: (String v) => rules = v,
+        onManualDanmakuMatch: () => manualOpened = true,
+      ),
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
+    );
+    await tester.pumpAndSettle();
+
+    // Style sliders present.
+    expect(find.textContaining(t.video_setting_danmaku_font_scale),
+        findsOneWidget);
+    expect(
+        find.textContaining(t.video_setting_danmaku_opacity), findsOneWidget);
+    expect(find.textContaining(t.video_setting_danmaku_speed), findsOneWidget);
+    expect(find.textContaining(t.video_setting_danmaku_area), findsOneWidget);
+
+    // Font-scale slider preview + commit reach the callbacks.
+    final AdaptiveSettingsSliderRow fontRow =
+        tester.widget<AdaptiveSettingsSliderRow>(
+      find.byWidgetPredicate((Widget w) =>
+          w is AdaptiveSettingsSliderRow &&
+          w.title.startsWith(t.video_setting_danmaku_font_scale)),
+    );
+    fontRow.onChanged(1.5);
+    await tester.pump();
+    expect(preview?.fontScale, 1.5);
+    fontRow.onChangeEnd!(1.5);
+    await tester.pump();
+    expect(committed?.fontScale, 1.5);
+
+    // Manual match navigation row triggers the callback.
+    final AdaptiveSettingsNavigationRow manualRow =
+        tester.widget<AdaptiveSettingsNavigationRow>(
+      find.widgetWithText(
+        AdaptiveSettingsNavigationRow,
+        t.video_setting_danmaku_manual_match,
+      ),
+    );
+    manualRow.onTap();
+    await tester.pump();
+    expect(manualOpened, isTrue);
+
+    // Block-rules field forwards edits.
+    await tester.enterText(
+      find.byKey(const Key('danmaku-block-rules-field')),
+      'spoiler',
+    );
+    await tester.pump();
+    expect(rules, 'spoiler');
   });
 
   test(
@@ -182,5 +271,34 @@ void main() {
       isNot(
           contains('onDanmakuEnabledChanged: appModel.setVideoDanmakuEnabled')),
     );
+  });
+
+  test('source guard: danmaku style/filter/manual-match wired end to end', () {
+    final String page = readVideoHibikiSource();
+    final String overlay =
+        File('lib/src/media/video/video_danmaku_overlay.dart')
+            .readAsStringSync();
+    final String layout = File('lib/src/media/video/video_danmaku_layout.dart')
+        .readAsStringSync();
+
+    // Overlay consumes the block-filtered list and applies the style.
+    expect(page, contains('items: _danmakuVisibleItems'));
+    expect(page, contains('style: _danmakuStyle'));
+    expect(overlay, contains('style.opacity'));
+    expect(overlay, contains('fontScale'));
+    expect(layout, contains('areaFraction'));
+    expect(layout, contains('fontScale'));
+
+    // Page wires style preview/commit + block rules + manual match.
+    expect(page, contains('onDanmakuStylePreview: _previewVideoDanmakuStyle'));
+    expect(page, contains('onDanmakuStyleCommit: _setVideoDanmakuStyle'));
+    expect(
+      page,
+      contains('onDanmakuBlockRulesChanged: _setVideoDanmakuBlockRules'),
+    );
+    expect(page, contains('onManualDanmakuMatch: _openDanmakuManualMatch'));
+    expect(page, contains('Future<void> _bindDanmakuEpisode'));
+    expect(page, contains('client.searchEpisodes'));
+    expect(page, contains('filterVideoDanmaku'));
   });
 }

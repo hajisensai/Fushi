@@ -10,6 +10,7 @@ class VideoDanmakuOverlay extends StatefulWidget {
     required this.maxActive,
     required this.positionMs,
     this.maxLanes = kDefaultVideoDanmakuMaxLanes,
+    this.style = VideoDanmakuStyle.defaults,
     super.key,
   });
 
@@ -18,6 +19,9 @@ class VideoDanmakuOverlay extends StatefulWidget {
   final int maxActive;
   final int maxLanes;
   final int Function() positionMs;
+
+  /// TODO-1376：字号/不透明度/速度/显示区域样式（即改即生效，源自全局偏好）。
+  final VideoDanmakuStyle style;
 
   @override
   State<VideoDanmakuOverlay> createState() => _VideoDanmakuOverlayState();
@@ -67,6 +71,7 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
         child: SizedBox.expand(),
       );
     }
+    final VideoDanmakuStyle style = widget.style;
     return IgnorePointer(
       key: const Key('video-danmaku-ignore-pointer'),
       ignoring: true,
@@ -82,6 +87,10 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
                 viewportSize: constraints.biggest,
                 maxActive: widget.maxActive,
                 maxLanes: widget.maxLanes,
+                scrollDuration: style.scrollDuration,
+                fixedDuration: style.fixedDuration,
+                fontScale: style.fontScale,
+                areaFraction: style.areaFraction,
               );
               if (snapshot.entries.isEmpty) return const SizedBox.expand();
               return Stack(
@@ -92,8 +101,13 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
                       left: entry.position.dx,
                       top: entry.position.dy,
                       child: Opacity(
-                        opacity: entry.opacity,
-                        child: _DanmakuText(entry: entry),
+                        opacity: (entry.opacity * style.opacity)
+                            .clamp(0.0, 1.0)
+                            .toDouble(),
+                        child: _DanmakuText(
+                          entry: entry,
+                          fontScale: style.fontScale,
+                        ),
                       ),
                     ),
                 ],
@@ -107,9 +121,10 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
 }
 
 class _DanmakuText extends StatelessWidget {
-  const _DanmakuText({required this.entry});
+  const _DanmakuText({required this.entry, required this.fontScale});
 
   final VideoDanmakuLayoutEntry entry;
+  final double fontScale;
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +138,7 @@ class _DanmakuText extends StatelessWidget {
         softWrap: false,
         style: TextStyle(
           color: Color(entry.item.colorArgb),
-          fontSize: 20,
+          fontSize: 20 * fontScale,
           fontWeight: FontWeight.w700,
           shadows: const <Shadow>[
             Shadow(

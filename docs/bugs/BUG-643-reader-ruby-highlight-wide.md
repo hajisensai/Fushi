@@ -6,6 +6,7 @@
 - **[x] ① 已修复** — `hibiki/lib/src/reader/reader_pagination_scripts.dart` 不再为 sasayaki 普通正文设置 CSS Highlight，统一把普通文本包成 `.hoshi-sasayaki-cue` span，ruby 节点继续分流成 `ruby.hoshi-sasayaki-ruby-active`；`hibiki/lib/src/reader/reader_content_styles.dart` 统一用 `--hoshi-highlight-lane-color` + `background-image` 画正文基字窄条，并给 active 普通 cue span 加 `line-height: 1 !important`，避免继承正文行高把「の顔色が変わった」这类无 ruby 片段刷宽。
 - **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_content_styles_test.dart` 增加竖排 ruby/普通 cue span 的窄 lane 守卫，覆盖“普通正文不能直接 background-color，且 active span 必须 line-height: 1”；`hibiki/test/reader/ruby_highlight_guard_test.dart` 增加源码守卫，禁止 sasayaki 再回到 `CSS.highlights.set('hoshi-sasayaki', ...)`。
 - **备注**：
+  - 2026-07-10 更新（BUG-690/TODO-1371）：本条给 active 普通 cue span 加的 `line-height: 1 !important` 被证实会在书籍 CSS strut < 1em 时改写行盒厚度、竖排下逐句平移后续列，已移除；1em 窄条宽度实际由 `background-size`（绘制层）保证，与 line-height 无关，本条「高亮条变宽」不回归（守卫仍在 reader_content_styles_test / ruby_highlight_guard_test）。
   - 已跑 `flutter test --no-test-assets test/reader/reader_content_styles_test.dart --plain-name 'vertical sasayaki text spans draw only the base text lane'`，先红后绿。
   - 已跑 `flutter test --no-test-assets test/reader/reader_content_styles_test.dart test/reader/ruby_highlight_guard_test.dart test/reader/favorite_audio_highlight_overlap_test.dart test/reader/sasayaki_cue_mapping_drift_test.dart test/reader/diagnostic_logging_guard_test.dart`。
   - 已用 Xcode 27 beta 2 / iOS 27 在 HUAWEI 17 安装并启动 profile 包到书架；因 iPhone Mirroring 要求先锁定手机才能接管，尚未完成原书页目标句截图复测。

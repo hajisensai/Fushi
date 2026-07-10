@@ -207,6 +207,10 @@ class _FakeRemoteBookClient implements RemoteBookClient {
   final List<String> downloadedTitles = <String>[];
 
   @override
+  RemoteBookSourceKind get remoteSourceKind =>
+      RemoteBookSourceKind.interconnect;
+
+  @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
         RemoteBookInfo.fromJson(<String, Object?>{
           'title': 'Remote Book',

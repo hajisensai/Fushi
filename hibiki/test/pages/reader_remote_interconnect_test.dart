@@ -149,6 +149,28 @@ void main() {
     expect(source.toLowerCase(), isNot(contains('computer')));
   });
 
+  testWidgets(
+      'cloud backend shelf uses generic cloud labels, never interconnect '
+      '(BUG-699 / TODO-1384)', (WidgetTester tester) async {
+    // WebDAV / GDrive 等云盘后端经 CloudRemoteBookClient 适配，来源类型是 cloud：
+    // 分区必须用通用「云端书」文案，绝不显示「互联 / 对端设备」（WebDAV-only 用户
+    // 从没配过互联）。
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      sourceKind: RemoteBookSourceKind.cloud,
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.remote_book_cloud), findsOneWidget);
+    expect(find.text(t.remote_book_cloud_device), findsOneWidget);
+    // 互联专属文案绝不出现在云盘分区。
+    expect(find.text(t.remote_book_interconnect), findsNothing);
+    expect(find.text(t.remote_book_paired_device), findsNothing);
+    // 远端书本身照常渲染。
+    expect(find.text('Remote Book'), findsOneWidget);
+  });
+
   testWidgets('remote book uses the shelf card cover layout',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -396,13 +418,18 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     this.title = 'Remote Book',
     this.bookKey,
     this.hasAudiobook = false,
+    this.sourceKind = RemoteBookSourceKind.interconnect,
   });
 
   final String coverPath;
   final String title;
   final String? bookKey;
   final bool hasAudiobook;
+  final RemoteBookSourceKind sourceKind;
   final List<String> downloadedTitles = <String>[];
+
+  @override
+  RemoteBookSourceKind get remoteSourceKind => sourceKind;
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[

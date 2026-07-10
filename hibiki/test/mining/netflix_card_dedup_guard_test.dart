@@ -44,13 +44,15 @@ void main() {
 
       test('[$root] Bug C：确认在播即刻 beginClip，不用固定 warmup 吃掉头部提前量', () {
         final String src = File('$root/content.js').readAsStringSync();
+        // TODO-1361（BUG-685）后「确认在播」由 hibikiWaitForPlaying 承担：以 currentTime
+        // 真正前进为唯一判据，条件满足即返回 → 即刻 beginClip，仍无固定 warmup。
         expect(
             src.contains(
-                'for (let i = 0; i < 8 && v.paused; i++) { try { await v.play(); } catch (_) {} await sleep(60); }'),
+                'const advancing = await hibikiWaitForPlaying(v, 4000);'),
             isTrue,
-            reason: '$root content.js 缺确认在播即刻开录轮询（Bug C）');
-        final int playIdx = src.indexOf('try { await v.play(); } catch (_) {}\n'
-            '        for (let i = 0; i < 8');
+            reason: '$root content.js 缺确认在播（currentTime 前进）门（Bug C）');
+        final int playIdx =
+            src.indexOf('const advancing = await hibikiWaitForPlaying');
         final int beginIdx = src.indexOf("type: 'beginClip'");
         expect(playIdx >= 0 && beginIdx > playIdx, isTrue,
             reason: '$root content.js beginClip 顺序异常');

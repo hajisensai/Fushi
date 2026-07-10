@@ -335,6 +335,11 @@ class _SeriesNameDialogState extends State<_SeriesNameDialog> {
       child: HibikiModalSheetFrame(
         title: widget.title,
         leadingIcon: Icons.collections_bookmark_outlined,
+        // TODO-1389：外层 HibikiDialogFrame(maxHeightFactor:0.74, scrollable:false) 给有界
+        // 高度；body 是含 92x120 封面大图 + 输入框的非滚动 Column，最小窗高 480（客户区
+        // ≈440）下会顶破 0.74 界底部溢出（尤其更大字号 / 紧凑间距）。scrollable:true 提供
+        // 滚动兜底，矮窗可滚不溢出。
+        scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,

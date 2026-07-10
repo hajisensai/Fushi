@@ -134,12 +134,12 @@ void _expectNoFlutterErrors(WidgetTester tester) {
   expect(exceptions, isEmpty);
 }
 
-/// 宽窗顶栏分类 chip 的稳定 key（与 video_quick_settings_sheet.dart 同步，TODO-640
-/// 起 chip 改纯图标无文字，测试 / 焦点驱动只能靠 id key 命中）。
+/// 宽窗顶栏分类 chip 的稳定 key（与 video_quick_settings_sheet.dart 同步）：测试 /
+/// 焦点驱动统一靠 id key 命中，不依赖标签文案（TODO-1351 起 chip 为「图标 + 完整文字」）。
 Finder _categoryChip(String id) =>
     find.byKey(ValueKey<String>('video-settings-cat-$id'));
 
-/// 切换到某分类：宽窗点纯图标 chip（按 id key），窄窗点带文字的分类导航行（按 label）。
+/// 切换到某分类：宽窗点顶栏 chip（按 id key），窄窗点带文字的分类导航行（按 label）。
 /// 两端语义统一，调用方不必关心当前是宽 / 窄窗。
 Future<void> _tapCategory(
   WidgetTester tester,
@@ -327,7 +327,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // TODO-640：顶栏 chip 改纯图标（无文字），六个分类按 id key 命中；默认选中
+    // 顶栏 chip 按 id key 命中（TODO-1351 起「图标 + 完整文字」）；默认选中
     // playback → 下方详情顶部用大标题标出当前分类 + 显示音画延迟 + 倍速。
     for (final String id in <String>[
       'playback',
@@ -337,10 +337,10 @@ void main() {
       'danmaku',
       'controls',
     ]) {
-      expect(_categoryChip(id), findsOneWidget, reason: '$id 必须是顶栏纯图标分类 chip');
+      expect(_categoryChip(id), findsOneWidget, reason: '$id 必须是顶栏分类 chip');
     }
-    // 选中分类（playback）的标题在详情区顶部呈现（纯图标 chip 无文字，靠它认当前项）。
-    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
+    // 选中分类（playback）标签出现两处：顶栏 chip 完整文字（TODO-1351）+ 详情区大标题。
+    expect(find.text(t.video_settings_cat_playback), findsNWidgets(2));
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
     expect(find.text(t.video_setting_speed), findsOneWidget);
     // 上下分栏无 push：无返回箭头。
@@ -384,8 +384,8 @@ void main() {
   });
 
   testWidgets(
-      'wide category bar is icon-only with tooltips (no inline label) even at '
-      'UI scale 2.0 (TODO-640)', (tester) async {
+      'wide category bar renders full inline labels without truncation even '
+      'at UI scale 2.0 (TODO-1351)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1320, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpScaled(
@@ -397,8 +397,9 @@ void main() {
       scale: 2.0,
     );
 
-    // TODO-640：顶栏 chip 改纯图标——长英文标签（含 UI scale 2.0）不再占顶栏空间，
-    // 根除「图标 + 文字」挤不下 / 显示不全。每个 chip 内无内联文字 label，只有图标。
+    // TODO-1351（用户复诉）：分类 tab 必须「图标 + 完整文字」显示（参考「检查器」式
+    // tab），标签按固有宽度完整渲染、不得省略号截断；顶栏空间不够时整条横滑兜底
+    // （TODO-640 的纯图标 + tooltip 方案被用户否决）。
     expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
     for (final ({String id, IconData icon, String label}) cat
         in <({String id, IconData icon, String label})>[
@@ -406,6 +407,11 @@ void main() {
         id: 'playback',
         icon: Icons.play_circle_outline,
         label: t.video_settings_cat_playback
+      ),
+      (
+        id: 'audio',
+        icon: Icons.audiotrack_outlined,
+        label: t.video_settings_cat_audio
       ),
       (
         id: 'shaders',
@@ -430,24 +436,32 @@ void main() {
       ),
     ]) {
       final Finder chip = _categoryChip(cat.id);
-      expect(chip, findsOneWidget, reason: '${cat.id} 必须是纯图标分类 chip');
-      // chip 内有该分类图标。
+      // 全文标签把顶栏撑宽，末位分类可能在横滑视口外，先滑入视口再断言几何。
+      await tester.ensureVisible(chip);
+      await tester.pumpAndSettle();
+      expect(chip, findsOneWidget, reason: '${cat.id} 必须是顶栏分类 chip');
+      // chip 内有该分类图标（图标 + 文字并列，观感对齐「检查器」tab）。
       expect(find.descendant(of: chip, matching: find.byIcon(cat.icon)),
           findsOneWidget,
           reason: '${cat.id} chip 须渲染分类图标');
-      // chip 内无内联文字 label（文字说明改走 tooltip）——
-      // 唯一例外是当前选中项的标题在详情区，不在 chip 内部。
-      expect(find.descendant(of: chip, matching: find.text(cat.label)),
-          findsNothing,
-          reason: '${cat.id} chip 不应再内联渲染文字标签（TODO-640 仅图标）');
-      // 文字说明经 tooltip 提供（hover / 长按）。
-      expect(find.descendant(of: chip, matching: find.byType(Tooltip)),
-          findsOneWidget,
-          reason: '${cat.id} chip 须用 tooltip 给文字说明');
-      final Tooltip tip = tester.widget<Tooltip>(
-          find.descendant(of: chip, matching: find.byType(Tooltip)));
-      expect(tip.message, cat.label,
-          reason: '${cat.id} chip 的 tooltip 文案应是分类标签');
+      // chip 内联渲染完整文字标签（TODO-1351 用户复诉：不许只剩图标 / tooltip）。
+      final Finder labelText =
+          find.descendant(of: chip, matching: find.text(cat.label));
+      expect(labelText, findsOneWidget,
+          reason: '${cat.id} chip 必须内联渲染完整文字标签（TODO-1351）');
+      // 标签不得省略号截断：Text 配置为 visible（allowLabelOverflow）……
+      final Text labelWidget = tester.widget<Text>(labelText);
+      expect(labelWidget.overflow, TextOverflow.visible,
+          reason: '${cat.id} 标签不得用 ellipsis 截断（TODO-1351）');
+      // ……且实际布局宽度容纳全部文字（按固有宽度完整铺开，无视觉裁切）。
+      final RenderParagraph paragraph =
+          tester.renderObject<RenderParagraph>(labelText);
+      expect(
+        paragraph.size.width,
+        greaterThanOrEqualTo(
+            paragraph.getMaxIntrinsicWidth(double.infinity) - 0.5),
+        reason: '${cat.id} 标签必须按固有宽度完整渲染，不得被压缩截断（TODO-1351）',
+      );
     }
     _expectNoFlutterErrors(tester);
   });
@@ -479,7 +493,7 @@ void main() {
         scale: sizeCase.scale,
       );
 
-      // 分类入口可达：窄窗是带文字的导航行，宽窗是纯图标 chip（按 id key）。
+      // 分类入口可达：窄窗是带文字的导航行，宽窗是顶栏 chip（按 id key）。
       expect(
         find.text(t.video_settings_cat_subtitle).evaluate().isNotEmpty ||
             _categoryChip('subtitle').evaluate().isNotEmpty,
@@ -638,7 +652,7 @@ void main() {
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     // 顶部分类条里的「播放」chip 是固定锚点（chip 行钉在顶部、随详情滚动不动）。
-    // TODO-640：纯图标 chip 无文字，按 id key 命中。
+    // chip 按 id key 命中（不依赖标签文案）。
     final Finder categoryAnchor = _categoryChip('playback');
     expect(categoryAnchor, findsOneWidget);
     final Offset before = tester.getTopLeft(categoryAnchor);
@@ -1239,8 +1253,16 @@ void main() {
 
     await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
-    // 音频分组仍在（变速保持音高 / 声道 / 归一化），但不再有音频延迟行。
-    expect(find.text(t.video_setting_mpv_group_audio), findsOneWidget);
+    // 音频分组仍在（变速保持音高 / 声道 / 归一化），但不再有音频延迟行。分组标题
+    // 限定在设置分区内命中：顶栏「音频」分类 chip 的全文标签（TODO-1351）与 mpv
+    // 音频分组同名（英文都是 Audio），不加限定会多命中顶栏 chip。
+    expect(
+      find.descendant(
+        of: find.byType(AdaptiveSettingsSection),
+        matching: find.text(t.video_setting_mpv_group_audio),
+      ),
+      findsOneWidget,
+    );
     expect(find.text(t.video_setting_mpv_pitch), findsOneWidget);
   });
 
@@ -1555,8 +1577,8 @@ void main() {
     // 进入控制分类详情（宽窗上下分栏顶部 chip 行）。「控制」是末位分类，在窄宽窗下
     // 横向 chip 行里可能排到视口外（TODO-427-③），先横滑入视口再点（模拟真实用户横滑）。
     Future<void> openControls(WidgetTester tester) async {
-      // TODO-640：纯图标分类 chip 无文字，经 id key 命中（_tapCategory 自动处理
-      // 宽窗 icon chip / 窄窗 push 导航行两端）。
+      // 分类 chip 经 id key 命中（_tapCategory 自动处理宽窗顶栏 chip / 窄窗 push
+      // 导航行两端）。
       await _tapCategory(tester, 'controls', t.video_settings_cat_controls);
     }
 
@@ -2130,8 +2152,8 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
 
-      // 大分类一律渲染成顶栏纯图标 chip（无左右 master-detail、无左栏列表项）。
-      // TODO-640：chip 无文字，按 id key 命中。
+      // 大分类一律渲染成顶栏 chip（无左右 master-detail、无左栏列表项），按 id
+      // key 命中（不依赖标签文案）。
       expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
       expect(find.byType(HibikiListItem), findsNothing);
       for (final String id in <String>[
@@ -2146,7 +2168,10 @@ void main() {
             reason: '$id must be a top-bar category chip');
       }
 
-      // 选「mpv」分类（顶栏纯图标 chip）→ 下方详情切到 mpv 详情，无 push 返回箭头。
+      // 选「mpv」分类（顶栏 chip）→ 下方详情切到 mpv 详情，无 push 返回箭头。
+      // TODO-1351 全文标签把顶栏撑宽，末位分类可能在视口外，先横滑入视口再点。
+      await tester.ensureVisible(_categoryChip('mpv'));
+      await tester.pumpAndSettle();
       await tester.tap(_categoryChip('mpv'));
       await tester.pumpAndSettle();
       expect(find.text(t.video_setting_mpv_deband), findsOneWidget);
@@ -2173,14 +2198,15 @@ void main() {
           reason: '视频设置宽窗不得再回退到左右 master-detail（书籍设置才用它）');
       expect(src, isNot(contains('_buildWidePane(')),
           reason: '旧左栏构建器 _buildWidePane 必须删除');
-      // TODO-640：顶栏 chip 改纯图标 + tooltip（文字说明 hover / 长按），不再内联文字
-      // 标签；详情顶部用大标题标出当前分类。
-      expect(src, contains('iconOnly: true'),
-          reason: '顶栏分类 chip 须为仅图标模式（TODO-640，文字挤不下改 tooltip）');
-      expect(src, contains('tooltip: cat.label'),
-          reason: '纯图标 chip 须用分类标签作 tooltip（hover / 长按显示文字说明）');
+      // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」标签，按固有宽度完整
+      // 渲染（allowLabelOverflow，无 ellipsis），放不下由横滑条兜底；TODO-640 的
+      // 纯图标 + tooltip 方案废弃，不得回退。
+      expect(src, contains('allowLabelOverflow: true'),
+          reason: '顶栏分类 chip 标签须完整渲染不省略（TODO-1351）');
+      expect(src, isNot(contains('iconOnly: true')),
+          reason: '顶栏分类 chip 不得退回仅图标模式（TODO-1351 用户复诉）');
       expect(src, contains('_buildWideDetailTitle('),
-          reason: '宽窗详情顶部须渲染当前分类标题（纯图标顶栏后用户靠标题认当前项）');
+          reason: '宽窗详情顶部须渲染当前分类标题（详情区页头）');
     });
   });
 
@@ -2192,7 +2218,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
-      // 参考「检查器」的 视频 / 音频 / 字幕 tab 都在顶栏（按 id key 命中纯图标 chip）。
+      // 参考「检查器」的 视频 / 音频 / 字幕 tab 都在顶栏（按 id key 命中 chip）。
       expect(_categoryChip('playback'), findsOneWidget);
       expect(_categoryChip('audio'), findsOneWidget, reason: '音频 tab 必须存在');
       expect(_categoryChip('subtitle'), findsOneWidget);

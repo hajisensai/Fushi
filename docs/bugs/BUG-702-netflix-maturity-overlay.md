@@ -1,0 +1,7 @@
+## BUG-702 · 网飞制卡时剧集开头的年龄分级 overlay 被录进卡片截图/gif（TODO-1391）
+
+- **报告**：2026-07-10（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/assets/browser_extension/content.js` 的 `hibikiNetflixNextEpisodeSelectors()`（约 :799，TODO-1361 ① 引入的常驻 CSS 隐藏机制 `#hibiki-nf-hide-next`）只隐藏 Netflix 剧末「下一集」按钮 + 剧末续播/evidence overlay，**未覆盖剧集开头左上角短暂显示的年龄分级/成熟度评级 overlay**。批量制卡会切集/seek/play 播放器，Netflix 在集头重新渲染该分级 badge，正好落进录制窗口 → 被 tabCapture 录进卡片截图/gif。同类问题、同一机制缺一条 selector，不是新机制。
+- **[x] ① 已修复** — 复用同一 `#hibiki-nf-hide-next` 常驻 CSS + 同一 `netflixHideNextEpisode` 开关门控（缺省=隐藏），往 `hibikiNetflixNextEpisodeSelectors()` 追加 3 条播放器作用域的年龄分级选择器：`[class*="watch-video--maturity-rating"]`（集头容器 + 哈希类名变体）、`.watch-video [data-uia*="maturity"]`（播放器内 data-uia 自动化钩子）、`.watch-video [class*="maturity-rating"]`（播放器内嵌套评级节点）。作用域限定播放器 `.watch-video` / `watch-video--` 前缀，不误伤浏览页的评级角标。同步 `hibiki/assets/browser_extension/content.js` 与 `tools/browser-extension/content.js` 两镜像（逐字节一致），横幅 v45→v46，options.html 隐藏说明同步补一句。提交见分支 `todo1391-netflix-maturity`。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/netflix_todo1391_maturity_overlay_guard_test.dart`：两镜像都断言年龄分级 selector 在隐藏清单里 + 复用 `hibiki-nf-hide-next` / `netflixHideNextEpisode`。版本守卫 `netflix_bug685_seek_gate_guard_test.dart` / `netflix_mining_robustness_guard_test.dart` 随 v46 更新；两镜像逐字节一致由 `browser_extension_dict_media_mirror_guard_test.dart` 强制。
+- **备注**：Netflix 的播放器 DOM 未公开、类名会加哈希后缀，故用 `class*=` / `data-uia*=` 子串匹配兜底；真机验证门=真 Netflix 制卡看卡片截图/gif 里不再出现年龄分级 badge（本环境无 Netflix 登录态，无法离屏收敛此门）。若 Netflix 改了容器命名导致某 selector 失效，属外部平台变动，按同机制再补一条 selector 即可。

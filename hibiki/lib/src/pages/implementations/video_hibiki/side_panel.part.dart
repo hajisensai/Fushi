@@ -87,6 +87,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return t.video_chapters;
       case _VideoSidePanelKind.quality:
         return t.video_quality;
+      case _VideoSidePanelKind.danmakuMatch:
+        return t.video_danmaku_manual_match_title;
     }
   }
 
@@ -96,6 +98,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return 560;
       case _VideoSidePanelKind.chapters:
         return 420;
+      case _VideoSidePanelKind.danmakuMatch:
+        return 480;
       case _VideoSidePanelKind.speed:
       case _VideoSidePanelKind.quality:
         return 320;
@@ -115,6 +119,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return _buildChapterSidePanel(controller);
       case _VideoSidePanelKind.quality:
         return _buildQualitySidePanel(controller);
+      case _VideoSidePanelKind.danmakuMatch:
+        return _buildDanmakuMatchSidePanel();
     }
   }
 

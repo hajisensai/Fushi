@@ -1,0 +1,12 @@
+## BUG-699 · WebDAV-only 用户首屏闪现无内容的幽灵远端书
+- **报告**：2026-07-10（用户：TODO-1384 问题①）
+- **真实性**：✅ 真 bug。两个真实根因（均沿 origin/develop@29c0fa9de 核实）：
+  1. **fail-open 误放无内容文件夹**：`hibiki/lib/src/sync/cloud_remote_book_client.dart:97-105` `_remoteFolderHasContent` 在 `catch (_) { return true; }`。首启 `triggerAutoSyncOnAppOpen` 后台全量同步与书架并发多路 `listChildren` 打同一 WebDAV → 探测超时/429 → fail-open 当「有内容」放出 → 无内容文件夹（只有封面/进度元数据、无 `.epub`）作幽灵书经 `remote.part.dart:46` 的 `.where(hasContent)` 通过、闪现；第二次启动同步压力小、探测成功 → hasContent=false → 连分区一起消失。瞬时态 `_remoteBooksFuture` 不落库，无持久残留。
+  2. **分区标签对所有后端硬编码「互联/对端设备」**：`hibiki/lib/src/pages/implementations/reader_history/remote.part.dart:103/107` `_buildRemoteBookSection` 用 `remote_book_interconnect`/`remote_book_paired_device` 文案，与后端类型无关（`_resolveRemoteBookClient` 把非 hibikiServer 的一切后端含 WebDAV 都包成 `CloudRemoteBookClient`，remote.part.dart:25-31）→ WebDAV 用户从没配过互联却看到「互联/对端设备」。
+- **[x] ① 已修复** — 提交 本轮（分支 todo1384-ghost-remote-book）
+  1. **fail-open → 保守**：`_remoteFolderHasContent` 改为「只有 `listChildren` 成功且含 `.epub` 才返 true」；「确定无内容」与「探测失败（异常/超时）」都返 `false`，绝不 fail-open 放出无内容/探测不确定的幽灵书。失败时做至多 `contentProbeRetries`（默认 1）次有界退避重试（`contentProbeRetryBackoff` 默认 300ms，测试可置 0）吸收瞬时抖动；仍失败即保守 `false`。正确性不依赖重试成功——真书被瞬时抖动误藏时下次刷新/同步再出。
+  2. **标签按后端类型**：新增 `RemoteBookSourceKind { interconnect, cloud }`（`remote_book_client.dart`）+ `RemoteBookClient.remoteSourceKind` 契约；`HibikiClientSyncBackend`→interconnect、`CloudRemoteBookClient`→cloud。`_RemoteBookState` 带上 `sourceKind`，`_buildRemoteBookSection` 按 kind 分流标题/副标题/加载失败文案（互联用「互联/对端设备」，云盘用新 i18n `remote_book_cloud`/`remote_book_cloud_device`/`remote_book_cloud_load_failed`，17 语言经 i18n_sync 落齐 + slang 重新生成）。
+- **[x] ② 已加自动化测试** — 提交 本轮（分支 todo1384-ghost-remote-book）
+  - `hibiki/test/sync/cloud_remote_book_client_test.dart`：① 翻转旧 fail-open 用例为「listChildren 持续抛异常 → hasContent=false + 有界重试调用 listChildren 两次」；② 新增「一次瞬时失败后重试成功 → 真书 hasContent=true 不被误藏」。
+  - `hibiki/test/pages/reader_remote_interconnect_test.dart`：新增「云盘后端（sourceKind=cloud）分区用 `remote_book_cloud`/`remote_book_cloud_device`，绝不出现 `remote_book_interconnect`/`remote_book_paired_device`」，与既有互联用例互为对照。
+- **备注**：网络竞态（首启 autoSync 与书架并发打爆 WebDAV 致探测超时）难在离屏/真机稳定复现，单元层锁住两个根因（保守探测 + 按后端类型分流文案）即可。真机验证门：需 WebDAV-only 账号首启 + 弱网/并发压测复测原始闪现路径，声明为待真机验证。fail-open 改保守对正常远端书的影响：确证有 `.epub` 的真书不受影响（探测成功即 true）；仅在探测失败（异常/超时）时该书本次不显示，一次有界重试后仍失败才暂藏，下次刷新/同步恢复——用「短暂不显示」换掉「放出幽灵书」，符合 TODO-1384 取舍。

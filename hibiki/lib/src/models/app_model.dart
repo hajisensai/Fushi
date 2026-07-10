@@ -39,6 +39,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
@@ -475,7 +476,9 @@ class AppModel with ChangeNotifier {
       dictionarySearchAgainNotifier.notifyListeners();
     }
 
-    if (report.booksImported > 0 || report.audiobooksImported > 0) {
+    if (report.booksImported > 0 ||
+        report.audiobooksImported > 0 ||
+        report.localBookProgressPulled > 0) {
       ReaderMediaType.instance.refreshTab();
     }
 
@@ -592,6 +595,17 @@ class AppModel with ChangeNotifier {
   /// READ surface, fed from the same gated presence callback, so the reader's
   /// behaviour is byte-for-byte preserved (Never break userspace).
   final ValueNotifier<bool> gamepadImmersiveActive = ValueNotifier<bool>(false);
+
+  /// TODO-1375：媒体（阅读器 / 视频）是否打开的**可靠**通知源，专供 macOS 原生壳的
+  /// 根 sidebar 显隐门控（main.dart 的 MacosWindow）。根因：sidebar 过去直接读
+  /// `isMediaOpen`（= `_currentMediaSource != null`）在 MaterialApp.builder 里求值，
+  /// 靠 `ref.watch(appProvider)` 重建——但 [openMedia] / [closeMedia] 只改
+  /// `_currentMediaSource` 却**从不** notifyListeners，于是退出阅读器后 builder 不重跑、
+  /// sidebar 卡在上一次求值的 `null`（永久消失 → 设置 tab 失去唯一切换出口 → 困死）。
+  /// 用这个独立 ValueNotifier 在 open/close 里精确 set，配合 ValueListenableBuilder，
+  /// 退出媒体必然重建并恢复 sidebar（单一真值源 + 保证通知），且不触发全局根重建。
+  /// 非 macOS 平台不读它（阅读器是盖满的整页路由，与壳 sidebar 无关），纯 no-op。
+  final ValueNotifier<bool> mediaOpenNotifier = ValueNotifier<bool>(false);
 
   /// Polls physical game controllers and dispatches them into the shortcut /
   /// focus pipeline on platforms where the Flutter engine does not deliver
@@ -1686,6 +1700,9 @@ class AppModel with ChangeNotifier {
   Future<void> injectAssetLicenses() async {
     final packageNames = [
       'ebook-reader',
+      // TODO-1368/BUG-691: "Hibiki Symbols" = renamed 3-glyph subset of
+      // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
+      'dejavu-fonts',
     ];
 
     for (String packageName in packageNames) {
@@ -1861,6 +1878,24 @@ class AppModel with ChangeNotifier {
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
+      // TODO-1393 self-heal: recover custom-font entries whose stored absolute
+      // path went stale (data-root move / pre-fix backup restore that never
+      // rebased `font_catalog` / iOS reinstall / profile-import stripped path) by
+      // relocating them onto same-basename files still present under the current
+      // `<documents>/custom_fonts`. Runs before the font resolution below so the
+      // app-wide + subtitle fonts load from healed paths on first paint. Idempotent
+      // (a no-op DB touch when every path already resolves).
+      try {
+        final int relocated = await readerSettings.healMissingFontFilePaths(
+          path.join(appDirectory.path, 'custom_fonts'),
+        );
+        if (relocated > 0) {
+          debugPrint(
+              '[Hibiki] init: relocated $relocated stale custom-font path(s) to current custom_fonts dir');
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.healFontPaths', e, stack);
+      }
       // Register the user's custom app-wide font (first enabled entry) before
       // first paint so the global theme uses it without a flash. Reuses the
       // settings just loaded above to avoid a second prefs read.
@@ -2222,12 +2257,23 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
-    // 内容缩放：与 in-app popupContentZoom 同公式，但扩展弹窗在宿主浏览器原生缩放下，
-    // 不叠加 app 的 appUiScale（那是 app 窗口的缩放，与浏览器无关）→ 只跟词典字号。
+    // BUG-688：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
+    // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
+    // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
+    // 是页面根 documentElement，无此问题；扩展只能缩放浮层嵌套容器）。要更大在词典字号设置里调。
     final double rawZoom = dictionaryFontSize / 16.0;
     final double zoom =
         (rawZoom.isFinite && rawZoom > 0) ? rawZoom.clamp(0.3, 8.0) : 1.0;
     return <String, String>{
+      // BUG-688：content.css/popup.css 的正文色/底色直接读 --text-color / --background-color
+      // （见 content.css `color: var(--text-color)` / `background-color: var(--background-color)`）。
+      // 与 in-app _themeVariablesJs 一致地下发这两个核心变量；漏了它们会导致弹窗容器色回落到
+      // data-theme 块的 #000/#fff 或宿主页继承（主题分裂：米卡 + 黑底 + 灰字）。
+      '--text-color': rgb(s.onSurface),
+      '--background-color': rgb(_overrideDictionaryColor ?? s.surface),
+      // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
+      // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
+      '--hibiki-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
       '--md-surface-container-high':
           rgb(_overrideDictionaryColor ?? s.surfaceContainerHigh),
       '--md-surface-container': rgb(s.surfaceContainer),
@@ -2518,6 +2564,18 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoDanmakuEpisodeId(String bookUid, int episodeId) =>
       prefsRepo.setVideoDanmakuEpisodeId(bookUid, episodeId);
+
+  /// 弹幕样式（字号/不透明度/速度/显示区域，TODO-1376）。
+  VideoDanmakuStyle get videoDanmakuStyle => prefsRepo.videoDanmakuStyle;
+
+  Future<void> setVideoDanmakuStyle(VideoDanmakuStyle style) =>
+      prefsRepo.setVideoDanmakuStyle(style);
+
+  /// 弹幕屏蔽规则原始多行文本（每行一条，`/pattern/` 为正则，TODO-1376）。
+  String get videoDanmakuBlockRulesText => prefsRepo.videoDanmakuBlockRulesText;
+
+  Future<void> setVideoDanmakuBlockRulesText(String value) =>
+      prefsRepo.setVideoDanmakuBlockRulesText(value);
 
   /// 桌面视频页按视频原始比例锁定原生窗口；默认开启。
   bool get videoLockWindowAspectRatio => prefsRepo.videoLockWindowAspectRatio;
@@ -3194,6 +3252,8 @@ class AppModel with ChangeNotifier {
     if (item != null) {
       _currentMediaItem = item;
     }
+    // TODO-1375：把「媒体已打开」推给可靠通知源，让 macOS 根 sidebar 隐藏（阅读全宽）。
+    mediaOpenNotifier.value = true;
 
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
@@ -3246,6 +3306,9 @@ class AppModel with ChangeNotifier {
     mediaSource.clearExtraData();
     _currentMediaSource = null;
     _currentMediaItem = null;
+    // TODO-1375：把「媒体已关闭」推给可靠通知源，保证退出阅读器后 macOS 根 sidebar
+    // 必然重建恢复（不再依赖碰巧有别的 notifyListeners 触发 builder 重跑）。
+    mediaOpenNotifier.value = false;
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
     blockCreatorInitialMedia = false;
@@ -3837,6 +3900,7 @@ class AppModel with ChangeNotifier {
     databaseCloseNotifier.dispose();
     homeDictionaryTabRequest.dispose();
     gamepadImmersiveActive.dispose();
+    mediaOpenNotifier.dispose();
     // session 的控制流订阅引用 audioCtrl 的 stream，须在 audioCtrl.dispose 前拆。
     audiobookSession.dispose();
     audioCtrl.dispose();
