@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "Касание плавающих субтитров для поиска слова",
   "floating_lyric_click_lookup_hint": "Оставьте включённым с фиксацией положения, если хотите сохранить поиск слов.",
   "desktop_clipboard_window_mode": "Закрепление окна",
-  "desktop_clipboard_window_mode_hint": "Определяет, остаётся ли Hibiki поверх других окон. Следит за буфером обмена и глобальной горячей клавишей только на вкладке поиска.",
   "desktop_clipboard_window_mode_lookup": "Только при поиске",
   "desktop_clipboard_window_mode_normal": "Выкл.",
   "desktop_clipboard_window_mode_always": "Всегда",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

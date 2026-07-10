@@ -285,10 +285,9 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.desktopClipboardEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
+              // spec 2026-07-10 §7：setter 内部经 applyDesktopClipboardLifecycle
+              // 幂等 start/stop，此处不再直接操作服务。
               await settingsContext.appModel.setDesktopClipboardEnabled(value);
-              if (!value) {
-                await DesktopLookupService.instance.stop();
-              }
               settingsContext.refresh();
             },
           ),

@@ -1425,7 +1425,6 @@
   "desktop_clipboard_window_mode": "Épinglage de la fenêtre",
   "desktop_clipboard_window_mode_normal": "Désactivé",
   "desktop_clipboard_window_mode_lookup": "Recherche uniquement",
-  "desktop_clipboard_window_mode_hint": "Détermine si Hibiki reste au-dessus des autres fenêtres. Ne surveille le presse-papiers et le raccourci global que dans l'onglet de recherche.",
   "desktop_clipboard_window_mode_always": "Toujours",
   "popup_instant_scroll": "Défilement instantané de la fenêtre",
   "popup_instant_scroll_hint": "Pour les écrans e-ink : la fenêtre de recherche saute par paliers fixes, sans animation de défilement.",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

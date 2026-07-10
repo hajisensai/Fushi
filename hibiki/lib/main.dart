@@ -377,6 +377,9 @@ void main([List<String> args = const <String>[]]) {
         try {
           await WidgetsBinding.instance.endOfFrame;
           await GlobalLookupController.instance.start(appModel: appModel);
+          // spec 2026-07-10 §7 — 剪贴板监听 app 级启动（生命周期归 AppModel；
+          // 覆盖窗控制器先启动，路由端 isAvailable 判定才准确）。
+          await appModel.applyDesktopClipboardLifecycle();
         } catch (e) {
           debugPrint('[Hibiki] global lookup start failed (non-fatal): $e');
         }

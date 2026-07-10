@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "点击悬浮字幕查词",
   "floating_lyric_click_lookup_hint": "锁定悬浮字幕位置时仍可保留点击查词。",
   "desktop_clipboard_window_mode": "窗口置顶策略",
-  "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方；仅在查词界面监听剪贴板和全局热键",
   "desktop_clipboard_window_mode_always": "始终置顶",
   "desktop_clipboard_window_mode_lookup": "仅查词期间",
   "desktop_clipboard_window_mode_normal": "不置顶",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "阅读、视频与制卡统计",
   "backup_category_settings_desc": "应用与阅读器设置",
   "backup_category_profiles_desc": "配置方案",
-  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。"
+  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。",
+  "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方"
 }

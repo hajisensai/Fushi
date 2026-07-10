@@ -43,19 +43,28 @@ void main() {
         reason: '不能再假设 service 发现剪贴板文本时已唤前台');
   });
 
-  test('HomeDictionaryPage owns desktop lookup service only while mounted', () {
+  // spec 2026-07-10 §7 生命周期上移：start/stop 归 AppModel（app 级监听，面板/
+  // 瞬态去向要求 tab 卸载后监听继续跑）；页面退化为 mainTab 分区的消费者，消费
+  // 必须过 resolveDesktopLookupConsumer 路由（防与 DesktopLookupDispatcher 双消费）。
+  test(
+      'HomeDictionaryPage consumes mainTab partition; lifecycle owned by '
+      'AppModel (spec 2026-07-10 §7)', () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
-    expect(src.contains('DesktopLookupService.instance.start'), isTrue,
-        reason: '进入查词页时才允许启动桌面剪贴板/热键监听');
-    expect(src.contains('DesktopLookupService.instance.stop'), isTrue,
-        reason: '离开查词页时必须停止桌面剪贴板/热键监听');
+    final String model = read('lib/src/models/app_model.dart');
+    expect(src.contains('DesktopLookupService.instance.start'), isFalse,
+        reason: '服务生命周期归 AppModel.applyDesktopClipboardLifecycle，'
+            '页面只消费不启动');
+    expect(src.contains('DesktopLookupService.instance.stop'), isFalse,
+        reason: '面板/瞬态去向要求监听在词典 tab 卸载后继续运行');
+    expect(model.contains('applyDesktopClipboardLifecycle'), isTrue,
+        reason: '服务启停仍受用户设置控制（enabled 开关经 AppModel 应用）');
     expect(src.contains('DesktopLookupService.instance.addListener'), isTrue,
-        reason: '查词页直接消费剪贴板/热键命中');
+        reason: '查词页直接消费剪贴板/热键命中（mainTab 分区）');
     expect(src.contains('DesktopLookupService.instance.removeListener'), isTrue,
         reason: '查词页 dispose 时必须移除监听');
-    expect(src.contains('desktopClipboardEnabled'), isTrue,
-        reason: '服务启停仍受用户设置控制');
+    expect(src.contains('resolveDesktopLookupConsumer'), isTrue,
+        reason: '消费必须过去向路由分区，防与 DesktopLookupDispatcher 双消费');
     // _search 支持 autoRead 覆盖（默认 null = 沿用 autoReadOnLookup，向后兼容）。
     expect(src.contains('bool? autoRead'), isTrue,
         reason: '_search 必须支持 autoRead 覆盖参数');
@@ -87,10 +96,14 @@ void main() {
         reason: '必须可选择仅查词期间置顶模式');
     expect(schema.contains('DesktopClipboardWindowMode.always'), isTrue,
         reason: '必须可选择始终置顶模式');
-    expect(en.contains('Only watches the clipboard and global hotkey'), isTrue,
-        reason: '英文文案必须说明只在查词页监听');
-    expect(zh.contains('仅在查词界面监听剪贴板和全局热键'), isTrue,
-        reason: '中文文案必须说明只在查词界面启用桌面剪贴板查词');
+    // spec 2026-07-10 §7：监听已上移 app 级，「仅在查词界面监听」的旧文案失效，
+    // 置顶策略 hint 只描述置顶行为，且旧措辞不得复活。
+    expect(en.contains('Controls whether Hibiki stays above other windows'),
+        isTrue,
+        reason: '英文文案描述窗口置顶策略');
+    expect(en.contains('Only watches the clipboard and global hotkey'), isFalse,
+        reason: '「仅在查词页监听」已随生命周期上移（spec §7）失效，不得复活');
+    expect(zh.contains('仅在查词界面监听'), isFalse, reason: '同上：中文旧措辞不得复活');
     expect(zh.contains('"desktop_clipboard_window_mode": "窗口置顶策略"'), isTrue);
     expect(
         zh.contains('"desktop_clipboard_window_mode_normal": "不置顶"'), isTrue);
@@ -109,11 +122,11 @@ void main() {
       () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
-    // 挂载即排一帧无条件消费已存在 pending（在 initState 里，且不在
-    // _startDesktopLookupIfEnabled 的 desktopClipboardEnabled 门控内）。
+    // 挂载即排一帧无条件消费已存在 pending。spec 2026-07-10 §7 后页面已无
+    // 启停分支（旧守卫的 _startDesktopLookupIfEnabled 门控整体消失，消费天然
+    // 无条件），这里以消费回调为界扫描 initState 区段锁 post-frame 接线。
     final int initStart = src.indexOf('void initState()');
-    final int initEnd =
-        src.indexOf('Future<void> _startDesktopLookupIfEnabled');
+    final int initEnd = src.indexOf('void _onDesktopLookupPending');
     expect(initStart, isNonNegative);
     expect(initEnd, isNonNegative);
     final String initBody = src.substring(initStart, initEnd);
@@ -121,15 +134,8 @@ void main() {
         reason: 'initState 必须排一帧消费已存在的 pending');
     expect(initBody.contains('_onDesktopLookupPending()'), isTrue,
         reason: 'initState 的 post-frame 必须无条件消费 pending（不受剪贴板开关门控）');
-    // start 分支内不得再调消费（消费已下放到 initState 无条件路径），避免回到
-    // 「只有剪贴板开启才消费」的旧门控。
-    final int startStart = initEnd;
-    final int startEnd = src.indexOf('void _onDesktopLookupPending');
-    expect(startEnd, isNonNegative);
-    final String startBody = src.substring(startStart, startEnd);
-    expect(startBody.contains('_onDesktopLookupPending()'), isFalse,
-        reason:
-            '消费不能门控在 desktopClipboardEnabled 分支（_startDesktopLookupIfEnabled）里');
+    expect(src.contains('_startDesktopLookupIfEnabled'), isFalse,
+        reason: 'spec §7：页面级启停分支必须保持删除状态（生命周期归 AppModel）');
   });
 
   // TODO-376 返工守卫 B：桌面悬浮字幕点词是**显式**手势，由 reader 经

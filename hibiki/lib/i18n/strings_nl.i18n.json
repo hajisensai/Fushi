@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "Tik op zwevende ondertitel om op te zoeken",
   "floating_lyric_click_lookup_hint": "Houd dit aan met positievergrendeling als je nog steeds woorden wilt opzoeken.",
   "desktop_clipboard_window_mode": "Venster vastzetten",
-  "desktop_clipboard_window_mode_hint": "Bepaalt of Hibiki boven andere vensters blijft. Bewaakt het klembord en de globale sneltoets alleen op het opzoektabblad.",
   "desktop_clipboard_window_mode_always": "Altijd",
   "desktop_clipboard_window_mode_lookup": "Alleen tijdens opzoeken",
   "desktop_clipboard_window_mode_normal": "Uit",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

@@ -882,8 +882,12 @@ class AppModel with ChangeNotifier {
   /// [HomeDictionaryPage] 挂载并消费 [DesktopLookupService.pendingText]。
   ///
   /// 这是与被动剪贴板监听**正交**的显式导航原语：HomePage 监听本信号只切 tab，不监听
-  /// DesktopLookupService、也不在剪贴板被动命中时自动切 tab（守卫：剪贴板/热键查词仅
-  /// 在查词页生命周期内消费，HomePage 根节点不常驻 DesktopLookupService 监听）。
+  /// DesktopLookupService、也不在剪贴板被动命中时自动切 tab。
+  ///
+  /// spec 2026-07-10 §7 后的守卫新事实：DesktopLookupService 的 start/stop 已上移
+  /// AppModel（[applyDesktopClipboardLifecycle]，app 级监听），消费按
+  /// resolveDesktopLookupConsumer 分区——mainTab 分区仍只由 HomeDictionaryPage
+  /// 消费（tab 未挂载时 pending 排队），HomePage 根节点依旧不消费查词请求。
   final ValueNotifier<int> homeDictionaryTabRequest = ValueNotifier<int>(0);
 
   /// 发一次「打开查词 tab」请求（桌面悬浮字幕点词等显式手势调）。
@@ -3967,8 +3971,27 @@ class AppModel with ChangeNotifier {
       prefsRepo.setTexthookerUrls(urls);
 
   bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
-  Future<void> setDesktopClipboardEnabled(bool v) =>
-      prefsRepo.setDesktopClipboardEnabled(v);
+  Future<void> setDesktopClipboardEnabled(bool v) async {
+    await prefsRepo.setDesktopClipboardEnabled(v);
+    await applyDesktopClipboardLifecycle();
+  }
+
+  /// spec 2026-07-10 §7 生命周期上移：剪贴板监听归 AppModel 持有（开=start /
+  /// 关=stop），HomeDictionaryPage 退化为 destination==main 分区的消费者。此前
+  /// start/stop 绑词典 tab 挂载周期——那是「去向只有主窗 tab」时代的产物；
+  /// 面板/瞬态去向要求 app 级监听（tab 未挂载时 pending 排队语义 TODO-376 已有）。
+  /// 启动期由 main.dart 桌面块调用一次；设置开关切换时经
+  /// [setDesktopClipboardEnabled] 幂等重入（service.start 对已运行是 no-op）。
+  Future<void> applyDesktopClipboardLifecycle() async {
+    if (!DesktopLookupService.isDesktop) return;
+    if (desktopClipboardEnabled) {
+      await DesktopLookupService.instance.start(
+        windowMode: desktopClipboardWindowMode,
+      );
+    } else {
+      await DesktopLookupService.instance.stop();
+    }
+  }
 
   // TODO-1030 M0 — 全局查词是否抓取选中文本上下文（隐私敏感，默认关）。
   bool get globalContextCaptureEnabled => prefsRepo.globalContextCaptureEnabled;

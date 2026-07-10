@@ -1426,7 +1426,6 @@
   "desktop_clipboard_window_mode_normal": "ปิด",
   "desktop_clipboard_window_mode_always": "เสมอ",
   "desktop_clipboard_window_mode_lookup": "เฉพาะตอนค้นคำ",
-  "desktop_clipboard_window_mode_hint": "ควบคุมว่า Hibiki จะอยู่เหนือหน้าต่างอื่นหรือไม่ จะเฝ้าดูคลิปบอร์ดและฮอตคีย์ทั่วระบบเฉพาะในแท็บค้นคำ",
   "popup_instant_scroll": "เลื่อนหน้าต่างค้นคำแบบทันที",
   "popup_instant_scroll_hint": "สำหรับจอ e-ink: เลื่อนหน้าต่างค้นคำเป็นระยะคงที่แบบทันทีโดยไม่มีอนิเมชัน",
   "remote_video_interconnect": "Hibiki Interconnect",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

@@ -1425,7 +1425,6 @@
   "desktop_clipboard_window_mode": "Fenster anheften",
   "desktop_clipboard_window_mode_normal": "Aus",
   "desktop_clipboard_window_mode_lookup": "Nur beim Nachschlagen",
-  "desktop_clipboard_window_mode_hint": "Steuert, ob Hibiki über anderen Fenstern bleibt. Überwacht Zwischenablage und globales Tastenkürzel nur im Nachschlagen-Tab.",
   "desktop_clipboard_window_mode_always": "Immer",
   "popup_instant_scroll": "Sofortiges Popup-Scrollen",
   "popup_instant_scroll_hint": "Lässt das Nachschlage-Popup ohne Scroll-Animation um feste Distanzen springen – für E-Ink-Bildschirme.",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

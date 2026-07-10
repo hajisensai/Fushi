@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "플로팅 자막을 탭해 단어 찾기",
   "floating_lyric_click_lookup_hint": "위치를 고정해도 단어 찾기를 쓰려면 이 옵션을 켜 두세요.",
   "desktop_clipboard_window_mode": "창 고정",
-  "desktop_clipboard_window_mode_hint": "Hibiki를 다른 창 위에 유지할지 제어합니다. 단어 찾기 탭에서만 클립보드와 전역 단축키를 감시합니다.",
   "desktop_clipboard_window_mode_lookup": "단어 찾기 중에만",
   "desktop_clipboard_window_mode_normal": "끄기",
   "desktop_clipboard_window_mode_always": "항상",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

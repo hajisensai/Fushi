@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "Tocar na legenda flutuante para consultar",
   "floating_lyric_click_lookup_hint": "Mantenha isto ativado com a posição travada se ainda quiser consultar palavras.",
   "desktop_clipboard_window_mode": "Fixação da janela",
-  "desktop_clipboard_window_mode_hint": "Controla se o Hibiki fica acima das outras janelas. Só monitora a área de transferência e o atalho global na aba de consulta.",
   "desktop_clipboard_window_mode_lookup": "Apenas durante a consulta",
   "desktop_clipboard_window_mode_normal": "Desativado",
   "desktop_clipboard_window_mode_always": "Sempre",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

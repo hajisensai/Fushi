@@ -1426,7 +1426,6 @@
   "desktop_clipboard_window_mode_normal": "Kapalı",
   "desktop_clipboard_window_mode_always": "Her zaman",
   "desktop_clipboard_window_mode_lookup": "Yalnızca arama sırasında",
-  "desktop_clipboard_window_mode_hint": "Hibiki'nin diğer pencerelerin üstünde kalıp kalmayacağını denetler. Pano ve genel kısayol tuşu yalnızca arama sekmesinde izlenir.",
   "popup_instant_scroll": "Anında açılır pencere kaydırma",
   "popup_instant_scroll_hint": "E-mürekkep ekranlar için arama açılır penceresini animasyonlu kaydırma olmadan sabit mesafelerle atlat.",
   "remote_video_interconnect": "Hibiki Interconnect",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "點按懸浮字幕即可查詞",
   "floating_lyric_click_lookup_hint": "鎖定懸浮字幕位置時若仍想查詞，請保持開啟。",
   "desktop_clipboard_window_mode": "視窗置頂策略",
-  "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他視窗上方；只在查詞分頁監聽剪貼簿與全域熱鍵。",
   "desktop_clipboard_window_mode_always": "永遠置頂",
   "desktop_clipboard_window_mode_lookup": "僅查詞期間",
   "desktop_clipboard_window_mode_normal": "不置頂",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

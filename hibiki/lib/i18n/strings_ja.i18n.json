@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "フローティング字幕をタップして辞書引き",
   "floating_lyric_click_lookup_hint": "位置を固定したままでも辞書引きを使いたい場合はオンにしてください。",
   "desktop_clipboard_window_mode": "ウィンドウの最前面固定",
-  "desktop_clipboard_window_mode_hint": "Hibiki を他のウィンドウより前面に保つかを制御します。クリップボードとグローバルホットキーは辞書タブでのみ監視します。",
   "desktop_clipboard_window_mode_lookup": "辞書引き中のみ",
   "desktop_clipboard_window_mode_normal": "固定しない",
   "desktop_clipboard_window_mode_always": "常に固定",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

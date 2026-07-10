@@ -1423,7 +1423,6 @@
   "floating_lyric_click_lookup": "Chạm phụ đề nổi để tra từ",
   "floating_lyric_click_lookup_hint": "Bật mục này cùng với khóa vị trí nếu bạn vẫn muốn tra từ.",
   "desktop_clipboard_window_mode": "Ghim cửa sổ",
-  "desktop_clipboard_window_mode_hint": "Quyết định Hibiki có nằm trên các cửa sổ khác hay không. Chỉ theo dõi clipboard và phím tắt toàn cục ở tab tra từ.",
   "desktop_clipboard_window_mode_always": "Luôn luôn",
   "desktop_clipboard_window_mode_lookup": "Chỉ khi tra từ",
   "desktop_clipboard_window_mode_normal": "Tắt",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

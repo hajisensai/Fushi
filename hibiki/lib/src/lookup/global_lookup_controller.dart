@@ -47,6 +47,11 @@ class GlobalLookupController {
 
   static bool get isSupported => Platform.isWindows;
 
+  /// spec 2026-07-10 — 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。
+  /// 剪贴板查词去向路由（desktop_lookup_router）以此决定 panel/transient 是否
+  /// 可用；不可用一律退回主窗 tab，请求不丢。
+  bool get isAvailable => isSupported && _started;
+
   AppModel? _appModel;
   HotKey? _hotKey;
   // TODO-1066 — the live shortcut registry we read the global-lookup hotkey

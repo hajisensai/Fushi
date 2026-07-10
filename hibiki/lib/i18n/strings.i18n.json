@@ -1425,7 +1425,6 @@
   "desktop_clipboard_window_mode": "Window pinning",
   "desktop_clipboard_window_mode_normal": "Off",
   "desktop_clipboard_window_mode_lookup": "Lookup only",
-  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows. Only watches the clipboard and global hotkey on the lookup tab.",
   "desktop_clipboard_window_mode_always": "Always",
   "popup_instant_scroll": "Instant popup scroll",
   "popup_instant_scroll_hint": "Jump the lookup popup by fixed distances without animated scrolling for e-ink screens.",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }

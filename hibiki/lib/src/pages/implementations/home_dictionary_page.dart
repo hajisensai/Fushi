@@ -12,6 +12,8 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dar
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
+import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -108,8 +110,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.addListener(_onFocusSignal);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
-    // 仅在剪贴板监听开启时启动桌面剪贴板/热键监听（受用户设置控制）。
-    unawaited(_startDesktopLookupIfEnabled());
+    // spec 2026-07-10 §7：剪贴板监听的 start/stop 已上移 AppModel
+    // （applyDesktopClipboardLifecycle，app 级生命周期），本页只做 mainTab 分区
+    // 的消费者，不再启动/停止服务。
     // TODO-376：无条件消费一次挂载前已排入的 pending（不被 desktopClipboardEnabled
     // 门控）。桌面悬浮字幕点词由 floatingLyricClickLookup 控制、与剪贴板监听无关：它
     // 在切到本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在
@@ -151,22 +154,21 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     });
   }
 
-  Future<void> _startDesktopLookupIfEnabled() async {
-    final AppModel model = appModelNoUpdate;
-    if (!DesktopLookupService.isDesktop || !model.desktopClipboardEnabled) {
-      return;
-    }
-    await DesktopLookupService.instance.start(
-      windowMode: model.desktopClipboardWindowMode,
-    );
-    // 已存在的 pending 由 initState 的 post-frame 无条件消费一次（不依赖剪贴板
-    // 是否开启），这里不再重复消费——start 之后的剪贴板/热键命中走 addListener。
-  }
-
   void _onDesktopLookupPending() {
     final DesktopLookupRequest? request =
         DesktopLookupService.instance.pendingRequest;
     if (request == null) return;
+    // spec 2026-07-10 §4 — destination 路由：本页只消费 mainTab 分区；
+    // panel/transient 由 DesktopLookupDispatcher 消费（同一纯函数互斥分区，
+    // 无双消费）。
+    if (resolveDesktopLookupConsumer(
+          origin: request.origin,
+          destination: appModelNoUpdate.desktopClipboardDestination,
+          overlayAvailable: GlobalLookupController.instance.isAvailable,
+        ) !=
+        DesktopLookupConsumer.mainTab) {
+      return;
+    }
     DesktopLookupService.instance.clearPending();
     _sourceLookupText = request.showSourcePanel ? request.text : '';
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
@@ -220,10 +222,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    if (DesktopLookupService.isDesktop &&
-        appModelNoUpdate.desktopClipboardEnabled) {
-      unawaited(DesktopLookupService.instance.stop());
-    }
+    // spec 2026-07-10 §7：服务生命周期归 AppModel，本页 dispose 不再 stop——
+    // 面板/瞬态去向要求监听在 tab 卸载后继续运行。
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier

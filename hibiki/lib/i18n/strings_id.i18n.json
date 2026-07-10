@@ -1425,7 +1425,6 @@
   "desktop_clipboard_window_mode": "Penyematan jendela",
   "desktop_clipboard_window_mode_normal": "Mati",
   "desktop_clipboard_window_mode_lookup": "Hanya saat mencari",
-  "desktop_clipboard_window_mode_hint": "Mengatur apakah Hibiki tetap di atas jendela lain. Hanya memantau papan klip dan hotkey global di tab pencarian kata.",
   "desktop_clipboard_window_mode_always": "Selalu",
   "popup_instant_scroll": "Gulir popup seketika",
   "popup_instant_scroll_hint": "Pindahkan popup pencarian dengan jarak tetap tanpa animasi gulir untuk layar e-ink.",
@@ -2217,5 +2216,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore."
+  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows"
 }
