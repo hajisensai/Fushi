@@ -1587,6 +1587,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               clearDictionaryResult();
               return;
             }
+            // TODO-1366：点空白取消残留的拖选（app 自绘选区 + 起止手柄）。拖选松手弹的
+            // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
+            // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
+            _clearReaderAppSelection();
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。

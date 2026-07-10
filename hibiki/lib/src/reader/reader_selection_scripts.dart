@@ -88,7 +88,7 @@ class ReaderSelectionScripts {
   function lpsAllowed(target, x, y) {
     var el = target || document.elementFromPoint(x, y);
     if (el && el.closest &&
-        el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring')) {
+        el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring, [data-hoshi-sel-handle]')) {
       return false;
     }
     return !!(window.hoshiSelection && window.hoshiSelection.getCharacterAtPoint &&
@@ -369,6 +369,20 @@ window.hoshiSelection = {
   // actually dragged (vs a stationary long-press that falls back to word lookup).
   dragAnchor: null,
   dragMoved: false,
+  // TODO-1366: screen anchor of the long-press start + a small pixel slop, so
+  // "drag intent" is physical finger movement (even a short drag that stays
+  // inside one glyph box) rather than crossing a character boundary. A truly
+  // stationary long-press (jitter < slop) still falls through to word lookup
+  // (TODO-971). This kills the "short selection is treated as a stationary tap
+  // and immediately looks up" special case the user hit.
+  dragStartX: 0,
+  dragStartY: 0,
+  dragMoveSlopSq: 64,
+  // TODO-1366: start/end drag handles (touch grips) for the app-drawn selection.
+  // Elements are lazily created and parented to <html> (like the caret ring),
+  // shown only while a drag-selection is live and adjustable, hidden on clear.
+  selectionHandles: null,
+  activeHandle: null,
   highlightWrappers: [],
   selectionRubyElements: [],
   scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
@@ -1155,6 +1169,8 @@ window.hoshiSelection = {
     if (!hit) return false;
     this.clearSelection();
     this.dragAnchor = { node: hit.node, offset: hit.offset };
+    this.dragStartX = x;
+    this.dragStartY = y;
     this.dragMoved = false;
     this.updateRangeSelection(x, y);
     return true;
@@ -1165,6 +1181,18 @@ window.hoshiSelection = {
     // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
     var endNode = hit ? hit.node : this.dragAnchor.node;
     var endOffset = hit ? hit.offset : this.dragAnchor.offset;
+    // TODO-1366: drag intent = physical finger travel past a small pixel slop
+    // OR crossing into a different glyph. The pixel test makes a short drag that
+    // stays within one glyph box still count as a drag (so release stops at the
+    // selection state instead of falling through to an immediate word lookup);
+    // the glyph-cross test is kept so nothing that used to register as a drag
+    // regresses. Truly stationary jitter (< slop, same glyph) stays a stationary
+    // long-press -> word lookup (TODO-971).
+    var ddx = x - this.dragStartX;
+    var ddy = y - this.dragStartY;
+    if ((ddx * ddx + ddy * ddy) > this.dragMoveSlopSq) {
+      this.dragMoved = true;
+    }
     if (hit && (hit.node !== this.dragAnchor.node || hit.offset !== this.dragAnchor.offset)) {
       this.dragMoved = true;
     }
@@ -1195,8 +1223,179 @@ window.hoshiSelection = {
       this.clearSelection();
       return false;
     }
+    // TODO-1366: stop at the selection state -- keep the highlight, raise the
+    // start/end grips so the range is adjustable, and hand Dart the confirm
+    // menu. Lookup only happens when the user confirms it (menu "search").
+    this.showSelectionHandles();
     this.fireSelectionMenu(x, y);
     return true;
+  },
+  // -- TODO-1366: start/end selection handles (touch grips) -------------------
+  // The app-drawn selection (this.selection.ranges) has a visual start (first
+  // glyph of the first range) and end (last glyph of the last range). Two round
+  // touch grips are drawn at those endpoints so the user can adjust the range
+  // after a drag-select instead of being forced into an immediate lookup. Drag
+  // semantics honour the writing mode via hoshiReader.isVertical(). The grips
+  // only ever mutate the app-drawn selection, never the browser's native one, so
+  // no double selection is created (TODO-1279).
+  _selectionVertical: function() {
+    if (window.hoshiReader && typeof window.hoshiReader.isVertical === 'function') {
+      return window.hoshiReader.isVertical();
+    }
+    return window.getComputedStyle(document.body).writingMode === 'vertical-rl';
+  },
+  // Visual endpoints of the current selection as {startNode, startOffset (first
+  // glyph), endNode, endOffset (index of the last glyph = one before range end)}.
+  // null when there is no live glyph selection.
+  selectionEndpoints: function() {
+    if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) {
+      return null;
+    }
+    var first = this.selection.ranges[0];
+    var last = this.selection.ranges[this.selection.ranges.length - 1];
+    if (last.end <= last.start) return null;
+    return {
+      startNode: first.node, startOffset: first.start,
+      endNode: last.node, endOffset: last.end - 1
+    };
+  },
+  _glyphRect: function(node, offset) {
+    var len = 1;
+    var cp = node.textContent.codePointAt(offset);
+    if (cp !== undefined && cp > 0xffff) len = 2;
+    var range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, Math.min(offset + len, node.textContent.length));
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
+    }
+    return range.getBoundingClientRect();
+  },
+  ensureSelectionHandles: function() {
+    if (this.selectionHandles && this.selectionHandles.start.isConnected &&
+        this.selectionHandles.end.isConnected) {
+      return this.selectionHandles;
+    }
+    var self = this;
+    var make = function(which) {
+      var el = document.getElementById('hoshi-sel-handle-' + which);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'hoshi-sel-handle-' + which;
+        el.setAttribute('data-hoshi-sel-handle', which);
+        el.style.cssText = 'position:fixed;z-index:2147483645;width:24px;height:24px;' +
+          'margin-left:-12px;margin-top:-12px;border-radius:50%;' +
+          'background:rgba(255,138,0,0.98);' +
+          'box-shadow:0 0 0 2px rgba(0,0,0,0.28),0 0 4px rgba(255,138,0,0.9);' +
+          'pointer-events:auto;touch-action:none;display:none;box-sizing:border-box;';
+        document.documentElement.appendChild(el);
+        self._wireHandle(el, which);
+      }
+      return el;
+    };
+    this.selectionHandles = { start: make('start'), end: make('end') };
+    return this.selectionHandles;
+  },
+  _wireHandle: function(el, which) {
+    var self = this;
+    // stopPropagation keeps the document-level long-press / page-gesture
+    // listeners from arming on a grip touch; preventDefault + touch-action:none
+    // stop the browser treating the grip drag as a scroll.
+    el.addEventListener('touchstart', function(e) {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      self.activeHandle = which;
+    }, {passive: false});
+    el.addEventListener('touchmove', function(e) {
+      if (self.activeHandle !== which) return;
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      var t = (e.touches && e.touches[0]) || null;
+      if (t) self.moveSelectionHandle(which, t.clientX, t.clientY);
+    }, {passive: false});
+    el.addEventListener('touchend', function(e) {
+      if (self.activeHandle !== which) return;
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      self.activeHandle = null;
+      var t = (e.changedTouches && e.changedTouches[0]) || null;
+      var x = t ? t.clientX : 0;
+      var y = t ? t.clientY : 0;
+      self.positionSelectionHandles();
+      // Re-present the confirm menu at the released grip so lookup/copy/export
+      // stay one tap away after an adjustment.
+      self.fireSelectionMenu(x, y);
+    }, {passive: false});
+    el.addEventListener('touchcancel', function() {
+      if (self.activeHandle === which) {
+        self.activeHandle = null;
+        self.positionSelectionHandles();
+      }
+    }, {passive: true});
+  },
+  // Drag one grip to (x,y): the other endpoint's glyph is the fixed anchor, the
+  // grip's glyph becomes the point under the finger. Rebuild + re-highlight +
+  // reposition both grips. No-op over a gap so the range never collapses.
+  moveSelectionHandle: function(which, x, y) {
+    var eps = this.selectionEndpoints();
+    if (!eps) return;
+    var hit = this.getCharacterAtPoint(x, y);
+    if (!hit) return;
+    var anchorNode, anchorOffset;
+    if (which === 'end') {
+      anchorNode = eps.startNode; anchorOffset = eps.startOffset;
+    } else {
+      anchorNode = eps.endNode; anchorOffset = eps.endOffset;
+    }
+    var built = this.collectRangeBetween(anchorNode, anchorOffset, hit.node, hit.offset);
+    if (!built) return;
+    this.selection = {
+      startNode: built.startNode, startOffset: built.startOffset,
+      ranges: built.ranges, text: built.text
+    };
+    this.renderSelectionHighlight();
+    this.positionSelectionHandles();
+  },
+  positionSelectionHandles: function() {
+    var eps = this.selectionEndpoints();
+    if (!eps) { this.hideSelectionHandles(); return; }
+    var handles = this.ensureSelectionHandles();
+    var vertical = this._selectionVertical();
+    var sRect = this._glyphRect(eps.startNode, eps.startOffset);
+    var eRect = this._glyphRect(eps.endNode, eps.endOffset);
+    var sx, sy, ex, ey;
+    if (vertical) {
+      // vertical-rl: reading runs top->bottom, columns right->left. Start grip
+      // above the first glyph, end grip below the last glyph.
+      sx = sRect.left + sRect.width / 2;
+      sy = sRect.top;
+      ex = eRect.left + eRect.width / 2;
+      ey = eRect.bottom;
+    } else {
+      // horizontal: start grip at the lower-left of the first glyph, end grip at
+      // the lower-right of the last glyph (below the baseline).
+      sx = sRect.left;
+      sy = sRect.bottom;
+      ex = eRect.right;
+      ey = eRect.bottom;
+    }
+    handles.start.style.left = sx + 'px';
+    handles.start.style.top = sy + 'px';
+    handles.start.style.display = 'block';
+    handles.end.style.left = ex + 'px';
+    handles.end.style.top = ey + 'px';
+    handles.end.style.display = 'block';
+  },
+  showSelectionHandles: function() {
+    this.positionSelectionHandles();
+  },
+  hideSelectionHandles: function() {
+    this.activeHandle = null;
+    if (this.selectionHandles) {
+      this.selectionHandles.start.style.display = 'none';
+      this.selectionHandles.end.style.display = 'none';
+    }
   },
   getSelectionRect: function(x, y) {
     if (!this.selection || !this.selection.ranges.length) return null;
@@ -1344,6 +1543,7 @@ window.hoshiSelection = {
     } else {
       this.clearHighlightWrappers();
     }
+    this.hideSelectionHandles();
     this.selection = null;
   }
 };
