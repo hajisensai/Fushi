@@ -251,7 +251,7 @@ void main() {
   });
 
   testWidgets(
-      'BUG-709: nested lookup keeps searching-UI off while a parent popup is '
+      'BUG-715: nested lookup keeps searching-UI off while a parent popup is '
       'visible (no placeholder behind the parent -> no z-order flip)',
       (WidgetTester tester) async {
     final key = GlobalKey<MixinHostPageState>();
@@ -284,7 +284,7 @@ void main() {
     // NOT engage: in the three mixin hosts (video / 首页 / 悬浮歌词) it is
     // stacked BELOW the popup entries, so drawing it during a nested search
     // paints the searching child *behind* the visible parent; when the child
-    // WebView renders it reveals on top -> the BUG-709 底层->上层 z-order flip.
+    // WebView renders it reveals on top -> the BUG-715 底层->上层 z-order flip.
     // With the fix, isSearchingUi stays false and the hidden child simply
     // reveals on top once rendered (reveal timing still guarded by BUG-170).
     //

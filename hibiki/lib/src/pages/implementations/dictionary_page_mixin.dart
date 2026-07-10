@@ -590,7 +590,7 @@ mixin DictionaryPageMixin {
     // `searching && !hasVisiblePopup` 门控对齐。嵌套查词时父弹窗仍可见，而三个 mixin
     // 宿主（video / 首页 / 悬浮歌词）的 Stack 里加载占位卡排在 entries **之前** =
     // 画在父弹窗**下方图层**，只从父弹窗底边露出一条，等子层 WebView 渲染完才在顶层
-    // 翻出 → 用户看到「子弹窗先在底层、渲染后跳到上层」的层级翻转（BUG-709）。有可见
+    // 翻出 → 用户看到「子弹窗先在底层、渲染后跳到上层」的层级翻转（BUG-715）。有可见
     // 弹窗时不进搜索占位态：父弹窗全程提供上下文，子层就绪即 markPendingReveal→
     // revealRendered 直接在顶层出现，无层级翻转（reveal 时序仍受 BUG-170 保护）。
     if (!controller.hasVisiblePopup) {

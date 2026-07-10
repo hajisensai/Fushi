@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 700 条。点号进各自文件。
+> 共 701 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-715](bugs/BUG-715-nested-popup-searching-placeholder-zorder.md) | ✅ | ✅ | 嵌套查词子弹窗渲染前显示在父弹窗下方图层(视频/首页/悬浮歌词) |
 | [BUG-714](bugs/BUG-714-interconnect-live-book-push-500.md) | ✅ | ✅ | 互联 live 书籍推送全部 HTTP 500(host 未接线 importBookFromFile) |
 | [BUG-713](bugs/BUG-713-clip-highlight-fps-quantization-lag.md) | ✅ | ✅ | 有声书导出片段逐句高亮系统性滞后=12fps帧量化 |
 | [BUG-712](bugs/BUG-712-popup-js-error-silent.md) | ✅ | ✅ | 查词弹窗 JS 渲染报错静默、错误日志为空 |
