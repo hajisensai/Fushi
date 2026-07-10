@@ -14,6 +14,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -160,10 +161,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     if (request == null) return;
     // spec 2026-07-10 §4 — destination 路由：本页只消费 mainTab 分区；
     // panel/transient 由 DesktopLookupDispatcher 消费（同一纯函数互斥分区，
-    // 无双消费）。
+    // 无双消费）。AppModel 未初始化（早帧 / widget 测试桩）时 prefsRepo 为
+    // null，读 destination 会抛——此时按默认 main 消费（与 _seedWarmPopup 的
+    // 「成功路径必已初始化」同范式；TODO-376 挂载即消费的契约不受影响）。
+    final DesktopClipboardDestination destination =
+        appModelNoUpdate.isInitialised
+            ? appModelNoUpdate.desktopClipboardDestination
+            : DesktopClipboardDestination.main;
     if (resolveDesktopLookupConsumer(
           origin: request.origin,
-          destination: appModelNoUpdate.desktopClipboardDestination,
+          destination: destination,
           overlayAvailable: GlobalLookupController.instance.isAvailable,
         ) !=
         DesktopLookupConsumer.mainTab) {

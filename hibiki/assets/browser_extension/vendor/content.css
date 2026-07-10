@@ -1226,6 +1226,16 @@
     white-space: pre-wrap;
 }
 
+/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词，嵌套子卡）。 */
+.global-lookup-sentence-char {
+    cursor: pointer;
+}
+
+.global-lookup-sentence-char:hover {
+    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    border-radius: 2px;
+}
+
 /*
  *  content-css-overlay.css — extension-only additions appended to the generated
  *  content.css (see generate-content-css.mjs).

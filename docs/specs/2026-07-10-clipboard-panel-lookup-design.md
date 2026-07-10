@@ -1,6 +1,7 @@
 # 剪贴板查词独立弹窗设计 · 常驻半透明面板 + 瞬态副档
 
-> 状态：设计已与用户确认（2026-07-10），待写实现计划。
+> 状态：设计已确认（2026-07-10），M1-M3 已实现（见同日 -plan.md 与分支
+> `worktree-clipboard-panel-spec` 提交序列）；待真机 gate（§6 backdrop / §9）。
 > 范围：Windows（面板/瞬态两种新去向）；macOS/Linux 剪贴板查词维持主窗 tab 现状。
 > 基线代码：origin/develop `cdcef9b86`（本文所有 file:line 以此为准）。
 > 前情：本设计**取代** `2026-06-05-webext-and-desktop-clipboard-design.md` 线 4 的「不开第二窗口」决策——当年的前提（Flutter 桌面无稳定多窗口、词典 FFI 不能跨 isolate）已被 TODO-617 的裸 WebView2 覆盖窗（不起第二 engine、主 Dart 引擎当词典大脑）绕开。
@@ -86,9 +87,19 @@
 ## 6. 半透明（唯一技术 gate）
 
 - 逐像素透明底子已有：`put_DefaultBackgroundColor({0,0,0,0})`（`global_lookup_window.cpp:614-619`，TODO-893）。
-- 半透明 = 卡片背景 CSS `rgba`：`buildPopupSettingsJs` 加 `--hibiki-card-bg-alpha` 变量（面板传用户值，in-app 与瞬态窗恒 1.0——现有表面零变化）。文字/外字图全不透明，只淡背景。
+- 半透明 = 卡片背景 CSS `rgba`：注入 `--hibiki-card-bg-rgb` 三元组 + 面板路径注入 `--hibiki-card-bg-alpha`（默认 1，in-app 与瞬态窗零变化）。文字/外字图全不透明，只淡背景。
 - 设置滑杆 50%–100%，默认 85%。
-- **M0 gate**：真机验证 WebView2 在非 layered HWND 上对半透明像素的合成（能否真透出底下游戏画面）。代码注释只佐证了全透明像素（TODO-893），半透明未验。**gate 失败降级**：面板用不透明暗色紧凑卡，滑杆隐藏——设计其余部分不受影响。
+- **实现期修正（2026-07-10）**：调查证实非 layered 顶层窗对桌面是不透明的
+  （popup.css:1225 注释）——纯 CSS rgba 只对「窗口底色」半透明，**透不到底下
+  的游戏**。真透视走 **Win11 `DWMWA_SYSTEMBACKDROP_TYPE`(acrylic) +
+  `DwmExtendFrameIntoClientArea`**（`GlobalLookupWindow::ApplySystemBackdrop`，
+  面板 channel `applyBackdrop` 返回 OS 是否接受）；`WS_EX_LAYERED` 仍不可用
+  （与 WebView2 组合表面不共存），不碰。
+- **M0 gate（改为验证 acrylic 组合）**：真机验证 backdrop + 透明 WebView2 像素
+  + rgba 卡背景的合成效果（能否真透出底下内容）。**gate 失败降级已实现**：
+  `applyBackdrop` 返回 false（Win10 / 旧 Win11 / 组合失败）时面板恒 alpha=1
+  （不透明）、透明度滑杆隐藏（`ClipboardPanelController.backdropOk` 门控）——
+  设计其余部分不受影响。
 
 ## 7. 设置、生命周期与向后兼容
 
