@@ -2978,6 +2978,18 @@ window.updatePopupIncremental = function() {
 const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
+// TODO-1387: a wheel frame counts as "horizontal" (left to native) only when the
+// horizontal delta leads the vertical delta by MORE than this many px. A touchpad
+// two-finger *vertical* scroll carries horizontal jitter that momentarily exceeds
+// deltaY; without this slack those frames were dropped and the scroll felt choppy.
+const POPUP_WHEEL_HORIZONTAL_MARGIN = 6;
+// TODO-1387: sub-pixel wheel remainder carried across events (see the wheel
+// handler for the full rationale). Keyed to the surface being scrolled and reset
+// after an idle gap so a stale carry can never trigger a delayed jump.
+const POPUP_WHEEL_RESIDUAL_IDLE_MS = 200;
+let _popupWheelResidual = 0;
+let _popupWheelResidualSurface = null;
+let _popupWheelResidualAt = 0;
 function popupCurrentZoom(scroller) {
     // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
@@ -3031,9 +3043,18 @@ function popupAncestorAbsorbsVerticalWheel(target, deltaPx) {
     return false;
 }
 document.addEventListener('wheel', (e) => {
-    // Ignore zoom gestures (ctrl+wheel / pinch) and pure horizontal scroll.
+    // Ignore zoom gestures (ctrl+wheel / pinch) and predominantly-horizontal wheels.
     if (e.ctrlKey) return;
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    // TODO-1387: treat a frame as horizontal (leave it to native) only when the
+    // horizontal delta clearly leads the vertical one. Strict '>' (was '<=') keeps
+    // 45deg / equal-magnitude frames scrolling vertically instead of dropping them;
+    // the HORIZONTAL_MARGIN slack stops touchpad horizontal jitter from shredding a
+    // genuine vertical two-finger scroll frame-by-frame. A pure horizontal wheel
+    // (deltaY 0) or shift+wheel still falls through to native scrolling.
+    const absY = Math.abs(e.deltaY);
+    const absX = Math.abs(e.deltaX);
+    if (absY === 0) return;
+    if (absX > absY + POPUP_WHEEL_HORIZONTAL_MARGIN) return;
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
@@ -3046,7 +3067,29 @@ document.addEventListener('wheel', (e) => {
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
     const scroller = __hibikiWheelScroller(e);
-    const step = visualStep / popupCurrentZoom(scroller);
+    const layoutStep = visualStep / popupCurrentZoom(scroller);
+    // TODO-1387: carry the sub-pixel remainder across events. A precision touchpad
+    // reports deltaMode=PIXEL with a tiny fractional deltaY (~1-4 per frame); after
+    // the 0.24 factor and the zoom divide each frame is a fraction of a layout
+    // pixel. scrollBy only moves whole (sub)pixels and the fraction was discarded
+    // every frame — preventDefault killed native scroll while the popup advanced
+    // ~0px, so slow touchpad scrolling froze (a fast fling cleared the 1px
+    // threshold, hence "sometimes works"). Accumulate the fraction and emit only
+    // the whole part, keeping the remainder for the next event. A mouse notch
+    // (deltaPx ~100-120 -> visualStep ~24) already clears 1px every frame so its
+    // behaviour is unchanged. Reset the carry on a surface switch or after an idle
+    // gap so a stale remainder can never cause a delayed jump.
+    const nowMs = performance.now();
+    if (scroller !== _popupWheelResidualSurface ||
+        (nowMs - _popupWheelResidualAt) > POPUP_WHEEL_RESIDUAL_IDLE_MS) {
+        _popupWheelResidual = 0;
+        _popupWheelResidualSurface = scroller;
+    }
+    _popupWheelResidualAt = nowMs;
+    _popupWheelResidual += layoutStep;
+    const step = Math.trunc(_popupWheelResidual);
+    _popupWheelResidual -= step;
+    if (step === 0) return; // sub-pixel this frame — carried to the next event
     if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
     else { window.scrollBy({ top: step, behavior: 'auto' }); }
 }, { passive: false });
