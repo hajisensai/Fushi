@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 694 条。点号进各自文件。
+> 共 695 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-711](bugs/BUG-711-nav-jump-rtc-verified-not-reproducible.md) | ✅ | ✅ | 导航跳转落章首 TODO-1308 复诉在 develop 无法复现（已被 BUG-696 根治） |
 | [BUG-708](bugs/BUG-708-interconnect-repair-blocked-by-lingering-pin-dialog.md) | ✅ | ✅ | 公网PIN配对取消后重新配对被host常驻PIN弹窗挡成拒绝 |
 | [BUG-707](bugs/BUG-707-selection-capture-clipboard-echo.md) | ✅ | ✅ | 全局查词抓选区的剪贴板回声泄漏进剪贴板查词管线 |
 | [BUG-706](bugs/BUG-706-lookup-popup-blank.md) | ✅ | ✅ | 查词弹窗全空白: __hibikiRoot 函数名与 window.__hibikiRoot marker 冲突 |

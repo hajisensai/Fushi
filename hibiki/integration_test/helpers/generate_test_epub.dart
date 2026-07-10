@@ -90,6 +90,13 @@ class EpubGenerator {
     files['OEBPS/chapter_07_long.xhtml'] =
         _utf8(_buildChapter('第七章　長文テスト', _generateStandard(500)));
 
+    // Chapter 8: JIS mono-ruby (rb/rtc group ruby, 120 markers). Mirrors the
+    // user's TODO-1308 book form (<ruby><rb>貫</rb><rb>禄</rb><rtc><rt>かん</rt>
+    // <rt>ろく</rt></rtc></ruby>) so favorite/jump landing can be measured on the
+    // exact DOM shape where base chars live in <rb> and furigana in <rtc><rt>.
+    files['OEBPS/chapter_08_monoruby.xhtml'] =
+        _utf8(_buildChapter('第八章　連番振り仮名テスト', _generateWithMonoRuby(120)));
+
     return _buildZip(files);
   }
 
@@ -158,6 +165,54 @@ class EpubGenerator {
     return buf.toString();
   }
 
+  /// JIS mono-ruby / group ruby: base chars in adjacent <rb>, furigana in a
+  /// trailing <rtc><rt>. Matches the user's TODO-1308 book DOM so a favorite/
+  /// jump can be measured where the target char is a text node inside <rb>.
+  String _generateWithMonoRuby(int count) {
+    const monoPairs = <List<String>>[
+      ['貫禄', 'かんろく'],
+      ['颯爽', 'さっそう'],
+      ['憂鬱', 'ゆううつ'],
+      ['薔薇', 'ばら'],
+      ['麒麟', 'きりん'],
+      ['葛藤', 'かっとう'],
+      ['桔梗', 'ききょう'],
+      ['林檎', 'りんご'],
+    ];
+    final buf = StringBuffer();
+    for (int i = 1; i <= count; i++) {
+      final id = i.toString().padLeft(3, '0');
+      final pair = monoPairs[(i - 1) % monoPairs.length];
+      final bases = pair[0].split('');
+      final readings = _splitReadingForBases(pair[1], bases.length);
+      final rb = bases.map((b) => '<rb>$b</rb>').join();
+      final rt = readings.map((r) => '<rt>$r</rt>').join();
+      buf.writeln('  <p id="m$id">【M$id】彼の'
+          '<ruby>$rb<rtc>$rt</rtc></ruby>'
+          'は、周囲の誰もが認めるところだった。年月を重ねるごとに、'
+          'その姿はいっそう際立っていった。</p>');
+    }
+    return buf.toString();
+  }
+
+  /// Splits [reading] into [n] chunks so each <rb> base gets one <rt>.
+  List<String> _splitReadingForBases(String reading, int n) {
+    if (n <= 1) return <String>[reading];
+    final chars = reading.split('');
+    final per = (chars.length / n).ceil();
+    final out = <String>[];
+    for (int i = 0; i < n; i++) {
+      final start = i * per;
+      if (start >= chars.length) {
+        out.add('');
+        continue;
+      }
+      final end = ((i + 1) * per).clamp(0, chars.length);
+      out.add(chars.sublist(start, end).join());
+    }
+    return out;
+  }
+
   String _generateMixed(int count) {
     final buf = StringBuffer();
     int marker = 1;
@@ -219,6 +274,7 @@ $body
       'chapter_05_vertical',
       'chapter_06_mixed',
       'chapter_07_long',
+      'chapter_08_monoruby',
     ];
     final items = chapters
         .map((c) => '    <item id="$c" href="$c.xhtml" '
@@ -254,6 +310,7 @@ $refs
       '第五章　縦書きテスト',
       '第六章　混合要素テスト',
       '第七章　長文テスト',
+      '第八章　連番振り仮名テスト',
     ];
     final files = [
       'chapter_01_standard',
@@ -263,6 +320,7 @@ $refs
       'chapter_05_vertical',
       'chapter_06_mixed',
       'chapter_07_long',
+      'chapter_08_monoruby',
     ];
     final points = StringBuffer();
     for (int i = 0; i < titles.length; i++) {
