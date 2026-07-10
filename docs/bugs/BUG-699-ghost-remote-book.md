@@ -1,4 +1,4 @@
-## BUG-689 · WebDAV-only 用户首屏闪现无内容的幽灵远端书
+## BUG-699 · WebDAV-only 用户首屏闪现无内容的幽灵远端书
 - **报告**：2026-07-10（用户：TODO-1384 问题①）
 - **真实性**：✅ 真 bug。两个真实根因（均沿 origin/develop@29c0fa9de 核实）：
   1. **fail-open 误放无内容文件夹**：`hibiki/lib/src/sync/cloud_remote_book_client.dart:97-105` `_remoteFolderHasContent` 在 `catch (_) { return true; }`。首启 `triggerAutoSyncOnAppOpen` 后台全量同步与书架并发多路 `listChildren` 打同一 WebDAV → 探测超时/429 → fail-open 当「有内容」放出 → 无内容文件夹（只有封面/进度元数据、无 `.epub`）作幽灵书经 `remote.part.dart:46` 的 `.where(hasContent)` 通过、闪现；第二次启动同步压力小、探测成功 → hasContent=false → 连分区一起消失。瞬时态 `_remoteBooksFuture` 不落库，无持久残留。
