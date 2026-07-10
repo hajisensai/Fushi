@@ -6,6 +6,13 @@ import 'package:hibiki/src/startup/desktop_window_placement.dart';
 
 void main() {
   group('DesktopWindowPlacement', () {
+    test('TODO-1377: minimum window size is the phone-class 360x480 floor', () {
+      // 用户「窗口不能再缩小了」：下限从 480x640 放宽到 360x480（普通手机宽度级，
+      // 全表面已在 min_window_size_surfaces_itest 离屏真 app 验证无溢出）。
+      // 别随手抬高：宽度 >=480 会让词典 dialog 的 compact 分支在桌面不可达。
+      expect(DesktopWindowPlacement.minimumSize, const Size(360, 480));
+    });
+
     test('chooses a roomy centered default on large desktop work areas', () {
       final Rect bounds = DesktopWindowPlacement.resolveInitialBounds(
         workArea: const Rect.fromLTWH(0, 0, 2560, 1440),
@@ -21,14 +28,17 @@ void main() {
         workArea: const Rect.fromLTWH(0, 0, 800, 560),
       );
 
-      // BUG-401: minimum window width relaxed 960 -> 480. The first-run
-      // default is 82% of the work-area width (656 on an 800-wide screen);
-      // previously the 960-wide minimum clamped that up to the full 800.
-      // Height still fills the short 560 work area (86% = 481.6 floored by
-      // the 560 effective minimum). The window stays centered horizontally.
-      expect(bounds.size, const Size(656, 560));
-      expect(bounds.left, 72);
-      expect(bounds.top, 0);
+      // BUG-401 relaxed the minimum width 960 -> 480; TODO-1377 relaxes the
+      // minimum to 360x480. The first-run default is 82% of the work-area
+      // width (656 on an 800-wide screen) and 86% of its height (481.6 on a
+      // 560-tall screen; no longer clamped up by the old 640 minimum height).
+      // The window stays centered in both axes.
+      // closeTo：Rect.fromLTWH 内部存 LTRB，size.height = (top+height)-top
+      // 会重引入 1ulp 级浮点差，不能用精确相等。
+      expect(bounds.size.width, closeTo(800 * 0.82, 1e-9));
+      expect(bounds.size.height, closeTo(560 * 0.86, 1e-9));
+      expect(bounds.left, closeTo(72, 1e-9));
+      expect(bounds.top, closeTo((560 - 560 * 0.86) / 2, 1e-9));
     });
 
     test('restores the last size and clamps an off-screen position', () {
@@ -45,7 +55,7 @@ void main() {
     test('expands too-small saved bounds to the effective minimum size', () {
       final Rect bounds = DesktopWindowPlacement.resolveInitialBounds(
         workArea: const Rect.fromLTWH(0, 0, 1920, 1040),
-        savedBounds: const Rect.fromLTWH(48, 56, 420, 320),
+        savedBounds: const Rect.fromLTWH(48, 56, 320, 300),
       );
 
       expect(bounds.size, DesktopWindowPlacement.minimumSize);
@@ -55,14 +65,22 @@ void main() {
 
     test('shrinks the effective minimum size when the work area is tiny', () {
       final Size minimum = DesktopWindowPlacement.minimumSizeForWorkArea(
+        const Rect.fromLTWH(0, 0, 320, 400),
+      );
+
+      // TODO-1377: the minimum window size is 360x480. On a work area smaller
+      // than that in both axes the effective minimum shrinks to the work area
+      // so the window always fits the screen.
+      expect(minimum, const Size(320, 400));
+    });
+
+    test('keeps the literal minimum on work areas larger than it', () {
+      final Size minimum = DesktopWindowPlacement.minimumSizeForWorkArea(
         const Rect.fromLTWH(0, 0, 700, 500),
       );
 
-      // BUG-401: minimum window width relaxed 960 -> 480. On a 700-wide work
-      // area the effective minimum width is now the literal 480 (no longer
-      // clamped up to the work-area width); the height is still shrunk to the
-      // 500 work area (< the 640 minimum height).
-      expect(minimum, const Size(480, 500));
+      // Both axes exceed the 360x480 minimum, so nothing shrinks.
+      expect(minimum, DesktopWindowPlacement.minimumSize);
     });
 
     test('selects the work area containing the current window center', () {

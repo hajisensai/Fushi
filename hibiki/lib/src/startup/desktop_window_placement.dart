@@ -16,12 +16,16 @@ import 'package:window_manager/window_manager.dart';
 class DesktopWindowPlacement {
   DesktopWindowPlacement._();
 
-  // BUG-401: the desktop minimum window WIDTH was 960, so the window could
-  // never be dragged narrow enough for the real-width breakpoint to fall
-  // into the compact (phone / bottom-bar) layout. Relaxed to 480 so users
-  // who want the phone layout on desktop can resize down to it. Height kept
-  // at 640 (vertical real estate is not the constraint for the layout class).
-  static const Size minimumSize = Size(480, 640);
+  // BUG-401 relaxed the minimum window width 960 -> 480 so the window could
+  // reach the compact (phone / bottom-bar) layout. TODO-1377 relaxes it
+  // further to a phone-class floor of 360x480 ("cannot shrink the window any
+  // further"): 360 is the common Android baseline logical width, so every
+  // surface already has to lay out at this width on phones. Note 480 is also
+  // the dictionary dialog's compact breakpoint (width < 480), so widths below
+  // it take the phone branch there — verified against the real Windows app in
+  // integration_test/min_window_size_surfaces_itest.dart (no RenderFlex
+  // overflow across shelf / video / lookup / settings / dictionary dialog).
+  static const Size minimumSize = Size(360, 480);
   static const Size _maximumDefaultSize = Size(1440, 960);
   static const double _defaultWidthFraction = 0.82;
   static const double _defaultHeightFraction = 0.86;
