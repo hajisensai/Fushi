@@ -26,8 +26,12 @@ void main() {
 
   setUpAll(() {
     cpp = File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+    // spec 2026-07-10 — the channel implementation (incl. the nativeError →
+    // ErrorLogService sink) moved to the instance-level OverlayWindowChannel
+    // shared by the lookup overlay and the clipboard panel; the guard follows
+    // the implementation, not the old facade file.
     dartChannel =
-        File('lib/src/lookup/global_lookup_channel.dart').readAsStringSync();
+        File('lib/src/lookup/overlay_window_channel.dart').readAsStringSync();
   });
 
   group('TODO-1153 direction 1: overlay env uses a dedicated user data folder',
@@ -54,8 +58,15 @@ void main() {
       final int create =
           cpp.indexOf('CreateCoreWebView2EnvironmentWithOptions(');
       expect(create, isNonNegative);
-      // The overlay folder string must be computed before and fed into the call.
-      expect(cpp.contains('overlay_folder = OverlayUserDataFolder()'), isTrue);
+      // The overlay folder string must be computed before and fed into the
+      // call. spec 2026-07-10 — the helper is now parameterised per instance
+      // (user_data_leaf_): lookup overlay = GlobalLookupWebView2, clipboard
+      // panel = ClipboardPanelWebView2, so the two instances' environment
+      // options stay independent (same-folder different-options = 0x8007139F).
+      expect(
+          cpp.contains(
+              'overlay_folder = OverlayUserDataFolder(user_data_leaf_)'),
+          isTrue);
       final int usage = cpp.indexOf('overlay_folder.empty() ? nullptr', create);
       expect(usage, greaterThan(create),
           reason: 'CreateCoreWebView2EnvironmentWithOptions must consume the '

@@ -1425,7 +1425,7 @@
   "desktop_clipboard_window_mode": "Penyematan jendela",
   "desktop_clipboard_window_mode_normal": "Mati",
   "desktop_clipboard_window_mode_lookup": "Hanya saat mencari",
-  "desktop_clipboard_window_mode_hint": "Mengatur apakah Hibiki tetap di atas jendela lain. Hanya memantau papan klip dan hotkey global di tab pencarian kata.",
+  "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
   "desktop_clipboard_window_mode_always": "Selalu",
   "popup_instant_scroll": "Gulir popup seketika",
   "popup_instant_scroll_hint": "Pindahkan popup pencarian dengan jarak tetap tanpa animasi gulir untuk layar e-ink.",
@@ -2242,5 +2242,12 @@
   "video_danmaku_manual_search_action": "Search",
   "video_danmaku_manual_no_result": "No matching anime found.",
   "video_danmaku_manual_network_error": "Network error. Check your connection and try again.",
-  "video_danmaku_manual_server_error": "Search failed. Try again later."
+  "video_danmaku_manual_server_error": "Search failed. Try again later.",
+  "desktop_clipboard_destination": "Clipboard lookup destination",
+  "desktop_clipboard_destination_hint": "Where clipboard lookups appear",
+  "desktop_clipboard_destination_main": "Main window",
+  "desktop_clipboard_destination_panel": "Floating panel",
+  "desktop_clipboard_destination_transient": "Popup at cursor",
+  "clipboard_panel_opacity": "Panel opacity",
+  "clipboard_panel_opacity_hint": "Card background opacity of the floating lookup panel (requires Windows 11 backdrop)"
 }

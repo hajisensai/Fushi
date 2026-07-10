@@ -56,6 +56,13 @@ String _cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
     '${(c.g * 255.0).round().clamp(0, 255)}, '
     '${(c.b * 255.0).round().clamp(0, 255)})';
 
+/// spec 2026-07-10 §6 — the bare `r, g, b` triplet of [c]，供 popup.css 的
+/// `rgba(var(--hibiki-card-bg-rgb), var(--hibiki-card-bg-alpha))` 组装半透明卡
+/// 背景（`--background-color` 是不透明 `rgb()`，纯 CSS 无法给它加 alpha）。
+String _cssRgbTriplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
+    '${(c.g * 255.0).round().clamp(0, 255)}, '
+    '${(c.b * 255.0).round().clamp(0, 255)}';
+
 /// Builds the theme-derived CSS custom properties + `data-theme` (+ the
 /// `global-lookup` document class when [globalLookup]). Shared by both paths so
 /// the WebView surfaces follow the app ColorScheme identically.
@@ -86,6 +93,7 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
       document.documentElement.style.setProperty('--text-color', '${_cssRgb(scheme.onSurface)}');
       document.documentElement.style.setProperty('--background-color', '${_cssRgb(bgColor)}');
+      document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${_cssRgbTriplet(bgColor)}');
       document.documentElement.style.setProperty('--md-surface-container', '${_cssRgb(scheme.surfaceContainer)}');
       document.documentElement.style.setProperty('--md-surface-container-high', '${_cssRgb(scheme.surfaceContainerHigh)}');
       document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');

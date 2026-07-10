@@ -30,15 +30,18 @@ void main() {
   group('Dart controller: favorite bridge branch (root cause 2)', () {
     late String src;
     setUpAll(() {
-      src = read('lib/src/lookup/global_lookup_controller.dart');
+      // spec 2026-07-10: 桥 handler 抽到 overlay_bridge_handlers.dart 与剪贴板
+      // 面板共享（红线：两表面不复制不漂移）；守卫扫 controller+共享实现拼接。
+      src = read('lib/src/lookup/global_lookup_controller.dart') +
+          read('lib/src/lookup/overlay_bridge_handlers.dart');
     });
 
     test(
         '_onJsMessage routes favoriteEntry / favoriteCheck to a deferred handler',
         () {
       expect(
-        src.contains(
-            "if (handler == 'favoriteEntry' || handler == 'favoriteCheck')"),
+        src.contains("case 'favoriteEntry':") &&
+            src.contains("case 'favoriteCheck':"),
         isTrue,
         reason: '_onJsMessage 必须有收藏分支（过去根本没有 → 按钮永挂）',
       );
@@ -54,8 +57,7 @@ void main() {
       expect(src.contains('addFavoriteWord('), isTrue);
       expect(src.contains('removeFavoriteWord('), isTrue);
       // 回传新收藏态给 iframe（星标切换）。
-      expect(
-          src.contains('GlobalLookupChannel.resolveBridge(id, reply)'), isTrue,
+      expect(src.contains('resolveBridge(id, reply)'), isTrue,
           reason: '收藏落库后必须 resolveBridge 回传布尔态');
       // 与 in-app 词典默认来源一致，(expression, reading, sourceType) 唯一键共享。
       expect(src.contains('kStatSourceBook'), isTrue,

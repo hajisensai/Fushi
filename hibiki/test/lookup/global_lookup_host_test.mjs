@@ -1646,4 +1646,96 @@ function flushTimers() {
   }
 }
 
+// ---- spec 2026-07-10 panel mode -------------------------------------------
+
+// P1. panel payload: root shell fills the fixed viewport below the panel bar;
+//     the panel bar DOM exists; measureAndReport is short-circuited (no
+//     overlaySize reveal-resize loop) and the reveal gate flips directly.
+{
+  const { host, document } = freshHost();
+  hostPostLog = [];
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+  });
+  const bar = document.getElementById('global-lookup-panel-bar');
+  assert.ok(bar, 'panel bar created in panel mode');
+  const shells = shellsOf(document);
+  assert.strictEqual(shells.length, 1, 'one root shell');
+  const shell = shells[0];
+  assert.strictEqual(shell.style.left, '0px', 'panel root pinned left');
+  assert.strictEqual(shell.style.top, '28px', 'panel root below the bar');
+  assert.strictEqual(shell.style.width, '100%', 'panel root fills width');
+  assert.strictEqual(
+    shell.style.height,
+    'calc(100% - 28px)',
+    'panel root fills height below the bar',
+  );
+  assert.ok(
+    !hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'panel mode never posts overlaySize (fixed window, no reveal-resize loop)',
+  );
+  assert.strictEqual(
+    host.frameGateState('panel-root').revealReady,
+    true,
+    'panel shell reveal gate flips directly (no overlaySize round-trip)',
+  );
+}
+
+// P2. cascade payload (no layoutMode key): NO panel bar — the transient
+//     overlay's DOM is byte-identical to the pre-panel host.
+{
+  const { host, document } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  assert.strictEqual(
+    document.getElementById('global-lookup-panel-bar'),
+    null,
+    'cascade mode never creates the panel bar',
+  );
+}
+
+// P3. panel bar chrome: grip mousedown posts beginWindowDrag; pin toggles the
+//     visual + posts panelPin; close posts panelClose; setPanelPinnedVisual
+//     syncs the visual from the Dart pref.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+  });
+  const bar = document.getElementById('global-lookup-panel-bar');
+  const [grip, pinBtn, closeBtn] = bar.children;
+  const fakeEvent = { preventDefault() {}, stopPropagation() {} };
+
+  hostPostLog = [];
+  grip._listeners['mousedown'][0](fakeEvent);
+  assert.ok(
+    hostPostLog.some((m) => m.handler === 'beginWindowDrag'),
+    'grip mousedown posts beginWindowDrag (native HTCAPTION loop)',
+  );
+
+  hostPostLog = [];
+  pinBtn._listeners['pointerdown'][0](fakeEvent);
+  const pinMsg = hostPostLog.find((m) => m.handler === 'panelPin');
+  assert.ok(pinMsg, 'pin posts panelPin');
+  assert.strictEqual(pinMsg.args[0], false, 'default pinned -> first tap unpins');
+  assert.ok(
+    pinBtn.className.indexOf('panel-pin-off') >= 0,
+    'unpinned visual applied',
+  );
+
+  host.setPanelPinnedVisual(true);
+  assert.ok(
+    pinBtn.className.indexOf('panel-pin-off') < 0,
+    'setPanelPinnedVisual(true) restores the pinned visual (Dart pref sync)',
+  );
+
+  hostPostLog = [];
+  closeBtn._listeners['pointerdown'][0](fakeEvent);
+  assert.ok(
+    hostPostLog.some((m) => m.handler === 'panelClose'),
+    'close posts panelClose (Dart hides + pauses)',
+  );
+}
+
 console.log('global_lookup_host_test: PASS');

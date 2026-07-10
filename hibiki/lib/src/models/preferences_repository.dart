@@ -31,6 +31,30 @@ enum DesktopClipboardWindowMode {
   }
 }
 
+/// 剪贴板查词去向（spec 2026-07-10 剪贴板独立弹窗）：
+/// panel = 常驻悬浮面板（覆盖窗第二实例，仅 Windows，**默认**——用户 2026-07-10
+/// 拍板：默认独立窗口而非主窗口）；main = 主窗查词 tab；transient = 光标处
+/// 瞬态弹卡（复用全局查词覆盖窗，仅 Windows）。
+/// 未知/空存值回退 panel（=默认）。非 Windows 平台覆盖窗不可用，去向路由
+/// （resolveDesktopLookupConsumer）自动退回主窗 tab，行为不变。
+enum DesktopClipboardDestination {
+  main('main'),
+  panel('panel'),
+  transient('transient');
+
+  const DesktopClipboardDestination(this.storageValue);
+
+  final String storageValue;
+
+  static DesktopClipboardDestination fromStorage(String value) {
+    for (final DesktopClipboardDestination d
+        in DesktopClipboardDestination.values) {
+      if (d.storageValue == value) return d;
+    }
+    return DesktopClipboardDestination.panel;
+  }
+}
+
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
 /// 与 mpv 内置几何（`video_setting_mpv_aspect`/`zoom`/`panscan`）是两个不同层：这里只决定
@@ -414,6 +438,46 @@ class PreferencesRepository extends ChangeNotifier {
     DesktopClipboardWindowMode value,
   ) async {
     await setPref('desktop_clipboard_window_mode', value.storageValue);
+    notifyListeners();
+  }
+
+  DesktopClipboardDestination get desktopClipboardDestination =>
+      DesktopClipboardDestination.fromStorage(getPref(
+        'desktop_clipboard_destination',
+        defaultValue: '',
+      ) as String);
+
+  Future<void> setDesktopClipboardDestination(
+    DesktopClipboardDestination value,
+  ) async {
+    await setPref('desktop_clipboard_destination', value.storageValue);
+    notifyListeners();
+  }
+
+  final double defaultClipboardPanelOpacity = 0.85;
+
+  double get clipboardPanelOpacity => getPref('clipboard_panel_opacity',
+      defaultValue: defaultClipboardPanelOpacity) as double;
+
+  Future<void> setClipboardPanelOpacity(double value) async {
+    await setPref('clipboard_panel_opacity', value);
+    notifyListeners();
+  }
+
+  /// 面板窗位置/尺寸记忆，格式 `x,y,w,h`（逻辑像素）；空 = 从未摆放（用默认位）。
+  String get clipboardPanelRect =>
+      getPref('clipboard_panel_rect', defaultValue: '') as String;
+
+  Future<void> setClipboardPanelRect(String value) async {
+    await setPref('clipboard_panel_rect', value);
+    notifyListeners();
+  }
+
+  bool get clipboardPanelPinned =>
+      getPref('clipboard_panel_pinned', defaultValue: true) as bool;
+
+  Future<void> setClipboardPanelPinned(bool value) async {
+    await setPref('clipboard_panel_pinned', value);
     notifyListeners();
   }
 

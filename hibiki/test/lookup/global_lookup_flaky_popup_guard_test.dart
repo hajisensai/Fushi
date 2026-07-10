@@ -23,7 +23,10 @@ void main() {
 
   group('A — overlay WebView2 is prewarmed off-screen (own ownership)', () {
     test('Dart channel exposes prewarmWebView', () {
-      final String ch = read('lib/src/lookup/global_lookup_channel.dart');
+      final String
+          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+          read('lib/src/lookup/global_lookup_channel.dart') +
+              read('lib/src/lookup/overlay_window_channel.dart');
       expect(ch.contains("invokeMethod<void>('prewarmWebView'"), isTrue,
           reason: 'a dedicated prewarm channel method must exist');
     });
@@ -65,7 +68,10 @@ void main() {
     });
 
     test('a readiness query exists on the channel + native', () {
-      final String ch = read('lib/src/lookup/global_lookup_channel.dart');
+      final String
+          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+          read('lib/src/lookup/global_lookup_channel.dart') +
+              read('lib/src/lookup/overlay_window_channel.dart');
       expect(ch.contains("invokeMethod<bool>('isWebViewReady')"), isTrue);
       final String fw = read('windows/runner/flutter_window.cpp');
       expect(fw.contains('method == "isWebViewReady"'), isTrue);

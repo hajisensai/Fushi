@@ -152,7 +152,9 @@ void main() {
       cpp = read('windows/runner/global_lookup_window.cpp');
       controller = read('lib/src/lookup/global_lookup_controller.dart');
       render = read('lib/src/lookup/global_lookup_render.dart');
-      channel = read('lib/src/lookup/global_lookup_channel.dart');
+      channel = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+          read('lib/src/lookup/global_lookup_channel.dart') +
+              read('lib/src/lookup/overlay_window_channel.dart');
     });
 
     test('C1: host re-anchors a child onLinkClick rect + stamps the frame id',

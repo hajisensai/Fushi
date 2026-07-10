@@ -372,7 +372,10 @@ void main() {
 
     test('symptom 3 — channel parses cursorWork offset into the show result',
         () {
-      final String channel = read('lib/src/lookup/global_lookup_channel.dart');
+      final String
+          channel = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+          read('lib/src/lookup/global_lookup_channel.dart') +
+              read('lib/src/lookup/overlay_window_channel.dart');
       expect(channel.contains("reply['cursorWorkX']"), isTrue);
       expect(channel.contains("reply['cursorWorkY']"), isTrue);
       expect(channel.contains('this.cursorWorkX'), isTrue);

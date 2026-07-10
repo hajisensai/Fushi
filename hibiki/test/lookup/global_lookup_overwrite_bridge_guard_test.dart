@@ -34,16 +34,19 @@ void main() {
       () {
     late String src;
     setUpAll(() {
-      src = read('lib/src/lookup/global_lookup_controller.dart');
+      // spec 2026-07-10: 桥 handler 抽到 overlay_bridge_handlers.dart 与剪贴板
+      // 面板共享（红线：两表面不复制不漂移）；守卫扫 controller+共享实现拼接。
+      src = read('lib/src/lookup/global_lookup_controller.dart') +
+          read('lib/src/lookup/overlay_bridge_handlers.dart');
     });
 
     test('_onJsMessage routes overwriteTargetNoteId / updateEntry to handlers',
         () {
-      expect(src.contains("if (handler == 'overwriteTargetNoteId')"), isTrue,
+      expect(src.contains("case 'overwriteTargetNoteId':"), isTrue,
           reason: '_onJsMessage 必须有覆写目标探测分支（否则已存在卡永不进 ✓↩）');
       expect(src.contains('_handleOverwriteTargetBridge('), isTrue,
           reason: '覆写目标探测走独立 deferred 处理器');
-      expect(src.contains("if (handler == 'updateEntry')"), isTrue,
+      expect(src.contains("case 'updateEntry':"), isTrue,
           reason: '_onJsMessage 必须有覆写执行分支（否则点 ✓↩ 覆写静默失败）');
       expect(src.contains('_handleUpdateBridge('), isTrue,
           reason: '覆写执行走独立 deferred 处理器');

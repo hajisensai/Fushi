@@ -141,6 +141,22 @@
   var originFloorLeft = 0;
   var originFloorTop = 0;
 
+  // spec 2026-07-10 — host layout mode. 'cascade' (default) = the transient
+  // global-lookup geometry (content-sized window, off-screen self-measure ->
+  // overlaySize -> reveal). 'panel' = the persistent clipboard panel: the
+  // window rect is FIXED (user-remembered), the ROOT shell fills the viewport
+  // below the panel bar (content scrolls inside the iframe), measureAndReport
+  // is short-circuited (no reveal-resize loop) and a blank click never
+  // dismisses (persistent semantics). Carried per renderStack payload so a
+  // cascade payload without the key is byte-identical to the pre-panel host.
+  var layoutMode = 'cascade';
+  // Panel top bar height (CSS px): grip + pin + close. Root shell top offset.
+  var PANEL_BAR_HEIGHT = 28;
+  // Panel pin VISUAL state. The truth source is the Dart-side pref (native
+  // SetTopmost applies it); Dart syncs this visual via setPanelPinnedVisual on
+  // panel show so the bar icon matches the remembered pref.
+  var panelPinnedVisual = true;
+
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
   // it identically to popup.js-originated messages. Read-only host messages need
@@ -312,11 +328,143 @@
         'color:rgba(235,235,245,0.6);}' +
         '.global-lookup-frame-shell[data-theme="dark"] ' +
         '.global-lookup-close:hover{' +
-        'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}';
+        'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}' +
+        // spec 2026-07-10 — panel top bar (grip + pin + close). Fixed to the
+        // window top, above the root shell (which starts at PANEL_BAR_HEIGHT).
+        // pointer-events:auto so the grip mousedown reaches the drag handler
+        // even though the layer beneath is pointer-events:none. Only created in
+        // panel mode (ensurePanelBar), so the transient overlay never carries
+        // this DOM/CSS.
+        '#global-lookup-panel-bar{' +
+        'position:fixed;left:0;top:0;right:0;height:28px;' +
+        'display:flex;align-items:center;z-index:2147483001;' +
+        'pointer-events:auto;user-select:none;-webkit-user-select:none;' +
+        'background:rgba(120,120,128,0.10);border-radius:10px 10px 0 0;}' +
+        '#global-lookup-panel-bar .panel-grip{' +
+        'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
+        'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
+        'color:rgba(120,120,128,0.8);letter-spacing:2px;}' +
+        '#global-lookup-panel-bar .panel-btn{' +
+        'width:24px;height:24px;line-height:24px;text-align:center;' +
+        'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
+        'font-size:14px;cursor:pointer;border-radius:12px;' +
+        'color:rgba(60,60,67,0.6);}' +
+        '#global-lookup-panel-bar .panel-btn:hover{' +
+        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.9);}' +
+        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
+        // Bottom-right resize grip (posts beginWindowResize).
+        '#global-lookup-panel-resize{' +
+        'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
+        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
     (head || document.documentElement || document.body).appendChild(style);
+  }
+
+  // spec 2026-07-10 — the panel top bar: drag grip + pin toggle + close. Host
+  // chrome (postToHost, no bridge id): beginWindowDrag/beginWindowResize are
+  // intercepted natively (HTCAPTION modal loop); panelPin/panelClose reach the
+  // Dart panel controller. Idempotent; only called from panel-mode renderStack.
+  function ensurePanelBar() {
+    if (!document || typeof document.createElement !== 'function') {
+      return null;
+    }
+    var existing = document.getElementById('global-lookup-panel-bar');
+    if (existing) {
+      return existing;
+    }
+    ensureStyle();
+    var bar = document.createElement('div');
+    bar.id = 'global-lookup-panel-bar';
+
+    var grip = document.createElement('div');
+    grip.className = 'panel-grip';
+    grip.textContent = '⋯';
+    grip.addEventListener('mousedown', function (event) {
+      if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+      }
+      postToHost('beginWindowDrag', []);
+    }, true);
+    bar.appendChild(grip);
+
+    var pinBtn = document.createElement('div');
+    pinBtn.className =
+        'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
+    pinBtn.setAttribute('role', 'button');
+    pinBtn.setAttribute('aria-label', 'Pin');
+    pinBtn.textContent = '📌';
+    var onPin = function (event) {
+      if (event) {
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+      }
+      setPanelPinnedVisual(!panelPinnedVisual);
+      postToHost('panelPin', [panelPinnedVisual]);
+    };
+    pinBtn.addEventListener('pointerdown', onPin, true);
+    bar.appendChild(pinBtn);
+
+    var closeBtn = document.createElement('div');
+    closeBtn.className = 'panel-btn panel-close';
+    closeBtn.setAttribute('role', 'button');
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    var onClose = function (event) {
+      if (event) {
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+      }
+      postToHost('panelClose', []);
+    };
+    closeBtn.addEventListener('pointerdown', onClose, true);
+    bar.appendChild(closeBtn);
+
+    (document.body || document.documentElement).appendChild(bar);
+
+    var resize = document.createElement('div');
+    resize.id = 'global-lookup-panel-resize';
+    resize.addEventListener('mousedown', function (event) {
+      if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+      }
+      postToHost('beginWindowResize', []);
+    }, true);
+    (document.body || document.documentElement).appendChild(resize);
+    return bar;
+  }
+
+  // spec 2026-07-10 — syncs the pin button's VISUAL state to the Dart pref
+  // (the truth source; native SetTopmost applies the actual z-order).
+  function setPanelPinnedVisual(pinned) {
+    panelPinnedVisual = !!pinned;
+    var bar = document.getElementById &&
+        document.getElementById('global-lookup-panel-bar');
+    if (!bar) {
+      return;
+    }
+    // children walk (not querySelector) so the node harness's minimal fake DOM
+    // exercises the same code path a real browser does.
+    var kids = bar.children || [];
+    for (var i = 0; i < kids.length; i++) {
+      var kid = kids[i];
+      if (kid && String(kid.className).indexOf('panel-pin') >= 0) {
+        kid.className =
+            'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
+        return;
+      }
+    }
   }
 
   function ensureLayer() {
@@ -346,6 +494,24 @@
     var theme = descriptor && descriptor.theme;
     if (theme === 'dark' || theme === 'light') {
       shell.setAttribute('data-theme', theme);
+    }
+    // spec 2026-07-10 panel — the ROOT shell ignores descriptor.frame and fills
+    // the fixed window viewport below the panel bar; the sentence + entries
+    // scroll INSIDE the iframe (fixed window = no reveal-resize loop, so a new
+    // clipboard sentence re-renders in place without any window motion).
+    // Nested children keep their Dart-computed cascade frames (bounded to the
+    // panel rect by the render side).
+    if (layoutMode === 'panel' && descriptor &&
+        typeof descriptor.parentIndex === 'number' &&
+        descriptor.parentIndex < 0) {
+      shell.style.position = 'absolute';
+      shell.style.left = '0px';
+      shell.style.top = PANEL_BAR_HEIGHT + 'px';
+      shell.style.width = '100%';
+      shell.style.height = 'calc(100% - ' + PANEL_BAR_HEIGHT + 'px)';
+      shell.style.zIndex = '0';
+      shell.style.pointerEvents = 'auto';
+      return;
     }
     shell.style.position = 'absolute';
     // TODO-1189 — establish a per-shell STACKING CONTEXT ordered by insertion
@@ -1001,6 +1167,12 @@
     // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
     // measure so the very first reveal already commits the headroom-covered origin.
     applyOriginFloor(payload && payload.originFloor);
+    // spec 2026-07-10 — panel mode rides the payload (absent = cascade, so the
+    // transient overlay's payload/behaviour is byte-identical to pre-panel).
+    layoutMode = (payload && payload.layoutMode) === 'panel' ? 'panel' : 'cascade';
+    if (layoutMode === 'panel') {
+      ensurePanelBar();
+    }
     if (!popups.length) {
       removeMissing([]);
       lastBBoxKey = '';
@@ -1036,6 +1208,18 @@
   // window geometry. De-duped on the box key.
   function measureAndReport() {
     if (!frames.size) {
+      return;
+    }
+    // spec 2026-07-10 panel — the window rect is FIXED (user-remembered): no
+    // overlaySize report, no reveal-resize loop. The root shell fills the
+    // viewport (applyShellStyle) and content scrolls inside the iframe, so a
+    // new clipboard sentence re-renders with zero window motion. Shells still
+    // need their reveal gate flipped (normally done by the overlaySize path),
+    // so flip it here directly.
+    if (layoutMode === 'panel') {
+      frames.forEach(function (record) {
+        setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+      });
       return;
     }
     // TODO-1231 v2 (BUG-583) — the union bbox has two independently-sourced
@@ -1291,6 +1475,12 @@
   // clicks to popup.js's per-layer path fixes it (SUB5) while the close-X (SUB1)
   // gives the mouse an explicit per-layer affordance.
   function onHostPointerDown(event) {
+    // spec 2026-07-10 panel — persistent semantics: a blank click inside the
+    // fixed panel window (panel bar gaps etc.) never dismisses. The panel bar's
+    // own buttons stopPropagation before this handler anyway.
+    if (layoutMode === 'panel') {
+      return;
+    }
     var t = event && event.target;
     if (t && typeof t.closest === 'function' &&
         t.closest('.global-lookup-frame-shell')) {
@@ -1463,6 +1653,8 @@
     commitLayerShift: commitLayerShift,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
+    // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).
+    setPanelPinnedVisual: setPanelPinnedVisual,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.

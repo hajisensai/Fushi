@@ -1,0 +1,35 @@
+// spec 2026-07-10 剪贴板独立弹窗 — 桌面查词请求的去向路由（纯函数）。
+//
+// HomeDictionaryPage（mainTab）与 DesktopLookupDispatcher（panel/transient）
+// 都用 [resolveDesktopLookupConsumer] 对同一个 pendingRequest 做互斥分区：
+// 判定不属于自己分区的请求一律不消费，故永不双消费、永不丢请求。
+
+import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+
+/// 桌面查词请求的消费面（spec 2026-07-10 §4）。
+enum DesktopLookupConsumer { mainTab, panel, transient }
+
+/// 纯函数：一次 [DesktopLookupService] 请求应落到哪个消费面。
+/// - explicit（悬浮字幕点词回落）恒 mainTab：它本就是覆盖窗不可用时的回落路径，
+///   覆盖窗可用时悬浮字幕点词根本不会走到 DesktopLookupService。
+/// - 覆盖窗不可用（非 Windows / 控制器未启动）时 panel/transient 退回 mainTab，
+///   请求永不静默丢失。
+DesktopLookupConsumer resolveDesktopLookupConsumer({
+  required DesktopLookupOrigin origin,
+  required DesktopClipboardDestination destination,
+  required bool overlayAvailable,
+}) {
+  if (origin == DesktopLookupOrigin.explicit) {
+    return DesktopLookupConsumer.mainTab;
+  }
+  if (!overlayAvailable) return DesktopLookupConsumer.mainTab;
+  switch (destination) {
+    case DesktopClipboardDestination.main:
+      return DesktopLookupConsumer.mainTab;
+    case DesktopClipboardDestination.panel:
+      return DesktopLookupConsumer.panel;
+    case DesktopClipboardDestination.transient:
+      return DesktopLookupConsumer.transient;
+  }
+}

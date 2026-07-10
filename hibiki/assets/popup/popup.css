@@ -1254,6 +1254,15 @@ html.global-lookup body {
     border-radius: 10px;
     padding: 8px 10px 10px;
     min-height: 100%;
+    /* spec 2026-07-10 §6 — semi-transparent card fill. Default alpha=1 with the
+       same rgb triplet the theme injects into --background-color, so this line
+       is byte-equivalent to the old opaque fill for the in-app popup and the
+       transient overlay (zero regression). The clipboard panel sets
+       --hibiki-card-bg-alpha < 1 (opacity slider) so the Win11 acrylic backdrop
+       (ApplySystemBackdrop) shows through; when the backdrop is unavailable
+       Dart always passes 1. */
+    background: rgba(var(--hibiki-card-bg-rgb, 255, 255, 255),
+        var(--hibiki-card-bg-alpha, 1));
 }
 
 html.global-lookup[data-theme="dark"] body {
@@ -1326,4 +1335,14 @@ html.global-lookup .glossary-section > .category-body > .glossary-group {
     line-height: 1.5;
     word-break: break-word;
     white-space: pre-wrap;
+}
+
+/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词，嵌套子卡）。 */
+.global-lookup-sentence-char {
+    cursor: pointer;
+}
+
+.global-lookup-sentence-char:hover {
+    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    border-radius: 2px;
 }

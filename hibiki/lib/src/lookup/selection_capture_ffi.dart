@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/sentence_extraction.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 typedef _KeybdEventNative = Void Function(
     Uint8 bVk, Uint8 bScan, Uint32 dwFlags, IntPtr dwExtraInfo);
@@ -59,23 +60,40 @@ abstract final class SelectionCapture {
 
     final String? oldText =
         (await Clipboard.getData(Clipboard.kTextPlain))?.text;
-    await Clipboard.setData(const ClipboardData(text: ''));
 
-    _injectCleanCopy();
-
-    // Bounded poll: the Windows clipboard update is async and may be briefly
-    // locked by the source app (mirrors the BUG-114 retry in
-    // desktop_lookup_service.dart). ~600ms ceiling.
+    // spec 2026-07-10 §8 — 本函数的剪贴板写入（清空 / 注入 Ctrl+C 的选区写入 /
+    // 旧值恢复）都会触发 WM_CLIPBOARDUPDATE；此刻 app 不在前台，剪贴板监听会把
+    // 它们当用户复制排进查词管线（假查词/面板错句）。TODO-617 设计（design.md:74）
+    // 规划过此护栏但从未实现。审查修正：captured 回声可能在下方轮询的 await 间隙
+    // **先于事后登记**到达——故改用捕获期括号：begin 后事件一律暂存，end 时以
+    // 「本次自产文本集合」对账放行/丢弃（收口后才到的恢复回声由登记集拦截）。
+    DesktopLookupService.instance.beginSelfInflictedCapture();
     String? captured;
-    for (int i = 0; i < 24; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 25));
-      final String? now = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
-      if (now != null && now.isNotEmpty) {
-        captured = now;
-        break;
-      }
-    }
+    try {
+      await Clipboard.setData(const ClipboardData(text: ''));
 
+      _injectCleanCopy();
+
+      // Bounded poll: the Windows clipboard update is async and may be briefly
+      // locked by the source app (mirrors the BUG-114 retry in
+      // desktop_lookup_service.dart). ~600ms ceiling.
+      for (int i = 0; i < 24; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        final String? now =
+            (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+        if (now != null && now.isNotEmpty) {
+          captured = now;
+          break;
+        }
+      }
+    } finally {
+      // 收口在恢复写入**之前**：恢复回声在登记之后到达，必被登记集吞掉。
+      // finally 保证异常路径也不把括号留开（否则后续真实复制全被暂存卡死）。
+      DesktopLookupService.instance.endSelfInflictedCapture(<String>[
+        if (captured != null) captured,
+        if (oldText != null) oldText,
+      ]);
+    }
     if (oldText != null && oldText.isNotEmpty && captured != oldText) {
       await Clipboard.setData(ClipboardData(text: oldText));
     }

@@ -12,7 +12,6 @@
 // deferred audio bridge calls (resolveWordAudio / playWordAudio).
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -22,10 +21,10 @@ import 'package:hibiki/src/lookup/global_lookup_layout.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
+import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
 import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -34,8 +33,6 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
@@ -46,6 +43,11 @@ class GlobalLookupController {
   static final GlobalLookupController instance = GlobalLookupController._();
 
   static bool get isSupported => Platform.isWindows;
+
+  /// spec 2026-07-10 — 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。
+  /// 剪贴板查词去向路由（desktop_lookup_router）以此决定 panel/transient 是否
+  /// 可用；不可用一律退回主窗 tab，请求不丢。
+  bool get isAvailable => isSupported && _started;
 
   AppModel? _appModel;
   HotKey? _hotKey;
@@ -697,63 +699,17 @@ class GlobalLookupController {
       }
       return;
     }
-    // Audio handlers are DEFERRED natively (see global_lookup_window.cpp): the
-    // main engine must supply the real reply and resolve the JS promise via
-    // resolveBridge(id, value), else the ♪ button hangs. popup.js calls
-    // resolveWordAudio({expression,reading}) then playWordAudio({url}).
-    if (handler == 'resolveWordAudio' ||
-        handler == 'queryLocalAudio' ||
-        handler == 'playWordAudio') {
-      unawaited(_handleAudioBridge(handler! as String, message));
-      return;
-    }
-    // TODO-1188 — 收藏（☆/★）也是 DEFERRED 桥：popup.js 的 createFavoriteButton
-    // await callHandler('favoriteEntry'/'favoriteCheck', {expression, reading})，
-    // 需 Dart 落库（FavoriteWords 表）后经 resolveBridge 回传新收藏态，iframe 里的
-    // 星标才切换。app 外覆盖窗过去 Dart 侧没有这两个分支（按钮永挂），且 C++ 把它们
-    // 当只读即时 null-resolve（回传恒 null）——本次一并接上（C++ 也纳入 deferred，
-    // host 桥回程把回复路由回源 iframe）。始终 resolveBridge，即使无 model / 出错，
-    // 收藏按钮也不会卡死。
-    if (handler == 'favoriteEntry' || handler == 'favoriteCheck') {
-      unawaited(_handleFavoriteBridge(handler! as String, message));
-      return;
-    }
-    // TODO-1188 follow-up — 制卡（➕）也是 DEFERRED 桥：popup.js 的 mine 按钮
-    // await callHandler('mineEntry', fields) 拿 {ankiConnect,noteId}，再
-    // await callHandler('duplicateCheck', {expression,reading}) 拿 bool 把 ➕→✓。
-    // app 外覆盖窗过去 Dart 侧没有这两个分支、C++ 又当只读即时 null-resolve（mineEntry
-    // 拿 null=没制成、duplicateCheck 拿 null=永不显示已制卡）——本次一并接上，直接调
-    // AnkiConnect/AnkiDroid repo（与 in-app DictionaryPageMixin.onMineEntry /
-    // checkDuplicate 同一 repo.mineEntry / repo.isDuplicate 路径），resolveBridge 回传
-    // 供 popup.js 翻 ✓。始终 resolveBridge，即使无 model / 出错也不卡死按钮。
-    if (handler == 'mineEntry') {
-      unawaited(_handleMineBridge(message));
-      return;
-    }
-    if (handler == 'duplicateCheck') {
-      unawaited(_handleDuplicateBridge(message));
-      return;
-    }
-    // TODO-1225 — 覆写制卡（✓↩）也是 DEFERRED 桥，补上 1188 只做了新建/查重后缺的那半：
-    //   - overwriteTargetNoteId：popup.js 查词时若 duplicateCheck 命中已存在卡（且非本
-    //     会话最近），await callHandler('overwriteTargetNoteId', {expression,reading}) 拿
-    //     一张可覆写的 note id（仅 AnkiSettings.overwriteScope=all 且 AnkiConnect 后端返回
-    //     非空），据此把已存在卡提升到 ✓↩「最新可改」态，一点即覆写。
-    //   - updateEntry：点 ✓↩ 时 await callHandler('updateEntry', {noteId,fields}) 按 id
-    //     真实覆盖字段（不新增卡、不查重、不记账）——与 in-app DictionaryPageMixin
-    //     .findOverwriteTargetNoteId / onUpdateEntry 同 repo.findOverwriteTargetNoteId /
-    //     repo.updateMinedNote 路径，别发明新协议。
-    // 两者过去在 C++ 都被当只读即时 null-resolve（overwriteTargetNoteId 拿 null=永不进
-    // ✓↩、updateEntry 拿 null=覆写静默失败），本次一并纳入 deferred 由 Dart 权威回复。
-    // minedCardAction（点普通 ✓ 弹「覆写哪张/新增重复/查看」操作面板）仍保持即时 null
-    // 降级——它需在前台弹 Flutter 底栏，而 app 外主窗被外部应用挡在后台无法呈现（见
-    // C++ 注释），故 app 外覆写只走 overwriteTargetNoteId + updateEntry 的 ✓↩ 就地覆写。
-    if (handler == 'overwriteTargetNoteId') {
-      unawaited(_handleOverwriteTargetBridge(message));
-      return;
-    }
-    if (handler == 'updateEntry') {
-      unawaited(_handleUpdateBridge(message));
+    // 九根 DEFERRED 桥（音频 ×3 / 收藏 ×2 / 制卡 ×2 / 覆写 ×2）统一走共享
+    // 权威 handler（spec 2026-07-10 抽取到 overlay_bridge_handlers.dart，与
+    // 常驻剪贴板面板共用同一实现——红线：两个表面绝不复制、绝不漂移）。
+    // 历史语义与决策记录（TODO-1188/1225：为何 deferred、minedCardAction 为何
+    // 保持即时 null 降级）随实现一并搬到该文件。
+    if (maybeHandleOverlayDeferredBridge(
+      model: _appModel,
+      handler: handler,
+      message: message,
+      resolveBridge: GlobalLookupChannel.resolveBridge,
+    )) {
       return;
     }
     // TODO-867 P3c D2 — size + place the overlay window from the host's stack
@@ -823,221 +779,6 @@ class GlobalLookupController {
     unawaited(_lookupNested(query, anchor));
   }
 
-  /// Resolves a deferred audio bridge call and pushes the reply back to the
-  /// overlay (resolveBridge). Always resolves — even on error / no model — so
-  /// the awaiting ♪ button never freezes.
-  Future<void> _handleAudioBridge(
-      String handler, Map<String, Object?> message) async {
-    final int? id = (message['__bridgeId'] is num)
-        ? (message['__bridgeId'] as num).toInt()
-        : null;
-    Object? reply;
-    try {
-      final AppModel? model = _appModel;
-      final Object? args = message['args'];
-      final Map<Object?, Object?> data =
-          (args is List && args.isNotEmpty && args.first is Map)
-              ? (args.first as Map)
-              : const <Object?, Object?>{};
-      if (model == null) {
-        reply = handler == 'playWordAudio' ? false : null;
-      } else if (handler == 'playWordAudio') {
-        final String url = data['url']?.toString() ?? '';
-        final bool ok = url.isEmpty
-            ? false
-            : await TtsChannel.instance.playAudioRef(
-                url,
-                volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-              );
-        reply = ok;
-      } else {
-        // resolveWordAudio / queryLocalAudio -> the configured-source URL.
-        final String expression = data['expression']?.toString() ?? '';
-        final String reading = data['reading']?.toString() ?? '';
-        // Diagnostic: which audio sources are configured/enabled? A null reply
-        // with 0 enabled sources = nothing to query (config), not a wiring bug.
-        glog('audio: resolve "$expression"/"$reading" '
-            'enabled=${model.enabledAudioSources} '
-            'configs=${model.audioSourceConfigs.length}');
-        reply = expression.isEmpty
-            ? null
-            : await resolveLookupAudioUrl(model, expression, reading);
-      }
-    } catch (e, st) {
-      glog('audio: EXCEPTION $e\n$st');
-      reply = handler == 'playWordAudio' ? false : null;
-    }
-    if (id != null) {
-      glog('audio: $handler -> reply=$reply (id=$id)');
-      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
-    }
-  }
-
-  /// TODO-1188 — resolves a DEFERRED favorite bridge call (favoriteEntry toggles
-  /// the FavoriteWords row and returns the NEW state; favoriteCheck just reads the
-  /// current state) and pushes the resulting bool back to the overlay iframe via
-  /// [GlobalLookupChannel.resolveBridge] so popup.js flips the ☆/★ star. Always
-  /// resolves — even on error / no model — so the ☆ button never freezes (mirrors
-  /// [_handleAudioBridge]). The DB logic mirrors the in-app
-  /// [DictionaryPageMixin.onFavoriteEntry]/[onFavoriteCheck].
-  Future<void> _handleFavoriteBridge(
-      String handler, Map<String, Object?> message) async {
-    final int? id = (message['__bridgeId'] is num)
-        ? (message['__bridgeId'] as num).toInt()
-        : null;
-    bool reply = false;
-    try {
-      final AppModel? model = _appModel;
-      final Object? args = message['args'];
-      final Map<Object?, Object?> data =
-          (args is List && args.isNotEmpty && args.first is Map)
-              ? (args.first as Map)
-              : const <Object?, Object?>{};
-      final String expression = data['expression']?.toString() ?? '';
-      final String reading = data['reading']?.toString() ?? '';
-      if (model != null && expression.isNotEmpty) {
-        reply = await _toggleOrCheckFavorite(
-          model,
-          toggle: handler == 'favoriteEntry',
-          expression: expression,
-          reading: reading,
-        );
-      }
-    } catch (e, st) {
-      glog('favorite: EXCEPTION $e\n$st');
-      reply = false;
-    }
-    if (id != null) {
-      glog('favorite: $handler -> reply=$reply (id=$id)');
-      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
-    }
-  }
-
-  /// TODO-1188 — favorite toggle ([toggle] true, favoriteEntry) or read ([toggle]
-  /// false, favoriteCheck) against the FavoriteWords table. Returns the resulting
-  /// favorited state (true = now favorited). Uses [kStatSourceBook] to match the
-  /// in-app dictionary default ([DictionaryPageMixin.dictionarySourceType]) so the
-  /// (expression, reading, sourceType) uniqueness key is SHARED with in-book
-  /// favorites — a word favorited app-out and the same word in the book reader
-  /// popup toggle the same row (consistent ★ across surfaces). No toast here: the
-  /// main window is backgrounded behind the external app, so the star flip in the
-  /// overlay iframe (driven by this returned bool) is the user-visible feedback.
-  Future<bool> _toggleOrCheckFavorite(
-    AppModel model, {
-    required bool toggle,
-    required String expression,
-    required String reading,
-  }) async {
-    final HibikiDatabase db = model.database;
-    final bool already = await db.isFavoriteWord(
-      expression: expression,
-      reading: reading,
-      sourceType: kStatSourceBook,
-    );
-    if (!toggle) {
-      return already; // favoriteCheck: report the current state, no write.
-    }
-    if (already) {
-      await db.removeFavoriteWord(
-        expression: expression,
-        reading: reading,
-        sourceType: kStatSourceBook,
-      );
-      return false;
-    }
-    await db.addFavoriteWord(
-      expression: expression,
-      reading: reading,
-      glossary: '',
-      sourceType: kStatSourceBook,
-      dateKey: statTodayKey(),
-    );
-    return true;
-  }
-
-  /// TODO-1188 follow-up — resolves a DEFERRED mineEntry bridge call and pushes
-  /// the {ankiConnect, noteId} result back to the overlay iframe via
-  /// [GlobalLookupChannel.resolveBridge] so popup.js flips the ➕ button
-  /// (parseMineResult). Mirrors the in-app [DictionaryPageMixin.onMineEntry].
-  /// Always resolves — even on error / no model — so the ➕ button never freezes
-  /// (same contract as [_handleFavoriteBridge] / [_handleAudioBridge]).
-  Future<void> _handleMineBridge(Map<String, Object?> message) async {
-    final int? id = (message['__bridgeId'] is num)
-        ? (message['__bridgeId'] as num).toInt()
-        : null;
-    Map<String, Object?> reply = const <String, Object?>{
-      'ankiConnect': false,
-      'noteId': null,
-    };
-    try {
-      final AppModel? model = _appModel;
-      final Object? args = message['args'];
-      final Map<Object?, Object?> raw =
-          (args is List && args.isNotEmpty && args.first is Map)
-              ? (args.first as Map)
-              : const <Object?, Object?>{};
-      final Map<String, String> fields = <String, String>{
-        for (final MapEntry<Object?, Object?> e in raw.entries)
-          e.key.toString(): e.value?.toString() ?? '',
-      };
-      final String expression = fields['expression'] ?? '';
-      if (model != null && expression.isNotEmpty) {
-        reply = await _mineEntry(model, fields);
-      }
-    } catch (e, st) {
-      glog('mine: EXCEPTION $e\n$st');
-      reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
-    }
-    if (id != null) {
-      glog('mine: mineEntry -> reply=$reply (id=$id)');
-      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
-    }
-  }
-
-  /// TODO-1188 follow-up — mines [fields] to Anki through the same
-  /// [BaseAnkiRepository.mineEntry] path the in-app dictionary popup uses
-  /// ([DictionaryPageMixin.onMineEntry]), records the mined-count + mined-sentence
-  /// stats on success (source [kStatSourceBook], to match the in-book dictionary
-  /// default so the shared uniqueness key + tag category stay consistent across
-  /// surfaces), and returns the popup.js-shaped {ankiConnect, noteId} reply.
-  ///
-  /// Gaiji (外字) bytes are flushed to the Anki media cache first (via
-  /// [writeDictionaryMediaCache]) so dictionary media embeds rather than degrading
-  /// to alt text — exactly as the in-app mineEntry handler does. App-external
-  /// lookup has NO screenshot / sentence-audio media context (the source text
-  /// lives in another app), so the card is a plain text/dictionary card; the
-  /// word-pronunciation `audio` field is still resolved by popup.js's
-  /// buildMinePayload when audio sources are configured. No toast: the main window
-  /// is backgrounded behind the external app (Windows Fluttertoast would not
-  /// render over it), so the button's ➕→✓ flip — driven by the follow-up
-  /// duplicateCheck reading THIS card back — is the user-visible feedback.
-  Future<Map<String, Object?>> _mineEntry(
-    AppModel model,
-    Map<String, String> fields,
-  ) async {
-    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo =
-        model.platformServices.createAnkiRepository();
-    final MineOutcome outcome = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: AnkiMiningContext(
-        sentence: fields['sentence'] ?? '',
-        source: AnkiMiningSource.book,
-      ),
-    );
-    // 与 in-app onMineEntry 同判据：仅 MineResult.success 回 ankiConnect=true + noteId
-    // （AnkiConnect 非空进「最新可改」态；AnkiDroid 恒 null=优雅降级）。重复/失败回
-    // false+null，随后 popup.js 的 duplicateCheck 若查到已存在仍会把按钮涂成 ✓。
-    final bool success = outcome.result == MineResult.success;
-    if (success) {
-      unawaited(_recordMinedStats(model, fields, outcome.noteId));
-    }
-    return <String, Object?>{
-      'ankiConnect': success,
-      'noteId': success ? outcome.noteId : null,
-    };
-  }
-
   /// TODO-1204 — records one lookup on every app-external hotkey / nested lookup
   /// (source [kStatSourceBook]; no book locator — global overlay is not tied to a
   /// book, so it only feeds the stats page "lookup" totals, never a per-book
@@ -1058,198 +799,6 @@ class GlobalLookupController {
     } catch (e, st) {
       glog('lookup-count: EXCEPTION (sync) $e\n$st');
     }
-  }
-
-  /// TODO-1188 follow-up — records one mined-count + one mined-sentence history
-  /// row on a successful app-external mine (source [kStatSourceBook]; no book
-  /// locator — same as home / standalone lookup, mirrors
-  /// [DictionaryPageMixin.recordMined]/[recordMinedSentence]). Best-effort: any
-  /// failure is logged and swallowed so a stats hiccup never fails the reply.
-  Future<void> _recordMinedStats(
-    AppModel model,
-    Map<String, String> fields,
-    int? noteId,
-  ) async {
-    try {
-      final HibikiDatabase db = model.database;
-      final String dateKey = statTodayKey();
-      await db.addMiningCount(sourceType: kStatSourceBook, dateKey: dateKey);
-      // TODO-1204：并行写 per-book 制卡计数（app 外全局查词无书 → bookKey/title 空，
-      // 只进统计页「查词」汇总。addMiningCount 保留不动，Never break userspace）。
-      await db.addMineCountPerBook(
-          sourceType: kStatSourceBook, dateKey: dateKey);
-      await db.addMinedSentence(
-        source: kStatSourceBook,
-        dateKey: dateKey,
-        expression: fields['expression'] ?? '',
-        reading: fields['reading'] ?? '',
-        glossary: fields['glossary'] ?? '',
-        sentence: fields['sentence'] ?? '',
-        noteId: noteId,
-      );
-    } catch (e, st) {
-      glog('mine: record stats FAILED (non-fatal): $e\n$st');
-    }
-  }
-
-  /// TODO-1188 follow-up — resolves a DEFERRED duplicateCheck bridge call
-  /// (queries Anki live for whether [expression]/[reading] already has a card via
-  /// [BaseAnkiRepository.isDuplicate] — the same repo path in-app checkDuplicate
-  /// uses) and pushes the bool back to the overlay iframe so popup.js paints the
-  /// ✓ (already mined) / ➕ (mineable) state at lookup time and after a mine.
-  /// Always resolves — even on error / no model — so the paint never hangs.
-  Future<void> _handleDuplicateBridge(Map<String, Object?> message) async {
-    final int? id = (message['__bridgeId'] is num)
-        ? (message['__bridgeId'] as num).toInt()
-        : null;
-    bool reply = false;
-    try {
-      final AppModel? model = _appModel;
-      final Object? args = message['args'];
-      final Map<Object?, Object?> data =
-          (args is List && args.isNotEmpty && args.first is Map)
-              ? (args.first as Map)
-              : const <Object?, Object?>{};
-      final String expression = data['expression']?.toString() ?? '';
-      final String reading = data['reading']?.toString() ?? '';
-      if (model != null && expression.isNotEmpty) {
-        final BaseAnkiRepository repo =
-            model.platformServices.createAnkiRepository();
-        reply = await repo.isDuplicate(expression, reading);
-      }
-    } catch (e, st) {
-      glog('duplicate: EXCEPTION $e\n$st');
-      reply = false;
-    }
-    if (id != null) {
-      glog('duplicate: duplicateCheck -> reply=$reply (id=$id)');
-      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
-    }
-  }
-
-  /// TODO-1225 — resolves a DEFERRED `overwriteTargetNoteId` probe: reverse-looks
-  /// up an EXISTING note id that [expression]/[reading] can overwrite in place via
-  /// [BaseAnkiRepository.findOverwriteTargetNoteId] — the SAME path the in-app
-  /// popup uses ([DictionaryPageMixin.findOverwriteTargetNoteId]). Only returns a
-  /// non-null id when the user set [AnkiSettings.overwriteScope] to `all` AND the
-  /// backend (AnkiConnect) can resolve one; otherwise (default `latest` / AnkiDroid)
-  /// it stays `null` and popup.js keeps the ordinary +/✓ two-state (Never break
-  /// userspace). A real id promotes the earlier card to popup.js's editable ✓↩
-  /// state so a single click overwrites it (updateEntry). popup.js expects a BARE
-  /// number (or null), so the reply is the raw `int?` — NOT wrapped in a map.
-  /// Always resolves — even on error / no model — so the ✓/+ paint never hangs
-  /// (mirrors [_handleDuplicateBridge]).
-  Future<void> _handleOverwriteTargetBridge(
-      Map<String, Object?> message) async {
-    final int? id = (message['__bridgeId'] is num)
-        ? (message['__bridgeId'] as num).toInt()
-        : null;
-    int? reply;
-    try {
-      final AppModel? model = _appModel;
-      final Object? args = message['args'];
-      final Map<Object?, Object?> data =
-          (args is List && args.isNotEmpty && args.first is Map)
-              ? (args.first as Map)
-              : const <Object?, Object?>{};
-      final String expression = data['expression']?.toString() ?? '';
-      final String reading = data['reading']?.toString() ?? '';
-      if (model != null && expression.isNotEmpty) {
-        final BaseAnkiRepository repo =
-            model.platformServices.createAnkiRepository();
-        reply = await repo.findOverwriteTargetNoteId(expression, reading);
-      }
-    } catch (e, st) {
-      glog('overwrite-target: EXCEPTION $e\n$st');
-      reply = null;
-    }
-    if (id != null) {
-      glog('overwrite-target: overwriteTargetNoteId -> reply=$reply (id=$id)');
-      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
-    }
-  }
-
-  /// TODO-1225 — resolves a DEFERRED `updateEntry` bridge call: OVERWRITES an
-  /// EXISTING note ([noteId]) in place with freshly-built fields through
-  /// [BaseAnkiRepository.updateMinedNote] — the SAME contract the in-app popup uses
-  /// ([DictionaryPageMixin.onUpdateEntry]). Reuses the mineEntry field/media path
-  /// (flushes gaiji [writeDictionaryMediaCache] first so overwrite carries the same
-  /// dictionary media) but does NOT create a new card and does NOT record mining
-  /// stats — an overwrite fixes an existing card in place (mirrors the in-app
-  /// `describeMineOutcome(overwrite: true)`, which does not count). popup.js's
-  /// `updateEntry` sends `{ noteId, fields }` (NOT the flat mineEntry payload), so
-  /// the fields live one level down under `fields`. Pushes the popup.js-shaped
-  /// {ankiConnect, noteId} reply back so the ✓↩ button refreshes. Always resolves —
-  /// even on error / no model / missing note id — so the ✓↩ button never freezes
-  /// (same contract as [_handleMineBridge]).
-  Future<void> _handleUpdateBridge(Map<String, Object?> message) async {
-    final int? id = (message['__bridgeId'] is num)
-        ? (message['__bridgeId'] as num).toInt()
-        : null;
-    Map<String, Object?> reply = const <String, Object?>{
-      'ankiConnect': false,
-      'noteId': null,
-    };
-    try {
-      final AppModel? model = _appModel;
-      final Object? args = message['args'];
-      final Map<Object?, Object?> envelope =
-          (args is List && args.isNotEmpty && args.first is Map)
-              ? (args.first as Map)
-              : const <Object?, Object?>{};
-      final int? noteId = (envelope['noteId'] is num)
-          ? (envelope['noteId'] as num).toInt()
-          : null;
-      final Object? rawFields = envelope['fields'];
-      final Map<Object?, Object?> raw =
-          rawFields is Map ? rawFields : const <Object?, Object?>{};
-      final Map<String, String> fields = <String, String>{
-        for (final MapEntry<Object?, Object?> e in raw.entries)
-          e.key.toString(): e.value?.toString() ?? '',
-      };
-      final String expression = fields['expression'] ?? '';
-      if (model != null && noteId != null && expression.isNotEmpty) {
-        reply = await _updateEntry(model, noteId, fields);
-      }
-    } catch (e, st) {
-      glog('update: EXCEPTION $e\n$st');
-      reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
-    }
-    if (id != null) {
-      glog('update: updateEntry -> reply=$reply (id=$id)');
-      unawaited(GlobalLookupChannel.resolveBridge(id, reply));
-    }
-  }
-
-  /// TODO-1225 — overwrites note [noteId] with [fields] through the same
-  /// [BaseAnkiRepository.updateMinedNote] path the in-app popup uses
-  /// ([DictionaryPageMixin.onUpdateEntry]). Flushes gaiji dictionary media first
-  /// (as [_mineEntry] does) so the overwrite carries identical media, then updates
-  /// by id WITHOUT recording stats (overwrite does not count). Returns the
-  /// popup.js-shaped {ankiConnect, noteId} reply (ankiConnect=true + noteId only on
-  /// [MineResult.success]; AnkiDroid's default-degrade [updateMinedNote] returns
-  /// failure → false+null, keeping the ✓↩ path a no-op there, Never break userspace).
-  Future<Map<String, Object?>> _updateEntry(
-    AppModel model,
-    int noteId,
-    Map<String, String> fields,
-  ) async {
-    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo =
-        model.platformServices.createAnkiRepository();
-    final MineOutcome outcome = await repo.updateMinedNote(
-      noteId: noteId,
-      rawPayloadJson: jsonEncode(fields),
-      context: AnkiMiningContext(
-        sentence: fields['sentence'] ?? '',
-        source: AnkiMiningSource.book,
-      ),
-    );
-    final bool success = outcome.result == MineResult.success;
-    return <String, Object?>{
-      'ankiConnect': success,
-      'noteId': success ? outcome.noteId : null,
-    };
   }
 
   /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。

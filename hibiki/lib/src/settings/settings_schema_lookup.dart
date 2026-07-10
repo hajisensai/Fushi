@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
+import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
+import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -285,9 +287,22 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.desktopClipboardEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
+              // spec 2026-07-10 §7：setter 内部经 applyDesktopClipboardLifecycle
+              // 幂等 start/stop，此处不再直接操作服务。
               await settingsContext.appModel.setDesktopClipboardEnabled(value);
-              if (!value) {
-                await DesktopLookupService.instance.stop();
+              // 默认去向=panel（用户拍板）：开总开关时若去向是面板则补预热
+              // （启动预热要求「开关开 且 去向 panel」双条件）；关总开关时收起
+              // 面板（服务已停，面板不该留着最后一句挂在屏上）。
+              if (ClipboardPanelController.isSupported) {
+                if (value &&
+                    settingsContext.appModel.desktopClipboardDestination ==
+                        DesktopClipboardDestination.panel) {
+                  unawaited(
+                      ClipboardPanelController.instance.ensurePrewarmed());
+                } else if (!value) {
+                  await ClipboardPanelController.instance
+                      .hidePanel(pause: false);
+                }
               }
               settingsContext.refresh();
             },
@@ -297,9 +312,13 @@ SettingsDestination buildLookupDestination() {
             title: t.desktop_clipboard_window_mode,
             subtitle: t.desktop_clipboard_window_mode_hint,
             icon: Icons.vertical_align_top_outlined,
+            // spec 2026-07-10：本项管的是主窗置顶策略，仅 destination==main 时
+            // 有意义（面板/瞬态去向不经主窗显示结果）。
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled,
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.main,
             options: <SettingsSegmentOption<DesktopClipboardWindowMode>>[
               SettingsSegmentOption<DesktopClipboardWindowMode>(
                 value: DesktopClipboardWindowMode.normal,
@@ -327,6 +346,89 @@ SettingsDestination buildLookupDestination() {
                 value,
               );
               settingsContext.refresh();
+            },
+          ),
+          // spec 2026-07-10 §4/§7 — 剪贴板查词去向三选。main = 主窗查词 tab
+          // （现状默认）；transient = 光标处瞬态弹卡（复用全局查词覆盖窗）；
+          // panel = 常驻悬浮面板（M2 落地后加入选项）。覆盖窗是 Windows-only
+          // （GlobalLookupController.isSupported），其余桌面平台不显示本项、
+          // 隐含恒为 main。
+          SettingsSegmentedItem<DesktopClipboardDestination>(
+            id: 'lookup.desktop_clipboard_destination',
+            title: t.desktop_clipboard_destination,
+            subtitle: t.desktop_clipboard_destination_hint,
+            icon: Icons.picture_in_picture_alt_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                GlobalLookupController.isSupported,
+            options: <SettingsSegmentOption<DesktopClipboardDestination>>[
+              SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.main,
+                label: t.desktop_clipboard_destination_main,
+                tooltip: t.desktop_clipboard_destination_main,
+              ),
+              SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.panel,
+                label: t.desktop_clipboard_destination_panel,
+                tooltip: t.desktop_clipboard_destination_panel,
+              ),
+              SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.transient,
+                label: t.desktop_clipboard_destination_transient,
+                tooltip: t.desktop_clipboard_destination_transient,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.desktopClipboardDestination,
+            onChanged: (
+              SettingsContext settingsContext,
+              DesktopClipboardDestination value,
+            ) async {
+              await settingsContext.appModel
+                  .setDesktopClipboardDestination(value);
+              // 去向切走时收起面板（不留孤儿常驻窗）；切到面板时解除 × 暂停
+              // （从设置重开面板的直觉路径，spec §5）并补预热（启动预热仅
+              // destination==panel 时做——默认 main 不常驻第二 WebView2）。
+              if (ClipboardPanelController.isSupported) {
+                if (value == DesktopClipboardDestination.panel) {
+                  ClipboardPanelController.instance.paused = false;
+                  unawaited(
+                      ClipboardPanelController.instance.ensurePrewarmed());
+                } else {
+                  await ClipboardPanelController.instance
+                      .hidePanel(pause: false);
+                }
+              }
+              settingsContext.refresh();
+            },
+          ),
+          // spec 2026-07-10 §6 — 面板卡背景不透明度。仅 destination==panel 且
+          // Win11 acrylic backdrop 被 OS 接受（backdropOk）时显示；backdrop
+          // 不可用时面板恒不透明（降级），滑杆隐藏。
+          SettingsSliderItem(
+            id: 'lookup.clipboard_panel_opacity',
+            title: t.clipboard_panel_opacity,
+            subtitle: t.clipboard_panel_opacity_hint,
+            icon: Icons.opacity_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.panel &&
+                ClipboardPanelController.instance.backdropOk,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.clipboardPanelOpacity * 100,
+            min: 50,
+            max: 100,
+            divisions: 50,
+            step: 5,
+            titleReadout: true,
+            label: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setClipboardPanelOpacity(value / 100);
+              await ClipboardPanelController.instance.refreshOpacity();
             },
           ),
           // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键

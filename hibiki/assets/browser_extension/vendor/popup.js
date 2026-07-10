@@ -2702,9 +2702,33 @@ function buildGlobalLookupSentenceBanner() {
         return null;
     }
     const banner = el('div', { className: 'global-lookup-sentence' });
-    // textContent (not innerHTML) — the sentence is untrusted foreground-app
-    // text; never interpret it as markup.
-    banner.textContent = sentence;
+    // spec 2026-07-10 — per-character spans: clicking any character looks up
+    // the "char to sentence end" suffix (the same semantics as the in-app
+    // ClipboardLookupTextPanel; the engine prefix/deinflection-matches from
+    // the clicked char). Rides the existing onLinkClick bridge (same path as
+    // kanji-tag clicks), so the overlay host re-anchors the rect and opens a
+    // nested child card. textContent per span (never innerHTML) — the sentence
+    // is untrusted foreground-app/clipboard text, never interpreted as markup.
+    const chars = Array.from(sentence);
+    chars.forEach((ch, i) => {
+        const span = el('span', {
+            className: 'global-lookup-sentence-char',
+            textContent: ch,
+        });
+        span.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = span.getBoundingClientRect();
+            window.flutter_inappwebview.callHandler(
+                'onLinkClick', chars.slice(i).join(''), {
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: rect.height
+            });
+        });
+        banner.appendChild(span);
+    });
     return banner;
 }
 

@@ -1423,7 +1423,7 @@
   "floating_lyric_click_lookup": "点击悬浮字幕查词",
   "floating_lyric_click_lookup_hint": "锁定悬浮字幕位置时仍可保留点击查词。",
   "desktop_clipboard_window_mode": "窗口置顶策略",
-  "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方；仅在查词界面监听剪贴板和全局热键",
+  "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方",
   "desktop_clipboard_window_mode_always": "始终置顶",
   "desktop_clipboard_window_mode_lookup": "仅查词期间",
   "desktop_clipboard_window_mode_normal": "不置顶",
@@ -2242,5 +2242,12 @@
   "video_danmaku_manual_search_action": "搜索",
   "video_danmaku_manual_no_result": "未找到匹配的番剧。",
   "video_danmaku_manual_network_error": "网络错误，请检查连接后重试。",
-  "video_danmaku_manual_server_error": "搜索失败，请稍后重试。"
+  "video_danmaku_manual_server_error": "搜索失败，请稍后重试。",
+  "desktop_clipboard_destination": "剪贴板查词显示位置",
+  "desktop_clipboard_destination_hint": "剪贴板查词结果显示在哪里",
+  "desktop_clipboard_destination_main": "主窗口",
+  "desktop_clipboard_destination_panel": "悬浮面板",
+  "desktop_clipboard_destination_transient": "光标处弹卡",
+  "clipboard_panel_opacity": "面板不透明度",
+  "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）"
 }
