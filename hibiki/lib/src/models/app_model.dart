@@ -34,6 +34,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/models/app_font_loader.dart';
 import 'package:hibiki/src/models/builtin_tags.dart';
+import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
@@ -425,6 +426,16 @@ class AppModel with ChangeNotifier {
         dictRepo.clearDictionaryResultsCache();
       },
       runExclusive: runExclusiveWithSync,
+      // BUG-714: 必须接线 importBookFromFile，否则 host 收到对端 client 的
+      // PUT /api/library/books/<title> 时 importBook 抛 UnsupportedError，被
+      // 服务端 catch 成 HTTP 500，互联/live 书籍推送（client→host）整体失效。
+      // 生产实现即文档约定的 EpubImporter.importFromPath（tmp 文件名 = <title>.epub，
+      // fileName 用作 epubPath 与标题回退）。
+      importBookFromFile: (File epubFile) => EpubImporter.importFromPath(
+        db: database,
+        filePath: epubFile.path,
+        fileName: path.basename(epubFile.path),
+      ),
       localAudioEntries: localAudioDbs,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 699 条。点号进各自文件。
+> 共 700 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-714](bugs/BUG-714-interconnect-live-book-push-500.md) | ✅ | ✅ | 互联 live 书籍推送全部 HTTP 500(host 未接线 importBookFromFile) |
 | [BUG-713](bugs/BUG-713-clip-highlight-fps-quantization-lag.md) | ✅ | ✅ | 有声书导出片段逐句高亮系统性滞后=12fps帧量化 |
 | [BUG-712](bugs/BUG-712-popup-js-error-silent.md) | ✅ | ✅ | 查词弹窗 JS 渲染报错静默、错误日志为空 |
 | [BUG-711](bugs/BUG-711-nav-jump-rtc-verified-not-reproducible.md) | ✅ | ✅ | 导航跳转落章首 TODO-1308 复诉在 develop 无法复现（已被 BUG-696 根治） |
