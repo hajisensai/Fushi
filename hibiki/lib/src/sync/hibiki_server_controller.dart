@@ -112,6 +112,16 @@ class HibikiSyncServerController extends ChangeNotifier {
   // 没有常驻 PIN 弹窗。串行化同 _pairDialogOpen，故单值即可。
   VoidCallback? _pendingPairPinDismiss;
 
+  // TODO-1330 / BUG-708：区分「审批未决」与「已允许后常驻显示 PIN 等对方输入」两态。
+  // 常驻态只是被动显示 PIN、审批决定早已交回，不该继续占用审批槽；否则一次配对被取消 /
+  // 未 confirm 时那个常驻弹窗会驻留至 TTL（≈90s），期间任何新配对（尤其「重新配对」）都被
+  // _pairDialogOpen 挡成 declined，用户无法重配。此标记让新请求识别常驻弹窗并先收起它再开
+  // 新审批。true 仅在 host 已允许、进入常驻 PIN 显示阶段期间。
+  bool _pairDialogLingering = false;
+  // 收起常驻弹窗后等它彻底 teardown（whenComplete 清共享单值态）的信号，避免新旧弹窗争用
+  // _pendingPairPin / _pendingPairPinDismiss 单值字段。仅在等待收起旧常驻弹窗期间非 null。
+  Completer<void>? _pairDialogClosed;
+
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
 
@@ -355,6 +365,19 @@ class HibikiSyncServerController extends ChangeNotifier {
     _pendingPairPinDismiss?.call();
   }
 
+  /// 测试缝（BUG-708）：直接驱动 host 审批弹窗，模拟 server 在 `_handlePairV2` 里
+  /// 「先 [_generatePairPin] 暂存 PIN，再调 [onPairRequest]」的时序。[seedPin] 非空时
+  /// 先写入 [_pendingPairPin]（等价 [_generatePairPin] 的效果），供 pinRequired 会话的
+  /// 弹窗显示。返回值与真实审批一致（true=允许 / false=拒绝或被叠弹挡下）。
+  @visibleForTesting
+  Future<bool> debugPromptPairApproval(
+    HibikiPairRequest request, {
+    String? seedPin,
+  }) {
+    if (seedPin != null) _pendingPairPin = seedPin;
+    return _promptPairApproval(request);
+  }
+
   /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the
   /// token handout via the app-wide navigator so the prompt appears even when
   /// the user is not on the sync page. Resolves false (refuse) on a stacked
@@ -368,10 +391,32 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// client 提交 confirm（[onPairSessionResolved] → [_dismissPendingPairPinDialog]）、
   /// 用户手动关、或会话 TTL 超时。免 PIN 会话行为不变（无 PIN 可显示，点选即关）。
   Future<bool> _promptPairApproval(HibikiPairRequest request) async {
-    if (_pairDialogOpen) return false;
+    // TODO-1330 / BUG-708：若当前弹窗只是「已允许、常驻显示 PIN 等对方输入」（approvedPhase），
+    // 它已不再占用审批槽——先收起它，让本次新配对（如取消后「重新配对」）不被误判为 stacked
+    // 请求而拒绝。等旧弹窗彻底 teardown（whenComplete 清单值态）再继续，并把本会话刚生成的
+    // PIN（可能被旧 teardown 清空）恢复回来，杜绝新旧弹窗争用共享单值字段。
+    if (_pairDialogOpen && _pairDialogLingering) {
+      final String? incomingPin = _pendingPairPin;
+      final Completer<void> closed = Completer<void>();
+      _pairDialogClosed = closed;
+      _pendingPairPinDismiss?.call();
+      await closed.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+      _pendingPairPin = incomingPin;
+    }
+    return _showPairApprovalDialog(request);
+  }
+
+  /// 实际展示 host 审批 / 常驻 PIN 弹窗并返回审批结果（[_promptPairApproval] 处理完
+  /// 「收起上一个常驻弹窗」的异步收尾后调用）。本方法内**没有任何 await**——弹窗用
+  /// unawaited 打开、结果经 [approval] completer 回传——故其对 [_navigatorKey] 当前
+  /// context 的使用不跨异步间隙（避免误用陈旧 BuildContext）。
+  Future<bool> _showPairApprovalDialog(HibikiPairRequest request) {
+    // 仍处于「审批未决」的弹窗才真正占槽——此时拒绝新请求（防恶意 peer 叠弹审批）。
+    if (_pairDialogOpen) return Future<bool>.value(false);
     final BuildContext? ctx = _navigatorKey.currentContext;
-    if (ctx == null) return false;
+    if (ctx == null) return Future<bool>.value(false);
     _pairDialogOpen = true;
+    _pairDialogLingering = false;
 
     final Completer<bool> approval = Completer<bool>();
     // 只有「真的要显示 PIN」的 pinRequired 会话才走常驻分支；免 PIN / 无 PIN 走旧的
@@ -406,7 +451,9 @@ class HibikiSyncServerController extends ChangeNotifier {
       if (!approval.isCompleted) approval.complete(true);
       if (lingerAfterApprove) {
         // 常驻 PIN 阶段：不关窗，转成「等对方输入此 PIN」，直到 confirm / 手动 / TTL。
+        // 标记「常驻」态：审批决定已交回，此弹窗只被动显示 PIN，不再占审批槽（BUG-708）。
         approvedPhase = true;
+        _pairDialogLingering = true;
         setDialogState?.call(() {});
         // 安全兜底：对齐 server 会话 TTL（≈90s）到点仍没 confirm 就自动收起，避免
         // host 屏上留一个永不消失的 PIN 弹窗。
@@ -527,8 +574,14 @@ class HibikiSyncServerController extends ChangeNotifier {
       autoDeny?.cancel();
       lingerTimeout?.cancel();
       _pairDialogOpen = false;
+      _pairDialogLingering = false;
       _pendingPairPin = null;
       _pendingPairPinDismiss = null;
+      // 若有新配对正等本（常驻）弹窗收起，放行它继续（BUG-708）。
+      if (_pairDialogClosed?.isCompleted == false) {
+        _pairDialogClosed?.complete();
+      }
+      _pairDialogClosed = null;
       // 弹窗被系统/其它路径关掉而用户没点过按钮时，兜底判为拒绝。
       if (!approval.isCompleted) approval.complete(false);
     }));
