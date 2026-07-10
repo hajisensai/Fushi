@@ -2219,5 +2219,8 @@
   "backup_category_profiles_desc": "配置方案",
   "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。",
   "popup_font_size_decrease": "缩小查词字号",
-  "popup_font_size_increase": "放大查词字号"
+  "popup_font_size_increase": "放大查词字号",
+  "remote_book_cloud": "云端书库",
+  "remote_book_cloud_device": "云盘备份书籍",
+  "remote_book_cloud_load_failed": "无法加载云端书籍"
 }

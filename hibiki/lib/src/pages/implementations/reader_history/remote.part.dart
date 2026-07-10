@@ -35,6 +35,8 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     final RemoteBookClient? client = await _resolveRemoteBookClient();
     _remoteBookClient = client;
     if (client == null) return null;
+    // 来源类型驱动书架远端分区文案（互联 vs 云盘），成功/失败两支都需带上。
+    final RemoteBookSourceKind sourceKind = client.remoteSourceKind;
     try {
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
       // #6: 远端与本地是同一本书时（同 bookKey）不在「配对设备」区重复展示。
@@ -45,6 +47,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       final List<RemoteBookInfo> withContent =
           books.where((RemoteBookInfo book) => book.hasContent).toList();
       return _RemoteBookState(
+        sourceKind: sourceKind,
         books: dedupeRemoteBooks(
           remote: withContent,
           localBookKeys: localKeys,
@@ -53,8 +56,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       );
     } catch (e) {
       debugPrint('[reader-shelf] remote book list failed: $e');
-      return const _RemoteBookState(
-        books: <RemoteBookInfo>[],
+      return _RemoteBookState(
+        sourceKind: sourceKind,
+        books: const <RemoteBookInfo>[],
         failed: true,
       );
     }
@@ -78,6 +82,16 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     // 窄、卡片变小）。改为：只 header 自带水平 padding（对齐 _buildSectionHeader），
     // GridView 不裹水平 padding，与本地 sliver grid 同宽基准。
     final double headerPadding = tokens.spacing.rowHorizontal * 0.75;
+    // 分区文案按后端来源分流（BUG-689 / TODO-1384）：互联（对端设备）用
+    // 「互联 / 对端设备」；云盘备份（WebDAV / GDrive 等）用通用「云端书」，
+    // 否则 WebDAV-only 用户会看到从没配过的「互联/对端设备」。
+    final bool isCloud = state.sourceKind == RemoteBookSourceKind.cloud;
+    final String sectionTitle =
+        isCloud ? t.remote_book_cloud : t.remote_book_interconnect;
+    final String sectionSubtitle =
+        isCloud ? t.remote_book_cloud_device : t.remote_book_paired_device;
+    final String loadFailedText =
+        isCloud ? t.remote_book_cloud_load_failed : t.remote_book_load_failed;
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: colors.outlineVariant)),
@@ -100,11 +114,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
                   color: colors.primary,
                 ),
                 SizedBox(width: tokens.spacing.gap),
-                Text(t.remote_book_interconnect,
-                    style: tokens.type.sectionLabel),
+                Text(sectionTitle, style: tokens.type.sectionLabel),
                 SizedBox(width: tokens.spacing.gap),
                 Text(
-                  t.remote_book_paired_device,
+                  sectionSubtitle,
                   style: textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -121,7 +134,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
                 tokens.spacing.card,
               ),
               child: Text(
-                t.remote_book_load_failed,
+                loadFailedText,
                 style: textTheme.bodySmall?.copyWith(color: colors.error),
               ),
             )
@@ -576,10 +589,14 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
 class _RemoteBookState {
   const _RemoteBookState({
     required this.books,
+    required this.sourceKind,
     this.failed = false,
   });
 
   final List<RemoteBookInfo> books;
+
+  /// 远端书来源类型：互联（对端设备） vs 云盘备份，驱动分区文案。
+  final RemoteBookSourceKind sourceKind;
   final bool failed;
 }
 

@@ -2219,5 +2219,8 @@
   "backup_category_profiles_desc": "Configuration profiles",
   "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
   "popup_font_size_decrease": "Smaller dictionary text",
-  "popup_font_size_increase": "Larger dictionary text"
+  "popup_font_size_increase": "Larger dictionary text",
+  "remote_book_cloud": "雲端書庫",
+  "remote_book_cloud_device": "雲端備份書籍",
+  "remote_book_cloud_load_failed": "無法載入雲端書籍"
 }
