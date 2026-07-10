@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 698 条。点号进各自文件。
+> 共 699 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-713](bugs/BUG-713-clip-highlight-fps-quantization-lag.md) | ✅ | ✅ | 有声书导出片段逐句高亮系统性滞后=12fps帧量化 |
+| [BUG-712](bugs/BUG-712-popup-js-error-silent.md) | ✅ | ✅ | 查词弹窗 JS 渲染报错静默、错误日志为空 |
 | [BUG-711](bugs/BUG-711-nav-jump-rtc-verified-not-reproducible.md) | ✅ | ✅ | 导航跳转落章首 TODO-1308 复诉在 develop 无法复现（已被 BUG-696 根治） |
 | [BUG-710](bugs/BUG-710-font-relocate-pjoin-platform.md) | ✅ | ✅ | 字体路径自愈测试硬编码Windows分隔符在Linux CI挂(Release APK阻断) |
 | [BUG-709](bugs/BUG-709-global-lookup-shadow-black-halo.md) | ✅ | ✅ | 全局查词覆盖窗圆角外黑边(非分层WebView2下box-shadow成黑晕) |

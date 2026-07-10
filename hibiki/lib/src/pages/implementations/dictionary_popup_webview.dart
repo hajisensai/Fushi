@@ -925,6 +925,28 @@ class DictionaryPopupWebViewState
       onWebViewCreated: (controller) {
         _controller = controller;
 
+        // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __hibikiContainer 等）抛异常，此前
+        // 只 console.error → onConsoleMessage → debugPrint（永不进错误日志），uncaught 更彻底
+        // 静默（popup.js 此前无 window.onerror）。BUG-706 那类 __hibikiRoot 命名冲突致 renderPopup
+        // TypeError 中止渲染时，用户看到「弹窗空白 + 错误日志为空」无从排查。popup.js 顶层现装
+        // 全局 window.onerror / unhandledrejection + 渲染 catch，经此桥把 {source,message,stack}
+        // 回传，落 ErrorLogService（错误日志页可见）。四查词表面（书内 / 视频 / 首页 / app 外悬浮）
+        // 共用本 WebView，一处接通全覆盖。
+        controller.addJavaScriptHandler(
+          handlerName: 'reportJsError',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.reportJsError',
+              null,
+              ErrorLogService.instance,
+              () {
+                logPopupJsError(ErrorLogService.instance, args);
+                return null;
+              },
+            );
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'tapOutside',
           callback: (_) {
@@ -1749,4 +1771,25 @@ class DictionaryPopupWebViewState
     }
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
+}
+
+/// TODO-1392：查词弹窗 JS 报错桥（`reportJsError` handler）收到的原始 args → 一条错误日志。
+/// 抽成顶层纯函数，便于单测「JS 抛异常 → error_log 有记录」而无需真 WebView。
+///
+/// [rawArgs] 是 flutter_inappwebview 传给 handler callback 的 `List`（首元素为 JS 对象
+/// `{source, message, stack}`）。source 前缀成 `PopupJs.<source>` 写进 [ErrorLogService]，
+/// stack 非空时经 [StackTrace.fromString] 还原成栈（[ErrorLogService.log] 会序列化落盘，
+/// 复用 TODO-1383 的串行落盘链），空则不带栈。绝不吞——目的就是让 JS 报错在错误日志页可见。
+void logPopupJsError(ErrorLogService errorLogService, List<dynamic> rawArgs) {
+  final Object? raw = rawArgs.isNotEmpty ? rawArgs.first : null;
+  final Map<Object?, Object?> payload =
+      raw is Map ? raw : const <Object?, Object?>{};
+  final String source = (payload['source'] ?? 'unknown').toString();
+  final String message = (payload['message'] ?? '').toString();
+  final String stack = (payload['stack'] ?? '').toString();
+  errorLogService.log(
+    'PopupJs.$source',
+    message.isEmpty ? '(no message)' : message,
+    stack.isEmpty ? null : StackTrace.fromString(stack),
+  );
 }
