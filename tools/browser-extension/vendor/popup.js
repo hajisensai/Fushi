@@ -2727,7 +2727,11 @@ window._renderGeneration = 0;
 // buildEntryElement / postProcessRuby throws. Without this a render exception
 // would swallow the `popupRendered` signal forever, leaving a cold nested popup
 // permanently hidden (pending reveal). Fired exactly once per render.
-function _firePopupRendered() {
+function _reportPopupHeight() {
+    // 把当前内容高度报给宿主（宿主据此给弹窗窗口/浮层定尺、并驱动 reveal 门）。
+    // 抽成独立函数是因为 masonry 铺完后容器高度会变（紧密堆比行对齐 grid 更矮），必须
+    // 复报一次，否则宿主拿的是 masonry 前的旧高度、弹窗底部会留空白。只报高度、不触发
+    // relayout，避免 _firePopupRendered→relayout→report→relayout 的死循环。
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
             __hibikiScrollHeight(),
@@ -2735,6 +2739,143 @@ function _firePopupRendered() {
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
     }
+}
+
+function _firePopupRendered() {
+    _reportPopupHeight();
+    // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
+    // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
+    window.hoshiRelayoutDictionaries();
+}
+
+// ===== N 列 masonry 词典方框排列（照抄 Niratan Features/Popup/popup.js layoutMasonry，
+//        一般化到 Hibiki 的 --dict-columns N 列）=====
+// develop 原本用 CSS grid `.glossary-section > .category-body`(repeat(--dict-columns,1fr))
+// 行对齐排列：同一行的词典卡片被该行最高者顶到同一水平线，矮卡片下方留空隙（Niratan 的
+// 紧密堆则无此空隙）。这里在 grid 之上叠一层运行时 masonry——cols>1 且多卡时用 inline-style
+// 把每张卡片绝对定位进「当前最矮的那一列」（最短列打包，无空隙，Pinterest 式），cols<=1 或
+// 单卡时清掉 inline 回落到 CSS grid/block。CSS 规则原样保留作「无 JS 兜底」，故所有现有 grid
+// 守卫测试不受影响。高度变化（<details> 展开/收起、图片异步加载、ruby、字体替换）由挂在每张
+// 卡片上的 ResizeObserver 捕捉重排（不依赖 toggle 事件跨 shadow 边界）；宽度变化走 resize。
+const HAS_NATIVE_MASONRY = (() => {
+    try { return CSS.supports('display', 'grid-lanes'); } catch (e) { return false; }
+})();
+let masonryRaf = null;
+let masonryObserver = null;
+
+// masonry 是叠在 CSS grid 之上的渐进增强：需要 ResizeObserver（捕捉卡片高度变化重排）
+// 与 requestAnimationFrame（合帧）。环境不具备（老 WebView / 非浏览器测试壳）时整体不做
+// masonry，静默回落到 CSS grid 行对齐布局——不崩、不报错，只是没有紧密堆。
+function masonrySupported() {
+    return typeof requestAnimationFrame === 'function'
+        && typeof ResizeObserver === 'function';
+}
+
+function dictColumns() {
+    // --dict-columns 由宿主注入到 documentElement（app_model / dictionary_popup_webview /
+    // popup_settings_injection 三面同源），即使弹窗挂在 shadow root 也从此处读。
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--dict-columns');
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function masonryGap() {
+    // 与 popup.css `.glossary-section > .category-body { column-gap: 6px }` 同源。
+    return 6;
+}
+
+function masonryBodies() {
+    const root = __hibikiContainer();
+    if (!root || typeof root.querySelectorAll !== 'function') return [];
+    // 只抓词典义项容器；frequency-section / pitch-section 也用 .category-body，不能误抓。
+    return [...root.querySelectorAll('.glossary-section > .category-body')];
+}
+
+function resetMasonryBody(body) {
+    body.style.position = '';
+    body.style.display = '';
+    body.style.height = '';
+    [...body.children].forEach(item => {
+        item.style.position = '';
+        item.style.left = '';
+        item.style.top = '';
+        item.style.width = '';
+        item.style.marginTop = '';
+        item.style.transform = '';
+    });
+}
+
+function layoutMasonry() {
+    if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
+    const cols = dictColumns();
+    const gap = masonryGap();
+    masonryBodies().forEach(body => {
+        const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
+        // 单列 / 单卡：不做 masonry，清 inline 回落 CSS（单卡满宽、单列纵向堆叠 + CSS margin-top）。
+        if (cols <= 1 || items.length <= 1) {
+            resetMasonryBody(body);
+            return;
+        }
+        body.style.position = 'relative';
+        body.style.display = 'block';
+        const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
+        const heights = new Array(cols).fill(0);
+        items.forEach(item => {
+            let c = 0;
+            for (let i = 1; i < cols; i++) {
+                if (heights[i] < heights[c]) c = i; // 当前最矮列
+            }
+            item.style.position = 'absolute';
+            item.style.left = '0';
+            item.style.top = '0';
+            item.style.marginTop = '0';
+            item.style.width = `${columnWidth}px`;
+            item.style.transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
+            // 读 offsetHeight 前已设 width，浏览器按目标列宽回流后再量高。
+            heights[c] += item.offsetHeight + gap;
+        });
+        body.style.height = `${Math.max(...heights) - gap}px`;
+    });
+}
+
+function observeMasonryTargets() {
+    if (HAS_NATIVE_MASONRY || !masonrySupported()) return;
+    if (!masonryObserver) {
+        masonryObserver = new ResizeObserver(scheduleMasonry);
+    }
+    // 只观察卡片本身（内容高度变化），不观察容器（避免 body.style.height 自触发死循环）；
+    // 容器宽度变化由 window resize 覆盖。observe 同一元素幂等，增量新增卡片可安全重观察。
+    masonryBodies().forEach(body => {
+        [...body.children].forEach(item => {
+            if (item.classList.contains('glossary-group')) masonryObserver.observe(item);
+        });
+    });
+}
+
+function scheduleMasonry() {
+    if (HAS_NATIVE_MASONRY || !masonrySupported() || masonryRaf) return;
+    masonryRaf = requestAnimationFrame(() => {
+        masonryRaf = null;
+        layoutMasonry();
+        // 铺完复报高度（容器高度已由 masonry 改写），让宿主给弹窗重新定尺。
+        _reportPopupHeight();
+    });
+}
+
+// 宿主改列数 / 外部触发时可调；渲染钩子已在 _firePopupRendered / updatePopupIncremental 里调。
+window.hoshiRelayoutDictionaries = () => {
+    observeMasonryTargets();
+    scheduleMasonry();
+};
+
+// 顶层注册用 typeof 守卫：真实浏览器一定有 addEventListener；非浏览器测试壳缺此 API 时
+// 跳过注册即可（masonry 本就会被 masonrySupported 门控掉）。
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', scheduleMasonry);
+}
+// <details> 展开/收起改高度：capture 阶段兜底（ResizeObserver 已是主路，故 shadow 边界不影响正确性）。
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('toggle', scheduleMasonry, true);
 }
 
 // TODO-1030 M0 — the app-external global-lookup capture (Windows UIA) hands the
@@ -3021,6 +3162,9 @@ window.updatePopupIncremental = function() {
     window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
     window._entryDomIndex = rebuiltDomIndex;
     applyCustomCSS();
+
+    // 增量追加了新的词典方框，重排 masonry 并观察新卡片。
+    window.hoshiRelayoutDictionaries();
 
     window.flutter_inappwebview.callHandler('popupRendered',
         __hibikiScrollHeight(),

@@ -8,7 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// （in-app 弹窗 + 两份浏览器扩展 vendor 副本；byte-parity 由
 /// `browser_extension_popup_parity_guard` 另锁，此处锁语义约束防回退）。
 ///
-///   #7 词典卡片：`.glossary-group` 是玻璃卡片（圆角走 token + 分层投影 + inset 内高光）。
+///   #7 词典卡片：`.glossary-group` 是 Niratan 描边卡（1px 描边 + 圆角 + inset 顶部高光 +
+///      薄贴地投影，无 background 填充；照抄 Niratan Features/Popup/popup.css）。
 ///   #5 词条导航：popup.js 暴露 `hoshiFocusDictionaryEntry/Move/Reset`，当前词条走
 ///      `.entry-current` 的 #1a73e8 纯 CSS 边框蓝三角（零字体依赖）。
 ///   #1338 制卡图标乱码：制卡按钮保留 ✓/✓↩ 文本标记（应用户要求不走 SVG），但用
@@ -47,14 +48,18 @@ void main() {
       late final String css;
       setUpAll(() => css = read(relPath));
 
-      test('#7 词典卡片：.glossary-group 圆角(token)+投影+inset 内高光', () {
+      test('#7 词典卡片：.glossary-group 是 Niratan 描边卡（描边+圆角+inset高光投影，无填充）', () {
         final String body = ruleBody(css, r'\.glossary-group');
-        expect(body.contains('var(--hibiki-radius-card'), isTrue,
-            reason: '卡片圆角走 --hibiki-radius-card token，与弹窗其余卡片统一');
+        expect(RegExp(r'(^|[;{\s])border\s*:').hasMatch(body), isTrue,
+            reason: 'Niratan 描边卡靠 1px 描边定形，非 background 填充');
+        expect(RegExp(r'border-radius\s*:').hasMatch(body), isTrue,
+            reason: '卡片要有圆角');
         expect(RegExp(r'box-shadow\s*:').hasMatch(body), isTrue,
-            reason: '卡片要有分层投影');
+            reason: '卡片要有薄贴地投影 + 顶部 inset 白高光');
         expect(body.contains('inset'), isTrue,
-            reason: 'box-shadow 含 inset 顶部内高光（玻璃质感）');
+            reason: 'box-shadow 含 inset 顶部内高光（照抄 Niratan）');
+        expect(RegExp(r'background\s*:').hasMatch(body), isFalse,
+            reason: 'Niratan 描边卡无 background 填充；有填充即退回玻璃卡');
       });
 
       test('#5 当前词条蓝三角 = 纯 CSS 边框三角 #1a73e8（零字体依赖）', () {

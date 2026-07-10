@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-1325 #7 守卫（超越 TODO-877/TODO-849 的往返，按用户 Niratan「卡片」决策）：查词
-/// 弹窗里每本词典的义项块 (`.glossary-group`) 是一枚「玻璃卡片」——圆角(走 token
-/// `--hibiki-radius-card`，与弹窗其余卡片统一) + 分层投影 + 顶部内高光 + 内边距。皮肤挂在
-/// 基类 `.glossary-group` 上（四端共用），暗色变体单独一条。
+/// 守卫（按用户「照抄 Niratan」决策，取代 TODO-1325 #7 的玻璃卡皮肤）：查词弹窗里每本
+/// 词典的义项块 (`.glossary-group`) 逐字对齐 Niratan Features/Popup/popup.css 的
+/// **描边卡**——1px 半透明描边 + 圆角 + 顶部 inset 白高光 + 薄贴地投影 + 内边距，**无
+/// background 填充**（比玻璃卡更扁平，与 Niratan 一致）。皮肤挂在基类 `.glossary-group`
+/// 上（四端共用），暗色变体单独一条（描边转白 + 加深投影）。
 ///
 /// 同时仍锁住原 TODO-877/TODO-776 的两个不变量不被卡片改动破坏：
 ///   * 间距模型：`.glossary-section > .category-body > .glossary-group` 仍走 margin-top +
@@ -30,27 +31,27 @@ void main() {
     return m!.group(1)!;
   }
 
-  test('每本词典义项块是玻璃卡片：基类 .glossary-group 有圆角/投影/底色/内边距 (TODO-1325 #7)', () {
+  test('每本词典义项块是 Niratan 描边卡：基类 .glossary-group 有描边/圆角/inset高光投影/内边距，无填充', () {
     final String body = ruleBody(r'\.glossary-group');
+    expect(RegExp(r'(^|[;{\s])border\s*:').hasMatch(body), isTrue,
+        reason: 'Niratan 描边卡靠 1px 描边定形（rgba 0,0,0,.14），非 background 填充');
     expect(RegExp(r'border-radius\s*:').hasMatch(body), isTrue,
         reason: '卡片要有圆角');
-    expect(body.contains('var(--hibiki-radius-card'), isTrue,
-        reason: '圆角走 --hibiki-radius-card token，与弹窗其余卡片统一，不硬编码');
     expect(RegExp(r'box-shadow\s*:').hasMatch(body), isTrue,
-        reason: '卡片要有分层投影 + 内高光（玻璃质感）');
+        reason: '卡片要有薄贴地投影 + 顶部 inset 白高光');
     expect(body.contains('inset'), isTrue,
-        reason: 'box-shadow 含 inset 顶部高光营造玻璃质感');
-    expect(RegExp(r'background\s*:').hasMatch(body), isTrue,
-        reason: '卡片要有底色（--surface-container 分层）');
+        reason: 'box-shadow 含 inset 顶部高光（照抄 Niratan）');
     expect(RegExp(r'padding\s*:').hasMatch(body), isTrue, reason: '卡片要有内边距');
+    expect(RegExp(r'background\s*:').hasMatch(body), isFalse,
+        reason: 'Niratan 描边卡无 background 填充；有填充即偏离本家、退回玻璃卡');
   });
 
-  test('暗色主题有独立卡片变体（降内高光 / 加深投影）(TODO-1325 #7)', () {
+  test('暗色主题有独立描边卡变体（描边转白 + 加深投影）', () {
     final String body = ruleBody(r'html\[data-theme="dark"\] \.glossary-group');
+    expect(RegExp(r'border-color\s*:').hasMatch(body), isTrue,
+        reason: '暗色卡片单独把描边转白（rgba 255,255,255,.09）');
     expect(RegExp(r'box-shadow\s*:').hasMatch(body), isTrue,
-        reason: '暗色卡片单独调投影 / 内高光强度');
-    expect(RegExp(r'background\s*:').hasMatch(body), isTrue,
-        reason: '暗色卡片单独底色');
+        reason: '暗色卡片单独加深贴地投影');
   });
 
   test('间距仍走 margin-top + min-width，未破坏 TODO-776 grid 间距模型', () {
@@ -118,7 +119,7 @@ void main() {
     expect(rule.contains('repeat(var(--dict-columns'), isTrue);
   });
 
-  test('玻璃卡片不钉死高度，取自然内容高度 (BUG-683)', () {
+  test('描边卡不钉死高度，取自然内容高度 (BUG-683)', () {
     final String body = stripComments(ruleBody(r'\.glossary-group'));
     expect(RegExp(r'(^|[;{\s])height\s*:').hasMatch(body), isFalse,
         reason: '卡片不能钉死 height，否则内容高度失真、又回到等高观感');
