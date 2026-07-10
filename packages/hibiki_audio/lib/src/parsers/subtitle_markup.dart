@@ -776,8 +776,7 @@ void _applyOverrideBlock(
     // \frz<deg> / \fr<deg>（旧式 \fr 即 \frz，Z 轴旋转；ASS 逆时针为正，TODO-1374）。
     // \frx / \fry（3D 旋转）不支持——`frz?` 的 z 可选但后面必须紧跟数字，`frx10` 的 x
     // 非数字故不误命中。
-    final RegExpMatch? frz =
-        RegExp(r'^frz?(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? frz = RegExp(r'^frz?(-?\d+(?:\.\d+)?)$').firstMatch(tag);
     if (frz != null) {
       xf.rotationDeg = double.parse(frz.group(1)!);
       continue;

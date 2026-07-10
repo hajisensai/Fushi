@@ -32,7 +32,8 @@ AudioCue _bottomCue(
     ..markup = SubtitleMarkup(
       plainText: text,
       spans: const <SubtitleSpan>[],
-      anchor: const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center),
+      anchor:
+          const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center),
       cueStyle: style,
       playResY: 720, // 显示区 720 / PlayResY 720 → 缩放 1.0，MarginV 直用像素值。
     )
@@ -41,8 +42,8 @@ AudioCue _bottomCue(
 }
 
 Rect _fillRect(WidgetTester tester, String ch) {
-  final Finder fill = find.byWidgetPredicate((Widget w) =>
-      w is Text && w.data == ch && w.style?.foreground == null);
+  final Finder fill = find.byWidgetPredicate(
+      (Widget w) => w is Text && w.data == ch && w.style?.foreground == null);
   return tester.getRect(fill.first);
 }
 

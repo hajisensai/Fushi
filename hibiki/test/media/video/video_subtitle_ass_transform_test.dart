@@ -21,7 +21,8 @@ void main() {
       expect(m.plainText, '題');
     });
 
-    test('\\fscy10 + \\t(18,226,\\fscy100)：缩放动画 from 0.1 → to 1.0，t=18..226', () {
+    test('\\fscy10 + \\t(18,226,\\fscy100)：缩放动画 from 0.1 → to 1.0，t=18..226',
+        () {
       final SubtitleMarkup m = parseSubtitleMarkup(
         r'{\fs40\bord3\pos(219,330)\fscy10\t(18,226,\fscy100)}生',
         playResX: 1280,
