@@ -94,14 +94,34 @@ class DictionaryFontCss {
   /// payload; CJK fonts above this are skipped (system-name fonts are unaffected).
   static const int _defaultMaxFileBytes = 8 * 1024 * 1024;
 
+  /// (mtime, size) 内容键的进程内缓存：同一字体文件只读盘 + base64 一次。
+  /// 每次查词推结果都会重建注入串（in-app 弹窗 / 全局查词栈 / 剪贴板面板共用
+  /// [build]），导入字体无缓存时每次数十 ms 的同步读盘+编码是查词热路径的纯
+  /// 浪费。文件被原地覆盖时 mtime/size 变化自动失效；路径变（导入落盘名带时间
+  /// 戳、启动自愈迁移）天然换键，无需接任何设置变更通知。
+  static final Map<String, ({int mtimeUs, int size, String dataUrl})>
+      _dataUrlCache = <String, ({int mtimeUs, int size, String dataUrl})>{};
+
   static String? _inlineFontDataUrl(String path, String mime, int maxBytes) {
     try {
-      final File file = File(path);
-      if (!file.existsSync()) return null;
-      final int length = file.lengthSync();
+      final FileStat stat = FileStat.statSync(path);
+      if (stat.type == FileSystemEntityType.notFound) return null;
+      final int length = stat.size;
+      // 上限检查放在缓存命中之前：大文件已缓存后，更小的 maxBytes 调用方仍须
+      // 拒绝它（dictionary_font_css_test.dart 覆盖该语义）。
       if (length <= 0 || length > maxBytes) return null;
-      final List<int> bytes = file.readAsBytesSync();
-      return 'data:$mime;base64,${base64Encode(bytes)}';
+      final int mtimeUs = stat.modified.microsecondsSinceEpoch;
+      final ({int mtimeUs, int size, String dataUrl})? cached =
+          _dataUrlCache[path];
+      if (cached != null &&
+          cached.mtimeUs == mtimeUs &&
+          cached.size == length) {
+        return cached.dataUrl;
+      }
+      final List<int> bytes = File(path).readAsBytesSync();
+      final String dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
+      _dataUrlCache[path] = (mtimeUs: mtimeUs, size: length, dataUrl: dataUrl);
+      return dataUrl;
     } catch (e, stack) {
       ErrorLogService.instance.log('DictionaryFontCss.inline', e, stack);
       return null;

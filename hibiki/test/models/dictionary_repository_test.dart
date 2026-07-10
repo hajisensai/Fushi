@@ -4,11 +4,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
+}
+
+/// BUG-712 P2：数一数整表历史重写的真实次数，让 debounce 用例能断言
+/// 「N 次连续变更 → 恰好 1 次 DB 写」，而不是只从时序侧面猜。
+class _CountingDb extends HibikiDatabase {
+  _CountingDb() : super.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+  int replaceAllCalls = 0;
+
+  @override
+  Future<void> replaceAllDictionaryHistory(
+      List<DictionaryHistoryCompanion> items) {
+    replaceAllCalls++;
+    return super.replaceAllDictionaryHistory(items);
+  }
 }
 
 Future<void> _settle() =>
@@ -85,7 +101,9 @@ void main() {
 
     test('loads dictionary history from DB', () async {
       repo.addHistoryResult(_result(searchTerm: '猫'), 10);
-      await _settle();
+      // BUG-712 P2：历史落库是 debounce 写穿，50ms 的 _settle 等不到 300ms
+      // 的 trailing timer；显式 flush 使该用例确定性成立。
+      await repo.flushDictionaryHistoryNow();
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();
@@ -383,7 +401,8 @@ void main() {
 
     test('addHistoryResult persists to DB', () async {
       repo.addHistoryResult(_result(searchTerm: '犬'), 10);
-      await _settle();
+      // BUG-712 P2：add 只改内存，落库走 debounce；显式 flush 后再验证。
+      await repo.flushDictionaryHistoryNow();
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();
@@ -401,7 +420,9 @@ void main() {
 
     test('clearDictionaryHistory empties history and DB', () async {
       repo.addHistoryResult(_result(searchTerm: '猫'), 10);
-      await _settle();
+      // BUG-712 P2：先真实落库再 clear，保住「DB 里有过这行、clear 删掉它」
+      // 的原始意图（debounce 下 _settle 50ms 后 DB 本来就还是空的）。
+      await repo.flushDictionaryHistoryNow();
       await repo.clearDictionaryHistory();
 
       expect(repo.dictionaryHistory, isEmpty);
@@ -410,6 +431,139 @@ void main() {
       await repo2.loadFromDb();
       expect(repo2.dictionaryHistory, isEmpty);
       repo2.dispose();
+    });
+  });
+
+  // ── history persistence debounce (BUG-712 P2) ────────────────────────
+
+  group('history persistence debounce (BUG-712 P2)', () {
+    test('addHistoryResult defers the DB write until flushDictionaryHistoryNow',
+        () async {
+      // 守回归：查词热路径不得回到「每次 add 同步整表序列化+重写」——add 只改
+      // 内存，落库延后；flushDictionaryHistoryNow 把 pending 变更确定性写穿。
+      repo.addHistoryResult(_result(searchTerm: '猫'), 10);
+      expect(await db.getAllDictionaryHistory(), isEmpty,
+          reason: 'add 后立即查 DB 必须为空（未同步落库）');
+
+      await repo.flushDictionaryHistoryNow();
+      final rows = await db.getAllDictionaryHistory();
+      expect(rows.length, 1);
+      expect(
+        DictionarySearchResult.fromJson(rows.single.resultJson).searchTerm,
+        '猫',
+      );
+    });
+
+    test('flushDictionaryHistoryNow without pending changes is a no-op',
+        () async {
+      // 守回归：无 pending 时不得触发整表重写（退出路径/loadFromDb 前置 flush
+      // 高频调用，no-op 语义是公开契约）。
+      final countingDb = _CountingDb();
+      final repo2 = DictionaryRepository(countingDb);
+      await repo2.loadFromDb();
+      await repo2.flushDictionaryHistoryNow();
+      expect(countingDb.replaceAllCalls, 0);
+      repo2.dispose();
+      await countingDb.close();
+    });
+
+    test('burst of adds inside the debounce window lands in a single DB write',
+        () async {
+      // 守回归：300ms trailing debounce——连续 add 多条只允许一次整表写，
+      // 且最终 DB 内容为全量三条（顺序按 position）。
+      final countingDb = _CountingDb();
+      final repo2 = DictionaryRepository(countingDb);
+      await repo2.loadFromDb();
+
+      repo2.addHistoryResult(_result(searchTerm: 'a'), 10);
+      repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
+      repo2.addHistoryResult(_result(searchTerm: 'c'), 10);
+      expect(countingDb.replaceAllCalls, 0, reason: 'debounce 窗口内不得有任何同步落库');
+
+      // 等真实时间越过 300ms 窗口（留余量），trailing timer 恰好触发一次。
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(countingDb.replaceAllCalls, 1, reason: '3 次连续变更必须合并为恰好 1 次整表写');
+      final rows = await countingDb.getAllDictionaryHistory();
+      expect(
+        rows.map(
+            (r) => DictionarySearchResult.fromJson(r.resultJson).searchTerm),
+        ['a', 'b', 'c'],
+      );
+
+      repo2.dispose();
+      await countingDb.close();
+    });
+
+    test('clearDictionaryHistory cancels the pending flush (no resurrection)',
+        () async {
+      // 守回归：clear 前有 pending add，clear 必须先取消 pending 再删表；
+      // 否则旧快照在 debounce 到期后写回，已清历史「复活」。
+      repo.addHistoryResult(_result(searchTerm: '猫'), 10);
+      await repo.clearDictionaryHistory();
+      expect(repo.dictionaryHistory, isEmpty);
+
+      // 越过 debounce 窗口后 DB 仍须为空。
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      expect(await db.getAllDictionaryHistory(), isEmpty,
+          reason: 'clear 之后 pending 旧快照不得复活');
+    });
+
+    test(
+        'scroll index update lands in persisted resultJson (memo invalidation)',
+        () async {
+      // 守回归：逐条序列化 memo（Expando）在就地改 scrollPosition 后必须失效；
+      // 否则第二次 flush 复用 stale JSON，滚动位置永远停在旧值。
+      repo.addHistoryResult(_result(searchTerm: '猫', scrollPosition: 0), 10);
+      await repo.flushDictionaryHistoryNow(); // 第一次 flush 填充该条 memo
+      final rows0 = await db.getAllDictionaryHistory();
+      expect(
+        DictionarySearchResult.fromJson(rows0.single.resultJson).scrollPosition,
+        0,
+      );
+
+      final result = repo.dictionaryHistory.first;
+      repo.updateDictionaryResultScrollIndex(result: result, newIndex: 5);
+      await repo.flushDictionaryHistoryNow();
+
+      final rows = await db.getAllDictionaryHistory();
+      expect(
+        DictionarySearchResult.fromJson(rows.single.resultJson).scrollPosition,
+        5,
+        reason: 'memo 未失效会把 stale 的 scrollPosition=0 写回 DB',
+      );
+    });
+
+    test(
+        'ExitFlushRegistry.flushAll writes pending history through (exit path)',
+        () async {
+      // 守回归：构造函数必须向 ExitFlushRegistry 注册 flush——桌面点 X 快杀
+      // （exit(0)）前靠 flushAll 把 debounce 中的历史写穿，删注册=退出丢历史。
+      // 隔离进程级单例：先清空既有注册，测试后恢复 setUp repo 的注册
+      // （同对象实例方法 tear-off 相等，re-register 与原注册等价，tearDown 里
+      // dispose 的 unregister 仍能命中）。
+      ExitFlushRegistry.instance.clear();
+      addTearDown(() {
+        ExitFlushRegistry.instance.register(repo.flushDictionaryHistoryNow);
+      });
+
+      final db2 = _testDb();
+      final repo2 = DictionaryRepository(db2);
+      expect(ExitFlushRegistry.instance.callbackCount, 1,
+          reason: '构造函数必须注册退出 flush 回调');
+
+      repo2.addHistoryResult(_result(searchTerm: '退'), 10);
+      expect(await db2.getAllDictionaryHistory(), isEmpty);
+
+      await ExitFlushRegistry.instance.flushAll();
+
+      final rows = await db2.getAllDictionaryHistory();
+      expect(rows.length, 1);
+      expect(
+        DictionarySearchResult.fromJson(rows.single.resultJson).searchTerm,
+        '退',
+      );
+      repo2.dispose();
+      await db2.close();
     });
   });
 

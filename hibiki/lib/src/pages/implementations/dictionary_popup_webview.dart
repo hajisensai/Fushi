@@ -202,6 +202,17 @@ class DictionaryPopupWebViewState
   int _lastEntryCount = 0;
   int _renderToken = 0;
 
+  /// 最近一次**真正发出注入**（controller 就绪、evaluateJavascript 已下发）的
+  /// [DictionarySearchResult]。`!_ready` 早退分支不记录（那次没推出去）。
+  /// 与 [_lastRenderedResult] 一起支撑 [refreshCurrentResult] 的去重：同一结果
+  /// 不再盲目二次全量重推（此前每次查词渲染两遍、可见时刻=第二遍完成）。
+  DictionarySearchResult? _lastPushedResult;
+
+  /// 最近一次收到 `popupRendered`（render token 命中）时对应的已推结果。
+  /// `identical(_lastRenderedResult, widget.result)` 即「当前结果已渲染完成，
+  /// 不会再有渲染信号」——等信号的宿主必须立即按已渲染处理。
+  DictionarySearchResult? _lastRenderedResult;
+
   /// The theme-derived CSS variable JS last pushed to the WebView. Used to
   /// re-inject (and only re-inject) when the app theme actually changes while
   /// the popup is open — see [didChangeDependencies].
@@ -657,6 +668,7 @@ class DictionaryPopupWebViewState
       return;
     }
     _refreshWhenReady = false;
+    _lastPushedResult = widget.result;
 
     final int renderToken = ++_renderToken;
     final bool isLoadMore = _lastSearchTerm == widget.result.searchTerm &&
@@ -735,15 +747,31 @@ class DictionaryPopupWebViewState
     });
   }
 
-  /// Re-injects the current [widget.result] into an already-mounted WebView.
+  /// Ensures the current [widget.result] is (or will be) rendered in the WebView.
   ///
-  /// BUG-480: macOS can skip the hidden warm slot's result push while the popup is
-  /// parked off-screen. When the slot is made visible, the host calls this once
-  /// after layout so the visible WebView definitely renders the current lookup
-  /// instead of exposing a blank white body.
-  void refreshCurrentResult() {
+  /// BUG-523（原 BUG-480 编号）：隐藏/屏外 warm slot 的结果推送可能被漏掉（如
+  /// didUpdateWidget 未触发、页面尚未 loadStop），宿主在该层翻可见后一帧调用
+  /// 本方法兜底补推，避免露出空白 WebView 壳。
+  ///
+  /// 性能：此前这里**无条件**全量重推——每次查词渲染两遍、且第二遍的 render
+  /// token 作废第一遍的 `popupRendered`，内容可见时刻被推迟到第二遍渲染完成。
+  /// 现在只在当前结果确实没推出去过时才补推：
+  ///
+  /// 返回 `true` = 渲染信号还会到来（本次补推了，或此前的推送仍在渲染中，
+  /// `popupRendered` 稍后必发）；返回 `false` = 当前结果已渲染完成、不会再有
+  /// `popupRendered`——等信号撤盖板/翻可见的宿主必须立即按已渲染处理，否则会
+  /// 空等到 failsafe 超时。
+  bool refreshCurrentResult() {
+    if (identical(_lastRenderedResult, widget.result)) {
+      return false;
+    }
+    if (identical(_lastPushedResult, widget.result)) {
+      // 已发出注入、渲染在途：popupRendered 会带当前 token 到达，别重推。
+      return true;
+    }
     _refreshWhenReady = true;
     _pushResults();
+    return true;
   }
 
   static String _colorToHex(Color c) {
@@ -1012,6 +1040,9 @@ class DictionaryPopupWebViewState
                 if (token != null && token != _renderToken) {
                   return null;
                 }
+                // 记录「当前已推结果渲染完成」，供 refreshCurrentResult 去重判定
+                // （识别渲染信号早于宿主盖板架起的竞态）。
+                _lastRenderedResult = _lastPushedResult;
                 widget.onRendered?.call();
                 // TODO-1152：全高填充宿主（in-app 查词结果区）渲染完成后补一次表面
                 // 重绘 nudge，逼 Windows WebView2/WGC 捕获完整视口，消除下半屏黑。

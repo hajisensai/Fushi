@@ -629,7 +629,16 @@ mixin DictionaryPageMixin {
                   !entry.revealOnRender) {
                 return;
               }
-              entry.webViewKey.currentState?.refreshCurrentResult();
+              // refreshCurrentResult 已去重（同一结果不再全量重推）：返回 false
+              // 表示当前结果已渲染完成、popupRendered 不会再来——立即走与
+              // onRendered 相同的翻可见路径，不空等 failsafe。state 为 null 时
+              // 维持等待，交给 failsafe。
+              final bool renderPending =
+                  entry.webViewKey.currentState?.refreshCurrentResult() ?? true;
+              if (!renderPending && controller.revealRendered(entry)) {
+                controller.endSearchUi();
+                setState(() {});
+              }
             });
           }
         });
