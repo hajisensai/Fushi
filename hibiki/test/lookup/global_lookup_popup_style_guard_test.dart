@@ -150,20 +150,31 @@ void main() {
     late String host;
     setUpAll(() => host = read('assets/popup/global_lookup_host.js'));
 
-    test('shell carries ONLY the radius + drop shadow (TODO-893: no border)',
-        () {
+    test('shell carries ONLY the radius, NO border and NO box-shadow', () {
       // TODO-893 symptom 1 — RESPONSIBILITY SPLIT. The single visible card
       // border belongs to the iframe (popup.css `html.global-lookup body`); the
       // shell must NOT draw a second border (that produced two concentric grey
       // rings with a white gap = the reported "white frame"). The shell keeps
-      // the radius (so the shadow + overflow clip follow the rounded card) and
-      // the drop-shadow the iframe element cannot cast.
+      // the radius so the overflow clip follows the rounded card.
+      //
+      // BUG-709 — the shell must ALSO cast NO box-shadow. The overlay HWND is a
+      // NON-layered, opaque WebView2 window (global_lookup_window.cpp: "No
+      // WS_EX_LAYERED"), so a CSS box-shadow has no translucent desktop to blend
+      // over: its blur paints onto the window's own hard-dark surface as an
+      // ~11px DARK HALO ringing the card corners/edges that the native rounded
+      // window region (SetWindowRgn) cannot clip away — exactly the "black
+      // border outside the rounded corners" the user reported. A real shadow is
+      // impossible on a non-layered WebView2 window, so the shell casts none.
       expect(host.contains('.global-lookup-frame-shell{'), isTrue);
       expect(host.contains('border-radius:10px'), isTrue,
-          reason: 'hoshi 10px card radius (drives shadow + clip silhouette)');
-      expect(host.contains('box-shadow:0 3px 12px rgba(0,0,0,0.22)'), isTrue,
           reason:
-              'hoshi drop shadow (renders inside the enlarged bbox window)');
+              'hoshi 10px card radius (drives the overflow clip silhouette)');
+      // Match the CSS DECLARATION form (`box-shadow:`) so the doc comments in
+      // host.js that mention the word "box-shadow" do not trip the guard.
+      expect(host.contains('box-shadow:'), isFalse,
+          reason:
+              'no box-shadow declaration: on the non-layered opaque overlay '
+              'it is a dark halo outside the card, not a real shadow (lock)');
     });
 
     test('shell draws NO solid border (single border lives on the iframe body)',
@@ -204,15 +215,25 @@ void main() {
           reason: 'shell owns only the rounded clip + shadow, not the fill');
     });
 
-    test('dark variant is keyed on data-theme stamped by the render payload',
+    test('shell stamps data-theme from the render payload (no themed shadow)',
         () {
-      expect(host.contains('.global-lookup-frame-shell[data-theme="dark"]'),
-          isTrue,
-          reason:
-              'the host document has no theme of its own; the shell reads a '
-              'per-layer data-theme the render payload supplies');
+      // BUG-709 — the shell no longer carries a themed box-shadow (the dark
+      // `[data-theme="dark"]{box-shadow}` variant was the only shell-LEVEL themed
+      // rule, and it is gone — a shadow is a dark halo on the non-layered
+      // overlay, see the box-shadow guard above). Assert that shell-level themed
+      // rule is gone by matching the `[data-theme="dark"]{` form (the bracket
+      // then an IMMEDIATE brace). The close-X descendant rule
+      // `[data-theme="dark"] .global-lookup-close{` (a space then the child
+      // selector) is a SEPARATE, legitimate themed rule and must stay. The
+      // per-layer data-theme STAMP still flows from the render payload onto the
+      // shell so a future themed shell rule (or debugging) can read it; assert
+      // the plumbing stays wired even though no shell-level rule consumes it now.
+      expect(host.contains('.global-lookup-frame-shell[data-theme="dark"]{'),
+          isFalse,
+          reason: 'the dark box-shadow shell variant is gone (no shell-level '
+              'themed rule left)');
       expect(host.contains('descriptor && descriptor.theme'), isTrue,
-          reason: 'host.js must stamp data-theme from the descriptor');
+          reason: 'host.js must still stamp data-theme from the descriptor');
       final String render = read('lib/src/lookup/global_lookup_render.dart');
       expect(render.contains("map['theme'] ="), isTrue,
           reason: 'the render payload must carry the resolved brightness');

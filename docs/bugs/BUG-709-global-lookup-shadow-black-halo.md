@@ -1,0 +1,11 @@
+## BUG-709 · 全局查词覆盖窗圆角外黑边(非分层WebView2下box-shadow成黑晕)
+- **报告**：2026-07-10（用户：app 外查词卡片圆角外面还有一圈黑边没去干净）
+- **真实性**：✅ 真 bug。根因 `hibiki/assets/popup/global_lookup_host.js`（origin/develop 树 `.global-lookup-frame-shell` 注入的 `box-shadow:0 3px 12px rgba(0,0,0,0.22)` + dark 变体 `[data-theme="dark"]{box-shadow:0 3px 12px rgba(0,0,0,0.44)}`）。
+  - 覆盖窗是**非分层、不透明的 WebView2 窗口**（`hibiki/windows/runner/global_lookup_window.cpp` 明确「No WS_EX_LAYERED」，因 WebView2 合成面与分层窗互斥）。在这种窗口上 WebView2 合成面对桌面**没有逐像素 alpha**，CSS `box-shadow` 无法当作透过桌面的半透明投影渲染：它的 12px 模糊落到窗口自身的硬底（透明=硬黑）上，成为**卡片圆角/边缘外一圈约 11px 的黑晕**，而原生圆角窗口区域 `SetWindowRgn`（`global_lookup_window.cpp` `ApplyRoundedRegion`）裁不掉它 → 即用户截图里「圆角外面没去干净的黑边」。像素实测残留厚度 ≈ 11px，与 shadow 模糊 12px 定量吻合。
+  - 代码注释自己已承认「非分层 WebView2 窗口物理上做不出真投影」，所以这条 shadow 从一开始就只有害（黑晕）无益。
+- **[x] ① 已修复** — 删除 `.global-lookup-frame-shell` 的 `box-shadow`（light+dark 两条，dark 变体整条移除，只余 shadow 无其它样式）。圆角轮廓单一真值源改由原生 `SetWindowRgn` 提供，卡片边框由 iframe body 的 1px 边框提供，卡片外不再绘制任何东西。`hibiki/assets/popup/global_lookup_host.js`。
+- **[x] ② 已加自动化测试** — 反转守卫为「禁止 box-shadow 声明」：`hibiki/test/lookup/global_lookup_popup_style_guard_test.dart`（`host.contains('box-shadow:')` isFalse + shell 级主题化 shadow 规则 `[data-theme="dark"]{` 消失，同时保留 close-X 后代 `[data-theme="dark"] .global-lookup-close{` 合法规则）与 node harness `hibiki/test/lookup/global_lookup_host_test.mjs`（test 16：注入样式文本 `!/box-shadow/`）。两处均 PASS。
+- **备注**：
+  - 源自 PR #16（分支 `worktree-fix-global-lookup-border`，base v30 `574fe98c7`）。base 太老带无关老冲突，未整分支 merge，改在 fresh origin/develop 上外科式 apply 纯 CSS 删除。原 PR 用 BUG-476 编号，但 origin/develop 上 BUG-476 已被 `restart-cold-start-black-window`、BUG-708 已被 `interconnect-repair-blocked-by-lingering-pin-dialog`(TODO-1330) 占用，落地时改到空号 BUG-709。
+  - develop 分叉点：TODO-1067 给 close-X 加了 `.global-lookup-frame-shell[data-theme="dark"] .global-lookup-close{` 主题化规则（v30 没有）。PR 原守卫断言 `host.contains('.global-lookup-frame-shell[data-theme="dark"]')` isFalse 在 develop 上会被 close-X 规则误命中，故落地版精确到被删的 shell 级 shadow 规则 `[data-theme="dark"]{`（bracket 紧跟花括号），close-X 的 `[data-theme="dark"] `（空格+后代选择器）不受影响。
+  - **未在真机跑活的覆盖窗验证**：用户生产 DB 为 v37，v30/开发树打开 v37 DB 会触发降级 DROP 表毁库风险；修复为纯 CSS 删除、机理确定、像素定量吻合、守卫锁死，最终肉眼确认建议用户在自己 v37 构建上做。

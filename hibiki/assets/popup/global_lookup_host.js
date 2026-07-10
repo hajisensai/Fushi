@@ -272,17 +272,25 @@
     // the iframe inside the shell already paints the THEME card background AND
     // the single visible card border (popup.css `html.global-lookup body`
     // border + radius + padding). The shell therefore owns ONLY the rounded
-    // clip + the drop-shadow that the iframe element itself cannot cast — it
-    // must NOT draw a second `border` (that produced two concentric grey rings
-    // with a white gap between them). `border-radius` stays so the shadow +
-    // overflow clip follow the same rounded silhouette as the body border;
+    // clip — it must NOT draw a second `border` (that produced two concentric
+    // grey rings with a white gap between them). `border-radius` stays so the
+    // overflow clip follows the same rounded silhouette as the body border;
     // `background:transparent` keeps the shell from painting a second fill.
-    // Unlike the P2 single-frame chrome (which lived on the iframe body and got
-    // clipped at the window edge), the shell shadow has room to render inside
-    // the enlarged bounding-box window (E1). Dark variant keyed off data-theme
-    // stamped by the render payload. All rules scoped to
-    // .global-lookup-frame-shell -> the in-app popup (no host.js) is never
-    // touched.
+    //
+    // BUG-709 — NO `box-shadow`. The overlay HWND is a NON-layered, OPAQUE
+    // WebView2 window (global_lookup_window.cpp: "No WS_EX_LAYERED"). On such a
+    // window the WebView2 composition surface has no per-pixel alpha against the
+    // desktop, so a CSS `box-shadow` does NOT read as a soft translucent shadow
+    // over whatever is behind the card — the shadow's blur (0 3px 12px) paints
+    // onto the window's own transparent (=hard dark) surface as an ~11px DARK
+    // HALO ringing the card's corners/edges, which the native rounded window
+    // region (SetWindowRgn) cannot clip away. That halo is exactly the "black
+    // border outside the rounded corners" the user reported. A real drop-shadow
+    // is physically impossible on a non-layered WebView2 window (the design
+    // already conceded this), so the shell casts none: the rounded silhouette
+    // comes from SetWindowRgn + the body's 1px card border, with nothing painted
+    // outside the card. All rules scoped to .global-lookup-frame-shell -> the
+    // in-app popup (no host.js) is never touched.
     // D1 reveal gate: a shell paints only when BOTH data-* flags are 'true'.
     style.textContent =
         // D1 reveal gate FIRST (kept as its own rule so the gate contract stays
@@ -293,15 +301,12 @@
         '.global-lookup-frame-shell{' +
         'box-sizing:border-box;overflow:hidden;background:transparent;' +
         'border-radius:10px;' +
-        'box-shadow:0 3px 12px rgba(0,0,0,0.22);' +
         // TODO-890 — slide-out close: the shell tweens transform+opacity so a
         // dismiss slides the card off-screen instead of vanishing instantly
         // (app-out parity with the in-app _BodySwipeDismissDetector). 200ms
         // ease-out matches the Flutter side. Scoped to the shell selector so
         // it never leaks into the in-app popup (which never loads host.js).
         'transition:transform 200ms ease-out, opacity 200ms ease-out;}' +
-        '.global-lookup-frame-shell[data-theme="dark"]{' +
-        'box-shadow:0 3px 12px rgba(0,0,0,0.44);}' +
         // TODO-890 — the dismissing class drives the slide-out: translate the
         // card fully off its own width + margin and fade to 0; visibility stays
         // visible during the transition (the reveal gate already passed) so the
