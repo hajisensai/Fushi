@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 671 条。点号进各自文件。
+> 共 672 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-686](bugs/BUG-686-nav-jump-lands-chapter-start.md) | ✅ | ✅ | 导航跳转落章节开头而非目标文字 |
 | [BUG-685](bugs/BUG-685-vertical-ruby-rtc-inline.md) | ✅ | ✅ | 竖排rtc形态振假名内联占字符格挤开基字 |
 | [BUG-684](bugs/BUG-684-multi-subtitle-full.md) | ✅ | ✅ | 视频多字幕降级:同锚点MarginV裹挟+副字幕硬拽顶部 |
 | [BUG-683](bugs/BUG-683-first-card-taller.md) | ✅ | ✅ | 查词弹窗首个词典卡片比其他卡片高 |

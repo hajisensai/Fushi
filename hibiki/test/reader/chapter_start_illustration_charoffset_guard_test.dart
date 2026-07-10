@@ -130,6 +130,21 @@ void main() {
       reason: '连续 <=0：有正 hint 保住滚动位（_writeContinuousScroll，不弹回章顶前导），'
           '否则 scrollToChapterStart 滚到顶——两分支后 return，绝不掉进走查跳首文本',
     );
+    // TODO-1308 问题②（BUG-686 根因③）：连续滚动位横排是 scrollTop（>=0），竖排是
+    // window.scrollX（vertical-rl 滚离章顶后为负——scrollToChapterEnd 用 -1e9）。旧判据
+    // `hintScroll > 0` 在竖排永假 → 保位分支在竖排是死代码，任何重锚把 fvco 采成 0 就
+    // 把用户钉回章首。判据必须轴向归一：非零即已滚离章顶（两轴章顶都是 0）。
+    expect(
+      n.contains("typeof hintScroll === 'number' && Math.abs(hintScroll) > 0"),
+      isTrue,
+      reason: '连续 <=0 的保位判据必须轴向归一（Math.abs——竖排 hint 为负 scrollX）',
+    );
+    expect(
+      n.contains("typeof hintScroll === 'number' && hintScroll > 0)"),
+      isFalse,
+      reason: '不得回退成 `hintScroll > 0` 裸判据——竖排（负 scrollX）下保位分支永假，'
+          '重锚会把竖排用户钉回章首（BUG-686 根因③）',
+    );
   });
 
   test('两模式重锚调用点都把「重锚前采到的位置」透传给 scrollToCharOffset（否则 <=0 无 hint 弹章顶）', () {

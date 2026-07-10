@@ -987,6 +987,13 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static bool Function()? debugLyricsModeReady;
 
+  /// Test hook (TODO-1308 问题②/BUG-686): drives the REAL in-book favorite
+  /// jump path (`_jumpToFavoriteSentence` — the same method the quick-settings
+  /// sheet's onJumpToFavorite invokes) so integration tests can assert the
+  /// landing position without scripting the sheet UI.
+  @visibleForTesting
+  static Future<void> Function(FavoriteSentence fav)? debugJumpToFavorite;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -1419,6 +1426,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugToggleLyricsMode = _toggleLyricsMode;
       ReaderHibikiPage.debugLyricsModeReady =
           () => mounted && _lyricsMode && _lyricsPageReady;
+      ReaderHibikiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
@@ -1871,6 +1879,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugOpenQuickSettings = null;
       ReaderHibikiPage.debugToggleLyricsMode = null;
       ReaderHibikiPage.debugLyricsModeReady = null;
+      ReaderHibikiPage.debugJumpToFavorite = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
