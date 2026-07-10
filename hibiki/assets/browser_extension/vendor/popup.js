@@ -8,6 +8,21 @@ function __hibikiOverlayParent(){ return window.__hibikiRoot || document.body; }
 function __hibikiScrollHeight(){ var c = __hibikiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
 function __hibikiSel(){ var r = window.__hibikiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
 function __hibikiEventTarget(e){ try { var p = e.composedPath && e.composedPath(); if (p && p.length) return p[0]; } catch(_){} return e.target; }
+/* BUG-686: the extension floating popup scrolls on the SHADOW HOST
+   (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
+   neutralized to overflow:visible inside the shadow), while the in-app popup
+   scrolls the document itself. These two resolve the wheel-scroll surface:
+   - __hibikiShadowHost(): the shadow host element, or null in-app / pre-shadow.
+   - __hibikiWheelScroller(e): the host ONLY when the wheel event originated
+     inside the popup shadow (composedPath crosses it); null means "scroll the
+     window" (in-app popup document, or the host page outside the popup). */
+function __hibikiShadowHost(){ var r = window.__hibikiRoot; return (r && r.host) ? r.host : null; }
+function __hibikiWheelScroller(e){
+    var host = __hibikiShadowHost();
+    if (!host) return null;
+    try { var p = e.composedPath && e.composedPath(); if (p && p.indexOf(host) !== -1) return host; } catch(_){}
+    return null;
+}
 
 //
 //  popup.js
@@ -2963,8 +2978,13 @@ window.updatePopupIncremental = function() {
 const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
-function popupCurrentZoom() {
-    const z = parseFloat(getComputedStyle(__hibikiContainer() || document.documentElement).getPropertyValue('--hibiki-popup-zoom'));
+function popupCurrentZoom(scroller) {
+    // BUG-686: read the zoom of the surface we are about to scroll. The in-app
+    // popup zooms document.documentElement (popup_settings_injection.dart sets
+    // documentElement.style.zoom); the extension floating popup zooms the shadow
+    // host instead (content.js hibikiRender sets host.style.zoom).
+    const el = scroller || document.documentElement;
+    const z = parseFloat(el.style && el.style.zoom);
     return (Number.isFinite(z) && z > 0) ? z : 1;
 }
 // Normalize a wheel delta (any axis) to CSS pixels, accounting for deltaMode.
@@ -3020,8 +3040,14 @@ document.addEventListener('wheel', (e) => {
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
     const visualStep = popupClampWheelVisualStep(deltaPx * POPUP_WHEEL_PIXEL_FACTOR);
-    const step = visualStep / popupCurrentZoom();
-    { var _hc = __hibikiContainer(); if (_hc) { _hc.scrollBy({ top: step, behavior: 'auto' }); } else { window.scrollBy({ top: step, behavior: 'auto' }); } }
+    // BUG-686: scroll the surface the wheel is actually over. Extension popup:
+    // the shadow host is the scroll container (the ancestor walk above cannot
+    // cross the shadow boundary, so it never absorbs there). In-app popup and
+    // wheels over the host page: the window, exactly as before the shadow move.
+    const scroller = __hibikiWheelScroller(e);
+    const step = visualStep / popupCurrentZoom(scroller);
+    if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
+    else { window.scrollBy({ top: step, behavior: 'auto' }); }
 }, { passive: false });
 
 
