@@ -1,4 +1,4 @@
-## BUG-738 · 双轨字幕来回弹跳 + 大屏底部双语塌陷重叠
+## BUG-743 · 双轨字幕来回弹跳 + 大屏底部双语塌陷重叠
 - **报告**：2026-07-12（用户：给真实 fansub `双语.ass`（喵萌 Ruri no Houseki，Dial_JP MarginV=4 + Dial_CH MarginV=30 底部双语）与 `Shunkashuutou…ToonsHub.ass`，报「双轨字幕会来回弹跳。字幕样式还是有问题」）
 - **真实性**：✅ 真 bug（离屏用真实 .ass 复现，两个独立根因）
   - **① 弹跳** 根因：`packages/hibiki_audio/lib/src/parsers/json_alignment_parser.dart:155` `findActiveCueIndices` 用**闭区间** `positionMs <= cue.endMs`。相邻对白（前条 `endMs` == 后条 `startMs`，fansub 极常见，如本文件 `0:00:53.20` 收尾即下句起始）在那一毫秒**两对 cue 同时活跃**（前条未退场 + 后条已进场）。视频字幕竖排堆叠槽位表 `video_subtitle_overlay.dart` `_syncGroupSlots`（step②「新 cue 补最靠锚点空槽、没有才追加远端」）在这一帧所有锚点槽都被旧 cue 占着 → 后进 cue 被追加到**远端槽**；旧 cue 退场后 step③ 只裁**尾部**死槽，锚点侧死槽当隐形占位保留，把后一条持续顶离基线，直到出现间隙整组清空才复位。表现：连续对白里字幕被抬高、间隙落回，**来回弹跳**。离屏 @1080 逐帧追踪：`t=53.2s→54.4s` JP/CH 带整体上下跳 201px。

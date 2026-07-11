@@ -215,6 +215,20 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 出现前既有行为、不受影响）。
   final bool respectAssStyle;
 
+  /// 听力沉浸「模糊态」的高斯模糊 sigma（逻辑像素）。以前是硬编码 8——一个只对默认字号
+  /// 36 勉强够用的绝对值（8/36≈0.22×字宽），用户把字幕字号调大后同样的 8px 相对字形就
+  /// 太浅、字还读得清（用户报「模糊度不够」）。字幕遮蔽的本意是**让人读不出**（只在悬停/
+  /// 点击时显形），故模糊强度必须随字号同构缩放而非固定绝对像素：sigma = fontSize×0.45，
+  /// 并取下限 12 保证小字号也真正糊掉。默认 36 → 16.2（约旧值两倍），60 → 27。纯函数、
+  /// 无副作用，供守卫测试直接钉不变式。
+  @visibleForTesting
+  static double obscureBlurSigma(double fontSize) {
+    const double ratio = 0.45;
+    const double minSigma = 12;
+    final double scaled = fontSize * ratio;
+    return scaled < minSigma ? minSigma : scaled;
+  }
+
   @override
   State<VideoSubtitleOverlay> createState() => _VideoSubtitleOverlayState();
 }
@@ -828,11 +842,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
 
     if (blurred) {
       // 模糊态（仅主层）：盖一层高斯模糊 + 拦字符点击（避免误触查词）+ 显形热区。
+      // 模糊强度随字号缩放（见 [VideoSubtitleOverlay.obscureBlurSigma]），字号越大糊得越狠，
+      // 保证任何字号下都真读不出（旧的固定 8px 对大字号太浅，用户报「模糊度不够」）。
+      final double sigma =
+          VideoSubtitleOverlay.obscureBlurSigma(widget.fontSize);
       content = Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
           ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
             child: content,
           ),
           Positioned.fill(
