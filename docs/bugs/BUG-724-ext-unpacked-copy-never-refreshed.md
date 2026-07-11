@@ -12,7 +12,7 @@
     `settings_schema_lookup.dart` 的手动「安装扩展」入口；app 升级从不刷新磁盘副本，
     浏览器加载的未解压扩展就永远停在用户最后一次跑助手那天。弹窗渲染器/样式
     （popup.js/content.css）随 app 演进越走越远 → 「明显和 app 内不一样」按月复发。
-- **[x] ① 已修复** — 打通「app 升级 → 磁盘副本刷新 → 扩展自 reload」全自动链路（提交 见 PR）：
+- **[x] ① 已修复** — 打通「app 升级 → 磁盘副本刷新 → 扩展自 reload」全自动链路（提交 `aee00d2b5`）：
   1. 指纹身份：`computeBrowserExtensionFingerprint`（内置扩展全资产 sha256 前 16 hex，排除
      解压时必被重写的 `hibiki-defaults.js`）；解压时写进 `hibiki-defaults.js` 的 `build` 键。
   2. 启动刷新：`AppModel.initialise` 桌面端 fire-and-forget 调 `refreshBrowserExtensionCopy`
