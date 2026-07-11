@@ -343,6 +343,209 @@ function buildSentenceContextPicker() {
     return picker;
 }
 
+// ── Niratan「制卡前调整·选择句子上下文」模态 ──────────────────────────────────
+// 与旧「上 N / 下 N」内联步进器（kSentenceContextPickerEnabled 恒 false，永不渲染）互
+// 独立的新特性：点词条上的「调整上下文」按钮打开一个模态，展示**前文 / 当前句(查到的
+// 词高亮) / 后文**的真实文本 + 前退/前加/后退/后加一句调整 + 取消/确认制卡。一键「+」
+// 制卡保持不变（不打开模态）。数据流复用既有 sentenceCtxPrev/Next 镜像 + setSentenceContext
+// 桥接（宿主整体解析上下文句进草稿），文本由新的只读 sentenceContextPreview 桥接回传；
+// 「确认制卡」直接点回该词条的 mineButton，复用其全部制卡/查重/覆写逻辑。
+
+function ctxI18n() {
+    return window.i18nCtx || {};
+}
+
+// 只读拉取宿主当前草稿的上下文预览（前/当前/后真实句 + 词在当前句的偏移）。宿主未接入
+// / 出错时回空对象，模态侧兜底不渲染文本（绝不崩制卡主流程）。
+async function fetchSentenceContextPreview() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler('sentenceContextPreview');
+        return (reply && typeof reply === 'object') ? reply : {};
+    } catch (e) {
+        console.error('sentenceContextPreview failed', e);
+        return {};
+    }
+}
+
+// 用当前句文本 + 词偏移 + 词表现形，构造一个带 <span class="scm-hl"> 高亮的文本盒。**不用
+// innerHTML 拼用户文本**（句子是书内容，杜绝 HTML 注入）——纯 textNode + 一个高亮 span。
+// offset 命中优先（与卡片渲染 _sentenceValue 同容错），失配回退首次出现匹配，再失配无高亮。
+function buildHighlightedCurrentText(text, offset, matched) {
+    const box = el('div', { className: 'scm-box-text' });
+    if (!text) {
+        box.classList.add('scm-empty');
+        box.textContent = ctxI18n().boxEmpty || '';
+        return box;
+    }
+    let start = -1;
+    if (matched) {
+        if (typeof offset === 'number' && offset >= 0 &&
+            text.substr(offset, matched.length) === matched) {
+            start = offset;
+        } else {
+            start = text.indexOf(matched);
+        }
+    }
+    if (start < 0 || !matched) {
+        box.textContent = text;
+        return box;
+    }
+    box.appendChild(document.createTextNode(text.slice(0, start)));
+    box.appendChild(el('span', {
+        className: 'scm-hl',
+        textContent: text.slice(start, start + matched.length),
+    }));
+    box.appendChild(document.createTextNode(text.slice(start + matched.length)));
+    return box;
+}
+
+// 渲染一个上下文盒（前文 / 后文）：标签 + 每句一行。空 → 占位「（无）」。纯 textNode。
+function buildContextBox(labelText, sentences, extraClass) {
+    const wrap = el('div', { className: 'scm-box ' + (extraClass || '') });
+    wrap.appendChild(el('div', { className: 'scm-box-label', textContent: labelText }));
+    if (!sentences || !sentences.length) {
+        wrap.appendChild(el('div', {
+            className: 'scm-box-text scm-empty',
+            textContent: ctxI18n().boxEmpty || '',
+        }));
+        return wrap;
+    }
+    const t = el('div', { className: 'scm-box-text' });
+    sentences.forEach(function(s, i) {
+        if (i) t.appendChild(el('br'));
+        t.appendChild(document.createTextNode(String(s)));
+    });
+    wrap.appendChild(t);
+    return wrap;
+}
+
+let __sentenceContextModalOpen = false;
+
+// 打开「制卡前调整」模态。[mineButton]：该词条的制卡按钮（确认制卡时点它复用全部逻辑）；
+// [matched]：查到的词表现形（用于在当前句里高亮）。同一时刻只允许一个模态。
+async function openSentenceContextModal(mineButton, matched) {
+    if (__sentenceContextModalOpen) return;
+    __sentenceContextModalOpen = true;
+    const i = ctxI18n();
+    // 记住打开时的镜像；取消 = 还原到此（不把半调整的草稿留给后续「+」一键制卡）。
+    const snapPrev = sentenceCtxPrev;
+    const snapNext = sentenceCtxNext;
+
+    const overlay = el('div', { className: 'sentence-context-modal' });
+    const card = el('div', { className: 'scm-card' });
+    overlay.appendChild(card);
+
+    const head = el('div', { className: 'scm-head' });
+    head.appendChild(el('span', { className: 'scm-eyebrow', textContent: i.eyebrow || '' }));
+    const closeBtn = el('button', { className: 'inline-action-button scm-x' });
+    setButtonIcon(closeBtn, 'close');
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+    card.appendChild(el('div', { className: 'scm-title', textContent: i.title || '' }));
+    const countEl = el('div', { className: 'scm-count' });
+    card.appendChild(countEl);
+
+    const boxes = el('div', { className: 'scm-boxes' });
+    card.appendChild(boxes);
+
+    let busy = false;
+    const makeAdjustBtn = function(dir, sign, label) {
+        const btn = el('button', {
+            className: 'scm-btn scm-adjust ' + dir + '-' + sign,
+            textContent: label,
+        });
+        btn.dataset.dir = dir;
+        btn.dataset.sign = sign;
+        btn.onclick = function() { adjust(dir, sign); };
+        return btn;
+    };
+    const prevMinusBtn = makeAdjustBtn('prev', 'minus', i.prevMinus || '');
+    const prevPlusBtn = makeAdjustBtn('prev', 'plus', i.prevPlus || '');
+    const nextMinusBtn = makeAdjustBtn('next', 'minus', i.nextMinus || '');
+    const nextPlusBtn = makeAdjustBtn('next', 'plus', i.nextPlus || '');
+    const actions = el('div', { className: 'scm-actions' });
+    actions.appendChild(prevMinusBtn);
+    actions.appendChild(prevPlusBtn);
+    actions.appendChild(nextMinusBtn);
+    actions.appendChild(nextPlusBtn);
+    card.appendChild(actions);
+
+    const cancelBtn = el('button', { className: 'scm-btn scm-cancel', textContent: i.cancel || '' });
+    const confirmBtn = el('button', { className: 'scm-btn scm-confirm', textContent: i.confirm || '' });
+    const foot = el('div', { className: 'scm-foot' });
+    foot.appendChild(cancelBtn);
+    foot.appendChild(confirmBtn);
+    card.appendChild(foot);
+
+    function renderPreview(preview) {
+        const prev = Array.isArray(preview.prev) ? preview.prev : [];
+        const next = Array.isArray(preview.next) ? preview.next : [];
+        const current = typeof preview.current === 'string' ? preview.current : '';
+        const total = typeof preview.total === 'number' ? preview.total : (prev.length + next.length);
+        // 镜像与宿主真实句数对齐：宿主按段落/cue 边界封顶，到边界再「加」是空操作，
+        // 计数不再上涨——honest feedback（不像旧步进器让镜像无界上涨）。
+        sentenceCtxPrev = prev.length;
+        sentenceCtxNext = next.length;
+        sentenceDraftCount = total;
+        countEl.textContent = (i.count || '%d').replace('%d', String(total));
+        boxes.textContent = '';
+        boxes.appendChild(buildContextBox(i.boxPrev || '', prev, 'scm-prev'));
+        const curBox = el('div', { className: 'scm-box scm-current selected' });
+        curBox.appendChild(el('div', { className: 'scm-box-label', textContent: i.boxCurrent || '' }));
+        curBox.appendChild(buildHighlightedCurrentText(current, preview.currentOffset, matched));
+        boxes.appendChild(curBox);
+        boxes.appendChild(buildContextBox(i.boxNext || '', next, 'scm-next'));
+        prevMinusBtn.disabled = prev.length <= 0;
+        nextMinusBtn.disabled = next.length <= 0;
+    }
+
+    async function refresh() {
+        renderPreview(await fetchSentenceContextPreview());
+    }
+
+    async function adjust(dir, sign) {
+        if (busy) return;
+        busy = true;
+        card.dataset.busy = '1';
+        try {
+            const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+            const nextN = sign === 'plus' ? cur + 1 : Math.max(0, cur - 1);
+            if (dir === 'prev') sentenceCtxPrev = nextN;
+            else sentenceCtxNext = nextN;
+            await setSentenceContextOnHost();
+            await refresh();
+        } finally {
+            busy = false;
+            card.dataset.busy = '';
+        }
+    }
+
+    function close() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        __sentenceContextModalOpen = false;
+    }
+    async function cancel() {
+        // 取消：还原到打开时的选择（取消不改草稿），再关。
+        sentenceCtxPrev = snapPrev;
+        sentenceCtxNext = snapNext;
+        try { await setSentenceContextOnHost(); } catch (e) { /* 取消尽力而为 */ }
+        close();
+    }
+    closeBtn.onclick = cancel;
+    cancelBtn.onclick = cancel;
+    overlay.onclick = function(e) { if (e.target === overlay) cancel(); };
+    confirmBtn.onclick = function() {
+        close();
+        // 复用该词条制卡按钮的全部逻辑（查重/覆写/制卡后清理都在里面）。
+        if (mineButton && !mineButton.disabled) mineButton.click();
+    };
+
+    (document.body || __hibikiRootNode()).appendChild(overlay);
+    // 先用镜像画个占位，再异步拉真实预览覆盖（避免打开瞬间空白）。
+    renderPreview({ prev: [], next: [], current: '', total: sentenceCtxPrev + sentenceCtxNext });
+    await refresh();
+}
+
 
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
@@ -383,6 +586,8 @@ const ICON_PATHS = {
     remove: 'M19 13H5v-2h14v2z',
     // close（清空草稿 / 标签说明遮罩关闭 ×）
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
+    tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
 };
 
 function iconSvg(name) {
@@ -1508,6 +1713,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
                     ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
                     : element.textContent || '';
                 const rect = element.getBoundingClientRect();
+                markGlobalLookupExtHit(element);
                 window.flutter_inappwebview.callHandler('onLinkClick', query, {
                     x: rect.left,
                     y: rect.top,
@@ -1979,6 +2185,7 @@ function createKanjiBreakdown(expression) {
             e.preventDefault();
             e.stopPropagation();
             const rect = tag.getBoundingClientRect();
+            markGlobalLookupExtHit(tag);
             window.flutter_inappwebview.callHandler('onLinkClick', ch, {
                 x: rect.left,
                 y: rect.top,
@@ -2007,6 +2214,7 @@ function createEntryHeader(entry, idx) {
         e.preventDefault();
         e.stopPropagation();
         const rect = expressionSpan.getBoundingClientRect();
+        markGlobalLookupExtHit(expressionSpan);
         window.flutter_inappwebview.callHandler('onLinkClick', expression, {
             x: rect.left,
             y: rect.top,
@@ -2254,6 +2462,21 @@ function createEntryHeader(entry, idx) {
         setButtonIcon(clearButton, 'close');
         refreshClearDraftButton(clearButton);
         buttonsContainer.appendChild(clearButton);
+    }
+
+    // Niratan「制卡前调整·选择句子上下文」：独立于上面被砍掉的内联步进器
+    // （kSentenceContextPickerEnabled 恒 false）。支持草稿且宿主接入了预览回调的表面
+    // （reader/有声书/视频，window.sentenceContextPreviewEnabled 为真）渲染一个「调整
+    // 上下文」按钮，点开模态在里面看前/当前/后真实句并增减上下文、确认制卡。一键「+」
+    // 制卡不受影响。
+    if (window.sentenceContextPreviewEnabled) {
+        const adjustBtn = el('button', {
+            className: 'inline-action-button ctx-adjust-button',
+            title: (window.i18nCtx && window.i18nCtx.adjust) || '',
+            onclick: function() { openSentenceContextModal(mineButton, matched); },
+        });
+        setButtonIcon(adjustBtn, 'tune');
+        buttonsContainer.appendChild(adjustBtn);
     }
 
     header.appendChild(buttonsContainer);
@@ -2588,13 +2811,60 @@ function buildEntryElement(entry, idx) {
 
 function postProcessRuby(container) {
     container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
-        ruby.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                const span = document.createElement('span');
-                span.textContent = node.textContent;
-                node.replaceWith(span);
+        // Wrap each base — a bare text node OR an element base like <rb>/<span>
+        // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
+        // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.
+        // popup.css positions the rt absolutely (left:0/right:0/top:0) against its
+        // nearest positioned ancestor AND reserves vertical room via the unit's
+        // padding-top; making the per-base unit that ancestor keeps each rt
+        // sized/centred over — and lifted above — its own kanji.
+        //   - Multi-kanji word (one <ruby>, several base+<rt> pairs, e.g.
+        //     将<rt>しょう</rt>棋<rt>ぎ</rt>): without per-base units every rt
+        //     stretched to the full <ruby> width and superimposed (BUG-722).
+        //   - Element base (<ruby><rb>未然形</rb><rt>みぜんけい</rt></ruby>): the
+        //     old text-node-only wrap skipped the <rb>, so no .ruby-unit was made;
+        //     the rt kept position:absolute;top:0 but anchored to the bare <ruby>
+        //     (line-height:1, no padding-top reserve) and the reading collapsed
+        //     onto the base (BUG-733). Wrapping ANY base restores the reserve.
+        // Keeping the base as a live text node (bare, in place) or a live element
+        // (moved whole, not flattened) preserves ruby lookup selection
+        // (BUG-110/123/125/129 must not regress).
+        const isEl = (n, tag) =>
+            n.nodeType === Node.ELEMENT_NODE && n.tagName === tag;
+        const isBlankText = (n) =>
+            n.nodeType === Node.TEXT_NODE && !n.textContent.trim();
+        const children = Array.from(ruby.childNodes);
+        for (const node of children) {
+            // A base is anything that is not a reading (<rt>), a fallback paren
+            // (<rp>), or inter-token whitespace.
+            if (isEl(node, 'RT') || isEl(node, 'RP') || isBlankText(node)) {
+                continue;
             }
-        });
+            const unit = document.createElement('span');
+            unit.className = 'ruby-unit';
+            if (node.nodeType === Node.TEXT_NODE) {
+                // Bare text base: keep the text live inside the unit.
+                unit.textContent = node.textContent;
+                node.replaceWith(unit);
+            } else {
+                // Element base (<rb>/<span>/nested structured-content): move the
+                // element itself into the unit so its inner text stays a live,
+                // selectable node while the unit becomes the positioned per-base
+                // box.
+                node.replaceWith(unit);
+                unit.appendChild(node);
+            }
+            // Move this base's own <rt> into the unit, stepping over <rp> fallback
+            // parens and whitespace text nodes that sit between a base and its
+            // reading.
+            let sib = unit.nextSibling;
+            while (sib && (isBlankText(sib) || isEl(sib, 'RP'))) {
+                sib = sib.nextSibling;
+            }
+            if (sib && isEl(sib, 'RT')) {
+                unit.appendChild(sib);
+            }
+        }
     });
 }
 
@@ -2650,6 +2920,7 @@ function createKanjiCard(kanji) {
         e.preventDefault();
         e.stopPropagation();
         const rect = charEl.getBoundingClientRect();
+        markGlobalLookupExtHit(charEl);
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
             y: rect.top,
@@ -2803,6 +3074,7 @@ function resetMasonryBody(body) {
     body.style.position = '';
     body.style.display = '';
     body.style.height = '';
+    delete body.dataset.masonryCols; // 清粘着列记录：回落单列/CSS 后再进 masonry 会重新最短列打包
     [...body.children].forEach(item => {
         item.style.position = '';
         item.style.left = '';
@@ -2810,6 +3082,7 @@ function resetMasonryBody(body) {
         item.style.width = '';
         item.style.marginTop = '';
         item.style.transform = '';
+        delete item.dataset.masonryCol;
     });
 }
 
@@ -2827,11 +3100,29 @@ function layoutMasonry() {
         body.style.position = 'relative';
         body.style.display = 'block';
         const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
+
+        // 粘着列分配（修用户「开关方框时按上下高度左右重排，实际只应上下动」）：只要列数没变、
+        // 且每张卡片都已记录合法列号，就复用既有列分配——展开/收起改高度时只在各自列内重算纵向
+        // 位置，卡片只上下动、绝不换列左右跳。仅列数变（窗口宽/设置）或有新卡片（增量加载，某卡
+        // 无记录）时，才用「最短列」从头打包并记录列号。
+        const prevCols = Number.parseInt(body.dataset.masonryCols, 10);
+        const canReuse = prevCols === cols &&
+            items.every(item => {
+                const c = Number.parseInt(item.dataset.masonryCol, 10);
+                return Number.isFinite(c) && c >= 0 && c < cols;
+            });
+
         const heights = new Array(cols).fill(0);
         items.forEach(item => {
-            let c = 0;
-            for (let i = 1; i < cols; i++) {
-                if (heights[i] < heights[c]) c = i; // 当前最矮列
+            let c;
+            if (canReuse) {
+                c = Number.parseInt(item.dataset.masonryCol, 10); // 复用粘着列，不重新分列
+            } else {
+                c = 0;
+                for (let i = 1; i < cols; i++) {
+                    if (heights[i] < heights[c]) c = i; // 首次：最短列打包
+                }
+                item.dataset.masonryCol = String(c); // 记住列号，之后开关都粘着此列
             }
             item.style.position = 'absolute';
             item.style.left = '0';
@@ -2842,6 +3133,7 @@ function layoutMasonry() {
             // 读 offsetHeight 前已设 width，浏览器按目标列宽回流后再量高。
             heights[c] += item.offsetHeight + gap;
         });
+        body.dataset.masonryCols = String(cols);
         body.style.height = `${Math.max(...heights) - gap}px`;
     });
 }
@@ -2902,22 +3194,47 @@ function buildGlobalLookupSentenceBanner() {
     // spec 2026-07-10 — per-character spans: clicking any character looks up
     // the "char to sentence end" suffix (the same semantics as the in-app
     // ClipboardLookupTextPanel; the engine prefix/deinflection-matches from
-    // the clicked char). Rides the existing onLinkClick bridge (same path as
-    // kanji-tag clicks), so the overlay host re-anchors the rect and opens a
-    // nested child card. textContent per span (never innerHTML) — the sentence
+    // the clicked char). textContent per span (never innerHTML) — the sentence
     // is untrusted foreground-app/clipboard text, never interpreted as markup.
+    //
+    // 真机第 4 轮 — 面板 root（window.__globalLookupPanelRoot，settingsJs 注入）
+    // 的句子条是「选词区」：点字走 panelSentenceLookup 桥，Dart 换根结果=底部
+    // 原地更新，不再嵌套压卡；引擎匹配到的词以 __globalLookupSentenceHit
+    // {start,length}（码点下标）整词高亮——分词由词典引擎给出，视觉上是连续
+    // 正常文本（面板无逐字 hover 框，见 popup.css 的 :not() 作用域）。
+    // 瞬态覆盖窗保持原语义：点字=onLinkClick 嵌套子卡。
     const chars = Array.from(sentence);
+    const isPanelRoot = window.__globalLookupPanelRoot === true;
+    const hit = isPanelRoot ? window.__globalLookupSentenceHit : null;
+    const hitStart = hit && typeof hit.start === 'number' ? hit.start : -1;
+    const hitEnd = hitStart >= 0 && hit && typeof hit.length === 'number'
+        ? hitStart + hit.length
+        : -1;
+    if (isPanelRoot) {
+        banner.classList.add('global-lookup-sentence-panel');
+    }
     chars.forEach((ch, i) => {
         const span = el('span', {
-            className: 'global-lookup-sentence-char',
+            className: 'global-lookup-sentence-char'
+                + (i >= hitStart && i < hitEnd
+                    ? ' global-lookup-sentence-hit'
+                    : ''),
             textContent: ch,
         });
         span.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const suffix = chars.slice(i).join('');
+            if (isPanelRoot) {
+                // i = 码点下标（chars 是 Array.from 的码点数组），Dart 侧原样
+                // 作为高亮起点回注——两端同一单位，无 UTF-16 代理对错位。
+                window.flutter_inappwebview.callHandler(
+                    'panelSentenceLookup', suffix, i);
+                return;
+            }
             const rect = span.getBoundingClientRect();
             window.flutter_inappwebview.callHandler(
-                'onLinkClick', chars.slice(i).join(''), {
+                'onLinkClick', suffix, {
                 x: rect.left,
                 y: rect.top,
                 width: rect.width,
@@ -2927,6 +3244,56 @@ function buildGlobalLookupSentenceBanner() {
         banner.appendChild(span);
     });
     return banner;
+}
+
+// 真机第 5 轮 — 面板 root：点释义/见出语/汉字标签弹**外部**瞬态窗时，被点元素
+// 加 .global-lookup-ext-hit 高亮（外部窗不在本文档里，没有嵌套卡的父卡反馈；
+// 高亮在下次点击时被替换、重渲时随 DOM 重建自然清除）。瞬态窗/in-app 弹窗
+// 不启用（__globalLookupPanelRoot 仅面板 root 注入，那边嵌套卡自有视觉反馈）。
+function markGlobalLookupExtHit(target) {
+    if (window.__globalLookupPanelRoot !== true || !target || !target.classList) {
+        return;
+    }
+    try {
+        document.querySelectorAll('.global-lookup-ext-hit').forEach((n) => {
+            n.classList.remove('global-lookup-ext-hit');
+        });
+    } catch (e) {
+        // querySelectorAll 失败也不阻断查词本身。
+    }
+    target.classList.add('global-lookup-ext-hit');
+}
+
+// 真机第 5 轮 — 视口感知的词典列数收敛：TODO-1357 只按平台定默认（桌面 2 列
+// Niratan 双栏、移动 1 列「不硬塞多列避免窄屏挤爆」），但面板窗可被拖到很窄，
+// 固定多列会让底下的词典玻璃卡互相挤压重叠。这里把同一「窄了就收」判断按真实
+// 视口宽度动态化：每列至少 DICT_COLUMN_MIN_WIDTH px（可读下限），有效列数 =
+// min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
+// resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
+const DICT_COLUMN_MIN_WIDTH = 170;
+function updateEffectiveDictColumns() {
+    const doc = document.documentElement;
+    if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
+        return;
+    }
+    let configured = 1;
+    try {
+        configured = parseInt(
+            getComputedStyle(doc).getPropertyValue('--dict-columns'), 10) || 1;
+    } catch (e) {
+        configured = 1;
+    }
+    const width = window.innerWidth || 0;
+    const fit = width > 0
+        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        : configured;
+    doc.style.setProperty(
+        '--dict-columns-effective', String(Math.min(configured, fit)));
+}
+if (typeof window.addEventListener === 'function'
+    && !window.__hibikiDictColsResizeHooked) {
+    window.__hibikiDictColsResizeHooked = true;
+    window.addEventListener('resize', updateEffectiveDictColumns);
 }
 
 // Inserts the sentence-context banner (if any) as the FIRST child of the popup
@@ -2944,6 +3311,9 @@ function prependSentenceBanner(container) {
 
 window.renderPopup = function() {
     const t0 = performance.now();
+    // 真机第 5 轮 — settingsJs 可能刚更新了 --dict-columns；渲染前按当前视口
+    // 重算有效列数（resize 监听兜住渲染后的窗口拖拽）。
+    updateEffectiveDictColumns();
     const container = __hibikiContainer();
     if (!container) { _firePopupRendered(); return; }
 
@@ -3305,6 +3675,15 @@ document.addEventListener('wheel', (e) => {
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
+    // BUG-732: 这段缩放平滑滚动只服务查词弹窗。扩展里弹窗是宿主页上的 shadow 覆盖层，
+    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host；返回 null
+    // 时唯一合法「滚 window」的表面是 in-app 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。
+    // 普通网页上扩展 content script 有 chrome.runtime.id，此时滚轮不在弹窗内绝不能接管：
+    // 否则整页被 POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
+    const scroller = __hibikiWheelScroller(e);
+    const inExtensionContentScript =
+        typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+    if (!scroller && inExtensionContentScript) return;
     e.preventDefault();
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
@@ -3313,7 +3692,6 @@ document.addEventListener('wheel', (e) => {
     // the shadow host is the scroll container (the ancestor walk above cannot
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
-    const scroller = __hibikiWheelScroller(e);
     const layoutStep = visualStep / popupCurrentZoom(scroller);
     // TODO-1387: carry the sub-pixel remainder across events. A precision touchpad
     // reports deltaMode=PIXEL with a tiny fractional deltaY (~1-4 per frame); after

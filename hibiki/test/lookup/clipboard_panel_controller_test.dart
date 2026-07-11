@@ -28,6 +28,24 @@ void main() {
     });
   });
 
+  group('hitLengthCodePoints（bestLength 码元 → 横幅码点，真机第 4 轮）', () {
+    test('BMP 文本码元=码点', () {
+      expect(ClipboardPanelController.hitLengthCodePoints(3, '食べていた'), 3);
+    });
+
+    test('代理对（emoji/罕见汉字）折算为码点数', () {
+      // '𠮟る' — '𠮟' 是 2 个 UTF-16 码元、1 个码点。
+      expect(ClipboardPanelController.hitLengthCodePoints(3, '𠮟る'), 2);
+    });
+
+    test('越界/非法 bestLength 钳位', () {
+      expect(ClipboardPanelController.hitLengthCodePoints(99, 'ある'), 2);
+      expect(ClipboardPanelController.hitLengthCodePoints(0, 'ある'), 0);
+      expect(ClipboardPanelController.hitLengthCodePoints(-1, 'ある'), 0);
+      expect(ClipboardPanelController.hitLengthCodePoints(2, ''), 0);
+    });
+  });
+
   test('面板栏高度与 host.js PANEL_BAR_HEIGHT 一致（跨端几何契约）', () {
     final String hostJs =
         File('assets/popup/global_lookup_host.js').readAsStringSync();
@@ -60,7 +78,10 @@ void main() {
       // 正向契约：update 见 !_visible 无条件 _showPanel，故关面板（_visible=false）
       // 后下一条剪贴板复制会重开面板。
       final int updAt = controllerSrc.indexOf('Future<void> update(');
-      final int visAt = controllerSrc.indexOf('if (!_visible) {', updAt);
+      // 前缀匹配：clipboard 真机第 2 轮把这个重开门加固成
+      // `if (!_visible || !await _channel.isShowing())`（窗口被系统藏掉也重上屏），
+      // 重开机制（!_visible 时 _showPanel）不变，故不锁死到旧的 `) {` 尾。
+      final int visAt = controllerSrc.indexOf('if (!_visible', updAt);
       final int showAt =
           controllerSrc.indexOf('await _showPanel(model);', visAt);
       expect(visAt, greaterThan(updAt),
@@ -86,13 +107,22 @@ void main() {
           reason: '回传必须走面板自己的 channel，与瞬态窗互不串线');
     });
 
-    test('渲染走 layoutMode panel + backdrop 门控 alpha', () {
+    test('渲染走 layoutMode panel；透明=整窗 LWA_ALPHA（spec §6 真机修正）', () {
       expect(controllerSrc.contains("layoutMode: 'panel'"), isTrue);
+      expect(controllerSrc.contains('setWindowAlpha'), isTrue,
+          reason: '真透视=整窗 alpha；acrylic 实测经 windowed WebView2 不透明');
+      expect(controllerSrc.contains('cardBgAlpha: 1.0'), isTrue,
+          reason: '卡背景恒不透明，避免与整窗 alpha 双重变淡');
+      expect(controllerSrc.contains('applyBackdrop'), isFalse,
+          reason: 'acrylic backdrop 路线废弃（毛玻璃≠透视），面板不再调用');
+    });
+
+    test('update 每次复核 native isShowing（防渲染进被系统藏掉的隐形窗）', () {
       expect(
-        controllerSrc
-            .contains('_backdropApplied ? model.clipboardPanelOpacity : 1.0'),
+        controllerSrc.contains('!_visible || !await _channel.isShowing()'),
         isTrue,
-        reason: 'backdrop 不可用时恒 alpha=1（spec §6 降级）',
+        reason: '真机症状「只显示一次」：窗口被藏后 Dart _visible 仍 true，'
+            '后续更新全进隐形窗',
       );
     });
 

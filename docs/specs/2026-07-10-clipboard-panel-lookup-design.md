@@ -76,11 +76,18 @@
 
 ## 5. 交互细节（面板窗）
 
-- **拖动**：host 顶部窄 grip 条，JS mousedown → `postMessage(dragStart)` → native `ReleaseCapture()` + `SendMessage(WM_NCLBUTTONDOWN, HTCAPTION)`。NOACTIVATE 窗拖动不夺焦点。松手后 native 读回 rect → Dart 存 pref。
+- **拖动**：host 顶部窄 grip 条，JS mousedown → `postMessage(beginWindowDrag)` → native `ReleaseCapture()` + **`PostMessage`**`(WM_NCLBUTTONDOWN, HTCAPTION)`（真机修复：SendMessage 在 WebMessageReceived COM 回调栈里同步进模态循环会挂住 WebView2 派发=拖不动；PostMessage 让模态循环从消息泵正常启动）。拖/拉结束由 `WM_EXITSIZEMOVE` 统一回报 rect → Dart 存 pref。NOACTIVATE 窗拖动不夺焦点。
+- **与主窗解耦（真机修复）**：面板窗**无 owner**（CreateWindowExW 传 nullptr，不传主窗 HWND）——owned 窗随 owner 最小化被系统隐藏（症状=最小化 app 面板跟着没了）、Z 序变更连带 owner（症状=点图钉把主 app 拉前台）。瞬态查词窗保持 owned（短命窗随主窗收纳合理）。`SetTopmost` 补 `SWP_NOOWNERZORDER` 兜底。
 - **图钉**：grip 条上按钮，切 `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`。默认钉住（游戏场景刚需）。注：独占全屏游戏 TOPMOST 也盖不住，文档注明需无边框窗口化——平台限制，不是 bug。
 - **×（关闭）**：藏窗 + 暂停面板路由（`ClipboardPanelController.paused=true`）。重唤两途：设置开关；或 Ctrl+Shift+D（现有热键语义=「立即查当前剪贴板」，destination=panel 时顺带取消暂停并显示面板——同一语义，零特殊分支）。
 - **点窗外 / 切前台**：**不关**（不装 dismiss 钩子）——这就是常驻语义本身，不是遗漏。
 - **嵌套卡**：句子条逐字点 / 卡内点词 → 现有 iframe 级联，`computeFrameRect` 边界参数从工作区换成面板 rect（纯函数换参，`global_lookup_layout.dart:92-169`）。子卡点空白处收子层、每层 × ——全现状。
+- **选词区/释义分流（真机第 4 轮修正，取代上一条的面板内语义）**：
+  - **选词区（句子条）**：字号与词条正文一致（`.global-lookup-sentence-panel`，1em 主色），视觉为连续正常文本（无逐字 hover 框；逐字 span 只作码点→点击位映射）。点字 → `panelSentenceLookup` 桥（后缀 + 码点下标）→ Dart `_lookupFromBanner` **换根结果=底部原地更新**（与剪贴板流同一 latest-wins 序列），不再嵌套压卡；引擎 `bestLength` 折算码点后经 `__globalLookupSentenceHit` 整词高亮（「按正常的断词」=词典引擎分词）。
+  - **释义文字点击**：`onLinkClick`/`textSelected` → **独立瞬态覆盖窗**（`GlobalLookupController.lookupText`，OS 光标处、点外即关、携带整句供制卡）——子 iframe 出不了面板 HWND，「弹窗可越出面板边界」唯一真解是第二个顶层窗。瞬态窗不可用时回退面板内嵌套卡（点击绝不丢）。瞬态窗自身的句子条/嵌套语义不变（`__globalLookupPanelRoot` 仅面板 root 注入）。
+- **焦点（真机第 4 轮）**：面板窗**可激活**（`SetActivatable(true)`：创建时不带 `WS_EX_NOACTIVATE`）——点击面板焦点落面板、游戏失焦，滚轮不再穿透滚动底下的游戏；程序化 show/update 全程 `SW_SHOWNOACTIVATE`/`SWP_NOACTIVATE`，台词流更新绝不抢游戏焦点。瞬态覆盖窗保持 NOACTIVATE（§5 保证 3）。
+- **释义点击反馈与定位（真机第 5 轮）**：①被点的释义/见出语/汉字标签加 `.global-lookup-ext-hit` 高亮（`markGlobalLookupExtHit`，下次点击替换、重渲清除；仅面板 root，嵌套卡/in-app 自有反馈）；②外部瞬态窗**锚定被点文字正下方**而非 OS 光标点：host 重锚定的面板窗内 CSS px 矩形 + `_panelRect` 原点 = 屏幕逻辑 px，经 `lookupText(anchorScreenRect:)` 传入，native `showAt(atCursor:false)` 直接用该点并以其算工作区偏移（级联种子自动对齐，零 native 改动）；无锚点调用方（热键/悬浮字幕）保持 atCursor 语义。
+- **窄宽度词典列收敛（真机第 5 轮）**：TODO-1357 的「窄屏不硬塞多列」只按平台定默认（桌面 2 列），面板拖窄后固定多列玻璃卡互相挤压重叠——popup.js `updateEffectiveDictColumns` 按真实视口宽度算 `--dict-columns-effective = min(用户设置, floor(宽/170px))`，grid 消费 effective 变量（缺席回退原值），resize 监听即时收敛（in-app 弹窗同规则受益）。附带修 `_renderPanel` 的 `clamp(160, viewport)` 在视口 <160 时下界>上界抛 ArgumentError 的面板假死。
 - **调尺寸**：面板右下角 resize grip，同 HTCAPTION 手法发 `HTBOTTOMRIGHT`。存 pref。
 - **恢复位置**：启动/重唤时 rect clamp 到当前可见工作区（防显示器拔掉后窗丢屏外）。
 
@@ -88,7 +95,7 @@
 
 - 逐像素透明底子已有：`put_DefaultBackgroundColor({0,0,0,0})`（`global_lookup_window.cpp:614-619`，TODO-893）。
 - 半透明 = 卡片背景 CSS `rgba`：注入 `--hibiki-card-bg-rgb` 三元组 + 面板路径注入 `--hibiki-card-bg-alpha`（默认 1，in-app 与瞬态窗零变化）。文字/外字图全不透明，只淡背景。
-- 设置滑杆 50%–100%，默认 85%。
+- 设置滑杆 50%–100%，默认 85%（整窗 alpha：看清底下游戏与面板正文的平衡点）。
 - **实现期修正（2026-07-10）**：调查证实非 layered 顶层窗对桌面是不透明的
   （popup.css:1225 注释）——纯 CSS rgba 只对「窗口底色」半透明，**透不到底下
   的游戏**。真透视走 **Win11 `DWMWA_SYSTEMBACKDROP_TYPE`(acrylic) +
@@ -103,11 +110,21 @@
   命中；BLURBEHIND 无此 lag，仍是「模糊+半透明」。GradientColor 带 0x01 alpha
   黑 tint（部分版本 alpha=0 不生效）。透明度链：Win11 acrylic → Win10 blur →
   都不行才不透明。
-- **M0 gate（验证透明合成）**：真机验证 backdrop/accent + 透明 WebView2 像素
-  + rgba 卡背景的合成效果（能否真透出底下内容）。本机 Win11 验 acrylic 路；
-  Win10 accent 路无 Win10 真机时标注「机会性验证」。**gate 失败降级已实现**：
-  `applyBackdrop` 返回 false（两级都失败）时面板恒 alpha=1（不透明）、透明度
-  滑杆隐藏（`ClipboardPanelController.backdropOk` 门控）——设计其余部分不受影响。
+- **M0 gate 真机结论（2026-07-10 用户实测）：acrylic 路线判死**——①用户可见
+  面板完全不透明（backdrop 未能透过 windowed WebView2 子窗合成）；②即使合成
+  成功，acrylic 是毛玻璃（重度模糊+着色），本就看不清底下的游戏/网页，不满足
+  「透视」诉求。
+- **最终机制（第二轮修正）：整窗 LWA_ALPHA**——`WS_EX_LAYERED` +
+  `SetLayeredWindowAttributes(LWA_ALPHA)`（`GlobalLookupWindow::SetWindowAlpha`，
+  面板 channel `setWindowAlpha`）。整窗（含文字）统一变淡、真透视底下内容；
+  Win10/11 通用（无需能力探测，原 backdropOk 门控删除，滑杆恒可用）；查证
+  WebView2 + 整窗 LWA_ALPHA 有工作先例（CppWeb 样例 80%），不可行的是
+  LWA_COLORKEY。关键坑：设 layered 位后必须立刻调 SLWA 否则窗口不渲染。
+  注意与早前「WS_EX_LAYERED 与 WebView2 不共存」注释的区分：那是逐像素/
+  colorkey 路线的结论，整窗 uniform alpha 不受影响。
+- acrylic/accent 链（`ApplySystemBackdrop`）保留在 native 供未来（如 DComp
+  逐像素路线的降级）复用，面板不再调用；卡背景 CSS alpha 基建同理保留、面板
+  恒传 1.0（双重变淡会让文字更虚）。
 
 ## 7. 设置、生命周期与向后兼容
 
@@ -115,7 +132,7 @@
 | key | 类型/默认 | 说明 |
 |---|---|---|
 | `desktop_clipboard_destination` | string `panel`（默认，用户 2026-07-10 拍板改） | `main` / `panel` / `transient`；`panel`/`transient` 仅 Windows 且覆盖窗 `isSupported` 时可见；非 Windows 路由自动退回 main |
-| `clipboard_panel_opacity` | double `0.85` | 卡片背景不透明度，0.5–1.0 |
+| `clipboard_panel_opacity` | double `0.85` | **整窗**不透明度（LWA_ALPHA 真透视），0.5–1.0 |
 | `clipboard_panel_rect` | string（逻辑像素 `x,y,w,h`） | 位置/尺寸记忆，恢复时 clamp 工作区 |
 | `clipboard_panel_pinned` | bool `true` | TOPMOST 图钉 |
 

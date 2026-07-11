@@ -105,6 +105,12 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// it); only consulted when the Books category is selected.
   Set<String>? _selectedBookKeys;
 
+  /// Per-video export selection (books analogue). null = every video (legacy
+  /// full export); a non-null set = only those `video_books.book_uid`s travel.
+  /// Persists across dialog opens within this settings session; only consulted
+  /// when the Videos category is selected.
+  Set<String>? _selectedVideoKeys;
+
   Future<void> _export() async {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an export is running.
@@ -147,6 +153,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
         categories: categories,
         bookKeys: categories.contains(BackupCategory.books)
             ? _selectedBookKeys
+            : null,
+        videoKeys: categories.contains(BackupCategory.videos)
+            ? _selectedVideoKeys
             : null,
       );
 
@@ -199,6 +208,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     // Per-book selection (TODO-1195 part A). Mutated by the nested book picker;
     // written back to [_selectedBookKeys] only when the dialog is confirmed.
     Set<String>? chosenBooks = _selectedBookKeys;
+    // Per-video selection (the books analogue). Mutated by the nested video
+    // picker; written back to [_selectedVideoKeys] only on confirm.
+    Set<String>? chosenVideos = _selectedVideoKeys;
     String labelFor(BackupCategory c) {
       switch (c) {
         case BackupCategory.dictionary:
@@ -260,7 +272,12 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 4),
-                  for (final BackupCategory c in BackupCategory.values)
+                  // Each category is a toggle; the Books/Videos toggles carry a
+                  // nested per-item picker glued DIRECTLY beneath them (not
+                  // floated to the list bottom) so "选择书籍/选择视频" reads as a
+                  // sub-option of its category instead of a duplicate top row.
+                  for (final BackupCategory c
+                      in BackupCategory.values) ...<Widget>[
                     AdaptiveSettingsSwitchRow(
                       title: labelFor(c),
                       subtitle: summary.counts.containsKey(c)
@@ -276,22 +293,41 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                         }
                       }),
                     ),
-                  // Per-book selection row (TODO-1195 part A): only meaningful
-                  // when the Books category itself is packed.
-                  if (selected.contains(BackupCategory.books))
-                    AdaptiveSettingsRow(
-                      title: t.backup_export_choose_books,
-                      subtitle: chosenBooks == null
-                          ? t.backup_export_books_all
-                          : t.backup_export_books_selected(
-                              count: chosenBooks!.length.toString()),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () async {
-                        final Set<String>? picked =
-                            await _pickBooks(chosenBooks);
-                        setLocal(() => chosenBooks = picked);
-                      },
-                    ),
+                    // Per-book selection row (TODO-1195 part A): only meaningful
+                    // when the Books category itself is packed.
+                    if (c == BackupCategory.books &&
+                        selected.contains(BackupCategory.books))
+                      AdaptiveSettingsRow(
+                        title: t.backup_export_choose_books,
+                        subtitle: chosenBooks == null
+                            ? t.backup_export_books_all
+                            : t.backup_export_books_selected(
+                                count: chosenBooks!.length.toString()),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          final Set<String>? picked =
+                              await _pickBooks(chosenBooks);
+                          setLocal(() => chosenBooks = picked);
+                        },
+                      ),
+                    // Per-video selection row (books analogue): only meaningful
+                    // when the Videos category itself is packed.
+                    if (c == BackupCategory.videos &&
+                        selected.contains(BackupCategory.videos))
+                      AdaptiveSettingsRow(
+                        title: t.backup_export_choose_videos,
+                        subtitle: chosenVideos == null
+                            ? t.backup_export_videos_all
+                            : t.backup_export_videos_selected(
+                                count: chosenVideos!.length.toString()),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          final Set<String>? picked =
+                              await _pickVideos(chosenVideos);
+                          setLocal(() => chosenVideos = picked);
+                        },
+                      ),
+                  ],
                 ],
               ),
               footer: Wrap(
@@ -317,8 +353,10 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       ),
     );
     if (confirmed != true) return null;
-    // Commit the per-book selection only on confirm (cancel leaves it as-was).
+    // Commit the per-book / per-video selection only on confirm (cancel leaves
+    // them as-was).
     _selectedBookKeys = chosenBooks;
+    _selectedVideoKeys = chosenVideos;
     return selected;
   }
 
@@ -432,6 +470,121 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     if (confirmed != true) return current;
     // "All ticked" collapses back to null so the export takes the legacy
     // full-book path (and stays correct if a book is added/removed later).
+    if (sel.length == keys.length) return null;
+    return sel;
+  }
+
+  /// Nested picker for per-video export (books analogue). Loads the video
+  /// library and lets the user tick which videos travel; [current] seeds the
+  /// initial state (null = every video). Returns the chosen set, collapsing
+  /// "all ticked" back to null (the legacy full-export path), or [current]
+  /// unchanged on cancel.
+  Future<Set<String>?> _pickVideos(Set<String>? current) async {
+    final List<VideoBookRow> videos =
+        await widget.settingsContext.appModel.database.allVideoBooks();
+    // State.context guarded by State.mounted (coherent for the lint): the
+    // settings page may have unmounted while the library loaded.
+    if (!mounted) return current;
+    if (videos.isEmpty) {
+      _showSnackBar(context, t.backup_export_no_videos);
+      return current;
+    }
+    final List<String> keys =
+        videos.map((VideoBookRow v) => v.bookUid).toList(growable: false);
+    // Seed: null (all) → every video ticked; otherwise the given subset.
+    final Set<String> sel = current == null
+        ? keys.toSet()
+        : keys.where((String k) => current.contains(k)).toSet();
+
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) {
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+          return HibikiDialogFrame(
+            maxWidth: 460,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.card,
+            ),
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.backup_export_choose_videos,
+              scrollable: true,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Text('${sel.length} / ${keys.length}',
+                          style: Theme.of(ctx).textTheme.bodySmall),
+                      const Spacer(),
+                      adaptiveDialogAction(
+                        context: ctx,
+                        onPressed: () => setLocal(() => sel
+                          ..clear()
+                          ..addAll(keys)),
+                        child: Text(t.backup_export_select_all),
+                      ),
+                      adaptiveDialogAction(
+                        context: ctx,
+                        onPressed: () => setLocal(sel.clear),
+                        child: Text(t.backup_export_select_none),
+                      ),
+                    ],
+                  ),
+                  for (final VideoBookRow v in videos)
+                    AdaptiveSettingsSwitchRow(
+                      title: v.title,
+                      value: sel.contains(v.bookUid),
+                      onChanged: (bool tick) => setLocal(() {
+                        if (tick) {
+                          sel.add(v.bookUid);
+                        } else {
+                          sel.remove(v.bookUid);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(t.dialog_cancel),
+                  ),
+                  adaptiveDialogAction(
+                    context: ctx,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(t.dialog_ok),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (confirmed != true) return current;
+    // "All ticked" collapses back to null so the export takes the legacy
+    // full-video path (and stays correct if a video is added/removed later).
     if (sel.length == keys.length) return null;
     return sel;
   }
@@ -601,8 +754,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       return;
     }
 
-    final _BackupImportChoice? choice = await _showConfirmDialog(
-        rootCtx, meta, mergePreview, summary);
+    final _BackupImportChoice? choice =
+        await _showConfirmDialog(rootCtx, meta, mergePreview, summary);
     if (choice == null) {
       // 用户取消确认 → 彻底退出遮罩态，回到设置页（validating 遮罩已退出）。
       if (mounted) setState(() => _isImporting = false);

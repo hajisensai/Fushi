@@ -494,20 +494,27 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FilledButton.tonal(
-                    onPressed: _testAll,
-                    child: Text(t.sync_test_connection),
-                  ),
-          ),
+          // 「测试连接」只在本机作为客户端（连出到其它 host）时有意义：它探测配置的
+          // 出站地址是否可达。本机作为服务端（serverEnabled → lockedByServer）时是一台
+          // 被动数据源，没有出站连接可测，此时显示测试连接按钮既无意义又误导用户（与
+          // BUG-084「服务端隐藏 sync now / compare」同一设计）。故服务端模式下隐藏。
+          if (!lockedByServer) ...<Widget>[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _isTesting
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child:
+                          adaptiveIndicator(context: context, strokeWidth: 2),
+                    )
+                  : FilledButton.tonal(
+                      onPressed: _testAll,
+                      child: Text(t.sync_test_connection),
+                    ),
+            ),
+          ],
         ],
       ),
     );

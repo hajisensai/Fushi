@@ -56,7 +56,7 @@ window.__hoshiImageBetween = function(prev, el) {
   for (var i = 0; i < media.length; i++) {
     var m = media[i];
     if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-        (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING)) {
+        (b.compareDocumentPosition(m) & (Node.DOCUMENT_POSITION_PRECEDING | Node.DOCUMENT_POSITION_CONTAINED_BY))) {
       return m;
     }
   }
@@ -96,7 +96,7 @@ window.__hoshiRevealBlurredBetween = function(prev, el) {
       continue;
     }
     if (!((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-          (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING))) {
+          (b.compareDocumentPosition(m) & (Node.DOCUMENT_POSITION_PRECEDING | Node.DOCUMENT_POSITION_CONTAINED_BY)))) {
       continue;
     }
     var key = window.__hoshiImageRevealKey(m);

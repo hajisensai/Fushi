@@ -1209,6 +1209,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<int> Function()? get onClearSentenceDraftToDraft =>
       _clearSentenceDraft;
 
+  /// Niratan「制卡前调整·选择句子上下文」（视频车道）：把当前草稿真实上下文句 + 当前
+  /// 正查字幕句（[_lastLookupSentence]）打包给弹窗预览。视频无「词在句中的字符偏移」
+  /// 缓存（cue 文本非阅读器 DOM 选区），词偏移传 null——弹窗侧回退到首次出现高亮。
+  @override
+  Future<Map<String, Object?>> Function()?
+      get onSentenceContextPreviewToDraft =>
+          () async => buildSentenceContextPreview(
+                draft: _miningDraft,
+                current: _lastLookupSentence,
+                currentOffset: null,
+              );
+
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
   /// 查词暂停 / 关浮层恢复与阅读器 [ReaderHibikiPage] 同源：浮层打开时若视频在播放则

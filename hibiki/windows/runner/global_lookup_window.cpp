@@ -268,10 +268,14 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // No WS_EX_LAYERED: WebView2 brings its own composition surface and does not
     // coexist with a layered window. WS_EX_NOACTIVATE keeps the foreground app's
     // keyboard focus intact when the card appears (design §5 guarantee 3).
+    // 真机第 4 轮 — 面板实例（activatable_）不带 NOACTIVATE：点击面板时焦点
+    // 落面板，滚轮不再穿到底下仍持焦点的游戏。程序化路径全程 SWP_NOACTIVATE /
+    // SW_SHOWNOACTIVATE，流式更新不抢焦点。
     hwnd_ = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName,
-        L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner, nullptr,
-        GetModuleHandle(nullptr), this);
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+            (activatable_ ? 0 : WS_EX_NOACTIVATE),
+        kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner,
+        nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
     }
@@ -307,8 +311,9 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   const int w = width > 0 ? width : 420;
   const int h = height > 0 ? height : 600;
   hwnd_ = CreateWindowExW(
-      WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName,
-      L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
+      WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+          (activatable_ ? 0 : WS_EX_NOACTIVATE),
+      kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
       GetModuleHandle(nullptr), this);
   if (hwnd_ == nullptr) {
     return;
@@ -556,8 +561,28 @@ void GlobalLookupWindow::SetTopmost(bool topmost) {
   if (hwnd_ == nullptr) {
     return;
   }
+  // SWP_NOOWNERZORDER：不带它时改 Z 序会连带 owner 的 Z 序（真机症状=点图钉
+  // 把主 app 拉到前台）。面板现已无 owner（见 RegisterClipboardPanelChannel），
+  // 此标志兜底防回归；与 Reveal/RevealStack 的 SetWindowPos 口径一致。
   SetWindowPos(hwnd_, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
+void GlobalLookupWindow::SetWindowAlpha(int percent) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  if (percent < 30) percent = 30;
+  if (percent > 100) percent = 100;
+  const LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
+  if ((ex & WS_EX_LAYERED) == 0) {
+    SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+  }
+  // A WS_EX_LAYERED window does not render AT ALL until
+  // SetLayeredWindowAttributes is called — always call it (100% => 255), and
+  // keep the layered bit once set (toggling it forces repaint quirks).
+  SetLayeredWindowAttributes(
+      hwnd_, 0, static_cast<BYTE>((255 * percent) / 100), LWA_ALPHA);
 }
 
 void GlobalLookupWindow::Hide(bool notify) {
@@ -893,11 +918,13 @@ void GlobalLookupWindow::ConfigureWebView() {
               // WM_NCHITTEST never reaches this window; the panel grip posts
               // {handler:'beginWindowDrag'/'beginWindowResize'} instead and we
               // enter the modal move/size loop via the HTCAPTION trick.
-              // SendMessage returns when the drag ends — report the final rect
-              // so Dart persists the panel position. Handled natively and NOT
-              // forwarded as a jsMessage (Dart only sees the windowMoved
-              // result). Matching quoted handler names keeps glossary text that
-              // merely mentions the words from triggering this.
+              // 真机修复：必须 PostMessage 而非 SendMessage——SendMessage 在
+              // WebMessageReceived 的 COM 回调栈里同步进模态循环，会把 WebView2
+              // 的消息派发挂在回调里（真机表现=面板拖不动）。PostMessage 让模态
+              // 循环从消息泵正常入口启动；拖/拉结束后由 WM_EXITSIZEMOVE（见
+              // HandleMessage）统一回报最终 rect 给 Dart 持久化。Matching
+              // quoted handler names keeps glossary text that merely mentions
+              // the words from triggering this.
               if (body.find("\"handler\":\"beginWindowDrag\"") !=
                       std::string::npos ||
                   body.find("\"handler\":\"beginWindowResize\"") !=
@@ -907,17 +934,8 @@ void GlobalLookupWindow::ConfigureWebView() {
                     std::string::npos;
                 if (hwnd_ != nullptr) {
                   ReleaseCapture();
-                  SendMessage(hwnd_, WM_NCLBUTTONDOWN,
+                  PostMessage(hwnd_, WM_NCLBUTTONDOWN,
                               resize ? HTBOTTOMRIGHT : HTCAPTION, 0);
-                  if (message_cb_) {
-                    RECT r{};
-                    GetWindowRect(hwnd_, &r);
-                    message_cb_(
-                        std::string("{\"handler\":\"windowMoved\",\"args\":[") +
-                        std::to_string(r.left) + "," + std::to_string(r.top) +
-                        "," + std::to_string(r.right - r.left) + "," +
-                        std::to_string(r.bottom - r.top) + "]}");
-                  }
                 }
                 return S_OK;
               }
@@ -1229,6 +1247,23 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // border supplies the card frame, this region supplies the rounded corners.
       ApplyRoundedRegion();
       return 0;
+    case WM_EXITSIZEMOVE: {
+      // spec 2026-07-10 panel — the modal move/size loop (entered via the
+      // posted WM_NCLBUTTONDOWN HTCAPTION/HTBOTTOMRIGHT, see the
+      // beginWindowDrag intercept) just ended: report the final rect so Dart
+      // persists the panel position/size. The transient lookup overlay never
+      // enters a modal loop (no drag chrome), so this only ever fires for the
+      // panel instance.
+      if (message_cb_ && hwnd_ != nullptr) {
+        RECT r{};
+        GetWindowRect(hwnd_, &r);
+        message_cb_(std::string("{\"handler\":\"windowMoved\",\"args\":[") +
+                    std::to_string(r.left) + "," + std::to_string(r.top) +
+                    "," + std::to_string(r.right - r.left) + "," +
+                    std::to_string(r.bottom - r.top) + "]}");
+      }
+      return 0;
+    }
     default:
       return DefWindowProc(hwnd_, message, wparam, lparam);
   }

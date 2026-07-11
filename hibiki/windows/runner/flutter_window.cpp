@@ -998,9 +998,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
 //   (same-folder different-options fails with 0x8007139F).
 // - Extra methods: applyBackdrop (Win11 acrylic semi-transparency gate,
 //   spec §6) and setPinned (panel pin toggles HWND_TOPMOST).
+// - SetActivatable(true)（真机第 4 轮）: 点击面板时焦点落面板（游戏失焦），
+//   滚轮只滚面板不再穿透游戏；瞬态覆盖窗保持 NOACTIVATE 不变。
 void FlutterWindow::RegisterClipboardPanelChannel() {
   clipboard_panel_window_ = std::make_unique<GlobalLookupWindow>();
   clipboard_panel_window_->SetArmDismissHooks(false);
+  clipboard_panel_window_->SetActivatable(true);
   clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
 
   clipboard_panel_channel_ =
@@ -1061,9 +1064,14 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
               WideFromValue(args, "assetsDir", L""));
           result->Success();
         } else if (method == "prewarmWebView") {
+          // 真机修复：面板窗必须是**无 owner** 的顶层窗（nullptr，不传主窗
+          // HWND）。owned window 有两个致命联动：owner 最小化时被系统一并隐藏
+          // （真机症状=最小化 app 面板跟着消失），且 Z 序变更会连带 owner
+          // （点图钉把主 app 拉到前台）。常驻面板的生命周期必须与主窗解耦；
+          // 瞬态查词窗保持 owned 不变（短命窗，随主窗收纳是合理语义）。
           clipboard_panel_window_->PrewarmWebView(
               IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), GetHandle());
+              IntFromValue(args, "height", 600), nullptr);
           result->Success();
         } else if (method == "isWebViewReady") {
           result->Success(flutter::EncodableValue(
@@ -1082,9 +1090,10 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
               y = pt.y + 8;
             }
           }
+          // nullptr owner：同 prewarmWebView 的解耦理由（最小化联动/Z 序连带）。
           const bool ok = clipboard_panel_window_->ShowAt(
               x, y, IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), GetHandle());
+              IntFromValue(args, "height", 600), nullptr);
           int work_w = 0;
           int work_h = 0;
           int anchor_work_x = 0;
@@ -1150,6 +1159,12 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
         } else if (method == "setPinned") {
           clipboard_panel_window_->SetTopmost(
               BoolFromValue(args, "pinned", true));
+          result->Success();
+        } else if (method == "setWindowAlpha") {
+          // spec §6 真机修正 — 整窗 LWA_ALPHA 透明（真透视；acrylic 实测经
+          // windowed WebView2 呈现为不透明，且毛玻璃本就不是「看见底下」）。
+          clipboard_panel_window_->SetWindowAlpha(
+              IntFromValue(args, "percent", 100));
           result->Success();
         } else {
           result->NotImplemented();

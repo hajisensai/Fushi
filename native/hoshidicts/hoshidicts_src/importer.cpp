@@ -774,6 +774,43 @@ std::vector<char> build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>&
   return offset_buf;
 }
 
+// Append one media record [u16 path_len][path][u32 blob_size][blob] to `media`,
+// recording (normalized_path, record_offset) for the sorted index. Shared by the
+// yomitan-zip writer and the .mdd writer so the on-disk media format stays
+// byte-identical (the query side binary-searches media.idx by path). Returns
+// false if the record was skipped (path too long).
+bool append_media_record(std::ofstream& media, uint32_t& write_pos,
+                         std::vector<std::pair<std::string, uint32_t>>& index_entries,
+                         std::string path, const void* blob, size_t blob_size) {
+  path = hoshidicts::normalize_media_path(std::move(path));
+  if (path.size() > std::numeric_limits<uint16_t>::max()) {
+    HOSHI_LOGW("media path too long (%zu bytes), skipping", path.size());
+    return false;
+  }
+  uint32_t record_start = write_pos;
+  std::vector<char> buf;
+  write_val<uint16_t>(buf, static_cast<uint16_t>(path.size()));
+  write_str(buf, path);
+  write_val<uint32_t>(buf, static_cast<uint32_t>(blob_size));
+  write_bytes(buf, blob, blob_size);
+  media.write(buf.data(), static_cast<std::streamsize>(buf.size()));
+  write_pos += static_cast<uint32_t>(buf.size());
+  index_entries.emplace_back(std::move(path), record_start);
+  return true;
+}
+
+// Finalize media.idx: [u32 count][u64 record_offset x count], sorted by path.
+void write_media_idx(std::ofstream& media_idx,
+                     std::vector<std::pair<std::string, uint32_t>>& index_entries) {
+  std::ranges::sort(index_entries);
+  std::vector<char> index_buf;
+  write_val<uint32_t>(index_buf, static_cast<uint32_t>(index_entries.size()));
+  for (const auto& [name, offset] : index_entries) {
+    write_val<uint64_t>(index_buf, offset);
+  }
+  media_idx.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
+}
+
 size_t write_media(const std::string& path, const Zip& zip, const std::vector<int>& files,
                    const std::string& breadcrumb_dir) {
   if (files.empty()) {
@@ -787,7 +824,6 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
 
   size_t media_count = 0;
   uint32_t write_pos = 0;
-  std::vector<char> buf;
   std::vector<std::pair<std::string, uint32_t>> index_entries;
   int media_seq = 0;
   for (int file_index : files) {
@@ -801,34 +837,53 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
     if (!media_file.has_value()) {
       continue;
     }
-
-    uint32_t record_start = write_pos;
-    media_file->path = hoshidicts::normalize_media_path(std::move(media_file->path));
-    if (media_file->path.size() > std::numeric_limits<uint16_t>::max()) {
-      HOSHI_LOGW("media path too long (%zu bytes), skipping", media_file->path.size());
-      continue;
+    if (append_media_record(media, write_pos, index_entries, std::move(media_file->path),
+                            media_file->blob.data(), media_file->blob.size())) {
+      media_count++;
     }
-    buf.clear();
-    write_val<uint16_t>(buf, static_cast<uint16_t>(media_file->path.size()));
-    write_str(buf, media_file->path);
-    write_val<uint32_t>(buf, static_cast<uint32_t>(media_file->blob.size()));
-    write_bytes(buf, media_file->blob.data(), media_file->blob.size());
-    media.write(buf.data(), static_cast<std::streamsize>(buf.size()));
-    write_pos += static_cast<uint32_t>(buf.size());
-
-    index_entries.emplace_back(std::move(media_file->path), record_start);
-    media_count++;
   }
 
-  std::ranges::sort(index_entries);
-  std::vector<char> index_buf;
-  write_val<uint32_t>(index_buf, static_cast<uint32_t>(index_entries.size()));
-  for (const auto& [name, offset] : index_entries) {
-    write_val<uint64_t>(index_buf, offset);
-  }
-
-  media_idx.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
+  write_media_idx(media_idx, index_entries);
   return media_count;
+}
+
+// Import an .mdd (MDX media companion) into an already-written dictionary
+// directory, producing media.bin/media.idx that the query side + popup image://
+// scheme consume unchanged. Media failure never aborts the host dictionary.
+size_t import_mdd_into(const std::string& mdd_path, const std::string& dict_dir) {
+  std::ifstream f(hoshi::fs_path(mdd_path), std::ios::binary | std::ios::ate);
+  if (!f) return 0;
+  auto n = f.tellg();
+  if (n <= 0) return 0;
+  std::vector<uint8_t> data(static_cast<size_t>(n));
+  f.seekg(0);
+  f.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(n));
+
+  std::vector<MddEntry> media;
+  try {
+    media = mdx_reader::parse_mdd(data.data(), data.size());
+  } catch (const std::exception& e) {
+    HOSHI_LOGW("mdd parse failed (%s), continuing without media", e.what());
+    return 0;
+  }
+  if (media.empty()) return 0;
+
+  std::ofstream mbin(hoshi::fs_path(dict_dir + "/media.bin"), std::ios::binary);
+  std::ofstream midx(hoshi::fs_path(dict_dir + "/media.idx"), std::ios::binary);
+  setup_stream_exceptions(mbin);
+  setup_stream_exceptions(midx);
+
+  size_t count = 0;
+  uint32_t write_pos = 0;
+  std::vector<std::pair<std::string, uint32_t>> index_entries;
+  for (auto& m : media) {
+    if (append_media_record(mbin, write_pos, index_entries, std::move(m.path), m.blob.data(),
+                            m.blob.size())) {
+      count++;
+    }
+  }
+  write_media_idx(midx, index_entries);
+  return count;
 }
 
 ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
@@ -894,7 +949,12 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
 
     write_val<uint8_t>(processed.data, 0);  // def_tags_len = 0
-    write_val<uint8_t>(processed.data, 0);  // rules_len = 0
+    // rules = "*": simple dicts have no per-term POS. The wildcard makes
+    // filter_by_pos keep these terms for deinflected (inflected-form) lookups
+    // instead of erasing them; see Deinflector::pos_to_conditions. Stored as a
+    // normal variable-length rules string (reader consumes it by length).
+    write_val<uint8_t>(processed.data, 1);  // rules_len = 1
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>('*'));
     write_val<uint8_t>(processed.data, 0);  // term_tags_len = 0
 
     processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
@@ -903,6 +963,21 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
   ZSTD_freeCCtx(cctx);
 
   return processed;
+}
+
+// Read a stylesheet sitting next to a dictionary file, named by swapping the
+// extension to .css (Foo.mdx -> Foo.css). Returns "" if absent/empty/unreadable.
+std::string read_sibling_css(const std::string& primary_path) {
+  auto css_path = hoshi::fs_path(primary_path);
+  css_path.replace_extension(".css");
+  std::ifstream css_in(css_path, std::ios::binary | std::ios::ate);
+  if (!css_in) return "";
+  auto n = css_in.tellg();
+  if (n <= 0) return "";
+  std::string css(static_cast<size_t>(n), '\0');
+  css_in.seekg(0);
+  css_in.read(css.data(), static_cast<std::streamsize>(n));
+  return css;
 }
 
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
@@ -937,28 +1012,73 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
     entries.push_back({std::move(e.key), std::move(e.definition)});
   }
 
-  return dictionary_importer::write_simple_dict(title, entries, output_dir);
+  // MDX glossaries are HTML that usually <link> a sibling stylesheet named after
+  // the dictionary (T4jiJuk.mdx -> T4jiJuk.css). Inline it as the dict's
+  // styles.css so the popup's constructDictCss scopes and injects it; otherwise
+  // the definitions render unstyled. Absent sibling -> empty -> no styles.css.
+  std::string styles_css = read_sibling_css(mdx_path);
+
+  ImportResult result = dictionary_importer::write_simple_dict(title, entries, output_dir, styles_css);
+
+  // Auto-mount the media companion (Foo.mdx -> Foo.mdd) into the same dict dir,
+  // so <img>/<link> in the glossaries resolve via the image:// media scheme.
+  // Media is best-effort: a missing/broken .mdd never fails the dictionary.
+  if (result.success) {
+    auto mdd_path = hoshi::fs_path(mdx_path);
+    mdd_path.replace_extension(".mdd");
+    if (std::filesystem::exists(mdd_path)) {
+      import_mdd_into(hoshi::fs_to_utf8(mdd_path), output_dir + "/" + result.title);
+    }
+  }
+
+  return result;
 }
 
 ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
+  int mdx_index = -1;
   for (size_t i = 0; i < zip.entries.size(); i++) {
     const auto& name = zip.entries[i].name;
     if (name.size() > 4 && name.substr(name.size() - 4) == ".mdx") {
-      std::string temp_dir = output_dir + "/_mdx_temp";
-      std::filesystem::create_directories(hoshi::fs_path(temp_dir));
-      std::string temp_path = temp_dir + "/" + hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
-      {
-        std::string content = zip.read(static_cast<int>(i));
-        std::ofstream out(hoshi::fs_path(temp_path), std::ios::binary);
-        setup_stream_exceptions(out);
-        out.write(content.data(), static_cast<std::streamsize>(content.size()));
-      }
-      auto result = import_mdx(temp_path, output_dir);
-      std::filesystem::remove_all(hoshi::fs_path(temp_dir));
-      return result;
+      mdx_index = static_cast<int>(i);
+      break;
     }
   }
-  return {.success = false, .errors = {"no .mdx file found in zip"}};
+  if (mdx_index < 0) {
+    return {.success = false, .errors = {"no .mdx file found in zip"}};
+  }
+
+  std::string temp_dir = output_dir + "/_mdx_temp";
+  std::filesystem::create_directories(hoshi::fs_path(temp_dir));
+
+  std::string mdx_filename = hoshi::fs_to_utf8(hoshi::fs_path(zip.entries[mdx_index].name).filename());
+  std::string stem = hoshi::fs_to_utf8(hoshi::fs_path(mdx_filename).stem());
+  std::string temp_path = temp_dir + "/" + mdx_filename;
+
+  auto extract = [&](int idx, const std::string& out_name) {
+    std::string content = zip.read(idx);
+    std::ofstream out(hoshi::fs_path(temp_dir + "/" + out_name), std::ios::binary);
+    setup_stream_exceptions(out);
+    out.write(content.data(), static_cast<std::streamsize>(content.size()));
+  };
+
+  // Extract the .mdx plus its sibling media (.mdd) / stylesheet (.css), renamed
+  // to share the .mdx stem, so import_mdx's sibling auto-mount finds them.
+  extract(mdx_index, mdx_filename);
+  for (size_t i = 0; i < zip.entries.size(); i++) {
+    if (static_cast<int>(i) == mdx_index) continue;
+    const auto& name = zip.entries[i].name;
+    if (name.empty() || name.back() == '/') continue;
+    std::string fn = hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
+    std::string ext = hoshi::fs_to_utf8(hoshi::fs_path(fn).extension());
+    std::string fstem = hoshi::fs_to_utf8(hoshi::fs_path(fn).stem());
+    if ((ext == ".mdd" || ext == ".css") && fstem == stem) {
+      extract(static_cast<int>(i), stem + ext);
+    }
+  }
+
+  auto result = import_mdx(temp_path, output_dir);
+  std::filesystem::remove_all(hoshi::fs_path(temp_dir));
+  return result;
 }
 
 ImportResult import_stardict(const std::string& ifo_path, const std::string& output_dir) {

@@ -14,4 +14,12 @@
   - P5：popup.js 多词条路径首词条（build+局部 postProcessRuby+applyCustomCSS）就绪后立即发第一次 `popupRendered`（宿主撤盖板/翻可见），尾批完成后发第二次（同 token；Dart 全部消费方幂等，Windows global-lookup host 依赖第二发量全高）。窗口期 `_renderInProgress` 令 `updatePopupIncremental` 回退全量 renderPopup（换代取消尾批，杜绝重复卡片）。三镜像已同步（assets/browser_extension/vendor + tools/browser-extension/vendor）。
   - 已评估不改：阅读器高亮 await（换精确锚点矩形，5-30ms 值得）；`maxResults=200`（load-more 分页深度硬依赖，收敛需改缓存键结构）；remoteLookupEnabled 时远端 HTTP 先于本地缓存（默认关闭；改序变更远端优先语义，留待独立决策）；C++ 引擎微优化（freq/pitch 截断后富化、排序键预计算——P4 后收益减半，留作后续）。
 - **[x] ② 已加自动化测试** — 提交：`e07e529ad`。弹窗推送去重与早到信号（test/pages/dictionary_popup_push_dedup_test.dart）、历史 debounce/flush/清空防复活/scroll memo 失效（test/models/dictionary_repository_test.dart）、字体缓存命中与 mtime 失效（test/reader/dictionary_font_css_test.dart）、popup.js 双发+`_renderInProgress` 三镜像源码扫描守卫（test/dictionary/popup_render_signal_guard_test.dart）、popupJson parity 补 deinflectionTrace 断言。既有 BUG-523 全套弹窗守卫、byte-parity、wheel、nav_icon、global_lookup_host_test.mjs 全绿。
-- **备注**：Windows 离屏 itest（reader_continuous_lookup_barrier_verify_itest）实测分段耗时对比见 PR；生成词典仅 2 词条，P2/P4 的量级收益按生产库实测（历史 1.36MB/词典规模）估算，真机满词典复测待用户。
+- **备注**：Windows 离屏 itest 两级实测（debug 构建）：
+  - 2 词条生成词典（`perf-after-01` vs 基线 `perf-base-01`）：renderPopup 2→1 次、全量注入 2→1 次（32+21ms→38ms）、persistHistory 移出弹窗帧前。
+  - **真实词典组合**（大辞林第四版+三省堂国語第八版+Novel 频率+NHK 音调，`integration_test/lookup_latency_perf_itest.dart`，RunId `perf-real-01`）：**端到端（真实 DOM 点击→弹窗可见）冷 66ms、复查 40-47ms**；engine-only 整句探针（10 词条结果）首查 3-8ms、缓存命中 0ms——引擎段已到 Yomitan 的 10ms 量级。测量含 ~10-20ms 测试挟具开销（点击派发桥往返+8ms 轮询粒度），生产真实体感更低。
+  - 剩余 40ms 构成=跨语言桥往返×5-6（onTap→Dart、selectText eval、onTextSelected→Dart、结果注入、popupRendered 回调、高亮 eval）+2-3 帧界+注入 payload 解析。
+  - **第二轮（桥往返治理，①③ 已实施）**：
+    - ① 触发段 3 跳并 1 跳：点词门控（chrome 可见性/highlightOnTap）做成 Dart 单写、JS 只读的镜像 `window.__hoshiTapGate`（setup 脚本带初始真值，`_syncTapGateJs` 在 `_toggleChrome`/`_setChromeVisible`/onSettingsChangedLive 三个翻转点刷新）；门控通过时 tap 在 JS 侧直接跑同一个 `selectText`（命中/空白/链接/同字 toggle 四分支与旧链逐一相同），镜像缺失回落旧 onTap 链。运行时证据：itest 探针 `tapGate={"gate":{"chrome":true,"lookup":true,"maxLen":400},"sel":true}`。守卫：`test/reader/tap_gate_mirror_guard_test.dart`。
+    - ③ 注入 payload 拆分：`popup_settings_injection.dart` 拆 head/entries/tail 三段（合并输出对全局查词栈/剪贴板面板逐字节不变）；in-app 热槽对静态段（主题/字体/词典样式/自定义 CSS/开关/名单）串级比对、变了才重发，每次查词只发 entries+renderPopup，onLoadStop 重置基线。实测注入 eval 57/39ms→36/34/31/20ms（约 −40%）。守卫：`dictionary_popup_push_dedup_test.dart` BUG-712 ③ 组 + `dictionary_popup_webview_test.dart` 推送顺序守卫（更新为新契约）。
+    - 端到端效果的诚实说明：同代码两次 itest 运行 e2e 相差 ±16ms（机器负载噪声），热 WebView2 实测单跳仅约 3-5ms（此前按上限 15ms 估计偏高），故 ① 的 ~5-10ms 收益在该挟具噪声内不可分辨；③ 的注入耗时下降可直接测得。两项均为结构性止损（少 2 跳、少数十 KB/次重复解析），零权衡、带回落安全网。
+    - ② 高亮 eval 解耦**未实施**（绘制时序有可感变化：高亮从弹窗前变弹窗后 ~10ms，非零损，待用户拍板）。

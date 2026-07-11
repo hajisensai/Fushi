@@ -6,12 +6,14 @@ import 'package:hibiki/src/lookup/global_lookup_render.dart';
 /// TODO-867 P2 — guards for the app-OUTSIDE global-lookup popup styling.
 ///
 /// popup.css/js are SHARED by the in-app popup (Flutter-Material card chrome)
-/// and the bare Windows global-lookup WebView2 window (no native card). The P2
-/// fixes — hoshi card chrome (#1), no first-result equal-height stretch (#2),
-/// flex-wrap variable-height sub-boxes (#3) — MUST be scoped to
-/// `html.global-lookup` so the in-app popup and its tested --dict-columns grid
-/// stay untouched. These guards lock that scoping in source so a later refactor
-/// can't leak the chrome into the in-app popup or drop the scope marker.
+/// and the bare Windows global-lookup WebView2 window (no native card). The card
+/// chrome (#1) MUST stay scoped to `html.global-lookup` so the in-app popup is
+/// untouched. The old sub-box divergence (#2/#3: global-lookup flex-wrap) was
+/// REMOVED — first-result equal-height stretch is now killed for ALL surfaces by
+/// the base grid `align-items:start` (BUG-683) + the shared masonry, so app-外/
+/// 扩展 use the same fixed --dict-columns columns as in-app (用户「左右动」根因修：
+/// flex-wrap 按窗口宽重排的漂移已消)。These guards lock the chrome scoping AND that
+/// global-lookup no longer re-introduces a flex-wrap override.
 void main() {
   String read(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
 
@@ -65,28 +67,36 @@ void main() {
       expect(bareBody.contains('box-shadow'), isFalse);
     });
 
-    test('in-app grid stays grid; global-lookup overrides to flex-wrap', () {
+    test(
+        'global-lookup shares the in-app grid — NO flex-wrap divergence (消左右动)',
+        () {
       expect(css.contains('.glossary-section > .category-body {'), isTrue);
-      // in-app rule keeps grid.
+      // in-app rule keeps the --dict-columns grid.
       final int gridAt = css.indexOf('.glossary-section > .category-body {');
       final String gridRule = css.substring(gridAt, css.indexOf('}', gridAt));
       expect(gridRule.contains('display: grid'), isTrue,
           reason: 'the tested --dict-columns grid must remain for in-app');
+      expect(gridRule.contains('align-items: start'), isTrue,
+          reason: 'align-items:start 让所有面（含 app 外）取自然高度、免 grid stretch，'
+              '这正是删掉 global-lookup flex 覆盖后不回退首卡偏高的根据');
 
-      // global-lookup override switches to variable-height flex-wrap.
+      // 用户「词典方框怎么能左右动，Niratan 不会」根因：app 外/扩展原本把 grid 覆盖成
+      // flex-wrap（flex:1 1 auto; min-width:160px），每行卡片数随窗口宽变、卡片随内容宽
+      // 伸缩漂移。已删除该覆盖，app 外/扩展与 in-app 共用固定列 grid + masonry，锁死不得回归。
       expect(
         css.contains('html.global-lookup .glossary-section > .category-body {'),
-        isTrue,
+        isFalse,
+        reason: 'global-lookup 不得再用独立 flex-wrap 覆盖 .category-body — '
+            '那会让 app 外/扩展词典方框按窗口宽左右重排漂移（用户投诉的「左右动」），'
+            '与 in-app 固定列 / Niratan 都不一致',
       );
-      final int flexAt = css
-          .indexOf('html.global-lookup .glossary-section > .category-body {');
-      final String flexRule = css.substring(flexAt, css.indexOf('}', flexAt));
-      expect(flexRule.contains('display: flex'), isTrue);
-      expect(flexRule.contains('flex-wrap: wrap'), isTrue);
-      expect(flexRule.contains('align-items: flex-start'), isTrue,
-          reason: 'flex-start = content height, kills the first-result '
-              'equal-height stretch (#2) and fixed-3 equal-height rows (#3)');
-      expect(flexRule.contains('grid-template-columns'), isFalse);
+      expect(
+        css.contains(
+            'html.global-lookup .glossary-section > .category-body > .glossary-group {'),
+        isFalse,
+        reason: 'global-lookup 的 glossary-group flex 覆盖（flex:1 1 auto; '
+            'min-width:160px 让卡片按内容宽伸缩）必须随之删除，回落 base grid 固定列',
+      );
     });
   });
 
@@ -280,15 +290,32 @@ void main() {
           read('lib/src/pages/implementations/dictionary_popup_webview.dart');
     });
 
-    test('both call sites go through the shared buildPopupSettingsJs', () {
+    test('both call sites go through the shared settings builders', () {
       // app-outside (buildFrameSettingsJs) and in-app (_pushResults) must both
-      // delegate to the one builder, so the settings body can never drift again.
+      // delegate to the shared builders in popup_settings_injection.dart, so the
+      // settings body can never drift again. BUG-712 ③: the composed
+      // buildPopupSettingsJs stays the single source of truth (byte-identical
+      // output) and the app-outside frame still calls it; the in-app hot-slot
+      // path splits it into the static half (buildPopupStaticSettingsJs) + the
+      // per-lookup entries half (buildPopupEntriesJs) to dedup the persistent
+      // WebView's static payload — the SAME shared builders buildPopupSettingsJs
+      // composes, so single-source-of-truth still holds.
       expect(inject.contains('String buildPopupSettingsJs('), isTrue,
           reason: 'the single source of truth builder must exist');
+      expect(
+          inject.contains('PopupStaticSettingsJs buildPopupStaticSettingsJs('),
+          isTrue,
+          reason: 'the shared static-settings builder must exist');
+      expect(inject.contains('String buildPopupEntriesJs('), isTrue,
+          reason: 'the shared per-lookup entries builder must exist');
       expect(render.contains('buildPopupSettingsJs('), isTrue,
-          reason: 'the app-outside frame must call the shared builder');
-      expect(inApp.contains('buildPopupSettingsJs('), isTrue,
-          reason: 'the in-app popup must call the shared builder');
+          reason:
+              'the app-outside frame must call the shared composed builder');
+      expect(inApp.contains('buildPopupStaticSettingsJs('), isTrue,
+          reason:
+              'the in-app popup must call the shared static-settings builder');
+      expect(inApp.contains('buildPopupEntriesJs('), isTrue,
+          reason: 'the in-app popup must call the shared entries builder');
     });
 
     test('D1 — the dictionary font is injected by the shared builder', () {

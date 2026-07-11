@@ -693,6 +693,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             supportsSentenceDraft ? onSetSentenceContextToDraft : null,
         onClearSentenceDraft:
             supportsSentenceDraft ? onClearSentenceDraftToDraft : null,
+        // Niratan「制卡前调整·选择句子上下文」模态：弹窗按需拉取当前草稿的真实上下
+        // 文句（前/当前/后）+ 词偏移做预览。只在支持草稿的表面接线，其余传 null。
+        onSentenceContextPreview:
+            supportsSentenceDraft ? onSentenceContextPreviewFromDraft : null,
       ),
     );
   }
@@ -762,6 +766,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader/视频覆写。
   @protected
   Future<int> onClearSentenceDraftToDraft() async => 0;
+
+  /// Niratan「制卡前调整·选择句子上下文」：把当前会话级草稿的真实上下文句
+  /// （上 N / 下 N，已按阅读顺序）+ 当前正查句 + 词在当前句里的偏移打包成 JSON-safe
+  /// Map（[buildSentenceContextPreview] 的结构）回给弹窗渲染三栏预览。默认返回空 Map
+  /// （[supportsSentenceDraft] 为 false 时不会被调用）。reader/视频覆写：各自提供当前
+  /// 正查句与词偏移来源。
+  @protected
+  Future<Map<String, Object?>> onSentenceContextPreviewFromDraft() async =>
+      const <String, Object?>{};
 
   /// Called when a non-last popup layer is dismissed (the stack shrinks but a
   /// parent popup remains). Override (reader) to keep the char cursor following

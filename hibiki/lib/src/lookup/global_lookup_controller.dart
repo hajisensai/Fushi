@@ -376,7 +376,13 @@ class GlobalLookupController {
   /// coordinates). Returns false when the overlay cannot take the lookup
   /// (unsupported platform / [start] never ran / blank term) so the caller
   /// falls back to its existing in-app route — a tap is never silently lost.
-  Future<bool> lookupText(String text, {String sentence = ''}) async {
+  /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形
+  /// 下方（剪贴板面板释义点击=被点文字处），null 保持 OS 光标语义。
+  Future<bool> lookupText(
+    String text, {
+    String sentence = '',
+    Rect? anchorScreenRect,
+  }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
       return false;
@@ -395,7 +401,8 @@ class GlobalLookupController {
     // fallback ("点击悬浮字幕文字没有出现查词窗口"). notify:false so this
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
     await GlobalLookupChannel.hide(notify: false);
-    await _lookupExternal(term, sentence: sentence);
+    await _lookupExternal(term,
+        sentence: sentence, anchorScreenRect: anchorScreenRect);
     return true;
   }
 
@@ -404,7 +411,17 @@ class GlobalLookupController {
   /// hide → searchDictionary → reset reveal state → seed the stack root →
   /// showAt(atCursor) → renderStack → auto-read → ready-driven reveal safety.
   /// Never throws (logs and swallows, matching the old _onHotKey contract).
-  Future<void> _lookupExternal(String text, {required String sentence}) async {
+  ///
+  /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：剪贴板面板的释义点击给出
+  /// 被点文字的屏幕矩形，卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是
+  /// 光标点右下。null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
+  /// showAt 在 atCursor:false 时直接用传入点并以该点算工作区偏移，级联种子
+  /// （cursorWorkX/Y）自动对齐锚点，无需 native 改动。
+  Future<void> _lookupExternal(
+    String text, {
+    required String sentence,
+    Rect? anchorScreenRect,
+  }) async {
     final AppModel? model = _appModel;
     if (model == null) {
       glog('lookup: appModel null — abort');
@@ -482,8 +499,17 @@ class GlobalLookupController {
       _layoutBoundsH = cardH * kGlobalLookupLayoutBoundsHeightFactor;
       final int w0 = (_layoutBoundsW * dpr).round();
       final int h0 = (_layoutBoundsH * dpr).round();
-      final GlobalLookupShowResult shown = await GlobalLookupChannel.showAt(
-          x: 0, y: 0, width: w0, height: h0, atCursor: true);
+      // 真机第 5 轮 — 有文字锚点时窗口放在被点文字左下（物理 px），native 以
+      // 该点所在显示器算工作区/偏移；无锚点保持 atCursor（+8,+8 光标偏移）。
+      final GlobalLookupShowResult shown = anchorScreenRect == null
+          ? await GlobalLookupChannel.showAt(
+              x: 0, y: 0, width: w0, height: h0, atCursor: true)
+          : await GlobalLookupChannel.showAt(
+              x: (anchorScreenRect.left * dpr).round(),
+              y: ((anchorScreenRect.bottom + 4) * dpr).round(),
+              width: w0,
+              height: h0,
+              atCursor: false);
       // TODO-893 — convert the native physical-px work area to CSS px (the
       // cascade layout domain) with the same dpr used for window geometry, so
       // _renderStack's computeFrameRect reasons about the real monitor.
@@ -709,6 +735,9 @@ class GlobalLookupController {
       handler: handler,
       message: message,
       resolveBridge: GlobalLookupChannel.resolveBridge,
+      // UIA 捕获的前台句即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发
+      // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
+      sentenceContext: _currentSentence,
     )) {
       return;
     }

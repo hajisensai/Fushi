@@ -27,12 +27,25 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 706 条。点号进各自文件。
+> 共 719 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-734](bugs/BUG-734-stats-mobile-text-clip.md) | ✅ | ✅ | 手机统计页文字被省略号裁切显示不全 |
+| [BUG-733](bugs/BUG-733-popup-glossary-ruby-element-base-overlap.md) | ✅ | ✅ | 词典弹窗释义正文元素基字 ruby 注音塌到基字上 |
+| [BUG-732](bugs/BUG-732-ext-page-scroll.md) | ✅ | ✅ | 扩展影响普通网页滚动速度 |
+| [BUG-731](bugs/BUG-731-backup-font-count-inflated.md) | ✅ | ✅ | 备份导出自定义字体计数虚高(2个显示7个) |
+| [BUG-730](bugs/BUG-730-clipboard-mine-sentence.md) | ✅ | ✅ | 剪贴板/全局查词制卡句子字段恒空（未接剪贴板文本） |
+| [BUG-729](bugs/BUG-729-simple-dict-inflected-lookup.md) | ✅ | ✅ | MDX/StarDict/DSL 等 simple 词典屈折形查词命中丢失 |
+| [BUG-728](bugs/BUG-728-shelf-audiobook-progress.md) | ✅ | ✅ | 书架有声书进度条听书时不更新 |
+| [BUG-727](bugs/BUG-727-mdx-encrypted-keyinfo.md) | ✅ | ✅ | MDX Encrypted=2 词典导入失败 empty key block info |
+| [BUG-726](bugs/BUG-726-ext-unpacked-copy-never-refreshed.md) | ✅ | ✅ | 浏览器扩展已解压副本永不随app升级刷新导致弹窗停留旧版 |
+| [BUG-725](bugs/BUG-725-interconnect-testconn-button-in-server-mode.md) | ✅ | ✅ | 互联服务端模式仍显示测试连接按钮 |
+| [BUG-724](bugs/BUG-724-audiobook-image-contained-anchor.md) | ✅ | ✅ | 有声书正文中间插图:当前句cue锚点是含图容器时compareDocumentPosition只判PRECEDING位漏检导致不暂停不去遮罩 |
+| [BUG-722](bugs/BUG-722-popup-multibase-ruby-furigana-overlap.md) | ✅ | ✅ | 词典弹窗多基字词逐字振假名完全重叠(勝負/将棋) |
 | [BUG-721](bugs/BUG-721-clipboard-panel-close-drops-lookups.md) | ✅ | ✅ | 剪贴板面板关闭后被永久暂停：第二个词出不来 |
 | [BUG-720](bugs/BUG-720-sasayaki-lookup-ruby-lane-misalign.md) | ✅ | ✅ | 有声书/查词注音高亮 narrow-lane 错位 |
+| [BUG-719](bugs/BUG-719-fontcache-mtime-roundtrip.md) | ✅ | ✅ | 词典字体缓存测试在 Linux CI 挂：setLastModified 亚秒 round-trip 丢精度 |
 | [BUG-718](bugs/BUG-718-vn-restore-charoffset-cloak.md) | ✅ | ✅ | VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白 |
 | [BUG-717](bugs/BUG-717-lookup-latency-half-second.md) | ✅ | ✅ | 查词全链路延迟半秒级 |
 | [BUG-716](bugs/BUG-716-bilingual-bottom-marginv-overlap.md) | ✅ | ✅ | 双语底部对白 MarginV 塌陷重叠 |

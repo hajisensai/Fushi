@@ -454,6 +454,9 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // spec §6 真机修正（2026-07-10 第二轮）：透明机制改整窗 LWA_ALPHA（真透视，
+  // 整窗含文字统一变淡）。85% 是「能看清底下游戏 + 面板正文可读」的平衡点；
+  // 滑杆 50%-100% 可调。
   final double defaultClipboardPanelOpacity = 0.85;
 
   double get clipboardPanelOpacity => getPref('clipboard_panel_opacity',

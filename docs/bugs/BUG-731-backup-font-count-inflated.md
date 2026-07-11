@@ -1,0 +1,6 @@
+## BUG-731 · 备份导出自定义字体计数虚高(2个显示7个)
+- **报告**：2026-07-11（用户：）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/sync/backup_service.dart:652`（原 `summarizeExportContent` 用 `_countFilesInTree(custom_fonts/)` 递归统计目录内**所有文件数**，而非用户认知的字体条目数）。字体的逻辑单位是字体目录 catalog 条目（`font_catalog` pref，字体页列表显示的数量）；`custom_fonts/` 目录会累积孤儿垃圾：失败下载残留的 `_tmp_*` 临时文件、被删/覆盖但无引用的旧字体文件（`custom_fonts_page.dart:850` 临时文件建在目录内、`:1067` 仅在无引用时删物理文件）。用户仅下载 2 个字体（每个下载路径只写 1 文件）却显示 7 = 目录里有 5 个孤儿文件。导出预览计数、归档回读计数、实际打包三处原本都数文件，彼此一致但与用户认知差一个量纲。
+- **[x] ① 已修复** — `backup_service.dart`：新增 `_referencedFontFiles()`（读 `font_catalog` + 4 个 legacy 影子 pref 的 `path` 字段，只保留 custom_fonts/ 根下且真实存在的文件，按归一化路径去重），计数改为其条目数；新增 `_collectReferencedFontFiles()` 打包时**只打被 catalog 引用的字体文件**，孤儿/临时文件不再进备份。三处口径（预览计数 / 打包内容 / 归档回读）自然一致。系统字体（path 在 custom_fonts/ 外）不计不打包（本就无文件可备份）。提交见分支 `worktree-backup-export-picker-font-count`。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/backup_font_count_video_selection_test.dart`：2 个 catalog 字体 + 3 个孤儿/临时文件 → `summarizeExportContent` 报 2、导出 zip 只含 2 个引用文件；legacy 影子列表（无 catalog）仍计数；无 catalog 无 legacy 时孤儿不计（0）。另 `backup_categories_test.dart` 的 `buildFullSource` 补种 `font_catalog` 以匹配新契约。
+- **备注**：同分支一并做了两处用户报告的导出对话框 UX：①"书籍内容"开关与"选择书籍"子选择器视觉脱节像重复 → 子选择器移到父开关正下方；②给"视频"分类补 per-video「选择视频」逐项选择器（服务层 `videoKeys` + `_retainVideos` 剥离未选视频行，与书籍 TODO-1195 对称，顺带修了"取消视频分类仍留幽灵视频行"的既有缺口）。待真机验证导出/导入往返。

@@ -400,9 +400,9 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          // spec 2026-07-10 §6 — 面板卡背景不透明度。仅 destination==panel 且
-          // Win11 acrylic backdrop 被 OS 接受（backdropOk）时显示；backdrop
-          // 不可用时面板恒不透明（降级），滑杆隐藏。
+          // spec 2026-07-10 §6 真机修正 — 面板整窗不透明度（LWA_ALPHA 真透视，
+          // Win10/11 通用），destination==panel 即显示（原 acrylic backdropOk
+          // 门控随路线废弃删除）。
           SettingsSliderItem(
             id: 'lookup.clipboard_panel_opacity',
             title: t.clipboard_panel_opacity,
@@ -412,8 +412,7 @@ SettingsDestination buildLookupDestination() {
                 DesktopLookupService.isDesktop &&
                 settingsContext.appModel.desktopClipboardEnabled &&
                 settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.panel &&
-                ClipboardPanelController.instance.backdropOk,
+                    DesktopClipboardDestination.panel,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.clipboardPanelOpacity * 100,
             min: 50,
