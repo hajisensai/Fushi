@@ -1,6 +1,6 @@
 // spec 2026-07-10 — ClipboardPanelController 的可离屏部分：rect 记忆纯函数、
-// paused 语义（× 后仅 hotkey 显式意图解除）、面板栏高度跨端契约、
-// dispatcher panel 分区接线守卫。运行时链（真窗口/真查词）归 M4 真机 gate。
+// 关面板不永久暂停（BUG-717：× 只清当前卡，下一条剪贴板复制重开）、面板栏高度
+// 跨端契约、dispatcher panel 分区接线守卫。运行时链（真窗口/真查词）归 M4 真机 gate。
 
 import 'dart:io';
 
@@ -47,13 +47,35 @@ void main() {
         File('lib/src/lookup/desktop_lookup_dispatcher.dart')
             .readAsStringSync();
 
-    test('paused 语义：仅 hotkey 显式意图穿透暂停', () {
+    test('BUG-717：× 关面板不永久暂停，下一条剪贴板复制重开', () {
+      // 旧的 paused 门（× 后丢弃非 hotkey 事件、直到 Ctrl+Shift+D 才解除）整条移除：
+      // 用户「第一个关掉了第二个就出不来」的根因就是这个门。
+      expect(controllerSrc.contains('bool paused'), isFalse,
+          reason: 'BUG-717：paused 字段必须移除');
       expect(
-        controllerSrc
-            .contains('paused && request.origin != DesktopLookupOrigin.hotkey'),
-        isTrue,
-        reason: '× 后剪贴板事件不再打扰；Ctrl+Shift+D（显式意图）重唤并继续',
+        controllerSrc.contains('request.origin != DesktopLookupOrigin.hotkey'),
+        isFalse,
+        reason: 'BUG-717：不得再有「paused 时丢弃非 hotkey 剪贴板事件」的门',
       );
+      // 正向契约：update 见 !_visible 无条件 _showPanel，故关面板（_visible=false）
+      // 后下一条剪贴板复制会重开面板。
+      final int updAt = controllerSrc.indexOf('Future<void> update(');
+      final int visAt = controllerSrc.indexOf('if (!_visible) {', updAt);
+      final int showAt =
+          controllerSrc.indexOf('await _showPanel(model);', visAt);
+      expect(visAt, greaterThan(updAt),
+          reason: 'update 必须在 !_visible 时重新显示面板（关掉后重开的机制）');
+      expect(showAt, greaterThan(visAt));
+    });
+
+    test('hidePanel 只藏窗、不设阻塞标志（关掉后下一条复制照弹）', () {
+      final int hideAt = controllerSrc.indexOf('Future<void> hidePanel()');
+      expect(hideAt, greaterThanOrEqualTo(0),
+          reason: 'BUG-717：hidePanel 无参（不再有 pause 开关）');
+      final int end = controllerSrc.indexOf('}', hideAt);
+      final String body = controllerSrc.substring(hideAt, end);
+      expect(body.contains('_visible = false'), isTrue);
+      expect(body.contains('paused'), isFalse, reason: 'hidePanel 不得设任何暂停标志');
     });
 
     test('九根 DEFERRED 桥经共享权威 handler（红线：不复制）', () {

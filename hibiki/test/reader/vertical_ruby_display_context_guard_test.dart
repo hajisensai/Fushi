@@ -88,20 +88,25 @@ void main() {
       }
     });
 
-    test('竖排高亮 lane 画基字侧(left center) 与 ruby-position:over 基字在左自洽', () async {
-      // BUG-666 自洽守卫：_highlightLaneCss 竖排用 background-position:left center +
-      // size 1em 100% 把高亮画在 ruby 盒**左侧**基字列。仅当振假名在右(over)时基字才在
-      // 左、lane 才盖基字。若哪天 ruby-position 回退成 under(振假名翻左)，lane 就会盖到
-      // 振假名列 → 用户报的「蓝带与振假名错位」复活。锁死两者成对出现。
+    test('竖排 ruby 高亮整句填充 + ruby-position:over 让振假名留在背景盒外', () async {
+      // BUG-716：原 narrow-lane(_highlightLaneCss 竖排 background-position:left center)
+      // 靠「振假名在右(over)、基字在左」把 1em 窄条钉到基字列，但 left 落点在书籍行距≠
+      // 字号或 <ruby> 盒宽不同(有无振假名)时错位 → 用户报有声书/查词注音高亮偏移。现回到
+      // 整句 background-color 填充：背景只刷 ruby 元素盒(不含 rt 注音轨)，over 仍保证振假名
+      // 在其自己的注音道(竖排右/横排上)、留在高亮基字盒外 → 有无振假名一致、无窄条 left 偏移。
       final String css = await _readerCss(
           writingMode: 'vertical-rl',
           viewMode: 'continuous',
           furiganaMode: 'show');
       expect(css.contains('ruby-position: over !important'), isTrue,
-          reason: '竖排必须 ruby-position:over(基字在左)');
+          reason: '竖排必须 ruby-position:over(振假名在右、留在基字高亮盒外)');
       expect(
-          css.contains('background-position: left center !important'), isTrue,
-          reason: '竖排高亮 lane 须画 left center(基字列)，与 over 的基字在左自洽');
+          css.contains(
+              'background-color: var(--hoshi-sasayaki-background-color) !important'),
+          isTrue,
+          reason: 'BUG-716：ruby 有声书高亮整句 background-color 填充');
+      expect(css.contains('--hoshi-highlight-lane-color'), isFalse,
+          reason: 'BUG-716：不再有 narrow-lane 窄条(避免 left 落点在宽盒/含注音轨时偏移)');
     });
 
     test('振假名显示态(show/partial/toggle) rt 强制 display:ruby-text(!important)',

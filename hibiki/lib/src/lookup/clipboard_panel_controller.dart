@@ -72,10 +72,6 @@ class ClipboardPanelController {
   bool _started = false;
   bool _visible = false;
 
-  /// ×（面板栏关闭钮）后为 true：剪贴板事件不再更新面板，直到 Ctrl+Shift+D
-  /// （origin=hotkey 的显式意图）或重开设置开关解除。
-  bool paused = false;
-
   bool _backdropApplied = false;
 
   /// spec §6 gate — Win11 acrylic backdrop 是否被 OS 接受。false（Win10 /
@@ -144,15 +140,14 @@ class ClipboardPanelController {
   /// 剪贴板/热键请求入口（DesktopLookupDispatcher 的 panel 分区）。
   /// 语义：整句查一次（引擎按前缀/去屈折从句首匹配）+ 句子横幅逐字可点；
   /// 面板未显示则按记忆位显示；已显示则原地更新（固定 rect 无窗口运动）。
-  /// paused 时只有 origin=hotkey（Ctrl+Shift+D 显式意图）解除暂停并继续。
+  /// BUG-717（用户 2026-07-11 拍板）：× 关面板只清当前卡，**不**永久暂停路由——
+  /// 下一条剪贴板复制（或任何来源）都无条件重开面板。旧的 `paused` 门（× 后丢弃
+  /// 非 hotkey 事件、直到 Ctrl+Shift+D 才解除）让用户「关掉后第二个词就出不来」，
+  /// 已整条移除：关面板 = 藏窗（`_visible=false`），下一次 update 见 `!_visible`
+  /// 直接 `_showPanel` 重开。想彻底静默走设置里的剪贴板查词总开关，不再靠这个门。
   Future<void> update(DesktopLookupRequest request) async {
     final AppModel? model = _appModel;
     if (!_started || model == null) return;
-    if (paused && request.origin != DesktopLookupOrigin.hotkey) {
-      glog('panel: paused — drop ${request.origin}');
-      return;
-    }
-    paused = false;
     // latest-wins：领取序号；每个 await 后核对，过期即弃（VN 流乱序守卫）。
     final int seq = ++_updateSeq;
     try {
@@ -201,9 +196,9 @@ class ClipboardPanelController {
     await _renderPanel(model);
   }
 
-  /// 面板栏 ×：藏窗 + 暂停路由（Ctrl+Shift+D 或设置重开解除）。
-  Future<void> hidePanel({bool pause = true}) async {
-    paused = pause || paused;
+  /// 面板栏 × / root 卡 ×：藏窗即可。BUG-717：不再暂停路由——下一条剪贴板复制
+  /// 会经 [update] 的 `!_visible` 分支重开面板（关掉后第二个词照样弹）。
+  Future<void> hidePanel() async {
     _visible = false;
     await _channel.hide(notify: false);
   }

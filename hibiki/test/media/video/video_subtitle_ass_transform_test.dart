@@ -139,7 +139,8 @@ void main() {
     testWidgets('respectAssStyle OFF：不旋转（历史行为，无旋转 Transform）',
         (WidgetTester tester) async {
       await pump(tester, respect: false);
-      expect(find.text('看'), findsNWidgets(2));
+      // 默认外观(OFF)=单层 fill+柔和阴影(PR#23/BUG-323)，无 stroke 层，故 1 个候选
+      expect(find.text('看'), findsNWidgets(1));
       expect(hasRotation(tester), isFalse, reason: '关开关时忽略 \\frz，不旋转');
     });
   });

@@ -280,7 +280,6 @@ svg.block-img.blurred {
         : '';
 
     final String furiganaCss = _furiganaCss(settings.furiganaMode);
-    final String highlightLaneCss = _highlightLaneCss(isVertical);
 
     final String textIndentCss = settings.textIndentation > 0
         ? 'text-indent: ${settings.textIndentation}em !important;'
@@ -508,12 +507,12 @@ $furiganaCss
    !important declaration wins the cascade over either spelling. `over` maps to
    line-over in horizontal-tb (furigana ABOVE the base) and to the right in
    vertical-rl (furigana RIGHT of the base) — the correct side for Japanese in
-   both writing modes. This also re-aligns the audiobook/selection highlight lane
-   (_highlightLaneCss paints `left center` in vertical, i.e. the base lane which
-   only sits on the left when annotations are on the right = `over`); with the
-   book's `under` the base moved right and the lane painted the furigana column
-   instead (the misaligned band seen on 「懐かしい」). display unchanged, so the
-   65fd8d03d non-collapse (dyRatio≈0) is preserved.
+   both writing modes. This also keeps the audiobook/selection highlight on the
+   base characters: the full-fill background (BUG-716) paints the <ruby> element
+   box, and `over` keeps the furigana in its own annotation lane on the correct
+   side (the right in vertical-rl) so it stays outside the highlighted base box;
+   the book's `under` would throw furigana to the left and back under the base.
+   display unchanged, so the 65fd8d03d non-collapse (dyRatio≈0) is preserved.
 
    TODO-1308 (user re-report): owning ruby/rt display is STILL not enough for
    <rb>/<rtc> markup (W3C ruby extensions / JIS mono-ruby, e.g.
@@ -577,11 +576,12 @@ ruby rt, ruby rp {
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
    加 class，背景画在元素上只画一遍。移植自 Hoshi-Reader-Android。 */
 ruby.hoshi-selection-ruby-active {
-  --hoshi-highlight-lane-color: $selectionOpaque;
+  background-color: $selectionOpaque !important;
   color: inherit;
 }
 /* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
-   三条路径共用背景 + underline，和 sasayaki/current sentence 重叠时仍保留收藏语义。 */
+   三条路径共用背景 + underline，和 sasayaki/current sentence 重叠时仍保留收藏语义。
+   BUG-716：ruby 高亮回到整句填充（不再走 1em 窄 lane），下同。 */
 ::highlight(hoshi-hl-yellow),
 .hoshi-hl-yellow,
 ruby.hoshi-hl-yellow-ruby-active {
@@ -590,9 +590,6 @@ ruby.hoshi-hl-yellow-ruby-active {
   text-decoration-color: var(--hoshi-hl-yellow-mark, rgb(184, 132, 0));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
-}
-ruby.hoshi-hl-yellow-ruby-active {
-  --hoshi-highlight-lane-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
 }
 ::highlight(hoshi-hl-green),
 .hoshi-hl-green,
@@ -603,9 +600,6 @@ ruby.hoshi-hl-green-ruby-active {
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-ruby.hoshi-hl-green-ruby-active {
-  --hoshi-highlight-lane-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
-}
 ::highlight(hoshi-hl-blue),
 .hoshi-hl-blue,
 ruby.hoshi-hl-blue-ruby-active {
@@ -614,9 +608,6 @@ ruby.hoshi-hl-blue-ruby-active {
   text-decoration-color: var(--hoshi-hl-blue-mark, rgb(36, 92, 190));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
-}
-ruby.hoshi-hl-blue-ruby-active {
-  --hoshi-highlight-lane-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
 }
 ::highlight(hoshi-hl-pink),
 .hoshi-hl-pink,
@@ -627,9 +618,6 @@ ruby.hoshi-hl-pink-ruby-active {
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-ruby.hoshi-hl-pink-ruby-active {
-  --hoshi-highlight-lane-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
-}
 ::highlight(hoshi-hl-purple),
 .hoshi-hl-purple,
 ruby.hoshi-hl-purple-ruby-active {
@@ -639,73 +627,44 @@ ruby.hoshi-hl-purple-ruby-active {
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-ruby.hoshi-hl-purple-ruby-active {
-  --hoshi-highlight-lane-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
-}
 .hoshi-dict-highlight {
   background-color: $selectionOpaque !important;
   color: inherit;
 }
 ::highlight(hoshi-sasayaki) {
   color: var(--hoshi-sasayaki-text-color);
-  background-color: transparent;
+  background-color: var(--hoshi-sasayaki-background-color);
 }
 /* BUG-110：sasayaki 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
 ruby.hoshi-sasayaki-ruby-active {
   color: var(--hoshi-sasayaki-text-color) !important;
-  --hoshi-highlight-lane-color: var(--hoshi-sasayaki-background-color);
+  background-color: var(--hoshi-sasayaki-background-color) !important;
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
    高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
 ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
-  --hoshi-highlight-lane-color: $selectionOpaque;
+  background-color: $selectionOpaque !important;
   color: inherit !important;
 }
-$highlightLaneCss
 ::highlight(hoshi-search) {
   background-color: rgba(255, 200, 0, 0.45);
 }
 .hoshi-sasayaki-cue {
   background-color: transparent;
 }
-/* TODO-1371/BUG-690：active 态只允许绘制层属性（color / 自定义变量 / lane 背景），
-   禁止任何盒模型改写。旧实现的 line-height:1 !important 会在 strut < 1em（书籍 CSS
-   行距小于字号）时逐句增厚激活行盒 —— 竖排下行盒厚度就是列厚，其后所有列随播放
-   逐句平移。1em 窄条宽度本就由 _highlightLaneCss 的 background-size(绘制层)保证，
-   与 line-height 无关（BUG-643 不回归）；若 iOS WebKit 竖排带位置有偏，用
-   background-position（绘制层）修正，不许改回 line-height。 */
+/* BUG-716：sasayaki 逐句跟随高亮回到整句 background-color 填充。narrow-lane
+   (旧 _highlightLaneCss 的 1em 窄条 + background-position:left) 在书籍行距≠字号
+   或 <ruby> 盒含注音轨时把条画偏（竖排下往基字左侧偏移、有无振假名两种宽度不一），
+   用户实机确认有声书与查词的注音高亮都错位。整句填充按元素 class 只刷一遍背景，
+   注音轨天然在 ruby 元素背景盒外（BUG-110/643 不回归），横竖排、有无振假名一致。 */
 .hoshi-sasayaki-cue.hoshi-sasayaki-active {
   color: var(--hoshi-sasayaki-text-color) !important;
-  --hoshi-highlight-lane-color: var(--hoshi-sasayaki-background-color);
+  background-color: var(--hoshi-sasayaki-background-color) !important;
 }
 a {
   color: ${linkColor ?? colors.linkColor}$readerStylePriority;
 }
 ''';
-  }
-
-  static String _highlightLaneCss(bool isVertical) {
-    final String size = isVertical ? '1em 100%' : '100% 1em';
-    final String position = isVertical ? 'left center' : 'left bottom';
-    return '''
-/* BUG-643：ruby 元素的盒子包含 rt/rp 注音轨，CSS Highlight 在竖排会按行盒刷宽。
-   ruby 与 sasayaki 普通正文都只把背景画在正文基字 lane 上，避免有无振假名宽度不一。 */
-.hoshi-sasayaki-cue.hoshi-sasayaki-active,
-ruby.hoshi-selection-ruby-active,
-ruby.hoshi-sasayaki-ruby-active,
-ruby.hoshi-hl-yellow-ruby-active,
-ruby.hoshi-hl-green-ruby-active,
-ruby.hoshi-hl-blue-ruby-active,
-ruby.hoshi-hl-pink-ruby-active,
-ruby.hoshi-hl-purple-ruby-active {
-  background-color: transparent !important;
-  background-image: linear-gradient(var(--hoshi-highlight-lane-color, transparent), var(--hoshi-highlight-lane-color, transparent)) !important;
-  background-repeat: no-repeat !important;
-  background-size: $size !important;
-  background-position: $position !important;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}''';
   }
 
   static String _paginatedLayoutCss({

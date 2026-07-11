@@ -540,8 +540,8 @@ void main() {
       (AdaptiveSettingsSliderRow row) =>
           row.title == t.video_setting_subtitle_shadow,
     );
-    // 默认阴影粗细 TODO-051 加大到 5px；UI scale 2.0 下预览 = 5 * 2 = 10。
-    expect(shadowRow.value, 10);
+    // 默认阴影 PR#23/BUG-323 改回 Niratan 柔和投影模糊半径 3px；UI scale 2.0 下预览 = 3 * 2 = 6。
+    expect(shadowRow.value, 6);
   });
 
   // ── BUG-672：字幕轨切换不即时加载（要重开才行）+ 副字幕跳到另一个窗口 ─────────

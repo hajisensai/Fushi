@@ -86,6 +86,13 @@ mixin DictionaryPageMixin {
   /// 对称，纯查词页不渲染清空入口）。视频页覆写返回非空闭包清掉 [MiningSentenceDraft]。
   Future<int> Function()? get onClearSentenceDraftToDraft => null;
 
+  /// Niratan「制卡前调整·选择句子上下文」（视频/首页查词车道）：弹窗打开模态时拉取当前
+  /// 草稿真实上下文句 + 当前正查句 + 词偏移做预览。默认 null = 不支持（纯查词页无草稿）。
+  /// 视频页覆写返回非空闭包（[buildSentenceContextPreview]）。与 reader 车道
+  /// （[BaseSourcePageState.onSentenceContextPreviewFromDraft]）对称。
+  Future<Map<String, Object?>> Function()?
+      get onSentenceContextPreviewToDraft => null;
+
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
   String _statTodayKey() => statTodayKey();
 
@@ -517,6 +524,7 @@ mixin DictionaryPageMixin {
         onAppendSentence: onAppendSentenceToDraft,
         onSetSentenceContext: onSetSentenceContextToDraft,
         onClearSentenceDraft: onClearSentenceDraftToDraft,
+        onSentenceContextPreview: onSentenceContextPreviewToDraft,
         headerWidget: buildPopupHeaderFor(index),
       ),
     );

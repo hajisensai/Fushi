@@ -97,6 +97,38 @@ class MiningSentenceDraft {
   }
 }
 
+/// 制卡前「上下文预览」纯数据（Niratan「选择句子上下文」模态）：宿主把当前草稿的
+/// 真实上下文句（[MiningSentenceDraft.prevSentences] / [nextSentences]，已按阅读顺序）+
+/// 当前正查句 [current] + 查到的词在当前句里的字符偏移 [currentOffset] 打包成一个
+/// JSON-safe Map 回给弹窗，供其渲染「前文 / 当前句(词高亮) / 后文」三栏预览。
+///
+/// 返回结构（字段名与 popup.js 的 `sentenceContextPreview` 消费方约定一致）：
+/// ```
+/// { 'prev': [句...], 'current': '当前句', 'currentOffset': int?, 'next': [句...],
+///   'total': prev.length + next.length }
+/// ```
+/// [currentOffset] 只是给 JS 定位高亮起点用（词的实际表现形由弹窗侧持有），失配时
+/// 弹窗回退到首次出现匹配——与卡片渲染 `_sentenceValue` 同一容错策略。纯函数、可单测。
+Map<String, Object?> buildSentenceContextPreview({
+  required MiningSentenceDraft draft,
+  required String current,
+  int? currentOffset,
+}) {
+  final List<String> prev = <String>[
+    for (final MiningDraftSentence e in draft.prevSentences) e.sentence,
+  ];
+  final List<String> next = <String>[
+    for (final MiningDraftSentence e in draft.nextSentences) e.sentence,
+  ];
+  return <String, Object?>{
+    'prev': prev,
+    'current': current,
+    'currentOffset': currentOffset,
+    'next': next,
+    'total': prev.length + next.length,
+  };
+}
+
 /// 把多句合成一段制卡用文本。纯函数（无副作用、可单测）。
 ///
 /// 与视频 `buildSelectedSubtitleCueContext` 的 `join('\n')` 语义一致：逐句 trim、

@@ -37,15 +37,13 @@ void main() {
 
     c.debugUpdateCueForPosition(500);
     await tester.pump();
-    // 'hello' 拆成逐字符可点；每个字符现在渲染成**双层**（底层 stroke 描边 Text +
-    // 上层 fill Text，BUG-323 / TODO-569 真描边），故每个唯一字符出现 2 个 Text，
-    // 重复字符 'l'（出现 2 次）共 4 个。默认 shadowThickness=5（非零）→ 描边层存在。
-    expect(find.text('h'), findsNWidgets(2));
-    expect(find.text('e'), findsNWidgets(2));
-    expect(find.text('l'), findsNWidgets(4));
+    // 'hello' 拆成逐字符可点；默认统一外观每字渲染成**单层** fill Text（Niratan 软投影，
+    // 非 respectAssStyle 路径），故每个唯一字符出现 1 个 Text，重复字符 'l'（2 次）共 2 个。
+    expect(find.text('h'), findsOneWidget);
+    expect(find.text('e'), findsOneWidget);
+    expect(find.text('l'), findsNWidgets(2));
 
-    // 双层重叠，点哪层都命中同一字符矩形；用 .first 避免「matched 2 widgets」。
-    await tester.tap(find.text('e').first);
+    await tester.tap(find.text('e'));
     expect(tappedSentence, 'hello');
     expect(tappedIndex, 1); // 'e' 是第 1 个 grapheme
     // 浮层定位用：被点字符报告非零屏幕矩形（弹窗据此定位到字符附近）。
@@ -56,7 +54,7 @@ void main() {
 
     c.debugUpdateCueForPosition(2500);
     await tester.pump();
-    expect(find.text('w'), findsNWidgets(2));
+    expect(find.text('w'), findsOneWidget);
     expect(find.text('h'), findsNothing);
   });
 
@@ -70,7 +68,7 @@ void main() {
   });
 
   testWidgets(
-      'renders real outline as double-layer stroke+fill Text, no shadow residue (BUG-323)',
+      'default uniform look: single fill Text + soft drop shadow (Niratan), no stroke layer',
       (tester) async {
     final c = VideoPlayerController();
     addTearDown(c.dispose);
@@ -88,6 +86,7 @@ void main() {
       backgroundOpacity: 0,
       bottomPadding: 75,
       fontFamily: 'ReaderFont',
+      // respectAssStyle 默认 false → 默认统一外观（软投影）。
     )));
 
     c.debugUpdateCueForPosition(500);
@@ -97,41 +96,30 @@ void main() {
     final BoxDecoration decoration = box.decoration as BoxDecoration;
     expect(decoration.color, Colors.transparent);
 
-    // BUG-323 / TODO-569 真描边：字符 'A' 渲染成**两层** Text（底层 stroke 描边 +
-    // 上层 fill 正文），故 find.text('A') 命中 2 个。旧的「8 个模糊 Shadow glyph
-    // 拷贝伪描边」会在大 thickness/横竖屏缩放下外溢成残留黑字，已彻底移除。
+    // 抄 Niratan：默认（非 respectAssStyle）字幕每字渲染成**单层** fill Text + 一枚柔和
+    // drop shadow（放弃 BUG-323 的双层硬描边）。单层软投影（仅一份拷贝、向下 1px 偏移）
+    // 不会重现 BUG-222/323 的 8 层模糊 glyph 拷贝残留黑字。
     final List<Text> texts = tester.widgetList<Text>(find.text('A')).toList();
-    expect(texts.length, 2, reason: '真描边 = 底层 stroke + 上层 fill 两个 Text');
+    expect(texts.length, 1, reason: '默认外观 = 单层 fill Text（无描边层）');
 
-    // 分辨两层：fill 层有 color、无 foreground、无 shadows；stroke 层 foreground 是
-    // PaintingStyle.stroke 画笔、color 为 null、无 shadows。
-    final Text fill = texts.firstWhere((Text t) => t.style?.foreground == null);
-    final Text stroke =
-        texts.firstWhere((Text t) => t.style?.foreground != null);
-
-    // fill 层：正文色、字号、字重、字体如实；**绝无 shadows**（残留黑字源已根除）。
+    final Text fill = texts.single;
+    // fill 层：正文色 / 字号 / 字重 / 字体如实，无 foreground（非描边）。
+    expect(fill.style!.foreground, isNull);
     expect(fill.style!.color, themedSubtitleColor);
     expect(fill.style!.fontSize, 36);
     expect(fill.style!.fontWeight, FontWeight.w500);
     expect(fill.style!.fontFamily, 'ReaderFont');
-    expect(fill.style!.shadows, anyOf(isNull, isEmpty),
-        reason: '不再用 Shadow 伪描边');
 
-    // stroke 层：foreground 是 stroke 画笔，宽度==thickness、色==shadowColor，
-    // 几何（字号/字重/字体）与 fill 层一致（两层逐像素对齐）；同样**无 shadows**。
-    final Paint strokePaint = stroke.style!.foreground!;
-    expect(strokePaint.style, PaintingStyle.stroke);
-    expect(strokePaint.strokeWidth, 6); // strokeWidth == thickness
-    // Paint.color round-trip 后实例不严格 ==（colorSpace/浮点表示），比 ARGB32。
-    expect(strokePaint.color.toARGB32(), const Color(0xFF224466).toARGB32());
-    expect(stroke.style!.color, isNull, reason: 'foreground 与 color 不可共存');
-    expect(stroke.style!.fontSize, 36);
-    expect(stroke.style!.fontWeight, FontWeight.w500);
-    expect(stroke.style!.fontFamily, 'ReaderFont');
-    expect(stroke.style!.shadows, anyOf(isNull, isEmpty));
+    // 柔和投影：单枚 Shadow，色==shadowColor、模糊半径==shadowThickness、向下偏移 1px
+    // （对应 Niratan `.shadow(color:.black.opacity(0.9), radius:r, y:1)`）。
+    final List<Shadow> shadows = fill.style!.shadows!;
+    expect(shadows.length, 1, reason: '单层柔和投影，不是 8 向伪描边');
+    expect(shadows.single.color, const Color(0xFF224466));
+    expect(shadows.single.blurRadius, 6);
+    expect(shadows.single.offset, const Offset(0, 1));
   });
 
-  testWidgets('thickness<=0 renders single fill Text (no stroke layer)',
+  testWidgets('thickness<=0 renders single fill Text with no shadow',
       (tester) async {
     final c = VideoPlayerController();
     addTearDown(c.dispose);
@@ -140,12 +128,12 @@ void main() {
     await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(
       controller: c,
       shadowColor: const Color(0xFF224466),
-      shadowThickness: 0, // 无描边：不应再有第二层 Text。
+      shadowThickness: 0, // 关阴影：单层 fill、无投影。
     )));
     c.debugUpdateCueForPosition(500);
     await tester.pump();
 
-    // 无描边 → 单层 fill Text，绝不渲染空描边层（无多余 widget、无残影）。
+    // 关阴影 → 单层 fill Text，无投影（无多余层、无残影）。
     final List<Text> texts = tester.widgetList<Text>(find.text('A')).toList();
     expect(texts.length, 1);
     expect(texts.single.style!.foreground, isNull);

@@ -197,18 +197,29 @@ class VideoSubtitleStyle {
   });
 
   static const int defaultFontWeight = 700;
-  static const double defaultShadowThickness = 5;
 
-  /// v1 持久化时代硬编码的默认阴影粗细（3px）。仅供 [decode] 把 v1 存的
-  /// 该值迁移成 null（跟随 UI scale）用，不参与当前外观（当前默认是
-  /// [defaultShadowThickness]=5）。与当前常量解耦，改默认不破坏旧数据迁移。
+  /// 默认阴影/投影**半径**（模糊强度），抄 Niratan（mac 原生日语沉浸 app）字幕默认的
+  /// `shadowRadius = 3`（其设置滑杆范围 0..10）。BUG-323 时代这里是 5px「硬描边粗细」；
+  /// 现按用户要求改回 Niratan 的柔和投影观感——渲染改为单层高斯 drop shadow（见
+  /// [buildSubtitleSoftShadow] 与 [VideoSubtitleOverlay._buildSubtitleChar]），3 就是那层
+  /// 软阴影的模糊半径。仍跟随 UI scale（[resolveShadowThickness]）。
+  static const double defaultShadowThickness = 3;
+
+  /// v1 持久化时代硬编码的默认阴影粗细（3px）。仅供 [decode] 把 v1 存的该值迁移成 null
+  /// （跟随 UI scale）用。用独立字面量与当前 [defaultShadowThickness] 解耦：即便两者当前
+  /// 同为 3，语义不同（此值是历史迁移锚点），后续改默认也不破坏旧数据迁移。
   static const double _v1LegacyShadowThickness = 3;
 
-  /// High-contrast caption defaults (TODO-051): 36px bold WHITE text with a
-  /// thick BLACK outline/shadow, no box. Fixed white/black instead of theme
+  /// High-contrast caption defaults (TODO-051): 36px bold WHITE text with a soft
+  /// translucent-BLACK drop shadow, no box. Fixed white/black instead of theme
   /// colors so subtitles stay legible on any video and don't wash out on
   /// low-contrast themes. [fontWeight]/[shadowThickness] stay null to follow the
   /// global UI scale ([defaultFontWeight] / [defaultShadowThickness] at 1.0).
+  ///
+  /// [shadowColor] 默认取 `0xE6000000`（黑 @ 0.9 alpha），抄 Niratan 字幕投影
+  /// `Color.black.opacity(0.9)`：配合 [defaultShadowThickness]=3 的模糊半径与
+  /// [buildSubtitleSoftShadow] 的向下 1px 偏移，得到「字后一层柔和黑影」的观感（不再是
+  /// BUG-323 的锐利硬描边）。旧用户显式存的 `0xFF000000` 仍逐字尊重、不被本默认覆盖。
   ///
   /// [bottomPadding] is the user's subtitle position only (default 75). It no
   /// longer bakes in the controls-bar clearance: TODO-129 made the self-drawn
@@ -225,7 +236,8 @@ class VideoSubtitleStyle {
     fontSize: 36,
     textColor: Color(0xFFFFFFFF),
     fontWeight: null,
-    shadowColor: Color(0xFF000000),
+    // 黑 @ 0.9 alpha（抄 Niratan `.black.opacity(0.9)`）：柔和投影而非纯黑硬边。
+    shadowColor: Color(0xE6000000),
     shadowThickness: null,
     backgroundColor: null,
     backgroundOpacity: 0,
@@ -371,28 +383,39 @@ class VideoSubtitleStyle {
   }
 }
 
-/// 字幕**真**描边画笔（BUG-323 / TODO-569）：把粗细 [thickness] 渲染成沿字形轮廓的
-/// 单层描边，由底层 stroke [Text] 用本画笔描出、上层 fill [Text] 填正文（见
-/// [VideoSubtitleOverlay] 的双层渲染）。[thickness] <= 0 返回 null（无描边）。
+/// 字幕正文的**柔和投影**（抄 Niratan / mac）：把 [thickness]（阴影半径）渲染成**单层**
+/// 高斯 drop shadow，挂在正文 fill [Text] 的 `style.shadows` 上（见
+/// [VideoSubtitleOverlay._buildSubtitleChar]）。[thickness] <= 0 返回空列表（无投影）。
 ///
-/// 根因（为什么 BUG-222 的 [buildSubtitleShadows] 没修好、用户报「一点没修好、还是
-/// 残留黑字」）：那套方案用 8 个 `Shadow(blurRadius: thickness, offset: r)` 模拟描边。
-/// Flutter 的 `Shadow` 不是沿轮廓描边，而是把**整个字形 glyph 用阴影色重绘一遍**再做
-/// 高斯模糊 + 偏移。8 个方向 = 8 份模糊的黑色字形拷贝叠加。由于 `blurRadius`(=thickness)
-/// 大于偏移半径(=thickness/2)，这些模糊黑字大面积重叠并外溢到字身周围 → 白字下方/旁边
-/// 浮现一团能看清字形轮廓的黑色虚影 = 用户说的「残留在文字下方的黑字、双重/残影」。
-/// 横竖屏切换 / 切句是「重灾区 / 必现」是因为旋转后 `uiScale` 变化把 thickness 经
-/// [VideoSubtitleStyle.resolveShadowThickness] 放大（默认随缩放、clamp 到 12），thickness
-/// 越大模糊黑字拷贝越大越糊、残影越重——不是状态残留，是 8 层模糊 glyph 拷贝的固有产物。
+/// 对应 Niratan `SubtitleOverlayView` 的 `.shadow(color: .black.opacity(0.9),
+/// radius: shadowRadius, y: 1)`：单个阴影、模糊半径 = [thickness]、向下偏移 1px、
+/// 颜色由 [color] 决定（默认 `0xE6000000` = 黑 @ 0.9）。观感是「字后面一团柔和黑影」。
 ///
-/// 真描边修复：`Paint()..style = PaintingStyle.stroke` 沿字形外轮廓画**一圈**线，宽度
-/// [thickness]、`strokeJoin.round` 让转角圆滑（ASS/asbplayer outline 观感）。它精确贴合
-/// 字身、单层、无模糊、无偏移拷贝 → 任何 thickness / 缩放 / 横竖屏都只是描边变粗变细，
-/// 绝不产生第二个错位黑字。`strokeWidth = thickness`：描边线以轮廓为中线，向内外各占
-/// thickness/2，可视外缘厚度约 thickness/2，与旧 [buildSubtitleShadows] 偏移半径
-/// `thickness/2` 同量级，外观厚度延续、不需用户重设。
+/// 为什么用**单层**而非 BUG-222/BUG-323 的 8 层 `Shadow`：那套残留黑字的根因是**8 份**
+/// 模糊 glyph 拷贝（`blurRadius=thickness` > 偏移 `thickness/2`）大面积重叠外溢成能看清
+/// 字形的第二个黑字。单层 drop shadow（偏移仅 (0,1)、只一份拷贝）不产生这种重叠，是所有
+/// 主流播放器（含 Niratan 本身）字幕投影的常规做法——按用户决策换回这套柔和观感（放弃
+/// BUG-323 的硬描边）。[color] 是用户/主题阴影色，thickness=模糊强度，0=无投影。
+List<Shadow> buildSubtitleSoftShadow(Color color, double thickness) {
+  if (thickness <= 0) return const <Shadow>[];
+  return <Shadow>[
+    Shadow(color: color, blurRadius: thickness, offset: const Offset(0, 1)),
+  ];
+}
+
+/// 字幕**真描边**画笔（BUG-323 / TODO-569）：把宽度 [thickness] 渲染成沿字形轮廓的单层
+/// 描边，由底层 stroke [Text] 用本画笔描出、上层 fill [Text] 填正文（见
+/// [VideoSubtitleOverlay._buildSubtitleChar] 的 ASS 尊重分支）。[thickness] <= 0 返回 null。
 ///
-/// [color] 仍是用户/主题描边色（默认黑）。语义与旧路径一致：thickness=描边强度，0=无描边。
+/// 适用范围（TODO-1105 后收窄）：现仅供**「尊重 .ass 自带样式」路径**画 .ass 的 `\bord`/
+/// `Outline` 硬描边——那是 .ass 文件明示的描边语义，必须用沿轮廓的真描边忠实还原。**默认
+/// 统一外观**已按用户决策改回 Niratan 的柔和投影（[buildSubtitleSoftShadow]），不再走本
+/// 描边。保留真描边而非旧的 8 层模糊 `Shadow` 伪描边，是因为后者在大 thickness / 缩放下
+/// 会外溢成「残留黑字」（BUG-323 根因，见 [buildSubtitleShadows] 文档）；真描边单层、无
+/// 模糊、无偏移拷贝，任何 thickness 只是描边变粗变细，绝不产生第二个错位黑字。
+///
+/// [color] 是描边色（.ass \3c / OutlineColour），[thickness] = 描边宽（.ass \bord），
+/// 0 = 无描边。`strokeJoin/Cap.round` 让转角圆滑，贴合 ASS/asbplayer outline 观感。
 Paint? buildSubtitleStrokePaint(Color color, double thickness) {
   if (thickness <= 0) return null;
   return Paint()
@@ -416,10 +439,10 @@ Paint? buildSubtitleStrokePaint(Color color, double thickness) {
 /// 光晕。八向对称 → 合成结果围绕文字、无单向「掉落」感。thickness 仍是用户/缩放控制的
 /// 描边强度（0 = 无描边），[color] 仍是用户/主题阴影色，语义不变。
 ///
-/// 历史：字幕**正文**字符的描边已于 BUG-323 / TODO-569 改用 [buildSubtitleStrokePaint]
-/// 的真描边（双层 [Text]），因为本函数的 8 个模糊 `Shadow` glyph 拷贝在大 thickness /
-/// 缩放下会外溢成「残留黑字」。本函数仍保留给**收藏星角标**那枚 [Icon] 用——图标无文字
-/// 双层渲染的对应物，且尺寸小、不在用户报的字幕文字残影范围内，沿用四周阴影即可。
+/// 历史：字幕**正文**字符早先用本函数的 8 向 `Shadow`（BUG-222），后因大 thickness /
+/// 缩放下 8 份模糊 glyph 拷贝外溢成「残留黑字」改成硬描边（BUG-323），现按用户决策再
+/// 换成 [buildSubtitleSoftShadow] 的单层柔和投影（抄 Niratan）。本函数仍保留给**收藏星
+/// 角标**那枚 [Icon] 用——图标尺寸小、四周对称光晕正合适，不在字幕文字残影范围内。
 ///
 /// [thickness] <= 0 返回空列表（无描边，与旧 `shadowThickness<=0` 分支等价）。
 List<Shadow> buildSubtitleShadows(Color color, double thickness) {

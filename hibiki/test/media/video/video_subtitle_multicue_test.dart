@@ -88,9 +88,9 @@ void main() {
       c.setCues(<AudioCue>[_cue('X', 0, 5000), _cue('Y', 2000, 8000)]);
       c.debugUpdateCueForPosition(3000); // 重叠区
       await _pump(tester, VideoSubtitleOverlay(controller: c));
-      // 每字 stroke+fill 双层。两条 cue 都在屏 → 各 2 个 Text。
-      expect(find.text('X'), findsNWidgets(2));
-      expect(find.text('Y'), findsNWidgets(2));
+      // 默认统一外观每字单层 Text（Niratan 软投影）。两条 cue 都在屏 → 各 1 个 Text。
+      expect(find.text('X'), findsOneWidget);
+      expect(find.text('Y'), findsOneWidget);
     });
 
     testWidgets('副字幕渲染在主字幕上方（画面顶部）', (WidgetTester tester) async {
@@ -101,8 +101,8 @@ void main() {
       c.debugUpdateCueForPosition(1000);
       await _pump(tester, VideoSubtitleOverlay(controller: c));
 
-      expect(find.text('主'), findsNWidgets(2));
-      expect(find.text('副'), findsNWidgets(2));
+      expect(find.text('主'), findsOneWidget);
+      expect(find.text('副'), findsOneWidget);
       final double mainDy = tester.getCenter(find.text('主').first).dy;
       final double secondaryDy = tester.getCenter(find.text('副').first).dy;
       expect(secondaryDy, lessThan(mainDy), reason: '副字幕应在画面顶部（dy 更小），主字幕在底部');
@@ -176,7 +176,8 @@ void main() {
       c.debugUpdateCueForPosition(1000);
       await _pump(tester, VideoSubtitleOverlay(controller: c));
       // 单层直接返回，overlay 直接子不是把主/副并列的 Stack（LayoutBuilder 在最外）。
-      expect(find.text('A'), findsNWidgets(2));
+      // 默认统一外观每字单层 Text（Niratan 软投影）。
+      expect(find.text('A'), findsOneWidget);
     });
   });
 }

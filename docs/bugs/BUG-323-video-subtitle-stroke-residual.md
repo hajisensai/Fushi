@@ -22,3 +22,5 @@
 
 - **备注**：**这是渲染观感 bug，host 单测只能证「描边渲染结构 = stroke 画笔单层 + fill 单层、绝无 Shadow 伪描边」，不能证视觉上残留黑字真的消失。** 真机/手机端横竖屏来回切换（必现路径）+ 切句必须由用户复测原始失败路径并留证据——这是上次 BUG-222「dev=True 没真机就声称修好」导致用户验证「根本没修好」的直接教训。本轮代码层根因清晰（8 层模糊 glyph 拷贝 → 真 stroke 轮廓），但不在此声称「真机已修好」，待用户真机确认。
 - **编号**：建 worktree 时（base develop@890b6768a）BUG-321 为空号、合法采番为 321；提交后发现 develop 已被并发 integration 推进到 1b88aa73a，抢先用掉 BUG-321（remote-video-resume）与 BUG-322（subtitle-list-click-highlight），故本条改号为 BUG-323（当前所有分支并集最大 322 → 323）避免撞号。
+
+- **后续（2026-07-10 用户决策「抄 Niratan 字幕默认阴影」）**：**默认统一外观**（非「尊重 .ass 自带样式」路径）的字幕正文已从本条的硬描边改回 Niratan（mac）的**单层柔和 drop shadow**（黑@0.9、模糊半径默认 3、向下 1px；`buildSubtitleSoftShadow`）。这**不是**回退 BUG-323 的坑：本条残留黑字的根因是 BUG-222 的**8 份**模糊 glyph 拷贝重叠外溢，而 Niratan 的单层软投影仅一份拷贝、偏移 (0,1)，不会重叠成第二个黑字（是所有主流播放器含 Niratan 的常规做法）。**真描边 `buildSubtitleStrokePaint` 仍保留**，现专供「尊重 .ass 自带样式」路径忠实还原 .ass 的 `\bord`/`\3c` 硬描边（TODO-1105/1246），不受本次默认外观变更影响。观感仍待用户真机确认。

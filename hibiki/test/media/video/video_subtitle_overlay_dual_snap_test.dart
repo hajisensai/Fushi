@@ -38,7 +38,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pump();
 }
 
-/// 第一个匹配 [label] 的 Text 的 topLeft.dy（stroke/fill 双层同位，取 first 即可）。
+/// 第一个匹配 [label] 的 Text 的 topLeft.dy（默认单层；ASS 尊重路径双层同位，取 first 即可）。
 double _dy(WidgetTester tester, String label) =>
     tester.getTopLeft(find.text(label).first).dy;
 
