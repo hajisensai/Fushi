@@ -253,9 +253,51 @@ int GlobalLookupWindow::OffscreenX() const {
          GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
 }
 
+bool GlobalLookupWindow::OwnsLiveWindow() const {
+  if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
+    return false;
+  }
+  // IsWindow() alone is not enough: Windows recycles HWND values, so a stale
+  // hwnd_ could name a DIFFERENT live window. Confirm the handle still points
+  // back at us via the GWLP_USERDATA we stamped in WM_NCCREATE.
+  return reinterpret_cast<GlobalLookupWindow*>(
+             GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
+}
+
+void GlobalLookupWindow::ForgetDeadWindow() {
+  if (hwnd_ == nullptr || OwnsLiveWindow()) {
+    return;
+  }
+  // The HWND was destroyed out from under us (WebView2 runtime crash/update,
+  // owner teardown, or any external DestroyWindow) yet hwnd_ stayed non-null,
+  // so every later ShowAt took the SetWindowPos(else) branch against a corpse
+  // and the app-external lookup/panel window "never came back without an app
+  // restart". Drop the dangling handle + the now-dead WebView2 proxies (the
+  // same release RecoverDeadWebView does) so the next ShowAt/PrewarmWebView
+  // rebuilds a fresh window from scratch. Surface it so the destroyer is
+  // diagnosable in the device log instead of a silent no-show.
+  if (error_cb_) {
+    error_cb_(
+        "overlay window found destroyed (external teardown) — rebuilding on "
+        "this lookup");
+  }
+  hwnd_ = nullptr;
+  controller_ = nullptr;
+  webview_ = nullptr;
+  env_ = nullptr;
+  webview_ready_ = false;
+  recovering_ = false;
+  visible_ = false;
+  revealed_ = false;
+}
+
 bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
                                 HWND owner) {
   EnsureWindowClass();
+  // A previously-created window may have been destroyed out from under us; drop
+  // the dangling handle so the guard below rebuilds instead of SetWindowPos-ing
+  // a corpse (root cause of "second lookup / reopen shows nothing").
+  ForgetDeadWindow();
   // Remember where the card should ultimately appear; Reveal() uses it.
   pending_x_ = x;
   pending_y_ = y;
@@ -303,6 +345,7 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   // path only renders + reveals. Semantics mirror the in-app keepWebViewWarm hot
   // slot, but for THIS bare overlay window (webview_prewarm.dart only warms the
   // in-app HeadlessInAppWebView, never this window — that gap was the root cause).
+  ForgetDeadWindow();  // A stale prewarm handle that died must be rebuilt.
   if (hwnd_ != nullptr) {
     return;  // Already warm (window + WebView2 exist) — idempotent.
   }
@@ -624,7 +667,10 @@ void GlobalLookupWindow::Hide(bool notify) {
 }
 
 bool GlobalLookupWindow::IsShowing() const {
-  return visible_ && hwnd_ != nullptr && IsWindowVisible(hwnd_);
+  // OwnsLiveWindow() (not a bare hwnd_ != nullptr) so a dangling/recycled handle
+  // can never report the overlay as showing — otherwise Dart's re-check skips
+  // the rebuild and renders into a window that no longer exists.
+  return visible_ && OwnsLiveWindow() && IsWindowVisible(hwnd_);
 }
 
 std::wstring GlobalLookupWindow::LoadAdapterScript() const {
