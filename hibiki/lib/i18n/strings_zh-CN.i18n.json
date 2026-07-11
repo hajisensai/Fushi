@@ -2254,5 +2254,13 @@
   "collection_empty": "合集为空",
   "collection_play": "播放",
   "rename_collection": "重命名合集",
-  "delete_collection": "删除合集"
+  "delete_collection": "删除合集",
+  "video_continue_watching": "继续观看",
+  "video_library_overview": "媒体库概览",
+  "video_stat_total_videos": "总数",
+  "video_stat_unfinished": "未完成",
+  "video_stat_recent_imports": "近7天导入",
+  "video_watched_up_to": "已看至 $time",
+  "video_last_watched": "上次观看 $date",
+  "collection_view_all": "查看全部"
 }

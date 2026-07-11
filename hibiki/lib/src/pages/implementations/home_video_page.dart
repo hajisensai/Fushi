@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/media/video/video_library_overview.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -119,6 +120,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
+  /// UI v2 Phase B：每 title 最近观看时间（watch-stats max(lastModified)），
+  /// 驱动「继续观看 hero」排序与「上次观看」外显。与 [_loadVideoOrder] 同批预取。
+  Map<String, DateTime> _lastWatchedByTitle = const <String, DateTime>{};
+
   @override
   void initState() {
     super.initState();
@@ -164,6 +169,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         await db.getAllMediaCollections();
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
+    // UI v2 Phase B：watch-stats 全量行 → 每 title 最近观看时间（内存聚合，无新 DAO）。
+    final List<VideoWatchStatisticRow> watchRows =
+        await db.getAllVideoWatchStatistics();
+    final Map<String, DateTime> lastWatched = latestWatchByTitle(
+      <(String, int)>[
+        for (final VideoWatchStatisticRow r in watchRows)
+          (r.title, r.lastModified),
+      ],
+    );
     final List<ShelfEntryRow> videoRows = <ShelfEntryRow>[
       for (final ShelfEntryRow r in rows)
         if (r.mediaType == 'video') r,
@@ -179,6 +193,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           for (final MediaCollectionRow c in collections) c.id: c,
         };
         _primaryCollectionByEntry = primaryMap;
+        _lastWatchedByTitle = lastWatched;
       });
     }
   }
@@ -1247,6 +1262,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 !(remoteSection is SizedBox && remoteSection.height == 0);
             return CustomScrollView(
               slivers: <Widget>[
+                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量 [all]
+                // 描述整库，不随标签筛选变。
+                if (all.isNotEmpty)
+                  SliverToBoxAdapter(child: _buildOverviewSection(all)),
                 if (hasRemoteSection) SliverToBoxAdapter(child: remoteSection),
                 ..._buildLocalVideoSlivers(all, ordered),
               ],
@@ -1255,6 +1275,220 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         );
       },
     );
+  }
+
+  /// UI v2 Phase B：顶部概览条 =「继续观看 hero」+「媒体库概览」统计。
+  ///
+  /// 数据全部内存推导（[computeVideoLibraryOverview]）：hero = 有痕迹未看完中
+  /// 最近看过的一条（watch-stats → importedAt 回退）；统计 = 总数 / 未完成 /
+  /// 近 7 天导入。**不显示百分比**（VideoBooks 无总时长列，不造假）。宽 ≥720
+  /// 并排、窄屏纵向堆叠；无 hero 候选时只渲染统计。
+  Widget _buildOverviewSection(List<VideoBookRow> all) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final VideoLibraryOverview overview = computeVideoLibraryOverview(
+      entries: <VideoOverviewEntry>[
+        for (final VideoBookRow r in all)
+          VideoOverviewEntry(
+            bookUid: r.bookUid,
+            title: r.title,
+            lastPositionMs: r.lastPositionMs,
+            completed: r.completedAt != null,
+            importedAt: r.importedAt,
+          ),
+      ],
+      lastWatchedByTitle: _lastWatchedByTitle,
+      now: DateTime.now(),
+    );
+    VideoBookRow? hero;
+    if (overview.heroUid != null) {
+      for (final VideoBookRow r in all) {
+        if (r.bookUid == overview.heroUid) {
+          hero = r;
+          break;
+        }
+      }
+    }
+    final Widget stats = _buildOverviewStats(overview, tokens);
+    final Widget? heroCard =
+        hero == null ? null : _buildContinueHero(hero, overview, tokens);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        0,
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (heroCard == null) return stats;
+          final bool wide = constraints.maxWidth >= 720;
+          if (wide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(flex: 3, child: heroCard),
+                SizedBox(width: tokens.spacing.gap + 4),
+                Expanded(flex: 2, child: stats),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              heroCard,
+              SizedBox(height: tokens.spacing.gap),
+              stats,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 继续观看 hero 卡：封面缩略 + 标题 + 已看至/上次观看 + 播放示意。整卡点击
+  /// 续播（带其 primary 合集 → 播放器有剧集面板/上下集）；无独立按钮避免嵌套
+  /// 焦点目标（卡本身即手柄/键盘目标）。
+  Widget _buildContinueHero(
+    VideoBookRow hero,
+    VideoLibraryOverview overview,
+    HibikiDesignTokens tokens,
+  ) {
+    final int? collectionId =
+        _primaryCollectionByEntry['video|${hero.bookUid}'];
+    final DateTime? watched = overview.heroLastWatched;
+    final List<String> metadata = <String>[
+      t.video_watched_up_to(time: formatVideoPosition(hero.lastPositionMs)),
+      if (watched != null)
+        t.video_last_watched(date: _formatOverviewDate(watched)),
+    ];
+    return HibikiCard(
+      key: const ValueKey<String>('home_video_continue_hero'),
+      focusId: const HibikiFocusId('home-video-continue-hero'),
+      onTap: () => _open(hero, playlistCollectionId: collectionId),
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 148,
+              height: 84,
+              child: _buildCover(hero),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap + 4),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.video_continue_watching,
+                    style: tokens.type.sectionLabel),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  hero.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  metadata.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Icon(
+            Icons.play_circle_filled,
+            size: 36,
+            color: tokens.surfaces.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 媒体库概览统计：总数 / 未完成 / 近 7 天导入 三格。
+  Widget _buildOverviewStats(
+    VideoLibraryOverview overview,
+    HibikiDesignTokens tokens,
+  ) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: tokens.surfaces.group,
+        shape: const RoundedRectangleBorder(
+          borderRadius: HibikiBorderRadius.card,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.video_library_overview, style: tokens.type.sectionLabel),
+            SizedBox(height: tokens.spacing.gap),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _buildOverviewStatCell(
+                    t.video_stat_total_videos,
+                    overview.total,
+                    tokens,
+                  ),
+                ),
+                Expanded(
+                  child: _buildOverviewStatCell(
+                    t.video_stat_unfinished,
+                    overview.unfinished,
+                    tokens,
+                  ),
+                ),
+                Expanded(
+                  child: _buildOverviewStatCell(
+                    t.video_stat_recent_imports,
+                    overview.recentImports,
+                    tokens,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverviewStatCell(
+    String label,
+    int value,
+    HibikiDesignTokens tokens,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text('$value', style: tokens.type.pageTitle),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.type.metadata,
+        ),
+      ],
+    );
+  }
+
+  /// 概览用短日期（`M-dd`；跨年补年份）。无 intl 依赖的确定性格式。
+  String _formatOverviewDate(DateTime at) {
+    final DateTime now = DateTime.now();
+    final String dd = at.day.toString().padLeft(2, '0');
+    if (at.year == now.year) return '${at.month}-$dd';
+    return '${at.year}-${at.month}-$dd';
   }
 
   /// 本地视频区的 sliver 列表：有视频时是 [SliverGrid]（响应式网格，随主滚动），

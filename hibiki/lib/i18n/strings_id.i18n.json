@@ -2254,5 +2254,13 @@
   "collection_empty": "Collection is empty",
   "collection_play": "Play",
   "rename_collection": "Rename collection",
-  "delete_collection": "Delete collection"
+  "delete_collection": "Delete collection",
+  "video_continue_watching": "Continue Watching",
+  "video_library_overview": "Library Overview",
+  "video_stat_total_videos": "Total",
+  "video_stat_unfinished": "Unfinished",
+  "video_stat_recent_imports": "New in 7 days",
+  "video_watched_up_to": "Watched to $time",
+  "video_last_watched": "Last watched $date",
+  "collection_view_all": "View all"
 }
