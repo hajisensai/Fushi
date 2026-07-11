@@ -14,12 +14,12 @@
   - `importer.cpp` `process_simple_entries`：simple 词条改写 `rules="*"`（通配词性）。
   - `deinflector.cpp` `pos_to_conditions`：遇 token `"*"` 返回全 1 位（`~0`），使
     `filter_by_pos` 的 erase 判据对通配词条永不触发。只影响 simple dict；Yomitan
-    词条从不用 `"*"`，行为不变。提交哈希：<待填>。
+    词条从不用 `"*"`，行为不变。提交哈希：cf5f817d5。
 - **[x] ② 已加自动化测试** — `native/hoshidicts/tests/simple_dict_deinflection_test.cpp`
   （CMake 注册 `simple_dict_deinflection_test`）：① `pos_to_conditions({"*"})==~0`、真
   tag/未知 tag/空各自正常且通配与真位有交集；② `write_simple_dict` 写一条后
   `DictionaryQuery::query` 取回 `rules=="*"`，证明通配真落到 term 记录。全套 15 个
-  native 测试通过（含 kanji/media/freq/pitch/ipa 查词回归门）。提交哈希：<待填>。
+  native 测试通过（含 kanji/media/freq/pitch/ipa 查词回归门）。提交哈希：cf5f817d5。
 - **备注**：term 记录读取侧 `query.cpp:229-230` 本就按 `rules_len` 变长读取（Yomitan
   词条 rules 非空），故 `rules_len 0→1` 安全无需改读取。真机复测：桌面导入一本 MDX/
   StarDict 后查一个动词屈折形，应能命中释义（待真机）。号从 724 改到 719 以避开另一
