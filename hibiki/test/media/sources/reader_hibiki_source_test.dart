@@ -1071,4 +1071,88 @@ void main() {
       expect(prog.duration, greaterThan(0), reason: '全书有字数，分母非 0(不是老书回退分支)');
     });
   });
+
+  // BUG-723：书架有声书进度条听书时不更新。听书 cue 派生位置无精确字符偏移，
+  // reader_positions.charOffset 存 -1（哨兵），章内进度只落在 normCharOffset（0-10000
+  // 章内归一化分数）里。旧 computeBookProgress 只认 charOffset、把 -1 当 0，令听书进度
+  // 停在章边界甚至显 0%（用户「有声书好像少了进度条」）。修复：charOffset<0 时回退
+  // normCharOffset 分数（与阅读器 restore 的回退口径一致）。
+  group('computeBookProgress normCharOffset 回退 (BUG-723 听书进度)', () {
+    // 三章：前=100+200=300，当前章(idx 2)字数 400，全书 700。
+    const List<int> chars = <int>[100, 200, 400];
+    const int before = 300; // Σchars[0..1]
+    const int total = 700;
+
+    test('charOffset=-1 + normCharOffset=5000（章内一半）→ 计入半章进度，不停在章首', () {
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: chars,
+        sectionIndex: 2,
+        charOffset: -1,
+        normCharOffset: 5000,
+      );
+      expect(prog.duration, total);
+      // intra = round(5000/10000 * 400) = 200。
+      expect(prog.position, before + 200);
+      // 关键回归：必须比「norm 缺省 0（旧行为）」的章首更前进。
+      final ({int position, int duration}) atStart = computeBookProgress(
+        sectionChars: chars,
+        sectionIndex: 2,
+        charOffset: -1,
+      );
+      expect(prog.position, greaterThan(atStart.position),
+          reason: '听书章内进度必须让书架进度前进，而非停在 charOffset=-1 的章首');
+    });
+
+    test('charOffset=-1 + normCharOffset=10000（章尾）→ 满章计入', () {
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: chars,
+        sectionIndex: 2,
+        charOffset: -1,
+        normCharOffset: 10000,
+      );
+      expect(prog.position, before + 400); // = total = 100%
+      expect(prog.position, total);
+    });
+
+    test('charOffset=-1 + normCharOffset=0（章首/未推进）→ 诚实停在章首', () {
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: chars,
+        sectionIndex: 2,
+        charOffset: -1,
+        normCharOffset: 0,
+      );
+      expect(prog.position, before);
+    });
+
+    test('精确 charOffset>=0 优先于 normCharOffset（正常阅读书不受影响）', () {
+      // 读书写精确 charOffset=250；即便 normCharOffset 陈旧为 9999 也不得被采纳。
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: chars,
+        sectionIndex: 2,
+        charOffset: 250,
+        normCharOffset: 9999,
+      );
+      expect(prog.position, before + 250,
+          reason: 'charOffset>=0 是精确值，必须压过归一化分数');
+    });
+
+    test('normCharOffset 越界（>10000）→ clamp，绝不 >100%', () {
+      final ({int position, int duration}) prog = computeBookProgress(
+        sectionChars: chars,
+        sectionIndex: 2,
+        charOffset: -1,
+        normCharOffset: 99999, // 脏数据
+      );
+      expect(prog.position, total); // clamp 到满章，不溢出
+      expect(prog.position, lessThanOrEqualTo(total));
+    });
+
+    test('源码守卫：_bookToMediaItem 把 normCharOffset 传进 computeBookProgress', () {
+      final String source = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      // 断了这根线（只传 charOffset）就退回 BUG-723 症状：听书进度停在章边界。
+      expect(source, contains('normCharOffset: pos?.normCharOffset'));
+    });
+  });
 }
