@@ -453,10 +453,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
-    final int seriesId = await appModel.database.createSeries(name);
+    // 统一合集 Phase 4：批量「组合成合集」建一个 collection 类合集，逐条 addToCollection
+    // （取代旧 createSeries + setSeriesForEntry）。
+    final int collectionId =
+        await appModel.database.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
       await appModel.database
-          .setSeriesForEntry(ref.mediaType, ref.entryKey, seriesId);
+          .addToCollection(collectionId, ref.mediaType, ref.entryKey);
     }
     if (!mounted) return;
     _exitSelectionMode();
