@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -326,32 +325,31 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         return;
       }
 
-      final String bookUid = await _uniqueBookUid(playlistBookUid(m3u8Path));
-      final String playlistJson = jsonEncode(
-        entries.map((PlaylistEntry e) => e.toJson()).toList(),
+      // 统一合集 Phase 2：多集拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
+      // （单一真相源 importSplitPlaylist，与 v38 迁移落库形状对齐）。
+      final ({int collectionId, List<String> episodeUids}) result =
+          await widget.repo.importSplitPlaylist(
+        collectionName: p.basenameWithoutExtension(m3u8Path),
+        entries: entries,
       );
-      // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集），
-      // 不再只认首集（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
+      final String firstUid = result.episodeUids.first;
+      // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集）给首集
+      // 承接（合集卡封面纯函数取首成员封面）。桌面 ffmpeg；移动端无 ffmpeg 时留空占位。
       final String? coverPath = await extractPlaylistCover(
         episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
-        bookUid: bookUid,
+        bookUid: firstUid,
       );
-      await widget.repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: Value(bookUid),
-        title: Value(p.basenameWithoutExtension(m3u8Path)),
-        videoPath: Value(entries.first.path),
-        playlistJson: Value(playlistJson),
-        currentEpisode: const Value<int>(0),
-        coverPath: Value<String?>(coverPath),
-        importedAt: Value(DateTime.now()),
-      ));
+      if (coverPath != null) {
+        await widget.repo.updateCover(firstUid, coverPath);
+      }
 
       if (!mounted) return;
       debugPrint(
-        '[hibiki-drop] [video-import] importedPlaylist bookUid=$bookUid '
+        '[hibiki-drop] [video-import] importedPlaylist collection='
+        '${result.collectionId} episodes=${result.episodeUids.length} '
         'playlist=${p.basename(m3u8Path)}',
       );
-      Navigator.pop(context, bookUid);
+      Navigator.pop(context, firstUid);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -417,24 +415,22 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       final List<PlaylistEntry> entries = group.episodes
           .map((VideoEpisode e) => PlaylistEntry(title: e.title, path: e.path))
           .toList();
-      final String bookUid = await _uniqueBookUid(
-          'video/playlist/${sanitizeTtuFilename(group.series)}');
-      final String playlistJson =
-          jsonEncode(entries.map((PlaylistEntry e) => e.toJson()).toList());
+      // 统一合集 Phase 2：拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
+      // （合集名用系列名）。封面给首集承接。
+      final ({int collectionId, List<String> episodeUids}) result =
+          await widget.repo.importSplitPlaylist(
+        collectionName: group.series,
+        entries: entries,
+      );
+      final String firstUid = result.episodeUids.first;
       final String? coverPath = await extractPlaylistCover(
         episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
-        bookUid: bookUid,
+        bookUid: firstUid,
       );
-      await widget.repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: Value(bookUid),
-        title: Value(group.series),
-        videoPath: Value(entries.first.path),
-        playlistJson: Value(playlistJson),
-        currentEpisode: const Value<int>(0),
-        coverPath: Value<String?>(coverPath),
-        importedAt: Value(DateTime.now()),
-      ));
-      return bookUid;
+      if (coverPath != null) {
+        await widget.repo.updateCover(firstUid, coverPath);
+      }
+      return firstUid;
     }
     final VideoEpisode only = group.episodes.first;
     final String bookUid = await _uniqueBookUid(singleVideoBookUid(only.path));

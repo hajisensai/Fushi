@@ -19,7 +19,6 @@
 // VIDEO sources are rejected (a raw remote path is not playable). Existing manual
 // import paths (dialogs) are untouched; sourceId defaults to null.
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -578,35 +577,42 @@ class MediaSourceScanner {
   /// Mirrors the dialog's manual / drag-drop playlist import but headless:
   /// [parseM3u8] parses the manifest (episode paths resolved via
   /// [resolveM3uEntryPath]: relative -> the m3u8's own dir, absolute /
-  /// backslash / UNC handled), derives a cross-device stable [playlistBookUid],
-  /// and persists one VideoBook carrying [VideoBooksCompanion.playlistJson].
-  /// Re-scan dedup keys on that STABLE identity (TODO-1237 (2)): a manifest
-  /// whose [playlistBookUid] already exists is SKIPPED (idempotent re-scan),
-  /// never suffixed into an `X (2)` duplicate -- unlike the old first-episode
-  /// path key that broke the moment the manifest's episode paths changed.
+  /// backslash / UNC handled), then splits it into N independent per-episode
+  /// VideoBook rows + one `'playlist'` [MediaCollections] (统一合集 Phase 2, via
+  /// [VideoBookRepository.importSplitPlaylist], byte-aligned with the v38
+  /// migration).
+  ///
+  /// Re-scan dedup: there is no single playlist row to key on any more, so the
+  /// manifest is deduped on whether its FIRST episode's path is already imported
+  /// ([VideoBookRepository.isVideoPathReferenced], same key the dialog folder
+  /// import uses) — a re-scan of an already-imported folder skips it. Unlike the
+  /// old first-episode key this now runs after parse (parsing a small manifest
+  /// on re-scan is cheap); correctness of idempotency wins over the micro-cost.
   ///
   /// [fs] is the source file system: the manifest is read via
   /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
   /// downloaded to a temp dir) then decoded with [readTextWithEncoding], reusing
   /// the same charset detection as [_importVideos]. Cover extraction needs a
-  /// local path so it only runs for local transport (like [_importVideos]);
-  /// ffmpeg-missing / any failure degrades to a null cover (shelf placeholder)
-  /// and never aborts the scan. An empty / unparsable manifest inserts nothing
-  /// (skipped, not counted, not an error).
+  /// local path so it only runs for local transport (like [_importVideos]) and
+  /// is applied to the first episode; ffmpeg-missing / any failure degrades to a
+  /// null cover (shelf placeholder) and never aborts the scan. An empty /
+  /// unparsable manifest inserts nothing (skipped, not counted, not an error).
+  /// Returns the number of playlists (collections) newly imported.
   Future<int> _importPlaylists(
     ScanPlan plan,
     int sourceId,
     SourceFileSystem fs,
   ) async {
     if (plan.playlists.isEmpty) return 0;
-    final List<VideoBookRow> existingRows = await _videoRepo.listAll();
-    // A playlist's STABLE identity is playlistBookUid (derived from the m3u8
-    // file's own name, TODO-1237 (2)), NOT its volatile first-episode path.
-    // Keying re-scan dedup on the identity means editing the manifest (e.g.
-    // relative -> absolute episode paths) no longer makes an `X (2)` duplicate,
-    // and re-scanning the same folder is idempotent (skip, never suffix).
-    final Set<String> existingKeys =
-        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+
+    // 统一合集：拆集后无单条 playlist 行 → 按「同名 playlist 合集是否已存在」判重。
+    // 合集名 = m3u8 basename（与旧 playlistBookUid 同为 basename 派生，去重/同名碰撞
+    // 行为一致），且**不随 manifest 内集路径编辑而变** → 编辑集路径重扫仍幂等，不产生
+    // X (2) 重复（TODO-1237 ②）。在读/解析前判重，未变的文件夹重扫无 per-playlist IO。
+    final Set<String> existingPlaylistNames = <String>{
+      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+        if (c.collectionType == 'playlist') c.name,
+    };
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -614,12 +620,9 @@ class MediaSourceScanner {
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
-        // TODO-1237 (2): same m3u8 identity already imported -> skip
-        // (idempotent re-scan), never a silent `X (2)` duplicate. Checked
-        // before read/parse so an unchanged folder re-scan does no
-        // per-playlist IO.
-        final String bookUid = playlistBookUid(item.playlistPath);
-        if (existingKeys.contains(bookUid)) continue;
+        final String collectionName =
+            p.basenameWithoutExtension(item.playlistPath);
+        if (existingPlaylistNames.contains(collectionName)) continue;
 
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
         final String localM3u8 =
@@ -632,38 +635,32 @@ class MediaSourceScanner {
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         if (entries.isEmpty) continue; // empty / not a playlist: skip silently.
-        existingKeys.add(bookUid);
-        final String playlistJson = jsonEncode(
-          entries.map((PlaylistEntry e) => e.toJson()).toList(),
-        );
+        existingPlaylistNames.add(collectionName);
 
-        // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only);
-        // mobile / any failure -> null cover, never aborts the scan.
-        String? coverPath;
-        if (fs.isLocal) {
-          try {
-            coverPath = await extractPlaylistCover(
-              episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
-              bookUid: bookUid,
-            );
-          } catch (e) {
-            debugPrint('MediaSourceScanner playlist cover extract failed for '
-                '$bookUid: $e');
-          }
-        }
-
-        await _videoRepo.saveVideoBook(
-          VideoBooksCompanion(
-            bookUid: Value(bookUid),
-            title: Value(p.basenameWithoutExtension(item.playlistPath)),
-            videoPath: Value(entries.first.path),
-            playlistJson: Value(playlistJson),
-            currentEpisode: const Value<int>(0),
-            coverPath: Value<String?>(coverPath),
-            importedAt: Value(DateTime.now()),
-          ),
+        final ({int collectionId, List<String> episodeUids}) result =
+            await _videoRepo.importSplitPlaylist(
+          collectionName: collectionName,
+          entries: entries,
           sourceId: sourceId,
         );
+
+        // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only),
+        // applied to the first episode row; mobile / any failure -> null cover,
+        // never aborts the scan.
+        if (fs.isLocal) {
+          try {
+            final String? coverPath = await extractPlaylistCover(
+              episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
+              bookUid: result.episodeUids.first,
+            );
+            if (coverPath != null) {
+              await _videoRepo.updateCover(result.episodeUids.first, coverPath);
+            }
+          } catch (e) {
+            debugPrint('MediaSourceScanner playlist cover extract failed for '
+                '${result.collectionId}: $e');
+          }
+        }
         count++;
       }
       return count;

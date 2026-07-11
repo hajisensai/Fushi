@@ -8,6 +8,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
+import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/media/video/video_storage.dart';
 
 /// VideoBooks 仓库：视频元数据 + 进度；字幕 cue 复用 audioCues 表。
@@ -39,6 +40,52 @@ class VideoBookRepository {
       final int tagId = await _db.getOrCreateTagByName(name);
       await _db.addTagToVideoBook(bookUid, tagId);
     }
+  }
+
+  /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
+  /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，与 v38 迁移
+  /// `splitPlaylistVideoBooksV38` 落库形状对齐（每集自带 positionMs 进 lastPositionMs；
+  /// 每集 uid = coreUniqueVideoBookUid(coreSingleVideoBookUid(path))；playlistJson 不写、
+  /// currentEpisode 恒 0；completed_at 不设）。整批包一个事务：全成或全回滚。
+  ///
+  /// 封面不在此处理（ffmpeg 属 app 层，且需先知集 uid 命名封面文件）——调用方在拿到
+  /// [episodeUids] 后自行抽封面并 [updateCover] 到首集。返回合集 id + 各集 uid（有序）。
+  Future<({int collectionId, List<String> episodeUids})> importSplitPlaylist({
+    required String collectionName,
+    required List<PlaylistEntry> entries,
+    int? sourceId,
+  }) async {
+    final Set<String> taken =
+        (await listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+    final List<String> epUids = <String>[];
+    int collectionId = 0;
+    await _db.transaction(() async {
+      for (final PlaylistEntry e in entries) {
+        final String uid =
+            coreUniqueVideoBookUid(coreSingleVideoBookUid(e.path), taken);
+        taken.add(uid);
+        epUids.add(uid);
+        await saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(uid),
+            title: Value(e.title.isNotEmpty
+                ? e.title
+                : p.basenameWithoutExtension(e.path)),
+            videoPath: Value(e.path),
+            lastPositionMs: Value(e.positionMs),
+            embeddedSubtitleTrack: const Value<int?>(0),
+            importedAt: Value(DateTime.now()),
+          ),
+          sourceId: sourceId,
+        );
+      }
+      collectionId = await _db.createMediaCollection(collectionName,
+          collectionType: 'playlist');
+      for (final String uid in epUids) {
+        await _db.addToCollection(collectionId, 'video', uid);
+      }
+    });
+    return (collectionId: collectionId, episodeUids: epUids);
   }
 
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
@@ -157,7 +204,12 @@ class VideoBookRepository {
   /// 在一个事务里删 videoBooks + audio_cues；标签映射经 FK cascade）。on-disk 的
   /// 封面/字幕副本回收交给调用方的 [VideoStorage.deleteBookAssets]（按被删 book 精确
   /// 删，不全库 sweep，BUG-276）。
-  Future<void> deleteVideoBook(String bookUid) => _db.deleteVideoBook(bookUid);
+  Future<void> deleteVideoBook(String bookUid) async {
+    await _db.deleteVideoBook(bookUid);
+    // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade）；被清空的 playlist
+    // 合集随之自删，避免留孤儿成员 / 合集卡数量虚高。
+    await _db.removeEntryFromAllCollections('video', bookUid);
+  }
 
   /// Deletes one video row and then reclaims the app-owned files that can be
   /// proven safe to delete.
