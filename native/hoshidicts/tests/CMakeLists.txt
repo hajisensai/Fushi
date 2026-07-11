@@ -98,6 +98,11 @@ add_hoshi_test(mdx_encrypted_keyinfo_test mdx_encrypted_keyinfo_test.cpp
 # Builds a real on-disk MDX (mdx_fixture.hpp) + sibling .css and asserts it lands.
 add_hoshi_test(simple_dict_css_test simple_dict_css_test.cpp
     "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
+# dict as media.bin/idx; get_media_file returns the bytes by normalized path.
+add_hoshi_test(mdd_media_import_test mdd_media_import_test.cpp
+    "${HOSHI_SRC}/mdx"
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # hoshidicts_src/.
 add_hoshi_test(import_breadcrumb_test import_breadcrumb_test.cpp

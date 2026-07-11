@@ -47,18 +47,21 @@ inline std::vector<uint8_t> make_zlib_block(const std::vector<uint8_t>& payload)
   return block;
 }
 
-// Build a single-key-block, single-record-block UTF-8 MDX v2 file (Encrypted=0)
-// from ordered (headword, definition) pairs. `title` becomes the <Title>.
-inline std::vector<uint8_t> build_mdx_plain(
-    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
-  // Record stream: definitions concatenated, each NUL-terminated.
+// Build a single-key-block, single-record-block UTF-8 MDX-family v2 container
+// (Encrypted=0) from ordered (key, record) pairs. When `null_terminate` is true
+// (MDX text records) each record is NUL-terminated; when false (MDD binary
+// files) records are concatenated byte-exact. `title` becomes the <Title>.
+inline std::vector<uint8_t> build_container(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
+    bool null_terminate) {
+  // Record stream: records concatenated (MDX: each NUL-terminated).
   std::vector<uint8_t> records;
   std::vector<uint64_t> offsets;
   for (const auto& [k, d] : entries) {
     (void)k;
     offsets.push_back(records.size());
     records.insert(records.end(), d.begin(), d.end());
-    records.push_back(0);
+    if (null_terminate) records.push_back(0);
   }
 
   // Key block: (be64 record_offset + headword + NUL) per entry.
@@ -114,6 +117,18 @@ inline std::vector<uint8_t> build_mdx_plain(
   file.insert(file.end(), record_block_info.begin(), record_block_info.end());
   file.insert(file.end(), record_block.begin(), record_block.end());
   return file;
+}
+
+// MDX: text (HTML) records, NUL-terminated.
+inline std::vector<uint8_t> build_mdx_plain(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
+  return build_container(title, entries, /*null_terminate=*/true);
+}
+
+// MDD: binary file records keyed by path, byte-exact (no terminator).
+inline std::vector<uint8_t> build_mdd_plain(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
+  return build_container(title, entries, /*null_terminate=*/false);
 }
 
 }  // namespace mdx_fixture

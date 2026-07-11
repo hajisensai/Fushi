@@ -189,8 +189,23 @@ struct BlockMeta {
 
 }  // namespace
 
-MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
-  MdxResult result;
+namespace {
+
+struct ContainerData {
+  std::string title;
+  std::string encoding;
+  int version_major = 0;
+  int version_minor = 0;
+  bool is_utf16 = false;
+  std::vector<KeyEntry> keys;
+  std::vector<uint8_t> all_records;
+};
+
+// Parse the MDX/MDD container down to decoded keys + the concatenated raw record
+// stream. Shared by parse() (text records) and parse_mdd() (binary records) --
+// they differ only in how each record slice is interpreted afterwards.
+ContainerData parse_container(const uint8_t* data, size_t size) {
+  ContainerData result;
   if (size < 8) throw std::runtime_error("mdx: file too small");
 
   size_t pos = 0;
@@ -499,24 +514,41 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
     pos += meta.compressed_size;
   }
 
-  // Build entries
-  result.entries.reserve(keys.size());
-  for (size_t i = 0; i < keys.size(); i++) {
-    uint64_t start = keys[i].record_offset;
-    uint64_t end = (i + 1 < keys.size()) ? keys[i + 1].record_offset : all_records.size();
+  result.is_utf16 = is_utf16;
+  result.keys = std::move(keys);
+  result.all_records = std::move(all_records);
+  return result;
+}
 
-    if (start >= all_records.size() || end > all_records.size() || start >= end) continue;
+}  // namespace
+
+MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
+  ContainerData c = parse_container(data, size);
+
+  MdxResult result;
+  result.title = std::move(c.title);
+  result.encoding = std::move(c.encoding);
+  result.version_major = c.version_major;
+  result.version_minor = c.version_minor;
+
+  // Build entries: each record slice is a text (HTML) definition.
+  result.entries.reserve(c.keys.size());
+  for (size_t i = 0; i < c.keys.size(); i++) {
+    uint64_t start = c.keys[i].record_offset;
+    uint64_t end = (i + 1 < c.keys.size()) ? c.keys[i + 1].record_offset : c.all_records.size();
+
+    if (start >= c.all_records.size() || end > c.all_records.size() || start >= end) continue;
 
     std::string definition;
-    if (is_utf16) {
-      definition = utf16le_to_utf8(all_records.data() + start, end - start);
+    if (c.is_utf16) {
+      definition = utf16le_to_utf8(c.all_records.data() + start, end - start);
     } else {
-      definition.assign(reinterpret_cast<const char*>(all_records.data() + start), end - start);
+      definition.assign(reinterpret_cast<const char*>(c.all_records.data() + start), end - start);
     }
 
     while (!definition.empty() && definition.back() == '\0') definition.pop_back();
 
-    result.entries.push_back({std::move(keys[i].headword), std::move(definition)});
+    result.entries.push_back({std::move(c.keys[i].headword), std::move(definition)});
   }
 
   // Resolve @@@LINK= redirects (follow chains up to 10 hops)
@@ -541,4 +573,25 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
   }
 
   return result;
+}
+
+std::vector<MddEntry> mdx_reader::parse_mdd(const uint8_t* data, size_t size) {
+  ContainerData c = parse_container(data, size);
+
+  // Each record slice is a raw binary file (image/audio/css/font); the key is
+  // its path. Keep bytes verbatim -- no transcoding, no trailing-NUL stripping
+  // (a PNG/JPEG legitimately ends in NUL bytes), no @@@LINK resolution.
+  std::vector<MddEntry> out;
+  out.reserve(c.keys.size());
+  for (size_t i = 0; i < c.keys.size(); i++) {
+    uint64_t start = c.keys[i].record_offset;
+    uint64_t end = (i + 1 < c.keys.size()) ? c.keys[i + 1].record_offset : c.all_records.size();
+
+    if (start >= c.all_records.size() || end > c.all_records.size() || start >= end) continue;
+
+    out.push_back(MddEntry{std::move(c.keys[i].headword),
+                           std::string(reinterpret_cast<const char*>(c.all_records.data() + start),
+                                       static_cast<size_t>(end - start))});
+  }
+  return out;
 }
