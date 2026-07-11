@@ -55,7 +55,9 @@ void main() {
             'its <rt> can anchor per-kanji (BUG-722)');
     // …and the base\'s own <rt> is relocated INTO that unit. If the rt stayed a
     // sibling of the whole ruby it would re-collapse to the full word width.
-    expect(js.contains("sib.tagName === 'RT'"), isTrue,
+    // (BUG-732 refactored the tag test into an isEl(node, 'RT') helper; the
+    // semantic — locate the following <rt> element — is unchanged.)
+    expect(js.contains("isEl(sib, 'RT')"), isTrue,
         reason: 'postProcessRuby must find the base\'s following <rt> element');
     expect(js.contains('unit.appendChild(sib)'), isTrue,
         reason:
