@@ -8,18 +8,18 @@
   "notes": "Automated release-signed debug-channel build from develop @ 002abcb. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.0.1-debug.7463-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7463-ios.ipa",
-      "releaseSequence": 7463,
-      "tag": "v1.0.1-debug.7463+740b83b",
-      "version": "1.0.1-debug.7463"
+      "name": "hibiki-1.0.1-debug.7468-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7468-ios.ipa",
+      "releaseSequence": 7468,
+      "tag": "v1.0.1-debug.7468+ff638f5",
+      "version": "1.0.1-debug.7468"
     },
     {
-      "name": "hibiki-1.0.1-debug.7463-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7463-macos.zip",
-      "releaseSequence": 7463,
-      "tag": "v1.0.1-debug.7463+740b83b",
-      "version": "1.0.1-debug.7463"
+      "name": "hibiki-1.0.1-debug.7468-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7468-macos.zip",
+      "releaseSequence": 7468,
+      "tag": "v1.0.1-debug.7468+ff638f5",
+      "version": "1.0.1-debug.7468"
     },
     {
       "name": "hibiki-1.0.1-debug.7468-windows-setup.exe",
