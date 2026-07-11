@@ -1564,10 +1564,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           handlerName: 'onShiftHover',
           callback: (args) {
             if (args.length < 2) return;
-            // TODO-851「限一级弹窗」：已有可见弹窗时悬停不再查词，保证 hover 最多
-            // 叠一层（不在已有弹窗之上再起查词）。两个 hover 入口都要门控
-            // （另一处见 reader_hibiki_page.dart onDismissBarrierHover）。
-            if (isDictionaryShown) return;
+            // 连续查词（和鼠标一样）：**不再**门控 isDictionaryShown（旧 TODO-851
+            // 放开）。弹窗未出时这里出首弹；某些平台弹窗出现后 WebView DOM 仍收
+            // mousemove（barrier 不拦原生视图指针），此时也照常换词——与
+            // onDismissBarrierHover 入口一致，防平台事件路由差异漏网。换词经
+            // prunePopupStack(0) 复用热槽无缝替换，同词由 JS selectText 的 fromHover
+            // 同词短路去重，二者协同不叠层不闪。
             final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
             final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
             // TODO-851：悬停路径传 fromHover:true，命中空白不触发 onTapEmpty。

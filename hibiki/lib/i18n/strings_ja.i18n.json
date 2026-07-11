@@ -1165,7 +1165,7 @@
   "move_down": "下に移動",
   "shortcut_action_reader_toggle_furigana": "ふりがなの切替",
   "shortcut_action_reader_lookup_at_cursor": "辞書を引く／カーソルを有効化",
-  "shortcut_action_reader_shift_lookup": "Shift 辞書引き",
+  "shortcut_action_reader_shift_lookup": "カーソル位置で辞書引き",
   "shortcut_action_reader_create_card_from_popup": "ポップアップからカード作成",
   "on_screen_keyboard": "オンスクリーンキーボード",
   "app_ui_scale": "UIサイズ",

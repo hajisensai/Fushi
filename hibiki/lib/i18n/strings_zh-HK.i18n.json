@@ -1165,7 +1165,7 @@
   "move_down": "下移",
   "shortcut_action_reader_toggle_furigana": "切換振假名",
   "shortcut_action_reader_lookup_at_cursor": "查詞／啟用游標",
-  "shortcut_action_reader_shift_lookup": "Shift 查詞",
+  "shortcut_action_reader_shift_lookup": "游標處查詞",
   "shortcut_action_reader_create_card_from_popup": "由彈窗製卡",
   "on_screen_keyboard": "螢幕鍵盤",
   "app_ui_scale": "介面大小",
