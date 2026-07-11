@@ -947,4 +947,100 @@ void main() {
     expect(counterTitles.contains('A'), false,
         reason: 'tombstoned "A" lookup counter must not resurrect either');
   });
+
+  test('media collections merge: (name,type) 幂等 + collection_id 跨库 remap',
+      () async {
+    // 目标：先建 Filler(collection) 占掉 id 1，让 Dupe 落 id 2，从而与 src 的 id 分叉，
+    // 真正检验 remap（不是靠 id 数字巧合相等蒙混）。Dupe(playlist) 含成员 keep-target。
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    await cur.createMediaCollection('Filler');
+    final int tDupe =
+        await cur.createMediaCollection('Dupe', collectionType: 'playlist');
+    await cur.addToCollection(tDupe, 'video', 'keep-target');
+    await cur.close();
+
+    // 备份：同名同类型 Dupe(playlist)（src 里落 id 1）含 from-src；另有全新
+    // NewOne(collection)（src id 2）含 b1。
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    final int sDupe =
+        await src.createMediaCollection('Dupe', collectionType: 'playlist');
+    await src.addToCollection(sDupe, 'video', 'from-src');
+    final int sNew = await src.createMediaCollection('NewOne');
+    await src.addToCollection(sNew, 'book', 'b1');
+    expect(sDupe, isNot(tDupe),
+        reason: 'src/target 的 Dupe id 必须不同，才能真正检验 remap');
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeImportBackupFiles(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
+
+    final after = HibikiDatabase(curDir.path);
+    addTearDown(after.close);
+    final List<MediaCollectionRow> cols = await after.getAllMediaCollections();
+    // Dupe 按自然键幂等（不重复），NewOne 新增 → 连同 Filler 恰好三个。
+    expect(cols.map((MediaCollectionRow c) => c.name).toList()..sort(),
+        <String>['Dupe', 'Filler', 'NewOne']);
+    final MediaCollectionRow dupe =
+        cols.firstWhere((MediaCollectionRow c) => c.name == 'Dupe');
+    expect(dupe.id, tDupe, reason: '同名同类型必须复用目标既有 id，绝不新建重复合集');
+    // Dupe 成员并集 {keep-target, from-src}：from-src 落进目标 Dupe(id=tDupe)，
+    // 证明 src Dupe(sDupe) 已 remap 到 tDupe，而非新建一个 id=sDupe 的孤儿合集。
+    final Set<String> dupeMembers = (await after.getCollectionItems(dupe.id))
+        .map((MediaCollectionItemRow r) => r.entryKey)
+        .toSet();
+    expect(dupeMembers, <String>{'keep-target', 'from-src'});
+    // NewOne 带 b1，collection_id 指向目标新分配的 id（非 src 的 sNew）。
+    final MediaCollectionRow newOne =
+        cols.firstWhere((MediaCollectionRow c) => c.name == 'NewOne');
+    final List<MediaCollectionItemRow> newItems =
+        await after.getCollectionItems(newOne.id);
+    expect(
+        newItems.map((MediaCollectionItemRow r) => r.entryKey), <String>['b1']);
+    expect(newItems.single.collectionId, newOne.id);
+  });
+
+  test('media collections merge: 重复导入同一备份幂等（成员不翻倍）', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    final int sCol =
+        await src.createMediaCollection('Show', collectionType: 'playlist');
+    await src.addToCollection(sCol, 'video', 'e1');
+    await src.addToCollection(sCol, 'video', 'e2');
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // 连续合并两次同一备份：合集不翻倍、成员不重复。
+    await BackupService.mergeImportBackupFiles(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeImportBackupFiles(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = HibikiDatabase(curDir.path);
+    addTearDown(after.close);
+    final List<MediaCollectionRow> cols = await after.getAllMediaCollections();
+    expect(cols, hasLength(1), reason: '同名同类型合集第二次导入必须复用，不新建');
+    final Set<String> members = (await after.getCollectionItems(cols.single.id))
+        .map((MediaCollectionItemRow r) => r.entryKey)
+        .toSet();
+    expect(members, <String>{'e1', 'e2'}, reason: '成员复合主键去重，不翻倍');
+  });
 }

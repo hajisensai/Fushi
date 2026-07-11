@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Variable;
+import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:hibiki/src/sync/aggregate_merge_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
@@ -96,6 +96,7 @@ class BackupMergeEngine {
       await _insertMissing('dictionary_metadata', 'name');
       await _insertMissing('srt_books', 'uid');
       await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
+      await _mergeMediaCollections();
       await _insertAudioCues();
       await _mergeReaderPositions();
       await _mergeReadingStatistics();
@@ -249,6 +250,118 @@ class BackupMergeEngine {
       'AND $_reachableVideoPredicate',
       _reachableVideoArgs,
     );
+  }
+
+  /// media_collections + media_collection_items 合并（统一合集 Phase 5）。合集主键是
+  /// 自增 `id`，跨库必冲突，故不能像其它表那样 INSERT...SELECT 直搬——按自然键
+  /// (name, collection_type) 幂等对齐：src 合集若目标已有同名同类型则复用其 id，否则
+  /// 新插得新 id；再把 src 成员的 collection_id 经 src→target id 映射改写后
+  /// INSERT OR IGNORE（成员复合主键 {collection_id, media_type, entry_key} 天然去重）。
+  ///
+  /// 说明：备份 DB 已在 ATTACH 前迁到当前 schema，故其 series/playlist 已经过 v38
+  /// 迁移落进 media_collections，这里搬的就是「合集分组」本身。孤儿成员引用（其条目文件
+  /// 未随备份到达、未插入 target）保留不删——UI 折叠时按实际条目跳过孤儿，日后条目补回
+  /// 即自动归位（保留用户分组意图）。
+  Future<void> _mergeMediaCollections() async {
+    if (!await _srcTableExists('media_collections') ||
+        !await _srcTableExists('media_collection_items')) {
+      return; // 迁移前的旧备份无合集表：无可合并。
+    }
+    final List<QueryRow> srcCols = await _db
+        .customSelect(
+          'SELECT id, name, collection_type, cover_source, sort_order, '
+          'created_at FROM $_srcAlias.media_collections',
+        )
+        .get();
+    if (srcCols.isEmpty) return;
+
+    // 目标现有 (name, collection_type) → id，用于幂等对齐。
+    final List<QueryRow> tgtCols = await _db
+        .customSelect('SELECT id, name, collection_type FROM media_collections')
+        .get();
+    final Map<String, int> targetIdByKey = <String, int>{
+      for (final QueryRow r in tgtCols)
+        _collectionKey(
+          r.read<String>('name'),
+          r.read<String>('collection_type'),
+        ): r.read<int>('id'),
+    };
+    int nextSort = await _nextTargetCollectionSortOrder();
+
+    // src.id → target.id 映射（复用或新插）。
+    final Map<int, int> srcToTargetId = <int, int>{};
+    for (final QueryRow c in srcCols) {
+      final int srcId = c.read<int>('id');
+      final String name = c.read<String>('name');
+      final String type = c.read<String>('collection_type');
+      final String key = _collectionKey(name, type);
+      final int? existing = targetIdByKey[key];
+      if (existing != null) {
+        srcToTargetId[srcId] = existing;
+        continue;
+      }
+      final int newId = await _db.customInsert(
+        'INSERT INTO media_collections '
+        '(name, collection_type, cover_source, sort_order, created_at) '
+        'VALUES (?, ?, ?, ?, ?)',
+        variables: <Variable<Object>>[
+          Variable<String>(name),
+          Variable<String>(type),
+          // cover_source 可空：Variable<String> 接受 null 值 → 落 SQL NULL。
+          Variable<String>(c.read<String?>('cover_source')),
+          Variable<int>(nextSort++),
+          Variable<int>(c.read<int>('created_at')),
+        ],
+      );
+      srcToTargetId[srcId] = newId;
+      targetIdByKey[key] = newId;
+    }
+
+    // 成员：collection_id 经映射改写后 INSERT OR IGNORE（复合主键去重）。
+    final List<QueryRow> srcItems = await _db
+        .customSelect(
+          'SELECT collection_id, media_type, entry_key, sort_index '
+          'FROM $_srcAlias.media_collection_items',
+        )
+        .get();
+    for (final QueryRow it in srcItems) {
+      final int? tgt = srcToTargetId[it.read<int>('collection_id')];
+      if (tgt == null) continue;
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO media_collection_items '
+        '(collection_id, media_type, entry_key, sort_index) '
+        'VALUES (?, ?, ?, ?)',
+        <Object?>[
+          tgt,
+          it.read<String>('media_type'),
+          it.read<String>('entry_key'),
+          it.read<int>('sort_index'),
+        ],
+      );
+    }
+  }
+
+  /// 自然键：name 与 collection_type 以 NUL 分隔（两者都不含 NUL），避免拼接歧义。
+  static String _collectionKey(String name, String type) => '$name\u0000$type';
+
+  /// 目标 media_collections 的下一个 sort_order（现有最大 +1，空表 0）。
+  Future<int> _nextTargetCollectionSortOrder() async {
+    final QueryRow row = await _db
+        .customSelect(
+          'SELECT COALESCE(MAX(sort_order), -1) AS m FROM media_collections',
+        )
+        .getSingle();
+    return row.read<int>('m') + 1;
+  }
+
+  /// src(备份)库是否有名为 [table] 的表（防旧备份缺合集表时 SELECT 崩溃）。
+  Future<bool> _srcTableExists(String table) async {
+    final QueryRow? row = await _db.customSelect(
+      'SELECT 1 FROM $_srcAlias.sqlite_master '
+      "WHERE type = 'table' AND name = ?",
+      variables: <Variable<Object>>[Variable<String>(table)],
+    ).getSingleOrNull();
+    return row != null;
   }
 
   /// AudioCues: import only cues for book_keys with no existing cues in the
