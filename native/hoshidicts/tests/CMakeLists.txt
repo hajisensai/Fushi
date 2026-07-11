@@ -69,6 +69,9 @@ add_hoshi_test(media_import_query_test media_import_query_test.cpp)
 add_hoshi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_hoshi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
 add_hoshi_test(ipa_import_query_test ipa_import_query_test.cpp)
+# Simple dicts (MDX/StarDict/DSL) store rules="*" so filter_by_pos keeps them
+# for inflected-form lookups; pins pos_to_conditions("*")==~0 + the stored rule.
+add_hoshi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
 
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate

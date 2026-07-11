@@ -894,7 +894,12 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
 
     write_val<uint8_t>(processed.data, 0);  // def_tags_len = 0
-    write_val<uint8_t>(processed.data, 0);  // rules_len = 0
+    // rules = "*": simple dicts have no per-term POS. The wildcard makes
+    // filter_by_pos keep these terms for deinflected (inflected-form) lookups
+    // instead of erasing them; see Deinflector::pos_to_conditions. Stored as a
+    // normal variable-length rules string (reader consumes it by length).
+    write_val<uint8_t>(processed.data, 1);  // rules_len = 1
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>('*'));
     write_val<uint8_t>(processed.data, 0);  // term_tags_len = 0
 
     processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
