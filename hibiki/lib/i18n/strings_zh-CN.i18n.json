@@ -2263,5 +2263,9 @@
   "popup_ctx_next_minus": "后退一句",
   "popup_ctx_next_plus": "后加一句",
   "popup_ctx_confirm": "确认制卡",
-  "popup_ctx_cancel": "取消"
+  "popup_ctx_cancel": "取消",
+  "backup_export_choose_videos": "选择视频",
+  "backup_export_videos_all": "全部视频",
+  "backup_export_no_videos": "没有可选的视频",
+  "backup_export_videos_selected": "已选 $count 个视频"
 }
