@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- BUG-736: 必须在任何外链脚本前显式声明 UTF-8。Android 从 file:///android_asset
+    <!-- BUG-738: 必须在任何外链脚本前显式声明 UTF-8。Android 从 file:///android_asset
          加载本文档时无 HTTP charset 头；file:// 是 opaque origin，外链 <script> 的编码
          不继承文档默认编码而回退到 legacy windows-1252 → popup.js 里的 '✓'(UTF-8
          E2 9C 93) 被按 1252 解码成乱码 'âœ"'（制卡按钮是文本字形，故只有它乱码；audio/

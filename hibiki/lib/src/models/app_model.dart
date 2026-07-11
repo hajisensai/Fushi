@@ -2278,6 +2278,16 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
+    // BUG-736：以下两个 helper 与 in-app 弹窗注入器（popup_settings_injection /
+    // dictionary_popup_webview）同款，用于补齐扩展此前漏发、退化成灰高亮/白字/直角的
+    // 变量。rgba035：查到词高亮色（primary @0.35 alpha）；triplet：卡片底色 RGB 三元组。
+    String rgba035(Color c) => 'rgba(${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)}, 0.35)';
+    String triplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)}';
+    final Color bgColor = _overrideDictionaryColor ?? s.surface;
     // BUG-688：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
     // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
     // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
@@ -2291,7 +2301,13 @@ class AppModel with ChangeNotifier {
       // 与 in-app _themeVariablesJs 一致地下发这两个核心变量；漏了它们会导致弹窗容器色回落到
       // data-theme 块的 #000/#fff 或宿主页继承（主题分裂：米卡 + 黑底 + 灰字）。
       '--text-color': rgb(s.onSurface),
-      '--background-color': rgb(_overrideDictionaryColor ?? s.surface),
+      '--background-color': rgb(bgColor),
+      // BUG-736：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
+      // 内的主题主色高亮不一致（这是「扩展弹窗和 app 不一样」最扎眼的一处）。
+      '--hoshi-primary-highlight': rgba035(s.primary),
+      // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
+      // 漏发时回落到纯白 255,255,255。
+      '--hibiki-card-bg-rgb': triplet(bgColor),
       // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
       // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
       '--hibiki-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
@@ -2302,6 +2318,11 @@ class AppModel with ChangeNotifier {
       '--md-on-surface-variant': rgb(s.onSurfaceVariant),
       '--md-outline-variant': rgb(s.outlineVariant),
       '--md-primary': rgb(s.primary),
+      // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
+      '--md-on-primary': rgb(s.onPrimary),
+      // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
+      // （HibikiRadii.cardValue）不一致。与两个 in-app 注入器逐字节同源。
+      '--hibiki-radius-card': '${HibikiRadii.cardValue.toInt()}px',
       '--hibiki-popup-max-width': '${popupMaxWidth.round()}px',
       '--hibiki-popup-max-height': '${popupMaxHeight.round()}px',
       '--hibiki-popup-zoom': zoom.toStringAsFixed(4),

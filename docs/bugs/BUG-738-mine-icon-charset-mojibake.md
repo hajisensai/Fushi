@@ -1,4 +1,4 @@
-## BUG-736 · 手机制卡后制卡按钮图标乱码 âœ (UTF-8 编码丢失/file:// opaque origin 外链脚本回退 1252)
+## BUG-738 · 手机制卡后制卡按钮图标乱码 âœ (UTF-8 编码丢失/file:// opaque origin 外链脚本回退 1252)
 - **报告**：2026-07-11（用户：「手机制卡以后 +号的图标会变成乱码」）
 - **真实性**：✅ 真 bug — 真机复现（OnePlus CPH2747 / ColorOS / Android 16 / System WebView Chromium 149）。查词弹窗已制卡词条的制卡按钮渲染成 `âœ"`（放大截图确认）。根因 `hibiki/assets/popup/popup.html:3`（`<head>` 缺 `<meta charset>`）+ 加载路径 `hibiki/lib/src/utils/misc/webview_asset_url.dart:13`（Android 走 `file:///android_asset/flutter_assets/...`）。
 - **根因链**：制卡按钮是「文本字形」`'✓↩︎'`（`popup.js` `setMineState`，应用户要求不走 SVG；audio/favorite 是 SVG）。Android 上弹窗从 `file:///android_asset/.../popup.html` 加载（无 HTTP `charset` 头），且 popup.html **无 `<meta charset>`**。`file://` 是 opaque origin，外链 `<script src="popup.js">` 的字符编码**不继承文档默认编码**，回退到 legacy **windows-1252** → popup.js 里 `'✓'`(UTF-8 `E2 9C 93`) 被按 1252 解码成 `â`(E2)`œ`(9C)`"`(93) = `âœ"`。制卡按钮是唯一用文本字形的顶部按钮，故只有它乱码。

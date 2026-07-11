@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-736 守卫：查词弹窗宿主 HTML 必须在任何外链 `<script>` 之前显式声明 UTF-8。
+/// BUG-738 守卫：查词弹窗宿主 HTML 必须在任何外链 `<script>` 之前显式声明 UTF-8。
 ///
 /// 根因：Android 从 `file:///android_asset/...` 加载 popup.html（无 HTTP charset 头），
 /// `file://` 是 opaque origin，外链 `<script>` 的字符编码不继承文档默认编码而回退到
@@ -29,14 +29,14 @@ void main() {
   final RegExp firstScript = RegExp(r'<script\b', caseSensitive: false);
 
   for (final String host in popupHosts) {
-    group('[$host] BUG-736 UTF-8 编码声明', () {
+    group('[$host] BUG-738 UTF-8 编码声明', () {
       late final String html;
       setUpAll(() => html = File(host).readAsStringSync());
 
       test('含 <meta charset="utf-8">', () {
         expect(charsetMeta.hasMatch(html), isTrue,
             reason: '$host 缺 <meta charset="utf-8">；file:// 加载时外链脚本会按 '
-                'windows-1252 解码，popup.js 的 ✓ 变乱码 âœ"（BUG-736）');
+                'windows-1252 解码，popup.js 的 ✓ 变乱码 âœ"（BUG-738）');
       });
 
       test('<meta charset> 出现在第一个 <script> 之前（否则对外链脚本无效）', () {
@@ -56,10 +56,12 @@ void main() {
         final RegExp externalScript =
             RegExp(r'<script\b[^>]*\bsrc\s*=', caseSensitive: false);
         for (final RegExpMatch m in externalScript.allMatches(html)) {
-          final String tag = html.substring(
-              m.start, html.indexOf('>', m.start) + 1);
-          expect(RegExp(r'charset\s*=\s*"utf-8"', caseSensitive: false)
-              .hasMatch(tag), isTrue,
+          final String tag =
+              html.substring(m.start, html.indexOf('>', m.start) + 1);
+          expect(
+              RegExp(r'charset\s*=\s*"utf-8"', caseSensitive: false)
+                  .hasMatch(tag),
+              isTrue,
               reason: '$host 的外链脚本标签缺 charset="utf-8"：$tag');
         }
       });
