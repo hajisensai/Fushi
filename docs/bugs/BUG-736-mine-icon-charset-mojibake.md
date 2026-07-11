@@ -1,0 +1,18 @@
+## BUG-736 · 手机制卡后制卡按钮图标乱码 âœ (UTF-8 编码丢失/file:// opaque origin 外链脚本回退 1252)
+- **报告**：2026-07-11（用户：「手机制卡以后 +号的图标会变成乱码」）
+- **真实性**：✅ 真 bug — 真机复现（OnePlus CPH2747 / ColorOS / Android 16 / System WebView Chromium 149）。查词弹窗已制卡词条的制卡按钮渲染成 `âœ"`（放大截图确认）。根因 `hibiki/assets/popup/popup.html:3`（`<head>` 缺 `<meta charset>`）+ 加载路径 `hibiki/lib/src/utils/misc/webview_asset_url.dart:13`（Android 走 `file:///android_asset/flutter_assets/...`）。
+- **根因链**：制卡按钮是「文本字形」`'✓↩︎'`（`popup.js` `setMineState`，应用户要求不走 SVG；audio/favorite 是 SVG）。Android 上弹窗从 `file:///android_asset/.../popup.html` 加载（无 HTTP `charset` 头），且 popup.html **无 `<meta charset>`**。`file://` 是 opaque origin，外链 `<script src="popup.js">` 的字符编码**不继承文档默认编码**，回退到 legacy **windows-1252** → popup.js 里 `'✓'`(UTF-8 `E2 9C 93`) 被按 1252 解码成 `â`(E2)`œ`(9C)`"`(93) = `âœ"`。制卡按钮是唯一用文本字形的顶部按钮，故只有它乱码。
+  - 判据：`âœ"` 正是 U+2713 的 UTF-8 三字节按 windows-1252 解读；词条正文（日文释义）不乱码，因其经 Dart `evaluateJavascript`（`window.lookupEntries=…`，UTF-8 桥）注入，非静态 popup.js。
+  - 为何 iOS/Windows 不复现：`dictionary_popup_webview.dart` `_shouldInlinePopupAssets` 对 iOS/Windows 把 popup 资源**内联**进 `InAppWebViewInitialData(encoding:'utf-8')`，编码显式 UTF-8。
+  - 为何 `global_lookup_host.html` 不复现：它一直有 `<meta charset="utf-8">`。
+  - 为何 fork 的 `defaultTextEncodingName="UTF-8"`（`InAppWebViewSettings.java:76`）救不了：它只作用于**文档本体**解码，不改变 opaque-origin 外链脚本的编码判定。
+  - **注**：BUG-691（内嵌 "Hibiki Symbols" 字体）此前把本症状误诊为「Android 缺符号字体」——字体方案没错但治不了乱码，因为 ✓ 在到达字体前已被编码破坏成 `âœ"`。本 bug 是真根因；BUG-691 的字体兜底保留（无害，且确保即使 ✓ 正确解码后任何 ROM 都有字形）。参见旧例 [BUG-234](BUG-234-popup-i18n-mojibake.md)（popup i18n 同类编码问题）。
+- **[x] ① 已修复** — 根因修（显式声明 UTF-8）：
+  - `hibiki/assets/popup/popup.html` + `hibiki/assets/popup/definition.html`：`<head>` 首个元素加 `<meta charset="utf-8">`（在任何外链 `<script>` 之前 → 文档编码显式 UTF-8，外链脚本随之按 UTF-8 解码），并给每个 `<script src>` 直接加 `charset="utf-8"`（opaque-origin 下第二层钉死）。
+  - 真机验证：见文末「验证」。
+  - 提交：`812982cae`
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/dictionary/popup_html_charset_guard_test.dart`：源码扫描守卫，锁 popup.html / definition.html / global_lookup_host.html 三宿主 ①含 `<meta charset="utf-8">`；②charset 出现在第一个 `<script>` 之前；③每个外链 `<script src>` 带 `charset="utf-8"`。
+  - 提交：`812982cae`
+- **验证**：真机 OnePlus CPH2747（release-signed 就地升级，用户数据保留）——制卡前截图制卡按钮=`âœ"`（乱码），装修复版后同词条=干净 `✓`。截图证据 `.codex-test/`（不入库）。
+- **备注**：`_shouldInlinePopupAssets` 未改（内联仅 iOS/Windows 需要，Android `<meta charset>` 已足够根治；不为省一个 meta 去改动加载路径，避免牵动 file:// 主帧 bootstrap 的既有行为）。

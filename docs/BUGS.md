@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 720 条。点号进各自文件。
+> 共 721 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-736](bugs/BUG-736-mine-icon-charset-mojibake.md) | ✅ | ✅ | 手机制卡后制卡按钮图标乱码 âœ (UTF-8 编码丢失/file:// opaque origin 外链脚本回退 1252) |
 | [BUG-735](bugs/BUG-735-shelf-add-button-size.md) | ✅ | ✅ | 书架添加按钮尺寸位置与其它头部按钮不一致 |
 | [BUG-734](bugs/BUG-734-stats-mobile-text-clip.md) | ✅ | ✅ | 手机统计页文字被省略号裁切显示不全 |
 | [BUG-733](bugs/BUG-733-popup-glossary-ruby-element-base-overlap.md) | ✅ | ✅ | 词典弹窗释义正文元素基字 ruby 注音塌到基字上 |

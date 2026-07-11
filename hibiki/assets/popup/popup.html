@@ -1,11 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- BUG-736: 必须在任何外链脚本前显式声明 UTF-8。Android 从 file:///android_asset
+         加载本文档时无 HTTP charset 头；file:// 是 opaque origin，外链 <script> 的编码
+         不继承文档默认编码而回退到 legacy windows-1252 → popup.js 里的 '✓'(UTF-8
+         E2 9C 93) 被按 1252 解码成乱码 'âœ"'（制卡按钮是文本字形，故只有它乱码；audio/
+         favorite 是 SVG 不受影响）。<meta charset> 把文档编码显式定为 UTF-8，外链脚本随之
+         按 UTF-8 解码；script 上的 charset 属性再直接钉死一层，双保险。global_lookup_host.html
+         一直有 charset 故从不乱码，本文件与 definition.html 之前漏了。fork 的
+         defaultTextEncodingName 虽默认 UTF-8，但只作用于文档本体，救不了 opaque-origin 外链脚本。 -->
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="popup.css">
-    <script src="dict-media.js"></script>
-    <script src="selection.js"></script>
-    <script src="popup.js"></script>
+    <script src="dict-media.js" charset="utf-8"></script>
+    <script src="selection.js" charset="utf-8"></script>
+    <script src="popup.js" charset="utf-8"></script>
 </head>
 <body>
     <div id="entries-container"></div>
