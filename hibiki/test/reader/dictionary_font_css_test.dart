@@ -153,7 +153,16 @@ void main() {
     });
     final File f = File('${dir.path}/Cached.ttf');
     await f.writeAsBytes(<int>[0x00, 0x01, 0x02, 0x03]); // base64 AAECAw==
-    final DateTime mtime = f.statSync().modified;
+    // 把 mtime 钉到一个确定的整秒值，两次 build 前都用同一个值恢复。
+    // 不能沿用「读原始 stat.modified 再 setLastModified 恢复」：`FileStat.modified`
+    // 由 `DateTime.fromMillisecondsSinceEpoch` 构造，Linux 会带亚秒毫秒分量，而
+    // `File.setLastModified` 在 POSIX 上经 utime() 落到整秒——恢复值与原始亚秒不
+    // 一致，缓存键 (mtimeUs,size) 变化，测试在 Linux/CI 误判缓存失效（Windows
+    // 的 stat.modified 本就是整秒故侥幸通过）。改为两侧 setLastModified 同一整秒：
+    // 同一落盘 mtime → 同一 stat 读回 → 缓存键跨平台恒定；缓存若真被删仍读到 CQkJCQ==。
+    final DateTime pinned = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000) * 1000);
+    await f.setLastModified(pinned);
 
     final r1 = DictionaryFontCss.build(
       <Map<String, dynamic>>[_e('Cached', path: f.path)],
@@ -161,10 +170,10 @@ void main() {
     );
     expect(r1.fontFaces, contains('AAECAw=='));
 
-    // 同 size 覆写不同内容，再把 mtime 恢复原值：缓存键 (mtimeUs,size) 不变。
+    // 同 size 覆写不同内容，再把 mtime 恢复到同一整秒：缓存键 (mtimeUs,size) 不变。
     // 若缓存被删（每次重读盘），这里必然读到新字节 CQkJCQ==。
     await f.writeAsBytes(<int>[0x09, 0x09, 0x09, 0x09]); // base64 CQkJCQ==
-    await f.setLastModified(mtime);
+    await f.setLastModified(pinned);
 
     final r2 = DictionaryFontCss.build(
       <Map<String, dynamic>>[_e('Cached', path: f.path)],
