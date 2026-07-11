@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-735 防回归守卫：浏览器扩展查词弹窗的主题变量必须与 app 内弹窗注入的**同一套** CSS
+/// BUG-736 防回归守卫：浏览器扩展查词弹窗的主题变量必须与 app 内弹窗注入的**同一套** CSS
 /// 变量对齐。
 ///
 /// 根因：扩展弹窗不吃 Flutter 直接注入，而是靠查词响应 `theme` 字段
@@ -48,7 +48,7 @@ void main() {
         .toSet();
   }
 
-  test('server theme map ships every var the in-app popup injects (BUG-735)',
+  test('server theme map ships every var the in-app popup injects (BUG-736)',
       () {
     final Set<String> inApp = inAppInjectedVars();
     final Set<String> server = serverThemeVars();
@@ -59,12 +59,12 @@ void main() {
       missing,
       isEmpty,
       reason: 'browserExtensionThemeColors() 漏发了 in-app 弹窗注入的主题变量 '
-          '$missing —— 扩展弹窗会在这些变量上退化成 CSS 兜底值，和 app 不一致（BUG-735）。'
+          '$missing —— 扩展弹窗会在这些变量上退化成 CSS 兜底值，和 app 不一致（BUG-736）。'
           '在 app_model.dart 的 map 里补上同源的值。',
     );
   });
 
-  test('the four BUG-735 vars are explicitly present (regression pin)', () {
+  test('the four BUG-736 vars are explicitly present (regression pin)', () {
     final Set<String> server = serverThemeVars();
     for (final String v in const <String>[
       '--hoshi-primary-highlight',
@@ -73,7 +73,7 @@ void main() {
       '--hibiki-card-bg-rgb',
     ]) {
       expect(server.contains(v), isTrue,
-          reason: 'BUG-735 修复不得回退：server theme map 必须含 $v');
+          reason: 'BUG-736 修复不得回退：server theme map 必须含 $v');
     }
   });
 }

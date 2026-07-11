@@ -1,4 +1,4 @@
-## BUG-735 · 浏览器扩展查词弹窗主题与 app 不一致(漏发4个CSS变量)
+## BUG-736 · 浏览器扩展查词弹窗主题与 app 不一致(漏发4个CSS变量)
 - **报告**：2026-07-11（用户：查词弹窗在浏览器里和 app 内不一样）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/models/app_model.dart:2288`（`browserExtensionThemeColors()` 返回的 theme map）。
 - **[x] ① 已修复** — `app_model.dart` `browserExtensionThemeColors()` 补发 4 个变量（提交见备注）。

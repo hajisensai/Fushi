@@ -2278,7 +2278,7 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
-    // BUG-735：以下两个 helper 与 in-app 弹窗注入器（popup_settings_injection /
+    // BUG-736：以下两个 helper 与 in-app 弹窗注入器（popup_settings_injection /
     // dictionary_popup_webview）同款，用于补齐扩展此前漏发、退化成灰高亮/白字/直角的
     // 变量。rgba035：查到词高亮色（primary @0.35 alpha）；triplet：卡片底色 RGB 三元组。
     String rgba035(Color c) => 'rgba(${(c.r * 255.0).round().clamp(0, 255)}, '
@@ -2302,10 +2302,10 @@ class AppModel with ChangeNotifier {
       // data-theme 块的 #000/#fff 或宿主页继承（主题分裂：米卡 + 黑底 + 灰字）。
       '--text-color': rgb(s.onSurface),
       '--background-color': rgb(bgColor),
-      // BUG-735：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
+      // BUG-736：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
       // 内的主题主色高亮不一致（这是「扩展弹窗和 app 不一样」最扎眼的一处）。
       '--hoshi-primary-highlight': rgba035(s.primary),
-      // BUG-735：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
+      // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
       // 漏发时回落到纯白 255,255,255。
       '--hibiki-card-bg-rgb': triplet(bgColor),
       // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
@@ -2318,9 +2318,9 @@ class AppModel with ChangeNotifier {
       '--md-on-surface-variant': rgb(s.onSurfaceVariant),
       '--md-outline-variant': rgb(s.outlineVariant),
       '--md-primary': rgb(s.primary),
-      // BUG-735：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
+      // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
       '--md-on-primary': rgb(s.onPrimary),
-      // BUG-735：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
+      // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （HibikiRadii.cardValue）不一致。与两个 in-app 注入器逐字节同源。
       '--hibiki-radius-card': '${HibikiRadii.cardValue.toInt()}px',
       '--hibiki-popup-max-width': '${popupMaxWidth.round()}px',
