@@ -19,7 +19,15 @@
   - **`collection_grouping.dart` 延到 Phase 4**：其接口取决于 Phase 4 UI 消费方，提前按猜测建抽象是 YAGNI 反模式。`collection_continue.dart` 已实现（契约明确）。
   - **对抗审查（4 镜头）修掉 9 处迁移缺陷**：①completedAt 不照抄每集（避免未看集标完成+完成数 N 倍膨胀）②created_at 秒→毫秒（drift DateTime 默认秒）③favorite 改写去掉 source!='video' 假阴性 ④拆集先于系列转换（playlist-in-series 提顶层，非孤儿）+ 空系列不建空合集 ⑤legacy playlist 当前集续播点从 parent.last_position_ms 兜底 ⑥cover_path 第 0 集承接 ⑦JSON 字段软转防砖 ⑧favorite 改写并入拆集同一事务（原子性）⑨迁移测试补真越界/负数/无 source 收藏/legacy 兜底覆盖。
   - **迁移 DAO 契约微调**：`deleteMediaCollection` / `removeFromCollection` / `removeEntryFromAllCollections` 显式删成员不依赖 FK cascade（测试 FK OFF 与生产 FK ON 行为一致）。`splitPlaylistVideoBooksV38` 顶部 `_columnExists('video_books','playlist_json')` 守卫（极简测试种子缺列不崩）。
-- **Phase 2–6 未开始**：开工前各自用 writing-plans 展开子计划（见下）。
+- **Phase 2（导入流）✅ 已实现**（commit `f3a302830`，PR #27）。全量 `flutter analyze`（lib+test）clean、`test/media/video`+`test/media/source` 1508 绿。
+  - `VideoBookRepository.importSplitPlaylist`：导入拆集单一真相源，与 v38 迁移落库形状字节对齐（每集独立行 + playlist 合集 + 首集承接封面 + 整批一事务）。对话框（m3u8 手动/拖入、文件夹扫描）+ 来源扫描器都改走它。
+  - `deleteVideoBook` 顺带 `removeEntryFromAllCollections('video', uid)`（删集清合集引用、移空自删）。
+  - 扫描器判重：`playlistBookUid` 单行存在 → 同名 playlist 合集存在（basename 派生，同旧碰撞语义，且不随 manifest 集路径编辑而变 → 重扫幂等）；源码守卫同步更新。
+  - **已知中间态（feature 分支可接受）**：导入的 playlist 合集在库页**尚不显示**（home_video_page `_loadVideoOrder` 仍读旧 `getAllSeries`，未读 `getAllMediaCollections`），多集导入后暂时表现为 N 张散集卡 + 一个隐藏合集。Phase 4 接库页读合集 + 折叠后恢复。
+- **Phase 3（播放器）/ 4（库UI+合集详情页）/ 5（远端+同步备份）/ 6（清理+守卫）：未实现，spec 已就绪**。
+  - 已完成 Phase 3/2 的实现就绪 recon spec（当前代码 file:line + 改造点），Phase 3 见本会话调查（player `_init`/`_episodes`/`_persistPosition`/`_loadEpisode`/`episode.part`/`video_episode_panel`/`collections_page` resolve/`lookup_favorite`+`lookup_mining`/cue 路径全部锚点）。
+  - **为何暂缓**：Phase 3 改的是 ~2900 行 WebView2/media_kit 播放器 god-file 的每集模型（进度/字幕/音轨/延迟/cue/收藏/制卡键全部从 playlistJson 转合集成员行），Phase 4 加新详情页 + 库网格折叠；二者**强耦合**（Phase 4 折叠前无人给 player 传 playlistCollectionId，单独任一phase不可端到端验证），且都属项目铁律「播放/布局改动声明修好前必须真机复测留证据」。应作为**带真机验证的专门 session**逐 phase 落地（player 换集/续播/连播/剧集面板/收藏跳转 + 库合集卡/详情页 Jellyfin 展示），不宜一次性盲写堆叠未验证的 god-file 改动。
+  - Phase 3 关键设计（供续做）：player 新增可选 `playlistCollectionId`；有则 `getCollectionItems` 取成员 uid → 逐个 `getByBookUid` 得 `List<VideoBookRow> _episodeRows`（每集独立行，各自 subtitle/audio/delay/cover/lastPositionMs）；`_currentEpisode`=`widget.bookUid` 在成员中的下标；换集载成员行、续播读该行 lastPositionMs、cue 走单视频 DB 路径（loadCues/saveCues by 集 uid）、收藏/制卡 bookKey=集 uid + sectionIndex=0；`resolveVideoFavoriteAudioClip`/`resolveVideoFavoriteOpenTarget` 简化（集 uid 直指文件，episodeIndex 维度消失）。
 
 ## 0. 已拍板的用户决策（2026-07-11）
 
