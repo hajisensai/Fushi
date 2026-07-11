@@ -343,6 +343,9 @@ class ClipboardPanelController {
       handler: handler,
       message: message,
       resolveBridge: _channel.resolveBridge,
+      // 剪贴板全文即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发 sentence）。
+      // 与句子横幅同一 `_currentSentence`，落实 spec §2 的「兼作制卡 sentence」。
+      sentenceContext: _currentSentence,
     )) {
       return;
     }

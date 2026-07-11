@@ -735,6 +735,9 @@ class GlobalLookupController {
       handler: handler,
       message: message,
       resolveBridge: GlobalLookupChannel.resolveBridge,
+      // UIA 捕获的前台句即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发
+      // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
+      sentenceContext: _currentSentence,
     )) {
       return;
     }
