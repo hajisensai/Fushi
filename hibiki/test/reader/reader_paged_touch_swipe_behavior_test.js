@@ -143,7 +143,15 @@ function makeHarness(continuousMode) {
     .replace(/\$vnClickAdvance/g, 'false')
     .replace(/\$hoverAutoLookup/g, 'false')
     .replace(/\$swipeDistThreshold/g, '72')
-    .replace(/\$swipeFastDistThreshold/g, '36');
+    .replace(/\$swipeFastDistThreshold/g, '36')
+    // BUG-712 ①: the tap-gate mirror line
+    // `window.__hoshiTapGate = { chrome: $_showChrome, lookup:
+    // ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };` is emitted
+    // in the setup slice; stub both Dart interpolations to a valid bool so the
+    // raw JS parses. The gate governs tap-to-lookup, orthogonal to the paged
+    // swipe assertion, so a neutral `true` is fine.
+    .replace(/\$\{ReaderHibikiSource\.instance\.highlightOnTap\}/g, 'true')
+    .replace(/\$_showChrome/g, 'true');
   prepared = '(function(){\n' + prepared + '\n})();';
 
   vm.createContext(sandbox);

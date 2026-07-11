@@ -280,15 +280,32 @@ void main() {
           read('lib/src/pages/implementations/dictionary_popup_webview.dart');
     });
 
-    test('both call sites go through the shared buildPopupSettingsJs', () {
+    test('both call sites go through the shared settings builders', () {
       // app-outside (buildFrameSettingsJs) and in-app (_pushResults) must both
-      // delegate to the one builder, so the settings body can never drift again.
+      // delegate to the shared builders in popup_settings_injection.dart, so the
+      // settings body can never drift again. BUG-712 ③: the composed
+      // buildPopupSettingsJs stays the single source of truth (byte-identical
+      // output) and the app-outside frame still calls it; the in-app hot-slot
+      // path splits it into the static half (buildPopupStaticSettingsJs) + the
+      // per-lookup entries half (buildPopupEntriesJs) to dedup the persistent
+      // WebView's static payload — the SAME shared builders buildPopupSettingsJs
+      // composes, so single-source-of-truth still holds.
       expect(inject.contains('String buildPopupSettingsJs('), isTrue,
           reason: 'the single source of truth builder must exist');
+      expect(
+          inject.contains('PopupStaticSettingsJs buildPopupStaticSettingsJs('),
+          isTrue,
+          reason: 'the shared static-settings builder must exist');
+      expect(inject.contains('String buildPopupEntriesJs('), isTrue,
+          reason: 'the shared per-lookup entries builder must exist');
       expect(render.contains('buildPopupSettingsJs('), isTrue,
-          reason: 'the app-outside frame must call the shared builder');
-      expect(inApp.contains('buildPopupSettingsJs('), isTrue,
-          reason: 'the in-app popup must call the shared builder');
+          reason:
+              'the app-outside frame must call the shared composed builder');
+      expect(inApp.contains('buildPopupStaticSettingsJs('), isTrue,
+          reason:
+              'the in-app popup must call the shared static-settings builder');
+      expect(inApp.contains('buildPopupEntriesJs('), isTrue,
+          reason: 'the in-app popup must call the shared entries builder');
     });
 
     test('D1 — the dictionary font is injected by the shared builder', () {
