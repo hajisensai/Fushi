@@ -94,6 +94,39 @@ void main() {
         reason: '视频合集行成员卡必须带 playlistCollectionId 直接换集');
   });
 
+  test('UI v2 Phase E：整理排序页零 series 写路径（合集是唯一分组真相源）', () {
+    // 用户拍板砍掉重做：分组/合并/移出/组位置持久化全走 MediaCollections。
+    final File reorderPage =
+        File('lib/src/pages/implementations/shelf_reorder_page.dart');
+    expect(reorderPage.existsSync(), isTrue);
+    final String reorderSrc = reorderPage.readAsStringSync();
+    for (final String banned in <String>[
+      'seriesId',
+      'seriesCardId',
+      'setSeriesForEntry',
+      'splitShelfReorderOrders',
+    ]) {
+      expect(reorderSrc.contains(banned), isFalse,
+          reason: '整理页不得回退 series 模型（含 $banned）');
+    }
+    expect(reorderSrc.contains('mergeReorderItemsIntoCollection'), isTrue,
+        reason: '拖合并共享执行器必须走合集 DB 原语');
+    expect(reorderSrc.contains('removeFromCollection'), isTrue,
+        reason: '移出必须走 removeFromCollection（空合集自动清理）');
+    // 两页整理接线：合集整体位置写 MediaCollections.sortOrder；书架不再拉死掉的
+    // Series 表喂整理页。
+    expect(historySrc.contains('updateMediaCollectionSortOrder'), isTrue,
+        reason: '书架整理落盘必须写合集 sortOrder');
+    expect(homeSrc.contains('updateMediaCollectionSortOrder'), isTrue,
+        reason: '视频整理落盘必须写合集 sortOrder');
+    expect(historySrc.contains('updateSeriesSortOrder'), isFalse,
+        reason: '书架不得再写死掉的 Series.sortOrder');
+    expect(historySrc.contains('getAllSeries'), isFalse,
+        reason: '书架不得再拉 Series 表喂整理页');
+    expect(historySrc.contains('groupAndSortShelfEntries'), isFalse,
+        reason: '整理页分组必须与主网格同走 groupByCollections');
+  });
+
   test('每集独立视频各自有封面：后台补齐 + playlist 详情页渲染每集缩略图', () {
     // 拆集/迁移拆出的非首集 cover_path 为空 → home_video_page 后台逐集抽帧补齐。
     expect(homeSrc.contains('_maybeBackfillCovers'), isTrue,

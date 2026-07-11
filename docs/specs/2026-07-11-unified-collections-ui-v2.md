@@ -120,4 +120,34 @@
 
 ## 执行状态
 
-（随实现更新）
+| 阶段 | 状态 | 提交 |
+|---|---|---|
+| A 页头按钮宽窗展开 | ✅ 落地（HibikiIconButton.label；两页接线；4 widget 测试） | `6854d5e92` |
+| B 继续观看 hero + 概览统计 | ✅ 落地（纯函数+7 单测；watch-stats 推导上次观看；i18n+8） | `f0b87cff7` |
+| C 合集独占一行横向切集 | ✅ 落地（CollectionShelfRow；两页交错 slivers；守卫+1；TODO-902 守卫断言更新） | `70159c612` |
+| D 视频卡观看进度文字行 | ✅ 落地（cell 200→218） | `eebd1010e` |
+| E 整理排序页砍掉重做 | ✅ 落地（见下） | 本批 |
+
+### Phase E 实录（用户拍板「编辑排序很烂，砍掉重做」）
+
+根因：旧页分组/移出/组位置持久化全挂死 Series 模型（`_seriesById` v38 后恒空）——合集成员在整理页显示为无框散卡、旧合集成员拖并重复建组、合集整体位置永远写不进 `MediaCollections.sortOrder`、移出按钮永不出现。
+
+- `shelf_reorder_page.dart` 重写：`seriesId`→`groupId`（=collectionId）、`SeriesFrameData`→`GroupFrameData`；删除零消费者死模式（折叠系列卡 enter / 成员子页框 / `splitShelfReorderOrders` / `seriesCardId`）；新共享执行器 `mergeReorderItemsIntoCollection`（目标有合集并入 / 散卡建新合集 / 跨合集移动）+ `removeReorderItemFromCollection`（`removeFromCollection` 空合集自动删）。
+- 书架接线：`_buildSortItems` 改 `groupByCollections`（与主区同真相源）；落盘 `unfoldedShelfReorderOrders.groupOrders` → `updateMediaCollectionSortOrder`；移出走合集确认框（i18n+5 key）；`_loadShelfOrder` 不再拉 Series 表。
+- 视频接线：`_openVideoSort` 同款分组/框/合并/移出/落盘（此前是纯平铺无合并无移出）。
+- 死代码删除：`SeriesDetailPage` 整页（**已无任何路由推入**）+ `removeEntryFromSeries`/`showRemoveFromSeriesConfirm` + `groupAndSortShelfEntries`/`ShelfGroup`/`ShelfOrderingItem`（shelf_ordering.dart）；命名对话框迁 `collection_name_dialog.dart`（`showCollectionNameDialog`）。
+- 守卫：架构守卫+1 不变量（整理页零 series 写路径、两页落盘必写合集 sortOrder、书架不再拉 Series 表）。
+- **保留**：旧 Series DAO/表（备份兼容与迁移路径仍需读）；`SeriesShelfCard`/`SeriesFolderCover`/`SeriesReorderFrame` 视觉组件（合集详情预览/整理框仍用）。
+- 真机边界：拖拽合并/移出手势手感需真机复测（离屏只锁写穿正确性与编译/widget 行为）。
+
+### 对抗审查结论（2026-07-11，4 镜头审查；验证代理部分被周配额限流，主代理逐条亲核）
+
+已修（各配守卫/测试）：
+1. **宽窗概览条崩溃**（真缺陷）：`Row(stretch)` 在 SliverToBoxAdapter 无界高度下抛 infinite height → `IntrinsicHeight` 收界 + 崩溃回归测试 `home_video_overview_wide_test.dart`（宽/窄两分支）。
+2. **组内序不写穿 `MediaCollectionItems.sortIndex`**（真缺陷）：整理后库页行序与播放器剧集面板/合集详情页分叉 → 新纯函数 `collectionMemberOrders` + 两页 persist 补 `reorderCollectionItems`；单测 `collection_member_orders_test.dart`。
+3. **播放器返回不刷新**：`_open` 改 await push 后 `_refresh()`（hero/统计/进度行/封面补齐同吃）。
+4. **合并后旧框残留**：被拖卡就地继承目标卡分组框（色/名）；新建合集仍待退出重建（成员数角标可能短暂陈旧，会话内视觉损耗可接受）。
+
+已知限制（如实记录，不掩盖）：
+- **watch-stats 按 title 键控**：同名不同视频「上次观看」会互相串（表本身无 uid 列，播放器写入即按 title）。根治需 schema v39 给 `VideoWatchStatistics` 加 uid 列 + 迁移，超出本轮 UI 范围；hero/进度行读到的时间戳最坏是同名视频中最近的一次。
+- git staging 状态那条被两名怀疑者驳倒（提交按文件显式 stage，含新文件）。

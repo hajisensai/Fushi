@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/pages/implementations/series_detail_page.dart'
-    show showSeriesNameDialog;
+import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
+    show showCollectionNameDialog;
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -57,7 +57,7 @@ class _MediaCollectionGridDetailPageState
   }
 
   Future<void> _rename() async {
-    final String? newName = await showSeriesNameDialog(
+    final String? newName = await showCollectionNameDialog(
       context: context,
       title: t.rename_collection,
       initialName: _name,

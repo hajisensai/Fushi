@@ -2262,5 +2262,10 @@
   "video_stat_recent_imports": "New in 7 days",
   "video_watched_up_to": "Watched to $time",
   "video_last_watched": "Last watched $date",
-  "collection_view_all": "View all"
+  "collection_view_all": "View all",
+  "collection_merged_hint": "Merged into collection",
+  "collection_remove_member": "Remove from collection",
+  "collection_remove_member_confirm": "Remove this item from the collection? The item itself is kept.",
+  "collection_member_removed": "Removed from collection",
+  "collection_default_name": "New collection"
 }

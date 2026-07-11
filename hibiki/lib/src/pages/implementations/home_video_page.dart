@@ -48,7 +48,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
-import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
@@ -646,7 +646,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       for (final VideoBookRow book in _visibleVideos)
         if (selectedUids.contains(book.bookUid)) _buildCover(book),
     ].take(4).toList();
-    final String? name = await showSeriesNameDialog(
+    final String? name = await showCollectionNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,
@@ -669,18 +669,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<void> _openVideoSort() async {
     if (_selectionMode) _exitSelectionMode();
     final List<VideoBookRow> books = _visibleVideos;
-    if (books.length < 2) {
+    // UI v2 Phase E：整理页与主区同源分组（groupByCollections）——合集**内联展开成员**
+    // 连续相邻并套同色分组框，首成员标合集名；支持拖合并（建新合集/并入/跨合集移动）
+    // 与成员移出，与书架整理页同一套语义。
+    final List<ShelfReorderItem> items = _buildVideoSortItems(books);
+    final bool hasGroupMember =
+        items.any((ShelfReorderItem it) => it.groupId != null);
+    if (items.length < 2 && !hasGroupMember) {
       HibikiToast.show(msg: t.shelf_sort_saved);
       return;
     }
-    final List<ShelfReorderItem> items = <ShelfReorderItem>[
-      for (final VideoBookRow book in books)
-        ShelfReorderItem(
-          mediaType: 'video',
-          entryKey: book.bookUid,
-          card: _buildCard(book),
-        ),
-    ];
     await Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
@@ -688,27 +686,150 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           title: t.shelf_edit_order,
           initialItems: items,
           cellExtent: 280,
-          mainAxisExtent: 200,
+          mainAxisExtent: 218,
           feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
           onPersist: _persistVideoOrder,
+          onMerge: _mergeVideoEntries,
+          // 视频卡底部有标题 + 观看进度两行文字（约一个 footer 高），把「移出合集」
+          // 按钮抬到封面区。
+          overlayCornerBottomInset: 40,
+          onRemove: (ShelfReorderItem item) =>
+              _removeVideoFromCollectionInSort(item.groupId!, item),
         ),
       ),
     );
+    // 整理页可能拖合并 / 移出写过合集归属，回库页后重载分组渲染。
+    _refresh();
+  }
+
+  /// 与主区 [_groupVideos] 同源的整理条目构造：散视频单卡无框；合集成员内联展开、
+  /// 套同色分组框（颜色按 collectionId 稳定分配）、首成员叠合集名 header。
+  List<ShelfReorderItem> _buildVideoSortItems(List<VideoBookRow> books) {
+    final List<CollectionGroup<VideoBookRow>> groups = _groupVideos(books);
+    final List<ShelfReorderItem> out = <ShelfReorderItem>[];
+    for (final CollectionGroup<VideoBookRow> group in groups) {
+      final MediaCollectionRow? collection = group.collection;
+      if (collection == null) {
+        final VideoBookRow book = group.coverItem.payload;
+        out.add(ShelfReorderItem(
+          mediaType: 'video',
+          entryKey: book.bookUid,
+          card: _buildCard(book),
+        ));
+        continue;
+      }
+      final Color frameColor = _videoGroupFrameColor(collection.id);
+      final int memberCount = group.items.length;
+      bool first = true;
+      for (final CollectionOrderingItem<VideoBookRow> it in group.items) {
+        final bool isHeader = first;
+        first = false;
+        out.add(ShelfReorderItem(
+          mediaType: 'video',
+          entryKey: it.payload.bookUid,
+          groupId: collection.id,
+          card: _buildCard(it.payload),
+          groupFrame: GroupFrameData(
+            color: frameColor,
+            showHeader: isHeader,
+            groupName: collection.name,
+            memberCount: memberCount,
+          ),
+        ));
+      }
+    }
+    return out;
+  }
+
+  /// 由合集 id 稳定映射分组框颜色（与书架整理页同调色板）。
+  Color _videoGroupFrameColor(int collectionId) {
+    const List<Color> palette = <Color>[
+      Color(0xFF4F8DFD),
+      Color(0xFF2FB56B),
+      Color(0xFFF08A24),
+      Color(0xFFAF52DE),
+      Color(0xFF20B2C4),
+      Color(0xFFE45C8A),
+      Color(0xFF6C6BE0),
+      Color(0xFFB58A21),
+    ];
+    return palette[collectionId.abs() % palette.length];
+  }
+
+  /// 拖拽合并（共享执行器）：目标有合集并入 / 散视频建新合集 / 跨合集移动。
+  Future<int?> _mergeVideoEntries(
+      ShelfReorderItem dragged, ShelfReorderItem target) async {
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final int collectionId = await mergeReorderItemsIntoCollection(
+      database: db,
+      defaultName: t.collection_default_name,
+      dragged: dragged,
+      target: target,
+    );
+    await _loadVideoOrder();
+    return collectionId;
+  }
+
+  /// 整理页移出合集：确认框 → removeFromCollection（空合集自动删）→ 重载归属。
+  Future<ShelfRemoveResult> _removeVideoFromCollectionInSort(
+      int collectionId, ShelfReorderItem item) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.collection_remove_member),
+        content: Text(t.collection_remove_member_confirm),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.collection_remove_member),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      return const ShelfRemoveResult(removed: false, groupEmptied: false);
+    }
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final bool emptied = await removeReorderItemFromCollection(
+      database: db,
+      collectionId: collectionId,
+      item: item,
+    );
+    await _loadVideoOrder();
+    if (mounted) HibikiToast.show(msg: t.collection_member_removed);
+    return ShelfRemoveResult(removed: true, groupEmptied: emptied);
   }
 
   /// 把重排页给回的最终顺序按下标批量回写 ShelfEntries.sortOrder（单事务），
   /// 重载排序映射后刷新网格。
   Future<void> _persistVideoOrder(List<ShelfReorderItem> ordered) async {
-    final List<({String mediaType, String entryKey, int sortOrder})> orders =
-        <({String mediaType, String entryKey, int sortOrder})>[
-      for (int i = 0; i < ordered.length; i++)
-        (
-          mediaType: ordered[i].mediaType,
-          entryKey: ordered[i].entryKey,
-          sortOrder: i,
-        ),
-    ];
-    await ref.read(appProvider).database.batchUpsertShelfOrder(orders);
+    // UI v2 Phase E：与书架整理页同款拆分——条目下标 → ShelfEntries.sortOrder；每个
+    // 合集的 MediaCollections.sortOrder 落其首成员下标（回主区合集行落在首成员位置）。
+    final ({
+      List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
+      List<({int groupId, int sortOrder})> groupOrders,
+    }) split = unfoldedShelfReorderOrders(ordered);
+    final HibikiDatabase db = ref.read(appProvider).database;
+    for (final ({int groupId, int sortOrder}) go in split.groupOrders) {
+      await db.updateMediaCollectionSortOrder(go.groupId, go.sortOrder);
+    }
+    if (split.entryOrders.isNotEmpty) {
+      await db.batchUpsertShelfOrder(split.entryOrders);
+    }
+    // 组内成员序同时写穿 MediaCollectionItems.sortIndex：库页行序（ShelfEntries）
+    // 与播放器剧集面板/连播、合集详情页（getCollectionItems 按 sortIndex）必须
+    // 同源，否则整理后两处顺序分叉（对抗审查确认）。
+    for (final MapEntry<int, List<({String mediaType, String entryKey})>> e
+        in collectionMemberOrders(ordered).entries) {
+      await db.reorderCollectionItems(e.key, e.value);
+    }
     await _loadVideoOrder();
   }
 
@@ -726,7 +847,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<void> _open(VideoBookRow book, {int? playlistCollectionId}) async {
     await _showAnime4kFirstUsePromptIfNeeded();
     if (!mounted) return;
-    Navigator.push(
+    await Navigator.push(
       context,
       adaptivePageRoute<void>(
         builder: (_) => VideoHibikiPage.neutralized(
@@ -736,6 +857,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ),
       ),
     );
+    // 从播放器返回后刷新：继续观看 hero / 概览统计 / 卡片观看进度行都依赖
+    // lastPositionMs 与 watch-stats，播完不刷会展示陈旧数据（对抗审查确认）。
+    if (mounted) _refresh();
   }
 
   Future<void> _openRemote(RemoteVideoInfo video) async {
@@ -1324,13 +1448,19 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           if (heroCard == null) return stats;
           final bool wide = constraints.maxWidth >= 720;
           if (wide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(flex: 3, child: heroCard),
-                SizedBox(width: tokens.spacing.gap + 4),
-                Expanded(flex: 2, child: stats),
-              ],
+            // IntrinsicHeight 必须有：本区在 SliverToBoxAdapter 下主轴（竖向）无界，
+            // 裸 Row(stretch) 会把无界高度强加给 Expanded 子项 → BoxConstraints
+            // forces an infinite height 首帧崩溃（对抗审查确认）。IntrinsicHeight
+            // 先按子项固有高度收界，再 stretch 等高。
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(flex: 3, child: heroCard),
+                  SizedBox(width: tokens.spacing.gap + 4),
+                  Expanded(flex: 2, child: stats),
+                ],
+              ),
             );
           }
           return Column(

@@ -2262,5 +2262,10 @@
   "video_stat_recent_imports": "近7天导入",
   "video_watched_up_to": "已看至 $time",
   "video_last_watched": "上次观看 $date",
-  "collection_view_all": "查看全部"
+  "collection_view_all": "查看全部",
+  "collection_merged_hint": "已合并进合集",
+  "collection_remove_member": "移出合集",
+  "collection_remove_member_confirm": "将该条目移出合集？条目本身保留。",
+  "collection_member_removed": "已移出合集",
+  "collection_default_name": "新合集"
 }

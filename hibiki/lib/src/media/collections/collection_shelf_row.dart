@@ -13,8 +13,8 @@ import 'package:hibiki/utils.dart';
 /// 左右横移可见相邻集；[initialIndex] 把「继续看」成员滚进初始视野。
 ///
 /// 焦点：行内成员卡各自注册焦点 id，方向键/手柄左右移动由全局几何焦点系统处理
-/// （被遮挡的卡在获焦时经 `Scrollable.ensureVisible` 自动横滚入视野——与纵向
-/// 网格同级别的既有支持，无自造 traversal）。
+/// （被遮挡的卡在获焦时经 `HibikiFocusScroll.ensureVisible` 自动横滚入视野——
+/// 与纵向网格同级别的既有支持，无自造 traversal）。
 class CollectionShelfRow extends StatefulWidget {
   const CollectionShelfRow({
     required this.title,
