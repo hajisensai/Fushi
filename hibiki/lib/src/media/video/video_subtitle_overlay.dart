@@ -633,10 +633,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (mvRaw == null || mvRaw <= 0) {
       mv = -1;
     } else if (vertical == SubtitleVAlign.bottom) {
-      // 底部锚点：只有缩放后真的超出用户基线（不会被 max 夹回）才算「不同位置」；否则
-      // 折进基线桶与同基线的其它底部 cue 同组堆叠，消除双语底部对白重叠（本 BUG）。
-      final double? smv = _scaledMarginV(markup);
-      mv = (smv == null || smv <= widget.bottomPadding) ? -1 : smv.round();
+      // 底部锚点折叠判据用**原始 MarginV**（PlayRes 像素、显示无关），不用缩放值：缩放值
+      // `_scaledMarginV` 随显示区高变化，大屏（显示区高 >> PlayResY）时第二语言对白的
+      // MarginV 缩放后会超出固定的 bottomPadding（如 CH MarginV=30 在 2160 高显示区 → 90 >
+      // 75），被错判成「独立位置」而脱离基线桶——它与仍折在基线的第一语言各自定位却落在
+      // 相邻高度，大字号盒相交、重现 BUG-709 的双语底部塌陷重叠（仅大屏触发）。原始值判据
+      // 在任何显示尺寸都一致：MarginV <= 用户基线的底部对白恒折进基线桶竖排堆叠（libass
+      // 碰撞下推同效果），只有真正的高位标题（大 MarginV，如 400）才独立占 authored 高度
+      // （TODO-1341 不回归）。以原始值入键（而非缩放 round），组身份也不随显示尺寸漂移，
+      // 跨帧槽位状态（[_syncGroupSlots]）不因窗口缩放churn。
+      mv = mvRaw <= widget.bottomPadding ? -1 : mvRaw.round();
     } else {
       mv = mvRaw.round();
     }

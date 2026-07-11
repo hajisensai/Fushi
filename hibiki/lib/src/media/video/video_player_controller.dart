@@ -1793,7 +1793,11 @@ class VideoPlayerController extends ChangeNotifier
     final List<int> nextSecondary = _secondaryCues.isEmpty
         ? const <int>[]
         : JsonAlignmentParser.findActiveCueIndices(
-            cues: _secondaryCues, positionMs: effectiveMs);
+            cues: _secondaryCues,
+            positionMs: effectiveMs,
+            // 渲染集半开区间：相邻对白边界不产生「幻影重叠」→ 堆叠不弹跳（见
+            // [JsonAlignmentParser.findActiveCueIndices] 的 endInclusive 说明）。
+            endInclusive: false);
     bool changed = !_intListEquals(nextSecondary, _activeSecondaryCueIndices);
     if (changed) _activeSecondaryCueIndices = nextSecondary;
 
@@ -1868,6 +1872,10 @@ class VideoPlayerController extends ChangeNotifier
     final List<int> byTime = JsonAlignmentParser.findActiveCueIndices(
       cues: _cues,
       positionMs: effectiveMs,
+      // 渲染集半开区间：相邻对白边界（前条 endMs==后条 startMs）不再同时活跃，堆叠槽位
+      // 不被幻影重叠污染 → 不弹跳。末条无后继时靠下方 primaryIdx（findCueIndex 闭区间）
+      // 并入兜底，不会提前 1 tick 消失（见 findActiveCueIndices 的 endInclusive 说明）。
+      endInclusive: false,
     );
     if (primaryIdx < 0 || byTime.contains(primaryIdx)) return byTime;
     final List<int> merged = <int>[...byTime, primaryIdx]..sort();
