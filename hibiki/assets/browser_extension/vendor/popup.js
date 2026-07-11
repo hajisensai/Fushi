@@ -2588,13 +2588,37 @@ function buildEntryElement(entry, idx) {
 
 function postProcessRuby(container) {
     container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
-        ruby.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                const span = document.createElement('span');
-                span.textContent = node.textContent;
-                node.replaceWith(span);
+        // Wrap each base text node in a <span class="ruby-unit"> and pull that
+        // base's OWN <rt> into the span. popup.css positions the rt absolutely
+        // (left:0/right:0) against its nearest positioned ancestor; making the
+        // per-base unit that ancestor keeps each rt sized/centred over its own
+        // kanji. Without this, a multi-kanji word (one <ruby> with several
+        // base+<rt> pairs, e.g. 将<rt>しょう</rt>棋<rt>ぎ</rt>) had every rt
+        // stretch to the full <ruby> width and superimpose (BUG-722). Keeping
+        // the base text as a live text node inside a <span> preserves ruby
+        // lookup selection (BUG-110/123/125/129 must not regress).
+        const children = Array.from(ruby.childNodes);
+        for (const node of children) {
+            if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) {
+                continue;
             }
-        });
+            const unit = document.createElement('span');
+            unit.className = 'ruby-unit';
+            unit.textContent = node.textContent;
+            node.replaceWith(unit);
+            // Move the immediately-following <rt> into the unit, stepping over
+            // <rp> fallback parens and whitespace text nodes that sit between a
+            // base and its reading.
+            let sib = unit.nextSibling;
+            while (sib &&
+                   ((sib.nodeType === Node.TEXT_NODE && !sib.textContent.trim()) ||
+                    (sib.nodeType === Node.ELEMENT_NODE && sib.tagName === 'RP'))) {
+                sib = sib.nextSibling;
+            }
+            if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.tagName === 'RT') {
+                unit.appendChild(sib);
+            }
+        }
     });
 }
 
