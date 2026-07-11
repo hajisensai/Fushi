@@ -87,6 +87,14 @@ class BackupMergeEngine {
   /// `favorite_sentence_pref_key_guard_test.dart`.
   static const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
+  /// Content-config preference keys carrying the local-audio registry (their
+  /// referenced `.db` files travel in the backup), merged by
+  /// [_mergeAudioSourcePrefs] instead of being dropped as device settings.
+  static const List<String> _audioSourcePrefKeys = <String>[
+    'local_audio_dbs',
+    'audio_source_configs',
+  ];
+
   /// Runs the whole merge inside a single transaction. The backup DB must
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   Future<void> merge() async {
@@ -114,6 +122,7 @@ class BackupMergeEngine {
       await _insertMissing('anki_mappings', 'label');
       await _mergeBookmarks();
       await _mergeAudiobookPositionPrefs();
+      await _mergeAudioSourcePrefs();
     });
   }
 
@@ -660,6 +669,57 @@ class BackupMergeEngine {
       "WHERE s.\"key\" LIKE 'audiobook_pos_%' "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
+  }
+
+  /// The audio-source registry prefs are CONTENT config, not device settings:
+  /// the local-audio `.db` files they reference DO travel in the backup (packed
+  /// under `localAudio/` and copied by [BackupService.mergeImportBackupFiles]),
+  /// so their config must travel too — otherwise the restored files are orphaned
+  /// and "音频来源" is silently lost on a merge (the pref-non-merge default
+  /// dropped them). Adopt the backup's value when the device has none/an empty
+  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
+  /// the key is not enough); keep the device's own list otherwise (merge never
+  /// clobbers local). The raw value is copied verbatim so its typed prefix is
+  /// preserved; [BackupService] re-homes the embedded paths onto this device's
+  /// support dir afterwards.
+  Future<void> _mergeAudioSourcePrefs() async {
+    for (final String key in _audioSourcePrefKeys) {
+      final String? src = await _readPrefValue(key, isSrc: true);
+      if (_isEmptyListPref(src)) continue; // backup carries no audio sources
+      final String? local = await _readPrefValue(key, isSrc: false);
+      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      await _db.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>[key, src],
+      );
+    }
+  }
+
+  /// Reads an arbitrary preference [key] value from the target ([isSrc] false)
+  /// or the ATTACHed src ([isSrc] true); null when the row is absent.
+  Future<String?> _readPrefValue(String key, {required bool isSrc}) async {
+    final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
+    final rows = await _db.customSelect(
+      'SELECT "value" FROM $table WHERE "key" = ?',
+      variables: <Variable<Object>>[Variable<String>(key)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.data['value'] as String?;
+  }
+
+  /// Whether a typed list-pref value is absent or an empty list. Tolerates the
+  /// typed prefix (`s:`/`j:`) by parsing from the first `[`; a value we cannot
+  /// parse as a non-empty list counts as empty (never worth clobbering with).
+  static bool _isEmptyListPref(String? raw) {
+    if (raw == null || raw.isEmpty) return true;
+    final int i = raw.indexOf('[');
+    if (i < 0) return true;
+    try {
+      final dynamic decoded = jsonDecode(raw.substring(i));
+      return decoded is! List || decoded.isEmpty;
+    } catch (_) {
+      return true;
+    }
   }
 }
 
