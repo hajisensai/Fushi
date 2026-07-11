@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 718 条。点号进各自文件。
+> 共 719 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-733](bugs/BUG-733-stats-mobile-text-clip.md) | ✅ | ✅ | 手机统计页文字被省略号裁切显示不全 |
+| [BUG-734](bugs/BUG-734-stats-mobile-text-clip.md) | ✅ | ✅ | 手机统计页文字被省略号裁切显示不全 |
+| [BUG-733](bugs/BUG-733-popup-glossary-ruby-element-base-overlap.md) | ✅ | ✅ | 词典弹窗释义正文元素基字 ruby 注音塌到基字上 |
 | [BUG-732](bugs/BUG-732-ext-page-scroll.md) | ✅ | ✅ | 扩展影响普通网页滚动速度 |
 | [BUG-731](bugs/BUG-731-backup-font-count-inflated.md) | ✅ | ✅ | 备份导出自定义字体计数虚高(2个显示7个) |
 | [BUG-730](bugs/BUG-730-clipboard-mine-sentence.md) | ✅ | ✅ | 剪贴板/全局查词制卡句子字段恒空（未接剪贴板文本） |

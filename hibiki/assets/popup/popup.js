@@ -2811,34 +2811,57 @@ function buildEntryElement(entry, idx) {
 
 function postProcessRuby(container) {
     container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
-        // Wrap each base text node in a <span class="ruby-unit"> and pull that
-        // base's OWN <rt> into the span. popup.css positions the rt absolutely
-        // (left:0/right:0) against its nearest positioned ancestor; making the
-        // per-base unit that ancestor keeps each rt sized/centred over its own
-        // kanji. Without this, a multi-kanji word (one <ruby> with several
-        // base+<rt> pairs, e.g. 将<rt>しょう</rt>棋<rt>ぎ</rt>) had every rt
-        // stretch to the full <ruby> width and superimpose (BUG-722). Keeping
-        // the base text as a live text node inside a <span> preserves ruby
-        // lookup selection (BUG-110/123/125/129 must not regress).
+        // Wrap each base — a bare text node OR an element base like <rb>/<span>
+        // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
+        // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.
+        // popup.css positions the rt absolutely (left:0/right:0/top:0) against its
+        // nearest positioned ancestor AND reserves vertical room via the unit's
+        // padding-top; making the per-base unit that ancestor keeps each rt
+        // sized/centred over — and lifted above — its own kanji.
+        //   - Multi-kanji word (one <ruby>, several base+<rt> pairs, e.g.
+        //     将<rt>しょう</rt>棋<rt>ぎ</rt>): without per-base units every rt
+        //     stretched to the full <ruby> width and superimposed (BUG-722).
+        //   - Element base (<ruby><rb>未然形</rb><rt>みぜんけい</rt></ruby>): the
+        //     old text-node-only wrap skipped the <rb>, so no .ruby-unit was made;
+        //     the rt kept position:absolute;top:0 but anchored to the bare <ruby>
+        //     (line-height:1, no padding-top reserve) and the reading collapsed
+        //     onto the base (BUG-733). Wrapping ANY base restores the reserve.
+        // Keeping the base as a live text node (bare, in place) or a live element
+        // (moved whole, not flattened) preserves ruby lookup selection
+        // (BUG-110/123/125/129 must not regress).
+        const isEl = (n, tag) =>
+            n.nodeType === Node.ELEMENT_NODE && n.tagName === tag;
+        const isBlankText = (n) =>
+            n.nodeType === Node.TEXT_NODE && !n.textContent.trim();
         const children = Array.from(ruby.childNodes);
         for (const node of children) {
-            if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) {
+            // A base is anything that is not a reading (<rt>), a fallback paren
+            // (<rp>), or inter-token whitespace.
+            if (isEl(node, 'RT') || isEl(node, 'RP') || isBlankText(node)) {
                 continue;
             }
             const unit = document.createElement('span');
             unit.className = 'ruby-unit';
-            unit.textContent = node.textContent;
-            node.replaceWith(unit);
-            // Move the immediately-following <rt> into the unit, stepping over
-            // <rp> fallback parens and whitespace text nodes that sit between a
-            // base and its reading.
+            if (node.nodeType === Node.TEXT_NODE) {
+                // Bare text base: keep the text live inside the unit.
+                unit.textContent = node.textContent;
+                node.replaceWith(unit);
+            } else {
+                // Element base (<rb>/<span>/nested structured-content): move the
+                // element itself into the unit so its inner text stays a live,
+                // selectable node while the unit becomes the positioned per-base
+                // box.
+                node.replaceWith(unit);
+                unit.appendChild(node);
+            }
+            // Move this base's own <rt> into the unit, stepping over <rp> fallback
+            // parens and whitespace text nodes that sit between a base and its
+            // reading.
             let sib = unit.nextSibling;
-            while (sib &&
-                   ((sib.nodeType === Node.TEXT_NODE && !sib.textContent.trim()) ||
-                    (sib.nodeType === Node.ELEMENT_NODE && sib.tagName === 'RP'))) {
+            while (sib && (isBlankText(sib) || isEl(sib, 'RP'))) {
                 sib = sib.nextSibling;
             }
-            if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.tagName === 'RT') {
+            if (sib && isEl(sib, 'RT')) {
                 unit.appendChild(sib);
             }
         }
