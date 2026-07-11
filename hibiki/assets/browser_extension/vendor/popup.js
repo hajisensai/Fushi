@@ -1713,6 +1713,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
                     ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
                     : element.textContent || '';
                 const rect = element.getBoundingClientRect();
+                markGlobalLookupExtHit(element);
                 window.flutter_inappwebview.callHandler('onLinkClick', query, {
                     x: rect.left,
                     y: rect.top,
@@ -2184,6 +2185,7 @@ function createKanjiBreakdown(expression) {
             e.preventDefault();
             e.stopPropagation();
             const rect = tag.getBoundingClientRect();
+            markGlobalLookupExtHit(tag);
             window.flutter_inappwebview.callHandler('onLinkClick', ch, {
                 x: rect.left,
                 y: rect.top,
@@ -2212,6 +2214,7 @@ function createEntryHeader(entry, idx) {
         e.preventDefault();
         e.stopPropagation();
         const rect = expressionSpan.getBoundingClientRect();
+        markGlobalLookupExtHit(expressionSpan);
         window.flutter_inappwebview.callHandler('onLinkClick', expression, {
             x: rect.left,
             y: rect.top,
@@ -2894,6 +2897,7 @@ function createKanjiCard(kanji) {
         e.preventDefault();
         e.stopPropagation();
         const rect = charEl.getBoundingClientRect();
+        markGlobalLookupExtHit(charEl);
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
             y: rect.top,
@@ -3219,6 +3223,56 @@ function buildGlobalLookupSentenceBanner() {
     return banner;
 }
 
+// 真机第 5 轮 — 面板 root：点释义/见出语/汉字标签弹**外部**瞬态窗时，被点元素
+// 加 .global-lookup-ext-hit 高亮（外部窗不在本文档里，没有嵌套卡的父卡反馈；
+// 高亮在下次点击时被替换、重渲时随 DOM 重建自然清除）。瞬态窗/in-app 弹窗
+// 不启用（__globalLookupPanelRoot 仅面板 root 注入，那边嵌套卡自有视觉反馈）。
+function markGlobalLookupExtHit(target) {
+    if (window.__globalLookupPanelRoot !== true || !target || !target.classList) {
+        return;
+    }
+    try {
+        document.querySelectorAll('.global-lookup-ext-hit').forEach((n) => {
+            n.classList.remove('global-lookup-ext-hit');
+        });
+    } catch (e) {
+        // querySelectorAll 失败也不阻断查词本身。
+    }
+    target.classList.add('global-lookup-ext-hit');
+}
+
+// 真机第 5 轮 — 视口感知的词典列数收敛：TODO-1357 只按平台定默认（桌面 2 列
+// Niratan 双栏、移动 1 列「不硬塞多列避免窄屏挤爆」），但面板窗可被拖到很窄，
+// 固定多列会让底下的词典玻璃卡互相挤压重叠。这里把同一「窄了就收」判断按真实
+// 视口宽度动态化：每列至少 DICT_COLUMN_MIN_WIDTH px（可读下限），有效列数 =
+// min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
+// resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
+const DICT_COLUMN_MIN_WIDTH = 170;
+function updateEffectiveDictColumns() {
+    const doc = document.documentElement;
+    if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
+        return;
+    }
+    let configured = 1;
+    try {
+        configured = parseInt(
+            getComputedStyle(doc).getPropertyValue('--dict-columns'), 10) || 1;
+    } catch (e) {
+        configured = 1;
+    }
+    const width = window.innerWidth || 0;
+    const fit = width > 0
+        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        : configured;
+    doc.style.setProperty(
+        '--dict-columns-effective', String(Math.min(configured, fit)));
+}
+if (typeof window.addEventListener === 'function'
+    && !window.__hibikiDictColsResizeHooked) {
+    window.__hibikiDictColsResizeHooked = true;
+    window.addEventListener('resize', updateEffectiveDictColumns);
+}
+
 // Inserts the sentence-context banner (if any) as the FIRST child of the popup
 // entries container, above the kanji card / entries / no-results placeholder.
 // No-op when there is no captured sentence (in-app popups, nested cards).
@@ -3234,6 +3288,9 @@ function prependSentenceBanner(container) {
 
 window.renderPopup = function() {
     const t0 = performance.now();
+    // 真机第 5 轮 — settingsJs 可能刚更新了 --dict-columns；渲染前按当前视口
+    // 重算有效列数（resize 监听兜住渲染后的窗口拖拽）。
+    updateEffectiveDictColumns();
     const container = __hibikiContainer();
     if (!container) { _firePopupRendered(); return; }
 

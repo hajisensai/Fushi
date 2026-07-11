@@ -86,6 +86,8 @@
   - **选词区（句子条）**：字号与词条正文一致（`.global-lookup-sentence-panel`，1em 主色），视觉为连续正常文本（无逐字 hover 框；逐字 span 只作码点→点击位映射）。点字 → `panelSentenceLookup` 桥（后缀 + 码点下标）→ Dart `_lookupFromBanner` **换根结果=底部原地更新**（与剪贴板流同一 latest-wins 序列），不再嵌套压卡；引擎 `bestLength` 折算码点后经 `__globalLookupSentenceHit` 整词高亮（「按正常的断词」=词典引擎分词）。
   - **释义文字点击**：`onLinkClick`/`textSelected` → **独立瞬态覆盖窗**（`GlobalLookupController.lookupText`，OS 光标处、点外即关、携带整句供制卡）——子 iframe 出不了面板 HWND，「弹窗可越出面板边界」唯一真解是第二个顶层窗。瞬态窗不可用时回退面板内嵌套卡（点击绝不丢）。瞬态窗自身的句子条/嵌套语义不变（`__globalLookupPanelRoot` 仅面板 root 注入）。
 - **焦点（真机第 4 轮）**：面板窗**可激活**（`SetActivatable(true)`：创建时不带 `WS_EX_NOACTIVATE`）——点击面板焦点落面板、游戏失焦，滚轮不再穿透滚动底下的游戏；程序化 show/update 全程 `SW_SHOWNOACTIVATE`/`SWP_NOACTIVATE`，台词流更新绝不抢游戏焦点。瞬态覆盖窗保持 NOACTIVATE（§5 保证 3）。
+- **释义点击反馈与定位（真机第 5 轮）**：①被点的释义/见出语/汉字标签加 `.global-lookup-ext-hit` 高亮（`markGlobalLookupExtHit`，下次点击替换、重渲清除；仅面板 root，嵌套卡/in-app 自有反馈）；②外部瞬态窗**锚定被点文字正下方**而非 OS 光标点：host 重锚定的面板窗内 CSS px 矩形 + `_panelRect` 原点 = 屏幕逻辑 px，经 `lookupText(anchorScreenRect:)` 传入，native `showAt(atCursor:false)` 直接用该点并以其算工作区偏移（级联种子自动对齐，零 native 改动）；无锚点调用方（热键/悬浮字幕）保持 atCursor 语义。
+- **窄宽度词典列收敛（真机第 5 轮）**：TODO-1357 的「窄屏不硬塞多列」只按平台定默认（桌面 2 列），面板拖窄后固定多列玻璃卡互相挤压重叠——popup.js `updateEffectiveDictColumns` 按真实视口宽度算 `--dict-columns-effective = min(用户设置, floor(宽/170px))`，grid 消费 effective 变量（缺席回退原值），resize 监听即时收敛（in-app 弹窗同规则受益）。附带修 `_renderPanel` 的 `clamp(160, viewport)` 在视口 <160 时下界>上界抛 ArgumentError 的面板假死。
 - **调尺寸**：面板右下角 resize grip，同 HTCAPTION 手法发 `HTBOTTOMRIGHT`。存 pref。
 - **恢复位置**：启动/重唤时 rect clamp 到当前可见工作区（防显示器拔掉后窗丢屏外）。
 

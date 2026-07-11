@@ -98,7 +98,8 @@ class ClipboardPanelController {
   /// 测试注入点：释义点击的外部瞬态弹窗路由。null 走真
   /// [GlobalLookupController.instance.lookupText]。
   @visibleForTesting
-  Future<bool> Function(String text, String sentence)? debugExternalLookup;
+  Future<bool> Function(String text, String sentence, Rect? anchorScreenRect)?
+      debugExternalLookup;
 
   /// 当前面板矩形（逻辑像素）。真相源是 pref（windowMoved 落库）；内存值只是
   /// 本次会话的工作拷贝。
@@ -280,10 +281,15 @@ class ClipboardPanelController {
     if (ctx == null) return;
     final double viewportW = _panelRect.width;
     final double viewportH = _panelRect.height - kClipboardPanelBarHeight;
-    final double maxW =
-        (model.popupMaxWidth * model.appUiScale).clamp(160.0, viewportW);
-    final double maxH =
-        (model.popupMaxHeight * model.appUiScale).clamp(160.0, viewportH);
+    // 真机第 5 轮 — 用户可把面板拖到 <160 逻辑 px：clamp(160, viewport) 在
+    // 下界>上界时抛 ArgumentError，_renderPanel 从此每次更新都炸=面板假死。
+    // 语义不变（至少 160、不超视口），只是视口更小时以视口为准。
+    final double maxW = viewportW < 160
+        ? viewportW
+        : (model.popupMaxWidth * model.appUiScale).clamp(160.0, viewportW);
+    final double maxH = viewportH < 160
+        ? viewportH
+        : (model.popupMaxHeight * model.appUiScale).clamp(160.0, viewportH);
     final List<GlobalLookupFramePayload> payloads =
         <GlobalLookupFramePayload>[];
     for (int i = 0; i < _stack.length; i++) {
@@ -454,17 +460,24 @@ class ClipboardPanelController {
   }
 
   /// 真机第 4 轮 — 释义文字点击走独立瞬态覆盖窗（「查词弹窗应该可以出这个
-  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。瞬态窗
-  /// 在 OS 光标处弹出（点击刚发生在那里）、点外即关、携带整句供制卡 sentence
-  /// 字段。lookupText 返回 false（未 start / 空词）时回退面板内嵌套卡——
-  /// 点击绝不静默丢失。
+  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。点外即关、
+  /// 携带整句供制卡 sentence 字段。lookupText 返回 false（未 start / 空词）时
+  /// 回退面板内嵌套卡——点击绝不静默丢失。
+  ///
+  /// 真机第 5 轮 — 卡片锚定在**被点文字**下方而非 OS 光标点：[anchorRect] 是
+  /// host 重锚定后的面板窗内 CSS px 矩形（含面板栏/shell 偏移），加上
+  /// [_panelRect] 原点即屏幕逻辑 px，传给瞬态窗做文字锚点。
   Future<void> _lookupExternal(String query, Rect? anchorRect) async {
+    final Rect? screenRect =
+        anchorRect?.shift(Offset(_panelRect.left, _panelRect.top));
     try {
-      final Future<bool> Function(String text, String sentence) lookup =
+      final Future<bool> Function(
+              String text, String sentence, Rect? anchorScreenRect) lookup =
           debugExternalLookup ??
-              (String text, String sentence) => GlobalLookupController.instance
-                  .lookupText(text, sentence: sentence);
-      if (await lookup(query, _currentSentence)) return;
+              (String text, String sentence, Rect? anchorScreenRect) =>
+                  GlobalLookupController.instance.lookupText(text,
+                      sentence: sentence, anchorScreenRect: anchorScreenRect);
+      if (await lookup(query, _currentSentence, screenRect)) return;
     } catch (e, st) {
       glog('panel: external lookup EXCEPTION $e\n$st');
     }

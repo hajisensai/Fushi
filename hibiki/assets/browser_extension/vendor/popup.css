@@ -951,7 +951,12 @@ html[data-theme="dark"] .glossary-group {
    affects the inter-column distance and leaves the row margin untouched. */
 .glossary-section > .category-body {
     display: grid;
-    grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
+    /* 真机第 5 轮 — 列数消费 popup.js updateEffectiveDictColumns 写入的
+       --dict-columns-effective（= min(用户设置, 视口宽度装得下的列数)，每列
+       至少 170px）：面板/弹窗拖窄后自动收敛列数，词典玻璃卡不再互相挤压重叠
+       （TODO-1357「窄屏不硬塞多列」的视口宽度动态版）。变量缺席（旧缓存/JS
+       未跑）回退用户设置原值，行为与改动前一致。 */
+    grid-template-columns: repeat(var(--dict-columns-effective, var(--dict-columns, 1)), minmax(0, 1fr));
     column-gap: 6px;
     /* TODO-1325 / BUG-683 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
        的词典卡片全部拉伸到该行最高卡片的高度。首行常含义项最多的词典（idx 0 那本），被
@@ -1523,4 +1528,9 @@ html.global-lookup[data-theme="dark"] body {
 
 .ctx-adjust-button {
     opacity: 0.85;
+/* 真机第 5 轮 — 面板释义区被点击、正在外部瞬态窗里查的那段文字的高亮
+   （markGlobalLookupExtHit；下次点击替换、重渲清除）。 */
+.global-lookup-ext-hit {
+    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    border-radius: 2px;
 }

@@ -203,11 +203,47 @@ void main() {
       expect(controllerDart.contains('_lookupFromBanner'), isTrue);
       expect(controllerDart.contains('GlobalLookupController.instance'), isTrue,
           reason: '释义点击=独立瞬态覆盖窗（可越出面板 HWND，点外即关）');
-      expect(controllerDart.contains('.lookupText(text, sentence: sentence)'),
-          isTrue);
+      expect(
+          controllerDart.contains('anchorScreenRect: anchorScreenRect'), isTrue,
+          reason: '真机第 5 轮：外部弹窗锚定被点文字（面板矩形折算屏幕逻辑 px）');
+      expect(
+          controllerDart.contains('anchorRect?.shift(Offset(_panelRect.left'),
+          isTrue,
+          reason: 'host 面板窗内 CSS px + 面板原点 = 屏幕逻辑 px，单位链守卫');
       expect(controllerDart.contains('await _lookupNested(query, anchorRect)'),
           isTrue,
           reason: '瞬态窗不可用时回退面板内嵌套卡，点击绝不静默丢失');
+    });
+
+    test('真机第 5 轮：释义点击高亮 + 文字锚点 + 视口感知列数收敛', () {
+      final String glcDart =
+          File('lib/src/lookup/global_lookup_controller.dart')
+              .readAsStringSync();
+      // ① 被点释义文字高亮：helper 定义 + 4 个 onLinkClick 发射点全部标记。
+      expect(
+        'markGlobalLookupExtHit('.allMatches(popupJs).length,
+        greaterThanOrEqualTo(5),
+        reason: '定义 + 释义链接/汉字标签/见出语/汉字卡 4 个发射点',
+      );
+      expect(popupCss.contains('.global-lookup-ext-hit'), isTrue);
+      // ② 外部瞬态窗按文字锚点定位（native atCursor:false 用传入点算工作区）。
+      expect(glcDart.contains('anchorScreenRect == null'), isTrue);
+      expect(glcDart.contains('atCursor: false'), isTrue,
+          reason: '有锚点=文字左下定位；无锚点保持 atCursor（热键/悬浮字幕零变化）');
+      // ③ 窄视口词典方块重叠：有效列数 = min(设置, 视口装得下)，grid 消费
+      //    effective 变量并保留旧值回退链。
+      expect(popupJs.contains('updateEffectiveDictColumns'), isTrue);
+      expect(popupJs.contains('--dict-columns-effective'), isTrue);
+      expect(
+        popupCss
+            .contains('var(--dict-columns-effective, var(--dict-columns, 1))'),
+        isTrue,
+        reason: 'TODO-1357「窄屏不硬塞多列」的视口宽度动态版；变量缺席回退原行为',
+      );
+      expect(popupJs.contains("addEventListener('resize'"), isTrue,
+          reason: '面板 resize grip 拖窄后 grid 即时收敛，无需等下次查词');
+      // ④ 超窄面板 clamp(160, viewport) 下界>上界 ArgumentError 假死守卫。
+      expect(controllerDart.contains('viewportW < 160'), isTrue);
     });
 
     test('面板窗可激活（点击落焦点，滚轮不穿游戏）；瞬态窗保持 NOACTIVATE', () {
