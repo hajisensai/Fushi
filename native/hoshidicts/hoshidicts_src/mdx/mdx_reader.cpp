@@ -3,6 +3,7 @@
 #include <libdeflate.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <stdexcept>
 #include <string_view>
@@ -22,6 +23,107 @@ inline uint64_t be64(const uint8_t* p) { return (uint64_t(be32(p)) << 32) | be32
 
 inline uint32_t le32(const uint8_t* p) {
   return p[0] | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+}
+
+// --- MDX Encrypted="2" key-block-info obfuscation ---------------------------
+// MDict scrambles the (already zlib-compressed) key-block-info section with a
+// self-contained algorithm that needs no registration key: a RIPEMD-128 hash
+// of the section's own adler32 bytes seeds a rolling XOR/nibble-swap cipher.
+// Without undoing it, libdeflate sees garbage and the parse dies with
+// "empty key block info". This is bit 1 of the header's `Encrypted` attribute;
+// bit 0 (record encryption) genuinely needs a purchased key and is left alone.
+
+inline uint32_t rol32(uint32_t x, unsigned s) { return (x << s) | (x >> (32 - s)); }
+
+// RIPEMD-128 (16-byte digest). Follows the reference from
+// homes.esat.kuleuven.be/~bosselae/ripemd/rmd128.txt.
+std::array<uint8_t, 16> ripemd128(const uint8_t* msg, size_t len) {
+  static const unsigned rr[64] = {
+      0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 7,  4,  13, 1,  10, 6,
+      15, 3,  12, 0,  9,  5,  2,  14, 11, 8,  3,  10, 14, 4,  9,  15, 8,  1,  2,  7,  0,  6,
+      13, 11, 5,  12, 1,  9,  11, 10, 0,  8,  12, 4,  13, 3,  7,  15, 14, 5,  6,  2};
+  static const unsigned rrp[64] = {
+      5,  14, 7,  0,  9,  2,  11, 4,  13, 6,  15, 8,  1,  10, 3,  12, 6,  11, 3,  7,  0,  13,
+      5,  10, 14, 15, 8,  12, 4,  9,  1,  2,  15, 5,  1,  3,  7,  14, 6,  9,  11, 8,  12, 2,
+      10, 0,  4,  13, 8,  6,  4,  1,  3,  11, 15, 0,  5,  12, 2,  13, 9,  7,  10, 14};
+  static const unsigned ss[64] = {
+      11, 14, 15, 12, 5,  8,  7,  9,  11, 13, 14, 15, 6,  7,  9,  8,  7,  6,  8,  13, 11, 9,
+      7,  15, 7,  12, 15, 9,  11, 7,  13, 12, 11, 13, 6,  7,  14, 9,  13, 15, 14, 8,  13, 6,
+      5,  12, 7,  5,  11, 12, 14, 15, 14, 15, 9,  8,  9,  14, 5,  6,  8,  6,  5,  12};
+  static const unsigned ssp[64] = {
+      8,  9,  9,  11, 13, 15, 15, 5,  7,  7,  8,  11, 14, 14, 12, 6,  9,  13, 15, 7,  12, 8,
+      9,  11, 7,  7,  12, 7,  6,  15, 13, 11, 9,  7,  15, 11, 8,  6,  6,  14, 12, 13, 5,  14,
+      13, 13, 7,  5,  15, 5,  8,  11, 14, 14, 6,  14, 6,  9,  12, 9,  12, 5,  15, 8};
+
+  auto f = [](int j, uint32_t x, uint32_t y, uint32_t z) -> uint32_t {
+    if (j < 16) return x ^ y ^ z;
+    if (j < 32) return (x & y) | (~x & z);
+    if (j < 48) return (x | ~y) ^ z;
+    return (x & z) | (y & ~z);
+  };
+  auto K = [](int j) -> uint32_t {
+    if (j < 16) return 0x00000000u;
+    if (j < 32) return 0x5a827999u;
+    if (j < 48) return 0x6ed9eba1u;
+    return 0x8f1bbcdcu;
+  };
+  auto Kp = [](int j) -> uint32_t {
+    if (j < 16) return 0x50a28be6u;
+    if (j < 32) return 0x5c4dd124u;
+    if (j < 48) return 0x6d703ef3u;
+    return 0x00000000u;
+  };
+
+  // Pad: 0x80, then zeros to 56 mod 64, then 64-bit little-endian bit length.
+  std::vector<uint8_t> buf(msg, msg + len);
+  uint64_t bit_len = uint64_t(len) * 8;
+  buf.push_back(0x80);
+  while (buf.size() % 64 != 56) buf.push_back(0x00);
+  for (int i = 0; i < 8; i++) buf.push_back(uint8_t((bit_len >> (8 * i)) & 0xff));
+
+  uint32_t h0 = 0x67452301u, h1 = 0xefcdab89u, h2 = 0x98badcfeu, h3 = 0x10325476u;
+  for (size_t chunk = 0; chunk < buf.size(); chunk += 64) {
+    uint32_t X[16];
+    for (int i = 0; i < 16; i++) X[i] = le32(buf.data() + chunk + i * 4);
+    uint32_t A = h0, B = h1, C = h2, D = h3;
+    uint32_t Ap = h0, Bp = h1, Cp = h2, Dp = h3;
+    for (int j = 0; j < 64; j++) {
+      uint32_t t = rol32(A + f(j, B, C, D) + X[rr[j]] + K(j), ss[j]);
+      A = D;
+      D = C;
+      C = B;
+      B = t;
+      t = rol32(Ap + f(63 - j, Bp, Cp, Dp) + X[rrp[j]] + Kp(j), ssp[j]);
+      Ap = Dp;
+      Dp = Cp;
+      Cp = Bp;
+      Bp = t;
+    }
+    uint32_t t = h1 + C + Dp;
+    h1 = h2 + D + Ap;
+    h2 = h3 + A + Bp;
+    h3 = h0 + B + Cp;
+    h0 = t;
+  }
+
+  std::array<uint8_t, 16> out{};
+  uint32_t hs[4] = {h0, h1, h2, h3};
+  for (int i = 0; i < 4; i++)
+    for (int b = 0; b < 4; b++) out[i * 4 + b] = uint8_t((hs[i] >> (8 * b)) & 0xff);
+  return out;
+}
+
+// In-place undo of the MDX key-block-info cipher (rolling nibble-swap XOR).
+void mdx_fast_decrypt(uint8_t* data, size_t len, const uint8_t* key, size_t key_len) {
+  if (key_len == 0) return;
+  uint8_t prev = 0x36;
+  for (size_t i = 0; i < len; i++) {
+    uint8_t b = data[i];
+    uint8_t t = uint8_t((b >> 4) | (b << 4));
+    t = uint8_t(t ^ prev ^ uint8_t(i & 0xff) ^ key[i % key_len]);
+    prev = b;
+    data[i] = t;
+  }
 }
 
 std::string utf16le_to_utf8(const uint8_t* data, size_t byte_len) {
@@ -113,6 +215,24 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
   result.encoding = get_attribute(header_text, "Encoding");
   if (result.encoding.empty()) result.encoding = "utf-8";
 
+  // `Encrypted` is a bitfield: bit 1 (value 2) scrambles the key-block-info
+  // section (undoable, no key needed); bit 0 (value 1) encrypts record blocks
+  // and requires a purchased registration key we cannot supply. Older dicts
+  // wrote "No"/"Yes"; treat "Yes" as bit 0.
+  int encrypted = 0;
+  {
+    std::string enc = get_attribute(header_text, "Encrypted");
+    if (enc == "Yes" || enc == "yes") {
+      encrypted = 1;
+    } else if (!enc.empty()) {
+      try {
+        encrypted = std::stoi(enc);
+      } catch (...) {
+        encrypted = 0;
+      }
+    }
+  }
+
   // Normalize encoding
   std::string enc_lower = result.encoding;
   std::transform(enc_lower.begin(), enc_lower.end(), enc_lower.begin(), ::tolower);
@@ -164,17 +284,30 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
 
   if (pos + key_block_info_size > size) throw std::runtime_error("mdx: key block info overflow");
 
-  // Decompress key block info
+  // Decompress key block info. When Encrypted="2", the compressed payload
+  // (everything after the 8-byte comp_type+adler32 prefix) is scrambled and
+  // must be unscrambled before libdeflate can inflate it. The RIPEMD-128 key is
+  // derived from the section's own adler32 bytes [4..8) plus the fixed 0x3695
+  // little-endian salt.
   std::vector<uint8_t> key_block_info;
+  std::vector<uint8_t> kbi_plain;  // holds the decrypted section if needed
+  const uint8_t* kbi_ptr = data + pos;
+  if ((encrypted & 2) && key_block_info_size >= 8) {
+    kbi_plain.assign(data + pos, data + pos + key_block_info_size);
+    uint8_t seed[8] = {kbi_plain[4], kbi_plain[5], kbi_plain[6], kbi_plain[7], 0x95, 0x36, 0x00, 0x00};
+    auto key = ripemd128(seed, 8);
+    mdx_fast_decrypt(kbi_plain.data() + 8, kbi_plain.size() - 8, key.data(), key.size());
+    kbi_ptr = kbi_plain.data();
+  }
   if (is_v2 && key_block_info_size >= 8) {
-    uint32_t comp_type = le32(data + pos);
+    uint32_t comp_type = le32(kbi_ptr);
     if (comp_type == 2 || comp_type == 1) {
-      key_block_info = decompress_block(data + pos, key_block_info_size, key_block_info_decomp_size);
+      key_block_info = decompress_block(kbi_ptr, key_block_info_size, key_block_info_decomp_size);
     } else {
-      key_block_info.assign(data + pos, data + pos + key_block_info_size);
+      key_block_info.assign(kbi_ptr, kbi_ptr + key_block_info_size);
     }
   } else {
-    key_block_info.assign(data + pos, data + pos + key_block_info_size);
+    key_block_info.assign(kbi_ptr, kbi_ptr + key_block_info_size);
   }
   pos += key_block_info_size;
 

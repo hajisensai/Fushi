@@ -84,6 +84,13 @@ add_hoshi_test(zip_malformed_deflate_test zip_malformed_deflate_test.cpp
 add_hoshi_test(zip_high_ratio_bank_test zip_high_ratio_bank_test.cpp
     "${HOSHI_SRC}"
     "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# BUG-723: MDX Encrypted="2" key-block-info must be unscrambled (RIPEMD-128 +
+# rolling XOR) before inflate. Builds a self-contained encrypted MDX fixture
+# and asserts the reader recovers its entries. Needs mdx_reader.hpp (mdx/ is an
+# internal subdir) and libdeflate (to compress the fixture's blocks).
+add_hoshi_test(mdx_encrypted_keyinfo_test mdx_encrypted_keyinfo_test.cpp
+    "${HOSHI_SRC}/mdx"
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # hoshidicts_src/.
 add_hoshi_test(import_breadcrumb_test import_breadcrumb_test.cpp
