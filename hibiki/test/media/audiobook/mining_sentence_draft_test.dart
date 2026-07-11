@@ -225,4 +225,57 @@ void main() {
       expect(() => draft.nextSentences.add(s('x')), throwsUnsupportedError);
     });
   });
+
+  group('buildSentenceContextPreview (Niratan 制卡前调整模态)', () {
+    MiningDraftSentence s(String text) => MiningDraftSentence(sentence: text);
+
+    test('empty draft yields prev/next empty, total 0, current + offset echoed',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '当前句。',
+        currentOffset: 3,
+      );
+      expect(p['prev'], <String>[]);
+      expect(p['next'], <String>[]);
+      expect(p['current'], '当前句。');
+      expect(p['currentOffset'], 3);
+      expect(p['total'], 0);
+    });
+
+    test('prev/next real texts echoed in reading order, total = prev + next',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前々。'), s('前。')],
+        next: <MiningDraftSentence>[s('后。')],
+      );
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '当前。',
+        currentOffset: null,
+      );
+      expect(p['prev'], <String>['前々。', '前。']);
+      expect(p['next'], <String>['后。']);
+      expect(p['current'], '当前。');
+      expect(p['currentOffset'], isNull);
+      expect(p['total'], 3);
+    });
+
+    test('result is JSON-safe (bridge-serializable) — String/int/List<String>',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft()
+        ..setContext(prev: <MiningDraftSentence>[s('前。')]);
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: 'x',
+        currentOffset: 0,
+      );
+      expect(p['prev'], isA<List<String>>());
+      expect(p['next'], isA<List<String>>());
+      expect(p['current'], isA<String>());
+      expect(p['total'], isA<int>());
+    });
+  });
 }

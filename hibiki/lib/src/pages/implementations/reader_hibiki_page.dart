@@ -2689,6 +2689,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return _miningDraft.length;
   }
 
+  /// Niratan「制卡前调整·选择句子上下文」：把当前草稿真实上下文句 + 当前正查句 + 词偏移
+  /// 打包给弹窗预览。当前句取制卡同一来源（[MediaSource.currentSentence]，见
+  /// [_prepareMiningContext]），词偏移取查词时缓存的 [_cachedSentenceOffset]，保证预览
+  /// 与真正落卡的 sentence 字段一致。
+  @override
+  Future<Map<String, Object?>> onSentenceContextPreviewFromDraft() async {
+    final String current =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    return buildSentenceContextPreview(
+      draft: _miningDraft,
+      current: current,
+      currentOffset: _cachedSentenceOffset,
+    );
+  }
+
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) {
     // TODO-644 / BUG-357：经制卡串行队列执行，杜绝快速连制两张卡时两次 prepare→mine

@@ -343,6 +343,209 @@ function buildSentenceContextPicker() {
     return picker;
 }
 
+// ── Niratan「制卡前调整·选择句子上下文」模态 ──────────────────────────────────
+// 与旧「上 N / 下 N」内联步进器（kSentenceContextPickerEnabled 恒 false，永不渲染）互
+// 独立的新特性：点词条上的「调整上下文」按钮打开一个模态，展示**前文 / 当前句(查到的
+// 词高亮) / 后文**的真实文本 + 前退/前加/后退/后加一句调整 + 取消/确认制卡。一键「+」
+// 制卡保持不变（不打开模态）。数据流复用既有 sentenceCtxPrev/Next 镜像 + setSentenceContext
+// 桥接（宿主整体解析上下文句进草稿），文本由新的只读 sentenceContextPreview 桥接回传；
+// 「确认制卡」直接点回该词条的 mineButton，复用其全部制卡/查重/覆写逻辑。
+
+function ctxI18n() {
+    return window.i18nCtx || {};
+}
+
+// 只读拉取宿主当前草稿的上下文预览（前/当前/后真实句 + 词在当前句的偏移）。宿主未接入
+// / 出错时回空对象，模态侧兜底不渲染文本（绝不崩制卡主流程）。
+async function fetchSentenceContextPreview() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler('sentenceContextPreview');
+        return (reply && typeof reply === 'object') ? reply : {};
+    } catch (e) {
+        console.error('sentenceContextPreview failed', e);
+        return {};
+    }
+}
+
+// 用当前句文本 + 词偏移 + 词表现形，构造一个带 <span class="scm-hl"> 高亮的文本盒。**不用
+// innerHTML 拼用户文本**（句子是书内容，杜绝 HTML 注入）——纯 textNode + 一个高亮 span。
+// offset 命中优先（与卡片渲染 _sentenceValue 同容错），失配回退首次出现匹配，再失配无高亮。
+function buildHighlightedCurrentText(text, offset, matched) {
+    const box = el('div', { className: 'scm-box-text' });
+    if (!text) {
+        box.classList.add('scm-empty');
+        box.textContent = ctxI18n().boxEmpty || '';
+        return box;
+    }
+    let start = -1;
+    if (matched) {
+        if (typeof offset === 'number' && offset >= 0 &&
+            text.substr(offset, matched.length) === matched) {
+            start = offset;
+        } else {
+            start = text.indexOf(matched);
+        }
+    }
+    if (start < 0 || !matched) {
+        box.textContent = text;
+        return box;
+    }
+    box.appendChild(document.createTextNode(text.slice(0, start)));
+    box.appendChild(el('span', {
+        className: 'scm-hl',
+        textContent: text.slice(start, start + matched.length),
+    }));
+    box.appendChild(document.createTextNode(text.slice(start + matched.length)));
+    return box;
+}
+
+// 渲染一个上下文盒（前文 / 后文）：标签 + 每句一行。空 → 占位「（无）」。纯 textNode。
+function buildContextBox(labelText, sentences, extraClass) {
+    const wrap = el('div', { className: 'scm-box ' + (extraClass || '') });
+    wrap.appendChild(el('div', { className: 'scm-box-label', textContent: labelText }));
+    if (!sentences || !sentences.length) {
+        wrap.appendChild(el('div', {
+            className: 'scm-box-text scm-empty',
+            textContent: ctxI18n().boxEmpty || '',
+        }));
+        return wrap;
+    }
+    const t = el('div', { className: 'scm-box-text' });
+    sentences.forEach(function(s, i) {
+        if (i) t.appendChild(el('br'));
+        t.appendChild(document.createTextNode(String(s)));
+    });
+    wrap.appendChild(t);
+    return wrap;
+}
+
+let __sentenceContextModalOpen = false;
+
+// 打开「制卡前调整」模态。[mineButton]：该词条的制卡按钮（确认制卡时点它复用全部逻辑）；
+// [matched]：查到的词表现形（用于在当前句里高亮）。同一时刻只允许一个模态。
+async function openSentenceContextModal(mineButton, matched) {
+    if (__sentenceContextModalOpen) return;
+    __sentenceContextModalOpen = true;
+    const i = ctxI18n();
+    // 记住打开时的镜像；取消 = 还原到此（不把半调整的草稿留给后续「+」一键制卡）。
+    const snapPrev = sentenceCtxPrev;
+    const snapNext = sentenceCtxNext;
+
+    const overlay = el('div', { className: 'sentence-context-modal' });
+    const card = el('div', { className: 'scm-card' });
+    overlay.appendChild(card);
+
+    const head = el('div', { className: 'scm-head' });
+    head.appendChild(el('span', { className: 'scm-eyebrow', textContent: i.eyebrow || '' }));
+    const closeBtn = el('button', { className: 'inline-action-button scm-x' });
+    setButtonIcon(closeBtn, 'close');
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+    card.appendChild(el('div', { className: 'scm-title', textContent: i.title || '' }));
+    const countEl = el('div', { className: 'scm-count' });
+    card.appendChild(countEl);
+
+    const boxes = el('div', { className: 'scm-boxes' });
+    card.appendChild(boxes);
+
+    let busy = false;
+    const makeAdjustBtn = function(dir, sign, label) {
+        const btn = el('button', {
+            className: 'scm-btn scm-adjust ' + dir + '-' + sign,
+            textContent: label,
+        });
+        btn.dataset.dir = dir;
+        btn.dataset.sign = sign;
+        btn.onclick = function() { adjust(dir, sign); };
+        return btn;
+    };
+    const prevMinusBtn = makeAdjustBtn('prev', 'minus', i.prevMinus || '');
+    const prevPlusBtn = makeAdjustBtn('prev', 'plus', i.prevPlus || '');
+    const nextMinusBtn = makeAdjustBtn('next', 'minus', i.nextMinus || '');
+    const nextPlusBtn = makeAdjustBtn('next', 'plus', i.nextPlus || '');
+    const actions = el('div', { className: 'scm-actions' });
+    actions.appendChild(prevMinusBtn);
+    actions.appendChild(prevPlusBtn);
+    actions.appendChild(nextMinusBtn);
+    actions.appendChild(nextPlusBtn);
+    card.appendChild(actions);
+
+    const cancelBtn = el('button', { className: 'scm-btn scm-cancel', textContent: i.cancel || '' });
+    const confirmBtn = el('button', { className: 'scm-btn scm-confirm', textContent: i.confirm || '' });
+    const foot = el('div', { className: 'scm-foot' });
+    foot.appendChild(cancelBtn);
+    foot.appendChild(confirmBtn);
+    card.appendChild(foot);
+
+    function renderPreview(preview) {
+        const prev = Array.isArray(preview.prev) ? preview.prev : [];
+        const next = Array.isArray(preview.next) ? preview.next : [];
+        const current = typeof preview.current === 'string' ? preview.current : '';
+        const total = typeof preview.total === 'number' ? preview.total : (prev.length + next.length);
+        // 镜像与宿主真实句数对齐：宿主按段落/cue 边界封顶，到边界再「加」是空操作，
+        // 计数不再上涨——honest feedback（不像旧步进器让镜像无界上涨）。
+        sentenceCtxPrev = prev.length;
+        sentenceCtxNext = next.length;
+        sentenceDraftCount = total;
+        countEl.textContent = (i.count || '%d').replace('%d', String(total));
+        boxes.textContent = '';
+        boxes.appendChild(buildContextBox(i.boxPrev || '', prev, 'scm-prev'));
+        const curBox = el('div', { className: 'scm-box scm-current selected' });
+        curBox.appendChild(el('div', { className: 'scm-box-label', textContent: i.boxCurrent || '' }));
+        curBox.appendChild(buildHighlightedCurrentText(current, preview.currentOffset, matched));
+        boxes.appendChild(curBox);
+        boxes.appendChild(buildContextBox(i.boxNext || '', next, 'scm-next'));
+        prevMinusBtn.disabled = prev.length <= 0;
+        nextMinusBtn.disabled = next.length <= 0;
+    }
+
+    async function refresh() {
+        renderPreview(await fetchSentenceContextPreview());
+    }
+
+    async function adjust(dir, sign) {
+        if (busy) return;
+        busy = true;
+        card.dataset.busy = '1';
+        try {
+            const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+            const nextN = sign === 'plus' ? cur + 1 : Math.max(0, cur - 1);
+            if (dir === 'prev') sentenceCtxPrev = nextN;
+            else sentenceCtxNext = nextN;
+            await setSentenceContextOnHost();
+            await refresh();
+        } finally {
+            busy = false;
+            card.dataset.busy = '';
+        }
+    }
+
+    function close() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        __sentenceContextModalOpen = false;
+    }
+    async function cancel() {
+        // 取消：还原到打开时的选择（取消不改草稿），再关。
+        sentenceCtxPrev = snapPrev;
+        sentenceCtxNext = snapNext;
+        try { await setSentenceContextOnHost(); } catch (e) { /* 取消尽力而为 */ }
+        close();
+    }
+    closeBtn.onclick = cancel;
+    cancelBtn.onclick = cancel;
+    overlay.onclick = function(e) { if (e.target === overlay) cancel(); };
+    confirmBtn.onclick = function() {
+        close();
+        // 复用该词条制卡按钮的全部逻辑（查重/覆写/制卡后清理都在里面）。
+        if (mineButton && !mineButton.disabled) mineButton.click();
+    };
+
+    (document.body || __hibikiRootNode()).appendChild(overlay);
+    // 先用镜像画个占位，再异步拉真实预览覆盖（避免打开瞬间空白）。
+    renderPreview({ prev: [], next: [], current: '', total: sentenceCtxPrev + sentenceCtxNext });
+    await refresh();
+}
+
 
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
@@ -383,6 +586,8 @@ const ICON_PATHS = {
     remove: 'M19 13H5v-2h14v2z',
     // close（清空草稿 / 标签说明遮罩关闭 ×）
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
+    tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
 };
 
 function iconSvg(name) {
@@ -2254,6 +2459,21 @@ function createEntryHeader(entry, idx) {
         setButtonIcon(clearButton, 'close');
         refreshClearDraftButton(clearButton);
         buttonsContainer.appendChild(clearButton);
+    }
+
+    // Niratan「制卡前调整·选择句子上下文」：独立于上面被砍掉的内联步进器
+    // （kSentenceContextPickerEnabled 恒 false）。支持草稿且宿主接入了预览回调的表面
+    // （reader/有声书/视频，window.sentenceContextPreviewEnabled 为真）渲染一个「调整
+    // 上下文」按钮，点开模态在里面看前/当前/后真实句并增减上下文、确认制卡。一键「+」
+    // 制卡不受影响。
+    if (window.sentenceContextPreviewEnabled) {
+        const adjustBtn = el('button', {
+            className: 'inline-action-button ctx-adjust-button',
+            title: (window.i18nCtx && window.i18nCtx.adjust) || '',
+            onclick: function() { openSentenceContextModal(mineButton, matched); },
+        });
+        setButtonIcon(adjustBtn, 'tune');
+        buttonsContainer.appendChild(adjustBtn);
     }
 
     header.appendChild(buttonsContainer);

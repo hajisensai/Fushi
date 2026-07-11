@@ -2249,5 +2249,19 @@
   "clipboard_panel_opacity": "Panel opacity",
   "clipboard_panel_opacity_hint": "Card background opacity of the floating lookup panel (requires Windows 11 backdrop)",
   "sync_client_connected": "Connected",
-  "sync_client_token_manual": "Enter token manually"
+  "sync_client_token_manual": "Enter token manually",
+  "popup_ctx_adjust_button": "Adjust context",
+  "popup_ctx_modal_eyebrow": "Before mining",
+  "popup_ctx_modal_title": "Select sentence context",
+  "popup_ctx_modal_count": "Selected %d",
+  "popup_ctx_box_prev": "Before",
+  "popup_ctx_box_current": "Current",
+  "popup_ctx_box_next": "After",
+  "popup_ctx_box_empty": "(none)",
+  "popup_ctx_prev_minus": "Remove before",
+  "popup_ctx_prev_plus": "Add before",
+  "popup_ctx_next_minus": "Remove after",
+  "popup_ctx_next_plus": "Add after",
+  "popup_ctx_confirm": "Confirm",
+  "popup_ctx_cancel": "Cancel"
 }

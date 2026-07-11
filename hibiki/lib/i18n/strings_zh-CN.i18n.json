@@ -2249,5 +2249,19 @@
   "clipboard_panel_opacity": "面板不透明度",
   "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）",
   "sync_client_connected": "已连接",
-  "sync_client_token_manual": "手动填写令牌"
+  "sync_client_token_manual": "手动填写令牌",
+  "popup_ctx_adjust_button": "调整上下文",
+  "popup_ctx_modal_eyebrow": "制卡前调整",
+  "popup_ctx_modal_title": "选择句子上下文",
+  "popup_ctx_modal_count": "已选择 %d 句",
+  "popup_ctx_box_prev": "前文",
+  "popup_ctx_box_current": "当前句",
+  "popup_ctx_box_next": "后文",
+  "popup_ctx_box_empty": "（无）",
+  "popup_ctx_prev_minus": "前退一句",
+  "popup_ctx_prev_plus": "前加一句",
+  "popup_ctx_next_minus": "后退一句",
+  "popup_ctx_next_plus": "后加一句",
+  "popup_ctx_confirm": "确认制卡",
+  "popup_ctx_cancel": "取消"
 }
