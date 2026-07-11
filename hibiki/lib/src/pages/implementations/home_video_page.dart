@@ -1592,7 +1592,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         countLabel: t.video_playlist_episodes(count: group.items.length),
         itemCount: group.items.length,
         itemWidth: 240,
-        rowHeight: 200,
+        // 与散卡网格 cell 同高（218 = 封面区 + 标题 + Phase D 观看进度行）。
+        rowHeight: 218,
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
@@ -2000,7 +2001,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       sliver: SliverGrid.builder(
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 280,
-          mainAxisExtent: 200,
+          // 200 → 218：UI v2 Phase D 卡片底部新增一行观看进度文字（metadata），
+          // 加高 cell 保持封面区不被挤压。
+          mainAxisExtent: 218,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
@@ -2126,7 +2129,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
             child: Text(
               book.title,
               maxLines: 2,
@@ -2134,6 +2137,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
+          // UI v2 Phase D：观看进度文字外显（mockup 卡片下的进度/上次观看行）。
+          // 只显示可靠数据：已看完 / 已看至 mm:ss（无总时长列，不显示百分比）+
+          // 上次观看日期（watch-stats 有该 title 时）；全无痕迹不渲染本行。
+          if (_buildCardWatchMeta(book) case final String meta
+              when meta.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: Text(
+                meta,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: HibikiDesignTokens.of(context).type.metadata,
+              ),
+            )
+          else
+            const SizedBox(height: 4),
         ],
       ),
     );
@@ -2150,6 +2169,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       meta: book,
       child: card,
     );
+  }
+
+  /// 视频卡观看进度文字行：`已看完` / `已看至 m:ss`（+ `上次观看 M-dd`）。
+  /// 无任何观看痕迹返回空串（调用方不渲染该行）。
+  String _buildCardWatchMeta(VideoBookRow book) {
+    final DateTime? watched = _lastWatchedByTitle[book.title];
+    final List<String> parts = <String>[
+      if (book.completedAt != null)
+        t.video_stat_completed
+      else if (book.lastPositionMs > 0)
+        t.video_watched_up_to(time: formatVideoPosition(book.lastPositionMs)),
+      if (watched != null)
+        t.video_last_watched(date: _formatOverviewDate(watched)),
+    ];
+    return parts.join(' · ');
   }
 
   /// 批量选择勾选标记：选中实心对勾，未选空心圆（与书架 _buildBookCard 一致）。
