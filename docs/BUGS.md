@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 716 条。点号进各自文件。
+> 共 717 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-732](bugs/BUG-732-ext-page-scroll.md) | ✅ | ✅ | 扩展影响普通网页滚动速度 |
 | [BUG-731](bugs/BUG-731-backup-font-count-inflated.md) | ✅ | ✅ | 备份导出自定义字体计数虚高(2个显示7个) |
 | [BUG-730](bugs/BUG-730-clipboard-mine-sentence.md) | ✅ | ✅ | 剪贴板/全局查词制卡句子字段恒空（未接剪贴板文本） |
 | [BUG-729](bugs/BUG-729-simple-dict-inflected-lookup.md) | ✅ | ✅ | MDX/StarDict/DSL 等 simple 词典屈折形查词命中丢失 |
