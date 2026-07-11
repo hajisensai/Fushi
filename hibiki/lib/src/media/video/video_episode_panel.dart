@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 
 /// 视频播放列表「剧集列表」push-aside 侧栏面板（TODO-638）。
 ///
@@ -9,7 +8,7 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 /// 设置 / 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，三者
 /// 视觉统一：顶部带标题 + 右上角 × 关闭按钮的 header，下面是可滚动的剧集列表。
 ///
-/// 本 widget 只负责渲染——把每集（[PlaylistEntry]）列成「序号 / 当前集播放图标 + 标题」
+/// 本 widget 只负责渲染——把每集标题列成「序号 / 当前集播放图标 + 标题」
 /// 一行，点击 [onTapEpisode] 切到该集（页面层 `_switchEpisode`），高亮 [currentIndex]
 /// 当前集。可见性与互斥由页面层（`_episodeListVisible` / `_videoWithSubtitlePanel`）管。
 ///
@@ -19,7 +18,7 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 class VideoEpisodePanel extends StatefulWidget {
   const VideoEpisodePanel({
     super.key,
-    required this.episodes,
+    required this.episodeTitles,
     required this.currentIndex,
     required this.onTapEpisode,
     required this.onClose,
@@ -30,9 +29,10 @@ class VideoEpisodePanel extends StatefulWidget {
     this.width = 320,
   });
 
-  /// 播放列表各集。空列表（单视频）时显示 [emptyHint]（剧集入口仅在播放列表出现，
-  /// 故正常不会空；空态作防御兜底）。
-  final List<PlaylistEntry> episodes;
+  /// 播放列表各集标题（有序）。空列表（单视频）时显示 [emptyHint]（剧集入口仅在播放
+  /// 列表出现，故正常不会空；空态作防御兜底）。统一合集 Phase 3：只需标题，与内部集
+  /// 表示解耦。
+  final List<String> episodeTitles;
 
   /// 当前播放集下标（[episodes] 内）；负 / 越界视为「无当前集」。
   final int currentIndex;
@@ -87,7 +87,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
 
   void _scrollToCurrentEpisode() {
     final int index = widget.currentIndex;
-    if (index < 0 || index >= widget.episodes.length) return;
+    if (index < 0 || index >= widget.episodeTitles.length) return;
     if (index == _lastScrolledIndex) return;
     if (!_scrollController.hasClients) return;
     _lastScrolledIndex = index;
@@ -120,7 +120,9 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
             _buildHeader(cs),
             const Divider(height: 1),
             Expanded(
-              child: widget.episodes.isEmpty ? _buildEmpty(cs) : _buildList(cs),
+              child: widget.episodeTitles.isEmpty
+                  ? _buildEmpty(cs)
+                  : _buildList(cs),
             ),
           ],
         ),
@@ -178,9 +180,9 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: widget.episodes.length,
+      itemCount: widget.episodeTitles.length,
       itemBuilder: (BuildContext _, int i) {
-        final PlaylistEntry episode = widget.episodes[i];
+        final String episodeTitle = widget.episodeTitles[i];
         final bool selected = i == widget.currentIndex;
         return ListTile(
           dense: true,
@@ -209,7 +211,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
                   ),
                 ),
           title: Text(
-            episode.title,
+            episodeTitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

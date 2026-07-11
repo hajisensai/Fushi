@@ -86,12 +86,11 @@ void main() {
         'Future<void> _init() async {',
         'Future<void> _initRemote() async {',
       );
+      // 统一合集 Phase 3：单视频与播放列表某一集都照 _loadSingle 加载（每集是独立
+      // VideoBooks 行），故只需保证持久化音量在 _loadSingle 前读到。
       expect(localInit.indexOf('_playbackVolume = _readPersistedVolume()'),
           lessThan(localInit.indexOf('_loadSingle(row)')),
-          reason: 'local single-video load must see persisted volume first');
-      expect(localInit.indexOf('_playbackVolume = _readPersistedVolume()'),
-          lessThan(localInit.indexOf('_loadEpisode(')),
-          reason: 'playlist load must see shared persisted volume first');
+          reason: 'single-video / playlist-episode load must see volume first');
 
       final String remoteInit = region(
         page,

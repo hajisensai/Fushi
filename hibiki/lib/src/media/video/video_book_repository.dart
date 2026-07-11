@@ -91,6 +91,14 @@ class VideoBookRepository {
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
 
+  /// 统一合集：某合集的成员引用行（按 sortIndex 有序）。播放器据此建播放列表兄弟集。
+  Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
+      _db.getCollectionItems(collectionId);
+
+  /// 统一合集：按 id 取合集（播放器取 playlist 合集名做制卡 documentTitle 系列名）。
+  Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
+      _db.getMediaCollectionById(id);
+
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径

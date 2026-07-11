@@ -17,10 +17,12 @@ part of '../video_hibiki_page.dart';
 extension _VideoEpisode on _VideoHibikiPageState {
   void _handlePlaybackCompleted() {
     if (!mounted) return;
-    final int? nextEpisode = nextPlaylistIndexAfterCompletion(
-      _episodes,
-      _currentEpisode,
-    );
+    // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
+    final int cur = _currentEpisode;
+    final int? nextEpisode =
+        (_episodes.length > 1 && cur >= 0 && cur < _episodes.length - 1)
+            ? cur + 1
+            : null;
     // TODO-639　三门控(自动连播开关/有下一集/未在换集)任一不满足都停在本集结束。
     if (!shouldAutoPlayNextOnCompletion(
       autoPlayNextEnabled: appModel.videoAutoPlayNext,
@@ -86,12 +88,9 @@ extension _VideoEpisode on _VideoHibikiPageState {
     }());
   }
 
-  /// 切到第 [index] 集：保存当前集进度 → 持久化 currentEpisode → 按 [intent]
-  /// 决定目标集保存位置是否恢复 + 重新 load 新集字幕。
-  ///
-  /// 当前集进度由 125ms tick 经 [_persistPosition] 已实时记进 `_episodes[当前集]`
-  /// 并落库；切集前再补记一次当前播放位置（覆盖 tick 整秒节流的尾差），确保下次
-  /// 回到本集精确续播。
+  /// 切到第 [index] 集。统一合集 Phase 3：本地每集是独立 VideoBooks 行 → 换集 =
+  /// pushReplacement 到该集的单视频页；远端保持原地 host 驱动换流。切前先把当前集
+  /// 精确位置补记落库（tick 只整秒写，补这一下避免丢尾部几百 ms），确保回到本集精确续播。
   Future<void> _switchEpisode(
     int index, {
     required EpisodeStartIntent intent,
@@ -115,22 +114,27 @@ extension _VideoEpisode on _VideoHibikiPageState {
       return;
     }
 
-    // 切前补记当前集精确位置（tick 只整秒写，补这一下避免丢尾部几百 ms）。
+    // 统一合集 Phase 3：本地每集是独立 VideoBooks 行 → 换集 = pushReplacement 到兄弟集
+    // 的单视频页（同 playlistCollectionId 让新页仍带剧集面板/上下集/连播；widget.bookUid
+    // 恒为当前集，整套单视频 load/cue/收藏/持久化机制原样复用）。先落当前集精确位置
+    // （tick 只整秒写，补这一下避免丢尾部几百 ms）；新页 _init 从该集行 lastPositionMs 续播。
+    final String? targetUid = _episodes[index].bookUid;
+    if (targetUid == null) return;
+    // 捕获 NavigatorState（在 await 前），避免跨 async gap 用 context。
+    final NavigatorState navigator = Navigator.of(context);
     final int? curPos = _controller?.positionMs;
     if (curPos != null) {
-      _episodes = updateEntryPosition(_episodes, _currentEpisode, curPos);
-      await widget.repo.updatePlaylistJson(widget.bookUid, _encodeEpisodes());
+      await _persistPosition(widget.bookUid, curPos);
     }
-
-    await widget.repo.updateCurrentEpisode(widget.bookUid, index);
-    // 换集：清空字幕去重集，新集字幕从头计（完成标记按整本书不变）。
-    _watchTracker?.onEpisodeChanged();
-    // 把上次选择的字幕偏好带进新集（同类应用：内嵌同轨 / 外挂同语言后缀）。
-    await _loadEpisode(
-      index,
-      initialPositionMs: _episodes[index].positionMs,
-      startIntent: intent,
-      subtitleSource: _currentSubtitleSource,
+    if (!mounted) return;
+    await navigator.pushReplacement<void, void>(
+      adaptivePageRoute<void>(
+        builder: (_) => VideoHibikiPage.neutralized(
+          bookUid: targetUid,
+          repo: widget.repo,
+          playlistCollectionId: widget.playlistCollectionId,
+        ),
+      ),
     );
   }
 
@@ -220,7 +224,10 @@ extension _VideoEpisode on _VideoHibikiPageState {
                       left: false,
                       child: VideoEpisodePanel(
                         key: const ValueKey<String>('video-episode-panel'),
-                        episodes: _episodes,
+                        episodeTitles: <String>[
+                          for (final _PlaylistEpisodeRef e in _episodes)
+                            e.title,
+                        ],
                         currentIndex: _currentEpisode,
                         onTapEpisode: _handleEpisodeListTap,
                         onClose: _closeEpisodeList,

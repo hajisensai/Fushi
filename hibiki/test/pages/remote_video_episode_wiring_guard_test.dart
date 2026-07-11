@@ -45,7 +45,7 @@ void main() {
       reason: 'remote playlist episodes must be mapped into _episodes',
     );
     expect(
-      initRemote.contains('PlaylistEntry(title: ep.title'),
+      initRemote.contains('_PlaylistEpisodeRef(title: ep.title'),
       isTrue,
       reason: 'remote episodes drive the existing _episodes/_isPlaylist path',
     );
