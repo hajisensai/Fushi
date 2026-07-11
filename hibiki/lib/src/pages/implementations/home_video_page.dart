@@ -1483,25 +1483,31 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
         // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
         // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
+        // 宽窗（非 compact）时四个动作展开成「图标+文字」药丸（用户 mockup：把
+        // 「导入视频、媒体库」等按钮可展开时展开）；窄窗自动回落纯图标。
         if (canImport)
           HibikiIconButton(
             tooltip: t.video_import_action,
+            label: t.video_import_action,
             icon: Icons.add,
             onTap: _openImport,
           ),
         if (canImport)
           HibikiIconButton(
             tooltip: t.media_source_manage_title,
+            label: t.media_source_manage_title,
             icon: Icons.folder_copy_outlined,
             onTap: _openManageSources,
           ),
         HibikiIconButton(
           tooltip: t.collections,
+          label: t.collections,
           icon: Icons.collections_bookmark_outlined,
           onTap: _openCollections,
         ),
         HibikiIconButton(
           tooltip: t.video_statistics,
+          label: t.video_statistics,
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
         ),

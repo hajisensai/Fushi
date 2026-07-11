@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 /// A button that can be set as busy. When busy, the icon is faded out when its
 /// [onTap] action is on-going and processing, which can be used to
@@ -27,11 +29,18 @@ class HibikiIconButton extends StatefulWidget {
     this.padding,
     this.isWideTapArea = false,
     this.focusId,
+    this.label,
     super.key,
   });
 
   /// The icon to display within the button.
   final IconData icon;
+
+  /// 可展开文字标签：非空时，在非 compact 宽度（真实视口 ≥600，经
+  /// [windowSizeClassReal] 判定）渲染成「图标 + 文字」的描边药丸按钮（页头动作在
+  /// 宽窗展开可读，对齐 Jellyfin 式工具栏）；compact 窄窗自动回落为纯图标圆钮，
+  /// 行为与 null 完全一致。busy / enabled / 焦点注册在两种形态间共享同一路径。
+  final String? label;
 
   /// The size of the icon. By default, this is 24.0.
   final double? size;
@@ -145,9 +154,56 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   Color get disabledColor =>
       widget.disabledColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
 
+  /// 宽窗判定与 [HibikiPageHeader] 同源：真实视口宽（BUG-401，乘回 UI 缩放）
+  /// 非 compact 才展开文字标签。
+  bool _labelExpanded(BuildContext context) =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        HibikiAppUiScale.of(context),
+      ) !=
+      WindowSizeClass.compact;
+
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final String? label = widget.label;
+    if (label != null && _labelExpanded(context)) {
+      final Color contentColor = enabled ? enabledColor : disabledColor;
+      final Semantics pill = Semantics(
+        label: widget.tooltip,
+        button: true,
+        child: InkWell(
+          enableFeedback: enabled,
+          customBorder: const StadiumBorder(),
+          onTap: enabled ? _handleTap : null,
+          onTapDown: widget.onTapDown,
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.rowHorizontal - 2,
+              vertical: tokens.spacing.gap - 1,
+            ),
+            decoration: ShapeDecoration(
+              color: widget.backgroundColor ?? Colors.transparent,
+              shape: StadiumBorder(
+                side: BorderSide(color: tokens.surfaces.outline),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(widget.icon, size: widget.size ?? 18, color: contentColor),
+                SizedBox(width: tokens.spacing.gap - 2),
+                Text(
+                  label,
+                  style: tokens.type.controlLabel.copyWith(color: contentColor),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return _focusable(context, pill);
+    }
     if (widget.isWideTapArea) {
       final Semantics button = Semantics(
         label: widget.tooltip,

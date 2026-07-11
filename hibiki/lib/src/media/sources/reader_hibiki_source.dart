@@ -289,10 +289,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
     required AppModel appModel,
     HibikiFocusId? focusId,
+    String? label,
   }) {
     return HibikiIconButton(
       size: Theme.of(context).textTheme.titleLarge?.fontSize,
       tooltip: t.srt_import,
+      // 宽窗展开为「图标+文字」（书架页头传入）；null 时保持纯图标（其它调用点）。
+      label: label,
       icon: Icons.library_add_outlined,
       focusId: focusId,
       onTap: () async {

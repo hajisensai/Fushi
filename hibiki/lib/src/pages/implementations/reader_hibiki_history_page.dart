@@ -370,11 +370,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     return HibikiPageHeader(
       title: t.books,
       actions: <Widget>[
+        // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
+        // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
         mediaSource.buildBookImportButton(
           context: context,
           ref: ref,
           appModel: appModel,
           focusId: kShelfImportFocusId,
+          label: t.srt_import,
         ),
         _headerAction(
           tooltip: t.media_source_manage_title,
@@ -413,6 +416,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }) {
     return HibikiIconButton(
       tooltip: tooltip,
+      // 页头动作宽窗展开文字（tooltip 即标签文案）；窄窗由组件自动回落纯图标。
+      label: tooltip,
       icon: icon,
       onTap: onTap,
     );
