@@ -217,6 +217,15 @@ void Deinflector::load_transforms_json(const std::string& json) {
 uint64_t Deinflector::pos_to_conditions(const std::vector<std::string>& part_of_speech) const {
   uint64_t result = 0;
   for (const auto& p : part_of_speech) {
+    if (p == "*") {
+      // Simple dictionaries (MDX / StarDict / DSL) carry no per-term part of
+      // speech, so their terms are stored with the wildcard rule "*". Returning
+      // all condition bits makes filter_by_pos keep them for ANY deinflected
+      // lookup (its `(dict_conditions & d.conditions) == 0` erase test can never
+      // fire), instead of dropping every inflected-form hit. Yomitan term banks
+      // carry real POS tags and never use "*", so they are unaffected.
+      return ~uint64_t{0};
+    }
     auto it = pos_to_condition_cache_.find(p);
     if (it != pos_to_condition_cache_.end()) {
       result |= it->second;
