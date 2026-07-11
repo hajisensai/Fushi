@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 717 条。点号进各自文件。
+> 共 719 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-734](bugs/BUG-734-desktop-restart-button-only-exits.md) | ✅ | ✅ | 桌面导入后点立即重启只退出不重启 |
+| [BUG-733](bugs/BUG-733-overwrite-import-rename-access-denied.md) | ✅ | ✅ | 覆盖导入书籍树换名Windows拒绝访问导致整个导入失败 |
 | [BUG-732](bugs/BUG-732-merge-import-deleted-book-empty-orphan.md) | ✅ | ✅ | 合并导入让已删书变空书籍(srt行不认书墓碑被复活) |
 | [BUG-731](bugs/BUG-731-merge-import-audio-sources-lost.md) | ✅ | ✅ | 合并导入不恢复音频来源(音频源配置/本地音频库被当设备设置丢弃) |
 | [BUG-730](bugs/BUG-730-backup-font-count-inflated.md) | ✅ | ✅ | 备份导出自定义字体计数虚高(2个显示7个) |

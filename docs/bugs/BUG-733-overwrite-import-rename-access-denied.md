@@ -1,0 +1,6 @@
+## BUG-733 · 覆盖导入书籍树换名Windows拒绝访问导致整个导入失败
+- **报告**：2026-07-12（用户：截图「备份导入失败：PathAccessException: Rename failed, path = 'D:\APP\HIBIKI_date\documents\hoshi_books.import-tmp' (OS Error: 拒绝访问。, errno = 5)」；连带「音频数据库没导入」——其实是整个导入在这步中止，什么都没落地）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/sync/backup_service.dart` 的 `_commitPreparedTree`。覆盖导入用两阶段换名把新写好的 `hoshi_books.import-tmp` 换成 `hoshi_books`（`tmpDir.rename(target)`）。**这三处 rename 没有任何重试**，而删除路径早有 `deleteDirectoryWithRetry` 对 Windows 瞬时占用（errno 5 拒绝访问 / 32 共享冲突 / 145 目录非空，见 `_isWindowsTransientFsBusy`）做有界重试。刚解压完的多 GB 目录树被杀软/索引器扫描时会短暂持句柄→对该树的 rename 立刻 errno 5 失败→`importBackupFiles` 抛出→`failBackupImport` 弹红错，本地音频等一切都没恢复。
+- **[x] ① 已修复** — 新增 `renameDirectoryWithRetry`（镜像 `deleteDirectoryWithRetry`：仅 Windows、仅瞬时码重试，退避 100ms→1s 上限、20 次≈15s 给大树扫描留时间，用尽抛出）；`_commitPreparedTree` 的三处 rename（target→aside、tmp→target、回滚 aside→target）全部走它。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/backup_rename_retry_test.dart`：一次成功不重试；errno 5/32/145 瞬时重试救回；非 Windows/非瞬时码立即抛；用尽 maxAttempts 抛最后异常。
+- **备注**：同轮修 [BUG-734](BUG-734-desktop-restart-button-only-exits.md)（桌面重启只退出）。「任何报错应该给提示」——导入异常本来就会经 `failBackupImport` 弹错（截图即是），已满足；本次修复让这个瞬时错不再发生。真机（用户 D:\APP\HIBIKI_date、14GB 备份）复测覆盖导入应能过换名步骤。

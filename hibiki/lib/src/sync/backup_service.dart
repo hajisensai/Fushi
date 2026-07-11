@@ -1070,6 +1070,36 @@ class BackupService {
     }
   }
 
+  /// Retries a directory [rename] that hits a transient Windows filesystem-busy
+  /// error (access denied / sharing violation — see [_isWindowsTransientFsBusy])
+  /// with a bounded backoff. The content-tree swap renames a freshly-EXTRACTED
+  /// `.import-tmp` into place; on Windows an antivirus / indexer scanning the
+  /// just-written tree briefly holds handles, so the immediate rename can fail
+  /// with `errno 5` (the "备份导入失败: Rename failed … 拒绝访问" the user hit).
+  /// A non-Windows error, or a non-transient Windows error, is rethrown at once.
+  /// The longer cap than the delete retry (backoff to ~1s/attempt) gives a big
+  /// multi-GB tree's scan time to finish.
+  @visibleForTesting
+  static Future<void> renameDirectoryWithRetry({
+    required Future<void> Function() rename,
+    required Future<void> Function(int delayMs) sleep,
+    required bool isWindows,
+    int maxAttempts = 20,
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await rename();
+        return;
+      } on FileSystemException catch (e) {
+        final int? code = e.osError?.errorCode;
+        final bool transient = isWindows && _isWindowsTransientFsBusy(code);
+        if (!transient || attempt == maxAttempts) rethrow;
+        // backoff: 100ms,200ms,... capped at 1s → ~15s total over 20 attempts.
+        await sleep((100 * attempt).clamp(100, 1000));
+      }
+    }
+  }
+
   /// Strips device-local sync config from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [HibikiDatabase]
   /// (the copy is already at the current schema, so no migration runs).
@@ -2692,14 +2722,22 @@ class BackupService {
     final Directory aside = Directory(asideRoot);
     final Directory target = Directory(targetRootPath);
     final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
+    // Every swap rename retries transient Windows FS-busy (errno 5/32/145): an
+    // antivirus/indexer scanning the freshly-written tree briefly locks it, so
+    // a bare rename fails with "拒绝访问" even though nothing is really wrong.
+    Future<void> renameDir(Directory dir, String to) => renameDirectoryWithRetry(
+          rename: () => dir.rename(to),
+          sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+          isWindows: Platform.isWindows,
+        );
     if (await aside.exists()) await aside.delete(recursive: true);
-    if (await target.exists()) await target.rename(asideRoot);
+    if (await target.exists()) await renameDir(target, asideRoot);
     try {
-      await tmpDir.rename(targetRootPath);
+      await renameDir(tmpDir, targetRootPath);
     } catch (_) {
       // Roll back: put the old tree back if the new one didn't land.
       if (await aside.exists() && !await target.exists()) {
-        await aside.rename(targetRootPath);
+        await renameDir(aside, targetRootPath);
       }
       rethrow;
     }

@@ -94,6 +94,19 @@ void backupImportRestart() {
   if (Platform.isAndroid || Platform.isIOS) {
     FlutterExitApp.exitApp();
   } else {
+    // Desktop: "立即重启" must actually RESTART, not just quit (the user hit
+    // "点重启没重启"). Launch a fresh detached instance of this executable, then
+    // exit the current one. Best-effort: if the relaunch fails we still exit, so
+    // behaviour never regresses below the old quit-only path.
+    try {
+      Process.start(
+        Platform.resolvedExecutable,
+        <String>[],
+        mode: ProcessStartMode.detached,
+      );
+    } catch (_) {
+      // Fall through to exit — a quit is still better than a stuck app.
+    }
     exit(0);
   }
 }
