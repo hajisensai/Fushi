@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 710 条。点号进各自文件。
+> 共 711 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-726](bugs/BUG-726-ext-unpacked-copy-never-refreshed.md) | ✅ | ✅ | 浏览器扩展已解压副本永不随app升级刷新导致弹窗停留旧版 |
 | [BUG-725](bugs/BUG-725-interconnect-testconn-button-in-server-mode.md) | ✅ | ✅ | 互联服务端模式仍显示测试连接按钮 |
 | [BUG-724](bugs/BUG-724-audiobook-image-contained-anchor.md) | ✅ | ✅ | 有声书正文中间插图:当前句cue锚点是含图容器时compareDocumentPosition只判PRECEDING位漏检导致不暂停不去遮罩 |
 | [BUG-722](bugs/BUG-722-popup-multibase-ruby-furigana-overlap.md) | ✅ | ✅ | 词典弹窗多基字词逐字振假名完全重叠(勝負/将棋) |

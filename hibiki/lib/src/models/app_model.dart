@@ -36,6 +36,7 @@ import 'package:hibiki/src/models/app_font_loader.dart';
 import 'package:hibiki/src/models/builtin_tags.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -2010,6 +2011,15 @@ class AppModel with ChangeNotifier {
       if (yomitanApiServerEnabled) {
         unawaited(startYomitanApiServer().catchError((Object _) {}));
       }
+      // BUG-726：桌面端启动时把 <appSupport> 下已解压的浏览器扩展副本刷新到当前内置版本
+      // （只在用户装过扩展、指纹不一致时重解压；没装过不落盘）。此前该副本只在手动跑
+      // 「安装扩展」助手时写入 → app 升级后磁盘副本永远停在安装当天的旧版，扩展弹窗与
+      // app 内弹窗漂移（BUG-621/688 修了也到不了用户浏览器）。fire-and-forget 不阻塞 init。
+      unawaited(
+          refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.refreshBrowserExtensionCopy', e, s);
+      }));
       if (texthookerEnabled) {
         TexthookerWsClientHost.instance.start(texthookerUrls);
       }
@@ -4279,6 +4289,10 @@ class AppModel with ChangeNotifier {
       // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
+      // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
+      // 与自身 HIBIKI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
+      // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
+      extensionBuildProvider: () => _browserExtensionBuild,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4286,6 +4300,24 @@ class AppModel with ChangeNotifier {
             HoshiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
+    );
+  }
+
+  // BUG-726：内置扩展指纹缓存（refreshBrowserExtensionCopy 启动时填充）。
+  String? _browserExtensionBuild;
+
+  /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
+  /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。
+  /// 仅桌面（扩展解压引导仅桌面有意义）；移动端 no-op。
+  Future<void> refreshBrowserExtensionCopy() async {
+    if (!DesktopLookupService.isDesktop) return;
+    _browserExtensionBuild = await bundledBrowserExtensionFingerprint();
+    await refreshBundledBrowserExtensionIfStale(
+      serverConfig: BrowserExtensionServerConfig(
+        host: '127.0.0.1',
+        port: yomitanApiPort,
+        token: yomitanApiKey,
+      ),
     );
   }
 

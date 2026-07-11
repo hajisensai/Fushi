@@ -993,6 +993,13 @@ window.hoshiSelection = {
       return null;
     }
     if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {
+      // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
+      // 高亮与弹窗——这是「按住 Shift 一路滑，弹窗跟着光标走」的去重基石。滑过一
+      // 个词只查一次，同词内继续移动不重复 fire onTextSelected，不闪、不刷 FFI /
+      // 查词历史。真点击（fromHover falsy）保持旧的 toggle 语义：再点同词 = 取消。
+      if (fromHover) {
+        return null;
+      }
       this.clearSelection();
       return null;
     }
