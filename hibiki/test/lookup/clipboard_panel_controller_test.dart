@@ -78,7 +78,10 @@ void main() {
       // 正向契约：update 见 !_visible 无条件 _showPanel，故关面板（_visible=false）
       // 后下一条剪贴板复制会重开面板。
       final int updAt = controllerSrc.indexOf('Future<void> update(');
-      final int visAt = controllerSrc.indexOf('if (!_visible) {', updAt);
+      // 前缀匹配：clipboard 真机第 2 轮把这个重开门加固成
+      // `if (!_visible || !await _channel.isShowing())`（窗口被系统藏掉也重上屏），
+      // 重开机制（!_visible 时 _showPanel）不变，故不锁死到旧的 `) {` 尾。
+      final int visAt = controllerSrc.indexOf('if (!_visible', updAt);
       final int showAt =
           controllerSrc.indexOf('await _showPanel(model);', visAt);
       expect(visAt, greaterThan(updAt),

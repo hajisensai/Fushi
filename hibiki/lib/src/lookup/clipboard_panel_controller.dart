@@ -75,10 +75,6 @@ class ClipboardPanelController {
   bool _started = false;
   bool _visible = false;
 
-  /// ×（面板栏关闭钮）后为 true：剪贴板事件不再更新面板，直到 Ctrl+Shift+D
-  /// （origin=hotkey 的显式意图）或重开设置开关解除。
-  bool paused = false;
-
   // spec §6 真机修正：acrylic backdrop 路线废弃（经 windowed WebView2 实测
   // 不透明，且毛玻璃≠透视）。透明=整窗 LWA_ALPHA，Win10/11 通用、无需能力
   // 探测，故原 backdropOk 门控删除、透明度滑杆恒可用。
