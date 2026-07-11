@@ -1,0 +1,13 @@
+{
+  "name": "hibiki-js-behavior-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "JS behavior tests for the reader/audiobook WebView bridge, run against real DOM via jsdom. Complements the Dart source-scan guards, which cannot exercise runtime DOM semantics (e.g. compareDocumentPosition bit flags).",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
