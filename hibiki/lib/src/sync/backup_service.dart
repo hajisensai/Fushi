@@ -1418,6 +1418,7 @@ class BackupService {
       final List<String> toCommit = <String>[];
       try {
         if (booksRootDirectory != null &&
+            wants(BackupCategory.books) &&
             await _prepareTreeRestore(
                 zipPath, archive, _booksPrefix, booksRootDirectory,
                 onBytes: reportBytes)) {
@@ -1530,6 +1531,32 @@ class BackupService {
           dbDirectory: dbDirectory,
           meta: meta,
           newVideosRoot: effVideosRoot,
+        );
+      }
+
+      // 3c) Honour the per-category IMPORT selection for the DB-content
+      //     categories the overwrite blob carries wholesale (TODO-1358). The
+      //     file categories are already gated above (skipped file restore), but
+      //     books / statistics / progress live in the swapped-in DB, so strip
+      //     the unticked ones here. Overwrite semantics: unticking = that
+      //     category's data does not end up on this device (the DB was replaced
+      //     wholesale, so there is no local layer to preserve — mirrors how the
+      //     statistics/progress strip already works on the export side).
+      if (!wants(BackupCategory.books)) {
+        // Strip every book row (+ its cascade) so no book from the backup
+        // travels; the hoshi_books tree restore was skipped above too.
+        await _retainBooks(dbDirectory, const <String>{});
+      }
+      if (!wants(BackupCategory.statistics) ||
+          !wants(BackupCategory.progress)) {
+        await _stripExcludedDataCategories(
+          dbDirectory,
+          stripProgress: !wants(BackupCategory.progress),
+          stripStatistics: !wants(BackupCategory.statistics),
+          // settings / profiles stay governed by the importSettings toggle and
+          // the excluded-layer preserve above — never touched by this strip.
+          stripSettings: false,
+          stripProfiles: false,
         );
       }
 

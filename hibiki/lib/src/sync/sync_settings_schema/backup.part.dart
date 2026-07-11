@@ -64,34 +64,27 @@ String backupCategoryDescription(BackupCategory category) {
   }
 }
 
-/// Categories the user can individually skip when RESTORING an overwrite import
-/// (TODO-1358): the bulky sidecar file trees. Books stay (core library index);
-/// progress/statistics ride the DB blob; settings/profiles ride the
-/// "import settings and profiles" toggle.
+/// Every content category the user can individually skip on import (TODO-1358).
+/// Both modes now honour the full set: overwrite strips the unticked category's
+/// rows/files from the swapped-in DB ([BackupService.importBackupFiles]); merge
+/// skips its per-category engine steps + content-tree copy
+/// ([BackupService.mergeImportBackupFiles]). settings / profiles stay governed
+/// by the separate "import settings and profiles" toggle (overwrite) / kept
+/// local (merge), so they are not listed here.
 const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
-  BackupCategory.dictionary,
-  BackupCategory.audiobooks,
-  BackupCategory.fonts,
-  BackupCategory.videos,
-  BackupCategory.localAudio,
-};
-
-/// Categories the user can individually skip on a MERGE import. Merge adds rows
-/// row-by-row through [BackupMergeEngine], so it can gate the DB-content
-/// categories too (books = epub+srt, statistics = the stats tables) that the
-/// overwrite whole-DB-blob path cannot — hence a wider set than
-/// [importSelectableCategories]. Every listed category is honoured by both the
-/// engine's per-category steps and the content-tree copies in
-/// [BackupService.mergeImportBackupFiles].
-const Set<BackupCategory> importMergeSelectableCategories = <BackupCategory>{
   BackupCategory.dictionary,
   BackupCategory.books,
   BackupCategory.audiobooks,
   BackupCategory.fonts,
   BackupCategory.videos,
   BackupCategory.localAudio,
+  BackupCategory.progress,
   BackupCategory.statistics,
 };
+
+/// Merge uses the same full selectable set as overwrite now.
+const Set<BackupCategory> importMergeSelectableCategories =
+    importSelectableCategories;
 
 /// TODO-1151：备份导入完成后由 [BackupImportOverlayView] 的「立即重启」按钮触发的退出。
 /// 沿用旧导入实现的平台分支（移动端 [FlutterExitApp.exitApp]，桌面端 `exit(0)`），只把
