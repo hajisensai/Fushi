@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 722 条。点号进各自文件。
+> 共 723 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-738](bugs/BUG-738-transient-lookup-window-owned-pulls-main-foreground.md) | ✅ | ✅ | 悬浮字幕点词瞬态查词窗owned·Z序连带把主窗拉前台 |
 | [BUG-737](bugs/BUG-737-overlay-window-dead-handle-no-recreate.md) | ✅ | ✅ | 覆盖窗HWND被外部销毁后悬垂hwnd_不重建·第二个弹窗出不来 |
 | [BUG-736](bugs/BUG-736-extension-popup-theme-vars.md) | ✅ | ✅ | 浏览器扩展查词弹窗主题与 app 不一致(漏发4个CSS变量) |
 | [BUG-735](bugs/BUG-735-shelf-add-button-size.md) | ✅ | ✅ | 书架添加按钮尺寸位置与其它头部按钮不一致 |
