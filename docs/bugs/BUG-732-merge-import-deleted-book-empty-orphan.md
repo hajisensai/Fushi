@@ -1,0 +1,6 @@
+## BUG-732 · 合并导入让已删书变空书籍(srt行不认书墓碑被复活)
+- **报告**：2026-07-11（用户：合并导入 14GB 备份后「有空书籍」；同数据根 `D:\APP\HIBIKI_date`、导入前手动删过一本测试书、选「合并到现有库」）
+- **真实性**：✅ 真 bug（离屏 export→delete→merge 往返复现）— 根因 `hibiki/lib/src/sync/backup_merge_engine.dart` 的 `merge()`：从书架删书走 `reader_hibiki_source.dart:690` 的 `deleteEpubBook(bookKey, tombstone: true)`，写 `book_tombstones`。合并时 `epub_books`(`skipBookTombstones:true`)、`audiobooks`(同)、`audio_cues`(`book_key NOT IN book_tombstones`) 都认墓碑不复活；**唯独 `srt_books` 那行 `_insertMissing('srt_books','uid')` 没有墓碑守卫**。于是删掉一本书后合并旧备份：它的 epub 行正确地不复活，但 srt 行被重新插入 = 一条没有 epub 的孤儿 srt → 书架上一本「空书籍」。（`srt_books` 按 `uid` 去重，但自带 `book_key` 列 col9，可据此守卫。）
+- **[x] ① 已修复** — 给 `_insertMissing` 加可选 `tombstoneKeyColumn`（默认=去重列）；`srt_books` 调用改为 `_insertMissing('srt_books','uid', skipBookTombstones:true, tombstoneKeyColumn:'book_key')`——按 `uid` 去重、按 `book_key` 认墓碑。`book_key=''` 的独立 srt 不受影响（'' 不在墓碑表→照常合并）。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/backup_merge_srt_tombstone_test.dart`：①删书(tombstone:true)后合并含该书的备份 → epub 与 srt 都不复活(无孤儿/空书籍)；②对另一本书的墓碑不误伤 `book_key` 为空的独立 srt(仍合并)。全量 `test/sync` 通过。
+- **备注**：同轮另修 [BUG-731](BUG-731-merge-import-audio-sources-lost.md)（合并不恢复音频来源）。用户还提到「点重启没重启」——桌面端 `backupImportRestart()` 走 `exit(0)` 只退不重启（既有行为，另议）。

@@ -102,7 +102,11 @@ class BackupMergeEngine {
       await _insertMissing('epub_books', 'book_key', skipBookTombstones: true);
       await _insertMissingVideoBooks();
       await _insertMissing('dictionary_metadata', 'name');
-      await _insertMissing('srt_books', 'uid');
+      // srt_books dedups on `uid` but must honour the deleted book's tombstone
+      // via its own `book_key` — else deleting a book then merging an old backup
+      // resurrects an orphan srt row (no epub) = an "empty book" on the shelf.
+      await _insertMissing('srt_books', 'uid',
+          skipBookTombstones: true, tombstoneKeyColumn: 'book_key');
       await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
       await _insertAudioCues();
       await _mergeReaderPositions();
@@ -219,19 +223,24 @@ class BackupMergeEngine {
   /// already present in the target. Explicit column list (minus `id`) so SQLite
   /// assigns fresh autoincrement ids and never reuses the src id.
   ///
-  /// [skipBookTombstones] additionally excludes any src row whose [keyColumn]
-  /// (a `book_key`) is tombstoned in the target — i.e. the user deleted that
-  /// book on this device, so an old backup must never resurrect it (TODO-1195
-  /// part B). Overwrite import does not go through here.
+  /// [skipBookTombstones] additionally excludes any src row whose book key is
+  /// tombstoned in the target — i.e. the user deleted that book on this device,
+  /// so an old backup must never resurrect it (TODO-1195 part B). The tombstoned
+  /// column is [keyColumn] by default, but a table that dedups on a non-book-key
+  /// column (e.g. `srt_books` dedups on `uid` yet carries its own `book_key`)
+  /// passes [tombstoneKeyColumn] so the guard still matches `book_tombstones`.
+  /// Overwrite import does not go through here.
   Future<void> _insertMissing(
     String table,
     String keyColumn, {
     bool skipBookTombstones = false,
+    String? tombstoneKeyColumn,
   }) async {
     final List<String> cols = await _columnsExceptId(table);
     final String colList = cols.join(', ');
+    final String tombCol = tombstoneKeyColumn ?? keyColumn;
     final String tombstoneGuard = skipBookTombstones
-        ? 'AND s.$keyColumn NOT IN (SELECT book_key FROM book_tombstones) '
+        ? 'AND s.$tombCol NOT IN (SELECT book_key FROM book_tombstones) '
         : '';
     await _db.customStatement(
       'INSERT INTO $table ($colList) '
