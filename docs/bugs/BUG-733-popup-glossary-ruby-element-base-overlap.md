@@ -1,4 +1,4 @@
-## BUG-732 · 词典弹窗释义正文元素基字 ruby 注音塌到基字上
+## BUG-733 · 词典弹窗释义正文元素基字 ruby 注音塌到基字上
 - **报告**：2026-07-11（用户：截图 明鏡国語辞典 释义正文，みぜんけい/どうし 等振假名压在 未然形/動詞 等基字上）
 - **真实性**：✅ **真 bug**。根因 `hibiki/assets/popup/popup.js` 的 `postProcessRuby`（约 :2812-2846）只包裹 `<ruby>` 的**裸文本节点**基字（`node.nodeType !== Node.TEXT_NODE → continue`）。明鏡等单语词典把释义正文的 ruby 基字写成**元素节点**（`<ruby><rb>未然形</rb><rt>みぜんけい</rt></ruby>`，或 `<span>` / 嵌套 structured-content），这些元素基字被跳过 → 不生成 `.ruby-unit` → `popup.css` 的 `:where(.glossary-group,.glossary-content) rt{position:absolute; top:0}` 只能锚到裸 `<ruby>`（`line-height:1`、**无 padding-top 预留**）→ 振假名塌到基字正上方与基字重叠。
   - **回归引入点**：BUG-363（`todo-643-popup-ruby-zoom`）把释义体 ruby 的纵向预留从 `ruby{line-height:2}`（**所有** `<ruby>` 天然都有）迁到 `.ruby-unit{padding-top}`（**只有裸文本基字才被 postProcessRuby 生成**）。此后元素基字 ruby 失去纵向预留。BUG-722 又把 rt 从 `bottom:100%` 改锚到 `.ruby-unit` 的 `top:0`，进一步坐实「无 unit 即无预留」。二者叠加使元素基字 ruby 压字。

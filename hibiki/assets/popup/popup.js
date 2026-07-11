@@ -2825,7 +2825,7 @@ function postProcessRuby(container) {
         //     old text-node-only wrap skipped the <rb>, so no .ruby-unit was made;
         //     the rt kept position:absolute;top:0 but anchored to the bare <ruby>
         //     (line-height:1, no padding-top reserve) and the reading collapsed
-        //     onto the base (BUG-732). Wrapping ANY base restores the reserve.
+        //     onto the base (BUG-733). Wrapping ANY base restores the reserve.
         // Keeping the base as a live text node (bare, in place) or a live element
         // (moved whole, not flattened) preserves ruby lookup selection
         // (BUG-110/123/125/129 must not regress).
@@ -3675,6 +3675,15 @@ document.addEventListener('wheel', (e) => {
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
+    // BUG-732: 这段缩放平滑滚动只服务查词弹窗。扩展里弹窗是宿主页上的 shadow 覆盖层，
+    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host；返回 null
+    // 时唯一合法「滚 window」的表面是 in-app 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。
+    // 普通网页上扩展 content script 有 chrome.runtime.id，此时滚轮不在弹窗内绝不能接管：
+    // 否则整页被 POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
+    const scroller = __hibikiWheelScroller(e);
+    const inExtensionContentScript =
+        typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+    if (!scroller && inExtensionContentScript) return;
     e.preventDefault();
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
@@ -3683,7 +3692,6 @@ document.addEventListener('wheel', (e) => {
     // the shadow host is the scroll container (the ancestor walk above cannot
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
-    const scroller = __hibikiWheelScroller(e);
     const layoutStep = visualStep / popupCurrentZoom(scroller);
     // TODO-1387: carry the sub-pixel remainder across events. A precision touchpad
     // reports deltaMode=PIXEL with a tiny fractional deltaY (~1-4 per frame); after

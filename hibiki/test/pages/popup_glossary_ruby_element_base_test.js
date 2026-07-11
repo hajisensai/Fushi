@@ -1,4 +1,4 @@
-// BUG-732 behavior test: dictionary glossary furigana whose ruby base is an
+// BUG-733 behavior test: dictionary glossary furigana whose ruby base is an
 // ELEMENT (<rb> / <span> / nested structured-content, as monolingual dicts like
 // 明鏡 emit) must still get a per-base <span class="ruby-unit"> so its <rt>
 // anchors to — and reserves vertical room above — its own kanji. Before the fix,
@@ -151,10 +151,10 @@ function rt(reading) { return { tag: 'rt', content: reading }; }
 // the <rt> stayed a direct child of <ruby> (collapsed onto the base).
 {
   const r = analyze(ruby([{ tag: 'rb', content: '未然形' }, rt('みぜんけい')]));
-  assert.strictEqual(r.units, 1, '<rb> element base: must still get one .ruby-unit (BUG-732); got ' + r.units);
+  assert.strictEqual(r.units, 1, '<rb> element base: must still get one .ruby-unit (BUG-733); got ' + r.units);
   assert.strictEqual(r.rtDirectlyUnderRuby, 0,
-    '<rb> element base: NO <rt> may remain a direct child of <ruby> — that is the overlap signature (BUG-732); got ' + r.rtDirectlyUnderRuby);
-  assert.strictEqual(r.rtInsideUnits, 1, '<rb> element base: the <rt> must be moved INTO the .ruby-unit (BUG-732); got ' + r.rtInsideUnits);
+    '<rb> element base: NO <rt> may remain a direct child of <ruby> — that is the overlap signature (BUG-733); got ' + r.rtDirectlyUnderRuby);
+  assert.strictEqual(r.rtInsideUnits, 1, '<rb> element base: the <rt> must be moved INTO the .ruby-unit (BUG-733); got ' + r.rtInsideUnits);
   // The <rb> element itself must survive inside the unit (lookup selection stays live).
   const unit = r.unitList[0];
   const hasRb = unit.childNodes.some((n) => n.nodeType === 1 && n.tagName === 'RB');
@@ -165,17 +165,17 @@ function rt(reading) { return { tag: 'rt', content: reading }; }
 // Case 3 — <span> element base (structured-content wrapper).
 {
   const r = analyze(ruby([{ tag: 'span', content: '未然形' }, rt('みぜんけい')]));
-  assert.strictEqual(r.units, 1, '<span> element base: must get one .ruby-unit (BUG-732); got ' + r.units);
-  assert.strictEqual(r.rtDirectlyUnderRuby, 0, '<span> element base: no <rt> may remain under <ruby> (BUG-732); got ' + r.rtDirectlyUnderRuby);
-  assert.strictEqual(r.rtInsideUnits, 1, '<span> element base: the <rt> must live inside the .ruby-unit (BUG-732); got ' + r.rtInsideUnits);
+  assert.strictEqual(r.units, 1, '<span> element base: must get one .ruby-unit (BUG-733); got ' + r.units);
+  assert.strictEqual(r.rtDirectlyUnderRuby, 0, '<span> element base: no <rt> may remain under <ruby> (BUG-733); got ' + r.rtDirectlyUnderRuby);
+  assert.strictEqual(r.rtInsideUnits, 1, '<span> element base: the <rt> must live inside the .ruby-unit (BUG-733); got ' + r.rtInsideUnits);
 }
 
 // Case 4 — nested structured-content base ({type:'structured-content'} → <span>).
 {
   const r = analyze(ruby([{ type: 'structured-content', content: '未然形' }, rt('みぜんけい')]));
-  assert.strictEqual(r.units, 1, 'nested structured-content base: must get one .ruby-unit (BUG-732); got ' + r.units);
-  assert.strictEqual(r.rtDirectlyUnderRuby, 0, 'nested base: no <rt> may remain under <ruby> (BUG-732); got ' + r.rtDirectlyUnderRuby);
-  assert.strictEqual(r.rtInsideUnits, 1, 'nested base: the <rt> must live inside the .ruby-unit (BUG-732); got ' + r.rtInsideUnits);
+  assert.strictEqual(r.units, 1, 'nested structured-content base: must get one .ruby-unit (BUG-733); got ' + r.units);
+  assert.strictEqual(r.rtDirectlyUnderRuby, 0, 'nested base: no <rt> may remain under <ruby> (BUG-733); got ' + r.rtDirectlyUnderRuby);
+  assert.strictEqual(r.rtInsideUnits, 1, 'nested base: the <rt> must live inside the .ruby-unit (BUG-733); got ' + r.rtInsideUnits);
 }
 
 // Case 5 — multi-kanji word, bare-text bases (BUG-722 must not regress): each

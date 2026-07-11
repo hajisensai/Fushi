@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-732：词典弹窗释义正文里 ruby 基字是**元素节点**（`<rb>` / `<span>` /
+/// BUG-733：词典弹窗释义正文里 ruby 基字是**元素节点**（`<rb>` / `<span>` /
 /// 嵌套 structured-content，明鏡等单语词典就这么写）时，振假名塌到基字上重叠。
 ///
 /// 根因：`popup.js` 的 `postProcessRuby` 旧实现只包裹 `<ruby>` 的**裸文本节点**基字
@@ -26,7 +26,7 @@ void main() {
   test(
     'element-base glossary ruby (<rb>/<span>/nested) still gets a per-base '
     '.ruby-unit so furigana never collapses onto the base (executes popup.js '
-    'via node, BUG-732)',
+    'via node, BUG-733)',
     () async {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
@@ -62,7 +62,7 @@ void main() {
 
   test(
       'postProcessRuby no longer skips element bases via a TEXT_NODE-only '
-      'discriminator (BUG-732)', () {
+      'discriminator (BUG-733)', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
 
     final int fn = js.indexOf('function postProcessRuby(');
@@ -80,14 +80,14 @@ void main() {
       isFalse,
       reason: 'postProcessRuby must not skip element bases with a '
           'TEXT_NODE-only continue — element bases (明鏡 <rb>/<span>) need a '
-          '.ruby-unit too (BUG-732)',
+          '.ruby-unit too (BUG-733)',
     );
     // Element bases are wrapped by MOVING the base element into the unit.
     expect(
       body.contains('unit.appendChild(node)'),
       isTrue,
       reason: 'postProcessRuby must move an element base INTO its .ruby-unit '
-          '(unit.appendChild(node)) so the reading anchors per-base (BUG-732)',
+          '(unit.appendChild(node)) so the reading anchors per-base (BUG-733)',
     );
   });
 }
