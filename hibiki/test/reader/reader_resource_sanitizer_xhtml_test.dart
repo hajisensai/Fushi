@@ -90,7 +90,7 @@ void main() {
           reason: 'meta/link/hr/input/br are void — keep self-closing');
     });
 
-    // BUG-735: a self-closing <a id="toc-N"/> (the per-chapter anchor in many
+    // BUG-737: a self-closing <a id="toc-N"/> (the per-chapter anchor in many
     // Japanese publisher EPUBs) is NOT a void element, so served as text/html it
     // becomes an unclosed <a> that the adoption-agency algorithm reconstructs
     // across every following block — wrapping the whole chapter's prose in an

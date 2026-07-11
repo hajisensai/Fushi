@@ -20,7 +20,7 @@ class ReaderResourceSanitizer {
   //  • BUG-079: raw-text elements (`<script/>`, `<style/>`, `<title/>`, …) enter
   //    their "raw text" content model and swallow everything up to the next
   //    matching close tag — which never comes — blanking the whole page.
-  //  • BUG-735: an active formatting element, above all `<a id="toc-N"/>` (the
+  //  • BUG-737: an active formatting element, above all `<a id="toc-N"/>` (the
   //    per-chapter anchor common in Japanese publisher EPUBs), stays open and,
   //    via the HTML adoption-agency reconstruction, wraps ALL following prose in
   //    an `<a>`. The reader's tap-lookup entry (`selectText`) then bails on
@@ -62,7 +62,7 @@ class ReaderResourceSanitizer {
 
   /// Normalizes XHTML served as text/html so a self-closing NON-void element
   /// (`<script/>` blanking the page — BUG-079; `<a id=".."/>` wrapping the whole
-  /// chapter's prose and killing tap-lookup — BUG-735) becomes an explicit
+  /// chapter's prose and killing tap-lookup — BUG-737) becomes an explicit
   /// paired tag, i.e. the same empty element the XHTML author intended. Void
   /// elements (`<br/>`, `<img/>`, …) keep their self-closing form. Returns the
   /// input unchanged when no self-closing non-void element is present.

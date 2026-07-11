@@ -27,11 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 720 条。点号进各自文件。
+> 共 722 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-735](bugs/BUG-735-selfclosing-anchor-blocks-lookup.md) | ✅ | ✅ | 自闭合a锚点被HTML解析成未闭合a包裹正文导致点字查词被链接守卫拒绝 |
+| [BUG-737](bugs/BUG-737-selfclosing-anchor-blocks-lookup.md) | ✅ | ✅ | 自闭合a锚点被HTML解析成未闭合a包裹正文导致点字查词被链接守卫拒绝 |
+| [BUG-736](bugs/BUG-736-extension-popup-theme-vars.md) | ✅ | ✅ | 浏览器扩展查词弹窗主题与 app 不一致(漏发4个CSS变量) |
+| [BUG-735](bugs/BUG-735-shelf-add-button-size.md) | ✅ | ✅ | 书架添加按钮尺寸位置与其它头部按钮不一致 |
 | [BUG-734](bugs/BUG-734-stats-mobile-text-clip.md) | ✅ | ✅ | 手机统计页文字被省略号裁切显示不全 |
 | [BUG-733](bugs/BUG-733-popup-glossary-ruby-element-base-overlap.md) | ✅ | ✅ | 词典弹窗释义正文元素基字 ruby 注音塌到基字上 |
 | [BUG-732](bugs/BUG-732-ext-page-scroll.md) | ✅ | ✅ | 扩展影响普通网页滚动速度 |
