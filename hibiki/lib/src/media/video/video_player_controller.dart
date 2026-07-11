@@ -336,7 +336,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
   StreamSubscription<Duration>? _durationReadySub;
 
-  /// BUG-737：当前音频输出设备变化订阅。libmpv `audio-device=auto` 在 OS 输出设备
+  /// BUG-739：当前音频输出设备变化订阅。libmpv `audio-device=auto` 在 OS 输出设备
   /// 切换时重建 ao，其软件 `volume` 属性可能被重置/衰减，media_kit 被动把降低值镜像
   /// 进 `state.volume`（[volume] getter 的真值来源）——反复切换设备使视频音量逐步变小
   /// 甚至归零。app 只在 [load] 与用户操作时下发音量、之后从不回补，故必须在设备切换后
@@ -1268,7 +1268,7 @@ class VideoPlayerController extends ChangeNotifier
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
       _mediaHandleRegistration ??=
           MediaHandleRegistry.instance.register(_releaseMediaHandles);
-      // BUG-737：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
+      // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
       // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。
       _audioDeviceSub = player.stream.audioDevice.listen((_) {
         final Player? current = _player;

@@ -1,4 +1,4 @@
-## BUG-737 · 反复切换音频输出设备后视频音量逐步变小甚至静音
+## BUG-739 · 反复切换音频输出设备后视频音量逐步变小甚至静音
 - **报告**：2026-07-11（用户：反复切换音频设备后 hibiki 视频音量会变小，有时直接没声；仅视频音量，查词音频正常）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_player_controller.dart:781`（`volume` getter 直接信任 libmpv `state.volume`）+ 全仓库缺音频设备切换监听（app 从不在设备切换后回补音量目标）。
 - **[x] ① 已修复** — `video_player_controller.dart`：首次建 `Player` 时订阅 media_kit `stream.audioDevice`，设备切换后重新下发音量目标 `_muted ? 0.0 : _lastVolume`；`dispose` 取消订阅。

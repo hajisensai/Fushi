@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（BUG-737）：**反复切换音频输出设备后视频音量不衰减的根因不变量**。
+/// 源码守卫（BUG-739）：**反复切换音频输出设备后视频音量不衰减的根因不变量**。
 ///
 /// 背景：视频走 media_kit 裸 `Player()`（`audio-device=auto`）。OS 切换音频输出设备时，
 /// libmpv 重建 ao，其软件 `volume` 属性可能被重置/衰减，media_kit 被动把降低值镜像进
@@ -25,7 +25,7 @@ void main() {
     throw StateError('找不到文件：$relPath');
   }
 
-  group('视频音量设备切换不衰减不变量 (BUG-737)', () {
+  group('视频音量设备切换不衰减不变量 (BUG-739)', () {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
     test('VideoPlayerController 订阅 stream.audioDevice（设备切换后回补音量）', () {
@@ -51,19 +51,18 @@ void main() {
     });
 
     test('_audioDeviceSub 在 dispose 里被取消（防订阅泄漏）', () {
-      expect(src.contains('_audioDeviceSub'), isTrue,
-          reason: '设备变化订阅须存字段以便取消');
+      expect(src.contains('_audioDeviceSub'), isTrue, reason: '设备变化订阅须存字段以便取消');
       expect(src.contains('_audioDeviceSub?.cancel()'), isTrue,
           reason: 'dispose 必须取消 _audioDeviceSub，随 Player 生命周期释放');
     });
 
     test('保留根因说明注释（防注释丢失后被误删订阅）', () {
-      expect(src.contains('BUG-737'), isTrue,
-          reason: '订阅点/字段须保留 BUG-737 根因注释，让 reviewer 看到不变量来由');
+      expect(src.contains('BUG-739'), isTrue,
+          reason: '订阅点/字段须保留 BUG-739 根因注释，让 reviewer 看到不变量来由');
     });
   });
 
-  group('查词音频每次播放重设绝对音量（对照：为何查词免疫 BUG-737）', () {
+  group('查词音频每次播放重设绝对音量（对照：为何查词免疫 BUG-739）', () {
     test('desktop_audio_playback 每次播放前 setVolume 绝对值', () {
       final String src = read('lib/src/utils/misc/desktop_audio_playback.dart');
       expect(src.contains('setVolume'), isTrue,
