@@ -24,7 +24,11 @@
   - `deleteVideoBook` 顺带 `removeEntryFromAllCollections('video', uid)`（删集清合集引用、移空自删）。
   - 扫描器判重：`playlistBookUid` 单行存在 → 同名 playlist 合集存在（basename 派生，同旧碰撞语义，且不随 manifest 集路径编辑而变 → 重扫幂等）；源码守卫同步更新。
   - **已知中间态（feature 分支可接受）**：导入的 playlist 合集在库页**尚不显示**（home_video_page `_loadVideoOrder` 仍读旧 `getAllSeries`，未读 `getAllMediaCollections`），多集导入后暂时表现为 N 张散集卡 + 一个隐藏合集。Phase 4 接库页读合集 + 折叠后恢复。
-- **Phase 3（播放器）/ 4（库UI+合集详情页）/ 5（远端+同步备份）/ 6（清理+守卫）：未实现，spec 已就绪**。
+- **Phase 3（播放器）✅ 已实现**（commit `07a1f9dee`，PR #27）。全量 `flutter test` **10770 绿**、`flutter analyze`（lib+test）clean。
+  - 落地了下面「pushReplacement 低风险架构」：player 加 `playlistCollectionId`；`_init` 从 `getCollectionItems` 建 `_episodes`(`_PlaylistEpisodeRef`) + 当前集照 `_loadSingle` 加载；本地换集 = pushReplacement 到兄弟集单视频页（`widget.bookUid` 恒当前集，整套单视频机制 0 处改）；`_persistPosition` 恒单视频；收藏/制卡 `sectionIndex` 走 `_favoriteSectionIndex`（本地 null / 远端多集 `_currentEpisode`）；`VideoEpisodePanel` 改 `episodeTitles`；删死方法 `_loadEpisode`/`_encodeEpisodes`；6 处源码守卫更新到新模型。收藏跳回 `collections_page` 免改。
+  - **⚠️ 待真机验证**：pushReplacement 换集的 media_kit/WebView 生命周期顺滑度（铁律）。Phase 4 接库合集卡+详情页 → 传 `playlistCollectionId` 后可端到端真机验证。
+  - **踩坑记录**：python 文本模式写文件在 Windows 会把 LF 变 CRLF，`dart format` 保留既有 EOL 不纠正 → 本地工作副本 CRLF 让读源码的 `\n` 守卫本地假红（但 `.gitattributes text=auto eol=lf` 让 git 存 LF，CI 实为绿）。以后 python 改文件用二进制写或写后 `sed -i 's/\r$//'`。database.dart 是 git-binary(NUL字节 CRLF)不参与 eol 归一，勿转 LF。
+- **Phase 4（库UI+合集详情页）/ 5（远端+同步备份）/ 6（清理+守卫）：未实现，spec 已就绪**（见计划 §4 各 Phase）。
   - 已完成 Phase 3/2 的实现就绪 recon spec（当前代码 file:line + 改造点），Phase 3 见本会话调查（player `_init`/`_episodes`/`_persistPosition`/`_loadEpisode`/`episode.part`/`video_episode_panel`/`collections_page` resolve/`lookup_favorite`+`lookup_mining`/cue 路径全部锚点）。
   - **为何暂缓**：Phase 3 改的是 ~2900 行 WebView2/media_kit 播放器 god-file 的每集模型（进度/字幕/音轨/延迟/cue/收藏/制卡键全部从 playlistJson 转合集成员行），Phase 4 加新详情页 + 库网格折叠；二者**强耦合**（Phase 4 折叠前无人给 player 传 playlistCollectionId，单独任一phase不可端到端验证），且都属项目铁律「播放/布局改动声明修好前必须真机复测留证据」。应作为**带真机验证的专门 session**逐 phase 落地（player 换集/续播/连播/剧集面板/收藏跳转 + 库合集卡/详情页 Jellyfin 展示），不宜一次性盲写堆叠未验证的 god-file 改动。
   - **Phase 3 架构已定（读码后关键 breakthrough，execution-ready）**：
