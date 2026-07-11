@@ -1051,11 +1051,12 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 37,
-          reason: 'global schemaVersion is now 37 (TODO-616 v30 + TODO-1017 '
+      expect(db.schemaVersion, 38,
+          reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
-              'book_key/title + TODO-1288 v37 audiobook srt_books self-heal); '
+              'book_key/title + TODO-1288 v37 audiobook srt_books self-heal + '
+              'v38 unified media_collections); '
               'TODO-894 backfill behavior asserted by the srt_books checks below');
 
       // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
@@ -1122,7 +1123,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 37,
+      expect(db.schemaVersion, 38,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1282,9 +1283,10 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 37,
-          reason: 'global schemaVersion is now 37 (…v35 + TODO-1252 v36 + '
-              'TODO-1288 v37 audiobook srt_books self-heal); v29->v30 '
+      expect(db.schemaVersion, 38,
+          reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
+              'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
+              'media_collections); v29->v30 '
               'series/shelf_entries creation asserted below');
 
       // Both new tables now exist.
@@ -1332,7 +1334,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 37);
+      expect(db.schemaVersion, 38);
     });
 
     test(
@@ -1341,9 +1343,9 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 37,
+      expect(db.schemaVersion, 38,
           reason:
-              'TODO-1288 bumps the global schemaVersion to 37 (v37 audiobook srt_books self-heal; v36 was TODO-1252 favorite_words book_key/title)');
+              'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1375,9 +1377,9 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 37,
+      expect(db.schemaVersion, 38,
           reason:
-              'TODO-1288 bumps the global schemaVersion to 37 (v37 audiobook srt_books self-heal; v36 was TODO-1252 favorite_words book_key/title)');
+              'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
       final tableNames = (await db
               .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1415,7 +1417,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 37);
+      expect(db.schemaVersion, 38);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1448,7 +1450,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 37);
+      expect(db.schemaVersion, 38);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();

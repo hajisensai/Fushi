@@ -4013,7 +4013,8 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   /// 本地绝对路径或网络根（含 scheme）。
   final String rootPath;
 
-  /// 凭据引用（键）/ 网络配置 JSON。**绝不裸存明文密码**；本地恒 NULL。
+  /// 非敏感网络连接参数 JSON（host/port/username/useTls）。**绝不裸存明文密码/
+  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL。
   final String? configJson;
 
   /// 截图「媒体数」：上次扫描产出的条目数。
@@ -12714,6 +12715,650 @@ class ShelfEntriesCompanion extends UpdateCompanion<ShelfEntryRow> {
   }
 }
 
+class $MediaCollectionsTable extends MediaCollections
+    with TableInfo<$MediaCollectionsTable, MediaCollectionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaCollectionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _collectionTypeMeta =
+      const VerificationMeta('collectionType');
+  @override
+  late final GeneratedColumn<String> collectionType = GeneratedColumn<String>(
+      'collection_type', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('collection'));
+  static const VerificationMeta _coverSourceMeta =
+      const VerificationMeta('coverSource');
+  @override
+  late final GeneratedColumn<String> coverSource = GeneratedColumn<String>(
+      'cover_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, name, collectionType, coverSource, sortOrder, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_collections';
+  @override
+  VerificationContext validateIntegrity(Insertable<MediaCollectionRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('collection_type')) {
+      context.handle(
+          _collectionTypeMeta,
+          collectionType.isAcceptableOrUnknown(
+              data['collection_type']!, _collectionTypeMeta));
+    }
+    if (data.containsKey('cover_source')) {
+      context.handle(
+          _coverSourceMeta,
+          coverSource.isAcceptableOrUnknown(
+              data['cover_source']!, _coverSourceMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MediaCollectionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaCollectionRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      collectionType: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}collection_type'])!,
+      coverSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_source']),
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $MediaCollectionsTable createAlias(String alias) {
+    return $MediaCollectionsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaCollectionRow extends DataClass
+    implements Insertable<MediaCollectionRow> {
+  final int id;
+
+  /// 合集名（必填）。
+  final String name;
+
+  /// 'collection' | 'playlist'。
+  final String collectionType;
+
+  /// 自定义封面成员 `'<mediaType>|<entryKey>'`；NULL = 自动（playlist 取前 4 成员封面
+  /// 2×2 拼贴；collection 取首成员封面堆叠）。不存快照——成员增删/重排后渲染时纯函数推导。
+  final String? coverSource;
+
+  /// 合集卡自身在库网格中的排序权重（与散条目同层混排，语义同旧 [Series.sortOrder]）。
+  final int sortOrder;
+
+  /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
+  final int createdAt;
+  const MediaCollectionRow(
+      {required this.id,
+      required this.name,
+      required this.collectionType,
+      this.coverSource,
+      required this.sortOrder,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['collection_type'] = Variable<String>(collectionType);
+    if (!nullToAbsent || coverSource != null) {
+      map['cover_source'] = Variable<String>(coverSource);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  MediaCollectionsCompanion toCompanion(bool nullToAbsent) {
+    return MediaCollectionsCompanion(
+      id: Value(id),
+      name: Value(name),
+      collectionType: Value(collectionType),
+      coverSource: coverSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverSource),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory MediaCollectionRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaCollectionRow(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      collectionType: serializer.fromJson<String>(json['collectionType']),
+      coverSource: serializer.fromJson<String?>(json['coverSource']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'collectionType': serializer.toJson<String>(collectionType),
+      'coverSource': serializer.toJson<String?>(coverSource),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  MediaCollectionRow copyWith(
+          {int? id,
+          String? name,
+          String? collectionType,
+          Value<String?> coverSource = const Value.absent(),
+          int? sortOrder,
+          int? createdAt}) =>
+      MediaCollectionRow(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        collectionType: collectionType ?? this.collectionType,
+        coverSource: coverSource.present ? coverSource.value : this.coverSource,
+        sortOrder: sortOrder ?? this.sortOrder,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
+    return MediaCollectionRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      collectionType: data.collectionType.present
+          ? data.collectionType.value
+          : this.collectionType,
+      coverSource:
+          data.coverSource.present ? data.coverSource.value : this.coverSource,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaCollectionRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('collectionType: $collectionType, ')
+          ..write('coverSource: $coverSource, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, collectionType, coverSource, sortOrder, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaCollectionRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.collectionType == this.collectionType &&
+          other.coverSource == this.coverSource &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<String> collectionType;
+  final Value<String?> coverSource;
+  final Value<int> sortOrder;
+  final Value<int> createdAt;
+  const MediaCollectionsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.collectionType = const Value.absent(),
+    this.coverSource = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  MediaCollectionsCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    this.collectionType = const Value.absent(),
+    this.coverSource = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    required int createdAt,
+  })  : name = Value(name),
+        createdAt = Value(createdAt);
+  static Insertable<MediaCollectionRow> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<String>? collectionType,
+    Expression<String>? coverSource,
+    Expression<int>? sortOrder,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (collectionType != null) 'collection_type': collectionType,
+      if (coverSource != null) 'cover_source': coverSource,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  MediaCollectionsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? name,
+      Value<String>? collectionType,
+      Value<String?>? coverSource,
+      Value<int>? sortOrder,
+      Value<int>? createdAt}) {
+    return MediaCollectionsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      collectionType: collectionType ?? this.collectionType,
+      coverSource: coverSource ?? this.coverSource,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (collectionType.present) {
+      map['collection_type'] = Variable<String>(collectionType.value);
+    }
+    if (coverSource.present) {
+      map['cover_source'] = Variable<String>(coverSource.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaCollectionsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('collectionType: $collectionType, ')
+          ..write('coverSource: $coverSource, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaCollectionItemsTable extends MediaCollectionItems
+    with TableInfo<$MediaCollectionItemsTable, MediaCollectionItemRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaCollectionItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _collectionIdMeta =
+      const VerificationMeta('collectionId');
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+      'collection_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_collections (id) ON DELETE CASCADE'));
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _entryKeyMeta =
+      const VerificationMeta('entryKey');
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+      'entry_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sortIndexMeta =
+      const VerificationMeta('sortIndex');
+  @override
+  late final GeneratedColumn<int> sortIndex = GeneratedColumn<int>(
+      'sort_index', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [collectionId, mediaType, entryKey, sortIndex];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_collection_items';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MediaCollectionItemRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('collection_id')) {
+      context.handle(
+          _collectionIdMeta,
+          collectionId.isAcceptableOrUnknown(
+              data['collection_id']!, _collectionIdMeta));
+    } else if (isInserting) {
+      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(_entryKeyMeta,
+          entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta));
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('sort_index')) {
+      context.handle(_sortIndexMeta,
+          sortIndex.isAcceptableOrUnknown(data['sort_index']!, _sortIndexMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {collectionId, mediaType, entryKey};
+  @override
+  MediaCollectionItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaCollectionItemRow(
+      collectionId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}collection_id'])!,
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      entryKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}entry_key'])!,
+      sortIndex: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_index'])!,
+    );
+  }
+
+  @override
+  $MediaCollectionItemsTable createAlias(String alias) {
+    return $MediaCollectionItemsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaCollectionItemRow extends DataClass
+    implements Insertable<MediaCollectionItemRow> {
+  /// 所属合集（[MediaCollections].id）。onDelete:cascade = 删合集连带删本引用行。
+  final int collectionId;
+
+  /// 媒体种类：'epub' | 'srt' | 'video'（同 [ShelfEntries].mediaType 值域）。
+  final String mediaType;
+
+  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid。
+  final String entryKey;
+
+  /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
+  final int sortIndex;
+  const MediaCollectionItemRow(
+      {required this.collectionId,
+      required this.mediaType,
+      required this.entryKey,
+      required this.sortIndex});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['collection_id'] = Variable<int>(collectionId);
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['sort_index'] = Variable<int>(sortIndex);
+    return map;
+  }
+
+  MediaCollectionItemsCompanion toCompanion(bool nullToAbsent) {
+    return MediaCollectionItemsCompanion(
+      collectionId: Value(collectionId),
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      sortIndex: Value(sortIndex),
+    );
+  }
+
+  factory MediaCollectionItemRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaCollectionItemRow(
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      sortIndex: serializer.fromJson<int>(json['sortIndex']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'collectionId': serializer.toJson<int>(collectionId),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'sortIndex': serializer.toJson<int>(sortIndex),
+    };
+  }
+
+  MediaCollectionItemRow copyWith(
+          {int? collectionId,
+          String? mediaType,
+          String? entryKey,
+          int? sortIndex}) =>
+      MediaCollectionItemRow(
+        collectionId: collectionId ?? this.collectionId,
+        mediaType: mediaType ?? this.mediaType,
+        entryKey: entryKey ?? this.entryKey,
+        sortIndex: sortIndex ?? this.sortIndex,
+      );
+  MediaCollectionItemRow copyWithCompanion(MediaCollectionItemsCompanion data) {
+    return MediaCollectionItemRow(
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      sortIndex: data.sortIndex.present ? data.sortIndex.value : this.sortIndex,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaCollectionItemRow(')
+          ..write('collectionId: $collectionId, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('sortIndex: $sortIndex')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(collectionId, mediaType, entryKey, sortIndex);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaCollectionItemRow &&
+          other.collectionId == this.collectionId &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.sortIndex == this.sortIndex);
+}
+
+class MediaCollectionItemsCompanion
+    extends UpdateCompanion<MediaCollectionItemRow> {
+  final Value<int> collectionId;
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<int> sortIndex;
+  final Value<int> rowid;
+  const MediaCollectionItemsCompanion({
+    this.collectionId = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.sortIndex = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaCollectionItemsCompanion.insert({
+    required int collectionId,
+    required String mediaType,
+    required String entryKey,
+    this.sortIndex = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : collectionId = Value(collectionId),
+        mediaType = Value(mediaType),
+        entryKey = Value(entryKey);
+  static Insertable<MediaCollectionItemRow> custom({
+    Expression<int>? collectionId,
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<int>? sortIndex,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (collectionId != null) 'collection_id': collectionId,
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (sortIndex != null) 'sort_index': sortIndex,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaCollectionItemsCompanion copyWith(
+      {Value<int>? collectionId,
+      Value<String>? mediaType,
+      Value<String>? entryKey,
+      Value<int>? sortIndex,
+      Value<int>? rowid}) {
+    return MediaCollectionItemsCompanion(
+      collectionId: collectionId ?? this.collectionId,
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      sortIndex: sortIndex ?? this.sortIndex,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (sortIndex.present) {
+      map['sort_index'] = Variable<int>(sortIndex.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaCollectionItemsCompanion(')
+          ..write('collectionId: $collectionId, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('sortIndex: $sortIndex, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $HibikiPairedPeersTable extends HibikiPairedPeers
     with TableInfo<$HibikiPairedPeersTable, HibikiPairedPeerRow> {
   @override
@@ -13941,6 +14586,10 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $MinedSentencesTable minedSentences = $MinedSentencesTable(this);
   late final $SeriesTable series = $SeriesTable(this);
   late final $ShelfEntriesTable shelfEntries = $ShelfEntriesTable(this);
+  late final $MediaCollectionsTable mediaCollections =
+      $MediaCollectionsTable(this);
+  late final $MediaCollectionItemsTable mediaCollectionItems =
+      $MediaCollectionItemsTable(this);
   late final $HibikiPairedPeersTable hibikiPairedPeers =
       $HibikiPairedPeersTable(this);
   late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
@@ -13985,6 +14634,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         minedSentences,
         series,
         shelfEntries,
+        mediaCollections,
+        mediaCollectionItems,
         hibikiPairedPeers,
         bookTombstones,
         lookupMiningCounters,
@@ -14082,6 +14733,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('shelf_entries', kind: UpdateKind.update),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_collections',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('media_collection_items', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -22786,6 +23444,550 @@ typedef $$ShelfEntriesTableProcessedTableManager = ProcessedTableManager<
     (ShelfEntryRow, $$ShelfEntriesTableReferences),
     ShelfEntryRow,
     PrefetchHooks Function({bool seriesId})>;
+typedef $$MediaCollectionsTableCreateCompanionBuilder
+    = MediaCollectionsCompanion Function({
+  Value<int> id,
+  required String name,
+  Value<String> collectionType,
+  Value<String?> coverSource,
+  Value<int> sortOrder,
+  required int createdAt,
+});
+typedef $$MediaCollectionsTableUpdateCompanionBuilder
+    = MediaCollectionsCompanion Function({
+  Value<int> id,
+  Value<String> name,
+  Value<String> collectionType,
+  Value<String?> coverSource,
+  Value<int> sortOrder,
+  Value<int> createdAt,
+});
+
+final class $$MediaCollectionsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $MediaCollectionsTable, MediaCollectionRow> {
+  $$MediaCollectionsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$MediaCollectionItemsTable,
+      List<MediaCollectionItemRow>> _mediaCollectionItemsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.mediaCollectionItems,
+          aliasName:
+              'media_collections__id__media_collection_items__collection_id');
+
+  $$MediaCollectionItemsTableProcessedTableManager
+      get mediaCollectionItemsRefs {
+    final manager = $$MediaCollectionItemsTableTableManager(
+            $_db, $_db.mediaCollectionItems)
+        .filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_mediaCollectionItemsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$MediaCollectionsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaCollectionsTable> {
+  $$MediaCollectionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get collectionType => $composableBuilder(
+      column: $table.collectionType,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverSource => $composableBuilder(
+      column: $table.coverSource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> mediaCollectionItemsRefs(
+      Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f)
+          f) {
+    final $$MediaCollectionItemsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.mediaCollectionItems,
+        getReferencedColumn: (t) => t.collectionId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionItemsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollectionItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$MediaCollectionsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaCollectionsTable> {
+  $$MediaCollectionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get collectionType => $composableBuilder(
+      column: $table.collectionType,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverSource => $composableBuilder(
+      column: $table.coverSource, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MediaCollectionsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaCollectionsTable> {
+  $$MediaCollectionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get collectionType => $composableBuilder(
+      column: $table.collectionType, builder: (column) => column);
+
+  GeneratedColumn<String> get coverSource => $composableBuilder(
+      column: $table.coverSource, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  Expression<T> mediaCollectionItemsRefs<T extends Object>(
+      Expression<T> Function($$MediaCollectionItemsTableAnnotationComposer a)
+          f) {
+    final $$MediaCollectionItemsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.mediaCollectionItems,
+            getReferencedColumn: (t) => t.collectionId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$MediaCollectionItemsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.mediaCollectionItems,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
+}
+
+class $$MediaCollectionsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaCollectionsTable,
+    MediaCollectionRow,
+    $$MediaCollectionsTableFilterComposer,
+    $$MediaCollectionsTableOrderingComposer,
+    $$MediaCollectionsTableAnnotationComposer,
+    $$MediaCollectionsTableCreateCompanionBuilder,
+    $$MediaCollectionsTableUpdateCompanionBuilder,
+    (MediaCollectionRow, $$MediaCollectionsTableReferences),
+    MediaCollectionRow,
+    PrefetchHooks Function({bool mediaCollectionItemsRefs})> {
+  $$MediaCollectionsTableTableManager(
+      _$HibikiDatabase db, $MediaCollectionsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaCollectionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaCollectionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaCollectionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String> collectionType = const Value.absent(),
+            Value<String?> coverSource = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              MediaCollectionsCompanion(
+            id: id,
+            name: name,
+            collectionType: collectionType,
+            coverSource: coverSource,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String name,
+            Value<String> collectionType = const Value.absent(),
+            Value<String?> coverSource = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            required int createdAt,
+          }) =>
+              MediaCollectionsCompanion.insert(
+            id: id,
+            name: name,
+            collectionType: collectionType,
+            coverSource: coverSource,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$MediaCollectionsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({mediaCollectionItemsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (mediaCollectionItemsRefs) db.mediaCollectionItems
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (mediaCollectionItemsRefs)
+                    await $_getPrefetchedData<MediaCollectionRow,
+                            $MediaCollectionsTable, MediaCollectionItemRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaCollectionsTableReferences
+                            ._mediaCollectionItemsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaCollectionsTableReferences(db, table, p0)
+                                .mediaCollectionItemsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.collectionId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$MediaCollectionsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MediaCollectionsTable,
+    MediaCollectionRow,
+    $$MediaCollectionsTableFilterComposer,
+    $$MediaCollectionsTableOrderingComposer,
+    $$MediaCollectionsTableAnnotationComposer,
+    $$MediaCollectionsTableCreateCompanionBuilder,
+    $$MediaCollectionsTableUpdateCompanionBuilder,
+    (MediaCollectionRow, $$MediaCollectionsTableReferences),
+    MediaCollectionRow,
+    PrefetchHooks Function({bool mediaCollectionItemsRefs})>;
+typedef $$MediaCollectionItemsTableCreateCompanionBuilder
+    = MediaCollectionItemsCompanion Function({
+  required int collectionId,
+  required String mediaType,
+  required String entryKey,
+  Value<int> sortIndex,
+  Value<int> rowid,
+});
+typedef $$MediaCollectionItemsTableUpdateCompanionBuilder
+    = MediaCollectionItemsCompanion Function({
+  Value<int> collectionId,
+  Value<String> mediaType,
+  Value<String> entryKey,
+  Value<int> sortIndex,
+  Value<int> rowid,
+});
+
+final class $$MediaCollectionItemsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $MediaCollectionItemsTable, MediaCollectionItemRow> {
+  $$MediaCollectionItemsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+      db.mediaCollections.createAlias(
+          'media_collection_items__collection_id__media_collections__id');
+
+  $$MediaCollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager =
+        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$MediaCollectionItemsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaCollectionItemsTable> {
+  $$MediaCollectionItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortIndex => $composableBuilder(
+      column: $table.sortIndex, builder: (column) => ColumnFilters(column));
+
+  $$MediaCollectionsTableFilterComposer get collectionId {
+    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$MediaCollectionItemsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaCollectionItemsTable> {
+  $$MediaCollectionItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortIndex => $composableBuilder(
+      column: $table.sortIndex, builder: (column) => ColumnOrderings(column));
+
+  $$MediaCollectionsTableOrderingComposer get collectionId {
+    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$MediaCollectionItemsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaCollectionItemsTable> {
+  $$MediaCollectionItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get sortIndex =>
+      $composableBuilder(column: $table.sortIndex, builder: (column) => column);
+
+  $$MediaCollectionsTableAnnotationComposer get collectionId {
+    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$MediaCollectionItemsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaCollectionItemsTable,
+    MediaCollectionItemRow,
+    $$MediaCollectionItemsTableFilterComposer,
+    $$MediaCollectionItemsTableOrderingComposer,
+    $$MediaCollectionItemsTableAnnotationComposer,
+    $$MediaCollectionItemsTableCreateCompanionBuilder,
+    $$MediaCollectionItemsTableUpdateCompanionBuilder,
+    (MediaCollectionItemRow, $$MediaCollectionItemsTableReferences),
+    MediaCollectionItemRow,
+    PrefetchHooks Function({bool collectionId})> {
+  $$MediaCollectionItemsTableTableManager(
+      _$HibikiDatabase db, $MediaCollectionItemsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaCollectionItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaCollectionItemsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaCollectionItemsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> collectionId = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<String> entryKey = const Value.absent(),
+            Value<int> sortIndex = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MediaCollectionItemsCompanion(
+            collectionId: collectionId,
+            mediaType: mediaType,
+            entryKey: entryKey,
+            sortIndex: sortIndex,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int collectionId,
+            required String mediaType,
+            required String entryKey,
+            Value<int> sortIndex = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MediaCollectionItemsCompanion.insert(
+            collectionId: collectionId,
+            mediaType: mediaType,
+            entryKey: entryKey,
+            sortIndex: sortIndex,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$MediaCollectionItemsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (collectionId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.collectionId,
+                    referencedTable: $$MediaCollectionItemsTableReferences
+                        ._collectionIdTable(db),
+                    referencedColumn: $$MediaCollectionItemsTableReferences
+                        ._collectionIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$MediaCollectionItemsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $MediaCollectionItemsTable,
+        MediaCollectionItemRow,
+        $$MediaCollectionItemsTableFilterComposer,
+        $$MediaCollectionItemsTableOrderingComposer,
+        $$MediaCollectionItemsTableAnnotationComposer,
+        $$MediaCollectionItemsTableCreateCompanionBuilder,
+        $$MediaCollectionItemsTableUpdateCompanionBuilder,
+        (MediaCollectionItemRow, $$MediaCollectionItemsTableReferences),
+        MediaCollectionItemRow,
+        PrefetchHooks Function({bool collectionId})>;
 typedef $$HibikiPairedPeersTableCreateCompanionBuilder
     = HibikiPairedPeersCompanion Function({
   Value<int> id,
@@ -23521,6 +24723,10 @@ class $HibikiDatabaseManager {
       $$SeriesTableTableManager(_db, _db.series);
   $$ShelfEntriesTableTableManager get shelfEntries =>
       $$ShelfEntriesTableTableManager(_db, _db.shelfEntries);
+  $$MediaCollectionsTableTableManager get mediaCollections =>
+      $$MediaCollectionsTableTableManager(_db, _db.mediaCollections);
+  $$MediaCollectionItemsTableTableManager get mediaCollectionItems =>
+      $$MediaCollectionItemsTableTableManager(_db, _db.mediaCollectionItems);
   $$HibikiPairedPeersTableTableManager get hibikiPairedPeers =>
       $$HibikiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
   $$BookTombstonesTableTableManager get bookTombstones =>
