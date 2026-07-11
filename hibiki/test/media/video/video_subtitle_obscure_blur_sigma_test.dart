@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 
-/// BUG-738：听力沉浸「模糊态」的高斯模糊强度守卫。
+/// BUG-742：听力沉浸「模糊态」的高斯模糊强度守卫。
 ///
 /// 旧实现把 sigma 硬编码为绝对 8px（与字号无关），字号调大后字仍读得清 →「模糊度不够」。
 /// 修复把 sigma 改成随字号缩放的纯函数 [VideoSubtitleOverlay.obscureBlurSigma]，本测试
@@ -12,7 +12,7 @@ void main() {
     test('默认字号 36 时明显强于旧的固定 8px', () {
       final double sigma = VideoSubtitleOverlay.obscureBlurSigma(36);
       expect(sigma, greaterThan(8),
-          reason: '默认字号下的模糊必须比旧值 8 更强，否则仍读得出（BUG-738）');
+          reason: '默认字号下的模糊必须比旧值 8 更强，否则仍读得出（BUG-742）');
       // 36×0.45 = 16.2
       expect(sigma, closeTo(16.2, 1e-9));
     });

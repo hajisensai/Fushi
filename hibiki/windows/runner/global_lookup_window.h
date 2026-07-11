@@ -187,6 +187,16 @@ class GlobalLookupWindow {
   // and dismisses the appropriate layer (the host owns the shell geometry truth).
   void ForwardGlobalClickToHost(int screen_x, int screen_y);
   void EnsureWindowClass();
+  // Root fix: hwnd_ must be non-null IFF a LIVE window that is OURS exists.
+  // External teardown (WebView2 runtime crash/update, owner destroy, any
+  // DestroyWindow) left hwnd_ dangling-non-null, so ShowAt kept SetWindowPos-ing
+  // a corpse instead of rebuilding -> the app-external lookup/panel window
+  // "never came back without an app restart". OwnsLiveWindow() rejects a
+  // destroyed handle (IsWindow) AND a handle recycled to another window
+  // (GWLP_USERDATA != this); ForgetDeadWindow() drops such a handle + its dead
+  // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
+  bool OwnsLiveWindow() const;
+  void ForgetDeadWindow();
   void EnsureWebView();
   void RecoverDeadWebView(const std::string& replay_script);
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
