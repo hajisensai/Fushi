@@ -8,8 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 集导入即拆成独立 VideoBooks 行 + 一个 playlist 合集）。撤任一接线即转红，防日后回退到
 /// 旧 Series 系统或 playlistJson 整本模型。
 void main() {
-  final File mergeEngine =
-      File('lib/src/sync/backup_merge_engine.dart');
+  final File mergeEngine = File('lib/src/sync/backup_merge_engine.dart');
   final File importDialog =
       File('lib/src/media/video/video_import_dialog.dart');
   final File database =
@@ -48,8 +47,7 @@ void main() {
     expect(split, isNonNegative, reason: 'v38 必须调用 splitPlaylistVideoBooksV38');
     expect(migrate, isNonNegative,
         reason: 'v38 必须调用 migrateSeriesToCollectionsV38');
-    expect(split, lessThan(migrate),
-        reason: '必须先拆播放列表再迁 series，避免拆出的集重复归组');
+    expect(split, lessThan(migrate), reason: '必须先拆播放列表再迁 series，避免拆出的集重复归组');
   });
 
   test('备份合并携带 media_collections（Phase 5a：合集随备份存活）', () {
@@ -83,5 +81,23 @@ void main() {
     // 折叠归属来自 getPrimaryCollectionIdByEntry（最小 collectionId），不再靠 seriesId。
     expect(homeSrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
+  });
+
+  test('每集独立视频各自有封面：后台补齐 + playlist 详情页渲染每集缩略图', () {
+    // 拆集/迁移拆出的非首集 cover_path 为空 → home_video_page 后台逐集抽帧补齐。
+    expect(homeSrc.contains('_maybeBackfillCovers'), isTrue,
+        reason: '视频库必须后台给缺封面的各集抽帧补封面（每集独立视频应各有封面）');
+    expect(homeSrc.contains('extractVideoCover'), isTrue,
+        reason: '补封面走单视频抽帧 extractVideoCover（非整本 playlist 封面）');
+    // playlist 合集详情页每集渲染各自封面缩略图（对齐 Jellyfin 剧集列表）。
+    final File detail = File(
+      'lib/src/pages/implementations/media_collection_detail_page.dart',
+    );
+    expect(detail.existsSync(), isTrue);
+    final String detailSrc = detail.readAsStringSync();
+    expect(detailSrc.contains('_episodeThumb'), isTrue,
+        reason: 'playlist 详情页剧集行必须带每集封面缩略图');
+    expect(detailSrc.contains('Image.file'), isTrue,
+        reason: '缩略图用集自身 coverPath 的 Image.file（无封面退占位）');
   });
 }

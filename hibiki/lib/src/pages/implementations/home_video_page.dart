@@ -103,6 +103,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
+  /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
+  final Set<String> _coverBackfillAttempted = <String>{};
+
+  /// 后台封面补齐进行中标志（防并发重入）。
+  bool _backfillingCovers = false;
+
   /// TODO-616 B2：视频自定义排序映射 `"video|bookUid" → sortOrder`，开页/落盘后
   /// 加载一次，本地网格按它稳定排序（无行的视频退化原序）。
   Map<String, int> _videoOrder = const <String, int>{};
@@ -123,6 +129,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // defaulting to 0 was harmless before, but series grouping needs
     // _seriesById on the first paint, not only after a refresh).
     _loadVideoOrder();
+    // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
+    _maybeBackfillCovers();
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
@@ -145,6 +153,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       _remoteFuture = _loadRemoteVideos();
     });
     _loadVideoOrder();
+    _maybeBackfillCovers();
   }
 
   /// 一次性预取全部 ShelfEntries（video 类）组装成 `"video|bookUid" → sortOrder`。
@@ -171,6 +180,46 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         };
         _primaryCollectionByEntry = primaryMap;
       });
+    }
+  }
+
+  /// 统一合集 Phase 2/6：给「缺封面的本地视频行」后台逐个抽一帧当封面。
+  ///
+  /// 播放列表拆集导入 / v38 迁移拆出的各集，只有首集在导入时承接了封面，其余各集
+  /// `cover_path` 为空——但每集本是**独立视频**，理应各自有封面（对齐 Jellyfin 每集
+  /// 缩略图）。ffmpeg 抽帧慢（最长 30s/次），绝不能挡列表加载：列表已就绪后**后台逐个
+  /// 补**，每抽好一张 [VideoBookRepository.updateCover] 回写并刷新一次（渐进出现）。
+  /// 本会话记 [_coverBackfillAttempted] 避免每次刷新对同一行重试（移动端无 ffmpeg 抽帧
+  /// 返 null 时也只试一次）；[_backfillingCovers] 防并发重入。流 URL 行跳过（无本地帧可
+  /// 抽，host 元数据封面另走）。
+  Future<void> _maybeBackfillCovers() async {
+    if (_backfillingCovers) return;
+    _backfillingCovers = true;
+    try {
+      final List<VideoBookRow> rows = await widget.repo.listAll();
+      for (final VideoBookRow row in rows) {
+        if (!mounted) return;
+        if (_coverBackfillAttempted.contains(row.bookUid)) continue;
+        final String? cover = row.coverPath;
+        if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+          continue; // 已有封面。
+        }
+        final String path = row.videoPath;
+        if (path.isEmpty ||
+            path.startsWith('http://') ||
+            path.startsWith('https://')) {
+          continue; // 流 URL：无本地帧可抽。
+        }
+        _coverBackfillAttempted.add(row.bookUid);
+        final String? extracted =
+            await extractVideoCover(videoPath: path, bookUid: row.bookUid);
+        if (extracted == null) continue;
+        await widget.repo.updateCover(row.bookUid, extracted);
+        if (!mounted) return;
+        setState(() => _future = widget.repo.listForShelf());
+      }
+    } finally {
+      _backfillingCovers = false;
     }
   }
 
