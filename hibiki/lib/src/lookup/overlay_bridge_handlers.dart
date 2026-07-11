@@ -30,11 +30,22 @@ typedef OverlayBridgeResolver = Future<void> Function(int id, Object? value);
 /// Dispatches [handler] if it is one of the nine natively-DEFERRED bridges.
 /// Returns true when handled (the caller's _onJsMessage returns immediately);
 /// false = not a deferred bridge, the caller keeps its own dispatch.
+///
+/// [sentenceContext] is the surface's captured sentence (剪贴板全文 for the
+/// clipboard panel, UIA-captured foreground line for the transient overlay). It
+/// is the mine/overwrite `{sentence}` fallback: JS `buildMinePayload` never
+/// sends a `sentence` field for these app-external surfaces (the source text
+/// lives in another app), so without this the mined card's sentence field was
+/// always empty. The controller already holds this string for the sentence
+/// banner; here it doubles as the mine sentence (per the clipboard-panel spec
+/// intent). [resolveMineSentence] still prefers a JS-sent `fields['sentence']`
+/// when present, so this is a pure fallback and never overrides real data.
 bool maybeHandleOverlayDeferredBridge({
   required AppModel? model,
   required Object? handler,
   required Map<String, Object?> message,
   required OverlayBridgeResolver resolveBridge,
+  String sentenceContext = '',
 }) {
   switch (handler) {
     case 'resolveWordAudio':
@@ -49,7 +60,8 @@ bool maybeHandleOverlayDeferredBridge({
           model, handler! as String, message, resolveBridge));
       return true;
     case 'mineEntry':
-      unawaited(_handleMineBridge(model, message, resolveBridge));
+      unawaited(
+          _handleMineBridge(model, message, resolveBridge, sentenceContext));
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
@@ -58,15 +70,26 @@ bool maybeHandleOverlayDeferredBridge({
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
       return true;
     case 'updateEntry':
-      unawaited(_handleUpdateBridge(model, message, resolveBridge));
+      unawaited(
+          _handleUpdateBridge(model, message, resolveBridge, sentenceContext));
       return true;
     default:
       return false;
   }
 }
 
-int? _bridgeIdOf(Map<String, Object?> message) =>
-    (message['__bridgeId'] is num) ? (message['__bridgeId'] as num).toInt() : null;
+/// The `{sentence}` value for an app-external mine/overwrite: a JS-sent
+/// `fields['sentence']` wins when non-empty (future-proof), otherwise the
+/// surface's captured [sentenceContext] (剪贴板全文 / UIA 前台句). Pure so the
+/// resolution is unit-testable without a live Anki backend or Windows overlay.
+String resolveMineSentence(Map<String, String> fields, String sentenceContext) {
+  final String fromJs = fields['sentence'] ?? '';
+  return fromJs.isNotEmpty ? fromJs : sentenceContext;
+}
+
+int? _bridgeIdOf(Map<String, Object?> message) => (message['__bridgeId'] is num)
+    ? (message['__bridgeId'] as num).toInt()
+    : null;
 
 Map<Object?, Object?> _firstMapArg(Map<String, Object?> message) {
   final Object? args = message['args'];
@@ -204,6 +227,7 @@ Future<void> _handleMineBridge(
   AppModel? model,
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
+  String sentenceContext,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -218,7 +242,7 @@ Future<void> _handleMineBridge(
     };
     final String expression = fields['expression'] ?? '';
     if (model != null && expression.isNotEmpty) {
-      reply = await _mineEntry(model, fields);
+      reply = await _mineEntry(model, fields, sentenceContext);
     }
   } catch (e, st) {
     glog('mine: EXCEPTION $e\n$st');
@@ -237,17 +261,23 @@ Future<void> _handleMineBridge(
 /// reply. Gaiji bytes are flushed to the Anki media cache first
 /// ([writeDictionaryMediaCache]) so dictionary media embeds rather than
 /// degrading to alt text. App-external lookup has NO screenshot /
-/// sentence-audio media context (the source text lives in another app).
+/// sentence-audio media context (the source text lives in another app), but the
+/// SENTENCE itself is the surface's captured text ([sentenceContext] — 剪贴板全文
+/// for the clipboard panel, UIA 前台句 for the transient overlay), resolved via
+/// [resolveMineSentence]. `{sentence}` bolds the matched word from
+/// `payload.matched`, same as in-app onMineEntry.
 Future<Map<String, Object?>> _mineEntry(
   AppModel model,
   Map<String, String> fields,
+  String sentenceContext,
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+  final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
   final MineOutcome outcome = await repo.mineEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
+      sentence: sentence,
       source: AnkiMiningSource.book,
     ),
   );
@@ -255,7 +285,7 @@ Future<Map<String, Object?>> _mineEntry(
   // noteId（AnkiConnect 非空进「最新可改」态；AnkiDroid 恒 null=优雅降级）。
   final bool success = outcome.result == MineResult.success;
   if (success) {
-    unawaited(_recordMinedStats(model, fields, outcome.noteId));
+    unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
   }
   return <String, Object?>{
     'ankiConnect': success,
@@ -270,6 +300,7 @@ Future<void> _recordMinedStats(
   AppModel model,
   Map<String, String> fields,
   int? noteId,
+  String sentence,
 ) async {
   try {
     final HibikiDatabase db = model.database;
@@ -284,7 +315,8 @@ Future<void> _recordMinedStats(
       expression: fields['expression'] ?? '',
       reading: fields['reading'] ?? '',
       glossary: fields['glossary'] ?? '',
-      sentence: fields['sentence'] ?? '',
+      // 与制卡卡片同一句（剪贴板全文 / UIA 前台句），制卡历史行不再空句。
+      sentence: sentence,
       noteId: noteId,
     );
   } catch (e, st) {
@@ -361,6 +393,7 @@ Future<void> _handleUpdateBridge(
   AppModel? model,
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
+  String sentenceContext,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -381,7 +414,7 @@ Future<void> _handleUpdateBridge(
     };
     final String expression = fields['expression'] ?? '';
     if (model != null && noteId != null && expression.isNotEmpty) {
-      reply = await _updateEntry(model, noteId, fields);
+      reply = await _updateEntry(model, noteId, fields, sentenceContext);
     }
   } catch (e, st) {
     glog('update: EXCEPTION $e\n$st');
@@ -401,6 +434,7 @@ Future<Map<String, Object?>> _updateEntry(
   AppModel model,
   int noteId,
   Map<String, String> fields,
+  String sentenceContext,
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
@@ -408,7 +442,7 @@ Future<Map<String, Object?>> _updateEntry(
     noteId: noteId,
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
+      sentence: resolveMineSentence(fields, sentenceContext),
       source: AnkiMiningSource.book,
     ),
   );
