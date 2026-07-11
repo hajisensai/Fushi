@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 713 条。点号进各自文件。
+> 共 714 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-729](bugs/BUG-729-simple-dict-inflected-lookup.md) | ✅ | ✅ | MDX/StarDict/DSL 等 simple 词典屈折形查词命中丢失 |
+| [BUG-728](bugs/BUG-728-shelf-audiobook-progress.md) | ✅ | ✅ | 书架有声书进度条听书时不更新 |
 | [BUG-727](bugs/BUG-727-mdx-encrypted-keyinfo.md) | ✅ | ✅ | MDX Encrypted=2 词典导入失败 empty key block info |
 | [BUG-726](bugs/BUG-726-ext-unpacked-copy-never-refreshed.md) | ✅ | ✅ | 浏览器扩展已解压副本永不随app升级刷新导致弹窗停留旧版 |
 | [BUG-725](bugs/BUG-725-interconnect-testconn-button-in-server-mode.md) | ✅ | ✅ | 互联服务端模式仍显示测试连接按钮 |

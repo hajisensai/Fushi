@@ -41,8 +41,13 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
 ///   `charOffset ≤ 当前章 characters`）。`-1` 是「仅章节、章内偏移未知」哨兵 → 当 0。
 ///
 /// 计算：
-/// - 有每章字数（全书字数>0）：`position = Σ前面各章字数 + clamp(charOffset,0,本章字数)`，
+/// - 有每章字数（全书字数>0）：`position = Σ前面各章字数 + 章内偏移`，
 ///   `duration = 全书字数`；position clamp 到 [0, 全书字数]（防 >100%）。
+///   章内偏移优先用精确 `charOffset`（与章字数同单位）；`charOffset < 0`
+///   （听书 cue 派生位置无精确偏移的哨兵，见 [ReaderPositions.charOffset] 注释）
+///   时回退到归一化 `normCharOffset` 分数——`intra = normCharOffset/10000 × 本章字数`，
+///   与阅读器 restore 的回退口径一致（BUG-728：书架旧实现漏了这条回退，听书进度
+///   停在章边界甚至显 0%）。
 /// - 老书无 `characters`（全书字数=0）但有章结构：回退章级 `sectionIndex / 章数`，
 ///   避免恒显 0%。
 /// - 完全无章结构：`(0, 1)`（0%，不崩）。
@@ -50,6 +55,7 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   required List<int> sectionChars,
   required int? sectionIndex,
   required int charOffset,
+  int normCharOffset = 0,
 }) {
   final int totalChars = sectionChars.fold<int>(0, (int a, int b) => a + b);
   final int chapterCount = sectionChars.length;
@@ -62,8 +68,12 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
     for (int i = 0; i < clampedSection; i++) {
       charsRead += sectionChars[i];
     }
-    final int intra =
-        charOffset < 0 ? 0 : charOffset.clamp(0, sectionChars[clampedSection]);
+    final int sectionSize = sectionChars[clampedSection];
+    // 精确偏移（charOffset >= 0）直接用；否则回退归一化分数（0-10000）还原听书
+    // 时的章内进度。normCharOffset 也 clamp 到 [0,10000] 防脏数据越界。
+    final int intra = charOffset >= 0
+        ? charOffset.clamp(0, sectionSize)
+        : (normCharOffset.clamp(0, 10000) * sectionSize / 10000).round();
     return (
       position: (charsRead + intra).clamp(0, totalChars),
       duration: totalChars,
@@ -381,6 +391,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
       sectionChars: sectionChars,
       sectionIndex: pos?.sectionIndex,
       charOffset: pos?.charOffset ?? -1,
+      // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
+      // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
+      normCharOffset: pos?.normCharOffset ?? 0,
     );
     position = prog.position;
     duration = prog.duration;
