@@ -13,13 +13,13 @@
   匿名命名空间新增 `ripemd128()` / `mdx_fast_decrypt()`；解析头部新增 `Encrypted`
   位域（bit 1=key-block-info 加扰，可还原；bit 0=记录块加密需注册码，不处理）；
   key-block-info 解压前，若 `encrypted & 2`，先用 `ripemd128(kbi[4..8) ++ 0x3695 LE)`
-  作密钥对 `kbi[8..)` 原地还原，再走原 zlib 解压路径。提交哈希：e0f2e1cb0。
+  作密钥对 `kbi[8..)` 原地还原，再走原 zlib 解压路径。提交哈希：dd85406ac。
 - **[x] ② 已加自动化测试** — `native/hoshidicts/tests/mdx_encrypted_keyinfo_test.cpp`
   （CMake 注册 `mdx_encrypted_keyinfo_test`）：在内存中构造一本 `Encrypted="2"` MDX
   fixture（用独立重写的 RIPEMD-128 + 逆向 fast_decrypt 加扰），断言 `mdx_reader::parse`
   还原出 headword/definition；另加 RIPEMD-128 三个标准 KAT 向量（空串/abc/message
   digest）。逻辑闭环：fixture 解密成功 ⇒ reader 的 RIPEMD == 测试的 RIPEMD；KAT 通过
-  ⇒ 测试的 RIPEMD == 规范 ⇒ reader 的 RIPEMD 规范正确。提交哈希：e0f2e1cb0。
+  ⇒ 测试的 RIPEMD == 规范 ⇒ reader 的 RIPEMD 规范正确。提交哈希：dd85406ac。
 - **备注**：真机/端到端已在本机 Windows/MSVC 验证：链接真实 `hoshidicts.lib` 的探针对
   用户原始文件 `T4jiJuk.mdx` 解析成功（title=大修館 四字熟語辞典，entries=7965，
   词条 `あいきこつりつ` 等正确）。native 库在 app 构建时从源码编译进
