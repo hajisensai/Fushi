@@ -94,6 +94,22 @@ void main() {
         },
       ])),
     ));
+    // The font catalog references MyFont.ttf: the export packs (and counts)
+    // ONLY catalog-referenced files, so without this the font would be treated
+    // as an orphan and skipped.
+    await db.setPref(
+      'src:reader_ttu:font_catalog',
+      jsonEncode(<String, Object?>{
+        'version': 1,
+        'fonts': <Map<String, Object?>>[
+          <String, Object?>{
+            'id': 'f1',
+            'name': 'MyFont',
+            'path': p.join(fonts, 'MyFont.ttf'),
+          },
+        ],
+      }),
+    );
 
     final service = BackupService(
       db: db,
