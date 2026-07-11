@@ -2249,5 +2249,10 @@
   "clipboard_panel_opacity": "Panel opacity",
   "clipboard_panel_opacity_hint": "Card background opacity of the floating lookup panel (requires Windows 11 backdrop)",
   "sync_client_connected": "Connected",
-  "sync_client_token_manual": "Enter token manually"
+  "sync_client_token_manual": "Enter token manually",
+  "delete_collection_confirm": "Deleting the collection won't delete its videos.",
+  "collection_empty": "Collection is empty",
+  "collection_play": "Play",
+  "rename_collection": "Rename collection",
+  "delete_collection": "Delete collection"
 }

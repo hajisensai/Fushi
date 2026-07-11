@@ -26,6 +26,8 @@ import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
@@ -105,10 +107,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 加载一次，本地网格按它稳定排序（无行的视频退化原序）。
   Map<String, int> _videoOrder = const <String, int>{};
 
-  /// TODO-616 A2：分组渲染所需的 video 类 ShelfEntries 原始行 + 系列字典，与
-  /// [_videoOrder] 同一次 [_loadVideoOrder] 预取。
-  List<ShelfEntryRow> _videoShelfEntries = const <ShelfEntryRow>[];
-  Map<int, SeriesRow> _seriesById = const <int, SeriesRow>{};
+  /// 统一合集 Phase 4：视频合集字典（id → 行）+ 条目折叠归属（'video|uid' → 最小
+  /// collectionId），与 [_videoOrder] 同一次 [_loadVideoOrder] 预取，替代旧 Series 分组。
+  Map<int, MediaCollectionRow> _collectionsById =
+      const <int, MediaCollectionRow>{};
+  Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
   @override
   void initState() {
@@ -148,7 +151,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<void> _loadVideoOrder() async {
     final HibikiDatabase db = ref.read(appProvider).database;
     final List<ShelfEntryRow> rows = await db.getAllShelfEntries();
-    final List<SeriesRow> series = await db.getAllSeries();
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    final Map<String, int> primaryMap =
+        await db.getPrimaryCollectionIdByEntry();
     final List<ShelfEntryRow> videoRows = <ShelfEntryRow>[
       for (final ShelfEntryRow r in rows)
         if (r.mediaType == 'video') r,
@@ -160,10 +166,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (mounted) {
       setState(() {
         _videoOrder = map;
-        _videoShelfEntries = videoRows;
-        _seriesById = <int, SeriesRow>{
-          for (final SeriesRow s in series) s.id: s,
+        _collectionsById = <int, MediaCollectionRow>{
+          for (final MediaCollectionRow c in collections) c.id: c,
         };
+        _primaryCollectionByEntry = primaryMap;
       });
     }
   }
@@ -582,10 +588,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
+    // 统一合集 Phase 4：批量「组合成合集」建一个 collection 类合集（无序，手动组合），
+    // 逐条 addToCollection，取代旧 createSeries + setSeriesForEntry。
     final HibikiDatabase db = ref.read(appProvider).database;
-    final int seriesId = await db.createSeries(name);
+    final int collectionId = await db.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
-      await db.setSeriesForEntry(ref.mediaType, ref.entryKey, seriesId);
+      await db.addToCollection(collectionId, ref.mediaType, ref.entryKey);
     }
     if (!mounted) return;
     _exitSelectionMode();
@@ -648,14 +656,19 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Future<void> _open(VideoBookRow book) async {
+  /// [playlistCollectionId] 非空 = 作为某 playlist 合集的一集打开（播放器据此建剧集面板/
+  /// 上下集/连播）；null = 独立单视频打开（散视频卡）。
+  Future<void> _open(VideoBookRow book, {int? playlistCollectionId}) async {
     await _showAnime4kFirstUsePromptIfNeeded();
     if (!mounted) return;
     Navigator.push(
       context,
       adaptivePageRoute<void>(
         builder: (_) => VideoHibikiPage.neutralized(
-            bookUid: book.bookUid, repo: widget.repo),
+          bookUid: book.bookUid,
+          repo: widget.repo,
+          playlistCollectionId: playlistCollectionId,
+        ),
       ),
     );
   }
@@ -1599,24 +1612,25 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 不变（与远端区同的 SliverGridDelegateWithMaxCrossAxisExtent）。
   Widget _buildLocalVideoGridSliver(List<VideoBookRow> books) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // TODO-616 A2：把已排序的视频条目经 groupAndSortShelfEntries 分组——散视频单卡、
-    // 同 seriesId 折叠成系列卡片。零系列时每条散视频单独成 group，顺序与 [books]
+    // 统一合集 Phase 4：把已排序的视频条目经 groupByCollections 分组——散视频单卡、
+    // 属同一 playlist 合集的折叠成合集卡。零合集时每条散视频单独成 group，顺序与 [books]
     // （已按 sortOrder 排）一致，向后兼容。
-    final List<ShelfOrderingItem<VideoBookRow>> items =
-        <ShelfOrderingItem<VideoBookRow>>[
+    final List<CollectionOrderingItem<VideoBookRow>> items =
+        <CollectionOrderingItem<VideoBookRow>>[
       for (int i = 0; i < books.length; i++)
-        ShelfOrderingItem<VideoBookRow>(
+        CollectionOrderingItem<VideoBookRow>(
           mediaType: 'video',
           entryKey: books[i].bookUid,
           importedAt: -i,
           payload: books[i],
         ),
     ];
-    final List<ShelfGroup<VideoBookRow>> groups =
-        groupAndSortShelfEntries<VideoBookRow>(
+    final List<CollectionGroup<VideoBookRow>> groups =
+        groupByCollections<VideoBookRow>(
       items: items,
-      shelfEntries: _videoShelfEntries,
-      seriesById: _seriesById,
+      primaryCollectionIdByEntry: _primaryCollectionByEntry,
+      collectionsById: _collectionsById,
+      itemSortOrder: _videoOrder,
     );
     return SliverPadding(
       padding: EdgeInsets.all(tokens.spacing.card),
@@ -1634,51 +1648,55 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// TODO-616 A2：渲染一个视频 group——散视频回退到原 [_buildCard]（逐像素一致）；
-  /// 系列 group 渲染 [SeriesShelfCard]（首卷封面 + 角标），点击进系列详情。
-  Widget _buildVideoGroupCard(ShelfGroup<VideoBookRow> group) {
-    if (group.seriesId == null) {
+  /// 统一合集 Phase 4：渲染一个视频 group——散视频回退到原 [_buildCard]（逐像素一致）；
+  /// 合集 group 渲染 [SeriesShelfCard]（首成员封面堆叠 + 数量角标），点击进合集详情页。
+  Widget _buildVideoGroupCard(CollectionGroup<VideoBookRow> group) {
+    final MediaCollectionRow? collection = group.collection;
+    if (collection == null) {
       return _buildCard(group.coverItem.payload);
     }
-    final int seriesId = group.seriesId!;
-    final SeriesRow? series = _seriesById[seriesId];
-    // TODO-1125 A：前 3 张成员封面做「露出后面几本书」的堆叠视觉（首卷 = 主封面）；
-    // 封面数据已在 group.items 里，无需额外查询，不足 3 张自动降级为单封面。
+    // 前 4 张成员封面做「露出后面几本」的堆叠视觉；封面数据已在 group.items 里。
     final List<Widget> covers = <Widget>[
-      for (final ShelfOrderingItem<VideoBookRow> it in group.items.take(4))
+      for (final CollectionOrderingItem<VideoBookRow> it in group.items.take(4))
         _buildCover(it.payload),
     ];
     return SeriesShelfCard(
-      name: series?.name ?? t.series,
+      name: collection.name,
       itemCount: group.items.length,
       slotAspectRatio: 280 / 200,
       covers: covers,
-      onTap: () => _openSeriesDetail(seriesId, series?.name ?? t.series),
+      onTap: () => _openCollectionDetail(collection),
     );
   }
 
-  /// 打开视频系列详情页。成员卡按 video bookUid 找 VideoBookRow 渲染；写库后重载。
-  void _openSeriesDetail(int seriesId, String name) {
+  /// 打开合集详情页（Jellyfin 式）。有序成员从 [HibikiDatabase.getCollectionItems] 解析，
+  /// 点某集经 playlistCollectionId 进播放器带剧集面板/上下集/连播；写库后重载库页。
+  void _openCollectionDetail(MediaCollectionRow collection) {
+    final VideoBookRepository repo = widget.repo;
+    final HibikiDatabase db = ref.read(appProvider).database;
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
-        builder: (_) => SeriesDetailPage(
-          database: ref.read(appProvider).database,
-          seriesId: seriesId,
-          initialName: name,
-          memberCardBuilder: _buildVideoSeriesMemberCard,
+        builder: (_) => MediaCollectionDetailPage(
+          database: db,
+          collection: collection,
+          loadMembers: () async {
+            final List<MediaCollectionItemRow> members =
+                await repo.getCollectionItems(collection.id);
+            final List<VideoBookRow> rows = <VideoBookRow>[];
+            for (final MediaCollectionItemRow m in members) {
+              if (m.mediaType != 'video') continue;
+              final VideoBookRow? r = await repo.getByBookUid(m.entryKey);
+              if (r != null) rows.add(r);
+            }
+            return rows;
+          },
+          onOpenEpisode: (VideoBookRow ep) =>
+              _open(ep, playlistCollectionId: collection.id),
           onChanged: _refresh,
         ),
       ),
     );
-  }
-
-  Widget? _buildVideoSeriesMemberCard(ShelfEntryRow row) {
-    if (row.mediaType != 'video') return null;
-    for (final VideoBookRow book in _visibleVideos) {
-      if (book.bookUid == row.entryKey) return _buildCard(book);
-    }
-    return null;
   }
 
   Widget _buildCard(VideoBookRow book) {

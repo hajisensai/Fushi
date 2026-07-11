@@ -2249,5 +2249,10 @@
   "clipboard_panel_opacity": "面板不透明度",
   "clipboard_panel_opacity_hint": "悬浮查词面板的卡片背景不透明度（需要 Windows 11 背景材质支持）",
   "sync_client_connected": "已连接",
-  "sync_client_token_manual": "手动填写令牌"
+  "sync_client_token_manual": "手动填写令牌",
+  "delete_collection_confirm": "删除合集不会删除其中的视频。",
+  "collection_empty": "合集为空",
+  "collection_play": "播放",
+  "rename_collection": "重命名合集",
+  "delete_collection": "删除合集"
 }
