@@ -163,6 +163,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // IllustrationsViewerPage 的 `no_illustrations_found` 占位友好兜底。
   Set<String> _epubBackedBookKeys = const {};
 
+  // BUG-728：EPUB-backed 有声书在书架**只渲染成 SRT 卡**（其 EpubBooks 行被
+  // `srtBookKeys` 过滤出 EPUB 卡列表），而 SRT 卡以前不画进度条。这里收录当前
+  // `books`（hibikiBooksProvider）里每本 EpubBooks 行**已算好的** position/duration
+  // （经 [ReaderHibikiSource.computeBookProgress]，含听书 normCharOffset 回退），
+  // 供 SRT 卡按 bookKey 复用同一进度，无需重复读 DB / 重算。
+  Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
+
   // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
   List<VideoBookRow> _videoBooks = const [];
   Future<List<VideoBookRow>>? _videoBooksFuture;
@@ -800,9 +807,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // TODO-1191：`books` 是 hibikiBooksProvider 的全部 EpubBooks 行；解析出的
     // bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
     final Set<String> epubBackedBookKeys = {};
+    // BUG-728：过滤前先收 EPUB 卡已算好的进度，供只以 SRT 卡出现的有声书复用。
+    final Map<String, ({int position, int duration})> epubProgressByBookKey =
+        {};
     for (final MediaItem item in books) {
       final String? key = _parseBookKey(item.mediaIdentifier);
-      if (key != null) epubBackedBookKeys.add(key);
+      if (key != null) {
+        epubBackedBookKeys.add(key);
+        epubProgressByBookKey[key] =
+            (position: item.position, duration: item.duration);
+      }
       final String? imageUrl = item.imageUrl;
       if (key != null && imageUrl != null && imageUrl.isNotEmpty) {
         epubCoverUrisByBookKey[key] = imageUrl;
@@ -883,6 +897,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
+    _epubProgressByBookKey = epubProgressByBookKey;
     final _RemoteBookState? remoteState = remoteSnapshot?.data;
     final bool showRemoteBooks = remoteState != null &&
         (remoteState.failed || remoteState.books.isNotEmpty);

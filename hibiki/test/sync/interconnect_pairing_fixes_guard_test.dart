@@ -31,6 +31,30 @@ void main() {
     );
   });
 
+  test('BUG-725：服务端模式隐藏「测试连接」按钮（lockedByServer 门控）', () {
+    final String source = readSyncSettingsSchemaSource();
+    // 「测试连接」按钮多个后端都有（WebDav/FTP/SFTP/互联客户端），只切互联客户端
+    // 配置 widget 的类区块来断言，避免误伤其它后端的同名按钮。
+    final int start = source.indexOf('class _HibikiServerConfigWidgetState');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: '_HibikiServerConfigWidgetState 丢失');
+    final int end = source.indexOf('mixin _PairingV2FlowMixin', start);
+    expect(end, greaterThan(start));
+    final String widgetSrc = source.substring(start, end);
+
+    final int buttonIdx = widgetSrc.indexOf('t.sync_test_connection');
+    expect(buttonIdx, greaterThanOrEqualTo(0), reason: '互联客户端配置区应有「测试连接」按钮');
+    final int guardIdx = widgetSrc.indexOf('if (!lockedByServer) ...<Widget>[');
+    expect(guardIdx, greaterThanOrEqualTo(0),
+        reason: '缺 if (!lockedByServer) 门控——服务端模式会重现测试连接按钮（BUG-725）。');
+    expect(
+      guardIdx < buttonIdx,
+      isTrue,
+      reason: '「测试连接」按钮未被 !lockedByServer 门控——本机作为服务端时不应显示出站测试'
+          '按钮（BUG-725，与 BUG-084 隐藏 sync now/compare 同一设计）。',
+    );
+  });
+
   test('#3：客户端地址行有「重新配对」入口，复用 _attemptManualPair', () {
     final String source = readSyncSettingsSchemaSource();
     expect(

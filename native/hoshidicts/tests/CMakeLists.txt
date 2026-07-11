@@ -69,6 +69,9 @@ add_hoshi_test(media_import_query_test media_import_query_test.cpp)
 add_hoshi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_hoshi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
 add_hoshi_test(ipa_import_query_test ipa_import_query_test.cpp)
+# Simple dicts (MDX/StarDict/DSL) store rules="*" so filter_by_pos keeps them
+# for inflected-form lookups; pins pos_to_conditions("*")==~0 + the stored rule.
+add_hoshi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
 
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate
@@ -83,6 +86,22 @@ add_hoshi_test(zip_malformed_deflate_test zip_malformed_deflate_test.cpp
 # now-public zip_uncompressed_size_in_range() boundary + an end-to-end inflate.
 add_hoshi_test(zip_high_ratio_bank_test zip_high_ratio_bank_test.cpp
     "${HOSHI_SRC}"
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# BUG-727: MDX Encrypted="2" key-block-info must be unscrambled (RIPEMD-128 +
+# rolling XOR) before inflate. Builds a self-contained encrypted MDX fixture
+# and asserts the reader recovers its entries. Needs mdx_reader.hpp (mdx/ is an
+# internal subdir) and libdeflate (to compress the fixture's blocks).
+add_hoshi_test(mdx_encrypted_keyinfo_test mdx_encrypted_keyinfo_test.cpp
+    "${HOSHI_SRC}/mdx"
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# BUG-729 Phase B: import_mdx inlines a sibling <base>.css as the dict styles.css.
+# Builds a real on-disk MDX (mdx_fixture.hpp) + sibling .css and asserts it lands.
+add_hoshi_test(simple_dict_css_test simple_dict_css_test.cpp
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
+# dict as media.bin/idx; get_media_file returns the bytes by normalized path.
+add_hoshi_test(mdd_media_import_test mdd_media_import_test.cpp
+    "${HOSHI_SRC}/mdx"
     "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # hoshidicts_src/.

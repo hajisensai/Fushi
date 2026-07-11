@@ -226,6 +226,12 @@ class DictionaryPopupWebViewState
   /// the popup is open — see [didChangeDependencies].
   String? _lastThemeVarsJs;
 
+  /// BUG-712 ③：最近一次已注入的静态设置负载（[PopupStaticSettingsJs.combined]）。
+  /// 热槽 WebView 的 `window.*` 状态跨渲染持久，静态段（主题/字体/词典样式/自定义
+  /// CSS/开关/名单）只在串内容变化时随下一次推送重发；每次查词只发 entries +
+  /// renderPopup。页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
+  String? _lastSentStaticSettingsJs;
+
   Future<T> _guardJsBridge<T>(
     String logTag,
     T fallback,
@@ -691,16 +697,21 @@ class DictionaryPopupWebViewState
     final appModel = ref.read(appProvider);
     // TODO-895: the SHARED settings body (theme vars + dictionary font + content
     // zoom + every window.* flag, incl. autoExpandDictionaries) is produced by the
-    // single source of truth buildPopupSettingsJs — the SAME builder the app-outside
-    // global-lookup window uses (options.globalLookup:false here). The in-app-only
-    // wiring (instant-scroll pref, __hoshiResetPopupScroll hook, sentence-context
-    // i18n labels, load-more vs scroll-reset beforeRenderJs, scroll-check) layers
-    // around it below. _lastThemeVarsJs still tracks the in-app theme-vars string
-    // for the live theme-switch dedup in didChangeDependencies.
-    final String sharedSettingsJs = buildPopupSettingsJs(
+    // single source of truth in popup_settings_injection.dart — the SAME builder
+    // the app-outside global-lookup window uses (options.globalLookup:false here).
+    // The in-app-only wiring (instant-scroll pref, __hoshiResetPopupScroll hook,
+    // sentence-context i18n labels, load-more vs scroll-reset beforeRenderJs,
+    // scroll-check) layers around it below. _lastThemeVarsJs still tracks the
+    // in-app theme-vars string for the live theme-switch dedup in
+    // didChangeDependencies.
+    //
+    // BUG-712 ③：静态段与词条段分开注入——静态段串级比对，变了才重发（热槽
+    // WebView 的 window.* 跨渲染持久，真实词典下重复注入是数十 KB 的纯浪费）；
+    // 每次查词只发 entries + renderPopup。任何主题/设置/词典集变化都会让静态串
+    // 不同 → 自动随下一次推送重发。
+    final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
       appModel: appModel,
       theme: Theme.of(context),
-      result: widget.result,
       options: PopupSettingsOptions(
         // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
         mobileExternal: widget.transparentDocumentBackground,
@@ -708,6 +719,12 @@ class DictionaryPopupWebViewState
             widget.onSetSentenceContext != null,
       ),
     );
+    final String staticSettingsJs = staticSettings.combined;
+    final bool staticChanged = staticSettingsJs != _lastSentStaticSettingsJs;
+    if (staticChanged) {
+      _lastSentStaticSettingsJs = staticSettingsJs;
+    }
+    final String entriesJs = buildPopupEntriesJs(widget.result);
     _lastThemeVarsJs = _themeVariablesJs();
     final bool popupInstantScroll = appModel.popupInstantScroll;
 
@@ -731,7 +748,8 @@ class DictionaryPopupWebViewState
         ''';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
-      $sharedSettingsJs
+      ${staticChanged ? staticSettingsJs : ''}
+      $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__hibikiRenderToken = $renderToken;
       window.__hoshiResetPopupScroll = function() {
@@ -1535,6 +1553,9 @@ class DictionaryPopupWebViewState
       },
       onLoadStop: (controller, url) {
         _ready = true;
+        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载必须随下一次
+        // 推送整体重发——重置串级比对基线。
+        _lastSentStaticSettingsJs = null;
         debugPrint('[popup-perf] webview loadStop $url');
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.hoshiSelection by load-stop). It stays

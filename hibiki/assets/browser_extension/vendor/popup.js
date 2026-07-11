@@ -3047,6 +3047,7 @@ function resetMasonryBody(body) {
     body.style.position = '';
     body.style.display = '';
     body.style.height = '';
+    delete body.dataset.masonryCols; // 清粘着列记录：回落单列/CSS 后再进 masonry 会重新最短列打包
     [...body.children].forEach(item => {
         item.style.position = '';
         item.style.left = '';
@@ -3054,6 +3055,7 @@ function resetMasonryBody(body) {
         item.style.width = '';
         item.style.marginTop = '';
         item.style.transform = '';
+        delete item.dataset.masonryCol;
     });
 }
 
@@ -3071,11 +3073,29 @@ function layoutMasonry() {
         body.style.position = 'relative';
         body.style.display = 'block';
         const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
+
+        // 粘着列分配（修用户「开关方框时按上下高度左右重排，实际只应上下动」）：只要列数没变、
+        // 且每张卡片都已记录合法列号，就复用既有列分配——展开/收起改高度时只在各自列内重算纵向
+        // 位置，卡片只上下动、绝不换列左右跳。仅列数变（窗口宽/设置）或有新卡片（增量加载，某卡
+        // 无记录）时，才用「最短列」从头打包并记录列号。
+        const prevCols = Number.parseInt(body.dataset.masonryCols, 10);
+        const canReuse = prevCols === cols &&
+            items.every(item => {
+                const c = Number.parseInt(item.dataset.masonryCol, 10);
+                return Number.isFinite(c) && c >= 0 && c < cols;
+            });
+
         const heights = new Array(cols).fill(0);
         items.forEach(item => {
-            let c = 0;
-            for (let i = 1; i < cols; i++) {
-                if (heights[i] < heights[c]) c = i; // 当前最矮列
+            let c;
+            if (canReuse) {
+                c = Number.parseInt(item.dataset.masonryCol, 10); // 复用粘着列，不重新分列
+            } else {
+                c = 0;
+                for (let i = 1; i < cols; i++) {
+                    if (heights[i] < heights[c]) c = i; // 首次：最短列打包
+                }
+                item.dataset.masonryCol = String(c); // 记住列号，之后开关都粘着此列
             }
             item.style.position = 'absolute';
             item.style.left = '0';
@@ -3086,6 +3106,7 @@ function layoutMasonry() {
             // 读 offsetHeight 前已设 width，浏览器按目标列宽回流后再量高。
             heights[c] += item.offsetHeight + gap;
         });
+        body.dataset.masonryCols = String(cols);
         body.style.height = `${Math.max(...heights) - gap}px`;
     });
 }

@@ -156,6 +156,52 @@ void main() {
     });
   });
 
+  group('BUG-712 ③ static settings payload dedup', () {
+    testWidgets(
+        'a repeat push with unchanged settings omits the static payload '
+        'but still carries the entries + renderPopup',
+        (WidgetTester tester) async {
+      final appModel = PushDedupAppModel();
+      final ResultHolder holder = ResultHolder(makeResult('語'));
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: appModel,
+          popup: MutableResultPopupWebView(holder: holder),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 1);
+      // 结果推送脚本以 lookupEntries 为标记定位（push 之后还有 __hasChildPopup
+      // 种子等小脚本，scripts.last 不一定是推送本体）。
+      String lastPushScript() => harness.scripts
+          .lastWhere((String s) => s.contains('window.lookupEntries'));
+      // 首推（页面加载后第一次）：静态设置负载必须整体下发（新页面无 window.* 状态）。
+      expect(lastPushScript(), contains('window.dictionaryStyles'),
+          reason: '首推必须带静态设置负载');
+      await harness.firePopupRendered();
+
+      final DictionaryPopupWebViewState state =
+          tester.state<DictionaryPopupWebViewState>(
+              find.byType(MutableResultPopupWebView));
+      // 换新结果触发第二次真实推送（安全网路径，与 P1 组用法一致）。
+      holder.value = makeResult('別');
+      expect(state.refreshCurrentResult(), isTrue);
+      await tester.pump();
+      expect(harness.pushCount, 2);
+
+      // 第二推：主题/设置/词典集未变 → 静态段串级比对命中，整段跳过；每次查词
+      // 只发词条 + renderPopup（BUG-712 ③——热槽 WebView 的 window.* 跨渲染持久，
+      // 真实词典下重复注入是数十 KB 的纯带宽/解析浪费）。
+      final String secondPush = lastPushScript();
+      expect(secondPush, isNot(contains('window.dictionaryStyles')),
+          reason: '静态设置负载未变化时不得重复注入');
+      expect(secondPush, isNot(contains('window.customDictCSS')));
+      expect(secondPush, contains('別'));
+      expect(secondPush, contains('window.renderPopup()'));
+    });
+  });
+
   group('BUG-712 P1 host cover release on already-rendered result', () {
     testWidgets(
         'base_source_page post-frame drops the loading cover immediately '

@@ -51,6 +51,22 @@ void main() {
         reason: '容器高度取最高列，避免绝对定位后容器塌陷');
   });
 
+  test('粘着列分配：开关方框只上下动，列固定不左右跳 (用户反馈)', () {
+    // 列号记录在卡片 dataset.masonryCol、列数记录在容器 dataset.masonryCols。
+    expect(js.contains('dataset.masonryCol'), isTrue,
+        reason: '每张卡片必须记录粘着列号 dataset.masonryCol');
+    expect(js.contains('dataset.masonryCols'), isTrue,
+        reason: '容器必须记录当时列数 dataset.masonryCols 以判断能否复用');
+    // 复用条件：列数没变(prevCols === cols) 且每张卡片都有合法列号 → 复用既有列，只重算纵向。
+    expect(RegExp(r'prevCols\s*===\s*cols').hasMatch(js), isTrue,
+        reason: '只有列数不变才复用粘着列（列数变才允许重排）');
+    expect(RegExp(r'canReuse').hasMatch(js), isTrue,
+        reason: 'canReuse 分支：复用列号时不得再跑最短列重新分列');
+    // 回落时清记录，回到 masonry 会重新打包。
+    expect(js.contains('delete item.dataset.masonryCol'), isTrue,
+        reason: 'resetMasonryBody 必须清粘着列记录，避免陈旧列号跨单列/多列切换复用');
+  });
+
   test('单列 / 单卡回落 CSS 兜底：cols<=1 或 items<=1 时清 inline', () {
     expect(
         RegExp(r'cols\s*<=\s*1\s*\|\|\s*items\.length\s*<=\s*1').hasMatch(js),
