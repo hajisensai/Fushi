@@ -80,6 +80,49 @@ void main() {
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
       expect(out, equals(input));
     });
+
+    test('leaves the full void-element set self-closing', () {
+      const String input = '<head><meta charset="utf-8"/>'
+          '<link rel="stylesheet" href="s.css"/></head>'
+          '<body><hr/><input type="text"/><br/></body>';
+      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+      expect(out, equals(input),
+          reason: 'meta/link/hr/input/br are void — keep self-closing');
+    });
+
+    // BUG-735: a self-closing <a id="toc-N"/> (the per-chapter anchor in many
+    // Japanese publisher EPUBs) is NOT a void element, so served as text/html it
+    // becomes an unclosed <a> that the adoption-agency algorithm reconstructs
+    // across every following block — wrapping the whole chapter's prose in an
+    // <a>. The reader's tap-lookup (selectText) then bails on
+    // elementFromPoint().closest('a'), so no word in the chapter can be looked
+    // up. Closing the empty anchor here keeps the prose out of any <a>.
+    test('closes a self-closing <a id=".."/> so it cannot wrap the prose', () {
+      const String input =
+          '<body><p><a id="toc-001"/><span>第一章</span></p>'
+          '<p>本文の続き。</p></body>';
+      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+      expect(out, contains('<a id="toc-001"></a>'),
+          reason: 'the empty anchor must be explicitly closed');
+      expect(out, isNot(contains('id="toc-001"/>')),
+          reason: 'no self-closing anchor may remain');
+    });
+
+    test('normalizes other self-closing non-void inline elements', () {
+      const String input = '<body><p><span/><i/><b/>本文</p></body>';
+      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+      expect(out, contains('<span></span>'));
+      expect(out, contains('<i></i>'));
+      expect(out, contains('<b></b>'));
+    });
+
+    test('does not corrupt a self-closing <a> whose attr value contains "/>"',
+        () {
+      const String input = '<body><a href="a/>b"/>x</body>';
+      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+      expect(out, equals('<body><a href="a/>b"></a>x</body>'),
+          reason: 'the "/>" inside the quoted href is not the tag end');
+    });
   });
 
   group('ReaderResourceSanitizer.injectImagesAfterBodyOpen (TODO-1174)', () {
