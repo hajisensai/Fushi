@@ -7,6 +7,10 @@
 //
 // 优先级：chrome.storage.local（用户在 options 手动覆盖） > 本文件内置默认。
 // service worker（background.js）用 importScripts 引入；options 页用 <script> 引入。
+//
+// BUG-724：安装助手/启动刷新还会写入 build（扩展内容指纹）。background.js 用它与查词
+// 响应里的 extensionBuild 比对，不一致即 chrome.runtime.reload() 从磁盘拉新（自更新）。
+// 占位默认不带 build（→ 永不触发 reload）。
 self.HIBIKI_DEFAULTS = {
   host: '127.0.0.1',
   port: 19633,

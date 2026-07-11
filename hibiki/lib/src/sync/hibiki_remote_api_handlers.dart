@@ -27,12 +27,17 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   HibikiRemoteHistoryService? history,
   Map<String, String> Function()? themeColorsProvider,
   List<String> Function()? audioSourcesProvider,
+  String? Function()? extensionBuildProvider,
 }) async {
   final Map<String, String>? theme = themeColorsProvider?.call();
   // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
   // window.audioSources（非空 → popup.js 渲染 ♪ 按钮）。null（未注入，如 sync host）
   // 时不带该字段（向后兼容）。
   final List<String>? audioSources = audioSourcesProvider?.call();
+  // BUG-724：app 内置扩展的内容指纹随查词响应下发。扩展 background 对比自身
+  // HIBIKI_DEFAULTS.build，不一致即 chrome.runtime.reload() 从磁盘拉新（磁盘副本由
+  // app 启动时刷新）。null（未注入 / 指纹尚未算好）时不带该字段（向后兼容）。
+  final String? extensionBuild = extensionBuildProvider?.call();
   final String term = body['term']?.toString() ?? '';
   if (term.trim().isEmpty) {
     return <String, dynamic>{
@@ -41,6 +46,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       'popupJson': null,
       if (theme != null) 'theme': theme,
       if (audioSources != null) 'audioSources': audioSources,
+      if (extensionBuild != null) 'extensionBuild': extensionBuild,
     };
   }
   final bool wildcards = body['wildcards'] as bool? ?? false;
@@ -59,6 +65,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     'popupJson': result?.popupJson,
     if (theme != null) 'theme': theme,
     if (audioSources != null) 'audioSources': audioSources,
+    if (extensionBuild != null) 'extensionBuild': extensionBuild,
   };
 }
 

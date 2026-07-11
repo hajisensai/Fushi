@@ -14,13 +14,15 @@ class YomitanApiServerManager {
     HibikiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
+    String? Function()? extensionBuildProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
         _tokenizer = tokenizer,
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
-        _audioSourcesProvider = audioSourcesProvider;
+        _audioSourcesProvider = audioSourcesProvider,
+        _extensionBuildProvider = extensionBuildProvider;
 
   final HibikiRemoteLookupService _lookup;
   final HibikiRemoteMiningService? _mining;
@@ -31,6 +33,8 @@ class YomitanApiServerManager {
   final Map<String, String> Function()? _themeColorsProvider;
   // 单词音频：已启用音频源供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展。
   final List<String> Function()? _audioSourcesProvider;
+  // BUG-724：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
+  final String? Function()? _extensionBuildProvider;
 
   YomitanApiServer? _server;
 
@@ -48,6 +52,7 @@ class YomitanApiServerManager {
       readingResolver: _readingResolver,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
+      extensionBuildProvider: _extensionBuildProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

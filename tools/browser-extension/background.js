@@ -16,6 +16,26 @@ async function cfg() {
 }
 function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }
 
+// BUG-724：扩展自更新。app 启动时会把 <appSupport> 的已解压副本刷新到当前内置版本，并把
+// 内容指纹写进 hibiki-defaults.js（build）+ 随查词响应下发（extensionBuild）。这里比对
+// 两者：不一致 = 磁盘上已有新版而当前加载的还是旧版 → chrome.runtime.reload() 从磁盘拉新
+// （等价于扩展管理页的「重新加载」，未解压包路径不变）。防护：
+// - 任一侧缺指纹（旧 app / 占位默认）→ 不动（向后兼容，绝不空转 reload）；
+// - storage 记录已为该指纹 reload 过 → 不再重试（防「磁盘没刷成」时无限循环）；
+// - 正在 Netflix 逐句回放录制 → 跳过（reload 会杀掉 offscreen 录制，等录完下次查词再说）。
+async function maybeSelfReload(data) {
+  try {
+    const remote = data && data.extensionBuild;
+    const local = HIBIKI_DEFAULTS.build;
+    if (!remote || !local || remote === local) return;
+    if (await isOffscreenRecording()) return;
+    const st = await chrome.storage.local.get(['hibikiReloadedForBuild']);
+    if (st.hibikiReloadedForBuild === remote) return;
+    await chrome.storage.local.set({ hibikiReloadedForBuild: remote });
+    chrome.runtime.reload();
+  } catch (_) { /* 自更新失败不影响查词本身 */ }
+}
+
 // TODO-1000 Netflix：offscreen 文档承载 tabCapture MediaRecorder。批量生成时按字幕逐句「回放
 // 录制」——每句 seek 到句首、播到句尾录成一段自包含 webm（beginClip/endClip），随 mineClip 发给
 // Hibiki 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
@@ -156,7 +176,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ term: msg.term, record: msg.record === true }),
         });
-        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+        const data = r.ok ? await r.json() : null;
+        sendResponse({ ok: r.ok, status: r.status, data });
+        // BUG-724：先回结果再检查自更新（reload 杀 SW，绝不能挡在 sendResponse 前面）。
+        maybeSelfReload(data);
       } else if (msg.type === 'lookupAudio') {
         // 单词音频：POST /api/lookup/audio {expression,reading}（Basic auth）→ server 用
         // 与 app 同一 lookupAudio（本地音频库）解析出音频字节，回 {url,contentType}，url 是

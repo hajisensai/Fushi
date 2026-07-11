@@ -43,6 +43,7 @@ class YomitanApiServer {
     HibikiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
+    String? Function()? extensionBuildProvider,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -53,6 +54,7 @@ class YomitanApiServer {
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
+        _extensionBuildProvider = extensionBuildProvider,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -66,6 +68,8 @@ class YomitanApiServer {
   final Map<String, String> Function()? _themeColorsProvider;
   // 单词音频：当前 app 已启用的音频源供给器，随查词响应下发给扩展弹窗。
   final List<String> Function()? _audioSourcesProvider;
+  // BUG-724：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
+  final String? Function()? _extensionBuildProvider;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -221,6 +225,7 @@ class YomitanApiServer {
       history: _history,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
+      extensionBuildProvider: _extensionBuildProvider,
     ));
   }
 
