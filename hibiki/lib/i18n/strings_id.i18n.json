@@ -2215,7 +2215,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
   "popup_font_size_decrease": "Smaller dictionary text",
   "popup_font_size_increase": "Larger dictionary text",
   "remote_book_cloud": "Cloud library",
@@ -2267,5 +2266,6 @@
   "backup_export_choose_videos": "Choose videos",
   "backup_export_videos_all": "All videos",
   "backup_export_no_videos": "No videos to choose from",
-  "backup_export_videos_selected": "$count videos selected"
+  "backup_export_videos_selected": "$count videos selected",
+  "backup_import_contents_hint": "Untick an item to skip it."
 }

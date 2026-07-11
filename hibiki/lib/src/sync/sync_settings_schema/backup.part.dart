@@ -76,6 +76,23 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.localAudio,
 };
 
+/// Categories the user can individually skip on a MERGE import. Merge adds rows
+/// row-by-row through [BackupMergeEngine], so it can gate the DB-content
+/// categories too (books = epub+srt, statistics = the stats tables) that the
+/// overwrite whole-DB-blob path cannot — hence a wider set than
+/// [importSelectableCategories]. Every listed category is honoured by both the
+/// engine's per-category steps and the content-tree copies in
+/// [BackupService.mergeImportBackupFiles].
+const Set<BackupCategory> importMergeSelectableCategories = <BackupCategory>{
+  BackupCategory.dictionary,
+  BackupCategory.books,
+  BackupCategory.audiobooks,
+  BackupCategory.fonts,
+  BackupCategory.videos,
+  BackupCategory.localAudio,
+  BackupCategory.statistics,
+};
+
 /// TODO-1151：备份导入完成后由 [BackupImportOverlayView] 的「立即重启」按钮触发的退出。
 /// 沿用旧导入实现的平台分支（移动端 [FlutterExitApp.exitApp]，桌面端 `exit(0)`），只把
 /// 触发时机从「延迟 500ms 自动退出」改为「用户点确认后退出」，退出行为本身不变
@@ -781,6 +798,9 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         await BackupService.mergeImportBackupFiles(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: filePath,
+          // Per-category merge selection (merge mode now honours the dialog's
+          // toggles): an unticked category adds neither rows nor files.
+          categories: choice.categories,
           dictionaryResourceDirectory:
               appModel.dictionaryResourceDirectory.path,
           booksRootDirectory: booksRoot,
@@ -863,13 +883,24 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     _BackupImportMode mode = _BackupImportMode.overwrite;
     bool importSettings = false;
     // TODO-1358: the selectable content categories this backup actually carries,
-    // all ticked by default; unticking one skips restoring its files (overwrite
-    // only). Iterated in enum order for a stable layout.
-    final List<BackupCategory> selectablePresent = BackupCategory.values
-        .where((BackupCategory c) =>
-            importSelectableCategories.contains(c) && summary.has(c))
-        .toList();
-    final Set<BackupCategory> selectedRestore = selectablePresent.toSet();
+    // all ticked by default; unticking one skips restoring it. The set differs
+    // by mode — merge can additionally gate books/statistics (row-level), which
+    // the overwrite whole-DB-blob path cannot. Iterated in enum order for a
+    // stable layout. [selectedRestore] seeds from the UNION so a tick survives a
+    // mode switch.
+    List<BackupCategory> presentFor(Set<BackupCategory> selectable) =>
+        BackupCategory.values
+            .where(
+                (BackupCategory c) => selectable.contains(c) && summary.has(c))
+            .toList();
+    final List<BackupCategory> overwriteSelectablePresent =
+        presentFor(importSelectableCategories);
+    final List<BackupCategory> mergeSelectablePresent =
+        presentFor(importMergeSelectableCategories);
+    final Set<BackupCategory> selectedRestore = <BackupCategory>{
+      ...overwriteSelectablePresent,
+      ...mergeSelectablePresent,
+    };
     final bool? confirmed = await showAppDialog<bool>(
       context: dialogContext,
       builder: (BuildContext ctx) => StatefulBuilder(
@@ -941,40 +972,41 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                     onChanged: (_BackupImportMode? v) =>
                         setLocal(() => mode = v ?? _BackupImportMode.overwrite),
                   ),
-                  // TODO-1358: "what is inside" manifest + per-category restore
-                  // toggles. Overwrite: a live toggle (untick to skip a
-                  // category's files). Merge: read-only info (merge adds what is
-                  // missing). Books / reading data / settings are handled by the
-                  // rows above, so only the bulky sidecar trees appear here.
-                  if (selectablePresent.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      t.backup_import_contents_title,
-                      style: Theme.of(ctx).textTheme.labelLarge,
-                    ),
-                    if (mode == _BackupImportMode.overwrite)
+                  // TODO-1358: "what is inside" manifest + per-category toggles.
+                  // Both modes are now live: untick a category to skip
+                  // restoring/merging it. The selectable set is mode-dependent —
+                  // merge can additionally gate books/statistics (row-level).
+                  ...<Widget>[
+                    if (mode == _BackupImportMode.overwrite
+                        ? overwriteSelectablePresent.isNotEmpty
+                        : mergeSelectablePresent.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        t.backup_import_contents_title,
+                        style: Theme.of(ctx).textTheme.labelLarge,
+                      ),
                       Text(
                         t.backup_import_contents_hint,
                         style: Theme.of(ctx).textTheme.bodySmall,
                       ),
-                    for (final BackupCategory c in selectablePresent)
-                      AdaptiveSettingsSwitchRow(
-                        title: '${backupCategoryLabel(c)} '
-                            '(${summary.countFor(c)})',
-                        subtitle: backupCategoryDescription(c),
-                        value: mode == _BackupImportMode.overwrite
-                            ? selectedRestore.contains(c)
-                            : true,
-                        onChanged: mode == _BackupImportMode.overwrite
-                            ? (bool v) => setLocal(() {
-                                  if (v) {
-                                    selectedRestore.add(c);
-                                  } else {
-                                    selectedRestore.remove(c);
-                                  }
-                                })
-                            : null,
-                      ),
+                      for (final BackupCategory c
+                          in mode == _BackupImportMode.overwrite
+                              ? overwriteSelectablePresent
+                              : mergeSelectablePresent)
+                        AdaptiveSettingsSwitchRow(
+                          title: '${backupCategoryLabel(c)} '
+                              '(${summary.countFor(c)})',
+                          subtitle: backupCategoryDescription(c),
+                          value: selectedRestore.contains(c),
+                          onChanged: (bool v) => setLocal(() {
+                            if (v) {
+                              selectedRestore.add(c);
+                            } else {
+                              selectedRestore.remove(c);
+                            }
+                          }),
+                        ),
+                    ],
                   ],
                   // The settings-layer toggle only applies to overwrite; merge
                   // always keeps this device's settings.
@@ -1020,13 +1052,18 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       ),
     );
     if (confirmed != true) return null;
-    // Everything not offered as a selectable toggle always restores (books /
-    // progress / statistics / settings / profiles); add the selectable ones the
-    // user kept ticked (TODO-1358).
+    // Everything not offered as a selectable toggle for THIS mode always
+    // applies; add the selectable ones the user kept ticked (TODO-1358). The
+    // selectable set is mode-dependent (merge can gate books/statistics too), so
+    // an unticked merge-only category (books/statistics) is correctly dropped
+    // from the set, while for overwrite those stay always-on.
+    final Set<BackupCategory> modeSelectable =
+        mode == _BackupImportMode.overwrite
+            ? importSelectableCategories
+            : importMergeSelectableCategories;
     final Set<BackupCategory> categories = BackupCategory.values
         .where((BackupCategory c) =>
-            !importSelectableCategories.contains(c) ||
-            selectedRestore.contains(c))
+            !modeSelectable.contains(c) || selectedRestore.contains(c))
         .toSet();
     return _BackupImportChoice(
       mode: mode,

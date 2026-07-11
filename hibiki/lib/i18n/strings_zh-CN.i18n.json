@@ -2215,7 +2215,6 @@
   "backup_category_statistics_desc": "阅读、视频与制卡统计",
   "backup_category_settings_desc": "应用与阅读器设置",
   "backup_category_profiles_desc": "配置方案",
-  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。",
   "popup_font_size_decrease": "缩小查词字号",
   "popup_font_size_increase": "放大查词字号",
   "remote_book_cloud": "云端书库",
@@ -2267,5 +2266,6 @@
   "backup_export_choose_videos": "选择视频",
   "backup_export_videos_all": "全部视频",
   "backup_export_no_videos": "没有可选的视频",
-  "backup_export_videos_selected": "已选 $count 个视频"
+  "backup_export_videos_selected": "已选 $count 个视频",
+  "backup_import_contents_hint": "取消勾选某项即可跳过它。"
 }

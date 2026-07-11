@@ -1563,6 +1563,7 @@ class BackupService {
   static Future<void> mergeImportBackupFiles({
     required String dbDirectory,
     required String zipPath,
+    Set<BackupCategory>? categories,
     String? dictionaryResourceDirectory,
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
@@ -1570,6 +1571,14 @@ class BackupService {
     String? videosRootDirectory,
     void Function(double progress)? onProgress,
   }) async {
+    // Per-category merge selection (import dialog, merge mode). null = merge
+    // every category (legacy full merge). Gates BOTH the DB row merge (via the
+    // engine) AND the content-tree copies below, so an unticked category adds
+    // nothing — neither rows nor files.
+    bool wants(BackupCategory c) =>
+        categories == null || categories.contains(c);
+    final Set<String>? enabledCategoryNames =
+        categories?.map((BackupCategory c) => c.name).toSet();
     final String dbPath = p.join(dbDirectory, _dbName);
     final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
     final String bakPath = '$dbPath.pre-merge.bak';
@@ -1648,6 +1657,7 @@ class BackupService {
             db,
             carriedVideoSourcePaths:
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
+            enabledCategoryNames: enabledCategoryNames,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
@@ -1658,36 +1668,41 @@ class BackupService {
       }
 
       // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing
-      //    files — the device's own library must stay intact).
-      if (dictionaryResourceDirectory != null) {
+      //    files — the device's own library must stay intact). Each tree is
+      //    gated by its category so an unticked category copies no files (its
+      //    rows were likewise skipped by the engine above).
+      if (dictionaryResourceDirectory != null &&
+          wants(BackupCategory.dictionary)) {
         await _copyTreeIfAbsent(zipPath, archive, _dictionaryResourcesPrefix,
             dictionaryResourceDirectory,
             onBytes: reportBytes);
       }
-      if (booksRootDirectory != null) {
+      if (booksRootDirectory != null && wants(BackupCategory.books)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _booksPrefix, booksRootDirectory,
             onBytes: reportBytes);
       }
-      if (audiobooksRootDirectory != null) {
+      if (audiobooksRootDirectory != null && wants(BackupCategory.audiobooks)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _audiobooksPrefix, audiobooksRootDirectory,
             onBytes: reportBytes);
       }
-      if (fontsRootDirectory != null) {
+      if (fontsRootDirectory != null && wants(BackupCategory.fonts)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _fontsPrefix, fontsRootDirectory,
             onBytes: reportBytes);
       }
-      if (videosRootDirectory != null) {
+      if (videosRootDirectory != null && wants(BackupCategory.videos)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _videosPrefix, videosRootDirectory,
             onBytes: reportBytes);
       }
       // Local-audio DBs are copy-if-absent into the support directory (never
       // overwrite the device's own local_audio_*.db files).
-      await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
-          overwrite: false, onBytes: reportBytes);
+      if (wants(BackupCategory.localAudio)) {
+        await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+            overwrite: false, onBytes: reportBytes);
+      }
 
       // 6) Rebase the newly-merged backup rows' stored paths onto this device's
       //    roots. Device-local rows aren't under the backup's source root, so

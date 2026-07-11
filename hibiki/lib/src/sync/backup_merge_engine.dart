@@ -44,11 +44,23 @@ class BackupMergeEngine {
     this._db, {
     String srcAlias = 'mergesrc',
     Set<String> carriedVideoSourcePaths = const <String>{},
+    Set<String>? enabledCategoryNames,
   })  : _srcAlias = srcAlias,
-        _carriedVideoSourcePaths = carriedVideoSourcePaths;
+        _carriedVideoSourcePaths = carriedVideoSourcePaths,
+        _enabledCategoryNames = enabledCategoryNames;
 
   final HibikiDatabase _db;
   final String _srcAlias;
+
+  /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
+  /// the import dialog); null = merge every category (legacy full merge). Only
+  /// the user-facing content categories are gated here — favorites / tags /
+  /// profiles / history rows have no dialog toggle and always merge.
+  final Set<String>? _enabledCategoryNames;
+
+  /// Whether category [name] (a `BackupCategory.name`) should be merged.
+  bool _wants(String name) =>
+      _enabledCategoryNames == null || _enabledCategoryNames.contains(name);
 
   /// Source-device absolute video paths whose file actually travelled inside the
   /// backup (= `BackupMeta.videoFiles.keys`). A merged `video_books` row is only
@@ -99,34 +111,50 @@ class BackupMergeEngine {
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   Future<void> merge() async {
     await _db.transaction(() async {
-      await _insertMissing('epub_books', 'book_key', skipBookTombstones: true);
-      await _insertMissingVideoBooks();
-      await _insertMissing('dictionary_metadata', 'name');
-      // srt_books dedups on `uid` but must honour the deleted book's tombstone
-      // via its own `book_key` — else deleting a book then merging an old backup
-      // resurrects an orphan srt row (no epub) = an "empty book" on the shelf.
-      await _insertMissing('srt_books', 'uid',
-          skipBookTombstones: true, tombstoneKeyColumn: 'book_key');
-      await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
-      await _insertAudioCues();
-      await _mergeReaderPositions();
-      await _mergeReadingStatistics();
-      await _mergeVideoWatchStatistics();
-      await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
-      await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
-      await _mergeMiningStatistics();
-      await _mergeLookupMiningCounters();
-      await _mergeFavoriteWords();
-      await _mergeMinedSentences();
+      // Content categories are gated by the import dialog's per-category
+      // selection (merge mode). Rows with no dialog toggle (favorites / tags /
+      // profiles / history) always merge — they carry no bulk content and their
+      // FK/EXISTS guards no-op harmlessly when their owners were skipped.
+      if (_wants('books')) {
+        await _insertMissing('epub_books', 'book_key',
+            skipBookTombstones: true);
+        // srt_books dedups on `uid` but must honour the deleted book's tombstone
+        // via its own `book_key` — else deleting a book then merging an old
+        // backup resurrects an orphan srt row (no epub) = an "empty book".
+        await _insertMissing('srt_books', 'uid',
+            skipBookTombstones: true, tombstoneKeyColumn: 'book_key');
+      }
+      if (_wants('videos')) await _insertMissingVideoBooks();
+      if (_wants('dictionary')) {
+        await _insertMissing('dictionary_metadata', 'name');
+      }
+      if (_wants('audiobooks')) {
+        await _insertMissing('audiobooks', 'book_key',
+            skipBookTombstones: true);
+        await _insertAudioCues();
+      }
+      if (_wants('progress')) await _mergeReaderPositions();
+      if (_wants('statistics')) {
+        await _mergeReadingStatistics();
+        await _mergeVideoWatchStatistics();
+        await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
+        await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
+        await _mergeMiningStatistics();
+        await _mergeLookupMiningCounters();
+        await _mergeFavoriteWords();
+        await _mergeMinedSentences();
+      }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeProfilesAndChildren();
       await _insertMissing('media_items', 'unique_key');
       await _insertMissing('search_history_items', 'unique_key');
       await _insertMissing('anki_mappings', 'label');
-      await _mergeBookmarks();
-      await _mergeAudiobookPositionPrefs();
-      await _mergeAudioSourcePrefs();
+      if (_wants('progress')) {
+        await _mergeBookmarks();
+        await _mergeAudiobookPositionPrefs();
+      }
+      if (_wants('localAudio')) await _mergeAudioSourcePrefs();
     });
   }
 
