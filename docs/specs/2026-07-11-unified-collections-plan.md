@@ -12,6 +12,15 @@
 
 ---
 
+## 实现进度
+
+- **Phase 1（DB 基建）✅ 已实现**（commit `86301329e`，PR #27）。全量 `flutter analyze`（lib+test）clean、`flutter test` 全绿。
+  - **phasing 修正**：Phase 1 改为**纯 additive**——不删旧 Series DAO / `setSeriesForEntry` / `playlistJson`（UI 仍在用，删了编译不过、CI 红）。删除挪到 Phase 6（UI 迁移后）。
+  - **`collection_grouping.dart` 延到 Phase 4**：其接口取决于 Phase 4 UI 消费方，提前按猜测建抽象是 YAGNI 反模式。`collection_continue.dart` 已实现（契约明确）。
+  - **对抗审查（4 镜头）修掉 9 处迁移缺陷**：①completedAt 不照抄每集（避免未看集标完成+完成数 N 倍膨胀）②created_at 秒→毫秒（drift DateTime 默认秒）③favorite 改写去掉 source!='video' 假阴性 ④拆集先于系列转换（playlist-in-series 提顶层，非孤儿）+ 空系列不建空合集 ⑤legacy playlist 当前集续播点从 parent.last_position_ms 兜底 ⑥cover_path 第 0 集承接 ⑦JSON 字段软转防砖 ⑧favorite 改写并入拆集同一事务（原子性）⑨迁移测试补真越界/负数/无 source 收藏/legacy 兜底覆盖。
+  - **迁移 DAO 契约微调**：`deleteMediaCollection` / `removeFromCollection` / `removeEntryFromAllCollections` 显式删成员不依赖 FK cascade（测试 FK OFF 与生产 FK ON 行为一致）。`splitPlaylistVideoBooksV38` 顶部 `_columnExists('video_books','playlist_json')` 守卫（极简测试种子缺列不崩）。
+- **Phase 2–6 未开始**：开工前各自用 writing-plans 展开子计划（见下）。
+
 ## 0. 已拍板的用户决策（2026-07-11）
 
 | # | 决策 | 用户选择 |
