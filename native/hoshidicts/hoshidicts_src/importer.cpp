@@ -910,6 +910,21 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
   return processed;
 }
 
+// Read a stylesheet sitting next to a dictionary file, named by swapping the
+// extension to .css (Foo.mdx -> Foo.css). Returns "" if absent/empty/unreadable.
+std::string read_sibling_css(const std::string& primary_path) {
+  auto css_path = hoshi::fs_path(primary_path);
+  css_path.replace_extension(".css");
+  std::ifstream css_in(css_path, std::ios::binary | std::ios::ate);
+  if (!css_in) return "";
+  auto n = css_in.tellg();
+  if (n <= 0) return "";
+  std::string css(static_cast<size_t>(n), '\0');
+  css_in.seekg(0);
+  css_in.read(css.data(), static_cast<std::streamsize>(n));
+  return css;
+}
+
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
   std::ifstream file(hoshi::fs_path(mdx_path), std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
@@ -942,7 +957,13 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
     entries.push_back({std::move(e.key), std::move(e.definition)});
   }
 
-  return dictionary_importer::write_simple_dict(title, entries, output_dir);
+  // MDX glossaries are HTML that usually <link> a sibling stylesheet named after
+  // the dictionary (T4jiJuk.mdx -> T4jiJuk.css). Inline it as the dict's
+  // styles.css so the popup's constructDictCss scopes and injects it; otherwise
+  // the definitions render unstyled. Absent sibling -> empty -> no styles.css.
+  std::string styles_css = read_sibling_css(mdx_path);
+
+  return dictionary_importer::write_simple_dict(title, entries, output_dir, styles_css);
 }
 
 ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {

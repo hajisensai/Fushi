@@ -94,6 +94,10 @@ add_hoshi_test(zip_high_ratio_bank_test zip_high_ratio_bank_test.cpp
 add_hoshi_test(mdx_encrypted_keyinfo_test mdx_encrypted_keyinfo_test.cpp
     "${HOSHI_SRC}/mdx"
     "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# BUG-719 Phase B: import_mdx inlines a sibling <base>.css as the dict styles.css.
+# Builds a real on-disk MDX (mdx_fixture.hpp) + sibling .css and asserts it lands.
+add_hoshi_test(simple_dict_css_test simple_dict_css_test.cpp
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # hoshidicts_src/.
 add_hoshi_test(import_breadcrumb_test import_breadcrumb_test.cpp
