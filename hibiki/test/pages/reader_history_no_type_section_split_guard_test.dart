@@ -70,10 +70,19 @@ void main() {
       isTrue,
       reason: 'EPUB 默认排在 SRT 之后（seq 偏移 srtBooks.length），证明两类同序进一个网格',
     );
+    // UI v2 Phase C 后单一 shelfGroups 交给 _buildShelfGroupSlivers 保序交错
+    // （合集=横排行、连续散书段=网格）。SRT/EPUB 仍在同一合并列表、同段网格混排
+    // （itemCount: segment.length），**依旧没有按类型拆的分区头**——本守卫保护的
+    // 不变量不变，只是渲染载体从单网格换成交错 slivers。
     expect(
-      body.contains('itemCount: shelfGroups.length'),
+      body.contains('..._buildShelfGroupSlivers('),
       isTrue,
-      reason: 'SRT 卡与 EPUB 卡（+ 系列卡）应混排进同一网格（单一 shelfGroups 的 itemCount）',
+      reason: '单一合并 shelfGroups 必须整体交给交错渲染（无类型拆分）',
+    );
+    expect(
+      body.contains('itemCount: segment.length'),
+      isTrue,
+      reason: '散书段落（SRT+EPUB 混排）共用同一网格段',
     );
   });
 

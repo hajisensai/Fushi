@@ -83,6 +83,17 @@ void main() {
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 
+  test('UI v2 Phase C：合集在两页主区渲染成独占一行的横排行（CollectionShelfRow）', () {
+    // 用户拍板：每个合集独占一行、行内横移看相邻集/卷；撤掉回折叠网格卡即转红。
+    expect(homeSrc.contains('CollectionShelfRow'), isTrue,
+        reason: '视频库合集必须渲染成全宽横排行');
+    expect(historySrc.contains('CollectionShelfRow'), isTrue,
+        reason: '书架合集必须渲染成全宽横排行');
+    // 视频行成员卡点击直接从该集进播放器（带剧集面板），不再必须绕详情页。
+    expect(homeSrc.contains('playlistCollectionId: collection.id'), isTrue,
+        reason: '视频合集行成员卡必须带 playlistCollectionId 直接换集');
+  });
+
   test('每集独立视频各自有封面：后台补齐 + playlist 详情页渲染每集缩略图', () {
     // 拆集/迁移拆出的非首集 cover_path 为空 → home_video_page 后台逐集抽帧补齐。
     expect(homeSrc.contains('_maybeBackfillCovers'), isTrue,

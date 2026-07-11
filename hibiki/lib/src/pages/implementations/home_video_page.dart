@@ -27,7 +27,9 @@ import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
@@ -47,7 +49,6 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
 import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
-import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
@@ -1491,9 +1492,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return '${at.year}-${at.month}-$dd';
   }
 
-  /// 本地视频区的 sliver 列表：有视频时是 [SliverGrid]（响应式网格，随主滚动），
-  /// 空库 / 筛选无结果时是占满剩余空间并垂直居中的提示（[SliverFillRemaining]，
-  /// 远端 section 在其上方时仍能撑开整页）。
+  /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则按
+  /// [groupByCollections] 输出**保序交错**——合集 group 渲染成全宽横排行
+  /// （[CollectionShelfRow]，UI v2 Phase C：每个合集独占一行、行内横移切集），
+  /// 连续散 group 段落合并成一个 [SliverGrid]。零合集时只有一个网格段，与旧
+  /// 单网格布局退化一致。
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
@@ -1508,7 +1511,97 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
     }
-    return <Widget>[_buildLocalVideoGridSliver(books)];
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final List<CollectionGroup<VideoBookRow>> groups = _groupVideos(books);
+    final bool hasCollectionRows = groups.any(
+      (CollectionGroup<VideoBookRow> g) => g.collection != null,
+    );
+    // 零合集：单网格 + 原 EdgeInsets.all 内边距（与旧布局逐像素一致）。
+    final EdgeInsetsGeometry gridPadding = hasCollectionRows
+        ? EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.gap,
+          )
+        : EdgeInsets.all(tokens.spacing.card);
+    final List<Widget> slivers = <Widget>[];
+    List<CollectionGroup<VideoBookRow>> loose =
+        <CollectionGroup<VideoBookRow>>[];
+    void flushLoose() {
+      if (loose.isEmpty) return;
+      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding));
+      loose = <CollectionGroup<VideoBookRow>>[];
+    }
+
+    for (final CollectionGroup<VideoBookRow> group in groups) {
+      if (group.collection == null) {
+        loose.add(group);
+        continue;
+      }
+      flushLoose();
+      slivers.add(
+        SliverToBoxAdapter(child: _buildVideoCollectionRow(group)),
+      );
+    }
+    flushLoose();
+    return slivers;
+  }
+
+  /// 已排序视频 → 合集分组（散视频单卡 group、同合集折叠）。
+  List<CollectionGroup<VideoBookRow>> _groupVideos(List<VideoBookRow> books) {
+    final List<CollectionOrderingItem<VideoBookRow>> items =
+        <CollectionOrderingItem<VideoBookRow>>[
+      for (int i = 0; i < books.length; i++)
+        CollectionOrderingItem<VideoBookRow>(
+          mediaType: 'video',
+          entryKey: books[i].bookUid,
+          importedAt: -i,
+          payload: books[i],
+        ),
+    ];
+    return groupByCollections<VideoBookRow>(
+      items: items,
+      primaryCollectionIdByEntry: _primaryCollectionByEntry,
+      collectionsById: _collectionsById,
+      itemSortOrder: _videoOrder,
+    );
+  }
+
+  /// 一个合集的全宽横排行：头（合集名+集数+查看全部→详情页）+ 横向成员卡列表。
+  /// 成员卡复用 [_buildCard] 并带 playlistCollectionId——点某集**直接从该集**进
+  /// 播放器（带剧集面板/上下集/连播）；初始横滚定位到「继续看」成员。
+  Widget _buildVideoCollectionRow(CollectionGroup<VideoBookRow> group) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final MediaCollectionRow collection = group.collection!;
+    final int continueIdx = continueMemberIndex(<CollectionMemberProgress>[
+      for (final CollectionOrderingItem<VideoBookRow> it in group.items)
+        CollectionMemberProgress(
+          positionMs: it.payload.lastPositionMs,
+          completed: it.payload.completedAt != null,
+        ),
+    ]);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        tokens.spacing.gap,
+      ),
+      child: CollectionShelfRow(
+        key: ValueKey<String>('home_video_collection_row_${collection.id}'),
+        title: collection.name,
+        countLabel: t.video_playlist_episodes(count: group.items.length),
+        itemCount: group.items.length,
+        itemWidth: 240,
+        rowHeight: 200,
+        initialIndex: continueIdx,
+        headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
+        onOpenDetail: () => _openCollectionDetail(collection),
+        itemBuilder: (BuildContext _, int i) => _buildCard(
+          group.items[i].payload,
+          playlistCollectionId: collection.id,
+        ),
+      ),
+    );
   }
 
   Widget _buildRemoteVideoSection(
@@ -1895,34 +1988,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 本地视频网格作为 [SliverGrid]（TODO-654）：随主 [CustomScrollView] 一起滚动，
-  /// 排在远端 section 下方。此前是独立的 GridView.builder（自带滚动），与远端区两
-  /// 个滚动容器并存；现在合并为单一垂直滚动，整页观感与书架一致。网格 delegate
-  /// 不变（与远端区同的 SliverGridDelegateWithMaxCrossAxisExtent）。
-  Widget _buildLocalVideoGridSliver(List<VideoBookRow> books) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // 统一合集 Phase 4：把已排序的视频条目经 groupByCollections 分组——散视频单卡、
-    // 属同一 playlist 合集的折叠成合集卡。零合集时每条散视频单独成 group，顺序与 [books]
-    // （已按 sortOrder 排）一致，向后兼容。
-    final List<CollectionOrderingItem<VideoBookRow>> items =
-        <CollectionOrderingItem<VideoBookRow>>[
-      for (int i = 0; i < books.length; i++)
-        CollectionOrderingItem<VideoBookRow>(
-          mediaType: 'video',
-          entryKey: books[i].bookUid,
-          importedAt: -i,
-          payload: books[i],
-        ),
-    ];
-    final List<CollectionGroup<VideoBookRow>> groups =
-        groupByCollections<VideoBookRow>(
-      items: items,
-      primaryCollectionIdByEntry: _primaryCollectionByEntry,
-      collectionsById: _collectionsById,
-      itemSortOrder: _videoOrder,
-    );
+  /// 连续散视频段落的 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动；
+  /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
+  /// 横排行），本网格只装散视频单卡。
+  Widget _buildLooseVideoGridSliver(
+    List<CollectionGroup<VideoBookRow>> loose,
+    EdgeInsetsGeometry padding,
+  ) {
     return SliverPadding(
-      padding: EdgeInsets.all(tokens.spacing.card),
+      padding: padding,
       sliver: SliverGrid.builder(
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 280,
@@ -1930,31 +2004,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        itemCount: groups.length,
+        itemCount: loose.length,
         itemBuilder: (BuildContext context, int i) =>
-            _buildVideoGroupCard(groups[i]),
+            _buildCard(loose[i].coverItem.payload),
       ),
-    );
-  }
-
-  /// 统一合集 Phase 4：渲染一个视频 group——散视频回退到原 [_buildCard]（逐像素一致）；
-  /// 合集 group 渲染 [SeriesShelfCard]（首成员封面堆叠 + 数量角标），点击进合集详情页。
-  Widget _buildVideoGroupCard(CollectionGroup<VideoBookRow> group) {
-    final MediaCollectionRow? collection = group.collection;
-    if (collection == null) {
-      return _buildCard(group.coverItem.payload);
-    }
-    // 前 4 张成员封面做「露出后面几本」的堆叠视觉；封面数据已在 group.items 里。
-    final List<Widget> covers = <Widget>[
-      for (final CollectionOrderingItem<VideoBookRow> it in group.items.take(4))
-        _buildCover(it.payload),
-    ];
-    return SeriesShelfCard(
-      name: collection.name,
-      itemCount: group.items.length,
-      slotAspectRatio: 280 / 200,
-      covers: covers,
-      onTap: () => _openCollectionDetail(collection),
     );
   }
 
@@ -1988,7 +2041,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Widget _buildCard(VideoBookRow book) {
+  /// 单视频卡。[playlistCollectionId] 非空 = 卡在合集横排行里（UI v2 Phase C），
+  /// 点击直接从该集进播放器并带剧集面板/上下集/连播。
+  Widget _buildCard(VideoBookRow book, {int? playlistCollectionId}) {
     final List<BookTagRow> tags =
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
@@ -2008,7 +2063,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。
       onTap: _selectionMode
           ? () => _toggleSelection(book.bookUid)
-          : () => _open(book),
+          : () => _open(book, playlistCollectionId: playlistCollectionId),
       onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

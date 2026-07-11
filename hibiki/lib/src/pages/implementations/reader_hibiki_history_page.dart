@@ -32,6 +32,7 @@ import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
@@ -1002,17 +1003,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
               // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+              // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
+              // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
               if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
-                SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    childAspectRatio: kShelfBookCardAspectRatio,
-                  ),
-                  itemCount: shelfGroups.length,
-                  itemBuilder: (_, i) => _buildShelfGroupCard(
-                    shelfGroups[i],
-                    epubCoverUrisByBookKey,
-                  ),
+                ..._buildShelfGroupSlivers(
+                  shelfGroups,
+                  epubCoverUrisByBookKey,
+                  constraints,
                 ),
               if (videoBooks.isNotEmpty) ...[
                 SliverToBoxAdapter(
@@ -1053,8 +1050,110 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// UI v2 Phase C：主网格 sliver 交错——按 [groupByCollections] 输出序扫描，合集
+  /// group 渲染成全宽横排行（每个合集独占一行、行内横移看相邻卷/集），连续散书段落
+  /// 合并成一个 [SliverGrid]。组间序不变；零合集时只有一个网格段（与旧布局一致）。
+  List<Widget> _buildShelfGroupSlivers(
+    List<CollectionGroup<_ShelfBookSlot>> groups,
+    Map<String, String> epubCoverUrisByBookKey,
+    BoxConstraints constraints,
+  ) {
+    final List<Widget> slivers = <Widget>[];
+    List<CollectionGroup<_ShelfBookSlot>> loose =
+        <CollectionGroup<_ShelfBookSlot>>[];
+    void flushLoose() {
+      if (loose.isEmpty) return;
+      final List<CollectionGroup<_ShelfBookSlot>> segment = loose;
+      slivers.add(
+        SliverGrid.builder(
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: _gridExtent(context, constraints),
+            childAspectRatio: kShelfBookCardAspectRatio,
+          ),
+          itemCount: segment.length,
+          itemBuilder: (_, i) => _buildShelfGroupCard(
+            segment[i],
+            epubCoverUrisByBookKey,
+          ),
+        ),
+      );
+      loose = <CollectionGroup<_ShelfBookSlot>>[];
+    }
+
+    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
+      if (group.collection == null) {
+        loose.add(group);
+        continue;
+      }
+      flushLoose();
+      slivers.add(
+        SliverToBoxAdapter(
+          child: _buildShelfCollectionRow(
+            group,
+            epubCoverUrisByBookKey,
+            constraints,
+          ),
+        ),
+      );
+    }
+    flushLoose();
+    return slivers;
+  }
+
+  /// 一个书籍合集的全宽横排行：头（合集名+数量+查看全部→详情页，focusId 沿用
+  /// `reader-shelf-collection-<id>` 保持标签栏 down-anchor 语义）+ 横向成员卡。
+  /// 成员卡复用散书渲染（SRT 卡 / EPUB 卡，点击即开书）；卡宽与网格列宽断点同源。
+  Widget _buildShelfCollectionRow(
+    CollectionGroup<_ShelfBookSlot> group,
+    Map<String, String> epubCoverUrisByBookKey,
+    BoxConstraints constraints,
+  ) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final MediaCollectionRow collection = group.collection!;
+    final double itemWidth = _gridExtent(context, constraints);
+    // 书卡槽比 = 宽/高（kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，
+    // 行内卡与网格卡同形。
+    final double rowHeight = itemWidth / kShelfBookCardAspectRatio;
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowVertical,
+        vertical: tokens.spacing.gap / 2,
+      ),
+      child: CollectionShelfRow(
+        key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
+        title: collection.name,
+        countLabel: t.series_item_count(n: group.items.length),
+        itemCount: group.items.length,
+        itemWidth: itemWidth,
+        rowHeight: rowHeight,
+        headerFocusId:
+            HibikiFocusId('reader-shelf-collection-${collection.id}'),
+        onOpenDetail: () => _openCollectionDetail(collection),
+        itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
+          group.items[i].payload,
+          epubCoverUrisByBookKey,
+        ),
+      ),
+    );
+  }
+
+  /// 横排行成员卡：SRT / EPUB 复用散书卡渲染（交互/焦点/选择态自带）。
+  Widget _buildShelfMemberCard(
+    _ShelfBookSlot slot,
+    Map<String, String> epubCoverUrisByBookKey,
+  ) {
+    final SrtBook? srt = slot.srt;
+    if (srt != null) {
+      return _buildSrtCard(srt,
+          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey]);
+    }
+    return buildMediaItem(slot.epub!);
+  }
+
   /// 统一合集 Phase 4：渲染一个书架 group——散书（collection==null，单成员）回退到原有
   /// 卡片渲染（与历史逐像素一致）；合集 group 渲染 [SeriesShelfCard]（首成员封面 + 角标）。
+  /// UI v2 Phase C 后主网格只喂散 group（合集走 [_buildShelfCollectionRow] 横排行）；
+  /// 合集分支保留给零星旧调用防御。
   Widget _buildShelfGroupCard(
     CollectionGroup<_ShelfBookSlot> group,
     Map<String, String> epubCoverUrisByBookKey,
