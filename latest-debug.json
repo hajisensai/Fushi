@@ -1,26 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.1-debug.7452",
-  "tag": "v1.0.1-debug.7452+e4f791e",
+  "version": "1.0.1-debug.7459",
+  "tag": "v1.0.1-debug.7459+14babbc",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 7452,
-  "notes": "Automated release-signed debug-channel build from develop @ e4f791e. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 7459,
+  "notes": "Automated Apple debug-channel build from develop @ 14babbc. Push releases are always prerelease and never Latest.",
   "assets": [
-    {
-      "name": "hibiki-1.0.1-debug.7441-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7441-ios.ipa",
-      "releaseSequence": 7441,
-      "tag": "v1.0.1-debug.7441+329502e",
-      "version": "1.0.1-debug.7441"
-    },
-    {
-      "name": "hibiki-1.0.1-debug.7441-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7441-macos.zip",
-      "releaseSequence": 7441,
-      "tag": "v1.0.1-debug.7441+329502e",
-      "version": "1.0.1-debug.7441"
-    },
     {
       "name": "hibiki-1.0.1-debug.7447-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7447-windows-setup.exe",
@@ -34,6 +20,20 @@
       "releaseSequence": 7452,
       "tag": "v1.0.1-debug.7452+e4f791e",
       "version": "1.0.1-debug.7452"
+    },
+    {
+      "name": "hibiki-1.0.1-debug.7459-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7459-ios.ipa",
+      "releaseSequence": 7459,
+      "tag": "v1.0.1-debug.7459+14babbc",
+      "version": "1.0.1-debug.7459"
+    },
+    {
+      "name": "hibiki-1.0.1-debug.7459-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7459-macos.zip",
+      "releaseSequence": 7459,
+      "tag": "v1.0.1-debug.7459+14babbc",
+      "version": "1.0.1-debug.7459"
     }
   ]
 }
