@@ -1,4 +1,4 @@
-## BUG-738 · 悬浮字幕点词瞬态查词窗owned·Z序连带把主窗拉前台
+## BUG-741 · 悬浮字幕点词瞬态查词窗owned·Z序连带把主窗拉前台
 - **报告**：2026-07-12（用户：悬浮字幕点词时 app 主窗被拉到前台；面板窗也不该把主窗拉前台）
 - **真实性**：✅ 真 bug（根因 `hibiki/windows/runner/flutter_window.cpp` 瞬态 `global_lookup_window_->ShowAt` / `PrewarmWebView` 传 `GetHandle()`=主窗 HWND 当 owner）
 - **[x] ① 已修复** — 瞬态窗 owner 改 `nullptr`（showAt + prewarm 两处），与面板窗一致（commit 待填）
@@ -17,11 +17,11 @@ app 外查词覆盖窗有两个 `GlobalLookupWindow` 实例：瞬态查词窗（
 
 `flutter_window.cpp` 瞬态实例两处 owner `GetHandle()` → `nullptr`：
 - `global_lookup_window_->ShowAt(..., nullptr)`
-- `global_lookup_window_->PrewarmWebView(..., nullptr)`（须与 showAt 一致，否则 BUG-737 的 `ForgetDeadWindow` 重建时 owner 漂移）
+- `global_lookup_window_->PrewarmWebView(..., nullptr)`（须与 showAt 一致，否则 BUG-740 的 `ForgetDeadWindow` 重建时 owner 漂移）
 
 瞬态窗短命且 `arm_dismiss_hooks=true`（前台切换即 `ForegroundHookProc`→`Hide`），主窗最小化=前台切换=瞬态窗自关，故"随主窗收纳"语义仍在，无孤儿悬浮窗回归。
 
 ### 待验证
 
 - Windows 真机：听书时主窗最小化/置后台，点悬浮字幕上的词 → 卡片弹在光标处、**主窗不被拉到前台**；再验热键 Ctrl+Alt+D、面板点释义同样不夺前台。
-- 相邻回归：主窗最小化时瞬态卡片仍随之收起（前台钩子自关）；BUG-737 死窗重建路径不受 owner 改动影响。
+- 相邻回归：主窗最小化时瞬态卡片仍随之收起（前台钩子自关）；BUG-740 死窗重建路径不受 owner 改动影响。

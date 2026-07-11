@@ -1,4 +1,4 @@
-## BUG-737 · 覆盖窗HWND被外部销毁后悬垂hwnd_不重建·第二个弹窗出不来
+## BUG-740 · 覆盖窗HWND被外部销毁后悬垂hwnd_不重建·第二个弹窗出不来
 - **报告**：2026-07-11（用户：手动关闭第一个弹窗/面板后，第二个弹窗出不来；有时"说出来了但不知道去哪里了"；不重启 app 不恢复）
 - **真实性**：✅ 真 bug（根因 `hibiki/windows/runner/global_lookup_window.cpp:267`（旧 `ShowAt` 幂等守卫）+ `:626`（旧 `IsShowing`）+ `:200`（`hwnd_` 仅在析构置 null））
 - **[x] ① 已修复** — `windows/runner/global_lookup_window.cpp` 新增 `OwnsLiveWindow()`/`ForgetDeadWindow()`；`ShowAt`/`PrewarmWebView`/`IsShowing` 改用之（commit 待填）

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-738 — 瞬态查词覆盖窗（悬浮字幕点词/全局热键/面板点释义）不得 owned by
+/// BUG-741 — 瞬态查词覆盖窗（悬浮字幕点词/全局热键/面板点释义）不得 owned by
 /// 主窗（源码扫描守卫）。
 ///
 /// 真机根因：`flutter_window.cpp` 里瞬态实例 `global_lookup_window_` 的 `ShowAt`
@@ -36,7 +36,7 @@ void main() {
   test('瞬态 global_lookup_window_->ShowAt 用 nullptr owner（不拉主窗前台）', () {
     final String seg = callArgs(cpp, 'global_lookup_window_->ShowAt(');
     expect(seg, contains('nullptr'),
-        reason: 'BUG-738：owner 必须 nullptr，否则 owned 窗 Z 序连带拉主窗前台');
+        reason: 'BUG-741：owner 必须 nullptr，否则 owned 窗 Z 序连带拉主窗前台');
     expect(seg.contains('GetHandle()'), isFalse,
         reason: '不得把主窗 HWND 当 owner（回归 signature）');
   });

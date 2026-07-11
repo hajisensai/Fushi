@@ -1075,7 +1075,7 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
           // HWND）。owned window 有两个致命联动：owner 最小化时被系统一并隐藏
           // （真机症状=最小化 app 面板跟着消失），且 Z 序变更会连带 owner
           // （点图钉把主 app 拉到前台）。常驻面板的生命周期必须与主窗解耦。
-          // BUG-738：瞬态查词窗（悬浮字幕点词/热键）此前保持 owned，同一 Z 序
+          // BUG-741：瞬态查词窗（悬浮字幕点词/热键）此前保持 owned，同一 Z 序
           // 连带把主窗拉前台——用户否决「随主窗收纳」取舍，故也改无 owner。
           clipboard_panel_window_->PrewarmWebView(
               IntFromValue(args, "width", 420),
