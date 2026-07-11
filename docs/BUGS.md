@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 695 条。点号进各自文件。
+> 共 696 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-718](bugs/BUG-718-vn-blank-tap-advance-vertical.md) | ✅ | ✅ | VN居中竖排布局下点击空白翻页永不触发(caret clamp到文字) |
 | [BUG-717](bugs/BUG-717-vn-restore-charoffset-cloak.md) | ✅ | ✅ | VN模式按字符偏移恢复时FOUC遮罩未移除致整页空白 |
 | [BUG-708](bugs/BUG-708-interconnect-repair-blocked-by-lingering-pin-dialog.md) | ✅ | ✅ | 公网PIN配对取消后重新配对被host常驻PIN弹窗挡成拒绝 |
 | [BUG-707](bugs/BUG-707-selection-capture-clipboard-echo.md) | ✅ | ✅ | 全局查词抓选区的剪贴板回声泄漏进剪贴板查词管线 |
