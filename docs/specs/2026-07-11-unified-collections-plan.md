@@ -308,3 +308,41 @@ Future<void> removeEntryFromAllCollections(String mediaType, String entryKey); /
 - **大播放列表迁移耗时**：纯 SQL+JSON 改写无 ffmpeg，百集级预计 <1s；封面懒补不阻塞迁移。
 - **多设备混版本**：v38 设备拆集后，旧版本设备的备份合并会把旧 playlist 行重新插回（merge 引擎 `_insertMissingVideoBooks`）→ Phase 5 给合并引擎加「playlistJson 行进站时先过拆分器」的入站闸。
 - 开放：详情页是否要 backdrop 大图头部（Jellyfin 有；本 app 只有竖版封面，v1 用模糊放大封面当 backdrop，实现成本低，效果待真机评估）。
+
+---
+
+## 8. 执行进度与结论（2026-07-11 落地记录）
+
+分支 `worktree-unified-collections-plan`，全部推送到 origin。每 phase 均 `dart format` + `flutter analyze`（lib+test）clean + 相关 `flutter test` 绿；Phase 4b 后跑过一次全量 `flutter test` = **10774 passed / 3 skipped / 0 failed**。
+
+| Phase | 状态 | 关键提交 | 验证 |
+|---|---|---|---|
+| 1 DB+迁移 | ✅ 已落 | tables.dart + database.dart v38（split→migrate）+ ttu_sanitize/video_book_uid core 副本 + parity guard | 迁移单测 + 幂等双跑 |
+| 2 导入拆集 | ✅ 已落 | video_book_repository.importSplitPlaylist / video_import_dialog / media_source_scanner | 导入单测 |
+| 3 播放器合集驱动 | ✅ 已落 | video_hibiki_page + episode/lookup_favorite/lookup_mining part：`_episodes` 换 `_PlaylistEpisodeRef`，本地换集 pushReplacement 同集 | 页面单测 + 更新的守卫 |
+| 4a 视频库 | ✅ 已落 | collection_grouping（纯函数）+ media_collection_detail_page（有序剧集）+ home_video_page groupByCollections | collection_grouping 单测 + widget |
+| 4b 书架 | ✅ 已落 90f213a6e | media_collection_grid_detail_page（无序网格）+ reader_hibiki_history_page/books.part groupByCollections | reader/shelf/series 80 测试 + 全量 10774 |
+| 5a 备份合并 | ✅ 已落 4e6ca0b07 | backup_merge_engine._mergeMediaCollections（自然键 remap + 复合 PK 去重） | merge 34 测试（含 2 新合集测试） |
+| 5b 远端协议 | ✅ 已确认无需改 | — | 远端视频 75 测试绿 |
+| 6 守卫 | ✅ 已落 f0b4f6687 | unified_collections_architecture_guard（4 不变量） | 4 守卫绿 |
+
+### Phase 5b 结论修正（与 §4 计划的偏差，已核实）
+
+计划设想 host 把 playlist 合集作为「一个远端条目 + episodes[]」下发。**执行时核实发现无需实现**：Phase 2 后**生产代码已无任何 playlistJson 写入路径**（单流/单视频写单行 streamSpecJson；多集 m3u8 走 importSplitPlaylist 拆成独立行 + 合集）。故 v38 后每个 VideoBooks 行都是独立单视频，`playlist_json` 恒 NULL：
+
+- host `listVideos()` 天然把每集当独立远端单视频下发；
+- 每集进度经 `getVideoPosition(bookUid)` 按各自行 key 存取——**天然每集粒度**，修掉了旧「playlist 进度不进同步」的缺口；
+- `_episodesFromRow` / `_resolveEpisodeVideoPath` 的 playlistJson 分支对直接种 playlistJson 的测试仍工作（未破坏），对生产数据是死支（Phase 6 待清）。
+
+远端「把拆出的集重新分组成合集」= 纯 UI 增强，需两台设备 LAN 真机验证（铁律：播放/协议改动真机复测前不宣称完成），且要为浏览协议新增合集下发面——**本轮不做**，与用户「每集独立条目」的拆分选择一致（远端也按独立集呈现，功能完整、进度正确）。
+
+### 尚未完成（诚实清单，需真机后续）
+
+Phase 6 的「删旧 Series API + 冻结表 DROP」**未做**，因其唯一存活消费者是**书架整理页 `ShelfReorderPage`**（书架 + 视频库均可打开的拖拽重排页），它端到端按 `seriesId` 渲染同色分组框 + 拖拽合并写 series。现状：
+
+- 重排页的**排序（sortOrder）仍工作**且反映到主网格（groupByCollections 读 shelf_entries sortOrder）；
+- 重排页的**「拖拽合并成系列」写空的 series 表**（迁移后 series 恒空）→ 建出的分组在主网格不显示 = 潜在不一致。
+
+把重排页 series→合集彻底改造（分组框/拖拽合并/进入系列全换合集）是**大型交互式拖拽布局改动**，按 CLAUDE.md 铁律需真机焦点驱动复测（离屏 bg 无法验证拖拽手势），故本轮**只加守卫、不改重排页**。旧 Series DAO（createSeries/setSeriesForEntry/deleteSeries…）、`SeriesDetailPage`、`SeriesReorderFrame`、`series_*` i18n key、`groupAndSortShelfEntries`、`playlistEpisodeCount` 系死函数一并**保留到重排页改造完成后统一删**（冻结表按「Never break userspace」不 DROP）。
+
+**后续接手入口**：重排页改造 = 把 `shelf_reorder_page.dart` + `shelf_ordering.dart` 的 `ShelfGroup`/`groupAndSortShelfEntries` 换成 collection 分组，merge 回调改 `createMediaCollection`+`addToCollection`，`_seriesById` 帧换 `_collectionsById`；改完真机（Android 模拟器 + Windows 离屏焦点驱动）验证拖拽合并建合集、进入合集、移出成员，再删上述死代码 + 加 `setSeriesForEntry` 禁用守卫。
