@@ -14,6 +14,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart'
     show
         GlobalLookupController,
@@ -124,6 +125,9 @@ class ClipboardPanelController {
       onOverlayHidden: () => _visible = false,
     );
     await _channel.prepare(_popupAssetsDir());
+    // 面板任务栏图标 — 在预热（窗口创建）之前把本地化标题递给 native，任务栏
+    // 按钮 / Alt-Tab 项从第一帧起就是正确文案；面板被压底时点它即可拉回前台。
+    await _channel.setWindowTitle(t.clipboard_panel_window_title);
     if (appModel.desktopClipboardEnabled &&
         appModel.desktopClipboardDestination ==
             DesktopClipboardDestination.panel) {

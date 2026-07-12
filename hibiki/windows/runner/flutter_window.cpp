@@ -1011,6 +1011,11 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
   clipboard_panel_window_ = std::make_unique<GlobalLookupWindow>();
   clipboard_panel_window_->SetArmDismissHooks(false);
   clipboard_panel_window_->SetActivatable(true);
+  // 面板任务栏图标 — 常驻面板有独立任务栏按钮（WS_EX_APPWINDOW）：面板未置顶
+  // （图钉关）被游戏/浏览器压底时，点任务栏图标即可激活+拉回前台。瞬态查词窗
+  // 不设，保持无任务栏项。
+  clipboard_panel_window_->SetTaskbarPresence(true);
+  clipboard_panel_window_->SetWindowTitle(L"Hibiki");
   clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
 
   clipboard_panel_channel_ =
@@ -1167,6 +1172,11 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
         } else if (method == "setPinned") {
           clipboard_panel_window_->SetTopmost(
               BoolFromValue(args, "pinned", true));
+          result->Success();
+        } else if (method == "setWindowTitle") {
+          // 面板任务栏图标 — Dart 传本地化标题（任务栏按钮 / Alt-Tab 项）。
+          clipboard_panel_window_->SetWindowTitle(
+              Utf8ToWideString(StringFromValue(args, "title", "")));
           result->Success();
         } else if (method == "setWindowAlpha") {
           // spec §6 真机修正 — 整窗 LWA_ALPHA 透明（真透视；acrylic 实测经

@@ -3,6 +3,8 @@
 #include <dwmapi.h>
 #include <shlwapi.h>
 
+#include "resource.h"
+
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -239,6 +241,10 @@ void GlobalLookupWindow::EnsureWindowClass() {
   wc.lpfnWndProc = GlobalLookupWindow::WndProc;
   wc.hInstance = GetModuleHandle(nullptr);
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+  // 面板任务栏图标 — 类图标供任务栏按钮 / Alt-Tab 使用（瞬态覆盖窗是
+  // TOOLWINDOW 不上任务栏，带图标无副作用）。
+  wc.hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
+  wc.hIconSm = wc.hIcon;
   wc.lpszClassName = kClassName;
   RegisterClassExW(&wc);
   s_class_registered = true;
@@ -313,11 +319,14 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // 真机第 4 轮 — 面板实例（activatable_）不带 NOACTIVATE：点击面板时焦点
     // 落面板，滚轮不再穿到底下仍持焦点的游戏。程序化路径全程 SWP_NOACTIVATE /
     // SW_SHOWNOACTIVATE，流式更新不抢焦点。
+    // 面板任务栏图标 — taskbar_presence_（面板实例）用 APPWINDOW 换掉
+    // TOOLWINDOW：任务栏出现独立按钮，点它即可把被压底的面板拉回前台。
     hwnd_ = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+        WS_EX_TOPMOST |
+            (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
             (activatable_ ? 0 : WS_EX_NOACTIVATE),
-        kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner,
-        nullptr, GetModuleHandle(nullptr), this);
+        kClassName, window_title_.c_str(), WS_POPUP, off_x, 0, width, height,
+        owner, nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
     }
@@ -354,10 +363,11 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   const int w = width > 0 ? width : 420;
   const int h = height > 0 ? height : 600;
   hwnd_ = CreateWindowExW(
-      WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+      WS_EX_TOPMOST |
+          (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
           (activatable_ ? 0 : WS_EX_NOACTIVATE),
-      kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
-      GetModuleHandle(nullptr), this);
+      kClassName, window_title_.c_str(), WS_POPUP, off_x, 0, w, h, owner,
+      nullptr, GetModuleHandle(nullptr), this);
   if (hwnd_ == nullptr) {
     return;
   }
@@ -598,6 +608,17 @@ bool GlobalLookupWindow::ApplySystemBackdrop() {
     return true;
   }
   return ApplyWin10AccentBlurBehind(hwnd_);
+}
+
+void GlobalLookupWindow::SetWindowTitle(const std::wstring& title) {
+  if (title.empty()) {
+    return;
+  }
+  window_title_ = title;
+  if (hwnd_ != nullptr) {
+    // 已创建（面板启动即预热）：任务栏按钮标题即时更新。
+    SetWindowTextW(hwnd_, window_title_.c_str());
+  }
 }
 
 void GlobalLookupWindow::SetTopmost(bool topmost) {

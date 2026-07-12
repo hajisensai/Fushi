@@ -2285,5 +2285,6 @@
   "collection_remove_member_confirm": "Remove this item from the collection? The item itself is kept.",
   "collection_member_removed": "Removed from collection",
   "collection_default_name": "New collection",
-  "backup_import_contents_hint": "Untick an item to skip it."
+  "backup_import_contents_hint": "Untick an item to skip it.",
+  "clipboard_panel_window_title": "Hibiki clipboard lookup"
 }

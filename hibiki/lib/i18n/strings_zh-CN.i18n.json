@@ -2285,5 +2285,6 @@
   "collection_remove_member_confirm": "将该条目移出合集？条目本身保留。",
   "collection_member_removed": "已移出合集",
   "collection_default_name": "新合集",
-  "backup_import_contents_hint": "取消勾选某项即可跳过它。"
+  "backup_import_contents_hint": "取消勾选某项即可跳过它。",
+  "clipboard_panel_window_title": "Hibiki 剪贴板查词"
 }

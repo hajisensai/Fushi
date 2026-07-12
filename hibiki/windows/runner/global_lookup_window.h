@@ -143,6 +143,14 @@ class GlobalLookupWindow {
   // 覆盖窗保持默认 false（查词卡出现时前台键盘焦点原地不动，design §5 保证 3）。
   // 必须在首次 ShowAt/PrewarmWebView（窗口创建）前设置。
   void SetActivatable(bool activatable) { activatable_ = activatable; }
+  // 面板任务栏图标 — 常驻剪贴板面板要有独立任务栏按钮（WS_EX_APPWINDOW 而非
+  // WS_EX_TOOLWINDOW）：面板未置顶（图钉关）被游戏/浏览器压到底下时，点任务栏
+  // 图标即可激活+拉回前台（任务栏激活自带 raise），面板永远找得回来。瞬态查词
+  // 覆盖窗保持默认 false（工具窗，无任务栏项/Alt-Tab 项）。必须在窗口创建前设置。
+  void SetTaskbarPresence(bool present) { taskbar_presence_ = present; }
+  // 任务栏按钮 / Alt-Tab 项显示的窗口标题（Dart 侧传本地化文案）。创建前设置
+  // 则用于 CreateWindowExW；窗口已存在时经 SetWindowTextW 即时生效。
+  void SetWindowTitle(const std::wstring& title);
 
   // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
   // behind the window's transparent WebView2 pixels. Returns whether the OS
@@ -224,6 +232,8 @@ class GlobalLookupWindow {
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;
   bool activatable_ = false;
+  bool taskbar_presence_ = false;
+  std::wstring window_title_ = L"Hibiki Lookup";
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
