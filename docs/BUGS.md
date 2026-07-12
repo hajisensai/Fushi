@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 749 条。点号进各自文件。
+> 共 750 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-767](bugs/BUG-767-lyrics-reload-flicker-first-cue.md) | ✅ | ✅ | 歌词模式进入后一直闪烁 + 高亮恒第一句（不是正在听的那句） |
 | [BUG-766](bugs/BUG-766-video-batch-book-counter.md) | ✅ | ✅ | 视频页批量删除/打标签文案误用「本书」量詞 |
 | [BUG-765](bugs/BUG-765-reader-selection-handles-cannot-drag.md) | ✅ | ✅ | 阅读器移动端自绘选区两端手柄拖不动 |
 | [BUG-764](bugs/BUG-764-scm-cross-paragraph-no-next.md) | ✅ | ✅ | 制卡「后加一句/前退一句」跨段落无反应（不支持跨 `<p>`） |
