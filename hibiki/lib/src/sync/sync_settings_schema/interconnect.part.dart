@@ -479,7 +479,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
             ),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
+            // 唯一的展开子项是带浮动标签的 OutlineInputBorder 字段：浮动后的标签骑在
+            // 字段顶边、上半部分会溢出到字段上方（14sp 标签约 7px）。ExpansionTile 的
+            // 展开体被 Expansible 包在 ClipRect 里（flutter widgets/expansible.dart），
+            // childrenPadding 顶部为 0 时这半个标签被裁掉（BUG-755：「对端访问令牌」
+            // 上半截不显示）。顶部留出浮动标签的溢出高度即可让标签完整渲染。
+            childrenPadding: const EdgeInsets.only(top: 10),
             title: Text(
               t.sync_client_token_manual,
               style: theme.textTheme.bodySmall
