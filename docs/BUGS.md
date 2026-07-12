@@ -27,11 +27,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 729 条。点号进各自文件。
+> 共 734 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-744](bugs/BUG-744-lookup-window-floor-region-eats-clicks.md) | ✅ | ✅ | app外查词覆盖窗铺满工作区吞掉下一次点击 |
+| [BUG-749](bugs/BUG-749-lookup-window-floor-region-eats-clicks.md) | ✅ | ✅ | app外查词覆盖窗铺满工作区吞掉下一次点击 |
+| [BUG-748](bugs/BUG-748-vn-blank-tap-advance-vertical.md) | ✅ | ✅ | VN居中竖排布局下点击空白翻页永不触发(caret clamp到文字) |
+| [BUG-747](bugs/BUG-747-desktop-restart-button-only-exits.md) | ✅ | ✅ | 桌面导入后点立即重启只退出不重启 |
+| [BUG-746](bugs/BUG-746-overwrite-import-rename-access-denied.md) | ✅ | ✅ | 覆盖导入书籍树换名Windows拒绝访问导致整个导入失败 |
+| [BUG-745](bugs/BUG-745-merge-import-deleted-book-empty-orphan.md) | ✅ | ✅ | 合并导入让已删书变空书籍(srt行不认书墓碑被复活) |
+| [BUG-744](bugs/BUG-744-merge-import-audio-sources-lost.md) | ✅ | ✅ | 合并导入不恢复音频来源(音频源配置/本地音频库被当设备设置丢弃) |
 | [BUG-743](bugs/BUG-743-dual-subtitle-bounce-and-large-display-overlap.md) | ✅ | ✅ | 双轨字幕来回弹跳 + 大屏底部双语塌陷重叠 |
 | [BUG-742](bugs/BUG-742-subtitle-blur-weak.md) | ✅ | ✅ | 视频听力沉浸字幕模糊度不够(固定8px不随字号缩放) |
 | [BUG-741](bugs/BUG-741-transient-lookup-window-owned-pulls-main-foreground.md) | ✅ | ✅ | 悬浮字幕点词瞬态查词窗owned·Z序连带把主窗拉前台 |

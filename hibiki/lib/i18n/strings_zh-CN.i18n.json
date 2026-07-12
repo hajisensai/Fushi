@@ -1611,8 +1611,6 @@
   "video_setting_seek_seconds": "快进/快退步长（秒）",
   "section_video_danmaku": "弹幕",
   "video_setting_danmaku_server_url": "弹幕服务器地址",
-  "video_setting_danmaku_app_id": "弹弹play AppId",
-  "video_setting_danmaku_app_secret": "弹弹play AppSecret",
   "card_overwritten": "卡片已覆盖到『$deck』。",
   "video_bottom_seek_back_label": "−10s",
   "video_bottom_seek_forward_label": "+10s",
@@ -2215,7 +2213,6 @@
   "backup_category_statistics_desc": "阅读、视频与制卡统计",
   "backup_category_settings_desc": "应用与阅读器设置",
   "backup_category_profiles_desc": "配置方案",
-  "backup_import_contents_hint": "取消勾选某项可在覆盖模式下跳过恢复它的文件；书籍与阅读数据始终会恢复。",
   "popup_font_size_decrease": "缩小查词字号",
   "popup_font_size_increase": "放大查词字号",
   "remote_book_cloud": "云端书库",
@@ -2285,5 +2282,6 @@
   "collection_remove_member": "移出合集",
   "collection_remove_member_confirm": "将该条目移出合集？条目本身保留。",
   "collection_member_removed": "已移出合集",
-  "collection_default_name": "新合集"
+  "collection_default_name": "新合集",
+  "backup_import_contents_hint": "取消勾选某项即可跳过它。"
 }

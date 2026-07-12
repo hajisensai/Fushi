@@ -103,7 +103,7 @@
   var bridgeSeq = 0;
   var bridgeRoutes = new Map();
   var lastBBoxKey = '';
-  // BUG-744 — last posted shell-rects payload (window-relative CSS px CSV).
+  // BUG-749 — last posted shell-rects payload (window-relative CSS px CSV).
   // De-duped independently of lastBBoxKey: a nested child that lands INSIDE the
   // reserved-floor bbox leaves the bbox key unchanged (overlaySize suppressed)
   // but MUST still refresh the native hit/paint region, or clicks on the new
@@ -1109,7 +1109,7 @@
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
   function beginLookup(rootId) {
     lastBBoxKey = '';
-    // BUG-744 — native cleared its shell rects on Hide(); force a re-post even
+    // BUG-749 — native cleared its shell rects on Hide(); force a re-post even
     // when the fresh card's rects CSV equals the previous lookup's.
     lastShellRectsKey = '';
     // TODO-1231 v3 (BUG-583) — a NEW hotkey lookup re-reveals the window from a
@@ -1287,7 +1287,7 @@
       if (measured > 0 && (height <= 0 || measured < height)) {
         height = measured;
       }
-      // BUG-744 — collect every placed shell (same left/top/height the bbox
+      // BUG-749 — collect every placed shell (same left/top/height the bbox
       // uses) for the native hit/paint region below.
       shellRects.push([left, top, width, height]);
       // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
@@ -1342,7 +1342,7 @@
     // DWM window and the WebView2 surface cannot move in the SAME frame across the
     // JS/window boundary, so a ~1 frame residual remains (vs the old multi-frame
     // desync) — and only for a left/up cascade (dx/dy != 0; down-right stays 0).
-    // BUG-744 — report the per-shell rects (window-relative CSS px: the window
+    // BUG-749 — report the per-shell rects (window-relative CSS px: the window
     // is positioned at the bbox MIN-corner, so window-relative = shell − min)
     // BEFORE overlaySize. Native clips the opaque overlay window's region to
     // the UNION of these card rects (global_lookup_window.cpp
@@ -1549,7 +1549,7 @@
     if (frameId != null) {
       return true; // Card hit: popup.js owns the per-layer decision.
     }
-    // BUG-744 — post the root dismiss IMMEDIATELY (no TODO-890 slide-out).
+    // BUG-749 — post the root dismiss IMMEDIATELY (no TODO-890 slide-out).
     // With the shell-union window region the SAME physical gap click also
     // lands in the app below (region hole) and may start a NEW lookup there
     // (clipboard panel word tap → lookupText). A dismiss delayed 200ms by the

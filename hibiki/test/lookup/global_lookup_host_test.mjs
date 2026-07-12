@@ -1745,7 +1745,7 @@ function flushTimers() {
   );
 }
 
-// ---- BUG-744 shell-union region + immediate gap dismiss --------------------
+// ---- BUG-749 shell-union region + immediate gap dismiss --------------------
 
 // R1. measureAndReport posts shellRects (window-relative CSS px = shell − bbox
 //     min corner, CSV encoded) BEFORE overlaySize — native applies the region
@@ -1764,18 +1764,18 @@ function flushTimers() {
   // one; the LAST posts are the settled pair (same convention as test 11).
   const idxRects = hostPostLog.map((m) => m.handler).lastIndexOf('shellRects');
   const idxSize = hostPostLog.map((m) => m.handler).lastIndexOf('overlaySize');
-  assert.ok(idxRects >= 0, 'BUG-744: shellRects posted');
+  assert.ok(idxRects >= 0, 'BUG-749: shellRects posted');
   assert.ok(idxSize >= 0, 'overlaySize posted');
   assert.ok(idxRects < idxSize,
-    'BUG-744: shellRects posted BEFORE overlaySize (region correct at reveal)');
+    'BUG-749: shellRects posted BEFORE overlaySize (region correct at reveal)');
   // min corner = (-40, 0): frame-0 -> (40,0,100,80), frame-1 -> (0,60,100,80).
   assert.strictEqual(hostPostLog[idxRects].args[0],
     '40,0,100,80;0,60,100,80',
-    'BUG-744: rects are window-relative (shell − bbox min), CSV encoded');
+    'BUG-749: rects are window-relative (shell − bbox min), CSV encoded');
   hostPostLog = [];
   host.measureAndReport();
   assert.ok(!hostPostLog.some((m) => m.handler === 'shellRects'),
-    'BUG-744: identical re-measure is de-duped (no shellRects spam)');
+    'BUG-749: identical re-measure is de-duped (no shellRects spam)');
 }
 
 // R2. beginLookup resets the shellRects de-dup key: native clears its cached
@@ -1788,10 +1788,10 @@ function flushTimers() {
   host.beginLookup('frame-0');
   host.measureAndReport();
   assert.ok(hostPostLog.some((m) => m.handler === 'shellRects'),
-    'BUG-744: shellRects re-posted after beginLookup even when unchanged');
+    'BUG-749: shellRects re-posted after beginLookup even when unchanged');
 }
 
-// R3. BUG-744: a hook-forwarded gap click posts the root dismiss IMMEDIATELY —
+// R3. BUG-749: a hook-forwarded gap click posts the root dismiss IMMEDIATELY —
 //     never deferred behind the TODO-890 slide-out. With the shell-union
 //     window region the same physical click also lands in the app below and
 //     may start a NEW lookup there (clipboard panel word tap); a dismiss
@@ -1815,7 +1815,7 @@ function flushTimers() {
   assert.strictEqual(hit, false, 'gap click misses all shells');
   const dismiss = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
   assert.ok(dismiss,
-    'BUG-744: gap dismiss posted synchronously (no slide-out deferral)');
+    'BUG-749: gap dismiss posted synchronously (no slide-out deferral)');
   assert.strictEqual(dismiss.args[0], 0, 'dismiss targets the root (index 0)');
 }
 

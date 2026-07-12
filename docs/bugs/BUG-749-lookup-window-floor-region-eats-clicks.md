@@ -1,4 +1,4 @@
-## BUG-744 · app外查词覆盖窗铺满工作区吞掉下一次点击
+## BUG-749 · app外查词覆盖窗铺满工作区吞掉下一次点击
 - **报告**：2026-07-12（用户：「app外查词，第二个弹窗闪一下消失，然后后面的弹窗连闪都不闪了」，build 7532）
 - **真实性**：✅ 真 bug（根因 `hibiki/assets/popup/global_lookup_host.js` measureAndReport 的 origin floor 拉 min-corner + `hibiki/windows/runner/global_lookup_window.cpp:ApplyRoundedRegion` 整窗 region；回归引入 = d2c57193a TODO-1345/BUG-583 round5，2026-07-09）
 - **[x] ① 已修复** — host 每次测量把 per-shell 窗口相对矩形（CSS px CSV）发 `shellRects` 给 native；native `ApplyRoundedRegion` 在 rects 非空时用 per-shell 圆角矩形并集 `SetWindowRgn`（窗口矩形不动，BUG-583 零位移保留；空隙点击物理穿透）；`Hide`/`ForgetDeadWindow` 清 rects、host `beginLookup` 重置去重键；`handleGlobalClick` gap dismiss 改立即 post（防 stale-dismiss 杀新卡）

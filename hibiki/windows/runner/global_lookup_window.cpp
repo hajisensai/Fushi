@@ -290,7 +290,7 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   recovering_ = false;
   visible_ = false;
   revealed_ = false;
-  shell_rects_css_.clear();  // BUG-744 — stale rects must not clip a rebuild.
+  shell_rects_css_.clear();  // BUG-749 — stale rects must not clip a rebuild.
 }
 
 bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
@@ -637,7 +637,7 @@ void GlobalLookupWindow::Hide(bool notify) {
   const bool was_showing = visible_;
   visible_ = false;
   revealed_ = false;
-  // BUG-744 — drop the per-shell region rects: the next lookup renders a new
+  // BUG-749 — drop the per-shell region rects: the next lookup renders a new
   // cascade and re-posts fresh rects (the host resets its de-dup key in
   // beginLookup), so a stale region can never clip the next card.
   shell_rects_css_.clear();
@@ -977,7 +977,7 @@ void GlobalLookupWindow::ConfigureWebView() {
               // HandleMessage）统一回报最终 rect 给 Dart 持久化。Matching
               // quoted handler names keeps glossary text that merely mentions
               // the words from triggering this.
-              // BUG-744 — the transient host reports its per-shell card rects
+              // BUG-749 — the transient host reports its per-shell card rects
               // (window-relative CSS px) whenever the cascade layout changes.
               // Handled fully natively (region update is pure Win32 state, no
               // Dart decision involved) and NOT forwarded, so the Dart message
@@ -1245,7 +1245,7 @@ LRESULT CALLBACK GlobalLookupWindow::WndProc(HWND hwnd, UINT message,
 // Called on every WM_SIZE. The corner diameter (2 * radius) is scaled by the
 // window DPI so the rounding stays a constant ~10 logical px across monitors.
 //
-// BUG-744 — when the host has reported per-shell rects (transient cascade
+// BUG-749 — when the host has reported per-shell rects (transient cascade
 // mode), the region is the UNION of those rounded card rects instead of the
 // full window. Root cause chain: the TODO-1345 reserved cascade floor makes
 // the revealed window span ~the whole work area (so a nested child never
@@ -1311,7 +1311,7 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
   }
 }
 
-// BUG-744 — parse {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…']} (window-
+// BUG-749 — parse {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…']} (window-
 // relative CSS px, numbers only — produced by global_lookup_host.js
 // measureAndReport) and re-apply the window region. A malformed payload (or a
 // glossary string that merely contains the handler name) parses to zero rects

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-744 — 瞬态查词覆盖窗命中/绘制区域必须裁到卡片矩形并集（源码扫描守卫）。
+/// BUG-749 — 瞬态查词覆盖窗命中/绘制区域必须裁到卡片矩形并集（源码扫描守卫）。
 ///
 /// 真机根因链：TODO-1345（BUG-583 round5, d2c57193a）给 reveal bbox 预留级联
 /// origin floor 后，瞬态覆盖窗 reveal 时≈铺满整个工作区（真机日志 box 高恒为

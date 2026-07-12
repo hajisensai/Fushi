@@ -301,15 +301,22 @@ void main() {
           reason: '_import 里不得直接 exit(0)，退出改由确认视图按钮驱动');
     });
 
-    test('backup.part：backupImportRestart 保留原平台退出分支（never-break）', () {
+    test('backup.part：backupImportRestart 保留原平台退出分支 + 桌面真重启', () {
       final String src =
           readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
               .readAsStringSync();
       final int fnIdx = src.indexOf('void backupImportRestart()');
       expect(fnIdx, greaterThan(0), reason: '必须有供确认按钮调用的退出函数');
-      final String fnBody = src.substring(fnIdx, fnIdx + 200);
+      final int fnEnd = src.indexOf('\n}', fnIdx);
+      final String fnBody = src.substring(fnIdx, fnEnd);
+      // never-break: 移动端仍走 FlutterExitApp，桌面端仍会退出当前进程。
       expect(fnBody.contains('FlutterExitApp.exitApp()'), isTrue);
       expect(fnBody.contains('exit(0)'), isTrue);
+      // 新增：桌面端「立即重启」必须真的重启——退出前拉起一个 detached 新实例
+      // （修「点重启没重启」）。
+      expect(fnBody.contains('Process.start'), isTrue,
+          reason: '桌面端应在退出前重新拉起可执行文件，实现真正的重启');
+      expect(fnBody.contains('ProcessStartMode.detached'), isTrue);
     });
 
     test('app_model：BackupImportPhase 含 validating 相位 + token/取消/退出方法', () {
