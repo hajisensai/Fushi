@@ -2278,5 +2278,7 @@
   "sort_title": "名称",
   "sort_imported": "导入时间",
   "collection_sort_by_title": "按名称排序",
-  "collection_sort_by_imported": "按导入时间排序"
+  "collection_sort_by_imported": "按导入时间排序",
+  "collection_collapse": "折叠",
+  "collection_expand": "展开"
 }

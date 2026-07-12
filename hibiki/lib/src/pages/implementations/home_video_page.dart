@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
@@ -231,6 +232,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     unawaited(
       ref.read(appProvider).prefsRepo.setVideoSortModeName(mode.name),
     );
+  }
+
+  /// 合集行折叠开关：`setPref` 先同步刷内存缓存，setState 重建即读到新值；
+  /// 落库 fire-and-forget（`collapsed_collection_ids`，书架/视频页共用）。
+  void _toggleCollectionCollapsed(int collectionId) {
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    final Set<int> ids = prefs.collapsedCollectionIds;
+    if (!ids.remove(collectionId)) ids.add(collectionId);
+    unawaited(prefs.setCollapsedCollectionIds(ids));
+    setState(() {});
   }
 
   /// 统一合集 Phase 2/6：给「缺封面的本地视频行」后台逐个抽一帧当封面。
@@ -1661,6 +1672,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
+        collapsed: ref
+            .watch(appProvider)
+            .prefsRepo
+            .collapsedCollectionIds
+            .contains(collection.id),
+        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
         itemBuilder: (BuildContext _, int i) => _buildCard(
           group.items[i].payload,
           playlistCollectionId: collection.id,

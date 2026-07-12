@@ -28,6 +28,8 @@ class CollectionShelfRow extends StatefulWidget {
     this.headerFocusId,
     this.initialIndex = 0,
     this.itemGap = 12,
+    this.collapsed = false,
+    this.onToggleCollapsed,
     super.key,
   });
 
@@ -62,6 +64,13 @@ class CollectionShelfRow extends StatefulWidget {
   /// 时传 0，使行内视觉间距与散书网格一致。
   final double itemGap;
 
+  /// 折叠态：true 时不建横向成员列表，行只剩行头（行头照常可点进详情）。
+  final bool collapsed;
+
+  /// 行头折叠开关（行头标题左侧旋转 chevron）。null 时不显示开关（行恒展开）。
+  /// 调用方负责持久化（`collapsed_collection_ids` 偏好，书架/视频页共用）。
+  final VoidCallback? onToggleCollapsed;
+
   @override
   State<CollectionShelfRow> createState() => _CollectionShelfRowState();
 }
@@ -93,34 +102,37 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _buildHeader(context, tokens),
-        SizedBox(
-          height: widget.rowHeight,
-          // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行用
-          // 鼠标左右拖会毫无反应（用户实报）。显式放开 mouse/trackpad/stylus
-          // 拖动；触屏行为不变。
-          child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(
-              dragDevices: <PointerDeviceKind>{
-                PointerDeviceKind.touch,
-                PointerDeviceKind.mouse,
-                PointerDeviceKind.stylus,
-                PointerDeviceKind.trackpad,
-              },
-            ),
-            child: ListView.separated(
-              controller: _controller,
-              scrollDirection: Axis.horizontal,
-              physics: desktopAwareScrollPhysics(),
-              itemCount: widget.itemCount,
-              separatorBuilder: (BuildContext _, int __) =>
-                  SizedBox(width: widget.itemGap),
-              itemBuilder: (BuildContext context, int i) => SizedBox(
-                width: widget.itemWidth,
-                child: widget.itemBuilder(context, i),
+        // 折叠态不建成员列表（行只剩行头）；展开时照常。控制器跨折叠切换存活
+        //（ListView 重建时重新 attach，无 clients 期间安全）。
+        if (!widget.collapsed)
+          SizedBox(
+            height: widget.rowHeight,
+            // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行用
+            // 鼠标左右拖会毫无反应（用户实报）。显式放开 mouse/trackpad/stylus
+            // 拖动；触屏行为不变。
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: <PointerDeviceKind>{
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.stylus,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: ListView.separated(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                physics: desktopAwareScrollPhysics(),
+                itemCount: widget.itemCount,
+                separatorBuilder: (BuildContext _, int __) =>
+                    SizedBox(width: widget.itemGap),
+                itemBuilder: (BuildContext context, int i) => SizedBox(
+                  width: widget.itemWidth,
+                  child: widget.itemBuilder(context, i),
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -137,6 +149,30 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         ),
         child: Row(
           children: <Widget>[
+            // 折叠开关：标题左侧旋转 chevron（展开朝下、折叠朝右）。紧凑尺寸不
+            // 抬高行头；ExcludeFocus——手柄/键盘焦点仍落整行头（Enter=进详情），
+            // 折叠是鼠标/触屏轻交互，不进焦点遍历序。
+            if (widget.onToggleCollapsed != null)
+              ExcludeFocus(
+                child: IconButton(
+                  onPressed: widget.onToggleCollapsed,
+                  tooltip: widget.collapsed
+                      ? t.collection_expand
+                      : t.collection_collapse,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 32, height: 32),
+                  icon: AnimatedRotation(
+                    turns: widget.collapsed ? -0.25 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: Icon(
+                      Icons.expand_more,
+                      size: 20,
+                      color: tokens.surfaces.onVariant,
+                    ),
+                  ),
+                ),
+              ),
             // Expanded（tight）吃满剩余宽，尾随「查看全部+chevron」才真正贴最右
             //（旧写法 Flexible(loose)+Spacer 按 flex 份额均分，标题短时尾随件
             // 停在行中间——用户实报）。

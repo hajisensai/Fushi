@@ -190,4 +190,34 @@ void main() {
     expect(gridDetailSrc.contains('reorderCollectionItems'), isTrue,
         reason: '书籍合集详情页一键排序必须写穿 sortIndex');
   });
+
+  test('BUG-756：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
+    final String sourceSrc =
+        File('lib/src/media/sources/reader_hibiki_source.dart')
+            .readAsStringSync();
+    // 唯一 recency 真相源（批量 DAO + provider）。
+    expect(sourceSrc.contains('bookLastReadAtProvider'), isTrue,
+        reason: 'recency 必须有唯一真相源 provider');
+    expect(sourceSrc.contains('getAllReaderPositions'), isTrue,
+        reason: 'recency 映射必须一次批量查询 reader_positions');
+    // 关书与书列表同点失效，否则 hero/「最近阅读」陈旧到重启。方法体终点锚定
+    // 下一个 override（`\n  }` 会先撞上参数表的 `}) async {`，不能用）。
+    final int exitFn = sourceSrc.indexOf('Future<void> onSourceExit(');
+    expect(exitFn, isNonNegative);
+    final int exitEnd = sourceSrc.indexOf('onSearchBarTap', exitFn);
+    expect(exitEnd, isNonNegative);
+    final String exitBody = sourceSrc.substring(exitFn, exitEnd);
+    expect(exitBody.contains('ref.invalidate(bookLastReadAtProvider)'), isTrue,
+        reason: '关书必须同点失效 recency 映射（BUG-756 刷新语义）');
+    // 书架页：hero 按最后阅读时间选书；「最近阅读」读同一映射、没读过退
+    // importedAt；provider 下标假名次（实为导入序）不得回潮。
+    expect(historySrc.contains('mostRecentlyReadCandidate'), isTrue,
+        reason: '继续阅读 hero 必须选最后阅读时间最新的在读书');
+    expect(
+        historySrc.contains('_lastReadAtByBookKey[bookKey] ?? it.importedAt'),
+        isTrue,
+        reason: '「最近阅读」= updatedAt，没读过按导入时间融入（与视频页语义镜像）');
+    expect(historySrc.contains('payload.seq'), isFalse,
+        reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
+  });
 }

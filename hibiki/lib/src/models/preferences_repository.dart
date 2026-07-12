@@ -338,6 +338,23 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 已折叠的合集横排行 collectionId 集（书架/视频页共用；折叠 = 行只剩行头）。
+  /// 逗号串存储；解析对空串/脏值宽容（tryParse 过滤）。
+  Set<int> get collapsedCollectionIds {
+    final String raw =
+        getPref('collapsed_collection_ids', defaultValue: '') as String;
+    return <int>{
+      for (final String part in raw.split(','))
+        if (int.tryParse(part) case final int id) id,
+    };
+  }
+
+  Future<void> setCollapsedCollectionIds(Set<int> ids) async {
+    final List<int> sorted = ids.toList()..sort();
+    await setPref('collapsed_collection_ids', sorted.join(','));
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>

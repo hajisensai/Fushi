@@ -436,13 +436,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       for (final MediaItem item in _visibleEpubBooks)
         if (_selectedKeys.contains(item.mediaIdentifier))
           _slotCover(
-            _ShelfBookSlot(seq: 0, epub: item),
+            _ShelfBookSlot(epub: item),
             _epubCoverUrisByBookKey,
           ),
       for (final SrtBook book in _visibleSrtBooks)
         if (_selectedKeys.contains('srt_${book.uid}'))
           _slotCover(
-            _ShelfBookSlot(seq: 0, srt: book),
+            _ShelfBookSlot(srt: book),
             _epubCoverUrisByBookKey,
           ),
     ].take(4).toList();

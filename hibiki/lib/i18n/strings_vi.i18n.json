@@ -2278,5 +2278,7 @@
   "sort_title": "Name",
   "sort_imported": "Import date",
   "collection_sort_by_title": "Sort by name",
-  "collection_sort_by_imported": "Sort by import date"
+  "collection_sort_by_imported": "Sort by import date",
+  "collection_collapse": "Collapse",
+  "collection_expand": "Expand"
 }

@@ -30,6 +30,7 @@ import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
@@ -489,32 +490,56 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     unawaited(appModel.prefsRepo.setShelfSortModeName(mode.name));
   }
 
+  /// 合集行折叠开关：`setPref` 先同步刷内存缓存，setState 重建即读到新值；
+  /// 落库 fire-and-forget（`collapsed_collection_ids`，书架/视频页共用）。
+  void _toggleCollectionCollapsed(int collectionId) {
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    final Set<int> ids = prefs.collapsedCollectionIds;
+    if (!ids.remove(collectionId)) ids.add(collectionId);
+    unawaited(prefs.setCollapsedCollectionIds(ids));
+    setState(() {});
+  }
+
   String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
         ShelfSortMode.recent => t.sort_recent_read,
         ShelfSortMode.title => t.sort_title,
         ShelfSortMode.imported => t.sort_imported,
       };
 
+  /// 每本书（bookKey → reader_positions.updatedAt 毫秒）的最后阅读时间；
+  /// 关书时经 [ReaderHibikiSource.onSourceExit] 与书列表同点失效（BUG-756）。
+  Map<String, int> get _lastReadAtByBookKey =>
+      ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
+
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
-  /// title 取合集名）。recentScore = -历史序名次（「最近阅读」= 现状历史序，零
-  /// 行为变化）；importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
+  /// title 取合集名）。recentScore = 最后阅读时间（[_lastReadAtByBookKey]，
+  /// EPUB/SRT 同走 bookKey），没读过退 importedAt——与视频页 watch-stats 语义
+  /// 镜像（BUG-756：旧的 -历史序名次实为 SRT 表序+EPUB 导入序，假 recency）；
+  /// importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
   /// [_epubImportedAtByKey]，srt 自带）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
     String titleOf(_ShelfBookSlot s) => s.srt?.title ?? s.epub?.title ?? '';
+    int recentOf(CollectionOrderingItem<_ShelfBookSlot> it) {
+      final String? bookKey = it.payload.srt?.bookKey ??
+          _parseBookKey(it.payload.epub!.mediaIdentifier);
+      return _lastReadAtByBookKey[bookKey] ?? it.importedAt;
+    }
+
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
       final CollectionOrderingItem<_ShelfBookSlot> it = group.coverItem;
       return ShelfSortKey(
-        recentScore: -it.payload.seq,
+        recentScore: recentOf(it),
         title: titleOf(it.payload),
         importedAt: it.importedAt,
         tieKey: '${it.mediaType}|${it.entryKey}',
       );
     }
-    int recent = -(1 << 30);
+    int recent = 0;
     int imported = 0;
     for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items) {
-      if (-it.payload.seq > recent) recent = -it.payload.seq;
+      final int r = recentOf(it);
+      if (r > recent) recent = r;
       if (it.importedAt > imported) imported = it.importedAt;
     }
     return ShelfSortKey(
@@ -625,16 +650,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   /// UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页）。
   ///
-  /// 数据边界（诚实外显）：hero = 历史序（provider 即最近访问序）第一本
-  /// 0<position<duration 的 EPUB，显示「已读 x%」；无候选整块只剩统计。统计 =
-  /// 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB 进度；SRT 卡无统一进度数据，
-  /// 不硬造）。宽 >=720 并排、窄屏堆叠。
+  /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB 中「最后阅读
+  /// 时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）最新者，
+  /// 显示「已读 x%」；无候选整块只剩统计。BUG-756：旧实现取列表第一本在读书，
+  /// 但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」而非
+  /// 「最近阅读」的书。统计 = 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB
+  /// 进度；SRT 卡无统一进度数据，不硬造）。宽 >=720 并排、窄屏堆叠。
   Widget _buildShelfOverviewSection(
     List<MediaItem> epubBooks,
     List<SrtBook> srtBooks,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    MediaItem? hero;
+    final List<MediaItem> inProgress = <MediaItem>[];
     int reading = 0;
     int finished = 0;
     for (final MediaItem item in epubBooks) {
@@ -644,9 +671,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         finished++;
       } else if (item.position > 0) {
         reading++;
-        hero ??= item;
+        inProgress.add(item);
       }
     }
+    final MediaItem? hero = mostRecentlyReadCandidate(
+      inProgress,
+      (MediaItem item) =>
+          _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
+    );
     final Widget stats = _buildShelfOverviewStats(
       total: epubBooks.length + srtBooks.length,
       reading: reading,
@@ -868,28 +900,25 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _visibleSrtBooks = srtBooks;
     // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
     // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
-    // 排序方式排 group（散书与合集行同层混排）。slot.seq = 历史序名次（provider
-    // 即最近访问序），是「最近阅读」模式的排序量纲。
+    // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
+    // （[_lastReadAtByBookKey]，BUG-756），不再依赖列表下标假名次。
     final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
         <CollectionOrderingItem<_ShelfBookSlot>>[
-      for (int i = 0; i < srtBooks.length; i++)
+      for (final SrtBook srt in srtBooks)
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: 'srt',
-          entryKey: srtBooks[i].uid,
-          importedAt: srtBooks[i].importedAt,
-          payload: _ShelfBookSlot(seq: i, srt: srtBooks[i]),
+          entryKey: srt.uid,
+          importedAt: srt.importedAt,
+          payload: _ShelfBookSlot(srt: srt),
         ),
-      for (int i = 0; i < epubBooks.length; i++)
+      for (final MediaItem epub in epubBooks)
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: 'epub',
-          entryKey: _parseBookKey(epubBooks[i].mediaIdentifier) ?? '',
-          importedAt: _epubImportedAtByKey[
-                  _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''] ??
-              0,
-          payload: _ShelfBookSlot(
-            seq: srtBooks.length + i,
-            epub: epubBooks[i],
-          ),
+          entryKey: _parseBookKey(epub.mediaIdentifier) ?? '',
+          importedAt:
+              _epubImportedAtByKey[_parseBookKey(epub.mediaIdentifier) ?? ''] ??
+                  0,
+          payload: _ShelfBookSlot(epub: epub),
         ),
     ];
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
@@ -1111,6 +1140,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         headerFocusId:
             HibikiFocusId('reader-shelf-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
+        collapsed:
+            appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
+        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
         itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
           group.items[i].payload,
           epubCoverUrisByBookKey,
@@ -1435,16 +1467,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 }
 
 /// 书架 SRT+EPUB 混排网格的单个排序槽（合并两类卡片到一个有序列表）。
-/// [srt]/[epub] 恰有一个非空。[seq] = 历史序名次（SRT 在前 EPUB 在后，provider
-/// 即最近访问序），是「最近阅读」排序模式的量纲（-seq 越大越新）。
+/// [srt]/[epub] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
+/// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-756）。
 class _ShelfBookSlot {
   const _ShelfBookSlot({
-    required this.seq,
     this.srt,
     this.epub,
   });
 
-  final int seq;
   final SrtBook? srt;
   final MediaItem? epub;
 }
