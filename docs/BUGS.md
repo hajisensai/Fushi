@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 748 条。点号进各自文件。
+> 共 749 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-766](bugs/BUG-766-nf-postmessage-file-origin.md) | ✅ | ✅ | Netflix字幕面板file://下postMessage因opaque origin报错致列表空 |
 | [BUG-765](bugs/BUG-765-reader-selection-handles-cannot-drag.md) | ✅ | ✅ | 阅读器移动端自绘选区两端手柄拖不动 |
 | [BUG-764](bugs/BUG-764-scm-cross-paragraph-no-next.md) | ✅ | ✅ | 制卡「后加一句/前退一句」跨段落无反应（不支持跨 `<p>`） |
 | [BUG-763](bugs/BUG-763-scm-modal-clipped.md) | ✅ | ✅ | 制卡「选择句子上下文」模态显示不全（预览被按钮区遮挡） |

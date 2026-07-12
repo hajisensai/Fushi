@@ -137,7 +137,8 @@
     ms = Math.max(0, Math.round(ms));
     if (/(^|\.)netflix\.com$/.test(location.hostname)) {
       // Netflix（DRM 平台边界）：走主世界 bridge 的官方 player.seek（直接改 currentTime 会触发 M7375）。
-      try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, location.origin); } catch (_) {}
+      // BUG-766：自投用 targetOrigin '/'，file:// opaque origin 下 location.origin('file://')≠recipient('null') 会抛错。
+      try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, '/'); } catch (_) {}
       return;
     }
     var v = videoEl();

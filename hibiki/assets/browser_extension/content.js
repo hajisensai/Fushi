@@ -189,7 +189,7 @@ window.addEventListener('message', (e) => {
 // netflix-bridge.js document_start 就装好 hook——Netflix 播放清单/字幕轨常在**本 listener 注册前**
 // 就被抓取并 postMessage 出去，fire-and-forget 的消息永久丢失 → store 空、勾选开关无物可挂、
 // 面板只剩预取的下一集轨（列表空）。接收端就位后立刻请求 bridge 重放已存档的 cue 消息，消除时序运气。
-try { window.postMessage({ __hibikiNf: 'replayCues' }, location.origin); } catch (_) {}
+try { window.postMessage({ __hibikiNf: 'replayCues' }, '/'); } catch (_) {}
 
 // ── TODO-1363：通用字幕轨 provider（所有站点） ──
 // 数据契约不变：window.hibikiEpisodeCues[`${videoKey}|${lang}`] = [{startMs,endMs,text}]，新数据到达
@@ -524,7 +524,7 @@ async function hibikiRunNetflixBatch() {
     v.addEventListener('seeked', onSeeked);
     window.addEventListener('message', onMsg);
     // 走 Netflix 官方播放器 API seek（主世界 netflix-bridge.js 执行），不改 currentTime → 不触发 M7375。
-    try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, window.location.origin); } catch (_) {}
+    try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, '/'); } catch (_) {}
     setTimeout(finish, 5000); // 兜底：seeked / seekDone 都不来也继续
   });
   try {

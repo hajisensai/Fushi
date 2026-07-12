@@ -6,7 +6,11 @@
 // **之前**装好 JSON.parse hook，拦到整集字幕轨。seek 路径不受影响：nfSeek 里 videoPlayer 是收到
 // seek 消息时才惰性解析（非脚本加载时），document_start 只是提前注册 listener + hook，安全。
 (function () {
-  var ORIGIN = window.location.origin;
+  // BUG-766：跨世界自投消息全部用 targetOrigin '/'（仅同源同窗才投递），而非 location.origin。
+  // file:// 页 opaque origin 序列化成 'null'，但 location.origin 返回 'file://' → 二者不匹配，
+  // postMessage 直接抛异常/静默丢弃。'/' 对不透明源同样成立（同窗自投恒同源），且不做 URL 解析。
+  // 接收端比对期望源用 window.origin（不透明源返回 'null'，与 e.origin 一致），location.origin 会错序列化。
+  var ORIGIN = window.origin;
 
   // ── TODO-1219 P1：整集字幕拦截（数据源） ──
   // Netflix 播放清单 timedtexttracks[] 列出每条字幕轨的下载地址（明文 WebVTT/TTML，非 DRM；只有
@@ -22,7 +26,7 @@
   var cueArchive = [];
   var CUE_ARCHIVE_MAX = 80;
   function postCuesMessage(payload) {
-    try { window.postMessage(payload, ORIGIN); } catch (_) {}
+    try { window.postMessage(payload, '/'); } catch (_) {}
   }
 
   function pickTrackUrl(track) {
@@ -128,7 +132,7 @@
     var replied = false;
     var reply = function (ok, err) {
       if (replied) return; replied = true;
-      try { window.postMessage({ __hibikiNf: 'seekDone', ok: ok, err: err || '' }, ORIGIN); } catch (_) {}
+      try { window.postMessage({ __hibikiNf: 'seekDone', ok: ok, err: err || '' }, '/'); } catch (_) {}
     };
     try { nfSeek(d.ms, function () { reply(true, ''); }); }
     catch (x) { reply(false, String(x)); }
