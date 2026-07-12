@@ -2272,5 +2272,18 @@
   "backup_export_choose_videos": "Choose videos",
   "backup_export_videos_all": "All videos",
   "backup_export_no_videos": "No videos to choose from",
-  "backup_export_videos_selected": "$count videos selected"
+  "backup_export_videos_selected": "$count videos selected",
+  "video_continue_watching": "Continue Watching",
+  "video_library_overview": "Library Overview",
+  "video_stat_total_videos": "Total",
+  "video_stat_unfinished": "Unfinished",
+  "video_stat_recent_imports": "New in 7 days",
+  "video_watched_up_to": "Watched to $time",
+  "video_last_watched": "Last watched $date",
+  "collection_view_all": "View all",
+  "collection_merged_hint": "Merged into collection",
+  "collection_remove_member": "Remove from collection",
+  "collection_remove_member_confirm": "Remove this item from the collection? The item itself is kept.",
+  "collection_member_removed": "Removed from collection",
+  "collection_default_name": "New collection"
 }

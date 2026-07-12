@@ -159,7 +159,7 @@ void main() {
     });
 
     testWidgets(
-        'scatter A dropped on series card S center -> onMerge carries S.seriesId',
+        'scatter A dropped on collection member S center -> onMerge carries S.groupId',
         (WidgetTester tester) async {
       final List<List<ShelfReorderItem>> merges = <List<ShelfReorderItem>>[];
       await _pumpReorder(
@@ -170,23 +170,23 @@ void main() {
           ShelfReorderItem(
               mediaType: 'epub',
               entryKey: 'S',
-              seriesId: 42,
+              groupId: 42,
               card: _LabelCard('S')),
         ],
         onMerge: (ShelfReorderItem dragged, ShelfReorderItem target) async {
           merges.add(<ShelfReorderItem>[dragged, target]);
-          return target.seriesId;
+          return target.groupId;
         },
       );
       await _dragCardTo(tester, 'A', 'S');
       expect(merges.length, 1);
       expect(merges.single[0].entryKey, 'A');
       expect(merges.single[1].entryKey, 'S');
-      expect(merges.single[1].seriesId, 42);
+      expect(merges.single[1].groupId, 42);
     });
 
     testWidgets(
-        'A already in same series as S -> canMergeInto=false, falls back to reorder',
+        'A already in same collection as S -> canMergeInto=false, falls back to reorder',
         (WidgetTester tester) async {
       final List<List<ShelfReorderItem>> merges = <List<ShelfReorderItem>>[];
       bool persisted = false;
@@ -196,32 +196,33 @@ void main() {
           ShelfReorderItem(
               mediaType: 'epub',
               entryKey: 'A',
-              seriesId: 9,
+              groupId: 9,
               card: _LabelCard('A')),
           ShelfReorderItem(
               mediaType: 'epub',
               entryKey: 'S',
-              seriesId: 9,
+              groupId: 9,
               card: _LabelCard('S')),
         ],
         onMerge: (ShelfReorderItem dragged, ShelfReorderItem target) async {
           merges.add(<ShelfReorderItem>[dragged, target]);
-          return target.seriesId;
+          return target.groupId;
         },
         onPersist: (_) async {
           persisted = true;
         },
       );
       await _dragCardTo(tester, 'A', 'S');
-      expect(merges, isEmpty, reason: 'same-series drop does not merge');
+      expect(merges, isEmpty, reason: 'same-collection drop does not merge');
       // Exit via the back path (maybePop -> PopScope -> _finish; the confirm
-      // check was removed by TODO-1228 -- exits always auto-save). Same-series
-      // drop fell back to reorder -> dirty -> persists on exit.
+      // check was removed by TODO-1228 -- exits always auto-save). Same-
+      // collection drop fell back to reorder -> dirty -> persists on exit.
       await Navigator.of(tester.element(find.byType(ShelfReorderPage)))
           .maybePop();
       await tester.pumpAndSettle();
       expect(persisted, isTrue,
-          reason: 'same-series drop degraded to reorder -> persisted on exit');
+          reason:
+              'same-collection drop degraded to reorder -> persisted on exit');
     });
 
     testWidgets(

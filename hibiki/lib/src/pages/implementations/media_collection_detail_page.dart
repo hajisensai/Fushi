@@ -1,8 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/collections/collection_continue.dart';
-import 'package:hibiki/src/pages/implementations/series_detail_page.dart'
-    show showSeriesNameDialog;
+import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
+    show showCollectionNameDialog;
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -67,7 +69,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
       ]);
 
   Future<void> _rename() async {
-    final String? newName = await showSeriesNameDialog(
+    final String? newName = await showCollectionNameDialog(
       context: context,
       title: t.rename_collection,
       initialName: _name,
@@ -106,6 +108,40 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
     widget.onChanged();
     Navigator.of(context).maybePop();
   }
+
+  /// 单集封面缩略图（16:9）：有封面文件则 [Image.file]，否则 letterbox 占位图标。
+  /// 每集是独立视频行，[VideoBookRow.coverPath] 由导入 / 后台补齐（home_video_page
+  /// `_maybeBackfillCovers`）逐集抽帧填充。
+  Widget _episodeThumb(VideoBookRow ep, ColorScheme cs) {
+    const double w = 96;
+    const double h = 54;
+    final String? cover = ep.coverPath;
+    if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.file(
+          File(cover),
+          width: w,
+          height: h,
+          fit: BoxFit.cover,
+          // 抽帧文件损坏 / 读取失败时退回占位，绝不抛。
+          errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+              _thumbPlaceholder(w, h, cs),
+        ),
+      );
+    }
+    return _thumbPlaceholder(w, h, cs);
+  }
+
+  Widget _thumbPlaceholder(double w, double h, ColorScheme cs) => Container(
+        width: w,
+        height: h,
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -178,6 +214,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                               color: cs.onSurfaceVariant),
                                         ),
                                       ),
+                                      const SizedBox(width: 12),
+                                      // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
+                                      // 抽帧；无封面时占位）。
+                                      _episodeThumb(ep, cs),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(

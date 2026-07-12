@@ -463,7 +463,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             _epubCoverUrisByBookKey,
           ),
     ].take(4).toList();
-    final String? name = await showSeriesNameDialog(
+    final String? name = await showCollectionNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,

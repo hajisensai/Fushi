@@ -2272,5 +2272,18 @@
   "backup_export_choose_videos": "选择视频",
   "backup_export_videos_all": "全部视频",
   "backup_export_no_videos": "没有可选的视频",
-  "backup_export_videos_selected": "已选 $count 个视频"
+  "backup_export_videos_selected": "已选 $count 个视频",
+  "video_continue_watching": "继续观看",
+  "video_library_overview": "媒体库概览",
+  "video_stat_total_videos": "总数",
+  "video_stat_unfinished": "未完成",
+  "video_stat_recent_imports": "近7天导入",
+  "video_watched_up_to": "已看至 $time",
+  "video_last_watched": "上次观看 $date",
+  "collection_view_all": "查看全部",
+  "collection_merged_hint": "已合并进合集",
+  "collection_remove_member": "移出合集",
+  "collection_remove_member_confirm": "将该条目移出合集？条目本身保留。",
+  "collection_member_removed": "已移出合集",
+  "collection_default_name": "新合集"
 }

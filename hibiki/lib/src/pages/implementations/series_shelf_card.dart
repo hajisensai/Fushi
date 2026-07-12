@@ -314,9 +314,9 @@ const double _kSeriesFrameMatteAlpha = 0.55;
 ///
 /// 用 [Container.foregroundDecoration] 在成员卡**之上**画同色圆角边框——纯前景绘制，不占
 /// 布局尺寸，故不破坏等尺寸重排网格（[HibikiReorderableGrid] 每格固定 cellExtent×高）。同一
-/// 系列的每个成员卡都用同一个 [color]（由 seriesId 稳定映射到调色板，相邻系列颜色不同），
-/// 配上 groupAndSortShelfEntries 保证的连续相邻 → 读作「这一串同色框是一个合集」。首个成员
-/// （[showHeader]）左上角额外叠一个系列名 header chip（不改尺寸的 Positioned 叠层）标注名字。
+/// 合集的每个成员卡都用同一个 [color]（由 collectionId 稳定映射到调色板，相邻合集颜色不同），
+/// 配上 groupByCollections 保证的连续相邻 → 读作「这一串同色框是一个合集」。首个成员
+/// （[showHeader]）左上角额外叠一个合集名 header chip（不改尺寸的 Positioned 叠层）标注名字。
 class SeriesReorderFrame extends StatelessWidget {
   const SeriesReorderFrame({
     required this.color,
