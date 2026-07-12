@@ -3088,15 +3088,22 @@ function resetMasonryBody(body) {
 
 function layoutMasonry() {
     if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
-    const cols = dictColumns();
+    const configured = dictColumns();
     const gap = masonryGap();
     masonryBodies().forEach(body => {
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
-        // 单列 / 单卡：不做 masonry，清 inline 回落 CSS（单卡满宽、单列纵向堆叠 + CSS margin-top）。
-        if (cols <= 1 || items.length <= 1) {
+        // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
+        //（block 纵向堆叠 + CSS margin-top / 空容器）。
+        if (configured <= 1 || items.length === 0) {
             resetMasonryBody(body);
             return;
         }
+        // 有效列数封顶到该词条实际的词典卡片数：词典数 < 设置列数时（如上限 2 但只有 1 本），
+        // 现有卡片平分整行宽度——单卡走 cols=1 满宽、2 卡 3 列走 cols=2 各半，不再让右侧空出
+        // 没有卡片的列。cols 每 body 独立计算（不同词条词典数不同）；masonry 仍绝对定位、按
+        // 最短列打包。cols=1 时 columnWidth=整宽、单卡 translate(0,0) 即满宽（取代旧「单卡回落
+        // 半宽 grid」——grid 用全局 --dict-columns 无法感知本词条只有 1 本词典）。
+        const cols = Math.min(configured, items.length);
         body.style.position = 'relative';
         body.style.display = 'block';
         const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
