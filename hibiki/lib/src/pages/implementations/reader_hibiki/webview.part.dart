@@ -571,16 +571,45 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
     // inherits a prior drag-select's flag; the drag-select timer re-arms it.
     window.__hoshiTextSelectDragActive = false; }
-  // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
-  // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
-  // rather than a word. Text taps still go to onTap (word lookup).
+  // TODO-909 M0: a VN tap is "blank" when the user tapped margin/gap rather than
+  // a word (blank -> paginate forward; word -> onTap lookup).
+  // BUG-748: caretPositionFromPoint/caretRangeFromPoint CLAMP to the nearest
+  // character even when the tap is in the margin. VN centers one short block in a
+  // shrink-to-fit .hoshi-vn-content, so the whole viewport outside that small box
+  // is margin — yet every tap clamps to a text node, so "text node found" alone
+  // judged EVERY tap (incl. margins) as a word -> blank-tap advance never fired
+  // (a 289-point scan found 0 blank points in centred vertical layout). Fix:
+  // after resolving the clamped caret, verify the point actually falls inside the
+  // resolved character's client rect; a clamped-but-outside hit is real blank.
   function _hoshiVnTapIsBlank(x, y) {
     try {
       var range = _hoshiReaderCaretRangeAtPoint(x, y);
       if (!range || !range.startContainer) return true;
       var node = range.startContainer;
       if (node.nodeType !== Node.TEXT_NODE) return true;
-      return !String(node.textContent || '').trim();
+      var text = String(node.textContent || '');
+      if (!text.trim()) return true;
+      // Hit-test the resolved glyph box. caretPositionFromPoint clamps offset to
+      // the nearest boundary, so probe the character on each side of the offset
+      // and treat the tap as a word only if it lands inside one of their rects.
+      var tol = 2;
+      var offsets = [range.startOffset, range.startOffset - 1];
+      for (var oi = 0; oi < offsets.length; oi++) {
+        var start = offsets[oi];
+        if (start < 0 || start >= text.length) continue;
+        var charRange = document.createRange();
+        charRange.setStart(node, start);
+        charRange.setEnd(node, start + 1);
+        var rects = charRange.getClientRects();
+        for (var i = 0; i < rects.length; i++) {
+          var r = rects[i];
+          if (x >= r.left - tol && x <= r.right + tol &&
+              y >= r.top - tol && y <= r.bottom + tol) {
+            return false;
+          }
+        }
+      }
+      return true;
     } catch (err) {
       return true;
     }
