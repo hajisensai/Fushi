@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 707 条。点号进各自文件。
+> 共 708 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-757](bugs/BUG-757-collection-detail-drag-ui-scale-offset.md) | ✅ | ✅ | 合集详情页拖拽排序不吃界面大小缩放拖动位置错位 |
 | [BUG-756](bugs/BUG-756-shelf-continue-hero-imported-order.md) | ✅ | ✅ | 继续阅读hero与书架最近阅读按导入序选书而非最近阅读序 |
 | [BUG-721](bugs/BUG-721-clipboard-panel-close-drops-lookups.md) | ✅ | ✅ | 剪贴板面板关闭后被永久暂停：第二个词出不来 |
 | [BUG-720](bugs/BUG-720-sasayaki-lookup-ruby-lane-misalign.md) | ✅ | ✅ | 有声书/查词注音高亮 narrow-lane 错位 |
