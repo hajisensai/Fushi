@@ -316,6 +316,26 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
         fi
+    # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
+    # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
+    # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set, bake
+    # the real values in so release builds sign dandanplay open-API requests and
+    # online danmaku works out of the box (no manual API entry).
+    - name: Provide gitignored dandanplay secret stub
+      shell: bash
+      env:
+        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+      run: |
+        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        if [ -n "$DANDANPLAY_APP_ID" ]; then
+          printf 'const String kDandanplayAppId = %s;\nconst String kDandanplayAppSecret = %s;\n' \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ["DANDANPLAY_APP_ID"]))')" \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("DANDANPLAY_APP_SECRET","")))')" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+        fi
 
     # TODO-1208: cache resolved pub packages + Gradle caches to shave minutes off
     # every push/release build. apply-patches.sh is idempotent so a warm cache is

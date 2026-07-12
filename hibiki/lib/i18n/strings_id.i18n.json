@@ -1611,8 +1611,6 @@
   "video_setting_seek_seconds": "Detik lompatan",
   "section_video_danmaku": "Danmaku",
   "video_setting_danmaku_server_url": "URL server danmaku",
-  "video_setting_danmaku_app_id": "AppId Dandanplay",
-  "video_setting_danmaku_app_secret": "AppSecret Dandanplay",
   "card_overwritten": "Kartu ditimpa di 『$deck』.",
   "video_bottom_seek_back_label": "−10s",
   "video_bottom_seek_forward_label": "+10s",
