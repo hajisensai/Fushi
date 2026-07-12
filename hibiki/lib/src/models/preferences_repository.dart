@@ -772,9 +772,9 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 视频弹幕 overlay 开关：默认开启，只在有本地/在线弹幕源时显示。
+  /// 视频弹幕 overlay 开关：**默认关闭**，用户显式开启后才显示（且需有本地/在线弹幕源）。
   bool get videoDanmakuEnabled =>
-      getPref('video_danmaku_enabled', defaultValue: true) as bool;
+      getPref('video_danmaku_enabled', defaultValue: false) as bool;
 
   Future<void> setVideoDanmakuEnabled(bool value) async {
     await setPref('video_danmaku_enabled', value);
