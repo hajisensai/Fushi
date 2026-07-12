@@ -29,8 +29,7 @@ void main() {
     });
 
     test('danmaku overlay defaults OFF with a bounded active limit', () {
-      expect(repo.videoDanmakuEnabled, isFalse,
-          reason: '弹幕默认关闭，用户显式开启后才显示');
+      expect(repo.videoDanmakuEnabled, isFalse, reason: '弹幕默认关闭，用户显式开启后才显示');
       expect(repo.videoDanmakuMaxActive, kDefaultVideoDanmakuMaxActive);
     });
 
