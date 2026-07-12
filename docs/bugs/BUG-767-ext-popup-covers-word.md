@@ -1,0 +1,6 @@
+## BUG-767 · 网页扩展 Shift 查词弹窗遮住被查词
+- **报告**：2026-07-13（用户：）
+- **真实性**：✅ 真 bug。根因在 `hibiki/assets/browser_extension/content.js` 的 `hibikiRender()` 内 `place()` 落点逻辑（原 `content.js:1327` 一带的翻转分支）：默认把弹窗落在词下方 `top = ay + ah + 4`；当下方放不下（`top + 弹窗高 > vh - 8`）时翻到词上方 `top = Math.max(8, ay - 弹窗高 - 4)`，**但从不把弹窗高度夹到可用空间**。词典结果多时弹窗较高，若视口不够高（`vh < ~2×弹窗高`）且被查词在上半屏，翻上方后 `ay - 弹窗高 - 4 < 8` 被夹成 `top = 8`，弹窗从视口顶 8px 处往下铺开，直接盖住被查词。实测 `vh=700 / 词 y=340 高 20 / 弹窗高 360` → 弹窗 `[8, 368]` 覆盖词 `[340, 360]`。
+- **[x] ① 已修复** — 把落点收敛进纯函数 `hibikiComputePlacement(anchor, size, viewport)`（`content.js`，两份镜像 `hibiki/assets/browser_extension/` + `tools/browser-extension/` 同步）：下方能放整只→落词下方；上方能放整只→落词上方；两侧都放不下→选空间更大的一侧，并把弹窗 `maxHeight` 夹到该侧可用空间（内部滚动），使弹窗底/顶恰贴词边，绝不覆盖被查词。`place()` 改为调用它并按 zoom 写回 `left/top/maxHeight`。提交：（见本分支）。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/popup-placement.test.js`（`node --test`）：在受控 vm 里真加载 `content.js`，直接调其顶层纯函数，断言弹窗矩形纵向**永不**与被查词矩形重叠且落在视口内，含旧逻辑必然翻车的高弹窗矮视口场景（已单独验证旧算法在该场景 `top=8` 覆盖词、守卫会失败）。5/5 通过。
+- **备注**：改动仅两份 `content.js` 镜像（未碰 `popup.css`，无需重生成 `content.css`）。同目录 `highlight-overlay.test.js` 3 项失败为**既有 bitrot**（在原始未改 `content.js` 上同样 3/3 失败，与本次无关，未在 CI 中运行）。真机复测：需在浏览器扩展里 Shift 查上半屏的词、结果较多时确认弹窗落词下方/上方而非盖住词。

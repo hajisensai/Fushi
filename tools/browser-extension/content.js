@@ -1242,6 +1242,45 @@ window.__hibikiOnLinkClick = function (query) {
   } catch (_) { /* 扩展上下文失效：静默 */ }
 };
 
+// BUG-767：计算查词弹窗落点，保证**永不覆盖被查词**。纯函数（不碰 DOM），便于单测。
+// anchor：被查词的视口矩形 {x, y, height}（x/y=左上角，height=词高，均视口坐标系）。
+// size：弹窗自然尺寸 {width, height}（已按主题 max-height 夹住的可见尺寸）。
+// viewport：{width, height}。返回 {left, top, maxHeight}；maxHeight!=null 表示上下两侧
+// 都放不下整只弹窗，需把弹窗高度夹到所选一侧的可用空间（内部滚动），故渲染后不会压到词上。
+// 旧实现只把 top 夹到边距 8，弹窗高时（词典结果多）会从 8 往下铺开盖住上半屏的词——本函数修掉。
+function hibikiComputePlacement(anchor, size, viewport) {
+  const M = 8; // 视口边距
+  const G = 4; // 词与弹窗之间的间隙
+  const vw = viewport.width;
+  const vh = viewport.height;
+  const ax = anchor.x;
+  const ay = anchor.y;
+  const ah = anchor.height || 0;
+  const pw = size.width;
+  const ph = size.height;
+  // 横向：左对齐词左缘，右/左溢出各自贴边（原行为，未变）。
+  let left = ax;
+  if (left + pw > vw - M) left = Math.max(M, vw - pw - M);
+  if (left < M) left = M;
+  // 纵向：词下方 / 上方各自的可用高度（含留出的视口边距）。
+  const belowSpace = vh - (ay + ah) - M; // 词底 → 视口底
+  const aboveSpace = ay - M;             // 视口顶 → 词顶
+  let top;
+  let maxHeight = null;
+  if (ph + G <= belowSpace) {
+    top = ay + ah + G;                   // 下方放得下整只弹窗：落词下方
+  } else if (ph + G <= aboveSpace) {
+    top = ay - G - ph;                   // 上方放得下整只弹窗：落词上方
+  } else if (belowSpace >= aboveSpace) {
+    top = ay + ah + G;                   // 两侧都放不下、下方空间更大：贴词下方并夹高度
+    maxHeight = Math.max(64, belowSpace - G);
+  } else {
+    maxHeight = Math.max(64, aboveSpace - G); // 上方空间更大：夹高度使弹窗底恰落词顶之上
+    top = Math.max(M, ay - G - maxHeight);
+  }
+  return { left, top, maxHeight };
+}
+
 function hibikiRender(popupJson, termLen, theme, anchorRect) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
@@ -1314,25 +1353,24 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸），不是容器（overflow:visible=全内容
     // 高度，会把弹窗错误地翻到词上方）。host 无则回落容器。
     const rect = (hibikiHost || c).getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
     // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
     // scrollX/Y（加了反而在滚动页面上错位）。拿不到 bbox → 回落最后鼠标视口坐标。
     const ax = wordRect ? wordRect.x : hibikiLastX;
     const ay = wordRect ? wordRect.y : hibikiLastY;
     const ah = wordRect ? wordRect.height : 0;
-    let left = ax;
-    let top = ay + ah + 4; // 默认落在词下方
-    if (left + rect.width > vw - 8) left = Math.max(8, vw - rect.width - 8); // 右溢出→贴右
-    if (left < 8) left = 8;
-    if (top + rect.height > vh - 8) top = Math.max(8, ay - rect.height - 4); // 下溢出→翻到词上方
-    if (top < 8) top = 8;
-    // BUG-688：host 现在带 zoom（尺寸盒随之缩放），故 fixed 定位坐标写入前除以 zoom，
-    // 使渲染值(styleLeft×zoom)落回目标视口坐标；zoom 缺省 1 时零影响。
+    // BUG-767：落点交给纯函数算，保证永不覆盖被查词（旧逻辑翻到词上方时会被夹到边距 8 → 盖住词）。
+    const pos = hibikiComputePlacement(
+      { x: ax, y: ay, height: ah },
+      { width: rect.width, height: rect.height },
+      { width: window.innerWidth, height: window.innerHeight });
+    // BUG-688：host 现在带 zoom（尺寸盒随之缩放），故 fixed 定位坐标 / 夹高写入前除以 zoom，
+    // 使渲染值(style×zoom)落回目标视口尺度；zoom 缺省 1 时零影响。
     const zoom = parseFloat(hibikiHost && hibikiHost.style.zoom) || 1;
     if (hibikiHost) {
-      hibikiHost.style.left = (left / zoom) + 'px';
-      hibikiHost.style.top = (top / zoom) + 'px';
+      // BUG-767：两侧都放不下时把弹窗高度夹到可用空间（内部滚动），弹窗底恰在词上方/下方，绝不压到词。
+      if (pos.maxHeight != null) hibikiHost.style.maxHeight = (pos.maxHeight / zoom) + 'px';
+      hibikiHost.style.left = (pos.left / zoom) + 'px';
+      hibikiHost.style.top = (pos.top / zoom) + 'px';
     }
     c.style.visibility = 'visible';
   };
