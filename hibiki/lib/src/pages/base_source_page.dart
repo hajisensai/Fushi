@@ -10,6 +10,7 @@ import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
@@ -697,6 +698,37 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 文句（前/当前/后）+ 词偏移做预览。只在支持草稿的表面接线，其余传 null。
         onSentenceContextPreview:
             supportsSentenceDraft ? onSentenceContextPreviewFromDraft : null,
+        // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
+        // WebView 内）；确认制卡回该层 WebView（item.webViewKey）精确点中该词条制卡。
+        onOpenSentenceContextModal: supportsSentenceDraft
+            ? (int entryIndex, String matched) => _openSentenceContextDialog(
+                  webViewKey: item.webViewKey,
+                  entryIndex: entryIndex,
+                  matched: matched,
+                )
+            : null,
+      ),
+    );
+  }
+
+  /// BUG-763/766：弹窗点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
+  /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内——那受弹窗表面尺寸/半透明
+  /// 限制，句子框重叠、显示不全）。复用宿主已有 [onSetSentenceContextToDraft] /
+  /// [onSentenceContextPreviewFromDraft] 驱动增减 + 预览（后端零改动）；「确认制卡」回
+  /// [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮
+  /// （[DictionaryPopupWebViewState.mineEntryByIndex]，复用全部制卡/查重/覆写逻辑）。
+  Future<void> _openSentenceContextDialog({
+    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required int entryIndex,
+    required String matched,
+  }) async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => SentenceContextDialog(
+        matched: matched,
+        fetchPreview: onSentenceContextPreviewFromDraft,
+        setContext: onSetSentenceContextToDraft,
+        onConfirm: () => webViewKey.currentState?.mineEntryByIndex(entryIndex),
       ),
     );
   }

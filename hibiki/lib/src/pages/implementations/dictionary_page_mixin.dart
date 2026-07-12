@@ -13,7 +13,8 @@ import 'package:hibiki/src/pages/base_source_page.dart'
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show MinePopupResult, DictionaryPopupWebViewState;
+import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
@@ -92,6 +93,30 @@ mixin DictionaryPageMixin {
   /// （[BaseSourcePageState.onSentenceContextPreviewFromDraft]）对称。
   Future<Map<String, Object?>> Function()?
       get onSentenceContextPreviewToDraft => null;
+
+  /// BUG-763/766：视频/首页车道点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
+  /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内）。复用视频覆写的
+  /// [onSentenceContextPreviewToDraft]/[onSetSentenceContextToDraft] 驱动预览+增减；
+  /// 「确认制卡」回 [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮。
+  Future<void> _openSentenceContextDialogForVideo({
+    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required int entryIndex,
+    required String matched,
+  }) async {
+    final Future<Map<String, Object?>> Function()? preview =
+        onSentenceContextPreviewToDraft;
+    final Future<int> Function(int, int)? setter = onSetSentenceContextToDraft;
+    if (preview == null || setter == null) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => SentenceContextDialog(
+        matched: matched,
+        fetchPreview: preview,
+        setContext: setter,
+        onConfirm: () => webViewKey.currentState?.mineEntryByIndex(entryIndex),
+      ),
+    );
+  }
 
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
   String _statTodayKey() => statTodayKey();
@@ -525,6 +550,16 @@ mixin DictionaryPageMixin {
         onSetSentenceContext: onSetSentenceContextToDraft,
         onClearSentenceDraft: onClearSentenceDraftToDraft,
         onSentenceContextPreview: onSentenceContextPreviewToDraft,
+        // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
+        // WebView 内）；确认制卡回该层 WebView 精确点中该词条制卡。
+        onOpenSentenceContextModal: onSentenceContextPreviewToDraft != null
+            ? (int entryIndex, String matched) =>
+                _openSentenceContextDialogForVideo(
+                  webViewKey: entry.webViewKey,
+                  entryIndex: entryIndex,
+                  matched: matched,
+                )
+            : null,
         headerWidget: buildPopupHeaderFor(index),
       ),
     );
