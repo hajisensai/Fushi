@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -123,17 +124,20 @@ void main() {
     );
   });
 
-  testWidgets('拖柄拖拽重排：首集拖到末尾真写穿 sortIndex', (WidgetTester tester) async {
+  testWidgets('整行长按拖拽重排：首集拖到末尾真写穿 sortIndex', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // 三行拖柄从上到下 = Beta / 第10话 / 第9话；把首行（Beta）往下拖两行。
-    final Finder firstHandle = find.byIcon(Icons.drag_handle).first;
-    await tester.timedDrag(
-      firstHandle,
-      const Offset(0, 170),
-      const Duration(milliseconds: 500),
-    );
+    // BUG-757 后拖拽走 HibikiReorderableColumn：触摸 = 长按整行起拖（鼠标即
+    // 拖）。三行从上到下 = Beta / 第10话 / 第9话；长按首行（Beta）往下拖两行。
+    final TestGesture gesture =
+        await tester.startGesture(tester.getCenter(find.text('Beta')));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+    for (int step = 0; step < 5; step++) {
+      await gesture.moveBy(const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
     await tester.pumpAndSettle();
 
     expect(

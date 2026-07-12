@@ -183,8 +183,21 @@ void main() {
     final String gridDetailSrc = File(
       'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
     ).readAsStringSync();
-    expect(videoDetailSrc.contains('ReorderableListView'), isTrue,
-        reason: '视频合集详情页必须支持拖拽排集（手动排序的唯一形态）');
+    // BUG-757：SDK ReorderableListView 的拖拽代理不认祖先 Transform.scale
+    // （界面大小缩放下拖动漂移），详情页拖拽必须用自实现的
+    // HibikiReorderableColumn（本地坐标消缩放）；裸 SDK 组件回潮即转红。
+    expect(videoDetailSrc.contains('HibikiReorderableColumn'), isTrue,
+        reason: '视频合集详情页必须支持拖拽排集（消缩放组件，手动排序的唯一形态）');
+    // 盯真实使用 token（注释里提及组件名做解释是允许的）。
+    for (final String banned in <String>[
+      'ReorderableListView.builder(',
+      'ReorderableListView(',
+      'ReorderableDelayedDragStartListener(',
+      'ReorderableDragStartListener(',
+    ]) {
+      expect(videoDetailSrc.contains(banned), isFalse,
+          reason: 'SDK Reorderable 组件在 UI 缩放下拖动漂移（BUG-757），不得回潮（$banned）');
+    }
     expect(videoDetailSrc.contains('reorderCollectionItems'), isTrue,
         reason: '视频详情页排序必须写穿 sortIndex（层次 C 真相源）');
     expect(gridDetailSrc.contains('reorderCollectionItems'), isTrue,

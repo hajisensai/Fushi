@@ -83,10 +83,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
     widget.onChanged();
   }
 
-  /// 拖拽精修：ReorderableListView 语义（newIndex 为移除前下标）→ 内存 move →
-  /// 落盘。
+  /// 拖拽精修：HibikiReorderableColumn 语义（newIndex 即最终下标，无 SDK
+  /// ReorderableListView 的「移除前下标」修正）→ 内存 move → 落盘。
   Future<void> _onReorder(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex--;
     if (oldIndex == newIndex) return;
     final List<VideoBookRow> next = List<VideoBookRow>.of(_members);
     final VideoBookRow moved = next.removeAt(oldIndex);
@@ -300,26 +299,30 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                       ),
                       const Divider(height: 1),
                       Expanded(
-                        // 排序交互重设计层次 B1：拖拽精修。触屏长按整行拖
-                        // （DelayedDragStartListener）、桌面鼠标按行尾拖柄即拖
-                        // （DragStartListener）；onReorder 落盘 sortIndex 后库页
-                        // 行 / 播放器换集立即同序。
-                        child: ReorderableListView.builder(
-                          buildDefaultDragHandles: false,
-                          itemCount: _members.length,
-                          onReorder: _onReorder,
-                          itemBuilder: (BuildContext _, int i) {
-                            final VideoBookRow ep = _members[i];
-                            final bool completed = ep.completedAt != null;
-                            final bool started = ep.lastPositionMs > 0;
-                            final bool isContinue = i == _continueIndex;
-                            // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
-                            // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 / 看过
-                            // 一半 / 未看」三态图标，不画误导性进度条。
-                            return ReorderableDelayedDragStartListener(
-                              key: ValueKey<String>(ep.bookUid),
-                              index: i,
-                              child: Material(
+                        // 排序交互重设计层次 B1：拖拽精修。BUG-757：SDK 的
+                        // ReorderableListView 拖拽代理用「全局坐标−overlay 原点」
+                        // 纯平移，不认祖先 Transform.scale（HibikiAppUiScale 的
+                        // 浏览器式整体缩放）——界面大小≠100% 时拖动位置按
+                        // (1−s)×距离 漂移。换自实现的 HibikiReorderableColumn
+                        // （浮层渲染在列表自身 Stack、指针经 globalToLocal 消
+                        // 祖先缩放，词典排序/媒体源排序同款）。整行拖拽：鼠标
+                        // 按下即拖、触摸长按；行尾拖柄图标保留为视觉提示。
+                        // onReorder 落盘 sortIndex 后库页行/播放器换集立即同序。
+                        child: SingleChildScrollView(
+                          child: HibikiReorderableColumn(
+                            itemCount: _members.length,
+                            keyForIndex: (int i) =>
+                                ValueKey<String>(_members[i].bookUid),
+                            onReorder: _onReorder,
+                            itemBuilder: (BuildContext _, int i) {
+                              final VideoBookRow ep = _members[i];
+                              final bool completed = ep.completedAt != null;
+                              final bool started = ep.lastPositionMs > 0;
+                              final bool isContinue = i == _continueIndex;
+                              // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
+                              // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 /
+                              // 看过一半 / 未看」三态图标，不画误导性进度条。
+                              return Material(
                                 color: isContinue
                                     ? cs.primaryContainer
                                         .withValues(alpha: 0.35)
@@ -368,22 +371,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                           onTap: () => _removeEpisode(ep),
                                         ),
                                         const SizedBox(width: 4),
-                                        // 桌面拖柄（鼠标按下即拖，无需长按）。
-                                        ReorderableDragStartListener(
-                                          index: i,
-                                          child: Icon(
-                                            Icons.drag_handle,
-                                            color: cs.onSurfaceVariant,
-                                            size: 20,
-                                          ),
+                                        // 拖柄图标：纯视觉提示（整行可拖，见类注释）。
+                                        Icon(
+                                          Icons.drag_handle,
+                                          color: cs.onSurfaceVariant,
+                                          size: 20,
                                         ),
                                       ],
                                     ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ],
