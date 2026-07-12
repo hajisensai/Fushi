@@ -86,27 +86,34 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
 const Set<BackupCategory> importMergeSelectableCategories =
     importSelectableCategories;
 
-/// TODO-1151：备份导入完成后由 [BackupImportOverlayView] 的「立即重启」按钮触发的退出。
-/// 沿用旧导入实现的平台分支（移动端 [FlutterExitApp.exitApp]，桌面端 `exit(0)`），只把
-/// 触发时机从「延迟 500ms 自动退出」改为「用户点确认后退出」，退出行为本身不变
-/// （never-break）。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
-void backupImportRestart() {
+/// TODO-1151：备份导入完成后的重启。DB 已在导入期 `closeDatabase()`，必须重启才能重载
+/// 新数据。既作为 [BackupImportOverlayView]「立即重启」按钮的手动出口，也在导入**成功**后由
+/// [_BackupImportWidgetState._import] 延时自动调用（用户诉求「导入完自动重启，不再手动重开」）。
+///
+/// **优先真重启**：委托 `lifecycle.restartApp()`——与数据根迁移成功路径同一条经过验证的重启
+/// 实现（桌面 detached 拉新进程 + 带 `--hibiki-restarted` 前台标志避免黑窗、macOS 经
+/// `open -n <bundle>` 规避直接起可执行文件在 Dart 启动前崩、移动端 `restart_app` 插件；三端
+/// `supportsRestart==true`）。消除了旧实现在本文件里 ad-hoc `Process.start(resolvedExecutable)`
+/// 的劣质重复（缺前台标志、macOS 会崩）。
+/// **兜底 never-break**：`restartApp` 起新进程失败或平台不支持时，退回旧的纯退出分支（移动端
+/// [FlutterExitApp.exitApp]、桌面端 `exit(0)`），至少让用户手动重开，绝不制造「老进程没了、新
+/// 进程也没起来」的假崩溃。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
+Future<void> backupImportRestart(AppModel appModel) async {
+  final PlatformLifecycleService lifecycle =
+      appModel.platformServices.lifecycle;
+  if (lifecycle.supportsRestart) {
+    try {
+      await lifecycle.restartApp();
+      // restartApp 成功会拉新进程并退出本进程，正常不会执行到这里。
+      return;
+    } catch (e) {
+      // 起新进程失败 → 落到下面的纯退出兜底（用户手动重开），不把失败吞成假成功。
+      debugPrint('Backup import: restartApp failed, fall back to exit: $e');
+    }
+  }
   if (Platform.isAndroid || Platform.isIOS) {
     FlutterExitApp.exitApp();
   } else {
-    // Desktop: "立即重启" must actually RESTART, not just quit (the user hit
-    // "点重启没重启"). Launch a fresh detached instance of this executable, then
-    // exit the current one. Best-effort: if the relaunch fails we still exit, so
-    // behaviour never regresses below the old quit-only path.
-    try {
-      Process.start(
-        Platform.resolvedExecutable,
-        <String>[],
-        mode: ProcessStartMode.detached,
-      );
-    } catch (_) {
-      // Fall through to exit — a quit is still better than a stuck app.
-    }
     exit(0);
   }
 }
@@ -838,8 +845,16 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       }
 
       // TODO-1151: 导入成功。不再「延迟 500ms 后突然 exit」——那会让用户以为崩溃/失败。
-      // 切到确认视图（导入完成 → 立即重启），由用户点按后经 backupImportRestart 退出。
+      // 切到确认视图（导入完成 → 立即重启），并在其可见 ~1s 后自动重启（用户诉求「导入完
+      // 自动重启，不再手动重开」）。与旧「500ms 后突然 exit」的关键区别：backupImportRestart
+      // 走 restartApp 真拉新进程重启（app 会自己回来），不是纯退出「凭空消失」；延时让「导入
+      // 成功」先可见一瞬，避免误判失败。「立即重启」按钮保留为手动兜底（可提前点，走同一函数）。
       appModel.completeBackupImport(t.backup_import_success);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回
+      // 纯退出兜底，故此处不会把「重启失败」冒泡成 catch 里的 failBackupImport（避免把成功的
+      // 导入错报为失败）。
+      await backupImportRestart(appModel);
     } catch (e) {
       // TODO-1183: DB 已关闭，无论成败都必须重启；失败走 failBackupImport → 遮罩画红色
       // 错误图标 + 失败原因（根治 OOM/异常「失败却显绿✓成功」的误导）。
