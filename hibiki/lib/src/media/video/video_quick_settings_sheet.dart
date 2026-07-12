@@ -91,6 +91,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.qualityOptionCount = 0,
     this.qualityCurrentLabel,
     this.onOpenQuality,
+    this.onSwitchToSkiaRenderer,
     this.isTouchControls = false,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
@@ -252,6 +253,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 打开画质侧栏（关本设置面板、开画质面板）。[qualityOptionCount]>0 时才接线。
   final VoidCallback? onOpenQuality;
+
+  /// TODO-1232 / BUG-597：视频「有声无画」黑屏降级入口——在「播放」分类给一个可发现的
+  /// 一键「切 Skia 渲染器并重启」行。仅当调用方判定"本次跑 Impeller 且渲染后端 channel
+  /// 已接线（=Android）且用户未显式选 Skia"时接线；否则为 null 不显示该行。点按由页面侧
+  /// 处理确认弹窗 → 写 pref（关 Impeller）→ 重启 app（见 `_switchToSkiaAndRestart`）。
+  final VoidCallback? onSwitchToSkiaRenderer;
 
   /// 触屏控件（无右键菜单兜底）。为 true 时，控件布局编辑区禁止把「设置」按钮
   /// （玩家内进入设置/控件编辑器的唯一入口）拖入 hidden 移除，避免触屏用户把
@@ -766,6 +773,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 : null,
             trailing: const Icon(Icons.chevron_right),
             onTap: widget.onOpenQuality,
+          ),
+        // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当页面判定本次跑
+        // Impeller 且渲染 channel 已接线（Android）时接线。点按 → 确认弹窗 → 关 Impeller
+        // 走 Skia + 重启。Android 默认已保持 Impeller，故此行只给受影响机型的显式降级。
+        if (widget.onSwitchToSkiaRenderer != null)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.animation_outlined),
+            title: Text(t.video_render_skia_fix_title),
+            subtitle: Text(t.video_render_skia_fix_hint),
+            trailing: const Icon(Icons.restart_alt),
+            onTap: widget.onSwitchToSkiaRenderer,
           ),
         _buildVideoFitModeRow(),
         if (isDesktopPlatform)
