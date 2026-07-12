@@ -35,6 +35,17 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 多端库联合视图（spec 2026-07-12 §2.6）：上传视频文件开关。写 SyncRepository
+  // gate（changed=true），生效点在 SyncOrchestrator 云后端上传阶段（非 reader
+  // CSS / 主题树），无适用探针；由专项 orchestrator 行为测试咬住（关=零上传、
+  // 开=上传缺失+清单正确、重复跑幂等）。
+  'syncBackup/Upload video files':
+      'test/sync/sync_orchestrator_video_test.dart',
+  // 多端库联合视图（spec §2.1）：显示远端条目开关。写 prefsRepo（changed=true），
+  // 生效点在书架/视频页占位卡渲染门控；由两页 mixed-grid 专项 widget 测试咬住
+  // （关=占位全隐藏、开=混排+云角标）。
+  'syncBackup/Show remote entries':
+      'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
   'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
   'reading/Font Kerning (Vertical)':
