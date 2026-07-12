@@ -28,24 +28,27 @@ class RenderBackendService {
   /// 设置里动过开关 / `true`＝显式选 Skia / `false`＝显式选 Impeller）解析成本平台
   /// **实际生效**的「关闭 Impeller（走 Skia）」决定。显式设置 > 平台默认：
   ///   * [storedPref] != null：用户显式设过 —— 直接遵从其选择，无视平台默认。
-  ///   * [storedPref] == null：用户从未设置 —— 回落到平台默认：
-  ///       - Android（[isAndroid]=true）：`true`（默认关 Impeller / 走 Skia），让
-  ///         media_kit 外部视频纹理（SurfaceProducer）开箱即出画。Impeller 在部分
-  ///         Android GPU（如 Mali-G76 / Android 11，见 BUG-597）静默不合成该外部纹理，
-  ///         解码/纹理握手全绿仍黑屏；Skia 是成熟稳定后端，作 Android 默认最简、覆盖
-  ///         最广，且可被本开关逆转。
-  ///       - 非 Android：`false`（此开关不适用，保持引擎默认 Impeller）。
+  ///   * [storedPref] == null：用户从未设置 —— 回落到平台默认 `false`（保持引擎默认
+  ///     Impeller），**所有平台一致**（Android 亦然）：
+  ///       - Impeller 是 Flutter 现默认，多数机型渲染更顺、无 Skia 首帧 shader 卡顿；
+  ///         为它保住这份收益，Android 不再全局默认翻到 Skia。
+  ///       - 少数 Android GPU（如 Mali-G76 / Android 11，见 BUG-597）上 Impeller 静默
+  ///         不合成 media_kit 外部视频纹理（SurfaceProducer），解码/纹理握手全绿仍黑屏。
+  ///         这些机型改由**播放器设置面板里可发现的一键「切 Skia 并重启」入口**降级
+  ///         （见 video_quick_settings_sheet 的渲染降级行 + [setImpellerDisabled]），
+  ///         而非拿全体用户的性能换少数机型的兼容。
   ///
   /// 纯函数、无副作用，便于离屏单测。与 native 权威决策同源：
-  /// `MainActivity.getFlutterShellArgs` 在引擎启动那一刻用等价逻辑（未设置→Android
-  /// 关 Impeller）决定是否追加 `--enable-impeller=false`；本函数是 Dart 侧镜像，供
+  /// `MainActivity.getFlutterShellArgs` 在引擎启动那一刻用等价逻辑（未设置→保持
+  /// Impeller）决定是否追加 `--enable-impeller=false`；本函数是 Dart 侧镜像，供
   /// 设置开关显示与诊断标签（守卫见 render_backend_service_test /
-  /// impeller_default_guard_test 锁两侧同默认）。
+  /// impeller_default_guard_test 锁两侧同默认）。[isAndroid] 保留在签名里以对齐 native
+  /// 决策点形状、便于将来再按平台分默认，当前所有平台默认同为 Impeller。
   static bool resolveImpellerDisabled({
     required bool? storedPref,
     required bool isAndroid,
   }) =>
-      storedPref ?? isAndroid;
+      storedPref ?? false;
 
   /// 可注入的 channel（测试替换成 mock messenger）；生产走真实 native channel。
   @visibleForTesting

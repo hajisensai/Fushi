@@ -5050,6 +5050,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ? t.video_quality_auto
               : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
       onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
+      // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当渲染 channel 已接线
+      // （Android）、本次运行确实跑 Impeller、且用户尚未选 Skia 时接线（=可能中招黑屏
+      // 的人群）；否则 null 不显示该行。点按走确认弹窗 → 关 Impeller → 重启。
+      onSwitchToSkiaRenderer: (RenderBackendService.instance.isSupported &&
+              !RenderBackendService.instance.impellerDisabled &&
+              !RenderBackendService.instance.activeImpellerDisabled)
+          ? _switchToSkiaAndRestart
+          : null,
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
@@ -5093,6 +5101,48 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ));
     }
     return options;
+  }
+
+  /// TODO-1232 / BUG-597：播放器设置面板「切 Skia 并重启」降级行的动作。视频「有声无画」
+  /// 黑屏根因是本机 GPU 上 Impeller 合成不了 media_kit 外部纹理（SurfaceProducer）；Android
+  /// 默认已保持 Impeller（多数机型性能优先），本动作给受影响机型一个显式降级：确认弹窗 →
+  /// 写 native pref 关 Impeller（下次启动走 Skia）→ 重启 app 使其生效。渲染后端只能在引擎
+  /// 启动那一刻定，故必须重启；不支持重启的平台降级为 toast 提示手动重开。仅在
+  /// [_buildVideoQuickSettingsSheet] 判定本次跑 Impeller + channel 已接线时才接线此动作。
+  Future<void> _switchToSkiaAndRestart() async {
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: Text(t.video_render_skia_fix_confirm_title),
+            content: Text(t.video_render_skia_fix_confirm_body),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(t.video_render_skia_fix_confirm_action),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    final bool ok =
+        await RenderBackendService.instance.setImpellerDisabled(true);
+    if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
+      // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
+      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      return;
+    }
+    try {
+      await appModel.platformServices.lifecycle.restartApp();
+    } catch (e) {
+      // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
+      debugPrint('[render] switch to Skia restart failed: $e');
+      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+    }
   }
 
   void _showPlayerSettings({

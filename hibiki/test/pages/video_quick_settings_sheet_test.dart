@@ -48,12 +48,14 @@ VideoQuickSettingsSheet _sheet({
   String? currentThemeKey,
   void Function(String key)? onSelectThemeKey,
   VoidCallback? onSubtitleCategoryShown,
+  VoidCallback? onSwitchToSkiaRenderer,
 }) {
   return VideoQuickSettingsSheet(
     initialCategory: initialCategory,
     audioTrackSection: audioTrackSection,
     subtitleTrackSection: subtitleTrackSection,
     onSubtitleCategoryShown: onSubtitleCategoryShown,
+    onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
     themeOptions: themeOptions,
     currentThemeKey: currentThemeKey,
     onSelectThemeKey: onSelectThemeKey == null
@@ -854,6 +856,44 @@ void main() {
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pump();
     expect(delay, 50);
+  });
+
+  // ── TODO-1232 / BUG-597：视频黑屏（有声无画）降级行 ─────────────────────────
+  // Android 默认已保持 Impeller；受影响机型（Impeller 合成不了 media_kit 外部纹理，见
+  // BUG-597）经「播放」分类的一键「切 Skia 并重启」行显式降级。该行仅在页面判定本次跑
+  // Impeller + 渲染 channel 已接线（Android）时接线 onSwitchToSkiaRenderer；此处锁死
+  // 「有回调 → 行在 playback 详情渲染且可点触发」「无回调 → 不渲染该行」。
+  testWidgets('TODO-1232：提供 onSwitchToSkiaRenderer 时渲染「切 Skia」降级行并可触发',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int switched = 0;
+    await _pump(tester, _sheet(onSwitchToSkiaRenderer: () => switched++));
+
+    // 宽窗默认选中 playback 分类，降级行随之渲染。
+    final Finder row = find.widgetWithText(
+      ListTile,
+      t.video_render_skia_fix_title,
+    );
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    expect(row, findsOneWidget,
+        reason: 'onSwitchToSkiaRenderer 非空时「切 Skia」降级行须在 playback 详情渲染');
+    await tester.tap(row);
+    await tester.pump();
+    expect(switched, 1, reason: '点降级行须触发 onSwitchToSkiaRenderer 回调');
+  });
+
+  testWidgets('TODO-1232：onSwitchToSkiaRenderer 为 null 时不渲染「切 Skia」降级行',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    // 默认 playback 详情里字幕调轴行在（证明确在 playback 分类），但降级行不渲染。
+    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    expect(find.text(t.video_render_skia_fix_title), findsNothing,
+        reason: '无 onSwitchToSkiaRenderer 回调时不应渲染「切 Skia」降级行');
   });
 
   // ── TODO-060：字幕调轴（正名 + 滑条 + 数值输入） ───────────────────────────

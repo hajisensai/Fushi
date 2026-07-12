@@ -2284,5 +2284,10 @@
   "collection_member_removed": "已移出合集",
   "collection_default_name": "新合集",
   "backup_import_contents_hint": "取消勾选某项即可跳过它。",
-  "clipboard_panel_window_title": "Hibiki 剪贴板查词"
+  "clipboard_panel_window_title": "Hibiki 剪贴板查词",
+  "video_render_skia_fix_confirm_title": "切换到 Skia 并重启？",
+  "video_render_skia_fix_confirm_body": "将关闭 Impeller 渲染器并重启应用使其生效。",
+  "video_render_skia_fix_confirm_action": "重启",
+  "video_render_skia_fix_title": "画面全黑？切换渲染器（Skia）",
+  "video_render_skia_fix_hint": "有声音但画面全黑时用。关闭 Impeller，重启后生效。"
 }
