@@ -449,6 +449,10 @@ async function openSentenceContextModal(mineButton, matched) {
     card.appendChild(boxes);
 
     let busy = false;
+    // BUG-764：记住最近一次「+」请求的目标句数，用于在到边界（宿主返回句数 < 请求）时
+    // 禁用对应「+」——诚实反馈「已到段落/章/文首文尾边界」，不再点了没反应。
+    let reqPrev = null;
+    let reqNext = null;
     const makeAdjustBtn = function(dir, sign, label) {
         const btn = el('button', {
             className: 'scm-btn scm-adjust ' + dir + '-' + sign,
@@ -497,6 +501,10 @@ async function openSentenceContextModal(mineButton, matched) {
         boxes.appendChild(buildContextBox(i.boxNext || '', next, 'scm-next'));
         prevMinusBtn.disabled = prev.length <= 0;
         nextMinusBtn.disabled = next.length <= 0;
+        // BUG-764：请求的上下文句数多于宿主实际能给（到边界，返回句数 < 请求）→ 禁用对应
+        // 「+」，给出诚实的「已到边界」反馈，不再点了没反应。初次打开 req* 为 null，不禁用。
+        prevPlusBtn.disabled = reqPrev !== null && prev.length < reqPrev;
+        nextPlusBtn.disabled = reqNext !== null && next.length < reqNext;
     }
 
     async function refresh() {
@@ -510,8 +518,8 @@ async function openSentenceContextModal(mineButton, matched) {
         try {
             const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
             const nextN = sign === 'plus' ? cur + 1 : Math.max(0, cur - 1);
-            if (dir === 'prev') sentenceCtxPrev = nextN;
-            else sentenceCtxNext = nextN;
+            if (dir === 'prev') { sentenceCtxPrev = nextN; reqPrev = nextN; }
+            else { sentenceCtxNext = nextN; reqNext = nextN; }
             await setSentenceContextOnHost();
             await refresh();
         } finally {

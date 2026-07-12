@@ -1333,6 +1333,11 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    /* BUG-763 修「模态显示不全」：卡是 flex column + max-height:92%，中间预览区
+       (.scm-boxes) 必须能收缩才会触发其内部滚动。overflow:hidden 把内容夹在 max-height
+       内（配合 .scm-boxes 的 flex:1 1 auto;min-height:0），头/标题/计数/按钮/底栏各占
+       固有高度，预览区吸收剩余空间并滚动，不再被撑破挤成半行、按钮压在预览上。 */
+    overflow: hidden;
     padding: 16px;
     border-radius: var(--hibiki-radius-card, 14px);
     background: var(--background-color, #fff);
@@ -1374,6 +1379,11 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* BUG-763：在 flex column 里 item 默认 min-height:auto（不小于内容），会拒绝收缩，
+       overflow-y:auto 永不触发、整卡被撑破。flex:1 1 auto + min-height:0 放开收缩，
+       激活内部滚动，让多句预览在卡内滚动而非溢出遮挡按钮。 */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }

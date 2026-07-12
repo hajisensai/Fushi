@@ -117,6 +117,26 @@ void main() {
       expect(body, contains('this.positionSelectionHandles();'));
     });
 
+    test('BUG-765：拖手柄 hit-test 时临时熄灭手柄 pointer-events（防命中手柄自身冻结）', () {
+      final String body = _between(js, 'moveSelectionHandle: function',
+          'positionSelectionHandles: function');
+      // 手指压在手柄上，若不让手柄对命中透明，elementFromPoint/caretPositionFromPoint
+      // 命中的是最上层手柄 div（非文本节点）→ getCharacterAtPoint 返回 null → 手柄冻结
+      // 拖不动。hit-test 前必须置 pointer-events:none，取字后还原。
+      expect(body, contains("pointerEvents = 'none'"),
+          reason: 'hit-test 前必须把两手柄 pointer-events 置 none');
+      // 取字后还原（否则手柄永久不可点）。
+      expect(body, contains("|| 'auto'"),
+          reason: 'hit-test 后必须还原手柄 pointer-events');
+      // 还原发生在拿到 hit 之后（顺序正确）。
+      final int noneAt = body.indexOf("pointerEvents = 'none'");
+      final int hitAt = body.indexOf('this.getCharacterAtPoint(x, y)');
+      final int restoreAt = body.indexOf("|| 'auto'");
+      expect(noneAt, greaterThanOrEqualTo(0));
+      expect(hitAt, greaterThan(noneAt), reason: '熄灭必须在 hit-test 之前');
+      expect(restoreAt, greaterThan(hitAt), reason: '还原必须在 hit-test 之后');
+    });
+
     test('手柄定位按书写模式分支（横排 vs 竖排 vertical-rl）', () {
       final String body = _between(js, 'positionSelectionHandles: function',
           'showSelectionHandles: function');

@@ -153,6 +153,32 @@ const String _globalLookupIconFontJs = '''
       }
     })();''';
 
+/// BUG-762 修「词典弹窗里长按释义文本弹出系统选择菜单（翻译/复制/分享/全选…）后 app
+/// 卡住」：弹窗 WebView（Android 原生平台视图）默认允许原生文本选区（popup.css 全局
+/// `-webkit-user-select:text` 且无触屏抑制），长按进入原生选区态 → 系统 ActionMode 浮动
+/// 工具栏弹出并接管该区域后续触摸，弹窗关不掉、点击无响应 → 观感「卡死」。查词根本不
+/// 依赖原生选区（走 selection.js 的 caretPositionFromPoint + CSS Custom Highlight 程序化
+/// 选区），故与阅读器 reader_content_styles.dart 的 TODO-1279 修复同款：粗指针（触屏，
+/// `@media (pointer: coarse)`）禁用原生 user-select + iOS 长按 callout，从根上不再进原生
+/// 选区态。CSS 层自门控——桌面细指针（Windows 裸 WebView2 全局查词）不受影响，复制/右键
+/// 照旧。刻意不放进共享 popup.css（那份还被 content.css 生成器 re-root 进浏览器扩展宿主页，
+/// 会误杀扩展在触屏宿主页里选文本；且生成器不支持 @media 嵌套 at-rule 会直接抛错），改由本
+/// 注入体以 id 守卫的 `<style>` 幂等注入，只作用于 app 内三种弹窗表面（in-app / 视频 /
+/// app 外悬浮），三端 WebView 复用同一注入体，一处全覆盖。
+const String _touchNoSelectStyleJs = '''
+    (function(){
+      var s = document.getElementById('hoshi-popup-touch-noselect');
+      if (!s) {
+        s = document.createElement('style');
+        s.id = 'hoshi-popup-touch-noselect';
+        s.textContent =
+          '@media (pointer: coarse){html,body,body *{' +
+          '-webkit-user-select:none !important;user-select:none !important;' +
+          '-webkit-touch-callout:none !important;}}';
+        document.head.appendChild(s);
+      }
+    })();''';
+
 /// BUG-712 ③：静态设置负载的两半（词条行在原模板里插在 head 与 tail 之间）。
 /// [combined] 供 in-app 热槽路径做串级比对去重（变了才重发）；head+entries+tail
 /// 的拼接顺序与拆分前的单模板逐字节一致，合并调用方（全局查词栈 / 剪贴板面板）
@@ -243,6 +269,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     $themeVarsJs
     $fontStyleJs
     $iconFontJs
+    $_touchNoSelectStyleJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
     // TODO-1353: Ctrl+滚轮缩放查词内容需要在 JS 侧就地重算 zoom（即时反馈），故把
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
