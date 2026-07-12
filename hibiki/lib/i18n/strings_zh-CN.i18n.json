@@ -2276,5 +2276,6 @@
   "sync_progress_videos": "同步视频",
   "sync_video_files": "上传视频文件",
   "sync_show_remote_entries": "显示远端条目",
-  "sync_show_remote_entries_warning": "把配对设备或云端有、本机没有的书籍和视频显示为可下载/流播的占位卡。"
+  "sync_show_remote_entries_warning": "把配对设备或云端有、本机没有的书籍和视频显示为可下载/流播的占位卡。",
+  "collection_open": "打开"
 }

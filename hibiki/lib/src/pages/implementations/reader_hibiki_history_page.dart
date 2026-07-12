@@ -1304,6 +1304,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           database: appModel.database,
           collection: collection,
           memberCardBuilder: _buildCollectionMemberCard,
+          onOpenMember: _openCollectionMember,
           onChanged: () {
             _shelfMapsFuture = _loadShelfMaps();
             if (mounted) setState(() {});
@@ -1338,6 +1339,30 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       return null;
     }
     return null;
+  }
+
+  /// 合集详情页「打开成员」（点卡片 / 菜单「打开」）：卡片自身手势被 IgnorePointer
+  /// 屏蔽（见 [MediaCollectionGridDetailPage]），故打开统一经此回调走与书架卡片
+  /// onTap 相同的路径——epub 经 openMedia，srt 经 _openSrtBook。
+  void _openCollectionMember(String mediaType, String entryKey) {
+    if (mediaType == 'srt') {
+      for (final SrtBook book in _visibleSrtBooks) {
+        if (book.uid == entryKey) {
+          unawaited(_openSrtBook(book));
+          return;
+        }
+      }
+      return;
+    }
+    if (mediaType == 'epub') {
+      for (final MediaItem item in _visibleEpubBooks) {
+        if (_parseBookKey(item.mediaIdentifier) == entryKey) {
+          final MediaSource source = item.getMediaSource(appModel: appModel);
+          unawaited(appModel.openMedia(ref: ref, mediaSource: source, item: item));
+          return;
+        }
+      }
+    }
   }
 
   Widget _buildSectionHeader(String label) {
