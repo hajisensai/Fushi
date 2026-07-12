@@ -4,6 +4,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
@@ -38,6 +40,16 @@ const String kSyncLocalAudioNamespace = '__local_audio__';
 
 const String _localAudioAssetSuffix = '.hibikiaudiolib';
 
+/// Reserved top-level folder holding the shared collection manifest
+/// (`collections.json`) for the collections union sync (多端库联合视图 §2.3).
+/// Must be filtered from any listing that treats root children as books
+/// ([isReservedSyncFolderName]).
+const String kSyncCollectionsNamespace = '__collections__';
+
+/// The single shared collection manifest asset inside
+/// [kSyncCollectionsNamespace]（读-合并-写；格式见 CollectionManifest）。
+const String kSyncCollectionsManifestName = 'collections.json';
+
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 ///
@@ -49,7 +61,8 @@ bool isReservedSyncFolderName(String name) =>
     name.trim().isEmpty ||
     name == kSyncDictionaryNamespace ||
     name == kSyncLocalAudioNamespace ||
-    name == kSyncAggregateNamespace;
+    name == kSyncAggregateNamespace ||
+    name == kSyncCollectionsNamespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
@@ -125,6 +138,11 @@ class SyncRunReport {
   /// never feeds [needsLocalLibraryRefresh] nor [errors].
   int rootSpillFilesRemoved = 0;
 
+  /// 本轮合集同步在本地应用了变更的合集数（多端库联合视图 §2.3：成员并集/墓碑/
+  /// 手动序 LWW 落进本地 DB 的合集条目数）。>0 时书架合集行/详情页需要刷新，
+  /// 故计入 [needsLocalLibraryRefresh]。
+  int collectionsUpdated = 0;
+
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
@@ -136,7 +154,8 @@ class SyncRunReport {
       dictionariesImported > 0 ||
       audiobooksImported > 0 ||
       localAudioImported > 0 ||
-      localBookProgressPulled > 0;
+      localBookProgressPulled > 0 ||
+      collectionsUpdated > 0;
 }
 
 /// Orchestrates sync across any [SyncBackend].
@@ -351,6 +370,19 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
 
+    // 合集双向同步（多端库联合视图 §2.3 任务4）：云后端走 sync 根下
+    // `__collections__/collections.json` 共享清单的读-合并-写（成员并集 + 移出/
+    // 删除墓碑 + 手动序整合集 LWW，语义在 CollectionSyncEngine）。
+    //
+    // 互联（HibikiClientSyncBackend）**留接缝暂不接线**：互联按拍板方案走 host API
+    // 合集清单 endpoint（任务5/6，目录接口带合集归属 + 清单读写），不走 WebDAV
+    // 文件箱伪装的 __collections__ 资产（互联 backend 的资产层是 live 端点适配，
+    // 语义不同）。endpoint 就绪后在上面的 isInterconnect 分支调用同一
+    // CollectionSyncEngine.merge / applyCollectionLocalChanges，仅通道不同。
+    if (!isInterconnect) {
+      await syncCollections(report);
+    }
+
     // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度
     // / 聚合等所有阶段都已尝试、未被异常 / app 退出 / 进程终止打断）才记录同步冷却
     // 时间戳。中断发生在本行之前 → lastSyncMs 保持不变，使下次 app-open 自动同步不被
@@ -411,6 +443,63 @@ class SyncOrchestrator {
     HibikiClientSyncBackend backend,
   ) =>
       _syncAggregateLive(report, backend);
+
+  /// 合集双向同步（多端库联合视图 §2.3 任务4，云后端通道）。
+  ///
+  /// 读远端 `__collections__/collections.json` 共享清单（无则视为空清单，首轮
+  /// 优雅退化为「只上传本机合集」）→ [CollectionSyncEngine.merge] 与本地全量
+  /// 快照合并（成员并集 + 移出/删除墓碑按基线裁决 + 手动序整合集 LWW）→
+  /// [applyCollectionLocalChanges] 把本地变更集落 DB → 合并后清单与远端字节
+  /// 不同才回写（确定性排序保证内容相等 ⇒ 字节相等，避免每轮写放大）。
+  ///
+  /// 基线（[SyncRepository.getCollectionsSyncBaselineMs]）在整轮成功后才推进：
+  /// 中途失败保持旧基线，下轮把同一批墓碑重新当「新闻」裁决——应用端按目标态
+  /// 调和，重放幂等，不会重复删除/复活。
+  ///
+  /// 整段 try/catch，错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
+  Future<void> syncCollections(SyncRunReport report) async {
+    try {
+      final String ns =
+          await _backend.ensureNamespace(kSyncCollectionsNamespace);
+      final AssetEntry? asset =
+          await _backend.findAsset(ns, kSyncCollectionsManifestName);
+      CollectionManifest remote = CollectionManifest.empty;
+      String? remoteCanonical;
+      if (asset != null) {
+        final Object? json = await _backend.getJsonAsset(asset.id);
+        if (json != null) {
+          remote = CollectionManifest.fromJson(json);
+          remoteCanonical = remote.canonicalJson();
+        }
+      }
+
+      final CollectionManifest local = await loadLocalCollectionManifest(_db);
+      final SyncRepository repo = SyncRepository(_db);
+      final int baseline = await repo.getCollectionsSyncBaselineMs();
+      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
+        local: local,
+        remote: remote,
+        lastSyncedAtMs: baseline,
+      );
+
+      report.collectionsUpdated +=
+          await applyCollectionLocalChanges(_db, outcome.changes);
+
+      // 回写门槛：字节有变才写；远端本无清单且合并结果为空（零合集库）不无中
+      // 生有地创建空文件。
+      final bool nothingToPublish =
+          asset == null && outcome.merged.collections.isEmpty;
+      if (!nothingToPublish &&
+          outcome.merged.canonicalJson() != remoteCanonical) {
+        await _backend.putJsonAsset(
+            ns, kSyncCollectionsManifestName, outcome.merged.toJson());
+      }
+      await repo
+          .setCollectionsSyncBaselineMs(DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      report.errors.add('collections sync: $e');
+    }
+  }
 
   /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
   /// [SyncResult.conflict] rows are collected; everything else (imported /

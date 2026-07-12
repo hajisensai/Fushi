@@ -12,6 +12,7 @@ MediaCollectionRow _col(int id, String name) => MediaCollectionRow(
       coverSource: null,
       sortOrder: 0,
       createdAt: 0,
+      orderUpdatedAt: 0,
     );
 
 CollectionOrderingItem<String> _item(String key, int importedAt) =>

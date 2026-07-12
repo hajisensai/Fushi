@@ -81,6 +81,7 @@ void main() {
               coverSource: null,
               sortOrder: 0,
               createdAt: 0,
+              orderUpdatedAt: 0,
             ),
             loadMembers: loadMembers,
             onOpenEpisode: (VideoBookRow _) {},
