@@ -30,6 +30,8 @@ class CollectionShelfRow extends StatefulWidget {
     this.itemGap = 12,
     this.collapsed = false,
     this.onToggleCollapsed,
+    this.selectionCheckbox,
+    this.onToggleSelected,
     super.key,
   });
 
@@ -70,6 +72,15 @@ class CollectionShelfRow extends StatefulWidget {
   /// 行头折叠开关（行头标题左侧旋转 chevron）。null 时不显示开关（行恒展开）。
   /// 调用方负责持久化（`collapsed_collection_ids` 偏好，书架/视频页共用）。
   final VoidCallback? onToggleCollapsed;
+
+  /// 多选态：行头前缀勾选框（选=选中整个合集）。非 null 时替代折叠 chevron 显示在
+  /// 行头最左，并隐藏「查看全部」尾随件（多选态下行头点击走 [onToggleSelected] 整选，
+  /// 不再导航进详情）。null（默认）= 非多选态，行头维持点击进详情，零破坏。
+  final Widget? selectionCheckbox;
+
+  /// 多选态：切换整合集选中（选/取消）。非 null 时行头点击/焦点激活走它，替代
+  /// [onOpenDetail]。null（默认）时行头点击维持进详情。
+  final VoidCallback? onToggleSelected;
 
   @override
   State<CollectionShelfRow> createState() => _CollectionShelfRowState();
@@ -138,10 +149,15 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
   }
 
   Widget _buildHeader(BuildContext context, HibikiDesignTokens tokens) {
+    // 多选态：行头点击整选合集（onToggleSelected），替代进详情（onOpenDetail）。
+    final Widget? selectionCheckbox = widget.selectionCheckbox;
+    final bool selectionMode = selectionCheckbox != null;
+    final VoidCallback headerTap =
+        widget.onToggleSelected ?? widget.onOpenDetail;
     final Widget header = InkWell(
       canRequestFocus: false,
       borderRadius: tokens.radii.controlRadius,
-      onTap: widget.onOpenDetail,
+      onTap: headerTap,
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.gap / 2,
@@ -149,10 +165,16 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         ),
         child: Row(
           children: <Widget>[
+            // 多选态：行头最左挂整选勾选框（选=选中整个合集），替代折叠 chevron。
+            if (selectionCheckbox != null)
+              Padding(
+                padding: EdgeInsets.only(right: tokens.spacing.gap / 2),
+                child: selectionCheckbox,
+              )
             // 折叠开关：标题左侧旋转 chevron（展开朝下、折叠朝右）。紧凑尺寸不
             // 抬高行头；ExcludeFocus——手柄/键盘焦点仍落整行头（Enter=进详情），
             // 折叠是鼠标/触屏轻交互，不进焦点遍历序。
-            if (widget.onToggleCollapsed != null)
+            else if (widget.onToggleCollapsed != null)
               ExcludeFocus(
                 child: IconButton(
                   onPressed: widget.onToggleCollapsed,
@@ -194,12 +216,15 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                 ],
               ),
             ),
-            Text(t.collection_view_all, style: tokens.type.metadata),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: tokens.surfaces.onVariant,
-            ),
+            // 多选态隐藏「查看全部」尾随件（行头点击整选而非导航）。
+            if (!selectionMode) ...<Widget>[
+              Text(t.collection_view_all, style: tokens.type.metadata),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: tokens.surfaces.onVariant,
+              ),
+            ],
           ],
         ),
       ),
@@ -210,7 +235,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
-              widget.onOpenDetail();
+              headerTap();
               return null;
             },
           ),

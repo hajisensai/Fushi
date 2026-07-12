@@ -316,6 +316,33 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     );
   }
 
+  /// 块2：合集行头整选勾选框（选=选中整个合集）。与散卡 [_bookCardShell] 的封面
+  /// 勾选框同款圆形对勾视觉；[IgnorePointer] 让点击穿透到行头 InkWell（整选回调）。
+  Widget _buildSelectionCheck(bool selected) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color selectionColor = tokens.surfaces.primary;
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          color: selected
+              ? selectionColor
+              : tokens.surfaces.page.withValues(alpha: 0.7),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? selectionColor : tokens.surfaces.outline,
+            width: 1.5,
+          ),
+        ),
+        padding: EdgeInsets.all(tokens.spacing.gap / 4),
+        child: Icon(
+          Icons.check,
+          size: tokens.spacing.gap * 1.75,
+          color: selected ? theme.colorScheme.onPrimary : Colors.transparent,
+        ),
+      ),
+    );
+  }
+
   Widget _bookCardLayout({
     required String title,
     required Widget cover,

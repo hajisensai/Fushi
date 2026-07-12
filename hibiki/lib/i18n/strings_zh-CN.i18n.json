@@ -2276,5 +2276,12 @@
   "sync_progress_videos": "同步视频",
   "sync_video_files": "上传视频文件",
   "sync_show_remote_entries": "显示远端条目",
-  "sync_show_remote_entries_warning": "把配对设备或云端有、本机没有的书籍和视频显示为可下载/流播的占位卡。"
+  "sync_show_remote_entries_warning": "把配对设备或云端有、本机没有的书籍和视频显示为可下载/流播的占位卡。",
+  "batch_dissolve_confirm": "解散 $m 个合集？只解除分组，不删除媒体本体。",
+  "batch_dissolve_success": "已解散 $m 个合集。",
+  "batch_delete_mixed_confirm": "删除 $n 个媒体、解散 $m 个合集？此操作无法撤销。",
+  "batch_delete_mixed_success": "已删除 $n 个媒体、解散 $m 个合集。",
+  "batch_add_to_collection_success": "已把 $n 项加入合集。",
+  "collection_merge_title": "合并合集",
+  "collection_merged": "已合并合集。"
 }
