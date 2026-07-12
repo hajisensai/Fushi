@@ -66,8 +66,6 @@ part 'reader_history/dialogs.part.dart';
 /// [HibikiFocusController.registerDirectionalAnchor]). Kept as constants (not
 /// derived per-instance ids) precisely so anchors can point at them by name.
 const HibikiFocusId kShelfImportFocusId = HibikiFocusId('reader-shelf-import');
-const HibikiFocusId kShelfTagBarOrganizeFocusId =
-    HibikiFocusId('reader-shelf-tagbar-organize');
 
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
@@ -353,8 +351,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
-      onOrganize: _openShelfSort,
-      onOrganizeFocusId: kShelfTagBarOrganizeFocusId,
+      // UI v2：整理排序页已按用户拍板整体砍掉（onOrganize 不再传，按钮消失）。
+      // 排序退化为既有 ShelfEntries.sortOrder + 导入时间倒序；分组管理走批量
+      // 「组合成合集」+ 合集详情页（改名/删除/移出成员）。
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
     );
   }
@@ -396,8 +395,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.bar_chart_outlined,
           onTap: _openReadingStatistics,
         ),
-        // TODO-947：原页头「编辑排序」(swap_vert) 入口已移到标签栏多选按钮旁
-        // （见 _buildTagBar 的 onOrganize），与「组合成系列」聚成一组整理动作。
       ],
     );
   }
@@ -440,260 +437,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       context,
       adaptivePageRoute(builder: (_) => const ReadingStatisticsPage()),
     );
-  }
-
-  /// TODO-616 B2：打开书架「编辑排序」独立重排页。把当前可见的 SRT + EPUB 卡片
-  /// （与网格同序：SRT 在前、EPUB 在后）构造成可重排条目 push 进 [ShelfReorderPage]，
-  /// 退出时按最终顺序批量回写 ShelfEntries.sortOrder（下标即新 sortOrder）。视频在
-  /// 书架是独立分区且归视频 tab 管，不纳入本页（在视频库页单独排序）。
-  Future<void> _openShelfSort() async {
-    if (_selectionMode) _exitSelectionMode();
-    // UI v2 Phase E：整理页把合集**内联展开成员**（不折叠成一张卡），同合集成员连续相邻
-    // 并套同色分组框，首成员标合集名。拖合并（建新合集 / 并入合集 / 跨合集移动）与
-    // 成员级移出在本页内完成，分组真相源与主网格同为 MediaCollections。
-    final List<ShelfReorderItem> items = _buildSortItems();
-    // 只要有 >=2 个条目、或存在任一合集成员（可对其做移出），就值得进排序页；否则无事可做。
-    final bool hasGroupMember =
-        items.any((ShelfReorderItem it) => it.groupId != null);
-    if (items.length < 2 && !hasGroupMember) {
-      HibikiToast.show(msg: t.shelf_sort_saved);
-      return;
-    }
-    await Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        builder: (_) => ShelfReorderPage(
-          title: t.shelf_edit_order,
-          initialItems: items,
-          cellExtent: 180,
-          childAspectRatio: kShelfBookCardAspectRatio,
-          feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
-          onPersist: _persistShelfOrder,
-          onMerge: _mergeShelfEntries,
-          // 书卡底部有 kShelfTitleFooterHeight 高的标题 footer，把「移出合集」按钮
-          // 从格底抬到封面右下角，别压住书名。
-          overlayCornerBottomInset: kShelfTitleFooterHeight,
-          onRemove: (ShelfReorderItem item) =>
-              _removeMemberFromCollectionInSort(item.groupId!, item),
-        ),
-      ),
-    );
-    // 重排页可能拖合并 / 移出写过合集归属，回到书架后重载分组渲染。
-    _shelfOrderFuture = _loadShelfOrder();
-    if (mounted) _rebuild(() {});
-  }
-
-  /// UI v2 Phase E：把当前可见 SRT + EPUB 经 [groupByCollections] 分组（与主网格
-  /// **同一真相源**）后构造成重排条目。散书渲染原卡、无框、无归属；合集**内联展开
-  /// 全部成员**（连续相邻），逐本套同色分组框、首成员叠合集名 header，每个成员条目
-  /// 携带真实 (mediaType, entryKey) + 归属 collectionId（供拖合并判据、移出按钮、
-  /// 落盘 [unfoldedShelfReorderOrders]）。主网格浏览渲染横排行。
-  List<ShelfReorderItem> _buildSortItems() {
-    final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
-        <CollectionOrderingItem<_ShelfBookSlot>>[
-      for (int i = 0; i < _visibleSrtBooks.length; i++)
-        CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: 'srt',
-          entryKey: _visibleSrtBooks[i].uid,
-          importedAt: -i,
-          payload: _ShelfBookSlot(
-            seq: i,
-            order: _orderOf('srt', _visibleSrtBooks[i].uid),
-            srt: _visibleSrtBooks[i],
-          ),
-        ),
-      for (int i = 0; i < _visibleEpubBooks.length; i++)
-        if (_parseBookKey(_visibleEpubBooks[i].mediaIdentifier)
-            case final String bookKey)
-          CollectionOrderingItem<_ShelfBookSlot>(
-            mediaType: 'epub',
-            entryKey: bookKey,
-            importedAt: -(_visibleSrtBooks.length + i),
-            payload: _ShelfBookSlot(
-              seq: _visibleSrtBooks.length + i,
-              order: _orderOf('epub', bookKey),
-              epub: _visibleEpubBooks[i],
-            ),
-          ),
-    ];
-    final List<CollectionGroup<_ShelfBookSlot>> groups =
-        groupByCollections<_ShelfBookSlot>(
-      items: shelfItems,
-      primaryCollectionIdByEntry: _primaryCollectionByEntry,
-      collectionsById: _collectionsById,
-      itemSortOrder: _shelfOrder,
-    );
-    final List<ShelfReorderItem> out = <ShelfReorderItem>[];
-    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
-      final MediaCollectionRow? collection = group.collection;
-      if (collection == null) {
-        // 散书：原卡渲染、无框、无归属。
-        final ShelfReorderItem? item =
-            _sortItemForSlot(group.coverItem.payload, groupId: null);
-        if (item != null) out.add(item);
-        continue;
-      }
-      // 合集：**内联展开全部成员**（连续相邻），逐本套同色分组框，首成员叠合集名
-      // header。成员携带 collectionId（拖合并判据 + 移出按钮 + 落盘把合集落回首成员位置）。
-      final Color frameColor = _groupFrameColor(collection.id);
-      final int memberCount = group.items.length;
-      bool first = true;
-      for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items) {
-        final ShelfReorderItem? base =
-            _sortItemForSlot(it.payload, groupId: collection.id);
-        if (base == null) continue;
-        final bool isHeader = first;
-        first = false;
-        out.add(ShelfReorderItem(
-          mediaType: base.mediaType,
-          entryKey: base.entryKey,
-          groupId: collection.id,
-          card: base.card,
-          groupFrame: GroupFrameData(
-            color: frameColor,
-            showHeader: isHeader,
-            groupName: collection.name,
-            memberCount: memberCount,
-          ),
-        ));
-      }
-    }
-    return out;
-  }
-
-  /// 把一个排序槽（散书或合集成员）构造成一条**未套框**的 [ShelfReorderItem]（原卡渲染）。
-  /// SRT / EPUB 各走既有卡片构造；EPUB bookKey 解析失败（脏 identifier）返回 null 跳过。
-  /// [groupId] 只填进返回条目的归属字段；套框 / header 由调用方 [_buildSortItems] 决定。
-  ShelfReorderItem? _sortItemForSlot(
-    _ShelfBookSlot slot, {
-    required int? groupId,
-  }) {
-    final SrtBook? srt = slot.srt;
-    if (srt != null) {
-      return ShelfReorderItem(
-        mediaType: 'srt',
-        entryKey: srt.uid,
-        groupId: groupId,
-        card: _buildSrtCard(
-          srt,
-          epubCoverUri: _epubCoverUrisByBookKey[srt.bookKey],
-        ),
-      );
-    }
-    final MediaItem item = slot.epub!;
-    final String? bookKey = _parseBookKey(item.mediaIdentifier);
-    if (bookKey == null) return null;
-    return ShelfReorderItem(
-      mediaType: 'epub',
-      entryKey: bookKey,
-      groupId: groupId,
-      card: buildMediaItem(item),
-    );
-  }
-
-  /// 由合集 id 稳定映射到一个分组框颜色（相邻合集不同色，便于区分）。同一合集每次
-  /// 渲染同色。调色板取中饱和度、明暗背景都清晰的 8 色循环。
-  Color _groupFrameColor(int collectionId) {
-    const List<Color> palette = <Color>[
-      Color(0xFF4F8DFD),
-      Color(0xFF2FB56B),
-      Color(0xFFF08A24),
-      Color(0xFFAF52DE),
-      Color(0xFF20B2C4),
-      Color(0xFFE45C8A),
-      Color(0xFF6C6BE0),
-      Color(0xFFB58A21),
-    ];
-    return palette[collectionId.abs() % palette.length];
-  }
-
-  /// UI v2 Phase E：把一个合集成员移出合集——整理页点「移出」按钮触发。弹确认框，
-  /// 确认后 [HibikiDatabase.removeFromCollection] 写库（空合集自动删），刷新书架
-  /// 归属映射，返回结果给重排页把该成员就地降级为散卡。
-  Future<ShelfRemoveResult> _removeMemberFromCollectionInSort(
-      int collectionId, ShelfReorderItem item) async {
-    if (!await _confirmRemoveFromCollection()) {
-      return const ShelfRemoveResult(removed: false, groupEmptied: false);
-    }
-    final bool emptied = await removeReorderItemFromCollection(
-      database: appModel.database,
-      collectionId: collectionId,
-      item: item,
-    );
-    _shelfOrderFuture = _loadShelfOrder();
-    if (mounted) {
-      HibikiToast.show(msg: t.collection_member_removed);
-      setState(() {});
-    }
-    return ShelfRemoveResult(removed: true, groupEmptied: emptied);
-  }
-
-  /// 「移出合集」确认框（条目本身保留，仅解除引用）。
-  Future<bool> _confirmRemoveFromCollection() async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.collection_remove_member),
-        content: Text(t.collection_remove_member_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.collection_remove_member),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
-
-  /// UI v2 Phase E：把被拖条目 [dragged] 合并进目标条目 [target]——共享执行器
-  /// [mergeReorderItemsIntoCollection]（目标有合集并入 / 散书建新合集 / 跨合集移动）。
-  /// 返回合并后归属的合集 id（重排页据此即时更新本地 groupId 并提示）。
-  Future<int?> _mergeShelfEntries(
-      ShelfReorderItem dragged, ShelfReorderItem target) async {
-    final int collectionId = await mergeReorderItemsIntoCollection(
-      database: appModel.database,
-      defaultName: t.collection_default_name,
-      dragged: dragged,
-      target: target,
-    );
-    _shelfOrderFuture = _loadShelfOrder();
-    return collectionId;
-  }
-
-  /// UI v2 Phase E：把整理页给回的顺序拆分回写——每个条目（散书 + 合集成员）下标 →
-  /// ShelfEntries.sortOrder（[batchUpsertShelfOrder]，单事务）；每个合集的
-  /// [MediaCollections].sortOrder 落该合集首成员下标（[updateMediaCollectionSortOrder]）。
-  /// 拆分逻辑复用纯函数 [unfoldedShelfReorderOrders]（与测试同一真相源）。这样回主区
-  /// 经 groupByCollections 混排后，合集行落在其首成员位置、成员按 sortOrder 升序聚拢，
-  /// 顺序与本页内联视图一致。
-  Future<void> _persistShelfOrder(List<ShelfReorderItem> ordered) async {
-    final ({
-      List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
-      List<({int groupId, int sortOrder})> groupOrders,
-    }) split = unfoldedShelfReorderOrders(ordered);
-    for (final ({int groupId, int sortOrder}) go in split.groupOrders) {
-      await appModel.database
-          .updateMediaCollectionSortOrder(go.groupId, go.sortOrder);
-    }
-    if (split.entryOrders.isNotEmpty) {
-      await appModel.database.batchUpsertShelfOrder(split.entryOrders);
-    }
-    // 组内成员序同时写穿 MediaCollectionItems.sortIndex（与合集详情页/横排行
-    // 成员序同源，见 collectionMemberOrders 注释；对抗审查确认）。
-    for (final MapEntry<int, List<({String mediaType, String entryKey})>> e
-        in collectionMemberOrders(ordered).entries) {
-      await appModel.database.reorderCollectionItems(e.key, e.value);
-    }
-    _shelfOrderFuture = _loadShelfOrder();
-    if (mounted) setState(() {});
   }
 
   /// 一次性预取全部 ShelfEntries，组装成 `"mediaType|entryKey" → sortOrder` 映射。
@@ -974,86 +717,49 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
       );
     }
-    // A2/B directional anchors from the tag bar's「整理」action: pressing Right
-    // jumps to the leftmost header icon (import), pressing Down enters the grid's
-    // first card (revealed if scrolled off-screen). Down only when a grid card
-    // exists (loose/series first, else the first video card); the anchor is a
-    // pure option so if the target isn't focusable geometry runs unchanged.
-    final HibikiFocusId? firstGridCardFocusId = shelfGroups.isNotEmpty
-        ? _shelfGroupFocusId(shelfGroups.first)
-        : (videoBooks.isNotEmpty
-            ? HibikiFocusId('reader-shelf-video-${videoBooks.first.bookUid}')
-            : null);
-    return HibikiFocusDirectionalAnchor(
-      source: kShelfTagBarOrganizeFocusId,
-      anchors: <HibikiFocusDirection, HibikiFocusId>{
-        HibikiFocusDirection.right: kShelfImportFocusId,
-        if (firstGridCardFocusId != null)
-          HibikiFocusDirection.down: firstGridCardFocusId,
-      },
-      child: RawScrollbar(
-        thumbVisibility: true,
-        thickness: 3,
-        controller: mediaType.scrollController,
-        child: LayoutBuilder(
-          builder: (context, constraints) => CustomScrollView(
-            controller: mediaType.scrollController,
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              if (showRemoteBooks)
-                SliverToBoxAdapter(
-                  child: _buildRemoteBookSection(remoteState, constraints),
-                ),
-              // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-              // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
-              // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
-              // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
-              if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
-                ..._buildShelfGroupSlivers(
-                  shelfGroups,
-                  epubCoverUrisByBookKey,
-                  constraints,
-                ),
-              if (videoBooks.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                    child: _buildSectionHeader(t.shelf_video_section)),
-                SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
-                    childAspectRatio: kShelfVideoCardAspectRatio,
-                  ),
-                  itemCount: videoBooks.length,
-                  itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
-                ),
-              ],
-            ],
+    return RawScrollbar(
+      thumbVisibility: true,
+      thickness: 3,
+      controller: mediaType.scrollController,
+      child: LayoutBuilder(
+        builder: (context, constraints) => CustomScrollView(
+          controller: mediaType.scrollController,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
+          slivers: [
+            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+            if (showRemoteBooks)
+              SliverToBoxAdapter(
+                child: _buildRemoteBookSection(remoteState, constraints),
+              ),
+            // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+            // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+            // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+            // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
+            // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
+            if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
+              ..._buildShelfGroupSlivers(
+                shelfGroups,
+                epubCoverUrisByBookKey,
+                constraints,
+              ),
+            if (videoBooks.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                  child: _buildSectionHeader(t.shelf_video_section)),
+              SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: _gridExtent(context, constraints),
+                  // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
+                  childAspectRatio: kShelfVideoCardAspectRatio,
+                ),
+                itemCount: videoBooks.length,
+                itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
+              ),
+            ],
+          ],
         ),
       ),
-    );
-  }
-
-  /// The gamepad/keyboard focus id of a shelf group's card, matching the id the
-  /// card actually registers in [_buildShelfGroupCard]: series -> the folded
-  /// series card; a loose SRT slot -> its SRT card; a loose EPUB slot -> its book
-  /// card. Used to anchor "Down from the tag bar enters the first grid card".
-  HibikiFocusId _shelfGroupFocusId(CollectionGroup<_ShelfBookSlot> group) {
-    final MediaCollectionRow? collection = group.collection;
-    if (collection != null) {
-      return HibikiFocusId('reader-shelf-collection-${collection.id}');
-    }
-    final _ShelfBookSlot slot = group.coverItem.payload;
-    final SrtBook? srt = slot.srt;
-    if (srt != null) {
-      return HibikiFocusId('reader-shelf-srt-${srt.uid}');
-    }
-    return HibikiFocusId(
-      'reader-shelf-book-${slot.epub!.mediaIdentifier}',
     );
   }
 

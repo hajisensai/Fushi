@@ -81,6 +81,47 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
     widget.onChanged();
   }
 
+  /// 逐集「移出合集」（整理排序页删除后本页是视频侧唯一移出入口）：确认 →
+  /// [HibikiDatabase.removeFromCollection]（空合集自动删）→ 重载；合集被清空则
+  /// 退回上层。条目本身绝不删除。
+  Future<void> _removeEpisode(VideoBookRow ep) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.collection_remove_member),
+        content: Text(t.collection_remove_member_confirm),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.collection_remove_member),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.database
+        .removeFromCollection(widget.collection.id, 'video', ep.bookUid);
+    if (!mounted) return;
+    widget.onChanged();
+    HibikiToast.show(msg: t.collection_member_removed);
+    final bool emptied =
+        await widget.database.getMediaCollectionById(widget.collection.id) ==
+            null;
+    if (!mounted) return;
+    if (emptied) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    await _reload();
+  }
+
   Future<void> _delete() async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
@@ -233,6 +274,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                                         Icon(Icons.play_circle_outline,
                                             color: cs.onSurfaceVariant,
                                             size: 20),
+                                      const SizedBox(width: 4),
+                                      // 逐集移出（整理页删除后的唯一入口）。
+                                      HibikiIconButton(
+                                        tooltip: t.collection_remove_member,
+                                        icon: Icons.remove_circle_outline,
+                                        size: 18,
+                                        onTap: () => _removeEpisode(ep),
+                                      ),
                                     ],
                                   ),
                                 ),
