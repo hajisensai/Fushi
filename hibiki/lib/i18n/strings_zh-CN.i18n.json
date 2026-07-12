@@ -2267,5 +2267,9 @@
   "collection_remove_member": "移出合集",
   "collection_remove_member_confirm": "将该条目移出合集？条目本身保留。",
   "collection_member_removed": "已移出合集",
-  "collection_default_name": "新合集"
+  "collection_default_name": "新合集",
+  "book_continue_reading": "继续阅读",
+  "book_library_overview": "书库概览",
+  "shelf_stat_reading": "在读",
+  "book_read_progress": "已读 $percent%"
 }

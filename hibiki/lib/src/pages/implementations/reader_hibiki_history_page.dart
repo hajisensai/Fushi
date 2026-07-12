@@ -561,6 +561,193 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     return _buildBodyWithSrtBooks(books, srtBooks, remoteSnapshot);
   }
 
+  /// UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页）。
+  ///
+  /// 数据边界（诚实外显）：hero = 历史序（provider 即最近访问序）第一本
+  /// 0<position<duration 的 EPUB，显示「已读 x%」；无候选整块只剩统计。统计 =
+  /// 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB 进度；SRT 卡无统一进度数据，
+  /// 不硬造）。宽 >=720 并排、窄屏堆叠。
+  Widget _buildShelfOverviewSection(
+    List<MediaItem> epubBooks,
+    List<SrtBook> srtBooks,
+  ) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    MediaItem? hero;
+    int reading = 0;
+    int finished = 0;
+    for (final MediaItem item in epubBooks) {
+      final int duration = item.duration;
+      if (duration <= 0) continue;
+      if (item.position >= duration) {
+        finished++;
+      } else if (item.position > 0) {
+        reading++;
+        hero ??= item;
+      }
+    }
+    final Widget stats = _buildShelfOverviewStats(
+      total: epubBooks.length + srtBooks.length,
+      reading: reading,
+      finished: finished,
+      tokens: tokens,
+    );
+    final Widget? heroCard =
+        hero == null ? null : _buildContinueReadingHero(hero, tokens);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        0,
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (heroCard == null) return stats;
+          final bool wide = constraints.maxWidth >= 720;
+          if (wide) {
+            // IntrinsicHeight 必须有：SliverToBoxAdapter 下主轴无界，裸
+            // Row(stretch) 会强制无限高崩溃（与视频页同一根因，对抗审查确认）。
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(flex: 3, child: heroCard),
+                  SizedBox(width: tokens.spacing.gap + 4),
+                  Expanded(flex: 2, child: stats),
+                ],
+              ),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              heroCard,
+              SizedBox(height: tokens.spacing.gap),
+              stats,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 继续阅读 hero：封面缩略 + 标题 + 已读 % 。整卡点击开书。
+  Widget _buildContinueReadingHero(MediaItem hero, HibikiDesignTokens tokens) {
+    final int percent = hero.duration > 0
+        ? ((hero.position / hero.duration) * 100).clamp(0, 100).round()
+        : 0;
+    return HibikiCard(
+      key: const ValueKey<String>('reader_shelf_continue_hero'),
+      focusId: const HibikiFocusId('reader-shelf-continue-hero'),
+      onTap: () async {
+        final MediaSource source = hero.getMediaSource(appModel: appModel);
+        await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
+      },
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 56,
+              height: 84,
+              child: FadeInImage(
+                imageErrorBuilder: (_, __, ___) =>
+                    _coverPlaceholderIcon(Icons.menu_book_outlined),
+                placeholder: MemoryImage(kTransparentImage),
+                image: mediaSource.getDisplayThumbnailFromMediaItem(
+                  appModel: appModel,
+                  item: hero,
+                ),
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap + 4),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.book_continue_reading, style: tokens.type.sectionLabel),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  hero.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.book_read_progress(percent: percent),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Icon(
+            Icons.play_circle_filled,
+            size: 36,
+            color: tokens.surfaces.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 书库概览统计三格：总数 / 在读 / 读完。
+  Widget _buildShelfOverviewStats({
+    required int total,
+    required int reading,
+    required int finished,
+    required HibikiDesignTokens tokens,
+  }) {
+    Widget cell(String label, int value) => Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('$value', style: tokens.type.pageTitle),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.metadata,
+              ),
+            ],
+          ),
+        );
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: tokens.surfaces.group,
+        shape: const RoundedRectangleBorder(
+          borderRadius: HibikiBorderRadius.card,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.book_library_overview, style: tokens.type.sectionLabel),
+            SizedBox(height: tokens.spacing.gap),
+            Row(
+              children: <Widget>[
+                cell(t.video_stat_total_videos, total),
+                cell(t.shelf_stat_reading, reading),
+                cell(t.video_stat_completed, finished),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildBodyWithSrtBooks(
     List<MediaItem> books,
     List<SrtBook> allSrtBooks,
@@ -729,6 +916,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ),
           slivers: [
             SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+            // UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页，用户
+            // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
+            if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildShelfOverviewSection(epubBooks, srtBooks),
+              ),
             if (showRemoteBooks)
               SliverToBoxAdapter(
                 child: _buildRemoteBookSection(remoteState, constraints),

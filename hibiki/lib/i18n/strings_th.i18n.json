@@ -2267,5 +2267,9 @@
   "collection_remove_member": "Remove from collection",
   "collection_remove_member_confirm": "Remove this item from the collection? The item itself is kept.",
   "collection_member_removed": "Removed from collection",
-  "collection_default_name": "New collection"
+  "collection_default_name": "New collection",
+  "book_continue_reading": "Continue Reading",
+  "book_library_overview": "Library Overview",
+  "shelf_stat_reading": "Reading",
+  "book_read_progress": "Read $percent%"
 }
