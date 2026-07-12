@@ -1,7 +1,7 @@
 ## BUG-759 · Anime4K 着色器开了跟没开一样（glsl-shaders-append 非法 property 空下发）
 - **报告**：2026-07-12（用户：hibiki 的 anime4k 跟没开一样，mpv 的正常）
 - **真实性**：✅ 真 bug，根因 `hibiki/lib/src/media/video/video_shader_manager.dart:282-285`（修复前）
-- **[x] ① 已修复** — 提交 `a2509591f`
+- **[x] ① 已修复** — 提交 `8d69c7b55`
 - **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_shader_manager_test.dart`（纯函数 + 源码守卫）；`hibiki/integration_test/video_shader_apply_readback_itest.dart`（Windows 实机回读）
 - **备注**：
 
