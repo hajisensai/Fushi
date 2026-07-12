@@ -136,8 +136,11 @@ if not rows:
     sys.exit(0)
 
 # 去重：一次 list（全部未归档行，含 done 未归档）复用给所有项。
-# 判据 = token 出现在**标题开头**（list 行格式「[状态] TODO-N <标题> …」）——
-# 别的 todo 正文顺带提及 "PR#42" 不算已跟踪（对抗审查抓过的误抑制）。
+# 判据 = PR 号紧跟「] TODO-N 」出现在标题开头（别的 todo 正文顺带提及 "PR#42"
+# 不算已跟踪，对抗审查抓过的误抑制），**且该 todo 未 done**——只被 done 单跟踪的 PR
+# 会被重新落板：done 只代表「有人关了这条」，不代表 commit 真进了 develop（PR#41 假
+# 完成教训：原始合并落了 v38、合并后新推的 v39 没落却被手动标 done，旧去重把 done 单
+# 当已跟踪永久抑制，缺口再没被重捞）。只要检测阶段判定 commit 不在 base，就持续建 todo。
 lp = run_cli(["list"])
 if lp.returncode != 0:
     sys.stderr.write("vibe-coxswain list 失败（rc=%s）：%s\n"
@@ -145,11 +148,27 @@ if lp.returncode != 0:
     print("落板中止：看板 CLI 不可用——上面的只读巡检输出仍有效，下轮面板任务重试")
     sys.exit(3)  # 非零退出：面板任务徽章如实变 fail，下轮调度天然重试
 listing = lp.stdout
+# done 号单独取（用机器码 --status done，不解析中文标签，标签改了也不误伤）。
+# 取失败不致命：done_nums 为空 = 退回「done 也算跟踪」的旧保守行为，绝不误刷屏。
+dlp = run_cli(["list", "--status", "done"])
+done_nums = set(re.findall(r"TODO-(\d+)", dlp.stdout)) if dlp.returncode == 0 else set()
+
+# PR#41 不得匹配 PR#410：号后接非数字守卫（空格/全角括号/半角括号/句读都放行）。
+_PR_TODO_RE = r"\] TODO-(\d+) PR#%s(?![0-9])"
 
 
 def tracked(num: str) -> bool:
-    """该 PR 号是否已有对应 todo：token 必须紧跟「] TODO-N 」出现在标题开头。"""
-    return re.search(r"\] TODO-\d+ PR#%s " % re.escape(num), listing) is not None
+    """该 PR 号是否已有**未 done**的 todo（done 单不抑制 → 假完成能被重捞）。"""
+    for m in re.finditer(_PR_TODO_RE % re.escape(num), listing):
+        if m.group(1) not in done_nums:
+            return True
+    return False
+
+
+def prior_done(num: str) -> bool:
+    """该 PR 曾有 done 单却又被检出未落地 = 那条是假完成（关了但 commit 没进 base）。"""
+    return any(m.group(1) in done_nums
+               for m in re.finditer(_PR_TODO_RE % re.escape(num), listing))
 
 today: str = datetime.date.today().isoformat()
 added: list = []
@@ -172,6 +191,9 @@ for kind, num, title, branch, ahead, oldsha, newsha in rows:
                       "未进 → 走门禁再合并；已进/已废弃 → 删远端分支并注明。"
                       "来源：pr_sweep --file 自动落板 %s。" % (base, today))
         next_val = "%s→%s" % (oldsha, newsha)
+    if prior_done(num):  # 曾被标 done 又检出未落地 → 明说是假完成重捞，别让人以为是新单
+        acceptance += ("（⚠️重捞：此 PR 之前有 done 单，但 commit 仍不在 %s——"
+                       "上次「已完成」是假完成，本轮按当前 head 重新落板。）" % base)
     ap = run_cli(["add", todo_title, "--status", "todo"])
     m = re.search(r"TODO-(\d+)", ap.stdout or "")
     if ap.returncode != 0 or m is None:
