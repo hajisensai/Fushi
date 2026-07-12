@@ -797,6 +797,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   VideoPlayerController? _controller;
 
+  /// BUG-766：首开时新建但尚未赋给 [_controller] 的「在途」controller。持有它，才能在
+  /// 用户于 `await controller.load()` 完成前退出页时，于 [dispose] 主动 dispose 取消它
+  /// （触发 `loadToken++` → 在途 load 的 `_isCurrentLoad` 判据翻假、干净放弃后续原生
+  /// 下发），杜绝在已离开页面上把 libmpv/WGC 完整拉起再拆的 GPU churn（进程共享 D3D
+  /// device 被 device-lost 污染 → 下次启动 raster present 楔死）。换集复用不设。
+  VideoPlayerController? _pendingController;
+
   /// TODO-1276：首开视频「转两次圈」根治开关。
   ///
   /// 根因：首开路径有**两个独立的加载指示器**接力——① 页级 [VideoLoadingOverlay]
@@ -2342,6 +2349,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
+    // BUG-766：首开新建的在途 controller 登记进字段，让页面 dispose 能主动取消它。
+    // 换集复用同一 _controller 时不设，避免误 dispose 正在用的实例。
+    if (isInitialVideoOpen) _pendingController = controller;
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
       appModel.videoMpvConfig,
     );
@@ -2409,6 +2419,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           .log('VideoHibiki.diag', '[VIDEO-DIAG] controller.load() threw: $e');
       ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
+      _pendingController = null; // BUG-766：在途结束（失败），清标记
       if (mounted) setState(() => _failed = true);
       return;
     }
@@ -2441,6 +2452,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _isRemote ? _persistRemotePosition : _persistPosition;
     if (!mounted) {
       if (_controller == null) controller.dispose();
+      _pendingController = null; // BUG-766：在途结束（页已卸载），清标记
       return;
     }
     controller.removeListener(_syncWindowAspectRatioLock);
@@ -2454,6 +2466,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
+      _pendingController = null; // BUG-766：首开成功，清在途标记（防 dispose 误取消）
       _hasChapters = controller.chapters.isNotEmpty;
       _title = title;
       _failed = false;
@@ -2860,6 +2873,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _clearClipExportState();
     // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
     _disposeThumbnailPreview();
+    // BUG-766：首开在途 controller（尚未赋给 _controller）主动 dispose，触发 loadToken++
+    // 让在途 load() 的 _isCurrentLoad 判据翻假、干净放弃后续原生下发，杜绝在已离开页面
+    // 上把 libmpv/WGC 完整拉起再拆的 GPU churn。identical 守卫避免与 _controller 二次
+    // dispose 同一实例（首开成功后 _pendingController 已置 null，二者不会同时非空同指）。
+    if (_pendingController != null &&
+        !identical(_pendingController, _controller)) {
+      _pendingController!.dispose();
+    }
+    _pendingController = null;
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
