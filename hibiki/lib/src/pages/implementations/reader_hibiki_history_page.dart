@@ -554,6 +554,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// 多端库联合视图 §2.3 任务10：按 (name, collectionType) 自然键把远端合集归属解析成
+  /// 本地合集 id（折叠归属同「最小 collectionId」规则，多个同键取最小）；本地无此合集则
+  /// 返 null（远端占位散卡降级，不硬造合集行）。
+  int? _resolveLocalCollectionId(String name, String type) {
+    int? best;
+    for (final MediaCollectionRow c in _collectionsById.values) {
+      if (c.name == name && c.collectionType == type) {
+        if (best == null || c.id < best) best = c.id;
+      }
+    }
+    return best;
+  }
+
   void _toggleFilter(int tagId) {
     final current = Set<int>.from(ref.read(selectedTagIdsProvider));
     if (current.contains(tagId)) {
@@ -936,25 +949,46 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           payload: _ShelfBookSlot(epub: epub),
         ),
     ];
-    // 远端占位书作为散卡混入（无合集归属 → groupByCollections 折叠成散 group）。
-    // importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，组内
-    // 保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
+    // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
+    // **真实 mediaType='epub' + entryKey=bookKey**（downloadId），使其能与本地 epub 成员
+    // 共键折进合集。importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
+    // 组内保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
     for (int i = 0; i < remoteBooks.length; i++) {
       shelfItems.add(
         CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: 'remote-book',
+          mediaType: 'epub',
           entryKey: remoteBooks[i].downloadId,
           importedAt: -1 - i,
           payload: _ShelfBookSlot(remote: remoteBooks[i]),
         ),
       );
     }
+    // §2.3 任务10：注入远端书的主合集归属（host 下发的 RemoteBookInfo.collection）到折叠
+    // 映射，使远端占位卡折进对应本地合集行。远端合集本地无 id——按 (name, type) 对本地合集
+    // 表解析（[_resolveLocalCollectionId]），解析不到 = 散卡降级（不硬造合集行）。局部拷贝
+    // 页级映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
+    final Map<String, int> primaryByEntry =
+        Map<String, int>.of(_primaryCollectionByEntry);
+    final Map<String, int> memberSortIndex =
+        Map<String, int>.of(_memberSortIndex);
+    for (final RemoteBookInfo book in remoteBooks) {
+      final RemoteCollectionMembership? membership = book.collection;
+      if (membership == null) continue;
+      final int? cid = _resolveLocalCollectionId(
+        membership.collectionName,
+        membership.collectionType,
+      );
+      if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
+      final String key = 'epub|${book.downloadId}';
+      primaryByEntry[key] = cid;
+      memberSortIndex[key] = membership.sortIndex;
+    }
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
         groupByCollections<_ShelfBookSlot>(
       items: shelfItems,
-      primaryCollectionIdByEntry: _primaryCollectionByEntry,
+      primaryCollectionIdByEntry: primaryByEntry,
       collectionsById: _collectionsById,
-      memberSortIndex: _memberSortIndex,
+      memberSortIndex: memberSortIndex,
     );
     shelfGroups.sort(
       (CollectionGroup<_ShelfBookSlot> a, CollectionGroup<_ShelfBookSlot> b) =>
