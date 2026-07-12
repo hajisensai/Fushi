@@ -350,7 +350,18 @@ function _lyTapEnd(x, y) {
   if (_lyTapMoved) return;
   var el = document.elementFromPoint(x, y);
   var cueEl = el ? el.closest('.cue') : null;
-  if (!cueEl) return;
+  if (!cueEl) {
+    // BUG-756: 歌词是独立文档，没有正文的 hoshiReader tap 桥（onTap/onTapEmpty）。
+    // 命中空白必须显式回 Dart：① 唤出/收起隐藏的底栏（正文靠 onTapEmpty，歌词此前
+    // 完全无此通道 → 底栏一旦隐藏就再也叫不出来）；② 让 Dart reclaim 阅读焦点——桌面
+    // WebView2 在本次 pointer 手势里抢走了 OS 焦点，不夺回 Flutter _focusNode 就永远
+    // 收不到 ESC，全局「Esc 退出整页」处理器再不触发（正文每个手势 handler 都 reclaim，
+    // 歌词 tap 路径此前一处都没有 → esc 退不出）。与正文 onTapEmpty 同款语义。
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onLyricsTapEmpty');
+    }
+    return;
+  }
   // TODO-908: 模糊态下点句显形（同视频「点击显形」语义）；非模糊态无影响。
   if (document.body.classList.contains('lyrics-blur')) cueEl.classList.add('revealed');
   if (window.hoshiSelection) {
