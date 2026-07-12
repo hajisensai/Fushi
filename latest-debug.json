@@ -5,28 +5,28 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 7612,
-  "notes": "Automated desktop debug-channel build from develop @ aba4895. Push releases are always prerelease and never Latest.",
+  "notes": "Automated Apple debug-channel build from develop @ aba4895. Push releases are always prerelease and never Latest.",
   "assets": [
-    {
-      "name": "hibiki-1.0.1-debug.7603-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7603-ios.ipa",
-      "releaseSequence": 7603,
-      "tag": "v1.0.1-debug.7603+35e873e",
-      "version": "1.0.1-debug.7603"
-    },
-    {
-      "name": "hibiki-1.0.1-debug.7603-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7603-macos.zip",
-      "releaseSequence": 7603,
-      "tag": "v1.0.1-debug.7603+35e873e",
-      "version": "1.0.1-debug.7603"
-    },
     {
       "name": "hibiki-1.0.1-debug.7609-64b9b92-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7609-64b9b92-debug.apk",
       "releaseSequence": 7609,
       "tag": "v1.0.1-debug.7609+64b9b92",
       "version": "1.0.1-debug.7609"
+    },
+    {
+      "name": "hibiki-1.0.1-debug.7612-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7612-ios.ipa",
+      "releaseSequence": 7612,
+      "tag": "v1.0.1-debug.7612+aba4895",
+      "version": "1.0.1-debug.7612"
+    },
+    {
+      "name": "hibiki-1.0.1-debug.7612-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7612-macos.zip",
+      "releaseSequence": 7612,
+      "tag": "v1.0.1-debug.7612+aba4895",
+      "version": "1.0.1-debug.7612"
     },
     {
       "name": "hibiki-1.0.1-debug.7612-windows-setup.exe",
