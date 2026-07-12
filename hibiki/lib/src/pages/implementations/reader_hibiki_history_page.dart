@@ -34,6 +34,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
@@ -156,6 +157,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   bool _selectionMode = false;
   final Set<String> _selectedKeys = {};
+
+  /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedKeys] 并存。
+  /// 组合三档（块3）与批量解散/删除（块4）都读这两个集。
+  final Set<int> _selectedCollectionIds = <int>{};
+
+  /// 当前渲染成横排行的合集 id 列表（[_buildBodyWithSrtBooks] 每帧写入），供
+  /// 全选 / 反选把可见合集纳入整选集。
+  List<int> _visibleCollectionIds = const <int>[];
   List<MediaItem> _visibleEpubBooks = const [];
   List<SrtBook> _visibleSrtBooks = const [];
   Map<String, String> _epubCoverUrisByBookKey = const {};
@@ -217,6 +226,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {
       _selectionMode = !_selectionMode;
       _selectedKeys.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -224,6 +234,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {
       _selectionMode = false;
       _selectedKeys.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -231,6 +242,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {
       if (!_selectedKeys.remove(key)) {
         _selectedKeys.add(key);
+      }
+    });
+  }
+
+  /// 块2：切换整合集选中（合集行头勾选框）。
+  void _toggleCollectionSelection(int collectionId) {
+    setState(() {
+      if (!_selectedCollectionIds.remove(collectionId)) {
+        _selectedCollectionIds.add(collectionId);
       }
     });
   }
@@ -998,6 +1018,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         _sortMode,
       ),
     );
+    // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    _visibleCollectionIds = <int>[
+      for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
+        if (g.collection != null) g.collection!.id,
+    ];
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     if (epubBooks.isEmpty &&
@@ -1198,28 +1223,42 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         collapsed:
             appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
         onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+        // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡多选态不可单独勾。
+        selectionCheckbox: _selectionMode
+            ? _buildSelectionCheck(
+                _selectedCollectionIds.contains(collection.id))
+            : null,
+        onToggleSelected: _selectionMode
+            ? () => _toggleCollectionSelection(collection.id)
+            : null,
         itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
           group.items[i].payload,
           epubCoverUrisByBookKey,
+          selectable: false,
         ),
       ),
     );
   }
 
-  /// 横排行成员卡：SRT / EPUB 复用散书卡渲染（交互/焦点/选择态自带）。
+  /// 横排行成员卡：SRT / EPUB 复用散书卡渲染（交互/焦点自带）。
+  ///
+  /// [selectable]（默认 true）= 该卡在多选态可单独勾选。块2：合集行成员卡传 false——
+  /// 多选态不画勾选框、不可单独勾（整合集由行头勾选框选中），点击照常开书。
   Widget _buildShelfMemberCard(
     _ShelfBookSlot slot,
-    Map<String, String> epubCoverUrisByBookKey,
-  ) {
+    Map<String, String> epubCoverUrisByBookKey, {
+    bool selectable = true,
+  }) {
     // 远端占位卡不进合集（本批无合集归属），此分支纯防御避免 epub! 空断言。
     final RemoteBookInfo? remote = slot.remote;
     if (remote != null) return _buildRemoteBookCard(remote);
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCard(srt,
-          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey]);
+          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
+          selectable: selectable);
     }
-    return buildMediaItem(slot.epub!);
+    return _buildEpubBookCard(slot.epub!, selectable: selectable);
   }
 
   /// 统一合集 Phase 4：渲染一个书架 group——散书（collection==null，单成员）回退到原有
@@ -1471,13 +1510,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   @override
-  Widget buildMediaItem(MediaItem item) {
+  Widget buildMediaItem(MediaItem item) =>
+      _buildEpubBookCard(item, selectable: true);
+
+  /// EPUB 书卡渲染。[selectable]（默认经 [buildMediaItem] 传 true）= 多选态可单独勾选；
+  /// 块2：合集行成员卡传 false（selectionKey 置空 → 不画勾、不可单独勾）。
+  Widget _buildEpubBookCard(MediaItem item, {bool selectable = true}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
-      selectionKey: item.mediaIdentifier,
+      selectionKey: selectable ? item.mediaIdentifier : null,
       dragBookId: bookKey,
       onTagDropped:
           bookKey == null ? null : (tag) => _addTagToBook(bookKey, tag),

@@ -29,6 +29,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
@@ -118,8 +119,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   bool _selectionMode = false;
   final Set<String> _selectedUids = <String>{};
 
+  /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedUids] 并存。
+  /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
+  final Set<int> _selectedCollectionIds = <int>{};
+
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
+
+  /// 当前渲染成横排行的合集 id 列表（[_buildLocalVideoSlivers] 每帧写入），供
+  /// 全选 / 反选把可见合集纳入整选集。
+  List<int> _visibleCollectionIds = const <int>[];
 
   /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
   /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
@@ -438,6 +447,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     setState(() {
       _selectionMode = !_selectionMode;
       _selectedUids.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -445,6 +455,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     setState(() {
       _selectionMode = false;
       _selectedUids.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -456,36 +467,67 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     });
   }
 
+  /// 块2：切换整合集选中（合集行头勾选框）。
+  void _toggleCollectionSelection(int collectionId) {
+    setState(() {
+      if (!_selectedCollectionIds.remove(collectionId)) {
+        _selectedCollectionIds.add(collectionId);
+      }
+    });
+  }
+
+  /// 一个可见视频是否已折进某合集（= 合集成员，不作散卡单选/全选）。
+  bool _isCollectionMember(String bookUid) =>
+      _primaryCollectionByEntry.containsKey('video|$bookUid');
+
   void _selectAllVisible() {
     setState(() {
+      // 散卡：只选未折进合集的可见视频（折进的成员由整合集选中，不单独勾）。
       for (final VideoBookRow book in _visibleVideos) {
+        if (_isCollectionMember(book.bookUid)) continue;
         _selectedUids.add(book.bookUid);
       }
+      _selectedCollectionIds.addAll(_visibleCollectionIds);
     });
   }
 
   void _invertSelection() {
     setState(() {
-      final Set<String> all = <String>{
-        for (final VideoBookRow book in _visibleVideos) book.bookUid,
+      final Set<String> allLoose = <String>{
+        for (final VideoBookRow book in _visibleVideos)
+          if (!_isCollectionMember(book.bookUid)) book.bookUid,
       };
-      final Set<String> inverted = all.difference(_selectedUids);
+      final Set<String> invertedLoose = allLoose.difference(_selectedUids);
       _selectedUids
         ..clear()
-        ..addAll(inverted);
+        ..addAll(invertedLoose);
+      final Set<int> allCollections = _visibleCollectionIds.toSet();
+      final Set<int> invertedCollections =
+          allCollections.difference(_selectedCollectionIds);
+      _selectedCollectionIds
+        ..clear()
+        ..addAll(invertedCollections);
     });
   }
 
-  /// 批量删除选中视频书：确认 → 逐个 [VideoBookRepository.deleteVideoBook] →
-  /// 刷新列表/标签映射 → 退出选择态 → toast。
+  /// 块4：批量删除区分解散/删媒体。
+  /// - 选中合集 → 解散（[HibikiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
+  /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
+  /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
-    final int count = _selectedUids.length;
-    if (count == 0) return;
+    final int mediaCount = _selectedUids.length;
+    final int collectionCount = _selectedCollectionIds.length;
+    if (mediaCount == 0 && collectionCount == 0) return;
+    final String message = collectionCount == 0
+        ? t.batch_delete_confirm(n: mediaCount)
+        : mediaCount == 0
+            ? t.batch_dissolve_confirm(m: collectionCount)
+            : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(t.dialog_delete),
-        content: Text(t.batch_delete_confirm(n: count)),
+        content: Text(message),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -503,6 +545,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
     if (confirmed != true || !mounted) return;
 
+    final HibikiDatabase db = ref.read(appProvider).database;
+    // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
+    final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
+    int dissolved = 0;
+    for (final int id in toDissolve) {
+      final int removed = await db.deleteMediaCollection(id);
+      if (removed > 0) dissolved++;
+    }
+    // 再删选中散卡的媒体本体（现状语义）。
     final Set<String> toDelete = Set<String>.of(_selectedUids);
     final List<VideoBookRow> deletedBooks = <VideoBookRow>[];
     for (final String bookUid in toDelete) {
@@ -529,7 +580,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       await widget.repo.compactAfterVideoDeleteBestEffort();
     }
     if (!mounted) return;
-    HibikiToast.show(msg: t.batch_delete_success(n: deleted));
+    final String successMsg = deleted > 0 && dissolved > 0
+        ? t.batch_delete_mixed_success(n: deleted, m: dissolved)
+        : deleted > 0
+            ? t.batch_delete_success(n: deleted)
+            : t.batch_dissolve_success(m: dissolved);
+    HibikiToast.show(msg: successMsg);
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
@@ -756,18 +812,42 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// TODO-616 A1：把选中视频「组合成系列」。命名 → createSeries → 逐条
-  /// setSeriesForEntry（视频选择键是裸 bookUid，经 shelfSelectionToEntry 编成
-  /// ('video', uid)）→ 退出选择态 → 重载分组渲染。
+  /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。视频选择键是裸 bookUid，
+  /// 经 shelfSelectionToEntry 编成 ('video', uid)：
+  /// - 仅散卡 → 命名弹窗新建合集（[_combineCreateNew]）；
+  /// - 恰 1 合集 + 若干散卡 → 散卡并入该合集（[_combineAddToExisting]，不弹命名）；
+  /// - ≥2 合集（可带散卡）→ 合并成一个（[_combineMergeCollections]，默认名=成员最多合集名）。
+  /// 全部走既有 DAO（createMediaCollection / addToCollection / deleteMediaCollection）。
   Future<void> _batchCombineIntoSeries() async {
-    if (_selectedUids.isEmpty) return;
-    final List<ShelfEntryRef> refs = <ShelfEntryRef>[
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
+    final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
       for (final String uid in _selectedUids)
         if (shelfSelectionToEntry(uid, ShelfSelectionSurface.video)
             case final ShelfEntryRef ref)
           ref,
     ];
-    if (refs.isEmpty) return;
+    final CombineTier tier = classifyCombine(
+      collectionCount: collectionIds.length,
+      looseCount: looseRefs.length,
+    );
+    switch (tier) {
+      case CombineTier.noop:
+        return;
+      case CombineTier.createNew:
+        await _combineCreateNew(db, looseRefs);
+      case CombineTier.addToExisting:
+        await _combineAddToExisting(db, collectionIds.single, looseRefs);
+      case CombineTier.mergeCollections:
+        await _combineMergeCollections(db, collectionIds, looseRefs);
+    }
+  }
+
+  /// 档1：仅散卡 → 命名弹窗新建合集，逐条 addToCollection。
+  Future<void> _combineCreateNew(
+    HibikiDatabase db,
+    List<ShelfEntryRef> refs,
+  ) async {
     // TODO-1125 B：预填合集默认名——把选中视频标题经 parseVideoFilename 去集号得系列名，
     // 再取最长公共前缀；推导为空则兜底 t.series_default_name（「新系列」）。
     final Set<String> selectedUids = Set<String>.of(_selectedUids);
@@ -792,9 +872,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
-    // 统一合集 Phase 4：批量「组合成合集」建一个 collection 类合集（无序，手动组合），
-    // 逐条 addToCollection，取代旧 createSeries + setSeriesForEntry。
-    final HibikiDatabase db = ref.read(appProvider).database;
     final int collectionId = await db.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
       await db.addToCollection(collectionId, ref.mediaType, ref.entryKey);
@@ -803,6 +880,69 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _exitSelectionMode();
     await _loadLibraryMaps();
     HibikiToast.show(msg: t.series_created);
+  }
+
+  /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
+  Future<void> _combineAddToExisting(
+    HibikiDatabase db,
+    int collectionId,
+    List<ShelfEntryRef> refs,
+  ) async {
+    for (final ShelfEntryRef ref in refs) {
+      await db.addToCollection(collectionId, ref.mediaType, ref.entryKey);
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    await _loadLibraryMaps();
+    HibikiToast.show(msg: t.batch_add_to_collection_success(n: refs.length));
+  }
+
+  /// 档3：≥2 合集（可带散卡）→ 合并成一个。目标 = 成员最多合集（其名作默认名，
+  /// 确认框可改名）；目标吸收其余合集成员（addToCollection）+ 散卡加入，其余合集
+  /// deleteMediaCollection 解散（只解除分组，不删媒体本体）。
+  Future<void> _combineMergeCollections(
+    HibikiDatabase db,
+    List<int> collectionIds,
+    List<ShelfEntryRef> refs,
+  ) async {
+    final Map<int, List<MediaCollectionItemRow>> itemsById =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final int id in collectionIds) {
+      itemsById[id] = await db.getCollectionItems(id);
+    }
+    final MergeTargetChoice choice = chooseMergeTarget(
+      <({int id, String name, int memberCount})>[
+        for (final int id in collectionIds)
+          (
+            id: id,
+            name: _collectionsById[id]?.name ?? '',
+            memberCount: itemsById[id]!.length,
+          ),
+      ],
+    );
+    if (!mounted) return;
+    final String? name = await showCollectionNameDialog(
+      context: context,
+      title: t.collection_merge_title,
+      initialName: choice.defaultName,
+    );
+    if (name == null || !mounted) return;
+    final int targetId = choice.targetId;
+    for (final int id in collectionIds) {
+      if (id == targetId) continue;
+      for (final MediaCollectionItemRow m in itemsById[id]!) {
+        await db.addToCollection(targetId, m.mediaType, m.entryKey);
+      }
+      await db.deleteMediaCollection(id);
+    }
+    for (final ShelfEntryRef ref in refs) {
+      await db.addToCollection(targetId, ref.mediaType, ref.entryKey);
+    }
+    await db.renameMediaCollection(targetId, name);
+    if (!mounted) return;
+    _exitSelectionMode();
+    await _loadLibraryMaps();
+    HibikiToast.show(msg: t.collection_merged);
   }
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
@@ -1727,6 +1867,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     final List<CollectionGroup<_VideoSlot>> groups =
         _groupVideos(books, remoteVideos, primaryByEntry, memberSortIndex);
+    // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    _visibleCollectionIds = <int>[
+      for (final CollectionGroup<_VideoSlot> g in groups)
+        if (g.collection != null) g.collection!.id,
+    ];
     final bool hasCollectionRows = groups.any(
       (CollectionGroup<_VideoSlot> g) => g.collection != null,
     );
@@ -1920,11 +2065,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             .collapsedCollectionIds
             .contains(collection.id),
         onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+        // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡在多选态不可单独勾。
+        selectionCheckbox: _selectionMode
+            ? _buildSelectionCheck(
+                _selectedCollectionIds.contains(collection.id))
+            : null,
+        onToggleSelected: _selectionMode
+            ? () => _toggleCollectionSelection(collection.id)
+            : null,
         itemBuilder: (BuildContext _, int i) {
           final _VideoSlot slot = group.items[i].payload;
           final VideoBookRow? local = slot.local;
           if (local != null) {
-            return _buildCard(local, playlistCollectionId: collection.id);
+            return _buildCard(
+              local,
+              playlistCollectionId: collection.id,
+              selectable: false,
+            );
           }
           return _buildRemoteVideoCard(slot.remote!);
         },
@@ -2337,7 +2494,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   /// 单视频卡。[playlistCollectionId] 非空 = 卡在合集横排行里（UI v2 Phase C），
   /// 点击直接从该集进播放器并带剧集面板/上下集/连播。
-  Widget _buildCard(VideoBookRow book, {int? playlistCollectionId}) {
+  ///
+  /// [selectable]（默认 true）= 该卡在多选态可单独勾选。块2：合集横排行里的成员卡
+  /// 传 false——多选态不画勾选框、不可单独勾（整合集由行头勾选框选中），点击照常开播。
+  Widget _buildCard(
+    VideoBookRow book, {
+    int? playlistCollectionId,
+    bool selectable = true,
+  }) {
     final List<BookTagRow> tags =
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
@@ -2348,14 +2512,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       currentEpisode: book.currentEpisode,
       episodeCount: episodeCount,
     );
-    final bool selected = _selectedUids.contains(book.bookUid);
+    // 块2：只有可单独勾选的卡才在多选态显示勾选框/高亮/切换选中。
+    final bool showSelection = _selectionMode && selectable;
+    final bool selected = showSelection && _selectedUids.contains(book.bookUid);
     final HibikiCard hibikiCard = HibikiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: HibikiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
       selected: selected,
-      // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。
-      onTap: _selectionMode
+      // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。成员卡
+      // （selectable=false）多选态照常开播、不切换选中。
+      onTap: showSelection
           ? () => _toggleSelection(book.bookUid)
           : () => _open(book, playlistCollectionId: playlistCollectionId),
       onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
@@ -2381,7 +2548,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     right: 6,
                     child: _buildPlaylistBadge(episodeCount),
                   ),
-                if (_selectionMode)
+                if (showSelection)
                   Positioned(
                     top: 6,
                     left: 6,
@@ -2511,6 +2678,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
+    final int selectedCount =
+        _selectedUids.length + _selectedCollectionIds.length;
+    final bool hasSelection =
+        _selectedUids.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     return Material(
       elevation: 6,
       color: theme.colorScheme.surfaceContainer,
@@ -2524,7 +2696,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           child: Row(
             children: <Widget>[
               Text(
-                t.batch_selected_count(n: _selectedUids.length),
+                t.batch_selected_count(n: selectedCount),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -2540,13 +2712,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ),
               const Spacer(),
               HibikiIconButton(
-                enabled: _selectedUids.isNotEmpty,
+                key: const ValueKey<String>('home_video_batch_combine'),
+                enabled: hasSelection,
                 onTap: _batchCombineIntoSeries,
                 icon: Icons.collections_bookmark_outlined,
                 tooltip: t.combine_into_series,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
+                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
                 enabled: _selectedUids.isNotEmpty,
                 onTap: _batchShowTagPicker,
                 icon: Icons.sell_outlined,
@@ -2554,7 +2728,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
-                enabled: _selectedUids.isNotEmpty,
+                key: const ValueKey<String>('home_video_batch_delete'),
+                enabled: hasSelection,
                 onTap: _batchDeleteConfirm,
                 icon: Icons.delete_outline,
                 tooltip: t.dialog_delete,

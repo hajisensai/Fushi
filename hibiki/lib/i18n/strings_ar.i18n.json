@@ -2277,5 +2277,12 @@
   "sync_video_files": "Upload video files",
   "sync_show_remote_entries": "Show remote entries",
   "sync_show_remote_entries_warning": "Show books and videos that exist on paired devices or the cloud as placeholder cards you can download or stream.",
-  "collection_open": "Open"
+  "collection_open": "Open",
+  "batch_dissolve_confirm": "Dissolve $m collection(s)? Grouping is removed; the media is kept.",
+  "batch_dissolve_success": "Dissolved $m collection(s).",
+  "batch_delete_mixed_confirm": "Delete $n media and dissolve $m collection(s)? This cannot be undone.",
+  "batch_delete_mixed_success": "Deleted $n media, dissolved $m collection(s).",
+  "batch_add_to_collection_success": "Added $n item(s) to the collection.",
+  "collection_merge_title": "Merge collections",
+  "collection_merged": "Collections merged."
 }

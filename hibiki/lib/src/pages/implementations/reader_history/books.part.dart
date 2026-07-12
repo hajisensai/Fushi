@@ -25,7 +25,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         srtBookId,
       );
 
-  Widget _buildSrtCard(SrtBook book, {String? epubCoverUri}) {
+  /// [selectable]（默认 true）= 多选态可单独勾选。块2：合集行成员卡传 false
+  /// （selectionKey 置空 → 不画勾、不可单独勾），点击照常开书。
+  Widget _buildSrtCard(SrtBook book,
+      {String? epubCoverUri, bool selectable = true}) {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -49,7 +52,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
       focusId: HibikiFocusId('reader-shelf-srt-${book.uid}'),
-      selectionKey: selKey,
+      selectionKey: selectable ? selKey : null,
       dragBookId: srtBookId,
       onTagDropped:
           srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
@@ -248,32 +251,60 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     }
   }
 
+  /// 该 epub bookKey 是否已折进某合集（= 合集成员，不作散卡单选/全选）。
+  bool _isEpubCollectionMember(String? bookKey) =>
+      bookKey != null && _primaryCollectionByEntry.containsKey('epub|$bookKey');
+
+  /// 该 srt uid 是否已折进某合集。
+  bool _isSrtCollectionMember(String uid) =>
+      _primaryCollectionByEntry.containsKey('srt|$uid');
+
   void _selectAll() {
     _rebuild(() {
+      // 散卡：只选未折进合集的可见书（折进的成员由整合集选中，不单独勾）。
       for (final item in _visibleEpubBooks) {
+        if (_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier))) {
+          continue;
+        }
         _selectedKeys.add(item.mediaIdentifier);
       }
       for (final book in _visibleSrtBooks) {
+        if (_isSrtCollectionMember(book.uid)) continue;
         _selectedKeys.add('srt_${book.uid}');
       }
+      _selectedCollectionIds.addAll(_visibleCollectionIds);
     });
   }
 
   void _invertSelection() {
     _rebuild(() {
       final Set<String> allKeys = {
-        for (final item in _visibleEpubBooks) item.mediaIdentifier,
-        for (final book in _visibleSrtBooks) 'srt_${book.uid}',
+        for (final item in _visibleEpubBooks)
+          if (!_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier)))
+            item.mediaIdentifier,
+        for (final book in _visibleSrtBooks)
+          if (!_isSrtCollectionMember(book.uid)) 'srt_${book.uid}',
       };
       final Set<String> inverted = allKeys.difference(_selectedKeys);
       _selectedKeys
         ..clear()
         ..addAll(inverted);
+      final Set<int> allCollections = _visibleCollectionIds.toSet();
+      final Set<int> invertedCollections =
+          allCollections.difference(_selectedCollectionIds);
+      _selectedCollectionIds
+        ..clear()
+        ..addAll(invertedCollections);
     });
   }
 
   Widget _buildBatchActionBar() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
+    final int selectedCount =
+        _selectedKeys.length + _selectedCollectionIds.length;
+    final bool hasSelection =
+        _selectedKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
 
     return Material(
       elevation: 6,
@@ -288,7 +319,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           child: Row(
             children: [
               Text(
-                t.batch_selected_count(n: _selectedKeys.length),
+                t.batch_selected_count(n: selectedCount),
                 style: textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -304,13 +335,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               ),
               const Spacer(),
               HibikiIconButton(
-                enabled: _selectedKeys.isNotEmpty,
+                key: const ValueKey<String>('reader_shelf_batch_combine'),
+                enabled: hasSelection,
                 onTap: _batchCombineIntoSeries,
                 icon: Icons.collections_bookmark_outlined,
                 tooltip: t.combine_into_series,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
+                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
                 enabled: _selectedKeys.isNotEmpty,
                 onTap: _batchShowTagPicker,
                 icon: Icons.sell_outlined,
@@ -318,7 +351,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
-                enabled: _selectedKeys.isNotEmpty,
+                key: const ValueKey<String>('reader_shelf_batch_delete'),
+                enabled: hasSelection,
                 onTap: _batchDeleteConfirm,
                 icon: Icons.delete_outline,
                 tooltip: t.dialog_delete,
@@ -331,17 +365,36 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
   }
 
+  /// 块4：批量删除区分解散/删媒体。
+  /// - 选中合集 → 解散（[HibikiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
+  /// - 选中散卡 → 删媒体本体（EPUB/SRT，现状语义）；
+  /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
-    final int count = _selectedKeys.length;
+    final int mediaCount = _selectedKeys.length;
+    final int collectionCount = _selectedCollectionIds.length;
+    if (mediaCount == 0 && collectionCount == 0) return;
+    final String message = collectionCount == 0
+        ? t.batch_delete_confirm(n: mediaCount)
+        : mediaCount == 0
+            ? t.batch_dissolve_confirm(m: collectionCount)
+            : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.dialog_delete,
-        message: t.batch_delete_confirm(n: count),
+        message: message,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
     if (confirmed != true || !mounted) return;
+
+    // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
+    final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
+    int dissolved = 0;
+    for (final int id in toDissolve) {
+      final int removed = await appModel.database.deleteMediaCollection(id);
+      if (removed > 0) dissolved++;
+    }
 
     int deleted = 0;
     final Set<String> toDelete = Set.of(_selectedKeys);
@@ -379,8 +432,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
+    // 解散后合集映射失效，重取（合集行随之消失）。
+    _shelfMapsFuture = _loadShelfMaps();
     _exitSelectionMode();
-    HibikiToast.show(msg: t.batch_delete_success(n: deleted));
+    final String successMsg = deleted > 0 && dissolved > 0
+        ? t.batch_delete_mixed_success(n: deleted, m: dissolved)
+        : deleted > 0
+            ? t.batch_delete_success(n: deleted)
+            : t.batch_dissolve_success(m: dissolved);
+    HibikiToast.show(msg: successMsg);
   }
 
   Future<void> _batchShowTagPicker() async {
@@ -405,18 +465,37 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     ref.invalidate(filteredSrtBookIdsProvider);
   }
 
-  /// TODO-616 A1：把选中条目「组合成系列」。命名 → createSeries → 逐条
-  /// setSeriesForEntry（书架选择键经 shelfSelectionToEntry 解码成 (mediaType,
-  /// entryKey)）→ 退出选择态 → 重载分组渲染。
+  /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。书架选择键经
+  /// shelfSelectionToEntry 解码成 (mediaType, entryKey)：
+  /// - 仅散卡 → 命名弹窗新建合集（[_combineCreateNew]）；
+  /// - 恰 1 合集 + 若干散卡 → 散卡并入该合集（[_combineAddToExisting]，不弹命名）；
+  /// - ≥2 合集（可带散卡）→ 合并成一个（[_combineMergeCollections]，默认名=成员最多合集名）。
   Future<void> _batchCombineIntoSeries() async {
-    if (_selectedKeys.isEmpty) return;
-    final List<ShelfEntryRef> refs = <ShelfEntryRef>[
+    final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
+    final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
       for (final String key in _selectedKeys)
         if (shelfSelectionToEntry(key, ShelfSelectionSurface.books)
             case final ShelfEntryRef ref)
           ref,
     ];
-    if (refs.isEmpty) return;
+    final CombineTier tier = classifyCombine(
+      collectionCount: collectionIds.length,
+      looseCount: looseRefs.length,
+    );
+    switch (tier) {
+      case CombineTier.noop:
+        return;
+      case CombineTier.createNew:
+        await _combineCreateNew(looseRefs);
+      case CombineTier.addToExisting:
+        await _combineAddToExisting(collectionIds.single, looseRefs);
+      case CombineTier.mergeCollections:
+        await _combineMergeCollections(collectionIds, looseRefs);
+    }
+  }
+
+  /// 档1：仅散卡 → 命名弹窗新建合集，逐条 addToCollection。
+  Future<void> _combineCreateNew(List<ShelfEntryRef> refs) async {
     // TODO-1125 B：预填合集默认名——收集选中条目标题（epub 用 mediaIdentifier、srt 用
     // 'srt_<uid>' 与选择键同编码匹配），经 deriveSeriesDefaultName 剥卷号取公共前缀；
     // 推导为空则兜底 t.series_default_name（「新系列」）。
@@ -453,8 +532,6 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
-    // 统一合集 Phase 4：批量「组合成合集」建一个 collection 类合集，逐条 addToCollection
-    // （取代旧 createSeries + setSeriesForEntry）。
     final int collectionId =
         await appModel.database.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
@@ -466,6 +543,71 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
     HibikiToast.show(msg: t.series_created);
+  }
+
+  /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
+  Future<void> _combineAddToExisting(
+    int collectionId,
+    List<ShelfEntryRef> refs,
+  ) async {
+    for (final ShelfEntryRef ref in refs) {
+      await appModel.database
+          .addToCollection(collectionId, ref.mediaType, ref.entryKey);
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
+    HibikiToast.show(msg: t.batch_add_to_collection_success(n: refs.length));
+  }
+
+  /// 档3：≥2 合集（可带散卡）→ 合并成一个。目标 = 成员最多合集（其名作默认名，
+  /// 确认框可改名）；目标吸收其余合集成员（addToCollection）+ 散卡加入，其余合集
+  /// deleteMediaCollection 解散（只解除分组，不删媒体本体）。
+  Future<void> _combineMergeCollections(
+    List<int> collectionIds,
+    List<ShelfEntryRef> refs,
+  ) async {
+    final HibikiDatabase db = appModel.database;
+    final Map<int, List<MediaCollectionItemRow>> itemsById =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final int id in collectionIds) {
+      itemsById[id] = await db.getCollectionItems(id);
+    }
+    final MergeTargetChoice choice = chooseMergeTarget(
+      <({int id, String name, int memberCount})>[
+        for (final int id in collectionIds)
+          (
+            id: id,
+            name: _collectionsById[id]?.name ?? '',
+            memberCount: itemsById[id]!.length,
+          ),
+      ],
+    );
+    if (!mounted) return;
+    final String? name = await showCollectionNameDialog(
+      context: context,
+      title: t.collection_merge_title,
+      initialName: choice.defaultName,
+    );
+    if (name == null || !mounted) return;
+    final int targetId = choice.targetId;
+    for (final int id in collectionIds) {
+      if (id == targetId) continue;
+      for (final MediaCollectionItemRow m in itemsById[id]!) {
+        await db.addToCollection(targetId, m.mediaType, m.entryKey);
+      }
+      await db.deleteMediaCollection(id);
+    }
+    for (final ShelfEntryRef ref in refs) {
+      await db.addToCollection(targetId, ref.mediaType, ref.entryKey);
+    }
+    await db.renameMediaCollection(targetId, name);
+    if (!mounted) return;
+    _exitSelectionMode();
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
+    HibikiToast.show(msg: t.collection_merged);
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
