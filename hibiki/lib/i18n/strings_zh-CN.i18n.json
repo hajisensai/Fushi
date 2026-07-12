@@ -2283,5 +2283,7 @@
   "collection_expand": "展开",
   "sync_video_files_warning": "视频文件可能非常大。",
   "sync_progress_videos": "同步视频",
-  "sync_video_files": "上传视频文件"
+  "sync_video_files": "上传视频文件",
+  "sync_show_remote_entries": "显示远端条目",
+  "sync_show_remote_entries_warning": "把配对设备或云端有、本机没有的书籍和视频显示为可下载/流播的占位卡。"
 }

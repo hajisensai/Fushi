@@ -313,12 +313,44 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
       );
     } catch (e) {
+      // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
       debugPrint('[home-video] remote video list failed: $e');
       return const _RemoteVideoState(
         videos: <RemoteVideoInfo>[],
         failed: true,
       );
     }
+  }
+
+  /// 多端库联合视图（spec §2.1/§2.4/§2.5）：解析可混排进主网格的远端占位视频。
+  ///
+  /// 门控：① 「显示远端条目」开关关闭 → 空；② 远端目录拉取失败/未配对/无后端
+  /// （[state] == null 或 [_RemoteVideoState.failed]）→ 空（离线=只剩本地，占位卡不
+  /// 出现）；③ 标签筛选激活（[filter] != null）→ 空（远端视频无本地标签，不参与
+  /// 筛选）。其余情况返回去重后的远端视频列表。
+  List<RemoteVideoInfo> _visibleRemoteVideos(
+    _RemoteVideoState? state,
+    Set<String>? filter,
+  ) {
+    if (!ref.read(appProvider).prefsRepo.showRemoteEntries) {
+      return const <RemoteVideoInfo>[];
+    }
+    if (state == null || state.failed) return const <RemoteVideoInfo>[];
+    if (filter != null) return const <RemoteVideoInfo>[];
+    return state.videos;
+  }
+
+  /// 远端占位视频的排序键（spec §2.1「无本地导入时间时目录序/远端进度时间戳退化」）：
+  /// recentScore = 远端进度时间戳 [RemoteVideoInfo.positionUpdatedAtMs]（无记录 0），
+  /// 让在对端看过的视频在「最近观看」下按其进度时间参与排序；importedAt 用 `-1-index`
+  /// 编码目录序（全为负，稳定排在本地条目之后，组内保持远端目录序）。
+  ShelfSortKey _remoteVideoSortKey(RemoteVideoInfo video, int index) {
+    return ShelfSortKey(
+      recentScore: video.positionUpdatedAtMs,
+      title: video.title,
+      importedAt: -1 - index,
+      tieKey: 'remote:${video.id}',
+    );
   }
 
   /// 标签改动（加/删/换书）后刷新：失效共享标签 provider + 重载视频列表。
@@ -1249,18 +1281,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           future: _remoteFuture,
           builder: (BuildContext context,
               AsyncSnapshot<_RemoteVideoState?> remoteSnap) {
-            // TODO-654：远端（互通）视频区与本地视频区改为「同一个 CustomScrollView
-            // 一起滚动」，对齐书架（reader_hibiki_history_page）的远端书籍区范式：
-            // 远端 section 完全撑开（shrinkWrap，不限高、不内滚），随主滚动自然延展
-            // 排在本地视频上方；本地视频区是真正的 SliverGrid。此前用
-            // LayoutBuilder + ConstrainedBox 把远端限到可用高度的 0.45 内滚（既挤本地
-            // 又把远端关进一个小内滚条），手机上观感差——用户要「远端区完全撑开、和
-            // 书籍一样」。整页只有一个垂直滚动容器，远端再多也只是把页面拉长由主滚动
-            // 消化，不会撑爆 Column（CustomScrollView 的 sliver 本就懒加载、无界高合法）。
-            final Widget remoteSection =
-                _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
-            final bool hasRemoteSection =
-                !(remoteSection is SizedBox && remoteSection.height == 0);
+            // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5，撤独立远端分区）：把
+            // 互联「远端有、本地无」的视频混排成主网格占位卡（云角标 + 远端封面，
+            // 点击走现有远端流播 [_openRemote] / 下载 [_downloadRemote]）。云端视频本批
+            // 不接（其目录 client 由并行批产出）——[_resolveRemoteVideoClient] 只对互联
+            // 后端返回 client，故 remoteSnap 天然只含互联视频，不为云视频造假入口。
+            // 离线/未配对/拉取失败（state==null 或 failed）→ 占位卡不出现（只剩本地）；
+            // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
+            final List<RemoteVideoInfo> remoteVideos =
+                _visibleRemoteVideos(remoteSnap.data, filter);
             // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
             // 以 240 为目标宽算响应式列数，两处共用同一实际卡宽。
             return LayoutBuilder(
@@ -1280,9 +1309,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     // [all] 描述整库，不随标签筛选变。
                     if (all.isNotEmpty)
                       SliverToBoxAdapter(child: _buildOverviewSection(all)),
-                    if (hasRemoteSection)
-                      SliverToBoxAdapter(child: remoteSection),
-                    ..._buildLocalVideoSlivers(all, ordered, cardLayout),
+                    ..._buildLocalVideoSlivers(
+                        all, ordered, remoteVideos, cardLayout),
                   ],
                 );
               },
@@ -1527,14 +1555,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    if (all.isEmpty) {
+    // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
+    if (all.isEmpty && remoteVideos.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
       ];
     }
-    if (books.isEmpty) {
+    if (books.isEmpty && remoteVideos.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
@@ -1552,11 +1582,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           )
         : EdgeInsets.all(tokens.spacing.card);
     final List<Widget> slivers = <Widget>[];
-    final List<CollectionGroup<VideoBookRow>> loose =
-        <CollectionGroup<VideoBookRow>>[];
+    // 多端库联合视图（spec §2.1）：散卡网格混排本地散卡 + 远端占位卡。合集行永远只
+    // 含本地成员（远端视频本批无合集归属），照常集中渲染在前；远端占位全部落散卡区，
+    // 与本地散卡按当前排序模式统一排序（远端进度时间戳/目录序退化，见 _remoteVideoSortKey）。
+    final List<_VideoLooseCard> loose = <_VideoLooseCard>[];
     for (final CollectionGroup<VideoBookRow> group in groups) {
       if (group.collection == null) {
-        loose.add(group);
+        final VideoBookRow row = group.coverItem.payload;
+        loose.add(_VideoLooseCard(
+          sortKey: _groupSortKey(group),
+          build: () => _buildCard(row),
+        ));
       } else {
         slivers.add(
           SliverToBoxAdapter(
@@ -1565,6 +1601,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         );
       }
     }
+    for (int i = 0; i < remoteVideos.length; i++) {
+      final RemoteVideoInfo video = remoteVideos[i];
+      loose.add(_VideoLooseCard(
+        sortKey: _remoteVideoSortKey(video, i),
+        build: () => _buildRemoteVideoCard(video),
+      ));
+    }
+    loose.sort((_VideoLooseCard a, _VideoLooseCard b) =>
+        compareShelfSortKeys(a.sortKey, b.sortKey, _sortMode));
     if (loose.isNotEmpty) {
       slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
     }
@@ -1683,76 +1728,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Widget _buildRemoteVideoSection(
-    _RemoteVideoState? state,
-    AsyncSnapshot<_RemoteVideoState?> snapshot,
-  ) {
-    if (snapshot.connectionState != ConnectionState.done) {
-      return const SizedBox(
-        height: 3,
-        child: LinearProgressIndicator(),
-      );
-    }
-    if (state == null) return const SizedBox.shrink();
-
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final List<RemoteVideoInfo> videos = state.videos;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // TODO-1143：标题与副标题拆成两行（副标题独占第二行），消除窄屏（手机）
-          // 下两固定中文标签在同一 Row 里各占 Flexible 抢行、互挤截断成「…」。
-          RemoteVideoSectionHeader(
-            title: t.remote_video_interconnect,
-            subtitle: t.remote_video_paired_device,
-          ),
-          if (state.failed)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                t.remote_video_load_failed,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.error),
-              ),
-            )
-          else if (videos.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 10),
-            // 远端视频与本地视频用同一套响应式网格（与 [_buildLocalVideoGridSliver] 同的
-            // SliverGridDelegateWithMaxCrossAxisExtent），手机窄屏会自动减成
-            // 1~2 列网格，而不再是固定高 200 的横向单行滚动条（TODO-593）。
-            // TODO-654：完全撑开——shrinkWrap + NeverScrollable，网格高度 = 全部
-            // 远端卡片的实际高度，整段交给外层 CustomScrollView 一起滚动（不再用
-            // Expanded 占有界高度 + 内部独立垂直滚动）。这样远端区「和书籍一样」自然
-            // 铺开、随页面滚动，再多也只是把页面拉长，由主滚动消化（对齐书架的
-            // _buildRemoteBookSection 范式）。
-            GridView.builder(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 280,
-                mainAxisExtent: 200,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: videos.length,
-              itemBuilder: (BuildContext context, int index) =>
-                  _buildRemoteVideoCard(videos[index]),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
+  /// 多端库联合视图占位卡（spec 2026-07-12 §2.1，撤独立远端分区）：本地视频卡尺寸 +
+  /// 远端封面 + 云角标 ☁，混排进视频库主网格散卡区（[_buildLocalVideoSlivers]）。
+  /// 短按走现有远端流播 [_openRemote]；右上角下载按钮/进度徽章复用 [_downloadRemote]
+  /// （下载委托 InterconnectDownloadManager，切 tab/退页仍推进）。
   Widget _buildRemoteVideoCard(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
@@ -1826,6 +1805,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     left: 6,
                     child: _buildPlaylistBadge(video.episodes.length),
                   ),
+                // 多端库联合视图云角标 ☁（spec §2.1）：占位卡「远端/未下载」标识，
+                // 叠右下角（右上=下载/进度、左上=字幕、左下=集数，互不遮挡）。
+                Positioned(
+                  bottom: 6,
+                  right: 6,
+                  child: _remoteVideoCloudBadge(safeKey),
+                ),
               ],
             ),
           ),
@@ -1876,6 +1862,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   String _safeRemoteKey(String id) =>
       id.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+
+  /// 云角标 ☁ 视觉：半透明黑底胶囊 + 白色云图标（与字幕/集数徽章同款）。多端库
+  /// 联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。带稳定 key 供 widget 测试定位。
+  Widget _remoteVideoCloudBadge(String safeKey) {
+    return Container(
+      key: ValueKey<String>('remote_video_cloud_badge_$safeKey'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.cloud_outlined, size: 13, color: Colors.white),
+    );
+  }
 
   /// 页头：与书架/词典统一，用 [HibikiPageHeader] 大标题 + [HibikiIconButton] 动作
   /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
@@ -2079,7 +2079,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
   /// 横排行），本网格只装散视频单卡。
   Widget _buildLooseVideoGridSliver(
-    List<CollectionGroup<VideoBookRow>> loose,
+    List<_VideoLooseCard> loose,
     EdgeInsetsGeometry padding,
     ({int columns, double cardWidth}) cardLayout,
   ) {
@@ -2096,8 +2096,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           mainAxisSpacing: 12,
         ),
         itemCount: loose.length,
-        itemBuilder: (BuildContext context, int i) =>
-            _buildCard(loose[i].coverItem.payload),
+        itemBuilder: (BuildContext context, int i) => loose[i].build(),
       ),
     );
   }
@@ -2652,56 +2651,14 @@ class _VideoBatchTagIntentRow extends StatelessWidget {
   }
 }
 
-/// 远端视频区头部（TODO-1143）。
-///
-/// 把「标题 + 副标题」两个固定中文标签拆成两行：标题与图标同处第一行、副标题
-/// 独占第二行。旧结构把两段标签放进同一个 `Row` 各占 `Flexible`，窄屏（手机）
-/// 下二者抢同一行宽度互相挤压，被 `maxLines:1 + ellipsis` 截成「…」。拆成两行后
-/// 每段标签独占整行宽度，不再互挤。抽成公开可复用 widget 以便窄宽行为守卫直接
-/// pump（避免依赖整页状态）。
-class RemoteVideoSectionHeader extends StatelessWidget {
-  const RemoteVideoSectionHeader({
-    super.key,
-    required this.title,
-    required this.subtitle,
-  });
+/// 多端库联合视图（spec §2.1）：视频库散卡区一个待渲染单元 = 排序键 + 卡片构造。
+/// 本地散卡（[_buildCard]）与远端占位卡（[_buildRemoteVideoCard]）用同一列表按当前
+/// 排序模式混排（[compareShelfSortKeys]）。构造用惰性闭包，排序后再取需要的那些。
+class _VideoLooseCard {
+  const _VideoLooseCard({required this.sortKey, required this.build});
 
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Icon(Icons.devices_other_outlined, size: 18, color: colors.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          subtitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: colors.onSurfaceVariant),
-        ),
-      ],
-    );
-  }
+  final ShelfSortKey sortKey;
+  final Widget Function() build;
 }
 
 class _RemoteVideoState {
@@ -2711,5 +2668,7 @@ class _RemoteVideoState {
   });
 
   final List<RemoteVideoInfo> videos;
+
+  /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
   final bool failed;
 }

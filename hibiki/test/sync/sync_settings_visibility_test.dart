@@ -89,6 +89,8 @@ void main() {
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
+        // 多端库联合视图（spec §2.1）：「显示远端条目」占位卡混排开关（纯显示偏好）。
+        'sync.show_remote_entries',
       ]);
       expect(idsOf(dest.sections[3]), <String>[
         'sync.server_mode_note',

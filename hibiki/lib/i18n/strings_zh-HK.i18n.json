@@ -2283,5 +2283,7 @@
   "collection_expand": "Expand",
   "sync_video_files_warning": "Video files can be very large.",
   "sync_progress_videos": "Syncing videos",
-  "sync_video_files": "Upload video files"
+  "sync_video_files": "Upload video files",
+  "sync_show_remote_entries": "Show remote entries",
+  "sync_show_remote_entries_warning": "Show books and videos that exist on paired devices or the cloud as placeholder cards you can download or stream."
 }

@@ -355,6 +355,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把「远端有、
+  /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。**默认 true**——
+  /// 用户拍板远端混排默认开。关闭时占位卡全部不渲染，两页只剩本地库。离线/未配对/
+  /// 后端不可达时占位卡本就不出现（远端目录拉取失败态），与本开关正交。
+  bool get showRemoteEntries =>
+      getPref('show_remote_entries', defaultValue: true) as bool;
+
+  Future<void> setShowRemoteEntries(bool value) async {
+    await setPref('show_remote_entries', value);
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>

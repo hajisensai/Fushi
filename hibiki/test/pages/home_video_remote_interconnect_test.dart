@@ -94,14 +94,20 @@ void main() {
         ),
       );
 
-  testWidgets('video tab exposes Hibiki interconnect remote videos',
+  testWidgets('video tab mixes interconnect remote videos into the main grid',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text(t.remote_video_interconnect), findsOneWidget);
-    expect(find.text(t.remote_video_paired_device), findsOneWidget);
+    // 多端库联合视图（spec §2.1，撤独立远端分区）：远端互联视频以占位卡混排进
+    // 主网格——卡片在、带云角标 ☁、右上角保留下载按钮（能力未丢失）。
     expect(find.text('Remote Episode'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>(
+        'remote_video_cloud_badge_remote_video-1',
+      )),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>(
         'remote_video_download_remote_video-1',

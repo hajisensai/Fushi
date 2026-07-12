@@ -518,8 +518,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
   /// [_epubImportedAtByKey]，srt 自带）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
-    String titleOf(_ShelfBookSlot s) => s.srt?.title ?? s.epub?.title ?? '';
+    String titleOf(_ShelfBookSlot s) =>
+        s.srt?.title ?? s.epub?.title ?? s.remote?.title ?? '';
     int recentOf(CollectionOrderingItem<_ShelfBookSlot> it) {
+      // 远端占位卡无本地阅读进度：退化到注入时编码的目录序（负 importedAt），稳定
+      // 排在本地条目之后（详见 [_ShelfBookSlot.remote]）。
+      if (it.payload.remote != null) return it.importedAt;
       final String? bookKey = it.payload.srt?.bookKey ??
           _parseBookKey(it.payload.epub!.mediaIdentifier);
       return _lastReadAtByBookKey[bookKey] ?? it.importedAt;
@@ -898,6 +902,17 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
+    // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5）：把「远端有、本地无」的书
+    // 混排成主网格占位卡。远端目录拉取失败/未配对/无后端（remoteState==null 或
+    // failed）→ 占位卡不出现（离线=只剩本地）；「显示远端条目」开关关闭 → 同样不
+    // 渲染；标签筛选激活时占位卡不参与（远端书无本地标签），只在无筛选时混排。
+    final _RemoteBookState? remoteState = remoteSnapshot?.data;
+    final List<RemoteBookInfo> remoteBooks = (remoteState != null &&
+            !remoteState.failed &&
+            !hasActiveFilter &&
+            appModel.prefsRepo.showRemoteEntries)
+        ? remoteState.books
+        : const <RemoteBookInfo>[];
     // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
     // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
     // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
@@ -921,6 +936,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           payload: _ShelfBookSlot(epub: epub),
         ),
     ];
+    // 远端占位书作为散卡混入（无合集归属 → groupByCollections 折叠成散 group）。
+    // importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，组内
+    // 保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
+    for (int i = 0; i < remoteBooks.length; i++) {
+      shelfItems.add(
+        CollectionOrderingItem<_ShelfBookSlot>(
+          mediaType: 'remote-book',
+          entryKey: remoteBooks[i].downloadId,
+          importedAt: -1 - i,
+          payload: _ShelfBookSlot(remote: remoteBooks[i]),
+        ),
+      );
+    }
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
         groupByCollections<_ShelfBookSlot>(
       items: shelfItems,
@@ -938,13 +966,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
-    final _RemoteBookState? remoteState = remoteSnapshot?.data;
-    final bool showRemoteBooks = remoteState != null &&
-        (remoteState.failed || remoteState.books.isNotEmpty);
     if (epubBooks.isEmpty &&
         srtBooks.isEmpty &&
         videoBooks.isEmpty &&
-        !showRemoteBooks) {
+        remoteBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -965,10 +990,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             physics: desktopAwareScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              if (showRemoteBooks)
-                SliverToBoxAdapter(
-                  child: _buildRemoteBookSection(remoteState, constraints),
-                ),
+              // 标签筛选激活时不混排远端占位（远端书无本地标签，不参与筛选）。
               // TODO-902: 不再渲染 srt_books_section 分区头，SRT 卡直接进网格。
               if (srtBooks.isNotEmpty)
                 SliverGrid.builder(
@@ -1018,16 +1040,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               SliverToBoxAdapter(
                 child: _buildShelfOverviewSection(epubBooks, srtBooks),
               ),
-            if (showRemoteBooks)
-              SliverToBoxAdapter(
-                child: _buildRemoteBookSection(remoteState, constraints),
-              ),
             // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
             // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
             // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
             // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
-            // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。
-            if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
+            // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
+            // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
+            // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
+            if (shelfGroups.isNotEmpty)
               ..._buildShelfGroupSlivers(
                 shelfGroups,
                 epubCoverUrisByBookKey,
@@ -1152,6 +1172,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _ShelfBookSlot slot,
     Map<String, String> epubCoverUrisByBookKey,
   ) {
+    // 远端占位卡不进合集（本批无合集归属），此分支纯防御避免 epub! 空断言。
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return _buildRemoteBookCard(remote);
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCard(srt,
@@ -1171,6 +1194,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
       final _ShelfBookSlot slot = group.coverItem.payload;
+      // 多端库联合视图（spec §2.1）：远端占位散卡走远端书卡渲染（云角标 + 远端封面
+      // + 下载按钮，点击复用下载→入库链）。远端书永无合集归属，只走此散卡路径。
+      final RemoteBookInfo? remote = slot.remote;
+      if (remote != null) {
+        return _buildRemoteBookCard(remote);
+      }
       final SrtBook? srt = slot.srt;
       if (srt != null) {
         return _buildSrtCard(
@@ -1203,6 +1232,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _ShelfBookSlot slot,
     Map<String, String> epubCoverUrisByBookKey,
   ) {
+    // 远端占位卡不进合集折叠堆叠封面（本批无合集归属），此分支纯防御。
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return _buildRemoteBookCover(remote);
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCover(
@@ -1462,15 +1494,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
 }
 
-/// 书架 SRT+EPUB 混排网格的单个排序槽（合并两类卡片到一个有序列表）。
-/// [srt]/[epub] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
+/// 书架混排网格的单个排序槽（SRT / EPUB / 远端占位三类卡片到一个有序列表）。
+/// [srt]/[epub]/[remote] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
 /// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-756）。
+///
+/// [remote] = 多端库联合视图（spec 2026-07-12 §2.1）的「远端有、本地无」占位卡：
+/// 无本地 importedAt/lastReadAt，排序退化到目录序（注入时以 `-1-index` 编码进
+/// CollectionOrderingItem.importedAt，稳定排在本地条目之后、组内保持目录序）。
 class _ShelfBookSlot {
   const _ShelfBookSlot({
     this.srt,
     this.epub,
+    this.remote,
   });
 
   final SrtBook? srt;
   final MediaItem? epub;
+  final RemoteBookInfo? remote;
 }
