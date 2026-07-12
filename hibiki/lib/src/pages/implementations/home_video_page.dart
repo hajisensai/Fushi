@@ -2165,7 +2165,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       onTap: _selectionMode
           ? () => _toggleSelection(book.bookUid)
           : () => _open(book, playlistCollectionId: playlistCollectionId),
+      // 长按 / 桌面右键都弹管理菜单，与书架书卡（_bookCardShell）、远端视频卡
+      // （_buildRemoteVideoCard）一致——本地视频卡此前只挂了 onLongPress、漏了
+      // onSecondaryTap，故桌面右键本地视频卡无反应（BUG-758）。
       onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
+      onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
