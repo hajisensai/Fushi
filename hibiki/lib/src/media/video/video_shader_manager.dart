@@ -262,28 +262,48 @@ Future<List<String>> discoverLocalMpvShaders({String? overrideDir}) async {
   return out;
 }
 
+/// 构建把 [absolutePaths] 应用为 libmpv `glsl-shaders` 列表的 `change-list` 命令序列。
+/// 纯函数（无副作用），便于单测。先 `clr` 清空整条着色器链，再逐个 `append`。
+///
+/// **为什么用 `change-list` 命令而非 `glsl-shaders-append` property**（BUG-759 根因）：
+/// `-append`/`-add`/`-clr` 这些后缀 action 只在 mpv 的**命令行 / 配置文件**解析路径
+/// （`m_config_mogrify_cli_opt`）里被识别；作为 property 名经 `mpv_set_property_string`
+/// 会走 `mp_property_generic_option` 的精确名查找（`m_config_get_co`，不剥后缀）→
+/// 返回 `PROPERTY_NOT_FOUND`。而 media_kit 的 `NativePlayer.setProperty` **丢弃**
+/// `mpv_set_property_string` 的返回码、不抛异常，于是 [applyShadersToPlayer] 里的
+/// `catch` 永不触发、append 静默失败、`glsl-shaders` 恒空——正是「Anime4K 开了跟没开
+/// 一样」。`change-list` 是 mpv 官方运行时改列表机制，把每个路径作为**独立命令参数**
+/// 传入（`mpv_command` 数组形式），天然规避平台路径分隔符（Unix `:` / Windows `;`）与
+/// Windows 盘符 `:` 的转义问题。
+List<List<String>> buildShaderChangeListCommands(List<String> absolutePaths) {
+  return <List<String>>[
+    <String>['change-list', 'glsl-shaders', 'clr', ''],
+    for (final String path in absolutePaths)
+      <String>['change-list', 'glsl-shaders', 'append', path],
+  ];
+}
+
 /// 把 [absolutePaths] 着色器应用到 media_kit [player]（libmpv 后端，五平台均生效）。
 ///
-/// 先把 `glsl-shaders` 清空，再逐个 `glsl-shaders-append`——用 append 规避
-/// `glsl-shaders` 单串里的**平台路径分隔符差异**（Unix `:` vs Windows `;`，且
-/// Windows 路径含 `:`）。media_kit 在 Android/iOS 同样是 libmpv + `vo=gpu`（见本文件头
-/// doc 的 media_kit 源码出处），故此处的 `setProperty` 在移动端也写穿、着色器进渲染管线，
-/// **不是移动端 no-op**。best-effort：仅在 `player.platform` 非 libmpv（无 setProperty）
-/// 或属性不支持时静默吞掉。
+/// 经 libmpv 的 `change-list glsl-shaders` 命令下发（先 `clr` 再逐个 `append`，见
+/// [buildShaderChangeListCommands] 的根因说明——**不能**用 `glsl-shaders-append`
+/// property，那不是合法 property 名，会被 media_kit 静默吞掉导致空下发）。media_kit 在
+/// Android/iOS 同样是 libmpv + `vo=gpu`（见本文件头 doc 的 media_kit 源码出处），故此处的
+/// `command` 在移动端也写穿、着色器进渲染管线，**不是移动端 no-op**。best-effort：仅在
+/// `player.platform` 非 libmpv（无 `command`）或命令不被接受时静默吞掉。
 Future<void> applyShadersToPlayer(
     Player player, List<String> absolutePaths) async {
-  // media_kit 的原生后端是 NativePlayer（libmpv），五平台一致，暴露 setProperty(name,
-  // value) → mpv_set_property_string。用 dynamic 避免硬耦合 media_kit 内部导出；这是
-  // 外部播放器边界，失败即静默是合理降级（见上方 doc）。移动端走 vo=gpu 渲染路径，属性
-  // 同样生效，这里不按平台门控。
+  // media_kit 的原生后端是 NativePlayer（libmpv），五平台一致，暴露 command(List<String>)
+  // → mpv_command。用 dynamic 避免硬耦合 media_kit 内部导出；这是外部播放器边界，失败即
+  // 静默是合理降级（见上方 doc）。移动端走 vo=gpu 渲染路径，命令同样生效，不按平台门控。
   final dynamic native = player.platform;
   if (native == null) return;
   try {
-    await native.setProperty('glsl-shaders', '');
-    for (final String path in absolutePaths) {
-      await native.setProperty('glsl-shaders-append', path);
+    for (final List<String> cmd
+        in buildShaderChangeListCommands(absolutePaths)) {
+      await native.command(cmd);
     }
   } catch (_) {
-    // 非 libmpv 后端 / 属性不支持：静默 no-op（非按平台门控——移动端 libmpv 同样生效）。
+    // 非 libmpv 后端 / 命令不支持：静默 no-op（非按平台门控——移动端 libmpv 同样生效）。
   }
 }
