@@ -44,11 +44,23 @@ class BackupMergeEngine {
     this._db, {
     String srcAlias = 'mergesrc',
     Set<String> carriedVideoSourcePaths = const <String>{},
+    Set<String>? enabledCategoryNames,
   })  : _srcAlias = srcAlias,
-        _carriedVideoSourcePaths = carriedVideoSourcePaths;
+        _carriedVideoSourcePaths = carriedVideoSourcePaths,
+        _enabledCategoryNames = enabledCategoryNames;
 
   final HibikiDatabase _db;
   final String _srcAlias;
+
+  /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
+  /// the import dialog); null = merge every category (legacy full merge). Only
+  /// the user-facing content categories are gated here — favorites / tags /
+  /// profiles / history rows have no dialog toggle and always merge.
+  final Set<String>? _enabledCategoryNames;
+
+  /// Whether category [name] (a `BackupCategory.name`) should be merged.
+  bool _wants(String name) =>
+      _enabledCategoryNames == null || _enabledCategoryNames.contains(name);
 
   /// Source-device absolute video paths whose file actually travelled inside the
   /// backup (= `BackupMeta.videoFiles.keys`). A merged `video_books` row is only
@@ -87,34 +99,67 @@ class BackupMergeEngine {
   /// `favorite_sentence_pref_key_guard_test.dart`.
   static const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
+  /// Content-config preference keys carrying the local-audio registry (their
+  /// referenced `.db` files travel in the backup), merged by
+  /// [_mergeAudioSourcePrefs] instead of being dropped as device settings.
+  static const List<String> _audioSourcePrefKeys = <String>[
+    'local_audio_dbs',
+    'audio_source_configs',
+  ];
+
   /// Runs the whole merge inside a single transaction. The backup DB must
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   Future<void> merge() async {
     await _db.transaction(() async {
-      await _insertMissing('epub_books', 'book_key', skipBookTombstones: true);
-      await _insertMissingVideoBooks();
-      await _insertMissing('dictionary_metadata', 'name');
-      await _insertMissing('srt_books', 'uid');
-      await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
+      // Content categories are gated by the import dialog's per-category
+      // selection (merge mode). Rows with no dialog toggle (favorites / tags /
+      // profiles / history / collections) always merge — they carry no bulk
+      // content and their FK/EXISTS guards no-op harmlessly when their owners
+      // were skipped.
+      if (_wants('books')) {
+        await _insertMissing('epub_books', 'book_key',
+            skipBookTombstones: true);
+        // srt_books dedups on `uid` but must honour the deleted book's tombstone
+        // via its own `book_key` — else deleting a book then merging an old
+        // backup resurrects an orphan srt row (no epub) = an "empty book".
+        await _insertMissing('srt_books', 'uid',
+            skipBookTombstones: true, tombstoneKeyColumn: 'book_key');
+      }
+      if (_wants('videos')) await _insertMissingVideoBooks();
+      if (_wants('dictionary')) {
+        await _insertMissing('dictionary_metadata', 'name');
+      }
+      if (_wants('audiobooks')) {
+        await _insertMissing('audiobooks', 'book_key',
+            skipBookTombstones: true);
+        await _insertAudioCues();
+      }
+      // Media collections (unified-collections Phase 5) have no dialog toggle:
+      // always merge the grouping itself; orphan members are kept and folded in
+      // the UI. Self-guards against missing src tables (pre-migration backups).
       await _mergeMediaCollections();
-      await _insertAudioCues();
-      await _mergeReaderPositions();
-      await _mergeReadingStatistics();
-      await _mergeVideoWatchStatistics();
-      await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
-      await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
-      await _mergeMiningStatistics();
-      await _mergeLookupMiningCounters();
-      await _mergeFavoriteWords();
-      await _mergeMinedSentences();
+      if (_wants('progress')) await _mergeReaderPositions();
+      if (_wants('statistics')) {
+        await _mergeReadingStatistics();
+        await _mergeVideoWatchStatistics();
+        await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
+        await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
+        await _mergeMiningStatistics();
+        await _mergeLookupMiningCounters();
+        await _mergeFavoriteWords();
+        await _mergeMinedSentences();
+      }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeProfilesAndChildren();
       await _insertMissing('media_items', 'unique_key');
       await _insertMissing('search_history_items', 'unique_key');
       await _insertMissing('anki_mappings', 'label');
-      await _mergeBookmarks();
-      await _mergeAudiobookPositionPrefs();
+      if (_wants('progress')) {
+        await _mergeBookmarks();
+        await _mergeAudiobookPositionPrefs();
+      }
+      if (_wants('localAudio')) await _mergeAudioSourcePrefs();
     });
   }
 
@@ -211,19 +256,24 @@ class BackupMergeEngine {
   /// already present in the target. Explicit column list (minus `id`) so SQLite
   /// assigns fresh autoincrement ids and never reuses the src id.
   ///
-  /// [skipBookTombstones] additionally excludes any src row whose [keyColumn]
-  /// (a `book_key`) is tombstoned in the target — i.e. the user deleted that
-  /// book on this device, so an old backup must never resurrect it (TODO-1195
-  /// part B). Overwrite import does not go through here.
+  /// [skipBookTombstones] additionally excludes any src row whose book key is
+  /// tombstoned in the target — i.e. the user deleted that book on this device,
+  /// so an old backup must never resurrect it (TODO-1195 part B). The tombstoned
+  /// column is [keyColumn] by default, but a table that dedups on a non-book-key
+  /// column (e.g. `srt_books` dedups on `uid` yet carries its own `book_key`)
+  /// passes [tombstoneKeyColumn] so the guard still matches `book_tombstones`.
+  /// Overwrite import does not go through here.
   Future<void> _insertMissing(
     String table,
     String keyColumn, {
     bool skipBookTombstones = false,
+    String? tombstoneKeyColumn,
   }) async {
     final List<String> cols = await _columnsExceptId(table);
     final String colList = cols.join(', ');
+    final String tombCol = tombstoneKeyColumn ?? keyColumn;
     final String tombstoneGuard = skipBookTombstones
-        ? 'AND s.$keyColumn NOT IN (SELECT book_key FROM book_tombstones) '
+        ? 'AND s.$tombCol NOT IN (SELECT book_key FROM book_tombstones) '
         : '';
     await _db.customStatement(
       'INSERT INTO $table ($colList) '
@@ -773,6 +823,57 @@ class BackupMergeEngine {
       "WHERE s.\"key\" LIKE 'audiobook_pos_%' "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
+  }
+
+  /// The audio-source registry prefs are CONTENT config, not device settings:
+  /// the local-audio `.db` files they reference DO travel in the backup (packed
+  /// under `localAudio/` and copied by [BackupService.mergeImportBackupFiles]),
+  /// so their config must travel too — otherwise the restored files are orphaned
+  /// and "音频来源" is silently lost on a merge (the pref-non-merge default
+  /// dropped them). Adopt the backup's value when the device has none/an empty
+  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
+  /// the key is not enough); keep the device's own list otherwise (merge never
+  /// clobbers local). The raw value is copied verbatim so its typed prefix is
+  /// preserved; [BackupService] re-homes the embedded paths onto this device's
+  /// support dir afterwards.
+  Future<void> _mergeAudioSourcePrefs() async {
+    for (final String key in _audioSourcePrefKeys) {
+      final String? src = await _readPrefValue(key, isSrc: true);
+      if (_isEmptyListPref(src)) continue; // backup carries no audio sources
+      final String? local = await _readPrefValue(key, isSrc: false);
+      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      await _db.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>[key, src],
+      );
+    }
+  }
+
+  /// Reads an arbitrary preference [key] value from the target ([isSrc] false)
+  /// or the ATTACHed src ([isSrc] true); null when the row is absent.
+  Future<String?> _readPrefValue(String key, {required bool isSrc}) async {
+    final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
+    final rows = await _db.customSelect(
+      'SELECT "value" FROM $table WHERE "key" = ?',
+      variables: <Variable<Object>>[Variable<String>(key)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.data['value'] as String?;
+  }
+
+  /// Whether a typed list-pref value is absent or an empty list. Tolerates the
+  /// typed prefix (`s:`/`j:`) by parsing from the first `[`; a value we cannot
+  /// parse as a non-empty list counts as empty (never worth clobbering with).
+  static bool _isEmptyListPref(String? raw) {
+    if (raw == null || raw.isEmpty) return true;
+    final int i = raw.indexOf('[');
+    if (i < 0) return true;
+    try {
+      final dynamic decoded = jsonDecode(raw.substring(i));
+      return decoded is! List || decoded.isEmpty;
+    } catch (_) {
+      return true;
+    }
   }
 }
 

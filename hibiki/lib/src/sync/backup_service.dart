@@ -1070,6 +1070,36 @@ class BackupService {
     }
   }
 
+  /// Retries a directory [rename] that hits a transient Windows filesystem-busy
+  /// error (access denied / sharing violation — see [_isWindowsTransientFsBusy])
+  /// with a bounded backoff. The content-tree swap renames a freshly-EXTRACTED
+  /// `.import-tmp` into place; on Windows an antivirus / indexer scanning the
+  /// just-written tree briefly holds handles, so the immediate rename can fail
+  /// with `errno 5` (the "备份导入失败: Rename failed … 拒绝访问" the user hit).
+  /// A non-Windows error, or a non-transient Windows error, is rethrown at once.
+  /// The longer cap than the delete retry (backoff to ~1s/attempt) gives a big
+  /// multi-GB tree's scan time to finish.
+  @visibleForTesting
+  static Future<void> renameDirectoryWithRetry({
+    required Future<void> Function() rename,
+    required Future<void> Function(int delayMs) sleep,
+    required bool isWindows,
+    int maxAttempts = 20,
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await rename();
+        return;
+      } on FileSystemException catch (e) {
+        final int? code = e.osError?.errorCode;
+        final bool transient = isWindows && _isWindowsTransientFsBusy(code);
+        if (!transient || attempt == maxAttempts) rethrow;
+        // backoff: 100ms,200ms,... capped at 1s → ~15s total over 20 attempts.
+        await sleep((100 * attempt).clamp(100, 1000));
+      }
+    }
+  }
+
   /// Strips device-local sync config from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [HibikiDatabase]
   /// (the copy is already at the current schema, so no migration runs).
@@ -1418,6 +1448,7 @@ class BackupService {
       final List<String> toCommit = <String>[];
       try {
         if (booksRootDirectory != null &&
+            wants(BackupCategory.books) &&
             await _prepareTreeRestore(
                 zipPath, archive, _booksPrefix, booksRootDirectory,
                 onBytes: reportBytes)) {
@@ -1533,6 +1564,32 @@ class BackupService {
         );
       }
 
+      // 3c) Honour the per-category IMPORT selection for the DB-content
+      //     categories the overwrite blob carries wholesale (TODO-1358). The
+      //     file categories are already gated above (skipped file restore), but
+      //     books / statistics / progress live in the swapped-in DB, so strip
+      //     the unticked ones here. Overwrite semantics: unticking = that
+      //     category's data does not end up on this device (the DB was replaced
+      //     wholesale, so there is no local layer to preserve — mirrors how the
+      //     statistics/progress strip already works on the export side).
+      if (!wants(BackupCategory.books)) {
+        // Strip every book row (+ its cascade) so no book from the backup
+        // travels; the hoshi_books tree restore was skipped above too.
+        await _retainBooks(dbDirectory, const <String>{});
+      }
+      if (!wants(BackupCategory.statistics) ||
+          !wants(BackupCategory.progress)) {
+        await _stripExcludedDataCategories(
+          dbDirectory,
+          stripProgress: !wants(BackupCategory.progress),
+          stripStatistics: !wants(BackupCategory.statistics),
+          // settings / profiles stay governed by the importSettings toggle and
+          // the excluded-layer preserve above — never touched by this strip.
+          stripSettings: false,
+          stripProfiles: false,
+        );
+      }
+
       // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
       await _safeDelete(sidecar.path);
       await _safeDelete(bakPath);
@@ -1563,6 +1620,7 @@ class BackupService {
   static Future<void> mergeImportBackupFiles({
     required String dbDirectory,
     required String zipPath,
+    Set<BackupCategory>? categories,
     String? dictionaryResourceDirectory,
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
@@ -1570,6 +1628,14 @@ class BackupService {
     String? videosRootDirectory,
     void Function(double progress)? onProgress,
   }) async {
+    // Per-category merge selection (import dialog, merge mode). null = merge
+    // every category (legacy full merge). Gates BOTH the DB row merge (via the
+    // engine) AND the content-tree copies below, so an unticked category adds
+    // nothing — neither rows nor files.
+    bool wants(BackupCategory c) =>
+        categories == null || categories.contains(c);
+    final Set<String>? enabledCategoryNames =
+        categories?.map((BackupCategory c) => c.name).toSet();
     final String dbPath = p.join(dbDirectory, _dbName);
     final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
     final String bakPath = '$dbPath.pre-merge.bak';
@@ -1648,6 +1714,7 @@ class BackupService {
             db,
             carriedVideoSourcePaths:
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
+            enabledCategoryNames: enabledCategoryNames,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
@@ -1658,36 +1725,41 @@ class BackupService {
       }
 
       // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing
-      //    files — the device's own library must stay intact).
-      if (dictionaryResourceDirectory != null) {
+      //    files — the device's own library must stay intact). Each tree is
+      //    gated by its category so an unticked category copies no files (its
+      //    rows were likewise skipped by the engine above).
+      if (dictionaryResourceDirectory != null &&
+          wants(BackupCategory.dictionary)) {
         await _copyTreeIfAbsent(zipPath, archive, _dictionaryResourcesPrefix,
             dictionaryResourceDirectory,
             onBytes: reportBytes);
       }
-      if (booksRootDirectory != null) {
+      if (booksRootDirectory != null && wants(BackupCategory.books)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _booksPrefix, booksRootDirectory,
             onBytes: reportBytes);
       }
-      if (audiobooksRootDirectory != null) {
+      if (audiobooksRootDirectory != null && wants(BackupCategory.audiobooks)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _audiobooksPrefix, audiobooksRootDirectory,
             onBytes: reportBytes);
       }
-      if (fontsRootDirectory != null) {
+      if (fontsRootDirectory != null && wants(BackupCategory.fonts)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _fontsPrefix, fontsRootDirectory,
             onBytes: reportBytes);
       }
-      if (videosRootDirectory != null) {
+      if (videosRootDirectory != null && wants(BackupCategory.videos)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _videosPrefix, videosRootDirectory,
             onBytes: reportBytes);
       }
       // Local-audio DBs are copy-if-absent into the support directory (never
       // overwrite the device's own local_audio_*.db files).
-      await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
-          overwrite: false, onBytes: reportBytes);
+      if (wants(BackupCategory.localAudio)) {
+        await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+            overwrite: false, onBytes: reportBytes);
+      }
 
       // 6) Rebase the newly-merged backup rows' stored paths onto this device's
       //    roots. Device-local rows aren't under the backup's source root, so
@@ -2650,14 +2722,23 @@ class BackupService {
     final Directory aside = Directory(asideRoot);
     final Directory target = Directory(targetRootPath);
     final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
+    // Every swap rename retries transient Windows FS-busy (errno 5/32/145): an
+    // antivirus/indexer scanning the freshly-written tree briefly locks it, so
+    // a bare rename fails with "拒绝访问" even though nothing is really wrong.
+    Future<void> renameDir(Directory dir, String to) =>
+        renameDirectoryWithRetry(
+          rename: () => dir.rename(to),
+          sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+          isWindows: Platform.isWindows,
+        );
     if (await aside.exists()) await aside.delete(recursive: true);
-    if (await target.exists()) await target.rename(asideRoot);
+    if (await target.exists()) await renameDir(target, asideRoot);
     try {
-      await tmpDir.rename(targetRootPath);
+      await renameDir(tmpDir, targetRootPath);
     } catch (_) {
       // Roll back: put the old tree back if the new one didn't land.
       if (await aside.exists() && !await target.exists()) {
-        await aside.rename(targetRootPath);
+        await renameDir(aside, targetRootPath);
       }
       rethrow;
     }
