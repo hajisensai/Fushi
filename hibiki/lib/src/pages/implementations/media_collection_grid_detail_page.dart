@@ -346,7 +346,7 @@ class _MediaCollectionGridDetailPageState
             childAspectRatio: 160 / 260,
             crossAxisSpacing: spacing,
             mainAxisSpacing: spacing,
-            feedbackBorderRadius: BorderRadius.circular(12),
+            feedbackBorderRadius: HibikiBorderRadius.card,
             keyForIndex: (int i) => ValueKey<String>(
                 '${members[i].row.mediaType}|${members[i].row.entryKey}'),
             onReorder: _onReorder,

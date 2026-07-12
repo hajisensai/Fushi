@@ -38,7 +38,8 @@ void main() {
     final String source = readReaderHistorySource();
     final String srtCard = _sectionSource(
       source,
-      'Widget _buildSrtCard(SrtBook book, {String? epubCoverUri}) {',
+      // 块2 起签名带 selectable（多选态成员卡不单独勾选），锚点跟随。
+      'Widget _buildSrtCard(SrtBook book,',
       '  Widget _buildSrtCover(',
     );
 
