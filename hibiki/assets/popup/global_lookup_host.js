@@ -355,13 +355,22 @@
         'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
         'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
         'color:rgba(120,120,128,0.8);letter-spacing:2px;}' +
+        // BUG-766 — persistent chip background so the pin/close read as tappable
+        // affordances on ANY window surface (light or dark); glyph color is made
+        // theme-aware below so it stays legible against that chip.
         '#global-lookup-panel-bar .panel-btn{' +
         'width:24px;height:24px;line-height:24px;text-align:center;' +
         'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
         'font-size:14px;cursor:pointer;border-radius:12px;' +
-        'color:rgba(60,60,67,0.6);}' +
+        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.75);}' +
         '#global-lookup-panel-bar .panel-btn:hover{' +
-        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.9);}' +
+        'background:rgba(120,120,128,0.28);color:rgba(60,60,67,0.95);}' +
+        // BUG-766 — dark-window variant (stamped via data-theme in renderStack):
+        // light glyph + light chip so the buttons don't vanish on a dark surface.
+        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{' +
+        'background:rgba(235,235,245,0.14);color:rgba(235,235,245,0.72);}' +
+        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
+        'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
         '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
@@ -1192,7 +1201,17 @@
     // transient overlay's payload/behaviour is byte-identical to pre-panel).
     layoutMode = (payload && payload.layoutMode) === 'panel' ? 'panel' : 'cascade';
     if (layoutMode === 'panel') {
-      ensurePanelBar();
+      var panelBar = ensurePanelBar();
+      // BUG-766 — the panel bar lives in document.body (fixed, OUTSIDE any shell),
+      // so it never inherits the per-shell data-theme. Without it the pin/close
+      // glyphs kept the light-theme dark-gray color (rgba(60,60,67,.6)) and
+      // vanished on a dark window. Stamp the root descriptor's resolved brightness
+      // onto the bar so the dark-theme .panel-btn variant applies (mirrors the
+      // per-shell .global-lookup-close dark variant).
+      var rootTheme = popups.length ? (popups[0] && popups[0].theme) : null;
+      if (panelBar && (rootTheme === 'dark' || rootTheme === 'light')) {
+        panelBar.setAttribute('data-theme', rootTheme);
+      }
     }
     if (!popups.length) {
       removeMissing([]);

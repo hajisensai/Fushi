@@ -278,4 +278,39 @@ void main() {
       );
     });
   });
+
+  // BUG-766 — 面板栏（图钉/关闭）在 document.body、fixed，不继承 shell 的
+  // data-theme；旧代码只给 light 主题的深灰字色，暗窗上完全看不见。修复=把 root
+  // 主题转写到面板栏 + 常驻 chip 背景 + 暗主题浅色字。三处互钉，任一改回都回归。
+  group('面板栏图钉/关闭可见（BUG-766 暗背景不可见）', () {
+    test('renderStack 把 root descriptor 主题转写到面板栏 data-theme', () {
+      expect(hostJs.contains('panelBar.setAttribute('), isTrue,
+          reason: '面板栏必须拿到 data-theme，否则暗主题变种永不命中');
+      expect(hostJs.contains("popups[0] && popups[0].theme"), isTrue,
+          reason: '主题真值源=root 弹窗 descriptor（render 侧 map[theme]）');
+    });
+
+    test('.panel-btn 恒有 chip 背景（用户诉求：给它个背景）', () {
+      final int rule = hostJs.indexOf("'#global-lookup-panel-bar .panel-btn{'");
+      expect(rule, isNonNegative);
+      // 该规则块到 :hover 之间必须含 background（非仅 hover 才出现）。
+      final int hover = hostJs.indexOf(".panel-btn:hover", rule);
+      expect(hover, isNonNegative);
+      expect(
+        hostJs.substring(rule, hover).contains('background:'),
+        isTrue,
+        reason: '常驻 chip 背景=按钮在任意窗底都可见；不能退回只 hover 才有背景',
+      );
+    });
+
+    test('暗主题面板栏按钮有浅色变种（暗窗不再深灰吃掉）', () {
+      expect(
+        hostJs.contains(
+            '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{'),
+        isTrue,
+        reason: '暗主题必须覆盖为浅色字 + 浅色 chip，镜像 .global-lookup-close 暗变种',
+      );
+      expect(hostJs.contains('rgba(235,235,245'), isTrue);
+    });
+  });
 }
