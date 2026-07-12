@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:hibiki/utils.dart';
@@ -68,6 +70,78 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
           ),
       ]);
 
+  /// 把当前 [_members] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
+  /// 换集读同一 `getCollectionItems`，落盘即三处同序（层次 C 单一真相源）。
+  Future<void> _persistOrder() async {
+    await widget.database.reorderCollectionItems(
+      widget.collection.id,
+      <({String mediaType, String entryKey})>[
+        for (final VideoBookRow r in _members)
+          (mediaType: 'video', entryKey: r.bookUid),
+      ],
+    );
+    widget.onChanged();
+  }
+
+  /// 拖拽精修：ReorderableListView 语义（newIndex 为移除前下标）→ 内存 move →
+  /// 落盘。
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    if (oldIndex == newIndex) return;
+    final List<VideoBookRow> next = List<VideoBookRow>.of(_members);
+    final VideoBookRow moved = next.removeAt(oldIndex);
+    next.insert(newIndex, moved);
+    setState(() => _members = next);
+    await _persistOrder();
+  }
+
+  /// 一键整理（覆盖 95% 场景）：按 [compare] 重排全表并落盘。乱序的手攒播放列表
+  /// 一键回名称序 / 加入时序。
+  Future<void> _applyOneKeySort(
+    int Function(VideoBookRow a, VideoBookRow b) compare,
+  ) async {
+    final List<VideoBookRow> next = List<VideoBookRow>.of(_members)
+      ..sort(compare);
+    setState(() => _members = next);
+    await _persistOrder();
+  }
+
+  /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间（旧→新 =
+  /// 原始加入时序）一键重排。
+  Widget _buildSortMenu() {
+    int importedMsOf(VideoBookRow r) =>
+        r.importedAt?.millisecondsSinceEpoch ?? 0;
+    return MenuAnchor(
+      menuChildren: <Widget>[
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.sort_by_alpha, size: 20),
+          onPressed: () => _applyOneKeySort(
+            (VideoBookRow a, VideoBookRow b) =>
+                naturalCompare(a.title, b.title),
+          ),
+          child: Text(t.collection_sort_by_title),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.history, size: 20),
+          onPressed: () => _applyOneKeySort(
+            (VideoBookRow a, VideoBookRow b) {
+              final int c = importedMsOf(a).compareTo(importedMsOf(b));
+              return c != 0 ? c : naturalCompare(a.title, b.title);
+            },
+          ),
+          child: Text(t.collection_sort_by_imported),
+        ),
+      ],
+      builder: (BuildContext context, MenuController controller, Widget? _) =>
+          IconButton(
+        tooltip: t.sort_by,
+        icon: const Icon(Icons.sort),
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+
   Future<void> _rename() async {
     final String? newName = await showCollectionNameDialog(
       context: context,
@@ -79,6 +153,47 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
     if (!mounted) return;
     setState(() => _name = newName);
     widget.onChanged();
+  }
+
+  /// 逐集「移出合集」（整理排序页删除后本页是视频侧唯一移出入口）：确认 →
+  /// [HibikiDatabase.removeFromCollection]（空合集自动删）→ 重载；合集被清空则
+  /// 退回上层。条目本身绝不删除。
+  Future<void> _removeEpisode(VideoBookRow ep) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.collection_remove_member),
+        content: Text(t.collection_remove_member_confirm),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.collection_remove_member),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.database
+        .removeFromCollection(widget.collection.id, 'video', ep.bookUid);
+    if (!mounted) return;
+    widget.onChanged();
+    HibikiToast.show(msg: t.collection_member_removed);
+    final bool emptied =
+        await widget.database.getMediaCollectionById(widget.collection.id) ==
+            null;
+    if (!mounted) return;
+    if (emptied) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    await _reload();
   }
 
   Future<void> _delete() async {
@@ -150,6 +265,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
       appBar: AppBar(
         title: Text(_name),
         actions: <Widget>[
+          _buildSortMenu(),
           IconButton(
             tooltip: t.rename_collection,
             icon: const Icon(Icons.drive_file_rename_outline),
@@ -184,8 +300,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                       ),
                       const Divider(height: 1),
                       Expanded(
-                        child: ListView.builder(
+                        // 排序交互重设计层次 B1：拖拽精修。触屏长按整行拖
+                        // （DelayedDragStartListener）、桌面鼠标按行尾拖柄即拖
+                        // （DragStartListener）；onReorder 落盘 sortIndex 后库页
+                        // 行 / 播放器换集立即同序。
+                        child: ReorderableListView.builder(
+                          buildDefaultDragHandles: false,
                           itemCount: _members.length,
+                          onReorder: _onReorder,
                           itemBuilder: (BuildContext _, int i) {
                             final VideoBookRow ep = _members[i];
                             final bool completed = ep.completedAt != null;
@@ -194,46 +316,69 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                             // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
                             // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 / 看过
                             // 一半 / 未看」三态图标，不画误导性进度条。
-                            return Material(
-                              color: isContinue
-                                  ? cs.primaryContainer.withValues(alpha: 0.35)
-                                  : Colors.transparent,
-                              child: InkWell(
-                                onTap: () => widget.onOpenEpisode(ep),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
-                                  child: Row(
-                                    children: <Widget>[
-                                      SizedBox(
-                                        width: 32,
-                                        child: Text(
-                                          '${i + 1}',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                              color: cs.onSurfaceVariant),
+                            return ReorderableDelayedDragStartListener(
+                              key: ValueKey<String>(ep.bookUid),
+                              index: i,
+                              child: Material(
+                                color: isContinue
+                                    ? cs.primaryContainer
+                                        .withValues(alpha: 0.35)
+                                    : Colors.transparent,
+                                child: InkWell(
+                                  onTap: () => widget.onOpenEpisode(ep),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    child: Row(
+                                      children: <Widget>[
+                                        SizedBox(
+                                          width: 32,
+                                          child: Text(
+                                            '${i + 1}',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                                color: cs.onSurfaceVariant),
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
-                                      // 抽帧；无封面时占位）。
-                                      _episodeThumb(ep, cs),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          ep.title,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
+                                        const SizedBox(width: 12),
+                                        // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
+                                        // 抽帧；无封面时占位）。
+                                        _episodeThumb(ep, cs),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            ep.title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
-                                      ),
-                                      if (completed)
-                                        Icon(Icons.check_circle,
-                                            color: cs.primary, size: 20)
-                                      else if (started)
-                                        Icon(Icons.play_circle_outline,
+                                        if (completed)
+                                          Icon(Icons.check_circle,
+                                              color: cs.primary, size: 20)
+                                        else if (started)
+                                          Icon(Icons.play_circle_outline,
+                                              color: cs.onSurfaceVariant,
+                                              size: 20),
+                                        const SizedBox(width: 4),
+                                        // 逐集移出（整理页删除后的唯一入口）。
+                                        HibikiIconButton(
+                                          tooltip: t.collection_remove_member,
+                                          icon: Icons.remove_circle_outline,
+                                          size: 18,
+                                          onTap: () => _removeEpisode(ep),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        // 桌面拖柄（鼠标按下即拖，无需长按）。
+                                        ReorderableDragStartListener(
+                                          index: i,
+                                          child: Icon(
+                                            Icons.drag_handle,
                                             color: cs.onSurfaceVariant,
-                                            size: 20),
-                                    ],
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),

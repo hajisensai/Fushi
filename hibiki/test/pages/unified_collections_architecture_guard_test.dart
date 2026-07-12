@@ -94,37 +94,40 @@ void main() {
         reason: '视频合集行成员卡必须带 playlistCollectionId 直接换集');
   });
 
-  test('UI v2 Phase E：整理排序页零 series 写路径（合集是唯一分组真相源）', () {
-    // 用户拍板砍掉重做：分组/合并/移出/组位置持久化全走 MediaCollections。
-    final File reorderPage =
-        File('lib/src/pages/implementations/shelf_reorder_page.dart');
-    expect(reorderPage.existsSync(), isTrue);
-    final String reorderSrc = reorderPage.readAsStringSync();
-    for (final String banned in <String>[
-      'seriesId',
-      'seriesCardId',
-      'setSeriesForEntry',
-      'splitShelfReorderOrders',
-    ]) {
-      expect(reorderSrc.contains(banned), isFalse,
-          reason: '整理页不得回退 series 模型（含 $banned）');
+  test('UI v2：整理排序页已按用户拍板整体砍掉——零残留 + 能力不回退', () {
+    // 用户：「编辑排序这个页面整个砍掉，做的太烂了」。页面、共享拖拽网格、入口
+    // 按钮全删；恢复任一残留即转红。
+    expect(
+        File('lib/src/pages/implementations/shelf_reorder_page.dart')
+            .existsSync(),
+        isFalse,
+        reason: '整理排序页必须保持删除');
+    expect(
+        File('lib/src/utils/components/hibiki_reorderable_grid.dart')
+            .existsSync(),
+        isFalse,
+        reason: '2D 拖拽重排网格随页面一起删除（零消费者）');
+    for (final String banned in <String>['ShelfReorderPage', 'onOrganize:']) {
+      expect(homeSrc.contains(banned), isFalse,
+          reason: '视频库不得残留整理页接线（$banned）');
+      expect(historySrc.contains(banned), isFalse,
+          reason: '书架不得残留整理页接线（$banned）');
     }
-    expect(reorderSrc.contains('mergeReorderItemsIntoCollection'), isTrue,
-        reason: '拖合并共享执行器必须走合集 DB 原语');
-    expect(reorderSrc.contains('removeFromCollection'), isTrue,
-        reason: '移出必须走 removeFromCollection（空合集自动清理）');
-    // 两页整理接线：合集整体位置写 MediaCollections.sortOrder；书架不再拉死掉的
-    // Series 表喂整理页。
-    expect(historySrc.contains('updateMediaCollectionSortOrder'), isTrue,
-        reason: '书架整理落盘必须写合集 sortOrder');
-    expect(homeSrc.contains('updateMediaCollectionSortOrder'), isTrue,
-        reason: '视频整理落盘必须写合集 sortOrder');
-    expect(historySrc.contains('updateSeriesSortOrder'), isFalse,
-        reason: '书架不得再写死掉的 Series.sortOrder');
-    expect(historySrc.contains('getAllSeries'), isFalse,
-        reason: '书架不得再拉 Series 表喂整理页');
-    expect(historySrc.contains('groupAndSortShelfEntries'), isFalse,
-        reason: '整理页分组必须与主网格同走 groupByCollections');
+    // series 死模型同样不得回潮。
+    expect(historySrc.contains('updateSeriesSortOrder'), isFalse);
+    expect(historySrc.contains('getAllSeries'), isFalse);
+    expect(historySrc.contains('groupAndSortShelfEntries'), isFalse);
+    // 能力不回退：合集成员移出改走详情页（书=网格详情页，视频=剧集详情页）。
+    final String gridDetailSrc = File(
+      'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+    ).readAsStringSync();
+    final String videoDetailSrc = File(
+      'lib/src/pages/implementations/media_collection_detail_page.dart',
+    ).readAsStringSync();
+    expect(gridDetailSrc.contains('removeFromCollection'), isTrue,
+        reason: '书籍合集详情页必须保留成员移出');
+    expect(videoDetailSrc.contains('removeFromCollection'), isTrue,
+        reason: '视频合集详情页必须提供逐集移出（整理页删除后的唯一入口）');
   });
 
   test('每集独立视频各自有封面：后台补齐 + playlist 详情页渲染每集缩略图', () {
@@ -143,5 +146,48 @@ void main() {
         reason: 'playlist 详情页剧集行必须带每集封面缩略图');
     expect(detailSrc.contains('Image.file'), isTrue,
         reason: '缩略图用集自身 coverPath 的 Image.file（无封面退占位）');
+  });
+
+  test('排序交互重设计：死权重零读取 + 排序菜单 + 成员序单一真相源 + 详情页就地排序', () {
+    // 层次 A：旧手动权重（ShelfEntries.sortOrder / MediaCollections.sortOrder）
+    // 已废弃（用户拍板，spec 2026-07-12）——两库页不得再读；卡片间序只能由
+    // 排序模式（compareShelfSortKeys）推导。恢复任一读取点即转红。
+    for (final String banned in <String>[
+      'getAllShelfEntries',
+      '_videoOrder',
+      '_shelfOrder',
+      'itemSortOrder',
+      'groupSortOrder',
+    ]) {
+      expect(homeSrc.contains(banned), isFalse,
+          reason: '视频库不得再读已废弃的手动权重（$banned）');
+      expect(historySrc.contains(banned), isFalse,
+          reason: '书架不得再读已废弃的手动权重（$banned）');
+    }
+    for (final String required in <String>[
+      'compareShelfSortKeys',
+      'onSortModeChanged',
+      // 层次 C：组内序读 MediaCollectionItems.sortIndex（与详情页/播放器
+      // getCollectionItems 同源，一处落盘三处同序）。
+      'memberSortIndex',
+    ]) {
+      expect(homeSrc.contains(required), isTrue,
+          reason: '视频库必须接线排序模式/成员序真相源（$required）');
+      expect(historySrc.contains(required), isTrue,
+          reason: '书架必须接线排序模式/成员序真相源（$required）');
+    }
+    // 层次 B：视频详情页拖拽精修 + 两详情页一键排序，均写穿 reorderCollectionItems。
+    final String videoDetailSrc = File(
+      'lib/src/pages/implementations/media_collection_detail_page.dart',
+    ).readAsStringSync();
+    final String gridDetailSrc = File(
+      'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+    ).readAsStringSync();
+    expect(videoDetailSrc.contains('ReorderableListView'), isTrue,
+        reason: '视频合集详情页必须支持拖拽排集（手动排序的唯一形态）');
+    expect(videoDetailSrc.contains('reorderCollectionItems'), isTrue,
+        reason: '视频详情页排序必须写穿 sortIndex（层次 C 真相源）');
+    expect(gridDetailSrc.contains('reorderCollectionItems'), isTrue,
+        reason: '书籍合集详情页一键排序必须写穿 sortIndex');
   });
 }

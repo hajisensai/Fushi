@@ -1,16 +1,16 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// 统一合集 Phase 4：[groupByCollections] 折叠归属 + 排序纯函数测试。
-MediaCollectionRow _col(int id, String name, int sortOrder) =>
-    MediaCollectionRow(
+/// 统一合集 Phase 4 / 排序 v2：[groupByCollections] 折叠纯函数测试。
+/// v2 后本函数只折叠不排卡（卡片间序由页面按排序模式做）；组内序真相源 =
+/// memberSortIndex（[MediaCollectionItems].sortIndex），与详情页/播放器同源。
+MediaCollectionRow _col(int id, String name) => MediaCollectionRow(
       id: id,
       name: name,
       collectionType: 'playlist',
       coverSource: null,
-      sortOrder: sortOrder,
+      sortOrder: 0,
       createdAt: 0,
     );
 
@@ -23,13 +23,6 @@ CollectionOrderingItem<String> _item(String key, int importedAt) =>
     );
 
 void main() {
-  // 让 drift Value 的 import 有实际使用（生成行类构造）。
-  test('MediaCollectionRow 构造可用', () {
-    expect(_col(1, 'A', 0).name, 'A');
-    // ignore: unnecessary_type_check
-    expect(const Value<int>(0) is Value<int>, isTrue);
-  });
-
   test('属同一合集的条目折叠成一个合集 group，散条目各自单卡', () {
     final List<CollectionGroup<String>> groups = groupByCollections<String>(
       items: <CollectionOrderingItem<String>>[
@@ -41,8 +34,8 @@ void main() {
         'video|v1': 1,
         'video|v2': 1,
       },
-      collectionsById: <int, MediaCollectionRow>{1: _col(1, 'Show', 5)},
-      itemSortOrder: <String, int>{},
+      collectionsById: <int, MediaCollectionRow>{1: _col(1, 'Show')},
+      memberSortIndex: <String, int>{},
     );
 
     // 合集卡 + 散条目卡。
@@ -62,25 +55,75 @@ void main() {
       items: <CollectionOrderingItem<String>>[_item('v1', 0)],
       primaryCollectionIdByEntry: <String, int>{'video|v1': 99},
       collectionsById: const <int, MediaCollectionRow>{}, // 99 不存在
-      itemSortOrder: <String, int>{},
+      memberSortIndex: <String, int>{},
     );
     expect(groups, hasLength(1));
     expect(groups.single.collection, isNull);
     expect(groups.single.coverItem.entryKey, 'v1');
   });
 
-  test('卡片间按 groupSortOrder 排序（合集用 sortOrder，散条目用 shelf sortOrder）', () {
+  test('组内序 = memberSortIndex 升序（与详情页/播放器 getCollectionItems 同源）', () {
     final List<CollectionGroup<String>> groups = groupByCollections<String>(
       items: <CollectionOrderingItem<String>>[
-        _item('loose', 0),
-        _item('m1', 0),
+        _item('e2', 100), // importedAt 更新，但 sortIndex 靠后
+        _item('e1', 50),
       ],
-      primaryCollectionIdByEntry: <String, int>{'video|m1': 1},
-      collectionsById: <int, MediaCollectionRow>{1: _col(1, 'Col', 2)},
-      itemSortOrder: <String, int>{'video|loose': 9}, // 散条目排后
+      primaryCollectionIdByEntry: <String, int>{
+        'video|e1': 1,
+        'video|e2': 1,
+      },
+      collectionsById: <int, MediaCollectionRow>{1: _col(1, 'S')},
+      memberSortIndex: <String, int>{'video|e1': 0, 'video|e2': 1},
     );
-    // 合集(sortOrder 2) 在散条目(sortOrder 9) 之前。
-    expect(groups.first.collection?.name, 'Col');
-    expect(groups.last.collection, isNull);
+    expect(
+      groups.single.items.map((CollectionOrderingItem<String> i) => i.entryKey),
+      <String>['e1', 'e2'],
+      reason: 'sortIndex 优先于 importedAt',
+    );
+  });
+
+  test('缺 sortIndex 行的成员退化 importedAt 倒序，排在有 sortIndex 成员之后', () {
+    final List<CollectionGroup<String>> groups = groupByCollections<String>(
+      items: <CollectionOrderingItem<String>>[
+        _item('noIdxNew', 200),
+        _item('noIdxOld', 100),
+        _item('idx0', 1),
+      ],
+      primaryCollectionIdByEntry: <String, int>{
+        'video|noIdxNew': 1,
+        'video|noIdxOld': 1,
+        'video|idx0': 1,
+      },
+      collectionsById: <int, MediaCollectionRow>{1: _col(1, 'S')},
+      memberSortIndex: <String, int>{'video|idx0': 0},
+    );
+    expect(
+      groups.single.items.map((CollectionOrderingItem<String> i) => i.entryKey),
+      <String>['idx0', 'noIdxNew', 'noIdxOld'],
+    );
+  });
+
+  test('v2 不排卡：散 group 保持输入序，合集 group 出现在首成员位置', () {
+    final List<CollectionGroup<String>> groups = groupByCollections<String>(
+      items: <CollectionOrderingItem<String>>[
+        _item('looseA', 0),
+        _item('m1', 0), // 合集 1 首成员 → 合集行占位于此
+        _item('looseB', 0),
+        _item('m2', 0), // 合集 1 后续成员，不再新增位置
+      ],
+      primaryCollectionIdByEntry: <String, int>{
+        'video|m1': 1,
+        'video|m2': 1,
+      },
+      collectionsById: <int, MediaCollectionRow>{1: _col(1, 'S')},
+      memberSortIndex: <String, int>{'video|m1': 0, 'video|m2': 1},
+    );
+    expect(
+      groups
+          .map((CollectionGroup<String> g) =>
+              g.collection?.name ?? g.coverItem.entryKey)
+          .toList(),
+      <String>['looseA', 'S', 'looseB'],
+    );
   });
 }
