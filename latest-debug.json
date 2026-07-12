@@ -5,14 +5,14 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 7568,
-  "notes": "Automated Apple debug-channel build from develop @ 6d758bb. Push releases are always prerelease and never Latest.",
+  "notes": "Automated release-signed debug-channel build from develop @ 6d758bb. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.0.1-debug.7565-920f2bc-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7565-920f2bc-debug.apk",
-      "releaseSequence": 7565,
-      "tag": "v1.0.1-debug.7565+920f2bc",
-      "version": "1.0.1-debug.7565"
+      "name": "hibiki-1.0.1-debug.7568-6d758bb-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7568-6d758bb-debug.apk",
+      "releaseSequence": 7568,
+      "tag": "v1.0.1-debug.7568+6d758bb",
+      "version": "1.0.1-debug.7568"
     },
     {
       "name": "hibiki-1.0.1-debug.7568-ios.ipa",
