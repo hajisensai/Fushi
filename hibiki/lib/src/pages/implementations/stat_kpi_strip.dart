@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
-/// 顶部 KPI 概览的单项数据：图标 + 大数值 + 标签。
+/// 顶部 KPI 概览的单项数据：图标 + 大数值 + 标签 + 可选环比。
 class StatKpiItem {
   const StatKpiItem({
     required this.icon,
     required this.value,
     required this.label,
+    this.delta,
+    this.deltaUp = true,
   });
 
   final IconData icon;
@@ -15,6 +17,13 @@ class StatKpiItem {
   /// 大数值文本（如 `12.3万` / `123小时45分`）。
   final String value;
   final String label;
+
+  /// 可选环比文本（如 `↑12%` / `↓8%`），为空时不渲染。数值下方以小号彩色文字展示，
+  /// 让「涨还是跌」一眼可见（本周 vs 上周）。
+  final String? delta;
+
+  /// [delta] 表示上涨（true）还是下跌（false），决定颜色：涨=主色、跌=错误色。
+  final bool deltaUp;
 }
 
 /// 顶部 KPI 概览条（TODO-1253）。
@@ -108,6 +117,24 @@ class StatKpiStrip extends StatelessWidget {
                   ),
             ),
           ),
+          if (item.delta != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap / 2),
+            // 环比小字：涨=主色、跌=错误色，箭头已含在文本里（↑/↓）。数值可能很短，
+            // 用 FittedBox scaleDown 兜底避免窄屏截断。
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                item.delta!,
+                maxLines: 1,
+                softWrap: false,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: item.deltaUp ? scheme.primary : scheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ],
           SizedBox(height: tokens.spacing.gap / 2),
           Text(
             item.label,

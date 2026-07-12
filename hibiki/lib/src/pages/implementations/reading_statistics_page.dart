@@ -41,6 +41,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   int _todayMs = 0;
   int _weekChars = 0;
   int _weekMs = 0;
+  // 上周字数（第 8–14 天窗口）：仅用于顶部 KPI 的本周字数环比，[8,14) 与本周 [0,7) 不重叠。
+  int _prevWeekChars = 0;
   int _monthChars = 0;
   int _monthMs = 0;
   int _allChars = 0;
@@ -71,8 +73,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 按书聚合
   List<_BookData> _bookData = [];
 
-  // 总览：总书数 / 活跃天数 / 日期范围（min/max dateKey，可空表示无数据）。
-  int _totalBooks = 0;
+  // 总览：活跃天数 / 日期范围（min/max dateKey，可空表示无数据）。
   int _activeDays = 0;
   int _streak = 0;
   String? _firstDateKey;
@@ -196,12 +197,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final now = DateTime.now();
     final todayKey = _dateKey(now);
     final weekAgoKey = _dateKey(now.subtract(const Duration(days: 7)));
+    final prevWeekAgoKey = _dateKey(now.subtract(const Duration(days: 14)));
     final monthAgoKey = _dateKey(now.subtract(const Duration(days: 30)));
 
     _todayChars = 0;
     _todayMs = 0;
     _weekChars = 0;
     _weekMs = 0;
+    _prevWeekChars = 0;
     _monthChars = 0;
     _monthMs = 0;
     _allChars = 0;
@@ -221,6 +224,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       if (s.dateKey.compareTo(weekAgoKey) >= 0) {
         _weekChars += s.charactersRead;
         _weekMs += s.readingTimeMs;
+      } else if (s.dateKey.compareTo(prevWeekAgoKey) >= 0) {
+        // 上周窗口 [prevWeekAgo, weekAgo)：本周分支未命中且不早于 14 天前。
+        _prevWeekChars += s.charactersRead;
       }
       if (s.dateKey.compareTo(monthAgoKey) >= 0) {
         _monthChars += s.charactersRead;
@@ -249,9 +255,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _dailyData.add(dailyMap[key] ?? StatDayData(dateKey: key));
     }
 
-    // 总览：总书数 = distinct title；活跃天数 = distinct dateKey；
-    // 日期范围 = min/max dateKey（dateKey 零填充可字典序比较）。
-    _totalBooks = bookMap.length;
+    // 总览：活跃天数 = distinct dateKey；日期范围 = min/max dateKey（dateKey 零填充可
+    // 字典序比较）。
     final Set<String> activeDayKeys =
         _allStats.map((ReadingStatisticRow s) => s.dateKey).toSet();
     _activeDays = activeDayKeys.length;
@@ -459,31 +464,45 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// 顶部 KPI 概览条：全部字数 / 全部时长 / 书数 / 活跃天数。
-  /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，
-  /// 避免手机上四张卡挤到内宽 ~40px 把数值 ellipsis 截没（「看不到数字」）。
+  /// 顶部 KPI 概览条：连续天数 / 今日 / 本周(带环比) / 日均。
+  ///
+  /// 旧版 4 张卡是「全部字数 / 全部时长 / 书数 / 活跃天数」纯累计值——只增不减、不驱动
+  /// 任何行动。换成近期动量指标：streak 促成「明天还想读」；今日 / 日均对应当下强度；
+  /// 本周带上周环比，一眼看出在涨还是在掉。累计与书数仍在下方「按书统计」与趋势图可查，
+  /// 无需在顶部重复挂一遍。
+  /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，数值 FittedBox
+  /// 缩放不截断。
   Widget _buildKpiStrip() {
+    final int dailyAvgChars =
+        _activeDays > 0 ? (_allChars / _activeDays).round() : 0;
+    final double? weekPct =
+        computeWeekOverWeekPercent(_weekChars, _prevWeekChars);
+    final String? weekDelta = weekPct == null
+        ? null
+        : '${weekPct >= 0 ? '↑' : '↓'}${weekPct.abs().round()}%';
     return StatKpiStrip(
       items: <StatKpiItem>[
         StatKpiItem(
-          icon: Icons.text_fields,
-          value: formatStatCharsAxis(_allChars),
-          label: t.stat_metric_chars,
+          icon: Icons.local_fire_department_outlined,
+          value: t.stat_format_days(n: _streak),
+          label: t.stat_streak,
         ),
         StatKpiItem(
-          icon: Icons.schedule,
-          value: _formatTime(_allMs),
-          label: t.stat_metric_time,
+          icon: Icons.today_outlined,
+          value: _formatChars(_todayChars),
+          label: t.stat_today,
         ),
         StatKpiItem(
-          icon: Icons.menu_book_outlined,
-          value: _totalBooks.toString(),
-          label: t.stat_total_books,
+          icon: Icons.trending_up,
+          value: _formatChars(_weekChars),
+          label: t.stat_this_week,
+          delta: weekDelta,
+          deltaUp: weekPct == null ? true : weekPct >= 0,
         ),
         StatKpiItem(
-          icon: Icons.calendar_today_outlined,
-          value: _activeDays.toString(),
-          label: t.stat_active_days,
+          icon: Icons.show_chart,
+          value: _formatChars(dailyAvgChars),
+          label: t.stat_daily_average,
         ),
       ],
     );

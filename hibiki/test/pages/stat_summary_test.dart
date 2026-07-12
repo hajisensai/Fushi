@@ -57,6 +57,25 @@ void main() {
     });
   });
 
+  group('computeWeekOverWeekPercent', () {
+    test('up: this week higher than last week', () {
+      expect(computeWeekOverWeekPercent(1200, 1000), closeTo(20.0, 1e-9));
+    });
+    test('down: this week lower than last week', () {
+      expect(computeWeekOverWeekPercent(800, 1000), closeTo(-20.0, 1e-9));
+    });
+    test('flat: equal weeks -> 0%', () {
+      expect(computeWeekOverWeekPercent(1000, 1000), 0.0);
+    });
+    test('no baseline: last week 0 -> null (avoid infinite %)', () {
+      expect(computeWeekOverWeekPercent(500, 0), isNull);
+      expect(computeWeekOverWeekPercent(0, 0), isNull);
+    });
+    test('this week 0 with baseline -> -100%', () {
+      expect(computeWeekOverWeekPercent(0, 1000), closeTo(-100.0, 1e-9));
+    });
+  });
+
   group('trendMetricValue', () {
     final StatTrendPoint p = StatTrendPoint(
         bucketKey: '2026-06-01', label: '06-01', chars: 3600, ms: 3600000);

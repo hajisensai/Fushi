@@ -80,6 +80,38 @@ void main() {
     }
   });
 
+  testWidgets('delta chip renders below value with sign, colored by direction',
+      (WidgetTester tester) async {
+    const List<StatKpiItem> trendItems = <StatKpiItem>[
+      StatKpiItem(
+          icon: Icons.trending_up,
+          value: '1.2万',
+          label: '本周',
+          delta: '↑12%'),
+      StatKpiItem(
+          icon: Icons.trending_down,
+          value: '8000',
+          label: '本周',
+          delta: '↓8%',
+          deltaUp: false),
+    ];
+    await pumpAt(
+        tester, const Size(360, 800), const StatKpiStrip(items: trendItems));
+
+    // 环比文本存在且不被截断。
+    expect(find.text('↑12%'), findsOneWidget);
+    expect(find.text('↓8%'), findsOneWidget);
+    expect(paragraphOf(tester, '↑12%').didExceedMaxLines, isFalse);
+
+    // 涨用主色、跌用错误色（方向可辨）。
+    final ColorScheme scheme =
+        Theme.of(tester.element(find.text('↑12%'))).colorScheme;
+    final TextStyle upStyle = tester.widget<Text>(find.text('↑12%')).style!;
+    final TextStyle downStyle = tester.widget<Text>(find.text('↓8%')).style!;
+    expect(upStyle.color, scheme.primary);
+    expect(downStyle.color, scheme.error);
+  });
+
   testWidgets(
       'REGRESSION baseline: old 4-in-row Row DOES clip numbers at 360px',
       (WidgetTester tester) async {
