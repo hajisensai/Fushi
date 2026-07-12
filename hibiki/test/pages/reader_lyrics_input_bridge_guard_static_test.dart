@@ -4,7 +4,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
 
-/// BUG-755 回归守卫：歌词模式（`LyricsModeHtml` 独立文档）唤不出隐藏底栏 + ESC 退不出。
+/// BUG-756 回归守卫：歌词模式（`LyricsModeHtml` 独立文档）唤不出隐藏底栏 + ESC 退不出。
 ///
 /// 根因：歌词是整页 `loadData` 的独立文档，没有正文 hoshiReader 的 onTap/onTapEmpty
 /// 桥；歌词里点句子 = 查词，点空白此前是 no-op（`if (!cueEl) return;`）。于是：
@@ -28,7 +28,7 @@ void main() {
     ..endMs = i * 1000 + 900
     ..audioFileIndex = 0;
 
-  test('lyrics HTML forwards empty-space tap to onLyricsTapEmpty (BUG-755)',
+  test('lyrics HTML forwards empty-space tap to onLyricsTapEmpty (BUG-756)',
       () {
     final String html = LyricsModeHtml.generate(
       cues: <AudioCue>[cue(0), cue(1), cue(2)],

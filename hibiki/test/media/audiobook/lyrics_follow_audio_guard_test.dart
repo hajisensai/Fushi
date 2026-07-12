@@ -56,13 +56,13 @@ void main() {
     final String src = readReaderPageSource();
 
     // 歌词分支必须把跟随开关透传进 JS scroll 形参（否则自动滚动永远发生）。
-    // BUG-756 后 scroll = followAudio || forceReveal（snap 也放行），故断言从
+    // BUG-757 后 scroll = followAudio || forceReveal（snap 也放行），故断言从
     // 旧的 `${controller.followAudio.value}` 直插改成新的派生变量与推导式。
     expect(src, contains(r'__lyricsSetCue($idx, $scroll)'));
     expect(src, contains('controller.followAudio.value || forceReveal'));
   });
 
-  test('lyrics branch consumes force-reveal and re-centers on snap (BUG-756)',
+  test('lyrics branch consumes force-reveal and re-centers on snap (BUG-757)',
       () {
     final String src = readReaderPageSource();
 

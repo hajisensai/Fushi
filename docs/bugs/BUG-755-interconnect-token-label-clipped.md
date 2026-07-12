@@ -1,0 +1,11 @@
+## BUG-755 · 互联对端访问令牌浮动标签上半截被折叠区裁剪
+- **报告**：2026-07-12（用户：截图「手动填写令牌」展开区里「对端访问令牌」标签只显示下半截，上半部分不显示）
+- **真实性**：✅ 真 bug（纯视觉裁剪，可稳定复现；令牌取值/鉴权/连接均正常）。
+  - 根因链（worktree `worktree-fix-token-label-clip`，基于 origin/develop）：
+    - 令牌输入框是 `hibiki/lib/src/sync/sync_settings_schema/interconnect.part.dart` 里「手动填写令牌」`ExpansionTile`（`childrenPadding: EdgeInsets.zero`）的**唯一且首个**展开子项 `HibikiTextField(labelText: t.sync_client_token)`。
+    - `HibikiTextField`（`hibiki/lib/src/utils/components/hibiki_material_components.dart:487`）用 `OutlineInputBorder` + `floatingLabelStyle: tokens.type.sectionLabel`（labelLarge 14sp/w600）。字段有值时标签浮动，浮动标签骑在字段顶边、中心落在顶边线上：Flutter `input_decorator.dart:1620` `outlinedFloatingY = -labelHeight*0.75/2 - strokeOffset/2`，即标签上半部分溢出到字段顶边**之上**约 7px（测试字体实测 4.75px，真机 CJK 字体更大）。
+    - `ExpansionTile` 的展开体被 `Expansible` 包在 `ClipRect(child: Align(heightFactor:...))` 里（Flutter `widgets/expansible.dart:466`）。`childrenPadding` 顶部为 0 时，`ClipRect` 上沿恰好压在字段顶边，把溢出到顶边之上的那半个浮动标签裁掉——于是「对端访问令牌」只剩下半截。
+  - 判定：不是令牌显示错误（BUG-637 已澄清取值/文案），是浮动标签几何 + 折叠区裁剪的布局问题。给该 `ExpansionTile` 顶部留出浮动标签的溢出高度即可根治，不动任何令牌取值/鉴权/文案。
+- **[x] ① 已修复** — `interconnect.part.dart` 该 `ExpansionTile` `childrenPadding: EdgeInsets.zero` → `const EdgeInsets.only(top: 10)`（>= 浮动标签溢出高度 ~7px，把字段整体下移让浮动标签落在 `ClipRect` 内），并加注释说明溢出/裁剪机理。提交：见 ② 同一提交。
+- **[x] ② 已加自动化测试** — widget 行为守卫 `hibiki/test/sync/interconnect_token_label_clip_guard_test.dart`：在真实的 `ExpansionTile`（含 `Expansible` 的 `ClipRect` 展开体）里放 `HibikiTextField(带浮动标签)`——① `childrenPadding: EdgeInsets.zero` 时断言浮动标签 painted top 位于 `ClipRect` 顶沿**之上**（复现裁剪）；② 用与源码一致的 `EdgeInsets.only(top: 10)` 时断言标签 painted top 落在 `ClipRect` **之内**（验修复）。`flutter test` 该文件 + `interconnect_token_display_guard_test` 全绿；`flutter analyze` 净。
+- **备注**：真机验收：桌面/手机进「互联」设置 → 展开「手动填写令牌」→「对端访问令牌」标签应完整显示（上下都不缺）。相邻的服务端令牌显示、`_validateAuth` 双接受、per-peer 签发均不受影响。

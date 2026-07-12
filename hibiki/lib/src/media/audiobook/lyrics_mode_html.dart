@@ -351,7 +351,7 @@ function _lyTapEnd(x, y) {
   var el = document.elementFromPoint(x, y);
   var cueEl = el ? el.closest('.cue') : null;
   if (!cueEl) {
-    // BUG-755: 歌词是独立文档，没有正文的 hoshiReader tap 桥（onTap/onTapEmpty）。
+    // BUG-756: 歌词是独立文档，没有正文的 hoshiReader tap 桥（onTap/onTapEmpty）。
     // 命中空白必须显式回 Dart：① 唤出/收起隐藏的底栏（正文靠 onTapEmpty，歌词此前
     // 完全无此通道 → 底栏一旦隐藏就再也叫不出来）；② 让 Dart reclaim 阅读焦点——桌面
     // WebView2 在本次 pointer 手势里抢走了 OS 焦点，不夺回 Flutter _focusNode 就永远

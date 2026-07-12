@@ -512,7 +512,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     if (controller == null) return;
 
     if (_lyricsMode) {
-      // BUG-756: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
+      // BUG-757: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
       // 时置位并 notify）。必须**无条件**消费（哪怕本帧未就绪 / idx 越界也读一次），
       // 否则这枚挂在共享 controller 上的进程级一次性旗会泄漏到之后退回正文的
       // _onCueChanged，被那边 consumeForceReveal 读成过期 true → 凭空多滚一次。
@@ -530,7 +530,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             _controller!.evaluateJavascript(
               source: 'if(window.__lyricsSetCue)'
                   'window.__lyricsSetCue($idx, $scroll);'
-                  // BUG-756: snap 那一刻 cue 往往没变，__lyricsSetCue 的
+                  // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的
                   // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
                   // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
                   '${forceReveal ? 'if(window.__lyricsScrollToCue)'

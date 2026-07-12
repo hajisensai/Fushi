@@ -118,11 +118,18 @@ class GlobalLookupController {
   // frame's own DictionarySearchResult is held alongside (the pure stack
   // model only carries identity/linkage). _frameSeq mints stable per-frame
   // ids (the stack model never generates random/clock ids, see its docs).
-  // TODO-1030 M0 — the current sentence for THIS lookup (UIA context capture),
-  // shown as a context banner in the root popup card. Empty when context
-  // capture is off / unavailable (clipboard fallback), in which case the banner
-  // is not rendered. Reset per lookup in _lookupExternal.
+  // TODO-1030 M0 — the current sentence for THIS lookup (剪贴板整句 / UIA 前台句).
+  // Two consumers: (1) mining `{sentence}` context (sentenceContext, BUG-730);
+  // (2) the root card's context banner — GATED by [_showSentenceBanner] so the
+  // sentence still feeds mining even when the banner is suppressed. Empty when
+  // no sentence was captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
+
+  // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
+  // 快捷键查词不显示（其整句仍进制卡 sentence，只是不贴横幅）。与 _currentSentence
+  // 解耦：banner 注入独立门控，mining context 不受影响。默认 true（剪切板/悬浮
+  // 字幕等既有带句路径不变），仅热键路径显式传 false。Reset per lookup。
+  bool _showSentenceBanner = true;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
@@ -338,9 +345,9 @@ class GlobalLookupController {
       GlobalLookupChannel.hide(notify: false);
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
-      // in (shown in the popup). On any miss (no UIA text element, non-Windows,
-      // channel unavailable) fall back to the clipboard capture (inject Ctrl+C),
-      // which yields only the bare selection — never break the existing path.
+      // in. On any miss (no UIA text element, non-Windows, channel unavailable)
+      // fall back to the clipboard capture (inject Ctrl+C), which yields only
+      // the bare selection — never break the existing path.
       String text = '';
       String sentence = '';
       if (model.globalContextCaptureEnabled) {
@@ -361,7 +368,11 @@ class GlobalLookupController {
         glog('hotkey: empty selection — abort');
         return;
       }
-      await _lookupExternal(text, sentence: sentence);
+      // 用户 2026-07-12 — 手动快捷键查词不显示整句横幅（框）：整句仍传下去供
+      // 制卡 `{sentence}` 兜底（sentenceContext），但 showSentenceBanner:false
+      // 让 root 卡不贴横幅。只有剪切板自动唤出的瞬态窗（dispatcher）才带横幅。
+      await _lookupExternal(text,
+          sentence: sentence, showSentenceBanner: false);
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
@@ -382,6 +393,7 @@ class GlobalLookupController {
     String text, {
     String sentence = '',
     Rect? anchorScreenRect,
+    bool showSentenceBanner = true,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -402,7 +414,9 @@ class GlobalLookupController {
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
     await GlobalLookupChannel.hide(notify: false);
     await _lookupExternal(term,
-        sentence: sentence, anchorScreenRect: anchorScreenRect);
+        sentence: sentence,
+        anchorScreenRect: anchorScreenRect,
+        showSentenceBanner: showSentenceBanner);
     return true;
   }
 
@@ -421,6 +435,7 @@ class GlobalLookupController {
     String text, {
     required String sentence,
     Rect? anchorScreenRect,
+    bool showSentenceBanner = true,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -440,6 +455,7 @@ class GlobalLookupController {
       // not look like a user dismissal.
       GlobalLookupChannel.hide(notify: false);
       _currentSentence = sentence;
+      _showSentenceBanner = showSentenceBanner;
 
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: text,
@@ -1029,16 +1045,19 @@ class GlobalLookupController {
       if (result == null) {
         continue;
       }
-      // TODO-1030 M0 — only the ROOT frame (the hotkey lookup itself) carries
-      // the captured sentence banner; nested child lookups (clicked words) have
-      // no sentence context, so they render without a banner.
+      // TODO-1030 M0 — only the ROOT frame carries the captured sentence banner;
+      // nested child lookups (clicked words) have no sentence context, so they
+      // render without a banner. 用户 2026-07-12 — 且仅当 [_showSentenceBanner]
+      // 时才贴横幅：手动快捷键窗（showSentenceBanner:false）整句只进制卡不显示，
+      // 只有剪切板自动唤出的瞬态窗才带整句框。mining sentenceContext 仍用完整
+      // _currentSentence（line ~740），与横幅解耦。
       final bool isRoot = frame.id == kGlobalLookupRootFrameId;
       payloads.add(GlobalLookupFramePayload(
         frame: frame,
         result: result,
         anchorRect: _frameAnchors[frame.id],
         isVertical: isVertical,
-        sentence: isRoot ? _currentSentence : '',
+        sentence: (isRoot && _showSentenceBanner) ? _currentSentence : '',
       ));
     }
     if (payloads.isEmpty) {
