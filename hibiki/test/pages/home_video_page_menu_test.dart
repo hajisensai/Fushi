@@ -331,6 +331,25 @@ void main() {
     expect(find.text(t.dialog_read), findsNothing);
   });
 
+  testWidgets('桌面右键（次按钮）本地视频卡弹出同一动作面板（BUG-758）', (WidgetTester tester) async {
+    // BUG-758：本地视频卡此前只挂 onLongPress、漏了 onSecondaryTap，桌面右键无反应
+    // （书架书卡 / 远端视频卡都支持右键）。此处直接模拟次按钮点击，断言与长按同一面板。
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(HibikiCard).first, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+
+    // 右键与长按同链路（都走 _showVideoMenu）：应弹出同一封面背景动作面板。
+    expect(find.byType(HibikiDialogFrame), findsOneWidget);
+    expect(find.text(t.tag_label), findsOneWidget);
+    expect(find.text(t.video_rename), findsOneWidget);
+    expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+    expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.dialog_delete), findsOneWidget);
+  });
+
   testWidgets(
       'first video open prompts for Anime4K recommended shaders (desktop)',
       (WidgetTester tester) async {
