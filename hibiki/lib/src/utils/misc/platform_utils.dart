@@ -114,7 +114,11 @@ double? desktopContentMaxWidth(
 ) {
   if (sizeClass == WindowSizeClass.compact) return null;
   return switch (kind) {
-    DesktopContentKind.readerShelf => 1280,
+    // UI v2：取消书架/视频库在宽屏上的 1280px 内容宽上限（用户实报「莫名的左右
+    // 宽度上限」）。合集横排行/卡片网格是媒体墙布局，随窗口放宽天然多排一列，
+    // 居中锁窄反而两侧留白。与查词页 TODO-1352 同款 full-bleed 分支（仍保留
+    // desktopContentPadding 的 16/24px 侧向留白，不贴边）。
+    DesktopContentKind.readerShelf => null,
     // TODO-1352: 取消查词页（nav「查词」）在宽屏上的强制内容宽度上限。此前 1040px 把
     // 查词结果区 WebView 居中锁死在窄栏，宽屏两侧大片留白、用户无法让词典正文占满。
     // 返回 null 让 [DesktopContentLayout] 走 full-bleed 分支（仍保留 24px 侧向留白，

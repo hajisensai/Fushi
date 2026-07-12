@@ -1226,16 +1226,31 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
             final bool hasRemoteSection =
                 !(remoteSection is SizedBox && remoteSection.height == 0);
-            return CustomScrollView(
-              slivers: <Widget>[
-                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量 [all]
-                // 描述整库，不随标签筛选变。
-                if (all.isNotEmpty)
-                  SliverToBoxAdapter(child: _buildOverviewSection(all)),
-                if (hasRemoteSection) SliverToBoxAdapter(child: remoteSection),
-                ..._buildLocalVideoSlivers(all, ordered),
-              ],
+            // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
+            // 以 240 为目标宽算响应式列数，两处共用同一实际卡宽。
+            return LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final HibikiDesignTokens tokens =
+                    HibikiDesignTokens.of(context);
+                final ({int columns, double cardWidth}) cardLayout =
+                    unifiedShelfCardLayout(
+                  availableWidth:
+                      constraints.maxWidth - tokens.spacing.card * 2,
+                  targetWidth: 240,
+                );
+                return CustomScrollView(
+                  slivers: <Widget>[
+                    // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                    // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                    // [all] 描述整库，不随标签筛选变。
+                    if (all.isNotEmpty)
+                      SliverToBoxAdapter(child: _buildOverviewSection(all)),
+                    if (hasRemoteSection)
+                      SliverToBoxAdapter(child: remoteSection),
+                    ..._buildLocalVideoSlivers(all, ordered, cardLayout),
+                  ],
+                );
+              },
             );
           },
         );
@@ -1471,6 +1486,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
+    ({int columns, double cardWidth}) cardLayout,
   ) {
     if (all.isEmpty) {
       return <Widget>[
@@ -1499,7 +1515,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         <CollectionGroup<VideoBookRow>>[];
     void flushLoose() {
       if (loose.isEmpty) return;
-      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding));
+      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
       loose = <CollectionGroup<VideoBookRow>>[];
     }
 
@@ -1510,7 +1526,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       }
       flushLoose();
       slivers.add(
-        SliverToBoxAdapter(child: _buildVideoCollectionRow(group)),
+        SliverToBoxAdapter(child: _buildVideoCollectionRow(group, cardLayout)),
       );
     }
     flushLoose();
@@ -1540,7 +1556,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 一个合集的全宽横排行：头（合集名+集数+查看全部→详情页）+ 横向成员卡列表。
   /// 成员卡复用 [_buildCard] 并带 playlistCollectionId——点某集**直接从该集**进
   /// 播放器（带剧集面板/上下集/连播）；初始横滚定位到「继续看」成员。
-  Widget _buildVideoCollectionRow(CollectionGroup<VideoBookRow> group) {
+  Widget _buildVideoCollectionRow(
+    CollectionGroup<VideoBookRow> group,
+    ({int columns, double cardWidth}) cardLayout,
+  ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final MediaCollectionRow collection = group.collection!;
     final int continueIdx = continueMemberIndex(<CollectionMemberProgress>[
@@ -1562,8 +1581,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         title: collection.name,
         countLabel: t.video_playlist_episodes(count: group.items.length),
         itemCount: group.items.length,
-        itemWidth: 240,
-        // 与散卡网格 cell 同高（218 = 封面区 + 标题 + Phase D 观看进度行）。
+        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
+        // Phase D 观看进度行）。
+        itemWidth: cardLayout.cardWidth,
         rowHeight: 218,
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
@@ -1966,14 +1986,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Widget _buildLooseVideoGridSliver(
     List<CollectionGroup<VideoBookRow>> loose,
     EdgeInsetsGeometry padding,
+    ({int columns, double cardWidth}) cardLayout,
   ) {
     return SliverPadding(
       padding: padding,
       sliver: SliverGrid.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 280,
-          // 200 → 218：UI v2 Phase D 卡片底部新增一行观看进度文字（metadata），
-          // 加高 cell 保持封面区不被挤压。
+        // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：散卡 cell 与
+        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。
+        // mainAxisExtent 218 = 封面区 + 标题 + Phase D 观看进度行。
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardLayout.columns,
           mainAxisExtent: 218,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,

@@ -27,6 +27,7 @@ class CollectionShelfRow extends StatefulWidget {
     required this.onOpenDetail,
     this.headerFocusId,
     this.initialIndex = 0,
+    this.itemGap = 12,
     super.key,
   });
 
@@ -57,6 +58,10 @@ class CollectionShelfRow extends StatefulWidget {
   /// 初始横滚定位到的成员下标（视频行 = 继续看成员；书架行 v1 恒 0）。
   final int initialIndex;
 
+  /// 卡间距。视频卡（无自带内边距）默认 12 对齐网格间距；书卡自带 12px 内边距
+  /// 时传 0，使行内视觉间距与散书网格一致。
+  final double itemGap;
+
   @override
   State<CollectionShelfRow> createState() => _CollectionShelfRowState();
 }
@@ -64,15 +69,14 @@ class CollectionShelfRow extends StatefulWidget {
 class _CollectionShelfRowState extends State<CollectionShelfRow> {
   late final ScrollController _controller;
 
-  /// 卡间距（与网格 12 间距一致；offset 计算与 separator 必须同源）。
-  static const double _itemGap = 12;
-
   @override
   void initState() {
     super.initState();
     final int idx = widget.initialIndex.clamp(0, widget.itemCount - 1);
+    // offset 计算与 separator 必须同源（widget.itemGap）。
     _controller = ScrollController(
-      initialScrollOffset: idx <= 0 ? 0 : idx * (widget.itemWidth + _itemGap),
+      initialScrollOffset:
+          idx <= 0 ? 0 : idx * (widget.itemWidth + widget.itemGap),
     );
   }
 
@@ -109,7 +113,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
               physics: desktopAwareScrollPhysics(),
               itemCount: widget.itemCount,
               separatorBuilder: (BuildContext _, int __) =>
-                  const SizedBox(width: _itemGap),
+                  SizedBox(width: widget.itemGap),
               itemBuilder: (BuildContext context, int i) => SizedBox(
                 width: widget.itemWidth,
                 child: widget.itemBuilder(context, i),
@@ -180,4 +184,23 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
     }
     return header;
   }
+}
+
+/// 统一「散卡网格」与「合集横排行」的卡片尺寸（用户实报：合集卡比散卡大一截）。
+/// 以 [targetWidth]（合集卡目标宽）为基准算响应式列数（floor→卡只会比目标更宽不
+/// 会更窄），返回列数 + 两处共用的**实际卡宽**：网格 FixedCrossAxisCount 的 cell
+/// 宽与行内 SizedBox 宽取同一值，散卡与合集成员卡逐像素同尺寸。
+({int columns, double cardWidth}) unifiedShelfCardLayout({
+  required double availableWidth,
+  required double targetWidth,
+  double spacing = 12,
+}) {
+  if (availableWidth <= 0 || targetWidth <= 0) {
+    return (columns: 1, cardWidth: targetWidth > 0 ? targetWidth : 1);
+  }
+  final int columns = ((availableWidth + spacing) / (targetWidth + spacing))
+      .floor()
+      .clamp(1, 1 << 10);
+  final double cardWidth = (availableWidth - (columns - 1) * spacing) / columns;
+  return (columns: columns, cardWidth: cardWidth);
 }

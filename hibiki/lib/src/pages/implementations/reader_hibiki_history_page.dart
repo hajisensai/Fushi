@@ -771,6 +771,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Map<String, String> epubCoverUrisByBookKey,
     BoxConstraints constraints,
   ) {
+    // UI v2：散书网格与合集横排行统一卡宽（用户实报合集卡大一截）——以网格列宽
+    // 断点为目标宽算响应式列数，两处共用同一实际卡宽（书卡自带内边距，网格零间距）。
+    final ({int columns, double cardWidth}) cardLayout = unifiedShelfCardLayout(
+      availableWidth: constraints.maxWidth,
+      targetWidth: _gridExtent(context, constraints),
+      spacing: 0,
+    );
     final List<Widget> slivers = <Widget>[];
     List<CollectionGroup<_ShelfBookSlot>> loose =
         <CollectionGroup<_ShelfBookSlot>>[];
@@ -779,8 +786,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       final List<CollectionGroup<_ShelfBookSlot>> segment = loose;
       slivers.add(
         SliverGrid.builder(
-          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: _gridExtent(context, constraints),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cardLayout.columns,
             childAspectRatio: kShelfBookCardAspectRatio,
           ),
           itemCount: segment.length,
@@ -804,7 +811,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           child: _buildShelfCollectionRow(
             group,
             epubCoverUrisByBookKey,
-            constraints,
+            cardLayout,
           ),
         ),
       );
@@ -819,17 +826,17 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildShelfCollectionRow(
     CollectionGroup<_ShelfBookSlot> group,
     Map<String, String> epubCoverUrisByBookKey,
-    BoxConstraints constraints,
+    ({int columns, double cardWidth}) cardLayout,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final MediaCollectionRow collection = group.collection!;
-    final double itemWidth = _gridExtent(context, constraints);
-    // 书卡槽比 = 宽/高（kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，
-    // 行内卡与网格卡同形。
+    // 与散书网格 cell 同宽（unifiedShelfCardLayout）；书卡槽比 = 宽/高
+    // （kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，行内卡与网格卡同形。
+    final double itemWidth = cardLayout.cardWidth;
     final double rowHeight = itemWidth / kShelfBookCardAspectRatio;
     return Padding(
+      // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
       padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.rowVertical,
         vertical: tokens.spacing.gap / 2,
       ),
       child: CollectionShelfRow(
@@ -839,6 +846,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         itemCount: group.items.length,
         itemWidth: itemWidth,
         rowHeight: rowHeight,
+        // 书卡自带 12px 内边距 → 行内间距归零，与散书网格视觉间距一致。
+        itemGap: 0,
         headerFocusId:
             HibikiFocusId('reader-shelf-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
