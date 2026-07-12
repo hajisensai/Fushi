@@ -2300,5 +2300,9 @@
   "sort_title": "Name",
   "sort_imported": "Import date",
   "collection_sort_by_title": "Sort by name",
-  "collection_sort_by_imported": "Sort by import date"
+  "collection_sort_by_imported": "Sort by import date",
+  "batch_delete_confirm_video": "Delete $n video(s)? This cannot be undone.",
+  "batch_delete_success_video": "Deleted $n video(s).",
+  "batch_tag_added_video": "Added tag \"$name\" to $n video(s).",
+  "batch_tag_removed_video": "Removed tag \"$name\" from $n video(s)."
 }

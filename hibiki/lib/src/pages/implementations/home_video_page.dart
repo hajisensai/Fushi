@@ -394,7 +394,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(t.dialog_delete),
-        content: Text(t.batch_delete_confirm(n: count)),
+        content: Text(t.batch_delete_confirm_video(n: count)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -438,7 +438,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       await widget.repo.compactAfterVideoDeleteBestEffort();
     }
     if (!mounted) return;
-    HibikiToast.show(msg: t.batch_delete_success(n: deleted));
+    HibikiToast.show(msg: t.batch_delete_success_video(n: deleted));
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
@@ -2496,14 +2496,20 @@ class _VideoBatchTagPickerDialogState
       final BookTagRow tag =
           widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
       HibikiToast.show(
-        msg: t.batch_tag_added(name: tag.name, n: widget.selectedUids.length),
+        msg: t.batch_tag_added_video(
+          name: tag.name,
+          n: widget.selectedUids.length,
+        ),
       );
     }
     for (final int tagId in _removeTagIds) {
       final BookTagRow tag =
           widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
       HibikiToast.show(
-        msg: t.batch_tag_removed(name: tag.name, n: widget.selectedUids.length),
+        msg: t.batch_tag_removed_video(
+          name: tag.name,
+          n: widget.selectedUids.length,
+        ),
       );
     }
     Navigator.pop(context);

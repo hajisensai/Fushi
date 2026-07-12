@@ -2300,5 +2300,9 @@
   "sort_title": "Name",
   "sort_imported": "Import date",
   "collection_sort_by_title": "Sort by name",
-  "collection_sort_by_imported": "Sort by import date"
+  "collection_sort_by_imported": "Sort by import date",
+  "batch_delete_confirm_video": "確定刪除 $n 個影片？此操作不可撤銷。",
+  "batch_delete_success_video": "已刪除 $n 個影片。",
+  "batch_tag_added_video": "已為 $n 個影片添加標籤「$name」。",
+  "batch_tag_removed_video": "已從 $n 個影片移除標籤「$name」。"
 }
