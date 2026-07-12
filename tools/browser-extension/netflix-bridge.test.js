@@ -13,13 +13,19 @@ const vm = require('node:vm');
 
 const BRIDGE = path.join(__dirname, 'netflix-bridge.js');
 
-function loadBridge() {
+function loadBridge(opts) {
+  opts = opts || {};
+  // BUG-769：window.origin 与 location.origin 在 file:// 下不同——前者是 opaque origin 序列化 'null'，
+  // 后者是 'file://'。桥的接收端比对期望源现改用 window.origin，故 harness 两者都要能独立设置。
+  const locationOrigin = opts.locationOrigin || 'https://www.netflix.com';
+  const windowOrigin = opts.windowOrigin || locationOrigin;
   const src = fs.readFileSync(BRIDGE, 'utf8');
   const posted = [];
   const listeners = [];
   const fetched = [];
   const windowObj = {
-    location: { origin: 'https://www.netflix.com' },
+    location: { origin: locationOrigin },
+    origin: windowOrigin,
     postMessage: (msg, origin) => posted.push({ msg, origin }),
     addEventListener: (t, fn) => { if (t === 'message') listeners.push(fn); },
   };
@@ -100,4 +106,30 @@ test('replayCues 只认同源同窗消息（不被宿主页第三方 iframe 驱�
     fn({ origin: 'https://www.netflix.com', source: {}, data: { __hibikiNf: 'replayCues' } });
   }
   assert.strictEqual(h.posted.length, 0, '跨源/跨窗的 replayCues 必须被忽略');
+});
+
+test('BUG-769 opaque origin（file://）下 cue 往返不丢：自投用 "/"、接收端认 window.origin', async () => {
+  // file:// 页 opaque origin：window.origin 序列化成 'null'，而 location.origin 返回 'file://'。
+  // 旧代码自投用 location.origin('file://') 作 targetOrigin → 与 recipient 真实源 'null' 不匹配 →
+  // postMessage 抛错、消息永久丢失（store 空、面板列表空）；接收端 e.origin 比对 location.origin 也永远失败。
+  const h = loadBridge({ locationOrigin: 'file://', windowOrigin: 'null' });
+  vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify(makeManifest())) + ')', h.ctx);
+  await settle();
+  const cues = h.posted.filter((p) => p.msg && p.msg.__hibikiNf === 'cues');
+  assert.strictEqual(cues.length, 3, 'file:// 下仍抓全 3 轨');
+  // targetOrigin 必须是 "/"（= 仅同源同窗投递，对不透明源成立）；绝不能是 location.origin/'file://'。
+  for (const p of cues) {
+    assert.strictEqual(p.origin, '/', 'file:// 自投必须用 "/" 作 targetOrigin');
+  }
+
+  // content.js 晚注入后请求重放：e.origin 为不透明源序列化 'null'，接收端须认可（ORIGIN=window.origin='null'）。
+  h.posted.length = 0;
+  for (const fn of h.listeners) {
+    fn({ origin: 'null', source: h.windowObj, data: { __hibikiNf: 'replayCues' } });
+  }
+  const replayed = h.posted.filter((p) => p.msg && p.msg.__hibikiNf === 'cues');
+  assert.strictEqual(replayed.length, 3, 'file:// opaque origin 的 replayCues 必须被接收端认可并整批重放');
+  for (const p of replayed) {
+    assert.strictEqual(p.origin, '/', '重放同样用 "/" 作 targetOrigin');
+  }
 });

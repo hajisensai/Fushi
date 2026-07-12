@@ -287,6 +287,39 @@ void main() {
                 'cues receiver (injection-order race, TODO-1219)');
       });
 
+      // BUG-769 根因守卫：跨世界自投消息在 file:// 页 opaque origin 下会炸。opaque origin 序列化成
+      // 'null'，但 location.origin 返回 'file://' → 二者不匹配 → postMessage 抛 SyntaxError/静默丢弃，
+      // 整条 cue 桥（含 replayCues 握手）在 file:// 下死掉 → 面板 store 空、列表空。正确做法：自投一律
+      // 用 targetOrigin '/'（仅同源同窗投递，对不透明源恒成立、不做 URL 解析），接收端比对期望源用
+      // window.origin（不透明源返回 'null'，与 e.origin 一致）。两镜像、三文件都锁死防回归。
+      test('[$name] cross-world postMessage is file:// opaque-origin safe', () {
+        const List<String> selfPostFiles = <String>[
+          'netflix-bridge.js',
+          'subtitle-panel.js',
+          'content.js',
+        ];
+        final RegExp badTarget =
+            RegExp(r'postMessage\([^;]*?,\s*(window\.)?location\.origin\s*\)');
+        for (final String rel in selfPostFiles) {
+          final String src = File('$root/$rel').readAsStringSync();
+          expect(badTarget.hasMatch(src), isFalse,
+              reason:
+                  '$root $rel must not use location.origin as a postMessage '
+                  'targetOrigin (BUG-769: throws on file:// opaque origin — '
+                  'use a bare-slash targetOrigin instead)');
+        }
+        // 接收端期望源改用 window.origin，绝不能退回 window.location.origin（file:// 会错序列化成 'file://'）。
+        final String bridge =
+            File('$root/netflix-bridge.js').readAsStringSync();
+        expect(bridge.contains('var ORIGIN = window.origin;'), isTrue,
+            reason: '$root netflix-bridge.js receiver must compare against '
+                'window.origin (opaque-origin safe), not location.origin');
+        expect(bridge.contains('window.location.origin'), isFalse,
+            reason:
+                '$root netflix-bridge.js must not read window.location.origin '
+                '(BUG-769: mis-serializes opaque file:// origin)');
+      });
+
       // TODO-1363 通用化守卫：面板不再是 Netflix 专属——数据源抽象（provider 全在 content.js，
       // 面板消费同一个 store），面板文件不得再按 hostname 早退。
       test('[$name] subtitle-panel.js is universal (no Netflix hostname gate)',
