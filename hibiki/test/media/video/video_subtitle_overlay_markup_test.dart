@@ -422,8 +422,25 @@ void main() {
       ),
     ));
     await tester.pump();
-    // 无 PlayResY → _assFontScale=1 → sigma=5 → 该字符包一层高斯模糊 ImageFiltered。
+    // 无 PlayResY → _assFontScale=1 → sigma=5×0.8493≈4.25>0 → 该字符包一层高斯 ImageFiltered。
     expect(find.byType(ImageFiltered), findsWidgets);
+  });
+
+  // ASS `\blur` → 高斯 sigma 换算须带 libass 的 `2/sqrt(ln256)`≈0.8493 因子（对齐 mpv），
+  // 不能把 `\blur` 值直接当 sigma（会比 mpv 明显偏糊 ~1.18×）。锁死纯函数换算。
+  test(r'assBlurValueToSigma applies libass 2/sqrt(ln256) factor (mpv parity)',
+      () {
+    expect(kLibassBlurRadiusScale, closeTo(0.8493, 0.0005));
+    // \blur5，无缩放（scale=1）：libass 有效 sigma = 5×0.8493 ≈ 4.247，而非旧的 5。
+    expect(assBlurValueToSigma(5, 1), closeTo(5 * 0.8493218, 0.001));
+    expect(assBlurValueToSigma(5, 1), lessThan(5.0),
+        reason: '必须比裸 \\blur 值小（带 libass 因子），否则比 mpv 偏糊');
+    // \blur4 @ 2× 缩放（1080p 脚本渲染到 2160）：4×2×0.8493 ≈ 6.79，而非旧的 8。
+    expect(assBlurValueToSigma(4, 2), closeTo(4 * 2 * 0.8493218, 0.001));
+    expect(assBlurValueToSigma(4, 2), lessThan(8.0));
+    // 边界：0 → 0；超大值夹到 24。
+    expect(assBlurValueToSigma(0, 3), 0);
+    expect(assBlurValueToSigma(100, 3), 24);
   });
 
   testWidgets(r'respectAssStyle OFF: \blur ignored (no ImageFiltered)',

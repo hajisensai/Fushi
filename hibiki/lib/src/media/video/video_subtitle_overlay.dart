@@ -78,6 +78,24 @@ int resolveSubtitleCharHit(
   return bestIndex;
 }
 
+/// libass 把 ASS `\blur` 值换算成高斯半径时乘的常数 `2 / sqrt(ln 256)`（≈0.8493）。见
+/// libass `ass_render.c`：`blur_radius_scale = 2 / sqrt(log(256))`，最终下发给高斯的半径 =
+/// `\blur 值 × (显示/PlayRes 缩放) × blur_radius_scale`。**ASS 的 `\blur` 数值不是直接的高斯
+/// sigma**——少了这个因子就比 mpv/libass 明显偏糊（约 1/0.8493 ≈ 1.18×）。
+final double kLibassBlurRadiusScale = 2 / math.sqrt(math.log(256));
+
+/// 把 ASS `\blur` 值 [blurValue] 换算成 Flutter 高斯模糊 sigma（逻辑像素），对齐 libass/mpv：
+/// `sigma = blurValue × [assFontScale]（显示区高 / PlayResY）× [kLibassBlurRadiusScale]`，
+/// 再夹到 [0, 24]（防 PlayResY 异常时糊爆）。纯函数，overlay 渲染与单测共享真相源。
+///
+/// 此前 overlay 漏乘 [kLibassBlurRadiusScale]，把 `\blur` 值当 sigma 直接 × 缩放，导致比
+/// mpv 明显偏糊（用户报「一条清晰一条发虚」的发虚那条来自字幕自带 `\blur4`，且比 mpv 更糊）。
+@visibleForTesting
+double assBlurValueToSigma(double blurValue, double assFontScale) {
+  final double sigma = blurValue * assFontScale * kLibassBlurRadiusScale;
+  return sigma < 0 ? 0 : (sigma > 24 ? 24 : sigma);
+}
+
 /// 视频底部当前句字幕 overlay；监听 [VideoPlayerController.currentCue]。
 ///
 /// 字幕逐字符可点击：点击第 [int] 个 grapheme 时回调
@@ -1136,14 +1154,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   }
 
   /// 覆盖第 [i] 个 grapheme 的 `\blur`/`\be` 换算成 Flutter 高斯模糊 sigma（逻辑像素）。
-  /// respectAssStyle 关 / 无 blur 返回 0。ASS blur 是相对 PlayResY 的绝对像素（与字号 / 描边 /
-  /// 阴影同源），故按 [_assFontScale] 缩放到显示尺寸，再夹到 [0,24] 防 PlayResY 异常时糊爆。
+  /// respectAssStyle 关 / 无 blur 返回 0。真换算（含 libass `2/sqrt(ln256)` 因子 + 夹范围）
+  /// 委托纯函数 [assBlurValueToSigma]（可单测），本方法只负责取 span 的 `\blur` 值 + 缩放。
   double _blurSigmaFor(int i, SubtitleMarkup? markup) {
     if (!widget.respectAssStyle || markup == null) return 0;
     final double? blur = _spanAt(i, markup)?.blur;
     if (blur == null || blur <= 0) return 0;
-    final double sigma = blur * _assFontScale(markup);
-    return sigma < 0 ? 0 : (sigma > 24 ? 24 : sigma);
+    return assBlurValueToSigma(blur, _assFontScale(markup));
   }
 
   /// 解析第 [i] 个 grapheme 的**描边色 + 描边宽**（[_buildSubtitleChar] 的 ASS 尊重分支用）。
