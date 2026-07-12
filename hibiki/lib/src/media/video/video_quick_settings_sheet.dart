@@ -590,38 +590,38 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  /// 宽窗顶部横向分类条（TODO-556 / TODO-1351）：大分类用横滑 chip 行，固定在 sheet
-  /// 顶部、不随下方详情滚动；放不下时横向滚动（与窄窗 push 的导航行、宽窗左栏不同）。
-  /// 选中 chip 高亮，点击切下方详情。
+  /// 宽窗顶部分类条（TODO-556 / TODO-1351 / BUG：末位分类被裁）：大分类用 chip 行，固定
+  /// 在 sheet 顶部、不随下方详情滚动；选中 chip 高亮，点击切下方详情。
   ///
-  /// TODO-1351（用户复诉）：分类 tab 必须「图标 + 完整文字」显示（参考「检查器」式
-  /// tab），不得截成省略号、也不得压成纯图标 + tooltip（TODO-640 曾为省顶栏空间改
-  /// 仅图标，用户要求恢复完整文字标签）。标签经
-  /// [HibikiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染（无 ellipsis），
-  /// 顶栏放不下时整条横向滚动——窄窗 / 高 UI scale 下可横滑，单个标签永不截断。
+  /// **放不下时换行堆叠**（[Wrap]）而非横向滚动裁断（用户报「弹幕 / 控制 分类被截在视口
+  /// 外、看不全」）。旧实现用横向 [SingleChildScrollView] + [Row]：视口装不下 7 个「图标 +
+  /// 完整文字」chip 时，末位分类被推到视口右侧外、无滚动条提示，用户不知还有分类、也点不
+  /// 到。改 [Wrap] 后所有 chip 恒可见：一行放不下就自动折到第二行，宽度越窄行数越多，
+  /// 永不裁断（[spacing] 行内间距、[runSpacing] 行间距均走 token，无裸值）。
+  ///
+  /// TODO-1351（用户复诉）：分类 tab 仍是「图标 + 完整文字」（参考「检查器」式 tab），不得
+  /// 截成省略号、也不得压成纯图标 + tooltip（TODO-640 曾为省顶栏空间改仅图标，用户要求恢复
+  /// 完整文字标签）。标签经 [HibikiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染
+  /// （无 ellipsis）；换行由 [Wrap] 承载，单个标签永不截断。
   Widget _buildTopCategoryBar(String selectedId) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: <Widget>[
-          for (final ({String id, IconData icon, String label}) cat
-              in _categories())
-            Padding(
-              padding: EdgeInsets.only(right: tokens.spacing.gap),
-              child: HibikiSelectableChip(
-                // 稳定 key：测试 / 焦点驱动靠 id key 命中分类（不依赖标签文案）。
-                key: ValueKey<String>('video-settings-cat-${cat.id}'),
-                label: cat.label,
-                leadingIcon: cat.icon,
-                selected: cat.id == selectedId,
-                // TODO-1351：标签完整渲染、不省略；空间不够由外层横滑条兜底。
-                allowLabelOverflow: true,
-                onSelected: (_) => _selectSubPage(cat.id),
-              ),
-            ),
-        ],
-      ),
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        for (final ({String id, IconData icon, String label}) cat
+            in _categories())
+          HibikiSelectableChip(
+            // 稳定 key：测试 / 焦点驱动靠 id key 命中分类（不依赖标签文案）。
+            key: ValueKey<String>('video-settings-cat-${cat.id}'),
+            label: cat.label,
+            leadingIcon: cat.icon,
+            selected: cat.id == selectedId,
+            // TODO-1351：标签完整渲染、不省略；空间不够由 Wrap 换行兜底（不裁断）。
+            allowLabelOverflow: true,
+            onSelected: (_) => _selectSubPage(cat.id),
+          ),
+      ],
     );
   }
 

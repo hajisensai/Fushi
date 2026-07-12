@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 743 条。点号进各自文件。
+> 共 744 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-759](bugs/BUG-759-anime4k-shader-noop.md) | ✅ | ✅ | Anime4K 着色器开了跟没开一样（glsl-shaders-append 非法 property 空下发） |
+| [BUG-758](bugs/BUG-758-local-video-card-right-click.md) | ✅ | ✅ | 本地视频卡不支持右键弹菜单 |
 | [BUG-757](bugs/BUG-757-lyrics-audio-follow-snap.md) | ✅ | ✅ | 歌词模式音频跟随失效（followAudio 门控 + snap 回中不生效） |
 | [BUG-756](bugs/BUG-756-lyrics-input-no-chrome-no-esc.md) | ✅ | ✅ | 歌词模式唤不出隐藏底栏 + esc 退不出 |
 | [BUG-755](bugs/BUG-755-interconnect-token-label-clipped.md) | ✅ | ✅ | 互联对端访问令牌浮动标签上半截被折叠区裁剪 |

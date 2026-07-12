@@ -144,8 +144,20 @@ void main() {
         reason: 'labels are inline now, not tooltip-only (TODO-1351)');
     expect(source, contains('_buildWideDetailTitle('),
         reason: 'the selected category title renders atop the detail pane');
-    expect(source, contains('scrollDirection: Axis.horizontal'),
-        reason: 'the top category bar scrolls horizontally when it overflows');
+    // BUG（用户复诉「弹幕 / 控制 分类被截在视口外、点不到」）：顶栏分类条放不下时必须
+    // 换行堆叠（Wrap），不得回退横向 SingleChildScrollView 裁断——横滑会把末位分类推到
+    // 视口外、无滚动条提示。守卫只扫 _buildTopCategoryBar 方法体，与
+    // video_quick_settings_sheet_test 的同款守卫互为镜像。
+    final String topBarSource = source.substring(
+      source.indexOf('Widget _buildTopCategoryBar('),
+      source.indexOf('Widget _buildWideDetailTitle('),
+    );
+    expect(topBarSource, contains('Wrap('),
+        reason: 'the top category bar wraps so no category chip is clipped');
+    expect(topBarSource, isNot(contains('scrollDirection: Axis.horizontal')),
+        reason:
+            'top category bar must wrap, not horizontally scroll (last chip '
+            'was pushed off-screen and unclickable)');
     expect(source, contains('padding: widePrimaryPadding'));
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));

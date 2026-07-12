@@ -28,8 +28,8 @@ void main() {
       await db.close();
     });
 
-    test('defaults enable local sidecar MVP with a bounded active limit', () {
-      expect(repo.videoDanmakuEnabled, isTrue);
+    test('danmaku overlay defaults OFF with a bounded active limit', () {
+      expect(repo.videoDanmakuEnabled, isFalse, reason: '弹幕默认关闭，用户显式开启后才显示');
       expect(repo.videoDanmakuMaxActive, kDefaultVideoDanmakuMaxActive);
     });
 
