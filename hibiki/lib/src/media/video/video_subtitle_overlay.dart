@@ -295,6 +295,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 求值（同帧生效）。null=尚未布局，缩放退回 1.0。
   double? _lastLayoutHeight;
 
+  /// 最近一次 build 的字幕显示区宽度（与 [_lastLayoutHeight] 同处记录），供
+  /// [_scaledMarginX] 把 ASS `MarginL`/`MarginR` 按 显示区宽 / PlayResX 缩放成水平边距。
+  double? _lastLayoutWidth;
+
   /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_hitEntryIndexAt] 命中的**登记表下标**
   /// （非 grapheme——二维登记后同一 grapheme 下标可能属不同 cue，故锁扁平 entry 下标），
   /// onTapUp 用它经 [_charHitByEntryIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
@@ -531,6 +535,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
         // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
         _lastLayoutHeight = container.height;
+        _lastLayoutWidth = container.width;
 
         // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
         // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
@@ -660,7 +665,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     } else {
       mv = mvRaw.round();
     }
-    return 'a:$av:$ah:$mv';
+    // MarginL/MarginR（水平边距，原始 PlayResX 像素——显示无关，组身份不随窗口缩放漂移）
+    // 纳入键：行级横移对白（如 MarginL=900 挪到说话人一侧）与常规居中对白水平盒不同，
+    // 不得同组共用一个代表 padding。无边距（null/<=0）归一成 -1（srt/vtt 恒 -1，分组
+    // 行为像素级不变）。
+    final double mlRaw = markup?.cueStyle?.marginL ?? 0;
+    final double mrRaw = markup?.cueStyle?.marginR ?? 0;
+    final int ml = mlRaw > 0 ? mlRaw.round() : -1;
+    final int mr = mrRaw > 0 ? mrRaw.round() : -1;
+    return 'a:$av:$ah:$mv:$ml:$mr';
   }
 
   /// TODO-1372/BUG-698：把一组的当前活动 cue 对齐进跨帧槽位表（不变量见 [_groupSlots]），
@@ -787,9 +800,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // ASS MarginV（同锚点内竖直边距）缩放到显示尺寸，作为该组距锚点边的偏移，使作者用
     // MarginV 放在不同高度的同锚点 cue（标题 + 多行歌词）各就其位（TODO-1341 后续）。
     final double? scaledMarginV = forceTop ? null : _scaledMarginV(posMarkup);
+    // ASS MarginL/MarginR（水平边距）缩放到显示尺寸：横移对白（说话人一侧）/ an7 左上
+    // 招牌的左缘偏移各就其位。强制置顶的纯 SRT 副字幕（posMarkup null）恒无边距。
+    final double? scaledMarginL =
+        _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginL);
+    final double? scaledMarginR =
+        _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginR);
     return Align(
       alignment: _alignFor(anchor),
-      child: _anchoredPadded(anchor, content, scaledMarginV),
+      child: _anchoredPadded(
+          anchor, content, scaledMarginV, scaledMarginL, scaledMarginR),
     );
   }
 
@@ -910,6 +930,52 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         : (widget.backgroundColor ?? kDefaultSubtitleBackgroundColor)
             .withValues(alpha: widget.backgroundOpacity);
 
+    // 单个 grapheme 的渲染 + 查词登记（所属 cue 文本 + 该 cue 内 grapheme 下标 + context
+    // + 模糊态，供全局坐标反查）。字符本身不各自包 opaque GestureDetector（会吞 hover /
+    // 光标，BUG-198）；tap 命中由上层 translucent RawGestureDetector + 本登记表反查承载
+    // （BUG-553 竞技场门控）。隐形占位（TODO-1372，registerHits 为 false）不登记：离场
+    // cue 不可点、不可查词。
+    Widget charWidget(int i) {
+      return Builder(
+        builder: (BuildContext charContext) {
+          if (registerHits) {
+            _charEntries.add(_SubtitleCharEntry(
+              sentence: text,
+              graphemeIndex: i,
+              context: charContext,
+              blurred: blurred,
+            ));
+          }
+          return _buildSubtitleChar(chars[i], i, markup);
+        },
+      );
+    }
+
+    // \N 硬换行（markup.lineBreakGraphemes）：按作者排好的断点切成多行，复现 libass
+    // 布局（plainText 里断点处是空格、查词/制卡不变，仅渲染分行；断点空格本身不渲染
+    // ——libass 的 \N 同样被消费不显示）。无 \N（含 srt/vtt）恒单行 Wrap，几何像素级不变。
+    final List<int> breakList = markup?.lineBreakGraphemes ?? const <int>[];
+    final Set<int> breakSet =
+        breakList.isEmpty ? const <int>{} : breakList.toSet();
+    final List<List<Widget>> rows = <List<Widget>>[<Widget>[]];
+    for (int i = 0; i < chars.length; i++) {
+      if (breakSet.contains(i)) {
+        rows.add(<Widget>[]);
+        continue;
+      }
+      rows.last.add(charWidget(i));
+    }
+    final Widget textContent = rows.length == 1
+        ? Wrap(alignment: WrapAlignment.center, children: rows.single)
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              for (final List<Widget> row in rows)
+                Wrap(alignment: WrapAlignment.center, children: row),
+            ],
+          );
+
     Widget box = DecoratedBox(
       decoration: BoxDecoration(
         color: backgroundColor,
@@ -917,30 +983,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          children: <Widget>[
-            for (int i = 0; i < chars.length; i++)
-              Builder(
-                builder: (BuildContext charContext) {
-                  // 登记字符（所属 cue 文本 + 该 cue 内 grapheme 下标 + context + 模糊态）
-                  // 供全局坐标反查。字符本身不各自包 opaque GestureDetector（会吞 hover /
-                  // 光标，BUG-198）；tap 命中由上层 translucent RawGestureDetector + 本登记
-                  // 表反查承载（BUG-553 竞技场门控）。隐形占位（TODO-1372，registerHits
-                  // 为 false）不登记：离场 cue 不可点、不可查词。
-                  if (registerHits) {
-                    _charEntries.add(_SubtitleCharEntry(
-                      sentence: text,
-                      graphemeIndex: i,
-                      context: charContext,
-                      blurred: blurred,
-                    ));
-                  }
-                  return _buildSubtitleChar(chars[i], i, markup);
-                },
-              ),
-          ],
-        ),
+        child: textContent,
       ),
     );
 
@@ -1264,6 +1307,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return (mv * _assFontScale(markup)).clamp(0.0, h).toDouble();
   }
 
+  /// ASS `MarginL`/`MarginR`（水平边距，PlayResX 像素）按 显示区宽 / PlayResX 缩放到显示
+  /// 尺寸（与 [_scaledMarginV] 之于 PlayResY 同构）。缺 PlayResX 时回退 [_assFontScale]
+  /// （等比视频两者相等）。无边距（null / <=0）返回 null。夹到 [0, 显示区宽] 防异常撑爆。
+  double? _scaledMarginX(SubtitleMarkup? markup, double? margin) {
+    if (margin == null || margin <= 0) return null;
+    final double? playResX = markup?.playResX;
+    final double? w = _lastLayoutWidth;
+    final double scale =
+        (playResX != null && playResX > 0 && w != null && w > 0)
+            ? w / playResX
+            : _assFontScale(markup);
+    return (margin * scale).clamp(0.0, w ?? 1280).toDouble();
+  }
+
   /// 把 ASS 阴影（Shadow 深度 + BackColour 阴影色，行内 span 覆盖 cueStyle 默认）解析成
   /// 向右下偏移的硬投影 [Shadow]（TODO-1246）。深度按 [scale] 与字号同步缩放。深度<=0 /
   /// 无阴影返回 null（不加 shadows，历史像素级一致）。阴影色缺失时按 ASS 默认取黑，而非
@@ -1336,25 +1393,35 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 在控制条可见时真正被抬升盖过被抬高的移动进度条。用户手选高位（> reserve）时 max 取其
   /// 值、不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回
   /// 原值。避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
-  EdgeInsets _paddingFor(
-      SubtitleAnchor? a, bool controlsVisible, double? scaledMarginV) {
+  EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible,
+      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
     // 底部锚点基线：用户 bottomPadding 与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
     // 用户基线，保 TODO-129/161/238 控制条避让不回归；作者用大 MarginV 要求更高时才抬）。
     final double bottomBase = scaledMarginV == null
         ? widget.bottomPadding
         : math.max(widget.bottomPadding, scaledMarginV);
+    // ASS MarginL/MarginR 水平边距：Align 内侧 padding 恰是 ASS 排版盒语义——居中对齐时
+    // 盒宽 = 文本 + L + R、Align 居中该盒 → 文本中心右移 (L-R)/2；左/右对齐时文本起点 /
+    // 终点分别落在 L / 宽-R。无边距恒 0（srt/vtt 像素级不变）。
+    final double left = scaledMarginL ?? 0;
+    final double right = scaledMarginR ?? 0;
     return switch (v) {
       SubtitleVAlign.bottom => EdgeInsets.only(
+          left: left,
+          right: right,
           bottom: controlsVisible
               ? math.max(bottomBase, widget.controlsBottomReserve)
               : bottomBase,
         ),
       // 顶部锚点：有 ASS MarginV 时用缩放 MarginV 作顶部偏移（标题 / 多行歌词各就其位），
       // 否则回退用户基线 bottomPadding（历史行为，像素级不变）。
-      SubtitleVAlign.top =>
-        EdgeInsets.only(top: scaledMarginV ?? widget.bottomPadding),
-      SubtitleVAlign.middle => EdgeInsets.zero,
+      SubtitleVAlign.top => EdgeInsets.only(
+          left: left,
+          right: right,
+          top: scaledMarginV ?? widget.bottomPadding,
+        ),
+      SubtitleVAlign.middle => EdgeInsets.only(left: left, right: right),
     };
   }
 
@@ -1365,12 +1432,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 底缘骑到控制条顶、躲开进度条）、隐藏 → 落回 bottomPadding 基线（TODO-129/161，几何
   /// 见 [_paddingFor]）。取下限而非加法，故基线 < 控制条高时不会把字幕顶飞、手选高位也
   /// 不被改写（同一字段无特例分支）。
-  Widget _anchoredPadded(
-      SubtitleAnchor? anchor, Widget child, double? scaledMarginV) {
+  Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child,
+      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR) {
     final ValueListenable<bool>? visible = widget.controlsVisible;
     if (visible == null) {
       return Padding(
-          padding: _paddingFor(anchor, false, scaledMarginV), child: child);
+          padding: _paddingFor(
+              anchor, false, scaledMarginV, scaledMarginL, scaledMarginR),
+          child: child);
     }
     return ValueListenableBuilder<bool>(
       valueListenable: visible,
@@ -1379,7 +1448,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           // 与 media_kit 控制条淡入淡出同量级（~200ms），字幕上顶/落回跟随控制条显隐。
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          padding: _paddingFor(anchor, controlsVisible, scaledMarginV),
+          padding: _paddingFor(anchor, controlsVisible, scaledMarginV,
+              scaledMarginL, scaledMarginR),
           child: padded,
         );
       },

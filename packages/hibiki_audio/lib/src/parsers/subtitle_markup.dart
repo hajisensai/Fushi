@@ -300,6 +300,14 @@ class SubtitleCueStyle {
   /// `MarginV` 竖直边距（px，ASS 坐标系）；null=默认。渲染层可选消费。
   final double? marginV;
 
+  /// `MarginL` 左边距（px，PlayResX 坐标系）；null=默认。与 [marginR] 一起定义水平
+  /// 排版盒 `[MarginL, PlayResX - MarginR]`：居中对齐在盒内居中（不对称边距 → 整体
+  /// 横移，字幕组用它把对白挪到说话人一侧）、左/右对齐分别贴盒左/右缘。
+  final double? marginL;
+
+  /// `MarginR` 右边距（px，PlayResX 坐标系）；null=默认。见 [marginL]。
+  final double? marginR;
+
   const SubtitleCueStyle({
     this.fontName,
     this.primaryColorArgb,
@@ -314,7 +322,35 @@ class SubtitleCueStyle {
     this.strikeOut,
     this.anchor,
     this.marginV,
+    this.marginL,
+    this.marginR,
   });
+
+  /// Dialogue 行级 Margin 列（MarginL/MarginR/MarginV，>0 才覆盖，0=沿用样式默认，ASS
+  /// 规范）覆盖后的新实例。样式表实例被同名多条 Dialogue 共享，覆盖必须 clone 不得原地改。
+  SubtitleCueStyle withEventMargins({
+    double? marginL,
+    double? marginR,
+    double? marginV,
+  }) {
+    return SubtitleCueStyle(
+      fontName: fontName,
+      primaryColorArgb: primaryColorArgb,
+      outlineColorArgb: outlineColorArgb,
+      shadowColorArgb: shadowColorArgb,
+      fontSizePx: fontSizePx,
+      outlineWidthPx: outlineWidthPx,
+      shadowDepthPx: shadowDepthPx,
+      bold: bold,
+      italic: italic,
+      underline: underline,
+      strikeOut: strikeOut,
+      anchor: anchor,
+      marginV: marginV ?? this.marginV,
+      marginL: marginL ?? this.marginL,
+      marginR: marginR ?? this.marginR,
+    );
+  }
 }
 
 /// 单条字幕 cue 解析出的几何 + 行内样式。`plainText` 不含任何标签，供逐字查词/制卡。
@@ -334,6 +370,16 @@ class SubtitleMarkup {
   /// 缺省时按 ASS 规范回退 288（与 `\pos` 归一化同源）；srt/vtt 无 PlayRes 传 null →
   /// 渲染层退回不缩放（历史行为）。
   final double? playResY;
+
+  /// ASS `[Script Info]` 的 `PlayResX`（脚本坐标系宽度）。`MarginL`/`MarginR` 是相对本
+  /// 宽度的绝对像素：渲染层据 `显示区宽 / playResX` 缩放成水平边距（与 [playResY] 之于
+  /// MarginV 同构）。缺省回退 384（ASS 规范）；srt/vtt 传 null。
+  final double? playResX;
+
+  /// `\N` 硬换行的 grapheme 下标（升序）。[plainText] 里这些下标处是**空格**（与历史
+  /// 行为一致——查词 / 制卡 / DB 文本零变化），渲染层据此把字幕盒切成多行，复现作者
+  /// 排好的换行（libass 语义）。空列表 = 无硬换行。
+  final List<int> lineBreakGraphemes;
 
   /// `\fad`/`\fade` 行级淡入淡出（TODO-1373）；null=无。渲染时按 cue 内已播放时长求不透明度。
   final SubtitleFade? fade;
@@ -356,6 +402,8 @@ class SubtitleMarkup {
     this.posFraction,
     this.cueStyle,
     this.playResY,
+    this.playResX,
+    this.lineBreakGraphemes = const <int>[],
     this.fade,
     this.rotationDeg,
     this.scale,
@@ -509,7 +557,16 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     }
     if (c == r'\' && i + 1 < n) {
       final String next = raw[i + 1];
-      if (next == 'N' || next == 'n' || next == 'h') {
+      // \N 硬换行：内部先写 '\n' 占位（同为 1 grapheme，span 偏移不变），扫描结束后
+      // 记录其下标进 lineBreakGraphemes、并在 plainText 里替换回空格——查词 / 制卡 /
+      // DB 文本与历史逐字节一致，只有渲染层看得到换行。\n（软换行，仅 WrapStyle 2 生效，
+      // 罕见）/ \h（不断行空格）维持空格。
+      if (next == 'N') {
+        cur.write('\n');
+        i += 2;
+        continue;
+      }
+      if (next == 'n' || next == 'h') {
         cur.write(' ');
         i += 2;
         continue;
@@ -575,8 +632,23 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
           t1Ms: xf.mt1, t2Ms: xf.mt2)
       : null;
 
+  // \N 硬换行占位（'\n'）→ 下标记录 + 替换回空格（plainText 与历史逐字节一致，查词 /
+  // 制卡 / DB 零变化；渲染层按下标切行）。逐 grapheme 扫描一次即可（'\n' 恒单 grapheme）。
+  final String rawPlain = plain.toString();
+  List<int> breaks = const <int>[];
+  String plainText = rawPlain;
+  if (rawPlain.contains('\n')) {
+    breaks = <int>[];
+    int gi = 0;
+    for (final String ch in rawPlain.characters) {
+      if (ch == '\n') breaks.add(gi);
+      gi++;
+    }
+    plainText = rawPlain.replaceAll('\n', ' ');
+  }
+
   return SubtitleMarkup(
-    plainText: plain.toString(),
+    plainText: plainText,
     spans: spans,
     // 行内 \an 优先；无行内 \an 时回退 cueStyle（V4+ Styles）的 Alignment（TODO-1105）。
     anchor: anchor ?? cueStyle?.anchor,
@@ -584,6 +656,9 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     cueStyle: cueStyle,
     // PlayResY 原样透传，供渲染层把 ASS 绝对字号 / 阴影深度缩放到播放尺寸（TODO-1246）。
     playResY: playResY,
+    // PlayResX 透传，供渲染层缩放 MarginL/MarginR 水平边距（与 PlayResY 同构）。
+    playResX: playResX,
+    lineBreakGraphemes: breaks,
     fade: fade,
     rotationDeg: xf.rotationDeg,
     scale: scale,

@@ -53,8 +53,8 @@ void main() {
         2,
         reason: 'ShowAt 懒建与 PrewarmWebView 预热两个创建点必须一致，'
             '否则预热窗与重建窗任务栏行为漂移');
-    expect('window_title_.c_str()'.allMatches(cpp).length,
-        greaterThanOrEqualTo(2),
+    expect(
+        'window_title_.c_str()'.allMatches(cpp).length, greaterThanOrEqualTo(2),
         reason: '两个创建点都必须用可设置的 window_title_（任务栏按钮文案）');
     expect(cpp.contains('L"Hibiki Lookup", WS_POPUP'), isFalse,
         reason: '不得残留写死的创建标题（回归 signature）');

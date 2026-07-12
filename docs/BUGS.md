@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 733 条。点号进各自文件。
+> 共 734 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-749](bugs/BUG-749-lookup-window-floor-region-eats-clicks.md) | ✅ | ✅ | app外查词覆盖窗铺满工作区吞掉下一次点击 |
 | [BUG-748](bugs/BUG-748-vn-blank-tap-advance-vertical.md) | ✅ | ✅ | VN居中竖排布局下点击空白翻页永不触发(caret clamp到文字) |
 | [BUG-747](bugs/BUG-747-desktop-restart-button-only-exits.md) | ✅ | ✅ | 桌面导入后点立即重启只退出不重启 |
 | [BUG-746](bugs/BUG-746-overwrite-import-rename-access-denied.md) | ✅ | ✅ | 覆盖导入书籍树换名Windows拒绝访问导致整个导入失败 |
