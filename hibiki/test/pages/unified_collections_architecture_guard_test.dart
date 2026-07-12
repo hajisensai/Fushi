@@ -235,15 +235,15 @@ void main() {
     }
 
     // ② 占位卡混排进主网格：远端卡渲染入口从主散卡路径调用（书=_ShelfBookSlot.remote
-    // → _buildRemoteBookCard；视频=散卡列表 _remoteVideoSortKey → _buildRemoteVideoCard），
+    // → _buildRemoteBookCard；视频=_VideoSlot union 混入 _groupVideos → _buildRemoteVideoCard），
     // 且带云角标 ☁。
     expect(historySrc.contains('slot.remote'), isTrue,
         reason: '书架散卡槽须承载远端占位（_ShelfBookSlot.remote）');
     expect(remotePartSrc.contains('_buildRemoteBookCard'), isTrue);
     expect(remotePartSrc.contains('remote_book_cloud_badge'), isTrue,
         reason: '远端书占位卡必须带云角标 ☁');
-    expect(homeSrc.contains('_remoteVideoSortKey'), isTrue,
-        reason: '远端视频占位须以排序键混入散卡网格');
+    expect(homeSrc.contains('_groupVideos(books, remoteVideos'), isTrue,
+        reason: '远端视频占位须混入 _groupVideos（union 折叠 + 排序模式统一排序）');
     expect(homeSrc.contains('_buildRemoteVideoCard'), isTrue);
     expect(homeSrc.contains('remote_video_cloud_badge'), isTrue,
         reason: '远端视频占位卡必须带云角标 ☁');
@@ -286,5 +286,43 @@ void main() {
         reason: '「最近阅读」= updatedAt，没读过按导入时间融入（与视频页语义镜像）');
     expect(historySrc.contains('payload.seq'), isFalse,
         reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
+  });
+
+  test('多端库联合视图 §2.2/§2.6：云视频占位必经 CloudRemoteVideoClient（不自造清单解析）', () {
+    // 云后端分支必须经 CloudRemoteVideoClient（唯一清单解析入口）而非在页面里自己
+    // ensureNamespace/读 videos.json/构造 RemoteVideoManifest——把解析散进页面即转红。
+    expect(homeSrc.contains('CloudRemoteVideoClient'), isTrue,
+        reason: '云视频目录/下载必须经 CloudRemoteVideoClient');
+    expect(homeSrc.contains('_resolveCloudRemoteVideoClient'), isTrue,
+        reason: '云后端分支：resolveSyncBackend 产物包进 CloudRemoteVideoClient');
+    expect(homeSrc.contains('_cloudManifestToRemoteVideoInfo'), isTrue,
+        reason: '云清单条目须经适配函数转成 RemoteVideoInfo 混排');
+    // 页面不得自造清单解析（RemoteVideoManifest.fromJson 只应在 client 里）。
+    expect(homeSrc.contains('RemoteVideoManifest.fromJson'), isFalse,
+        reason: '页面不得自己解析 videos.json 清单（收敛到 CloudRemoteVideoClient）');
+    expect(homeSrc.contains('kSyncVideosManifestName'), isFalse,
+        reason: '页面不得直接触碰清单资产名（收敛到 CloudRemoteVideoClient）');
+    // 云视频下载走 CloudRemoteVideoClient.getRemoteVideo（整文件），登记时不双重导入。
+    expect(homeSrc.contains('getRemoteVideo('), isTrue,
+        reason: '云视频下载必须经 CloudRemoteVideoClient.getRemoteVideo 拉整文件');
+    expect(homeSrc.contains('_registerDownloadedCloudVideo'), isTrue,
+        reason: '云视频下载后必须建 VideoBooks 行（勿双重导入）');
+  });
+
+  test('多端库联合视图 §2.3 任务10：合集行成员占位归属解析不到 → 散卡降级（不硬造行）', () {
+    // 两页都必须按 (name, type) 自然键把远端合集归属解析成本地合集 id，解析不到就
+    // continue（散卡降级），绝不硬造本地无 id 的合集行。撤降级守卫即转红。
+    for (final String src in <String>[homeSrc, historySrc]) {
+      expect(src.contains('_resolveLocalCollectionId('), isTrue,
+          reason: '远端合集归属须按 (name, type) 解析本地合集 id');
+      expect(src.contains('if (cid == null) continue;'), isTrue,
+          reason: '归属解析不到本地合集必须散卡降级（continue），不硬造合集行');
+    }
+    // 视频侧用 _VideoSlot union 把远端占位与本地成员折进同一合集行。
+    expect(homeSrc.contains('_VideoSlot'), isTrue,
+        reason: '视频远端占位须经 _VideoSlot union 折进合集行');
+    // 书侧远端占位给真实 mediaType（epub），不再用私有 remote-book 伪类型（否则永不折叠）。
+    expect(historySrc.contains("mediaType: 'remote-book'"), isFalse,
+        reason: '远端书占位须给真实 mediaType（epub）才能与本地成员共键折叠');
   });
 }
