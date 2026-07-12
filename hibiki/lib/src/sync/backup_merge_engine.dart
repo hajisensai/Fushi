@@ -258,6 +258,17 @@ class BackupMergeEngine {
   /// 新插得新 id；再把 src 成员的 collection_id 经 src→target id 映射改写后
   /// INSERT OR IGNORE（成员复合主键 {collection_id, media_type, entry_key} 天然去重）。
   ///
+  /// 尊重本地成员/合集墓碑（多端库联合视图 §2.3 任务7，同书墓碑 [_insertMissing]
+  /// `skipBookTombstones` 一律「旧备份不复活已删」）：本地 `collection_member_tombstones`
+  /// 是「用户在本设备移出某成员 / 删除某合集」的证据。备份是（通常更旧的）快照且
+  /// **不带成员的时间证据**（成员行无 addedAt），故本地墓碑直接生效——
+  /// - 命中成员移出墓碑（同自然键 + media_type + entry_key）的 src 成员：跳过不插入
+  ///   （否则并入会复活用户已移出的成员，与在线合集同步的移出墓碑防复活同一律）；
+  /// - 命中合集级删除墓碑（空哨兵行，同自然键）的整个 src 合集：跳过——不新建目标
+  ///   合集、不映射其 id、不插入其任何成员（否则复活用户已删的合集）。
+  /// 用户日后可手动重加成员 / 重建合集（[HibikiDatabase.addToCollection] /
+  /// [HibikiDatabase.createMediaCollection] 会清对应墓碑），撤销「不复活」。
+  ///
   /// 说明：备份 DB 已在 ATTACH 前迁到当前 schema，故其 series/playlist 已经过 v38
   /// 迁移落进 media_collections，这里搬的就是「合集分组」本身。孤儿成员引用（其条目文件
   /// 未随备份到达、未插入 target）保留不删——UI 折叠时按实际条目跳过孤儿，日后条目补回
@@ -275,6 +286,33 @@ class BackupMergeEngine {
         .get();
     if (srcCols.isEmpty) return;
 
+    // 本地墓碑（防复活，任务7）：合集级删除哨兵按自然键 (name, type)、成员移出墓碑按
+    // (name, type, mediaType, entryKey)。用 record 集合（结构相等），避免拼接分隔符歧义。
+    // 备份 DB 早于该表 schema 时无此表（防 SELECT 崩溃）——空集即无墓碑约束。
+    final Set<(String, String)> deletedCollectionKeys = <(String, String)>{};
+    final Set<(String, String, String, String)> removedMemberKeys =
+        <(String, String, String, String)>{};
+    if (await _tableExists('collection_member_tombstones')) {
+      final List<QueryRow> tombs = await _db
+          .customSelect(
+            'SELECT collection_name, collection_type, media_type, entry_key '
+            'FROM collection_member_tombstones',
+          )
+          .get();
+      for (final QueryRow t in tombs) {
+        final String name = t.read<String>('collection_name');
+        final String type = t.read<String>('collection_type');
+        final String mediaType = t.read<String>('media_type');
+        final String entryKey = t.read<String>('entry_key');
+        // 空哨兵 (media_type=='' && entry_key=='') = 合集级删除墓碑。
+        if (mediaType.isEmpty && entryKey.isEmpty) {
+          deletedCollectionKeys.add((name, type));
+        } else {
+          removedMemberKeys.add((name, type, mediaType, entryKey));
+        }
+      }
+    }
+
     // 目标现有 (name, collection_type) → id，用于幂等对齐。
     final List<QueryRow> tgtCols = await _db
         .customSelect('SELECT id, name, collection_type FROM media_collections')
@@ -288,12 +326,19 @@ class BackupMergeEngine {
     };
     int nextSort = await _nextTargetCollectionSortOrder();
 
-    // src.id → target.id 映射（复用或新插）。
+    // src.id → target.id 映射（复用或新插）。命中合集级删除墓碑的 src 合集直接跳过：
+    // 不建目标合集、不映射 id（下面成员循环因 srcToTargetId 缺键连带跳过其全部成员）。
     final Map<int, int> srcToTargetId = <int, int>{};
+    // src.id → 合集自然键 (name, type)，成员循环查成员墓碑用（record，避免拼接歧义）。
+    final Map<int, (String, String)> srcIdToNatural = <int, (String, String)>{};
     for (final QueryRow c in srcCols) {
       final int srcId = c.read<int>('id');
       final String name = c.read<String>('name');
       final String type = c.read<String>('collection_type');
+      srcIdToNatural[srcId] = (name, type);
+      if (deletedCollectionKeys.contains((name, type))) {
+        continue; // 合集级删除墓碑命中：整个合集跳过（防复活已删合集）。
+      }
       final String key = _collectionKey(name, type);
       final int? existing = targetIdByKey[key];
       if (existing != null) {
@@ -317,7 +362,8 @@ class BackupMergeEngine {
       targetIdByKey[key] = newId;
     }
 
-    // 成员：collection_id 经映射改写后 INSERT OR IGNORE（复合主键去重）。
+    // 成员：collection_id 经映射改写后 INSERT OR IGNORE（复合主键去重）。命中本地成员
+    // 移出墓碑（同自然键 + 成员键）的成员跳过——防旧备份复活用户已移出的成员（任务7）。
     final List<QueryRow> srcItems = await _db
         .customSelect(
           'SELECT collection_id, media_type, entry_key, sort_index '
@@ -325,20 +371,40 @@ class BackupMergeEngine {
         )
         .get();
     for (final QueryRow it in srcItems) {
-      final int? tgt = srcToTargetId[it.read<int>('collection_id')];
-      if (tgt == null) continue;
+      final int srcCollectionId = it.read<int>('collection_id');
+      final int? tgt = srcToTargetId[srcCollectionId];
+      if (tgt == null) continue; // 合集被删除墓碑跳过或未映射：连带跳过成员。
+      final String mediaType = it.read<String>('media_type');
+      final String entryKey = it.read<String>('entry_key');
+      final (String, String)? natural = srcIdToNatural[srcCollectionId];
+      if (natural != null &&
+          removedMemberKeys
+              .contains((natural.$1, natural.$2, mediaType, entryKey))) {
+        continue; // 成员移出墓碑命中：跳过（防复活已移出成员）。
+      }
       await _db.customStatement(
         'INSERT OR IGNORE INTO media_collection_items '
         '(collection_id, media_type, entry_key, sort_index) '
         'VALUES (?, ?, ?, ?)',
         <Object?>[
           tgt,
-          it.read<String>('media_type'),
-          it.read<String>('entry_key'),
+          mediaType,
+          entryKey,
           it.read<int>('sort_index'),
         ],
       );
     }
+  }
+
+  /// 目标（当前设备）DB 是否有名为 [table] 的表。与 [_srcTableExists] 对称，但查
+  /// 目标库 `sqlite_master`（合集墓碑表 collection_member_tombstones 是本地防复活证据；
+  /// merge 前两库都已迁到当前 schema，正常必有此表——防御性判存，与 src 侧同纪律）。
+  Future<bool> _tableExists(String table) async {
+    final QueryRow? row = await _db.customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+      variables: <Variable<Object>>[Variable<String>(table)],
+    ).getSingleOrNull();
+    return row != null;
   }
 
   /// 自然键：name 与 collection_type 以 NUL 分隔（两者都不含 NUL），避免拼接歧义。

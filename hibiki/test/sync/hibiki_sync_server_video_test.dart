@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
@@ -23,6 +24,15 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
+  @override
+  Future<CollectionManifest> getCollectionManifest() async =>
+      CollectionManifest.empty;
+
+  @override
+  Future<CollectionManifest> mergeCollectionManifest(
+          CollectionManifest incoming) async =>
+      incoming;
 
   _FakeLibraryService() {
     // 创建临时视频文件（内容为已知字节）

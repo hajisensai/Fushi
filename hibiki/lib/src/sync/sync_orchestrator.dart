@@ -370,16 +370,16 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
 
-    // 合集双向同步（多端库联合视图 §2.3 任务4）：云后端走 sync 根下
-    // `__collections__/collections.json` 共享清单的读-合并-写（成员并集 + 移出/
-    // 删除墓碑 + 手动序整合集 LWW，语义在 CollectionSyncEngine）。
-    //
-    // 互联（HibikiClientSyncBackend）**留接缝暂不接线**：互联按拍板方案走 host API
-    // 合集清单 endpoint（任务5/6，目录接口带合集归属 + 清单读写），不走 WebDAV
-    // 文件箱伪装的 __collections__ 资产（互联 backend 的资产层是 live 端点适配，
-    // 语义不同）。endpoint 就绪后在上面的 isInterconnect 分支调用同一
-    // CollectionSyncEngine.merge / applyCollectionLocalChanges，仅通道不同。
-    if (!isInterconnect) {
+    // 合集双向同步（多端库联合视图 §2.3）：
+    // - 云后端走 sync 根下 `__collections__/collections.json` 共享清单的读-合并-写；
+    // - 互联（HibikiClientSyncBackend）走 host API `/api/library/collections` 端点
+    //   （任务5/6，目录接口带合集归属 + 清单读写），不走 WebDAV 文件箱伪装的
+    //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
+    // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
+    // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    if (isInterconnect) {
+      await _syncCollectionsLive(report, b);
+    } else {
       await syncCollections(report);
     }
 
@@ -500,6 +500,61 @@ class SyncOrchestrator {
       report.errors.add('collections sync: $e');
     }
   }
+
+  /// 合集双向同步（多端库联合视图 §2.3 任务5.3，互联 host API 通道）。
+  ///
+  /// 读-合并-写，与云后端 [syncCollections] 完全同构，仅通道不同（host API 而非
+  /// WebDAV `__collections__` 文件箱）：GET host 合集清单
+  /// （[HibikiClientSyncBackend.getRemoteCollectionManifest]）→ [CollectionSyncEngine.merge]
+  /// 与本地全量快照合并（成员并集 + 移出/删除墓碑按基线裁决 + 手动序整合集 LWW）→
+  /// [applyCollectionLocalChanges] 落本地 DB（计入 [SyncRunReport.collectionsUpdated]）→
+  /// 合并后清单与 host 字节不同才 POST 回写（host 端再经 mergeCollectionManifest 并入
+  /// 自己 DB，同一引擎）。
+  ///
+  /// 老 host 无端点（GET 404 → null）时优雅跳过（不 POST，不崩）。基线（本端
+  /// [SyncRepository.getCollectionsSyncBaselineMs]）在整轮成功后才推进；中途失败保持
+  /// 旧基线，下轮同一批墓碑重当「新闻」裁决——应用端按目标态调和幂等重放安全。
+  /// 整段 try/catch，错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
+  Future<void> _syncCollectionsLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    try {
+      final CollectionManifest? remote =
+          await backend.getRemoteCollectionManifest();
+      if (remote == null) return; // 老 host 无合集端点：优雅跳过。
+
+      final CollectionManifest local = await loadLocalCollectionManifest(_db);
+      final SyncRepository repo = SyncRepository(_db);
+      final int baseline = await repo.getCollectionsSyncBaselineMs();
+      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
+        local: local,
+        remote: remote,
+        lastSyncedAtMs: baseline,
+      );
+
+      report.collectionsUpdated +=
+          await applyCollectionLocalChanges(_db, outcome.changes);
+
+      // 回写门槛：字节有变才 POST（确定性排序保证内容相等 ⇒ 字节相等，避免每轮
+      // 无谓写放大）。
+      if (outcome.merged.canonicalJson() != remote.canonicalJson()) {
+        await backend.putRemoteCollectionManifest(outcome.merged);
+      }
+      await repo
+          .setCollectionsSyncBaselineMs(DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      report.errors.add('collections live sync: $e');
+    }
+  }
+
+  /// 测试入口：直接调用 [_syncCollectionsLive]（private 方法对测试文件不可见）。
+  @visibleForTesting
+  Future<void> syncCollectionsLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncCollectionsLive(report, backend);
 
   /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
   /// [SyncResult.conflict] rows are collected; everything else (imported /
