@@ -2327,6 +2327,11 @@ class AppModel with ChangeNotifier {
       '--hibiki-popup-max-height': '${popupMaxHeight.round()}px',
       '--hibiki-popup-zoom': zoom.toStringAsFixed(4),
       '--dict-columns': '$popupDictionaryColumns',
+      // 「滑动关闭查词弹窗」偏好（enableSwipeToClose）下发给扩展 content.js：非 CSS 变量、
+      // 仅 JS 消费（content.js 据此决定是否给浮动弹窗启用水平拖关手势）。走 theme 传输通道
+      // 与 --hibiki-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
+      '--hibiki-swipe-close':
+          ReaderHibikiSource.instance.enableSwipeToClose ? '1' : '0',
     };
   }
 

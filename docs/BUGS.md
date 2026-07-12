@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 740 条。点号进各自文件。
+> 共 742 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-757](bugs/BUG-757-lyrics-audio-follow-snap.md) | ✅ | ✅ | 歌词模式音频跟随失效（followAudio 门控 + snap 回中不生效） |
+| [BUG-756](bugs/BUG-756-lyrics-input-no-chrome-no-esc.md) | ✅ | ✅ | 歌词模式唤不出隐藏底栏 + esc 退不出 |
 | [BUG-755](bugs/BUG-755-interconnect-token-label-clipped.md) | ✅ | ✅ | 互联对端访问令牌浮动标签上半截被折叠区裁剪 |
 | [BUG-754](bugs/BUG-754-clipboard-transient-banner-dup.md) | ✅ | ✅ | 剪贴板面板释义子查词瞬态窗顶部重复贴剪贴板整句横幅 |
 | [BUG-753](bugs/BUG-753-header-pill-crushes-title.md) | ✅ | ✅ | 页头标签药丸按本地宽降级失败·挤压书架标题重叠 |
