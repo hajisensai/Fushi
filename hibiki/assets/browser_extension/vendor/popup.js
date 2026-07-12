@@ -3740,6 +3740,40 @@ document.addEventListener('mousedown', (e) => {
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
 });
 
+// BUG-767：MDX 词典条目里的交叉引用（類義語 等）是原始 HTML
+// `<a href="entry://词（読み）">词</a>`，经 innerHTML 注入到 .glossary-content
+// （renderContent → rewriteDictLinks，dict-media.js 只重写 <link>/<img>，不碰 <a>）。
+// 它既没有结构化内容链接那套 onclick（preventDefault + onLinkClick 重查，见
+// renderStructuredContent），结果 WebView 也没有装 shouldOverrideUrlLoading 导航拦截、
+// 未注册 entry:// scheme。裸点击 → 浏览器对结果框架发起默认导航到无法解析的 entry:// URL →
+// 主框架离开 popup.html、已渲染词条 DOM 全被销毁 → 内容区空白（只剩 Flutter 画的页头）。
+// 统一在此拦下 glossary 内锚点：先 preventDefault（根因——绝不让结果框架被导走），外链交给
+// openExternalLink，发音媒体节点忽略，其余内部交叉引用用可见词头 textContent 作查询词转成
+// onLinkClick 重查（与结构化内容链接、app 的干净词头索引一致）。抽成具名函数便于 test/js
+// jsdom 行为测试直接执行判据。
+function handleGlossaryAnchorClick(event, anchor) {
+    event.preventDefault();
+    const href = (anchor.getAttribute('href') || '').trim();
+    if (/^https?:\/\//i.test(href)) {
+        openExternalLink(href);
+        return;
+    }
+    if (/^sound:/i.test(href)) {
+        // 词典发音媒体节点（sound://xxx），不是查词目标；导航已被阻止，播放另属后续能力。
+        return;
+    }
+    const query = (anchor.textContent || '').trim();
+    if (!query) return;
+    const rect = anchor.getBoundingClientRect();
+    markGlobalLookupExtHit(anchor);
+    window.flutter_inappwebview.callHandler('onLinkClick', query, {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+    });
+}
+
 document.addEventListener('click', (e) => {
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
@@ -3767,7 +3801,14 @@ document.addEventListener('click', (e) => {
         target?.closest('.favorite-button')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
-        if (target?.closest('a[href]')) return;
+        // BUG-767：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
+        // handleGlossaryAnchorClick——preventDefault 阻止默认导航（否则结果框架被导走→白屏），
+        // 内部引用转 onLinkClick 重查。结构化内容链接自带 onclick + stopPropagation，永不冒泡到此。
+        const glossaryAnchor = target?.closest('a[href]');
+        if (glossaryAnchor) {
+            handleGlossaryAnchorClick(e, glossaryAnchor);
+            return;
+        }
         // TODO-869 收尾：词典释义正文（.glossary-content）是父卡片占面积最大的可点
         // 区，也是用户说的「词典部分」。若本层有子弹窗（__hasChildPopup，宿主据
         // index < entries.length-1 注入），点正文应先关掉后代层（dismissDescendantsOf），
