@@ -25,11 +25,21 @@ class CollectionSyncEngine {
 
   /// 合并本地快照与远端清单。[lastSyncedAtMs] 是本端上次**成功**合集同步的毫秒
   /// 戳（0 = 从未同步过：一切墓碑都是新闻，移出/删除全部生效——首次同步语义）。
+  ///
+  /// [nowMs] 是「发布时刻」——本端首次把一条远端清单里尚无的墓碑/删除写进合并结果时
+  /// 给它盖上 publishedAt=now（缺省取当前墙钟）。[localIsPeer] 为 true 时把 [local] 侧
+  /// 也当**对端已发布**清单裁决（用 publishedAt 而非 removedAt），供 [combinePeers] 折叠
+  /// 多份 per-device 清单；缺省 false（[local] 是本端未发布快照，用 removedAt 本端裁决）。
+  /// [stampPublish] 为 false 时不盖 publishedAt（折叠对端清单时保真，不冒充本端发布）。
   static CollectionSyncOutcome merge({
     required CollectionManifest local,
     required CollectionManifest remote,
     required int lastSyncedAtMs,
+    int? nowMs,
+    bool localIsPeer = false,
+    bool stampPublish = true,
   }) {
+    final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final Map<String, _NormalizedEntry> lSide = _normalize(local);
     final Map<String, _NormalizedEntry> rSide = _normalize(remote);
     final Set<String> allKeys = <String>{...lSide.keys, ...rSide.keys};
@@ -44,9 +54,12 @@ class CollectionSyncEngine {
     for (final String key in orderedKeys) {
       final _NormalizedEntry? l = lSide[key];
       final _NormalizedEntry? r = rSide[key];
-      final CollectionManifestEntry? merged =
-          _mergeOne(l, r, lastSyncedAtMs: lastSyncedAtMs);
+      CollectionManifestEntry? merged =
+          _mergeOne(l, r, lastSyncedAtMs: lastSyncedAtMs, lPeer: localIsPeer);
       if (merged == null) continue; // 双方都无知识（不可达）或全空壳被剪枝。
+      // 首次发布盖时戳：把本端新造/新并入的（publishedAt 尚空的）墓碑/删除标记为
+      // now，供对端用「基线 vs publishedAt」判新旧（§2.3 因果修复）。
+      if (stampPublish) merged = _stampEntry(merged, now);
       mergedEntries.add(merged);
       if (!_localMatches(l, merged)) toReconcile.add(merged);
     }
@@ -57,11 +70,75 @@ class CollectionSyncEngine {
     );
   }
 
+  /// 折叠多份**对端已发布**清单（per-device `collections-<id>.json` + 旧单文件）成
+  /// 一份「远端并集」，供编排器再与本端快照 [merge]。两侧都按 publishedAt 裁决
+  /// （[localIsPeer]=true），不盖新 publishedAt（[stampPublish]=false，保真对端发布戳）。
+  /// 折叠可交换：publishedAt 是绝对时刻，与折叠顺序无关。
+  static CollectionManifest combinePeers(
+    List<CollectionManifest> peers, {
+    required int lastSyncedAtMs,
+    int? nowMs,
+  }) {
+    CollectionManifest acc = CollectionManifest.empty;
+    for (final CollectionManifest peer in peers) {
+      acc = merge(
+        local: acc,
+        remote: peer,
+        lastSyncedAtMs: lastSyncedAtMs,
+        nowMs: nowMs,
+        localIsPeer: true,
+        stampPublish: false,
+      ).merged;
+    }
+    return acc;
+  }
+
+  /// 给合并结果条目里 publishedAt 尚空的墓碑/删除盖上 [nowMs]（本端首次发布）。
+  /// publishedAt 已有值（来自对端清单）的原样保留——发布时刻一经确定绝不刷新，
+  /// 否则每轮都重盖会破坏「字节相等 ⇒ 跳过回写」的幂等。
+  static CollectionManifestEntry _stampEntry(
+      CollectionManifestEntry e, int nowMs) {
+    final bool deadNeedsStamp =
+        e.deletedAt != null && e.deletedPublishedAt == null;
+    bool tombNeedsStamp = false;
+    for (final CollectionMemberTombstone t in e.memberTombstones) {
+      if (t.publishedAt == null) {
+        tombNeedsStamp = true;
+        break;
+      }
+    }
+    if (!deadNeedsStamp && !tombNeedsStamp) return e;
+    return CollectionManifestEntry(
+      name: e.name,
+      collectionType: e.collectionType,
+      orderUpdatedAt: e.orderUpdatedAt,
+      deletedAt: e.deletedAt,
+      deletedPublishedAt:
+          e.deletedAt != null ? (e.deletedPublishedAt ?? nowMs) : null,
+      members: e.members,
+      memberTombstones: <CollectionMemberTombstone>[
+        for (final CollectionMemberTombstone t in e.memberTombstones)
+          t.publishedAt == null
+              ? CollectionMemberTombstone(
+                  mediaType: t.mediaType,
+                  entryKey: t.entryKey,
+                  removedAt: t.removedAt,
+                  publishedAt: nowMs,
+                )
+              : t,
+      ],
+    );
+  }
+
   /// 合并单个自然键。返回 null = 该键在合并后不携带任何知识（剪枝）。
+  /// [lPeer]/[rPeer] 分别标记 l/r 侧是否为「对端已发布」清单：对端侧用 publishedAt
+  /// 判新旧（回退 removedAt 兼容旧清单），本端侧用 removedAt（与本端基线同一时钟轴）。
   static CollectionManifestEntry? _mergeOne(
     _NormalizedEntry? l,
     _NormalizedEntry? r, {
     required int lastSyncedAtMs,
+    bool lPeer = false,
+    bool rPeer = true,
   }) {
     // 单侧知识：原样并入（对侧从未见过该合集/墓碑）。
     if (l == null && r == null) return null;
@@ -73,19 +150,23 @@ class CollectionSyncEngine {
 
     // ── 合集级死活裁决 ─────────────────────────────────────────────
     if (lDead != null && rDead != null) {
-      // 双死：取新 deletedAt（知识合并，无需基线）。
-      return _deadEntry(l, lDead > rDead ? lDead : rDead);
+      // 双死：取新 deletedAt（知识合并），publishedAt 取较早的真·首发戳。
+      final int deadAt = lDead >= rDead ? lDead : rDead;
+      return _deadEntry(
+          l, deadAt, _minPublished(l.deletedPublishedAt, r.deletedPublishedAt));
     }
     if (rDead != null) {
-      // 本端活 / 远端死：删除是新闻 ⇒ 生效；旧闻且本端活着 ⇒ 本端重建 ⇒ 活胜。
-      return rDead > lastSyncedAtMs
-          ? _deadEntry(l, rDead)
+      // 本端活 / 对侧死：删除是新闻 ⇒ 生效；旧闻且本端活着 ⇒ 本端重建 ⇒ 活胜。
+      return _deleteIsNews(rDead, r.deletedPublishedAt,
+              peer: rPeer, baseline: lastSyncedAtMs)
+          ? _deadEntry(l, rDead, r.deletedPublishedAt)
           : _prune(l.toEntry());
     }
     if (lDead != null) {
-      // 本端死 / 远端活：本端删除未发布(晚于基线) ⇒ 死胜；已发布过 ⇒ 远端重建 ⇒ 活胜。
-      return lDead > lastSyncedAtMs
-          ? _deadEntry(l, lDead)
+      // 本端死 / 对侧活：本端删除未发布(新闻) ⇒ 死胜；已发布过 ⇒ 对侧重建 ⇒ 活胜。
+      return _deleteIsNews(lDead, l.deletedPublishedAt,
+              peer: lPeer, baseline: lastSyncedAtMs)
+          ? _deadEntry(l, lDead, l.deletedPublishedAt)
           : _prune(r.toEntry());
     }
 
@@ -97,32 +178,33 @@ class CollectionSyncEngine {
       ...r.tombstones.keys,
     };
     final Set<String> aliveMembers = <String>{};
-    final Map<String, int> mergedTombstones = <String, int>{};
+    final Map<String, _Tomb> mergedTombstones = <String, _Tomb>{};
     for (final String mk in memberKeys) {
       final bool lm = l.membersByKey.containsKey(mk);
       final bool rm = r.membersByKey.containsKey(mk);
-      final int? lt = l.tombstones[mk];
-      final int? rt = r.tombstones[mk];
+      final _Tomb? lt = l.tombstones[mk];
+      final _Tomb? rt = r.tombstones[mk];
       if (lm && rm) {
         aliveMembers.add(mk);
       } else if (lm) {
-        // 本端有成员，远端没有：无墓碑 = 纯本端独有 ⇒ 并集保留；有墓碑按基线裁决。
-        if (rt == null || rt <= lastSyncedAtMs) {
+        // 本端有成员，对侧没有：无墓碑 = 纯本端独有 ⇒ 并集保留；有墓碑按对侧模式裁决。
+        if (rt == null ||
+            !_tombIsNews(rt, peer: rPeer, baseline: lastSyncedAtMs)) {
           aliveMembers.add(mk); // 旧闻墓碑 + 成员仍在 ⇒ 重加胜，墓碑清除。
         } else {
           mergedTombstones[mk] = rt;
         }
       } else if (rm) {
-        // 远端有成员，本端没有：对称——本端墓碑未发布(新闻)则移出胜，否则重加胜。
-        if (lt == null || lt <= lastSyncedAtMs) {
+        // 对侧有成员，本端没有：对称——本端墓碑未发布(新闻)则移出胜，否则重加胜。
+        if (lt == null ||
+            !_tombIsNews(lt, peer: lPeer, baseline: lastSyncedAtMs)) {
           aliveMembers.add(mk);
         } else {
           mergedTombstones[mk] = lt;
         }
       } else {
-        // 两侧都无成员：墓碑纯知识合并，取新。
-        final int ts = (lt ?? -1) > (rt ?? -1) ? lt! : rt!;
-        mergedTombstones[mk] = ts;
+        // 两侧都无成员：墓碑纯知识合并（removedAt 取新、publishedAt 取较早真·首发）。
+        mergedTombstones[mk] = _mergeTomb(lt, rt);
       }
     }
 
@@ -147,14 +229,52 @@ class CollectionSyncEngine {
       orderUpdatedAt: mergedOrderUpdatedAt,
       members: _reindexed(orderedAlive),
       memberTombstones: <CollectionMemberTombstone>[
-        for (final MapEntry<String, int> e in mergedTombstones.entries)
+        for (final MapEntry<String, _Tomb> e in mergedTombstones.entries)
           CollectionMemberTombstone(
             mediaType: _memberMediaType(e.key),
             entryKey: _memberEntryKey(e.key),
-            removedAt: e.value,
+            removedAt: e.value.removedAt,
+            publishedAt: e.value.publishedAt,
           ),
       ],
     ));
+  }
+
+  /// 一条墓碑「对本端是不是新闻」：对端侧用 publishedAt（首次进共享清单的时刻，回退
+  /// removedAt 兼容旧清单）判 `> 基线`；本端侧用 removedAt（与本端基线同一时钟轴，
+  /// 本端未发布=removedAt>基线=新闻）。
+  static bool _tombIsNews(_Tomb t,
+      {required bool peer, required int baseline}) {
+    final int at = peer ? (t.publishedAt ?? t.removedAt) : t.removedAt;
+    return at > baseline;
+  }
+
+  /// 合集级删除「对本端是不是新闻」：同 [_tombIsNews]，用 deletedPublishedAt/deletedAt。
+  static bool _deleteIsNews(int deletedAt, int? deletedPublishedAt,
+      {required bool peer, required int baseline}) {
+    final int at = peer ? (deletedPublishedAt ?? deletedAt) : deletedAt;
+    return at > baseline;
+  }
+
+  /// 合并两条同键墓碑：removedAt 取较大（较新移出墙钟），publishedAt 取较早的非空
+  /// 首发戳（都空 → null，留待 [_stampEntry] 盖本端 now）。显式 null 展开，不用
+  /// `?? -1` 哨兵——负 removedAt（已在 codec 拒绝）+ 哨兵曾触发 `!` 空断言崩溃。
+  static _Tomb _mergeTomb(_Tomb? a, _Tomb? b) {
+    if (a == null) return b!;
+    if (b == null) return a;
+    final int removedAt =
+        a.removedAt >= b.removedAt ? a.removedAt : b.removedAt;
+    return (
+      removedAt: removedAt,
+      publishedAt: _minPublished(a.publishedAt, b.publishedAt),
+    );
+  }
+
+  /// 两个可空发布戳取较早的非空值（首次真发布时刻收敛，与折叠顺序无关）。
+  static int? _minPublished(int? a, int? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return a <= b ? a : b;
   }
 
   /// 全空的活壳（无成员、无墓碑）不携带知识：从清单剪掉，防止清单无限膨胀。
@@ -164,11 +284,13 @@ class CollectionSyncEngine {
           ? null
           : e;
 
-  static CollectionManifestEntry _deadEntry(_NormalizedEntry key, int at) =>
+  static CollectionManifestEntry _deadEntry(
+          _NormalizedEntry key, int at, int? publishedAt) =>
       CollectionManifestEntry(
         name: key.name,
         collectionType: key.collectionType,
         deletedAt: at,
+        deletedPublishedAt: publishedAt,
       );
 
   /// 本地现状 [l]（null = 本地全然不知）是否已与合并结果 [merged] 一致（一致则
@@ -200,10 +322,12 @@ class CollectionSyncEngine {
     if (m.members.isNotEmpty && l.orderUpdatedAt != m.orderUpdatedAt) {
       return false;
     }
-    // 墓碑集合一致？
+    // 墓碑集合一致？只比 removedAt——publishedAt 不落本地 DB（本地无该列），忽略之
+    // 才不会因合并结果盖了 publishedAt 就每轮误判「需变更」空转写库。
     if (l.tombstones.length != m.memberTombstones.length) return false;
     for (final CollectionMemberTombstone t in m.memberTombstones) {
-      if (l.tombstones[_memberKey(t.mediaType, t.entryKey)] != t.removedAt) {
+      if (l.tombstones[_memberKey(t.mediaType, t.entryKey)]?.removedAt !=
+          t.removedAt) {
         return false;
       }
     }
@@ -233,10 +357,11 @@ class CollectionSyncEngine {
           name: e.name,
           collectionType: e.collectionType,
           deletedAt: e.deletedAt,
+          deletedPublishedAt: e.deletedPublishedAt,
           orderUpdatedAt: 0,
           memberOrder: const <String>[],
           membersByKey: const <String, CollectionManifestMember>{},
-          tombstones: const <String, int>{},
+          tombstones: const <String, _Tomb>{},
         );
         continue;
       }
@@ -253,15 +378,19 @@ class CollectionSyncEngine {
         byKey[mk] = mm;
         order.add(mk);
       }
-      final Map<String, int> tombs = <String, int>{
+      final Map<String, _Tomb> tombs = <String, _Tomb>{
         for (final CollectionMemberTombstone t in e.memberTombstones)
           if (!byKey.containsKey(_memberKey(t.mediaType, t.entryKey)))
-            _memberKey(t.mediaType, t.entryKey): t.removedAt,
+            _memberKey(t.mediaType, t.entryKey): (
+              removedAt: t.removedAt,
+              publishedAt: t.publishedAt,
+            ),
       };
       out[key] = _NormalizedEntry(
         name: e.name,
         collectionType: e.collectionType,
         deletedAt: null,
+        deletedPublishedAt: null,
         orderUpdatedAt: e.orderUpdatedAt,
         memberOrder: order,
         membersByKey: byKey,
@@ -329,11 +458,22 @@ Future<CollectionManifest> loadLocalCollectionManifest(
     }
   }
 
+  // 历史重名行去重方向必须与 applyCollectionLocalChanges 用的
+  // getMediaCollectionByNaturalKey(min id) 一致——否则同名两行每轮各选一行、判不
+  // 一致永不收敛。getAllMediaCollections 按 sortOrder,id 排序，先见者未必是 min id；
+  // 这里显式按 id 升序取先见者，与应用端对齐（BUG 修复）。
+  final List<MediaCollectionRow> byId = List<MediaCollectionRow>.of(rows)
+    ..sort(
+        (MediaCollectionRow a, MediaCollectionRow b) => a.id.compareTo(b.id));
+
   final List<CollectionManifestEntry> entries = <CollectionManifestEntry>[];
   final Set<String> seen = <String>{};
-  for (final MediaCollectionRow row in rows) {
+  for (final MediaCollectionRow row in byId) {
+    // 空自然键行是脏数据（正常合集名恒非空）：绝不发布，否则对端 fromJson 抛
+    // FormatException 拖垮整份清单解析。
+    if (row.name.isEmpty || row.collectionType.isEmpty) continue;
     final String key = nk(row.name, row.collectionType);
-    if (!seen.add(key)) continue; // 历史重名行：取先见者（同引擎归一化方向）。
+    if (!seen.add(key)) continue; // 历史重名行：取 min id 者（同应用端对齐方向）。
     final List<MediaCollectionItemRow> items =
         await db.getCollectionItems(row.id);
     entries.add(CollectionManifestEntry(
@@ -342,20 +482,26 @@ Future<CollectionManifest> loadLocalCollectionManifest(
       orderUpdatedAt: row.orderUpdatedAt,
       members: <CollectionManifestMember>[
         for (int i = 0; i < items.length; i++)
-          CollectionManifestMember(
-            mediaType: items[i].mediaType,
-            entryKey: items[i].entryKey,
-            sortIndex: i,
-          ),
+          // 空成员键是脏数据：跳过（对端 codec 会拒空键）。
+          if (items[i].mediaType.isNotEmpty && items[i].entryKey.isNotEmpty)
+            CollectionManifestMember(
+              mediaType: items[i].mediaType,
+              entryKey: items[i].entryKey,
+              sortIndex: i,
+            ),
       ],
       memberTombstones: <CollectionMemberTombstone>[
         for (final CollectionMemberTombstoneRow t
             in memberTombsByKey[key] ?? const <CollectionMemberTombstoneRow>[])
-          CollectionMemberTombstone(
-            mediaType: t.mediaType,
-            entryKey: t.entryKey,
-            removedAt: t.removedAt,
-          ),
+          // 空键 / 负 removedAt 是脏数据：跳过（对端 codec 会拒之）。
+          if (t.mediaType.isNotEmpty &&
+              t.entryKey.isNotEmpty &&
+              t.removedAt >= 0)
+            CollectionMemberTombstone(
+              mediaType: t.mediaType,
+              entryKey: t.entryKey,
+              removedAt: t.removedAt,
+            ),
       ],
     ));
   }
@@ -370,6 +516,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(
     final int nul = key.indexOf('\u0000');
     final String name = key.substring(0, nul);
     final String type = key.substring(nul + 1);
+    // 空自然键的墓碑壳是脏数据：跳过（绝不发布空 name/type 毒害对端）。
+    if (name.isEmpty || type.isEmpty) continue;
     final int? deadAt = deletedAtByKey[key];
     entries.add(CollectionManifestEntry(
       name: name,
@@ -380,11 +528,14 @@ Future<CollectionManifest> loadLocalCollectionManifest(
           : <CollectionMemberTombstone>[
               for (final CollectionMemberTombstoneRow t
                   in memberTombsByKey[key]!)
-                CollectionMemberTombstone(
-                  mediaType: t.mediaType,
-                  entryKey: t.entryKey,
-                  removedAt: t.removedAt,
-                ),
+                if (t.mediaType.isNotEmpty &&
+                    t.entryKey.isNotEmpty &&
+                    t.removedAt >= 0)
+                  CollectionMemberTombstone(
+                    mediaType: t.mediaType,
+                    entryKey: t.entryKey,
+                    removedAt: t.removedAt,
+                  ),
             ],
     ));
   }
@@ -468,12 +619,17 @@ Future<int> applyCollectionLocalChanges(
   return changes.changedCollections;
 }
 
+/// 一条墓碑的知识：移出墙钟 [removedAt] + 首次进共享清单的发布戳 [publishedAt]
+/// （null = 本端尚未发布，一律视为新闻）。
+typedef _Tomb = ({int removedAt, int? publishedAt});
+
 /// 引擎内部使用的归一化条目（一侧清单里某自然键的知识）。
 class _NormalizedEntry {
   const _NormalizedEntry({
     required this.name,
     required this.collectionType,
     required this.deletedAt,
+    required this.deletedPublishedAt,
     required this.orderUpdatedAt,
     required this.memberOrder,
     required this.membersByKey,
@@ -486,6 +642,9 @@ class _NormalizedEntry {
   /// 非 null = 该侧认为合集已删（deletedAt 毫秒戳）。
   final int? deletedAt;
 
+  /// 合集级删除的首次发布戳（null = 未发布，对端裁决回退 deletedAt）。
+  final int? deletedPublishedAt;
+
   final int orderUpdatedAt;
 
   /// 成员键（mediaType NUL entryKey）按该侧 sortIndex 的顺序。
@@ -493,14 +652,15 @@ class _NormalizedEntry {
 
   final Map<String, CollectionManifestMember> membersByKey;
 
-  /// 成员键 → removedAt。
-  final Map<String, int> tombstones;
+  /// 成员键 → 墓碑知识（removedAt + publishedAt）。
+  final Map<String, _Tomb> tombstones;
 
   CollectionManifestEntry toEntry() => CollectionManifestEntry(
         name: name,
         collectionType: collectionType,
         orderUpdatedAt: orderUpdatedAt,
         deletedAt: deletedAt,
+        deletedPublishedAt: deletedPublishedAt,
         members: <CollectionManifestMember>[
           for (int i = 0; i < memberOrder.length; i++)
             CollectionManifestMember(
@@ -510,11 +670,12 @@ class _NormalizedEntry {
             ),
         ],
         memberTombstones: <CollectionMemberTombstone>[
-          for (final MapEntry<String, int> e in tombstones.entries)
+          for (final MapEntry<String, _Tomb> e in tombstones.entries)
             CollectionMemberTombstone(
               mediaType: CollectionSyncEngine._memberMediaType(e.key),
               entryKey: CollectionSyncEngine._memberEntryKey(e.key),
-              removedAt: e.value,
+              removedAt: e.value.removedAt,
+              publishedAt: e.value.publishedAt,
             ),
         ],
       );

@@ -60,13 +60,16 @@ class CollectionManifest {
 
   /// 编码为确定性排序的 JSON 结构（见类注释）。
   Map<String, dynamic> toJson() {
-    final List<CollectionManifestEntry> sorted =
-        List<CollectionManifestEntry>.of(collections)
-          ..sort((CollectionManifestEntry a, CollectionManifestEntry b) {
-            final int byName = a.name.compareTo(b.name);
-            if (byName != 0) return byName;
-            return a.collectionType.compareTo(b.collectionType);
-          });
+    // 跳过非法自然键条目（空 name / 空 collectionType）：绝不把本地脏行原样发布
+    // 毒害对端（对端 fromJson 对空自然键抛 FormatException，拖垮整份清单解析）。
+    final List<CollectionManifestEntry> sorted = <CollectionManifestEntry>[
+      for (final CollectionManifestEntry c in collections)
+        if (c.name.isNotEmpty && c.collectionType.isNotEmpty) c,
+    ]..sort((CollectionManifestEntry a, CollectionManifestEntry b) {
+        final int byName = a.name.compareTo(b.name);
+        if (byName != 0) return byName;
+        return a.collectionType.compareTo(b.collectionType);
+      });
     return <String, dynamic>{
       'version': version,
       'collections': <Map<String, dynamic>>[
@@ -87,6 +90,7 @@ class CollectionManifestEntry {
     required this.collectionType,
     this.orderUpdatedAt = 0,
     this.deletedAt,
+    this.deletedPublishedAt,
     this.members = const <CollectionManifestMember>[],
     this.memberTombstones = const <CollectionMemberTombstone>[],
   });
@@ -102,6 +106,12 @@ class CollectionManifestEntry {
 
   /// 合集级删除墓碑毫秒戳；null = 活合集。
   final int? deletedAt;
+
+  /// 合集级删除墓碑**首次进入共享清单**的毫秒戳（多端库联合视图 §2.3 因果修复）；
+  /// null = 本端尚未发布该删除（一律视为新闻）。对端用「基线 vs publishedAt」判新旧
+  /// （而非用移出端墙钟 [deletedAt] 对比本端基线，避免因果轴错位复活）。旧清单无该
+  /// 字段时引擎回退用 [deletedAt] 裁决（读老写新）。
+  final int? deletedPublishedAt;
 
   /// 成员（按 sortIndex 排序输出；sortIndex 即合集内手动序）。
   final List<CollectionManifestMember> members;
@@ -120,6 +130,15 @@ class CollectionManifestEntry {
     }
     final Object? orderUpdatedAt = json['orderUpdatedAt'];
     final Object? deletedAt = json['deletedAt'];
+    // 负删除墓碑戳非法（时间戳恒非负；负值会污染 max 比较与裁决，拒之）。
+    if (deletedAt != null && (deletedAt is! int || deletedAt < 0)) {
+      throw const FormatException('collection entry: bad deletedAt');
+    }
+    final Object? deletedPublishedAt = json['deletedPublishedAt'];
+    if (deletedPublishedAt != null &&
+        (deletedPublishedAt is! int || deletedPublishedAt < 0)) {
+      throw const FormatException('collection entry: bad deletedPublishedAt');
+    }
     final Object? rawMembers = json['members'];
     final Object? rawTombstones = json['memberTombstones'];
     if (rawMembers is! List || rawTombstones is! List) {
@@ -130,6 +149,7 @@ class CollectionManifestEntry {
       collectionType: type,
       orderUpdatedAt: orderUpdatedAt is int ? orderUpdatedAt : 0,
       deletedAt: deletedAt is int ? deletedAt : null,
+      deletedPublishedAt: deletedPublishedAt is int ? deletedPublishedAt : null,
       members: <CollectionManifestMember>[
         for (final Object? m in rawMembers)
           CollectionManifestMember.fromJson(m),
@@ -142,9 +162,13 @@ class CollectionManifestEntry {
   }
 
   Map<String, dynamic> toJson() {
+    // 跳过非法条目（空 mediaType / 空 entryKey）：本地脏行绝不原样发布毒害对端
+    // （对端 fromJson 会对空键抛 FormatException，一条坏成员会拖垮整份清单解析）。
     final List<CollectionManifestMember> sortedMembers =
-        List<CollectionManifestMember>.of(members)
-          ..sort((CollectionManifestMember a, CollectionManifestMember b) {
+        <CollectionManifestMember>[
+      for (final CollectionManifestMember m in members)
+        if (m.mediaType.isNotEmpty && m.entryKey.isNotEmpty) m,
+    ]..sort((CollectionManifestMember a, CollectionManifestMember b) {
             final int byIndex = a.sortIndex.compareTo(b.sortIndex);
             if (byIndex != 0) return byIndex;
             final int byType = a.mediaType.compareTo(b.mediaType);
@@ -152,8 +176,11 @@ class CollectionManifestEntry {
             return a.entryKey.compareTo(b.entryKey);
           });
     final List<CollectionMemberTombstone> sortedTombstones =
-        List<CollectionMemberTombstone>.of(memberTombstones)
-          ..sort((CollectionMemberTombstone a, CollectionMemberTombstone b) {
+        <CollectionMemberTombstone>[
+      for (final CollectionMemberTombstone t in memberTombstones)
+        if (t.mediaType.isNotEmpty && t.entryKey.isNotEmpty && t.removedAt >= 0)
+          t,
+    ]..sort((CollectionMemberTombstone a, CollectionMemberTombstone b) {
             final int byType = a.mediaType.compareTo(b.mediaType);
             if (byType != 0) return byType;
             return a.entryKey.compareTo(b.entryKey);
@@ -163,6 +190,7 @@ class CollectionManifestEntry {
       'collectionType': collectionType,
       'orderUpdatedAt': orderUpdatedAt,
       if (deletedAt != null) 'deletedAt': deletedAt,
+      if (deletedPublishedAt != null) 'deletedPublishedAt': deletedPublishedAt,
       'members': <Map<String, dynamic>>[
         for (final CollectionManifestMember m in sortedMembers) m.toJson(),
       ],
@@ -223,13 +251,22 @@ class CollectionMemberTombstone {
     required this.mediaType,
     required this.entryKey,
     required this.removedAt,
+    this.publishedAt,
   });
 
   final String mediaType;
   final String entryKey;
 
-  /// 移出毫秒戳（LWW；与对端「最后同步基线」比较判新旧，见引擎）。
+  /// 移出毫秒戳（移出端墙钟；保留做展示与**本端裁决**——本端自己移出的墓碑
+  /// removedAt 与本端基线同一时钟轴可靠比较）。
   final int removedAt;
+
+  /// 该墓碑**首次进入共享清单**的毫秒戳（多端库联合视图 §2.3 因果修复）；
+  /// null = 本端尚未发布该移出（一律视为新闻）。**对端**用「基线 vs publishedAt」
+  /// 判新旧——移出端墙钟 [removedAt] 与本端基线是不同因果轴（对端可能在移出端离线
+  /// 期间推进过基线），直接比较会把上线后才发布的墓碑误判为旧闻→成员复活。旧清单
+  /// 无该字段时引擎回退用 [removedAt] 裁决（读老写新）。
+  final int? publishedAt;
 
   factory CollectionMemberTombstone.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -238,17 +275,25 @@ class CollectionMemberTombstone {
     final Object? mediaType = json['mediaType'];
     final Object? entryKey = json['entryKey'];
     final Object? removedAt = json['removedAt'];
+    // 负 removedAt 非法：时间戳恒非负，负值触发引擎 max 比较的 null 展开崩溃
+    // （历史 `(lt ?? -1)` 哨兵与负值撞车），拒之。
     if (mediaType is! String ||
         mediaType.isEmpty ||
         entryKey is! String ||
         entryKey.isEmpty ||
-        removedAt is! int) {
+        removedAt is! int ||
+        removedAt < 0) {
       throw const FormatException('member tombstone: bad fields');
+    }
+    final Object? publishedAt = json['publishedAt'];
+    if (publishedAt != null && (publishedAt is! int || publishedAt < 0)) {
+      throw const FormatException('member tombstone: bad publishedAt');
     }
     return CollectionMemberTombstone(
       mediaType: mediaType,
       entryKey: entryKey,
       removedAt: removedAt,
+      publishedAt: publishedAt is int ? publishedAt : null,
     );
   }
 
@@ -256,5 +301,6 @@ class CollectionMemberTombstone {
         'mediaType': mediaType,
         'entryKey': entryKey,
         'removedAt': removedAt,
+        if (publishedAt != null) 'publishedAt': publishedAt,
       };
 }

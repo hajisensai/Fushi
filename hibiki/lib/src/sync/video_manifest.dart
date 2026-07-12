@@ -169,14 +169,21 @@ String _sanitizeAssetBase(String uid) {
   return '${cleaned}_${_stableHashHex(uid)}';
 }
 
-/// 视频文件在 `__videos__/` 下的资产名：`<safeUid><原扩展名>`（扩展名缺失回退 `.mp4`）。
-String videoAssetName(String uid, String videoPath) {
-  final String ext = p.extension(videoPath);
-  return '${_sanitizeAssetBase(uid)}${ext.isEmpty ? '.mp4' : ext}';
+/// 清洗扩展名到文件系统安全形态：合法扩展名 = 点 + 纯 ASCII 字母数字（如 `.mkv`）。
+/// 任何脏扩展名（含中文 / 空格 / 多点，如 `movie.第1話` 的 `.第1話`）或缺扩展名整体
+/// 回退 [fallback]——绝不把非 ASCII 字节拼进资产名（FTP/SFTP 路径、WebDAV href 会炸）。
+/// 不做部分清洗（避免产出 `.1` 之类的怪扩展名），与基名一套「非法即回退」策略一致。
+String _cleanVideoExt(String rawExt, String fallback) {
+  if (RegExp(r'^\.[A-Za-z0-9]+$').hasMatch(rawExt)) return rawExt;
+  return fallback;
 }
 
-/// 视频封面在 `__videos__/` 下的资产名：`<safeUid>.cover<原扩展名>`（缺扩展名回退 `.jpg`）。
+/// 视频文件在 `__videos__/` 下的资产名：`<safeUid><清洗后扩展名>`（脏/缺扩展名回退 `.mp4`）。
+String videoAssetName(String uid, String videoPath) {
+  return '${_sanitizeAssetBase(uid)}${_cleanVideoExt(p.extension(videoPath), '.mp4')}';
+}
+
+/// 视频封面在 `__videos__/` 下的资产名：`<safeUid>.cover<清洗后扩展名>`（脏/缺扩展名回退 `.jpg`）。
 String videoCoverAssetName(String uid, String coverPath) {
-  final String ext = p.extension(coverPath);
-  return '${_sanitizeAssetBase(uid)}.cover${ext.isEmpty ? '.jpg' : ext}';
+  return '${_sanitizeAssetBase(uid)}.cover${_cleanVideoExt(p.extension(coverPath), '.jpg')}';
 }

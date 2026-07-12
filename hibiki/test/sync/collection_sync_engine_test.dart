@@ -267,6 +267,198 @@ void main() {
     expect(seen.merged.collections.single.memberTombstones, isEmpty);
     expect(seen.changes.isEmpty, isTrue, reason: '本地已是目标态，零变更');
   });
+
+  // ── finding 2：对端墓碑用 publishedAt（非 removedAt）对比本端基线判新旧 ──────
+  test('finding2 因果修复：对端上线后发布的旧 removedAt 墓碑仍是新闻，成员不复活', () {
+    // 本端 B：成员 M 活着，基线=150（B 在 t=150 同步过一轮）。
+    final CollectionManifest bLocal = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+                mediaType: 'video', entryKey: 'M', sortIndex: 0),
+          ],
+        ),
+      ],
+    );
+    // 对端 A 离线时于 t1=100 移出 M（removedAt=100），上线后于 t=200 才发布
+    // （publishedAt=200）——removedAt 早于 B 基线 150，但 publishedAt 晚于 150。
+    final CollectionManifest sharedPublished = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'video',
+                entryKey: 'M',
+                removedAt: 100,
+                publishedAt: 200),
+          ],
+        ),
+      ],
+    );
+
+    // 修复后：对端用 publishedAt=200 > 基线150 ⇒ 新闻 ⇒ M 移出（不复活）。
+    final CollectionSyncOutcome fixed = CollectionSyncEngine.merge(
+        local: bLocal, remote: sharedPublished, lastSyncedAtMs: 150);
+    expect(fixed.merged.collections.single.members, isEmpty,
+        reason: 'publishedAt 判新旧：上线后发布的墓碑对 B 是新闻，M 不复活');
+    expect(fixed.merged.collections.single.memberTombstones, hasLength(1));
+
+    // 旧清单兼容：无 publishedAt 时回退 removedAt=100 <= 基线150 ⇒ 旧闻 ⇒ 保留旧行为。
+    final CollectionManifest sharedLegacy = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'video', entryKey: 'M', removedAt: 100),
+          ],
+        ),
+      ],
+    );
+    final CollectionSyncOutcome legacy = CollectionSyncEngine.merge(
+        local: bLocal, remote: sharedLegacy, lastSyncedAtMs: 150);
+    expect(legacy.merged.collections.single.members, hasLength(1),
+        reason: '旧清单无 publishedAt 回退 removedAt，行为不变（向后兼容）');
+
+    // 已见过的发布（publishedAt=100 <= 基线150）：真·旧闻 ⇒ 成员是之后重加 ⇒ 保留。
+    final CollectionManifest seen = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'video',
+                entryKey: 'M',
+                removedAt: 80,
+                publishedAt: 100),
+          ],
+        ),
+      ],
+    );
+    final CollectionSyncOutcome seenOutcome = CollectionSyncEngine.merge(
+        local: bLocal, remote: seen, lastSyncedAtMs: 150);
+    expect(seenOutcome.merged.collections.single.members, hasLength(1),
+        reason: 'publishedAt<=基线：本端已见过，成员在=重加胜');
+  });
+
+  test('finding2 发布盖戳：本端新造墓碑写进合并结果时盖 publishedAt=now', () {
+    final CollectionManifest local = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'video', entryKey: 'M', removedAt: 500),
+          ],
+        ),
+      ],
+    );
+    final CollectionSyncOutcome out = CollectionSyncEngine.merge(
+      local: local,
+      remote: CollectionManifest.empty,
+      lastSyncedAtMs: 0,
+      nowMs: 9999,
+    );
+    expect(
+        out.merged.collections.single.memberTombstones.single.publishedAt, 9999,
+        reason: '远端清单不含该墓碑 → 本端首次发布 → 盖 now');
+    // 幂等：把发布结果当远端再合，publishedAt 保持 9999，不重盖。
+    final CollectionSyncOutcome again = CollectionSyncEngine.merge(
+      local: local,
+      remote: out.merged,
+      lastSyncedAtMs: 0,
+      nowMs: 12345,
+    );
+    expect(again.merged.collections.single.memberTombstones.single.publishedAt,
+        9999,
+        reason: '已发布戳保真，不被后续 now 重盖（幂等）');
+  });
+
+  // ── finding 12：负 removedAt 参与 max 比较不崩（历史 `(lt ?? -1)!` 空断言崩溃）──
+  test('finding12 两侧同键墓碑 + 一侧极端值：merge 不抛（显式 null 展开）', () {
+    final CollectionManifest a = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'video', entryKey: 'M', removedAt: 0),
+          ],
+        ),
+      ],
+    );
+    final CollectionManifest b = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'video', entryKey: 'M', removedAt: 10),
+          ],
+        ),
+      ],
+    );
+    // 两侧都无成员、都有 M 墓碑 → 走 _mergeTomb（历史 `(lt ?? -1) > (rt ?? -1) ? lt! : rt!`
+    // 在一侧墓碑缺失 + 另一侧值 <= -1 时 `!` 崩）。这里断言合并正常、removedAt 取较大。
+    final CollectionSyncOutcome out =
+        CollectionSyncEngine.merge(local: a, remote: b, lastSyncedAtMs: 0);
+    expect(out.merged.collections.single.memberTombstones.single.removedAt, 10);
+  });
+
+  // ── finding 3：改名后双库互推不产生旧名副本 ───────────────────────────────
+  test('finding3 改名：旧名写删除墓碑跨端生效，全网不留旧名副本', () async {
+    await seedConverged(); // A/B 收敛于 playlist S{v1,v2,v3}。
+
+    // A 把 S 改名为 S2。
+    final int cA =
+        (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+    await a.db.renameMediaCollection(cA, 'S2');
+    await tick();
+    await a.sync(cloud);
+    await b.sync(cloud);
+
+    // B 端：旧名 S 被删除墓碑清掉，新名 S2 带原成员。
+    expect(await b.db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull,
+        reason: '旧名副本被合集级墓碑跨端删除');
+    expect(await orderOf(b.db, 'S2'), <String>['v1', 'v2', 'v3'],
+        reason: '新名带原成员');
+
+    // 多轮互推：旧名绝不复活（这就是给旧自然键写墓碑的意义）。
+    await tick();
+    await b.sync(cloud);
+    await a.sync(cloud);
+    await b.sync(cloud);
+    expect(await a.db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull);
+    expect(await b.db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull);
+    expect(await orderOf(a.db, 'S2'), <String>['v1', 'v2', 'v3']);
+  });
+
+  // ── finding 6：createMediaCollection 自然键幂等，不造重复行 ─────────────────
+  test('finding6 createMediaCollection 同名复用已有行（不造重复自然键行）', () async {
+    final int id1 = await a.db.createMediaCollection('Dup');
+    final int id2 = await a.db.createMediaCollection('Dup');
+    expect(id2, id1, reason: '同 (name,type) 复用已有 id');
+    expect(
+        (await a.db.getAllMediaCollections())
+            .where((c) => c.name == 'Dup')
+            .length,
+        1,
+        reason: '绝不再造重复自然键行');
+    // 不同 collectionType 不算重复。
+    final int id3 =
+        await a.db.createMediaCollection('Dup', collectionType: 'playlist');
+    expect(id3, isNot(id1));
+  });
 }
 
 /// 共享云清单（模拟 `__collections__/collections.json`）。
