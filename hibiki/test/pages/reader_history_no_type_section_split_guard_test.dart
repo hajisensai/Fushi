@@ -72,19 +72,19 @@ void main() {
       isTrue,
       reason: 'SRT 与 EPUB 必须构造进同一合并列表（无类型分区）',
     );
-    // UI v2 Phase C 后单一 shelfGroups 交给 _buildShelfGroupSlivers 保序交错
-    // （合集=横排行、连续散书段=网格）。SRT/EPUB 仍在同一合并列表、同段网格混排
-    // （itemCount: segment.length），**依旧没有按类型拆的分区头**——本守卫保护的
-    // 不变量不变，只是渲染载体从单网格换成交错 slivers。
+    // 单一 shelfGroups 交给 _buildShelfGroupSlivers 分区渲染（去碎片方案 A：
+    // 合集横排行集中在前、散书单一网格在后）。SRT/EPUB 仍在同一合并列表、同一
+    // 网格混排（itemCount: loose.length），**依旧没有按类型拆的分区头**——本守卫
+    // 保护的不变量不变，渲染载体从交错 slivers 换成分区 slivers。
     expect(
       body.contains('..._buildShelfGroupSlivers('),
       isTrue,
-      reason: '单一合并 shelfGroups 必须整体交给交错渲染（无类型拆分）',
+      reason: '单一合并 shelfGroups 必须整体交给分区渲染（无类型拆分）',
     );
     expect(
-      body.contains('itemCount: segment.length'),
+      body.contains('itemCount: loose.length'),
       isTrue,
-      reason: '散书段落（SRT+EPUB 混排）共用同一网格段',
+      reason: '散书（SRT+EPUB 混排）共用同一个网格',
     );
   });
 

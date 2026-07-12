@@ -191,6 +191,15 @@ void main() {
         reason: '书籍合集详情页一键排序必须写穿 sortIndex');
   });
 
+  test('去碎片方案A（已拍板）：合集区集中+散卡单一网格，交错组装不回潮', () {
+    // 旧保序交错的 flushLoose 分段组装每个合集行都切碎散卡网格（一两本书占
+    // 一行，用户实报）；分区后散卡恒渲染成一个网格。恢复交错即转红。
+    expect(homeSrc.contains('flushLoose'), isFalse,
+        reason: '视频库不得回到交错分段组装（散卡必须单一网格）');
+    expect(historySrc.contains('flushLoose'), isFalse,
+        reason: '书架不得回到交错分段组装（散卡必须单一网格）');
+  });
+
   test('BUG-756：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
     final String sourceSrc =
         File('lib/src/media/sources/reader_hibiki_source.dart')

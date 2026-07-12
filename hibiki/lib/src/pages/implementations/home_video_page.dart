@@ -1519,11 +1519,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return '${at.year}-${at.month}-$dd';
   }
 
-  /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则按
-  /// [groupByCollections] 输出**保序交错**——合集 group 渲染成全宽横排行
-  /// （[CollectionShelfRow]，UI v2 Phase C：每个合集独占一行、行内横移切集），
-  /// 连续散 group 段落合并成一个 [SliverGrid]。零合集时只有一个网格段，与旧
-  /// 单网格布局退化一致。
+  /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则
+  /// **分区**（去碎片 spec 2026-07-12，已拍板方案 A+顶部）——合集横排行集中
+  /// 渲染在前（[CollectionShelfRow]，区内保持排序模式的组间序），散卡合成
+  /// **单一** [SliverGrid] 在后。旧保序交错布局每个合集行都把网格切段产生残行
+  /// （一两张卡占一行，用户实报）；分区后残行恒 1 个（网格末行）。
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
@@ -1552,25 +1552,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           )
         : EdgeInsets.all(tokens.spacing.card);
     final List<Widget> slivers = <Widget>[];
-    List<CollectionGroup<VideoBookRow>> loose =
+    final List<CollectionGroup<VideoBookRow>> loose =
         <CollectionGroup<VideoBookRow>>[];
-    void flushLoose() {
-      if (loose.isEmpty) return;
-      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
-      loose = <CollectionGroup<VideoBookRow>>[];
-    }
-
     for (final CollectionGroup<VideoBookRow> group in groups) {
       if (group.collection == null) {
         loose.add(group);
-        continue;
+      } else {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _buildVideoCollectionRow(group, cardLayout),
+          ),
+        );
       }
-      flushLoose();
-      slivers.add(
-        SliverToBoxAdapter(child: _buildVideoCollectionRow(group, cardLayout)),
-      );
     }
-    flushLoose();
+    if (loose.isNotEmpty) {
+      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
+    }
     return slivers;
   }
 

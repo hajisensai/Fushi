@@ -1025,8 +1025,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
             // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
             // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
-            // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
-            // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
+            // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
+            // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。
             if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
               ..._buildShelfGroupSlivers(
                 shelfGroups,
@@ -1052,9 +1052,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// UI v2 Phase C：主网格 sliver 交错——按 [groupByCollections] 输出序扫描，合集
-  /// group 渲染成全宽横排行（每个合集独占一行、行内横移看相邻卷/集），连续散书段落
-  /// 合并成一个 [SliverGrid]。组间序不变；零合集时只有一个网格段（与旧布局一致）。
+  /// 主网格 sliver 组装：**分区**（去碎片 spec 2026-07-12，已拍板方案 A+顶部）
+  /// ——合集横排行集中渲染在前（每个合集独占一行、行内横移看相邻卷/集，区内
+  /// 保持排序模式的组间序），散书合成**单一** [SliverGrid] 在后。旧保序交错
+  /// 布局每个合集行都把网格切段产生残行（一两本书占一行，用户实报）；分区后
+  /// 残行恒 1 个（网格末行）。
   List<Widget> _buildShelfGroupSlivers(
     List<CollectionGroup<_ShelfBookSlot>> groups,
     Map<String, String> epubCoverUrisByBookKey,
@@ -1068,44 +1070,38 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       spacing: 0,
     );
     final List<Widget> slivers = <Widget>[];
-    List<CollectionGroup<_ShelfBookSlot>> loose =
+    final List<CollectionGroup<_ShelfBookSlot>> loose =
         <CollectionGroup<_ShelfBookSlot>>[];
-    void flushLoose() {
-      if (loose.isEmpty) return;
-      final List<CollectionGroup<_ShelfBookSlot>> segment = loose;
+    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
+      if (group.collection == null) {
+        loose.add(group);
+      } else {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _buildShelfCollectionRow(
+              group,
+              epubCoverUrisByBookKey,
+              cardLayout,
+            ),
+          ),
+        );
+      }
+    }
+    if (loose.isNotEmpty) {
       slivers.add(
         SliverGrid.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cardLayout.columns,
             childAspectRatio: kShelfBookCardAspectRatio,
           ),
-          itemCount: segment.length,
+          itemCount: loose.length,
           itemBuilder: (_, i) => _buildShelfGroupCard(
-            segment[i],
+            loose[i],
             epubCoverUrisByBookKey,
           ),
         ),
       );
-      loose = <CollectionGroup<_ShelfBookSlot>>[];
     }
-
-    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
-      if (group.collection == null) {
-        loose.add(group);
-        continue;
-      }
-      flushLoose();
-      slivers.add(
-        SliverToBoxAdapter(
-          child: _buildShelfCollectionRow(
-            group,
-            epubCoverUrisByBookKey,
-            cardLayout,
-          ),
-        ),
-      );
-    }
-    flushLoose();
     return slivers;
   }
 
