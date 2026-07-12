@@ -1547,6 +1547,22 @@
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
     }
+    // BUG-745 — strip the TODO-890 slide-out class off the REUSED root shell.
+    // dismissRootWithSlide adds .global-lookup-dismissing (translateX(120%) +
+    // opacity 0) and NOTHING ever removed it, while the root shell survives
+    // across lookups (stable root id, TODO-1095). After the first slide
+    // dismissal every later card therefore rendered ALREADY slid off-window and
+    // fully transparent: native revealed the window, popupRendered/overlaySize
+    // all fired, but the user saw NOTHING ("第一次正常，之后的弹窗根本不出
+    // 现"). The TODO-1345 floor window made every click-outside take the JS
+    // slide path (clicks always land inside the near-fullscreen window), so a
+    // session was poisoned on its very first dismissal.
+    if (record.shell && record.shell.classList &&
+        typeof record.shell.classList.remove === 'function') {
+      record.shell.classList.remove('global-lookup-dismissing');
+    }
+    // A slide interrupted by this new lookup must not leave the latch stuck.
+    dismissingRoot = false;
     // TODO-1231 (BUG-583) -- tear down the PREVIOUS lookup's content observer +
     // safety timer, but DO NOT re-arm an observer off the stale card here. The
     // reused iframe still holds the previous lookup's `.glossary-content`, so
