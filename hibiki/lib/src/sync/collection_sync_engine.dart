@@ -71,26 +71,34 @@ class CollectionSyncEngine {
   }
 
   /// 折叠多份**对端已发布**清单（per-device `collections-<id>.json` + 旧单文件）成
-  /// 一份「远端并集」，供编排器再与本端快照 [merge]。两侧都按 publishedAt 裁决
-  /// （[localIsPeer]=true），不盖新 publishedAt（[stampPublish]=false，保真对端发布戳）。
-  /// 折叠可交换：publishedAt 是绝对时刻，与折叠顺序无关。
-  static CollectionManifest combinePeers(
-    List<CollectionManifest> peers, {
-    required int lastSyncedAtMs,
-    int? nowMs,
-  }) {
-    CollectionManifest acc = CollectionManifest.empty;
+  /// 一份「远端并集」，供编排器再与本端快照 [merge]。
+  ///
+  /// finding 1 因果修复：折叠里**不**用本端基线裁决墓碑——基线每轮推进，一条本端上轮
+  /// 刚发布（publishedAt==上轮基线）的墓碑到了下轮会 `publishedAt > 基线` 判 false → 判
+  /// 旧闻 → 陈旧对端文件里的活成员「重加胜」→ 已移出/删除/改名的成员在全网复活。改用
+  /// **文件级 [CollectionManifest.lastWrittenAt]**：一个活成员仅当其所在文件的 lastWrittenAt
+  /// **晚于**该成员墓碑的 publishedAt 才算「看过墓碑后的有意重加」，否则墓碑默认获胜。
+  /// 旧文件/旧单文件缺 lastWrittenAt（=0）的活成员恒陈旧，永远输给任何已发布墓碑。
+  ///
+  /// 折叠对折叠顺序不变（每项聚合都用 max/min，与顺序无关），不盖新 publishedAt（保真
+  /// 对端发布戳）。合集级删除同理：某文件在删除发布戳之后（lastWrittenAt > deletePublishedAt）
+  /// 仍把合集列为活的 ⇒ 重建胜；否则删除胜。
+  static CollectionManifest combinePeers(List<CollectionManifest> peers) {
+    final Map<String, _FoldGroup> groups = <String, _FoldGroup>{};
     for (final CollectionManifest peer in peers) {
-      acc = merge(
-        local: acc,
-        remote: peer,
-        lastSyncedAtMs: lastSyncedAtMs,
-        nowMs: nowMs,
-        localIsPeer: true,
-        stampPublish: false,
-      ).merged;
+      final int fileTime = peer.lastWrittenAt;
+      final Map<String, _NormalizedEntry> norm = _normalize(peer);
+      for (final MapEntry<String, _NormalizedEntry> e in norm.entries) {
+        (groups[e.key] ??= _FoldGroup(e.value.name, e.value.collectionType))
+            .observe(e.value, fileTime);
+      }
     }
-    return acc;
+    final List<CollectionManifestEntry> out = <CollectionManifestEntry>[];
+    for (final _FoldGroup g in groups.values) {
+      final CollectionManifestEntry? entry = g.resolve();
+      if (entry != null) out.add(entry);
+    }
+    return CollectionManifest(collections: out);
   }
 
   /// 给合并结果条目里 publishedAt 尚空的墓碑/删除盖上 [nowMs]（本端首次发布）。
@@ -679,4 +687,170 @@ class _NormalizedEntry {
             ),
         ],
       );
+}
+
+/// [CollectionSyncEngine.combinePeers] 的按自然键聚合器：把 N 份对端清单里同一合集的
+/// 知识折叠成一条。裁决全用**文件级 lastWrittenAt**（finding 1 因果修复），不碰本端基线。
+///
+/// 聚合项都用 max/min（与折叠顺序无关，保证两端读同一批文件收敛到同一并集）：
+/// - 成员活/死：`aliveFileTimeMax`（该成员被列为活的文件中最新 lastWrittenAt）> 该成员墓碑
+///   的最新 publishedAt ⇒ 活（有意重加）；否则墓碑胜。缺 publishedAt 回退 removedAt。
+/// - 合集删/活：任一文件在删除发布之后仍把它列为活 ⇒ 重建胜；否则删除胜。
+/// - 手动序 LWW：取最大 orderUpdatedAt 的成员顺序；多份平手取字典序最小者（对折叠顺序不变）。
+class _FoldGroup {
+  _FoldGroup(this.name, this.collectionType);
+
+  final String name;
+  final String collectionType;
+
+  // ── 合集级删除聚合 ──
+  bool _sawDelete = false;
+  int _deleteRemovedMax = 0; // 删除胜时落盘的 deletedAt（取最新移除墙钟）。
+  int? _deletePubMin; // 删除胜时落盘的 deletedPublishedAt（首发戳，取最早非空）。
+  int _deletePubMaxDecision = -1; // 决策用：最新删除发布戳（回退 deletedAt）。
+
+  // ── 活条目聚合 ──
+  int _aliveFileTimeMax = -1; // 把本合集列为活的文件中最新 lastWrittenAt。
+  int _orderUpdatedAtMax = 0;
+  int _orderCandidateAt = -1; // 当前候选顺序对应的 orderUpdatedAt。
+  final List<List<String>> _orderCandidates = <List<String>>[];
+
+  final Map<String, int> _memberAliveTime = <String, int>{}; // 成员键 → 最新活文件时戳。
+  final Map<String, int> _tombRemovedMax =
+      <String, int>{}; // 成员键 → 最新 removedAt。
+  final Map<String, int?> _tombPubMin =
+      <String, int?>{}; // 成员键 → 最早非空 publishedAt。
+  final Map<String, int> _tombPubMaxDecision =
+      <String, int>{}; // 决策用 max(pub??removed)。
+
+  void observe(_NormalizedEntry e, int fileTime) {
+    if (e.deletedAt != null) {
+      _sawDelete = true;
+      final int d = e.deletedAt!;
+      if (d > _deleteRemovedMax) _deleteRemovedMax = d;
+      final int pubDecision = e.deletedPublishedAt ?? d;
+      if (pubDecision > _deletePubMaxDecision) {
+        _deletePubMaxDecision = pubDecision;
+      }
+      final int? p = e.deletedPublishedAt;
+      if (p != null && (_deletePubMin == null || p < _deletePubMin!)) {
+        _deletePubMin = p;
+      }
+      return; // 归一化后的死条目不携带成员/墓碑。
+    }
+    if (fileTime > _aliveFileTimeMax) _aliveFileTimeMax = fileTime;
+    if (e.orderUpdatedAt > _orderUpdatedAtMax) {
+      _orderUpdatedAtMax = e.orderUpdatedAt;
+    }
+    if (e.orderUpdatedAt > _orderCandidateAt) {
+      _orderCandidateAt = e.orderUpdatedAt;
+      _orderCandidates
+        ..clear()
+        ..add(e.memberOrder);
+    } else if (e.orderUpdatedAt == _orderCandidateAt) {
+      _orderCandidates.add(e.memberOrder);
+    }
+    for (final String mk in e.memberOrder) {
+      final int prev = _memberAliveTime[mk] ?? -1;
+      if (fileTime > prev) _memberAliveTime[mk] = fileTime;
+    }
+    for (final MapEntry<String, _Tomb> t in e.tombstones.entries) {
+      final String mk = t.key;
+      final int r = t.value.removedAt;
+      final int prevR = _tombRemovedMax[mk] ?? -1;
+      if (r > prevR) _tombRemovedMax[mk] = r;
+      final int pubDecision = t.value.publishedAt ?? r;
+      final int prevMax = _tombPubMaxDecision[mk] ?? -1;
+      if (pubDecision > prevMax) _tombPubMaxDecision[mk] = pubDecision;
+      final int? p = t.value.publishedAt;
+      if (p != null) {
+        final int? prevMin = _tombPubMin[mk];
+        if (prevMin == null || p < prevMin) _tombPubMin[mk] = p;
+      } else {
+        _tombPubMin.putIfAbsent(mk, () => null);
+      }
+    }
+  }
+
+  /// 折叠出该合集在远端并集里的最终条目（剪枝空壳返回 null）。
+  CollectionManifestEntry? resolve() {
+    // 合集级死活：任一文件在最新删除发布之后仍把它列为活（活文件时戳更晚）⇒ 重建胜。
+    if (_sawDelete && !(_aliveFileTimeMax > _deletePubMaxDecision)) {
+      return CollectionManifestEntry(
+        name: name,
+        collectionType: collectionType,
+        deletedAt: _deleteRemovedMax,
+        deletedPublishedAt: _deletePubMin,
+      );
+    }
+
+    final Set<String> keys = <String>{
+      ..._memberAliveTime.keys,
+      ..._tombRemovedMax.keys,
+    };
+    final Set<String> aliveMembers = <String>{};
+    final Map<String, _Tomb> tombs = <String, _Tomb>{};
+    for (final String mk in keys) {
+      final int? aliveT = _memberAliveTime[mk];
+      final bool hasTomb = _tombRemovedMax.containsKey(mk);
+      final int tombPubDecision = _tombPubMaxDecision[mk] ?? -1;
+      // 活成员仅当其文件时戳晚于墓碑最新发布戳（有意重加）；无墓碑则活着即保留。
+      final bool alive =
+          aliveT != null && (!hasTomb || aliveT > tombPubDecision);
+      if (alive) {
+        aliveMembers.add(mk);
+      } else if (hasTomb) {
+        tombs[mk] =
+            (removedAt: _tombRemovedMax[mk]!, publishedAt: _tombPubMin[mk]);
+      }
+    }
+
+    // 顺序：候选（最大 orderUpdatedAt 的 memberOrder）里字典序最小者为准（折叠顺序无关），
+    // 过滤到 alive，再追加不在候选里的剩余 alive（按 key 排序，确定性）。
+    final List<String> winnerOrder = _pickCanonicalOrder();
+    final List<String> ordered = <String>[
+      for (final String mk in winnerOrder)
+        if (aliveMembers.contains(mk)) mk,
+    ];
+    final Set<String> placed = ordered.toSet();
+    final List<String> rest = <String>[
+      for (final String mk in aliveMembers)
+        if (!placed.contains(mk)) mk,
+    ]..sort();
+    ordered.addAll(rest);
+
+    return CollectionSyncEngine._prune(CollectionManifestEntry(
+      name: name,
+      collectionType: collectionType,
+      orderUpdatedAt: _orderUpdatedAtMax,
+      members: CollectionSyncEngine._reindexed(ordered),
+      memberTombstones: <CollectionMemberTombstone>[
+        for (final MapEntry<String, _Tomb> e in tombs.entries)
+          CollectionMemberTombstone(
+            mediaType: CollectionSyncEngine._memberMediaType(e.key),
+            entryKey: CollectionSyncEngine._memberEntryKey(e.key),
+            removedAt: e.value.removedAt,
+            publishedAt: e.value.publishedAt,
+          ),
+      ],
+    ));
+  }
+
+  List<String> _pickCanonicalOrder() {
+    if (_orderCandidates.isEmpty) return const <String>[];
+    List<String> best = _orderCandidates.first;
+    for (final List<String> c in _orderCandidates.skip(1)) {
+      if (_lexLess(c, best)) best = c;
+    }
+    return best;
+  }
+
+  static bool _lexLess(List<String> a, List<String> b) {
+    final int n = a.length < b.length ? a.length : b.length;
+    for (int i = 0; i < n; i++) {
+      final int c = a[i].compareTo(b[i]);
+      if (c != 0) return c < 0;
+    }
+    return a.length < b.length;
+  }
 }

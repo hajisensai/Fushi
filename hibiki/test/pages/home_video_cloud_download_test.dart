@@ -190,6 +190,48 @@ void main() {
     // 下载委托 client.getRemoteVideo 拉整文件（勿双重导入：只建单行）。
     expect(cloud.downloadedUids, contains('cloud/vid1'));
   });
+
+  // #4：云视频占位卡**短按**（点卡片本体，非右上角下载按钮）也要触发下载——云后端视频
+  // 无 live host 不能流播，短按 = 下载语义（对齐书侧）。旧实现 _openRemote 见 client==null
+  // 直接 return，短按静默无反应。
+  testWidgets('短按云视频占位卡触发下载（云无法流播，短按=下载）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final _FakeCloudRemoteVideoClient cloud = _FakeCloudRemoteVideoClient(
+      entries: <RemoteVideoManifestEntry>[
+        const RemoteVideoManifestEntry(
+          uid: 'cloud/vid1',
+          title: 'Cloud Vid',
+          videoAsset: 'cloud_vid1.mp4',
+          sizeBytes: 3,
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp(cloud));
+    await tester.pumpAndSettle();
+
+    expect(await repo.getByBookUid('cloud/vid1'), isNull);
+
+    await tester.runAsync(() async {
+      // 点卡片本体（onTap → _openRemote），不是右上角 remote_video_download 按钮。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
+      );
+      for (int i = 0; i < 200; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (await repo.getByBookUid('cloud/vid1') != null && i > 4) return;
+      }
+    });
+    await tester.pump();
+
+    expect(cloud.downloadedUids, contains('cloud/vid1'),
+        reason: '#4：短按云占位卡分派下载（不再静默 return）');
+    expect(await repo.getByBookUid('cloud/vid1'), isNotNull,
+        reason: '短按下载后建 VideoBooks 行');
+  });
 }
 
 /// 云视频目录 client 的 fake（[CloudRemoteVideoClient] 是具体类，用 implements 覆盖

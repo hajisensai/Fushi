@@ -208,6 +208,49 @@ void main() {
         reason: '负 deletedAt');
   });
 
+  // ── finding 1：文件级 lastWrittenAt 编解码 + 不进 canonicalJson ──────────────
+  test('lastWrittenAt roundtrip via toJson，且不参与 canonicalJson（幂等）', () {
+    final CollectionManifest m = CollectionManifest(
+      lastWrittenAt: 4242,
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+                mediaType: 'epub', entryKey: 'x', sortIndex: 0),
+          ],
+        ),
+      ],
+    );
+    // toJson 携带 lastWrittenAt（写盘用）；fromJson 无损解回。
+    expect(m.toJson()['lastWrittenAt'], 4242);
+    final CollectionManifest decoded = CollectionManifest.fromJson(m.toJson());
+    expect(decoded.lastWrittenAt, 4242);
+
+    // canonicalJson 不含 lastWrittenAt：两份 lastWrittenAt 不同但内容相同的清单
+    // canonical 字节相等（否则每轮写盘时戳变化会破坏「内容相等 ⇒ 跳过回写」的幂等）。
+    final CollectionManifest other = m.withLastWrittenAt(9999);
+    expect(other.canonicalJson(), m.canonicalJson(),
+        reason: 'lastWrittenAt 不进内容等价判据');
+    expect(m.canonicalJson().contains('lastWrittenAt'), isFalse);
+  });
+
+  test('缺 / 非法 lastWrittenAt 解码为 0（向后兼容，恒陈旧）', () {
+    // 旧清单无该字段。
+    final CollectionManifest legacy = CollectionManifest.fromJson(
+        <String, dynamic>{'version': 1, 'collections': <Object?>[]});
+    expect(legacy.lastWrittenAt, 0);
+    // 负值 / 非 int 一律 0（不因脏字段拒绝解析）。
+    final CollectionManifest negative =
+        CollectionManifest.fromJson(<String, dynamic>{
+      'version': 1,
+      'lastWrittenAt': -5,
+      'collections': <Object?>[],
+    });
+    expect(negative.lastWrittenAt, 0);
+  });
+
   test('toJson 跳过非法条目：空自然键合集 / 空键成员 / 空键墓碑不发布毒害对端', () {
     final CollectionManifest dirty = CollectionManifest(
       collections: <CollectionManifestEntry>[

@@ -836,7 +836,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Future<void> _openRemote(RemoteVideoInfo video) async {
     final RemoteVideoClient? client = _remoteVideoClient;
-    if (client == null) return;
+    if (client == null) {
+      // #4：云后端视频无 live host、不能流播；短按 = 下载入库（对齐书侧短按=下载语义），
+      // 而不是静默 return（占位卡点了像没反应）。仅当存在云 client 时分派；两者都无时
+      // _downloadRemote 自身会给「不可达」提示。
+      if (_cloudRemoteVideoClient != null) {
+        await _downloadRemote(video);
+      }
+      return;
+    }
     // 打开远端播放页后再弹首次着色器提示（而非提示阻塞导航）：远端入口的契约是
     // 「点击立即建立远端流」（home_video_remote_interconnect_test），把一次性的着色器
     // 提示放到 await 导航前会让远端串流请求永远不发出（TODO-026 回归）。提示是纯信息
@@ -945,8 +953,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     // 根因修复（TODO-819）：下载任务委托给 app 级 InterconnectDownloadManager 而非
     // 本页 State —— 故切 tab / 退页 / 本页 dispose 时下载仍在管理器里推进到底，重进
-    // 页面只 ref.watch 订阅渲染进度。底层下载器已走可续传引擎（Range + .part），
-    // 中断留 part 下次可续。manager 自身去重（同 id 在跑则忽略）。
+    // 页面只 ref.watch 订阅渲染进度。manager 自身去重（同 id 在跑则忽略）。
+    // #6 续传口径按分支写实：互联走 host live 下载引擎（Range + `.part`，中断留 part
+    // 下次可续）；云后端分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败
+    // 清残片、无断点续传。
     final InterconnectDownloadManager manager =
         ref.read(interconnectDownloadManagerProvider);
     if (manager.isRunning(video.id)) return;
@@ -1881,6 +1891,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           completed: it.payload.local?.completedAt != null,
         ),
     ]);
+    // #5：行头计数只数**本地成员**（远端占位成员不入 n），与合集详情页口径一致——详情页
+    // 只显示本地成员。行体（itemCount）仍渲染全部成员（含远端占位卡供流播/下载），故不变。
+    final int localCount =
+        group.items.where((it) => it.payload.local != null).length;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -1891,7 +1905,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: CollectionShelfRow(
         key: ValueKey<String>('home_video_collection_row_${collection.id}'),
         title: collection.name,
-        countLabel: t.video_playlist_episodes(count: group.items.length),
+        countLabel: t.video_playlist_episodes(count: localCount),
         itemCount: group.items.length,
         // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
         // Phase D 观看进度行）。

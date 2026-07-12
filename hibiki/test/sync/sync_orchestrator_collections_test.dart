@@ -208,4 +208,155 @@ void main() {
           reason: '时钟回拨钳制：未来基线钳到 now，对端未来发布的移出仍生效，不复活 x');
     });
   });
+
+  group('finding1 no self-resurrect on 2nd sync (file lastWrittenAt fold)', () {
+    test('same device 2nd sync, peer file unchanged: removed member stays gone',
+        () async {
+      await seedConverged(); // A/B 收敛 Fav{x,y,z}，两份文件都在。
+
+      // A 移出 x 并发布（tomb x），B **不同步**（devB 仍列 x 活）。
+      final int cA =
+          (await a.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
+      await a.db.removeFromCollection(cA, 'epub', 'x');
+      await tick();
+      await a.sync();
+      expect(await a.orderOf('Fav'), <String>['y', 'z']);
+
+      // A **再次**同步，devB 仍是陈旧的 Fav{x,y,z}（x 活）。旧实现：本端已发布墓碑
+      // publishedAt==上轮基线，> 基线判 false → 判旧闻 → 陈旧 devB 里 x 重加胜 → 复活。
+      // 修后：按文件 lastWrittenAt，devB(旧)不晚于墓碑 publishedAt → 墓碑默认胜。
+      await tick();
+      final SyncRunReport r = await a.sync();
+      expect(await a.orderOf('Fav'), <String>['y', 'z'],
+          reason: 'finding1：同端二轮同步不复活自己刚移出的成员');
+      expect(r.collectionsUpdated, 0, reason: '第二轮无本地变更');
+    });
+
+    test(
+        'peer republishes member later than tombstone → intentional re-add wins',
+        () async {
+      await seedConverged();
+
+      // A 移出 x、发布；B 同步（应用移出）。
+      final int cA =
+          (await a.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
+      await a.db.removeFromCollection(cA, 'epub', 'x');
+      await tick();
+      await a.sync();
+      await b.sync();
+      expect(await b.orderOf('Fav'), <String>['y', 'z']);
+
+      // B 重加 x 并发布——devB 的 lastWrittenAt 现在晚于墓碑 publishedAt（有意重加）。
+      await tick();
+      final int cB =
+          (await b.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
+      await b.db.addToCollection(cB, 'epub', 'x');
+      await tick();
+      await b.sync();
+      await a.sync();
+
+      expect((await a.orderOf('Fav')).toSet(), <String>{'x', 'y', 'z'},
+          reason: 'finding1：对端文件晚于墓碑且含该成员 = 有意重加，成员复归');
+      expect(await a.db.getAllCollectionMemberTombstones(), isEmpty,
+          reason: '重加清墓碑');
+    });
+  });
+
+  group('finding2 corrupt manifest resilience (no whole-run abort)', () {
+    test('own file corrupt: self-heal republish, does not abort', () async {
+      final int c = await a.db.createMediaCollection('Fav');
+      await a.db.addToCollection(c, 'epub', 'x');
+      await tick();
+      await a.sync();
+
+      // 损坏本端自己那份（解码为 null）。
+      await store.putJsonAsset(
+          kSyncCollectionsNamespace, 'collections-devA.json', null);
+
+      await tick();
+      final SyncRunReport r = await a.sync();
+      expect(r.errors.any((String e) => e.contains('self-heal')), isTrue,
+          reason: '本端损坏走自愈分支，不 abort');
+
+      // 本端文件被自愈重写为有效清单，仍带 Fav{x}。
+      final AssetEntry own = (await store.findAsset(
+          kSyncCollectionsNamespace, 'collections-devA.json'))!;
+      final Object? json = await store.getJsonAsset(own.id);
+      expect(json, isNotNull, reason: '损坏文件被覆盖为有效清单');
+      final CollectionManifest m = CollectionManifest.fromJson(json);
+      expect(m.collections.any((CollectionManifestEntry e) => e.name == 'Fav'),
+          isTrue);
+      // A 本地 DB 未受影响。
+      expect(await a.orderOf('Fav'), <String>['x']);
+    });
+
+    test('peer file corrupt: skip that file + continue (no abort)', () async {
+      // B 发布 Fav{y} 到自己那份。
+      final int cB = await b.db.createMediaCollection('Fav');
+      await b.db.addToCollection(cB, 'epub', 'y');
+      await tick();
+      await b.sync();
+
+      // A 有 Fav{x}。损坏 B 那份（A 视角是对端文件）。
+      final int cA = await a.db.createMediaCollection('Fav');
+      await a.db.addToCollection(cA, 'epub', 'x');
+      await tick();
+      await store.putJsonAsset(
+          kSyncCollectionsNamespace, 'collections-devB.json', null);
+
+      // A 同步：跳过损坏的 devB，不 abort，照常回写自己那份 Fav{x}。
+      final SyncRunReport r = await a.sync();
+      expect(r.errors.any((String e) => e.contains('skipped this run')), isTrue,
+          reason: '对端损坏文件被跳过（不 abort）');
+
+      final AssetEntry own = (await store.findAsset(
+          kSyncCollectionsNamespace, 'collections-devA.json'))!;
+      final CollectionManifest m =
+          CollectionManifest.fromJson(await store.getJsonAsset(own.id));
+      final CollectionManifestEntry fav = m.collections
+          .firstWhere((CollectionManifestEntry e) => e.name == 'Fav');
+      expect(fav.members.map((CollectionManifestMember mm) => mm.entryKey),
+          contains('x'),
+          reason: '本端那份照常写出（可读对端 + 本地的并集）');
+      // 跳过了对端 y（本轮没读到），A 只有本地 x——不 abort、不误撤知识。
+      expect(await a.orderOf('Fav'), <String>['x']);
+    });
+
+    test(
+        'legacy single-file collections.json is deleted after per-device publish',
+        () async {
+      // 预置一份旧单文件 collections.json（per-device 布局前遗留），带 Fav{legacy}。
+      await store.putJsonAsset(
+        kSyncCollectionsNamespace,
+        kSyncCollectionsManifestName,
+        const CollectionManifest(collections: <CollectionManifestEntry>[
+          CollectionManifestEntry(
+            name: 'Fav',
+            collectionType: 'collection',
+            members: <CollectionManifestMember>[
+              CollectionManifestMember(
+                  mediaType: 'epub', entryKey: 'legacy', sortIndex: 0),
+            ],
+          ),
+        ]).toJson(),
+      );
+
+      // A 有本地 Fav{x}，同步：吸收旧单文件知识（legacy 成员并入）后删除旧单文件。
+      final int cA = await a.db.createMediaCollection('Fav');
+      await a.db.addToCollection(cA, 'epub', 'x');
+      await tick();
+      await a.sync();
+
+      // 旧单文件已删除。
+      expect(
+          await store.findAsset(
+              kSyncCollectionsNamespace, kSyncCollectionsManifestName),
+          isNull,
+          reason: 'finding1：吸收后删除旧单文件，消除永久陈旧源');
+      // legacy 成员被吸收（并入 A 的库）。
+      expect((await a.orderOf('Fav')).toSet(),
+          containsAll(<String>{'x', 'legacy'}),
+          reason: '删除前先吸收旧单文件知识');
+    });
+  });
 }

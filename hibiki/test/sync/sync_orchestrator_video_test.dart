@@ -375,10 +375,12 @@ void main() {
               'missing local cover file must not wipe published coverAsset');
     });
 
-    // finding 10：远端 videos.json 存在但读不出（返 null）→ 视为损坏，本轮跳过清单
-    // 回写（否则按空清单覆盖抹掉他端全部条目），资产照传。
+    // finding 3（原 finding10 修正）：远端 videos.json 存在但读不出（返 null）→ 损坏 →
+    // 本轮**跳过视频上传 + 清单回写**并 return。若照传：远端 = 空清单 → priorEntry 恒
+    // null → 每轮全量重传（视频体积大的死循环）；若回写：空清单抹掉他端条目。下轮下载
+    // 成功即自愈。加第二轮断言：损坏态第二轮仍 videosExported==0（不是每轮重传）。
     test(
-        'finding10 corrupt videos.json is not overwritten; assets still uploaded',
+        'finding3 corrupt videos.json: skip upload + writeback, no re-transfer loop',
         () async {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
@@ -392,18 +394,33 @@ void main() {
           kSyncVideosNamespace, kSyncVideosManifestName, null);
       await _seedLocalVideo(db, tmp, uid: 'video/Keep', title: 'Keep');
 
-      final SyncRunReport report = SyncRunReport();
+      final SyncRunReport first = SyncRunReport();
       await _orchestrator(db, backend, tmp, syncVideoFiles: true)
-          .syncVideoAssets(report);
+          .syncVideoAssets(first);
 
-      expect(report.videosExported, 1, reason: 'assets still uploaded');
-      expect(report.errors.any((String e) => e.contains('unreadable')), isTrue,
+      expect(first.videosExported, 0,
+          reason: 'corrupt manifest → no idempotency judge → skip upload');
+      expect(first.errors.any((String e) => e.contains('unreadable')), isTrue,
           reason: 'corruption recorded');
+      // No video file asset uploaded (only the corrupt manifest itself present).
+      final List<AssetEntry> uploaded =
+          (await store.listChildren(kSyncVideosNamespace))
+              .where((AssetEntry e) =>
+                  !e.isFolder && e.name != kSyncVideosManifestName)
+              .toList();
+      expect(uploaded, isEmpty, reason: 'no asset uploaded under corruption');
       final AssetEntry manifest = (await store.findAsset(
           kSyncVideosNamespace, kSyncVideosManifestName))!;
       expect(await store.getJsonAsset(manifest.id), isNull,
           reason:
               'corrupt manifest must NOT be overwritten (would wipe peers)');
+
+      // 第二轮：仍损坏 → 仍 0（关键：不是每轮全量重传的死循环）。
+      final SyncRunReport second = SyncRunReport();
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(second);
+      expect(second.videosExported, 0,
+          reason: 'corrupt manifest must not force a full re-upload each run');
     });
   });
 

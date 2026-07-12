@@ -505,35 +505,54 @@ class SyncOrchestrator {
 
       // 竞态修复：**读远端清单之前**先预取本轮基线时刻，整轮成功后写这个预取值
       // （而非结束时的新 now）。否则「IO 期间用户移出的墓碑 removedAt <= 结束才取的
-      // now」会在下轮被判旧闻撤销。同时作 publishedAt 发布时戳。
+      // now」会在下轮被判旧闻撤销。同时作 publishedAt 发布时戳 + 本端文件 lastWrittenAt。
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
 
       // per-device 布局：本端只写 `collections-<deviceId>.json`，读时合并**命名空间下
       // 全部清单文件（含本端上轮自己那份 + 旧单文件）**成远端并集。单文件读-合-写两
       // 设备并发后写者整文件覆盖先写者会永久丢墓碑；per-device 各写各的绝不互相覆盖。
-      // 折叠里**包含本端自己上轮那份**——否则本端已发布墓碑的 publishedAt 每轮会被
-      // 重新盖 now（写放大 + 破坏幂等）；含进来则保真已发布戳，字节稳定。
+      // 折叠里**包含本端自己上轮那份**——保真已发布墓碑戳、字节稳定（幂等）。
       final String ownName = collectionsManifestNameFor(deviceId);
       final List<AssetEntry> children = await _backend.listChildren(ns);
 
       final List<CollectionManifest> peers = <CollectionManifest>[];
       bool ownExists = false;
-      String? ownCanonical; // 本端上轮那份的规范字节（回写去重用，字节不变不回写）。
+      bool ownCorrupt = false; // 本端自己那份读不出：自愈重写（finding 2）。
+      bool skippedPeer = false; // 跳过了他端损坏文件：本轮不推进基线（finding 2）。
+      String? ownCanonical; // 本端上轮那份的内容字节（回写去重用，内容不变不回写）。
+      AssetEntry? legacySingle; // 旧单文件 collections.json（per-device 布局前遗留）。
       for (final AssetEntry e in children) {
         if (e.isFolder || !isCollectionsManifestName(e.name)) continue;
-        final Object? json = await _backend.getJsonAsset(e.id);
-        if (json == null) {
-          // 清单资产存在但读不出（下载失败/损坏）：本轮跳过（不 apply、不回写、不推进
-          // 基线，下轮重试）——否则按残缺远端并集会误撤他端知识。
-          report.errors.add('collections manifest "${e.name}" present but '
-              'unreadable; skipping collections sync this run');
-          return;
+        final bool isOwn = e.name == ownName;
+        if (e.name == kSyncCollectionsManifestName &&
+            ownName != kSyncCollectionsManifestName) {
+          legacySingle = e; // 记下旧单文件，吸收其知识后删除（finding 1）。
         }
-        final CollectionManifest m = CollectionManifest.fromJson(json);
-        peers.add(m);
-        if (e.name == ownName) {
-          ownExists = true;
-          ownCanonical = m.canonicalJson();
+        try {
+          final Object? json = await _backend.getJsonAsset(e.id);
+          if (json == null) {
+            throw const FormatException('unreadable (null decode)');
+          }
+          final CollectionManifest m = CollectionManifest.fromJson(json);
+          peers.add(m);
+          if (isOwn) {
+            ownExists = true;
+            ownCanonical = m.canonicalJson();
+          }
+        } catch (err) {
+          // finding 2 自愈：坏文件是本端自己那份 → 不 abort，按其余可读对端 + 本地照常
+          // 合并并回写自己那份（覆盖损坏）；坏文件是他端 → 跳过该文件继续本轮（记
+          // report.errors），且**不推进基线**（没读到那份的墓碑下轮仍当新闻裁决，避免
+          // 基线越过未读知识造成误判）。任一情况都绝不整轮 return。
+          if (isOwn) {
+            ownCorrupt = true;
+            report.errors.add('own collections manifest "${e.name}" unreadable;'
+                ' republishing from local+peers this run (self-heal): $err');
+          } else {
+            skippedPeer = true;
+            report.errors.add('peer collections manifest "${e.name}" '
+                'unreadable; skipped this run (baseline held): $err');
+          }
         }
       }
 
@@ -544,13 +563,10 @@ class SyncOrchestrator {
       int baseline = await repo.getCollectionsSyncBaselineMs();
       if (baseline > nextBaseline) baseline = nextBaseline;
 
-      // 折叠对端 per-device 文件 + 旧单文件成远端并集（两侧皆已发布，用 publishedAt
-      // 裁决；不盖新 publishedAt）。空并集 = 首轮/无对端，优雅退化为「只上传本机」。
-      final CollectionManifest remote = CollectionSyncEngine.combinePeers(
-        peers,
-        lastSyncedAtMs: baseline,
-        nowMs: nextBaseline,
-      );
+      // 折叠对端 per-device 文件 + 旧单文件成远端并集（按文件级 lastWrittenAt 裁决墓碑，
+      // 见 combinePeers）。空并集 = 首轮/无对端，优雅退化为「只上传本机」。
+      final CollectionManifest remote =
+          CollectionSyncEngine.combinePeers(peers);
 
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
@@ -562,14 +578,31 @@ class SyncOrchestrator {
       report.collectionsUpdated +=
           await applyCollectionLocalChanges(_db, outcome.changes);
 
-      // 回写门槛：本端 per-device 文件字节有变才写自己那份；本端尚无文件且合并结果为空
-      // （零合集库）不无中生有地创建空文件。只写 ownName——绝不覆盖别人的文件。
+      // 回写门槛：本端 per-device 文件内容有变才写自己那份；本端尚无文件且合并结果为空
+      // （零合集库）不无中生有地创建空文件；但本端文件损坏时强制回写以自愈。只写 ownName
+      // ——绝不覆盖别人的文件。写时盖 lastWrittenAt=nextBaseline（发布时刻），供对端折叠裁决。
       final bool nothingToPublish =
-          !ownExists && outcome.merged.collections.isEmpty;
+          !ownExists && !ownCorrupt && outcome.merged.collections.isEmpty;
+      bool ownWritten = false;
       if (!nothingToPublish && outcome.merged.canonicalJson() != ownCanonical) {
-        await _backend.putJsonAsset(ns, ownName, outcome.merged.toJson());
+        await _backend.putJsonAsset(ns, ownName,
+            outcome.merged.withLastWrittenAt(nextBaseline).toJson());
+        ownWritten = true;
       }
-      await repo.setCollectionsSyncBaselineMs(nextBaseline);
+
+      // finding 1：本端 per-device 文件此刻已承载吸收后的并集知识（读到的旧单文件已折进
+      // outcome.merged），删除旧单文件 collections.json，消除永不重写/删除的永久陈旧活
+      // 成员源。仅本端文件此刻存在时删除；legacySingle 只在 deviceId 非空（ownName != 旧
+      // 单文件名）时被赋值，故绝不误删本端自己那份。
+      if (legacySingle != null && (ownExists || ownWritten)) {
+        await _backend.deleteAsset(legacySingle.id);
+      }
+
+      // finding 2：跳过了任一他端损坏文件 ⇒ 本轮没读全知识，不推进基线。本端自愈不算
+      // （本端知识来自本地 DB，未依赖那份损坏文件）。
+      if (!skippedPeer) {
+        await repo.setCollectionsSyncBaselineMs(nextBaseline);
+      }
     } catch (e) {
       report.errors.add('collections sync: $e');
     }
@@ -667,19 +700,20 @@ class SyncOrchestrator {
           await _backend.findAsset(ns, kSyncVideosManifestName);
       RemoteVideoManifest remote = RemoteVideoManifest.empty;
       String? remoteCanonical;
-      // 清单资产存在但读不出（getJsonAsset 返 null = 下载失败/损坏）：视为损坏，
-      // 本轮**跳过清单回写**（否则会按空清单合并，抹掉他端全部条目），资产照传。
-      bool manifestCorrupt = false;
       if (manifestAsset != null) {
         final Object? json = await _backend.getJsonAsset(manifestAsset.id);
-        if (json != null) {
-          remote = RemoteVideoManifest.fromJson(json);
-          remoteCanonical = remote.canonicalJson();
-        } else {
-          manifestCorrupt = true;
-          report.errors.add('video manifest present but unreadable; '
-              'skipping manifest writeback this run (assets still uploaded)');
+        if (json == null) {
+          // 清单资产存在但读不出（getJsonAsset 返 null = 下载失败/损坏）：本轮**跳过
+          // 视频上传 + 清单回写**并 return（finding 3）。若照传：远端 = 空清单 →
+          // priorEntry 恒 null → 每个视频每轮都判「远端无同尺寸」全量重传（无幂等判据的
+          // 死循环，视频体积大代价惨重）；若回写：空清单覆盖抹掉他端全部条目。无法判幂等
+          // 就不传，下轮下载成功即自愈。
+          report.errors.add('video manifest present but unreadable; skipping '
+              'video upload + manifest writeback this run (retried next run)');
+          return;
         }
+        remote = RemoteVideoManifest.fromJson(json);
+        remoteCanonical = remote.canonicalJson();
       }
 
       // 合并清单起点 = 远端既有条目（按 uid 索引；本地在库的 uid 下面覆盖，远端独有
@@ -765,15 +799,13 @@ class SyncOrchestrator {
       }
 
       // 回写门槛：字节有变才写；远端本无清单且合并结果为空（零视频库）不无中生有
-      // 地创建空文件；清单损坏（读不出）本轮绝不回写（否则用空清单覆盖抹掉他端条目）。
+      // 地创建空文件。（清单损坏已在上方 return，走不到这里。）
       final RemoteVideoManifest merged = RemoteVideoManifest(
         videos: byUid.values.toList(),
       );
       final bool nothingToPublish =
           manifestAsset == null && merged.videos.isEmpty;
-      if (!manifestCorrupt &&
-          !nothingToPublish &&
-          merged.canonicalJson() != remoteCanonical) {
+      if (!nothingToPublish && merged.canonicalJson() != remoteCanonical) {
         await _backend.putJsonAsset(
             ns, kSyncVideosManifestName, merged.toJson());
       }

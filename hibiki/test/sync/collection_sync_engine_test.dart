@@ -459,6 +459,103 @@ void main() {
         await a.db.createMediaCollection('Dup', collectionType: 'playlist');
     expect(id3, isNot(id1));
   });
+
+  // ── finding 1：combinePeers 折叠按文件级 lastWrittenAt 裁决墓碑（非本端基线）─────
+  group('finding1 combinePeers uses file lastWrittenAt', () {
+    CollectionManifest tombFile(int lwt, {int pub = 100}) => CollectionManifest(
+          lastWrittenAt: lwt,
+          collections: <CollectionManifestEntry>[
+            CollectionManifestEntry(
+              name: 'S',
+              collectionType: 'playlist',
+              memberTombstones: <CollectionMemberTombstone>[
+                CollectionMemberTombstone(
+                    mediaType: 'video',
+                    entryKey: 'm',
+                    removedAt: pub,
+                    publishedAt: pub),
+              ],
+            ),
+          ],
+        );
+    CollectionManifest aliveFile(int lwt) => CollectionManifest(
+          lastWrittenAt: lwt,
+          collections: <CollectionManifestEntry>[
+            const CollectionManifestEntry(
+              name: 'S',
+              collectionType: 'playlist',
+              members: <CollectionManifestMember>[
+                CollectionManifestMember(
+                    mediaType: 'video', entryKey: 'm', sortIndex: 0),
+              ],
+            ),
+          ],
+        );
+
+    test('stale peer alive member loses to a newer published tombstone', () {
+      // 墓碑文件 pub=100/lwt=100；活成员文件更旧（lwt=50）——陈旧，墓碑默认获胜。
+      final CollectionManifest union =
+          CollectionSyncEngine.combinePeers(<CollectionManifest>[
+        tombFile(100),
+        aliveFile(50),
+      ]);
+      final CollectionManifestEntry e = union.collections.single;
+      expect(e.members, isEmpty,
+          reason: '陈旧文件(lwt=50)的活成员输给已发布墓碑(pub=100)——不复活');
+      expect(e.memberTombstones, hasLength(1));
+    });
+
+    test('fresher peer alive member (re-add after tombstone) wins', () {
+      // 活成员文件 lwt=200 > 墓碑 pub=100 ⇒「看过墓碑后的有意重加」，成员胜、墓碑清。
+      final CollectionManifest union =
+          CollectionSyncEngine.combinePeers(<CollectionManifest>[
+        tombFile(100),
+        aliveFile(200),
+      ]);
+      final CollectionManifestEntry e = union.collections.single;
+      expect(e.members.map((CollectionManifestMember m) => m.entryKey).toList(),
+          <String>['m'],
+          reason: '文件晚于墓碑 = 有意重加胜');
+      expect(e.memberTombstones, isEmpty);
+    });
+
+    test('legacy file (no lastWrittenAt = 0) alive member is always stale', () {
+      // 旧文件缺 lastWrittenAt 解码为 0：其活成员恒陈旧，输给任何已发布墓碑。
+      final CollectionManifest legacyAlive = CollectionManifest(
+        // 不设 lastWrittenAt → 默认 0。
+        collections: <CollectionManifestEntry>[
+          const CollectionManifestEntry(
+            name: 'S',
+            collectionType: 'playlist',
+            members: <CollectionManifestMember>[
+              CollectionManifestMember(
+                  mediaType: 'video', entryKey: 'm', sortIndex: 0),
+            ],
+          ),
+        ],
+      );
+      final CollectionManifest union = CollectionSyncEngine.combinePeers(
+          <CollectionManifest>[tombFile(1), legacyAlive]);
+      expect(union.collections.single.members, isEmpty,
+          reason: '旧文件(lwt=0)活成员恒陈旧，墓碑胜');
+    });
+
+    test(
+        'fold is order-independent (max/min aggregation + canonical tie-break)',
+        () {
+      final CollectionManifest ab =
+          CollectionSyncEngine.combinePeers(<CollectionManifest>[
+        tombFile(100),
+        aliveFile(200),
+      ]);
+      final CollectionManifest ba =
+          CollectionSyncEngine.combinePeers(<CollectionManifest>[
+        aliveFile(200),
+        tombFile(100),
+      ]);
+      expect(ab.canonicalJson(), ba.canonicalJson(), reason: '折叠对顺序不变（收敛前提）');
+    });
+  });
 }
 
 /// 共享云清单（模拟 `__collections__/collections.json`）。
