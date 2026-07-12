@@ -2304,5 +2304,6 @@
   "batch_delete_confirm_video": "确定删除 $n 个视频？此操作不可撤销。",
   "batch_delete_success_video": "已删除 $n 个视频。",
   "batch_tag_added_video": "已为 $n 个视频添加标签「$name」。",
-  "batch_tag_removed_video": "已从 $n 个视频移除标签「$name」。"
+  "batch_tag_removed_video": "已从 $n 个视频移除标签「$name」。",
+  "stat_daily_average": "日均"
 }

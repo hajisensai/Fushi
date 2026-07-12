@@ -2304,5 +2304,6 @@
   "batch_delete_confirm_video": "$n 本の動画を削除しますか？この操作は元に戻せません。",
   "batch_delete_success_video": "$n 本の動画を削除しました。",
   "batch_tag_added_video": "$n 本の動画にタグ「$name」を追加しました。",
-  "batch_tag_removed_video": "$n 本の動画からタグ「$name」を削除しました。"
+  "batch_tag_removed_video": "$n 本の動画からタグ「$name」を削除しました。",
+  "stat_daily_average": "Daily avg"
 }

@@ -2304,5 +2304,6 @@
   "batch_delete_confirm_video": "Delete $n video(s)? This cannot be undone.",
   "batch_delete_success_video": "Deleted $n video(s).",
   "batch_tag_added_video": "Added tag \"$name\" to $n video(s).",
-  "batch_tag_removed_video": "Removed tag \"$name\" from $n video(s)."
+  "batch_tag_removed_video": "Removed tag \"$name\" from $n video(s).",
+  "stat_daily_average": "Daily avg"
 }
