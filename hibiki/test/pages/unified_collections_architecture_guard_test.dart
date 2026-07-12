@@ -95,18 +95,38 @@ void main() {
   });
 
   test('UI v2：整理排序页已按用户拍板整体砍掉——零残留 + 能力不回退', () {
-    // 用户：「编辑排序这个页面整个砍掉，做的太烂了」。页面、共享拖拽网格、入口
-    // 按钮全删；恢复任一残留即转红。
+    // 用户：「编辑排序这个页面整个砍掉，做的太烂了」。整理排序页 + 入口按钮全删；
+    // 恢复任一残留即转红。
     expect(
         File('lib/src/pages/implementations/shelf_reorder_page.dart')
             .existsSync(),
         isFalse,
         reason: '整理排序页必须保持删除');
-    expect(
-        File('lib/src/utils/components/hibiki_reorderable_grid.dart')
-            .existsSync(),
-        isFalse,
-        reason: '2D 拖拽重排网格随页面一起删除（零消费者）');
+    // 共享 2D 拖拽网格当年随整理页删除（零消费者）；现书籍合集详情页重新需要它做
+    // 网格内拖排（有消费者），且新实现消缩放（浮层渲染在组件自身 Stack、指针
+    // globalToLocal 消祖先 Transform.scale，非 SDK/pub 的 Overlay 平移代理，BUG-757）。
+    // 断言按新现实：文件必须存在、含 globalToLocal（消缩放核心），且详情页真在用。
+    final File reorderGrid =
+        File('lib/src/utils/components/hibiki_reorderable_grid.dart');
+    expect(reorderGrid.existsSync(), isTrue,
+        reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 HibikiReorderableGrid');
+    expect(reorderGrid.readAsStringSync().contains('globalToLocal'), isTrue,
+        reason: '消缩放核心：所有指针坐标必经根 Stack 的 globalToLocal 转本地（消祖先缩放）');
+    final String gridPageSrc = File(
+      'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+    ).readAsStringSync();
+    expect(gridPageSrc.contains('HibikiReorderableGrid'), isTrue,
+        reason: '书籍合集详情页必须用消缩放 2D 拖排网格（不得裸用 SDK/pub Reorderable 网格）');
+    for (final String banned in <String>[
+      'ReorderableListView.builder(',
+      'ReorderableListView(',
+      'ReorderableGridView',
+      'ReorderableDelayedDragStartListener(',
+      'ReorderableDragStartListener(',
+    ]) {
+      expect(gridPageSrc.contains(banned), isFalse,
+          reason: 'SDK/pub Reorderable 在 UI 缩放下拖动漂移（BUG-757），详情页不得回潮（$banned）');
+    }
     for (final String banned in <String>['ShelfReorderPage', 'onOrganize:']) {
       expect(homeSrc.contains(banned), isFalse,
           reason: '视频库不得残留整理页接线（$banned）');
