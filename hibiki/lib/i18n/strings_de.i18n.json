@@ -2289,5 +2289,16 @@
   "video_render_skia_fix_confirm_body": "This disables the Impeller renderer and restarts the app to apply.",
   "video_render_skia_fix_confirm_action": "Restart",
   "video_render_skia_fix_title": "Screen black? Switch renderer (Skia)",
-  "video_render_skia_fix_hint": "Use if audio plays but the video stays black. Disables Impeller; restarts to apply."
+  "video_render_skia_fix_hint": "Use if audio plays but the video stays black. Disables Impeller; restarts to apply.",
+  "book_continue_reading": "Continue Reading",
+  "book_library_overview": "Library Overview",
+  "shelf_stat_reading": "Reading",
+  "book_read_progress": "Read $percent%",
+  "sort_by": "Sort",
+  "sort_recent_read": "Recently read",
+  "sort_recent_watched": "Recently watched",
+  "sort_title": "Name",
+  "sort_imported": "Import date",
+  "collection_sort_by_title": "Sort by name",
+  "collection_sort_by_imported": "Sort by import date"
 }

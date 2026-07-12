@@ -2524,6 +2524,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             dateKey: dateKey,
             subtitleChars: chars,
             watchTimeMs: ms,
+            // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频
+            // 每集独立页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
+            bookUid: widget.bookUid,
           ),
         ),
         markCompleted: (String uid) =>
