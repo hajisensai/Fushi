@@ -1011,42 +1011,46 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         thickness: 3,
         controller: mediaType.scrollController,
         child: LayoutBuilder(
-          builder: (context, constraints) => CustomScrollView(
-            controller: mediaType.scrollController,
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              if (showRemoteBooks)
-                SliverToBoxAdapter(
-                  child: _buildRemoteBookSection(remoteState, constraints),
-                ),
-              // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-              // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
-              // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
-              // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
-              if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
-                ..._buildShelfGroupSlivers(
-                  shelfGroups,
-                  epubCoverUrisByBookKey,
-                  constraints,
-                ),
-              if (videoBooks.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                    child: _buildSectionHeader(t.shelf_video_section)),
-                SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
-                    childAspectRatio: kShelfVideoCardAspectRatio,
+          // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
+          builder: (context, constraints) => RefreshIndicator(
+            onRefresh: _pullToRefreshBooks,
+            child: CustomScrollView(
+              controller: mediaType.scrollController,
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+                if (showRemoteBooks)
+                  SliverToBoxAdapter(
+                    child: _buildRemoteBookSection(remoteState, constraints),
                   ),
-                  itemCount: videoBooks.length,
-                  itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
-                ),
+                // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+                // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+                // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+                // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
+                // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
+                if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
+                  ..._buildShelfGroupSlivers(
+                    shelfGroups,
+                    epubCoverUrisByBookKey,
+                    constraints,
+                  ),
+                if (videoBooks.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                      child: _buildSectionHeader(t.shelf_video_section)),
+                  SliverGrid.builder(
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: _gridExtent(context, constraints),
+                      // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
+                      childAspectRatio: kShelfVideoCardAspectRatio,
+                    ),
+                    itemCount: videoBooks.length,
+                    itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

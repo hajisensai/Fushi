@@ -70,6 +70,24 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     });
   }
 
+  /// 下拉刷新：强制重拉远端书列表（并失效本地书 / 有声书列表 provider 一并重读），
+  /// await 远端 future 完成后指示器才收起。
+  ///
+  /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回书架不再隐式重拉远端，
+  /// 故给用户一个**显式**强制刷新入口——对端设备 / 云盘新增的书，不重启 app 也能刷出来。
+  /// [_loadRemoteBooks] 内部吞异常返回 failed 态，await 不会抛，指示器必定收起。
+  Future<void> _pullToRefreshBooks() async {
+    ref.invalidate(hibikiBooksProvider);
+    ref.invalidate(srtBooksProvider);
+    _batchAudiobookInfoFuture = null;
+    _batchAudiobookInfoResult = const <String, _AudiobookInfo>{};
+    final Future<_RemoteBookState?> future = _loadRemoteBooks();
+    _rebuild(() {
+      _remoteBooksFuture = future;
+    });
+    await future;
+  }
+
   Widget _buildRemoteBookSection(
     _RemoteBookState state,
     BoxConstraints constraints,

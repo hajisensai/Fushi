@@ -162,6 +162,24 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _maybeBackfillCovers();
   }
 
+  /// 下拉刷新：强制重拉远端视频列表 + 本地列表，await 远端 future 完成后指示器才收起。
+  ///
+  /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回视频 tab 不再隐式重拉远端，
+  /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
+  /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起。
+  Future<void> _pullToRefresh() async {
+    final Future<_RemoteVideoState?> remote = _loadRemoteVideos();
+    if (mounted) {
+      setState(() {
+        _future = widget.repo.listForShelf();
+        _remoteFuture = remote;
+      });
+    }
+    _loadVideoOrder();
+    _maybeBackfillCovers();
+    await remote;
+  }
+
   /// 一次性预取全部 ShelfEntries（video 类）组装成 `"video|bookUid" → sortOrder`。
   Future<void> _loadVideoOrder() async {
     final HibikiDatabase db = ref.read(appProvider).database;
@@ -1385,16 +1403,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
             final bool hasRemoteSection =
                 !(remoteSection is SizedBox && remoteSection.height == 0);
-            return CustomScrollView(
-              slivers: <Widget>[
-                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量 [all]
-                // 描述整库，不随标签筛选变。
-                if (all.isNotEmpty)
-                  SliverToBoxAdapter(child: _buildOverviewSection(all)),
-                if (hasRemoteSection) SliverToBoxAdapter(child: remoteSection),
-                ..._buildLocalVideoSlivers(all, ordered),
-              ],
+            // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
+            // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
+            return RefreshIndicator(
+              onRefresh: _pullToRefresh,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: <Widget>[
+                  // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                  // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量 [all]
+                  // 描述整库，不随标签筛选变。
+                  if (all.isNotEmpty)
+                    SliverToBoxAdapter(child: _buildOverviewSection(all)),
+                  if (hasRemoteSection)
+                    SliverToBoxAdapter(child: remoteSection),
+                  ..._buildLocalVideoSlivers(all, ordered),
+                ],
+              ),
             );
           },
         );
