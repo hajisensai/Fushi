@@ -1,0 +1,11 @@
+## BUG-730 · MDX词典类义语交叉引用链接点击后面板空白
+- **报告**：2026-07-13（用户：截图 查「七転八起」→ 大修館 四字熟語辞典 T4jiJuk.mdx）
+- **真实性**：✅ 真 bug。app 内「查词」页查一个四字熟语，条目「類義語」是一排绿色可点交叉引用（`一栄一辱` 等）。点击后整个词典内容区变空白（只剩顶部标题）。
+  - 根因：MDX 原始 HTML 的交叉引用是内联锚点 `<a href="entry://词（読み）">词</a>`，经 `renderContent` 把原始 HTML 赋给 `wrapper` 的 DOM（`hibiki/assets/popup/popup.js:2692`，`rewriteDictLinks(...)`）注入到 `.glossary-content`。`rewriteDictLinks`（`hibiki/assets/popup/dict-media.js:14-25`）只重写 `<link>`/`<img>`，**不碰 `<a>`**，这些锚点没有任何 onclick。文档点击委托 `hibiki/assets/popup/popup.js:3724` 对 `.glossary-content a[href]` **直接 `return`**（既不 preventDefault 也不 onLinkClick）；结果 WebView 又没有 `shouldOverrideUrlLoading` 导航拦截、未注册 `entry://` scheme（`dictionary_popup_webview.dart:981-997`）。于是裸点击触发浏览器默认导航到无法解析的 `entry://…` → 结果 WebView 主框架离开 `popup.html`、已渲染词条 DOM 全被销毁 → 内容区空白。
+  - 对照：结构化内容（Yomitan JSON）链接在 `popup.js:1703-1724` 有 `preventDefault + stopPropagation + callHandler('onLinkClick')`，能正确重查、不白屏——只有 MDX 原始 HTML 内联锚点漏了接线。
+  - 真实样本（解密 T4jiJuk.mdx 抽取）：`<a href="entry://一栄一辱（いちえい-いちじょく）">一栄一辱</a>`——href 带读音噪声、振假名是锚外兄弟 `<span>`，故查询词取干净词头 `textContent`（app 索引与结构化内容链接同口径），不取 href。
+- **[x] ① 已修复** — `hibiki/assets/popup/popup.js`：新增具名函数 `handleGlossaryAnchorClick(event, anchor)`（`preventDefault` 阻止默认导航→根因；外链交 `openExternalLink`；`sound://` 发音节点忽略；其余内部交叉引用用 `textContent` 干净词头转 `onLinkClick` 重查），文档委托 `.glossary-content` 分支把锚点点击统一交给它，替代原来的裸 `return`。同步到 3 份镜像（`assets/popup/` + `assets/browser_extension/vendor/` + `tools/browser-extension/vendor/`，parity 守卫要求逐字节一致）。提交：<待补>
+- **[x] ② 已加自动化测试** — `test/js/dict_glossary_crossref_link.test.mjs`（jsdom 真实 DOM 行为测试）：提取真实 `handleGlossaryAnchorClick`，用真实 MDX 锚点样本执行，断言 ① `preventDefault` 被调用（根因守卫：默认导航被阻止）② `onLinkClick` 用干净词头 `一栄一辱` 重查（不用带读音的 href）③ 外链走 `openExternalLink` 不误查词 ④ `sound://` 阻止导航但不查词 ⑤ 空词头不发空查询。`cd test/js && node --test` 全绿。
+- **备注**：
+  - 编号 730 与并发未合并 PR（剪贴板制卡 BUG-730）撞号——integration owner 合并时用 `dart run tool/bug.dart` 改名其一即可（per-file 结构，仅文件名冲突）。
+  - 修复只动 JS + 测试，无 Dart 改动。仍需**真机/桌面复测原始失败路径**（在查词页查 `七転八起`，点 `類義語` 的 `一栄一辱` 应跳转到该词条目而非白屏）后才算完全收尾。
