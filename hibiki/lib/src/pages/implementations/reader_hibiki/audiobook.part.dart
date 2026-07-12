@@ -512,6 +512,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     if (controller == null) return;
 
     if (_lyricsMode) {
+      // BUG-756: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
+      // 时置位并 notify）。必须**无条件**消费（哪怕本帧未就绪 / idx 越界也读一次），
+      // 否则这枚挂在共享 controller 上的进程级一次性旗会泄漏到之后退回正文的
+      // _onCueChanged，被那边 consumeForceReveal 读成过期 true → 凭空多滚一次。
+      final bool forceReveal = controller.consumeForceReveal();
       if (_lyricsPageReady) {
         final int sourceIdx = _lyricsCueWindowUsesAllBookCues
             ? controller.allBookCueIdx
@@ -519,12 +524,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         final int idx = sourceIdx - _lyricsCueIndexOffset;
         if (idx >= 0) {
           if (idx < _lyricsCueList.length) {
-            // followAudio OFF → pass scroll=false so the lyrics page updates the
-            // current-line highlight but does not auto-scroll (the toggle was a
-            // no-op before: __lyricsSetCue always scrolled regardless).
+            // followAudio OFF → scroll=false：只换当前行高亮、不自动滚（用户可自由滚动
+            // 歌词）。forceReveal（切「跟随音频」ON 触发的 snap 回中）也放行滚动。
+            final bool scroll = controller.followAudio.value || forceReveal;
             _controller!.evaluateJavascript(
               source: 'if(window.__lyricsSetCue)'
-                  'window.__lyricsSetCue($idx, ${controller.followAudio.value});',
+                  'window.__lyricsSetCue($idx, $scroll);'
+                  // BUG-756: snap 那一刻 cue 往往没变，__lyricsSetCue 的
+                  // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
+                  // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
+                  '${forceReveal ? 'if(window.__lyricsScrollToCue)'
+                      'window.__lyricsScrollToCue($idx);' : ''}',
             );
           } else if (_lyricsCueWindowUsesAllBookCues) {
             unawaited(_loadLyricsPage());
