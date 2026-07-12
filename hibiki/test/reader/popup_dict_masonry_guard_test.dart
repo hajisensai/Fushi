@@ -8,9 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 同行卡片被最高者顶到同一水平线、矮卡片下方留空白）。
 ///
 /// 实现取舍（见 popup.js 注释）：CSS grid 规则原样保留作「无 JS 兜底」，masonry 是叠在
-/// grid 之上的运行时 inline-style 覆盖层——`--dict-columns > 1` 且多卡时接管绝对定位，
-/// `<=1` 或单卡时清 inline 回落 grid/block。因此这里锁 popup.js 的 masonry 不变量，而
-/// popup.css 的 grid 守卫（popup_dict_card_guard / popup_dictionary_columns）不受影响。
+/// grid 之上的运行时 inline-style 覆盖层——设置列数 `--dict-columns > 1` 且该词条至少有 1 本
+/// 词典时接管绝对定位，有效列数封顶到实际卡片数 `min(设置列数, 卡片数)`（词典数 < 列数时
+/// 现有卡片平分整行、单卡满宽）；设置=1（经典单列）或无卡时清 inline 回落 grid/block。
+/// 因此这里锁 popup.js 的 masonry 不变量，而 popup.css 的 grid 守卫（popup_dict_card_guard /
+/// popup_dictionary_columns）不受影响。
 ///
 /// 纯源码不变量（CI 只跑 .dart，node 守卫 CI 不跑），故在 Dart 层断言以进 CI 真跑；
 /// 真实排列观感另由桌面离屏真机复测（reader/popup 布局问题的验证纪律）。
@@ -67,13 +69,25 @@ void main() {
         reason: 'resetMasonryBody 必须清粘着列记录，避免陈旧列号跨单列/多列切换复用');
   });
 
-  test('单列 / 单卡回落 CSS 兜底：cols<=1 或 items<=1 时清 inline', () {
+  test('回落条件：设置=1（经典单列）或无卡才清 inline，单卡不再回落半宽 grid', () {
     expect(
-        RegExp(r'cols\s*<=\s*1\s*\|\|\s*items\.length\s*<=\s*1').hasMatch(js),
+        RegExp(r'configured\s*<=\s*1\s*\|\|\s*items\.length\s*===\s*0')
+            .hasMatch(js),
         isTrue,
-        reason: '单列或单卡不做 masonry，清 inline 回落 CSS grid/block（不破坏单卡满宽 / 单列纵堆）');
+        reason: '只有设置列数=1 或该词条无词典卡才回落 CSS grid/block；'
+            '单卡改由 masonry cols=1 满宽承载，不再落进 N 列 grid 只占 1/N 宽');
     expect(js.contains('function resetMasonryBody('), isTrue,
         reason: '回落时必须清掉 position/width/transform/height 等 inline，让 CSS 接管');
+  });
+
+  test('有效列数封顶到词典卡片数：词典数 < 设置列数时现有卡片平分整行（单卡满宽）', () {
+    // 核心新契约：cols = min(设置列数, 该词条实际词典卡片数)。上限 2 但只有 1 本 → cols=1
+    // → columnWidth 取整宽、单卡满宽；2 卡 3 列 → cols=2 各半，右侧不再空出无卡的列。
+    expect(
+        RegExp(r'Math\.min\(\s*configured\s*,\s*items\.length\s*\)')
+            .hasMatch(js),
+        isTrue,
+        reason: '有效列数必须 min(设置列数, 卡片数)，卡片才会平分整行、不留空列');
   });
 
   test('高度变化用 ResizeObserver 兜底（<details> 折叠 / 图片异步 / ruby / 字体）', () {
