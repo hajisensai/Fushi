@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 737 条。点号进各自文件。
+> 共 738 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-752](bugs/BUG-752-ext-content-css-reset-specificity.md) | 🚧 | 🚧 | 扩展查词弹窗与app内完全不一样：content.css生成器把通用reset抬到ID特异性压死低特异性margin/padding |
+| [BUG-753](bugs/BUG-753-header-pill-crushes-title.md) | ✅ | ✅ | 页头标签药丸按本地宽降级失败·挤压书架标题重叠 |
+| [BUG-752](bugs/BUG-752-ext-content-css-reset-specificity.md) | ✅ | ✅ | 扩展查词弹窗与app内完全不一样：content.css生成器把通用reset抬到ID特异性压死低特异性margin/padding |
 | [BUG-751](bugs/BUG-751-panel-header-buttons-washed-out.md) | ✅ | ✅ | 剪贴板半透明面板顶部按钮(制卡/音频/收藏)几乎不可见 |
 | [BUG-750](bugs/BUG-750-remote-tab-reload.md) | ✅ | ✅ | 远端视频/书切 tab 每次重新加载（顶层 tab 无保活） |
 | [BUG-749](bugs/BUG-749-lookup-window-floor-region-eats-clicks.md) | ✅ | ✅ | app外查词覆盖窗铺满工作区吞掉下一次点击 |

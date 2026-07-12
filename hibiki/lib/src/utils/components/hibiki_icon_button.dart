@@ -7,6 +7,37 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
+/// 页头动作按钮「展开文字标签」的作用域开关。
+///
+/// BUG：`_labelExpanded` 原本只按**整窗**宽（[MediaQuery.sizeOf]）判定，与页头
+/// 实际可用宽脱钩。桌面带导航栏 / 分栏时整窗 ≥840 但页头本地宽更窄，窗宽判定仍把
+/// 4 个动作展开成药丸，[HibikiPageHeader] 里 [Expanded] 的标题被挤到贴着按钮甚至
+/// 折成两行（用户反馈「已经重叠了还没降级成无字」）。
+///
+/// 修法：由 [HibikiPageHeader] 的行布局用 [LayoutBuilder] 拿到的**本地可用宽**
+/// （经 UI 缩放还原真实宽）判定，仅 [WindowSizeClass.expanded]（真实 ≥840）才展开，
+/// 结果经本作用域下发给后代 [HibikiIconButton]。域外（无此祖先，独立使用的带 label
+/// 按钮）回退整窗判定，行为零变化。
+class HibikiHeaderLabelScope extends InheritedWidget {
+  const HibikiHeaderLabelScope({
+    required this.expandLabels,
+    required super.child,
+    super.key,
+  });
+
+  /// 本作用域内的带 [HibikiIconButton.label] 按钮是否展开成图标+文字药丸。
+  final bool expandLabels;
+
+  /// 就近作用域的展开开关；无祖先返回 null（由调用方回退整窗判定）。
+  static bool? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<HibikiHeaderLabelScope>()
+      ?.expandLabels;
+
+  @override
+  bool updateShouldNotify(HibikiHeaderLabelScope oldWidget) =>
+      expandLabels != oldWidget.expandLabels;
+}
+
 /// A button that can be set as busy. When busy, the icon is faded out when its
 /// [onTap] action is on-going and processing, which can be used to
 /// indicate when a button cannot be pressed once its click action has been
@@ -36,10 +67,11 @@ class HibikiIconButton extends StatefulWidget {
   /// The icon to display within the button.
   final IconData icon;
 
-  /// 可展开文字标签：非空时，在非 compact 宽度（真实视口 ≥600，经
-  /// [windowSizeClassReal] 判定）渲染成「图标 + 文字」的描边药丸按钮（页头动作在
-  /// 宽窗展开可读，对齐 Jellyfin 式工具栏）；compact 窄窗自动回落为纯图标圆钮，
-  /// 行为与 null 完全一致。busy / enabled / 焦点注册在两种形态间共享同一路径。
+  /// 可展开文字标签：非空时渲染成「图标 + 文字」的描边药丸按钮（页头动作在宽窗展开
+  /// 可读，对齐 Jellyfin 式工具栏），窄窗自动回落为纯图标圆钮，行为与 null 完全一致。
+  /// 是否展开由 [_labelExpanded] 决定——[HibikiPageHeader] 内经 [HibikiHeaderLabelScope]
+  /// 按**页头本地可用宽**判定（真实 ≥840 才展开，避免挤压标题）；域外独立使用回退整窗
+  /// 宽（非 compact 即展开）。busy / enabled / 焦点注册在两种形态间共享同一路径。
   final String? label;
 
   /// The size of the icon. By default, this is 24.0.
@@ -154,14 +186,18 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   Color get disabledColor =>
       widget.disabledColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
 
-  /// 宽窗判定与 [HibikiPageHeader] 同源：真实视口宽（BUG-401，乘回 UI 缩放）
-  /// 非 compact 才展开文字标签。
-  bool _labelExpanded(BuildContext context) =>
-      windowSizeClassReal(
-        MediaQuery.sizeOf(context).width,
-        HibikiAppUiScale.of(context),
-      ) !=
-      WindowSizeClass.compact;
+  /// 是否展开文字标签。优先取 [HibikiHeaderLabelScope]（页头按**本地可用宽**下发的
+  /// 权威判定）；域外独立使用时回退整窗宽判定（BUG-401，乘回 UI 缩放还原真实宽），
+  /// 非 compact 即展开——保持独立按钮行为不变。
+  bool _labelExpanded(BuildContext context) {
+    final bool? scoped = HibikiHeaderLabelScope.maybeOf(context);
+    if (scoped != null) return scoped;
+    return windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          HibikiAppUiScale.of(context),
+        ) !=
+        WindowSizeClass.compact;
+  }
 
   @override
   Widget build(BuildContext context) {
