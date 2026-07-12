@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -29,6 +30,7 @@ import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -47,7 +49,6 @@ import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
@@ -105,25 +106,36 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
+  /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
+  /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
+  /// 全页 spinner，用户报「一直在刷新」）。仅首载（缓存空）才显示加载圈。
+  List<VideoBookRow>? _videosCache;
+
   /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
   final Set<String> _coverBackfillAttempted = <String>{};
 
   /// 后台封面补齐进行中标志（防并发重入）。
   bool _backfillingCovers = false;
 
-  /// TODO-616 B2：视频自定义排序映射 `"video|bookUid" → sortOrder`，开页/落盘后
-  /// 加载一次，本地网格按它稳定排序（无行的视频退化原序）。
-  Map<String, int> _videoOrder = const <String, int>{};
+  /// 排序交互重设计层次 A：当前排序方式（偏好 `video_sort_mode` 持久化，默认
+  /// 最近观看，用户拍板）。旧 `ShelfEntries.sortOrder` 手动权重已废弃不再读取。
+  ShelfSortMode _sortMode = ShelfSortMode.recent;
+
+  /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
+  /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
+  Map<String, int> _memberSortIndex = const <String, int>{};
 
   /// 统一合集 Phase 4：视频合集字典（id → 行）+ 条目折叠归属（'video|uid' → 最小
-  /// collectionId），与 [_videoOrder] 同一次 [_loadVideoOrder] 预取，替代旧 Series 分组。
+  /// collectionId），与 [_memberSortIndex] 同一次 [_loadLibraryMaps] 预取。
   Map<int, MediaCollectionRow> _collectionsById =
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
-  /// UI v2 Phase B：每 title 最近观看时间（watch-stats max(lastModified)），
-  /// 驱动「继续观看 hero」排序与「上次观看」外显。与 [_loadVideoOrder] 同批预取。
-  Map<String, DateTime> _lastWatchedByTitle = const <String, DateTime>{};
+  /// UI v2 Phase B / v39：最近观看时间（watch-stats max(lastModified)），驱动
+  /// 「继续观看 hero」排序与「上次观看」外显。v39 起按 bookUid 键控；迁移遗留
+  /// NULL-uid 行按 title 回退。与 [_loadLibraryMaps] 同批预取。
+  Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
+  Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
 
   @override
   void initState() {
@@ -131,10 +143,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
     _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
-    // TODO-616 A2: also prefetch order / series maps on first frame (order
-    // defaulting to 0 was harmless before, but series grouping needs
-    // _seriesById on the first paint, not only after a refresh).
-    _loadVideoOrder();
+    // 首帧就预取分组/排序映射（合集折叠首绘就要 _collectionsById，不能等刷新）。
+    _loadLibraryMaps();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
     assert(() {
@@ -158,7 +168,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       _future = widget.repo.listForShelf();
       _remoteFuture = _loadRemoteVideos();
     });
-    _loadVideoOrder();
+    _loadLibraryMaps();
     _maybeBackfillCovers();
   }
 
@@ -175,46 +185,70 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         _remoteFuture = remote;
       });
     }
-    _loadVideoOrder();
+    _loadLibraryMaps();
     _maybeBackfillCovers();
     await remote;
   }
 
-  /// 一次性预取全部 ShelfEntries（video 类）组装成 `"video|bookUid" → sortOrder`。
-  Future<void> _loadVideoOrder() async {
-    final HibikiDatabase db = ref.read(appProvider).database;
-    final List<ShelfEntryRow> rows = await db.getAllShelfEntries();
+  /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
+  /// watch-stats 最近观看，外加偏好里的排序方式。
+  Future<void> _loadLibraryMaps() async {
+    final AppModel appModel = ref.read(appProvider);
+    final HibikiDatabase db = appModel.database;
+    final ShelfSortMode sortMode =
+        ShelfSortMode.fromName(appModel.prefsRepo.videoSortModeName);
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
-    // UI v2 Phase B：watch-stats 全量行 → 每 title 最近观看时间（内存聚合，无新 DAO）。
+    // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
+    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。
+    final Map<String, int> memberSortIndex = <String, int>{};
+    for (final MediaCollectionRow c in collections) {
+      final List<MediaCollectionItemRow> members =
+          await db.getCollectionItems(c.id);
+      for (final MediaCollectionItemRow m in members) {
+        final String key = '${m.mediaType}|${m.entryKey}';
+        if (primaryMap[key] == c.id) memberSortIndex[key] = m.sortIndex;
+      }
+    }
+    // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
+    // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     final List<VideoWatchStatisticRow> watchRows =
         await db.getAllVideoWatchStatistics();
-    final Map<String, DateTime> lastWatched = latestWatchByTitle(
+    final Map<String, DateTime> watchByUid = latestWatchAtByKey(
       <(String, int)>[
         for (final VideoWatchStatisticRow r in watchRows)
-          (r.title, r.lastModified),
+          if (r.bookUid case final String uid) (uid, r.lastModified),
       ],
     );
-    final List<ShelfEntryRow> videoRows = <ShelfEntryRow>[
-      for (final ShelfEntryRow r in rows)
-        if (r.mediaType == 'video') r,
-    ];
-    final Map<String, int> map = <String, int>{
-      for (final ShelfEntryRow r in videoRows)
-        'video|${r.entryKey}': r.sortOrder,
-    };
+    final Map<String, DateTime> legacyByTitle = latestWatchAtByKey(
+      <(String, int)>[
+        for (final VideoWatchStatisticRow r in watchRows)
+          if (r.bookUid == null) (r.title, r.lastModified),
+      ],
+    );
     if (mounted) {
       setState(() {
-        _videoOrder = map;
+        _sortMode = sortMode;
+        _memberSortIndex = memberSortIndex;
         _collectionsById = <int, MediaCollectionRow>{
           for (final MediaCollectionRow c in collections) c.id: c,
         };
         _primaryCollectionByEntry = primaryMap;
-        _lastWatchedByTitle = lastWatched;
+        _watchAtByUid = watchByUid;
+        _legacyWatchAtByTitle = legacyByTitle;
       });
     }
+  }
+
+  /// 用户切换排序方式：立即重排 + 偏好持久化（跨启动记住）。
+  void _setSortMode(ShelfSortMode mode) {
+    if (mode == _sortMode) return;
+    setState(() => _sortMode = mode);
+    unawaited(
+      ref.read(appProvider).prefsRepo.setVideoSortModeName(mode.name),
+    );
   }
 
   /// 统一合集 Phase 2/6：给「缺封面的本地视频行」后台逐个抽一帧当封面。
@@ -631,10 +665,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// TODO-616 B2：打开视频库「编辑排序」独立重排页。把当前可见的本地视频卡片
-  /// 构造成可重排条目 push 进 [ShelfReorderPage]，退出时按最终顺序批量回写
-  /// ShelfEntries.sortOrder（mediaType='video'，entryKey=bookUid）。远端视频不入
-  /// 重排（下载后才有本地 bookUid，与本地同键）。
   /// TODO-616 A1：把选中视频「组合成系列」。命名 → createSeries → 逐条
   /// setSeriesForEntry（视频选择键是裸 bookUid，经 shelfSelectionToEntry 编成
   /// ('video', uid)）→ 退出选择态 → 重载分组渲染。
@@ -680,175 +710,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     if (!mounted) return;
     _exitSelectionMode();
-    await _loadVideoOrder();
+    await _loadLibraryMaps();
     HibikiToast.show(msg: t.series_created);
-  }
-
-  Future<void> _openVideoSort() async {
-    if (_selectionMode) _exitSelectionMode();
-    final List<VideoBookRow> books = _visibleVideos;
-    // UI v2 Phase E：整理页与主区同源分组（groupByCollections）——合集**内联展开成员**
-    // 连续相邻并套同色分组框，首成员标合集名；支持拖合并（建新合集/并入/跨合集移动）
-    // 与成员移出，与书架整理页同一套语义。
-    final List<ShelfReorderItem> items = _buildVideoSortItems(books);
-    final bool hasGroupMember =
-        items.any((ShelfReorderItem it) => it.groupId != null);
-    if (items.length < 2 && !hasGroupMember) {
-      HibikiToast.show(msg: t.shelf_sort_saved);
-      return;
-    }
-    await Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        builder: (_) => ShelfReorderPage(
-          title: t.shelf_edit_order,
-          initialItems: items,
-          cellExtent: 280,
-          mainAxisExtent: 218,
-          feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
-          onPersist: _persistVideoOrder,
-          onMerge: _mergeVideoEntries,
-          // 视频卡底部有标题 + 观看进度两行文字（约一个 footer 高），把「移出合集」
-          // 按钮抬到封面区。
-          overlayCornerBottomInset: 40,
-          onRemove: (ShelfReorderItem item) =>
-              _removeVideoFromCollectionInSort(item.groupId!, item),
-        ),
-      ),
-    );
-    // 整理页可能拖合并 / 移出写过合集归属，回库页后重载分组渲染。
-    _refresh();
-  }
-
-  /// 与主区 [_groupVideos] 同源的整理条目构造：散视频单卡无框；合集成员内联展开、
-  /// 套同色分组框（颜色按 collectionId 稳定分配）、首成员叠合集名 header。
-  List<ShelfReorderItem> _buildVideoSortItems(List<VideoBookRow> books) {
-    final List<CollectionGroup<VideoBookRow>> groups = _groupVideos(books);
-    final List<ShelfReorderItem> out = <ShelfReorderItem>[];
-    for (final CollectionGroup<VideoBookRow> group in groups) {
-      final MediaCollectionRow? collection = group.collection;
-      if (collection == null) {
-        final VideoBookRow book = group.coverItem.payload;
-        out.add(ShelfReorderItem(
-          mediaType: 'video',
-          entryKey: book.bookUid,
-          card: _buildCard(book),
-        ));
-        continue;
-      }
-      final Color frameColor = _videoGroupFrameColor(collection.id);
-      final int memberCount = group.items.length;
-      bool first = true;
-      for (final CollectionOrderingItem<VideoBookRow> it in group.items) {
-        final bool isHeader = first;
-        first = false;
-        out.add(ShelfReorderItem(
-          mediaType: 'video',
-          entryKey: it.payload.bookUid,
-          groupId: collection.id,
-          card: _buildCard(it.payload),
-          groupFrame: GroupFrameData(
-            color: frameColor,
-            showHeader: isHeader,
-            groupName: collection.name,
-            memberCount: memberCount,
-          ),
-        ));
-      }
-    }
-    return out;
-  }
-
-  /// 由合集 id 稳定映射分组框颜色（与书架整理页同调色板）。
-  Color _videoGroupFrameColor(int collectionId) {
-    const List<Color> palette = <Color>[
-      Color(0xFF4F8DFD),
-      Color(0xFF2FB56B),
-      Color(0xFFF08A24),
-      Color(0xFFAF52DE),
-      Color(0xFF20B2C4),
-      Color(0xFFE45C8A),
-      Color(0xFF6C6BE0),
-      Color(0xFFB58A21),
-    ];
-    return palette[collectionId.abs() % palette.length];
-  }
-
-  /// 拖拽合并（共享执行器）：目标有合集并入 / 散视频建新合集 / 跨合集移动。
-  Future<int?> _mergeVideoEntries(
-      ShelfReorderItem dragged, ShelfReorderItem target) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
-    final int collectionId = await mergeReorderItemsIntoCollection(
-      database: db,
-      defaultName: t.collection_default_name,
-      dragged: dragged,
-      target: target,
-    );
-    await _loadVideoOrder();
-    return collectionId;
-  }
-
-  /// 整理页移出合集：确认框 → removeFromCollection（空合集自动删）→ 重载归属。
-  Future<ShelfRemoveResult> _removeVideoFromCollectionInSort(
-      int collectionId, ShelfReorderItem item) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.collection_remove_member),
-        content: Text(t.collection_remove_member_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.collection_remove_member),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) {
-      return const ShelfRemoveResult(removed: false, groupEmptied: false);
-    }
-    final HibikiDatabase db = ref.read(appProvider).database;
-    final bool emptied = await removeReorderItemFromCollection(
-      database: db,
-      collectionId: collectionId,
-      item: item,
-    );
-    await _loadVideoOrder();
-    if (mounted) HibikiToast.show(msg: t.collection_member_removed);
-    return ShelfRemoveResult(removed: true, groupEmptied: emptied);
-  }
-
-  /// 把重排页给回的最终顺序按下标批量回写 ShelfEntries.sortOrder（单事务），
-  /// 重载排序映射后刷新网格。
-  Future<void> _persistVideoOrder(List<ShelfReorderItem> ordered) async {
-    // UI v2 Phase E：与书架整理页同款拆分——条目下标 → ShelfEntries.sortOrder；每个
-    // 合集的 MediaCollections.sortOrder 落其首成员下标（回主区合集行落在首成员位置）。
-    final ({
-      List<({String mediaType, String entryKey, int sortOrder})> entryOrders,
-      List<({int groupId, int sortOrder})> groupOrders,
-    }) split = unfoldedShelfReorderOrders(ordered);
-    final HibikiDatabase db = ref.read(appProvider).database;
-    for (final ({int groupId, int sortOrder}) go in split.groupOrders) {
-      await db.updateMediaCollectionSortOrder(go.groupId, go.sortOrder);
-    }
-    if (split.entryOrders.isNotEmpty) {
-      await db.batchUpsertShelfOrder(split.entryOrders);
-    }
-    // 组内成员序同时写穿 MediaCollectionItems.sortIndex：库页行序（ShelfEntries）
-    // 与播放器剧集面板/连播、合集详情页（getCollectionItems 按 sortIndex）必须
-    // 同源，否则整理后两处顺序分叉（对抗审查确认）。
-    for (final MapEntry<int, List<({String mediaType, String entryKey})>> e
-        in collectionMemberOrders(ordered).entries) {
-      await db.reorderCollectionItems(e.key, e.value);
-    }
-    await _loadVideoOrder();
   }
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
@@ -1365,10 +1228,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return FutureBuilder<List<VideoBookRow>>(
       future: _future,
       builder: (BuildContext context, AsyncSnapshot<List<VideoBookRow>> snap) {
-        if (snap.connectionState != ConnectionState.done) {
+        if (snap.connectionState == ConnectionState.done && snap.hasData) {
+          _videosCache = snap.data;
+        }
+        final List<VideoBookRow>? loaded =
+            snap.connectionState == ConnectionState.done
+                ? (snap.data ?? const <VideoBookRow>[])
+                : _videosCache;
+        if (loaded == null) {
+          // 仅首载（无缓存）显示加载圈；后续刷新用旧数据顶住，不闪屏。
           return const Center(child: CircularProgressIndicator());
         }
-        final List<VideoBookRow> all = snap.data ?? const <VideoBookRow>[];
+        final List<VideoBookRow> all = loaded;
         final Set<String>? filter =
             ref.watch(filteredVideoBookUidsProvider).valueOrNull;
         final List<VideoBookRow> books = filter == null
@@ -1376,16 +1247,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             : all
                 .where((VideoBookRow b) => filter.contains(b.bookUid))
                 .toList();
-        // TODO-616 B2：按 ShelfEntries.sortOrder 稳定重排（无行退化原序，零自定义
-        // 排序时与历史 listAll 顺序一致）。
-        final List<VideoBookRow> ordered = List<VideoBookRow>.of(books);
-        ordered.sort((VideoBookRow a, VideoBookRow b) {
-          final int oa = _videoOrder['video|${a.bookUid}'] ?? 0;
-          final int ob = _videoOrder['video|${b.bookUid}'] ?? 0;
-          final int c = oa.compareTo(ob);
-          return c != 0 ? c : books.indexOf(a).compareTo(books.indexOf(b));
-        });
-        // 记录当前可见（已过滤+排序）的本地视频，供批量「全选 / 反选」用。
+        // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
+        // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
+        final List<VideoBookRow> ordered = books;
+        // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。
         _visibleVideos = ordered;
         return FutureBuilder<_RemoteVideoState?>(
           future: _remoteFuture,
@@ -1405,20 +1270,34 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 !(remoteSection is SizedBox && remoteSection.height == 0);
             // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
             // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
+            // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
+            // 以 240 为目标宽算响应式列数，两处共用同一实际卡宽。
             return RefreshIndicator(
               onRefresh: _pullToRefresh,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: <Widget>[
-                  // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                  // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量 [all]
-                  // 描述整库，不随标签筛选变。
-                  if (all.isNotEmpty)
-                    SliverToBoxAdapter(child: _buildOverviewSection(all)),
-                  if (hasRemoteSection)
-                    SliverToBoxAdapter(child: remoteSection),
-                  ..._buildLocalVideoSlivers(all, ordered),
-                ],
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final HibikiDesignTokens tokens =
+                      HibikiDesignTokens.of(context);
+                  final ({int columns, double cardWidth}) cardLayout =
+                      unifiedShelfCardLayout(
+                    availableWidth:
+                        constraints.maxWidth - tokens.spacing.card * 2,
+                    targetWidth: 240,
+                  );
+                  return CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: <Widget>[
+                      // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                      // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                      // [all] 描述整库，不随标签筛选变。
+                      if (all.isNotEmpty)
+                        SliverToBoxAdapter(child: _buildOverviewSection(all)),
+                      if (hasRemoteSection)
+                        SliverToBoxAdapter(child: remoteSection),
+                      ..._buildLocalVideoSlivers(all, ordered, cardLayout),
+                    ],
+                  );
+                },
               ),
             );
           },
@@ -1446,7 +1325,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             importedAt: r.importedAt,
           ),
       ],
-      lastWatchedByTitle: _lastWatchedByTitle,
+      // uid 优先、遗留行按 title 回退，合并成按 uid 键控的单一映射。
+      lastWatchedByUid: <String, DateTime>{
+        for (final VideoBookRow r in all)
+          if ((_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
+              case final DateTime at)
+            r.bookUid: at,
+      },
       now: DateTime.now(),
     );
     VideoBookRow? hero;
@@ -1655,6 +1540,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
+    ({int columns, double cardWidth}) cardLayout,
   ) {
     if (all.isEmpty) {
       return <Widget>[
@@ -1683,7 +1569,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         <CollectionGroup<VideoBookRow>>[];
     void flushLoose() {
       if (loose.isEmpty) return;
-      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding));
+      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
       loose = <CollectionGroup<VideoBookRow>>[];
     }
 
@@ -1694,37 +1580,83 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       }
       flushLoose();
       slivers.add(
-        SliverToBoxAdapter(child: _buildVideoCollectionRow(group)),
+        SliverToBoxAdapter(child: _buildVideoCollectionRow(group, cardLayout)),
       );
     }
     flushLoose();
     return slivers;
   }
 
-  /// 已排序视频 → 合集分组（散视频单卡 group、同合集折叠）。
+  /// 过滤后视频 → 合集折叠 + 按当前排序方式排 group（散卡与合集行同层混排）。
   List<CollectionGroup<VideoBookRow>> _groupVideos(List<VideoBookRow> books) {
     final List<CollectionOrderingItem<VideoBookRow>> items =
         <CollectionOrderingItem<VideoBookRow>>[
-      for (int i = 0; i < books.length; i++)
+      for (final VideoBookRow book in books)
         CollectionOrderingItem<VideoBookRow>(
           mediaType: 'video',
-          entryKey: books[i].bookUid,
-          importedAt: -i,
-          payload: books[i],
+          entryKey: book.bookUid,
+          importedAt: book.importedAt?.millisecondsSinceEpoch ?? 0,
+          payload: book,
         ),
     ];
-    return groupByCollections<VideoBookRow>(
+    final List<CollectionGroup<VideoBookRow>> groups =
+        groupByCollections<VideoBookRow>(
       items: items,
       primaryCollectionIdByEntry: _primaryCollectionByEntry,
       collectionsById: _collectionsById,
-      itemSortOrder: _videoOrder,
+      memberSortIndex: _memberSortIndex,
+    );
+    groups.sort(
+      (CollectionGroup<VideoBookRow> a, CollectionGroup<VideoBookRow> b) =>
+          compareShelfSortKeys(_groupSortKey(a), _groupSortKey(b), _sortMode),
+    );
+    return groups;
+  }
+
+  /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
+  /// title 取合集名）。recentScore = watch-stats 最近观看毫秒（v39 uid 键控，遗留
+  /// NULL-uid 行按 title 回退），无观看记录退 importedAt——「最近观看」下刚导入
+  /// 没看过的条目自然靠前而不是沉底。
+  ShelfSortKey _groupSortKey(CollectionGroup<VideoBookRow> group) {
+    int recentOf(VideoBookRow r) =>
+        (_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
+            ?.millisecondsSinceEpoch ??
+        r.importedAt?.millisecondsSinceEpoch ??
+        0;
+    int importedOf(VideoBookRow r) => r.importedAt?.millisecondsSinceEpoch ?? 0;
+    final MediaCollectionRow? collection = group.collection;
+    if (collection == null) {
+      final VideoBookRow r = group.coverItem.payload;
+      return ShelfSortKey(
+        recentScore: recentOf(r),
+        title: r.title,
+        importedAt: importedOf(r),
+        tieKey: r.bookUid,
+      );
+    }
+    int recent = 0;
+    int imported = 0;
+    for (final CollectionOrderingItem<VideoBookRow> it in group.items) {
+      final int rs = recentOf(it.payload);
+      if (rs > recent) recent = rs;
+      final int im = importedOf(it.payload);
+      if (im > imported) imported = im;
+    }
+    return ShelfSortKey(
+      recentScore: recent,
+      title: collection.name,
+      importedAt: imported,
+      tieKey: 'c${collection.id}',
     );
   }
 
   /// 一个合集的全宽横排行：头（合集名+集数+查看全部→详情页）+ 横向成员卡列表。
   /// 成员卡复用 [_buildCard] 并带 playlistCollectionId——点某集**直接从该集**进
   /// 播放器（带剧集面板/上下集/连播）；初始横滚定位到「继续看」成员。
-  Widget _buildVideoCollectionRow(CollectionGroup<VideoBookRow> group) {
+  Widget _buildVideoCollectionRow(
+    CollectionGroup<VideoBookRow> group,
+    ({int columns, double cardWidth}) cardLayout,
+  ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final MediaCollectionRow collection = group.collection!;
     final int continueIdx = continueMemberIndex(<CollectionMemberProgress>[
@@ -1746,8 +1678,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         title: collection.name,
         countLabel: t.video_playlist_episodes(count: group.items.length),
         itemCount: group.items.length,
-        itemWidth: 240,
-        // 与散卡网格 cell 同高（218 = 封面区 + 标题 + Phase D 观看进度行）。
+        // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
+        // Phase D 观看进度行）。
+        itemWidth: cardLayout.cardWidth,
         rowHeight: 218,
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
@@ -1994,8 +1927,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
         ),
-        // TODO-947：原页头「编辑排序」(swap_vert) 入口已移到标签栏多选按钮旁
-        // （见 _buildTagFilterBar 的 onOrganize），与书架对齐。
       ],
     );
   }
@@ -2078,10 +2009,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
-      onOrganize: _openVideoSort,
+      // 排序交互重设计层次 A：「排序方式」菜单（原「整理」按钮位置；整理页已删）。
+      // 分组管理走批量「组合成合集」+ 合集详情页（改名/删除/移出成员/拖拽排集）。
+      sortMode: _sortMode,
+      sortModeLabel: _sortModeLabel,
+      onSortModeChanged: _setSortMode,
       onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
     );
   }
+
+  String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
+        ShelfSortMode.recent => t.sort_recent_watched,
+        ShelfSortMode.title => t.sort_title,
+        ShelfSortMode.imported => t.sort_imported,
+      };
 
   void _toggleFilter(int tagId) {
     final Set<int> next = Set<int>.from(ref.read(selectedTagIdsProvider));
@@ -2150,14 +2091,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Widget _buildLooseVideoGridSliver(
     List<CollectionGroup<VideoBookRow>> loose,
     EdgeInsetsGeometry padding,
+    ({int columns, double cardWidth}) cardLayout,
   ) {
     return SliverPadding(
       padding: padding,
       sliver: SliverGrid.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 280,
-          // 200 → 218：UI v2 Phase D 卡片底部新增一行观看进度文字（metadata），
-          // 加高 cell 保持封面区不被挤压。
+        // FixedCrossAxisCount + 统一卡宽（unifiedShelfCardLayout）：散卡 cell 与
+        // 合集横排行成员卡逐像素同尺寸（用户实报合集卡大一截）。
+        // mainAxisExtent 218 = 封面区 + 标题 + Phase D 观看进度行。
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardLayout.columns,
           mainAxisExtent: 218,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
@@ -2329,7 +2272,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 视频卡观看进度文字行：`已看完` / `已看至 m:ss`（+ `上次观看 M-dd`）。
   /// 无任何观看痕迹返回空串（调用方不渲染该行）。
   String _buildCardWatchMeta(VideoBookRow book) {
-    final DateTime? watched = _lastWatchedByTitle[book.title];
+    final DateTime? watched =
+        _watchAtByUid[book.bookUid] ?? _legacyWatchAtByTitle[book.title];
     final List<String> parts = <String>[
       if (book.completedAt != null)
         t.video_stat_completed
