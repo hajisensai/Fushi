@@ -491,36 +491,45 @@ class BackupMergeEngine {
     );
   }
 
-  /// VideoWatchStatistics MAX-union per {title, dateKey}.
+  /// VideoWatchStatistics MAX-union。v39 合并键 = (mergeKey, dateKey)，其中
+  /// mergeKey = book_uid（新行）/ 'title:'+title（迁移遗留 NULL-uid 行回退）——
+  /// 同名不同视频各行独立合并，不再按裸 (title,dateKey) 互相吞并。备份源可能是
+  /// v39 前导出（无 book_uid 列值 → NULL → 回退 title 键，与旧行为一致）。
+  /// 'title:' 前缀防 NULL 回退键与真实 uid 空间相撞（uid 形如 'video/...'）。
+  static const String _watchKeyT = "COALESCE(t.book_uid, 'title:' || t.title)";
+  static const String _watchKeyS = "COALESCE(s.book_uid, 'title:' || s.title)";
+
   Future<void> _mergeVideoWatchStatistics() async {
     await _db.customStatement(
       'INSERT INTO video_watch_statistics '
-      '(title, date_key, subtitle_chars, watch_time_ms, last_modified) '
-      'SELECT title, date_key, subtitle_chars, watch_time_ms, last_modified '
+      '(title, book_uid, date_key, subtitle_chars, watch_time_ms, '
+      'last_modified) '
+      'SELECT title, book_uid, date_key, subtitle_chars, watch_time_ms, '
+      'last_modified '
       'FROM $_srcAlias.video_watch_statistics AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM video_watch_statistics AS t '
-      'WHERE t.title = s.title AND t.date_key = s.date_key) '
+      'WHERE $_watchKeyT = $_watchKeyS AND t.date_key = s.date_key) '
       // TODO-1204 后续：用户删过该视频统计（video 墓碑）→ 旧备份不得复活它。
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'video')",
     );
     await _db.customStatement(
-      'UPDATE video_watch_statistics SET '
-      'subtitle_chars = MAX(subtitle_chars, ('
+      'UPDATE video_watch_statistics AS t SET '
+      'subtitle_chars = MAX(t.subtitle_chars, ('
       'SELECT s.subtitle_chars FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)), '
-      'watch_time_ms = MAX(watch_time_ms, ('
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)), '
+      'watch_time_ms = MAX(t.watch_time_ms, ('
       'SELECT s.watch_time_ms FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)), '
-      'last_modified = MAX(last_modified, ('
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)), '
+      'last_modified = MAX(t.last_modified, ('
       'SELECT s.last_modified FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)) '
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)) '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)',
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)',
     );
   }
 

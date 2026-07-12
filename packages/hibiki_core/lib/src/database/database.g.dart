@@ -10051,6 +10051,12 @@ class $VideoWatchStatisticsTable extends VideoWatchStatistics
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
       'title', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _dateKeyMeta =
       const VerificationMeta('dateKey');
   @override
@@ -10077,7 +10083,7 @@ class $VideoWatchStatisticsTable extends VideoWatchStatistics
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, title, dateKey, subtitleChars, watchTimeMs, lastModified];
+      [id, title, bookUid, dateKey, subtitleChars, watchTimeMs, lastModified];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -10097,6 +10103,10 @@ class $VideoWatchStatisticsTable extends VideoWatchStatistics
           _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
     } else if (isInserting) {
       context.missing(_titleMeta);
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
     }
     if (data.containsKey('date_key')) {
       context.handle(_dateKeyMeta,
@@ -10135,7 +10145,7 @@ class $VideoWatchStatisticsTable extends VideoWatchStatistics
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-        {title, dateKey},
+        {bookUid, dateKey},
       ];
   @override
   VideoWatchStatisticRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -10145,6 +10155,8 @@ class $VideoWatchStatisticsTable extends VideoWatchStatistics
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       title: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid']),
       dateKey: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
       subtitleChars: attachedDatabase.typeMapping
@@ -10166,6 +10178,11 @@ class VideoWatchStatisticRow extends DataClass
     implements Insertable<VideoWatchStatisticRow> {
   final int id;
   final String title;
+
+  /// v39：视频稳定身份（[VideoBooks].bookUid）。旧表按 (title,dateKey) 键控，
+  /// 同名不同视频统计互串（用户拍板根治）。迁移按 title 唯一匹配回填；同名多
+  /// 视频的旧行保持 NULL（读取端按 title 回退）。v39 起写入必带。
+  final String? bookUid;
   final String dateKey;
   final int subtitleChars;
   final int watchTimeMs;
@@ -10173,6 +10190,7 @@ class VideoWatchStatisticRow extends DataClass
   const VideoWatchStatisticRow(
       {required this.id,
       required this.title,
+      this.bookUid,
       required this.dateKey,
       required this.subtitleChars,
       required this.watchTimeMs,
@@ -10182,6 +10200,9 @@ class VideoWatchStatisticRow extends DataClass
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['title'] = Variable<String>(title);
+    if (!nullToAbsent || bookUid != null) {
+      map['book_uid'] = Variable<String>(bookUid);
+    }
     map['date_key'] = Variable<String>(dateKey);
     map['subtitle_chars'] = Variable<int>(subtitleChars);
     map['watch_time_ms'] = Variable<int>(watchTimeMs);
@@ -10193,6 +10214,9 @@ class VideoWatchStatisticRow extends DataClass
     return VideoWatchStatisticsCompanion(
       id: Value(id),
       title: Value(title),
+      bookUid: bookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookUid),
       dateKey: Value(dateKey),
       subtitleChars: Value(subtitleChars),
       watchTimeMs: Value(watchTimeMs),
@@ -10206,6 +10230,7 @@ class VideoWatchStatisticRow extends DataClass
     return VideoWatchStatisticRow(
       id: serializer.fromJson<int>(json['id']),
       title: serializer.fromJson<String>(json['title']),
+      bookUid: serializer.fromJson<String?>(json['bookUid']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       subtitleChars: serializer.fromJson<int>(json['subtitleChars']),
       watchTimeMs: serializer.fromJson<int>(json['watchTimeMs']),
@@ -10218,6 +10243,7 @@ class VideoWatchStatisticRow extends DataClass
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'title': serializer.toJson<String>(title),
+      'bookUid': serializer.toJson<String?>(bookUid),
       'dateKey': serializer.toJson<String>(dateKey),
       'subtitleChars': serializer.toJson<int>(subtitleChars),
       'watchTimeMs': serializer.toJson<int>(watchTimeMs),
@@ -10228,6 +10254,7 @@ class VideoWatchStatisticRow extends DataClass
   VideoWatchStatisticRow copyWith(
           {int? id,
           String? title,
+          Value<String?> bookUid = const Value.absent(),
           String? dateKey,
           int? subtitleChars,
           int? watchTimeMs,
@@ -10235,6 +10262,7 @@ class VideoWatchStatisticRow extends DataClass
       VideoWatchStatisticRow(
         id: id ?? this.id,
         title: title ?? this.title,
+        bookUid: bookUid.present ? bookUid.value : this.bookUid,
         dateKey: dateKey ?? this.dateKey,
         subtitleChars: subtitleChars ?? this.subtitleChars,
         watchTimeMs: watchTimeMs ?? this.watchTimeMs,
@@ -10244,6 +10272,7 @@ class VideoWatchStatisticRow extends DataClass
     return VideoWatchStatisticRow(
       id: data.id.present ? data.id.value : this.id,
       title: data.title.present ? data.title.value : this.title,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       subtitleChars: data.subtitleChars.present
           ? data.subtitleChars.value
@@ -10261,6 +10290,7 @@ class VideoWatchStatisticRow extends DataClass
     return (StringBuffer('VideoWatchStatisticRow(')
           ..write('id: $id, ')
           ..write('title: $title, ')
+          ..write('bookUid: $bookUid, ')
           ..write('dateKey: $dateKey, ')
           ..write('subtitleChars: $subtitleChars, ')
           ..write('watchTimeMs: $watchTimeMs, ')
@@ -10270,14 +10300,15 @@ class VideoWatchStatisticRow extends DataClass
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, title, dateKey, subtitleChars, watchTimeMs, lastModified);
+  int get hashCode => Object.hash(
+      id, title, bookUid, dateKey, subtitleChars, watchTimeMs, lastModified);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is VideoWatchStatisticRow &&
           other.id == this.id &&
           other.title == this.title &&
+          other.bookUid == this.bookUid &&
           other.dateKey == this.dateKey &&
           other.subtitleChars == this.subtitleChars &&
           other.watchTimeMs == this.watchTimeMs &&
@@ -10288,6 +10319,7 @@ class VideoWatchStatisticsCompanion
     extends UpdateCompanion<VideoWatchStatisticRow> {
   final Value<int> id;
   final Value<String> title;
+  final Value<String?> bookUid;
   final Value<String> dateKey;
   final Value<int> subtitleChars;
   final Value<int> watchTimeMs;
@@ -10295,6 +10327,7 @@ class VideoWatchStatisticsCompanion
   const VideoWatchStatisticsCompanion({
     this.id = const Value.absent(),
     this.title = const Value.absent(),
+    this.bookUid = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.subtitleChars = const Value.absent(),
     this.watchTimeMs = const Value.absent(),
@@ -10303,6 +10336,7 @@ class VideoWatchStatisticsCompanion
   VideoWatchStatisticsCompanion.insert({
     this.id = const Value.absent(),
     required String title,
+    this.bookUid = const Value.absent(),
     required String dateKey,
     required int subtitleChars,
     required int watchTimeMs,
@@ -10315,6 +10349,7 @@ class VideoWatchStatisticsCompanion
   static Insertable<VideoWatchStatisticRow> custom({
     Expression<int>? id,
     Expression<String>? title,
+    Expression<String>? bookUid,
     Expression<String>? dateKey,
     Expression<int>? subtitleChars,
     Expression<int>? watchTimeMs,
@@ -10323,6 +10358,7 @@ class VideoWatchStatisticsCompanion
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (title != null) 'title': title,
+      if (bookUid != null) 'book_uid': bookUid,
       if (dateKey != null) 'date_key': dateKey,
       if (subtitleChars != null) 'subtitle_chars': subtitleChars,
       if (watchTimeMs != null) 'watch_time_ms': watchTimeMs,
@@ -10333,6 +10369,7 @@ class VideoWatchStatisticsCompanion
   VideoWatchStatisticsCompanion copyWith(
       {Value<int>? id,
       Value<String>? title,
+      Value<String?>? bookUid,
       Value<String>? dateKey,
       Value<int>? subtitleChars,
       Value<int>? watchTimeMs,
@@ -10340,6 +10377,7 @@ class VideoWatchStatisticsCompanion
     return VideoWatchStatisticsCompanion(
       id: id ?? this.id,
       title: title ?? this.title,
+      bookUid: bookUid ?? this.bookUid,
       dateKey: dateKey ?? this.dateKey,
       subtitleChars: subtitleChars ?? this.subtitleChars,
       watchTimeMs: watchTimeMs ?? this.watchTimeMs,
@@ -10355,6 +10393,9 @@ class VideoWatchStatisticsCompanion
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
+    }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
     }
     if (dateKey.present) {
       map['date_key'] = Variable<String>(dateKey.value);
@@ -10376,6 +10417,7 @@ class VideoWatchStatisticsCompanion
     return (StringBuffer('VideoWatchStatisticsCompanion(')
           ..write('id: $id, ')
           ..write('title: $title, ')
+          ..write('bookUid: $bookUid, ')
           ..write('dateKey: $dateKey, ')
           ..write('subtitleChars: $subtitleChars, ')
           ..write('watchTimeMs: $watchTimeMs, ')
@@ -21894,6 +21936,7 @@ typedef $$VideoWatchStatisticsTableCreateCompanionBuilder
     = VideoWatchStatisticsCompanion Function({
   Value<int> id,
   required String title,
+  Value<String?> bookUid,
   required String dateKey,
   required int subtitleChars,
   required int watchTimeMs,
@@ -21903,6 +21946,7 @@ typedef $$VideoWatchStatisticsTableUpdateCompanionBuilder
     = VideoWatchStatisticsCompanion Function({
   Value<int> id,
   Value<String> title,
+  Value<String?> bookUid,
   Value<String> dateKey,
   Value<int> subtitleChars,
   Value<int> watchTimeMs,
@@ -21923,6 +21967,9 @@ class $$VideoWatchStatisticsTableFilterComposer
 
   ColumnFilters<String> get title => $composableBuilder(
       column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get dateKey => $composableBuilder(
       column: $table.dateKey, builder: (column) => ColumnFilters(column));
@@ -21951,6 +21998,9 @@ class $$VideoWatchStatisticsTableOrderingComposer
 
   ColumnOrderings<String> get title => $composableBuilder(
       column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get dateKey => $composableBuilder(
       column: $table.dateKey, builder: (column) => ColumnOrderings(column));
@@ -21981,6 +22031,9 @@ class $$VideoWatchStatisticsTableAnnotationComposer
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
 
   GeneratedColumn<String> get dateKey =>
       $composableBuilder(column: $table.dateKey, builder: (column) => column);
@@ -22027,6 +22080,7 @@ class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> title = const Value.absent(),
+            Value<String?> bookUid = const Value.absent(),
             Value<String> dateKey = const Value.absent(),
             Value<int> subtitleChars = const Value.absent(),
             Value<int> watchTimeMs = const Value.absent(),
@@ -22035,6 +22089,7 @@ class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
               VideoWatchStatisticsCompanion(
             id: id,
             title: title,
+            bookUid: bookUid,
             dateKey: dateKey,
             subtitleChars: subtitleChars,
             watchTimeMs: watchTimeMs,
@@ -22043,6 +22098,7 @@ class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required String title,
+            Value<String?> bookUid = const Value.absent(),
             required String dateKey,
             required int subtitleChars,
             required int watchTimeMs,
@@ -22051,6 +22107,7 @@ class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
               VideoWatchStatisticsCompanion.insert(
             id: id,
             title: title,
+            bookUid: bookUid,
             dateKey: dateKey,
             subtitleChars: subtitleChars,
             watchTimeMs: watchTimeMs,

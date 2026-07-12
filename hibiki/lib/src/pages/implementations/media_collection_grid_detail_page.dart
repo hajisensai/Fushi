@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// 统一合集 Phase 4：网格式合集详情页（书架用；书籍合集是无序手动分组，与 playlist 的
-/// 有序剧集列表 [MediaCollectionDetailPage] 区分）。渲染成员卡网格（[memberCardBuilder]
-/// 由调用方按 mediaType/entryKey 提供），支持重命名 / 删除合集（删只解链、绝不删条目）+
-/// 逐个「移出合集」（移空后合集自删）。
+/// 统一合集 Phase 4：网格式合集详情页（书架用；成员按 sortIndex 有序渲染，与 playlist
+/// 的剧集列表 [MediaCollectionDetailPage] 同一顺序真相源）。渲染成员卡网格
+/// （[memberCardBuilder] 由调用方按 mediaType/entryKey 提供），支持重命名 / 删除合集
+/// （删只解链、绝不删条目）+ 逐个「移出合集」（移空后合集自删）+ AppBar 一键排序
+/// （按名称/导入时间写穿 sortIndex；v1 不做网格拖拽，用户拍板）。
 class MediaCollectionGridDetailPage extends StatefulWidget {
   const MediaCollectionGridDetailPage({
     required this.database,
@@ -54,6 +57,72 @@ class _MediaCollectionGridDetailPageState
       _rows = rows;
       _loading = false;
     });
+  }
+
+  /// 一键整理（排序交互重设计层次 B2；书合集 v1 不做网格拖拽，用户拍板——卷序 =
+  /// 名称 natural 序几乎恒正确）：按名称 / 导入时间（旧→新）重排全表并落盘
+  /// sortIndex（`reorderCollectionItems`），库页合集行同源立即同序。标题/导入
+  /// 时间从 epub/srt 两表现查（成员行只有身份键）。
+  Future<void> _applyOneKeySort({required bool byTitle}) async {
+    final List<EpubBookRow> epubs = await widget.database.getAllEpubBooks();
+    final List<SrtBookRow> srts = await widget.database.getAllSrtBooks();
+    final Map<String, ({String title, int importedAt})> meta =
+        <String, ({String title, int importedAt})>{
+      for (final EpubBookRow r in epubs)
+        'epub|${r.bookKey}': (title: r.title, importedAt: r.importedAt),
+      for (final SrtBookRow r in srts)
+        'srt|${r.uid}': (title: r.title, importedAt: r.importedAt),
+    };
+    ({String title, int importedAt}) metaOf(MediaCollectionItemRow r) =>
+        meta['${r.mediaType}|${r.entryKey}'] ??
+        (title: r.entryKey, importedAt: 0);
+    final List<MediaCollectionItemRow> next =
+        List<MediaCollectionItemRow>.of(_rows)
+          ..sort((MediaCollectionItemRow a, MediaCollectionItemRow b) {
+            final ({String title, int importedAt}) ma = metaOf(a);
+            final ({String title, int importedAt}) mb = metaOf(b);
+            if (byTitle) {
+              final int c = naturalCompare(ma.title, mb.title);
+              return c != 0 ? c : ma.importedAt.compareTo(mb.importedAt);
+            }
+            final int c = ma.importedAt.compareTo(mb.importedAt);
+            return c != 0 ? c : naturalCompare(ma.title, mb.title);
+          });
+    if (!mounted) return;
+    setState(() => _rows = next);
+    await widget.database.reorderCollectionItems(
+      widget.collection.id,
+      <({String mediaType, String entryKey})>[
+        for (final MediaCollectionItemRow r in next)
+          (mediaType: r.mediaType, entryKey: r.entryKey),
+      ],
+    );
+    widget.onChanged();
+  }
+
+  /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间一键重排。
+  Widget _buildSortMenu() {
+    return MenuAnchor(
+      menuChildren: <Widget>[
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.sort_by_alpha, size: 20),
+          onPressed: () => _applyOneKeySort(byTitle: true),
+          child: Text(t.collection_sort_by_title),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.history, size: 20),
+          onPressed: () => _applyOneKeySort(byTitle: false),
+          child: Text(t.collection_sort_by_imported),
+        ),
+      ],
+      builder: (BuildContext context, MenuController controller, Widget? _) =>
+          IconButton(
+        tooltip: t.sort_by,
+        icon: const Icon(Icons.sort),
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
   }
 
   Future<void> _rename() async {
@@ -126,6 +195,7 @@ class _MediaCollectionGridDetailPageState
       appBar: AppBar(
         title: Text(_name),
         actions: <Widget>[
+          _buildSortMenu(),
           IconButton(
             tooltip: t.rename_collection,
             icon: const Icon(Icons.drive_file_rename_outline),

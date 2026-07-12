@@ -487,6 +487,8 @@ void main() {
     await enterSelectionMode(tester);
 
     // 选择态下点卡片切换勾选（不再打开播放页）。
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
@@ -612,8 +614,12 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     await enterSelectionMode(tester);
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.pumpAndSettle();
 
@@ -684,8 +690,12 @@ void main() {
     await tester.pumpWidget(buildApp(repo: repo));
     await tester.pumpAndSettle();
     await enterSelectionMode(tester);
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.pumpAndSettle();
 
@@ -740,8 +750,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await enterSelectionMode(tester);
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);

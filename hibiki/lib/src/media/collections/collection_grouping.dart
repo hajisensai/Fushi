@@ -2,15 +2,18 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 统一合集 Phase 4：库网格分组核心（纯函数，widget-free 单测）。
 ///
-/// 把已排序的媒体条目按「所属合集」折叠——不属任何合集的条目单卡；属某合集的条目折进
+/// 把媒体条目按「所属合集」折叠——不属任何合集的条目单卡；属某合集的条目折进
 /// 该合集卡。折叠归属用 [HibikiDatabase.getPrimaryCollectionIdByEntry] 的「最小
 /// collectionId」（一条目属多合集时只折进 id 最小的那张；其余合集卡照常显示、详情页
-/// 照常含该条目）。与旧 `groupAndSortShelfEntries`（按 [ShelfEntries].seriesId 折叠）同
-/// 范式，只是折叠键从 seriesId 换成 [MediaCollectionItems] 引用表。
+/// 照常含该条目）。
 ///
-/// 排序：散条目卡片序取其 shelf `sortOrder`（[ShelfEntries]，Phase 6 前保留）；合集卡序取
-/// [MediaCollectionRow.sortOrder]；两者同层混排。组内成员按 `sortOrder asc, importedAt
-/// desc, entryKey asc`（无 shelf 行退化 importedAt 倒序，向后兼容）。
+/// 排序 v2（排序交互重设计 2026-07-12）：本函数只负责**折叠**，不再承担卡片间排序
+/// （旧 `itemSortOrder`/`groupSortOrder` 死权重已随整理页删除）——散 group 保持输入
+/// 序、合集 group 出现在其首个成员的位置；页面拿到 groups 后按当前排序模式
+/// （`compareShelfSortKeys` 聚合键）自行排序。组内成员按 [groupByCollections] 的
+/// `memberSortIndex`（= 该条目在其主折叠合集里的 [MediaCollectionItems].sortIndex）
+/// 升序 → importedAt 倒序 → entryKey 排——与详情页/播放器 `getCollectionItems`
+/// 同源，一处落盘（`reorderCollectionItems`）三处同序。
 
 /// 一个待分组条目的最小身份 + 排序回退键 + 渲染载荷。
 class CollectionOrderingItem<T> {
@@ -27,7 +30,7 @@ class CollectionOrderingItem<T> {
   /// 稳定身份：epub=bookKey / srt=uid / video=bookUid。
   final String entryKey;
 
-  /// 排序回退键（importedAt 毫秒；无 sortOrder 时按此倒序）。
+  /// 组内排序回退键（importedAt 毫秒；无 sortIndex 行时按此倒序）。
   final int importedAt;
 
   /// 渲染层透传的原始条目。
@@ -38,7 +41,6 @@ class CollectionOrderingItem<T> {
 class CollectionGroup<T> {
   const CollectionGroup({
     required this.collection,
-    required this.groupSortOrder,
     required this.items,
   });
 
@@ -46,33 +48,33 @@ class CollectionGroup<T> {
   /// surface 的全部成员，已按组内序排好）。
   final MediaCollectionRow? collection;
 
-  /// 卡片间排序权重（合集取 [MediaCollectionRow.sortOrder]；散条目取其 shelf sortOrder）。
-  final int groupSortOrder;
-
   /// 组内已排序成员。
   final List<CollectionOrderingItem<T>> items;
 
-  /// 封面 = 组内排序最小成员（散条目即其唯一成员）。
+  /// 封面 = 组内序首成员（散条目即其唯一成员）。
   CollectionOrderingItem<T> get coverItem => items.first;
 }
 
 String _composite(String mediaType, String entryKey) => '$mediaType|$entryKey';
 
-/// 把 [items] 按所属合集折叠 + 排序，返回同层混排的 group 列表。
+/// 把 [items] 按所属合集折叠，返回 group 列表（散 group 保持输入序、合集 group 在
+/// 首成员位置；卡片间最终排序由页面按排序模式完成）。
 ///
 /// [primaryCollectionIdByEntry]：`'<mediaType>|<entryKey>'` → 该条目折叠归属的最小
 ///   collectionId（[HibikiDatabase.getPrimaryCollectionIdByEntry]）。
-/// [collectionsById]：collectionId → 合集行（取 sortOrder / 名 / 类型）。归属 id 不在此
-///   映射（合集已删的孤儿引用）→ 该条目退化为散条目。
-/// [itemSortOrder]：`'<mediaType>|<entryKey>'` → shelf sortOrder（散条目卡片序 + 组内序）。
+/// [collectionsById]：collectionId → 合集行。归属 id 不在此映射（合集已删的孤儿
+///   引用）→ 该条目退化为散条目。
+/// [memberSortIndex]：`'<mediaType>|<entryKey>'` → 该条目在其主折叠合集里的
+///   [MediaCollectionItems].sortIndex（组内序真相源；缺行退化 importedAt 倒序）。
 List<CollectionGroup<T>> groupByCollections<T>({
   required List<CollectionOrderingItem<T>> items,
   required Map<String, int> primaryCollectionIdByEntry,
   required Map<int, MediaCollectionRow> collectionsById,
-  required Map<String, int> itemSortOrder,
+  required Map<String, int> memberSortIndex,
 }) {
-  int sortOrderOf(CollectionOrderingItem<T> it) =>
-      itemSortOrder[_composite(it.mediaType, it.entryKey)] ?? 0;
+  const int noSortIndex = 1 << 30;
+  int sortIndexOf(CollectionOrderingItem<T> it) =>
+      memberSortIndex[_composite(it.mediaType, it.entryKey)] ?? noSortIndex;
   int? collectionIdOf(CollectionOrderingItem<T> it) {
     final int? cid =
         primaryCollectionIdByEntry[_composite(it.mediaType, it.entryKey)];
@@ -80,51 +82,46 @@ List<CollectionGroup<T>> groupByCollections<T>({
     return cid;
   }
 
-  int compareItems(CollectionOrderingItem<T> a, CollectionOrderingItem<T> b) {
-    final int so = sortOrderOf(a).compareTo(sortOrderOf(b));
-    if (so != 0) return so;
+  int compareMembers(CollectionOrderingItem<T> a, CollectionOrderingItem<T> b) {
+    final int si = sortIndexOf(a).compareTo(sortIndexOf(b));
+    if (si != 0) return si;
     final int ia = b.importedAt.compareTo(a.importedAt); // desc
     if (ia != 0) return ia;
     return a.entryKey.compareTo(b.entryKey);
   }
 
-  final List<CollectionOrderingItem<T>> loose = <CollectionOrderingItem<T>>[];
+  // sequence 保留展示单元的出现序：散条目本体 / 合集 id（首成员处登记一次）。
+  final List<Object> sequence = <Object>[];
   final Map<int, List<CollectionOrderingItem<T>>> byCollection =
       <int, List<CollectionOrderingItem<T>>>{};
   for (final CollectionOrderingItem<T> it in items) {
     final int? cid = collectionIdOf(it);
     if (cid == null) {
-      loose.add(it);
+      sequence.add(it);
     } else {
-      (byCollection[cid] ??= <CollectionOrderingItem<T>>[]).add(it);
+      final List<CollectionOrderingItem<T>>? members = byCollection[cid];
+      if (members == null) {
+        byCollection[cid] = <CollectionOrderingItem<T>>[it];
+        sequence.add(cid);
+      } else {
+        members.add(it);
+      }
     }
   }
 
-  final List<CollectionGroup<T>> groups = <CollectionGroup<T>>[];
-  for (final CollectionOrderingItem<T> it in loose) {
-    groups.add(CollectionGroup<T>(
-      collection: null,
-      groupSortOrder: sortOrderOf(it),
-      items: <CollectionOrderingItem<T>>[it],
-    ));
-  }
-  for (final MapEntry<int, List<CollectionOrderingItem<T>>> e
-      in byCollection.entries) {
-    final List<CollectionOrderingItem<T>> members = e.value..sort(compareItems);
-    groups.add(CollectionGroup<T>(
-      collection: collectionsById[e.key],
-      groupSortOrder: collectionsById[e.key]?.sortOrder ?? 0,
-      items: members,
-    ));
-  }
-
-  groups.sort((CollectionGroup<T> a, CollectionGroup<T> b) {
-    final int so = a.groupSortOrder.compareTo(b.groupSortOrder);
-    if (so != 0) return so;
-    final int ia = b.coverItem.importedAt.compareTo(a.coverItem.importedAt);
-    if (ia != 0) return ia;
-    return a.coverItem.entryKey.compareTo(b.coverItem.entryKey);
-  });
-
-  return groups;
+  return <CollectionGroup<T>>[
+    for (final Object unit in sequence)
+      if (unit is int)
+        CollectionGroup<T>(
+          collection: collectionsById[unit],
+          items: byCollection[unit]!..sort(compareMembers),
+        )
+      else
+        CollectionGroup<T>(
+          collection: null,
+          items: <CollectionOrderingItem<T>>[
+            unit as CollectionOrderingItem<T>,
+          ],
+        ),
+  ];
 }
