@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 754 条。点号进各自文件。
+> 共 755 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-772](bugs/BUG-772-video-startup-freeze.md) | ✅ | ✅ | 快速进出视频后 Windows 启动冻死在 loading |
 | [BUG-771](bugs/BUG-771-lyrics-reload-flicker-first-cue.md) | ✅ | ✅ | 歌词模式进入后一直闪烁 + 高亮恒第一句（不是正在听的那句） |
 | [BUG-770](bugs/BUG-770-ext-popup-covers-word.md) | ✅ | ✅ | 网页扩展 Shift 查词弹窗遮住被查词 |
 | [BUG-769](bugs/BUG-769-nf-postmessage-file-origin.md) | ✅ | ✅ | Netflix字幕面板file://下postMessage因opaque origin报错致列表空 |
