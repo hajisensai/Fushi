@@ -88,6 +88,7 @@ void main() {
         'sync.local_audio',
         'sync.content',
         'sync.audiobook_files',
+        'sync.video_files',
       ]);
       expect(idsOf(dest.sections[3]), <String>[
         'sync.server_mode_note',
@@ -117,6 +118,7 @@ void main() {
         'sync.local_audio',
         'sync.content',
         'sync.audiobook_files',
+        'sync.video_files',
       ]) {
         expect(byId(id).visible, isNull,
             reason: '$id is a content-scope setting, global to every backend');
