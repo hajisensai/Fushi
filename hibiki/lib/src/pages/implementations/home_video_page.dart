@@ -105,6 +105,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
+  /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
+  /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
+  /// 全页 spinner，用户报「一直在刷新」）。仅首载（缓存空）才显示加载圈。
+  List<VideoBookRow>? _videosCache;
+
   /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
   final Set<String> _coverBackfillAttempted = <String>{};
 
@@ -1347,10 +1352,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return FutureBuilder<List<VideoBookRow>>(
       future: _future,
       builder: (BuildContext context, AsyncSnapshot<List<VideoBookRow>> snap) {
-        if (snap.connectionState != ConnectionState.done) {
+        if (snap.connectionState == ConnectionState.done && snap.hasData) {
+          _videosCache = snap.data;
+        }
+        final List<VideoBookRow>? loaded =
+            snap.connectionState == ConnectionState.done
+                ? (snap.data ?? const <VideoBookRow>[])
+                : _videosCache;
+        if (loaded == null) {
+          // 仅首载（无缓存）显示加载圈；后续刷新用旧数据顶住，不闪屏。
           return const Center(child: CircularProgressIndicator());
         }
-        final List<VideoBookRow> all = snap.data ?? const <VideoBookRow>[];
+        final List<VideoBookRow> all = loaded;
         final Set<String>? filter =
             ref.watch(filteredVideoBookUidsProvider).valueOrNull;
         final List<VideoBookRow> books = filter == null

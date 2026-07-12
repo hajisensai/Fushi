@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -90,15 +91,29 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         _buildHeader(context, tokens),
         SizedBox(
           height: widget.rowHeight,
-          child: ListView.separated(
-            controller: _controller,
-            scrollDirection: Axis.horizontal,
-            itemCount: widget.itemCount,
-            separatorBuilder: (BuildContext _, int __) =>
-                const SizedBox(width: _itemGap),
-            itemBuilder: (BuildContext context, int i) => SizedBox(
-              width: widget.itemWidth,
-              child: widget.itemBuilder(context, i),
+          // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行用
+          // 鼠标左右拖会毫无反应（用户实报）。显式放开 mouse/trackpad/stylus
+          // 拖动；触屏行为不变。
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: <PointerDeviceKind>{
+                PointerDeviceKind.touch,
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.stylus,
+                PointerDeviceKind.trackpad,
+              },
+            ),
+            child: ListView.separated(
+              controller: _controller,
+              scrollDirection: Axis.horizontal,
+              physics: desktopAwareScrollPhysics(),
+              itemCount: widget.itemCount,
+              separatorBuilder: (BuildContext _, int __) =>
+                  const SizedBox(width: _itemGap),
+              itemBuilder: (BuildContext context, int i) => SizedBox(
+                width: widget.itemWidth,
+                child: widget.itemBuilder(context, i),
+              ),
             ),
           ),
         ),
@@ -118,19 +133,27 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         ),
         child: Row(
           children: <Widget>[
-            Flexible(
-              child: Text(
-                widget.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.listTitle.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            // Expanded（tight）吃满剩余宽，尾随「查看全部+chevron」才真正贴最右
+            //（旧写法 Flexible(loose)+Spacer 按 flex 份额均分，标题短时尾随件
+            // 停在行中间——用户实报）。
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.type.listTitle.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  Text(widget.countLabel, style: tokens.type.metadata),
+                ],
               ),
             ),
-            SizedBox(width: tokens.spacing.gap),
-            Text(widget.countLabel, style: tokens.type.metadata),
-            const Spacer(),
             Text(t.collection_view_all, style: tokens.type.metadata),
             Icon(
               Icons.chevron_right,
