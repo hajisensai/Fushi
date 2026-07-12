@@ -103,6 +103,12 @@
   var bridgeSeq = 0;
   var bridgeRoutes = new Map();
   var lastBBoxKey = '';
+  // BUG-744 — last posted shell-rects payload (window-relative CSS px CSV).
+  // De-duped independently of lastBBoxKey: a nested child that lands INSIDE the
+  // reserved-floor bbox leaves the bbox key unchanged (overlaySize suppressed)
+  // but MUST still refresh the native hit/paint region, or clicks on the new
+  // card would fall through the stale region hole.
+  var lastShellRectsKey = '';
   // TODO-1079 (C) / TODO-1095 — the root frame id of the currently-rendered
   // stack. TODO-1095 makes the root frame id STABLE across hotkey lookups (the
   // root iframe is REUSED, not rebuilt per lookup — see beginLookup), so the
@@ -1103,6 +1109,9 @@
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
   function beginLookup(rootId) {
     lastBBoxKey = '';
+    // BUG-744 — native cleared its shell rects on Hide(); force a re-post even
+    // when the fresh card's rects CSV equals the previous lookup's.
+    lastShellRectsKey = '';
     // TODO-1231 v3 (BUG-583) — a NEW hotkey lookup re-reveals the window from a
     // fresh origin; drop the committed layer origin so a stale NEGATIVE origin left
     // by a PREVIOUS lookup's up/left cascade cannot falsely mark THIS lookup's
@@ -1188,6 +1197,7 @@
     if (!popups.length) {
       removeMissing([]);
       lastBBoxKey = '';
+      lastShellRectsKey = '';
       lastRootId = null;
       return;
     }
@@ -1208,6 +1218,7 @@
     if (rootId !== lastRootId) {
       lastRootId = rootId;
       lastBBoxKey = '';
+      lastShellRectsKey = '';
     }
     removeMissing(ids);
     scheduleMeasure();
@@ -1266,6 +1277,7 @@
     var minTopAll = Infinity;
     var maxRight = -Infinity;
     var maxBottom = -Infinity;
+    var shellRects = [];
     frames.forEach(function (record) {
       var left = parseFloat(record.shell.style.left) || 0;
       var top = parseFloat(record.shell.style.top) || 0;
@@ -1275,6 +1287,9 @@
       if (measured > 0 && (height <= 0 || measured < height)) {
         height = measured;
       }
+      // BUG-744 — collect every placed shell (same left/top/height the bbox
+      // uses) for the native hit/paint region below.
+      shellRects.push([left, top, width, height]);
       // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
       // shell, so the window pre-grows to cover a not-yet-ready child (no clip).
       if (left < minLeftAll) minLeftAll = left;
@@ -1327,6 +1342,25 @@
     // DWM window and the WebView2 surface cannot move in the SAME frame across the
     // JS/window boundary, so a ~1 frame residual remains (vs the old multi-frame
     // desync) — and only for a left/up cascade (dx/dy != 0; down-right stays 0).
+    // BUG-744 — report the per-shell rects (window-relative CSS px: the window
+    // is positioned at the bbox MIN-corner, so window-relative = shell − min)
+    // BEFORE overlaySize. Native clips the opaque overlay window's region to
+    // the UNION of these card rects (global_lookup_window.cpp
+    // ApplyRoundedRegion), so a click in the reserved-floor GAP passes through
+    // to the app below (clipboard panel next-word tap works in ONE click)
+    // instead of being swallowed by a near-fullscreen invisible sheet — the
+    // TODO-1345 floor regression. Posting before overlaySize means the region
+    // is already correct when Dart reveals the window (no clipped first frame).
+    // The window rect/origin itself never changes → BUG-583 zero-motion holds.
+    var rectsCsv = shellRects.map(function (r) {
+      return [r[0] - minLeft, r[1] - minTop, r[2], r[3]].map(function (v) {
+        return Math.round(v * 100) / 100;
+      }).join(',');
+    }).join(';');
+    if (rectsCsv !== lastShellRectsKey) {
+      lastShellRectsKey = rectsCsv;
+      postToHost('shellRects', [rectsCsv]);
+    }
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
     var box = {
@@ -1515,7 +1549,14 @@
     if (frameId != null) {
       return true; // Card hit: popup.js owns the per-layer decision.
     }
-    dismissRootWithSlide();
+    // BUG-744 — post the root dismiss IMMEDIATELY (no TODO-890 slide-out).
+    // With the shell-union window region the SAME physical gap click also
+    // lands in the app below (region hole) and may start a NEW lookup there
+    // (clipboard panel word tap → lookupText). A dismiss delayed 200ms by the
+    // slide would post AFTER the fresh card seeded and kill it (stale-dismiss
+    // race); posted now it always precedes the new lookup's stack reset
+    // (searchDictionary alone takes longer than the bridge round-trip).
+    postToHost('dismissPopupAt', [0]);
     return false;
   }
 

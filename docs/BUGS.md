@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 728 条。点号进各自文件。
+> 共 729 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-744](bugs/BUG-744-lookup-window-floor-region-eats-clicks.md) | ✅ | ✅ | app外查词覆盖窗铺满工作区吞掉下一次点击 |
 | [BUG-743](bugs/BUG-743-dual-subtitle-bounce-and-large-display-overlap.md) | ✅ | ✅ | 双轨字幕来回弹跳 + 大屏底部双语塌陷重叠 |
 | [BUG-742](bugs/BUG-742-subtitle-blur-weak.md) | ✅ | ✅ | 视频听力沉浸字幕模糊度不够(固定8px不随字号缩放) |
 | [BUG-741](bugs/BUG-741-transient-lookup-window-owned-pulls-main-foreground.md) | ✅ | ✅ | 悬浮字幕点词瞬态查词窗owned·Z序连带把主窗拉前台 |

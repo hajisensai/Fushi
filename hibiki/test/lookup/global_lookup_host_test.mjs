@@ -1745,4 +1745,78 @@ function flushTimers() {
   );
 }
 
+// ---- BUG-744 shell-union region + immediate gap dismiss --------------------
+
+// R1. measureAndReport posts shellRects (window-relative CSS px = shell − bbox
+//     min corner, CSV encoded) BEFORE overlaySize — native applies the region
+//     before Dart ever reveals the window — and de-dupes an identical
+//     re-measure.
+{
+  const { host } = freshHost();
+  hostPostLog = [];
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 80 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: 60, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  // renderStack may run interim measure passes while shells are placed one by
+  // one; the LAST posts are the settled pair (same convention as test 11).
+  const idxRects = hostPostLog.map((m) => m.handler).lastIndexOf('shellRects');
+  const idxSize = hostPostLog.map((m) => m.handler).lastIndexOf('overlaySize');
+  assert.ok(idxRects >= 0, 'BUG-744: shellRects posted');
+  assert.ok(idxSize >= 0, 'overlaySize posted');
+  assert.ok(idxRects < idxSize,
+    'BUG-744: shellRects posted BEFORE overlaySize (region correct at reveal)');
+  // min corner = (-40, 0): frame-0 -> (40,0,100,80), frame-1 -> (0,60,100,80).
+  assert.strictEqual(hostPostLog[idxRects].args[0],
+    '40,0,100,80;0,60,100,80',
+    'BUG-744: rects are window-relative (shell − bbox min), CSV encoded');
+  hostPostLog = [];
+  host.measureAndReport();
+  assert.ok(!hostPostLog.some((m) => m.handler === 'shellRects'),
+    'BUG-744: identical re-measure is de-duped (no shellRects spam)');
+}
+
+// R2. beginLookup resets the shellRects de-dup key: native clears its cached
+//     rects on Hide(), so the next lookup must re-post even when its cascade
+//     geometry is byte-identical to the previous one.
+{
+  const { host } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  hostPostLog = [];
+  host.beginLookup('frame-0');
+  host.measureAndReport();
+  assert.ok(hostPostLog.some((m) => m.handler === 'shellRects'),
+    'BUG-744: shellRects re-posted after beginLookup even when unchanged');
+}
+
+// R3. BUG-744: a hook-forwarded gap click posts the root dismiss IMMEDIATELY —
+//     never deferred behind the TODO-890 slide-out. With the shell-union
+//     window region the same physical click also lands in the app below and
+//     may start a NEW lookup there (clipboard panel word tap); a dismiss
+//     delayed 200ms would post after the fresh card seeded and kill it.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const shell = shellsOf(document)[0];
+  // Give the root shell an animatable classList: a slide-based dismiss would
+  // DEFER its post to transitionend/safety-timer — the gap path must post NOW.
+  const classes = new Set();
+  shell.classList = {
+    add: (c) => classes.add(c),
+    remove: (c) => classes.delete(c),
+    contains: (c) => classes.has(c),
+  };
+  shell.addEventListener = () => {}; // transitionend never fires
+  shell.removeEventListener = () => {};
+  hostPostLog = [];
+  const hit = host.handleGlobalClick(5000, 5000);
+  assert.strictEqual(hit, false, 'gap click misses all shells');
+  const dismiss = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(dismiss,
+    'BUG-744: gap dismiss posted synchronously (no slide-out deferral)');
+  assert.strictEqual(dismiss.args[0], 0, 'dismiss targets the root (index 0)');
+}
+
 console.log('global_lookup_host_test: PASS');

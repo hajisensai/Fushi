@@ -26,6 +26,7 @@
 #include <wil/com.h>
 #pragma warning(pop)
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -181,7 +182,15 @@ class GlobalLookupWindow {
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
   // TODO-867 P2: round the window corners to match popup.css's card radius.
+  // BUG-744: when the host has reported per-shell rects (transient cascade
+  // mode), the region is the UNION of those card rects instead of the full
+  // window — the TODO-1345 reserved-floor window spans ~the whole work area,
+  // and an opaque full-window region both paints a giant sheet and swallows
+  // every click meant for the app below (clipboard panel next-word tap).
   void ApplyRoundedRegion();
+  // BUG-744 — parses the host's {handler:'shellRects', args:['l,t,w,h;…']}
+  // message (window-relative CSS px) and re-applies the window region.
+  void SetShellRectsFromCsv(const std::string& body);
   // TODO-867 P3c E2: forward a global click (screen physical px) into the web
   // host as host CSS px relative to the window, so the host hit-tests its shells
   // and dismisses the appropriate layer (the host owns the shell geometry truth).
@@ -227,6 +236,11 @@ class GlobalLookupWindow {
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
+  // BUG-744 — host-reported shell rects (window-relative CSS px, one
+  // {l,t,w,h} per card). Non-empty only on the transient cascade instance
+  // (the panel host short-circuits measureAndReport and never posts them).
+  // Cleared on Hide()/ForgetDeadWindow() so a fresh lookup re-posts.
+  std::vector<std::array<double, 4>> shell_rects_css_;
 
   wil::com_ptr<ICoreWebView2Environment> env_;
   wil::com_ptr<ICoreWebView2Controller> controller_;
