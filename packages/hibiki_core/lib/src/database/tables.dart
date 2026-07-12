@@ -163,6 +163,11 @@ class ReadingHourlyLogs extends Table {
 class VideoWatchStatistics extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get title => text()();
+
+  /// v39：视频稳定身份（[VideoBooks].bookUid）。旧表按 (title,dateKey) 键控，
+  /// 同名不同视频统计互串（用户拍板根治）。迁移按 title 唯一匹配回填；同名多
+  /// 视频的旧行保持 NULL（读取端按 title 回退）。v39 起写入必带。
+  TextColumn get bookUid => text().nullable()();
   TextColumn get dateKey => text()();
   IntColumn get subtitleChars => integer()();
   IntColumn get watchTimeMs => integer()();
@@ -170,7 +175,9 @@ class VideoWatchStatistics extends Table {
 
   @override
   List<Set<Column>> get uniqueKeys => [
-        {title, dateKey},
+        // v39：唯一键从 {title,dateKey} 换 {bookUid,dateKey}——同名不同视频当天
+        // 各写各行不再撞约束/互串（SQLite UNIQUE 视 NULL 互异，旧 NULL 行不冲突）。
+        {bookUid, dateKey},
       ];
 }
 

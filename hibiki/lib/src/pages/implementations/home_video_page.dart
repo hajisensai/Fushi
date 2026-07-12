@@ -125,9 +125,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
-  /// UI v2 Phase B：每 title 最近观看时间（watch-stats max(lastModified)），
-  /// 驱动「继续观看 hero」排序与「上次观看」外显。与 [_loadVideoOrder] 同批预取。
-  Map<String, DateTime> _lastWatchedByTitle = const <String, DateTime>{};
+  /// UI v2 Phase B / v39：最近观看时间（watch-stats max(lastModified)），驱动
+  /// 「继续观看 hero」排序与「上次观看」外显。v39 起按 bookUid 键控；迁移遗留
+  /// NULL-uid 行按 title 回退。与 [_loadVideoOrder] 同批预取。
+  Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
+  Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
 
   @override
   void initState() {
@@ -174,13 +176,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         await db.getAllMediaCollections();
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
-    // UI v2 Phase B：watch-stats 全量行 → 每 title 最近观看时间（内存聚合，无新 DAO）。
+    // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
+    // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     final List<VideoWatchStatisticRow> watchRows =
         await db.getAllVideoWatchStatistics();
-    final Map<String, DateTime> lastWatched = latestWatchByTitle(
+    final Map<String, DateTime> watchByUid = latestWatchAtByKey(
       <(String, int)>[
         for (final VideoWatchStatisticRow r in watchRows)
-          (r.title, r.lastModified),
+          if (r.bookUid case final String uid) (uid, r.lastModified),
+      ],
+    );
+    final Map<String, DateTime> legacyByTitle = latestWatchAtByKey(
+      <(String, int)>[
+        for (final VideoWatchStatisticRow r in watchRows)
+          if (r.bookUid == null) (r.title, r.lastModified),
       ],
     );
     final List<ShelfEntryRow> videoRows = <ShelfEntryRow>[
@@ -198,7 +207,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           for (final MediaCollectionRow c in collections) c.id: c,
         };
         _primaryCollectionByEntry = primaryMap;
-        _lastWatchedByTitle = lastWatched;
+        _watchAtByUid = watchByUid;
+        _legacyWatchAtByTitle = legacyByTitle;
       });
     }
   }
@@ -1277,7 +1287,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             importedAt: r.importedAt,
           ),
       ],
-      lastWatchedByTitle: _lastWatchedByTitle,
+      // uid 优先、遗留行按 title 回退，合并成按 uid 键控的单一映射。
+      lastWatchedByUid: <String, DateTime>{
+        for (final VideoBookRow r in all)
+          if ((_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
+              case final DateTime at)
+            r.bookUid: at,
+      },
       now: DateTime.now(),
     );
     VideoBookRow? hero;
@@ -2167,7 +2183,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 视频卡观看进度文字行：`已看完` / `已看至 m:ss`（+ `上次观看 M-dd`）。
   /// 无任何观看痕迹返回空串（调用方不渲染该行）。
   String _buildCardWatchMeta(VideoBookRow book) {
-    final DateTime? watched = _lastWatchedByTitle[book.title];
+    final DateTime? watched =
+        _watchAtByUid[book.bookUid] ?? _legacyWatchAtByTitle[book.title];
     final List<String> parts = <String>[
       if (book.completedAt != null)
         t.video_stat_completed

@@ -24,7 +24,7 @@ void main() {
   test('空库：全 0 + 无 hero', () {
     final VideoLibraryOverview o = computeVideoLibraryOverview(
       entries: const <VideoOverviewEntry>[],
-      lastWatchedByTitle: const <String, DateTime>{},
+      lastWatchedByUid: const <String, DateTime>{},
       now: now,
     );
     expect(o.total, 0);
@@ -45,7 +45,7 @@ void main() {
         entry(uid: 'c', importedAt: now.subtract(const Duration(days: 30))),
         entry(uid: 'd'), // importedAt null：不计近7天。
       ],
-      lastWatchedByTitle: const <String, DateTime>{},
+      lastWatchedByUid: const <String, DateTime>{},
       now: now,
     );
     expect(o.total, 4);
@@ -60,14 +60,14 @@ void main() {
         entry(uid: 'fresh'), // 无痕迹。
         entry(uid: 'watching', positionMs: 1200),
       ],
-      lastWatchedByTitle: const <String, DateTime>{},
+      lastWatchedByUid: const <String, DateTime>{},
       now: now,
     );
     expect(o.heroUid, 'watching');
     expect(o.heroLastWatched, isNull);
   });
 
-  test('hero 排序：watch-stats 最新者胜；无统计行回退 importedAt', () {
+  test('hero 排序：watch-stats（按 uid 键控）最新者胜；无统计行回退 importedAt', () {
     final VideoLibraryOverview o = computeVideoLibraryOverview(
       entries: <VideoOverviewEntry>[
         entry(
@@ -89,9 +89,10 @@ void main() {
           importedAt: now,
         ),
       ],
-      lastWatchedByTitle: <String, DateTime>{
-        'A': now.subtract(const Duration(days: 3)),
-        'B': now.subtract(const Duration(days: 2)),
+      // v39：映射按 bookUid 键控（页面已把遗留 title 行按 uid 合并后传入）。
+      lastWatchedByUid: <String, DateTime>{
+        'older-watch': now.subtract(const Duration(days: 3)),
+        'newer-watch': now.subtract(const Duration(days: 2)),
       },
       now: now,
     );
@@ -112,7 +113,7 @@ void main() {
             positionMs: 1,
             importedAt: now.subtract(const Duration(days: 1))),
       ],
-      lastWatchedByTitle: const <String, DateTime>{},
+      lastWatchedByUid: const <String, DateTime>{},
       now: now,
     );
     expect(byImport.heroUid, 'y');
@@ -122,7 +123,7 @@ void main() {
         entry(uid: 'b', positionMs: 1),
         entry(uid: 'a', positionMs: 1),
       ],
-      lastWatchedByTitle: const <String, DateTime>{},
+      lastWatchedByUid: const <String, DateTime>{},
       now: now,
     );
     expect(byUid.heroUid, 'a');
@@ -135,8 +136,8 @@ void main() {
     expect(formatVideoPosition((3600 + 62) * 1000), '1:01:02');
   });
 
-  test('latestWatchByTitle：同 title 取最大 lastModified，非正毫秒丢弃', () {
-    final Map<String, DateTime> m = latestWatchByTitle(<(String, int)>[
+  test('latestWatchAtByKey：同键取最大 lastModified，非正毫秒丢弃', () {
+    final Map<String, DateTime> m = latestWatchAtByKey(<(String, int)>[
       ('A', DateTime(2026, 1, 1).millisecondsSinceEpoch),
       ('A', DateTime(2026, 3, 1).millisecondsSinceEpoch),
       ('A', DateTime(2026, 2, 1).millisecondsSinceEpoch),

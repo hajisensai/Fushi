@@ -3,8 +3,8 @@
 /// 数据边界（诚实外显，不造假）：
 /// * `VideoBooks` 无总时长列 → 不推导百分比，hero 只给「已看至 mm:ss」。
 /// * `VideoBooks` 无 lastWatchedAt 列 → 「上次观看」从 `VideoWatchStatistics`
-///   （title+dateKey 键控，取该 title 的 max(lastModified)）推导；无统计行的视频
-///   退回 importedAt 排序，且不显示「上次观看」。
+///   推导（v39 起按 bookUid 键控；迁移前遗留 NULL-uid 行由页面按 title 回退合并
+///   后传入）；无统计行的视频退回 importedAt 排序，且不显示「上次观看」。
 library;
 
 /// 一条视频行参与概览推导的最小投影（页面从 `VideoBookRow` 映射；测试直接构造）。
@@ -55,7 +55,7 @@ class VideoLibraryOverview {
 /// 从全量行 + 每 title 最近观看时间推导概览。
 VideoLibraryOverview computeVideoLibraryOverview({
   required List<VideoOverviewEntry> entries,
-  required Map<String, DateTime> lastWatchedByTitle,
+  required Map<String, DateTime> lastWatchedByUid,
   required DateTime now,
 }) {
   int unfinished = 0;
@@ -69,7 +69,7 @@ VideoLibraryOverview computeVideoLibraryOverview({
       recentImports++;
     }
     if (e.completed || e.lastPositionMs <= 0) continue;
-    final DateTime? watched = lastWatchedByTitle[e.title];
+    final DateTime? watched = lastWatchedByUid[e.bookUid];
     if (hero == null || _heroRank(e, watched, hero, heroWatched) > 0) {
       hero = e;
       heroWatched = watched;
@@ -124,17 +124,18 @@ String formatVideoPosition(int positionMs) {
   return '$minutes:$ss';
 }
 
-/// `VideoWatchStatistics` 行投影（title + lastModified 毫秒）→ 每 title 最近
-/// 观看时间映射。页面把 DAO 行映射成 (title, lastModifiedMs) 元组传入。
-Map<String, DateTime> latestWatchByTitle(
-  Iterable<(String, int)> titleAndLastModifiedMs,
+/// `VideoWatchStatistics` 行投影（键 + lastModified 毫秒）→ 每键最近观看时间
+/// 映射。键 = bookUid（v39 新行）或 title（迁移遗留 NULL-uid 行的回退键），
+/// 页面各建一张再按 uid 优先合并。
+Map<String, DateTime> latestWatchAtByKey(
+  Iterable<(String, int)> keyAndLastModifiedMs,
 ) {
   final Map<String, DateTime> out = <String, DateTime>{};
-  for (final (String title, int ms) in titleAndLastModifiedMs) {
+  for (final (String key, int ms) in keyAndLastModifiedMs) {
     if (ms <= 0) continue;
     final DateTime at = DateTime.fromMillisecondsSinceEpoch(ms);
-    final DateTime? prev = out[title];
-    if (prev == null || at.isAfter(prev)) out[title] = at;
+    final DateTime? prev = out[key];
+    if (prev == null || at.isAfter(prev)) out[key] = at;
   }
   return out;
 }
