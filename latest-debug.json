@@ -1,19 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.1-debug.7620",
-  "tag": "v1.0.1-debug.7620+e6ea102",
+  "version": "1.1.0-debug.7621",
+  "tag": "v1.1.0-debug.7621+4fb9fb8",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 7620,
-  "notes": "Automated release-signed debug-channel build from develop @ e6ea102. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 7621,
+  "notes": "Automated release-signed debug-channel build from develop @ 4fb9fb8. Push releases are always prerelease and never Latest.",
   "assets": [
-    {
-      "name": "hibiki-1.0.1-debug.7620-e6ea102-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7620-e6ea102-debug.apk",
-      "releaseSequence": 7620,
-      "tag": "v1.0.1-debug.7620+e6ea102",
-      "version": "1.0.1-debug.7620"
-    },
     {
       "name": "hibiki-1.0.1-debug.7620-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.7620-ios.ipa",
@@ -34,6 +27,13 @@
       "releaseSequence": 7620,
       "tag": "v1.0.1-debug.7620+e6ea102",
       "version": "1.0.1-debug.7620"
+    },
+    {
+      "name": "hibiki-1.1.0-debug.7621-4fb9fb8-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.1.0-debug.7621-4fb9fb8-debug.apk",
+      "releaseSequence": 7621,
+      "tag": "v1.1.0-debug.7621+4fb9fb8",
+      "version": "1.1.0-debug.7621"
     }
   ]
 }
