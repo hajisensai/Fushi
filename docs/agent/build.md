@@ -40,6 +40,14 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
+### 快速发版（跳测试）
+
+手动发版嫌慢时用「快速编译」路径：`release.yml`（Android）的 `workflow_dispatch` 带 `skip_tests` 输入，**默认 `true`**——手动 dispatch（debug/beta/formal 任意通道）默认跳过 `flutter analyze` + 主 app 单元测试 + 5 个 package 测试，直接进编译+发布。`release build` 步骤本身仍会挡住硬编译失败，发版前的真机验证仍按 [CLAUDE.md](../../CLAUDE.md) 走。约束：
+- `skip_tests` **只在 `workflow_dispatch` 生效**；`push`（自动 debug）与 `release`（手动 GitHub Release）事件的 `github.event.inputs.skip_tests` 为空，恒跑完整测试门——`main`/`develop` 的持续测试信号不被削弱，慢的只让手动、你在等的那次发版跳过。
+- 想手动发版也跑测试：dispatch 时把 `skip_tests` 取消勾选（设为 `false`）。
+- `release-desktop.yml`（Win/mac/iOS）本就无测试步骤，天生快，无需该开关。
+- 平台并行：Android（`release.yml`）与桌面（`release-desktop.yml`）是两条独立 workflow，同时 dispatch 即并行；桌面内部 `apple needs: windows` 是**故意串行**，避免两 job 抢同一 release 上传，勿改。
+
 ## 版本号与 build number
 
 Flutter 版本号以 `hibiki/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。准备 push 前先判断本轮改动是否影响用户可安装/可分发产物：

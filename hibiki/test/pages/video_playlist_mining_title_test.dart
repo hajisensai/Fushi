@@ -107,19 +107,16 @@ void main() {
       src = readVideoHibikiSource();
     });
 
-    test('_init 播放列表分支记系列名到 _playlistTitle', () {
+    test('_init 播放列表分支记合集名到 _playlistTitle', () {
       expect(src.contains('String? _playlistTitle'), isTrue,
           reason: '需有播放列表系列名成员（方案 B）。');
-      // 设值落在 _episodes.isNotEmpty 分支（确认是播放列表后），
-      // 紧接其后即剧集索引解析，确保是在播放列表分支内赋值。
-      final int branchIdx = src.indexOf('if (_episodes.isNotEmpty) {');
-      expect(branchIdx, greaterThanOrEqualTo(0));
-      final int setIdx = src.indexOf('_playlistTitle = row.title;', branchIdx);
-      final int episodeIdxResolve =
-          src.indexOf('row.currentEpisode)', branchIdx);
-      expect(setIdx, greaterThan(branchIdx), reason: '系列名须在播放列表分支内赋值。');
-      expect(setIdx, lessThan(episodeIdxResolve),
-          reason: '系列名赋值须在 idx 解析前的播放列表分支头部。');
+      // 统一合集 Phase 3：设值落在合集成员 >1（确认是多集播放列表）分支，取 playlist
+      // 合集名（col?.name）作系列名。
+      final int branchIdx = src.indexOf('if (refs.length > 1) {');
+      expect(branchIdx, greaterThanOrEqualTo(0),
+          reason: '系列名须在多集（refs.length > 1）分支内赋值。');
+      final int setIdx = src.indexOf('_playlistTitle = col?.name;', branchIdx);
+      expect(setIdx, greaterThan(branchIdx), reason: '系列名（合集名）须在多集播放列表分支内赋值。');
     });
 
     test('_mineVideoCard 的 documentTitle 经 helper 而非裸 _title（喂进沉浸引擎请求）', () {

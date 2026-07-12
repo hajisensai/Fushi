@@ -571,16 +571,45 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
     // inherits a prior drag-select's flag; the drag-select timer re-arms it.
     window.__hoshiTextSelectDragActive = false; }
-  // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
-  // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
-  // rather than a word. Text taps still go to onTap (word lookup).
+  // TODO-909 M0: a VN tap is "blank" when the user tapped margin/gap rather than
+  // a word (blank -> paginate forward; word -> onTap lookup).
+  // BUG-748: caretPositionFromPoint/caretRangeFromPoint CLAMP to the nearest
+  // character even when the tap is in the margin. VN centers one short block in a
+  // shrink-to-fit .hoshi-vn-content, so the whole viewport outside that small box
+  // is margin — yet every tap clamps to a text node, so "text node found" alone
+  // judged EVERY tap (incl. margins) as a word -> blank-tap advance never fired
+  // (a 289-point scan found 0 blank points in centred vertical layout). Fix:
+  // after resolving the clamped caret, verify the point actually falls inside the
+  // resolved character's client rect; a clamped-but-outside hit is real blank.
   function _hoshiVnTapIsBlank(x, y) {
     try {
       var range = _hoshiReaderCaretRangeAtPoint(x, y);
       if (!range || !range.startContainer) return true;
       var node = range.startContainer;
       if (node.nodeType !== Node.TEXT_NODE) return true;
-      return !String(node.textContent || '').trim();
+      var text = String(node.textContent || '');
+      if (!text.trim()) return true;
+      // Hit-test the resolved glyph box. caretPositionFromPoint clamps offset to
+      // the nearest boundary, so probe the character on each side of the offset
+      // and treat the tap as a word only if it lands inside one of their rects.
+      var tol = 2;
+      var offsets = [range.startOffset, range.startOffset - 1];
+      for (var oi = 0; oi < offsets.length; oi++) {
+        var start = offsets[oi];
+        if (start < 0 || start >= text.length) continue;
+        var charRange = document.createRange();
+        charRange.setStart(node, start);
+        charRange.setEnd(node, start + 1);
+        var rects = charRange.getClientRects();
+        for (var i = 0; i < rects.length; i++) {
+          var r = rects[i];
+          if (x >= r.left - tol && x <= r.right + tol &&
+              y >= r.top - tol && y <= r.bottom + tol) {
+            return false;
+          }
+        }
+      }
+      return true;
     } catch (err) {
       return true;
     }
@@ -1625,6 +1654,32 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           },
         );
 
+        // BUG-756: 歌词模式空白点击的专用桥。歌词是独立文档（LyricsModeHtml），没有
+        // 正文 hoshiReader 的 onTap/onTapEmpty；歌词里点句子 = 查词，唯一能唤出底栏的
+        // 手势就是点空白。故这里对隐藏的底栏**无条件唤出/收起**——不看
+        // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏，歌词没有别的唤出
+        // 途径，绝不能被它关死）。挤压态直接 _toggleChrome（隐藏→出、可见→收，且其内部
+        // 已 requestFocus reclaim）；悬浮态走同一唤出/收起状态机。收尾再 reclaim 一次
+        // 阅读焦点：本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode
+        // 就收不到 ESC，全局「Esc 退出整页」永不触发（正文每个手势都 reclaim，歌词此前
+        // 一处都没有 → esc 退不出）。有可见查词弹窗时按正文语义清栈、不动底栏。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsTapEmpty',
+          callback: (_) {
+            if (!_lyricsMode) return;
+            if (isDictionaryShown) {
+              clearDictionaryResult();
+              return;
+            }
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else {
+              _toggleChrome();
+            }
+            _reclaimReaderFocusAfterGesture();
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onSwipe',
           callback: (List<dynamic> args) {
@@ -1999,6 +2054,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       }
       _onCueChanged();
       await _applyLyricsFavorites();
+      // BUG-756: 歌词页 loadData 把 OS 焦点交给了 WebView，Flutter _focusNode 掉焦 →
+      // 一进歌词模式（还没点任何东西）ESC 就到不了 _handleKeyEvent / 全局退出处理器。
+      // 这里就绪即 reclaim 阅读焦点，让 ESC 从进入那刻起就能退出（与正文每个手势 reclaim
+      // 同纪律）；predicate 会在弹窗/底栏合法持焦点时自动跳过，底栏是 ExcludeFocus 恒不持焦。
+      _reclaimReaderFocusAfterGesture();
       return;
     }
     final int gen = _navigateGeneration;

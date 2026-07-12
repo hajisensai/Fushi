@@ -3,6 +3,9 @@
 #include <dwmapi.h>
 #include <shlwapi.h>
 
+#include "resource.h"
+
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -239,6 +242,10 @@ void GlobalLookupWindow::EnsureWindowClass() {
   wc.lpfnWndProc = GlobalLookupWindow::WndProc;
   wc.hInstance = GetModuleHandle(nullptr);
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+  // 面板任务栏图标 — 类图标供任务栏按钮 / Alt-Tab 使用（瞬态覆盖窗是
+  // TOOLWINDOW 不上任务栏，带图标无副作用）。
+  wc.hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
+  wc.hIconSm = wc.hIcon;
   wc.lpszClassName = kClassName;
   RegisterClassExW(&wc);
   s_class_registered = true;
@@ -253,9 +260,52 @@ int GlobalLookupWindow::OffscreenX() const {
          GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
 }
 
+bool GlobalLookupWindow::OwnsLiveWindow() const {
+  if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
+    return false;
+  }
+  // IsWindow() alone is not enough: Windows recycles HWND values, so a stale
+  // hwnd_ could name a DIFFERENT live window. Confirm the handle still points
+  // back at us via the GWLP_USERDATA we stamped in WM_NCCREATE.
+  return reinterpret_cast<GlobalLookupWindow*>(
+             GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
+}
+
+void GlobalLookupWindow::ForgetDeadWindow() {
+  if (hwnd_ == nullptr || OwnsLiveWindow()) {
+    return;
+  }
+  // The HWND was destroyed out from under us (WebView2 runtime crash/update,
+  // owner teardown, or any external DestroyWindow) yet hwnd_ stayed non-null,
+  // so every later ShowAt took the SetWindowPos(else) branch against a corpse
+  // and the app-external lookup/panel window "never came back without an app
+  // restart". Drop the dangling handle + the now-dead WebView2 proxies (the
+  // same release RecoverDeadWebView does) so the next ShowAt/PrewarmWebView
+  // rebuilds a fresh window from scratch. Surface it so the destroyer is
+  // diagnosable in the device log instead of a silent no-show.
+  if (error_cb_) {
+    error_cb_(
+        "overlay window found destroyed (external teardown) — rebuilding on "
+        "this lookup");
+  }
+  hwnd_ = nullptr;
+  controller_ = nullptr;
+  webview_ = nullptr;
+  env_ = nullptr;
+  webview_ready_ = false;
+  recovering_ = false;
+  visible_ = false;
+  revealed_ = false;
+  shell_rects_css_.clear();  // BUG-749 — stale rects must not clip a rebuild.
+}
+
 bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
                                 HWND owner) {
   EnsureWindowClass();
+  // A previously-created window may have been destroyed out from under us; drop
+  // the dangling handle so the guard below rebuilds instead of SetWindowPos-ing
+  // a corpse (root cause of "second lookup / reopen shows nothing").
+  ForgetDeadWindow();
   // Remember where the card should ultimately appear; Reveal() uses it.
   pending_x_ = x;
   pending_y_ = y;
@@ -271,11 +321,14 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // 真机第 4 轮 — 面板实例（activatable_）不带 NOACTIVATE：点击面板时焦点
     // 落面板，滚轮不再穿到底下仍持焦点的游戏。程序化路径全程 SWP_NOACTIVATE /
     // SW_SHOWNOACTIVATE，流式更新不抢焦点。
+    // 面板任务栏图标 — taskbar_presence_（面板实例）用 APPWINDOW 换掉
+    // TOOLWINDOW：任务栏出现独立按钮，点它即可把被压底的面板拉回前台。
     hwnd_ = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+        WS_EX_TOPMOST |
+            (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
             (activatable_ ? 0 : WS_EX_NOACTIVATE),
-        kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner,
-        nullptr, GetModuleHandle(nullptr), this);
+        kClassName, window_title_.c_str(), WS_POPUP, off_x, 0, width, height,
+        owner, nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
     }
@@ -303,6 +356,7 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   // path only renders + reveals. Semantics mirror the in-app keepWebViewWarm hot
   // slot, but for THIS bare overlay window (webview_prewarm.dart only warms the
   // in-app HeadlessInAppWebView, never this window — that gap was the root cause).
+  ForgetDeadWindow();  // A stale prewarm handle that died must be rebuilt.
   if (hwnd_ != nullptr) {
     return;  // Already warm (window + WebView2 exist) — idempotent.
   }
@@ -311,10 +365,11 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   const int w = width > 0 ? width : 420;
   const int h = height > 0 ? height : 600;
   hwnd_ = CreateWindowExW(
-      WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+      WS_EX_TOPMOST |
+          (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
           (activatable_ ? 0 : WS_EX_NOACTIVATE),
-      kClassName, L"Hibiki Lookup", WS_POPUP, off_x, 0, w, h, owner, nullptr,
-      GetModuleHandle(nullptr), this);
+      kClassName, window_title_.c_str(), WS_POPUP, off_x, 0, w, h, owner,
+      nullptr, GetModuleHandle(nullptr), this);
   if (hwnd_ == nullptr) {
     return;
   }
@@ -557,6 +612,17 @@ bool GlobalLookupWindow::ApplySystemBackdrop() {
   return ApplyWin10AccentBlurBehind(hwnd_);
 }
 
+void GlobalLookupWindow::SetWindowTitle(const std::wstring& title) {
+  if (title.empty()) {
+    return;
+  }
+  window_title_ = title;
+  if (hwnd_ != nullptr) {
+    // 已创建（面板启动即预热）：任务栏按钮标题即时更新。
+    SetWindowTextW(hwnd_, window_title_.c_str());
+  }
+}
+
 void GlobalLookupWindow::SetTopmost(bool topmost) {
   if (hwnd_ == nullptr) {
     return;
@@ -592,6 +658,10 @@ void GlobalLookupWindow::Hide(bool notify) {
   const bool was_showing = visible_;
   visible_ = false;
   revealed_ = false;
+  // BUG-749 — drop the per-shell region rects: the next lookup renders a new
+  // cascade and re-posts fresh rects (the host resets its de-dup key in
+  // beginLookup), so a stale region can never clip the next card.
+  shell_rects_css_.clear();
   if (foreground_hook_ != nullptr) {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
@@ -624,7 +694,10 @@ void GlobalLookupWindow::Hide(bool notify) {
 }
 
 bool GlobalLookupWindow::IsShowing() const {
-  return visible_ && hwnd_ != nullptr && IsWindowVisible(hwnd_);
+  // OwnsLiveWindow() (not a bare hwnd_ != nullptr) so a dangling/recycled handle
+  // can never report the overlay as showing — otherwise Dart's re-check skips
+  // the rebuild and renders into a window that no longer exists.
+  return visible_ && OwnsLiveWindow() && IsWindowVisible(hwnd_);
 }
 
 std::wstring GlobalLookupWindow::LoadAdapterScript() const {
@@ -925,6 +998,16 @@ void GlobalLookupWindow::ConfigureWebView() {
               // HandleMessage）统一回报最终 rect 给 Dart 持久化。Matching
               // quoted handler names keeps glossary text that merely mentions
               // the words from triggering this.
+              // BUG-749 — the transient host reports its per-shell card rects
+              // (window-relative CSS px) whenever the cascade layout changes.
+              // Handled fully natively (region update is pure Win32 state, no
+              // Dart decision involved) and NOT forwarded, so the Dart message
+              // log is not spammed once per measure pass.
+              if (body.find("\"handler\":\"shellRects\"") !=
+                  std::string::npos) {
+                SetShellRectsFromCsv(body);
+                return S_OK;
+              }
               if (body.find("\"handler\":\"beginWindowDrag\"") !=
                       std::string::npos ||
                   body.find("\"handler\":\"beginWindowResize\"") !=
@@ -1182,6 +1265,18 @@ LRESULT CALLBACK GlobalLookupWindow::WndProc(HWND hwnd, UINT message,
 // lookup window has rounded corners that match popup.css's 10px card radius.
 // Called on every WM_SIZE. The corner diameter (2 * radius) is scaled by the
 // window DPI so the rounding stays a constant ~10 logical px across monitors.
+//
+// BUG-749 — when the host has reported per-shell rects (transient cascade
+// mode), the region is the UNION of those rounded card rects instead of the
+// full window. Root cause chain: the TODO-1345 reserved cascade floor makes
+// the revealed window span ~the whole work area (so a nested child never
+// moves the window = BUG-583 zero-motion); this window is OPAQUE (no
+// WS_EX_LAYERED, WebView2 composition), so a full-window region both painted
+// a near-fullscreen sheet AND swallowed every click meant for the app below —
+// the user's "click the next word in the clipboard panel → the card just
+// vanishes and the click is eaten" regression. Clipping the region to the
+// real cards keeps the window geometry 100% untouched (zero-motion holds)
+// while gap clicks physically pass through to whatever is beneath.
 void GlobalLookupWindow::ApplyRoundedRegion() {
   if (hwnd_ == nullptr) {
     return;
@@ -1199,12 +1294,97 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
   }
   // 10 logical px radius -> diameter = 20 logical px, scaled to physical px.
   const int diameter = MulDiv(20, static_cast<int>(dpi), 96);
+  if (!shell_rects_css_.empty()) {
+    const double dpr = static_cast<double>(dpi) / 96.0;
+    HRGN union_region = CreateRectRgn(0, 0, 0, 0);
+    if (union_region != nullptr) {
+      bool any = false;
+      for (const std::array<double, 4>& r : shell_rects_css_) {
+        if (r[2] <= 0 || r[3] <= 0) {
+          continue;
+        }
+        const int l = static_cast<int>(std::floor(r[0] * dpr));
+        const int t = static_cast<int>(std::floor(r[1] * dpr));
+        const int rt = static_cast<int>(std::ceil((r[0] + r[2]) * dpr));
+        const int b = static_cast<int>(std::ceil((r[1] + r[3]) * dpr));
+        HRGN shell = CreateRoundRectRgn(l, t, rt + 1, b + 1, diameter, diameter);
+        if (shell != nullptr) {
+          CombineRgn(union_region, union_region, shell, RGN_OR);
+          DeleteObject(shell);
+          any = true;
+        }
+      }
+      if (any) {
+        // SetWindowRgn takes ownership on success; the system frees it.
+        SetWindowRgn(hwnd_, union_region, TRUE);
+        return;
+      }
+      DeleteObject(union_region);
+    }
+    // Region build failed -> fall through to the full-window region (worse UX,
+    // never a missing/garbage region).
+  }
   HRGN region =
       CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
   if (region != nullptr) {
     // SetWindowRgn takes ownership of the region on success; the system frees it.
     SetWindowRgn(hwnd_, region, TRUE);
   }
+}
+
+// BUG-749 — parse {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…']} (window-
+// relative CSS px, numbers only — produced by global_lookup_host.js
+// measureAndReport) and re-apply the window region. A malformed payload (or a
+// glossary string that merely contains the handler name) parses to zero rects
+// and leaves the previous region untouched — degraded, never garbage.
+void GlobalLookupWindow::SetShellRectsFromCsv(const std::string& body) {
+  const std::string args_marker = "\"args\":[\"";
+  const size_t args_at = body.find(args_marker);
+  if (args_at == std::string::npos) {
+    return;
+  }
+  const size_t start = args_at + args_marker.size();
+  const size_t end = body.find('"', start);
+  if (end == std::string::npos || end <= start) {
+    return;
+  }
+  const std::string csv = body.substr(start, end - start);
+  std::vector<std::array<double, 4>> rects;
+  size_t pos = 0;
+  while (pos < csv.size()) {
+    size_t next = csv.find(';', pos);
+    if (next == std::string::npos) {
+      next = csv.size();
+    }
+    const std::string rect_str = csv.substr(pos, next - pos);
+    std::array<double, 4> rect{};
+    int idx = 0;
+    size_t p = 0;
+    bool ok = true;
+    while (idx < 4 && p <= rect_str.size()) {
+      size_t comma = rect_str.find(',', p);
+      if (comma == std::string::npos) {
+        comma = rect_str.size();
+      }
+      try {
+        rect[idx] = std::stod(rect_str.substr(p, comma - p));
+      } catch (...) {
+        ok = false;
+        break;
+      }
+      ++idx;
+      p = comma + 1;
+    }
+    if (ok && idx == 4) {
+      rects.push_back(rect);
+    }
+    pos = next + 1;
+  }
+  if (rects.empty()) {
+    return;
+  }
+  shell_rects_css_ = std::move(rects);
+  ApplyRoundedRegion();
 }
 
 void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {

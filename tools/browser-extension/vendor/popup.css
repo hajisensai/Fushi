@@ -307,6 +307,20 @@ html {
     opacity: 0.15;
 }
 
+/* BUG-730 后续：半透明外部查词面（剪贴板面板 + 瞬态窗，均带 html.global-lookup）上，
+   顶部动作按钮 +/♪/☆ 的静息 opacity:0.5 与卡片/整窗半透明（cardBgAlpha + 整窗
+   LWA_ALPHA）逐层相乘后被冲淡到近乎不可见——用户「看不见制卡按钮」「顶上按钮像全透明」。
+   app 内弹窗卡背景是实心的，0.5 依旧清晰，故只在 .global-lookup 外部面把「可点」态提到
+   全不透明（与正文一样清晰）。仅覆写 opacity，不动颜色：金色收藏 .favorited / 绿色 ✓↩
+   .latest 的特例色不变；:not(:disabled) 让禁用态仍保留 0.15 的淡显（不误显成可点）。
+   app 内弹窗无 .global-lookup 类，保持低调 0.5，零回归。generate-content-css.mjs 会整条
+   丢弃（扩展 #entries-container 永不带 global-lookup 类），故不进扩展 content.css。 */
+html.global-lookup .audio-button:not(:disabled),
+html.global-lookup .favorite-button:not(:disabled),
+html.global-lookup .mine-button:not(:disabled) {
+    opacity: 1;
+}
+
 /* TODO-1338: 制卡后图标乱码根因修。制卡按钮的 +/✓/✓↩ 是「文本字形标记」(应用户要求保留
    文本，不走 SVG，见 popup.js setMineState)。默认它会继承 Dart 注入到 html,body 的用户
    自定义词典字体(popup_settings_injection.dartdictionaryFontStyleJs，!important)；若该字体
@@ -1402,6 +1416,11 @@ html.global-lookup[data-theme="dark"] body {
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    /* BUG-763 修「模态显示不全」：卡是 flex column + max-height:92%，中间预览区
+       (.scm-boxes) 必须能收缩才会触发其内部滚动。overflow:hidden 把内容夹在 max-height
+       内（配合 .scm-boxes 的 flex:1 1 auto;min-height:0），头/标题/计数/按钮/底栏各占
+       固有高度，预览区吸收剩余空间并滚动，不再被撑破挤成半行、按钮压在预览上。 */
+    overflow: hidden;
     padding: 16px;
     border-radius: var(--hibiki-radius-card, 14px);
     background: var(--background-color, #fff);
@@ -1443,6 +1462,11 @@ html.global-lookup[data-theme="dark"] body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* BUG-763：在 flex column 里 item 默认 min-height:auto（不小于内容），会拒绝收缩，
+       overflow-y:auto 永不触发、整卡被撑破。flex:1 1 auto + min-height:0 放开收缩，
+       激活内部滚动，让多句预览在卡内滚动而非溢出遮挡按钮。 */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }

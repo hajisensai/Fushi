@@ -105,18 +105,8 @@ void main() {
       expect(sidecarIdx, greaterThan(offIdx), reason: '关闭判据必须在 sidecar 探测之前短路');
     });
 
-    test('_loadEpisode 见哨兵短路：不退 sidecar 探测', () {
-      final String body = region(
-        'Future<void> _loadEpisode(',
-        'Future<({String path, List<AudioCue> cues})?> _detectSidecar(',
-      );
-      expect(body.contains('SubtitleSource.isOff(subtitleSource)'), isTrue,
-          reason: '换集恢复也要识别显式关闭哨兵（作用域=整张 video book）');
-      final int offIdx = body.indexOf('SubtitleSource.isOff');
-      final int sidecarIdx = body.indexOf('_detectSidecar');
-      expect(offIdx, greaterThanOrEqualTo(0));
-      expect(sidecarIdx, greaterThan(offIdx));
-    });
+    // 统一合集 Phase 3：播放列表某一集也照 _loadSingle 加载（每集是独立 VideoBooks 行），
+    // 关闭哨兵短路由上面的 `_loadSingle 见哨兵短路` 用例覆盖；旧的独立 `_loadEpisode` 已删。
 
     test('_applyLoad 把关闭哨兵透传成 subtitleExplicitlyOff，堵内嵌轨自动抽取', () {
       final String body = region(

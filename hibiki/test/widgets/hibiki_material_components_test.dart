@@ -360,6 +360,126 @@ void main() {
     expect(statisticsTop, importTop);
   });
 
+  // BUG（页头药丸挤标题）：带 label 的动作是否展开成「图标+文字」药丸，必须按
+  // **页头本地可用宽**（而非整窗宽）判定。桌面带导航栏 / 分栏时整窗 expanded（≥840）
+  // 但页头本地宽只到 medium，旧实现按整窗宽（[MediaQuery.sizeOf]）误展开 4 个药丸，
+  // 把 [Expanded] 标题挤到贴按钮甚至折成两行（用户反馈「已经重叠了还没降级成无字」）。
+  // 守卫：整窗放宽到 1200(expanded)、页头本地宽压到 720(medium) 时，带 label 动作回落
+  // 纯图标（无文字），标题不再被挤。
+  testWidgets(
+      'HibikiPageHeader collapses labeled actions to icons by local width '
+      'even when the window is wide', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      buildSubject(
+        Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 720, // 页头本地宽 = medium（600–840），整窗 1200 = expanded
+            child: HibikiPageHeader(
+              title: '书架',
+              padding: EdgeInsets.zero,
+              actions: <Widget>[
+                HibikiIconButton(
+                  tooltip: 'Import',
+                  label: 'Import',
+                  icon: Icons.library_add_outlined,
+                  onTap: () {},
+                ),
+                HibikiIconButton(
+                  tooltip: 'Manage',
+                  label: 'Manage sources',
+                  icon: Icons.folder_copy_outlined,
+                  onTap: () {},
+                ),
+                HibikiIconButton(
+                  tooltip: 'Collections',
+                  label: 'Collections',
+                  icon: Icons.collections_bookmark_outlined,
+                  onTap: () {},
+                ),
+                HibikiIconButton(
+                  tooltip: 'Statistics',
+                  label: 'Statistics',
+                  icon: Icons.bar_chart_outlined,
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    // 本地 medium → 回落纯图标（无 label 文字），标题不再被药丸挤压。
+    for (final String label in <String>[
+      'Import',
+      'Manage sources',
+      'Collections',
+      'Statistics',
+    ]) {
+      expect(find.text(label), findsNothing, reason: '$label 应折叠为纯图标');
+    }
+    for (final IconData icon in <IconData>[
+      Icons.library_add_outlined,
+      Icons.folder_copy_outlined,
+      Icons.collections_bookmark_outlined,
+      Icons.bar_chart_outlined,
+    ]) {
+      expect(find.byIcon(icon), findsOneWidget, reason: '$icon 应仍可见');
+    }
+    expect(find.text('书架'), findsOneWidget);
+  });
+
+  // 反向守卫：页头本地宽达到 expanded（≥840）时，带 label 动作展开成图标+文字药丸
+  // （宽窗零行为变化）。
+  testWidgets(
+      'HibikiPageHeader expands labeled actions when local width is expanded',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      buildSubject(
+        Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 1000, // 页头本地宽 = expanded（≥840）
+            child: HibikiPageHeader(
+              title: '书架',
+              padding: EdgeInsets.zero,
+              actions: <Widget>[
+                HibikiIconButton(
+                  tooltip: 'Import',
+                  label: 'Import',
+                  icon: Icons.library_add_outlined,
+                  onTap: () {},
+                ),
+                HibikiIconButton(
+                  tooltip: 'Statistics',
+                  label: 'Statistics',
+                  icon: Icons.bar_chart_outlined,
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Import'), findsOneWidget);
+    expect(find.text('Statistics'), findsOneWidget);
+  });
+
   // TODO-955: 内容放得下时，4 个动作 icon 必须贴页头最右侧（回归前被 7ce19740c 的
   // Flexible+反向 ScrollView 平分宽度推到了页头中间）。断言最右动作的右缘 ~= 页头右
   // 内边界，而非停在中部。

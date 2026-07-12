@@ -1,4 +1,4 @@
-// BUG-730 行为测试（jsdom 真实 DOM）：MDX 词典条目里的交叉引用（類義語 等）点击后
+// BUG-767 行为测试（jsdom 真实 DOM）：MDX 词典条目里的交叉引用（類義語 等）点击后
 // 面板空白。
 //
 // 根因：MDX 原始 HTML 的 `<a href="entry://词（読み）">词</a>` 经 innerHTML 注入到
@@ -79,7 +79,7 @@ function clickAnchor(anchorHtml) {
   return results;
 }
 
-test("BUG-730 类义语交叉引用：阻止默认导航 + 用干净词头触发 onLinkClick 重查", () => {
+test("BUG-767 类义语交叉引用：阻止默认导航 + 用干净词头触发 onLinkClick 重查", () => {
   // 真实样本：href 带读音、振假名在锚外兄弟 span。
   const r = clickAnchor(
     `<a href="entry://一栄一辱（いちえい-いちじょく）">一栄一辱</a>` +
@@ -93,7 +93,7 @@ test("BUG-730 类义语交叉引用：阻止默认导航 + 用干净词头触发
   assert.equal(r.externalCalls.length, 0, "内部引用不应当作外链打开");
 });
 
-test("BUG-730 外链：交给 openExternalLink，不误当查词", () => {
+test("BUG-767 外链：交给 openExternalLink，不误当查词", () => {
   const r = clickAnchor(`<a href="https://example.com/x">出典</a>`);
   assert.equal(r.prevented, true);
   assert.equal(r.externalCalls.length, 1);
@@ -101,14 +101,14 @@ test("BUG-730 外链：交给 openExternalLink，不误当查词", () => {
   assert.equal(r.linkCalls.length, 0, "外链不应触发 onLinkClick");
 });
 
-test("BUG-730 发音媒体节点 sound://：阻止导航但不查词", () => {
+test("BUG-767 发音媒体节点 sound://：阻止导航但不查词", () => {
   const r = clickAnchor(`<a href="sound://word.spx">🔊</a>`);
   assert.equal(r.prevented, true, "sound:// 也必须阻止默认导航");
   assert.equal(r.linkCalls.length, 0, "发音节点不是查词目标");
   assert.equal(r.externalCalls.length, 0);
 });
 
-test("BUG-730 空词头（href='#'）：阻止导航，不发空查询", () => {
+test("BUG-767 空词头（href='#'）：阻止导航，不发空查询", () => {
   const r = clickAnchor(`<a href="#"> </a>`);
   assert.equal(r.prevented, true);
   assert.equal(r.linkCalls.length, 0, "空词头不应触发 onLinkClick");

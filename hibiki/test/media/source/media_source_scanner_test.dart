@@ -22,7 +22,6 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -522,16 +521,14 @@ void main() {
       } catch (_) {}
     });
 
-    test('m3u8 manifest imports as a playlist VideoBook (episodes + sourceId)',
-        () async {
+    test(
+        'm3u8 manifest imports as N per-episode rows + a playlist collection '
+        '(统一合集 Phase 2)', () async {
       final HibikiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
       // A 2-episode m3u8; relative paths resolve against the manifest's dir.
-      // Only the manifest sits in the folder (episodes referenced by the m3u8,
-      // not standalone files) so the scan yields exactly one playlist VideoBook
-      // and no standalone single-video rows to disambiguate against.
       File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync(
         '''
 #EXTM3U
@@ -552,22 +549,35 @@ ep2.mp4
 
       await MediaSourceScanner(db).scan(source);
 
+      // 拆集：2 条独立 per-episode VideoBooks 行（uid=video/<集文件名>），各自 videoPath，
+      // 都不再写 playlistJson，都回填 sourceId。
       final List<VideoBookRow> videos = await repo.listAll();
-      expect(videos, hasLength(1),
-          reason: 'the m3u8 manifest imports as one playlist VideoBook');
-      final VideoBookRow row = videos.single;
-      expect(row.sourceId, sid,
-          reason: 'scanned playlist must be backfilled with its source id');
-      // Persisted as a playlist (2 episodes), not a single video.
-      expect(playlistEpisodeCount(row.playlistJson), 2,
-          reason: 'the two m3u8 entries must be parsed into playlistJson');
-      expect(row.bookUid, startsWith('video/playlist/'),
-          reason: 'playlist identity namespace, distinct from single videos');
-      // First episode is the initial videoPath, resolved against the manifest.
-      expect(row.videoPath, p.normalize(p.join(tmp.path, 'ep1.mp4')));
+      expect(videos, hasLength(2), reason: '2 集拆成 2 条独立 VideoBooks 行');
+      final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+        for (final VideoBookRow r in videos) r.bookUid: r,
+      };
+      expect(byUid.keys.toSet(), <String>{'video/ep1', 'video/ep2'});
+      for (final VideoBookRow r in videos) {
+        expect(r.sourceId, sid, reason: 'scanned episodes backfilled sourceId');
+        expect(r.playlistJson, isNull, reason: '拆集后不再写 playlistJson');
+      }
+      expect(byUid['video/ep1']!.videoPath,
+          p.normalize(p.join(tmp.path, 'ep1.mp4')));
+
+      // playlist 合集：type=playlist，名=m3u8 basename，成员按序 = 各集 uid。
+      final List<MediaCollectionRow> collections =
+          await db.getAllMediaCollections();
+      expect(collections, hasLength(1));
+      final MediaCollectionRow playlist = collections.single;
+      expect(playlist.collectionType, 'playlist');
+      expect(playlist.name, 'series');
+      final List<MediaCollectionItemRow> members =
+          await db.getCollectionItems(playlist.id);
+      expect(members.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+          <String>['video/ep1', 'video/ep2']);
 
       final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 1);
+      expect(after.mediaCount, 1, reason: '1 个 playlist 合集导入');
       expect(after.lastScanError, isNull);
     });
 
@@ -661,11 +671,16 @@ ep2.mp4
       final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
 
       await MediaSourceScanner(db).scan(source);
-      expect(await repo.listAll(), hasLength(1));
+      expect(await repo.listAll(), hasLength(2)); // 2 集拆成 2 行
 
       await MediaSourceScanner(db).scan(source);
-      expect(await repo.listAll(), hasLength(1),
-          reason: 're-scan must not duplicate the playlist VideoBook');
+      expect(await repo.listAll(), hasLength(2),
+          reason: 're-scan must not duplicate the split episode rows');
+      // 同名 playlist 合集仍只有一个（未重复建）。
+      expect(
+          (await db.getAllMediaCollections())
+              .where((MediaCollectionRow c) => c.collectionType == 'playlist'),
+          hasLength(1));
       final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
       expect(afterSrc.mediaCount, 0,
           reason: 'second scan reports 0 newly-imported playlists');
@@ -701,12 +716,14 @@ sub_a/ep2.mp4
 
       await MediaSourceScanner(db).scan(source);
       final List<VideoBookRow> first = await repo.listAll();
-      expect(first, hasLength(1));
-      final String firstVideoPath = first.single.videoPath;
+      expect(first, hasLength(2)); // 2 集拆成 2 行
+      final Map<String, String> firstPathByUid = <String, String>{
+        for (final VideoBookRow r in first) r.bookUid: r.videoPath,
+      };
 
       // The user edits the manifest so every episode path differs (here a
-      // different subdirectory), changing the resolved first-episode path — the
-      // OLD dedup key. The m3u8 identity (its basename) is unchanged.
+      // different subdirectory), changing the resolved first-episode path. The
+      // playlist collection identity (its basename-derived name) is unchanged.
       manifest.writeAsStringSync('''
 #EXTM3U
 #EXTINF:-1,Episode 1
@@ -717,15 +734,18 @@ sub_b/ep2.mp4
 
       await MediaSourceScanner(db).scan(source);
       final List<VideoBookRow> after = await repo.listAll();
-      expect(after, hasLength(1),
-          reason: 'identity dedup: same m3u8 => skip even though the '
-              'first-episode path changed (old key would make X (2))');
+      expect(after, hasLength(2),
+          reason: 'name dedup: same m3u8 basename => skip even though episode '
+              'paths changed (a path-only key would make X (2) duplicates)');
       expect(
           after.where((VideoBookRow r) => r.bookUid.contains('(2)')), isEmpty,
           reason: 'no suffixed duplicate book_uid');
-      // The surviving row is the ORIGINAL import (skip, not overwrite).
-      expect(after.single.videoPath, firstVideoPath,
-          reason: 're-scan skips (does not rewrite) the already-imported row');
+      // The surviving rows are the ORIGINAL import (skip, not overwrite): paths
+      // still point at sub_a, not the edited sub_b.
+      expect(<String, String>{
+        for (final VideoBookRow r in after) r.bookUid: r.videoPath
+      }, firstPathByUid,
+          reason: 're-scan skips (does not rewrite) the already-imported rows');
       final MediaSourceRow afterSrc = (await db.getMediaSourceById(sid))!;
       expect(afterSrc.mediaCount, 0,
           reason: 'second scan imported nothing new');
@@ -748,18 +768,18 @@ sub_b/ep2.mp4
     // reintroduce X (2) single-video folder-scan duplicates.
     expect(src.contains('existingPaths.add(normalizeVideoPath'), isTrue,
         reason: 'single-video scan must skip already-imported physical paths');
-    // TODO-1237 ②: _importPlaylists dedups by the STABLE playlist identity
-    // (playlistBookUid), skipping an already-imported manifest instead of
-    // suffixing an X (2) duplicate. Guard the identity-skip wiring so a future
-    // edit can't regress to the volatile first-episode-path key.
+    // TODO-1237 ② / 统一合集 Phase 2: _importPlaylists dedups by the STABLE
+    // playlist COLLECTION name (m3u8 basename), skipping an already-imported
+    // manifest instead of suffixing an X (2) duplicate. Guard the name-skip
+    // wiring so a future edit can't regress to a volatile first-episode-path key.
     expect(
         src.contains(
-            'final String bookUid = playlistBookUid(item.playlistPath);'),
+            'if (existingPlaylistNames.contains(collectionName)) continue;'),
         isTrue,
-        reason: 'playlist scan must derive dedup identity from the m3u8 path');
-    expect(
-        src.contains('if (existingKeys.contains(bookUid)) continue;'), isTrue,
-        reason: 'playlist scan must skip an already-imported m3u8 identity');
+        reason: 'playlist scan must skip an already-imported collection name');
+    expect(src.contains('importSplitPlaylist('), isTrue,
+        reason:
+            'playlist scan must split into per-episode rows + a collection');
   });
 
   // TODO-1284: the duplicate-skip branch must still attach a sidecar srt+audio

@@ -449,6 +449,10 @@ async function openSentenceContextModal(mineButton, matched) {
     card.appendChild(boxes);
 
     let busy = false;
+    // BUG-764：记住最近一次「+」请求的目标句数，用于在到边界（宿主返回句数 < 请求）时
+    // 禁用对应「+」——诚实反馈「已到段落/章/文首文尾边界」，不再点了没反应。
+    let reqPrev = null;
+    let reqNext = null;
     const makeAdjustBtn = function(dir, sign, label) {
         const btn = el('button', {
             className: 'scm-btn scm-adjust ' + dir + '-' + sign,
@@ -497,6 +501,10 @@ async function openSentenceContextModal(mineButton, matched) {
         boxes.appendChild(buildContextBox(i.boxNext || '', next, 'scm-next'));
         prevMinusBtn.disabled = prev.length <= 0;
         nextMinusBtn.disabled = next.length <= 0;
+        // BUG-764：请求的上下文句数多于宿主实际能给（到边界，返回句数 < 请求）→ 禁用对应
+        // 「+」，给出诚实的「已到边界」反馈，不再点了没反应。初次打开 req* 为 null，不禁用。
+        prevPlusBtn.disabled = reqPrev !== null && prev.length < reqPrev;
+        nextPlusBtn.disabled = reqNext !== null && next.length < reqNext;
     }
 
     async function refresh() {
@@ -510,8 +518,8 @@ async function openSentenceContextModal(mineButton, matched) {
         try {
             const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
             const nextN = sign === 'plus' ? cur + 1 : Math.max(0, cur - 1);
-            if (dir === 'prev') sentenceCtxPrev = nextN;
-            else sentenceCtxNext = nextN;
+            if (dir === 'prev') { sentenceCtxPrev = nextN; reqPrev = nextN; }
+            else { sentenceCtxNext = nextN; reqNext = nextN; }
             await setSentenceContextOnHost();
             await refresh();
         } finally {
@@ -2811,34 +2819,57 @@ function buildEntryElement(entry, idx) {
 
 function postProcessRuby(container) {
     container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
-        // Wrap each base text node in a <span class="ruby-unit"> and pull that
-        // base's OWN <rt> into the span. popup.css positions the rt absolutely
-        // (left:0/right:0) against its nearest positioned ancestor; making the
-        // per-base unit that ancestor keeps each rt sized/centred over its own
-        // kanji. Without this, a multi-kanji word (one <ruby> with several
-        // base+<rt> pairs, e.g. 将<rt>しょう</rt>棋<rt>ぎ</rt>) had every rt
-        // stretch to the full <ruby> width and superimpose (BUG-722). Keeping
-        // the base text as a live text node inside a <span> preserves ruby
-        // lookup selection (BUG-110/123/125/129 must not regress).
+        // Wrap each base — a bare text node OR an element base like <rb>/<span>
+        // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
+        // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.
+        // popup.css positions the rt absolutely (left:0/right:0/top:0) against its
+        // nearest positioned ancestor AND reserves vertical room via the unit's
+        // padding-top; making the per-base unit that ancestor keeps each rt
+        // sized/centred over — and lifted above — its own kanji.
+        //   - Multi-kanji word (one <ruby>, several base+<rt> pairs, e.g.
+        //     将<rt>しょう</rt>棋<rt>ぎ</rt>): without per-base units every rt
+        //     stretched to the full <ruby> width and superimposed (BUG-722).
+        //   - Element base (<ruby><rb>未然形</rb><rt>みぜんけい</rt></ruby>): the
+        //     old text-node-only wrap skipped the <rb>, so no .ruby-unit was made;
+        //     the rt kept position:absolute;top:0 but anchored to the bare <ruby>
+        //     (line-height:1, no padding-top reserve) and the reading collapsed
+        //     onto the base (BUG-733). Wrapping ANY base restores the reserve.
+        // Keeping the base as a live text node (bare, in place) or a live element
+        // (moved whole, not flattened) preserves ruby lookup selection
+        // (BUG-110/123/125/129 must not regress).
+        const isEl = (n, tag) =>
+            n.nodeType === Node.ELEMENT_NODE && n.tagName === tag;
+        const isBlankText = (n) =>
+            n.nodeType === Node.TEXT_NODE && !n.textContent.trim();
         const children = Array.from(ruby.childNodes);
         for (const node of children) {
-            if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) {
+            // A base is anything that is not a reading (<rt>), a fallback paren
+            // (<rp>), or inter-token whitespace.
+            if (isEl(node, 'RT') || isEl(node, 'RP') || isBlankText(node)) {
                 continue;
             }
             const unit = document.createElement('span');
             unit.className = 'ruby-unit';
-            unit.textContent = node.textContent;
-            node.replaceWith(unit);
-            // Move the immediately-following <rt> into the unit, stepping over
-            // <rp> fallback parens and whitespace text nodes that sit between a
-            // base and its reading.
+            if (node.nodeType === Node.TEXT_NODE) {
+                // Bare text base: keep the text live inside the unit.
+                unit.textContent = node.textContent;
+                node.replaceWith(unit);
+            } else {
+                // Element base (<rb>/<span>/nested structured-content): move the
+                // element itself into the unit so its inner text stays a live,
+                // selectable node while the unit becomes the positioned per-base
+                // box.
+                node.replaceWith(unit);
+                unit.appendChild(node);
+            }
+            // Move this base's own <rt> into the unit, stepping over <rp> fallback
+            // parens and whitespace text nodes that sit between a base and its
+            // reading.
             let sib = unit.nextSibling;
-            while (sib &&
-                   ((sib.nodeType === Node.TEXT_NODE && !sib.textContent.trim()) ||
-                    (sib.nodeType === Node.ELEMENT_NODE && sib.tagName === 'RP'))) {
+            while (sib && (isBlankText(sib) || isEl(sib, 'RP'))) {
                 sib = sib.nextSibling;
             }
-            if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.tagName === 'RT') {
+            if (sib && isEl(sib, 'RT')) {
                 unit.appendChild(sib);
             }
         }
@@ -3065,15 +3096,22 @@ function resetMasonryBody(body) {
 
 function layoutMasonry() {
     if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
-    const cols = dictColumns();
+    const configured = dictColumns();
     const gap = masonryGap();
     masonryBodies().forEach(body => {
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
-        // 单列 / 单卡：不做 masonry，清 inline 回落 CSS（单卡满宽、单列纵向堆叠 + CSS margin-top）。
-        if (cols <= 1 || items.length <= 1) {
+        // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
+        //（block 纵向堆叠 + CSS margin-top / 空容器）。
+        if (configured <= 1 || items.length === 0) {
             resetMasonryBody(body);
             return;
         }
+        // 有效列数封顶到该词条实际的词典卡片数：词典数 < 设置列数时（如上限 2 但只有 1 本），
+        // 现有卡片平分整行宽度——单卡走 cols=1 满宽、2 卡 3 列走 cols=2 各半，不再让右侧空出
+        // 没有卡片的列。cols 每 body 独立计算（不同词条词典数不同）；masonry 仍绝对定位、按
+        // 最短列打包。cols=1 时 columnWidth=整宽、单卡 translate(0,0) 即满宽（取代旧「单卡回落
+        // 半宽 grid」——grid 用全局 --dict-columns 无法感知本词条只有 1 本词典）。
+        const cols = Math.min(configured, items.length);
         body.style.position = 'relative';
         body.style.display = 'block';
         const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
@@ -3652,6 +3690,15 @@ document.addEventListener('wheel', (e) => {
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
+    // BUG-732: 这段缩放平滑滚动只服务查词弹窗。扩展里弹窗是宿主页上的 shadow 覆盖层，
+    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host；返回 null
+    // 时唯一合法「滚 window」的表面是 in-app 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。
+    // 普通网页上扩展 content script 有 chrome.runtime.id，此时滚轮不在弹窗内绝不能接管：
+    // 否则整页被 POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
+    const scroller = __hibikiWheelScroller(e);
+    const inExtensionContentScript =
+        typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+    if (!scroller && inExtensionContentScript) return;
     e.preventDefault();
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
@@ -3660,7 +3707,6 @@ document.addEventListener('wheel', (e) => {
     // the shadow host is the scroll container (the ancestor walk above cannot
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
-    const scroller = __hibikiWheelScroller(e);
     const layoutStep = visualStep / popupCurrentZoom(scroller);
     // TODO-1387: carry the sub-pixel remainder across events. A precision touchpad
     // reports deltaMode=PIXEL with a tiny fractional deltaY (~1-4 per frame); after
@@ -3694,7 +3740,7 @@ document.addEventListener('mousedown', (e) => {
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
 });
 
-// BUG-730：MDX 词典条目里的交叉引用（類義語 等）是原始 HTML
+// BUG-767：MDX 词典条目里的交叉引用（類義語 等）是原始 HTML
 // `<a href="entry://词（読み）">词</a>`，经 innerHTML 注入到 .glossary-content
 // （renderContent → rewriteDictLinks，dict-media.js 只重写 <link>/<img>，不碰 <a>）。
 // 它既没有结构化内容链接那套 onclick（preventDefault + onLinkClick 重查，见
@@ -3755,7 +3801,7 @@ document.addEventListener('click', (e) => {
         target?.closest('.favorite-button')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
-        // BUG-730：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
+        // BUG-767：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
         // handleGlossaryAnchorClick——preventDefault 阻止默认导航（否则结果框架被导走→白屏），
         // 内部引用转 onLinkClick 重查。结构化内容链接自带 onclick + stopPropagation，永不冒泡到此。
         const glossaryAnchor = target?.closest('a[href]');

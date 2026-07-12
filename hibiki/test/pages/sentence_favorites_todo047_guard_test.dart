@@ -43,8 +43,9 @@ void main() {
       );
       expect(
         src,
-        contains('sectionIndex: _currentEpisode'),
-        reason: '播放列表收藏必须把 episode index 存进 FavoriteSentence.sectionIndex',
+        contains('sectionIndex: _favoriteSectionIndex'),
+        reason: '收藏 sectionIndex 走 _favoriteSectionIndex（本地每集独立行=null；'
+            '远端多集=当前集），统一合集 Phase 3',
       );
       expect(
         src,
@@ -145,20 +146,17 @@ void main() {
       expect(src, contains('t.nav_video'), reason: '视频来源句子前缀标注');
     });
 
-    test('视频页初始化播放列表时消费收藏页传入的 episode + cue startMs', () {
+    test('视频页初始化：收藏页跳回打开该集 bookUid，_loadSingle 消费 cue startMs', () {
+      // 统一合集 Phase 3：每集是独立 VideoBooks 行，收藏句 bookKey=集 uid，collections
+      // 页跳回直接 open 该集 bookUid（+ initialCueStartMs）；起播点由单视频路径
+      // _loadSingle 消费（widget.initialCueStartMs ?? row.lastPositionMs）。
       final String videoSrc = read(
         'lib/src/pages/implementations/video_hibiki_page.dart',
       );
-      expect(videoSrc, contains('final int? initialEpisodeIndex'));
       expect(
         videoSrc,
-        contains('widget.initialEpisodeIndex ?? row.currentEpisode'),
-        reason: '播放列表打开应优先使用收藏句 episode 锚点，再回退上次播放集',
-      );
-      expect(
-        videoSrc,
-        contains('widget.initialCueStartMs ?? _episodes[idx].positionMs'),
-        reason: '定位到收藏 episode 后，还要 seek 到该 cue 的 startMs',
+        contains('widget.initialCueStartMs ?? row.lastPositionMs'),
+        reason: '收藏 cue 起点 / 续播由 _loadSingle 消费',
       );
     });
 

@@ -453,31 +453,34 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       for (final MediaItem item in _visibleEpubBooks)
         if (_selectedKeys.contains(item.mediaIdentifier))
           _slotCover(
-            _ShelfBookSlot(seq: 0, order: 0, epub: item),
+            _ShelfBookSlot(seq: 0, epub: item),
             _epubCoverUrisByBookKey,
           ),
       for (final SrtBook book in _visibleSrtBooks)
         if (_selectedKeys.contains('srt_${book.uid}'))
           _slotCover(
-            _ShelfBookSlot(seq: 0, order: 0, srt: book),
+            _ShelfBookSlot(seq: 0, srt: book),
             _epubCoverUrisByBookKey,
           ),
     ].take(4).toList();
-    final String? name = await showSeriesNameDialog(
+    final String? name = await showCollectionNameDialog(
       context: context,
       title: t.create_series,
       initialName: defaultName,
       previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
-    final int seriesId = await appModel.database.createSeries(name);
+    // 统一合集 Phase 4：批量「组合成合集」建一个 collection 类合集，逐条 addToCollection
+    // （取代旧 createSeries + setSeriesForEntry）。
+    final int collectionId =
+        await appModel.database.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
       await appModel.database
-          .setSeriesForEntry(ref.mediaType, ref.entryKey, seriesId);
+          .addToCollection(collectionId, ref.mediaType, ref.entryKey);
     }
     if (!mounted) return;
     _exitSelectionMode();
-    _shelfOrderFuture = _loadShelfOrder();
+    _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
     HibikiToast.show(msg: t.series_created);
   }

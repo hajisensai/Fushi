@@ -424,17 +424,20 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     // TODO-1232: the effective "disable Impeller (use Skia)" decision for THIS
-    // launch. Android DEFAULTS TO SKIA (disable Impeller) so media_kit's external
-    // SurfaceProducer video texture composites out of the box -- Impeller silently
-    // fails to composite it on some Android GPUs (e.g. Mali-G76 / Android 11,
-    // BUG-597), leaving video black while decode + texture handshake are fully
-    // green. An EXPLICIT user choice (Settings > Diagnostics switch) overrides this
-    // default in either direction (explicit > platform default); only the
-    // never-set case falls back to Skia. Mirrors
+    // launch. Android DEFAULTS TO IMPELLER (never-set -> false) so the majority
+    // keeps Impeller's smoother rendering / no Skia first-frame shader jank.
+    // Impeller silently fails to composite media_kit's external SurfaceProducer
+    // video texture on a FEW Android GPUs (e.g. Mali-G76 / Android 11, BUG-597),
+    // leaving video black while decode + texture handshake are fully green -- those
+    // devices degrade via the discoverable one-tap "switch to Skia + restart" entry
+    // in the player settings sheet (writes this pref = true, then restarts), rather
+    // than flipping every Android user to Skia. An EXPLICIT user choice overrides
+    // this default in either direction (explicit > platform default); only the
+    // never-set case falls back to Impeller. Mirrors
     // RenderBackendService.resolveImpellerDisabled(storedPref, isAndroid: true).
     private boolean isImpellerDisabledPref() {
         Boolean raw = getImpellerDisabledRawPref();
-        return raw != null ? raw : true;
+        return raw != null ? raw : false;
     }
 
     // TODO-1232: raw persisted intent as a tri-state -- null when the user has

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -33,6 +32,7 @@ import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
+import 'package:hibiki/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
@@ -105,6 +105,8 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart'
+    show adaptivePageRoute;
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/debug_log_service.dart';
@@ -305,10 +307,24 @@ enum _MissingResourceChoice { relink, reimport, delete, cancel }
 /// 字幕 → 缓冲 → 准备。纯 UI 状态，不影响 controller.load 时序。
 enum _VideoLoadPhase { connecting, downloadingSubtitle, buffering, preparing }
 
+/// 统一合集 Phase 3：播放列表上下文里的一集（剧集面板 / 上下集 / 自动连播 / 预热用）。
+///
+/// 本地播放列表：[bookUid] = 成员集自己的 VideoBooks 行 uid（换集靠 pushReplacement 到
+/// 该集的单视频页）、[path] = 该集视频路径（预热用）。远端播放列表：[bookUid] = null、
+/// [path] = ''（换集靠 episodeIndex 向 host 建流，不走 pushReplacement）。
+class _PlaylistEpisodeRef {
+  const _PlaylistEpisodeRef(
+      {this.bookUid, required this.title, this.path = ''});
+  final String? bookUid;
+  final String title;
+  final String path;
+}
+
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
     required this.repo,
+    this.playlistCollectionId,
     this.initialCueStartMs,
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
@@ -326,12 +342,18 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     super.key,
   })  : bookUid = info.id,
         remoteInfo = info,
-        remoteClient = client;
+        remoteClient = client,
+        playlistCollectionId = null;
 
   final String bookUid;
   final VideoBookRepository repo;
   final RemoteVideoInfo? remoteInfo;
   final RemoteVideoClient? remoteClient;
+
+  /// 统一合集 Phase 3：本集所属 playlist 合集 id（非空 = 作为播放列表某一集打开，
+  /// player 据此建兄弟集列表 + 剧集面板 + 上下集 + 自动连播；null = 独立单视频打开）。
+  /// 本地专用；远端播放列表走 host 驱动的 episodeIndex，不用此字段。
+  final int? playlistCollectionId;
   final int? initialCueStartMs;
   final int? initialEpisodeIndex;
   final bool initialSubtitleListVisible;
@@ -347,6 +369,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   static Widget neutralized({
     required String bookUid,
     required VideoBookRepository repo,
+    int? playlistCollectionId,
     int? initialCueStartMs,
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
@@ -355,6 +378,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
         child: VideoHibikiPage(
           bookUid: bookUid,
           repo: repo,
+          playlistCollectionId: playlistCollectionId,
           initialCueStartMs: initialCueStartMs,
           initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
@@ -1239,8 +1263,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookUid, title: _title ?? '');
 
-  /// 多集播放列表（单视频导入时为空）。
-  List<PlaylistEntry> _episodes = const <PlaylistEntry>[];
+  /// 多集播放列表的兄弟集（单视频/独立打开时为空）。统一合集 Phase 3：本地从 playlist
+  /// 合集成员建、远端从 host episodes 建；只作面板/上下集/连播上下文，播放本身每集是独立
+  /// 单视频（本地 pushReplacement 换集，widget.bookUid 恒为当前集）。
+  List<_PlaylistEpisodeRef> _episodes = const <_PlaylistEpisodeRef>[];
 
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
@@ -1268,7 +1294,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   double? _pendingSpeedPersist;
   Timer? _speedPersistDebounce;
 
-  /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
+  /// 换集加载代际计数：每次 [_loadRemoteEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
   /// 枚举字幕源 + 解析 cue）跑完后若序号已被后续切集取代，则放弃应用，避免「播放中
   /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
   /// 对不上，疑似中途切换；本机不可复现，加此守卫兜底竞态）。
@@ -1276,6 +1302,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
+
+  /// 视频内嵌字体加载器（对齐 mpv attachment 字体）：开视频时抽 MKV 内嵌字体附件注册进
+  /// 引擎，字幕 overlay 按 ASS `Fontname` 命中真实字体。内部按视频路径缓存 + 进程级 family
+  /// 去重，故可反复调（换集/重开）。见 [_maybeLoadEmbeddedSubtitleFonts]。
+  final SubtitleEmbeddedFontLoader _embeddedFontLoader =
+      SubtitleEmbeddedFontLoader();
 
   /// 远端模式（[_isRemote]）下 host 下发并下载到本地临时文件的那条外挂字幕路径；
   /// 无 host 字幕时为 null。远端没有本地视频文件，字幕菜单不能走 [_currentVideoPath]
@@ -1365,6 +1397,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoFitMode _videoFitMode = VideoFitMode.contain;
 
   bool get _isPlaylist => _episodes.length > 1;
+
+  /// 收藏/制卡是否按集区分：本地每集是独立 VideoBooks 行（bookKey 已唯一定位集，单视频
+  /// 语义）→ false；远端多集是 host 单 id → 需按 episodeIndex 区分 → true（统一合集 Phase 3）。
+  bool get _favoriteIsPlaylist => _isRemote && _episodes.length > 1;
+
+  /// 收藏/制卡的集下标锚点：[_favoriteIsPlaylist] 时为当前集，否则 null（单视频语义）。
+  int? get _favoriteSectionIndex =>
+      _favoriteIsPlaylist ? _currentEpisode : null;
 
   /// 缓存的 [AppModel] 引用。`appProvider` 是单例（实例不变），在 [initState] 一次
   /// 性读取并缓存。**不能**每次 `ref.read(appProvider)`：浮层层（[buildNestedPopupLayer]）
@@ -1620,39 +1660,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
 
-    // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
-    final String? playlistJson = row.playlistJson;
-    if (playlistJson != null && playlistJson.isNotEmpty) {
-      final List<dynamic> raw = jsonDecode(playlistJson) as List<dynamic>;
-      _episodes = raw
-          .map((dynamic e) => PlaylistEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-    }
-
-    if (_episodes.isNotEmpty) {
-      // TODO-761（方案 B）：确认是播放列表（多集）后记系列名（[VideoBookRow.title]），
-      // 制卡 documentTitle 据此拼「系列名 - 剧集名」。单视频 / 远端不进此分支，保持 null。
-      _playlistTitle = row.title;
-      final int idx = (widget.initialEpisodeIndex ?? row.currentEpisode)
-          .clamp(0, _episodes.length - 1);
-      if (widget.initialEpisodeIndex != null && idx != row.currentEpisode) {
-        unawaited(widget.repo.updateCurrentEpisode(widget.bookUid, idx));
+    // 统一合集 Phase 3：本集若作为某 playlist 合集的一集打开（widget.playlistCollectionId
+    // 非空），从合集成员建兄弟集列表（剧集面板 / 上下集 / 连播上下文）。每集是独立
+    // VideoBooks 行，当前集照单视频路径加载（widget.bookUid 恒为当前集）。
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId != null) {
+      final List<MediaCollectionItemRow> members =
+          await widget.repo.getCollectionItems(collectionId);
+      final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
+      for (final MediaCollectionItemRow m in members) {
+        if (m.mediaType != 'video') continue;
+        final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
+        if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
+        refs.add(_PlaylistEpisodeRef(
+            bookUid: er.bookUid, title: er.title, path: er.videoPath));
       }
-      // 每集各记自己的进度：恢复到 currentEpisode 那集的 entry.positionMs
-      // （取代旧的「整个 VideoBook 一个 lastPositionMs」）。
-      await _loadEpisode(
-        idx,
-        initialPositionMs:
-            widget.initialCueStartMs ?? _episodes[idx].positionMs,
-        startIntent: widget.initialCueStartMs == null
-            ? EpisodeStartIntent.initialOpen
-            : EpisodeStartIntent.explicitCue,
-        subtitleSource: row.subtitleSource,
-      );
-      return;
+      _episodes = refs;
+      final int idx = refs
+          .indexWhere((_PlaylistEpisodeRef e) => e.bookUid == widget.bookUid);
+      _currentEpisode = idx >= 0 ? idx : 0;
+      if (refs.length > 1) {
+        // TODO-761（方案 B）：记系列名（合集名），制卡 documentTitle 据此拼「系列名 - 剧集名」。
+        final MediaCollectionRow? col =
+            await widget.repo.getMediaCollectionById(collectionId);
+        _playlistTitle = col?.name;
+      }
     }
 
-    // 单视频路径（无播放列表）。
+    // 当前集照单视频加载（每集是独立 VideoBooks 行；_loadSingle 已尊重
+    // widget.initialCueStartMs 与该行 lastPositionMs 续播）。
     await _loadSingle(row);
   }
 
@@ -1675,9 +1711,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             .clamp(0, info.episodes.length - 1)
         : 0;
     if (info.isPlaylist) {
-      _episodes = <PlaylistEntry>[
+      _episodes = <_PlaylistEpisodeRef>[
         for (final RemoteVideoEpisode ep in info.episodes)
-          PlaylistEntry(title: ep.title, path: ''),
+          _PlaylistEpisodeRef(title: ep.title),
       ];
     }
     await _loadRemoteEpisode(
@@ -2190,90 +2226,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return null;
   }
 
-  /// 载入播放列表第 [index] 集：先按上次选择的「同类偏好」选新集字幕源
-  /// （[subtitleSource] 是上次持久化的偏好），无匹配再退默认 sidecar 探测。
-  ///
-  /// cue 不存 DB——每集 load 时按文件动态解析（播放列表各集字幕是外部文件，本就随
-  /// 磁盘存在；存 DB 只会与磁盘真相重复且引入跨集 book_uid 错配）。
-  Future<void> _loadEpisode(
-    int index, {
-    int initialPositionMs = 0,
-    required EpisodeStartIntent startIntent,
-    String? subtitleSource,
-  }) async {
-    if (index < 0 || index >= _episodes.length) return;
-    final PlaylistEntry episode = _episodes[index];
-    // 本次加载的代际序号；慢路径跑完后据此判断是否已被后续切集取代。
-    final int seq = ++_episodeLoadSeq;
-
-    List<AudioCue> cues = const <AudioCue>[];
-    String? externalSub;
-    int? graphicStreamIndex;
-
-    // TODO-818：用户显式关闭字幕（哨兵存在 video book 的 subtitleSource 上，作用域与
-    // 选具体源一致——按整张 video book 持久化，各集共享）。哨兵短路两个自动重选向量
-    // （sidecar 探测 + 内嵌轨抽取），externalSub 保持哨兵传给 _applyLoad 维持关闭态。
-    if (SubtitleSource.isOff(subtitleSource)) {
-      externalSub = subtitleSource;
-    } else {
-      // ① 按上次偏好（同类）选新集字幕源：内嵌同 streamIndex / 外挂同语言后缀。
-      if (subtitleSource != null && subtitleSource.isNotEmpty) {
-        final ({
-          String persisted,
-          List<AudioCue> cues,
-          int? graphicStreamIndex
-        })? restored = await _restorePersistedSubtitle(
-          videoPath: episode.path,
-          persisted: subtitleSource,
-          crossEpisode: true,
-        );
-        if (restored != null) {
-          cues = restored.cues;
-          externalSub = restored.persisted;
-          graphicStreamIndex = restored.graphicStreamIndex;
-        }
-      }
-
-      // ② 无偏好 / 无匹配：退默认 sidecar 探测。图形轨恢复时 cues 虽空但
-      // externalSub 已置（embedded:<n>），不能让 sidecar 覆盖掉画面字幕选择（BUG-122）。
-      if (cues.isEmpty && externalSub == null) {
-        final ({String path, List<AudioCue> cues})? sidecar =
-            await _detectSidecar(episode.path, widget.bookUid);
-        if (sidecar != null) {
-          cues = sidecar.cues;
-          externalSub = sidecar.path;
-        }
-      }
-    }
-
-    // 慢路径（ffmpeg 枚举 + cue 解析）期间若已被后续切集取代，放弃应用避免覆盖新集。
-    if (seq != _episodeLoadSeq || !mounted) {
-      debugPrint(
-        '[video-episode] superseded: ep$index seq=$seq '
-        'cur=$_episodeLoadSeq — skip apply',
-      );
-      return;
-    }
-    // 诊断（用户报「切到第4集字幕/音画对不上」，本机不可复现）：记录实际选中的字幕源
-    // 与解析出的 cue 数 + 首句，便于真机切集后回看日志锁定是否选错源/空 cue/错集。
-    debugPrint(
-      '[video-episode] load ep$index "${episode.title}" '
-      'path=${episode.path} subSrc=$externalSub cues=${cues.length}'
-      '${cues.isNotEmpty ? ' first=[${cues.first.startMs}ms]${cues.first.text}' : ''}',
-    );
-
-    _currentEpisode = index;
-    await _applyLoad(
-      videoPath: episode.path,
-      cues: cues,
-      title: episode.title,
-      initialPositionMs: initialPositionMs,
-      startIntent: startIntent,
-      externalSubtitlePath: externalSub,
-      renderGraphicStreamIndex: graphicStreamIndex,
-    );
-  }
-
   /// 若 [source] 是仍在磁盘上的**外挂文本字幕档案**（.srt/.ass/.ssa/.vtt），返回其路径供
   /// 重解析拿回样式 markup（TODO-1246）；否则返回 null：内嵌轨（`embedded:<n>` 无扩展名，
   /// [subtitleFormatForPath] 判 null）、关闭哨兵、`null`/空、或档案已不在磁盘上（重解析无源）。
@@ -2560,6 +2512,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // only after playback has opened so UI/video startup is not blocked.
       unawaited(prewarmEmbeddedSubtitleCache(videoPath));
       unawaited(_loadDanmakuForVideo(videoPath));
+      // 视频内嵌字体（对齐 mpv）：抽 MKV attachment 字体注册进引擎，字幕按 ASS Fontname
+      // 命中真实字体。仅本地 + 开「尊重 .ass 样式」时做；远端/无 ffmpeg/无附件静默降级。
+      unawaited(_maybeLoadEmbeddedSubtitleFonts(videoPath));
     } else {
       unawaited(_loadDanmakuForVideo(null));
     }
@@ -2579,6 +2534,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             dateKey: dateKey,
             subtitleChars: chars,
             watchTimeMs: ms,
+            // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频
+            // 每集独立页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
+            bookUid: widget.bookUid,
           ),
         ),
         markCompleted: (String uid) =>
@@ -2775,34 +2733,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _persistPosition(String uid, int posMs) async {
     final int clamped = posMs < 0 ? 0 : posMs;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (_episodes.isEmpty) {
-      await widget.repo.updatePosition(uid, posMs);
-      await appModel.prefsRepo
-          .setPref(videoRemotePositionEpisodePrefKey(uid, 0), clamped);
-      await appModel.prefsRepo
-          .setPref(videoRemotePositionEpisodeAtPrefKey(uid, 0), nowMs);
-      return;
-    }
-    _episodes = updateEntryPosition(_episodes, _currentEpisode, posMs);
-    await widget.repo.updatePlaylistJson(uid, _encodeEpisodes());
-    // TODO-885: 按当前集镜像到远端进度键空间，client 据此按集恢复 host 自看进度。
-    await appModel.prefsRepo.setPref(
-        videoRemotePositionEpisodePrefKey(uid, _currentEpisode), clamped);
-    await appModel.prefsRepo.setPref(
-        videoRemotePositionEpisodeAtPrefKey(uid, _currentEpisode), nowMs);
+    // 统一合集 Phase 3：每集是独立 VideoBooks 行 → 恒单视频持久化（写该集自己的
+    // lastPositionMs + 按集 0 镜像远端进度键）。播放列表不再靠 playlistJson 存每集进度。
+    await widget.repo.updatePosition(uid, posMs);
+    await appModel.prefsRepo
+        .setPref(videoRemotePositionEpisodePrefKey(uid, 0), clamped);
+    await appModel.prefsRepo
+        .setPref(videoRemotePositionEpisodeAtPrefKey(uid, 0), nowMs);
   }
 
-  /// 把当前 [_episodes] 序列化回 playlistJson（带各集 positionMs）。
-  String _encodeEpisodes() =>
-      jsonEncode(_episodes.map((PlaylistEntry e) => e.toJson()).toList());
-
   void _prewarmNextEpisodeSubtitleCache() {
-    final String? path = nextPlaylistPathToPrewarm(
-      entries: _episodes,
-      currentIndex: _currentEpisode,
-      lastPrewarmedPath: _lastPrewarmedEpisodePath,
-    );
-    if (path == null) return;
+    // 有下一集且其路径已知（本地）时后台预热其内嵌字幕缓存。远端集 path 为空（跳过）。
+    final int cur = _currentEpisode;
+    if (_episodes.length <= 1 || cur < 0 || cur >= _episodes.length - 1) return;
+    final String path = _episodes[cur + 1].path;
+    if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
     _lastPrewarmedEpisodePath = path;
     unawaited(prewarmEmbeddedSubtitleCache(path));
   }
@@ -5118,6 +5063,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ? t.video_quality_auto
               : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
       onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
+      // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当渲染 channel 已接线
+      // （Android）、本次运行确实跑 Impeller、且用户尚未选 Skia 时接线（=可能中招黑屏
+      // 的人群）；否则 null 不显示该行。点按走确认弹窗 → 关 Impeller → 重启。
+      onSwitchToSkiaRenderer: (RenderBackendService.instance.isSupported &&
+              !RenderBackendService.instance.impellerDisabled &&
+              !RenderBackendService.instance.activeImpellerDisabled)
+          ? _switchToSkiaAndRestart
+          : null,
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
@@ -5161,6 +5114,48 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ));
     }
     return options;
+  }
+
+  /// TODO-1232 / BUG-597：播放器设置面板「切 Skia 并重启」降级行的动作。视频「有声无画」
+  /// 黑屏根因是本机 GPU 上 Impeller 合成不了 media_kit 外部纹理（SurfaceProducer）；Android
+  /// 默认已保持 Impeller（多数机型性能优先），本动作给受影响机型一个显式降级：确认弹窗 →
+  /// 写 native pref 关 Impeller（下次启动走 Skia）→ 重启 app 使其生效。渲染后端只能在引擎
+  /// 启动那一刻定，故必须重启；不支持重启的平台降级为 toast 提示手动重开。仅在
+  /// [_buildVideoQuickSettingsSheet] 判定本次跑 Impeller + channel 已接线时才接线此动作。
+  Future<void> _switchToSkiaAndRestart() async {
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: Text(t.video_render_skia_fix_confirm_title),
+            content: Text(t.video_render_skia_fix_confirm_body),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(t.video_render_skia_fix_confirm_action),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    final bool ok =
+        await RenderBackendService.instance.setImpellerDisabled(true);
+    if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
+      // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
+      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      return;
+    }
+    try {
+      await appModel.platformServices.lifecycle.restartApp();
+    } catch (e) {
+      // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
+      debugPrint('[render] switch to Skia restart failed: $e');
+      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+    }
   }
 
   void _showPlayerSettings({

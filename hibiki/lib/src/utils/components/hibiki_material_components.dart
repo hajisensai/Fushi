@@ -1766,6 +1766,16 @@ class _HibikiPageHeaderRow extends StatelessWidget {
           final double maxActionsWidth = constraints.maxWidth.isFinite
               ? (constraints.maxWidth - actionsGap).clamp(0.0, double.infinity)
               : double.infinity;
+          // 带 label 的动作是否展开成药丸：按**页头本地可用宽**（而非整窗宽）判定，经
+          // UI 缩放还原真实宽后仅 expanded（≥840）才展开。桌面带导航栏 / 分栏时整窗
+          // ≥840 但本地宽更窄，若按整窗判定会误展开、把 [Expanded] 标题挤到贴按钮/折行
+          // （用户反馈「已经重叠了还没降级成无字」）。经 [HibikiHeaderLabelScope] 下发。
+          final bool expandLabels = constraints.maxWidth.isFinite &&
+              windowSizeClassReal(
+                    constraints.maxWidth,
+                    HibikiAppUiScale.of(context),
+                  ) ==
+                  WindowSizeClass.expanded;
           children
             ..add(SizedBox(width: actionsGap))
             ..add(
@@ -1774,7 +1784,10 @@ class _HibikiPageHeaderRow extends StatelessWidget {
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   physics: const ClampingScrollPhysics(),
-                  child: actions,
+                  child: HibikiHeaderLabelScope(
+                    expandLabels: expandLabels,
+                    child: actions!,
+                  ),
                 ),
               ),
             );

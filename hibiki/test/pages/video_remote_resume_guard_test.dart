@@ -194,7 +194,7 @@ void main() {
       // 单视频播放也落同一键空间（带时间戳），消除「两套键」特殊情况。
       final String persist = region(
         'Future<void> _persistPosition(String uid, int posMs) async {',
-        'String _encodeEpisodes()',
+        'void _prewarmNextEpisodeSubtitleCache()',
       );
       expect(
         persist.contains('updatePosition(uid, posMs)'),
@@ -202,24 +202,18 @@ void main() {
         reason:
             'single video must still write lastPositionMs (backward compat)',
       );
-      // TODO-885: 镜像改用按集 key 函数（episodeIndex 0 等价整书 key，向后兼容）；
-      // 播放列表按 _currentEpisode 镜像，让 client 按集恢复 host 自看进度。
+      // TODO-885 / 统一合集 Phase 3：镜像用按集 key 函数（episodeIndex 0 等价整书 key）。
+      // 拆集后每集是独立 VideoBooks 行 → 恒按集 0 镜像（不再按 _currentEpisode 分集）。
       expect(
-        persist.contains('videoRemotePositionEpisodePrefKey(uid,'),
+        persist.contains('videoRemotePositionEpisodePrefKey(uid, 0)'),
         isTrue,
         reason: 'host self-play must mirror into the remote-position key space',
       );
       expect(
-        persist.contains('videoRemotePositionEpisodeAtPrefKey(uid,'),
+        persist.contains('videoRemotePositionEpisodeAtPrefKey(uid, 0)'),
         isTrue,
         reason:
             'host self-play must stamp an updatedAt for conflict resolution',
-      );
-      expect(
-        persist.contains(
-            'videoRemotePositionEpisodePrefKey(uid, _currentEpisode)'),
-        isTrue,
-        reason: 'playlist host self-play must mirror per current episode',
       );
     });
   });

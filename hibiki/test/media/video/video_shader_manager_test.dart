@@ -291,4 +291,63 @@ void main() {
       expect(resolveShaderPathsIn(dir, <String>['x.glsl']), isEmpty);
     });
   });
+
+  group('buildShaderChangeListCommands（BUG-759 根因守卫）', () {
+    test('空启用集 → 只有一条 clr（清空整链）', () {
+      expect(buildShaderChangeListCommands(const <String>[]), <List<String>>[
+        <String>['change-list', 'glsl-shaders', 'clr', ''],
+      ]);
+    });
+
+    test('多路径 → clr 打头，再逐个 append，保持勾选顺序', () {
+      final List<List<String>> cmds = buildShaderChangeListCommands(<String>[
+        '/shaders/Restore.glsl',
+        '/shaders/Upscale.glsl',
+      ]);
+      expect(cmds, <List<String>>[
+        <String>['change-list', 'glsl-shaders', 'clr', ''],
+        <String>[
+          'change-list',
+          'glsl-shaders',
+          'append',
+          '/shaders/Restore.glsl'
+        ],
+        <String>[
+          'change-list',
+          'glsl-shaders',
+          'append',
+          '/shaders/Upscale.glsl'
+        ],
+      ]);
+    });
+
+    test('Windows 盘符路径（含 : 与反斜杠）作为独立参数原样传入，绝不拼分隔符', () {
+      const String winPath =
+          r'D:\APP\HIBIKI_date\support\mpv_shaders\Anime4K_Clamp_Highlights.glsl';
+      final List<List<String>> cmds =
+          buildShaderChangeListCommands(<String>[winPath]);
+      // append 命令的第 4 个参数必须是原始路径（未被任何分隔符切分/转义）。
+      expect(cmds.last,
+          <String>['change-list', 'glsl-shaders', 'append', winPath]);
+      // 关键回归守卫：绝不出现被证伪的 `glsl-shaders-append` property 名（空下发根因）。
+      for (final List<String> cmd in cmds) {
+        expect(cmd.contains('glsl-shaders-append'), isFalse,
+            reason: 'glsl-shaders-append 不是合法 property 名，会被 media_kit '
+                '静默吞掉导致着色器空下发（BUG-759）——必须走 change-list 命令');
+      }
+    });
+  });
+
+  group('applyShadersToPlayer 源码守卫（BUG-759）', () {
+    test('apply 路径用 native.command，且不再用 glsl-shaders-append property', () {
+      final String src = File('lib/src/media/video/video_shader_manager.dart')
+          .readAsStringSync();
+      // 必须经 command 下发 change-list（正确的运行时改列表机制）。
+      expect(src.contains('native.command('), isTrue,
+          reason: '着色器必须经 NativePlayer.command 下发 change-list');
+      // 绝不再用 setProperty 设 glsl-shaders-append（会 PROPERTY_NOT_FOUND 空下发）。
+      expect(src.contains("setProperty('glsl-shaders-append'"), isFalse,
+          reason: 'glsl-shaders-append 作为 property 非法，会导致空下发（BUG-759）');
+    });
+  });
 }

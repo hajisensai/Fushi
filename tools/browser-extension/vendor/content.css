@@ -24,14 +24,13 @@
 /* A big portion of the CSS was directly copied from Yomitan */
 /* https://github.com/yomidevs/yomitan/blob/d810b2f0842536d24ab82b6cd75d00841710e57b/ext/css/structured-content.css */
 
-#entries-container,
-#entries-container * {
+:where(#entries-container, #entries-container *) {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
-#entries-container {
+:where(#entries-container) {
     --font-size-no-units: 15;
     --line-height: 1.4;
     --list-padding1: 1.4em;
@@ -73,7 +72,7 @@
     direction: ltr;
 }
 
-#entries-container {
+:where(#entries-container) {
     overflow-x: hidden;
     padding: 0 10px 10px;
 }
@@ -86,28 +85,28 @@
    WebView / Windows WebView2 / macOS WKWebView. color-scheme is pinned per theme
    in the html[data-theme] blocks below -- WebView2's Fluent overlay scrollbar
    ignores ::-webkit-scrollbar and only follows the UA color-scheme. */
-#entries-container {
+:where(#entries-container) {
     scrollbar-width: thin;
     scrollbar-color: var(--text-color) transparent;
 }
 
-#entries-container ::-webkit-scrollbar {
+:where(#entries-container) ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-#entries-container ::-webkit-scrollbar-track {
+:where(#entries-container) ::-webkit-scrollbar-track {
     background: transparent;
 }
 
-#entries-container ::-webkit-scrollbar-thumb {
+:where(#entries-container) ::-webkit-scrollbar-thumb {
     background-color: var(--text-color);
     background-clip: padding-box;
     border: 2px solid transparent;
     border-radius: 8px;
 }
 
-#entries-container ::-webkit-scrollbar-corner {
+:where(#entries-container) ::-webkit-scrollbar-corner {
     background: transparent;
 }
 
@@ -491,13 +490,13 @@
     padding: 2px 4px;
 }
 
-#entries-container hr {
+:where(#entries-container) hr {
     border: none;
     border-top: 1px solid var(--outline-variant);
     margin: 4px 0;
 }
 
-#entries-container a {
+:where(#entries-container) a {
     color: var(--primary-color);
 }
 
@@ -581,7 +580,7 @@
     filter: brightness(0);
 }
 
-#entries-container[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.gloss-image {
+:where(#entries-container)[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.gloss-image {
     filter: brightness(0) invert(1);
 }
 
@@ -640,7 +639,7 @@
         0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-#entries-container[data-theme="dark"] .glossary-group {
+:where(#entries-container)[data-theme="dark"] .glossary-group {
     border-color: rgba(255, 255, 255, 0.09);
     box-shadow: 0 1px 1px rgba(0, 0, 0, 0.36);
 }
@@ -1095,12 +1094,12 @@
     color: inherit;
 }
 
-#entries-container ::selection {
+:where(#entries-container) ::selection {
     background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
 }
 
-#entries-container[data-theme="light"] {
+:where(#entries-container)[data-theme="light"] {
     color-scheme: light;
     --background-color: #fff;
     --background-color-light: #fff;
@@ -1114,7 +1113,7 @@
     --on-surface-variant: var(--md-on-surface-variant, #44483F);
 }
 
-#entries-container[data-theme="dark"] {
+:where(#entries-container)[data-theme="dark"] {
     color-scheme: dark;
     --background-color: #000;
     --background-color-light: #000;
@@ -1334,6 +1333,11 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    /* BUG-763 修「模态显示不全」：卡是 flex column + max-height:92%，中间预览区
+       (.scm-boxes) 必须能收缩才会触发其内部滚动。overflow:hidden 把内容夹在 max-height
+       内（配合 .scm-boxes 的 flex:1 1 auto;min-height:0），头/标题/计数/按钮/底栏各占
+       固有高度，预览区吸收剩余空间并滚动，不再被撑破挤成半行、按钮压在预览上。 */
+    overflow: hidden;
     padding: 16px;
     border-radius: var(--hibiki-radius-card, 14px);
     background: var(--background-color, #fff);
@@ -1375,6 +1379,11 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* BUG-763：在 flex column 里 item 默认 min-height:auto（不小于内容），会拒绝收缩，
+       overflow-y:auto 永不触发、整卡被撑破。flex:1 1 auto + min-height:0 放开收缩，
+       激活内部滚动，让多句预览在卡内滚动而非溢出遮挡按钮。 */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }

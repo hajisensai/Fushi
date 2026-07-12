@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Variable;
+import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:hibiki/src/sync/aggregate_merge_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
@@ -44,11 +44,23 @@ class BackupMergeEngine {
     this._db, {
     String srcAlias = 'mergesrc',
     Set<String> carriedVideoSourcePaths = const <String>{},
+    Set<String>? enabledCategoryNames,
   })  : _srcAlias = srcAlias,
-        _carriedVideoSourcePaths = carriedVideoSourcePaths;
+        _carriedVideoSourcePaths = carriedVideoSourcePaths,
+        _enabledCategoryNames = enabledCategoryNames;
 
   final HibikiDatabase _db;
   final String _srcAlias;
+
+  /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
+  /// the import dialog); null = merge every category (legacy full merge). Only
+  /// the user-facing content categories are gated here — favorites / tags /
+  /// profiles / history rows have no dialog toggle and always merge.
+  final Set<String>? _enabledCategoryNames;
+
+  /// Whether category [name] (a `BackupCategory.name`) should be merged.
+  bool _wants(String name) =>
+      _enabledCategoryNames == null || _enabledCategoryNames.contains(name);
 
   /// Source-device absolute video paths whose file actually travelled inside the
   /// backup (= `BackupMeta.videoFiles.keys`). A merged `video_books` row is only
@@ -87,33 +99,67 @@ class BackupMergeEngine {
   /// `favorite_sentence_pref_key_guard_test.dart`.
   static const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
+  /// Content-config preference keys carrying the local-audio registry (their
+  /// referenced `.db` files travel in the backup), merged by
+  /// [_mergeAudioSourcePrefs] instead of being dropped as device settings.
+  static const List<String> _audioSourcePrefKeys = <String>[
+    'local_audio_dbs',
+    'audio_source_configs',
+  ];
+
   /// Runs the whole merge inside a single transaction. The backup DB must
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   Future<void> merge() async {
     await _db.transaction(() async {
-      await _insertMissing('epub_books', 'book_key', skipBookTombstones: true);
-      await _insertMissingVideoBooks();
-      await _insertMissing('dictionary_metadata', 'name');
-      await _insertMissing('srt_books', 'uid');
-      await _insertMissing('audiobooks', 'book_key', skipBookTombstones: true);
-      await _insertAudioCues();
-      await _mergeReaderPositions();
-      await _mergeReadingStatistics();
-      await _mergeVideoWatchStatistics();
-      await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
-      await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
-      await _mergeMiningStatistics();
-      await _mergeLookupMiningCounters();
-      await _mergeFavoriteWords();
-      await _mergeMinedSentences();
+      // Content categories are gated by the import dialog's per-category
+      // selection (merge mode). Rows with no dialog toggle (favorites / tags /
+      // profiles / history / collections) always merge — they carry no bulk
+      // content and their FK/EXISTS guards no-op harmlessly when their owners
+      // were skipped.
+      if (_wants('books')) {
+        await _insertMissing('epub_books', 'book_key',
+            skipBookTombstones: true);
+        // srt_books dedups on `uid` but must honour the deleted book's tombstone
+        // via its own `book_key` — else deleting a book then merging an old
+        // backup resurrects an orphan srt row (no epub) = an "empty book".
+        await _insertMissing('srt_books', 'uid',
+            skipBookTombstones: true, tombstoneKeyColumn: 'book_key');
+      }
+      if (_wants('videos')) await _insertMissingVideoBooks();
+      if (_wants('dictionary')) {
+        await _insertMissing('dictionary_metadata', 'name');
+      }
+      if (_wants('audiobooks')) {
+        await _insertMissing('audiobooks', 'book_key',
+            skipBookTombstones: true);
+        await _insertAudioCues();
+      }
+      // Media collections (unified-collections Phase 5) have no dialog toggle:
+      // always merge the grouping itself; orphan members are kept and folded in
+      // the UI. Self-guards against missing src tables (pre-migration backups).
+      await _mergeMediaCollections();
+      if (_wants('progress')) await _mergeReaderPositions();
+      if (_wants('statistics')) {
+        await _mergeReadingStatistics();
+        await _mergeVideoWatchStatistics();
+        await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
+        await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
+        await _mergeMiningStatistics();
+        await _mergeLookupMiningCounters();
+        await _mergeFavoriteWords();
+        await _mergeMinedSentences();
+      }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeProfilesAndChildren();
       await _insertMissing('media_items', 'unique_key');
       await _insertMissing('search_history_items', 'unique_key');
       await _insertMissing('anki_mappings', 'label');
-      await _mergeBookmarks();
-      await _mergeAudiobookPositionPrefs();
+      if (_wants('progress')) {
+        await _mergeBookmarks();
+        await _mergeAudiobookPositionPrefs();
+      }
+      if (_wants('localAudio')) await _mergeAudioSourcePrefs();
     });
   }
 
@@ -210,19 +256,24 @@ class BackupMergeEngine {
   /// already present in the target. Explicit column list (minus `id`) so SQLite
   /// assigns fresh autoincrement ids and never reuses the src id.
   ///
-  /// [skipBookTombstones] additionally excludes any src row whose [keyColumn]
-  /// (a `book_key`) is tombstoned in the target — i.e. the user deleted that
-  /// book on this device, so an old backup must never resurrect it (TODO-1195
-  /// part B). Overwrite import does not go through here.
+  /// [skipBookTombstones] additionally excludes any src row whose book key is
+  /// tombstoned in the target — i.e. the user deleted that book on this device,
+  /// so an old backup must never resurrect it (TODO-1195 part B). The tombstoned
+  /// column is [keyColumn] by default, but a table that dedups on a non-book-key
+  /// column (e.g. `srt_books` dedups on `uid` yet carries its own `book_key`)
+  /// passes [tombstoneKeyColumn] so the guard still matches `book_tombstones`.
+  /// Overwrite import does not go through here.
   Future<void> _insertMissing(
     String table,
     String keyColumn, {
     bool skipBookTombstones = false,
+    String? tombstoneKeyColumn,
   }) async {
     final List<String> cols = await _columnsExceptId(table);
     final String colList = cols.join(', ');
+    final String tombCol = tombstoneKeyColumn ?? keyColumn;
     final String tombstoneGuard = skipBookTombstones
-        ? 'AND s.$keyColumn NOT IN (SELECT book_key FROM book_tombstones) '
+        ? 'AND s.$tombCol NOT IN (SELECT book_key FROM book_tombstones) '
         : '';
     await _db.customStatement(
       'INSERT INTO $table ($colList) '
@@ -249,6 +300,118 @@ class BackupMergeEngine {
       'AND $_reachableVideoPredicate',
       _reachableVideoArgs,
     );
+  }
+
+  /// media_collections + media_collection_items 合并（统一合集 Phase 5）。合集主键是
+  /// 自增 `id`，跨库必冲突，故不能像其它表那样 INSERT...SELECT 直搬——按自然键
+  /// (name, collection_type) 幂等对齐：src 合集若目标已有同名同类型则复用其 id，否则
+  /// 新插得新 id；再把 src 成员的 collection_id 经 src→target id 映射改写后
+  /// INSERT OR IGNORE（成员复合主键 {collection_id, media_type, entry_key} 天然去重）。
+  ///
+  /// 说明：备份 DB 已在 ATTACH 前迁到当前 schema，故其 series/playlist 已经过 v38
+  /// 迁移落进 media_collections，这里搬的就是「合集分组」本身。孤儿成员引用（其条目文件
+  /// 未随备份到达、未插入 target）保留不删——UI 折叠时按实际条目跳过孤儿，日后条目补回
+  /// 即自动归位（保留用户分组意图）。
+  Future<void> _mergeMediaCollections() async {
+    if (!await _srcTableExists('media_collections') ||
+        !await _srcTableExists('media_collection_items')) {
+      return; // 迁移前的旧备份无合集表：无可合并。
+    }
+    final List<QueryRow> srcCols = await _db
+        .customSelect(
+          'SELECT id, name, collection_type, cover_source, sort_order, '
+          'created_at FROM $_srcAlias.media_collections',
+        )
+        .get();
+    if (srcCols.isEmpty) return;
+
+    // 目标现有 (name, collection_type) → id，用于幂等对齐。
+    final List<QueryRow> tgtCols = await _db
+        .customSelect('SELECT id, name, collection_type FROM media_collections')
+        .get();
+    final Map<String, int> targetIdByKey = <String, int>{
+      for (final QueryRow r in tgtCols)
+        _collectionKey(
+          r.read<String>('name'),
+          r.read<String>('collection_type'),
+        ): r.read<int>('id'),
+    };
+    int nextSort = await _nextTargetCollectionSortOrder();
+
+    // src.id → target.id 映射（复用或新插）。
+    final Map<int, int> srcToTargetId = <int, int>{};
+    for (final QueryRow c in srcCols) {
+      final int srcId = c.read<int>('id');
+      final String name = c.read<String>('name');
+      final String type = c.read<String>('collection_type');
+      final String key = _collectionKey(name, type);
+      final int? existing = targetIdByKey[key];
+      if (existing != null) {
+        srcToTargetId[srcId] = existing;
+        continue;
+      }
+      final int newId = await _db.customInsert(
+        'INSERT INTO media_collections '
+        '(name, collection_type, cover_source, sort_order, created_at) '
+        'VALUES (?, ?, ?, ?, ?)',
+        variables: <Variable<Object>>[
+          Variable<String>(name),
+          Variable<String>(type),
+          // cover_source 可空：Variable<String> 接受 null 值 → 落 SQL NULL。
+          Variable<String>(c.read<String?>('cover_source')),
+          Variable<int>(nextSort++),
+          Variable<int>(c.read<int>('created_at')),
+        ],
+      );
+      srcToTargetId[srcId] = newId;
+      targetIdByKey[key] = newId;
+    }
+
+    // 成员：collection_id 经映射改写后 INSERT OR IGNORE（复合主键去重）。
+    final List<QueryRow> srcItems = await _db
+        .customSelect(
+          'SELECT collection_id, media_type, entry_key, sort_index '
+          'FROM $_srcAlias.media_collection_items',
+        )
+        .get();
+    for (final QueryRow it in srcItems) {
+      final int? tgt = srcToTargetId[it.read<int>('collection_id')];
+      if (tgt == null) continue;
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO media_collection_items '
+        '(collection_id, media_type, entry_key, sort_index) '
+        'VALUES (?, ?, ?, ?)',
+        <Object?>[
+          tgt,
+          it.read<String>('media_type'),
+          it.read<String>('entry_key'),
+          it.read<int>('sort_index'),
+        ],
+      );
+    }
+  }
+
+  /// 自然键：name 与 collection_type 以 NUL 分隔（两者都不含 NUL），避免拼接歧义。
+  static String _collectionKey(String name, String type) => '$name\u0000$type';
+
+  /// 目标 media_collections 的下一个 sort_order（现有最大 +1，空表 0）。
+  Future<int> _nextTargetCollectionSortOrder() async {
+    final QueryRow row = await _db
+        .customSelect(
+          'SELECT COALESCE(MAX(sort_order), -1) AS m FROM media_collections',
+        )
+        .getSingle();
+    return row.read<int>('m') + 1;
+  }
+
+  /// src(备份)库是否有名为 [table] 的表（防旧备份缺合集表时 SELECT 崩溃）。
+  Future<bool> _srcTableExists(String table) async {
+    final QueryRow? row = await _db.customSelect(
+      'SELECT 1 FROM $_srcAlias.sqlite_master '
+      "WHERE type = 'table' AND name = ?",
+      variables: <Variable<Object>>[Variable<String>(table)],
+    ).getSingleOrNull();
+    return row != null;
   }
 
   /// AudioCues: import only cues for book_keys with no existing cues in the
@@ -328,36 +491,45 @@ class BackupMergeEngine {
     );
   }
 
-  /// VideoWatchStatistics MAX-union per {title, dateKey}.
+  /// VideoWatchStatistics MAX-union。v39 合并键 = (mergeKey, dateKey)，其中
+  /// mergeKey = book_uid（新行）/ 'title:'+title（迁移遗留 NULL-uid 行回退）——
+  /// 同名不同视频各行独立合并，不再按裸 (title,dateKey) 互相吞并。备份源可能是
+  /// v39 前导出（无 book_uid 列值 → NULL → 回退 title 键，与旧行为一致）。
+  /// 'title:' 前缀防 NULL 回退键与真实 uid 空间相撞（uid 形如 'video/...'）。
+  static const String _watchKeyT = "COALESCE(t.book_uid, 'title:' || t.title)";
+  static const String _watchKeyS = "COALESCE(s.book_uid, 'title:' || s.title)";
+
   Future<void> _mergeVideoWatchStatistics() async {
     await _db.customStatement(
       'INSERT INTO video_watch_statistics '
-      '(title, date_key, subtitle_chars, watch_time_ms, last_modified) '
-      'SELECT title, date_key, subtitle_chars, watch_time_ms, last_modified '
+      '(title, book_uid, date_key, subtitle_chars, watch_time_ms, '
+      'last_modified) '
+      'SELECT title, book_uid, date_key, subtitle_chars, watch_time_ms, '
+      'last_modified '
       'FROM $_srcAlias.video_watch_statistics AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM video_watch_statistics AS t '
-      'WHERE t.title = s.title AND t.date_key = s.date_key) '
+      'WHERE $_watchKeyT = $_watchKeyS AND t.date_key = s.date_key) '
       // TODO-1204 后续：用户删过该视频统计（video 墓碑）→ 旧备份不得复活它。
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'video')",
     );
     await _db.customStatement(
-      'UPDATE video_watch_statistics SET '
-      'subtitle_chars = MAX(subtitle_chars, ('
+      'UPDATE video_watch_statistics AS t SET '
+      'subtitle_chars = MAX(t.subtitle_chars, ('
       'SELECT s.subtitle_chars FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)), '
-      'watch_time_ms = MAX(watch_time_ms, ('
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)), '
+      'watch_time_ms = MAX(t.watch_time_ms, ('
       'SELECT s.watch_time_ms FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)), '
-      'last_modified = MAX(last_modified, ('
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)), '
+      'last_modified = MAX(t.last_modified, ('
       'SELECT s.last_modified FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)) '
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)) '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.video_watch_statistics AS s '
-      'WHERE s.title = video_watch_statistics.title '
-      'AND s.date_key = video_watch_statistics.date_key)',
+      'WHERE $_watchKeyS = $_watchKeyT '
+      'AND s.date_key = t.date_key)',
     );
   }
 
@@ -660,6 +832,57 @@ class BackupMergeEngine {
       "WHERE s.\"key\" LIKE 'audiobook_pos_%' "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
+  }
+
+  /// The audio-source registry prefs are CONTENT config, not device settings:
+  /// the local-audio `.db` files they reference DO travel in the backup (packed
+  /// under `localAudio/` and copied by [BackupService.mergeImportBackupFiles]),
+  /// so their config must travel too — otherwise the restored files are orphaned
+  /// and "音频来源" is silently lost on a merge (the pref-non-merge default
+  /// dropped them). Adopt the backup's value when the device has none/an empty
+  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
+  /// the key is not enough); keep the device's own list otherwise (merge never
+  /// clobbers local). The raw value is copied verbatim so its typed prefix is
+  /// preserved; [BackupService] re-homes the embedded paths onto this device's
+  /// support dir afterwards.
+  Future<void> _mergeAudioSourcePrefs() async {
+    for (final String key in _audioSourcePrefKeys) {
+      final String? src = await _readPrefValue(key, isSrc: true);
+      if (_isEmptyListPref(src)) continue; // backup carries no audio sources
+      final String? local = await _readPrefValue(key, isSrc: false);
+      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      await _db.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>[key, src],
+      );
+    }
+  }
+
+  /// Reads an arbitrary preference [key] value from the target ([isSrc] false)
+  /// or the ATTACHed src ([isSrc] true); null when the row is absent.
+  Future<String?> _readPrefValue(String key, {required bool isSrc}) async {
+    final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
+    final rows = await _db.customSelect(
+      'SELECT "value" FROM $table WHERE "key" = ?',
+      variables: <Variable<Object>>[Variable<String>(key)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.data['value'] as String?;
+  }
+
+  /// Whether a typed list-pref value is absent or an empty list. Tolerates the
+  /// typed prefix (`s:`/`j:`) by parsing from the first `[`; a value we cannot
+  /// parse as a non-empty list counts as empty (never worth clobbering with).
+  static bool _isEmptyListPref(String? raw) {
+    if (raw == null || raw.isEmpty) return true;
+    final int i = raw.indexOf('[');
+    if (i < 0) return true;
+    try {
+      final dynamic decoded = jsonDecode(raw.substring(i));
+      return decoded is! List || decoded.isEmpty;
+    } catch (_) {
+      return true;
+    }
   }
 }
 

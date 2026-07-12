@@ -130,7 +130,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
             _favoritedVideoSentences.remove(_videoFavoriteCacheKey(
               sentence,
               cue.startMs,
-              _currentEpisode,
+              _favoriteSectionIndex,
             ));
           }
           _favoritedVideoSentences.remove(
@@ -149,7 +149,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
         bookTitle: _title ?? widget.bookUid,
         createdAt: DateTime.now(),
         bookKey: widget.bookUid,
-        sectionIndex: _currentEpisode,
+        sectionIndex: _favoriteSectionIndex,
         normCharOffset: cue?.startMs,
         normCharLength: cue == null
             ? null
@@ -164,7 +164,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
         _favoritedVideoSentences.add(_videoFavoriteCacheKey(
           sentence,
           cue?.startMs,
-          _episodes.isEmpty ? null : _currentEpisode,
+          _favoriteSectionIndex,
         ));
       });
     }
@@ -185,7 +185,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     return _favoritedVideoSentences.contains(_videoFavoriteCacheKey(
           text,
           cue.startMs,
-          _episodes.isEmpty ? null : _currentEpisode,
+          _favoriteSectionIndex,
         )) ||
         _favoritedVideoSentences
             .contains(_videoFavoriteCacheKey(text, null, null));
@@ -216,7 +216,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
           bookTitle: _title ?? widget.bookUid,
           createdAt: DateTime.now(),
           bookKey: widget.bookUid,
-          sectionIndex: _currentEpisode,
+          sectionIndex: _favoriteSectionIndex,
           normCharOffset: cue.startMs,
           normCharLength: (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
           source: kFavoriteSentenceSourceVideo,
@@ -231,14 +231,14 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
           ..remove(_videoFavoriteCacheKey(
             sentence,
             cue.startMs,
-            _episodes.isEmpty ? null : _currentEpisode,
+            _favoriteSectionIndex,
           ))
           ..remove(_videoFavoriteCacheKey(sentence, null, null));
       } else {
         _favoritedVideoSentences.add(_videoFavoriteCacheKey(
           sentence,
           cue.startMs,
-          _episodes.isEmpty ? null : _currentEpisode,
+          _favoriteSectionIndex,
         ));
       }
       // 列表 toggle 的若是当前查词那句，同步浮层星标态（两处共用同一收藏记录）。
@@ -283,7 +283,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
         text: text,
         startMs: startMs,
         episodeIndex: episodeIndex,
-        isPlaylist: _episodes.isNotEmpty,
+        isPlaylist: _favoriteIsPlaylist,
       );
 
   Future<List<FavoriteSentence>> _matchingVideoFavorites(
@@ -294,7 +294,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     final List<FavoriteSentence> all = await FavoriteSentenceRepository(
       appModel.database,
     ).getAll();
-    final int? episodeIndex = _episodes.isEmpty ? null : _currentEpisode;
+    final int? episodeIndex = _favoriteSectionIndex;
     return all
         .where(
           (FavoriteSentence s) =>
@@ -304,7 +304,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
               (cue == null
                   ? s.normCharOffset == null
                   : (s.normCharOffset == cue.startMs &&
-                          (_episodes.isEmpty ||
+                          (!_favoriteIsPlaylist ||
                               s.sectionIndex == episodeIndex)) ||
                       (s.normCharOffset == null && s.sectionIndex == null)),
         )

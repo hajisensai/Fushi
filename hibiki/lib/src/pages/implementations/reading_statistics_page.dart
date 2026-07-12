@@ -865,45 +865,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _miniStat(String label, String value) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Container(
-      margin: EdgeInsets.only(right: tokens.spacing.gap),
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: tokens.radii.cardRadius,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: scheme.onSurface,
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _miniStat(String label, String value) =>
+      StatMiniTile(label: label, value: value);
 
   /// 「速度摘要」卡：加权均速 / 典型日 / 近 7 活跃日 / 较前 14 天 / 最快·最慢日。
   Widget _buildSpeedSummaryPanel() {
@@ -951,40 +914,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _summaryTile(String label, String value, {Color? valueColor}) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.only(
-        right: tokens.spacing.gap,
-        bottom: tokens.spacing.card,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: valueColor ?? scheme.onSurface,
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _summaryTile(String label, String value, {Color? valueColor}) =>
+      StatSummaryTile(label: label, value: value, valueColor: valueColor);
 
   Widget _deltaTile(double? delta) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -1261,7 +1192,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             children: [
               Text(
                 book.title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -1312,4 +1243,114 @@ class _BookData {
 
   /// 该书阅读速度（字/小时）。复用统一口径的 [computeCph]。
   double get cph => computeCph(chars, ms);
+}
+
+/// 「今日」面板底部三宫格里的单个迷你统计（速度/连击/收藏）。
+///
+/// 手机窄屏下每格只有约 1/3 卡片宽，之前 [Text] 被 `maxLines: 1` 钉死会把
+/// 中文标签和数值裁成省略号（BUG：手机统计页「好多显示不全的字」）。这里让
+/// 数值与标签都能换行到 2 行，`ellipsis` 只作极端长文案的最后兜底。
+class StatMiniTile extends StatelessWidget {
+  const StatMiniTile({super.key, required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Container(
+      margin: EdgeInsets.only(right: tokens.spacing.gap),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: tokens.radii.cardRadius,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            value,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            label,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 「速度摘要」卡里的半宽小格（加权均速 / 典型日 / 最快·最慢日 等）。
+///
+/// 同样为窄屏放开换行：`_extremeTile` 会塞进「速度 · 日期」这类复合值，半宽格
+/// 单行必被裁；允许 2 行后完整可读，`ellipsis` 仅兜底极端长值。
+class StatSummaryTile extends StatelessWidget {
+  const StatSummaryTile({
+    super.key,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.only(
+        right: tokens.spacing.gap,
+        bottom: tokens.spacing.card,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            value,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: valueColor ?? scheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            label,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
 }

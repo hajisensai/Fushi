@@ -299,10 +299,16 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
     required AppModel appModel,
     HibikiFocusId? focusId,
+    String? label,
   }) {
+    // 不覆盖 size：书架页头同排的其它按钮（管理来源 / 合集 / 统计，走
+    // _headerAction → HibikiIconButton）与视频 tab 的导入按钮都用默认 24。
+    // 此前这里显式塞 titleLarge.fontSize(~22) 让「添加」按钮比兄弟小一圈、
+    // 外框也短一截，看起来大小和位置都对不齐（BUG-735）。回落默认即对齐。
     return HibikiIconButton(
-      size: Theme.of(context).textTheme.titleLarge?.fontSize,
       tooltip: t.srt_import,
+      // 宽窗展开为「图标+文字」（书架页头传入）；null 时保持纯图标（其它调用点）。
+      label: label,
       icon: Icons.library_add_outlined,
       focusId: focusId,
       onTap: () async {

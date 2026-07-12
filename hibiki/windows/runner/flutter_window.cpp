@@ -877,9 +877,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // TODO-1079 — build the overlay window + WebView2 off-screen at
           // startup so the first hotkey lookup hits a WARM surface (no cold
           // create-chain race that left the popup blank / self-closed).
+          // nullptr owner：与 showAt 同源解耦（无 owner，不拉主窗前台）。prewarm
+          // 与 showAt 的 owner 必须一致，否则 ForgetDeadWindow 重建时 owner 漂移。
           global_lookup_window_->PrewarmWebView(
               IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), GetHandle());
+              IntFromValue(args, "height", 600), nullptr);
           result->Success();
         } else if (method == "isWebViewReady") {
           // TODO-1079 — the ready-driven reveal fallback confirms the WebView2
@@ -900,9 +902,14 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
               y = pt.y + 8;
             }
           }
+          // nullptr owner（不传主窗 HWND）：owned 窗显示/Z 序变更会连带把
+          // owner 主窗拉到前台（真机第 4 轮对面板确认的机制，见 1067 注释）。
+          // 用户诉求=悬浮字幕点词等 app 外查词绝不该夺前台（覆盖窗 §5 契约）：
+          // 瞬态窗也解耦成无 owner，与面板一致。短命窗（点外/前台切换即经
+          // arm_dismiss_hooks 自关），主窗最小化时照样收纳，无孤儿窗回归。
           const bool ok = global_lookup_window_->ShowAt(
               x, y, IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), GetHandle());
+              IntFromValue(args, "height", 600), nullptr);
           // TODO-893 (symptom 2) — report the CURSOR MONITOR work area
           // (physical px) so Dart's cascade layout uses the real screen, not
           // the off-screen measurement canvas. computeFrameRect's showBelow /
@@ -1004,6 +1011,11 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
   clipboard_panel_window_ = std::make_unique<GlobalLookupWindow>();
   clipboard_panel_window_->SetArmDismissHooks(false);
   clipboard_panel_window_->SetActivatable(true);
+  // 面板任务栏图标 — 常驻面板有独立任务栏按钮（WS_EX_APPWINDOW）：面板未置顶
+  // （图钉关）被游戏/浏览器压底时，点任务栏图标即可激活+拉回前台。瞬态查词窗
+  // 不设，保持无任务栏项。
+  clipboard_panel_window_->SetTaskbarPresence(true);
+  clipboard_panel_window_->SetWindowTitle(L"Hibiki");
   clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
 
   clipboard_panel_channel_ =
@@ -1067,8 +1079,9 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
           // 真机修复：面板窗必须是**无 owner** 的顶层窗（nullptr，不传主窗
           // HWND）。owned window 有两个致命联动：owner 最小化时被系统一并隐藏
           // （真机症状=最小化 app 面板跟着消失），且 Z 序变更会连带 owner
-          // （点图钉把主 app 拉到前台）。常驻面板的生命周期必须与主窗解耦；
-          // 瞬态查词窗保持 owned 不变（短命窗，随主窗收纳是合理语义）。
+          // （点图钉把主 app 拉到前台）。常驻面板的生命周期必须与主窗解耦。
+          // BUG-741：瞬态查词窗（悬浮字幕点词/热键）此前保持 owned，同一 Z 序
+          // 连带把主窗拉前台——用户否决「随主窗收纳」取舍，故也改无 owner。
           clipboard_panel_window_->PrewarmWebView(
               IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), nullptr);
@@ -1159,6 +1172,11 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
         } else if (method == "setPinned") {
           clipboard_panel_window_->SetTopmost(
               BoolFromValue(args, "pinned", true));
+          result->Success();
+        } else if (method == "setWindowTitle") {
+          // 面板任务栏图标 — Dart 传本地化标题（任务栏按钮 / Alt-Tab 项）。
+          clipboard_panel_window_->SetWindowTitle(
+              Utf8ToWideString(StringFromValue(args, "title", "")));
           result->Success();
         } else if (method == "setWindowAlpha") {
           // spec §6 真机修正 — 整窗 LWA_ALPHA 透明（真透视；acrylic 实测经

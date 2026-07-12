@@ -14,6 +14,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart'
     show
         GlobalLookupController,
@@ -124,6 +125,9 @@ class ClipboardPanelController {
       onOverlayHidden: () => _visible = false,
     );
     await _channel.prepare(_popupAssetsDir());
+    // 面板任务栏图标 — 在预热（窗口创建）之前把本地化标题递给 native，任务栏
+    // 按钮 / Alt-Tab 项从第一帧起就是正确文案；面板被压底时点它即可拉回前台。
+    await _channel.setWindowTitle(t.clipboard_panel_window_title);
     if (appModel.desktopClipboardEnabled &&
         appModel.desktopClipboardDestination ==
             DesktopClipboardDestination.panel) {
@@ -343,6 +347,9 @@ class ClipboardPanelController {
       handler: handler,
       message: message,
       resolveBridge: _channel.resolveBridge,
+      // 剪贴板全文即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发 sentence）。
+      // 与句子横幅同一 `_currentSentence`，落实 spec §2 的「兼作制卡 sentence」。
+      sentenceContext: _currentSentence,
     )) {
       return;
     }
@@ -456,9 +463,16 @@ class ClipboardPanelController {
   }
 
   /// 真机第 4 轮 — 释义文字点击走独立瞬态覆盖窗（「查词弹窗应该可以出这个
-  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。点外即关、
-  /// 携带整句供制卡 sentence 字段。lookupText 返回 false（未 start / 空词）时
-  /// 回退面板内嵌套卡——点击绝不静默丢失。
+  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。点外即关。
+  /// lookupText 返回 false（未 start / 空词）时回退面板内嵌套卡——点击绝不静默
+  /// 丢失。
+  ///
+  /// 句子横幅（sentence=''）：这条路径是**释义文字/内链的子查词**，被点词并不
+  /// 在剪贴板整句里（横幅整句是给面板 root「选词区」用的），故不传 [_currentSentence]
+  /// ——否则瞬态窗顶上会重复贴一条与该词无关的剪贴板内容（面板背后本已显示）。
+  /// 与面板自身「子卡不带横幅」策略（[_renderPanel] 里 root 才带 [_currentSentence]）
+  /// 一致：所有子查词一律无横幅。制卡 sentence 字段不经此横幅（popup.js
+  /// buildMinePayload 不读 __globalLookupSentence），故此处清空零影响制卡。
   ///
   /// 真机第 5 轮 — 卡片锚定在**被点文字**下方而非 OS 光标点：[anchorRect] 是
   /// host 重锚定后的面板窗内 CSS px 矩形（含面板栏/shell 偏移），加上
@@ -473,7 +487,7 @@ class ClipboardPanelController {
               (String text, String sentence, Rect? anchorScreenRect) =>
                   GlobalLookupController.instance.lookupText(text,
                       sentence: sentence, anchorScreenRect: anchorScreenRect);
-      if (await lookup(query, _currentSentence, screenRect)) return;
+      if (await lookup(query, '', screenRect)) return;
     } catch (e, st) {
       glog('panel: external lookup EXCEPTION $e\n$st');
     }

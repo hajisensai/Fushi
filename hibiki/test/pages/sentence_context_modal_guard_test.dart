@@ -135,4 +135,39 @@ void main() {
           reason: '$root/vendor/content.css missing .scm-hl');
     }
   });
+
+  test('BUG-763: 预览区能收缩+滚动（不被按钮区遮挡）', () {
+    final String css = read('assets/popup/popup.css');
+    // .scm-boxes 必须能收缩才会触发内部滚动（flex column 里默认 min-height:auto 拒收缩）。
+    final int boxesStart = css.indexOf('.scm-boxes {');
+    expect(boxesStart, greaterThanOrEqualTo(0));
+    final String boxesRule =
+        css.substring(boxesStart, css.indexOf('}', boxesStart));
+    expect(boxesRule, contains('flex: 1 1 auto'),
+        reason: '.scm-boxes 必须 flex:1 1 auto 吸收剩余空间');
+    expect(boxesRule, contains('min-height: 0'),
+        reason: '.scm-boxes 必须 min-height:0 放开收缩、激活 overflow-y 滚动');
+    expect(boxesRule, contains('overflow-y: auto'));
+    // .scm-card 必须 overflow:hidden 把内容夹在 max-height 内（否则撑破+溢出遮挡按钮）。
+    final int cardStart = css.indexOf('.scm-card {');
+    expect(cardStart, greaterThanOrEqualTo(0));
+    final String cardRule =
+        css.substring(cardStart, css.indexOf('}', cardStart));
+    expect(cardRule, contains('overflow: hidden'),
+        reason: '.scm-card 必须 overflow:hidden 夹住溢出内容');
+  });
+
+  test('BUG-764: 到上下文边界时禁用「+」（诚实反馈，不点了没反应）', () {
+    final String js = read('assets/popup/popup.js');
+    expect(js, contains('reqPrev'));
+    expect(js, contains('reqNext'));
+    expect(
+        js,
+        contains(
+            'prevPlusBtn.disabled = reqPrev !== null && prev.length < reqPrev'));
+    expect(
+        js,
+        contains(
+            'nextPlusBtn.disabled = reqNext !== null && next.length < reqNext'));
+  });
 }

@@ -658,6 +658,15 @@ void main() {
               'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
               'art / reader-shelf content, not ordinary page chrome — same '
               'reviewed exception class as the reader-shelf book-cover overlays.',
+      // 统一合集 playlist 详情页的剧集列表渲染每集封面缩略图（Image.file + ClipRRect
+      // 圆角 + 无封面 letterbox 占位 surfaceContainerHighest）——每集独立视频的封面
+      // 美术内容，非普通页面 chrome，同 series_shelf_card 马赛克封面 / 书架封面豁免类。
+      'lib/src/pages/implementations/media_collection_detail_page.dart':
+          'Unified-collection playlist detail lists per-episode cover '
+              'thumbnails (Image.file + ClipRRect radius + no-cover letterbox '
+              'placeholder using surfaceContainerHighest); episode cover art / '
+              'media-shelf content, not ordinary page chrome — same reviewed '
+              'exception class as series_shelf_card mosaic covers.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
@@ -891,15 +900,6 @@ void main() {
           'Cupertino destination list still wraps platform navigation rows.',
       'lib/src/utils/components/hibiki_list_tile.dart':
           'Legacy compatibility adapter wraps framework ListTile.',
-      'lib/src/utils/components/hibiki_reorderable_grid.dart':
-          'TODO-947-2 the 2D drag-reorder grid paints a transient non-interactive '
-              '"new collection" merge affordance (_wrapMergeHighlight) on the '
-              'drop-target cell during a merge gesture; its BorderRadius.circular(12) '
-              'is only the fallback when the caller supplies no feedbackBorderRadius '
-              '(callers pass their own card radius), so it is a transient drag/merge '
-              'interaction affordance rendered by a shared gesture primitive, not '
-              'ordinary settings/list page chrome — same reviewed exception class as '
-              'the allowlisted reader-shelf book-cover overlays / drag affordances.',
       'lib/src/utils/components/hibiki_text_selection_controls.dart':
           'Shared text-selection toolbar owns its transient surface.',
       'lib/src/utils/misc/update_checker_ui.dart':

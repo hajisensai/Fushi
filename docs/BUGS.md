@@ -27,11 +27,46 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 715 条。点号进各自文件。
+> 共 750 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-730](bugs/BUG-730-reader-mdx-crossref-link.md) | ✅ | ✅ | MDX词典类义语交叉引用链接点击后面板空白 |
+| [BUG-767](bugs/BUG-767-reader-mdx-crossref-link.md) | ✅ | ✅ | MDX词典类义语交叉引用链接点击后面板空白 |
+| [BUG-766](bugs/BUG-766-video-batch-book-counter.md) | ✅ | ✅ | 视频页批量删除/打标签文案误用「本书」量詞 |
+| [BUG-765](bugs/BUG-765-reader-selection-handles-cannot-drag.md) | ✅ | ✅ | 阅读器移动端自绘选区两端手柄拖不动 |
+| [BUG-764](bugs/BUG-764-scm-cross-paragraph-no-next.md) | ✅ | ✅ | 制卡「后加一句/前退一句」跨段落无反应（不支持跨 `<p>`） |
+| [BUG-763](bugs/BUG-763-scm-modal-clipped.md) | ✅ | ✅ | 制卡「选择句子上下文」模态显示不全（预览被按钮区遮挡） |
+| [BUG-762](bugs/BUG-762-popup-native-selection-freeze.md) | ✅ | ✅ | 词典弹窗长按释义弹原生选择菜单后卡住 |
+| [BUG-759](bugs/BUG-759-anime4k-shader-noop.md) | ✅ | ✅ | Anime4K 着色器开了跟没开一样（glsl-shaders-append 非法 property 空下发） |
+| [BUG-758](bugs/BUG-758-local-video-card-right-click.md) | ✅ | ✅ | 本地视频卡不支持右键弹菜单 |
+| [BUG-757](bugs/BUG-757-lyrics-audio-follow-snap.md) | ✅ | ✅ | 歌词模式音频跟随失效（followAudio 门控 + snap 回中不生效） |
+| [BUG-756](bugs/BUG-756-lyrics-input-no-chrome-no-esc.md) | ✅ | ✅ | 歌词模式唤不出隐藏底栏 + esc 退不出 |
+| [BUG-755](bugs/BUG-755-interconnect-token-label-clipped.md) | ✅ | ✅ | 互联对端访问令牌浮动标签上半截被折叠区裁剪 |
+| [BUG-754](bugs/BUG-754-clipboard-transient-banner-dup.md) | ✅ | ✅ | 剪贴板面板释义子查词瞬态窗顶部重复贴剪贴板整句横幅 |
+| [BUG-753](bugs/BUG-753-header-pill-crushes-title.md) | ✅ | ✅ | 页头标签药丸按本地宽降级失败·挤压书架标题重叠 |
+| [BUG-752](bugs/BUG-752-ext-content-css-reset-specificity.md) | ✅ | ✅ | 扩展查词弹窗与app内完全不一样：content.css生成器把通用reset抬到ID特异性压死低特异性margin/padding |
+| [BUG-751](bugs/BUG-751-panel-header-buttons-washed-out.md) | ✅ | ✅ | 剪贴板半透明面板顶部按钮(制卡/音频/收藏)几乎不可见 |
+| [BUG-750](bugs/BUG-750-remote-tab-reload.md) | ✅ | ✅ | 远端视频/书切 tab 每次重新加载（顶层 tab 无保活） |
+| [BUG-749](bugs/BUG-749-lookup-window-floor-region-eats-clicks.md) | ✅ | ✅ | app外查词覆盖窗铺满工作区吞掉下一次点击 |
+| [BUG-748](bugs/BUG-748-vn-blank-tap-advance-vertical.md) | ✅ | ✅ | VN居中竖排布局下点击空白翻页永不触发(caret clamp到文字) |
+| [BUG-747](bugs/BUG-747-desktop-restart-button-only-exits.md) | ✅ | ✅ | 桌面导入后点立即重启只退出不重启 |
+| [BUG-746](bugs/BUG-746-overwrite-import-rename-access-denied.md) | ✅ | ✅ | 覆盖导入书籍树换名Windows拒绝访问导致整个导入失败 |
+| [BUG-745](bugs/BUG-745-merge-import-deleted-book-empty-orphan.md) | ✅ | ✅ | 合并导入让已删书变空书籍(srt行不认书墓碑被复活) |
+| [BUG-744](bugs/BUG-744-merge-import-audio-sources-lost.md) | ✅ | ✅ | 合并导入不恢复音频来源(音频源配置/本地音频库被当设备设置丢弃) |
+| [BUG-743](bugs/BUG-743-dual-subtitle-bounce-and-large-display-overlap.md) | ✅ | ✅ | 双轨字幕来回弹跳 + 大屏底部双语塌陷重叠 |
+| [BUG-742](bugs/BUG-742-subtitle-blur-weak.md) | ✅ | ✅ | 视频听力沉浸字幕模糊度不够(固定8px不随字号缩放) |
+| [BUG-741](bugs/BUG-741-transient-lookup-window-owned-pulls-main-foreground.md) | ✅ | ✅ | 悬浮字幕点词瞬态查词窗owned·Z序连带把主窗拉前台 |
+| [BUG-740](bugs/BUG-740-overlay-window-dead-handle-no-recreate.md) | ✅ | ✅ | 覆盖窗HWND被外部销毁后悬垂hwnd_不重建·第二个弹窗出不来 |
+| [BUG-739](bugs/BUG-739-video-volume-device-switch.md) | ✅ | ✅ | 反复切换音频输出设备后视频音量逐步变小甚至静音 |
+| [BUG-738](bugs/BUG-738-mine-icon-charset-mojibake.md) | ✅ | ✅ | 手机制卡后制卡按钮图标乱码 âœ (UTF-8 编码丢失/file:// opaque origin 外链脚本回退 1252) |
+| [BUG-737](bugs/BUG-737-selfclosing-anchor-blocks-lookup.md) | ✅ | ✅ | 自闭合a锚点被HTML解析成未闭合a包裹正文导致点字查词被链接守卫拒绝 |
+| [BUG-736](bugs/BUG-736-extension-popup-theme-vars.md) | ✅ | ✅ | 浏览器扩展查词弹窗主题与 app 不一致(漏发4个CSS变量) |
+| [BUG-735](bugs/BUG-735-shelf-add-button-size.md) | ✅ | ✅ | 书架添加按钮尺寸位置与其它头部按钮不一致 |
+| [BUG-734](bugs/BUG-734-stats-mobile-text-clip.md) | ✅ | ✅ | 手机统计页文字被省略号裁切显示不全 |
+| [BUG-733](bugs/BUG-733-popup-glossary-ruby-element-base-overlap.md) | ✅ | ✅ | 词典弹窗释义正文元素基字 ruby 注音塌到基字上 |
+| [BUG-732](bugs/BUG-732-ext-page-scroll.md) | ✅ | ✅ | 扩展影响普通网页滚动速度 |
+| [BUG-731](bugs/BUG-731-backup-font-count-inflated.md) | ✅ | ✅ | 备份导出自定义字体计数虚高(2个显示7个) |
+| [BUG-730](bugs/BUG-730-clipboard-mine-sentence.md) | ✅ | ✅ | 剪贴板/全局查词制卡句子字段恒空（未接剪贴板文本） |
 | [BUG-729](bugs/BUG-729-simple-dict-inflected-lookup.md) | ✅ | ✅ | MDX/StarDict/DSL 等 simple 词典屈折形查词命中丢失 |
 | [BUG-728](bugs/BUG-728-shelf-audiobook-progress.md) | ✅ | ✅ | 书架有声书进度条听书时不更新 |
 | [BUG-727](bugs/BUG-727-mdx-encrypted-keyinfo.md) | ✅ | ✅ | MDX Encrypted=2 词典导入失败 empty key block info |

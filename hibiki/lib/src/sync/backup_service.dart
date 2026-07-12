@@ -649,9 +649,12 @@ class BackupService {
     final int audiobooks = (await _db.getAllAudiobooks()).length;
     final int videos = (await _db.allVideoBooks()).length;
     final int dictionaries = (await _db.getAllDictionaryMetadata()).length;
-    final int fonts = _fontsRootDirectory == null
-        ? 0
-        : await _countFilesInTree(Directory(_fontsRootDirectory));
+    // Count the fonts the USER manages (catalog entries whose file lives under
+    // custom_fonts/), not every file in the tree: failed `_tmp_*` downloads and
+    // replaced-but-unreferenced old files inflated the count (a user with 2
+    // fonts saw 7). This is also exactly what the export packs, so the preview
+    // count, the packed content and the import readback all agree.
+    final int fonts = (await _referencedFontFiles()).length;
     final int localAudio = await _countLocalAudioDbs();
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       BackupCategory.dictionary: dictionaries,
@@ -670,13 +673,76 @@ class BackupService {
     );
   }
 
-  static Future<int> _countFilesInTree(Directory root) async {
-    if (!await root.exists()) return 0;
-    int n = 0;
-    await for (final FileSystemEntity e in root.list(recursive: true)) {
-      if (e is File) n++;
+  /// The custom-font files under [_fontsRootDirectory] the user actually
+  /// manages: every `path` referenced by the canonical font catalog (or its
+  /// legacy shadow lists) that resolves to an existing file under the fonts
+  /// root. Orphan/temp leftovers in the tree (failed `_tmp_*` downloads,
+  /// replaced-but-unreferenced old files) are excluded, so the export count and
+  /// the packed content match the custom-fonts page instead of the raw file
+  /// total (root fix for "2 fonts shown as 7"). System fonts, whose catalog
+  /// entries point outside custom_fonts/, are excluded because no file travels.
+  /// Returned paths keep their original (as-stored) form, deduped by their
+  /// forward-slash-normalized value.
+  Future<List<String>> _referencedFontFiles() async {
+    final String? root = _fontsRootDirectory;
+    if (root == null) return const <String>[];
+    final Directory rootDir = Directory(root);
+    if (!await rootDir.exists()) return const <String>[];
+    final String rootNorm = rootDir.path.replaceAll(r'\', '/');
+    final Set<String> seen = <String>{};
+    final List<String> result = <String>[];
+    for (final String key in <String>[
+      _fontCatalogPrefKey,
+      ..._legacyFontPrefKeys,
+    ]) {
+      final String? json = await _db.getPref(key);
+      if (json == null || json.isEmpty) continue;
+      for (final String path in _fontPathsFromPrefJson(json)) {
+        if (path.isEmpty) continue;
+        if (!_isUnderRoot(path, rootNorm)) continue;
+        if (!await File(path).exists()) continue;
+        if (seen.add(path.replaceAll(r'\', '/'))) result.add(path);
+      }
     }
-    return n;
+    return result;
+  }
+
+  /// Extracts font-file `path` strings from a persisted font pref [json]: the
+  /// canonical catalog `{version, fonts:[{id, name, path}]}` or a legacy list
+  /// `[{name, path, enabled}]`. A malformed value yields nothing rather than
+  /// throwing (a corrupt pref never aborts an export summary).
+  static Iterable<String> _fontPathsFromPrefJson(String json) sync* {
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(json);
+    } catch (_) {
+      return;
+    }
+    final Iterable<dynamic>? entries =
+        decoded is Map && decoded['fonts'] is List
+            ? decoded['fonts'] as List<dynamic>
+            : decoded is List
+                ? decoded
+                : null;
+    if (entries == null) return;
+    for (final dynamic e in entries) {
+      if (e is Map && e['path'] is String) yield e['path'] as String;
+    }
+  }
+
+  /// Packs ONLY the custom-font files the catalog references (see
+  /// [_referencedFontFiles]) into [into] under the `custom_fonts/` prefix, keyed
+  /// by each file's path relative to the fonts root (mirrors [_collectTreeFiles]
+  /// so import restores identically). Orphan/temp leftovers are skipped so the
+  /// backup carries only the fonts the user manages, and the archive font-file
+  /// count matches the export preview.
+  Future<void> _collectReferencedFontFiles(Map<String, String> into) async {
+    final String? root = _fontsRootDirectory;
+    if (root == null) return;
+    for (final String abs in await _referencedFontFiles()) {
+      final String rel = p.relative(abs, from: root).replaceAll(r'\', '/');
+      into[p.posix.join(_fontsPrefix, rel)] = abs;
+    }
   }
 
   Future<int> _countLocalAudioDbs() async {
@@ -708,10 +774,18 @@ class BackupService {
   /// categories (dictionaries / statistics / settings / videos / local audio)
   /// are unaffected. When the [BackupCategory.books] category itself is excluded
   /// no book records or content travel at all, regardless of [bookKeys].
+  ///
+  /// [videoKeys] is the per-video analogue (by `video_books.book_uid`): null
+  /// (default) exports every video (legacy); a non-null set exports ONLY those
+  /// videos — both their `video_books` records (every unselected row is stripped
+  /// from the DB copy so restore never resurrects a "ghost video" with no file)
+  /// AND their `videos/` content. Ignored when the [BackupCategory.videos]
+  /// category itself is excluded (then no video rows or files travel at all).
   Future<BackupMeta> exportBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
     Set<String>? bookKeys,
+    Set<String>? videoKeys,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -779,6 +853,18 @@ class BackupService {
       if (retainBookKeys != null) {
         await _retainBooks(tmpDir.path, retainBookKeys);
       }
+      // Which video records survive in the exported DB copy — mirrors books:
+      //  - video category unticked     → keep NONE (strip every video_books row).
+      //  - a per-video selection given → keep ONLY the selected book_uids.
+      //  - otherwise                   → keep all (null = legacy full export).
+      // Stripping the row (not just skipping the file) is what stops a restore
+      // from resurrecting a "ghost video" whose file never travelled.
+      final bool includeVideos = wants(BackupCategory.videos);
+      final Set<String>? retainVideoKeys =
+          !includeVideos ? const <String>{} : videoKeys; // null = every video
+      if (retainVideoKeys != null) {
+        await _retainVideos(tmpDir.path, retainVideoKeys);
+      }
 
       // TODO-1193: the four data categories (progress / statistics / settings /
       // profiles) live only in the DB blob, so when the user unticks any of
@@ -821,8 +907,8 @@ class BackupService {
         _dbName: cleanDbPath,
       };
       Map<String, String> videoFiles = const <String, String>{};
-      if (wants(BackupCategory.videos)) {
-        videoFiles = await _collectVideoFiles(files);
+      if (includeVideos) {
+        videoFiles = await _collectVideoFiles(files, videoKeys: videoKeys);
       }
       if (wants(BackupCategory.localAudio)) {
         await _collectLocalAudioFiles(files);
@@ -830,15 +916,20 @@ class BackupService {
 
       // TODO-1261: the confirm dialog's "N books" must count EVERY shelf item
       // that will travel usably, not just EPUBs. A video book travels usably iff
-      // its file was packed (in [videoFiles]) or it is a streaming book (http(s)
-      // URL, self-contained) — the SAME reachability the merge/preview enforce,
-      // so a video-only backup no longer reports "0 books" while 19 videos land.
+      // it is selected (video category on + not filtered out by [videoKeys]) AND
+      // either its file was packed (in [videoFiles]) or it is a streaming book
+      // (http(s) URL, self-contained) — the SAME reachability the merge/preview
+      // enforce, so a video-only backup no longer reports "0 books" while 19
+      // videos land, and an unticked/deselected video is not counted.
+      bool videoTravels(VideoBookRow v) {
+        if (!includeVideos) return false;
+        if (videoKeys != null && !videoKeys.contains(v.bookUid)) return false;
+        return _isStreamingVideoPath(v.videoPath) ||
+            videoFiles.containsKey(v.videoPath);
+      }
+
       final List<VideoBookRow> allVideos = await _db.allVideoBooks();
-      final int usableVideoCount = allVideos
-          .where((VideoBookRow v) =>
-              _isStreamingVideoPath(v.videoPath) ||
-              videoFiles.containsKey(v.videoPath))
-          .length;
+      final int usableVideoCount = allVideos.where(videoTravels).length;
 
       // "Statistics records" spans reading + video + mining buckets, not reading
       // alone, so a video-watcher's backup no longer reports "0 statistics".
@@ -902,8 +993,7 @@ class BackupService {
             Directory(_audiobooksRootDirectory), _audiobooksPrefix, files);
       }
       if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
-        await _collectTreeFiles(
-            Directory(_fontsRootDirectory), _fontsPrefix, files);
+        await _collectReferencedFontFiles(files);
       }
 
       final String metaJson =
@@ -976,6 +1066,36 @@ class BackupService {
         final bool transient = isWindows && _isWindowsTransientFsBusy(code);
         if (!transient || attempt == maxAttempts) rethrow;
         await sleep(50 * attempt); // backoff: 50ms,100ms,... let handle drop
+      }
+    }
+  }
+
+  /// Retries a directory [rename] that hits a transient Windows filesystem-busy
+  /// error (access denied / sharing violation — see [_isWindowsTransientFsBusy])
+  /// with a bounded backoff. The content-tree swap renames a freshly-EXTRACTED
+  /// `.import-tmp` into place; on Windows an antivirus / indexer scanning the
+  /// just-written tree briefly holds handles, so the immediate rename can fail
+  /// with `errno 5` (the "备份导入失败: Rename failed … 拒绝访问" the user hit).
+  /// A non-Windows error, or a non-transient Windows error, is rethrown at once.
+  /// The longer cap than the delete retry (backoff to ~1s/attempt) gives a big
+  /// multi-GB tree's scan time to finish.
+  @visibleForTesting
+  static Future<void> renameDirectoryWithRetry({
+    required Future<void> Function() rename,
+    required Future<void> Function(int delayMs) sleep,
+    required bool isWindows,
+    int maxAttempts = 20,
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await rename();
+        return;
+      } on FileSystemException catch (e) {
+        final int? code = e.osError?.errorCode;
+        final bool transient = isWindows && _isWindowsTransientFsBusy(code);
+        if (!transient || attempt == maxAttempts) rethrow;
+        // backoff: 100ms,200ms,... capped at 1s → ~15s total over 20 attempts.
+        await sleep((100 * attempt).clamp(100, 1000));
       }
     }
   }
@@ -1328,6 +1448,7 @@ class BackupService {
       final List<String> toCommit = <String>[];
       try {
         if (booksRootDirectory != null &&
+            wants(BackupCategory.books) &&
             await _prepareTreeRestore(
                 zipPath, archive, _booksPrefix, booksRootDirectory,
                 onBytes: reportBytes)) {
@@ -1443,6 +1564,32 @@ class BackupService {
         );
       }
 
+      // 3c) Honour the per-category IMPORT selection for the DB-content
+      //     categories the overwrite blob carries wholesale (TODO-1358). The
+      //     file categories are already gated above (skipped file restore), but
+      //     books / statistics / progress live in the swapped-in DB, so strip
+      //     the unticked ones here. Overwrite semantics: unticking = that
+      //     category's data does not end up on this device (the DB was replaced
+      //     wholesale, so there is no local layer to preserve — mirrors how the
+      //     statistics/progress strip already works on the export side).
+      if (!wants(BackupCategory.books)) {
+        // Strip every book row (+ its cascade) so no book from the backup
+        // travels; the hoshi_books tree restore was skipped above too.
+        await _retainBooks(dbDirectory, const <String>{});
+      }
+      if (!wants(BackupCategory.statistics) ||
+          !wants(BackupCategory.progress)) {
+        await _stripExcludedDataCategories(
+          dbDirectory,
+          stripProgress: !wants(BackupCategory.progress),
+          stripStatistics: !wants(BackupCategory.statistics),
+          // settings / profiles stay governed by the importSettings toggle and
+          // the excluded-layer preserve above — never touched by this strip.
+          stripSettings: false,
+          stripProfiles: false,
+        );
+      }
+
       // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
       await _safeDelete(sidecar.path);
       await _safeDelete(bakPath);
@@ -1473,6 +1620,7 @@ class BackupService {
   static Future<void> mergeImportBackupFiles({
     required String dbDirectory,
     required String zipPath,
+    Set<BackupCategory>? categories,
     String? dictionaryResourceDirectory,
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
@@ -1480,6 +1628,14 @@ class BackupService {
     String? videosRootDirectory,
     void Function(double progress)? onProgress,
   }) async {
+    // Per-category merge selection (import dialog, merge mode). null = merge
+    // every category (legacy full merge). Gates BOTH the DB row merge (via the
+    // engine) AND the content-tree copies below, so an unticked category adds
+    // nothing — neither rows nor files.
+    bool wants(BackupCategory c) =>
+        categories == null || categories.contains(c);
+    final Set<String>? enabledCategoryNames =
+        categories?.map((BackupCategory c) => c.name).toSet();
     final String dbPath = p.join(dbDirectory, _dbName);
     final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
     final String bakPath = '$dbPath.pre-merge.bak';
@@ -1558,6 +1714,7 @@ class BackupService {
             db,
             carriedVideoSourcePaths:
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
+            enabledCategoryNames: enabledCategoryNames,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
@@ -1568,36 +1725,41 @@ class BackupService {
       }
 
       // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing
-      //    files — the device's own library must stay intact).
-      if (dictionaryResourceDirectory != null) {
+      //    files — the device's own library must stay intact). Each tree is
+      //    gated by its category so an unticked category copies no files (its
+      //    rows were likewise skipped by the engine above).
+      if (dictionaryResourceDirectory != null &&
+          wants(BackupCategory.dictionary)) {
         await _copyTreeIfAbsent(zipPath, archive, _dictionaryResourcesPrefix,
             dictionaryResourceDirectory,
             onBytes: reportBytes);
       }
-      if (booksRootDirectory != null) {
+      if (booksRootDirectory != null && wants(BackupCategory.books)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _booksPrefix, booksRootDirectory,
             onBytes: reportBytes);
       }
-      if (audiobooksRootDirectory != null) {
+      if (audiobooksRootDirectory != null && wants(BackupCategory.audiobooks)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _audiobooksPrefix, audiobooksRootDirectory,
             onBytes: reportBytes);
       }
-      if (fontsRootDirectory != null) {
+      if (fontsRootDirectory != null && wants(BackupCategory.fonts)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _fontsPrefix, fontsRootDirectory,
             onBytes: reportBytes);
       }
-      if (videosRootDirectory != null) {
+      if (videosRootDirectory != null && wants(BackupCategory.videos)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _videosPrefix, videosRootDirectory,
             onBytes: reportBytes);
       }
       // Local-audio DBs are copy-if-absent into the support directory (never
       // overwrite the device's own local_audio_*.db files).
-      await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
-          overwrite: false, onBytes: reportBytes);
+      if (wants(BackupCategory.localAudio)) {
+        await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+            overwrite: false, onBytes: reportBytes);
+      }
 
       // 6) Rebase the newly-merged backup rows' stored paths onto this device's
       //    roots. Device-local rows aren't under the backup's source root, so
@@ -2069,6 +2231,31 @@ class BackupService {
     }
   }
 
+  /// Per-video analogue of [_retainBooks]: DELETEs every `video_books` row whose
+  /// `book_uid` is NOT in [keep] (plus its dependent rows — subtitle cues, tag
+  /// mappings, shelf entry — via the canonical [HibikiDatabase.deleteVideoBook]
+  /// cascade). [keep] empty strips every video (the video category was
+  /// unticked); a non-empty set keeps only the user-selected videos (per-video
+  /// export). Same root fix as books: without stripping the row a restore/merge
+  /// would insert a video record whose file never travelled = an un-openable
+  /// "ghost video".
+  static Future<void> _retainVideos(
+    String dbDirectory,
+    Set<String> keep,
+  ) async {
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      for (final VideoBookRow v in await db.allVideoBooks()) {
+        if (keep.contains(v.bookUid)) continue;
+        await db.deleteVideoBook(v.bookUid);
+      }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
   /// Packs ONLY the selected [bookKeys]' book content into [into] (per-book
   /// export, TODO-1195 part A). For each selected [EpubBookRow] its extracted
   /// content directory subtree plus the epub file and cover file are added,
@@ -2177,13 +2364,18 @@ class BackupService {
     }
   }
 
+  /// Packs the referenced video files into [into] under the `videos/` prefix.
+  /// [videoKeys] (by `video_books.book_uid`) restricts packing to the selected
+  /// videos (per-video export); null packs every video (legacy full export).
   Future<Map<String, String>> _collectVideoFiles(
-    Map<String, String> into,
-  ) async {
+    Map<String, String> into, {
+    Set<String>? videoKeys,
+  }) async {
     final Map<String, String> sourcePathToArchiveRelative = <String, String>{};
     final Set<String> usedArchiveRelativePaths = <String>{};
     final List<VideoBookRow> rows = await _db.allVideoBooks();
     for (final VideoBookRow row in rows) {
+      if (videoKeys != null && !videoKeys.contains(row.bookUid)) continue;
       int index = 0;
       for (final String videoPath in _videoPathsForRow(row)) {
         if (videoPath.isEmpty ||
@@ -2530,14 +2722,23 @@ class BackupService {
     final Directory aside = Directory(asideRoot);
     final Directory target = Directory(targetRootPath);
     final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
+    // Every swap rename retries transient Windows FS-busy (errno 5/32/145): an
+    // antivirus/indexer scanning the freshly-written tree briefly locks it, so
+    // a bare rename fails with "拒绝访问" even though nothing is really wrong.
+    Future<void> renameDir(Directory dir, String to) =>
+        renameDirectoryWithRetry(
+          rename: () => dir.rename(to),
+          sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+          isWindows: Platform.isWindows,
+        );
     if (await aside.exists()) await aside.delete(recursive: true);
-    if (await target.exists()) await target.rename(asideRoot);
+    if (await target.exists()) await renameDir(target, asideRoot);
     try {
-      await tmpDir.rename(targetRootPath);
+      await renameDir(tmpDir, targetRootPath);
     } catch (_) {
       // Roll back: put the old tree back if the new one didn't land.
       if (await aside.exists() && !await target.exists()) {
-        await aside.rename(targetRootPath);
+        await renameDir(aside, targetRootPath);
       }
       rethrow;
     }

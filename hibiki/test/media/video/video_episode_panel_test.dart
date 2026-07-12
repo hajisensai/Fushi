@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  List<PlaylistEntry> episodes(int n) => <PlaylistEntry>[
-        for (int i = 0; i < n; i++)
-          PlaylistEntry(title: 'Episode ${i + 1}', path: '/v/$i.mp4'),
+  List<String> episodes(int n) => <String>[
+        for (int i = 0; i < n; i++) 'Episode ${i + 1}',
       ];
 
   testWidgets('lists episodes; tap reports the episode index (TODO-638)',
@@ -17,7 +15,7 @@ void main() {
     final List<int> tapped = <int>[];
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodes: episodes(3),
+        episodeTitles: episodes(3),
         currentIndex: 1,
         onTapEpisode: tapped.add,
         onClose: () {},
@@ -40,7 +38,7 @@ void main() {
       '(TODO-638)', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodes: episodes(3),
+        episodeTitles: episodes(3),
         currentIndex: 1,
         onTapEpisode: (_) {},
         onClose: () {},
@@ -77,7 +75,7 @@ void main() {
     int closed = 0;
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodes: episodes(2),
+        episodeTitles: episodes(2),
         currentIndex: 0,
         onTapEpisode: (_) {},
         onClose: () => closed++,
@@ -96,7 +94,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodes: const <PlaylistEntry>[],
+        episodeTitles: const <String>[],
         currentIndex: -1,
         onTapEpisode: (_) {},
         onClose: () {},
@@ -120,7 +118,7 @@ void main() {
     const double largeFontSize = 42; // 14 * appUiScale(3.0)
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodes: episodes(12),
+        episodeTitles: episodes(12),
         currentIndex: 0, // 当前集 0 用 play_arrow；序号从「2」起全是显式 Text。
         onTapEpisode: (_) {},
         onClose: () {},

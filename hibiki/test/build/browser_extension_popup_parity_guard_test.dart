@@ -111,14 +111,48 @@ void main() {
             reason:
                 '$root/vendor/content.css lost the floating-popup sizing overlay');
         // Scoped forms of the document-level popup.css rules must be present.
+        // BUG-752: the scope must be the specificity-neutral `:where(...)` form.
         for (final String scoped in const <String>[
-          '#entries-container ::selection',
-          '#entries-container ::-webkit-scrollbar',
-          '#entries-container[data-theme="dark"]',
+          ':where(#entries-container) ::selection',
+          ':where(#entries-container) ::-webkit-scrollbar',
+          ':where(#entries-container)[data-theme="dark"]',
         ]) {
           expect(content.contains(scoped), isTrue,
               reason: '$root/vendor/content.css missing scoped rule: $scoped');
         }
+      });
+
+      test('[$root] content.css re-roots stay specificity-neutral (BUG-752)',
+          () {
+        // A bare `#entries-container` re-root prefix lifts a document-level
+        // popup.css rule from (0,0,x) to (1,0,x) so it out-ranks every class
+        // rule and the extension cascade inverts vs the in-app popup. The `*`
+        // reset re-rooted as `#entries-container *` killed
+        // `.ruby-unit { padding-top }` and glossary furigana printed on top of
+        // its base text. The generator must emit `:where(#entries-container...)`
+        // scopes instead; only the extension-only overlay may address the
+        // container element itself by bare ID (its rules target ONLY the
+        // container, never descendants).
+        final String content = stripComments(read('$root/vendor/content.css'));
+        // The zero-specificity universal reset must exist...
+        expect(
+            content
+                .contains(':where(#entries-container, #entries-container *)'),
+            isTrue,
+            reason: '$root/vendor/content.css lost the :where() universal '
+                'reset (BUG-752)');
+        // ...and no selector may re-introduce a bare-ID descendant re-root
+        // (`#entries-container *`, `#entries-container hr`, `#entries-container
+        // ::selection`, `#entries-container[data-theme]`...). `#entries-container
+        // {` / `#entries-container,` (container-only rules, e.g. the overlay
+        // sizing block) stay allowed.
+        final RegExp bareIdReroot =
+            RegExp(r'(^|\n)\s*#entries-container(\s+[^{\s]|\[)[^{}]*\{');
+        final Match? m = bareIdReroot.firstMatch(content);
+        expect(m, isNull,
+            reason: '$root/vendor/content.css re-introduced a bare-ID re-root '
+                'selector (cascade-inverting, BUG-752): '
+                '${m?.group(0)?.trim()}');
       });
     }
 

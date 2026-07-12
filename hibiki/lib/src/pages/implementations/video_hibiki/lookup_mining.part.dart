@@ -377,7 +377,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         sentence: sentence,
         documentTitle: _title ?? widget.bookUid,
         bookKey: widget.bookUid,
-        sectionIndex: _episodes.isEmpty ? null : _currentEpisode,
+        sectionIndex: _favoriteSectionIndex,
         normCharOffset: cue?.startMs,
         normCharLength: cue == null
             ? null

@@ -163,6 +163,11 @@ class ReadingHourlyLogs extends Table {
 class VideoWatchStatistics extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get title => text()();
+
+  /// v39：视频稳定身份（[VideoBooks].bookUid）。旧表按 (title,dateKey) 键控，
+  /// 同名不同视频统计互串（用户拍板根治）。迁移按 title 唯一匹配回填；同名多
+  /// 视频的旧行保持 NULL（读取端按 title 回退）。v39 起写入必带。
+  TextColumn get bookUid => text().nullable()();
   TextColumn get dateKey => text()();
   IntColumn get subtitleChars => integer()();
   IntColumn get watchTimeMs => integer()();
@@ -170,7 +175,9 @@ class VideoWatchStatistics extends Table {
 
   @override
   List<Set<Column>> get uniqueKeys => [
-        {title, dateKey},
+        // v39：唯一键从 {title,dateKey} 换 {bookUid,dateKey}——同名不同视频当天
+        // 各写各行不再撞约束/互串（SQLite UNIQUE 视 NULL 互异，旧 NULL 行不冲突）。
+        {bookUid, dateKey},
       ];
 }
 
@@ -637,6 +644,59 @@ class ShelfEntries extends Table {
   /// 复合主键：一条目一行。
   @override
   Set<Column> get primaryKey => {mediaType, entryKey};
+}
+
+// ── media_collections (统一合集：Jellyfin BoxSet/Playlist 式容器) ──────
+// 取代旧 [Series] + [ShelfEntries.seriesId]（两者自 v38 起冻结为遗留残留，勿再读写
+// 系列语义；[ShelfEntries.sortOrder] 书架排序职责保留）。collection = 无序跨媒体合集
+// （展示时按成员 sortIndex → importedAt 排序）；playlist = 有序播放列表（sortIndex 即
+// 播放序，点任一成员从该处连播）。删容器 cascade 只删成员引用 [MediaCollectionItems]，
+// 绝不删条目本身（Jellyfin「删 BoxSet 不删 LinkedChild」语义）。
+@DataClassName('MediaCollectionRow')
+class MediaCollections extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 合集名（必填）。
+  TextColumn get name => text()();
+
+  /// 'collection' | 'playlist'。
+  TextColumn get collectionType =>
+      text().withDefault(const Constant('collection'))();
+
+  /// 自定义封面成员 `'<mediaType>|<entryKey>'`；NULL = 自动（playlist 取前 4 成员封面
+  /// 2×2 拼贴；collection 取首成员封面堆叠）。不存快照——成员增删/重排后渲染时纯函数推导。
+  TextColumn get coverSource => text().nullable()();
+
+  /// 合集卡自身在库网格中的排序权重（与散条目同层混排，语义同旧 [Series.sortOrder]）。
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
+  IntColumn get createdAt => integer()();
+}
+
+// ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────
+// 复合主键 (collectionId, mediaType, entryKey) 按合集去重：**同一条目可属于多个
+// 合集**；删合集 cascade 只删本表引用行。entryKey 是逻辑外键（epub=bookKey / srt=uid /
+// video=bookUid），不加本地三表 DB FK——与 [ShelfEntries].entryKey 同理由（远端条目无
+// 本地行，写 FK 会违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+@DataClassName('MediaCollectionItemRow')
+class MediaCollectionItems extends Table {
+  /// 所属合集（[MediaCollections].id）。onDelete:cascade = 删合集连带删本引用行。
+  IntColumn get collectionId => integer()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+
+  /// 媒体种类：'epub' | 'srt' | 'video'（同 [ShelfEntries].mediaType 值域）。
+  TextColumn get mediaType => text()();
+
+  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid。
+  TextColumn get entryKey => text()();
+
+  /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
+  IntColumn get sortIndex => integer().withDefault(const Constant(0))();
+
+  /// 复合主键：同一合集内一条目一行（允许跨合集重复）。
+  @override
+  Set<Column> get primaryKey => {collectionId, mediaType, entryKey};
 }
 
 // ── hibiki_paired_peers ─────────────────────────────

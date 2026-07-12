@@ -11,6 +11,22 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  // 让签名相关断言与本机是否已填内置密钥 (dandanplay_secret.dart) 无关：每个用例前
+  // 清空内置凭据，用例内需要时再显式注入，用例后恢复。否则填了真值的开发机上「默认
+  // 不签名」类断言会失败。
+  late String savedEmbeddedId;
+  late String savedEmbeddedSecret;
+  setUp(() {
+    savedEmbeddedId = DandanplayConfig.embeddedAppId;
+    savedEmbeddedSecret = DandanplayConfig.embeddedAppSecret;
+    DandanplayConfig.embeddedAppId = '';
+    DandanplayConfig.embeddedAppSecret = '';
+  });
+  tearDown(() {
+    DandanplayConfig.embeddedAppId = savedEmbeddedId;
+    DandanplayConfig.embeddedAppSecret = savedEmbeddedSecret;
+  });
+
   group('DandanplayClient', () {
     late Directory tempDir;
 
@@ -291,6 +307,74 @@ void main() {
       expect(request.headers.containsKey('X-Signature'), isFalse);
       expect(request.url.host, 'api.dandanplay.net');
     });
+
+    test('embedded app credentials sign requests when user config is unsigned',
+        () async {
+      // 内置官方凭据（编译期从 dandanplay_secret.dart 注入）让默认配置也签名，
+      // 用户无需手动输入 API —— 本 feature 的核心行为。
+      DandanplayConfig.embeddedAppId = 'builtin-app';
+      DandanplayConfig.embeddedAppSecret = 'builtin-secret';
+      final File file = File(p.join(tempDir.path, 'Episode 08.mkv'));
+      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final List<http.Request> requests = <http.Request>[];
+      final DandanplayClient client = DandanplayClient(
+        config: DandanplayConfig.defaults,
+        httpClient: MockClient((http.Request request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'success': true,
+              'isMatched': true,
+              'matches': <Map<String, dynamic>>[
+                <String, dynamic>{'episodeId': 13},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      await client.matchFile(file);
+
+      final http.Request request = requests.single;
+      expect(request.headers['X-AppId'], 'builtin-app',
+          reason: '内置凭据让默认（空）配置也签名，用户无需手动输入 API');
+      final String? ts = request.headers['X-Timestamp'];
+      expect(ts, isNotNull);
+      final List<int> payload =
+          utf8.encode('builtin-app$ts/api/v2/match' 'builtin-secret');
+      expect(request.headers['X-Signature'],
+          base64.encode(sha256.convert(payload).bytes));
+    });
+
+    test('user AppId/AppSecret override the embedded credentials', () async {
+      DandanplayConfig.embeddedAppId = 'builtin-app';
+      DandanplayConfig.embeddedAppSecret = 'builtin-secret';
+      final File file = File(p.join(tempDir.path, 'Episode 09.mkv'));
+      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final List<http.Request> requests = <http.Request>[];
+      final DandanplayClient client = DandanplayClient(
+        config: const DandanplayConfig(appId: 'mine', appSecret: 'mysecret'),
+        httpClient: MockClient((http.Request request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'success': true,
+              'isMatched': true,
+              'matches': <Map<String, dynamic>>[
+                <String, dynamic>{'episodeId': 14},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      await client.matchFile(file);
+
+      expect(requests.single.headers['X-AppId'], 'mine',
+          reason: '用户显式配置的 AppId 优先于内置凭据');
+    });
   });
 
   group('DandanplayConfig', () {
@@ -322,11 +406,33 @@ void main() {
     });
 
     test('isSigned only when both AppId and AppSecret are present', () {
+      // 内置凭据在此组已被顶层 setUp 清空，故这里纯测用户配置自身语义。
       expect(const DandanplayConfig().isSigned, isFalse);
       expect(const DandanplayConfig(appId: 'a').isSigned, isFalse);
       expect(const DandanplayConfig(appSecret: 'b').isSigned, isFalse);
       expect(
           const DandanplayConfig(appId: 'a', appSecret: 'b').isSigned, isTrue);
+    });
+
+    test('effective credentials fall back to embedded, user config overrides',
+        () {
+      DandanplayConfig.embeddedAppId = 'e-app';
+      DandanplayConfig.embeddedAppSecret = 'e-secret';
+      const DandanplayConfig empty = DandanplayConfig();
+      expect(empty.effectiveAppId, 'e-app');
+      expect(empty.effectiveAppSecret, 'e-secret');
+      expect(empty.isSigned, isTrue, reason: '内置凭据非空时，空用户配置也算已签名（开箱即用）');
+
+      const DandanplayConfig user =
+          DandanplayConfig(appId: 'u-app', appSecret: 'u-secret');
+      expect(user.effectiveAppId, 'u-app');
+      expect(user.effectiveAppSecret, 'u-secret');
+
+      // 只填一半：用户 AppId + 内置 AppSecret 也能凑齐生效凭据。
+      const DandanplayConfig halfUser = DandanplayConfig(appId: 'u-app');
+      expect(halfUser.effectiveAppId, 'u-app');
+      expect(halfUser.effectiveAppSecret, 'e-secret');
+      expect(halfUser.isSigned, isTrue);
     });
 
     test('signatureHeaders match the documented SHA256 scheme', () {

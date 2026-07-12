@@ -1226,7 +1226,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     // TODO-1151: 本地备份「导入/恢复」期间会 closeDatabase() 置 isInitialised=false。
     // 若落到下面的裸 loading 分支，设置页会「突然消失」变近黑转圈，导入完再 exit(0)，
     // 用户误以为崩溃/失败。这里镜像上面的迁移遮罩：running 显「正在导入备份，请勿关闭」
-    // + 进度条；done 显结果 +「立即重启」按钮，由用户点按后再退出（backupImportRestart）。
+    // + 进度条；done 显结果，导入成功后 ~1s 自动重启（backupImportRestart 走 restartApp 真
+    // 拉新进程），「立即重启」按钮保留为手动兜底可提前点；失败态不自动、由用户读完原因手点。
     if (appModel.backupImportActive) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
@@ -1244,7 +1245,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             background: _savedSplashColor,
             // TODO-1183: 确定进度条监听（只进度条重建，不整树重绘）。
             progress: appModel.backupImportProgress,
-            onRestart: backupImportRestart,
+            onRestart: () => backupImportRestart(appModel),
             // TODO-1151: validating 相位的「取消」——作废 in-flight 校验 token 并退出
             // 遮罩回设置页（其它相位本视图不渲染取消按钮）。
             onCancel: appModel.cancelBackupValidating,

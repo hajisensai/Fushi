@@ -39,6 +39,11 @@ on:
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
+      skip_tests:
+        description: 'Fast build: skip the analyze/unit/package test suites and go straight to compile+publish. Only honored on workflow_dispatch (push-triggered debug builds always run the tests).'
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
@@ -316,6 +321,26 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
         fi
+    # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
+    # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
+    # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set, bake
+    # the real values in so release builds sign dandanplay open-API requests and
+    # online danmaku works out of the box (no manual API entry).
+    - name: Provide gitignored dandanplay secret stub
+      shell: bash
+      env:
+        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+      run: |
+        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        if [ -n "$DANDANPLAY_APP_ID" ]; then
+          printf 'const String kDandanplayAppId = %s;\nconst String kDandanplayAppSecret = %s;\n' \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ["DANDANPLAY_APP_ID"]))')" \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("DANDANPLAY_APP_SECRET","")))')" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+        fi
 
     # TODO-1208: cache resolved pub packages + Gradle caches to shave minutes off
     # every push/release build. apply-patches.sh is idempotent so a warm cache is
@@ -347,15 +372,23 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
+    # Fast-build path (TODO-fast-release): a workflow_dispatch with skip_tests:true
+    # skips the analyze/unit/package suites and goes straight to compile+publish.
+    # push/release events never carry the input (github.event.inputs.skip_tests is
+    # '') so they keep running the full gate -- the continuous test signal on
+    # main/develop is preserved; only the manual, user-waited release is fast.
     - name: Run dart analyze
+      if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
       working-directory: hibiki
       run: flutter analyze
 
     - name: Run unit tests (main app)
+      if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
       working-directory: hibiki
       run: dart run tool/flutter_test_failures.dart --exclude-tags golden
 
     - name: Run package tests
+      if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
       run: |
         for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
           if [ -d "$pkg/test" ]; then

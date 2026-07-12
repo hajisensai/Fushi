@@ -33,7 +33,8 @@ void main() {
     );
 
     expect(fn, contains('if (!mounted) return'));
-    expect(fn, contains('nextPlaylistIndexAfterCompletion('));
+    // 统一合集 Phase 3：下一集索引内联计算（有下一集才连播；末集/单集/越界 → null）。
+    expect(fn, contains('cur < _episodes.length - 1'));
     // TODO-639: the advance decision is the pure predicate gating on the
     // user's auto-play-next preference, next-episode existence, and reentry.
     expect(fn, contains('shouldAutoPlayNextOnCompletion('));
@@ -123,10 +124,12 @@ void main() {
   });
 
   test('initial open uses explicit start policy before autoplay', () {
-    final String initFn = _functionSource(
+    // 统一合集 Phase 3：每集（含播放列表某一集）都照单视频路径 _loadSingle 加载，显式
+    // 起播策略（initialOpen / explicitCue）落在 _loadSingle。
+    final String loadSingleFn = _functionSource(
       pageSource,
-      '  Future<void> _init() async {',
-      '  Future<void> _initRemote() async {',
+      '  Future<void> _loadSingle(VideoBookRow row) async {',
+      '  Future<({String videoPath, String? subtitleSource})>',
     );
     final String loadFn = _functionSource(
       pageSource,
@@ -134,8 +137,8 @@ void main() {
       '  /// 位置持久化',
     );
 
-    expect(initFn, contains('EpisodeStartIntent.initialOpen'));
-    expect(initFn, contains('EpisodeStartIntent.explicitCue'),
+    expect(loadSingleFn, contains('EpisodeStartIntent.initialOpen'));
+    expect(loadSingleFn, contains('EpisodeStartIntent.explicitCue'),
         reason: 'favorite/cue opens are not saved-position resumes');
     expect(loadFn, contains('startIntent: startIntent'));
   });

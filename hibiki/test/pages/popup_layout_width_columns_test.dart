@@ -32,11 +32,12 @@ void main() {
         isNull,
         reason: 'TODO-1352：查词页宽屏应占满（null）',
       );
-      // 书架 / 设置的上限不受牵连（仅动 dictionary）。
+      // UI v2（2026-07-12 用户拍板）：书架/视频库上限同样取消（媒体墙布局占满）。
       expect(
         desktopContentMaxWidth(
             WindowSizeClass.expanded, DesktopContentKind.readerShelf),
-        1280,
+        isNull,
+        reason: '书架/视频库宽屏应占满（用户实报莫名宽度上限）',
       );
       expect(
         desktopContentMaxWidth(

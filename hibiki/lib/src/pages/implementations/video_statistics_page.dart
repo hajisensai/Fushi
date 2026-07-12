@@ -459,7 +459,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             children: [
               Text(
                 video.title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),

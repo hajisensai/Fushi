@@ -64,23 +64,53 @@ String backupCategoryDescription(BackupCategory category) {
   }
 }
 
-/// Categories the user can individually skip when RESTORING an overwrite import
-/// (TODO-1358): the bulky sidecar file trees. Books stay (core library index);
-/// progress/statistics ride the DB blob; settings/profiles ride the
-/// "import settings and profiles" toggle.
+/// Every content category the user can individually skip on import (TODO-1358).
+/// Both modes now honour the full set: overwrite strips the unticked category's
+/// rows/files from the swapped-in DB ([BackupService.importBackupFiles]); merge
+/// skips its per-category engine steps + content-tree copy
+/// ([BackupService.mergeImportBackupFiles]). settings / profiles stay governed
+/// by the separate "import settings and profiles" toggle (overwrite) / kept
+/// local (merge), so they are not listed here.
 const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.dictionary,
+  BackupCategory.books,
   BackupCategory.audiobooks,
   BackupCategory.fonts,
   BackupCategory.videos,
   BackupCategory.localAudio,
+  BackupCategory.progress,
+  BackupCategory.statistics,
 };
 
-/// TODO-1151：备份导入完成后由 [BackupImportOverlayView] 的「立即重启」按钮触发的退出。
-/// 沿用旧导入实现的平台分支（移动端 [FlutterExitApp.exitApp]，桌面端 `exit(0)`），只把
-/// 触发时机从「延迟 500ms 自动退出」改为「用户点确认后退出」，退出行为本身不变
-/// （never-break）。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
-void backupImportRestart() {
+/// Merge uses the same full selectable set as overwrite now.
+const Set<BackupCategory> importMergeSelectableCategories =
+    importSelectableCategories;
+
+/// TODO-1151：备份导入完成后的重启。DB 已在导入期 `closeDatabase()`，必须重启才能重载
+/// 新数据。既作为 [BackupImportOverlayView]「立即重启」按钮的手动出口，也在导入**成功**后由
+/// [_BackupImportWidgetState._import] 延时自动调用（用户诉求「导入完自动重启，不再手动重开」）。
+///
+/// **优先真重启**：委托 `lifecycle.restartApp()`——与数据根迁移成功路径同一条经过验证的重启
+/// 实现（桌面 detached 拉新进程 + 带 `--hibiki-restarted` 前台标志避免黑窗、macOS 经
+/// `open -n <bundle>` 规避直接起可执行文件在 Dart 启动前崩、移动端 `restart_app` 插件；三端
+/// `supportsRestart==true`）。消除了旧实现在本文件里 ad-hoc `Process.start(resolvedExecutable)`
+/// 的劣质重复（缺前台标志、macOS 会崩）。
+/// **兜底 never-break**：`restartApp` 起新进程失败或平台不支持时，退回旧的纯退出分支（移动端
+/// [FlutterExitApp.exitApp]、桌面端 `exit(0)`），至少让用户手动重开，绝不制造「老进程没了、新
+/// 进程也没起来」的假崩溃。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
+Future<void> backupImportRestart(AppModel appModel) async {
+  final PlatformLifecycleService lifecycle =
+      appModel.platformServices.lifecycle;
+  if (lifecycle.supportsRestart) {
+    try {
+      await lifecycle.restartApp();
+      // restartApp 成功会拉新进程并退出本进程，正常不会执行到这里。
+      return;
+    } catch (e) {
+      // 起新进程失败 → 落到下面的纯退出兜底（用户手动重开），不把失败吞成假成功。
+      debugPrint('Backup import: restartApp failed, fall back to exit: $e');
+    }
+  }
   if (Platform.isAndroid || Platform.isIOS) {
     FlutterExitApp.exitApp();
   } else {
@@ -104,6 +134,12 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// across dialog opens within this settings session (the picker re-seeds from
   /// it); only consulted when the Books category is selected.
   Set<String>? _selectedBookKeys;
+
+  /// Per-video export selection (books analogue). null = every video (legacy
+  /// full export); a non-null set = only those `video_books.book_uid`s travel.
+  /// Persists across dialog opens within this settings session; only consulted
+  /// when the Videos category is selected.
+  Set<String>? _selectedVideoKeys;
 
   Future<void> _export() async {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
@@ -147,6 +183,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
         categories: categories,
         bookKeys: categories.contains(BackupCategory.books)
             ? _selectedBookKeys
+            : null,
+        videoKeys: categories.contains(BackupCategory.videos)
+            ? _selectedVideoKeys
             : null,
       );
 
@@ -199,6 +238,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     // Per-book selection (TODO-1195 part A). Mutated by the nested book picker;
     // written back to [_selectedBookKeys] only when the dialog is confirmed.
     Set<String>? chosenBooks = _selectedBookKeys;
+    // Per-video selection (the books analogue). Mutated by the nested video
+    // picker; written back to [_selectedVideoKeys] only on confirm.
+    Set<String>? chosenVideos = _selectedVideoKeys;
     String labelFor(BackupCategory c) {
       switch (c) {
         case BackupCategory.dictionary:
@@ -260,7 +302,12 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 4),
-                  for (final BackupCategory c in BackupCategory.values)
+                  // Each category is a toggle; the Books/Videos toggles carry a
+                  // nested per-item picker glued DIRECTLY beneath them (not
+                  // floated to the list bottom) so "选择书籍/选择视频" reads as a
+                  // sub-option of its category instead of a duplicate top row.
+                  for (final BackupCategory c
+                      in BackupCategory.values) ...<Widget>[
                     AdaptiveSettingsSwitchRow(
                       title: labelFor(c),
                       subtitle: summary.counts.containsKey(c)
@@ -276,22 +323,41 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                         }
                       }),
                     ),
-                  // Per-book selection row (TODO-1195 part A): only meaningful
-                  // when the Books category itself is packed.
-                  if (selected.contains(BackupCategory.books))
-                    AdaptiveSettingsRow(
-                      title: t.backup_export_choose_books,
-                      subtitle: chosenBooks == null
-                          ? t.backup_export_books_all
-                          : t.backup_export_books_selected(
-                              count: chosenBooks!.length.toString()),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () async {
-                        final Set<String>? picked =
-                            await _pickBooks(chosenBooks);
-                        setLocal(() => chosenBooks = picked);
-                      },
-                    ),
+                    // Per-book selection row (TODO-1195 part A): only meaningful
+                    // when the Books category itself is packed.
+                    if (c == BackupCategory.books &&
+                        selected.contains(BackupCategory.books))
+                      AdaptiveSettingsRow(
+                        title: t.backup_export_choose_books,
+                        subtitle: chosenBooks == null
+                            ? t.backup_export_books_all
+                            : t.backup_export_books_selected(
+                                count: chosenBooks!.length.toString()),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          final Set<String>? picked =
+                              await _pickBooks(chosenBooks);
+                          setLocal(() => chosenBooks = picked);
+                        },
+                      ),
+                    // Per-video selection row (books analogue): only meaningful
+                    // when the Videos category itself is packed.
+                    if (c == BackupCategory.videos &&
+                        selected.contains(BackupCategory.videos))
+                      AdaptiveSettingsRow(
+                        title: t.backup_export_choose_videos,
+                        subtitle: chosenVideos == null
+                            ? t.backup_export_videos_all
+                            : t.backup_export_videos_selected(
+                                count: chosenVideos!.length.toString()),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          final Set<String>? picked =
+                              await _pickVideos(chosenVideos);
+                          setLocal(() => chosenVideos = picked);
+                        },
+                      ),
+                  ],
                 ],
               ),
               footer: Wrap(
@@ -317,8 +383,10 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       ),
     );
     if (confirmed != true) return null;
-    // Commit the per-book selection only on confirm (cancel leaves it as-was).
+    // Commit the per-book / per-video selection only on confirm (cancel leaves
+    // them as-was).
     _selectedBookKeys = chosenBooks;
+    _selectedVideoKeys = chosenVideos;
     return selected;
   }
 
@@ -432,6 +500,121 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     if (confirmed != true) return current;
     // "All ticked" collapses back to null so the export takes the legacy
     // full-book path (and stays correct if a book is added/removed later).
+    if (sel.length == keys.length) return null;
+    return sel;
+  }
+
+  /// Nested picker for per-video export (books analogue). Loads the video
+  /// library and lets the user tick which videos travel; [current] seeds the
+  /// initial state (null = every video). Returns the chosen set, collapsing
+  /// "all ticked" back to null (the legacy full-export path), or [current]
+  /// unchanged on cancel.
+  Future<Set<String>?> _pickVideos(Set<String>? current) async {
+    final List<VideoBookRow> videos =
+        await widget.settingsContext.appModel.database.allVideoBooks();
+    // State.context guarded by State.mounted (coherent for the lint): the
+    // settings page may have unmounted while the library loaded.
+    if (!mounted) return current;
+    if (videos.isEmpty) {
+      _showSnackBar(context, t.backup_export_no_videos);
+      return current;
+    }
+    final List<String> keys =
+        videos.map((VideoBookRow v) => v.bookUid).toList(growable: false);
+    // Seed: null (all) → every video ticked; otherwise the given subset.
+    final Set<String> sel = current == null
+        ? keys.toSet()
+        : keys.where((String k) => current.contains(k)).toSet();
+
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) {
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+          return HibikiDialogFrame(
+            maxWidth: 460,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.card,
+            ),
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.backup_export_choose_videos,
+              scrollable: true,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Text('${sel.length} / ${keys.length}',
+                          style: Theme.of(ctx).textTheme.bodySmall),
+                      const Spacer(),
+                      adaptiveDialogAction(
+                        context: ctx,
+                        onPressed: () => setLocal(() => sel
+                          ..clear()
+                          ..addAll(keys)),
+                        child: Text(t.backup_export_select_all),
+                      ),
+                      adaptiveDialogAction(
+                        context: ctx,
+                        onPressed: () => setLocal(sel.clear),
+                        child: Text(t.backup_export_select_none),
+                      ),
+                    ],
+                  ),
+                  for (final VideoBookRow v in videos)
+                    AdaptiveSettingsSwitchRow(
+                      title: v.title,
+                      value: sel.contains(v.bookUid),
+                      onChanged: (bool tick) => setLocal(() {
+                        if (tick) {
+                          sel.add(v.bookUid);
+                        } else {
+                          sel.remove(v.bookUid);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(t.dialog_cancel),
+                  ),
+                  adaptiveDialogAction(
+                    context: ctx,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(t.dialog_ok),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (confirmed != true) return current;
+    // "All ticked" collapses back to null so the export takes the legacy
+    // full-video path (and stays correct if a video is added/removed later).
     if (sel.length == keys.length) return null;
     return sel;
   }
@@ -601,8 +784,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       return;
     }
 
-    final _BackupImportChoice? choice = await _showConfirmDialog(
-        rootCtx, meta, mergePreview, summary);
+    final _BackupImportChoice? choice =
+        await _showConfirmDialog(rootCtx, meta, mergePreview, summary);
     if (choice == null) {
       // 用户取消确认 → 彻底退出遮罩态，回到设置页（validating 遮罩已退出）。
       if (mounted) setState(() => _isImporting = false);
@@ -628,6 +811,9 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         await BackupService.mergeImportBackupFiles(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: filePath,
+          // Per-category merge selection (merge mode now honours the dialog's
+          // toggles): an unticked category adds neither rows nor files.
+          categories: choice.categories,
           dictionaryResourceDirectory:
               appModel.dictionaryResourceDirectory.path,
           booksRootDirectory: booksRoot,
@@ -659,8 +845,16 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       }
 
       // TODO-1151: 导入成功。不再「延迟 500ms 后突然 exit」——那会让用户以为崩溃/失败。
-      // 切到确认视图（导入完成 → 立即重启），由用户点按后经 backupImportRestart 退出。
+      // 切到确认视图（导入完成 → 立即重启），并在其可见 ~1s 后自动重启（用户诉求「导入完
+      // 自动重启，不再手动重开」）。与旧「500ms 后突然 exit」的关键区别：backupImportRestart
+      // 走 restartApp 真拉新进程重启（app 会自己回来），不是纯退出「凭空消失」；延时让「导入
+      // 成功」先可见一瞬，避免误判失败。「立即重启」按钮保留为手动兜底（可提前点，走同一函数）。
       appModel.completeBackupImport(t.backup_import_success);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回
+      // 纯退出兜底，故此处不会把「重启失败」冒泡成 catch 里的 failBackupImport（避免把成功的
+      // 导入错报为失败）。
+      await backupImportRestart(appModel);
     } catch (e) {
       // TODO-1183: DB 已关闭，无论成败都必须重启；失败走 failBackupImport → 遮罩画红色
       // 错误图标 + 失败原因（根治 OOM/异常「失败却显绿✓成功」的误导）。
@@ -710,13 +904,24 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     _BackupImportMode mode = _BackupImportMode.overwrite;
     bool importSettings = false;
     // TODO-1358: the selectable content categories this backup actually carries,
-    // all ticked by default; unticking one skips restoring its files (overwrite
-    // only). Iterated in enum order for a stable layout.
-    final List<BackupCategory> selectablePresent = BackupCategory.values
-        .where((BackupCategory c) =>
-            importSelectableCategories.contains(c) && summary.has(c))
-        .toList();
-    final Set<BackupCategory> selectedRestore = selectablePresent.toSet();
+    // all ticked by default; unticking one skips restoring it. The set differs
+    // by mode — merge can additionally gate books/statistics (row-level), which
+    // the overwrite whole-DB-blob path cannot. Iterated in enum order for a
+    // stable layout. [selectedRestore] seeds from the UNION so a tick survives a
+    // mode switch.
+    List<BackupCategory> presentFor(Set<BackupCategory> selectable) =>
+        BackupCategory.values
+            .where(
+                (BackupCategory c) => selectable.contains(c) && summary.has(c))
+            .toList();
+    final List<BackupCategory> overwriteSelectablePresent =
+        presentFor(importSelectableCategories);
+    final List<BackupCategory> mergeSelectablePresent =
+        presentFor(importMergeSelectableCategories);
+    final Set<BackupCategory> selectedRestore = <BackupCategory>{
+      ...overwriteSelectablePresent,
+      ...mergeSelectablePresent,
+    };
     final bool? confirmed = await showAppDialog<bool>(
       context: dialogContext,
       builder: (BuildContext ctx) => StatefulBuilder(
@@ -788,40 +993,41 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                     onChanged: (_BackupImportMode? v) =>
                         setLocal(() => mode = v ?? _BackupImportMode.overwrite),
                   ),
-                  // TODO-1358: "what is inside" manifest + per-category restore
-                  // toggles. Overwrite: a live toggle (untick to skip a
-                  // category's files). Merge: read-only info (merge adds what is
-                  // missing). Books / reading data / settings are handled by the
-                  // rows above, so only the bulky sidecar trees appear here.
-                  if (selectablePresent.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      t.backup_import_contents_title,
-                      style: Theme.of(ctx).textTheme.labelLarge,
-                    ),
-                    if (mode == _BackupImportMode.overwrite)
+                  // TODO-1358: "what is inside" manifest + per-category toggles.
+                  // Both modes are now live: untick a category to skip
+                  // restoring/merging it. The selectable set is mode-dependent —
+                  // merge can additionally gate books/statistics (row-level).
+                  ...<Widget>[
+                    if (mode == _BackupImportMode.overwrite
+                        ? overwriteSelectablePresent.isNotEmpty
+                        : mergeSelectablePresent.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        t.backup_import_contents_title,
+                        style: Theme.of(ctx).textTheme.labelLarge,
+                      ),
                       Text(
                         t.backup_import_contents_hint,
                         style: Theme.of(ctx).textTheme.bodySmall,
                       ),
-                    for (final BackupCategory c in selectablePresent)
-                      AdaptiveSettingsSwitchRow(
-                        title: '${backupCategoryLabel(c)} '
-                            '(${summary.countFor(c)})',
-                        subtitle: backupCategoryDescription(c),
-                        value: mode == _BackupImportMode.overwrite
-                            ? selectedRestore.contains(c)
-                            : true,
-                        onChanged: mode == _BackupImportMode.overwrite
-                            ? (bool v) => setLocal(() {
-                                  if (v) {
-                                    selectedRestore.add(c);
-                                  } else {
-                                    selectedRestore.remove(c);
-                                  }
-                                })
-                            : null,
-                      ),
+                      for (final BackupCategory c
+                          in mode == _BackupImportMode.overwrite
+                              ? overwriteSelectablePresent
+                              : mergeSelectablePresent)
+                        AdaptiveSettingsSwitchRow(
+                          title: '${backupCategoryLabel(c)} '
+                              '(${summary.countFor(c)})',
+                          subtitle: backupCategoryDescription(c),
+                          value: selectedRestore.contains(c),
+                          onChanged: (bool v) => setLocal(() {
+                            if (v) {
+                              selectedRestore.add(c);
+                            } else {
+                              selectedRestore.remove(c);
+                            }
+                          }),
+                        ),
+                    ],
                   ],
                   // The settings-layer toggle only applies to overwrite; merge
                   // always keeps this device's settings.
@@ -867,13 +1073,18 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       ),
     );
     if (confirmed != true) return null;
-    // Everything not offered as a selectable toggle always restores (books /
-    // progress / statistics / settings / profiles); add the selectable ones the
-    // user kept ticked (TODO-1358).
+    // Everything not offered as a selectable toggle for THIS mode always
+    // applies; add the selectable ones the user kept ticked (TODO-1358). The
+    // selectable set is mode-dependent (merge can gate books/statistics too), so
+    // an unticked merge-only category (books/statistics) is correctly dropped
+    // from the set, while for overwrite those stay always-on.
+    final Set<BackupCategory> modeSelectable =
+        mode == _BackupImportMode.overwrite
+            ? importSelectableCategories
+            : importMergeSelectableCategories;
     final Set<BackupCategory> categories = BackupCategory.values
         .where((BackupCategory c) =>
-            !importSelectableCategories.contains(c) ||
-            selectedRestore.contains(c))
+            !modeSelectable.contains(c) || selectedRestore.contains(c))
         .toSet();
     return _BackupImportChoice(
       mode: mode,

@@ -88,11 +88,20 @@ function transformSelector(raw) {
   // Verbatim class/id/:where() rules — already popup-scoped in practice.
   if (p.startsWith('.') || p.startsWith('#') || p.startsWith(':where(')) return p;
   // Document-level rules → re-root at #entries-container.
-  if (p === 'body') return '#entries-container';
-  if (/^html([.[ ]|$)/.test(p)) return '#entries-container' + p.slice(4);
-  if (p === '::selection') return '#entries-container ::selection';
-  if (p.startsWith('::-webkit-scrollbar')) return '#entries-container ' + p;
-  if (/^(hr|a)$/.test(p)) return '#entries-container ' + p;
+  //
+  // The added scope MUST be specificity-neutral (`:where(#entries-container)`,
+  // never a bare `#entries-container` prefix). A bare ID prefix lifts these
+  // document-level rules from (0,0,x) to (1,0,x), so they out-rank every class
+  // rule in the file and the extension cascade inverts relative to the in-app
+  // popup.css cascade. That inversion is exactly how the `*` margin/padding
+  // reset killed `.ruby-unit { padding-top }` (deliberately kept low-specificity
+  // via `:where()`) and glossary furigana printed on top of its base text in the
+  // extension while the in-app popup rendered fine (BUG-752).
+  if (p === 'body') return ':where(#entries-container)';
+  if (/^html([.[ ]|$)/.test(p)) return ':where(#entries-container)' + p.slice(4);
+  if (p === '::selection') return ':where(#entries-container) ::selection';
+  if (p.startsWith('::-webkit-scrollbar')) return ':where(#entries-container) ' + p;
+  if (/^(hr|a)$/.test(p)) return ':where(#entries-container) ' + p;
   throw new Error(
     `[generate-content-css] UNKNOWN document-level selector ${JSON.stringify(p)}: ` +
       'decide whether to scope it to #entries-container or drop it, then update transformSelector().',
@@ -101,7 +110,10 @@ function transformSelector(raw) {
 
 /** Transform a whole selector list; returns replacement text, or null to drop the rule. */
 function transformSelectorList(sel) {
-  if (sel.trim() === '*') return '#entries-container,\n#entries-container *';
+  // Zero-specificity scope (BUG-752): `:where(...)` keeps the universal reset at
+  // (0,0,0) exactly like popup.css's bare `*`, so `.ruby-unit { padding-top }`
+  // and every other class-rule margin/padding still win in the extension.
+  if (sel.trim() === '*') return ':where(#entries-container, #entries-container *)';
   const out = [];
   for (const part of splitSelectorList(sel)) {
     const t = transformSelector(part);
