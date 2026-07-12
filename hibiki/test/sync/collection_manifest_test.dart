@@ -115,4 +115,128 @@ void main() {
             }),
         throwsFormatException);
   });
+
+  // ── finding 2：publishedAt 字段编解码 ────────────────────────────────────
+  test('publishedAt roundtrip：墓碑/合集级删除的发布戳无损，缺省不写', () {
+    final CollectionManifest m = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'P',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            // 已发布（带 publishedAt）。
+            CollectionMemberTombstone(
+                mediaType: 'video',
+                entryKey: 'pub',
+                removedAt: 100,
+                publishedAt: 150),
+            // 未发布（publishedAt 缺省 null，toJson 不写该字段）。
+            CollectionMemberTombstone(
+                mediaType: 'video', entryKey: 'unpub', removedAt: 200),
+          ],
+        ),
+        const CollectionManifestEntry(
+          name: 'D',
+          collectionType: 'collection',
+          deletedAt: 300,
+          deletedPublishedAt: 350,
+        ),
+      ],
+    );
+    final CollectionManifest decoded =
+        CollectionManifest.fromJson(jsonDecode(m.canonicalJson()));
+    expect(decoded.canonicalJson(), m.canonicalJson(), reason: '字节等价');
+
+    final CollectionManifestEntry p = decoded.collections
+        .firstWhere((CollectionManifestEntry e) => e.name == 'P');
+    final CollectionMemberTombstone pub =
+        p.memberTombstones.firstWhere((t) => t.entryKey == 'pub');
+    final CollectionMemberTombstone unpub =
+        p.memberTombstones.firstWhere((t) => t.entryKey == 'unpub');
+    expect(pub.publishedAt, 150);
+    expect(unpub.publishedAt, isNull, reason: '缺省 publishedAt 解码为 null');
+
+    final CollectionManifestEntry d = decoded.collections
+        .firstWhere((CollectionManifestEntry e) => e.name == 'D');
+    expect(d.deletedPublishedAt, 350);
+  });
+
+  // ── finding 12：负时间戳拒绝 + 非法条目跳过发布 ──────────────────────────
+  test('负 removedAt / 负 publishedAt / 负 deletedAt 一律 FormatException', () {
+    Object entryWith(Map<String, dynamic> tomb) => <String, dynamic>{
+          'version': 1,
+          'collections': <Object?>[
+            <String, dynamic>{
+              'name': 'X',
+              'collectionType': 'collection',
+              'members': <Object?>[],
+              'memberTombstones': <Object?>[tomb],
+            },
+          ],
+        };
+    expect(
+        () => CollectionManifest.fromJson(entryWith(<String, dynamic>{
+              'mediaType': 'epub',
+              'entryKey': 'z',
+              'removedAt': -1,
+            })),
+        throwsFormatException,
+        reason: '负 removedAt（历史 `(lt ?? -1)` 哨兵撞车会崩）');
+    expect(
+        () => CollectionManifest.fromJson(entryWith(<String, dynamic>{
+              'mediaType': 'epub',
+              'entryKey': 'z',
+              'removedAt': 5,
+              'publishedAt': -9,
+            })),
+        throwsFormatException,
+        reason: '负 publishedAt');
+    expect(
+        () => CollectionManifest.fromJson(<String, dynamic>{
+              'version': 1,
+              'collections': <Object?>[
+                <String, dynamic>{
+                  'name': 'X',
+                  'collectionType': 'collection',
+                  'deletedAt': -3,
+                  'members': <Object?>[],
+                  'memberTombstones': <Object?>[],
+                },
+              ],
+            }),
+        throwsFormatException,
+        reason: '负 deletedAt');
+  });
+
+  test('toJson 跳过非法条目：空自然键合集 / 空键成员 / 空键墓碑不发布毒害对端', () {
+    final CollectionManifest dirty = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        // 空 name 合集：整条不发布。
+        const CollectionManifestEntry(name: '', collectionType: 'collection'),
+        CollectionManifestEntry(
+          name: 'Good',
+          collectionType: 'collection',
+          members: const <CollectionManifestMember>[
+            CollectionManifestMember(
+                mediaType: '', entryKey: 'x', sortIndex: 0), // 空 mediaType
+            CollectionManifestMember(
+                mediaType: 'epub', entryKey: 'y', sortIndex: 1), // 合法
+          ],
+          memberTombstones: const <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+                mediaType: 'epub', entryKey: '', removedAt: 5), // 空 entryKey
+          ],
+        ),
+      ],
+    );
+    // 关键：脏清单编码后必须能被严格 codec 无异常解回（证明没发布非法条目）。
+    final CollectionManifest reparsed =
+        CollectionManifest.fromJson(jsonDecode(dirty.canonicalJson()));
+    expect(reparsed.collections, hasLength(1), reason: '空 name 合集被跳过');
+    final CollectionManifestEntry good = reparsed.collections.single;
+    expect(good.name, 'Good');
+    expect(good.members.map((m) => m.entryKey).toList(), <String>['y'],
+        reason: '空键成员被跳过，只剩合法成员');
+    expect(good.memberTombstones, isEmpty, reason: '空键墓碑被跳过');
+  });
 }

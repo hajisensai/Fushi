@@ -47,9 +47,23 @@ const String _localAudioAssetSuffix = '.hibikiaudiolib';
 /// ([isReservedSyncFolderName]).
 const String kSyncCollectionsNamespace = '__collections__';
 
-/// The single shared collection manifest asset inside
-/// [kSyncCollectionsNamespace]（读-合并-写；格式见 CollectionManifest）。
+/// 旧版**单文件**合集清单资产名（向后兼容读；per-device 布局前所有端共写它）。
+/// 现改 per-device `collections-<deviceId>.json`（[collectionsManifestNameFor]）：
+/// 单文件读-合-写在两设备并发时后写者整文件覆盖先写者会永久丢墓碑，per-device 各写
+/// 各的绝不互相覆盖（沿 `__aggregate__` 成熟范式）。仍读旧单文件做向后兼容合并。
 const String kSyncCollectionsManifestName = 'collections.json';
+
+/// 本端自己的 per-device 合集清单资产名。[deviceId] 为空（未配置/测试）时退回旧单
+/// 文件名（不产生匿名碎片、且旧行为完全保留）。
+String collectionsManifestNameFor(String deviceId) => deviceId.isEmpty
+    ? kSyncCollectionsManifestName
+    : 'collections-$deviceId.json';
+
+/// 是否是一份合集清单资产（旧单文件 `collections.json` 或 per-device
+/// `collections-<id>.json`）——读时据此把命名空间下全部合集清单文件都折进远端并集。
+bool isCollectionsManifestName(String name) =>
+    name == kSyncCollectionsManifestName ||
+    (name.startsWith('collections-') && name.endsWith('.json'));
 
 /// Reserved top-level folder holding uploaded video files + their directory
 /// manifest (`videos.json`) for cloud video asset sync (多端库联合视图 §2.6).
@@ -487,41 +501,75 @@ class SyncOrchestrator {
     try {
       final String ns =
           await _backend.ensureNamespace(kSyncCollectionsNamespace);
-      final AssetEntry? asset =
-          await _backend.findAsset(ns, kSyncCollectionsManifestName);
-      CollectionManifest remote = CollectionManifest.empty;
-      String? remoteCanonical;
-      if (asset != null) {
-        final Object? json = await _backend.getJsonAsset(asset.id);
-        if (json != null) {
-          remote = CollectionManifest.fromJson(json);
-          remoteCanonical = remote.canonicalJson();
+      final SyncRepository repo = SyncRepository(_db);
+
+      // 竞态修复：**读远端清单之前**先预取本轮基线时刻，整轮成功后写这个预取值
+      // （而非结束时的新 now）。否则「IO 期间用户移出的墓碑 removedAt <= 结束才取的
+      // now」会在下轮被判旧闻撤销。同时作 publishedAt 发布时戳。
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
+
+      // per-device 布局：本端只写 `collections-<deviceId>.json`，读时合并**命名空间下
+      // 全部清单文件（含本端上轮自己那份 + 旧单文件）**成远端并集。单文件读-合-写两
+      // 设备并发后写者整文件覆盖先写者会永久丢墓碑；per-device 各写各的绝不互相覆盖。
+      // 折叠里**包含本端自己上轮那份**——否则本端已发布墓碑的 publishedAt 每轮会被
+      // 重新盖 now（写放大 + 破坏幂等）；含进来则保真已发布戳，字节稳定。
+      final String ownName = collectionsManifestNameFor(deviceId);
+      final List<AssetEntry> children = await _backend.listChildren(ns);
+
+      final List<CollectionManifest> peers = <CollectionManifest>[];
+      bool ownExists = false;
+      String? ownCanonical; // 本端上轮那份的规范字节（回写去重用，字节不变不回写）。
+      for (final AssetEntry e in children) {
+        if (e.isFolder || !isCollectionsManifestName(e.name)) continue;
+        final Object? json = await _backend.getJsonAsset(e.id);
+        if (json == null) {
+          // 清单资产存在但读不出（下载失败/损坏）：本轮跳过（不 apply、不回写、不推进
+          // 基线，下轮重试）——否则按残缺远端并集会误撤他端知识。
+          report.errors.add('collections manifest "${e.name}" present but '
+              'unreadable; skipping collections sync this run');
+          return;
+        }
+        final CollectionManifest m = CollectionManifest.fromJson(json);
+        peers.add(m);
+        if (e.name == ownName) {
+          ownExists = true;
+          ownCanonical = m.canonicalJson();
         }
       }
 
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
-      final SyncRepository repo = SyncRepository(_db);
-      final int baseline = await repo.getCollectionsSyncBaselineMs();
+
+      // 时钟回拨钳制：持久化基线晚于 now（时钟被拨回）时钳到 now，避免基线永远大于
+      // 一切 publishedAt/removedAt 而把所有墓碑当旧闻。
+      int baseline = await repo.getCollectionsSyncBaselineMs();
+      if (baseline > nextBaseline) baseline = nextBaseline;
+
+      // 折叠对端 per-device 文件 + 旧单文件成远端并集（两侧皆已发布，用 publishedAt
+      // 裁决；不盖新 publishedAt）。空并集 = 首轮/无对端，优雅退化为「只上传本机」。
+      final CollectionManifest remote = CollectionSyncEngine.combinePeers(
+        peers,
+        lastSyncedAtMs: baseline,
+        nowMs: nextBaseline,
+      );
+
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
         remote: remote,
         lastSyncedAtMs: baseline,
+        nowMs: nextBaseline,
       );
 
       report.collectionsUpdated +=
           await applyCollectionLocalChanges(_db, outcome.changes);
 
-      // 回写门槛：字节有变才写；远端本无清单且合并结果为空（零合集库）不无中
-      // 生有地创建空文件。
+      // 回写门槛：本端 per-device 文件字节有变才写自己那份；本端尚无文件且合并结果为空
+      // （零合集库）不无中生有地创建空文件。只写 ownName——绝不覆盖别人的文件。
       final bool nothingToPublish =
-          asset == null && outcome.merged.collections.isEmpty;
-      if (!nothingToPublish &&
-          outcome.merged.canonicalJson() != remoteCanonical) {
-        await _backend.putJsonAsset(
-            ns, kSyncCollectionsManifestName, outcome.merged.toJson());
+          !ownExists && outcome.merged.collections.isEmpty;
+      if (!nothingToPublish && outcome.merged.canonicalJson() != ownCanonical) {
+        await _backend.putJsonAsset(ns, ownName, outcome.merged.toJson());
       }
-      await repo
-          .setCollectionsSyncBaselineMs(DateTime.now().millisecondsSinceEpoch);
+      await repo.setCollectionsSyncBaselineMs(nextBaseline);
     } catch (e) {
       report.errors.add('collections sync: $e');
     }
@@ -546,17 +594,23 @@ class SyncOrchestrator {
     HibikiClientSyncBackend backend,
   ) async {
     try {
+      // 竞态修复：读远端清单**之前**先预取本轮基线时刻，整轮成功后写这个预取值
+      // （而非结束时的新 now），并作 publishedAt 发布时戳。
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
       final CollectionManifest? remote =
           await backend.getRemoteCollectionManifest();
       if (remote == null) return; // 老 host 无合集端点：优雅跳过。
 
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       final SyncRepository repo = SyncRepository(_db);
-      final int baseline = await repo.getCollectionsSyncBaselineMs();
+      // 时钟回拨钳制：持久化基线晚于 now 时钳到 now。
+      int baseline = await repo.getCollectionsSyncBaselineMs();
+      if (baseline > nextBaseline) baseline = nextBaseline;
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
         remote: remote,
         lastSyncedAtMs: baseline,
+        nowMs: nextBaseline,
       );
 
       report.collectionsUpdated +=
@@ -567,8 +621,7 @@ class SyncOrchestrator {
       if (outcome.merged.canonicalJson() != remote.canonicalJson()) {
         await backend.putRemoteCollectionManifest(outcome.merged);
       }
-      await repo
-          .setCollectionsSyncBaselineMs(DateTime.now().millisecondsSinceEpoch);
+      await repo.setCollectionsSyncBaselineMs(nextBaseline);
     } catch (e) {
       report.errors.add('collections live sync: $e');
     }
@@ -614,11 +667,18 @@ class SyncOrchestrator {
           await _backend.findAsset(ns, kSyncVideosManifestName);
       RemoteVideoManifest remote = RemoteVideoManifest.empty;
       String? remoteCanonical;
+      // 清单资产存在但读不出（getJsonAsset 返 null = 下载失败/损坏）：视为损坏，
+      // 本轮**跳过清单回写**（否则会按空清单合并，抹掉他端全部条目），资产照传。
+      bool manifestCorrupt = false;
       if (manifestAsset != null) {
         final Object? json = await _backend.getJsonAsset(manifestAsset.id);
         if (json != null) {
           remote = RemoteVideoManifest.fromJson(json);
           remoteCanonical = remote.canonicalJson();
+        } else {
+          manifestCorrupt = true;
+          report.errors.add('video manifest present but unreadable; '
+              'skipping manifest writeback this run (assets still uploaded)');
         }
       }
 
@@ -665,11 +725,18 @@ class SyncOrchestrator {
             }
           }
 
-          // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。
-          final bool remoteHasSameSize =
-              remoteSizeByName.containsKey(assetName) &&
-                  remoteSizeByName[assetName] == size;
-          if (!remoteHasSameSize) {
+          // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。跳过判据**不能**用
+          // 远端资产的物理尺寸——`resolveSyncBackend` 无条件包 ObfuscatingSyncBackend，
+          // 上传体 = 8 字节 magic + XOR 正文（远端尺寸 = 明文 + 8，永不等于本地明文
+          // size），且 Dropbox/WebDAV/FTP 的 listChildren 根本不报 sizeBytes（null）。
+          // 改用清单记录的**明文尺寸**（跨后端可靠）：远端按名存在 && 合并清单里该 uid
+          // 条目 videoAsset 同名 && 记录的明文尺寸 == 本地明文尺寸 ⇒ 跳过。
+          final RemoteVideoManifestEntry? priorEntry = byUid[v.bookUid];
+          final bool remoteHasByName = remoteSizeByName.containsKey(assetName);
+          final bool manifestSameSize = priorEntry != null &&
+              priorEntry.videoAsset == assetName &&
+              priorEntry.sizeBytes == size;
+          if (!(remoteHasByName && manifestSameSize)) {
             await _backend.putAsset(ns, assetName, file,
                 onProgress: (double f) => _emit(SyncPhase.videos,
                     itemIndex: index,
@@ -681,13 +748,15 @@ class SyncOrchestrator {
           }
 
           // 无论是否跳过上传，都刷新清单条目（保证同尺寸跳过时清单仍有此 uid）。
+          // coverAsset 回退保留 byUid 既有值：本地封面文件丢失 ≠ 远端没有封面，绝不
+          // 把已发布的 coverAsset 抹成 null。
           byUid[v.bookUid] = RemoteVideoManifestEntry(
             uid: v.bookUid,
             title: v.title,
             videoAsset: assetName,
             sizeBytes: size,
             importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
-            coverAsset: coverAsset,
+            coverAsset: coverAsset ?? priorEntry?.coverAsset,
           );
         } catch (e) {
           report.errors.add('video "${v.title}": $e');
@@ -696,13 +765,15 @@ class SyncOrchestrator {
       }
 
       // 回写门槛：字节有变才写；远端本无清单且合并结果为空（零视频库）不无中生有
-      // 地创建空文件。
+      // 地创建空文件；清单损坏（读不出）本轮绝不回写（否则用空清单覆盖抹掉他端条目）。
       final RemoteVideoManifest merged = RemoteVideoManifest(
         videos: byUid.values.toList(),
       );
       final bool nothingToPublish =
           manifestAsset == null && merged.videos.isEmpty;
-      if (!nothingToPublish && merged.canonicalJson() != remoteCanonical) {
+      if (!manifestCorrupt &&
+          !nothingToPublish &&
+          merged.canonicalJson() != remoteCanonical) {
         await _backend.putJsonAsset(
             ns, kSyncVideosManifestName, merged.toJson());
       }

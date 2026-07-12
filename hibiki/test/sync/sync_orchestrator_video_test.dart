@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
+import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
@@ -283,6 +284,126 @@ void main() {
               .toSet();
       expect(uids, containsAll(<String>['video/FromA', 'video/FromB']),
           reason: 'upload-only union must not drop the remote-only entry');
+    });
+  });
+
+  group('adversarial finding fixes', () {
+    // finding 1/7：同尺寸跳过判据不能用远端物理尺寸——resolveSyncBackend 无条件包
+    // ObfuscatingSyncBackend（远端 = 明文 + 8 字节 magic），且 Dropbox/WebDAV/FTP
+    // 不报 sizeBytes。改用清单记录的明文尺寸后，第二轮必须零重传。
+    test(
+        'finding1/7 idempotent under ObfuscatingSyncBackend (remote size = plaintext+8)',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final SyncBackend backend =
+          ObfuscatingSyncBackend(FakeSyncBackend(store));
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      await _seedLocalVideo(db, tmp,
+          uid: 'video/Obf', title: 'Obf', contents: 'the-real-bytes');
+
+      final SyncRunReport first = SyncRunReport();
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(first);
+      expect(first.videosExported, 1);
+
+      final SyncRunReport second = SyncRunReport();
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(second);
+      expect(second.videosExported, 0,
+          reason:
+              'obfuscated remote size = plaintext+8; skip must use manifest '
+              'plaintext size, not physical remote size');
+      expect(second.errors, isEmpty);
+    });
+
+    test(
+        'finding7 idempotent when backend reports null sizeBytes (Dropbox/WebDAV/FTP)',
+        () async {
+      final FakeAssetStore store = FakeAssetStore(reportNullSizes: true);
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      await _seedLocalVideo(db, tmp, uid: 'video/NullSz', title: 'NullSz');
+
+      final SyncRunReport first = SyncRunReport();
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(first);
+      expect(first.videosExported, 1);
+
+      final SyncRunReport second = SyncRunReport();
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(second);
+      expect(second.videosExported, 0,
+          reason: 'null remote size must not force a re-upload every run');
+      expect(second.errors, isEmpty);
+    });
+
+    // finding 9：清单条目刷新绝不把既有 coverAsset 抹成 null（本地封面文件丢失 ≠
+    // 远端没有封面）。
+    test('finding9 keeps prior coverAsset when the local cover file disappears',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      await _seedLocalVideo(db, tmp,
+          uid: 'video/Cov', title: 'Cov', coverName: 'cov.jpg');
+
+      // Round 1: cover uploaded, manifest entry carries coverAsset.
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(SyncRunReport());
+      final RemoteVideoManifestEntry e1 =
+          (await CloudRemoteVideoClient(backend: store).listRemoteVideos())
+              .single;
+      expect(e1.coverAsset, isNotNull);
+
+      // Local cover file vanishes (moved/deleted on this device) before round 2.
+      File(p.join(tmp.path, 'cov.jpg')).deleteSync();
+
+      // Round 2: manifest entry must still carry the coverAsset (not nulled).
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(SyncRunReport());
+      final RemoteVideoManifestEntry e2 =
+          (await CloudRemoteVideoClient(backend: store).listRemoteVideos())
+              .single;
+      expect(e2.coverAsset, e1.coverAsset,
+          reason:
+              'missing local cover file must not wipe published coverAsset');
+    });
+
+    // finding 10：远端 videos.json 存在但读不出（返 null）→ 视为损坏，本轮跳过清单
+    // 回写（否则按空清单覆盖抹掉他端全部条目），资产照传。
+    test(
+        'finding10 corrupt videos.json is not overwritten; assets still uploaded',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // Manifest asset present but decodes to null (download-failure / corruption).
+      await store.ensureNamespace(kSyncVideosNamespace);
+      await store.putJsonAsset(
+          kSyncVideosNamespace, kSyncVideosManifestName, null);
+      await _seedLocalVideo(db, tmp, uid: 'video/Keep', title: 'Keep');
+
+      final SyncRunReport report = SyncRunReport();
+      await _orchestrator(db, backend, tmp, syncVideoFiles: true)
+          .syncVideoAssets(report);
+
+      expect(report.videosExported, 1, reason: 'assets still uploaded');
+      expect(report.errors.any((String e) => e.contains('unreadable')), isTrue,
+          reason: 'corruption recorded');
+      final AssetEntry manifest = (await store.findAsset(
+          kSyncVideosNamespace, kSyncVideosManifestName))!;
+      expect(await store.getJsonAsset(manifest.id), isNull,
+          reason:
+              'corrupt manifest must NOT be overwritten (would wipe peers)');
     });
   });
 

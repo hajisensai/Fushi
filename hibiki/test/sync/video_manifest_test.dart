@@ -143,5 +143,25 @@ void main() {
       final String b = videoAssetName('video_1', '/x/b.mp4');
       expect(a, isNot(equals(b)));
     });
+
+    // finding 8：脏扩展名（非 ASCII / 空格 / 多点）不清洗直拼会把非 ASCII 字节送进
+    // FTP/SFTP 路径、WebDAV href 而炸；改为「非法即回退 .mp4/.jpg」。
+    test(
+        'finding8 dirty (non-ASCII) extension falls back, keeps asset name safe',
+        () {
+      final String v = videoAssetName('u', '/anime/movie.第1話');
+      expect(v, endsWith('.mp4'), reason: '.第1話 是脏扩展名，回退 .mp4');
+      expect(RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(v), isTrue,
+          reason: '资产名不得含非 ASCII 字节（跨后端路径安全）');
+
+      final String c = videoCoverAssetName('u', '/covers/cover.表紙');
+      expect(c, endsWith('.jpg'));
+      expect(RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(c), isTrue);
+
+      // 含空格的脏扩展名也回退。
+      expect(videoAssetName('u', '/x/clip.mp4 copy'), endsWith('.mp4'));
+      // 合法 ASCII 扩展名保留（含大写）。
+      expect(videoAssetName('u', '/x/a.MKV'), endsWith('.MKV'));
+    });
   });
 }
