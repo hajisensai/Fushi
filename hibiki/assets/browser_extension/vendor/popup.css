@@ -173,6 +173,18 @@ html {
     flex: 1 1 auto;
     min-width: 0;
     overflow-x: auto;
+    /* BUG-753: hide the scrollbar via the STANDARD property too, not only the
+       ::-webkit-scrollbar rule below. The themed-scrollbar block sets the
+       standard `scrollbar-color` on the root, which INHERITS into this element;
+       once a standard scrollbar property is in effect, Chromium 121+ disables
+       the whole ::-webkit-scrollbar pseudo family, so `display: none` below
+       stops applying. The headword ruby (reading over base) also overflows the
+       box by a few px vertically, and `overflow-x: auto` makes computed
+       overflow-y `auto`, so the extension popup (real Chrome, classic
+       scrollbars) showed a tiny arrows+thumb vertical scrollbar squeezed
+       against the header buttons. In-app WebView2 hid it only by luck (Fluent
+       overlay scrollbars are invisible at rest). */
+    scrollbar-width: none;
 }
 
 .expression-scroll::-webkit-scrollbar {

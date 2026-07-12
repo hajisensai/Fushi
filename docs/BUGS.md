@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 758 条。点号进各自文件。
+> 共 759 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-775](bugs/BUG-775-ext-expression-scroll-scrollbar.md) | ✅ | ✅ | 扩展弹窗词头旁多出迷你滚动条：标准scrollbar-color继承使::-webkit-scrollbar隐藏失效 |
 | [BUG-774](bugs/BUG-774-mine-button-global-lookup.md) | ✅ | ✅ | 剪贴板/选中查词缺少制卡按钮 |
 | [BUG-773](bugs/BUG-773-clipboard-sentence-hit-offset.md) | ✅ | ✅ | 剪贴板面板句子横幅整词高亮左移吞句首标点 |
 | [BUG-772](bugs/BUG-772-video-startup-freeze.md) | ✅ | ✅ | 快速进出视频后 Windows 启动冻死在 loading |
