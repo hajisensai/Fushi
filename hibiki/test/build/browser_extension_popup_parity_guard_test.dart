@@ -136,7 +136,8 @@ void main() {
         final String content = stripComments(read('$root/vendor/content.css'));
         // The zero-specificity universal reset must exist...
         expect(
-            content.contains(':where(#entries-container, #entries-container *)'),
+            content
+                .contains(':where(#entries-container, #entries-container *)'),
             isTrue,
             reason: '$root/vendor/content.css lost the :where() universal '
                 'reset (BUG-752)');
