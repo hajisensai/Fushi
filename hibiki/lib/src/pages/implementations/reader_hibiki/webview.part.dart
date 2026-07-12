@@ -2054,11 +2054,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       }
       _onCueChanged();
       await _applyLyricsFavorites();
-      // BUG-756: 歌词页 loadData 把 OS 焦点交给了 WebView，Flutter _focusNode 掉焦 →
-      // 一进歌词模式（还没点任何东西）ESC 就到不了 _handleKeyEvent / 全局退出处理器。
-      // 这里就绪即 reclaim 阅读焦点，让 ESC 从进入那刻起就能退出（与正文每个手势 reclaim
-      // 同纪律）；predicate 会在弹窗/底栏合法持焦点时自动跳过，底栏是 ExcludeFocus 恒不持焦。
-      _reclaimReaderFocusAfterGesture();
+      // BUG-767: 此前（BUG-755）在歌词页就绪即强夺阅读焦点，想让 ESC 从进入那刻就能退。
+      // 但桌面 loadData 后强夺 Flutter 焦点会把原生 WebView2 顶焦、重置其滚动到顶
+      // （→ 高亮看似回第一句），并与页面自身抢焦点抖动；一旦叠加重载路径每次 loadData
+      // 都触发一次，放大成持续闪烁。故移除这处 on-load 强夺焦（本行下方原有的焦点 reclaim
+      // 调用已删）。ESC 退出仍可用：点空白唤底栏走 onLyricsTapEmpty（内含焦点 reclaim）、
+      // 查词弹窗关闭走 onAllPopupsDismissed reclaim——任一交互后焦点即回阅读内容，ESC 正常退出。
       return;
     }
     final int gen = _navigateGeneration;

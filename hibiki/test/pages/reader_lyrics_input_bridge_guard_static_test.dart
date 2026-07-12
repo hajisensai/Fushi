@@ -66,16 +66,40 @@ void main() {
     );
   });
 
-  test('lyrics page-ready reclaims reader focus so ESC works from entry', () {
+  test(
+      'lyrics page-ready does NOT steal reader focus on load (BUG-767 no flicker)',
+      () {
     final String src = readReaderPageSource();
 
-    // `_onChapterLoadComplete` 歌词分支就绪后必须 reclaim 焦点（loadData 掉焦 →
-    // 一进歌词模式 ESC 就到不了 Flutter）。锚定该方法体的歌词分支（含
-    // `_lyricsPageReady = true;`），断言同一分支里出现 reclaim（旧码无）。
+    // BUG-767 回归守卫：BUG-755 曾在歌词就绪分支 `_reclaimReaderFocusAfterGesture()`
+    // 想让 ESC 从进入即可用，但桌面 loadData 后强夺 Flutter 焦点会顶焦原生 WebView2、
+    // 重置滚动（→ 高亮看似回第一句）并抖动，叠加重载路径成持续闪烁。故歌词就绪分支
+    // **必须不再**在 loadData 后强夺焦（ESC 改由任一交互后的 reclaim 覆盖）。
     final int m = src.indexOf('_onChapterLoadComplete(InAppWebViewController');
     expect(m, greaterThanOrEqualTo(0));
-    final String method = src.substring(m, m + 1600);
-    expect(method, contains('_lyricsPageReady = true;'));
-    expect(method, contains('_reclaimReaderFocusAfterGesture()'));
+    final int end = src.indexOf('final int gen = _navigateGeneration;', m);
+    expect(end, greaterThan(m));
+    final String lyricsBranch = src.substring(m, end);
+    expect(lyricsBranch, contains('_lyricsPageReady = true;'));
+    expect(lyricsBranch, isNot(contains('_reclaimReaderFocusAfterGesture()')));
+  });
+
+  test(
+      'lyrics _onCueChanged guards reload behind sourceIdx>=0 (BUG-767 no reload loop)',
+      () {
+    final String src = readReaderPageSource();
+
+    // BUG-767 回归守卫：sourceIdx<0（当前 cue 不可解析：cue 间隙 / setChapterCues 瞬时
+    // 清 _currentCue 后 notify）时必须保位不跳、绝不重载。旧码在 `idx<0` 分支无条件
+    // `_loadLyricsPage()`，重载又以 allBookCueIdx(-1) 回退到过期 entry index 生成
+    // currentIndex → 恒第一句 + 无限重载闪烁。守卫后重载只剩「窗外合法重载」一处。
+    final int s = src.indexOf('void _onCueChanged() {');
+    expect(s, greaterThanOrEqualTo(0));
+    final int e =
+        src.indexOf('final AudioCue? cue = controller.currentCue;', s);
+    expect(e, greaterThan(s));
+    final String lyricsBranch = src.substring(s, e);
+    expect(lyricsBranch, contains('if (sourceIdx >= 0) {'));
+    expect('_loadLyricsPage()'.allMatches(lyricsBranch).length, 1);
   });
 }

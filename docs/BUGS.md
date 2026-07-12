@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 753 条。点号进各自文件。
+> 共 754 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-771](bugs/BUG-771-lyrics-reload-flicker-first-cue.md) | ✅ | ✅ | 歌词模式进入后一直闪烁 + 高亮恒第一句（不是正在听的那句） |
 | [BUG-770](bugs/BUG-770-ext-popup-covers-word.md) | ✅ | ✅ | 网页扩展 Shift 查词弹窗遮住被查词 |
 | [BUG-769](bugs/BUG-769-nf-postmessage-file-origin.md) | ✅ | ✅ | Netflix字幕面板file://下postMessage因opaque origin报错致列表空 |
 | [BUG-768](bugs/BUG-768-clipboard-panel-btn-invisible.md) | ✅ | ✅ | 剪贴板面板图钉/关闭按钮暗背景不可见 |
