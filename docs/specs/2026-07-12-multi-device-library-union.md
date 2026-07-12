@@ -1,8 +1,8 @@
 # 多端库联合视图（完整方案：远端混排 + 合集同步 + 手动序跨端）
 
 > 状态：**已拍板**（2026-07-12 用户挨个决策：①混排+撤独立分区+开关默认开
-> ②离线=目录快照缓存（灰占位+上次同步时间）③云视频也可下载 ④手动序整合集
-> LWW）。本稿为一次交付的完整范围，无分期。
+> ②离线=**只剩本地**（先选快照缓存，同日用户改回只剩本地）③云视频也可下载
+> ④手动序整合集 LWW）。本稿为一次交付的完整范围，无分期。
 > 源头：用户群聊——书架跨客户端显示一致；缺的书占位可下载；没网保持现状；
 > 客户端专有书照常；「参照 git 那样搞？我想让他远端书籍/视频混合进正常里面」。
 > 分支：`worktree-unified-collections-plan`。
@@ -64,11 +64,11 @@
    的「合并」。A 端拖完序，B 端同步后详情页/合集行/播放器换集三处跨端同序。
    是否同步手动序 → 决策点 ④。
 
-### 2.4 离线语义（已拍板：目录快照缓存）
+### 2.4 离线语义（已拍板：只剩本地）
 
-新表 `remote_catalog_cache` 缓存上次成功拉取的远端目录（书+视频+合集归属，
-含拉取时间戳）；离线/后端不可达时占位卡照常渲染但**置灰 + 「上次同步于 x」**
-角标，点击提示不可用。在线成功拉取即整表覆盖快照。
+离线/未配对/后端不可达时远端占位卡**不出现**，只剩本地库（零新状态、零缓存
+表）；重新联网拉取成功后占位卡自动回来。不做「离线可见但不可点」的灰占位
+——点了也下载不了，假可用性。
 
 ### 2.5 客户端专有内容
 
@@ -85,7 +85,7 @@
 
 | 面 | 改动 |
 |---|---|
-| schema v40 | `media_collections.order_updated_at`；新表 `collection_member_tombstones`；新表 `remote_catalog_cache`（离线快照，含拉取时间戳） |
+| schema v40 | `media_collections.order_updated_at`；新表 `collection_member_tombstones` |
 | host API | 目录接口带合集归属；合集清单 endpoint（读+写） |
 | 云后端 | sync 根 `__collections__/collections.json` 清单（LWW 按 order_updated_at/updatedAt） |
 | 同步管线 | SyncOrchestrator 新增合集阶段（对齐/并集/墓碑/序 LWW）；SyncRunReport 计数 |
@@ -96,8 +96,8 @@
 ## 5. 决策点（2026-07-12 已全部拍板）
 
 1. **远端混排形态 = 混排 + 撤独立分区**，设置「显示远端条目」开关默认开。
-2. **离线语义 = 目录快照缓存**（灰占位 + 「上次同步于 x」，新表
-   `remote_catalog_cache`）。
+2. **离线语义 = 只剩本地**（2026-07-12 二次修订：先拍快照缓存，用户当日改回
+   只剩本地——零新状态，离线不显示远端条目）。
 3. **云视频 = 也可下载**（整文件入库，进度徽章同书）。
 4. **合集手动序 = 整合集 LWW**（`order_updated_at`，最后改序设备赢整个顺序）。
 
@@ -105,18 +105,17 @@
 
 | # | 任务 | 文件 | 验证 |
 |---|---|---|---|
-| 1 | schema v40：order_updated_at 列 + 成员/合集墓碑表 + remote_catalog_cache 快照表 + 迁移 | hibiki_core database/tables | 迁移单测 |
+| 1 | schema v40：order_updated_at 列 + 成员/合集墓碑表 + 迁移 | hibiki_core database/tables | 迁移单测 |
 | 2 | reorderCollectionItems bump order_updated_at | database.dart | DAO 单测 |
 | 3 | 合集清单编解码（JSON schema：自然键/成员/序/墓碑/时间戳） | 新 sync/collection_manifest.dart | 纯函数单测 |
 | 4 | 合集同步阶段（对齐/并集/墓碑/整表 LWW）接进 SyncOrchestrator | sync_orchestrator.dart | 引擎级单测（双库互推收敛） |
 | 5 | 互联 host：目录带合集归属 + 合集清单 endpoint | hibiki_library_host_service.dart | host 单测 |
 | 6 | 云后端：__collections__ 清单读写 | sync backends | 同上 |
 | 7 | 备份合并尊重成员墓碑 | backup_merge_engine.dart | merge 单测 |
-| 8 | 远端目录快照：成功拉取整表覆盖 remote_catalog_cache；离线读快照 | 新 sync/remote_catalog_cache 层 + 两页 | DAO+widget 测试 |
-| 9 | 书架/视频页占位卡混排（云角标/在线点击下载/流播、离线灰卡+上次同步时间）+ 开关 + 撤独立分区 | 两库页 + 设置 schema | widget 测试 |
-| 10 | 云视频下载链（整文件入库，进度徽章复用书下载） | 视频占位卡 + 下载服务 | widget/服务测试 |
-| 11 | 合集行成员占位卡 | collection_shelf_row 调用方 | widget 测试 |
-| 12 | 守卫：合集同步不变量（墓碑必查/LWW 必比时间戳/占位不入库/离线只读快照） | 守卫测试 | 全量 analyze+test |
+| 8 | 书架/视频页占位卡混排（云角标/在线点击下载/流播、离线不显示远端条目）+ 「显示远端条目」开关 + 撤独立分区 | 两库页 + 设置 schema | widget 测试 |
+| 9 | 云视频下载链（整文件入库，进度徽章复用书下载） | 视频占位卡 + 下载服务 | widget/服务测试 |
+| 10 | 合集行成员占位卡 | collection_shelf_row 调用方 | widget 测试 |
+| 11 | 守卫：合集同步不变量（墓碑必查/LWW 必比时间戳/占位不入库） | 守卫测试 | 全量 analyze+test |
 
 铁律边界：占位卡视觉/下载流播体验/双机真同步需真机（两台设备）复测；
 离屏能验到引擎收敛性 + widget 行为层。
