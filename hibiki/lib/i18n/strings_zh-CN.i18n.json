@@ -2280,5 +2280,8 @@
   "collection_sort_by_title": "按名称排序",
   "collection_sort_by_imported": "按导入时间排序",
   "collection_collapse": "折叠",
-  "collection_expand": "展开"
+  "collection_expand": "展开",
+  "sync_video_files_warning": "视频文件可能非常大。",
+  "sync_progress_videos": "同步视频",
+  "sync_video_files": "上传视频文件"
 }

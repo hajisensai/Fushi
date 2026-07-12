@@ -2280,5 +2280,8 @@
   "collection_sort_by_title": "Sort by name",
   "collection_sort_by_imported": "Sort by import date",
   "collection_collapse": "Collapse",
-  "collection_expand": "Expand"
+  "collection_expand": "Expand",
+  "sync_video_files_warning": "Video files can be very large.",
+  "sync_progress_videos": "Syncing videos",
+  "sync_video_files": "Upload video files"
 }

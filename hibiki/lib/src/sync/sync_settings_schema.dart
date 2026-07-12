@@ -232,6 +232,19 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncAudioBookFilesEnabled(value);
             },
           ),
+          // 上传视频文件（多端库联合视图 §2.6）：默认关，沿 audiobook_files 同款 gate。
+          SettingsSwitchItem(
+            id: 'sync.video_files',
+            title: t.sync_video_files,
+            subtitle: t.sync_video_files_warning,
+            icon: Icons.video_file_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncVideoFiles = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncVideoFilesEnabled(value);
+            },
+          ),
         ],
       ),
       // ── Group 4: Manual sync actions — global ────────────────────────
@@ -363,6 +376,7 @@ class _SyncSettingsState {
   bool syncLocalAudio = false;
   bool syncContent = false;
   bool syncAudioBookFiles = false;
+  bool syncVideoFiles = false;
   bool _loaded = false;
   bool _loading = false;
 
@@ -410,6 +424,7 @@ class _SyncSettingsState {
       syncLocalAudio = await _repo.isSyncLocalAudioEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
+      syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       serverEnabled = await _repo.isServerEnabled();
       hasClientConnection = (await _repo.getHibikiClientUrls()).isNotEmpty;
       _loaded = true;

@@ -17,6 +17,7 @@ import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -50,6 +51,16 @@ const String kSyncCollectionsNamespace = '__collections__';
 /// [kSyncCollectionsNamespace]（读-合并-写；格式见 CollectionManifest）。
 const String kSyncCollectionsManifestName = 'collections.json';
 
+/// Reserved top-level folder holding uploaded video files + their directory
+/// manifest (`videos.json`) for cloud video asset sync (多端库联合视图 §2.6).
+/// Populated only when the "上传视频文件" switch is on. Must be filtered from any
+/// listing that treats root children as books ([isReservedSyncFolderName]).
+const String kSyncVideosNamespace = '__videos__';
+
+/// The single shared video directory manifest asset inside
+/// [kSyncVideosNamespace]（读-合并-写；格式见 RemoteVideoManifest）。
+const String kSyncVideosManifestName = 'videos.json';
+
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 ///
@@ -62,7 +73,8 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncDictionaryNamespace ||
     name == kSyncLocalAudioNamespace ||
     name == kSyncAggregateNamespace ||
-    name == kSyncCollectionsNamespace;
+    name == kSyncCollectionsNamespace ||
+    name == kSyncVideosNamespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
@@ -120,6 +132,11 @@ class SyncRunReport {
   int audiobooksExported = 0;
   int localAudioImported = 0;
   int localAudioExported = 0;
+
+  /// 本轮推到云 `__videos__/` 命名空间的视频文件数（多端库联合视图 §2.6）。上传语义
+  /// （export-only），不产生本地导入，故不计入 [needsLocalLibraryRefresh]——与
+  /// [audiobooksExported] / [dictionariesExported] 同律。
+  int videosExported = 0;
 
   /// Book reading positions pulled from the interconnect host into this device's
   /// local `reader_positions` this run (host→local, newer-wins). A progress-only
@@ -187,6 +204,7 @@ class SyncOrchestrator {
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncAudioBookFiles,
+    this.syncVideoFiles = false,
     required this.syncDictionary,
     required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
@@ -218,6 +236,11 @@ class SyncOrchestrator {
   final bool syncAudioBookPosition;
   final bool syncContent;
   final bool syncAudioBookFiles;
+
+  /// 是否把本地视频文件上传到云 `__videos__/` 命名空间（多端库联合视图 §2.6）。默认
+  /// false：视频体积大，须用户显式 opt-in。仅云后端生效（互联走 host API，暂不接线）。
+  final bool syncVideoFiles;
+
   final bool syncDictionary;
 
   /// 是否同步本地音频来源（DB 文件 + 配置）。orchestrator 不依赖 AppModel：导出用的
@@ -337,6 +360,9 @@ class SyncOrchestrator {
     } else {
       if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
+      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端 + 开关开启。互联视频资产走
+      // host API（后续批），不走 __videos__ 伪装资产，故留在此云后端专属分支。
+      if (syncVideoFiles) await syncVideoAssets(report);
     }
 
     // 互联书籍 + 视频进度走 live 端点双向同步（TODO-767）。
@@ -555,6 +581,152 @@ class SyncOrchestrator {
     HibikiClientSyncBackend backend,
   ) =>
       _syncCollectionsLive(report, backend);
+
+  /// 云视频资产同步（多端库联合视图 §2.6 / 任务12，云后端通道）。
+  ///
+  /// 仅云后端 + `sync_video_files` 开启时由 [run] 调用。把本地 `VideoBooks` 里的
+  /// **本地单文件**视频（流媒体 URL / 多集播放列表跳过——它们没有可上传的单个本地
+  /// 字节，见 [_isUploadableLocalVideo]）推到 sync 根 `__videos__/` 命名空间：
+  /// - 资产名按 bookUid 安全编码 + 原扩展名（[videoAssetName]）；
+  /// - 远端已存在**同尺寸**跳过（upload-only，删除不传播——远端不删本地、本地删除
+  ///   也不删远端，与书内容 [_syncBooksContentLive] / 有声书包同律）；
+  /// - 封面（若有本地文件）作独立资产一并上传（[videoCoverAssetName]）。
+  ///
+  /// 同时维护 `__videos__/videos.json` 目录清单（[RemoteVideoManifest]）：读远端清单
+  /// → 合本地在库视频条目（本地覆盖同 uid，远端独有 uid 保留——知识的并集）→ 字节
+  /// 有变才回写（确定性排序 ⇒ 内容相等即字节相等，避免每轮写放大）。供其它端渲染
+  /// 云视频占位卡 + 按 uid 下载（[CloudRemoteVideoClient]）。
+  ///
+  /// 整段 try/catch，逐项 + 整体错误进 [report.errors] 不中断整体 sweep（与其它维度
+  /// 同纪律）。删除不跨端传播；[report.videosExported] 计上传数（跳过不计）。
+  Future<void> syncVideoAssets(SyncRunReport report) async {
+    try {
+      final String ns = await _backend.ensureNamespace(kSyncVideosNamespace);
+
+      // 远端既有资产（名 -> 大小），用于「同尺寸跳过」与「封面是否已上传」判定。
+      final Map<String, int?> remoteSizeByName = <String, int?>{
+        for (final AssetEntry e in await _backend.listChildren(ns))
+          if (!e.isFolder) e.name: e.sizeBytes,
+      };
+
+      // 远端既有清单（无则空，首轮优雅退化为「只上传本机视频」）。
+      final AssetEntry? manifestAsset =
+          await _backend.findAsset(ns, kSyncVideosManifestName);
+      RemoteVideoManifest remote = RemoteVideoManifest.empty;
+      String? remoteCanonical;
+      if (manifestAsset != null) {
+        final Object? json = await _backend.getJsonAsset(manifestAsset.id);
+        if (json != null) {
+          remote = RemoteVideoManifest.fromJson(json);
+          remoteCanonical = remote.canonicalJson();
+        }
+      }
+
+      // 合并清单起点 = 远端既有条目（按 uid 索引；本地在库的 uid 下面覆盖，远端独有
+      // 的 uid 原样保留——upload-only 并集，绝不因本地缺这条而从清单里抹掉它）。
+      final Map<String, RemoteVideoManifestEntry> byUid =
+          <String, RemoteVideoManifestEntry>{
+        for (final RemoteVideoManifestEntry e in remote.videos) e.uid: e,
+      };
+
+      // 稳定顺序（uid 升序）遍历本地可上传视频，进度分母 = 可上传视频数。
+      final List<VideoBookRow> localVideos = <VideoBookRow>[
+        for (final VideoBookRow v in await _db.allVideoBooks())
+          if (_isUploadableLocalVideo(v)) v,
+      ]..sort(
+          (VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
+      final int total = localVideos.length;
+      int index = 0;
+
+      for (final VideoBookRow v in localVideos) {
+        _emit(SyncPhase.videos,
+            itemIndex: index, itemTotal: total, title: v.title);
+        try {
+          final File file = File(v.videoPath);
+          if (!file.existsSync()) {
+            report.errors
+                .add('video "${v.title}": local file missing: ${v.videoPath}');
+            index++;
+            continue;
+          }
+          final int size = await file.length();
+          final String assetName = videoAssetName(v.bookUid, v.videoPath);
+
+          // 封面（可选、独立资产）：本地有文件且远端尚无同名资产才上传。
+          String? coverAsset;
+          final String? coverPath = v.coverPath;
+          if (coverPath != null &&
+              coverPath.isNotEmpty &&
+              File(coverPath).existsSync()) {
+            coverAsset = videoCoverAssetName(v.bookUid, coverPath);
+            if (!remoteSizeByName.containsKey(coverAsset)) {
+              await _backend.putAsset(ns, coverAsset, File(coverPath));
+              remoteSizeByName[coverAsset] = await File(coverPath).length();
+            }
+          }
+
+          // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。
+          final bool remoteHasSameSize =
+              remoteSizeByName.containsKey(assetName) &&
+                  remoteSizeByName[assetName] == size;
+          if (!remoteHasSameSize) {
+            await _backend.putAsset(ns, assetName, file,
+                onProgress: (double f) => _emit(SyncPhase.videos,
+                    itemIndex: index,
+                    itemTotal: total,
+                    title: v.title,
+                    fileFraction: f));
+            remoteSizeByName[assetName] = size;
+            report.videosExported++;
+          }
+
+          // 无论是否跳过上传，都刷新清单条目（保证同尺寸跳过时清单仍有此 uid）。
+          byUid[v.bookUid] = RemoteVideoManifestEntry(
+            uid: v.bookUid,
+            title: v.title,
+            videoAsset: assetName,
+            sizeBytes: size,
+            importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
+            coverAsset: coverAsset,
+          );
+        } catch (e) {
+          report.errors.add('video "${v.title}": $e');
+        }
+        index++;
+      }
+
+      // 回写门槛：字节有变才写；远端本无清单且合并结果为空（零视频库）不无中生有
+      // 地创建空文件。
+      final RemoteVideoManifest merged = RemoteVideoManifest(
+        videos: byUid.values.toList(),
+      );
+      final bool nothingToPublish =
+          manifestAsset == null && merged.videos.isEmpty;
+      if (!nothingToPublish && merged.canonicalJson() != remoteCanonical) {
+        await _backend.putJsonAsset(
+            ns, kSyncVideosManifestName, merged.toJson());
+      }
+    } catch (e) {
+      report.errors.add('video assets sync: $e');
+    }
+  }
+
+  /// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频（[syncVideoAssets] 用）。
+  ///
+  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为 http(s) URL）——无本地字节
+  /// 可传；多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传
+  /// 是后续批的接缝，见 §2.6 seam）。
+  bool _isUploadableLocalVideo(VideoBookRow v) {
+    if (v.streamSpecJson != null) return false;
+    if (v.playlistJson != null) return false;
+    final String path = v.videoPath;
+    if (path.isEmpty) return false;
+    final String lower = path.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+      return false;
+    }
+    return true;
+  }
 
   /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
   /// [SyncResult.conflict] rows are collected; everything else (imported /

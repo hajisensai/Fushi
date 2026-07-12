@@ -27,6 +27,9 @@ enum SyncPhase {
 
   /// Audiobook packages (`audiobook.hibikiaudio`) inside each book folder.
   audiobooks,
+
+  /// Video files in the `__videos__` namespace (多端库联合视图 §2.6).
+  videos,
 }
 
 /// One progress tick within a sync phase.
