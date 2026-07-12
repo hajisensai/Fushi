@@ -1,0 +1,6 @@
+## BUG-754 · 剪贴板面板释义子查词瞬态窗顶部重复贴剪贴板整句横幅
+- **报告**：2026-07-12（用户：截图——剪贴板面板查词时弹出的查词弹窗，上面有个多余的剪切板内容）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/lookup/clipboard_panel_controller.dart:476`（旧行）——面板里点释义文字/内链开的**独立瞬态覆盖窗**（`_lookupExternal`→`GlobalLookupController.lookupText`）把 `_currentSentence`（剪贴板整句）当 `sentence` 传下去，瞬态窗 root 帧据此注入 `window.__globalLookupSentence`，popup.js `buildGlobalLookupSentenceBanner` 在词条上方贴一条整句横幅。但被点的是**释义子词**（如 `考`→`考え`），并不在剪贴板整句里；且面板背后本已显示同一整句 → 横幅既无关又重复。面板自身对**子卡**是传 `''`（`_renderPanel` 里 `frame.id == kGlobalLookupRootFrameId ? _currentSentence : ''`，`clipboard_panel_controller.dart:301`），唯独「从面板弹出的瞬态子查词窗」被当成 root 破了这条一致性。横幅纯视觉，制卡 `sentence` 字段不经它（popup.js `buildMinePayload` 从不发 sentence / 不读 `__globalLookupSentence`），故清空零影响制卡。
+- **[x] ① 已修复** — `clipboard_panel_controller.dart` `_lookupExternal` 改传 `lookup(query, '', screenRect)`（原 `_currentSentence`），与面板「子查词一律无横幅」策略统一；同步重写方法头注释说明为何清空。commit `PENDING`。
+- **[x] ② 已加自动化测试** — `hibiki/test/lookup/clipboard_panel_controller_test.dart` 「源码接线守卫」组新增「释义子查词瞬态窗不带剪贴板横幅（sentence=''，去重）」：断言 `_lookupExternal` 体内传空句、且不再回退传 `_currentSentence`。14/14 全绿。commit `PENDING`。
+- **备注**：仅改 Dart 宿主侧，未触 popup.js/css，浏览器扩展 3-way parity / content.css 守卫不涉及。全屏 `flutter analyze` No issues。真机目视 gate：面板点释义弹瞬态窗，确认其顶部**不再**出现剪贴板整句横幅、而面板自身 root 横幅照旧、制卡 sentence 行为不变。

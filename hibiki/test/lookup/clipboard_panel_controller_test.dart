@@ -132,5 +132,26 @@ void main() {
         isTrue,
       );
     });
+
+    test('释义子查词瞬态窗不带剪贴板横幅（sentence=\'\'，去重）', () {
+      // 用户报「查词的时候出现的查词弹窗，上面有个多余的剪切板内容」：释义文字/
+      // 内链点击开的瞬态窗是子查词，被点词不在剪贴板整句里，不该重复贴整句横幅
+      // （面板背后已显示）。_lookupExternal 必须给 lookupText 传空句，与面板自身
+      // 「子卡不带横幅」策略一致。
+      final int fnAt = controllerSrc.indexOf('Future<void> _lookupExternal(');
+      expect(fnAt, greaterThan(0));
+      final int fnEnd = controllerSrc.indexOf('\n  }', fnAt);
+      final String body = controllerSrc.substring(fnAt, fnEnd);
+      expect(
+        body.contains("await lookup(query, '', screenRect)"),
+        isTrue,
+        reason: '瞬态子查词窗必须传空句（无横幅），不得回退传 _currentSentence',
+      );
+      expect(
+        body.contains('lookup(query, _currentSentence'),
+        isFalse,
+        reason: '不得把剪贴板整句作为子查词的横幅/上下文重复展示',
+      );
+    });
   });
 }

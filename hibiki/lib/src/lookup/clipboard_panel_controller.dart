@@ -463,9 +463,16 @@ class ClipboardPanelController {
   }
 
   /// 真机第 4 轮 — 释义文字点击走独立瞬态覆盖窗（「查词弹窗应该可以出这个
-  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。点外即关、
-  /// 携带整句供制卡 sentence 字段。lookupText 返回 false（未 start / 空词）时
-  /// 回退面板内嵌套卡——点击绝不静默丢失。
+  /// 框」：子窗 iframe 出不了自己的 HWND，唯一真解是另一个顶层窗）。点外即关。
+  /// lookupText 返回 false（未 start / 空词）时回退面板内嵌套卡——点击绝不静默
+  /// 丢失。
+  ///
+  /// 句子横幅（sentence=''）：这条路径是**释义文字/内链的子查词**，被点词并不
+  /// 在剪贴板整句里（横幅整句是给面板 root「选词区」用的），故不传 [_currentSentence]
+  /// ——否则瞬态窗顶上会重复贴一条与该词无关的剪贴板内容（面板背后本已显示）。
+  /// 与面板自身「子卡不带横幅」策略（[_renderPanel] 里 root 才带 [_currentSentence]）
+  /// 一致：所有子查词一律无横幅。制卡 sentence 字段不经此横幅（popup.js
+  /// buildMinePayload 不读 __globalLookupSentence），故此处清空零影响制卡。
   ///
   /// 真机第 5 轮 — 卡片锚定在**被点文字**下方而非 OS 光标点：[anchorRect] 是
   /// host 重锚定后的面板窗内 CSS px 矩形（含面板栏/shell 偏移），加上
@@ -480,7 +487,7 @@ class ClipboardPanelController {
               (String text, String sentence, Rect? anchorScreenRect) =>
                   GlobalLookupController.instance.lookupText(text,
                       sentence: sentence, anchorScreenRect: anchorScreenRect);
-      if (await lookup(query, _currentSentence, screenRect)) return;
+      if (await lookup(query, '', screenRect)) return;
     } catch (e, st) {
       glog('panel: external lookup EXCEPTION $e\n$st');
     }
