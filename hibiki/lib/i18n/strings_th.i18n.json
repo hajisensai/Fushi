@@ -2213,7 +2213,6 @@
   "backup_category_statistics_desc": "Reading, video and mining statistics",
   "backup_category_settings_desc": "App and reader settings",
   "backup_category_profiles_desc": "Configuration profiles",
-  "backup_import_contents_hint": "Untick an item to skip restoring its files (overwrite only). Books and reading data always restore.",
   "popup_font_size_decrease": "Smaller dictionary text",
   "popup_font_size_increase": "Larger dictionary text",
   "remote_book_cloud": "Cloud library",
@@ -2283,5 +2282,6 @@
   "collection_remove_member": "Remove from collection",
   "collection_remove_member_confirm": "Remove this item from the collection? The item itself is kept.",
   "collection_member_removed": "Removed from collection",
-  "collection_default_name": "New collection"
+  "collection_default_name": "New collection",
+  "backup_import_contents_hint": "Untick an item to skip it."
 }
