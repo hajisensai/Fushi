@@ -32,6 +32,7 @@ import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
+import 'package:hibiki/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
@@ -1302,6 +1303,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
 
+  /// 视频内嵌字体加载器（对齐 mpv attachment 字体）：开视频时抽 MKV 内嵌字体附件注册进
+  /// 引擎，字幕 overlay 按 ASS `Fontname` 命中真实字体。内部按视频路径缓存 + 进程级 family
+  /// 去重，故可反复调（换集/重开）。见 [_maybeLoadEmbeddedSubtitleFonts]。
+  final SubtitleEmbeddedFontLoader _embeddedFontLoader =
+      SubtitleEmbeddedFontLoader();
+
   /// 远端模式（[_isRemote]）下 host 下发并下载到本地临时文件的那条外挂字幕路径；
   /// 无 host 字幕时为 null。远端没有本地视频文件，字幕菜单不能走 [_currentVideoPath]
   /// 的同目录枚举（恒 null → 早返回 → 点了没反应，#2），故单独记下这条 host 字幕，
@@ -2505,6 +2512,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // only after playback has opened so UI/video startup is not blocked.
       unawaited(prewarmEmbeddedSubtitleCache(videoPath));
       unawaited(_loadDanmakuForVideo(videoPath));
+      // 视频内嵌字体（对齐 mpv）：抽 MKV attachment 字体注册进引擎，字幕按 ASS Fontname
+      // 命中真实字体。仅本地 + 开「尊重 .ass 样式」时做；远端/无 ffmpeg/无附件静默降级。
+      unawaited(_maybeLoadEmbeddedSubtitleFonts(videoPath));
     } else {
       unawaited(_loadDanmakuForVideo(null));
     }

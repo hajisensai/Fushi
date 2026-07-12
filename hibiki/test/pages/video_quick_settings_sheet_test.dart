@@ -852,7 +852,11 @@ void main() {
     await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
 
     // 播放详情只有延迟行 + 倍速行，chevron_right 仅出现在「+50ms」按钮
-    // （导航行的 chevron 在别的分类，playback 无导航行）。
+    // （导航行的 chevron 在别的分类，playback 无导航行）。顶栏分类条在窄宽窗
+    // （如 1000px；desktop 面板 maxWidth 900 更窄）会换行成两行、把详情下推，故先
+    // ensureVisible 把按钮滚进可点区域再点，不依赖顶栏恰好单行的脆弱位置假设。
+    await tester.ensureVisible(find.byIcon(Icons.chevron_right));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pump();
     expect(delay, 50);
@@ -2233,7 +2237,7 @@ void main() {
               .readAsStringSync();
       // 宽窗大分类置顶：必须有顶栏构建器，且不再用左右 master-detail 容器/侧栏。
       expect(src, contains('_buildTopCategoryBar('),
-          reason: '宽窗分类须经顶栏横滑 chip 构建器渲染');
+          reason: '宽窗分类须经顶栏 chip 构建器渲染');
       expect(src, isNot(contains('MaterialSupportingPaneLayout(')),
           reason: '视频设置宽窗不得再回退到左右 master-detail（书籍设置才用它）');
       expect(src, isNot(contains('_buildWidePane(')),
@@ -2247,6 +2251,52 @@ void main() {
           reason: '顶栏分类 chip 不得退回仅图标模式（TODO-1351 用户复诉）');
       expect(src, contains('_buildWideDetailTitle('),
           reason: '宽窗详情顶部须渲染当前分类标题（详情区页头）');
+      // BUG（末位分类被裁）：顶栏须用 Wrap 换行堆叠，不得回退横向 SingleChildScrollView
+      // 裁断（旧实现把「弹幕 / 控制」推到视口外，用户看不全也点不到）。
+      final String barSrc = src.substring(
+        src.indexOf('Widget _buildTopCategoryBar('),
+        src.indexOf('Widget _buildWideDetailTitle('),
+      );
+      expect(barSrc, contains('Wrap('),
+          reason: '顶栏分类条须用 Wrap 换行堆叠（放不下自动折行，不裁断）');
+      expect(barSrc, isNot(contains('scrollDirection: Axis.horizontal')),
+          reason: '顶栏分类条不得回退横向滚动（会把末位分类裁到视口外）');
+    });
+
+    testWidgets('BUG（顶栏末位分类被裁）：窄宽窗顶栏 chip 换行堆叠，7 个分类全部可见不被右裁', (tester) async {
+      // 宽窗阈值 560×440；取 620 宽——进宽窗分支，但 7 个「图标 + 完整文字」chip 一行
+      // 装不下。旧横向滚动实现会把末位「弹幕 / 控制」推到视口右侧外裁掉；Wrap 换行后全可见。
+      await tester.binding.setSurfaceSize(const Size(620, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+
+      const List<String> ids = <String>[
+        'playback',
+        'audio',
+        'subtitle',
+        'shaders',
+        'mpv',
+        'danmaku',
+        'controls',
+      ];
+      for (final String id in ids) {
+        expect(_categoryChip(id), findsOneWidget, reason: '$id chip 必须在顶栏渲染');
+      }
+
+      // 末位分类「控制」的右缘不得超出面板宽度（不被横向裁到视口外）。
+      final Rect controls = tester.getRect(_categoryChip('controls'));
+      expect(controls.right, lessThanOrEqualTo(620.0),
+          reason: '末位分类 chip 不得被裁到视口右侧外（须换行，而非横向滚动裁断）');
+
+      // 一行放不下 → 换行：末位「控制」应落到比首位「播放」更低的行（dy 更大）。
+      final double playbackTop =
+          tester.getTopLeft(_categoryChip('playback')).dy;
+      final double controlsTop =
+          tester.getTopLeft(_categoryChip('controls')).dy;
+      expect(controlsTop, greaterThan(playbackTop),
+          reason: '装不下时顶栏必须换行堆叠（Wrap），末位分类落到下一行');
+
+      _expectNoFlutterErrors(tester);
     });
   });
 
