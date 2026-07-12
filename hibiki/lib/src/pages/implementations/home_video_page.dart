@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -29,6 +30,7 @@ import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -115,19 +117,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 后台封面补齐进行中标志（防并发重入）。
   bool _backfillingCovers = false;
 
-  /// TODO-616 B2：视频自定义排序映射 `"video|bookUid" → sortOrder`，开页/落盘后
-  /// 加载一次，本地网格按它稳定排序（无行的视频退化原序）。
-  Map<String, int> _videoOrder = const <String, int>{};
+  /// 排序交互重设计层次 A：当前排序方式（偏好 `video_sort_mode` 持久化，默认
+  /// 最近观看，用户拍板）。旧 `ShelfEntries.sortOrder` 手动权重已废弃不再读取。
+  ShelfSortMode _sortMode = ShelfSortMode.recent;
+
+  /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
+  /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
+  Map<String, int> _memberSortIndex = const <String, int>{};
 
   /// 统一合集 Phase 4：视频合集字典（id → 行）+ 条目折叠归属（'video|uid' → 最小
-  /// collectionId），与 [_videoOrder] 同一次 [_loadVideoOrder] 预取，替代旧 Series 分组。
+  /// collectionId），与 [_memberSortIndex] 同一次 [_loadLibraryMaps] 预取。
   Map<int, MediaCollectionRow> _collectionsById =
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
   /// UI v2 Phase B / v39：最近观看时间（watch-stats max(lastModified)），驱动
   /// 「继续观看 hero」排序与「上次观看」外显。v39 起按 bookUid 键控；迁移遗留
-  /// NULL-uid 行按 title 回退。与 [_loadVideoOrder] 同批预取。
+  /// NULL-uid 行按 title 回退。与 [_loadLibraryMaps] 同批预取。
   Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
   Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
 
@@ -137,10 +143,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
     _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
-    // TODO-616 A2: also prefetch order / series maps on first frame (order
-    // defaulting to 0 was harmless before, but series grouping needs
-    // _seriesById on the first paint, not only after a refresh).
-    _loadVideoOrder();
+    // 首帧就预取分组/排序映射（合集折叠首绘就要 _collectionsById，不能等刷新）。
+    _loadLibraryMaps();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
     assert(() {
@@ -164,18 +168,32 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       _future = widget.repo.listForShelf();
       _remoteFuture = _loadRemoteVideos();
     });
-    _loadVideoOrder();
+    _loadLibraryMaps();
     _maybeBackfillCovers();
   }
 
-  /// 一次性预取全部 ShelfEntries（video 类）组装成 `"video|bookUid" → sortOrder`。
-  Future<void> _loadVideoOrder() async {
-    final HibikiDatabase db = ref.read(appProvider).database;
-    final List<ShelfEntryRow> rows = await db.getAllShelfEntries();
+  /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
+  /// watch-stats 最近观看，外加偏好里的排序方式。
+  Future<void> _loadLibraryMaps() async {
+    final AppModel appModel = ref.read(appProvider);
+    final HibikiDatabase db = appModel.database;
+    final ShelfSortMode sortMode =
+        ShelfSortMode.fromName(appModel.prefsRepo.videoSortModeName);
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
     final Map<String, int> primaryMap =
         await db.getPrimaryCollectionIdByEntry();
+    // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
+    // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。
+    final Map<String, int> memberSortIndex = <String, int>{};
+    for (final MediaCollectionRow c in collections) {
+      final List<MediaCollectionItemRow> members =
+          await db.getCollectionItems(c.id);
+      for (final MediaCollectionItemRow m in members) {
+        final String key = '${m.mediaType}|${m.entryKey}';
+        if (primaryMap[key] == c.id) memberSortIndex[key] = m.sortIndex;
+      }
+    }
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     final List<VideoWatchStatisticRow> watchRows =
@@ -192,17 +210,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           if (r.bookUid == null) (r.title, r.lastModified),
       ],
     );
-    final List<ShelfEntryRow> videoRows = <ShelfEntryRow>[
-      for (final ShelfEntryRow r in rows)
-        if (r.mediaType == 'video') r,
-    ];
-    final Map<String, int> map = <String, int>{
-      for (final ShelfEntryRow r in videoRows)
-        'video|${r.entryKey}': r.sortOrder,
-    };
     if (mounted) {
       setState(() {
-        _videoOrder = map;
+        _sortMode = sortMode;
+        _memberSortIndex = memberSortIndex;
         _collectionsById = <int, MediaCollectionRow>{
           for (final MediaCollectionRow c in collections) c.id: c,
         };
@@ -211,6 +222,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         _legacyWatchAtByTitle = legacyByTitle;
       });
     }
+  }
+
+  /// 用户切换排序方式：立即重排 + 偏好持久化（跨启动记住）。
+  void _setSortMode(ShelfSortMode mode) {
+    if (mode == _sortMode) return;
+    setState(() => _sortMode = mode);
+    unawaited(
+      ref.read(appProvider).prefsRepo.setVideoSortModeName(mode.name),
+    );
   }
 
   /// 统一合集 Phase 2/6：给「缺封面的本地视频行」后台逐个抽一帧当封面。
@@ -672,7 +692,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     if (!mounted) return;
     _exitSelectionMode();
-    await _loadVideoOrder();
+    await _loadLibraryMaps();
     HibikiToast.show(msg: t.series_created);
   }
 
@@ -1209,16 +1229,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             : all
                 .where((VideoBookRow b) => filter.contains(b.bookUid))
                 .toList();
-        // TODO-616 B2：按 ShelfEntries.sortOrder 稳定重排（无行退化原序，零自定义
-        // 排序时与历史 listAll 顺序一致）。
-        final List<VideoBookRow> ordered = List<VideoBookRow>.of(books);
-        ordered.sort((VideoBookRow a, VideoBookRow b) {
-          final int oa = _videoOrder['video|${a.bookUid}'] ?? 0;
-          final int ob = _videoOrder['video|${b.bookUid}'] ?? 0;
-          final int c = oa.compareTo(ob);
-          return c != 0 ? c : books.indexOf(a).compareTo(books.indexOf(b));
-        });
-        // 记录当前可见（已过滤+排序）的本地视频，供批量「全选 / 反选」用。
+        // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
+        // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
+        final List<VideoBookRow> ordered = books;
+        // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。
         _visibleVideos = ordered;
         return FutureBuilder<_RemoteVideoState?>(
           future: _remoteFuture,
@@ -1549,23 +1563,66 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return slivers;
   }
 
-  /// 已排序视频 → 合集分组（散视频单卡 group、同合集折叠）。
+  /// 过滤后视频 → 合集折叠 + 按当前排序方式排 group（散卡与合集行同层混排）。
   List<CollectionGroup<VideoBookRow>> _groupVideos(List<VideoBookRow> books) {
     final List<CollectionOrderingItem<VideoBookRow>> items =
         <CollectionOrderingItem<VideoBookRow>>[
-      for (int i = 0; i < books.length; i++)
+      for (final VideoBookRow book in books)
         CollectionOrderingItem<VideoBookRow>(
           mediaType: 'video',
-          entryKey: books[i].bookUid,
-          importedAt: -i,
-          payload: books[i],
+          entryKey: book.bookUid,
+          importedAt: book.importedAt?.millisecondsSinceEpoch ?? 0,
+          payload: book,
         ),
     ];
-    return groupByCollections<VideoBookRow>(
+    final List<CollectionGroup<VideoBookRow>> groups =
+        groupByCollections<VideoBookRow>(
       items: items,
       primaryCollectionIdByEntry: _primaryCollectionByEntry,
       collectionsById: _collectionsById,
-      itemSortOrder: _videoOrder,
+      memberSortIndex: _memberSortIndex,
+    );
+    groups.sort(
+      (CollectionGroup<VideoBookRow> a, CollectionGroup<VideoBookRow> b) =>
+          compareShelfSortKeys(_groupSortKey(a), _groupSortKey(b), _sortMode),
+    );
+    return groups;
+  }
+
+  /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
+  /// title 取合集名）。recentScore = watch-stats 最近观看毫秒（v39 uid 键控，遗留
+  /// NULL-uid 行按 title 回退），无观看记录退 importedAt——「最近观看」下刚导入
+  /// 没看过的条目自然靠前而不是沉底。
+  ShelfSortKey _groupSortKey(CollectionGroup<VideoBookRow> group) {
+    int recentOf(VideoBookRow r) =>
+        (_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
+            ?.millisecondsSinceEpoch ??
+        r.importedAt?.millisecondsSinceEpoch ??
+        0;
+    int importedOf(VideoBookRow r) => r.importedAt?.millisecondsSinceEpoch ?? 0;
+    final MediaCollectionRow? collection = group.collection;
+    if (collection == null) {
+      final VideoBookRow r = group.coverItem.payload;
+      return ShelfSortKey(
+        recentScore: recentOf(r),
+        title: r.title,
+        importedAt: importedOf(r),
+        tieKey: r.bookUid,
+      );
+    }
+    int recent = 0;
+    int imported = 0;
+    for (final CollectionOrderingItem<VideoBookRow> it in group.items) {
+      final int rs = recentOf(it.payload);
+      if (rs > recent) recent = rs;
+      final int im = importedOf(it.payload);
+      if (im > imported) imported = im;
+    }
+    return ShelfSortKey(
+      recentScore: recent,
+      title: collection.name,
+      importedAt: imported,
+      tieKey: 'c${collection.id}',
     );
   }
 
@@ -1928,12 +1985,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
-      // UI v2：整理排序页已按用户拍板整体砍掉（onOrganize 不再传，按钮消失）。
-      // 排序退化为既有 ShelfEntries.sortOrder + 导入时间倒序；分组管理走批量
-      // 「组合成合集」+ 合集详情页（改名/删除/移出成员）。
+      // 排序交互重设计层次 A：「排序方式」菜单（原「整理」按钮位置；整理页已删）。
+      // 分组管理走批量「组合成合集」+ 合集详情页（改名/删除/移出成员/拖拽排集）。
+      sortMode: _sortMode,
+      sortModeLabel: _sortModeLabel,
+      onSortModeChanged: _setSortMode,
       onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
     );
   }
+
+  String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
+        ShelfSortMode.recent => t.sort_recent_watched,
+        ShelfSortMode.title => t.sort_title,
+        ShelfSortMode.imported => t.sort_imported,
+      };
 
   void _toggleFilter(int tagId) {
     final Set<int> next = Set<int>.from(ref.read(selectedTagIdsProvider));

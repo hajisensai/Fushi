@@ -147,4 +147,47 @@ void main() {
     expect(detailSrc.contains('Image.file'), isTrue,
         reason: '缩略图用集自身 coverPath 的 Image.file（无封面退占位）');
   });
+
+  test('排序交互重设计：死权重零读取 + 排序菜单 + 成员序单一真相源 + 详情页就地排序', () {
+    // 层次 A：旧手动权重（ShelfEntries.sortOrder / MediaCollections.sortOrder）
+    // 已废弃（用户拍板，spec 2026-07-12）——两库页不得再读；卡片间序只能由
+    // 排序模式（compareShelfSortKeys）推导。恢复任一读取点即转红。
+    for (final String banned in <String>[
+      'getAllShelfEntries',
+      '_videoOrder',
+      '_shelfOrder',
+      'itemSortOrder',
+      'groupSortOrder',
+    ]) {
+      expect(homeSrc.contains(banned), isFalse,
+          reason: '视频库不得再读已废弃的手动权重（$banned）');
+      expect(historySrc.contains(banned), isFalse,
+          reason: '书架不得再读已废弃的手动权重（$banned）');
+    }
+    for (final String required in <String>[
+      'compareShelfSortKeys',
+      'onSortModeChanged',
+      // 层次 C：组内序读 MediaCollectionItems.sortIndex（与详情页/播放器
+      // getCollectionItems 同源，一处落盘三处同序）。
+      'memberSortIndex',
+    ]) {
+      expect(homeSrc.contains(required), isTrue,
+          reason: '视频库必须接线排序模式/成员序真相源（$required）');
+      expect(historySrc.contains(required), isTrue,
+          reason: '书架必须接线排序模式/成员序真相源（$required）');
+    }
+    // 层次 B：视频详情页拖拽精修 + 两详情页一键排序，均写穿 reorderCollectionItems。
+    final String videoDetailSrc = File(
+      'lib/src/pages/implementations/media_collection_detail_page.dart',
+    ).readAsStringSync();
+    final String gridDetailSrc = File(
+      'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+    ).readAsStringSync();
+    expect(videoDetailSrc.contains('ReorderableListView'), isTrue,
+        reason: '视频合集详情页必须支持拖拽排集（手动排序的唯一形态）');
+    expect(videoDetailSrc.contains('reorderCollectionItems'), isTrue,
+        reason: '视频详情页排序必须写穿 sortIndex（层次 C 真相源）');
+    expect(gridDetailSrc.contains('reorderCollectionItems'), isTrue,
+        reason: '书籍合集详情页一键排序必须写穿 sortIndex');
+  });
 }

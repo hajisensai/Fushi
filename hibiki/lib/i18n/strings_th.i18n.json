@@ -2271,5 +2271,12 @@
   "book_continue_reading": "Continue Reading",
   "book_library_overview": "Library Overview",
   "shelf_stat_reading": "Reading",
-  "book_read_progress": "Read $percent%"
+  "book_read_progress": "Read $percent%",
+  "sort_by": "Sort",
+  "sort_recent_read": "Recently read",
+  "sort_recent_watched": "Recently watched",
+  "sort_title": "Name",
+  "sort_imported": "Import date",
+  "collection_sort_by_title": "Sort by name",
+  "collection_sort_by_imported": "Sort by import date"
 }

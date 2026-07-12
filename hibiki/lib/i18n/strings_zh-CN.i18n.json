@@ -2271,5 +2271,12 @@
   "book_continue_reading": "继续阅读",
   "book_library_overview": "书库概览",
   "shelf_stat_reading": "在读",
-  "book_read_progress": "已读 $percent%"
+  "book_read_progress": "已读 $percent%",
+  "sort_by": "排序方式",
+  "sort_recent_read": "最近阅读",
+  "sort_recent_watched": "最近观看",
+  "sort_title": "名称",
+  "sort_imported": "导入时间",
+  "collection_sort_by_title": "按名称排序",
+  "collection_sort_by_imported": "按导入时间排序"
 }

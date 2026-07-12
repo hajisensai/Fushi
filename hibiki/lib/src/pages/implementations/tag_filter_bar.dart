@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/utils.dart';
 
 /// 书架 / 视频 tab 共享的标签筛选栏：横向 tag chip（点选筛选、长按拖拽重排）+ 末尾
@@ -20,8 +23,9 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
     required this.onReorder,
     this.selectionMode = false,
     this.onToggleSelectionMode,
-    this.onOrganize,
-    this.onOrganizeFocusId,
+    this.sortMode,
+    this.sortModeLabel,
+    this.onSortModeChanged,
     this.onTagsChanged,
     super.key,
   });
@@ -36,15 +40,15 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
   /// 切换批量选择模式。为 null（如视频 tab 无批量选择）时不显示批量选择动作。
   final VoidCallback? onToggleSelectionMode;
 
-  /// 「整理」入口：点开进入拖动排序（合集入口在相邻的多选批量栏）。为 null 时不渲染。
-  /// TODO-947：把原本散在页头的「编辑排序」(swap_vert) 入口挪到多选按钮旁，与
-  /// 「组合成系列」(多选批量栏) 聚成一组整理动作。
-  final VoidCallback? onOrganize;
+  /// 「排序方式」菜单（排序交互重设计层次 A）当前选中模式。三个 sort 参数同 null /
+  /// 同非 null；null 时不渲染排序动作。
+  final ShelfSortMode? sortMode;
 
-  /// Stable focus id for the「整理」(swap_vert) action, so a directional anchor
-  /// can point at it (the shelf anchors "Right from organize -> import icon" and
-  /// "Down from organize -> first grid card"). Null keeps the derived fallback id.
-  final HibikiFocusId? onOrganizeFocusId;
+  /// 模式 → 菜单项文案（recent 两页语义不同：书架=最近阅读、视频=最近观看）。
+  final String Function(ShelfSortMode mode)? sortModeLabel;
+
+  /// 用户选中新排序方式（页面负责 setState + 偏好持久化）。
+  final ValueChanged<ShelfSortMode>? onSortModeChanged;
 
   /// 管理标签返回后，调用方据此刷新自身的标签映射 provider（book / video）。
   final VoidCallback? onTagsChanged;
@@ -54,6 +58,8 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
 }
 
 class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
+  final MenuController _sortMenu = MenuController();
+
   @override
   Widget build(BuildContext context) {
     final Set<int> selectedIds = ref.watch(selectedTagIdsProvider);
@@ -85,14 +91,12 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
           selected: widget.selectionMode,
           onTap: widget.onToggleSelectionMode!,
         ),
-      // 「整理」入口（拖动排序 + 相邻多选批量栏的「组合成系列」），挂在多选按钮旁。
-      if (widget.onOrganize != null && !widget.selectionMode)
-        _tagBarAction(
-          icon: Icons.swap_vert,
-          tooltip: t.shelf_edit_order,
-          onTap: widget.onOrganize!,
-          focusId: widget.onOrganizeFocusId,
-        ),
+      // 「排序方式」菜单（原「整理」swap_vert 的位置；整理页已整体删除）。
+      if (widget.sortMode != null &&
+          widget.sortModeLabel != null &&
+          widget.onSortModeChanged != null &&
+          !widget.selectionMode)
+        _sortMenuAction(tokens),
     ];
 
     return Container(
@@ -181,7 +185,6 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
     required String tooltip,
     required VoidCallback onTap,
     bool selected = false,
-    HibikiFocusId? focusId,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiIconButton(
@@ -192,7 +195,97 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
       enabledColor:
           selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
       onTap: onTap,
-      focusId: focusId,
+    );
+  }
+
+  /// 「排序方式」三项单选菜单：MenuAnchor + 选中项 autofocus（手柄/键盘打开即落进
+  /// 菜单，D-pad 可遍历、A/Enter 选中、B 关闭——与 [GamepadMenuDropdown] 的
+  /// polled 路径同款交互，样式走同一组 menu tokens）。
+  Widget _sortMenuAction(HibikiDesignTokens tokens) {
+    final t = Translations.of(context);
+    final ShelfSortMode selectedMode = widget.sortMode!;
+    return MenuAnchor(
+      controller: _sortMenu,
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.overlay),
+        surfaceTintColor:
+            const WidgetStatePropertyAll<Color>(Colors.transparent),
+        shape: WidgetStatePropertyAll<OutlinedBorder>(
+          RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
+        ),
+        padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+          EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        ),
+      ),
+      menuChildren: <Widget>[
+        for (final ShelfSortMode mode in ShelfSortMode.values)
+          _sortMenuItem(tokens, mode, selectedMode),
+      ],
+      builder: (BuildContext context, MenuController controller, Widget? _) {
+        return _tagBarAction(
+          icon: Icons.sort,
+          tooltip: t.sort_by,
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+        );
+      },
+    );
+  }
+
+  Widget _sortMenuItem(
+    HibikiDesignTokens tokens,
+    ShelfSortMode mode,
+    ShelfSortMode selectedMode,
+  ) {
+    final bool selected = mode == selectedMode;
+    final Color foreground =
+        selected ? tokens.surfaces.primary : tokens.surfaces.onSurface;
+    return Actions(
+      // B 只关菜单（焦点回归标签栏），不冒泡成 GamepadService 的整页返回。
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) {
+            if (intent.button == GamepadButton.b) {
+              _sortMenu.close();
+              return true;
+            }
+            return null;
+          },
+        ),
+      },
+      child: MenuItemButton(
+        autofocus: selected,
+        onPressed: () {
+          _sortMenu.close();
+          widget.onSortModeChanged!(mode);
+        },
+        style: MenuItemButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal,
+          ),
+          alignment: Alignment.centerLeft,
+          backgroundColor: selected ? tokens.surfaces.selected : null,
+          foregroundColor: foreground,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              widget.sortModeLabel!(mode),
+              style: tokens.type.listTitle.copyWith(
+                color: foreground,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+            if (selected)
+              Padding(
+                padding: EdgeInsets.only(left: tokens.spacing.gap),
+                child: Icon(Icons.check, size: 20, color: foreground),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

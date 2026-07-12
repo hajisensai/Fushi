@@ -318,6 +318,26 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── 库页排序方式（排序交互重设计 2026-07-12）──────────────────────────
+
+  /// 书架排序方式 `.name`（recent/title/imported）。默认 recent（=历史序，现状零变化）。
+  String get shelfSortModeName =>
+      getPref('shelf_sort_mode', defaultValue: 'recent') as String;
+
+  Future<void> setShelfSortModeName(String name) async {
+    await setPref('shelf_sort_mode', name);
+    notifyListeners();
+  }
+
+  /// 视频库排序方式 `.name`。默认 recent（最近观看，用户拍板；一键可切回导入时间）。
+  String get videoSortModeName =>
+      getPref('video_sort_mode', defaultValue: 'recent') as String;
+
+  Future<void> setVideoSortModeName(String name) async {
+    await setPref('video_sort_mode', name);
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>

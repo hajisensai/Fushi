@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -33,6 +34,7 @@ import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
@@ -169,13 +171,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Future<List<VideoBookRow>>? _videoBooksFuture;
   Future<_RemoteBookState?>? _remoteBooksFuture;
 
-  /// TODO-616 B2：自定义排序映射 `"mediaType|entryKey" → sortOrder`，开页/落盘后
-  /// 加载一次，渲染时把 SRT+EPUB 混排网格按它稳定排序（无行的条目退化原序）。
-  Future<Map<String, int>>? _shelfOrderFuture;
-  Map<String, int> _shelfOrder = const <String, int>{};
+  /// 排序交互重设计层次 A：当前排序方式（偏好 `shelf_sort_mode` 持久化，默认
+  /// 最近阅读=历史序，现状零变化）。旧 `ShelfEntries.sortOrder` 手动权重已废弃。
+  Future<void>? _shelfMapsFuture;
+  ShelfSortMode _sortMode = ShelfSortMode.recent;
+
+  /// 层次 C：`'mediaType|entryKey' → 该条目在其主折叠合集里的 sortIndex`（组内序
+  /// 真相源，与详情页 `getCollectionItems` 同源）。
+  Map<String, int> _memberSortIndex = const <String, int>{};
+
+  /// 「导入时间」排序用：epub bookKey → importedAt 毫秒（MediaItem 不携带导入
+  /// 时间；SRT 卡的 SrtBook 自带）。
+  Map<String, int> _epubImportedAtByKey = const <String, int>{};
 
   /// 统一合集 Phase 4：书籍合集字典（id → 行）+ 条目折叠归属（'mediaType|entryKey' →
-  /// 最小 collectionId），与 [_shelfOrder] 同一次 [_loadShelfOrder] 预取，替代 Series 折叠。
+  /// 最小 collectionId），与上述映射同一次 [_loadShelfMaps] 预取，替代 Series 折叠。
   Map<int, MediaCollectionRow> _collectionsById =
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
@@ -292,7 +302,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                       _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
                       _videoBooksFuture ??= _loadVideoBooks();
                       _remoteBooksFuture ??= _loadRemoteBooks();
-                      _shelfOrderFuture ??= _loadShelfOrder();
+                      _shelfMapsFuture ??= _loadShelfMaps();
                       final Set<String>? filterSet = filteredIds.valueOrNull;
                       final List<MediaItem> filtered;
                       if (filterSet == null) {
@@ -313,8 +323,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                               FutureBuilder<_RemoteBookState?>(
                             future: _remoteBooksFuture,
                             builder: (context, remoteSnapshot) =>
-                                FutureBuilder<Map<String, int>>(
-                              future: _shelfOrderFuture,
+                                FutureBuilder<void>(
+                              future: _shelfMapsFuture,
                               builder: (context, _) =>
                                   buildBody(filtered, remoteSnapshot),
                             ),
@@ -351,9 +361,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
-      // UI v2：整理排序页已按用户拍板整体砍掉（onOrganize 不再传，按钮消失）。
-      // 排序退化为既有 ShelfEntries.sortOrder + 导入时间倒序；分组管理走批量
-      // 「组合成合集」+ 合集详情页（改名/删除/移出成员）。
+      // 排序交互重设计层次 A：「排序方式」菜单（原「整理」按钮位置；整理页已删）。
+      // 分组管理走批量「组合成合集」+ 合集详情页（改名/删除/移出成员/一键排序）。
+      sortMode: _sortMode,
+      sortModeLabel: _sortModeLabel,
+      onSortModeChanged: _setSortMode,
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
     );
   }
@@ -439,29 +451,79 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 一次性预取全部 ShelfEntries，组装成 `"mediaType|entryKey" → sortOrder` 映射。
-  Future<Map<String, int>> _loadShelfOrder() async {
-    final List<ShelfEntryRow> rows =
-        await appModel.database.getAllShelfEntries();
+  /// 一次性预取书架排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
+  /// epub 导入时间，外加偏好里的排序方式。
+  Future<void> _loadShelfMaps() async {
+    _sortMode = ShelfSortMode.fromName(appModel.prefsRepo.shelfSortModeName);
     final List<MediaCollectionRow> collections =
         await appModel.database.getAllMediaCollections();
     final Map<String, int> primaryMap =
         await appModel.database.getPrimaryCollectionIdByEntry();
-    final Map<String, int> map = <String, int>{
-      for (final ShelfEntryRow r in rows)
-        '${r.mediaType}|${r.entryKey}': r.sortOrder,
+    // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行，与 primaryMap
+    // 同口径；详情页拖完 onChanged 重载本映射，库页行立即同序）。
+    final Map<String, int> memberSortIndex = <String, int>{};
+    for (final MediaCollectionRow c in collections) {
+      final List<MediaCollectionItemRow> members =
+          await appModel.database.getCollectionItems(c.id);
+      for (final MediaCollectionItemRow m in members) {
+        final String key = '${m.mediaType}|${m.entryKey}';
+        if (primaryMap[key] == c.id) memberSortIndex[key] = m.sortIndex;
+      }
+    }
+    final List<EpubBookRow> epubRows =
+        await appModel.database.getAllEpubBooks();
+    _epubImportedAtByKey = <String, int>{
+      for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
-    _shelfOrder = map;
+    _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
     };
     _primaryCollectionByEntry = primaryMap;
-    return map;
   }
 
-  /// 某条目的自定义排序权重（无行退化为 0；与 groupByCollections 同语义）。
-  int _orderOf(String mediaType, String entryKey) =>
-      _shelfOrder['$mediaType|$entryKey'] ?? 0;
+  /// 用户切换排序方式：立即重排 + 偏好持久化（跨启动记住）。
+  void _setSortMode(ShelfSortMode mode) {
+    if (mode == _sortMode) return;
+    setState(() => _sortMode = mode);
+    unawaited(appModel.prefsRepo.setShelfSortModeName(mode.name));
+  }
+
+  String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
+        ShelfSortMode.recent => t.sort_recent_read,
+        ShelfSortMode.title => t.sort_title,
+        ShelfSortMode.imported => t.sort_imported,
+      };
+
+  /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
+  /// title 取合集名）。recentScore = -历史序名次（「最近阅读」= 现状历史序，零
+  /// 行为变化）；importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
+  /// [_epubImportedAtByKey]，srt 自带）。
+  ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
+    String titleOf(_ShelfBookSlot s) => s.srt?.title ?? s.epub?.title ?? '';
+    final MediaCollectionRow? collection = group.collection;
+    if (collection == null) {
+      final CollectionOrderingItem<_ShelfBookSlot> it = group.coverItem;
+      return ShelfSortKey(
+        recentScore: -it.payload.seq,
+        title: titleOf(it.payload),
+        importedAt: it.importedAt,
+        tieKey: '${it.mediaType}|${it.entryKey}',
+      );
+    }
+    int recent = -(1 << 30);
+    int imported = 0;
+    for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items) {
+      if (-it.payload.seq > recent) recent = -it.payload.seq;
+      if (it.importedAt > imported) imported = it.importedAt;
+    }
+    return ShelfSortKey(
+      recentScore: recent,
+      title: collection.name,
+      importedAt: imported,
+      tieKey: 'c${collection.id}',
+    );
+  }
 
   void _toggleFilter(int tagId) {
     final current = Set<int>.from(ref.read(selectedTagIdsProvider));
@@ -804,31 +866,28 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
-    // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 分组——散书每条单独成
-    // group、同合集折叠成一组，散书与合集同层混排。零合集时每条散书单独成 group，
-    // 顺序与历史 mergedBooks（sortOrder asc, 原序 tie-break）一致。
+    // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
+    // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
+    // 排序方式排 group（散书与合集行同层混排）。slot.seq = 历史序名次（provider
+    // 即最近访问序），是「最近阅读」模式的排序量纲。
     final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
         <CollectionOrderingItem<_ShelfBookSlot>>[
       for (int i = 0; i < srtBooks.length; i++)
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: 'srt',
           entryKey: srtBooks[i].uid,
-          importedAt: -i,
-          payload: _ShelfBookSlot(
-            seq: i,
-            order: _orderOf('srt', srtBooks[i].uid),
-            srt: srtBooks[i],
-          ),
+          importedAt: srtBooks[i].importedAt,
+          payload: _ShelfBookSlot(seq: i, srt: srtBooks[i]),
         ),
       for (int i = 0; i < epubBooks.length; i++)
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: 'epub',
           entryKey: _parseBookKey(epubBooks[i].mediaIdentifier) ?? '',
-          importedAt: -(srtBooks.length + i),
+          importedAt: _epubImportedAtByKey[
+                  _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''] ??
+              0,
           payload: _ShelfBookSlot(
             seq: srtBooks.length + i,
-            order: _orderOf(
-                'epub', _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''),
             epub: epubBooks[i],
           ),
         ),
@@ -838,7 +897,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       items: shelfItems,
       primaryCollectionIdByEntry: _primaryCollectionByEntry,
       collectionsById: _collectionsById,
-      itemSortOrder: _shelfOrder,
+      memberSortIndex: _memberSortIndex,
+    );
+    shelfGroups.sort(
+      (CollectionGroup<_ShelfBookSlot> a, CollectionGroup<_ShelfBookSlot> b) =>
+          compareShelfSortKeys(
+        _shelfGroupSortKey(a),
+        _shelfGroupSortKey(b),
+        _sortMode,
+      ),
     );
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
@@ -1139,7 +1206,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           collection: collection,
           memberCardBuilder: _buildCollectionMemberCard,
           onChanged: () {
-            _shelfOrderFuture = _loadShelfOrder();
+            _shelfMapsFuture = _loadShelfMaps();
             if (mounted) setState(() {});
           },
         ),
@@ -1367,19 +1434,17 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
 }
 
-/// TODO-616 B2：书架 SRT+EPUB 混排网格的单个排序槽（合并两类卡片到一个有序列表）。
-/// [srt]/[epub] 恰有一个非空。[order] = ShelfEntries.sortOrder（无行退化 0），
-/// [seq] = 原序列下标（SRT 在前 EPUB 在后），作零自定义排序时的稳定 tie-break。
+/// 书架 SRT+EPUB 混排网格的单个排序槽（合并两类卡片到一个有序列表）。
+/// [srt]/[epub] 恰有一个非空。[seq] = 历史序名次（SRT 在前 EPUB 在后，provider
+/// 即最近访问序），是「最近阅读」排序模式的量纲（-seq 越大越新）。
 class _ShelfBookSlot {
   const _ShelfBookSlot({
     required this.seq,
-    required this.order,
     this.srt,
     this.epub,
   });
 
   final int seq;
-  final int order;
   final SrtBook? srt;
   final MediaItem? epub;
 }
