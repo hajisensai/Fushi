@@ -200,6 +200,51 @@ void main() {
         reason: '书架不得回到交错分段组装（散卡必须单一网格）');
   });
 
+  test('多端库联合视图（spec §2.1/§2.4）：远端占位卡混排主网格 + 撤独立远端分区零残留', () {
+    final String remotePartSrc = File(
+      'lib/src/pages/implementations/reader_history/remote.part.dart',
+    ).readAsStringSync();
+
+    // ① 撤独立远端分区：两页主文件与远端 part 都不得再有 _buildRemoteBookSection /
+    // _buildRemoteVideoSection（方法定义 + 调用点全删），亦不得残留仅服务于旧分区
+    // 的 RemoteVideoSectionHeader widget。恢复任一即转红（回退到独立远端分区）。
+    for (final String banned in <String>[
+      '_buildRemoteBookSection',
+      '_buildRemoteVideoSection',
+      'RemoteVideoSectionHeader',
+    ]) {
+      expect(historySrc.contains(banned), isFalse,
+          reason: '书架不得残留独立远端分区接线（$banned）');
+      expect(remotePartSrc.contains(banned), isFalse,
+          reason: '书架远端 part 不得残留独立远端分区（$banned）');
+      expect(homeSrc.contains(banned), isFalse,
+          reason: '视频库不得残留独立远端分区接线（$banned）');
+    }
+
+    // ② 占位卡混排进主网格：远端卡渲染入口从主散卡路径调用（书=_ShelfBookSlot.remote
+    // → _buildRemoteBookCard；视频=散卡列表 _remoteVideoSortKey → _buildRemoteVideoCard），
+    // 且带云角标 ☁。
+    expect(historySrc.contains('slot.remote'), isTrue,
+        reason: '书架散卡槽须承载远端占位（_ShelfBookSlot.remote）');
+    expect(remotePartSrc.contains('_buildRemoteBookCard'), isTrue);
+    expect(remotePartSrc.contains('remote_book_cloud_badge'), isTrue,
+        reason: '远端书占位卡必须带云角标 ☁');
+    expect(homeSrc.contains('_remoteVideoSortKey'), isTrue,
+        reason: '远端视频占位须以排序键混入散卡网格');
+    expect(homeSrc.contains('_buildRemoteVideoCard'), isTrue);
+    expect(homeSrc.contains('remote_video_cloud_badge'), isTrue,
+        reason: '远端视频占位卡必须带云角标 ☁');
+
+    // ③ 「显示远端条目」开关 + 离线语义门控：两页混排前都读 showRemoteEntries；
+    // 远端目录拉取失败（failed）门控占位卡不出现（离线=只剩本地）。
+    expect(historySrc.contains('showRemoteEntries'), isTrue,
+        reason: '书架混排远端占位前须读「显示远端条目」开关');
+    expect(homeSrc.contains('showRemoteEntries'), isTrue,
+        reason: '视频库混排远端占位前须读「显示远端条目」开关');
+    expect(homeSrc.contains('state.failed'), isTrue,
+        reason: '视频库须按远端拉取失败门控（离线不显示远端占位）');
+  });
+
   test('BUG-756：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
     final String sourceSrc =
         File('lib/src/media/sources/reader_hibiki_source.dart')

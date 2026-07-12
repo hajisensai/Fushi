@@ -232,6 +232,21 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncAudioBookFilesEnabled(value);
             },
           ),
+          // 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把
+          // 「远端有、本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。
+          // 纯显示偏好（PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/
+          // 未配对/后端不可达时占位卡本就不出现，与本开关正交。
+          SettingsSwitchItem(
+            id: 'sync.show_remote_entries',
+            title: t.sync_show_remote_entries,
+            subtitle: t.sync_show_remote_entries_warning,
+            icon: Icons.devices_other_outlined,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.showRemoteEntries,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
+            },
+          ),
         ],
       ),
       // ── Group 4: Manual sync actions — global ────────────────────────

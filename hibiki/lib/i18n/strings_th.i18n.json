@@ -2280,5 +2280,7 @@
   "collection_sort_by_title": "Sort by name",
   "collection_sort_by_imported": "Sort by import date",
   "collection_collapse": "Collapse",
-  "collection_expand": "Expand"
+  "collection_expand": "Expand",
+  "sync_show_remote_entries": "Show remote entries",
+  "sync_show_remote_entries_warning": "Show books and videos that exist on paired devices or the cloud as placeholder cards you can download or stream."
 }

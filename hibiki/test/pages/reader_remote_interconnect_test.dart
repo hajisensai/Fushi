@@ -127,14 +127,20 @@ void main() {
         ),
       );
 
-  testWidgets('bookshelf exposes Hibiki interconnect remote books',
+  testWidgets('bookshelf mixes interconnect remote books into the main grid',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text(t.remote_book_interconnect), findsOneWidget);
-    expect(find.text(t.remote_book_paired_device), findsOneWidget);
+    // 多端库联合视图（spec §2.1，撤独立远端分区）：远端书以占位卡混排进主网格——
+    // 卡片在、带云角标 ☁、右上角保留下载按钮（能力未丢失）。
     expect(find.text('Remote Book'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>(
+        'remote_book_cloud_badge_Remote_Book',
+      )),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>(
         'remote_book_download_Remote_Book',
@@ -150,11 +156,11 @@ void main() {
   });
 
   testWidgets(
-      'cloud backend shelf uses generic cloud labels, never interconnect '
-      '(BUG-699 / TODO-1384)', (WidgetTester tester) async {
-    // WebDAV / GDrive 等云盘后端经 CloudRemoteBookClient 适配，来源类型是 cloud：
-    // 分区必须用通用「云端书」文案，绝不显示「互联 / 对端设备」（WebDAV-only 用户
-    // 从没配过互联）。
+      'cloud backend remote books also mix into the main grid as placeholders',
+      (WidgetTester tester) async {
+    // 撤独立远端分区后不再有「互联 vs 云端」分区文案区分——云盘后端
+    // （CloudRemoteBookClient，来源 cloud）的远端书同样以占位卡混排进主网格，
+    // 与互联来源共用同一占位卡渲染（云角标 + 远端封面 + 下载按钮）。
     remoteClient = _FakeRemoteBookClient(
       coverPath: remoteBookCover.path,
       sourceKind: RemoteBookSourceKind.cloud,
@@ -162,13 +168,13 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text(t.remote_book_cloud), findsOneWidget);
-    expect(find.text(t.remote_book_cloud_device), findsOneWidget);
-    // 互联专属文案绝不出现在云盘分区。
-    expect(find.text(t.remote_book_interconnect), findsNothing);
-    expect(find.text(t.remote_book_paired_device), findsNothing);
-    // 远端书本身照常渲染。
     expect(find.text('Remote Book'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>(
+        'remote_book_cloud_badge_Remote_Book',
+      )),
+      findsOneWidget,
+    );
   });
 
   testWidgets('remote book uses the shelf card cover layout',
@@ -270,32 +276,20 @@ void main() {
   });
 
   testWidgets(
-      'remote book grid spans full shelf width like local books '
-      '(TODO-655b)', (WidgetTester tester) async {
+      'remote book renders as a placeholder card in the main scatter grid '
+      '(spec §2.1 mixed grid)', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // The remote grid shares the local sliver-grid full-width baseline: its
-    // GridView must span the same width as the enclosing scroll viewport, so
-    // cell width matches local book cards (no shrinking from section padding).
-    final Finder grid = find.descendant(
-      of: find.byType(ReaderHibikiHistoryPage),
-      matching: find.byType(GridView),
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Book'),
     );
-    expect(grid, findsOneWidget);
-    final Finder viewport = find
-        .ancestor(
-          of: find.byType(CustomScrollView),
-          matching: find.byType(LayoutBuilder),
-        )
-        .first;
-    final double gridWidth = tester.getSize(grid).width;
-    final double shelfWidth = tester.getSize(viewport).width;
+    expect(card, findsOneWidget);
+    // 撤独立远端 GridView 分区后，远端占位卡是主散卡网格（SliverGrid）的一个 cell，
+    // 与本地书卡同一网格、同一卡宽基准（不再被独立 section 的内边距压窄）。
     expect(
-      gridWidth,
-      closeTo(shelfWidth, 0.5),
-      reason: 'remote grid must span the full shelf width (no section padding '
-          'shrinking the cards below the local baseline)',
+      find.ancestor(of: card, matching: find.byType(SliverGrid)),
+      findsOneWidget,
     );
   });
 
