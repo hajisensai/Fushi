@@ -36,6 +36,7 @@ import 'package:hibiki/src/models/app_font_loader.dart';
 import 'package:hibiki/src/models/builtin_tags.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -300,6 +301,21 @@ NormalizedSearchTerm normalizeSearchTerm(
     punctMicros: swPunct.elapsedMicroseconds,
     surrogateMicros: swSurrogate.elapsedMicroseconds,
   );
+}
+
+/// [normalizeSearchTerm] 在查词前用 [punctuationRegex]（`^[\p{P}\p{S}]+|[\p{P}\p{S}]+$`）
+/// 剥掉查询串的**句首/句尾**标点/符号（『「"( 等），引擎才从剥离串的 0 位去屈折/前缀
+/// 匹配，`bestLength` 也以剥离串为坐标系。返回原始串**句首**被剥掉的 UTF-16 code unit
+/// 数（无句首标点=0）。剪贴板面板的句子横幅显示的是**原始**句子（含句首标点），整词
+/// 高亮起点必须右移这段长度，否则高亮左移吞进句首括号、右缺词尾（BUG-773）。
+///
+/// 与 [normalizeSearchTerm] 共用同一 [punctuationRegex]（单一真相）：只取句首分支
+/// （`match.start == 0` 的命中）；只有句尾标点时命中不在句首，返回 0。
+@visibleForTesting
+int leadingPunctuationStripUnits(String raw, RegExp punctuationRegex) {
+  if (raw.isEmpty) return 0;
+  final Match? m = punctuationRegex.firstMatch(raw);
+  return (m != null && m.start == 0) ? m.end : 0;
 }
 
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
@@ -754,6 +770,14 @@ class AppModel with ChangeNotifier {
   static final RegExp _loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
+
+  /// 剪贴板面板句子横幅整词高亮定位（BUG-773）：查词前 [normalizeSearchTerm] 用
+  /// [_punctuationRegex] 剥掉 [rawQuery] 的句首标点/符号，引擎才从剥离串 0 位匹配、
+  /// `bestLength` 以剥离串为坐标系。横幅显示原始句（含句首标点），故高亮起点须右移
+  /// 这段被剥长度。委托 [leadingPunctuationStripUnits]（同一正则=单一真相），返回
+  /// 句首被剥掉的 UTF-16 code unit 数。
+  int lookupLeadingStripUnits(String rawQuery) =>
+      leadingPunctuationStripUnits(rawQuery, _punctuationRegex);
 
   /// Used to notify toggling incognito. Updates the app logo to and from
   /// grayscale.
@@ -2014,6 +2038,15 @@ class AppModel with ChangeNotifier {
       if (yomitanApiServerEnabled) {
         unawaited(startYomitanApiServer().catchError((Object _) {}));
       }
+      // BUG-726：桌面端启动时把 <appSupport> 下已解压的浏览器扩展副本刷新到当前内置版本
+      // （只在用户装过扩展、指纹不一致时重解压；没装过不落盘）。此前该副本只在手动跑
+      // 「安装扩展」助手时写入 → app 升级后磁盘副本永远停在安装当天的旧版，扩展弹窗与
+      // app 内弹窗漂移（BUG-621/688 修了也到不了用户浏览器）。fire-and-forget 不阻塞 init。
+      unawaited(
+          refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.refreshBrowserExtensionCopy', e, s);
+      }));
       if (texthookerEnabled) {
         TexthookerWsClientHost.instance.start(texthookerUrls);
       }
@@ -2272,6 +2305,16 @@ class AppModel with ChangeNotifier {
     String rgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
         '${(c.g * 255.0).round().clamp(0, 255)}, '
         '${(c.b * 255.0).round().clamp(0, 255)})';
+    // BUG-736：以下两个 helper 与 in-app 弹窗注入器（popup_settings_injection /
+    // dictionary_popup_webview）同款，用于补齐扩展此前漏发、退化成灰高亮/白字/直角的
+    // 变量。rgba035：查到词高亮色（primary @0.35 alpha）；triplet：卡片底色 RGB 三元组。
+    String rgba035(Color c) => 'rgba(${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)}, 0.35)';
+    String triplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)}';
+    final Color bgColor = _overrideDictionaryColor ?? s.surface;
     // BUG-688：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
     // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
     // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
@@ -2285,7 +2328,13 @@ class AppModel with ChangeNotifier {
       // 与 in-app _themeVariablesJs 一致地下发这两个核心变量；漏了它们会导致弹窗容器色回落到
       // data-theme 块的 #000/#fff 或宿主页继承（主题分裂：米卡 + 黑底 + 灰字）。
       '--text-color': rgb(s.onSurface),
-      '--background-color': rgb(_overrideDictionaryColor ?? s.surface),
+      '--background-color': rgb(bgColor),
+      // BUG-736：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
+      // 内的主题主色高亮不一致（这是「扩展弹窗和 app 不一样」最扎眼的一处）。
+      '--hoshi-primary-highlight': rgba035(s.primary),
+      // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
+      // 漏发时回落到纯白 255,255,255。
+      '--hibiki-card-bg-rgb': triplet(bgColor),
       // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
       // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
       '--hibiki-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
@@ -2296,10 +2345,20 @@ class AppModel with ChangeNotifier {
       '--md-on-surface-variant': rgb(s.onSurfaceVariant),
       '--md-outline-variant': rgb(s.outlineVariant),
       '--md-primary': rgb(s.primary),
+      // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
+      '--md-on-primary': rgb(s.onPrimary),
+      // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
+      // （HibikiRadii.cardValue）不一致。与两个 in-app 注入器逐字节同源。
+      '--hibiki-radius-card': '${HibikiRadii.cardValue.toInt()}px',
       '--hibiki-popup-max-width': '${popupMaxWidth.round()}px',
       '--hibiki-popup-max-height': '${popupMaxHeight.round()}px',
       '--hibiki-popup-zoom': zoom.toStringAsFixed(4),
       '--dict-columns': '$popupDictionaryColumns',
+      // 「滑动关闭查词弹窗」偏好（enableSwipeToClose）下发给扩展 content.js：非 CSS 变量、
+      // 仅 JS 消费（content.js 据此决定是否给浮动弹窗启用水平拖关手势）。走 theme 传输通道
+      // 与 --hibiki-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
+      '--hibiki-swipe-close':
+          ReaderHibikiSource.instance.enableSwipeToClose ? '1' : '0',
     };
   }
 
@@ -3968,6 +4027,12 @@ class AppModel with ChangeNotifier {
   bool get compressMiningMedia => prefsRepo.compressMiningMedia;
   void toggleCompressMiningMedia() => prefsRepo.toggleCompressMiningMedia();
 
+  // 视频制卡封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 gif=现状。
+  VideoMiningImageMode get videoMiningImageMode =>
+      prefsRepo.videoMiningImageMode;
+  void setVideoMiningImageMode(VideoMiningImageMode mode) =>
+      prefsRepo.setVideoMiningImageMode(mode);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();
@@ -4283,6 +4348,10 @@ class AppModel with ChangeNotifier {
       // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
+      // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
+      // 与自身 HIBIKI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
+      // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
+      extensionBuildProvider: () => _browserExtensionBuild,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4290,6 +4359,24 @@ class AppModel with ChangeNotifier {
             HoshiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
+    );
+  }
+
+  // BUG-726：内置扩展指纹缓存（refreshBrowserExtensionCopy 启动时填充）。
+  String? _browserExtensionBuild;
+
+  /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
+  /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。
+  /// 仅桌面（扩展解压引导仅桌面有意义）；移动端 no-op。
+  Future<void> refreshBrowserExtensionCopy() async {
+    if (!DesktopLookupService.isDesktop) return;
+    _browserExtensionBuild = await bundledBrowserExtensionFingerprint();
+    await refreshBundledBrowserExtensionIfStale(
+      serverConfig: BrowserExtensionServerConfig(
+        host: '127.0.0.1',
+        port: yomitanApiPort,
+        token: yomitanApiKey,
+      ),
     );
   }
 

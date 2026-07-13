@@ -319,4 +319,132 @@ void main() {
     expect(res.abortReason, contains('no cover'));
     expect(repo.minedContext, isNull);
   });
+
+  // ── 视频制卡封面图片模式（VideoMiningImageMode）─────────────────────────
+  // gif 模式与旧阶梯逐字等价（上面 'gif+audio success' / 'gif fails -> frame fallback'
+  // 已覆盖，且 imageMode 默认 gif）。以下覆盖两个静态模式：主动选静态图不置 degradedToStill、
+  // 走对的来源、且不调 GIF。
+
+  // 制卡时截图：当前解码帧（stillFallback → immersion_shot.jpg）优先，不抽 GIF、非降级。
+  test('imageMode=currentFrame uses screenshot, no gif, not degraded',
+      () async {
+    final repo = _FakeRepo();
+    bool gifCalled = false;
+    Future<String?> flagGif(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int fps = 8,
+        int width = 320,
+        FfmpegFailureReporter? onFailure}) async {
+      gifCalled = true;
+      return outputPath;
+    }
+
+    final res = await build(gif: flagGif, audio: okAudio, frame: okFrame).mine(
+        ImmersionMiningRequest(
+            fields: const {'expression': 'x'},
+            mediaSource: '/v.mp4',
+            clipStartMs: 1000,
+            clipEndMs: 3000,
+            sentence: 's',
+            imageMode: VideoMiningImageMode.currentFrame,
+            stillFallback: () async => Uint8List.fromList(<int>[9, 9, 9])),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo);
+    expect(res.aborted, false);
+    expect(gifCalled, false, reason: '静态模式不该抽 GIF');
+    expect(res.degradedToStill, false, reason: '用户主动选静态图，非降级');
+    expect(repo.minedContext!.coverPath, endsWith('immersion_shot.jpg'));
+  });
+
+  // 字幕开头截图：字幕起点单帧（immersion_frame.jpg）优先，不抽 GIF、非降级。
+  test('imageMode=subtitleStart uses start frame, no gif, not degraded',
+      () async {
+    final repo = _FakeRepo();
+    bool gifCalled = false;
+    Future<String?> flagGif(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int fps = 8,
+        int width = 320,
+        FfmpegFailureReporter? onFailure}) async {
+      gifCalled = true;
+      return outputPath;
+    }
+
+    final res = await build(gif: flagGif, audio: okAudio, frame: okFrame).mine(
+        const ImmersionMiningRequest(
+            fields: {'expression': 'x'},
+            mediaSource: '/v.mp4',
+            clipStartMs: 1000,
+            clipEndMs: 3000,
+            sentence: 's',
+            imageMode: VideoMiningImageMode.subtitleStart),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo);
+    expect(res.aborted, false);
+    expect(gifCalled, false, reason: '静态模式不该抽 GIF');
+    expect(res.degradedToStill, false, reason: '用户主动选静态图，非降级');
+    expect(repo.minedContext!.coverPath, endsWith('immersion_frame.jpg'));
+  });
+
+  // currentFrame 无 stillFallback（如无当前帧）→ 退字幕起点单帧，仍非降级。
+  test('imageMode=currentFrame without screenshot falls back to start frame',
+      () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: okAudio, frame: okFrame).mine(
+        const ImmersionMiningRequest(
+            fields: {'expression': 'x'},
+            mediaSource: '/v.mp4',
+            clipStartMs: 1000,
+            clipEndMs: 3000,
+            sentence: 's',
+            imageMode: VideoMiningImageMode.currentFrame),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo);
+    expect(res.aborted, false);
+    expect(res.degradedToStill, false);
+    expect(repo.minedContext!.coverPath, endsWith('immersion_frame.jpg'));
+  });
+
+  // subtitleStart 起点帧失败 → 退当前解码帧（immersion_shot.jpg），仍非降级。
+  test('imageMode=subtitleStart with frame failure falls back to screenshot',
+      () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: okGif, audio: okAudio, frame: nullFrame).mine(
+        ImmersionMiningRequest(
+            fields: const {'expression': 'x'},
+            mediaSource: '/v.mp4',
+            clipStartMs: 1000,
+            clipEndMs: 3000,
+            sentence: 's',
+            imageMode: VideoMiningImageMode.subtitleStart,
+            stillFallback: () async => Uint8List.fromList(<int>[7, 7, 7])),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo);
+    expect(res.aborted, false);
+    expect(res.degradedToStill, false);
+    expect(repo.minedContext!.coverPath, endsWith('immersion_shot.jpg'));
+  });
+
+  // wireName 往返 + 未知值回退 gif（持久化契约，向后兼容）。
+  test('VideoMiningImageMode.fromWireName round-trips and defaults to gif', () {
+    for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
+      expect(VideoMiningImageMode.fromWireName(mode.wireName), mode);
+    }
+    expect(VideoMiningImageMode.fromWireName(null), VideoMiningImageMode.gif);
+    expect(VideoMiningImageMode.fromWireName('nonsense'),
+        VideoMiningImageMode.gif);
+    expect(VideoMiningImageMode.gif.isStill, false);
+    expect(VideoMiningImageMode.currentFrame.isStill, true);
+    expect(VideoMiningImageMode.subtitleStart.isStill, true);
+  });
 }

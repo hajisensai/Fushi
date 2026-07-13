@@ -111,16 +111,82 @@ void main() {
             reason:
                 '$root/vendor/content.css lost the floating-popup sizing overlay');
         // Scoped forms of the document-level popup.css rules must be present.
+        // BUG-752: the scope must be the specificity-neutral `:where(...)` form.
         for (final String scoped in const <String>[
-          '#entries-container ::selection',
-          '#entries-container ::-webkit-scrollbar',
-          '#entries-container[data-theme="dark"]',
+          ':where(#entries-container) ::selection',
+          ':where(#entries-container) ::-webkit-scrollbar',
+          ':where(#entries-container)[data-theme="dark"]',
         ]) {
           expect(content.contains(scoped), isTrue,
               reason: '$root/vendor/content.css missing scoped rule: $scoped');
         }
       });
+
+      test('[$root] content.css re-roots stay specificity-neutral (BUG-752)',
+          () {
+        // A bare `#entries-container` re-root prefix lifts a document-level
+        // popup.css rule from (0,0,x) to (1,0,x) so it out-ranks every class
+        // rule and the extension cascade inverts vs the in-app popup. The `*`
+        // reset re-rooted as `#entries-container *` killed
+        // `.ruby-unit { padding-top }` and glossary furigana printed on top of
+        // its base text. The generator must emit `:where(#entries-container...)`
+        // scopes instead; only the extension-only overlay may address the
+        // container element itself by bare ID (its rules target ONLY the
+        // container, never descendants).
+        final String content = stripComments(read('$root/vendor/content.css'));
+        // The zero-specificity universal reset must exist...
+        expect(
+            content
+                .contains(':where(#entries-container, #entries-container *)'),
+            isTrue,
+            reason: '$root/vendor/content.css lost the :where() universal '
+                'reset (BUG-752)');
+        // ...and no selector may re-introduce a bare-ID descendant re-root
+        // (`#entries-container *`, `#entries-container hr`, `#entries-container
+        // ::selection`, `#entries-container[data-theme]`...). `#entries-container
+        // {` / `#entries-container,` (container-only rules, e.g. the overlay
+        // sizing block) stay allowed.
+        final RegExp bareIdReroot =
+            RegExp(r'(^|\n)\s*#entries-container(\s+[^{\s]|\[)[^{}]*\{');
+        final Match? m = bareIdReroot.firstMatch(content);
+        expect(m, isNull,
+            reason: '$root/vendor/content.css re-introduced a bare-ID re-root '
+                'selector (cascade-inverting, BUG-752): '
+                '${m?.group(0)?.trim()}');
+      });
     }
+
+    test(
+        'scrollbars hidden via ::-webkit-scrollbar also hide via the standard '
+        'property (BUG-775)', () {
+      // The themed-scrollbar block sets the standard `scrollbar-color` on the
+      // popup root and it INHERITS into every descendant. Per spec, once a
+      // standard scrollbar property is in effect Chromium 121+ disables the
+      // whole ::-webkit-scrollbar pseudo family — so a scrollbar hidden ONLY
+      // via `X::-webkit-scrollbar { display: none }` re-appears as a classic
+      // scrollbar in the browser extension (BUG-775: tiny arrows+thumb bar
+      // squeezed against the header buttons). Every such X must therefore also
+      // carry `scrollbar-width: none`.
+      final String css = stripComments(popupCss);
+      final RegExp hider = RegExp(
+          r'([^\s{},]+)::-webkit-scrollbar\s*\{[^}]*display:\s*none[^}]*\}');
+      final List<String> bases =
+          hider.allMatches(css).map((Match m) => m.group(1)!).toList();
+      expect(bases, isNotEmpty,
+          reason: 'expected at least .expression-scroll to hide its scrollbar '
+              '— selector shape changed? Update this guard.');
+      for (final String base in bases) {
+        // A rule whose selector list contains the bare base selector and whose
+        // body sets scrollbar-width: none.
+        final RegExp companion = RegExp('(^|[,\\s}])${RegExp.escape(base)}'
+            r'\s*(,[^{]*)?\{[^}]*scrollbar-width:\s*none[^}]*\}');
+        expect(companion.hasMatch(css), isTrue,
+            reason: 'popup.css hides "$base" scrollbars only via '
+                '::-webkit-scrollbar{display:none}; add `scrollbar-width: '
+                'none` to the $base rule or the hiding breaks in the browser '
+                'extension (BUG-775).');
+      }
+    });
 
     test('the two extension content.css mirrors are byte-identical', () {
       expect(bytes('$extAssets/vendor/content.css'),

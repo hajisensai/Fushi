@@ -137,8 +137,19 @@ class JsonAlignmentParser {
   /// 上时间轴重叠的多条 cue 同时渲染出来（TODO-1312：重叠 cue 都显示、不因越过被选那
   /// 条 end 落进 gap 而闪烁 / 切换）。
   ///
-  /// 边界与 [findCueIndex] 一致：`startMs <= positionMs <= endMs`（endMs **闭区间**，
+  /// 边界默认与 [findCueIndex] 一致：`startMs <= positionMs <= endMs`（endMs **闭区间**，
   /// HBK-AUDIT-153）。空活动集返回空列表（调用方据此清空 overlay，与 gap 语义一致）。
+  ///
+  /// [endInclusive]（默认 true，保 HBK-AUDIT-153 契约）：置 false 时改用**半开区间**
+  /// `[startMs, endMs)`。视频字幕 overlay 的**渲染集**必须传 false，否则相邻对白
+  /// （前一条 `endMs` == 后一条 `startMs`，fansub 极常见）在那一毫秒会**同时活跃**——
+  /// 前一条尚未退场、后一条已进场，两对 cue 挤成一帧的「幻影重叠」。竖排堆叠槽位表
+  /// （`VideoSubtitleOverlay._syncGroupSlots`）据此把后进 cue 追加到远端槽，随后前一条
+  /// 退场只留下**锚点侧隐形占位**（step③ 只裁尾部死槽），把后一条持续顶离基线，直到
+  /// 出现间隙整组清空——表现为「双轨字幕在连续对白里被抬高、间隙落回，来回弹跳」。半开
+  /// 区间让边界处只后一条活跃，后进 cue 直接复用被腾空的锚点槽，弹跳根除。代表 cue
+  /// （[findCueIndex]，仍闭区间）由 `_activeRenderIndices` 并入，故末条无后继时不会因半开
+  /// 提前 1 tick 消失。
   ///
   /// 要求 [cues] 已按 startMs 升序排序（[VideoPlayerController.setCues] /
   /// [JsonAlignmentParser.parseString] 后调用方保证）：一旦某条 startMs > positionMs，
@@ -147,12 +158,15 @@ class JsonAlignmentParser {
   static List<int> findActiveCueIndices({
     required List<AudioCue> cues,
     required int positionMs,
+    bool endInclusive = true,
   }) {
     final List<int> active = <int>[];
     for (int i = 0; i < cues.length; i++) {
       final AudioCue cue = cues[i];
       if (cue.startMs > positionMs) break;
-      if (positionMs <= cue.endMs) active.add(i);
+      final bool withinEnd =
+          endInclusive ? positionMs <= cue.endMs : positionMs < cue.endMs;
+      if (withinEnd) active.add(i);
     }
     return active;
   }

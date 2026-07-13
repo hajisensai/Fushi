@@ -251,4 +251,44 @@ void main() {
       expect(decodeDictTypeFromBlobHeader(b), null);
     });
   });
+
+  group('leadingPunctuationStripUnits (BUG-773 句首标点剥离长度)', () {
+    int lead(String s) => leadingPunctuationStripUnits(s, punctuationRegex);
+
+    test('句首日文书名号 『 计 1 个 code unit', () {
+      expect(lead('『呪術廻戦 第1期』'), 1);
+    });
+
+    test('句首多重括号/引号连剥', () {
+      expect(lead('（「図書館」）'), 2); // （「 两个
+      expect(lead('！！！hello'), 3);
+    });
+
+    test('无句首标点 -> 0', () {
+      expect(lead('呪術廻戦'), 0);
+      expect(lead('図書館。'), 0, reason: '只有句尾标点，命中不在句首');
+    });
+
+    test('空串 -> 0', () {
+      expect(lead(''), 0);
+    });
+
+    // 单一真相校验：剥掉的句首长度必须恰好等于 normalizeSearchTerm 从句首移除的量。
+    // 对「仅句首标点、无 emoji/换行/代理项、无句尾标点」的输入，
+    // 原始长度 - 归一化后长度 == 句首剥离长度。
+    test('与 normalizeSearchTerm 句首移除量一致（无其他清洗时）', () {
+      for (final String s in <String>[
+        '『呪術廻戦',
+        '（図書館',
+        '「「テスト',
+        '！！！hello',
+        '普通の文', // 无句首标点：剥 0、归一化不变
+      ]) {
+        final int leadUnits = lead(s);
+        final int removedTotal = s.length - normalize(s).length;
+        expect(leadUnits, removedTotal,
+            reason: '「$s」句首剥离长度须等于归一化移除总量（无句尾标点样本）');
+      }
+    });
+  });
 }

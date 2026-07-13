@@ -48,12 +48,12 @@ void main() {
         controller = read('lib/src/lookup/global_lookup_controller.dart'));
 
     test('公开 lookupText 程序化入口存在且带 _started 门', () {
-      expect(
-        controller.contains(
-            "Future<bool> lookupText(String text, {String sentence = ''})"),
-        isTrue,
-        reason: '867 覆盖窗必须暴露程序化文本查词入口（TODO-872）',
-      );
+      // 真机第 5 轮（剪贴板面板）起签名多了可选 anchorScreenRect（文字锚点）；
+      // 悬浮字幕调用方不传即旧 atCursor 语义，契约不变。
+      expect(controller.contains('Future<bool> lookupText('), isTrue,
+          reason: '867 覆盖窗必须暴露程序化文本查词入口（TODO-872）');
+      expect(controller.contains("String sentence = ''"), isTrue,
+          reason: 'sentence 可选参数（悬浮字幕带整句）不得丢');
       final int at = controller.indexOf('Future<bool> lookupText(');
       final String fn =
           controller.substring(at, controller.indexOf('return true;', at));

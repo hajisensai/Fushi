@@ -88,7 +88,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
   /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词
   /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
   /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
-  /// sasayakiAudioPath（→`{sasayaki-audio}`）+ 例句 sentence。复用现有 Anki 字段。
+  /// sasayakiAudioPath（→`{sentence-audio}`）+ 例句 sentence。复用现有 Anki 字段。
   bool _isCueSelectedForCard(AudioCue cue) =>
       _selectedMiningCueStarts.contains(cue.startMs);
 
@@ -306,6 +306,9 @@ extension _VideoLookupMining on _VideoHibikiPageState {
             : null,
         updateNoteId: updateNoteId,
         stillFallback: controller.screenshot,
+        // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
+        // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
+        imageMode: appModel.videoMiningImageMode,
       ),
       compression: mediaCompression,
       tempDir: tmp.path,

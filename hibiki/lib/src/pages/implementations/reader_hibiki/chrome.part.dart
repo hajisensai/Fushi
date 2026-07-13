@@ -830,6 +830,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       _showChrome = visible;
     });
     _applyChromeInsets();
+    // BUG-712 ①：chrome 可见性是 JS 侧点词门控镜像的一半，翻转即同步。
+    _syncTapGateJs();
     _focusNode.requestFocus();
   }
 
@@ -855,6 +857,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       _showChrome = !_showChrome;
     });
     _applyChromeInsets();
+    // BUG-712 ①：chrome 可见性是 JS 侧点词门控镜像的一半，翻转即同步。
+    _syncTapGateJs();
     // TODO-700 T8: the bottom chrome bar is wrapped in ExcludeFocus (see
     // [_buildAudiobookBar]/[_buildSettingsBar]), so its controls are never
     // focus-traversal targets — focus always lives on the reading content

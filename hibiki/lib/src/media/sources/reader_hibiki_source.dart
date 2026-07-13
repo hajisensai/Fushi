@@ -53,8 +53,13 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
 ///   `charOffset ≤ 当前章 characters`）。`-1` 是「仅章节、章内偏移未知」哨兵 → 当 0。
 ///
 /// 计算：
-/// - 有每章字数（全书字数>0）：`position = Σ前面各章字数 + clamp(charOffset,0,本章字数)`，
+/// - 有每章字数（全书字数>0）：`position = Σ前面各章字数 + 章内偏移`，
 ///   `duration = 全书字数`；position clamp 到 [0, 全书字数]（防 >100%）。
+///   章内偏移优先用精确 `charOffset`（与章字数同单位）；`charOffset < 0`
+///   （听书 cue 派生位置无精确偏移的哨兵，见 [ReaderPositions.charOffset] 注释）
+///   时回退到归一化 `normCharOffset` 分数——`intra = normCharOffset/10000 × 本章字数`，
+///   与阅读器 restore 的回退口径一致（BUG-728：书架旧实现漏了这条回退，听书进度
+///   停在章边界甚至显 0%）。
 /// - 老书无 `characters`（全书字数=0）但有章结构：回退章级 `sectionIndex / 章数`，
 ///   避免恒显 0%。
 /// - 完全无章结构：`(0, 1)`（0%，不崩）。
@@ -62,6 +67,7 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   required List<int> sectionChars,
   required int? sectionIndex,
   required int charOffset,
+  int normCharOffset = 0,
 }) {
   final int totalChars = sectionChars.fold<int>(0, (int a, int b) => a + b);
   final int chapterCount = sectionChars.length;
@@ -74,8 +80,12 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
     for (int i = 0; i < clampedSection; i++) {
       charsRead += sectionChars[i];
     }
-    final int intra =
-        charOffset < 0 ? 0 : charOffset.clamp(0, sectionChars[clampedSection]);
+    final int sectionSize = sectionChars[clampedSection];
+    // 精确偏移（charOffset >= 0）直接用；否则回退归一化分数（0-10000）还原听书
+    // 时的章内进度。normCharOffset 也 clamp 到 [0,10000] 防脏数据越界。
+    final int intra = charOffset >= 0
+        ? charOffset.clamp(0, sectionSize)
+        : (normCharOffset.clamp(0, 10000) * sectionSize / 10000).round();
     return (
       position: (charsRead + intra).clamp(0, totalChars),
       duration: totalChars,
@@ -306,8 +316,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
     HibikiFocusId? focusId,
     String? label,
   }) {
+    // 不覆盖 size：书架页头同排的其它按钮（管理来源 / 合集 / 统计，走
+    // _headerAction → HibikiIconButton）与视频 tab 的导入按钮都用默认 24。
+    // 此前这里显式塞 titleLarge.fontSize(~22) 让「添加」按钮比兄弟小一圈、
+    // 外框也短一截，看起来大小和位置都对不齐（BUG-735）。回落默认即对齐。
     return HibikiIconButton(
-      size: Theme.of(context).textTheme.titleLarge?.fontSize,
       tooltip: t.srt_import,
       // 宽窗展开为「图标+文字」（书架页头传入）；null 时保持纯图标（其它调用点）。
       label: label,
@@ -399,6 +412,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
       sectionChars: sectionChars,
       sectionIndex: pos?.sectionIndex,
       charOffset: pos?.charOffset ?? -1,
+      // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
+      // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
+      normCharOffset: pos?.normCharOffset ?? 0,
     );
     position = prog.position;
     duration = prog.duration;

@@ -176,6 +176,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // IllustrationsViewerPage 的 `no_illustrations_found` 占位友好兜底。
   Set<String> _epubBackedBookKeys = const {};
 
+  // BUG-728：EPUB-backed 有声书在书架**只渲染成 SRT 卡**（其 EpubBooks 行被
+  // `srtBookKeys` 过滤出 EPUB 卡列表），而 SRT 卡以前不画进度条。这里收录当前
+  // `books`（hibikiBooksProvider）里每本 EpubBooks 行**已算好的** position/duration
+  // （经 [ReaderHibikiSource.computeBookProgress]，含听书 normCharOffset 回退），
+  // 供 SRT 卡按 bookKey 复用同一进度，无需重复读 DB / 重算。
+  Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
+
   // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
   List<VideoBookRow> _videoBooks = const [];
   Future<List<VideoBookRow>>? _videoBooksFuture;
@@ -889,9 +896,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // TODO-1191：`books` 是 hibikiBooksProvider 的全部 EpubBooks 行；解析出的
     // bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
     final Set<String> epubBackedBookKeys = {};
+    // BUG-728：过滤前先收 EPUB 卡已算好的进度，供只以 SRT 卡出现的有声书复用。
+    final Map<String, ({int position, int duration})> epubProgressByBookKey =
+        {};
     for (final MediaItem item in books) {
       final String? key = _parseBookKey(item.mediaIdentifier);
-      if (key != null) epubBackedBookKeys.add(key);
+      if (key != null) {
+        epubBackedBookKeys.add(key);
+        epubProgressByBookKey[key] =
+            (position: item.position, duration: item.duration);
+      }
       final String? imageUrl = item.imageUrl;
       if (key != null && imageUrl != null && imageUrl.isNotEmpty) {
         epubCoverUrisByBookKey[key] = imageUrl;
@@ -1025,6 +1039,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ];
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
+    _epubProgressByBookKey = epubProgressByBookKey;
     if (epubBooks.isEmpty &&
         srtBooks.isEmpty &&
         videoBooks.isEmpty &&
@@ -1086,46 +1101,50 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       thickness: 3,
       controller: mediaType.scrollController,
       child: LayoutBuilder(
-        builder: (context, constraints) => CustomScrollView(
-          controller: mediaType.scrollController,
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          slivers: [
-            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-            // UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页，用户
-            // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
-            if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildShelfOverviewSection(epubBooks, srtBooks),
-              ),
-            // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-            // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-            // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
-            // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
-            // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
-            // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
-            // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
-            if (shelfGroups.isNotEmpty)
-              ..._buildShelfGroupSlivers(
-                shelfGroups,
-                epubCoverUrisByBookKey,
-                constraints,
-              ),
-            if (videoBooks.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                  child: _buildSectionHeader(t.shelf_video_section)),
-              SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: _gridExtent(context, constraints),
-                  // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
-                  childAspectRatio: kShelfVideoCardAspectRatio,
+        // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
+        builder: (context, constraints) => RefreshIndicator(
+          onRefresh: _pullToRefreshBooks,
+          child: CustomScrollView(
+            controller: mediaType.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+              // UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页，用户
+              // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
+              if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildShelfOverviewSection(epubBooks, srtBooks),
                 ),
-                itemCount: videoBooks.length,
-                itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
-              ),
+              // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+              // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+              // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
+              // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
+              // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
+              // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
+              if (shelfGroups.isNotEmpty)
+                ..._buildShelfGroupSlivers(
+                  shelfGroups,
+                  epubCoverUrisByBookKey,
+                  constraints,
+                ),
+              if (videoBooks.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                    child: _buildSectionHeader(t.shelf_video_section)),
+                SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: _gridExtent(context, constraints),
+                    // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
+                    childAspectRatio: kShelfVideoCardAspectRatio,
+                  ),
+                  itemCount: videoBooks.length,
+                  itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

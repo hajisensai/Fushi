@@ -66,6 +66,16 @@ int computeReadingStreak(Set<String> activeDayKeys, DateTime now) {
   return streak;
 }
 
+/// 纯函数：本周相对上周的百分比变化（week-over-week）。
+///
+/// [thisWeek] / [lastWeek] 为同一指标（字数或时长ms）的两周聚合值。上周为 0（无基线，
+/// 例如新用户或上周没读）时返回 `null`——此时「涨了 ∞%」没有意义，调用方应改为不显示
+/// 环比，而不是显示一个爆表数字。正常返回带符号的百分比（正=涨、负=跌）。
+double? computeWeekOverWeekPercent(int thisWeek, int lastWeek) {
+  if (lastWeek == 0) return null;
+  return (thisWeek - lastWeek) / lastWeek * 100.0;
+}
+
 /// 纯函数：目标环填充比例，裁剪到 [0, 1]。[goal] <= 0 时返回 0（避免除零）。
 double goalFraction(num value, num goal) {
   if (goal <= 0) return 0;

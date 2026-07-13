@@ -24,14 +24,13 @@
 /* A big portion of the CSS was directly copied from Yomitan */
 /* https://github.com/yomidevs/yomitan/blob/d810b2f0842536d24ab82b6cd75d00841710e57b/ext/css/structured-content.css */
 
-#entries-container,
-#entries-container * {
+:where(#entries-container, #entries-container *) {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
-#entries-container {
+:where(#entries-container) {
     --font-size-no-units: 15;
     --line-height: 1.4;
     --list-padding1: 1.4em;
@@ -73,7 +72,7 @@
     direction: ltr;
 }
 
-#entries-container {
+:where(#entries-container) {
     overflow-x: hidden;
     padding: 0 10px 10px;
 }
@@ -86,28 +85,28 @@
    WebView / Windows WebView2 / macOS WKWebView. color-scheme is pinned per theme
    in the html[data-theme] blocks below -- WebView2's Fluent overlay scrollbar
    ignores ::-webkit-scrollbar and only follows the UA color-scheme. */
-#entries-container {
+:where(#entries-container) {
     scrollbar-width: thin;
     scrollbar-color: var(--text-color) transparent;
 }
 
-#entries-container ::-webkit-scrollbar {
+:where(#entries-container) ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-#entries-container ::-webkit-scrollbar-track {
+:where(#entries-container) ::-webkit-scrollbar-track {
     background: transparent;
 }
 
-#entries-container ::-webkit-scrollbar-thumb {
+:where(#entries-container) ::-webkit-scrollbar-thumb {
     background-color: var(--text-color);
     background-clip: padding-box;
     border: 2px solid transparent;
     border-radius: 8px;
 }
 
-#entries-container ::-webkit-scrollbar-corner {
+:where(#entries-container) ::-webkit-scrollbar-corner {
     background: transparent;
 }
 
@@ -151,6 +150,18 @@
     flex: 1 1 auto;
     min-width: 0;
     overflow-x: auto;
+    /* BUG-753: hide the scrollbar via the STANDARD property too, not only the
+       ::-webkit-scrollbar rule below. The themed-scrollbar block sets the
+       standard `scrollbar-color` on the root, which INHERITS into this element;
+       once a standard scrollbar property is in effect, Chromium 121+ disables
+       the whole ::-webkit-scrollbar pseudo family, so `display: none` below
+       stops applying. The headword ruby (reading over base) also overflows the
+       box by a few px vertically, and `overflow-x: auto` makes computed
+       overflow-y `auto`, so the extension popup (real Chrome, classic
+       scrollbars) showed a tiny arrows+thumb vertical scrollbar squeezed
+       against the header buttons. In-app WebView2 hid it only by luck (Fluent
+       overlay scrollbars are invisible at rest). */
+    scrollbar-width: none;
 }
 
 .expression-scroll::-webkit-scrollbar {
@@ -491,13 +502,13 @@
     padding: 2px 4px;
 }
 
-#entries-container hr {
+:where(#entries-container) hr {
     border: none;
     border-top: 1px solid var(--outline-variant);
     margin: 4px 0;
 }
 
-#entries-container a {
+:where(#entries-container) a {
     color: var(--primary-color);
 }
 
@@ -581,7 +592,7 @@
     filter: brightness(0);
 }
 
-#entries-container[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.gloss-image {
+:where(#entries-container)[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.gloss-image {
     filter: brightness(0) invert(1);
 }
 
@@ -640,7 +651,7 @@
         0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-#entries-container[data-theme="dark"] .glossary-group {
+:where(#entries-container)[data-theme="dark"] .glossary-group {
     border-color: rgba(255, 255, 255, 0.09);
     box-shadow: 0 1px 1px rgba(0, 0, 0, 0.36);
 }
@@ -765,17 +776,30 @@
     padding: 0 8px;
 }
 
-/* Furigana inside dictionary glossary bodies. Two layout invariants live in
-   this rule pair and must stay together:
-     - Horizontal compaction (BUG-345 / TODO-620): popup.js's postProcessRuby
-       replaces each <ruby>'s base text node with a bare <span> so the ruby text
-       stays selectable (BUG-110/123/125/129), but that <span> is still a ruby
-       base box and Blink sizes every base box to max(base, rt). With
+/* Furigana inside dictionary glossary bodies. Three layout invariants live in
+   this rule group and must stay together. The anchor of all three is the
+   per-base UNIT box (.ruby-unit), NOT the <ruby> element — popup.js's
+   postProcessRuby wraps each base text node in a <span class="ruby-unit"> and
+   moves that base's own <rt> INTO the span, so every rt sizes and positions
+   against its own kanji.
+     - Per-base anchoring (BUG-722): a dictionary word is one <ruby> holding
+       several base+<rt> pairs (e.g. <ruby>将<rt>しょう</rt>棋<rt>ぎ</rt></ruby>).
+       An absolutely-positioned rt with left:0/right:0 resolves against its
+       nearest positioned ancestor. When that ancestor was the whole <ruby>,
+       EVERY rt in the word stretched to the full ruby width and printed on top
+       of each other — しょう and ぎ (and 勝負's しょう/ぶ) fully superimposed
+       (headless Blink measured −40px / 100% overlap). Making the base <span>
+       the positioned ancestor collapses each rt back to its own kanji and
+       centres it there, so multi-kanji-word readings never collide.
+     - Horizontal compaction (BUG-345 / TODO-620): the base <span> is still a
+       ruby base box and Blink would size it to max(base, rt); with
        rt{font-size:0.5em} a >=3-kana reading is wider than its kanji, so each
-       ruby base would be stretched to its own annotation width and 明鏡-style
-       逐字 ruby lines go ragged. Keeping the <rt> out of the inline flow
-       (position:absolute) collapses every base box back to the kanji width
-       while centring the furigana above it.
+       base would stretch to its annotation width and 明鏡-style 逐字 ruby lines
+       go ragged. Keeping the <rt> out of the inline flow (position:absolute)
+       collapses every base box back to the kanji width while centring the
+       furigana above it. (The reading may still spill a few px past a very
+       narrow single kanji, as before — that residual ink overhang is BUG-345's
+       accepted trade-off; the fix above only kills the full-width superimposition.)
      - Vertical reserve, zoom-immune (BUG-108 + BUG-363 / TODO-643): the popup
        scales its whole content with documentElement.style.zoom when the user
        enlarges the dictionary font size or UI scale (dictionary_popup_webview
@@ -785,11 +809,21 @@
        box that also depended on the PREVIOUS line's leading. Under zoom!=1 that
        rounding (amplified by the zoom factor and real CJK line metrics) made the
        furigana drift up and collide with the line above. The reserve is now
-       intrinsic to the ruby element and expressed purely in em: padding-top
-       reserves room for the <rt>, which anchors to the ruby's own top (top:0).
+       intrinsic to the .ruby-unit and expressed purely in em: padding-top
+       reserves room for the <rt>, which anchors to the unit's own top (top:0).
        Reserve and annotation live on one element on one em chain, so they scale
-       together under any zoom and never depend on the neighbouring line. */
+       together under any zoom and never depend on the neighbouring line.
+   The <ruby> itself stays inline-block+relative only as a fallback anchor: if
+   postProcessRuby ever failed to wrap (never in practice), a bare <rt> would
+   still pin to the <ruby> instead of escaping to the viewport. */
 :where(.glossary-group, .glossary-content) ruby {
+    display: inline-block;
+    position: relative;
+    line-height: 1;
+    vertical-align: baseline;
+}
+
+:where(.glossary-group, .glossary-content) .ruby-unit {
     display: inline-block;
     position: relative;
     line-height: 1;
@@ -906,7 +940,12 @@
    affects the inter-column distance and leaves the row margin untouched. */
 .glossary-section > .category-body {
     display: grid;
-    grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
+    /* 真机第 5 轮 — 列数消费 popup.js updateEffectiveDictColumns 写入的
+       --dict-columns-effective（= min(用户设置, 视口宽度装得下的列数)，每列
+       至少 170px）：面板/弹窗拖窄后自动收敛列数，词典玻璃卡不再互相挤压重叠
+       （TODO-1357「窄屏不硬塞多列」的视口宽度动态版）。变量缺席（旧缓存/JS
+       未跑）回退用户设置原值，行为与改动前一致。 */
+    grid-template-columns: repeat(var(--dict-columns-effective, var(--dict-columns, 1)), minmax(0, 1fr));
     column-gap: 6px;
     /* TODO-1325 / BUG-683 首卡偏高根因修：CSS grid 默认 align-items:stretch 会把同一行
        的词典卡片全部拉伸到该行最高卡片的高度。首行常含义项最多的词典（idx 0 那本），被
@@ -1067,12 +1106,12 @@
     color: inherit;
 }
 
-#entries-container ::selection {
+:where(#entries-container) ::selection {
     background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
 }
 
-#entries-container[data-theme="light"] {
+:where(#entries-container)[data-theme="light"] {
     color-scheme: light;
     --background-color: #fff;
     --background-color-light: #fff;
@@ -1086,7 +1125,7 @@
     --on-surface-variant: var(--md-on-surface-variant, #44483F);
 }
 
-#entries-container[data-theme="dark"] {
+:where(#entries-container)[data-theme="dark"] {
     color-scheme: dark;
     --background-color: #000;
     --background-color-light: #000;
@@ -1201,6 +1240,16 @@
     -webkit-user-select: none;
 }
 
+/* 用户「词典方框怎么能左右动，Niratan 不会」根因修：app 外全局查词 / 浏览器扩展原本
+   在 .global-lookup 下把 .category-body 从 grid 覆盖成 flex-wrap（flex:1 1 auto;
+   min-width:160px）——每行卡片数由「窗口宽度」决定、卡片随内容宽伸缩，窗口一变 / 内容一变
+   卡片就左右重排漂移（用户看到的「左右动」）。这与 in-app 的固定 --dict-columns 列、也与
+   Niratan（固定列 masonry / 单列 block，从不按宽折行）都不一致。
+   删掉这个 flex 覆盖后，app 外 / 扩展与 in-app 走同一条 base grid：
+   `.glossary-section > .category-body`(repeat(var(--dict-columns),1fr) + align-items:start)，
+   桌面默认 2 列固定；多列由 popup.js 的 masonry 叠加成最短列紧密堆（等宽固定列、绝对定位，
+   不随窗口宽折行）。flex-wrap 当初为解决 grid stretch 首卡偏高（旧 complaints #2/#3），
+   现已由 base grid 的 align-items:start（BUG-683）根治，故此覆盖冗余，删除即统一四端、消抖。 */
 /* TODO-860 / BUG-435: 词典 structured-content 文本链接错位。
    词典语法节点的 inline style（float / position:absolute|fixed，经
    popup.js:516 setStructuredContentElementStyle 无白名单原样落 element.style，
@@ -1234,7 +1283,9 @@
     padding: 8px 10px;
     border-radius: var(--hibiki-radius-card, 10px);
     background: var(--surface-variant, rgba(128, 128, 128, 0.12));
-    border-left: 3px solid var(--primary-color, #386A58);
+    /* 真机反馈（2026-07-10）：左侧 3px 强调色竖条（引用块样式）在面板里像
+       「搜索栏左边一块莫名深色」——去掉竖条，改四边细边框的普通搜索框外观。 */
+    border: 1px solid var(--md-outline-variant, rgba(120, 120, 128, 0.32));
     color: var(--text-color-light1, #555555);
     font-size: 0.85em;
     line-height: 1.5;
@@ -1242,12 +1293,38 @@
     white-space: pre-wrap;
 }
 
-/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词，嵌套子卡）。 */
+/* 真机第 4 轮 — 面板 root 的句子条是「选词区」：字号与底下词条正文一致
+   （1em，不再缩小），用正文主色（不是弱化的 context 灰）。瞬态覆盖窗的
+   横幅保持 0.85em context 条外观不变。 */
+.global-lookup-sentence-panel {
+    font-size: 1em;
+    color: var(--text-color, #333333);
+}
+
+/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词）。 */
 .global-lookup-sentence-char {
     cursor: pointer;
 }
 
-.global-lookup-sentence-char:hover {
+/* 逐字 hover 框只留给瞬态窗（那里点字=嵌套子卡，需要逐字瞄准反馈）。
+   面板选词区是连续正常文本：不按字画格子，点击后由引擎分词结果整词高亮
+   （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
+.global-lookup-sentence:not(.global-lookup-sentence-panel) .global-lookup-sentence-char:hover {
+    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    border-radius: 2px;
+}
+
+/* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
+.global-lookup-sentence-hit {
+    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    border-radius: 2px;
+}
+
+.ctx-adjust-button {
+    opacity: 0.85;
+/* 真机第 5 轮 — 面板释义区被点击、正在外部瞬态窗里查的那段文字的高亮
+   （markGlobalLookupExtHit；下次点击替换、重渲清除）。 */
+.global-lookup-ext-hit {
     background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }

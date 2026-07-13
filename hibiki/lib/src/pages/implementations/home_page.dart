@@ -843,10 +843,67 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架与视频。
+  ///
+  /// 只有这两个 tab 进入时会做**无持久缓存的远端加载**——`listRemoteBooks()` /
+  /// `listRemoteVideos()` 每次都实打实打网络，远端封面（`RemoteCoverImage`）只走进程
+  /// 内 `ImageCache`、无磁盘缓存。若页面 State 随切走被销毁，切回时 `initState` 重跑
+  /// 就会把远端列表 + 封面全部重新联网拉一遍（用户报「每次进书架/视频都重新加载」）。
+  /// 保活让 State 常驻 → 切回沿用已加载的列表/封面/滚动位置，秒回。
+  ///
+  /// 其余 tab（词典 / texthooker / 设置）**故意不保活**、按需重建，以保留其依赖
+  /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
+  /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
+  /// 若把它也保活会不再 re-mount 而漏消费。
+  static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
+    HomeTab.books,
+    HomeTab.video,
+  };
+
+  /// 用户已实际打开过至少一次的保活 tab。惰性构建：没进过的视频/书架 tab 不预建，
+  /// 避免 app 一启动就把没访问的 tab 的远端列表/封面预拉一遍。
+  final Set<HomeTab> _visitedKeepAliveTabs = <HomeTab>{};
+
+  /// 缓存视频页仓库实例，令 [HomeVideoPage] 的 `widget.repo` 跨 [buildBody] 重建保持
+  /// 同一对象，避免每次 `setState` 都塞入新 repo 触发无谓 didUpdateWidget。
+  VideoBookRepository? _videoRepo;
+  VideoBookRepository get _videoRepository =>
+      _videoRepo ??= VideoBookRepository(appModel.database);
+
   Widget buildBody() {
-    switch (_visibleTab) {
+    final HomeTab visible = _visibleTab;
+    if (_keepAliveTabs.contains(visible)) {
+      _visitedKeepAliveTabs.add(visible);
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
+        // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
+        for (final HomeTab tab in _keepAliveTabs)
+          if (_visitedKeepAliveTabs.contains(tab))
+            Offstage(
+              key: ValueKey<HomeTab>(tab),
+              offstage: visible != tab,
+              child: TickerMode(
+                enabled: visible == tab,
+                child: _buildTabContent(tab),
+              ),
+            ),
+        // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
+        if (!_keepAliveTabs.contains(visible))
+          KeyedSubtree(
+            key: ValueKey<HomeTab>(visible),
+            child: _buildTabContent(visible),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTabContent(HomeTab tab) {
+    switch (tab) {
       case HomeTab.video:
-        return HomeVideoPage(repo: VideoBookRepository(appModel.database));
+        return HomeVideoPage(repo: _videoRepository);
       case HomeTab.dictionaries:
         return HomeDictionaryPage(
           focusSignal: _dictFocusSignal,

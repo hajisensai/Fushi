@@ -258,8 +258,10 @@ void main() {
       expect(backupIdx, lessThan(loadingIdx),
           reason: '导入遮罩必须在裸 loading 分支之前命中，否则导入期回退近黑屏');
       expect(src.contains('BackupImportOverlayView('), isTrue);
-      // 退出由确认视图按钮驱动（onRestart 注入 backupImportRestart）。
-      expect(src.contains('onRestart: backupImportRestart'), isTrue);
+      // 重启由确认视图按钮 + 导入成功后的自动触发共同驱动（onRestart 注入 backupImportRestart，
+      // 需带 appModel 以委托 lifecycle.restartApp 真重启）。
+      expect(src.contains('onRestart: () => backupImportRestart(appModel)'),
+          isTrue);
     });
 
     test('backup.part：先 beginBackupImport 再 closeDatabase（遮罩→关库顺序）', () {
@@ -301,15 +303,49 @@ void main() {
           reason: '_import 里不得直接 exit(0)，退出改由确认视图按钮驱动');
     });
 
-    test('backup.part：backupImportRestart 保留原平台退出分支（never-break）', () {
+    test('backup.part：backupImportRestart 优先真重启(restartApp)+保留纯退出兜底', () {
       final String src =
           readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
               .readAsStringSync();
-      final int fnIdx = src.indexOf('void backupImportRestart()');
-      expect(fnIdx, greaterThan(0), reason: '必须有供确认按钮调用的退出函数');
-      final String fnBody = src.substring(fnIdx, fnIdx + 200);
+      final int fnIdx =
+          src.indexOf('Future<void> backupImportRestart(AppModel appModel)');
+      expect(fnIdx, greaterThan(0), reason: '必须有供确认按钮+自动重启调用的重启函数');
+      final int fnEnd = src.indexOf('\n}', fnIdx);
+      final String fnBody = src.substring(fnIdx, fnEnd);
+      // 优先走经过验证的 lifecycle.restartApp()（真拉新进程，带前台标志/ macOS bundle 处理），
+      // 由 supportsRestart 门控；消除本文件里 ad-hoc Process.start 的劣质重复。
+      expect(fnBody.contains('lifecycle.supportsRestart'), isTrue,
+          reason: '重启前必须先判 supportsRestart');
+      expect(fnBody.contains('lifecycle.restartApp()'), isTrue,
+          reason: '应委托经过验证的 restartApp 真重启，而非本文件里 ad-hoc Process.start');
+      // never-break 兜底: restartApp 失败/不支持时仍退回原平台纯退出分支。
       expect(fnBody.contains('FlutterExitApp.exitApp()'), isTrue);
       expect(fnBody.contains('exit(0)'), isTrue);
+    });
+
+    test('backup.part：导入成功后延时自动重启，失败态不自动（TODO-1151 自动重启）', () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
+              .readAsStringSync();
+      final int importIdx = src.indexOf('Future<void> _import()');
+      final int nextTop =
+          src.indexOf('Future<_BackupImportChoice?>', importIdx);
+      final String importBody = src.substring(importIdx, nextTop);
+      // 成功路径：completeBackupImport 之后延时(~1s)自动调 backupImportRestart。
+      final int completeIdx =
+          importBody.indexOf('completeBackupImport(t.backup_import_success)');
+      final int autoRestartIdx =
+          importBody.indexOf('await backupImportRestart(appModel)');
+      expect(completeIdx, greaterThan(0));
+      expect(autoRestartIdx, greaterThan(completeIdx),
+          reason: '导入成功后必须自动调 backupImportRestart（用户诉求：不再手动重开）');
+      expect(importBody.contains('Duration(seconds: 1)'), isTrue,
+          reason: '自动重启前应短暂展示成功态(~1s)再拉新进程，避免像纯退出那样凭空消失');
+      // 失败路径：failBackupImport 之后不得再自动重启（保留手动按钮，用户先读失败原因）。
+      final int failIdx = importBody.indexOf('failBackupImport(');
+      expect(failIdx, greaterThan(0));
+      expect(importBody.indexOf('backupImportRestart', failIdx), -1,
+          reason: '失败态不得自动重启——保留手动「立即重启」按钮，用户读完原因再点');
     });
 
     test('app_model：BackupImportPhase 含 validating 相位 + token/取消/退出方法', () {

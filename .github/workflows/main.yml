@@ -101,6 +101,26 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
+    # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
+    # = '') so a fresh clone compiles and online danmaku degrades to unsigned. When
+    # the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set, bake the
+    # real values in so the built APK signs dandanplay open-API requests and online
+    # danmaku works out of the box (no manual API entry).
+    - name: Provide gitignored dandanplay secret stub
+      shell: bash
+      env:
+        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+      run: |
+        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        if [ -n "$DANDANPLAY_APP_ID" ]; then
+          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
+            "$DANDANPLAY_APP_ID" \
+            "$DANDANPLAY_APP_SECRET" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+        fi
 
     # TODO-1208: cache the resolved pub packages so pub get is near-instant on a
     # warm runner. apply-patches.sh is idempotent (cp -r overwrite), so a restored
@@ -158,6 +178,17 @@ jobs:
             echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"
           fi
         done
+
+    # JS behavior tests (jsdom) for the reader/audiobook WebView bridge. The Dart
+    # source-scan guards can't execute compareDocumentPosition semantics; this runs
+    # the real bridge functions against a real DOM (BUG-724). Ubuntu runners ship
+    # Node; jsdom is pinned exactly in test/js/package.json so `npm install` is
+    # reproducible (package-lock is gitignored).
+    - name: Run JS behavior tests (jsdom)
+      working-directory: test/js
+      run: |
+        npm install
+        npm test
 
     # The release build (minify/R8/proguard + C++23 native) is the variant that
     # ships; without a keystore it was never exercised on PRs, so R8/keep-rule

@@ -112,31 +112,32 @@ void main() {
     });
   });
 
-  group('TODO-1232 三态默认解析（resolveImpellerDisabled，Android 默认走 Skia）', () {
-    test('未设置 + Android → true（默认关 Impeller / 走 Skia，视频开箱即用）', () {
+  group('TODO-1232 三态默认解析（resolveImpellerDisabled，所有平台默认 Impeller）', () {
+    test('未设置 + Android → false（保持 Impeller；黑屏机型走一键切 Skia 入口降级）', () {
       expect(
         RenderBackendService.resolveImpellerDisabled(
             storedPref: null, isAndroid: true),
-        isTrue,
-        reason: '用户从未动开关时，Android 平台默认关 Impeller 走 Skia（BUG-597）',
+        isFalse,
+        reason: '用户从未动开关时，Android 亦保持引擎默认 Impeller（不再全局翻 Skia）；'
+            'BUG-597 黑屏机型改由播放器设置面板可发现的一键「切 Skia 并重启」降级',
       );
     });
 
-    test('未设置 + 非 Android → false（开关不适用，保持引擎默认 Impeller）', () {
+    test('未设置 + 非 Android → false（保持引擎默认 Impeller）', () {
       expect(
         RenderBackendService.resolveImpellerDisabled(
             storedPref: null, isAndroid: false),
         isFalse,
-        reason: '非 Android 平台此开关不适用，不擅自翻默认',
+        reason: '非 Android 平台此开关不适用，保持引擎默认 Impeller',
       );
     });
 
-    test('显式 false（用户选 Impeller）压过 Android 默认 → false', () {
+    test('显式 false（用户选 Impeller）→ false（与默认同向，仍遵从显式）', () {
       expect(
         RenderBackendService.resolveImpellerDisabled(
             storedPref: false, isAndroid: true),
         isFalse,
-        reason: '用户在设置里显式拨回「用 Impeller」时，显式选择 > 平台默认',
+        reason: '用户在设置里显式选「用 Impeller」时遵从其选择',
       );
     });
 
@@ -152,9 +153,9 @@ void main() {
 
   test('init 收到 null（用户未设置）→ 仍 supported，按平台默认解析', () async {
     // native 未设置该开关时 channel 返回 null（三态）。init 必须仍标记 supported
-    // （channel 有响应＝已接线），并用 Platform.isAndroid 兜底平台默认——测试宿主
-    // 物理 OS 非 Android，故未设置态解析为 false（保持 Impeller），恰好锁「非 Android
-    // 不擅自翻默认」这条边。真机 Android 上同一路径解析为 true（走 Skia）。
+    // （channel 有响应＝已接线），并用 Platform.isAndroid 兜底平台默认——所有平台
+    // （含 Android）未设置态现均解析为 false（保持 Impeller）；黑屏机型走播放器设置
+    // 面板的一键「切 Skia 并重启」入口显式降级，而非全局默认翻 Skia。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(testChannel, (MethodCall call) async {
       if (call.method == 'isImpellerDisabled') return null; // 未设置
@@ -169,7 +170,7 @@ void main() {
         RenderBackendService.resolveImpellerDisabled(
             storedPref: null, isAndroid: Platform.isAndroid),
         reason: 'init 须用同一三态 helper + 物理 OS 兜底未设置态');
-    expect(service.impellerDisabled, Platform.isAndroid,
-        reason: '未设置态在 Android 解析为 true（Skia）、非 Android 为 false（Impeller）');
+    expect(service.impellerDisabled, isFalse,
+        reason: '未设置态在所有平台（含 Android）均解析为 false（保持 Impeller）');
   });
 }

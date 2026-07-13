@@ -49,6 +49,9 @@ String buildFrameSettingsJs({
   required DictionarySearchResult result,
   String sentence = '',
   double cardBgAlpha = 1.0,
+  bool panelRoot = false,
+  int sentenceHitStart = -1,
+  int sentenceHitLength = 0,
 }) {
   final String settingsJs = buildPopupSettingsJs(
     appModel: appModel,
@@ -85,6 +88,15 @@ String buildFrameSettingsJs({
   // self-guards against double-install (window.__hoshiTopPullInstalled) and
   // reports through flutter_inappwebview.callHandler('topPullReleased'), which
   // the controller already gates on the enableSwipeToClose preference.
+  // 真机第 4 轮 — 仅面板 root 注入选词区标记 + 引擎命中区间（码点下标；
+  // popup.js 句子条据此走 panelSentenceLookup 原地更新语义并整词高亮）。
+  // 非面板帧（瞬态窗 / 嵌套子卡）恒为空串：同一帧同一结果下 settingsJs 跨
+  // 渲染字节稳定（host 以 settingsJs 变更为重渲判据），面板语义永不外溢。
+  final String panelRootLines = panelRoot
+      ? 'window.__globalLookupPanelRoot = true;\n'
+          '    window.__globalLookupSentenceHit = '
+          '{start: $sentenceHitStart, length: $sentenceHitLength};\n'
+      : '';
   return '''
     $settingsJs
     $kPopupTopPullReleaseJs
@@ -92,6 +104,7 @@ String buildFrameSettingsJs({
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.__globalLookupSentence = ${jsonEncode(sentence)};
+    $panelRootLines
     window.renderPopup && window.renderPopup();
 ''';
 }
@@ -226,6 +239,10 @@ String buildStackRenderScript({
   // 载荷与改动前逐字节相同（Never break userspace）。
   String layoutMode = 'cascade',
   double cardBgAlpha = 1.0,
+  // 真机第 4 轮 — 面板选词区的引擎命中区间（码点下标），只作用于面板 root
+  // 帧的 settingsJs；cascade 模式忽略。
+  int sentenceHitStart = -1,
+  int sentenceHitLength = 0,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -250,12 +267,16 @@ String buildStackRenderScript({
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];
+    final bool isPanelRoot = layoutMode == 'panel' && p.frame.parentIndex < 0;
     final String settingsJs = buildFrameSettingsJs(
       context: context,
       appModel: appModel,
       result: p.result,
       sentence: p.sentence,
       cardBgAlpha: cardBgAlpha,
+      panelRoot: isPanelRoot,
+      sentenceHitStart: isPanelRoot ? sentenceHitStart : -1,
+      sentenceHitLength: isPanelRoot ? sentenceHitLength : 0,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;

@@ -195,6 +195,23 @@ class OverlayWindowChannel {
         'pinned': pinned,
       });
 
+  /// 面板任务栏图标 — 任务栏按钮 / Alt-Tab 项的窗口标题（本地化文案）。
+  /// 窗口创建前设置则用于创建，已创建则即时更新。Only wired on the
+  /// clipboard-panel channel.
+  Future<void> setWindowTitle(String title) =>
+      _channel.invokeMethod<void>('setWindowTitle', <String, Object?>{
+        'title': title,
+      });
+
+  /// spec §6 真机修正 — 整窗不透明度（WS_EX_LAYERED + LWA_ALPHA，30-100%）。
+  /// 真透视：整窗（含文字）统一变淡，透出底下的游戏/网页；acrylic backdrop
+  /// 实测经 windowed WebView2 呈现为不透明且毛玻璃本就不是「看见底下」。
+  /// Only wired on the clipboard-panel channel.
+  Future<void> setWindowAlpha(int percent) =>
+      _channel.invokeMethod<void>('setWindowAlpha', <String, Object?>{
+        'percent': percent,
+      });
+
   /// Wires the overlay's reverse calls. [onGetMedia] resolves gaiji bytes for
   /// an `image://` url; [onJsMessage] receives raw bridge messages decoded
   /// from JSON; [onOverlayHidden] fires on a genuine native dismissal.

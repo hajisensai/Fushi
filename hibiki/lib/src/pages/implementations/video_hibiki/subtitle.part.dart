@@ -488,6 +488,25 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     controller.setSecondaryCues(cues);
   }
 
+  /// 视频内嵌字体加载（对齐 mpv/libass 的 attachment 字体）：本地视频 + 开「尊重 .ass
+  /// 自带样式」时，抽 MKV 内嵌字体附件注册进 Flutter 引擎，字幕 overlay 的
+  /// `_styleForGrapheme` 用 `cue.fontName` 即可命中真实字体（无需改 overlay）。加载完成若
+  /// 有 family 注册成功，[_rebuild] 触发 overlay 重渲染以套用新字体。
+  ///
+  /// 门控 [AppModel.videoRespectAssStyle]：关时字幕走 App 统一样式、不认 ASS 字体名，抽字体
+  /// 无意义（省一次 ffmpeg）。降级链在 [SubtitleEmbeddedFontLoader] 内：远端/无本地文件/无
+  /// ffmpeg/无附件/解析失败一律返回空集，overlay 继续走 [_kSubtitleCjkFallback]，不崩不阻塞
+  /// 播放（fire-and-forget）。
+  Future<void> _maybeLoadEmbeddedSubtitleFonts(String videoPath) async {
+    if (_isRemote) return;
+    if (!appModel.videoRespectAssStyle) return;
+    final Set<String> families =
+        await _embeddedFontLoader.loadForVideo(videoPath);
+    if (!mounted || families.isEmpty) return;
+    // 字体已进引擎；重建让字幕 overlay 按 cue.fontName 重解析并命中新注册的 family。
+    _rebuild(() {});
+  }
+
   /// Jimaku 搜索用的番名 query。能算出非空 query 时返回它，否则返回 null
   /// （= 字幕菜单不显示「自动获取字幕」入口）。
   ///

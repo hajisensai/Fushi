@@ -60,6 +60,49 @@ void main() {
     });
   });
 
+  // 真机反馈修复（2026-07-10）：面板窗必须与主窗解耦、拖动必须真能进模态循环。
+  group('面板窗解耦与拖动（真机修复回归钉）', () {
+    final String cpp =
+        File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+    final String fw =
+        File('windows/runner/flutter_window.cpp').readAsStringSync();
+
+    test('面板窗无 owner（owned 窗随主窗最小化隐藏 + Z 序连带拉主窗前台）', () {
+      final int start = fw.indexOf('RegisterClipboardPanelChannel() {');
+      expect(start, isNonNegative);
+      final String body = fw.substring(start);
+      final int prewarm =
+          body.indexOf('clipboard_panel_window_->PrewarmWebView');
+      final int showAt = body.indexOf('clipboard_panel_window_->ShowAt');
+      expect(prewarm, isNonNegative);
+      expect(showAt, isNonNegative);
+      expect(body.substring(prewarm, prewarm + 200).contains('nullptr'), isTrue,
+          reason: '面板 prewarm 不得把主窗 HWND 作 owner');
+      expect(body.substring(showAt, showAt + 200).contains('nullptr'), isTrue,
+          reason: '面板 showAt 不得把主窗 HWND 作 owner');
+      expect(body.substring(prewarm, prewarm + 200).contains('GetHandle()'),
+          isFalse);
+      expect(body.substring(showAt, showAt + 200).contains('GetHandle()'),
+          isFalse);
+    });
+
+    test('拖动经 PostMessage 进模态循环，结束由 WM_EXITSIZEMOVE 报 rect', () {
+      expect(cpp.contains('PostMessage(hwnd_, WM_NCLBUTTONDOWN'), isTrue,
+          reason: 'SendMessage 在 WebMessageReceived COM 回调栈里同步进模态'
+              '循环会挂住 WebView2 派发（真机=拖不动）');
+      expect(cpp.contains('SendMessage(hwnd_, WM_NCLBUTTONDOWN'), isFalse);
+      expect(cpp.contains('case WM_EXITSIZEMOVE:'), isTrue,
+          reason: '模态循环结束的 rect 回报唯一出口');
+    });
+
+    test('SetTopmost 带 SWP_NOOWNERZORDER（图钉不得连带主窗 Z 序）', () {
+      final int fn = cpp.indexOf('void GlobalLookupWindow::SetTopmost');
+      expect(fn, isNonNegative);
+      final String body = cpp.substring(fn, fn + 700);
+      expect(body.contains('SWP_NOOWNERZORDER'), isTrue);
+    });
+  });
+
   group('半透明卡背景（--hibiki-card-bg-* 三端契约）', () {
     test('注入端产出 rgb 三元组变量', () {
       expect(injectionDart.contains('--hibiki-card-bg-rgb'), isTrue);
@@ -80,22 +123,194 @@ void main() {
   });
 
   group('句子横幅逐字可点', () {
-    test('popup.js 逐字 span + 后缀 onLinkClick', () {
-      final int fn =
-          popupJs.indexOf('function buildGlobalLookupSentenceBanner');
+    final int fn = popupJs.indexOf('function buildGlobalLookupSentenceBanner');
+    final String bannerBody = fn < 0
+        ? ''
+        : popupJs.substring(
+            fn, popupJs.indexOf('function prependSentenceBanner'));
+
+    test('popup.js 逐字 span + 后缀查词', () {
       expect(fn, isNonNegative);
-      final String body = popupJs.substring(
-          fn, popupJs.indexOf('function prependSentenceBanner'));
-      expect(body.contains('global-lookup-sentence-char'), isTrue);
-      expect(body.contains('chars.slice(i).join('), isTrue,
+      expect(bannerBody.contains('global-lookup-sentence-char'), isTrue);
+      expect(bannerBody.contains('chars.slice(i).join('), isTrue,
           reason: '点字=该字到句尾后缀查词（同 in-app 剪贴板面板语义）');
-      expect(body.contains('callHandler(') && body.contains("'onLinkClick'"),
-          isTrue,
-          reason: '复用现有 onLinkClick 桥（host 重锚定 + 嵌套子卡）');
     });
 
-    test('popup.css 有逐字 hover 样式', () {
-      expect(popupCss.contains('.global-lookup-sentence-char'), isTrue);
+    test(
+        '真机第 4 轮：面板 root 点字=panelSentenceLookup 原地更新，'
+        '瞬态窗保持 onLinkClick 嵌套', () {
+      expect(bannerBody.contains('__globalLookupPanelRoot'), isTrue,
+          reason: '面板/瞬态分流判据由 settingsJs 注入（render 侧 panelRoot）');
+      expect(bannerBody.contains("'panelSentenceLookup', suffix, i"), isTrue,
+          reason: '面板：后缀 + 码点下标 → Dart 换根结果=底部原地变动');
+      expect(
+          bannerBody.contains("'onLinkClick'") &&
+              bannerBody.contains('getBoundingClientRect'),
+          isTrue,
+          reason: '瞬态窗路径保留：点字=onLinkClick 嵌套子卡（零回归）');
+      expect(bannerBody.contains('global-lookup-sentence-hit'), isTrue,
+          reason: '引擎 bestLength 整词高亮=「按正常的断词」');
+    });
+
+    test('popup.css：hover 格子只留瞬态窗，面板有整词高亮 + 正文字号', () {
+      expect(
+        popupCss.contains(
+            '.global-lookup-sentence:not(.global-lookup-sentence-panel)'),
+        isTrue,
+        reason: '逐字 hover 框在面板里=「按照字来划分」，必须作用域隔离',
+      );
+      expect(popupCss.contains('.global-lookup-sentence-hit'), isTrue);
+      final int panelRule = popupCss.indexOf('.global-lookup-sentence-panel {');
+      expect(panelRule, isNonNegative);
+      expect(
+        popupCss
+            .substring(panelRule, panelRule + 200)
+            .contains('font-size: 1em;'),
+        isTrue,
+        reason: '真机第 4 轮：选词区文字与底下词条正文一样大，不得回 0.85em',
+      );
+    });
+
+    test('句子条=普通搜索框外观（真机反馈：左侧强调竖条已删，不得复活）', () {
+      expect(
+        popupCss.contains('border-left: 3px solid var(--primary-color'),
+        isFalse,
+        reason: '左侧 3px 竖条在面板里像「搜索栏左边一块莫名深色」',
+      );
+    });
+  });
+
+  group('真机第 4 轮：选词区/释义分流 + 面板可激活', () {
+    final String controllerDart =
+        File('lib/src/lookup/clipboard_panel_controller.dart')
+            .readAsStringSync();
+    final String cpp =
+        File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+    final String fw =
+        File('windows/runner/flutter_window.cpp').readAsStringSync();
+
+    test('render 仅面板 root 注入 panelRoot 标记（cascade settingsJs 恒不带）', () {
+      expect(
+          renderDart
+              .contains("layoutMode == 'panel' && p.frame.parentIndex < 0"),
+          isTrue);
+      expect(renderDart.contains('__globalLookupPanelRoot = true'), isTrue);
+      expect(renderDart.contains('__globalLookupSentenceHit'), isTrue);
+    });
+
+    test('controller：panelSentenceLookup 换根，onLinkClick 走外部瞬态窗', () {
+      expect(controllerDart.contains("case 'panelSentenceLookup':"), isTrue);
+      expect(controllerDart.contains('_lookupFromBanner'), isTrue);
+      expect(controllerDart.contains('GlobalLookupController.instance'), isTrue,
+          reason: '释义点击=独立瞬态覆盖窗（可越出面板 HWND，点外即关）');
+      expect(
+          controllerDart.contains('anchorScreenRect: anchorScreenRect'), isTrue,
+          reason: '真机第 5 轮：外部弹窗锚定被点文字（面板矩形折算屏幕逻辑 px）');
+      expect(
+          controllerDart.contains('anchorRect?.shift(Offset(_panelRect.left'),
+          isTrue,
+          reason: 'host 面板窗内 CSS px + 面板原点 = 屏幕逻辑 px，单位链守卫');
+      expect(controllerDart.contains('await _lookupNested(query, anchorRect)'),
+          isTrue,
+          reason: '瞬态窗不可用时回退面板内嵌套卡，点击绝不静默丢失');
+    });
+
+    test('真机第 5 轮：释义点击高亮 + 文字锚点 + 视口感知列数收敛', () {
+      final String glcDart =
+          File('lib/src/lookup/global_lookup_controller.dart')
+              .readAsStringSync();
+      // ① 被点释义文字高亮：helper 定义 + 4 个 onLinkClick 发射点全部标记。
+      expect(
+        'markGlobalLookupExtHit('.allMatches(popupJs).length,
+        greaterThanOrEqualTo(5),
+        reason: '定义 + 释义链接/汉字标签/见出语/汉字卡 4 个发射点',
+      );
+      expect(popupCss.contains('.global-lookup-ext-hit'), isTrue);
+      // ② 外部瞬态窗按文字锚点定位（native atCursor:false 用传入点算工作区）。
+      expect(glcDart.contains('anchorScreenRect == null'), isTrue);
+      expect(glcDart.contains('atCursor: false'), isTrue,
+          reason: '有锚点=文字左下定位；无锚点保持 atCursor（热键/悬浮字幕零变化）');
+      // ③ 窄视口词典方块重叠：有效列数 = min(设置, 视口装得下)，grid 消费
+      //    effective 变量并保留旧值回退链。
+      expect(popupJs.contains('updateEffectiveDictColumns'), isTrue);
+      expect(popupJs.contains('--dict-columns-effective'), isTrue);
+      expect(
+        popupCss
+            .contains('var(--dict-columns-effective, var(--dict-columns, 1))'),
+        isTrue,
+        reason: 'TODO-1357「窄屏不硬塞多列」的视口宽度动态版；变量缺席回退原行为',
+      );
+      expect(popupJs.contains("addEventListener('resize'"), isTrue,
+          reason: '面板 resize grip 拖窄后 grid 即时收敛，无需等下次查词');
+      // ④ 超窄面板 clamp(160, viewport) 下界>上界 ArgumentError 假死守卫。
+      expect(controllerDart.contains('viewportW < 160'), isTrue);
+    });
+
+    test('面板窗可激活（点击落焦点，滚轮不穿游戏）；瞬态窗保持 NOACTIVATE', () {
+      expect(
+        'activatable_ ? 0 : WS_EX_NOACTIVATE'.allMatches(cpp).length,
+        greaterThanOrEqualTo(2),
+        reason: 'ShowAt 与 PrewarmWebView 两处创建点都必须按 activatable_ 分流',
+      );
+      final int panelChannel = fw.indexOf('RegisterClipboardPanelChannel() {');
+      expect(panelChannel, isNonNegative);
+      expect(
+        fw.substring(panelChannel).contains('SetActivatable(true)'),
+        isTrue,
+        reason: '面板实例开激活旋钮（真机第 4 轮：滚轮把底下的游戏滚动）',
+      );
+      expect(
+        '->SetActivatable(true)'.allMatches(fw).length,
+        1,
+        reason: '只有面板实例可激活；瞬态覆盖窗抢焦点=违反 design §5 保证 3',
+      );
+    });
+  });
+
+  group('面板 root 卡无 per-shell ×（真机反馈：与面板栏 × 重复）', () {
+    test('host 标记 panel-root 且 CSS 隐藏其关闭钮', () {
+      expect(
+          hostJs.contains("setAttribute('data-panel-root', 'true')"), isTrue);
+      expect(
+        hostJs.contains('[data-panel-root="true"] '),
+        isTrue,
+        reason: 'CSS 规则隐藏 root 卡 ×；嵌套子卡的 × 保留（关子层有用）',
+      );
+    });
+  });
+
+  // BUG-768 — 面板栏（图钉/关闭）在 document.body、fixed，不继承 shell 的
+  // data-theme；旧代码只给 light 主题的深灰字色，暗窗上完全看不见。修复=把 root
+  // 主题转写到面板栏 + 常驻 chip 背景 + 暗主题浅色字。三处互钉，任一改回都回归。
+  group('面板栏图钉/关闭可见（BUG-768 暗背景不可见）', () {
+    test('renderStack 把 root descriptor 主题转写到面板栏 data-theme', () {
+      expect(hostJs.contains('panelBar.setAttribute('), isTrue,
+          reason: '面板栏必须拿到 data-theme，否则暗主题变种永不命中');
+      expect(hostJs.contains('popups[0] && popups[0].theme'), isTrue,
+          reason: '主题真值源=root 弹窗 descriptor（render 侧 map[theme]）');
+    });
+
+    test('.panel-btn 恒有 chip 背景（用户诉求：给它个背景）', () {
+      final int rule = hostJs.indexOf("'#global-lookup-panel-bar .panel-btn{'");
+      expect(rule, isNonNegative);
+      // 该规则块到 :hover 之间必须含 background（非仅 hover 才出现）。
+      final int hover = hostJs.indexOf('.panel-btn:hover', rule);
+      expect(hover, isNonNegative);
+      expect(
+        hostJs.substring(rule, hover).contains('background:'),
+        isTrue,
+        reason: '常驻 chip 背景=按钮在任意窗底都可见；不能退回只 hover 才有背景',
+      );
+    });
+
+    test('暗主题面板栏按钮有浅色变种（暗窗不再深灰吃掉）', () {
+      expect(
+        hostJs.contains(
+            '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{'),
+        isTrue,
+        reason: '暗主题必须覆盖为浅色字 + 浅色 chip，镜像 .global-lookup-close 暗变种',
+      );
+      expect(hostJs.contains('rgba(235,235,245'), isTrue);
     });
   });
 }

@@ -21,6 +21,39 @@ String immersionMiningAudioExtensionFor({required bool isIOS}) =>
 String immersionMiningAudioExtension() =>
     immersionMiningAudioExtensionFor(isIOS: Platform.isIOS);
 
+/// 视频制卡的封面图片模式（用户在 Anki 设置里三选一，默认 [gif]=现状零破坏）：
+/// - [gif]：字幕区间动图（现默认，`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
+///   静态帧，并弹「降级为静态帧」OSD。
+/// - [currentFrame]：制卡那一刻的当前解码帧（`controller.screenshot`，点词已自动暂停）。
+///   用户主动选的静态图，非降级 → 不弹降级 OSD。
+/// - [subtitleStart]：当前字幕 cue 起始时间点的帧（`extractVideoFrameViaFfmpeg`，
+///   `atSeconds = clipStartMs/1000`）。同为主动选择的静态图。
+///
+/// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]（未知值回退 [gif]，
+/// 向后兼容）。远端来源（Netflix providedCoverBytes / YouTube）请求不设本字段，保持 [gif]
+/// 默认——它们直接给字节或走既有阶梯，不受影响。
+enum VideoMiningImageMode {
+  gif('gif'),
+  currentFrame('current_frame'),
+  subtitleStart('subtitle_start');
+
+  const VideoMiningImageMode(this.wireName);
+
+  /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
+  final String wireName;
+
+  /// 从偏好字符串解析；未知/null → [gif]（默认，向后兼容）。
+  static VideoMiningImageMode fromWireName(String? name) {
+    for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
+      if (mode.wireName == name) return mode;
+    }
+    return VideoMiningImageMode.gif;
+  }
+
+  /// 是否为静态截图模式（用户主动选静态图，非 GIF 降级）。
+  bool get isStill => this != VideoMiningImageMode.gif;
+}
+
 /// 统一沉浸制卡请求。任何来源（本地/YouTube/Netflix）都构造这个喂 [ImmersionMiningEngine]。
 ///
 /// [mediaSource] 是 ffmpeg 的 inputPath——本地绝对路径 或 可 seek 的 http 流 URL。
@@ -47,6 +80,7 @@ class ImmersionMiningRequest {
     this.providedAudioBytes,
     this.providedAudioName,
     this.requireAudio = true,
+    this.imageMode = VideoMiningImageMode.gif,
   });
 
   final Map<String, String> fields;
@@ -79,6 +113,10 @@ class ImmersionMiningRequest {
 
   /// true = 无音频则中止制卡（本地/YouTube 默认）；false = 允许无音频卡（Netflix 2A 截图卡）。
   final bool requireAudio;
+
+  /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。默认 [VideoMiningImageMode.gif]
+  /// = 现状。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
+  final VideoMiningImageMode imageMode;
 
   bool get hasRange => clipEndMs > clipStartMs;
 }

@@ -571,16 +571,45 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
     // inherits a prior drag-select's flag; the drag-select timer re-arms it.
     window.__hoshiTextSelectDragActive = false; }
-  // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
-  // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
-  // rather than a word. Text taps still go to onTap (word lookup).
+  // TODO-909 M0: a VN tap is "blank" when the user tapped margin/gap rather than
+  // a word (blank -> paginate forward; word -> onTap lookup).
+  // BUG-748: caretPositionFromPoint/caretRangeFromPoint CLAMP to the nearest
+  // character even when the tap is in the margin. VN centers one short block in a
+  // shrink-to-fit .hoshi-vn-content, so the whole viewport outside that small box
+  // is margin — yet every tap clamps to a text node, so "text node found" alone
+  // judged EVERY tap (incl. margins) as a word -> blank-tap advance never fired
+  // (a 289-point scan found 0 blank points in centred vertical layout). Fix:
+  // after resolving the clamped caret, verify the point actually falls inside the
+  // resolved character's client rect; a clamped-but-outside hit is real blank.
   function _hoshiVnTapIsBlank(x, y) {
     try {
       var range = _hoshiReaderCaretRangeAtPoint(x, y);
       if (!range || !range.startContainer) return true;
       var node = range.startContainer;
       if (node.nodeType !== Node.TEXT_NODE) return true;
-      return !String(node.textContent || '').trim();
+      var text = String(node.textContent || '');
+      if (!text.trim()) return true;
+      // Hit-test the resolved glyph box. caretPositionFromPoint clamps offset to
+      // the nearest boundary, so probe the character on each side of the offset
+      // and treat the tap as a word only if it lands inside one of their rects.
+      var tol = 2;
+      var offsets = [range.startOffset, range.startOffset - 1];
+      for (var oi = 0; oi < offsets.length; oi++) {
+        var start = offsets[oi];
+        if (start < 0 || start >= text.length) continue;
+        var charRange = document.createRange();
+        charRange.setStart(node, start);
+        charRange.setEnd(node, start + 1);
+        var rects = charRange.getClientRects();
+        for (var i = 0; i < rects.length; i++) {
+          var r = rects[i];
+          if (x >= r.left - tol && x <= r.right + tol &&
+              y >= r.top - tol && y <= r.bottom + tol) {
+            return false;
+          }
+        }
+      }
+      return true;
     } catch (err) {
       return true;
     }
@@ -778,6 +807,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       e.clientY || 0
     );
   }, {passive: false});
+  // BUG-712 ①：点词门控只读镜像的初始值（chrome 可见性 / highlightOnTap / 选词扫描
+  // 上限）。Dart 是唯一写者：本脚本注入时带当前真值，之后 chrome 翻转与设置热更新由
+  // _syncTapGateJs 刷新。tap 手势据此在 JS 侧直接 selectText（见 _gestureEnd 的 tap
+  // 分支），砍掉 onTap→Dart→evaluateJavascript 的整个来回。
+  window.__hoshiTapGate = { chrome: $_showChrome, lookup: ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
     // TODO-1317: a mobile long-press drag-select owns this gesture (finalized
@@ -851,7 +885,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               + ' scrollX=' + window.scrollX + ' scrollY=' + window.scrollY);
           } catch (err) {}
         }
-        window.flutter_inappwebview.callHandler('onTap', x, y, !!(e && e.shiftKey));
+        var shiftTap = !!(e && e.shiftKey);
+        var tapGate = window.__hoshiTapGate;
+        if (tapGate && window.hoshiSelection &&
+            (shiftTap || (tapGate.chrome && tapGate.lookup))) {
+          // BUG-712 ①（查词时延）：门控通过时 JS 直接选词——与旧链 Dart onTap→
+          // _selectTextAt→evaluateJavascript(selectText) 跑的是完全同一个 selectText
+          // （命中→onTextSelected、空白→onTapEmpty、链接/同字 toggle→静默），只是
+          // 砍掉 JS→Dart→JS 一整个跨语言来回（Windows WebView2 单跳 5-15ms）。
+          // 门控镜像由 Dart 单写（_syncTapGateJs：chrome 翻转/设置热更新时刷新）；
+          // 镜像缺失或 hoshiSelection 未就绪时回落旧 onTap 链，行为不变。
+          window.hoshiSelection.selectText(x, y, tapGate.maxLen || 400, false);
+        } else {
+          window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);
+        }
       }
     }
   }
@@ -1564,10 +1611,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           handlerName: 'onShiftHover',
           callback: (args) {
             if (args.length < 2) return;
-            // TODO-851「限一级弹窗」：已有可见弹窗时悬停不再查词，保证 hover 最多
-            // 叠一层（不在已有弹窗之上再起查词）。两个 hover 入口都要门控
-            // （另一处见 reader_hibiki_page.dart onDismissBarrierHover）。
-            if (isDictionaryShown) return;
+            // 连续查词（和鼠标一样）：**不再**门控 isDictionaryShown（旧 TODO-851
+            // 放开）。弹窗未出时这里出首弹；某些平台弹窗出现后 WebView DOM 仍收
+            // mousemove（barrier 不拦原生视图指针），此时也照常换词——与
+            // onDismissBarrierHover 入口一致，防平台事件路由差异漏网。换词经
+            // prunePopupStack(0) 复用热槽无缝替换，同词由 JS selectText 的 fromHover
+            // 同词短路去重，二者协同不叠层不闪。
             final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
             final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
             // TODO-851：悬停路径传 fromHover:true，命中空白不触发 onTapEmpty。
@@ -1601,6 +1650,32 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             }
             // Tap on empty space handed OS focus to the WebView; reclaim it so
             // ESC still exits the book afterward (BUG-136).
+            _reclaimReaderFocusAfterGesture();
+          },
+        );
+
+        // BUG-756: 歌词模式空白点击的专用桥。歌词是独立文档（LyricsModeHtml），没有
+        // 正文 hoshiReader 的 onTap/onTapEmpty；歌词里点句子 = 查词，唯一能唤出底栏的
+        // 手势就是点空白。故这里对隐藏的底栏**无条件唤出/收起**——不看
+        // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏，歌词没有别的唤出
+        // 途径，绝不能被它关死）。挤压态直接 _toggleChrome（隐藏→出、可见→收，且其内部
+        // 已 requestFocus reclaim）；悬浮态走同一唤出/收起状态机。收尾再 reclaim 一次
+        // 阅读焦点：本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode
+        // 就收不到 ESC，全局「Esc 退出整页」永不触发（正文每个手势都 reclaim，歌词此前
+        // 一处都没有 → esc 退不出）。有可见查词弹窗时按正文语义清栈、不动底栏。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsTapEmpty',
+          callback: (_) {
+            if (!_lyricsMode) return;
+            if (isDictionaryShown) {
+              clearDictionaryResult();
+              return;
+            }
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else {
+              _toggleChrome();
+            }
             _reclaimReaderFocusAfterGesture();
           },
         );
@@ -1979,6 +2054,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       }
       _onCueChanged();
       await _applyLyricsFavorites();
+      // BUG-767: 此前（BUG-755）在歌词页就绪即强夺阅读焦点，想让 ESC 从进入那刻就能退。
+      // 但桌面 loadData 后强夺 Flutter 焦点会把原生 WebView2 顶焦、重置其滚动到顶
+      // （→ 高亮看似回第一句），并与页面自身抢焦点抖动；一旦叠加重载路径每次 loadData
+      // 都触发一次，放大成持续闪烁。故移除这处 on-load 强夺焦（本行下方原有的焦点 reclaim
+      // 调用已删）。ESC 退出仍可用：点空白唤底栏走 onLyricsTapEmpty（内含焦点 reclaim）、
+      // 查词弹窗关闭走 onAllPopupsDismissed reclaim——任一交互后焦点即回阅读内容，ESC 正常退出。
       return;
     }
     final int gen = _navigateGeneration;

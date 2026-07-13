@@ -67,6 +67,24 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     });
   }
 
+  /// 下拉刷新：强制重拉远端书列表（并失效本地书 / 有声书列表 provider 一并重读），
+  /// await 远端 future 完成后指示器才收起。
+  ///
+  /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回书架不再隐式重拉远端，
+  /// 故给用户一个**显式**强制刷新入口——对端设备 / 云盘新增的书，不重启 app 也能刷出来。
+  /// [_loadRemoteBooks] 内部吞异常返回 failed 态，await 不会抛，指示器必定收起。
+  Future<void> _pullToRefreshBooks() async {
+    ref.invalidate(hibikiBooksProvider);
+    ref.invalidate(srtBooksProvider);
+    _batchAudiobookInfoFuture = null;
+    _batchAudiobookInfoResult = const <String, _AudiobookInfo>{};
+    final Future<_RemoteBookState?> future = _loadRemoteBooks();
+    _rebuild(() {
+      _remoteBooksFuture = future;
+    });
+    await future;
+  }
+
   /// 多端库联合视图占位卡（spec 2026-07-12 §2.1）：正常书卡尺寸 + 远端封面 +
   /// 云角标 ☁（[_remoteBookCoverWithCloudBadge]），混排进书架主网格（[_ShelfBookSlot.remote]
   /// → [_buildShelfGroupCard] 散卡路径）。短按/下载按钮复用现有下载→入库链

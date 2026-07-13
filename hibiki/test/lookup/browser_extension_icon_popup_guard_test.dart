@@ -93,7 +93,9 @@ void main() {
         expect(src.contains('window.__hibikiOnLinkClick = function'), isTrue,
             reason: '$root content.js 未定义 __hibikiOnLinkClick（点释义里的词无反应）');
         // place() 按 zoom 除算 fixed 定位坐标，避免 CSS zoom 放大偏移。
-        expect(src.contains('(left / zoom)') && src.contains('(top / zoom)'),
+        expect(
+            src.contains('(pos.left / zoom)') &&
+                src.contains('(pos.top / zoom)'),
             isTrue,
             reason: '$root content.js place() 未按 --hibiki-popup-zoom 补偿定位');
       });

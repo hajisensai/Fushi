@@ -1446,6 +1446,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ErrorLogService.instance
             .log('ReaderHibiki.onSettingsChangedLive', e, s);
       }));
+      // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
+      _syncTapGateJs();
       setState(() {});
     };
     ReaderHibikiSource.onLayoutReloadLive = () {
@@ -2689,6 +2691,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return _miningDraft.length;
   }
 
+  /// Niratan「制卡前调整·选择句子上下文」：把当前草稿真实上下文句 + 当前正查句 + 词偏移
+  /// 打包给弹窗预览。当前句取制卡同一来源（[MediaSource.currentSentence]，见
+  /// [_prepareMiningContext]），词偏移取查词时缓存的 [_cachedSentenceOffset]，保证预览
+  /// 与真正落卡的 sentence 字段一致。
+  @override
+  Future<Map<String, Object?>> onSentenceContextPreviewFromDraft() async {
+    final String current =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    return buildSentenceContextPreview(
+      draft: _miningDraft,
+      current: current,
+      currentOffset: _cachedSentenceOffset,
+    );
+  }
+
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) {
     // TODO-644 / BUG-357：经制卡串行队列执行，杜绝快速连制两张卡时两次 prepare→mine
@@ -2860,10 +2877,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _barrierHoverLastDy = -1;
       return;
     }
-    // TODO-851「限一级弹窗」：已有可见弹窗时遮罩上的悬停不再查词，保证 hover 最多
-    // 叠一层。这是第二个 hover 入口（另一处在 webview.part.dart onShiftHover），
-    // 两处必须都门控，否则遮罩 hover 路径漏网。
-    if (isDictionaryShown) return;
+    // 连续查词（和鼠标一样）：弹窗出现后，全屏 dismiss barrier 盖在 WebView 之上，
+    // WebView DOM 的 onShiftHover 收不到事件——此时唯一还能接 hover 的入口就是这里。
+    // 故此处**不再**门控 isDictionaryShown（旧 TODO-851「限一级弹窗」放开）：按住
+    // Shift 一路滑，命中新词就 _selectTextAt 换词。换词经 _runLookupAndHighlight →
+    // prunePopupStack(0) 复用热槽无缝替换（不叠层、不白屏，BUG-092/482 已验证），
+    // 命中同一个词由 JS selectText 的 fromHover 同词短路挡住（不重复 fire、不闪、不刷
+    // FFI）。下面的 8px 平方阈值仍在，避免每像素抖动都查。
     // TODO-806 真坐标系修复：[event.localPosition] 是相对**dismiss barrier**
     // （Positioned.fill 铺满页面 Stack）的逻辑像素，而 WebView 被 chrome inset
     // （顶栏 [_readerTopOffset] / 底栏预留）挤在 Stack 内部、原点 ≠ barrier 原点。

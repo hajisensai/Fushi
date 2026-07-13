@@ -512,25 +512,42 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     if (controller == null) return;
 
     if (_lyricsMode) {
+      // BUG-757: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
+      // 时置位并 notify）。必须**无条件**消费（哪怕本帧未就绪 / idx 越界也读一次），
+      // 否则这枚挂在共享 controller 上的进程级一次性旗会泄漏到之后退回正文的
+      // _onCueChanged，被那边 consumeForceReveal 读成过期 true → 凭空多滚一次。
+      final bool forceReveal = controller.consumeForceReveal();
       if (_lyricsPageReady) {
         final int sourceIdx = _lyricsCueWindowUsesAllBookCues
             ? controller.allBookCueIdx
             : controller.currentCueIdx;
-        final int idx = sourceIdx - _lyricsCueIndexOffset;
-        if (idx >= 0) {
-          if (idx < _lyricsCueList.length) {
-            // followAudio OFF → pass scroll=false so the lyrics page updates the
-            // current-line highlight but does not auto-scroll (the toggle was a
-            // no-op before: __lyricsSetCue always scrolled regardless).
+        // BUG-767: sourceIdx < 0 = 当前 cue 暂不可解析（cue 间隙 / setChapterCues 把
+        // _currentCue 瞬时清空后 notify / 尚未匹配）。此时**保位不跳、绝不重载**。
+        // 旧码在 `idx < 0` 分支无条件重开歌词页：重载又以 allBookCueIdx(-1) 回退到过期
+        // `_lyricsEntryCueIndex`（≈0）生成 currentIndex → 高亮跳回第一句；且重载 onLoadStop
+        // 落定那帧 sourceIdx 仍 -1 → 再次重载 → 无限重载 = 进歌词模式一直闪烁且恒高亮
+        // 第一句（不是正在听的那句）。守卫在 sourceIdx>=0 才动作，从根上消除这个特殊分支
+        // 制造的死循环。
+        if (sourceIdx >= 0) {
+          final int idx = sourceIdx - _lyricsCueIndexOffset;
+          if (idx >= 0 && idx < _lyricsCueList.length) {
+            // followAudio OFF → scroll=false：只换当前行高亮、不自动滚（用户可自由滚动
+            // 歌词）。forceReveal（切「跟随音频」ON 触发的 snap 回中）也放行滚动。
+            final bool scroll = controller.followAudio.value || forceReveal;
             _controller!.evaluateJavascript(
               source: 'if(window.__lyricsSetCue)'
-                  'window.__lyricsSetCue($idx, ${controller.followAudio.value});',
+                  'window.__lyricsSetCue($idx, $scroll);'
+                  // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的
+                  // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
+                  // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
+                  '${forceReveal ? 'if(window.__lyricsScrollToCue)'
+                      'window.__lyricsScrollToCue($idx);' : ''}',
             );
           } else if (_lyricsCueWindowUsesAllBookCues) {
+            // cue 真的移出已载窗口（sourceIdx>=0 但落在窗外）→ 重开窗口居中当前 cue。
+            // 这是唯一合法的重载：currentIndex 用真实 sourceIdx，不会回退到第一句。
             unawaited(_loadLyricsPage());
           }
-        } else if (_lyricsCueWindowUsesAllBookCues) {
-          unawaited(_loadLyricsPage());
         }
       }
       _syncPositionFromCurrentCue();

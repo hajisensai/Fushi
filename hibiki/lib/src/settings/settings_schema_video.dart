@@ -741,21 +741,14 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
-          // TODO-277：弹幕来源配置——自建/镜像 Dandanplay 服务器地址 + 可选 API 凭据。
-          // 空地址=用官方 api.dandanplay.net；AppId/AppSecret 同时填写时按 v2 签名请求。
-          // 写入 videoDanmakuConfig（纯 pref），同步推进程级 DandanplayConfig.current，
-          // 下次匹配弹幕即生效（播放页里无参构造的 DandanplayClient 自动读取）。
+          // 弹幕来源配置只剩自建/镜像 Dandanplay 服务器地址（高级项，空=官方
+          // api.dandanplay.net）。官方 AppId/AppSecret 已内置（dandanplay_secret.dart，
+          // 见 DandanplayConfig.embeddedAppId），请求自动 v2 签名，用户**无需手动输入
+          // API**——故原 AppId/AppSecret 两个输入框已删除。写入 videoDanmakuConfig
+          // （纯 pref），同步推进程级 DandanplayConfig.current，下次匹配弹幕即生效。
           SettingsCustomItem(
             id: 'video.danmaku.server_url',
             builder: _buildDanmakuServerField,
-          ),
-          SettingsCustomItem(
-            id: 'video.danmaku.app_id',
-            builder: _buildDanmakuAppIdField,
-          ),
-          SettingsCustomItem(
-            id: 'video.danmaku.app_secret',
-            builder: _buildDanmakuAppSecretField,
           ),
         ],
       ),
@@ -783,36 +776,6 @@ Widget _buildDanmakuServerField(SettingsContext settingsContext) {
       await _commitVideoDanmakuConfig(
         settingsContext,
         (DandanplayConfig c) => c.copyWith(baseUrl: value.trim()),
-      );
-    },
-  );
-}
-
-Widget _buildDanmakuAppIdField(SettingsContext settingsContext) {
-  return SettingsSecretField(
-    title: t.video_setting_danmaku_app_id,
-    icon: Icons.badge_outlined,
-    initialValue: settingsContext.appModel.videoDanmakuConfig.appId,
-    onChanged: (String value) async {
-      await _commitVideoDanmakuConfig(
-        settingsContext,
-        (DandanplayConfig c) => c.copyWith(appId: value.trim()),
-      );
-    },
-  );
-}
-
-Widget _buildDanmakuAppSecretField(SettingsContext settingsContext) {
-  return SettingsSecretField(
-    title: t.video_setting_danmaku_app_secret,
-    icon: Icons.key_outlined,
-    initialValue: settingsContext.appModel.videoDanmakuConfig.appSecret,
-    obscureText: true,
-    keyboardType: TextInputType.visiblePassword,
-    onChanged: (String value) async {
-      await _commitVideoDanmakuConfig(
-        settingsContext,
-        (DandanplayConfig c) => c.copyWith(appSecret: value.trim()),
       );
     },
   );

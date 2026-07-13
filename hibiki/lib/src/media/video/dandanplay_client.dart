@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/media/video/dandanplay_secret.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_danmaku_source.dart';
 
@@ -17,9 +18,11 @@ const int kDandanplayHashPrefixBytes = 16 * 1024 * 1024;
 ///
 /// - [baseUrl] 空 = 用官方 `https://api.dandanplay.net`；非空 = 自建/镜像 dandanplay
 ///   API 根地址（兼容同协议的私有部署，TODO-277）。
-/// - [appId] / [appSecret] 同时非空时，按 dandanplay **API v2 签名**给每个请求附带
-///   `X-AppId` / `X-Timestamp` / `X-Signature` 头（见 [signatureHeaders]）；任一为空则
-///   不签名（官方公共端点旧契约，向后兼容）。
+/// - [appId] / [appSecret] 是用户自填的**覆盖**凭据；留空时回退到内置的
+///   [embeddedAppId] / [embeddedAppSecret]（编译期从 `dandanplay_secret.dart` 注入），
+///   使官方在线弹幕**开箱即用、无需用户手动输入 API**。生效凭据见 [effectiveAppId] /
+///   [effectiveAppSecret]，两者同时非空即按 dandanplay **API v2 签名**给每个请求附带
+///   `X-AppId` / `X-Timestamp` / `X-Signature` 头（见 [signatureHeaders]）。
 @immutable
 class DandanplayConfig {
   const DandanplayConfig({
@@ -40,6 +43,20 @@ class DandanplayConfig {
   /// 进程级当前配置：偏好仓库（数据拥有者）在加载/变更时推送到此，
   /// [DandanplayClient] 的默认构造从这里读取，避免改动播放页的零参构造调用点。
   static DandanplayConfig current = defaults;
+
+  /// 内置的官方 dandanplay 开放平台凭据（编译期，来自 `dandanplay_secret.dart`）。
+  /// 用户未在偏好里填自己的 [appId] / [appSecret] 时，请求用这套内置凭据签名，
+  /// 使弹幕开箱即用、无需用户手动输入 API。可变 static 便于测试注入确定值。
+  static String embeddedAppId = kDandanplayAppId;
+  static String embeddedAppSecret = kDandanplayAppSecret;
+
+  /// 生效的 AppId：用户显式配置优先，否则回退内置凭据 [embeddedAppId]。
+  String get effectiveAppId =>
+      appId.trim().isNotEmpty ? appId.trim() : embeddedAppId.trim();
+
+  /// 生效的 AppSecret：用户显式配置优先，否则回退内置凭据 [embeddedAppSecret]。
+  String get effectiveAppSecret =>
+      appSecret.trim().isNotEmpty ? appSecret.trim() : embeddedAppSecret.trim();
 
   DandanplayConfig copyWith({
     String? baseUrl,
@@ -70,8 +87,9 @@ class DandanplayConfig {
         port: parsed.hasPort ? parsed.port : null);
   }
 
-  /// 是否启用 API v2 签名（[appId] 与 [appSecret] 同时非空）。
-  bool get isSigned => appId.trim().isNotEmpty && appSecret.trim().isNotEmpty;
+  /// 是否启用 API v2 签名（[effectiveAppId] 与 [effectiveAppSecret] 同时非空）。
+  bool get isSigned =>
+      effectiveAppId.isNotEmpty && effectiveAppSecret.isNotEmpty;
 
   /// 为请求 [path]（如 `/api/v2/match`）生成 dandanplay API v2 签名头。
   ///
@@ -82,8 +100,8 @@ class DandanplayConfig {
     if (!isSigned) return const <String, String>{};
     final int timestamp =
         (now ?? DateTime.now()).toUtc().millisecondsSinceEpoch ~/ 1000;
-    final String id = appId.trim();
-    final String secret = appSecret.trim();
+    final String id = effectiveAppId;
+    final String secret = effectiveAppSecret;
     final List<int> payload = utf8.encode('$id$timestamp$path$secret');
     final String signature = base64.encode(sha256.convert(payload).bytes);
     return <String, String>{

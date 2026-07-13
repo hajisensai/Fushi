@@ -189,7 +189,7 @@ window.addEventListener('message', (e) => {
 // netflix-bridge.js document_start 就装好 hook——Netflix 播放清单/字幕轨常在**本 listener 注册前**
 // 就被抓取并 postMessage 出去，fire-and-forget 的消息永久丢失 → store 空、勾选开关无物可挂、
 // 面板只剩预取的下一集轨（列表空）。接收端就位后立刻请求 bridge 重放已存档的 cue 消息，消除时序运气。
-try { window.postMessage({ __hibikiNf: 'replayCues' }, location.origin); } catch (_) {}
+try { window.postMessage({ __hibikiNf: 'replayCues' }, '/'); } catch (_) {}
 
 // ── TODO-1363：通用字幕轨 provider（所有站点） ──
 // 数据契约不变：window.hibikiEpisodeCues[`${videoKey}|${lang}`] = [{startMs,endMs,text}]，新数据到达
@@ -524,7 +524,7 @@ async function hibikiRunNetflixBatch() {
     v.addEventListener('seeked', onSeeked);
     window.addEventListener('message', onMsg);
     // 走 Netflix 官方播放器 API seek（主世界 netflix-bridge.js 执行），不改 currentTime → 不触发 M7375。
-    try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, window.location.origin); } catch (_) {}
+    try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, '/'); } catch (_) {}
     setTimeout(finish, 5000); // 兜底：seeked / seekDone 都不来也继续
   });
   try {
@@ -839,6 +839,62 @@ try {
   });
 } catch (_) {}
 
+// 「滑动关闭查词弹窗」——app 的 enableSwipeToClose 偏好经查词响应 theme 的
+// --hibiki-swipe-close（'1'/'0'）下发；in-app 走 Flutter 手势层 / WebView topPullReleased，
+// 扩展的浮动弹窗是纯 DOM，这里在弹窗宿主上装同语义的**水平拖关**手势（设置项文案即「水平
+// 滑动关闭查词弹窗」）。默认 Windows/Linux 关（鼠标框选正文与拖手势同形易误触），跟随 app 偏好。
+let hibikiSwipeCloseEnabled = false;
+let hibikiSwipeStart = null;
+// 水平拖过此像素即关（固定阈值；in-app 的灵敏度滑块暂不移植，待真机再定是否需要）。
+const HIBIKI_SWIPE_CLOSE_THRESHOLD = 64;
+
+// 在弹窗宿主 [host] 上装水平拖关手势（每个 host 只装一次）。监听始终挂上，是否真正关窗由
+// hibikiSwipeCloseEnabled 门控（theme 到达后置位）→ 关时纯 no-op，开时水平主导且过阈才关。
+// pointer 路径只接 mouse/pen（touch 由 touch 家族处理，避免同一次拖动双触发）；全部 passive。
+function hibikiInstallSwipeClose(host) {
+  if (!host || host.__hibikiSwipeHooked) return;
+  host.__hibikiSwipeHooked = true;
+  const start = (x, y) => { hibikiSwipeStart = { x: x, y: y }; };
+  const move = (x, y) => {
+    if (!hibikiSwipeCloseEnabled || !hibikiSwipeStart) return;
+    const dx = x - hibikiSwipeStart.x;
+    const dy = y - hibikiSwipeStart.y;
+    // 水平主导（|dx| > 1.5·|dy|，避开竖向滚动/选竖排）且过阈 → 关。
+    if (Math.abs(dx) > HIBIKI_SWIPE_CLOSE_THRESHOLD &&
+        Math.abs(dx) > Math.abs(dy) * 1.5) {
+      hibikiSwipeStart = null;
+      hibikiRemoveContainer();
+    }
+  };
+  const end = () => { hibikiSwipeStart = null; };
+  host.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') return;
+    if (e.button !== undefined && e.button !== 0) return;
+    start(e.clientX, e.clientY);
+  }, { passive: true });
+  host.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    move(e.clientX, e.clientY);
+  }, { passive: true });
+  host.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'touch') return;
+    end();
+  }, { passive: true });
+  host.addEventListener('pointercancel', (e) => {
+    if (e.pointerType === 'touch') return;
+    end();
+  }, { passive: true });
+  host.addEventListener('touchstart', (e) => {
+    if (!e.touches || e.touches.length !== 1) return;
+    start(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  host.addEventListener('touchmove', (e) => {
+    if (!e.touches || e.touches.length !== 1) return;
+    move(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  host.addEventListener('touchend', end, { passive: true });
+}
+
 function hibikiEnsureContainer() {
   // BUG-530：全屏时（Netflix 看片常全屏）挂在 document.body 上的弹窗会被全屏元素盖住看不见
   // （浏览器全屏只渲染 fullscreenElement 及其后代）→ shift 划词其实触发了但弹窗不可见=「没反应」。
@@ -858,6 +914,7 @@ function hibikiEnsureContainer() {
     // 按查词响应下发的 --hibiki-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
     hibikiHost.style.cssText =
         'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;';
+    hibikiInstallSwipeClose(hibikiHost); // 水平拖关手势（是否生效由 hibikiSwipeCloseEnabled 门控）
     const shadow = hibikiHost.attachShadow({ mode: 'open' });
     // 中和 content.css 里 #entries-container 自带的尺寸盒/zoom（那套是给「容器自身即 fixed 元素」
     // 的旧模型用的）；现在 host 才是尺寸/缩放/定位主体，容器只做 100% 透传。
@@ -1185,6 +1242,45 @@ window.__hibikiOnLinkClick = function (query) {
   } catch (_) { /* 扩展上下文失效：静默 */ }
 };
 
+// BUG-767：计算查词弹窗落点，保证**永不覆盖被查词**。纯函数（不碰 DOM），便于单测。
+// anchor：被查词的视口矩形 {x, y, height}（x/y=左上角，height=词高，均视口坐标系）。
+// size：弹窗自然尺寸 {width, height}（已按主题 max-height 夹住的可见尺寸）。
+// viewport：{width, height}。返回 {left, top, maxHeight}；maxHeight!=null 表示上下两侧
+// 都放不下整只弹窗，需把弹窗高度夹到所选一侧的可用空间（内部滚动），故渲染后不会压到词上。
+// 旧实现只把 top 夹到边距 8，弹窗高时（词典结果多）会从 8 往下铺开盖住上半屏的词——本函数修掉。
+function hibikiComputePlacement(anchor, size, viewport) {
+  const M = 8; // 视口边距
+  const G = 4; // 词与弹窗之间的间隙
+  const vw = viewport.width;
+  const vh = viewport.height;
+  const ax = anchor.x;
+  const ay = anchor.y;
+  const ah = anchor.height || 0;
+  const pw = size.width;
+  const ph = size.height;
+  // 横向：左对齐词左缘，右/左溢出各自贴边（原行为，未变）。
+  let left = ax;
+  if (left + pw > vw - M) left = Math.max(M, vw - pw - M);
+  if (left < M) left = M;
+  // 纵向：词下方 / 上方各自的可用高度（含留出的视口边距）。
+  const belowSpace = vh - (ay + ah) - M; // 词底 → 视口底
+  const aboveSpace = ay - M;             // 视口顶 → 词顶
+  let top;
+  let maxHeight = null;
+  if (ph + G <= belowSpace) {
+    top = ay + ah + G;                   // 下方放得下整只弹窗：落词下方
+  } else if (ph + G <= aboveSpace) {
+    top = ay - G - ph;                   // 上方放得下整只弹窗：落词上方
+  } else if (belowSpace >= aboveSpace) {
+    top = ay + ah + G;                   // 两侧都放不下、下方空间更大：贴词下方并夹高度
+    maxHeight = Math.max(64, belowSpace - G);
+  } else {
+    maxHeight = Math.max(64, aboveSpace - G); // 上方空间更大：夹高度使弹窗底恰落词顶之上
+    top = Math.max(M, ay - G - maxHeight);
+  }
+  return { left, top, maxHeight };
+}
+
 function hibikiRender(popupJson, termLen, theme, anchorRect) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
@@ -1199,6 +1295,24 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
     const cs = theme['--hibiki-color-scheme'];
     if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
+    // 多列词典（masonry）根因修：popup.js 的 dictColumns() 与 updateEffectiveDictColumns()
+    // 都从 document.documentElement 读 --dict-columns（in-app 时 documentElement 就是弹窗自身
+    // 文档，注入在那里）。扩展里弹窗挂在宿主页的 shadow root，上面把 --dict-columns 连同其它
+    // theme 变量 setProperty 到 #entries-container（c）——masonry 读 documentElement 读不到 →
+    // 恒 1 列，且 updateEffectiveDictColumns 把 --dict-columns-effective 算成 1 写回
+    // documentElement 又继承进 grid，连 CSS grid 兜底也塌成单列（用户报「浏览器多列不生效」）。
+    // 这里把列数额外落到宿主页 documentElement（与 in-app dictionary_popup_webview 同源、整数
+    // 字符串），让 masonry 读数、effective 收敛、grid 继承三条路径全部命中。命名空间自定义属性，
+    // 宿主页 CSS 不消费，无副作用。
+    const dictCols = theme['--dict-columns'];
+    if (typeof dictCols === 'string' && dictCols) {
+      try {
+        document.documentElement.style.setProperty('--dict-columns', dictCols);
+      } catch (_) { /* 宿主页禁写 style 时静默：多列退化为单列，不崩查词 */ }
+    }
+    // 「滑动关闭」偏好（app enableSwipeToClose）随 theme 下发（'1'/'0'）；置位后弹窗宿主上已挂的
+    // 水平拖关手势才真正关窗（缺该 key = 旧 app，保持关闭，向后兼容）。
+    hibikiSwipeCloseEnabled = theme['--hibiki-swipe-close'] === '1';
     // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
     if (hibikiHost) {
       hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';
@@ -1239,25 +1353,24 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
     // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸），不是容器（overflow:visible=全内容
     // 高度，会把弹窗错误地翻到词上方）。host 无则回落容器。
     const rect = (hibikiHost || c).getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
     // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
     // scrollX/Y（加了反而在滚动页面上错位）。拿不到 bbox → 回落最后鼠标视口坐标。
     const ax = wordRect ? wordRect.x : hibikiLastX;
     const ay = wordRect ? wordRect.y : hibikiLastY;
     const ah = wordRect ? wordRect.height : 0;
-    let left = ax;
-    let top = ay + ah + 4; // 默认落在词下方
-    if (left + rect.width > vw - 8) left = Math.max(8, vw - rect.width - 8); // 右溢出→贴右
-    if (left < 8) left = 8;
-    if (top + rect.height > vh - 8) top = Math.max(8, ay - rect.height - 4); // 下溢出→翻到词上方
-    if (top < 8) top = 8;
-    // BUG-688：host 现在带 zoom（尺寸盒随之缩放），故 fixed 定位坐标写入前除以 zoom，
-    // 使渲染值(styleLeft×zoom)落回目标视口坐标；zoom 缺省 1 时零影响。
+    // BUG-767：落点交给纯函数算，保证永不覆盖被查词（旧逻辑翻到词上方时会被夹到边距 8 → 盖住词）。
+    const pos = hibikiComputePlacement(
+      { x: ax, y: ay, height: ah },
+      { width: rect.width, height: rect.height },
+      { width: window.innerWidth, height: window.innerHeight });
+    // BUG-688：host 现在带 zoom（尺寸盒随之缩放），故 fixed 定位坐标 / 夹高写入前除以 zoom，
+    // 使渲染值(style×zoom)落回目标视口尺度；zoom 缺省 1 时零影响。
     const zoom = parseFloat(hibikiHost && hibikiHost.style.zoom) || 1;
     if (hibikiHost) {
-      hibikiHost.style.left = (left / zoom) + 'px';
-      hibikiHost.style.top = (top / zoom) + 'px';
+      // BUG-767：两侧都放不下时把弹窗高度夹到可用空间（内部滚动），弹窗底恰在词上方/下方，绝不压到词。
+      if (pos.maxHeight != null) hibikiHost.style.maxHeight = (pos.maxHeight / zoom) + 'px';
+      hibikiHost.style.left = (pos.left / zoom) + 'px';
+      hibikiHost.style.top = (pos.top / zoom) + 'px';
     }
     c.style.visibility = 'visible';
   };

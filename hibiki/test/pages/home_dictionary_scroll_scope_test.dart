@@ -93,7 +93,8 @@ void main() {
 
     test('popup.html pulls in popup.js', () {
       final String html = readSource('assets/popup/popup.html');
-      expect(html, contains('<script src="popup.js">'),
+      // BUG-738 起 <script> 带 charset="utf-8" 属性，故只钉住 src 契约而非整段标签。
+      expect(html, contains('src="popup.js"'),
           reason: 'popup.html must include popup.js, which carries the '
               'TODO-460 smooth-wheel channel.');
     });

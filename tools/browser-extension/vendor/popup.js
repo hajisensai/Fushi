@@ -343,6 +343,12 @@ function buildSentenceContextPicker() {
     return picker;
 }
 
+// BUG-763/766：「制卡·选择句子上下文」模态已改为 app 原生顶层 Flutter 对话框
+// （SentenceContextDialog，宿主经 openSentenceContextModal 桥接弹出），不再画在查词
+// 弹窗 WebView 内（那受弹窗表面尺寸/半透明限制，句子框重叠、显示不全）。
+// 这里只保留词条上「调整上下文」按钮 → callHandler('openSentenceContextModal',
+// {entryIndex, matched})，与确认制卡回点用的 hoshiPopupMineEntryByIndex（见文件末尾）。
+
 
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
@@ -383,6 +389,8 @@ const ICON_PATHS = {
     remove: 'M19 13H5v-2h14v2z',
     // close（清空草稿 / 标签说明遮罩关闭 ×）
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    // tune（Niratan「调整上下文」按钮：打开制卡前句子上下文调整模态）
+    tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
 };
 
 function iconSvg(name) {
@@ -1508,6 +1516,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
                     ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
                     : element.textContent || '';
                 const rect = element.getBoundingClientRect();
+                markGlobalLookupExtHit(element);
                 window.flutter_inappwebview.callHandler('onLinkClick', query, {
                     x: rect.left,
                     y: rect.top,
@@ -1979,6 +1988,7 @@ function createKanjiBreakdown(expression) {
             e.preventDefault();
             e.stopPropagation();
             const rect = tag.getBoundingClientRect();
+            markGlobalLookupExtHit(tag);
             window.flutter_inappwebview.callHandler('onLinkClick', ch, {
                 x: rect.left,
                 y: rect.top,
@@ -2007,6 +2017,7 @@ function createEntryHeader(entry, idx) {
         e.preventDefault();
         e.stopPropagation();
         const rect = expressionSpan.getBoundingClientRect();
+        markGlobalLookupExtHit(expressionSpan);
         window.flutter_inappwebview.callHandler('onLinkClick', expression, {
             x: rect.left,
             y: rect.top,
@@ -2256,6 +2267,35 @@ function createEntryHeader(entry, idx) {
         buttonsContainer.appendChild(clearButton);
     }
 
+    // Niratan「制卡前调整·选择句子上下文」：独立于上面被砍掉的内联步进器
+    // （kSentenceContextPickerEnabled 恒 false）。支持草稿且宿主接入了预览回调的表面
+    // （reader/有声书/视频，window.sentenceContextPreviewEnabled 为真）渲染一个「调整
+    // 上下文」按钮，点开模态在里面看前/当前/后真实句并增减上下文、确认制卡。一键「+」
+    // 制卡不受影响。
+    if (window.sentenceContextPreviewEnabled) {
+        const adjustBtn = el('button', {
+            className: 'inline-action-button ctx-adjust-button',
+            title: (window.i18nCtx && window.i18nCtx.adjust) || '',
+            onclick: function() {
+                // BUG-763/766：改弹 app 原生顶层对话框（不再画在查词弹窗 WebView 内）。
+                // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与确认制卡回点的
+                // hoshiPopupMineEntryByIndex 同一套索引。
+                var entryEl = adjustBtn.closest('.entry');
+                var idx = 0;
+                if (entryEl && entryEl.parentNode) {
+                    var siblings = entryEl.parentNode.querySelectorAll(':scope > .entry');
+                    idx = Array.prototype.indexOf.call(siblings, entryEl);
+                    if (idx < 0) idx = 0;
+                }
+                window.flutter_inappwebview.callHandler(
+                    'openSentenceContextModal',
+                    JSON.stringify({ entryIndex: idx, matched: matched }));
+            },
+        });
+        setButtonIcon(adjustBtn, 'tune');
+        buttonsContainer.appendChild(adjustBtn);
+    }
+
     header.appendChild(buttonsContainer);
     
     return header;
@@ -2267,6 +2307,22 @@ window.hoshiPopupMineFirstEntry = async function() {
         return false;
     }
     mineButton.click();
+    return true;
+};
+
+// BUG-763/766：确认「制卡前调整」原生对话框时，Dart 回点第 idx 个词条（:scope > .entry
+// DOM 序，与打开对话框时的 entryIndex 同源）的制卡按钮，复用其全部制卡/查重/覆写逻辑。
+window.hoshiPopupMineEntryByIndex = function(idx) {
+    const root = __hibikiRootNode();
+    const first = root && root.querySelector('.entry');
+    const container = first && first.parentNode;
+    if (!container) return false;
+    const entries = container.querySelectorAll(':scope > .entry');
+    const entry = entries[idx];
+    if (!entry) return false;
+    const b = entry.querySelector('.mine-button');
+    if (!b || b.disabled) return false;
+    b.click();
     return true;
 };
 
@@ -2588,13 +2644,60 @@ function buildEntryElement(entry, idx) {
 
 function postProcessRuby(container) {
     container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
-        ruby.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                const span = document.createElement('span');
-                span.textContent = node.textContent;
-                node.replaceWith(span);
+        // Wrap each base — a bare text node OR an element base like <rb>/<span>
+        // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
+        // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.
+        // popup.css positions the rt absolutely (left:0/right:0/top:0) against its
+        // nearest positioned ancestor AND reserves vertical room via the unit's
+        // padding-top; making the per-base unit that ancestor keeps each rt
+        // sized/centred over — and lifted above — its own kanji.
+        //   - Multi-kanji word (one <ruby>, several base+<rt> pairs, e.g.
+        //     将<rt>しょう</rt>棋<rt>ぎ</rt>): without per-base units every rt
+        //     stretched to the full <ruby> width and superimposed (BUG-722).
+        //   - Element base (<ruby><rb>未然形</rb><rt>みぜんけい</rt></ruby>): the
+        //     old text-node-only wrap skipped the <rb>, so no .ruby-unit was made;
+        //     the rt kept position:absolute;top:0 but anchored to the bare <ruby>
+        //     (line-height:1, no padding-top reserve) and the reading collapsed
+        //     onto the base (BUG-733). Wrapping ANY base restores the reserve.
+        // Keeping the base as a live text node (bare, in place) or a live element
+        // (moved whole, not flattened) preserves ruby lookup selection
+        // (BUG-110/123/125/129 must not regress).
+        const isEl = (n, tag) =>
+            n.nodeType === Node.ELEMENT_NODE && n.tagName === tag;
+        const isBlankText = (n) =>
+            n.nodeType === Node.TEXT_NODE && !n.textContent.trim();
+        const children = Array.from(ruby.childNodes);
+        for (const node of children) {
+            // A base is anything that is not a reading (<rt>), a fallback paren
+            // (<rp>), or inter-token whitespace.
+            if (isEl(node, 'RT') || isEl(node, 'RP') || isBlankText(node)) {
+                continue;
             }
-        });
+            const unit = document.createElement('span');
+            unit.className = 'ruby-unit';
+            if (node.nodeType === Node.TEXT_NODE) {
+                // Bare text base: keep the text live inside the unit.
+                unit.textContent = node.textContent;
+                node.replaceWith(unit);
+            } else {
+                // Element base (<rb>/<span>/nested structured-content): move the
+                // element itself into the unit so its inner text stays a live,
+                // selectable node while the unit becomes the positioned per-base
+                // box.
+                node.replaceWith(unit);
+                unit.appendChild(node);
+            }
+            // Move this base's own <rt> into the unit, stepping over <rp> fallback
+            // parens and whitespace text nodes that sit between a base and its
+            // reading.
+            let sib = unit.nextSibling;
+            while (sib && (isBlankText(sib) || isEl(sib, 'RP'))) {
+                sib = sib.nextSibling;
+            }
+            if (sib && isEl(sib, 'RT')) {
+                unit.appendChild(sib);
+            }
+        }
     });
 }
 
@@ -2650,6 +2753,7 @@ function createKanjiCard(kanji) {
         e.preventDefault();
         e.stopPropagation();
         const rect = charEl.getBoundingClientRect();
+        markGlobalLookupExtHit(charEl);
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
             y: rect.top,
@@ -2803,6 +2907,7 @@ function resetMasonryBody(body) {
     body.style.position = '';
     body.style.display = '';
     body.style.height = '';
+    delete body.dataset.masonryCols; // 清粘着列记录：回落单列/CSS 后再进 masonry 会重新最短列打包
     [...body.children].forEach(item => {
         item.style.position = '';
         item.style.left = '';
@@ -2810,28 +2915,54 @@ function resetMasonryBody(body) {
         item.style.width = '';
         item.style.marginTop = '';
         item.style.transform = '';
+        delete item.dataset.masonryCol;
     });
 }
 
 function layoutMasonry() {
     if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
-    const cols = dictColumns();
+    const configured = dictColumns();
     const gap = masonryGap();
     masonryBodies().forEach(body => {
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
-        // 单列 / 单卡：不做 masonry，清 inline 回落 CSS（单卡满宽、单列纵向堆叠 + CSS margin-top）。
-        if (cols <= 1 || items.length <= 1) {
+        // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
+        //（block 纵向堆叠 + CSS margin-top / 空容器）。
+        if (configured <= 1 || items.length === 0) {
             resetMasonryBody(body);
             return;
         }
+        // 有效列数封顶到该词条实际的词典卡片数：词典数 < 设置列数时（如上限 2 但只有 1 本），
+        // 现有卡片平分整行宽度——单卡走 cols=1 满宽、2 卡 3 列走 cols=2 各半，不再让右侧空出
+        // 没有卡片的列。cols 每 body 独立计算（不同词条词典数不同）；masonry 仍绝对定位、按
+        // 最短列打包。cols=1 时 columnWidth=整宽、单卡 translate(0,0) 即满宽（取代旧「单卡回落
+        // 半宽 grid」——grid 用全局 --dict-columns 无法感知本词条只有 1 本词典）。
+        const cols = Math.min(configured, items.length);
         body.style.position = 'relative';
         body.style.display = 'block';
         const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
+
+        // 粘着列分配（修用户「开关方框时按上下高度左右重排，实际只应上下动」）：只要列数没变、
+        // 且每张卡片都已记录合法列号，就复用既有列分配——展开/收起改高度时只在各自列内重算纵向
+        // 位置，卡片只上下动、绝不换列左右跳。仅列数变（窗口宽/设置）或有新卡片（增量加载，某卡
+        // 无记录）时，才用「最短列」从头打包并记录列号。
+        const prevCols = Number.parseInt(body.dataset.masonryCols, 10);
+        const canReuse = prevCols === cols &&
+            items.every(item => {
+                const c = Number.parseInt(item.dataset.masonryCol, 10);
+                return Number.isFinite(c) && c >= 0 && c < cols;
+            });
+
         const heights = new Array(cols).fill(0);
         items.forEach(item => {
-            let c = 0;
-            for (let i = 1; i < cols; i++) {
-                if (heights[i] < heights[c]) c = i; // 当前最矮列
+            let c;
+            if (canReuse) {
+                c = Number.parseInt(item.dataset.masonryCol, 10); // 复用粘着列，不重新分列
+            } else {
+                c = 0;
+                for (let i = 1; i < cols; i++) {
+                    if (heights[i] < heights[c]) c = i; // 首次：最短列打包
+                }
+                item.dataset.masonryCol = String(c); // 记住列号，之后开关都粘着此列
             }
             item.style.position = 'absolute';
             item.style.left = '0';
@@ -2842,6 +2973,7 @@ function layoutMasonry() {
             // 读 offsetHeight 前已设 width，浏览器按目标列宽回流后再量高。
             heights[c] += item.offsetHeight + gap;
         });
+        body.dataset.masonryCols = String(cols);
         body.style.height = `${Math.max(...heights) - gap}px`;
     });
 }
@@ -2902,22 +3034,47 @@ function buildGlobalLookupSentenceBanner() {
     // spec 2026-07-10 — per-character spans: clicking any character looks up
     // the "char to sentence end" suffix (the same semantics as the in-app
     // ClipboardLookupTextPanel; the engine prefix/deinflection-matches from
-    // the clicked char). Rides the existing onLinkClick bridge (same path as
-    // kanji-tag clicks), so the overlay host re-anchors the rect and opens a
-    // nested child card. textContent per span (never innerHTML) — the sentence
+    // the clicked char). textContent per span (never innerHTML) — the sentence
     // is untrusted foreground-app/clipboard text, never interpreted as markup.
+    //
+    // 真机第 4 轮 — 面板 root（window.__globalLookupPanelRoot，settingsJs 注入）
+    // 的句子条是「选词区」：点字走 panelSentenceLookup 桥，Dart 换根结果=底部
+    // 原地更新，不再嵌套压卡；引擎匹配到的词以 __globalLookupSentenceHit
+    // {start,length}（码点下标）整词高亮——分词由词典引擎给出，视觉上是连续
+    // 正常文本（面板无逐字 hover 框，见 popup.css 的 :not() 作用域）。
+    // 瞬态覆盖窗保持原语义：点字=onLinkClick 嵌套子卡。
     const chars = Array.from(sentence);
+    const isPanelRoot = window.__globalLookupPanelRoot === true;
+    const hit = isPanelRoot ? window.__globalLookupSentenceHit : null;
+    const hitStart = hit && typeof hit.start === 'number' ? hit.start : -1;
+    const hitEnd = hitStart >= 0 && hit && typeof hit.length === 'number'
+        ? hitStart + hit.length
+        : -1;
+    if (isPanelRoot) {
+        banner.classList.add('global-lookup-sentence-panel');
+    }
     chars.forEach((ch, i) => {
         const span = el('span', {
-            className: 'global-lookup-sentence-char',
+            className: 'global-lookup-sentence-char'
+                + (i >= hitStart && i < hitEnd
+                    ? ' global-lookup-sentence-hit'
+                    : ''),
             textContent: ch,
         });
         span.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const suffix = chars.slice(i).join('');
+            if (isPanelRoot) {
+                // i = 码点下标（chars 是 Array.from 的码点数组），Dart 侧原样
+                // 作为高亮起点回注——两端同一单位，无 UTF-16 代理对错位。
+                window.flutter_inappwebview.callHandler(
+                    'panelSentenceLookup', suffix, i);
+                return;
+            }
             const rect = span.getBoundingClientRect();
             window.flutter_inappwebview.callHandler(
-                'onLinkClick', chars.slice(i).join(''), {
+                'onLinkClick', suffix, {
                 x: rect.left,
                 y: rect.top,
                 width: rect.width,
@@ -2927,6 +3084,56 @@ function buildGlobalLookupSentenceBanner() {
         banner.appendChild(span);
     });
     return banner;
+}
+
+// 真机第 5 轮 — 面板 root：点释义/见出语/汉字标签弹**外部**瞬态窗时，被点元素
+// 加 .global-lookup-ext-hit 高亮（外部窗不在本文档里，没有嵌套卡的父卡反馈；
+// 高亮在下次点击时被替换、重渲时随 DOM 重建自然清除）。瞬态窗/in-app 弹窗
+// 不启用（__globalLookupPanelRoot 仅面板 root 注入，那边嵌套卡自有视觉反馈）。
+function markGlobalLookupExtHit(target) {
+    if (window.__globalLookupPanelRoot !== true || !target || !target.classList) {
+        return;
+    }
+    try {
+        document.querySelectorAll('.global-lookup-ext-hit').forEach((n) => {
+            n.classList.remove('global-lookup-ext-hit');
+        });
+    } catch (e) {
+        // querySelectorAll 失败也不阻断查词本身。
+    }
+    target.classList.add('global-lookup-ext-hit');
+}
+
+// 真机第 5 轮 — 视口感知的词典列数收敛：TODO-1357 只按平台定默认（桌面 2 列
+// Niratan 双栏、移动 1 列「不硬塞多列避免窄屏挤爆」），但面板窗可被拖到很窄，
+// 固定多列会让底下的词典玻璃卡互相挤压重叠。这里把同一「窄了就收」判断按真实
+// 视口宽度动态化：每列至少 DICT_COLUMN_MIN_WIDTH px（可读下限），有效列数 =
+// min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
+// resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
+const DICT_COLUMN_MIN_WIDTH = 170;
+function updateEffectiveDictColumns() {
+    const doc = document.documentElement;
+    if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
+        return;
+    }
+    let configured = 1;
+    try {
+        configured = parseInt(
+            getComputedStyle(doc).getPropertyValue('--dict-columns'), 10) || 1;
+    } catch (e) {
+        configured = 1;
+    }
+    const width = window.innerWidth || 0;
+    const fit = width > 0
+        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        : configured;
+    doc.style.setProperty(
+        '--dict-columns-effective', String(Math.min(configured, fit)));
+}
+if (typeof window.addEventListener === 'function'
+    && !window.__hibikiDictColsResizeHooked) {
+    window.__hibikiDictColsResizeHooked = true;
+    window.addEventListener('resize', updateEffectiveDictColumns);
 }
 
 // Inserts the sentence-context banner (if any) as the FIRST child of the popup
@@ -2944,6 +3151,9 @@ function prependSentenceBanner(container) {
 
 window.renderPopup = function() {
     const t0 = performance.now();
+    // 真机第 5 轮 — settingsJs 可能刚更新了 --dict-columns；渲染前按当前视口
+    // 重算有效列数（resize 监听兜住渲染后的窗口拖拽）。
+    updateEffectiveDictColumns();
     const container = __hibikiContainer();
     if (!container) { _firePopupRendered(); return; }
 
@@ -3305,6 +3515,15 @@ document.addEventListener('wheel', (e) => {
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
+    // BUG-732: 这段缩放平滑滚动只服务查词弹窗。扩展里弹窗是宿主页上的 shadow 覆盖层，
+    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host；返回 null
+    // 时唯一合法「滚 window」的表面是 in-app 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。
+    // 普通网页上扩展 content script 有 chrome.runtime.id，此时滚轮不在弹窗内绝不能接管：
+    // 否则整页被 POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
+    const scroller = __hibikiWheelScroller(e);
+    const inExtensionContentScript =
+        typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+    if (!scroller && inExtensionContentScript) return;
     e.preventDefault();
     // Scale each notch down first, cap unusually large visual deltas, then
     // divide by zoom so the on-screen step is zoom-independent.
@@ -3313,7 +3532,6 @@ document.addEventListener('wheel', (e) => {
     // the shadow host is the scroll container (the ancestor walk above cannot
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
-    const scroller = __hibikiWheelScroller(e);
     const layoutStep = visualStep / popupCurrentZoom(scroller);
     // TODO-1387: carry the sub-pixel remainder across events. A precision touchpad
     // reports deltaMode=PIXEL with a tiny fractional deltaY (~1-4 per frame); after
@@ -3347,6 +3565,40 @@ document.addEventListener('mousedown', (e) => {
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
 });
 
+// BUG-767：MDX 词典条目里的交叉引用（類義語 等）是原始 HTML
+// `<a href="entry://词（読み）">词</a>`，经 innerHTML 注入到 .glossary-content
+// （renderContent → rewriteDictLinks，dict-media.js 只重写 <link>/<img>，不碰 <a>）。
+// 它既没有结构化内容链接那套 onclick（preventDefault + onLinkClick 重查，见
+// renderStructuredContent），结果 WebView 也没有装 shouldOverrideUrlLoading 导航拦截、
+// 未注册 entry:// scheme。裸点击 → 浏览器对结果框架发起默认导航到无法解析的 entry:// URL →
+// 主框架离开 popup.html、已渲染词条 DOM 全被销毁 → 内容区空白（只剩 Flutter 画的页头）。
+// 统一在此拦下 glossary 内锚点：先 preventDefault（根因——绝不让结果框架被导走），外链交给
+// openExternalLink，发音媒体节点忽略，其余内部交叉引用用可见词头 textContent 作查询词转成
+// onLinkClick 重查（与结构化内容链接、app 的干净词头索引一致）。抽成具名函数便于 test/js
+// jsdom 行为测试直接执行判据。
+function handleGlossaryAnchorClick(event, anchor) {
+    event.preventDefault();
+    const href = (anchor.getAttribute('href') || '').trim();
+    if (/^https?:\/\//i.test(href)) {
+        openExternalLink(href);
+        return;
+    }
+    if (/^sound:/i.test(href)) {
+        // 词典发音媒体节点（sound://xxx），不是查词目标；导航已被阻止，播放另属后续能力。
+        return;
+    }
+    const query = (anchor.textContent || '').trim();
+    if (!query) return;
+    const rect = anchor.getBoundingClientRect();
+    markGlobalLookupExtHit(anchor);
+    window.flutter_inappwebview.callHandler('onLinkClick', query, {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+    });
+}
+
 document.addEventListener('click', (e) => {
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
@@ -3374,7 +3626,14 @@ document.addEventListener('click', (e) => {
         target?.closest('.favorite-button')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
-        if (target?.closest('a[href]')) return;
+        // BUG-767：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
+        // handleGlossaryAnchorClick——preventDefault 阻止默认导航（否则结果框架被导走→白屏），
+        // 内部引用转 onLinkClick 重查。结构化内容链接自带 onclick + stopPropagation，永不冒泡到此。
+        const glossaryAnchor = target?.closest('a[href]');
+        if (glossaryAnchor) {
+            handleGlossaryAnchorClick(e, glossaryAnchor);
+            return;
+        }
         // TODO-869 收尾：词典释义正文（.glossary-content）是父卡片占面积最大的可点
         // 区，也是用户说的「词典部分」。若本层有子弹窗（__hasChildPopup，宿主据
         // index < entries.length-1 注入），点正文应先关掉后代层（dismissDescendantsOf），

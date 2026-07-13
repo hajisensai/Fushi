@@ -950,10 +950,13 @@ window.hoshiSelection = {
     return null;
   },
   // 返回 (node, offset) 之前一个文本字符的位置（跨文本节点，跳振假名），无则 null。
+  // TODO-393 修「后加一句/前退一句跨段无反应」：walker 根用 document.body（不是
+  // findParagraph 的当前块），故「上一句」的种子字符能跨 <p>/块级边界回退。句子自身仍
+  // 由 getSentenceContext 的 findParagraph 限定在其块内，这里只把「找相邻句起点」放宽到
+  // 跨段——与 collectRangeBetween 同一套 document 级 walker（同样 REJECT 振假名/空白节点）。
   charBefore: function(node, offset) {
     if (offset > 0) return { node: node, offset: offset - 1 };
-    var container = this.findParagraph(node) || document.body;
-    var walker = this.createWalker(container);
+    var walker = this.createWalker(document.body);
     walker.currentNode = node;
     var prev = walker.previousNode();
     while (prev) {
@@ -965,10 +968,11 @@ window.hoshiSelection = {
     return null;
   },
   // 返回 (node, offset) 处（含本位）的下一个有效文本位置，无则 null。
+  // TODO-393 修：同 charBefore，walker 根用 document.body 以支持「下一句」跨 <p> 段落取到
+  // 下一段首个可见文本节点（旧实现困在 findParagraph 当前块内、段末即 break → 后加一句没反应）。
   charAt: function(node, offset) {
     if (offset < node.textContent.length) return { node: node, offset: offset };
-    var container = this.findParagraph(node) || document.body;
-    var walker = this.createWalker(container);
+    var walker = this.createWalker(document.body);
     walker.currentNode = node;
     var next = walker.nextNode();
     while (next) {
@@ -993,6 +997,13 @@ window.hoshiSelection = {
       return null;
     }
     if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {
+      // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
+      // 高亮与弹窗——这是「按住 Shift 一路滑，弹窗跟着光标走」的去重基石。滑过一
+      // 个词只查一次，同词内继续移动不重复 fire onTextSelected，不闪、不刷 FFI /
+      // 查词历史。真点击（fromHover falsy）保持旧的 toggle 语义：再点同词 = 取消。
+      if (fromHover) {
+        return null;
+      }
       this.clearSelection();
       return null;
     }
@@ -1340,7 +1351,26 @@ window.hoshiSelection = {
   moveSelectionHandle: function(which, x, y) {
     var eps = this.selectionEndpoints();
     if (!eps) return;
+    // The grip div sits directly under the finger (pointer-events:auto, top
+    // z-index). A hit-test at the raw finger point resolves elementFromPoint /
+    // caretPositionFromPoint to the grip element (an ELEMENT_NODE, not a text
+    // node) -> getCharacterAtPoint returns null -> the grip appears frozen and
+    // the range never adjusts. Make both grips transparent to hit-testing for
+    // the duration of the point resolution so the finger coordinate falls
+    // through to the glyph underneath, then restore. No native selection is
+    // touched (still app-drawn only).
+    var handles = this.selectionHandles;
+    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
+    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
+    if (handles) {
+      handles.start.style.pointerEvents = 'none';
+      handles.end.style.pointerEvents = 'none';
+    }
     var hit = this.getCharacterAtPoint(x, y);
+    if (handles) {
+      handles.start.style.pointerEvents = savedStartPe || 'auto';
+      handles.end.style.pointerEvents = savedEndPe || 'auto';
+    }
     if (!hit) return;
     var anchorNode, anchorOffset;
     if (which === 'end') {

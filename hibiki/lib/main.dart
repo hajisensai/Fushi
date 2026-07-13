@@ -30,6 +30,7 @@ import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/present_watchdog.dart';
 import 'package:hibiki/src/utils/misc/wgc_capture_log.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/src/utils/adaptive/hibiki_macos_theme.dart';
@@ -311,6 +312,9 @@ void main([List<String> args = const <String>[]]) {
     // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
     // UAF 崩溃提供可读的崩前生命周期证据。
     await WgcCaptureLog.foldIntoErrorLog();
+    // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
+    // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
+    await PresentStallLog.foldIntoErrorLog();
 
     /// Initialise local file-based logging (mobile only).
     if (Platform.isAndroid || Platform.isIOS) {
@@ -499,6 +503,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   Timer? _loadingWatchdog;
   bool _loadingTimedOut = false;
 
+  /// BUG-772：present-watchdog 超时（比 20s 裸加载看门狗更长，确认是硬故障而非 IO 慢）。
+  static const Duration _presentWatchdogTimeout = Duration(seconds: 30);
+
+  /// BUG-772：present 层死锁兜底看门狗（仅 Windows arm）。UI-isolate 看门狗的逃生 UI 在
+  /// raster/present 楔死时也送不上屏，故用「首帧是否 rasterize 过」这个不依赖 present 的
+  /// 判据兜底。启动推进后置 null（只清一次 marker）。
+  PresentWatchdog? _presentWatchdog;
+
   /// 守卫：Windows 安装器 handoff marker 只在拿到真实 Navigator 后 reconcile 一次。
   bool _windowsUpdateHandoffChecked = false;
   StreamSubscription<String>? _iosUrlSubscription;
@@ -511,6 +523,18 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
+    // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
+    // libmpv/ANGLE/WGC churn 污染进程共享 D3D device），落盘取证 + 一次性自动重启。
+    // 这是 UI-isolate 看门狗（逃生 UI 同样送不上屏）够不着的 present 层兜底。
+    if (Platform.isWindows) {
+      _presentWatchdog = PresentWatchdog(
+        timeout: _presentWatchdogTimeout,
+        isFirstFrameRasterized: () =>
+            WidgetsBinding.instance.firstFrameRasterized,
+        onStall: _onPresentStall,
+      )..arm();
+    }
     // 桌面端监听原生窗口关闭：配合 main() 里的 setPreventClose(true)，在引擎拆除前
     // 停掉 Bonsoir mDNS 事件源（TODO-036）。
     if (_isDesktop) {
@@ -985,6 +1009,25 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     _loadingTimedOut = false;
   }
 
+  /// BUG-772：present 楔死自愈动作（仅 Windows）——落盘取证 + 一次性自动重启。marker 不
+  /// 存在（首次楔死）→ 认领并 restartApp（有验证过的桌面重启路径）；已存在（上次重启后
+  /// 仍卡，疑驱动级 device-lost 跨进程）→ 不再重启，避免无限循环，取证已落盘供下次上传。
+  /// restartApp 走 platform 线程起新进程 + 退本进程，不依赖已楔死的 raster 线程。
+  void _onPresentStall() {
+    final File? logFile = PresentStallLog.resolveStallLogFile();
+    if (logFile != null) {
+      PresentStallLog.appendStall(
+        logFile,
+        DateTime.now(),
+        afterTimeout: _presentWatchdogTimeout,
+      );
+    }
+    final File? marker = PresentStallLog.resolveMarkerFile();
+    if (marker != null && PresentStallLog.claimRestart(marker)) {
+      unawaited(ref.read(appProvider).platformServices.lifecycle.restartApp());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // TODO-1260：只要不再处于「裸加载」态（已初始化 / 已落错误屏 / 迁移或备份导入有自己
@@ -994,6 +1037,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         appModel.dataRootMigrationActive ||
         appModel.backupImportActive) {
       _cancelLoadingWatchdog();
+      // BUG-772：启动已推进（首帧早已 rasterize）→ 撤 present-watchdog 并清自动重启
+      // marker（只跑一次：置 null 后不再进），让下次再遇 present 楔死还能自动重启一次。
+      if (_presentWatchdog != null) {
+        _presentWatchdog!.disarm();
+        _presentWatchdog = null;
+        final File? marker = PresentStallLog.resolveMarkerFile();
+        if (marker != null) PresentStallLog.clearRestartMarker(marker);
+      }
     }
     // Fields like locales/targetLanguage/theme are late and only available
     // after initialise() completes. Return a minimal app while loading and
@@ -1226,7 +1277,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     // TODO-1151: 本地备份「导入/恢复」期间会 closeDatabase() 置 isInitialised=false。
     // 若落到下面的裸 loading 分支，设置页会「突然消失」变近黑转圈，导入完再 exit(0)，
     // 用户误以为崩溃/失败。这里镜像上面的迁移遮罩：running 显「正在导入备份，请勿关闭」
-    // + 进度条；done 显结果 +「立即重启」按钮，由用户点按后再退出（backupImportRestart）。
+    // + 进度条；done 显结果，导入成功后 ~1s 自动重启（backupImportRestart 走 restartApp 真
+    // 拉新进程），「立即重启」按钮保留为手动兜底可提前点；失败态不自动、由用户读完原因手点。
     if (appModel.backupImportActive) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
@@ -1244,7 +1296,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             background: _savedSplashColor,
             // TODO-1183: 确定进度条监听（只进度条重建，不整树重绘）。
             progress: appModel.backupImportProgress,
-            onRestart: backupImportRestart,
+            onRestart: () => backupImportRestart(appModel),
             // TODO-1151: validating 相位的「取消」——作废 in-flight 校验 token 并退出
             // 遮罩回设置页（其它相位本视图不渲染取消按钮）。
             onCancel: appModel.cancelBackupValidating,

@@ -109,7 +109,12 @@ class AssParser {
     int endCol = -1;
     int textCol = -1;
     int styleCol = -1;
-    // 脚本坐标系分辨率（[Script Info]），仅用于把 \pos 归一化；缺省按 ASS 规范 384×288。
+    // Dialogue 行级 Margin 覆盖列（MarginL/MarginR/MarginV，>0 覆盖样式默认，ASS 规范）。
+    int marginLCol = -1;
+    int marginRCol = -1;
+    int marginVCol = -1;
+    // 脚本坐标系分辨率（[Script Info]）：\pos 归一化 + MarginL/R（PlayResX）与字号/阴影
+    // （PlayResY）缩放基准；缺省按 ASS 规范 384×288。
     double? playResX;
     double? playResY;
 
@@ -197,6 +202,9 @@ class AssParser {
         endCol = cols.indexOf('end');
         textCol = cols.indexOf('text');
         styleCol = cols.indexOf('style');
+        marginLCol = cols.indexOf('marginl');
+        marginRCol = cols.indexOf('marginr');
+        marginVCol = cols.indexOf('marginv');
         continue;
       }
 
@@ -225,6 +233,23 @@ class AssParser {
         SubtitleCueStyle? cueStyle;
         if (styleCol >= 0 && styleCol < parts.length) {
           cueStyle = styles[parts[styleCol].trim().toLowerCase()];
+        }
+
+        // Dialogue 行级 Margin 覆盖（ASS 规范：>0 覆盖样式默认，0 沿用）。样式实例被
+        // 同名多条共享，覆盖走 clone（withEventMargins），不原地改。字幕组用它把单句
+        // 对白横移到说话人一侧（MarginL/R）或抬离默认高度（MarginV）。
+        double? eventMargin(int col) {
+          if (col < 0 || col >= parts.length) return null;
+          final double? v = double.tryParse(parts[col].trim());
+          return (v == null || v <= 0) ? null : v;
+        }
+
+        final double? evL = eventMargin(marginLCol);
+        final double? evR = eventMargin(marginRCol);
+        final double? evV = eventMargin(marginVCol);
+        if (evL != null || evR != null || evV != null) {
+          cueStyle = (cueStyle ?? const SubtitleCueStyle())
+              .withEventMargins(marginL: evL, marginR: evR, marginV: evV);
         }
 
         // Text 列及其后所有列重新拼合（Text 本身可能含逗号）
@@ -364,6 +389,8 @@ class AssParser {
       strikeOut: flag('strikeout'),
       anchor: anchor(),
       marginV: number('marginv'),
+      marginL: number('marginl'),
+      marginR: number('marginr'),
     );
   }
 }

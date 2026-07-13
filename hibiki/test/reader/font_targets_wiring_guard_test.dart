@@ -66,9 +66,13 @@ void main() {
     expect(src.contains("'hoshi-dict-font'"), isTrue);
     // The in-app WebView path must feed through the shared builder (not a
     // re-introduced local copy that could drift from the app-outside window).
+    // BUG-712 ③ split buildPopupSettingsJs into the shared static-settings half
+    // (buildPopupStaticSettingsJs — which carries the DictionaryFontCss.build
+    // injection) + the per-lookup entries half; the in-app hot-slot path now
+    // feeds through buildPopupStaticSettingsJs, still the shared source of truth.
     final String webview =
         read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-    expect(webview.contains('buildPopupSettingsJs('), isTrue);
+    expect(webview.contains('buildPopupStaticSettingsJs('), isTrue);
   });
 
   test('structured dictionary page injects the dictionaryFonts target', () {

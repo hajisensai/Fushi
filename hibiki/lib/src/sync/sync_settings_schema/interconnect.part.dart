@@ -479,7 +479,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
             ),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
+            // 唯一的展开子项是带浮动标签的轮廓边框输入框：浮动后的标签骑在
+            // 字段顶边、上半部分会溢出到字段上方（14sp 标签约 7px）。ExpansionTile 的
+            // 展开体被 Expansible 包在 ClipRect 里（flutter widgets/expansible.dart），
+            // childrenPadding 顶部为 0 时这半个标签被裁掉（BUG-755：「对端访问令牌」
+            // 上半截不显示）。顶部留出浮动标签的溢出高度即可让标签完整渲染。
+            childrenPadding: const EdgeInsets.only(top: 10),
             title: Text(
               t.sync_client_token_manual,
               style: theme.textTheme.bodySmall
@@ -494,20 +499,27 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FilledButton.tonal(
-                    onPressed: _testAll,
-                    child: Text(t.sync_test_connection),
-                  ),
-          ),
+          // 「测试连接」只在本机作为客户端（连出到其它 host）时有意义：它探测配置的
+          // 出站地址是否可达。本机作为服务端（serverEnabled → lockedByServer）时是一台
+          // 被动数据源，没有出站连接可测，此时显示测试连接按钮既无意义又误导用户（与
+          // BUG-084「服务端隐藏 sync now / compare」同一设计）。故服务端模式下隐藏。
+          if (!lockedByServer) ...<Widget>[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _isTesting
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child:
+                          adaptiveIndicator(context: context, strokeWidth: 2),
+                    )
+                  : FilledButton.tonal(
+                      onPressed: _testAll,
+                      child: Text(t.sync_test_connection),
+                    ),
+            ),
+          ],
         ],
       ),
     );

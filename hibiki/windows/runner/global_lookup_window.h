@@ -26,6 +26,7 @@
 #include <wil/com.h>
 #pragma warning(pop)
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -137,6 +138,20 @@ class GlobalLookupWindow {
   // overlay's (same-folder different-options fails with 0x8007139F).
   void SetArmDismissHooks(bool arm) { arm_dismiss_hooks_ = arm; }
   void SetUserDataLeaf(std::wstring leaf) { user_data_leaf_ = std::move(leaf); }
+  // 真机第 4 轮 — 面板窗可被激活：不带 WS_EX_NOACTIVATE 创建，点击面板时焦点
+  // 落在面板上（游戏失焦，滚轮不再穿到底下的游戏）。程序化 show/update 仍全
+  // 走 SW_SHOWNOACTIVATE / SWP_NOACTIVATE，文本流更新绝不抢游戏焦点。瞬态
+  // 覆盖窗保持默认 false（查词卡出现时前台键盘焦点原地不动，design §5 保证 3）。
+  // 必须在首次 ShowAt/PrewarmWebView（窗口创建）前设置。
+  void SetActivatable(bool activatable) { activatable_ = activatable; }
+  // 面板任务栏图标 — 常驻剪贴板面板要有独立任务栏按钮（WS_EX_APPWINDOW 而非
+  // WS_EX_TOOLWINDOW）：面板未置顶（图钉关）被游戏/浏览器压到底下时，点任务栏
+  // 图标即可激活+拉回前台（任务栏激活自带 raise），面板永远找得回来。瞬态查词
+  // 覆盖窗保持默认 false（工具窗，无任务栏项/Alt-Tab 项）。必须在窗口创建前设置。
+  void SetTaskbarPresence(bool present) { taskbar_presence_ = present; }
+  // 任务栏按钮 / Alt-Tab 项显示的窗口标题（Dart 侧传本地化文案）。创建前设置
+  // 则用于 CreateWindowExW；窗口已存在时经 SetWindowTextW 即时生效。
+  void SetWindowTitle(const std::wstring& title);
 
   // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
   // behind the window's transparent WebView2 pixels. Returns whether the OS
@@ -149,6 +164,17 @@ class GlobalLookupWindow {
   // spec 2026-07-10 panel pin — toggles HWND_TOPMOST without moving/resizing
   // or activating. No-op before the window exists.
   void SetTopmost(bool topmost);
+
+  // spec §6 真机修正 — WHOLE-WINDOW opacity via WS_EX_LAYERED +
+  // SetLayeredWindowAttributes(LWA_ALPHA). Real-device finding: the acrylic
+  // backdrop chain renders user-visibly OPAQUE through the windowed WebView2
+  // child — and frosted glass was never the ask anyway; the user wants to SEE
+  // the game/page beneath. LWA_ALPHA is the verified working path for WebView2
+  // hosts (whole window fades, incl. text; LWA_COLORKEY is NOT supported by
+  // WebView2) and works on Win10 too. [percent] clamped to 30..100; the
+  // layered bit sticks once set (a layered window does not render until
+  // SetLayeredWindowAttributes is called, so the call always follows).
+  void SetWindowAlpha(int percent);
 
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
@@ -164,12 +190,30 @@ class GlobalLookupWindow {
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
   // TODO-867 P2: round the window corners to match popup.css's card radius.
+  // BUG-749: when the host has reported per-shell rects (transient cascade
+  // mode), the region is the UNION of those card rects instead of the full
+  // window — the TODO-1345 reserved-floor window spans ~the whole work area,
+  // and an opaque full-window region both paints a giant sheet and swallows
+  // every click meant for the app below (clipboard panel next-word tap).
   void ApplyRoundedRegion();
+  // BUG-749 — parses the host's {handler:'shellRects', args:['l,t,w,h;…']}
+  // message (window-relative CSS px) and re-applies the window region.
+  void SetShellRectsFromCsv(const std::string& body);
   // TODO-867 P3c E2: forward a global click (screen physical px) into the web
   // host as host CSS px relative to the window, so the host hit-tests its shells
   // and dismisses the appropriate layer (the host owns the shell geometry truth).
   void ForwardGlobalClickToHost(int screen_x, int screen_y);
   void EnsureWindowClass();
+  // Root fix: hwnd_ must be non-null IFF a LIVE window that is OURS exists.
+  // External teardown (WebView2 runtime crash/update, owner destroy, any
+  // DestroyWindow) left hwnd_ dangling-non-null, so ShowAt kept SetWindowPos-ing
+  // a corpse instead of rebuilding -> the app-external lookup/panel window
+  // "never came back without an app restart". OwnsLiveWindow() rejects a
+  // destroyed handle (IsWindow) AND a handle recycled to another window
+  // (GWLP_USERDATA != this); ForgetDeadWindow() drops such a handle + its dead
+  // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
+  bool OwnsLiveWindow() const;
+  void ForgetDeadWindow();
   void EnsureWebView();
   void RecoverDeadWebView(const std::string& replay_script);
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
@@ -196,9 +240,17 @@ class GlobalLookupWindow {
   // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;
+  bool activatable_ = false;
+  bool taskbar_presence_ = false;
+  std::wstring window_title_ = L"Hibiki Lookup";
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
+  // BUG-749 — host-reported shell rects (window-relative CSS px, one
+  // {l,t,w,h} per card). Non-empty only on the transient cascade instance
+  // (the panel host short-circuits measureAndReport and never posts them).
+  // Cleared on Hide()/ForgetDeadWindow() so a fresh lookup re-posts.
+  std::vector<std::array<double, 4>> shell_rects_css_;
 
   wil::com_ptr<ICoreWebView2Environment> env_;
   wil::com_ptr<ICoreWebView2Controller> controller_;

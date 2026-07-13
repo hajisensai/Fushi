@@ -77,6 +77,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               ? theme.colorScheme.onErrorContainer
               : theme.colorScheme.onSecondaryContainer,
         ),
+        // BUG-728：EPUB-backed 有声书只以 SRT 卡出现，进度条走与 EPUB 卡同一个
+        // [_progressBar]（读 srtItem.position/duration，来自共享 EpubBooks 行）。
+        // 纯字幕书无进度真值则不传 metadata，保持原样（无进度条）。
+        metadata: _srtBookHasProgress(book) ? _progressBar(srtItem) : null,
       ),
     );
   }
@@ -120,18 +124,31 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final String? imageUrl = ownCoverPath != null
         ? Uri.file(ownCoverPath).toString()
         : _epubCoverUrisByBookKey[book.bookKey];
+    // BUG-728：EPUB-backed 有声书在书架只以 SRT 卡出现（其 EPUB 卡被过滤），进度
+    // 复用同一本 EpubBooks 行已算好的 position/duration（含听书 normCharOffset 回退）。
+    // 无 EPUB backing 的纯字幕书没有字符进度真值，退回 0/1（进度条按 [_srtBookHasProgress]
+    // 门控不渲染，不灌水）。
+    final ({int position, int duration})? prog =
+        _epubProgressByBookKey[book.bookKey];
     return MediaItem(
       mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.bookKey),
       title: book.title,
       mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
       mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
-      position: 0,
-      duration: 1,
+      position: prog?.position ?? 0,
+      duration: prog?.duration ?? 1,
       canDelete: false,
       canEdit: true,
       imageUrl: imageUrl,
     );
   }
+
+  /// BUG-728：SRT 卡是否有可展示的阅读进度真值。仅 EPUB-backed 有声书（其 bookKey
+  /// 命中 [_epubProgressByBookKey]，进度来自共享的 EpubBooks 行 + reader_positions）
+  /// 才画进度条；纯字幕书无字符进度，返回 false，保持无进度条（不显永远空的条）。
+  bool _srtBookHasProgress(SrtBook book) =>
+      book.bookKey.isNotEmpty &&
+      _epubProgressByBookKey.containsKey(book.bookKey);
 
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {

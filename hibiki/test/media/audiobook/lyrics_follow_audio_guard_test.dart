@@ -50,12 +50,33 @@ void main() {
     expect(html, isNot(contains('window.__lyricsSetCue = function(index) {')));
   });
 
-  test('reader _onCueChanged passes followAudio into __lyricsSetCue', () {
+  test(
+      'reader _onCueChanged passes followAudio (+force-reveal) into __lyricsSetCue',
+      () {
     final String src = readReaderPageSource();
 
-    // 歌词分支必须把跟随开关透传进 JS（否则自动滚动永远发生）。拆成两个更小的
-    // 不变片段，避免对跨行字符串拼接的换行位置脆敏（Info-5）。
-    expect(src, contains(r'__lyricsSetCue($idx, '));
-    expect(src, contains(r'${controller.followAudio.value}'));
+    // 歌词分支必须把跟随开关透传进 JS scroll 形参（否则自动滚动永远发生）。
+    // BUG-757 后 scroll = followAudio || forceReveal（snap 也放行），故断言从
+    // 旧的 `${controller.followAudio.value}` 直插改成新的派生变量与推导式。
+    expect(src, contains(r'__lyricsSetCue($idx, $scroll)'));
+    expect(src, contains('controller.followAudio.value || forceReveal'));
+  });
+
+  test('lyrics branch consumes force-reveal and re-centers on snap (BUG-757)',
+      () {
+    final String src = readReaderPageSource();
+
+    // ① force-reveal 一次性旗必须**也在歌词分支**消费——否则 snapReaderToAudio
+    //   置的位会泄漏到之后退回正文的 _onCueChanged，凭空多滚。原来只有正文分支调一次
+    //   consumeForceReveal()；歌词分支补上后全语料至少 2 处（非同义反复）。
+    expect(
+      'consumeForceReveal()'.allMatches(src).length,
+      greaterThanOrEqualTo(2),
+      reason: '歌词分支必须独立消费 force-reveal，防泄漏到正文路径',
+    );
+    // ② snap 那刻 cue 常没变，__lyricsSetCue 的 index===_currentIdx 早退会吞掉回中；
+    //   forceReveal 下必须再显式 __lyricsScrollToCue 强制居中（绕过早退）。
+    //   该调用只在 reader 页 Dart 侧（语料）出现，HTML 生成器的函数定义不在语料内。
+    expect(src, contains(r'window.__lyricsScrollToCue($idx)'));
   });
 }

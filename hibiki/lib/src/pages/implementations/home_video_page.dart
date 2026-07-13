@@ -196,6 +196,24 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _maybeBackfillCovers();
   }
 
+  /// 下拉刷新：强制重拉远端视频列表 + 本地列表，await 远端 future 完成后指示器才收起。
+  ///
+  /// 顶层 tab 保活（[HomePage] 的 `_keepAliveTabs`）后，切回视频 tab 不再隐式重拉远端，
+  /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
+  /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起。
+  Future<void> _pullToRefresh() async {
+    final Future<_RemoteVideoState?> remote = _loadRemoteVideos();
+    if (mounted) {
+      setState(() {
+        _future = widget.repo.listForShelf();
+        _remoteFuture = remote;
+      });
+    }
+    _loadLibraryMaps();
+    _maybeBackfillCovers();
+    await remote;
+  }
+
   /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
   /// watch-stats 最近观看，外加偏好里的排序方式。
   Future<void> _loadLibraryMaps() async {
@@ -518,8 +536,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final int mediaCount = _selectedUids.length;
     final int collectionCount = _selectedCollectionIds.length;
     if (mediaCount == 0 && collectionCount == 0) return;
+    // 纯删媒体分支用视频专用文案（batch_delete_confirm_video，develop 新增 key）；
+    // 混选/纯解散仍走合集区分文案（本分支批量删除语义超集）。
     final String message = collectionCount == 0
-        ? t.batch_delete_confirm(n: mediaCount)
+        ? t.batch_delete_confirm_video(n: mediaCount)
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
@@ -582,13 +602,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (!mounted) return;
     // 复查 #7：零成功（deleted==0 且 dissolved==0）时兜底文案按「选择构成」诚实分派——
     // 只选散卡（collectionCount==0）说「已删除 0 个」，否则说「已解散 0 个合集」；不再
-    // 无条件谎报解散类别（对齐 BUG-439 诚实计数精神）。
+    // 无条件谎报解散类别（对齐 BUG-439 诚实计数精神）。纯删媒体分支用视频专用文案
+    // （batch_delete_success_video，develop 新增 key）。
     final String successMsg = deleted > 0 && dissolved > 0
         ? t.batch_delete_mixed_success(n: deleted, m: dissolved)
         : deleted > 0
-            ? t.batch_delete_success(n: deleted)
+            ? t.batch_delete_success_video(n: deleted)
             : collectionCount == 0
-                ? t.batch_delete_success(n: deleted)
+                ? t.batch_delete_success_video(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
     HibikiToast.show(msg: successMsg);
   }
@@ -1575,30 +1596,36 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
             final List<RemoteVideoInfo> remoteVideos =
                 _visibleRemoteVideos(remoteSnap.data, filter);
+            // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
+            // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
             // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
             // 以 240 为目标宽算响应式列数，两处共用同一实际卡宽。
-            return LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final HibikiDesignTokens tokens =
-                    HibikiDesignTokens.of(context);
-                final ({int columns, double cardWidth}) cardLayout =
-                    unifiedShelfCardLayout(
-                  availableWidth:
-                      constraints.maxWidth - tokens.spacing.card * 2,
-                  targetWidth: 240,
-                );
-                return CustomScrollView(
-                  slivers: <Widget>[
-                    // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                    // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                    // [all] 描述整库，不随标签筛选变。
-                    if (all.isNotEmpty)
-                      SliverToBoxAdapter(child: _buildOverviewSection(all)),
-                    ..._buildLocalVideoSlivers(
-                        all, ordered, remoteVideos, cardLayout),
-                  ],
-                );
-              },
+            return RefreshIndicator(
+              onRefresh: _pullToRefresh,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final HibikiDesignTokens tokens =
+                      HibikiDesignTokens.of(context);
+                  final ({int columns, double cardWidth}) cardLayout =
+                      unifiedShelfCardLayout(
+                    availableWidth:
+                        constraints.maxWidth - tokens.spacing.card * 2,
+                    targetWidth: 240,
+                  );
+                  return CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: <Widget>[
+                      // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                      // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                      // [all] 描述整库，不随标签筛选变。
+                      if (all.isNotEmpty)
+                        SliverToBoxAdapter(child: _buildOverviewSection(all)),
+                      ..._buildLocalVideoSlivers(
+                          all, ordered, remoteVideos, cardLayout),
+                    ],
+                  );
+                },
+              ),
             );
           },
         );
@@ -2536,7 +2563,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       onTap: showSelection
           ? () => _toggleSelection(book.bookUid)
           : () => _open(book, playlistCollectionId: playlistCollectionId),
+      // 长按 / 桌面右键都弹管理菜单，与书架书卡（_bookCardShell）、远端视频卡
+      // （_buildRemoteVideoCard）一致——本地视频卡此前只挂了 onLongPress、漏了
+      // onSecondaryTap，故桌面右键本地视频卡无反应（BUG-758）。
       onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
+      onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -2878,14 +2909,20 @@ class _VideoBatchTagPickerDialogState
       final BookTagRow tag =
           widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
       HibikiToast.show(
-        msg: t.batch_tag_added(name: tag.name, n: widget.selectedUids.length),
+        msg: t.batch_tag_added_video(
+          name: tag.name,
+          n: widget.selectedUids.length,
+        ),
       );
     }
     for (final int tagId in _removeTagIds) {
       final BookTagRow tag =
           widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
       HibikiToast.show(
-        msg: t.batch_tag_removed(name: tag.name, n: widget.selectedUids.length),
+        msg: t.batch_tag_removed_video(
+          name: tag.name,
+          n: widget.selectedUids.length,
+        ),
       );
     }
     Navigator.pop(context);

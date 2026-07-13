@@ -143,6 +143,54 @@ void main() {
               'desktop path after the restart-marker branch');
     });
   });
+
+  // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
+  // 快捷键查词不显示（整句仍进制卡 sentence，与横幅解耦）。
+  group('整句横幅只给剪切板自动唤出的瞬态窗', () {
+    late String controllerSrc;
+    late String dispatcherSrc;
+    setUpAll(() {
+      controllerSrc = read('lib/src/lookup/global_lookup_controller.dart');
+      dispatcherSrc = read('lib/src/lookup/desktop_lookup_dispatcher.dart');
+    });
+
+    test('手动快捷键窗不贴横幅：hotkey 的 _lookupExternal 传 showSentenceBanner:false', () {
+      final int at = controllerSrc.indexOf('hotkey: empty selection');
+      expect(at, greaterThan(-1), reason: 'hotkey 分支必须存在');
+      final String tail = controllerSrc.substring(at);
+      final int callAt = tail.indexOf('_lookupExternal(text,');
+      expect(callAt, greaterThan(-1), reason: 'hotkey 必须走 _lookupExternal');
+      final String call = tail.substring(callAt, tail.indexOf(';', callAt));
+      expect(call.contains('showSentenceBanner: false'), isTrue,
+          reason: '手动快捷键查词不显示整句横幅（框）');
+    });
+
+    test('横幅注入门控在 _showSentenceBanner（与 mining 解耦）', () {
+      expect(
+        controllerSrc.contains('(isRoot && _showSentenceBanner)'),
+        isTrue,
+        reason: 'root 卡横幅必须同时满足 isRoot 且 _showSentenceBanner',
+      );
+    });
+
+    test('制卡 sentenceContext 仍用完整 _currentSentence（横幅关掉也不空）', () {
+      expect(
+          controllerSrc.contains('sentenceContext: _currentSentence'), isTrue,
+          reason: 'BUG-730：热键窗整句仍进制卡 {sentence}，与横幅解耦不受影响');
+    });
+
+    test('剪切板自动唤出（dispatcher transient）保留横幅：不关 banner', () {
+      final int at = dispatcherSrc.indexOf('DesktopLookupConsumer.transient');
+      expect(at, greaterThan(-1));
+      final String tail = dispatcherSrc.substring(at);
+      final int callAt = tail.indexOf('.lookupText(');
+      expect(callAt, greaterThan(-1));
+      final String call =
+          tail.substring(callAt, tail.indexOf(');', callAt) + 1);
+      expect(call.contains('showSentenceBanner: false'), isFalse,
+          reason: '剪切板自动唤出的瞬态窗必须显示整句框（默认 true 不关）');
+    });
+  });
 }
 
 /// Removes `//` line comments so a source-scan assertion inspects CODE only

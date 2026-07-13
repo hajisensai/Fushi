@@ -32,6 +32,7 @@ import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
+import 'package:hibiki/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
@@ -796,6 +797,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   VideoPlayerController? _controller;
 
+  /// BUG-772：首开时新建但尚未赋给 [_controller] 的「在途」controller。持有它，才能在
+  /// 用户于 `await controller.load()` 完成前退出页时，于 [dispose] 主动 dispose 取消它
+  /// （触发 `loadToken++` → 在途 load 的 `_isCurrentLoad` 判据翻假、干净放弃后续原生
+  /// 下发），杜绝在已离开页面上把 libmpv/WGC 完整拉起再拆的 GPU churn（进程共享 D3D
+  /// device 被 device-lost 污染 → 下次启动 raster present 楔死）。换集复用不设。
+  VideoPlayerController? _pendingController;
+
   /// TODO-1276：首开视频「转两次圈」根治开关。
   ///
   /// 根因：首开路径有**两个独立的加载指示器**接力——① 页级 [VideoLoadingOverlay]
@@ -1209,6 +1217,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<int> Function()? get onClearSentenceDraftToDraft =>
       _clearSentenceDraft;
 
+  /// Niratan「制卡前调整·选择句子上下文」（视频车道）：把当前草稿真实上下文句 + 当前
+  /// 正查字幕句（[_lastLookupSentence]）打包给弹窗预览。视频无「词在句中的字符偏移」
+  /// 缓存（cue 文本非阅读器 DOM 选区），词偏移传 null——弹窗侧回退到首次出现高亮。
+  @override
+  Future<Map<String, Object?>> Function()?
+      get onSentenceContextPreviewToDraft =>
+          () async => buildSentenceContextPreview(
+                draft: _miningDraft,
+                current: _lastLookupSentence,
+                currentOffset: null,
+              );
+
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
   /// 查词暂停 / 关浮层恢复与阅读器 [ReaderHibikiPage] 同源：浮层打开时若视频在播放则
@@ -1289,6 +1309,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
+
+  /// 视频内嵌字体加载器（对齐 mpv attachment 字体）：开视频时抽 MKV 内嵌字体附件注册进
+  /// 引擎，字幕 overlay 按 ASS `Fontname` 命中真实字体。内部按视频路径缓存 + 进程级 family
+  /// 去重，故可反复调（换集/重开）。见 [_maybeLoadEmbeddedSubtitleFonts]。
+  final SubtitleEmbeddedFontLoader _embeddedFontLoader =
+      SubtitleEmbeddedFontLoader();
 
   /// 远端模式（[_isRemote]）下 host 下发并下载到本地临时文件的那条外挂字幕路径；
   /// 无 host 字幕时为 null。远端没有本地视频文件，字幕菜单不能走 [_currentVideoPath]
@@ -2323,6 +2349,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
+    // BUG-772：首开新建的在途 controller 登记进字段，让页面 dispose 能主动取消它。
+    // 换集复用同一 _controller 时不设，避免误 dispose 正在用的实例。
+    if (isInitialVideoOpen) _pendingController = controller;
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
       appModel.videoMpvConfig,
     );
@@ -2390,6 +2419,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           .log('VideoHibiki.diag', '[VIDEO-DIAG] controller.load() threw: $e');
       ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
+      _pendingController = null; // BUG-772：在途结束（失败），清标记
       if (mounted) setState(() => _failed = true);
       return;
     }
@@ -2422,6 +2452,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _isRemote ? _persistRemotePosition : _persistPosition;
     if (!mounted) {
       if (_controller == null) controller.dispose();
+      _pendingController = null; // BUG-772：在途结束（页已卸载），清标记
       return;
     }
     controller.removeListener(_syncWindowAspectRatioLock);
@@ -2435,6 +2466,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
+      _pendingController = null; // BUG-772：首开成功，清在途标记（防 dispose 误取消）
       _hasChapters = controller.chapters.isNotEmpty;
       _title = title;
       _failed = false;
@@ -2493,6 +2525,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // only after playback has opened so UI/video startup is not blocked.
       unawaited(prewarmEmbeddedSubtitleCache(videoPath));
       unawaited(_loadDanmakuForVideo(videoPath));
+      // 视频内嵌字体（对齐 mpv）：抽 MKV attachment 字体注册进引擎，字幕按 ASS Fontname
+      // 命中真实字体。仅本地 + 开「尊重 .ass 样式」时做；远端/无 ffmpeg/无附件静默降级。
+      unawaited(_maybeLoadEmbeddedSubtitleFonts(videoPath));
     } else {
       unawaited(_loadDanmakuForVideo(null));
     }
@@ -2838,6 +2873,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _clearClipExportState();
     // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
     _disposeThumbnailPreview();
+    // BUG-772：首开在途 controller（尚未赋给 _controller）主动 dispose，触发 loadToken++
+    // 让在途 load() 的 _isCurrentLoad 判据翻假、干净放弃后续原生下发，杜绝在已离开页面
+    // 上把 libmpv/WGC 完整拉起再拆的 GPU churn。identical 守卫避免与 _controller 二次
+    // dispose 同一实例（首开成功后 _pendingController 已置 null，二者不会同时非空同指）。
+    if (_pendingController != null &&
+        !identical(_pendingController, _controller)) {
+      _pendingController!.dispose();
+    }
+    _pendingController = null;
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
@@ -3343,7 +3387,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词
   /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
   /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
-  /// sasayakiAudioPath（→`{sasayaki-audio}`）+ 例句 sentence。复用现有 Anki 字段。
+  /// sasayakiAudioPath（→`{sentence-audio}`）+ 例句 sentence。复用现有 Anki 字段。
   /// 方法体搬到 [_VideoLookupMining] part（TODO-590 batch14），@override 留瘦转发器。
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
@@ -5041,6 +5085,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ? t.video_quality_auto
               : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
       onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
+      // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当渲染 channel 已接线
+      // （Android）、本次运行确实跑 Impeller、且用户尚未选 Skia 时接线（=可能中招黑屏
+      // 的人群）；否则 null 不显示该行。点按走确认弹窗 → 关 Impeller → 重启。
+      onSwitchToSkiaRenderer: (RenderBackendService.instance.isSupported &&
+              !RenderBackendService.instance.impellerDisabled &&
+              !RenderBackendService.instance.activeImpellerDisabled)
+          ? _switchToSkiaAndRestart
+          : null,
       // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
       // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
       isTouchControls: !_isDesktopVideoControls,
@@ -5084,6 +5136,48 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ));
     }
     return options;
+  }
+
+  /// TODO-1232 / BUG-597：播放器设置面板「切 Skia 并重启」降级行的动作。视频「有声无画」
+  /// 黑屏根因是本机 GPU 上 Impeller 合成不了 media_kit 外部纹理（SurfaceProducer）；Android
+  /// 默认已保持 Impeller（多数机型性能优先），本动作给受影响机型一个显式降级：确认弹窗 →
+  /// 写 native pref 关 Impeller（下次启动走 Skia）→ 重启 app 使其生效。渲染后端只能在引擎
+  /// 启动那一刻定，故必须重启；不支持重启的平台降级为 toast 提示手动重开。仅在
+  /// [_buildVideoQuickSettingsSheet] 判定本次跑 Impeller + channel 已接线时才接线此动作。
+  Future<void> _switchToSkiaAndRestart() async {
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: Text(t.video_render_skia_fix_confirm_title),
+            content: Text(t.video_render_skia_fix_confirm_body),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(t.video_render_skia_fix_confirm_action),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    final bool ok =
+        await RenderBackendService.instance.setImpellerDisabled(true);
+    if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
+      // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
+      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+      return;
+    }
+    try {
+      await appModel.platformServices.lifecycle.restartApp();
+    } catch (e) {
+      // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
+      debugPrint('[render] switch to Skia restart failed: $e');
+      if (mounted) HibikiToast.show(msg: t.render_restart_required);
+    }
   }
 
   void _showPlayerSettings({

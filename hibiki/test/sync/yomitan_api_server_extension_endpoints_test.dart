@@ -125,6 +125,7 @@ void main() {
       String? apiKey,
       Map<String, String> Function()? themeColorsProvider,
       List<String> Function()? audioSourcesProvider,
+      String? Function()? extensionBuildProvider,
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
@@ -136,6 +137,7 @@ void main() {
         readingResolver: rr,
         themeColorsProvider: themeColorsProvider,
         audioSourcesProvider: audioSourcesProvider,
+        extensionBuildProvider: extensionBuildProvider,
         apiKey: apiKey,
       );
       await server.start();
@@ -198,6 +200,34 @@ void main() {
       final Map<String, dynamic> j = await _json(resp);
       // 无 provider（旧 app / server 未注入）→ 不带 theme，扩展 CSS 回落默认 400x360。
       expect(j.containsKey('theme'), isFalse);
+    });
+
+    test(
+        'lookup response carries extensionBuild from provider and omits it '
+        'when absent (BUG-726)', () async {
+      // BUG-726：扩展自更新信号。app 把内置扩展内容指纹随查词响应下发（extensionBuild），
+      // 扩展 background 与自身 HIBIKI_DEFAULTS.build 比对，不一致即 runtime.reload 拉新。
+      await startServer(apiKey: 'k123', extensionBuildProvider: () => 'abc123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '猫', 'record': false},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      final Map<String, dynamic> j = await _json(resp);
+      expect(j['extensionBuild'], 'abc123');
+
+      // 未注入（旧 app / sync host）→ 不带该字段（向后兼容：旧扩展代码不受影响）。
+      await server.stop();
+      await startServer(apiKey: 'k123');
+      final Map<String, dynamic> j2 = await _json(await _post(
+        server.port,
+        '/api/lookup/dictionary',
+        <String, dynamic>{'term': '猫', 'record': false},
+        auth: _basic('k123'),
+      ));
+      expect(j2.containsKey('extensionBuild'), isFalse);
     });
 
     test('/api/mine with screenshot routes to mineImmersion', () async {

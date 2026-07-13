@@ -85,6 +85,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onAppendSentence,
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
+    this.onSentenceContextPreview,
+    this.onOpenSentenceContextModal,
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
@@ -161,6 +163,21 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 处理器触发本回调，宿主清空草稿并回传清空后句数（恒 0），popup 据此把所有「+句」
   /// 角标归零。非空才在 popup 渲染清空入口（与 [onAppendSentence] 同生命周期）。
   final Future<int> Function()? onClearSentenceDraft;
+
+  /// Niratan「制卡前调整·选择句子上下文」：popup 点「调整上下文」打开模态时经
+  /// `sentenceContextPreview` JS 处理器触发本回调，宿主把当前草稿的真实上下文句
+  /// （前/当前/后）+ 词在当前句的偏移打包成 JSON-safe Map（见 `buildSentenceContextPreview`）
+  /// 回给 popup 渲染三栏预览。非空才在 popup 渲染「调整上下文」按钮（与 [onSetSentenceContext]
+  /// 同生命周期；reader/视频启用）。
+  final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
+
+  /// BUG-763/766：popup 里点某词条的「调整上下文」按钮经 `openSentenceContextModal` JS
+  /// 处理器触发本回调，宿主弹 **app 原生顶层对话框**（`SentenceContextDialog`，不再画在
+  /// 弹窗 WebView 内）。[entryIndex] 是该词条在 `:scope > .entry` 里的稳定 DOM 序（确认
+  /// 制卡时用 [DictionaryPopupWebViewState.mineEntryByIndex] 精确回点），[matched] 是查到
+  /// 的词表现形（对话框里在当前句高亮）。非空才在 popup 渲染「调整上下文」按钮。
+  final Future<void> Function(int entryIndex, String matched)?
+      onOpenSentenceContextModal;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onTopPullReleased;
 
@@ -217,6 +234,12 @@ class DictionaryPopupWebViewState
   /// re-inject (and only re-inject) when the app theme actually changes while
   /// the popup is open — see [didChangeDependencies].
   String? _lastThemeVarsJs;
+
+  /// BUG-712 ③：最近一次已注入的静态设置负载（[PopupStaticSettingsJs.combined]）。
+  /// 热槽 WebView 的 `window.*` 状态跨渲染持久，静态段（主题/字体/词典样式/自定义
+  /// CSS/开关/名单）只在串内容变化时随下一次推送重发；每次查词只发 entries +
+  /// renderPopup。页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
+  String? _lastSentStaticSettingsJs;
 
   Future<T> _guardJsBridge<T>(
     String logTag,
@@ -519,6 +542,16 @@ class DictionaryPopupWebViewState
     );
   }
 
+  /// BUG-763/766：确认「制卡前调整」原生对话框时，回 WebView 精确点中第 [idx] 个词条
+  /// （`:scope > .entry` DOM 序）的制卡按钮，复用其全部制卡/查重/覆写逻辑（Dart 侧无
+  /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。
+  Future<void> mineEntryByIndex(int idx) async {
+    await _controller?.evaluateJavascript(
+      source: 'window.hoshiPopupMineEntryByIndex'
+          ' ? window.hoshiPopupMineEntryByIndex($idx) : false',
+    );
+  }
+
   Future<void> caretRefresh() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.refreshInvocation());
@@ -683,16 +716,21 @@ class DictionaryPopupWebViewState
     final appModel = ref.read(appProvider);
     // TODO-895: the SHARED settings body (theme vars + dictionary font + content
     // zoom + every window.* flag, incl. autoExpandDictionaries) is produced by the
-    // single source of truth buildPopupSettingsJs — the SAME builder the app-outside
-    // global-lookup window uses (options.globalLookup:false here). The in-app-only
-    // wiring (instant-scroll pref, __hoshiResetPopupScroll hook, sentence-context
-    // i18n labels, load-more vs scroll-reset beforeRenderJs, scroll-check) layers
-    // around it below. _lastThemeVarsJs still tracks the in-app theme-vars string
-    // for the live theme-switch dedup in didChangeDependencies.
-    final String sharedSettingsJs = buildPopupSettingsJs(
+    // single source of truth in popup_settings_injection.dart — the SAME builder
+    // the app-outside global-lookup window uses (options.globalLookup:false here).
+    // The in-app-only wiring (instant-scroll pref, __hoshiResetPopupScroll hook,
+    // sentence-context i18n labels, load-more vs scroll-reset beforeRenderJs,
+    // scroll-check) layers around it below. _lastThemeVarsJs still tracks the
+    // in-app theme-vars string for the live theme-switch dedup in
+    // didChangeDependencies.
+    //
+    // BUG-712 ③：静态段与词条段分开注入——静态段串级比对，变了才重发（热槽
+    // WebView 的 window.* 跨渲染持久，真实词典下重复注入是数十 KB 的纯浪费）；
+    // 每次查词只发 entries + renderPopup。任何主题/设置/词典集变化都会让静态串
+    // 不同 → 自动随下一次推送重发。
+    final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
       appModel: appModel,
       theme: Theme.of(context),
-      result: widget.result,
       options: PopupSettingsOptions(
         // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
         mobileExternal: widget.transparentDocumentBackground,
@@ -700,6 +738,12 @@ class DictionaryPopupWebViewState
             widget.onSetSentenceContext != null,
       ),
     );
+    final String staticSettingsJs = staticSettings.combined;
+    final bool staticChanged = staticSettingsJs != _lastSentStaticSettingsJs;
+    if (staticChanged) {
+      _lastSentStaticSettingsJs = staticSettingsJs;
+    }
+    final String entriesJs = buildPopupEntriesJs(widget.result);
     _lastThemeVarsJs = _themeVariablesJs();
     final bool popupInstantScroll = appModel.popupInstantScroll;
 
@@ -723,7 +767,8 @@ class DictionaryPopupWebViewState
         ''';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
-      $sharedSettingsJs
+      ${staticChanged ? staticSettingsJs : ''}
+      $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__hibikiRenderToken = $renderToken;
       window.__hoshiResetPopupScroll = function() {
@@ -738,6 +783,28 @@ class DictionaryPopupWebViewState
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
       window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
+      // Niratan「制卡前调整·选择句子上下文」：独立于旧内联步进器（kSentenceContextPickerEnabled
+      // 恒 false）的新特性门控——宿主接入了预览回调（reader/有声书/视频，supportsSentenceDraft
+      // 为真）才为真，popup.js 据此渲染「调整上下文」按钮。app 外 / 悬浮独立窗不走本注入块，
+      // 该 flag undefined → 按钮不渲染。
+      window.sentenceContextPreviewEnabled = ${widget.onSentenceContextPreview != null};
+      // Niratan「制卡前调整·选择句子上下文」模态文案（popup.js 无自带 i18n，靠宿主注入）。
+      window.i18nCtx = {
+        adjust: ${jsonEncode(t.popup_ctx_adjust_button)},
+        eyebrow: ${jsonEncode(t.popup_ctx_modal_eyebrow)},
+        title: ${jsonEncode(t.popup_ctx_modal_title)},
+        count: ${jsonEncode(t.popup_ctx_modal_count)},
+        boxPrev: ${jsonEncode(t.popup_ctx_box_prev)},
+        boxCurrent: ${jsonEncode(t.popup_ctx_box_current)},
+        boxNext: ${jsonEncode(t.popup_ctx_box_next)},
+        boxEmpty: ${jsonEncode(t.popup_ctx_box_empty)},
+        prevMinus: ${jsonEncode(t.popup_ctx_prev_minus)},
+        prevPlus: ${jsonEncode(t.popup_ctx_prev_plus)},
+        nextMinus: ${jsonEncode(t.popup_ctx_next_minus)},
+        nextPlus: ${jsonEncode(t.popup_ctx_next_plus)},
+        confirm: ${jsonEncode(t.popup_ctx_confirm)},
+        cancel: ${jsonEncode(t.popup_ctx_cancel)},
+      };
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''').then((_) {
@@ -1344,6 +1411,52 @@ class DictionaryPopupWebViewState
           },
         );
 
+        // Niratan「制卡前调整·选择句子上下文」：popup 打开模态 / 每次调整后拉取当前草稿
+        // 的真实上下文句（前/当前/后）+ 词偏移做预览。只读，不改草稿（调整仍走
+        // setSentenceContext）。宿主未接入 / 出错时回传空 Map，popup 侧兜底不渲染文本。
+        controller.addJavaScriptHandler(
+          handlerName: 'sentenceContextPreview',
+          callback: (_) async {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.sentenceContextPreview',
+              const <String, Object?>{},
+              ErrorLogService.instance,
+              () async {
+                if (widget.onSentenceContextPreview == null) {
+                  return const <String, Object?>{};
+                }
+                return widget.onSentenceContextPreview!();
+              },
+            );
+          },
+        );
+
+        // BUG-763/766：popup 点某词条「调整上下文」→ 宿主弹 app 原生顶层对话框
+        // （SentenceContextDialog），不再画在弹窗 WebView 内（那受弹窗尺寸/半透明限制，
+        // 句子框重叠、显示不全）。args[0] = {entryIndex, matched}。
+        controller.addJavaScriptHandler(
+          handlerName: 'openSentenceContextModal',
+          callback: (args) async {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.openSentenceContextModal',
+              null,
+              ErrorLogService.instance,
+              () async {
+                if (widget.onOpenSentenceContextModal == null) return null;
+                int entryIndex = 0;
+                String matched = '';
+                if (args.isNotEmpty && args[0] is Map) {
+                  final Map<dynamic, dynamic> data = args[0] as Map;
+                  entryIndex = (data['entryIndex'] as num?)?.toInt() ?? 0;
+                  matched = data['matched']?.toString() ?? '';
+                }
+                await widget.onOpenSentenceContextModal!(entryIndex, matched);
+                return null;
+              },
+            );
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'textSelected',
           callback: (args) async {
@@ -1485,6 +1598,9 @@ class DictionaryPopupWebViewState
       },
       onLoadStop: (controller, url) {
         _ready = true;
+        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载必须随下一次
+        // 推送整体重发——重置串级比对基线。
+        _lastSentStaticSettingsJs = null;
         debugPrint('[popup-perf] webview loadStop $url');
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.hoshiSelection by load-stop). It stays

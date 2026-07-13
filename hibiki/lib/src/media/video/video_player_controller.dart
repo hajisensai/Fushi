@@ -336,6 +336,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
   StreamSubscription<Duration>? _durationReadySub;
 
+  /// BUG-739：当前音频输出设备变化订阅。libmpv `audio-device=auto` 在 OS 输出设备
+  /// 切换时重建 ao，其软件 `volume` 属性可能被重置/衰减，media_kit 被动把降低值镜像
+  /// 进 `state.volume`（[volume] getter 的真值来源）——反复切换设备使视频音量逐步变小
+  /// 甚至归零。app 只在 [load] 与用户操作时下发音量、之后从不回补，故必须在设备切换后
+  /// 把「音量目标」([_lastVolume] / 静音态) 重新下发（查词音频每次播放都重设绝对音量，
+  /// 天然免疫）。**随 [Player] 生命周期挂一次**（首次建 Player 时挂、[dispose] 取消），
+  /// 不随换集重挂——`stream.audioDevice` 在 media_kit 内部 `distinct` 去重，首个事件
+  /// 回补当前 [_lastVolume]（默认 100）无害，[load] 随后会再设一次。
+  StreamSubscription<AudioDevice>? _audioDeviceSub;
+
   /// 每次 [load] 递增。复用同一个 [Player] 换片时，单靠 player identity 无法区分
   /// 旧媒体的异步章节读取结果；token 让旧 load 的结果可被丢弃。
   int _loadToken = 0;
@@ -1258,6 +1268,13 @@ class VideoPlayerController extends ChangeNotifier
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
       _mediaHandleRegistration ??=
           MediaHandleRegistry.instance.register(_releaseMediaHandles);
+      // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
+      // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。
+      _audioDeviceSub = player.stream.audioDevice.listen((_) {
+        final Player? current = _player;
+        if (current == null) return;
+        unawaited(current.setVolume(_muted ? 0.0 : _lastVolume));
+      });
     }
     // TODO-1110：挂纹理 id 监听（Android 无画面诊断）。放在 controller 就绪后、诊断
     // 订阅块之前——首个 id 变化（native 纹理握手成功）能被记进日志。换集复用同一
@@ -1793,7 +1810,11 @@ class VideoPlayerController extends ChangeNotifier
     final List<int> nextSecondary = _secondaryCues.isEmpty
         ? const <int>[]
         : JsonAlignmentParser.findActiveCueIndices(
-            cues: _secondaryCues, positionMs: effectiveMs);
+            cues: _secondaryCues,
+            positionMs: effectiveMs,
+            // 渲染集半开区间：相邻对白边界不产生「幻影重叠」→ 堆叠不弹跳（见
+            // [JsonAlignmentParser.findActiveCueIndices] 的 endInclusive 说明）。
+            endInclusive: false);
     bool changed = !_intListEquals(nextSecondary, _activeSecondaryCueIndices);
     if (changed) _activeSecondaryCueIndices = nextSecondary;
 
@@ -1868,6 +1889,10 @@ class VideoPlayerController extends ChangeNotifier
     final List<int> byTime = JsonAlignmentParser.findActiveCueIndices(
       cues: _cues,
       positionMs: effectiveMs,
+      // 渲染集半开区间：相邻对白边界（前条 endMs==后条 startMs）不再同时活跃，堆叠槽位
+      // 不被幻影重叠污染 → 不弹跳。末条无后继时靠下方 primaryIdx（findCueIndex 闭区间）
+      // 并入兜底，不会提前 1 tick 消失（见 findActiveCueIndices 的 endInclusive 说明）。
+      endInclusive: false,
     );
     if (primaryIdx < 0 || byTime.contains(primaryIdx)) return byTime;
     final List<int> merged = <int>[...byTime, primaryIdx]..sort();
@@ -2850,6 +2875,8 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingReadySub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
+    unawaited(_audioDeviceSub?.cancel());
+    _audioDeviceSub = null;
     unawaited(_diagErrorSub?.cancel());
     _diagErrorSub = null;
     unawaited(_diagLogSub?.cancel());

@@ -103,6 +103,12 @@
   var bridgeSeq = 0;
   var bridgeRoutes = new Map();
   var lastBBoxKey = '';
+  // BUG-749 — last posted shell-rects payload (window-relative CSS px CSV).
+  // De-duped independently of lastBBoxKey: a nested child that lands INSIDE the
+  // reserved-floor bbox leaves the bbox key unchanged (overlaySize suppressed)
+  // but MUST still refresh the native hit/paint region, or clicks on the new
+  // card would fall through the stale region hole.
+  var lastShellRectsKey = '';
   // TODO-1079 (C) / TODO-1095 — the root frame id of the currently-rendered
   // stack. TODO-1095 makes the root frame id STABLE across hotkey lookups (the
   // root iframe is REUSED, not rebuilt per lookup — see beginLookup), so the
@@ -349,18 +355,31 @@
         'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
         'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
         'color:rgba(120,120,128,0.8);letter-spacing:2px;}' +
+        // BUG-768 — persistent chip background so the pin/close read as tappable
+        // affordances on ANY window surface (light or dark); glyph color is made
+        // theme-aware below so it stays legible against that chip.
         '#global-lookup-panel-bar .panel-btn{' +
         'width:24px;height:24px;line-height:24px;text-align:center;' +
         'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
         'font-size:14px;cursor:pointer;border-radius:12px;' +
-        'color:rgba(60,60,67,0.6);}' +
+        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.75);}' +
         '#global-lookup-panel-bar .panel-btn:hover{' +
-        'background:rgba(120,120,128,0.16);color:rgba(60,60,67,0.9);}' +
+        'background:rgba(120,120,128,0.28);color:rgba(60,60,67,0.95);}' +
+        // BUG-768 — dark-window variant (stamped via data-theme in renderStack):
+        // light glyph + light chip so the buttons don't vanish on a dark surface.
+        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{' +
+        'background:rgba(235,235,245,0.14);color:rgba(235,235,245,0.72);}' +
+        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
+        'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
         '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
-        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}';
+        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}' +
+        // 真机反馈：面板 root 卡不画 per-shell 关闭 ×（与面板栏 × 重复；
+        // 嵌套子卡的 × 保留）。
+        '.global-lookup-frame-shell[data-panel-root="true"] ' +
+        '.global-lookup-close{display:none;}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
@@ -516,6 +535,9 @@
       shell.style.height = 'calc(100% - ' + PANEL_BAR_HEIGHT + 'px)';
       shell.style.zIndex = '0';
       shell.style.pointerEvents = 'auto';
+      // 真机反馈：面板 root 卡的 per-shell 关闭 × 与面板栏的 × 重复——标记
+      // panel-root，CSS 隐藏 root 卡的 ×（嵌套子卡保留各自的 ×，关子层有用）。
+      shell.setAttribute('data-panel-root', 'true');
       return;
     }
     shell.style.position = 'absolute';
@@ -1096,6 +1118,9 @@
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
   function beginLookup(rootId) {
     lastBBoxKey = '';
+    // BUG-749 — native cleared its shell rects on Hide(); force a re-post even
+    // when the fresh card's rects CSV equals the previous lookup's.
+    lastShellRectsKey = '';
     // TODO-1231 v3 (BUG-583) — a NEW hotkey lookup re-reveals the window from a
     // fresh origin; drop the committed layer origin so a stale NEGATIVE origin left
     // by a PREVIOUS lookup's up/left cascade cannot falsely mark THIS lookup's
@@ -1176,11 +1201,22 @@
     // transient overlay's payload/behaviour is byte-identical to pre-panel).
     layoutMode = (payload && payload.layoutMode) === 'panel' ? 'panel' : 'cascade';
     if (layoutMode === 'panel') {
-      ensurePanelBar();
+      var panelBar = ensurePanelBar();
+      // BUG-768 — the panel bar lives in document.body (fixed, OUTSIDE any shell),
+      // so it never inherits the per-shell data-theme. Without it the pin/close
+      // glyphs kept the light-theme dark-gray color (rgba(60,60,67,.6)) and
+      // vanished on a dark window. Stamp the root descriptor's resolved brightness
+      // onto the bar so the dark-theme .panel-btn variant applies (mirrors the
+      // per-shell .global-lookup-close dark variant).
+      var rootTheme = popups.length ? (popups[0] && popups[0].theme) : null;
+      if (panelBar && (rootTheme === 'dark' || rootTheme === 'light')) {
+        panelBar.setAttribute('data-theme', rootTheme);
+      }
     }
     if (!popups.length) {
       removeMissing([]);
       lastBBoxKey = '';
+      lastShellRectsKey = '';
       lastRootId = null;
       return;
     }
@@ -1201,6 +1237,7 @@
     if (rootId !== lastRootId) {
       lastRootId = rootId;
       lastBBoxKey = '';
+      lastShellRectsKey = '';
     }
     removeMissing(ids);
     scheduleMeasure();
@@ -1259,6 +1296,7 @@
     var minTopAll = Infinity;
     var maxRight = -Infinity;
     var maxBottom = -Infinity;
+    var shellRects = [];
     frames.forEach(function (record) {
       var left = parseFloat(record.shell.style.left) || 0;
       var top = parseFloat(record.shell.style.top) || 0;
@@ -1268,6 +1306,9 @@
       if (measured > 0 && (height <= 0 || measured < height)) {
         height = measured;
       }
+      // BUG-749 — collect every placed shell (same left/top/height the bbox
+      // uses) for the native hit/paint region below.
+      shellRects.push([left, top, width, height]);
       // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
       // shell, so the window pre-grows to cover a not-yet-ready child (no clip).
       if (left < minLeftAll) minLeftAll = left;
@@ -1320,6 +1361,25 @@
     // DWM window and the WebView2 surface cannot move in the SAME frame across the
     // JS/window boundary, so a ~1 frame residual remains (vs the old multi-frame
     // desync) — and only for a left/up cascade (dx/dy != 0; down-right stays 0).
+    // BUG-749 — report the per-shell rects (window-relative CSS px: the window
+    // is positioned at the bbox MIN-corner, so window-relative = shell − min)
+    // BEFORE overlaySize. Native clips the opaque overlay window's region to
+    // the UNION of these card rects (global_lookup_window.cpp
+    // ApplyRoundedRegion), so a click in the reserved-floor GAP passes through
+    // to the app below (clipboard panel next-word tap works in ONE click)
+    // instead of being swallowed by a near-fullscreen invisible sheet — the
+    // TODO-1345 floor regression. Posting before overlaySize means the region
+    // is already correct when Dart reveals the window (no clipped first frame).
+    // The window rect/origin itself never changes → BUG-583 zero-motion holds.
+    var rectsCsv = shellRects.map(function (r) {
+      return [r[0] - minLeft, r[1] - minTop, r[2], r[3]].map(function (v) {
+        return Math.round(v * 100) / 100;
+      }).join(',');
+    }).join(';');
+    if (rectsCsv !== lastShellRectsKey) {
+      lastShellRectsKey = rectsCsv;
+      postToHost('shellRects', [rectsCsv]);
+    }
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
     var box = {
@@ -1508,7 +1568,14 @@
     if (frameId != null) {
       return true; // Card hit: popup.js owns the per-layer decision.
     }
-    dismissRootWithSlide();
+    // BUG-749 — post the root dismiss IMMEDIATELY (no TODO-890 slide-out).
+    // With the shell-union window region the SAME physical gap click also
+    // lands in the app below (region hole) and may start a NEW lookup there
+    // (clipboard panel word tap → lookupText). A dismiss delayed 200ms by the
+    // slide would post AFTER the fresh card seeded and kill it (stale-dismiss
+    // race); posted now it always precedes the new lookup's stack reset
+    // (searchDictionary alone takes longer than the bridge round-trip).
+    postToHost('dismissPopupAt', [0]);
     return false;
   }
 
