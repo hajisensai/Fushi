@@ -38,6 +38,58 @@ void main() {
     });
   });
 
+  // BUG-781：YouTube androidVr 现在一律返回 timedtext format="3" 的 <p t d>（毫秒），
+  // 即使 fmt=srv1 也被无视；旧解析器只认 srv1 <text start dur>（秒）→ 0 cue → 字幕失效。
+  // fixtures 用探测抓下来的真实结构（人工轨 <p>text</p>、ASR 轨 <p><s>词</s></p>）。
+  group('parseYoutubeTimedTextToCues format 3 (BUG-781)', () {
+    test('manual track: <p t d>text</p> 毫秒直用', () {
+      const xml = '<?xml version="1.0" encoding="utf-8" ?>'
+          '<timedtext format="3">\n<body>\n'
+          '<p t="1360" d="1680">[♪♪♪]</p>\n'
+          '<p t="18640" d="3240">♪ We&#39;re no strangers to love ♪</p>\n'
+          '</body>\n</timedtext>';
+      final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:abc');
+      expect(cues.length, 2);
+      expect(cues[0].text, '[♪♪♪]');
+      expect(cues[0].startMs, 1360);
+      expect(cues[0].endMs, 3040); // 1360 + 1680
+      expect(cues[1].text, "♪ We're no strangers to love ♪");
+      expect(cues[1].startMs, 18640);
+      expect(cues[1].endMs, 21880); // 18640 + 3240
+    });
+
+    test('ASR track: 拼接 <s> 词级片段、跳空白滚动占位与 <w> 元素', () {
+      const xml = '<?xml version="1.0" encoding="utf-8" ?>'
+          '<timedtext format="3">\n'
+          '<head>\n<ws id="0"/>\n<wp id="0"/>\n</head>\n<body>\n'
+          '<w t="0" id="1" wp="1" ws="1"/>\n'
+          '<p t="320" d="14260" w="1">[Music]</p>\n'
+          '<p t="18790" w="1" a="1"> </p>\n'
+          '<p t="18800" d="7160" w="1">'
+          '<s ac="0">We&#39;re</s><s t="239" ac="0"> no</s>'
+          '<s t="559" ac="0"> strangers</s><s t="1040" ac="0"> to</s></p>\n'
+          '</body>\n</timedtext>';
+      final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:asr');
+      expect(cues.length, 2); // [Music] + 拼接行；空白 <p a="1"> 与 <w> 跳过
+      expect(cues[0].text, '[Music]');
+      expect(cues[0].startMs, 320);
+      expect(cues[0].endMs, 14580);
+      expect(cues[1].text, "We're no strangers to");
+      expect(cues[1].startMs, 18800);
+      expect(cues[1].endMs, 25960); // 18800 + 7160
+    });
+
+    test('format 3 无 d 属性时 endMs 退回 startMs（不崩）', () {
+      const xml = '<timedtext format="3"><body>'
+          '<p t="5000">末尾无时长</p>'
+          '</body></timedtext>';
+      final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:z');
+      expect(cues.length, 1);
+      expect(cues[0].startMs, 5000);
+      expect(cues[0].endMs, 5000);
+    });
+  });
+
   // TODO-1159 M0：导入对话框「网页地址」软警告的判定谓词——命中已知网页视频站
   // 且不是 YouTube 时才警告（YouTube 已由 resolveYoutubeSource 支持解析）。这里断言
   // 该组合谓词的真值表，守卫 YouTube 抑制 / 非 YouTube 保留不被回退。

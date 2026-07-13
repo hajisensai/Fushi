@@ -210,11 +210,26 @@ AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) =>
       ..endMs = endMs
       ..audioFileIndex = 0;
 
-/// 纯函数：YouTube timedtext（srv1/legacy）XML → List<AudioCue>。start/dur 秒 → 毫秒。
+/// 纯函数：YouTube timedtext XML → List<AudioCue>。两种格式**按内容自适应**（BUG-781）：
+/// - **srv1/legacy**：`<text start="秒" dur="秒">文本</text>`（旧路径，保留）。
+/// - **timedtext format="3"**：`<p t="毫秒" d="毫秒">文本</p>`，ASR 轨文本拆进内嵌
+///   `<s>` 词级片段（需拼接）；含 `a="1"` 的空白滚动占位 `<p>` 与 `<w>` 元素跳过。
+///   YouTube androidVr 现在一律回 format 3（`fmt=srv1` 被无视），旧 srv1-only 正则对它
+///   解析出 0 cue → 字幕静默消失。
+///
+/// 策略：先跑 srv1；有结果即返回（旧行为不变）。无 srv1 `<text>` 命中才按 format 3 解析
+/// `<p>`（两格式互斥，不会共存）。
 List<AudioCue> parseYoutubeTimedTextToCues({
   required String content,
   required String bookKey,
 }) {
+  final List<AudioCue> srv1 = _parseSrv1TimedText(content, bookKey);
+  if (srv1.isNotEmpty) return srv1;
+  return _parseFormat3TimedText(content, bookKey);
+}
+
+/// srv1/legacy：`<text start="秒" dur="秒">…</text>`，秒 → 毫秒。
+List<AudioCue> _parseSrv1TimedText(String content, String bookKey) {
   final List<AudioCue> cues = <AudioCue>[];
   final RegExp re = RegExp(
     r'<text start="([\d.]+)"(?: dur="([\d.]+)")?[^>]*>(.*?)</text>',
@@ -230,6 +245,30 @@ List<AudioCue> parseYoutubeTimedTextToCues({
     if (raw.isEmpty) continue;
     cues.add(_cue(bookKey, index, raw, (start * 1000).round(),
         ((start + dur) * 1000).round()));
+    index++;
+  }
+  return cues;
+}
+
+/// timedtext format="3"：`<p t="毫秒" (d="毫秒")? …>…</p>`。t/d 已是毫秒直用；内嵌
+/// `<s>` 词级片段经 `<[^>]+>` 剥标签后自然拼接；空白/无 t 的 `<p>` 跳过。
+List<AudioCue> _parseFormat3TimedText(String content, String bookKey) {
+  final List<AudioCue> cues = <AudioCue>[];
+  final RegExp pRe = RegExp(r'<p\b([^>]*)>(.*?)</p>', dotAll: true);
+  final RegExp tRe = RegExp(r'\bt="(\d+)"');
+  final RegExp dRe = RegExp(r'\bd="(\d+)"');
+  int index = 0;
+  for (final RegExpMatch m in pRe.allMatches(content)) {
+    final String attrs = m.group(1) ?? '';
+    final RegExpMatch? tm = tRe.firstMatch(attrs);
+    if (tm == null) continue; // 无起始时间的 <p> 跳过
+    final int start = int.tryParse(tm.group(1) ?? '') ?? 0;
+    final int dur = int.tryParse(dRe.firstMatch(attrs)?.group(1) ?? '') ?? 0;
+    final String raw = _unescape
+        .convert((m.group(2) ?? '').replaceAll(RegExp(r'<[^>]+>'), ''))
+        .trim();
+    if (raw.isEmpty) continue; // 空白滚动占位 <p a="1"> </p> 天然跳过
+    cues.add(_cue(bookKey, index, raw, start, start + dur));
     index++;
   }
   return cues;

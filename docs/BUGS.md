@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 763 条。点号进各自文件。
+> 共 764 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-781](bugs/BUG-781-youtube-timedtext-format3.md) | ✅ | ✅ | YouTube 字幕失效: androidVr 返回 timedtext format3 <p t d> 而解析器只认 srv1 <text> |
 | [BUG-780](bugs/BUG-780-backup-keep-settings-local-audio-wipe.md) | ✅ | ✅ | 覆盖整库保留设置冲掉本地音频注册 |
 | [BUG-779](bugs/BUG-779-local-audio-import-invalid-file.md) | ✅ | ✅ | 本地音频源导入无效文件假成功 |
 | [BUG-778](bugs/BUG-778-collection-detail-drag-ui-scale-offset.md) | ✅ | ✅ | 合集详情页拖拽排序不吃界面大小缩放拖动位置错位 |
