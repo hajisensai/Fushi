@@ -214,6 +214,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ videoId: msg.videoId || '', preferLang: msg.preferLang || 'ja' }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'parseSubtitle') {
+        // B（asb 招牌）：给任意网页视频加载用户自己的外挂字幕文件——扩展读本地 srt/ass/vtt 文本
+        // POST /api/subtitle/parse {filename,content} → server 复用 app 内已测 parser 解析成 cue。
+        const r = await fetch(base + '/api/subtitle/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ filename: msg.filename || '', content: msg.content || '' }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mine') {
         // 纯文本挖词（非流媒体页 / 回落）：直接 POST {fields,sentence}，无媒体。
         const r = await fetch(base + '/api/mine', {

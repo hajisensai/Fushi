@@ -315,6 +315,33 @@ List<AudioCue> parseSubtitleContent(
   }
 }
 
+/// 纯函数（B：浏览器扩展加载外挂字幕文件）：把用户上传的字幕文件（按 [filename] 扩展名判
+/// 格式）解析成扩展面板可消费的 cue JSON `{format, cues:[{text,startMs,endMs}]}`。复用 app
+/// 内已测的 SRT/ASS/VTT parser（`parseSubtitleContent` 无 IO）。不支持的扩展名返回
+/// `{error:'unsupported', cues:[]}`（不抛，扩展侧提示格式不支持）。
+Map<String, dynamic> buildParsedSubtitleResponse({
+  required String filename,
+  required String content,
+}) {
+  final SubtitleFormat? format = subtitleFormatForPath(filename);
+  if (format == null) {
+    return <String, dynamic>{'error': 'unsupported', 'cues': <dynamic>[]};
+  }
+  final List<AudioCue> cues =
+      parseSubtitleContent(format, content: content, bookUid: 'ext');
+  return <String, dynamic>{
+    'format': format.name,
+    'cues': <Map<String, dynamic>>[
+      for (final AudioCue c in cues)
+        <String, dynamic>{
+          'text': c.text,
+          'startMs': c.startMs,
+          'endMs': c.endMs,
+        },
+    ],
+  };
+}
+
 Future<List<AudioCue>> parseSubtitleContentAsync(
   SubtitleFormat format, {
   required String content,

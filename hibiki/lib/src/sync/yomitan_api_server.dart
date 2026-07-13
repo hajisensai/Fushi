@@ -8,6 +8,8 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+import 'package:hibiki/src/media/video/video_subtitle_source.dart'
+    show buildParsedSubtitleResponse;
 import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
 import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
@@ -222,6 +224,8 @@ class YomitanApiServer {
         return _handleExtensionPopupSize(request);
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
+      case '/api/subtitle/parse':
+        return _handleSubtitleParse(request);
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
@@ -285,6 +289,21 @@ class YomitanApiServer {
       id,
       preferLang: lang is String && lang.isNotEmpty ? lang : 'ja',
     ));
+  }
+
+  /// B（asb 招牌）：浏览器扩展**给任意网页视频加载用户自己的外挂字幕文件**端点——扩展读本地
+  /// srt/ass/vtt 文本 POST 上来，server 复用 app 内已测的 SRT/ASS/VTT parser 解析成 cue，扩展把
+  /// cue 叠到当前网页视频。body：`{filename, content}`。不支持的扩展名回 `{error:'unsupported'}`。
+  Future<shelf.Response> _handleSubtitleParse(shelf.Request request) async {
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? filename = body['filename'];
+    final Object? content = body['content'];
+    if (filename is! String || content is! String || filename.isEmpty) {
+      return shelf.Response(400, body: 'Missing filename/content');
+    }
+    return _json(
+        buildParsedSubtitleResponse(filename: filename, content: content));
   }
 
   /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经

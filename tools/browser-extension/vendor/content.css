@@ -1551,6 +1551,22 @@
     font-size: 12px;
 }
 
+/* B（asb 招牌）：外挂字幕时轴偏移条——仅当前轨为外挂字幕时显示（JS 控制 display）。 */
+#hibiki-subtitle-panel .hibiki-sub-offset {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+#hibiki-subtitle-panel .hibiki-sub-offset-val {
+    min-width: 44px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--hibiki-sub-on-surface);
+    font-variant-numeric: tabular-nums;
+}
+
 #hibiki-subtitle-panel .hibiki-sub-list {
     flex: 1 1 auto;
     min-height: 0;
