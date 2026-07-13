@@ -371,6 +371,31 @@ class DictionaryPopupWebViewState
 })();
 ''';
 
+  // BUG-802：查词弹窗把每张词条卡渲染成独立**同源** iframe（global_lookup_host.js），
+  // 用户在词典正文里拖选的原生文本落在 CHILD iframe 的 `window.getSelection()` 里。桌面
+  // flutter_inappwebview_windows fork 根本没实现 `getSelectedText`（channel delegate 无
+  // 分支 → `NotImplemented()` → Dart 侧返回 null），移动端 `getSelectedText` 也只读顶层
+  // 文档 → 两端都取不到 iframe 内选区，右键「复制/搜索」拿到空串直接早退（表现为无效）。
+  // 改用已实现的 `evaluateJavascript` 递归遍历同源子 frame（无 sandbox，可跨 frame 读
+  // contentWindow），返回第一个非空选区文本。`JSON.stringify` 收口成确定的字符串回传，
+  // 与 [ReaderCaretScripts] 同惯例；跨源 frame 访问抛异常被 try/catch 吞成空串。
+  static const String _selectedTextAcrossFramesJs = r'''
+JSON.stringify((function(){
+  function readSel(win){
+    var out = '';
+    try { var s = win.getSelection && win.getSelection(); if (s) out = String(s); } catch (e) {}
+    if (out) return out;
+    var frames;
+    try { frames = win.document.querySelectorAll('iframe,frame'); } catch (e) { return ''; }
+    for (var i = 0; i < frames.length; i++) {
+      try { var r = readSel(frames[i].contentWindow); if (r) return r; } catch (e) {}
+    }
+    return '';
+  }
+  return readSel(window) || '';
+})())
+''';
+
   // TODO-854 M1a-2：下滑关闭弹窗的注入 JS 收口到 kPopupTopPullReleaseJs（单一真相，
   // 桌面 in-app 弹窗与 Windows 全局查词覆盖窗共用）。touch + pointer/mouse 两套识别，
   // 解决桌面 WebView2 不触发 touch 导致下滑关闭失效。
@@ -444,6 +469,25 @@ class DictionaryPopupWebViewState
         insetBottom: 0,
       ),
     );
+  }
+
+  /// BUG-802：读取当前拖选文本，穿透词条卡的同源 iframe（见 [_selectedTextAcrossFramesJs]）。
+  /// 替代桌面上未实现、且天然只读顶层文档的 `_controller.getSelectedText()`——右键
+  /// 「复制/搜索」都靠它拿选区。空选区（或 controller 未就绪）返回空串，调用方据此早退。
+  Future<String> _selectedTextAcrossFrames() async {
+    final Object? raw = await _controller?.evaluateJavascript(
+        source: _selectedTextAcrossFramesJs);
+    if (raw == null) return '';
+    final String trimmed = raw.toString().trim();
+    if (trimmed.isEmpty || trimmed == 'null') return '';
+    try {
+      final Object? decoded = jsonDecode(trimmed);
+      if (decoded is String) return decoded;
+    } catch (_) {
+      // 某些平台已返回裸字符串（非 JSON），直接用原值。
+      return raw.toString();
+    }
+    return '';
   }
 
   Future<String> caretEnter() async {
@@ -973,8 +1017,10 @@ class DictionaryPopupWebViewState
             id: 1,
             title: t.search,
             action: () async {
-              final text = await _controller?.getSelectedText();
-              if (text != null && text.isNotEmpty) {
+              // BUG-802：选区在同源子 iframe 里，`getSelectedText` 只读顶层文档取不到，
+              // 改用穿透 iframe 的 [_selectedTextAcrossFrames]（否则「查词」项无效）。
+              final String text = await _selectedTextAcrossFrames();
+              if (text.isNotEmpty) {
                 widget.onTextSelected?.call(text, Rect.zero);
               }
             },
@@ -1670,7 +1716,9 @@ class DictionaryPopupWebViewState
   /// 映射到 showMenu 所用 [Overlay] 的 [RenderBox] 坐标系（`localToGlobal(..., ancestor:
   /// overlayObject)`），界面大小（appUiScale）的 FittedBox 缩放残差被 ancestor 变换自动
   /// 吸收，菜单对准鼠标。菜单项：「查词」（平移自原 WebView2 自定义项）+「复制」（原是
-  /// WebView2 原生项，禁原生后用 BUG-402 范式 `getSelectedText` + [Clipboard.setData] 自补）。
+  /// WebView2 原生项，禁原生后自补 [Clipboard.setData]）。BUG-802：选区读取从早年的
+  /// `getSelectedText`（桌面 fork 未实现 + 只读顶层文档）改为穿透同源 iframe 的
+  /// [_selectedTextAcrossFrames]，否则复制/搜索拿到空串永远无效。
   Future<void> _showWindowsContextMenu(
       BuildContext context, Offset globalPosition) async {
     final RenderObject? overlayObject =
@@ -1701,7 +1749,9 @@ class DictionaryPopupWebViewState
       ],
     );
     if (action == null) return;
-    final String text = (await _controller?.getSelectedText()) ?? '';
+    // BUG-802：桌面 fork 未实现 getSelectedText 且选区在同源子 iframe 内，改用穿透 iframe
+    // 的 [_selectedTextAcrossFrames]，否则复制/搜索永远拿到空串直接早退（表现为无效）。
+    final String text = await _selectedTextAcrossFrames();
     if (text.isEmpty) return;
     switch (action) {
       case _PopupContextMenuAction.search:
