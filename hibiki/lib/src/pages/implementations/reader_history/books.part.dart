@@ -322,6 +322,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         _selectedKeys.length + _selectedCollectionIds.length;
     final bool hasSelection =
         _selectedKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
+    // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
+    // 只在真能组合（新建 / 并入 / 合并）时才可点，与 [_batchCombineIntoSeries] 同判据。
+    final bool canCombine = classifyCombine(
+          collectionCount: _selectedCollectionIds.length,
+          looseCount: _selectedKeys.length,
+        ) !=
+        CombineTier.noop;
 
     return Material(
       elevation: 6,
@@ -353,7 +360,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               const Spacer(),
               HibikiIconButton(
                 key: const ValueKey<String>('reader_shelf_batch_combine'),
-                enabled: hasSelection,
+                enabled: canCombine,
                 onTap: _batchCombineIntoSeries,
                 icon: Icons.collections_bookmark_outlined,
                 tooltip: t.combine_into_series,
@@ -452,11 +459,16 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     // 解散后合集映射失效，重取（合集行随之消失）。
     _shelfMapsFuture = _loadShelfMaps();
     _exitSelectionMode();
+    // 复查 #7：零成功（deleted==0 且 dissolved==0）时兜底文案按「选择构成」诚实分派——
+    // 只选散卡（collectionCount==0）说「已删除 0 本」，否则说「已解散 0 个合集」；不再
+    // 无条件谎报解散类别（对齐 BUG-439 诚实计数精神）。
     final String successMsg = deleted > 0 && dissolved > 0
         ? t.batch_delete_mixed_success(n: deleted, m: dissolved)
         : deleted > 0
             ? t.batch_delete_success(n: deleted)
-            : t.batch_dissolve_success(m: dissolved);
+            : collectionCount == 0
+                ? t.batch_delete_success(n: deleted)
+                : t.batch_dissolve_success(m: dissolved);
     HibikiToast.show(msg: successMsg);
   }
 
@@ -609,9 +621,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
     if (name == null || !mounted) return;
     final int targetId = choice.targetId;
+    // 复查 #6（TOCTOU）：成员快照上面是在命名确认框「之前」取的，框开着期间若有新成员
+    // 同步进源合集，用旧快照迁移会漏掉这些新成员，随后 deleteMediaCollection 把它们连
+    // 同源合集一起删掉 → 分组丢失。确认后、迁移前对每个源合集「重取」最新成员再迁移，
+    // addToCollection 幂等去重，重复成员无副作用。
     for (final int id in collectionIds) {
       if (id == targetId) continue;
-      for (final MediaCollectionItemRow m in itemsById[id]!) {
+      final List<MediaCollectionItemRow> members =
+          await db.getCollectionItems(id);
+      for (final MediaCollectionItemRow m in members) {
         await db.addToCollection(targetId, m.mediaType, m.entryKey);
       }
       await db.deleteMediaCollection(id);
