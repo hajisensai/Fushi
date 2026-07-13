@@ -10,8 +10,9 @@
   也会因此显示为 582/583px 交替步长，并伪造出 page 5→29 余数线性增长。
   - 提交 `a6c9904d0` 保留 `scroll/pageSize/minScroll/maxScroll` 的原始 `double`，并将 I1
     改为从 `minScroll` 出发量「当前位置到最近亚像素页网格」的像素误差，不再对取整值取模。
-  - 修正探针后在真实 macOS WKWebView 复跑，raw `pitch=564.490967`；I1、I2、I3、I4、
-    I6 全部通过，未出现随页数增长的全局网格误差。
+  - 修正探针后在真实 macOS WKWebView 复跑；最终 raw `pitch=582.490967`、完整扫描
+    61 页，I1-I7、位置恢复 I9、快速 chrome 切换 I10 全部通过，未出现随页数增长的
+    全局网格误差。
   - 本次复跑另发现 I5 在 page 31 提前停止且仍余 17426px 内容；这是同步 `paginate`
     边界误判的独立问题，已另记 BUG-777，不能回写成累计漂移。
 - **[x] ① 产品无需新增修复** — 原累计漂移在保留原始小数精度后未复现；本条未修改
@@ -21,7 +22,8 @@
   fractional pagination geometry`）新增
   `hibiki/test/integration_helpers/pagination_test_harness_test.dart`，覆盖原始小数保真、
   浏览器 floor 后 30 页不误报、`minScroll` 锚定、真实整数步长漂移仍能报错、JS 不再取整
-  五项；专项结果 5/5 通过。
+  五项；`804ab9262` 进一步锁定 1px 正反边界、非末页 I6 负向控制、五个 raw JS 映射，
+  并仅对真实 `maxScroll` 末页 clamp 豁免 I1。专项结果 13/13 通过。
 - **备注**：文件路径保留 bug 工具实际生成的
   `docs/bugs/BUG-776-vertical-pagination-drift-recurrence.md`，标题按最终验真结论修正。
   BUG-405 的「当前产品未见累计漂移」结论不再被旧 I1 假阳性推翻。

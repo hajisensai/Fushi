@@ -12,9 +12,13 @@
   - `hibiki/lib/src/pages/implementations/home_page.dart:628-640` 又正确按
     `isMacosPlatform(context)` 选择内部页面壳；因此 MD3 内层 navigation rail 与
     错误的外层 Apple Sidebar 同时渲染，形成截图中的双壳。
-- **[ ] ① 未修复** — 待让 `auto` 全平台解析为 MD3、迁移隐藏旧值，并让根
-  `MacosWindow` 与 `HomePage` 共用 `isMacosPlatform(context)` 门控。
-- **[ ] ② 未加自动化测试** — 待增加五平台 auto 矩阵、隐藏持久值迁移与 macOS
-  根壳负向守卫。
-- **备注**：Cupertino/macOS 实现保留但入口暂时隐藏；修复完成前不得把当前启动
-  成功误报成 UI 问题已解决。设备复测需重新构建并确认最左侧原生栏消失。
+- **[x] ① 已修复** — `be3693f31` 让 `auto` 在五个平台统一解析为 MD3；
+  `63b12d03b` 将隐藏的 Cupertino/macOS/未知持久值迁移为 `auto`；`3593b3647`
+  让根 `MacosWindow` 与 `HomePage` 共用 `isMacosPlatform(context)` 门控，默认 MD3
+  不再创建最外层 macos_ui Sidebar。
+- **[x] ② 已加自动化测试** — `61b67684d` 与 `3593b3647` 覆盖五平台 auto 矩阵、
+  缺失 extension、旧值加载/刷新持久迁移、设置入口隐藏，以及 macOS 根壳的负向守卫。
+  2026-07-13 聚焦回归 251/251 通过，定向 analyze 零问题。
+- **备注**：Cupertino/macOS renderer 仅保留为隐藏内部能力。真实 macOS debug 构建
+  到达 `[Hibiki] init: DONE`；窗口证据 `/tmp/hibiki-md3-window-20260713.png` 已人工检查，
+  只剩 MD3 应用内导航，用户指出的最左侧原生栏/边框已消失。

@@ -31,9 +31,9 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-777](bugs/BUG-777-fractional-page-boundary-premature-limit.md) | 🚧 | 🚧 | 亚像素页距在第31页误判边界提前停翻 |
+| [BUG-777](bugs/BUG-777-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
 | [BUG-776](bugs/BUG-776-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |
-| [BUG-775](bugs/BUG-775-md3-macos-double-shell.md) | 🚧 | 🚧 | macOS 自动/MD3 仍套原生侧栏形成双壳 |
+| [BUG-775](bugs/BUG-775-md3-macos-double-shell.md) | ✅ | ✅ | macOS 自动/MD3 仍套原生侧栏形成双壳 |
 | [BUG-774](bugs/BUG-774-mine-button-global-lookup.md) | ✅ | ✅ | 剪贴板/选中查词缺少制卡按钮 |
 | [BUG-773](bugs/BUG-773-clipboard-sentence-hit-offset.md) | ✅ | ✅ | 剪贴板面板句子横幅整词高亮左移吞句首标点 |
 | [BUG-772](bugs/BUG-772-video-startup-freeze.md) | ✅ | ✅ | 快速进出视频后 Windows 启动冻死在 loading |
