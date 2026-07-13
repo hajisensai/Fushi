@@ -499,6 +499,27 @@ void main() {
       repo2.dispose();
     });
 
+    test('desktopClipboardAutoLookup defaults true and round-trips', () async {
+      // 默认 true=保持现状（复制自动查词）；关掉后跨实例 reload 仍为 false
+      // （落 Drift preferences、记住设置）。与总开关 desktopClipboardEnabled 正交。
+      expect(repo.desktopClipboardAutoLookup, true);
+      await repo.setDesktopClipboardAutoLookup(false);
+      expect(repo.desktopClipboardAutoLookup, false);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.desktopClipboardAutoLookup, false,
+          reason: '剪切板自动查词开关必须跨实例 reload 记住');
+
+      // 开回 true 也持久。
+      await repo.setDesktopClipboardAutoLookup(true);
+      final PreferencesRepository repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      addTearDown(repo3.dispose);
+      expect(repo3.desktopClipboardAutoLookup, true);
+    });
+
     test('legacy desktop clipboard always-on-top pref maps to lookup mode',
         () async {
       await repo.setPref('desktop_clipboard_always_on_top', true);
