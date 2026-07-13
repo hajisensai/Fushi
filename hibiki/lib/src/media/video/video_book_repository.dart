@@ -101,6 +101,10 @@ class VideoBookRepository {
 
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
+  /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部
+  /// 「用 Hibiki 打开」/ 远端下载）落库后自动刷新（BUG-791）。
+  Stream<List<String>> watchVideoBookUids() => _db.watchVideoBookUids();
+
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
   /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。
