@@ -153,6 +153,13 @@ class GlobalLookupWindow {
   // 则用于 CreateWindowExW；窗口已存在时经 SetWindowTextW 即时生效。
   void SetWindowTitle(const std::wstring& title);
 
+  // 剪切板面板背景逐像素透明 — 仅面板实例开启：窗口用 WS_EX_NOREDIRECTIONBITMAP
+  // 建、WebView2 走 composition controller + DirectComposition 视觉树，透明像素
+  // 真透到桌面（背景全透 + 文字实心），取代整窗 LWA_ALPHA 的「文字一起变淡」。
+  // 瞬态查词覆盖窗保持默认 false（windowed，行为一字不改）。必须在首次
+  // ShowAt/PrewarmWebView（窗口 + WebView 创建）前设置。
+  void SetCompositionMode(bool composition) { composition_mode_ = composition; }
+
   // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
   // behind the window's transparent WebView2 pixels. Returns whether the OS
   // accepted it (Win10 / pre-22H2 -> false; the panel then stays opaque and
@@ -248,6 +255,9 @@ class GlobalLookupWindow {
   bool arm_dismiss_hooks_ = true;
   bool activatable_ = false;
   bool taskbar_presence_ = false;
+  // 背景逐像素透明模式（仅面板实例）：composition controller + DirectComposition。
+  // 默认 false=windowed（瞬态窗与历史行为一字不改）。见 SetCompositionMode。
+  bool composition_mode_ = false;
   std::wstring window_title_ = L"Hibiki Lookup";
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;

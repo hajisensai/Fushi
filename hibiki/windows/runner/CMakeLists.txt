@@ -71,6 +71,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE uiautomationcore.lib)
 # (RoInitialize / RoGetActivationFactory / WindowsCreateStringReference) and WIC
 # for PNG encode.
 target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscodecs)
+# 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
+# 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
+target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 

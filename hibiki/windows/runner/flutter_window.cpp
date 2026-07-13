@@ -1015,6 +1015,9 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
   // （图钉关）被游戏/浏览器压底时，点任务栏图标即可激活+拉回前台。瞬态查词窗
   // 不设，保持无任务栏项。
   clipboard_panel_window_->SetTaskbarPresence(true);
+  // 背景逐像素透明：面板走 composition + DirectComposition（透明像素真透到桌面，
+  // 背景全透 + 文字实心），取代整窗 LWA_ALPHA。瞬态查词窗不设，保持 windowed。
+  clipboard_panel_window_->SetCompositionMode(true);
   clipboard_panel_window_->SetWindowTitle(L"Hibiki");
   clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
 
