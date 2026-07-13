@@ -118,6 +118,15 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[];
 
   @override
+  Future<bool> videoExists(String id) async => false;
+
+  @override
+  Future<void> importVideo(File videoFile,
+      {required String id,
+      required String title,
+      String? originalFileName}) async {}
+
+  @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 

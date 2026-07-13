@@ -120,30 +120,27 @@ void main() {
         'sync.local_audio',
         'sync.content',
         'sync.audiobook_files',
+        // 视频文件上传现在两条通道都实现（云后端 __videos__ 伪装资产；互联走 host 上传
+        // 端点 _syncVideosLive），故与其它「同步什么」开关一样全后端无条件可见。
+        'sync.video_files',
       ]) {
         expect(byId(id).visible, isNull,
             reason: '$id is a content-scope setting, global to every backend');
       }
-      // sync.video_files is cloud-backend-scoped: 上传走 __videos__ 伪装资产，只在
-      // run() 非互联分支执行，互联(hibikiServer)下纯空转，故 gated（仅云后端可见）。
-      expect(byId('sync.video_files').visible, isNotNull,
-          reason:
-              'video upload only works on cloud backends (not interconnect)');
     });
 
-    test('sync.video_files gate hides only on the interconnect backend', () {
-      // Source guard: 视频上传开关必须仅在云后端可见——门控判据是
-      // `backendType != SyncBackendType.hibikiServer`（沿既有 backend-scope 范式）。
+    test('sync.video_files is unconditional across every backend', () {
+      // Source guard: 视频上传开关不再带 backend-scope 门控——云后端与互联(hibikiServer)
+      // 都实现了视频文件上传（云走 syncVideoAssets，互联走 _syncVideosLive host 端点），
+      // 故绝不能再携带 `!= SyncBackendType.hibikiServer` 之类的隐藏判据。
       final String src =
           File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
       final int at = src.indexOf("id: 'sync.video_files'");
       expect(at, greaterThanOrEqualTo(0));
       final String block = src.substring(at, at + 500);
-      expect(block, contains('visible:'),
-          reason: 'sync.video_files must carry a visibility predicate');
-      expect(block, contains('!= SyncBackendType.hibikiServer'),
+      expect(block, isNot(contains('!= SyncBackendType.hibikiServer')),
           reason:
-              'gate must hide only on the interconnect backend (cloud-only)');
+              'video upload now works on every backend; no hibikiServer gate');
     });
 
     test('auto-sync gate keys off the hosting-interconnect role (TODO-876)',

@@ -828,6 +828,8 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       backend: widget.backend,
       folderId: folderId,
       tempDir: _resolveTempDir(),
+      // 云后端下载远端书时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
+      audioDatabaseRoot: widget.audioDatabaseRoot,
     );
   }
 

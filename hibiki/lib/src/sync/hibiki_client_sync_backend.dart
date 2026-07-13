@@ -1106,6 +1106,38 @@ class HibikiClientSyncBackend extends SyncBackend
     ];
   }
 
+  /// 把本地视频 [file] 上传到对端 host，注册成 bookUid 为 [id] 的视频（client→host，
+  /// syncVideoFiles 开关驱动的 live push）。[title] 与原始文件名经 URL-encode 走 header
+  /// （HTTP header 只收 ASCII，日文标题/文件名必须编码）。流式发送、不整块读进内存
+  /// （视频 GB 级），进度经 [onProgress] 上报。
+  Future<void> putRemoteVideo(
+    String id,
+    File file, {
+    required String title,
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}',
+    );
+    final int length = await file.length();
+    final String baseName = file.path.split(RegExp(r'[/\\]')).last;
+    req.headers.set('Content-Type', 'application/octet-stream');
+    req.headers.set('Content-Length', '$length');
+    req.headers.set('X-Hibiki-Video-Title', Uri.encodeComponent(title));
+    req.headers.set('X-Hibiki-Video-Filename', Uri.encodeComponent(baseName));
+    int sent = 0;
+    await req.addStream(file.openRead().map((List<int> chunk) {
+      sent += chunk.length;
+      onProgress?.call(length > 0 ? sent / length : 0);
+      return chunk;
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
+  }
+
   /// 向 host 换取可直接播放的视频 stream URL。
   ///
   /// 返回的 [RemoteVideoStreamUrls.streamUrl] 已携带短时 token；播放器不需要

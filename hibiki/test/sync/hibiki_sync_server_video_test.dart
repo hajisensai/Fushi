@@ -90,6 +90,21 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     ];
   }
 
+  final List<({String id, String title, String? fileName})> uploaded =
+      <({String id, String title, String? fileName})>[];
+
+  @override
+  Future<bool> videoExists(String id) async =>
+      id == videoId || uploaded.any((u) => u.id == id);
+
+  @override
+  Future<void> importVideo(File videoFile,
+      {required String id,
+      required String title,
+      String? originalFileName}) async {
+    uploaded.add((id: id, title: title, fileName: originalFileName));
+  }
+
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
     if (id == videoId) return videoFile;

@@ -9,7 +9,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart' show kSyncBookTagsAssetName;
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
-    show importRemoteBookFolder;
+    show importRemoteBookFolder, kSyncAudiobookAssetName;
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -67,15 +67,21 @@ class _FakeBookFolderBackend implements SyncBackend {
     required this.folderId,
     required this.sidecarJson,
     this.includeSidecarEntry = true,
+    this.includeAudiobookEntry = false,
   });
 
   final String bookTitle;
   final String folderId;
   final Object? sidecarJson;
   final bool includeSidecarEntry;
+  final bool includeAudiobookEntry;
+
+  /// getAsset 请求过的 assetId（供断言云有声书 pull 是否被触达）。
+  final List<String> requestedAssetIds = <String>[];
 
   static const String epubAssetId = 'epubAsset1';
   static const String sidecarAssetId = 'tagsSidecar1';
+  static const String audiobookAssetId = 'audioAsset1';
 
   @override
   Future<List<AssetEntry>> listChildren(String id) async {
@@ -84,12 +90,21 @@ class _FakeBookFolderBackend implements SyncBackend {
       const AssetEntry(id: epubAssetId, name: 'book.epub'),
       if (includeSidecarEntry)
         const AssetEntry(id: sidecarAssetId, name: kSyncBookTagsAssetName),
+      if (includeAudiobookEntry)
+        const AssetEntry(id: audiobookAssetId, name: kSyncAudiobookAssetName),
     ];
   }
 
   @override
   Future<void> getAsset(String assetId, File destination,
       {void Function(double progress)? onProgress}) async {
+    requestedAssetIds.add(assetId);
+    // 有声书资产：写非法包字节，让 importAudioDatabasePackage 抛错（被
+    // _pullRemoteFolderAudiobook 吞掉）——本测试只验证「下载路径是否触达该资产」。
+    if (assetId == audiobookAssetId) {
+      await destination.writeAsBytes(<int>[0, 1, 2, 3]);
+      return;
+    }
     await destination.writeAsBytes(_buildMinimalEpub(bookTitle));
   }
 
@@ -353,5 +368,58 @@ void main() {
           reason: 'malformed sidecar $malformed must degrade to empty tags');
       expect(await db.getAllTags(), isEmpty);
     }
+  });
+
+  // ── 云后端有声书 pull（修复「只上传拿不回」缺口）──────────────────────────────
+  test('提供 audioDatabaseRoot 时下载远端书文件夹会补拉 audiobook.hibikiaudio', () async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
+      bookTitle: 'BookWithAudio',
+      folderId: 'folderAudio',
+      sidecarJson: null,
+      includeSidecarEntry: false,
+      includeAudiobookEntry: true,
+    );
+    final Directory audioRoot = freshTemp();
+
+    final bool imported = await importRemoteBookFolder(
+      db: db,
+      backend: backend,
+      folderId: backend.folderId,
+      tempDir: freshTemp(),
+      audioDatabaseRoot: audioRoot,
+    );
+
+    expect(imported, isTrue); // EPUB 导入成功
+    expect(await db.getAllEpubBooks(), hasLength(1));
+    // 关键：下载路径触达了有声书资产（此前只找 .epub、拿不回音频）。
+    expect(backend.requestedAssetIds,
+        contains(_FakeBookFolderBackend.audiobookAssetId));
+  });
+
+  test('未提供 audioDatabaseRoot 时不拉 audiobook.hibikiaudio（保持旧行为）', () async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
+      bookTitle: 'BookAudioSkipped',
+      folderId: 'folderAudioSkip',
+      sidecarJson: null,
+      includeSidecarEntry: false,
+      includeAudiobookEntry: true,
+    );
+
+    final bool imported = await importRemoteBookFolder(
+      db: db,
+      backend: backend,
+      folderId: backend.folderId,
+      tempDir: freshTemp(),
+      // audioDatabaseRoot 缺省 null
+    );
+
+    expect(imported, isTrue);
+    expect(backend.requestedAssetIds,
+        isNot(contains(_FakeBookFolderBackend.audiobookAssetId)),
+        reason: '未注入 audioDatabaseRoot 时绝不触达有声书资产（向后兼容）');
   });
 }
