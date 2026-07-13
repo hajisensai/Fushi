@@ -46,6 +46,84 @@ void main() {
     });
   });
 
+  group('rootHitRange（BUG-773 句首标点补偿：起点右移 + 从词首量长度）', () {
+    test('句首书名号：呪術廻戦 高亮到词本身，不吞 『、不缺 戦', () {
+      // 原始句 = 『呪術廻戦 第1期』…；归一化剥掉句首 『（leadingUnits=1），引擎从
+      // 剥离串匹配 呪術廻戦（bestLength=4，全 BMP）。修复前从句首铺 4 = 『呪術廻（错）；
+      // 修复后起点右移 1 落到 呪，长度 4 = 呪術廻戦（对）。
+      const String sentence = '『呪術廻戦 第1期』『チェンソーマン』';
+      final hit = ClipboardPanelController.rootHitRange(
+        query: sentence,
+        baseStartCp: 0,
+        leadingUnits: 1,
+        bestLength: 4,
+      );
+      expect(hit.start, 1); // 跳过句首 『
+      expect(hit.length, 4); // 呪術廻戦
+      // 码点区间对准的正是被查词。
+      final chars = sentence.runes.toList();
+      final matched = String.fromCharCodes(
+          chars.sublist(hit.start, hit.start + hit.length));
+      expect(matched, '呪術廻戦');
+    });
+
+    test('无句首标点：leadingUnits=0 时退化为旧语义（零回归）', () {
+      final hit = ClipboardPanelController.rootHitRange(
+        query: '呪術廻戦は面白い',
+        baseStartCp: 0,
+        leadingUnits: 0,
+        bestLength: 4,
+      );
+      expect(hit.start, 0);
+      expect(hit.length, 4);
+    });
+
+    test('点字后缀：baseStartCp 为句中码点下标，起点叠加', () {
+      // 点了句子第 5 个码点起的后缀，后缀本身无句首标点（leadingUnits=0）。
+      final hit = ClipboardPanelController.rootHitRange(
+        query: '第1期』の話',
+        baseStartCp: 5,
+        leadingUnits: 0,
+        bestLength: 3, // 第1期
+      );
+      expect(hit.start, 5);
+      expect(hit.length, 3);
+    });
+
+    test('代理对（罕见汉字）长度折算为码点', () {
+      // '𠮟' 2 code units / 1 code point；leadingUnits=1（句首标点 1 unit）。
+      final hit = ClipboardPanelController.rootHitRange(
+        query: '「𠮟る',
+        baseStartCp: 0,
+        leadingUnits: 1, // 「
+        bestLength: 3, // 𠮟(2) + る(1) = 3 code units
+      );
+      expect(hit.start, 1); // 跳过 「（1 码点）
+      expect(hit.length, 2); // 𠮟る = 2 码点
+    });
+
+    test('bestLength 越界/非法 钳位；空串安全', () {
+      final over = ClipboardPanelController.rootHitRange(
+        query: '『あ',
+        baseStartCp: 0,
+        leadingUnits: 1,
+        bestLength: 99,
+      );
+      expect(over.start, 1);
+      expect(over.length, 1); // 只剩 あ
+      expect(
+        ClipboardPanelController.rootHitRange(
+            query: 'ある', baseStartCp: 0, leadingUnits: 0, bestLength: 0),
+        (start: 0, length: 0),
+      );
+      expect(
+        ClipboardPanelController.rootHitRange(
+            query: '', baseStartCp: 3, leadingUnits: 0, bestLength: 2),
+        (start: 0, length: 0),
+      );
+    });
+  });
+
   test('面板栏高度与 host.js PANEL_BAR_HEIGHT 一致（跨端几何契约）', () {
     final String hostJs =
         File('assets/popup/global_lookup_host.js').readAsStringSync();
