@@ -626,6 +626,11 @@ void main() {
       'lib/src/pages/implementations/video_statistics_page.dart':
           'Video statistics charts/metric bars mirror reading_statistics_page: '
               'progress-bar track surface is chart content, not page chrome.',
+      'lib/src/pages/implementations/sentence_context_dialog.dart':
+          'BUG-766 sentence-context preview boxes are mining CONTENT preview '
+              '(current-sentence highlight vs context), not ordinary page '
+              'chrome; develop landed without allowlist entry — recorded at '
+              'merge integration, restyle to tokens is a follow-up.',
       'lib/src/pages/implementations/dictionary_term_page.dart':
           'Dictionary article surface is content chrome, not ordinary page rows.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
