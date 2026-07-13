@@ -1961,9 +1961,11 @@ Future<bool> importRemoteBookFolder({
   }
 }
 
-/// 读取云盘书文件夹里的标签 sidecar（[kSyncBookTagsAssetName]）并按名重建 [bookKey]
-/// 的标签映射（TODO-1165）。[children] 复用 [importRemoteBookFolder] 已列出的目录项。
-/// 缺 sidecar（旧端未写）安全降级为空——按名只增不删，绝不清本地既有标签。
+/// 读取云盘书文件夹里的标签 sidecar（[kSyncBookTagsAssetName]）并 LWW-element-set 合并进
+/// [bookKey] 本地标签（TODO-1165 / tags 稳健档）。[children] 复用 [importRemoteBookFolder]
+/// 已列出的目录项。缺 sidecar（旧端未写）安全降级为不动本地。v2 sidecar 带 tagsAddedAt +
+/// tagTombstones → 按名 max(add) vs max(removed) 裁决（删除/改名传播、防复活）；v1 旧
+/// sidecar 只有 tags 名单 → 合成 addedAt=1，退化为「只增且尊重本地移除墓碑」（向后兼容）。
 Future<void> _applyRemoteBookFolderTags(
   HibikiDatabase db,
   SyncBackend backend,
@@ -1979,15 +1981,40 @@ Future<void> _applyRemoteBookFolderTags(
   }
   if (sidecar == null) return;
   final Object? json = await backend.getJsonAsset(sidecar.id);
-  for (final String name in _bookTagNamesFromSidecar(json)) {
-    if (name.isEmpty) continue;
-    final int tagId = await db.getOrCreateTagByName(name);
-    await db.addTagToBook(bookKey, tagId);
-  }
+  final ({Map<String, int> addedAt, Map<String, int> tombstones}) parsed =
+      parseTagSidecar(json);
+  if (parsed.addedAt.isEmpty && parsed.tombstones.isEmpty) return;
+  await db.mergeRemoteBookTags(
+    bookKey,
+    remoteAddedAt: parsed.addedAt,
+    remoteTombstones: parsed.tombstones,
+  );
 }
 
-/// 从标签 sidecar JSON 解析非空标签名列表（TODO-1165）。非 Map / `tags` 非 List /
-/// 缺键一律返回空列表——向后兼容旧格式，绝不对缺字段抛 FormatException。
+/// 解析标签 sidecar JSON 为 LWW 输入（tags 稳健档）。v2 带 `tagsAddedAt` / `tagTombstones`
+/// （名→毫秒戳）直接用；否则 v1 只有 `tags` 名单 → 合成 addedAt=1（正数，胜过缺席但输给
+/// 任何本地墓碑，保持「只增 + 尊重本地移除」的旧语义）。非 Map / 坏字段一律安全降级为空，
+/// 绝不抛 FormatException。测试可见。
+@visibleForTesting
+({Map<String, int> addedAt, Map<String, int> tombstones}) parseTagSidecar(
+    Object? json) {
+  if (json is! Map) {
+    return (addedAt: <String, int>{}, tombstones: <String, int>{});
+  }
+  final Map<String, int> addedAt = _parseNameIntMap(json['tagsAddedAt']);
+  final Map<String, int> tombstones = _parseNameIntMap(json['tagTombstones']);
+  if (addedAt.isNotEmpty || tombstones.isNotEmpty) {
+    return (addedAt: addedAt, tombstones: tombstones);
+  }
+  final Map<String, int> v1 = <String, int>{
+    for (final String name in _bookTagNamesFromSidecar(json))
+      if (name.isNotEmpty) name: 1,
+  };
+  return (addedAt: v1, tombstones: <String, int>{});
+}
+
+/// 从标签 sidecar JSON 解析非空标签名列表（v1 兼容）。非 Map / `tags` 非 List / 缺键
+/// 一律返回空列表——向后兼容旧格式，绝不对缺字段抛 FormatException。
 List<String> _bookTagNamesFromSidecar(Object? json) {
   if (json is! Map) return const <String>[];
   final Object? raw = json['tags'];
@@ -1996,4 +2023,19 @@ List<String> _bookTagNamesFromSidecar(Object? json) {
     for (final Object? item in raw)
       if (item != null && item.toString().isNotEmpty) item.toString(),
   ];
+}
+
+/// 解析 `{name: ms}` 映射（值容忍 int / num / 数字串）。非 Map / 空名 / 非数值值跳过。
+Map<String, int> _parseNameIntMap(Object? raw) {
+  if (raw is! Map) return <String, int>{};
+  final Map<String, int> out = <String, int>{};
+  raw.forEach((Object? k, Object? v) {
+    final String name = k?.toString() ?? '';
+    if (name.isEmpty) return;
+    final int? ms = v is int
+        ? v
+        : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
+    if (ms != null) out[name] = ms;
+  });
+  return out;
 }

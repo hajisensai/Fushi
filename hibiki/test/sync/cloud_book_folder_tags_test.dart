@@ -9,7 +9,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart' show kSyncBookTagsAssetName;
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
-    show importRemoteBookFolder;
+    show importRemoteBookFolder, parseTagSidecar;
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -353,5 +353,40 @@ void main() {
           reason: 'malformed sidecar $malformed must degrade to empty tags');
       expect(await db.getAllTags(), isEmpty);
     }
+  });
+
+  // ── parseTagSidecar：v1/v2 LWW 输入解析（tags 稳健档）──────────────────────────
+  group('parseTagSidecar', () {
+    test('v2 带 tagsAddedAt + tagTombstones 直接用', () {
+      final parsed = parseTagSidecar(<String, Object?>{
+        'schemaVersion': 2,
+        'tags': <String>['听力'],
+        'tagsAddedAt': <String, Object?>{'听力': 100},
+        'tagTombstones': <String, Object?>{'N2': 200},
+      });
+      expect(parsed.addedAt, <String, int>{'听力': 100});
+      expect(parsed.tombstones, <String, int>{'N2': 200});
+    });
+
+    test('v1 只有 tags 名单 → 合成 addedAt=1、无墓碑（向后兼容只增）', () {
+      final parsed = parseTagSidecar(<String, Object?>{
+        'schemaVersion': 1,
+        'tags': <String>['听力', 'N2'],
+      });
+      expect(parsed.addedAt, <String, int>{'听力': 1, 'N2': 1});
+      expect(parsed.tombstones, isEmpty);
+    });
+
+    test('数字串值容忍 + 空名/坏字段跳过；非 Map 安全降级为空', () {
+      final parsed = parseTagSidecar(<String, Object?>{
+        'tagsAddedAt': <String, Object?>{'A': '300', '': 5, 'B': 'x'},
+        'tagTombstones': <String, Object?>{'C': 400},
+      });
+      expect(parsed.addedAt, <String, int>{'A': 300});
+      expect(parsed.tombstones, <String, int>{'C': 400});
+      final empty = parseTagSidecar('not json');
+      expect(empty.addedAt, isEmpty);
+      expect(empty.tombstones, isEmpty);
+    });
   });
 }

@@ -723,16 +723,23 @@ class SyncManager {
       }
     }
 
-    // TODO-1165：书标签名 sidecar。标签每设备本地，跨设备按名带、落地端按名归一
-    // 重建（只增不删）。与内容同属「书文件夹元数据」，同受 syncContent 门控（本方法
-    // 仅在 syncContent 开时被 _handleExport 调用）。putJsonAsset 覆盖写，标签编辑后
-    // 每次导出同步刷新；无标签时不写空文件（避免无谓 PUT，且下行只增语义下无差别）。
-    final List<BookTagRow> bookTags = await _db.getTagsForBook(book.bookKey);
-    if (bookTags.isNotEmpty) {
+    // TODO-1165 / tags 稳健档：书标签 sidecar（LWW-element-set v2）。标签每设备本地，
+    // 跨设备按名带、落地端按名归一。与内容同属「书文件夹元数据」，同受 syncContent 门控
+    // （本方法仅在 syncContent 开时被 _handleExport 调用）。putJsonAsset 覆盖写权威全量
+    // 快照：tagsAddedAt=当前标签名→加入戳；tagTombstones=移除墓碑名→移除戳，让远端按
+    // max(add) vs max(removed) 裁决，删除/改名（旧名进墓碑+新名进 add）跨端传播、防复活。
+    // v1 兼容字段 tags 仍是名单供旧端只增读取。有标签或有墓碑才写（否则无谓 PUT）。
+    final Map<String, int> tagAddedAt =
+        await _db.bookTagAddedAtByName(book.bookKey);
+    final Map<String, int> tagTombstones =
+        await _db.tagTombstonesByName(book.bookKey, 'epub');
+    if (tagAddedAt.isNotEmpty || tagTombstones.isNotEmpty) {
       await _backend
           .putJsonAsset(folderId, kSyncBookTagsAssetName, <String, Object?>{
-        'schemaVersion': 1,
-        'tags': <String>[for (final BookTagRow t in bookTags) t.name],
+        'schemaVersion': 2,
+        'tags': tagAddedAt.keys.toList(),
+        'tagsAddedAt': tagAddedAt,
+        'tagTombstones': tagTombstones,
       });
     }
 
