@@ -166,4 +166,42 @@ void main() {
       expect(unlocked, followed);
     });
   });
+
+  group('resolveExtensionPopupSize（Phase D — 扩展拖角回写 clamp）', () {
+    test('范围内尺寸原样透传', () {
+      expect(resolveExtensionPopupSize(maxWidth: 640, maxHeight: 520),
+          const LookupSize(640, 520));
+    });
+
+    test('超上界夹到 2000×1600（4K 屏视口空间远超上界）', () {
+      // 扩展侧只按视口可用空间夹（可远超上界），app 侧必须再兜底夹到滑杆同款上界。
+      expect(resolveExtensionPopupSize(maxWidth: 5000, maxHeight: 4000),
+          const LookupSize(kLookupPopupMaxWidth, kLookupPopupMaxHeight));
+    });
+
+    test('低于下界夹到 250×200', () {
+      expect(resolveExtensionPopupSize(maxWidth: 10, maxHeight: 10),
+          const LookupSize(kLookupPopupMinWidth, kLookupPopupMinHeight));
+    });
+
+    test('非有限值（NaN/Inf）按下限兜底', () {
+      expect(
+          resolveExtensionPopupSize(
+              maxWidth: double.nan, maxHeight: double.infinity),
+          const LookupSize(kLookupPopupMinWidth, kLookupPopupMinHeight));
+    });
+
+    test('clamp 后即扩展场景独立键的写入值（拖拽与滑杆写同一真值）', () {
+      final LookupSize dragged =
+          resolveExtensionPopupSize(maxWidth: 720, maxHeight: 600);
+      final LookupSize effective = effectiveLookupSize(
+        independent: true,
+        sceneWidth: dragged.width,
+        sceneHeight: dragged.height,
+        sharedWidth: 400,
+        sharedHeight: 360,
+      );
+      expect(effective, const LookupSize(720, 600));
+    });
+  });
 }

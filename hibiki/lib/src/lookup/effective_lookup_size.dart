@@ -114,3 +114,26 @@ LookupSize resolveOverlayResizeFromWindow({
       .clamp(minHeight, maxHeight);
   return LookupSize(width, height);
 }
+
+/// Phase D（2026-07-13）— 浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
+/// 扩展 ↔ app bridge（POST `/api/extension/popup-size`）回写的**基准（未缩放）最大
+/// 宽高**（逻辑像素）。扩展侧已按视口可用空间夹过一次并保证下限（不撑出屏幕、不遮被查
+/// 词），但**未夹 2000/1600 上界**（4K 屏视口空间可远超上界）。本函数把它 clamp 到与
+/// 设置页两滑杆同一 [kLookupPopupMinWidth]..[kLookupPopupMaxHeight] 单一同源——拖拽与
+/// 滑杆写同一真值，故 app 侧再兜底 clamp 一次，任何客户端（含异常/恶意值）都写不出越界
+/// 尺寸。非有限值（NaN/Inf）按下限兜底。纯函数（min/max 边界 + 非有限兜底），直接单测。
+LookupSize resolveExtensionPopupSize({
+  required double maxWidth,
+  required double maxHeight,
+  double minWidth = kLookupPopupMinWidth,
+  double maxWidthLimit = kLookupPopupMaxWidth,
+  double minHeight = kLookupPopupMinHeight,
+  double maxHeightLimit = kLookupPopupMaxHeight,
+}) {
+  final double w = maxWidth.isFinite ? maxWidth : minWidth;
+  final double h = maxHeight.isFinite ? maxHeight : minHeight;
+  return LookupSize(
+    w.clamp(minWidth, maxWidthLimit),
+    h.clamp(minHeight, maxHeightLimit),
+  );
+}

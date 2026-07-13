@@ -126,6 +126,7 @@ void main() {
       Map<String, String> Function()? themeColorsProvider,
       List<String> Function()? audioSourcesProvider,
       String? Function()? extensionBuildProvider,
+      void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
@@ -138,6 +139,7 @@ void main() {
         themeColorsProvider: themeColorsProvider,
         audioSourcesProvider: audioSourcesProvider,
         extensionBuildProvider: extensionBuildProvider,
+        onExtensionPopupSize: onExtensionPopupSize,
         apiKey: apiKey,
       );
       await server.start();
@@ -440,6 +442,99 @@ void main() {
       );
       expect(resp.statusCode, 401);
       await resp.drain<void>();
+    });
+
+    // 弹窗尺寸精细化 Phase D：扩展拖角 resize 回写端点 /api/extension/popup-size。
+    test('/api/extension/popup-size 把原始尺寸交给 sink（未 clamp，clamp 在 app 侧）',
+        () async {
+      double? gotW;
+      double? gotH;
+      await startServer(
+        apiKey: 'k123',
+        onExtensionPopupSize: (double w, double h) {
+          gotW = w;
+          gotH = h;
+        },
+      );
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/popup-size',
+        <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      expect((await _json(resp))['ok'], true);
+      // server 不 clamp（透传原始值给 app 侧 resolveExtensionPopupSize）。
+      expect(gotW, 720);
+      expect(gotH, 600);
+    });
+
+    test('/api/extension/popup-size 数值型 int/double 都接受', () async {
+      double? gotW;
+      double? gotH;
+      await startServer(
+        apiKey: 'k123',
+        onExtensionPopupSize: (double w, double h) {
+          gotW = w;
+          gotH = h;
+        },
+      );
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/popup-size',
+        <String, dynamic>{'maxWidth': 640.5, 'maxHeight': 480},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      expect(gotW, 640.5);
+      expect(gotH, 480.0);
+    });
+
+    test('/api/extension/popup-size 缺字段/类型错 → 400，不触发 sink', () async {
+      bool called = false;
+      await startServer(
+        apiKey: 'k123',
+        onExtensionPopupSize: (double w, double h) => called = true,
+      );
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/popup-size',
+        <String, dynamic>{'maxWidth': 'wide'},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 400);
+      await resp.drain<void>();
+      expect(called, isFalse);
+    });
+
+    test('/api/extension/popup-size 未注入 sink → 404（旧 app / 配对 host 向后兼容）',
+        () async {
+      await startServer(apiKey: 'k123'); // onExtensionPopupSize 缺省 null
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/popup-size',
+        <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 404);
+      await resp.drain<void>();
+    });
+
+    test('/api/extension/popup-size 错 token → 401，不触发 sink（鉴权守卫）', () async {
+      bool called = false;
+      await startServer(
+        apiKey: 'k123',
+        onExtensionPopupSize: (double w, double h) => called = true,
+      );
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/extension/popup-size',
+        <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
+        auth: _basic('WRONG'),
+      );
+      expect(resp.statusCode, 401);
+      await resp.drain<void>();
+      expect(called, isFalse);
     });
   });
 }

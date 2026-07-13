@@ -170,6 +170,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // base URL + token to build GET /api/media/dictionary. Same source as
         // lookup/mine (cfg()): installer-injected defaults or options override.
         sendResponse({ ok: true, base, token });
+      } else if (msg.type === 'popupSize') {
+        // 弹窗尺寸精细化 Phase D：content.js 拖弹窗右下角把手松手后，把最终基准最大宽高经此
+        // 回写 app（POST /api/extension/popup-size，Basic auth 与查词同源）。app 侧 clamp
+        // (250-2000/200-1600) + 「拖即解锁」extensionPopupIndependentSize=true + 写扩展键，
+        // 下次查词以新尺寸下发。lookup 样板同款鉴权头，不新开无鉴权入口。
+        const r = await fetch(base + '/api/extension/popup-size', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ maxWidth: msg.maxWidth, maxHeight: msg.maxHeight }),
+        });
+        sendResponse({ ok: r.ok, status: r.status });
       } else if (msg.type === 'lookup') {
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',

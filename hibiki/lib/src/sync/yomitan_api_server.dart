@@ -44,6 +44,7 @@ class YomitanApiServer {
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
+    void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -55,6 +56,7 @@ class YomitanApiServer {
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
+        _onExtensionPopupSize = onExtensionPopupSize,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -70,6 +72,10 @@ class YomitanApiServer {
   final List<String> Function()? _audioSourcesProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后，content.js 经 bridge 回写最终基准
+  // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
+  // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
+  final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -210,6 +216,8 @@ class YomitanApiServer {
         return _handleMine(request);
       case '/api/duplicate':
         return _handleDuplicate(request);
+      case '/api/extension/popup-size':
+        return _handleExtensionPopupSize(request);
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
@@ -254,6 +262,27 @@ class YomitanApiServer {
       return _json(<String, dynamic>{'duplicate': false});
     }
     return _json(await buildRemoteDuplicateResponse(body, mining: mining));
+  }
+
+  /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
+  /// background（POST `/api/extension/popup-size` {maxWidth,maxHeight}）回写最终基准最大宽
+  /// 高。走与查词同一 [_authMiddleware]（Basic `hibiki:'+key`）鉴权——**不在**免鉴权白名
+  /// 单里，绝不新开无鉴权写入口。收到 → 交给注入的 [_onExtensionPopupSize] sink（app 侧
+  /// clamp 250-2000/200-1600 + 「拖即解锁」extensionPopupIndependentSize + 只写扩展键，
+  /// 绝不碰 overlay/popupMax）。未注入（旧 app / 配对 host）时 404，无副作用（向后兼容）。
+  Future<shelf.Response> _handleExtensionPopupSize(
+      shelf.Request request) async {
+    final void Function(double, double)? sink = _onExtensionPopupSize;
+    if (sink == null) return shelf.Response.notFound('Popup size sink off');
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final dynamic w = body['maxWidth'];
+    final dynamic h = body['maxHeight'];
+    if (w is! num || h is! num) {
+      return shelf.Response(400, body: 'Missing maxWidth/maxHeight');
+    }
+    sink(w.toDouble(), h.toDouble());
+    return _json(<String, dynamic>{'ok': true});
   }
 
   /// 单词音频①解析：POST /api/lookup/audio {expression,reading}。用与 app 同一

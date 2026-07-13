@@ -32,6 +32,16 @@ let hibikiLastX = -1;
 let hibikiLastY = -1;
 let hibikiPending = false;
 
+// 弹窗尺寸精细化 Phase D：拖拽调整扩展弹窗尺寸。
+// hibikiResizeGrip：右下角拖拽把手（顶层 position:fixed overlay，与高亮层同父挂在
+//   fullscreenElement||body；不放进 host 的 shadow，避开 host 的 zoom 建立包含块干扰 fixed）。
+// hibikiResizeBox：place() 每次落点后存的夹取上下文——弹窗视口左上角 + 视口可用空间右/下边界
+//   （已内含 BUG-767「拖大也不许遮住被查词」约束）+ 当前 zoom，供拖拽把「视口位移」折回基准尺度。
+// hibikiResizeDrag：一次拖拽的起始快照 {startX,startY,baseW,baseH,zoom,bounds}；null=未在拖。
+let hibikiResizeGrip = null;
+let hibikiResizeBox = null;
+let hibikiResizeDrag = null;
+
 // 扩展重载/更新/禁用后，已注入到**已打开标签**里的旧 content script 会「上下文失效」：
 // chrome.runtime 变 undefined / 访问抛异常 → 再调 chrome.runtime.sendMessage 就报
 // 「Cannot read properties of undefined (reading 'sendMessage')」。守卫掉：失效即静默停手，
@@ -1044,6 +1054,13 @@ function hibikiRemoveContainer() {
   if (hibikiHost) { hibikiHost.remove(); hibikiHost = null; }
   hibikiContainer = null;
   window.__hibikiRoot = null;
+  // Phase D：关窗即撤拖拽把手 + 清尺寸拖拽状态（把手随弹窗生命周期，下次开窗 place() 重建）。
+  if (hibikiResizeGrip) {
+    try { hibikiResizeGrip.remove(); } catch (_) { /* 已脱离文档 */ }
+    hibikiResizeGrip = null;
+  }
+  hibikiResizeDrag = null;
+  hibikiResizeBox = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   hibikiClearHighlightOverlay();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。hoshiSelection 未加载/无选区时是 no-op。
@@ -1281,6 +1298,130 @@ function hibikiComputePlacement(anchor, size, viewport) {
   return { left, top, maxHeight };
 }
 
+// 弹窗尺寸精细化 Phase D：拖拽右下角把手把「起始基准最大宽高 + 本次累计位移」折算成新的基准
+// （未缩放）最大宽高并 clamp。纯函数（不碰 DOM），便于单测。
+// start：拖拽开始时的基准 {width, height}（= host.style.width / 渲染高÷zoom，未乘 zoom）。
+// delta：指针在视口(**已缩放**)坐标系里的累计位移 {dx, dy}；除以 zoom 折回基准尺度
+//   （与 place() 里 `pos.left / zoom` 折算同源——host 带 zoom，视口位移 = 基准位移 × zoom）。
+// bounds：{minW, minH, maxW, maxH}（基准尺度上下限；maxW/maxH 由视口可用空间÷zoom 得来，已内含
+//   BUG-767「不遮词」约束）。zoom<=0 按 1 兜底（不除零）。clamp 上界恒 >= 下界（视口过小也不倒挂）。
+function hibikiComputeResizedSize(start, delta, zoom, bounds) {
+  const z = zoom > 0 ? zoom : 1;
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  const width = clamp(start.width + delta.dx / z, bounds.minW, bounds.maxW);
+  const height = clamp(start.height + delta.dy / z, bounds.minH, bounds.maxH);
+  return { width: width, height: height };
+}
+
+// 基准最大宽/高的允许范围（逻辑像素）。与 app 设置页两滑杆 + Dart 侧
+// effective_lookup_size.dart 的 kLookupPopupMin/MaxWidth/Height 单一同源——拖拽与滑杆写同一
+// 真值，故边界必须一致，否则拖拽能写出滑杆写不出的越界值（app 侧仍会再 clamp 一次兜底）。
+const HIBIKI_POPUP_MIN_WIDTH = 250;
+const HIBIKI_POPUP_MIN_HEIGHT = 200;
+const HIBIKI_RESIZE_GRIP_SIZE = 18;
+
+// 把拖拽把手移到弹窗当前渲染矩形的右下角（视口坐标；host 是 fixed，坐标即视口系）。
+function hibikiPositionResizeGrip() {
+  if (!hibikiResizeGrip || !hibikiHost) return;
+  const r = hibikiHost.getBoundingClientRect();
+  const s = HIBIKI_RESIZE_GRIP_SIZE;
+  hibikiResizeGrip.style.left = (r.right - s) + 'px';
+  hibikiResizeGrip.style.top = (r.bottom - s) + 'px';
+}
+
+// Phase D：把拖出来的最终基准最大宽高经 background → app（POST /api/extension/popup-size）。
+// app 侧 clamp(250-2000/200-1600) + 「拖即解锁」extensionPopupIndependentSize=true + 写扩展键，
+// 下一次查词 browserExtensionThemeColors 读新 extensionPopupEffectiveSize 即以新尺寸下发（闭环）。
+function hibikiSendPopupSize(maxWidth, maxHeight) {
+  try {
+    chrome.runtime.sendMessage(
+      { type: 'popupSize', maxWidth: Math.round(maxWidth), maxHeight: Math.round(maxHeight) },
+      () => { void chrome.runtime.lastError; });
+  } catch (_) { /* 扩展上下文失效：静默（尺寸只是没落库，不崩查词） */ }
+}
+
+// 在把手上装拖拽逻辑（每个 grip 只装一次）。pointerdown 快照起始基准 + 视口可用空间夹取上界，
+// pointermove 经纯函数 hibikiComputeResizedSize 实时改 host 的 width/maxHeight（place() 只在查词当
+// 帧跑一次、无 rAF 循环，故手动尺寸不会被每帧覆盖回去），pointerup 落库并经 bridge 回写 app。
+function hibikiInstallResizeDrag(grip) {
+  if (!grip || grip.__hibikiResizeHooked) return;
+  grip.__hibikiResizeHooked = true;
+  const down = (x, y) => {
+    if (!hibikiHost || !hibikiResizeBox) return;
+    const box = hibikiResizeBox;
+    const z = box.zoom > 0 ? box.zoom : 1;
+    const baseW = parseFloat(hibikiHost.style.width) || 0;
+    // 当前基准高度：host 渲染高÷zoom（style.maxHeight 可能是 min()/px/未设 → 用真实 rect 最稳）。
+    const baseH = hibikiHost.getBoundingClientRect().height / z;
+    hibikiResizeDrag = {
+      startX: x, startY: y, baseW: baseW, baseH: baseH, zoom: z,
+      bounds: {
+        minW: HIBIKI_POPUP_MIN_WIDTH, minH: HIBIKI_POPUP_MIN_HEIGHT,
+        // 视口可用空间（右/下边界 − 弹窗左上角）÷zoom = 基准尺度上界；不撑出视口、不遮被查词。
+        maxW: (box.maxRight - box.left) / z,
+        maxH: (box.maxBottom - box.top) / z,
+      },
+    };
+  };
+  const move = (x, y) => {
+    if (!hibikiResizeDrag || !hibikiHost) return;
+    const d = hibikiResizeDrag;
+    const size = hibikiComputeResizedSize(
+      { width: d.baseW, height: d.baseH },
+      { dx: x - d.startX, dy: y - d.startY },
+      d.zoom, d.bounds);
+    hibikiHost.style.width = size.width + 'px';
+    hibikiHost.style.maxHeight = size.height + 'px';
+    hibikiPositionResizeGrip();
+  };
+  const up = () => {
+    if (!hibikiResizeDrag || !hibikiHost) { hibikiResizeDrag = null; return; }
+    hibikiResizeDrag = null;
+    const w = parseFloat(hibikiHost.style.width);
+    const h = parseFloat(hibikiHost.style.maxHeight);
+    if (w > 0 && h > 0) hibikiSendPopupSize(w, h);
+  };
+  grip.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try { grip.setPointerCapture(e.pointerId); } catch (_) { /* 某些上下文无指针捕获 */ }
+    down(e.clientX, e.clientY);
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!hibikiResizeDrag) return;
+    e.preventDefault();
+    move(e.clientX, e.clientY);
+  });
+  grip.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { grip.releasePointerCapture(e.pointerId); } catch (_) { /* 同上 */ }
+    up();
+  });
+  grip.addEventListener('pointercancel', () => { up(); });
+}
+
+// 确保拖拽把手已创建并挂到弹窗同父节点（fullscreenElement||body，与高亮层同源，全屏也可见）。
+function hibikiEnsureResizeGrip() {
+  const parent = document.fullscreenElement || document.body;
+  if (!parent) return;
+  if (!hibikiResizeGrip) {
+    const g = document.createElement('div');
+    g.id = 'hibiki-popup-resize-grip';
+    // 顶层 fixed；z-index 与 host 齐平（同值时 DOM 靠后者胜出 → 把手可点）；斜纹视觉暗示可拖。
+    g.style.cssText =
+      'position:fixed;left:0;top:0;width:' + HIBIKI_RESIZE_GRIP_SIZE + 'px;height:' +
+      HIBIKI_RESIZE_GRIP_SIZE + 'px;z-index:2147483647;cursor:nwse-resize;' +
+      'pointer-events:auto;touch-action:none;' +
+      'background:linear-gradient(135deg,transparent 0 46%,rgba(128,128,128,0.75) 46% 54%,' +
+      'transparent 54% 66%,rgba(128,128,128,0.75) 66% 74%,transparent 74%);';
+    hibikiInstallResizeDrag(g);
+    hibikiResizeGrip = g;
+  }
+  if (hibikiResizeGrip.parentNode !== parent) parent.appendChild(hibikiResizeGrip);
+}
+
 function hibikiRender(popupJson, termLen, theme, anchorRect) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
@@ -1371,6 +1512,22 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
       if (pos.maxHeight != null) hibikiHost.style.maxHeight = (pos.maxHeight / zoom) + 'px';
       hibikiHost.style.left = (pos.left / zoom) + 'px';
       hibikiHost.style.top = (pos.top / zoom) + 'px';
+      // Phase D：记录本次落点的视口可用空间夹取上下文（视口坐标；host fixed，pos.* 即视口系），
+      // 供拖拽把手把视口位移折回基准并夹取——不撑出视口、且拖大也不遮被查词（BUG-767 延续）。
+      // 弹窗落在词上方(pos.top<ay)时弹窗底不得越过词顶(ay-G)；否则(落词下方/无锚点)可长到视口底。
+      const resizeGap = 4;
+      const maxBottom = (wordRect && pos.top < ay)
+          ? (ay - resizeGap)
+          : (window.innerHeight - 8);
+      hibikiResizeBox = {
+        left: pos.left,
+        top: pos.top,
+        maxRight: window.innerWidth - 8,
+        maxBottom: maxBottom,
+        zoom: zoom,
+      };
+      hibikiEnsureResizeGrip();
+      hibikiPositionResizeGrip();
     }
     c.style.visibility = 'visible';
   };
@@ -1380,5 +1537,11 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
 document.addEventListener('mousedown', (e) => {
   // BUG-688：shadow 内点击 e.target 被 retarget 成 hibikiHost，故 contains 判定天然把
   // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
+  // Phase D：拖拽把手是 host 之外的顶层兄弟节点（避开 host 的 zoom 包含块），点它属正常操作
+  // （开始拖拽调尺寸），不能触发关窗——否则一按把手弹窗就没了。故命中把手也算「点在弹窗上」。
+  if (hibikiResizeGrip &&
+      (e.target === hibikiResizeGrip || hibikiResizeGrip.contains(e.target))) {
+    return;
+  }
   if (hibikiHost && !hibikiHost.contains(e.target)) hibikiRemoveContainer();
 });
