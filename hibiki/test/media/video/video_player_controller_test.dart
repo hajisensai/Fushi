@@ -1821,4 +1821,81 @@ void main() {
       expect(c.currentCue!.text, 'line0');
     });
   });
+
+  // 普通 seek（±秒键 / 章节 / 收藏句直接 seekMs，非 skipToCue）在途保护：修「跳转到 gap
+  // 后旧字幕不消失（尤其暂停重听时）」。根因——media_kit `state.position` 不随 seek 同步
+  // 更新、暂停态更长期停旧位置，125ms tick 逐拍读旧 position → findCueIndex 反推旧句 →
+  // 旧字幕被反复确认挂着。skipToCue 有 cue-snap 抑制，普通 seek 历史上没有。修法对齐有声书
+  // `_explicitSeekInFlight`：seekMs 发 seek 即按目标位置权威同步字幕 + 抑制在途旧 position。
+  group('普通 seek 在途：跳到 gap 旧字幕立即消失、不被滞后旧 position 拉回', () {
+    test('暂停态 ±秒跳到 gap：字幕立即消失且多拍旧 position 不把它拉回', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 1000, 2000), _cue(1, 5000, 6000)]);
+
+      // 暂停中停在 cue0。
+      c.debugSetIsPlayingForTesting(false);
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCue!.text, 'line0');
+      expect(c.activeCues, isNotEmpty);
+
+      // 跳到 gap（3000）。权威同步：字幕应**立即**消失（不等 tick / 不等 seek 落地）。
+      await c.seekMs(3000);
+      expect(c.currentCue, isNull, reason: 'seek 到 gap 后字幕应立即消失');
+      expect(c.currentCueIndex, -1);
+      expect(c.activeCues, isEmpty);
+
+      // 暂停态 media_kit 仍逐拍吐旧 position 1500（positionStream 不推进 / seek 未落地）：
+      // 修复前 findCueIndex(1500)=cue0 会把旧字幕拉回；修复后在途调和把它替成目标 3000（gap）。
+      for (var i = 0; i < 5; i++) {
+        c.debugUpdateCueForPosition(1500);
+        expect(c.currentCue, isNull, reason: '暂停在途：旧 position 不得把旧字幕拉回');
+        expect(c.activeCues, isEmpty);
+      }
+    });
+
+    test('播放态在途保持目标、落地后放行真实位置（不把字幕钉在跳转 gap）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 1000, 2000), _cue(1, 5000, 6000)]);
+      c.debugSetIsPlayingForTesting(true);
+
+      c.debugUpdateCueForPosition(1500); // cue0
+      expect(c.currentCue!.text, 'line0');
+
+      await c.seekMs(4800); // 跳到接近 cue1 前的 gap
+      expect(c.currentCue, isNull, reason: '权威同步：目的地是 gap');
+
+      // 播放在途：前几拍仍读旧 1500（seek 未落地）→ 宽限保持目标 gap，不回 cue0。
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCue, isNull, reason: '播放在途：旧 position 不得把 cue0 拉回');
+
+      // 真实位置落定到目标 4800 → 作废在途保护、放行真实位置。
+      c.debugUpdateCueForPosition(4800);
+      expect(c.currentCue, isNull);
+
+      // 自然播放进入 cue1：在途保护已放行，字幕正常跟随（未被钉在跳转 gap）。
+      c.debugUpdateCueForPosition(5500);
+      expect(c.currentCueIndex, 1, reason: '落地后不得把字幕钉在跳转目标 gap 上');
+      expect(c.currentCue!.text, 'line1');
+    });
+
+    test('暂停态跳进某句：立即显示目的地句，旧 position 不显示旧句', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 1000, 2000), _cue(1, 5000, 6000)]);
+      c.debugSetIsPlayingForTesting(false);
+      c.debugUpdateCueForPosition(1500); // cue0
+      expect(c.currentCue!.text, 'line0');
+
+      await c.seekMs(5500); // 跳进 cue1
+      expect(c.currentCueIndex, 1, reason: 'seek 目的地在 cue1，应立即显示 line1');
+      expect(c.currentCue!.text, 'line1');
+
+      // 暂停态在途仍读旧 1500：不得回 cue0。
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCueIndex, 1);
+      expect(c.currentCue!.text, 'line1');
+    });
+  });
 }

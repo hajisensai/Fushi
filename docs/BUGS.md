@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 777 条。点号进各自文件。
+> 共 778 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-796](bugs/BUG-796-video-seek-gap-subtitle-linger.md) | ✅ | ✅ | 视频普通 seek（±秒键）跳到无字幕段后旧字幕不消失 |
 | [BUG-795](bugs/BUG-795-subtitle-list-empty-hint.md) | ✅ | ✅ | 字幕列表收藏/已选档结果为空误显示未加载字幕 |
 | [BUG-793](bugs/BUG-793-video-import-no-refresh.md) | ✅ | ✅ | 视频导入后库页不自动刷新(外部打开等路径) |
 | [BUG-792](bugs/BUG-792-subtitle-list-hover-popover-close.md) | ✅ | ✅ | 悬停底栏音量/倍速图标误关 push-aside 字幕列表 |
