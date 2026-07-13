@@ -237,6 +237,10 @@ class GlobalLookupWindow {
   // 建窗 ex-style（含 composition 能力探测）：composition_active_ 时带
   // WS_EX_NOREDIRECTIONBITMAP。ShowAt / PrewarmWebView 共用，避免两处重复。
   DWORD OverlayCreateExStyle();
+  // 背景逐像素透明（composition）无子 HWND，鼠标消息直达本窗：把它们转发给
+  // composition controller（SendMouseInput），否则透明面板点不动/滚不动。windowed
+  // 瞬态窗的 WebView2 子窗自动收输入，不经此路径。
+  void ForwardCompositionMouse(UINT message, WPARAM wparam, LPARAM lparam);
   void RecoverDeadWebView(const std::string& replay_script);
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
   // swallows it) so the "app-external lookup shows no popup" cause is visible.
@@ -298,6 +302,9 @@ class GlobalLookupWindow {
   wil::com_ptr<IDCompositionTarget> dcomp_target_;
   wil::com_ptr<IDCompositionVisual> dcomp_visual_;
   wil::com_ptr<ICoreWebView2CompositionController> composition_controller_;
+  // composition 模式下 WebView2 请求的光标（add_CursorChanged 回调更新）；
+  // WM_SETCURSOR 据此 SetCursor，让 hover 链接/文本时光标形状正确。
+  HCURSOR composition_cursor_ = nullptr;
 
   MediaResolver media_resolver_;
   MessageCallback message_cb_;

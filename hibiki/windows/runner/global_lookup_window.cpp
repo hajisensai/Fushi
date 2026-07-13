@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <shlwapi.h>
+#include <windowsx.h>  // GET_X_LPARAM / GET_KEYSTATE_WPARAM（composition 鼠标转发）
 
 #include "resource.h"
 
@@ -839,6 +840,63 @@ DWORD GlobalLookupWindow::OverlayCreateExStyle() {
          (composition_active_ ? WS_EX_NOREDIRECTIONBITMAP : 0);
 }
 
+// 背景逐像素透明（composition）— 把本窗收到的鼠标消息转发给 composition controller。
+// windowed 模式 WebView2 子窗自动收输入，不走这里。坐标：非滚轮消息 lParam 已是
+// 客户区物理像素（窗口 per-monitor DPI 感知，bounds 用 RAW_PIXELS，客户区=WebView 坐标）；
+// 滚轮消息 lParam 是屏幕坐标，需 ScreenToClient。virtualKeys 与 MK_* 位值一一对应，
+// 直接 cast。mouseData：滚轮=WHEEL_DELTA 倍数，其余 0。
+void GlobalLookupWindow::ForwardCompositionMouse(UINT message, WPARAM wparam,
+                                                 LPARAM lparam) {
+  if (composition_controller_ == nullptr) {
+    return;
+  }
+  const bool is_wheel =
+      (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL);
+  POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+  UINT32 mouse_data = 0;
+  COREWEBVIEW2_MOUSE_EVENT_KIND kind = COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE;
+  if (is_wheel) {
+    ScreenToClient(hwnd_, &point);  // 滚轮 lParam 是屏幕坐标。
+    mouse_data =
+        static_cast<UINT32>(GET_WHEEL_DELTA_WPARAM(wparam));
+    kind = (message == WM_MOUSEWHEEL)
+               ? COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL
+               : COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL;
+  } else {
+    switch (message) {
+      case WM_MOUSEMOVE:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE;
+        break;
+      case WM_LBUTTONDOWN:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOWN;
+        break;
+      case WM_LBUTTONUP:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_UP;
+        break;
+      case WM_LBUTTONDBLCLK:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOUBLE_CLICK;
+        break;
+      case WM_RBUTTONDOWN:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_RIGHT_BUTTON_DOWN;
+        break;
+      case WM_RBUTTONUP:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_RIGHT_BUTTON_UP;
+        break;
+      case WM_MBUTTONDOWN:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_MIDDLE_BUTTON_DOWN;
+        break;
+      case WM_MBUTTONUP:
+        kind = COREWEBVIEW2_MOUSE_EVENT_KIND_MIDDLE_BUTTON_UP;
+        break;
+      default:
+        return;
+    }
+  }
+  const auto keys = static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(
+      GET_KEYSTATE_WPARAM(wparam));
+  composition_controller_->SendMouseInput(kind, keys, mouse_data, point);
+}
+
 void GlobalLookupWindow::EnsureWebView() {
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto options = Make<CoreWebView2EnvironmentOptions>();
@@ -947,6 +1005,27 @@ void GlobalLookupWindow::EnsureWebView() {
                               // WebView 的 visual 挂到 DComp 视觉树 → Commit 上桌面。
                               composition_controller_->put_RootVisualTarget(
                                   dcomp_visual_.get());
+                              // 光标形状：composition 无子窗自动管光标，靠 WebView2
+                              // 的 CursorChanged 通知 + WM_SETCURSOR 应用（hover 链接
+                              // /文本时光标正确）。
+                              composition_controller_->add_CursorChanged(
+                                  Callback<
+                                      ICoreWebView2CursorChangedEventHandler>(
+                                      [this](
+                                          ICoreWebView2CompositionController*
+                                              sender,
+                                          IUnknown*) -> HRESULT {
+                                        HCURSOR cursor = nullptr;
+                                        if (sender != nullptr &&
+                                            SUCCEEDED(
+                                                sender->get_Cursor(&cursor))) {
+                                          composition_cursor_ = cursor;
+                                          SetCursor(cursor);
+                                        }
+                                        return S_OK;
+                                      })
+                                      .Get(),
+                                  nullptr);
                               RECT rc;
                               GetClientRect(hwnd_, &rc);
                               controller_->put_Bounds(rc);
@@ -1652,6 +1731,46 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       }
       return 0;
     }
+    // 背景逐像素透明（composition）— 无子 HWND，客户区鼠标消息直达本窗，转发给
+    // composition controller（否则透明面板点不动/滚不动）。windowed 瞬态窗
+    // composition_active_=false，落 default→DefWindowProc（子窗自动收输入，行为不变）。
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
+      if (composition_active_) {
+        if (message == WM_MOUSEMOVE) {
+          // 追踪离开事件（hover-reveal / 悬停状态需要 mouseleave）。
+          TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd_, 0};
+          TrackMouseEvent(&tme);
+        }
+        ForwardCompositionMouse(message, wparam, lparam);
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
+    case WM_MOUSELEAVE:
+      if (composition_active_ && composition_controller_ != nullptr) {
+        POINT pt{0, 0};
+        composition_controller_->SendMouseInput(
+            COREWEBVIEW2_MOUSE_EVENT_KIND_LEAVE,
+            COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_NONE, 0, pt);
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
+    case WM_SETCURSOR:
+      // composition 无子窗托管光标：客户区内用 WebView2 请求的光标形状。
+      if (composition_active_ && LOWORD(lparam) == HTCLIENT &&
+          composition_cursor_ != nullptr) {
+        SetCursor(composition_cursor_);
+        return TRUE;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     default:
       return DefWindowProc(hwnd_, message, wparam, lparam);
   }
