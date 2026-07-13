@@ -118,30 +118,37 @@ extension _ReaderLookup on _ReaderHibikiPageState {
     int highlightCount,
     Rect fallbackRect,
   ) async {
-    Rect finalRect = fallbackRect;
+    // BUG-717 ②：把「显示弹窗」与「正文高亮 eval」解耦。旧实现先 `await` 高亮 eval（打在
+    // 正在渲染 EPUB 的大 reader WebView 上，其忙于分页/滚动/渲染时每次 JS 往返 stall 到
+    // 数十 ms），`finally` 才 `showDeferredPopup` —— 弹窗显示 + 弹窗 WebView 内容注入被
+    // 死死串在繁忙大 WebView 之后，是 app 内查词比 app 外覆盖窗慢数倍的主乘数。
+    //
+    // 现改为：先用原始选区 rect **立即显示**（弹窗 WebView 注入与下面的高亮 eval 分属两个
+    // WebView、并行不争用），高亮 eval 异步回来拿到精修后的词 bbox 再经 [reanchorTopPopup]
+    // 重锚（多字去屈折时高亮比选区宽，重锚保证弹窗不覆盖被查词 BUG-767；代次守卫防迟到
+    // 回调错位到新查词弹窗）。高亮副作用（正文里高亮被查词）随之从「弹窗前」变「弹窗后
+    // ~一跳」，与 app 外一致（app 外根本不在正文高亮）。
+    final int generation = activeLookupGeneration;
+    showDeferredPopup(selectionRect: fallbackRect);
+    if (highlightCount <= 0 || _controller == null) return;
     try {
-      if (highlightCount > 0 && _controller != null) {
-        final raw = await _controller!.evaluateJavascript(
-          source: ReaderSelectionScripts.highlightInvocation(highlightCount),
-        );
-        if (mounted) {
-          final rect = ReaderSelectionScripts.highlightRectFromResult(
-            raw,
-            topOffset: 0,
-          );
-          if (rect != null) finalRect = rect;
-        }
-      }
+      final raw = await _controller!.evaluateJavascript(
+        source: ReaderSelectionScripts.highlightInvocation(highlightCount),
+      );
+      if (!mounted) return;
+      final rect = ReaderSelectionScripts.highlightRectFromResult(
+        raw,
+        topOffset: 0,
+      );
+      if (rect != null) reanchorTopPopup(rect, generation);
     } catch (e, stack) {
-      // BUG-005 同根因（TODO-678）：WebView 半销毁（页面 teardown / 设置 reload
-      // 重建瞬态）时其 per-instance method channel 的 setMethodCallHandler(null)
-      // 已摘除，evaluateJavascript 抛 MissingPluginException。`_controller != null`
-      // 守卫只防 null，防不了通道已废 —— 必须 try/catch 兜底。高亮失败退回
-      // fallbackRect，finally 仍照常 showDeferredPopup（查词弹窗不中断）。
+      // BUG-005 同根因（TODO-678）：WebView 半销毁（页面 teardown / 设置 reload 重建
+      // 瞬态）时其 per-instance method channel 的 setMethodCallHandler(null) 已摘除，
+      // evaluateJavascript 抛 MissingPluginException。`_controller != null` 守卫只防
+      // null，防不了通道已废 —— 必须 try/catch 兜底。弹窗已显示，重锚失败仅停在选区
+      // rect（查词弹窗不中断）。
       ErrorLogService.instance
           .log('ReaderHibiki.highlightAndShowPopup.eval', e, stack);
-    } finally {
-      showDeferredPopup(selectionRect: finalRect);
     }
   }
 

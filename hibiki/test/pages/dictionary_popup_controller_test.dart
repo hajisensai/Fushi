@@ -482,4 +482,65 @@ void main() {
       expect(calls, 0);
     });
   });
+
+  group('BUG-717 ② reanchorEntry（显示与高亮 eval 解耦后的重锚）', () {
+    DictionaryPopupController visibleTop() {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      c.beginTop(
+        term: 'あ',
+        rect: const Rect.fromLTWH(1, 2, 3, 4),
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+      );
+      return c;
+    }
+
+    test('可见条目重锚到新 rect 并通知（弹窗重定位）', () {
+      final c = visibleTop();
+      int notifies = 0;
+      c.addListener(() => notifies++);
+      const Rect refined = Rect.fromLTWH(10, 20, 30, 8);
+      c.reanchorEntry(c.entries.first, refined);
+      expect(c.entries.first.selectionRect, refined);
+      expect(notifies, 1, reason: 'rect 变化必须通知以触发重定位');
+    });
+
+    test('rect 未变：不改不通知（避免无谓重建 / 位置抖动）', () {
+      final c = visibleTop();
+      final Rect current = c.entries.first.selectionRect;
+      int notifies = 0;
+      c.addListener(() => notifies++);
+      c.reanchorEntry(c.entries.first, current);
+      expect(c.entries.first.selectionRect, current);
+      expect(notifies, 0);
+    });
+
+    test('隐藏条目不重锚（迟到高亮回调不动隐身热槽）', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.entries.first; // 隐身热槽 visible=false
+      int notifies = 0;
+      c.addListener(() => notifies++);
+      c.reanchorEntry(e, const Rect.fromLTWH(9, 9, 9, 9));
+      expect(e.selectionRect, isNot(const Rect.fromLTWH(9, 9, 9, 9)));
+      expect(notifies, 0);
+    });
+
+    test('条目已被新查词清出栈：重锚 no-op（防错位新弹窗）', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      // 嵌套子条目（非热槽），随后 pruneToWarmSlot 把它清出栈，模拟迟到高亮回调。
+      final DictionaryPopupEntry stale = c.pushChild(
+        term: 'い',
+        rect: const Rect.fromLTWH(5, 6, 7, 8),
+        parentIndex: 0,
+        visible: true,
+      );
+      c.pruneToWarmSlot();
+      expect(c.entries.contains(stale), false, reason: '前置：子条目已被清出栈');
+      int notifies = 0;
+      c.addListener(() => notifies++);
+      c.reanchorEntry(stale, const Rect.fromLTWH(70, 70, 7, 7));
+      expect(notifies, 0, reason: '不在栈内的旧条目不得触发重定位');
+    });
+  });
 }
