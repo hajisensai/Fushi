@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 765 条。点号进各自文件。
+> 共 766 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-783](bugs/BUG-783-youtube-timedtext-format3.md) | ✅ | ✅ | YouTube 字幕失效: androidVr 返回 timedtext format3 <p t d> 而解析器只认 srv1 <text> |
 | [BUG-782](bugs/BUG-782-reader-sheet-exit-bypasses-popscope.md) | ✅ | ✅ | 快捷面板退出按钮直接pop绕过PopScope致hero不更新且不触发同步 |
 | [BUG-781](bugs/BUG-781-collection-member-menu-ui-scale-offset.md) | ✅ | ✅ | 合集详情页成员右键菜单未按界面缩放换算坐标错位 |
 | [BUG-780](bugs/BUG-780-backup-keep-settings-local-audio-wipe.md) | ✅ | ✅ | 覆盖整库保留设置冲掉本地音频注册 |

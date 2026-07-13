@@ -8,6 +8,49 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  // B（浏览器扩展加载外挂字幕文件）：server 端点把用户上传的 srt/ass/vtt 文本解析成扩展
+  // 面板可消费的 cue JSON。纯函数（parseSubtitleContent 无 IO），复用 app 内已测的 parser。
+  group('buildParsedSubtitleResponse (extension external subtitle)', () {
+    test('SRT → cues {text,startMs,endMs}', () {
+      const String srt = '1\n'
+          '00:00:01,500 --> 00:00:03,500\n'
+          '走り出した\n\n'
+          '2\n'
+          '00:00:04,000 --> 00:00:05,000\n'
+          'こんにちは\n';
+      final Map<String, dynamic> json =
+          buildParsedSubtitleResponse(filename: 'movie.ja.srt', content: srt);
+      final List<dynamic> cues = json['cues'] as List<dynamic>;
+      expect(cues.length, 2);
+      expect(cues[0], <String, dynamic>{
+        'text': '走り出した',
+        'startMs': 1500,
+        'endMs': 3500,
+      });
+      expect((cues[1] as Map<String, dynamic>)['startMs'], 4000);
+      expect(json['format'], 'srt');
+    });
+
+    test('ASS 也解析（复用 AssParser）', () {
+      const String ass = '[Events]\n'
+          'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+          'Dialogue: 0,0:00:02.00,0:00:04.00,Default,,0,0,0,,テスト\n';
+      final Map<String, dynamic> json =
+          buildParsedSubtitleResponse(filename: 'x.ass', content: ass);
+      final List<dynamic> cues = json['cues'] as List<dynamic>;
+      expect(cues.length, 1);
+      expect((cues[0] as Map<String, dynamic>)['text'], 'テスト');
+      expect((cues[0] as Map<String, dynamic>)['startMs'], 2000);
+    });
+
+    test('不支持的扩展名 → error、不抛', () {
+      final Map<String, dynamic> json =
+          buildParsedSubtitleResponse(filename: 'notes.txt', content: 'x');
+      expect(json['error'], 'unsupported');
+      expect(json['cues'], isEmpty);
+    });
+  });
+
   group('parseSubtitleStreamsFromFfmpegLog', () {
     test('解析龙女仆 S01E01 真实 ffmpeg stderr：2 条字幕轨（eng/ass）', () {
       // 真实 `ffmpeg -i "...S01E01.mkv"` stderr 片段（HEVC + 2 opus 音轨 +
