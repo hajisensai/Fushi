@@ -17,4 +17,5 @@
   - DB 层行为：`hibiki/test/database/video_books_test.dart` 新增 `watchVideoBookUids` 组（插入发出更新集合；纯进度更新集合不变）。
   - 源码守卫：`hibiki/test/pages/home_video_page_watch_guard_test.dart`（断言库页在 initState 订阅 `watchVideoBookUids` 且 dispose 取消，防回归删订阅）。
   - 测试文件：见上；提交：74ca7bdb2
-- **备注**：书架（书籍）同属一类（`reader_hibiki_source.dart` 的 `hibikiBooksProvider`/`srtBooksProvider` 是 `FutureProvider`、不 `.watch()`），但书籍的导入/变更点都调 `ref.invalidate(hibikiBooksProvider)` 缓解，故本次不动书籍以免扩大范围；哪天冒出不 invalidate 的加书路径会犯同病。真机验收：外部「用 Hibiki 打开」一个新 mkv → 不重启不下拉，视频页应自动出现该条目。BUG-790 已被 PR#94（草稿，合集行头 0 集）占用，故本 bug 用 791。
+- **书架（书籍/有声书）一并根因修**（用户追问「一样处理不好吗」）：`reader_hibiki_source.dart` 的 `hibikiBooksProvider`/`srtBooksProvider` 同属「`FutureProvider` 不 `.watch()`、靠每个导入点各自 `ref.invalidate`」的脆弱模式。改为各 `ref.watch` 一个监听 DB 行集的 StreamProvider（`_epubBookKeysProvider`/`_srtBookUidsProvider`，底层 `watchEpubBookKeys()`/`watchSrtBookUids()` + `.distinct(listEquals)` 按集合去重），任意导入路径落库自动重算；现存 invalidate 保留为即时刷新兜底。DB 层新增 `watchEpubBookKeys()`/`watchSrtBookUids()`；测试见 `epub_books_test.dart`/`srt_books_test.dart` 的 watch 组 + `test/media/reader_hibiki_source_watch_guard_test.dart`。
+- **备注**：真机验收——① 外部「用 Hibiki 打开」一个新 mkv → 不重启不下拉，视频页应自动出现；② 用不触发 invalidate 的路径加一本 EPUB/有声书 → 书架应自动出现。BUG-790 已被 PR#94（草稿，合集行头 0 集）占用，故本 bug 用 791。
