@@ -91,7 +91,7 @@ import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 
 export 'package:hibiki/src/models/local_audio_manager.dart'
-    show LocalAudioDbEntry;
+    show LocalAudioDbEntry, InvalidLocalAudioDbException;
 export 'package:hibiki/src/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 export 'package:hibiki/src/models/audio_source_config.dart'

@@ -516,6 +516,40 @@ class BackupService {
         'AND key NOT IN ($notIn)';
   }
 
+  /// Predicate for the keep-THIS-device-settings restore ([_restoreSettingsLayer],
+  /// the `importSettings=false` overwrite path). Restores from bak every pref row
+  /// EXCEPT the ones that are CONTENT and must follow the imported backup:
+  ///   - `audiobook_pos_*`      -> reading progress (the `progress` category)
+  ///   - `favorite_sentences`   -> favorites content (travels)
+  ///   - `local_audio_dbs` / `audio_source_configs` -> audio-source registry that
+  ///     points at the imported local-audio `.db` files (BUG-778: the old
+  ///     `NOT LIKE 'audiobook_pos_%'` restored these from THIS device, wiping the
+  ///     backup's registration so the `.db` files landed but no source was
+  ///     registered → imported local audio silently stopped working).
+  ///   - font catalog + legacy font prefs -> font registry (the `fonts` category)
+  /// UNLIKE [settingsPrefPredicate] this KEEPS `sync_*` restored from bak: the
+  /// keep-settings path writes no `{'mode':'prefs'}` sidecar and never calls
+  /// [_applyPreservedConfig], so this wholesale restore is the ONLY place the
+  /// device's own (never-exported) sync config is preserved — excluding `sync_*`
+  /// here would drop it. Same content-vs-settings split as the export strip and
+  /// [_restoreExcludedSettingsLayers], so the two restore paths stay symmetric.
+  static final String _keepDeviceSettingsPrefPredicate =
+      _buildKeepDeviceSettingsPrefPredicate();
+
+  static String _buildKeepDeviceSettingsPrefPredicate() {
+    final List<String> contentRegistryKeys = <String>[
+      _favoriteSentencesPrefKey,
+      _localAudioDbsPrefKey,
+      _audioSourceConfigsPrefKey,
+      _fontCatalogPrefKey,
+      ..._legacyFontPrefKeys,
+    ];
+    final String notIn = contentRegistryKeys
+        .map((String k) => "'${k.replaceAll("'", "''")}'")
+        .join(', ');
+    return "key NOT LIKE 'audiobook_pos_%' AND key NOT IN ($notIn)";
+  }
+
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
   /// (a startup sweep re-applies it). Deleted once the import completes.
@@ -2009,13 +2043,16 @@ class BackupService {
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
       await db.customStatement("ATTACH DATABASE '$safeBak' AS bak");
       await db.transaction(() async {
-        // preferences: keep local settings, but let audiobook positions (per
-        // book content) follow the imported books.
+        // preferences: keep this device's SETTINGS from bak, but let CONTENT
+        // prefs (audiobook positions, favorites, local-audio / audio-source
+        // registry, font registry) follow the imported backup — see
+        // [_keepDeviceSettingsPrefPredicate]. `sync_*` stays restored from bak
+        // (device-local, never exported), which this predicate keeps.
         await db.customStatement(
-            "DELETE FROM preferences WHERE key NOT LIKE 'audiobook_pos_%'");
+            'DELETE FROM preferences WHERE $_keepDeviceSettingsPrefPredicate');
         await db.customStatement(
             'INSERT INTO preferences SELECT * FROM bak.preferences '
-            "WHERE key NOT LIKE 'audiobook_pos_%'");
+            'WHERE $_keepDeviceSettingsPrefPredicate');
         // profiles before its FK dependents.
         for (final String t in _settingsLayerTables) {
           await db.customStatement('DELETE FROM $t');

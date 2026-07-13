@@ -358,7 +358,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       // （错误日志页可查、可回传），并把异常类型摘要带进可见 snackbar，让用户能复述。
       ErrorLogService.instance.log('AudioSourcesDialog.addLocalDb', e, st);
       if (mounted) {
-        _showSnack(t.local_audio_import_failed_detail(reason: '$e'));
+        // BUG-777：无效文件（zip / 备份 zip / 空库）给专属可读文案，不把裸异常字符串
+        // 甩给用户；其它真·失败（权限 / 磁盘 / 平台）仍带异常摘要便于复述。
+        _showSnack(e is InvalidLocalAudioDbException
+            ? t.local_audio_invalid_db
+            : t.local_audio_import_failed_detail(reason: '$e'));
       }
     } finally {
       if (mounted) setState(() => _importing = false);

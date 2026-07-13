@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 759 条。点号进各自文件。
+> 共 761 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-778](bugs/BUG-778-backup-keep-settings-local-audio-wipe.md) | ✅ | ✅ | 覆盖整库保留设置冲掉本地音频注册 |
+| [BUG-777](bugs/BUG-777-local-audio-import-invalid-file.md) | ✅ | ✅ | 本地音频源导入无效文件假成功 |
 | [BUG-776](bugs/BUG-776-sentence-context-native-dialog.md) | ✅ | ✅ | 制卡「选择句子上下文」应为 app 原生顶层对话框（不是画在查词弹窗内） |
 | [BUG-775](bugs/BUG-775-ext-expression-scroll-scrollbar.md) | ✅ | ✅ | 扩展弹窗词头旁多出迷你滚动条：标准scrollbar-color继承使::-webkit-scrollbar隐藏失效 |
 | [BUG-774](bugs/BUG-774-mine-button-global-lookup.md) | ✅ | ✅ | 剪贴板/选中查词缺少制卡按钮 |
