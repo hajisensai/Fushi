@@ -7,11 +7,15 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:macos_ui/macos_ui.dart' show MacosWindow, MacosIcon;
+import 'package:macos_ui/macos_ui.dart' show MacosWindow;
 
 import 'package:hibiki/main.dart' as app;
+import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
+    show hibikiMaterialNavKey;
 
-/// macOS-only visual capture of the native shell. Run via:
+import 'helpers/focus_driver.dart';
+
+/// macOS-only visual capture of the default-auto MD3 shell. Run via:
 ///   flutter drive \
 ///     --driver=test_driver/integration_test_screenshots.dart \
 ///     --target=integration_test/macos_shell_screenshot_test.dart -d macos
@@ -24,22 +28,24 @@ import 'package:hibiki/main.dart' as app;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('macOS native shell renders MacosWindow + Sidebar',
+  testWidgets('macOS default auto renders the MD3 home and settings shell',
       (WidgetTester tester) async {
     app.main();
 
     // Boot can take a while (DB open, dictionary preload). Pump until the
-    // native MacosWindow shell appears, up to 90s.
-    bool shell = false;
+    // Material navigation shell appears, up to 90s.
+    bool homeReady = false;
     for (int i = 0; i < 180; i++) {
       await tester.pump(const Duration(milliseconds: 500));
-      if (find.byType(MacosWindow).evaluate().isNotEmpty) {
-        shell = true;
+      if (find.byKey(hibikiMaterialNavKey).evaluate().isNotEmpty) {
+        homeReady = true;
         break;
       }
     }
-    expect(shell, isTrue,
-        reason: 'MacosWindow should render within 90s on macOS.');
+    expect(homeReady, isTrue,
+        reason: 'MD3 navigation should render within 90s on macOS.');
+    expect(find.byType(MacosWindow), findsNothing,
+        reason: 'Default auto must not create the hidden native macOS shell.');
 
     // Let the first frame settle, then capture the home (bookshelf) shell.
     await tester.pump(const Duration(seconds: 1));
@@ -54,56 +60,24 @@ void main() {
     final String tmp = Directory.systemTemp.path;
     await _captureLargestBoundary(tester, '$tmp/macos_home_shell.png');
 
-    // Navigate to Settings via the sidebar (its item uses Icons.tune_outlined)
-    // and capture the native settings controls (MacosSwitch / MacosSlider).
-    final Finder settingsItem = find.byWidgetPredicate(
-        (Widget w) => w is MacosIcon && w.icon == Icons.tune);
-    if (settingsItem.evaluate().isNotEmpty) {
-      // itest-tap-allow: macOS-only screenshot harness — navigates the macos_ui
-      // sidebar to capture native settings pixels; no interaction assertion.
-      await tester.tap(settingsItem.first,
-          warnIfMissed: false); // itest-tap-allow: macOS pixel-capture only
-      for (int i = 0; i < 30; i++) {
-        await tester.pump(const Duration(milliseconds: 300));
-      }
-      await _captureLargestBoundary(tester, '$tmp/macos_settings.png');
-      debugPrint('[test] captured macos_settings');
-
-      // Drill into a settings destination that has toggles ("系统"/System) to
-      // capture the native MacosSwitch controls. Locale on the build Mac is zh.
-      final Finder systemDest = find.text('系统');
-      if (systemDest.evaluate().isNotEmpty) {
-        // itest-tap-allow: macOS-only screenshot harness — opens the 系统
-        // destination to capture native MacosSwitch pixels; no assertion.
-        await tester.tap(systemDest.first,
-            warnIfMissed: false); // itest-tap-allow: macOS pixel-capture only
-        for (int i = 0; i < 20; i++) {
-          await tester.pump(const Duration(milliseconds: 300));
-        }
-        await _captureLargestBoundary(tester, '$tmp/macos_settings_detail.png');
-        debugPrint('[test] captured macos_settings_detail');
-      } else {
-        debugPrint('[test] 系统 destination not found');
-      }
-    } else {
-      debugPrint('[test] settings sidebar item not found; home-only capture');
+    // Navigate through the MD3 rail/bottom bar using the shared focus driver,
+    // then capture the Material settings shell.
+    final Finder materialNav = find.byKey(hibikiMaterialNavKey);
+    final Finder settingsItem = find.descendant(
+      of: materialNav,
+      matching: find.byIcon(Icons.tune_outlined),
+    );
+    expect(settingsItem, findsOneWidget,
+        reason: 'MD3 settings destination should be present.');
+    final FocusDriver driver = FocusDriver(tester);
+    expect(await driver.focusWidget(settingsItem), isTrue,
+        reason: 'Settings destination should be keyboard reachable.');
+    await driver.activate();
+    for (int i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
     }
-
-    // Navigate to the Dictionary tab (Icons.search_outlined) to capture the
-    // native MacosTextField search field.
-    final Finder dictItem = find.byWidgetPredicate(
-        (Widget w) => w is MacosIcon && w.icon == Icons.search);
-    if (dictItem.evaluate().isNotEmpty) {
-      // itest-tap-allow: macOS-only screenshot harness — opens the dictionary
-      // tab to capture the native MacosTextField pixels; no assertion.
-      await tester.tap(dictItem.first,
-          warnIfMissed: false); // itest-tap-allow: macOS pixel-capture only
-      for (int i = 0; i < 20; i++) {
-        await tester.pump(const Duration(milliseconds: 300));
-      }
-      await _captureLargestBoundary(tester, '$tmp/macos_dict.png');
-      debugPrint('[test] captured macos_dict');
-    }
+    await _captureLargestBoundary(tester, '$tmp/macos_settings.png');
+    debugPrint('[test] captured macos_settings');
   });
 }
 

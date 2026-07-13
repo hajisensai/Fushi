@@ -1428,7 +1428,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         ],
                       ),
                     );
-                    if (Theme.of(context).platform == TargetPlatform.macOS) {
+                    if (isMacosPlatform(context)) {
                       // macOS native shell (Approach B): the MacosWindow + Sidebar
                       // wrap the WHOLE navigator so every route — home tabs AND
                       // pushed routes (reader, settings detail, dialogs) — inherits
