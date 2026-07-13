@@ -79,3 +79,61 @@ LookupSize resolveDraggedLookupSize({
       (currentBaseHeight + deltaHeightPx / scale).clamp(minHeight, maxHeight);
   return LookupSize(width, height);
 }
+
+/// Phase C（2026-07-13）— 「app 外瞬态覆盖查词窗」被拖角调整尺寸后，native 模态
+/// size 循环结束回报**最终窗口物理像素**尺寸，本函数把它倒推回 overlay 场景的
+/// 「基准（未缩放）最大宽高」并 clamp。app 内拖拽写 [resolveDraggedLookupSize]（增量
+/// 折算），覆盖窗走这里（绝对窗口尺寸折算）——两者都不引入第二套「固定尺寸」概念，
+/// 只是把同一「最大宽高」真值换一种输入编辑。
+///
+/// 正向链（controller 算窗口物理尺寸，见 global_lookup_controller）：
+/// `cardW = overlayEffective.width × appUiScale`，再 `× dpr` 传 native 建窗，
+/// 故单卡窗口物理宽 ≈ `overlayLogicalW × uiScale × dpr`。倒推即：
+/// `overlayLogicalW = 窗口物理宽 / dpr / uiScale`。
+///
+/// [dpr] / [uiScale] 非正时按 1 兜底（不除零、不反向缩放）。结果先**下取整**到整
+/// 逻辑像素（避免一次拖拽因四舍五入把值顶上去 / 多次往返累积漂移），再 clamp 到
+/// [kLookupPopupMinWidth]..[kLookupPopupMaxHeight]——与滑杆同一 min/max 单一同源。
+/// 纯函数（含 dpr、uiScale、下取整、clamp 边界），直接单测。
+LookupSize resolveOverlayResizeFromWindow({
+  required double windowPhysicalWidth,
+  required double windowPhysicalHeight,
+  required double dpr,
+  required double uiScale,
+  double minWidth = kLookupPopupMinWidth,
+  double maxWidth = kLookupPopupMaxWidth,
+  double minHeight = kLookupPopupMinHeight,
+  double maxHeight = kLookupPopupMaxHeight,
+}) {
+  final double d = dpr > 0 ? dpr : 1.0;
+  final double s = uiScale > 0 ? uiScale : 1.0;
+  final double width =
+      (windowPhysicalWidth / d / s).floorToDouble().clamp(minWidth, maxWidth);
+  final double height = (windowPhysicalHeight / d / s)
+      .floorToDouble()
+      .clamp(minHeight, maxHeight);
+  return LookupSize(width, height);
+}
+
+/// Phase D（2026-07-13）— 浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
+/// 扩展 ↔ app bridge（POST `/api/extension/popup-size`）回写的**基准（未缩放）最大
+/// 宽高**（逻辑像素）。扩展侧已按视口可用空间夹过一次并保证下限（不撑出屏幕、不遮被查
+/// 词），但**未夹 2000/1600 上界**（4K 屏视口空间可远超上界）。本函数把它 clamp 到与
+/// 设置页两滑杆同一 [kLookupPopupMinWidth]..[kLookupPopupMaxHeight] 单一同源——拖拽与
+/// 滑杆写同一真值，故 app 侧再兜底 clamp 一次，任何客户端（含异常/恶意值）都写不出越界
+/// 尺寸。非有限值（NaN/Inf）按下限兜底。纯函数（min/max 边界 + 非有限兜底），直接单测。
+LookupSize resolveExtensionPopupSize({
+  required double maxWidth,
+  required double maxHeight,
+  double minWidth = kLookupPopupMinWidth,
+  double maxWidthLimit = kLookupPopupMaxWidth,
+  double minHeight = kLookupPopupMinHeight,
+  double maxHeightLimit = kLookupPopupMaxHeight,
+}) {
+  final double w = maxWidth.isFinite ? maxWidth : minWidth;
+  final double h = maxHeight.isFinite ? maxHeight : minHeight;
+  return LookupSize(
+    w.clamp(minWidth, maxWidthLimit),
+    h.clamp(minHeight, maxHeightLimit),
+  );
+}

@@ -254,9 +254,73 @@ Widget parkedPopupLayer({
       maintainState: true,
       maintainAnimation: true,
       maintainSize: true,
-      child: child,
+      // TODO-890 姊妹项：入场淡入。四表面共用此收口，一处补齐全部。
+      child: _PopupEntranceFade(visible: visible, child: child),
     ),
   );
+}
+
+/// TODO-890 姊妹项：查词弹窗**入场淡入**收口。app 外覆盖窗靠注入 CSS
+/// `transition:opacity 200ms ease-out` + 双 gate 翻 `opacity 0→1` 做平滑淡入；app 内
+/// 各表面（阅读器 / 视频 / 首页 / 安卓独立窗）此前经 [parkedPopupLayer] 的 [Visibility]
+/// **硬切**出现，观感生硬且冷路径显得慢。此包装器把「隐藏→可见」补成
+/// [_kSlideDuration] / easeOut 淡入，与 app 外及本层既有的 swipe 滑出淡出（同一常量 /
+/// 曲线）三处统一。
+///
+/// 关键：[ImplicitlyAnimatedWidget] 首帧取目标值不补间，故不能只写
+/// `AnimatedOpacity(opacity: visible ? 1 : 0)`——首次挂载即 `visible:true` 的
+/// 视频 / 首页 / 独立窗会跳过淡入。这里用「首帧强制 0 + post-frame 翻 1」保证每次进入
+/// 可见态都淡入（含首帧即可见），镜像 app 外「shell 默认 opacity:0，reveal gate 齐才翻 1」。
+class _PopupEntranceFade extends StatefulWidget {
+  const _PopupEntranceFade({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  State<_PopupEntranceFade> createState() => _PopupEntranceFadeState();
+}
+
+class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
+  /// 入场淡入是否已触发（[AnimatedOpacity] 目标翻 1）。隐藏态复位，下次可见重新淡入。
+  bool _revealed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.visible) _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(_PopupEntranceFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible && !oldWidget.visible) {
+      _revealed = false; // 重新进入可见态：复位以再次淡入。
+      _scheduleReveal();
+    } else if (!widget.visible && oldWidget.visible) {
+      _revealed = false; // 隐藏即复位，避免下次瞬间满不透明。
+    }
+  }
+
+  /// 下一帧把 [_revealed] 翻 true，使 [AnimatedOpacity] 从首帧的 0 补间到 1
+  /// （同帧内 0→1 会被隐式动画当作初值直接取 1、不补间）。
+  void _scheduleReveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.visible && !_revealed) {
+        setState(() => _revealed = true);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: widget.visible && _revealed ? 1.0 : 0.0,
+      duration: _kSlideDuration,
+      curve: Curves.easeOut,
+      child: widget.child,
+    );
+  }
 }
 
 /// Maps a word rect reported in the popup WebView's own coordinate space

@@ -3955,6 +3955,24 @@ class AppModel with ChangeNotifier {
         sharedHeight: popupMaxHeight,
       );
 
+  /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
+  /// 扩展 ↔ app bridge（POST `/api/extension/popup-size`）回写最终基准最大宽高，由
+  /// [YomitanApiServer] 的 `onExtensionPopupSize` sink 调到这里。先 clamp 到与设置页两滑杆
+  /// 同一 250-2000/200-1600（[resolveExtensionPopupSize]，任何异常/越界客户端都写不穿），
+  /// 再按「拖即解锁」好品味写真值：一动手定制扩展尺寸就脱钩「跟随 app 内」——置
+  /// [setExtensionPopupIndependentSize]`(true)` + 写 extension 宽/高键。滑杆与拖拽写同一真
+  /// 值，下次查词 [extensionPopupEffectiveSize] 以新值下发（预期行为）。**只写扩展键**，
+  /// 绝不碰 overlay / popupMax（app 内 / app 外覆盖窗各自的真值，串台即破坏它们）。
+  void _applyExtensionPopupSize(double maxWidth, double maxHeight) {
+    final LookupSize size = resolveExtensionPopupSize(
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+    );
+    unawaited(setExtensionPopupIndependentSize(true));
+    setExtensionPopupMaxWidth(size.width);
+    setExtensionPopupMaxHeight(size.height);
+  }
+
   bool get popupInstantScroll => prefsRepo.popupInstantScroll;
   Future<void> setPopupInstantScroll(bool value) =>
       prefsRepo.setPopupInstantScroll(value);
@@ -4403,6 +4421,10 @@ class AppModel with ChangeNotifier {
       // 与自身 HIBIKI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
       extensionBuildProvider: () => _browserExtensionBuild,
+      // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后经 bridge 回写的 sink——clamp + 拖即
+      // 解锁 + 只写扩展键（下次查词 browserExtensionThemeColors 读新 extensionPopupEffectiveSize
+      // 即以新尺寸下发，闭环）。
+      onExtensionPopupSize: _applyExtensionPopupSize,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';

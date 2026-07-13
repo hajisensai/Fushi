@@ -30,14 +30,24 @@ REPO="${PR_SWEEP_REPO:-hajisensai/hibiki}"
 BASE="${PR_SWEEP_BASE:-develop}"
 SELF="${PR_SWEEP_SELF:-hajisensai}"
 LIMIT="${PR_SWEEP_LIMIT:-40}"
+# 合并后分支落后 $BASE ≥ 此值 = 疑似陈旧/被后续工作取代（活的 post-merge 迭代应贴近
+# $BASE；落后一大截多半 patch-id 漂移的假阳性）——todo 改指向「核实后删远端分支」而非
+# 「再合并」，避免 agent 只关不删导致 sweep 每轮重报（PR#68 死循环教训）。
+# 导出（非仅 shell 变量）让内嵌 python 直接读到同一真值，默认只此一处。
+export PR_SWEEP_STALE_BEHIND="${PR_SWEEP_STALE_BEHIND:-20}"
 # fake-ip DNS 下 gh 直连必超时——与 tool/board 同款默认自动挂本机代理。
 export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:34151}"
 export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY}}"
 export PYTHONUTF8=1   # Windows GBK 控制台下内嵌 python 打中文不乱码
 
-# 检测阶段把「自动处理」项统一收集成 TSV（kind\tnum\ttitle\tbranch\tahead\toldsha\tnewsha），
+# 检测阶段把「自动处理」项统一收集成 TSV（kind\tnum\ttitle\tbranch\tahead\toldsha\tnewsha\tbehind），
 # 人读输出照旧打印；--file 模式末尾一次性喂给内嵌 python 去重+落板。
+# ⚠️ 路径归一：mktemp 给 MSYS `/tmp/...`，Git-bash 的 cp/printf 解析对，但 Windows
+# 内嵌 python 对 `/tmp/...` 解析不稳定（会读到自己在别处建的空文件→落板 0 条·假成功）。
+# 用 cygpath -m 转成 `C:/...` 原生路径，bash 与 Windows python 就指向同一物理文件；
+# 非 Windows/无 cygpath 时保持原路径（Linux/Mac 上 mktemp 路径本就通用）。
 AUTO_TSV="$(mktemp)"
+AUTO_TSV="$(cygpath -m "$AUTO_TSV" 2>/dev/null || echo "$AUTO_TSV")"
 trap 'rm -f "$AUTO_TSV"' EXIT
 
 open_json=$(gh pr list --repo "$REPO" --state open \
@@ -55,8 +65,8 @@ ext  = [r for r in rows if r["author"]["login"] != self_login]
 def clean(s: str) -> str:
     return " ".join(str(s).split())  # 去掉标题里的 tab/换行，保 TSV 一行一项
 with open(tsv_path, "a", encoding="utf-8") as f:
-    for r in mine:
-        f.write("open\t%s\t%s\t%s\t\t\t\n"
+    for r in mine:  # 8 列（kind num title branch ahead oldsha newsha behind），open 项后四列空
+        f.write("open\t%s\t%s\t%s\t\t\t\t\n"
                 % (r["number"], clean(r["title"]), clean(r["headRefName"])))
 for r in mine:
     print("#%s %s | head=%s | updated=%s"
@@ -80,12 +90,15 @@ while IFS=$'\t' read -r num author owner repo branch oid; do
   cur=$(gh api "repos/$owner/$repo/branches/$branch" --jq .commit.sha 2>/dev/null) || continue  # 分支已删=无更新
   case "$cur" in *[!0-9a-f]*|"") continue;; esac        # 非 40 位 sha（404 JSON 等）跳过
   [ "$cur" = "$oid" ] && continue                       # 合并后分支没动过
-  ahead=$(gh api "repos/$REPO/compare/$BASE...$owner:$branch" --jq .ahead_by 2>/dev/null) || ahead=""
+  # 一次 compare 拿 ahead+behind（behind=分支落后 $BASE 多少 commit，判陈旧/被取代关键）。
+  ab=$(gh api "repos/$REPO/compare/$BASE...$owner:$branch" --jq '[.ahead_by,.behind_by]|@tsv' 2>/dev/null) || ab=""
+  ahead="${ab%%$'\t'*}"; behind="${ab#*$'\t'}"
   case "$ahead" in ""|*[!0-9]*) ahead="?";; esac
+  case "$behind" in ""|*[!0-9]*) behind="?";; esac
   [ "$ahead" = "0" ] && continue                        # 新 commit 已在 $BASE（被直接合过）
-  echo "#$num $owner:$branch 有 $ahead 个 commit 不在 $BASE（merge 时 ${oid:0:9} → 现 ${cur:0:9}）——核实后再合并或废弃分支"
-  printf 'merged\t%s\t\t%s\t%s\t%s\t%s\n' \
-    "$num" "$owner:$branch" "$ahead" "${oid:0:9}" "${cur:0:9}" >> "$AUTO_TSV"
+  echo "#$num $owner:$branch ahead $ahead / behind $behind（相对 $BASE·merge 时 ${oid:0:9} → 现 ${cur:0:9}）——核实内容是否已落地：未进则再合并，已进/被取代则删远端分支"
+  printf 'merged\t%s\t\t%s\t%s\t%s\t%s\t%s\n' \
+    "$num" "$owner:$branch" "$ahead" "${oid:0:9}" "${cur:0:9}" "$behind" >> "$AUTO_TSV"
   found=1
 done < <(gh pr list --repo "$REPO" --state merged --limit "$LIMIT" \
   --json number,author,headRefName,headRefOid,headRepository,headRepositoryOwner \
@@ -107,6 +120,7 @@ if [ "$FILE_MODE" = "1" ]; then
   if command -v vibe-coxswain >/dev/null 2>&1; then CLI_KIND="exe"; else CLI_KIND="module"; fi
   python - "$AUTO_TSV" "$BASE" "$CLI_KIND" "$DB" <<'PYEOF'
 import datetime
+import os
 import re
 import subprocess
 import sys
@@ -128,7 +142,7 @@ rows: list = []
 with open(tsv_path, encoding="utf-8") as fh:
     for line in fh:
         parts = line.rstrip("\n").split("\t")
-        if len(parts) == 7 and parts[1]:
+        if len(parts) == 8 and parts[1]:  # kind num title branch ahead oldsha newsha behind
             rows.append(parts)
 
 if not rows:
@@ -174,7 +188,11 @@ today: str = datetime.date.today().isoformat()
 added: list = []
 skipped: int = 0
 failed: int = 0
-for kind, num, title, branch, ahead, oldsha, newsha in rows:
+try:
+    stale_behind = int(os.environ.get("PR_SWEEP_STALE_BEHIND", "20"))
+except ValueError:
+    stale_behind = 20  # 环境变量给了非数字：退回默认，绝不因此崩落板
+for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
     if tracked(num):
         skipped += 1
         continue
@@ -184,13 +202,24 @@ for kind, num, title, branch, ahead, oldsha, newsha in rows:
                       "integration owner 合并 %s → CI 绿 → 关 PR、清远端分支。"
                       "来源：pr_sweep --file 自动落板 %s。" % (base, today))
         next_val = "分支 %s" % branch
-    else:  # merged：合并后更新
-        todo_title = ("PR#%s 合并后更新：%s 有 %s 个 commit 不在 %s"
-                      % (num, branch, ahead, base))
-        acceptance = ("【验收】逐个 commit 核实内容是否已以其它形式进 %s："
-                      "未进 → 走门禁再合并；已进/已废弃 → 删远端分支并注明。"
-                      "来源：pr_sweep --file 自动落板 %s。" % (base, today))
-        next_val = "%s→%s" % (oldsha, newsha)
+    else:  # merged：合并后更新。behind 大 = 分支陈旧/被后续工作取代（PR#68 死循环教训）：
+           # 标题与验收指向「删远端分支」而非「再合并」，避免只关不删导致每轮重报。
+        stale = behind.isdigit() and int(behind) >= stale_behind
+        if stale:
+            todo_title = ("PR#%s 疑似陈旧分支：%s ahead %s/behind %s（落后 %s 太多，多半已被取代）"
+                          % (num, branch, ahead, behind, base))
+            acceptance = ("【验收】分支落后 %s %s 个 commit，多半 ahead 的 %s 个 commit 内容已"
+                          "以其它形式进 %s（patch-id 漂移的假阳性）：逐个 commit 核内容是否已进 %s"
+                          "——已进/已废弃 → `git push origin --delete %s` 删远端分支并注明（删后本 sweep 项永久消失）；"
+                          "仅在确有未落地内容时才走门禁再合并。来源：pr_sweep --file 自动落板 %s。"
+                          % (base, behind, ahead, base, base, branch, today))
+        else:
+            todo_title = ("PR#%s 合并后更新：%s ahead %s/behind %s（不在 %s）"
+                          % (num, branch, ahead, behind, base))
+            acceptance = ("【验收】逐个 commit 核实内容是否已以其它形式进 %s："
+                          "未进 → 走门禁再合并；已进/已废弃 → 删远端分支并注明。"
+                          "来源：pr_sweep --file 自动落板 %s。" % (base, today))
+        next_val = "%s→%s（behind %s）" % (oldsha, newsha, behind)
     if prior_done(num):  # 曾被标 done 又检出未落地 → 明说是假完成重捞，别让人以为是新单
         acceptance += ("（⚠️重捞：此 PR 之前有 done 单，但 commit 仍不在 %s——"
                        "上次「已完成」是假完成，本轮按当前 head 重新落板。）" % base)
