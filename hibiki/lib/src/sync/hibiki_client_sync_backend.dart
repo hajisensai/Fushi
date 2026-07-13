@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
@@ -849,6 +850,49 @@ class HibikiClientSyncBackend extends SyncBackend
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/aggregate');
+  }
+
+  // ── Live collections (interconnect-only) ──────────────────────────
+  // 合集双向同步（多端库联合视图 §2.3 任务5.3）：直打 /api/library/collections，
+  // 不经 WebDAV 文件箱伪装的 __collections__ 资产（互联资产层是 live 端点适配，语义
+  // 不同）。读-合并-写：GET host 清单 → 引擎合并 → 应用本地 → POST 合并后清单。
+
+  /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
+  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregate]
+  /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码。
+  Future<CollectionManifest?> getRemoteCollectionManifest() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/collections',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null; // 老 host 无合集端点：降级跳过，不崩。
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/collections');
+    final String body = await res.transform(utf8.decoder).join();
+    return CollectionManifest.fromJson(jsonDecode(body));
+  }
+
+  /// POST 本端合并后清单到对端 host（写），host 并入自己 DB（成员并集 + 墓碑防复活 +
+  /// 手动序 LWW）并返回其合并结果。返回体供调用方核对/调试；互联读-合并-写的收敛
+  /// 已在 client 端 GET+merge 阶段完成，本方法只负责把结果推给 host 落库。
+  Future<CollectionManifest> putRemoteCollectionManifest(
+    CollectionManifest manifest,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'POST',
+      '$_apiBase/api/library/collections',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(manifest.canonicalJson()));
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'POST /api/library/collections');
+    final String body = await res.transform(utf8.decoder).join();
+    return CollectionManifest.fromJson(jsonDecode(body));
   }
 
   // ── Live local audio (interconnect-only) ──────────────────────────

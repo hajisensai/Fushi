@@ -4,20 +4,24 @@ import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
+import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 统一合集 Phase 4：网格式合集详情页（书架用；成员按 sortIndex 有序渲染，与 playlist
 /// 的剧集列表 [MediaCollectionDetailPage] 同一顺序真相源）。渲染成员卡网格
 /// （[memberCardBuilder] 由调用方按 mediaType/entryKey 提供），支持重命名 / 删除合集
-/// （删只解链、绝不删条目）+ 逐个「移出合集」（移空后合集自删）+ AppBar 一键排序
-/// （按名称/导入时间写穿 sortIndex；v1 不做网格拖拽，用户拍板）。
+/// （删只解链、绝不删条目）+ AppBar 一键排序（按名称/导入时间写穿 sortIndex）+
+/// **网格拖拽精修**（[HibikiReorderableGrid]，消缩放 2D 拖排，落盘 sortIndex 与库页
+/// 合集行同源）。「移出合集」/「打开」走卡片**长按 / 右键**上下文菜单（不再是每卡右上角
+/// 浮动按钮），移空后合集自删。
 class MediaCollectionGridDetailPage extends StatefulWidget {
   const MediaCollectionGridDetailPage({
     required this.database,
     required this.collection,
     required this.memberCardBuilder,
     required this.onChanged,
+    this.onOpenMember,
     super.key,
   });
 
@@ -26,7 +30,22 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
 
   /// 按成员 (mediaType, entryKey) 渲染卡片；返回 null = 该成员当前不可见（孤儿/被过滤），
   /// 详情页跳过它。
-  final Widget? Function(String mediaType, String entryKey) memberCardBuilder;
+  ///
+  /// [onRemoveFromCollection]（详情页在此处注入 `() => _removeMember(row)`）供调用方把
+  /// 「移出合集」接进该成员卡的**长按/右键对话框**（[MediaItemDialogPage] 的 extraActions）。
+  /// 触摸/鼠标经网格接管走上下文菜单移出，但键盘/手柄用户是聚焦长按 A 弹卡片自身的
+  /// [MediaItemDialogPage]（不经网格指针路径），若不注入就没有移出项——故给可聚焦对话框
+  /// 补一条「移出合集」DialogAction，键盘/手柄用户不失能。
+  final Widget? Function(
+    String mediaType,
+    String entryKey, {
+    VoidCallback? onRemoveFromCollection,
+  }) memberCardBuilder;
+
+  /// 打开某成员（点卡片 / 菜单「打开」）。null = 不提供打开（仅菜单移出）。卡片自身的
+  /// 手势被 [IgnorePointer] 屏蔽（避免其内部 long-press 与网格触摸拖拽争用），故「打开」
+  /// 统一经此回调，由调用方按 (mediaType, entryKey) 找到条目并打开。
+  final void Function(String mediaType, String entryKey)? onOpenMember;
 
   /// 改名 / 删除 / 移出成员后刷新书架。
   final VoidCallback onChanged;
@@ -40,6 +59,11 @@ class _MediaCollectionGridDetailPageState
     extends State<MediaCollectionGridDetailPage> {
   late String _name;
   List<MediaCollectionItemRow> _rows = const <MediaCollectionItemRow>[];
+
+  /// 当前**可见**成员行（memberCardBuilder 返回非空的子集，与 [_rows] 同序）。build
+  /// 时刷新；拖拽 onReorder 的 from/to 是这份列表的下标，用它把可见序回写进 [_rows]
+  /// 全表（孤儿行追加到末尾），再一次落盘 sortIndex。
+  List<MediaCollectionItemRow> _visibleRows = const <MediaCollectionItemRow>[];
   bool _loading = true;
 
   @override
@@ -59,10 +83,9 @@ class _MediaCollectionGridDetailPageState
     });
   }
 
-  /// 一键整理（排序交互重设计层次 B2；书合集 v1 不做网格拖拽，用户拍板——卷序 =
-  /// 名称 natural 序几乎恒正确）：按名称 / 导入时间（旧→新）重排全表并落盘
-  /// sortIndex（`reorderCollectionItems`），库页合集行同源立即同序。标题/导入
-  /// 时间从 epub/srt 两表现查（成员行只有身份键）。
+  /// 一键整理（排序交互重设计层次 B2；覆盖 95% 场景，配合网格拖拽精修）：按名称 /
+  /// 导入时间（旧→新）重排全表并落盘 sortIndex（`reorderCollectionItems`），库页合集行
+  /// 同源立即同序。标题/导入时间从 epub/srt 两表现查（成员行只有身份键）。
   Future<void> _applyOneKeySort({required bool byTitle}) async {
     final List<EpubBookRow> epubs = await widget.database.getAllEpubBooks();
     final List<SrtBookRow> srts = await widget.database.getAllSrtBooks();
@@ -182,14 +205,113 @@ class _MediaCollectionGridDetailPageState
     await _reload();
   }
 
+  /// 网格拖拽落序：from/to 是**可见**成员下标（[_visibleRows]）。先在可见序上应用
+  /// removeAt/insert，再**保序合并**回 [_rows] 全表：遍历原 _rows，可见槽按新可见序
+  /// 依次填入、孤儿行（当前不可见——被书架标签筛选掉的成员）留在原下标。绝不把隐藏
+  /// 成员挤到表尾——否则筛选态下一次拖拽就把全部隐藏成员从原位挤到末尾落盘。最后
+  /// `reorderCollectionItems` 一次落盘。库页合集行 / 播放器换集读同一 `getCollectionItems`，
+  /// 落盘即同序。
+  Future<void> _onReorder(int from, int to) async {
+    if (from == to) return;
+    final List<MediaCollectionItemRow> visible =
+        List<MediaCollectionItemRow>.of(_visibleRows);
+    if (from < 0 || from >= visible.length || to < 0 || to >= visible.length) {
+      return;
+    }
+    final MediaCollectionItemRow moved = visible.removeAt(from);
+    visible.insert(to, moved);
+    // 保序合并：可见槽（key 命中 visibleKeys）按 visible 的新顺序依次消费，孤儿行按
+    // 其在原 _rows 中的下标原地保留。visible 的成员集合与拖前一致（只是被置换顺序），
+    // 故可见槽数 == visible.length，vi 恰好消费完，不会越界。
+    final Set<String> visibleKeys = <String>{
+      for (final MediaCollectionItemRow r in visible)
+        '${r.mediaType}|${r.entryKey}',
+    };
+    int vi = 0;
+    final List<MediaCollectionItemRow> next = <MediaCollectionItemRow>[
+      for (final MediaCollectionItemRow r in _rows)
+        if (visibleKeys.contains('${r.mediaType}|${r.entryKey}'))
+          visible[vi++]
+        else
+          r,
+    ];
+    setState(() {
+      _rows = next;
+      _visibleRows = visible;
+    });
+    await widget.database.reorderCollectionItems(
+      widget.collection.id,
+      <({String mediaType, String entryKey})>[
+        for (final MediaCollectionItemRow r in next)
+          (mediaType: r.mediaType, entryKey: r.entryKey),
+      ],
+    );
+    widget.onChanged();
+  }
+
+  /// 长按（原地松手）/ 右键上下文菜单：移出合集 + 可选打开。照仓库既有卡片长按菜单
+  /// 范式（书卡 onLongPress/onSecondaryTap 弹条目动作）。
+  Future<void> _showMemberMenu(
+      MediaCollectionItemRow row, Offset globalPosition) async {
+    final RenderObject? overlay =
+        Overlay.of(context).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(globalPosition, globalPosition),
+      Offset.zero & overlay.size,
+    );
+    final _MemberMenuAction? action = await showMenu<_MemberMenuAction>(
+      context: context,
+      position: position,
+      items: <PopupMenuEntry<_MemberMenuAction>>[
+        if (widget.onOpenMember != null)
+          PopupMenuItem<_MemberMenuAction>(
+            value: _MemberMenuAction.open,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.open_in_new, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_open),
+              ],
+            ),
+          ),
+        PopupMenuItem<_MemberMenuAction>(
+          value: _MemberMenuAction.remove,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.remove_circle_outline, size: 20),
+              const SizedBox(width: 12),
+              Text(t.collection_remove_member),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _MemberMenuAction.open:
+        widget.onOpenMember?.call(row.mediaType, row.entryKey);
+      case _MemberMenuAction.remove:
+        await _removeMember(row);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<({MediaCollectionItemRow row, Widget card})> members =
         <({MediaCollectionItemRow row, Widget card})>[
       for (final MediaCollectionItemRow r in _rows)
-        if (widget.memberCardBuilder(r.mediaType, r.entryKey)
+        if (widget.memberCardBuilder(
+          r.mediaType,
+          r.entryKey,
+          onRemoveFromCollection: () => _removeMember(r),
+        )
             case final Widget card)
           (row: r, card: card),
+    ];
+    _visibleRows = <MediaCollectionItemRow>[
+      for (final ({MediaCollectionItemRow row, Widget card}) m in members)
+        m.row,
     ];
     return Scaffold(
       appBar: AppBar(
@@ -213,40 +335,54 @@ class _MediaCollectionGridDetailPageState
             ? const Center(child: CircularProgressIndicator())
             : members.isEmpty
                 ? Center(child: Text(t.collection_empty))
-                : GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 180,
-                      childAspectRatio: 160 / 260,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    itemCount: members.length,
-                    itemBuilder: (BuildContext context, int i) {
-                      final ({MediaCollectionItemRow row, Widget card}) m =
-                          members[i];
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: <Widget>[
-                          m.card,
-                          PositionedDirectional(
-                            top: 2,
-                            end: 2,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: IconButton(
-                                tooltip: t.remove_from_series,
-                                icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: () => _removeMember(m.row),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                : _buildMemberGrid(members),
       ),
     );
   }
+
+  /// 成员网格：消缩放 2D 拖排（[HibikiReorderableGrid]）。列数按可用宽度换算
+  /// （每卡 ≤180 宽，与旧 [SliverGridDelegateWithMaxCrossAxisExtent] 一致）。卡片包在
+  /// [IgnorePointer] 里——其内部 InkWell 的 long-press 会与网格触摸长按拖拽争用手势
+  /// 竞技场（LongPress 在 500ms 抢先夺胜 → 触摸永远拖不动），故屏蔽卡片自身手势，由
+  /// 网格统一接管：轻点→打开、按下/长按拖→重排、长按松手/右键→上下文菜单。
+  Widget _buildMemberGrid(
+      List<({MediaCollectionItemRow row, Widget card})> members) {
+    const double spacing = 12;
+    const double maxCardWidth = 180;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxWidth - 24; // 两侧各 12 padding
+        final int cols = available <= 0
+            ? 1
+            : ((available + spacing) / (maxCardWidth + spacing))
+                .ceil()
+                .clamp(1, 1 << 30);
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: HibikiReorderableGrid(
+            itemCount: members.length,
+            crossAxisCount: cols,
+            childAspectRatio: 160 / 260,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
+            feedbackBorderRadius: HibikiBorderRadius.card,
+            keyForIndex: (int i) => ValueKey<String>(
+                '${members[i].row.mediaType}|${members[i].row.entryKey}'),
+            onReorder: _onReorder,
+            onActivateItem: widget.onOpenMember == null
+                ? null
+                : (int i) => widget.onOpenMember!(
+                    members[i].row.mediaType, members[i].row.entryKey),
+            onContextMenu: (int i, Offset globalPosition) =>
+                _showMemberMenu(members[i].row, globalPosition),
+            itemBuilder: (BuildContext context, int i) =>
+                IgnorePointer(child: members[i].card),
+          ),
+        );
+      },
+    );
+  }
 }
+
+/// 成员卡上下文菜单动作。
+enum _MemberMenuAction { open, remove }

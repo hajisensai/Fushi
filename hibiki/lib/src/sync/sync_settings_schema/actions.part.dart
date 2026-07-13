@@ -131,6 +131,8 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         return t.sync_progress_local_audio;
       case SyncPhase.audiobooks:
         return t.sync_progress_audiobooks;
+      case SyncPhase.videos:
+        return t.sync_progress_videos;
     }
   }
 

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -39,6 +40,15 @@ class _CapturingLibraryService implements HibikiLibraryHostService {
   @override
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async =>
       applied = snapshot;
+
+  @override
+  Future<CollectionManifest> getCollectionManifest() async =>
+      CollectionManifest.empty;
+
+  @override
+  Future<CollectionManifest> mergeCollectionManifest(
+          CollectionManifest incoming) async =>
+      incoming;
 
   @override
   Future<RemoteBookProgress> getBookProgress(String bookKey) async =>

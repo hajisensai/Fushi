@@ -30,9 +30,11 @@ import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
@@ -155,6 +157,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   bool _selectionMode = false;
   final Set<String> _selectedKeys = {};
+
+  /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedKeys] 并存。
+  /// 组合三档（块3）与批量解散/删除（块4）都读这两个集。
+  final Set<int> _selectedCollectionIds = <int>{};
+
+  /// 当前渲染成横排行的合集 id 列表（[_buildBodyWithSrtBooks] 每帧写入），供
+  /// 全选 / 反选把可见合集纳入整选集。
+  List<int> _visibleCollectionIds = const <int>[];
   List<MediaItem> _visibleEpubBooks = const [];
   List<SrtBook> _visibleSrtBooks = const [];
   Map<String, String> _epubCoverUrisByBookKey = const {};
@@ -223,6 +233,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {
       _selectionMode = !_selectionMode;
       _selectedKeys.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -230,6 +241,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {
       _selectionMode = false;
       _selectedKeys.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -237,6 +249,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {
       if (!_selectedKeys.remove(key)) {
         _selectedKeys.add(key);
+      }
+    });
+  }
+
+  /// 块2：切换整合集选中（合集行头勾选框）。
+  void _toggleCollectionSelection(int collectionId) {
+    setState(() {
+      if (!_selectedCollectionIds.remove(collectionId)) {
+        _selectedCollectionIds.add(collectionId);
       }
     });
   }
@@ -502,32 +523,60 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     unawaited(appModel.prefsRepo.setShelfSortModeName(mode.name));
   }
 
+  /// 合集行折叠开关：`setPref` 先同步刷内存缓存，setState 重建即读到新值；
+  /// 落库 fire-and-forget（`collapsed_collection_ids`，书架/视频页共用）。
+  void _toggleCollectionCollapsed(int collectionId) {
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    final Set<int> ids = prefs.collapsedCollectionIds;
+    if (!ids.remove(collectionId)) ids.add(collectionId);
+    unawaited(prefs.setCollapsedCollectionIds(ids));
+    setState(() {});
+  }
+
   String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
         ShelfSortMode.recent => t.sort_recent_read,
         ShelfSortMode.title => t.sort_title,
         ShelfSortMode.imported => t.sort_imported,
       };
 
+  /// 每本书（bookKey → reader_positions.updatedAt 毫秒）的最后阅读时间；
+  /// 关书时经 [ReaderHibikiSource.onSourceExit] 与书列表同点失效（BUG-777）。
+  Map<String, int> get _lastReadAtByBookKey =>
+      ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
+
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
-  /// title 取合集名）。recentScore = -历史序名次（「最近阅读」= 现状历史序，零
-  /// 行为变化）；importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
+  /// title 取合集名）。recentScore = 最后阅读时间（[_lastReadAtByBookKey]，
+  /// EPUB/SRT 同走 bookKey），没读过退 importedAt——与视频页 watch-stats 语义
+  /// 镜像（BUG-777：旧的 -历史序名次实为 SRT 表序+EPUB 导入序，假 recency）；
+  /// importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
   /// [_epubImportedAtByKey]，srt 自带）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
-    String titleOf(_ShelfBookSlot s) => s.srt?.title ?? s.epub?.title ?? '';
+    String titleOf(_ShelfBookSlot s) =>
+        s.srt?.title ?? s.epub?.title ?? s.remote?.title ?? '';
+    int recentOf(CollectionOrderingItem<_ShelfBookSlot> it) {
+      // 远端占位卡无本地阅读进度：退化到注入时编码的目录序（负 importedAt），稳定
+      // 排在本地条目之后（详见 [_ShelfBookSlot.remote]）。
+      if (it.payload.remote != null) return it.importedAt;
+      final String? bookKey = it.payload.srt?.bookKey ??
+          _parseBookKey(it.payload.epub!.mediaIdentifier);
+      return _lastReadAtByBookKey[bookKey] ?? it.importedAt;
+    }
+
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
       final CollectionOrderingItem<_ShelfBookSlot> it = group.coverItem;
       return ShelfSortKey(
-        recentScore: -it.payload.seq,
+        recentScore: recentOf(it),
         title: titleOf(it.payload),
         importedAt: it.importedAt,
         tieKey: '${it.mediaType}|${it.entryKey}',
       );
     }
-    int recent = -(1 << 30);
+    int recent = 0;
     int imported = 0;
     for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items) {
-      if (-it.payload.seq > recent) recent = -it.payload.seq;
+      final int r = recentOf(it);
+      if (r > recent) recent = r;
       if (it.importedAt > imported) imported = it.importedAt;
     }
     return ShelfSortKey(
@@ -536,6 +585,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       importedAt: imported,
       tieKey: 'c${collection.id}',
     );
+  }
+
+  /// 多端库联合视图 §2.3 任务10：按 (name, collectionType) 自然键把远端合集归属解析成
+  /// 本地合集 id（折叠归属同「最小 collectionId」规则，多个同键取最小）；本地无此合集则
+  /// 返 null（远端占位散卡降级，不硬造合集行）。
+  int? _resolveLocalCollectionId(String name, String type) {
+    int? best;
+    for (final MediaCollectionRow c in _collectionsById.values) {
+      if (c.name == name && c.collectionType == type) {
+        if (best == null || c.id < best) best = c.id;
+      }
+    }
+    return best;
   }
 
   void _toggleFilter(int tagId) {
@@ -638,16 +700,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   /// UI v2：书架顶部「继续阅读 hero + 书库概览」条（对齐视频页）。
   ///
-  /// 数据边界（诚实外显）：hero = 历史序（provider 即最近访问序）第一本
-  /// 0<position<duration 的 EPUB，显示「已读 x%」；无候选整块只剩统计。统计 =
-  /// 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB 进度；SRT 卡无统一进度数据，
-  /// 不硬造）。宽 >=720 并排、窄屏堆叠。
+  /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB 中「最后阅读
+  /// 时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）最新者，
+  /// 显示「已读 x%」；无候选整块只剩统计。BUG-777：旧实现取列表第一本在读书，
+  /// 但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」而非
+  /// 「最近阅读」的书。统计 = 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB
+  /// 进度；SRT 卡无统一进度数据，不硬造）。宽 >=720 并排、窄屏堆叠。
   Widget _buildShelfOverviewSection(
     List<MediaItem> epubBooks,
     List<SrtBook> srtBooks,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    MediaItem? hero;
+    final List<MediaItem> inProgress = <MediaItem>[];
     int reading = 0;
     int finished = 0;
     for (final MediaItem item in epubBooks) {
@@ -657,9 +721,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         finished++;
       } else if (item.position > 0) {
         reading++;
-        hero ??= item;
+        inProgress.add(item);
       }
     }
+    final MediaItem? hero = mostRecentlyReadCandidate(
+      inProgress,
+      (MediaItem item) =>
+          _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
+    );
     final Widget stats = _buildShelfOverviewStats(
       total: epubBooks.length + srtBooks.length,
       reading: reading,
@@ -886,38 +955,80 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
+    // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5）：把「远端有、本地无」的书
+    // 混排成主网格占位卡。远端目录拉取失败/未配对/无后端（remoteState==null 或
+    // failed）→ 占位卡不出现（离线=只剩本地）；「显示远端条目」开关关闭 → 同样不
+    // 渲染；标签筛选激活时占位卡不参与（远端书无本地标签），只在无筛选时混排。
+    final _RemoteBookState? remoteState = remoteSnapshot?.data;
+    final List<RemoteBookInfo> remoteBooks = (remoteState != null &&
+            !remoteState.failed &&
+            !hasActiveFilter &&
+            appModel.prefsRepo.showRemoteEntries)
+        ? remoteState.books
+        : const <RemoteBookInfo>[];
     // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
     // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
-    // 排序方式排 group（散书与合集行同层混排）。slot.seq = 历史序名次（provider
-    // 即最近访问序），是「最近阅读」模式的排序量纲。
+    // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
+    // （[_lastReadAtByBookKey]，BUG-777），不再依赖列表下标假名次。
     final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
         <CollectionOrderingItem<_ShelfBookSlot>>[
-      for (int i = 0; i < srtBooks.length; i++)
+      for (final SrtBook srt in srtBooks)
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: 'srt',
-          entryKey: srtBooks[i].uid,
-          importedAt: srtBooks[i].importedAt,
-          payload: _ShelfBookSlot(seq: i, srt: srtBooks[i]),
+          entryKey: srt.uid,
+          importedAt: srt.importedAt,
+          payload: _ShelfBookSlot(srt: srt),
         ),
-      for (int i = 0; i < epubBooks.length; i++)
+      for (final MediaItem epub in epubBooks)
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: 'epub',
-          entryKey: _parseBookKey(epubBooks[i].mediaIdentifier) ?? '',
-          importedAt: _epubImportedAtByKey[
-                  _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''] ??
-              0,
-          payload: _ShelfBookSlot(
-            seq: srtBooks.length + i,
-            epub: epubBooks[i],
-          ),
+          entryKey: _parseBookKey(epub.mediaIdentifier) ?? '',
+          importedAt:
+              _epubImportedAtByKey[_parseBookKey(epub.mediaIdentifier) ?? ''] ??
+                  0,
+          payload: _ShelfBookSlot(epub: epub),
         ),
     ];
+    // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
+    // **真实 mediaType='epub' + entryKey=bookKey**（downloadId），使其能与本地 epub 成员
+    // 共键折进合集。importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
+    // 组内保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
+    for (int i = 0; i < remoteBooks.length; i++) {
+      shelfItems.add(
+        CollectionOrderingItem<_ShelfBookSlot>(
+          mediaType: 'epub',
+          entryKey: remoteBooks[i].downloadId,
+          importedAt: -1 - i,
+          payload: _ShelfBookSlot(remote: remoteBooks[i]),
+        ),
+      );
+    }
+    // §2.3 任务10：注入远端书的主合集归属（host 下发的 RemoteBookInfo.collection）到折叠
+    // 映射，使远端占位卡折进对应本地合集行。远端合集本地无 id——按 (name, type) 对本地合集
+    // 表解析（[_resolveLocalCollectionId]），解析不到 = 散卡降级（不硬造合集行）。局部拷贝
+    // 页级映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
+    final Map<String, int> primaryByEntry =
+        Map<String, int>.of(_primaryCollectionByEntry);
+    final Map<String, int> memberSortIndex =
+        Map<String, int>.of(_memberSortIndex);
+    for (final RemoteBookInfo book in remoteBooks) {
+      final RemoteCollectionMembership? membership = book.collection;
+      if (membership == null) continue;
+      final int? cid = _resolveLocalCollectionId(
+        membership.collectionName,
+        membership.collectionType,
+      );
+      if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
+      final String key = 'epub|${book.downloadId}';
+      primaryByEntry[key] = cid;
+      memberSortIndex[key] = membership.sortIndex;
+    }
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
         groupByCollections<_ShelfBookSlot>(
       items: shelfItems,
-      primaryCollectionIdByEntry: _primaryCollectionByEntry,
+      primaryCollectionIdByEntry: primaryByEntry,
       collectionsById: _collectionsById,
-      memberSortIndex: _memberSortIndex,
+      memberSortIndex: memberSortIndex,
     );
     shelfGroups.sort(
       (CollectionGroup<_ShelfBookSlot> a, CollectionGroup<_ShelfBookSlot> b) =>
@@ -927,16 +1038,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         _sortMode,
       ),
     );
+    // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    _visibleCollectionIds = <int>[
+      for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
+        if (g.collection != null) g.collection!.id,
+    ];
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
-    final _RemoteBookState? remoteState = remoteSnapshot?.data;
-    final bool showRemoteBooks = remoteState != null &&
-        (remoteState.failed || remoteState.books.isNotEmpty);
     if (epubBooks.isEmpty &&
         srtBooks.isEmpty &&
         videoBooks.isEmpty &&
-        !showRemoteBooks) {
+        remoteBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -957,10 +1070,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             physics: desktopAwareScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              if (showRemoteBooks)
-                SliverToBoxAdapter(
-                  child: _buildRemoteBookSection(remoteState, constraints),
-                ),
+              // 标签筛选激活时不混排远端占位（远端书无本地标签，不参与筛选）。
               // TODO-902: 不再渲染 srt_books_section 分区头，SRT 卡直接进网格。
               if (srtBooks.isNotEmpty)
                 SliverGrid.builder(
@@ -1013,16 +1123,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 SliverToBoxAdapter(
                   child: _buildShelfOverviewSection(epubBooks, srtBooks),
                 ),
-              if (showRemoteBooks)
-                SliverToBoxAdapter(
-                  child: _buildRemoteBookSection(remoteState, constraints),
-                ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
               // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
-              // UI v2 Phase C：合集 group 渲染成全宽横排行（CollectionShelfRow），
-              // 连续散书段落合并成 SliverGrid，保序交错；零合集退化单网格。
-              if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
+              // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
+              // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
+              // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
+              // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
+              if (shelfGroups.isNotEmpty)
                 ..._buildShelfGroupSlivers(
                   shelfGroups,
                   epubCoverUrisByBookKey,
@@ -1048,9 +1156,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// UI v2 Phase C：主网格 sliver 交错——按 [groupByCollections] 输出序扫描，合集
-  /// group 渲染成全宽横排行（每个合集独占一行、行内横移看相邻卷/集），连续散书段落
-  /// 合并成一个 [SliverGrid]。组间序不变；零合集时只有一个网格段（与旧布局一致）。
+  /// 主网格 sliver 组装：**分区**（去碎片 spec 2026-07-12，已拍板方案 A+顶部）
+  /// ——合集横排行集中渲染在前（每个合集独占一行、行内横移看相邻卷/集，区内
+  /// 保持排序模式的组间序），散书合成**单一** [SliverGrid] 在后。旧保序交错
+  /// 布局每个合集行都把网格切段产生残行（一两本书占一行，用户实报）；分区后
+  /// 残行恒 1 个（网格末行）。
   List<Widget> _buildShelfGroupSlivers(
     List<CollectionGroup<_ShelfBookSlot>> groups,
     Map<String, String> epubCoverUrisByBookKey,
@@ -1064,44 +1174,38 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       spacing: 0,
     );
     final List<Widget> slivers = <Widget>[];
-    List<CollectionGroup<_ShelfBookSlot>> loose =
+    final List<CollectionGroup<_ShelfBookSlot>> loose =
         <CollectionGroup<_ShelfBookSlot>>[];
-    void flushLoose() {
-      if (loose.isEmpty) return;
-      final List<CollectionGroup<_ShelfBookSlot>> segment = loose;
+    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
+      if (group.collection == null) {
+        loose.add(group);
+      } else {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _buildShelfCollectionRow(
+              group,
+              epubCoverUrisByBookKey,
+              cardLayout,
+            ),
+          ),
+        );
+      }
+    }
+    if (loose.isNotEmpty) {
       slivers.add(
         SliverGrid.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cardLayout.columns,
             childAspectRatio: kShelfBookCardAspectRatio,
           ),
-          itemCount: segment.length,
+          itemCount: loose.length,
           itemBuilder: (_, i) => _buildShelfGroupCard(
-            segment[i],
+            loose[i],
             epubCoverUrisByBookKey,
           ),
         ),
       );
-      loose = <CollectionGroup<_ShelfBookSlot>>[];
     }
-
-    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
-      if (group.collection == null) {
-        loose.add(group);
-        continue;
-      }
-      flushLoose();
-      slivers.add(
-        SliverToBoxAdapter(
-          child: _buildShelfCollectionRow(
-            group,
-            epubCoverUrisByBookKey,
-            cardLayout,
-          ),
-        ),
-      );
-    }
-    flushLoose();
     return slivers;
   }
 
@@ -1119,6 +1223,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // （kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，行内卡与网格卡同形。
     final double itemWidth = cardLayout.cardWidth;
     final double rowHeight = itemWidth / kShelfBookCardAspectRatio;
+    // #5：行头计数只数**本地成员**（远端占位不入 n），与合集详情页口径一致（详情页只显示
+    // 本地成员）。当前书侧合集成员本就全是本地（远端占位卡不进合集，见 _buildShelfMemberCard），
+    // 此过滤是防御性对齐口径；行体（itemCount）仍渲染 group.items 全部。
+    final int localCount =
+        group.items.where((it) => it.payload.remote == null).length;
     return Padding(
       // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
       padding: EdgeInsets.symmetric(
@@ -1127,7 +1236,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       child: CollectionShelfRow(
         key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
         title: collection.name,
-        countLabel: t.series_item_count(n: group.items.length),
+        countLabel: t.series_item_count(n: localCount),
         itemCount: group.items.length,
         itemWidth: itemWidth,
         rowHeight: rowHeight,
@@ -1136,25 +1245,45 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         headerFocusId:
             HibikiFocusId('reader-shelf-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
+        collapsed:
+            appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
+        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+        // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡多选态不可单独勾。
+        selectionCheckbox: _selectionMode
+            ? _buildSelectionCheck(
+                _selectedCollectionIds.contains(collection.id))
+            : null,
+        onToggleSelected: _selectionMode
+            ? () => _toggleCollectionSelection(collection.id)
+            : null,
         itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
           group.items[i].payload,
           epubCoverUrisByBookKey,
+          selectable: false,
         ),
       ),
     );
   }
 
-  /// 横排行成员卡：SRT / EPUB 复用散书卡渲染（交互/焦点/选择态自带）。
+  /// 横排行成员卡：SRT / EPUB 复用散书卡渲染（交互/焦点自带）。
+  ///
+  /// [selectable]（默认 true）= 该卡在多选态可单独勾选。块2：合集行成员卡传 false——
+  /// 多选态不画勾选框、不可单独勾（整合集由行头勾选框选中），点击照常开书。
   Widget _buildShelfMemberCard(
     _ShelfBookSlot slot,
-    Map<String, String> epubCoverUrisByBookKey,
-  ) {
+    Map<String, String> epubCoverUrisByBookKey, {
+    bool selectable = true,
+  }) {
+    // 远端占位卡不进合集（本批无合集归属），此分支纯防御避免 epub! 空断言。
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return _buildRemoteBookCard(remote);
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCard(srt,
-          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey]);
+          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
+          selectable: selectable);
     }
-    return buildMediaItem(slot.epub!);
+    return _buildEpubBookCard(slot.epub!, selectable: selectable);
   }
 
   /// 统一合集 Phase 4：渲染一个书架 group——散书（collection==null，单成员）回退到原有
@@ -1168,6 +1297,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
       final _ShelfBookSlot slot = group.coverItem.payload;
+      // 多端库联合视图（spec §2.1）：远端占位散卡走远端书卡渲染（云角标 + 远端封面
+      // + 下载按钮，点击复用下载→入库链）。远端书永无合集归属，只走此散卡路径。
+      final RemoteBookInfo? remote = slot.remote;
+      if (remote != null) {
+        return _buildRemoteBookCard(remote);
+      }
       final SrtBook? srt = slot.srt;
       if (srt != null) {
         return _buildSrtCard(
@@ -1200,6 +1335,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _ShelfBookSlot slot,
     Map<String, String> epubCoverUrisByBookKey,
   ) {
+    // 远端占位卡不进合集折叠堆叠封面（本批无合集归属），此分支纯防御。
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return _buildRemoteBookCover(remote);
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCover(
@@ -1231,6 +1369,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           database: appModel.database,
           collection: collection,
           memberCardBuilder: _buildCollectionMemberCard,
+          onOpenMember: _openCollectionMember,
           onChanged: () {
             _shelfMapsFuture = _loadShelfMaps();
             if (mounted) setState(() {});
@@ -1244,13 +1383,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 找 SrtBook。找不到（条目已删 / 远端离线）返回 null，详情页跳过该成员。
   /// 合集详情页成员卡渲染：按 (mediaType, entryKey) 找当前可见的 SRT / EPUB 书渲染，
   /// 找不到（孤儿 / 被过滤）返回 null（详情页跳过）。
-  Widget? _buildCollectionMemberCard(String mediaType, String entryKey) {
+  ///
+  /// [onRemoveFromCollection]（详情页注入 `() => _removeMember(row)`）非空时把「移出合集」
+  /// 接进该成员卡长按 / 右键对话框（键盘/手柄用户聚焦长按 A 走此对话框而非网格指针菜单，
+  /// 不注入就没有移出项）。
+  Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
+      {VoidCallback? onRemoveFromCollection}) {
     if (mediaType == 'srt') {
       for (final SrtBook book in _visibleSrtBooks) {
         if (book.uid == entryKey) {
           return _buildSrtCard(
             book,
             epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
+            removeFromCollection: onRemoveFromCollection,
           );
         }
       }
@@ -1259,12 +1404,40 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (mediaType == 'epub') {
       for (final MediaItem item in _visibleEpubBooks) {
         if (_parseBookKey(item.mediaIdentifier) == entryKey) {
-          return buildMediaItem(item);
+          return _buildEpubBookCard(
+            item,
+            removeFromCollection: onRemoveFromCollection,
+          );
         }
       }
       return null;
     }
     return null;
+  }
+
+  /// 合集详情页「打开成员」（点卡片 / 菜单「打开」）：卡片自身手势被 IgnorePointer
+  /// 屏蔽（见 [MediaCollectionGridDetailPage]），故打开统一经此回调走与书架卡片
+  /// onTap 相同的路径——epub 经 openMedia，srt 经 _openSrtBook。
+  void _openCollectionMember(String mediaType, String entryKey) {
+    if (mediaType == 'srt') {
+      for (final SrtBook book in _visibleSrtBooks) {
+        if (book.uid == entryKey) {
+          unawaited(_openSrtBook(book));
+          return;
+        }
+      }
+      return;
+    }
+    if (mediaType == 'epub') {
+      for (final MediaItem item in _visibleEpubBooks) {
+        if (_parseBookKey(item.mediaIdentifier) == entryKey) {
+          final MediaSource source = item.getMediaSource(appModel: appModel);
+          unawaited(
+              appModel.openMedia(ref: ref, mediaSource: source, item: item));
+          return;
+        }
+      }
+    }
   }
 
   Widget _buildSectionHeader(String label) {
@@ -1373,13 +1546,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   @override
-  Widget buildMediaItem(MediaItem item) {
+  Widget buildMediaItem(MediaItem item) =>
+      _buildEpubBookCard(item, selectable: true);
+
+  /// EPUB 书卡渲染。[selectable]（默认经 [buildMediaItem] 传 true）= 多选态可单独勾选；
+  /// 块2：合集行成员卡传 false（selectionKey 置空 → 不画勾、不可单独勾）。
+  /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补一条
+  /// 「移出合集」动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
+  Widget _buildEpubBookCard(MediaItem item,
+      {bool selectable = true, VoidCallback? removeFromCollection}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
-      selectionKey: item.mediaIdentifier,
+      selectionKey: selectable ? item.mediaIdentifier : null,
       dragBookId: bookKey,
       onTagDropped:
           bookKey == null ? null : (tag) => _addTagToBook(bookKey, tag),
@@ -1394,11 +1575,23 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onLongPress: () async {
         await showAppDialog(
           context: context,
-          builder: (_) => MediaItemDialogPage(
+          builder: (BuildContext dialogCtx) => MediaItemDialogPage(
             item: item,
             isHistory: isHistory,
             showLaunchAction: false,
-            extraActions: extraActions,
+            extraActions: removeFromCollection == null
+                ? extraActions
+                : (MediaItem it) => <DialogAction>[
+                      ...extraActions(it),
+                      DialogListAction(
+                        label: t.collection_remove_member,
+                        icon: Icons.remove_circle_outline,
+                        onPressed: () {
+                          Navigator.pop(dialogCtx);
+                          removeFromCollection();
+                        },
+                      ),
+                    ],
           ),
         );
         if (isHistory) {
@@ -1460,17 +1653,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
 }
 
-/// 书架 SRT+EPUB 混排网格的单个排序槽（合并两类卡片到一个有序列表）。
-/// [srt]/[epub] 恰有一个非空。[seq] = 历史序名次（SRT 在前 EPUB 在后，provider
-/// 即最近访问序），是「最近阅读」排序模式的量纲（-seq 越大越新）。
+/// 书架混排网格的单个排序槽（SRT / EPUB / 远端占位三类卡片到一个有序列表）。
+/// [srt]/[epub]/[remote] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
+/// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-777）。
+///
+/// [remote] = 多端库联合视图（spec 2026-07-12 §2.1）的「远端有、本地无」占位卡：
+/// 无本地 importedAt/lastReadAt，排序退化到目录序（注入时以 `-1-index` 编码进
+/// CollectionOrderingItem.importedAt，稳定排在本地条目之后、组内保持目录序）。
 class _ShelfBookSlot {
   const _ShelfBookSlot({
-    required this.seq,
     this.srt,
     this.epub,
+    this.remote,
   });
 
-  final int seq;
   final SrtBook? srt;
   final MediaItem? epub;
+  final RemoteBookInfo? remote;
 }

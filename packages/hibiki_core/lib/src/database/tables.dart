@@ -672,6 +672,13 @@ class MediaCollections extends Table {
 
   /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
   IntColumn get createdAt => integer()();
+
+  /// 合集内手动序（成员 sortIndex）最后一次人为改动的毫秒戳（schema v40，多端库
+  /// 联合视图 §2.3）。仅 [HibikiDatabase.reorderCollectionItems]（用户拖拽落盘）
+  /// bump 为 now；同步应用对端顺序时**镜像对端时间戳而非 now**（否则同步会伪装成
+  /// 更新的人为改序，两端时间戳互相追赶）。跨端手动序整合集 LWW 的比较键：新者
+  /// 整表覆盖成员 sortIndex。默认 0 = 从未手动排序，任何真实改序都能盖过它。
+  IntColumn get orderUpdatedAt => integer().withDefault(const Constant(0))();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────
@@ -697,6 +704,46 @@ class MediaCollectionItems extends Table {
   /// 复合主键：同一合集内一条目一行（允许跨合集重复）。
   @override
   Set<Column> get primaryKey => {collectionId, mediaType, entryKey};
+}
+
+// ── collection_member_tombstones (合集成员移出/合集删除墓碑) ──────────
+// schema v40（多端库联合视图 §2.3）：合集是跨端并集同步（成员 UNION），没有墓碑则
+// A 端移出的成员会被 B 端并集复活——与书删除墓碑（[BookTombstones]）同一律。键用
+// 合集**自然键 (collectionName, collectionType)** 而非自增 collection_id：两端 id
+// 必冲突且无跨端意义（同 backup_merge_engine 的自然键对齐语义），且墓碑必须在
+// 合集行被删（移空自删/显式删除）后继续存活。
+//
+// 两种行共用一张表（spec §2.3「合集级墓碑用同表哨兵」）：
+//  - 成员移出墓碑：mediaType/entryKey = 真实成员键，removedAt = 移出毫秒戳；
+//  - 合集删除墓碑：mediaType = entryKey = ''（空哨兵，真实成员键恒非空，无歧义），
+//    removedAt = 删除毫秒戳（语义即 deletedAt）。
+//
+// 主键不含 removedAt（spec 原文把 removed_at 列进复合键，但同一成员保留多条移出
+// 事件对「防复活 + 重加清墓碑」毫无增益——同步只比较最新一条，重加要清的也是全部；
+// 范式仿 [BookTombstones] 单行 LWW：重复移出 upsert 刷新 removedAt）。
+// 重新加入清同键墓碑（[HibikiDatabase.addToCollection]）；重建同名合集清合集级
+// 墓碑（[HibikiDatabase.createMediaCollection]），同插书清书墓碑一律。
+@DataClassName('CollectionMemberTombstoneRow')
+class CollectionMemberTombstones extends Table {
+  /// 合集自然键：名字。
+  TextColumn get collectionName => text()();
+
+  /// 合集自然键：'collection' | 'playlist'（同 [MediaCollections].collectionType）。
+  TextColumn get collectionType => text()();
+
+  /// 成员媒体种类（'epub' | 'srt' | 'video'）；'' = 合集级删除墓碑哨兵。
+  TextColumn get mediaType => text()();
+
+  /// 成员稳定身份（同 [MediaCollectionItems].entryKey）；'' = 合集级删除墓碑哨兵。
+  TextColumn get entryKey => text()();
+
+  /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
+  IntColumn get removedAt => integer()();
+
+  /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
+  @override
+  Set<Column> get primaryKey =>
+      {collectionName, collectionType, mediaType, entryKey};
 }
 
 // ── hibiki_paired_peers ─────────────────────────────

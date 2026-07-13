@@ -90,9 +90,11 @@ class SyncRepository {
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
   static const _keySyncDictionary = 'sync_dictionary_enabled';
   static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
+  static const _keySyncVideoFiles = 'sync_video_files_enabled';
   static const _keySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
+  static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
   static const _keyBackendType = 'sync_backend_type';
   static const _keySyncContent = 'sync_content_enabled';
@@ -169,6 +171,14 @@ class SyncRepository {
   Future<void> setSyncAudioBookFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncAudioBookFiles, v);
 
+  /// 是否上传本地视频文件到云 `__videos__/` 命名空间（多端库联合视图 §2.6）。
+  /// 默认 false：视频体积 / 流量大，须用户显式 opt-in。与 syncAudioBookFiles 同为
+  /// 行为开关，不进 [deviceLocalPrefKeys]（当作用户设置，随备份跨设备恢复）。
+  Future<bool> isSyncVideoFilesEnabled() =>
+      _db.getPrefTyped<bool>(_keySyncVideoFiles, false);
+  Future<void> setSyncVideoFilesEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySyncVideoFiles, v);
+
   /// 是否同步本地音频来源（DB 文件 + 配置）。默认 false：DB 大，需用户显式开启。
   Future<bool> isSyncLocalAudioEnabled() =>
       _db.getPrefTyped<bool>(_keySyncLocalAudio, false);
@@ -187,6 +197,19 @@ class SyncRepository {
 
   Future<void> setLastSyncMs(int ms) =>
       _setString(_keyLastSyncMs, ms.toString());
+
+  /// 本端上次**成功**合集同步的毫秒戳（多端库联合视图 §2.3：合集同步引擎的
+  /// 因果基线——removedAt/deletedAt 晚于它的墓碑才是「新闻」，早于它的墓碑视为
+  /// 本端已裁决过、成员/合集仍在即代表之后重加/重建）。0 = 从未同步过。
+  /// 设备本地（[deviceLocalPrefKeys]）：它描述「本设备见过共享清单到什么时刻」，
+  /// 随备份跨设备会让新设备把没见过的墓碑误判为旧闻而复活成员。
+  Future<int> getCollectionsSyncBaselineMs() async {
+    final String? s = await _getStringOrNull(_keyCollectionsBaselineMs);
+    return s == null ? 0 : int.tryParse(s) ?? 0;
+  }
+
+  Future<void> setCollectionsSyncBaselineMs(int ms) =>
+      _setString(_keyCollectionsBaselineMs, ms.toString());
 
   // ── Desktop OAuth credentials ──────────────────────────────────────
 
@@ -686,6 +709,9 @@ class SyncRepository {
     _keyHibikiClientUrls,
     _keyHibikiClientToken,
     _keyHibikiClientUrl,
+    // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
+    // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
+    _keyCollectionsBaselineMs,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

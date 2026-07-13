@@ -35,11 +35,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     final RemoteBookClient? client = await _resolveRemoteBookClient();
     _remoteBookClient = client;
     if (client == null) return null;
-    // 来源类型驱动书架远端分区文案（互联 vs 云盘），成功/失败两支都需带上。
-    final RemoteBookSourceKind sourceKind = client.remoteSourceKind;
     try {
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
-      // #6: 远端与本地是同一本书时（同 bookKey）不在「配对设备」区重复展示。
+      // #6: 远端与本地是同一本书时（同 bookKey）不在混排网格重复展示（只显示本地卡）。
       final List<EpubBookRow> localBooks =
           await appModel.database.getAllEpubBooks();
       final Set<String> localKeys =
@@ -47,7 +45,6 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       final List<RemoteBookInfo> withContent =
           books.where((RemoteBookInfo book) => book.hasContent).toList();
       return _RemoteBookState(
-        sourceKind: sourceKind,
         books: dedupeRemoteBooks(
           remote: withContent,
           localBookKeys: localKeys,
@@ -55,9 +52,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         ),
       );
     } catch (e) {
+      // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
       debugPrint('[reader-shelf] remote book list failed: $e');
       return _RemoteBookState(
-        sourceKind: sourceKind,
         books: const <RemoteBookInfo>[],
         failed: true,
       );
@@ -88,99 +85,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     await future;
   }
 
-  Widget _buildRemoteBookSection(
-    _RemoteBookState state,
-    BoxConstraints constraints,
-  ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final ColorScheme colors = theme.colorScheme;
-    // TODO-655b: 本地书 SliverGrid 直接挂 CustomScrollView 全宽布局；远端 section
-    // 不能再用一个带左右 padding 的 Container 包住 GridView（否则 GridView 的实际
-    // 可用宽 = 全宽 - 2*padding，而 maxCrossAxisExtent 仍按全宽算 → 远端 cell 比本地
-    // 窄、卡片变小）。改为：只 header 自带水平 padding（对齐 _buildSectionHeader），
-    // GridView 不裹水平 padding，与本地 sliver grid 同宽基准。
-    final double headerPadding = tokens.spacing.rowHorizontal * 0.75;
-    // 分区文案按后端来源分流（BUG-699 / TODO-1384）：互联（对端设备）用
-    // 「互联 / 对端设备」；云盘备份（WebDAV / GDrive 等）用通用「云端书」，
-    // 否则 WebDAV-only 用户会看到从没配过的「互联/对端设备」。
-    final bool isCloud = state.sourceKind == RemoteBookSourceKind.cloud;
-    final String sectionTitle =
-        isCloud ? t.remote_book_cloud : t.remote_book_interconnect;
-    final String sectionSubtitle =
-        isCloud ? t.remote_book_cloud_device : t.remote_book_paired_device;
-    final String loadFailedText =
-        isCloud ? t.remote_book_cloud_load_failed : t.remote_book_load_failed;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsetsDirectional.fromSTEB(
-              headerPadding,
-              tokens.spacing.gap,
-              headerPadding,
-              0,
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  Icons.devices_other_outlined,
-                  size: 18,
-                  color: colors.primary,
-                ),
-                SizedBox(width: tokens.spacing.gap),
-                Text(sectionTitle, style: tokens.type.sectionLabel),
-                SizedBox(width: tokens.spacing.gap),
-                Text(
-                  sectionSubtitle,
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (state.failed)
-            Padding(
-              padding: EdgeInsetsDirectional.fromSTEB(
-                headerPadding,
-                tokens.spacing.gap,
-                headerPadding,
-                tokens.spacing.card,
-              ),
-              child: Text(
-                loadFailedText,
-                style: textTheme.bodySmall?.copyWith(color: colors.error),
-              ),
-            )
-          else if (state.books.isNotEmpty) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Padding(
-              padding: EdgeInsetsDirectional.only(bottom: tokens.spacing.card),
-              child: GridView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: _gridExtent(context, constraints),
-                  childAspectRatio: kShelfBookCardAspectRatio,
-                  crossAxisSpacing: tokens.spacing.gap,
-                  mainAxisSpacing: tokens.spacing.gap,
-                ),
-                itemCount: state.books.length,
-                itemBuilder: (BuildContext context, int index) =>
-                    _buildRemoteBookCard(state.books[index]),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
+  /// 多端库联合视图占位卡（spec 2026-07-12 §2.1）：正常书卡尺寸 + 远端封面 +
+  /// 云角标 ☁（[_remoteBookCoverWithCloudBadge]），混排进书架主网格（[_ShelfBookSlot.remote]
+  /// → [_buildShelfGroupCard] 散卡路径）。短按/下载按钮复用现有下载→入库链
+  /// （[_downloadRemoteBook]），完成后原地变正常卡（下载后 dedup 去重隐藏占位）。
   Widget _buildRemoteBookCard(RemoteBookInfo book) {
     final String safeKey = _safeRemoteBookKey(book.title);
     return _bookCardShell(
@@ -194,7 +102,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       onLongPress: () => _showRemoteBookDialog(book),
       child: _bookCardLayout(
         title: book.title,
-        cover: _buildRemoteBookCover(book),
+        cover: _remoteBookCoverWithCloudBadge(book, safeKey),
         // TODO-655a：远端书卡右上角是下载按钮 / 下载进度，类型徽章（有声书耳机 /
         // 普通书本）放左上角，与本地书卡（buildMediaItemContent）的类型语义一致。
         leadingBadge: _buildRemoteBookTypeBadge(book, safeKey),
@@ -346,6 +254,24 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     return KeyedSubtree(
       key: ValueKey<String>('remote_book_type_badge_$safeKey'),
       child: badge,
+    );
+  }
+
+  /// 远端封面 + 云角标 ☁（spec §2.1）：封面右上角是下载按钮/进度徽章、左上角是类型
+  /// 徽章，故云角标叠在**左下角**（互不遮挡）。带稳定 key 供 widget 测试定位占位卡。
+  Widget _remoteBookCoverWithCloudBadge(RemoteBookInfo book, String safeKey) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        _buildRemoteBookCover(book),
+        PositionedDirectional(
+          bottom: 6,
+          start: 6,
+          child: _remoteCloudBadge(
+            key: ValueKey<String>('remote_book_cloud_badge_$safeKey'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -602,19 +528,31 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
 
   String _safeRemoteBookKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+
+  /// 云角标 ☁ 的视觉：半透明黑底胶囊 + 白色云图标（与视频卡字幕/集数徽章同款风格）。
+  /// 多端库联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。
+  Widget _remoteCloudBadge({Key? key}) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.cloud_outlined, size: 13, color: Colors.white),
+    );
+  }
 }
 
 class _RemoteBookState {
   const _RemoteBookState({
     required this.books,
-    required this.sourceKind,
     this.failed = false,
   });
 
   final List<RemoteBookInfo> books;
 
-  /// 远端书来源类型：互联（对端设备） vs 云盘备份，驱动分区文案。
-  final RemoteBookSourceKind sourceKind;
+  /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
   final bool failed;
 }
 

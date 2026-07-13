@@ -8,12 +8,14 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/pages/base_source_page.dart'
     show lookupHighlightCharCount;
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show MinePopupResult, DictionaryPopupWebViewState;
+import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
@@ -93,6 +95,30 @@ mixin DictionaryPageMixin {
   Future<Map<String, Object?>> Function()?
       get onSentenceContextPreviewToDraft => null;
 
+  /// BUG-763/766：视频/首页车道点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
+  /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内）。复用视频覆写的
+  /// [onSentenceContextPreviewToDraft]/[onSetSentenceContextToDraft] 驱动预览+增减；
+  /// 「确认制卡」回 [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮。
+  Future<void> _openSentenceContextDialogForVideo({
+    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required int entryIndex,
+    required String matched,
+  }) async {
+    final Future<Map<String, Object?>> Function()? preview =
+        onSentenceContextPreviewToDraft;
+    final Future<int> Function(int, int)? setter = onSetSentenceContextToDraft;
+    if (preview == null || setter == null) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => SentenceContextDialog(
+        matched: matched,
+        fetchPreview: preview,
+        setContext: setter,
+        onConfirm: () => webViewKey.currentState?.mineEntryByIndex(entryIndex),
+      ),
+    );
+  }
+
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
   String _statTodayKey() => statTodayKey();
 
@@ -117,14 +143,63 @@ mixin DictionaryPageMixin {
   Rect _calcMixinPopupPosition(Rect selectionRect, Size screen) {
     // 与 base_source_page._calculatePopupPosition 共用 [resolvePopupRect]。mixin
     // 家族（video/首页/texthooker）不预留 reserve、不竖排避让（全用默认），盒子尺寸
-    // 随界面大小放大（同 base 的 popupMaxWidth/Height）。
+    // 随界面大小放大（同 base 的 popupMaxWidth/Height）。Phase B 拖把手时用预览态
+    // [_popupResizePreview] 临时覆盖偏好实时预览（松手落库，见 [_onMixinPopupResizeEnd]）。
     return resolvePopupRect(
       selectionRect: selectionRect,
       screen: screen,
       bottomDocked: mixinAppModel.popupBottomDocked,
-      maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
-      maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
+      maxWidth: (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *
+          mixinAppModel.appUiScale,
+      maxHeight: (_popupResizePreview?.height ?? mixinAppModel.popupMaxHeight) *
+          mixinAppModel.appUiScale,
     );
+  }
+
+  /// Phase B 尺寸拖拽的预览态（基准逻辑像素，未缩放）。非空 = 正在拖右下角把手；
+  /// null = 未拖，用已落库真值。reader 家族的对应态在 [BaseSourcePageState]。
+  LookupSize? _popupResizePreview;
+
+  /// 拖把手起手：存当前偏好基准尺寸为预览起点。
+  void _onMixinPopupResizeStart() {
+    setState(() {
+      _popupResizePreview = LookupSize(
+        mixinAppModel.popupMaxWidth,
+        mixinAppModel.popupMaxHeight,
+      );
+    });
+  }
+
+  /// 拖把手进行：盒坐标系增量位移 [deltaPx] 经 [resolveDraggedLookupSize] 折算回基准
+  /// （除 appUiScale）并 clamp，驱动实时重建。
+  void _onMixinPopupResizeUpdate(Offset deltaPx) {
+    final LookupSize base = _popupResizePreview ??
+        LookupSize(mixinAppModel.popupMaxWidth, mixinAppModel.popupMaxHeight);
+    setState(() {
+      _popupResizePreview = resolveDraggedLookupSize(
+        currentBaseWidth: base.width,
+        currentBaseHeight: base.height,
+        deltaWidthPx: deltaPx.dx,
+        deltaHeightPx: deltaPx.dy,
+        uiScale: mixinAppModel.appUiScale,
+      );
+    });
+  }
+
+  /// 松手：预览尺寸一次性落偏好（`setPopupMaxWidth/Height`，与设置滑杆同源真值）后清空。
+  void _onMixinPopupResizeEnd() {
+    final LookupSize? committed = _popupResizePreview;
+    setState(() => _popupResizePreview = null);
+    if (committed != null) {
+      mixinAppModel.setPopupMaxWidth(committed.width);
+      mixinAppModel.setPopupMaxHeight(committed.height);
+    }
+  }
+
+  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好。
+  void _onMixinPopupResizeCancel() {
+    if (_popupResizePreview == null) return;
+    setState(() => _popupResizePreview = null);
   }
 
   /// Mines the current dictionary entry to Anki.
@@ -452,6 +527,13 @@ mixin DictionaryPageMixin {
         onClose: () => onPop(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
+        // Phase B：app 内弹窗右下角尺寸拖拽把手（video/首页/texthooker 共用此收口）。
+        // 拖动 = 可视化改「最大宽高」偏好（与设置滑杆同一真值）；预览态在 mixin 级。
+        showResizeGrip: true,
+        onResizeStart: _onMixinPopupResizeStart,
+        onResizeUpdate: _onMixinPopupResizeUpdate,
+        onResizeEnd: _onMixinPopupResizeEnd,
+        onResizeCancel: _onMixinPopupResizeCancel,
         // TODO-834：点**本层弹窗本体的空白区**只关该层衍生的后代层（index 更大的全部），
         // 保留本层 + 祖先。线性扁平栈里 index 即 depth，故后代 = `index+1..end`，用
         // [DictionaryPopupController.truncateTo] 精确裁。点本层无后代 = no-op 栈不变。
@@ -525,6 +607,16 @@ mixin DictionaryPageMixin {
         onSetSentenceContext: onSetSentenceContextToDraft,
         onClearSentenceDraft: onClearSentenceDraftToDraft,
         onSentenceContextPreview: onSentenceContextPreviewToDraft,
+        // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
+        // WebView 内）；确认制卡回该层 WebView 精确点中该词条制卡。
+        onOpenSentenceContextModal: onSentenceContextPreviewToDraft != null
+            ? (int entryIndex, String matched) =>
+                _openSentenceContextDialogForVideo(
+                  webViewKey: entry.webViewKey,
+                  entryIndex: entryIndex,
+                  matched: matched,
+                )
+            : null,
         headerWidget: buildPopupHeaderFor(index),
       ),
     );

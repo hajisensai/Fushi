@@ -10,9 +10,9 @@
 
 ## Global Constraints
 
-- 只修改 `reader_pagination_scripts.dart`、`reader_paginate_step_test.dart`、`reader_paginate_js_guard_static_test.dart` 与 BUG-777 完成记录。
+- 只修改 `reader_pagination_scripts.dart`、`reader_paginate_step_test.dart`、`reader_paginate_js_guard_static_test.dart` 与 BUG-783 完成记录。
 - 页边界容差固定为现有语义的 1px；不得随页数累计或扩大。
-- 不修改分页 CSS、`getScrollContext()`、pagination metrics、章节切换或 BUG-776 harness。
+- 不修改分页 CSS、`getScrollContext()`、pagination metrics、章节切换或 BUG-782 harness。
 - 不纳入任何旧分支的其它 57 个文件。
 - 严格 TDD：先用精确真机数值证明旧实现红，再写最小实现。
 
@@ -171,15 +171,15 @@ git diff --cached --check
 git commit -m "fix(reader): tolerate fractional page boundary quotients"
 ```
 
-Expected: commit 只含上述 3 个文件，不含 `hibiki/macos/Podfile.lock`、BUG-776 harness 或旧分支文件。
+Expected: commit 只含上述 3 个文件，不含 `hibiki/macos/Podfile.lock`、BUG-782 harness 或旧分支文件。
 
 ---
 
-### Task 2: 在真实 macOS WKWebView 复验并完成 BUG-777
+### Task 2: 在真实 macOS WKWebView 复验并完成 BUG-783
 
 **Files:**
 - Verify: `hibiki/integration_test/reader_pagination_test.dart`
-- Modify: `docs/bugs/BUG-777-fractional-page-boundary-premature-limit.md`
+- Modify: `docs/bugs/BUG-783-fractional-page-boundary-premature-limit.md`
 - Modify generated index: `docs/BUGS.md`
 
 **Interfaces:**
@@ -196,14 +196,14 @@ flutter test integration_test/reader_pagination_test.dart -d macos --no-pub
 Expected: `pitch` 保持 raw 小数；page 31 forward 继续到 page 32，不再同步返回 `limit`；
 扫描走到真实章末，I1/I2/I3/I4/I5/I6 全部通过，命令 exit 0。
 
-- [ ] **Step 2: 更新 BUG-777 完成证据**
+- [ ] **Step 2: 更新 BUG-783 完成证据**
 
-在 `docs/bugs/BUG-777-fractional-page-boundary-premature-limit.md` 中：
+在 `docs/bugs/BUG-783-fractional-page-boundary-premature-limit.md` 中：
 
 - 将 `[ ] ①` 改为 `[x] ①`，记录 Task 1 的真实提交哈希及 JS/Dart 修改位置。
 - 将 `[ ] ②` 改为 `[x] ②`，记录两个精确 TDD 用例、JS 源码守卫、聚焦测试结果和 macOS
   WKWebView 全章扫描结果。
-- 保留 BUG-776 为「探针假阳性」，不得把本 bug 改名为累计漂移。
+- 保留 BUG-782 为「探针假阳性」，不得把本 bug 改名为累计漂移。
 
 - [ ] **Step 3: 重建索引并提交文档**
 
@@ -211,9 +211,9 @@ Expected: `pitch` 保持 raw 小数；page 31 forward 继续到 page 32，不再
 dart run tool/bug.dart reindex
 git add \
   docs/BUGS.md \
-  docs/bugs/BUG-777-fractional-page-boundary-premature-limit.md
+  docs/bugs/BUG-783-fractional-page-boundary-premature-limit.md
 git diff --cached --check
 git commit -m "docs(bug): close fractional page boundary limit"
 ```
 
-Expected: docs commit 只含 BUG-777 与自动索引；`hibiki/macos/Podfile.lock` 仍未暂存。
+Expected: docs commit 只含 BUG-783 与自动索引；`hibiki/macos/Podfile.lock` 仍未暂存。

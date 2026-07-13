@@ -86,6 +86,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
     this.onSentenceContextPreview,
+    this.onOpenSentenceContextModal,
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
@@ -169,6 +170,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 回给 popup 渲染三栏预览。非空才在 popup 渲染「调整上下文」按钮（与 [onSetSentenceContext]
   /// 同生命周期；reader/视频启用）。
   final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
+
+  /// BUG-763/766：popup 里点某词条的「调整上下文」按钮经 `openSentenceContextModal` JS
+  /// 处理器触发本回调，宿主弹 **app 原生顶层对话框**（`SentenceContextDialog`，不再画在
+  /// 弹窗 WebView 内）。[entryIndex] 是该词条在 `:scope > .entry` 里的稳定 DOM 序（确认
+  /// 制卡时用 [DictionaryPopupWebViewState.mineEntryByIndex] 精确回点），[matched] 是查到
+  /// 的词表现形（对话框里在当前句高亮）。非空才在 popup 渲染「调整上下文」按钮。
+  final Future<void> Function(int entryIndex, String matched)?
+      onOpenSentenceContextModal;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onTopPullReleased;
 
@@ -530,6 +539,16 @@ class DictionaryPopupWebViewState
     await _controller?.evaluateJavascript(
       source: 'window.hoshiPopupMineFirstEntry'
           ' ? window.hoshiPopupMineFirstEntry() : false',
+    );
+  }
+
+  /// BUG-763/766：确认「制卡前调整」原生对话框时，回 WebView 精确点中第 [idx] 个词条
+  /// （`:scope > .entry` DOM 序）的制卡按钮，复用其全部制卡/查重/覆写逻辑（Dart 侧无
+  /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。
+  Future<void> mineEntryByIndex(int idx) async {
+    await _controller?.evaluateJavascript(
+      source: 'window.hoshiPopupMineEntryByIndex'
+          ' ? window.hoshiPopupMineEntryByIndex($idx) : false',
     );
   }
 
@@ -1407,6 +1426,32 @@ class DictionaryPopupWebViewState
                   return const <String, Object?>{};
                 }
                 return widget.onSentenceContextPreview!();
+              },
+            );
+          },
+        );
+
+        // BUG-763/766：popup 点某词条「调整上下文」→ 宿主弹 app 原生顶层对话框
+        // （SentenceContextDialog），不再画在弹窗 WebView 内（那受弹窗尺寸/半透明限制，
+        // 句子框重叠、显示不全）。args[0] = {entryIndex, matched}。
+        controller.addJavaScriptHandler(
+          handlerName: 'openSentenceContextModal',
+          callback: (args) async {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.openSentenceContextModal',
+              null,
+              ErrorLogService.instance,
+              () async {
+                if (widget.onOpenSentenceContextModal == null) return null;
+                int entryIndex = 0;
+                String matched = '';
+                if (args.isNotEmpty && args[0] is Map) {
+                  final Map<dynamic, dynamic> data = args[0] as Map;
+                  entryIndex = (data['entryIndex'] as num?)?.toInt() ?? 0;
+                  matched = data['matched']?.toString() ?? '';
+                }
+                await widget.onOpenSentenceContextModal!(entryIndex, matched);
+                return null;
               },
             );
           },

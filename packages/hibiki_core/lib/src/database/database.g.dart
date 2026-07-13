@@ -12805,9 +12805,24 @@ class $MediaCollectionsTable extends MediaCollections
   late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
       'created_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _orderUpdatedAtMeta =
+      const VerificationMeta('orderUpdatedAt');
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, name, collectionType, coverSource, sortOrder, createdAt];
+  late final GeneratedColumn<int> orderUpdatedAt = GeneratedColumn<int>(
+      'order_updated_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        name,
+        collectionType,
+        coverSource,
+        sortOrder,
+        createdAt,
+        orderUpdatedAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -12849,6 +12864,12 @@ class $MediaCollectionsTable extends MediaCollections
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('order_updated_at')) {
+      context.handle(
+          _orderUpdatedAtMeta,
+          orderUpdatedAt.isAcceptableOrUnknown(
+              data['order_updated_at']!, _orderUpdatedAtMeta));
+    }
     return context;
   }
 
@@ -12870,6 +12891,8 @@ class $MediaCollectionsTable extends MediaCollections
           .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+      orderUpdatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}order_updated_at'])!,
     );
   }
 
@@ -12898,13 +12921,21 @@ class MediaCollectionRow extends DataClass
 
   /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
   final int createdAt;
+
+  /// 合集内手动序（成员 sortIndex）最后一次人为改动的毫秒戳（schema v40，多端库
+  /// 联合视图 §2.3）。仅 [HibikiDatabase.reorderCollectionItems]（用户拖拽落盘）
+  /// bump 为 now；同步应用对端顺序时**镜像对端时间戳而非 now**（否则同步会伪装成
+  /// 更新的人为改序，两端时间戳互相追赶）。跨端手动序整合集 LWW 的比较键：新者
+  /// 整表覆盖成员 sortIndex。默认 0 = 从未手动排序，任何真实改序都能盖过它。
+  final int orderUpdatedAt;
   const MediaCollectionRow(
       {required this.id,
       required this.name,
       required this.collectionType,
       this.coverSource,
       required this.sortOrder,
-      required this.createdAt});
+      required this.createdAt,
+      required this.orderUpdatedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -12916,6 +12947,7 @@ class MediaCollectionRow extends DataClass
     }
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
+    map['order_updated_at'] = Variable<int>(orderUpdatedAt);
     return map;
   }
 
@@ -12929,6 +12961,7 @@ class MediaCollectionRow extends DataClass
           : Value(coverSource),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
+      orderUpdatedAt: Value(orderUpdatedAt),
     );
   }
 
@@ -12942,6 +12975,7 @@ class MediaCollectionRow extends DataClass
       coverSource: serializer.fromJson<String?>(json['coverSource']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      orderUpdatedAt: serializer.fromJson<int>(json['orderUpdatedAt']),
     );
   }
   @override
@@ -12954,6 +12988,7 @@ class MediaCollectionRow extends DataClass
       'coverSource': serializer.toJson<String?>(coverSource),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
+      'orderUpdatedAt': serializer.toJson<int>(orderUpdatedAt),
     };
   }
 
@@ -12963,7 +12998,8 @@ class MediaCollectionRow extends DataClass
           String? collectionType,
           Value<String?> coverSource = const Value.absent(),
           int? sortOrder,
-          int? createdAt}) =>
+          int? createdAt,
+          int? orderUpdatedAt}) =>
       MediaCollectionRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -12971,6 +13007,7 @@ class MediaCollectionRow extends DataClass
         coverSource: coverSource.present ? coverSource.value : this.coverSource,
         sortOrder: sortOrder ?? this.sortOrder,
         createdAt: createdAt ?? this.createdAt,
+        orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
       );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -12983,6 +13020,9 @@ class MediaCollectionRow extends DataClass
           data.coverSource.present ? data.coverSource.value : this.coverSource,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      orderUpdatedAt: data.orderUpdatedAt.present
+          ? data.orderUpdatedAt.value
+          : this.orderUpdatedAt,
     );
   }
 
@@ -12994,14 +13034,15 @@ class MediaCollectionRow extends DataClass
           ..write('collectionType: $collectionType, ')
           ..write('coverSource: $coverSource, ')
           ..write('sortOrder: $sortOrder, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('orderUpdatedAt: $orderUpdatedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, collectionType, coverSource, sortOrder, createdAt);
+  int get hashCode => Object.hash(id, name, collectionType, coverSource,
+      sortOrder, createdAt, orderUpdatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -13011,7 +13052,8 @@ class MediaCollectionRow extends DataClass
           other.collectionType == this.collectionType &&
           other.coverSource == this.coverSource &&
           other.sortOrder == this.sortOrder &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.orderUpdatedAt == this.orderUpdatedAt);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -13021,6 +13063,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<String?> coverSource;
   final Value<int> sortOrder;
   final Value<int> createdAt;
+  final Value<int> orderUpdatedAt;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -13028,6 +13071,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.coverSource = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.orderUpdatedAt = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -13036,6 +13080,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.coverSource = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required int createdAt,
+    this.orderUpdatedAt = const Value.absent(),
   })  : name = Value(name),
         createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -13045,6 +13090,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<String>? coverSource,
     Expression<int>? sortOrder,
     Expression<int>? createdAt,
+    Expression<int>? orderUpdatedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -13053,6 +13099,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (coverSource != null) 'cover_source': coverSource,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
+      if (orderUpdatedAt != null) 'order_updated_at': orderUpdatedAt,
     });
   }
 
@@ -13062,7 +13109,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       Value<String>? collectionType,
       Value<String?>? coverSource,
       Value<int>? sortOrder,
-      Value<int>? createdAt}) {
+      Value<int>? createdAt,
+      Value<int>? orderUpdatedAt}) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -13070,6 +13118,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       coverSource: coverSource ?? this.coverSource,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
+      orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
     );
   }
 
@@ -13094,6 +13143,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (orderUpdatedAt.present) {
+      map['order_updated_at'] = Variable<int>(orderUpdatedAt.value);
+    }
     return map;
   }
 
@@ -13105,7 +13157,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('collectionType: $collectionType, ')
           ..write('coverSource: $coverSource, ')
           ..write('sortOrder: $sortOrder, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('orderUpdatedAt: $orderUpdatedAt')
           ..write(')'))
         .toString();
   }
@@ -13395,6 +13448,343 @@ class MediaCollectionItemsCompanion
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
           ..write('sortIndex: $sortIndex, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
+    with
+        TableInfo<$CollectionMemberTombstonesTable,
+            CollectionMemberTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CollectionMemberTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _collectionNameMeta =
+      const VerificationMeta('collectionName');
+  @override
+  late final GeneratedColumn<String> collectionName = GeneratedColumn<String>(
+      'collection_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _collectionTypeMeta =
+      const VerificationMeta('collectionType');
+  @override
+  late final GeneratedColumn<String> collectionType = GeneratedColumn<String>(
+      'collection_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _entryKeyMeta =
+      const VerificationMeta('entryKey');
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+      'entry_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _removedAtMeta =
+      const VerificationMeta('removedAt');
+  @override
+  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
+      'removed_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [collectionName, collectionType, mediaType, entryKey, removedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'collection_member_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<CollectionMemberTombstoneRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('collection_name')) {
+      context.handle(
+          _collectionNameMeta,
+          collectionName.isAcceptableOrUnknown(
+              data['collection_name']!, _collectionNameMeta));
+    } else if (isInserting) {
+      context.missing(_collectionNameMeta);
+    }
+    if (data.containsKey('collection_type')) {
+      context.handle(
+          _collectionTypeMeta,
+          collectionType.isAcceptableOrUnknown(
+              data['collection_type']!, _collectionTypeMeta));
+    } else if (isInserting) {
+      context.missing(_collectionTypeMeta);
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(_entryKeyMeta,
+          entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta));
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('removed_at')) {
+      context.handle(_removedAtMeta,
+          removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta));
+    } else if (isInserting) {
+      context.missing(_removedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey =>
+      {collectionName, collectionType, mediaType, entryKey};
+  @override
+  CollectionMemberTombstoneRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CollectionMemberTombstoneRow(
+      collectionName: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}collection_name'])!,
+      collectionType: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}collection_type'])!,
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      entryKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}entry_key'])!,
+      removedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}removed_at'])!,
+    );
+  }
+
+  @override
+  $CollectionMemberTombstonesTable createAlias(String alias) {
+    return $CollectionMemberTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class CollectionMemberTombstoneRow extends DataClass
+    implements Insertable<CollectionMemberTombstoneRow> {
+  /// 合集自然键：名字。
+  final String collectionName;
+
+  /// 合集自然键：'collection' | 'playlist'（同 [MediaCollections].collectionType）。
+  final String collectionType;
+
+  /// 成员媒体种类（'epub' | 'srt' | 'video'）；'' = 合集级删除墓碑哨兵。
+  final String mediaType;
+
+  /// 成员稳定身份（同 [MediaCollectionItems].entryKey）；'' = 合集级删除墓碑哨兵。
+  final String entryKey;
+
+  /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
+  final int removedAt;
+  const CollectionMemberTombstoneRow(
+      {required this.collectionName,
+      required this.collectionType,
+      required this.mediaType,
+      required this.entryKey,
+      required this.removedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['collection_name'] = Variable<String>(collectionName);
+    map['collection_type'] = Variable<String>(collectionType);
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['removed_at'] = Variable<int>(removedAt);
+    return map;
+  }
+
+  CollectionMemberTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return CollectionMemberTombstonesCompanion(
+      collectionName: Value(collectionName),
+      collectionType: Value(collectionType),
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      removedAt: Value(removedAt),
+    );
+  }
+
+  factory CollectionMemberTombstoneRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CollectionMemberTombstoneRow(
+      collectionName: serializer.fromJson<String>(json['collectionName']),
+      collectionType: serializer.fromJson<String>(json['collectionType']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      removedAt: serializer.fromJson<int>(json['removedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'collectionName': serializer.toJson<String>(collectionName),
+      'collectionType': serializer.toJson<String>(collectionType),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'removedAt': serializer.toJson<int>(removedAt),
+    };
+  }
+
+  CollectionMemberTombstoneRow copyWith(
+          {String? collectionName,
+          String? collectionType,
+          String? mediaType,
+          String? entryKey,
+          int? removedAt}) =>
+      CollectionMemberTombstoneRow(
+        collectionName: collectionName ?? this.collectionName,
+        collectionType: collectionType ?? this.collectionType,
+        mediaType: mediaType ?? this.mediaType,
+        entryKey: entryKey ?? this.entryKey,
+        removedAt: removedAt ?? this.removedAt,
+      );
+  CollectionMemberTombstoneRow copyWithCompanion(
+      CollectionMemberTombstonesCompanion data) {
+    return CollectionMemberTombstoneRow(
+      collectionName: data.collectionName.present
+          ? data.collectionName.value
+          : this.collectionName,
+      collectionType: data.collectionType.present
+          ? data.collectionType.value
+          : this.collectionType,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionMemberTombstoneRow(')
+          ..write('collectionName: $collectionName, ')
+          ..write('collectionType: $collectionType, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('removedAt: $removedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      collectionName, collectionType, mediaType, entryKey, removedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CollectionMemberTombstoneRow &&
+          other.collectionName == this.collectionName &&
+          other.collectionType == this.collectionType &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.removedAt == this.removedAt);
+}
+
+class CollectionMemberTombstonesCompanion
+    extends UpdateCompanion<CollectionMemberTombstoneRow> {
+  final Value<String> collectionName;
+  final Value<String> collectionType;
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<int> removedAt;
+  final Value<int> rowid;
+  const CollectionMemberTombstonesCompanion({
+    this.collectionName = const Value.absent(),
+    this.collectionType = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.removedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CollectionMemberTombstonesCompanion.insert({
+    required String collectionName,
+    required String collectionType,
+    required String mediaType,
+    required String entryKey,
+    required int removedAt,
+    this.rowid = const Value.absent(),
+  })  : collectionName = Value(collectionName),
+        collectionType = Value(collectionType),
+        mediaType = Value(mediaType),
+        entryKey = Value(entryKey),
+        removedAt = Value(removedAt);
+  static Insertable<CollectionMemberTombstoneRow> custom({
+    Expression<String>? collectionName,
+    Expression<String>? collectionType,
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<int>? removedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (collectionName != null) 'collection_name': collectionName,
+      if (collectionType != null) 'collection_type': collectionType,
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (removedAt != null) 'removed_at': removedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CollectionMemberTombstonesCompanion copyWith(
+      {Value<String>? collectionName,
+      Value<String>? collectionType,
+      Value<String>? mediaType,
+      Value<String>? entryKey,
+      Value<int>? removedAt,
+      Value<int>? rowid}) {
+    return CollectionMemberTombstonesCompanion(
+      collectionName: collectionName ?? this.collectionName,
+      collectionType: collectionType ?? this.collectionType,
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      removedAt: removedAt ?? this.removedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (collectionName.present) {
+      map['collection_name'] = Variable<String>(collectionName.value);
+    }
+    if (collectionType.present) {
+      map['collection_type'] = Variable<String>(collectionType.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (removedAt.present) {
+      map['removed_at'] = Variable<int>(removedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionMemberTombstonesCompanion(')
+          ..write('collectionName: $collectionName, ')
+          ..write('collectionType: $collectionType, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('removedAt: $removedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -14632,6 +15022,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $MediaCollectionsTable(this);
   late final $MediaCollectionItemsTable mediaCollectionItems =
       $MediaCollectionItemsTable(this);
+  late final $CollectionMemberTombstonesTable collectionMemberTombstones =
+      $CollectionMemberTombstonesTable(this);
   late final $HibikiPairedPeersTable hibikiPairedPeers =
       $HibikiPairedPeersTable(this);
   late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
@@ -14678,6 +15070,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         shelfEntries,
         mediaCollections,
         mediaCollectionItems,
+        collectionMemberTombstones,
         hibikiPairedPeers,
         bookTombstones,
         lookupMiningCounters,
@@ -23509,6 +23902,7 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder
   Value<String?> coverSource,
   Value<int> sortOrder,
   required int createdAt,
+  Value<int> orderUpdatedAt,
 });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder
     = MediaCollectionsCompanion Function({
@@ -23518,6 +23912,7 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
   Value<String?> coverSource,
   Value<int> sortOrder,
   Value<int> createdAt,
+  Value<int> orderUpdatedAt,
 });
 
 final class $$MediaCollectionsTableReferences extends BaseReferences<
@@ -23573,6 +23968,10 @@ class $$MediaCollectionsTableFilterComposer
   ColumnFilters<int> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<int> get orderUpdatedAt => $composableBuilder(
+      column: $table.orderUpdatedAt,
+      builder: (column) => ColumnFilters(column));
+
   Expression<bool> mediaCollectionItemsRefs(
       Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f)
           f) {
@@ -23623,6 +24022,10 @@ class $$MediaCollectionsTableOrderingComposer
 
   ColumnOrderings<int> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get orderUpdatedAt => $composableBuilder(
+      column: $table.orderUpdatedAt,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -23651,6 +24054,9 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get orderUpdatedAt => $composableBuilder(
+      column: $table.orderUpdatedAt, builder: (column) => column);
 
   Expression<T> mediaCollectionItemsRefs<T extends Object>(
       Expression<T> Function($$MediaCollectionItemsTableAnnotationComposer a)
@@ -23706,6 +24112,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<String?> coverSource = const Value.absent(),
             Value<int> sortOrder = const Value.absent(),
             Value<int> createdAt = const Value.absent(),
+            Value<int> orderUpdatedAt = const Value.absent(),
           }) =>
               MediaCollectionsCompanion(
             id: id,
@@ -23714,6 +24121,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             coverSource: coverSource,
             sortOrder: sortOrder,
             createdAt: createdAt,
+            orderUpdatedAt: orderUpdatedAt,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -23722,6 +24130,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<String?> coverSource = const Value.absent(),
             Value<int> sortOrder = const Value.absent(),
             required int createdAt,
+            Value<int> orderUpdatedAt = const Value.absent(),
           }) =>
               MediaCollectionsCompanion.insert(
             id: id,
@@ -23730,6 +24139,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             coverSource: coverSource,
             sortOrder: sortOrder,
             createdAt: createdAt,
+            orderUpdatedAt: orderUpdatedAt,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -24045,6 +24455,190 @@ typedef $$MediaCollectionItemsTableProcessedTableManager
         (MediaCollectionItemRow, $$MediaCollectionItemsTableReferences),
         MediaCollectionItemRow,
         PrefetchHooks Function({bool collectionId})>;
+typedef $$CollectionMemberTombstonesTableCreateCompanionBuilder
+    = CollectionMemberTombstonesCompanion Function({
+  required String collectionName,
+  required String collectionType,
+  required String mediaType,
+  required String entryKey,
+  required int removedAt,
+  Value<int> rowid,
+});
+typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder
+    = CollectionMemberTombstonesCompanion Function({
+  Value<String> collectionName,
+  Value<String> collectionType,
+  Value<String> mediaType,
+  Value<String> entryKey,
+  Value<int> removedAt,
+  Value<int> rowid,
+});
+
+class $$CollectionMemberTombstonesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $CollectionMemberTombstonesTable> {
+  $$CollectionMemberTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get collectionName => $composableBuilder(
+      column: $table.collectionName,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get collectionType => $composableBuilder(
+      column: $table.collectionType,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$CollectionMemberTombstonesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $CollectionMemberTombstonesTable> {
+  $$CollectionMemberTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get collectionName => $composableBuilder(
+      column: $table.collectionName,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get collectionType => $composableBuilder(
+      column: $table.collectionType,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$CollectionMemberTombstonesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $CollectionMemberTombstonesTable> {
+  $$CollectionMemberTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get collectionName => $composableBuilder(
+      column: $table.collectionName, builder: (column) => column);
+
+  GeneratedColumn<String> get collectionType => $composableBuilder(
+      column: $table.collectionType, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get removedAt =>
+      $composableBuilder(column: $table.removedAt, builder: (column) => column);
+}
+
+class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $CollectionMemberTombstonesTable,
+    CollectionMemberTombstoneRow,
+    $$CollectionMemberTombstonesTableFilterComposer,
+    $$CollectionMemberTombstonesTableOrderingComposer,
+    $$CollectionMemberTombstonesTableAnnotationComposer,
+    $$CollectionMemberTombstonesTableCreateCompanionBuilder,
+    $$CollectionMemberTombstonesTableUpdateCompanionBuilder,
+    (
+      CollectionMemberTombstoneRow,
+      BaseReferences<_$HibikiDatabase, $CollectionMemberTombstonesTable,
+          CollectionMemberTombstoneRow>
+    ),
+    CollectionMemberTombstoneRow,
+    PrefetchHooks Function()> {
+  $$CollectionMemberTombstonesTableTableManager(
+      _$HibikiDatabase db, $CollectionMemberTombstonesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CollectionMemberTombstonesTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CollectionMemberTombstonesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CollectionMemberTombstonesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> collectionName = const Value.absent(),
+            Value<String> collectionType = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<String> entryKey = const Value.absent(),
+            Value<int> removedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              CollectionMemberTombstonesCompanion(
+            collectionName: collectionName,
+            collectionType: collectionType,
+            mediaType: mediaType,
+            entryKey: entryKey,
+            removedAt: removedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String collectionName,
+            required String collectionType,
+            required String mediaType,
+            required String entryKey,
+            required int removedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              CollectionMemberTombstonesCompanion.insert(
+            collectionName: collectionName,
+            collectionType: collectionType,
+            mediaType: mediaType,
+            entryKey: entryKey,
+            removedAt: removedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$CollectionMemberTombstonesTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $CollectionMemberTombstonesTable,
+        CollectionMemberTombstoneRow,
+        $$CollectionMemberTombstonesTableFilterComposer,
+        $$CollectionMemberTombstonesTableOrderingComposer,
+        $$CollectionMemberTombstonesTableAnnotationComposer,
+        $$CollectionMemberTombstonesTableCreateCompanionBuilder,
+        $$CollectionMemberTombstonesTableUpdateCompanionBuilder,
+        (
+          CollectionMemberTombstoneRow,
+          BaseReferences<_$HibikiDatabase, $CollectionMemberTombstonesTable,
+              CollectionMemberTombstoneRow>
+        ),
+        CollectionMemberTombstoneRow,
+        PrefetchHooks Function()>;
 typedef $$HibikiPairedPeersTableCreateCompanionBuilder
     = HibikiPairedPeersCompanion Function({
   Value<int> id,
@@ -24784,6 +25378,10 @@ class $HibikiDatabaseManager {
       $$MediaCollectionsTableTableManager(_db, _db.mediaCollections);
   $$MediaCollectionItemsTableTableManager get mediaCollectionItems =>
       $$MediaCollectionItemsTableTableManager(_db, _db.mediaCollectionItems);
+  $$CollectionMemberTombstonesTableTableManager
+      get collectionMemberTombstones =>
+          $$CollectionMemberTombstonesTableTableManager(
+              _db, _db.collectionMemberTombstones);
   $$HibikiPairedPeersTableTableManager get hibikiPairedPeers =>
       $$HibikiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
   $$BookTombstonesTableTableManager get bookTombstones =>

@@ -7,9 +7,11 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
@@ -454,8 +456,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   // 弹窗盒子尺寸随「界面大小」一起放大：阅读器/词典页整树被 HibikiAppUiScaleNeutralizer
   // 中和回原生密度（净缩放=1），弹窗盒子若不乘 appUiScale，界面 200% 时它仍是原生小尺寸
   // （内容放大走 WebView 内 CSS zoom，见 DictionaryPopupWebView）。
-  double get popupMaxWidth => appModel.popupMaxWidth * appModel.appUiScale;
-  double get popupMaxHeight => appModel.popupMaxHeight * appModel.appUiScale;
+  //
+  // Phase B（尺寸拖拽）：拖动把手期间用预览态 [_popupResizePreview]（基准逻辑像素）临时
+  // 覆盖偏好真值，让盒子实时跟手放大/缩小；松手 [_onPopupResizeEnd] 才落偏好并清预览。
+  double get popupMaxWidth =>
+      (_popupResizePreview?.width ?? appModel.popupMaxWidth) *
+      appModel.appUiScale;
+  double get popupMaxHeight =>
+      (_popupResizePreview?.height ?? appModel.popupMaxHeight) *
+      appModel.appUiScale;
   double get popupPadding => 6;
   double get popupBottomReserve => 0;
   double get popupTopReserve => 0;
@@ -465,6 +474,51 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   bool get popupVerticalWriting => false;
   late final Listenable _popupListenable =
       Listenable.merge([_popup, _isSearchingNotifier]);
+
+  /// Phase B 尺寸拖拽的预览态（基准逻辑像素，未缩放）。非空 = 正在拖把手，[popupMaxWidth]
+  /// / [popupMaxHeight] 用它临时覆盖偏好实时预览；null = 未拖，用已落库真值。松手清空。
+  LookupSize? _popupResizePreview;
+
+  /// 拖把手起手：把当前偏好基准尺寸存入预览态（后续增量累积其上）。
+  void _onPopupResizeStart() {
+    setState(() {
+      _popupResizePreview =
+          LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
+    });
+  }
+
+  /// 拖把手进行：把盒坐标系增量位移 [deltaPx] 经 [resolveDraggedLookupSize] 折算回基准
+  /// （除 appUiScale）并 clamp，实时驱动重建。
+  void _onPopupResizeUpdate(Offset deltaPx) {
+    final LookupSize base = _popupResizePreview ??
+        LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
+    setState(() {
+      _popupResizePreview = resolveDraggedLookupSize(
+        currentBaseWidth: base.width,
+        currentBaseHeight: base.height,
+        deltaWidthPx: deltaPx.dx,
+        deltaHeightPx: deltaPx.dy,
+        uiScale: appModel.appUiScale,
+      );
+    });
+  }
+
+  /// 松手：把预览尺寸一次性落偏好（`setPopupMaxWidth/Height` 单一真值，与设置滑杆同源），
+  /// 清空预览态回到「读真值」。
+  void _onPopupResizeEnd() {
+    final LookupSize? committed = _popupResizePreview;
+    setState(() => _popupResizePreview = null);
+    if (committed != null) {
+      appModel.setPopupMaxWidth(committed.width);
+      appModel.setPopupMaxHeight(committed.height);
+    }
+  }
+
+  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好。
+  void _onPopupResizeCancel() {
+    if (_popupResizePreview == null) return;
+    setState(() => _popupResizePreview = null);
+  }
 
   Widget buildDictionary() {
     return Theme(
@@ -613,6 +667,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onClose: () => _dismissPopupAt(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
+        // Phase B：app 内弹窗右下角尺寸拖拽把手（全 5 平台）。拖动 = 可视化改「最大宽高」
+        // 偏好（与设置滑杆同一真值）。任意层都能拖（都编辑共享真值），预览态在宿主级。
+        showResizeGrip: true,
+        onResizeStart: _onPopupResizeStart,
+        onResizeUpdate: _onPopupResizeUpdate,
+        onResizeEnd: _onPopupResizeEnd,
+        onResizeCancel: _onPopupResizeCancel,
         // TODO-834：点**某层弹窗本体的空白区**（非内容区）只关该层衍生的后代层，
         // 保留本层 + 祖先（不关母代）。点顶层（无后代）= no-op 栈不变。
         onTapOutside: () => dismissDescendantsOf(index),
@@ -697,6 +758,37 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 文句（前/当前/后）+ 词偏移做预览。只在支持草稿的表面接线，其余传 null。
         onSentenceContextPreview:
             supportsSentenceDraft ? onSentenceContextPreviewFromDraft : null,
+        // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
+        // WebView 内）；确认制卡回该层 WebView（item.webViewKey）精确点中该词条制卡。
+        onOpenSentenceContextModal: supportsSentenceDraft
+            ? (int entryIndex, String matched) => _openSentenceContextDialog(
+                  webViewKey: item.webViewKey,
+                  entryIndex: entryIndex,
+                  matched: matched,
+                )
+            : null,
+      ),
+    );
+  }
+
+  /// BUG-763/766：弹窗点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
+  /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内——那受弹窗表面尺寸/半透明
+  /// 限制，句子框重叠、显示不全）。复用宿主已有 [onSetSentenceContextToDraft] /
+  /// [onSentenceContextPreviewFromDraft] 驱动增减 + 预览（后端零改动）；「确认制卡」回
+  /// [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮
+  /// （[DictionaryPopupWebViewState.mineEntryByIndex]，复用全部制卡/查重/覆写逻辑）。
+  Future<void> _openSentenceContextDialog({
+    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required int entryIndex,
+    required String matched,
+  }) async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => SentenceContextDialog(
+        matched: matched,
+        fetchPreview: onSentenceContextPreviewFromDraft,
+        setContext: onSetSentenceContextToDraft,
+        onConfirm: () => webViewKey.currentState?.mineEntryByIndex(entryIndex),
       ),
     );
   }

@@ -166,8 +166,10 @@ void main() {
     expect(mineCard, contains(r'sentence audio export failed: $lastFailure'),
         reason: '用户可见错误应含实际 executable/fallback/0xC000007B 等摘要。');
     // 引擎把 onFailure 转发给 GIF/音频抽取器，故 GIF 失败也留下 ffmpeg 诊断。
+    // TODO-<image-mode>：GIF 调用搬进 tryGif() 闭包（封面模式排列器），`await` 移位；
+    // 守卫改锚 `_gif(` 调用点 + onFailure 转发（不再钉死 `await _gif(` 这一实现细节）。
     expect(
-        engineNorm.contains('await _gif(') &&
+        engineNorm.contains('_gif(') &&
             engineNorm.contains('onFailure: onFailure'),
         isTrue,
         reason: 'GIF 导出失败虽可回退截图，也必须经 onFailure 留下 ffmpeg 诊断。');

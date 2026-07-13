@@ -8,6 +8,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
@@ -16,6 +17,34 @@ HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
+}
+
+/// 写一个「可用」的本地音频源库（entries + android schema + 一行音频字节），让
+/// [AppModel.importSyncedLocalAudioDb] → [LocalAudioManager.importFile] 的 BUG-779
+/// 内容校验通过。旧桩写 [1,2,3,4] 假字节现在会被 isUsableAudioSource 正确拒绝，故
+/// 同步库 fixture 改用真实最小音频库（用例意图=路径重建/双真相源/去重 不变）。
+void _writeValidAudioDb(String path) {
+  // 幂等：同名调用（如按 displayName 去重的用例会二次造同路径库）先删旧文件，
+  // 复刻旧桩 writeAsBytesSync 的覆盖语义，避免在已建表的库上重复 CREATE TABLE。
+  final File dbFile = File(path);
+  if (dbFile.existsSync()) dbFile.deleteSync();
+  final Database sdb = sqlite3.open(path);
+  try {
+    sdb.execute('CREATE TABLE entries '
+        '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+    sdb.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
+    sdb.execute("INSERT INTO entries VALUES ('猫','ねこ','neko.mp3','nhk16')");
+    final PreparedStatement stmt =
+        sdb.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    stmt.execute(<Object?>[
+      'neko.mp3',
+      'nhk16',
+      Uint8List.fromList(<int>[1, 2, 3])
+    ]);
+    stmt.dispose();
+  } finally {
+    sdb.dispose();
+  }
 }
 
 void main() {
@@ -73,8 +102,8 @@ void main() {
     bool enabled = true,
     List<LocalAudioSourcePref> sources = const <LocalAudioSourcePref>[],
   }) {
-    final File dbFile = File(p.join(stagingDir.path, '$displayName.db'))
-      ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+    final File dbFile = File(p.join(stagingDir.path, '$displayName.db'));
+    _writeValidAudioDb(dbFile.path);
     return LocalAudioPackageContents(
       dbFile: dbFile,
       displayName: displayName,

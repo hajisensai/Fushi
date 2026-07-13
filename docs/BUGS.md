@@ -27,14 +27,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 761 条。点号进各自文件。
+> 共 767 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-778](bugs/BUG-778-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
-| [BUG-777](bugs/BUG-777-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
-| [BUG-776](bugs/BUG-776-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |
-| [BUG-775](bugs/BUG-775-md3-macos-double-shell.md) | ✅ | ✅ | macOS 自动/MD3 仍套原生侧栏形成双壳 |
+| [BUG-784](bugs/BUG-784-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
+| [BUG-783](bugs/BUG-783-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
+| [BUG-782](bugs/BUG-782-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |
+| [BUG-781](bugs/BUG-781-md3-macos-double-shell.md) | ✅ | ✅ | macOS 自动/MD3 仍套原生侧栏形成双壳 |
+| [BUG-780](bugs/BUG-780-backup-keep-settings-local-audio-wipe.md) | ✅ | ✅ | 覆盖整库保留设置冲掉本地音频注册 |
+| [BUG-779](bugs/BUG-779-local-audio-import-invalid-file.md) | ✅ | ✅ | 本地音频源导入无效文件假成功 |
+| [BUG-778](bugs/BUG-778-collection-detail-drag-ui-scale-offset.md) | ✅ | ✅ | 合集详情页拖拽排序不吃界面大小缩放拖动位置错位 |
+| [BUG-777](bugs/BUG-777-shelf-continue-hero-imported-order.md) | ✅ | ✅ | 继续阅读hero与书架最近阅读按导入序选书而非最近阅读序 |
+| [BUG-776](bugs/BUG-776-sentence-context-native-dialog.md) | ✅ | ✅ | 制卡「选择句子上下文」应为 app 原生顶层对话框（不是画在查词弹窗内） |
+| [BUG-775](bugs/BUG-775-ext-expression-scroll-scrollbar.md) | ✅ | ✅ | 扩展弹窗词头旁多出迷你滚动条：标准scrollbar-color继承使::-webkit-scrollbar隐藏失效 |
 | [BUG-774](bugs/BUG-774-mine-button-global-lookup.md) | ✅ | ✅ | 剪贴板/选中查词缺少制卡按钮 |
 | [BUG-773](bugs/BUG-773-clipboard-sentence-hit-offset.md) | ✅ | ✅ | 剪贴板面板句子横幅整词高亮左移吞句首标点 |
 | [BUG-772](bugs/BUG-772-video-startup-freeze.md) | ✅ | ✅ | 快速进出视频后 Windows 启动冻死在 loading |

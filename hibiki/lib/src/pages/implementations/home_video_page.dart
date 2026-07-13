@@ -26,8 +26,10 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
@@ -44,10 +46,12 @@ import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
+import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -68,12 +72,19 @@ class HomeVideoPage extends ConsumerStatefulWidget {
   const HomeVideoPage({
     required this.repo,
     this.remoteVideoClientLoader,
+    this.cloudRemoteVideoClientLoader,
     this.remoteVideoDownloadDestination,
     super.key,
   });
 
   final VideoBookRepository repo;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
+
+  /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
+  /// 让「云后端 → 云视频占位卡混排 + 按 uid 下载入库」在 widget 测试可落地。缺省时
+  /// 生产路径经 [_resolveCloudRemoteVideoClient]（resolveSyncBackend 产物包进 client）。
+  final Future<CloudRemoteVideoClient?> Function()?
+      cloudRemoteVideoClientLoader;
   final Future<File> Function(RemoteVideoInfo video)?
       remoteVideoDownloadDestination;
 
@@ -92,6 +103,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
 
+  /// 多端库联合视图 §2.2/§2.6：云后端（Google Drive 等）的云视频目录 client。互联
+  /// （hibikiServer）与云后端互斥——一台设备只配一种后端，故 [_remoteVideoClient]（互联）
+  /// 与本字段（云）至多一个非空，[_downloadRemote] 据此分派下载路径。
+  CloudRemoteVideoClient? _cloudRemoteVideoClient;
+
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
   final CardDropRegistry<VideoBookRow> _cardDropRegistry =
@@ -103,8 +119,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   bool _selectionMode = false;
   final Set<String> _selectedUids = <String>{};
 
+  /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedUids] 并存。
+  /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
+  final Set<int> _selectedCollectionIds = <int>{};
+
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
+
+  /// 当前渲染成横排行的合集 id 列表（[_buildLocalVideoSlivers] 每帧写入），供
+  /// 全选 / 反选把可见合集纳入整选集。
+  List<int> _visibleCollectionIds = const <int>[];
 
   /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
   /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
@@ -251,6 +275,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
+  /// 合集行折叠开关：`setPref` 先同步刷内存缓存，setState 重建即读到新值；
+  /// 落库 fire-and-forget（`collapsed_collection_ids`，书架/视频页共用）。
+  void _toggleCollectionCollapsed(int collectionId) {
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    final Set<int> ids = prefs.collapsedCollectionIds;
+    if (!ids.remove(collectionId)) ids.add(collectionId);
+    unawaited(prefs.setCollapsedCollectionIds(ids));
+    setState(() {});
+  }
+
   /// 统一合集 Phase 2/6：给「缺封面的本地视频行」后台逐个抽一帧当封面。
   ///
   /// 播放列表拆集导入 / v38 迁移拆出的各集，只有首集在导入时承接了封面，其余各集
@@ -306,13 +340,66 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return backend;
   }
 
+  /// 多端库联合视图 §2.2/§2.6 云后端分支：把 `resolveSyncBackend` 的产物（含解混淆
+  /// 装饰层）包进 [CloudRemoteVideoClient]，读 `__videos__/videos.json` 目录清单渲染
+  /// 云视频占位卡 + 按 uid 下载入库。与书侧 `_resolveRemoteBookClient` 云分支同范式；
+  /// 互联后端（hibikiServer）走 [_resolveRemoteVideoClient]，此处只对云盘后端出 client，
+  /// 鉴权失败/无后端返 null（不显示云视频占位）。
+  Future<CloudRemoteVideoClient?> _resolveCloudRemoteVideoClient() async {
+    final Future<CloudRemoteVideoClient?> Function()? injected =
+        widget.cloudRemoteVideoClientLoader;
+    if (injected != null) return injected();
+
+    final AppModel appModel = ref.read(appProvider);
+    final SyncRepository syncRepo = SyncRepository(appModel.database);
+    final SyncBackendType type = await syncRepo.getBackendType();
+    // 互联后端不在此处理（已由 _resolveRemoteVideoClient 覆盖）。
+    if (type == SyncBackendType.hibikiServer) return null;
+    final SyncBackend backend = resolveSyncBackend(type);
+    if (!await backend.restoreAuth(syncRepo)) return null;
+    return CloudRemoteVideoClient(backend: backend);
+  }
+
   Future<_RemoteVideoState?> _loadRemoteVideos() async {
     final RemoteVideoClient? client = await _resolveRemoteVideoClient();
     _remoteVideoClient = client;
-    if (client == null) return null;
+    if (client != null) {
+      // 互联后端：host live 库直接下发 RemoteVideoInfo。
+      _cloudRemoteVideoClient = null;
+      try {
+        final List<RemoteVideoInfo> videos = await client.listRemoteVideos();
+        // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
+        final List<VideoBookRow> localVideos = await widget.repo.listAll();
+        final Set<String> localUids =
+            localVideos.map((VideoBookRow r) => r.bookUid).toSet();
+        return _RemoteVideoState(
+          videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
+        );
+      } catch (e) {
+        // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
+        debugPrint('[home-video] remote video list failed: $e');
+        return const _RemoteVideoState(
+          videos: <RemoteVideoInfo>[],
+          failed: true,
+        );
+      }
+    }
+
+    // 云后端（§2.2/§2.6）：读 `__videos__/videos.json` 清单，把云视频条目适配成
+    // RemoteVideoInfo 混排进主网格（云角标/排序/散卡降级既有逻辑自动生效）。
+    final CloudRemoteVideoClient? cloud =
+        await _resolveCloudRemoteVideoClient();
+    _cloudRemoteVideoClient = cloud;
+    if (cloud == null) return null;
     try {
-      final List<RemoteVideoInfo> videos = await client.listRemoteVideos();
-      // #6: 远端与本地是同一视频时（同 bookUid）不在「配对设备」区重复展示。
+      // 清单不存在（从未有设备上传）→ listRemoteVideos 返回空表；结构非法
+      // （FormatException）向上抛，此处 catch → 本轮云视频不可用（= 只剩本地语义）。
+      final List<RemoteVideoManifestEntry> entries =
+          await cloud.listRemoteVideos();
+      final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[
+        for (final RemoteVideoManifestEntry e in entries)
+          _cloudManifestToRemoteVideoInfo(e),
+      ];
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
       final Set<String> localUids =
           localVideos.map((VideoBookRow r) => r.bookUid).toSet();
@@ -320,12 +407,43 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
       );
     } catch (e) {
-      debugPrint('[home-video] remote video list failed: $e');
+      debugPrint('[home-video] cloud video manifest failed: $e');
       return const _RemoteVideoState(
         videos: <RemoteVideoInfo>[],
         failed: true,
       );
     }
+  }
+
+  /// 把云视频清单条目（[RemoteVideoManifestEntry]）适配成主网格占位卡消费的
+  /// [RemoteVideoInfo]。云清单只带 uid/title/大小/importedAt/封面资产名——无外挂字幕、
+  /// 无远端进度、无合集归属（云视频占位永远散卡，与 §2.3 host 合集归属互不影响），
+  /// 故这些字段取缺省。封面走下载时的 [CloudRemoteVideoClient.getRemoteVideoCover]，
+  /// 占位阶段用占位图（不预下封面），因此这里不设 coverPath/coverUrl。
+  RemoteVideoInfo _cloudManifestToRemoteVideoInfo(RemoteVideoManifestEntry e) {
+    return RemoteVideoInfo(
+      id: e.uid,
+      title: e.title,
+      sizeBytes: e.sizeBytes,
+    );
+  }
+
+  /// 多端库联合视图（spec §2.1/§2.4/§2.5）：解析可混排进主网格的远端占位视频。
+  ///
+  /// 门控：① 「显示远端条目」开关关闭 → 空；② 远端目录拉取失败/未配对/无后端
+  /// （[state] == null 或 [_RemoteVideoState.failed]）→ 空（离线=只剩本地，占位卡不
+  /// 出现）；③ 标签筛选激活（[filter] != null）→ 空（远端视频无本地标签，不参与
+  /// 筛选）。其余情况返回去重后的远端视频列表。
+  List<RemoteVideoInfo> _visibleRemoteVideos(
+    _RemoteVideoState? state,
+    Set<String>? filter,
+  ) {
+    if (!ref.read(appProvider).prefsRepo.showRemoteEntries) {
+      return const <RemoteVideoInfo>[];
+    }
+    if (state == null || state.failed) return const <RemoteVideoInfo>[];
+    if (filter != null) return const <RemoteVideoInfo>[];
+    return state.videos;
   }
 
   /// 标签改动（加/删/换书）后刷新：失效共享标签 provider + 重载视频列表。
@@ -347,6 +465,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     setState(() {
       _selectionMode = !_selectionMode;
       _selectedUids.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -354,6 +473,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     setState(() {
       _selectionMode = false;
       _selectedUids.clear();
+      _selectedCollectionIds.clear();
     });
   }
 
@@ -365,36 +485,69 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     });
   }
 
+  /// 块2：切换整合集选中（合集行头勾选框）。
+  void _toggleCollectionSelection(int collectionId) {
+    setState(() {
+      if (!_selectedCollectionIds.remove(collectionId)) {
+        _selectedCollectionIds.add(collectionId);
+      }
+    });
+  }
+
+  /// 一个可见视频是否已折进某合集（= 合集成员，不作散卡单选/全选）。
+  bool _isCollectionMember(String bookUid) =>
+      _primaryCollectionByEntry.containsKey('video|$bookUid');
+
   void _selectAllVisible() {
     setState(() {
+      // 散卡：只选未折进合集的可见视频（折进的成员由整合集选中，不单独勾）。
       for (final VideoBookRow book in _visibleVideos) {
+        if (_isCollectionMember(book.bookUid)) continue;
         _selectedUids.add(book.bookUid);
       }
+      _selectedCollectionIds.addAll(_visibleCollectionIds);
     });
   }
 
   void _invertSelection() {
     setState(() {
-      final Set<String> all = <String>{
-        for (final VideoBookRow book in _visibleVideos) book.bookUid,
+      final Set<String> allLoose = <String>{
+        for (final VideoBookRow book in _visibleVideos)
+          if (!_isCollectionMember(book.bookUid)) book.bookUid,
       };
-      final Set<String> inverted = all.difference(_selectedUids);
+      final Set<String> invertedLoose = allLoose.difference(_selectedUids);
       _selectedUids
         ..clear()
-        ..addAll(inverted);
+        ..addAll(invertedLoose);
+      final Set<int> allCollections = _visibleCollectionIds.toSet();
+      final Set<int> invertedCollections =
+          allCollections.difference(_selectedCollectionIds);
+      _selectedCollectionIds
+        ..clear()
+        ..addAll(invertedCollections);
     });
   }
 
-  /// 批量删除选中视频书：确认 → 逐个 [VideoBookRepository.deleteVideoBook] →
-  /// 刷新列表/标签映射 → 退出选择态 → toast。
+  /// 块4：批量删除区分解散/删媒体。
+  /// - 选中合集 → 解散（[HibikiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
+  /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
+  /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
-    final int count = _selectedUids.length;
-    if (count == 0) return;
+    final int mediaCount = _selectedUids.length;
+    final int collectionCount = _selectedCollectionIds.length;
+    if (mediaCount == 0 && collectionCount == 0) return;
+    // 纯删媒体分支用视频专用文案（batch_delete_confirm_video，develop 新增 key）；
+    // 混选/纯解散仍走合集区分文案（本分支批量删除语义超集）。
+    final String message = collectionCount == 0
+        ? t.batch_delete_confirm_video(n: mediaCount)
+        : mediaCount == 0
+            ? t.batch_dissolve_confirm(m: collectionCount)
+            : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(t.dialog_delete),
-        content: Text(t.batch_delete_confirm_video(n: count)),
+        content: Text(message),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -412,6 +565,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
     if (confirmed != true || !mounted) return;
 
+    final HibikiDatabase db = ref.read(appProvider).database;
+    // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
+    final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
+    int dissolved = 0;
+    for (final int id in toDissolve) {
+      final int removed = await db.deleteMediaCollection(id);
+      if (removed > 0) dissolved++;
+    }
+    // 再删选中散卡的媒体本体（现状语义）。
     final Set<String> toDelete = Set<String>.of(_selectedUids);
     final List<VideoBookRow> deletedBooks = <VideoBookRow>[];
     for (final String bookUid in toDelete) {
@@ -438,7 +600,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       await widget.repo.compactAfterVideoDeleteBestEffort();
     }
     if (!mounted) return;
-    HibikiToast.show(msg: t.batch_delete_success_video(n: deleted));
+    // 复查 #7：零成功（deleted==0 且 dissolved==0）时兜底文案按「选择构成」诚实分派——
+    // 只选散卡（collectionCount==0）说「已删除 0 个」，否则说「已解散 0 个合集」；不再
+    // 无条件谎报解散类别（对齐 BUG-439 诚实计数精神）。纯删媒体分支用视频专用文案
+    // （batch_delete_success_video，develop 新增 key）。
+    final String successMsg = deleted > 0 && dissolved > 0
+        ? t.batch_delete_mixed_success(n: deleted, m: dissolved)
+        : deleted > 0
+            ? t.batch_delete_success_video(n: deleted)
+            : collectionCount == 0
+                ? t.batch_delete_success_video(n: deleted)
+                : t.batch_dissolve_success(m: dissolved);
+    HibikiToast.show(msg: successMsg);
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
@@ -668,18 +841,42 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// TODO-616 A1：把选中视频「组合成系列」。命名 → createSeries → 逐条
-  /// setSeriesForEntry（视频选择键是裸 bookUid，经 shelfSelectionToEntry 编成
-  /// ('video', uid)）→ 退出选择态 → 重载分组渲染。
+  /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。视频选择键是裸 bookUid，
+  /// 经 shelfSelectionToEntry 编成 ('video', uid)：
+  /// - 仅散卡 → 命名弹窗新建合集（[_combineCreateNew]）；
+  /// - 恰 1 合集 + 若干散卡 → 散卡并入该合集（[_combineAddToExisting]，不弹命名）；
+  /// - ≥2 合集（可带散卡）→ 合并成一个（[_combineMergeCollections]，默认名=成员最多合集名）。
+  /// 全部走既有 DAO（createMediaCollection / addToCollection / deleteMediaCollection）。
   Future<void> _batchCombineIntoSeries() async {
-    if (_selectedUids.isEmpty) return;
-    final List<ShelfEntryRef> refs = <ShelfEntryRef>[
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
+    final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
       for (final String uid in _selectedUids)
         if (shelfSelectionToEntry(uid, ShelfSelectionSurface.video)
             case final ShelfEntryRef ref)
           ref,
     ];
-    if (refs.isEmpty) return;
+    final CombineTier tier = classifyCombine(
+      collectionCount: collectionIds.length,
+      looseCount: looseRefs.length,
+    );
+    switch (tier) {
+      case CombineTier.noop:
+        return;
+      case CombineTier.createNew:
+        await _combineCreateNew(db, looseRefs);
+      case CombineTier.addToExisting:
+        await _combineAddToExisting(db, collectionIds.single, looseRefs);
+      case CombineTier.mergeCollections:
+        await _combineMergeCollections(db, collectionIds, looseRefs);
+    }
+  }
+
+  /// 档1：仅散卡 → 命名弹窗新建合集，逐条 addToCollection。
+  Future<void> _combineCreateNew(
+    HibikiDatabase db,
+    List<ShelfEntryRef> refs,
+  ) async {
     // TODO-1125 B：预填合集默认名——把选中视频标题经 parseVideoFilename 去集号得系列名，
     // 再取最长公共前缀；推导为空则兜底 t.series_default_name（「新系列」）。
     final Set<String> selectedUids = Set<String>.of(_selectedUids);
@@ -704,9 +901,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       previewCovers: previewCovers,
     );
     if (name == null || !mounted) return;
-    // 统一合集 Phase 4：批量「组合成合集」建一个 collection 类合集（无序，手动组合），
-    // 逐条 addToCollection，取代旧 createSeries + setSeriesForEntry。
-    final HibikiDatabase db = ref.read(appProvider).database;
     final int collectionId = await db.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
       await db.addToCollection(collectionId, ref.mediaType, ref.entryKey);
@@ -715,6 +909,75 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _exitSelectionMode();
     await _loadLibraryMaps();
     HibikiToast.show(msg: t.series_created);
+  }
+
+  /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
+  Future<void> _combineAddToExisting(
+    HibikiDatabase db,
+    int collectionId,
+    List<ShelfEntryRef> refs,
+  ) async {
+    for (final ShelfEntryRef ref in refs) {
+      await db.addToCollection(collectionId, ref.mediaType, ref.entryKey);
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    await _loadLibraryMaps();
+    HibikiToast.show(msg: t.batch_add_to_collection_success(n: refs.length));
+  }
+
+  /// 档3：≥2 合集（可带散卡）→ 合并成一个。目标 = 成员最多合集（其名作默认名，
+  /// 确认框可改名）；目标吸收其余合集成员（addToCollection）+ 散卡加入，其余合集
+  /// deleteMediaCollection 解散（只解除分组，不删媒体本体）。
+  Future<void> _combineMergeCollections(
+    HibikiDatabase db,
+    List<int> collectionIds,
+    List<ShelfEntryRef> refs,
+  ) async {
+    final Map<int, List<MediaCollectionItemRow>> itemsById =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final int id in collectionIds) {
+      itemsById[id] = await db.getCollectionItems(id);
+    }
+    final MergeTargetChoice choice = chooseMergeTarget(
+      <({int id, String name, int memberCount})>[
+        for (final int id in collectionIds)
+          (
+            id: id,
+            name: _collectionsById[id]?.name ?? '',
+            memberCount: itemsById[id]!.length,
+          ),
+      ],
+    );
+    if (!mounted) return;
+    final String? name = await showCollectionNameDialog(
+      context: context,
+      title: t.collection_merge_title,
+      initialName: choice.defaultName,
+    );
+    if (name == null || !mounted) return;
+    final int targetId = choice.targetId;
+    // 复查 #6（TOCTOU）：成员快照上面是在命名确认框「之前」取的，框开着期间若有新成员
+    // 同步进源合集，用旧快照迁移会漏掉这些新成员，随后 deleteMediaCollection 把它们连
+    // 同源合集一起删掉 → 分组丢失。确认后、迁移前对每个源合集「重取」最新成员再迁移，
+    // addToCollection 幂等去重，重复成员无副作用。
+    for (final int id in collectionIds) {
+      if (id == targetId) continue;
+      final List<MediaCollectionItemRow> members =
+          await db.getCollectionItems(id);
+      for (final MediaCollectionItemRow m in members) {
+        await db.addToCollection(targetId, m.mediaType, m.entryKey);
+      }
+      await db.deleteMediaCollection(id);
+    }
+    for (final ShelfEntryRef ref in refs) {
+      await db.addToCollection(targetId, ref.mediaType, ref.entryKey);
+    }
+    await db.renameMediaCollection(targetId, name);
+    if (!mounted) return;
+    _exitSelectionMode();
+    await _loadLibraryMaps();
+    HibikiToast.show(msg: t.collection_merged);
   }
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
@@ -752,7 +1015,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Future<void> _openRemote(RemoteVideoInfo video) async {
     final RemoteVideoClient? client = _remoteVideoClient;
-    if (client == null) return;
+    if (client == null) {
+      // #4：云后端视频无 live host、不能流播；短按 = 下载入库（对齐书侧短按=下载语义），
+      // 而不是静默 return（占位卡点了像没反应）。仅当存在云 client 时分派；两者都无时
+      // _downloadRemote 自身会给「不可达」提示。
+      if (_cloudRemoteVideoClient != null) {
+        await _downloadRemote(video);
+      }
+      return;
+    }
     // 打开远端播放页后再弹首次着色器提示（而非提示阻塞导航）：远端入口的契约是
     // 「点击立即建立远端流」（home_video_remote_interconnect_test），把一次性的着色器
     // 提示放到 await 导航前会让远端串流请求永远不发出（TODO-026 回归）。提示是纯信息
@@ -851,8 +1122,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Future<void> _downloadRemote(RemoteVideoInfo video) async {
     final RemoteVideoClient? client = _remoteVideoClient;
+    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
     // #3: 服务不可达 / 未鉴权时给明确提示，不再静默 return（用户点了像没反应）。
-    if (client == null) {
+    if (client == null && cloud == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_video_unavailable)),
@@ -861,29 +1133,36 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     // 根因修复（TODO-819）：下载任务委托给 app 级 InterconnectDownloadManager 而非
     // 本页 State —— 故切 tab / 退页 / 本页 dispose 时下载仍在管理器里推进到底，重进
-    // 页面只 ref.watch 订阅渲染进度。底层 client.downloadRemoteVideo 已走可续传引擎
-    // （Range + .part），中断留 part 下次可续。manager 自身去重（同 id 在跑则忽略）。
+    // 页面只 ref.watch 订阅渲染进度。manager 自身去重（同 id 在跑则忽略）。
+    // #6 续传口径按分支写实：互联走 host live 下载引擎（Range + `.part`，中断留 part
+    // 下次可续）；云后端分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败
+    // 清残片、无断点续传。
     final InterconnectDownloadManager manager =
         ref.read(interconnectDownloadManagerProvider);
     if (manager.isRunning(video.id)) return;
 
     final File dest = await _remoteDownloadDestination(video);
+    // 互联 vs 云后端分派：互联走 host live 下载 + 字幕；云后端（§2.2/§2.6）走
+    // CloudRemoteVideoClient.getRemoteVideo 拉整文件，收尾登记时无外挂字幕、封面可选。
+    // bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
+    // 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
+    final InterconnectDownloadRunner run = client != null
+        ? (File target, {void Function(double progress)? onProgress}) =>
+            client.downloadRemoteVideo(video.id, target, onProgress: onProgress)
+        : (File target, {void Function(double progress)? onProgress}) =>
+            cloud!.getRemoteVideo(video.id, target, onProgress: onProgress);
+    final InterconnectDownloadComplete onComplete = client != null
+        ? (File downloaded) =>
+            _registerDownloadedVideo(client, video, downloaded)
+        : (File downloaded) =>
+            _registerDownloadedCloudVideo(cloud!, video, downloaded);
     try {
       await manager.startVideoDownload(
         id: video.id,
         title: video.title,
         dest: dest,
-        run: (File target, {void Function(double progress)? onProgress}) =>
-            client.downloadRemoteVideo(
-          video.id,
-          target,
-          onProgress: onProgress,
-        ),
-        // 建行/下字幕/抽封面收尾（TODO-820）：与下载同一失败边界，任一失败计入任务
-        // 失败。bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：
-        // upsert 同行不撞键），故下载好的视频立即出现在列表、并从「配对设备」区隐藏。
-        onComplete: (File downloaded) =>
-            _registerDownloadedVideo(client, video, downloaded),
+        run: run,
+        onComplete: onComplete,
       );
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
@@ -947,6 +1226,58 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       await widget.repo.updateCover(bookUid, coverPath);
       if (mounted) _refresh();
     }
+  }
+
+  /// 把刚下载到本机的**云后端**视频 [dest] 登记成本地 [VideoBooksCompanion] 行
+  /// （多端库联合视图 §2.2/§2.6）。与 [_registerDownloadedVideo] 同一「勿双重导入」语义
+  /// （bookUid = 稳定的远端 [RemoteVideoInfo.id]，saveVideoBook 是 upsert），但云清单
+  /// 无外挂字幕/标签，故：无字幕（回退内嵌轨 0）、无标签重建；封面先试云端封面资产
+  /// （[CloudRemoteVideoClient.getRemoteVideoCover]，可选），无则本地抽帧兜底。
+  Future<void> _registerDownloadedCloudVideo(
+    CloudRemoteVideoClient cloud,
+    RemoteVideoInfo video,
+    File dest,
+  ) async {
+    final String bookUid = video.id;
+    await widget.repo.saveVideoBook(VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(video.title),
+      videoPath: Value(dest.path),
+      // 云视频无外挂字幕：回退内嵌默认轨（与 _registerDownloadedVideo 无字幕分支一致）。
+      embeddedSubtitleTrack: const Value<int?>(0),
+      importedAt: Value(DateTime.now()),
+    ));
+    // 封面：先试云端封面资产（可选，无封面记录返回 false 不抛）；失败/无则本地抽帧兜底。
+    // 与建行解耦（抽帧走 ffmpeg 慢，绝不挡建行落库），抽好后 updateCover 回写并刷新一次。
+    bool gotCover = false;
+    try {
+      final File coverDest = await _cloudCoverDestination(bookUid);
+      gotCover = await cloud.getRemoteVideoCover(bookUid, coverDest);
+      if (gotCover) {
+        await widget.repo.updateCover(bookUid, coverDest.path);
+        if (mounted) _refresh();
+      }
+    } catch (e) {
+      debugPrint('[home-video] cloud video cover download failed: $e');
+      gotCover = false;
+    }
+    if (!gotCover) {
+      final String? coverPath =
+          await extractVideoCover(videoPath: dest.path, bookUid: bookUid);
+      if (coverPath != null) {
+        await widget.repo.updateCover(bookUid, coverPath);
+        if (mounted) _refresh();
+      }
+    }
+  }
+
+  /// 云视频封面下载落点：`<documents>/remote_videos/<safeUid>.cover.jpg`（与视频落点
+  /// 同目录，重复下载覆盖同一副本）。
+  Future<File> _cloudCoverDestination(String bookUid) async {
+    final Directory dir = await AppPaths.remoteVideosDirectory();
+    await dir.create(recursive: true);
+    final String safeUid = bookUid.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return File(p.join(dir.path, '$safeUid.cover.jpg'));
   }
 
   /// 下载并解析对端外挂字幕（TODO-820）：返回外挂字幕落地路径 / 格式 / 解析出的 cue。
@@ -1265,18 +1596,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           future: _remoteFuture,
           builder: (BuildContext context,
               AsyncSnapshot<_RemoteVideoState?> remoteSnap) {
-            // TODO-654：远端（互通）视频区与本地视频区改为「同一个 CustomScrollView
-            // 一起滚动」，对齐书架（reader_hibiki_history_page）的远端书籍区范式：
-            // 远端 section 完全撑开（shrinkWrap，不限高、不内滚），随主滚动自然延展
-            // 排在本地视频上方；本地视频区是真正的 SliverGrid。此前用
-            // LayoutBuilder + ConstrainedBox 把远端限到可用高度的 0.45 内滚（既挤本地
-            // 又把远端关进一个小内滚条），手机上观感差——用户要「远端区完全撑开、和
-            // 书籍一样」。整页只有一个垂直滚动容器，远端再多也只是把页面拉长由主滚动
-            // 消化，不会撑爆 Column（CustomScrollView 的 sliver 本就懒加载、无界高合法）。
-            final Widget remoteSection =
-                _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
-            final bool hasRemoteSection =
-                !(remoteSection is SizedBox && remoteSection.height == 0);
+            // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5，撤独立远端分区）：把
+            // 互联「远端有、本地无」的视频混排成主网格占位卡（云角标 + 远端封面，
+            // 点击走现有远端流播 [_openRemote] / 下载 [_downloadRemote]）。云端视频本批
+            // 不接（其目录 client 由并行批产出）——[_resolveRemoteVideoClient] 只对互联
+            // 后端返回 client，故 remoteSnap 天然只含互联视频，不为云视频造假入口。
+            // 离线/未配对/拉取失败（state==null 或 failed）→ 占位卡不出现（只剩本地）；
+            // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
+            final List<RemoteVideoInfo> remoteVideos =
+                _visibleRemoteVideos(remoteSnap.data, filter);
             // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
             // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
             // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
@@ -1301,9 +1629,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       // [all] 描述整库，不随标签筛选变。
                       if (all.isNotEmpty)
                         SliverToBoxAdapter(child: _buildOverviewSection(all)),
-                      if (hasRemoteSection)
-                        SliverToBoxAdapter(child: remoteSection),
-                      ..._buildLocalVideoSlivers(all, ordered, cardLayout),
+                      ..._buildLocalVideoSlivers(
+                          all, ordered, remoteVideos, cardLayout),
                     ],
                   );
                 },
@@ -1541,30 +1868,59 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return '${at.year}-${at.month}-$dd';
   }
 
-  /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则按
-  /// [groupByCollections] 输出**保序交错**——合集 group 渲染成全宽横排行
-  /// （[CollectionShelfRow]，UI v2 Phase C：每个合集独占一行、行内横移切集），
-  /// 连续散 group 段落合并成一个 [SliverGrid]。零合集时只有一个网格段，与旧
-  /// 单网格布局退化一致。
+  /// 本地视频区的 sliver 列表：空库 / 筛选无结果时是占满剩余空间的提示；否则
+  /// **分区**（去碎片 spec 2026-07-12，已拍板方案 A+顶部）——合集横排行集中
+  /// 渲染在前（[CollectionShelfRow]，区内保持排序模式的组间序），散卡合成
+  /// **单一** [SliverGrid] 在后。旧保序交错布局每个合集行都把网格切段产生残行
+  /// （一两张卡占一行，用户实报）；分区后残行恒 1 个（网格末行）。
   List<Widget> _buildLocalVideoSlivers(
     List<VideoBookRow> all,
     List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    if (all.isEmpty) {
+    // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
+    if (all.isEmpty && remoteVideos.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
       ];
     }
-    if (books.isEmpty) {
+    if (books.isEmpty && remoteVideos.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
     }
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final List<CollectionGroup<VideoBookRow>> groups = _groupVideos(books);
+    // 多端库联合视图 §2.3 任务10：把「远端有本地无」视频的**主合集归属**（host 下发的
+    // RemoteVideoInfo.collection）注入折叠映射，使远端占位卡折进对应本地合集行。远端合集
+    // 本地无 id——按 (name, type) 对本地合集表解析（[_resolveLocalCollectionId]），解析不到
+    // = 散卡降级（不硬造合集行）。云视频占位 collection 恒 null（散卡）。局部拷贝页级
+    // 映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
+    final Map<String, int> primaryByEntry =
+        Map<String, int>.of(_primaryCollectionByEntry);
+    final Map<String, int> memberSortIndex =
+        Map<String, int>.of(_memberSortIndex);
+    for (final RemoteVideoInfo video in remoteVideos) {
+      final RemoteCollectionMembership? membership = video.collection;
+      if (membership == null) continue;
+      final int? cid = _resolveLocalCollectionId(
+        membership.collectionName,
+        membership.collectionType,
+      );
+      if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
+      final String key = 'video|${video.id}';
+      primaryByEntry[key] = cid;
+      memberSortIndex[key] = membership.sortIndex;
+    }
+    final List<CollectionGroup<_VideoSlot>> groups =
+        _groupVideos(books, remoteVideos, primaryByEntry, memberSortIndex);
+    // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    _visibleCollectionIds = <int>[
+      for (final CollectionGroup<_VideoSlot> g in groups)
+        if (g.collection != null) g.collection!.id,
+    ];
     final bool hasCollectionRows = groups.any(
-      (CollectionGroup<VideoBookRow> g) => g.collection != null,
+      (CollectionGroup<_VideoSlot> g) => g.collection != null,
     );
     // 零合集：单网格 + 原 EdgeInsets.all 内边距（与旧布局逐像素一致）。
     final EdgeInsetsGeometry gridPadding = hasCollectionRows
@@ -1574,82 +1930,130 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           )
         : EdgeInsets.all(tokens.spacing.card);
     final List<Widget> slivers = <Widget>[];
-    List<CollectionGroup<VideoBookRow>> loose =
-        <CollectionGroup<VideoBookRow>>[];
-    void flushLoose() {
-      if (loose.isEmpty) return;
-      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
-      loose = <CollectionGroup<VideoBookRow>>[];
-    }
-
-    for (final CollectionGroup<VideoBookRow> group in groups) {
+    // 方案A（去碎片）：合集行集中渲染在前（可含远端占位成员），散卡（本地 + 未归属
+    // 远端占位）合成单一网格在后，按当前排序模式统一排序（远端进度时间戳/目录序退化）。
+    final List<_VideoLooseCard> loose = <_VideoLooseCard>[];
+    for (final CollectionGroup<_VideoSlot> group in groups) {
       if (group.collection == null) {
-        loose.add(group);
-        continue;
+        final _VideoSlot slot = group.coverItem.payload;
+        loose.add(_VideoLooseCard(
+          sortKey: _groupSortKey(group),
+          build: () => _buildVideoSlotCard(slot),
+        ));
+      } else {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _buildVideoCollectionRow(group, cardLayout),
+          ),
+        );
       }
-      flushLoose();
-      slivers.add(
-        SliverToBoxAdapter(child: _buildVideoCollectionRow(group, cardLayout)),
-      );
     }
-    flushLoose();
+    loose.sort((_VideoLooseCard a, _VideoLooseCard b) =>
+        compareShelfSortKeys(a.sortKey, b.sortKey, _sortMode));
+    if (loose.isNotEmpty) {
+      slivers.add(_buildLooseVideoGridSliver(loose, gridPadding, cardLayout));
+    }
     return slivers;
   }
 
-  /// 过滤后视频 → 合集折叠 + 按当前排序方式排 group（散卡与合集行同层混排）。
-  List<CollectionGroup<VideoBookRow>> _groupVideos(List<VideoBookRow> books) {
-    final List<CollectionOrderingItem<VideoBookRow>> items =
-        <CollectionOrderingItem<VideoBookRow>>[
+  /// 散卡分派：本地卡 [_buildCard] / 远端占位卡 [_buildRemoteVideoCard]（任务10 union）。
+  Widget _buildVideoSlotCard(_VideoSlot slot) {
+    final VideoBookRow? local = slot.local;
+    if (local != null) return _buildCard(local);
+    return _buildRemoteVideoCard(slot.remote!);
+  }
+
+  /// 按 (name, collectionType) 自然键把远端合集归属解析成本地合集 id（折叠归属同「最小
+  /// collectionId」规则，多个同键取最小）；本地无此合集则返 null（散卡降级，不硬造行）。
+  int? _resolveLocalCollectionId(String name, String type) {
+    int? best;
+    for (final MediaCollectionRow c in _collectionsById.values) {
+      if (c.name == name && c.collectionType == type) {
+        if (best == null || c.id < best) best = c.id;
+      }
+    }
+    return best;
+  }
+
+  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。远端占位
+  /// 用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目之后、组内保持目录序）。
+  List<CollectionGroup<_VideoSlot>> _groupVideos(
+    List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
+    Map<String, int> primaryByEntry,
+    Map<String, int> memberSortIndex,
+  ) {
+    final List<CollectionOrderingItem<_VideoSlot>> items =
+        <CollectionOrderingItem<_VideoSlot>>[
       for (final VideoBookRow book in books)
-        CollectionOrderingItem<VideoBookRow>(
+        CollectionOrderingItem<_VideoSlot>(
           mediaType: 'video',
           entryKey: book.bookUid,
           importedAt: book.importedAt?.millisecondsSinceEpoch ?? 0,
-          payload: book,
+          payload: _VideoSlot(local: book),
         ),
     ];
-    final List<CollectionGroup<VideoBookRow>> groups =
-        groupByCollections<VideoBookRow>(
+    for (int i = 0; i < remoteVideos.length; i++) {
+      final RemoteVideoInfo video = remoteVideos[i];
+      items.add(CollectionOrderingItem<_VideoSlot>(
+        mediaType: 'video',
+        entryKey: video.id,
+        importedAt: -1 - i,
+        payload: _VideoSlot(remote: video),
+      ));
+    }
+    final List<CollectionGroup<_VideoSlot>> groups =
+        groupByCollections<_VideoSlot>(
       items: items,
-      primaryCollectionIdByEntry: _primaryCollectionByEntry,
+      primaryCollectionIdByEntry: primaryByEntry,
       collectionsById: _collectionsById,
-      memberSortIndex: _memberSortIndex,
+      memberSortIndex: memberSortIndex,
     );
     groups.sort(
-      (CollectionGroup<VideoBookRow> a, CollectionGroup<VideoBookRow> b) =>
+      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
           compareShelfSortKeys(_groupSortKey(a), _groupSortKey(b), _sortMode),
     );
     return groups;
   }
 
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
-  /// title 取合集名）。recentScore = watch-stats 最近观看毫秒（v39 uid 键控，遗留
-  /// NULL-uid 行按 title 回退），无观看记录退 importedAt——「最近观看」下刚导入
-  /// 没看过的条目自然靠前而不是沉底。
-  ShelfSortKey _groupSortKey(CollectionGroup<VideoBookRow> group) {
-    int recentOf(VideoBookRow r) =>
-        (_watchAtByUid[r.bookUid] ?? _legacyWatchAtByTitle[r.title])
-            ?.millisecondsSinceEpoch ??
-        r.importedAt?.millisecondsSinceEpoch ??
-        0;
-    int importedOf(VideoBookRow r) => r.importedAt?.millisecondsSinceEpoch ?? 0;
+  /// title 取合集名）。本地 recentScore = watch-stats 最近观看毫秒（v39 uid 键控，遗留
+  /// NULL-uid 行按 title 回退），无观看记录退 importedAt；远端占位 recentScore = 远端进度
+  /// 时间戳（无则退目录序编码 it.importedAt），稳定排在本地条目之后。
+  ShelfSortKey _groupSortKey(CollectionGroup<_VideoSlot> group) {
+    int recentOf(CollectionOrderingItem<_VideoSlot> it) {
+      final VideoBookRow? local = it.payload.local;
+      if (local != null) {
+        return (_watchAtByUid[local.bookUid] ??
+                    _legacyWatchAtByTitle[local.title])
+                ?.millisecondsSinceEpoch ??
+            it.importedAt;
+      }
+      final RemoteVideoInfo remote = it.payload.remote!;
+      return remote.positionUpdatedAtMs > 0
+          ? remote.positionUpdatedAtMs
+          : it.importedAt;
+    }
+
+    String titleOf(_VideoSlot s) => s.local?.title ?? s.remote!.title;
+    String tieOf(_VideoSlot s) =>
+        s.local != null ? s.local!.bookUid : 'remote:${s.remote!.id}';
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
-      final VideoBookRow r = group.coverItem.payload;
+      final CollectionOrderingItem<_VideoSlot> it = group.coverItem;
       return ShelfSortKey(
-        recentScore: recentOf(r),
-        title: r.title,
-        importedAt: importedOf(r),
-        tieKey: r.bookUid,
+        recentScore: recentOf(it),
+        title: titleOf(it.payload),
+        importedAt: it.importedAt,
+        tieKey: tieOf(it.payload),
       );
     }
     int recent = 0;
     int imported = 0;
-    for (final CollectionOrderingItem<VideoBookRow> it in group.items) {
-      final int rs = recentOf(it.payload);
+    for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
+      final int rs = recentOf(it);
       if (rs > recent) recent = rs;
-      final int im = importedOf(it.payload);
-      if (im > imported) imported = im;
+      if (it.importedAt > imported) imported = it.importedAt;
     }
     return ShelfSortKey(
       recentScore: recent,
@@ -1660,21 +2064,29 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 一个合集的全宽横排行：头（合集名+集数+查看全部→详情页）+ 横向成员卡列表。
-  /// 成员卡复用 [_buildCard] 并带 playlistCollectionId——点某集**直接从该集**进
-  /// 播放器（带剧集面板/上下集/连播）；初始横滚定位到「继续看」成员。
+  /// 本地成员卡复用 [_buildCard] 并带 playlistCollectionId——点某集**直接从该集**进
+  /// 播放器（带剧集面板/上下集/连播）；远端占位成员（任务10 union）走 [_buildRemoteVideoCard]
+  /// （流播/下载，无本地集坐标故不带 playlistCollectionId）。初始横滚定位到「继续看」成员。
   Widget _buildVideoCollectionRow(
-    CollectionGroup<VideoBookRow> group,
+    CollectionGroup<_VideoSlot> group,
     ({int columns, double cardWidth}) cardLayout,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final MediaCollectionRow collection = group.collection!;
     final int continueIdx = continueMemberIndex(<CollectionMemberProgress>[
-      for (final CollectionOrderingItem<VideoBookRow> it in group.items)
+      for (final CollectionOrderingItem<_VideoSlot> it in group.items)
         CollectionMemberProgress(
-          positionMs: it.payload.lastPositionMs,
-          completed: it.payload.completedAt != null,
+          // 远端占位无本地播放断点：用远端进度 positionMs、completed 恒 false。
+          positionMs: it.payload.local?.lastPositionMs ??
+              it.payload.remote?.positionMs ??
+              0,
+          completed: it.payload.local?.completedAt != null,
         ),
     ]);
+    // #5：行头计数只数**本地成员**（远端占位成员不入 n），与合集详情页口径一致——详情页
+    // 只显示本地成员。行体（itemCount）仍渲染全部成员（含远端占位卡供流播/下载），故不变。
+    final int localCount =
+        group.items.where((it) => it.payload.local != null).length;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -1685,7 +2097,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: CollectionShelfRow(
         key: ValueKey<String>('home_video_collection_row_${collection.id}'),
         title: collection.name,
-        countLabel: t.video_playlist_episodes(count: group.items.length),
+        countLabel: t.video_playlist_episodes(count: localCount),
         itemCount: group.items.length,
         // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
         // Phase D 观看进度行）。
@@ -1694,84 +2106,40 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         initialIndex: continueIdx,
         headerFocusId: HibikiFocusId('home-video-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
-        itemBuilder: (BuildContext _, int i) => _buildCard(
-          group.items[i].payload,
-          playlistCollectionId: collection.id,
-        ),
+        collapsed: ref
+            .watch(appProvider)
+            .prefsRepo
+            .collapsedCollectionIds
+            .contains(collection.id),
+        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+        // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡在多选态不可单独勾。
+        selectionCheckbox: _selectionMode
+            ? _buildSelectionCheck(
+                _selectedCollectionIds.contains(collection.id))
+            : null,
+        onToggleSelected: _selectionMode
+            ? () => _toggleCollectionSelection(collection.id)
+            : null,
+        itemBuilder: (BuildContext _, int i) {
+          final _VideoSlot slot = group.items[i].payload;
+          final VideoBookRow? local = slot.local;
+          if (local != null) {
+            return _buildCard(
+              local,
+              playlistCollectionId: collection.id,
+              selectable: false,
+            );
+          }
+          return _buildRemoteVideoCard(slot.remote!);
+        },
       ),
     );
   }
 
-  Widget _buildRemoteVideoSection(
-    _RemoteVideoState? state,
-    AsyncSnapshot<_RemoteVideoState?> snapshot,
-  ) {
-    if (snapshot.connectionState != ConnectionState.done) {
-      return const SizedBox(
-        height: 3,
-        child: LinearProgressIndicator(),
-      );
-    }
-    if (state == null) return const SizedBox.shrink();
-
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final List<RemoteVideoInfo> videos = state.videos;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // TODO-1143：标题与副标题拆成两行（副标题独占第二行），消除窄屏（手机）
-          // 下两固定中文标签在同一 Row 里各占 Flexible 抢行、互挤截断成「…」。
-          RemoteVideoSectionHeader(
-            title: t.remote_video_interconnect,
-            subtitle: t.remote_video_paired_device,
-          ),
-          if (state.failed)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                t.remote_video_load_failed,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.error),
-              ),
-            )
-          else if (videos.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 10),
-            // 远端视频与本地视频用同一套响应式网格（与 [_buildLocalVideoGridSliver] 同的
-            // SliverGridDelegateWithMaxCrossAxisExtent），手机窄屏会自动减成
-            // 1~2 列网格，而不再是固定高 200 的横向单行滚动条（TODO-593）。
-            // TODO-654：完全撑开——shrinkWrap + NeverScrollable，网格高度 = 全部
-            // 远端卡片的实际高度，整段交给外层 CustomScrollView 一起滚动（不再用
-            // Expanded 占有界高度 + 内部独立垂直滚动）。这样远端区「和书籍一样」自然
-            // 铺开、随页面滚动，再多也只是把页面拉长，由主滚动消化（对齐书架的
-            // _buildRemoteBookSection 范式）。
-            GridView.builder(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 280,
-                mainAxisExtent: 200,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: videos.length,
-              itemBuilder: (BuildContext context, int index) =>
-                  _buildRemoteVideoCard(videos[index]),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
+  /// 多端库联合视图占位卡（spec 2026-07-12 §2.1，撤独立远端分区）：本地视频卡尺寸 +
+  /// 远端封面 + 云角标 ☁，混排进视频库主网格散卡区（[_buildLocalVideoSlivers]）。
+  /// 短按走现有远端流播 [_openRemote]；右上角下载按钮/进度徽章复用 [_downloadRemote]
+  /// （下载委托 InterconnectDownloadManager，切 tab/退页仍推进）。
   Widget _buildRemoteVideoCard(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
@@ -1845,6 +2213,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     left: 6,
                     child: _buildPlaylistBadge(video.episodes.length),
                   ),
+                // 多端库联合视图云角标 ☁（spec §2.1）：占位卡「远端/未下载」标识，
+                // 叠右下角（右上=下载/进度、左上=字幕、左下=集数，互不遮挡）。
+                Positioned(
+                  bottom: 6,
+                  right: 6,
+                  child: _remoteVideoCloudBadge(safeKey),
+                ),
               ],
             ),
           ),
@@ -1895,6 +2270,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   String _safeRemoteKey(String id) =>
       id.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+
+  /// 云角标 ☁ 视觉：半透明黑底胶囊 + 白色云图标（与字幕/集数徽章同款）。多端库
+  /// 联合视图占位卡的「远端 / 未下载」标识（spec §2.1）。带稳定 key 供 widget 测试定位。
+  Widget _remoteVideoCloudBadge(String safeKey) {
+    return Container(
+      key: ValueKey<String>('remote_video_cloud_badge_$safeKey'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.cloud_outlined, size: 13, color: Colors.white),
+    );
+  }
 
   /// 页头：与书架/词典统一，用 [HibikiPageHeader] 大标题 + [HibikiIconButton] 动作
   /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
@@ -2098,7 +2487,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 网格 delegate 与远端区一致）。UI v2 Phase C 后合集不再进网格（渲染成全宽
   /// 横排行），本网格只装散视频单卡。
   Widget _buildLooseVideoGridSliver(
-    List<CollectionGroup<VideoBookRow>> loose,
+    List<_VideoLooseCard> loose,
     EdgeInsetsGeometry padding,
     ({int columns, double cardWidth}) cardLayout,
   ) {
@@ -2115,8 +2504,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           mainAxisSpacing: 12,
         ),
         itemCount: loose.length,
-        itemBuilder: (BuildContext context, int i) =>
-            _buildCard(loose[i].coverItem.payload),
+        itemBuilder: (BuildContext context, int i) => loose[i].build(),
       ),
     );
   }
@@ -2154,7 +2542,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   /// 单视频卡。[playlistCollectionId] 非空 = 卡在合集横排行里（UI v2 Phase C），
   /// 点击直接从该集进播放器并带剧集面板/上下集/连播。
-  Widget _buildCard(VideoBookRow book, {int? playlistCollectionId}) {
+  ///
+  /// [selectable]（默认 true）= 该卡在多选态可单独勾选。块2：合集横排行里的成员卡
+  /// 传 false——多选态不画勾选框、不可单独勾（整合集由行头勾选框选中），点击照常开播。
+  Widget _buildCard(
+    VideoBookRow book, {
+    int? playlistCollectionId,
+    bool selectable = true,
+  }) {
     final List<BookTagRow> tags =
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
@@ -2165,14 +2560,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       currentEpisode: book.currentEpisode,
       episodeCount: episodeCount,
     );
-    final bool selected = _selectedUids.contains(book.bookUid);
+    // 块2：只有可单独勾选的卡才在多选态显示勾选框/高亮/切换选中。
+    final bool showSelection = _selectionMode && selectable;
+    final bool selected = showSelection && _selectedUids.contains(book.bookUid);
     final HibikiCard hibikiCard = HibikiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: HibikiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
       selected: selected,
-      // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。
-      onTap: _selectionMode
+      // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。成员卡
+      // （selectable=false）多选态照常开播、不切换选中。
+      onTap: showSelection
           ? () => _toggleSelection(book.bookUid)
           : () => _open(book, playlistCollectionId: playlistCollectionId),
       // 长按 / 桌面右键都弹管理菜单，与书架书卡（_bookCardShell）、远端视频卡
@@ -2202,7 +2600,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                     right: 6,
                     child: _buildPlaylistBadge(episodeCount),
                   ),
-                if (_selectionMode)
+                if (showSelection)
                   Positioned(
                     top: 6,
                     left: 6,
@@ -2332,6 +2730,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
+    final int selectedCount =
+        _selectedUids.length + _selectedCollectionIds.length;
+    final bool hasSelection =
+        _selectedUids.isNotEmpty || _selectedCollectionIds.isNotEmpty;
+    // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
+    // 只在真能组合（新建 / 并入 / 合并）时才可点，与 [_batchCombineIntoSeries] 同判据。
+    final bool canCombine = classifyCombine(
+          collectionCount: _selectedCollectionIds.length,
+          looseCount: _selectedUids.length,
+        ) !=
+        CombineTier.noop;
     return Material(
       elevation: 6,
       color: theme.colorScheme.surfaceContainer,
@@ -2345,7 +2755,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           child: Row(
             children: <Widget>[
               Text(
-                t.batch_selected_count(n: _selectedUids.length),
+                t.batch_selected_count(n: selectedCount),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -2361,13 +2771,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ),
               const Spacer(),
               HibikiIconButton(
-                enabled: _selectedUids.isNotEmpty,
+                key: const ValueKey<String>('home_video_batch_combine'),
+                enabled: canCombine,
                 onTap: _batchCombineIntoSeries,
                 icon: Icons.collections_bookmark_outlined,
                 tooltip: t.combine_into_series,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
+                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
                 enabled: _selectedUids.isNotEmpty,
                 onTap: _batchShowTagPicker,
                 icon: Icons.sell_outlined,
@@ -2375,7 +2787,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
-                enabled: _selectedUids.isNotEmpty,
+                key: const ValueKey<String>('home_video_batch_delete'),
+                enabled: hasSelection,
                 onTap: _batchDeleteConfirm,
                 icon: Icons.delete_outline,
                 tooltip: t.dialog_delete,
@@ -2682,56 +3095,25 @@ class _VideoBatchTagIntentRow extends StatelessWidget {
   }
 }
 
-/// 远端视频区头部（TODO-1143）。
-///
-/// 把「标题 + 副标题」两个固定中文标签拆成两行：标题与图标同处第一行、副标题
-/// 独占第二行。旧结构把两段标签放进同一个 `Row` 各占 `Flexible`，窄屏（手机）
-/// 下二者抢同一行宽度互相挤压，被 `maxLines:1 + ellipsis` 截成「…」。拆成两行后
-/// 每段标签独占整行宽度，不再互挤。抽成公开可复用 widget 以便窄宽行为守卫直接
-/// pump（避免依赖整页状态）。
-class RemoteVideoSectionHeader extends StatelessWidget {
-  const RemoteVideoSectionHeader({
-    super.key,
-    required this.title,
-    required this.subtitle,
-  });
+/// 多端库联合视图（spec §2.1）：视频库散卡区一个待渲染单元 = 排序键 + 卡片构造。
+/// 本地散卡（[_buildCard]）与远端占位卡（[_buildRemoteVideoCard]）用同一列表按当前
+/// 排序模式混排（[compareShelfSortKeys]）。构造用惰性闭包，排序后再取需要的那些。
+class _VideoLooseCard {
+  const _VideoLooseCard({required this.sortKey, required this.build});
 
-  final String title;
-  final String subtitle;
+  final ShelfSortKey sortKey;
+  final Widget Function() build;
+}
 
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Icon(Icons.devices_other_outlined, size: 18, color: colors.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          subtitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: colors.onSurfaceVariant),
-        ),
-      ],
-    );
-  }
+/// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或
+/// 「远端有本地无」占位 [remote]，二者恰一非空。让 [groupByCollections] 把本地成员与
+/// 远端占位成员折进同一合集行（远端占位归属由 host 合集下发 + 本地自然键解析注入）。
+class _VideoSlot {
+  const _VideoSlot({this.local, this.remote})
+      : assert(local != null || remote != null);
+
+  final VideoBookRow? local;
+  final RemoteVideoInfo? remote;
 }
 
 class _RemoteVideoState {
@@ -2741,5 +3123,7 @@ class _RemoteVideoState {
   });
 
   final List<RemoteVideoInfo> videos;
+
+  /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
   final bool failed;
 }

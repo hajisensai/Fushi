@@ -3,13 +3,13 @@
 - 日期：2026-07-13
 - 分支：`codex/md3-pagination-drift-20260713`
 - reader 基线：`develop@b177f858b`
-- 关联缺陷：BUG-777
+- 关联缺陷：BUG-783
 
 ## 背景与验真结论
 
 旧分页集成探针把 WebView 的 `scroll` 与 `pageSize` 分别取整，导致正确亚像素页网格被 I1
 误报为累计漂移。`a6c9904d0` 保留原始 `double` 后，真实 macOS WKWebView 报告
-`pitch=564.490967`，I1/I2/I3/I4/I6 全部通过，因此 BUG-776 的产品累计漂移未复现。
+`pitch=564.490967`，I1/I2/I3/I4/I6 全部通过，因此 BUG-782 的产品累计漂移未复现。
 
 同一次全章扫描暴露出另一条真实故障：page 31 的 `scroll=17499`，距离理论页边界
 `31 × 564.490967 = 17499.219977` 仅 0.22px；内容仍有 17426px，但同步
@@ -71,8 +71,8 @@ forward 继续使用 `floor(pageCoordinate)+1`，backward 继续使用
 3. `hibiki/test/reader/reader_paginate_js_guard_static_test.dart`
    - 锁定 JS 存在像素化的 1px 商容差，且 forward/backward 都消费规范化后的页号商。
 
-实现完成后只更新 BUG-777 状态并重建 bug 索引。不得修改分页 CSS、`getScrollContext()`、
-pagination metrics、章节切换、BUG-776 harness，也不得带入任何旧分支的其它 57 个文件。
+实现完成后只更新 BUG-783 状态并重建 bug 索引。不得修改分页 CSS、`getScrollContext()`、
+pagination metrics、章节切换、BUG-782 harness，也不得带入任何旧分支的其它 57 个文件。
 
 ## TDD 验证
 
@@ -100,7 +100,7 @@ pagination metrics、章节切换、BUG-776 harness，也不得带入任何旧�
 1. **容差过宽吞掉真实页内位置**：固定复用现有 1px，而不是按页数放大；>1px 时保持原商。
 2. **只修 forward 留下对称回归**：forward 与 backward 共用同一规范化页号商，并各有精确红测。
 3. **Dart 影子与 JS 漂移**：两侧使用同一公式，源码守卫锁定 JS，纯函数测试锁定数值行为。
-4. **误把 BUG-776 探针修复混入产品修复**：`a6c9904d0` 保持独立；本实现不再改 harness。
+4. **误把 BUG-782 探针修复混入产品修复**：`a6c9904d0` 保持独立；本实现不再改 harness。
 5. **范围膨胀**：不碰 CSS、metrics、章节逻辑或旧分支其它 57 文件；若精确红测不能复现，
    停止实施并重新取证，不扩大修改面。
 
@@ -109,4 +109,4 @@ pagination metrics、章节切换、BUG-776 harness，也不得带入任何旧�
 - 精确 forward/backward 测试先红后绿。
 - JS 守卫、Dart 影子及现有跨章边界回归测试全部通过。
 - 真实 macOS WKWebView 全章扫描不在 page 31 提前停止，I5 通过。
-- 最终产品提交只含上述 3 个代码/测试文件；BUG-777 文档完成另作 docs 提交。
+- 最终产品提交只含上述 3 个代码/测试文件；BUG-783 文档完成另作 docs 提交。

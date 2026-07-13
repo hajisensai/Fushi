@@ -618,8 +618,10 @@ SettingsDestination buildLookupDestination() {
           // surfaced through a double slider, so value/onChanged bridge int↔double.
           SettingsSliderItem(
             id: 'lookup.popup_dictionary_columns',
-            title: t.popup_dictionary_columns,
-            subtitle: t.popup_dictionary_columns_hint +
+            // 语义收敛：列数一直是「自动填充、封顶用户值」（effective = min(用户值,
+            // 视口可容)），文案随之改为「词典最多列数（自动填充）」，不改底层算法。
+            title: t.popup_dictionary_max_columns,
+            subtitle: t.popup_dictionary_max_columns_hint +
                 t.settings_experimental_suffix,
             icon: Icons.view_column_outlined,
             min: 1,
@@ -692,16 +694,117 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_height',
+            // TODO-1352 后续：放宽最大高度上限（800→1600），配合高分屏 / 精细调整；
+            // 实际高度仍由 resolvePopupRect 按当前屏高 clamp，绝不会超出屏幕。
+            // 步进保持 10px（1400/140）。
             title: t.popup_max_height,
             icon: Icons.height_outlined,
             min: 200,
-            max: 800,
-            divisions: 60,
+            max: 1600,
+            divisions: 140,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxHeight,
             label: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) {
               settingsContext.appModel.setPopupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 弹窗尺寸精细化：app 外覆盖查词窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
+          // 关闭时跟随上面的 app 内最大宽高（overlayLookupEffectiveSize 解析）。
+          SettingsSwitchItem(
+            id: 'lookup.overlay_lookup_independent_size',
+            title: t.overlay_lookup_independent_size,
+            subtitle: t.overlay_lookup_independent_size_hint,
+            icon: Icons.open_in_new_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setOverlayLookupIndependentSize(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.overlay_lookup_max_width',
+            title: t.overlay_lookup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setOverlayLookupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.overlay_lookup_max_height',
+            title: t.overlay_lookup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.overlayLookupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setOverlayLookupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
+          // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
+          SettingsSwitchItem(
+            id: 'lookup.extension_popup_independent_size',
+            title: t.extension_popup_independent_size,
+            subtitle: t.extension_popup_independent_size_hint,
+            icon: Icons.extension_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setExtensionPopupIndependentSize(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.extension_popup_max_width',
+            title: t.extension_popup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setExtensionPopupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.extension_popup_max_height',
+            title: t.extension_popup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setExtensionPopupMaxHeight(value);
               settingsContext.refresh();
             },
           ),

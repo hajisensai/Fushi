@@ -7,6 +7,8 @@ import 'package:hibiki/utils.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show VideoMiningImageMode;
 import 'package:hibiki/src/profile/profile_selector.dart';
 
 /// Anki 设置正文（无脚手架）。直接平铺进「制卡」设置 destination 详情页
@@ -192,9 +194,41 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 setState(() {});
               },
             ),
+            _buildVideoMiningImageModePicker(),
           ],
         ),
       ],
+    );
+  }
+
+  /// 视频制卡封面图片模式三选一：gif=字幕区间动图（默认，现状零破坏）；currentFrame=
+  /// 制卡那一刻的当前解码帧（点词已自动暂停）；subtitleStart=当前字幕 cue 起始时间点的帧。
+  /// 全局设置，透传 [AppModel.videoMiningImageMode]，所有视频制卡生效。
+  Widget _buildVideoMiningImageModePicker() {
+    return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
+      title: t.video_mining_image_mode,
+      subtitle: t.video_mining_image_mode_hint,
+      icon: Icons.photo_library_outlined,
+      controlBelow: true,
+      selected: appModel.videoMiningImageMode,
+      options: [
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.gif,
+          label: t.video_mining_image_mode_gif,
+        ),
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.currentFrame,
+          label: t.video_mining_image_mode_current_frame,
+        ),
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.subtitleStart,
+          label: t.video_mining_image_mode_subtitle_start,
+        ),
+      ],
+      onChanged: (VideoMiningImageMode mode) {
+        appModel.setVideoMiningImageMode(mode);
+        setState(() {});
+      },
     );
   }
 

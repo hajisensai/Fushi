@@ -8,6 +8,8 @@ import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/update_check_cache.dart';
@@ -338,6 +340,35 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 已折叠的合集横排行 collectionId 集（书架/视频页共用；折叠 = 行只剩行头）。
+  /// 逗号串存储；解析对空串/脏值宽容（tryParse 过滤）。
+  Set<int> get collapsedCollectionIds {
+    final String raw =
+        getPref('collapsed_collection_ids', defaultValue: '') as String;
+    return <int>{
+      for (final String part in raw.split(','))
+        if (int.tryParse(part) case final int id) id,
+    };
+  }
+
+  Future<void> setCollapsedCollectionIds(Set<int> ids) async {
+    final List<int> sorted = ids.toList()..sort();
+    await setPref('collapsed_collection_ids', sorted.join(','));
+    notifyListeners();
+  }
+
+  /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把「远端有、
+  /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。**默认 true**——
+  /// 用户拍板远端混排默认开。关闭时占位卡全部不渲染，两页只剩本地库。离线/未配对/
+  /// 后端不可达时占位卡本就不出现（远端目录拉取失败态），与本开关正交。
+  bool get showRemoteEntries =>
+      getPref('show_remote_entries', defaultValue: true) as bool;
+
+  Future<void> setShowRemoteEntries(bool value) async {
+    await setPref('show_remote_entries', value);
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>
@@ -542,6 +573,62 @@ class PreferencesRepository extends ChangeNotifier {
 
   void setPopupMaxHeight(double height) async {
     await setPref('popup_max_height', height);
+    notifyListeners();
+  }
+
+  // 查词弹窗尺寸精细化（2026-07-13 设计）：app 外覆盖窗 / 浏览器扩展各自可「独立尺寸」。
+  // 默认 independent=false → 跟随 app 内 popupMaxWidth/Height；用户显式解锁后用各自键。
+  // 各自宽/高默认值等于 app 内默认（400×360），保证解锁瞬间不跳尺寸。
+
+  bool get overlayLookupIndependentSize =>
+      getPref('overlay_lookup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setOverlayLookupIndependentSize(bool value) async {
+    await setPref('overlay_lookup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get overlayLookupMaxWidth =>
+      getPref('overlay_lookup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setOverlayLookupMaxWidth(double width) async {
+    await setPref('overlay_lookup_max_width', width);
+    notifyListeners();
+  }
+
+  double get overlayLookupMaxHeight =>
+      getPref('overlay_lookup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setOverlayLookupMaxHeight(double height) async {
+    await setPref('overlay_lookup_max_height', height);
+    notifyListeners();
+  }
+
+  bool get extensionPopupIndependentSize =>
+      getPref('extension_popup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setExtensionPopupIndependentSize(bool value) async {
+    await setPref('extension_popup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get extensionPopupMaxWidth =>
+      getPref('extension_popup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setExtensionPopupMaxWidth(double width) async {
+    await setPref('extension_popup_max_width', width);
+    notifyListeners();
+  }
+
+  double get extensionPopupMaxHeight =>
+      getPref('extension_popup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setExtensionPopupMaxHeight(double height) async {
+    await setPref('extension_popup_max_height', height);
     notifyListeners();
   }
 
@@ -1053,6 +1140,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   void toggleCompressMiningMedia() async {
     await setPref('compress_mining_media', !compressMiningMedia);
+    notifyListeners();
+  }
+
+  // 视频制卡封面图片模式（GIF 动图 / 制卡时当前帧 / 字幕开头帧）。默认 gif=现状零破坏。
+  // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析未知值回退 gif（向后兼容）。
+  VideoMiningImageMode get videoMiningImageMode =>
+      VideoMiningImageMode.fromWireName(
+          getPref('video_mining_image_mode', defaultValue: null) as String?);
+
+  void setVideoMiningImageMode(VideoMiningImageMode mode) async {
+    await setPref('video_mining_image_mode', mode.wireName);
     notifyListeners();
   }
 

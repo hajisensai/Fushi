@@ -37,6 +37,7 @@ import 'package:hibiki/src/models/builtin_tags.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
+import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -91,7 +92,7 @@ import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 
 export 'package:hibiki/src/models/local_audio_manager.dart'
-    show LocalAudioDbEntry;
+    show LocalAudioDbEntry, InvalidLocalAudioDbException;
 export 'package:hibiki/src/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 export 'package:hibiki/src/models/audio_source_config.dart'
@@ -399,6 +400,10 @@ class AppModel with ChangeNotifier {
   }) {
     _prefsRepo = prefsRepo;
     _databaseDirectory = databaseDirectory;
+    // 初始化 late [_thumbnailsDirectory]：书架 / 视频卡渲染经 MediaSource
+    // getOverrideThumbnailFilename 读它，未初始化会抛 LateInitializationError。测试里
+    // 复用 databaseDirectory（存在且可写）即可，不读它的既有调用点不受影响。
+    _thumbnailsDirectory = databaseDirectory;
     _localAudioManager = LocalAudioManager(
       prefsRepo: prefsRepo,
       databaseDirectory: databaseDirectory,
@@ -2346,8 +2351,12 @@ class AppModel with ChangeNotifier {
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （HibikiRadii.cardValue）不一致。与两个 in-app 注入器逐字节同源。
       '--hibiki-radius-card': '${HibikiRadii.cardValue.toInt()}px',
-      '--hibiki-popup-max-width': '${popupMaxWidth.round()}px',
-      '--hibiki-popup-max-height': '${popupMaxHeight.round()}px',
+      // 弹窗尺寸精细化：扩展弹窗默认跟随 app 内 popupMaxWidth/Height，用户显式
+      // 解锁「浏览器扩展独立尺寸」后改用扩展自己的键（extensionPopupEffectiveSize）。
+      '--hibiki-popup-max-width':
+          '${extensionPopupEffectiveSize.width.round()}px',
+      '--hibiki-popup-max-height':
+          '${extensionPopupEffectiveSize.height.round()}px',
       '--hibiki-popup-zoom': zoom.toStringAsFixed(4),
       '--dict-columns': '$popupDictionaryColumns',
       // 「滑动关闭查词弹窗」偏好（enableSwipeToClose）下发给扩展 content.js：非 CSS 变量、
@@ -3903,6 +3912,49 @@ class AppModel with ChangeNotifier {
   double get popupMaxHeight => prefsRepo.popupMaxHeight;
   void setPopupMaxHeight(double height) => prefsRepo.setPopupMaxHeight(height);
 
+  // 查词弹窗尺寸精细化（2026-07-13）：app 外覆盖窗 / 浏览器扩展的独立尺寸键。
+  bool get overlayLookupIndependentSize =>
+      prefsRepo.overlayLookupIndependentSize;
+  Future<void> setOverlayLookupIndependentSize(bool value) =>
+      prefsRepo.setOverlayLookupIndependentSize(value);
+  double get overlayLookupMaxWidth => prefsRepo.overlayLookupMaxWidth;
+  void setOverlayLookupMaxWidth(double width) =>
+      prefsRepo.setOverlayLookupMaxWidth(width);
+  double get overlayLookupMaxHeight => prefsRepo.overlayLookupMaxHeight;
+  void setOverlayLookupMaxHeight(double height) =>
+      prefsRepo.setOverlayLookupMaxHeight(height);
+
+  bool get extensionPopupIndependentSize =>
+      prefsRepo.extensionPopupIndependentSize;
+  Future<void> setExtensionPopupIndependentSize(bool value) =>
+      prefsRepo.setExtensionPopupIndependentSize(value);
+  double get extensionPopupMaxWidth => prefsRepo.extensionPopupMaxWidth;
+  void setExtensionPopupMaxWidth(double width) =>
+      prefsRepo.setExtensionPopupMaxWidth(width);
+  double get extensionPopupMaxHeight => prefsRepo.extensionPopupMaxHeight;
+  void setExtensionPopupMaxHeight(double height) =>
+      prefsRepo.setExtensionPopupMaxHeight(height);
+
+  /// app 外覆盖查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
+  /// controller 的窗口尺寸测算读它，而不是直接读 [popupMaxWidth]/[popupMaxHeight]。
+  LookupSize get overlayLookupEffectiveSize => effectiveLookupSize(
+        independent: overlayLookupIndependentSize,
+        sceneWidth: overlayLookupMaxWidth,
+        sceneHeight: overlayLookupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
+
+  /// 浏览器扩展弹窗的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
+  /// [browserExtensionThemeColors] 下发的 `--hibiki-popup-max-*` 读它。
+  LookupSize get extensionPopupEffectiveSize => effectiveLookupSize(
+        independent: extensionPopupIndependentSize,
+        sceneWidth: extensionPopupMaxWidth,
+        sceneHeight: extensionPopupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
+
   bool get popupInstantScroll => prefsRepo.popupInstantScroll;
   Future<void> setPopupInstantScroll(bool value) =>
       prefsRepo.setPopupInstantScroll(value);
@@ -4025,6 +4077,12 @@ class AppModel with ChangeNotifier {
   // TODO-757 压缩制卡媒体开关（透传 prefsRepo）。默认 true=压缩档（现状）。
   bool get compressMiningMedia => prefsRepo.compressMiningMedia;
   void toggleCompressMiningMedia() => prefsRepo.toggleCompressMiningMedia();
+
+  // 视频制卡封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 gif=现状。
+  VideoMiningImageMode get videoMiningImageMode =>
+      prefsRepo.videoMiningImageMode;
+  void setVideoMiningImageMode(VideoMiningImageMode mode) =>
+      prefsRepo.setVideoMiningImageMode(mode);
 
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>

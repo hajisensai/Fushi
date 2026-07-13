@@ -6,6 +6,12 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 /// 内存资产库：命名空间用 `/` 分隔的路径作为 id；文件夹是已知路径集合，
 /// 资产是 path->bytes 映射。仅供测试（契约测试 + Plan B 编排器测试）。
 class FakeAssetStore implements SyncAssetStore {
+  FakeAssetStore({this.reportNullSizes = false});
+
+  /// 模拟 Dropbox/WebDAV/FTP 那类**不报 sizeBytes** 的后端：listChildren/findAsset
+  /// 返回 sizeBytes=null。用于验证「同尺寸跳过」判据不依赖远端物理尺寸。
+  final bool reportNullSizes;
+
   final Set<String> _folders = <String>{''};
   final Map<String, List<int>> _files = <String, List<int>>{};
 
@@ -42,7 +48,7 @@ class FakeAssetStore implements SyncAssetStore {
         out.add(AssetEntry(
           id: e.key,
           name: e.key.substring(prefix.length),
-          sizeBytes: e.value.length,
+          sizeBytes: reportNullSizes ? null : e.value.length,
         ));
       }
     }
@@ -53,7 +59,10 @@ class FakeAssetStore implements SyncAssetStore {
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {
     final String path = _join(namespaceId, name);
     if (!_files.containsKey(path)) return null;
-    return AssetEntry(id: path, name: name, sizeBytes: _files[path]!.length);
+    return AssetEntry(
+        id: path,
+        name: name,
+        sizeBytes: reportNullSizes ? null : _files[path]!.length);
   }
 
   @override

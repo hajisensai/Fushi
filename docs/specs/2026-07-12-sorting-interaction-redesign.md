@@ -56,7 +56,7 @@
 
 | 模式 | 书架 | 视频页 |
 |---|---|---|
-| `recent`（默认） | 最近阅读 = 现状历史序（**零行为变化**） | 最近观看 = watch-stats `_watchAtByUid` 倒序，无记录退导入时间倒序 |
+| `recent`（默认） | 最近阅读 = `reader_positions.updatedAt` 倒序，没读过退导入时间（**BUG-777 修正**：原文「现状历史序零变化」前提为假——provider 序实为 `getAllEpubBooks` 的 importedAt 倒序，从来不是访问序；用户真机实报「刚读的书 hero 不显示」后改为真 recency） | 最近观看 = watch-stats `_watchAtByUid` 倒序，无记录退导入时间倒序 |
 | `title` | 书名 natural 排序（卷1<卷2<卷10） | 名称 natural 排序 |
 | `imported` | `importedAt` 倒序（epub/srt 两表均有该列） | `importedAt` 倒序 |
 

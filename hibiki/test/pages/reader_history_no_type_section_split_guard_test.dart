@@ -55,33 +55,36 @@ void main() {
     // 合集聚成一行，但**依旧无类型分区头**。下列共同证明「SRT + EPUB 进同一合并列表、
     // 不再按类型拆」的合并不变式。
     expect(
-      body.contains('srt: srtBooks[i]'),
+      body.contains('_ShelfBookSlot(srt: srt)'),
       isTrue,
       reason: 'SRT 卡应作为 _ShelfBookSlot payload 进入合并列表',
     );
     expect(
-      body.contains('epub: epubBooks[i]'),
+      body.contains('_ShelfBookSlot(epub: epub)'),
       isTrue,
       reason: 'EPUB 卡应作为 _ShelfBookSlot payload 进入同一合并列表',
     );
+    // BUG-777：seq 假名次已删——两类同进一个 shelfItems 列表（SRT 段在前、EPUB
+    // 段在后的字面顺序即合并证据），排序量纲改由 compareShelfSortKeys 推导。
     expect(
-      body.contains('seq: srtBooks.length + i'),
+      body.contains('for (final SrtBook srt in srtBooks)') &&
+          body.contains('for (final MediaItem epub in epubBooks)'),
       isTrue,
-      reason: 'EPUB 默认排在 SRT 之后（seq 偏移 srtBooks.length），证明两类同序进一个网格',
+      reason: 'SRT 与 EPUB 必须构造进同一合并列表（无类型分区）',
     );
-    // UI v2 Phase C 后单一 shelfGroups 交给 _buildShelfGroupSlivers 保序交错
-    // （合集=横排行、连续散书段=网格）。SRT/EPUB 仍在同一合并列表、同段网格混排
-    // （itemCount: segment.length），**依旧没有按类型拆的分区头**——本守卫保护的
-    // 不变量不变，只是渲染载体从单网格换成交错 slivers。
+    // 单一 shelfGroups 交给 _buildShelfGroupSlivers 分区渲染（去碎片方案 A：
+    // 合集横排行集中在前、散书单一网格在后）。SRT/EPUB 仍在同一合并列表、同一
+    // 网格混排（itemCount: loose.length），**依旧没有按类型拆的分区头**——本守卫
+    // 保护的不变量不变，渲染载体从交错 slivers 换成分区 slivers。
     expect(
       body.contains('..._buildShelfGroupSlivers('),
       isTrue,
-      reason: '单一合并 shelfGroups 必须整体交给交错渲染（无类型拆分）',
+      reason: '单一合并 shelfGroups 必须整体交给分区渲染（无类型拆分）',
     );
     expect(
-      body.contains('itemCount: segment.length'),
+      body.contains('itemCount: loose.length'),
       isTrue,
-      reason: '散书段落（SRT+EPUB 混排）共用同一网格段',
+      reason: '散书（SRT+EPUB 混排）共用同一个网格',
     );
   });
 

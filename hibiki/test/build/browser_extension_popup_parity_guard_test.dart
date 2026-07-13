@@ -156,6 +156,38 @@ void main() {
       });
     }
 
+    test(
+        'scrollbars hidden via ::-webkit-scrollbar also hide via the standard '
+        'property (BUG-775)', () {
+      // The themed-scrollbar block sets the standard `scrollbar-color` on the
+      // popup root and it INHERITS into every descendant. Per spec, once a
+      // standard scrollbar property is in effect Chromium 121+ disables the
+      // whole ::-webkit-scrollbar pseudo family — so a scrollbar hidden ONLY
+      // via `X::-webkit-scrollbar { display: none }` re-appears as a classic
+      // scrollbar in the browser extension (BUG-775: tiny arrows+thumb bar
+      // squeezed against the header buttons). Every such X must therefore also
+      // carry `scrollbar-width: none`.
+      final String css = stripComments(popupCss);
+      final RegExp hider = RegExp(
+          r'([^\s{},]+)::-webkit-scrollbar\s*\{[^}]*display:\s*none[^}]*\}');
+      final List<String> bases =
+          hider.allMatches(css).map((Match m) => m.group(1)!).toList();
+      expect(bases, isNotEmpty,
+          reason: 'expected at least .expression-scroll to hide its scrollbar '
+              '— selector shape changed? Update this guard.');
+      for (final String base in bases) {
+        // A rule whose selector list contains the bare base selector and whose
+        // body sets scrollbar-width: none.
+        final RegExp companion = RegExp('(^|[,\\s}])${RegExp.escape(base)}'
+            r'\s*(,[^{]*)?\{[^}]*scrollbar-width:\s*none[^}]*\}');
+        expect(companion.hasMatch(css), isTrue,
+            reason: 'popup.css hides "$base" scrollbars only via '
+                '::-webkit-scrollbar{display:none}; add `scrollbar-width: '
+                'none` to the $base rule or the hiding breaks in the browser '
+                'extension (BUG-775).');
+      }
+    });
+
     test('the two extension content.css mirrors are byte-identical', () {
       expect(bytes('$extAssets/vendor/content.css'),
           bytes('$extTools/vendor/content.css'),

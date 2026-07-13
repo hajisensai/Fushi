@@ -140,10 +140,14 @@ class _FakeSyncBackend implements SyncBackend {
   Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
       null;
 
-  // ── SyncAssetStore (unreached) ──────────────────────────────────────
+  // ── SyncAssetStore ──────────────────────────────────────────────────
+  // run() 的常开阶段（root-spill 扫除、合集清单读-合并-写）会到达这里：与
+  // listChildren 的空根语义同理，只为 `__collections__` 命名空间提供最小实现
+  // （无远端清单 → 本地也无合集 → 合并为空 → 无回写）；其余命名空间保持响亮
+  // 抛错，任何意外路径照样让测试失败。
   @override
   Future<String> ensureNamespace(String name) async =>
-      throw UnimplementedError();
+      name == kSyncCollectionsNamespace ? name : throw UnimplementedError();
   @override
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
@@ -155,7 +159,9 @@ class _FakeSyncBackend implements SyncBackend {
       const <AssetEntry>[];
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
-      throw UnimplementedError();
+      namespaceId == kSyncCollectionsNamespace
+          ? null
+          : throw UnimplementedError();
   @override
   Future<void> putAsset(String namespaceId, String name, File file,
           {void Function(double progress)? onProgress}) async =>
@@ -169,8 +175,10 @@ class _FakeSyncBackend implements SyncBackend {
       throw UnimplementedError();
   @override
   Future<void> putJsonAsset(
-          String namespaceId, String name, Object? json) async =>
-      throw UnimplementedError();
+      String namespaceId, String name, Object? json) async {
+    if (namespaceId != kSyncCollectionsNamespace) throw UnimplementedError();
+    // 空库合并出空清单时不回写（canonical 相等跳过）；真的写到这里也只是记录。
+  }
 }
 
 /// One 1000-char chapter keeps fraction math simple.

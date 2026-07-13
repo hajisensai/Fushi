@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
@@ -20,6 +21,15 @@ class _LiveBookLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
+  @override
+  Future<CollectionManifest> getCollectionManifest() async =>
+      CollectionManifest.empty;
+
+  @override
+  Future<CollectionManifest> mergeCollectionManifest(
+          CollectionManifest incoming) async =>
+      incoming;
 
   const _LiveBookLibraryService(this.bookTitle);
 

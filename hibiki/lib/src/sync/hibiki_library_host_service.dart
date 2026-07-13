@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:path/path.dart' as p;
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
@@ -139,6 +140,54 @@ DictionarySyncDiff computeDictionarySyncDiff({
   );
 }
 
+// ── 合集归属（多端库联合视图 §2.3 任务5.1）────────────────────────────────────
+
+/// 一条目在 host 端的**主合集归属**（跟随 [HibikiDatabase.getPrimaryCollectionIdByEntry]
+/// 的「最小 collectionId」折叠语义：一条目可属多合集，只带它折进的那一张）。
+///
+/// 远端占位卡据此归进对应合集行（UI 批任务 8-10 消费）：[collectionName] +
+/// [collectionType] 是合集自然键（与合集清单 / 备份合并的 (name, collection_type) 对齐），
+/// [sortIndex] 是该条目在该合集里的组内序（= `MediaCollectionItems.sortIndex`，与本地卡
+/// `groupByCollections` 的 memberSortIndex 同源）。[RemoteBookInfo.collection] /
+/// [RemoteVideoInfo.collection] 缺省 null = 该条目不属任何合集（散卡）。
+class RemoteCollectionMembership {
+  const RemoteCollectionMembership({
+    required this.collectionName,
+    required this.collectionType,
+    required this.sortIndex,
+  });
+
+  /// 合集自然键：合集名。
+  final String collectionName;
+
+  /// 合集自然键：'collection' | 'playlist'。
+  final String collectionType;
+
+  /// 条目在该合集内的组内序（`MediaCollectionItems.sortIndex`）。
+  final int sortIndex;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'name': collectionName,
+        'collectionType': collectionType,
+        'sortIndex': sortIndex,
+      };
+
+  /// 解析归属条目。非对象 / 缺自然键（旧 host 不带该字段）返回 null（向后兼容：
+  /// 无归属 = 散卡，不破坏既有调用方）。
+  static RemoteCollectionMembership? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final Map<String, Object?> map = json.cast<String, Object?>();
+    final String name = map['name']?.toString() ?? '';
+    final String type = map['collectionType']?.toString() ?? '';
+    if (name.isEmpty || type.isEmpty) return null;
+    return RemoteCollectionMembership(
+      collectionName: name,
+      collectionType: type,
+      sortIndex: _jsonInt(map['sortIndex']) ?? 0,
+    );
+  }
+}
+
 // ── Books ──────────────────────────────────────────────────────────────────
 
 /// host 实时书籍的清单条目。
@@ -157,6 +206,7 @@ class RemoteBookInfo {
     this.coverPath,
     this.hasAudiobook = false,
     this.tags = const <String>[],
+    this.collection,
   });
 
   final String title;
@@ -174,6 +224,10 @@ class RemoteBookInfo {
   /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
   final List<String> tags;
 
+  /// 该书在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
+  /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
+  final RemoteCollectionMembership? collection;
+
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
   bool get hasDisplayCover =>
@@ -187,6 +241,7 @@ class RemoteBookInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (hasAudiobook) 'hasAudiobook': true,
         if (tags.isNotEmpty) 'tags': tags,
+        if (collection != null) 'collection': collection!.toJson(),
       };
 
   RemoteBookInfo copyWith({
@@ -196,6 +251,7 @@ class RemoteBookInfo {
     String? coverPath,
     bool? hasAudiobook,
     List<String>? tags,
+    RemoteCollectionMembership? collection,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -206,6 +262,7 @@ class RemoteBookInfo {
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
         tags: tags ?? this.tags,
+        collection: collection ?? this.collection,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -222,6 +279,7 @@ class RemoteBookInfo {
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
       tags: _jsonStringList(json['tags']),
+      collection: RemoteCollectionMembership.fromJson(json['collection']),
     );
   }
 }
@@ -631,6 +689,7 @@ class RemoteVideoInfo {
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
+    this.collection,
   });
 
   final String id;
@@ -653,6 +712,10 @@ class RemoteVideoInfo {
   /// 该视频在 host 端的标签名列表（TODO-1165）。标签每设备本地，只传名；
   /// client 下载后 getOrCreateTagByName + addTagToVideoBook 重建映射。
   final List<String> tags;
+
+  /// 该视频在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
+  /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
+  final RemoteCollectionMembership? collection;
 
   /// 是否为多集远端播放列表（≥2 集）。client UI 据此渲染集数角标 + 切集面板。
   bool get isPlaylist => episodes.length > 1;
@@ -698,6 +761,7 @@ class RemoteVideoInfo {
           if (currentEpisode > 0) 'currentEpisode': currentEpisode,
         },
         if (tags.isNotEmpty) 'tags': tags,
+        if (collection != null) 'collection': collection!.toJson(),
       };
 
   RemoteVideoInfo copyWith({
@@ -708,6 +772,7 @@ class RemoteVideoInfo {
     List<RemoteVideoEmbeddedSubtitleTrack>? embeddedSubtitleTracks,
     int? positionMs,
     int? positionUpdatedAtMs,
+    RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
         id: id,
@@ -723,6 +788,10 @@ class RemoteVideoInfo {
         coverPath: coverPath ?? this.coverPath,
         positionMs: positionMs ?? this.positionMs,
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
+        episodes: episodes,
+        currentEpisode: currentEpisode,
+        tags: tags,
+        collection: collection ?? this.collection,
       );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -1041,4 +1110,20 @@ abstract class HibikiLibraryHostService {
   /// MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，删除绝不跨端
   /// 传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用同一实现）。
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot);
+
+  // ── 合集清单（多端库联合视图 §2.3 任务5.2）──────────────────────────────────
+
+  /// 读 host 当前合集全量快照清单（`loadLocalCollectionManifest` 结果）。GET
+  /// `/api/library/collections` 返回其 canonicalJson，供 client 拉取 host 合集真相源
+  /// 做读-合并-写。纯读，无副作用。
+  Future<CollectionManifest> getCollectionManifest();
+
+  /// 把 client 上报的合集清单 [incoming] 并入 host 自己的合集库并返回合并后清单
+  /// （POST `/api/library/collections`）。语义：`CollectionSyncEngine.merge`（host 自身
+  /// 因果基线 `sync_collections_baseline_ms`）→ `applyCollectionLocalChanges` 把变更
+  /// 落 host DB → 推进 host 基线 → 返回合并后清单。与云后端 `__collections__` 通道
+  /// 同一引擎、同一墓碑/LWW 语义，仅通道不同；成员并集 + 移出/删除墓碑防复活 +
+  /// 手动序整合集 LWW。重放同一清单幂等（应用端按目标态调和）。
+  Future<CollectionManifest> mergeCollectionManifest(
+      CollectionManifest incoming);
 }

@@ -14,8 +14,11 @@ import 'package:hibiki/src/media/video/video_sidecar.dart'
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
 import 'package:hibiki_core/hibiki_core.dart';
@@ -215,6 +218,44 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     return result;
   }
 
+  /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
+  /// 任务5.1）的一趟映射。归属跟随 [HibikiDatabase.getPrimaryCollectionIdByEntry] 的
+  /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格
+  /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。每个被引用
+  /// 合集只 [getCollectionItems] 一次，避免逐条目 N+1。
+  Future<Map<String, RemoteCollectionMembership>>
+      _primaryCollectionMembership() async {
+    final Map<String, int> primaryByEntry =
+        await _db.getPrimaryCollectionIdByEntry();
+    if (primaryByEntry.isEmpty) {
+      return const <String, RemoteCollectionMembership>{};
+    }
+    final Map<int, MediaCollectionRow> collectionsById =
+        <int, MediaCollectionRow>{
+      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+        c.id: c,
+    };
+    final Map<String, RemoteCollectionMembership> out =
+        <String, RemoteCollectionMembership>{};
+    // 只遍历真正承载某条目主归属的合集（按 id 去重），逐合集取一次成员行。
+    for (final int cid in primaryByEntry.values.toSet()) {
+      final MediaCollectionRow? col = collectionsById[cid];
+      if (col == null) continue; // 孤儿引用：归属合集已删 → 该条目退化散卡。
+      for (final MediaCollectionItemRow item
+          in await _db.getCollectionItems(cid)) {
+        final String key = '${item.mediaType}|${item.entryKey}';
+        // 仅记录以本合集为主归属的成员（该条目也可能在别的更大 id 合集里）。
+        if (primaryByEntry[key] != cid) continue;
+        out[key] = RemoteCollectionMembership(
+          collectionName: col.name,
+          collectionType: col.collectionType,
+          sortIndex: item.sortIndex,
+        );
+      }
+    }
+    return out;
+  }
+
   /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
   Future<Map<String, List<String>>> _tagNamesByVideoUid() async {
     final Map<int, String> nameById = <int, String>{
@@ -242,6 +283,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     // 抛 StateError → 服务端 404。
     final Set<String> audiobookKeys = await _srtBackedAudiobookKeys();
     final Map<String, List<String>> tagsByBookKey = await _tagNamesByBookKey();
+    final Map<String, RemoteCollectionMembership> membership =
+        await _primaryCollectionMembership();
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -257,6 +300,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],
+        // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
+        collection: membership['epub|${r.bookKey}'],
       );
     }).toList();
   }
@@ -674,11 +719,15 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
     final Map<String, List<String>> tagsByVideoUid =
         await _tagNamesByVideoUid();
+    final Map<String, RemoteCollectionMembership> membership =
+        await _primaryCollectionMembership();
     final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
     for (final VideoBookRow row in rows) {
       videos.add(await _videoInfoFromRow(
         row,
         tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
+        // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
+        collection: membership['video|${row.bookUid}'],
       ));
     }
     return videos;
@@ -688,6 +737,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   Future<RemoteVideoInfo> _videoInfoFromRow(
     VideoBookRow row, {
     List<String> tags = const <String>[],
+    RemoteCollectionMembership? collection,
   }) async {
     final String videoPath = row.videoPath;
     int? sizeBytes;
@@ -746,6 +796,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
+      collection: collection,
     );
   }
 
@@ -932,5 +983,49 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     await _runExclusive(
       () => AggregateSyncService(_db).foldIntoLocal(snapshot),
     );
+  }
+
+  // ── 合集清单（多端库联合视图 §2.3 任务5.2）──────────────────────────────────
+
+  /// 读 host 合集全量快照清单。直接复用云后端同一 [loadLocalCollectionManifest]（同一
+  /// DB 读取逻辑），保证互联与云通道 materialize 结果字节等价、无第二套实现。
+  @override
+  Future<CollectionManifest> getCollectionManifest() =>
+      loadLocalCollectionManifest(_db);
+
+  /// 把 client 上报的合集清单并入 host DB 并返回合并后清单。
+  ///
+  /// 与云后端 orchestrator [SyncOrchestrator.syncCollections] 的核心完全同构，仅
+  /// 通道不同：`CollectionSyncEngine.merge`（host 自身 `sync_collections_baseline_ms`
+  /// 因果基线）→ [applyCollectionLocalChanges] 把本地变更集落 host DB → 推进 host
+  /// 基线 → 返回合并后清单（client 端再拿它重跑引擎收敛，双端同一并集）。
+  ///
+  /// 基线的角色：区分「未见过的移出/删除墓碑」（新闻 → 生效）与「本端已裁决过、
+  /// 成员/合集仍在即代表之后重加/重建」（旧闻 → 活胜）。host 每次合并成功后推进基线，
+  /// 使已应用的墓碑成为「旧闻」，日后本端或对端重加时不被旧墓碑再删（收敛正确性依赖
+  /// 此推进，见 collection_sync_engine 注释）。
+  ///
+  /// 经 [_runExclusive] 与其它库变动串行：读清单→合并→落库→推基线整体互斥，
+  /// 避免与 host 本机合集编辑竞态。重放同一清单幂等（应用端按目标态调和）。
+  @override
+  Future<CollectionManifest> mergeCollectionManifest(
+    CollectionManifest incoming,
+  ) async {
+    late CollectionManifest merged;
+    await _runExclusive(() async {
+      final CollectionManifest local = await loadLocalCollectionManifest(_db);
+      final SyncRepository repo = SyncRepository(_db);
+      final int baseline = await repo.getCollectionsSyncBaselineMs();
+      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
+        local: local,
+        remote: incoming,
+        lastSyncedAtMs: baseline,
+      );
+      await applyCollectionLocalChanges(_db, outcome.changes);
+      await repo
+          .setCollectionsSyncBaselineMs(DateTime.now().millisecondsSinceEpoch);
+      merged = outcome.merged;
+    });
+    return merged;
   }
 }

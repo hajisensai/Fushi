@@ -4,6 +4,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
@@ -15,6 +17,7 @@ import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -38,6 +41,40 @@ const String kSyncLocalAudioNamespace = '__local_audio__';
 
 const String _localAudioAssetSuffix = '.hibikiaudiolib';
 
+/// Reserved top-level folder holding the shared collection manifest
+/// (`collections.json`) for the collections union sync (多端库联合视图 §2.3).
+/// Must be filtered from any listing that treats root children as books
+/// ([isReservedSyncFolderName]).
+const String kSyncCollectionsNamespace = '__collections__';
+
+/// 旧版**单文件**合集清单资产名（向后兼容读；per-device 布局前所有端共写它）。
+/// 现改 per-device `collections-<deviceId>.json`（[collectionsManifestNameFor]）：
+/// 单文件读-合-写在两设备并发时后写者整文件覆盖先写者会永久丢墓碑，per-device 各写
+/// 各的绝不互相覆盖（沿 `__aggregate__` 成熟范式）。仍读旧单文件做向后兼容合并。
+const String kSyncCollectionsManifestName = 'collections.json';
+
+/// 本端自己的 per-device 合集清单资产名。[deviceId] 为空（未配置/测试）时退回旧单
+/// 文件名（不产生匿名碎片、且旧行为完全保留）。
+String collectionsManifestNameFor(String deviceId) => deviceId.isEmpty
+    ? kSyncCollectionsManifestName
+    : 'collections-$deviceId.json';
+
+/// 是否是一份合集清单资产（旧单文件 `collections.json` 或 per-device
+/// `collections-<id>.json`）——读时据此把命名空间下全部合集清单文件都折进远端并集。
+bool isCollectionsManifestName(String name) =>
+    name == kSyncCollectionsManifestName ||
+    (name.startsWith('collections-') && name.endsWith('.json'));
+
+/// Reserved top-level folder holding uploaded video files + their directory
+/// manifest (`videos.json`) for cloud video asset sync (多端库联合视图 §2.6).
+/// Populated only when the "上传视频文件" switch is on. Must be filtered from any
+/// listing that treats root children as books ([isReservedSyncFolderName]).
+const String kSyncVideosNamespace = '__videos__';
+
+/// The single shared video directory manifest asset inside
+/// [kSyncVideosNamespace]（读-合并-写；格式见 RemoteVideoManifest）。
+const String kSyncVideosManifestName = 'videos.json';
+
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 ///
@@ -49,7 +86,9 @@ bool isReservedSyncFolderName(String name) =>
     name.trim().isEmpty ||
     name == kSyncDictionaryNamespace ||
     name == kSyncLocalAudioNamespace ||
-    name == kSyncAggregateNamespace;
+    name == kSyncAggregateNamespace ||
+    name == kSyncCollectionsNamespace ||
+    name == kSyncVideosNamespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
@@ -108,6 +147,11 @@ class SyncRunReport {
   int localAudioImported = 0;
   int localAudioExported = 0;
 
+  /// 本轮推到云 `__videos__/` 命名空间的视频文件数（多端库联合视图 §2.6）。上传语义
+  /// （export-only），不产生本地导入，故不计入 [needsLocalLibraryRefresh]——与
+  /// [audiobooksExported] / [dictionariesExported] 同律。
+  int videosExported = 0;
+
   /// Book reading positions pulled from the interconnect host into this device's
   /// local `reader_positions` this run (host→local, newer-wins). A progress-only
   /// pull writes no *content*, so it never bumps [booksImported]; yet the shelf's
@@ -125,6 +169,11 @@ class SyncRunReport {
   /// never feeds [needsLocalLibraryRefresh] nor [errors].
   int rootSpillFilesRemoved = 0;
 
+  /// 本轮合集同步在本地应用了变更的合集数（多端库联合视图 §2.3：成员并集/墓碑/
+  /// 手动序 LWW 落进本地 DB 的合集条目数）。>0 时书架合集行/详情页需要刷新，
+  /// 故计入 [needsLocalLibraryRefresh]。
+  int collectionsUpdated = 0;
+
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
@@ -136,7 +185,8 @@ class SyncRunReport {
       dictionariesImported > 0 ||
       audiobooksImported > 0 ||
       localAudioImported > 0 ||
-      localBookProgressPulled > 0;
+      localBookProgressPulled > 0 ||
+      collectionsUpdated > 0;
 }
 
 /// Orchestrates sync across any [SyncBackend].
@@ -168,6 +218,7 @@ class SyncOrchestrator {
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncAudioBookFiles,
+    this.syncVideoFiles = false,
     required this.syncDictionary,
     required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
@@ -199,6 +250,11 @@ class SyncOrchestrator {
   final bool syncAudioBookPosition;
   final bool syncContent;
   final bool syncAudioBookFiles;
+
+  /// 是否把本地视频文件上传到云 `__videos__/` 命名空间（多端库联合视图 §2.6）。默认
+  /// false：视频体积大，须用户显式 opt-in。仅云后端生效（互联走 host API，暂不接线）。
+  final bool syncVideoFiles;
+
   final bool syncDictionary;
 
   /// 是否同步本地音频来源（DB 文件 + 配置）。orchestrator 不依赖 AppModel：导出用的
@@ -318,6 +374,9 @@ class SyncOrchestrator {
     } else {
       if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
+      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端 + 开关开启。互联视频资产走
+      // host API（后续批），不走 __videos__ 伪装资产，故留在此云后端专属分支。
+      if (syncVideoFiles) await syncVideoAssets(report);
     }
 
     // 互联书籍 + 视频进度走 live 端点双向同步（TODO-767）。
@@ -349,6 +408,19 @@ class SyncOrchestrator {
     // 无法安全落每设备快照，降级为 no-op（绝不崩，绝不写错名快照）。
     if (!isInterconnect && syncStats && deviceId.isNotEmpty) {
       await _syncAggregate(report);
+    }
+
+    // 合集双向同步（多端库联合视图 §2.3）：
+    // - 云后端走 sync 根下 `__collections__/collections.json` 共享清单的读-合并-写；
+    // - 互联（HibikiClientSyncBackend）走 host API `/api/library/collections` 端点
+    //   （任务5/6，目录接口带合集归属 + 清单读写），不走 WebDAV 文件箱伪装的
+    //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
+    // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
+    // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    if (isInterconnect) {
+      await _syncCollectionsLive(report, b);
+    } else {
+      await syncCollections(report);
     }
 
     // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度
@@ -411,6 +483,353 @@ class SyncOrchestrator {
     HibikiClientSyncBackend backend,
   ) =>
       _syncAggregateLive(report, backend);
+
+  /// 合集双向同步（多端库联合视图 §2.3 任务4，云后端通道）。
+  ///
+  /// 读远端 `__collections__/collections.json` 共享清单（无则视为空清单，首轮
+  /// 优雅退化为「只上传本机合集」）→ [CollectionSyncEngine.merge] 与本地全量
+  /// 快照合并（成员并集 + 移出/删除墓碑按基线裁决 + 手动序整合集 LWW）→
+  /// [applyCollectionLocalChanges] 把本地变更集落 DB → 合并后清单与远端字节
+  /// 不同才回写（确定性排序保证内容相等 ⇒ 字节相等，避免每轮写放大）。
+  ///
+  /// 基线（[SyncRepository.getCollectionsSyncBaselineMs]）在整轮成功后才推进：
+  /// 中途失败保持旧基线，下轮把同一批墓碑重新当「新闻」裁决——应用端按目标态
+  /// 调和，重放幂等，不会重复删除/复活。
+  ///
+  /// 整段 try/catch，错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
+  Future<void> syncCollections(SyncRunReport report) async {
+    try {
+      final String ns =
+          await _backend.ensureNamespace(kSyncCollectionsNamespace);
+      final SyncRepository repo = SyncRepository(_db);
+
+      // 竞态修复：**读远端清单之前**先预取本轮基线时刻，整轮成功后写这个预取值
+      // （而非结束时的新 now）。否则「IO 期间用户移出的墓碑 removedAt <= 结束才取的
+      // now」会在下轮被判旧闻撤销。同时作 publishedAt 发布时戳 + 本端文件 lastWrittenAt。
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
+
+      // per-device 布局：本端只写 `collections-<deviceId>.json`，读时合并**命名空间下
+      // 全部清单文件（含本端上轮自己那份 + 旧单文件）**成远端并集。单文件读-合-写两
+      // 设备并发后写者整文件覆盖先写者会永久丢墓碑；per-device 各写各的绝不互相覆盖。
+      // 折叠里**包含本端自己上轮那份**——保真已发布墓碑戳、字节稳定（幂等）。
+      final String ownName = collectionsManifestNameFor(deviceId);
+      final List<AssetEntry> children = await _backend.listChildren(ns);
+
+      final List<CollectionManifest> peers = <CollectionManifest>[];
+      bool ownExists = false;
+      bool ownCorrupt = false; // 本端自己那份读不出：自愈重写（finding 2）。
+      bool skippedPeer = false; // 跳过了他端损坏文件：本轮不推进基线（finding 2）。
+      String? ownCanonical; // 本端上轮那份的内容字节（回写去重用，内容不变不回写）。
+      AssetEntry? legacySingle; // 旧单文件 collections.json（per-device 布局前遗留）。
+      for (final AssetEntry e in children) {
+        if (e.isFolder || !isCollectionsManifestName(e.name)) continue;
+        final bool isOwn = e.name == ownName;
+        if (e.name == kSyncCollectionsManifestName &&
+            ownName != kSyncCollectionsManifestName) {
+          legacySingle = e; // 记下旧单文件，吸收其知识后删除（finding 1）。
+        }
+        try {
+          final Object? json = await _backend.getJsonAsset(e.id);
+          if (json == null) {
+            throw const FormatException('unreadable (null decode)');
+          }
+          final CollectionManifest m = CollectionManifest.fromJson(json);
+          peers.add(m);
+          if (isOwn) {
+            ownExists = true;
+            ownCanonical = m.canonicalJson();
+          }
+        } catch (err) {
+          // finding 2 自愈：坏文件是本端自己那份 → 不 abort，按其余可读对端 + 本地照常
+          // 合并并回写自己那份（覆盖损坏）；坏文件是他端 → 跳过该文件继续本轮（记
+          // report.errors），且**不推进基线**（没读到那份的墓碑下轮仍当新闻裁决，避免
+          // 基线越过未读知识造成误判）。任一情况都绝不整轮 return。
+          if (isOwn) {
+            ownCorrupt = true;
+            report.errors.add('own collections manifest "${e.name}" unreadable;'
+                ' republishing from local+peers this run (self-heal): $err');
+          } else {
+            skippedPeer = true;
+            report.errors.add('peer collections manifest "${e.name}" '
+                'unreadable; skipped this run (baseline held): $err');
+          }
+        }
+      }
+
+      final CollectionManifest local = await loadLocalCollectionManifest(_db);
+
+      // 时钟回拨钳制：持久化基线晚于 now（时钟被拨回）时钳到 now，避免基线永远大于
+      // 一切 publishedAt/removedAt 而把所有墓碑当旧闻。
+      int baseline = await repo.getCollectionsSyncBaselineMs();
+      if (baseline > nextBaseline) baseline = nextBaseline;
+
+      // 折叠对端 per-device 文件 + 旧单文件成远端并集（按文件级 lastWrittenAt 裁决墓碑，
+      // 见 combinePeers）。空并集 = 首轮/无对端，优雅退化为「只上传本机」。
+      final CollectionManifest remote =
+          CollectionSyncEngine.combinePeers(peers);
+
+      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
+        local: local,
+        remote: remote,
+        lastSyncedAtMs: baseline,
+        nowMs: nextBaseline,
+      );
+
+      report.collectionsUpdated +=
+          await applyCollectionLocalChanges(_db, outcome.changes);
+
+      // 回写门槛：本端 per-device 文件内容有变才写自己那份；本端尚无文件且合并结果为空
+      // （零合集库）不无中生有地创建空文件；但本端文件损坏时强制回写以自愈。只写 ownName
+      // ——绝不覆盖别人的文件。写时盖 lastWrittenAt=nextBaseline（发布时刻），供对端折叠裁决。
+      final bool nothingToPublish =
+          !ownExists && !ownCorrupt && outcome.merged.collections.isEmpty;
+      bool ownWritten = false;
+      if (!nothingToPublish && outcome.merged.canonicalJson() != ownCanonical) {
+        await _backend.putJsonAsset(ns, ownName,
+            outcome.merged.withLastWrittenAt(nextBaseline).toJson());
+        ownWritten = true;
+      }
+
+      // finding 1：本端 per-device 文件此刻已承载吸收后的并集知识（读到的旧单文件已折进
+      // outcome.merged），删除旧单文件 collections.json，消除永不重写/删除的永久陈旧活
+      // 成员源。仅本端文件此刻存在时删除；legacySingle 只在 deviceId 非空（ownName != 旧
+      // 单文件名）时被赋值，故绝不误删本端自己那份。
+      if (legacySingle != null && (ownExists || ownWritten)) {
+        await _backend.deleteAsset(legacySingle.id);
+      }
+
+      // finding 2：跳过了任一他端损坏文件 ⇒ 本轮没读全知识，不推进基线。本端自愈不算
+      // （本端知识来自本地 DB，未依赖那份损坏文件）。
+      if (!skippedPeer) {
+        await repo.setCollectionsSyncBaselineMs(nextBaseline);
+      }
+    } catch (e) {
+      report.errors.add('collections sync: $e');
+    }
+  }
+
+  /// 合集双向同步（多端库联合视图 §2.3 任务5.3，互联 host API 通道）。
+  ///
+  /// 读-合并-写，与云后端 [syncCollections] 完全同构，仅通道不同（host API 而非
+  /// WebDAV `__collections__` 文件箱）：GET host 合集清单
+  /// （[HibikiClientSyncBackend.getRemoteCollectionManifest]）→ [CollectionSyncEngine.merge]
+  /// 与本地全量快照合并（成员并集 + 移出/删除墓碑按基线裁决 + 手动序整合集 LWW）→
+  /// [applyCollectionLocalChanges] 落本地 DB（计入 [SyncRunReport.collectionsUpdated]）→
+  /// 合并后清单与 host 字节不同才 POST 回写（host 端再经 mergeCollectionManifest 并入
+  /// 自己 DB，同一引擎）。
+  ///
+  /// 老 host 无端点（GET 404 → null）时优雅跳过（不 POST，不崩）。基线（本端
+  /// [SyncRepository.getCollectionsSyncBaselineMs]）在整轮成功后才推进；中途失败保持
+  /// 旧基线，下轮同一批墓碑重当「新闻」裁决——应用端按目标态调和幂等重放安全。
+  /// 整段 try/catch，错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
+  Future<void> _syncCollectionsLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    try {
+      // 竞态修复：读远端清单**之前**先预取本轮基线时刻，整轮成功后写这个预取值
+      // （而非结束时的新 now），并作 publishedAt 发布时戳。
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
+      final CollectionManifest? remote =
+          await backend.getRemoteCollectionManifest();
+      if (remote == null) return; // 老 host 无合集端点：优雅跳过。
+
+      final CollectionManifest local = await loadLocalCollectionManifest(_db);
+      final SyncRepository repo = SyncRepository(_db);
+      // 时钟回拨钳制：持久化基线晚于 now 时钳到 now。
+      int baseline = await repo.getCollectionsSyncBaselineMs();
+      if (baseline > nextBaseline) baseline = nextBaseline;
+      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
+        local: local,
+        remote: remote,
+        lastSyncedAtMs: baseline,
+        nowMs: nextBaseline,
+      );
+
+      report.collectionsUpdated +=
+          await applyCollectionLocalChanges(_db, outcome.changes);
+
+      // 回写门槛：字节有变才 POST（确定性排序保证内容相等 ⇒ 字节相等，避免每轮
+      // 无谓写放大）。
+      if (outcome.merged.canonicalJson() != remote.canonicalJson()) {
+        await backend.putRemoteCollectionManifest(outcome.merged);
+      }
+      await repo.setCollectionsSyncBaselineMs(nextBaseline);
+    } catch (e) {
+      report.errors.add('collections live sync: $e');
+    }
+  }
+
+  /// 测试入口：直接调用 [_syncCollectionsLive]（private 方法对测试文件不可见）。
+  @visibleForTesting
+  Future<void> syncCollectionsLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncCollectionsLive(report, backend);
+
+  /// 云视频资产同步（多端库联合视图 §2.6 / 任务12，云后端通道）。
+  ///
+  /// 仅云后端 + `sync_video_files` 开启时由 [run] 调用。把本地 `VideoBooks` 里的
+  /// **本地单文件**视频（流媒体 URL / 多集播放列表跳过——它们没有可上传的单个本地
+  /// 字节，见 [_isUploadableLocalVideo]）推到 sync 根 `__videos__/` 命名空间：
+  /// - 资产名按 bookUid 安全编码 + 原扩展名（[videoAssetName]）；
+  /// - 远端已存在**同尺寸**跳过（upload-only，删除不传播——远端不删本地、本地删除
+  ///   也不删远端，与书内容 [_syncBooksContentLive] / 有声书包同律）；
+  /// - 封面（若有本地文件）作独立资产一并上传（[videoCoverAssetName]）。
+  ///
+  /// 同时维护 `__videos__/videos.json` 目录清单（[RemoteVideoManifest]）：读远端清单
+  /// → 合本地在库视频条目（本地覆盖同 uid，远端独有 uid 保留——知识的并集）→ 字节
+  /// 有变才回写（确定性排序 ⇒ 内容相等即字节相等，避免每轮写放大）。供其它端渲染
+  /// 云视频占位卡 + 按 uid 下载（[CloudRemoteVideoClient]）。
+  ///
+  /// 整段 try/catch，逐项 + 整体错误进 [report.errors] 不中断整体 sweep（与其它维度
+  /// 同纪律）。删除不跨端传播；[report.videosExported] 计上传数（跳过不计）。
+  Future<void> syncVideoAssets(SyncRunReport report) async {
+    try {
+      final String ns = await _backend.ensureNamespace(kSyncVideosNamespace);
+
+      // 远端既有资产（名 -> 大小），用于「同尺寸跳过」与「封面是否已上传」判定。
+      final Map<String, int?> remoteSizeByName = <String, int?>{
+        for (final AssetEntry e in await _backend.listChildren(ns))
+          if (!e.isFolder) e.name: e.sizeBytes,
+      };
+
+      // 远端既有清单（无则空，首轮优雅退化为「只上传本机视频」）。
+      final AssetEntry? manifestAsset =
+          await _backend.findAsset(ns, kSyncVideosManifestName);
+      RemoteVideoManifest remote = RemoteVideoManifest.empty;
+      String? remoteCanonical;
+      if (manifestAsset != null) {
+        final Object? json = await _backend.getJsonAsset(manifestAsset.id);
+        if (json == null) {
+          // 清单资产存在但读不出（getJsonAsset 返 null = 下载失败/损坏）：本轮**跳过
+          // 视频上传 + 清单回写**并 return（finding 3）。若照传：远端 = 空清单 →
+          // priorEntry 恒 null → 每个视频每轮都判「远端无同尺寸」全量重传（无幂等判据的
+          // 死循环，视频体积大代价惨重）；若回写：空清单覆盖抹掉他端全部条目。无法判幂等
+          // 就不传，下轮下载成功即自愈。
+          report.errors.add('video manifest present but unreadable; skipping '
+              'video upload + manifest writeback this run (retried next run)');
+          return;
+        }
+        remote = RemoteVideoManifest.fromJson(json);
+        remoteCanonical = remote.canonicalJson();
+      }
+
+      // 合并清单起点 = 远端既有条目（按 uid 索引；本地在库的 uid 下面覆盖，远端独有
+      // 的 uid 原样保留——upload-only 并集，绝不因本地缺这条而从清单里抹掉它）。
+      final Map<String, RemoteVideoManifestEntry> byUid =
+          <String, RemoteVideoManifestEntry>{
+        for (final RemoteVideoManifestEntry e in remote.videos) e.uid: e,
+      };
+
+      // 稳定顺序（uid 升序）遍历本地可上传视频，进度分母 = 可上传视频数。
+      final List<VideoBookRow> localVideos = <VideoBookRow>[
+        for (final VideoBookRow v in await _db.allVideoBooks())
+          if (_isUploadableLocalVideo(v)) v,
+      ]..sort(
+          (VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
+      final int total = localVideos.length;
+      int index = 0;
+
+      for (final VideoBookRow v in localVideos) {
+        _emit(SyncPhase.videos,
+            itemIndex: index, itemTotal: total, title: v.title);
+        try {
+          final File file = File(v.videoPath);
+          if (!file.existsSync()) {
+            report.errors
+                .add('video "${v.title}": local file missing: ${v.videoPath}');
+            index++;
+            continue;
+          }
+          final int size = await file.length();
+          final String assetName = videoAssetName(v.bookUid, v.videoPath);
+
+          // 封面（可选、独立资产）：本地有文件且远端尚无同名资产才上传。
+          String? coverAsset;
+          final String? coverPath = v.coverPath;
+          if (coverPath != null &&
+              coverPath.isNotEmpty &&
+              File(coverPath).existsSync()) {
+            coverAsset = videoCoverAssetName(v.bookUid, coverPath);
+            if (!remoteSizeByName.containsKey(coverAsset)) {
+              await _backend.putAsset(ns, coverAsset, File(coverPath));
+              remoteSizeByName[coverAsset] = await File(coverPath).length();
+            }
+          }
+
+          // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。跳过判据**不能**用
+          // 远端资产的物理尺寸——`resolveSyncBackend` 无条件包 ObfuscatingSyncBackend，
+          // 上传体 = 8 字节 magic + XOR 正文（远端尺寸 = 明文 + 8，永不等于本地明文
+          // size），且 Dropbox/WebDAV/FTP 的 listChildren 根本不报 sizeBytes（null）。
+          // 改用清单记录的**明文尺寸**（跨后端可靠）：远端按名存在 && 合并清单里该 uid
+          // 条目 videoAsset 同名 && 记录的明文尺寸 == 本地明文尺寸 ⇒ 跳过。
+          final RemoteVideoManifestEntry? priorEntry = byUid[v.bookUid];
+          final bool remoteHasByName = remoteSizeByName.containsKey(assetName);
+          final bool manifestSameSize = priorEntry != null &&
+              priorEntry.videoAsset == assetName &&
+              priorEntry.sizeBytes == size;
+          if (!(remoteHasByName && manifestSameSize)) {
+            await _backend.putAsset(ns, assetName, file,
+                onProgress: (double f) => _emit(SyncPhase.videos,
+                    itemIndex: index,
+                    itemTotal: total,
+                    title: v.title,
+                    fileFraction: f));
+            remoteSizeByName[assetName] = size;
+            report.videosExported++;
+          }
+
+          // 无论是否跳过上传，都刷新清单条目（保证同尺寸跳过时清单仍有此 uid）。
+          // coverAsset 回退保留 byUid 既有值：本地封面文件丢失 ≠ 远端没有封面，绝不
+          // 把已发布的 coverAsset 抹成 null。
+          byUid[v.bookUid] = RemoteVideoManifestEntry(
+            uid: v.bookUid,
+            title: v.title,
+            videoAsset: assetName,
+            sizeBytes: size,
+            importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
+            coverAsset: coverAsset ?? priorEntry?.coverAsset,
+          );
+        } catch (e) {
+          report.errors.add('video "${v.title}": $e');
+        }
+        index++;
+      }
+
+      // 回写门槛：字节有变才写；远端本无清单且合并结果为空（零视频库）不无中生有
+      // 地创建空文件。（清单损坏已在上方 return，走不到这里。）
+      final RemoteVideoManifest merged = RemoteVideoManifest(
+        videos: byUid.values.toList(),
+      );
+      final bool nothingToPublish =
+          manifestAsset == null && merged.videos.isEmpty;
+      if (!nothingToPublish && merged.canonicalJson() != remoteCanonical) {
+        await _backend.putJsonAsset(
+            ns, kSyncVideosManifestName, merged.toJson());
+      }
+    } catch (e) {
+      report.errors.add('video assets sync: $e');
+    }
+  }
+
+  /// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频（[syncVideoAssets] 用）。
+  ///
+  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为 http(s) URL）——无本地字节
+  /// 可传；多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传
+  /// 是后续批的接缝，见 §2.6 seam）。
+  bool _isUploadableLocalVideo(VideoBookRow v) {
+    if (v.streamSpecJson != null) return false;
+    if (v.playlistJson != null) return false;
+    final String path = v.videoPath;
+    if (path.isEmpty) return false;
+    final String lower = path.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+      return false;
+    }
+    return true;
+  }
 
   /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
   /// [SyncResult.conflict] rows are collected; everything else (imported /
