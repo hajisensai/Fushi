@@ -22,20 +22,20 @@ void main() {
     );
   });
 
-  test('forward steps to floor(stepScroll/pitch)+1, not round(cur+pitch)', () {
+  test('normalizes near-integer page quotient with the existing 1px contract',
+      () {
+    expect(paginate, contains('var pageCoordinate = stepScroll / pitch;'));
+    expect(paginate, contains('var nearestPage = Math.round(pageCoordinate);'));
     expect(
       paginate,
-      contains('Math.floor(stepScroll / pitch) + 1'),
-      reason: 'forward 必须用 floor+1 整页步进',
+      contains('Math.abs(pageCoordinate - nearestPage) * pitch <= 1'),
     );
+    expect(paginate, contains('pageCoordinate = nearestPage;'));
   });
 
-  test('backward steps to ceil(stepScroll/pitch)-1', () {
-    expect(
-      paginate,
-      contains('Math.ceil(stepScroll / pitch) - 1'),
-      reason: 'backward 必须用 ceil-1 整页步进',
-    );
+  test('forward and backward consume the normalized page coordinate', () {
+    expect(paginate, contains('Math.floor(pageCoordinate) + 1'));
+    expect(paginate, contains('Math.ceil(pageCoordinate) - 1'));
   });
 
   test('sub-pixel drift is normalized before stepping', () {

@@ -68,6 +68,38 @@ void main() {
       expect(step.scrolled, isTrue);
       expect(step.targetScroll, 3000);
     });
+
+    test('forward crosses fractional page 31 instead of returning limit', () {
+      const double fractionalPitch = 564.490967;
+      final ReaderPageStep step =
+          ReaderPaginationScripts.resolvePaginateStepForTesting(
+        direction: ReaderNavigationDirection.forward,
+        currentScroll: 17499,
+        columnPitch: fractionalPitch,
+        minAlignedScroll: 0,
+        maxAlignedScroll: 40 * fractionalPitch,
+      );
+
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, closeTo(32 * fractionalPitch, 1e-9));
+    });
+
+    test(
+        'backward crosses an N-plus-epsilon quotient instead of returning limit',
+        () {
+      const double fractionalPitch = 564.490967;
+      final ReaderPageStep step =
+          ReaderPaginationScripts.resolvePaginateStepForTesting(
+        direction: ReaderNavigationDirection.backward,
+        currentScroll: 33305,
+        columnPitch: fractionalPitch,
+        minAlignedScroll: 0,
+        maxAlignedScroll: 80 * fractionalPitch,
+      );
+
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, closeTo(58 * fractionalPitch, 1e-9));
+    });
   });
 
   group('misaligned scroll never skips a page (BUG-169 regression)', () {

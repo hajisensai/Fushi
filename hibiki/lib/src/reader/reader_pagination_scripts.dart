@@ -115,6 +115,9 @@ class ReaderPaginationScripts {
   /// - backward → 严格在 [currentScroll] 之前的最近整页边界
   ///   （`ceil(currentScroll/pitch) - 1`）。
   ///
+  /// 若除法商与最近整数页号在像素空间相差不超过 1px，先把商规范化为该整数，避免
+  /// 已归一的亚像素页边界被二进制除法重新落到整数两侧。
+  ///
   /// 当 [currentScroll] 已对齐到整页时与「当前页 ±1」完全等价；当它落在两页之间
   /// （snap 监听器尚未把它对齐 / pitch 微变导致瞬时错位）时，floor/ceil 也只走一页，
   /// 不会像旧实现 `round((currentScroll ± pitch)/pitch)` 那样把当前页算成相邻页而跳 2 页。
@@ -135,16 +138,22 @@ class ReaderPaginationScripts {
     // 的目标与当前位置比较得出。这样首/末页判定与步长计算共用同一个 target，不再有
     // 「currentScroll 错位 → guard 用 cur±pitch 误判已到边界 / round 跳 2 页」的特例。
     final double stepScroll = _pageStepPosition(currentScroll, columnPitch);
+    final double rawPageCoordinate = stepScroll / columnPitch;
+    final int nearestPage = rawPageCoordinate.round();
+    final double pageCoordinate =
+        (rawPageCoordinate - nearestPage).abs() * columnPitch <= 1
+            ? nearestPage.toDouble()
+            : rawPageCoordinate;
     final double target;
     if (direction == ReaderNavigationDirection.forward) {
-      final int basePage = (stepScroll / columnPitch).floor();
+      final int basePage = pageCoordinate.floor();
       target = _clampDouble(
           (basePage + 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
       // 已对齐在末页时 target == currentScroll（差值 <=1px 视为同页）→ 无下一页。
       final bool scrolled = target > stepScroll + 1;
       return ReaderPageStep(scrolled: scrolled, targetScroll: target);
     } else {
-      final int basePage = (stepScroll / columnPitch).ceil();
+      final int basePage = pageCoordinate.ceil();
       target = _clampDouble(
           (basePage - 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
       final bool scrolled = target < stepScroll - 1;
@@ -2173,10 +2182,16 @@ $_sharedJs
     var maxAlignedScroll = metrics.maxScroll;
     var pitch = context.pageSize;
     var stepScroll = this.pageStepPosition(currentScroll, pitch);
+    var pageCoordinate = stepScroll / pitch;
+    var nearestPage = Math.round(pageCoordinate);
+    if (Math.abs(pageCoordinate - nearestPage) * pitch <= 1) {
+      pageCoordinate = nearestPage;
+    }
     // BUG-169：从可能未对齐的 currentScroll 出发先算「严格相邻整页边界」再 clamp，
     // 是否真翻页由 clamp 后的 target 与当前位置比较得出（共用同一 target，首/末页
-    // 判定与步长计算一致）。forward 取 floor(stepScroll/pitch)+1、backward 取
-    // ceil(stepScroll/pitch)-1：对齐时与「当前页 ±1」等价、错位时永远只走一页，
+    // 判定与步长计算一致）。pageCoordinate 延续 1px 页边界契约先规范化近整数商；
+    // forward 取 floor(pageCoordinate)+1、backward 取 ceil(pageCoordinate)-1：
+    // 对齐时与「当前页 ±1」等价、错位时永远只走一页，
     // 不会像旧 round((cur±pitch)/pitch) 那样把当前页算成相邻页跳 2 页。1px 内的
     // WebView sub-pixel 漂移先经 pageStepPosition 归一化到最近整页，避免连续 backward
     // 把 17955.33 → 17955 误判成 limit。与 Dart 影子 resolvePaginateStepForTesting
@@ -2188,7 +2203,7 @@ $_sharedJs
     // 补救，根因消除后即多余）。安卓 reader-paginated.js paginate(814-840) 即直接
     // return "limit"。
     if (direction === "forward") {
-      var targetForward = (Math.floor(stepScroll / pitch) + 1) * pitch;
+      var targetForward = (Math.floor(pageCoordinate) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
@@ -2196,7 +2211,7 @@ $_sharedJs
       this._diagTurn(context, direction, currentScroll, stepScroll, targetForward);
       return "scrolled";
     } else {
-      var targetBack = (Math.ceil(stepScroll / pitch) - 1) * pitch;
+      var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
