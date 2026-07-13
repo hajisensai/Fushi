@@ -334,9 +334,9 @@ jobs:
       run: |
         dst=hibiki/lib/src/media/video/dandanplay_secret.dart
         if [ -n "$DANDANPLAY_APP_ID" ]; then
-          printf 'const String kDandanplayAppId = %s;\nconst String kDandanplayAppSecret = %s;\n' \
-            "$(python3 -c 'import json,os; print(json.dumps(os.environ["DANDANPLAY_APP_ID"]))')" \
-            "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("DANDANPLAY_APP_SECRET","")))')" \
+          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
+            "$DANDANPLAY_APP_ID" \
+            "$DANDANPLAY_APP_SECRET" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
