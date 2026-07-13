@@ -519,7 +519,12 @@ String buildPopupJsonFromLookup({
       if (entryCount >= maximumTerms) break outer;
       entryCount++;
 
-      final key = '${r.term.expression}\n${r.term.reading}';
+      // BUG-791：空读音按 Yomitan 约定等价于「读音同表记」。分组前归一，
+      // 免得同一个假名词（reading 有的显式给、有的留空）被拆成两张卡。
+      // 只归一分组 key，不改存储的 display reading（空读音仍无注音）。
+      final String effectiveReading =
+          r.term.reading.isEmpty ? r.term.expression : r.term.reading;
+      final key = '${r.term.expression}\n$effectiveReading';
       if (!groupExpression.containsKey(key)) {
         groupKeys.add(key);
         groupExpression[key] = r.term.expression;
