@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 964 条。点号进各自文件。
+> 共 965 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-998](bugs/BUG-998-backup-audiobooks-untick-not-stripped.md) | ✅ | ✅ | 覆盖导入取消勾选有声书仍恢复幽灵有声书 |
 | [BUG-997](bugs/BUG-997-video-import-uninvited-unskippable.md) | ✅ | ✅ | 覆盖导入视频强行进且无法取消勾选 |
 | [BUG-996](bugs/BUG-996-remote-video-resume-and-subtitle-delay-sync.md) | ✅ | ✅ | 互联远端视频不续播(从头)+ 字幕调轴(delay)不同步 |
 | [BUG-995](bugs/BUG-995-video-overview-hero-excludes-remote.md) | ✅ | ✅ | 视频页「继续观看」+「媒体库概览」在只有远端视频时不显示且不计入远端 |
