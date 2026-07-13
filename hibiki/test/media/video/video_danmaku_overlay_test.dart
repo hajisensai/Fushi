@@ -188,4 +188,56 @@ void main() {
     expect(at2x, greaterThan(at1x),
         reason: '倍速时按帧外推更快，弹幕单帧左移更远');
   });
+
+  testWidgets('scroll danmaku is monotonic: backward raw jitter never reverses',
+      (WidgetTester tester) async {
+    // media_kit `state.position` 偶发小幅回退时，弹幕绝不能往右跳回——否则退出边缘
+    // 会来回穿越活动/淡出阈值，表现为「来回跳动 + 忽隐忽现」。
+    int raw = 2000;
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: <VideoDanmakuItem>[_item(0, 'x')],
+        enabled: true,
+        maxActive: 20,
+        positionMs: () => raw,
+        isPlaying: () => true,
+        speed: () => 1.0,
+      ),
+    );
+
+    final double l0 = scrollLeft(tester, 'x');
+    await tester.pump(const Duration(milliseconds: 100));
+    final double l1 = scrollLeft(tester, 'x');
+    expect(l1, lessThan(l0), reason: '正常播放时滚动弹幕左移');
+
+    raw = 1950; // 播放器时钟小幅回退（<1s，非 seek）
+    await tester.pump(const Duration(milliseconds: 16));
+    final double l2 = scrollLeft(tester, 'x');
+    expect(l2, lessThanOrEqualTo(l1),
+        reason: 'raw 小幅回退时弹幕只进不退（消除来回跳动）');
+  });
+
+  testWidgets('large backward raw (seek) re-aligns danmaku position',
+      (WidgetTester tester) async {
+    int raw = 6000;
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: <VideoDanmakuItem>[_item(0, 'x')],
+        enabled: true,
+        maxActive: 20,
+        positionMs: () => raw,
+        isPlaying: () => true,
+        speed: () => 1.0,
+      ),
+    );
+    final double before = scrollLeft(tester, 'x');
+    // 真正 seek 回退（>1s）：弹幕应对齐到新位置（更靠右，progress 变小）。
+    raw = 1000;
+    await tester.pump(const Duration(milliseconds: 16));
+    final double after = scrollLeft(tester, 'x');
+    expect(after, greaterThan(before),
+        reason: 'seek 回退是真正的位置跳变，弹幕对齐真值（更靠右）');
+  });
 }
