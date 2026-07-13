@@ -1355,6 +1355,7 @@ function hibikiInstallResizeDrag(grip) {
     const baseH = hibikiHost.getBoundingClientRect().height / z;
     hibikiResizeDrag = {
       startX: x, startY: y, baseW: baseW, baseH: baseH, zoom: z,
+      moved: false,
       bounds: {
         minW: HIBIKI_POPUP_MIN_WIDTH, minH: HIBIKI_POPUP_MIN_HEIGHT,
         // 视口可用空间（右/下边界 − 弹窗左上角）÷zoom = 基准尺度上界；不撑出视口、不遮被查词。
@@ -1366,6 +1367,10 @@ function hibikiInstallResizeDrag(grip) {
   const move = (x, y) => {
     if (!hibikiResizeDrag || !hibikiHost) return;
     const d = hibikiResizeDrag;
+    // 位移超阈值才算真拖拽（区分纯点击与拖动，见 up() 的「拖即解锁」门控）。
+    if (!d.moved && Math.abs(x - d.startX) + Math.abs(y - d.startY) > 3) {
+      d.moved = true;
+    }
     const size = hibikiComputeResizedSize(
       { width: d.baseW, height: d.baseH },
       { dx: x - d.startX, dy: y - d.startY },
@@ -1375,8 +1380,11 @@ function hibikiInstallResizeDrag(grip) {
     hibikiPositionResizeGrip();
   };
   const up = () => {
-    if (!hibikiResizeDrag || !hibikiHost) { hibikiResizeDrag = null; return; }
+    const d = hibikiResizeDrag;
     hibikiResizeDrag = null;
+    // 拖即解锁：仅当本次确实拖动过（位移超阈值）才回写尺寸 + 翻 independent；
+    // 纯点击（把手盖住的内容点击）不脱钩「跟随 app 内尺寸」（BUG review LOW）。
+    if (!d || !hibikiHost || !d.moved) return;
     const w = parseFloat(hibikiHost.style.width);
     const h = parseFloat(hibikiHost.style.maxHeight);
     if (w > 0 && h > 0) hibikiSendPopupSize(w, h);
