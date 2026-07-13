@@ -350,16 +350,25 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
               .log('ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
         }
       }
-      // TODO-1165：按标签名重建远端书标签映射（标签每设备本地，host 按名传来，
-      // 落地端 getOrCreate 后 addTagToBook；只增不删；localBookKey 为 null 即注入
-      // 测试 importer 不返 key 时跳过）。
-      if (localBookKey != null && book.tags.isNotEmpty) {
-        for (final String tagName in book.tags) {
-          if (tagName.isEmpty) continue;
-          final int tagId =
-              await appModel.database.getOrCreateTagByName(tagName);
-          await appModel.database.addTagToBook(localBookKey, tagId);
-        }
+      // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名跨端传播、
+      // 防复活）。host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteBookTags；旧 host
+      // 只有 tags 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
+      // localBookKey 为 null（注入测试 importer 不返 key）即跳过。
+      if (localBookKey != null &&
+          (book.tagsAddedAt.isNotEmpty ||
+              book.tagTombstones.isNotEmpty ||
+              book.tags.isNotEmpty)) {
+        final Map<String, int> remoteAddedAt = book.tagsAddedAt.isNotEmpty
+            ? book.tagsAddedAt
+            : <String, int>{
+                for (final String name in book.tags)
+                  if (name.isNotEmpty) name: 1,
+              };
+        await appModel.database.mergeRemoteBookTags(
+          localBookKey,
+          remoteAddedAt: remoteAddedAt,
+          remoteTombstones: book.tagTombstones,
+        );
       }
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
       await _downloadRemoteAudiobook(book, client, localBookKey);

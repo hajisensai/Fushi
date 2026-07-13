@@ -206,6 +206,8 @@ class RemoteBookInfo {
     this.coverPath,
     this.hasAudiobook = false,
     this.tags = const <String>[],
+    this.tagsAddedAt = const <String, int>{},
+    this.tagTombstones = const <String, int>{},
     this.collection,
   });
 
@@ -224,6 +226,13 @@ class RemoteBookInfo {
   /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
   final List<String> tags;
 
+  /// tags 稳健档 LWW：标签「名→加入戳」（client mergeRemoteBookTags 用）。空 = 旧 host
+  /// 未带（退化为按 [tags] 名单只增 + 尊重本地移除墓碑）。
+  final Map<String, int> tagsAddedAt;
+
+  /// tags 稳健档 LWW：标签移除墓碑「名→移除戳」（host 移除标签跨端传播、防复活）。
+  final Map<String, int> tagTombstones;
+
   /// 该书在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
   /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
   final RemoteCollectionMembership? collection;
@@ -241,6 +250,8 @@ class RemoteBookInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (hasAudiobook) 'hasAudiobook': true,
         if (tags.isNotEmpty) 'tags': tags,
+        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
       };
 
@@ -251,6 +262,8 @@ class RemoteBookInfo {
     String? coverPath,
     bool? hasAudiobook,
     List<String>? tags,
+    Map<String, int>? tagsAddedAt,
+    Map<String, int>? tagTombstones,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteBookInfo(
@@ -262,6 +275,8 @@ class RemoteBookInfo {
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
         tags: tags ?? this.tags,
+        tagsAddedAt: tagsAddedAt ?? this.tagsAddedAt,
+        tagTombstones: tagTombstones ?? this.tagTombstones,
         collection: collection ?? this.collection,
       );
 
@@ -279,6 +294,8 @@ class RemoteBookInfo {
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
       tags: _jsonStringList(json['tags']),
+      tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
+      tagTombstones: _jsonNameIntMap(json['tagTombstones']),
       collection: RemoteCollectionMembership.fromJson(json['collection']),
     );
   }

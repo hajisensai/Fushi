@@ -283,6 +283,18 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     // 抛 StateError → 服务端 404。
     final Set<String> audiobookKeys = await _srtBackedAudiobookKeys();
     final Map<String, List<String>> tagsByBookKey = await _tagNamesByBookKey();
+    // tags 稳健档：host 为每本书带上标签 LWW 时钟（名→加入戳）+ 移除墓碑，供 client
+    // mergeRemoteBookTags 传播 host 侧的删除/改名、防复活（旧 client 忽略这些键、按
+    // tags 名单只增，向后兼容）。逐书查（个人库规模可接受）。
+    final Map<String, Map<String, int>> tagAddedAtByKey =
+        <String, Map<String, int>>{};
+    final Map<String, Map<String, int>> tagTombByKey =
+        <String, Map<String, int>>{};
+    for (final EpubBookRow r in rows) {
+      tagAddedAtByKey[r.bookKey] = await _db.bookTagAddedAtByName(r.bookKey);
+      tagTombByKey[r.bookKey] =
+          await _db.tagTombstonesByName(r.bookKey, 'epub');
+    }
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
     return rows.map((EpubBookRow r) {
@@ -300,6 +312,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],
+        tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
+        tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
         // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
         collection: membership['epub|${r.bookKey}'],
       );
@@ -796,6 +810,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
+      // tags 稳健档：带上标签 LWW 时钟 + 移除墓碑，供 client mergeRemoteVideoTags 传播
+      // host 侧删除/改名、防复活（旧 client 忽略、按 tags 名单只增）。
+      tagsAddedAt: await _db.videoTagAddedAtByName(row.bookUid),
+      tagTombstones: await _db.tagTombstonesByName(row.bookUid, 'video'),
       collection: collection,
     );
   }

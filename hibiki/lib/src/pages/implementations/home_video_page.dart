@@ -1216,9 +1216,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
     }
-    // TODO-1165：按标签名重建视频标签映射（host 按名传来，只增不删）。
-    if (video.tags.isNotEmpty) {
-      await widget.repo.applyTagNamesToVideoBook(bookUid, video.tags);
+    // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名传播、防复活）。
+    // host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteVideoTags；旧 host 只有 tags
+    // 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
+    if (video.tagsAddedAt.isNotEmpty ||
+        video.tagTombstones.isNotEmpty ||
+        video.tags.isNotEmpty) {
+      final Map<String, int> remoteAddedAt = video.tagsAddedAt.isNotEmpty
+          ? video.tagsAddedAt
+          : <String, int>{
+              for (final String name in video.tags)
+                if (name.isNotEmpty) name: 1,
+            };
+      await widget.repo.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: remoteAddedAt,
+        remoteTombstones: video.tagTombstones,
+      );
     }
     // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
     // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
