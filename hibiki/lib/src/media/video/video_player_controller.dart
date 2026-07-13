@@ -1371,6 +1371,21 @@ class VideoPlayerController extends ChangeNotifier
     // 取 httpHeaders 设 `http-header-fields` 后才真正打开 URL（media_kit-1.2.6 real.dart:2145），
     // 故 header 走 Media 构造参数才赶得上 open。open 后的 [applyHttpHeaderFieldsToPlayer] 保留，
     // 为随后（本方法内、seek/play 之前）外挂的 audio-only 音轨设全局属性（TODO-1280）。
+    // 根治 BUG-791：libmpv 默认 `sub-auto=exact` 会在 `open()` 加载文件时**自动加载与视频
+    // 同名的 sidecar 外挂字幕**（用户放在视频旁的 `<video>.ass/.srt`），把它选成字幕轨、
+    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 .ass 得到的可点
+    // [VideoSubtitleOverlay] **叠成两条同句字幕**（原生较小钉底、overlay 较大随控制条避让）。
+    // 抑制属性（下面 open 之后的 [buildSubtitleSuppressionProperties]）设 `sub-auto=no` 已**太迟**
+    // ——sidecar 在 `open()` 那一刻就已随 `sub-auto=exact` 自动加载并选中。故必须在 **open 之前**
+    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Hibiki 自己的解析
+    // （sidecar/内嵌文本轨抽成 cue 走 overlay，图形 PGS 轨由 [selectEmbeddedGraphicTrack]
+    // 显式选轨渲染，均不受 `sub-auto=no` 影响）。open 后仍再下发一次做兜底（内嵌轨 open 后异步
+    // 就绪的重选竞态，BUG-190）。仅 libmpv 后端生效，非 libmpv 静默 no-op（见 helper）。
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleSuppressionProperties(),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return; // open 前抑制下发后换片/销毁。
     await player.open(
       Media(
         sourceUri,
