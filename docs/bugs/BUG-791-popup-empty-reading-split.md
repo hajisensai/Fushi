@@ -1,7 +1,7 @@
 ## BUG-791 · 查词弹窗同词因空读音拆成两张卡
 - **报告**：2026-07-14（用户）
 - **真实性**：✅ 真 bug — 根因 `packages/hibiki_dictionary/lib/src/language/language.dart:522` 与 `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:1749`
-- **[x] ① 已修复** — 见下「根因 / 修复」，提交 <PENDING>
+- **[x] ① 已修复** — 见下「根因 / 修复」，提交 `77548db8a`
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/dictionary_popup_empty_reading_group_test.dart`
 - **备注**：
 
