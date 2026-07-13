@@ -317,10 +317,17 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
     if (!mounted) return;
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
+    // BUG-781（与 BUG-129/261/381 同族）：[globalPosition] 是 onSecondaryTapDown
+    // 报的真实视口坐标，而 showMenu 的 RelativeRect 落在根 Navigator 的 Overlay
+    // 坐标系，该 Overlay 位于全局 [HibikiAppUiScale] 的缩放画布内。直接把真实视口
+    // 坐标当 Overlay 本地坐标喂进去，界面大小≠100% 时菜单会偏离点击点 factor≈scale。
+    // 用 Overlay.globalToLocal 沿真实渲染变换链换算——FittedBox 缩放被自动吸收，
+    // 对任意 scale 自洽；scale=1 时为单位阵，逐像素等价（零行为变化）。
+    final Offset anchor = overlay.globalToLocal(globalPosition);
     final String? action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
-        Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<String>>[

@@ -1357,8 +1357,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         onBookmark: () async {
           await _addBookmarkAtCurrentPosition();
         },
+        // BUG-782：退出必须走 maybePop() 而非直接 pop()。直接 Navigator.pop()
+        // 会绕过阅读器 PopScope(canPop:false) 的 onPopInvokedWithResult，使
+        // onWillPop 整条链全部跳过——onSourcePagePop 的最终位置 flush（BUG-203）、
+        // appModel.closeMedia 里对 hibikiBooksProvider/bookLastReadAtProvider 的
+        // invalidate（BUG-777 依赖它刷新书架「继续阅读」hero 与进度）、以及
+        // triggerAutoSyncAfterClose 关书自动同步都不会触发。maybePop() 触发
+        // PopScope 回调 → onWillPop() → nav.pop()，与键盘 ESC / 手柄 B 分支
+        // （caret.part.dart 的 readerDismissDict）走的是同一条退出路径。
         onExitReader: () {
-          Navigator.of(context).pop();
+          unawaited(Navigator.of(context).maybePop());
         },
         webViewController: _controller!,
         appModel: appModel,
