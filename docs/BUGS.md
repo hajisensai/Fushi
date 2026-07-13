@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 758 条。点号进各自文件。
+> 共 760 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-777](bugs/BUG-777-fractional-page-boundary-premature-limit.md) | 🚧 | 🚧 | 亚像素页距在第31页误判边界提前停翻 |
+| [BUG-776](bugs/BUG-776-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |
 | [BUG-775](bugs/BUG-775-md3-macos-double-shell.md) | 🚧 | 🚧 | macOS 自动/MD3 仍套原生侧栏形成双壳 |
 | [BUG-774](bugs/BUG-774-mine-button-global-lookup.md) | ✅ | ✅ | 剪贴板/选中查词缺少制卡按钮 |
 | [BUG-773](bugs/BUG-773-clipboard-sentence-hit-offset.md) | ✅ | ✅ | 剪贴板面板句子横幅整词高亮左移吞句首标点 |
