@@ -291,6 +291,11 @@ LegacyCustomThemeMigration migrateLegacyCustomTheme({
   );
 }
 
+typedef _DesignSystemPreferenceMigration = ({
+  String expectedRaw,
+  String normalizedRaw,
+});
+
 class ThemeNotifier extends ChangeNotifier {
   ThemeNotifier(
     this._db,
@@ -354,10 +359,17 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(snapshot);
-    final String? normalized = _normalizeHiddenDesignSystemInMemory();
-    if (normalized != null) {
+    final _DesignSystemPreferenceMigration? migration =
+        _normalizeHiddenDesignSystemInMemory();
+    if (migration != null) {
+      // Initial snapshot loading is deliberately synchronous. The best-effort
+      // migration owns all of its async errors so this fire-and-forget boundary
+      // can never surface an unhandled Future during app startup.
       unawaited(
-        _db.setPref('design_system', PrefCodec.encode(normalized)),
+        _persistHiddenDesignSystemMigration(
+          migration,
+          notifyOnReload: true,
+        ),
       );
     }
   }
@@ -367,11 +379,68 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(all);
-    final String? normalized = _normalizeHiddenDesignSystemInMemory();
-    if (normalized != null) {
-      await _db.setPref('design_system', PrefCodec.encode(normalized));
+    final _DesignSystemPreferenceMigration? migration =
+        _normalizeHiddenDesignSystemInMemory();
+    if (migration != null) {
+      await _persistHiddenDesignSystemMigration(
+        migration,
+        notifyOnReload: false,
+      );
     }
     notifyListeners();
+  }
+
+  Future<void> _persistHiddenDesignSystemMigration(
+    _DesignSystemPreferenceMigration migration, {
+    required bool notifyOnReload,
+  }) async {
+    try {
+      final bool migrated = await _db.compareAndSetPref(
+        'design_system',
+        expectedValue: migration.expectedRaw,
+        newValue: migration.normalizedRaw,
+      );
+      if (!migrated) {
+        await _reloadDesignSystemPreferenceAfterMigrationRace(
+          notifyOnChange: notifyOnReload,
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[ThemeNotifier] design_system migration write failed: $error\n'
+        '$stackTrace',
+      );
+      await _reloadDesignSystemPreferenceAfterMigrationRace(
+        notifyOnChange: notifyOnReload,
+      );
+    }
+  }
+
+  Future<void> _reloadDesignSystemPreferenceAfterMigrationRace({
+    required bool notifyOnChange,
+  }) async {
+    try {
+      final String designSystemBeforeReload = designSystem;
+      final String? currentRaw = await _db.getPref('design_system');
+      if (currentRaw == null) {
+        _prefs.remove('design_system');
+      } else {
+        _prefs['design_system'] = currentRaw;
+      }
+      if (notifyOnChange &&
+          designSystemBeforeReload != designSystem &&
+          hasListeners) {
+        notifyListeners();
+      }
+    } catch (error, stackTrace) {
+      // Migration is compatibility cleanup, not a prerequisite for rendering.
+      // Keep the already-normalized in-memory auto value and report the failed
+      // reload without letting snapshot startup leak an unhandled Future.
+      debugPrint(
+        '[ThemeNotifier] design_system migration reload failed: $error\n'
+        '$stackTrace',
+      );
+    }
   }
 
   // Pure read. Theme getters (theme/darkTheme/themeMode) run inside
@@ -551,12 +620,15 @@ class ThemeNotifier extends ChangeNotifier {
     return value == 'material' ? 'material' : 'auto';
   }
 
-  String? _normalizeHiddenDesignSystemInMemory() {
-    final Object? raw = _get('design_system', defaultValue: 'auto');
-    final String normalized = normalizeDesignSystemPreference(raw);
-    if (raw == normalized) return null;
-    _prefs['design_system'] = PrefCodec.encode(normalized);
-    return normalized;
+  _DesignSystemPreferenceMigration? _normalizeHiddenDesignSystemInMemory() {
+    final String? expectedRaw = _prefs['design_system'];
+    if (expectedRaw == null) return null;
+    final Object? decoded = PrefCodec.decodeUntyped(expectedRaw);
+    final String normalized = normalizeDesignSystemPreference(decoded);
+    if (decoded == normalized) return null;
+    final String normalizedRaw = PrefCodec.encode(normalized);
+    _prefs['design_system'] = normalizedRaw;
+    return (expectedRaw: expectedRaw, normalizedRaw: normalizedRaw);
   }
 
   String get designSystem => normalizeDesignSystemPreference(

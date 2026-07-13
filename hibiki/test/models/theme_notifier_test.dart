@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -421,6 +423,7 @@ void main() {
     for (final String value in <String>['cupertino', 'macos', 'fluent']) {
       test('hidden design_system=$value snapshot is immediately auto',
           () async {
+        await db.setPref('design_system', PrefCodec.encode(value));
         notifier.loadFromPrefsSnapshot(<String, String>{
           'design_system': PrefCodec.encode(value),
         });
@@ -433,11 +436,14 @@ void main() {
 
       test('hidden design_system=$value refresh persists auto', () async {
         await db.setPref('design_system', PrefCodec.encode(value));
+        int notifyCount = 0;
+        notifier.addListener(() => notifyCount++);
         await notifier.refreshFromDb();
 
         expect(notifier.designSystem, 'auto');
         final Map<String, String> prefs = await db.getAllPrefs();
         expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
+        expect(notifyCount, 1, reason: 'refreshFromDb 只在尾部统一通知一次');
       });
     }
 
@@ -481,6 +487,170 @@ void main() {
       expect(notifier.designSystem, 'auto');
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
+    });
+
+    test(
+        'stale hidden snapshot does not overwrite a newer material write and '
+        'reloads notifier memory', () async {
+      final String hiddenRaw = PrefCodec.encode('macos');
+      final String materialRaw = PrefCodec.encode('material');
+      await db.setPref('design_system', hiddenRaw);
+      final Map<String, String> staleSnapshot = await db.getAllPrefs();
+
+      // 模拟另一进程在本进程拿到旧 snapshot 后已选择 material。
+      await db.setPref('design_system', materialRaw);
+      final String versionBeforeMigration =
+          (await db.getPref(HibikiDatabase.prefsVersionKey))!;
+      int notifyCount = 0;
+      notifier.addListener(() => notifyCount++);
+
+      notifier.loadFromPrefsSnapshot(staleSnapshot);
+      await pumpEventQueue(times: 10);
+
+      expect(await db.getPref('design_system'), materialRaw);
+      expect(notifier.designSystem, 'material');
+      expect(
+        await db.getPref(HibikiDatabase.prefsVersionKey),
+        versionBeforeMigration,
+        reason: 'CAS 失败不能 bump prefs_version',
+      );
+      expect(notifyCount, 1, reason: '异步重读 material 后必须驱动已挂载界面重建');
+    });
+
+    test(
+        'two database connections keep a newer material write after the stale '
+        'snapshot barrier is released', () async {
+      final bool previousWarningSetting =
+          driftRuntimeOptions.dontWarnAboutMultipleDatabases;
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      final Directory tempDirectory =
+          await Directory.systemTemp.createTemp('hibiki-design-cas-');
+      final File databaseFile = File(
+        '${tempDirectory.path}${Platform.pathSeparator}preferences.sqlite',
+      );
+      final HibikiDatabase processADb = HibikiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase(databaseFile)),
+      );
+      final HibikiDatabase processBDb = HibikiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase(databaseFile)),
+      );
+      final ThemeNotifier processANotifier =
+          ThemeNotifier(processADb, textThemeBuilder);
+      final Completer<void> releaseStaleSnapshot = Completer<void>();
+
+      try {
+        await processADb.setPref(
+          'design_system',
+          PrefCodec.encode('cupertino'),
+        );
+        final Map<String, String> staleSnapshot =
+            await processADb.getAllPrefs();
+        final Future<void> delayedMigration = () async {
+          await releaseStaleSnapshot.future;
+          processANotifier.loadFromPrefsSnapshot(staleSnapshot);
+          await pumpEventQueue(times: 10);
+        }();
+
+        await processBDb.setPref(
+          'design_system',
+          PrefCodec.encode('material'),
+        );
+        final String versionBeforeMigration =
+            (await processBDb.getPref(HibikiDatabase.prefsVersionKey))!;
+        releaseStaleSnapshot.complete();
+        await delayedMigration;
+
+        expect(
+          await processBDb.getPref('design_system'),
+          PrefCodec.encode('material'),
+        );
+        expect(processANotifier.designSystem, 'material');
+        expect(
+          await processBDb.getPref(HibikiDatabase.prefsVersionKey),
+          versionBeforeMigration,
+        );
+      } finally {
+        if (!releaseStaleSnapshot.isCompleted) {
+          releaseStaleSnapshot.complete();
+        }
+        processANotifier.dispose();
+        await processBDb.close();
+        await processADb.close();
+        await tempDirectory.delete(recursive: true);
+        driftRuntimeOptions.dontWarnAboutMultipleDatabases =
+            previousWarningSetting;
+      }
+    });
+
+    test('replaying the same stale hidden snapshot migrates and bumps once',
+        () async {
+      final String hiddenRaw = PrefCodec.encode('cupertino');
+      await db.setPref('design_system', hiddenRaw);
+      final Map<String, String> staleSnapshot = await db.getAllPrefs();
+
+      notifier.loadFromPrefsSnapshot(staleSnapshot);
+      await pumpEventQueue(times: 10);
+      final String versionAfterFirstMigration =
+          (await db.getPref(HibikiDatabase.prefsVersionKey))!;
+      expect(
+        PrefCodec.decode<int>(versionAfterFirstMigration, 0),
+        2,
+        reason: '旧值写入一次、CAS 迁移一次',
+      );
+
+      notifier.loadFromPrefsSnapshot(staleSnapshot);
+      await pumpEventQueue(times: 10);
+
+      expect(
+        PrefCodec.decode(
+          (await db.getPref('design_system'))!,
+          '',
+        ),
+        'auto',
+      );
+      expect(
+        await db.getPref(HibikiDatabase.prefsVersionKey),
+        versionAfterFirstMigration,
+        reason: '重复旧 snapshot 的 CAS 失败不能再次 bump',
+      );
+    });
+
+    test('snapshot migration write failure never escapes as an uncaught Future',
+        () async {
+      await db.getAllPrefs();
+      await db.close();
+      final List<Object> uncaughtErrors = <Object>[];
+      final List<String?> migrationLogs = <String?>[];
+      final DebugPrintCallback previousDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        migrationLogs.add(message);
+      };
+
+      try {
+        await runZonedGuarded<Future<void>>(
+          () async {
+            notifier.loadFromPrefsSnapshot(<String, String>{
+              'design_system': PrefCodec.encode('macos'),
+            });
+            await pumpEventQueue(times: 10);
+          },
+          (Object error, StackTrace stackTrace) {
+            uncaughtErrors.add(error);
+          },
+        );
+      } finally {
+        debugPrint = previousDebugPrint;
+      }
+
+      expect(notifier.designSystem, 'auto');
+      expect(uncaughtErrors, isEmpty);
+      expect(
+        migrationLogs.join('\n'),
+        allOf(
+          contains('design_system migration write failed'),
+          contains('design_system migration reload failed'),
+        ),
+      );
     });
   });
 
