@@ -44,6 +44,15 @@ void main() {
           reason: '覆盖窗 resize 串写了剪贴板面板 rect——破坏面板');
       expect(src.contains('setPopupMaxWidth'), isFalse,
           reason: '覆盖窗 resize 串写了 app 内共享键——破坏 app 内弹窗');
+      // 松手即时填充：_onOverlayResized 方法体内必须重触发 _renderStack，当前卡才即时
+      // 长到新尺寸（否则回落到「下次查词才生效」）。切到方法边界内断言，避免全局误命中。
+      final int mStart = src.indexOf('void _onOverlayResized(');
+      expect(mStart, greaterThanOrEqualTo(0),
+          reason: '_onOverlayResized 方法不存在/改名');
+      final int mEnd = src.indexOf('void _onJsMessage(', mStart);
+      final String body = src.substring(mStart, mEnd < 0 ? src.length : mEnd);
+      expect(body.contains('_renderStack('), isTrue,
+          reason: '拖完未重排当前卡——松手即时填充失效，退回下次查词才生效');
     });
 
     test('C++ — 瞬态窗放开模态 resize + 拖拽期挂起 shell 区域裁剪', () {
