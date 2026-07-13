@@ -99,8 +99,15 @@ class ImmersionMiningEngine {
 
     final String? src = req.mediaSource;
 
-    if (coverPath == null && src != null && req.hasRange) {
-      coverPath = await _gif(
+    // 三种封面来源封成本地闭包（各自带前置守卫，源不可用即返 null）。三个 [VideoMiningImageMode]
+    // 只是它们的不同优先级排列，把原来手写的三段 `if (coverPath == null && ...)` 阶梯归一成
+    // 「一张优先级表」——GIF 模式排列与旧代码逐字等价（Never break userspace），静态模式只是
+    // 换个排列且不置 degradedToStill（用户主动选静态图，非降级）。
+    //
+    // 抽字幕区间动图（GIF）到临时文件；无 src / 无区间 → null。
+    Future<String?> tryGif() async {
+      if (src == null || !req.hasRange) return null;
+      return _gif(
         inputPath: src,
         startMs: req.clipStartMs,
         endMs: req.clipEndMs,
@@ -110,29 +117,53 @@ class ImmersionMiningEngine {
         onFailure: onFailure,
       );
     }
-    if (coverPath == null && src != null) {
-      final String? framePath = await _frame(
+
+    // 抽字幕 cue 起始时间点的单帧；无 src → null。
+    Future<String?> tryStartFrame() async {
+      if (src == null) return null;
+      return _frame(
         inputPath: src,
         outputPath: '$tempDir/immersion_frame.jpg',
         atSeconds: req.clipStartMs / 1000.0,
         onFailure: onFailure,
       );
-      if (framePath != null) {
-        coverPath = framePath;
-        degradedToStill = true;
-      }
     }
-    if (coverPath == null && req.stillFallback != null) {
+
+    // 当前解码帧（`controller.screenshot`，点词已自动暂停）→ 降采样写盘；无 stillFallback → null。
+    Future<String?> tryCurrentFrame() async {
+      if (req.stillFallback == null) return null;
       final Uint8List? shot = await req.stillFallback!();
-      if (shot != null) {
-        final Uint8List small = downsampleCardScreenshot(
-          shot,
-          maxLongEdge: compression.screenshotMaxLongEdge,
-          quality: compression.screenshotQuality,
-        );
-        coverPath = await _writeBytes(tempDir, 'immersion_shot.jpg', small);
-        // 无区间(无cue)截当前帧不算降级，不弹「降级为静态」OSD。
-        degradedToStill = req.hasRange;
+      if (shot == null) return null;
+      final Uint8List small = downsampleCardScreenshot(
+        shot,
+        maxLongEdge: compression.screenshotMaxLongEdge,
+        quality: compression.screenshotQuality,
+      );
+      return _writeBytes(tempDir, 'immersion_shot.jpg', small);
+    }
+
+    if (coverPath == null) {
+      switch (req.imageMode) {
+        case VideoMiningImageMode.gif:
+          // 现状阶梯：GIF 主 → 起点单帧降级 → 当前帧兜底（逐字等价于旧三段 if）。
+          coverPath = await tryGif();
+          if (coverPath == null) {
+            coverPath = await tryStartFrame();
+            if (coverPath != null) degradedToStill = true;
+          }
+          if (coverPath == null) {
+            coverPath = await tryCurrentFrame();
+            // 无区间(无cue)截当前帧不算降级，不弹「降级为静态」OSD。
+            if (coverPath != null) degradedToStill = req.hasRange;
+          }
+        case VideoMiningImageMode.subtitleStart:
+          // 用户选「字幕开头截图」：起点单帧优先，失败退当前帧。主动选静态图，非降级。
+          coverPath = await tryStartFrame();
+          coverPath ??= await tryCurrentFrame();
+        case VideoMiningImageMode.currentFrame:
+          // 用户选「制卡时截图」：当前解码帧优先，失败退起点单帧。主动选静态图，非降级。
+          coverPath = await tryCurrentFrame();
+          coverPath ??= await tryStartFrame();
       }
     }
 
