@@ -12,9 +12,9 @@
   - `packages/hibiki_core/lib/src/database/database.dart`：新增 `watchVideoBookUids()`（`select(videoBooks).map((r)=>r.bookUid).watch()`）。
   - `hibiki/lib/src/media/video/video_book_repository.dart`：新增 `watchVideoBookUids()` 委托 `_db`。
   - `hibiki/lib/src/pages/implementations/home_video_page.dart`：`initState` 订阅、`dispose` 取消、`_onVideoUidsChanged` 集合去重后 `_refresh()`。
-  - 提交：<待填>
+  - 提交：74ca7bdb2
 - **[x] ② 已加自动化测试** —
   - DB 层行为：`hibiki/test/database/video_books_test.dart` 新增 `watchVideoBookUids` 组（插入发出更新集合；纯进度更新集合不变）。
   - 源码守卫：`hibiki/test/pages/home_video_page_watch_guard_test.dart`（断言库页在 initState 订阅 `watchVideoBookUids` 且 dispose 取消，防回归删订阅）。
-  - 测试文件：见上；提交：<待填>
+  - 测试文件：见上；提交：74ca7bdb2
 - **备注**：书架（书籍）同属一类（`reader_hibiki_source.dart` 的 `hibikiBooksProvider`/`srtBooksProvider` 是 `FutureProvider`、不 `.watch()`），但书籍的导入/变更点都调 `ref.invalidate(hibikiBooksProvider)` 缓解，故本次不动书籍以免扩大范围；哪天冒出不 invalidate 的加书路径会犯同病。真机验收：外部「用 Hibiki 打开」一个新 mkv → 不重启不下拉，视频页应自动出现该条目。BUG-790 已被 PR#94（草稿，合集行头 0 集）占用，故本 bug 用 791。
