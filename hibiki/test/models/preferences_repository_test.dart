@@ -112,6 +112,12 @@ void main() {
           ...AudioSourceConfig.fromLegacyUrls(
             PreferencesRepository.defaultAudioSources,
           ).map((AudioSourceConfig s) => s.copyWith(enabled: false)),
+          // 内置 Anki 本地音频服务器（5050）预设，追加在列尾、默认关闭。
+          AudioSourceConfig.remoteAudio(
+            url: PreferencesRepository.ankiLocalAudioUrl,
+            label: 'Anki',
+            enabled: false,
+          ),
         ],
       );
       // 没有任何源默认启用。
@@ -135,15 +141,39 @@ void main() {
 
       final PreferencesRepository repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      final List<AudioSourceConfig> remotes = repo2.audioSourceConfigs
-          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.remoteAudio)
+      // 老用户的已启用 URL 必须仍在、仍 enabled；内置 Anki 预设会被回填但默认关闭，
+      // 故按「已启用的 remoteAudio」而非「全部 remoteAudio」定位老用户的源。
+      final List<AudioSourceConfig> enabledRemotes = repo2.audioSourceConfigs
+          .where((AudioSourceConfig s) =>
+              s.kind == AudioSourceKind.remoteAudio && s.enabled)
           .toList();
-      expect(remotes, hasLength(1));
+      expect(enabledRemotes, hasLength(1));
       expect(
-        remotes.single.url,
+        enabledRemotes.single.url,
         'https://legacy.test/?term={term}&reading={reading}',
       );
-      expect(remotes.single.enabled, isTrue);
+      repo2.dispose();
+    });
+
+    test(
+        'ankiLocalAudioUrl preset is back-filled DISABLED for existing users '
+        'who already have saved configs', () async {
+      // 已有 typed 配置但不含 Anki 源的用户：读取时必须回填一条 disabled 的 Anki
+      // 预设（标签 Anki），让所有用户都能在「管理音频来源」里打开这个开关即用。
+      await repo.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.hibikiRemote(enabled: true),
+      ]);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      final Iterable<AudioSourceConfig> anki = repo2.audioSourceConfigs.where(
+        (AudioSourceConfig s) =>
+            s.kind == AudioSourceKind.remoteAudio &&
+            s.url == PreferencesRepository.ankiLocalAudioUrl,
+      );
+      expect(anki, hasLength(1));
+      expect(anki.single.enabled, isFalse);
+      expect(anki.single.label, 'Anki');
       repo2.dispose();
     });
 
@@ -350,6 +380,12 @@ void main() {
         AudioSourceConfig.remoteAudio(
           label: 'B',
           url: 'https://b.com/{reading}',
+          enabled: false,
+        ),
+        // 内置 Anki 本地音频服务器预设：保存的列表不含它 → 读取时回填（disabled）。
+        AudioSourceConfig.remoteAudio(
+          url: PreferencesRepository.ankiLocalAudioUrl,
+          label: 'Anki',
           enabled: false,
         ),
       ]);

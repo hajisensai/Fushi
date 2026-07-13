@@ -379,6 +379,12 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       _sources = <AudioSourceConfig>[
         if (hadHibiki) AudioSourceConfig.hibikiRemote(),
         ...AudioSourceConfig.fromLegacyUrls(AppModel.defaultAudioSources),
+        // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
+        AudioSourceConfig.remoteAudio(
+          url: AppModel.ankiLocalAudioUrl,
+          label: 'Anki',
+          enabled: false,
+        ),
         ...locals,
       ];
     });

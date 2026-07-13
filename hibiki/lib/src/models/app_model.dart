@@ -4273,6 +4273,10 @@ class AppModel with ChangeNotifier {
   static const List<String> defaultAudioSources =
       PreferencesRepository.defaultAudioSources;
 
+  /// Anki 本地音频服务器（5050）内置预设 URL 的镜像，供 UI（重置默认）引用。
+  static const String ankiLocalAudioUrl =
+      PreferencesRepository.ankiLocalAudioUrl;
+
   List<String> get audioSources => prefsRepo.audioSources;
 
   List<AudioSourceConfig> get audioSourceConfigs {
