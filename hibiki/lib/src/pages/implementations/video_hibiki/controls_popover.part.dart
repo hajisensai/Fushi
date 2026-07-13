@@ -298,11 +298,16 @@ extension _VideoControlsPopover on _VideoHibikiPageState {
       _controlPopoverPinned = true;
     }
     _hideVideoControlEditOverlay(revealControls: false);
-    if (_subtitleListVisible.value) {
-      _clearSelectedMiningCues();
-      _subtitleListVisible.value = false;
-    }
+    // BUG-792：不再关 push-aside 字幕列表。音量/倍速轻浮层由 [_controlPopoverAnchor]
+    // 的 MouseRegion **hover**（onEnter）触发，且落点被 [resolveVideoControlPopoverPlacement]
+    // clamp 在 [playerBounds]（字幕列表推开后已窄化的视频列）内，几何上不与右侧 push-aside
+    // 字幕栏重叠——鼠标划过右下角音量/倍速图标去够全屏时不该把字幕列表弄没。二者本可共存
+    // （与 BUG-371 对三处控制条门控移除 [_subtitleListVisible] 的处理一致）。真正遮挡右栏、
+    // 需互斥关字幕列表的是**点击**触发的 overlay 面板 [_showVideoSidePanel] / 编辑态
+    // [_showVideoControlEditOverlay]，那两处保留关闭。
     // TODO-638：开任何浮层都关掉 push-aside 剧集列表（与字幕列表同处右栏，互斥）。
+    // 注：剧集列表是控制条门控（开列表时控制条被隐藏、无法 hover 到音量/倍速），故此处
+    // 实际不会被本 hover 路径触发；保留为防御性关闭。
     if (_episodeListVisible.value) {
       _episodeListVisible.value = false;
     }
