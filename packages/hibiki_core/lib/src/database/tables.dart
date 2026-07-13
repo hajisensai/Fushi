@@ -844,3 +844,32 @@ class BookTagMembershipTombstones extends Table {
   @override
   Set<Column> get primaryKey => {itemKey, mediaType, tagName};
 }
+
+// ── book_custom_css ─────────────────────────────────────────────────
+// per-book 自定义 CSS 跨端同步的时间戳载体。磁盘真相源是 extractDir 里被改写的 .css
+// 文件（+ `.original` 备份，见 BookCssRepository），但磁盘无跨设备可比较的版本；本表按
+// (bookKey, relativePath) 记录用户自定义的 CSS 文本 + updatedAt，让 sync 走 LWW（按
+// updatedAt 取较新，整块文本不能并集）。[deleted]=true 表「已重置回原始」的墓碑（updatedAt
+// 记重置时刻），使「reset」也能跨端传播（否则删行无法与「从未自定义」区分）。空表 =
+// 从未自定义 = sync 零命中（Never break userspace）。范式仿 [BookProfiles]（text 复合键 +
+// int 毫秒戳）。
+@DataClassName('BookCustomCssRow')
+class BookCustomCss extends Table {
+  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。
+  TextColumn get bookKey => text()();
+
+  /// 书内 CSS 文件相对路径（extractDir 内，正斜杠归一，同 [CssFileEntry].relativePath）。
+  TextColumn get relativePath => text()();
+
+  /// 用户自定义的 CSS 全文（[deleted]=true 时无意义，留空）。
+  TextColumn get content => text().withDefault(const Constant(''))();
+
+  /// true = 已重置回原始（重置墓碑）；false = 有自定义内容。
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  /// 最后修改毫秒戳（LWW 比较键；保存/重置都刷新）。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {bookKey, relativePath};
+}

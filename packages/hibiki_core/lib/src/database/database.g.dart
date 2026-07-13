@@ -15342,6 +15342,332 @@ class BookTagMembershipTombstonesCompanion
   }
 }
 
+class $BookCustomCssTable extends BookCustomCss
+    with TableInfo<$BookCustomCssTable, BookCustomCssRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookCustomCssTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _relativePathMeta =
+      const VerificationMeta('relativePath');
+  @override
+  late final GeneratedColumn<String> relativePath = GeneratedColumn<String>(
+      'relative_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _contentMeta =
+      const VerificationMeta('content');
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+      'content', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _deletedMeta =
+      const VerificationMeta('deleted');
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+      'deleted', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("deleted" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [bookKey, relativePath, content, deleted, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_custom_css';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookCustomCssRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    } else if (isInserting) {
+      context.missing(_bookKeyMeta);
+    }
+    if (data.containsKey('relative_path')) {
+      context.handle(
+          _relativePathMeta,
+          relativePath.isAcceptableOrUnknown(
+              data['relative_path']!, _relativePathMeta));
+    } else if (isInserting) {
+      context.missing(_relativePathMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(_contentMeta,
+          content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(_deletedMeta,
+          deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookKey, relativePath};
+  @override
+  BookCustomCssRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookCustomCssRow(
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
+      relativePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}relative_path'])!,
+      content: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}content'])!,
+      deleted: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}deleted'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $BookCustomCssTable createAlias(String alias) {
+    return $BookCustomCssTable(attachedDatabase, alias);
+  }
+}
+
+class BookCustomCssRow extends DataClass
+    implements Insertable<BookCustomCssRow> {
+  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。
+  final String bookKey;
+
+  /// 书内 CSS 文件相对路径（extractDir 内，正斜杠归一，同 [CssFileEntry].relativePath）。
+  final String relativePath;
+
+  /// 用户自定义的 CSS 全文（[deleted]=true 时无意义，留空）。
+  final String content;
+
+  /// true = 已重置回原始（重置墓碑）；false = 有自定义内容。
+  final bool deleted;
+
+  /// 最后修改毫秒戳（LWW 比较键；保存/重置都刷新）。
+  final int updatedAt;
+  const BookCustomCssRow(
+      {required this.bookKey,
+      required this.relativePath,
+      required this.content,
+      required this.deleted,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_key'] = Variable<String>(bookKey);
+    map['relative_path'] = Variable<String>(relativePath);
+    map['content'] = Variable<String>(content);
+    map['deleted'] = Variable<bool>(deleted);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  BookCustomCssCompanion toCompanion(bool nullToAbsent) {
+    return BookCustomCssCompanion(
+      bookKey: Value(bookKey),
+      relativePath: Value(relativePath),
+      content: Value(content),
+      deleted: Value(deleted),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory BookCustomCssRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookCustomCssRow(
+      bookKey: serializer.fromJson<String>(json['bookKey']),
+      relativePath: serializer.fromJson<String>(json['relativePath']),
+      content: serializer.fromJson<String>(json['content']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookKey': serializer.toJson<String>(bookKey),
+      'relativePath': serializer.toJson<String>(relativePath),
+      'content': serializer.toJson<String>(content),
+      'deleted': serializer.toJson<bool>(deleted),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  BookCustomCssRow copyWith(
+          {String? bookKey,
+          String? relativePath,
+          String? content,
+          bool? deleted,
+          int? updatedAt}) =>
+      BookCustomCssRow(
+        bookKey: bookKey ?? this.bookKey,
+        relativePath: relativePath ?? this.relativePath,
+        content: content ?? this.content,
+        deleted: deleted ?? this.deleted,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  BookCustomCssRow copyWithCompanion(BookCustomCssCompanion data) {
+    return BookCustomCssRow(
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      relativePath: data.relativePath.present
+          ? data.relativePath.value
+          : this.relativePath,
+      content: data.content.present ? data.content.value : this.content,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookCustomCssRow(')
+          ..write('bookKey: $bookKey, ')
+          ..write('relativePath: $relativePath, ')
+          ..write('content: $content, ')
+          ..write('deleted: $deleted, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(bookKey, relativePath, content, deleted, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookCustomCssRow &&
+          other.bookKey == this.bookKey &&
+          other.relativePath == this.relativePath &&
+          other.content == this.content &&
+          other.deleted == this.deleted &&
+          other.updatedAt == this.updatedAt);
+}
+
+class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
+  final Value<String> bookKey;
+  final Value<String> relativePath;
+  final Value<String> content;
+  final Value<bool> deleted;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const BookCustomCssCompanion({
+    this.bookKey = const Value.absent(),
+    this.relativePath = const Value.absent(),
+    this.content = const Value.absent(),
+    this.deleted = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BookCustomCssCompanion.insert({
+    required String bookKey,
+    required String relativePath,
+    this.content = const Value.absent(),
+    this.deleted = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  })  : bookKey = Value(bookKey),
+        relativePath = Value(relativePath),
+        updatedAt = Value(updatedAt);
+  static Insertable<BookCustomCssRow> custom({
+    Expression<String>? bookKey,
+    Expression<String>? relativePath,
+    Expression<String>? content,
+    Expression<bool>? deleted,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookKey != null) 'book_key': bookKey,
+      if (relativePath != null) 'relative_path': relativePath,
+      if (content != null) 'content': content,
+      if (deleted != null) 'deleted': deleted,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BookCustomCssCompanion copyWith(
+      {Value<String>? bookKey,
+      Value<String>? relativePath,
+      Value<String>? content,
+      Value<bool>? deleted,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
+    return BookCustomCssCompanion(
+      bookKey: bookKey ?? this.bookKey,
+      relativePath: relativePath ?? this.relativePath,
+      content: content ?? this.content,
+      deleted: deleted ?? this.deleted,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (relativePath.present) {
+      map['relative_path'] = Variable<String>(relativePath.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookCustomCssCompanion(')
+          ..write('bookKey: $bookKey, ')
+          ..write('relativePath: $relativePath, ')
+          ..write('content: $content, ')
+          ..write('deleted: $deleted, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -15406,6 +15732,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $StatisticsTombstonesTable(this);
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
+  late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -15450,7 +15777,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         bookTombstones,
         lookupMiningCounters,
         statisticsTombstones,
-        bookTagMembershipTombstones
+        bookTagMembershipTombstones,
+        bookCustomCss
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -25877,6 +26205,181 @@ typedef $$BookTagMembershipTombstonesTableProcessedTableManager
         ),
         BookTagMembershipTombstoneRow,
         PrefetchHooks Function()>;
+typedef $$BookCustomCssTableCreateCompanionBuilder = BookCustomCssCompanion
+    Function({
+  required String bookKey,
+  required String relativePath,
+  Value<String> content,
+  Value<bool> deleted,
+  required int updatedAt,
+  Value<int> rowid,
+});
+typedef $$BookCustomCssTableUpdateCompanionBuilder = BookCustomCssCompanion
+    Function({
+  Value<String> bookKey,
+  Value<String> relativePath,
+  Value<String> content,
+  Value<bool> deleted,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+
+class $$BookCustomCssTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+  $$BookCustomCssTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get relativePath => $composableBuilder(
+      column: $table.relativePath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookCustomCssTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+  $$BookCustomCssTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get relativePath => $composableBuilder(
+      column: $table.relativePath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+      column: $table.deleted, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookCustomCssTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+  $$BookCustomCssTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get relativePath => $composableBuilder(
+      column: $table.relativePath, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$BookCustomCssTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookCustomCssTable,
+    BookCustomCssRow,
+    $$BookCustomCssTableFilterComposer,
+    $$BookCustomCssTableOrderingComposer,
+    $$BookCustomCssTableAnnotationComposer,
+    $$BookCustomCssTableCreateCompanionBuilder,
+    $$BookCustomCssTableUpdateCompanionBuilder,
+    (
+      BookCustomCssRow,
+      BaseReferences<_$HibikiDatabase, $BookCustomCssTable, BookCustomCssRow>
+    ),
+    BookCustomCssRow,
+    PrefetchHooks Function()> {
+  $$BookCustomCssTableTableManager(
+      _$HibikiDatabase db, $BookCustomCssTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookCustomCssTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookCustomCssTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookCustomCssTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> bookKey = const Value.absent(),
+            Value<String> relativePath = const Value.absent(),
+            Value<String> content = const Value.absent(),
+            Value<bool> deleted = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookCustomCssCompanion(
+            bookKey: bookKey,
+            relativePath: relativePath,
+            content: content,
+            deleted: deleted,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String bookKey,
+            required String relativePath,
+            Value<String> content = const Value.absent(),
+            Value<bool> deleted = const Value.absent(),
+            required int updatedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookCustomCssCompanion.insert(
+            bookKey: bookKey,
+            relativePath: relativePath,
+            content: content,
+            deleted: deleted,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $BookCustomCssTable,
+    BookCustomCssRow,
+    $$BookCustomCssTableFilterComposer,
+    $$BookCustomCssTableOrderingComposer,
+    $$BookCustomCssTableAnnotationComposer,
+    $$BookCustomCssTableCreateCompanionBuilder,
+    $$BookCustomCssTableUpdateCompanionBuilder,
+    (
+      BookCustomCssRow,
+      BaseReferences<_$HibikiDatabase, $BookCustomCssTable, BookCustomCssRow>
+    ),
+    BookCustomCssRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -25965,4 +26468,6 @@ class $HibikiDatabaseManager {
       get bookTagMembershipTombstones =>
           $$BookTagMembershipTombstonesTableTableManager(
               _db, _db.bookTagMembershipTombstones);
+  $$BookCustomCssTableTableManager get bookCustomCss =>
+      $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
 }
