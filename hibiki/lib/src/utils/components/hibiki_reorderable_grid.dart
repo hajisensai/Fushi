@@ -278,8 +278,18 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       _autoScrollStepSigned = 0;
       return;
     }
+    // 仅纵向 Scrollable 参与（横向祖先误滚防御）。
+    if (sc.position.axis != Axis.vertical) {
+      _autoScrollStepSigned = 0;
+      return;
+    }
     final ScrollPosition pos = sc.position;
-    final Rect viewport = ro.localToGlobal(Offset.zero) & ro.size;
+    // 完整变换取**屏幕**矩形：本组件运行在 HibikiAppUiScale 的祖先缩放之下
+    //（BUG-757），`localToGlobal(zero) & size` 把缩放后的原点和未缩放的布局
+    // 尺寸混拼——scale<1 时底边高估、边缘带够不到（自动滚动失效），scale>1
+    // 时边缘带侵入视口中部（误触发）。transformRect 连尺寸一起过变换。
+    final Rect viewport = MatrixUtils.transformRect(
+        ro.getTransformTo(null), Offset.zero & ro.size);
     double step = 0;
     if (globalPosition.dy < viewport.top + _autoScrollEdge &&
         pos.pixels > pos.minScrollExtent) {
