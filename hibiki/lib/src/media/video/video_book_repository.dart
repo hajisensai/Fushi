@@ -42,6 +42,16 @@ class VideoBookRepository {
     }
   }
 
+  /// tags 稳健档 LWW：把远端标签快照（名→加入戳 + 移除墓碑）合并进视频 [bookUid]。
+  /// 删除/改名跨端传播、防复活（见 [HibikiDatabase.mergeRemoteVideoTags]）。
+  Future<void> mergeRemoteVideoTags(
+    String bookUid, {
+    required Map<String, int> remoteAddedAt,
+    Map<String, int> remoteTombstones = const <String, int>{},
+  }) =>
+      _db.mergeRemoteVideoTags(bookUid,
+          remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
+
   /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
   /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，与 v38 迁移
   /// `splitPlaylistVideoBooksV38` 落库形状对齐（每集自带 positionMs 进 lastPositionMs；

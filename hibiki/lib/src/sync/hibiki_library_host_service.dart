@@ -206,6 +206,8 @@ class RemoteBookInfo {
     this.coverPath,
     this.hasAudiobook = false,
     this.tags = const <String>[],
+    this.tagsAddedAt = const <String, int>{},
+    this.tagTombstones = const <String, int>{},
     this.collection,
   });
 
@@ -224,6 +226,13 @@ class RemoteBookInfo {
   /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
   final List<String> tags;
 
+  /// tags 稳健档 LWW：标签「名→加入戳」（client mergeRemoteBookTags 用）。空 = 旧 host
+  /// 未带（退化为按 [tags] 名单只增 + 尊重本地移除墓碑）。
+  final Map<String, int> tagsAddedAt;
+
+  /// tags 稳健档 LWW：标签移除墓碑「名→移除戳」（host 移除标签跨端传播、防复活）。
+  final Map<String, int> tagTombstones;
+
   /// 该书在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
   /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
   final RemoteCollectionMembership? collection;
@@ -241,6 +250,8 @@ class RemoteBookInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (hasAudiobook) 'hasAudiobook': true,
         if (tags.isNotEmpty) 'tags': tags,
+        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
       };
 
@@ -251,6 +262,8 @@ class RemoteBookInfo {
     String? coverPath,
     bool? hasAudiobook,
     List<String>? tags,
+    Map<String, int>? tagsAddedAt,
+    Map<String, int>? tagTombstones,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteBookInfo(
@@ -262,6 +275,8 @@ class RemoteBookInfo {
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
         tags: tags ?? this.tags,
+        tagsAddedAt: tagsAddedAt ?? this.tagsAddedAt,
+        tagTombstones: tagTombstones ?? this.tagTombstones,
         collection: collection ?? this.collection,
       );
 
@@ -279,6 +294,8 @@ class RemoteBookInfo {
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
       tags: _jsonStringList(json['tags']),
+      tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
+      tagTombstones: _jsonNameIntMap(json['tagTombstones']),
       collection: RemoteCollectionMembership.fromJson(json['collection']),
     );
   }
@@ -689,6 +706,8 @@ class RemoteVideoInfo {
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
+    this.tagsAddedAt = const <String, int>{},
+    this.tagTombstones = const <String, int>{},
     this.collection,
   });
 
@@ -712,6 +731,13 @@ class RemoteVideoInfo {
   /// 该视频在 host 端的标签名列表（TODO-1165）。标签每设备本地，只传名；
   /// client 下载后 getOrCreateTagByName + addTagToVideoBook 重建映射。
   final List<String> tags;
+
+  /// tags 稳健档 LWW：标签「名→加入戳」（下载端 mergeRemoteVideoTags 用，云清单携带）。
+  /// 空 = 旧端未带（退化为按 [tags] 名单只增）。
+  final Map<String, int> tagsAddedAt;
+
+  /// tags 稳健档 LWW：标签移除墓碑「名→移除戳」（跨端传播删除/改名、防复活）。
+  final Map<String, int> tagTombstones;
 
   /// 该视频在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
   /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
@@ -761,6 +787,8 @@ class RemoteVideoInfo {
           if (currentEpisode > 0) 'currentEpisode': currentEpisode,
         },
         if (tags.isNotEmpty) 'tags': tags,
+        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
       };
 
@@ -791,6 +819,8 @@ class RemoteVideoInfo {
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
+        tagsAddedAt: tagsAddedAt,
+        tagTombstones: tagTombstones,
         collection: collection ?? this.collection,
       );
 
@@ -818,8 +848,25 @@ class RemoteVideoInfo {
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),
+      tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
+      tagTombstones: _jsonNameIntMap(json['tagTombstones']),
     );
   }
+}
+
+/// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。
+Map<String, int> _jsonNameIntMap(Object? raw) {
+  if (raw is! Map) return const <String, int>{};
+  final Map<String, int> out = <String, int>{};
+  raw.forEach((Object? k, Object? v) {
+    final String name = k?.toString() ?? '';
+    if (name.isEmpty) return;
+    final int? ms = v is int
+        ? v
+        : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
+    if (ms != null) out[name] = ms;
+  });
+  return out;
 }
 
 List<RemoteVideoEpisode> _jsonVideoEpisodes(Object? value) {

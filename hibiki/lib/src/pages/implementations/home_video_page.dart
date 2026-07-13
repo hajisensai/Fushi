@@ -453,6 +453,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       id: e.uid,
       title: e.title,
       sizeBytes: e.sizeBytes,
+      // tags 稳健档：把清单条目的标签 LWW 时钟带进 RemoteVideoInfo，供下载后
+      // mergeRemoteVideoTags 按名 max(add) vs max(removed) 解析（删除/改名传播）。
+      tagsAddedAt: e.tagsAddedAt,
+      tagTombstones: e.tagTombstones,
     );
   }
 
@@ -1240,9 +1244,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
     }
-    // TODO-1165：按标签名重建视频标签映射（host 按名传来，只增不删）。
-    if (video.tags.isNotEmpty) {
-      await widget.repo.applyTagNamesToVideoBook(bookUid, video.tags);
+    // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名传播、防复活）。
+    // host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteVideoTags；旧 host 只有 tags
+    // 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
+    if (video.tagsAddedAt.isNotEmpty ||
+        video.tagTombstones.isNotEmpty ||
+        video.tags.isNotEmpty) {
+      final Map<String, int> remoteAddedAt = video.tagsAddedAt.isNotEmpty
+          ? video.tagsAddedAt
+          : <String, int>{
+              for (final String name in video.tags)
+                if (name.isNotEmpty) name: 1,
+            };
+      await widget.repo.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: remoteAddedAt,
+        remoteTombstones: video.tagTombstones,
+      );
     }
     // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
     // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
@@ -1275,6 +1293,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       embeddedSubtitleTrack: const Value<int?>(0),
       importedAt: Value(DateTime.now()),
     ));
+    // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
+    if (video.tagsAddedAt.isNotEmpty || video.tagTombstones.isNotEmpty) {
+      await widget.repo.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: video.tagsAddedAt,
+        remoteTombstones: video.tagTombstones,
+      );
+    }
     // 封面：先试云端封面资产（可选，无封面记录返回 false 不抛）；失败/无则本地抽帧兜底。
     // 与建行解耦（抽帧走 ffmpeg 慢，绝不挡建行落库），抽好后 updateCover 回写并刷新一次。
     bool gotCover = false;
