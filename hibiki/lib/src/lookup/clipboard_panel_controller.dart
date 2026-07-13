@@ -388,6 +388,8 @@ class ClipboardPanelController {
       // 关闭时恒 1.0（不透明卡，保持现观感、零破坏）。native 若回退 windowed（DComp
       // 不可用），cardBgAlpha=0 会露出黑（透明背景色），但那是无 GPU 的极端环境。
       cardBgAlpha: model.clipboardPanelTransparent ? 0.0 : 1.0,
+      // 阶段三 — 面板栏悬停显示：开启后面板栏平时收起、鼠标移顶部才淡入。
+      peek: model.clipboardPanelPeek,
       sentenceHitStart: hit.length > 0 ? hit.start : -1,
       sentenceHitLength: hit.length,
     );

@@ -467,6 +467,26 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 面板栏「悬停显示」：开启后拖动/图钉/关闭栏平时收起，鼠标移到窗口顶部
+          // 才淡入——平时只剩文字浮着，配合背景透明是完整的「字幕」观感。
+          SettingsSwitchItem(
+            id: 'lookup.clipboard_panel_peek',
+            title: t.clipboard_panel_peek,
+            subtitle: t.clipboard_panel_peek_hint,
+            icon: Icons.unfold_less_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.panel,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.clipboardPanelPeek,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setClipboardPanelPeek(value);
+              await ClipboardPanelController.instance.refreshTransparency();
+              settingsContext.refresh();
+            },
+          ),
           // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
           // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
           // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，

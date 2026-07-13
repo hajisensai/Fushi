@@ -162,6 +162,28 @@
   // SetTopmost applies it); Dart syncs this visual via setPanelPinnedVisual on
   // panel show so the bar icon matches the remembered pref.
   var panelPinnedVisual = true;
+  // 阶段三 — 面板栏「悬停显示」(peek)：true 时面板栏平时收起（透明+上移、不挡内容），
+  // 鼠标移到窗口顶部触发区才淡入；只剩文字浮着，需要拖/钉/关时把鼠标移上去即可。
+  var panelPeekEnabled = false;
+
+  // className 字符串增删（面板 host 不用 classList——node 假 DOM 只有 className 串，
+  // 与 setPanelPinnedVisual 的字符串走法一致，保证同一代码路径可离屏测）。
+  function hasClass(el, cls) {
+    return (' ' + ((el && el.className) || '') + ' ').indexOf(
+      ' ' + cls + ' ') >= 0;
+  }
+  function addClass(el, cls) {
+    if (el && !hasClass(el, cls)) {
+      el.className = (((el.className || '') + ' ' + cls)).replace(/^\s+/, '');
+    }
+  }
+  function removeClass(el, cls) {
+    if (el) {
+      el.className = (' ' + (el.className || '') + ' ')
+        .split(' ' + cls + ' ').join(' ')
+        .replace(/^\s+|\s+$/g, '');
+    }
+  }
 
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
@@ -381,6 +403,17 @@
         '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
         'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
         '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.45;}' +
+        // 阶段三 — peek：面板栏平时收起（透明+上移、不吃点击），移入顶部触发区
+        // （global-lookup-panel-peek-zone）才淡入（.panel-peek-shown）。
+        '#global-lookup-panel-bar.panel-peek{opacity:0;' +
+        'transform:translateY(-100%);' +
+        'transition:opacity 0.18s ease,transform 0.18s ease;' +
+        'pointer-events:none;}' +
+        '#global-lookup-panel-bar.panel-peek.panel-peek-shown{opacity:1;' +
+        'transform:translateY(0);pointer-events:auto;}' +
+        '#global-lookup-panel-peek-zone{position:fixed;left:0;top:0;right:0;' +
+        'height:14px;z-index:2147483000;pointer-events:auto;' +
+        'background:transparent;}' +
         // Bottom-right resize grip (posts beginWindowResize).
         '#global-lookup-panel-resize{' +
         'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
@@ -476,6 +509,41 @@
     }, true);
     (document.body || document.documentElement).appendChild(resize);
     return bar;
+  }
+
+  // 阶段三 — 应用/取消面板栏「悬停显示」(peek)。启用：给栏加 panel-peek（CSS 收起），
+  // 并在窗口顶部装一条透明触发区，鼠标进入→显示栏（栏显示后覆盖在触发区之上）；
+  // 鼠标移出栏→收回。禁用：移除 peek 类 + 触发区。幂等，仅面板模式调用。
+  function applyPanelPeek(bar, enabled) {
+    panelPeekEnabled = !!enabled;
+    if (!bar) {
+      return;
+    }
+    if (!enabled) {
+      removeClass(bar, 'panel-peek');
+      removeClass(bar, 'panel-peek-shown');
+      var oldZone = document.getElementById &&
+          document.getElementById('global-lookup-panel-peek-zone');
+      if (oldZone && oldZone.parentNode &&
+          typeof oldZone.parentNode.removeChild === 'function') {
+        oldZone.parentNode.removeChild(oldZone);
+      }
+      return;
+    }
+    addClass(bar, 'panel-peek');
+    var zone = document.getElementById &&
+        document.getElementById('global-lookup-panel-peek-zone');
+    if (!zone) {
+      zone = document.createElement('div');
+      zone.id = 'global-lookup-panel-peek-zone';
+      zone.addEventListener('mouseenter', function () {
+        addClass(bar, 'panel-peek-shown');
+      }, false);
+      (document.body || document.documentElement).appendChild(zone);
+      bar.addEventListener('mouseleave', function () {
+        removeClass(bar, 'panel-peek-shown');
+      }, false);
+    }
   }
 
   // spec 2026-07-10 — syncs the pin button's VISUAL state to the Dart pref
@@ -1261,6 +1329,9 @@
       if (panelBar && (rootTheme === 'dark' || rootTheme === 'light')) {
         panelBar.setAttribute('data-theme', rootTheme);
       }
+      // 阶段三 — 面板栏「悬停显示」：payload.peek 驱动收起/常显（每次渲染重申，
+      // Dart 侧开关切换即时生效）。
+      applyPanelPeek(panelBar, !!(payload && payload.peek));
     }
     if (!popups.length) {
       removeMissing([]);
@@ -1776,6 +1847,7 @@
     dismissRootWithSlide: dismissRootWithSlide,
     // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).
     setPanelPinnedVisual: setPanelPinnedVisual,
+    applyPanelPeek: applyPanelPeek,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.
