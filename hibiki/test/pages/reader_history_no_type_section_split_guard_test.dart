@@ -64,7 +64,7 @@ void main() {
       isTrue,
       reason: 'EPUB 卡应作为 _ShelfBookSlot payload 进入同一合并列表',
     );
-    // BUG-756：seq 假名次已删——两类同进一个 shelfItems 列表（SRT 段在前、EPUB
+    // BUG-777：seq 假名次已删——两类同进一个 shelfItems 列表（SRT 段在前、EPUB
     // 段在后的字面顺序即合并证据），排序量纲改由 compareShelfSortKeys 推导。
     expect(
       body.contains('for (final SrtBook srt in srtBooks)') &&

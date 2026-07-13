@@ -1,4 +1,4 @@
-## BUG-756 · 继续阅读hero与书架最近阅读按导入序选书而非最近阅读序
+## BUG-777 · 继续阅读hero与书架最近阅读按导入序选书而非最近阅读序
 - **报告**：2026-07-12（用户：「这个继续阅读显示不对，我明明刚刚看的是另一本书。并且好像也没同步远端」，PR#41 真机测试反馈）
 - **真实性**：✅ 真 bug。根因链：
   - `packages/hibiki_core/lib/src/database/database.dart:3106` — `getAllEpubBooks()` 按 `importedAt DESC` 排序，这是 `hibikiBooksProvider` 的唯一顺序来源；

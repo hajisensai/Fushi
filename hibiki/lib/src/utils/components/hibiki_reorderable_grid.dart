@@ -36,7 +36,7 @@ typedef HibikiReorderGridContextMenu = void Function(
 ///   **原地松手**（未移动）→ 上下文菜单。触摸没有右键，故长按同时承载「拿起拖拽」与
 ///   「弹出菜单」，用是否移动过 slop 消歧——这是触摸端唯一自洽的编排。
 ///
-/// **为什么不用 `ReorderableListView` / pub `ReorderableGridView`**（BUG-757）：
+/// **为什么不用 `ReorderableListView` / pub `ReorderableGridView`**（BUG-778）：
 /// SDK/pub 的拖拽代理把浮层放进 [Overlay]，用「全局坐标 − overlay 原点」纯平移定位，
 /// 不认祖先 [Transform.scale]；整棵树被缩放时代理落点按 `(1−s)×距离` 漂移、缩小时
 /// 一拖即飞出屏幕。本组件不借助任何 Overlay：浮层复制渲染在本网格自身 [Stack]
@@ -285,7 +285,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     }
     final ScrollPosition pos = sc.position;
     // 完整变换取**屏幕**矩形：本组件运行在 HibikiAppUiScale 的祖先缩放之下
-    //（BUG-757），`localToGlobal(zero) & size` 把缩放后的原点和未缩放的布局
+    //（BUG-778），`localToGlobal(zero) & size` 把缩放后的原点和未缩放的布局
     // 尺寸混拼——scale<1 时底边高估、边缘带够不到（自动滚动失效），scale>1
     // 时边缘带侵入视口中部（误触发）。transformRect 连尺寸一起过变换。
     final Rect viewport = MatrixUtils.transformRect(

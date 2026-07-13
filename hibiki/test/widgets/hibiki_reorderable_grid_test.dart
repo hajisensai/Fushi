@@ -267,7 +267,7 @@ void main() {
 
   testWidgets(
       'mouse drag reorders under 0.5 UI scale without flying off (de-scale — '
-      'SDK/pub Reorderable grids fail here, BUG-757)',
+      'SDK/pub Reorderable grids fail here, BUG-778)',
       (WidgetTester tester) async {
     final List<int> calls = <int>[];
     final List<String> order = <String>['A', 'B', 'C'];

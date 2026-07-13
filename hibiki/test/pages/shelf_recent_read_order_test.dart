@@ -9,7 +9,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-756：继续阅读 hero 与书架「最近阅读」曾按 provider 列表序（=
+/// BUG-777：继续阅读 hero 与书架「最近阅读」曾按 provider 列表序（=
 /// `getAllEpubBooks` 的 importedAt 倒序）当「最近访问序」用——刚读过的老书永远
 /// 选不中/排不前。锁死修复的两层：
 /// ① [mostRecentlyReadCandidate] 纯选择器（hero 选「最后阅读时间」最大者）；
@@ -26,7 +26,7 @@ void main() {
         <String>['新导入在读', '刚读过的老书'],
         (String s) => s == '刚读过的老书' ? 200 : 100,
       );
-      expect(hero, '刚读过的老书', reason: '刚读的书必须赢过更晚导入的书（BUG-756 原症状）');
+      expect(hero, '刚读过的老书', reason: '刚读的书必须赢过更晚导入的书（BUG-777 原症状）');
     });
 
     test('全部无时间戳（0）保留首个候选 = 旧行为退化（映射未加载时不闪变）', () {

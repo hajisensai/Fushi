@@ -33,7 +33,7 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
 });
 
 /// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=bookKey，
-/// EPUB/SRT 同源——SRT 书经阅读器落位置也用 bookKey）。BUG-756：继续阅读 hero
+/// EPUB/SRT 同源——SRT 书经阅读器落位置也用 bookKey）。BUG-777：继续阅读 hero
 /// 与书架「最近阅读」排序的唯一 recency 真相源；关书时与 [hibikiBooksProvider]
 /// 同点失效（[ReaderHibikiSource.onSourceExit]），不会陈旧。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
@@ -243,7 +243,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
   }) async {
     ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-    // BUG-756：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
+    // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
   }

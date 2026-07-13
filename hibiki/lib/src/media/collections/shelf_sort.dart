@@ -7,7 +7,7 @@ library;
 /// 库页排序方式。`.name` 即偏好持久化值（shelf_sort_mode / video_sort_mode）。
 enum ShelfSortMode {
   /// 最近（默认）：书架=最近阅读（`reader_positions.updatedAt`，没读过退导入
-  /// 时间，BUG-756），视频=最近观看（watch-stats，无记录退导入时间）。
+  /// 时间，BUG-777），视频=最近观看（watch-stats，无记录退导入时间）。
   recent,
 
   /// 名称（natural 排序：卷1 < 卷2 < 卷10）。
@@ -34,7 +34,7 @@ class ShelfSortKey {
   });
 
   /// 「最近」量纲，越大越新。视频=watch-stats 毫秒戳（无记录退 importedAt）；
-  /// 书架=`reader_positions.updatedAt` 毫秒戳（没读过退 importedAt，BUG-756：
+  /// 书架=`reader_positions.updatedAt` 毫秒戳（没读过退 importedAt，BUG-777：
   /// 旧实现把 provider 下标当历史名次，实际是导入序）。
   final int recentScore;
 
@@ -121,7 +121,7 @@ int naturalCompare(String a, String b) {
   return a.compareTo(b);
 }
 
-/// BUG-756：继续阅读 hero 的候选选择——在候选里选 [lastReadAt] 最大者（严格
+/// BUG-777：继续阅读 hero 的候选选择——在候选里选 [lastReadAt] 最大者（严格
 /// 大于才替换）；并列（含全部无时间戳 = 0）保留先出现者，退化为调用方列表序。
 /// 候选为空返回 null。
 T? mostRecentlyReadCandidate<T>(

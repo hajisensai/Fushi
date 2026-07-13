@@ -1,4 +1,4 @@
-## BUG-757 · 合集详情页拖拽排序不吃界面大小缩放拖动位置错位
+## BUG-778 · 合集详情页拖拽排序不吃界面大小缩放拖动位置错位
 - **报告**：2026-07-13（用户：「合集里面好像没吃界面大小缩放，导致拖动位置错误」，PR#41 真机测试反馈）
 - **真实性**：✅ 真 bug，已知 SDK 缺陷的复发。根因链：
   - `hibiki/lib/src/pages/implementations/media_collection_detail_page.dart`（排序交互重设计 a16aec742 前身引入）用 SDK `ReorderableListView.builder` 做拖拽排集；

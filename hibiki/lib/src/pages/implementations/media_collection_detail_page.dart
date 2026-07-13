@@ -299,7 +299,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage> {
                       ),
                       const Divider(height: 1),
                       Expanded(
-                        // 排序交互重设计层次 B1：拖拽精修。BUG-757：SDK 的
+                        // 排序交互重设计层次 B1：拖拽精修。BUG-778：SDK 的
                         // ReorderableListView 拖拽代理用「全局坐标−overlay 原点」
                         // 纯平移，不认祖先 Transform.scale（HibikiAppUiScale 的
                         // 浏览器式整体缩放）——界面大小≠100% 时拖动位置按

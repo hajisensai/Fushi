@@ -104,7 +104,7 @@ void main() {
         reason: '整理排序页必须保持删除');
     // 共享 2D 拖拽网格当年随整理页删除（零消费者）；现书籍合集详情页重新需要它做
     // 网格内拖排（有消费者），且新实现消缩放（浮层渲染在组件自身 Stack、指针
-    // globalToLocal 消祖先 Transform.scale，非 SDK/pub 的 Overlay 平移代理，BUG-757）。
+    // globalToLocal 消祖先 Transform.scale，非 SDK/pub 的 Overlay 平移代理，BUG-778）。
     // 断言按新现实：文件必须存在、含 globalToLocal（消缩放核心），且详情页真在用。
     final File reorderGrid =
         File('lib/src/utils/components/hibiki_reorderable_grid.dart');
@@ -125,7 +125,7 @@ void main() {
       'ReorderableDragStartListener(',
     ]) {
       expect(gridPageSrc.contains(banned), isFalse,
-          reason: 'SDK/pub Reorderable 在 UI 缩放下拖动漂移（BUG-757），详情页不得回潮（$banned）');
+          reason: 'SDK/pub Reorderable 在 UI 缩放下拖动漂移（BUG-778），详情页不得回潮（$banned）');
     }
     for (final String banned in <String>['ShelfReorderPage', 'onOrganize:']) {
       expect(homeSrc.contains(banned), isFalse,
@@ -203,7 +203,7 @@ void main() {
     final String gridDetailSrc = File(
       'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
     ).readAsStringSync();
-    // BUG-757：SDK ReorderableListView 的拖拽代理不认祖先 Transform.scale
+    // BUG-778：SDK ReorderableListView 的拖拽代理不认祖先 Transform.scale
     // （界面大小缩放下拖动漂移），详情页拖拽必须用自实现的
     // HibikiReorderableColumn（本地坐标消缩放）；裸 SDK 组件回潮即转红。
     expect(videoDetailSrc.contains('HibikiReorderableColumn'), isTrue,
@@ -216,7 +216,7 @@ void main() {
       'ReorderableDragStartListener(',
     ]) {
       expect(videoDetailSrc.contains(banned), isFalse,
-          reason: 'SDK Reorderable 组件在 UI 缩放下拖动漂移（BUG-757），不得回潮（$banned）');
+          reason: 'SDK Reorderable 组件在 UI 缩放下拖动漂移（BUG-778），不得回潮（$banned）');
     }
     expect(videoDetailSrc.contains('reorderCollectionItems'), isTrue,
         reason: '视频详情页排序必须写穿 sortIndex（层次 C 真相源）');
@@ -278,7 +278,7 @@ void main() {
         reason: '视频库须按远端拉取失败门控（离线不显示远端占位）');
   });
 
-  test('BUG-756：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
+  test('BUG-777：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
     final String sourceSrc =
         File('lib/src/media/sources/reader_hibiki_source.dart')
             .readAsStringSync();
@@ -295,7 +295,7 @@ void main() {
     expect(exitEnd, isNonNegative);
     final String exitBody = sourceSrc.substring(exitFn, exitEnd);
     expect(exitBody.contains('ref.invalidate(bookLastReadAtProvider)'), isTrue,
-        reason: '关书必须同点失效 recency 映射（BUG-756 刷新语义）');
+        reason: '关书必须同点失效 recency 映射（BUG-777 刷新语义）');
     // 书架页：hero 按最后阅读时间选书；「最近阅读」读同一映射、没读过退
     // importedAt；provider 下标假名次（实为导入序）不得回潮。
     expect(historySrc.contains('mostRecentlyReadCandidate'), isTrue,

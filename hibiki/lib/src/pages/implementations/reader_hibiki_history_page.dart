@@ -527,14 +527,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       };
 
   /// 每本书（bookKey → reader_positions.updatedAt 毫秒）的最后阅读时间；
-  /// 关书时经 [ReaderHibikiSource.onSourceExit] 与书列表同点失效（BUG-756）。
+  /// 关书时经 [ReaderHibikiSource.onSourceExit] 与书列表同点失效（BUG-777）。
   Map<String, int> get _lastReadAtByBookKey =>
       ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
 
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
   /// title 取合集名）。recentScore = 最后阅读时间（[_lastReadAtByBookKey]，
   /// EPUB/SRT 同走 bookKey），没读过退 importedAt——与视频页 watch-stats 语义
-  /// 镜像（BUG-756：旧的 -历史序名次实为 SRT 表序+EPUB 导入序，假 recency）；
+  /// 镜像（BUG-777：旧的 -历史序名次实为 SRT 表序+EPUB 导入序，假 recency）；
   /// importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
   /// [_epubImportedAtByKey]，srt 自带）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
@@ -689,7 +689,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   ///
   /// 数据边界（诚实外显）：hero = 在读（0<position<duration）EPUB 中「最后阅读
   /// 时间」（[bookLastReadAtProvider]，即 reader_positions.updatedAt）最新者，
-  /// 显示「已读 x%」；无候选整块只剩统计。BUG-756：旧实现取列表第一本在读书，
+  /// 显示「已读 x%」；无候选整块只剩统计。BUG-777：旧实现取列表第一本在读书，
   /// 但列表序 = getAllEpubBooks 的 importedAt 倒序，选中的是「最近导入」而非
   /// 「最近阅读」的书。统计 = 总数（EPUB+SRT）/ 在读 / 读完（后两格按 EPUB
   /// 进度；SRT 卡无统一进度数据，不硬造）。宽 >=720 并排、窄屏堆叠。
@@ -949,7 +949,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
     // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
     // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
-    // （[_lastReadAtByBookKey]，BUG-756），不再依赖列表下标假名次。
+    // （[_lastReadAtByBookKey]，BUG-777），不再依赖列表下标假名次。
     final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
         <CollectionOrderingItem<_ShelfBookSlot>>[
       for (final SrtBook srt in srtBooks)
@@ -1629,7 +1629,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
 /// 书架混排网格的单个排序槽（SRT / EPUB / 远端占位三类卡片到一个有序列表）。
 /// [srt]/[epub]/[remote] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
-/// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-756）。
+/// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-777）。
 ///
 /// [remote] = 多端库联合视图（spec 2026-07-12 §2.1）的「远端有、本地无」占位卡：
 /// 无本地 importedAt/lastReadAt，排序退化到目录序（注入时以 `-1-index` 编码进

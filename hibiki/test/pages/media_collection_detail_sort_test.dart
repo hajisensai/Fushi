@@ -128,7 +128,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // BUG-757 后拖拽走 HibikiReorderableColumn：触摸 = 长按整行起拖（鼠标即
+    // BUG-778 后拖拽走 HibikiReorderableColumn：触摸 = 长按整行起拖（鼠标即
     // 拖）。三行从上到下 = Beta / 第10话 / 第9话；长按首行（Beta）往下拖两行。
     final TestGesture gesture =
         await tester.startGesture(tester.getCenter(find.text('Beta')));
