@@ -192,7 +192,7 @@ void main() {
       expect(containerRule, contains('flex-direction: row;'));
 
       // Scrolling is delta/incremental to dodge vertical-rl's negative scrollX
-      // coordinate, not absolute scrollTo. BUG-768: the delta is applied to the
+      // coordinate, not absolute scrollTo. BUG-781: the delta is applied to the
       // real overflow container's scrollLeft (vertical mode = horizontal scroll),
       // not window.scrollBy (which no-ops because body, not html, is the scroller).
       expect(html, contains('s.scrollLeft += d'));

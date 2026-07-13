@@ -51,7 +51,7 @@ void main() {
   });
 
   test(
-      'lyrics scroll targets the real overflow container, not window (BUG-768)',
+      'lyrics scroll targets the real overflow container, not window (BUG-781)',
       () {
     final String html = LyricsModeHtml.generate(
       cues: <AudioCue>[cue(0), cue(1), cue(2)],
@@ -62,7 +62,7 @@ void main() {
       fontSize: 20,
     );
 
-    // BUG-768: `html,body{height:100%;overflow-x:hidden}` 让 overflow-y 计算成 auto，
+    // BUG-781: `html,body{height:100%;overflow-x:hidden}` 让 overflow-y 计算成 auto，
     // body 才是真正滚动容器；旧码 `window.scrollBy` 作用于 scrollingElement(html) → 空转，
     // 高亮更新但页面不跟随滚动。修后必须滚真正有溢出的元素、且不再用 window.scrollBy。
     expect(html, isNot(contains('window.scrollBy(')));

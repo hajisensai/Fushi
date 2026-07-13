@@ -104,7 +104,7 @@ void main() {
   });
 
   test(
-      'lyrics mode persists across re-entry via safe deferred restore (BUG-769)',
+      'lyrics mode persists across re-entry via safe deferred restore (BUG-782)',
       () {
     final String src = readReaderPageSource();
 

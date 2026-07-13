@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
-  // BUG-769: 歌词模式改为可跨会话恢复（用户请求「重进书籍还在歌词模式」）。fresh open
+  // BUG-782: 歌词模式改为可跨会话恢复（用户请求「重进书籍还在歌词模式」）。fresh open
   // 仍以正文起步（绝不由 persisted lyrics_mode 直接整页加载歌词 HTML 跳过 EPUB —— iOS
   // 大字幕书白屏的根因），但改为**捕获待恢复意图**（保留偏好），等 EPUB 就绪 + 有声书
   // 挂载后再切歌词（见 _onChapterLoadComplete 的 _pendingLyricsRestore 触发，另有守卫）。
@@ -26,7 +26,7 @@ void main() {
       isNot(contains('_lyricsMode = ReaderHibikiSource.instance.lyricsMode')),
       reason: 'fresh open 不应由 persisted lyrics_mode 直接驱动 UI 模式（仍先正文）。',
     );
-    // BUG-769: 捕获意图代替抹除——保留偏好以便延迟恢复。
+    // BUG-782: 捕获意图代替抹除——保留偏好以便延迟恢复。
     expect(
       initSource,
       contains('_pendingLyricsRestore = ReaderHibikiSource.instance.lyricsMode;'),
@@ -35,7 +35,7 @@ void main() {
     expect(
       initSource,
       isNot(contains('setLyricsMode(false)')),
-      reason: 'BUG-769: 不再在 _initBookInner 抹除偏好，否则跨会话恢复失效。',
+      reason: 'BUG-782: 不再在 _initBookInner 抹除偏好，否则跨会话恢复失效。',
     );
   });
 }

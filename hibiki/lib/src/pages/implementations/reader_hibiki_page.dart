@@ -1238,7 +1238,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
-  // BUG-769: 「上次退出时在歌词模式」的待恢复意图。fresh open 仍先以正文加载
+  // BUG-782: 「上次退出时在歌词模式」的待恢复意图。fresh open 仍先以正文加载
   // （_lyricsMode=false，避免直接整页加载歌词 HTML 跳过 EPUB → iOS 白屏），等 EPUB
   // 内容就绪 + 有声书已挂载后再切歌词（等价用户手动切，已知安全）。一次性，恢复后清零。
   bool _pendingLyricsRestore = false;
@@ -1680,7 +1680,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _syncDictionaryTheme();
 
-    // BUG-769: 歌词模式改为可跨会话恢复（用户请求「重进书籍还在歌词模式」）。
+    // BUG-782: 歌词模式改为可跨会话恢复（用户请求「重进书籍还在歌词模式」）。
     // fresh open 仍先以正文加载（_lyricsMode=false）——直接按 persisted lyrics_mode
     // 让 WebView 整页加载歌词 HTML、跳过 EPUB 正文，iOS 大字幕书会内容超时甚至白屏。
     // 这里把「上次是歌词模式」记成待恢复意图（保留偏好、不再抹除），等 EPUB 内容就绪

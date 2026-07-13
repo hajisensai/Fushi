@@ -195,7 +195,7 @@ function _lyricsCenterDelta(el) {
   var elCenterY = r.top + r.height / 2;
   return elCenterY - (window.innerHeight / 2);
 }
-// BUG-768: `html, body { height:100%; overflow-x:hidden }` —— 按 CSS 规范，overflow-x
+// BUG-781: `html, body { height:100%; overflow-x:hidden }` —— 按 CSS 规范，overflow-x
 // 非 visible 会把 overflow-y 从 visible **计算成 auto**，于是 body 恰好填满 html、真正
 // 溢出滚动的是 **body**，而 `window.scrollBy` 作用于 `document.scrollingElement`(=html，
 // body 等高无溢出) → **空转 no-op**：当前句高亮会更新，但页面永不跟随滚动、初始也不居中
