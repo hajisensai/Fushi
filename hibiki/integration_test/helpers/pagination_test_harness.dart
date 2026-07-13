@@ -10,11 +10,30 @@ import 'package:flutter/foundation.dart';
 const String paginationHarnessJs = r'''
 (function() {
   window.hoshiTestHarness = {
+    visibleBounds: function() {
+      var cs = getComputedStyle(document.body);
+      var top = Math.max(0, parseFloat(cs.paddingTop) || 0);
+      var bottom = Math.max(top, window.innerHeight -
+        Math.max(0, parseFloat(cs.paddingBottom) || 0));
+      var left = Math.max(0, parseFloat(cs.paddingLeft) || 0);
+      var right = Math.max(left, window.innerWidth -
+        Math.max(0, parseFloat(cs.paddingRight) || 0));
+      return { top: top, bottom: bottom, left: left, right: right };
+    },
+
+    markerClientRects: function(marker) {
+      var range = document.createRange();
+      range.selectNodeContents(marker);
+      var rects = Array.from(range.getClientRects());
+      return rects.length > 0 ? rects : Array.from(marker.getClientRects());
+    },
+
     getVisibleMarkers: function() {
       var markers = document.querySelectorAll('[id^="m"]');
       var visible = [];
-      var wh = window.innerHeight;
-      var ww = window.innerWidth;
+      var bounds = this.visibleBounds();
+      var visibleWidth = bounds.right - bounds.left;
+      var visibleHeight = bounds.bottom - bounds.top;
       for (var i = 0; i < markers.length; i++) {
         // A marker counts as "on this page" only when SUBSTANTIALLY visible.
         // Use per-fragment client rects (not the union getBoundingClientRect,
@@ -23,7 +42,7 @@ const String paginationHarnessJs = r'''
         // tiny sliver bleeding into the page margin (e.g. next page's content
         // peeking ~20px at the bottom edge) from being double-counted on two
         // adjacent pages, while still flagging genuine large overlaps.
-        var rects = markers[i].getClientRects();
+        var rects = this.markerClientRects(markers[i]);
         var visibleArea = 0;
         var totalArea = 0;
         for (var r = 0; r < rects.length; r++) {
@@ -32,8 +51,10 @@ const String paginationHarnessJs = r'''
           var h = rect.height;
           if (w <= 0 || h <= 0) continue;
           totalArea += w * h;
-          var ix = Math.max(0, Math.min(rect.right, ww) - Math.max(rect.left, 0));
-          var iy = Math.max(0, Math.min(rect.bottom, wh) - Math.max(rect.top, 0));
+          var ix = Math.max(0, Math.min(rect.right, bounds.right) -
+            Math.max(rect.left, bounds.left));
+          var iy = Math.max(0, Math.min(rect.bottom, bounds.bottom) -
+            Math.max(rect.top, bounds.top));
           visibleArea += ix * iy;
         }
         if (totalArea <= 0) continue;
@@ -42,7 +63,7 @@ const String paginationHarnessJs = r'''
         // itself is shown; a paragraph taller than the viewport counts when it
         // fills >=50% of the screen. Using the element area alone wrongly
         // drops tall paragraphs (they can never reach 50% of themselves).
-        var denom = Math.min(totalArea, ww * wh);
+        var denom = Math.min(totalArea, visibleWidth * visibleHeight);
         if ((visibleArea / denom) >= 0.5) {
           visible.push(markers[i].id);
         }
@@ -69,6 +90,7 @@ const String paginationHarnessJs = r'''
         columnPitch: ctx.pageSize,
         pageSize: ctx.pageSize,
         maxScroll: metrics.maxScroll,
+        physicalMaxScroll: ctx.physicalMaxScroll,
         minScroll: metrics.minScroll,
         totalChars: metrics.totalChars,
         vertical: ctx.vertical
@@ -131,23 +153,27 @@ const String paginationHarnessJs = r'''
     // id -> fraction for markers with any visible area.
     markerFractions: function() {
       var markers = document.querySelectorAll('[id^="m"]');
-      var wh = window.innerHeight;
-      var ww = window.innerWidth;
+      var bounds = this.visibleBounds();
+      var visibleWidth = bounds.right - bounds.left;
+      var visibleHeight = bounds.bottom - bounds.top;
       var map = {};
       for (var i = 0; i < markers.length; i++) {
-        var rects = markers[i].getClientRects();
+        var rects = this.markerClientRects(markers[i]);
         var visibleArea = 0;
         var totalArea = 0;
         for (var r = 0; r < rects.length; r++) {
           var rect = rects[r];
           if (rect.width <= 0 || rect.height <= 0) continue;
           totalArea += rect.width * rect.height;
-          var ix = Math.max(0, Math.min(rect.right, ww) - Math.max(rect.left, 0));
-          var iy = Math.max(0, Math.min(rect.bottom, wh) - Math.max(rect.top, 0));
+          var ix = Math.max(0, Math.min(rect.right, bounds.right) -
+            Math.max(rect.left, bounds.left));
+          var iy = Math.max(0, Math.min(rect.bottom, bounds.bottom) -
+            Math.max(rect.top, bounds.top));
           visibleArea += ix * iy;
         }
         if (totalArea <= 0) continue;
-        var frac = visibleArea / Math.min(totalArea, ww * wh);
+        var frac = visibleArea /
+          Math.min(totalArea, visibleWidth * visibleHeight);
         if (frac > 0) map[markers[i].id] = frac;
       }
       return map;
@@ -177,6 +203,7 @@ const String paginationHarnessJs = r'''
         pages.push({
           page: pageNum,
           markers: [],
+          markerFractions: {},
           state: JSON.parse(self.getPaginationState())
         });
       };
@@ -194,7 +221,10 @@ const String paginationHarnessJs = r'''
       var ids = Object.keys(best).sort();
       for (var k = 0; k < ids.length; k++) {
         var assignedPage = best[ids[k]].page;
-        if (pages[assignedPage]) pages[assignedPage].markers.push(ids[k]);
+        if (pages[assignedPage]) {
+          pages[assignedPage].markers.push(ids[k]);
+          pages[assignedPage].markerFractions[ids[k]] = best[ids[k]].frac;
+        }
       }
 
       return JSON.stringify(pages);
@@ -218,6 +248,7 @@ class PaginationState {
   final double columnPitch;
   final double pageSize;
   final double maxScroll;
+  final double physicalMaxScroll;
   final double minScroll;
   final int totalChars;
   final bool vertical;
@@ -227,6 +258,7 @@ class PaginationState {
         columnPitch = (json['columnPitch'] as num).toDouble(),
         pageSize = (json['pageSize'] as num).toDouble(),
         maxScroll = (json['maxScroll'] as num).toDouble(),
+        physicalMaxScroll = (json['physicalMaxScroll'] as num).toDouble(),
         minScroll = (json['minScroll'] as num).toDouble(),
         totalChars = (json['totalChars'] as num?)?.toInt() ?? 0,
         vertical = json['vertical'] as bool? ?? false;
@@ -240,11 +272,16 @@ class PaginationState {
 class PageData {
   final int pageNumber;
   final List<String> markers;
+  final Map<String, double> markerFractions;
   final PaginationState state;
 
   PageData.fromJson(Map<String, dynamic> json)
       : pageNumber = (json['page'] as num).toInt(),
         markers = (json['markers'] as List).cast<String>(),
+        markerFractions = (json['markerFractions'] as Map? ?? const {})
+            .map<String, double>((dynamic key, dynamic value) =>
+                MapEntry<String, double>(
+                    key as String, (value as num).toDouble())),
         state = PaginationState.fromJson(json['state'] as Map<String, dynamic>);
 }
 
@@ -308,19 +345,18 @@ List<InvariantViolation> validateChapterScan(
     // I1: Scroll alignment
     if (page.state.columnPitch > 0) {
       final double pitch = page.state.columnPitch;
-      final double minScroll = page.state.minScroll;
-      final int pageIndex = ((page.state.scroll - minScroll) / pitch).round();
-      final double expectedScroll = minScroll + pageIndex * pitch;
+      final int pageIndex = (page.state.scroll / pitch).round();
+      final double expectedScroll = pageIndex * pitch;
       final double error = (page.state.scroll - expectedScroll).abs();
       final bool isTerminalClamp = i == pages.length - 1 &&
-          (page.state.scroll - page.state.maxScroll).abs() <= 1;
+          (page.state.scroll - page.state.physicalMaxScroll).abs() <= 1 &&
+          (page.state.maxScroll - page.state.physicalMaxScroll).abs() <= 1;
       if (error > 1 && !isTerminalClamp) {
         violations.add(InvariantViolation(
           invariant: 'I1',
           pageNumber: page.pageNumber,
           message: 'Scroll ${page.state.scroll.toStringAsFixed(3)} not aligned '
-              'to pitch ${pitch.toStringAsFixed(3)} from minScroll '
-              '${minScroll.toStringAsFixed(3)} '
+              'to absolute pitch ${pitch.toStringAsFixed(3)} '
               '(error=${error.toStringAsFixed(3)})',
         ));
       }
@@ -371,7 +407,11 @@ List<InvariantViolation> validateChapterScan(
       final delta = page.state.scroll - pages[i - 1].state.scroll;
       final pitch = page.state.columnPitch;
       final isLast = i == pages.length - 1;
-      final ok = (delta - pitch).abs() <= 1 || (isLast && delta <= pitch + 1);
+      final isPhysicalTerminal = isLast &&
+          (page.state.scroll - page.state.physicalMaxScroll).abs() <= 1 &&
+          (page.state.maxScroll - page.state.physicalMaxScroll).abs() <= 1;
+      final ok = (delta - pitch).abs() <= 1 ||
+          (isPhysicalTerminal && delta > 1 && delta <= pitch + 1);
       if (!ok) {
         violations.add(InvariantViolation(
           invariant: 'I6',
@@ -383,6 +423,30 @@ List<InvariantViolation> validateChapterScan(
           details: {'delta': delta, 'pitch': pitch},
         ));
       }
+    }
+  }
+
+  // A perfectly aligned subset can still miss the start or tail. Lock both
+  // scan endpoints to the production metrics so coverage cannot self-validate
+  // against an arbitrary interior range.
+  if (pages.isNotEmpty) {
+    final PageData first = pages.first;
+    if ((first.state.scroll - first.state.minScroll).abs() > 1) {
+      violations.add(InvariantViolation(
+        invariant: 'I1',
+        pageNumber: first.pageNumber,
+        message: 'Scan starts at ${first.state.scroll.toStringAsFixed(3)}, '
+            'not minScroll ${first.state.minScroll.toStringAsFixed(3)}',
+      ));
+    }
+    final PageData last = pages.last;
+    if ((last.state.scroll - last.state.maxScroll).abs() > 1) {
+      violations.add(InvariantViolation(
+        invariant: 'I1',
+        pageNumber: last.pageNumber,
+        message: 'Scan ends at ${last.state.scroll.toStringAsFixed(3)}, '
+            'not maxScroll ${last.state.maxScroll.toStringAsFixed(3)}',
+      ));
     }
   }
 
@@ -413,6 +477,28 @@ List<InvariantViolation> validateChapterScan(
         invariant: 'I3',
         pageNumber: -1,
         message: 'Marker $id never appeared on any page',
+      ));
+    }
+  }
+
+  // The final marker has no following page on which its hidden remainder can
+  // appear. Seeing a few pixels is therefore not coverage: the chapter scan
+  // must expose at least half of that marker inside the reader's clipped
+  // content box on one recorded page.
+  if (expectedMarkerCount > 0) {
+    final String tailId = 'm${expectedMarkerCount.toString().padLeft(3, "0")}';
+    double tailBestFraction = 0;
+    for (final PageData page in pages) {
+      final double fraction = page.markerFractions[tailId] ?? 0;
+      if (fraction > tailBestFraction) tailBestFraction = fraction;
+    }
+    if (allSeen.contains(tailId) && tailBestFraction < 0.5) {
+      violations.add(InvariantViolation(
+        invariant: 'I3',
+        pageNumber: pages.isEmpty ? -1 : pages.last.pageNumber,
+        message: 'Tail marker $tailId was never substantially visible '
+            '(best fraction ${tailBestFraction.toStringAsFixed(3)})',
+        details: <String, dynamic>{'bestFraction': tailBestFraction},
       ));
     }
   }

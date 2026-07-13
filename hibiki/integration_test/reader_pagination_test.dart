@@ -153,6 +153,16 @@ void main() {
           await eval('window.hoshiTestHarness.validateRenderedSettings();')
               as String;
       debugPrint('[M1] rendered: $settingsRaw');
+      final RenderedSettings rendered =
+          RenderedSettings.fromJson(_decode(settingsRaw));
+      expect(rendered.writingMode, 'vertical-rl',
+          reason: 'M1 must exercise the reported vertical pagination path');
+      expect(pages.length, greaterThan(31),
+          reason: 'M1 must cross page 31 where cumulative drift was visible');
+      final double pitch = pages.first.state.columnPitch;
+      expect((pitch - pitch.roundToDouble()).abs(), greaterThan(0.01),
+          reason: 'M1 must retain the browser fractional pitch instead of '
+              'testing only an integer grid');
       for (int i = 0; i < pages.length && i < 4; i++) {
         final p = pages[i];
         debugPrint('[M1] page ${p.pageNumber} '
@@ -160,20 +170,42 @@ void main() {
             'markers=${p.markers.join(",")}');
       }
 
-      // Detect marker count for coverage (I3). Real books have no markers,
-      // so coverage is skipped by passing 0.
-      int markerCount = 0;
+      // The synthetic fixture contract is fixed. Deriving the expected count
+      // from the markers already seen makes a clipped tail self-validate.
+      const int markerCount = EpubGenerator.standardChapterMarkerCount;
       final allMarkers = <String>{};
       for (final p in pages) {
         allMarkers.addAll(p.markers);
       }
-      if (allMarkers.isNotEmpty) {
-        markerCount = allMarkers
-            .map((m) => int.tryParse(m.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
-            .fold<int>(0, (a, b) => a > b ? a : b);
-      }
+      final int domMarkerCount = num.parse(
+        (await eval("document.querySelectorAll('[id^=m]').length")).toString(),
+      ).toInt();
       debugPrint('[M1] Distinct markers seen: ${allMarkers.length} '
-          '(max index $markerCount)');
+          '(expected $markerCount, DOM $domMarkerCount)');
+      final Object? tailGeometry = await eval('''JSON.stringify((function() {
+        var ctx = hoshiReader.getScrollContext();
+        var metrics = hoshiReader.paginationMetrics || hoshiReader.buildPaginationMetrics();
+        var marker = document.getElementById('m420');
+        var rects = marker ? Array.from(marker.getClientRects()).map(function(r) {
+          return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height};
+        }) : [];
+        return {
+          pagePosition: hoshiReader.getPagePosition(ctx),
+          pageSize: ctx.pageSize,
+          contextMaxScroll: ctx.maxScroll,
+          browserMaxScroll: ctx.vertical
+            ? ctx.scrollEl.scrollHeight - ctx.scrollEl.clientHeight
+            : ctx.scrollEl.scrollWidth - ctx.scrollEl.clientWidth,
+          metricsMinScroll: metrics.minScroll,
+          metricsMaxScroll: metrics.maxScroll,
+          scrollHeight: ctx.scrollEl.scrollHeight,
+          clientHeight: ctx.scrollEl.clientHeight,
+          marker420Rects: rects
+        };
+      })())''');
+      debugPrint('[M1] tail geometry: $tailGeometry');
+      expect(domMarkerCount, markerCount,
+          reason: 'Synthetic chapter DOM must contain all fixture markers');
 
       final violations =
           validateChapterScan(pages, expectedMarkerCount: markerCount);
@@ -213,18 +245,17 @@ void main() {
           reason: 'I5 trailing-space violations: ${i5.join("; ")}');
       expect(i7, isEmpty, reason: 'I7 page-count violations: ${i7.join("; ")}');
 
-      // Marker continuity/coverage only when synthetic markers present.
-      if (allMarkers.isNotEmpty) {
-        final i2 = byInv['I2'] ?? const [];
-        final i3 = byInv['I3'] ?? const [];
-        expect(i2, isEmpty,
-            reason: 'I2 marker-continuity violations: ${i2.join("; ")}');
-        expect(i3, isEmpty, reason: 'I3 coverage violations: ${i3.join("; ")}');
-        debugPrint('[M1] ✓ Marker continuity + coverage validated');
-      } else {
-        debugPrint('[M1] ⚠ No markers in book — I2/I3 skipped '
-            '(import synthetic test EPUB for full coverage)');
-      }
+      // This test always imports the fixed synthetic fixture. Marker checks
+      // are mandatory: an empty visible set is itself a complete coverage
+      // failure, not a reason to skip I2/I3.
+      final i2 = byInv['I2'] ?? const [];
+      final i3 = byInv['I3'] ?? const [];
+      expect(allMarkers, isNotEmpty,
+          reason: 'Synthetic fixture markers must become visible');
+      expect(i2, isEmpty,
+          reason: 'I2 marker-continuity violations: ${i2.join("; ")}');
+      expect(i3, isEmpty, reason: 'I3 coverage violations: ${i3.join("; ")}');
+      debugPrint('[M1] ✓ Marker continuity + coverage validated');
 
       await takeScreenshot(binding, 'm1_pagination_scan');
 

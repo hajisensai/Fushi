@@ -202,8 +202,9 @@ class ReaderPaginationScripts {
   /// - `maxAligned` = floor((ctxMaxScroll + 1) / pageStep) * pageStep。**+1px 容差**
   ///   吸收单一量纲下 totalSize 比 numCols*pageStep 少零点几 px 的 sub-pixel 下溢，
   ///   否则裸 floor 把 P*pageStep−ε 砍成 (P−1)*pageStep → 末列整页(含末行)不可达。
-  /// - `maxScroll` = min(maxAligned, lastContentScroll)；`lastContentScroll` 夹住
-  ///   maxScroll 不越过末内容页，容差绝不引入空白末页。
+  /// - 通常 `maxScroll` = min(maxAligned, lastContentScroll)；若浏览器物理终点落在
+  ///   最后一条可达网格与末内容网格之间，则仅保留该非网格物理终点作为 terminal page。
+  ///   `lastContentScroll` 始终夹住上界，不会引入空白末页。
   ///
   /// 与 JS 同算法（headless WebView 不可用）。所有量都在滚动轴向、CSS px，pageStep 为
   /// 真实列周期(column-width + gap)。返回 (minScroll, maxScroll)。
@@ -212,6 +213,7 @@ class ReaderPaginationScripts {
     required double firstContentEdge,
     required double lastContentEdge,
     required double contextMaxScroll,
+    required double physicalMaxScroll,
     required double pageStep,
   }) {
     if (pageStep <= 0) {
@@ -223,16 +225,55 @@ class ReaderPaginationScripts {
     final double startSafe = firstContentEdge < 0 ? 0 : firstContentEdge;
     final double startAligned =
         (startSafe / pageStep).floorToDouble() * pageStep;
-    final double minScroll =
-        maxAligned < startAligned ? maxAligned : startAligned;
     final double lastContentScroll = lastContentEdge <= 0
         ? 0
         : (((lastContentEdge - 1) < 0 ? 0 : (lastContentEdge - 1)) / pageStep)
                 .floorToDouble() *
             pageStep;
-    final double maxScroll =
+    final double physicalMax = physicalMaxScroll < 0 ? 0 : physicalMaxScroll;
+    double maxScroll =
         maxAligned < lastContentScroll ? maxAligned : lastContentScroll;
+    // The CSS page pitch can be smaller than the scrolling element's client
+    // extent after chrome insets. In that case the final full grid line may be
+    // unreachable while the browser still exposes a useful partial terminal
+    // page beyond [maxAligned]. Preserve that physical endpoint. Conversely,
+    // never walk past [lastContentScroll] into trailing blank columns.
+    if (maxScroll > physicalMax + 1) {
+      maxScroll = physicalMax;
+    }
+    if (lastContentScroll > maxScroll + 1 && physicalMax > maxScroll + 1) {
+      maxScroll =
+          lastContentScroll < physicalMax ? lastContentScroll : physicalMax;
+    }
+    final double minScroll =
+        maxScroll < startAligned ? maxScroll : startAligned;
     return (minScroll: minScroll, maxScroll: maxScroll);
+  }
+
+  /// JS `pageInfo` 的页号纯 Dart 影子。
+  ///
+  /// `maxScroll` 通常落在绝对 pageStep 网格上；chrome inset 造成物理终点位于两条
+  /// 网格之间时，该非网格终点是一张独立末页，即使剩余不足半页也不能被 `round` 吞掉。
+  @visibleForTesting
+  static ({int currentPage, int totalPages}) resolvePageInfoForTesting({
+    required double minScroll,
+    required double maxScroll,
+    required double currentScroll,
+    required double pageStep,
+  }) {
+    if (pageStep <= 0) return (currentPage: 1, totalPages: 1);
+    final double rawSpan = maxScroll - minScroll;
+    final double span = rawSpan < 0 ? 0 : rawSpan;
+    final int alignedTurns = ((span + 1) / pageStep).floor();
+    final double alignedEnd = minScroll + alignedTurns * pageStep;
+    final bool hasPartialTerminal = maxScroll - alignedEnd > 1;
+    final int totalPages = alignedTurns + 1 + (hasPartialTerminal ? 1 : 0);
+    int currentPage = hasPartialTerminal && currentScroll >= maxScroll - 1
+        ? totalPages
+        : ((currentScroll - minScroll) / pageStep).round() + 1;
+    if (currentPage < 1) currentPage = 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    return (currentPage: currentPage, totalPages: totalPages);
   }
 
   /// 连续(滚动)模式收藏句跳转落点的纯 Dart 影子（BUG-461）。
@@ -1841,7 +1882,19 @@ $_sharedJs
     // 815 == 名义 pageStep。故这里**不再补偿**：contentBox+gap 已等于真实列周期，加 O 反会过冲。
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - pageStep);
-    return { vertical: vertical, scrollEl: scrollEl, pageSize: pageStep, maxScroll: maxScroll };
+    // maxScroll 是分页网格的逻辑尾界（仍以唯一 pageStep 为减项）；浏览器实际能赋给
+    // scrollTop/scrollLeft 的终点则由 scroll extent - client extent 决定。chrome inset
+    // 会让 pageStep 小于 client extent，两者因此可相差半页。物理尾界不是第二套步长，
+    // 只用于最后一张无法整页对齐的 terminal clamp。
+    var viewportExtent = vertical ? scrollEl.clientHeight : scrollEl.clientWidth;
+    var physicalMaxScroll = Math.max(0, totalSize - viewportExtent);
+    return {
+      vertical: vertical,
+      scrollEl: scrollEl,
+      pageSize: pageStep,
+      maxScroll: maxScroll,
+      physicalMaxScroll: physicalMaxScroll
+    };
   },
   getPagePosition: function(context) {
     return context.vertical ? context.scrollEl.scrollTop : context.scrollEl.scrollLeft;
@@ -1872,7 +1925,7 @@ $_sharedJs
     this.lockRootViewport();
   },
   setPagePosition: function(context, position) {
-    var clamped = Math.min(Math.max(0, position), context.maxScroll);
+    var clamped = Math.min(Math.max(0, position), context.physicalMaxScroll);
     window.lastPageScroll = clamped;
     this.assignPagePosition(context, clamped);
     return clamped;
@@ -1893,7 +1946,7 @@ $_sharedJs
       if (context.pageSize <= 0) return;
       var currentScroll = this.getPagePosition(context);
       var snappedScroll = Math.round(currentScroll / context.pageSize) * context.pageSize;
-      snappedScroll = Math.min(Math.max(0, snappedScroll), context.maxScroll);
+      snappedScroll = Math.min(Math.max(0, snappedScroll), context.physicalMaxScroll);
       if (Math.abs(currentScroll - snappedScroll) > 1) {
         this.assignPagePosition(context, window.lastPageScroll || 0);
       } else {
@@ -1997,8 +2050,8 @@ $_sharedJs
     // 零点几 px → 裸 floor 把 P*pageStep−ε 砍成 (P−1)*pageStep，末列整页(含末行)不可达
     // → 手动后退跳章 progress=0.99 落 maxScroll 停在倒数第二页、末行被跳。加 1px 容差吸收
     // sub-pixel 下溢（要真多一页需近乎一整列真实尾随空间，容差绝不越界；下方 maxScroll 仍
-    // 被 lastContentScroll 上限夹住不越过末内容页，setPagePosition 再 clamp 到物理
-    // context.maxScroll，绝不 overscroll）。与 pageStepPosition / alignContentStartToPage
+    // 被 lastContentScroll 上限夹住不越过末内容页，setPagePosition 再 clamp 到
+    // context.physicalMaxScroll，绝不 overscroll）。与 pageStepPosition / alignContentStartToPage
     // 的 1px sub-pixel 归一同口径。
     var maxAlignedScroll = Math.floor((context.maxScroll + 1) / context.pageSize) * context.pageSize;
     if (context.pageSize <= 0) {
@@ -2046,9 +2099,24 @@ $_sharedJs
       firstContentEdge = firstContentEdge === null ? mediaStart : Math.min(firstContentEdge, mediaStart);
       lastContentEdge = Math.max(lastContentEdge, mediaEnd);
     }
-    var minScroll = firstContentEdge === null ? 0 : Math.min(maxAlignedScroll, this.alignContentStartToPage(context, firstContentEdge));
+    var startAlignedScroll = firstContentEdge === null ? 0 : this.alignContentStartToPage(context, firstContentEdge);
     var lastContentScroll = lastContentEdge <= 0 ? 0 : Math.floor(Math.max(0, lastContentEdge - 1) / context.pageSize) * context.pageSize;
     var maxScroll = Math.min(maxAlignedScroll, lastContentScroll);
+    // A chrome inset can make the real browser scroll endpoint fall between
+    // two absolute page-grid lines. If content continues beyond the last
+    // reachable aligned line, expose exactly that physical endpoint as one
+    // partial terminal page. This keeps every intermediate turn on N*pitch,
+    // makes the final turn finite, and never creates a blank page after the
+    // actual last-content grid line. A <=1px physical shortfall retains the
+    // aligned value so existing sub-pixel boundary normalization still works.
+    if (maxScroll > context.physicalMaxScroll + 1) {
+      maxScroll = context.physicalMaxScroll;
+    }
+    if (lastContentScroll > maxScroll + 1 &&
+        context.physicalMaxScroll > maxScroll + 1) {
+      maxScroll = Math.min(lastContentScroll, context.physicalMaxScroll);
+    }
+    var minScroll = Math.min(maxScroll, startAlignedScroll);
     progressStops.sort(function(a, b) { return a.scroll - b.scroll; });
     var metrics = {
       minScroll: minScroll,
@@ -2087,13 +2155,19 @@ $_sharedJs
     if (this._reanchorPending === true) return null;
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return null;
-    // totalPages math relies on min/maxScroll being whole-columnPitch aligned,
-    // which buildPaginationMetrics guarantees (alignContentStartToPage / floor*pitch).
+    // Intermediate pages remain on the absolute pitch grid. The final page may
+    // be a physical terminal clamp between grid lines when chrome insets make
+    // the next full line unreachable, so count it as one additional page.
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var span = Math.max(0, metrics.maxScroll - metrics.minScroll);
-    var totalPages = Math.round(span / context.pageSize) + 1;
+    var alignedTurns = Math.floor((span + 1) / context.pageSize);
+    var alignedEnd = metrics.minScroll + alignedTurns * context.pageSize;
+    var hasPartialTerminal = metrics.maxScroll - alignedEnd > 1;
+    var totalPages = alignedTurns + 1 + (hasPartialTerminal ? 1 : 0);
     var currentScroll = this.getPagePosition(context);
-    var page = Math.round((currentScroll - metrics.minScroll) / context.pageSize) + 1;
+    var page = hasPartialTerminal && currentScroll >= metrics.maxScroll - 1
+      ? totalPages
+      : Math.round((currentScroll - metrics.minScroll) / context.pageSize) + 1;
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
     return { currentPage: page, totalPages: totalPages };
@@ -2342,6 +2416,11 @@ $_sharedJs
     var scrollBefore = inFlight ? 0 : this.getPagePosition(this.getScrollContext());
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
+    // Chrome insets participate in the paginated column-width/pageStep CSS.
+    // Cached min/max bounds were built against the previous pitch; retaining
+    // them can stop pagination before the final columns after the bottom bar
+    // changes. Invalidate even when a re-anchor is already in flight.
+    this.paginationMetrics = null;
     if (inFlight || charOffset < 0) return;
     this._reanchorPending = true;
     var self = this;
