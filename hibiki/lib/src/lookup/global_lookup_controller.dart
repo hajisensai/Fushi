@@ -717,6 +717,13 @@ class GlobalLookupController {
     model.setOverlayLookupMaxHeight(size.height);
     glog('overlay resized -> unlock independent, ${size.width}x${size.height} '
         '(phys=${physW}x$physH dpr=$dpr uiScale=${model.appUiScale})');
+    // 松手即时填充（2026-07-13）— setPref 同步更新 prefCache，故此刻
+    // [AppModel.overlayLookupEffectiveSize] 已是新尺寸；立即重排当前卡，复用嵌套卡
+    // 同款的 overlaySize→_applyOverlayBox→revealStack resize 分支把窗口长到位并填满
+    // 卡片，无需等下次查词、不重新查词（[_renderStack] 自守空栈）。右下角 resize 原点
+    // (top-left) 不动 → 棘轮 [ratchetOverlayOrigin] 天然 no-op，不碰脆弱 reveal 几何。
+    // 高度按内容封顶：拖高于内容会回落到内容高度（符合「最大高度」语义），宽度填满。
+    unawaited(_renderStack());
   }
 
   void _onJsMessage(Map<String, Object?> message) {
