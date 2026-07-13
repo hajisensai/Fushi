@@ -51,4 +51,25 @@ void main() {
           reason: '$root/vendor/content.css 不应含 global-lookup 专属按钮规则');
     }
   });
+
+  // BUG-774 — the app-outside icon-font injection (`_globalLookupIconFontJs` in
+  // popup_settings_injection.dart) used to also inject
+  // `.mine-button{display:none !important}` on the retired "no mining in the bare
+  // window" premise. TODO-1188 wired a full app-external mine path and BUG-751 (the
+  // opacity:1 rule above) tried to make the button visible — but display:none
+  // silently ate it in BOTH the clipboard panel and the selection/overlay window.
+  // Removing it makes the wired backend reachable. This pin stops the hide from
+  // creeping back (opacity:1 above is inert while a display:none exists).
+  test('BUG-774: global-lookup injection does NOT hide the mine button', () {
+    final String inj =
+        read('lib/src/pages/implementations/popup_settings_injection.dart');
+    // Match the JS string-literal form only (leading single quote), so this
+    // guard's own prose mentioning the retired rule doesn't self-trip.
+    expect(
+      RegExp(r"'\.mine-button\s*\{\s*display\s*:\s*none").hasMatch(inj),
+      isFalse,
+      reason: '制卡桥已接通（TODO-1188）+ popup.css opacity:1（BUG-751），'
+          '不得再注入隐藏制卡按钮的 display:none 样式',
+    );
+  });
 }
