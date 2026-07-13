@@ -176,7 +176,8 @@ void main() {
   test('书籍长按对话框隐藏阅读按钮，点击卡片仍负责阅读', () {
     final String srtDialog = _sectionSource(
       src,
-      'Future<void> _showSrtBookDialog(SrtBook book) async {',
+      // 复查F3 起签名带 onRemoveFromCollection 注入参，锚点用前缀。
+      'Future<void> _showSrtBookDialog(SrtBook book,',
       '  bool _srtBookHasMissingAudio(',
     );
     final String epubDialog = _sectionSource(
