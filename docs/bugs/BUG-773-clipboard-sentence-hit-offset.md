@@ -8,7 +8,7 @@
   用 `_punctuationRegex=^[\p{P}\p{S}]+|[\p{P}\p{S}]+$` 剥掉句首 `『`，引擎才从 `呪術廻戦…` 的 0 位
   匹配、`bestLength=4`）。两端坐标系差一个被剥的句首 `『`：高亮从 `『` 起铺 4 码点 = `『呪術廻`
   （吞了 `『`、缺了词尾 `戦`），而不是 `呪術廻戦`。popup.js 逐字上色见 `hibiki/assets/popup/popup.js:3193-3199`。
-- **[x] ① 已修复** — `2fb?`（见提交）。修复=把整词高亮起点从「句首第 0 字符」右移「归一化剥掉的句首标点长度」再从真正词首量 `bestLength`：
+- **[x] ① 已修复** — `8ec88f008`。修复=把整词高亮起点从「句首第 0 字符」右移「归一化剥掉的句首标点长度」再从真正词首量 `bestLength`：
   - `hibiki/lib/src/models/app_model.dart`：新增纯函数 `leadingPunctuationStripUnits(raw, punctuationRegex)`（返回句首被剥 UTF-16 长度，复用同一 `_punctuationRegex`=单一真相）+ AppModel 公开包装 `lookupLeadingStripUnits`。
   - `hibiki/lib/src/lookup/clipboard_panel_controller.dart`：新增纯函数 `rootHitRange({query, baseStartCp, leadingUnits, bestLength})`，起点=`baseStartCp + 句首剥离码点`、长度=从词首起量 `bestLength`（复用 `hitLengthCodePoints` 钳位）；`_renderPanel` 改用它；删除多余的私有 `_hitLengthCodePoints` 包装。
   - 点字后缀路径（`_lookupFromBanner`，`_rootHitStart=i`）同链受益：后缀句首标点也补偿。
