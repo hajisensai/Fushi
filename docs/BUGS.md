@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 750 条。点号进各自文件。
+> 共 752 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-769](bugs/BUG-769-lyrics-mode-persist-reentry.md) | ✅ | ✅ | 重新进入书籍不再是歌词模式（歌词模式跨会话不恢复） |
+| [BUG-768](bugs/BUG-768-lyrics-follow-scroll-window-noop.md) | ✅ | ✅ | 歌词模式音频跟随「高亮变但不滚动」（window.scrollBy 空转） |
 | [BUG-767](bugs/BUG-767-lyrics-reload-flicker-first-cue.md) | ✅ | ✅ | 歌词模式进入后一直闪烁 + 高亮恒第一句（不是正在听的那句） |
 | [BUG-766](bugs/BUG-766-video-batch-book-counter.md) | ✅ | ✅ | 视频页批量删除/打标签文案误用「本书」量詞 |
 | [BUG-765](bugs/BUG-765-reader-selection-handles-cannot-drag.md) | ✅ | ✅ | 阅读器移动端自绘选区两端手柄拖不动 |
