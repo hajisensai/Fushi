@@ -468,6 +468,13 @@ class AnkiHandlebarRenderer {
         return context.coverPath ?? '';
       case '{video-clip}':
         return context.coverPath ?? '';
+      // {sentence-audio} 是句子音频的通用键（语义中性、名副其实）：对应 Lapis
+      // SentenceAudio 字段的默认映射，值就是 sasayakiAudioPath（有声书 cue / 视频
+      // 例句音频片段）。
+      case '{sentence-audio}':
+        return context.sasayakiAudioPath ?? '';
+      // {sasayaki-audio} 是 {sentence-audio} 的旧别名（历史命名），保留以兼容老配置
+      // 与老卡片模板：两者读同一个 sasayakiAudioPath，运行时零分叉、媒体嵌入零改动。
       case '{sasayaki-audio}':
         return context.sasayakiAudioPath ?? '';
       default:
@@ -543,6 +550,7 @@ class AnkiHandlebarOptions {
     '{card-image}',
     '{book-cover}',
     '{video-clip}',
+    '{sentence-audio}',
     '{sasayaki-audio}',
   ];
 
@@ -553,7 +561,7 @@ class AnkiHandlebarOptions {
 
   /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
   /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
-  /// `{sasayaki-audio}`）。字段模板可以是裸 token，也可以是把多个 token 拼进 HTML 的
+  /// `{sentence-audio}`）。字段模板可以是裸 token，也可以是把多个 token 拼进 HTML 的
   /// 大模板，故按子串包含判断（与 [AnkiHandlebarRenderer.render] 用同一套 `{...}`
   /// token 语义）。fieldMappings 为空、或所有字段都映成 `-`/纯字面量时返回 false——
   /// 这正是「句子写进了 context 但卡片没字段接它 → 字段恒空」的可见判据。
@@ -572,6 +580,15 @@ class AnkiHandlebarOptions {
   static bool anyFieldConsumesSentence(Map<String, String> fieldMappings) =>
       anyFieldConsumesToken(fieldMappings, '{sentence}') ||
       anyFieldConsumesToken(fieldMappings, '{cue-sentence}');
+
+  /// 是否有字段消费句子音频（`{sentence-audio}` 或语义等价的旧别名
+  /// `{sasayaki-audio}`）。两者任一被引用即视为「句子音频有去处」，避免把用了新名
+  /// 或老名的配置误报成未映射（与 [AnkiHandlebarRenderer.render] 同一套别名语义）。
+  static bool anyFieldConsumesSentenceAudio(
+    Map<String, String> fieldMappings,
+  ) =>
+      anyFieldConsumesToken(fieldMappings, '{sentence-audio}') ||
+      anyFieldConsumesToken(fieldMappings, '{sasayaki-audio}');
 }
 
 String mimeTypeForPath(String path) {

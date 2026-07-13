@@ -186,7 +186,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
 
     // TODO-948/952 诊断可见性：制卡链路自身字节稳定，但用户报「卡片没有句子/句子
     // 音频」。真因是运行时二选一——句子真空（抽句回空）或 Anki 卡片模板没有字段
-    // 映射到 {sentence}/{sasayaki-audio}（字段恒空）。这里在制卡前把『为什么会空』
+    // 映射到 {sentence}/{sentence-audio}（字段恒空）。这里在制卡前把『为什么会空』
     // 摊到用户面前（toast + 日志），不改任何制卡行为（卡照常创建）。
     await _emitSentenceDiagnostics(repo, miningContext);
 
@@ -272,7 +272,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
   /// - [context].sentence 为空 → 运行时根本没捕获到句子（无标点/无 <p> 等内容让
   ///   JS 抽句回空，或没选词）。
   /// - 句子非空、但当前 Anki note-type 的 fieldMappings **没有任何字段消费**
-  ///   `{sentence}`/`{cue-sentence}`（句子）或 `{sasayaki-audio}`（句子音频）→ 字段
+  ///   `{sentence}`/`{cue-sentence}`（句子）或 `{sentence-audio}`（句子音频）→ 字段
   ///   渲染恒空，卡片上自然「没有句子」。判据复用 hibiki_anki 的纯函数
   ///   [AnkiHandlebarOptions.anyFieldConsumesSentence] / [anyFieldConsumesToken]，
   ///   与 [AnkiHandlebarRenderer] 同一套 token 语义，不自己重造解析。
@@ -311,10 +311,9 @@ extension _ReaderMining on _ReaderHibikiPageState {
 
     final bool hasSentenceAudio = (context.sasayakiAudioPath ?? '').isNotEmpty;
     if (hasSentenceAudio &&
-        !AnkiHandlebarOptions.anyFieldConsumesToken(
-            fieldMappings, '{sasayaki-audio}')) {
+        !AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(fieldMappings)) {
       debugPrint('[mine-diag] sentence audio attached but no field maps '
-          '{sasayaki-audio}; the audio will not land on the card.');
+          '{sentence-audio}; the audio will not land on the card.');
       HibikiToast.show(msg: t.card_mined_unmapped_sentence_audio_field);
     }
   }

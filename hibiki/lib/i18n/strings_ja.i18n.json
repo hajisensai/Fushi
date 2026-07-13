@@ -1974,7 +1974,7 @@
   "audiobook_export_clip_unsupported_range": "This selection can't be exported (crosses chapter or audio file)",
   "card_mined_no_sentence_captured": "Card created, but no sentence was captured (re-select the word, or this text has no recognizable sentence).",
   "card_mined_unmapped_sentence_field": "Card created, but your Anki note type has no field mapped to the sentence. Use Settings -> 'Create Lapis deck' or map a field to {sentence}.",
-  "card_mined_unmapped_sentence_audio_field": "Card created with sentence audio, but your Anki note type has no field mapped to it. Map a field to {sasayaki-audio}.",
+  "card_mined_unmapped_sentence_audio_field": "Card created with sentence audio, but your Anki note type has no field mapped to it. Map a field to {sentence-audio}.",
   "audiobook_export_clip_in_progress": "Exporting clip…",
   "audiobook_export_clip_saved": "Clip saved",
   "audiobook_export_clip_failed": "Clip export failed",
@@ -2305,5 +2305,6 @@
   "batch_delete_success_video": "$n 本の動画を削除しました。",
   "batch_tag_added_video": "$n 本の動画にタグ「$name」を追加しました。",
   "batch_tag_removed_video": "$n 本の動画からタグ「$name」を削除しました。",
-  "stat_daily_average": "Daily avg"
+  "stat_daily_average": "Daily avg",
+  "handlebar_sentence_audio": "Sentence Audio"
 }
