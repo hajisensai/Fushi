@@ -22,12 +22,12 @@
 ### Task 1: Record the verified macOS double-shell bug
 
 **Files:**
-- Create: `docs/bugs/BUG-784-md3-macos-double-shell.md` through the bug tool
+- Create: `docs/bugs/BUG-786-md3-macos-double-shell.md` through the bug tool
 - Modify: `docs/BUGS.md` through reindexing only
 
 **Interfaces:**
 - Consumes: the reproduced latest-build screenshot and the `main.dart`/`home_page.dart` root-cause path
-- Produces: `BUG-784`, whose two checkboxes are completed only after code and tests land
+- Produces: `BUG-786`, whose two checkboxes are completed only after code and tests land
 
 - [ ] **Step 1: Create the bug record**
 
@@ -37,7 +37,7 @@ Run from the repository root:
 dart run tool/bug.dart new md3-macos-double-shell "macOS 自动/MD3 仍套原生侧栏形成双壳"
 ```
 
-Expected: `docs/bugs/BUG-784-md3-macos-double-shell.md`, plus an automatically rebuilt `docs/BUGS.md` index.
+Expected: `docs/bugs/BUG-786-md3-macos-double-shell.md`, plus an automatically rebuilt `docs/BUGS.md` index.
 
 - [ ] **Step 2: Replace the skeleton with verified evidence**
 
@@ -55,7 +55,7 @@ Record these facts without checking completion boxes yet:
 - [ ] **Step 3: Commit the verified bug record**
 
 ```bash
-git add docs/bugs/BUG-784-md3-macos-double-shell.md docs/BUGS.md
+git add docs/bugs/BUG-786-md3-macos-double-shell.md docs/BUGS.md
 git commit -m "docs(bug): record macOS MD3 double shell"
 ```
 
@@ -381,7 +381,7 @@ git commit -m "fix(macos): respect MD3 before creating native shell"
 ### Task 5: Complete regression checks, bug record, and visible macOS proof
 
 **Files:**
-- Modify: `docs/bugs/BUG-784-md3-macos-double-shell.md`
+- Modify: `docs/bugs/BUG-786-md3-macos-double-shell.md`
 - Modify: `docs/BUGS.md` through `tool/bug.dart reindex`
 - Create evidence outside git: `/tmp/hibiki-md3-single-shell-20260713.png`
 
@@ -426,6 +426,6 @@ dart run tool/bug.dart reindex
 - [ ] **Step 5: Commit the completed bug record**
 
 ```bash
-git add docs/bugs/BUG-784-md3-macos-double-shell.md docs/BUGS.md
+git add docs/bugs/BUG-786-md3-macos-double-shell.md docs/BUGS.md
 git commit -m "docs(bug): close macOS MD3 double shell"
 ```
