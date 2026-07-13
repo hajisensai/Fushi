@@ -1357,13 +1357,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 找 SrtBook。找不到（条目已删 / 远端离线）返回 null，详情页跳过该成员。
   /// 合集详情页成员卡渲染：按 (mediaType, entryKey) 找当前可见的 SRT / EPUB 书渲染，
   /// 找不到（孤儿 / 被过滤）返回 null（详情页跳过）。
-  Widget? _buildCollectionMemberCard(String mediaType, String entryKey) {
+  ///
+  /// [onRemoveFromCollection]（详情页注入 `() => _removeMember(row)`）非空时把「移出合集」
+  /// 接进该成员卡长按 / 右键对话框（键盘/手柄用户聚焦长按 A 走此对话框而非网格指针菜单，
+  /// 不注入就没有移出项）。
+  Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
+      {VoidCallback? onRemoveFromCollection}) {
     if (mediaType == 'srt') {
       for (final SrtBook book in _visibleSrtBooks) {
         if (book.uid == entryKey) {
           return _buildSrtCard(
             book,
             epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
+            removeFromCollection: onRemoveFromCollection,
           );
         }
       }
@@ -1372,7 +1378,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (mediaType == 'epub') {
       for (final MediaItem item in _visibleEpubBooks) {
         if (_parseBookKey(item.mediaIdentifier) == entryKey) {
-          return buildMediaItem(item);
+          return _buildEpubBookCard(
+            item,
+            removeFromCollection: onRemoveFromCollection,
+          );
         }
       }
       return null;
@@ -1397,7 +1406,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       for (final MediaItem item in _visibleEpubBooks) {
         if (_parseBookKey(item.mediaIdentifier) == entryKey) {
           final MediaSource source = item.getMediaSource(appModel: appModel);
-          unawaited(appModel.openMedia(ref: ref, mediaSource: source, item: item));
+          unawaited(
+              appModel.openMedia(ref: ref, mediaSource: source, item: item));
           return;
         }
       }
@@ -1515,7 +1525,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   /// EPUB 书卡渲染。[selectable]（默认经 [buildMediaItem] 传 true）= 多选态可单独勾选；
   /// 块2：合集行成员卡传 false（selectionKey 置空 → 不画勾、不可单独勾）。
-  Widget _buildEpubBookCard(MediaItem item, {bool selectable = true}) {
+  /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补一条
+  /// 「移出合集」动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
+  Widget _buildEpubBookCard(MediaItem item,
+      {bool selectable = true, VoidCallback? removeFromCollection}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
@@ -1536,11 +1549,23 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onLongPress: () async {
         await showAppDialog(
           context: context,
-          builder: (_) => MediaItemDialogPage(
+          builder: (BuildContext dialogCtx) => MediaItemDialogPage(
             item: item,
             isHistory: isHistory,
             showLaunchAction: false,
-            extraActions: extraActions,
+            extraActions: removeFromCollection == null
+                ? extraActions
+                : (MediaItem it) => <DialogAction>[
+                      ...extraActions(it),
+                      DialogListAction(
+                        label: t.collection_remove_member,
+                        icon: Icons.remove_circle_outline,
+                        onPressed: () {
+                          Navigator.pop(dialogCtx);
+                          removeFromCollection();
+                        },
+                      ),
+                    ],
           ),
         );
         if (isHistory) {

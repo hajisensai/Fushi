@@ -30,7 +30,17 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
 
   /// 按成员 (mediaType, entryKey) 渲染卡片；返回 null = 该成员当前不可见（孤儿/被过滤），
   /// 详情页跳过它。
-  final Widget? Function(String mediaType, String entryKey) memberCardBuilder;
+  ///
+  /// [onRemoveFromCollection]（详情页在此处注入 `() => _removeMember(row)`）供调用方把
+  /// 「移出合集」接进该成员卡的**长按/右键对话框**（[MediaItemDialogPage] 的 extraActions）。
+  /// 触摸/鼠标经网格接管走上下文菜单移出，但键盘/手柄用户是聚焦长按 A 弹卡片自身的
+  /// [MediaItemDialogPage]（不经网格指针路径），若不注入就没有移出项——故给可聚焦对话框
+  /// 补一条「移出合集」DialogAction，键盘/手柄用户不失能。
+  final Widget? Function(
+    String mediaType,
+    String entryKey, {
+    VoidCallback? onRemoveFromCollection,
+  }) memberCardBuilder;
 
   /// 打开某成员（点卡片 / 菜单「打开」）。null = 不提供打开（仅菜单移出）。卡片自身的
   /// 手势被 [IgnorePointer] 屏蔽（避免其内部 long-press 与网格触摸拖拽争用），故「打开」
@@ -196,9 +206,11 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// 网格拖拽落序：from/to 是**可见**成员下标（[_visibleRows]）。先在可见序上应用
-  /// removeAt/insert，再把可见序回写进 [_rows] 全表（孤儿行——当前不可见——追加到末尾，
-  /// 保持落盘为一次全表 sortIndex 回写、不与孤儿旧序交错），最后 `reorderCollectionItems`
-  /// 一次落盘。库页合集行 / 播放器换集读同一 `getCollectionItems`，落盘即同序。
+  /// removeAt/insert，再**保序合并**回 [_rows] 全表：遍历原 _rows，可见槽按新可见序
+  /// 依次填入、孤儿行（当前不可见——被书架标签筛选掉的成员）留在原下标。绝不把隐藏
+  /// 成员挤到表尾——否则筛选态下一次拖拽就把全部隐藏成员从原位挤到末尾落盘。最后
+  /// `reorderCollectionItems` 一次落盘。库页合集行 / 播放器换集读同一 `getCollectionItems`，
+  /// 落盘即同序。
   Future<void> _onReorder(int from, int to) async {
     if (from == to) return;
     final List<MediaCollectionItemRow> visible =
@@ -208,17 +220,20 @@ class _MediaCollectionGridDetailPageState
     }
     final MediaCollectionItemRow moved = visible.removeAt(from);
     visible.insert(to, moved);
+    // 保序合并：可见槽（key 命中 visibleKeys）按 visible 的新顺序依次消费，孤儿行按
+    // 其在原 _rows 中的下标原地保留。visible 的成员集合与拖前一致（只是被置换顺序），
+    // 故可见槽数 == visible.length，vi 恰好消费完，不会越界。
     final Set<String> visibleKeys = <String>{
       for (final MediaCollectionItemRow r in visible)
         '${r.mediaType}|${r.entryKey}',
     };
-    final List<MediaCollectionItemRow> orphans = <MediaCollectionItemRow>[
-      for (final MediaCollectionItemRow r in _rows)
-        if (!visibleKeys.contains('${r.mediaType}|${r.entryKey}')) r,
-    ];
+    int vi = 0;
     final List<MediaCollectionItemRow> next = <MediaCollectionItemRow>[
-      ...visible,
-      ...orphans,
+      for (final MediaCollectionItemRow r in _rows)
+        if (visibleKeys.contains('${r.mediaType}|${r.entryKey}'))
+          visible[vi++]
+        else
+          r,
     ];
     setState(() {
       _rows = next;
@@ -286,7 +301,11 @@ class _MediaCollectionGridDetailPageState
     final List<({MediaCollectionItemRow row, Widget card})> members =
         <({MediaCollectionItemRow row, Widget card})>[
       for (final MediaCollectionItemRow r in _rows)
-        if (widget.memberCardBuilder(r.mediaType, r.entryKey)
+        if (widget.memberCardBuilder(
+          r.mediaType,
+          r.entryKey,
+          onRemoveFromCollection: () => _removeMember(r),
+        )
             case final Widget card)
           (row: r, card: card),
     ];

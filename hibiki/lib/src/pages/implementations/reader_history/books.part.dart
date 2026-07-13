@@ -27,8 +27,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   /// [selectable]（默认 true）= 多选态可单独勾选。块2：合集行成员卡传 false
   /// （selectionKey 置空 → 不画勾、不可单独勾），点击照常开书。
+  /// [removeFromCollection] 非空（合集详情页成员卡）时给长按 / 右键对话框补「移出合集」
+  /// 动作，让键盘/手柄用户（聚焦长按 A 弹此对话框，不经网格指针菜单）也能移出。
   Widget _buildSrtCard(SrtBook book,
-      {String? epubCoverUri, bool selectable = true}) {
+      {String? epubCoverUri,
+      bool selectable = true,
+      VoidCallback? removeFromCollection}) {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -57,7 +61,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       onTagDropped:
           srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
       onTap: () => _openSrtBook(book),
-      onLongPress: () => _showSrtBookDialog(book),
+      onLongPress: () =>
+          _showSrtBookDialog(book, removeFromCollection: removeFromCollection),
       child: _bookCardLayout(
         title: displayTitle,
         cover: _buildSrtCover(book, epubCoverUri: epubCoverUri),
@@ -142,8 +147,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
   }
 
-  List<DialogAction> _srtExtraActions(
-      BuildContext dialogContext, SrtBook book) {
+  List<DialogAction> _srtExtraActions(BuildContext dialogContext, SrtBook book,
+      {VoidCallback? removeFromCollection}) {
     final String bookKey = book.bookKey;
     final MediaItem item = _srtBookMediaItem(book);
     return [
@@ -154,6 +159,16 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           await _confirmDeleteSrtBook(book);
         },
       ),
+      // 合集详情页成员卡：给可聚焦长按对话框补「移出合集」（键盘/手柄移出入口）。
+      if (removeFromCollection != null)
+        DialogListAction(
+          label: t.collection_remove_member,
+          icon: Icons.remove_circle_outline,
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            removeFromCollection();
+          },
+        ),
       if (_srtBookHasMissingAudio(book))
         DialogQuickAction(
           label: t.audiobook_relocate,
@@ -211,7 +226,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     ];
   }
 
-  Future<void> _showSrtBookDialog(SrtBook book) async {
+  Future<void> _showSrtBookDialog(SrtBook book,
+      {VoidCallback? removeFromCollection}) async {
     await showAppDialog(
       context: context,
       builder: (ctx) => MediaItemDialogPage(
@@ -223,7 +239,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         coverFallbackIcon: isEpubBackedAudiobookSrt(book)
             ? Icons.headphones_outlined
             : Icons.subtitles_outlined,
-        extraActions: (_) => _srtExtraActions(ctx, book),
+        extraActions: (_) => _srtExtraActions(ctx, book,
+            removeFromCollection: removeFromCollection),
       ),
     );
     if (mounted) _rebuild(() {});
