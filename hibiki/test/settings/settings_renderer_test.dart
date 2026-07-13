@@ -475,6 +475,8 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
+        designSystemTheme:
+            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDestinationList(
             settingsContext: settingsContext,
@@ -895,6 +897,8 @@ void main() {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
+        designSystemTheme:
+            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           final SettingsDestination appearance =
               buildSettingsSchema(settingsContext).firstWhere(
@@ -1015,6 +1019,8 @@ void main() {
     String received = '';
     await tester.pumpWidget(_harness(
       platform: TargetPlatform.iOS,
+      designSystemTheme:
+          const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
       builder: (SettingsContext sctx) => CupertinoSettingsRenderer()
           .buildDetailPage(
               settingsContext: sctx,
@@ -1036,6 +1042,8 @@ void main() {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
+        designSystemTheme:
+            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           // 模拟宽屏 primary：固定矮高度面板，内容远超其高度。
           return Align(
