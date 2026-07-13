@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/utils.dart';
 
 /// BUG-763/766「制卡·选择句子上下文」**app 原生顶层对话框**。
 ///
@@ -181,16 +181,15 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
     bool current = false,
   }) {
     final ColorScheme scheme = theme.colorScheme;
-    return Container(
-      width: double.infinity,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 走共享 MD3 卡片外壳（HibikiCard）而非裸 Container+BoxDecoration：
+    // 当前句用更高一档的容器令牌 surfaces.search + primary 描边区分，上/下句用
+    // surfaces.card。非当前句保留 transparent 1px 描边，令三个框内容起点严格对齐
+    // （等价旧的透明 Border.all，避免仅当前句多 1px 内缩）。
+    return HibikiCard(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: current ? scheme.surfaceContainerHigh : scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: current ? scheme.primary : Colors.transparent,
-        ),
-      ),
+      color: current ? tokens.surfaces.search : tokens.surfaces.card,
+      borderColor: current ? tokens.surfaces.primary : Colors.transparent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -247,6 +246,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
                     child: SingleChildScrollView(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
                           _box(
                             theme,
