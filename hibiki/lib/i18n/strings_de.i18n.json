@@ -2339,5 +2339,7 @@
   "extension_popup_max_width": "Extension popup max width",
   "extension_popup_max_height": "Extension popup max height",
   "desktop_clipboard_auto_lookup": "Auto-look-up on copy",
-  "desktop_clipboard_auto_lookup_hint": "When off, the panel shows only the copied text; tap a word to look it up."
+  "desktop_clipboard_auto_lookup_hint": "When off, the panel shows only the copied text; tap a word to look it up.",
+  "video_subtitle_filter_favorites_empty": "No favorited lines yet",
+  "video_subtitle_filter_selected_empty": "No lines selected yet"
 }

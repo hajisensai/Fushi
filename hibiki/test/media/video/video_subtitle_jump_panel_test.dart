@@ -343,6 +343,107 @@ void main() {
       expect(find.text('No subtitles loaded'), findsOneWidget);
     });
 
+    // ── BUG-795：字幕已加载但当前过滤档筛出 0 条时，不得误报「未加载字幕」──────
+    // 复现（用户报）：收藏 0 句时切到收藏档，明明有字幕却显示 emptyHint（"未加载字幕"）。
+    // 根因：build 里 `cues.isEmpty || visibleIndexes.isEmpty` 一律走 emptyHint，把
+    // 「过滤结果为空」与「真未加载」混为一谈。修复后收藏 / 已选档为空给档专属文案。
+    testWidgets(
+        'BUG-795: loaded cues + empty favorites filter shows favorites-empty '
+        'hint, not the not-loaded emptyHint', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      // 字幕已加载（非空），但一条都没收藏。
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta line'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'No subtitles loaded',
+        width: 520,
+      )));
+
+      await tester.tap(find.text(t.video_subtitle_filter_favorites));
+      await tester.pumpAndSettle();
+
+      // 收藏档为空 → 档专属文案，绝不是「未加载字幕」emptyHint（撤修复 → 显示
+      // emptyHint → 红）。
+      expect(find.text(t.video_subtitle_filter_favorites_empty), findsOneWidget,
+          reason: 'loaded cues with 0 favorites must show the favorites-empty '
+              'hint, not the not-loaded emptyHint');
+      expect(find.text('No subtitles loaded'), findsNothing,
+          reason: 'subtitles ARE loaded; must not claim not-loaded');
+    });
+
+    testWidgets(
+        'BUG-795: loaded cues + empty selected filter shows selected-empty hint',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta line'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        // 已选档需要选择控件存在才有意义；谓词恒 false → 已选集为空。
+        isCueSelectedForCard: (_) => false,
+        onToggleCueSelection: (_) {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'No subtitles loaded',
+        width: 520,
+      )));
+
+      await tester.tap(find.text(t.video_subtitle_filter_selected));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.video_subtitle_filter_selected_empty), findsOneWidget,
+          reason: 'loaded cues with 0 selected must show the selected-empty '
+              'hint, not the not-loaded emptyHint');
+      expect(find.text('No subtitles loaded'), findsNothing);
+    });
+
+    // 「全部」档筛出 0 条只可能因 cues 本身为空 → 仍是真未加载 → emptyHint。
+    testWidgets(
+        'BUG-795: all filter with no cues still shows the not-loaded emptyHint',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(const <AudioCue>[]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'No subtitles loaded',
+        width: 520,
+      )));
+
+      expect(find.text('No subtitles loaded'), findsOneWidget,
+          reason: 'genuinely empty cues in the all filter keep the not-loaded '
+              'emptyHint');
+    });
+
     testWidgets('shows loading state instead of empty hint while cues load', (
       WidgetTester tester,
     ) async {
