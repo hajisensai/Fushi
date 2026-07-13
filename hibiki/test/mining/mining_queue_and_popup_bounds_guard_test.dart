@@ -153,10 +153,16 @@ void main() {
           reason: 'app_model 未下发 --hibiki-popup-max-width（扩展宽度无法跟随配置）');
       expect(src.contains("'--hibiki-popup-max-height':"), isTrue,
           reason: 'app_model 未下发 --hibiki-popup-max-height（扩展高度无法跟随配置）');
-      expect(src.contains('popupMaxWidth.round()'), isTrue,
-          reason: 'app_model 未用用户配置 popupMaxWidth 生成弹窗宽度变量');
-      expect(src.contains('popupMaxHeight.round()'), isTrue,
-          reason: 'app_model 未用用户配置 popupMaxHeight 生成弹窗高度变量');
+      // PR#83（弹窗尺寸精细化）：弹窗宽/高不再直接取 popupMaxWidth/Height，改由
+      // extensionPopupEffectiveSize 解析——用户解锁「扩展独立尺寸」用扩展自己的键，
+      // 否则回退 app 内 popupMaxWidth/Height（effectiveLookupSize 纯函数）。守卫仍
+      // 咬「弹窗尺寸变量源自用户配置、非硬编码 400×360」，只把符号更到有效尺寸解析入口。
+      expect(src.contains('extensionPopupEffectiveSize.width.round()'), isTrue,
+          reason:
+              'app_model 未经 extensionPopupEffectiveSize 生成弹窗宽度变量（应源自用户配置尺寸）');
+      expect(src.contains('extensionPopupEffectiveSize.height.round()'), isTrue,
+          reason:
+              'app_model 未经 extensionPopupEffectiveSize 生成弹窗高度变量（应源自用户配置尺寸）');
     });
 
     for (final File content in <File>[assetsContent, toolsContent]) {

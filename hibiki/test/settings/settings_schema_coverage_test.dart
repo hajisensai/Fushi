@@ -62,12 +62,24 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/epub/epub_spread_map_test.dart: mergeImagePages absorb/spread-priority/charOffset (reader layout effect needs live WebView, DEVICE for render)',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
-  // TODO-776: 查词弹窗每行词典数（实验性）。焦点遍历能切到滑块并写穿 DB
-  // （changed=true），但生效点在 popup WebView 的 CSS grid（--dict-columns 注入 +
+  // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案
+  // 从「Dictionaries per row」改为「Max dictionary columns (auto-fill)」（底层算法不变，
+  // 仍是 effective = min(用户值, 视口可容)），故此处登记键随标题更新。焦点遍历能切到滑块
+  // 并写穿 DB（changed=true），但生效点在 popup WebView 的 CSS grid（--dict-columns 注入 +
   // popup.css grid 渲染，非 reader CSS / 主题树），无适用的 reader/appearance 探针；
   // 由专项 widget 契约 + popup.css/注入源码守卫覆盖。
-  'lookup/Dictionaries per row':
+  'lookup/Max dictionary columns (auto-fill)':
       'test/settings/popup_dictionary_columns_test.dart',
+  // 弹窗尺寸精细化（spec 2026-07-13 §3）：app 外覆盖窗 / 浏览器扩展的「独立尺寸」开关
+  // （PR#83 新增）。焦点遍历切到 switch 并写穿 DB（changed=true），但生效点在
+  // effectiveLookupSize 解析——决定弹窗宽高取自身场景键还是回退 app 内共享值（overlay
+  // 走原生窗尺寸测算、extension 经 theme 下发 --hibiki-popup-max-*），无适用的
+  // reader/appearance 探针；由专项纯函数 + AppModel 接线测试咬住（解锁切源 / 场景隔离 /
+  // 关闭仍跟随共享值）。解锁后才可见的宽/高滑杆随开关一并被这两组测试覆盖。
+  'lookup/Separate size for pop-out lookup':
+      'test/lookup/effective_lookup_size_test.dart + test/models/lookup_effective_size_wiring_test.dart',
+  'lookup/Separate size for browser extension':
+      'test/lookup/effective_lookup_size_test.dart + test/models/lookup_effective_size_wiring_test.dart',
   'lookup/Instant popup scroll': 'test/reader/reader_caret_scripts_test.dart',
   // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
