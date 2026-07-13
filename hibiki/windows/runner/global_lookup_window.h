@@ -237,6 +237,12 @@ class GlobalLookupWindow {
   // cache into pending_json_ until NavigationCompleted re-arms
   // webview_ready_.
   bool recovering_ = false;
+  // Phase C（弹窗尺寸精细化 2026-07-13）— 用户正拖右下角 grip 调整窗口尺寸（在
+  // WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE 之间为 true）。瞬态覆盖窗平时按 shell 卡矩形
+  // 裁剪窗口区域（BUG-749 gap click-through），裁剪区不随窗口增大 → 拖拽看不到窗口
+  // 变大；resize 期间 ApplyRoundedRegion 改用整窗区域，让窗口可见地随拖拽增长，结束
+  // 复原 shell 裁剪。面板实例 shell_rects_css_ 为空，此标志对它无副作用。
+  bool resizing_ = false;
   // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;

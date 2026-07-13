@@ -1294,7 +1294,11 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
   }
   // 10 logical px radius -> diameter = 20 logical px, scaled to physical px.
   const int diameter = MulDiv(20, static_cast<int>(dpi), 96);
-  if (!shell_rects_css_.empty()) {
+  // Phase C（弹窗尺寸精细化 2026-07-13）— 用户正拖右下角 grip 调整瞬态窗尺寸时，跳过
+  // shell 卡矩形裁剪、临时用整窗区域，让窗口可见地随拖拽增长（否则区域钉死在旧卡矩形，
+  // 拖拽毫无视觉变化）。WM_EXITSIZEMOVE 结束时 resizing_=false 并重新 ApplyRoundedRegion
+  // 复原 shell 裁剪。面板实例 shell_rects_css_ 恒空，本就走整窗区域，此条件对它是 no-op。
+  if (!shell_rects_css_.empty() && !resizing_) {
     const double dpr = static_cast<double>(dpi) / 96.0;
     HRGN union_region = CreateRectRgn(0, 0, 0, 0);
     if (union_region != nullptr) {
@@ -1427,13 +1431,22 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // border supplies the card frame, this region supplies the rounded corners.
       ApplyRoundedRegion();
       return 0;
+    case WM_ENTERSIZEMOVE:
+      // Phase C（弹窗尺寸精细化 2026-07-13）— 进入模态 move/size 循环（面板拖动/调整，
+      // 或 —— Phase C 起 —— 瞬态覆盖窗拖右下角 grip）。瞬态窗平时按 shell 卡矩形裁剪
+      // 窗口区域，裁剪区不随窗口增大 → 拖拽看不到窗口变大；置 resizing_ 并立即重算区域，
+      // 拖拽期间改用整窗区域（见 ApplyRoundedRegion）。面板实例区域本就是整窗，此为 no-op。
+      resizing_ = true;
+      ApplyRoundedRegion();
+      return 0;
     case WM_EXITSIZEMOVE: {
-      // spec 2026-07-10 panel — the modal move/size loop (entered via the
-      // posted WM_NCLBUTTONDOWN HTCAPTION/HTBOTTOMRIGHT, see the
-      // beginWindowDrag intercept) just ended: report the final rect so Dart
-      // persists the panel position/size. The transient lookup overlay never
-      // enters a modal loop (no drag chrome), so this only ever fires for the
-      // panel instance.
+      // 模态 move/size 循环结束（面板拖动/调整，或 Phase C 起的瞬态覆盖窗拖角 resize）：
+      // 回报最终窗口 rect（物理 px）供 Dart 持久化。同一 windowMoved 通道，两实例各自的
+      // message_cb_ 落不同真值——面板落 clipboardPanelRect，瞬态窗落 overlay 尺寸键（Dart
+      // 侧按实例区分去向，见各自 controller 的 _onJsMessage / windowMoved 分支）。
+      // Phase C — 先复原 resize 期间临时挂起的 shell 区域裁剪（resizing_ 归零后重算）。
+      resizing_ = false;
+      ApplyRoundedRegion();
       if (message_cb_ && hwnd_ != nullptr) {
         RECT r{};
         GetWindowRect(hwnd_, &r);

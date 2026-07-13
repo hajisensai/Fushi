@@ -340,6 +340,15 @@
         '.global-lookup-frame-shell[data-theme="dark"] ' +
         '.global-lookup-close:hover{' +
         'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}' +
+        // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗（cascade 模式）ROOT 卡的
+        // 右下角 resize grip：拖它进 native 模态 size 循环（beginWindowResize，与面板
+        // grip 同一通路）。必须挂在 SHELL 内（z-index 高于 iframe、pointer-events:auto），
+        // 因为瞬态窗被 native 按 shell 卡矩形做区域裁剪（BUG-749 gap click-through）——
+        // 挂在窗口层的角落 grip 会被裁掉不可见/不可点，只有 root 卡区域在裁剪区内。
+        // 透明无背景（cursor 提示可拖），与面板 grip 一致，避免遮挡卡片文字。
+        '.global-lookup-frame-shell .global-lookup-resize-grip{' +
+        'position:absolute;right:0;bottom:0;width:16px;height:16px;' +
+        'z-index:6;cursor:nwse-resize;pointer-events:auto;}' +
         // spec 2026-07-10 — panel top bar (grip + pin + close). Fixed to the
         // window top, above the root shell (which starts at PANEL_BAR_HEIGHT).
         // pointer-events:auto so the grip mousedown reaches the drag handler
@@ -738,6 +747,35 @@
     return btn;
   }
 
+  // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗 ROOT 卡的右下角 resize grip。
+  // mousedown 直接 postToHost('beginWindowResize')（host 顶层 DOM，无需 iframe 桥，
+  // 与面板 grip 一致）：native 收到后 PostMessage(WM_NCLBUTTONDOWN, HTBOTTOMRIGHT)
+  // 进模态 size 循环，松手经 WM_EXITSIZEMOVE 回报窗口 rect 给 Dart 落 overlay 尺寸键。
+  // preventDefault + stopPropagation(capture)：不让这次 mousedown 触发 host 的
+  // 点外关闭 / 拖出选区。返回 null 时（node harness 无 DOM）createRecord 照常健壮。
+  function createResizeGrip() {
+    if (!document || typeof document.createElement !== 'function') {
+      return null;
+    }
+    var grip = document.createElement('div');
+    grip.className = 'global-lookup-resize-grip';
+    grip.setAttribute('role', 'button');
+    grip.setAttribute('aria-label', 'Resize');
+    var onDown = function (event) {
+      if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') {
+          event.stopPropagation();
+        }
+      }
+      postToHost('beginWindowResize', []);
+    };
+    if (typeof grip.addEventListener === 'function') {
+      grip.addEventListener('mousedown', onDown, true);
+    }
+    return grip;
+  }
+
   function createRecord(layer, descriptor) {
     var shell = document.createElement('div');
     shell.className = 'global-lookup-frame-shell';
@@ -770,6 +808,17 @@
     var closeBtn = createCloseButton(descriptor.id);
     if (closeBtn) {
       shell.appendChild(closeBtn);
+    }
+    // Phase C — 只给瞬态覆盖窗（cascade）的 ROOT 卡（parentIndex < 0）挂 resize grip：
+    // 调整的是 overlay「最大卡尺寸」真值，子级级联卡由它派生，故不各自加把手；面板
+    // 模式另有窗口级 #global-lookup-panel-resize，不在此重复。
+    if (layoutMode !== 'panel' && descriptor &&
+        typeof descriptor.parentIndex === 'number' &&
+        descriptor.parentIndex < 0) {
+      var grip = createResizeGrip();
+      if (grip) {
+        shell.appendChild(grip);
+      }
     }
     layer.appendChild(shell);
 

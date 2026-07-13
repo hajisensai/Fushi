@@ -71,6 +71,79 @@ void main() {
       expect(independent(2000, 1600), const LookupSize(640, 480));
     });
 
+    test('resolveOverlayResizeFromWindow — 覆盖窗拖角倒推 + 解锁真值', () {
+      // 正向：cardW = overlayLogicalW × uiScale，窗口物理宽 = cardW × dpr。
+      // 取 overlayLogicalW=600, uiScale=1.25, dpr=1.5 → 物理宽 = 600×1.25×1.5 = 1125。
+      final LookupSize size = resolveOverlayResizeFromWindow(
+        windowPhysicalWidth: 1125,
+        windowPhysicalHeight: 900, // 480×1.25×1.5 = 900 → 逻辑高 480
+        dpr: 1.5,
+        uiScale: 1.25,
+      );
+      expect(size, const LookupSize(600, 480));
+    });
+
+    test('resolveOverlayResizeFromWindow — dpr/uiScale 非正按 1 兜底（不除零）', () {
+      final LookupSize size = resolveOverlayResizeFromWindow(
+        windowPhysicalWidth: 800,
+        windowPhysicalHeight: 600,
+        dpr: 0,
+        uiScale: -1,
+      );
+      expect(size, const LookupSize(800, 600));
+    });
+
+    test('resolveOverlayResizeFromWindow — 下取整到整逻辑像素', () {
+      // 900.9 / 1 / 1 = 900.9 → floor 900；700.2 → 700。
+      final LookupSize size = resolveOverlayResizeFromWindow(
+        windowPhysicalWidth: 900.9,
+        windowPhysicalHeight: 700.2,
+        dpr: 1,
+        uiScale: 1,
+      );
+      expect(size, const LookupSize(900, 700));
+    });
+
+    test('resolveOverlayResizeFromWindow — clamp 到滑杆同源 min/max', () {
+      // 过小 → 夹到 (250,200)；过大 → 夹到 (2000,1600)。
+      final LookupSize tiny = resolveOverlayResizeFromWindow(
+        windowPhysicalWidth: 10,
+        windowPhysicalHeight: 10,
+        dpr: 1,
+        uiScale: 1,
+      );
+      expect(
+          tiny, const LookupSize(kLookupPopupMinWidth, kLookupPopupMinHeight));
+      final LookupSize huge = resolveOverlayResizeFromWindow(
+        windowPhysicalWidth: 99999,
+        windowPhysicalHeight: 99999,
+        dpr: 1,
+        uiScale: 1,
+      );
+      expect(
+          huge, const LookupSize(kLookupPopupMaxWidth, kLookupPopupMaxHeight));
+    });
+
+    test('resolveOverlayResizeFromWindow — 拖出的尺寸即解锁独立键的写入值', () {
+      // 语义验证：倒推值直接作为 overlayLookupMaxWidth/Height 写入，effective 在
+      // independent=true 下即读它——拖拽与滑杆写同一真值。
+      final LookupSize dragged = resolveOverlayResizeFromWindow(
+        windowPhysicalWidth: 1400,
+        windowPhysicalHeight: 1000,
+        dpr: 2,
+        uiScale: 1,
+      );
+      expect(dragged, const LookupSize(700, 500));
+      final LookupSize effective = effectiveLookupSize(
+        independent: true,
+        sceneWidth: dragged.width,
+        sceneHeight: dragged.height,
+        sharedWidth: 400,
+        sharedHeight: 360,
+      );
+      expect(effective, const LookupSize(700, 500));
+    });
+
     test('默认场景键 == app 内默认（解锁瞬间不跳尺寸）', () {
       // 场景键默认值应等于 app 内默认（400×360），使 independent 从 false→true 的
       // 那一刻有效尺寸不变——这是「一动手才脱钩」好品味的前提。
