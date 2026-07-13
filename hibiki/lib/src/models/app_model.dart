@@ -4210,6 +4210,16 @@ class AppModel with ChangeNotifier {
   Future<void> setDesktopClipboardAutoLookup(bool v) =>
       prefsRepo.setDesktopClipboardAutoLookup(v);
 
+  /// 剪切板悬浮面板背景逐像素透明（composition 模式）。默认 false。
+  bool get clipboardPanelTransparent => prefsRepo.clipboardPanelTransparent;
+  Future<void> setClipboardPanelTransparent(bool v) =>
+      prefsRepo.setClipboardPanelTransparent(v);
+
+  /// 剪切板悬浮面板栏「悬停显示」（peek）。默认 false。
+  bool get clipboardPanelPeek => prefsRepo.clipboardPanelPeek;
+  Future<void> setClipboardPanelPeek(bool v) =>
+      prefsRepo.setClipboardPanelPeek(v);
+
   /// spec 2026-07-10 §7 生命周期上移：剪贴板监听归 AppModel 持有（开=start /
   /// 关=stop），HomeDictionaryPage 退化为 destination==main 分区的消费者。此前
   /// start/stop 绑词典 tab 挂载周期——那是「去向只有主窗 tab」时代的产物；

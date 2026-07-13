@@ -185,12 +185,15 @@ void main() {
           reason: '回传必须走面板自己的 channel，与瞬态窗互不串线');
     });
 
-    test('渲染走 layoutMode panel；透明=整窗 LWA_ALPHA（spec §6 真机修正）', () {
+    test('渲染走 layoutMode panel；背景逐像素透明由 cardBgAlpha 承担（composition）', () {
       expect(controllerSrc.contains("layoutMode: 'panel'"), isTrue);
-      expect(controllerSrc.contains('setWindowAlpha'), isTrue,
-          reason: '真透视=整窗 alpha；acrylic 实测经 windowed WebView2 不透明');
-      expect(controllerSrc.contains('cardBgAlpha: 1.0'), isTrue,
-          reason: '卡背景恒不透明，避免与整窗 alpha 双重变淡');
+      // 背景逐像素透明：透明开关开→cardBgAlpha=0（卡背景透明、只剩文字），
+      // 关→1.0（不透明卡）。取代旧的「整窗 LWA_ALPHA 恒 cardBgAlpha:1.0」。
+      expect(
+        controllerSrc.contains('clipboardPanelTransparent ? 0.0 : 1.0'),
+        isTrue,
+        reason: '透明开关驱动卡背景 alpha：开=0（只剩文字），关=1（不透明卡）',
+      );
       expect(controllerSrc.contains('applyBackdrop'), isFalse,
           reason: 'acrylic backdrop 路线废弃（毛玻璃≠透视），面板不再调用');
     });

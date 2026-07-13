@@ -257,6 +257,17 @@ class ClipboardPanelController {
     await _channel.setWindowAlpha((model.clipboardPanelOpacity * 100).round());
   }
 
+  /// 背景逐像素透明开关切换即时生效：composition 下透明由卡背景 alpha（cardBgAlpha）
+  /// 承担，重渲当前面板（若正显示）即更新观感；未显示则下一条剪切板更新自然带上
+  /// 新 cardBgAlpha。native setWindowAlpha 在 composition 下已 no-op，故此处只重渲。
+  Future<void> refreshTransparency() async {
+    final AppModel? model = _appModel;
+    if (!_started || model == null) return;
+    if (_visible && _stack.isNotEmpty) {
+      await _renderPanel(model);
+    }
+  }
+
   /// 面板栏 × / root 卡 ×：藏窗即可。BUG-717：不再暂停路由——下一条剪贴板复制
   /// 会经 [update] 的 `!_visible` 分支重开面板（关掉后第二个词照样弹）。
   Future<void> hidePanel() async {
@@ -372,9 +383,13 @@ class ClipboardPanelController {
       maxWidth: maxW,
       maxHeight: maxH,
       layoutMode: 'panel',
-      // spec §6 真机修正：透明改整窗 LWA_ALPHA，卡背景恒不透明（双重变淡会
-      // 让文字更虚；CSS alpha 基建保留供未来 DComp 逐像素路线复用）。
-      cardBgAlpha: 1.0,
+      // 背景逐像素透明（composition 模式）：clipboardPanelTransparent 开启时卡背景
+      // 透明（cardBgAlpha=0），只有文字/注音/高亮实心像素画，其余透到桌面（像字幕）。
+      // 关闭时恒 1.0（不透明卡，保持现观感、零破坏）。native 若回退 windowed（DComp
+      // 不可用），cardBgAlpha=0 会露出黑（透明背景色），但那是无 GPU 的极端环境。
+      cardBgAlpha: model.clipboardPanelTransparent ? 0.0 : 1.0,
+      // 阶段三 — 面板栏悬停显示：开启后面板栏平时收起、鼠标移顶部才淡入。
+      peek: model.clipboardPanelPeek,
       sentenceHitStart: hit.length > 0 ? hit.start : -1,
       sentenceHitLength: hit.length,
     );

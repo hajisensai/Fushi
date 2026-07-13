@@ -1701,6 +1701,52 @@ function flushTimers() {
   );
 }
 
+// P-peek (阶段三). 面板栏「悬停显示」：payload.peek=true → bar 加 panel-peek（收起）
+//   + 窗口顶部触发区；触发区 mouseenter → panel-peek-shown（淡入）；bar mouseleave →
+//   收回。下次渲染 peek 缺省 → 撤销收起 + 移除触发区（常显，零回归）。
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+    peek: true,
+  });
+  const bar = document.getElementById('global-lookup-panel-bar');
+  assert.ok(bar, 'panel bar exists');
+  assert.ok(
+    /(^|\s)panel-peek(\s|$)/.test(bar.className),
+    'peek=true collapses the bar (panel-peek class)',
+  );
+  const zone = document.getElementById('global-lookup-panel-peek-zone');
+  assert.ok(zone, 'peek hover zone created at window top');
+  // 移入顶部触发区 → 面板栏淡入。
+  zone._listeners['mouseenter'][0]();
+  assert.ok(
+    /panel-peek-shown/.test(bar.className),
+    'hovering the top zone reveals the bar',
+  );
+  // 移出面板栏 → 收回。
+  bar._listeners['mouseleave'][0]();
+  assert.ok(
+    !/panel-peek-shown/.test(bar.className),
+    'leaving the bar hides it again',
+  );
+  // 关掉 peek（下一次渲染无 peek 键）→ 撤销收起 + 摘除触发区。
+  host.renderStack({
+    popups: [descriptor('panel-root', -1)],
+    layoutMode: 'panel',
+  });
+  assert.ok(
+    !/panel-peek/.test(bar.className),
+    'peek off restores the always-visible bar',
+  );
+  assert.strictEqual(
+    zone.parentNode,
+    null,
+    'peek off detaches the hover zone',
+  );
+}
+
 // P3. panel bar chrome: grip mousedown posts beginWindowDrag; pin toggles the
 //     visual + posts panelPin; close posts panelClose; setPanelPinnedVisual
 //     syncs the visual from the Dart pref.
