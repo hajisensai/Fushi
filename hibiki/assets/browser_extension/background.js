@@ -203,6 +203,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!r.ok) { sendResponse({ ok: false, status: r.status, url: null }); return; }
         const data = await r.json();
         sendResponse({ ok: !!(data && data.url), url: (data && data.url) || null, contentType: (data && data.contentType) || null });
+      } else if (msg.type === 'youtubeCaptions') {
+        // A（BUG-781 后续）：扩展抓 YouTube 网页视频**真整集字幕**——POST /api/youtube/captions
+        // {videoId,preferLang} → server 复用 app 内已修的解析器（androidVr getPlayerResponse +
+        // format-3 timedtext），回全部轨（自动/人工）+ cue。Basic auth 与查词同源。best-effort：
+        // 失败/无字幕回 {tracks:[]}，content.js 回退 live 采样。
+        const r = await fetch(base + '/api/youtube/captions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ videoId: msg.videoId || '', preferLang: msg.preferLang || 'ja' }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mine') {
         // 纯文本挖词（非流媒体页 / 回落）：直接 POST {fields,sentence}，无媒体。
         const r = await fetch(base + '/api/mine', {
