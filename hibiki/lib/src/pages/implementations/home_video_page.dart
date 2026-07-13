@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -103,6 +103,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
 
+  /// BUG-793：视频库 uid 集合监听。列表是一次性 FutureBuilder + 保活 tab，无此
+  /// 订阅时非本页发起的导入（外部「用 Hibiki 打开」等直接落库不 _refresh 的路径）
+  /// 要等下拉刷新/重启才出现。订阅 videoBooks 表 → 集合一变（插入/删除）就 _refresh。
+  StreamSubscription<List<String>>? _videoUidsSub;
+
+  /// 上一次已知的视频 uid 集合，用于对 [_videoUidsSub] 事件去重：仅集合变化才刷新，
+  /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
+  /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
+  Set<String>? _knownVideoUids;
+
   /// 多端库联合视图 §2.2/§2.6：云后端（Google Drive 等）的云视频目录 client。互联
   /// （hibikiServer）与云后端互斥——一台设备只配一种后端，故 [_remoteVideoClient]（互联）
   /// 与本字段（云）至多一个非空，[_downloadRemote] 据此分派下载路径。
@@ -171,6 +181,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     _loadLibraryMaps();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
+    // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
+    _videoUidsSub =
+        widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
@@ -179,11 +192,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _videoUidsSub?.cancel();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
       return true;
     }());
     super.dispose();
+  }
+
+  /// BUG-793：视频库 uid 集合变化回调。首个事件仅登记基线（initState 已首载）；
+  /// 此后仅当集合真变化（插入/删除）才 _refresh——纯列更新（封面自愈 / 进度回写）
+  /// 集合不变故跳过，避免自愈写回→重刷环。
+  void _onVideoUidsChanged(List<String> uids) {
+    final Set<String> next = uids.toSet();
+    if (_knownVideoUids == null) {
+      _knownVideoUids = next;
+      return;
+    }
+    if (setEquals(next, _knownVideoUids)) return;
+    _knownVideoUids = next;
+    if (mounted) _refresh();
   }
 
   void _refresh() {

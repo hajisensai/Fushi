@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 775 条。点号进各自文件。
+> 共 776 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-793](bugs/BUG-793-video-import-no-refresh.md) | ✅ | ✅ | 视频导入后库页不自动刷新(外部打开等路径) |
 | [BUG-792](bugs/BUG-792-subtitle-list-hover-popover-close.md) | ✅ | ✅ | 悬停底栏音量/倍速图标误关 push-aside 字幕列表 |
 | [BUG-791](bugs/BUG-791-popup-empty-reading-split.md) | ✅ | ✅ | 查词弹窗同词因空读音拆成两张卡 |
 | [BUG-790](bugs/BUG-790-video-collection-count-remote.md) | ✅ | ✅ | 视频合集行计数只数本地成员导致全云端合集显示0集 |
