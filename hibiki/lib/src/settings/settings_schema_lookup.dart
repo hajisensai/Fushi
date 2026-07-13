@@ -306,6 +306,24 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 复制后是否自动查词。关掉后剪贴板面板/查词只显示复制到的文字，点词才查
+          // （见 ClipboardPanelController 纯文字态）。仅桌面 + 剪贴板总开关开时可见。
+          SettingsSwitchItem(
+            id: 'lookup.desktop_clipboard_auto_lookup',
+            title: t.desktop_clipboard_auto_lookup,
+            subtitle: t.desktop_clipboard_auto_lookup_hint,
+            icon: Icons.search_off_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.desktopClipboardAutoLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setDesktopClipboardAutoLookup(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSegmentedItem<DesktopClipboardWindowMode>(
             id: 'lookup.desktop_clipboard_window_mode',
             title: t.desktop_clipboard_window_mode,

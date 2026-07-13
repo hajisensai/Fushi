@@ -4194,6 +4194,13 @@ class AppModel with ChangeNotifier {
     await applyDesktopClipboardLifecycle();
   }
 
+  /// 剪切板复制后是否自动查词（默认 true=现状）。false 时面板只显示文字、点词才查。
+  /// 与总开关 [desktopClipboardEnabled] 正交，不影响监听生命周期，故无需重跑
+  /// [applyDesktopClipboardLifecycle]。
+  bool get desktopClipboardAutoLookup => prefsRepo.desktopClipboardAutoLookup;
+  Future<void> setDesktopClipboardAutoLookup(bool v) =>
+      prefsRepo.setDesktopClipboardAutoLookup(v);
+
   /// spec 2026-07-10 §7 生命周期上移：剪贴板监听归 AppModel 持有（开=start /
   /// 关=stop），HomeDictionaryPage 退化为 destination==main 分区的消费者。此前
   /// start/stop 绑词典 tab 挂载周期——那是「去向只有主窗 tab」时代的产物；

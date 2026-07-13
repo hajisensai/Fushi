@@ -2337,5 +2337,7 @@
   "extension_popup_independent_size": "浏览器扩展独立尺寸",
   "extension_popup_independent_size_hint": "让浏览器扩展查词弹窗使用独立最大尺寸，而非跟随 app 内查词弹窗",
   "extension_popup_max_width": "扩展弹窗最大宽度",
-  "extension_popup_max_height": "扩展弹窗最大高度"
+  "extension_popup_max_height": "扩展弹窗最大高度",
+  "desktop_clipboard_auto_lookup": "复制后自动查词",
+  "desktop_clipboard_auto_lookup_hint": "关闭后面板只显示复制到的文字，点词才查词。"
 }

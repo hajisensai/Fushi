@@ -2337,5 +2337,7 @@
   "extension_popup_independent_size": "Separate size for browser extension",
   "extension_popup_independent_size_hint": "Give the browser-extension lookup popup its own max size instead of following the in-app popup",
   "extension_popup_max_width": "Extension popup max width",
-  "extension_popup_max_height": "Extension popup max height"
+  "extension_popup_max_height": "Extension popup max height",
+  "desktop_clipboard_auto_lookup": "Auto-look-up on copy",
+  "desktop_clipboard_auto_lookup_hint": "When off, the panel shows only the copied text; tap a word to look it up."
 }

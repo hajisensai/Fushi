@@ -448,6 +448,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 剪切板复制后是否自动查词（默认 true=保持现状）。false 时剪切板面板只显示
+  /// 复制到的句子文字（逐字可点），不自动 [searchDictionary]、不弹释义、不朗读；
+  /// 用户点句中字才手动查（走面板既有 panelSentenceLookup 桥）。总开关
+  /// [desktopClipboardEnabled] 仍决定「是否监听剪切板」，本开关只决定「监听到之后
+  /// 自不自动查词」，两者正交。
+  bool get desktopClipboardAutoLookup =>
+      getPref('desktop_clipboard_auto_lookup', defaultValue: true) as bool;
+
+  Future<void> setDesktopClipboardAutoLookup(bool value) async {
+    await setPref('desktop_clipboard_auto_lookup', value);
+    notifyListeners();
+  }
+
   // TODO-1030 M0 — 全局查词（应用外）是否抓取选中文本周围的上下文句。默认 false：
   // 抓取要读前台应用的 UIA 文本，隐私敏感，用户显式开启才启用；关闭时全局查词只用
   // 剪贴板拿到的纯选中串（现状），不接触前台应用文本。
