@@ -64,5 +64,3 @@ bool isMacosPlatform(BuildContext context) {
       return false;
   }
 }
-
-bool get isCupertinoDefault => false;

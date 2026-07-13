@@ -661,7 +661,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   void _openStatistics() {
     Navigator.push(
       context,
-      adaptivePageRoute<void>(builder: (_) => const VideoStatisticsPage()),
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const VideoStatisticsPage(),
+      ),
     );
   }
 
@@ -719,7 +722,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   void _openCollections() {
     Navigator.push(
       context,
-      adaptivePageRoute<void>(builder: (_) => const CollectionsPage()),
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(),
+      ),
     );
   }
 
@@ -731,6 +737,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     await Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralized(
           bookUid: book.bookUid,
           repo: widget.repo,
@@ -753,6 +760,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralizedRemote(
           info: video,
           repo: widget.repo,
@@ -1065,6 +1073,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     await Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => TagPickerPage(videoBookUid: book.bookUid),
       ),
     );
@@ -2120,6 +2129,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => MediaCollectionDetailPage(
           database: db,
           collection: collection,

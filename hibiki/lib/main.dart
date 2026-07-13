@@ -958,8 +958,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     }
 
     if (!mounted) return;
+    // This process-level launch path owns a NavigatorState but has no themed
+    // descendant BuildContext, so its route contract is explicitly Material.
     await navigator.push(
-      adaptivePageRoute<void>(
+      MaterialPageRoute<void>(
         builder: (_) =>
             VideoHibikiPage.neutralized(bookUid: bookUid, repo: repo),
       ),

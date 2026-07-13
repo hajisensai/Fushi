@@ -1,9 +1,61 @@
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+
+class _RecordingNavigatorObserver extends NavigatorObserver {
+  Route<dynamic>? lastPushedRoute;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    lastPushedRoute = route;
+  }
+}
+
+Future<Route<dynamic>?> _pushAdaptiveRoute(
+  WidgetTester tester, {
+  required TargetPlatform platform,
+  required HibikiDesignSystem? designSystem,
+}) async {
+  final _RecordingNavigatorObserver observer = _RecordingNavigatorObserver();
+  await tester.pumpWidget(
+    MaterialApp(
+      key: UniqueKey(),
+      navigatorObservers: <NavigatorObserver>[observer],
+      theme: ThemeData(
+        platform: platform,
+        extensions: designSystem == null
+            ? const <ThemeExtension<dynamic>>[]
+            : <ThemeExtension<dynamic>>[
+                HibikiDesignSystemTheme(designSystem),
+              ],
+      ),
+      home: Builder(
+        builder: (BuildContext context) => TextButton(
+          onPressed: () {
+            Navigator.of(context).push<void>(
+              adaptivePageRoute<void>(
+                context: context,
+                builder: (_) => const SizedBox.shrink(),
+              ),
+            );
+          },
+          child: const Text('open'),
+        ),
+      ),
+    ),
+  );
+  observer.lastPushedRoute = null;
+
+  await tester.tap(find.text('open'));
+  await tester.pump();
+
+  return observer.lastPushedRoute;
+}
 
 void main() {
   Future<({bool cupertino, bool macos})> resolve(
@@ -88,10 +140,56 @@ void main() {
     expect(macos, isFalse);
   });
 
-  test('context-free adaptive route defaults to Material', () {
-    final route = adaptivePageRoute<void>(
-      builder: (_) => const SizedBox.shrink(),
+  test('adaptive route API requires the active BuildContext', () {
+    final String source = File(
+      'lib/src/utils/adaptive/adaptive_widgets.dart',
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains(
+        'Route<T> adaptivePageRoute<T>({\n'
+        '  required BuildContext context,',
+      ),
     );
-    expect(route, isA<MaterialPageRoute<void>>());
+    expect(source, isNot(contains('BuildContext? context')));
+    expect(source, isNot(contains('context != null')));
+  });
+
+  testWidgets('explicit Cupertino route is pushed through a real Navigator', (
+    WidgetTester tester,
+  ) async {
+    final Route<dynamic>? route = await _pushAdaptiveRoute(
+      tester,
+      platform: TargetPlatform.iOS,
+      designSystem: HibikiDesignSystem.cupertino,
+    );
+
+    expect(route, isA<CupertinoPageRoute<void>>());
+  });
+
+  testWidgets('auto and missing extension routes stay Material everywhere', (
+    WidgetTester tester,
+  ) async {
+    for (final TargetPlatform platform in TargetPlatform.values) {
+      final Route<dynamic>? autoRoute = await _pushAdaptiveRoute(
+        tester,
+        platform: platform,
+        designSystem: HibikiDesignSystem.auto,
+      );
+      expect(autoRoute, isA<MaterialPageRoute<void>>(),
+          reason: '$platform auto');
+
+      final Route<dynamic>? missingRoute = await _pushAdaptiveRoute(
+        tester,
+        platform: platform,
+        designSystem: null,
+      );
+      expect(
+        missingRoute,
+        isA<MaterialPageRoute<void>>(),
+        reason: '$platform missing',
+      );
+    }
   });
 }

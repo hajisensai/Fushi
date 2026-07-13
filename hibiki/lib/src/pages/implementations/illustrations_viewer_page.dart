@@ -189,6 +189,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     Navigator.push(
       context,
       adaptivePageRoute(
+        context: context,
         builder: (_) => _FullScreenGallery(
           images: _images,
           initialIndex: initialIndex,

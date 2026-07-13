@@ -233,14 +233,12 @@ Widget adaptiveSegmentedButton<T extends Object>({
 }
 
 Route<T> adaptivePageRoute<T>({
+  required BuildContext context,
   required WidgetBuilder builder,
   RouteSettings? settings,
   bool fullscreenDialog = false,
-  BuildContext? context,
 }) {
-  final bool cupertino =
-      context != null ? isCupertinoPlatform(context) : isCupertinoDefault;
-  if (cupertino) {
+  if (isCupertinoPlatform(context)) {
     return CupertinoPageRoute<T>(
       builder: builder,
       settings: settings,

@@ -126,9 +126,10 @@ extension _VideoEpisode on _VideoHibikiPageState {
     if (curPos != null) {
       await _persistPosition(widget.bookUid, curPos);
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
     await navigator.pushReplacement<void, void>(
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralized(
           bookUid: targetUid,
           repo: widget.repo,

@@ -2771,6 +2771,7 @@ class AppModel with ChangeNotifier {
     await Navigator.push(
       ctx,
       adaptivePageRoute(
+        context: ctx,
         builder: (context) => const ProfileManagementPage(),
       ),
     );
@@ -3352,6 +3353,7 @@ class AppModel with ChangeNotifier {
       await Navigator.pushReplacement(
         ctx,
         adaptivePageRoute(
+          context: ctx,
           builder: (context) => mediaSource.buildLaunchPage(
               item: item, initialBookmarkJump: initialBookmarkJump),
         ),
@@ -3360,6 +3362,7 @@ class AppModel with ChangeNotifier {
       await Navigator.push(
         ctx,
         adaptivePageRoute(
+          context: ctx,
           builder: (context) => mediaSource.buildLaunchPage(
               item: item, initialBookmarkJump: initialBookmarkJump),
         ),
