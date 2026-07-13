@@ -2101,6 +2101,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       // page-turn hits the LRU cache instead of disk read + decode + sanitize +
       // inject. Background, single chapter, dropped if disposed/style-changed.
       _prefetchAdjacentChapter(chapterSnapshot + 1);
+      // BUG-785: EPUB 正文首次就绪 + 有声书已挂载 → 恢复「上次退出时在歌词模式」。
+      // 此刻正文已加载，切歌词等价用户手动切（已知安全），规避 fresh open 直接整页
+      // 加载歌词 HTML 跳过 EPUB 的 iOS 白屏。一次性（下面立即清零）防每章重触发；
+      // 无有声书（controller==null）则不恢复（歌词模式依赖音频），意图也一并清掉。
+      if (_pendingLyricsRestore) {
+        _pendingLyricsRestore = false;
+        if (_audiobookController != null && !_lyricsMode) {
+          unawaited(_toggleLyricsMode());
+        }
+      }
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._onChapterLoadComplete', e, stack);

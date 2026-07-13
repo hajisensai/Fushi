@@ -51,6 +51,28 @@ void main() {
   });
 
   test(
+      'lyrics scroll targets the real overflow container, not window (BUG-784)',
+      () {
+    final String html = LyricsModeHtml.generate(
+      cues: <AudioCue>[cue(0), cue(1), cue(2)],
+      currentIndex: 1,
+      backgroundColor: 'rgba(255,255,255,1.00)',
+      textColor: 'rgba(0,0,0,1.00)',
+      accentColor: 'rgba(255,220,0,1.00)',
+      fontSize: 20,
+    );
+
+    // BUG-784: `html,body{height:100%;overflow-x:hidden}` 让 overflow-y 计算成 auto，
+    // body 才是真正滚动容器；旧码 `window.scrollBy` 作用于 scrollingElement(html) → 空转，
+    // 高亮更新但页面不跟随滚动。修后必须滚真正有溢出的元素、且不再用 window.scrollBy。
+    expect(html, isNot(contains('window.scrollBy(')));
+    expect(html, contains('function _lyricsScrollTarget()'));
+    // 增量滚动打到容器的 scrollTop/scrollLeft（横排纵滚 / 竖排横滚）。
+    expect(html, contains('s.scrollTop += d'));
+    expect(html, contains('s.scrollLeft += d'));
+  });
+
+  test(
       'reader _onCueChanged passes followAudio (+force-reveal) into __lyricsSetCue',
       () {
     final String src = readReaderPageSource();

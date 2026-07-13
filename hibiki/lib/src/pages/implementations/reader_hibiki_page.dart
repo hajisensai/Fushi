@@ -1241,6 +1241,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
+  // BUG-785: 「上次退出时在歌词模式」的待恢复意图。fresh open 仍先以正文加载
+  // （_lyricsMode=false，避免直接整页加载歌词 HTML 跳过 EPUB → iOS 白屏），等 EPUB
+  // 内容就绪 + 有声书已挂载后再切歌词（等价用户手动切，已知安全）。一次性，恢复后清零。
+  bool _pendingLyricsRestore = false;
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
@@ -1679,14 +1683,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _syncDictionaryTheme();
 
-    // 歌词模式是当前 reader 页面的瞬时显示态。fresh open 时若恢复上个会话的
-    // persisted lyrics_mode，会让 WebView 跳过 EPUB 正文，直接加载整本歌词 HTML；
-    // iOS 上大字幕书容易触发内容超时甚至白屏。
+    // BUG-785: 歌词模式改为可跨会话恢复（用户请求「重进书籍还在歌词模式」）。
+    // fresh open 仍先以正文加载（_lyricsMode=false）——直接按 persisted lyrics_mode
+    // 让 WebView 整页加载歌词 HTML、跳过 EPUB 正文，iOS 大字幕书会内容超时甚至白屏。
+    // 这里把「上次是歌词模式」记成待恢复意图（保留偏好、不再抹除），等 EPUB 内容就绪
+    // + 有声书已挂载后（见 _onChapterLoadComplete）再切歌词，等价用户手动切、已知安全。
     _lyricsMode = false;
-    if (ReaderHibikiSource.instance.lyricsMode) {
-      await ReaderHibikiSource.instance.setLyricsMode(false);
-      if (!mounted) return;
-    }
+    _pendingLyricsRestore = ReaderHibikiSource.instance.lyricsMode;
 
     _audioSlotResolved = true;
 
