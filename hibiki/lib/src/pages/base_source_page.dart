@@ -203,6 +203,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   int _visibleRenderPendingGeneration = 0;
   Timer? _visibleRenderFailsafeTimer;
 
+  /// BUG-717 ②：最近一次 [showDeferredPopup] 真正显示的条目。阅读器把「显示弹窗」与
+  /// 「正文高亮 eval」解耦后，高亮 eval 回调经 [reanchorTopPopup] 只重锚这个条目（配合
+  /// [activeLookupGeneration] 代次校验），避免旧 eval 回调错位到新查词的弹窗。
+  DictionaryPopupEntry? _lastDeferredShown;
+
   Future<int> searchDictionaryResult({
     required String searchTerm,
     required Rect selectionRect,
@@ -342,6 +347,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final gen = _deferredGeneration;
     _deferredPopupItem = null;
     if (item != null) {
+      _lastDeferredShown = item;
       if (selectionRect != null) {
         item.selectionRect = selectionRect;
       }
@@ -357,6 +363,21 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _isSearchingNotifier.value = false;
       _pendingSelectionRect = null;
     }
+  }
+
+  /// BUG-717 ②：当前查词代次快照。阅读器把显示与高亮 eval 解耦后，捕获它传给
+  /// [reanchorTopPopup]，异步回来时若已有更新查词（[_searchGeneration] 已 bump）就丢弃
+  /// 迟到的重锚。见 reader_hibiki `_highlightAndShowPopup`。
+  int get activeLookupGeneration => _searchGeneration;
+
+  /// BUG-717 ②：把最近显示的顶层弹窗重锚到高亮 eval 精修后的词 bbox [rect]。仅当
+  /// [generation] 仍是当前查词代次（其间没有更新查词、没清栈）时才动，且委托
+  /// [DictionaryPopupController.reanchorEntry] 再校验该条目仍显示 / rect 有变。
+  void reanchorTopPopup(Rect rect, int generation) {
+    if (generation != _searchGeneration) return;
+    final DictionaryPopupEntry? item = _lastDeferredShown;
+    if (item == null) return;
+    _popup.reanchorEntry(item, rect);
   }
 
   bool _itemNeedsWebViewRender(DictionaryPopupEntry item) {
