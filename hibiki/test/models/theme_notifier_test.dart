@@ -19,6 +19,40 @@ HibikiDatabase _testDb() {
   );
 }
 
+class _DesignSystemMigrationRaceDatabase extends HibikiDatabase {
+  _DesignSystemMigrationRaceDatabase()
+      : super.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+  final Completer<void> migrationReloadReadCaptured = Completer<void>();
+  final Completer<void> releaseMigrationReloadRead = Completer<void>();
+  final Completer<void> setterWriteStarted = Completer<void>();
+  final Completer<void> releaseSetterWrite = Completer<void>();
+
+  bool holdNextDesignSystemRead = false;
+  bool holdNextDesignSystemWrite = false;
+
+  @override
+  Future<String?> getPref(String key) async {
+    final String? value = await super.getPref(key);
+    if (key == 'design_system' && holdNextDesignSystemRead) {
+      holdNextDesignSystemRead = false;
+      migrationReloadReadCaptured.complete();
+      await releaseMigrationReloadRead.future;
+    }
+    return value;
+  }
+
+  @override
+  Future<void> setPref(String key, String value) async {
+    if (key == 'design_system' && holdNextDesignSystemWrite) {
+      holdNextDesignSystemWrite = false;
+      setterWriteStarted.complete();
+      await releaseSetterWrite.future;
+    }
+    await super.setPref(key, value);
+  }
+}
+
 void main() {
   late HibikiDatabase db;
   late ThemeNotifier notifier;
@@ -515,6 +549,63 @@ void main() {
         reason: 'CAS 失败不能 bump prefs_version',
       );
       expect(notifyCount, 1, reason: '异步重读 material 后必须驱动已挂载界面重建');
+    });
+
+    test(
+        'migration reload cannot overwrite a design system setter that starts '
+        'while its database read is suspended', () async {
+      final _DesignSystemMigrationRaceDatabase raceDb =
+          _DesignSystemMigrationRaceDatabase();
+      final ThemeNotifier raceNotifier =
+          ThemeNotifier(raceDb, textThemeBuilder);
+      Future<void>? setterFuture;
+
+      try {
+        final String hiddenRaw = PrefCodec.encode('macos');
+        await raceDb.setPref('design_system', hiddenRaw);
+        final Map<String, String> staleSnapshot = await raceDb.getAllPrefs();
+        await raceDb.setPref('design_system', PrefCodec.encode('auto'));
+
+        raceDb.holdNextDesignSystemRead = true;
+        raceNotifier.loadFromPrefsSnapshot(staleSnapshot);
+        await raceDb.migrationReloadReadCaptured.future;
+
+        raceDb.holdNextDesignSystemWrite = true;
+        setterFuture = raceNotifier.setDesignSystem('material');
+        await raceDb.setterWriteStarted.future;
+        expect(
+          raceNotifier.designSystem,
+          'material',
+          reason: 'setter 在等待 DB 前已更新内存',
+        );
+
+        raceDb.releaseMigrationReloadRead.complete();
+        await pumpEventQueue(times: 10);
+        raceDb.releaseSetterWrite.complete();
+        await setterFuture;
+        await pumpEventQueue(times: 10);
+
+        expect(await raceDb.getPref('design_system'),
+            PrefCodec.encode('material'));
+        expect(
+          raceNotifier.designSystem,
+          'material',
+          reason: '旧 migration reload 不能覆盖已开始的用户设置',
+        );
+      } finally {
+        if (!raceDb.releaseMigrationReloadRead.isCompleted) {
+          raceDb.releaseMigrationReloadRead.complete();
+        }
+        if (!raceDb.releaseSetterWrite.isCompleted) {
+          raceDb.releaseSetterWrite.complete();
+        }
+        if (setterFuture != null) {
+          await setterFuture;
+        }
+        await pumpEventQueue(times: 10);
+        raceNotifier.dispose();
+        await raceDb.close();
+      }
     });
 
     test(

@@ -320,6 +320,9 @@ class ThemeNotifier extends ChangeNotifier {
   final HibikiDatabase _db;
   final TextTheme Function() _textThemeBuilder;
   final Map<String, String> _prefs = {};
+  // Invalidates an async migration reload whenever a newer local write or
+  // full preference snapshot has taken ownership of the in-memory value.
+  int _designSystemPreferenceRevision = 0;
   double _autoAppUiScale = HibikiAppUiScale.defaultScale;
 
   CorePalette? _systemPalette;
@@ -359,6 +362,7 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(snapshot);
+    _designSystemPreferenceRevision++;
     final _DesignSystemPreferenceMigration? migration =
         _normalizeHiddenDesignSystemInMemory();
     if (migration != null) {
@@ -379,6 +383,7 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(all);
+    _designSystemPreferenceRevision++;
     final _DesignSystemPreferenceMigration? migration =
         _normalizeHiddenDesignSystemInMemory();
     if (migration != null) {
@@ -402,6 +407,7 @@ class ThemeNotifier extends ChangeNotifier {
       );
       if (!migrated) {
         await _reloadDesignSystemPreferenceAfterMigrationRace(
+          migration,
           notifyOnChange: notifyOnReload,
         );
       }
@@ -411,22 +417,30 @@ class ThemeNotifier extends ChangeNotifier {
         '$stackTrace',
       );
       await _reloadDesignSystemPreferenceAfterMigrationRace(
+        migration,
         notifyOnChange: notifyOnReload,
       );
     }
   }
 
-  Future<void> _reloadDesignSystemPreferenceAfterMigrationRace({
+  Future<void> _reloadDesignSystemPreferenceAfterMigrationRace(
+    _DesignSystemPreferenceMigration migration, {
     required bool notifyOnChange,
   }) async {
     try {
+      final int revisionBeforeReload = _designSystemPreferenceRevision;
       final String designSystemBeforeReload = designSystem;
       final String? currentRaw = await _db.getPref('design_system');
+      if (_designSystemPreferenceRevision != revisionBeforeReload ||
+          _prefs['design_system'] != migration.normalizedRaw) {
+        return;
+      }
       if (currentRaw == null) {
         _prefs.remove('design_system');
       } else {
         _prefs['design_system'] = currentRaw;
       }
+      _designSystemPreferenceRevision++;
       if (notifyOnChange &&
           designSystemBeforeReload != designSystem &&
           hasListeners) {
@@ -457,6 +471,9 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> _set(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
     _prefs[key] = strVal;
+    if (key == 'design_system') {
+      _designSystemPreferenceRevision++;
+    }
     await _db.setPref(key, strVal);
   }
 
