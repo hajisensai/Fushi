@@ -425,6 +425,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       id: e.uid,
       title: e.title,
       sizeBytes: e.sizeBytes,
+      // tags 稳健档：把清单条目的标签 LWW 时钟带进 RemoteVideoInfo，供下载后
+      // mergeRemoteVideoTags 按名 max(add) vs max(removed) 解析（删除/改名传播）。
+      tagsAddedAt: e.tagsAddedAt,
+      tagTombstones: e.tagTombstones,
     );
   }
 
@@ -1247,6 +1251,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       embeddedSubtitleTrack: const Value<int?>(0),
       importedAt: Value(DateTime.now()),
     ));
+    // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
+    if (video.tagsAddedAt.isNotEmpty || video.tagTombstones.isNotEmpty) {
+      await widget.repo.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: video.tagsAddedAt,
+        remoteTombstones: video.tagTombstones,
+      );
+    }
     // 封面：先试云端封面资产（可选，无封面记录返回 false 不抛）；失败/无则本地抽帧兜底。
     // 与建行解耦（抽帧走 ffmpeg 慢，绝不挡建行落库），抽好后 updateCover 回写并刷新一次。
     bool gotCover = false;

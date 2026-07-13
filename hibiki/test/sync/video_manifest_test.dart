@@ -164,4 +164,41 @@ void main() {
       expect(videoAssetName('u', '/x/a.MKV'), endsWith('.MKV'));
     });
   });
+
+  group('tags 稳健档：清单条目携带标签 LWW 时钟', () {
+    test('tagsAddedAt / tagTombstones toJson↔fromJson 往返一致（version 仍为 1）', () {
+      const RemoteVideoManifestEntry entry = RemoteVideoManifestEntry(
+        uid: 'video/v1',
+        title: 'V1',
+        videoAsset: 'v1.mp4',
+        sizeBytes: 100,
+        tagsAddedAt: <String, int>{'アニメ': 100},
+        tagTombstones: <String, int>{'旧': 200},
+      );
+      final manifest =
+          RemoteVideoManifest(videos: <RemoteVideoManifestEntry>[entry]);
+      // version 保持 1：旧 app 仍能解析（只忽略未知标签键），不破坏混版舰队。
+      expect(manifest.toJson()['version'], 1);
+      final restored = RemoteVideoManifest.fromJson(manifest.toJson());
+      final RemoteVideoManifestEntry e = restored.videos.single;
+      expect(e.tagsAddedAt, <String, int>{'アニメ': 100});
+      expect(e.tagTombstones, <String, int>{'旧': 200});
+    });
+
+    test('无标签字段（旧清单）解码为空 map，不抛', () {
+      final restored = RemoteVideoManifest.fromJson(<String, dynamic>{
+        'version': 1,
+        'videos': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'uid': 'video/old',
+            'title': 'Old',
+            'videoAsset': 'old.mp4',
+            'sizeBytes': 1,
+          },
+        ],
+      });
+      expect(restored.videos.single.tagsAddedAt, isEmpty);
+      expect(restored.videos.single.tagTombstones, isEmpty);
+    });
+  });
 }

@@ -781,6 +781,18 @@ class SyncOrchestrator {
             report.videosExported++;
           }
 
+          // tags 稳健档：清单条目累积「知识的并集」——本地标签 LWW 时钟与 priorEntry
+          // （他端已发布）取 max 并集，使单一共享清单文件不因后写覆盖丢掉他端标签知识；
+          // 下载端按 max(add) vs max(removed) 逐名解析。删除靠墓碑跨端传播、防复活。
+          final Map<String, int> mergedTagAddedAt = _unionMaxIntMap(
+            await _db.videoTagAddedAtByName(v.bookUid),
+            priorEntry?.tagsAddedAt ?? const <String, int>{},
+          );
+          final Map<String, int> mergedTagTombstones = _unionMaxIntMap(
+            await _db.tagTombstonesByName(v.bookUid, 'video'),
+            priorEntry?.tagTombstones ?? const <String, int>{},
+          );
+
           // 无论是否跳过上传，都刷新清单条目（保证同尺寸跳过时清单仍有此 uid）。
           // coverAsset 回退保留 byUid 既有值：本地封面文件丢失 ≠ 远端没有封面，绝不
           // 把已发布的 coverAsset 抹成 null。
@@ -791,6 +803,8 @@ class SyncOrchestrator {
             sizeBytes: size,
             importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
             coverAsset: coverAsset ?? priorEntry?.coverAsset,
+            tagsAddedAt: mergedTagAddedAt,
+            tagTombstones: mergedTagTombstones,
           );
         } catch (e) {
           report.errors.add('video "${v.title}": $e');
@@ -2037,5 +2051,16 @@ Map<String, int> _parseNameIntMap(Object? raw) {
         : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
     if (ms != null) out[name] = ms;
   });
+  return out;
+}
+
+/// 两个 `{name: ms}` 时钟按名取 max 并集（tags 稳健档：视频清单条目累积他端知识）。
+Map<String, int> _unionMaxIntMap(Map<String, int> a, Map<String, int> b) {
+  final Map<String, int> out = <String, int>{...a};
+  for (final MapEntry<String, int> e in b.entries) {
+    out[e.key] = out.containsKey(e.key)
+        ? (out[e.key]! > e.value ? out[e.key]! : e.value)
+        : e.value;
+  }
   return out;
 }
