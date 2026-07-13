@@ -913,7 +913,10 @@ function hibikiEnsureContainer() {
     // 「CSS zoom × 100vw × shadow shrink-to-fit」相互作用干扰。host 宽/高/zoom 由 hibikiRender
     // 按查词响应下发的 --hibiki-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
     hibikiHost.style.cssText =
-        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;';
+        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;' +
+        // 入场淡入：与 app 内 parkedPopupLayer 及 app 外 .global-lookup-frame-shell 的
+        // 200ms ease-out 对齐。首帧 opacity:0，place() 定位后 reflow 触发 0→1 淡入。
+        'opacity:0;transition:opacity 200ms ease-out;';
     hibikiInstallSwipeClose(hibikiHost); // 水平拖关手势（是否生效由 hibikiSwipeCloseEnabled 门控）
     const shadow = hibikiHost.attachShadow({ mode: 'open' });
     // 中和 content.css 里 #entries-container 自带的尺寸盒/zoom（那套是给「容器自身即 fixed 元素」
@@ -1040,8 +1043,10 @@ function hibikiDrawHighlightOverlay(rects) {
 
 function hibikiRemoveContainer() {
   // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __hibikiRoot 让 popup.js
-  // 的 helper 回落到 document（下次开窗 hibikiEnsureContainer 会重建）。
-  if (hibikiHost) { hibikiHost.remove(); hibikiHost = null; }
+  // 的 helper 回落到 document（下次开窗 hibikiEnsureContainer 会重建）。host 引用即刻置空，
+  // 让并发 re-lookup 重建新 host；旧节点先淡出、末尾才从 DOM 移除（高亮/选区仍即时清）。
+  const dying = hibikiHost;
+  hibikiHost = null;
   hibikiContainer = null;
   window.__hibikiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
@@ -1052,6 +1057,21 @@ function hibikiRemoveContainer() {
       window.hoshiSelection.clearSelection();
     }
   } catch (_) { /* no-op */ }
+  // 淡出后再从 DOM 移除 host 节点（与入场淡入及 app 外 .global-lookup-dismissing 的 200ms
+  // ease-out 对齐）。pointer-events:none 避免淡出期误吞点击；transitionend 用 setTimeout
+  // 兜底（reduced-motion / 离屏也能移除）。高亮/选区已在上面即时清，不随淡出延迟残留。
+  if (dying) {
+    dying.style.pointerEvents = 'none';
+    dying.style.opacity = '0';
+    let dropped = false;
+    const drop = () => {
+      if (dropped) return;
+      dropped = true;
+      try { dying.remove(); } catch (_) { /* 已脱离文档 */ }
+    };
+    dying.addEventListener('transitionend', drop, { once: true });
+    setTimeout(drop, 260);
+  }
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
@@ -1373,6 +1393,14 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
       hibikiHost.style.top = (pos.top / zoom) + 'px';
     }
     c.style.visibility = 'visible';
+    // 入场淡入：把 host 压到 0 并强制回流提交为过渡基线，再翻 1 触发 200ms ease-out
+    // 淡入（同帧 0→1 无 reflow 会被浏览器合并、跳过过渡）。重复查词复用同一 host 时
+    // 亦从 0 重新淡入，与 app 内每次「隐藏→可见」淡入一致。
+    if (hibikiHost) {
+      hibikiHost.style.opacity = '0';
+      void hibikiHost.offsetWidth;
+      hibikiHost.style.opacity = '1';
+    }
   };
   requestAnimationFrame(place);
 }
