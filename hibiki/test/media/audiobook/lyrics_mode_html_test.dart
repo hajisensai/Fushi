@@ -191,9 +191,11 @@ void main() {
       final String containerRule = _cssBlock(html, '.lyrics-container {');
       expect(containerRule, contains('flex-direction: row;'));
 
-      // Scrolling is delta/incremental (scrollBy) to dodge vertical-rl's
-      // negative scrollX coordinate, not absolute scrollTo.
-      expect(html, contains('window.scrollBy(d, 0)'));
+      // Scrolling is delta/incremental to dodge vertical-rl's negative scrollX
+      // coordinate, not absolute scrollTo. BUG-784: the delta is applied to the
+      // real overflow container's scrollLeft (vertical mode = horizontal scroll),
+      // not window.scrollBy (which no-ops because body, not html, is the scroller).
+      expect(html, contains('s.scrollLeft += d'));
       expect(html, contains('_lyricsScrollByAxis'));
     });
 

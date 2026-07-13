@@ -102,4 +102,24 @@ void main() {
     expect(lyricsBranch, contains('if (sourceIdx >= 0) {'));
     expect('_loadLyricsPage()'.allMatches(lyricsBranch).length, 1);
   });
+
+  test(
+      'lyrics mode persists across re-entry via safe deferred restore (BUG-785)',
+      () {
+    final String src = readReaderPageSource();
+
+    // fresh open 捕获「上次是歌词模式」意图（保留偏好），而不是旧的直接抹除偏好。
+    expect(
+      src,
+      contains(
+          '_pendingLyricsRestore = ReaderHibikiSource.instance.lyricsMode;'),
+    );
+    // EPUB 内容就绪 + 有声书已挂载后再切歌词（等价手动切、规避 iOS 白屏），一次性触发。
+    final int t = src.indexOf('if (_pendingLyricsRestore) {');
+    expect(t, greaterThanOrEqualTo(0));
+    final String block = src.substring(t, t + 220);
+    expect(block, contains('_pendingLyricsRestore = false;'));
+    expect(block, contains('_audiobookController != null'));
+    expect(block, contains('_toggleLyricsMode()'));
+  });
 }

@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 766 条。点号进各自文件。
+> 共 768 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-785](bugs/BUG-785-lyrics-mode-persist-reentry.md) | ✅ | ✅ | 重新进入书籍不再是歌词模式（歌词模式跨会话不恢复） |
+| [BUG-784](bugs/BUG-784-lyrics-follow-scroll-window-noop.md) | ✅ | ✅ | 歌词模式音频跟随「高亮变但不滚动」（window.scrollBy 空转，Windows/桌面复现） |
 | [BUG-783](bugs/BUG-783-youtube-timedtext-format3.md) | ✅ | ✅ | YouTube 字幕失效: androidVr 返回 timedtext format3 <p t d> 而解析器只认 srv1 <text> |
 | [BUG-782](bugs/BUG-782-reader-sheet-exit-bypasses-popscope.md) | ✅ | ✅ | 快捷面板退出按钮直接pop绕过PopScope致hero不更新且不触发同步 |
 | [BUG-781](bugs/BUG-781-collection-member-menu-ui-scale-offset.md) | ✅ | ✅ | 合集详情页成员右键菜单未按界面缩放换算坐标错位 |
