@@ -75,7 +75,10 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
           onTap: () {
             Navigator.push(
               context,
-              adaptivePageRoute(builder: (_) => const TagManagementPage()),
+              adaptivePageRoute(
+                context: context,
+                builder: (_) => const TagManagementPage(),
+              ),
             ).then((_) {
               ref.invalidate(allTagsProvider);
               widget.onTagsChanged?.call();

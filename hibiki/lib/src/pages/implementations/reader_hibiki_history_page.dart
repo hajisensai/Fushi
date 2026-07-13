@@ -468,14 +468,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   void _openCollections() {
     Navigator.push(
       context,
-      adaptivePageRoute(builder: (_) => const CollectionsPage()),
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => const CollectionsPage(),
+      ),
     );
   }
 
   void _openReadingStatistics() {
     Navigator.push(
       context,
-      adaptivePageRoute(builder: (_) => const ReadingStatisticsPage()),
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => const ReadingStatisticsPage(),
+      ),
     );
   }
 
@@ -1358,6 +1364,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => MediaCollectionGridDetailPage(
           database: appModel.database,
           collection: collection,

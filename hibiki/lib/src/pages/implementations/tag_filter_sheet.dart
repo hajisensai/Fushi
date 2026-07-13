@@ -132,6 +132,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
               Navigator.push(
                 context,
                 adaptivePageRoute(
+                  context: context,
                   builder: (_) => const TagManagementPage(),
                 ),
               );

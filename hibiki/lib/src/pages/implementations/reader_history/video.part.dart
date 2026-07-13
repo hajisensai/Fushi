@@ -65,6 +65,7 @@ extension _ReaderHistoryVideo on _ReaderHibikiHistoryPageState {
     Navigator.push(
       context,
       adaptivePageRoute<void>(
+        context: context,
         builder: (_) => VideoHibikiPage.neutralized(
             bookUid: book.bookUid, repo: _videoRepo),
       ),
@@ -156,6 +157,7 @@ extension _ReaderHistoryVideo on _ReaderHibikiHistoryPageState {
     Navigator.push(
       context,
       adaptivePageRoute(
+        context: context,
         builder: (_) => TagPickerPage(videoBookUid: bookUid),
       ),
     ).then((_) {

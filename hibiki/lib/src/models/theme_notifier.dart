@@ -291,6 +291,11 @@ LegacyCustomThemeMigration migrateLegacyCustomTheme({
   );
 }
 
+typedef _DesignSystemPreferenceMigration = ({
+  String expectedRaw,
+  String normalizedRaw,
+});
+
 class ThemeNotifier extends ChangeNotifier {
   ThemeNotifier(
     this._db,
@@ -315,6 +320,9 @@ class ThemeNotifier extends ChangeNotifier {
   final HibikiDatabase _db;
   final TextTheme Function() _textThemeBuilder;
   final Map<String, String> _prefs = {};
+  // Invalidates an async migration reload whenever a newer local write or
+  // full preference snapshot has taken ownership of the in-memory value.
+  int _designSystemPreferenceRevision = 0;
   double _autoAppUiScale = HibikiAppUiScale.defaultScale;
 
   CorePalette? _systemPalette;
@@ -354,6 +362,20 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(snapshot);
+    _designSystemPreferenceRevision++;
+    final _DesignSystemPreferenceMigration? migration =
+        _normalizeHiddenDesignSystemInMemory();
+    if (migration != null) {
+      // Initial snapshot loading is deliberately synchronous. The best-effort
+      // migration owns all of its async errors so this fire-and-forget boundary
+      // can never surface an unhandled Future during app startup.
+      unawaited(
+        _persistHiddenDesignSystemMigration(
+          migration,
+          notifyOnReload: true,
+        ),
+      );
+    }
   }
 
   Future<void> refreshFromDb() async {
@@ -361,14 +383,85 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(all);
+    _designSystemPreferenceRevision++;
+    final _DesignSystemPreferenceMigration? migration =
+        _normalizeHiddenDesignSystemInMemory();
+    if (migration != null) {
+      await _persistHiddenDesignSystemMigration(
+        migration,
+        notifyOnReload: false,
+      );
+    }
     notifyListeners();
+  }
+
+  Future<void> _persistHiddenDesignSystemMigration(
+    _DesignSystemPreferenceMigration migration, {
+    required bool notifyOnReload,
+  }) async {
+    try {
+      final bool migrated = await _db.compareAndSetPref(
+        'design_system',
+        expectedValue: migration.expectedRaw,
+        newValue: migration.normalizedRaw,
+      );
+      if (!migrated) {
+        await _reloadDesignSystemPreferenceAfterMigrationRace(
+          migration,
+          notifyOnChange: notifyOnReload,
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[ThemeNotifier] design_system migration write failed: $error\n'
+        '$stackTrace',
+      );
+      await _reloadDesignSystemPreferenceAfterMigrationRace(
+        migration,
+        notifyOnChange: notifyOnReload,
+      );
+    }
+  }
+
+  Future<void> _reloadDesignSystemPreferenceAfterMigrationRace(
+    _DesignSystemPreferenceMigration migration, {
+    required bool notifyOnChange,
+  }) async {
+    try {
+      final int revisionBeforeReload = _designSystemPreferenceRevision;
+      final String designSystemBeforeReload = designSystem;
+      final String? currentRaw = await _db.getPref('design_system');
+      if (_designSystemPreferenceRevision != revisionBeforeReload ||
+          _prefs['design_system'] != migration.normalizedRaw) {
+        return;
+      }
+      if (currentRaw == null) {
+        _prefs.remove('design_system');
+      } else {
+        _prefs['design_system'] = currentRaw;
+      }
+      _designSystemPreferenceRevision++;
+      if (notifyOnChange &&
+          designSystemBeforeReload != designSystem &&
+          hasListeners) {
+        notifyListeners();
+      }
+    } catch (error, stackTrace) {
+      // Migration is compatibility cleanup, not a prerequisite for rendering.
+      // Keep the already-normalized in-memory auto value and report the failed
+      // reload without letting snapshot startup leak an unhandled Future.
+      debugPrint(
+        '[ThemeNotifier] design_system migration reload failed: $error\n'
+        '$stackTrace',
+      );
+    }
   }
 
   // Pure read. Theme getters (theme/darkTheme/themeMode) run inside
   // MaterialApp.build(); previously an absent key triggered a fire-and-forget
   // DB write (_set) from the getter, a side effect on every first build
-  // (HBK-AUDIT-022). Defaults are returned without persisting; a value is only
-  // written when explicitly set via a setter.
+  // (HBK-AUDIT-022). Defaults are returned without persisting; writes happen
+  // only at explicit setter or load/refresh migration boundaries, never here.
   dynamic _get(String key, {dynamic defaultValue}) {
     final raw = _prefs[key];
     if (raw == null) return defaultValue;
@@ -378,6 +471,9 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> _set(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
     _prefs[key] = strVal;
+    if (key == 'design_system') {
+      _designSystemPreferenceRevision++;
+    }
     await _db.setPref(key, strVal);
   }
 
@@ -537,10 +633,27 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Design system override ────────────────────────────────────────
 
-  String get designSystem => _get('design_system', defaultValue: 'auto');
+  static String normalizeDesignSystemPreference(Object? value) {
+    return value == 'material' ? 'material' : 'auto';
+  }
+
+  _DesignSystemPreferenceMigration? _normalizeHiddenDesignSystemInMemory() {
+    final String? expectedRaw = _prefs['design_system'];
+    if (expectedRaw == null) return null;
+    final Object? decoded = PrefCodec.decodeUntyped(expectedRaw);
+    final String normalized = normalizeDesignSystemPreference(decoded);
+    if (decoded == normalized) return null;
+    final String normalizedRaw = PrefCodec.encode(normalized);
+    _prefs['design_system'] = normalizedRaw;
+    return (expectedRaw: expectedRaw, normalizedRaw: normalizedRaw);
+  }
+
+  String get designSystem => normalizeDesignSystemPreference(
+        _get('design_system', defaultValue: 'auto'),
+      );
 
   Future<void> setDesignSystem(String value) async {
-    await _set('design_system', value);
+    await _set('design_system', normalizeDesignSystemPreference(value));
     notifyListeners();
   }
 

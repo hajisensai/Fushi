@@ -106,7 +106,12 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
-          theme: ThemeData(platform: TargetPlatform.iOS),
+          theme: ThemeData(
+            platform: TargetPlatform.iOS,
+            extensions: const <ThemeExtension<dynamic>>[
+              HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            ],
+          ),
           home: BookProfileDialogContent(
             activeProfileName: 'Default',
             profiles: List.generate(3, profile),

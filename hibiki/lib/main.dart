@@ -958,8 +958,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     }
 
     if (!mounted) return;
+    // This process-level launch path owns a NavigatorState but has no themed
+    // descendant BuildContext, so its route contract is explicitly Material.
     await navigator.push(
-      adaptivePageRoute<void>(
+      MaterialPageRoute<void>(
         builder: (_) =>
             VideoHibikiPage.neutralized(bookUid: bookUid, repo: repo),
       ),
@@ -1428,7 +1430,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         ],
                       ),
                     );
-                    if (Theme.of(context).platform == TargetPlatform.macOS) {
+                    if (isMacosPlatform(context)) {
                       // macOS native shell (Approach B): the MacosWindow + Sidebar
                       // wrap the WHOLE navigator so every route — home tabs AND
                       // pushed routes (reader, settings detail, dialogs) — inherits

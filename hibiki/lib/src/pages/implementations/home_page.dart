@@ -747,7 +747,7 @@ class _HomePageState extends BasePageState<HomePage>
         // between the rail and the content pane row-by-row.
         child: Row(
           children: [
-            // TODO-973: the side rail (AND its divider) collapse together while
+            // TODO-973: the side rail collapses while
             // gamepad auto-immersive is active — single source of truth on
             // AppModel.gamepadImmersiveActive. ValueListenableBuilder so only this
             // region rebuilds on the immersive edge; opted-out users keep the rail
@@ -756,23 +756,18 @@ class _HomePageState extends BasePageState<HomePage>
               valueListenable: appModel.gamepadImmersiveActive,
               builder: (BuildContext context, bool immersive, _) {
                 if (immersive) return const SizedBox.shrink();
-                return Row(
-                  children: [
-                    FocusTraversalGroup(
-                      // Each rail destination is its own gamepad/keyboard focus
-                      // target, so the app focus ring hugs the single selected
-                      // item; D-pad Up/Down steps between them and Left/Right
-                      // leaves to the content.
-                      child: adaptiveNavRail(
-                        context: context,
-                        currentIndex: visualIndex,
-                        onTap: selectVisual,
-                        items: displayItems,
-                        gamepadImmersiveActive: immersive,
-                      ),
-                    ),
-                    const VerticalDivider(thickness: 1, width: 1),
-                  ],
+                return FocusTraversalGroup(
+                  // Each rail destination is its own gamepad/keyboard focus
+                  // target, so the app focus ring hugs the single selected
+                  // item; D-pad Up/Down steps between them and Left/Right
+                  // leaves to the content.
+                  child: adaptiveNavRail(
+                    context: context,
+                    currentIndex: visualIndex,
+                    onTap: selectVisual,
+                    items: displayItems,
+                    gamepadImmersiveActive: immersive,
+                  ),
                 );
               },
             ),

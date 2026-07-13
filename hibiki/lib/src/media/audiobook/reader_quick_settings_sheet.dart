@@ -672,6 +672,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         await Navigator.push(
           context,
           adaptivePageRoute(
+            context: context,
             builder: (_) => BookCssEditorPage(extractDir: widget.extractDir!),
           ),
         );

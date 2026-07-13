@@ -50,7 +50,7 @@ void main() {
     });
   });
 
-  group('sub-pixel page-boundary drift (Windows WebView)', () {
+  group('sub-pixel page-boundary drift (desktop WebView)', () {
     test('backward from just past an aligned page retreats one full page', () {
       final ReaderPageStep step = stepBackward(2000.33);
       expect(step.scrolled, isTrue);
@@ -67,6 +67,69 @@ void main() {
       final ReaderPageStep step = stepForward(2000.33);
       expect(step.scrolled, isTrue);
       expect(step.targetScroll, 3000);
+    });
+
+    test('forward crosses fractional page 31 instead of returning limit', () {
+      const double fractionalPitch = 564.490967;
+      final ReaderPageStep step =
+          ReaderPaginationScripts.resolvePaginateStepForTesting(
+        direction: ReaderNavigationDirection.forward,
+        currentScroll: 17499,
+        columnPitch: fractionalPitch,
+        minAlignedScroll: 0,
+        maxAlignedScroll: 40 * fractionalPitch,
+      );
+
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, closeTo(32 * fractionalPitch, 1e-9));
+    });
+
+    test(
+        'backward crosses an N-plus-epsilon quotient instead of returning limit',
+        () {
+      const double fractionalPitch = 564.490967;
+      final ReaderPageStep step =
+          ReaderPaginationScripts.resolvePaginateStepForTesting(
+        direction: ReaderNavigationDirection.backward,
+        currentScroll: 33305,
+        columnPitch: fractionalPitch,
+        minAlignedScroll: 0,
+        maxAlignedScroll: 80 * fractionalPitch,
+      );
+
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, closeTo(58 * fractionalPitch, 1e-9));
+    });
+
+    test('forward keeps a position just over 1px before a boundary in-page',
+        () {
+      const double fractionalPitch = 564.490967;
+      final ReaderPageStep step =
+          ReaderPaginationScripts.resolvePaginateStepForTesting(
+        direction: ReaderNavigationDirection.forward,
+        currentScroll: 31 * fractionalPitch - 1.01,
+        columnPitch: fractionalPitch,
+        minAlignedScroll: 0,
+        maxAlignedScroll: 40 * fractionalPitch,
+      );
+
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, closeTo(31 * fractionalPitch, 1e-9));
+    });
+
+    test('backward keeps a position just over 1px past a boundary in-page', () {
+      const double fractionalPitch = 564.490967;
+      final ReaderPageStep step =
+          ReaderPaginationScripts.resolvePaginateStepForTesting(
+        direction: ReaderNavigationDirection.backward,
+        currentScroll: 59 * fractionalPitch + 1.01,
+        columnPitch: fractionalPitch,
+        minAlignedScroll: 0,
+        maxAlignedScroll: 80 * fractionalPitch,
+      );
+
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, closeTo(59 * fractionalPitch, 1e-9));
     });
   });
 

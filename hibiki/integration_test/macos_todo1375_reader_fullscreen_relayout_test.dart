@@ -6,10 +6,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:macos_ui/macos_ui.dart' show MacosWindow;
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
+    show hibikiMaterialNavKey;
 
 import 'helpers/library_fixture.dart';
 
@@ -21,7 +22,7 @@ import 'helpers/library_fixture.dart';
 /// didChangeDependencies (inset re-feed, TODO-1375). Captures the windowed vs
 /// fullscreen-sized reader layout for review. Lives in its own file because
 /// each integration_test app.main() needs a fresh process (two testWidgets both
-/// calling app.main() in one file leaves the second without a MacosWindow).
+/// calling app.main() in one file leaves the second without a fresh home shell).
 ///
 /// PlatformDispatcher.onError swallows the app-background UpdateChecker network
 /// errors (no GitHub reachability on this build Mac). Screenshots come off the
@@ -38,15 +39,15 @@ void main() {
       return true;
     };
 
-    bool shell = false;
+    bool homeReady = false;
     for (int i = 0; i < 180; i++) {
       await tester.pump(const Duration(milliseconds: 500));
-      if (find.byType(MacosWindow).evaluate().isNotEmpty) {
-        shell = true;
+      if (find.byKey(hibikiMaterialNavKey).evaluate().isNotEmpty) {
+        homeReady = true;
         break;
       }
     }
-    expect(shell, isTrue, reason: 'MacosWindow shell within 90s');
+    expect(homeReady, isTrue, reason: 'MD3 home shell within 90s');
     await tester.pump(const Duration(seconds: 2));
 
     final String bookKey = await seedReaderBook(tester);
@@ -57,7 +58,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
     }
     expect(entry, findsOneWidget, reason: 'seeded book on shelf');
-    await tester.tap(entry); // itest-tap-allow: macos_ui shell nav
+    await tester.tap(entry); // itest-tap-allow: macOS pixel-capture only
     await tester.pump(const Duration(seconds: 3));
 
     const Key webViewKey = ValueKey<String>('hoshi_webview');

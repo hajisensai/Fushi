@@ -35,6 +35,13 @@ void main() {
   test('root MacosWindow + Sidebar wrap the navigator (Approach B)', () {
     // The window/sidebar are at the app root so pushed routes inherit a
     // MacosWindowScope (native ToolBars everywhere).
+    expect(main, contains('if (isMacosPlatform(context))'));
+    expect(
+      main,
+      isNot(contains(
+        'if (Theme.of(context).platform == TargetPlatform.macOS)',
+      )),
+    );
     expect(main, contains('MacosWindow('),
         reason: 'main.dart builder must wrap the navigator in MacosWindow.');
     expect(main, contains('buildHibikiMacosSidebar('),
@@ -91,5 +98,17 @@ void main() {
     expect(home, contains('homeShellTabNotifier.value = tab'),
         reason: '_selectTab writes back so the root sidebar reflects the '
             'current tab whatever entry point switched it.');
+  });
+
+  test('MD3 desktop rail has no Apple-style sidebar separator', () {
+    final int layoutStart = home.indexOf('Widget _buildDesktopLayout(');
+    final int layoutEnd =
+        home.indexOf('Widget _bodyWithMiniBar()', layoutStart);
+    expect(layoutStart, isNonNegative);
+    expect(layoutEnd, greaterThan(layoutStart));
+    final String body = home.substring(layoutStart, layoutEnd);
+    expect(body, isNot(contains('VerticalDivider')),
+        reason: 'The MD3 rail and content surface must not be split by the '
+            'leftover macOS/Cupertino-style sidebar border.');
   });
 }

@@ -10,6 +10,9 @@ import 'package:hibiki/src/reader/reader_content_styles.dart';
 /// 数值正确性由 reader_paginate_step_test.dart 的纯函数影子覆盖，这里只锁 JS 公式不回退。
 void main() {
   late String paginate;
+  final RegExp onePixelPageCoordinateNormalization = RegExp(
+    r'if\s*\(\s*Math\.abs\(pageCoordinate\s*-\s*nearestPage\)\s*\*\s*pitch\s*<=\s*1\s*\)\s*\{\s*pageCoordinate\s*=\s*nearestPage;\s*\}',
+  );
 
   setUpAll(() {
     final String source = File(
@@ -22,20 +25,31 @@ void main() {
     );
   });
 
-  test('forward steps to floor(stepScroll/pitch)+1, not round(cur+pitch)', () {
+  test('normalizes near-integer page quotient with the existing 1px contract',
+      () {
+    expect(paginate, contains('var pageCoordinate = stepScroll / pitch;'));
+    expect(paginate, contains('var nearestPage = Math.round(pageCoordinate);'));
     expect(
-      paginate,
-      contains('Math.floor(stepScroll / pitch) + 1'),
-      reason: 'forward 必须用 floor+1 整页步进',
+      onePixelPageCoordinateNormalization.hasMatch(paginate),
+      isTrue,
+      reason: '条件必须严格是 1px；<=10 或 <=1.5 不得通过源码守卫',
     );
   });
 
-  test('backward steps to ceil(stepScroll/pitch)-1', () {
-    expect(
-      paginate,
-      contains('Math.ceil(stepScroll / pitch) - 1'),
-      reason: 'backward 必须用 ceil-1 整页步进',
-    );
+  test('forward and backward consume the normalized page coordinate', () {
+    final RegExpMatch? normalization =
+        onePixelPageCoordinateNormalization.firstMatch(paginate);
+    final int normalizationEnd = normalization?.end ?? -1;
+    final int forwardTarget =
+        paginate.indexOf('Math.floor(pageCoordinate) + 1');
+    final int backwardTarget =
+        paginate.indexOf('Math.ceil(pageCoordinate) - 1');
+
+    expect(normalizationEnd, greaterThanOrEqualTo(0));
+    expect(forwardTarget, greaterThan(normalizationEnd),
+        reason: 'forward 目标必须在近整数商规范化之后计算');
+    expect(backwardTarget, greaterThan(normalizationEnd),
+        reason: 'backward 目标必须在近整数商规范化之后计算');
   });
 
   test('sub-pixel drift is normalized before stepping', () {
