@@ -2083,10 +2083,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           completed: it.payload.local?.completedAt != null,
         ),
     ]);
-    // #5：行头计数只数**本地成员**（远端占位成员不入 n），与合集详情页口径一致——详情页
-    // 只显示本地成员。行体（itemCount）仍渲染全部成员（含远端占位卡供流播/下载），故不变。
-    final int localCount =
-        group.items.where((it) => it.payload.local != null).length;
+    // 行头计数 = 行体实际渲染的成员数（本地 + 远端占位），与 itemCount 同源（BUG-790）。
+    // 旧口径只数本地成员，导致「全为未下载远端剧集」的合集行明明有云占位卡却显示「0 集」，
+    // 与眼前所见割裂（用户实报）。行头数字必须诚实反映该行看得见的卡片数。
+    final int memberCount = group.items.length;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -2097,8 +2097,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: CollectionShelfRow(
         key: ValueKey<String>('home_video_collection_row_${collection.id}'),
         title: collection.name,
-        countLabel: t.video_playlist_episodes(count: localCount),
-        itemCount: group.items.length,
+        countLabel: t.video_playlist_episodes(count: memberCount),
+        itemCount: memberCount,
         // 与散卡网格 cell 同宽同高（unifiedShelfCardLayout；218 = 封面区 + 标题 +
         // Phase D 观看进度行）。
         itemWidth: cardLayout.cardWidth,
