@@ -303,6 +303,21 @@ NormalizedSearchTerm normalizeSearchTerm(
   );
 }
 
+/// [normalizeSearchTerm] 在查词前用 [punctuationRegex]（`^[\p{P}\p{S}]+|[\p{P}\p{S}]+$`）
+/// 剥掉查询串的**句首/句尾**标点/符号（『「"( 等），引擎才从剥离串的 0 位去屈折/前缀
+/// 匹配，`bestLength` 也以剥离串为坐标系。返回原始串**句首**被剥掉的 UTF-16 code unit
+/// 数（无句首标点=0）。剪贴板面板的句子横幅显示的是**原始**句子（含句首标点），整词
+/// 高亮起点必须右移这段长度，否则高亮左移吞进句首括号、右缺词尾（BUG-773）。
+///
+/// 与 [normalizeSearchTerm] 共用同一 [punctuationRegex]（单一真相）：只取句首分支
+/// （`match.start == 0` 的命中）；只有句尾标点时命中不在句首，返回 0。
+@visibleForTesting
+int leadingPunctuationStripUnits(String raw, RegExp punctuationRegex) {
+  if (raw.isEmpty) return 0;
+  final Match? m = punctuationRegex.firstMatch(raw);
+  return (m != null && m.start == 0) ? m.end : 0;
+}
+
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
 /// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
 /// 内联插值，无法独立断言「键格式不漂移」。
@@ -751,6 +766,14 @@ class AppModel with ChangeNotifier {
   static final RegExp _loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
+
+  /// 剪贴板面板句子横幅整词高亮定位（BUG-773）：查词前 [normalizeSearchTerm] 用
+  /// [_punctuationRegex] 剥掉 [rawQuery] 的句首标点/符号，引擎才从剥离串 0 位匹配、
+  /// `bestLength` 以剥离串为坐标系。横幅显示原始句（含句首标点），故高亮起点须右移
+  /// 这段被剥长度。委托 [leadingPunctuationStripUnits]（同一正则=单一真相），返回
+  /// 句首被剥掉的 UTF-16 code unit 数。
+  int lookupLeadingStripUnits(String rawQuery) =>
+      leadingPunctuationStripUnits(rawQuery, _punctuationRegex);
 
   /// Used to notify toggling incognito. Updates the app logo to and from
   /// grayscale.

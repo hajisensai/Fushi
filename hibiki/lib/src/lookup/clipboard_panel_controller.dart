@@ -176,7 +176,9 @@ class ClipboardPanelController {
       }
       _recordLookupCount(model);
       _currentSentence = request.text;
-      _rootHitStart = 0; // 新句：选词起点回句首（高亮引擎从句首匹配到的词）。
+      // 新句：rootQuery=整句，故基准码点下标=0；真正词首由 rootHitRange 再补偿被归一化
+      // 剥掉的句首标点长度（BUG-773），不再假设词从句首第 0 字符开始。
+      _rootHitStart = 0;
       _seedRootFrame(request.text, result);
       // 真机修复（"只显示一次"）：不能只信 Dart 侧 _visible——窗口可能被系统
       // 藏掉（历史 owned-minimize 联动、显式全屏切换等）而 Dart 不知情，之后
@@ -306,14 +308,23 @@ class ClipboardPanelController {
       ));
     }
     if (payloads.isEmpty) return;
-    // 真机第 4 轮 — 选词区整词高亮：起点=_rootHitStart（点击字/句首），长度=
-    // 根结果的引擎匹配长度（bestLength，即「正常的断词」），码点单位。
+    // 真机第 4 轮 — 选词区整词高亮：_rootHitStart（点击字/句首）为 rootQuery 在显示
+    // 句子里的起始码点下标，长度=根结果的引擎匹配长度（bestLength，即「正常的断词」）。
+    // BUG-773 — 归一化查词前剥掉了 rootQuery 的句首标点（『「"( 等），引擎从剥离串 0
+    // 位匹配、bestLength 以剥离串为坐标系，而横幅显示**原始**句（含句首标点）。若直接
+    // 从 _rootHitStart 铺 bestLength 会左移吞括号、右缺词尾（呪術廻戦→高亮成『呪術廻）。
+    // 故把起点再右移「被剥句首标点」长度，再从真正词首量 bestLength（见 rootHitRange）。
     final DictionarySearchResult? rootResult =
         _frameResults[kGlobalLookupRootFrameId];
     final String rootQuery = _stack.isEmpty ? '' : _stack.frames.first.query;
-    final int hitLength = rootResult == null
-        ? 0
-        : _hitLengthCodePoints(rootResult.bestLength, rootQuery);
+    final ({int start, int length}) hit = rootResult == null
+        ? (start: 0, length: 0)
+        : rootHitRange(
+            query: rootQuery,
+            baseStartCp: _rootHitStart,
+            leadingUnits: model.lookupLeadingStripUnits(rootQuery),
+            bestLength: rootResult.bestLength,
+          );
     final String script = buildStackRenderScript(
       context: ctx,
       appModel: model,
@@ -326,8 +337,8 @@ class ClipboardPanelController {
       // spec §6 真机修正：透明改整窗 LWA_ALPHA，卡背景恒不透明（双重变淡会
       // 让文字更虚；CSS alpha 基建保留供未来 DComp 逐像素路线复用）。
       cardBgAlpha: 1.0,
-      sentenceHitStart: hitLength > 0 ? _rootHitStart : -1,
-      sentenceHitLength: hitLength,
+      sentenceHitStart: hit.length > 0 ? hit.start : -1,
+      sentenceHitLength: hit.length,
     );
     // pin 视觉态并进同一渲染脚本：native pending_json_ 是单槽缓存，冷启动时
     // 独立脚本会互相覆盖；同一 ExecuteScript 保证 pin 图标与卡片同帧就位。
@@ -504,8 +515,34 @@ class ClipboardPanelController {
     return query.substring(0, units).runes.length;
   }
 
-  int _hitLengthCodePoints(int bestLength, String query) =>
-      hitLengthCodePoints(bestLength, query);
+  /// 句子横幅整词高亮区间（**码点**坐标，对应 popup.js `Array.from` 的码点数组）。
+  /// BUG-773：归一化查词前用 [AppModel.lookupLeadingStripUnits] 剥掉 [query] 的句首
+  /// 标点，引擎才从剥离串 0 位匹配、[bestLength] 以剥离串为坐标系；而横幅显示的是
+  /// **原始** query（含句首标点）。若从 [baseStartCp] 直接铺 bestLength 会左移吞进
+  /// 句首括号、右缺词尾。故起点右移 [leadingUnits]（句首被剥的 UTF-16 长度）落到真正
+  /// 词首，长度从词首起量 bestLength。
+  ///
+  /// [query]=当前根查询串（整句或点字后缀），[baseStartCp]=query 在显示句子里的起始
+  /// 码点下标（整句=0，点字=点击码点下标），[leadingUnits]=query 句首被归一化剥掉的
+  /// UTF-16 长度，[bestLength]=引擎匹配长度（UTF-16 code units）。返回 (start,length)
+  /// 均为码点。纯函数，直接单测。
+  @visibleForTesting
+  static ({int start, int length}) rootHitRange({
+    required String query,
+    required int baseStartCp,
+    required int leadingUnits,
+    required int bestLength,
+  }) {
+    if (bestLength <= 0 || query.isEmpty) return (start: 0, length: 0);
+    final int lead = leadingUnits < 0
+        ? 0
+        : (leadingUnits > query.length ? query.length : leadingUnits);
+    final int leadCp = query.substring(0, lead).runes.length;
+    // 词首之后的子串上再量 bestLength → 码点（复用 hitLengthCodePoints 的钳位）。
+    final int lenCp = hitLengthCodePoints(bestLength, query.substring(lead));
+    final int base = baseStartCp < 0 ? 0 : baseStartCp;
+    return (start: base + leadCp, length: lenCp);
+  }
 
   Future<void> _lookupNested(String query, Rect? anchorRect) async {
     final AppModel? model = _appModel;
