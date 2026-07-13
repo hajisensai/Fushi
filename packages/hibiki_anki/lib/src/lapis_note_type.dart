@@ -67,7 +67,7 @@ class LapisNoteType {
     'SelectionText': '{popup-selection-text}',
     'MainDefinition': '{glossary-first}',
     'Sentence': '{sentence}',
-    'SentenceAudio': '{sasayaki-audio}',
+    'SentenceAudio': '{sentence-audio}',
     'Picture': '{card-image}',
     'Glossary': '{glossary}',
     'PitchPosition': '{pitch-accent-positions}',

@@ -88,7 +88,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
   /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词
   /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
   /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
-  /// sasayakiAudioPath（→`{sasayaki-audio}`）+ 例句 sentence。复用现有 Anki 字段。
+  /// sasayakiAudioPath（→`{sentence-audio}`）+ 例句 sentence。复用现有 Anki 字段。
   bool _isCueSelectedForCard(AudioCue cue) =>
       _selectedMiningCueStarts.contains(cue.startMs);
 

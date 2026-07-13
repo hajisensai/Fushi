@@ -79,7 +79,7 @@ void main() {
       }
       expect(LapisNoteType.defaultFieldMappings['Picture'], '{card-image}');
       expect(LapisNoteType.defaultFieldMappings['SentenceAudio'],
-          '{sasayaki-audio}');
+          '{sentence-audio}');
       expect(LapisNoteType.defaultFieldMappings['IsWordAndSentenceCard'], 'x');
     });
   });
