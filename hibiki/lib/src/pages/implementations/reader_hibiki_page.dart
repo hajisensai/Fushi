@@ -1056,6 +1056,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
   bool _imageChapterPauseInFlight = false;
+  // BUG-782 加固：PopScope 退出链（onWillPop 异步 flush + closeMedia）在途为真，
+  // 并发退出触发（ESC 连按/退出按钮后再 ESC）合并为一次，防连退两级。
+  bool _popInProgress = false;
   double _initialProgress = 0;
   // BUG-162: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
   // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。
@@ -2225,9 +2228,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
               canPop: false,
               onPopInvokedWithResult: (didPop, dynamic result) async {
                 if (didPop) return;
-                final nav = Navigator.of(context);
-                final bool allow = await onWillPop();
-                if (allow && mounted) nav.pop();
+                // BUG-782 加固：onWillPop 是异步长操作（落位置 flush + closeMedia
+                // 约百毫秒），窗口期内第二次退出触发（ESC/手柄 B 连按、退出按钮后
+                // 再 ESC）会并发再跑一条 onWillPop——首条完成 pop 掉阅读器后，第二
+                // 条的 nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动
+                // 同步重复执行）。并发退出触发合并为一次。
+                if (_popInProgress) return;
+                _popInProgress = true;
+                try {
+                  final nav = Navigator.of(context);
+                  final bool allow = await onWillPop();
+                  if (allow && mounted) nav.pop();
+                } finally {
+                  // onWillPop 异常逃逸时复位，用户可重试退出而非永久困死。
+                  _popInProgress = false;
+                }
               },
               child: Scaffold(
                 backgroundColor: bgColor,

@@ -1,8 +1,8 @@
-## BUG-782 · 竖排累计漂移探针取整假阳性（当前 develop 未复现）
+## BUG-785 · 竖排累计漂移探针取整假阳性（当前 develop 未复现）
 
 - **报告**：2026-07-13（用户：「翻页漂移问题」）。验证基线为
   `origin/develop@b177f858b50769df43e4736087da5d1d37d158de`；初次漂移验真阶段相对基线的
-  reader 生产代码无差异（随后发现并另修 BUG-783/784）。
+  reader 生产代码无差异（随后发现并另修 BUG-786/787）。
 - **真实性**：❌ **当前 develop 未复现原「越翻越偏」产品问题；旧 I1 报错是测试探针
   取整假阳性。** 原 harness 在
   `hibiki/integration_test/helpers/pagination_test_harness.dart:64-70` 将 WebView 返回的
@@ -11,13 +11,13 @@
   - 提交 `a6c9904d0` 保留 `scroll/pageSize/minScroll/maxScroll` 的原始 `double`；最终 I1
     量「当前位置到最近绝对 `N × pitch` 亚像素页网格」的像素误差，不再对取整值取模，也不把
     任意 `minScroll` 当成新的网格原点。
-  - 修正探针及后续 BUG-784 章尾终点后在真实 macOS WKWebView 复跑；最终 raw
+  - 修正探针及后续 BUG-787 章尾终点后在真实 macOS WKWebView 复跑；最终 raw
     `pitch=582.490967`、完整扫描 63 页，I1-I7、位置恢复 I9、快速 chrome 切换 I10 全部通过，未出现随页数增长的
     全局网格误差。
   - 本次复跑另发现 I5 在 page 31 提前停止且仍余 17426px 内容；这是同步 `paginate`
-    边界误判的独立问题，已另记 BUG-783，不能回写成累计漂移。
+    边界误判的独立问题，已另记 BUG-786，不能回写成累计漂移。
 - **[x] ① 产品无需新增修复** — 原累计漂移在保留原始小数精度后未复现；本条未修改
-  `reader_pagination_scripts.dart` 或分页 CSS。产品侧后续只处理 BUG-783 的提前 `limit`，
+  `reader_pagination_scripts.dart` 或分页 CSS。产品侧后续只处理 BUG-786 的提前 `limit`，
   不按旧 I1 整数余数改 pageStep。
 - **[x] ② 已修复探针并加自动化测试** — `a6c9904d0`（`test(reader): preserve
   fractional pagination geometry`）新增
@@ -27,5 +27,5 @@
   并仅对浏览器真实 `physicalMaxScroll` 末页 clamp 豁免 I1；固定 420 标记及裁剪盒可见面积
   防止章尾缺失自证通过。
 - **备注**：文件路径保留 bug 工具实际生成的
-  `docs/bugs/BUG-782-vertical-pagination-drift-recurrence.md`，标题按最终验真结论修正。
+  `docs/bugs/BUG-785-vertical-pagination-drift-recurrence.md`，标题按最终验真结论修正。
   BUG-405 的「当前产品未见累计漂移」结论不再被旧 I1 假阳性推翻。

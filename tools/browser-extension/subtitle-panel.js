@@ -31,7 +31,10 @@
     autoScroll: true, fontScaleIndex: 1, hidden: false, panel: null, listEl: null,
     langSelect: null, builtLang: null, builtLen: -1, pushedEl: null, prevWidth: '', tickTimer: null,
     pushSuspended: false, enabled: false,
+    // B（外挂字幕）：用户主动打开面板（即使暂无轨也不自动拆）；已加载外挂轨的原始 cue + 时轴偏移。
+    forceOpen: false, extTracks: Object.create(null), offsetBar: null, offsetLabel: null,
   };
+  var EXT_PREFIX = '外挂:';
 
   // ── TODO-1219/1363：字幕列表面板开关（默认关，全站点）──
   // 面板不默认打开：只有用户在扩展 options/action-popup 勾选「字幕列表」（chrome.storage.local 的
@@ -65,8 +68,12 @@
     if (!st.enabled) { teardownAll(); return; }
     var tracks = [];
     try { tracks = tracksForVideo(); } catch (_) { tracks = []; }
-    if (!tracks.length) { teardownAll(); return; }
+    var hasVideo = !!videoEl();
+    // B：有 <video> 就给外挂字幕入口（即使暂无轨）；既无轨又无视频、且用户没主动开 → 拆。
+    if (!tracks.length && !hasVideo && !st.forceOpen) { teardownAll(); return; }
     if (st.hidden) { showReopen(); return; }
+    // 暂无轨且用户未主动打开：只挂紧凑「字幕」重开小片（点开可加载外挂字幕），不铺空面板。
+    if (!tracks.length && !st.forceOpen) { showReopen(); return; }
     showPanel();
   }
 
@@ -191,11 +198,13 @@
       b.addEventListener('click', function (e) { e.stopPropagation(); onClick(b); });
       return b;
     }
+    var loadBtn = iconBtn('＋', '加载外挂字幕文件（srt/ass/vtt）', function () { openFilePicker(); });
     var smaller = iconBtn('A-', '缩小字号', function () { stepFont(-1); });
     var larger = iconBtn('A+', '放大字号', function () { stepFont(1); });
     var autoBtn = iconBtn('AS', '自动滚动到当前句', function () { toggleAutoScroll(autoBtn); });
     autoBtn.classList.toggle('is-on', st.autoScroll);
     var closeBtn = iconBtn('X', '关闭', function () { hidePanel(); });
+    titleRow.appendChild(loadBtn);
     titleRow.appendChild(smaller);
     titleRow.appendChild(larger);
     titleRow.appendChild(autoBtn);
@@ -211,6 +220,37 @@
     });
     st.langSelect = langSelect;
     header.appendChild(langSelect);
+
+    // B（asb 招牌）：外挂字幕时轴偏移条——仅当前轨是外挂字幕时显示。−/＋ 微调让字幕对齐视频。
+    var offsetBar = document.createElement('div');
+    offsetBar.className = 'hibiki-sub-offset';
+    offsetBar.style.display = 'none';
+    function offBtn(label, deltaMs) {
+      var b = document.createElement('button');
+      b.className = 'hibiki-sub-iconbtn';
+      b.type = 'button';
+      b.textContent = label;
+      b.title = '字幕时轴偏移 ' + label + ' 秒';
+      b.addEventListener('click', function (e) { e.stopPropagation(); nudgeOffset(deltaMs); });
+      return b;
+    }
+    var offsetLabel = document.createElement('span');
+    offsetLabel.className = 'hibiki-sub-offset-val';
+    offsetBar.appendChild(offBtn('−0.5', -500));
+    offsetBar.appendChild(offBtn('−0.1', -100));
+    offsetBar.appendChild(offsetLabel);
+    offsetBar.appendChild(offBtn('＋0.1', 100));
+    offsetBar.appendChild(offBtn('＋0.5', 500));
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'hibiki-sub-iconbtn';
+    resetBtn.type = 'button';
+    resetBtn.textContent = '⟲';
+    resetBtn.title = '重置时轴偏移';
+    resetBtn.addEventListener('click', function (e) { e.stopPropagation(); resetOffset(); });
+    offsetBar.appendChild(resetBtn);
+    st.offsetBar = offsetBar;
+    st.offsetLabel = offsetLabel;
+    header.appendChild(offsetBar);
 
     panel.appendChild(header);
 
@@ -363,8 +403,12 @@
       chip.id = REOPEN_ID;
       chip.type = 'button';
       chip.textContent = '字幕';
-      chip.title = '打开字幕列表';
-      chip.addEventListener('click', function (e) { e.stopPropagation(); showPanel(); });
+      chip.title = '打开字幕列表（可加载外挂字幕）';
+      chip.addEventListener('click', function (e) {
+        e.stopPropagation();
+        st.forceOpen = true; // 用户主动开：即使暂无轨也铺面板（含加载外挂字幕入口）
+        showPanel();
+      });
     }
     chip.setAttribute('data-theme', resolveTheme());
     if (chip.parentNode !== parent) parent.appendChild(chip);
@@ -381,8 +425,121 @@
     ensureMounted();
     refreshLangSelect(tracks);
     rebuildList(tracks);
+    updateOffsetBar();
     st.currentIndex = -1;
     tick();
+  }
+
+  // ── B（asb 招牌）：加载用户外挂字幕文件 + 时轴偏移微调 ──
+  function toast(msg) {
+    try { if (typeof window.hibikiToast === 'function') window.hibikiToast(msg); } catch (_) {}
+  }
+  function isExternalLang(lang) {
+    return typeof lang === 'string' && lang.indexOf(EXT_PREFIX) === 0;
+  }
+  function openFilePicker() {
+    try {
+      var inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.srt,.ass,.ssa,.vtt';
+      inp.style.display = 'none';
+      inp.addEventListener('change', function () {
+        var f = inp.files && inp.files[0];
+        if (f) loadSubtitleFile(f);
+        if (inp.parentNode) inp.parentNode.removeChild(inp);
+      });
+      (st.panel || document.body).appendChild(inp);
+      inp.click();
+    } catch (_) { toast('无法打开文件选择器'); }
+  }
+  function loadSubtitleFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var content = String(reader.result || '');
+      try {
+        chrome.runtime.sendMessage(
+          { type: 'parseSubtitle', filename: file.name, content: content },
+          function (resp) {
+            try {
+              if (chrome.runtime.lastError) { toast('字幕加载失败：未连上 Hibiki'); return; }
+              applyExternalSubtitle(file.name, resp);
+            } catch (_) {}
+          });
+      } catch (_) { toast('字幕加载失败'); }
+    };
+    reader.onerror = function () { toast('读取文件失败'); };
+    try { reader.readAsText(file); } catch (_) { toast('读取文件失败'); }
+  }
+  function applyExternalSubtitle(filename, resp) {
+    if (!resp || !resp.ok || !resp.data) { toast('字幕解析失败'); return; }
+    if (resp.data.error === 'unsupported') { toast('不支持的格式（用 srt/ass/vtt）'); return; }
+    var raw = Array.isArray(resp.data.cues) ? resp.data.cues : [];
+    var base = [];
+    for (var i = 0; i < raw.length; i++) {
+      var c = raw[i];
+      if (!c || typeof c.startMs !== 'number' || typeof c.endMs !== 'number') continue;
+      var text = String(c.text || '');
+      if (!text) continue;
+      base.push({ startMs: c.startMs, endMs: c.endMs, text: text });
+    }
+    if (!base.length) { toast('字幕为空'); return; }
+    var label = EXT_PREFIX + String(filename).replace(/\|/g, '_');
+    var key = videoKey() + '|' + label;
+    st.extTracks[key] = { baseCues: base, offsetMs: 0 };
+    writeExternalTrack(key);
+    st.activeLang = label;
+    st.builtLang = null;
+    st.forceOpen = true;
+    st.hidden = false;
+    showPanel();
+    toast('已加载外挂字幕：' + base.length + ' 句');
+  }
+  // 把外挂轨（原始 cue + 当前偏移）写进 store，供面板/查词消费。偏移让字幕对齐视频时轴。
+  function writeExternalTrack(key) {
+    var t = st.extTracks[key];
+    if (!t) return;
+    var store = window.hibikiEpisodeCues || (window.hibikiEpisodeCues = Object.create(null));
+    var out = [];
+    for (var i = 0; i < t.baseCues.length; i++) {
+      var c = t.baseCues[i];
+      out.push({
+        startMs: Math.max(0, c.startMs + t.offsetMs),
+        endMs: Math.max(0, c.endMs + t.offsetMs),
+        text: c.text,
+      });
+    }
+    store[key] = out;
+  }
+  function activeExternalKey() {
+    if (!isExternalLang(st.activeLang)) return null;
+    var key = videoKey() + '|' + st.activeLang;
+    return st.extTracks[key] ? key : null;
+  }
+  function nudgeOffset(deltaMs) {
+    var key = activeExternalKey();
+    if (!key) return;
+    st.extTracks[key].offsetMs += deltaMs;
+    writeExternalTrack(key);
+    st.builtLang = null; // 时间戳变了 → 强制列表重建
+    refresh();
+  }
+  function resetOffset() {
+    var key = activeExternalKey();
+    if (!key) return;
+    st.extTracks[key].offsetMs = 0;
+    writeExternalTrack(key);
+    st.builtLang = null;
+    refresh();
+  }
+  function updateOffsetBar() {
+    if (!st.offsetBar) return;
+    var key = activeExternalKey();
+    if (!key) { st.offsetBar.style.display = 'none'; return; }
+    st.offsetBar.style.display = '';
+    var ms = st.extTracks[key].offsetMs;
+    if (st.offsetLabel) {
+      st.offsetLabel.textContent = (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(1) + 's';
+    }
   }
 
   // TODO-1219 P3：Netflix 批量录制（content.js hibikiRunNetflixBatch）录整标签页前调用，撤销推挤让
@@ -412,6 +569,7 @@
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       st.builtLang = null; st.builtLen = -1; st.activeLang = null;
+      st.forceOpen = false; // 新视频：不沿用上一个视频的「主动打开」，回到默认收起
       sync(); // 新页有轨才挂；无轨（含离开视频页）拆干净
     }
   }, 500);

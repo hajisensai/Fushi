@@ -256,8 +256,17 @@ class _MediaCollectionGridDetailPageState
     final RenderObject? overlay =
         Overlay.of(context).context.findRenderObject();
     if (overlay is! RenderBox) return;
+    // BUG-781（与 BUG-129/261/381 同族）：[globalPosition] 是网格右键 / 触摸长按
+    // 回调报的真实视口坐标；而 showMenu 的 RelativeRect 落在根 Navigator 的
+    // Overlay 坐标系，该 Overlay 位于全局 [HibikiAppUiScale]（FittedBox 整体缩放）
+    // 的缩放画布内。直接把真实视口坐标当 Overlay 本地坐标喂进去，界面大小≠100%
+    // 时菜单会偏离点击点 factor≈scale（scale=0.5 时约偏半个点击坐标、数百像素）。
+    // 用 Overlay 的 RenderBox.globalToLocal 沿真实渲染变换链换算——中间的 FittedBox
+    // 缩放被 render transform 自动吸收，对任意 scale 自洽无残差；scale=1 时变换为
+    // 单位阵，逐像素等价（零行为变化，向后兼容）。
+    final Offset anchor = overlay.globalToLocal(globalPosition);
     final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(globalPosition, globalPosition),
+      Rect.fromPoints(anchor, anchor),
       Offset.zero & overlay.size,
     );
     final _MemberMenuAction? action = await showMenu<_MemberMenuAction>(

@@ -27,14 +27,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 767 条。点号进各自文件。
+> 共 770 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-784](bugs/BUG-784-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
-| [BUG-783](bugs/BUG-783-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
-| [BUG-782](bugs/BUG-782-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |
-| [BUG-781](bugs/BUG-781-md3-macos-double-shell.md) | ✅ | ✅ | macOS 自动/MD3 仍套原生侧栏形成双壳 |
+| [BUG-787](bugs/BUG-787-reader-chrome-inset-stale-pagination-metrics.md) | ✅ | ✅ | 底栏 inset 后分页终点过期导致章尾不可读 |
+| [BUG-786](bugs/BUG-786-fractional-page-boundary-premature-limit.md) | ✅ | ✅ | 亚像素页距在第31页误判边界提前停翻 |
+| [BUG-785](bugs/BUG-785-vertical-pagination-drift-recurrence.md) | ✅ | ✅ | 竖排累计漂移探针取整假阳性（当前 develop 未复现） |
+| [BUG-784](bugs/BUG-784-md3-macos-double-shell.md) | ✅ | ✅ | macOS 自动/MD3 仍套原生侧栏形成双壳 |
+| [BUG-783](bugs/BUG-783-youtube-timedtext-format3.md) | ✅ | ✅ | YouTube 字幕失效: androidVr 返回 timedtext format3 <p t d> 而解析器只认 srv1 <text> |
+| [BUG-782](bugs/BUG-782-reader-sheet-exit-bypasses-popscope.md) | ✅ | ✅ | 快捷面板退出按钮直接pop绕过PopScope致hero不更新且不触发同步 |
+| [BUG-781](bugs/BUG-781-collection-member-menu-ui-scale-offset.md) | ✅ | ✅ | 合集详情页成员右键菜单未按界面缩放换算坐标错位 |
 | [BUG-780](bugs/BUG-780-backup-keep-settings-local-audio-wipe.md) | ✅ | ✅ | 覆盖整库保留设置冲掉本地音频注册 |
 | [BUG-779](bugs/BUG-779-local-audio-import-invalid-file.md) | ✅ | ✅ | 本地音频源导入无效文件假成功 |
 | [BUG-778](bugs/BUG-778-collection-detail-drag-ui-scale-offset.md) | ✅ | ✅ | 合集详情页拖拽排序不吃界面大小缩放拖动位置错位 |
