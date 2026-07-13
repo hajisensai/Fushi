@@ -445,6 +445,28 @@ SettingsDestination buildLookupDestination() {
               await ClipboardPanelController.instance.refreshOpacity();
             },
           ),
+          // 背景逐像素透明（Windows composition 模式）：开启后面板卡背景透明，只有
+          // 文字/注音/高亮实心，其余透到底下的游戏画面（像字幕）。区别于上面的整窗
+          // 不透明度（整窗统一变淡、文字一起透）。destination==panel 即显示。
+          SettingsSwitchItem(
+            id: 'lookup.clipboard_panel_transparent',
+            title: t.clipboard_panel_transparent,
+            subtitle: t.clipboard_panel_transparent_hint,
+            icon: Icons.blur_on_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.panel,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.clipboardPanelTransparent,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setClipboardPanelTransparent(value);
+              await ClipboardPanelController.instance.refreshTransparency();
+              settingsContext.refresh();
+            },
+          ),
           // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
           // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
           // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，

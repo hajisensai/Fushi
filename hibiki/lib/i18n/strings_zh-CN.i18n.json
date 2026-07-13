@@ -2339,5 +2339,7 @@
   "extension_popup_max_width": "扩展弹窗最大宽度",
   "extension_popup_max_height": "扩展弹窗最大高度",
   "desktop_clipboard_auto_lookup": "复制后自动查词",
-  "desktop_clipboard_auto_lookup_hint": "关闭后面板只显示复制到的文字，点词才查词。"
+  "desktop_clipboard_auto_lookup_hint": "关闭后面板只显示复制到的文字，点词才查词。",
+  "clipboard_panel_transparent": "面板背景透明",
+  "clipboard_panel_transparent_hint": "逐像素透明：只显示文字，背后的游戏画面透过来（Windows）。"
 }

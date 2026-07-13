@@ -461,6 +461,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 剪切板悬浮面板背景是否**逐像素透明**（Windows composition 模式）：开启后卡背景
+  /// 透明（cardBgAlpha=0），只有文字/注音/高亮实心像素画，其余透到底下的游戏画面
+  /// （像字幕）。默认 false=不透明卡（保持现观感，零破坏）。区别于旧的整窗
+  /// [clipboardPanelOpacity]（整窗统一变淡、文字一起透）——composition 下整窗 alpha
+  /// 已 no-op，透明改由本开关的逐像素卡背景承担。仅 Windows 面板去向有意义。
+  bool get clipboardPanelTransparent =>
+      getPref('clipboard_panel_transparent', defaultValue: false) as bool;
+
+  Future<void> setClipboardPanelTransparent(bool value) async {
+    await setPref('clipboard_panel_transparent', value);
+    notifyListeners();
+  }
+
   // TODO-1030 M0 — 全局查词（应用外）是否抓取选中文本周围的上下文句。默认 false：
   // 抓取要读前台应用的 UIA 文本，隐私敏感，用户显式开启才启用；关闭时全局查词只用
   // 剪贴板拿到的纯选中串（现状），不接触前台应用文本。
