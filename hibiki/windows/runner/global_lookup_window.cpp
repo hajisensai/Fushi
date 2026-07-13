@@ -292,6 +292,11 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   controller_ = nullptr;
   webview_ = nullptr;
   env_ = nullptr;
+  // 背景逐像素透明：DComp target/visual + composition controller 绑在这个已死的
+  // HWND 上，必须一并释放，下次重建从头再建（d3d/dcomp 设备无 HWND 绑定，保留复用）。
+  composition_controller_ = nullptr;
+  dcomp_target_ = nullptr;
+  dcomp_visual_ = nullptr;
   webview_ready_ = false;
   recovering_ = false;
   visible_ = false;
@@ -323,12 +328,12 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // SW_SHOWNOACTIVATE，流式更新不抢焦点。
     // 面板任务栏图标 — taskbar_presence_（面板实例）用 APPWINDOW 换掉
     // TOOLWINDOW：任务栏出现独立按钮，点它即可把被压底的面板拉回前台。
+    // 背景逐像素透明 — composition 模式下 OverlayCreateExStyle 带
+    // WS_EX_NOREDIRECTIONBITMAP（透明像素经 DComp 上桌面）。
     hwnd_ = CreateWindowExW(
-        WS_EX_TOPMOST |
-            (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
-            (activatable_ ? 0 : WS_EX_NOACTIVATE),
-        kClassName, window_title_.c_str(), WS_POPUP, off_x, 0, width, height,
-        owner, nullptr, GetModuleHandle(nullptr), this);
+        OverlayCreateExStyle(), kClassName, window_title_.c_str(), WS_POPUP,
+        off_x, 0, width, height, owner, nullptr, GetModuleHandle(nullptr),
+        this);
     if (hwnd_ == nullptr) {
       return false;
     }
@@ -364,12 +369,10 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   const int off_x = OffscreenX();
   const int w = width > 0 ? width : 420;
   const int h = height > 0 ? height : 600;
+  // 背景逐像素透明 — composition 模式带 WS_EX_NOREDIRECTIONBITMAP（见 ShowAt）。
   hwnd_ = CreateWindowExW(
-      WS_EX_TOPMOST |
-          (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
-          (activatable_ ? 0 : WS_EX_NOACTIVATE),
-      kClassName, window_title_.c_str(), WS_POPUP, off_x, 0, w, h, owner,
-      nullptr, GetModuleHandle(nullptr), this);
+      OverlayCreateExStyle(), kClassName, window_title_.c_str(), WS_POPUP, off_x,
+      0, w, h, owner, nullptr, GetModuleHandle(nullptr), this);
   if (hwnd_ == nullptr) {
     return;
   }
@@ -638,6 +641,12 @@ void GlobalLookupWindow::SetWindowAlpha(int percent) {
   if (hwnd_ == nullptr) {
     return;
   }
+  // 背景逐像素透明（composition）模式：透明由 DComp per-pixel 承担，整窗
+  // WS_EX_LAYERED + LWA_ALPHA 会与之冲突（把文字一起变淡、甚至令 NOREDIRECTIONBITMAP
+  // 窗不渲染）。此模式下整窗 alpha 是 no-op，透明度语义交给 CSS 卡背景（cardBgAlpha）。
+  if (composition_active_) {
+    return;
+  }
   if (percent < 30) percent = 30;
   if (percent > 100) percent = 100;
   const LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
@@ -752,6 +761,84 @@ void GlobalLookupWindow::ReportOverlayError(const std::string& message,
   }
 }
 
+// 背景逐像素透明 — 建 D3D11 + DirectComposition 设备（无需 HWND，可在建窗前探测
+// 能力）。硬件设备失败回退 WARP（远程桌面/无 GPU），仍失败则整条回退 windowed
+// （composition_active_=false），面板照常工作、只是不透明。幂等（已建则直接 true）。
+bool GlobalLookupWindow::InitCompositionDevice() {
+  if (dcomp_device_ != nullptr) {
+    return true;
+  }
+  const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+  D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
+  HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                 flags, nullptr, 0, D3D11_SDK_VERSION,
+                                 &d3d_device_, &feature_level, nullptr);
+  if (FAILED(hr) || d3d_device_ == nullptr) {
+    // 无硬件 GPU / 远程桌面：WARP 软件设备兜底。
+    hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags,
+                           nullptr, 0, D3D11_SDK_VERSION, &d3d_device_,
+                           &feature_level, nullptr);
+  }
+  if (FAILED(hr) || d3d_device_ == nullptr) {
+    ReportOverlayError("composition: D3D11CreateDevice failed", hr);
+    return false;
+  }
+  wil::com_ptr<IDXGIDevice> dxgi_device;
+  hr = d3d_device_->QueryInterface(IID_PPV_ARGS(&dxgi_device));
+  if (FAILED(hr) || dxgi_device == nullptr) {
+    ReportOverlayError("composition: QI IDXGIDevice failed", hr);
+    d3d_device_ = nullptr;
+    return false;
+  }
+  hr = DCompositionCreateDevice(dxgi_device.get(),
+                                IID_PPV_ARGS(&dcomp_device_));
+  if (FAILED(hr) || dcomp_device_ == nullptr) {
+    ReportOverlayError("composition: DCompositionCreateDevice failed", hr);
+    d3d_device_ = nullptr;
+    dcomp_device_ = nullptr;
+    return false;
+  }
+  return true;
+}
+
+// 背景逐像素透明 — 为已创建的 hwnd_ 建 DComp target + 承载 WebView 的根 visual。
+// composition controller 的 put_RootVisualTarget 挂到这个 visual，Commit 后透明像素
+// 上桌面。幂等。失败返回 false（调用方回退 / 报错）。
+bool GlobalLookupWindow::EnsureCompositionTargetVisual() {
+  if (dcomp_device_ == nullptr || hwnd_ == nullptr) {
+    return false;
+  }
+  if (dcomp_target_ != nullptr && dcomp_visual_ != nullptr) {
+    return true;
+  }
+  HRESULT hr =
+      dcomp_device_->CreateTargetForHwnd(hwnd_, TRUE, &dcomp_target_);
+  if (FAILED(hr) || dcomp_target_ == nullptr) {
+    ReportOverlayError("composition: CreateTargetForHwnd failed", hr);
+    return false;
+  }
+  hr = dcomp_device_->CreateVisual(&dcomp_visual_);
+  if (FAILED(hr) || dcomp_visual_ == nullptr) {
+    ReportOverlayError("composition: CreateVisual failed", hr);
+    return false;
+  }
+  dcomp_target_->SetRoot(dcomp_visual_.get());
+  return true;
+}
+
+DWORD GlobalLookupWindow::OverlayCreateExStyle() {
+  // 背景逐像素透明：composition 请求下先探测 D3D11+DComp 设备能力（无需 HWND），
+  // 成功才带 WS_EX_NOREDIRECTIONBITMAP（无重定向表面，透明像素经 DComp 上桌面）。
+  // 探测失败回退 composition_active_=false（windowed），面板不透明但照常工作。
+  if (composition_mode_ && !composition_active_) {
+    composition_active_ = InitCompositionDevice();
+  }
+  return WS_EX_TOPMOST |
+         (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
+         (activatable_ ? 0 : WS_EX_NOACTIVATE) |
+         (composition_active_ ? WS_EX_NOREDIRECTIONBITMAP : 0);
+}
+
 void GlobalLookupWindow::EnsureWebView() {
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto options = Make<CoreWebView2EnvironmentOptions>();
@@ -797,6 +884,101 @@ void GlobalLookupWindow::EnsureWebView() {
               return env_hr;
             }
             env_ = env;
+            // 背景逐像素透明 — composition 分区：QI env3 + DComp target/visual +
+            // composition controller，透明像素经 DComp 上桌面（背景全透、文字实心）。
+            // 瞬态窗 composition_active_=false，走下面 windowed 原路（一字不改）。任一
+            // 步失败仅在 InitCompositionDevice 已成功后才可能（composition_active_=true、
+            // 窗口已带 NOREDIRECTIONBITMAP），落到 windowed 也渲染不出——极罕见，已记日志。
+            if (composition_active_ && EnsureCompositionTargetVisual()) {
+              wil::com_ptr<ICoreWebView2Environment3> env3;
+              if (SUCCEEDED(env_->QueryInterface(IID_PPV_ARGS(&env3))) &&
+                  env3 != nullptr) {
+                HRESULT cc_call_hr =
+                    env3->CreateCoreWebView2CompositionController(
+                        hwnd_,
+                        Callback<
+                            ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler>(
+                            [this](HRESULT cc_hr,
+                                   ICoreWebView2CompositionController* cc)
+                                -> HRESULT {
+                              if (FAILED(cc_hr) || cc == nullptr) {
+                                ReportOverlayError(
+                                    "composition controller create failed",
+                                    cc_hr);
+                                return S_OK;
+                              }
+                              composition_controller_ = cc;
+                              wil::com_ptr<ICoreWebView2Controller> base;
+                              if (FAILED(composition_controller_->QueryInterface(
+                                      IID_PPV_ARGS(&base))) ||
+                                  base == nullptr) {
+                                ReportOverlayError(
+                                    "composition: QI ICoreWebView2Controller "
+                                    "failed",
+                                    E_NOINTERFACE);
+                                return S_OK;
+                              }
+                              controller_ = base;
+                              controller_->get_CoreWebView2(&webview_);
+                              controller_->put_IsVisible(TRUE);
+                              // 透明背景色（A=0）：只有实心像素画，其余透到桌面。
+                              wil::com_ptr<ICoreWebView2Controller2> controller2;
+                              if (SUCCEEDED(controller_->QueryInterface(
+                                      IID_PPV_ARGS(&controller2)))) {
+                                COREWEBVIEW2_COLOR transparent = {0, 0, 0, 0};
+                                controller2->put_DefaultBackgroundColor(
+                                    transparent);
+                              }
+                              // BoundsMode=RAW_PIXELS + rasterization scale 按 DPI。
+                              UINT dpi = GetDpiForWindow(hwnd_);
+                              if (dpi == 0) {
+                                dpi = 96;
+                              }
+                              wil::com_ptr<ICoreWebView2Controller3> controller3;
+                              if (SUCCEEDED(controller_->QueryInterface(
+                                      IID_PPV_ARGS(&controller3)))) {
+                                controller3->put_BoundsMode(
+                                    COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS);
+                                controller3->put_ShouldDetectMonitorScaleChanges(
+                                    FALSE);
+                                controller3->put_RasterizationScale(
+                                    static_cast<double>(dpi) / 96.0);
+                              }
+                              // WebView 的 visual 挂到 DComp 视觉树 → Commit 上桌面。
+                              composition_controller_->put_RootVisualTarget(
+                                  dcomp_visual_.get());
+                              RECT rc;
+                              GetClientRect(hwnd_, &rc);
+                              controller_->put_Bounds(rc);
+                              if (dcomp_device_ != nullptr) {
+                                dcomp_device_->Commit();
+                              }
+                              ConfigureWebView();
+                              wil::com_ptr<ICoreWebView2_3> wv3;
+                              if (webview_ &&
+                                  SUCCEEDED(webview_->QueryInterface(
+                                      IID_PPV_ARGS(&wv3))) &&
+                                  !popup_assets_dir_.empty()) {
+                                wv3->SetVirtualHostNameToFolderMapping(
+                                    L"hibiki.popup", popup_assets_dir_.c_str(),
+                                    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+                              }
+                              if (webview_) {
+                                webview_->Navigate(
+                                    L"https://hibiki.popup/"
+                                    L"global_lookup_host.html");
+                              }
+                              return S_OK;
+                            })
+                            .Get());
+                if (FAILED(cc_call_hr)) {
+                  ReportOverlayError(
+                      "CreateCoreWebView2CompositionController call failed",
+                      cc_call_hr);
+                }
+                return S_OK;  // composition 路径已接管，不再走 windowed。
+              }
+            }
             HRESULT ctrl_hr = env_->CreateCoreWebView2Controller(
                 hwnd_,
                 Callback<
@@ -1223,6 +1405,9 @@ void GlobalLookupWindow::RecoverDeadWebView(const std::string& replay_script) {
   controller_ = nullptr;
   webview_ = nullptr;
   env_ = nullptr;
+  // 背景逐像素透明：composition controller 也在死进程里，释放它让重建分支重造并
+  // 重新 put_RootVisualTarget。hwnd_ 仍活，dcomp target/visual 保留复用（幂等）。
+  composition_controller_ = nullptr;
   if (hwnd_ != nullptr) {
     EnsureWebView();
   }
@@ -1422,6 +1607,16 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         RECT rc;
         GetClientRect(hwnd_, &rc);
         controller_->put_Bounds(rc);
+      }
+      // 背景逐像素透明（composition）：put_Bounds 后必须 Commit 才把新尺寸的透明帧
+      // 推上桌面；且**不**设窗口 region——逐像素透明已让圆角/卡间隙靠 CSS 呈现，
+      // 一个不透明的窗口 region 会硬裁并吞掉透明区（游戏区）的点击。windowed 瞬态
+      // 窗保持原有 ApplyRoundedRegion（非 layered，圆角只能靠 region）。
+      if (composition_active_) {
+        if (dcomp_device_ != nullptr) {
+          dcomp_device_->Commit();
+        }
+        return 0;
       }
       // TODO-867 P2: round the actual window corners to match popup.css's hoshi
       // card radius. The window is opaque (no WS_EX_LAYERED — it conflicts with

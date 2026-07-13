@@ -26,6 +26,12 @@
 #include <wil/com.h>
 #pragma warning(pop)
 
+// 剪切板面板背景逐像素透明（composition 模式）：DirectComposition 视觉树承载
+// WebView2 composition controller 的透明像素，配 WS_EX_NOREDIRECTIONBITMAP 真透到桌面。
+#include <d3d11.h>
+#include <dxgi.h>
+#include <dcomp.h>
+
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -222,6 +228,15 @@ class GlobalLookupWindow {
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
   void EnsureWebView();
+  // 背景逐像素透明（composition 模式）辅助：
+  // InitCompositionDevice — 建 D3D11 + DComp 设备（无需 HWND），可在建窗前探测能力；
+  //   失败即 composition_active_=false，回退 windowed（面板照常工作、只是不透明）。
+  // EnsureCompositionTargetVisual — 为 hwnd_ 建 DComp target + 承载 WebView 的 visual。
+  bool InitCompositionDevice();
+  bool EnsureCompositionTargetVisual();
+  // 建窗 ex-style（含 composition 能力探测）：composition_active_ 时带
+  // WS_EX_NOREDIRECTIONBITMAP。ShowAt / PrewarmWebView 共用，避免两处重复。
+  DWORD OverlayCreateExStyle();
   void RecoverDeadWebView(const std::string& replay_script);
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
   // swallows it) so the "app-external lookup shows no popup" cause is visible.
@@ -258,6 +273,11 @@ class GlobalLookupWindow {
   // 背景逐像素透明模式（仅面板实例）：composition controller + DirectComposition。
   // 默认 false=windowed（瞬态窗与历史行为一字不改）。见 SetCompositionMode。
   bool composition_mode_ = false;
+  // composition_mode_ 请求下 DComp 设备真的建起来了才为 true：任何 D3D11/DComp/
+  // composition controller 创建失败都回退 composition_active_=false（windowed），
+  // 面板永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
+  // controller 分支、WM_SIZE 都以 composition_active_（而非 _mode_）为准。
+  bool composition_active_ = false;
   std::wstring window_title_ = L"Hibiki Lookup";
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
@@ -271,6 +291,13 @@ class GlobalLookupWindow {
   wil::com_ptr<ICoreWebView2Environment> env_;
   wil::com_ptr<ICoreWebView2Controller> controller_;
   wil::com_ptr<ICoreWebView2> webview_;
+
+  // 背景逐像素透明（composition 模式）COM 对象。composition_active_ 时才创建。
+  wil::com_ptr<ID3D11Device> d3d_device_;
+  wil::com_ptr<IDCompositionDevice> dcomp_device_;
+  wil::com_ptr<IDCompositionTarget> dcomp_target_;
+  wil::com_ptr<IDCompositionVisual> dcomp_visual_;
+  wil::com_ptr<ICoreWebView2CompositionController> composition_controller_;
 
   MediaResolver media_resolver_;
   MessageCallback message_cb_;
