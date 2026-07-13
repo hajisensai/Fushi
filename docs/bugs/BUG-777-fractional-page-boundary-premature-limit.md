@@ -18,11 +18,12 @@
   （同文件 `:123-151`）也在 floor/ceil 前丢掉了已有的 1px 页边界容差。
 - **[x] ① 已修复** — `d80657dcd` 只在 JS forward/back 与 Dart 影子中把距整数页号
   不超过 1px 的商归一为整数；pageStep、maxScroll、CSS、章节切换和写入路径均未改变。
-  真实 macOS WKWebView 由修复前 page 31 提前停止变为完整扫描 61 页，I5 通过。
+  真实 macOS WKWebView 由修复前 page 31 提前停止变为越过 page 31；后续 BUG-778 终点
+  修复后完整扫描 63 页，I5 通过。
 - **[x] ② 已加自动化测试** — 精确 `pitch=564.490967/currentScroll=17499` forward
   与 backward 对称红测已覆盖；`7097982da` 再用 `>1px` 数值用例、严格 JS 正则和执行顺序
   守卫锁死容差。纯测试 40/40、相关聚焦回归 251/251 通过；真实 macOS 全章扫描
-  I1-I7、I9、I10 和 413 个标记连续覆盖全部通过。
+  I1-I7、I9、I10 和固定 420/420 个标记连续覆盖全部通过。
 - **备注**：聚焦设计见
   `docs/superpowers/specs/2026-07-13-fractional-page-boundary-design.md`，实现计划见
   `docs/superpowers/plans/2026-07-13-fractional-page-boundary.md`。本条不纳入任何旧分支的
