@@ -154,6 +154,7 @@ Widget _harness({
   required Widget Function(SettingsContext) builder,
   CupertinoThemeData? cupertinoTheme,
   String designSystem = 'auto',
+  HibikiDesignSystemTheme? designSystemTheme,
   AppModel? appModel,
   HibikiDatabase? database,
   Map<String, String> extraThemePrefs = const <String, String>{},
@@ -185,7 +186,8 @@ Widget _harness({
         platform: platform,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          designSystemTheme ??
+              HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: _buildHome(cupertinoTheme, builder, textScaler),
@@ -380,6 +382,8 @@ void main() {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
+        designSystemTheme:
+            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -446,6 +450,8 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
+        designSystemTheme:
+            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -1066,7 +1072,8 @@ void main() {
       _harness(
         // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
         platform: TargetPlatform.windows,
-        designSystem: 'cupertino',
+        designSystemTheme:
+            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
         builder: (SettingsContext _) =>
             SettingsHomePage(embedded: true, onBack: () {}),
       ),

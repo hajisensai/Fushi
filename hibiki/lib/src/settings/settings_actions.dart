@@ -231,13 +231,12 @@ Future<void> setUpdateChannel(
 }
 
 Widget buildDesignSystemSelector(SettingsContext settingsContext) {
-  // iOS (Cupertino) 设计系统暂时不对外开放（后续推出再把分段加回来）。这里只隐藏
-  // 选择入口，底层能力（themeNotifier 持久化 / cupertino renderer / auto 在真
-  // iOS 机上仍走 Cupertino）保持不变，恢复时把 cupertino 分段加回即可。
+  // Apple 设计系统选项和历史值不对外开放；Cupertino / macOS renderer 仅作为
+  // 内部能力保留。ThemeNotifier 会在加载、刷新和写入边界把这些隐藏值归一化为 auto。
   const List<String> visibleValues = <String>['auto', 'material'];
   final String persisted = settingsContext.appModel.themeNotifier.designSystem;
-  // 历史上可能已持久化 'cupertino'，而分段控件要求 selected 必须落在 segments
-  // 内否则断言崩溃——钳到 'auto' 仅用于显示，不改写持久值。
+  // 分段控件要求 selected 必须落在 segments 内；这里保留防御性钳制，持久层的
+  // Apple / 未知旧值已由 ThemeNotifier 迁移为 auto。
   final String selected =
       visibleValues.contains(persisted) ? persisted : 'auto';
   return AdaptiveSettingsSegmentedRow<String>(

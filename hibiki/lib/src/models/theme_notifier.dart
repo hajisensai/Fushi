@@ -354,6 +354,12 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(snapshot);
+    final String? normalized = _normalizeHiddenDesignSystemInMemory();
+    if (normalized != null) {
+      unawaited(
+        _db.setPref('design_system', PrefCodec.encode(normalized)),
+      );
+    }
   }
 
   Future<void> refreshFromDb() async {
@@ -361,14 +367,18 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(all);
+    final String? normalized = _normalizeHiddenDesignSystemInMemory();
+    if (normalized != null) {
+      await _db.setPref('design_system', PrefCodec.encode(normalized));
+    }
     notifyListeners();
   }
 
   // Pure read. Theme getters (theme/darkTheme/themeMode) run inside
   // MaterialApp.build(); previously an absent key triggered a fire-and-forget
   // DB write (_set) from the getter, a side effect on every first build
-  // (HBK-AUDIT-022). Defaults are returned without persisting; a value is only
-  // written when explicitly set via a setter.
+  // (HBK-AUDIT-022). Defaults are returned without persisting; writes happen
+  // only at explicit setter or load/refresh migration boundaries, never here.
   dynamic _get(String key, {dynamic defaultValue}) {
     final raw = _prefs[key];
     if (raw == null) return defaultValue;
@@ -537,10 +547,24 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Design system override ────────────────────────────────────────
 
-  String get designSystem => _get('design_system', defaultValue: 'auto');
+  static String normalizeDesignSystemPreference(Object? value) {
+    return value == 'material' ? 'material' : 'auto';
+  }
+
+  String? _normalizeHiddenDesignSystemInMemory() {
+    final Object? raw = _get('design_system', defaultValue: 'auto');
+    final String normalized = normalizeDesignSystemPreference(raw);
+    if (raw == normalized) return null;
+    _prefs['design_system'] = PrefCodec.encode(normalized);
+    return normalized;
+  }
+
+  String get designSystem => normalizeDesignSystemPreference(
+        _get('design_system', defaultValue: 'auto'),
+      );
 
   Future<void> setDesignSystem(String value) async {
-    await _set('design_system', value);
+    await _set('design_system', normalizeDesignSystemPreference(value));
     notifyListeners();
   }
 

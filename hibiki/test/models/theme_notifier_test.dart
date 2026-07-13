@@ -418,26 +418,28 @@ void main() {
   });
 
   group('ThemeNotifier.designSystemTheme reflects design_system pref', () {
-    test(
-        'design_system=cupertino → designSystemTheme is cupertino and is '
-        'injected into ThemeData.extensions', () {
-      notifier.loadFromPrefsSnapshot(<String, String>{
-        'design_system': PrefCodec.encode('cupertino'),
+    for (final String value in <String>['cupertino', 'macos', 'fluent']) {
+      test('hidden design_system=$value snapshot is immediately auto',
+          () async {
+        notifier.loadFromPrefsSnapshot(<String, String>{
+          'design_system': PrefCodec.encode(value),
+        });
+
+        expect(notifier.designSystem, 'auto');
+        expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+        final Map<String, String> prefs = await db.getAllPrefs();
+        expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
       });
 
-      expect(notifier.designSystem, 'cupertino');
-      expect(notifier.designSystemTheme, HibikiDesignSystem.cupertino);
+      test('hidden design_system=$value refresh persists auto', () async {
+        await db.setPref('design_system', PrefCodec.encode(value));
+        await notifier.refreshFromDb();
 
-      final HibikiDesignSystemTheme? lightExt =
-          notifier.theme.extension<HibikiDesignSystemTheme>();
-      expect(lightExt, isNotNull);
-      expect(lightExt!.designSystem, HibikiDesignSystem.cupertino);
-
-      final HibikiDesignSystemTheme? darkExt =
-          notifier.darkTheme.extension<HibikiDesignSystemTheme>();
-      expect(darkExt, isNotNull);
-      expect(darkExt!.designSystem, HibikiDesignSystem.cupertino);
-    });
+        expect(notifier.designSystem, 'auto');
+        final Map<String, String> prefs = await db.getAllPrefs();
+        expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
+      });
+    }
 
     test('design_system=material → designSystemTheme is material', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
@@ -472,13 +474,13 @@ void main() {
       expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
     });
 
-    test('unknown design_system value → falls through to auto', () {
-      notifier.loadFromPrefsSnapshot(<String, String>{
-        'design_system': PrefCodec.encode('fluent'),
-      });
+    test('setDesignSystem rejects hidden values by normalizing to auto',
+        () async {
+      await notifier.setDesignSystem('macos');
 
-      expect(notifier.designSystem, 'fluent');
-      expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+      expect(notifier.designSystem, 'auto');
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
     });
   });
 
