@@ -1054,13 +1054,6 @@ function hibikiRemoveContainer() {
   if (hibikiHost) { hibikiHost.remove(); hibikiHost = null; }
   hibikiContainer = null;
   window.__hibikiRoot = null;
-  // Phase D：关窗即撤拖拽把手 + 清尺寸拖拽状态（把手随弹窗生命周期，下次开窗 place() 重建）。
-  if (hibikiResizeGrip) {
-    try { hibikiResizeGrip.remove(); } catch (_) { /* 已脱离文档 */ }
-    hibikiResizeGrip = null;
-  }
-  hibikiResizeDrag = null;
-  hibikiResizeBox = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   hibikiClearHighlightOverlay();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。hoshiSelection 未加载/无选区时是 no-op。
@@ -1069,6 +1062,13 @@ function hibikiRemoveContainer() {
       window.hoshiSelection.clearSelection();
     }
   } catch (_) { /* no-op */ }
+  // Phase D：关窗即撤拖拽把手 + 清尺寸拖拽状态（把手随弹窗生命周期，下次开窗 place() 重建）。
+  if (hibikiResizeGrip) {
+    try { hibikiResizeGrip.remove(); } catch (_) { /* 已脱离文档 */ }
+    hibikiResizeGrip = null;
+  }
+  hibikiResizeDrag = null;
+  hibikiResizeBox = null;
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
