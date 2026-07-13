@@ -111,6 +111,22 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   Offset _touchStartGlobal = Offset.zero;
   bool _touchMoved = false;
 
+  // ── 拖拽近视口边缘自动滚动（本网格常挂在 SingleChildScrollView 内，成员超一屏时
+  //    需能把浮层拖到视口外的槽位）。起拖时抓最近的祖先 [ScrollableState]，指针进入
+  //    视口上/下边缘带就按帧步进 [ScrollPosition.jumpTo]，滚动后用最近一次指针全局
+  //    坐标重跑 [_applyDragAt]（`globalToLocal` 已消滚动位移，浮层/目标槽随内容自洽）。
+  //    无祖先 Scrollable（如离屏测试）时 [_scrollable] 为 null，整段降级为不滚动。──
+  ScrollableState? _scrollable;
+  Offset _lastPointerGlobal = Offset.zero;
+  double _autoScrollStepSigned = 0; // 当前每帧步进（含方向）；0 = 不滚
+  bool _autoScrollScheduled = false;
+
+  /// 触发自动滚动的视口上/下边缘带宽（指针进入即滚）。
+  static const double _autoScrollEdge = 64.0;
+
+  /// 自动滚动每帧步进（像素）。
+  static const double _autoScrollStep = 16.0;
+
   @override
   void initState() {
     super.initState();
@@ -177,6 +193,9 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
     if (di < 0) return;
     final Offset slot = _slotTopLeft(di);
     final Offset startLocal = _localOffset(startGlobal);
+    // 抓最近的祖先 Scrollable（不建依赖，避免每次页面滚动都重建本网格）；无则不滚。
+    _scrollable = context.findAncestorStateOfType<ScrollableState>();
+    _lastPointerGlobal = startGlobal;
     setState(() {
       _dragOriginal = original;
       _dragStartDi = di;
@@ -190,11 +209,19 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
 
   void _updateDrag(Offset globalPosition) {
     if (_dragOriginal == null) return;
+    _lastPointerGlobal = globalPosition;
+    _applyDragAt(globalPosition);
+    _maybeAutoScroll(globalPosition);
+  }
+
+  /// 按给定全局指针坐标定位浮层 + 实时腾位（起拖后每次指针移动、以及自动滚动每帧
+  /// 各调一次）。指针经根 [Stack] 的 `globalToLocal` 转本地坐标，自动消祖先缩放/滚动。
+  void _applyDragAt(Offset globalPosition) {
+    if (_dragOriginal == null) return;
     final Offset local = _localOffset(globalPosition);
-    final double maxX = (_cols * _cellW +
-            widget.crossAxisSpacing * (_cols - 1) -
-            _cellW)
-        .clamp(0.0, double.infinity);
+    final double maxX =
+        (_cols * _cellW + widget.crossAxisSpacing * (_cols - 1) - _cellW)
+            .clamp(0.0, double.infinity);
     final double maxY = (_totalHeight - _cellH).clamp(0.0, double.infinity);
     final Offset topLeft = Offset(
       (local.dx - _grab.dx).clamp(0.0, maxX),
@@ -214,6 +241,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   void _endDrag() {
     final int? dragged = _dragOriginal;
     if (dragged == null) return;
+    _stopAutoScroll();
     final int from = _dragStartDi;
     final int to = _display.indexOf(dragged);
     setState(() {
@@ -227,6 +255,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   /// **不提交 onReorder**（中间态非用户最终意图）。守 mounted 防 dispose 期 setState。
   void _cancelDrag() {
     if (_dragOriginal == null) return;
+    _stopAutoScroll();
     if (!mounted) {
       _dragOriginal = null;
       return;
@@ -235,6 +264,55 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       _dragOriginal = null;
       _resetDisplay();
     });
+  }
+
+  /// 指针近视口边缘则设定本帧步进并驱动帧循环；离开边缘带 / 到滚动界则停。
+  void _maybeAutoScroll(Offset globalPosition) {
+    final ScrollableState? sc = _scrollable;
+    if (sc == null || !sc.mounted) {
+      _autoScrollStepSigned = 0;
+      return;
+    }
+    final RenderObject? ro = sc.context.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) {
+      _autoScrollStepSigned = 0;
+      return;
+    }
+    final ScrollPosition pos = sc.position;
+    final Rect viewport = ro.localToGlobal(Offset.zero) & ro.size;
+    double step = 0;
+    if (globalPosition.dy < viewport.top + _autoScrollEdge &&
+        pos.pixels > pos.minScrollExtent) {
+      step = -_autoScrollStep;
+    } else if (globalPosition.dy > viewport.bottom - _autoScrollEdge &&
+        pos.pixels < pos.maxScrollExtent) {
+      step = _autoScrollStep;
+    }
+    _autoScrollStepSigned = step;
+    if (step != 0 && !_autoScrollScheduled) {
+      _autoScrollScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback(_autoScrollTick);
+    }
+  }
+
+  /// 帧回调：滚动一步 → 用最近一次指针坐标重跑拖拽（浮层/目标槽随内容自洽）→
+  /// 重新评估边缘带决定是否续帧。拖拽已结束 / 已 unmount / 已到滚动界即停。
+  void _autoScrollTick(Duration _) {
+    _autoScrollScheduled = false;
+    if (!mounted || _dragOriginal == null || _autoScrollStepSigned == 0) return;
+    final ScrollableState? sc = _scrollable;
+    if (sc == null || !sc.mounted) return;
+    final ScrollPosition pos = sc.position;
+    final double next = (pos.pixels + _autoScrollStepSigned)
+        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    if (next != pos.pixels) pos.jumpTo(next);
+    _applyDragAt(_lastPointerGlobal);
+    _maybeAutoScroll(_lastPointerGlobal);
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollStepSigned = 0;
+    _scrollable = null;
   }
 
   // ── 触摸长按：起拖前先待命，移动过 slop 才起拖，原地松手→菜单 ──────────────
@@ -263,6 +341,19 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       widget.onContextMenu?.call(original, d.globalPosition);
     }
     _touchMoved = false;
+  }
+
+  /// 触摸长按被系统取消（通知栏下拉 / 来电 / 切后台等发 PointerCancel，或竞技场把
+  /// 指针夺走）：清待命态并复位本次拖拽，**不提交 onReorder**（中间态非用户最终意图）。
+  /// 不接此路径时，取消后残留的 _touchPendingOriginal/_dragOriginal/_display 会留下幽灵
+  /// 浮层，且下次起拖 _dragStartDi 在错乱 display 上取值 → onReorder 提交错误 from → 错序
+  /// 写穿 DB。SDK 的 LongPressGestureRecognizer 在长按已接受（起拖中）时收到 PointerCancel
+  /// 仍会回调 onLongPressCancel（state 仍为 possible），故此路径覆盖「拖拽中被系统取消」。
+  void _touchLongPressCancel(int original) {
+    if (_touchPendingOriginal != original) return;
+    _touchPendingOriginal = null;
+    _touchMoved = false;
+    _cancelDrag(); // _dragOriginal==null（待命未移动即取消）时为 no-op
   }
 
   /// 鼠标等精确指针：按下移动即拖。
@@ -294,10 +385,8 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final double totalW = constraints.maxWidth.isFinite
             ? constraints.maxWidth
-            : (_cellW * _cols +
-                widget.crossAxisSpacing * (_cols - 1));
-        _cellW =
-            (totalW - widget.crossAxisSpacing * (_cols - 1)) / _cols;
+            : (_cellW * _cols + widget.crossAxisSpacing * (_cols - 1));
+        _cellW = (totalW - widget.crossAxisSpacing * (_cols - 1)) / _cols;
         if (_cellW < 0) _cellW = 0;
         _cellH = widget.childAspectRatio <= 0
             ? _cellW
@@ -345,16 +434,17 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   Widget _buildCell(int original) {
     final Widget content = widget.itemBuilder(context, original);
     // 被拖单元在原位保留占位但透明（充当随实时重排移动的「空位」），可见的是浮层。
-    final Widget slot =
-        _dragOriginal == original ? Opacity(opacity: 0, child: content) : content;
+    final Widget slot = _dragOriginal == original
+        ? Opacity(opacity: 0, child: content)
+        : content;
     // 身份 key 已放在外层 [Positioned]（Stack 直接子节点）上，重排时保留本
     // RawGestureDetector 与其活跃识别器；此处不再重复挂 key。
     return RawGestureDetector(
       behavior: HitTestBehavior.opaque,
       gestures: <Type, GestureRecognizerFactory>{
         // 主轻点 → 激活；右键 secondary tap → 上下文菜单。
-        TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
-            TapGestureRecognizer>(
+        TapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
           () => TapGestureRecognizer(),
           (TapGestureRecognizer instance) {
             final HibikiReorderGridActivate? activate = widget.onActivateItem;
@@ -377,8 +467,8 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
           },
         ),
         // 触摸屏：长按待命，移动过 slop 起拖，原地松手弹菜单。
-        LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<
-            LongPressGestureRecognizer>(
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
           () => LongPressGestureRecognizer(supportedDevices: _touchDragDevices),
           (LongPressGestureRecognizer instance) {
             instance.onLongPressStart =
@@ -387,6 +477,9 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
                 _touchLongPressMove(original, d);
             instance.onLongPressEnd =
                 (LongPressEndDetails d) => _touchLongPressEnd(original, d);
+            // 系统取消指针（通知栏下拉/来电/切后台）→ 清待命 + 复位拖拽（防幽灵浮层
+            // 与下次错序提交）。
+            instance.onLongPressCancel = () => _touchLongPressCancel(original);
           },
         ),
       },
