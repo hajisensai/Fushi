@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
@@ -1965,6 +1966,8 @@ Future<bool> importRemoteBookFolder({
     // TODO-1165：按标签名重建云盘书标签映射（sidecar 由 push 侧写在同文件夹，只增
     // 不删）。复用已列出的 children，不再多发一次 listChildren。
     await _applyRemoteBookFolderTags(db, backend, children, importedBookKey);
+    // per-book 自定义 CSS：LWW 合并同文件夹 book_css.json，把较新内容写穿 extractDir。
+    await _applyRemoteBookFolderCss(db, backend, children, importedBookKey);
     return true;
   } finally {
     try {
@@ -2003,6 +2006,85 @@ Future<void> _applyRemoteBookFolderTags(
     remoteAddedAt: parsed.addedAt,
     remoteTombstones: parsed.tombstones,
   );
+}
+
+/// 读取云盘书文件夹里的 CSS sidecar（[kSyncBookCssAssetName]）并 LWW 合并进 [bookKey]：
+/// 按 relativePath 取 updatedAt 较新，把内容/重置写穿书的 extractDir（磁盘是渲染真相源，
+/// DB 只是时间戳载体）。缺 sidecar / 本书无对应 CSS 文件 / 反查不到 extractDir 一律安全跳过。
+Future<void> _applyRemoteBookFolderCss(
+  HibikiDatabase db,
+  SyncBackend backend,
+  List<AssetEntry> children,
+  String bookKey,
+) async {
+  AssetEntry? sidecar;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name == kSyncBookCssAssetName) {
+      sidecar = e;
+      break;
+    }
+  }
+  if (sidecar == null) return;
+  final Object? json = await backend.getJsonAsset(sidecar.id);
+  final Map<String, ({String content, bool deleted, int updatedAt})> remote =
+      parseBookCssSidecar(json);
+  if (remote.isEmpty) return;
+  final List<({String relativePath, String content, bool deleted})> changed =
+      await db.mergeRemoteBookCss(bookKey, remote);
+  if (changed.isEmpty) return;
+  final EpubBookRow? book = await db.getEpubBook(bookKey);
+  final String? extractDir = book?.extractDir;
+  if (extractDir == null || extractDir.isEmpty) return;
+  final BookCssRepository repo = BookCssRepository(extractDir);
+  final Map<String, CssFileEntry> byRel = <String, CssFileEntry>{
+    for (final CssFileEntry e in repo.discoverCssFiles()) e.relativePath: e,
+  };
+  for (final ({String relativePath, String content, bool deleted}) c
+      in changed) {
+    final CssFileEntry? entry = byRel[c.relativePath];
+    if (entry == null) continue; // 本书无此 CSS 文件（版本差异）→ 跳过
+    try {
+      if (c.deleted) {
+        repo.resetFile(entry);
+      } else {
+        repo.saveCss(entry, c.content);
+      }
+    } catch (_) {
+      // best-effort：单个 CSS 写盘失败不影响其余（磁盘/权限异常）。
+    }
+  }
+}
+
+/// 解析 CSS sidecar JSON 为 LWW 输入：`{files:{relativePath:{content,deleted,updatedAt}}}`。
+/// 非 Map / 缺 updatedAt / 坏字段一律安全跳过，绝不抛 FormatException。测试可见。
+@visibleForTesting
+Map<String, ({String content, bool deleted, int updatedAt})>
+    parseBookCssSidecar(Object? json) {
+  if (json is! Map)
+    return const <String, ({String content, bool deleted, int updatedAt})>{};
+  final Object? files = json['files'];
+  if (files is! Map) {
+    return const <String, ({String content, bool deleted, int updatedAt})>{};
+  }
+  final Map<String, ({String content, bool deleted, int updatedAt})> out =
+      <String, ({String content, bool deleted, int updatedAt})>{};
+  files.forEach((Object? k, Object? v) {
+    final String rel = k?.toString() ?? '';
+    if (rel.isEmpty || v is! Map) return;
+    final Object? updatedAt = v['updatedAt'];
+    final int? ms = updatedAt is int
+        ? updatedAt
+        : (updatedAt is num
+            ? updatedAt.toInt()
+            : int.tryParse(updatedAt?.toString() ?? ''));
+    if (ms == null) return;
+    out[rel] = (
+      content: v['content']?.toString() ?? '',
+      deleted: v['deleted'] == true,
+      updatedAt: ms,
+    );
+  });
+  return out;
 }
 
 /// 解析标签 sidecar JSON 为 LWW 输入（tags 稳健档）。v2 带 `tagsAddedAt` / `tagTombstones`

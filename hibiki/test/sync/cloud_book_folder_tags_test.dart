@@ -9,7 +9,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart' show kSyncBookTagsAssetName;
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
-    show importRemoteBookFolder, parseTagSidecar;
+    show importRemoteBookFolder, parseTagSidecar, parseBookCssSidecar;
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -387,6 +387,45 @@ void main() {
       final empty = parseTagSidecar('not json');
       expect(empty.addedAt, isEmpty);
       expect(empty.tombstones, isEmpty);
+    });
+  });
+
+  // ── parseBookCssSidecar：per-book CSS sidecar 解析 ──────────────────────────
+  group('parseBookCssSidecar', () {
+    test('files 映射解析出 content/deleted/updatedAt', () {
+      final parsed = parseBookCssSidecar(<String, Object?>{
+        'schemaVersion': 1,
+        'files': <String, Object?>{
+          'style.css': <String, Object?>{
+            'content': 'body{color:red}',
+            'deleted': false,
+            'updatedAt': 100,
+          },
+          'reset.css': <String, Object?>{
+            'content': '',
+            'deleted': true,
+            'updatedAt': 200,
+          },
+        },
+      });
+      expect(parsed['style.css']!.content, 'body{color:red}');
+      expect(parsed['style.css']!.deleted, isFalse);
+      expect(parsed['style.css']!.updatedAt, 100);
+      expect(parsed['reset.css']!.deleted, isTrue);
+      expect(parsed['reset.css']!.updatedAt, 200);
+    });
+
+    test('缺 updatedAt / 空 rel / 非 Map 一律安全跳过或返空', () {
+      final parsed = parseBookCssSidecar(<String, Object?>{
+        'files': <String, Object?>{
+          'a.css': <String, Object?>{'content': 'x'}, // 缺 updatedAt
+          '': <String, Object?>{'content': 'y', 'updatedAt': 1}, // 空 rel
+          'b.css': 'not-a-map',
+        },
+      });
+      expect(parsed, isEmpty);
+      expect(parseBookCssSidecar('not json'), isEmpty);
+      expect(parseBookCssSidecar(<String, Object?>{'files': 'oops'}), isEmpty);
     });
   });
 }

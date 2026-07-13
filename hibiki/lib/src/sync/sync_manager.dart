@@ -23,6 +23,11 @@ import 'package:path/path.dart' as p;
 /// / [importRemoteBookFolder] / 内容探针都不会把它误判为进度或内容。
 const String kSyncBookTagsAssetName = 'tags.json';
 
+/// per-book 自定义 CSS sidecar 名（与 tags.json 同级、同不撞前缀分类）。存
+/// `{schemaVersion:1, files:{relativePath: {content, deleted, updatedAt}}}`，供跨端
+/// LWW 同步用户改写的书内 CSS。
+const String kSyncBookCssAssetName = 'book_css.json';
+
 /// Re-package an extracted book directory back into a single `.epub` at
 /// [outputPath]. Hibiki stores imported books EXTRACTED (the extract dir is a
 /// valid EPUB layout: `mimetype` + `META-INF/` + OPF + content) and keeps no
@@ -740,6 +745,25 @@ class SyncManager {
         'tags': tagAddedAt.keys.toList(),
         'tagsAddedAt': tagAddedAt,
         'tagTombstones': tagTombstones,
+      });
+    }
+
+    // per-book 自定义 CSS sidecar（LWW by updatedAt）。用户改写的书内 CSS 存 book_css.json
+    // 权威全量快照（含重置墓碑 deleted），供他端按 updatedAt 取较新落地。有行才写。
+    final List<BookCustomCssRow> cssRows =
+        await _db.getBookCssRows(book.bookKey);
+    if (cssRows.isNotEmpty) {
+      await _backend
+          .putJsonAsset(folderId, kSyncBookCssAssetName, <String, Object?>{
+        'schemaVersion': 1,
+        'files': <String, Object?>{
+          for (final BookCustomCssRow r in cssRows)
+            r.relativePath: <String, Object?>{
+              'content': r.content,
+              'deleted': r.deleted,
+              'updatedAt': r.updatedAt,
+            },
+        },
       });
     }
 
