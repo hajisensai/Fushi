@@ -514,6 +514,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     }
   }
 
+  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好。
+  void _onPopupResizeCancel() {
+    if (_popupResizePreview == null) return;
+    setState(() => _popupResizePreview = null);
+  }
+
   Widget buildDictionary() {
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
@@ -667,6 +673,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onResizeStart: _onPopupResizeStart,
         onResizeUpdate: _onPopupResizeUpdate,
         onResizeEnd: _onPopupResizeEnd,
+        onResizeCancel: _onPopupResizeCancel,
         // TODO-834：点**某层弹窗本体的空白区**（非内容区）只关该层衍生的后代层，
         // 保留本层 + 祖先（不关母代）。点顶层（无后代）= no-op 栈不变。
         onTapOutside: () => dismissDescendantsOf(index),

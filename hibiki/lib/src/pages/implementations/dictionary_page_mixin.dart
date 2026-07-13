@@ -196,6 +196,12 @@ mixin DictionaryPageMixin {
     }
   }
 
+  /// 拖拽被竞技场中途取消：丢弃预览态回到「读真值」，不落偏好。
+  void _onMixinPopupResizeCancel() {
+    if (_popupResizePreview == null) return;
+    setState(() => _popupResizePreview = null);
+  }
+
   /// Mines the current dictionary entry to Anki.
   ///
   /// Shows a Fluttertoast for each outcome and returns `true` on success.
@@ -527,6 +533,7 @@ mixin DictionaryPageMixin {
         onResizeStart: _onMixinPopupResizeStart,
         onResizeUpdate: _onMixinPopupResizeUpdate,
         onResizeEnd: _onMixinPopupResizeEnd,
+        onResizeCancel: _onMixinPopupResizeCancel,
         // TODO-834：点**本层弹窗本体的空白区**只关该层衍生的后代层（index 更大的全部），
         // 保留本层 + 祖先。线性扁平栈里 index 即 depth，故后代 = `index+1..end`，用
         // [DictionaryPopupController.truncateTo] 精确裁。点本层无后代 = no-op 栈不变。

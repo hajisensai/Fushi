@@ -338,6 +338,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onResizeStart,
     this.onResizeUpdate,
     this.onResizeEnd,
+    this.onResizeCancel,
     super.key,
   });
 
@@ -452,6 +453,10 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// 拖拽结束：宿主把预览尺寸一次性落偏好（`setPopupMaxWidth/Height`）。
   final VoidCallback? onResizeEnd;
+
+  /// 拖拽被竞技场中途取消（不走 [onResizeEnd]）：宿主借此丢弃预览态、还原到已落库
+  /// 尺寸，避免弹窗悬停在预览尺寸；偏好从不会因取消被写坏。
+  final VoidCallback? onResizeCancel;
 
   /// 拖拽把手的测试锚点（widget 测试用 `find.byKey` 定位后模拟 pan）。
   static const Key resizeGripKey =
@@ -578,6 +583,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onStart: onResizeStart,
             onUpdate: onResizeUpdate!,
             onEnd: onResizeEnd,
+            onCancel: onResizeCancel,
           ),
         ),
       ],
@@ -977,12 +983,17 @@ class _PopupResizeGrip extends StatelessWidget {
     required this.onUpdate,
     this.onStart,
     this.onEnd,
+    this.onCancel,
     super.key,
   });
 
   final VoidCallback? onStart;
   final void Function(Offset deltaPx) onUpdate;
   final VoidCallback? onEnd;
+
+  /// pan 被手势竞技场中途夺走（不走 [onEnd]）时触发：宿主借此丢弃预览态、还原到
+  /// 已落库尺寸，避免弹窗停在预览尺寸的悬挂态（偏好从不会因取消被写坏）。
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -995,6 +1006,7 @@ class _PopupResizeGrip extends StatelessWidget {
         onPanStart: onStart == null ? null : (_) => onStart!(),
         onPanUpdate: (DragUpdateDetails details) => onUpdate(details.delta),
         onPanEnd: onEnd == null ? null : (_) => onEnd!(),
+        onPanCancel: onCancel,
         child: CustomPaint(
           size: const Size.square(_kResizeGripSize),
           painter: _ResizeGripPainter(color),
