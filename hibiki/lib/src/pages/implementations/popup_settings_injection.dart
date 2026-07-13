@@ -138,8 +138,19 @@ String dictionaryFontStyleJs(AppModel appModel) {
 
 /// TODO-867 P3c F1 / TODO-895 D6: the app-outside icon-font override. Forces the
 /// monochrome "Segoe UI Symbol" font (which carries the audio/arrow/close glyphs)
-/// and DROPS the colour-emoji font, plus hides the `.mine-button` (no mining in the
-/// bare window). In-app popups never call this (they keep popup.css's default stack).
+/// and DROPS the colour-emoji font. In-app popups never call this (they keep
+/// popup.css's default stack).
+///
+/// BUG-774 — this block USED to also inject `.mine-button{display:none}` on the
+/// premise "no mining in the bare window". That premise was retired: TODO-1188
+/// wired a full app-external mine path (overlay_bridge_handlers `mineEntry` /
+/// `duplicateCheck` / `resolveMineSentence`, natively DEFERRED by the C++ window)
+/// and BUG-730 added the clipboard-panel mine sentence, so both the clipboard
+/// panel and the selection/overlay window CAN mine — popup.css even bumps
+/// `html.global-lookup .mine-button:not(:disabled){opacity:1}` to keep it visible
+/// on the translucent surface. The leftover `display:none !important` outlived its
+/// premise and silently ate the button in both surfaces; removed so the wired
+/// backend is actually reachable.
 const String _globalLookupIconFontJs = '''
     (function(){
       var s = document.getElementById('hibiki-overlay-style');
@@ -147,7 +158,6 @@ const String _globalLookupIconFontJs = '''
         s = document.createElement('style');
         s.id = 'hibiki-overlay-style';
         s.textContent =
-          '.mine-button{display:none !important;}' +
           '.audio-button,.glossary-group>summary::before{font-family:"Segoe UI Symbol","Segoe UI",sans-serif !important;}';
         document.head.appendChild(s);
       }
