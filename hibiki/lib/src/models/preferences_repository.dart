@@ -547,6 +547,62 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 查词弹窗尺寸精细化（2026-07-13 设计）：app 外覆盖窗 / 浏览器扩展各自可「独立尺寸」。
+  // 默认 independent=false → 跟随 app 内 popupMaxWidth/Height；用户显式解锁后用各自键。
+  // 各自宽/高默认值等于 app 内默认（400×360），保证解锁瞬间不跳尺寸。
+
+  bool get overlayLookupIndependentSize =>
+      getPref('overlay_lookup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setOverlayLookupIndependentSize(bool value) async {
+    await setPref('overlay_lookup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get overlayLookupMaxWidth =>
+      getPref('overlay_lookup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setOverlayLookupMaxWidth(double width) async {
+    await setPref('overlay_lookup_max_width', width);
+    notifyListeners();
+  }
+
+  double get overlayLookupMaxHeight =>
+      getPref('overlay_lookup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setOverlayLookupMaxHeight(double height) async {
+    await setPref('overlay_lookup_max_height', height);
+    notifyListeners();
+  }
+
+  bool get extensionPopupIndependentSize =>
+      getPref('extension_popup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setExtensionPopupIndependentSize(bool value) async {
+    await setPref('extension_popup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get extensionPopupMaxWidth =>
+      getPref('extension_popup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setExtensionPopupMaxWidth(double width) async {
+    await setPref('extension_popup_max_width', width);
+    notifyListeners();
+  }
+
+  double get extensionPopupMaxHeight =>
+      getPref('extension_popup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setExtensionPopupMaxHeight(double height) async {
+    await setPref('extension_popup_max_height', height);
+    notifyListeners();
+  }
+
   // TODO-776: number of dictionary blocks rendered per row inside one entry's
   // glossary section (experimental). Default 1 = the classic single vertical
   // column; clamped to 1..4 both on read and write so a corrupt/out-of-range

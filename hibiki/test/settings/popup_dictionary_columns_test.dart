@@ -71,7 +71,7 @@ void main() {
   SettingsDestination columnsOnlyDestination(SettingsContext settingsContext) {
     return SettingsDestination(
       id: SettingsDestinationId.lookup,
-      title: t.popup_dictionary_columns,
+      title: t.popup_dictionary_max_columns,
       icon: Icons.view_column_outlined,
       sections: <SettingsSection>[
         SettingsSection(items: <SettingsItem>[columnsItem(settingsContext)]),
@@ -140,12 +140,12 @@ void main() {
       expect(slider.divisions, 3, reason: '1..4 共 4 档 = 3 个 division');
 
       // 标题 + 实时读数（titleReadout）。TODO-1357：桌面（测试 host = 桌面）未设默认 2 列。
-      expect(find.text('${t.popup_dictionary_columns} (2)'), findsOneWidget,
+      expect(find.text('${t.popup_dictionary_max_columns} (2)'), findsOneWidget,
           reason: 'TODO-1357：桌面默认 2 列，标题带实时读数');
 
       // 副标题 = hint + 实验性后缀，渲染成单个 Text。
       final String expectedSubtitle =
-          t.popup_dictionary_columns_hint + t.settings_experimental_suffix;
+          t.popup_dictionary_max_columns_hint + t.settings_experimental_suffix;
       expect(find.text(expectedSubtitle), findsOneWidget,
           reason: '副标题展示 hint 文案并标注实验性后缀');
       expect(expectedSubtitle, contains(t.settings_experimental_suffix.trim()),

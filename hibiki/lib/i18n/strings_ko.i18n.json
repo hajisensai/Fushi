@@ -1804,8 +1804,6 @@
   "remote_book_info_has_audiobook": "오디오북 포함",
   "remote_video_info": "정보",
   "remote_video_info_has_subtitle": "자막 포함",
-  "popup_dictionary_columns": "한 줄당 사전 수",
-  "popup_dictionary_columns_hint": "여러 사전을 나란히 표시합니다. 화면이 좁으면 열 수를 줄이세요",
   "card_exported_audio_failed": "카드를 내보냈지만 오디오 다운로드에 실패했습니다($reason).",
   "card_mined_without_sentence_audio": "카드를 만들었지만 이번 선택 범위에서 문장 오디오를 찾지 못했습니다.",
   "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
@@ -2311,5 +2309,15 @@
   "video_mining_image_mode_hint": "How covers on video cards are captured",
   "video_mining_image_mode_gif": "Animated GIF (subtitle clip)",
   "video_mining_image_mode_current_frame": "Screenshot at mining",
-  "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start"
+  "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start",
+  "popup_dictionary_max_columns": "Max dictionary columns (auto-fill)",
+  "popup_dictionary_max_columns_hint": "Auto-fills up to this many dictionary columns per row; narrower screens use fewer",
+  "overlay_lookup_independent_size": "Separate size for pop-out lookup",
+  "overlay_lookup_independent_size_hint": "Give the app-external pop-out lookup window its own max size instead of following the in-app popup",
+  "overlay_lookup_max_width": "Pop-out lookup max width",
+  "overlay_lookup_max_height": "Pop-out lookup max height",
+  "extension_popup_independent_size": "Separate size for browser extension",
+  "extension_popup_independent_size_hint": "Give the browser-extension lookup popup its own max size instead of following the in-app popup",
+  "extension_popup_max_width": "Extension popup max width",
+  "extension_popup_max_height": "Extension popup max height"
 }

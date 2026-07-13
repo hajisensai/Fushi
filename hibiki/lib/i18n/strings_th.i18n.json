@@ -1804,8 +1804,6 @@
   "remote_book_info_has_audiobook": "มีหนังสือเสียง",
   "remote_video_info": "ข้อมูล",
   "remote_video_info_has_subtitle": "มีคำบรรยาย",
-  "popup_dictionary_columns": "จำนวนพจนานุกรมต่อแถว",
-  "popup_dictionary_columns_hint": "แสดงพจนานุกรมหลายเล่มเคียงข้างกัน ใช้คอลัมน์น้อยลงบนหน้าจอแคบ",
   "card_exported_audio_failed": "ส่งออกการ์ดแล้ว แต่ดาวน์โหลดเสียงไม่สำเร็จ ($reason)",
   "card_mined_without_sentence_audio": "สร้างการ์ดโดยไม่มีเสียงประโยค (ไม่พบเสียงสำหรับส่วนที่เลือกนี้)",
   "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
@@ -2311,5 +2309,15 @@
   "video_mining_image_mode_hint": "How covers on video cards are captured",
   "video_mining_image_mode_gif": "Animated GIF (subtitle clip)",
   "video_mining_image_mode_current_frame": "Screenshot at mining",
-  "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start"
+  "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start",
+  "popup_dictionary_max_columns": "Max dictionary columns (auto-fill)",
+  "popup_dictionary_max_columns_hint": "Auto-fills up to this many dictionary columns per row; narrower screens use fewer",
+  "overlay_lookup_independent_size": "Separate size for pop-out lookup",
+  "overlay_lookup_independent_size_hint": "Give the app-external pop-out lookup window its own max size instead of following the in-app popup",
+  "overlay_lookup_max_width": "Pop-out lookup max width",
+  "overlay_lookup_max_height": "Pop-out lookup max height",
+  "extension_popup_independent_size": "Separate size for browser extension",
+  "extension_popup_independent_size_hint": "Give the browser-extension lookup popup its own max size instead of following the in-app popup",
+  "extension_popup_max_width": "Extension popup max width",
+  "extension_popup_max_height": "Extension popup max height"
 }
