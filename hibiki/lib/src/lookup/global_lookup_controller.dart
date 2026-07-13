@@ -16,6 +16,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
@@ -207,8 +208,10 @@ class GlobalLookupController {
   Future<void> _prewarmOverlay(AppModel model) async {
     try {
       final double dpr = _devicePixelRatio();
-      final int w = (model.popupMaxWidth * model.appUiScale * dpr).round();
-      final int h = (model.popupMaxHeight * model.appUiScale * dpr).round();
+      // 弹窗尺寸精细化：app 外覆盖窗默认跟随 app 内，解锁后用 overlay 自己的键。
+      final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+      final int w = (overlaySize.width * model.appUiScale * dpr).round();
+      final int h = (overlaySize.height * model.appUiScale * dpr).round();
       await GlobalLookupChannel.prewarmWebView(width: w, height: h);
       glog('start: overlay prewarm requested w=$w h=$h');
     } catch (e) {
@@ -509,8 +512,9 @@ class GlobalLookupController {
       // the window-local origin clamped into the work area (TODO-1231
       // computeRootShellOffset), so a single-frame lookup still reveals exactly
       // at the card size after the bbox trims the bounds — no regression.
-      final double cardW = model.popupMaxWidth * model.appUiScale;
-      final double cardH = model.popupMaxHeight * model.appUiScale;
+      final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+      final double cardW = overlaySize.width * model.appUiScale;
+      final double cardH = overlaySize.height * model.appUiScale;
       _layoutBoundsW = cardW * kGlobalLookupLayoutBoundsWidthFactor;
       _layoutBoundsH = cardH * kGlobalLookupLayoutBoundsHeightFactor;
       final int w0 = (_layoutBoundsW * dpr).round();
@@ -1065,8 +1069,9 @@ class GlobalLookupController {
     }
     // maxWidth/maxHeight are the single card size; children cascade and D2 bbox
     // trims the window down to the real extent.
-    final double cardW = model.popupMaxWidth * model.appUiScale;
-    final double cardH = model.popupMaxHeight * model.appUiScale;
+    final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+    final double cardW = overlaySize.width * model.appUiScale;
+    final double cardH = overlaySize.height * model.appUiScale;
     // TODO-893 — screenWidth/screenHeight MUST be the real monitor work area
     // (CSS px), NOT the off-screen measurement canvas (_layoutBounds*). The
     // canvas is only ~2x the card, so computeFrameRect's showBelow (spaceBelow
@@ -1207,8 +1212,9 @@ class GlobalLookupController {
   /// scrollHeight, exactly as before D2. Kept as a fallback so a frame that
   /// somehow reports the scalar form still sizes correctly.
   void _applyOverlayScalar(AppModel model, double dpr, double physH) {
-    final int width = (model.popupMaxWidth * model.appUiScale * dpr).round();
-    final double maxHeight = model.popupMaxHeight * model.appUiScale * dpr;
+    final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+    final int width = (overlaySize.width * model.appUiScale * dpr).round();
+    final double maxHeight = overlaySize.height * model.appUiScale * dpr;
     final int height = (physH > maxHeight ? maxHeight : physH).round();
     if (!_revealed) {
       _revealed = true;

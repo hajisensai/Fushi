@@ -334,6 +334,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClose,
     this.onBack,
     this.transparentDocumentBackground = false,
+    this.showResizeGrip = false,
+    this.onResizeStart,
+    this.onResizeUpdate,
+    this.onResizeEnd,
+    this.onResizeCancel,
     super.key,
   });
 
@@ -433,6 +438,30 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// in-app 行为，见 DictionaryPopupWebView.transparentDocumentBackground）。
   final bool transparentDocumentBackground;
 
+  /// 弹窗尺寸拖拽（2026-07-13 设计 Phase B）：为真时在弹窗右下角叠一个可拖拽把手，
+  /// 拖动 = 可视化地改「最大宽/高」偏好（`popupMaxWidth/Height`，与设置页两滑杆同一
+  /// 真值）。仅 app 内 reader / video 两宿主开启（默认 false，app 外覆盖窗 / 嵌套返回层
+  /// 不受影响）。三个回调都非空时才真正渲染并接线把手。
+  final bool showResizeGrip;
+
+  /// 拖拽开始：宿主据此把当前基准尺寸存入预览态（[onResizeUpdate] 累积于其上）。
+  final VoidCallback? onResizeStart;
+
+  /// 拖拽进行：[deltaPx] 是本次指针增量位移（弹窗盒坐标系，已缩放逻辑像素）。宿主
+  /// 经 `resolveDraggedLookupSize` 折算回基准并实时预览。
+  final void Function(Offset deltaPx)? onResizeUpdate;
+
+  /// 拖拽结束：宿主把预览尺寸一次性落偏好（`setPopupMaxWidth/Height`）。
+  final VoidCallback? onResizeEnd;
+
+  /// 拖拽被竞技场中途取消（不走 [onResizeEnd]）：宿主借此丢弃预览态、还原到已落库
+  /// 尺寸，避免弹窗悬停在预览尺寸；偏好从不会因取消被写坏。
+  final VoidCallback? onResizeCancel;
+
+  /// 拖拽把手的测试锚点（widget 测试用 `find.byKey` 定位后模拟 pan）。
+  static const Key resizeGripKey =
+      ValueKey<String>('dictionary-popup-resize-grip');
+
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
   bool get _swipeActive => swipeDismissible && enableSwipeToClose;
@@ -522,12 +551,42 @@ class DictionaryPopupLayer extends StatelessWidget {
       child: surface,
     );
 
-    if (topBar != null || !_swipeActive) return content;
+    final Widget shell = (topBar != null || !_swipeActive)
+        ? content
+        : SwipeDismissWrapper(
+            sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+            onDismiss: onDismiss,
+            child: content,
+          );
 
-    return SwipeDismissWrapper(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
-      onDismiss: onDismiss,
-      child: content,
+    return _maybeWrapResizeGrip(shell);
+  }
+
+  /// 尺寸拖拽（Phase B）：仅当 [showResizeGrip] 且已接线 [onResizeUpdate] 时，在弹窗
+  /// 盒右下角叠一个拖拽把手。把手是 [Stack] 的**同级顶层**（不在 [SwipeDismissWrapper]
+  /// / [_BodySwipeDismissDetector] 子树内），其 `HitTestBehavior.opaque` 在右下角吸收
+  /// 命中，pan 识别器在竞技场天然赢过下面的滑关/关窗判定，故绝不破坏既有滑动关闭 /
+  /// barrier / 嵌套弹窗几何（Never break userspace）。外层 [Stack] 填满宿主给的
+  /// `Positioned` 盒，把手钉在 `right:0,bottom:0`（右下），向右增宽、向下增高——弹窗可能
+  /// 锚在词上方，几何 recompute 由 `resolvePopupRect` 处理，无需在此关心锚点方向。
+  Widget _maybeWrapResizeGrip(Widget shell) {
+    if (!showResizeGrip || onResizeUpdate == null) return shell;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        Positioned.fill(child: shell),
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: _PopupResizeGrip(
+            key: resizeGripKey,
+            onStart: onResizeStart,
+            onUpdate: onResizeUpdate!,
+            onEnd: onResizeEnd,
+            onCancel: onResizeCancel,
+          ),
+        ),
+      ],
     );
   }
 
@@ -910,4 +969,80 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
           : widget.child,
     );
   }
+}
+
+/// 尺寸拖拽把手的边长（逻辑像素）。桌面常显、移动端可触摸拖。
+const double _kResizeGripSize = 18.0;
+
+/// 查词弹窗右下角的尺寸拖拽把手（Phase B）。渲染成常见的对角抓手纹样，接 pan 手势：
+/// 起手 [onStart]（宿主存当前基准尺寸）、拖动 [onUpdate]（增量位移，宿主折算+实时预览）、
+/// 松手 [onEnd]（宿主落偏好）。`HitTestBehavior.opaque` 让整块把手区域吸收命中，pan
+/// 识别器在竞技场赢过下面的滑关/关窗，绝不误触。桌面附带右下拉伸鼠标指针。
+class _PopupResizeGrip extends StatelessWidget {
+  const _PopupResizeGrip({
+    required this.onUpdate,
+    this.onStart,
+    this.onEnd,
+    this.onCancel,
+    super.key,
+  });
+
+  final VoidCallback? onStart;
+  final void Function(Offset deltaPx) onUpdate;
+  final VoidCallback? onEnd;
+
+  /// pan 被手势竞技场中途夺走（不走 [onEnd]）时触发：宿主借此丢弃预览态、还原到
+  /// 已落库尺寸，避免弹窗停在预览尺寸的悬挂态（偏好从不会因取消被写坏）。
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color =
+        Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.55);
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpLeftDownRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: onStart == null ? null : (_) => onStart!(),
+        onPanUpdate: (DragUpdateDetails details) => onUpdate(details.delta),
+        onPanEnd: onEnd == null ? null : (_) => onEnd!(),
+        onPanCancel: onCancel,
+        child: CustomPaint(
+          size: const Size.square(_kResizeGripSize),
+          painter: _ResizeGripPainter(color),
+        ),
+      ),
+    );
+  }
+}
+
+/// 把手纹样：右下角两道由长到短的对角线（越靠角越长），是跨平台通用的 resize 抓手观感。
+class _ResizeGripPainter extends CustomPainter {
+  const _ResizeGripPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const double margin = 3.0;
+    // 靠角的长线 + 更靠角的短线，形成阶梯状对角抓手。
+    canvas.drawLine(
+      Offset(size.width - margin, size.height - margin * 5),
+      Offset(size.width - margin * 5, size.height - margin),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width - margin, size.height - margin * 3),
+      Offset(size.width - margin * 3, size.height - margin),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ResizeGripPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
