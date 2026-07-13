@@ -383,6 +383,10 @@ class AppModel with ChangeNotifier {
   }) {
     _prefsRepo = prefsRepo;
     _databaseDirectory = databaseDirectory;
+    // 初始化 late [_thumbnailsDirectory]：书架 / 视频卡渲染经 MediaSource
+    // getOverrideThumbnailFilename 读它，未初始化会抛 LateInitializationError。测试里
+    // 复用 databaseDirectory（存在且可写）即可，不读它的既有调用点不受影响。
+    _thumbnailsDirectory = databaseDirectory;
     _localAudioManager = LocalAudioManager(
       prefsRepo: prefsRepo,
       databaseDirectory: databaseDirectory,
