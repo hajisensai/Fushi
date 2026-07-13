@@ -371,11 +371,15 @@ class SyncOrchestrator {
     if (isInterconnect) {
       if (syncLocalAudio) await _syncLocalAudioLive(report, b);
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
+      // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
+      // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
+      // upload-only（host→client 仍走按需流式/下载）。
+      if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
       if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
-      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端 + 开关开启。互联视频资产走
-      // host API（后续批），不走 __videos__ 伪装资产，故留在此云后端专属分支。
+      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
+      // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
       if (syncVideoFiles) await syncVideoAssets(report);
     }
 
@@ -885,6 +889,8 @@ class SyncOrchestrator {
           backend: _backend,
           folderId: folder.id,
           tempDir: _tempDir,
+          // 下载远端书文件夹时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
+          audioDatabaseRoot: _audioDatabaseRoot,
           onProgress: (double f) => _emit(SyncPhase.books,
               itemIndex: i,
               itemTotal: total,
@@ -1707,6 +1713,80 @@ class SyncOrchestrator {
     }
   }
 
+  /// 互联视频文件 live push（client→host，TODO §2.6「后续批」接线）。
+  ///
+  /// 直打对端 host 上传端点：枚举本地可上传单文件视频（[_isUploadableLocalVideo]，
+  /// 排除流媒体 / 多集播放列表），对 host 尚无（按 bookUid）或尺寸不同的推上去。视频
+  /// 身份键是 `VideoBooks.bookUid`（= host 端 [RemoteVideoInfo.id]，两端同源派生），故
+  /// 直接按 uid union，重复上传同一视频 host 端 upsert 覆盖同一行、不产生重复。
+  ///
+  /// **upload-only**：host→client 方向仍是按需流式播放 / 手动下载（视频 GB 级不进
+  /// 自动 pull），与云后端 [syncVideoAssets] 同律。互联 host 上传字节未混淆（与
+  /// [putRemoteAudiobook] 同为裸 octet-stream），故 host 清单 [RemoteVideoInfo.sizeBytes]
+  /// == 本地明文尺寸，可直接按尺寸判幂等（不必像云后端那样绕物理尺寸走清单）。
+  ///
+  /// 仅当 client syncVideoFiles 开且 isInterconnect 时由 [run] 调用。进度走
+  /// [SyncPhase.videos]，逐项错误进 report.errors 不中断，[report.videosExported] 计上传数。
+  Future<void> _syncVideosLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    // host 既有视频（uid → sizeBytes，null=host 无法 stat）。
+    final Map<String, int?> hostSizeByUid = <String, int?>{
+      for (final RemoteVideoInfo info in await backend.listRemoteVideos())
+        info.id: info.sizeBytes,
+    };
+
+    // 稳定顺序（uid 升序）遍历本地可上传视频，先算出真正要传的（host 无 / 尺寸不同），
+    // 让进度分母只计实际上传数。
+    final List<VideoBookRow> localVideos = <VideoBookRow>[
+      for (final VideoBookRow v in await _db.allVideoBooks())
+        if (_isUploadableLocalVideo(v)) v,
+    ]..sort((VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
+
+    final List<({VideoBookRow row, File file})> toPush =
+        <({VideoBookRow row, File file})>[];
+    for (final VideoBookRow v in localVideos) {
+      final File file = File(v.videoPath);
+      if (!file.existsSync()) {
+        report.errors.add(
+            'live push video "${v.title}": local file missing: ${v.videoPath}');
+        continue;
+      }
+      final bool hostHas = hostSizeByUid.containsKey(v.bookUid);
+      final int? hostSize = hostSizeByUid[v.bookUid];
+      final int localSize = await file.length();
+      // host 已有：尺寸可比且相等 ⇒ 跳过（幂等）；host 尺寸不可知（null）也跳过（无从
+      // 判差异，避免每轮全量重传大视频，下轮 host stat 成功即自愈）。host 无 ⇒ 上传。
+      if (hostHas && (hostSize == null || hostSize == localSize)) continue;
+      toPush.add((row: v, file: file));
+    }
+
+    final int total = toPush.length;
+    int index = 0;
+    for (final ({VideoBookRow row, File file}) item in toPush) {
+      final VideoBookRow v = item.row;
+      _emit(SyncPhase.videos,
+          itemIndex: index, itemTotal: total, title: v.title);
+      try {
+        await backend.putRemoteVideo(
+          v.bookUid,
+          item.file,
+          title: v.title,
+          onProgress: (double f) => _emit(SyncPhase.videos,
+              itemIndex: index,
+              itemTotal: total,
+              title: v.title,
+              fileFraction: f),
+        );
+        report.videosExported++;
+      } catch (e) {
+        report.errors.add('live push video "${v.title}": $e');
+      }
+      index++;
+    }
+  }
+
   /// Union-syncs local audio source DBs in the `__local_audio__` namespace.
   /// 资产名 = displayName（[LocalAudioDbEntry.path] 含本机时间戳，每机不同不可用）。
   /// push 本地独有（displayName 不在远端）/ pull 远端独有（displayName 不在本地）。
@@ -1924,6 +2004,7 @@ Future<bool> importRemoteBookFolder({
   required SyncBackend backend,
   required String folderId,
   required Directory tempDir,
+  Directory? audioDatabaseRoot,
   void Function(double fraction)? onProgress,
 }) async {
   final List<AssetEntry> children = await backend.listChildren(folderId);
@@ -1951,7 +2032,65 @@ Future<bool> importRemoteBookFolder({
     // TODO-1165：按标签名重建云盘书标签映射（sidecar 由 push 侧写在同文件夹，只增
     // 不删）。复用已列出的 children，不再多发一次 listChildren。
     await _applyRemoteBookFolderTags(db, backend, children, importedBookKey);
+    // 云后端有声书 pull：下载远端书文件夹时若带 `audiobook.hibikiaudio`（push 侧
+    // syncAudiobookPackages 写在同文件夹），且调用方注入了 [audioDatabaseRoot]，一并
+    // 补下音频包。修复历史缺口——此前 syncAudiobookPackages 是 upload-only、
+    // importRemoteBookFolder 只找 `.epub`，导致云有声书「只上传拿不回」。best-effort：
+    // 音频补下失败不影响 EPUB 已成功导入。
+    if (audioDatabaseRoot != null) {
+      await _pullRemoteFolderAudiobook(
+        db: db,
+        backend: backend,
+        children: children,
+        bookKey: importedBookKey,
+        audioDatabaseRoot: audioDatabaseRoot,
+        tempDir: tempDir,
+      );
+    }
     return true;
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync();
+    } catch (_) {
+      // best-effort temp cleanup
+    }
+  }
+}
+
+/// 若远端书文件夹 [children] 里存在 `audiobook.hibikiaudio`（[kSyncAudiobookAssetName]），
+/// 下载并用本地刚导入 EPUB 的 [bookKey] 作 `bookKeyOverride` 解包落盘（修复云后端有声书
+/// 「只上传拿不回」缺口）。无音频资产是常态（普通书）——静默返回。best-effort：下载/
+/// 解包失败仅吞掉（EPUB 已成功导入，不因音频回退整本失败）。
+Future<void> _pullRemoteFolderAudiobook({
+  required HibikiDatabase db,
+  required SyncBackend backend,
+  required List<AssetEntry> children,
+  required String bookKey,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+}) async {
+  AssetEntry? audioAsset;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name == kSyncAudiobookAssetName) {
+      audioAsset = e;
+      break;
+    }
+  }
+  if (audioAsset == null) return;
+
+  final File tmp = File(p.join(
+    tempDir.path,
+    'hibiki_remote_audio_${DateTime.now().microsecondsSinceEpoch}.hibikiaudio',
+  ));
+  try {
+    await backend.getAsset(audioAsset.id, tmp);
+    await SyncAssetPackageService(db: db).importAudioDatabasePackage(
+      packageFile: tmp,
+      audioDatabaseRoot: audioDatabaseRoot,
+      bookKeyOverride: bookKey,
+    );
+  } catch (_) {
+    // best-effort：音频补下失败不影响 EPUB 已成功导入。
   } finally {
     try {
       if (tmp.existsSync()) tmp.deleteSync();

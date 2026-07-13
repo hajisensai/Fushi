@@ -76,6 +76,8 @@ import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show extractVideoCover;
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -462,6 +464,13 @@ class AppModel with ChangeNotifier {
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
       videoSubtitleLangCode: targetLanguage.languageCode,
+      // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
+      // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
+      uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
+      // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
+      extractVideoCover: (
+              {required String videoPath, required String bookUid}) =>
+          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。

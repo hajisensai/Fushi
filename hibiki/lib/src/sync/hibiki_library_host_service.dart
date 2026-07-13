@@ -1049,12 +1049,35 @@ abstract class HibikiLibraryHostService {
     int updatedAtMs,
   );
 
-  // ── 视频（只读，不同步）────────────────────────────────────────────────────────
+  // ── 视频 ──────────────────────────────────────────────────────────────────────
 
   /// host 当前视频清单（从 VideoBooks 表读，按 importedAt DESC 排序）。
   ///
-  /// 只读接口：视频文件通常数 GB，不走同步管道；这里仅供客户端请求流式传输用。
+  /// 流式播放：视频文件通常数 GB，host→client 只按需流式传输（不走同步管道下发整
+  /// 文件）；client→host 方向由 [importVideo] 接收上传（syncVideoFiles 开关驱动，
+  /// 见 [SyncOrchestrator]._syncVideosLive）。
   Future<List<RemoteVideoInfo>> listVideos();
+
+  /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（仅一次 DB 查询）。
+  /// 供 client 侧 push 幂等判据（远端已有同 uid+同尺寸则跳过重传）与上传端点用。
+  /// [id] 含路径穿越字符（`..` / `\`）时抛 [ArgumentError]。
+  Future<bool> videoExists(String id);
+
+  /// 接收 client 上传的单文件视频并注册进 host 视频库（client→host，
+  /// syncVideoFiles 开关驱动的 live push）。
+  ///
+  /// [videoFile] 是已落到临时位置的上传字节；实现把它搬进 host 拥有的视频目录，按
+  /// [id]（= client 端 `VideoBooks.bookUid`，跨设备稳定同步键）+ [title] upsert 一行
+  /// `VideoBooks`（`videoPath` = 目录内绝对路径），使上传的视频出现在 host 视频列表、
+  /// 可被其它 client 流式播放。bookUid 稳定 ⇒ upsert，重复上传同一视频只覆盖同一行。
+  /// [originalFileName] 用于保留扩展名（media_kit 依赖），实现须做路径穿越校验。
+  /// 封面为可选增强，best-effort 抽取，绝不挡建行落库。
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  });
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
   ///

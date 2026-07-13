@@ -16,6 +16,10 @@ AppModelLibraryHostService _makeService({
   required HibikiDatabase db,
   required Directory tmp,
   String langCode = 'ja',
+  Directory? uploadedVideoRoot,
+  Future<String?> Function(
+          {required String videoPath, required String bookUid})?
+      extractVideoCover,
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
     ..createSync(recursive: true);
@@ -26,6 +30,8 @@ AppModelLibraryHostService _makeService({
     refreshDictionaryCache: () async {},
     runExclusive: (Future<void> Function() body) => body(),
     videoSubtitleLangCode: langCode,
+    uploadedVideoRoot: uploadedVideoRoot,
+    extractVideoCover: extractVideoCover,
   );
 }
 
@@ -547,6 +553,113 @@ void main() {
           await svc.getVideoPosition('video/missing');
       expect(progress.positionMs, 0);
       expect(progress.updatedAtMs, 0);
+    });
+  });
+
+  // ── importVideo / videoExists（client→host 上传落库）────────────────────────────
+  group('importVideo / videoExists', () {
+    test('上传视频落进 uploadedVideoRoot 并 upsert VideoBooks 行（保留扩展名）', () async {
+      final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
+        ..createSync(recursive: true);
+      final AppModelLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
+
+      // client 上传的临时字节（模拟 server 落到临时目录的 body）。
+      final File upload = File(p.join(tmp.path, 'upload.bin'))
+        ..writeAsBytesSync(List<int>.filled(2048, 7));
+
+      await svc.importVideo(
+        upload,
+        id: 'video/film',
+        title: '映画タイトル',
+        originalFileName: 'movie.mkv',
+      );
+
+      final VideoBookRow? row = await db.getVideoBookByBookUid('video/film');
+      expect(row, isNotNull);
+      expect(row!.title, '映画タイトル');
+      // 落在 uploadedVideoRoot 下，保留上传原始扩展名（media_kit 依赖）。
+      expect(p.isWithin(uploads.path, row.videoPath), isTrue);
+      expect(p.extension(row.videoPath), '.mkv');
+      expect(File(row.videoPath).existsSync(), isTrue);
+      expect(File(row.videoPath).lengthSync(), 2048);
+      // 上传临时源已被搬走（rename/move 语义），不留孤儿。
+      expect(upload.existsSync(), isFalse);
+
+      expect(await svc.videoExists('video/film'), isTrue);
+      expect(await svc.videoExists('video/absent'), isFalse);
+    });
+
+    test('重复上传同一 bookUid 幂等覆盖同一行（不产生重复条目）', () async {
+      final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
+        ..createSync(recursive: true);
+      final AppModelLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
+
+      await svc.importVideo(
+        File(p.join(tmp.path, 'u1.bin'))
+          ..writeAsBytesSync(List<int>.filled(100, 1)),
+        id: 'video/dup',
+        title: 'First',
+        originalFileName: 'a.mp4',
+      );
+      await svc.importVideo(
+        File(p.join(tmp.path, 'u2.bin'))
+          ..writeAsBytesSync(List<int>.filled(200, 2)),
+        id: 'video/dup',
+        title: 'Second',
+        originalFileName: 'a.mp4',
+      );
+
+      final List<VideoBookRow> all = await db.allVideoBooks();
+      expect(all.where((VideoBookRow v) => v.bookUid == 'video/dup').length, 1);
+      final VideoBookRow row =
+          await db.getVideoBookByBookUid('video/dup') as VideoBookRow;
+      expect(row.title, 'Second');
+      expect(File(row.videoPath).lengthSync(), 200);
+    });
+
+    test('best-effort 抽取封面回写 coverPath', () async {
+      final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
+        ..createSync(recursive: true);
+      final File coverFile = File(p.join(tmp.path, 'cover.png'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final AppModelLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        uploadedVideoRoot: uploads,
+        extractVideoCover: (
+                {required String videoPath, required String bookUid}) async =>
+            coverFile.path,
+      );
+
+      await svc.importVideo(
+        File(p.join(tmp.path, 'u.bin'))..writeAsBytesSync(<int>[9]),
+        id: 'video/withcover',
+        title: 'Cover',
+        originalFileName: 'c.mp4',
+      );
+
+      final VideoBookRow row =
+          await db.getVideoBookByBookUid('video/withcover') as VideoBookRow;
+      expect(row.coverPath, coverFile.path);
+    });
+
+    test('未注入 uploadedVideoRoot 时 importVideo 抛 UnsupportedError', () async {
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      expect(
+        () => svc.importVideo(
+          File(p.join(tmp.path, 'x.bin'))..writeAsBytesSync(<int>[0]),
+          id: 'video/x',
+          title: 'X',
+        ),
+        throwsA(isA<UnsupportedError>()),
+      );
+    });
+
+    test('videoExists 拒路径穿越 id', () async {
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      expect(() => svc.videoExists('../escape'), throwsA(isA<ArgumentError>()));
     });
   });
 }

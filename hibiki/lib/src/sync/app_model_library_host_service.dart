@@ -59,6 +59,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     Directory? audioDatabaseRoot,
     Future<void> Function(String displayName)? removeLocalAudioEntry,
     String videoSubtitleLangCode = 'ja',
+    Directory? uploadedVideoRoot,
+    Future<String?> Function(
+            {required String videoPath, required String bookUid})?
+        extractVideoCover,
   })  : _db = db,
         _dictionaryResourceRoot = dictionaryResourceRoot,
         _packages = packages,
@@ -71,7 +75,9 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         _onLocalAudioImported = onLocalAudioImported,
         _audioDatabaseRoot = audioDatabaseRoot,
         _removeLocalAudioEntry = removeLocalAudioEntry,
-        _videoSubtitleLangCode = videoSubtitleLangCode;
+        _videoSubtitleLangCode = videoSubtitleLangCode,
+        _uploadedVideoRoot = uploadedVideoRoot,
+        _extractVideoCover = extractVideoCover;
 
   final HibikiDatabase _db;
   final Directory _dictionaryResourceRoot;
@@ -114,6 +120,16 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   /// 视频 sidecar 字幕匹配的目标语言代码（默认 'ja'）。
   /// 生产传 AppModel.targetLanguage.langCode（P4 接线任务完成后注入真实值）。
   final String _videoSubtitleLangCode;
+
+  /// client→host 上传视频的落盘根目录（可选；null 时 [importVideo] 抛 [UnsupportedError]）。
+  /// 生产传 `<documents>/remote_videos`（[AppPaths.remoteVideosDirectory] 同目录，与
+  /// client 下载远端视频落点一致）。
+  final Directory? _uploadedVideoRoot;
+
+  /// 上传视频后的封面抽取回调（可选、best-effort；null 时上传的视频无封面占位）。
+  /// 生产传 `extractVideoCover`（桌面 ffmpeg 抽帧；移动端无 ffmpeg 返 null 留空占位）。
+  final Future<String?> Function(
+      {required String videoPath, required String bookUid})? _extractVideoCover;
 
   static const String _dictionaryAssetSuffix = '.hibikidict';
 
@@ -960,6 +976,110 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     await _db.setPrefTyped<int>(
         videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
         winner.updatedAtMs);
+  }
+
+  /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（一次 DB 查询）。
+  @override
+  Future<bool> videoExists(String id) async {
+    _assertSafeVideoId(id);
+    return (await _db.getVideoBookByBookUid(id)) != null;
+  }
+
+  /// 接收 client 上传的单文件视频并注册进 host 视频库（client→host live push）。
+  ///
+  /// 落盘目录按 [id] 确定（`<uploadedVideoRoot>/<safeUid>/`），故重复上传同一视频
+  /// 覆盖同一副本、不留孤儿；`upsertVideoBook` 幂等按 bookUid 覆盖同一行。封面 best-effort
+  /// 抽取，与建行解耦（绝不挡上传落库）。
+  @override
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {
+    _assertSafeVideoId(id);
+    final Directory? root = _uploadedVideoRoot;
+    if (root == null) {
+      throw UnsupportedError(
+        'importVideo requires uploadedVideoRoot to be provided',
+      );
+    }
+    await _runExclusive(() async {
+      final String safeUid = _sanitizeVideoIdForPath(id);
+      final Directory destDir = Directory(p.join(root.path, safeUid));
+      destDir.createSync(recursive: true);
+      final File dest = File(
+          p.join(destDir.path, _uploadedVideoFileName(originalFileName, id)));
+      await _moveFileInto(videoFile, dest);
+      await _db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value(id),
+        title: Value(title),
+        videoPath: Value(dest.path),
+        // 无外挂字幕上传：回退内嵌默认轨（与 client 下载无字幕分支一致）。
+        embeddedSubtitleTrack: const Value<int?>(0),
+        importedAt: Value(DateTime.now()),
+      ));
+    });
+    // 封面 best-effort，与建行解耦：抽帧走 ffmpeg 慢，失败留空占位（移动端无 ffmpeg
+    // 返 null），绝不让封面失败使整个上传报错。
+    final Future<String?> Function(
+        {required String videoPath,
+        required String bookUid})? extractor = _extractVideoCover;
+    if (extractor != null) {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+      if (row != null) {
+        try {
+          final String? coverPath =
+              await extractor(videoPath: row.videoPath, bookUid: id);
+          if (coverPath != null && coverPath.isNotEmpty) {
+            await _db.updateVideoBookCover(id, coverPath);
+          }
+        } catch (_) {
+          // best-effort：封面失败不影响上传成功。
+        }
+      }
+    }
+  }
+
+  /// 校验视频 id 不含路径穿越字符（`..` / `\`）。id 允许 `/`（bookUid 形如
+  /// `video/xxx`），落盘前经 [_sanitizeVideoIdForPath] 压平。
+  static void _assertSafeVideoId(String id) {
+    if (id.isEmpty || id.contains('..') || id.contains('\\')) {
+      throw ArgumentError.value(id, 'id', 'unsafe video id');
+    }
+  }
+
+  /// 把视频 id 压成单层安全目录名（`/` → `_`，其余非白名单字符 → `_`）。
+  static String _sanitizeVideoIdForPath(String id) =>
+      id.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+
+  /// 上传视频落盘文件名：优先保留上传方原始 basename 的扩展名（media_kit 依赖扩展名
+  /// 判容器）；basename 缺失/不安全时回退 `<safeUid>.mp4`。
+  static String _uploadedVideoFileName(String? originalFileName, String id) {
+    if (originalFileName != null && originalFileName.isNotEmpty) {
+      final String base = p.basename(originalFileName);
+      final String safe = base.replaceAll(RegExp(r'[/\\]'), '_');
+      if (safe.isNotEmpty &&
+          !safe.contains('..') &&
+          p.extension(safe).isNotEmpty) {
+        return safe;
+      }
+    }
+    return '${_sanitizeVideoIdForPath(id)}.mp4';
+  }
+
+  /// 把 [src] 搬进 [dest]（同卷 rename 最快；跨卷 rename 失败回退 copy + delete）。
+  static Future<void> _moveFileInto(File src, File dest) async {
+    try {
+      await src.rename(dest.path);
+    } on FileSystemException {
+      await src.copy(dest.path);
+      try {
+        await src.delete();
+      } catch (_) {
+        // best-effort：源临时文件删除失败不影响落库（上层临时目录整体清理）。
+      }
+    }
   }
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
