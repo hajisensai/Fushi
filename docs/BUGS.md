@@ -31,6 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-776](bugs/BUG-776-sentence-context-native-dialog.md) | ✅ | ✅ | 制卡「选择句子上下文」应为 app 原生顶层对话框（不是画在查词弹窗内） |
 | [BUG-775](bugs/BUG-775-ext-expression-scroll-scrollbar.md) | ✅ | ✅ | 扩展弹窗词头旁多出迷你滚动条：标准scrollbar-color继承使::-webkit-scrollbar隐藏失效 |
 | [BUG-774](bugs/BUG-774-mine-button-global-lookup.md) | ✅ | ✅ | 剪贴板/选中查词缺少制卡按钮 |
 | [BUG-773](bugs/BUG-773-clipboard-sentence-hit-offset.md) | ✅ | ✅ | 剪贴板面板句子横幅整词高亮左移吞句首标点 |
@@ -41,7 +42,6 @@
 | [BUG-768](bugs/BUG-768-clipboard-panel-btn-invisible.md) | ✅ | ✅ | 剪贴板面板图钉/关闭按钮暗背景不可见 |
 | [BUG-767](bugs/BUG-767-reader-mdx-crossref-link.md) | ✅ | ✅ | MDX词典类义语交叉引用链接点击后面板空白 |
 | [BUG-766](bugs/BUG-766-video-batch-book-counter.md) | ✅ | ✅ | 视频页批量删除/打标签文案误用「本书」量詞 |
-| [BUG-766](bugs/BUG-766-sentence-context-native-dialog.md) | ✅ | ✅ | 制卡「选择句子上下文」应为 app 原生顶层对话框（不是画在查词弹窗内） |
 | [BUG-765](bugs/BUG-765-reader-selection-handles-cannot-drag.md) | ✅ | ✅ | 阅读器移动端自绘选区两端手柄拖不动 |
 | [BUG-764](bugs/BUG-764-scm-cross-paragraph-no-next.md) | ✅ | ✅ | 制卡「后加一句/前退一句」跨段落无反应（不支持跨 `<p>`） |
 | [BUG-763](bugs/BUG-763-scm-modal-clipped.md) | ✅ | ✅ | 制卡「选择句子上下文」模态显示不全（预览被按钮区遮挡） |
