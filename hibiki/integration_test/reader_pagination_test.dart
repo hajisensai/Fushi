@@ -73,16 +73,13 @@ void main() {
       debugPrint('[M1] Importing synthetic marker EPUB');
       final String bookKey = await _seedTestBook(tester);
       await _openBooksTab(tester, driver);
-      final String seededEntryKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
-      final Finder seededEntry = find.byKey(ValueKey<String>(seededEntryKey));
-      for (int i = 0; i < 20 && seededEntry.evaluate().isEmpty; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-      }
-      if (seededEntry.evaluate().isEmpty) {
-        fail('M1 blocked: seeded test EPUB did not appear on shelf '
-            '($seededEntryKey).');
-      }
+
+      // Do not require the exact shelf card to be mounted before opening it.
+      // A populated shelf is lazily built and may sort a just-imported fixture
+      // outside the current viewport, even though the provider and database
+      // already contain it. For this pagination test, [_activateBook] validates
+      // the required fixture identity by resolving this exact [bookKey] through
+      // the production media source before opening the reader route.
 
       await _activateBook(tester, bookKey);
       await tester.pump(const Duration(seconds: 3));
