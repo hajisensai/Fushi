@@ -63,13 +63,13 @@ const String paginationHarnessJs = r'''
       // what previously produced false I1/I5 results.
       var scroll = hoshiReader.getPagePosition(ctx);
       return JSON.stringify({
-        scroll: Math.round(scroll),
+        scroll: scroll,
         // TODO-729：单一量纲后 ctx.pageSize 即唯一步进量(=旧 columnPitch=pageStep)；
         // ctx.columnPitch 已删。Dart 侧字段名沿用 columnPitch（语义=整页步距）。
-        columnPitch: Math.round(ctx.pageSize),
-        pageSize: Math.round(ctx.pageSize),
-        maxScroll: Math.round(metrics.maxScroll),
-        minScroll: Math.round(metrics.minScroll),
+        columnPitch: ctx.pageSize,
+        pageSize: ctx.pageSize,
+        maxScroll: metrics.maxScroll,
+        minScroll: metrics.minScroll,
         totalChars: metrics.totalChars,
         vertical: ctx.vertical
       });
@@ -214,20 +214,20 @@ const String paginationHarnessJs = r'''
 // -- Data classes --
 
 class PaginationState {
-  final int scroll;
-  final int columnPitch;
-  final int pageSize;
-  final int maxScroll;
-  final int minScroll;
+  final double scroll;
+  final double columnPitch;
+  final double pageSize;
+  final double maxScroll;
+  final double minScroll;
   final int totalChars;
   final bool vertical;
 
   PaginationState.fromJson(Map<String, dynamic> json)
-      : scroll = (json['scroll'] as num).toInt(),
-        columnPitch = (json['columnPitch'] as num).toInt(),
-        pageSize = (json['pageSize'] as num).toInt(),
-        maxScroll = (json['maxScroll'] as num).toInt(),
-        minScroll = (json['minScroll'] as num).toInt(),
+      : scroll = (json['scroll'] as num).toDouble(),
+        columnPitch = (json['columnPitch'] as num).toDouble(),
+        pageSize = (json['pageSize'] as num).toDouble(),
+        maxScroll = (json['maxScroll'] as num).toDouble(),
+        minScroll = (json['minScroll'] as num).toDouble(),
         totalChars = (json['totalChars'] as num?)?.toInt() ?? 0,
         vertical = json['vertical'] as bool? ?? false;
 
@@ -307,16 +307,19 @@ List<InvariantViolation> validateChapterScan(
 
     // I1: Scroll alignment
     if (page.state.columnPitch > 0) {
-      final remainder = page.state.scroll % page.state.columnPitch;
-      final aligned = remainder == 0 ||
-          remainder == page.state.columnPitch ||
-          remainder.abs() <= 1;
-      if (!aligned) {
+      final double pitch = page.state.columnPitch;
+      final double minScroll = page.state.minScroll;
+      final int pageIndex = ((page.state.scroll - minScroll) / pitch).round();
+      final double expectedScroll = minScroll + pageIndex * pitch;
+      final double error = (page.state.scroll - expectedScroll).abs();
+      if (error > 1) {
         violations.add(InvariantViolation(
           invariant: 'I1',
           pageNumber: page.pageNumber,
-          message: 'Scroll ${page.state.scroll} not aligned to '
-              'pitch ${page.state.columnPitch} (remainder=$remainder)',
+          message: 'Scroll ${page.state.scroll.toStringAsFixed(3)} not aligned '
+              'to pitch ${pitch.toStringAsFixed(3)} from minScroll '
+              '${minScroll.toStringAsFixed(3)} '
+              '(error=${error.toStringAsFixed(3)})',
         ));
       }
     }
@@ -371,8 +374,10 @@ List<InvariantViolation> validateChapterScan(
         violations.add(InvariantViolation(
           invariant: 'I6',
           pageNumber: page.pageNumber,
-          message: 'Page step $delta != pitch $pitch '
-              '(drift ${delta - pitch}px on turn ${page.pageNumber})',
+          message: 'Page step ${delta.toStringAsFixed(3)} != pitch '
+              '${pitch.toStringAsFixed(3)} (drift '
+              '${(delta - pitch).toStringAsFixed(3)}px on turn '
+              '${page.pageNumber})',
           details: {'delta': delta, 'pitch': pitch},
         ));
       }
