@@ -88,11 +88,160 @@ void main() {
 
       expect(_violationsFor(violations, 'I1'), isNotEmpty);
     });
+
+    test('I1 accepts exactly 1px error from a nonzero minScroll grid', () {
+      const double minScroll = 37.375;
+      const double expectedScroll = minScroll + 2 * pitch;
+      const double scroll = expectedScroll + 1;
+      expect((scroll - expectedScroll).abs(), 1);
+
+      final List<InvariantViolation> violations = validateChapterScan(
+        <PageData>[
+          _page(
+            page: 2,
+            scroll: scroll,
+            pitch: pitch,
+            minScroll: minScroll,
+            maxScroll: scroll + pitch,
+          ),
+          _page(
+            page: 3,
+            scroll: scroll + pitch,
+            pitch: pitch,
+            minScroll: minScroll,
+            maxScroll: scroll + pitch,
+          ),
+        ],
+        expectedMarkerCount: 0,
+      );
+
+      expect(_violationsFor(violations, 'I1'), isEmpty);
+    });
+
+    test('I1 rejects error greater than 1px from a nonzero minScroll grid', () {
+      const double minScroll = 37.375;
+      const double expectedScroll = minScroll + 2 * pitch;
+      const double scroll = expectedScroll + 1.001;
+
+      final List<InvariantViolation> violations = validateChapterScan(
+        <PageData>[
+          _page(
+            page: 2,
+            scroll: scroll,
+            pitch: pitch,
+            minScroll: minScroll,
+            maxScroll: scroll + pitch,
+          ),
+          _page(
+            page: 3,
+            scroll: scroll + pitch,
+            pitch: pitch,
+            minScroll: minScroll,
+            maxScroll: scroll + pitch,
+          ),
+        ],
+        expectedMarkerCount: 0,
+      );
+
+      expect(_violationsFor(violations, 'I1'), isNotEmpty);
+    });
+
+    test('I1 accepts an off-grid final page clamped to maxScroll', () {
+      const double maxScroll = 2 * pitch - 123;
+      final List<PageData> pages = <PageData>[
+        _page(
+          page: 0,
+          scroll: 0,
+          pitch: pitch,
+          maxScroll: maxScroll,
+        ),
+        _page(
+          page: 1,
+          scroll: pitch,
+          pitch: pitch,
+          maxScroll: maxScroll,
+        ),
+        _page(
+          page: 2,
+          scroll: maxScroll,
+          pitch: pitch,
+          maxScroll: maxScroll,
+        ),
+      ];
+
+      final List<InvariantViolation> violations = validateChapterScan(
+        pages,
+        expectedMarkerCount: 0,
+      );
+
+      expect(_violationsFor(violations, 'I1'), isEmpty);
+    });
+
+    test('I6 catches a greater-than-1px step error before the final page', () {
+      const double badSecondPage = pitch + 1.25;
+      const double finalPage = badSecondPage + pitch;
+      final List<PageData> pages = <PageData>[
+        _page(
+          page: 0,
+          scroll: 0,
+          pitch: pitch,
+          maxScroll: finalPage,
+        ),
+        _page(
+          page: 1,
+          scroll: badSecondPage,
+          pitch: pitch,
+          maxScroll: finalPage,
+        ),
+        _page(
+          page: 2,
+          scroll: finalPage,
+          pitch: pitch,
+          maxScroll: finalPage,
+        ),
+      ];
+
+      final List<InvariantViolation> violations = validateChapterScan(
+        pages,
+        expectedMarkerCount: 0,
+      );
+      final List<InvariantViolation> i6 = _violationsFor(violations, 'I6');
+
+      expect(i6, hasLength(1));
+      expect(i6.single.pageNumber, 1, reason: '偏差发生在非末页 page 1');
+    });
   });
 
-  test('JavaScript probe keeps scroll and page size fractional', () {
-    expect(paginationHarnessJs, isNot(contains('Math.round(scroll)')));
-    expect(paginationHarnessJs, isNot(contains('Math.round(ctx.pageSize)')));
+  group('JavaScript probe keeps raw fractional mappings', () {
+    const Map<String, List<String>> mappings = <String, List<String>>{
+      'scroll': <String>[
+        'scroll: scroll,',
+        'scroll: Math.round(scroll),',
+      ],
+      'columnPitch': <String>[
+        'columnPitch: ctx.pageSize,',
+        'columnPitch: Math.round(ctx.pageSize),',
+      ],
+      'pageSize': <String>[
+        'pageSize: ctx.pageSize,',
+        'pageSize: Math.round(ctx.pageSize),',
+      ],
+      'maxScroll': <String>[
+        'maxScroll: metrics.maxScroll,',
+        'maxScroll: Math.round(metrics.maxScroll),',
+      ],
+      'minScroll': <String>[
+        'minScroll: metrics.minScroll,',
+        'minScroll: Math.round(metrics.minScroll),',
+      ],
+    };
+
+    for (final MapEntry<String, List<String>> mapping in mappings.entries) {
+      test('${mapping.key} remains raw', () {
+        expect(paginationHarnessJs, contains(mapping.value.first));
+        expect(paginationHarnessJs, isNot(contains(mapping.value.last)));
+      });
+    }
   });
 }
 

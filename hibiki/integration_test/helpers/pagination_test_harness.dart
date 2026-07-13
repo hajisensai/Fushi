@@ -312,7 +312,9 @@ List<InvariantViolation> validateChapterScan(
       final int pageIndex = ((page.state.scroll - minScroll) / pitch).round();
       final double expectedScroll = minScroll + pageIndex * pitch;
       final double error = (page.state.scroll - expectedScroll).abs();
-      if (error > 1) {
+      final bool isTerminalClamp = i == pages.length - 1 &&
+          (page.state.scroll - page.state.maxScroll).abs() <= 1;
+      if (error > 1 && !isTerminalClamp) {
         violations.add(InvariantViolation(
           invariant: 'I1',
           pageNumber: page.pageNumber,
