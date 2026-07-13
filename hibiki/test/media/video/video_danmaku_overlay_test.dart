@@ -108,4 +108,84 @@ void main() {
       const Duration(milliseconds: 120),
     );
   });
+
+  double scrollLeft(WidgetTester tester, String text) => tester
+      .widget<Positioned>(
+        find
+            .ancestor(of: find.text(text), matching: find.byType(Positioned))
+            .first,
+      )
+      .left!;
+
+  testWidgets(
+      'scroll danmaku interpolates between low-frequency position samples',
+      (WidgetTester tester) async {
+    // 播放器时钟固定不动（模拟 media_kit state.position ~200ms 才更新的那段间隙），
+    // 但时间在推进 + 正在播放：插值必须让滚动弹幕继续左移，而不是卡住等下次采样。
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: <VideoDanmakuItem>[_item(0, 'x')],
+        enabled: true,
+        maxActive: 20,
+        positionMs: () => 2000,
+        isPlaying: () => true,
+        speed: () => 1.0,
+      ),
+    );
+
+    final double before = scrollLeft(tester, 'x');
+    await tester.pump(const Duration(milliseconds: 50));
+    final double after = scrollLeft(tester, 'x');
+
+    expect(after, lessThan(before),
+        reason: '真值未更新的帧里，插值让滚动弹幕平滑左移（消除 ~200ms 跳格）');
+  });
+
+  testWidgets('paused danmaku freezes (no extrapolation drift)',
+      (WidgetTester tester) async {
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: <VideoDanmakuItem>[_item(0, 'x')],
+        enabled: true,
+        maxActive: 20,
+        positionMs: () => 2000,
+        isPlaying: () => false,
+        speed: () => 1.0,
+      ),
+    );
+
+    final double before = scrollLeft(tester, 'x');
+    await tester.pump(const Duration(milliseconds: 200));
+    final double after = scrollLeft(tester, 'x');
+
+    expect(after, before, reason: '暂停时插值冻结在真值，弹幕不应继续漂移');
+  });
+
+  testWidgets('speed scales interpolation (2x drifts ~twice as far)',
+      (WidgetTester tester) async {
+    Future<double> travel(double speed) async {
+      await _pump(
+        tester,
+        VideoDanmakuOverlay(
+          items: <VideoDanmakuItem>[_item(0, 'x')],
+          enabled: true,
+          maxActive: 20,
+          positionMs: () => 2000,
+          isPlaying: () => true,
+          speed: () => speed,
+        ),
+      );
+      final double before = scrollLeft(tester, 'x');
+      await tester.pump(const Duration(milliseconds: 60));
+      final double after = scrollLeft(tester, 'x');
+      return before - after; // 左移距离（正数）
+    }
+
+    final double at1x = await travel(1.0);
+    final double at2x = await travel(2.0);
+    expect(at2x, greaterThan(at1x),
+        reason: '倍速时按帧外推更快，弹幕单帧左移更远');
+  });
 }
