@@ -1,0 +1,6 @@
+## BUG-790 · 制卡「选择句子上下文」原生对话框被查词弹窗盖住（层级不对）
+- **报告**：2026-07-14（用户：qqbotxiaoxiao，原话「层级不对」，附截图：对话框右半边被词典弹窗遮住）
+- **真实性**：✅ 真 bug（BUG-766 把模态改原生对话框后的新回归）。根因：查词弹窗是**原生平台视图**（桌面 fork 的 `flutter_inappwebview_windows` WebView2 / Android `InAppWebView` platform view），渲染在自己的原生层，**总画在 Flutter overlay 之上**（airspace / 平台视图 z-order）。而 `showAppDialog` 弹的 `SentenceContextDialog` 在 Flutter overlay 层 → 被原生弹窗盖住。这正是 BUG-766 之前把模态画在 WebView 内的原因（那样才盖得住 WebView 内容），改原生对话框后撞上此冲突。
+- **[x] ① 已修复** — 对话框打开期间把查词弹窗停靠屏外：`base_source_page.dart`（reader 车道）+ `dictionary_page_mixin.dart`（video/首页车道）各加状态位 `_sentenceContextDialogOpen`，`_openSentenceContextDialog*` 期间 `setState` 翻真、`finally` 翻假；`parkedPopupLayer` 的 `visible` 改 `item/entry.visible && !_sentenceContextDialogOpen`。复用既有 `parkedPopupLayer` 的 BUG-135 停靠语义（`visible:false` → Positioned 到 `screen.width+8` 屏外），webview 仍存活 → 「确认制卡」的 `mineEntryByIndex` 回点照常（对离屏 webview evaluateJavascript 有效）。对话框关闭后 `visible` 复原、弹窗回位。提交：<待填>
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/sentence_context_dialog_zorder_guard_test.dart`（源码扫描守卫：两车道对话框打开期间置 `_sentenceContextDialogOpen`、`parkedPopupLayer` 的 visible 与之相与；平台视图 airspace 无头测试照不到，故守卫钉死接线）。
+- **备注**：真机验证待用户（reader/有声书/视频点「调整上下文」，对话框独占屏幕、不再被词典弹窗盖住；确认制卡仍落到正确词条）。基于当前 develop（tip c367fda3e）新 worktree 实现，非过期分支。
