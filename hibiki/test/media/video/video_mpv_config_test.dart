@@ -57,7 +57,9 @@ keep-open=yes
       expect(m['panscan'], '0.0');
       expect(m['audio-delay'], '0.0');
       expect(m['audio-pitch-correction'], 'yes'); // mpv 默认 yes
-      expect(m['audio-channels'], 'auto-safe');
+      // BUG-792：auto-safe 下发标准布局白名单（而非透传源布局），绕开含 FLC 的奇异
+      // 布局做输出目标时 libswresample 无法初始化 → 无声。末位 stereo 永远兜底。
+      expect(m['audio-channels'], '7.1,5.1,stereo');
       expect(m['audio-normalize-downmix'], 'no');
     });
 
@@ -73,6 +75,36 @@ keep-open=yes
       expect(m['audio-pitch-correction'], 'no');
       expect(m['audio-channels'], 'stereo');
       expect(m['audio-normalize-downmix'], 'yes');
+    });
+
+    // BUG-792：特殊多声道布局（6.1 FL+FR+FC+LFE+BL+BR+FLC）无声——auto-safe 透传源布局
+    // 令 libswresample 无法为含 FLC 的输出布局建矩阵。修复=auto-safe 解析成标准布局白名单。
+    group('resolveAudioChannels (BUG-792 exotic layout silence)', () {
+      test('auto-safe -> standard layout whitelist (never exotic output)', () {
+        // 白名单只含标准布局（无 FLC/FRC），高→低有序，末位 stereo 永远兜底。
+        expect(resolveAudioChannels('auto-safe'), '7.1,5.1,stereo');
+      });
+
+      test('whitelist ends with stereo so audio never falls silent', () {
+        final String wl = resolveAudioChannels('auto-safe');
+        expect(wl.split(',').last, 'stereo');
+        // 白名单不含任何带 FLC/FRC 的奇异输出布局。
+        expect(wl.toLowerCase().contains('flc'), isFalse);
+        expect(wl.toLowerCase().contains('frc'), isFalse);
+      });
+
+      test('explicit stereo / mono pass through unchanged', () {
+        expect(resolveAudioChannels('stereo'), 'stereo');
+        expect(resolveAudioChannels('mono'), 'mono');
+      });
+
+      test('buildMpvProperties keeps explicit stereo (user forced downmix)',
+          () {
+        final Map<String, String> m = buildMpvProperties(
+            VideoMpvConfig.defaults.copyWith(audioChannels: 'stereo'),
+            isAndroid: false);
+        expect(m['audio-channels'], 'stereo');
+      });
     });
 
     test('hwdec value passes through (non-Android)', () {
