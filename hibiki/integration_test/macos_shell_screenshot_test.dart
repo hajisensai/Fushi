@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/material.dart' show Icons, VerticalDivider;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +46,9 @@ void main() {
         reason: 'MD3 navigation should render within 90s on macOS.');
     expect(find.byType(MacosWindow), findsNothing,
         reason: 'Default auto must not create the hidden native macOS shell.');
+    expect(find.byType(VerticalDivider), findsNothing,
+        reason: 'The MD3 navigation rail must flow into the content surface '
+            'without the Apple-style sidebar separator.');
 
     // Let the first frame settle, then capture the home (bookshelf) shell.
     await tester.pump(const Duration(seconds: 1));

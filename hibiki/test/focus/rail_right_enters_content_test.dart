@@ -8,8 +8,9 @@ import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 // TODO-814 回归守卫：平板/宽屏下底栏渲染成左侧竖向 nav rail（[adaptiveNavRail]）。
 // 焦点停在 rail 的某个导航项，按「右」方向键必须跨出 rail 进入右侧内容区（书架），
 // 绝不在 rail 内纵向遍历（往上/往下）。结构对齐 home_page._buildDesktopLayout：
-// 左 rail（独立 FocusTraversalGroup + SingleChildScrollView 居中）+ VerticalDivider +
-// 右 body（独立 FocusTraversalGroup + 内容网格，卡片为受管 HibikiFocusTarget）。
+// 左 rail（独立 FocusTraversalGroup + SingleChildScrollView 居中）+
+// 右 body（独立 FocusTraversalGroup + 内容网格，卡片为受管 HibikiFocusTarget），
+// 两区之间不绘制侧栏分隔线。
 //
 // 走真实分发路径 [gamepadMoveFocusInDirection]（键盘方向键与手柄 D-pad/摇杆共用），
 // 覆盖 controller.move 几何 + 框架回退整链。
@@ -40,7 +41,6 @@ Widget _shell({required GlobalKey rootKey}) {
                 ),
               ),
             ),
-            const VerticalDivider(thickness: 1, width: 1),
             Expanded(
               child: FocusTraversalGroup(
                 child: GridView.count(
