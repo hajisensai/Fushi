@@ -15,8 +15,9 @@ const vm = require('node:vm');
 
 const CONTENT = path.join(__dirname, 'content.js');
 
-// 加载 content.js 到最小 vm 沙箱，仅为拿到顶层纯函数 hibikiComputePlacement（不触发任何 DOM 定位）。
-function loadPlacement() {
+// 加载 content.js 到最小 vm 沙箱，返回 sandbox 以取顶层纯函数（hibikiComputePlacement /
+// hibikiComputeResizedSize，均不触发任何 DOM 定位）。
+function loadSandbox() {
   const src = fs.readFileSync(CONTENT, 'utf8');
   const noop = () => {};
   const el = () => ({
@@ -55,7 +56,15 @@ function loadPlacement() {
   sandbox.window.window = sandbox.window;
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
-  return sandbox.hibikiComputePlacement;
+  return sandbox;
+}
+
+function loadPlacement() {
+  return loadSandbox().hibikiComputePlacement;
+}
+
+function loadResized() {
+  return loadSandbox().hibikiComputeResizedSize;
 }
 
 // 弹窗实际渲染高度：被夹高时用 maxHeight，否则用自然高度。
@@ -128,4 +137,60 @@ test('词贴视口底时弹窗翻到词上方且不覆盖', () => {
   const pos = fn(anchor, SIZE_SHORT, VP);
   assert.ok(pos.top + popupHeight(pos, SIZE_SHORT) <= anchor.y + 0.5, '弹窗未落在词上方');
   assert.ok(!overlapsVertically(pos, SIZE_SHORT, anchor), '弹窗覆盖了被查词');
+});
+
+// ── Phase D：拖拽调整尺寸的纯函数 hibikiComputeResizedSize ──
+// 宽敞 bounds（视口大、可用空间远超上下限），只考验位移折算与下限。
+const WIDE_BOUNDS = { minW: 250, minH: 200, maxW: 2000, maxH: 1600 };
+
+test('顶层纯函数 hibikiComputeResizedSize 存在', () => {
+  assert.strictEqual(typeof loadResized(), 'function',
+    'content.js 未导出 hibikiComputeResizedSize 全局函数');
+});
+
+test('zoom=1：位移直接加到基准宽高', () => {
+  const fn = loadResized();
+  const r = fn({ width: 400, height: 360 }, { dx: 120, dy: 80 }, 1, WIDE_BOUNDS);
+  assert.strictEqual(r.width, 520);
+  assert.strictEqual(r.height, 440);
+});
+
+test('zoom>1：视口位移除以 zoom 折回基准尺度', () => {
+  const fn = loadResized();
+  // 渲染盒 = 基准 × zoom；拖动发生在已缩放坐标系，故 base delta = 视口 delta / zoom。
+  const r = fn({ width: 400, height: 360 }, { dx: 200, dy: 100 }, 2, WIDE_BOUNDS);
+  assert.strictEqual(r.width, 500); // 400 + 200/2
+  assert.strictEqual(r.height, 410); // 360 + 100/2
+});
+
+test('zoom<=0 兜底为 1（不除零/不反向缩放）', () => {
+  const fn = loadResized();
+  const r = fn({ width: 400, height: 360 }, { dx: 50, dy: 50 }, 0, WIDE_BOUNDS);
+  assert.strictEqual(r.width, 450);
+  assert.strictEqual(r.height, 410);
+});
+
+test('缩小时夹到下限 250×200', () => {
+  const fn = loadResized();
+  const r = fn({ width: 300, height: 240 }, { dx: -400, dy: -400 }, 1, WIDE_BOUNDS);
+  assert.strictEqual(r.width, 250);
+  assert.strictEqual(r.height, 200);
+});
+
+test('放大时夹到 bounds 上限（视口可用空间÷zoom，不撑出视口/不遮词）', () => {
+  const fn = loadResized();
+  // maxW/maxH 由 place() 用视口可用空间÷zoom 算出（此处模拟为 700×500）。
+  const bounds = { minW: 250, minH: 200, maxW: 700, maxH: 500 };
+  const r = fn({ width: 400, height: 360 }, { dx: 9999, dy: 9999 }, 1, bounds);
+  assert.strictEqual(r.width, 700);
+  assert.strictEqual(r.height, 500);
+});
+
+test('视口过小导致上界<下界时仍返回下限（不倒挂）', () => {
+  const fn = loadResized();
+  // maxW/maxH 折算后小于下限（极小视口 / 大 zoom）：clamp 上界取 max(lo,hi)=lo，恒返回下限。
+  const bounds = { minW: 250, minH: 200, maxW: 100, maxH: 90 };
+  const r = fn({ width: 400, height: 360 }, { dx: 0, dy: 0 }, 1, bounds);
+  assert.strictEqual(r.width, 250);
+  assert.strictEqual(r.height, 200);
 });

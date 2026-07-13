@@ -682,9 +682,54 @@ class GlobalLookupController {
     onHidden?.call();
   }
 
+  /// Phase C（弹窗尺寸精细化 2026-07-13）— 覆盖窗拖角 resize 落库。native（模态
+  /// size 循环结束）回报的 [message] args = [left, top, width, height]（**窗口物理
+  /// px**）；只取 width/height 倒推 overlay 场景「基准最大宽高」（÷dpr ÷appUiScale +
+  /// 下取整 + clamp，见 [resolveOverlayResizeFromWindow]），再按「拖即解锁」好品味写
+  /// 真值：一动手定制 overlay 尺寸就脱钩「跟随 app 内」——
+  /// [AppModel.setOverlayLookupIndependentSize]`(true)` + 写 overlay 宽/高键。滑杆与
+  /// 拖拽写同一真值，下次查词沿用新尺寸（预期行为）。**绝不写 clipboardPanelRect /
+  /// popupMaxWidth**——那是剪贴板面板与 app 内弹窗各自的真值，串台就破坏它们。
+  void _onOverlayResized(Map<String, Object?> message) {
+    final AppModel? model = _appModel;
+    if (model == null) {
+      return;
+    }
+    final Object? args = message['args'];
+    if (args is! List || args.length < 4) {
+      return;
+    }
+    double num2(Object? v) => (v is num) ? v.toDouble() : 0;
+    final double physW = num2(args[2]);
+    final double physH = num2(args[3]);
+    if (physW <= 0 || physH <= 0) {
+      return;
+    }
+    final double dpr = _devicePixelRatio();
+    final LookupSize size = resolveOverlayResizeFromWindow(
+      windowPhysicalWidth: physW,
+      windowPhysicalHeight: physH,
+      dpr: dpr,
+      uiScale: model.appUiScale,
+    );
+    unawaited(model.setOverlayLookupIndependentSize(true));
+    model.setOverlayLookupMaxWidth(size.width);
+    model.setOverlayLookupMaxHeight(size.height);
+    glog('overlay resized -> unlock independent, ${size.width}x${size.height} '
+        '(phys=${physW}x$physH dpr=$dpr uiScale=${model.appUiScale})');
+  }
+
   void _onJsMessage(Map<String, Object?> message) {
     final Object? handler = message['handler'];
     glog('js: handler=$handler args=${message['args']}');
+    // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗被用户拖右下角 grip 调整
+    // 尺寸：native 模态 size 循环结束后经 WM_EXITSIZEMOVE 回报最终窗口 rect（物理
+    // px，args=[left,top,width,height]），与剪贴板面板走同一 windowMoved 通道，但
+    // 本实例（global_lookup channel）的去向只落 overlay 键。见 _onOverlayResized。
+    if (handler == 'windowMoved') {
+      _onOverlayResized(message);
+      return;
+    }
     if (handler == 'tapOutside' || handler == 'dismiss') {
       // TODO-867 P3c C3 — a tapOutside stamped with the source layer's frame id
       // (by the host shim) means "tap inside layer L outside its glossary" ->

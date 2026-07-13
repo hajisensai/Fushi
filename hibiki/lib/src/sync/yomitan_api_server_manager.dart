@@ -15,6 +15,7 @@ class YomitanApiServerManager {
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
+    void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -22,7 +23,8 @@ class YomitanApiServerManager {
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
-        _extensionBuildProvider = extensionBuildProvider;
+        _extensionBuildProvider = extensionBuildProvider,
+        _onExtensionPopupSize = onExtensionPopupSize;
 
   final HibikiRemoteLookupService _lookup;
   final HibikiRemoteMiningService? _mining;
@@ -35,6 +37,8 @@ class YomitanApiServerManager {
   final List<String> Function()? _audioSourcesProvider;
   // BUG-726：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // 弹窗尺寸精细化 Phase D：扩展弹窗拖角调整后回写尺寸的 sink，透传给 [YomitanApiServer]。
+  final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
 
   YomitanApiServer? _server;
 
@@ -53,6 +57,7 @@ class YomitanApiServerManager {
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       extensionBuildProvider: _extensionBuildProvider,
+      onExtensionPopupSize: _onExtensionPopupSize,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );
