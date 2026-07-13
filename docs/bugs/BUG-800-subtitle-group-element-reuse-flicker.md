@@ -1,0 +1,6 @@
+## BUG-800 · 双语字幕重叠进出场时在屏字幕元素被跨 cue 复用导致闪烁
+- **报告**：2026-07-14（用户：「双重弹幕(双语双轨字幕)还是会闪烁」——PR#49（BUG-743 相邻对白弹跳）修复后仍闪）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart:765-787`（修复前）——字幕组 `Column` 的子节点**无 key**，且底部锚组用 `slots.reversed` 渲染（新槽位追加到 Column 头部）。双语（ASSx2 / 单 .ass 双样式）相邻对白时间不齐、重叠进出场时，组内 cue 数量变化 → Flutter 按 **Column 位置**而非 cue 身份复用 element：在屏那条字幕的 element 被喂成**另一条** cue 的文本 + `\fad` 不透明度（`_fadeOpacityFor` 立即改用新 cue 的 startMs 求值，透明度 1→0 瞬跳）= 视觉闪一下。PR#49（TODO-1372/BUG-698 `_groupSlots`）让**槽位数据层**跨帧稳定，但没有 key，稳定性传导不到 element 层——这就是「修了还闪」的结构缺口。
+- **[x] ① 已修复** — `_positionCueGroup` 给每个槽位包 `KeyedSubtree(key: ObjectKey(slot.cue))`：Flutter 按 cue 身份匹配 element，组内增减/reversed 位移不再窃用在屏 cue 的 element；槽位被新 cue 补占时 key 变化、正常重建（语义正确）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_group_element_stability_test.dart`：JP1/CH1 在屏时 JP2/CH2 重叠进场（组 2→4 条），断言 JP1/CH1 的 fill Text element **原样保留**（`identical`）。修复前红（element 被按位置复用成新 cue）、修复后绿。
+- **备注**：次要嫌疑（未在本轮动）：`\fad` 期间 `_fadeTicker` 每帧整树重建 × 每字符一个 `ImageFiltered` saveLayer（双语长句 ~35 个/帧、无 `RepaintBoundary`）→ 掉帧型闪烁；若真机复测挂 key 后仍闪且形态是「卡顿掉帧」而非「瞬跳」，下一步做 RepaintBoundary/整盒 blur 优化。另查明：secondary 轨选择无「≠primary」去重校验（`subtitle.part.dart:420-489`），用户把同一 .ass 同时选 primary+secondary 且其自带 `\an8` 时会顶部叠印双份——需用户显式误配，暂不动。姊妹 bug：[[BUG-799]]（同会话报的 `\blur` 整字糊）。

@@ -768,22 +768,30 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
+        // 每个槽位按 **cue 身份**挂 key：组内 cue 数量变化（相邻/重叠对白进出场）时，
+        // Flutter 按身份而非 Column 位置复用 element。没有 key 时，底部锚组的 reversed
+        // 顺序让新 cue 追加在 Column 头部，在屏 cue 的 element 被按位置复用成**另一条**
+        // cue（文本+\fad 不透明度瞬跳 1→0）——双语字幕闪烁的直接根因。槽位数据层的跨帧
+        // 稳定（TODO-1372/BUG-698）必须传导到 element 层才有效。
         for (final _GroupSlot slot in topToBottom)
-          if (slot.alive)
-            _buildCueBox(context, slot.cue,
-                isSecondary: isSecondary, blurred: blurred)
-          else
-            // 离场 cue 的隐形占位：保持原盒尺寸撑住远端在屏字幕的槽位（不登记查词命中、
-            // 不响应指针、无收藏角标）。libass「事件在屏期间位置不变」语义的槽位版。
-            IgnorePointer(
-              child: Opacity(
-                opacity: 0,
-                child: _buildCueBox(context, slot.cue,
-                    isSecondary: isSecondary,
-                    blurred: blurred,
-                    registerHits: false),
-              ),
-            ),
+          KeyedSubtree(
+            key: ObjectKey(slot.cue),
+            child: slot.alive
+                ? _buildCueBox(context, slot.cue,
+                    isSecondary: isSecondary, blurred: blurred)
+                // 离场 cue 的隐形占位：保持原盒尺寸撑住远端在屏字幕的槽位（不登记查词
+                // 命中、不响应指针、无收藏角标）。libass「事件在屏期间位置不变」语义的
+                // 槽位版。
+                : IgnorePointer(
+                    child: Opacity(
+                      opacity: 0,
+                      child: _buildCueBox(context, slot.cue,
+                          isSecondary: isSecondary,
+                          blurred: blurred,
+                          registerHits: false),
+                    ),
+                  ),
+          ),
       ],
     );
 
@@ -1093,11 +1101,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// `shadows`）。忠实还原 .ass 文件明示的描边/阴影语义（TODO-1105/1246），不被默认软投影
   /// 覆盖。描边宽<=0 时降级为单层 fill。
   ///
-  /// 两路径外均可套 \blur/\be 辉光（仅 respect 时）；命中矩形不因层数变化（ImageFiltered /
-  /// Stack 不改布局），逐字查词照常。
+  /// \blur/\be 辉光（TODO-1373，仅 respect 时）对齐 libass `ass_bitmap.c` 语义：
+  /// **\bord>0 时只糊「描边（含 \shad 阴影）」层，字面 fill 保持锐利**（mpv 观感=清晰
+  /// 字面+柔光晕）；\bord==0 才糊整个字形（字面边缘发虚）。此前无条件把合成字形
+  /// （描边+填充+阴影）整体 [ImageFiltered]，带描边的 `{\blur5}` 对白被糊成一团不可读。
+  /// 命中矩形不因层数变化（ImageFiltered / Stack 不改布局），逐字查词照常。
   Widget _buildSubtitleChar(String char, int i, SubtitleMarkup? markup) {
     final TextStyle fillStyle = _styleForGrapheme(i, markup);
     final bool respect = widget.respectAssStyle && markup != null;
+    final double sigma = _blurSigmaFor(i, markup);
     final Widget glyph;
     if (!respect) {
       // 默认统一外观：Niratan 柔和投影。fillStyle 在非 respect 下 shadows==null，直接挂软
@@ -1133,19 +1145,26 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         final TextStyle fillTopStyle = hasShadows
             ? fillStyle.copyWith(shadows: const <Shadow>[])
             : fillStyle;
-        glyph = Stack(
-          // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
+        // \bord>0 + \blur：只糊描边层（阴影挂在描边层上，随之同糊——libass 的阴影本就是
+        // 模糊后描边位图的平移拷贝）；fill 层留在 ImageFiltered 外保持锐利。
+        Widget strokeLayer = Text(char, style: strokeStyle);
+        if (sigma > 0) {
+          strokeLayer = ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: strokeLayer,
+          );
+        }
+        // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
+        return Stack(
           children: <Widget>[
-            Text(char, style: strokeStyle),
+            strokeLayer,
             Text(char, style: fillTopStyle),
           ],
         );
       }
     }
-    // \blur/\be 辉光（TODO-1373）：把合成字形（描边+填充+阴影）整体高斯模糊。仅 respectAssStyle
-    // 开且该字符所在 span 带 blur 时包裹；ImageFiltered 不改布局尺寸，故字符命中矩形
-    // （_charEntries）不变、逐字查词照常。sigma<=0 不包裹（外观像素级不变）。
-    final double sigma = _blurSigmaFor(i, markup);
+    // 无描边（\bord 0 的 respect 分支；非 respect 分支 sigma 恒 0）：糊整个字形——libass
+    // 在没有描边位图时对字形位图本身做高斯，字面边缘发虚是原作者点名要的效果。
     if (sigma <= 0) return glyph;
     return ImageFiltered(
       imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),

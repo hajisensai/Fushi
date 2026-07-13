@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 780 条。点号进各自文件。
+> 共 782 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-800](bugs/BUG-800-subtitle-group-element-reuse-flicker.md) | ✅ | ✅ | 双语字幕重叠进出场时在屏字幕元素被跨 cue 复用导致闪烁 |
+| [BUG-799](bugs/BUG-799-ass-blur-border-only.md) | ✅ | ✅ | ASS `\blur` 有描边时整字被糊成一团（应只糊描边、留锐利字面） |
 | [BUG-798](bugs/BUG-798-exotic-audio-layout-silence.md) | ✅ | ✅ | 特殊多声道音频布局(6.1 FLC)无声 |
 | [BUG-797](bugs/BUG-797-sentence-context-dialog-behind-popup.md) | ✅ | ✅ | 制卡「选择句子上下文」原生对话框被查词弹窗盖住（层级不对） |
 | [BUG-796](bugs/BUG-796-video-seek-gap-subtitle-linger.md) | ✅ | ✅ | 视频普通 seek（±秒键）跳到无字幕段后旧字幕不消失 |
