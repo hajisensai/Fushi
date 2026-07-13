@@ -2060,8 +2060,9 @@ Future<void> _applyRemoteBookFolderCss(
 @visibleForTesting
 Map<String, ({String content, bool deleted, int updatedAt})>
     parseBookCssSidecar(Object? json) {
-  if (json is! Map)
+  if (json is! Map) {
     return const <String, ({String content, bool deleted, int updatedAt})>{};
+  }
   final Object? files = json['files'];
   if (files is! Map) {
     return const <String, ({String content, bool deleted, int updatedAt})>{};
