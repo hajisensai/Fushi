@@ -204,6 +204,38 @@ void main() {
       );
     });
 
+    test('关自动查词：update 走 _showTextOnly 分区、不 searchDictionary', () {
+      // 契约：desktopClipboardAutoLookup=false 时，update 早退到纯文字态
+      // （_showTextOnly），不自动查词、不弹释义；点句中字才手动查。
+      final int updAt = controllerSrc.indexOf('Future<void> update(');
+      expect(updAt, greaterThan(0));
+      final int gateAt =
+          controllerSrc.indexOf('if (!model.desktopClipboardAutoLookup)', updAt);
+      final int textOnlyAt =
+          controllerSrc.indexOf('_showTextOnly(model, request.text)', gateAt);
+      expect(gateAt, greaterThan(updAt),
+          reason: 'update 必须在关自动查词时早退到纯文字态');
+      expect(textOnlyAt, greaterThan(gateAt));
+      // _showTextOnly 里没有 searchDictionary（纯文字态绝不自动查词）。
+      final int fnAt = controllerSrc.indexOf('Future<void> _showTextOnly(');
+      expect(fnAt, greaterThan(0));
+      final int fnEnd = controllerSrc.indexOf('\n  }', fnAt);
+      final String body = controllerSrc.substring(fnAt, fnEnd);
+      expect(body.contains('searchDictionary'), isFalse,
+          reason: '纯文字态不得自动查词');
+      expect(body.contains('_sentenceOnly = true'), isTrue,
+          reason: '纯文字态须置 sentenceOnly，渲染脚本据此摘掉 No results 块');
+    });
+
+    test('点句中字（_lookupFromBanner）退出纯文字态，释义正常出', () {
+      final int fnAt = controllerSrc.indexOf('Future<void> _lookupFromBanner(');
+      expect(fnAt, greaterThan(0));
+      final int fnEnd = controllerSrc.indexOf('\n  }', fnAt);
+      final String body = controllerSrc.substring(fnAt, fnEnd);
+      expect(body.contains('_sentenceOnly = false'), isTrue,
+          reason: '手动查词必须清纯文字态，否则点词后释义被 sentenceOnly 摘掉');
+    });
+
     test('dispatcher panel 分区调 ClipboardPanelController.update', () {
       expect(
         dispatcherSrc.contains('ClipboardPanelController.instance.update'),

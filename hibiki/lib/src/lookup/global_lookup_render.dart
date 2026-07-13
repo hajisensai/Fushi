@@ -52,6 +52,7 @@ String buildFrameSettingsJs({
   bool panelRoot = false,
   int sentenceHitStart = -1,
   int sentenceHitLength = 0,
+  bool sentenceOnly = false,
 }) {
   final String settingsJs = buildPopupSettingsJs(
     appModel: appModel,
@@ -97,6 +98,15 @@ String buildFrameSettingsJs({
           '    window.__globalLookupSentenceHit = '
           '{start: $sentenceHitStart, length: $sentenceHitLength};\n'
       : '';
+  // 剪切板「关自动查词」纯文字态：面板只显示句子横幅（逐字可点），不显示词典结果。
+  // 传入的是空结果（无 entries），popup.js 会渲染句子横幅 + 一块「No results」提示；
+  // 这里在 renderPopup 之后就地摘掉那块提示节点，达成「只剩文字」。仅面板 root、仅
+  // sentenceOnly 时注入，故自动查词路径 settingsJs 逐字节不变（host 以此判重渲）。
+  // 走 app 侧渲染脚本而非改 popup.js，避开浏览器扩展三镜像 + content.css 重生成。
+  final String sentenceOnlyLine = sentenceOnly
+      ? 'var __hibikiNoRes = document.querySelector(".no-results"); '
+          'if (__hibikiNoRes) __hibikiNoRes.remove();\n'
+      : '';
   return '''
     $settingsJs
     $kPopupTopPullReleaseJs
@@ -106,6 +116,7 @@ String buildFrameSettingsJs({
     window.__globalLookupSentence = ${jsonEncode(sentence)};
     $panelRootLines
     window.renderPopup && window.renderPopup();
+    $sentenceOnlyLine
 ''';
 }
 
@@ -123,10 +134,15 @@ class GlobalLookupFramePayload {
     this.anchorRect,
     this.isVertical = false,
     this.sentence = '',
+    this.sentenceOnly = false,
   });
 
   final GlobalLookupFrame frame;
   final DictionarySearchResult result;
+
+  /// 剪切板「关自动查词」纯文字态：只渲染句子横幅、摘掉「No results」结果块。
+  /// 仅面板 root 帧有意义（子卡/瞬态窗恒 false）。
+  final bool sentenceOnly;
 
   /// TODO-1030 M0 — the current sentence to show as a context banner in this
   /// card (only the ROOT frame carries it; empty = no banner). Body text stays
@@ -277,6 +293,7 @@ String buildStackRenderScript({
       panelRoot: isPanelRoot,
       sentenceHitStart: isPanelRoot ? sentenceHitStart : -1,
       sentenceHitLength: isPanelRoot ? sentenceHitLength : 0,
+      sentenceOnly: isPanelRoot && p.sentenceOnly,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;

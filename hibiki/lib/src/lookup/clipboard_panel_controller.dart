@@ -88,6 +88,11 @@ class ClipboardPanelController {
   int _frameSeq = 0;
   String _currentSentence = '';
 
+  /// 「关自动查词」纯文字态：面板只显示句子横幅（逐字可点）、不显示词典结果块。
+  /// [_showTextOnly] 置 true；任何真查词（自动查词 / 点句中字 / 嵌套子查词）置
+  /// false，使点词后释义正常显示。[_renderPanel] 据此给面板 root 帧传 sentenceOnly。
+  bool _sentenceOnly = false;
+
   /// 真机第 4 轮 — 选词区当前查词起点（整句里的码点下标）。剪贴板更新回 0；
   /// 点句子条某字后为该字下标，配合根结果 bestLength 在横幅整词高亮。
   int _rootHitStart = 0;
@@ -163,6 +168,14 @@ class ClipboardPanelController {
   Future<void> update(DesktopLookupRequest request) async {
     final AppModel? model = _appModel;
     if (!_started || model == null) return;
+    // 「关自动查词」纯文字态：只显示复制到的句子文字（逐字可点），不自动 searchDictionary、
+    // 不弹释义、不朗读、不记查词计数。用户点句中字才走 panelSentenceLookup 手动查
+    // （那条路径重置 _sentenceOnly=false，释义正常出）。总开关 desktopClipboardEnabled
+    // 仍决定「是否监听剪贴板」，本开关只决定「监听到之后自不自动查词」，两者正交。
+    if (!model.desktopClipboardAutoLookup) {
+      await _showTextOnly(model, request.text);
+      return;
+    }
     // latest-wins：领取序号；每个 await 后核对，过期即弃（VN 流乱序守卫）。
     final int seq = ++_updateSeq;
     try {
@@ -175,6 +188,7 @@ class ClipboardPanelController {
         return;
       }
       _recordLookupCount(model);
+      _sentenceOnly = false;
       _currentSentence = request.text;
       // 新句：rootQuery=整句，故基准码点下标=0；真正词首由 rootHitRange 再补偿被归一化
       // 剥掉的句首标点长度（BUG-773），不再假设词从句首第 0 字符开始。
@@ -195,6 +209,28 @@ class ClipboardPanelController {
     } catch (e, st) {
       glog('panel: update EXCEPTION $e\n$st');
     }
+  }
+
+  /// 「关自动查词」纯文字态：不查词，只把复制到的句子作为 root 帧的横幅显示
+  /// （逐字可点，点字走 panelSentenceLookup 手动查）。seed 一个空结果的 root 帧
+  /// 让 [_renderPanel] 有 payload 可渲染，并置 [_sentenceOnly] 使渲染脚本摘掉
+  /// 「No results」结果块。与自动查词路径共用同一 latest-wins 序号，避免与并发的
+  /// 手动查词/后到的剪贴板句乱序。
+  Future<void> _showTextOnly(AppModel model, String text) async {
+    final int seq = ++_updateSeq;
+    _sentenceOnly = true;
+    _currentSentence = text;
+    _rootHitStart = 0;
+    // 空结果（无 entries）：popup.js 渲染句子横幅 + No results 块，后者由渲染脚本
+    // 的 sentenceOnly 分支就地摘除，只剩句子文字。
+    _seedRootFrame(text, DictionarySearchResult(searchTerm: text));
+    if (!_visible || !await _channel.isShowing()) {
+      _visible = false;
+      await _showPanel(model);
+      if (seq != _updateSeq) return;
+    }
+    await _renderPanel(model);
+    glog('panel: text-only "${text.length} chars" (auto-lookup off)');
   }
 
   /// TODO-1204 对齐——面板查词与瞬态覆盖窗同口径记一次查词计数（source
@@ -305,6 +341,8 @@ class ClipboardPanelController {
         // 面板 root 恒带整句横幅（剪贴板文本天然就是句子上下文，兼作制卡
         // sentence 字段）；子卡不带（与瞬态窗一致）。
         sentence: frame.id == kGlobalLookupRootFrameId ? _currentSentence : '',
+        // 纯文字态只对面板 root 帧生效：摘掉空结果的「No results」块只剩句子。
+        sentenceOnly: _sentenceOnly && frame.id == kGlobalLookupRootFrameId,
       ));
     }
     if (payloads.isEmpty) return;
@@ -465,6 +503,8 @@ class ClipboardPanelController {
         searchWithWildcards: false,
       );
       if (seq != _updateSeq) return;
+      // 点句中字=真手动查词：退出纯文字态，释义正常显示。
+      _sentenceOnly = false;
       _rootHitStart = hitStart < 0 ? 0 : hitStart;
       _seedRootFrame(suffix, result);
       await _renderPanel(model);
