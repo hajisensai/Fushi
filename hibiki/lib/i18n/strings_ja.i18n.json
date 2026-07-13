@@ -2317,5 +2317,6 @@
   "video_mining_image_mode_hint": "How covers on video cards are captured",
   "video_mining_image_mode_gif": "Animated GIF (subtitle clip)",
   "video_mining_image_mode_current_frame": "Screenshot at mining",
-  "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start"
+  "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start",
+  "local_audio_invalid_db": "This file isn't a usable audio database (not a Local Audio Server database, or it has no audio)."
 }

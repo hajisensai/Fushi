@@ -20,6 +20,43 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 class LocalAudioDb {
   const LocalAudioDb._();
 
+  /// 校验 [dbPath] 是不是一个「可用」的本地音频源库：能被 sqlite3 只读打开，且含
+  /// 音频 schema 的两张表（`entries` + `android`），且 `android` 至少有一行音频数据。
+  ///
+  /// 用于导入时把关（BUG-779）：`FilePicker` 无扩展名过滤，任何文件（没用的 zip /
+  /// 备份 zip / 随便一个 sqlite）都能被选中，旧实现只复制文件就报「导入成功」，无效性
+  /// 要等查询时才在 [listSources]/[queryMeta] 的 catch 里被静默吞掉 → 得到一个空音频源
+  /// 却显示成功。导入前调本方法，无效即拒绝 + 给可见反馈，不再制造空音频源。
+  ///
+  /// 非 SQLite（zip/文本）→ `sqlite3.open` 惰性、首个 query 抛 `SqliteException` → 捕获
+  /// 返回 false；缺表 / 空库同样 false。只读打开绝不修改被校验文件。
+  static bool isUsableAudioSource(String dbPath) {
+    if (dbPath.isEmpty || !File(dbPath).existsSync()) return false;
+    Database? db;
+    try {
+      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      final ResultSet tables = db.select(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name IN ('entries', 'android')",
+      );
+      final Set<String> names = <String>{
+        for (final Row r in tables)
+          if (r['name'] is String) r['name'] as String,
+      };
+      if (!names.contains('entries') || !names.contains('android')) {
+        return false;
+      }
+      // 至少一行音频字节，否则是「结构对但没内容」的空库 = 用不了。
+      return db.select('SELECT 1 FROM android LIMIT 1').isNotEmpty;
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('LocalAudioDb.isUsableAudioSource', e, stack);
+      return false;
+    } finally {
+      db?.dispose();
+    }
+  }
+
   /// 枚举库内全部子来源名（`SELECT DISTINCT source`），用于「编辑来源」UI。
   /// 返回空表示库为空 / 读失败。
   static List<String> listSources(String dbPath) {

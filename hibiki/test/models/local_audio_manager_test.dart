@@ -8,11 +8,32 @@ import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
+}
+
+/// 写一个「可用」的本地音频源库（entries + android schema + 一行音频），让
+/// [LocalAudioManager.importFile] 的 BUG-779 内容校验通过（旧测试写的假字符串
+/// 现在会被正确拒绝，故 importFile 相关用例统一改用真实库）。
+void _writeValidAudioDb(String path) {
+  final Database db = sqlite3.open(path);
+  db.execute('CREATE TABLE entries '
+      '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+  db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
+  db.execute("INSERT INTO entries VALUES ('猫','ねこ','neko.mp3','forvo')");
+  final PreparedStatement stmt =
+      db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+  stmt.execute(<Object?>[
+    'neko.mp3',
+    'forvo',
+    Uint8List.fromList(<int>[1, 2, 3])
+  ]);
+  stmt.dispose();
+  db.dispose();
 }
 
 void main() {
@@ -155,7 +176,7 @@ void main() {
   test('importFile copies into store and does NOT persist prefs', () async {
     final Directory src = await Directory.systemTemp.createTemp('src');
     final File source = File('${src.path}/nhk.db');
-    await source.writeAsString('sqlite-bytes');
+    _writeValidAudioDb(source.path);
 
     final LocalAudioDbEntry entry =
         await manager.importFile(source.path, displayName: 'nhk');
@@ -180,6 +201,41 @@ void main() {
     expect(leftover, isEmpty);
   });
 
+  // BUG-779：无效文件（没用的 zip / 备份 zip / 非音频 sqlite / 空库）不再假成功。
+  // importFile 在收进库前用 LocalAudioDb.isUsableAudioSource 校验，无效即抛
+  // InvalidLocalAudioDbException，且绝不在库目录留下内部副本孤儿。
+  test(
+      'importFile rejects a non-audio file (zip / junk) and leaves no copy '
+      '(BUG-779)', () async {
+    final Directory src = await Directory.systemTemp.createTemp('src_junk');
+    final File junk = File('${src.path}/backup.zip');
+    // ZIP 魔数 + 垃圾字节：能被 FilePicker 选中，但不是音频源库。
+    await junk.writeAsBytes(
+        Uint8List.fromList(<int>[0x50, 0x4b, 0x03, 0x04, 7, 7, 7, 7]));
+
+    await expectLater(
+      () => manager.importFile(junk.path, displayName: 'junk'),
+      throwsA(isA<InvalidLocalAudioDbException>()),
+    );
+    // 无效文件绝不被拷进库目录（无假成功 + 无孤儿副本）。
+    expect(directory.listSync(), isEmpty);
+    await src.delete(recursive: true);
+  });
+
+  // BUG-779：引用模式同样校验（引用一个没用的文件也是假成功）。
+  test('importFile reference=true also rejects a non-audio file (BUG-779)',
+      () async {
+    final Directory src = await Directory.systemTemp.createTemp('src_junk_ref');
+    final File junk = File('${src.path}/notes.txt')..writeAsStringSync('hello');
+
+    await expectLater(
+      () => manager.importFile(junk.path, displayName: 'x', reference: true),
+      throwsA(isA<InvalidLocalAudioDbException>()),
+    );
+    expect(directory.listSync(), isEmpty);
+    await src.delete(recursive: true);
+  });
+
   // BUG-483：引用模式（仅桌面）不复制，entry.path 直接指向用户原文件，不在 AppData
   // 库目录留任何副本。
   test(
@@ -187,7 +243,7 @@ void main() {
       '(BUG-483)', () async {
     final Directory src = await Directory.systemTemp.createTemp('src_ref');
     final File source = File('${src.path}/nhk.db');
-    await source.writeAsString('sqlite-bytes');
+    _writeValidAudioDb(source.path);
 
     final LocalAudioDbEntry entry = await manager.importFile(
       source.path,

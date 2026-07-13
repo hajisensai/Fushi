@@ -2317,5 +2317,6 @@
   "video_mining_image_mode_hint": "视频制卡封面用动图还是截图",
   "video_mining_image_mode_gif": "动图 GIF（字幕片段）",
   "video_mining_image_mode_current_frame": "制卡时截图",
-  "video_mining_image_mode_subtitle_start": "字幕开头截图"
+  "video_mining_image_mode_subtitle_start": "字幕开头截图",
+  "local_audio_invalid_db": "该文件不是可用的音频数据库（不是本地音频源数据库，或其中没有任何音频）。"
 }

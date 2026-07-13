@@ -158,6 +158,44 @@ void main() {
     expect(path!.endsWith('.opus'), isTrue);
   });
 
+  // BUG-779：导入把关。isUsableAudioSource 是唯一真值判据。
+  group('isUsableAudioSource', () {
+    test('accepts a real audio db (entries + android with a row)', () {
+      expect(LocalAudioDb.isUsableAudioSource(dbPath), isTrue);
+    });
+
+    test('rejects a non-existent path', () {
+      expect(LocalAudioDb.isUsableAudioSource('/no/such/audio.db'), isFalse);
+    });
+
+    test('rejects a non-sqlite file (a zip / backup zip / junk)', () {
+      final String junk = '${dir.path}/junk.zip';
+      // PK\x03\x04 = ZIP 魔数 + 垃圾字节：sqlite3 首个 query 会抛「not a database」。
+      File(junk).writeAsBytesSync(
+          Uint8List.fromList(<int>[0x50, 0x4b, 0x03, 0x04, 9, 9, 9, 9]));
+      expect(LocalAudioDb.isUsableAudioSource(junk), isFalse);
+    });
+
+    test('rejects a valid sqlite db that lacks the audio schema', () {
+      final String other = '${dir.path}/other.db';
+      final Database db = sqlite3.open(other);
+      db.execute('CREATE TABLE foo (a TEXT)');
+      db.execute("INSERT INTO foo VALUES ('x')");
+      db.dispose();
+      expect(LocalAudioDb.isUsableAudioSource(other), isFalse);
+    });
+
+    test('rejects an audio db whose android table has no rows (empty)', () {
+      final String empty = '${dir.path}/empty.db';
+      final Database db = sqlite3.open(empty);
+      db.execute('CREATE TABLE entries '
+          '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+      db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
+      db.dispose(); // 结构对但没有任何音频行
+      expect(LocalAudioDb.isUsableAudioSource(empty), isFalse);
+    });
+  });
+
   test('extractBlob keeps different local audio blobs on different paths', () {
     final Database db = sqlite3.open(dbPath);
     db.execute("INSERT INTO entries VALUES ('other','','b.mp3','src1')");

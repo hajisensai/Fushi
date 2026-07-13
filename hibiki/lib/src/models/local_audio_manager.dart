@@ -6,7 +6,23 @@ import 'package:path/path.dart' as path;
 
 import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/utils/misc/local_audio_db.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
+
+/// 选中的文件不是一个可用的本地音频源库（不是 Yomitan「本地音频服务器」SQLite，
+/// 或库里没有任何音频）。[LocalAudioManager.importFile] 在把文件收进库前抛出，
+/// 让上层给用户一句「这不是有效音频数据库」，而不是把没用的 zip / 备份 zip 当成
+/// 音频源静默导入成空音频（BUG-779）。
+class InvalidLocalAudioDbException implements Exception {
+  const InvalidLocalAudioDbException(this.sourcePath);
+
+  final String sourcePath;
+
+  @override
+  String toString() =>
+      'InvalidLocalAudioDbException: not a usable local audio database '
+      '($sourcePath)';
+}
 
 class LocalAudioDbEntry {
   const LocalAudioDbEntry({
@@ -196,6 +212,12 @@ class LocalAudioManager {
     if (!await sourceFile.exists()) {
       throw FileSystemException(
           'local audio db source file not found', sourcePath);
+    }
+    // BUG-779：导入前校验内容，拒绝「没用的 zip / 备份 zip / 空库」。旧实现只查存在性
+    // 就复制并报成功，无效性要等查询时才在 LocalAudioDb 的 catch 里被吞成空音频源。
+    // 校验源文件（引用模式指向它、复制模式即将复制它），无效即抛，绝不留内部副本孤儿。
+    if (!LocalAudioDb.isUsableAudioSource(sourcePath)) {
+      throw InvalidLocalAudioDbException(sourcePath);
     }
     if (reference) {
       // 引用模式（BUG-483）：不复制，直接指向用户原路径。清理逻辑按 [_isInternalCopy]

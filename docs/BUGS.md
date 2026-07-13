@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 761 条。点号进各自文件。
+> 共 763 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-780](bugs/BUG-780-backup-keep-settings-local-audio-wipe.md) | ✅ | ✅ | 覆盖整库保留设置冲掉本地音频注册 |
+| [BUG-779](bugs/BUG-779-local-audio-import-invalid-file.md) | ✅ | ✅ | 本地音频源导入无效文件假成功 |
 | [BUG-778](bugs/BUG-778-collection-detail-drag-ui-scale-offset.md) | ✅ | ✅ | 合集详情页拖拽排序不吃界面大小缩放拖动位置错位 |
 | [BUG-777](bugs/BUG-777-shelf-continue-hero-imported-order.md) | ✅ | ✅ | 继续阅读hero与书架最近阅读按导入序选书而非最近阅读序 |
 | [BUG-776](bugs/BUG-776-sentence-context-native-dialog.md) | ✅ | ✅ | 制卡「选择句子上下文」应为 app 原生顶层对话框（不是画在查词弹窗内） |
