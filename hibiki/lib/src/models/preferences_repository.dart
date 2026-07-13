@@ -8,6 +8,8 @@ import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/update_check_cache.dart';
@@ -1053,6 +1055,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   void toggleCompressMiningMedia() async {
     await setPref('compress_mining_media', !compressMiningMedia);
+    notifyListeners();
+  }
+
+  // 视频制卡封面图片模式（GIF 动图 / 制卡时当前帧 / 字幕开头帧）。默认 gif=现状零破坏。
+  // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析未知值回退 gif（向后兼容）。
+  VideoMiningImageMode get videoMiningImageMode =>
+      VideoMiningImageMode.fromWireName(
+          getPref('video_mining_image_mode', defaultValue: null) as String?);
+
+  void setVideoMiningImageMode(VideoMiningImageMode mode) async {
+    await setPref('video_mining_image_mode', mode.wireName);
     notifyListeners();
   }
 

@@ -4023,6 +4023,12 @@ class AppModel with ChangeNotifier {
   bool get compressMiningMedia => prefsRepo.compressMiningMedia;
   void toggleCompressMiningMedia() => prefsRepo.toggleCompressMiningMedia();
 
+  // 视频制卡封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 gif=现状。
+  VideoMiningImageMode get videoMiningImageMode =>
+      prefsRepo.videoMiningImageMode;
+  void setVideoMiningImageMode(VideoMiningImageMode mode) =>
+      prefsRepo.setVideoMiningImageMode(mode);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

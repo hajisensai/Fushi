@@ -306,6 +306,9 @@ extension _VideoLookupMining on _VideoHibikiPageState {
             : null,
         updateNoteId: updateNoteId,
         stillFallback: controller.screenshot,
+        // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
+        // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
+        imageMode: appModel.videoMiningImageMode,
       ),
       compression: mediaCompression,
       tempDir: tmp.path,

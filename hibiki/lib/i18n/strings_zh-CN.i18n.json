@@ -2306,5 +2306,10 @@
   "batch_tag_added_video": "已为 $n 个视频添加标签「$name」。",
   "batch_tag_removed_video": "已从 $n 个视频移除标签「$name」。",
   "stat_daily_average": "日均",
-  "handlebar_sentence_audio": "句子音频"
+  "handlebar_sentence_audio": "句子音频",
+  "video_mining_image_mode": "视频卡片图片",
+  "video_mining_image_mode_hint": "视频制卡封面用动图还是截图",
+  "video_mining_image_mode_gif": "动图 GIF（字幕片段）",
+  "video_mining_image_mode_current_frame": "制卡时截图",
+  "video_mining_image_mode_subtitle_start": "字幕开头截图"
 }
