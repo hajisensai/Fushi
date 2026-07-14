@@ -162,7 +162,7 @@ const List<Anime4kPreset> kAnime4kPresets = <Anime4kPreset>[
   ),
 ];
 
-/// ── 画质档位用的 GLSL 预设（无独立数据，复用上面 Anime4K 链 + 新增 ArtCNN）────────
+/// ── 画质档位用的 GLSL 预设（无独立数据，复用上面 Anime4K 链）───────────────────
 /// 这三个常量是 [VideoShaderTier]「中/高/极高」三档映射到的着色器集（见
 /// video_shader_tier.dart）；与上面 [kAnime4kPresets] 共享同一下载/落盘/勾选管线。
 
@@ -175,32 +175,36 @@ final Anime4kPreset kAnime4kFastPreset =
 final Anime4kPreset kAnime4kHqPreset =
     kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_hq');
 
-/// 「极高」档：ArtCNN C4F32 **DS（denoise + sharpen）变体**（Artoriuz/ArtCNN，MIT，
-/// 2025 最强 HD 番上采样，需旗舰 GPU）。
+/// 「极高」档：Anime4K Mode A **UL（Ultra Large 超大网络）重建链**（bloc97/Anime4K，
+/// MIT，需旗舰 GPU）。
 ///
-/// **为什么用 DS 而非中性 C4F32**（TODO-706）：中性 `ArtCNN_C4F32` 只做数学最优上采样，
-/// 对干净 HD 源最佳，但对 web 压制番（去压缩伪影、轻锐化）毫无帮助——这正是用户吐槽
-/// 「极高反而比高弱」的真因（高档 = Anime4K Mode A HQ 有完整去振铃/去压缩修复链）。
-/// `ArtCNN_C4F32_DS` 是同网络的 denoise+sharpen 训练变体，专为压制源训练，对脏源真有
-/// 去噪锐化作用，与「高档 = Anime4K A HQ」的文件集不同 → [tierFromState] 反查无歧义。
+/// **为什么回到 Anime4K UL 而非 ArtCNN**（用户诉求）：极高必须与「高档 = Anime4K Mode A
+/// HQ」同宗、单调更强，而不是换到另一血统（ArtCNN）让用户觉得「极高只是不一样、不是更强」。
+/// UL 变体把「高档」的 VL（Very Large）重建/上采样网络换成更大的 UL 网络——同一条
+/// Restore(重建) + Upscale 结构，网络更深、修复/上采样更强，是 Anime4K 家族里最强的
+/// 「重建」档。链结构照官方 Mode A HQ 模板，只把 Restore/首次 Upscale 提到 UL。
 ///
-/// 单文件 `.glsl`（内含 MIT license 注释 + `//!HOOK` 指令，[looksLikeGlslShader] 全文
-/// 扫描可通过）。经 [downloadAnime4kFiles] 同款多镜像下载，repo/ref 由本预设覆写。
+/// **反查无歧义**：文件集 {Clamp, Restore_CNN_**UL**, Upscale_CNN_x2_**UL**, AutoDownscale
+/// x2/x4, Upscale_CNN_x2_VL} 与「高档」{…, Restore_CNN_**VL**, …, Upscale_CNN_x2_**M**}
+/// 不相等（UL 独有 Restore_UL/Upscale_UL；高独有 Restore_VL/Upscale_M）→ [tierFromState]
+/// 集合相等反查两档不会相互命中（守卫见 video_shader_tier_test.dart）。
 ///
-/// **ref = `main`**：Artoriuz/ArtCNN 主分支是 `main`（非 `master`），raw 路径
-/// `/main/GLSL/ArtCNN_*.glsl`（联网核对 2026-06-23：`ArtCNN_C4F32_DS.glsl` 在
-/// `main` 返回 200；`master` 虽因 GitHub 把默认分支同时挂在旧名下也能解析，但 `main`
-/// 才是规范分支名，钉死 `main` 避免依赖 GitHub 的兼容别名）。
-const Anime4kPreset kArtCnnC4F32DsPreset = Anime4kPreset(
-  id: 'artcnn_c4f32_ds',
-  name: 'ArtCNN C4F32 DS',
+/// 全部落盘文件均在 bloc97/Anime4K master 分支存在（联网核对 2026-07-14：Restore_CNN_UL /
+/// Upscale_CNN_x2_UL / Upscale_CNN_x2_VL 均返回 200）。经 [downloadAnime4kFiles] 同款多镜像
+/// 下载，默认 repo=bloc97/Anime4K、ref=master（与中/高档同源，无需覆写）。
+const Anime4kPreset kAnime4kUlPreset = Anime4kPreset(
+  id: 'mode_a_ul',
+  name: 'Anime4K Mode A (UL)',
   description:
-      'Strongest HD anime upscaler with denoise + sharpen for web-encoded '
-      'sources (MIT). Needs a flagship GPU.',
-  repo: 'Artoriuz/ArtCNN',
-  ref: 'main',
+      'Strongest Anime4K reconstruction (Ultra Large network restore + upscale). '
+      'Needs a flagship GPU.',
   shaders: <Anime4kShaderFile>[
-    Anime4kShaderFile('GLSL/ArtCNN_C4F32_DS.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_UL.glsl'),
+    Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_UL.glsl'),
+    Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl'),
+    Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl'),
+    Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl'),
   ],
 );
 

@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "mpv-integrierte Schärfung (ewa_lanczossharp). Funktioniert bei jedem Video (Anime und Realfilm). Kein Download, geringste GPU-Last. Wähle dies bei integrierten oder älteren Grafikkarten (NVIDIA GTX 1050, AMD RX 560, Intel iGPU).",
   "video_shader_tier_medium_hint": "Anime4K Fast. Am besten für Anime, funktioniert aber auch bei Realfilmen/-Serien (geringerer Effekt). Läuft auf Mittelklasse-GPUs (NVIDIA GTX 1660 / RTX 3050, AMD RX 6600).",
   "video_shader_tier_high_hint": "Anime4K HQ. Schärfer; am besten für Anime, auch bei Realfilm nutzbar (geringerer Effekt). Benötigt eine obere Mittelklasse-GPU (NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT).",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32. Beste Qualität für HD-Anime; auch bei Realfilm nutzbar (geringerer Effekt). Benötigt eine Spitzen-GPU (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Wähle eine niedrigere Stufe, wenn deine GPU schwächer ist.",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A (UL, Ultra-Large-Netzwerk). Stärkste Anime4K-Rekonstruktion; auch bei Realfilm nutzbar (geringerer Effekt). Benötigt eine Spitzen-GPU (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Wähle eine niedrigere Stufe, wenn deine GPU schwächer ist.",
   "video_shader_tier_custom_hint": "Eigene Shader-Auswahl. Wähle oben eine Stufe, um zu einer Voreinstellung zu wechseln.",
   "video_shader_section_advanced": "Erweitert (manuelle Shader)",
   "video_shader_first_use_download": "Herunterladen und aktivieren",

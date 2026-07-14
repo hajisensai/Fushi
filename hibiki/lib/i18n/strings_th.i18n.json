@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "การลับคมในตัวของ mpv (ewa_lanczossharp) ใช้ได้กับวิดีโอทุกแบบ (อนิเมะและคนแสดง) ไม่ต้องดาวน์โหลด ใช้ GPU น้อยที่สุด เลือกระดับนี้สำหรับการ์ดจอออนบอร์ดหรือรุ่นเก่า (NVIDIA GTX 1050, AMD RX 560, Intel iGPU)",
   "video_shader_tier_medium_hint": "Anime4K Fast เหมาะกับอนิเมะที่สุด แต่ใช้กับภาพยนตร์/ทีวีคนแสดงได้ด้วย (ผลน้อยกว่า) ใช้ได้กับ GPU ระดับกลาง (NVIDIA GTX 1660 / RTX 3050, AMD RX 6600)",
   "video_shader_tier_high_hint": "Anime4K HQ คมขึ้น เหมาะกับอนิเมะที่สุด ใช้กับคนแสดงได้ด้วย (ผลน้อยกว่า) ต้องใช้ GPU ระดับกลางค่อนสูง (NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT)",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32 คุณภาพดีที่สุดสำหรับอนิเมะ HD ใช้กับคนแสดงได้ด้วย (ผลน้อยกว่า) ต้องใช้ GPU เรือธง (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX) เลือกระดับต่ำกว่าหาก GPU ของคุณอ่อนกว่า",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A (UL เครือข่ายขนาดใหญ่พิเศษ) การสร้างใหม่ของ Anime4K ที่แรงที่สุด ใช้กับคนแสดงได้ด้วย (ผลน้อยกว่า) ต้องใช้ GPU เรือธง (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX) เลือกระดับต่ำกว่าหาก GPU ของคุณอ่อนกว่า",
   "video_shader_tier_custom_hint": "การเลือกเชเดอร์แบบกำหนดเอง เลือกระดับด้านบนเพื่อสลับไปใช้พรีเซ็ต",
   "video_shader_section_advanced": "ขั้นสูง (เชเดอร์แบบเลือกเอง)",
   "video_shader_first_use_download": "ดาวน์โหลดและเปิดใช้งาน",

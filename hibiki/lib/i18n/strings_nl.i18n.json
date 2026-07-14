@@ -1471,7 +1471,7 @@
   "video_shader_tier_low_hint": "Ingebouwde verscherping van mpv (ewa_lanczossharp). Werkt op elke video (animatie en live-action). Geen download, laagste GPU-belasting. Kies dit op geïntegreerde of oudere kaarten (NVIDIA GTX 1050, AMD RX 560, Intel iGPU).",
   "video_shader_tier_medium_hint": "Anime4K Fast. Het beste voor animatie, maar werkt ook op live-action films/series (kleinere winst). Draait op middenklasse-GPU's (NVIDIA GTX 1660 / RTX 3050, AMD RX 6600).",
   "video_shader_tier_high_hint": "Anime4K HQ. Scherper; het beste voor animatie, ook bruikbaar voor live-action (kleinere winst). Vereist een hogere middenklasse-GPU (NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT).",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32. Beste kwaliteit voor HD-animatie; ook bruikbaar voor live-action (kleinere winst). Vereist een topGPU (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Kies een lager niveau als je GPU zwakker is.",
+  "video_shader_tier_ultra_hint": "Anime4K Mode A (UL, ultragroot netwerk). De sterkste Anime4K-reconstructie; ook bruikbaar voor live-action (kleinere winst). Vereist een topGPU (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Kies een lager niveau als je GPU zwakker is.",
   "video_shader_tier_custom_hint": "Aangepaste shaderselectie. Kies een niveau hierboven om over te schakelen naar een preset.",
   "video_shader_section_advanced": "Geavanceerd (handmatige shaders)",
   "video_shader_first_use_download": "Downloaden en inschakelen",
