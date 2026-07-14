@@ -9,8 +9,12 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.media.AudioManager;
+import android.database.Cursor;
 import android.provider.DocumentsContract;
+import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.view.KeyEvent;
 import android.view.WindowManager;
 import androidx.annotation.NonNull;
@@ -320,8 +324,16 @@ public class MainActivity extends AudioServiceActivity {
             final Uri pickedUri = data.getData();
             final boolean isTree = requestCode == SAF_PICK_REAL_DIR_REQUEST;
             ioExecutor.execute(() -> {
-                final String realPath = resolveSafRealPath(pickedUri, isTree);
-                // null = provider without a real filesystem path (cloud / virtual).
+                String resolved = resolveSafRealPath(pickedUri, isTree);
+                // Files: if no real path (true cloud DocumentsProvider), copy to
+                // cache so the pick still works — matches the no-permission
+                // file_picker escape hatch (dangles on cache clear, but rare).
+                // Folders: no fallback (dart:io cannot read a cloud tree anyway).
+                if (resolved == null && !isTree) {
+                    resolved = copyUriToCache(pickedUri);
+                }
+                final String realPath = resolved;
+                // null = user picked a folder we cannot map, or a copy failure.
                 new Handler(Looper.getMainLooper()).post(() ->
                     safResult.success(realPath));
             });
@@ -536,7 +548,13 @@ public class MainActivity extends AudioServiceActivity {
                         }
                         pendingSafResult = result;
                         Intent dirIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-                        startActivityForResult(dirIntent, SAF_PICK_REAL_DIR_REQUEST);
+                        try {
+                            startActivityForResult(dirIntent, SAF_PICK_REAL_DIR_REQUEST);
+                        } catch (Exception e) {
+                            // No DocumentsUI: reset so the channel is not stuck BUSY.
+                            pendingSafResult = null;
+                            result.error("NO_PICKER", e.getMessage(), null);
+                        }
                         break;
                     }
                     case "pickRealFile": {
@@ -551,7 +569,13 @@ public class MainActivity extends AudioServiceActivity {
                         Intent fileIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
                         fileIntent.setType("*/*");
-                        startActivityForResult(fileIntent, SAF_PICK_REAL_FILE_REQUEST);
+                        try {
+                            startActivityForResult(fileIntent, SAF_PICK_REAL_FILE_REQUEST);
+                        } catch (Exception e) {
+                            // No DocumentsUI: reset so the channel is not stuck BUSY.
+                            pendingSafResult = null;
+                            result.error("NO_PICKER", e.getMessage(), null);
+                        }
                         break;
                     }
                     default:
@@ -1183,32 +1207,61 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     // Resolve a SAF tree/document content URI to a real filesystem absolute path
-    // (no copy). Only the externalstorage provider (device storage / SD card)
-    // maps reliably; cloud / Downloads virtual providers have no real path, so we
-    // return null and let the Dart side cancel (folder) or keep its escape hatch
-    // (file). The app holds MANAGE_EXTERNAL_STORAGE, so dart:io can read the
-    // resolved path directly and the whole downstream stays real-path based.
+    // (no copy). The app holds MANAGE_EXTERNAL_STORAGE, so once we recover the
+    // real path dart:io can read it and the whole downstream stays real-path
+    // based. Covers the common DocumentsUI entry points so "pick from Recent /
+    // Videos / Downloads" does not silently fail:
+    //   - externalstorage (逐级浏览设备目录/SD 卡): volumeId:relative
+    //   - downloads with a raw: docId: the real path is embedded
+    //   - media provider (Recent / 视频集): resolve via MediaStore _data
+    //   - generic: best-effort _data column on the picked URI
+    // Returns null only for providers with no real path (true cloud); the caller
+    // then cancels (folder) or copies to cache (file).
     private String resolveSafRealPath(Uri uri, boolean isTree) {
         try {
-            if (!"com.android.externalstorage.documents".equals(uri.getAuthority())) {
-                return null;
+            final String authority = uri.getAuthority();
+            if ("com.android.externalstorage.documents".equals(authority)) {
+                final String docId = isTree
+                    ? DocumentsContract.getTreeDocumentId(uri)
+                    : DocumentsContract.getDocumentId(uri);
+                final String path = externalStorageDocIdToPath(docId);
+                if (path != null) return path;
             }
-            final String docId = isTree
-                ? DocumentsContract.getTreeDocumentId(uri)
-                : DocumentsContract.getDocumentId(uri);
-            final int sep = docId.indexOf(':');
-            if (sep < 0) return null;
-            final String volumeId = docId.substring(0, sep);
-            final String relative = docId.substring(sep + 1);
-            final String root = resolveVolumeRoot(volumeId);
-            if (root == null) return null;
-            final File target = relative.isEmpty()
-                ? new File(root)
-                : new File(root, relative);
-            return target.exists() ? target.getAbsolutePath() : null;
+            // A folder pick only ever yields a tree URI; non-externalstorage
+            // trees are cloud DocumentsProviders with no readable real path.
+            if (isTree) return null;
+
+            if ("com.android.providers.downloads.documents".equals(authority)) {
+                final String docId = DocumentsContract.getDocumentId(uri);
+                if (docId != null && docId.startsWith("raw:")) {
+                    final File raw = new File(docId.substring(4));
+                    if (raw.exists()) return raw.getAbsolutePath();
+                }
+            }
+            if ("com.android.providers.media.documents".equals(authority)) {
+                final String path = mediaDocIdToPath(DocumentsContract.getDocumentId(uri));
+                if (path != null) return path;
+            }
+            // Best-effort: some providers expose the legacy _data column directly.
+            final String data = queryDataColumn(uri, null, null);
+            if (data != null && new File(data).exists()) return data;
+            return null;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // externalstorage docId "volumeId:relative" -> real absolute path.
+    private String externalStorageDocIdToPath(String docId) {
+        if (docId == null) return null;
+        final int sep = docId.indexOf(':');
+        if (sep < 0) return null;
+        final String volumeId = docId.substring(0, sep);
+        final String relative = docId.substring(sep + 1);
+        final String root = resolveVolumeRoot(volumeId);
+        if (root == null) return null;
+        final File target = relative.isEmpty() ? new File(root) : new File(root, relative);
+        return target.exists() ? target.getAbsolutePath() : null;
     }
 
     // externalstorage volume id -> real mount root. "primary" is internal
@@ -1220,5 +1273,87 @@ public class MainActivity extends AudioServiceActivity {
         }
         final File volumeRoot = new File("/storage/" + volumeId);
         return volumeRoot.exists() ? volumeRoot.getAbsolutePath() : null;
+    }
+
+    // media provider docId ("video:123" / "image:123" / "audio:123") -> real
+    // path via the matching MediaStore collection's _data column.
+    private String mediaDocIdToPath(String docId) {
+        if (docId == null) return null;
+        final int sep = docId.indexOf(':');
+        if (sep < 0) return null;
+        final String type = docId.substring(0, sep);
+        final String id = docId.substring(sep + 1);
+        final Uri contentUri;
+        if ("video".equals(type)) {
+            contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+        } else if ("image".equals(type)) {
+            contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+        } else if ("audio".equals(type)) {
+            contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        } else {
+            return null;
+        }
+        final String path = queryDataColumn(contentUri, "_id=?", new String[]{id});
+        return (path != null && new File(path).exists()) ? path : null;
+    }
+
+    // Read the legacy _data column for a content URI (readable under all-files
+    // access). Returns null if the column is absent/empty or the query fails.
+    private String queryDataColumn(Uri uri, String selection, String[] args) {
+        try (Cursor cursor = getContentResolver()
+                .query(uri, new String[]{"_data"}, selection, args, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                final int idx = cursor.getColumnIndex("_data");
+                if (idx >= 0) {
+                    final String data = cursor.getString(idx);
+                    if (data != null && !data.isEmpty()) return data;
+                }
+            }
+        } catch (Exception e) {
+            // fall through
+        }
+        return null;
+    }
+
+    // Last-resort copy of a picked file content URI into app cache, returning the
+    // cache path. Used only when the URI has no real filesystem path (true cloud
+    // DocumentsProvider) — same escape hatch as the no-permission file_picker
+    // path (dangles on cache clear, but the pick still works).
+    private String copyUriToCache(Uri uri) {
+        try {
+            String name = queryDisplayName(uri);
+            if (name == null || name.isEmpty()) {
+                name = "saf_pick_" + SystemClock.uptimeMillis();
+            }
+            final File cacheDir = new File(getCacheDir(), "saf_pick");
+            cacheDir.mkdirs();
+            final File dest = new File(cacheDir, name);
+            try (InputStream in = getContentResolver().openInputStream(uri);
+                 OutputStream out = new FileOutputStream(dest)) {
+                if (in == null) return null;
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = in.read(buf)) > 0) {
+                    out.write(buf, 0, len);
+                }
+            }
+            return dest.getAbsolutePath();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // Display name for a content URI (falls back to null when unavailable).
+    private String queryDisplayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(
+                uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                final int idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0) return cursor.getString(idx);
+            }
+        } catch (Exception e) {
+            // fall through
+        }
+        return null;
     }
 }
