@@ -46,6 +46,20 @@ constexpr float kBaseStripHeightForFontDip = 96.0f;
 // hit areas can never drift from what is drawn.
 constexpr int kControlSlotCount = 5;
 
+// Text-only clipboard window (Luna-style hover toolbar). A thin top strip is
+// ALWAYS a mouse catch (drawn at ~2% alpha across the full width) so the fully
+// transparent window can always be grabbed to move + can reveal its toolbar,
+// while the body below stays truly transparent (click-through to the game). At
+// rest only a small centre grip pill hints the handle; on hover the strip
+// brightens and the lock + one-click-transparency buttons appear. Text-only
+// hit-testing / drawing derive geometry from these so the hit areas can never
+// drift from what is drawn.
+constexpr float kTextGripWidthDip = 40.0f;
+constexpr float kTextGripHeightDip = 4.0f;
+constexpr float kTextGripTopDip = 9.0f;
+constexpr float kTextStripRestAlpha = 0.02f;   // near-invisible, still catchable
+constexpr float kTextStripHoverAlpha = 0.55f;  // visible toolbar band on hover
+
 // ARGB (0xAARRGGBB) -> D2D1_COLOR_F (straight alpha).
 D2D1_COLOR_F ColorFromArgb(uint32_t argb) {
   const float a = ((argb >> 24) & 0xFF) / 255.0f;
@@ -659,14 +673,13 @@ void FloatingLyricWindow::Render() {
   const float pad = ScaleForDpi(kHorizontalPaddingDip);
   const float controls_h =
       ScaleForDpi(kButtonSizeDip) + ScaleForDpi(kControlsTopDip);
-  // Text-only mode has no controls row: the text uses the full window height
-  // (centred), so the clipboard string is never pushed down under a phantom
-  // button strip. The audiobook strip keeps reserving controls_h at the top.
-  const float text_top = text_only_ ? pad : controls_h;
+  // Both modes reserve controls_h at the top: the lyric strip for its transport
+  // row, the text-only clipboard window for its thin Luna-style hover toolbar
+  // (the text sits below the strip so the toolbar never overlaps it).
   text_rect_.left = pad;
-  text_rect_.top = text_top;
+  text_rect_.top = controls_h;
   text_rect_.width = std::max(1.0f, width - pad * 2);
-  text_rect_.height = std::max(1.0f, height - text_top - pad * 0.5f);
+  text_rect_.height = std::max(1.0f, height - controls_h - pad * 0.5f);
 
   if (text_format_ != nullptr && !text_.empty()) {
     if (text_layout_ == nullptr) {
@@ -741,10 +754,81 @@ void FloatingLyricWindow::Render() {
     }
   }
 
-  // Text-only clipboard window draws no transport / lock / close buttons and no
-  // resize grip — only the draggable, tappable text. Skip the whole controls +
-  // grip block; ControlActionAt() / ResizeGripContains() short-circuit to match.
-  if (!text_only_) {
+  if (text_only_) {
+    // Luna-style hover toolbar for the transparent clipboard window: a thin top
+    // strip that is ALWAYS a mouse catch (so the transparent window can be
+    // grabbed to move + can reveal its controls), showing only a grip hint at
+    // rest and the lock + one-click-transparency buttons on hover. Geometry
+    // mirrors ControlActionAt(text_only_) exactly.
+    const float t_btn = ScaleForDpi(kButtonSizeDip);
+    const float t_pad = ScaleForDpi(kHorizontalPaddingDip);
+    const float t_gap = ScaleForDpi(kButtonGapDip);
+    const float t_top = ScaleForDpi(kControlsTopDip);
+    const float strip_h = t_top + t_btn;
+
+    // Full-width strip background: near-invisible at rest (still catches the
+    // mouse so the top edge is always grabbable), a visible band on hover so the
+    // whole strip stays catchable while sliding across to the buttons.
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> strip_bg;
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.bg_color | 0xFF000000),
+                                          strip_bg.GetAddressOf());
+    strip_bg->SetOpacity(hovered_ ? kTextStripHoverAlpha : kTextStripRestAlpha);
+    D2D1_ROUNDED_RECT strip_rect = D2D1::RoundedRect(
+        D2D1::RectF(0, 0, static_cast<float>(width), strip_h),
+        ScaleForDpi(6), ScaleForDpi(6));
+    render_target_->FillRoundedRectangle(strip_rect, strip_bg.Get());
+
+    // Centre grip pill — the visible move handle (brighter on hover).
+    const float grip_w = ScaleForDpi(kTextGripWidthDip);
+    const float grip_h = ScaleForDpi(kTextGripHeightDip);
+    const float grip_x = (width - grip_w) / 2.0f;
+    const float grip_y = ScaleForDpi(kTextGripTopDip);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.text_color),
+                                          grip_brush.GetAddressOf());
+    grip_brush->SetOpacity(hovered_ ? 0.9f : 0.28f);
+    D2D1_ROUNDED_RECT grip_rect = D2D1::RoundedRect(
+        D2D1::RectF(grip_x, grip_y, grip_x + grip_w, grip_y + grip_h),
+        grip_h / 2.0f, grip_h / 2.0f);
+    render_target_->FillRoundedRectangle(grip_rect, grip_brush.Get());
+
+    // Lock + one-click-transparency buttons appear only on hover, right-aligned
+    // (transparency then lock). Their hit areas in ControlActionAt() are gated
+    // on hovered_ too, so a click can never hit an invisible button.
+    if (hovered_) {
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_active;
+      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
+                                            tb_bg.GetAddressOf());
+      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
+                                            tb_fg.GetAddressOf());
+      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
+                                            tb_active.GetAddressOf());
+      const float lock_x = width - t_pad - t_btn;
+      const float trans_x = lock_x - t_gap - t_btn;
+      auto draw_tbtn = [&](float bx, const wchar_t* glyph, bool active) {
+        D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
+            D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), ScaleForDpi(6),
+            ScaleForDpi(6));
+        render_target_->FillRoundedRectangle(br, tb_bg.Get());
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
+        dwrite_factory_->CreateTextFormat(
+            L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, t_btn * 0.5f,
+            L"", glyph_fmt.GetAddressOf());
+        if (glyph_fmt != nullptr) {
+          glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+          glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+          render_target_->DrawTextW(glyph, GlyphLength(glyph), glyph_fmt.Get(),
+                                    D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn),
+                                    active ? tb_active.Get() : tb_fg.Get());
+        }
+      };
+      draw_tbtn(trans_x, L"◐", false);  // one-click background transparency
+      draw_tbtn(lock_x, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
+    }
+  } else {
   // Controls row (only fully visible while hovered, like QQ Music). The hit
   // areas in ControlActionAt() stay live regardless so a deliberate click on a
   // half-faded button still works.
@@ -814,7 +898,7 @@ void FloatingLyricWindow::Render() {
           D2D1::Point2F(width - 2.0f, height - off), grip_brush.Get(), stroke);
     }
   }
-  }  // if (!text_only_)
+  }  // else (lyric transport controls)
 
   HRESULT hr = render_target_->EndDraw();
   if (hr == D2DERR_RECREATE_TARGET) {
@@ -841,9 +925,32 @@ void FloatingLyricWindow::Render() {
 }
 
 std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
-  // Text-only clipboard window has no control buttons, so no client point is
-  // ever a control hit — every press falls through to the drag / lookup path.
   if (text_only_) {
+    // Text-only Luna toolbar: only the lock + one-click-transparency buttons are
+    // control hits, and only while hovered (they are invisible otherwise, so a
+    // click must never land on a phantom button). The grip / empty strip returns
+    // empty so a press there becomes a window drag — geometry mirrors Render().
+    if (!hovered_) {
+      return std::string();
+    }
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    const float width = static_cast<float>(rc.right - rc.left);
+    const float btn = ScaleForDpi(kButtonSizeDip);
+    const float gap = ScaleForDpi(kButtonGapDip);
+    const float pad = ScaleForDpi(kHorizontalPaddingDip);
+    const float ctrl_top = ScaleForDpi(kControlsTopDip);
+    if (y < ctrl_top || y > ctrl_top + btn) {
+      return std::string();
+    }
+    const float lock_x = width - pad - btn;
+    const float trans_x = lock_x - gap - btn;
+    if (x >= lock_x && x <= lock_x + btn) {
+      return "lock";
+    }
+    if (x >= trans_x && x <= trans_x + btn) {
+      return "toggleTransparency";
+    }
     return std::string();
   }
   RECT rc;
