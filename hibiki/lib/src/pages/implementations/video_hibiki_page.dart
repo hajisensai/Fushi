@@ -109,7 +109,6 @@ import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
@@ -2328,10 +2327,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 远端 / 流（videoPath==null 或 http(s) URL）天然豁免（见 video_resource_check）。
     if (await isLocalVideoResourceMissing(videoPath)) {
       debugPrint('[VideoHibikiPage] local video resource missing: $videoPath');
-      ErrorLogService.instance.log(
-        'VideoHibiki.diag',
-        '[VIDEO-DIAG] local video resource missing: $videoPath',
-      );
       if (!mounted) return;
       setState(() {
         _failed = false;
@@ -2363,31 +2358,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           )
         : const <String>[];
     controller.setOnCompleted(_handlePlaybackCompleted);
-    // TODO-984：把控制器诊断行接到错误日志服务（用户可在「错误日志」页查看 / 上传）。
-    // 现场定位 Android「闪烁 + 空白无画面」（realme 8 / Android 11）——其他 app 播同文件
-    // 正常，疑点在 hwdec / 纹理 surface / 解码出帧。诊断行带 `[VIDEO-DIAG]` 前缀便于筛选。
-    controller.onDiagLog = (String message) {
-      ErrorLogService.instance.log('VideoHibiki.diag', message);
-    };
-    // TODO-1232：verbose 视频诊断（libmpv verbose log / videoParams / buffering 每次
-    // 变化）只有用户开了「调试日志」开关才收——正常播放只留关键低频诊断行，避免刷爆
-    // 错误日志（realme 8 事故里 verbose 洪水把关键头部行挤出环形缓冲）。
-    controller.diagVerbose = DebugLogService.instance.enabled;
     // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
     // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
     controller.onSuspectedBlackFlicker =
         Platform.isWindows ? _handleSuspectedBlackFlicker : null;
-    ErrorLogService.instance.log(
-      'VideoHibiki.diag',
-      '[VIDEO-DIAG] _applyLoad: title=$title videoPath=$videoPath '
-          'mediaUri=$mediaUri cues=${cues.length} '
-          'initialPositionMs=$initialPositionMs '
-          'externalSubtitlePath=$externalSubtitlePath '
-          'renderGraphicStreamIndex=$renderGraphicStreamIndex '
-          'fitMode=$_videoFitMode platform=${Platform.operatingSystem} '
-          'impellerDisabledPref=${RenderBackendService.instance.impellerDisabled} '
-          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
-    );
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
@@ -2415,25 +2389,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
-      ErrorLogService.instance
-          .log('VideoHibiki.diag', '[VIDEO-DIAG] controller.load() threw: $e');
       ErrorLogService.instance.log('VideoHibiki.load', e, stack);
       if (_controller == null) controller.dispose();
       _pendingController = null; // BUG-772：在途结束（失败），清标记
       if (mounted) setState(() => _failed = true);
       return;
     }
-    // TODO-984：load() 正常返回（未抛）——记一行让日志能区分「load 抛异常失败」与
-    // 「load 返回了但画面仍空白」（后者疑点在解码出帧 / 纹理，看控制器 [VIDEO-DIAG] 行）。
-    ErrorLogService.instance.log(
-      'VideoHibiki.diag',
-      '[VIDEO-DIAG] controller.load() returned ok: '
-          'durationMs=${controller.durationMs} '
-          'videoWidth=${controller.videoWidth} '
-          'videoHeight=${controller.videoHeight} '
-          'videoController=${controller.videoController != null} '
-          'activeRenderBackend=${RenderBackendService.instance.activeBackendLabel}',
-    );
     _syncVolumeDisplay(controller.volume);
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
