@@ -1437,6 +1437,16 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // 窗口区域，裁剪区不随窗口增大 → 拖拽看不到窗口变大；置 resizing_ 并立即重算区域，
       // 拖拽期间改用整窗区域（见 ApplyRoundedRegion）。面板实例区域本就是整窗，此为 no-op。
       resizing_ = true;
+      // Phase C（2026-07-14）— 记下拖拽起始的真实窗口物理尺寸；WM_EXITSIZEMOVE 一并回报，
+      // Dart 用「结束−起始」增量折算（抵消恒定级联余量）。GetWindowRect 是拖拽前实际尺寸，
+      // 比 Dart 侧 last-sent（可能被 clamp）可靠。
+      if (hwnd_ != nullptr) {
+        RECT sr{};
+        if (GetWindowRect(hwnd_, &sr)) {
+          resize_start_w_ = sr.right - sr.left;
+          resize_start_h_ = sr.bottom - sr.top;
+        }
+      }
       ApplyRoundedRegion();
       return 0;
     case WM_EXITSIZEMOVE: {
@@ -1450,10 +1460,14 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       if (message_cb_ && hwnd_ != nullptr) {
         RECT r{};
         GetWindowRect(hwnd_, &r);
+        // Phase C（2026-07-14）— 追加拖拽起始尺寸 [startW, startH]，Dart 用「结束−起始」
+        // 增量折算 overlay 尺寸（面板实例读 [0..3] 绝对 rect，忽略 [4][5]，向后兼容）。
         message_cb_(std::string("{\"handler\":\"windowMoved\",\"args\":[") +
                     std::to_string(r.left) + "," + std::to_string(r.top) +
                     "," + std::to_string(r.right - r.left) + "," +
-                    std::to_string(r.bottom - r.top) + "]}");
+                    std::to_string(r.bottom - r.top) + "," +
+                    std::to_string(resize_start_w_) + "," +
+                    std::to_string(resize_start_h_) + "]}");
       }
       return 0;
     }

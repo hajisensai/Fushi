@@ -243,6 +243,12 @@ class GlobalLookupWindow {
   // 变大；resize 期间 ApplyRoundedRegion 改用整窗区域，让窗口可见地随拖拽增长，结束
   // 复原 shell 裁剪。面板实例 shell_rects_css_ 为空，此标志对它无副作用。
   bool resizing_ = false;
+  // Phase C（2026-07-14）— 拖拽起始（WM_ENTERSIZEMOVE 那刻）的窗口物理尺寸。瞬态覆盖
+  // 窗恒比可见卡片大一截（reserve-to-edge 级联余量），故 WM_EXITSIZEMOVE 回报「起始+结束」
+  // 两个尺寸，Dart 用二者之差（恒定余量抵消）折算 overlay 增量——绝对窗口尺寸会把余量算
+  // 进去导致尺寸暴涨/卡片甩边（乱跳）。0 = 未在拖拽。
+  int resize_start_w_ = 0;
+  int resize_start_h_ = 0;
   // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;
