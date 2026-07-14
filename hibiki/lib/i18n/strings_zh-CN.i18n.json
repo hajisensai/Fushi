@@ -2337,7 +2337,5 @@
   "video_subtitle_filter_favorites_empty": "暂无收藏的句子",
   "video_subtitle_filter_selected_empty": "还未选择句子",
   "clipboard_panel_transparent": "面板背景透明",
-  "clipboard_panel_transparent_hint": "逐像素透明：只显示文字，背后的游戏画面透过来（Windows）。",
-  "clipboard_panel_peek": "面板栏悬停显示",
-  "clipboard_panel_peek_hint": "隐藏拖动/图钉/关闭栏；鼠标移到顶部才显示。"
+  "clipboard_panel_transparent_hint": "逐像素透明：只显示文字，背后的游戏画面透过来（Windows）。"
 }

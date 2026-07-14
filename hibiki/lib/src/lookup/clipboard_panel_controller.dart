@@ -391,8 +391,6 @@ class ClipboardPanelController {
       // 透明「只剩文字」：把句子条/结果块的 surface 填充变量也设透明（cardBgAlpha
       // 只透了最外层卡，内容块各画自己的主题填充色，不跟着透就看着「还有背景」）。
       transparent: model.clipboardPanelTransparent,
-      // 阶段三 — 面板栏悬停显示：开启后面板栏平时收起、鼠标移顶部才淡入。
-      peek: model.clipboardPanelPeek,
       sentenceHitStart: hit.length > 0 ? hit.start : -1,
       sentenceHitLength: hit.length,
     );

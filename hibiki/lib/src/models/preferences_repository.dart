@@ -474,17 +474,6 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 剪切板悬浮面板的面板栏是否「悬停显示」（peek）：开启后面板栏（拖动/图钉/关闭）
-  /// 平时收起，鼠标移到窗口顶部才淡入——平时只剩文字浮着，需要操作时把鼠标移上去。
-  /// 默认 false=面板栏常显（现观感，零破坏）。仅 Windows 面板去向有意义。
-  bool get clipboardPanelPeek =>
-      getPref('clipboard_panel_peek', defaultValue: false) as bool;
-
-  Future<void> setClipboardPanelPeek(bool value) async {
-    await setPref('clipboard_panel_peek', value);
-    notifyListeners();
-  }
-
   // TODO-1030 M0 — 全局查词（应用外）是否抓取选中文本周围的上下文句。默认 false：
   // 抓取要读前台应用的 UIA 文本，隐私敏感，用户显式开启才启用；关闭时全局查词只用
   // 剪贴板拿到的纯选中串（现状），不接触前台应用文本。
