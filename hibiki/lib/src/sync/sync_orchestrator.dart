@@ -1632,8 +1632,13 @@ class SyncOrchestrator {
     final Set<String> localKeys = <String>{
       for (final AudiobookRow ab in localAudiobooks) ab.bookKey,
     };
+    // 纯 SRT（standalone）远端有声书（bookKey 空、身份=uid）**不进自动 union**：与
+    // 远端独有 EPUB 一样是「手动下载才落地」（TODO-1291 / 书架远端占位卡），自动
+    // sweep 只处理 srt-backed（bookKey 非空）有声书文件补拉，避免把独有 standalone
+    // 书自动灌进对端，也避免空 bookKey 污染 diff。
     final Set<String> remoteKeys = <String>{
-      for (final RemoteAudiobookInfo r in remoteAudiobooks) r.bookKey,
+      for (final RemoteAudiobookInfo r in remoteAudiobooks)
+        if (r.bookKey.isNotEmpty) r.bookKey,
     };
     // 本端已有 EPUB 的 bookKey 集合：Pull 只对「本端有书但缺音频」的远端项动作，
     // 避免落下无 EpubBooks 行可绑的孤儿有声书（importAudioDatabasePackage 不建书行）。

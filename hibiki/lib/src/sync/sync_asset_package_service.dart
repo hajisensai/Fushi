@@ -103,14 +103,30 @@ class SyncAssetPackageService {
     );
   }
 
+  /// 打包一本有声书为 `.hibikiaudio`。支持两类：
+  /// - **srt-backed**（EPUB 配对）：[bookKey] 非空、host 有 Audiobooks 行 → manifest
+  ///   带 `audiobook` 段、cue 走 bookKey 命名空间（原行为，逐字节不变）。
+  /// - **纯 SRT（standalone）有声书**：无 Audiobooks 行（[bookKey] 省略或空）→
+  ///   manifest `audiobook` 段为 null、资源仅取 SrtBook 自身音频/字幕/封面、cue 走
+  ///   **uid** 命名空间（SrtBook cue 键）。这样纯 SRT 有声书也能跨设备打包下载。
+  ///
+  /// [bookKey] 可省略：省略时从 [srtBookUid] 对应 SrtBook 的 bookKey 派生（standalone
+  /// 该 bookKey 为空 → 纯 SRT 分支）。
   Future<File> exportAudioDatabasePackage({
-    required String bookKey,
     required String srtBookUid,
     required File outputFile,
+    String? bookKey,
   }) async {
-    final AudiobookRow audiobook = (await _db.getAudiobookByBookKey(bookKey))!;
     final SrtBookRow srtBook = (await _db.getSrtBookByUid(srtBookUid))!;
-    final List<AudioCueRow> cues = await _db.getCuesForBook(bookKey);
+    final String effectiveBookKey =
+        (bookKey != null && bookKey.isNotEmpty) ? bookKey : srtBook.bookKey;
+    // 纯 SRT：无 Audiobooks 行（effectiveBookKey 为空则连查都不查）。
+    final AudiobookRow? audiobook = effectiveBookKey.isNotEmpty
+        ? await _db.getAudiobookByBookKey(effectiveBookKey)
+        : null;
+    // cue 命名空间：srt-backed=bookKey（Audiobook cue）；纯 SRT=uid（SrtBook cue）。
+    final String cueKey = audiobook != null ? effectiveBookKey : srtBookUid;
+    final List<AudioCueRow> cues = await _db.getCuesForBook(cueKey);
     // TODO-1165：SRT 书标签名（标签每设备本地，跨设备按名带进 manifest）。
     final List<BookTagRow> srtTags = await _db.getTagsForSrtBook(srtBook.id);
     final List<File> files = _audioPackageFiles(audiobook, srtBook);
@@ -130,7 +146,8 @@ class SyncAssetPackageService {
     final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
       'kind': 'audioDatabase',
-      'audiobook': _audiobookManifest(audiobook),
+      // 纯 SRT 有声书无 Audiobooks 行 → audiobook 段为 null，导入端据此走纯 SRT 分支。
+      'audiobook': audiobook != null ? _audiobookManifest(audiobook) : null,
       'srtBook': <String, Object?>{
         ..._srtBookManifest(srtBook),
         if (srtTags.isNotEmpty)
@@ -166,9 +183,27 @@ class SyncAssetPackageService {
     if (manifest['kind'] != 'audioDatabase') {
       throw FormatException('Unexpected package kind: ${manifest['kind']}');
     }
-    final Map<String, Object?> audiobook = _mapValue(manifest, 'audiobook');
+    // 纯 SRT 有声书包 audiobook 段为 null（standalone，无 Audiobooks 行）；
+    // srt-backed 包才有 audiobook 段。据此分流，纯 SRT 走 uid 身份专用分支。
+    final Object? rawAudiobook = manifest['audiobook'];
+    final Map<String, Object?>? audiobook =
+        rawAudiobook is Map ? _typedMap(rawAudiobook) : null;
     final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
     final Map<String, Object?> resources = _mapValue(manifest, 'resources');
+
+    if (audiobook == null) {
+      // 纯 SRT（standalone）有声书：bookKey 恒空、身份=uid、cue 走 uid 命名空间。
+      // bookKeyOverride 对 standalone 无意义（其 bookKey 必须保持空），此处忽略。
+      await _importStandaloneSrtPackage(
+        packageFile: packageFile,
+        audioDatabaseRoot: audioDatabaseRoot,
+        srtBook: srtBook,
+        resources: resources,
+        cues: _listValue(manifest, 'cues'),
+      );
+      return;
+    }
+
     final String bookKey =
         bookKeyOverride ?? _stringValue(audiobook, 'bookKey');
     // The on-disk directory name must be filesystem-safe: a bookKey (sanitized
@@ -255,6 +290,85 @@ class SyncAssetPackageService {
         final Map<String, Object?> cue = _typedMap(raw);
         return AudioCuesCompanion.insert(
           bookKey: bookKey,
+          chapterHref: _stringValue(cue, 'chapterHref'),
+          sentenceIndex: _intValue(cue, 'sentenceIndex'),
+          textFragmentId: _stringValue(cue, 'textFragmentId'),
+          cueText: _stringValue(cue, 'cueText'),
+          startMs: _intValue(cue, 'startMs'),
+          endMs: _intValue(cue, 'endMs'),
+          audioFileIndex: _intValue(cue, 'audioFileIndex'),
+        );
+      }).toList(),
+    );
+  }
+
+  /// 导入纯 SRT（standalone）有声书包：无 Audiobooks 行，身份=uid，bookKey 恒空。
+  /// 与 srt-backed 分支的差异：不 upsert Audiobooks 行（否则造孤儿脏行）、持久目录
+  /// 与 cue 命名空间均用 uid、音频/字幕/封面全取自 srtBook 段（无 audiobook 段）。
+  Future<void> _importStandaloneSrtPackage({
+    required File packageFile,
+    required Directory audioDatabaseRoot,
+    required Map<String, Object?> srtBook,
+    required Map<String, Object?> resources,
+    required List<Object?> cues,
+  }) async {
+    final String uid = _stringValue(srtBook, 'uid');
+    // standalone 无 bookKey，持久目录键统一用 uid（与 AudiobookStorage 一致）。
+    final Directory targetDir =
+        Directory(p.join(audioDatabaseRoot.path, _safeDirName(uid)));
+
+    await _extractResourcesInIsolate(
+      packagePath: packageFile.path,
+      targetDirPath: targetDir.path,
+      prefix: 'resources',
+    );
+
+    final List<String> audioPaths = _stringList(srtBook, 'audioPaths')
+        .map((String path) =>
+            p.join(targetDir.path, _resourceName(resources, path)))
+        .toList();
+
+    await _db.upsertSrtBook(SrtBooksCompanion.insert(
+      uid: uid,
+      title: _stringValue(srtBook, 'title'),
+      author: Value(_nullableString(srtBook, 'author')),
+      audioRoot: Value(targetDir.path),
+      audioPathsJson: Value(jsonEncode(audioPaths)),
+      srtPath: p.join(
+        targetDir.path,
+        _resourceName(resources, _stringValue(srtBook, 'srtPath')),
+      ),
+      coverPath: Value(_nullablePathIn(targetDir, resources, srtBook, 'coverPath')),
+      importedAt: _intValue(srtBook, 'importedAt'),
+      bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
+    ));
+
+    // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
+    final Object? rawSrtTags = srtBook['tags'];
+    final List<String> srtTagNames = rawSrtTags is List
+        ? <String>[
+            for (final Object? t in rawSrtTags)
+              if (t != null && t.toString().isNotEmpty) t.toString(),
+          ]
+        : const <String>[];
+    if (srtTagNames.isNotEmpty) {
+      final SrtBookRow? importedSrt = await _db.getSrtBookByUid(uid);
+      if (importedSrt != null) {
+        for (final String name in srtTagNames) {
+          if (name.isEmpty) continue;
+          final int tagId = await _db.getOrCreateTagByName(name);
+          await _db.addTagToSrtBook(importedSrt.id, tagId);
+        }
+      }
+    }
+
+    // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
+    await _db.replaceCuesForBook(
+      uid,
+      cues.map((Object? raw) {
+        final Map<String, Object?> cue = _typedMap(raw);
+        return AudioCuesCompanion.insert(
+          bookKey: uid,
           chapterHref: _stringValue(cue, 'chapterHref'),
           sentenceIndex: _intValue(cue, 'sentenceIndex'),
           textFragmentId: _stringValue(cue, 'textFragmentId'),
@@ -396,10 +510,11 @@ class SyncAssetPackageService {
 /// `ttu-42`) pass through unchanged.
 String _safeDirName(String id) => id.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
-List<File> _audioPackageFiles(AudiobookRow audiobook, SrtBookRow srtBook) {
+List<File> _audioPackageFiles(AudiobookRow? audiobook, SrtBookRow srtBook) {
   final List<String> paths = <String>[
-    ..._decodeStringList(audiobook.audioPathsJson),
-    audiobook.alignmentPath,
+    // 纯 SRT 无 Audiobooks 行：不含 audiobook 音频/对齐文件，仅取 SrtBook 自身资源。
+    if (audiobook != null) ..._decodeStringList(audiobook.audioPathsJson),
+    if (audiobook != null) audiobook.alignmentPath,
     ..._decodeStringList(srtBook.audioPathsJson),
     srtBook.srtPath,
     if (srtBook.coverPath != null) srtBook.coverPath!,

@@ -229,6 +229,109 @@ void main() {
       expect(srt.coverPath, p.join(targetAudio.path, 'ttu-42', 'cover.jpg'));
     });
 
+    test('standalone (pure SRT) audiobook round trips without an Audiobooks row',
+        () async {
+      // 纯 SRT（standalone）有声书：SrtBooks 行 bookKey 为空、无 Audiobooks 行，
+      // 身份=uid、cue 走 uid 命名空间。导出无 audiobook 段、导入不造孤儿 Audiobooks 行。
+      final Directory temp =
+          await Directory.systemTemp.createTemp('hibiki-audio-standalone-');
+      addTearDown(() => temp.delete(recursive: true));
+      final HibikiDatabase sourceDb = _testDb();
+      final HibikiDatabase targetDb = _testDb();
+      addTearDown(sourceDb.close);
+      addTearDown(targetDb.close);
+
+      final Directory sourceAudio =
+          Directory(p.join(temp.path, 'source-audio'));
+      await sourceAudio.create(recursive: true);
+      final File track = File(p.join(sourceAudio.path, 'voice.mp3'))
+        ..writeAsStringSync('standalone audio bytes');
+      final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nこんにちは\n');
+      final File cover = File(p.join(sourceAudio.path, 'cover.png'))
+        ..writeAsStringSync('cover bytes');
+
+      // 无 Audiobooks 行；SrtBooks 行 bookKey 空。
+      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srt-standalone-1',
+        title: 'Standalone SRT',
+        author: const Value('Voice Author'),
+        audioRoot: Value(sourceAudio.path),
+        audioPathsJson: Value(jsonEncode(<String>[track.path])),
+        srtPath: subs.path,
+        coverPath: Value(cover.path),
+        importedAt: 4242,
+        bookKey: const Value(''),
+      ));
+      // cue 走 uid 命名空间（SrtBook cue 键）。
+      await sourceDb.replaceCuesForBook(
+          'srt-standalone-1', <AudioCuesCompanion>[
+        AudioCuesCompanion.insert(
+          bookKey: 'srt-standalone-1',
+          chapterHref: 'srt',
+          sentenceIndex: 0,
+          textFragmentId: 'frag-0',
+          cueText: 'こんにちは',
+          startMs: 0,
+          endMs: 1000,
+          audioFileIndex: 0,
+        ),
+      ]);
+
+      // 不传 bookKey：从 SrtBook 派生（空）→ 纯 SRT 分支。
+      final File package = await SyncAssetPackageService(db: sourceDb)
+          .exportAudioDatabasePackage(
+        srtBookUid: 'srt-standalone-1',
+        outputFile: File(p.join(temp.path, 'standalone.hibikiaudio')),
+      );
+
+      // manifest 的 audiobook 段必须为 null（无 Audiobooks 行）。
+      final Archive archive =
+          ZipDecoder().decodeBytes(package.readAsBytesSync());
+      final ArchiveFile manifestFile = archive.findFile('manifest.json')!;
+      final Map<String, Object?> manifest =
+          (jsonDecode(utf8.decode(manifestFile.content as List<int>))
+              as Map<String, Object?>);
+      expect(manifest['audiobook'], isNull,
+          reason: '纯 SRT 包不带 audiobook 段');
+
+      final Directory targetAudio =
+          Directory(p.join(temp.path, 'target-audio'));
+      // 即便传 bookKeyOverride，纯 SRT 分支也必须忽略它（bookKey 恒空）。
+      await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+        packageFile: package,
+        audioDatabaseRoot: targetAudio,
+        bookKeyOverride: 'should-be-ignored',
+      );
+
+      // 关键：不得造出任何 Audiobooks 行。
+      expect(await targetDb.getAllAudiobooks(), isEmpty,
+          reason: '纯 SRT 导入不得造孤儿 Audiobooks 行');
+
+      final SrtBookRow srt =
+          (await targetDb.getSrtBookByUid('srt-standalone-1'))!;
+      expect(srt.bookKey, '', reason: 'standalone bookKey 恒空（忽略 override）');
+      expect(srt.title, 'Standalone SRT');
+      // 持久目录键 = uid。
+      expect(srt.srtPath,
+          p.join(targetAudio.path, 'srt-standalone-1', 'subs.srt'));
+      expect(srt.coverPath,
+          p.join(targetAudio.path, 'srt-standalone-1', 'cover.png'));
+      expect(jsonDecode(srt.audioPathsJson!) as List<dynamic>, <String>[
+        p.join(targetAudio.path, 'srt-standalone-1', 'voice.mp3'),
+      ]);
+      expect(
+          await File(p.join(targetAudio.path, 'srt-standalone-1', 'voice.mp3'))
+              .readAsString(),
+          'standalone audio bytes');
+
+      // cue 落在 uid 命名空间。
+      final List<AudioCueRow> cues =
+          await targetDb.getCuesForBook('srt-standalone-1');
+      expect(cues, hasLength(1));
+      expect(cues.single.cueText, 'こんにちは');
+    });
+
     test('large audio file survives STORE export + streaming import intact',
         () async {
       // 行为级证明 STORE 导出 + rawContent 流式导入对大文件往返字节一致。
