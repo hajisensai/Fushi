@@ -4,6 +4,7 @@ import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
+import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -159,6 +160,48 @@ class _MediaCollectionGridDetailPageState
     if (!mounted) return;
     setState(() => _name = newName);
     widget.onChanged();
+  }
+
+  /// 编辑本合集的标签：复用共享标签池的 [TagPickerPage]（合集第 4 路，传
+  /// collectionId）；返回后自增刷新计数，触发 [_buildTagChips] 的 FutureBuilder
+  /// 重取，chip 行立即反映新增/移除。
+  int _tagsRefresh = 0;
+
+  Future<void> _editTags() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => TagPickerPage(collectionId: widget.collection.id),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _tagsRefresh++);
+  }
+
+  /// 详情页头部标签 chip 行：随 [_tagsRefresh] 强制重取本合集标签；空则不占位。
+  Widget _buildTagChips() {
+    return FutureBuilder<List<BookTagRow>>(
+      key: ValueKey<int>(_tagsRefresh),
+      future: widget.database.getTagsForCollection(widget.collection.id),
+      builder: (BuildContext context, AsyncSnapshot<List<BookTagRow>> snap) {
+        final List<BookTagRow> tags = snap.data ?? const <BookTagRow>[];
+        if (tags.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final BookTagRow tag in tags)
+                HibikiTagChip(
+                  label: tag.name,
+                  color: Color(tag.colorValue),
+                  tone: HibikiTagChipTone.surface,
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _delete() async {
@@ -333,6 +376,11 @@ class _MediaCollectionGridDetailPageState
             onPressed: _rename,
           ),
           IconButton(
+            tooltip: t.tag_label,
+            icon: const Icon(Icons.sell_outlined),
+            onPressed: _editTags,
+          ),
+          IconButton(
             tooltip: t.delete_collection,
             icon: const Icon(Icons.delete_outline),
             onPressed: _delete,
@@ -344,7 +392,13 @@ class _MediaCollectionGridDetailPageState
             ? const Center(child: CircularProgressIndicator())
             : members.isEmpty
                 ? Center(child: Text(t.collection_empty))
-                : _buildMemberGrid(members),
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _buildTagChips(),
+                      Expanded(child: _buildMemberGrid(members)),
+                    ],
+                  ),
       ),
     );
   }
