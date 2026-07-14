@@ -102,6 +102,13 @@ class FloatingLyricWindow {
   void UpdateLabels(const Labels& labels);
   void SetPlaybackState(bool playing);
   void SetClickLookupEnabled(bool enabled);
+  // Text-only mode (the transparent clipboard text window): the strip draws
+  // ONLY the draggable, tappable text — no playback / lock / close control
+  // buttons and no resize grip. Drag + single-tap word lookup still work exactly
+  // as in the audiobook lyric strip. Set once right after construction (before
+  // Show) by the clipboard_text channel; the audiobook lyric instance leaves it
+  // false so its rendering + hit-testing stay byte-for-byte unchanged.
+  void SetTextOnly(bool text_only) { text_only_ = text_only; }
   // Position lock: when locked the strip can no longer be dragged, but word
   // lookup taps and the playback-control buttons keep working (mirrors the
   // Android FloatingLyricService position lock — drag-only restriction).
@@ -176,6 +183,9 @@ class FloatingLyricWindow {
   bool visible_ = false;
   bool playing_ = false;
   bool click_lookup_enabled_ = true;
+  // Text-only clipboard window: suppress control buttons + resize grip, use the
+  // full window height for text. Never true for the audiobook lyric strip.
+  bool text_only_ = false;
   bool hovered_ = false;
   bool tracking_mouse_leave_ = false;
   // Position lock: drag disabled, everything else (lookup + controls) still

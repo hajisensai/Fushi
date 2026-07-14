@@ -37,6 +37,7 @@ import 'package:hibiki/src/utils/adaptive/hibiki_macos_theme.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
+import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
@@ -389,6 +390,12 @@ void main([List<String> args = const <String>[]]) {
           // 到首个 panel 分区请求才显示。
           if (ClipboardPanelController.isSupported) {
             await ClipboardPanelController.instance.start(appModel: appModel);
+          }
+          // 真透明剪切板文字窗控制器：只接线 native 点字回调，窗口到首个
+          // textWindow 分区请求才显示。
+          if (ClipboardTextOverlayController.isSupported) {
+            await ClipboardTextOverlayController.instance
+                .start(appModel: appModel);
           }
           DesktopLookupDispatcher.instance.start(appModel: appModel);
           await appModel.applyDesktopClipboardLifecycle();

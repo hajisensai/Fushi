@@ -7,6 +7,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
 import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
+import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
@@ -395,6 +396,11 @@ SettingsDestination buildLookupDestination() {
                 label: t.desktop_clipboard_destination_transient,
                 tooltip: t.desktop_clipboard_destination_transient,
               ),
+              SettingsSegmentOption<DesktopClipboardDestination>(
+                value: DesktopClipboardDestination.textWindow,
+                label: t.desktop_clipboard_destination_text_window,
+                tooltip: t.desktop_clipboard_destination_text_window,
+              ),
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.desktopClipboardDestination,
@@ -414,6 +420,12 @@ SettingsDestination buildLookupDestination() {
                 } else {
                   await ClipboardPanelController.instance.hidePanel();
                 }
+              }
+              // 切走透明文字窗去向时收起它（不留孤儿透明窗）；透明窗无需预热，
+              // native 窗到首个 textWindow 分区请求才创建。
+              if (ClipboardTextOverlayController.isSupported &&
+                  value != DesktopClipboardDestination.textWindow) {
+                await ClipboardTextOverlayController.instance.hide();
               }
               settingsContext.refresh();
             },
@@ -443,6 +455,33 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel
                   .setClipboardPanelOpacity(value / 100);
               await ClipboardPanelController.instance.refreshOpacity();
+            },
+          ),
+          // 真透明剪切板文字窗的背景不透明度（destination==textWindow 时显示）。
+          // 默认 0% = 完全透明背景只露实心文字（用户诉求）；亮色游戏上白字看不清
+          // 时上抬垫一层暗底。与面板整窗 LWA_ALPHA 不同，这里只压背景 alpha。
+          SettingsSliderItem(
+            id: 'lookup.clipboard_text_window_bg_opacity',
+            title: t.clipboard_text_window_bg_opacity,
+            subtitle: t.clipboard_text_window_bg_opacity_hint,
+            icon: Icons.gradient_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled &&
+                settingsContext.appModel.desktopClipboardDestination ==
+                    DesktopClipboardDestination.textWindow,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.clipboardTextWindowBgOpacity * 100,
+            min: 0,
+            max: 100,
+            divisions: 20,
+            step: 5,
+            titleReadout: true,
+            label: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setClipboardTextWindowBgOpacity(value / 100);
+              await ClipboardTextOverlayController.instance.refreshStyle();
             },
           ),
           // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键

@@ -4252,6 +4252,11 @@ class AppModel with ChangeNotifier {
   double get clipboardPanelOpacity => prefsRepo.clipboardPanelOpacity;
   Future<void> setClipboardPanelOpacity(double v) =>
       prefsRepo.setClipboardPanelOpacity(v);
+  // 真透明剪切板文字窗背景不透明度（0.0 = 全透只露文字）。
+  double get clipboardTextWindowBgOpacity =>
+      prefsRepo.clipboardTextWindowBgOpacity;
+  Future<void> setClipboardTextWindowBgOpacity(double v) =>
+      prefsRepo.setClipboardTextWindowBgOpacity(v);
   String get clipboardPanelRect => prefsRepo.clipboardPanelRect;
   Future<void> setClipboardPanelRect(String v) =>
       prefsRepo.setClipboardPanelRect(v);

@@ -533,6 +533,7 @@ bool FlutterWindow::OnCreate() {
           &flutter::StandardMethodCodec::GetInstance());
 
   RegisterFloatingLyricChannel();
+  RegisterClipboardTextChannel();
   RegisterGlobalLookupChannel();
   RegisterClipboardPanelChannel();
   RegisterForegroundSelectionChannel();
@@ -792,6 +793,77 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // any user-driven toggle back over "lockChanged".
           floating_lyric_window_->SetLocked(
               BoolFromValue(args, "locked", false));
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+}
+
+void FlutterWindow::RegisterClipboardTextChannel() {
+  // Second FloatingLyricWindow instance, text-only: the transparent clipboard
+  // text window. No transport / lock / close controls, no resize grip — only
+  // draggable, tappable text over a per-pixel transparent background. Tap lookup
+  // routes back over "lookupText" into the in-app dictionary overlay (same
+  // contract as the audiobook lyric strip). Independent instance so it can be
+  // shown alongside the lyric strip without either clobbering the other.
+  clipboard_text_window_ = std::make_unique<FloatingLyricWindow>();
+  clipboard_text_window_->SetTextOnly(true);
+
+  clipboard_text_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/clipboard_text",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  // Only the word-lookup tap is wired: text-only mode never emits control / lock
+  // events (ControlActionAt short-circuits), so those callbacks are unnecessary.
+  clipboard_text_window_->SetLookupCallback(
+      [this](const std::string& text, int char_index) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
+            {flutter::EncodableValue("index"),
+             flutter::EncodableValue(char_index)},
+        };
+        clipboard_text_channel_->InvokeMethod(
+            "lookupText",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+
+  clipboard_text_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const std::string& method = call.method_name();
+
+        if (method == "canDrawOverlays") {
+          // Runner-owned window — no OS overlay permission exists.
+          result->Success(flutter::EncodableValue(true));
+        } else if (method == "show") {
+          clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
+          clipboard_text_window_->SetClickLookupEnabled(
+              BoolFromValue(args, "clickLookupEnabled", true));
+          const bool shown = clipboard_text_window_->Show(GetHandle());
+          result->Success(flutter::EncodableValue(shown));
+        } else if (method == "hide") {
+          clipboard_text_window_->Hide();
+          result->Success();
+        } else if (method == "isShowing") {
+          result->Success(
+              flutter::EncodableValue(clipboard_text_window_->IsShowing()));
+        } else if (method == "updateText") {
+          // Clipboard text is a single string with no "current line" concept, so
+          // the multi-line dim range stays at the default (-1/0 = whole string
+          // full colour).
+          clipboard_text_window_->UpdateText(WideFromValue(args, "text", L""));
+          result->Success();
+        } else if (method == "updateStyle") {
+          clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
+          result->Success();
+        } else if (method == "setClickLookupEnabled") {
+          clipboard_text_window_->SetClickLookupEnabled(
+              BoolFromValue(args, "enabled", true));
           result->Success();
         } else {
           result->NotImplemented();
