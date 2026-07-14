@@ -41,7 +41,11 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
         YoutubeCaptionTrack,
         resolveYoutubeCaptionTracks,
         resolveYoutubeCaptionCues,
-        pickBestYoutubeCaptionTrack;
+        pickBestYoutubeCaptionTrack,
+        YoutubeVideoVariant,
+        YoutubeVariantSet,
+        resolveYoutubeVideoVariants,
+        isYoutubeUrl;
 import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
 import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
@@ -1360,6 +1364,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   int _selectedHlsVariantIndex = -1;
   int _hlsDetectSeq = 0;
 
+  /// YouTube 画质档（用户报「YouTube 没法调画质」）：与 HLS 画质并行的一套状态，**懒解析**
+  /// ——用户点开画质菜单时才 [resolveYoutubeVideoVariants]（一次 getManifest）填 [_youtubeVariants]
+  /// （各档 video-only 流，高→低）。[_selectedYoutubeVariantIndex] 当前选中档（-1=自动=解析器
+  /// 默认最佳）；[_youtubeVariantsAudioUrl] 分离音轨（切档保持同一音频）；[_youtubeVariantsLoading]
+  /// 解析中（画质侧栏显 spinner）。切档走 [_switchYoutubeVariant]（换 video-only URL + 同音轨重载，
+  /// 保持播放位置 + 现有字幕 cue）。非 YouTube 时恒空。
+  List<YoutubeVideoVariant> _youtubeVariants = const <YoutubeVideoVariant>[];
+  int _selectedYoutubeVariantIndex = -1;
+
+  /// 「自动」档对应的 [_youtubeVariants] 下标（= 解析器默认最佳挑选，avc1≤1080p）。用户选
+  /// 「自动」时切到这条 URL；-1=尚未解析。
+  int _youtubeVariantsDefaultIndex = -1;
+  String? _youtubeVariantsAudioUrl;
+  bool _youtubeVariantsLoading = false;
+
   bool _clipExportMarking = false;
   bool _clipExporting = false;
   int? _clipExportStartMs;
@@ -1760,6 +1779,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
     _remoteSubtitleUserDismissed = false;
+    // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
+    _youtubeVariants = const <YoutubeVideoVariant>[];
+    _selectedYoutubeVariantIndex = -1;
+    _youtubeVariantsDefaultIndex = -1;
+    _youtubeVariantsAudioUrl = null;
+    _youtubeVariantsLoading = false;
     final int initialPositionMs = initialPositionMsOverride ??
         _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
@@ -5065,16 +5090,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
       onEditControlsOnscreen: _showVideoControlEditOverlay,
-      // TODO-1158：HLS 多档画质入口（跨平台，经设置面板「播放」分类可达）。仅当探测到
-      // HLS master variant 时给入口；点开画质侧栏（替换当前设置侧栏）。
-      qualityOptionCount: _hlsVariants.length,
-      qualityCurrentLabel: _hlsVariants.isEmpty
-          ? null
-          : (_selectedHlsVariantIndex < 0 ||
-                  _selectedHlsVariantIndex >= _hlsVariants.length
-              ? t.video_quality_auto
-              : _hlsVariants[_selectedHlsVariantIndex].qualityLabel),
-      onOpenQuality: _hlsVariants.isEmpty ? null : _showQualityMenu,
+      // TODO-1158 / TODO-1159：多档画质入口（跨平台，经设置面板「播放」分类可达）。HLS
+      // master variant 或 YouTube 流（懒解析多档）时给入口；点开画质侧栏（替换设置侧栏）。
+      qualityOptionCount: _qualityOptionCount,
+      qualityCurrentLabel: _qualityCurrentLabel,
+      onOpenQuality: _hasQualityMenu ? _showQualityMenu : null,
       // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当渲染 channel 已接线
       // （Android）、本次运行确实跑 Impeller、且用户尚未选 Skia 时接线（=可能中招黑屏
       // 的人群）；否则 null 不显示该行。点按走确认弹窗 → 关 Impeller → 重启。
@@ -5823,8 +5843,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         t.video_audio_track,
         () => _showAudioTrackMenu(controller),
       ),
-      // TODO-1158：仅当当前流是 HLS master（探测到多档码率 variant）才给画质入口。
-      if (_hlsVariants.isNotEmpty)
+      // TODO-1158/1159：HLS master（多档码率）或 YouTube 流（懒解析多档）才给画质入口。
+      if (_hasQualityMenu)
         item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),

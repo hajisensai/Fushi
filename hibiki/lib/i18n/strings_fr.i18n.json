@@ -2347,5 +2347,7 @@
   "video_load_failed_generic": "Couldn't load this video.",
   "video_load_failed_not_found": "This item was not found in your library.",
   "video_load_failed_retry": "Retry",
-  "video_load_failed_back": "Back"
+  "video_load_failed_back": "Back",
+  "video_quality_loading": "Loading available qualities…",
+  "video_quality_load_failed": "Couldn't load qualities for this video."
 }

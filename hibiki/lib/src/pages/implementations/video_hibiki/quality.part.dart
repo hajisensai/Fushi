@@ -63,12 +63,124 @@ extension _VideoQuality on _VideoHibikiPageState {
     return path.endsWith('.m3u8') || path.endsWith('.m3u');
   }
 
-  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。
+  /// 当前是否为 YouTube 流（据 [UrlStreamVideoClient.youtubeCaptionsUrl] 存的 watch URL）。
+  /// 非空即可懒解析画质档。
+  String? get _currentYoutubeWatchUrl {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is UrlStreamVideoClient) {
+      final String? captions = client.youtubeCaptionsUrl;
+      if (captions != null && isYoutubeUrl(captions)) return captions;
+    }
+    return null;
+  }
+
+  bool get _isYoutubeStream => _currentYoutubeWatchUrl != null;
+
+  /// 画质入口是否可见：HLS master（多档码率）或 YouTube 流（懒解析多档）。
+  bool get _hasQualityMenu => _hlsVariants.isNotEmpty || _isYoutubeStream;
+
+  /// 画质档数量（YouTube 优先，其次 HLS）。控件槽据此判是否显数字/入口。
+  int get _qualityOptionCount => _youtubeVariants.isNotEmpty
+      ? _youtubeVariants.length
+      : _hlsVariants.length;
+
+  /// 当前画质档标签（控件槽副标题）：YouTube > HLS；YouTube 尚未解析显「自动」占位。
+  String? get _qualityCurrentLabel {
+    if (_youtubeVariants.isNotEmpty) {
+      return (_selectedYoutubeVariantIndex < 0 ||
+              _selectedYoutubeVariantIndex >= _youtubeVariants.length)
+          ? t.video_quality_auto
+          : _youtubeVariants[_selectedYoutubeVariantIndex].label;
+    }
+    if (_hlsVariants.isNotEmpty) {
+      return (_selectedHlsVariantIndex < 0 ||
+              _selectedHlsVariantIndex >= _hlsVariants.length)
+          ? t.video_quality_auto
+          : _hlsVariants[_selectedHlsVariantIndex].qualityLabel;
+    }
+    return _isYoutubeStream ? t.video_quality_auto : null;
+  }
+
+  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流首次点开即**懒解析**各档
+  /// （一次 getManifest；侧栏解析中显 spinner），避免每次开视频都预解析多档拖慢起播。
   void _showQualityMenu({VideoControlSlot? sourceSlot}) {
+    if (_isYoutubeStream &&
+        _youtubeVariants.isEmpty &&
+        !_youtubeVariantsLoading) {
+      unawaited(_ensureYoutubeVariantsLoaded());
+    }
     _showVideoSidePanel(
       _VideoSidePanelKind.quality,
       sourceSlot: sourceSlot,
     );
+  }
+
+  /// 懒解析当前 YouTube 视频的各档 video-only 流（用户点开画质菜单时调）。填
+  /// [_youtubeVariants] / [_youtubeVariantsAudioUrl] / [_youtubeVariantsDefaultIndex]。
+  /// best-effort：失败 / 无分离流（仅 muxed）弹一次 OSD，画质侧栏留占位（不影响播放）。
+  Future<void> _ensureYoutubeVariantsLoaded() async {
+    final String? watch = _currentYoutubeWatchUrl;
+    if (watch == null) return;
+    if (_youtubeVariants.isNotEmpty || _youtubeVariantsLoading) return;
+    _rebuild(() => _youtubeVariantsLoading = true);
+    try {
+      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(watch);
+      if (!mounted) return;
+      _rebuild(() {
+        _youtubeVariants = set.variants;
+        _youtubeVariantsAudioUrl = set.audioStreamUrl;
+        _youtubeVariantsDefaultIndex = set.defaultIndex;
+        _selectedYoutubeVariantIndex = -1; // 默认自动。
+        _youtubeVariantsLoading = false;
+      });
+      if (set.variants.isEmpty) _showOsd(t.video_quality_load_failed);
+    } catch (_) {
+      if (!mounted) return;
+      _rebuild(() => _youtubeVariantsLoading = false);
+      _showOsd(t.video_quality_load_failed);
+    }
+  }
+
+  /// 切到第 [index] 档 YouTube 画质（-1=自动=解析器默认最佳）：换 video-only URL + 同
+  /// audio-only 音轨重载，保持当前播放位置与现有字幕 cue。同档早退；重载后弹 OSD。
+  Future<void> _switchYoutubeVariant(int index) async {
+    if (index >= _youtubeVariants.length) return;
+    if (index == _selectedYoutubeVariantIndex) {
+      _hideVideoSidePanel();
+      return;
+    }
+    // 自动 → 解析器默认最佳档（[_youtubeVariantsDefaultIndex]）的 URL。
+    final int effectiveIndex = index < 0 ? _youtubeVariantsDefaultIndex : index;
+    if (effectiveIndex < 0 || effectiveIndex >= _youtubeVariants.length) {
+      _hideVideoSidePanel();
+      return;
+    }
+    final String videoUrl = _youtubeVariants[effectiveIndex].videoUrl;
+    final VideoPlayerController? controller = _controller;
+    final int posMs = controller?.positionMs ?? 0;
+    final List<AudioCue> cues = controller != null
+        ? List<AudioCue>.of(controller.cues)
+        : const <AudioCue>[];
+    _hideVideoSidePanel();
+    // 乐观更新选中档（-1 保留为「自动」显示）。
+    _rebuild(() => _selectedYoutubeVariantIndex = index);
+    // detectHls=false：googlevideo URL 非 m3u8，且不碰 YouTube 档列表。音轨保持同一
+    // audio-only 流（切档只换画面清晰度）。字幕经现有 cue + 当前 source 保留。
+    await _applyLoad(
+      videoPath: null,
+      mediaUri: videoUrl,
+      cues: cues,
+      title: _title ?? '',
+      initialPositionMs: posMs,
+      startIntent: EpisodeStartIntent.explicitCue,
+      externalSubtitlePath: _currentSubtitleSource,
+      externalAudioTrackUrl: _youtubeVariantsAudioUrl,
+      detectHls: false,
+    );
+    if (!mounted) return;
+    final String label =
+        index < 0 ? t.video_quality_auto : _youtubeVariants[index].label;
+    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
   /// 切到第 [index] 档画质（-1=自动/master ABR）：换 variant URL 重载，保持当前播放位置
@@ -109,9 +221,61 @@ extension _VideoQuality on _VideoHibikiPageState {
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
-  /// 画质侧栏面板：「自动」+ 各档 variant（高到低），当前档打勾。空态显示标题占位。
+  /// 画质侧栏面板：「自动」+ 各档 variant（高到低），当前档打勾。YouTube 流优先显其懒解析
+  /// 的各档（解析中显 spinner）；否则显 HLS 档；空态显示标题占位。
   Widget _buildQualitySidePanel(VideoPlayerController controller) {
     final ColorScheme cs = _videoChromeColorScheme(context);
+    // YouTube 分支：懒解析。解析中显 spinner；已解析显各档；解析失败/无分离流留占位。
+    if (_isYoutubeStream) {
+      if (_youtubeVariants.isEmpty && _youtubeVariantsLoading) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  t.video_quality_loading,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      if (_youtubeVariants.isNotEmpty) {
+        return ListView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: <Widget>[
+            _buildYoutubeQualityTile(
+              cs,
+              icon: Icons.auto_awesome,
+              label: t.video_quality_auto,
+              index: -1,
+            ),
+            for (int i = 0; i < _youtubeVariants.length; i++)
+              _buildYoutubeQualityTile(
+                cs,
+                icon: Icons.high_quality,
+                label: _youtubeVariants[i].label,
+                index: i,
+              ),
+          ],
+        );
+      }
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            t.video_quality,
+            style: TextStyle(color: cs.onSurfaceVariant),
+          ),
+        ),
+      );
+    }
     final List<HlsVariant> variants = _hlsVariants;
     if (variants.isEmpty) {
       return Center(
@@ -159,6 +323,24 @@ extension _VideoQuality on _VideoHibikiPageState {
       selectedColor: cs.primary,
       trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
       onTap: () => unawaited(_switchHlsVariant(index)),
+    );
+  }
+
+  Widget _buildYoutubeQualityTile(
+    ColorScheme cs, {
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final bool selected = _selectedYoutubeVariantIndex == index;
+    return ListTile(
+      dense: true,
+      leading: Icon(icon),
+      title: Text(label),
+      selected: selected,
+      selectedColor: cs.primary,
+      trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
+      onTap: () => unawaited(_switchYoutubeVariant(index)),
     );
   }
 }
