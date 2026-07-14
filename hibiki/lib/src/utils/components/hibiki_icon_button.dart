@@ -257,7 +257,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
           onPressed: enabled ? _handleTap : null,
         ),
       );
-      return _focusable(context, button);
+      return _focusable(context, _withTooltip(button));
     }
 
     Widget touchTarget = ColoredBox(
@@ -289,7 +289,16 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
         child: touchTarget,
       ),
     );
-    return _focusable(context, button);
+    return _focusable(context, _withTooltip(button));
+  }
+
+  /// 纯图标按钮（无可见文字）用 Material [Tooltip] 包裹，让鼠标悬停 / 长按能弹出
+  /// 用途说明——原先 [tooltip] 只喂给 [Semantics.label]（无障碍），屏幕上不可见，
+  /// 导致批量操作栏等纯图标按钮「放上去没说明」。带可见文字的药丸形态无需再弹，
+  /// 故不走此路径。空 [tooltip] 不包裹，避免弹出空浮层。
+  Widget _withTooltip(Widget child) {
+    if (widget.tooltip.isEmpty) return child;
+    return Tooltip(message: widget.tooltip, child: child);
   }
 
   Widget _focusable(BuildContext context, Widget button) {

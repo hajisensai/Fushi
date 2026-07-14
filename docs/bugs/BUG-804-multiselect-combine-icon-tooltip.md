@@ -1,0 +1,14 @@
+## BUG-804 · 多选栏组合成系列图标与收藏夹雷同且无tooltip
+- **报告**：2026-07-14（用户：）
+- **真实性**：✅ 真 bug。两处独立缺陷叠加：
+  - **图标雷同**：多选（批量）操作栏的「组合成系列」按钮与页头「收藏夹」入口、合集卡叠层角标共用同一 `Icons.collections_bookmark_outlined`，肉眼无法区分。
+    - `hibiki/lib/src/pages/implementations/home_video_page.dart:2846`（组合成系列，旧值 `collections_bookmark_outlined`）
+    - `hibiki/lib/src/pages/implementations/reader_history/books.part.dart:382`（书架同款组合按钮，旧值同上）
+    - 对照入口：`home_video_page.dart:2388`（收藏夹 `t.collections`，保留 `collections_bookmark_outlined`）
+  - **无 tooltip**：`HibikiIconButton` 收到 `tooltip:` 后只喂给 `Semantics(label:)`（无障碍），从不生成 Material `Tooltip`，纯图标按钮悬停 / 长按无可见说明。
+    - 根因 `hibiki/lib/src/utils/components/hibiki_icon_button.dart`（原 260 / 292 行两处纯图标 return 只包 `Semantics`，无 `Tooltip`）
+- **[x] ① 已修复** — commit（见下）：
+  - 图标差异化：`home_video_page.dart` 与 `books.part.dart` 的组合按钮改用 `Icons.playlist_add`，与收藏夹的 `collections_bookmark_outlined` 区分（二者语义无关）。
+  - Tooltip：`hibiki_icon_button.dart` 新增 `_withTooltip()`，两条纯图标 return（宽点击区 / 普通图标）用 Material `Tooltip` 包裹（空 tooltip 不包裹，避免空浮层）；带可见文字的药丸形态无需再弹，不变。
+- **[x] ② 已加自动化测试** — `hibiki/test/widgets/hibiki_icon_button_test.dart`：新增 3 例——纯图标按钮包 Material `Tooltip` 且 message 正确、宽点击区同样包 `Tooltip`、空 tooltip 不生成 `Tooltip`。守住「纯图标按钮必有可见说明」这一系统性根因。
+- **备注**：图标雷同是一行视觉选择、无独立行为可 widget 断言（批量栏 widget 测试依赖 DB/native_assets，本机 native_assets 有 DLL 锁问题不稳定），故以 `HibikiIconButton` 的 Tooltip 生成守卫为主。核心改动经 `flutter analyze`（clean）+ 上述 3 例 + 既有 `HibikiIconButton` 点击/焦点/golden 测试验证；`Tooltip` 在 `dispose()` 内自取消定时器，不引入「tree 释放后 timer pending」。批量栏页级测试（含 DB）待真机 / CI 复测。
