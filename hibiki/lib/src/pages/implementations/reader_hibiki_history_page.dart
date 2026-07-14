@@ -763,8 +763,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 排除，读了有声书回书架「继续阅读」永不更新。过滤到纯 EPUB 只为主网格卡
   /// 去重（有声书渲染成 SRT 卡），与 hero/统计无关。
   ///
-  /// 统计 = 总数（[libraryTotal] = 纯 EPUB 卡 + SRT 卡，有声书计一次）/ 在读 /
-  /// 读完（后两格按 EPUB-backed 进度；纯字幕无 EPUB 正文的书无进度维度，跳过）。
+  /// 统计 = 总数（[libraryTotal] = 书架可见卡数 = 本地纯 EPUB 卡 + SRT 卡（有声书计
+  /// 一次）+ 联合视图里的远端占位卡；调用处按此传入，BUG-815）/ 在读 / 读完（后两格
+  /// 按 EPUB-backed 进度；远端未下载卡与纯字幕书无进度维度，跳过）。
   /// 宽 >=720 并排、窄屏堆叠。
   Widget _buildShelfOverviewSection(
     List<MediaItem> progressBooks,
@@ -900,11 +901,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required int finished,
     required HibikiDesignTokens tokens,
   }) {
-    Widget cell(String label, int value) => Expanded(
+    Widget cell(String label, int value, {String? valueKey}) => Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text('$value', style: tokens.type.pageTitle),
+              Text('$value',
+                  key: valueKey == null ? null : ValueKey<String>(valueKey),
+                  style: tokens.type.pageTitle),
               SizedBox(height: tokens.spacing.gap / 2),
               Text(
                 label,
@@ -933,7 +936,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             SizedBox(height: tokens.spacing.gap),
             Row(
               children: <Widget>[
-                cell(t.video_stat_total_videos, total),
+                cell(t.video_stat_total_videos, total,
+                    valueKey: 'shelf_overview_total'),
                 cell(t.shelf_stat_reading, reading),
                 cell(t.video_stat_completed, finished),
               ],
@@ -1205,13 +1209,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               // 拍板「书架也要有」）。空库隐藏；统计按未过滤全量描述整库。
               // BUG-804：hero/在读统计喂**未过滤的全量 EPUB-backed `books`**（含
               // 有声书），不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续
-              // 阅读」永不更新。libraryTotal 仍按可见卡数（纯 EPUB + SRT）计，
-              // 有声书渲染成单张 SRT 卡只计一次。
-              if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
+              // 阅读」永不更新。
+              // BUG-815：libraryTotal = 书架**可见卡数** = 本地（纯 EPUB + SRT，有声书
+              // 只计一次）+ 联合视图里的远端占位卡（`remoteBooks` + `remoteSrtBooks`，
+              // 已 dedupe 去掉与本地重复者、已按 showRemote 门控）。此前只数本地，用户
+              // 看到一屏含远端书却「总数」只报本地数，对不上（与视频页统计口径看齐）。
+              if (epubBooks.isNotEmpty ||
+                  srtBooks.isNotEmpty ||
+                  remoteBooks.isNotEmpty ||
+                  remoteSrtBooks.isNotEmpty)
                 SliverToBoxAdapter(
                   child: _buildShelfOverviewSection(
                     books,
-                    epubBooks.length + srtBooks.length,
+                    epubBooks.length +
+                        srtBooks.length +
+                        remoteBooks.length +
+                        remoteSrtBooks.length,
                   ),
                 ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
