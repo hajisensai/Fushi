@@ -231,6 +231,14 @@ class VideoBookRepository {
     // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade）；被清空的 playlist
     // 合集随之自删，避免留孤儿成员 / 合集卡数量虚高。
     await _db.removeEntryFromAllCollections('video', bookUid);
+    // 删除传播（显式确认式）：用户主动删视频记一条 sync 删除墓碑，供同步经 compare
+    // 确认后传播到远端。best-effort。
+    try {
+      await _db.writeSyncDeletionTombstone(
+          'video', bookUid, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {
+      // best-effort：记账失败不影响视频已删。
+    }
   }
 
   /// Deletes one video row and then reclaims the app-owned files that can be
