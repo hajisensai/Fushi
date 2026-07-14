@@ -1051,6 +1051,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         const isGaiji = nodeData?.class === 'gaiji' || Object.prototype.hasOwnProperty.call(nodeData || {}, 'gaiji');
         if (isGaiji) {
             imageContainer.style.setProperty('width', 'auto', 'important');
+            imageContainer.style.setProperty('margin-inline-end', '0', 'important');
         }
         imageContainer.style.minWidth = '1.2em';
         imageContainer.style.height = '1.2em';
