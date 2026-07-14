@@ -23,6 +23,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     required this.memberCardBuilder,
     required this.onChanged,
     this.onOpenMember,
+    this.onDeleteMembersMedia,
     super.key,
   });
 
@@ -50,6 +51,13 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
 
   /// 改名 / 删除 / 移出成员后刷新书架。
   final VoidCallback onChanged;
+
+  /// 「删除合集」时可选连同成员本体一起删（默认不删，保持只解链语义）。调用方
+  /// （持 AppModel + [ReaderHibikiSource] / [VideoBookRepository]）注入：按每个成员
+  /// (mediaType, entryKey) 删底层书/有声书/视频本体 + 磁盘副本，并释放空间。
+  /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
+  final Future<void> Function(List<MediaCollectionItemRow> members)?
+      onDeleteMembersMedia;
 
   @override
   State<MediaCollectionGridDetailPage> createState() =>
@@ -205,27 +213,57 @@ class _MediaCollectionGridDetailPageState
   }
 
   Future<void> _delete() async {
+    // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同书一起删」
+    // 选项；否则退回纯解链删除（老行为，零变化）。
+    final bool canDeleteMembers =
+        widget.onDeleteMembersMedia != null && _rows.isNotEmpty;
+    bool alsoDeleteMembers = false;
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.delete_collection),
-        content: Text(t.delete_collection_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
+          title: Text(t.delete_collection),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.delete_collection_confirm),
+              if (canDeleteMembers) ...<Widget>[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: alsoDeleteMembers,
+                  onChanged: (bool? v) =>
+                      setLocal(() => alsoDeleteMembers = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(t.delete_collection_also_books),
+                ),
+              ],
+            ],
           ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.delete_collection),
-          ),
-        ],
+          actions: <Widget>[
+            adaptiveDialogAction(
+              context: ctx,
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: ctx,
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.delete_collection),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true) return;
+    // 先删成员本体（书/有声书/视频 DB 行 + 磁盘副本），再解散容器。删书不动合集引用
+    // 行，故随后的 deleteMediaCollection 负责清掉残留引用 + 写合集级墓碑。
+    if (alsoDeleteMembers && widget.onDeleteMembersMedia != null) {
+      await widget
+          .onDeleteMembersMedia!(List<MediaCollectionItemRow>.of(_rows));
+    }
     await widget.database.deleteMediaCollection(widget.collection.id);
     if (!mounted) return;
     widget.onChanged();

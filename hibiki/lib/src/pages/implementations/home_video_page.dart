@@ -2611,6 +2611,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           onOpenEpisode: (VideoBookRow ep) =>
               _open(ep, playlistCollectionId: collection.id),
           onChanged: _refresh,
+          // 「连同视频一起删」：逐集删视频 DB 行 + app 拥有副本（封面/字幕），保留用户
+          // 原始视频文件；逐集不 VACUUM，循环后一次性 compact（避免逐集 VACUUM）。
+          // 复用批量删除同一纪律（_batchDeleteConfirm）。
+          onDeleteMembersMedia: (List<VideoBookRow> members) async {
+            for (final VideoBookRow ep in members) {
+              await repo.deleteVideoBookAndReclaimAssets(
+                ep.bookUid,
+                compactDatabase: false,
+              );
+            }
+            if (members.isNotEmpty) {
+              await repo.compactAfterVideoDeleteBestEffort();
+            }
+          },
         ),
       ),
     );
